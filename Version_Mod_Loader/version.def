@@ -1,0 +1,19 @@
+LIBRARY version
+EXPORTS
+    GetFileVersionInfoA=vp_GetFileVersionInfoA @1
+    GetFileVersionInfoByHandle=vp_GetFileVersionInfoByHandle @2
+    GetFileVersionInfoExA=vp_GetFileVersionInfoExA @3
+    GetFileVersionInfoExW=vp_GetFileVersionInfoExW @4
+    GetFileVersionInfoSizeA=vp_GetFileVersionInfoSizeA @5
+    GetFileVersionInfoSizeExA=vp_GetFileVersionInfoSizeExA @6
+    GetFileVersionInfoSizeExW=vp_GetFileVersionInfoSizeExW @7
+    GetFileVersionInfoSizeW=vp_GetFileVersionInfoSizeW @8
+    GetFileVersionInfoW=vp_GetFileVersionInfoW @9
+    VerFindFileA=vp_VerFindFileA @10
+    VerFindFileW=vp_VerFindFileW @11
+    VerInstallFileA=vp_VerInstallFileA @12
+    VerInstallFileW=vp_VerInstallFileW @13
+    VerLanguageNameA=vp_VerLanguageNameA @14
+    VerLanguageNameW=vp_VerLanguageNameW @15
+    VerQueryValueA=vp_VerQueryValueA @16
+    VerQueryValueW=vp_VerQueryValueW @17

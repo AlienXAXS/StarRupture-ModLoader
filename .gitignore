@@ -30,3 +30,20 @@
 *.exe
 *.out
 *.app
+
+# Visual Studio
+.vs/
+x64/
+Debug/
+Release/
+*.vcxproj.user
+*.suo
+*.sdf
+*.opensdf
+*.db
+*.opendb
+ipch/
+
+
+# Claude
+.claude/
