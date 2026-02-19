@@ -1,7 +1,8 @@
 #include "mod_core.h"
 #include "plugin_helpers.h"
+#include "plugin_config.h"
 #include "hooks/fake_player/fake_player.h"
-#include "../StarRupture SDK/SDK/Engine_classes.hpp"
+#include "Engine_classes.hpp"
 
 // ---------------------------------------------------------------------------
 // Callback when world begins play (ChimeraMain world)
@@ -16,6 +17,10 @@ static void OnWorldBeginPlay(SDK::UWorld* world)
 		LOG_ERROR("World is null in callback!");
 		return;
 	}
+
+	// Set debug visible mode from config before spawning
+	bool debugVisible = KeepTickingConfig::Config::IsDebugVisibleModeEnabled();
+	Hooks::FakePlayer::SetDebugVisibleMode(debugVisible);
 
 	// Spawn fake player to trick the game into staying active
 	Hooks::FakePlayer::SpawnFakePlayer();

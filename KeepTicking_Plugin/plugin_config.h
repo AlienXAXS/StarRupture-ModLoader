@@ -12,6 +12,13 @@ namespace KeepTickingConfig
 			ConfigValueType::Boolean,
 			"false",
 			"Spawn a fake player to prevent server from sleeping when empty"
+		},
+		{
+			"Hooks",
+			"DebugVisibleMode",
+			ConfigValueType::Boolean,
+			"false",
+			"Make the fake player visible for debugging (enables collision and ticking)"
 		}
 	};
 
@@ -38,6 +45,11 @@ namespace KeepTickingConfig
 		static bool ShouldPreventServerSleep()
 		{
 			return s_config ? s_config->ReadBool("KeepTicking", "Hooks", "PreventServerSleep", false) : false;
+		}
+
+		static bool IsDebugVisibleModeEnabled()
+		{
+			return s_config ? s_config->ReadBool("KeepTicking", "Hooks", "DebugVisibleMode", false) : false;
 		}
 
 	private:

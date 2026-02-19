@@ -17,4 +17,7 @@ namespace Hooks::FakePlayer
 	// Manually spawn/despawn the fake player
 	void SpawnFakePlayer();
 	void DespawnFakePlayer();
+
+	// Enable/disable debug visible mode (must be set before spawning)
+	void SetDebugVisibleMode(bool enabled);
 }

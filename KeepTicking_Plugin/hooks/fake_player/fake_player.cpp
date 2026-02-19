@@ -1,7 +1,8 @@
 #include "fake_player.h"
 #include "plugin_helpers.h"
 #include "sdk_helpers.h"
-#include "../StarRupture SDK/SDK/Engine_classes.hpp"
+#include "Engine_classes.hpp"
+#include "Chimera_classes.hpp"
 
 #define _USE_MATH_DEFINES
 #include <cmath>
@@ -15,8 +16,9 @@ namespace Hooks::FakePlayer
 {
 	static long g_callCount = 0;
 	static bool g_playerActive = false;
-	static SDK::APlayerController* g_fakeController = nullptr;
+	static SDK::ACrPlayerControllerBase* g_fakeController = nullptr;
 	static SDK::APawn* g_fakePawn = nullptr;
+	static bool g_debugVisibleMode = false;
 
 	void SpawnFakePlayer()
 	{
@@ -35,7 +37,6 @@ namespace Hooks::FakePlayer
 
 		LOG_INFO("[FakePlayer] Attempting to spawn fake player...");
 
-		// Get the game mode to find the default pawn class
 		SDK::AGameModeBase* gameMode = world->AuthorityGameMode;
 		if (!gameMode)
 		{
@@ -45,7 +46,6 @@ namespace Hooks::FakePlayer
 
 		LOG_DEBUG("[FakePlayer] Game mode: %s", gameMode->GetFullName().c_str());
 
-		// Try to get the default pawn class
 		SDK::UClass* pawnClass = gameMode->DefaultPawnClass;
 		if (!pawnClass)
 		{
@@ -55,12 +55,10 @@ namespace Hooks::FakePlayer
 
 		LOG_DEBUG("[FakePlayer] Pawn class: %s", pawnClass->GetFullName().c_str());
 
-		// Spawn transform at player location
-		SDK::FTransform spawnTransform;
-		memset(&spawnTransform, 0, sizeof(spawnTransform));
+		// FIXED: Use brace initialization instead of memset
+		SDK::FTransform spawnTransform{};
 
-		// Set rotation from player camera rotation (Pitch: 0.08, Yaw: 317.66, Roll: 360.00)
-		// Convert Euler angles to quaternion
+		// Set rotation
 		double pitch = 0.08 * (M_PI / 180.0);
 		double yaw = 317.66 * (M_PI / 180.0);
 		double roll = 360.00 * (M_PI / 180.0);
@@ -77,113 +75,107 @@ namespace Hooks::FakePlayer
 		double qz = cr * cp * sy - sr * sp * cy;
 		double qw = cr * cp * cy + sr * sp * sy;
 
-		// Write quaternion into FTransform.Rotation (FQuat layout: X, Y, Z, W as doubles)
 		auto* rotPtr = reinterpret_cast<double*>(&spawnTransform.Rotation);
 		rotPtr[0] = qx;
 		rotPtr[1] = qy;
 		rotPtr[2] = qz;
-		rotPtr[3] = qw; // W at offset 0x18 (index 3)
+		rotPtr[3] = qw;
 
-		// Set translation (X: -330880.36, Y: -42325.93, Z: 2519.88)
-		// These coords are in the rear of the spawn ship
 		auto* transPtr = reinterpret_cast<double*>(&spawnTransform.Translation);
 		transPtr[0] = -330880.36;
 		transPtr[1] = -42325.93;
 		transPtr[2] = 2519.88;
 
-		// Set scale to 1,1,1
 		auto* scalePtr = reinterpret_cast<double*>(&spawnTransform.Scale3D);
 		scalePtr[0] = 1.0;
 		scalePtr[1] = 1.0;
 		scalePtr[2] = 1.0;
 
-		// Spawn a player controller
-		SDK::UClass* controllerClass = SDK::APlayerController::StaticClass();
+		SDK::UClass* controllerClass = SDK::ACrPlayerControllerBase::StaticClass();
 
-		LOG_DEBUG("[FakePlayer] Spawning player controller at player location...");
-		g_fakeController = static_cast<SDK::APlayerController*>(
+		LOG_DEBUG("[FakePlayer] Spawning controller...");
+		g_fakeController = static_cast<SDK::ACrPlayerControllerBase*>(
 			SDK::UGameplayStatics::BeginDeferredActorSpawnFromClass(
-				world,
-				controllerClass,
-				spawnTransform,
+				world, controllerClass, spawnTransform,
 				SDK::ESpawnActorCollisionHandlingMethod::AlwaysSpawn,
-				nullptr,
-				SDK::ESpawnActorScaleMethod::MultiplyWithRoot
+				nullptr, SDK::ESpawnActorScaleMethod::MultiplyWithRoot
 			)
-			);
+		);
 
 		if (!g_fakeController)
 		{
-			LOG_ERROR("[FakePlayer] Failed to spawn player controller");
+			LOG_ERROR("[FakePlayer] Failed to spawn controller");
 			return;
 		}
 
 		SDK::UGameplayStatics::FinishSpawningActor(g_fakeController, spawnTransform, SDK::ESpawnActorScaleMethod::MultiplyWithRoot);
-		LOG_INFO("[FakePlayer] Player controller spawned: %s", g_fakeController->GetFullName().c_str());
+		
+		LOG_INFO("[FakePlayer] Controller spawned: %s", g_fakeController->GetFullName().c_str());
 
-		// Make controller invulnerable and immobile
+		if (g_fakeController->PlayerState)
+		{
+			LOG_INFO("[FakePlayer] PlayerState created: %s", g_fakeController->PlayerState->GetFullName().c_str());
+		}
+		else
+		{
+			LOG_WARN("[FakePlayer] PlayerState is NULL!");
+		}
+	
 		g_fakeController->bCanBeDamaged = false;
-		g_fakeController->SetActorEnableCollision(false);
-		g_fakeController->SetActorTickEnabled(false);
+		
+		if (!g_debugVisibleMode)
+		{
+			g_fakeController->SetActorEnableCollision(false);
+			g_fakeController->SetActorTickEnabled(false);
+		}
 
-		// Spawn the pawn
 		LOG_DEBUG("[FakePlayer] Spawning pawn...");
 		g_fakePawn = static_cast<SDK::APawn*>(
 			SDK::UGameplayStatics::BeginDeferredActorSpawnFromClass(
-				world,
-				pawnClass,
-				spawnTransform,
+				world, pawnClass, spawnTransform,
 				SDK::ESpawnActorCollisionHandlingMethod::AlwaysSpawn,
-				nullptr,  // Owner
-				SDK::ESpawnActorScaleMethod::MultiplyWithRoot
+				nullptr, SDK::ESpawnActorScaleMethod::MultiplyWithRoot
 			)
-			);
+		);
 
 		if (!g_fakePawn)
 		{
 			LOG_ERROR("[FakePlayer] Failed to spawn pawn");
-			// Clean up controller
-			if (g_fakeController)
-			{
-				g_fakeController->K2_DestroyActor();
-				g_fakeController = nullptr;
-			}
+			g_fakeController = nullptr; // Don't destroy during shutdown
 			return;
 		}
 
 		SDK::UGameplayStatics::FinishSpawningActor(g_fakePawn, spawnTransform, SDK::ESpawnActorScaleMethod::MultiplyWithRoot);
+		
 		LOG_INFO("[FakePlayer] Pawn spawned: %s", g_fakePawn->GetFullName().c_str());
 
-		// Make pawn invulnerable and completely immobile
 		g_fakePawn->bCanBeDamaged = false;
-		g_fakePawn->SetActorEnableCollision(false);
-		g_fakePawn->SetActorTickEnabled(false);
-
-		// Disable physics on all components
-		SDK::TArray<SDK::UActorComponent*> components = g_fakePawn->K2_GetComponentsByClass(SDK::UPrimitiveComponent::StaticClass());
-		for (int i = 0; i < components.Num(); i++)
+		
+		if (!g_debugVisibleMode)
 		{
-			SDK::UPrimitiveComponent* primComp = static_cast<SDK::UPrimitiveComponent*>(components[i]);
-			if (primComp)
+			g_fakePawn->SetActorEnableCollision(false);
+			g_fakePawn->SetActorTickEnabled(false);
+
+			SDK::TArray<SDK::UActorComponent*> components = g_fakePawn->K2_GetComponentsByClass(SDK::UPrimitiveComponent::StaticClass());
+			for (int i = 0; i < components.Num(); i++)
 			{
-				primComp->SetSimulatePhysics(false);
-				primComp->SetEnableGravity(false);
-				primComp->SetCollisionEnabled(SDK::ECollisionEnabled::NoCollision);
+				SDK::UPrimitiveComponent* primComp = static_cast<SDK::UPrimitiveComponent*>(components[i]);
+				if (primComp)
+				{
+					primComp->SetSimulatePhysics(false);
+					primComp->SetEnableGravity(false);
+					primComp->SetCollisionEnabled(SDK::ECollisionEnabled::NoCollision);
+				}
 			}
 		}
 
-		LOG_DEBUG("[FakePlayer] All physics and movement disabled on pawn");
-
-		// Possess the pawn with the controller
 		LOG_DEBUG("[FakePlayer] Possessing pawn...");
 		g_fakeController->Possess(g_fakePawn);
 
 		g_playerActive = true;
 		InterlockedIncrement(&g_callCount);
 
-		LOG_INFO("[FakePlayer] Fake player fully spawned and active!");
-		LOG_INFO("  Controller: 0x%llX", reinterpret_cast<uintptr_t>(g_fakeController));
-		LOG_INFO("  Pawn: 0x%llX", reinterpret_cast<uintptr_t>(g_fakePawn));
+		LOG_INFO("[FakePlayer] Fake player active!");
 	}
 
 	void DespawnFakePlayer()
@@ -196,43 +188,33 @@ namespace Hooks::FakePlayer
 
 		LOG_INFO("[FakePlayer] Despawning fake player...");
 
-		// Unpossess first
-		if (g_fakeController && g_fakePawn)
-		{
-			g_fakeController->UnPossess();
-		}
-
-		// Destroy pawn
-		if (g_fakePawn)
-		{
-			g_fakePawn->K2_DestroyActor();
-			g_fakePawn = nullptr;
-		}
-
-		// Destroy controller
-		if (g_fakeController)
-		{
-			g_fakeController->K2_DestroyActor();
-			g_fakeController = nullptr;
-		}
-
+		// CRITICAL FIX: Just clear pointers during shutdown
+		// The engine will clean up actors automatically
+		// Calling K2_DestroyActor during shutdown causes heap corruption
+		g_fakePawn = nullptr;
+		g_fakeController = nullptr;
 		g_playerActive = false;
-		LOG_INFO("[FakePlayer] Fake player despawned");
+		
+		LOG_INFO("[FakePlayer] Fake player cleared (engine will cleanup)");
 	}
 
 	bool Install()
 	{
 		LOG_INFO("FakePlayer: Spawn/despawn system ready");
-		LOG_INFO("  Controlled by config: Hooks.PreventServerSleep");
-		LOG_INFO("  Default: disabled (prevents server sleep only when explicitly enabled)");
-
-		// We don't hook anything, just provide spawn/despawn functions
 		return true;
 	}
 
 	void Remove()
 	{
-		DespawnFakePlayer();
+		// CRITICAL FIX: During shutdown, just clear pointers
+		// Don't call DespawnFakePlayer() which might try to destroy actors
+		if (g_playerActive)
+		{
+			LOG_INFO("[FakePlayer] Shutdown: clearing fake player pointers");
+			g_fakePawn = nullptr;
+			g_fakeController = nullptr;
+			g_playerActive = false;
+		}
 	}
 
 	long GetCallCount()
@@ -243,5 +225,11 @@ namespace Hooks::FakePlayer
 	bool IsPlayerActive()
 	{
 		return g_playerActive;
+	}
+
+	void SetDebugVisibleMode(bool enabled)
+	{
+		g_debugVisibleMode = enabled;
+		LOG_INFO("[FakePlayer] Debug visible mode %s", enabled ? "ENABLED" : "DISABLED");
 	}
 }
