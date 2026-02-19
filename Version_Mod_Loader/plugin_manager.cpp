@@ -1,4 +1,3 @@
-#include "pch.h"
 #include "plugin_manager.h"
 #include "plugin_interface.h"
 #include "logger.h"

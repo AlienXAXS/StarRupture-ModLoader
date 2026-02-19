@@ -22,14 +22,11 @@
     <Filter Include="Source Files\game\engine_init">
       <UniqueIdentifier>{5e68a0e8-3d63-4d34-bee2-9de7ea5c385f}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Source Files\game\engine_shutdown">
+      <UniqueIdentifier>{94c6be5a-0f37-4a6d-b2c2-73fc15105b87}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="framework.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="pch.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="plugin_interface.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -68,9 +65,6 @@
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="pch.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="dllmain.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -103,6 +97,18 @@
     </ClCompile>
     <ClCompile Include="game\engine_init\engine_init.cpp">
       <Filter>Source Files\game\engine_init</Filter>
+    </ClCompile>
+    <ClCompile Include="$(SolutionDir)StarRupture SDK\SDK\Basic.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="$(SolutionDir)StarRupture SDK\SDK\CoreUObject_functions.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="$(SolutionDir)StarRupture SDK\SDK\Engine_functions.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="game\engine_shutdown\engine_shutdown.cpp">
+      <Filter>Source Files\game\engine_shutdown</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

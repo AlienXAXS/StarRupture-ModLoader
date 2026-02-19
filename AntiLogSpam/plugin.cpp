@@ -83,6 +83,20 @@ static void OnEngineInit()
 	LOG_INFO("Hook installed successfully - null-pointer calls will be silently suppressed");
 }
 
+// Engine shutdown callback - called before UObject system tears down.
+// Remove the hook here so the trampoline isn't left dangling in engine memory.
+static void OnEngineShutdown()
+{
+	LOG_INFO("Engine shutting down - removing IsValidLowLevelFast hook...");
+
+	if (g_hooks && g_hookHandle)
+	{
+		g_hooks->RemoveHook(g_hookHandle);
+		g_hookHandle = nullptr;
+		LOG_INFO("Hook removed successfully");
+	}
+}
+
 extern "C" {
 
 	__declspec(dllexport) PluginInfo* GetPluginInfo()
@@ -111,6 +125,16 @@ extern "C" {
 		hooks->RegisterEngineInitCallback(OnEngineInit);
 		LOG_INFO("Registered for engine init callback - patch will be applied when engine is ready");
 
+		if (hooks->RegisterEngineShutdownCallback)
+		{
+			hooks->RegisterEngineShutdownCallback(OnEngineShutdown);
+			LOG_INFO("Registered for engine shutdown callback - hook will be removed before engine teardown");
+		}
+		else
+		{
+			LOG_WARN("RegisterEngineShutdownCallback not available - hook will not be cleanly removed on shutdown");
+		}
+
 		return true;
 	}
 
@@ -118,11 +142,9 @@ extern "C" {
 	{
 		LOG_INFO("Plugin shutting down...");
 
-		if (g_hooks && g_hookHandle)
-		{
-			g_hooks->RemoveHook(g_hookHandle);
-			g_hookHandle = nullptr;
-		}
+		// NOTE: Hook removal is handled in OnEngineShutdown() which fires before
+		// UObject teardown. By the time PluginShutdown could run (explicit FreeLibrary
+		// only), the hook has already been removed. Do not touch engine memory here.
 
 		g_logger  = nullptr;
 		g_config  = nullptr;

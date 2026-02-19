@@ -1,4 +1,3 @@
-#include "pch.h"
 #include "scanner_interface.h"
 #include "scanner.h"
 #include <vector>

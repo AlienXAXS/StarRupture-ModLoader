@@ -1,4 +1,3 @@
-#include "pch.h"
 #include "logger.h"
 #include "log.h"  // Use the existing comprehensive log system
 #include <cstdarg>

@@ -3,11 +3,8 @@
 #include "logger.h"
 #include "scanner.h"
 #include "../SDK.hpp"
-#include "CoreUObject_functions.cpp"
 #include "Engine_classes.hpp"
-#include "Engine_functions.cpp"
 #include "CoreUObject_classes.hpp"
-#include "Basic.cpp"
 #include <vector>
 #include <algorithm>
 

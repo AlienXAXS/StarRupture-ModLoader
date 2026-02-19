@@ -1,5 +1,4 @@
 // dllmain.cpp : Defines the entry point for the DLL application.
-#include "pch.h"
 #include "log.h"
 #include "version_proxy.h"
 #include "logger.h"
@@ -7,6 +6,7 @@
 #include "plugin_manager.h"
 #include "game/world_begin_play/world_begin_play.h"
 #include "game/engine_init/engine_init.h"
+#include "game/engine_shutdown/engine_shutdown.h"
 #include <Psapi.h>
 #include <VersionHelpers.h>
 
@@ -110,6 +110,15 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
             ModLoader::LogMessage(L"  WARNING: EngineInit hook failed to install");
         }
 
+        if (Hooks::EngineShutdown::Install())
+        {
+            ModLoader::LogMessage(L"  EngineShutdown hook installed");
+        }
+        else
+        {
+            ModLoader::LogMessage(L"  WARNING: EngineShutdown hook failed to install - plugins will not receive shutdown callbacks");
+        }
+
         ModLoader::LoadAllPlugins();
 
         ModLoader::LogMessage(L"Mod loader initialization complete");
@@ -139,6 +148,8 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 
         // Remove core game hooks
         ModLoader::LogMessage(L"Removing core game hooks...");
+        Hooks::EngineShutdown::Remove();
+        Hooks::EngineInit::Remove();
         Hooks::WorldBeginPlay::Remove();
 
         ModLoader::ShutdownPluginManager();
