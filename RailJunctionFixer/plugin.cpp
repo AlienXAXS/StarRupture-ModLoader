@@ -1,5 +1,6 @@
 #include "plugin.h"
 #include "plugin_helpers.h"
+#include "plugin_config.h"
 #include "LogisticsFragmentFixer.h"
 
 // Global plugin interface pointers
@@ -13,7 +14,7 @@ static PluginInfo s_pluginInfo = {
 	"RailJunctionFixer",
 	"1.0.0",
 	"Wilhelm & AlienX",
-	"Fixes rail junction issues in the game for 3x and 5x rails",
+	"Fixes rail junction save/load issues by patching FCrLogisticsSocketsFragment inheritance",
 	PLUGIN_INTERFACE_VERSION
 };
 
@@ -22,6 +23,32 @@ IPluginLogger* GetLogger() { return g_logger; }
 IPluginConfig* GetConfig() { return g_config; }
 IPluginScanner* GetScanner() { return g_scanner; }
 IPluginHooks* GetHooks() { return g_hooks; }
+
+// Engine init callback - called when UE5 engine finishes initialization
+static void OnEngineInit()
+{
+	LOG_INFO("Engine initialized - checking if fix should be applied...");
+
+	// Check if plugin is enabled via config
+	if (!RailJunctionFixerConfig::Config::IsEnabled())
+	{
+		LOG_WARN("Plugin is DISABLED in config file");
+		LOG_INFO("To enable: Set 'Enabled' to 'true' in alienx_mods/configs/RailJunctionFixer.json");
+		LOG_INFO("WARNING: This is an experimental fix - only enable if you have rail junction save issues!");
+		return;
+	}
+
+	LOG_INFO("Plugin is enabled - applying logistics fragment fix...");
+
+	// Initialize the LogisticsFragmentFixer now that engine is ready
+	if (!RailJunctionFixer::LogisticsFragmentFixer::Initialize())
+	{
+		LOG_ERROR("Failed to initialize LogisticsFragmentFixer");
+		return;
+	}
+
+	LOG_INFO("Logistics fragment fix applied successfully");
+}
 
 extern "C" {
 
@@ -40,14 +67,30 @@ extern "C" {
 
 		LOG_INFO("Plugin initializing...");
 
-		// Initialize the LogisticsFragmentFixer
-		if (!RailJunctionFixer::LogisticsFragmentFixer::Initialize())
+		// Initialize config system with schema - creates default config if needed
+		RailJunctionFixerConfig::Config::Initialize(config);
+		LOG_INFO("Config initialized (Enabled: %s)", 
+			RailJunctionFixerConfig::Config::IsEnabled() ? "true" : "false");
+
+		// Register for engine init callback - we need to wait until engine is ready
+		// before patching UStruct metadata
+		if (!hooks->RegisterEngineInitCallback)
 		{
-			LOG_ERROR("Failed to initialize LogisticsFragmentFixer");
+			LOG_ERROR("RegisterEngineInitCallback not available - loader version mismatch?");
 			return false;
 		}
 
-		LOG_INFO("Plugin initialized successfully");
+		hooks->RegisterEngineInitCallback(OnEngineInit);
+		LOG_INFO("Registered for engine init callback");
+
+		if (RailJunctionFixerConfig::Config::IsEnabled())
+		{
+			LOG_INFO("Fix will be applied when engine is ready");
+		}
+		else
+		{
+			LOG_INFO("Fix is DISABLED - plugin will not modify game memory");
+		}
 
 		return true;
 	}
@@ -55,6 +98,12 @@ extern "C" {
 	__declspec(dllexport) void PluginShutdown()
 	{
 		LOG_INFO("Plugin shutting down...");
+
+		// Unregister engine init callback if still registered
+		if (g_hooks && g_hooks->UnregisterEngineInitCallback)
+		{
+			g_hooks->UnregisterEngineInitCallback(OnEngineInit);
+		}
 
 		// Shutdown the LogisticsFragmentFixer
 		RailJunctionFixer::LogisticsFragmentFixer::Shutdown();

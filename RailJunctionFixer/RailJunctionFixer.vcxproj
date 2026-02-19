@@ -160,6 +160,7 @@
   <ItemGroup>
     <ClInclude Include="LogisticsFragmentFixer.h" />
     <ClInclude Include="plugin.h" />
+    <ClInclude Include="plugin_config.h" />
     <ClInclude Include="plugin_helpers.h" />
     <ClInclude Include="plugin_interface.h" />
     <ClInclude Include="RailJunctionFixer.h" />
@@ -172,6 +173,7 @@
     <ClCompile Include="Engine_functions.cpp" />
     <ClCompile Include="LogisticsFragmentFixer.cpp" />
     <ClCompile Include="plugin.cpp" />
+    <ClCompile Include="plugin_config.cpp" />
     <ClCompile Include="RailJunctionFixer.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
