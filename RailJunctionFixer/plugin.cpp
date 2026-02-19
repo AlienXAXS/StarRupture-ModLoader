@@ -98,11 +98,11 @@ extern "C" {
 	{
 		LOG_INFO("Plugin shutting down...");
 
-		// Unregister engine init callback if still registered
-		if (g_hooks && g_hooks->UnregisterEngineInitCallback)
-		{
-			g_hooks->UnregisterEngineInitCallback(OnEngineInit);
-		}
+		// Do NOT call UnregisterEngineInitCallback here. PluginShutdown is invoked
+		// during DLL_PROCESS_DETACH, at which point the engine's callback lists are
+		// already partially destroyed. Touching them causes MallocBinned2 canary
+		// corruption. The loader skips cleanup entirely on process termination
+		// (lpReserved != nullptr), so the callback list will never be called again.
 
 		// Shutdown the LogisticsFragmentFixer
 		RailJunctionFixer::LogisticsFragmentFixer::Shutdown();

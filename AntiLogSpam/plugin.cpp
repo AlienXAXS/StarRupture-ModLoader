@@ -46,6 +46,43 @@ static char __fastcall Hook_IsValidLowLevelFast(void* thisPtr, bool bRecursive)
 // Plugin lifecycle
 // -----------------------------------------------------------------------
 
+// Engine init callback - called when UE5 engine finishes initialization
+static void OnEngineInit()
+{
+	LOG_INFO("Engine initialized - applying patch...");
+
+	if (!AntiLogSpamConfig::Config::IsEnabled())
+	{
+		LOG_WARN("PatchMiningGunLogSpam is DISABLED in config - patch will not be applied");
+		return;
+	}
+
+	// Scan for UObjectBase::IsValidLowLevelFast
+	uintptr_t addr = g_scanner->FindPatternInMainModule(
+		"0F 82 ?? ?? ?? ?? F6 C3 ?? 74 ?? 80 3D");
+
+	if (addr == 0)
+	{
+		LOG_ERROR("Pattern scan failed - could not locate UObjectBase::IsValidLowLevelFast");
+		return; // Non-fatal: game still runs without the patch
+	}
+
+	LOG_INFO("Found UObjectBase::IsValidLowLevelFast at 0x%llX", (unsigned long long)addr);
+
+	g_hookHandle = g_hooks->InstallHook(
+		addr,
+		(void*)&Hook_IsValidLowLevelFast,
+		(void**)&g_originalIsValidLowLevelFast);
+
+	if (g_hookHandle == nullptr)
+	{
+		LOG_ERROR("Failed to install hook on UObjectBase::IsValidLowLevelFast");
+		return; // Non-fatal
+	}
+
+	LOG_INFO("Hook installed successfully - null-pointer calls will be silently suppressed");
+}
+
 extern "C" {
 
 	__declspec(dllexport) PluginInfo* GetPluginInfo()
@@ -65,36 +102,15 @@ extern "C" {
 		AntiLogSpamConfig::Config::Initialize(config);
 		LOG_INFO("Config initialized (PatchMiningGunLogSpam: %s)", AntiLogSpamConfig::Config::IsEnabled() ? "true" : "false");
 
-		if (!AntiLogSpamConfig::Config::IsEnabled())
+		if (!hooks->RegisterEngineInitCallback)
 		{
-			LOG_WARN("PatchMiningGunLogSpam is DISABLED in config - patch will not be applied");
-			return true;
+			LOG_ERROR("RegisterEngineInitCallback not available - loader version mismatch?");
+			return false;
 		}
 
-		// Scan for UObjectBase::IsValidLowLevelFast
-		uintptr_t addr = scanner->FindPatternInMainModule(
-			"0F 82 ?? ?? ?? ?? F6 C3 ?? 74 ?? 80 3D");
+		hooks->RegisterEngineInitCallback(OnEngineInit);
+		LOG_INFO("Registered for engine init callback - patch will be applied when engine is ready");
 
-		if (addr == 0)
-		{
-			LOG_ERROR("Pattern scan failed - could not locate UObjectBase::IsValidLowLevelFast");
-			return true; // Non-fatal: game still runs without the patch
-		}
-
-		LOG_INFO("Found UObjectBase::IsValidLowLevelFast at 0x%llX", (unsigned long long)addr);
-
-		g_hookHandle = hooks->InstallHook(
-			addr,
-			(void*)&Hook_IsValidLowLevelFast,
-			(void**)&g_originalIsValidLowLevelFast);
-
-		if (g_hookHandle == nullptr)
-		{
-			LOG_ERROR("Failed to install hook on UObjectBase::IsValidLowLevelFast");
-			return true; // Non-fatal
-		}
-
-		LOG_INFO("Hook installed successfully - null-pointer calls will be silently suppressed");
 		return true;
 	}
 
