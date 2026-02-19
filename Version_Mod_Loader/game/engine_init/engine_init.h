@@ -4,24 +4,28 @@
 #include <cstdint>
 
 // ---------------------------------------------------------------------------
-// FEngineLoop::Init Hook
+// Engine Initialization Hooks
 // 
 // Purpose: Engine ready signal - fires when UE5 engine finishes initialization
+// Uses multiple hook points as fallbacks for maximum compatibility:
+//   1. FEngineLoop::Init (primary)
+//   2. UGameEngine::Init (fallback)
 // ---------------------------------------------------------------------------
 
 namespace Hooks::EngineInit
 {
-    // Original function signature
+    // Original function signatures
     typedef int32_t (__fastcall *FEngineLoop_Init_t)(void* thisPtr);
+    typedef bool (__fastcall *UGameEngine_Init_t)(void* thisPtr, void* InEngineLoop);
 
     // Callback signature for plugins
     typedef void (*PluginEngineInitCallback)();
 
-    // Install the hook
-    // Returns true if successful, false if pattern not found or hook failed
+    // Install the hooks (tries multiple patterns for reliability)
+    // Returns true if at least one hook was successful
     bool Install();
 
-    // Remove the hook
+    // Remove all hooks
     void Remove();
 
     // Check if engine has initialized
