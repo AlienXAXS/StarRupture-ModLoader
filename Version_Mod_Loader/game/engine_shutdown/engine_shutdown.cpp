@@ -19,12 +19,20 @@ namespace Hooks::EngineShutdown
 
 	// Only notify plugins once regardless of which hook fires first
 	static bool g_shutdownFired = false;
+	static bool g_shutdownInProgress = false;  // Add flag to track if we're cleaning up
 
 	// Registered plugin callbacks
 	static std::vector<PluginEngineShutdownCallback> g_pluginCallbacks;
 
 	static void NotifyEngineShuttingDown(const wchar_t* hookSource)
 	{
+		// Don't fire if we're already in cleanup mode (callbacks cleared)
+		if (g_shutdownInProgress)
+		{
+			ModLoader::LogWarn(L"[EngineShutdown] Hook fired during cleanup - ignoring (source: %s)", hookSource);
+			return;
+		}
+
 		if (g_shutdownFired)
 			return;
 
@@ -98,7 +106,7 @@ namespace Hooks::EngineShutdown
 			uintptr_t addr = Scanner::FindPatternInMainModule(pattern);
 			if (addr)
 			{
-				ModLoader::LogInfo(L"[EngineShutdown] ✓ FEngineLoop::Exit found at 0x%llX (base+0x%llX)",
+				ModLoader::LogInfo(L"[EngineShutdown] [OK] FEngineLoop::Exit found at 0x%llX (base+0x%llX)",
 					static_cast<unsigned long long>(addr),
 					static_cast<unsigned long long>(addr - base));
 
@@ -109,17 +117,17 @@ namespace Hooks::EngineShutdown
 
 				if (hookOk)
 				{
-					ModLoader::LogInfo(L"[EngineShutdown] ✓ FEngineLoop::Exit hook installed successfully");
+					ModLoader::LogInfo(L"[EngineShutdown] [OK] FEngineLoop::Exit hook installed successfully");
 					anyHookSucceeded = true;
 				}
 				else
 				{
-					ModLoader::LogWarn(L"[EngineShutdown] ✗ FEngineLoop::Exit hook installation failed");
+					ModLoader::LogWarn(L"[EngineShutdown] [FAIL] FEngineLoop::Exit hook installation failed");
 				}
 			}
 			else
 			{
-				ModLoader::LogWarn(L"[EngineShutdown] ✗ FEngineLoop::Exit pattern not found - will try fallback");
+				ModLoader::LogWarn(L"[EngineShutdown] [FAIL] FEngineLoop::Exit pattern not found - will try fallback");
 			}
 		}
 
@@ -134,7 +142,7 @@ namespace Hooks::EngineShutdown
 			uintptr_t addr = Scanner::FindPatternInMainModule(pattern);
 			if (addr)
 			{
-				ModLoader::LogInfo(L"[EngineShutdown] ✓ UEngine::PreExit found at 0x%llX (base+0x%llX)",
+				ModLoader::LogInfo(L"[EngineShutdown] [OK] UEngine::PreExit found at 0x%llX (base+0x%llX)",
 					static_cast<unsigned long long>(addr),
 					static_cast<unsigned long long>(addr - base));
 
@@ -145,17 +153,17 @@ namespace Hooks::EngineShutdown
 
 				if (hookOk)
 				{
-					ModLoader::LogInfo(L"[EngineShutdown] ✓ UEngine::PreExit hook installed successfully");
+					ModLoader::LogInfo(L"[EngineShutdown] [OK] UEngine::PreExit hook installed successfully");
 					anyHookSucceeded = true;
 				}
 				else
 				{
-					ModLoader::LogWarn(L"[EngineShutdown] ✗ UEngine::PreExit hook installation failed");
+					ModLoader::LogWarn(L"[EngineShutdown] [FAIL] UEngine::PreExit hook installation failed");
 				}
 			}
 			else
 			{
-				ModLoader::LogWarn(L"[EngineShutdown] ✗ UEngine::PreExit pattern not found");
+				ModLoader::LogWarn(L"[EngineShutdown] [FAIL] UEngine::PreExit pattern not found");
 			}
 		}
 
@@ -170,9 +178,19 @@ namespace Hooks::EngineShutdown
 	void Remove()
 	{
 		ModLoader::LogInfo(L"[EngineShutdown] Removing engine shutdown hooks...");
+
+		// Set the cleanup flag FIRST to prevent hooks from firing during removal
+		g_shutdownInProgress = true;
+
+		// CRITICAL: Clear callbacks FIRST to prevent any pending hook invocations
+		// from trying to call into already-freed plugin memory
+		g_pluginCallbacks.clear();
+		ModLoader::LogInfo(L"[EngineShutdown] Plugin callbacks cleared");
+
+		// Then remove the hooks
 		g_engineLoopExitHook.Remove();
 		g_enginePreExitHook.Remove();
-		g_pluginCallbacks.clear();
+
 		ModLoader::LogInfo(L"[EngineShutdown] All hooks removed");
 	}
 

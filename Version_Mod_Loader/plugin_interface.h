@@ -2,12 +2,12 @@
 
 #include <windows.h>
 #include <cstdint>
-#include <vector>
-#include <string>
 
 // Plugin interface version - increment when breaking changes are made
 // v2: Added RegisterEngineShutdownCallback / UnregisterEngineShutdownCallback to IPluginHooks
-#define PLUGIN_INTERFACE_VERSION 2
+// v3: Replaced std::vector return types in IPluginScanner with caller-buffer API to fix
+//     cross-DLL heap corruption (EXCEPTION_ACCESS_VIOLATION on plugin load)
+#define PLUGIN_INTERFACE_VERSION 3
 
 // Log levels
 enum class PluginLogLevel
@@ -108,15 +108,17 @@ struct IPluginScanner
     // Returns the absolute address of the match, or 0 if not found
     uintptr_t (*FindPatternInModule)(HMODULE module, const char* pattern);
 
-    // Find all occurrences of a pattern in the main executable module
-    // Returns a vector of absolute addresses where the pattern was found
-    // Note: Caller is responsible for managing the returned vector
-    std::vector<uintptr_t> (*FindAllPatternsInMainModule)(const char* pattern);
+    // Find all occurrences of a pattern in the main executable module.
+    // Writes up to maxResults addresses into outAddresses and returns the total match count.
+    // Pass outAddresses=nullptr / maxResults=0 to query the count without writing.
+    // Safe across DLL boundaries - no heap ownership transfer.
+    int (*FindAllPatternsInMainModule)(const char* pattern, uintptr_t* outAddresses, int maxResults);
 
-    // Find all occurrences of a pattern in a specific module
-    // Returns a vector of absolute addresses where the pattern was found
-    // Note: Caller is responsible for managing the returned vector
-    std::vector<uintptr_t> (*FindAllPatternsInModule)(HMODULE module, const char* pattern);
+    // Find all occurrences of a pattern in a specific module.
+    // Writes up to maxResults addresses into outAddresses and returns the total match count.
+    // Pass outAddresses=nullptr / maxResults=0 to query the count without writing.
+    // Safe across DLL boundaries - no heap ownership transfer.
+    int (*FindAllPatternsInModule)(HMODULE module, const char* pattern, uintptr_t* outAddresses, int maxResults);
 
     // Find a unique pattern from a list of candidates
     // Returns the address if exactly one pattern matches exactly once
