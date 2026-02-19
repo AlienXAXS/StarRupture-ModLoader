@@ -12,13 +12,27 @@
     <ClCompile Include="Engine_functions.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="plugin.h" />
-    <ClInclude Include="mod_core.h" />
-    <ClInclude Include="hooks.h" />
-    <ClInclude Include="hooks\fake_player\fake_player.h" />
-    <ClInclude Include="plugin_helpers.h" />
-    <ClInclude Include="plugin_config.h" />
-    <ClInclude Include="sdk_helpers.h" />
+    <ClInclude Include="hooks\fake_player\fake_player.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="hooks.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="mod_core.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="plugin.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="plugin_config.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="plugin_helpers.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="sdk_helpers.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="Header Files">
