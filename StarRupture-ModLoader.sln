@@ -14,6 +14,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "StarRupture SDK", "StarRupt
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ExamplePlugin", "ExamplePlugin\ExamplePlugin.vcxproj", "{E8F3A2D4-5C9B-4F1E-8A7D-3B2C1D4E5F6A}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "AntiLogSpam", "AntiLogSpam\AntiLogSpam.vcxproj", "{A3C2D1E0-5F4B-4E8A-9C7D-6B1F2E3A4D5C}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -36,6 +38,10 @@ Global
 		{E8F3A2D4-5C9B-4F1E-8A7D-3B2C1D4E5F6A}.Debug|x64.Build.0 = Debug|x64
 		{E8F3A2D4-5C9B-4F1E-8A7D-3B2C1D4E5F6A}.Release|x64.ActiveCfg = Release|x64
 		{E8F3A2D4-5C9B-4F1E-8A7D-3B2C1D4E5F6A}.Release|x64.Build.0 = Release|x64
+		{A3C2D1E0-5F4B-4E8A-9C7D-6B1F2E3A4D5C}.Debug|x64.ActiveCfg = Debug|x64
+		{A3C2D1E0-5F4B-4E8A-9C7D-6B1F2E3A4D5C}.Debug|x64.Build.0 = Debug|x64
+		{A3C2D1E0-5F4B-4E8A-9C7D-6B1F2E3A4D5C}.Release|x64.ActiveCfg = Release|x64
+		{A3C2D1E0-5F4B-4E8A-9C7D-6B1F2E3A4D5C}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -44,6 +50,7 @@ Global
 		{B8F4A3E2-9C6D-4F7A-8E1B-2D3C4E5F6A7B} = {02EA681E-C7D8-13C7-8484-4AC65E1B71E8}
 		{B1E1F993-67C7-45C5-9FD6-7DA1F00DBF4E} = {02EA681E-C7D8-13C7-8484-4AC65E1B71E8}
 		{E8F3A2D4-5C9B-4F1E-8A7D-3B2C1D4E5F6A} = {02EA681E-C7D8-13C7-8484-4AC65E1B71E8}
+		{A3C2D1E0-5F4B-4E8A-9C7D-6B1F2E3A4D5C} = {02EA681E-C7D8-13C7-8484-4AC65E1B71E8}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {821D00E1-6E9E-43A6-9817-CEF50642F49B}
