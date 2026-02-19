@@ -118,16 +118,29 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 
     case DLL_PROCESS_DETACH:
     {
+        // lpReserved is non-null when the process is terminating (as opposed to
+        // an explicit FreeLibrary call). During process termination the engine's
+        // allocator, object system and hooks are already in a partially destroyed
+        // state - calling into them from DllMain (which holds the loader lock)
+        // causes MallocBinned2 canary corruption and similar crashes. Let the OS
+        // reclaim everything; we do not need to clean up in that case.
+        if (lpReserved != nullptr)
+        {
+            Log::Info("Process terminating - skipping shutdown to avoid loader-lock / allocator corruption");
+            Log::Shutdown();
+            break;
+        }
+
         ModLoader::LogMessage(L"======================================");
         ModLoader::LogMessage(L"  Version_Mod_Loader shutting down");
         ModLoader::LogMessage(L"======================================");
 
         ModLoader::UnloadAllPlugins();
-        
+
         // Remove core game hooks
         ModLoader::LogMessage(L"Removing core game hooks...");
         Hooks::WorldBeginPlay::Remove();
-      
+
         ModLoader::ShutdownPluginManager();
         ModLoader::ShutdownConfigManager();
         ModLoader::ShutdownLogger();
