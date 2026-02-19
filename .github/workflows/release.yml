@@ -26,7 +26,6 @@ jobs:
             /p:Configuration=Release `
             /p:Platform=x64 `
             /p:PostBuildEventUseInBuild=false `
-            /p:WarningLevel=0 `
             /m `
             /v:minimal
 
