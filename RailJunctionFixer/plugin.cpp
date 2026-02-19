@@ -34,7 +34,6 @@ static void OnEngineInit()
 	{
 		LOG_WARN("Plugin is DISABLED in config file");
 		LOG_INFO("To enable: Set 'Enabled' to 'true' in alienx_mods/configs/RailJunctionFixer.json");
-		LOG_INFO("WARNING: This is an experimental fix - only enable if you have rail junction save issues!");
 		return;
 	}
 
