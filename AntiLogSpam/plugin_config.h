@@ -10,7 +10,7 @@ namespace AntiLogSpamConfig
 			"General",
 			"PatchMiningGunLogSpam",
 			ConfigValueType::Boolean,
-			"true",
+			"false",
 			"Patch UObjectBase::IsValidLowLevelFast to silently suppress null-pointer log spam from the mining gun."
 		}
 	};
