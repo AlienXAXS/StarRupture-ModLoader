@@ -126,6 +126,7 @@ echo Deploy complete.</Command>
     <ClInclude Include="plugin_manager.h" />
     <ClInclude Include="scanner.h" />
     <ClInclude Include="scanner_interface.h" />
+    <ClInclude Include="ue_log.h" />
     <ClInclude Include="version_proxy.h" />
   </ItemGroup>
   <ItemGroup>

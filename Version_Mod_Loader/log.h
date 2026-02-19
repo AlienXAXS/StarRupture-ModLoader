@@ -9,6 +9,7 @@
 #include <io.h>
 #include <fcntl.h>
 #include <string>
+#include "ue_log.h"
 
 // ---------------------------------------------------------------------------
 // Logger — writes to configurable log file next to the game exe.
@@ -357,6 +358,22 @@ namespace Log
 #endif
 
 			OutputDebugStringA(lineBuf);
+
+			// Forward Info/Warn/Error to the game's own log (StarRupture.log).
+			// Trace and Debug are intentionally excluded to avoid flooding it.
+			// UELog::Write() is internally guarded so this is a no-op until
+			// UELog::Initialize() has been called from the EngineInit callback.
+			if (level >= Level::Info)
+			{
+				UELog::ELogVerbosity ueVerbosity;
+				switch (level)
+				{
+				case Level::Warn:  ueVerbosity = UELog::ELogVerbosity::Warning; break;
+				case Level::Error: ueVerbosity = UELog::ELogVerbosity::Error;   break;
+				default:           ueVerbosity = UELog::ELogVerbosity::Log;     break;
+				}
+				UELog::Write(ueVerbosity, messageBuf);
+			}
 		}
 		__finally
 		{

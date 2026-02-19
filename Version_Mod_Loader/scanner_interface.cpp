@@ -19,16 +19,32 @@ namespace ModLoader
         return Scanner::FindPatternInModule(module, std::string(pattern));
     }
 
-    static std::vector<uintptr_t> ScannerFindAllPatternsInMainModule(const char* pattern)
+    static int ScannerFindAllPatternsInMainModule(const char* pattern, uintptr_t* outAddresses, int maxResults)
     {
-        if (!pattern) return std::vector<uintptr_t>();
-     return Scanner::FindAllPatternsInMainModule(std::string(pattern));
+        if (!pattern) return 0;
+        std::vector<uintptr_t> results = Scanner::FindAllPatternsInMainModule(std::string(pattern));
+        int count = static_cast<int>(results.size());
+        if (outAddresses && maxResults > 0)
+        {
+            int toCopy = count < maxResults ? count : maxResults;
+            for (int i = 0; i < toCopy; ++i)
+                outAddresses[i] = results[i];
+        }
+        return count;
     }
 
-    static std::vector<uintptr_t> ScannerFindAllPatternsInModule(HMODULE module, const char* pattern)
+    static int ScannerFindAllPatternsInModule(HMODULE module, const char* pattern, uintptr_t* outAddresses, int maxResults)
     {
-        if (!pattern) return std::vector<uintptr_t>();
-        return Scanner::FindAllPatternsInModule(module, std::string(pattern));
+        if (!pattern) return 0;
+        std::vector<uintptr_t> results = Scanner::FindAllPatternsInModule(module, std::string(pattern));
+        int count = static_cast<int>(results.size());
+        if (outAddresses && maxResults > 0)
+        {
+            int toCopy = count < maxResults ? count : maxResults;
+            for (int i = 0; i < toCopy; ++i)
+                outAddresses[i] = results[i];
+        }
+        return count;
     }
 
     static uintptr_t ScannerFindUniquePattern(const char** patterns, int patternCount, int* outPatternIndex)

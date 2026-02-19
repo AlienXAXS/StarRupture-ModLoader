@@ -142,7 +142,7 @@ namespace Hooks::EngineInit
 				HMODULE mainModule = GetModuleHandleW(nullptr);
 				auto base = reinterpret_cast<uintptr_t>(mainModule);
 
-				ModLoader::LogInfo(L"[EngineInit] ✓ FEngineLoop::Init found at 0x%llX (base+0x%llX)",
+				ModLoader::LogInfo(L"[EngineInit] [OK] FEngineLoop::Init found at 0x%llX (base+0x%llX)",
 					static_cast<unsigned long long>(addr),
 					static_cast<unsigned long long>(addr - base));
 
@@ -153,17 +153,17 @@ namespace Hooks::EngineInit
 
 				if (hookOk)
 				{
-					ModLoader::LogInfo(L"[EngineInit] ✓ FEngineLoop::Init hook installed successfully");
+					ModLoader::LogInfo(L"[EngineInit] [OK] FEngineLoop::Init hook installed successfully");
 					anyHookSucceeded = true;
 				}
 				else
 				{
-					ModLoader::LogWarn(L"[EngineInit] ✗ FEngineLoop::Init hook installation failed");
+					ModLoader::LogWarn(L"[EngineInit] [FAIL] FEngineLoop::Init hook installation failed");
 				}
 			}
 			else
 			{
-				ModLoader::LogWarn(L"[EngineInit] ✗ FEngineLoop::Init pattern not found - will try fallback");
+				ModLoader::LogWarn(L"[EngineInit] [FAIL] FEngineLoop::Init pattern not found - will try fallback");
 			}
 		}
 
@@ -182,7 +182,7 @@ namespace Hooks::EngineInit
 				HMODULE mainModule = GetModuleHandleW(nullptr);
 				auto base = reinterpret_cast<uintptr_t>(mainModule);
 
-				ModLoader::LogInfo(L"[EngineInit] ✓ UGameEngine::Init found at 0x%llX (base+0x%llX)",
+				ModLoader::LogInfo(L"[EngineInit] [OK] UGameEngine::Init found at 0x%llX (base+0x%llX)",
 					static_cast<unsigned long long>(addr),
 					static_cast<unsigned long long>(addr - base));
 
@@ -193,17 +193,17 @@ namespace Hooks::EngineInit
 
 				if (hookOk)
 				{
-					ModLoader::LogInfo(L"[EngineInit] ✓ UGameEngine::Init hook installed successfully");
+					ModLoader::LogInfo(L"[EngineInit] [OK] UGameEngine::Init hook installed successfully");
 					anyHookSucceeded = true;
 				}
 				else
 				{
-					ModLoader::LogWarn(L"[EngineInit] ✗ UGameEngine::Init hook installation failed");
+					ModLoader::LogWarn(L"[EngineInit] [FAIL] UGameEngine::Init hook installation failed");
 				}
 			}
 			else
 			{
-				ModLoader::LogWarn(L"[EngineInit] ✗ UGameEngine::Init pattern not found");
+				ModLoader::LogWarn(L"[EngineInit] [FAIL] UGameEngine::Init pattern not found");
 			}
 		}
 

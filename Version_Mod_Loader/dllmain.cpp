@@ -1,9 +1,11 @@
 // dllmain.cpp : Defines the entry point for the DLL application.
 #include "log.h"
+#include "ue_log.h"
 #include "version_proxy.h"
 #include "logger.h"
 #include "config_manager.h"
 #include "plugin_manager.h"
+#include "scanner.h"
 #include "game/world_begin_play/world_begin_play.h"
 #include "game/engine_init/engine_init.h"
 #include "game/engine_shutdown/engine_shutdown.h"
@@ -11,6 +13,19 @@
 #include <VersionHelpers.h>
 
 #pragma comment(lib, "psapi.lib")
+
+// Called by EngineInit hook once the UE engine is up — safe to call BasicLogV
+static void OnEngineInitForUELog()
+{
+    if (UELog::Initialize(Scanner::FindPatternInMainModule))
+    {
+        Log::Info("[ModLoader] UE log bridge active - messages will also appear in StarRupture.log");
+    }
+    else
+    {
+        Log::Warn("[ModLoader] UE log bridge failed to initialize - BasicLogV pattern not found");
+    }
+}
 
 static void LogStartupEnvironment()
 {
@@ -104,6 +119,8 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
         if (Hooks::EngineInit::Install())
         {
             ModLoader::LogMessage(L"  EngineInit hook installed");
+            // Register UE log bridge — initialised once the engine is up
+            Hooks::EngineInit::RegisterPluginCallback(OnEngineInitForUELog);
         }
         else
         {
@@ -144,11 +161,18 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
         ModLoader::LogMessage(L"  Version_Mod_Loader shutting down");
         ModLoader::LogMessage(L"======================================");
 
+        // CRITICAL: Remove engine shutdown hook and clear callbacks FIRST
+        // This prevents the hook from firing with dangling function pointers
+        // after plugins are unloaded
+        ModLoader::LogMessage(L"Removing engine shutdown hook...");
+        Hooks::EngineShutdown::Remove();
+        ModLoader::LogMessage(L"Engine shutdown hook removed");
+
+        // Now safe to unload plugins
         ModLoader::UnloadAllPlugins();
 
-        // Remove core game hooks
-        ModLoader::LogMessage(L"Removing core game hooks...");
-        Hooks::EngineShutdown::Remove();
+        // Remove remaining core game hooks
+        ModLoader::LogMessage(L"Removing remaining core game hooks...");
         Hooks::EngineInit::Remove();
         Hooks::WorldBeginPlay::Remove();
 

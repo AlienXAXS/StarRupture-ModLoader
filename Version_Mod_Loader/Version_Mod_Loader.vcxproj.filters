@@ -63,6 +63,9 @@
     <ClInclude Include="game\engine_init\engine_init.h">
       <Filter>Source Files\game\engine_init</Filter>
     </ClInclude>
+    <ClInclude Include="ue_log.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="dllmain.cpp">

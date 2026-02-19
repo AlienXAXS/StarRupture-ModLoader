@@ -342,12 +342,12 @@ uintptr_t Scanner::FindUniquePattern(const std::vector<std::string>& patterns, i
 
 		if (matches.empty())
 		{
-			ModLoader::LogDebug(L"[Scanner]     ✗ No matches, trying next pattern...");
+			ModLoader::LogDebug(L"[Scanner]     [FAIL] No matches, trying next pattern...");
 			continue;
 		}
 		else if (matches.size() == 1)
 		{
-			ModLoader::LogInfo(L"[Scanner]     ✓ UNIQUE match found at 0x%llX (base+0x%llX)",
+			ModLoader::LogInfo(L"[Scanner]     [OK] UNIQUE match found at 0x%llX (base+0x%llX)",
 				static_cast<unsigned long long>(matches[0]),
 				static_cast<unsigned long long>(matches[0] - base));
 			
@@ -358,7 +358,7 @@ uintptr_t Scanner::FindUniquePattern(const std::vector<std::string>& patterns, i
 		}
 		else
 		{
-			ModLoader::LogWarn(L"[Scanner]     ✗ Pattern matched %zu times (not unique)", matches.size());
+			ModLoader::LogWarn(L"[Scanner]     [FAIL] Pattern matched %zu times (not unique)", matches.size());
 			
 			// Log first few matches for debugging
 			size_t displayCount = (matches.size() < 5) ? matches.size() : 5;
