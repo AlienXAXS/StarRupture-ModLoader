@@ -33,7 +33,6 @@ static void OnEngineInit()
 	if (!RailJunctionFixerConfig::Config::IsEnabled())
 	{
 		LOG_WARN("Plugin is DISABLED in config file");
-		LOG_INFO("To enable: Set 'Enabled' to 'true' in alienx_mods/configs/RailJunctionFixer.json");
 		return;
 	}
 
