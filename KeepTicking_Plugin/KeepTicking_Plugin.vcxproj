@@ -86,17 +86,17 @@
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
-      <EnableCOMDATFolding>true</EnableCOMDATFolding>
-      <OptimizeReferences>true</OptimizeReferences>
+      <EnableCOMDATFolding>false</EnableCOMDATFolding>
+      <OptimizeReferences>false</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableUAC>false</EnableUAC>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="Basic.cpp" />
-    <ClCompile Include="CoreUObject_functions.cpp" />
+    <ClCompile Include="$(SolutionDir)StarRupture SDK\SDK\Basic.cpp" />
+    <ClCompile Include="$(SolutionDir)StarRupture SDK\SDK\CoreUObject_functions.cpp" />
+    <ClCompile Include="$(SolutionDir)StarRupture SDK\SDK\Engine_functions.cpp" />
     <ClCompile Include="dllmain.cpp" />
-    <ClCompile Include="Engine_functions.cpp" />
     <ClCompile Include="plugin.cpp" />
     <ClCompile Include="mod_core.cpp" />
     <ClCompile Include="hooks\fake_player\fake_player.cpp" />
@@ -112,11 +112,7 @@
     <ClInclude Include="hooks\fake_player\fake_player.h" />
     <ClInclude Include="sdk_helpers.h" />
   </ItemGroup>
-  <ItemGroup>
-    <ProjectReference Include="..\src\SDK.vcxproj">
-      <Project>{c2d4e6f8-a0b1-4c2d-8e3f-5a6b7c8d9e0f}</Project>
-    </ProjectReference>
-  </ItemGroup>
+
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>

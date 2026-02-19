@@ -7,9 +7,8 @@
     <ClCompile Include="hooks\fake_player\fake_player.cpp" />
     <ClCompile Include="plugin_config.cpp" />
     <ClCompile Include="sdk_helpers.cpp" />
-    <ClCompile Include="Basic.cpp" />
-    <ClCompile Include="CoreUObject_functions.cpp" />
-    <ClCompile Include="Engine_functions.cpp" />
+    <ClCompile Include="$(SolutionDir)StarRupture SDK\SDK\Basic.cpp" />
+    <ClCompile Include="$(SolutionDir)StarRupture SDK\SDK\CoreUObject_functions.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="hooks\fake_player\fake_player.h">

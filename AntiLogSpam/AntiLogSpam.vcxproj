@@ -158,10 +158,10 @@
     <ClInclude Include="plugin_interface.h" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="Basic.cpp" />
-    <ClCompile Include="CoreUObject_functions.cpp" />
+    <ClCompile Include="$(SolutionDir)StarRupture SDK\SDK\Basic.cpp" />
+    <ClCompile Include="$(SolutionDir)StarRupture SDK\SDK\CoreUObject_functions.cpp" />
+    <ClCompile Include="$(SolutionDir)StarRupture SDK\SDK\Engine_functions.cpp" />
     <ClCompile Include="dllmain.cpp" />
-    <ClCompile Include="Engine_functions.cpp" />
     <ClCompile Include="plugin.cpp" />
     <ClCompile Include="plugin_config.cpp" />
   </ItemGroup>
