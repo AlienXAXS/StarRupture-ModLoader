@@ -16,6 +16,12 @@
     <Filter Include="Source Files\game">
       <UniqueIdentifier>{fb5e4029-d43b-4540-ad5c-51f8078a4d2c}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Source Files\game\world_begin_play">
+      <UniqueIdentifier>{1154c2bd-a19a-4194-8578-590069b83ce9}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\game\engine_init">
+      <UniqueIdentifier>{5e68a0e8-3d63-4d34-bee2-9de7ea5c385f}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="framework.h">
@@ -54,8 +60,11 @@
     <ClInclude Include="hooks_interface.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="game\world_begin_play.h">
-      <Filter>Source Files\game</Filter>
+    <ClInclude Include="game\world_begin_play\world_begin_play.h">
+      <Filter>Source Files\game\world_begin_play</Filter>
+    </ClInclude>
+    <ClInclude Include="game\engine_init\engine_init.h">
+      <Filter>Source Files\game\engine_init</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -89,8 +98,11 @@
     <ClCompile Include="hooks_interface.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="game\world_begin_play.cpp">
-      <Filter>Source Files\game</Filter>
+    <ClCompile Include="game\world_begin_play\world_begin_play.cpp">
+      <Filter>Source Files\game\world_begin_play</Filter>
+    </ClCompile>
+    <ClCompile Include="game\engine_init\engine_init.cpp">
+      <Filter>Source Files\game\engine_init</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

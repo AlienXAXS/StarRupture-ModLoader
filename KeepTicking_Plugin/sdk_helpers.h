@@ -1,6 +1,6 @@
 #pragma once
 
-#include "SDK/Engine_classes.hpp"
+#include "../StarRupture SDK/SDK/Engine_classes.hpp"
 
 namespace SDKHelpers
 {

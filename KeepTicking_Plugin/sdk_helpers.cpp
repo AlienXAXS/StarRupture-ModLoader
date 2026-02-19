@@ -1,5 +1,6 @@
 #include "sdk_helpers.h"
-#include "plugin_logger.h"
+#include "plugin_helpers.h"
+#include "../StarRupture SDK/SDK/Engine_classes.hpp"
 
 namespace SDKHelpers
 {
@@ -8,10 +9,10 @@ namespace SDKHelpers
 		// Use the SDK's built-in UWorld::GetWorld() function
 		// This is implemented in SDK/Engine_functions.cpp
 		SDK::UWorld* World = SDK::UWorld::GetWorld();
-		
+
 		if (!World)
 		{
-			PluginLogger::Debug("[SDK] UWorld::GetWorld() returned null");
+			LOG_DEBUG("[SDK] UWorld::GetWorld() returned null");
 			return nullptr;
 		}
 
@@ -32,7 +33,7 @@ namespace SDKHelpers
 		SDK::UWorld* World = GetWorld();
 		if (!World)
 		{
-			PluginLogger::Debug("[SDK] Cannot get player count - World is null");
+			LOG_DEBUG("[SDK] Cannot get player count - World is null");
 			return -1;
 		}
 
@@ -40,15 +41,15 @@ namespace SDKHelpers
 		SDK::UNetDriver* NetDriver = GetNetDriver(World);
 		if (!NetDriver)
 		{
-			PluginLogger::Debug("[SDK] Cannot get player count - NetDriver is null (might be listen server or single player)");
+			LOG_DEBUG("[SDK] Cannot get player count - NetDriver is null (might be listen server or single player)");
 			return -1;
 		}
 
 		// Get client connections array
 		// NetDriver->ClientConnections is TArray<UNetConnection*>
 		int32_t playerCount = NetDriver->ClientConnections.Num();
-		
-		PluginLogger::Debug("[SDK] Found %d connected clients via NetDriver", playerCount);
+
+		LOG_DEBUG("[SDK] Found %d connected clients via NetDriver", playerCount);
 		return playerCount;
 	}
 
@@ -61,14 +62,14 @@ namespace SDKHelpers
 		SDK::UGameInstance* GameInstance = World->OwningGameInstance;
 		if (!GameInstance)
 		{
-			PluginLogger::Debug("[SDK] Cannot get local player count - GameInstance is null");
+			LOG_DEBUG("[SDK] Cannot get local player count - GameInstance is null");
 			return -1;
 		}
 
 		// Count local players
 		int32_t localPlayerCount = GameInstance->LocalPlayers.Num();
-		
-		PluginLogger::Debug("[SDK] Found %d local players via GameInstance", localPlayerCount);
+
+		LOG_DEBUG("[SDK] Found %d local players via GameInstance", localPlayerCount);
 		return localPlayerCount;
 	}
 }

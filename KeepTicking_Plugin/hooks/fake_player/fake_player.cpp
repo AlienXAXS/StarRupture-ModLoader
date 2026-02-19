@@ -1,8 +1,7 @@
 #include "fake_player.h"
-#include "plugin_logger.h"
+#include "plugin_helpers.h"
 #include "sdk_helpers.h"
-#include "SDK/Engine_classes.hpp"
-#include <config/pattern_config.h>
+#include "../StarRupture SDK/SDK/Engine_classes.hpp"
 
 #define _USE_MATH_DEFINES
 #include <cmath>
@@ -21,46 +20,40 @@ namespace Hooks::FakePlayer
 
 	void SpawnFakePlayer()
 	{
-		if (!PatternConfig::GetHookEnabled(L"PreventServerSleep", false))
-		{
-			PluginLogger::Info("FakePlayer hook is disabled - skipping");
-			return;
-		}
-
 		if (g_playerActive)
 		{
-			PluginLogger::Debug("[FakePlayer] Fake player already spawned");
+			LOG_DEBUG("[FakePlayer] Fake player already spawned");
 			return;
 		}
 
-		SDK::UWorld* world = SDKHelpers::GetWorld();
+		SDK::UWorld* world = SDK::UWorld::GetWorld();
 		if (!world)
 		{
-			PluginLogger::Error("[FakePlayer] Cannot spawn - world is null");
+			LOG_ERROR("[FakePlayer] Cannot spawn - world is null");
 			return;
 		}
 
-		PluginLogger::Info("[FakePlayer] Attempting to spawn fake player...");
+		LOG_INFO("[FakePlayer] Attempting to spawn fake player...");
 
 		// Get the game mode to find the default pawn class
 		SDK::AGameModeBase* gameMode = world->AuthorityGameMode;
 		if (!gameMode)
 		{
-			PluginLogger::Error("[FakePlayer] No game mode available");
+			LOG_ERROR("[FakePlayer] No game mode available");
 			return;
 		}
 
-		PluginLogger::Debug("[FakePlayer] Game mode: %s", gameMode->GetFullName().c_str());
+		LOG_DEBUG("[FakePlayer] Game mode: %s", gameMode->GetFullName().c_str());
 
 		// Try to get the default pawn class
 		SDK::UClass* pawnClass = gameMode->DefaultPawnClass;
 		if (!pawnClass)
 		{
-			PluginLogger::Warn("[FakePlayer] No default pawn class, using APawn");
+			LOG_WARN("[FakePlayer] No default pawn class, using APawn");
 			pawnClass = SDK::APawn::StaticClass();
 		}
 
-		PluginLogger::Debug("[FakePlayer] Pawn class: %s", pawnClass->GetFullName().c_str());
+		LOG_DEBUG("[FakePlayer] Pawn class: %s", pawnClass->GetFullName().c_str());
 
 		// Spawn transform at player location
 		SDK::FTransform spawnTransform;
@@ -107,7 +100,7 @@ namespace Hooks::FakePlayer
 		// Spawn a player controller
 		SDK::UClass* controllerClass = SDK::APlayerController::StaticClass();
 
-		PluginLogger::Debug("[FakePlayer] Spawning player controller at player location...");
+		LOG_DEBUG("[FakePlayer] Spawning player controller at player location...");
 		g_fakeController = static_cast<SDK::APlayerController*>(
 			SDK::UGameplayStatics::BeginDeferredActorSpawnFromClass(
 				world,
@@ -117,16 +110,16 @@ namespace Hooks::FakePlayer
 				nullptr,
 				SDK::ESpawnActorScaleMethod::MultiplyWithRoot
 			)
-		);
+			);
 
 		if (!g_fakeController)
 		{
-			PluginLogger::Error("[FakePlayer] Failed to spawn player controller");
+			LOG_ERROR("[FakePlayer] Failed to spawn player controller");
 			return;
 		}
 
 		SDK::UGameplayStatics::FinishSpawningActor(g_fakeController, spawnTransform, SDK::ESpawnActorScaleMethod::MultiplyWithRoot);
-		PluginLogger::Info("[FakePlayer] Player controller spawned: %s", g_fakeController->GetFullName().c_str());
+		LOG_INFO("[FakePlayer] Player controller spawned: %s", g_fakeController->GetFullName().c_str());
 
 		// Make controller invulnerable and immobile
 		g_fakeController->bCanBeDamaged = false;
@@ -134,7 +127,7 @@ namespace Hooks::FakePlayer
 		g_fakeController->SetActorTickEnabled(false);
 
 		// Spawn the pawn
-		PluginLogger::Debug("[FakePlayer] Spawning pawn...");
+		LOG_DEBUG("[FakePlayer] Spawning pawn...");
 		g_fakePawn = static_cast<SDK::APawn*>(
 			SDK::UGameplayStatics::BeginDeferredActorSpawnFromClass(
 				world,
@@ -144,11 +137,11 @@ namespace Hooks::FakePlayer
 				nullptr,  // Owner
 				SDK::ESpawnActorScaleMethod::MultiplyWithRoot
 			)
-		);
+			);
 
 		if (!g_fakePawn)
 		{
-			PluginLogger::Error("[FakePlayer] Failed to spawn pawn");
+			LOG_ERROR("[FakePlayer] Failed to spawn pawn");
 			// Clean up controller
 			if (g_fakeController)
 			{
@@ -159,7 +152,7 @@ namespace Hooks::FakePlayer
 		}
 
 		SDK::UGameplayStatics::FinishSpawningActor(g_fakePawn, spawnTransform, SDK::ESpawnActorScaleMethod::MultiplyWithRoot);
-		PluginLogger::Info("[FakePlayer] Pawn spawned: %s", g_fakePawn->GetFullName().c_str());
+		LOG_INFO("[FakePlayer] Pawn spawned: %s", g_fakePawn->GetFullName().c_str());
 
 		// Make pawn invulnerable and completely immobile
 		g_fakePawn->bCanBeDamaged = false;
@@ -179,29 +172,29 @@ namespace Hooks::FakePlayer
 			}
 		}
 
-		PluginLogger::Debug("[FakePlayer] All physics and movement disabled on pawn");
+		LOG_DEBUG("[FakePlayer] All physics and movement disabled on pawn");
 
 		// Possess the pawn with the controller
-		PluginLogger::Debug("[FakePlayer] Possessing pawn...");
+		LOG_DEBUG("[FakePlayer] Possessing pawn...");
 		g_fakeController->Possess(g_fakePawn);
 
 		g_playerActive = true;
 		InterlockedIncrement(&g_callCount);
 
-		PluginLogger::Info("[FakePlayer] Fake player fully spawned and active!");
-		PluginLogger::Info("  Controller: 0x%llX", reinterpret_cast<uintptr_t>(g_fakeController));
-		PluginLogger::Info("  Pawn: 0x%llX", reinterpret_cast<uintptr_t>(g_fakePawn));
+		LOG_INFO("[FakePlayer] Fake player fully spawned and active!");
+		LOG_INFO("  Controller: 0x%llX", reinterpret_cast<uintptr_t>(g_fakeController));
+		LOG_INFO("  Pawn: 0x%llX", reinterpret_cast<uintptr_t>(g_fakePawn));
 	}
 
 	void DespawnFakePlayer()
 	{
 		if (!g_playerActive)
 		{
-			PluginLogger::Debug("[FakePlayer] No fake player to despawn");
+			LOG_DEBUG("[FakePlayer] No fake player to despawn");
 			return;
 		}
 
-		PluginLogger::Info("[FakePlayer] Despawning fake player...");
+		LOG_INFO("[FakePlayer] Despawning fake player...");
 
 		// Unpossess first
 		if (g_fakeController && g_fakePawn)
@@ -224,20 +217,14 @@ namespace Hooks::FakePlayer
 		}
 
 		g_playerActive = false;
-		PluginLogger::Info("[FakePlayer] Fake player despawned");
+		LOG_INFO("[FakePlayer] Fake player despawned");
 	}
 
 	bool Install()
 	{
-		if (!PatternConfig::GetHookEnabled(L"PreventServerSleep", false))
-		{
-			PluginLogger::Info("FakePlayer hook is disabled - skipping");
-			return false;
-		}
-
-		PluginLogger::Info("FakePlayer: Will spawn fake player when all players leave");
-		PluginLogger::Info("  This creates a PlayerController + Pawn to trick the game");
-		PluginLogger::Info("  The fake player will be invisible and at world origin");
+		LOG_INFO("FakePlayer: Spawn/despawn system ready");
+		LOG_INFO("  Controlled by config: Hooks.PreventServerSleep");
+		LOG_INFO("  Default: disabled (prevents server sleep only when explicitly enabled)");
 
 		// We don't hook anything, just provide spawn/despawn functions
 		return true;

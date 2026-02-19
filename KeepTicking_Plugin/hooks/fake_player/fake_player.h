@@ -1,7 +1,5 @@
 #pragma once
 
-#include "../hooks_common.h"
-
 namespace Hooks::FakePlayer
 {
 	// Install the hook to spawn a fake player

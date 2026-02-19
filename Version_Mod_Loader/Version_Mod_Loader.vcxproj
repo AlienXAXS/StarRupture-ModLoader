@@ -65,11 +65,12 @@
       <LanguageStandard>stdcpp20</LanguageStandard>
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
-      <AdditionalIncludeDirectories>$(ProjectDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)StarRupture SDK\SDK;$(ProjectDir);$(SolutionDir)src;$(SolutionDir)Version_Mod_Loader;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <DebugInformationFormat>None</DebugInformationFormat>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
-      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <GenerateDebugInformation>false</GenerateDebugInformation>
       <EnableUAC>false</EnableUAC>
       <ModuleDefinitionFile>$(ProjectDir)version.def</ModuleDefinitionFile>
     </Link>
@@ -93,7 +94,7 @@ echo Deploy complete.</Command>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
-      <AdditionalIncludeDirectories>$(ProjectDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)StarRupture SDK\SDK;$(ProjectDir);$(SolutionDir)src;$(SolutionDir)Version_Mod_Loader;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
     </ClCompile>
     <Link>
@@ -116,7 +117,8 @@ echo Deploy complete.</Command>
   <ItemGroup>
     <ClInclude Include="config_manager.h" />
     <ClInclude Include="framework.h" />
-    <ClInclude Include="game\world_begin_play.h" />
+    <ClInclude Include="game\engine_init\engine_init.h" />
+    <ClInclude Include="game\world_begin_play\world_begin_play.h" />
     <ClInclude Include="hooks_common.h" />
     <ClInclude Include="hooks_interface.h" />
     <ClInclude Include="log.h" />
@@ -133,7 +135,8 @@ echo Deploy complete.</Command>
     <ClCompile Include="dllmain.cpp">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="game\world_begin_play.cpp" />
+    <ClCompile Include="game\engine_init\engine_init.cpp" />
+    <ClCompile Include="game\world_begin_play\world_begin_play.cpp" />
     <ClCompile Include="hooks_common.cpp" />
     <ClCompile Include="hooks_interface.cpp" />
     <ClCompile Include="logger.cpp" />

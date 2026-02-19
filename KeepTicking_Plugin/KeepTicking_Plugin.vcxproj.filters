@@ -1,0 +1,28 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="dllmain.cpp" />
+    <ClCompile Include="plugin.cpp" />
+    <ClCompile Include="mod_core.cpp" />
+    <ClCompile Include="hooks\fake_player\fake_player.cpp" />
+    <ClCompile Include="plugin_config.cpp" />
+    <ClCompile Include="sdk_helpers.cpp" />
+    <ClCompile Include="Basic.cpp" />
+    <ClCompile Include="CoreUObject_functions.cpp" />
+    <ClCompile Include="Engine_functions.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="plugin.h" />
+    <ClInclude Include="mod_core.h" />
+    <ClInclude Include="hooks.h" />
+    <ClInclude Include="hooks\fake_player\fake_player.h" />
+    <ClInclude Include="plugin_helpers.h" />
+    <ClInclude Include="plugin_config.h" />
+    <ClInclude Include="sdk_helpers.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Header Files">
+      <UniqueIdentifier>{8c502c1d-b945-4d61-a94b-87c4faa5ef6f}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

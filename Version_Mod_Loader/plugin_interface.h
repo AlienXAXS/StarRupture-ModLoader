@@ -18,6 +18,32 @@ enum class PluginLogLevel
     Error = 4
 };
 
+// Config value types
+enum class ConfigValueType
+{
+    String,
+    Integer,
+    Float,
+    Boolean
+};
+
+// Config entry definition for auto-generation
+struct ConfigEntry
+{
+    const char* section;     // INI section name (e.g., "General", "Advanced")
+    const char* key;            // INI key name
+    ConfigValueType type;     // Value type
+    const char* defaultValue;   // Default value as string (converted based on type)
+    const char* description;    // Optional description/comment
+};
+
+// Config schema - defines all config entries for a plugin
+struct ConfigSchema
+{
+    const ConfigEntry* entries; // Array of config entries
+    int entryCount;          // Number of entries in array
+};
+
 // Universal logger interface provided by mod loader
 struct IPluginLogger
 {
@@ -58,6 +84,15 @@ struct IPluginConfig
 
     // Write boolean value to plugin's config file
     bool (*WriteBool)(const char* pluginName, const char* section, const char* key, bool value);
+
+    // Initialize plugin config from schema
+    // Creates config file with defaults if it doesn't exist
+    // Returns true if config was loaded/created successfully
+    bool (*InitializeFromSchema)(const char* pluginName, const ConfigSchema* schema);
+    
+    // Validate and repair config file based on schema
+    // Adds missing entries with defaults, preserves existing values
+    void (*ValidateConfig)(const char* pluginName, const ConfigSchema* schema);
 };
 
 // Pattern scanner interface provided by mod loader
@@ -121,6 +156,13 @@ struct IPluginHooks
     
     // Unregister world begin play callback
     void (*UnregisterWorldBeginPlayCallback)(void (*callback)(SDK::UWorld*));
+
+    // Register for engine initialization events
+    // Callback signature: void OnEngineInit()
+    void (*RegisterEngineInitCallback)(void (*callback)());
+    
+    // Unregister engine init callback
+    void (*UnregisterEngineInitCallback)(void (*callback)());
 };
 
 // Plugin metadata structure

@@ -1,0 +1,2 @@
+#define RAILJUNCTIONFIXER_API __declspec(dllexport)
+#define RAILJUNCTIONFIXER_API __declspec(dllimport)

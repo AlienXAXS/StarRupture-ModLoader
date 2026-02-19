@@ -2,7 +2,8 @@
 #include "hooks_interface.h"
 #include "hooks_common.h"
 #include "logger.h"
-#include "game/world_begin_play.h"
+#include "game/world_begin_play/world_begin_play.h"
+#include "game/engine_init/engine_init.h"
 #include <unordered_map>
 #include <mutex>
 
@@ -147,6 +148,30 @@ namespace ModLoader
 		LogDebug(L"[HooksInterface] WorldBeginPlay callback unregistered for plugin");
 	}
 
+	static void HooksRegisterEngineInitCallback(void (*callback)())
+	{
+		if (!callback)
+		{
+			LogWarn(L"[HooksInterface] RegisterEngineInitCallback: null callback");
+			return;
+		}
+
+		Hooks::EngineInit::RegisterPluginCallback(callback);
+		LogDebug(L"[HooksInterface] EngineInit callback registered for plugin");
+	}
+
+	static void HooksUnregisterEngineInitCallback(void (*callback)())
+	{
+		if (!callback)
+		{
+			LogWarn(L"[HooksInterface] UnregisterEngineInitCallback: null callback");
+			return;
+		}
+
+		Hooks::EngineInit::UnregisterPluginCallback(callback);
+		LogDebug(L"[HooksInterface] EngineInit callback unregistered for plugin");
+	}
+
 	// Global hooks interface instance
 	static IPluginHooks g_pluginHooks = {
 		HooksInstallHook,
@@ -156,7 +181,9 @@ namespace ModLoader
 		HooksNopMemory,
 		HooksReadMemory,
 		HooksRegisterWorldBeginPlayCallback,
-		HooksUnregisterWorldBeginPlayCallback
+		HooksUnregisterWorldBeginPlayCallback,
+		HooksRegisterEngineInitCallback,
+		HooksUnregisterEngineInitCallback
 	};
 
 	IPluginHooks* GetPluginHooks()

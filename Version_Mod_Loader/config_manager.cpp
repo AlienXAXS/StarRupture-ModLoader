@@ -2,6 +2,8 @@
 #include "config_manager.h"
 #include "logger.h"
 #include <string>
+#include <fstream>
+#include <sstream>
 
 namespace ModLoader
 {
@@ -137,6 +139,150 @@ namespace ModLoader
 		return ConfigWriteInt(pluginName, section, key, value ? 1 : 0);
 	}
 
+	// Check if a key exists in the config file
+	static bool ConfigKeyExists(const char* pluginName, const char* section, const char* key)
+	{
+		if (!g_configInitialized || !pluginName || !section || !key)
+			return false;
+
+		wchar_t configPath[MAX_PATH];
+		if (!GetPluginConfigPath(pluginName, configPath, MAX_PATH))
+			return false;
+
+		// Convert section and key to wide strings
+		wchar_t wSection[256], wKey[256];
+		MultiByteToWideChar(CP_UTF8, 0, section, -1, wSection, 256);
+		MultiByteToWideChar(CP_UTF8, 0, key, -1, wKey, 256);
+
+		// Use a unique default that's unlikely to be a real value
+		const wchar_t* uniqueDefault = L"__CONFIG_KEY_NOT_FOUND__";
+		wchar_t wValue[1024];
+		
+		EnterCriticalSection(&g_configLock);
+		GetPrivateProfileStringW(wSection, wKey, uniqueDefault, wValue, 1024, configPath);
+		LeaveCriticalSection(&g_configLock);
+
+		return wcscmp(wValue, uniqueDefault) != 0;
+	}
+
+	// Helper to convert default value string to appropriate type and write
+	static void WriteDefaultValue(const char* pluginName, const ConfigEntry& entry)
+	{
+		switch (entry.type)
+		{
+		case ConfigValueType::String:
+			ConfigWriteString(pluginName, entry.section, entry.key, entry.defaultValue);
+			break;
+		case ConfigValueType::Integer:
+			ConfigWriteInt(pluginName, entry.section, entry.key, atoi(entry.defaultValue));
+			break;
+		case ConfigValueType::Float:
+			ConfigWriteFloat(pluginName, entry.section, entry.key, static_cast<float>(atof(entry.defaultValue)));
+			break;
+		case ConfigValueType::Boolean:
+			{
+				bool boolVal = (_stricmp(entry.defaultValue, "true") == 0 || 
+							   _stricmp(entry.defaultValue, "1") == 0 ||
+							   _stricmp(entry.defaultValue, "yes") == 0);
+				ConfigWriteBool(pluginName, entry.section, entry.key, boolVal);
+			}
+			break;
+		}
+	}
+
+	// Validate config and add missing entries
+	static void ConfigValidateConfig(const char* pluginName, const ConfigSchema* schema)
+	{
+		if (!g_configInitialized || !pluginName || !schema || !schema->entries)
+			return;
+
+		wchar_t wPluginName[256];
+		MultiByteToWideChar(CP_UTF8, 0, pluginName, -1, wPluginName, 256);
+
+		int addedCount = 0;
+
+		for (int i = 0; i < schema->entryCount; ++i)
+		{
+			const ConfigEntry& entry = schema->entries[i];
+
+			// Check if key exists
+			if (!ConfigKeyExists(pluginName, entry.section, entry.key))
+			{
+				// Key missing - add with default value
+				WriteDefaultValue(pluginName, entry);
+				addedCount++;
+
+				LogMessage(L"[ConfigManager] Added missing config entry: %S.%S = %S", 
+					entry.section, entry.key, entry.defaultValue);
+			}
+		}
+
+		if (addedCount > 0)
+		{
+			LogMessage(L"[ConfigManager] Validated config for '%s': added %d missing entries", 
+				wPluginName, addedCount);
+		}
+		else
+		{
+			LogMessage(L"[ConfigManager] Config for '%s' is complete", wPluginName);
+		}
+	}
+
+	// Initialize config from schema
+	static bool ConfigInitializeFromSchema(const char* pluginName, const ConfigSchema* schema)
+	{
+		if (!g_configInitialized || !pluginName || !schema || !schema->entries)
+		{
+			LogMessage(L"[ConfigManager] InitializeFromSchema failed: invalid parameters");
+			return false;
+		}
+
+		wchar_t configPath[MAX_PATH];
+		if (!GetPluginConfigPath(pluginName, configPath, MAX_PATH))
+			return false;
+
+		// Convert plugin name for logging
+		wchar_t wPluginName[256];
+		MultiByteToWideChar(CP_UTF8, 0, pluginName, -1, wPluginName, 256);
+
+		// Check if config file exists
+		bool configExists = (GetFileAttributesW(configPath) != INVALID_FILE_ATTRIBUTES);
+
+		if (!configExists)
+		{
+			LogMessage(L"[ConfigManager] Creating new config for '%s' with %d entries", wPluginName, schema->entryCount);
+
+			// Create config file with all defaults
+			for (int i = 0; i < schema->entryCount; ++i)
+			{
+				const ConfigEntry& entry = schema->entries[i];
+
+				// Write description as comment if provided
+				if (entry.description && entry.description[0] != '\0')
+				{
+					// Write comment line (INI files support ; for comments)
+					wchar_t wSection[256];
+					MultiByteToWideChar(CP_UTF8, 0, entry.section, -1, wSection, 256);
+					
+					// Note: WritePrivateProfileString doesn't support comments,
+					// but we can document this in a readme or use a separate comment system
+				}
+
+				// Write default value
+				WriteDefaultValue(pluginName, entry);
+			}
+
+			LogMessage(L"[ConfigManager] Config created: %s", configPath);
+			return true;
+		}
+		else
+		{
+			LogMessage(L"[ConfigManager] Config exists for '%s', validating entries...", wPluginName);
+			ConfigValidateConfig(pluginName, schema);
+			return true;
+		}
+	}
+
 	// Global config interface instance
 	static IPluginConfig g_pluginConfig = {
 		ConfigReadString,
@@ -146,7 +292,9 @@ namespace ModLoader
 		ConfigReadFloat,
 		ConfigWriteFloat,
 		ConfigReadBool,
-		ConfigWriteBool
+		ConfigWriteBool,
+		ConfigInitializeFromSchema,
+		ConfigValidateConfig
 	};
 
 	void InitializeConfigManager()

@@ -1,11 +1,7 @@
 #include "mod_core.h"
-#include "plugin_logger.h"
-#include "plugin_scanner.h"
-#include "plugin_hooks.h"
-#include "hooks/engine_init/engine_init.h"
+#include "plugin_helpers.h"
 #include "hooks/fake_player/fake_player.h"
-#include "SDK/Engine_classes.hpp"
-// #include "hooks/fragment_reparent/fragment_reparent.h"  // TODO: File missing
+#include "../StarRupture SDK/SDK/Engine_classes.hpp"
 
 // ---------------------------------------------------------------------------
 // Callback when world begins play (ChimeraMain world)
@@ -13,11 +9,11 @@
 
 static void OnWorldBeginPlay(SDK::UWorld* world)
 {
-	PluginLogger::Info("ChimeraMain world begin play - spawning fake player...");
+	LOG_INFO("ChimeraMain world begin play - spawning fake player...");
 
 	if (!world)
 	{
-		PluginLogger::Error("World is null in callback!");
+		LOG_ERROR("World is null in callback!");
 		return;
 	}
 
@@ -39,17 +35,30 @@ static void OnEngineInitialized()
 
 void ModCore::Initialize(IPluginScanner* scanner, IPluginHooks* hooks)
 {
-	PluginLogger::Info("ModCore initializing...");
+	LOG_INFO("ModCore initializing...");
 	
-	// Initialize the scanner wrapper
-	PluginScanner::Initialize(scanner);
-	
-	// Initialize the hooks wrapper
-	PluginHooks::Initialize(hooks);
+	// Register for world begin play events
+	if (hooks)
+	{
+		hooks->RegisterWorldBeginPlayCallback(OnWorldBeginPlay);
+		LOG_DEBUG("Registered for WorldBeginPlay events");
+	}
+
+	// Initialize fake player hook
+	if (!Hooks::FakePlayer::Install())
+	{
+		LOG_WARN("Failed to install FakePlayer hook");
+	}
 }
 
 void ModCore::Shutdown()
 {
+	// Unregister callbacks
+	if (auto hooks = GetHooks())
+	{
+		hooks->UnregisterWorldBeginPlayCallback(OnWorldBeginPlay);
+	}
+
 	Hooks::FakePlayer::Remove();
-	PluginLogger::Info("ModCore shutdown complete");
+	LOG_INFO("ModCore shutdown complete");
 }

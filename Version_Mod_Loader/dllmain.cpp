@@ -5,7 +5,8 @@
 #include "logger.h"
 #include "config_manager.h"
 #include "plugin_manager.h"
-#include "game/world_begin_play.h"
+#include "game/world_begin_play/world_begin_play.h"
+#include "game/engine_init/engine_init.h"
 #include <Psapi.h>
 #include <VersionHelpers.h>
 
@@ -98,6 +99,15 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
         else
         {
             ModLoader::LogMessage(L"  WARNING: WorldBeginPlay hook failed to install");
+        }
+
+        if (Hooks::EngineInit::Install())
+        {
+            ModLoader::LogMessage(L"  EngineInit hook installed");
+        }
+        else
+        {
+            ModLoader::LogMessage(L"  WARNING: EngineInit hook failed to install");
         }
 
         ModLoader::LoadAllPlugins();
