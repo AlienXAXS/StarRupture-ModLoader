@@ -144,22 +144,66 @@ namespace RailJunctionFixer
 
 		try
 		{
-			// Find both UScriptStruct objects via Unreal reflection
-			auto* socketsStruct = SDK::UObject::FindObjectFast<SDK::UScriptStruct>(
-				"CrLogisticsSocketsFragment", SDK::EClassCastFlags::ScriptStruct);
+			// Verify GObjects is valid before attempting to find objects
+			// Check if we can safely access GObjects without crashing
+			SDK::TUObjectArray* objArray = SDK::UObject::GObjects.GetTypedPtr();
+			if (!objArray)
+			{
+				LOG_ERROR("GObjects pointer is null - SDK may be incompatible with this game build");
+				LOG_ERROR("This plugin was built with an SDK from the dedicated server");
+				LOG_ERROR("Please disable this plugin when running on client builds");
+				return false;
+			}
 
-			auto* savableStruct = SDK::UObject::FindObjectFast<SDK::UScriptStruct>(
-				"CrMassSavableFragment", SDK::EClassCastFlags::ScriptStruct);
+			// Try to validate that GObjects has reasonable values
+			UC::int32 numObjects = objArray->NumElements;
+			if (numObjects <= 0 || numObjects > 10000000) // Sanity check
+			{
+				LOG_ERROR("GObjects has invalid NumElements (%d) - SDK offset mismatch", numObjects);
+				LOG_ERROR("This indicates the SDK is incompatible with this game build");
+				LOG_ERROR("Please disable this plugin when running on client builds");
+				return false;
+			}
+
+			LOG_DEBUG("GObjects validation passed (NumElements: %d)", numObjects);
+
+			// Find both UScriptStruct objects via Unreal reflection
+			SDK::UScriptStruct* socketsStruct = nullptr;
+			SDK::UScriptStruct* savableStruct = nullptr;
+
+			try
+			{
+				socketsStruct = SDK::UObject::FindObjectFast<SDK::UScriptStruct>(
+					"CrLogisticsSocketsFragment", SDK::EClassCastFlags::ScriptStruct);
+			}
+			catch (...)
+			{
+				LOG_ERROR("Exception while searching for CrLogisticsSocketsFragment - SDK mismatch");
+				return false;
+			}
+
+			try
+			{
+				savableStruct = SDK::UObject::FindObjectFast<SDK::UScriptStruct>(
+					"CrMassSavableFragment", SDK::EClassCastFlags::ScriptStruct);
+			}
+			catch (...)
+			{
+				LOG_ERROR("Exception while searching for CrMassSavableFragment - SDK mismatch");
+				return false;
+			}
 
 			if (!socketsStruct)
 			{
 				LOG_ERROR("Could not find UScriptStruct for CrLogisticsSocketsFragment");
+				LOG_ERROR("This may indicate an SDK version mismatch");
 				return false;
 			}
 
 			if (!savableStruct)
 			{
 				LOG_ERROR("Could not find UScriptStruct for CrMassSavableFragment");
+				LOG_ERROR("This may indicate an SDK version mismatch");
 				return false;
 			}
 
@@ -198,6 +242,11 @@ namespace RailJunctionFixer
 		catch (const std::exception& e)
 		{
 			LOG_ERROR("Exception during initialization: %s", e.what());
+			return false;
+		}
+		catch (...)
+		{
+			LOG_ERROR("Unknown exception during initialization");
 			return false;
 		}
 	}
