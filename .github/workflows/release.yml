@@ -1,0 +1,103 @@
+name: Build and Release
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history needed for changelog generation
+
+      - name: Add MSBuild to PATH
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Build solution (Release|x64)
+        run: |
+          msbuild "StarRupture-ModLoader.sln" `
+            /p:Configuration=Release `
+            /p:Platform=x64 `
+            /p:PostBuildEventUseInBuild=false `
+            /m `
+            /v:minimal
+
+      - name: Stage release layout
+        shell: pwsh
+        run: |
+          $staging = "$env:GITHUB_WORKSPACE\staging"
+          $modsDir = "$staging\alienx_mods"
+
+          New-Item -ItemType Directory -Force -Path $staging    | Out-Null
+          New-Item -ItemType Directory -Force -Path $modsDir    | Out-Null
+
+          # version.dll goes in the root
+          Copy-Item "build\Release\version.dll" "$staging\version.dll"
+
+          # Copy every .dll found in alienx_mods - no exp/lib files
+          Get-ChildItem "build\Release\alienx_mods\*.dll" | ForEach-Object {
+            Copy-Item $_.FullName $modsDir
+            Write-Host "Staged: $($_.Name)"
+          }
+
+      - name: Generate release tag
+        id: tag
+        shell: pwsh
+        run: |
+          $tag = "release-$(Get-Date -Format 'yyyy.MM.dd-HHmmss')"
+          echo "TAG=$tag" >> $env:GITHUB_OUTPUT
+
+      - name: Generate changelog
+        id: changelog
+        shell: pwsh
+        run: |
+          # Find the previous release tag
+          $prevTag = git tag --sort=-creatordate | Select-Object -First 1
+
+          if ($prevTag) {
+            Write-Host "Generating changelog since tag: $prevTag"
+            $log = git log "$prevTag..HEAD" --pretty=format:"- %s (%an)" --no-merges
+          } else {
+            Write-Host "No previous tag found - listing all commits"
+            $log = git log --pretty=format:"- %s (%an)" --no-merges
+          }
+
+          if (-not $log) {
+            $log = "- No changes listed"
+          }
+
+          # Write to a file to safely pass multiline content
+          $log | Out-File -FilePath "$env:GITHUB_WORKSPACE\changelog.txt" -Encoding utf8
+          Write-Host "Changelog:"
+          Write-Host $log
+
+      - name: Create ZIP archive
+        shell: pwsh
+        run: |
+          $zipPath = "$env:GITHUB_WORKSPACE\StarRupture-ModLoader-${{ steps.tag.outputs.TAG }}.zip"
+          Compress-Archive -Path "$env:GITHUB_WORKSPACE\staging\*" -DestinationPath $zipPath
+          Write-Host "Created ZIP: $zipPath"
+
+      - name: Create GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tag      = "${{ steps.tag.outputs.TAG }}"
+          $zipPath  = "$env:GITHUB_WORKSPACE\StarRupture-ModLoader-$tag.zip"
+          $changelog = Get-Content "$env:GITHUB_WORKSPACE\changelog.txt" -Raw
+
+          $notes = @"
+          ## What's New
+
+          $changelog
+          "@
+
+          gh release create $tag $zipPath `
+            --title "StarRupture ModLoader $tag" `
+            --notes $notes
