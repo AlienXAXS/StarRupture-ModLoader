@@ -112,11 +112,7 @@
     <ClInclude Include="hooks\fake_player\fake_player.h" />
     <ClInclude Include="sdk_helpers.h" />
   </ItemGroup>
-  <ItemGroup>
-    <ProjectReference Include="..\src\SDK.vcxproj">
-      <Project>{c2d4e6f8-a0b1-4c2d-8e3f-5a6b7c8d9e0f}</Project>
-    </ProjectReference>
-  </ItemGroup>
+
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
