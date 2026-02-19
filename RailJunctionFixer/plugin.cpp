@@ -49,6 +49,15 @@ static void OnEngineInit()
 	LOG_INFO("Logistics fragment fix applied successfully");
 }
 
+// Engine shutdown callback - called before UObject system tears down
+// This is the correct place to restore UStruct patches so the engine
+// doesn't encounter our VirtualAlloc'd memory during its own teardown.
+static void OnEngineShutdown()
+{
+	LOG_INFO("Engine shutting down - restoring UStruct hierarchy...");
+	RailJunctionFixer::LogisticsFragmentFixer::Shutdown();
+}
+
 extern "C" {
 
 	__declspec(dllexport) PluginInfo* GetPluginInfo()
@@ -82,6 +91,16 @@ extern "C" {
 		hooks->RegisterEngineInitCallback(OnEngineInit);
 		LOG_INFO("Registered for engine init callback");
 
+		if (hooks->RegisterEngineShutdownCallback)
+		{
+			hooks->RegisterEngineShutdownCallback(OnEngineShutdown);
+			LOG_INFO("Registered for engine shutdown callback");
+		}
+		else
+		{
+			LOG_WARN("RegisterEngineShutdownCallback not available - UStruct restore will not run before engine teardown");
+		}
+
 		if (RailJunctionFixerConfig::Config::IsEnabled())
 		{
 			LOG_INFO("Fix will be applied when engine is ready");
@@ -98,14 +117,13 @@ extern "C" {
 	{
 		LOG_INFO("Plugin shutting down...");
 
-		// Do NOT call UnregisterEngineInitCallback here. PluginShutdown is invoked
-		// during DLL_PROCESS_DETACH, at which point the engine's callback lists are
-		// already partially destroyed. Touching them causes MallocBinned2 canary
-		// corruption. The loader skips cleanup entirely on process termination
-		// (lpReserved != nullptr), so the callback list will never be called again.
-
-		// Shutdown the LogisticsFragmentFixer
-		RailJunctionFixer::LogisticsFragmentFixer::Shutdown();
+		// NOTE: Do NOT touch engine callback lists or engine-owned memory here.
+		// PluginShutdown is called from DLL_PROCESS_DETACH only if lpReserved==nullptr
+		// (explicit FreeLibrary), but in practice server shutdown always goes through
+		// ExitProcess (lpReserved!=nullptr) so this function is never called.
+		//
+		// UStruct restoration is handled in OnEngineShutdown() which fires via the
+		// FEngineLoop::Exit hook - before the UObject system tears down.
 
 		g_logger = nullptr;
 		g_config = nullptr;

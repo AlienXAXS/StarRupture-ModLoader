@@ -6,7 +6,8 @@
 #include <string>
 
 // Plugin interface version - increment when breaking changes are made
-#define PLUGIN_INTERFACE_VERSION 1
+// v2: Added RegisterEngineShutdownCallback / UnregisterEngineShutdownCallback to IPluginHooks
+#define PLUGIN_INTERFACE_VERSION 2
 
 // Log levels
 enum class PluginLogLevel
@@ -160,9 +161,17 @@ struct IPluginHooks
     // Register for engine initialization events
     // Callback signature: void OnEngineInit()
     void (*RegisterEngineInitCallback)(void (*callback)());
-    
+
     // Unregister engine init callback
     void (*UnregisterEngineInitCallback)(void (*callback)());
+
+    // Register for engine shutdown events - fires before UObject system tears down.
+    // Use this to clean up any patches/allocations that reference engine-owned memory.
+    // Callback signature: void OnEngineShutdown()
+    void (*RegisterEngineShutdownCallback)(void (*callback)());
+
+    // Unregister engine shutdown callback
+    void (*UnregisterEngineShutdownCallback)(void (*callback)());
 };
 
 // Plugin metadata structure

@@ -1,4 +1,3 @@
-#include "pch.h"
 #include "hooks_common.h"
 #include <cstring>
 #include <malloc.h>

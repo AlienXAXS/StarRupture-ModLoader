@@ -6,7 +6,11 @@
 
 namespace RailJunctionFixer
 {
-	uintptr_t* LogisticsFragmentFixer::s_newChain = nullptr;
+	uintptr_t* LogisticsFragmentFixer::s_newChain      = nullptr;
+	uintptr_t  LogisticsFragmentFixer::s_socketsStruct  = 0;
+	uintptr_t* LogisticsFragmentFixer::s_origChain      = nullptr;
+	int32_t    LogisticsFragmentFixer::s_origDepth      = 0;
+	uintptr_t  LogisticsFragmentFixer::s_origSuperStruct = 0;
 
 	bool LogisticsFragmentFixer::PatchHierarchyChain(uintptr_t socketsStruct, uintptr_t savableStruct)
 	{
@@ -87,6 +91,12 @@ namespace RailJunctionFixer
 				(s_newChain[i] == savIdentity) ? " [SAVABLE]" : "",
 				(s_newChain[i] == sockIdentity) ? " [SELF]" : "");
 		}
+
+		// Save originals for restoration on shutdown
+		s_socketsStruct   = socketsStruct;
+		s_origChain       = sockChain;
+		s_origDepth       = sockDepth;
+		s_origSuperStruct = ReadAt<uintptr_t>(socketsStruct, UStructOff::SuperStruct);
 
 		// Apply the patch: update chain pointer, depth, and SuperStruct
 		uintptr_t patchStart = socketsStruct + UStructOff::InheritanceChain;
@@ -195,7 +205,37 @@ namespace RailJunctionFixer
 	void LogisticsFragmentFixer::Shutdown()
 	{
 		LOG_INFO("Shutting down LogisticsFragmentFixer...");
-		// Note: s_newChain is intentionally leaked (tiny allocation, permanent for game session)
-		// No need to restore - the change is intentional and permanent for this game session
+
+		// Restore the original UScriptStruct data so the engine doesn't encounter
+		// our VirtualAlloc'd chain pointer during its own teardown, which would
+		// cause MallocBinned2 corruption when it tries to free non-UE memory.
+		if (s_socketsStruct != 0 && s_origChain != nullptr)
+		{
+			DWORD oldProtect;
+			uintptr_t patchStart = s_socketsStruct + UStructOff::InheritanceChain;
+			if (VirtualProtect((void*)patchStart, 0x18, PAGE_READWRITE, &oldProtect))
+			{
+				WriteAt<uintptr_t*>(s_socketsStruct, UStructOff::InheritanceChain, s_origChain);
+				WriteAt<int32_t>   (s_socketsStruct, UStructOff::HierarchyDepth,   s_origDepth);
+				WriteAt<uintptr_t> (s_socketsStruct, UStructOff::SuperStruct,      s_origSuperStruct);
+				VirtualProtect((void*)patchStart, 0x18, oldProtect, &oldProtect);
+				LOG_INFO("Original UScriptStruct hierarchy restored");
+			}
+			else
+			{
+				LOG_ERROR("VirtualProtect failed during restore - original hierarchy NOT restored");
+			}
+
+			s_socketsStruct   = 0;
+			s_origChain       = nullptr;
+			s_origDepth       = 0;
+			s_origSuperStruct = 0;
+		}
+
+		if (s_newChain)
+		{
+			VirtualFree(s_newChain, 0, MEM_RELEASE);
+			s_newChain = nullptr;
+		}
 	}
 }

@@ -8,9 +8,9 @@ namespace RailJunctionFixer
     // UStruct offsets for hierarchy chain patching
     namespace UStructOff
     {
-        constexpr size_t InheritanceChain = 0x30;  // uintptr_t* — array of ancestor identities
-        constexpr size_t HierarchyDepth = 0x38;    // int32_t — depth in hierarchy
-        constexpr size_t SuperStruct = 0x40;       // uintptr_t — pointer to parent UStruct
+        constexpr size_t InheritanceChain = 0x30;  // uintptr_t* ï¿½ array of ancestor identities
+        constexpr size_t HierarchyDepth = 0x38;    // int32_t ï¿½ depth in hierarchy
+        constexpr size_t SuperStruct = 0x40;       // uintptr_t ï¿½ pointer to parent UStruct
     }
 
     // Template helper to read a value at an offset from a pointer
@@ -34,19 +34,20 @@ namespace RailJunctionFixer
         // Initialize the fixer - patches the parent class
         static bool Initialize();
 
-        // Cleanup (if needed)
+        // Restore original struct data and free allocated chain memory
         static void Shutdown();
 
     private:
-        // Memory address where we need to make the patch
-        static void* s_targetAddress;
-
-        // Original bytes for restoration (if needed)
-        static uint8_t s_originalBytes[32];
-        static size_t s_patchSize;
-
-        // Allocated chain memory (leaked intentionally - permanent for game session)
+        // Allocated chain memory
         static uintptr_t* s_newChain;
+
+        // Address of the patched UScriptStruct (needed for restore)
+        static uintptr_t s_socketsStruct;
+
+        // Original values saved before patching (for restoration on shutdown)
+        static uintptr_t* s_origChain;
+        static int32_t    s_origDepth;
+        static uintptr_t  s_origSuperStruct;
 
         // Patch the inheritance hierarchy chain for IsChildOf to work correctly
         static bool PatchHierarchyChain(uintptr_t socketsStruct, uintptr_t savableStruct);

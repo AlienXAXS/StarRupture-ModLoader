@@ -1,4 +1,3 @@
-#include "pch.h"
 #include "config_manager.h"
 #include "logger.h"
 #include <string>

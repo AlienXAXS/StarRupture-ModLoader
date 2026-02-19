@@ -1,9 +1,9 @@
-#include "pch.h"
 #include "hooks_interface.h"
 #include "hooks_common.h"
 #include "logger.h"
 #include "game/world_begin_play/world_begin_play.h"
 #include "game/engine_init/engine_init.h"
+#include "game/engine_shutdown/engine_shutdown.h"
 #include <unordered_map>
 #include <mutex>
 
@@ -172,6 +172,30 @@ namespace ModLoader
 		LogDebug(L"[HooksInterface] EngineInit callback unregistered for plugin");
 	}
 
+	static void HooksRegisterEngineShutdownCallback(void (*callback)())
+	{
+		if (!callback)
+		{
+			LogWarn(L"[HooksInterface] RegisterEngineShutdownCallback: null callback");
+			return;
+		}
+
+		Hooks::EngineShutdown::RegisterPluginCallback(callback);
+		LogDebug(L"[HooksInterface] EngineShutdown callback registered for plugin");
+	}
+
+	static void HooksUnregisterEngineShutdownCallback(void (*callback)())
+	{
+		if (!callback)
+		{
+			LogWarn(L"[HooksInterface] UnregisterEngineShutdownCallback: null callback");
+			return;
+		}
+
+		Hooks::EngineShutdown::UnregisterPluginCallback(callback);
+		LogDebug(L"[HooksInterface] EngineShutdown callback unregistered for plugin");
+	}
+
 	// Global hooks interface instance
 	static IPluginHooks g_pluginHooks = {
 		HooksInstallHook,
@@ -183,7 +207,9 @@ namespace ModLoader
 		HooksRegisterWorldBeginPlayCallback,
 		HooksUnregisterWorldBeginPlayCallback,
 		HooksRegisterEngineInitCallback,
-		HooksUnregisterEngineInitCallback
+		HooksUnregisterEngineInitCallback,
+		HooksRegisterEngineShutdownCallback,
+		HooksUnregisterEngineShutdownCallback
 	};
 
 	IPluginHooks* GetPluginHooks()
