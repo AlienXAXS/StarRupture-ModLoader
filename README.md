@@ -12,7 +12,7 @@ This mod loader uses DLL proxying (`version.dll`) to inject into the game proces
 - **Plugin System** - Modular architecture for easy mod development
 - **Memory Scanner** - Pattern scanning for finding game functions
 - **Function Hooking** - Safe hooking system for intercepting game functions
-- **Configuration System** - JSON-based config with schema validation
+- **Configuration System** - INI-based config with schema validation
 - **Logging System** - Multi-level logging (Trace/Debug/Info/Warn/Error)
 - **Game Event Callbacks** - Engine initialization and world begin play events
 - **Unreal SDK Integration** - Full access to Unreal Engine classes via Dumper-7 SDK
@@ -23,22 +23,24 @@ This mod loader uses DLL proxying (`version.dll`) to inject into the game proces
 
 ```
 StarRupture-ModLoader/
-??? Version_Mod_Loader/     # Core mod loader (version.dll proxy)
-?   ??? logger.cpp          # Multi-level logging system
-?   ??? scanner.cpp         # Pattern scanning engine
-?   ??? hooks_interface.cpp # Function hooking system
-?   ??? config_manager.cpp  # JSON config management
-?   ??? plugin_manager.cpp  # Plugin loading/unloading
-?   ??? game/    # Game-specific hooks
-?       ??? engine_init/   # Engine initialization callback
-?   ??? world_begin_play/ # World loading callback
-?
-??? StarRupture SDK/        # Dumper-7 generated Unreal Engine SDK
-?   ??? SDK/               # SDK headers and implementations
-?
-??? ExamplePlugin/          # Template plugin (starter example)
-??? KeepTicking_Plugin/  # Anti-AFK plugin for dedicated servers
-??? RailJunctionFixer/      # Runtime type system patcher
++-- Version_Mod_Loader/      # Core mod loader (version.dll proxy)
+|   +-- logger.cpp           # Multi-level logging system
+|   +-- scanner.cpp          # Pattern scanning engine
+|   +-- hooks_interface.cpp  # Function hooking system
+|   +-- config_manager.cpp   # INI config management
+|   +-- plugin_manager.cpp   # Plugin loading/unloading
+|   +-- game/                # Game-specific hooks
+|       +-- engine_init/     # Engine initialization callback
+|       +-- engine_shutdown/ # Engine shutdown callback
+|       +-- world_begin_play/ # World loading callback
+|
++-- StarRupture SDK/         # Dumper-7 generated Unreal Engine SDK
+|   +-- SDK/                 # SDK headers and implementations
+|
++-- ExamplePlugin/           # Template plugin (starter example)
++-- AntiLogSpam/             # Suppresses null-pointer log spam
++-- KeepTicking_Plugin/      # Anti-AFK plugin for dedicated servers
++-- RailJunctionFixer/       # Runtime type system patcher
 ```
 
 ## Installation
@@ -178,7 +180,7 @@ hooks->RegisterWorldBeginPlayCallback(OnWorldBeginPlay);
 
 **How it works**:
 - Spawns an invisible, invulnerable fake player when server would otherwise be empty
-- Configurable via `KeepTicking.json`
+- Configurable via `KeepTicking.INI`
 - Uses SDK to spawn actors and manage player controllers
 
 **Use case**: Running persistent dedicated servers that should stay online 24/7
@@ -246,17 +248,12 @@ SDK::AActor* actor = SDK::UGameplayStatics::BeginDeferredActorSpawnFromClass(
 
 ## Configuration
 
-Plugins can use JSON configuration files stored in `alienx_mods/configs/[PluginName].json`.
+Plugins can use INI configuration files stored in `alienx_mods/configs/[PluginName].ini`.
 
 Example configuration:
-```json
-{
-  "KeepTicking": {
-    "Enabled": true,
-    "PreventServerSleep": true,
-    "DebugLogging": false
-  }
-}
+```ini
+[Section]
+Key=Value
 ```
 
 ## Logging
@@ -378,7 +375,7 @@ Each plugin is a separate DLL project that:
 ### Config Not Saving
 - Ensure config directory exists (`alienx_mods/configs/`)
 - Check file permissions
-- Verify JSON syntax is valid
+- Verify ini syntax is valid
 - Use schema validation in config initialization
 
 ## Credits
@@ -397,4 +394,4 @@ This is a modding tool for educational purposes. Use at your own risk. The autho
 **Game**: StarRupture  
 **Engine**: Unreal Engine 5  
 **Mod Loader Version**: 1.0.0  
-**Interface Version**: 1
+**Interface Version**: 3
