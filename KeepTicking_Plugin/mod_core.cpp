@@ -22,8 +22,10 @@ static void OnWorldBeginPlay(SDK::UWorld* world)
 	bool debugVisible = KeepTickingConfig::Config::IsDebugVisibleModeEnabled();
 	Hooks::FakePlayer::SetDebugVisibleMode(debugVisible);
 
+	bool shouldPreventSleep = KeepTickingConfig::Config::ShouldPreventServerSleep();
 	// Spawn fake player to trick the game into staying active
-	Hooks::FakePlayer::SpawnFakePlayer();
+	if (shouldPreventSleep)
+		Hooks::FakePlayer::SpawnFakePlayer();
 }
 
 // ---------------------------------------------------------------------------
