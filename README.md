@@ -6,6 +6,11 @@ A plugin-based mod loader for StarRupture, providing a framework for creating ga
 
 This mod loader uses DLL proxying (`version.dll`) to inject into the game process and provides a comprehensive plugin API for creating mods. The loader handles memory scanning, function hooking, configuration management, and game event callbacks.
 
+## Current Plugins
+- **AntiLogSpam** - Prevents the mining tool from filling up the servers log with spam whenever its used
+- **KeepTicking** - Allows the server to keep running even when no one is online (Note: this will spawn aliens etc)
+- **RailJunctionFixer** - Fixes the 3x and 5x rails so that the logistic drones no longer teleport to a single rail. (Note: this only fixes newly placed junctions)
+
 ## Features
 
 - **DLL Proxy Injection** - Automatic loading via `version.dll` proxy
