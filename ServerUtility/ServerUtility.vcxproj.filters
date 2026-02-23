@@ -1,0 +1,38 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="$(SolutionDir)StarRupture SDK\SDK\Basic.cpp" />
+    <ClCompile Include="$(SolutionDir)StarRupture SDK\SDK\CoreUObject_functions.cpp" />
+    <ClCompile Include="$(SolutionDir)StarRupture SDK\SDK\Engine_functions.cpp" />
+    <ClCompile Include="dllmain.cpp" />
+    <ClCompile Include="plugin.cpp" />
+    <ClCompile Include="hooks\set_password\set_password.cpp">
+      <Filter>hooks\set_password</Filter>
+    </ClCompile>
+    <ClCompile Include="hooks\parse_settings\parse_settings.cpp">
+      <Filter>hooks\parse_settings</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="plugin.h" />
+    <ClInclude Include="plugin_helpers.h" />
+    <ClInclude Include="plugin_interface.h" />
+    <ClInclude Include="hooks\set_password\set_password.h">
+      <Filter>hooks\set_password</Filter>
+    </ClInclude>
+    <ClInclude Include="hooks\parse_settings\parse_settings.h">
+      <Filter>hooks\parse_settings</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="hooks">
+      <UniqueIdentifier>{abb35c9f-48e7-415f-9d1b-c17927aa406e}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="hooks\set_password">
+      <UniqueIdentifier>{0f2880d0-f6fe-4e37-9452-0542d0635db1}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="hooks\parse_settings">
+      <UniqueIdentifier>{7309dcfa-4d6c-466c-adb6-1c84a519a4fd}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

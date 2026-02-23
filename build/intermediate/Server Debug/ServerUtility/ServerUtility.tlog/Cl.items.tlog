@@ -1,0 +1,7 @@
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Basic.cpp;C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\build\intermediate\Server Debug\ServerUtility\Basic.obj
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\CoreUObject_functions.cpp;C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\build\intermediate\Server Debug\ServerUtility\CoreUObject_functions.obj
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_functions.cpp;C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\build\intermediate\Server Debug\ServerUtility\Engine_functions.obj
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\ServerUtility\dllmain.cpp;C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\build\intermediate\Server Debug\ServerUtility\dllmain.obj
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\ServerUtility\hooks\parse_settings\parse_settings.cpp;C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\build\intermediate\Server Debug\ServerUtility\parse_settings.obj
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\ServerUtility\hooks\set_password\set_password.cpp;C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\build\intermediate\Server Debug\ServerUtility\set_password.obj
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\ServerUtility\plugin.cpp;C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\build\intermediate\Server Debug\ServerUtility\plugin.obj

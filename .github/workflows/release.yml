@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - main
+    paths-ignore:
+      - '**/*.md'
 
 jobs:
   build:
@@ -20,10 +22,19 @@ jobs:
       - name: Add MSBuild to PATH
         uses: microsoft/setup-msbuild@v2
 
-      - name: Build solution (Release|x64)
+      - name: Build Client Release
         run: |
           msbuild "StarRupture-ModLoader.sln" `
-            /p:Configuration=Release `
+            /p:Configuration="Client Release" `
+            /p:Platform=x64 `
+            /p:PostBuildEventUseInBuild=false `
+            /m `
+            /v:minimal
+
+      - name: Build Server Release
+        run: |
+          msbuild "StarRupture-ModLoader.sln" `
+            /p:Configuration="Server Release" `
             /p:Platform=x64 `
             /p:PostBuildEventUseInBuild=false `
             /m `
@@ -32,19 +43,22 @@ jobs:
       - name: Stage release layout
         shell: pwsh
         run: |
-          $staging = "$env:GITHUB_WORKSPACE\staging"
-          $modsDir = "$staging\alienx_mods"
+          foreach ($target in @("Client", "Server")) {
+            $config  = "$target Release"
+            $staging = "$env:GITHUB_WORKSPACE\staging\$target"
+            $modsDir = "$staging\alienx_mods"
 
-          New-Item -ItemType Directory -Force -Path $staging    | Out-Null
-          New-Item -ItemType Directory -Force -Path $modsDir    | Out-Null
+            New-Item -ItemType Directory -Force -Path $staging | Out-Null
+            New-Item -ItemType Directory -Force -Path $modsDir | Out-Null
 
-          # version.dll goes in the root
-          Copy-Item "build\Release\version.dll" "$staging\version.dll"
+            # version.dll goes in the root
+            Copy-Item "build\$config\version.dll" "$staging\version.dll"
 
-          # Copy every .dll found in alienx_mods - no exp/lib files
-          Get-ChildItem "build\Release\alienx_mods\*.dll" | ForEach-Object {
-            Copy-Item $_.FullName $modsDir
-            Write-Host "Staged: $($_.Name)"
+            # Copy every .dll found in alienx_mods - no exp/lib files
+            Get-ChildItem "build\$config\alienx_mods\*.dll" | ForEach-Object {
+              Copy-Item $_.FullName $modsDir
+              Write-Host "Staged [$target]: $($_.Name)"
+            }
           }
 
       - name: Generate release tag
@@ -78,21 +92,25 @@ jobs:
           Write-Host "Changelog:"
           Write-Host $log
 
-      - name: Create ZIP archive
+      - name: Create ZIP archives
         shell: pwsh
         run: |
-          $zipPath = "$env:GITHUB_WORKSPACE\StarRupture-ModLoader-${{ steps.tag.outputs.TAG }}.zip"
-          Compress-Archive -Path "$env:GITHUB_WORKSPACE\staging\*" -DestinationPath $zipPath
-          Write-Host "Created ZIP: $zipPath"
+          $tag = "${{ steps.tag.outputs.TAG }}"
+          foreach ($target in @("Client", "Server")) {
+            $zipPath = "$env:GITHUB_WORKSPACE\StarRupture-ModLoader-$target-$tag.zip"
+            Compress-Archive -Path "$env:GITHUB_WORKSPACE\staging\$target\*" -DestinationPath $zipPath
+            Write-Host "Created ZIP: $zipPath"
+          }
 
       - name: Create GitHub Release
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          $tag      = "${{ steps.tag.outputs.TAG }}"
-          $zipPath  = "$env:GITHUB_WORKSPACE\StarRupture-ModLoader-$tag.zip"
+          $tag       = "${{ steps.tag.outputs.TAG }}"
           $changelog = Get-Content "$env:GITHUB_WORKSPACE\changelog.txt" -Raw
+          $clientZip = "$env:GITHUB_WORKSPACE\StarRupture-ModLoader-Client-$tag.zip"
+          $serverZip = "$env:GITHUB_WORKSPACE\StarRupture-ModLoader-Server-$tag.zip"
 
           $notes = @"
           ## What's New
@@ -100,6 +118,6 @@ jobs:
           $changelog
           "@
 
-          gh release create $tag $zipPath `
+          gh release create $tag $clientZip $serverZip `
             --title "StarRupture ModLoader $tag" `
             --notes $notes

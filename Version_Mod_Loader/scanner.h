@@ -48,4 +48,27 @@ namespace Scanner
     // Returns 0 if no patterns match uniquely.
     // outPatternIndex is set to the index of the matching pattern (if found).
     uintptr_t FindUniquePattern(const std::vector<std::string>& patterns, int* outPatternIndex = nullptr);
+
+    // XRef scanning - find all locations that reference a given address.
+    //
+    // Two reference types are detected:
+    //   - Absolute (8-byte pointer): any 8-byte-aligned value in the scan region
+    //     that equals targetAddress exactly.  Covers vtables, function-pointer
+    //     arrays, global data references, etc.
+    //   - Relative call/jmp (E8 / E9): near CALL or JMP instructions whose
+    //     computed target  (instrAddr + 5 + rel32)  equals targetAddress.
+    //
+    // FindXrefsToAddress      - scan an arbitrary [start, start+size) region.
+    // FindXrefsToAddressInModule - scan an entire PE module (uses SizeOfImage).
+    // FindXrefsToAddressInMainModule - convenience: scans the main .exe module.
+
+    struct XRef
+    {
+        uintptr_t address;   // Address of the referencing instruction / pointer slot
+        bool      isRelative; // true = relative call/jmp  |  false = absolute pointer
+    };
+
+    std::vector<XRef> FindXrefsToAddress(uintptr_t targetAddress, uintptr_t start, size_t size);
+    std::vector<XRef> FindXrefsToAddressInModule(uintptr_t targetAddress, HMODULE module);
+    std::vector<XRef> FindXrefsToAddressInMainModule(uintptr_t targetAddress);
 }

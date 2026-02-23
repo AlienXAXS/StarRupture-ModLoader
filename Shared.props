@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+
+  <!-- ============================================================
+       StarRuptureSDKSourceDir
+       Points to the SDK subdirectory containing Basic.cpp,
+       CoreUObject_functions.cpp and Engine_functions.cpp for the
+       active configuration.
+       ============================================================ -->
+  <PropertyGroup Condition="'$(Configuration)' == 'Debug' Or '$(Configuration)' == 'Release'">
+    <StarRuptureSDKSourceDir>$(SolutionDir)StarRupture SDK\SDK\</StarRuptureSDKSourceDir>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)' == 'Client Debug' Or '$(Configuration)' == 'Client Release'">
+    <StarRuptureSDKSourceDir>$(SolutionDir)StarRupture SDK\Client\SDK\</StarRuptureSDKSourceDir>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)' == 'Server Debug' Or '$(Configuration)' == 'Server Release'">
+    <StarRuptureSDKSourceDir>$(SolutionDir)StarRupture SDK\Server\SDK\</StarRuptureSDKSourceDir>
+  </PropertyGroup>
+
+  <!-- ============================================================
+       StarRuptureSDKConfigDir
+       Additional include directories injected for Client/Server
+       builds. Includes both the top-level override headers and the
+       generated SDK sub-directory headers.
+       ============================================================ -->
+  <PropertyGroup Condition="'$(Configuration)' == 'Client Debug' Or '$(Configuration)' == 'Client Release'">
+    <StarRuptureSDKConfigDir>$(SolutionDir)StarRupture SDK\Client\;$(SolutionDir)StarRupture SDK\Client\SDK\</StarRuptureSDKConfigDir>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)' == 'Server Debug' Or '$(Configuration)' == 'Server Release'">
+    <StarRuptureSDKConfigDir>$(SolutionDir)StarRupture SDK\Server\;$(SolutionDir)StarRupture SDK\Server\SDK\</StarRuptureSDKConfigDir>
+  </PropertyGroup>
+
+</Project>

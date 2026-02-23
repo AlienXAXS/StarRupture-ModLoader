@@ -2,6 +2,7 @@
 #include "engine_shutdown.h"
 #include "../../logger.h"
 #include "../../scanner.h"
+#include "../../engine_allocator.h"
 #include <vector>
 #include <algorithm>
 
@@ -61,6 +62,11 @@ namespace Hooks::EngineShutdown
 		}
 
 		ModLoader::LogDebug(L"[EngineShutdown] All plugin callbacks completed");
+
+		// Shut down the engine allocator after all plugins have cleaned up.
+		// This must come after plugin callbacks since they may need to free
+		// engine-allocated memory during their shutdown.
+		EngineAllocator::Shutdown();
 	}
 
 	// Hook 1: FEngineLoop::Exit detour

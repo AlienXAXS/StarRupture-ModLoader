@@ -2,6 +2,7 @@
 #include "engine_init.h"
 #include "../../logger.h"
 #include "../../scanner.h"
+#include "../../engine_allocator.h"
 #include <vector>
 #include <algorithm>
 
@@ -33,6 +34,15 @@ namespace Hooks::EngineInit
 		g_engineInitialized = true;
 
 		ModLoader::LogInfo(L"[EngineInit] *** ENGINE READY *** (via %s)", hookSource);
+
+		// Resolve the engine allocator (FMemory::Malloc / FMemory::Free) now
+		// that the engine is fully initialised.  This must happen before plugin
+		// callbacks fire so they can use IPluginHooks::EngineAlloc / EngineFree.
+		if (!EngineAllocator::Resolve())
+		{
+			ModLoader::LogWarn(L"[EngineInit] Engine allocator resolution failed - "
+				L"plugins will not be able to use EngineAlloc/EngineFree");
+		}
 
 		if (!g_pluginCallbacks.empty())
 		{

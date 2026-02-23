@@ -14,34 +14,70 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "StarRupture SDK", "StarRupt
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ExamplePlugin", "ExamplePlugin\ExamplePlugin.vcxproj", "{E8F3A2D4-5C9B-4F1E-8A7D-3B2C1D4E5F6A}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "AntiLogSpam", "AntiLogSpam\AntiLogSpam.vcxproj", "{A3C2D1E0-5F4B-4E8A-9C7D-6B1F2E3A4D5C}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ServerUtility", "ServerUtility\ServerUtility.vcxproj", "{C4D1E2F3-6A7B-4C8D-9E0F-1A2B3C4D5E6F}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Client Debug|x64 = Client Debug|x64
+		Client Release|x64 = Client Release|x64
 		Debug|x64 = Debug|x64
 		Release|x64 = Release|x64
+		Server Debug|x64 = Server Debug|x64
+		Server Release|x64 = Server Release|x64
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{98EE5D6F-1FA3-4FAC-960F-6892D0139BF1}.Client Debug|x64.ActiveCfg = Client Debug|x64
+		{98EE5D6F-1FA3-4FAC-960F-6892D0139BF1}.Client Debug|x64.Build.0 = Client Debug|x64
+		{98EE5D6F-1FA3-4FAC-960F-6892D0139BF1}.Client Release|x64.ActiveCfg = Client Release|x64
+		{98EE5D6F-1FA3-4FAC-960F-6892D0139BF1}.Client Release|x64.Build.0 = Client Release|x64
 		{98EE5D6F-1FA3-4FAC-960F-6892D0139BF1}.Debug|x64.ActiveCfg = Debug|x64
 		{98EE5D6F-1FA3-4FAC-960F-6892D0139BF1}.Debug|x64.Build.0 = Debug|x64
 		{98EE5D6F-1FA3-4FAC-960F-6892D0139BF1}.Release|x64.ActiveCfg = Release|x64
 		{98EE5D6F-1FA3-4FAC-960F-6892D0139BF1}.Release|x64.Build.0 = Release|x64
+		{98EE5D6F-1FA3-4FAC-960F-6892D0139BF1}.Server Debug|x64.ActiveCfg = Server Debug|x64
+		{98EE5D6F-1FA3-4FAC-960F-6892D0139BF1}.Server Debug|x64.Build.0 = Server Debug|x64
+		{98EE5D6F-1FA3-4FAC-960F-6892D0139BF1}.Server Release|x64.ActiveCfg = Server Release|x64
+		{98EE5D6F-1FA3-4FAC-960F-6892D0139BF1}.Server Release|x64.Build.0 = Server Release|x64
+		{B8F4A3E2-9C6D-4F7A-8E1B-2D3C4E5F6A7B}.Client Debug|x64.ActiveCfg = Debug|x64
+		{B8F4A3E2-9C6D-4F7A-8E1B-2D3C4E5F6A7B}.Client Release|x64.ActiveCfg = Release|x64
 		{B8F4A3E2-9C6D-4F7A-8E1B-2D3C4E5F6A7B}.Debug|x64.ActiveCfg = Debug|x64
 		{B8F4A3E2-9C6D-4F7A-8E1B-2D3C4E5F6A7B}.Debug|x64.Build.0 = Debug|x64
 		{B8F4A3E2-9C6D-4F7A-8E1B-2D3C4E5F6A7B}.Release|x64.ActiveCfg = Release|x64
 		{B8F4A3E2-9C6D-4F7A-8E1B-2D3C4E5F6A7B}.Release|x64.Build.0 = Release|x64
+		{B8F4A3E2-9C6D-4F7A-8E1B-2D3C4E5F6A7B}.Server Debug|x64.ActiveCfg = Server Debug|x64
+		{B8F4A3E2-9C6D-4F7A-8E1B-2D3C4E5F6A7B}.Server Debug|x64.Build.0 = Server Debug|x64
+		{B8F4A3E2-9C6D-4F7A-8E1B-2D3C4E5F6A7B}.Server Release|x64.ActiveCfg = Server Release|x64
+		{B8F4A3E2-9C6D-4F7A-8E1B-2D3C4E5F6A7B}.Server Release|x64.Build.0 = Server Release|x64
+		{B1E1F993-67C7-45C5-9FD6-7DA1F00DBF4E}.Client Debug|x64.ActiveCfg = Client Debug|x64
+		{B1E1F993-67C7-45C5-9FD6-7DA1F00DBF4E}.Client Debug|x64.Build.0 = Client Debug|x64
+		{B1E1F993-67C7-45C5-9FD6-7DA1F00DBF4E}.Client Release|x64.ActiveCfg = Client Release|x64
+		{B1E1F993-67C7-45C5-9FD6-7DA1F00DBF4E}.Client Release|x64.Build.0 = Client Release|x64
 		{B1E1F993-67C7-45C5-9FD6-7DA1F00DBF4E}.Debug|x64.ActiveCfg = Debug|x64
 		{B1E1F993-67C7-45C5-9FD6-7DA1F00DBF4E}.Debug|x64.Build.0 = Debug|x64
 		{B1E1F993-67C7-45C5-9FD6-7DA1F00DBF4E}.Release|x64.ActiveCfg = Release|x64
 		{B1E1F993-67C7-45C5-9FD6-7DA1F00DBF4E}.Release|x64.Build.0 = Release|x64
+		{B1E1F993-67C7-45C5-9FD6-7DA1F00DBF4E}.Server Debug|x64.ActiveCfg = Server Debug|x64
+		{B1E1F993-67C7-45C5-9FD6-7DA1F00DBF4E}.Server Debug|x64.Build.0 = Server Debug|x64
+		{B1E1F993-67C7-45C5-9FD6-7DA1F00DBF4E}.Server Release|x64.ActiveCfg = Server Release|x64
+		{B1E1F993-67C7-45C5-9FD6-7DA1F00DBF4E}.Server Release|x64.Build.0 = Server Release|x64
+		{E8F3A2D4-5C9B-4F1E-8A7D-3B2C1D4E5F6A}.Client Debug|x64.ActiveCfg = Debug|x64
+		{E8F3A2D4-5C9B-4F1E-8A7D-3B2C1D4E5F6A}.Client Release|x64.ActiveCfg = Release|x64
 		{E8F3A2D4-5C9B-4F1E-8A7D-3B2C1D4E5F6A}.Debug|x64.ActiveCfg = Debug|x64
 		{E8F3A2D4-5C9B-4F1E-8A7D-3B2C1D4E5F6A}.Debug|x64.Build.0 = Debug|x64
 		{E8F3A2D4-5C9B-4F1E-8A7D-3B2C1D4E5F6A}.Release|x64.ActiveCfg = Release|x64
 		{E8F3A2D4-5C9B-4F1E-8A7D-3B2C1D4E5F6A}.Release|x64.Build.0 = Release|x64
-		{A3C2D1E0-5F4B-4E8A-9C7D-6B1F2E3A4D5C}.Debug|x64.ActiveCfg = Debug|x64
-		{A3C2D1E0-5F4B-4E8A-9C7D-6B1F2E3A4D5C}.Debug|x64.Build.0 = Debug|x64
-		{A3C2D1E0-5F4B-4E8A-9C7D-6B1F2E3A4D5C}.Release|x64.ActiveCfg = Release|x64
-		{A3C2D1E0-5F4B-4E8A-9C7D-6B1F2E3A4D5C}.Release|x64.Build.0 = Release|x64
+		{E8F3A2D4-5C9B-4F1E-8A7D-3B2C1D4E5F6A}.Server Debug|x64.ActiveCfg = Debug|x64
+		{E8F3A2D4-5C9B-4F1E-8A7D-3B2C1D4E5F6A}.Server Release|x64.ActiveCfg = Release|x64
+		{C4D1E2F3-6A7B-4C8D-9E0F-1A2B3C4D5E6F}.Client Debug|x64.ActiveCfg = Debug|x64
+		{C4D1E2F3-6A7B-4C8D-9E0F-1A2B3C4D5E6F}.Client Release|x64.ActiveCfg = Release|x64
+		{C4D1E2F3-6A7B-4C8D-9E0F-1A2B3C4D5E6F}.Debug|x64.ActiveCfg = Debug|x64
+		{C4D1E2F3-6A7B-4C8D-9E0F-1A2B3C4D5E6F}.Debug|x64.Build.0 = Debug|x64
+		{C4D1E2F3-6A7B-4C8D-9E0F-1A2B3C4D5E6F}.Release|x64.ActiveCfg = Release|x64
+		{C4D1E2F3-6A7B-4C8D-9E0F-1A2B3C4D5E6F}.Release|x64.Build.0 = Release|x64
+		{C4D1E2F3-6A7B-4C8D-9E0F-1A2B3C4D5E6F}.Server Debug|x64.ActiveCfg = Server Debug|x64
+		{C4D1E2F3-6A7B-4C8D-9E0F-1A2B3C4D5E6F}.Server Debug|x64.Build.0 = Server Debug|x64
+		{C4D1E2F3-6A7B-4C8D-9E0F-1A2B3C4D5E6F}.Server Release|x64.ActiveCfg = Server Release|x64
+		{C4D1E2F3-6A7B-4C8D-9E0F-1A2B3C4D5E6F}.Server Release|x64.Build.0 = Server Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -50,7 +86,7 @@ Global
 		{B8F4A3E2-9C6D-4F7A-8E1B-2D3C4E5F6A7B} = {02EA681E-C7D8-13C7-8484-4AC65E1B71E8}
 		{B1E1F993-67C7-45C5-9FD6-7DA1F00DBF4E} = {02EA681E-C7D8-13C7-8484-4AC65E1B71E8}
 		{E8F3A2D4-5C9B-4F1E-8A7D-3B2C1D4E5F6A} = {02EA681E-C7D8-13C7-8484-4AC65E1B71E8}
-		{A3C2D1E0-5F4B-4E8A-9C7D-6B1F2E3A4D5C} = {02EA681E-C7D8-13C7-8484-4AC65E1B71E8}
+		{C4D1E2F3-6A7B-4C8D-9E0F-1A2B3C4D5E6F} = {02EA681E-C7D8-13C7-8484-4AC65E1B71E8}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {821D00E1-6E9E-43A6-9817-CEF50642F49B}

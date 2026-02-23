@@ -1,6 +1,7 @@
 #include "hooks_interface.h"
 #include "hooks_common.h"
 #include "logger.h"
+#include "engine_allocator.h"
 #include "game/world_begin_play/world_begin_play.h"
 #include "game/engine_init/engine_init.h"
 #include "game/engine_shutdown/engine_shutdown.h"
@@ -196,6 +197,23 @@ namespace ModLoader
 		LogDebug(L"[HooksInterface] EngineShutdown callback unregistered for plugin");
 	}
 
+	// --- Engine allocator wrappers ---
+
+	static void* HooksEngineAlloc(size_t count, uint32_t alignment)
+	{
+		return EngineAllocator::Alloc(count, alignment);
+	}
+
+	static void HooksEngineFree(void* ptr)
+	{
+		EngineAllocator::Free(ptr);
+	}
+
+	static bool HooksIsEngineAllocatorAvailable()
+	{
+		return EngineAllocator::IsAvailable();
+	}
+
 	// Global hooks interface instance
 	static IPluginHooks g_pluginHooks = {
 		HooksInstallHook,
@@ -209,7 +227,10 @@ namespace ModLoader
 		HooksRegisterEngineInitCallback,
 		HooksUnregisterEngineInitCallback,
 		HooksRegisterEngineShutdownCallback,
-		HooksUnregisterEngineShutdownCallback
+		HooksUnregisterEngineShutdownCallback,
+		HooksEngineAlloc,
+		HooksEngineFree,
+		HooksIsEngineAllocatorAvailable
 	};
 
 	IPluginHooks* GetPluginHooks()
