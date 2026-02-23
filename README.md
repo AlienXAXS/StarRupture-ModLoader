@@ -1,5 +1,8 @@
 # StarRupture ModLoader
 
+> [!TIP]
+> 🎮 **Just want to install and play?** → [**How To Use**](How%20To%20Use.md)
+
 A plugin-based mod loader for StarRupture, providing a framework for creating game modifications without directly modifying game files.
 
 ## Overview
