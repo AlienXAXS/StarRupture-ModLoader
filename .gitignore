@@ -47,3 +47,6 @@ ipch/
 
 # Claude
 .claude/
+
+# build
+build/
