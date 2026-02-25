@@ -1,9 +1,0 @@
-C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Basic.cpp;C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\build\intermediate\Server Debug\KeepTicking\Basic.obj
-C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\CoreUObject_functions.cpp;C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\build\intermediate\Server Debug\KeepTicking\CoreUObject_functions.obj
-C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_functions.cpp;C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\build\intermediate\Server Debug\KeepTicking\Engine_functions.obj
-C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\KeepTicking_Plugin\dllmain.cpp;C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\build\intermediate\Server Debug\KeepTicking\dllmain.obj
-C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\KeepTicking_Plugin\plugin.cpp;C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\build\intermediate\Server Debug\KeepTicking\plugin.obj
-C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\KeepTicking_Plugin\mod_core.cpp;C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\build\intermediate\Server Debug\KeepTicking\mod_core.obj
-C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\KeepTicking_Plugin\hooks\fake_player\fake_player.cpp;C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\build\intermediate\Server Debug\KeepTicking\fake_player.obj
-C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\KeepTicking_Plugin\plugin_config.cpp;C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\build\intermediate\Server Debug\KeepTicking\plugin_config.obj
-C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\KeepTicking_Plugin\sdk_helpers.cpp;C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\build\intermediate\Server Debug\KeepTicking\sdk_helpers.obj
