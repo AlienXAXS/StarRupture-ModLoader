@@ -89,6 +89,100 @@ C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK
   (compiling source file '../StarRupture%20SDK/Server/SDK/Engine_functions.cpp')
   
   dllmain.cpp
+  JunctionReconnector.cpp
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Basic.hpp(844,2): warning C4369: 'SDK::EObjectFlags':  enumerator value '2147483648' cannot be represented as 'int', value is '2147483648'
+  (compiling source file '../RailJunctionFixer/JunctionReconnector.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\CoreUObject_structs.hpp(606,2): warning C4309: 'initializing': truncation of constant value
+  (compiling source file '../RailJunctionFixer/JunctionReconnector.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\CoreUObject_structs.hpp(606,2): warning C4369: 'SDK::EInputDeviceMappingPolicy':  enumerator value '-1' cannot be represented as 'unsigned int', value is '-1'
+  (compiling source file '../RailJunctionFixer/JunctionReconnector.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(2377,2): warning C4309: 'initializing': truncation of constant value
+  (compiling source file '../RailJunctionFixer/JunctionReconnector.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(2377,2): warning C4369: 'SDK::EMaterialParameterType':  enumerator value '256' cannot be represented as 'unsigned char', value is '256'
+  (compiling source file '../RailJunctionFixer/JunctionReconnector.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(3451,2): warning C4309: 'initializing': truncation of constant value
+  (compiling source file '../RailJunctionFixer/JunctionReconnector.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(3451,2): warning C4369: 'SDK::ESoundWaveLoadingBehavior':  enumerator value '256' cannot be represented as 'unsigned char', value is '256'
+  (compiling source file '../RailJunctionFixer/JunctionReconnector.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(6611,2): warning C4309: 'initializing': truncation of constant value
+  (compiling source file '../RailJunctionFixer/JunctionReconnector.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(6611,2): warning C4369: 'SDK::ESkinCacheUsage':  enumerator value '256' cannot be represented as 'unsigned char', value is '256'
+  (compiling source file '../RailJunctionFixer/JunctionReconnector.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(6858,2): warning C4309: 'initializing': truncation of constant value
+  (compiling source file '../RailJunctionFixer/JunctionReconnector.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(6858,2): warning C4369: 'SDK::ETextureEncodeSpeedOverride':  enumerator value '256' cannot be represented as 'unsigned char', value is '256'
+  (compiling source file '../RailJunctionFixer/JunctionReconnector.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(7105,2): warning C4309: 'initializing': truncation of constant value
+  (compiling source file '../RailJunctionFixer/JunctionReconnector.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(7105,2): warning C4369: 'SDK::EStreamingSourcePriority':  enumerator value '256' cannot be represented as 'unsigned char', value is '256'
+  (compiling source file '../RailJunctionFixer/JunctionReconnector.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\ZoneGraph_structs.hpp(57,2): warning C4309: 'initializing': truncation of constant value
+  (compiling source file '../RailJunctionFixer/JunctionReconnector.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\ZoneGraph_structs.hpp(57,2): warning C4369: 'SDK::EZoneLaneLinkType':  enumerator value '256' cannot be represented as 'unsigned char', value is '256'
+  (compiling source file '../RailJunctionFixer/JunctionReconnector.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\ZoneGraph_structs.hpp(71,2): warning C4309: 'initializing': truncation of constant value
+  (compiling source file '../RailJunctionFixer/JunctionReconnector.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\ZoneGraph_structs.hpp(71,2): warning C4369: 'SDK::EZoneLaneLinkFlags':  enumerator value '256' cannot be represented as 'unsigned char', value is '256'
+  (compiling source file '../RailJunctionFixer/JunctionReconnector.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\AuNotification_structs.hpp(21,2): warning C4309: 'initializing': truncation of constant value
+  (compiling source file '../RailJunctionFixer/JunctionReconnector.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\AuNotification_structs.hpp(21,2): warning C4369: 'SDK::EFAuNotificationType':  enumerator value '-1' cannot be represented as 'unsigned int', value is '-1'
+  (compiling source file '../RailJunctionFixer/JunctionReconnector.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Chimera_structs.hpp(525,2): warning C4309: 'initializing': truncation of constant value
+  (compiling source file '../RailJunctionFixer/JunctionReconnector.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Chimera_structs.hpp(525,2): warning C4369: 'SDK::ECrBuildingItemStorageType':  enumerator value '-1' cannot be represented as 'unsigned int', value is '-1'
+  (compiling source file '../RailJunctionFixer/JunctionReconnector.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\PCG_structs.hpp(463,2): warning C4309: 'initializing': truncation of constant value
+  (compiling source file '../RailJunctionFixer/JunctionReconnector.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\PCG_structs.hpp(463,2): warning C4369: 'SDK::EPCGKernelAttributeType':  enumerator value '256' cannot be represented as 'unsigned char', value is '256'
+  (compiling source file '../RailJunctionFixer/JunctionReconnector.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\PCG_structs.hpp(591,2): warning C4309: 'initializing': truncation of constant value
+  (compiling source file '../RailJunctionFixer/JunctionReconnector.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\PCG_structs.hpp(591,2): warning C4369: 'SDK::EPCGMetadataTypes':  enumerator value '256' cannot be represented as 'unsigned char', value is '256'
+  (compiling source file '../RailJunctionFixer/JunctionReconnector.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\PCG_structs.hpp(626,2): warning C4309: 'initializing': truncation of constant value
+  (compiling source file '../RailJunctionFixer/JunctionReconnector.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\PCG_structs.hpp(626,2): warning C4369: 'SDK::EPCGMetadataDomainFlag':  enumerator value '256' cannot be represented as 'unsigned char', value is '256'
+  (compiling source file '../RailJunctionFixer/JunctionReconnector.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\PCG_structs.hpp(1824,2): warning C4309: 'initializing': truncation of constant value
+  (compiling source file '../RailJunctionFixer/JunctionReconnector.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\PCG_structs.hpp(1824,2): warning C4369: 'SDK::EPCGPointProperties':  enumerator value '256' cannot be represented as 'unsigned char', value is '256'
+  (compiling source file '../RailJunctionFixer/JunctionReconnector.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\ComputeFramework_structs.hpp(36,2): warning C4309: 'initializing': truncation of constant value
+  (compiling source file '../RailJunctionFixer/JunctionReconnector.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\ComputeFramework_structs.hpp(36,2): warning C4369: 'SDK::EShaderFundamentalType':  enumerator value '256' cannot be represented as 'unsigned char', value is '256'
+  (compiling source file '../RailJunctionFixer/JunctionReconnector.cpp')
+  
   LogisticsFragmentFixer.cpp
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Basic.hpp(844,2): warning C4369: 'SDK::EObjectFlags':  enumerator value '2147483648' cannot be represented as 'int', value is '2147483648'
   (compiling source file '../RailJunctionFixer/LogisticsFragmentFixer.cpp')
@@ -130,6 +224,45 @@ C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK
   (compiling source file '../RailJunctionFixer/LogisticsFragmentFixer.cpp')
   
   plugin.cpp
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Basic.hpp(844,2): warning C4369: 'SDK::EObjectFlags':  enumerator value '2147483648' cannot be represented as 'int', value is '2147483648'
+  (compiling source file '../RailJunctionFixer/plugin.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\CoreUObject_structs.hpp(606,2): warning C4309: 'initializing': truncation of constant value
+  (compiling source file '../RailJunctionFixer/plugin.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\CoreUObject_structs.hpp(606,2): warning C4369: 'SDK::EInputDeviceMappingPolicy':  enumerator value '-1' cannot be represented as 'unsigned int', value is '-1'
+  (compiling source file '../RailJunctionFixer/plugin.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(2377,2): warning C4309: 'initializing': truncation of constant value
+  (compiling source file '../RailJunctionFixer/plugin.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(2377,2): warning C4369: 'SDK::EMaterialParameterType':  enumerator value '256' cannot be represented as 'unsigned char', value is '256'
+  (compiling source file '../RailJunctionFixer/plugin.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(3451,2): warning C4309: 'initializing': truncation of constant value
+  (compiling source file '../RailJunctionFixer/plugin.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(3451,2): warning C4369: 'SDK::ESoundWaveLoadingBehavior':  enumerator value '256' cannot be represented as 'unsigned char', value is '256'
+  (compiling source file '../RailJunctionFixer/plugin.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(6611,2): warning C4309: 'initializing': truncation of constant value
+  (compiling source file '../RailJunctionFixer/plugin.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(6611,2): warning C4369: 'SDK::ESkinCacheUsage':  enumerator value '256' cannot be represented as 'unsigned char', value is '256'
+  (compiling source file '../RailJunctionFixer/plugin.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(6858,2): warning C4309: 'initializing': truncation of constant value
+  (compiling source file '../RailJunctionFixer/plugin.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(6858,2): warning C4369: 'SDK::ETextureEncodeSpeedOverride':  enumerator value '256' cannot be represented as 'unsigned char', value is '256'
+  (compiling source file '../RailJunctionFixer/plugin.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(7105,2): warning C4309: 'initializing': truncation of constant value
+  (compiling source file '../RailJunctionFixer/plugin.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(7105,2): warning C4369: 'SDK::EStreamingSourcePriority':  enumerator value '256' cannot be represented as 'unsigned char', value is '256'
+  (compiling source file '../RailJunctionFixer/plugin.cpp')
+  
   plugin_config.cpp
   RailJunctionFixer.cpp
   Generating Code...

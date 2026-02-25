@@ -25,6 +25,12 @@
     <Filter Include="Source Files\game\engine_shutdown">
       <UniqueIdentifier>{94c6be5a-0f37-4a6d-b2c2-73fc15105b87}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Source Files\game\save_loaded">
+      <UniqueIdentifier>{7319e901-1e30-4f85-a398-a6628d90a01d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\game\experience_load_complete">
+      <UniqueIdentifier>{94cb41f4-d4af-4ce1-9e4c-fb122cde2f2a}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="plugin_interface.h">
@@ -69,6 +75,18 @@
     <ClInclude Include="engine_allocator.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="game\scan_patterns.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="splash_window.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="game\save_loaded\save_loaded.h">
+      <Filter>Source Files\game\save_loaded</Filter>
+    </ClInclude>
+    <ClInclude Include="game\experience_load_complete\experience_load_complete.h">
+      <Filter>Source Files\game\experience_load_complete</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="dllmain.cpp">
@@ -104,20 +122,29 @@
     <ClCompile Include="game\engine_init\engine_init.cpp">
       <Filter>Source Files\game\engine_init</Filter>
     </ClCompile>
-    <ClCompile Include="$(SolutionDir)StarRupture SDK\SDK\Basic.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="$(SolutionDir)StarRupture SDK\SDK\CoreUObject_functions.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="$(SolutionDir)StarRupture SDK\SDK\Engine_functions.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="game\engine_shutdown\engine_shutdown.cpp">
       <Filter>Source Files\game\engine_shutdown</Filter>
     </ClCompile>
     <ClCompile Include="engine_allocator.cpp">
       <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="$(StarRuptureSDKSourceDir)Basic.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="$(StarRuptureSDKSourceDir)CoreUObject_functions.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="$(StarRuptureSDKSourceDir)Engine_functions.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="splash_window.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="game\save_loaded\save_loaded.cpp">
+      <Filter>Source Files\game\save_loaded</Filter>
+    </ClCompile>
+    <ClCompile Include="game\experience_load_complete\experience_load_complete.cpp">
+      <Filter>Source Files\game\experience_load_complete</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

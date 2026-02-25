@@ -16,14 +16,20 @@ namespace SDK
 
 namespace Hooks::WorldBeginPlay
 {
-    // Callback signature for plugins
+    // Callback signature for ChimeraMain-only notifications (existing)
     typedef void (*PluginWorldBeginPlayCallback)(SDK::UWorld* world);
+
+    // Callback signature for ALL worlds — receives the world pointer and its name
+    typedef void (*PluginAnyWorldBeginPlayCallback)(SDK::UWorld* world, const char* worldName);
 
     // Install the hook
     bool Install();
 
     // Remove the hook
     void Remove();
+
+    // Returns true if the hook is currently installed
+    bool IsInstalled();
 
     // Get call count
     long GetCallCount();
@@ -33,4 +39,11 @@ namespace Hooks::WorldBeginPlay
 
     // Unregister a plugin callback
     void UnregisterPluginCallback(PluginWorldBeginPlayCallback callback);
+
+    // Register a plugin callback to be notified when ANY world begins play.
+    // The hook is installed lazily on the first registration if not already active.
+    void RegisterAnyWorldCallback(PluginAnyWorldBeginPlayCallback callback);
+
+    // Unregister an any-world callback
+    void UnregisterAnyWorldCallback(PluginAnyWorldBeginPlayCallback callback);
 }

@@ -309,6 +309,9 @@ echo Deploy complete.</Command>
     <ClInclude Include="config_manager.h" />
     <ClInclude Include="engine_allocator.h" />
     <ClInclude Include="game\engine_init\engine_init.h" />
+    <ClInclude Include="game\experience_load_complete\experience_load_complete.h" />
+    <ClInclude Include="game\save_loaded\save_loaded.h" />
+    <ClInclude Include="game\scan_patterns.h" />
     <ClInclude Include="game\world_begin_play\world_begin_play.h" />
     <ClInclude Include="hooks_common.h" />
     <ClInclude Include="hooks_interface.h" />
@@ -318,6 +321,7 @@ echo Deploy complete.</Command>
     <ClInclude Include="plugin_manager.h" />
     <ClInclude Include="scanner.h" />
     <ClInclude Include="scanner_interface.h" />
+    <ClInclude Include="splash_window.h" />
     <ClInclude Include="ue_log.h" />
     <ClInclude Include="version_proxy.h" />
   </ItemGroup>
@@ -338,6 +342,8 @@ echo Deploy complete.</Command>
     <ClCompile Include="engine_allocator.cpp" />
     <ClCompile Include="game\engine_init\engine_init.cpp" />
     <ClCompile Include="game\engine_shutdown\engine_shutdown.cpp" />
+    <ClCompile Include="game\experience_load_complete\experience_load_complete.cpp" />
+    <ClCompile Include="game\save_loaded\save_loaded.cpp" />
     <ClCompile Include="game\world_begin_play\world_begin_play.cpp" />
     <ClCompile Include="hooks_common.cpp" />
     <ClCompile Include="hooks_interface.cpp" />
@@ -345,6 +351,7 @@ echo Deploy complete.</Command>
     <ClCompile Include="plugin_manager.cpp" />
     <ClCompile Include="scanner.cpp" />
     <ClCompile Include="scanner_interface.cpp" />
+    <ClCompile Include="splash_window.cpp" />
     <ClCompile Include="version_proxy.cpp">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>

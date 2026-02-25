@@ -11,7 +11,13 @@
 //     to IPluginScanner for function-pointer cross-reference scanning
 // v5: Added EngineAlloc / EngineFree / IsEngineAllocatorAvailable to IPluginHooks
 //     for safe FString / engine-owned memory manipulation from plugins
-#define PLUGIN_INTERFACE_VERSION 5
+// v6: Added RegisterAnyWorldBeginPlayCallback / UnregisterAnyWorldBeginPlayCallback to IPluginHooks
+//     for receiving notifications when ANY world begins play (not just ChimeraMain)
+// v7: Added RegisterSaveLoadedCallback / UnregisterSaveLoadedCallback to IPluginHooks
+//     for receiving notifications when UCrMassSaveSubsystem::OnSaveLoaded fires (save fully loaded)
+// v8: Added RegisterExperienceLoadCompleteCallback / UnregisterExperienceLoadCompleteCallback
+//     to IPluginHooks for receiving notifications when UCrExperienceManagerComponent::OnExperienceLoadComplete fires
+#define PLUGIN_INTERFACE_VERSION 8
 
 // Log levels
 enum class PluginLogLevel
@@ -182,10 +188,11 @@ struct IPluginHooks
     // Check if a hook is currently installed
     bool (*IsHookInstalled)(HookHandle handle);
 
-    // Memory patching utilities
+  // Memory patching utilities
     bool (*PatchMemory)(uintptr_t address, const uint8_t* data, size_t size);
     bool (*NopMemory)(uintptr_t address, size_t size);
-    bool (*ReadMemory)(uintptr_t address, void* buffer, size_t size);
+    bool (*ReadableMemory)(uintptr_t address, size_t size);
+    bool (*WriteableMemory)(uintptr_t address, size_t size);
     
     // Register for world begin play events (ChimeraMain world only)
     // Callback signature: void OnWorldBeginPlay(SDK::UWorld* world)
@@ -210,7 +217,7 @@ struct IPluginHooks
     void (*UnregisterEngineShutdownCallback)(void (*callback)());
 
     // -----------------------------------------------------------------------
-    // Engine memory allocator
+    // Engine memory allocator (v5)
     //
     // These wrap the game's FMemory::Malloc / FMemory::Free so plugins can
     // safely allocate and free memory that the engine (GC, FString destructors,
@@ -220,16 +227,43 @@ struct IPluginHooks
     // Always check IsEngineAllocatorAvailable() before use.
     // -----------------------------------------------------------------------
 
-    // Allocate memory via FMemory::Malloc(Count, Alignment).
-    // Returns nullptr if the allocator is not available or allocation fails.
     void* (*EngineAlloc)(size_t count, uint32_t alignment);
-
-    // Free memory via FMemory::Free(ptr).
-    // Does nothing if the allocator is not available or ptr is nullptr.
     void (*EngineFree)(void* ptr);
-
-    // Returns true if the engine allocator has been resolved and is usable.
     bool (*IsEngineAllocatorAvailable)();
+
+    // -----------------------------------------------------------------------
+    // Any-world begin play callbacks (v6)
+    //
+    // Unlike RegisterWorldBeginPlayCallback (ChimeraMain only), these fire for
+    // every world that begins play — the world name is passed as a C string.
+    // Callback signature: void OnAnyWorldBeginPlay(SDK::UWorld* world, const char* worldName)
+    // -----------------------------------------------------------------------
+
+    void (*RegisterAnyWorldBeginPlayCallback)(void (*callback)(SDK::UWorld*, const char*));
+    void (*UnregisterAnyWorldBeginPlayCallback)(void (*callback)(SDK::UWorld*, const char*));
+
+    // -----------------------------------------------------------------------
+    // Save-loaded callbacks (v7)
+    //
+    // Fires when UCrMassSaveSubsystem::OnSaveLoaded completes — i.e. after
+    // the save has finished loading and all actors should be spawned.
+    // Callback signature: void OnSaveLoaded()
+    // -----------------------------------------------------------------------
+
+    void (*RegisterSaveLoadedCallback)(void (*callback)());
+    void (*UnregisterSaveLoadedCallback)(void (*callback)());
+
+    // -----------------------------------------------------------------------
+    // Experience-load-complete callbacks (v8)
+    //
+    // Fires when UCrExperienceManagerComponent::OnExperienceLoadComplete
+    // completes — this is significantly later than OnSaveLoaded and indicates
+    // the map/gameplay experience is fully ready with all actors spawned.
+    // Callback signature: void OnExperienceLoadComplete()
+    // -----------------------------------------------------------------------
+
+    void (*RegisterExperienceLoadCompleteCallback)(void (*callback)());
+    void (*UnregisterExperienceLoadCompleteCallback)(void (*callback)());
 };
 
 // Plugin metadata structure

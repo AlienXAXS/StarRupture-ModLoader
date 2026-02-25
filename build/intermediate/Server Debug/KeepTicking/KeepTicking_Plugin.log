@@ -1,124 +1,359 @@
-﻿  fake_player.cpp
+﻿  Basic.cpp
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\UnrealContainers.hpp(188,4): warning C4201: nonstandard extension used: nameless struct/union
-  (compiling source file 'hooks/fake_player/fake_player.cpp')
+  (compiling source file '../StarRupture%20SDK/Server/SDK/Basic.cpp')
       C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\UnrealContainers.hpp(188,4):
       the template instantiation context (the oldest one first) is
           C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\UnrealContainers.hpp(183,9):
           while compiling class template 'UC::ContainerImpl::TSparseArrayElementOrFreeListLink'
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\UnrealContainers.hpp(844,25): warning C4245: '=': conversion from 'int' to 'UC::uint32', signed/unsigned mismatch
-  (compiling source file 'hooks/fake_player/fake_player.cpp')
+  (compiling source file '../StarRupture%20SDK/Server/SDK/Basic.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Basic.hpp(844,2): warning C4369: 'SDK::EObjectFlags':  enumerator value '2147483648' cannot be represented as 'int', value is '2147483648'
-  (compiling source file 'hooks/fake_player/fake_player.cpp')
+  (compiling source file '../StarRupture%20SDK/Server/SDK/Basic.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\CoreUObject_structs.hpp(606,2): warning C4309: 'initializing': truncation of constant value
-  (compiling source file 'hooks/fake_player/fake_player.cpp')
+  (compiling source file '../StarRupture%20SDK/Server/SDK/Basic.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\CoreUObject_structs.hpp(606,2): warning C4369: 'SDK::EInputDeviceMappingPolicy':  enumerator value '-1' cannot be represented as 'unsigned int', value is '-1'
-  (compiling source file 'hooks/fake_player/fake_player.cpp')
+  (compiling source file '../StarRupture%20SDK/Server/SDK/Basic.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(2377,2): warning C4309: 'initializing': truncation of constant value
-  (compiling source file 'hooks/fake_player/fake_player.cpp')
+  (compiling source file '../StarRupture%20SDK/Server/SDK/Basic.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(2377,2): warning C4369: 'SDK::EMaterialParameterType':  enumerator value '256' cannot be represented as 'unsigned char', value is '256'
-  (compiling source file 'hooks/fake_player/fake_player.cpp')
+  (compiling source file '../StarRupture%20SDK/Server/SDK/Basic.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(3451,2): warning C4309: 'initializing': truncation of constant value
-  (compiling source file 'hooks/fake_player/fake_player.cpp')
+  (compiling source file '../StarRupture%20SDK/Server/SDK/Basic.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(3451,2): warning C4369: 'SDK::ESoundWaveLoadingBehavior':  enumerator value '256' cannot be represented as 'unsigned char', value is '256'
-  (compiling source file 'hooks/fake_player/fake_player.cpp')
+  (compiling source file '../StarRupture%20SDK/Server/SDK/Basic.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(6611,2): warning C4309: 'initializing': truncation of constant value
-  (compiling source file 'hooks/fake_player/fake_player.cpp')
+  (compiling source file '../StarRupture%20SDK/Server/SDK/Basic.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(6611,2): warning C4369: 'SDK::ESkinCacheUsage':  enumerator value '256' cannot be represented as 'unsigned char', value is '256'
-  (compiling source file 'hooks/fake_player/fake_player.cpp')
+  (compiling source file '../StarRupture%20SDK/Server/SDK/Basic.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(6858,2): warning C4309: 'initializing': truncation of constant value
-  (compiling source file 'hooks/fake_player/fake_player.cpp')
+  (compiling source file '../StarRupture%20SDK/Server/SDK/Basic.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(6858,2): warning C4369: 'SDK::ETextureEncodeSpeedOverride':  enumerator value '256' cannot be represented as 'unsigned char', value is '256'
-  (compiling source file 'hooks/fake_player/fake_player.cpp')
+  (compiling source file '../StarRupture%20SDK/Server/SDK/Basic.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(7105,2): warning C4309: 'initializing': truncation of constant value
-  (compiling source file 'hooks/fake_player/fake_player.cpp')
+  (compiling source file '../StarRupture%20SDK/Server/SDK/Basic.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(7105,2): warning C4369: 'SDK::EStreamingSourcePriority':  enumerator value '256' cannot be represented as 'unsigned char', value is '256'
-  (compiling source file 'hooks/fake_player/fake_player.cpp')
+  (compiling source file '../StarRupture%20SDK/Server/SDK/Basic.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(10335,1): warning C4324: 'SDK::FAnimInstanceProxy': structure was padded due to alignment specifier
-  (compiling source file 'hooks/fake_player/fake_player.cpp')
+  (compiling source file '../StarRupture%20SDK/Server/SDK/Basic.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_classes.hpp(4023,1): warning C4324: 'SDK::UAnimInstance': structure was padded due to alignment specifier
-  (compiling source file 'hooks/fake_player/fake_player.cpp')
+  (compiling source file '../StarRupture%20SDK/Server/SDK/Basic.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_classes.hpp(8332,1): warning C4324: 'SDK::UCameraShakeBase': structure was padded due to alignment specifier
-  (compiling source file 'hooks/fake_player/fake_player.cpp')
+  (compiling source file '../StarRupture%20SDK/Server/SDK/Basic.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_classes.hpp(9572,1): warning C4324: 'SDK::UNetConnection': structure was padded due to alignment specifier
-  (compiling source file 'hooks/fake_player/fake_player.cpp')
+  (compiling source file '../StarRupture%20SDK/Server/SDK/Basic.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_classes.hpp(32398,1): warning C4324: 'SDK::UProjectileMovementComponent': structure was padded due to alignment specifier
-  (compiling source file 'hooks/fake_player/fake_player.cpp')
+  (compiling source file '../StarRupture%20SDK/Server/SDK/Basic.cpp')
+  
+  CoreUObject_functions.cpp
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\UnrealContainers.hpp(188,4): warning C4201: nonstandard extension used: nameless struct/union
+  (compiling source file '../StarRupture%20SDK/Server/SDK/CoreUObject_functions.cpp')
+      C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\UnrealContainers.hpp(188,4):
+      the template instantiation context (the oldest one first) is
+          C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\UnrealContainers.hpp(183,9):
+          while compiling class template 'UC::ContainerImpl::TSparseArrayElementOrFreeListLink'
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\UnrealContainers.hpp(844,25): warning C4245: '=': conversion from 'int' to 'UC::uint32', signed/unsigned mismatch
+  (compiling source file '../StarRupture%20SDK/Server/SDK/CoreUObject_functions.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Basic.hpp(844,2): warning C4369: 'SDK::EObjectFlags':  enumerator value '2147483648' cannot be represented as 'int', value is '2147483648'
+  (compiling source file '../StarRupture%20SDK/Server/SDK/CoreUObject_functions.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\CoreUObject_structs.hpp(606,2): warning C4309: 'initializing': truncation of constant value
+  (compiling source file '../StarRupture%20SDK/Server/SDK/CoreUObject_functions.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\CoreUObject_structs.hpp(606,2): warning C4369: 'SDK::EInputDeviceMappingPolicy':  enumerator value '-1' cannot be represented as 'unsigned int', value is '-1'
+  (compiling source file '../StarRupture%20SDK/Server/SDK/CoreUObject_functions.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\CoreUObject_functions.cpp(74,15): warning C4458: declaration of 'Name' hides class member
+      C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\CoreUObject_classes.hpp(30,48):
+      see declaration of 'SDK::UObject::Name'
+  
+  Engine_functions.cpp
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\UnrealContainers.hpp(188,4): warning C4201: nonstandard extension used: nameless struct/union
+  (compiling source file '../StarRupture%20SDK/Server/SDK/Engine_functions.cpp')
+      C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\UnrealContainers.hpp(188,4):
+      the template instantiation context (the oldest one first) is
+          C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\UnrealContainers.hpp(183,9):
+          while compiling class template 'UC::ContainerImpl::TSparseArrayElementOrFreeListLink'
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\UnrealContainers.hpp(844,25): warning C4245: '=': conversion from 'int' to 'UC::uint32', signed/unsigned mismatch
+  (compiling source file '../StarRupture%20SDK/Server/SDK/Engine_functions.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Basic.hpp(844,2): warning C4369: 'SDK::EObjectFlags':  enumerator value '2147483648' cannot be represented as 'int', value is '2147483648'
+  (compiling source file '../StarRupture%20SDK/Server/SDK/Engine_functions.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\CoreUObject_structs.hpp(606,2): warning C4309: 'initializing': truncation of constant value
+  (compiling source file '../StarRupture%20SDK/Server/SDK/Engine_functions.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\CoreUObject_structs.hpp(606,2): warning C4369: 'SDK::EInputDeviceMappingPolicy':  enumerator value '-1' cannot be represented as 'unsigned int', value is '-1'
+  (compiling source file '../StarRupture%20SDK/Server/SDK/Engine_functions.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(2377,2): warning C4309: 'initializing': truncation of constant value
+  (compiling source file '../StarRupture%20SDK/Server/SDK/Engine_functions.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(2377,2): warning C4369: 'SDK::EMaterialParameterType':  enumerator value '256' cannot be represented as 'unsigned char', value is '256'
+  (compiling source file '../StarRupture%20SDK/Server/SDK/Engine_functions.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(3451,2): warning C4309: 'initializing': truncation of constant value
+  (compiling source file '../StarRupture%20SDK/Server/SDK/Engine_functions.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(3451,2): warning C4369: 'SDK::ESoundWaveLoadingBehavior':  enumerator value '256' cannot be represented as 'unsigned char', value is '256'
+  (compiling source file '../StarRupture%20SDK/Server/SDK/Engine_functions.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(6611,2): warning C4309: 'initializing': truncation of constant value
+  (compiling source file '../StarRupture%20SDK/Server/SDK/Engine_functions.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(6611,2): warning C4369: 'SDK::ESkinCacheUsage':  enumerator value '256' cannot be represented as 'unsigned char', value is '256'
+  (compiling source file '../StarRupture%20SDK/Server/SDK/Engine_functions.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(6858,2): warning C4309: 'initializing': truncation of constant value
+  (compiling source file '../StarRupture%20SDK/Server/SDK/Engine_functions.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(6858,2): warning C4369: 'SDK::ETextureEncodeSpeedOverride':  enumerator value '256' cannot be represented as 'unsigned char', value is '256'
+  (compiling source file '../StarRupture%20SDK/Server/SDK/Engine_functions.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(7105,2): warning C4309: 'initializing': truncation of constant value
+  (compiling source file '../StarRupture%20SDK/Server/SDK/Engine_functions.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(7105,2): warning C4369: 'SDK::EStreamingSourcePriority':  enumerator value '256' cannot be represented as 'unsigned char', value is '256'
+  (compiling source file '../StarRupture%20SDK/Server/SDK/Engine_functions.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(10335,1): warning C4324: 'SDK::FAnimInstanceProxy': structure was padded due to alignment specifier
+  (compiling source file '../StarRupture%20SDK/Server/SDK/Engine_functions.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_classes.hpp(4023,1): warning C4324: 'SDK::UAnimInstance': structure was padded due to alignment specifier
+  (compiling source file '../StarRupture%20SDK/Server/SDK/Engine_functions.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_classes.hpp(8332,1): warning C4324: 'SDK::UCameraShakeBase': structure was padded due to alignment specifier
+  (compiling source file '../StarRupture%20SDK/Server/SDK/Engine_functions.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_classes.hpp(9572,1): warning C4324: 'SDK::UNetConnection': structure was padded due to alignment specifier
+  (compiling source file '../StarRupture%20SDK/Server/SDK/Engine_functions.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_classes.hpp(32398,1): warning C4324: 'SDK::UProjectileMovementComponent': structure was padded due to alignment specifier
+  (compiling source file '../StarRupture%20SDK/Server/SDK/Engine_functions.cpp')
+  
+  dllmain.cpp
+  plugin.cpp
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\KeepTicking_Plugin\plugin.cpp(41,2): warning C4457: declaration of 'logger' hides function parameter
+      C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\KeepTicking_Plugin\plugin.cpp(33,54):
+      see declaration of 'logger'
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\KeepTicking_Plugin\plugin.cpp(45,2): warning C4457: declaration of 'logger' hides function parameter
+      C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\KeepTicking_Plugin\plugin.cpp(33,54):
+      see declaration of 'logger'
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\KeepTicking_Plugin\plugin.cpp(50,2): warning C4457: declaration of 'logger' hides function parameter
+      C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\KeepTicking_Plugin\plugin.cpp(33,54):
+      see declaration of 'logger'
+  
+  mod_core.cpp
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\UnrealContainers.hpp(188,4): warning C4201: nonstandard extension used: nameless struct/union
+  (compiling source file 'mod_core.cpp')
+      C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\UnrealContainers.hpp(188,4):
+      the template instantiation context (the oldest one first) is
+          C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\UnrealContainers.hpp(183,9):
+          while compiling class template 'UC::ContainerImpl::TSparseArrayElementOrFreeListLink'
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\UnrealContainers.hpp(844,25): warning C4245: '=': conversion from 'int' to 'UC::uint32', signed/unsigned mismatch
+  (compiling source file 'mod_core.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Basic.hpp(844,2): warning C4369: 'SDK::EObjectFlags':  enumerator value '2147483648' cannot be represented as 'int', value is '2147483648'
+  (compiling source file 'mod_core.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\CoreUObject_structs.hpp(606,2): warning C4309: 'initializing': truncation of constant value
+  (compiling source file 'mod_core.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\CoreUObject_structs.hpp(606,2): warning C4369: 'SDK::EInputDeviceMappingPolicy':  enumerator value '-1' cannot be represented as 'unsigned int', value is '-1'
+  (compiling source file 'mod_core.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(2377,2): warning C4309: 'initializing': truncation of constant value
+  (compiling source file 'mod_core.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(2377,2): warning C4369: 'SDK::EMaterialParameterType':  enumerator value '256' cannot be represented as 'unsigned char', value is '256'
+  (compiling source file 'mod_core.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(3451,2): warning C4309: 'initializing': truncation of constant value
+  (compiling source file 'mod_core.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(3451,2): warning C4369: 'SDK::ESoundWaveLoadingBehavior':  enumerator value '256' cannot be represented as 'unsigned char', value is '256'
+  (compiling source file 'mod_core.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(6611,2): warning C4309: 'initializing': truncation of constant value
+  (compiling source file 'mod_core.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(6611,2): warning C4369: 'SDK::ESkinCacheUsage':  enumerator value '256' cannot be represented as 'unsigned char', value is '256'
+  (compiling source file 'mod_core.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(6858,2): warning C4309: 'initializing': truncation of constant value
+  (compiling source file 'mod_core.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(6858,2): warning C4369: 'SDK::ETextureEncodeSpeedOverride':  enumerator value '256' cannot be represented as 'unsigned char', value is '256'
+  (compiling source file 'mod_core.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(7105,2): warning C4309: 'initializing': truncation of constant value
+  (compiling source file 'mod_core.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(7105,2): warning C4369: 'SDK::EStreamingSourcePriority':  enumerator value '256' cannot be represented as 'unsigned char', value is '256'
+  (compiling source file 'mod_core.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(10335,1): warning C4324: 'SDK::FAnimInstanceProxy': structure was padded due to alignment specifier
+  (compiling source file 'mod_core.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_classes.hpp(4023,1): warning C4324: 'SDK::UAnimInstance': structure was padded due to alignment specifier
+  (compiling source file 'mod_core.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_classes.hpp(8332,1): warning C4324: 'SDK::UCameraShakeBase': structure was padded due to alignment specifier
+  (compiling source file 'mod_core.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_classes.hpp(9572,1): warning C4324: 'SDK::UNetConnection': structure was padded due to alignment specifier
+  (compiling source file 'mod_core.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_classes.hpp(32398,1): warning C4324: 'SDK::UProjectileMovementComponent': structure was padded due to alignment specifier
+  (compiling source file 'mod_core.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\KeepTicking_Plugin\mod_core.cpp(43,42): warning C4100: 'scanner': unreferenced parameter
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\KeepTicking_Plugin\mod_core.cpp(35,13): warning C4505: 'OnEngineInitialized': unreferenced function with internal linkage has been removed
+  fake_player.cpp
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\UnrealContainers.hpp(188,4): warning C4201: nonstandard extension used: nameless struct/union
+  (compiling source file '../KeepTicking_Plugin/hooks/fake_player/fake_player.cpp')
+      C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\UnrealContainers.hpp(188,4):
+      the template instantiation context (the oldest one first) is
+          C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\UnrealContainers.hpp(183,9):
+          while compiling class template 'UC::ContainerImpl::TSparseArrayElementOrFreeListLink'
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\UnrealContainers.hpp(844,25): warning C4245: '=': conversion from 'int' to 'UC::uint32', signed/unsigned mismatch
+  (compiling source file '../KeepTicking_Plugin/hooks/fake_player/fake_player.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Basic.hpp(844,2): warning C4369: 'SDK::EObjectFlags':  enumerator value '2147483648' cannot be represented as 'int', value is '2147483648'
+  (compiling source file '../KeepTicking_Plugin/hooks/fake_player/fake_player.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\CoreUObject_structs.hpp(606,2): warning C4309: 'initializing': truncation of constant value
+  (compiling source file '../KeepTicking_Plugin/hooks/fake_player/fake_player.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\CoreUObject_structs.hpp(606,2): warning C4369: 'SDK::EInputDeviceMappingPolicy':  enumerator value '-1' cannot be represented as 'unsigned int', value is '-1'
+  (compiling source file '../KeepTicking_Plugin/hooks/fake_player/fake_player.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(2377,2): warning C4309: 'initializing': truncation of constant value
+  (compiling source file '../KeepTicking_Plugin/hooks/fake_player/fake_player.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(2377,2): warning C4369: 'SDK::EMaterialParameterType':  enumerator value '256' cannot be represented as 'unsigned char', value is '256'
+  (compiling source file '../KeepTicking_Plugin/hooks/fake_player/fake_player.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(3451,2): warning C4309: 'initializing': truncation of constant value
+  (compiling source file '../KeepTicking_Plugin/hooks/fake_player/fake_player.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(3451,2): warning C4369: 'SDK::ESoundWaveLoadingBehavior':  enumerator value '256' cannot be represented as 'unsigned char', value is '256'
+  (compiling source file '../KeepTicking_Plugin/hooks/fake_player/fake_player.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(6611,2): warning C4309: 'initializing': truncation of constant value
+  (compiling source file '../KeepTicking_Plugin/hooks/fake_player/fake_player.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(6611,2): warning C4369: 'SDK::ESkinCacheUsage':  enumerator value '256' cannot be represented as 'unsigned char', value is '256'
+  (compiling source file '../KeepTicking_Plugin/hooks/fake_player/fake_player.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(6858,2): warning C4309: 'initializing': truncation of constant value
+  (compiling source file '../KeepTicking_Plugin/hooks/fake_player/fake_player.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(6858,2): warning C4369: 'SDK::ETextureEncodeSpeedOverride':  enumerator value '256' cannot be represented as 'unsigned char', value is '256'
+  (compiling source file '../KeepTicking_Plugin/hooks/fake_player/fake_player.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(7105,2): warning C4309: 'initializing': truncation of constant value
+  (compiling source file '../KeepTicking_Plugin/hooks/fake_player/fake_player.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(7105,2): warning C4369: 'SDK::EStreamingSourcePriority':  enumerator value '256' cannot be represented as 'unsigned char', value is '256'
+  (compiling source file '../KeepTicking_Plugin/hooks/fake_player/fake_player.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(10335,1): warning C4324: 'SDK::FAnimInstanceProxy': structure was padded due to alignment specifier
+  (compiling source file '../KeepTicking_Plugin/hooks/fake_player/fake_player.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_classes.hpp(4023,1): warning C4324: 'SDK::UAnimInstance': structure was padded due to alignment specifier
+  (compiling source file '../KeepTicking_Plugin/hooks/fake_player/fake_player.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_classes.hpp(8332,1): warning C4324: 'SDK::UCameraShakeBase': structure was padded due to alignment specifier
+  (compiling source file '../KeepTicking_Plugin/hooks/fake_player/fake_player.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_classes.hpp(9572,1): warning C4324: 'SDK::UNetConnection': structure was padded due to alignment specifier
+  (compiling source file '../KeepTicking_Plugin/hooks/fake_player/fake_player.cpp')
+  
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_classes.hpp(32398,1): warning C4324: 'SDK::UProjectileMovementComponent': structure was padded due to alignment specifier
+  (compiling source file '../KeepTicking_Plugin/hooks/fake_player/fake_player.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\ZoneGraph_structs.hpp(57,2): warning C4309: 'initializing': truncation of constant value
-  (compiling source file 'hooks/fake_player/fake_player.cpp')
+  (compiling source file '../KeepTicking_Plugin/hooks/fake_player/fake_player.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\ZoneGraph_structs.hpp(57,2): warning C4369: 'SDK::EZoneLaneLinkType':  enumerator value '256' cannot be represented as 'unsigned char', value is '256'
-  (compiling source file 'hooks/fake_player/fake_player.cpp')
+  (compiling source file '../KeepTicking_Plugin/hooks/fake_player/fake_player.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\ZoneGraph_structs.hpp(71,2): warning C4309: 'initializing': truncation of constant value
-  (compiling source file 'hooks/fake_player/fake_player.cpp')
+  (compiling source file '../KeepTicking_Plugin/hooks/fake_player/fake_player.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\ZoneGraph_structs.hpp(71,2): warning C4369: 'SDK::EZoneLaneLinkFlags':  enumerator value '256' cannot be represented as 'unsigned char', value is '256'
-  (compiling source file 'hooks/fake_player/fake_player.cpp')
+  (compiling source file '../KeepTicking_Plugin/hooks/fake_player/fake_player.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\AuNotification_structs.hpp(21,2): warning C4309: 'initializing': truncation of constant value
-  (compiling source file 'hooks/fake_player/fake_player.cpp')
+  (compiling source file '../KeepTicking_Plugin/hooks/fake_player/fake_player.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\AuNotification_structs.hpp(21,2): warning C4369: 'SDK::EFAuNotificationType':  enumerator value '-1' cannot be represented as 'unsigned int', value is '-1'
-  (compiling source file 'hooks/fake_player/fake_player.cpp')
+  (compiling source file '../KeepTicking_Plugin/hooks/fake_player/fake_player.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Chimera_structs.hpp(525,2): warning C4309: 'initializing': truncation of constant value
-  (compiling source file 'hooks/fake_player/fake_player.cpp')
+  (compiling source file '../KeepTicking_Plugin/hooks/fake_player/fake_player.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Chimera_structs.hpp(525,2): warning C4369: 'SDK::ECrBuildingItemStorageType':  enumerator value '-1' cannot be represented as 'unsigned int', value is '-1'
-  (compiling source file 'hooks/fake_player/fake_player.cpp')
+  (compiling source file '../KeepTicking_Plugin/hooks/fake_player/fake_player.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\PCG_structs.hpp(463,2): warning C4309: 'initializing': truncation of constant value
-  (compiling source file 'hooks/fake_player/fake_player.cpp')
+  (compiling source file '../KeepTicking_Plugin/hooks/fake_player/fake_player.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\PCG_structs.hpp(463,2): warning C4369: 'SDK::EPCGKernelAttributeType':  enumerator value '256' cannot be represented as 'unsigned char', value is '256'
-  (compiling source file 'hooks/fake_player/fake_player.cpp')
+  (compiling source file '../KeepTicking_Plugin/hooks/fake_player/fake_player.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\PCG_structs.hpp(591,2): warning C4309: 'initializing': truncation of constant value
-  (compiling source file 'hooks/fake_player/fake_player.cpp')
+  (compiling source file '../KeepTicking_Plugin/hooks/fake_player/fake_player.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\PCG_structs.hpp(591,2): warning C4369: 'SDK::EPCGMetadataTypes':  enumerator value '256' cannot be represented as 'unsigned char', value is '256'
-  (compiling source file 'hooks/fake_player/fake_player.cpp')
+  (compiling source file '../KeepTicking_Plugin/hooks/fake_player/fake_player.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\PCG_structs.hpp(626,2): warning C4309: 'initializing': truncation of constant value
-  (compiling source file 'hooks/fake_player/fake_player.cpp')
+  (compiling source file '../KeepTicking_Plugin/hooks/fake_player/fake_player.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\PCG_structs.hpp(626,2): warning C4369: 'SDK::EPCGMetadataDomainFlag':  enumerator value '256' cannot be represented as 'unsigned char', value is '256'
-  (compiling source file 'hooks/fake_player/fake_player.cpp')
+  (compiling source file '../KeepTicking_Plugin/hooks/fake_player/fake_player.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\PCG_structs.hpp(1824,2): warning C4309: 'initializing': truncation of constant value
-  (compiling source file 'hooks/fake_player/fake_player.cpp')
+  (compiling source file '../KeepTicking_Plugin/hooks/fake_player/fake_player.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\PCG_structs.hpp(1824,2): warning C4369: 'SDK::EPCGPointProperties':  enumerator value '256' cannot be represented as 'unsigned char', value is '256'
-  (compiling source file 'hooks/fake_player/fake_player.cpp')
+  (compiling source file '../KeepTicking_Plugin/hooks/fake_player/fake_player.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\ComputeFramework_structs.hpp(36,2): warning C4309: 'initializing': truncation of constant value
-  (compiling source file 'hooks/fake_player/fake_player.cpp')
+  (compiling source file '../KeepTicking_Plugin/hooks/fake_player/fake_player.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\ComputeFramework_structs.hpp(36,2): warning C4369: 'SDK::EShaderFundamentalType':  enumerator value '256' cannot be represented as 'unsigned char', value is '256'
-  (compiling source file 'hooks/fake_player/fake_player.cpp')
+  (compiling source file '../KeepTicking_Plugin/hooks/fake_player/fake_player.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\ReplicationGraph_classes.hpp(51,1): warning C4324: 'SDK::UReplicationGraph': structure was padded due to alignment specifier
-  (compiling source file 'hooks/fake_player/fake_player.cpp')
+  (compiling source file '../KeepTicking_Plugin/hooks/fake_player/fake_player.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\UnrealContainers.hpp(214,1): warning C4324: 'UC::TPair<KeyElementType,ValueElementType>': structure was padded due to alignment specifier
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\UnrealContainers.hpp(214,1): warning C4324:         with
@@ -126,7 +361,7 @@ C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\Unr
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\UnrealContainers.hpp(214,1): warning C4324:             KeyElementType=SDK::EProfessionType,
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\UnrealContainers.hpp(214,1): warning C4324:             ValueElementType=SDK::FColor
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\UnrealContainers.hpp(214,1): warning C4324:         ]
-  (compiling source file 'hooks/fake_player/fake_player.cpp')
+  (compiling source file '../KeepTicking_Plugin/hooks/fake_player/fake_player.cpp')
       C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\UnrealContainers.hpp(214,1):
       the template instantiation context (the oldest one first) is
           C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Chimera_classes.hpp(13685,48):
@@ -146,71 +381,76 @@ C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\Unr
               ValueElementType=SDK::FColor
           ]
   
+  plugin_config.cpp
   sdk_helpers.cpp
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\UnrealContainers.hpp(188,4): warning C4201: nonstandard extension used: nameless struct/union
-  (compiling source file 'sdk_helpers.cpp')
+  (compiling source file '../KeepTicking_Plugin/sdk_helpers.cpp')
       C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\UnrealContainers.hpp(188,4):
       the template instantiation context (the oldest one first) is
           C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\UnrealContainers.hpp(183,9):
           while compiling class template 'UC::ContainerImpl::TSparseArrayElementOrFreeListLink'
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\UnrealContainers.hpp(844,25): warning C4245: '=': conversion from 'int' to 'UC::uint32', signed/unsigned mismatch
-  (compiling source file 'sdk_helpers.cpp')
+  (compiling source file '../KeepTicking_Plugin/sdk_helpers.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Basic.hpp(844,2): warning C4369: 'SDK::EObjectFlags':  enumerator value '2147483648' cannot be represented as 'int', value is '2147483648'
-  (compiling source file 'sdk_helpers.cpp')
+  (compiling source file '../KeepTicking_Plugin/sdk_helpers.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\CoreUObject_structs.hpp(606,2): warning C4309: 'initializing': truncation of constant value
-  (compiling source file 'sdk_helpers.cpp')
+  (compiling source file '../KeepTicking_Plugin/sdk_helpers.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\CoreUObject_structs.hpp(606,2): warning C4369: 'SDK::EInputDeviceMappingPolicy':  enumerator value '-1' cannot be represented as 'unsigned int', value is '-1'
-  (compiling source file 'sdk_helpers.cpp')
+  (compiling source file '../KeepTicking_Plugin/sdk_helpers.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(2377,2): warning C4309: 'initializing': truncation of constant value
-  (compiling source file 'sdk_helpers.cpp')
+  (compiling source file '../KeepTicking_Plugin/sdk_helpers.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(2377,2): warning C4369: 'SDK::EMaterialParameterType':  enumerator value '256' cannot be represented as 'unsigned char', value is '256'
-  (compiling source file 'sdk_helpers.cpp')
+  (compiling source file '../KeepTicking_Plugin/sdk_helpers.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(3451,2): warning C4309: 'initializing': truncation of constant value
-  (compiling source file 'sdk_helpers.cpp')
+  (compiling source file '../KeepTicking_Plugin/sdk_helpers.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(3451,2): warning C4369: 'SDK::ESoundWaveLoadingBehavior':  enumerator value '256' cannot be represented as 'unsigned char', value is '256'
-  (compiling source file 'sdk_helpers.cpp')
+  (compiling source file '../KeepTicking_Plugin/sdk_helpers.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(6611,2): warning C4309: 'initializing': truncation of constant value
-  (compiling source file 'sdk_helpers.cpp')
+  (compiling source file '../KeepTicking_Plugin/sdk_helpers.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(6611,2): warning C4369: 'SDK::ESkinCacheUsage':  enumerator value '256' cannot be represented as 'unsigned char', value is '256'
-  (compiling source file 'sdk_helpers.cpp')
+  (compiling source file '../KeepTicking_Plugin/sdk_helpers.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(6858,2): warning C4309: 'initializing': truncation of constant value
-  (compiling source file 'sdk_helpers.cpp')
+  (compiling source file '../KeepTicking_Plugin/sdk_helpers.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(6858,2): warning C4369: 'SDK::ETextureEncodeSpeedOverride':  enumerator value '256' cannot be represented as 'unsigned char', value is '256'
-  (compiling source file 'sdk_helpers.cpp')
+  (compiling source file '../KeepTicking_Plugin/sdk_helpers.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(7105,2): warning C4309: 'initializing': truncation of constant value
-  (compiling source file 'sdk_helpers.cpp')
+  (compiling source file '../KeepTicking_Plugin/sdk_helpers.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(7105,2): warning C4369: 'SDK::EStreamingSourcePriority':  enumerator value '256' cannot be represented as 'unsigned char', value is '256'
-  (compiling source file 'sdk_helpers.cpp')
+  (compiling source file '../KeepTicking_Plugin/sdk_helpers.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(10335,1): warning C4324: 'SDK::FAnimInstanceProxy': structure was padded due to alignment specifier
-  (compiling source file 'sdk_helpers.cpp')
+  (compiling source file '../KeepTicking_Plugin/sdk_helpers.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_classes.hpp(4023,1): warning C4324: 'SDK::UAnimInstance': structure was padded due to alignment specifier
-  (compiling source file 'sdk_helpers.cpp')
+  (compiling source file '../KeepTicking_Plugin/sdk_helpers.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_classes.hpp(8332,1): warning C4324: 'SDK::UCameraShakeBase': structure was padded due to alignment specifier
-  (compiling source file 'sdk_helpers.cpp')
+  (compiling source file '../KeepTicking_Plugin/sdk_helpers.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_classes.hpp(9572,1): warning C4324: 'SDK::UNetConnection': structure was padded due to alignment specifier
-  (compiling source file 'sdk_helpers.cpp')
+  (compiling source file '../KeepTicking_Plugin/sdk_helpers.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_classes.hpp(32398,1): warning C4324: 'SDK::UProjectileMovementComponent': structure was padded due to alignment specifier
-  (compiling source file 'sdk_helpers.cpp')
+  (compiling source file '../KeepTicking_Plugin/sdk_helpers.cpp')
   
   Generating Code...
-     Creating library C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\build\Server Debug\alienx_mods\KeepTicking.lib and object C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\build\Server Debug\alienx_mods\KeepTicking.exp
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_functions.cpp(38225,1): warning C4702: unreachable code
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_functions.cpp(38227,1): warning C4702: unreachable code
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_functions.cpp(38228,1): warning C4702: unreachable code
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_functions.cpp(38230,1): warning C4702: unreachable code
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_functions.cpp(38233,1): warning C4702: unreachable code
   KeepTicking_Plugin.vcxproj -> C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\build\Server Debug\alienx_mods\KeepTicking.dll

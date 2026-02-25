@@ -319,7 +319,6 @@
     <ClInclude Include="plugin.h" />
     <ClInclude Include="plugin_config.h" />
     <ClInclude Include="plugin_helpers.h" />
-    <ClInclude Include="plugin_interface.h" />
     <ClInclude Include="RailJunctionFixer.h" />
     <ClInclude Include="StringHelpers.h" />
   </ItemGroup>

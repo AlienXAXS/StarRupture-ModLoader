@@ -5,6 +5,8 @@
 #include "game/world_begin_play/world_begin_play.h"
 #include "game/engine_init/engine_init.h"
 #include "game/engine_shutdown/engine_shutdown.h"
+#include "game/save_loaded/save_loaded.h"
+#include "game/experience_load_complete/experience_load_complete.h"
 #include <unordered_map>
 #include <mutex>
 
@@ -197,6 +199,78 @@ namespace ModLoader
 		LogDebug(L"[HooksInterface] EngineShutdown callback unregistered for plugin");
 	}
 
+	static void HooksRegisterAnyWorldBeginPlayCallback(void (*callback)(SDK::UWorld*, const char*))
+	{
+		if (!callback)
+		{
+			LogWarn(L"[HooksInterface] RegisterAnyWorldBeginPlayCallback: null callback");
+			return;
+		}
+
+		Hooks::WorldBeginPlay::RegisterAnyWorldCallback(callback);
+		LogDebug(L"[HooksInterface] AnyWorldBeginPlay callback registered for plugin");
+	}
+
+	static void HooksUnregisterAnyWorldBeginPlayCallback(void (*callback)(SDK::UWorld*, const char*))
+	{
+		if (!callback)
+		{
+			LogWarn(L"[HooksInterface] UnregisterAnyWorldBeginPlayCallback: null callback");
+			return;
+		}
+
+		Hooks::WorldBeginPlay::UnregisterAnyWorldCallback(callback);
+		LogDebug(L"[HooksInterface] AnyWorldBeginPlay callback unregistered for plugin");
+	}
+
+	static void HooksRegisterSaveLoadedCallback(void (*callback)())
+	{
+		if (!callback)
+		{
+			LogWarn(L"[HooksInterface] RegisterSaveLoadedCallback: null callback");
+			return;
+		}
+
+		Hooks::SaveLoaded::RegisterPluginCallback(callback);
+		LogDebug(L"[HooksInterface] SaveLoaded callback registered for plugin");
+	}
+
+	static void HooksUnregisterSaveLoadedCallback(void (*callback)())
+	{
+		if (!callback)
+		{
+			LogWarn(L"[HooksInterface] UnregisterSaveLoadedCallback: null callback");
+			return;
+		}
+
+		Hooks::SaveLoaded::UnregisterPluginCallback(callback);
+		LogDebug(L"[HooksInterface] SaveLoaded callback unregistered for plugin");
+	}
+
+	static void HooksRegisterExperienceLoadCompleteCallback(void (*callback)())
+	{
+		if (!callback)
+		{
+			LogWarn(L"[HooksInterface] RegisterExperienceLoadCompleteCallback: null callback");
+			return;
+		}
+
+		Hooks::ExperienceLoadComplete::RegisterPluginCallback(callback);
+		LogDebug(L"[HooksInterface] ExperienceLoadComplete callback registered for plugin");
+	}
+
+	static void HooksUnregisterExperienceLoadCompleteCallback(void (*callback)())
+	{
+		if (!callback)
+		{
+			LogWarn(L"[HooksInterface] UnregisterExperienceLoadCompleteCallback: null callback");
+			return;
+		}
+
+		Hooks::ExperienceLoadComplete::UnregisterPluginCallback(callback);
+		LogDebug(L"[HooksInterface] ExperienceLoadComplete callback unregistered for plugin");
+	}
+
 	// --- Engine allocator wrappers ---
 
 	static void* HooksEngineAlloc(size_t count, uint32_t alignment)
@@ -230,7 +304,13 @@ namespace ModLoader
 		HooksUnregisterEngineShutdownCallback,
 		HooksEngineAlloc,
 		HooksEngineFree,
-		HooksIsEngineAllocatorAvailable
+		HooksIsEngineAllocatorAvailable,
+		HooksRegisterAnyWorldBeginPlayCallback,
+		HooksUnregisterAnyWorldBeginPlayCallback,
+		HooksRegisterSaveLoadedCallback,
+		HooksUnregisterSaveLoadedCallback,
+		HooksRegisterExperienceLoadCompleteCallback,
+		HooksUnregisterExperienceLoadCompleteCallback
 	};
 
 	IPluginHooks* GetPluginHooks()

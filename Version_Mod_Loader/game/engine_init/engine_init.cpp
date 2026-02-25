@@ -5,6 +5,7 @@
 #include "../../engine_allocator.h"
 #include <vector>
 #include <algorithm>
+#include "game/scan_patterns.h"
 
 namespace Hooks::EngineInit
 {
@@ -139,8 +140,8 @@ namespace Hooks::EngineInit
 
 		// Try Hook 1: FEngineLoop::Init (primary)
 		{
-			const char* pattern = 
-				"4C 8B DC 55 57 49 8D AB ?? ?? ?? ?? 48 81 EC ?? ?? ?? ?? 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 85 ?? ?? ?? ?? 49 89 5B ?? 48 8D 15";
+			const char* pattern = ScanPatterns::FEngineLoop_Init;
+				
 
 			ModLoader::LogInfo(L"[EngineInit] Scanning for FEngineLoop::Init...");
 			ModLoader::LogDebug(L"[EngineInit]   Pattern: %S", pattern);
@@ -179,8 +180,8 @@ namespace Hooks::EngineInit
 
 		// Try Hook 2: UGameEngine::Init (fallback)
 		{
-			const char* pattern = 
-				"48 89 5C 24 ?? 48 89 74 24 ?? 55 57 41 54 41 56 41 57 48 8D AC 24 ?? ?? ?? ?? 48 81 EC ?? ?? ?? ?? 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 85 ?? ?? ?? ?? 45 33 E4 48 89 4D";
+			const char* pattern = ScanPatterns::UGameEngine_Init;
+				
 
 			ModLoader::LogInfo(L"[EngineInit] Scanning for UGameEngine::Init (fallback)...");
 			ModLoader::LogDebug(L"[EngineInit]   Pattern: %S", pattern);

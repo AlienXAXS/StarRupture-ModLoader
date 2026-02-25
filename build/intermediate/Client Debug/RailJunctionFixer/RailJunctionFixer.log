@@ -1,132 +1,42 @@
-﻿  Basic.cpp
+﻿  plugin.cpp
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Client\SDK\Basic.hpp(844,2): warning C4369: 'SDK::EObjectFlags':  enumerator value '2147483648' cannot be represented as 'int', value is '2147483648'
-  (compiling source file '../StarRupture%20SDK/Client/SDK/Basic.cpp')
+  (compiling source file 'plugin.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Client\SDK\CoreUObject_structs.hpp(606,2): warning C4309: 'initializing': truncation of constant value
-  (compiling source file '../StarRupture%20SDK/Client/SDK/Basic.cpp')
+  (compiling source file 'plugin.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Client\SDK\CoreUObject_structs.hpp(606,2): warning C4369: 'SDK::EInputDeviceMappingPolicy':  enumerator value '-1' cannot be represented as 'unsigned int', value is '-1'
-  (compiling source file '../StarRupture%20SDK/Client/SDK/Basic.cpp')
+  (compiling source file 'plugin.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Client\SDK\Engine_structs.hpp(2377,2): warning C4309: 'initializing': truncation of constant value
-  (compiling source file '../StarRupture%20SDK/Client/SDK/Basic.cpp')
+  (compiling source file 'plugin.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Client\SDK\Engine_structs.hpp(2377,2): warning C4369: 'SDK::EMaterialParameterType':  enumerator value '256' cannot be represented as 'unsigned char', value is '256'
-  (compiling source file '../StarRupture%20SDK/Client/SDK/Basic.cpp')
+  (compiling source file 'plugin.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Client\SDK\Engine_structs.hpp(3451,2): warning C4309: 'initializing': truncation of constant value
-  (compiling source file '../StarRupture%20SDK/Client/SDK/Basic.cpp')
+  (compiling source file 'plugin.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Client\SDK\Engine_structs.hpp(3451,2): warning C4369: 'SDK::ESoundWaveLoadingBehavior':  enumerator value '256' cannot be represented as 'unsigned char', value is '256'
-  (compiling source file '../StarRupture%20SDK/Client/SDK/Basic.cpp')
+  (compiling source file 'plugin.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Client\SDK\Engine_structs.hpp(6611,2): warning C4309: 'initializing': truncation of constant value
-  (compiling source file '../StarRupture%20SDK/Client/SDK/Basic.cpp')
+  (compiling source file 'plugin.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Client\SDK\Engine_structs.hpp(6611,2): warning C4369: 'SDK::ESkinCacheUsage':  enumerator value '256' cannot be represented as 'unsigned char', value is '256'
-  (compiling source file '../StarRupture%20SDK/Client/SDK/Basic.cpp')
+  (compiling source file 'plugin.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Client\SDK\Engine_structs.hpp(6858,2): warning C4309: 'initializing': truncation of constant value
-  (compiling source file '../StarRupture%20SDK/Client/SDK/Basic.cpp')
+  (compiling source file 'plugin.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Client\SDK\Engine_structs.hpp(6858,2): warning C4369: 'SDK::ETextureEncodeSpeedOverride':  enumerator value '256' cannot be represented as 'unsigned char', value is '256'
-  (compiling source file '../StarRupture%20SDK/Client/SDK/Basic.cpp')
+  (compiling source file 'plugin.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Client\SDK\Engine_structs.hpp(7105,2): warning C4309: 'initializing': truncation of constant value
-  (compiling source file '../StarRupture%20SDK/Client/SDK/Basic.cpp')
+  (compiling source file 'plugin.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Client\SDK\Engine_structs.hpp(7105,2): warning C4369: 'SDK::EStreamingSourcePriority':  enumerator value '256' cannot be represented as 'unsigned char', value is '256'
-  (compiling source file '../StarRupture%20SDK/Client/SDK/Basic.cpp')
+  (compiling source file 'plugin.cpp')
   
-  CoreUObject_functions.cpp
-C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Client\SDK\Basic.hpp(844,2): warning C4369: 'SDK::EObjectFlags':  enumerator value '2147483648' cannot be represented as 'int', value is '2147483648'
-  (compiling source file '../StarRupture%20SDK/Client/SDK/CoreUObject_functions.cpp')
-  
-C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Client\SDK\CoreUObject_structs.hpp(606,2): warning C4309: 'initializing': truncation of constant value
-  (compiling source file '../StarRupture%20SDK/Client/SDK/CoreUObject_functions.cpp')
-  
-C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Client\SDK\CoreUObject_structs.hpp(606,2): warning C4369: 'SDK::EInputDeviceMappingPolicy':  enumerator value '-1' cannot be represented as 'unsigned int', value is '-1'
-  (compiling source file '../StarRupture%20SDK/Client/SDK/CoreUObject_functions.cpp')
-  
-  Engine_functions.cpp
-C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Client\SDK\Basic.hpp(844,2): warning C4369: 'SDK::EObjectFlags':  enumerator value '2147483648' cannot be represented as 'int', value is '2147483648'
-  (compiling source file '../StarRupture%20SDK/Client/SDK/Engine_functions.cpp')
-  
-C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Client\SDK\CoreUObject_structs.hpp(606,2): warning C4309: 'initializing': truncation of constant value
-  (compiling source file '../StarRupture%20SDK/Client/SDK/Engine_functions.cpp')
-  
-C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Client\SDK\CoreUObject_structs.hpp(606,2): warning C4369: 'SDK::EInputDeviceMappingPolicy':  enumerator value '-1' cannot be represented as 'unsigned int', value is '-1'
-  (compiling source file '../StarRupture%20SDK/Client/SDK/Engine_functions.cpp')
-  
-C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Client\SDK\Engine_structs.hpp(2377,2): warning C4309: 'initializing': truncation of constant value
-  (compiling source file '../StarRupture%20SDK/Client/SDK/Engine_functions.cpp')
-  
-C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Client\SDK\Engine_structs.hpp(2377,2): warning C4369: 'SDK::EMaterialParameterType':  enumerator value '256' cannot be represented as 'unsigned char', value is '256'
-  (compiling source file '../StarRupture%20SDK/Client/SDK/Engine_functions.cpp')
-  
-C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Client\SDK\Engine_structs.hpp(3451,2): warning C4309: 'initializing': truncation of constant value
-  (compiling source file '../StarRupture%20SDK/Client/SDK/Engine_functions.cpp')
-  
-C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Client\SDK\Engine_structs.hpp(3451,2): warning C4369: 'SDK::ESoundWaveLoadingBehavior':  enumerator value '256' cannot be represented as 'unsigned char', value is '256'
-  (compiling source file '../StarRupture%20SDK/Client/SDK/Engine_functions.cpp')
-  
-C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Client\SDK\Engine_structs.hpp(6611,2): warning C4309: 'initializing': truncation of constant value
-  (compiling source file '../StarRupture%20SDK/Client/SDK/Engine_functions.cpp')
-  
-C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Client\SDK\Engine_structs.hpp(6611,2): warning C4369: 'SDK::ESkinCacheUsage':  enumerator value '256' cannot be represented as 'unsigned char', value is '256'
-  (compiling source file '../StarRupture%20SDK/Client/SDK/Engine_functions.cpp')
-  
-C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Client\SDK\Engine_structs.hpp(6858,2): warning C4309: 'initializing': truncation of constant value
-  (compiling source file '../StarRupture%20SDK/Client/SDK/Engine_functions.cpp')
-  
-C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Client\SDK\Engine_structs.hpp(6858,2): warning C4369: 'SDK::ETextureEncodeSpeedOverride':  enumerator value '256' cannot be represented as 'unsigned char', value is '256'
-  (compiling source file '../StarRupture%20SDK/Client/SDK/Engine_functions.cpp')
-  
-C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Client\SDK\Engine_structs.hpp(7105,2): warning C4309: 'initializing': truncation of constant value
-  (compiling source file '../StarRupture%20SDK/Client/SDK/Engine_functions.cpp')
-  
-C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Client\SDK\Engine_structs.hpp(7105,2): warning C4369: 'SDK::EStreamingSourcePriority':  enumerator value '256' cannot be represented as 'unsigned char', value is '256'
-  (compiling source file '../StarRupture%20SDK/Client/SDK/Engine_functions.cpp')
-  
-  LogisticsFragmentFixer.cpp
-C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Client\SDK\Basic.hpp(844,2): warning C4369: 'SDK::EObjectFlags':  enumerator value '2147483648' cannot be represented as 'int', value is '2147483648'
-  (compiling source file 'LogisticsFragmentFixer.cpp')
-  
-C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Client\SDK\CoreUObject_structs.hpp(606,2): warning C4309: 'initializing': truncation of constant value
-  (compiling source file 'LogisticsFragmentFixer.cpp')
-  
-C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Client\SDK\CoreUObject_structs.hpp(606,2): warning C4369: 'SDK::EInputDeviceMappingPolicy':  enumerator value '-1' cannot be represented as 'unsigned int', value is '-1'
-  (compiling source file 'LogisticsFragmentFixer.cpp')
-  
-C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Client\SDK\Engine_structs.hpp(2377,2): warning C4309: 'initializing': truncation of constant value
-  (compiling source file 'LogisticsFragmentFixer.cpp')
-  
-C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Client\SDK\Engine_structs.hpp(2377,2): warning C4369: 'SDK::EMaterialParameterType':  enumerator value '256' cannot be represented as 'unsigned char', value is '256'
-  (compiling source file 'LogisticsFragmentFixer.cpp')
-  
-C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Client\SDK\Engine_structs.hpp(3451,2): warning C4309: 'initializing': truncation of constant value
-  (compiling source file 'LogisticsFragmentFixer.cpp')
-  
-C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Client\SDK\Engine_structs.hpp(3451,2): warning C4369: 'SDK::ESoundWaveLoadingBehavior':  enumerator value '256' cannot be represented as 'unsigned char', value is '256'
-  (compiling source file 'LogisticsFragmentFixer.cpp')
-  
-C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Client\SDK\Engine_structs.hpp(6611,2): warning C4309: 'initializing': truncation of constant value
-  (compiling source file 'LogisticsFragmentFixer.cpp')
-  
-C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Client\SDK\Engine_structs.hpp(6611,2): warning C4369: 'SDK::ESkinCacheUsage':  enumerator value '256' cannot be represented as 'unsigned char', value is '256'
-  (compiling source file 'LogisticsFragmentFixer.cpp')
-  
-C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Client\SDK\Engine_structs.hpp(6858,2): warning C4309: 'initializing': truncation of constant value
-  (compiling source file 'LogisticsFragmentFixer.cpp')
-  
-C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Client\SDK\Engine_structs.hpp(6858,2): warning C4369: 'SDK::ETextureEncodeSpeedOverride':  enumerator value '256' cannot be represented as 'unsigned char', value is '256'
-  (compiling source file 'LogisticsFragmentFixer.cpp')
-  
-C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Client\SDK\Engine_structs.hpp(7105,2): warning C4309: 'initializing': truncation of constant value
-  (compiling source file 'LogisticsFragmentFixer.cpp')
-  
-C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Client\SDK\Engine_structs.hpp(7105,2): warning C4369: 'SDK::EStreamingSourcePriority':  enumerator value '256' cannot be represented as 'unsigned char', value is '256'
-  (compiling source file 'LogisticsFragmentFixer.cpp')
-  
-  Generating Code...
+     Creating library C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\build\Client Debug\alienx_mods\RailJunctionFixer.lib and object C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\build\Client Debug\alienx_mods\RailJunctionFixer.exp
   RailJunctionFixer.vcxproj -> C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\build\Client Debug\alienx_mods\RailJunctionFixer.dll

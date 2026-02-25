@@ -5,6 +5,7 @@
 #include "../../engine_allocator.h"
 #include <vector>
 #include <algorithm>
+#include "game/scan_patterns.h"
 
 namespace Hooks::EngineShutdown
 {
@@ -103,8 +104,8 @@ namespace Hooks::EngineShutdown
 
 		// Hook 1: FEngineLoop::Exit (primary)
 		{
-			const char* pattern =
-				"40 53 55 56 57 48 83 EC ?? ?? ?? ?? 48 8B F9 FF 50";
+			const char* pattern = ScanPatterns::FEngineLoop_Exit;
+				
 
 			ModLoader::LogInfo(L"[EngineShutdown] Scanning for FEngineLoop::Exit...");
 			ModLoader::LogDebug(L"[EngineShutdown]   Pattern: %S", pattern);
@@ -139,8 +140,7 @@ namespace Hooks::EngineShutdown
 
 		// Hook 2: UEngine::PreExit (fallback)
 		{
-			const char* pattern =
-				"E8 ?? ?? ?? ?? 48 83 3D ?? ?? ?? ?? ?? 75 ?? 4C 8D 0D ?? ?? ?? ?? 41 B8 ?? ?? ?? ?? 48 8D 15 ?? ?? ?? ?? 48 8D 0D ?? ?? ?? ?? E8 ?? ?? ?? ?? 84 C0 74 ?? 90 ?? 48 8B 0D ?? ?? ?? ?? 48 8B 15";
+			const char* pattern = ScanPatterns::UEngine_PreExit;
 
 			ModLoader::LogInfo(L"[EngineShutdown] Scanning for UEngine::PreExit (fallback)...");
 			ModLoader::LogDebug(L"[EngineShutdown]   Pattern: %S", pattern);

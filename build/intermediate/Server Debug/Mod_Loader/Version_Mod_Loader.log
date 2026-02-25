@@ -159,125 +159,125 @@ C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK
   engine_shutdown.cpp
   world_begin_play.cpp
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\UnrealContainers.hpp(188,4): warning C4201: nonstandard extension used: nameless struct/union
-  (compiling source file '../Version_Mod_Loader/game/world_begin_play/world_begin_play.cpp')
+  (compiling source file 'game/world_begin_play/world_begin_play.cpp')
       C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\UnrealContainers.hpp(188,4):
       the template instantiation context (the oldest one first) is
           C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\UnrealContainers.hpp(183,9):
           while compiling class template 'UC::ContainerImpl::TSparseArrayElementOrFreeListLink'
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\UnrealContainers.hpp(844,25): warning C4245: '=': conversion from 'int' to 'UC::uint32', signed/unsigned mismatch
-  (compiling source file '../Version_Mod_Loader/game/world_begin_play/world_begin_play.cpp')
+  (compiling source file 'game/world_begin_play/world_begin_play.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Basic.hpp(844,2): warning C4369: 'SDK::EObjectFlags':  enumerator value '2147483648' cannot be represented as 'int', value is '2147483648'
-  (compiling source file '../Version_Mod_Loader/game/world_begin_play/world_begin_play.cpp')
+  (compiling source file 'game/world_begin_play/world_begin_play.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\CoreUObject_structs.hpp(606,2): warning C4309: 'initializing': truncation of constant value
-  (compiling source file '../Version_Mod_Loader/game/world_begin_play/world_begin_play.cpp')
+  (compiling source file 'game/world_begin_play/world_begin_play.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\CoreUObject_structs.hpp(606,2): warning C4369: 'SDK::EInputDeviceMappingPolicy':  enumerator value '-1' cannot be represented as 'unsigned int', value is '-1'
-  (compiling source file '../Version_Mod_Loader/game/world_begin_play/world_begin_play.cpp')
+  (compiling source file 'game/world_begin_play/world_begin_play.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(2377,2): warning C4309: 'initializing': truncation of constant value
-  (compiling source file '../Version_Mod_Loader/game/world_begin_play/world_begin_play.cpp')
+  (compiling source file 'game/world_begin_play/world_begin_play.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(2377,2): warning C4369: 'SDK::EMaterialParameterType':  enumerator value '256' cannot be represented as 'unsigned char', value is '256'
-  (compiling source file '../Version_Mod_Loader/game/world_begin_play/world_begin_play.cpp')
+  (compiling source file 'game/world_begin_play/world_begin_play.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(3451,2): warning C4309: 'initializing': truncation of constant value
-  (compiling source file '../Version_Mod_Loader/game/world_begin_play/world_begin_play.cpp')
+  (compiling source file 'game/world_begin_play/world_begin_play.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(3451,2): warning C4369: 'SDK::ESoundWaveLoadingBehavior':  enumerator value '256' cannot be represented as 'unsigned char', value is '256'
-  (compiling source file '../Version_Mod_Loader/game/world_begin_play/world_begin_play.cpp')
+  (compiling source file 'game/world_begin_play/world_begin_play.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(6611,2): warning C4309: 'initializing': truncation of constant value
-  (compiling source file '../Version_Mod_Loader/game/world_begin_play/world_begin_play.cpp')
+  (compiling source file 'game/world_begin_play/world_begin_play.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(6611,2): warning C4369: 'SDK::ESkinCacheUsage':  enumerator value '256' cannot be represented as 'unsigned char', value is '256'
-  (compiling source file '../Version_Mod_Loader/game/world_begin_play/world_begin_play.cpp')
+  (compiling source file 'game/world_begin_play/world_begin_play.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(6858,2): warning C4309: 'initializing': truncation of constant value
-  (compiling source file '../Version_Mod_Loader/game/world_begin_play/world_begin_play.cpp')
+  (compiling source file 'game/world_begin_play/world_begin_play.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(6858,2): warning C4369: 'SDK::ETextureEncodeSpeedOverride':  enumerator value '256' cannot be represented as 'unsigned char', value is '256'
-  (compiling source file '../Version_Mod_Loader/game/world_begin_play/world_begin_play.cpp')
+  (compiling source file 'game/world_begin_play/world_begin_play.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(7105,2): warning C4309: 'initializing': truncation of constant value
-  (compiling source file '../Version_Mod_Loader/game/world_begin_play/world_begin_play.cpp')
+  (compiling source file 'game/world_begin_play/world_begin_play.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(7105,2): warning C4369: 'SDK::EStreamingSourcePriority':  enumerator value '256' cannot be represented as 'unsigned char', value is '256'
-  (compiling source file '../Version_Mod_Loader/game/world_begin_play/world_begin_play.cpp')
+  (compiling source file 'game/world_begin_play/world_begin_play.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_structs.hpp(10335,1): warning C4324: 'SDK::FAnimInstanceProxy': structure was padded due to alignment specifier
-  (compiling source file '../Version_Mod_Loader/game/world_begin_play/world_begin_play.cpp')
+  (compiling source file 'game/world_begin_play/world_begin_play.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_classes.hpp(4023,1): warning C4324: 'SDK::UAnimInstance': structure was padded due to alignment specifier
-  (compiling source file '../Version_Mod_Loader/game/world_begin_play/world_begin_play.cpp')
+  (compiling source file 'game/world_begin_play/world_begin_play.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_classes.hpp(8332,1): warning C4324: 'SDK::UCameraShakeBase': structure was padded due to alignment specifier
-  (compiling source file '../Version_Mod_Loader/game/world_begin_play/world_begin_play.cpp')
+  (compiling source file 'game/world_begin_play/world_begin_play.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_classes.hpp(9572,1): warning C4324: 'SDK::UNetConnection': structure was padded due to alignment specifier
-  (compiling source file '../Version_Mod_Loader/game/world_begin_play/world_begin_play.cpp')
+  (compiling source file 'game/world_begin_play/world_begin_play.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_classes.hpp(32398,1): warning C4324: 'SDK::UProjectileMovementComponent': structure was padded due to alignment specifier
-  (compiling source file '../Version_Mod_Loader/game/world_begin_play/world_begin_play.cpp')
+  (compiling source file 'game/world_begin_play/world_begin_play.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\ZoneGraph_structs.hpp(57,2): warning C4309: 'initializing': truncation of constant value
-  (compiling source file '../Version_Mod_Loader/game/world_begin_play/world_begin_play.cpp')
+  (compiling source file 'game/world_begin_play/world_begin_play.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\ZoneGraph_structs.hpp(57,2): warning C4369: 'SDK::EZoneLaneLinkType':  enumerator value '256' cannot be represented as 'unsigned char', value is '256'
-  (compiling source file '../Version_Mod_Loader/game/world_begin_play/world_begin_play.cpp')
+  (compiling source file 'game/world_begin_play/world_begin_play.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\ZoneGraph_structs.hpp(71,2): warning C4309: 'initializing': truncation of constant value
-  (compiling source file '../Version_Mod_Loader/game/world_begin_play/world_begin_play.cpp')
+  (compiling source file 'game/world_begin_play/world_begin_play.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\ZoneGraph_structs.hpp(71,2): warning C4369: 'SDK::EZoneLaneLinkFlags':  enumerator value '256' cannot be represented as 'unsigned char', value is '256'
-  (compiling source file '../Version_Mod_Loader/game/world_begin_play/world_begin_play.cpp')
+  (compiling source file 'game/world_begin_play/world_begin_play.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\AuNotification_structs.hpp(21,2): warning C4309: 'initializing': truncation of constant value
-  (compiling source file '../Version_Mod_Loader/game/world_begin_play/world_begin_play.cpp')
+  (compiling source file 'game/world_begin_play/world_begin_play.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\AuNotification_structs.hpp(21,2): warning C4369: 'SDK::EFAuNotificationType':  enumerator value '-1' cannot be represented as 'unsigned int', value is '-1'
-  (compiling source file '../Version_Mod_Loader/game/world_begin_play/world_begin_play.cpp')
+  (compiling source file 'game/world_begin_play/world_begin_play.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Chimera_structs.hpp(525,2): warning C4309: 'initializing': truncation of constant value
-  (compiling source file '../Version_Mod_Loader/game/world_begin_play/world_begin_play.cpp')
+  (compiling source file 'game/world_begin_play/world_begin_play.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Chimera_structs.hpp(525,2): warning C4369: 'SDK::ECrBuildingItemStorageType':  enumerator value '-1' cannot be represented as 'unsigned int', value is '-1'
-  (compiling source file '../Version_Mod_Loader/game/world_begin_play/world_begin_play.cpp')
+  (compiling source file 'game/world_begin_play/world_begin_play.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\PCG_structs.hpp(463,2): warning C4309: 'initializing': truncation of constant value
-  (compiling source file '../Version_Mod_Loader/game/world_begin_play/world_begin_play.cpp')
+  (compiling source file 'game/world_begin_play/world_begin_play.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\PCG_structs.hpp(463,2): warning C4369: 'SDK::EPCGKernelAttributeType':  enumerator value '256' cannot be represented as 'unsigned char', value is '256'
-  (compiling source file '../Version_Mod_Loader/game/world_begin_play/world_begin_play.cpp')
+  (compiling source file 'game/world_begin_play/world_begin_play.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\PCG_structs.hpp(591,2): warning C4309: 'initializing': truncation of constant value
-  (compiling source file '../Version_Mod_Loader/game/world_begin_play/world_begin_play.cpp')
+  (compiling source file 'game/world_begin_play/world_begin_play.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\PCG_structs.hpp(591,2): warning C4369: 'SDK::EPCGMetadataTypes':  enumerator value '256' cannot be represented as 'unsigned char', value is '256'
-  (compiling source file '../Version_Mod_Loader/game/world_begin_play/world_begin_play.cpp')
+  (compiling source file 'game/world_begin_play/world_begin_play.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\PCG_structs.hpp(626,2): warning C4309: 'initializing': truncation of constant value
-  (compiling source file '../Version_Mod_Loader/game/world_begin_play/world_begin_play.cpp')
+  (compiling source file 'game/world_begin_play/world_begin_play.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\PCG_structs.hpp(626,2): warning C4369: 'SDK::EPCGMetadataDomainFlag':  enumerator value '256' cannot be represented as 'unsigned char', value is '256'
-  (compiling source file '../Version_Mod_Loader/game/world_begin_play/world_begin_play.cpp')
+  (compiling source file 'game/world_begin_play/world_begin_play.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\PCG_structs.hpp(1824,2): warning C4309: 'initializing': truncation of constant value
-  (compiling source file '../Version_Mod_Loader/game/world_begin_play/world_begin_play.cpp')
+  (compiling source file 'game/world_begin_play/world_begin_play.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\PCG_structs.hpp(1824,2): warning C4369: 'SDK::EPCGPointProperties':  enumerator value '256' cannot be represented as 'unsigned char', value is '256'
-  (compiling source file '../Version_Mod_Loader/game/world_begin_play/world_begin_play.cpp')
+  (compiling source file 'game/world_begin_play/world_begin_play.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\ComputeFramework_structs.hpp(36,2): warning C4309: 'initializing': truncation of constant value
-  (compiling source file '../Version_Mod_Loader/game/world_begin_play/world_begin_play.cpp')
+  (compiling source file 'game/world_begin_play/world_begin_play.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\ComputeFramework_structs.hpp(36,2): warning C4369: 'SDK::EShaderFundamentalType':  enumerator value '256' cannot be represented as 'unsigned char', value is '256'
-  (compiling source file '../Version_Mod_Loader/game/world_begin_play/world_begin_play.cpp')
+  (compiling source file 'game/world_begin_play/world_begin_play.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\ReplicationGraph_classes.hpp(51,1): warning C4324: 'SDK::UReplicationGraph': structure was padded due to alignment specifier
-  (compiling source file '../Version_Mod_Loader/game/world_begin_play/world_begin_play.cpp')
+  (compiling source file 'game/world_begin_play/world_begin_play.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\UnrealContainers.hpp(214,1): warning C4324: 'UC::TPair<KeyElementType,ValueElementType>': structure was padded due to alignment specifier
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\UnrealContainers.hpp(214,1): warning C4324:         with
@@ -285,7 +285,7 @@ C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\Unr
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\UnrealContainers.hpp(214,1): warning C4324:             KeyElementType=SDK::EProfessionType,
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\UnrealContainers.hpp(214,1): warning C4324:             ValueElementType=SDK::FColor
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\UnrealContainers.hpp(214,1): warning C4324:         ]
-  (compiling source file '../Version_Mod_Loader/game/world_begin_play/world_begin_play.cpp')
+  (compiling source file 'game/world_begin_play/world_begin_play.cpp')
       C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\UnrealContainers.hpp(214,1):
       the template instantiation context (the oldest one first) is
           C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Chimera_classes.hpp(13685,48):
@@ -306,22 +306,22 @@ C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\Unr
           ]
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\MassAIPrototypeEnemyRuntime_structs.hpp(139,2): warning C4309: 'initializing': truncation of constant value
-  (compiling source file '../Version_Mod_Loader/game/world_begin_play/world_begin_play.cpp')
+  (compiling source file 'game/world_begin_play/world_begin_play.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\MassAIPrototypeEnemyRuntime_structs.hpp(139,2): warning C4369: 'SDK::ECrEnemyLocomotionType':  enumerator value '256' cannot be represented as 'unsigned char', value is '256'
-  (compiling source file '../Version_Mod_Loader/game/world_begin_play/world_begin_play.cpp')
+  (compiling source file 'game/world_begin_play/world_begin_play.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\GeometryFramework_structs.hpp(25,2): warning C4309: 'initializing': truncation of constant value
-  (compiling source file '../Version_Mod_Loader/game/world_begin_play/world_begin_play.cpp')
+  (compiling source file 'game/world_begin_play/world_begin_play.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\GeometryFramework_structs.hpp(25,2): warning C4369: 'SDK::EDynamicMeshComponentTangentsMode':  enumerator value '256' cannot be represented as 'unsigned char', value is '256'
-  (compiling source file '../Version_Mod_Loader/game/world_begin_play/world_begin_play.cpp')
+  (compiling source file 'game/world_begin_play/world_begin_play.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\HeadMountedDisplay_structs.hpp(102,2): warning C4309: 'initializing': truncation of constant value
-  (compiling source file '../Version_Mod_Loader/game/world_begin_play/world_begin_play.cpp')
+  (compiling source file 'game/world_begin_play/world_begin_play.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\HeadMountedDisplay_structs.hpp(102,2): warning C4369: 'SDK::EXRTrackedDeviceType':  enumerator value '256' cannot be represented as 'unsigned char', value is '256'
-  (compiling source file '../Version_Mod_Loader/game/world_begin_play/world_begin_play.cpp')
+  (compiling source file 'game/world_begin_play/world_begin_play.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\UnrealContainers.hpp(214,1): warning C4324: 'UC::TPair<KeyElementType,ValueElementType>': structure was padded due to alignment specifier
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\UnrealContainers.hpp(214,1): warning C4324:         with
@@ -329,7 +329,7 @@ C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\Unr
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\UnrealContainers.hpp(214,1): warning C4324:             KeyElementType=SDK::ECrUIInputActionType,
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\UnrealContainers.hpp(214,1): warning C4324:             ValueElementType=SDK::FUIActionBindingHandle
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\UnrealContainers.hpp(214,1): warning C4324:         ]
-  (compiling source file '../Version_Mod_Loader/game/world_begin_play/world_begin_play.cpp')
+  (compiling source file 'game/world_begin_play/world_begin_play.cpp')
       C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\UnrealContainers.hpp(214,1):
       the template instantiation context (the oldest one first) is
           C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\ChimeraUI_classes.hpp(9626,60):
@@ -355,7 +355,7 @@ C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\Unr
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\UnrealContainers.hpp(214,1): warning C4324:             KeyElementType=SDK::EUIItemType,
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\UnrealContainers.hpp(214,1): warning C4324:             ValueElementType=SDK::FColor
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\UnrealContainers.hpp(214,1): warning C4324:         ]
-  (compiling source file '../Version_Mod_Loader/game/world_begin_play/world_begin_play.cpp')
+  (compiling source file 'game/world_begin_play/world_begin_play.cpp')
       C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\UnrealContainers.hpp(214,1):
       the template instantiation context (the oldest one first) is
           C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\ChimeraUI_classes.hpp(12076,48):
@@ -381,7 +381,7 @@ C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\Unr
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\UnrealContainers.hpp(214,1): warning C4324:             KeyElementType=SDK::UPrimitiveComponent *,
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\UnrealContainers.hpp(214,1): warning C4324:             ValueElementType=SDK::FBreakEventCallbackWrapper
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\UnrealContainers.hpp(214,1): warning C4324:         ]
-  (compiling source file '../Version_Mod_Loader/game/world_begin_play/world_begin_play.cpp')
+  (compiling source file 'game/world_begin_play/world_begin_play.cpp')
       C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\UnrealContainers.hpp(214,1):
       the template instantiation context (the oldest one first) is
           C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\ChaosSolverEngine_classes.hpp(98,70):
@@ -407,7 +407,7 @@ C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\Unr
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\UnrealContainers.hpp(214,1): warning C4324:             KeyElementType=SDK::UPrimitiveComponent *,
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\UnrealContainers.hpp(214,1): warning C4324:             ValueElementType=SDK::FRemovalEventCallbackWrapper
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\UnrealContainers.hpp(214,1): warning C4324:         ]
-  (compiling source file '../Version_Mod_Loader/game/world_begin_play/world_begin_play.cpp')
+  (compiling source file 'game/world_begin_play/world_begin_play.cpp')
       C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\UnrealContainers.hpp(214,1):
       the template instantiation context (the oldest one first) is
           C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\ChaosSolverEngine_classes.hpp(99,72):
@@ -433,7 +433,7 @@ C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\Unr
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\UnrealContainers.hpp(214,1): warning C4324:             KeyElementType=SDK::UPrimitiveComponent *,
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\UnrealContainers.hpp(214,1): warning C4324:             ValueElementType=SDK::FCrumblingEventCallbackWrapper
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\UnrealContainers.hpp(214,1): warning C4324:         ]
-  (compiling source file '../Version_Mod_Loader/game/world_begin_play/world_begin_play.cpp')
+  (compiling source file 'game/world_begin_play/world_begin_play.cpp')
       C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\UnrealContainers.hpp(214,1):
       the template instantiation context (the oldest one first) is
           C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\ChaosSolverEngine_classes.hpp(100,74):
@@ -454,10 +454,10 @@ C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\Unr
           ]
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Niagara_structs.hpp(888,2): warning C4309: 'initializing': truncation of constant value
-  (compiling source file '../Version_Mod_Loader/game/world_begin_play/world_begin_play.cpp')
+  (compiling source file 'game/world_begin_play/world_begin_play.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Niagara_structs.hpp(888,2): warning C4369: 'SDK::ENDISkeletalMesh_SkinningMode':  enumerator value '256' cannot be represented as 'unsigned char', value is '256'
-  (compiling source file '../Version_Mod_Loader/game/world_begin_play/world_begin_play.cpp')
+  (compiling source file 'game/world_begin_play/world_begin_play.cpp')
   
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\ChaosClothAssetEngine_structs.hpp(32,2): warning C4309: 'initializing': truncation of constant value
   (compiling source file '../Version_Mod_Loader/game/world_begin_play/world_begin_play.cpp')
@@ -546,6 +546,7 @@ C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\Version_Mod_Loader\hooks_c
   plugin_manager.cpp
   scanner.cpp
   scanner_interface.cpp
+  splash_window.cpp
   version_proxy.cpp
   Generating Code...
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Server\SDK\Engine_functions.cpp(38225,1): warning C4702: unreachable code

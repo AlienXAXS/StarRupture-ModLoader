@@ -1,4 +1,11 @@
-﻿  world_begin_play.cpp
+﻿  config_manager.cpp
+  dllmain.cpp
+  engine_allocator.cpp
+  engine_init.cpp
+  engine_shutdown.cpp
+  experience_load_complete.cpp
+  save_loaded.cpp
+  world_begin_play.cpp
 C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Client\UnrealContainers.hpp(188,4): warning C4201: nonstandard extension used: nameless struct/union
   (compiling source file 'game/world_begin_play/world_begin_play.cpp')
       C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Client\UnrealContainers.hpp(188,4):
@@ -380,6 +387,14 @@ C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\StarRupture SDK\Client\Unr
               ValueElementType=SDK::FQuat
           ]
   
+  hooks_common.cpp
+C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\Version_Mod_Loader\hooks_common.cpp(37,18): warning C4189: 'start': local variable is initialized but not referenced
+  hooks_interface.cpp
+  logger.cpp
+  plugin_manager.cpp
+  scanner.cpp
+  scanner_interface.cpp
+  Generating Code...
      Creating library C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\build\Client Debug\version.lib and object C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\build\Client Debug\version.exp
   Version_Mod_Loader.vcxproj -> C:\Users\markp\Documents\GitHub\StarRupture-ModLoader\build\Client Debug\version.dll
   Copying version.dll to game server directory...
