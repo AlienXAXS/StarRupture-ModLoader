@@ -1,8 +1,12 @@
 #include "LogisticsFragmentFixer.h"
 #include "plugin_helpers.h"
+#include "plugin_config.h"
 #include "Engine_classes.hpp"
 #include "CoreUObject_classes.hpp"
+#include "MassEntity_structs.hpp"
+#include "MassSignals_classes.hpp"
 #include <Windows.h>
+#include <string>
 
 namespace RailJunctionFixer
 {
@@ -286,5 +290,297 @@ namespace RailJunctionFixer
 			VirtualFree(s_newChain, 0, MEM_RELEASE);
 			s_newChain = nullptr;
 		}
+	}
+
+	// =================================================================
+	// SignalSocketEntities — post-save-load socket re-initialization
+	//
+	// After a save is loaded, FCrLogisticsSocketRuntimeData.ConnectionEntity
+	// contains stale FMassEntityHandle values that were serialized.
+	// We signal all entities via UMassSignalSubsystem::SignalEntity to
+	// trigger UCrLogisticsSocketsSignalProcessor::Execute, which rebuilds
+	// socket data from persistent FCrCustomConnectionData.SocketConnections.
+	// =================================================================
+
+	// SignalEntity function signature:
+	//   void UMassSignalSubsystem::SignalEntity(FName signalName, FMassEntityHandle handle)
+	using SignalEntityFn = void (*)(void* signalSubsystem,
+	                                SDK::FName signalName,
+	                                SDK::FMassEntityHandle handle);
+
+	// Offset within UCrLogisticsSocketsSignalProcessor where the subscribed
+	// signal FName is stored (discovered from InitializeInternal disassembly)
+	static constexpr size_t SIGNAL_PROCESSOR_SIGNAL_OFFSET = 0x288;
+
+	void LogisticsFragmentFixer::SignalSocketEntities()
+	{
+		LOG_INFO("SignalSocketEntities: Re-initializing logistics sockets after save load...");
+
+		// ---- 1. Resolve SignalEntity function pointer ----
+		HMODULE mainModule = GetModuleHandleW(nullptr);
+		auto moduleBase = reinterpret_cast<uintptr_t>(mainModule);
+
+		// Read RVA from config, default to PDB-verified address
+		uintptr_t signalEntityRVA = 0x65F1BB0;
+		auto* config = GetConfig();
+		if (config)
+		{
+			auto configRVA = static_cast<uintptr_t>(
+				config->ReadInt("RailJunctionFixer", "Advanced", "SignalEntity_RVA", 0));
+			if (configRVA != 0)
+				signalEntityRVA = configRVA;
+		}
+
+		auto fnSignalEntity = reinterpret_cast<SignalEntityFn>(moduleBase + signalEntityRVA);
+		LOG_DEBUG("  SignalEntity at 0x%llX (base + 0x%llX)",
+			static_cast<unsigned long long>(moduleBase + signalEntityRVA),
+			static_cast<unsigned long long>(signalEntityRVA));
+
+		// ---- 2. Find UMassSignalSubsystem instance ----
+		SDK::UObject* signalSubsystem = nullptr;
+		try
+		{
+			// Walk GObjects to find the live instance (not CDO)
+			SDK::TUObjectArray* objArray = SDK::UObject::GObjects.GetTypedPtr();
+			if (!objArray)
+			{
+				LOG_ERROR("  GObjects is null");
+				return;
+			}
+
+			for (int32_t i = 0; i < objArray->NumElements; ++i)
+			{
+				SDK::UObject* obj = objArray->GetByIndex(i);
+				if (!obj || !obj->Class) continue;
+
+				std::string className = obj->Class->GetName();
+				if (className == "MassSignalSubsystem")
+				{
+					// Skip the CDO — we need the live world instance
+					if (!obj->IsDefaultObject())
+					{
+						signalSubsystem = obj;
+						break;
+					}
+				}
+			}
+		}
+		catch (...)
+		{
+			LOG_ERROR("  Exception while searching for MassSignalSubsystem");
+			return;
+		}
+
+		if (!signalSubsystem)
+		{
+			LOG_ERROR("  UMassSignalSubsystem instance not found");
+			return;
+		}
+		LOG_INFO("  UMassSignalSubsystem at %p", static_cast<void*>(signalSubsystem));
+
+		// ---- 3. Discover signal name ----
+		SDK::FName socketSignalName = {};
+
+		// Try reading from CrLogisticsSocketsSignalProcessor CDO
+		try
+		{
+			SDK::TUObjectArray* objArray = SDK::UObject::GObjects.GetTypedPtr();
+			for (int32_t i = 0; i < objArray->NumElements; ++i)
+			{
+				SDK::UObject* obj = objArray->GetByIndex(i);
+				if (!obj || !obj->Class) continue;
+
+				std::string className = obj->Class->GetName();
+				if (className == "CrLogisticsSocketsSignalProcessor")
+				{
+					// Read FName at the signal offset
+					auto processorAddr = reinterpret_cast<uintptr_t>(obj);
+					socketSignalName = ReadAt<SDK::FName>(processorAddr, SIGNAL_PROCESSOR_SIGNAL_OFFSET);
+
+					if (socketSignalName.ComparisonIndex != 0)
+					{
+						LOG_INFO("  Signal name from CDO+0x%zX: CompIdx=0x%X",
+							SIGNAL_PROCESSOR_SIGNAL_OFFSET,
+							socketSignalName.ComparisonIndex);
+						break;
+					}
+				}
+			}
+		}
+		catch (...)
+		{
+			LOG_WARN("  Exception while discovering signal name from CDO");
+		}
+
+		// Fallback: find the FName by looking for an object named after the signal
+		if (socketSignalName.ComparisonIndex == 0)
+		{
+			LOG_WARN("  CDO signal discovery failed, searching for FName by string...");
+
+			// Read fallback name from config
+			std::string fallbackName = "CrLogisticsSocketsSignal";
+			if (config)
+			{
+				char buf[256] = {};
+				config->ReadString("RailJunctionFixer", "Advanced", "SocketSignalName",
+					fallbackName.c_str(), buf, sizeof(buf));
+				fallbackName = buf;
+			}
+
+			// Search GObjects for any FName matching the signal name
+			try
+			{
+				SDK::TUObjectArray* objArray = SDK::UObject::GObjects.GetTypedPtr();
+				for (int32_t i = 0; i < objArray->NumElements; ++i)
+				{
+					SDK::UObject* obj = objArray->GetByIndex(i);
+					if (!obj) continue;
+
+					if (obj->GetName() == fallbackName)
+					{
+						socketSignalName = obj->Name;
+						LOG_INFO("  Resolved signal FName '%s': CompIdx=0x%X",
+							fallbackName.c_str(), socketSignalName.ComparisonIndex);
+						break;
+					}
+				}
+			}
+			catch (...)
+			{
+				LOG_ERROR("  Exception during FName search");
+			}
+		}
+
+		if (socketSignalName.ComparisonIndex == 0)
+		{
+			LOG_ERROR("  Could not resolve socket signal FName - aborting");
+			return;
+		}
+
+		// ---- 4. Find UMassEntitySubsystem and iterate entity handles ----
+		SDK::UObject* entitySubsystem = nullptr;
+		try
+		{
+			SDK::TUObjectArray* objArray = SDK::UObject::GObjects.GetTypedPtr();
+			for (int32_t i = 0; i < objArray->NumElements; ++i)
+			{
+				SDK::UObject* obj = objArray->GetByIndex(i);
+				if (!obj || !obj->Class) continue;
+
+				std::string className = obj->Class->GetName();
+				if (className == "MassEntitySubsystem" && !obj->IsDefaultObject())
+				{
+					entitySubsystem = obj;
+					break;
+				}
+			}
+		}
+		catch (...)
+		{
+			LOG_ERROR("  Exception while searching for MassEntitySubsystem");
+			return;
+		}
+
+		if (!entitySubsystem)
+		{
+			LOG_ERROR("  UMassEntitySubsystem not found");
+			return;
+		}
+		LOG_INFO("  UMassEntitySubsystem at %p", static_cast<void*>(entitySubsystem));
+
+		// Scan the entity subsystem's memory for the entity manager's sparse array.
+		// We look for a TSparseArray pattern: pointer + reasonable Num + Max >= Num.
+		// Each element contains a serial number (int32) at offset 0 and an archetype
+		// pointer at offset 8.
+		auto subsysAddr = reinterpret_cast<uintptr_t>(entitySubsystem);
+		constexpr int MAX_HANDLES = 100000;
+
+		auto* handles = static_cast<SDK::FMassEntityHandle*>(
+			VirtualAlloc(nullptr, MAX_HANDLES * sizeof(SDK::FMassEntityHandle),
+				MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE));
+		if (!handles)
+		{
+			LOG_ERROR("  Failed to allocate handle buffer");
+			return;
+		}
+
+		int handleCount = 0;
+
+		for (size_t off = 0x30; off < 0x400 && handleCount == 0; off += 8)
+		{
+			uintptr_t arrayPtr = ReadAt<uintptr_t>(subsysAddr, off);
+			if (arrayPtr == 0 || arrayPtr < 0x10000) continue;
+
+			int32_t num = ReadAt<int32_t>(subsysAddr, off + 0x08);
+			int32_t max = ReadAt<int32_t>(subsysAddr, off + 0x0C);
+
+			if (num < 100 || num > 200000 || max < num || max > 400000)
+				continue;
+
+			// Validate: try element sizes 16, 24, 32
+			for (int elemSize = 16; elemSize <= 32; elemSize += 8)
+			{
+				int validCount = 0;
+				int sampleSize = (num < 20) ? num : 20;
+
+				for (int i = 0; i < sampleSize; ++i)
+				{
+					uintptr_t elemAddr = arrayPtr + static_cast<uintptr_t>(i) * elemSize;
+					int32_t serial = ReadAt<int32_t>(elemAddr, 0);
+					uintptr_t archetype = ReadAt<uintptr_t>(elemAddr, 8);
+
+					if (serial > 0 && serial < 10000 &&
+						archetype > 0x10000 && archetype < 0x7FFFFFFFFFFF)
+					{
+						validCount++;
+					}
+				}
+
+				if (validCount >= sampleSize / 2)
+				{
+					LOG_INFO("  Found entity array at subsys+0x%zX: num=%d, elemSize=%d",
+						off, num, elemSize);
+
+					for (int i = 0; i < num && handleCount < MAX_HANDLES; ++i)
+					{
+						uintptr_t elemAddr = arrayPtr + static_cast<uintptr_t>(i) * elemSize;
+						int32_t serial = ReadAt<int32_t>(elemAddr, 0);
+
+						if (serial > 0)
+						{
+							handles[handleCount].Index = i;
+							handles[handleCount].SerialNumber = serial;
+							handleCount++;
+						}
+					}
+
+					LOG_INFO("  Extracted %d valid entity handles from %d slots",
+						handleCount, num);
+					break;
+				}
+			}
+		}
+
+		// ---- 5. Signal all entities ----
+		if (handleCount > 0)
+		{
+			LOG_INFO("  Signaling %d entities with socket signal...", handleCount);
+
+			for (int i = 0; i < handleCount; ++i)
+			{
+				fnSignalEntity(static_cast<void*>(signalSubsystem),
+					socketSignalName, handles[i]);
+			}
+
+			LOG_INFO("  Socket signal sent to %d entities", handleCount);
+		}
+		else
+		{
+			LOG_WARN("  No entity handles found - could not signal for socket re-init");
+			LOG_WARN("  This may indicate the entity manager layout has changed");
+		}
+
+		VirtualFree(handles, 0, MEM_RELEASE);
+		LOG_INFO("SignalSocketEntities: complete");
 	}
 }

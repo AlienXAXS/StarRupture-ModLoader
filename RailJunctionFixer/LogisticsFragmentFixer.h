@@ -37,6 +37,11 @@ namespace RailJunctionFixer
         // Restore original struct data and free allocated chain memory
         static void Shutdown();
 
+        // Signal all entities to re-initialize their logistics sockets.
+        // Called after save data is loaded to overwrite stale FMassEntityHandle
+        // values with freshly rebuilt data from persistent connection topology.
+        static void SignalSocketEntities();
+
     private:
         // Allocated chain memory
         static uintptr_t* s_newChain;

@@ -237,6 +237,26 @@ static void OnExperienceLoadComplete()
 	LOG_INFO("ExperienceLoadComplete: Current world is '%s' at %p", worldName.c_str(), static_cast<void*>(world));
 }
 
+// ----------------------------------------------------------------
+// Save-loaded callback
+// ----------------------------------------------------------------
+// Called by the mod loader when UCrMassSaveSubsystem::OnSaveLoaded
+// fires.  At this point all entity data has been deserialized, but
+// FCrLogisticsSocketRuntimeData.ConnectionEntity contains stale
+// FMassEntityHandle values.  We signal all entities to trigger
+// UCrLogisticsSocketsSignalProcessor::Execute which rebuilds socket
+// connections from persistent data.
+// ----------------------------------------------------------------
+
+static void OnSaveLoaded()
+{
+	if (!RailJunctionFixerConfig::Config::IsEnabled())
+		return;
+
+	LOG_INFO("OnSaveLoaded: Save data loaded - triggering socket re-initialization");
+	RailJunctionFixer::LogisticsFragmentFixer::SignalSocketEntities();
+}
+
 // Engine init callback - called after FEngineLoop::Init returns.
 // NOTE: UCrMassEntityConfigLoaderSubsystem::OnWorldBeginPlay fires INSIDE
 // FEngineLoop::Init, so the WBP hook is installed from PluginInit instead.
@@ -252,6 +272,20 @@ static void OnEngineInit()
 	else
 	{
 		LOG_WARN("AActor::BeginPlay diagnostic hook failed - non-critical, continuing");
+	}
+
+	// Register for save-loaded callback to re-initialize sockets after load
+	if (RailJunctionFixerConfig::Config::IsEnabled())
+	{
+		if (g_hooks && g_hooks->RegisterSaveLoadedCallback)
+		{
+			g_hooks->RegisterSaveLoadedCallback(OnSaveLoaded);
+			LOG_INFO("Socket re-initialization will run after each save load (via SaveLoaded callback)");
+		}
+		else
+		{
+			LOG_ERROR("RegisterSaveLoadedCallback not available (need mod loader v7+) - socket fix will NOT run on load");
+		}
 	}
 
 	// Register for experience-load-complete callback to run junction repair
@@ -277,7 +311,11 @@ static void OnEngineShutdown()
 {
 	LOG_INFO("Engine shutting down - cleaning up...");
 
-	// Unregister experience-load-complete callback
+	// Unregister callbacks
+	if (g_hooks && g_hooks->UnregisterSaveLoadedCallback)
+	{
+		g_hooks->UnregisterSaveLoadedCallback(OnSaveLoaded);
+	}
 	if (g_hooks && g_hooks->UnregisterExperienceLoadCompleteCallback)
 	{
 		g_hooks->UnregisterExperienceLoadCompleteCallback(OnExperienceLoadComplete);

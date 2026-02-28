@@ -26,6 +26,20 @@ namespace RailJunctionFixerConfig
 			ConfigValueType::Boolean,
 			"true",
 			"When true, the junction repair scan will only LOG what it would fix without actually calling OnSplineReady. Set to false once you are satisfied the detection looks correct."
+		},
+		{
+			"Advanced",
+			"SignalEntity_RVA",
+			ConfigValueType::Integer,
+			"0",
+			"RVA of UMassSignalSubsystem::SignalEntity (hex). 0 = use default (0x65F1BB0). Only change if the game updates."
+		},
+		{
+			"Advanced",
+			"SocketSignalName",
+			ConfigValueType::String,
+			"CrLogisticsSocketsSignal",
+			"Fallback signal name if CDO auto-discovery fails. Should not need changing."
 		}
 	};
 
