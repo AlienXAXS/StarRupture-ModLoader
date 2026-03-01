@@ -12,6 +12,9 @@
     <ClCompile Include="rcon\rcon.cpp">
       <Filter>rcon</Filter>
     </ClCompile>
+    <ClCompile Include="rcon\state\game_thread_dispatch.cpp">
+      <Filter>rcon\state</Filter>
+    </ClCompile>
     <ClCompile Include="rcon\state\server_state.cpp">
       <Filter>rcon\state</Filter>
     </ClCompile>
@@ -49,6 +52,9 @@
     </ClInclude>
     <ClInclude Include="rcon\rcon.h">
       <Filter>rcon</Filter>
+    </ClInclude>
+    <ClInclude Include="rcon\state\game_thread_dispatch.h">
+      <Filter>rcon\state</Filter>
     </ClInclude>
     <ClInclude Include="rcon\state\server_state.h">
       <Filter>rcon\state</Filter>

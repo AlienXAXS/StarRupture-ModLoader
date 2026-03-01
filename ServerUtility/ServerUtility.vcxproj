@@ -240,6 +240,7 @@
     <ClInclude Include="plugin_interface.h" />
     <ClInclude Include="rcon\commands\cmd_save.h" />
     <ClInclude Include="rcon\rcon.h" />
+    <ClInclude Include="rcon\state\game_thread_dispatch.h" />
     <ClInclude Include="rcon\state\server_state.h" />
     <ClInclude Include="rcon\commands\command_handler.h" />
     <ClInclude Include="rcon\commands\cmd_players.h" />
@@ -263,6 +264,7 @@
     <ClCompile Include="plugin.cpp" />
     <ClCompile Include="rcon\commands\cmd_save.cpp" />
     <ClCompile Include="rcon\rcon.cpp" />
+    <ClCompile Include="rcon\state\game_thread_dispatch.cpp" />
     <ClCompile Include="rcon\state\server_state.cpp" />
     <ClCompile Include="rcon\commands\command_handler.cpp" />
     <ClCompile Include="rcon\commands\cmd_players.cpp" />
