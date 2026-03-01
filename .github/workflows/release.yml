@@ -77,10 +77,10 @@ jobs:
 
           if ($prevTag) {
             Write-Host "Generating changelog since tag: $prevTag"
-            $log = git log "$prevTag..HEAD" --pretty=format:"- %s (%an)" --no-merges
+            $log = git log "$prevTag..HEAD" --pretty=format:"- %s (%an)" --no-merges --reverse
           } else {
             Write-Host "No previous tag found - listing all commits"
-            $log = git log --pretty=format:"- %s (%an)" --no-merges
+            $log = git log --pretty=format:"- %s (%an)" --no-merges --reverse
           }
 
           if (-not $log) {
