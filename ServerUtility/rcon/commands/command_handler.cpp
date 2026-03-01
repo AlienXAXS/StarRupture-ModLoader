@@ -1,7 +1,10 @@
 #include "command_handler.h"
+#include "../state/game_thread_dispatch.h"
+#include "plugin_helpers.h"
 
 #include <sstream>
 #include <algorithm>
+#include <chrono>
 
 CommandHandler& CommandHandler::Get()
 {
@@ -11,12 +14,14 @@ CommandHandler& CommandHandler::Get()
 
 void CommandHandler::Register(std::initializer_list<std::string> aliases,
                                std::string description,
-                               CommandFunc handler)
+                               CommandFunc handler,
+                               bool gameThread)
 {
     CommandRegistration reg;
     reg.aliases     = aliases;
     reg.description = std::move(description);
     reg.handler     = std::move(handler);
+    reg.gameThread  = gameThread;
     m_commands.push_back(std::move(reg));
 }
 
@@ -52,7 +57,23 @@ std::string CommandHandler::Execute(const std::string& cmdLine) const
             std::string aliasLower = alias;
             std::transform(aliasLower.begin(), aliasLower.end(), aliasLower.begin(), ::tolower);
             if (aliasLower == verbLower)
-                return reg.handler(args);
+            {
+                if (!reg.gameThread)
+                    return reg.handler(args);
+
+                // Dispatch to game thread and block until complete
+                auto handler = reg.handler;
+                auto fut = GameThreadDispatch::Post([handler, args]() -> std::string {
+                    return handler(args);
+                });
+
+                using namespace std::chrono_literals;
+                if (fut.wait_for(30s) == std::future_status::ready)
+                    return fut.get();
+
+                LOG_WARN("[RCON] Command '%s' timed out waiting for game thread (30s).", verb.c_str());
+                return "Error: command timed out waiting for game thread.\n";
+            }
         }
     }
 

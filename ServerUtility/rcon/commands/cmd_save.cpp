@@ -1,10 +1,8 @@
 #include "cmd_save.h"
 #include "command_handler.h"
 #include "plugin_helpers.h"
-#include "../state/game_thread_dispatch.h"
 
 #include <windows.h>
-#include <chrono>
 
 // SDK access: UCrSaveSubsystem and UObject::FindObjectFast are engine types.
 // Only available when the full SDK is compiled in.
@@ -52,7 +50,7 @@ namespace Cmd_Save
 	}
 
 	// -----------------------------------------------------------------------
-	// Command handler — posts save work to the game thread and waits
+	// Command handler — runs on the game thread (dispatched by CommandHandler)
 	// -----------------------------------------------------------------------
 	static std::string Handle(const std::string& /*args*/)
 	{
@@ -64,66 +62,52 @@ namespace Cmd_Save
 			return "Error: save function not found (pattern not matched).\n";
 		}
 
-		// The save subsystem requires IsInGameThread().  RCON command handlers
-		// run on a network thread, so we must bounce the actual work to the
-		// game thread via GameThreadDispatch::Post and wait for the result.
-		auto fut = GameThreadDispatch::Post([]() -> std::string {
 #if CMD_SAVE_HAS_SDK
-			// Find the UCrSaveSubsystem *instance* (not the UClass or CDO).
-			SDK::UObject* subsystem = nullptr;
+		// Find the UCrSaveSubsystem *instance* (not the UClass or CDO).
+		SDK::UObject* subsystem = nullptr;
+		{
+			auto& GObjects = SDK::UObject::GObjects;
+			const int32_t count = GObjects->Num();
+			for (int32_t i = 0; i < count; ++i)
 			{
-				auto& GObjects = SDK::UObject::GObjects;
-				const int32_t count = GObjects->Num();
-				for (int32_t i = 0; i < count; ++i)
+				SDK::UObject* obj = GObjects->GetByIndex(i);
+				if (!obj || !obj->Class)
+					continue;
+
+				if (obj->IsDefaultObject())
+					continue;
+
+				if (obj->Class->GetName() == "CrSaveSubsystem")
 				{
-					SDK::UObject* obj = GObjects->GetByIndex(i);
-					if (!obj || !obj->Class)
-						continue;
-
-					if (obj->IsDefaultObject())
-						continue;
-
-					if (obj->Class->GetName() == "CrSaveSubsystem")
-					{
-						subsystem = obj;
-						break;
-					}
+					subsystem = obj;
+					break;
 				}
 			}
+		}
 #else
-			void* subsystem = nullptr;
+		void* subsystem = nullptr;
 #endif
 
-			if (!subsystem)
-			{
-				LOG_ERROR("[RCON] UCrSaveSubsystem instance not found - world may not be loaded yet.");
-				return "Error: save subsystem not available (world may not be loaded yet).\n";
-			}
+		if (!subsystem)
+		{
+			LOG_ERROR("[RCON] UCrSaveSubsystem instance not found - world may not be loaded yet.");
+			return "Error: save subsystem not available (world may not be loaded yet).\n";
+		}
 
 #if CMD_SAVE_HAS_SDK
-			LOG_INFO("[RCON] Forcing world save via UCrSaveSubsystem::SaveNextSaveGame "
-				     "(instance at %p, name: %s)...", subsystem, subsystem->GetName().c_str());
+		LOG_INFO("[RCON] Forcing world save via UCrSaveSubsystem::SaveNextSaveGame "
+			     "(instance at %p, name: %s)...", subsystem, subsystem->GetName().c_str());
 #endif
 
-			DWORD exCode = TryCallSave(subsystem);
-			if (exCode == 0)
-			{
-				LOG_INFO("[RCON] World save completed successfully.");
-				return "World saved successfully.\n";
-			}
+		DWORD exCode = TryCallSave(subsystem);
+		if (exCode == 0)
+		{
+			LOG_INFO("[RCON] World save completed successfully.");
+			return "World saved successfully.\n";
+		}
 
-			LOG_ERROR("[RCON] Exception during save (0x%08lX) - save may be incomplete.", exCode);
-			return "Error: exception occurred during save.\n";
-		});
-
-		// Block the RCON network thread waiting for the game thread to
-		// execute the save.  30 seconds should be more than enough.
-		using namespace std::chrono_literals;
-		if (fut.wait_for(30s) == std::future_status::ready)
-			return fut.get();
-
-		LOG_WARN("[RCON] Save command timed out waiting for game thread (30s).");
-		return "Error: save command timed out waiting for game thread.\n";
+		LOG_ERROR("[RCON] Exception during save (0x%08lX) - save may be incomplete.", exCode);
+		return "Error: exception occurred during save.\n";
 	}
 
 	// -----------------------------------------------------------------------

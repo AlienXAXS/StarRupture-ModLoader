@@ -12,6 +12,7 @@ struct CommandRegistration
     std::vector<std::string> aliases;
     std::string              description;
     CommandFunc              handler;
+    bool                     gameThread;  // true = dispatch to game thread via GameThreadDispatch
 };
 
 // Command registry with alias support.
@@ -21,12 +22,19 @@ class CommandHandler
 public:
     static CommandHandler& Get();
 
-    // Register a command with one or more aliases (first alias shown in help)
+    // Register a command with one or more aliases (first alias shown in help).
+    // gameThread: if true (default), the handler is automatically dispatched to
+    // the game thread.  Set to false only for commands that are safe to run on
+    // any thread and don't touch engine state.
     void Register(std::initializer_list<std::string> aliases,
                   std::string description,
-                  CommandFunc handler);
+                  CommandFunc handler,
+                  bool gameThread = true);
 
-    // Execute a command line; splits on first space into verb + args
+    // Execute a command line; splits on first space into verb + args.
+    // If the matched command was registered with gameThread=true, the handler
+    // is posted to GameThreadDispatch and the calling thread blocks until it
+    // completes (30 s timeout).
     std::string Execute(const std::string& cmdLine) const;
 
     // Return a formatted help string listing all commands and aliases
