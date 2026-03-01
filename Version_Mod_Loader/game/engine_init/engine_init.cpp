@@ -260,6 +260,26 @@ namespace Hooks::EngineInit
 
 		g_pluginCallbacks.push_back(callback);
 		ModLoader::LogDebug(L"[EngineInit] Plugin callback registered (%zu total)", g_pluginCallbacks.size());
+
+		// If the engine is already initialized, invoke the callback immediately
+		// so that late-registering plugins (loaded after the hook fires) still
+		// receive the notification.
+		if (g_engineInitialized)
+		{
+			ModLoader::LogInfo(L"[EngineInit] Engine already initialized - invoking callback immediately");
+			try
+			{
+				callback();
+			}
+			catch (const std::exception& e)
+			{
+				ModLoader::LogError(L"[EngineInit] Exception in late callback: %S", e.what());
+			}
+			catch (...)
+			{
+				ModLoader::LogError(L"[EngineInit] Unknown exception in late callback");
+			}
+		}
 	}
 
 	void UnregisterPluginCallback(PluginEngineInitCallback callback)

@@ -157,8 +157,6 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 			ModLoader::LogMessage(L"  WARNING: EngineShutdown hook failed to install - plugins will not receive shutdown callbacks");
 		}
 
-		ModLoader::LogMessage(L"  Watermark overlay registered for main menu detection");
-
 		Splash::SetStatus(L"Loading plugins...");
 		Splash::SetProgress(0.75f);
 

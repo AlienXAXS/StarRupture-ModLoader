@@ -94,7 +94,7 @@ static constexpr const wchar_t* PARAM_SESSION_NAME = L"-SessionName=";
 static constexpr const wchar_t* PARAM_SAVE_INTERVAL = L"-SaveGameInterval=";
 
 // Save game name is always AutoSave0
-static constexpr const wchar_t* SAVE_GAME_NAME = L"AutoSave0.sav";
+static constexpr const wchar_t* SAVE_GAME_NAME = L"AutoSave0";
 
 // Default save interval in seconds (5 minutes)
 static constexpr int DEFAULT_SAVE_INTERVAL = 300;
@@ -122,11 +122,27 @@ static bool AssignEngineString(EngineString* str, const wchar_t* value)
 		return false;
 	}
 
-	// Free old allocation if present
+	// Free old allocation if present AND looks valid.
+	// When the original ParseSettings fails (returns 0), the FString fields
+	// may contain uninitialized garbage.  We only call FMemory::Free if
+	// Data is non-null AND Num/Max look sane (positive, consistent).
+	// Otherwise we just zero the struct and allocate fresh.
 	if (str->Data)
 	{
-		LOG_DEBUG("[AssignEngineString] Freeing old Data at %p", static_cast<void*>(str->Data));
-		g_engineFree(str->Data);
+		bool looksValid = (str->Num > 0 && str->Max > 0 && str->Num <= str->Max && str->Max < 0x100000);
+
+		if (looksValid)
+		{
+			LOG_DEBUG("[AssignEngineString] Freeing old Data at %p (Num=%d, Max=%d)",
+				static_cast<void*>(str->Data), str->Num, str->Max);
+			g_engineFree(str->Data);
+		}
+		else
+		{
+			LOG_WARN("[AssignEngineString] Skipping free of suspicious Data=%p (Num=%d, Max=%d) - likely uninitialized",
+				static_cast<void*>(str->Data), str->Num, str->Max);
+		}
+
 		str->Data = nullptr;
 		str->Num = 0;
 		str->Max = 0;
@@ -346,6 +362,33 @@ static __int64 __fastcall Hook_ParseSettings(void* thisPtr)
 	__int64 originalResult = g_originalParseSettings(thisPtr);
 	LOG_DEBUG("[Hook_ParseSettings] Original ParseSettings returned %lld", originalResult);
 
+	// If the original failed (returned 0), the FString fields may contain
+	// uninitialized garbage.  Zero-init them so AssignEngineString doesn't
+	// try to free garbage pointers.
+	if (originalResult == 0)
+	{
+		LOG_WARN("[Hook_ParseSettings] Original ParseSettings FAILED (returned 0) - "
+			"zero-initializing FString fields before override");
+
+		EngineString* sessionStr = FieldAccessor::GetSessionName(thisPtr);
+		EngineString* saveStr = FieldAccessor::GetSaveGameName(thisPtr);
+
+		// Log current (potentially garbage) values for diagnostics
+		LOG_DEBUG("[Hook_ParseSettings] Pre-init SessionName: Data=%p Num=%d Max=%d",
+			static_cast<void*>(sessionStr->Data), sessionStr->Num, sessionStr->Max);
+		LOG_DEBUG("[Hook_ParseSettings] Pre-init SaveGameName: Data=%p Num=%d Max=%d",
+			static_cast<void*>(saveStr->Data), saveStr->Num, saveStr->Max);
+
+		// Zero-init the FString structs so they look like empty strings
+		memset(sessionStr, 0, sizeof(EngineString));
+		memset(saveStr, 0, sizeof(EngineString));
+
+		// Also zero the other fields
+		*FieldAccessor::GetSaveGameInterval(thisPtr) = 0;
+		*FieldAccessor::GetStartNewGame(thisPtr) = false;
+		*FieldAccessor::GetLoadSavedGame(thisPtr) = false;
+	}
+
 	// -----------------------------------------------------------------------
 	// Step 2: Parse our command-line overrides.
 	// -----------------------------------------------------------------------
@@ -358,12 +401,12 @@ static __int64 __fastcall Hook_ParseSettings(void* thisPtr)
 	{
 		saveInterval = _wtoi(saveGameInterval.c_str());
 		LOG_INFO("  SessionName      = %ls", sessionName.c_str());
-		LOG_INFO("  SaveGameName = %ls (fixed)", SAVE_GAME_NAME);
+		LOG_INFO("  SaveGameName     = %ls (fixed)", SAVE_GAME_NAME);
 		LOG_INFO("  SaveGameInterval = %d seconds (from command line)", saveInterval);
 	}
 	else
 	{
-		LOG_INFO("SessionName      = %ls", sessionName.c_str());
+		LOG_INFO("  SessionName      = %ls", sessionName.c_str());
 		LOG_INFO("  SaveGameName     = %ls (fixed)", SAVE_GAME_NAME);
 		LOG_INFO("  SaveGameInterval = %d seconds (default)", saveInterval);
 	}
@@ -421,6 +464,34 @@ static __int64 __fastcall Hook_ParseSettings(void* thisPtr)
 		LOG_ERROR("[Hook_ParseSettings] Unknown exception while setting fields");
 		LOG_INFO("[Hook_ParseSettings] ===== CALL #%d END (exception, original result used) =====", currentCall);
 		return originalResult;
+	}
+
+	// -----------------------------------------------------------------------
+	// Step 4: Read back and verify the assigned values for diagnostics
+	// -----------------------------------------------------------------------
+	{
+		EngineString* sessionStr = FieldAccessor::GetSessionName(thisPtr);
+		EngineString* saveStr = FieldAccessor::GetSaveGameName(thisPtr);
+
+		if (sessionStr->Data && sessionStr->Num > 0)
+		{
+			LOG_INFO("[Hook_ParseSettings] Readback SessionName: \"%ls\" (Num=%d, Max=%d)",
+				sessionStr->Data, sessionStr->Num, sessionStr->Max);
+		}
+		else
+		{
+			LOG_ERROR("[Hook_ParseSettings] Readback SessionName: EMPTY/NULL!");
+		}
+
+		if (saveStr->Data && saveStr->Num > 0)
+		{
+			LOG_INFO("[Hook_ParseSettings] Readback SaveGameName: \"%ls\" (Num=%d, Max=%d)",
+				saveStr->Data, saveStr->Num, saveStr->Max);
+		}
+		else
+		{
+			LOG_ERROR("[Hook_ParseSettings] Readback SaveGameName: EMPTY/NULL!");
+		}
 	}
 
 	LOG_INFO("[Hook_ParseSettings] Settings applied (SaveGameInterval=%d, bStartNewGame=%s, bLoadSavedGame=%s)",

@@ -1,6 +1,7 @@
 #include "plugin.h"
 #include "plugin_helpers.h"
 #include "hooks/parse_settings/parse_settings.h"
+#include "rcon/rcon.h"
 
 // -----------------------------------------------------------------------
 // Global plugin interface pointers
@@ -49,12 +50,28 @@ static void OnEngineInit()
 
     LOG_INFO("Found ParseSettings at 0x%llX", static_cast<unsigned long long>(addr));
     ParseSettingsHook::Install(addr);
+
+    // Start the RCON / Steam Query subsystem
+    Rcon::Init();
 }
 
 static void OnEngineShutdown()
 {
     LOG_INFO("Engine shutting down – removing ParseSettings hook...");
     ParseSettingsHook::Remove();
+
+    // Shut down RCON / Steam Query (must happen before UObject teardown)
+    Rcon::Shutdown();
+}
+
+static void OnAnyWorldBeginPlay(SDK::UWorld* world, const char* worldName)
+{
+    Rcon::OnAnyWorldBeginPlay(world, worldName);
+}
+
+static void OnExperienceLoadComplete()
+{
+    Rcon::OnExperienceLoadComplete();
 }
 
 // -----------------------------------------------------------------------
@@ -96,6 +113,18 @@ extern "C"
             LOG_WARN("RegisterEngineShutdownCallback not available – hook may not be removed cleanly on shutdown");
         }
 
+        if (hooks->RegisterAnyWorldBeginPlayCallback)
+        {
+            hooks->RegisterAnyWorldBeginPlayCallback(OnAnyWorldBeginPlay);
+            LOG_INFO("Registered for any-world begin play callback (RCON player tracking)");
+        }
+
+        if (hooks->RegisterExperienceLoadCompleteCallback)
+        {
+            hooks->RegisterExperienceLoadCompleteCallback(OnExperienceLoadComplete);
+            LOG_INFO("Registered for experience load complete callback (RCON player refresh)");
+        }
+
         LOG_INFO("Plugin initialised. Awaiting engine ready signal.");
         LOG_INFO("Usage: launch the server with the following parameters:");
         LOG_INFO("  -SessionName=<name> [-SaveGameInterval=<seconds>]");
@@ -113,9 +142,18 @@ extern "C"
     {
         LOG_INFO("Plugin shutting down...");
 
-        // Hook removal is handled in OnEngineShutdown() which fires before UObject
-        // teardown.  By the time PluginShutdown is called (explicit FreeLibrary only)
-        // the hook has already been removed – do not touch engine memory here.
+        // Hook removal and RCON shutdown are handled in OnEngineShutdown() which fires
+        // before UObject teardown.  By the time PluginShutdown is called (explicit
+        // FreeLibrary only) those resources have already been released.
+
+        if (g_hooks)
+        {
+            if (g_hooks->UnregisterAnyWorldBeginPlayCallback)
+                g_hooks->UnregisterAnyWorldBeginPlayCallback(OnAnyWorldBeginPlay);
+
+            if (g_hooks->UnregisterExperienceLoadCompleteCallback)
+                g_hooks->UnregisterExperienceLoadCompleteCallback(OnExperienceLoadComplete);
+        }
 
         g_logger  = nullptr;
         g_config  = nullptr;
