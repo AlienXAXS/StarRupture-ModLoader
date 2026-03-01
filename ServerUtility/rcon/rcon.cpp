@@ -93,7 +93,7 @@ static uint16_t ReadRconPort()
 		if (port > 0 && port <= 65535)
 			return static_cast<uint16_t>(port);
 	}
-	return 27015; // Steam default
+	return 0; // Not specified
 }
 
 static std::string ReadRconPassword()
@@ -266,6 +266,19 @@ void Rcon::Init()
 {
 	LOG_INFO("[Rcon] Initialising RCON / Query subsystem...");
 
+	const uint16_t    port = ReadRconPort();
+	const std::string password = ReadRconPassword();
+
+	if (port == 0 || password.empty())
+	{
+		if (port == 0)
+			LOG_INFO("[Rcon] No -RconPort= provided – RCON subsystem will not start");
+		if (password.empty())
+			LOG_INFO("[Rcon] No -RconPassword= provided – RCON subsystem will not start");
+		LOG_INFO("[Rcon] To enable RCON, launch with: -RconPort=<port> -RconPassword=<password>");
+		return;
+	}
+
 	// Initialise Winsock (version 2.2)
 	WSADATA wsaData{};
 	const int wsaErr = WSAStartup(MAKEWORD(2, 2), &wsaData);
@@ -275,19 +288,13 @@ void Rcon::Init()
 		return;
 	}
 
-	const uint16_t    port = ReadRconPort();
-	const std::string password = ReadRconPassword();
 	const std::string servName = ReadSessionName();
 
 	ServerState::Get().SetServerName(servName);
 
 	LOG_INFO("[Rcon] Query port : %d", port);
 	LOG_INFO("[Rcon] Server name: %s", servName.c_str());
-
-	if (password.empty())
-		LOG_WARN("[Rcon] No -RconPassword= provided – RCON TCP server will not start");
-	else
-		LOG_INFO("[Rcon] RCON password is set");
+	LOG_INFO("[Rcon] RCON password is set");
 
 	// Register built-in commands
 	auto& cmds = CommandHandler::Get();
@@ -298,7 +305,7 @@ void Rcon::Init()
 	// Start UDP query server (always)
 	g_queryServer.Start(port);
 
-	// Start TCP RCON server (only if password was supplied)
+	// Start TCP RCON server
 	g_rconServer.Start(port, password);
 
 	// Launch background player-refresh thread

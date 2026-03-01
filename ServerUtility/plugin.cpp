@@ -128,10 +128,12 @@ extern "C"
         LOG_INFO("Plugin initialised. Awaiting engine ready signal.");
         LOG_INFO("Usage: launch the server with the following parameters:");
         LOG_INFO("  -SessionName=<name> [-SaveGameInterval=<seconds>]");
+        LOG_INFO("  -RconPort=<port> -RconPassword=<password>");
         LOG_INFO("When SessionName is present, DSSettings.txt is completely bypassed.");
-        LOG_INFO("  SaveGameName: Always 'AutoSave0.sav' (fixed)");
+        LOG_INFO("  SaveGameName: Always 'AutoSave0.sav'");
         LOG_INFO("  SaveGameInterval: Defaults to 300 seconds (5 minutes) if not specified");
         LOG_INFO("  StartNewGame / LoadSavedGame: Derived automatically from save file existence");
+        LOG_INFO("RCON requires both -RconPort= and -RconPassword= to be set.");
         LOG_INFO("Save location checked: <binDir>\\..\\..\\Saved\\SaveGames\\<SessionName>\\AutoSave0.sav");
         LOG_INFO("  (navigates up 2 directories from binary: Win64 -> Binaries -> <root>)");
 

@@ -65,8 +65,15 @@ bool RconServer::Start(uint16_t port, const std::string& password)
 void RconServer::Stop()
 {
     if (!m_running.exchange(false))
-        return;
+      return;
 
+    LOG_INFO("[RCON] Initiating shutdown...");
+
+    // Close all connected client sockets first — this unblocks any threads
+    // sitting in recv() so they can exit cleanly.
+    CloseAllClients();
+
+    // Close the listen socket to unblock accept()
     if (m_listenSocket != INVALID_SOCKET)
     {
         closesocket(m_listenSocket);
@@ -76,7 +83,45 @@ void RconServer::Stop()
     if (m_listenThread.joinable())
         m_listenThread.join();
 
+    // Wait briefly for detached client handler threads to finish their
+    // cleanup after their sockets were force-closed.  They only need to
+    // run UnregisterClient + closesocket + LOG_INFO, which is sub-millisecond.
+    Sleep(100);
+
     LOG_INFO("[RCON] Server stopped");
+}
+
+// ---------------------------------------------------------------------------
+// Client socket tracking
+// ---------------------------------------------------------------------------
+void RconServer::RegisterClient(SOCKET s)
+{
+    std::lock_guard<std::mutex> lock(m_clientsMutex);
+    m_clientSockets.push_back(s);
+}
+
+void RconServer::UnregisterClient(SOCKET s)
+{
+    std::lock_guard<std::mutex> lock(m_clientsMutex);
+    m_clientSockets.erase(
+        std::remove(m_clientSockets.begin(), m_clientSockets.end(), s),
+        m_clientSockets.end());
+}
+
+void RconServer::CloseAllClients()
+{
+    std::lock_guard<std::mutex> lock(m_clientsMutex);
+  for (SOCKET s : m_clientSockets)
+ {
+        // Shut down both directions — this causes any blocking recv() on
+        // the client handler thread to return immediately with an error,
+   // and also sends a TCP FIN to the remote client so it knows the
+      // connection is being closed.
+        shutdown(s, SD_BOTH);
+        closesocket(s);
+    }
+    LOG_INFO("[RCON] Closed %zu client connection(s)", m_clientSockets.size());
+    m_clientSockets.clear();
 }
 
 void RconServer::ListenLoop()
@@ -107,67 +152,93 @@ void RconServer::ListenLoop()
 
 void RconServer::HandleClient(SOCKET clientSock)
 {
-    // 30-second receive timeout — disconnects idle / stalled clients
-    DWORD timeout = 30000;
+    // Register so Stop() can force-close this socket
+    RegisterClient(clientSock);
+
+    // 5-minute receive timeout — only catches completely stalled connections.
+    // Interactive admin sessions may be idle for several minutes between commands,
+    // so the old 30s value was far too aggressive.
+    DWORD timeout = 300000;
     setsockopt(clientSock, SOL_SOCKET, SO_RCVTIMEO,
-               reinterpret_cast<const char*>(&timeout), sizeof(timeout));
+             reinterpret_cast<const char*>(&timeout), sizeof(timeout));
+
+ // TCP keepalives — detect dead peers (crashed client, dropped NAT entry, etc.)
+    // at the socket layer without involving the RCON protocol at all.
+    // Clients never see these probes, so no compatibility risk.
+  int keepAlive = 1;
+    setsockopt(clientSock, SOL_SOCKET, SO_KEEPALIVE,
+               reinterpret_cast<const char*>(&keepAlive), sizeof(keepAlive));
+    // Start probing after 60 s of silence, then every 10 s, give up after 3 misses.
+    DWORD keepIdle  = 60000;
+    DWORD keepIntvl = 10000;
+  DWORD keepCnt   = 3;
+    setsockopt(clientSock, IPPROTO_TCP, TCP_KEEPIDLE,
+         reinterpret_cast<const char*>(&keepIdle),  sizeof(keepIdle));
+    setsockopt(clientSock, IPPROTO_TCP, TCP_KEEPINTVL,
+               reinterpret_cast<const char*>(&keepIntvl), sizeof(keepIntvl));
+    setsockopt(clientSock, IPPROTO_TCP, TCP_KEEPCNT,
+           reinterpret_cast<const char*>(&keepCnt), sizeof(keepCnt));
 
     bool authenticated = false;
 
-    for (;;)
+    while (m_running)
     {
-        int32_t     id, type;
+     int32_t     id, type;
         std::string body;
 
-        if (!RecvPacket(clientSock, id, type, body))
+     if (!RecvPacket(clientSock, id, type, body))
             break;
 
         if (!authenticated)
+ {
+     if (type == TYPE_AUTH)
+     {
+      if (body == m_password)
+         {
+           authenticated = true;
+  // Source RCON spec: send empty RESPONSE_VALUE first, then AUTH_RESPONSE.
+         // Many clients block waiting for RESPONSE_VALUE and will never advance
+      // past auth without it — causing the 30-second SO_RCVTIMEO timeout loop.
+ SendPacket(clientSock, id, TYPE_RESPONSE_VALUE, "");
+        SendPacket(clientSock, id, TYPE_AUTH_RESPONSE, "");
+      LOG_INFO("[RCON] Client authenticated successfully");
+    }
+ else
         {
-            if (type == TYPE_AUTH)
-            {
-                if (body == m_password)
-                {
-                    authenticated = true;
-                    // Source RCON spec: send empty RESPONSE_VALUE first, then AUTH_RESPONSE.
-                    // Many clients block waiting for RESPONSE_VALUE and will never advance
-                    // past auth without it — causing the 30-second SO_RCVTIMEO timeout loop.
-                    SendPacket(clientSock, id, TYPE_RESPONSE_VALUE, "");
-                    SendPacket(clientSock, id, TYPE_AUTH_RESPONSE, "");
-                    LOG_INFO("[RCON] Client authenticated successfully");
+     // Source RCON spec: id=-1 means auth failure
+  SendPacket(clientSock, -1, TYPE_AUTH_RESPONSE, "");
+   LOG_WARN("[RCON] Client failed authentication (wrong password)");
+        break;
                 }
-                else
-                {
-                    // Source RCON spec: id=-1 means auth failure
-                    SendPacket(clientSock, -1, TYPE_AUTH_RESPONSE, "");
-                    LOG_WARN("[RCON] Client failed authentication (wrong password)");
-                    break;
-                }
-            }
-            else
+}
+    else
             {
-                // Unauthenticated client sent a non-auth packet — disconnect
-                break;
-            }
+     // Unauthenticated client sent a non-auth packet — disconnect
+        break;
         }
+  }
         else
         {
             if (type == TYPE_EXECCOMMAND)
             {
-                std::string response = CommandHandler::Get().Execute(body);
-                SendPacket(clientSock, id, TYPE_RESPONSE_VALUE, response);
-            }
+            std::string response = CommandHandler::Get().Execute(body);
+        SendPacket(clientSock, id, TYPE_RESPONSE_VALUE, response);
+          }
             else if (type == TYPE_AUTH)
-            {
-                // Re-auth attempt (some RCON clients do this periodically)
+   {
+        // Re-auth attempt (some RCON clients do this periodically)
                 if (body == m_password)
-                    SendPacket(clientSock, id, TYPE_AUTH_RESPONSE, "");
-                else
-                    SendPacket(clientSock, -1, TYPE_AUTH_RESPONSE, "");
-            }
+        SendPacket(clientSock, id, TYPE_AUTH_RESPONSE, "");
+       else
+          SendPacket(clientSock, -1, TYPE_AUTH_RESPONSE, "");
+   }
         }
     }
 
+    // Unregister and clean up — if Stop() already closed this socket via
+    // CloseAllClients(), closesocket() will harmlessly return WSAENOTSOCK.
+    UnregisterClient(clientSock);
+    shutdown(clientSock, SD_BOTH);
     closesocket(clientSock);
     LOG_INFO("[RCON] Client disconnected");
 }

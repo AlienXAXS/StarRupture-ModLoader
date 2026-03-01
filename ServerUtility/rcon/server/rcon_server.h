@@ -4,6 +4,8 @@
 #include <thread>
 #include <atomic>
 #include <cstdint>
+#include <mutex>
+#include <vector>
 
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -44,10 +46,19 @@ private:
     bool RecvPacket(SOCKET s, int32_t& outId, int32_t& outType, std::string& outBody);
     bool SendPacket(SOCKET s, int32_t id, int32_t type, const std::string& body);
 
+    // Track connected client sockets so Stop() can close them.
+    void RegisterClient(SOCKET s);
+    void UnregisterClient(SOCKET s);
+    void CloseAllClients();
+
     SOCKET            m_listenSocket = INVALID_SOCKET;
     std::thread       m_listenThread;
     std::atomic<bool> m_running{ false };
     std::string       m_password;
+
+    // Active client sockets (protected by m_clientsMutex)
+    std::mutex       m_clientsMutex;
+    std::vector<SOCKET> m_clientSockets;
 
     // Source Engine RCON packet types
     static constexpr int32_t TYPE_RESPONSE_VALUE = 0; // server -> client: command result
