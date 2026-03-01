@@ -361,3 +361,11 @@ void Rcon::OnExperienceLoadComplete()
 	// Drain any tasks queued by RCON command handlers that need the game thread
 	GameThreadDispatch::Drain();
 }
+
+void Rcon::OnTick(float /*deltaSeconds*/)
+{
+	// Drain any tasks queued by RCON command handlers that need the game thread.
+	// This runs every frame on the game thread, so posted tasks (e.g. save
+	// commands) are picked up promptly rather than waiting for a one-shot event.
+	GameThreadDispatch::Drain();
+}

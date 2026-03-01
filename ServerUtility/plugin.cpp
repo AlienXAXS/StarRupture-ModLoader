@@ -74,6 +74,11 @@ static void OnExperienceLoadComplete()
     Rcon::OnExperienceLoadComplete();
 }
 
+static void OnEngineTick(float deltaSeconds)
+{
+    Rcon::OnTick(deltaSeconds);
+}
+
 // -----------------------------------------------------------------------
 // Plugin exports
 // -----------------------------------------------------------------------
@@ -125,6 +130,12 @@ extern "C"
             LOG_INFO("Registered for experience load complete callback (RCON player refresh)");
         }
 
+        if (hooks->RegisterEngineTickCallback)
+        {
+            hooks->RegisterEngineTickCallback(OnEngineTick);
+            LOG_INFO("Registered for engine tick callback (game-thread task dispatch)");
+        }
+
         LOG_INFO("Plugin initialised. Awaiting engine ready signal.");
         LOG_INFO("Usage: launch the server with the following parameters:");
         LOG_INFO("  -SessionName=<name> [-SaveGameInterval=<seconds>]");
@@ -155,6 +166,9 @@ extern "C"
 
             if (g_hooks->UnregisterExperienceLoadCompleteCallback)
                 g_hooks->UnregisterExperienceLoadCompleteCallback(OnExperienceLoadComplete);
+
+            if (g_hooks->UnregisterEngineTickCallback)
+                g_hooks->UnregisterEngineTickCallback(OnEngineTick);
         }
 
         g_logger  = nullptr;

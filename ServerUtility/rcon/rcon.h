@@ -23,4 +23,7 @@ namespace Rcon
     // Game-thread callbacks – safe to call from the registered hook callbacks.
     void OnAnyWorldBeginPlay(SDK::UWorld* world, const char* worldName);
     void OnExperienceLoadComplete();
+
+    // Per-frame game-thread tick — drains the GameThreadDispatch task queue.
+    void OnTick(float deltaSeconds);
 }

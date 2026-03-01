@@ -26,11 +26,7 @@ namespace Cmd_Save
 	// immediate save on demand.
 	// -----------------------------------------------------------------------
 	static constexpr const char* SAVE_PATTERN =
-		"48 89 5C 24 ?? 48 89 74 24 ?? 48 89 7C 24 ?? 4C 89 74 24 ?? "
-		"55 48 8B EC 48 83 EC ?? 48 8B F9 E8 ?? ?? ?? ?? 45 33 F6 "
-		"48 8B D8 48 85 C0 74 ?? E8 ?? ?? ?? ?? 48 8B 53 ?? 4C 8D 40 ?? "
-		"48 63 40 ?? 3B 42 ?? 7F ?? 48 8B C8 48 8B 42 ?? ?? ?? ?? "
-		"74 ?? 49 8B DE 48 8D 55 ?? 48 8B CB E8 ?? ?? ?? ?? 48 63 5D";
+		"48 89 5C 24 ?? 48 89 6C 24 ?? 48 89 74 24 ?? 57 48 83 EC ?? 48 8B F9 E8 ?? ?? ?? ?? 33 ED 48 8B D8 48 85 C0 74 ?? E8 ?? ?? ?? ?? 48 8B 53 ?? 4C 8D 40 ?? 48 63 40 ?? 3B 42 ?? 7F ?? 48 8B C8 48 8B 42 ?? ?? ?? ?? ?? 74 ?? 48 8B DD 48 8D 54 24 ?? 48 8B CB E8 ?? ?? ?? ?? 48 63 5C 24";
 
 	using SaveNextSaveGame_t = void(__fastcall*)(void* thisPtr);
 	static SaveNextSaveGame_t g_saveFunc = nullptr;
@@ -68,20 +64,46 @@ namespace Cmd_Save
 			return "Error: save function not found (pattern not matched).\n";
 		}
 
-		// Post the save onto the game thread.  Engine APIs (UObject lookup,
-		// SaveNextSaveGame) must not be called from the RCON network thread.
-		auto fut = GameThreadDispatch::Post([]() -> std::string
-		{
+		// The save subsystem requires IsInGameThread().  RCON command handlers
+		// run on a network thread, so we must bounce the actual work to the
+		// game thread via GameThreadDispatch::Post and wait for the result.
+		auto fut = GameThreadDispatch::Post([]() -> std::string {
 #if CMD_SAVE_HAS_SDK
-			auto* subsystem = SDK::UObject::FindObjectFast("CrSaveSubsystem");
+			// Find the UCrSaveSubsystem *instance* (not the UClass or CDO).
+			SDK::UObject* subsystem = nullptr;
+			{
+				auto& GObjects = SDK::UObject::GObjects;
+				const int32_t count = GObjects->Num();
+				for (int32_t i = 0; i < count; ++i)
+				{
+					SDK::UObject* obj = GObjects->GetByIndex(i);
+					if (!obj || !obj->Class)
+						continue;
+
+					if (obj->IsDefaultObject())
+						continue;
+
+					if (obj->Class->GetName() == "CrSaveSubsystem")
+					{
+						subsystem = obj;
+						break;
+					}
+				}
+			}
+#else
+			void* subsystem = nullptr;
+#endif
+
 			if (!subsystem)
 			{
 				LOG_ERROR("[RCON] UCrSaveSubsystem instance not found - world may not be loaded yet.");
 				return "Error: save subsystem not available (world may not be loaded yet).\n";
 			}
 
+#if CMD_SAVE_HAS_SDK
 			LOG_INFO("[RCON] Forcing world save via UCrSaveSubsystem::SaveNextSaveGame "
-			         "(instance at %p)...", subsystem);
+				     "(instance at %p, name: %s)...", subsystem, subsystem->GetName().c_str());
+#endif
 
 			DWORD exCode = TryCallSave(subsystem);
 			if (exCode == 0)
@@ -92,22 +114,16 @@ namespace Cmd_Save
 
 			LOG_ERROR("[RCON] Exception during save (0x%08lX) - save may be incomplete.", exCode);
 			return "Error: exception occurred during save.\n";
-#else
-			return "Error: save not available in this build configuration.\n";
-#endif
 		});
 
-		// Block the RCON thread for up to 10 seconds while the game thread
-		// drains the queue (happens on the next OnAnyWorldBeginPlay or
-		// OnExperienceLoadComplete callback).
+		// Block the RCON network thread waiting for the game thread to
+		// execute the save.  30 seconds should be more than enough.
 		using namespace std::chrono_literals;
-		if (fut.wait_for(10s) == std::future_status::ready)
+		if (fut.wait_for(30s) == std::future_status::ready)
 			return fut.get();
 
-		// Game thread didn't drain in time — task is still queued and will
-		// complete eventually, but we can't return its result to the client.
-		LOG_WARN("[RCON] Save task queued but game thread did not drain within 10s.");
-		return "Save queued (game thread busy – will complete on next world event).\n";
+		LOG_WARN("[RCON] Save command timed out waiting for game thread (30s).");
+		return "Error: save command timed out waiting for game thread.\n";
 	}
 
 	// -----------------------------------------------------------------------
