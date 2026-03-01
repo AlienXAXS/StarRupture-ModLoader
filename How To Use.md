@@ -37,6 +37,9 @@ Download the one that matches your use case.
 
 3. Launch the game (or server) as normal. The mod loader will initialise automatically via `version.dll`.
 
+Note for Linux Users
+In order for the mod to load, you must have the envrionment variable `WINEDLLOVERRIDES` set with the value `version=n,b`
+
 ---
 
 ## Enabling Plugins
