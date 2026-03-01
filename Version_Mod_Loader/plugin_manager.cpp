@@ -219,4 +219,12 @@ namespace ModLoader
 
 		LogMessage(L"All plugins unloaded");
 	}
+
+	int GetLoadedPluginCount()
+	{
+		EnterCriticalSection(&g_pluginLock);
+		int count = static_cast<int>(g_loadedPlugins.size());
+		LeaveCriticalSection(&g_pluginLock);
+		return count;
+	}
 }

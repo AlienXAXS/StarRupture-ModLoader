@@ -16,4 +16,14 @@ namespace ScanPatterns
 	inline constexpr const char* UCrMassSaveSubsystem_OnSaveLoaded = "4C 8B DC 55 57 49 8D AB ?? ?? ?? ?? 48 81 EC ?? ?? ?? ?? 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 85 ?? ?? ?? ?? 49 89 5B ?? B8";
 
 	inline constexpr const char* UCrExperienceManagerComponent_OnExperienceLoadComplete = "48 89 4C 24 ?? 55 53 56 41 54 41 55 48 8D 6C 24 ?? 48 81 EC ?? ?? ?? ?? 83 B9";
+
+	// FMassEntityManager::GetArchetypeForEntity(FMassEntityHandle)
+	// Returns FMassArchetypeHandle (wraps FMassArchetypeData*).
+	// Used by RailJunctionFixer to filter entities by archetype for socket signaling.
+	inline constexpr const char* FMassEntityManager_GetArchetypeForEntity = "48 89 5C 24 ?? 48 89 74 24 ?? 57 48 83 EC ?? 48 8B FA 49 8B D8 49 8B D0 48 8B F1 E8 ?? ?? ?? ?? 84 C0";
+
+	// UMassSignalSubsystem::SignalEntity(FName SignalName, FMassEntityHandle Entity)
+	// rcx=this, rdx=FName (8 bytes by value), r8=FMassEntityHandle (8 bytes by value)
+	// Used by RailJunctionFixer to signal socket entities after save load.
+	inline constexpr const char* UMassSignalSubsystem_SignalEntity = "48 89 5C 24 ?? 4C 89 44 24 ?? 57 48 83 EC ?? 48 8B DA 48 8B F9 45 85 C0";
 }

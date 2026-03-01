@@ -125,89 +125,6 @@ static void RemoveMassEntityConfigWBPHook()
 }
 
 // ----------------------------------------------------------------
-// TEMP DIAGNOSTIC: AActor::BeginPlay hook
-// ----------------------------------------------------------------
-// Logs every actor that begins play so we can see the spawn order
-// and confirm when BP_DroneLane actors appear relative to other
-// lifecycle events (SaveLoaded, ExperienceLoadComplete, etc.)
-// ----------------------------------------------------------------
-
-static constexpr const char* AACTOR_BEGINPLAY_PATTERN =
-"48 89 5C 24 10 48 89 74 24 18 57 48 81 EC 10 01 00 00 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 84 24 00 01 00 00 0F B6 41 5D 48 8B F9 24 18 3C 08 74";
-
-typedef void(__fastcall* AActorBeginPlay_t)(SDK::AActor* thisPtr);
-static AActorBeginPlay_t g_originalAActorBeginPlay = nullptr;
-static HookHandle g_aactorBeginPlayHookHandle = nullptr;
-
-static void __fastcall Hook_AActorBeginPlay(SDK::AActor* thisPtr)
-{
-	if (thisPtr)
-	{
-		std::string actorName = thisPtr->GetName();
-		std::string className = thisPtr->Class ? thisPtr->Class->GetName() : "(null class)";
-		LOG_DEBUG("AActor::BeginPlay - %s [%s] (%p)",
-			actorName.c_str(), className.c_str(), static_cast<void*>(thisPtr));
-	}
-	else
-	{
-		LOG_DEBUG("AActor::BeginPlay - (null actor)");
-	}
-
-	if (g_originalAActorBeginPlay)
-		g_originalAActorBeginPlay(thisPtr);
-}
-
-static bool InstallAActorBeginPlayHook()
-{
-	if (!g_scanner || !g_hooks)
-	{
-		LOG_ERROR("AActorBeginPlay hook: Scanner or Hooks interface not available");
-		return false;
-	}
-
-	LOG_INFO("Scanning for AActor::BeginPlay...");
-	uintptr_t addr = g_scanner->FindPatternInMainModule(AACTOR_BEGINPLAY_PATTERN);
-
-	if (!addr)
-	{
-		LOG_ERROR("AActorBeginPlay hook: Pattern not found!");
-		return false;
-	}
-
-	HMODULE mainModule = GetModuleHandleW(nullptr);
-	auto base = reinterpret_cast<uintptr_t>(mainModule);
-	LOG_INFO("AActor::BeginPlay found at 0x%llX (base+0x%llX)",
-		static_cast<unsigned long long>(addr),
-		static_cast<unsigned long long>(addr - base));
-
-	g_aactorBeginPlayHookHandle = g_hooks->InstallHook(
-		addr,
-		reinterpret_cast<void*>(&Hook_AActorBeginPlay),
-		reinterpret_cast<void**>(&g_originalAActorBeginPlay));
-
-	if (!g_aactorBeginPlayHookHandle)
-	{
-		LOG_ERROR("AActorBeginPlay hook: InstallHook failed!");
-		return false;
-	}
-
-	LOG_INFO("AActor::BeginPlay hook installed successfully (TEMP DIAGNOSTIC)");
-	return true;
-}
-
-static void RemoveAActorBeginPlayHook()
-{
-	if (g_aactorBeginPlayHookHandle && g_hooks)
-	{
-		LOG_INFO("Removing AActor::BeginPlay hook...");
-		g_hooks->RemoveHook(g_aactorBeginPlayHookHandle);
-		g_aactorBeginPlayHookHandle = nullptr;
-		g_originalAActorBeginPlay = nullptr;
-		LOG_INFO("AActor::BeginPlay hook removed");
-	}
-}
-
-// ----------------------------------------------------------------
 // Experience-load-complete callback
 // ----------------------------------------------------------------
 // Called by the mod loader when UCrExperienceManagerComponent::
@@ -219,9 +136,6 @@ static void RemoveAActorBeginPlayHook()
 static void OnExperienceLoadComplete()
 {
 	if (!RailJunctionFixerConfig::Config::IsEnabled())
-		return;
-
-	if (!RailJunctionFixerConfig::Config::AutoFixExistingJunctions())
 		return;
 
 	LOG_INFO("ExperienceLoadComplete: Experience fully loaded - running junction repair");
@@ -237,6 +151,23 @@ static void OnExperienceLoadComplete()
 	LOG_INFO("ExperienceLoadComplete: Current world is '%s' at %p", worldName.c_str(), static_cast<void*>(world));
 }
 
+// ----------------------------------------------------------------
+// Save-loaded callback
+// ----------------------------------------------------------------
+// Called by the mod loader when UCrMassSaveSubsystem::OnSaveLoaded
+// fires - the save is fully loaded. We use this to signal socket
+// entities so that stale FMassEntityHandle values are rebuilt.
+// ----------------------------------------------------------------
+
+static void OnSaveLoaded()
+{
+	if (!RailJunctionFixerConfig::Config::IsEnabled())
+		return;
+
+	LOG_INFO("SaveLoaded: Save finished loading - signaling socket entities for re-initialization");
+	RailJunctionFixer::LogisticsFragmentFixer::SignalSocketEntities();
+}
+
 // Engine init callback - called after FEngineLoop::Init returns.
 // NOTE: UCrMassEntityConfigLoaderSubsystem::OnWorldBeginPlay fires INSIDE
 // FEngineLoop::Init, so the WBP hook is installed from PluginInit instead.
@@ -244,28 +175,17 @@ static void OnEngineInit()
 {
 	LOG_INFO("Engine initialized");
 
-	// TEMP DIAGNOSTIC: Install AActor::BeginPlay hook to log all actor spawns
-	if (InstallAActorBeginPlayHook())
+	// Register for save-loaded callback to signal socket entities after a save loads
+	if (RailJunctionFixerConfig::Config::IsEnabled())
 	{
-		LOG_INFO("AActor::BeginPlay diagnostic hook active");
-	}
-	else
-	{
-		LOG_WARN("AActor::BeginPlay diagnostic hook failed - non-critical, continuing");
-	}
-
-	// Register for experience-load-complete callback to run junction repair
-	// after the map/gameplay experience is fully ready (all actors spawned)
-	if (RailJunctionFixerConfig::Config::IsEnabled() && RailJunctionFixerConfig::Config::AutoFixExistingJunctions())
-	{
-		if (g_hooks && g_hooks->RegisterExperienceLoadCompleteCallback)
+		if (g_hooks && g_hooks->RegisterSaveLoadedCallback)
 		{
-			g_hooks->RegisterExperienceLoadCompleteCallback(OnExperienceLoadComplete);
-			LOG_INFO("Junction repair will run after experience finishes loading (via ExperienceLoadComplete callback)");
+			g_hooks->RegisterSaveLoadedCallback(OnSaveLoaded);
+			LOG_INFO("Registered for save-loaded callback (socket entity signaling)");
 		}
 		else
 		{
-			LOG_ERROR("RegisterExperienceLoadCompleteCallback not available - junction repair will NOT run");
+			LOG_WARN("RegisterSaveLoadedCallback not available - socket re-init after save load will NOT run");
 		}
 	}
 }
@@ -277,6 +197,12 @@ static void OnEngineShutdown()
 {
 	LOG_INFO("Engine shutting down - cleaning up...");
 
+	// Unregister save-loaded callback
+	if (g_hooks && g_hooks->UnregisterSaveLoadedCallback)
+	{
+		g_hooks->UnregisterSaveLoadedCallback(OnSaveLoaded);
+	}
+
 	// Unregister experience-load-complete callback
 	if (g_hooks && g_hooks->UnregisterExperienceLoadCompleteCallback)
 	{
@@ -287,9 +213,6 @@ static void OnEngineShutdown()
 
 	// Remove the mass entity config loader subsystem hook
 	RemoveMassEntityConfigWBPHook();
-
-	// TEMP DIAGNOSTIC: Remove AActor::BeginPlay hook
-	RemoveAActorBeginPlayHook();
 }
 
 extern "C" {
@@ -345,17 +268,6 @@ extern "C" {
 		else
 		{
 			LOG_WARN("RegisterEngineShutdownCallback not available - UStruct restore will not run before engine teardown");
-		}
-
-		if (RailJunctionFixerConfig::Config::IsEnabled())
-		{
-			LOG_INFO("Fix will be applied on UCrMassEntityConfigLoaderSubsystem::OnWorldBeginPlay");
-			if (RailJunctionFixerConfig::Config::AutoFixExistingJunctions())
-				LOG_INFO("Existing junction repair is ENABLED - will run via ExperienceLoadComplete callback");
-		}
-		else
-		{
-			LOG_INFO("Fix is DISABLED - plugin will not modify game memory");
 		}
 
 		return true;
