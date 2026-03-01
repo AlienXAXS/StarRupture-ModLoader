@@ -94,7 +94,7 @@ static constexpr const wchar_t* PARAM_SESSION_NAME = L"-SessionName=";
 static constexpr const wchar_t* PARAM_SAVE_INTERVAL = L"-SaveGameInterval=";
 
 // Save game name is always AutoSave0
-static constexpr const wchar_t* SAVE_GAME_NAME = L"AutoSave0";
+static constexpr const wchar_t* SAVE_GAME_NAME = L"AutoSave0.sav";
 
 // Default save interval in seconds (5 minutes)
 static constexpr int DEFAULT_SAVE_INTERVAL = 300;
