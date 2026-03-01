@@ -37,6 +37,9 @@ namespace RailJunctionFixer
         // Restore original struct data and free allocated chain memory
         static void Shutdown();
 
+		// After patching the hierarchy, we need to signal the entity subsystem to update its internal data for the sockets fragment, so it recognizes the new parentage for saving/loading.
+        static void SignalSocketEntities();
+
     private:
         // Allocated chain memory
         static uintptr_t* s_newChain;
@@ -48,6 +51,10 @@ namespace RailJunctionFixer
         static uintptr_t* s_origChain;
         static int32_t    s_origDepth;
         static uintptr_t  s_origSuperStruct;
+
+        // UScriptStruct* for CrLogisticsSocketsFragment, saved from Initialize()
+        // so SignalSocketEntities() can filter entities by fragment type.
+        static void* s_socketsFragmentStruct;
 
         // Patch the inheritance hierarchy chain for IsChildOf to work correctly
         static bool PatchHierarchyChain(uintptr_t socketsStruct, uintptr_t savableStruct);

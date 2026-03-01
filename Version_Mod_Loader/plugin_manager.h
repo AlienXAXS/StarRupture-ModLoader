@@ -15,4 +15,7 @@ namespace ModLoader
 
     // Unload all plugins
     void UnloadAllPlugins();
+
+    // Get the number of currently loaded plugins
+    int GetLoadedPluginCount();
 }
