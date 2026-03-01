@@ -14,14 +14,13 @@
 // UCrDedicatedServerSettingsComp memory layout
 //
 // ParseSettings writes five fields on the component object.  The offsets
-// below are derived from the order the fields are accessed in the
-// decompiled function:
+// below are derived from the IDA decompilation of the original function:
 //
-//   SessionName    FString   - first GetStringField call
-//   SaveGameName     FString   - second GetStringField call
-//   SaveGameInterval int     - _wtoi() result
-//   bStartNewGame    bool      - Stricmp("true") == 0
-//bLoadSavedGame   bool      - Stricmp("true") == 0
+//   +0xB8  SessionName      FString  — (char*)this + 184
+// +0xC8  SaveGameName     FString  — (char*)this + 200
+//   +0xD8  SaveGameInterval int32    — (_DWORD*)this + 54  (54*4=216=0xD8)
+//   +0xDC  bStartNewGame  bool     — (_BYTE*)this + 220
+//   +0xDD  bLoadSavedGame   bool     — (_BYTE*)this + 221
 // ---------------------------------------------------------------------------
 
 // Minimal FString mirror so we can manipulate engine strings from outside.
@@ -51,15 +50,15 @@ static FMemoryFree_t   g_engineFree = nullptr;
 
 // ---------------------------------------------------------------------------
 // Field accessor namespace for UCrDedicatedServerSettingsComp
-// Based on IDA decompilation, provides safe access to member fields
+// Offsets verified against IDA pseudocode of ParseSettings.
 // ---------------------------------------------------------------------------
 namespace FieldAccessor
 {
-	constexpr size_t OFFSET_SESSION_NAME = 0xB8;
-	constexpr size_t OFFSET_SAVEGAME_NAME = 0xC8;
-	constexpr size_t OFFSET_SAVE_INTERVAL = 0xD8;
-	constexpr size_t OFFSET_START_NEW_GAME = 0xE0;
-	constexpr size_t OFFSET_LOAD_SAVED_GAME = 0xE1;
+	constexpr size_t OFFSET_SESSION_NAME     = 0xB8; // (char*)this + 184
+	constexpr size_t OFFSET_SAVEGAME_NAME    = 0xC8; // (char*)this + 200
+	constexpr size_t OFFSET_SAVE_INTERVAL    = 0xD8; // (_DWORD*)this + 54 → 216
+	constexpr size_t OFFSET_START_NEW_GAME   = 0xDC; // (_BYTE*)this + 220
+	constexpr size_t OFFSET_LOAD_SAVED_GAME  = 0xDD; // (_BYTE*)this + 221
 
 	inline EngineString* GetSessionName(void* thisPtr)
 	{
@@ -102,8 +101,11 @@ static constexpr int DEFAULT_SAVE_INTERVAL = 300;
 // ---------------------------------------------------------------------------
 // Helper: assign an FString using the engine's own allocator.
 //
-// This mirrors exactly what the original ParseSettings does:
-//1. Free the old Data pointer via FMemory::Free (if non-null)
+// Because the hook now skips the original function entirely when command-line
+// params are present, the FString fields are guaranteed to be in their
+// default-constructed state (Data=null, Num=0, Max=0) from UObject
+// initialisation.  We therefore:
+//   1. Free old Data via FMemory::Free only if it looks valid
 //   2. Allocate a new buffer via FMemory::Malloc
 //   3. Copy the string into the new buffer
 //   4. Update Num and Max
@@ -123,10 +125,8 @@ static bool AssignEngineString(EngineString* str, const wchar_t* value)
 	}
 
 	// Free old allocation if present AND looks valid.
-	// When the original ParseSettings fails (returns 0), the FString fields
-	// may contain uninitialized garbage.  We only call FMemory::Free if
-	// Data is non-null AND Num/Max look sane (positive, consistent).
-	// Otherwise we just zero the struct and allocate fresh.
+	// Since we skip the original, FStrings should be default-constructed
+	// (Data=null), but handle the case defensively.
 	if (str->Data)
 	{
 		bool looksValid = (str->Num > 0 && str->Max > 0 && str->Num <= str->Max && str->Max < 0x100000);
@@ -304,11 +304,18 @@ static HookHandle       g_hookHandle = nullptr;
 // ---------------------------------------------------------------------------
 // Detour
 //
-// Strategy: ALWAYS call the original function first.  This lets the engine
-// do its normal DSSettings.txt load and allocate FString buffers via FMalloc.
-// We then REPLACE the string contents using the engine's own allocator -
-// freeing old data with FMemory::Free and allocating new data with
-// FMemory::Malloc - so the GC's destructor always finds valid canary values.
+// Strategy: When command-line parameters are present, SKIP the original
+// function entirely and write all five fields ourselves.  This eliminates
+// the DSSettings.txt dependency — no file needed, no JSON parsing, no
+// risk of garbage FString state from a failed LoadFileToString.
+//
+// The FString fields at +0xB8 and +0xC8 are guaranteed to be in their
+// default-constructed state (Data=null, Num=0, Max=0) since UObject
+// zero-inits its memory.  We allocate via the engine's own FMemory::Malloc
+// so the GC destructor sees valid FMallocBinned2 canary values.
+//
+// When command-line params are NOT present, we fall through to the original
+// function for normal DSSettings.txt loading.
 // ---------------------------------------------------------------------------
 static __int64 __fastcall Hook_ParseSettings(void* thisPtr)
 {
@@ -352,45 +359,10 @@ static __int64 __fastcall Hook_ParseSettings(void* thisPtr)
 		return result;
 	}
 
-	LOG_INFO("[Hook_ParseSettings] Command-line parameters detected - will override after original runs");
+	LOG_INFO("[Hook_ParseSettings] Command-line parameters detected - bypassing original (no DSSettings.txt needed)");
 
 	// -----------------------------------------------------------------------
-	// Step 1: Let the ORIGINAL function run so the engine does its normal
-	//     initialization (loads DSSettings.txt, allocates FStrings, etc.)
-	// -----------------------------------------------------------------------
-	LOG_DEBUG("[Hook_ParseSettings] Calling original ParseSettings to let engine initialize...");
-	__int64 originalResult = g_originalParseSettings(thisPtr);
-	LOG_DEBUG("[Hook_ParseSettings] Original ParseSettings returned %lld", originalResult);
-
-	// If the original failed (returned 0), the FString fields may contain
-	// uninitialized garbage.  Zero-init them so AssignEngineString doesn't
-	// try to free garbage pointers.
-	if (originalResult == 0)
-	{
-		LOG_WARN("[Hook_ParseSettings] Original ParseSettings FAILED (returned 0) - "
-			"zero-initializing FString fields before override");
-
-		EngineString* sessionStr = FieldAccessor::GetSessionName(thisPtr);
-		EngineString* saveStr = FieldAccessor::GetSaveGameName(thisPtr);
-
-		// Log current (potentially garbage) values for diagnostics
-		LOG_DEBUG("[Hook_ParseSettings] Pre-init SessionName: Data=%p Num=%d Max=%d",
-			static_cast<void*>(sessionStr->Data), sessionStr->Num, sessionStr->Max);
-		LOG_DEBUG("[Hook_ParseSettings] Pre-init SaveGameName: Data=%p Num=%d Max=%d",
-			static_cast<void*>(saveStr->Data), saveStr->Num, saveStr->Max);
-
-		// Zero-init the FString structs so they look like empty strings
-		memset(sessionStr, 0, sizeof(EngineString));
-		memset(saveStr, 0, sizeof(EngineString));
-
-		// Also zero the other fields
-		*FieldAccessor::GetSaveGameInterval(thisPtr) = 0;
-		*FieldAccessor::GetStartNewGame(thisPtr) = false;
-		*FieldAccessor::GetLoadSavedGame(thisPtr) = false;
-	}
-
-	// -----------------------------------------------------------------------
-	// Step 2: Parse our command-line overrides.
+	// Step 1: Parse command-line parameters.
 	// -----------------------------------------------------------------------
 	std::wstring sessionName, saveGameInterval;
 
@@ -400,13 +372,13 @@ static __int64 __fastcall Hook_ParseSettings(void* thisPtr)
 	if (GetCommandLineParam(PARAM_SAVE_INTERVAL, saveGameInterval))
 	{
 		saveInterval = _wtoi(saveGameInterval.c_str());
-		LOG_INFO("  SessionName      = %ls", sessionName.c_str());
-		LOG_INFO("  SaveGameName     = %ls (fixed)", SAVE_GAME_NAME);
+		LOG_INFO("  SessionName  = %ls", sessionName.c_str());
+		LOG_INFO("SaveGameName     = %ls (fixed)", SAVE_GAME_NAME);
 		LOG_INFO("  SaveGameInterval = %d seconds (from command line)", saveInterval);
 	}
 	else
 	{
-		LOG_INFO("  SessionName      = %ls", sessionName.c_str());
+		LOG_INFO("  SessionName  = %ls", sessionName.c_str());
 		LOG_INFO("  SaveGameName     = %ls (fixed)", SAVE_GAME_NAME);
 		LOG_INFO("  SaveGameInterval = %d seconds (default)", saveInterval);
 	}
@@ -420,11 +392,20 @@ static __int64 __fastcall Hook_ParseSettings(void* thisPtr)
 		hasSave ? "loading existing session" : "starting new session");
 
 	// -----------------------------------------------------------------------
-	// Step 3: Replace FString contents using engine allocator.
-	//   Free old Data via FMemory::Free, allocate new via FMemory::Malloc.
-	//   This guarantees correct FMallocBinned2 canary values.
+	// Step 2: Write all five fields directly onto the component.
+	//
+	// The original function is NOT called.  FString fields should be in
+	// their default-constructed state (zeroed by UObject allocation).
+	// We allocate string data via FMemory::Malloc so GC cleanup works.
+	//
+	// Field layout from IDA pseudocode:
+	//   +0xB8  SessionName      (FString — Data/Num/Max)
+	//   +0xC8  SaveGameName     (FString — Data/Num/Max)
+	//   +0xD8  SaveGameInterval (int32)
+	//+0xDC  bStartNewGame    (bool)
+	//   +0xDD  bLoadSavedGame   (bool)
 	// -----------------------------------------------------------------------
-	LOG_DEBUG("[Hook_ParseSettings] Replacing fields via engine allocator (thisPtr at 0x%p)...", thisPtr);
+	LOG_DEBUG("[Hook_ParseSettings] Writing fields directly (thisPtr at 0x%p)...", thisPtr);
 
 	try
 	{
@@ -447,27 +428,32 @@ static __int64 __fastcall Hook_ParseSettings(void* thisPtr)
 		}
 
 		*FieldAccessor::GetSaveGameInterval(thisPtr) = saveInterval;
-		LOG_DEBUG("[Hook_ParseSettings] SaveGameInterval set successfully");
+		LOG_DEBUG("[Hook_ParseSettings] SaveGameInterval set to %d", saveInterval);
 
 		*FieldAccessor::GetStartNewGame(thisPtr) = bStartNew;
 		*FieldAccessor::GetLoadSavedGame(thisPtr) = bLoadSaved;
-		LOG_DEBUG("[Hook_ParseSettings] Boolean flags set successfully");
+		LOG_DEBUG("[Hook_ParseSettings] bStartNewGame=%s, bLoadSavedGame=%s",
+			bStartNew ? "true" : "false", bLoadSaved ? "true" : "false");
 	}
 	catch (const std::exception& ex)
 	{
 		LOG_ERROR("[Hook_ParseSettings] C++ exception while setting fields: %s", ex.what());
-		LOG_INFO("[Hook_ParseSettings] ===== CALL #%d END (exception, original result used) =====", currentCall);
-		return originalResult;
+		LOG_ERROR("[Hook_ParseSettings] Falling back to original function");
+		__int64 result = g_originalParseSettings(thisPtr);
+		LOG_INFO("[Hook_ParseSettings] ===== CALL #%d END (exception, fell back to original) =====", currentCall);
+		return result;
 	}
 	catch (...)
 	{
 		LOG_ERROR("[Hook_ParseSettings] Unknown exception while setting fields");
-		LOG_INFO("[Hook_ParseSettings] ===== CALL #%d END (exception, original result used) =====", currentCall);
-		return originalResult;
+		LOG_ERROR("[Hook_ParseSettings] Falling back to original function");
+		__int64 result = g_originalParseSettings(thisPtr);
+		LOG_INFO("[Hook_ParseSettings] ===== CALL #%d END (exception, fell back to original) =====", currentCall);
+		return result;
 	}
 
 	// -----------------------------------------------------------------------
-	// Step 4: Read back and verify the assigned values for diagnostics
+	// Step 3: Read back and verify the assigned values for diagnostics
 	// -----------------------------------------------------------------------
 	{
 		EngineString* sessionStr = FieldAccessor::GetSessionName(thisPtr);
@@ -499,10 +485,9 @@ static __int64 __fastcall Hook_ParseSettings(void* thisPtr)
 		*FieldAccessor::GetStartNewGame(thisPtr) ? "true" : "false",
 		*FieldAccessor::GetLoadSavedGame(thisPtr) ? "true" : "false");
 
-	LOG_INFO("[Hook_ParseSettings] ===== CALL #%d END (success) =====", currentCall);
+	LOG_INFO("[Hook_ParseSettings] ===== CALL #%d END (success, original NOT called) =====", currentCall);
 
-	// Return 1 (success) regardless of whether the original succeeded,
-	// because we've successfully populated all five fields.
+	// Return 1 (success) — we've populated all five fields.
 	return 1;
 }
 
