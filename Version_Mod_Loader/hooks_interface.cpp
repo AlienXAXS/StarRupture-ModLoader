@@ -7,6 +7,7 @@
 #include "game/engine_shutdown/engine_shutdown.h"
 #include "game/save_loaded/save_loaded.h"
 #include "game/experience_load_complete/experience_load_complete.h"
+#include "game/engine_tick/engine_tick.h"
 #include <unordered_map>
 #include <mutex>
 
@@ -288,6 +289,30 @@ namespace ModLoader
 		return EngineAllocator::IsAvailable();
 	}
 
+	static void HooksRegisterEngineTickCallback(void (*callback)(float))
+	{
+		if (!callback)
+		{
+			LogWarn(L"[HooksInterface] RegisterEngineTickCallback: null callback");
+			return;
+		}
+
+		Hooks::EngineTick::RegisterPluginCallback(callback);
+		LogDebug(L"[HooksInterface] EngineTick callback registered for plugin");
+	}
+
+	static void HooksUnregisterEngineTickCallback(void (*callback)(float))
+	{
+		if (!callback)
+		{
+			LogWarn(L"[HooksInterface] UnregisterEngineTickCallback: null callback");
+			return;
+		}
+
+		Hooks::EngineTick::UnregisterPluginCallback(callback);
+		LogDebug(L"[HooksInterface] EngineTick callback unregistered for plugin");
+	}
+
 	// Global hooks interface instance
 	static IPluginHooks g_pluginHooks = {
 		HooksInstallHook,
@@ -310,7 +335,9 @@ namespace ModLoader
 		HooksRegisterSaveLoadedCallback,
 		HooksUnregisterSaveLoadedCallback,
 		HooksRegisterExperienceLoadCompleteCallback,
-		HooksUnregisterExperienceLoadCompleteCallback
+		HooksUnregisterExperienceLoadCompleteCallback,
+		HooksRegisterEngineTickCallback,
+		HooksUnregisterEngineTickCallback
 	};
 
 	IPluginHooks* GetPluginHooks()

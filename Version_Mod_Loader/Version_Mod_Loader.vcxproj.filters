@@ -31,6 +31,9 @@
     <Filter Include="Source Files\game\experience_load_complete">
       <UniqueIdentifier>{94cb41f4-d4af-4ce1-9e4c-fb122cde2f2a}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Source Files\game\engine_tick">
+      <UniqueIdentifier>{ad840a96-d535-42f9-9386-22100e859737}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="plugin_interface.h">
@@ -86,6 +89,9 @@
     </ClInclude>
     <ClInclude Include="game\experience_load_complete\experience_load_complete.h">
       <Filter>Source Files\game\experience_load_complete</Filter>
+    </ClInclude>
+    <ClInclude Include="game\engine_tick\engine_tick.h">
+      <Filter>Source Files\game\engine_tick</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -145,6 +151,9 @@
     </ClCompile>
     <ClCompile Include="game\experience_load_complete\experience_load_complete.cpp">
       <Filter>Source Files\game\experience_load_complete</Filter>
+    </ClCompile>
+    <ClCompile Include="game\engine_tick\engine_tick.cpp">
+      <Filter>Source Files\game\engine_tick</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

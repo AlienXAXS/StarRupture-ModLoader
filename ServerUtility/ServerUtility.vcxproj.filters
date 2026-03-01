@@ -1,9 +1,6 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
-    <ClCompile Include="$(SolutionDir)StarRupture SDK\SDK\Basic.cpp" />
-    <ClCompile Include="$(SolutionDir)StarRupture SDK\SDK\CoreUObject_functions.cpp" />
-    <ClCompile Include="$(SolutionDir)StarRupture SDK\SDK\Engine_functions.cpp" />
     <ClCompile Include="dllmain.cpp" />
     <ClCompile Include="plugin.cpp" />
     <ClCompile Include="hooks\set_password\set_password.cpp">
@@ -11,6 +8,36 @@
     </ClCompile>
     <ClCompile Include="hooks\parse_settings\parse_settings.cpp">
       <Filter>hooks\parse_settings</Filter>
+    </ClCompile>
+    <ClCompile Include="rcon\rcon.cpp">
+      <Filter>rcon</Filter>
+    </ClCompile>
+    <ClCompile Include="rcon\state\game_thread_dispatch.cpp">
+      <Filter>rcon\state</Filter>
+    </ClCompile>
+    <ClCompile Include="rcon\state\server_state.cpp">
+      <Filter>rcon\state</Filter>
+    </ClCompile>
+    <ClCompile Include="rcon\commands\command_handler.cpp">
+      <Filter>rcon\commands</Filter>
+    </ClCompile>
+    <ClCompile Include="rcon\commands\cmd_players.cpp">
+      <Filter>rcon\commands</Filter>
+    </ClCompile>
+    <ClCompile Include="rcon\commands\cmd_stop.cpp">
+      <Filter>rcon\commands</Filter>
+    </ClCompile>
+    <ClCompile Include="rcon\server\rcon_server.cpp">
+      <Filter>rcon\server</Filter>
+    </ClCompile>
+    <ClCompile Include="rcon\server\query_server.cpp">
+      <Filter>rcon\server</Filter>
+    </ClCompile>
+    <ClCompile Include="$(StarRuptureSDKSourceDir)Basic.cpp" />
+    <ClCompile Include="$(StarRuptureSDKSourceDir)CoreUObject_functions.cpp" />
+    <ClCompile Include="$(StarRuptureSDKSourceDir)Engine_functions.cpp" />
+    <ClCompile Include="rcon\commands\cmd_save.cpp">
+      <Filter>rcon\commands</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -23,6 +50,33 @@
     <ClInclude Include="hooks\parse_settings\parse_settings.h">
       <Filter>hooks\parse_settings</Filter>
     </ClInclude>
+    <ClInclude Include="rcon\rcon.h">
+      <Filter>rcon</Filter>
+    </ClInclude>
+    <ClInclude Include="rcon\state\game_thread_dispatch.h">
+      <Filter>rcon\state</Filter>
+    </ClInclude>
+    <ClInclude Include="rcon\state\server_state.h">
+      <Filter>rcon\state</Filter>
+    </ClInclude>
+    <ClInclude Include="rcon\commands\command_handler.h">
+      <Filter>rcon\commands</Filter>
+    </ClInclude>
+    <ClInclude Include="rcon\commands\cmd_players.h">
+      <Filter>rcon\commands</Filter>
+    </ClInclude>
+    <ClInclude Include="rcon\commands\cmd_stop.h">
+      <Filter>rcon\commands</Filter>
+    </ClInclude>
+    <ClInclude Include="rcon\server\rcon_server.h">
+      <Filter>rcon\server</Filter>
+    </ClInclude>
+    <ClInclude Include="rcon\server\query_server.h">
+      <Filter>rcon\server</Filter>
+    </ClInclude>
+    <ClInclude Include="rcon\commands\cmd_save.h">
+      <Filter>rcon\commands</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="hooks">
@@ -33,6 +87,18 @@
     </Filter>
     <Filter Include="hooks\parse_settings">
       <UniqueIdentifier>{7309dcfa-4d6c-466c-adb6-1c84a519a4fd}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="rcon">
+      <UniqueIdentifier>{a1b2c3d4-e5f6-7890-abcd-ef1234567890}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="rcon\state">
+      <UniqueIdentifier>{b2c3d4e5-f6a7-8901-bcde-f12345678901}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="rcon\commands">
+      <UniqueIdentifier>{c3d4e5f6-a7b8-9012-cdef-123456789012}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="rcon\server">
+      <UniqueIdentifier>{d4e5f6a7-b8c9-0123-def0-234567890123}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
 </Project>

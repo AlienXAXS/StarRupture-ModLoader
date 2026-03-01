@@ -169,6 +169,7 @@
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>false</GenerateDebugInformation>
       <EnableUAC>false</EnableUAC>
+      <AdditionalDependencies>ws2_32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -189,6 +190,7 @@
       <OptimizeReferences>false</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableUAC>false</EnableUAC>
+      <AdditionalDependencies>ws2_32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Server Debug|x64'">
@@ -206,6 +208,7 @@
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>false</GenerateDebugInformation>
       <EnableUAC>false</EnableUAC>
+      <AdditionalDependencies>ws2_32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Server Release|x64'">
@@ -226,6 +229,7 @@
       <OptimizeReferences>false</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableUAC>false</EnableUAC>
+      <AdditionalDependencies>ws2_32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
@@ -234,6 +238,15 @@
     <ClInclude Include="plugin.h" />
     <ClInclude Include="plugin_helpers.h" />
     <ClInclude Include="plugin_interface.h" />
+    <ClInclude Include="rcon\commands\cmd_save.h" />
+    <ClInclude Include="rcon\rcon.h" />
+    <ClInclude Include="rcon\state\game_thread_dispatch.h" />
+    <ClInclude Include="rcon\state\server_state.h" />
+    <ClInclude Include="rcon\commands\command_handler.h" />
+    <ClInclude Include="rcon\commands\cmd_players.h" />
+    <ClInclude Include="rcon\commands\cmd_stop.h" />
+    <ClInclude Include="rcon\server\rcon_server.h" />
+    <ClInclude Include="rcon\server\query_server.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="$(StarRuptureSDKSourceDir)Basic.cpp">
@@ -249,6 +262,15 @@
     <ClCompile Include="hooks\parse_settings\parse_settings.cpp" />
     <ClCompile Include="hooks\set_password\set_password.cpp" />
     <ClCompile Include="plugin.cpp" />
+    <ClCompile Include="rcon\commands\cmd_save.cpp" />
+    <ClCompile Include="rcon\rcon.cpp" />
+    <ClCompile Include="rcon\state\game_thread_dispatch.cpp" />
+    <ClCompile Include="rcon\state\server_state.cpp" />
+    <ClCompile Include="rcon\commands\command_handler.cpp" />
+    <ClCompile Include="rcon\commands\cmd_players.cpp" />
+    <ClCompile Include="rcon\commands\cmd_stop.cpp" />
+    <ClCompile Include="rcon\server\rcon_server.cpp" />
+    <ClCompile Include="rcon\server\query_server.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

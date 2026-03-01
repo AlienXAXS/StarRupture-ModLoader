@@ -17,7 +17,9 @@
 //     for receiving notifications when UCrMassSaveSubsystem::OnSaveLoaded fires (save fully loaded)
 // v8: Added RegisterExperienceLoadCompleteCallback / UnregisterExperienceLoadCompleteCallback
 //     to IPluginHooks for receiving notifications when UCrExperienceManagerComponent::OnExperienceLoadComplete fires
-#define PLUGIN_INTERFACE_VERSION 8
+// v9: Added RegisterEngineTickCallback / UnregisterEngineTickCallback to IPluginHooks
+//     for receiving per-frame game-thread tick notifications (UGameEngine::Tick)
+#define PLUGIN_INTERFACE_VERSION 9
 
 // Log levels
 enum class PluginLogLevel
@@ -256,6 +258,18 @@ struct IPluginHooks
 
     void (*RegisterExperienceLoadCompleteCallback)(void (*callback)());
     void (*UnregisterExperienceLoadCompleteCallback)(void (*callback)());
+
+    // -----------------------------------------------------------------------
+    // Engine tick callbacks (v9)
+    //
+    // Fires every frame on the game thread (UGameEngine::Tick).  Useful for
+    // draining task queues or performing periodic game-thread work.
+  // Keep callbacks fast — they run every frame.
+    // Callback signature: void OnEngineTick(float deltaSeconds)
+    // -----------------------------------------------------------------------
+
+    void (*RegisterEngineTickCallback)(void (*callback)(float));
+    void (*UnregisterEngineTickCallback)(void (*callback)(float));
 };
 
 // Plugin metadata structure
