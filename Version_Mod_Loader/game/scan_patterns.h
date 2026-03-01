@@ -26,4 +26,8 @@ namespace ScanPatterns
 	// rcx=this, rdx=FName (8 bytes by value), r8=FMassEntityHandle (8 bytes by value)
 	// Used by RailJunctionFixer to signal socket entities after save load.
 	inline constexpr const char* UMassSignalSubsystem_SignalEntity = "48 89 5C 24 ?? 4C 89 44 24 ?? 57 48 83 EC ?? 48 8B DA 48 8B F9 45 85 C0";
+
+	// UGameEngine::Tick(float DeltaSeconds, bool bIdleMode)
+	// Fires every frame on the game thread — used to drain plugin task queues.
+	inline constexpr const char* UGameEngine_Tick = "4C 8B DC 48 81 EC ?? ?? ?? ?? 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 84 24 ?? ?? ?? ?? 49 89 5B ?? 49 89 6B ?? 49 89 73 ?? 49 89 7B ?? 4D 89 63 ?? 45 0F B6 E0";
 }

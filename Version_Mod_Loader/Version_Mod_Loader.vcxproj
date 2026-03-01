@@ -309,6 +309,7 @@ echo Deploy complete.</Command>
     <ClInclude Include="config_manager.h" />
     <ClInclude Include="engine_allocator.h" />
     <ClInclude Include="game\engine_init\engine_init.h" />
+    <ClInclude Include="game\engine_tick\engine_tick.h" />
     <ClInclude Include="game\experience_load_complete\experience_load_complete.h" />
     <ClInclude Include="game\save_loaded\save_loaded.h" />
     <ClInclude Include="game\scan_patterns.h" />
@@ -342,6 +343,7 @@ echo Deploy complete.</Command>
     <ClCompile Include="engine_allocator.cpp" />
     <ClCompile Include="game\engine_init\engine_init.cpp" />
     <ClCompile Include="game\engine_shutdown\engine_shutdown.cpp" />
+    <ClCompile Include="game\engine_tick\engine_tick.cpp" />
     <ClCompile Include="game\experience_load_complete\experience_load_complete.cpp" />
     <ClCompile Include="game\save_loaded\save_loaded.cpp" />
     <ClCompile Include="game\world_begin_play\world_begin_play.cpp" />
