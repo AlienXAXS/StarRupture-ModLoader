@@ -35,16 +35,6 @@ StarRupture-Server.exe -SessionName="My Server" -RconPort=27015 -RconPassword=my
 The RCON server implements the [Source RCON protocol](https://developer.valvesoftware.com/wiki/Source_RCON_Protocol) (Valve specification). Any standard RCON client (e.g. `mcrcon`, `rcon-cli`, game server panels) should work out of the box.
 
 ### Packet Format
-
-All integers are **little-endian**. Each packet on the wire is:
-
-```
-┌──────────┬──────────┬──────────┬───────────────────┬─────┐
-│ Size (4) │  ID (4)  │ Type (4) │ Body (variable)   │ 0x00│
-│          │    │          │ (null-terminated)  │ pad │
-└──────────┴──────────┴──────────┴───────────────────┴─────┘
-```
-
 | Field | Size | Description |
 |---|---|---|
 | **Size** | 4 bytes | Number of bytes in the rest of the packet (`ID` + `Type` + `Body` + 2 null bytes). Maximum 4096. |
@@ -100,18 +90,15 @@ All RCON commands run on the **game thread** by default. This is critical becaus
 
 The flow is:
 
-```
-RCON client thread       Game thread (UGameEngine::Tick)
-  │       │
-  │  CommandHandler::Execute()       │
-  │    ├─ Post task to queue ──────────▶   │
-  │    │           ├─ Rcon::OnTick()
-  │    │        │    └─ GameThreadDispatch::Drain()
-  │    │        │   └─ execute handler
-│    │  ◀─── future completes ───────────┤
-  │    └─ return result string           │
-  │            │
-```
+| Step | Thread | Action |
+|---|---|---|
+| 1 | RCON client thread | `CommandHandler::Execute()` is called with the command string |
+| 2 | RCON client thread | A task (lambda + future) is posted to the dispatch queue |
+| 3 | RCON client thread | Blocks waiting for the future to complete (30-second timeout) |
+| 4 | Game thread | `Rcon::OnTick()` fires on the next engine tick |
+| 5 | Game thread | `GameThreadDispatch::Drain()` picks up the queued task |
+| 6 | Game thread | The command handler runs and sets the result on the future |
+| 7 | RCON client thread | The future completes; the result string is sent back to the client |
 
 Commands that don't touch engine state can opt out by registering with `gameThread = false`.
 
@@ -130,8 +117,8 @@ List all connected players with their ping.
 Players (2 connected):
   Player Name      Time On Server  IP Address      Latency
   ----------------------------------------------------------------------
-  [1] Alice  2h 15m 30s      N/A    42 ms
-  [2] Bob  0m 45s          N/A               18 ms
+  [1] Alice        2h 15m 30s      N/A             42 ms
+  [2] Bob          0m 45s          N/A             18 ms
 ```
 
 ### `save` / `savegame` / `forcesave`
