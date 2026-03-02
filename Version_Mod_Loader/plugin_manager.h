@@ -10,7 +10,7 @@ namespace ModLoader
     // Shutdown the plugin manager
     void ShutdownPluginManager();
 
-    // Load all plugins from the alienx_mods directory
+    // Load all plugins from the Plugins directory
     void LoadAllPlugins();
 
     // Unload all plugins

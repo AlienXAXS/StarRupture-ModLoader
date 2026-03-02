@@ -1,7 +1,7 @@
 // dllmain.cpp : Defines the entry point for the DLL application.
 #include "log.h"
 #include "ue_log.h"
-#include "version_proxy.h"
+#include "dwmapi_proxy.h"
 #include "logger.h"
 #include "config_manager.h"
 #include "plugin_manager.h"
@@ -14,8 +14,13 @@
 #include "game/experience_load_complete/experience_load_complete.h"
 #include <Psapi.h>
 #include <VersionHelpers.h>
+#include <thread>
+#include <chrono>
 
 #pragma comment(lib, "psapi.lib")
+
+// Forward declarations
+static void LoadUE4SS();
 
 // Called by EngineInit hook once the UE engine is up — safe to call BasicLogV
 static void OnEngineInitForUELog()
@@ -28,6 +33,20 @@ static void OnEngineInitForUELog()
 	{
 		Log::Warn("[ModLoader] UE log bridge failed to initialize - BasicLogV pattern not found");
 	}
+
+	// Load UE4SS on a background thread so that LoadLibraryW does not run
+	// synchronously inside the engine-init hook detour.  Calling LoadLibraryW
+	// from a hook callback acquires the loader lock while the engine (and GPU
+	// driver threads) are still mid-initialisation, which can cause crashes in
+	// nvoglv64 or similar drivers.  Deferring to a detached thread lets the
+	// hook return cleanly first.
+	std::thread([]()
+	{
+		// Give the engine init hook time to fully unwind and let any
+		// concurrent driver initialisation settle.
+		std::this_thread::sleep_for(std::chrono::milliseconds(500));
+		LoadUE4SS();
+	}).detach();
 }
 
 static void LogStartupEnvironment()
@@ -76,6 +95,47 @@ static void LogStartupEnvironment()
 	}
 }
 
+static void LoadUE4SS()
+{
+	// Build the modloader.ini path next to the game exe
+	wchar_t iniPath[MAX_PATH]{};
+	GetModuleFileNameW(nullptr, iniPath, MAX_PATH);
+	wchar_t* lastSlash = wcsrchr(iniPath, L'\\');
+	if (lastSlash)
+		wcscpy_s(lastSlash + 1,
+			static_cast<rsize_t>(MAX_PATH - (lastSlash + 1 - iniPath)),
+			L"modloader.ini");
+
+	if (!GetPrivateProfileIntW(L"UE4SS", L"Enabled", 1, iniPath))
+	{
+		Log::Info("UE4SS loading disabled in modloader.ini");
+		return;
+	}
+
+	wchar_t relPath[MAX_PATH]{};
+	GetPrivateProfileStringW(L"UE4SS", L"Path", L"ue4ss\\ue4ss.dll", relPath, MAX_PATH, iniPath);
+
+	// Resolve relative to the exe directory
+	wchar_t fullPath[MAX_PATH]{};
+	GetModuleFileNameW(nullptr, fullPath, MAX_PATH);
+	wchar_t* slash = wcsrchr(fullPath, L'\\');
+	if (slash) *(slash + 1) = L'\0';
+	wcsncat_s(fullPath, relPath, _TRUNCATE);
+
+	Log::Info("Loading UE4SS from: %ls", fullPath);
+
+	HMODULE hUE4SS = LoadLibraryW(fullPath);
+	if (hUE4SS)
+	{
+		Log::Info("UE4SS loaded successfully (handle 0x%llX)",
+			static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(hUE4SS)));
+	}
+	else
+	{
+		Log::Warn("UE4SS failed to load (error %lu): %ls", GetLastError(), fullPath);
+	}
+}
+
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserved)
 {
 	switch (ul_reason_for_call)
@@ -86,7 +146,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 
 		Log::Initialize();
 		Log::Info("======================================================");
-		Log::Info("  StarRupture Mod Loader (version.dll proxy) loaded");
+		Log::Info("  StarRupture Mod Loader (dwmapi.dll proxy) loaded");
 		Log::Info("======================================================");
 
 		// Show splash window on client builds (no-op on server)
@@ -96,32 +156,32 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 
 		LogStartupEnvironment();
 
-		Splash::SetStatus(L"Initializing version proxy...");
+		Splash::SetStatus(L"Initializing dwmapi proxy...");
 		Splash::SetProgress(0.10f);
 
-		Log::Info("Initializing version.dll proxy...");
-		if (!VersionProxy::Initialize())
+		Log::Info("Initializing dwmapi.dll proxy...");
+		if (!DwmapiProxy::Initialize())
 		{
-			Log::Error("FATAL: Failed to initialize version proxy -- DLL load aborted");
+			Log::Error("FATAL: Failed to initialize dwmapi proxy -- DLL load aborted");
 			Splash::Close();
 			Log::Shutdown();
 			return FALSE;
 		}
-		Log::Info("Version proxy initialized successfully");
+		Log::Info("Dwmapi proxy initialized successfully");
 
 		Splash::SetStatus(L"Initializing logger...");
 		Splash::SetProgress(0.20f);
 
 		ModLoader::InitializeLogger();
 		ModLoader::LogMessage(L"======================================");
-		ModLoader::LogMessage(L"  Version_Mod_Loader initialized");
+		ModLoader::LogMessage(L"  AlienX's Mod Loader initialized");
 		ModLoader::LogMessage(L"======================================");
 
-		Splash::SetStatus(L"Initializing config & plugin manager...");
+		Splash::SetStatus(L"Here Goes Nothin' ...");
 		Splash::SetProgress(0.30f);
 
 		ModLoader::InitializeConfigManager();
-		ModLoader::InitializePluginManager();
+		ModLoader::InitializePluginManager();		
 
 		// Install core game hooks BEFORE loading plugins
 		Splash::SetStatus(L"Installing core game hooks...");
@@ -214,8 +274,8 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 		ModLoader::ShutdownConfigManager();
 		ModLoader::ShutdownLogger();
 
-		Log::Info("Shutting down version proxy...");
-		VersionProxy::Shutdown();
+		Log::Info("Shutting down dwmapi proxy...");
+		DwmapiProxy::Shutdown();
 
 		Log::Info("Goodbye!");
 		Log::Shutdown();

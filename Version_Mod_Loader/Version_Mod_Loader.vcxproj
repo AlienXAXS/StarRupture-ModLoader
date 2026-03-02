@@ -102,32 +102,32 @@
     <GameDeployDir>F:\starrupture\server\StarRupture\Binaries\Win64\</GameDeployDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <TargetName>version</TargetName>
+    <TargetName>dwmapi</TargetName>
     <OutDir>$(SolutionDir)build\$(Configuration)\</OutDir>
     <IntDir>$(SolutionDir)build\intermediate\$(Configuration)\$(ProjectName)\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-    <TargetName>version</TargetName>
+    <TargetName>dwmapi</TargetName>
     <OutDir>$(SolutionDir)build\$(Configuration)\</OutDir>
     <IntDir>$(SolutionDir)build\intermediate\$(Configuration)\$(ProjectName)\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Client Debug|x64'">
-    <TargetName>version</TargetName>
+    <TargetName>dwmapi</TargetName>
     <OutDir>$(SolutionDir)build\$(Configuration)\</OutDir>
     <IntDir>$(SolutionDir)build\intermediate\$(Configuration)\$(ProjectName)\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Client Release|x64'">
-    <TargetName>version</TargetName>
+    <TargetName>dwmapi</TargetName>
     <OutDir>$(SolutionDir)build\$(Configuration)\</OutDir>
     <IntDir>$(SolutionDir)build\intermediate\$(Configuration)\$(ProjectName)\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Server Debug|x64'">
-    <TargetName>version</TargetName>
+    <TargetName>dwmapi</TargetName>
     <OutDir>$(SolutionDir)build\$(Configuration)\</OutDir>
     <IntDir>$(SolutionDir)build\intermediate\$(Configuration)\$(ProjectName)\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Server Release|x64'">
-    <TargetName>version</TargetName>
+    <TargetName>dwmapi</TargetName>
     <OutDir>$(SolutionDir)build\$(Configuration)\</OutDir>
     <IntDir>$(SolutionDir)build\intermediate\$(Configuration)\$(ProjectName)\</IntDir>
   </PropertyGroup>
@@ -147,15 +147,15 @@
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>false</GenerateDebugInformation>
       <EnableUAC>false</EnableUAC>
-      <ModuleDefinitionFile>$(ProjectDir)version.def</ModuleDefinitionFile>
+      <ModuleDefinitionFile>$(ProjectDir)dwmapi.def</ModuleDefinitionFile>
     </Link>
     <PostBuildEvent>
-      <Command>echo Deploying version.dll to $(GameDeployDir)...
+      <Command>echo Deploying dwmapi.dll to $(GameDeployDir)...
 if not exist "$(GameDeployDir)" mkdir "$(GameDeployDir)"
 copy /Y "$(TargetPath)" "$(GameDeployDir)$(TargetFileName)"
 if exist "$(TargetDir)$(TargetName).pdb" copy /Y "$(TargetDir)$(TargetName).pdb" "$(GameDeployDir)$(TargetName).pdb"
 echo Deploy complete.</Command>
-      <Message>Copying version.dll to game server directory...</Message>
+      <Message>Copying dwmapi.dll to game server directory...</Message>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -178,15 +178,15 @@ echo Deploy complete.</Command>
       <OptimizeReferences>false</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableUAC>false</EnableUAC>
-      <ModuleDefinitionFile>$(ProjectDir)version.def</ModuleDefinitionFile>
+      <ModuleDefinitionFile>$(ProjectDir)dwmapi.def</ModuleDefinitionFile>
     </Link>
     <PostBuildEvent>
-      <Command>echo Deploying version.dll to $(GameDeployDir)...
+      <Command>echo Deploying dwmapi.dll to $(GameDeployDir)...
 if not exist "$(GameDeployDir)" mkdir "$(GameDeployDir)"
 copy /Y "$(TargetPath)" "$(GameDeployDir)$(TargetFileName)"
 if exist "$(TargetDir)$(TargetName).pdb" copy /Y "$(TargetDir)$(TargetName).pdb" "$(GameDeployDir)$(TargetName).pdb"
 echo Deploy complete.</Command>
-      <Message>Copying version.dll to game server directory...</Message>
+      <Message>Copying dwmapi.dll to game server directory...</Message>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Client Debug|x64'">
@@ -205,15 +205,15 @@ echo Deploy complete.</Command>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>false</GenerateDebugInformation>
       <EnableUAC>false</EnableUAC>
-      <ModuleDefinitionFile>$(ProjectDir)version.def</ModuleDefinitionFile>
+      <ModuleDefinitionFile>$(ProjectDir)dwmapi.def</ModuleDefinitionFile>
     </Link>
     <PostBuildEvent>
-      <Command>echo Deploying version.dll to $(GameDeployDir)...
+      <Command>echo Deploying dwmapi.dll to $(GameDeployDir)...
 if not exist "$(GameDeployDir)" mkdir "$(GameDeployDir)"
 copy /Y "$(TargetPath)" "$(GameDeployDir)$(TargetFileName)"
 if exist "$(TargetDir)$(TargetName).pdb" copy /Y "$(TargetDir)$(TargetName).pdb" "$(GameDeployDir)$(TargetName).pdb"
 echo Deploy complete.</Command>
-      <Message>Copying version.dll to game server directory...</Message>
+      <Message>Copying dwmapi.dll to game server directory...</Message>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Client Release|x64'">
@@ -236,15 +236,15 @@ echo Deploy complete.</Command>
       <OptimizeReferences>false</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableUAC>false</EnableUAC>
-      <ModuleDefinitionFile>$(ProjectDir)version.def</ModuleDefinitionFile>
+      <ModuleDefinitionFile>$(ProjectDir)dwmapi.def</ModuleDefinitionFile>
     </Link>
     <PostBuildEvent>
-      <Command>echo Deploying version.dll to $(GameDeployDir)...
+      <Command>echo Deploying dwmapi.dll to $(GameDeployDir)...
 if not exist "$(GameDeployDir)" mkdir "$(GameDeployDir)"
 copy /Y "$(TargetPath)" "$(GameDeployDir)$(TargetFileName)"
 if exist "$(TargetDir)$(TargetName).pdb" copy /Y "$(TargetDir)$(TargetName).pdb" "$(GameDeployDir)$(TargetName).pdb"
 echo Deploy complete.</Command>
-      <Message>Copying version.dll to game server directory...</Message>
+      <Message>Copying dwmapi.dll to game server directory...</Message>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Server Debug|x64'">
@@ -263,15 +263,15 @@ echo Deploy complete.</Command>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>false</GenerateDebugInformation>
       <EnableUAC>false</EnableUAC>
-      <ModuleDefinitionFile>$(ProjectDir)version.def</ModuleDefinitionFile>
+      <ModuleDefinitionFile>$(ProjectDir)dwmapi.def</ModuleDefinitionFile>
     </Link>
     <PostBuildEvent>
-      <Command>echo Deploying version.dll to $(GameDeployDir)...
+      <Command>echo Deploying dwmapi.dll to $(GameDeployDir)...
 if not exist "$(GameDeployDir)" mkdir "$(GameDeployDir)"
 copy /Y "$(TargetPath)" "$(GameDeployDir)$(TargetFileName)"
 if exist "$(TargetDir)$(TargetName).pdb" copy /Y "$(TargetDir)$(TargetName).pdb" "$(GameDeployDir)$(TargetName).pdb"
 echo Deploy complete.</Command>
-      <Message>Copying version.dll to game server directory...</Message>
+      <Message>Copying dwmapi.dll to game server directory...</Message>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Server Release|x64'">
@@ -294,15 +294,15 @@ echo Deploy complete.</Command>
       <OptimizeReferences>false</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableUAC>false</EnableUAC>
-      <ModuleDefinitionFile>$(ProjectDir)version.def</ModuleDefinitionFile>
+      <ModuleDefinitionFile>$(ProjectDir)dwmapi.def</ModuleDefinitionFile>
     </Link>
     <PostBuildEvent>
-      <Command>echo Deploying version.dll to $(GameDeployDir)...
+      <Command>echo Deploying dwmapi.dll to $(GameDeployDir)...
 if not exist "$(GameDeployDir)" mkdir "$(GameDeployDir)"
 copy /Y "$(TargetPath)" "$(GameDeployDir)$(TargetFileName)"
 if exist "$(TargetDir)$(TargetName).pdb" copy /Y "$(TargetDir)$(TargetName).pdb" "$(GameDeployDir)$(TargetName).pdb"
 echo Deploy complete.</Command>
-      <Message>Copying version.dll to game server directory...</Message>
+      <Message>Copying dwmapi.dll to game server directory...</Message>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
@@ -324,7 +324,7 @@ echo Deploy complete.</Command>
     <ClInclude Include="scanner_interface.h" />
     <ClInclude Include="splash_window.h" />
     <ClInclude Include="ue_log.h" />
-    <ClInclude Include="version_proxy.h" />
+    <ClInclude Include="dwmapi_proxy.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="$(StarRuptureSDKSourceDir)Basic.cpp">
@@ -354,12 +354,12 @@ echo Deploy complete.</Command>
     <ClCompile Include="scanner.cpp" />
     <ClCompile Include="scanner_interface.cpp" />
     <ClCompile Include="splash_window.cpp" />
-    <ClCompile Include="version_proxy.cpp">
+    <ClCompile Include="dwmapi_proxy.cpp">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <None Include="version.def" />
+    <None Include="dwmapi.def" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

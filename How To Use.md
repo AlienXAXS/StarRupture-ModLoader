@@ -28,17 +28,17 @@ Download the one that matches your use case.
    ```
    StarRupture\Binaries\Win64\
    ├── StarRuptureGameSteam-Win64-Shipping.exe
-   ├── version.dll                ← mod loader
-   └── alienx_mods\
-       ├── KeepTicking.dll
-       ├── RailJunctionFixer.dll
+   ├── dwmapi.dll                 ← mod loader
+   └── Plugins\
+       ├── ExamplePlugin1.dll     ← Just example plugin names.
+       ├── ExamplePlugin2.dll
        └── ...
    ```
 
-3. Launch the game (or server) as normal. The mod loader will initialise automatically via `version.dll`.
+3. Launch the game (or server) as normal. The mod loader will initialise automatically via `dwmapi.dll`.
 
 Note for Linux Users
-In order for the mod to load, you must have the envrionment variable `WINEDLLOVERRIDES` set with the value `version=n,b`
+In order for the mod to load, you must have the envrionment variable `WINEDLLOVERRIDES` set with the value `dwmapi=n,b`
 
 ---
 
@@ -49,7 +49,7 @@ In order for the mod to load, you must have the envrionment variable `WINEDLLOVE
 1. Run the game once and then close it.
 2. Open the following folder:
    ```
-   StarRupture\Binaries\Win64\alienx_mods\config\
+   StarRupture\Binaries\Win64\Plugins\config\
    ```
 3. Open the `.ini` file for the plugin you want to enable (e.g. `KeepTicking.ini`).
 4. Set `Enabled=1` and save the file.

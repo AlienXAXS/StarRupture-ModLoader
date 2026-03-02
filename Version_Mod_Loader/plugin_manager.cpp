@@ -135,9 +135,9 @@ namespace ModLoader
 			*lastSlash = L'\0';
 		}
 
-		// Build path to alienx_mods directory
+		// Build path to Plugins directory
 		wchar_t modsPath[MAX_PATH] = {};
-		swprintf_s(modsPath, L"%s\\alienx_mods", exePath);
+		swprintf_s(modsPath, L"%s\\Plugins", exePath);
 
 		LogMessage(L"Searching for plugins in: %s", modsPath);
 
@@ -145,10 +145,10 @@ namespace ModLoader
 		DWORD attribs = GetFileAttributesW(modsPath);
 		if (attribs == INVALID_FILE_ATTRIBUTES || !(attribs & FILE_ATTRIBUTE_DIRECTORY))
 		{
-			LogMessage(L"alienx_mods directory not found, creating it...");
+			LogMessage(L"Plugins directory not found, creating it...");
 			if (!CreateDirectoryW(modsPath, nullptr))
 			{
-				LogMessage(L"Failed to create alienx_mods directory (error: %lu)", GetLastError());
+				LogMessage(L"Failed to create Plugins directory (error: %lu)", GetLastError());
 				return;
 			}
 		}
@@ -163,7 +163,7 @@ namespace ModLoader
 
 		if (hFind == INVALID_HANDLE_VALUE)
 		{
-			LogMessage(L"No plugins found in alienx_mods directory");
+			LogMessage(L"No plugins found in Plugins directory");
 			return;
 		}
 
@@ -188,7 +188,7 @@ namespace ModLoader
 
 		FindClose(hFind);
 
-		LogMessage(L"Loaded %d plugin(s) from alienx_mods", loadedCount);
+		LogMessage(L"Loaded %d plugin(s) from Plugins", loadedCount);
 	}
 
 	void UnloadAllPlugins()
