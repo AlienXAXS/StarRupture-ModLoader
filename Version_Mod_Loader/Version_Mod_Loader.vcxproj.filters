@@ -51,7 +51,7 @@
     <ClInclude Include="log.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="version_proxy.h">
+    <ClInclude Include="dwmapi_proxy.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="scanner_interface.h">
@@ -107,7 +107,7 @@
     <ClCompile Include="plugin_manager.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="version_proxy.cpp">
+    <ClCompile Include="dwmapi_proxy.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="scanner_interface.cpp">
@@ -157,7 +157,7 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <None Include="version.def">
+    <None Include="dwmapi.def">
       <Filter>Source Files</Filter>
     </None>
   </ItemGroup>

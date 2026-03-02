@@ -41,9 +41,9 @@ A starter template for plugin development. Demonstrates the plugin lifecycle, co
 
 3. Launch the game or server as normal.
 
-4. **Plugins are disabled by default.** After the first launch, edit the `.ini` files in `alienx_mods\config\` and set `Enabled=1` for each plugin you want.
+4. **Plugins are disabled by default.** After the first launch, edit the `.ini` files in `Plugins\config\` and set `Enabled=1` for each plugin you want.
 
-**Linux users:** Set the environment variable `WINEDLLOVERRIDES=version=n,b` before launching.
+**Linux users:** Set the environment variable `WINEDLLOVERRIDES=dwmapi=n,b` before launching.
 
 ---
 
@@ -71,11 +71,11 @@ When `-SessionName=` is present, `DSSettings.txt` is not needed. The save game n
 
 | Problem | Solution |
 |---|---|
-| Plugins not loading | Make sure DLLs are in the `alienx_mods\` folder and `Enabled=1` is set in each plugin's `.ini` file. |
+| Plugins not loading | Make sure DLLs are in the `Plugins\` folder and `Enabled=1` is set in each plugin's `.ini` file. |
 | RCON won't start | Both `-RconPort=` and `-RconPassword=` must be provided on the command line. |
 | Rail junctions still broken | Enable RailJunctionFixer in the plugins `.ini` file. |
 | Server sleeps when empty | Enable KeepTicking in the plugins `.ini` file. |
-| Logs / diagnostics | Check `version-mod.log` for detailed output.  Enable debug log level by setting `Level=DEBUG` in `version-mod.ini`. |
+| Logs / diagnostics | Check `modloader.log` for detailed output.  Enable debug log level by setting `Level=DEBUG` in `modloader.ini`. |
 
 ---
 

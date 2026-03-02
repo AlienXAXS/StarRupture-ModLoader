@@ -46,16 +46,16 @@ jobs:
           foreach ($target in @("Client", "Server")) {
             $config  = "$target Release"
             $staging = "$env:GITHUB_WORKSPACE\staging\$target"
-            $modsDir = "$staging\alienx_mods"
+            $modsDir = "$staging\Plugins"
 
             New-Item -ItemType Directory -Force -Path $staging | Out-Null
             New-Item -ItemType Directory -Force -Path $modsDir | Out-Null
 
-            # version.dll goes in the root
-            Copy-Item "build\$config\version.dll" "$staging\version.dll"
+            # dwmapi.dll goes in the root
+            Copy-Item "build\$config\dwmapi.dll" "$staging\dwmapi.dll"
 
-            # Copy every .dll found in alienx_mods - no exp/lib files
-            Get-ChildItem "build\$config\alienx_mods\*.dll" | ForEach-Object {
+            # Copy every .dll found in Plugins - no exp/lib files
+            Get-ChildItem "build\$config\Plugins\*.dll" | ForEach-Object {
               Copy-Item $_.FullName $modsDir
               Write-Host "Staged [$target]: $($_.Name)"
             }

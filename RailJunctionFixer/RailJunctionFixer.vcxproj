@@ -127,7 +127,7 @@
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <TargetName>RailJunctionFixer</TargetName>
-    <OutDir>$(SolutionDir)build\$(Configuration)\alienx_mods\</OutDir>
+    <OutDir>$(SolutionDir)build\$(Configuration)\Plugins\</OutDir>
     <IntDir>$(SolutionDir)build\intermediate\$(Configuration)\$(ProjectName)\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
@@ -138,27 +138,27 @@
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <TargetName>RailJunctionFixer</TargetName>
-    <OutDir>$(SolutionDir)build\$(Configuration)\alienx_mods\</OutDir>
+    <OutDir>$(SolutionDir)build\$(Configuration)\Plugins\</OutDir>
     <IntDir>$(SolutionDir)build\intermediate\$(Configuration)\$(ProjectName)\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Client Debug|x64'">
     <TargetName>RailJunctionFixer</TargetName>
-    <OutDir>$(SolutionDir)build\$(Configuration)\alienx_mods\</OutDir>
+    <OutDir>$(SolutionDir)build\$(Configuration)\Plugins\</OutDir>
     <IntDir>$(SolutionDir)build\intermediate\$(Configuration)\$(ProjectName)\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Client Release|x64'">
     <TargetName>RailJunctionFixer</TargetName>
-    <OutDir>$(SolutionDir)build\$(Configuration)\alienx_mods\</OutDir>
+    <OutDir>$(SolutionDir)build\$(Configuration)\Plugins\</OutDir>
     <IntDir>$(SolutionDir)build\intermediate\$(Configuration)\$(ProjectName)\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Server Debug|x64'">
     <TargetName>RailJunctionFixer</TargetName>
-    <OutDir>$(SolutionDir)build\$(Configuration)\alienx_mods\</OutDir>
+    <OutDir>$(SolutionDir)build\$(Configuration)\Plugins\</OutDir>
     <IntDir>$(SolutionDir)build\intermediate\$(Configuration)\$(ProjectName)\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Server Release|x64'">
     <TargetName>RailJunctionFixer</TargetName>
-    <OutDir>$(SolutionDir)build\$(Configuration)\alienx_mods\</OutDir>
+    <OutDir>$(SolutionDir)build\$(Configuration)\Plugins\</OutDir>
     <IntDir>$(SolutionDir)build\intermediate\$(Configuration)\$(ProjectName)\</IntDir>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">

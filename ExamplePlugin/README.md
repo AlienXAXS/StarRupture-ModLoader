@@ -145,7 +145,7 @@ GetHooks()->RemoveHook(hook);
 
 Copy `ExamplePlugin.dll` to:
 ```
-<game_directory>\alienx_mods\plugins\
+<game_directory>\Plugins\
 ```
 
 The mod loader will automatically load it on next game start.
@@ -167,11 +167,11 @@ This is intentional - it's a template with config examples, not a functional mod
 
 ## Example Output
 
-When loaded, you'll see in `alienx_mods\logs\modloader.log`:
+When loaded, you'll see in `Plugins\logs\modloader.log`:
 
 ```
 [INFO] [ConfigManager] Creating new config for 'ExamplePlugin' with 4 entries
-[INFO] [ConfigManager] Config created: ...\alienx_mods\config\ExamplePlugin.ini
+[INFO] [ConfigManager] Config created: ...\Plugins\config\ExamplePlugin.ini
 [INFO] [ExamplePlugin] Plugin initializing...
 [INFO] [ExamplePlugin] Config values:
 [INFO] [ExamplePlugin]   ExampleString: Hello World
@@ -237,7 +237,7 @@ The config system is **completely optional**. You can:
 ### Config File Location
 
 ```
-<game_dir>\alienx_mods\config\ExamplePlugin.ini
+<game_dir>\Plugins\config\ExamplePlugin.ini
 ```
 
 Users can edit this file while the game is running, and changes will be read on next config access (though the `Enabled` flag is only checked during `PluginInit`).

@@ -27,7 +27,7 @@ This guide covers building the mod loader from source, creating new plugins, and
 
 ```
 StarRupture-ModLoader/
-+-- Version_Mod_Loader/          # Core mod loader (ships as version.dll)
++-- Version_Mod_Loader/          # Core mod loader (ships as dwmapi.dll)
 |   +-- logger.cpp               # Multi-level logging system
 |   +-- scanner.cpp        # IDA-style pattern scanning engine
 |   +-- hooks_interface.cpp      # MinHook-based function hooking
@@ -49,7 +49,7 @@ StarRupture-ModLoader/
 
 ### Version_Mod_Loader (Core)
 
-The main DLL that loads as `version.dll` via DLL proxy injection. It provides:
+The main DLL that loads as `dwmapi.dll` via DLL proxy injection. It provides:
 
 - Plugin lifecycle management (load | init | tick | shutdown)
 - Core services exposed to plugins via interfaces
@@ -62,7 +62,7 @@ Each plugin is a separate DLL that:
 
 - Exports three functions: `GetPluginInfo`, `PluginInit`, `PluginShutdown`
 - Receives four interface pointers on init (logger, config, scanner, hooks)
-- Outputs to the `alienx_mods/` directory for the loader to discover
+- Outputs to the `Plugins/` directory for the loader to discover
 
 ---
 
@@ -133,7 +133,7 @@ LOG_WARN("Warning message");
 LOG_ERROR("Error message");
 ```
 
-Logs are written to `alienx_mods/logs/modloader.log`.
+Logs are written to `Plugins/logs/modloader.log`.
 
 ### IPluginConfig
 
@@ -146,7 +146,7 @@ int value = GetConfig()->ReadInt("PluginName", "Section", "Key", defaultValue);
 GetConfig()->WriteString("PluginName", "Section", "Key", "value");
 ```
 
-Config files are stored in `alienx_mods/config/<PluginName>.ini`.
+Config files are stored in `Plugins/config/<PluginName>.ini`.
 
 ### IPluginScanner
 
@@ -227,9 +227,9 @@ When writing to engine FString fields from a hook, you must allocate via `FMemor
 ## Troubleshooting (Development)
 
 ### Plugin Not Loading
-- Verify the DLL is in `alienx_mods/` and exports all three functions.
+- Verify the DLL is in `Plugins/` and exports all three functions.
 - Check `PLUGIN_INTERFACE_VERSION` matches the loader.
-- Check `alienx_mods/logs/modloader.log` for initialisation errors.
+- Check `Plugins/logs/modloader.log` for initialisation errors.
 
 ### Pattern Not Found
 - Confirm the pattern against a disassembler (IDA, Ghidra, x64dbg).
@@ -243,7 +243,7 @@ When writing to engine FString fields from a hook, you must allocate via `FMemor
 - Wrap hook bodies in try-catch for error isolation.
 
 ### Config Not Saving
-- Ensure `alienx_mods/config/` exists (created automatically on first run).
+- Ensure `Plugins/config/` exists (created automatically on first run).
 - Check file permissions.
 
 ---

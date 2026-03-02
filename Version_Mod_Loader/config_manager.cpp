@@ -20,7 +20,7 @@ namespace ModLoader
 		wchar_t wPluginName[256];
 		MultiByteToWideChar(CP_UTF8, 0, pluginName, -1, wPluginName, 256);
 
-		// Build path: alienx_mods\config\PluginName.ini
+		// Build path: Plugins\config\PluginName.ini
 		swprintf_s(outPath, maxLen, L"%s\\%s.ini", g_configDirectory, wPluginName);
 		return true;
 	}
@@ -312,7 +312,7 @@ namespace ModLoader
 		}
 
 		// Build path to config directory
-		swprintf_s(g_configDirectory, L"%s\\alienx_mods\\config", exePath);
+		swprintf_s(g_configDirectory, L"%s\\Plugins\\config", exePath);
 
 		// Create directory if it doesn't exist
 		DWORD attribs = GetFileAttributesW(g_configDirectory);
