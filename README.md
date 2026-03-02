@@ -88,7 +88,7 @@ Want to create your own plugins or contribute? See the **[Developer Guide](DEVEL
 ## Credits
 
 - **[Dumper-7](https://github.com/Encryqed/Dumper-7)** — Unreal Engine SDK generation
-- **[MinHook](https://github.com/TsudaKageworker/minhook)** — Function hooking library
+- **[MinHook](https://github.com/TsudaKageyu/minhook)** — Function hooking library
 - **[nlohmann/json](https://github.com/nlohmann/json)** — JSON parsing
 - **[Wilhelm-af](https://github.com/Wilhelm-af)** — Rail junction fix logic
 
