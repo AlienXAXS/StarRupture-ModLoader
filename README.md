@@ -12,6 +12,7 @@ Prevents a dedicated server from sleeping when no players are online. Without th
 
 ### 🛤️ RailJunctionFixer *(Client & Server)*
 Fixes rail junction save/load issues at runtime. Without this fix, rail junctions may lose their connections after loading a save causing logistic drones to teleport between rails.
+*Note: Existing rails cannot be fixed automatically, at least a method has not been found.  You can use [this](https://wilhelm-af.github.io/StarRupture-JunctionFixer/) to fix existing rails though outside of the game first.*
 
 ### 🖥️ ServerUtility *(Server)*
 Adds remote administration to a dedicated server:
