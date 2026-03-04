@@ -1,0 +1,171 @@
+name: Draft Build and Release
+
+on:
+  push:
+    branches:
+      - draft
+    paths-ignore:
+      - "**/*.md"
+
+jobs:
+  build:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Add MSBuild to PATH
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Generate release tag
+        id: tag
+        shell: pwsh
+        run: |
+          $tag = "draft-$(Get-Date -Format 'yyyy.MM.dd-HHmmss')"
+          echo "TAG=$tag" >> $env:GITHUB_OUTPUT
+
+      - name: Build Client Release
+        run: |
+          msbuild "StarRupture-ModLoader.sln" `
+            /p:Configuration="Client Release" `
+            /p:Platform=x64 `
+            /p:PostBuildEventUseInBuild=false `
+            /p:ModLoaderBuildTag="${{ steps.tag.outputs.TAG }}" `
+            /p:AutoUpdateManifestUrl="https://github.com/${{ github.repository }}/releases/latest/download/manifest-client.json" `
+            /m `
+            /v:minimal
+
+      - name: Build Server Release
+        run: |
+          msbuild "StarRupture-ModLoader.sln" `
+            /p:Configuration="Server Release" `
+            /p:Platform=x64 `
+            /p:PostBuildEventUseInBuild=false `
+            /p:ModLoaderBuildTag="${{ steps.tag.outputs.TAG }}" `
+            /p:AutoUpdateManifestUrl="https://github.com/${{ github.repository }}/releases/latest/download/manifest-server.json" `
+            /m `
+            /v:minimal
+
+      - name: Stage release layout
+        shell: pwsh
+        run: |
+          foreach ($target in @("Client", "Server")) {
+            $config  = "$target Release"
+            $staging = "$env:GITHUB_WORKSPACE\staging\$target"
+            $modsDir = "$staging\Plugins"
+
+            New-Item -ItemType Directory -Force -Path $staging | Out-Null
+            New-Item -ItemType Directory -Force -Path $modsDir | Out-Null
+
+            Copy-Item "build\$config\dwmapi.dll" "$staging\dwmapi.dll"
+
+            Get-ChildItem "build\$config\Plugins\*.dll" | ForEach-Object {
+              Copy-Item $_.FullName $modsDir
+              Write-Host "Staged [$target]: $($_.Name)"
+            }
+          }
+
+      - name: Prepare individual plugin assets
+        shell: pwsh
+        run: |
+          foreach ($variant in @("Client", "Server")) {
+            Get-ChildItem "build\$variant Release\Plugins\*.dll" | ForEach-Object {
+              $dest = "$env:GITHUB_WORKSPACE\$($_.BaseName)-$variant.dll"
+              Copy-Item $_.FullName $dest
+              Write-Host "Prepared individual asset: $($_.BaseName)-$variant.dll"
+            }
+          }
+
+      - name: Generate manifests
+        shell: pwsh
+        run: |
+          $tag      = "${{ steps.tag.outputs.TAG }}"
+          $ifaceVer = 12
+          $repoBase = "https://github.com/${{ github.repository }}/releases/latest/download"
+
+          foreach ($variant in @("Client", "Server")) {
+            $plugins = @()
+
+            Get-ChildItem "build\$variant Release\Plugins\*.dll" | ForEach-Object {
+              $name = $_.BaseName
+              $plugins += [ordered]@{
+                name         = $name
+                filename     = "$name.dll"
+                version      = $tag
+                download_url = "$repoBase/$name-$variant.dll"
+              }
+            }
+
+            $manifest = [ordered]@{
+              build_tag         = $tag
+              interface_version = $ifaceVer
+              plugins           = $plugins
+            }
+
+            $outPath = "$env:GITHUB_WORKSPACE\manifest-$($variant.ToLower()).json"
+            $manifest | ConvertTo-Json -Depth 3 | Out-File -FilePath $outPath -Encoding utf8NoBOM
+            Write-Host "Generated: $outPath"
+          }
+
+      - name: Generate changelog
+        shell: pwsh
+        run: |
+          $prevTag = git tag --sort=-creatordate | Select-Object -First 1
+
+          if ($prevTag) {
+            $log = git log "$prevTag..HEAD" --pretty=format:"- %s (%an)" --no-merges --reverse
+          } else {
+            $log = git log --pretty=format:"- %s (%an)" --no-merges --reverse
+          }
+
+          if (-not $log) { $log = "- No changes listed" }
+
+          $log | Out-File -FilePath "$env:GITHUB_WORKSPACE\changelog.txt" -Encoding utf8
+
+      - name: Create ZIP archives
+        shell: pwsh
+        run: |
+          $tag = "${{ steps.tag.outputs.TAG }}"
+          foreach ($target in @("Client", "Server")) {
+            $zipPath = "$env:GITHUB_WORKSPACE\StarRupture-ModLoader-$target-$tag.zip"
+            Compress-Archive -Path "$env:GITHUB_WORKSPACE\staging\$target\*" -DestinationPath $zipPath
+            Write-Host "Created ZIP: $zipPath"
+          }
+
+      - name: Create Draft GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tag       = "${{ steps.tag.outputs.TAG }}"
+          $changelog = Get-Content "$env:GITHUB_WORKSPACE\changelog.txt" -Raw
+          $clientZip = "$env:GITHUB_WORKSPACE\StarRupture-ModLoader-Client-$tag.zip"
+          $serverZip = "$env:GITHUB_WORKSPACE\StarRupture-ModLoader-Server-$tag.zip"
+
+          $notes = @"
+          ## Draft Build
+
+          $changelog
+          "@
+
+          $assets = @(
+            $clientZip,
+            $serverZip,
+            "$env:GITHUB_WORKSPACE\manifest-client.json",
+            "$env:GITHUB_WORKSPACE\manifest-server.json"
+          )
+
+          Get-ChildItem "$env:GITHUB_WORKSPACE\*-Client.dll",
+                        "$env:GITHUB_WORKSPACE\*-Server.dll" | ForEach-Object {
+            $assets += $_.FullName
+          }
+
+          gh release create $tag @assets `
+            --title "StarRupture ModLoader $tag (Draft)" `
+            --notes $notes `
+            --draft
