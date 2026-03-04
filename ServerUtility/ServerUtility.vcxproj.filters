@@ -39,6 +39,16 @@
     <ClCompile Include="rcon\commands\cmd_save.cpp">
       <Filter>rcon\commands</Filter>
     </ClCompile>
+    <ClCompile Include="plugin_config.cpp" />
+    <ClCompile Include="hooks\max_players\max_players.cpp">
+      <Filter>hooks\max_players</Filter>
+    </ClCompile>
+    <ClCompile Include="hooks\auto_profession\auto_profession.cpp">
+      <Filter>hooks\max_players\helpers</Filter>
+    </ClCompile>
+    <ClCompile Include="hooks\http_connection\http_connection.cpp">
+      <Filter>hooks\http_connections</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="plugin.h" />
@@ -77,6 +87,16 @@
     <ClInclude Include="rcon\commands\cmd_save.h">
       <Filter>rcon\commands</Filter>
     </ClInclude>
+    <ClInclude Include="plugin_config.h" />
+    <ClInclude Include="hooks\max_players\max_players.h">
+      <Filter>hooks\max_players</Filter>
+    </ClInclude>
+    <ClInclude Include="hooks\auto_profession\auto_profession.h">
+      <Filter>hooks\max_players\helpers</Filter>
+    </ClInclude>
+    <ClInclude Include="hooks\http_connection\http_connection.h">
+      <Filter>hooks\http_connections</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="hooks">
@@ -99,6 +119,15 @@
     </Filter>
     <Filter Include="rcon\server">
       <UniqueIdentifier>{d4e5f6a7-b8c9-0123-def0-234567890123}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="hooks\max_players">
+      <UniqueIdentifier>{2e4121e6-f248-4c43-8323-60089d894a97}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="hooks\max_players\helpers">
+      <UniqueIdentifier>{f4966296-e574-4207-a045-eff66dc8d4a4}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="hooks\http_connections">
+      <UniqueIdentifier>{3ab7b82c-aa31-4eda-adfd-28a6e1c232e4}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
 </Project>

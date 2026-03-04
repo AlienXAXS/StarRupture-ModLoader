@@ -18,6 +18,17 @@ namespace Hooks::FakePlayer
 	void SpawnFakePlayer();
 	void DespawnFakePlayer();
 
+	// Get the fake player's controller pointer (nullptr if not active)
+	void* GetFakeController();
+
 	// Enable/disable debug visible mode (must be set before spawning)
 	void SetDebugVisibleMode(bool enabled);
+
+	// Map traversal — teleports fake player through a grid of waypoints
+	void StartMapTraversal();
+	void StopMapTraversal();
+	bool IsTraversing();
+
+	// Called each engine tick to advance traversal (teleport to next waypoint)
+	void TickTraversal();
 }

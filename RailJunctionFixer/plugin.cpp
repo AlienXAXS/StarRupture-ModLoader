@@ -2,6 +2,7 @@
 #include "plugin_helpers.h"
 #include "plugin_config.h"
 #include "LogisticsFragmentFixer.h"
+#include "rail_scanner.h"
 
 #include "Engine_classes.hpp"
 #include "CoreUObject_classes.hpp"
@@ -149,6 +150,12 @@ static void OnExperienceLoadComplete()
 
 	std::string worldName = world->GetName();
 	LOG_INFO("ExperienceLoadComplete: Current world is '%s' at %p", worldName.c_str(), static_cast<void*>(world));
+
+	if (worldName != "ChimeraMain") return;
+
+	LOG_INFO("SaveLoaded: Save finished loading - signaling socket entities for re-initialization");
+	RailJunctionFixer::LogisticsFragmentFixer::SignalSocketEntities();
+	RailJunctionFixer::RailScanner::ScanRailSocketState(world);
 }
 
 // ----------------------------------------------------------------
@@ -163,9 +170,6 @@ static void OnSaveLoaded()
 {
 	if (!RailJunctionFixerConfig::Config::IsEnabled())
 		return;
-
-	LOG_INFO("SaveLoaded: Save finished loading - signaling socket entities for re-initialization");
-	RailJunctionFixer::LogisticsFragmentFixer::SignalSocketEntities();
 }
 
 // Engine init callback - called after FEngineLoop::Init returns.
@@ -187,6 +191,31 @@ static void OnEngineInit()
 		{
 			LOG_WARN("RegisterSaveLoadedCallback not available - socket re-init after save load will NOT run");
 		}
+
+		// Register for experience-load-complete callback to run the rail scanner.
+		// This fires after all Mass Entity BP actors are fully spawned, which is
+		// later than OnSaveLoaded -- giving all actor data time to settle.
+		if (g_hooks && g_hooks->RegisterExperienceLoadCompleteCallback)
+		{
+			g_hooks->RegisterExperienceLoadCompleteCallback(OnExperienceLoadComplete);
+			LOG_INFO("Registered for experience-load-complete callback (rail socket scan)");
+		}
+		else
+		{
+			LOG_WARN("RegisterExperienceLoadCompleteCallback not available - rail socket scan will NOT run");
+		}
+
+		// Register for actor begin-play callback to TRACE log every spawned actor.
+		// This is installed after engine init so the hook targets live engine code.
+		if (g_hooks && g_hooks->RegisterActorBeginPlayCallback)
+		{
+			g_hooks->RegisterActorBeginPlayCallback(RailJunctionFixer::RailScanner::OnActorBeginPlay);
+			LOG_INFO("Registered for actor-begin-play callback (TRACE diagnostics)");
+		}
+		else
+		{
+			LOG_WARN("RegisterActorBeginPlayCallback not available - actor spawn diagnostics will NOT run");
+		}
 	}
 }
 
@@ -207,6 +236,12 @@ static void OnEngineShutdown()
 	if (g_hooks && g_hooks->UnregisterExperienceLoadCompleteCallback)
 	{
 		g_hooks->UnregisterExperienceLoadCompleteCallback(OnExperienceLoadComplete);
+	}
+
+	// Unregister actor begin-play callback
+	if (g_hooks && g_hooks->UnregisterActorBeginPlayCallback)
+	{
+		g_hooks->UnregisterActorBeginPlayCallback(RailJunctionFixer::RailScanner::OnActorBeginPlay);
 	}
 
 	RailJunctionFixer::LogisticsFragmentFixer::Shutdown();
@@ -247,14 +282,6 @@ extern "C" {
 		else
 		{
 			LOG_ERROR("UCrMassEntityConfigLoaderSubsystem::OnWorldBeginPlay hook FAILED - hierarchy patch will not be applied");
-		}
-
-		// Register for engine init callback (for AActor::BeginPlay diagnostic and
-		// ExperienceLoadComplete registration, which are safe to install post-engine-init)
-		if (!hooks->RegisterEngineInitCallback)
-		{
-			LOG_ERROR("RegisterEngineInitCallback not available - loader version mismatch?");
-			return false;
 		}
 
 		hooks->RegisterEngineInitCallback(OnEngineInit);
