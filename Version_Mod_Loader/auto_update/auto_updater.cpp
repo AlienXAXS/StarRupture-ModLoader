@@ -76,7 +76,7 @@ static void GetUpdateStateIniPath(wchar_t* outPath, DWORD maxLen)
 	if (slash)
 		wcscpy_s(slash + 1,
 			static_cast<rsize_t>(maxLen - static_cast<DWORD>(slash + 1 - outPath)),
-			L"Plugins\\update_state.ini");
+			L"update_state.ini");
 }
 
 static void ReadStoredBuildTag(char* outTag, int maxLen)
