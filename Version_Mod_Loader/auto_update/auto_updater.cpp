@@ -615,8 +615,10 @@ void ModLoader::RunAutoUpdate()
 	{
 		std::string n = JsonExtractString(pluginEntries[idx], "name");
 		std::string f = JsonExtractString(pluginEntries[idx], "filename");
-		Log::Debug("[AutoUpdate]   [%zu] name='%s'  filename='%s'  url='%s%s'",
-			idx, n.c_str(), f.c_str(), baseDownloadUrl.c_str(), f.c_str());
+		std::string a = JsonExtractString(pluginEntries[idx], "asset_filename");
+		if (a.empty()) a = f; // backwards compat
+		Log::Debug("[AutoUpdate]   [%zu] name='%s'  filename='%s'  asset='%s'  url='%s%s'",
+			idx, n.c_str(), f.c_str(), a.c_str(), baseDownloadUrl.c_str(), a.c_str());
 	}
 
 	bool tagsMatch = (effectiveLocalTag[0] != '\0' &&
@@ -680,9 +682,17 @@ void ModLoader::RunAutoUpdate()
 			continue;
 		}
 
+		// asset_filename is the name of the GitHub release asset (e.g. "ServerUtility-Server.dll").
+		// filename is the local name used on disk (e.g. "ServerUtility.dll").
+		// They differ because both Client and Server variants are uploaded to the same
+		// release, so the assets carry a variant suffix to avoid collisions.
+		std::string assetFilename = JsonExtractString(entry, "asset_filename");
+		if (assetFilename.empty())
+			assetFilename = filename; // backwards compat with manifests that lack the field
+
 		// Build the download URL from the base (derived from the manifest URL)
-		// and the plugin's filename, e.g. ".../TAG/ServerUtility-Server.dll"
-		std::string downloadUrl = baseDownloadUrl + filename;
+		// and the asset filename, e.g. ".../TAG/ServerUtility-Server.dll"
+		std::string downloadUrl = baseDownloadUrl + assetFilename;
 
 		wchar_t wFilename[256]{};
 		MultiByteToWideChar(CP_UTF8, 0, filename.c_str(), -1, wFilename, 256);

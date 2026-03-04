@@ -91,9 +91,10 @@ jobs:
             Get-ChildItem "build\$variant Release\Plugins\*.dll" | ForEach-Object {
               $name = $_.BaseName
               $plugins += [ordered]@{
-                name     = $name
-                filename = "$name.dll"
-                version  = $tag
+                name           = $name
+                filename       = "$name.dll"           # local name written to Plugins\
+                asset_filename = "$name-$variant.dll"  # GitHub release asset name
+                version        = $tag
               }
             }
 
