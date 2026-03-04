@@ -16,8 +16,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0  # Full history needed for changelog generation
 
       - name: Add MSBuild to PATH
         uses: microsoft/setup-msbuild@v2
@@ -90,7 +88,6 @@ jobs:
           $tag      = "${{ steps.tag.outputs.TAG }}"
           # IMPORTANT: Keep this in sync with PLUGIN_INTERFACE_VERSION in plugin_interface.h
           $ifaceVer = 12
-          $repoBase = "https://github.com/${{ github.repository }}/releases/latest/download"
 
           foreach ($variant in @("Client", "Server")) {
             $plugins = @()
@@ -98,10 +95,9 @@ jobs:
             Get-ChildItem "build\$variant Release\Plugins\*.dll" | ForEach-Object {
               $name = $_.BaseName
               $plugins += [ordered]@{
-                name         = $name
-                filename     = "$name.dll"
-                version      = $tag
-                download_url = "$repoBase/$name-$variant.dll"
+                name     = $name
+                filename = "$name.dll"
+                version  = $tag
               }
             }
 
@@ -116,30 +112,6 @@ jobs:
             Write-Host "Generated: $outPath"
             Get-Content $outPath
           }
-
-      - name: Generate changelog
-        id: changelog
-        shell: pwsh
-        run: |
-          # Find the previous release tag
-          $prevTag = git tag --sort=-creatordate | Select-Object -First 1
-
-          if ($prevTag) {
-            Write-Host "Generating changelog since tag: $prevTag"
-            $log = git log "$prevTag..HEAD" --pretty=format:"- %s (%an)" --no-merges --reverse
-          } else {
-            Write-Host "No previous tag found - listing all commits"
-            $log = git log --pretty=format:"- %s (%an)" --no-merges --reverse
-          }
-
-          if (-not $log) {
-            $log = "- No changes listed"
-          }
-
-          # Write to a file to safely pass multiline content
-          $log | Out-File -FilePath "$env:GITHUB_WORKSPACE\changelog.txt" -Encoding utf8
-          Write-Host "Changelog:"
-          Write-Host $log
 
       - name: Create ZIP archives
         shell: pwsh
@@ -157,15 +129,8 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $tag       = "${{ steps.tag.outputs.TAG }}"
-          $changelog = Get-Content "$env:GITHUB_WORKSPACE\changelog.txt" -Raw
           $clientZip = "$env:GITHUB_WORKSPACE\StarRupture-ModLoader-Client-$tag.zip"
           $serverZip = "$env:GITHUB_WORKSPACE\StarRupture-ModLoader-Server-$tag.zip"
-
-          $notes = @"
-          ## What's New
-
-          $changelog
-          "@
 
           # Collect all assets: ZIPs + manifests + individual plugin DLLs
           $assets = @(
@@ -182,4 +147,4 @@ jobs:
 
           gh release create $tag @assets `
             --title "StarRupture ModLoader $tag" `
-            --notes $notes
+            --generate-notes

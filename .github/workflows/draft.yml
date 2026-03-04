@@ -16,8 +16,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Add MSBuild to PATH
         uses: microsoft/setup-msbuild@v2
@@ -86,7 +84,6 @@ jobs:
         run: |
           $tag      = "${{ steps.tag.outputs.TAG }}"
           $ifaceVer = 12
-          $repoBase = "https://github.com/${{ github.repository }}/releases/latest/download"
 
           foreach ($variant in @("Client", "Server")) {
             $plugins = @()
@@ -94,10 +91,9 @@ jobs:
             Get-ChildItem "build\$variant Release\Plugins\*.dll" | ForEach-Object {
               $name = $_.BaseName
               $plugins += [ordered]@{
-                name         = $name
-                filename     = "$name.dll"
-                version      = $tag
-                download_url = "$repoBase/$name-$variant.dll"
+                name     = $name
+                filename = "$name.dll"
+                version  = $tag
               }
             }
 
@@ -111,21 +107,6 @@ jobs:
             $manifest | ConvertTo-Json -Depth 3 | Out-File -FilePath $outPath -Encoding utf8NoBOM
             Write-Host "Generated: $outPath"
           }
-
-      - name: Generate changelog
-        shell: pwsh
-        run: |
-          $prevTag = git tag --sort=-creatordate | Select-Object -First 1
-
-          if ($prevTag) {
-            $log = git log "$prevTag..HEAD" --pretty=format:"- %s (%an)" --no-merges --reverse
-          } else {
-            $log = git log --pretty=format:"- %s (%an)" --no-merges --reverse
-          }
-
-          if (-not $log) { $log = "- No changes listed" }
-
-          $log | Out-File -FilePath "$env:GITHUB_WORKSPACE\changelog.txt" -Encoding utf8
 
       - name: Create ZIP archives
         shell: pwsh
@@ -143,15 +124,8 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $tag       = "${{ steps.tag.outputs.TAG }}"
-          $changelog = Get-Content "$env:GITHUB_WORKSPACE\changelog.txt" -Raw
           $clientZip = "$env:GITHUB_WORKSPACE\StarRupture-ModLoader-Client-$tag.zip"
           $serverZip = "$env:GITHUB_WORKSPACE\StarRupture-ModLoader-Server-$tag.zip"
-
-          $notes = @"
-          ## Draft Build
-
-          $changelog
-          "@
 
           $assets = @(
             $clientZip,
@@ -167,5 +141,5 @@ jobs:
 
           gh release create $tag @assets `
             --title "StarRupture ModLoader $tag (Draft)" `
-            --notes $notes `
+            --generate-notes `
             --draft
