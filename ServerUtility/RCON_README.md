@@ -200,6 +200,42 @@ Returns server key-value pairs:
 
 ---
 
+## Security — Remote Vulnerability Patch
+
+A vulnerability in the game's built-in HTTP server allows unauthenticated remote callers to invoke arbitrary Unreal Engine remote object calls via the `/remote/object/call` endpoint. See the [vulnerability announcement](https://wiki.starrupture-utilities.com/en/dedicated-server/Vulnerability-Announcement) for full details.
+
+ServerUtility includes a patch that intercepts this endpoint and blocks any call whose `objectPath` does not target the legitimate `DedicatedServerSettingsComp` object. Blocked requests receive an HTTP `403 Forbidden` response and are logged as warnings.
+
+### Configuration
+
+The patch is controlled by `RemoteVulnerabilityPatch` in the `[Security]` section of `ServerUtility.ini`:
+
+```ini
+[Security]
+RemoteVulnerabilityPatch=true
+```
+
+| Value | Behaviour |
+|---|---|
+| `true` *(default)* | Unauthorized `/remote/object/call` requests are blocked and logged |
+| `false` | No interception — the game's HTTP server handles all requests as normal |
+
+> **It is strongly recommended to leave this enabled.** Only disable it if you have a specific reason and your server is not exposed to untrusted networks.
+
+### What gets logged
+
+When a request is blocked, two `WARN` lines are written to `modloader.log`:
+
+```
+[WARN] [RemoteVulnerabilityPatcher] Blocked unauthorized /remote/object/call
+[WARN] [RemoteVulnerabilityPatcher]   objectPath:   '/Game/...'
+[WARN] [RemoteVulnerabilityPatcher]   functionName: '...'
+```
+
+Legitimate requests (those targeting the allowed object path) pass through silently.
+
+---
+
 ## Troubleshooting
 
 ### RCON won't start
@@ -218,6 +254,10 @@ Returns server key-value pairs:
 ### Pattern scan failures
 - Game updates may change function byte patterns. Check the log for `pattern not found` errors.
 - Update the patterns in `scan_patterns.h` (mod loader) or the command source files (plugin) to match the new binary.
+
+### Remote Vulnerability Patch not activating
+- Check the log at startup for `[RemoteVulnerabilityPatcher] Hook installed successfully` — if absent, the pattern scan failed (game update may have changed the binary).
+- If `FHttpServerResponse::Error not located` appears, the patch is still active but blocked requests will drop the connection rather than receiving a 403 response. The exploit is still blocked.
 
 ### Firewall / port forwarding
 - The RCON port needs both **TCP** (RCON) and **UDP** (A2S query) forwarded.

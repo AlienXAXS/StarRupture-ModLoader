@@ -233,9 +233,13 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="hooks\auto_profession\auto_profession.h" />
+    <ClInclude Include="hooks\http_connection\http_connection.h" />
+    <ClInclude Include="hooks\max_players\max_players.h" />
     <ClInclude Include="hooks\parse_settings\parse_settings.h" />
     <ClInclude Include="hooks\set_password\set_password.h" />
     <ClInclude Include="plugin.h" />
+    <ClInclude Include="plugin_config.h" />
     <ClInclude Include="plugin_helpers.h" />
     <ClInclude Include="plugin_interface.h" />
     <ClInclude Include="rcon\commands\cmd_save.h" />
@@ -259,9 +263,13 @@
       <Visible>false</Visible>
     </ClCompile>
     <ClCompile Include="dllmain.cpp" />
+    <ClCompile Include="hooks\auto_profession\auto_profession.cpp" />
+    <ClCompile Include="hooks\http_connection\http_connection.cpp" />
+    <ClCompile Include="hooks\max_players\max_players.cpp" />
     <ClCompile Include="hooks\parse_settings\parse_settings.cpp" />
     <ClCompile Include="hooks\set_password\set_password.cpp" />
     <ClCompile Include="plugin.cpp" />
+    <ClCompile Include="plugin_config.cpp" />
     <ClCompile Include="rcon\commands\cmd_save.cpp" />
     <ClCompile Include="rcon\rcon.cpp" />
     <ClCompile Include="rcon\state\game_thread_dispatch.cpp" />

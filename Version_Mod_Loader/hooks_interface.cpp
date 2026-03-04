@@ -8,6 +8,9 @@
 #include "game/save_loaded/save_loaded.h"
 #include "game/experience_load_complete/experience_load_complete.h"
 #include "game/engine_tick/engine_tick.h"
+#include "game/actor_begin_play/actor_begin_play.h"
+#include "game/post_login/player_joined.h"
+#include "game/player_left/player_left.h"
 #include <unordered_map>
 #include <mutex>
 
@@ -313,6 +316,78 @@ namespace ModLoader
 		LogDebug(L"[HooksInterface] EngineTick callback unregistered for plugin");
 	}
 
+	static void HooksRegisterActorBeginPlayCallback(void (*callback)(void*))
+	{
+		if (!callback)
+		{
+			LogWarn(L"[HooksInterface] RegisterActorBeginPlayCallback: null callback");
+			return;
+		}
+
+		Hooks::ActorBeginPlay::RegisterPluginCallback(callback);
+		LogDebug(L"[HooksInterface] ActorBeginPlay callback registered for plugin");
+	}
+
+	static void HooksUnregisterActorBeginPlayCallback(void (*callback)(void*))
+	{
+		if (!callback)
+		{
+			LogWarn(L"[HooksInterface] UnregisterActorBeginPlayCallback: null callback");
+			return;
+		}
+
+		Hooks::ActorBeginPlay::UnregisterPluginCallback(callback);
+		LogDebug(L"[HooksInterface] ActorBeginPlay callback unregistered for plugin");
+	}
+
+	static void HooksRegisterPlayerJoinedCallback(void (*callback)(void*))
+	{
+		if (!callback)
+		{
+			LogWarn(L"[HooksInterface] RegisterPlayerJoinedCallback: null callback");
+			return;
+		}
+
+		Hooks::PlayerJoined::RegisterPluginCallback(callback);
+		LogDebug(L"[HooksInterface] PlayerJoined callback registered for plugin");
+	}
+
+	static void HooksUnregisterPlayerJoinedCallback(void (*callback)(void*))
+	{
+		if (!callback)
+		{
+			LogWarn(L"[HooksInterface] UnregisterPlayerJoinedCallback: null callback");
+			return;
+		}
+
+		Hooks::PlayerJoined::UnregisterPluginCallback(callback);
+		LogDebug(L"[HooksInterface] PlayerJoined callback unregistered for plugin");
+	}
+
+	static void HooksRegisterPlayerLeftCallback(void (*callback)(void*))
+	{
+		if (!callback)
+		{
+			LogWarn(L"[HooksInterface] RegisterPlayerLeftCallback: null callback");
+			return;
+		}
+
+		Hooks::PlayerLeft::RegisterPluginCallback(callback);
+		LogDebug(L"[HooksInterface] PlayerLeft callback registered for plugin");
+	}
+
+	static void HooksUnregisterPlayerLeftCallback(void (*callback)(void*))
+	{
+		if (!callback)
+		{
+			LogWarn(L"[HooksInterface] UnregisterPlayerLeftCallback: null callback");
+			return;
+		}
+
+		Hooks::PlayerLeft::UnregisterPluginCallback(callback);
+		LogDebug(L"[HooksInterface] PlayerLeft callback unregistered for plugin");
+	}
+
 	// Global hooks interface instance
 	static IPluginHooks g_pluginHooks = {
 		HooksInstallHook,
@@ -337,7 +412,13 @@ namespace ModLoader
 		HooksRegisterExperienceLoadCompleteCallback,
 		HooksUnregisterExperienceLoadCompleteCallback,
 		HooksRegisterEngineTickCallback,
-		HooksUnregisterEngineTickCallback
+		HooksUnregisterEngineTickCallback,
+		HooksRegisterActorBeginPlayCallback,
+		HooksUnregisterActorBeginPlayCallback,
+		HooksRegisterPlayerJoinedCallback,
+		HooksUnregisterPlayerJoinedCallback,
+		HooksRegisterPlayerLeftCallback,
+		HooksUnregisterPlayerLeftCallback
 	};
 
 	IPluginHooks* GetPluginHooks()

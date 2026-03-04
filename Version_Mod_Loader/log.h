@@ -40,32 +40,41 @@ namespace Log
 		Error = 4,
 	};
 
-	inline FILE*  g_file     = nullptr;
+	inline FILE* g_file = nullptr;
 	inline Level  g_minLevel = Level::Info; // Default to Info for production
 	inline bool   g_enableFile = true;       // Default to enabled
 	inline std::wstring g_logFileName = L"modloader.log"; // Default log file name
-	
+
 	// Critical section with explicit initialization flag and init-once semantics
 	inline CRITICAL_SECTION g_logLock{};
 	inline volatile LONG g_logLockInitialized = 0;  // Use volatile LONG for thread-safe flag
 
 	// -----------------------------------------------------------------------
-	// Check if -Log parameter was passed on command line
+	// Check if -Log parameter was passed on command line.
+	// The result is cached after the first call since the command line
+	// never changes during the lifetime of the process.
 	// -----------------------------------------------------------------------
 	inline bool HasLogCommandLineParam()
 	{
+		static int cached = -1; // -1 = not yet checked
+		if (cached >= 0)
+			return cached != 0;
+
+		bool result = false;
 		__try
 		{
 			const wchar_t* cmdLine = GetCommandLineW();
-			if (!cmdLine)
-				return false;
-			return wcsstr(cmdLine, L"-Log") != nullptr || wcsstr(cmdLine, L"-log") != nullptr;
+			if (cmdLine)
+				result = wcsstr(cmdLine, L"-Log") != nullptr || wcsstr(cmdLine, L"-log") != nullptr;
 		}
 		__except (EXCEPTION_EXECUTE_HANDLER)
 		{
 			// If command line is not accessible, assume no -Log parameter
-			return false;
+			result = false;
 		}
+
+		cached = result ? 1 : 0;
+		return result;
 	}
 
 	// -----------------------------------------------------------------------
@@ -299,7 +308,7 @@ namespace Log
 		// Ensure logging is initialized (with init-once semantics)
 		// States: 0 = uninitialized, 1 = initializing, 2 = ready
 		LONG state = InterlockedCompareExchange(&g_logLockInitialized, 0, 0);
-		
+
 		if (state == 0)
 		{
 			// Not initialized - try to initialize now
@@ -355,29 +364,42 @@ namespace Log
 				fflush(g_file);
 			}
 
-#ifdef _DEBUG
-			if (HasLogCommandLineParam())
+			// Already wrote to file above if enabled.
+
+			// If the UE log bridge is initialized, prefer that as the primary output
+			// for Info/Warn/Error. We still write to the modloader log file (g_file),
+			// but avoid printing to the console or OutputDebugString to prevent
+			// duplicate lines (the engine will handle its own outputs).
+			bool ueReady = UELog::g_initialized.load(std::memory_order_acquire);
+
+			if (ueReady)
 			{
-				printf("%s", lineBuf);
+				if (level >= Level::Info)
+				{
+					UELog::ELogVerbosity ueVerbosity;
+					switch (level)
+					{
+						case Level::Warn: ueVerbosity = UELog::ELogVerbosity::Warning; break;
+						case Level::Error: ueVerbosity = UELog::ELogVerbosity::Error; break;
+						default: ueVerbosity = UELog::ELogVerbosity::Log; break;
+					}
+					UELog::Write(ueVerbosity, messageBuf);
+				}
 			}
+			else
+			{
+				// UE bridge not active — fall back to printing to console (if requested)
+				// and OutputDebugString so debugger capture still works.
+#ifdef _DEBUG
+				if (HasLogCommandLineParam())
+				{
+					printf("%s", lineBuf);
+				}
 #endif
 
-			OutputDebugStringA(lineBuf);
+				OutputDebugStringA(lineBuf);
 
-			// Forward Info/Warn/Error to the game's own log (StarRupture.log).
-			// Trace and Debug are intentionally excluded to avoid flooding it.
-			// UELog::Write() is internally guarded so this is a no-op until
-			// UELog::Initialize() has been called from the EngineInit callback.
-			if (level >= Level::Info)
-			{
-				UELog::ELogVerbosity ueVerbosity;
-				switch (level)
-				{
-				case Level::Warn:  ueVerbosity = UELog::ELogVerbosity::Warning; break;
-				case Level::Error: ueVerbosity = UELog::ELogVerbosity::Error;   break;
-				default:           ueVerbosity = UELog::ELogVerbosity::Log;     break;
-				}
-				UELog::Write(ueVerbosity, messageBuf);
+				// If UELog becomes available later, it will be used from then on.
 			}
 		}
 		__finally

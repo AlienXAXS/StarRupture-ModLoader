@@ -12,6 +12,9 @@
 #include "game/engine_shutdown/engine_shutdown.h"
 #include "game/save_loaded/save_loaded.h"
 #include "game/experience_load_complete/experience_load_complete.h"
+#include "game/actor_begin_play/actor_begin_play.h"
+#include "game/post_login/player_joined.h"
+#include "game/player_left/player_left.h"
 #include <Psapi.h>
 #include <VersionHelpers.h>
 #include <thread>
@@ -269,6 +272,9 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 		Hooks::WorldBeginPlay::Remove();
 		Hooks::SaveLoaded::Remove();
 		Hooks::ExperienceLoadComplete::Remove();
+		Hooks::ActorBeginPlay::Remove();
+		Hooks::PlayerJoined::Remove();
+		Hooks::PlayerLeft::Remove();
 
 		ModLoader::ShutdownPluginManager();
 		ModLoader::ShutdownConfigManager();

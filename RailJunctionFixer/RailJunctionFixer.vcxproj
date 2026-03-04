@@ -319,6 +319,7 @@
     <ClInclude Include="plugin.h" />
     <ClInclude Include="plugin_config.h" />
     <ClInclude Include="plugin_helpers.h" />
+    <ClInclude Include="rail_scanner.h" />
     <ClInclude Include="RailJunctionFixer.h" />
     <ClInclude Include="StringHelpers.h" />
   </ItemGroup>
@@ -337,6 +338,7 @@
     <ClCompile Include="plugin.cpp" />
     <ClCompile Include="plugin_config.cpp" />
     <ClCompile Include="RailJunctionFixer.cpp" />
+    <ClCompile Include="rail_scanner.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

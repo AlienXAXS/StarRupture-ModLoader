@@ -19,6 +19,13 @@ namespace KeepTickingConfig
 			ConfigValueType::Boolean,
 			"false",
 			"Make the fake player visible for debugging (enables collision and ticking)"
+		},
+		{
+			"Traversal",
+			"WaypointsPerTick",
+			ConfigValueType::Integer,
+			"10",
+			"Number of waypoints the fake player teleports through per engine tick (higher = faster traversal)"
 		}
 	};
 
@@ -50,6 +57,14 @@ namespace KeepTickingConfig
 		static bool IsDebugVisibleModeEnabled()
 		{
 			return s_config ? s_config->ReadBool("KeepTicking", "Hooks", "DebugVisibleMode", false) : false;
+		}
+
+		static int GetWaypointsPerTick()
+		{
+			int val = s_config ? s_config->ReadInt("KeepTicking", "Traversal", "WaypointsPerTick", 10) : 10;
+			if (val < 1) val = 1;
+			if (val > 100) val = 100;
+			return val;
 		}
 
 	private:

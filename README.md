@@ -21,6 +21,7 @@ Adds remote administration to a dedicated server:
 - **Command-line server settings** — pass `-SessionName=`, `-SaveGameInterval=`, etc. to bypass `DSSettings.txt` entirely. Automatically detects existing saves and sets `StartNewGame` / `LoadSavedGame` accordingly.
 - **Source RCON** — authenticated remote command execution (TCP) compatible with any standard RCON client.
 - **Steam A2S Query** — server browser integration (UDP) for player counts, server name, and map info.
+- **Remote Vulnerability Patch** — blocks a known exploit in the game's built-in HTTP server that allows unauthenticated remote code execution. Enabled by default. See the [vulnerability announcement](https://wiki.starrupture-utilities.com/en/dedicated-server/Vulnerability-Announcement) for details.
 
 See the [RCON & Query documentation](ServerUtility/RCON_README.md) for protocol details, supported commands, and client compatibility.
 

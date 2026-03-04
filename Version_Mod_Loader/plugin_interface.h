@@ -19,7 +19,15 @@
 //     to IPluginHooks for receiving notifications when UCrExperienceManagerComponent::OnExperienceLoadComplete fires
 // v9: Added RegisterEngineTickCallback / UnregisterEngineTickCallback to IPluginHooks
 //     for receiving per-frame game-thread tick notifications (UGameEngine::Tick)
-#define PLUGIN_INTERFACE_VERSION 9
+// v10: Added RegisterActorBeginPlayCallback / UnregisterActorBeginPlayCallback
+//      to IPluginHooks for receiving notifications when any AActor::BeginPlay fires
+// v11: Added RegisterPlayerJoinedCallback / UnregisterPlayerJoinedCallback
+//      to IPluginHooks for receiving notifications when ACrGameModeBase::PostLogin fires
+//      (player controller fully connected and ready on server)
+// v12: Added RegisterPlayerLeftCallback / UnregisterPlayerLeftCallback
+//      to IPluginHooks for receiving notifications when ACrGameModeBase::Logout fires
+//      (player controller about to be destroyed — still valid at callback time)
+#define PLUGIN_INTERFACE_VERSION 12
 
 // Log levels
 enum class PluginLogLevel
@@ -270,6 +278,47 @@ struct IPluginHooks
 
     void (*RegisterEngineTickCallback)(void (*callback)(float));
     void (*UnregisterEngineTickCallback)(void (*callback)(float));
+
+    // -----------------------------------------------------------------------
+    // Actor begin-play callbacks (v10)
+    //
+    // Fires when any AActor::BeginPlay is called.  The actor pointer is
+    // passed as void* — cast to SDK::AActor* in the plugin.
+    // Performance note: this fires for EVERY actor — keep callbacks fast.
+  // Callback signature: void OnActorBeginPlay(void* actor)
+    // -----------------------------------------------------------------------
+
+    void (*RegisterActorBeginPlayCallback)(void (*callback)(void*));
+    void (*UnregisterActorBeginPlayCallback)(void (*callback)(void*));
+
+    // -----------------------------------------------------------------------
+    // Player-joined callbacks (v11)
+    //
+    // Fires when ACrGameModeBase::PostLogin completes on the server.
+    // At this point the player controller is fully networked, replicated,
+    // and ready — but may not yet possess a pawn (the game normally waits
+    // for the profession selection UI).
+    // The player controller pointer is passed as void* — cast to
+    // SDK::APlayerController* or SDK::ACrPlayerControllerBase* in the plugin.
+    // Callback signature: void OnPlayerJoined(void* playerController)
+    // -----------------------------------------------------------------------
+
+    void (*RegisterPlayerJoinedCallback)(void (*callback)(void*));
+    void (*UnregisterPlayerJoinedCallback)(void (*callback)(void*));
+
+    // -----------------------------------------------------------------------
+    // Player-left callbacks (v12)
+    //
+    // Fires when ACrGameModeBase::Logout is called on the server — i.e. when
+    // a player disconnects, is kicked, or the session ends.  Callbacks are
+    // invoked BEFORE the original Logout so the controller is still valid.
+    // The exiting controller pointer is passed as void* — cast to
+    // SDK::AController* or SDK::ACrPlayerControllerBase* in the plugin.
+    // Callback signature: void OnPlayerLeft(void* exitingController)
+    // -----------------------------------------------------------------------
+
+    void (*RegisterPlayerLeftCallback)(void (*callback)(void*));
+    void (*UnregisterPlayerLeftCallback)(void (*callback)(void*));
 };
 
 // Plugin metadata structure

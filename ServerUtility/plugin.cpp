@@ -1,6 +1,10 @@
 #include "plugin.h"
 #include "plugin_helpers.h"
+#include "plugin_config.h"
 #include "hooks/parse_settings/parse_settings.h"
+#include "hooks/max_players/max_players.h"
+#include "hooks/auto_profession/auto_profession.h"
+#include "hooks/http_connection/http_connection.h"
 #include "rcon/rcon.h"
 
 // -----------------------------------------------------------------------
@@ -51,14 +55,35 @@ static void OnEngineInit()
     LOG_INFO("Found ParseSettings at 0x%llX", static_cast<unsigned long long>(addr));
     ParseSettingsHook::Install(addr);
 
+    // Apply max players patch if configured
+    int maxPlayers = ServerUtilityConfig::Config::GetMaxPlayers();
+    if (maxPlayers > 0)
+    {
+        LOG_INFO("MaxPlayers configured to %d - applying patch...", maxPlayers);
+        MaxPlayersHook::Install(maxPlayers);
+
+        // Auto-assign professions for players joining when MaxPlayers is patched
+        AutoProfessionHook::Install();
+    }
+    else
+    {
+        LOG_INFO("MaxPlayers is 0 — using game default (no patch)");
+    }
+
     // Start the RCON / Steam Query subsystem
     Rcon::Init();
+
+    // Install FHttpConnection::ProcessRequest hook
+    HttpConnectionHook::Install();
 }
 
 static void OnEngineShutdown()
 {
-    LOG_INFO("Engine shutting down – removing ParseSettings hook...");
+    LOG_INFO("Engine shutting down – removing hooks...");
     ParseSettingsHook::Remove();
+    MaxPlayersHook::Remove();
+    AutoProfessionHook::Remove();
+    HttpConnectionHook::Remove();
 
     // Shut down RCON / Steam Query (must happen before UObject teardown)
     Rcon::Shutdown();
@@ -98,6 +123,9 @@ extern "C"
         g_hooks   = hooks;
 
         LOG_INFO("Plugin initialising...");
+
+        // Initialize config system with schema
+        ServerUtilityConfig::Config::Initialize(config);
 
         if (!hooks->RegisterEngineInitCallback)
         {
