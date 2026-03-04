@@ -1,17 +1,17 @@
-name: Build and Release
+name: Draft Build and Release
 
 on:
   push:
     branches:
-      - main
+      - draft
     paths-ignore:
-      - '**/*.md'
+      - "**/*.md"
 
 jobs:
   build:
     runs-on: windows-latest
     permissions:
-      contents: write  # Required to create releases and upload assets
+      contents: write
 
     steps:
       - name: Checkout repository
@@ -24,7 +24,7 @@ jobs:
         id: tag
         shell: pwsh
         run: |
-          $tag = "release-$(Get-Date -Format 'yyyy.MM.dd-HHmmss')"
+          $tag = "draft-$(Get-Date -Format 'yyyy.MM.dd-HHmmss')"
           echo "TAG=$tag" >> $env:GITHUB_OUTPUT
 
       - name: Build Client Release
@@ -60,10 +60,8 @@ jobs:
             New-Item -ItemType Directory -Force -Path $staging | Out-Null
             New-Item -ItemType Directory -Force -Path $modsDir | Out-Null
 
-            # dwmapi.dll goes in the root
             Copy-Item "build\$config\dwmapi.dll" "$staging\dwmapi.dll"
 
-            # Copy every .dll found in Plugins - no exp/lib files
             Get-ChildItem "build\$config\Plugins\*.dll" | ForEach-Object {
               Copy-Item $_.FullName $modsDir
               Write-Host "Staged [$target]: $($_.Name)"
@@ -73,7 +71,6 @@ jobs:
       - name: Prepare individual plugin assets
         shell: pwsh
         run: |
-          # Copy each plugin DLL as <Name>-<Variant>.dll for individual download
           foreach ($variant in @("Client", "Server")) {
             Get-ChildItem "build\$variant Release\Plugins\*.dll" | ForEach-Object {
               $dest = "$env:GITHUB_WORKSPACE\$($_.BaseName)-$variant.dll"
@@ -86,7 +83,6 @@ jobs:
         shell: pwsh
         run: |
           $tag      = "${{ steps.tag.outputs.TAG }}"
-          # IMPORTANT: Keep this in sync with PLUGIN_INTERFACE_VERSION in plugin_interface.h
           $ifaceVer = 12
 
           foreach ($variant in @("Client", "Server")) {
@@ -110,7 +106,6 @@ jobs:
             $outPath = "$env:GITHUB_WORKSPACE\manifest-$($variant.ToLower()).json"
             $manifest | ConvertTo-Json -Depth 3 | Out-File -FilePath $outPath -Encoding utf8NoBOM
             Write-Host "Generated: $outPath"
-            Get-Content $outPath
           }
 
       - name: Create ZIP archives
@@ -123,7 +118,7 @@ jobs:
             Write-Host "Created ZIP: $zipPath"
           }
 
-      - name: Create GitHub Release
+      - name: Create Draft GitHub Release
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -132,7 +127,6 @@ jobs:
           $clientZip = "$env:GITHUB_WORKSPACE\StarRupture-ModLoader-Client-$tag.zip"
           $serverZip = "$env:GITHUB_WORKSPACE\StarRupture-ModLoader-Server-$tag.zip"
 
-          # Collect all assets: ZIPs + manifests + individual plugin DLLs
           $assets = @(
             $clientZip,
             $serverZip,
@@ -146,5 +140,6 @@ jobs:
           }
 
           gh release create $tag @assets `
-            --title "StarRupture ModLoader $tag" `
-            --generate-notes
+            --title "StarRupture ModLoader $tag (Draft)" `
+            --generate-notes `
+            --draft

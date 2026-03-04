@@ -17,9 +17,13 @@ static IPluginScanner* g_scanner = nullptr;
 static IPluginHooks* g_hooks = nullptr;
 
 // Plugin metadata
+#ifndef MODLOADER_BUILD_TAG
+#define MODLOADER_BUILD_TAG "dev"
+#endif
+
 static PluginInfo s_pluginInfo = {
 	"RailJunctionFixer",
-	"1.0.0",
+	MODLOADER_BUILD_TAG,
 	"Wilhelm & AlienX",
 	"Fixes rail junction save/load issues by patching FCrLogisticsSocketsFragment inheritance",
 	PLUGIN_INTERFACE_VERSION
