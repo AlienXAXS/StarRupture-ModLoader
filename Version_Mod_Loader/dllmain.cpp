@@ -32,10 +32,29 @@
 
 #pragma comment(lib, "psapi.lib")
 
-// Forward declarations
-static void LoadUE4SS();
+// ---------------------------------------------------------------------------
+// Globals shared between DllMain and the main init thread
+// ---------------------------------------------------------------------------
 
+// Handle to the main initialisation thread (kept so DLL_PROCESS_DETACH can
+// wait for it in the FreeLibrary case before tearing down subsystems).
+static HANDLE g_mainInitThread = NULL;
+
+// Signalled (manual-reset) by the init thread once all plugins are loaded and
+// all hooks are installed.  DLL_PROCESS_DETACH waits on this before running
+// the shutdown sequence so it never tries to unload plugins that haven't been
+// loaded yet.
+static HANDLE g_pluginsLoadedEvent = NULL;
+
+// ---------------------------------------------------------------------------
+// Forward declarations
+// ---------------------------------------------------------------------------
+static void LoadUE4SS();
+static void LogStartupEnvironment();
+
+// ---------------------------------------------------------------------------
 // Called by EngineInit hook once the UE engine is up — safe to call BasicLogV
+// ---------------------------------------------------------------------------
 static void OnEngineInitForUELog()
 {
 	if (UELog::Initialize(Scanner::FindPatternInMainModule))
@@ -61,6 +80,111 @@ static void OnEngineInitForUELog()
 		LoadUE4SS();
 	}).detach();
 }
+
+// ---------------------------------------------------------------------------
+// Main initialisation thread
+//
+// Owns everything that would previously have run inside DLL_PROCESS_ATTACH
+// but cannot safely run there because:
+//   • WinHTTP (used by RunAutoUpdate) lazily loads TLS/DNS DLLs via
+//     LoadLibrary.  LoadLibrary needs the loader lock, which DllMain holds
+//     for its entire duration — causing an immediate deadlock if we wait, or
+//     error 5023 if we try to use the thread pool from inside the lock.
+//   • By running here we are already outside the loader lock, so WinHTTP,
+//     hook installation, and plugin LoadLibrary calls all work normally.
+// ---------------------------------------------------------------------------
+static DWORD WINAPI MainInitThreadProc(LPVOID)
+{
+	// Open the splash here, not in DllMain.  The splash window has no internal
+	// message thread — Show/SetStatus/SetProgress/Close must all be called from
+	// the same thread that owns the HWND.  Running everything here keeps the
+	// ownership consistent and avoids cross-thread UpdateWindow / PumpMessages
+	// failures.  DllMain returns in microseconds so the visual delay is nil.
+	Splash::Show();
+	Splash::SetStatus(L"Starting mod loader...");
+	Splash::SetProgress(0.0f);
+
+	LogStartupEnvironment();
+
+	Splash::SetStatus(L"Initializing logger...");
+	Splash::SetProgress(0.20f);
+
+	ModLoader::InitializeLogger();
+	ModLoader::LogMessage(L"======================================");
+	ModLoader::LogMessage(L"  AlienX's Mod Loader initialized");
+	ModLoader::LogMessage(L"======================================");
+
+	Splash::SetStatus(L"Here Goes Nothin' ...");
+	Splash::SetProgress(0.30f);
+
+	ModLoader::InitializeConfigManager();
+	ModLoader::InitializePluginManager();
+
+	// Auto-update runs here, outside the loader lock, so WinHTTP can work.
+	// Downloaded DLLs are in place for this boot's plugin load.
+	Splash::SetStatus(L"Checking for plugin updates...");
+	Splash::SetProgress(0.35f);
+	ModLoader::RunAutoUpdate();
+
+	// Install core game hooks BEFORE loading plugins
+	Splash::SetStatus(L"Installing core game hooks...");
+	Splash::SetProgress(0.40f);
+
+	ModLoader::LogMessage(L"Installing core game hooks...");
+	// NOTE: WorldBeginPlay hook is installed lazily on first
+	// RegisterAnyWorldBeginPlayCallback / RegisterWorldBeginPlayCallback call.
+
+	Splash::SetStatus(L"Installing EngineInit hook...");
+	Splash::SetProgress(0.55f);
+
+	if (Hooks::EngineInit::Install())
+	{
+		ModLoader::LogMessage(L"  EngineInit hook installed");
+		// Register UE log bridge — initialised once the engine is up
+		Hooks::EngineInit::RegisterPluginCallback(OnEngineInitForUELog);
+	}
+	else
+	{
+		ModLoader::LogMessage(L"  WARNING: EngineInit hook failed to install");
+	}
+
+	Splash::SetStatus(L"Installing EngineShutdown hook...");
+	Splash::SetProgress(0.65f);
+
+	if (Hooks::EngineShutdown::Install())
+	{
+		ModLoader::LogMessage(L"  EngineShutdown hook installed");
+	}
+	else
+	{
+		ModLoader::LogMessage(L"  WARNING: EngineShutdown hook failed to install - plugins will not receive shutdown callbacks");
+	}
+
+	Splash::SetStatus(L"Loading plugins...");
+	Splash::SetProgress(0.75f);
+
+	ModLoader::LoadAllPlugins();
+
+	Splash::SetStatus(L"Initialization complete!");
+	Splash::SetProgress(1.0f);
+
+	ModLoader::LogMessage(L"Mod loader initialization complete");
+
+	// Signal DLL_PROCESS_DETACH that init is complete and it is safe to start
+	// the shutdown sequence (UnloadAllPlugins etc.).
+	if (g_pluginsLoadedEvent)
+		SetEvent(g_pluginsLoadedEvent);
+
+	// Brief pause so the user can see 100%, then close the splash.
+	Sleep(600);
+	Splash::Close();
+
+	return 0;
+}
+
+// ---------------------------------------------------------------------------
+// Helper functions
+// ---------------------------------------------------------------------------
 
 static void LogStartupEnvironment()
 {
@@ -149,6 +273,10 @@ static void LoadUE4SS()
 	}
 }
 
+// ---------------------------------------------------------------------------
+// DLL entry point
+// ---------------------------------------------------------------------------
+
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserved)
 {
 	switch (ul_reason_for_call)
@@ -157,96 +285,59 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 	{
 		DisableThreadLibraryCalls(hModule);
 
+		// Initialise our low-level file logger — simple file I/O, no LoadLibrary.
 		Log::Initialize();
 		Log::Info("======================================================");
 		Log::Info("  StarRupture Mod Loader (dwmapi.dll proxy) loaded");
 		Log::Info("======================================================");
 
-		// Show splash window on client builds (no-op on server)
-		Splash::Show();
-		Splash::SetStatus(L"Starting mod loader...");
-		Splash::SetProgress(0.0f);
-
-		LogStartupEnvironment();
-
-		Splash::SetStatus(L"Initializing dwmapi proxy...");
-		Splash::SetProgress(0.10f);
+		// Initialise the dwmapi forwarding table synchronously.  This MUST
+		// happen in DllMain before any caller can reach our dwmapi exports,
+		// and before we release the loader lock.
+		// NOTE: Splash::Show() is intentionally NOT called here.  The splash
+		// uses a plain HWND with no internal thread — all calls (Show, SetStatus,
+		// SetProgress, Close) must be made from the same thread that owns the
+		// window.  We open the splash at the top of MainInitThreadProc so that
+		// every call originates from that one thread.
 
 		Log::Info("Initializing dwmapi.dll proxy...");
 		if (!DwmapiProxy::Initialize())
 		{
 			Log::Error("FATAL: Failed to initialize dwmapi proxy -- DLL load aborted");
-			Splash::Close();
 			Log::Shutdown();
 			return FALSE;
 		}
 		Log::Info("Dwmapi proxy initialized successfully");
 
-		Splash::SetStatus(L"Initializing logger...");
-		Splash::SetProgress(0.20f);
-
-		ModLoader::InitializeLogger();
-		ModLoader::LogMessage(L"======================================");
-		ModLoader::LogMessage(L"  AlienX's Mod Loader initialized");
-		ModLoader::LogMessage(L"======================================");
-
-		Splash::SetStatus(L"Here Goes Nothin' ...");
-		Splash::SetProgress(0.30f);
-
-		ModLoader::InitializeConfigManager();
-		ModLoader::InitializePluginManager();
-
-		Splash::SetStatus(L"Checking for plugin updates...");
-		Splash::SetProgress(0.35f);
-		ModLoader::RunAutoUpdate();
-
-		// Install core game hooks BEFORE loading plugins
-		Splash::SetStatus(L"Installing core game hooks...");
-		Splash::SetProgress(0.40f);
-
-		ModLoader::LogMessage(L"Installing core game hooks...");
-		// NOTE: WorldBeginPlay hook is installed lazily on first
-		// RegisterAnyWorldBeginPlayCallback / RegisterWorldBeginPlayCallback call.
-
-		Splash::SetStatus(L"Installing EngineInit hook...");
-		Splash::SetProgress(0.55f);
-
-		if (Hooks::EngineInit::Install())
+		// Create the synchronisation event used by DLL_PROCESS_DETACH to wait
+		// for the init thread before running the shutdown sequence.
+		g_pluginsLoadedEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+		if (!g_pluginsLoadedEvent)
 		{
-			ModLoader::LogMessage(L"  EngineInit hook installed");
-			// Register UE log bridge — initialised once the engine is up
-			Hooks::EngineInit::RegisterPluginCallback(OnEngineInitForUELog);
-		}
-		else
-		{
-			ModLoader::LogMessage(L"  WARNING: EngineInit hook failed to install");
+			Log::Error("FATAL: Failed to create init-done event (%lu)", GetLastError());
+			DwmapiProxy::Shutdown();
+			Log::Shutdown();
+			return FALSE;
 		}
 
-		Splash::SetStatus(L"Installing EngineShutdown hook...");
-		Splash::SetProgress(0.65f);
-
-		if (Hooks::EngineShutdown::Install())
+		// Spawn the main init thread and return immediately, releasing the
+		// loader lock.  Everything else (splash, auto-update, hooks, plugin
+		// loading) runs in that thread where WinHTTP and LoadLibrary work
+		// normally, and where all splash calls share the same owning thread.
+		g_mainInitThread = CreateThread(nullptr, 0, MainInitThreadProc, nullptr, 0, nullptr);
+		if (!g_mainInitThread)
 		{
-			ModLoader::LogMessage(L"  EngineShutdown hook installed");
+			DWORD err = GetLastError();
+			Log::Error("FATAL: Failed to create main init thread (%lu)", err);
+			CloseHandle(g_pluginsLoadedEvent);
+			g_pluginsLoadedEvent = NULL;
+			DwmapiProxy::Shutdown();
+			Log::Shutdown();
+			return FALSE;
 		}
-		else
-		{
-			ModLoader::LogMessage(L"  WARNING: EngineShutdown hook failed to install - plugins will not receive shutdown callbacks");
-		}
 
-		Splash::SetStatus(L"Loading plugins...");
-		Splash::SetProgress(0.75f);
-
-		ModLoader::LoadAllPlugins();
-
-		Splash::SetStatus(L"Initialization complete!");
-		Splash::SetProgress(1.0f);
-
-		ModLoader::LogMessage(L"Mod loader initialization complete");
-
-		// Brief pause so the user can see 100%, then close
-		Sleep(600);
-		Splash::Close();
+		// Return TRUE immediately — loader lock is now released and the init
+		// thread can proceed with WinHTTP, hook patching, and plugin loading.
 	}
 	break;
 
@@ -265,10 +356,28 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 			break;
 		}
 
+		// Wait for the init thread to finish so we never try to unload plugins
+		// that haven't been loaded yet, or tear down hooks before they are set.
+		// g_pluginsLoadedEvent is signalled (and doesn't need LoadLibrary to be
+		// waited on), so there is no deadlock risk even though the loader lock
+		// is held here.
+		if (g_pluginsLoadedEvent)
+		{
+			if (WaitForSingleObject(g_pluginsLoadedEvent, 30000) == WAIT_TIMEOUT)
+				Log::Warn("Timed out waiting for init thread — proceeding with shutdown anyway");
+			CloseHandle(g_pluginsLoadedEvent);
+			g_pluginsLoadedEvent = NULL;
+		}
+
+		if (g_mainInitThread)
+		{
+			CloseHandle(g_mainInitThread);
+			g_mainInitThread = NULL;
+		}
+
 		ModLoader::LogMessage(L"======================================");
 		ModLoader::LogMessage(L"  Version_Mod_Loader shutting down");
 		ModLoader::LogMessage(L"======================================");
-
 
 		// CRITICAL: Remove engine shutdown hook and clear callbacks FIRST
 		// This prevents the hook from firing with dangling function pointers

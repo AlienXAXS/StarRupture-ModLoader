@@ -13,6 +13,9 @@
 
 #pragma comment(lib, "winhttp.lib")
 
+// Forward declaration — defined in Section C
+static std::string FormatWinHttpError(DWORD err);
+
 // ===========================================================================
 // Section A — Configuration
 // ===========================================================================
@@ -98,12 +101,50 @@ static void WriteStoredBuildTag(const char* tag)
 	if (WritePrivateProfileStringW(L"AutoUpdate", L"BuildTag", wTag, iniPath))
 		Log::Debug("[AutoUpdate] Stored build tag written: %s", tag);
 	else
-		Log::Warn("[AutoUpdate] Failed to write build tag to update_state.ini (error %lu)", GetLastError());
+	{
+		DWORD err = GetLastError();
+		Log::Warn("[AutoUpdate] Failed to write build tag to update_state.ini (%lu: %s)", err, FormatWinHttpError(err).c_str());
+	}
 }
 
 // ===========================================================================
 // Section C — WinHTTP GET
 // ===========================================================================
+
+// Converts a WinHTTP (or Win32) error code to a human-readable string.
+// Checks the WinHTTP message table first, then falls back to the system table.
+static std::string FormatWinHttpError(DWORD err)
+{
+	char buf[512]{};
+	HMODULE hWinHttp = GetModuleHandleW(L"winhttp.dll");
+
+	if (hWinHttp)
+	{
+		DWORD n = FormatMessageA(
+			FORMAT_MESSAGE_FROM_HMODULE | FORMAT_MESSAGE_IGNORE_INSERTS,
+			hWinHttp, err, 0, buf, static_cast<DWORD>(sizeof(buf) - 1), nullptr);
+		if (n > 0)
+		{
+			// Strip trailing CR/LF/spaces inserted by FormatMessage
+			while (n > 0 && (buf[n - 1] == '\r' || buf[n - 1] == '\n' || buf[n - 1] == ' '))
+				buf[--n] = '\0';
+			return std::string(buf);
+		}
+	}
+
+	// Fall back to the system error message table
+	DWORD n = FormatMessageA(
+		FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+		nullptr, err, 0, buf, static_cast<DWORD>(sizeof(buf) - 1), nullptr);
+	if (n > 0)
+	{
+		while (n > 0 && (buf[n - 1] == '\r' || buf[n - 1] == '\n' || buf[n - 1] == ' '))
+			buf[--n] = '\0';
+		return std::string(buf);
+	}
+
+	return "unknown error " + std::to_string(err);
+}
 
 // Returns the full HTTP response body on success, or an empty string on any
 // error.  Handles HTTPS and follows redirects (required for GitHub CDN).
@@ -116,7 +157,8 @@ static std::string HttpGet(const char* url, const char* label = "resource")
 	wchar_t wUrl[1024]{};
 	if (MultiByteToWideChar(CP_UTF8, 0, url, -1, wUrl, 1024) == 0)
 	{
-		Log::Debug("[AutoUpdate] HttpGet [%s]: URL encoding failed (error %lu)", label, GetLastError());
+		DWORD err = GetLastError();
+		Log::Debug("[AutoUpdate] HttpGet [%s]: URL encoding failed (%lu: %s)", label, err, FormatWinHttpError(err).c_str());
 		return {};
 	}
 
@@ -128,19 +170,25 @@ static std::string HttpGet(const char* url, const char* label = "resource")
 	uc.lpszUrlPath    = path; uc.dwUrlPathLength    = 768;
 	if (!WinHttpCrackUrl(wUrl, 0, 0, &uc))
 	{
-		Log::Debug("[AutoUpdate] HttpGet [%s]: WinHttpCrackUrl failed (error %lu)", label, GetLastError());
+		DWORD err = GetLastError();
+		Log::Debug("[AutoUpdate] HttpGet [%s]: WinHttpCrackUrl failed (%lu: %s)", label, err, FormatWinHttpError(err).c_str());
 		return {};
 	}
 
 	Log::Debug("[AutoUpdate] HttpGet [%s]: host=%ls path=%ls port=%d", label, host, path, (int)uc.nPort);
 
+	// WINHTTP_ACCESS_TYPE_NO_PROXY: connect directly without reading IE/user
+	// proxy registry settings.  Dedicated game servers run as SYSTEM which has
+	// no IE proxy hive, causing WinHttpSendRequest to fail with error 5023
+	// (ERROR_WINHTTP_CANNOT_CONNECT) when the default proxy mode is used.
 	HINTERNET hSession = WinHttpOpen(
 		L"StarRupture-ModLoader-AutoUpdate/1.0",
-		WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
+		WINHTTP_ACCESS_TYPE_NO_PROXY,
 		WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
 	if (!hSession)
 	{
-		Log::Debug("[AutoUpdate] HttpGet [%s]: WinHttpOpen failed (error %lu)", label, GetLastError());
+		DWORD err = GetLastError();
+		Log::Debug("[AutoUpdate] HttpGet [%s]: WinHttpOpen failed (%lu: %s)", label, err, FormatWinHttpError(err).c_str());
 		return {};
 	}
 
@@ -152,7 +200,8 @@ static std::string HttpGet(const char* url, const char* label = "resource")
 	HINTERNET hConnect = WinHttpConnect(hSession, host, port, 0);
 	if (!hConnect)
 	{
-		Log::Debug("[AutoUpdate] HttpGet [%s]: WinHttpConnect failed (error %lu)", label, GetLastError());
+		DWORD err = GetLastError();
+		Log::Debug("[AutoUpdate] HttpGet [%s]: WinHttpConnect failed (%lu: %s)", label, err, FormatWinHttpError(err).c_str());
 		WinHttpCloseHandle(hSession);
 		return {};
 	}
@@ -163,7 +212,8 @@ static std::string HttpGet(const char* url, const char* label = "resource")
 		nullptr, WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, reqFlags);
 	if (!hRequest)
 	{
-		Log::Debug("[AutoUpdate] HttpGet [%s]: WinHttpOpenRequest failed (error %lu)", label, GetLastError());
+		DWORD err = GetLastError();
+		Log::Debug("[AutoUpdate] HttpGet [%s]: WinHttpOpenRequest failed (%lu: %s)", label, err, FormatWinHttpError(err).c_str());
 		WinHttpCloseHandle(hConnect);
 		WinHttpCloseHandle(hSession);
 		return {};
@@ -179,7 +229,8 @@ static std::string HttpGet(const char* url, const char* label = "resource")
 	if (!WinHttpSendRequest(hRequest, WINHTTP_NO_ADDITIONAL_HEADERS, 0,
 		WINHTTP_NO_REQUEST_DATA, 0, 0, 0))
 	{
-		Log::Debug("[AutoUpdate] HttpGet [%s]: WinHttpSendRequest failed (error %lu)", label, GetLastError());
+		DWORD err = GetLastError();
+		Log::Debug("[AutoUpdate] HttpGet [%s]: WinHttpSendRequest failed (%lu: %s)", label, err, FormatWinHttpError(err).c_str());
 		WinHttpCloseHandle(hRequest);
 		WinHttpCloseHandle(hConnect);
 		WinHttpCloseHandle(hSession);
@@ -188,7 +239,8 @@ static std::string HttpGet(const char* url, const char* label = "resource")
 
 	if (!WinHttpReceiveResponse(hRequest, nullptr))
 	{
-		Log::Debug("[AutoUpdate] HttpGet [%s]: WinHttpReceiveResponse failed (error %lu)", label, GetLastError());
+		DWORD err = GetLastError();
+		Log::Debug("[AutoUpdate] HttpGet [%s]: WinHttpReceiveResponse failed (%lu: %s)", label, err, FormatWinHttpError(err).c_str());
 		WinHttpCloseHandle(hRequest);
 		WinHttpCloseHandle(hConnect);
 		WinHttpCloseHandle(hSession);
@@ -207,7 +259,12 @@ static std::string HttpGet(const char* url, const char* label = "resource")
 
 	if (statusCode != 200)
 	{
-		Log::Debug("[AutoUpdate] HttpGet [%s]: non-200 status, aborting", label);
+		// Promote to Warn so HTTP errors are always visible without debug logging.
+		// Common causes:
+		//   404 — release does not exist or is a private/draft release
+		//   403 — asset requires authentication (private repo)
+		//   5xx — GitHub CDN or release server error
+		Log::Warn("[AutoUpdate] HttpGet [%s]: server returned HTTP %lu (URL: %s)", label, statusCode, url);
 		WinHttpCloseHandle(hRequest);
 		WinHttpCloseHandle(hConnect);
 		WinHttpCloseHandle(hSession);
@@ -225,8 +282,9 @@ static std::string HttpGet(const char* url, const char* label = "resource")
 		DWORD bytesRead = 0;
 		if (!WinHttpReadData(hRequest, chunk.data(), available, &bytesRead))
 		{
-			Log::Debug("[AutoUpdate] HttpGet [%s]: WinHttpReadData failed mid-stream (error %lu) — %zu bytes received so far",
-				label, GetLastError(), body.size());
+			DWORD err = GetLastError();
+			Log::Debug("[AutoUpdate] HttpGet [%s]: WinHttpReadData failed mid-stream (%lu: %s) — %zu bytes received so far",
+				label, err, FormatWinHttpError(err).c_str(), body.size());
 			break;
 		}
 		chunk.resize(bytesRead);
@@ -398,8 +456,9 @@ static bool DownloadPlugin(const char* url,
 		CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
 	if (hFile == INVALID_HANDLE_VALUE)
 	{
-		Log::Debug("[AutoUpdate] Download [%s]: CreateFileW failed for temp path (error %lu): %ls",
-			displayName, GetLastError(), tmpPath);
+		DWORD err = GetLastError();
+		Log::Debug("[AutoUpdate] Download [%s]: CreateFileW failed for temp path (%lu: %s): %ls",
+			displayName, err, FormatWinHttpError(err).c_str(), tmpPath);
 		return false;
 	}
 
@@ -422,8 +481,9 @@ static bool DownloadPlugin(const char* url,
 	// never removed unless the new file is successfully placed.
 	if (!MoveFileExW(tmpPath, finalPath, MOVEFILE_REPLACE_EXISTING))
 	{
-		Log::Debug("[AutoUpdate] Download [%s]: MoveFileExW failed (error %lu) — temp file removed",
-			displayName, GetLastError());
+		DWORD err = GetLastError();
+		Log::Debug("[AutoUpdate] Download [%s]: MoveFileExW failed (%lu: %s) — temp file removed",
+			displayName, err, FormatWinHttpError(err).c_str());
 		DeleteFileW(tmpPath);
 		return false;
 	}
@@ -458,10 +518,22 @@ void ModLoader::RunAutoUpdate()
 		cfg.manifestUrl,
 		cfg.urlFromIni ? " (from modloader.ini)" : " (compiled-in default)");
 
+	// Derive the base download URL by stripping the manifest filename.
+	// e.g. ".../releases/download/TAG/manifest-server.json"
+	//   -> ".../releases/download/TAG/"
+	// Individual plugin DLLs are then fetched as baseDownloadUrl + filename.
+	std::string baseDownloadUrl = cfg.manifestUrl;
+	{
+		size_t lastSlash = baseDownloadUrl.rfind('/');
+		if (lastSlash != std::string::npos)
+			baseDownloadUrl.resize(lastSlash + 1); // keep trailing '/'
+	}
+	Log::Debug("[AutoUpdate] Base download URL: %s", baseDownloadUrl.c_str());
+
 	std::string manifest = HttpGet(cfg.manifestUrl, "manifest");
 	if (manifest.empty())
 	{
-		Log::Warn("[AutoUpdate] Failed to fetch manifest — network unavailable or server returned an error");
+		Log::Warn("[AutoUpdate] Manifest fetch failed — see above for details (network error or HTTP error)");
 		Log::Info("[AutoUpdate] Skipping update; existing plugins will be loaded as-is");
 		return;
 	}
@@ -505,10 +577,28 @@ void ModLoader::RunAutoUpdate()
 	// Ensure Plugins directory exists (in case we're running before first load)
 	CreateDirectoryW(pluginsDir, nullptr);
 
-	// Read stored tag
+	// The build tag stamped into this DLL by CI (via /p:ModLoaderBuildTag=...).
+	// Empty on dev/generic builds.  Used as a fallback when update_state.ini
+	// does not exist yet (fresh install from a ZIP archive).
+#ifdef MODLOADER_BUILD_TAG
+	const char* compiledTag = MODLOADER_BUILD_TAG;
+#else
+	const char* compiledTag = "";
+#endif
+
+	// Read stored tag (written by a previous auto-update run)
 	char storedTag[256]{};
 	ReadStoredBuildTag(storedTag, sizeof(storedTag));
-	Log::Debug("[AutoUpdate] Stored build_tag: %s", storedTag[0] ? storedTag : "<none>");
+	Log::Debug("[AutoUpdate] Stored build_tag:   %s", storedTag[0] ? storedTag : "<none>");
+	Log::Debug("[AutoUpdate] Compiled build_tag: %s", compiledTag[0] ? compiledTag : "<none>");
+
+	// Determine the effective local version:
+	//   • If update_state.ini exists, use it — it tracks what the auto-updater
+	//     last downloaded and is authoritative after the first run.
+	//   • Otherwise fall back to the tag compiled into this DLL.  On a fresh
+	//     install from a ZIP the DLL and all plugin DLLs share the same build
+	//     tag, so if it matches the manifest there is nothing to download.
+	const char* effectiveLocalTag = storedTag[0] ? storedTag : compiledTag;
 
 	// Parse plugin list
 	auto pluginEntries = JsonExtractObjectArray(manifest, "plugins");
@@ -525,19 +615,26 @@ void ModLoader::RunAutoUpdate()
 	{
 		std::string n = JsonExtractString(pluginEntries[idx], "name");
 		std::string f = JsonExtractString(pluginEntries[idx], "filename");
-		std::string u = JsonExtractString(pluginEntries[idx], "download_url");
-		Log::Debug("[AutoUpdate]   [%zu] name='%s'  filename='%s'  url='%s'",
-			idx, n.c_str(), f.c_str(), u.c_str());
+		Log::Debug("[AutoUpdate]   [%zu] name='%s'  filename='%s'  url='%s%s'",
+			idx, n.c_str(), f.c_str(), baseDownloadUrl.c_str(), f.c_str());
 	}
 
-	bool tagsMatch = (strcmp(storedTag, remoteBuildTag.c_str()) == 0);
+	bool tagsMatch = (effectiveLocalTag[0] != '\0' &&
+	                  strcmp(effectiveLocalTag, remoteBuildTag.c_str()) == 0);
 
 	if (tagsMatch)
 	{
-		// Build tags match — every plugin the user has installed is already at
-		// the correct version by definition.  Plugins absent from disk were
-		// never installed by the user and should not be touched.
-		Log::Info("[AutoUpdate] Already up to date (%s)", storedTag);
+		// Already up to date — plugins on disk match the manifest version.
+		Log::Info("[AutoUpdate] Already up to date (%s)", effectiveLocalTag);
+
+		// If we matched via the compiled tag rather than a stored tag, this is
+		// the first boot after a fresh install from a ZIP.  Write update_state.ini
+		// now so future boots skip the manifest comparison entirely.
+		if (storedTag[0] == '\0' && compiledTag[0] != '\0')
+		{
+			Log::Debug("[AutoUpdate] First run after fresh install — writing update_state.ini");
+			WriteStoredBuildTag(compiledTag);
+		}
 
 		// Log per-plugin status at debug level for diagnostics
 		for (const auto& entry : pluginEntries)
@@ -561,7 +658,7 @@ void ModLoader::RunAutoUpdate()
 	}
 
 	Log::Info("[AutoUpdate] Update available: [%s] -> [%s]",
-		storedTag[0] ? storedTag : "<none>", remoteBuildTag.c_str());
+		effectiveLocalTag[0] ? effectiveLocalTag : "<none>", remoteBuildTag.c_str());
 
 	// Download each plugin entry — but ONLY if the user already has it installed.
 	// Plugins absent from disk were deliberately not installed and must not be
@@ -574,15 +671,18 @@ void ModLoader::RunAutoUpdate()
 	{
 		std::string name        = JsonExtractString(entry, "name");
 		std::string filename    = JsonExtractString(entry, "filename");
-		std::string downloadUrl = JsonExtractString(entry, "download_url");
 		const char* displayName = name.empty() ? filename.c_str() : name.c_str();
 
-		if (filename.empty() || downloadUrl.empty())
+		if (filename.empty())
 		{
-			Log::Warn("[AutoUpdate] Skipping malformed plugin entry — missing 'filename' or 'download_url'");
+			Log::Warn("[AutoUpdate] Skipping malformed plugin entry — missing 'filename'");
 			++failed;
 			continue;
 		}
+
+		// Build the download URL from the base (derived from the manifest URL)
+		// and the plugin's filename, e.g. ".../TAG/ServerUtility-Server.dll"
+		std::string downloadUrl = baseDownloadUrl + filename;
 
 		wchar_t wFilename[256]{};
 		MultiByteToWideChar(CP_UTF8, 0, filename.c_str(), -1, wFilename, 256);

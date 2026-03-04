@@ -149,6 +149,42 @@ namespace Log
 			}
 		}
 
+		// Migration: ensure [AutoUpdate] section exists for existing installs.
+		// New installs already have it (written above); this handles users who
+		// have an older modloader.ini that predates the auto-update feature.
+		{
+			wchar_t sentinel[4] = L"\x01"; // unprintable — can't be a real INI value
+			wchar_t checkVal[4]{};
+			GetPrivateProfileStringW(L"AutoUpdate", L"Enabled", sentinel, checkVal, 4, iniPath);
+			if (wcscmp(checkVal, sentinel) == 0)
+			{
+				// Section is absent — append it to the existing file
+				HANDLE hAppend = CreateFileW(
+					iniPath,
+					FILE_APPEND_DATA,
+					FILE_SHARE_READ,
+					nullptr,
+					OPEN_EXISTING,
+					FILE_ATTRIBUTE_NORMAL,
+					nullptr);
+
+				if (hAppend != INVALID_HANDLE_VALUE)
+				{
+					const char* autoUpdateSection =
+						"\r\n[AutoUpdate]\r\n"
+						"; Set to 0 to disable automatic plugin updates at startup\r\n"
+						"Enabled=1\r\n\r\n"
+						"; Override the manifest URL (leave empty to use the compiled-in default)\r\n"
+						"ManifestUrl=\r\n\r\n";
+
+					DWORD written = 0;
+					WriteFile(hAppend, autoUpdateSection,
+					          static_cast<DWORD>(strlen(autoUpdateSection)), &written, nullptr);
+					CloseHandle(hAppend);
+				}
+			}
+		}
+
 		// Read configuration values
 		wchar_t buffer[256]{};
 
