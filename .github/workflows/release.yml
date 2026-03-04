@@ -22,12 +22,21 @@ jobs:
       - name: Add MSBuild to PATH
         uses: microsoft/setup-msbuild@v2
 
+      - name: Generate release tag
+        id: tag
+        shell: pwsh
+        run: |
+          $tag = "release-$(Get-Date -Format 'yyyy.MM.dd-HHmmss')"
+          echo "TAG=$tag" >> $env:GITHUB_OUTPUT
+
       - name: Build Client Release
         run: |
           msbuild "StarRupture-ModLoader.sln" `
             /p:Configuration="Client Release" `
             /p:Platform=x64 `
             /p:PostBuildEventUseInBuild=false `
+            /p:ModLoaderBuildTag="${{ steps.tag.outputs.TAG }}" `
+            /p:AutoUpdateManifestUrl="https://github.com/${{ github.repository }}/releases/latest/download/manifest-client.json" `
             /m `
             /v:minimal
 
@@ -37,6 +46,8 @@ jobs:
             /p:Configuration="Server Release" `
             /p:Platform=x64 `
             /p:PostBuildEventUseInBuild=false `
+            /p:ModLoaderBuildTag="${{ steps.tag.outputs.TAG }}" `
+            /p:AutoUpdateManifestUrl="https://github.com/${{ github.repository }}/releases/latest/download/manifest-server.json" `
             /m `
             /v:minimal
 
@@ -61,12 +72,50 @@ jobs:
             }
           }
 
-      - name: Generate release tag
-        id: tag
+      - name: Prepare individual plugin assets
         shell: pwsh
         run: |
-          $tag = "release-$(Get-Date -Format 'yyyy.MM.dd-HHmmss')"
-          echo "TAG=$tag" >> $env:GITHUB_OUTPUT
+          # Copy each plugin DLL as <Name>-<Variant>.dll for individual download
+          foreach ($variant in @("Client", "Server")) {
+            Get-ChildItem "build\$variant Release\Plugins\*.dll" | ForEach-Object {
+              $dest = "$env:GITHUB_WORKSPACE\$($_.BaseName)-$variant.dll"
+              Copy-Item $_.FullName $dest
+              Write-Host "Prepared individual asset: $($_.BaseName)-$variant.dll"
+            }
+          }
+
+      - name: Generate manifests
+        shell: pwsh
+        run: |
+          $tag      = "${{ steps.tag.outputs.TAG }}"
+          # IMPORTANT: Keep this in sync with PLUGIN_INTERFACE_VERSION in plugin_interface.h
+          $ifaceVer = 12
+          $repoBase = "https://github.com/${{ github.repository }}/releases/latest/download"
+
+          foreach ($variant in @("Client", "Server")) {
+            $plugins = @()
+
+            Get-ChildItem "build\$variant Release\Plugins\*.dll" | ForEach-Object {
+              $name = $_.BaseName
+              $plugins += [ordered]@{
+                name         = $name
+                filename     = "$name.dll"
+                version      = $tag
+                download_url = "$repoBase/$name-$variant.dll"
+              }
+            }
+
+            $manifest = [ordered]@{
+              build_tag         = $tag
+              interface_version = $ifaceVer
+              plugins           = $plugins
+            }
+
+            $outPath = "$env:GITHUB_WORKSPACE\manifest-$($variant.ToLower()).json"
+            $manifest | ConvertTo-Json -Depth 3 | Out-File -FilePath $outPath -Encoding utf8NoBOM
+            Write-Host "Generated: $outPath"
+            Get-Content $outPath
+          }
 
       - name: Generate changelog
         id: changelog
@@ -118,6 +167,19 @@ jobs:
           $changelog
           "@
 
-          gh release create $tag $clientZip $serverZip `
+          # Collect all assets: ZIPs + manifests + individual plugin DLLs
+          $assets = @(
+            $clientZip,
+            $serverZip,
+            "$env:GITHUB_WORKSPACE\manifest-client.json",
+            "$env:GITHUB_WORKSPACE\manifest-server.json"
+          )
+
+          Get-ChildItem "$env:GITHUB_WORKSPACE\*-Client.dll",
+                        "$env:GITHUB_WORKSPACE\*-Server.dll" | ForEach-Object {
+            $assets += $_.FullName
+          }
+
+          gh release create $tag @assets `
             --title "StarRupture ModLoader $tag" `
             --notes $notes

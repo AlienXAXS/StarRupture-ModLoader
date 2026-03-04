@@ -15,9 +15,13 @@ IPluginConfig* GetConfig() { return g_config; }
 IPluginScanner* GetScanner() { return g_scanner; }
 IPluginHooks* GetHooks() { return g_hooks; }
 
+#ifndef MODLOADER_BUILD_TAG
+#define MODLOADER_BUILD_TAG "dev"
+#endif
+
 static PluginInfo s_pluginInfo = {
 	"KeepTicking",
-	"1.0.0",
+	MODLOADER_BUILD_TAG,
 	"AlienX",
 	"Prevents dedicated server from sleeping when no players are online",
 	PLUGIN_INTERFACE_VERSION

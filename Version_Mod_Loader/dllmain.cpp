@@ -1,20 +1,30 @@
 // dllmain.cpp : Defines the entry point for the DLL application.
-#include "log.h"
-#include "ue_log.h"
+#include "logging/log.h"
+#include "logging/ue_log.h"
+#include "logging/logger.h"
+
 #include "dwmapi_proxy.h"
-#include "logger.h"
-#include "config_manager.h"
-#include "plugin_manager.h"
-#include "scanner.h"
-#include "splash_window.h"
-#include "game/world_begin_play/world_begin_play.h"
-#include "game/engine_init/engine_init.h"
-#include "game/engine_shutdown/engine_shutdown.h"
-#include "game/save_loaded/save_loaded.h"
-#include "game/experience_load_complete/experience_load_complete.h"
-#include "game/actor_begin_play/actor_begin_play.h"
-#include "game/post_login/player_joined.h"
-#include "game/player_left/player_left.h"
+
+#include "config/config_manager.h"
+
+#include "plugins/plugin_manager.h"
+
+#include "memory_scanner/scanner.h"
+
+#include "UI/splash_window.h"
+
+#include "hooks/game/world_begin_play/world_begin_play.h"
+#include "hooks/game/engine_init/engine_init.h"
+#include "hooks/game/engine_shutdown/engine_shutdown.h"
+#include "hooks/game/save_loaded/save_loaded.h"
+#include "hooks/game/experience_load_complete/experience_load_complete.h"
+#include "hooks/game/actor_begin_play/actor_begin_play.h"
+#include "hooks/game/player_joined/player_joined.h"
+#include "hooks/game/player_left/player_left.h"
+
+#include "auto_update/auto_updater.h"
+
+
 #include <Psapi.h>
 #include <VersionHelpers.h>
 #include <thread>
@@ -184,7 +194,11 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 		Splash::SetProgress(0.30f);
 
 		ModLoader::InitializeConfigManager();
-		ModLoader::InitializePluginManager();		
+		ModLoader::InitializePluginManager();
+
+		Splash::SetStatus(L"Checking for plugin updates...");
+		Splash::SetProgress(0.35f);
+		ModLoader::RunAutoUpdate();
 
 		// Install core game hooks BEFORE loading plugins
 		Splash::SetStatus(L"Installing core game hooks...");
