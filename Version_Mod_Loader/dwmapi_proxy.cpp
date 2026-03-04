@@ -1,5 +1,5 @@
 #include "dwmapi_proxy.h"
-#include "log.h"
+#include "logging/log.h"
 #include <cstdio>
 
 // ---------------------------------------------------------------------------

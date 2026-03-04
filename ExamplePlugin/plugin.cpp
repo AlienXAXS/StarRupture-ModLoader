@@ -15,9 +15,13 @@ IPluginScanner* GetScanner() { return g_scanner; }
 IPluginHooks* GetHooks() { return g_hooks; }
 
 // Plugin metadata
+#ifndef MODLOADER_BUILD_TAG
+#define MODLOADER_BUILD_TAG "dev"
+#endif
+
 static PluginInfo s_pluginInfo = {
 	"ExamplePlugin",
-	"1.0.0",
+	MODLOADER_BUILD_TAG,
 	"Your Name",
 	"A minimal example plugin showing the basic structure required by the mod loader",
 	PLUGIN_INTERFACE_VERSION

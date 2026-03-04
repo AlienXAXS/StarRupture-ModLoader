@@ -304,29 +304,29 @@ echo Deploy complete.</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClInclude Include="config_manager.h" />
-    <ClInclude Include="engine_allocator.h" />
-    <ClInclude Include="game\actor_begin_play\actor_begin_play.h" />
-    <ClInclude Include="game\engine_init\engine_init.h" />
-    <ClInclude Include="game\engine_tick\engine_tick.h" />
-    <ClInclude Include="game\experience_load_complete\experience_load_complete.h" />
-    <ClInclude Include="game\player_left\player_left.h" />
-    <ClInclude Include="game\post_login\player_joined.h" />
-    <ClInclude Include="game\post_login\post_login.h" />
-    <ClInclude Include="game\save_loaded\save_loaded.h" />
-    <ClInclude Include="game\scan_patterns.h" />
-    <ClInclude Include="game\world_begin_play\world_begin_play.h" />
-    <ClInclude Include="hooks_common.h" />
-    <ClInclude Include="hooks_interface.h" />
-    <ClInclude Include="log.h" />
-    <ClInclude Include="logger.h" />
-    <ClInclude Include="plugin_interface.h" />
-    <ClInclude Include="plugin_manager.h" />
-    <ClInclude Include="scanner.h" />
-    <ClInclude Include="scanner_interface.h" />
-    <ClInclude Include="splash_window.h" />
-    <ClInclude Include="ue_log.h" />
+    <ClInclude Include="auto_update\auto_updater.h" />
+    <ClInclude Include="config\config_manager.h" />
+    <ClInclude Include="hooks\game\actor_begin_play\actor_begin_play.h" />
+    <ClInclude Include="hooks\game\engine_init\engine_init.h" />
+    <ClInclude Include="hooks\game\engine_shutdown\engine_shutdown.h" />
+    <ClInclude Include="hooks\game\engine_tick\engine_tick.h" />
+    <ClInclude Include="hooks\game\experience_load_complete\experience_load_complete.h" />
+    <ClInclude Include="hooks\game\player_joined\player_joined.h" />
+    <ClInclude Include="hooks\game\player_left\player_left.h" />
+    <ClInclude Include="hooks\game\save_loaded\save_loaded.h" />
+    <ClInclude Include="hooks\game\world_begin_play\world_begin_play.h" />
+    <ClInclude Include="hooks\hooks_common.h" />
+    <ClInclude Include="hooks\hooks_interface.h" />
+    <ClInclude Include="hooks\memory\engine_allocator.h" />
+    <ClInclude Include="logging\log.h" />
+    <ClInclude Include="logging\logger.h" />
     <ClInclude Include="dwmapi_proxy.h" />
+    <ClInclude Include="logging\ue_log.h" />
+    <ClInclude Include="memory_scanner\scanner.h" />
+    <ClInclude Include="memory_scanner\scanner_interface.h" />
+    <ClInclude Include="plugins\plugin_interface.h" />
+    <ClInclude Include="plugins\plugin_manager.h" />
+    <ClInclude Include="UI\splash_window.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="$(StarRuptureSDKSourceDir)Basic.cpp">
@@ -338,30 +338,31 @@ echo Deploy complete.</Command>
     <ClCompile Include="$(StarRuptureSDKSourceDir)Engine_functions.cpp">
       <Visible>false</Visible>
     </ClCompile>
-    <ClCompile Include="config_manager.cpp" />
+    <ClCompile Include="auto_update\auto_updater.cpp" />
+    <ClCompile Include="config\config_manager.cpp" />
     <ClCompile Include="dllmain.cpp">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="engine_allocator.cpp" />
-    <ClCompile Include="game\actor_begin_play\actor_begin_play.cpp" />
-    <ClCompile Include="game\engine_init\engine_init.cpp" />
-    <ClCompile Include="game\engine_shutdown\engine_shutdown.cpp" />
-    <ClCompile Include="game\engine_tick\engine_tick.cpp" />
-    <ClCompile Include="game\experience_load_complete\experience_load_complete.cpp" />
-    <ClCompile Include="game\player_left\player_left.cpp" />
-    <ClCompile Include="game\post_login\player_joined.cpp" />
-    <ClCompile Include="game\save_loaded\save_loaded.cpp" />
-    <ClCompile Include="game\world_begin_play\world_begin_play.cpp" />
-    <ClCompile Include="hooks_common.cpp" />
-    <ClCompile Include="hooks_interface.cpp" />
-    <ClCompile Include="logger.cpp" />
-    <ClCompile Include="plugin_manager.cpp" />
-    <ClCompile Include="scanner.cpp" />
-    <ClCompile Include="scanner_interface.cpp" />
-    <ClCompile Include="splash_window.cpp" />
+    <ClCompile Include="hooks\game\actor_begin_play\actor_begin_play.cpp" />
+    <ClCompile Include="hooks\game\engine_init\engine_init.cpp" />
+    <ClCompile Include="hooks\game\engine_shutdown\engine_shutdown.cpp" />
+    <ClCompile Include="hooks\game\engine_tick\engine_tick.cpp" />
+    <ClCompile Include="hooks\game\experience_load_complete\experience_load_complete.cpp" />
+    <ClCompile Include="hooks\game\player_joined\player_joined.cpp" />
+    <ClCompile Include="hooks\game\player_left\player_left.cpp" />
+    <ClCompile Include="hooks\game\save_loaded\save_loaded.cpp" />
+    <ClCompile Include="hooks\game\world_begin_play\world_begin_play.cpp" />
+    <ClCompile Include="hooks\hooks_common.cpp" />
+    <ClCompile Include="hooks\hooks_interface.cpp" />
+    <ClCompile Include="hooks\memory\engine_allocator.cpp" />
+    <ClCompile Include="logging\logger.cpp" />
     <ClCompile Include="dwmapi_proxy.cpp">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
+    <ClCompile Include="memory_scanner\scanner.cpp" />
+    <ClCompile Include="memory_scanner\scanner_interface.cpp" />
+    <ClCompile Include="plugins\plugin_manager.cpp" />
+    <ClCompile Include="UI\splash_window.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include="dwmapi.def" />

@@ -24,11 +24,15 @@ IPluginHooks*   GetHooks()   { return g_hooks;   }
 // -----------------------------------------------------------------------
 // Plugin metadata
 // -----------------------------------------------------------------------
+#ifndef MODLOADER_BUILD_TAG
+#define MODLOADER_BUILD_TAG "dev"
+#endif
+
 static PluginInfo s_pluginInfo = {
     "ServerUtility",
-    "1.0.0",
+    MODLOADER_BUILD_TAG,
     "AlienX",
-    "Provides dedicated-server settings via command-line parameters, bypassing DSSettings.txt",
+    "Provides dedicated-server settings via command-line parameters, bypassing DSSettings.txt as well as other various fixes",
     PLUGIN_INTERFACE_VERSION
 };
 
