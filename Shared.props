@@ -52,4 +52,29 @@
     </ClCompile>
   </ItemDefinitionGroup>
 
+  <!-- ============================================================
+       MODLOADER_BUILD_TAG
+       Injected by CI via /p:ModLoaderBuildTag="release-YYYY.MM.DD-HHmmss".
+       Plugins embed this in PluginInfo.version so the auto-updater
+       can identify which build is installed.
+       Dev / local builds get no define -> fallback "dev" in plugin code.
+       ============================================================ -->
+  <ItemDefinitionGroup Condition="'$(ModLoaderBuildTag)' != ''">
+    <ClCompile>
+      <PreprocessorDefinitions>MODLOADER_BUILD_TAG="$(ModLoaderBuildTag)";%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+  </ItemDefinitionGroup>
+
+  <!-- ============================================================
+       AUTOUPDATE_MANIFEST_URL
+       Injected by CI per variant via /p:AutoUpdateManifestUrl="https://...".
+       Baked into dwmapi.dll as the default manifest URL.
+       Empty on dev builds -> auto-update disabled at runtime.
+       ============================================================ -->
+  <ItemDefinitionGroup Condition="'$(AutoUpdateManifestUrl)' != ''">
+    <ClCompile>
+      <PreprocessorDefinitions>AUTOUPDATE_MANIFEST_URL="$(AutoUpdateManifestUrl)";%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+  </ItemDefinitionGroup>
+
 </Project>

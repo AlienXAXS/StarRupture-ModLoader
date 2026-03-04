@@ -13,146 +13,137 @@
       <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
       <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
     </Filter>
-    <Filter Include="Source Files\game">
+    <Filter Include="Source Files\auto_update">
+      <UniqueIdentifier>{0898575e-bbd7-49b9-95ef-5e18848e9520}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\hooks">
+      <UniqueIdentifier>{b4f2e641-4b67-440f-8953-97e373f6e21f}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\hooks\game">
       <UniqueIdentifier>{fb5e4029-d43b-4540-ad5c-51f8078a4d2c}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Source Files\game\world_begin_play">
+    <Filter Include="Source Files\hooks\game\world_begin_play">
       <UniqueIdentifier>{1154c2bd-a19a-4194-8578-590069b83ce9}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Source Files\game\engine_init">
+    <Filter Include="Source Files\hooks\game\engine_init">
       <UniqueIdentifier>{5e68a0e8-3d63-4d34-bee2-9de7ea5c385f}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Source Files\game\engine_shutdown">
+    <Filter Include="Source Files\hooks\game\engine_shutdown">
       <UniqueIdentifier>{94c6be5a-0f37-4a6d-b2c2-73fc15105b87}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Source Files\game\save_loaded">
+    <Filter Include="Source Files\hooks\game\save_loaded">
       <UniqueIdentifier>{7319e901-1e30-4f85-a398-a6628d90a01d}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Source Files\game\experience_load_complete">
+    <Filter Include="Source Files\hooks\game\experience_load_complete">
       <UniqueIdentifier>{94cb41f4-d4af-4ce1-9e4c-fb122cde2f2a}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Source Files\game\engine_tick">
+    <Filter Include="Source Files\hooks\game\engine_tick">
       <UniqueIdentifier>{ad840a96-d535-42f9-9386-22100e859737}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Source Files\game\actor_begin_play">
+    <Filter Include="Source Files\hooks\game\actor_begin_play">
       <UniqueIdentifier>{75a11838-a61f-4b73-bad6-773b6425b24e}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Source Files\game\playerLeft">
+    <Filter Include="Source Files\hooks\game\playerLeft">
       <UniqueIdentifier>{2983d86c-6262-4d24-9514-cca4f13c3394}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Source Files\game\playerJoined">
+    <Filter Include="Source Files\hooks\game\playerJoined">
       <UniqueIdentifier>{59697777-3178-4bb6-a286-27728ad0088f}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\hooks\memory">
+      <UniqueIdentifier>{cf7c46f1-b2f1-46ea-8e7e-8f7b5d7b2f69}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\logging">
+      <UniqueIdentifier>{784118a6-3305-49bb-8049-8da77eaa514e}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\plugins">
+      <UniqueIdentifier>{70a61256-1b5f-40d5-a73f-3a03bff2d0da}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\memory_scanner">
+      <UniqueIdentifier>{7cd5beef-9915-4144-af61-34a4067819d9}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\UI">
+      <UniqueIdentifier>{83136a42-c010-41c4-b584-888d732c2a65}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\config">
+      <UniqueIdentifier>{0a9a1e21-213e-4f0b-a7cb-3a54f59d8021}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="plugin_interface.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="logger.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="config_manager.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="plugin_manager.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="log.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="dwmapi_proxy.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="scanner_interface.h">
-      <Filter>Header Files</Filter>
+    <ClInclude Include="hooks\hooks_common.h">
+      <Filter>Source Files\hooks</Filter>
     </ClInclude>
-    <ClInclude Include="hooks_common.h">
-      <Filter>Header Files</Filter>
+    <ClInclude Include="hooks\hooks_interface.h">
+      <Filter>Source Files\hooks</Filter>
     </ClInclude>
-    <ClInclude Include="scanner.h">
-      <Filter>Header Files</Filter>
+    <ClInclude Include="UI\splash_window.h">
+      <Filter>Source Files\UI</Filter>
     </ClInclude>
-    <ClInclude Include="hooks_interface.h">
-      <Filter>Header Files</Filter>
+    <ClInclude Include="memory_scanner\scanner.h">
+      <Filter>Source Files\memory_scanner</Filter>
     </ClInclude>
-    <ClInclude Include="game\world_begin_play\world_begin_play.h">
-      <Filter>Source Files\game\world_begin_play</Filter>
+    <ClInclude Include="memory_scanner\scanner_interface.h">
+      <Filter>Source Files\memory_scanner</Filter>
     </ClInclude>
-    <ClInclude Include="game\engine_init\engine_init.h">
-      <Filter>Source Files\game\engine_init</Filter>
+    <ClInclude Include="plugins\plugin_manager.h">
+      <Filter>Source Files\plugins</Filter>
     </ClInclude>
-    <ClInclude Include="ue_log.h">
-      <Filter>Header Files</Filter>
+    <ClInclude Include="plugins\plugin_interface.h">
+      <Filter>Source Files\plugins</Filter>
     </ClInclude>
-    <ClInclude Include="engine_allocator.h">
-      <Filter>Header Files</Filter>
+    <ClInclude Include="logging\logger.h">
+      <Filter>Source Files\logging</Filter>
     </ClInclude>
-    <ClInclude Include="game\scan_patterns.h">
-      <Filter>Header Files</Filter>
+    <ClInclude Include="logging\log.h">
+      <Filter>Source Files\logging</Filter>
     </ClInclude>
-    <ClInclude Include="splash_window.h">
-      <Filter>Header Files</Filter>
+    <ClInclude Include="logging\ue_log.h">
+      <Filter>Source Files\logging</Filter>
     </ClInclude>
-    <ClInclude Include="game\save_loaded\save_loaded.h">
-      <Filter>Source Files\game\save_loaded</Filter>
+    <ClInclude Include="config\config_manager.h">
+      <Filter>Source Files\config</Filter>
     </ClInclude>
-    <ClInclude Include="game\experience_load_complete\experience_load_complete.h">
-      <Filter>Source Files\game\experience_load_complete</Filter>
+    <ClInclude Include="auto_update\auto_updater.h">
+      <Filter>Source Files\auto_update</Filter>
     </ClInclude>
-    <ClInclude Include="game\engine_tick\engine_tick.h">
-      <Filter>Source Files\game\engine_tick</Filter>
+    <ClInclude Include="hooks\memory\engine_allocator.h">
+      <Filter>Source Files\hooks\memory</Filter>
     </ClInclude>
-    <ClInclude Include="game\actor_begin_play\actor_begin_play.h">
-      <Filter>Source Files\game\actor_begin_play</Filter>
+    <ClInclude Include="hooks\game\actor_begin_play\actor_begin_play.h">
+      <Filter>Source Files\hooks\game\actor_begin_play</Filter>
     </ClInclude>
-    <ClInclude Include="game\post_login\player_joined.h">
-      <Filter>Source Files\game\playerJoined</Filter>
+    <ClInclude Include="hooks\game\engine_init\engine_init.h">
+      <Filter>Source Files\hooks\game\engine_init</Filter>
     </ClInclude>
-    <ClInclude Include="game\player_left\player_left.h">
-      <Filter>Source Files\game\playerLeft</Filter>
+    <ClInclude Include="hooks\game\engine_shutdown\engine_shutdown.h">
+      <Filter>Source Files\hooks\game\engine_shutdown</Filter>
     </ClInclude>
-    <ClInclude Include="game\post_login\post_login.h">
-      <Filter>Header Files</Filter>
+    <ClInclude Include="hooks\game\engine_tick\engine_tick.h">
+      <Filter>Source Files\hooks\game\engine_tick</Filter>
+    </ClInclude>
+    <ClInclude Include="hooks\game\experience_load_complete\experience_load_complete.h">
+      <Filter>Source Files\hooks\game\experience_load_complete</Filter>
+    </ClInclude>
+    <ClInclude Include="hooks\game\player_left\player_left.h">
+      <Filter>Source Files\hooks\game\playerLeft</Filter>
+    </ClInclude>
+    <ClInclude Include="hooks\game\player_joined\player_joined.h">
+      <Filter>Source Files\hooks\game\playerJoined</Filter>
+    </ClInclude>
+    <ClInclude Include="hooks\game\save_loaded\save_loaded.h">
+      <Filter>Source Files\hooks\game\save_loaded</Filter>
+    </ClInclude>
+    <ClInclude Include="hooks\game\world_begin_play\world_begin_play.h">
+      <Filter>Source Files\hooks\game\world_begin_play</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="dllmain.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="logger.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="config_manager.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="plugin_manager.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="dwmapi_proxy.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="scanner_interface.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="hooks_common.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="scanner.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="hooks_interface.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="game\world_begin_play\world_begin_play.cpp">
-      <Filter>Source Files\game\world_begin_play</Filter>
-    </ClCompile>
-    <ClCompile Include="game\engine_init\engine_init.cpp">
-      <Filter>Source Files\game\engine_init</Filter>
-    </ClCompile>
-    <ClCompile Include="game\engine_shutdown\engine_shutdown.cpp">
-      <Filter>Source Files\game\engine_shutdown</Filter>
-    </ClCompile>
-    <ClCompile Include="engine_allocator.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="$(StarRuptureSDKSourceDir)Basic.cpp">
@@ -164,26 +155,62 @@
     <ClCompile Include="$(StarRuptureSDKSourceDir)Engine_functions.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="splash_window.cpp">
-      <Filter>Source Files</Filter>
+    <ClCompile Include="hooks\hooks_common.cpp">
+      <Filter>Source Files\hooks</Filter>
     </ClCompile>
-    <ClCompile Include="game\save_loaded\save_loaded.cpp">
-      <Filter>Source Files\game\save_loaded</Filter>
+    <ClCompile Include="hooks\hooks_interface.cpp">
+      <Filter>Source Files\hooks</Filter>
     </ClCompile>
-    <ClCompile Include="game\experience_load_complete\experience_load_complete.cpp">
-      <Filter>Source Files\game\experience_load_complete</Filter>
+    <ClCompile Include="hooks\memory\engine_allocator.cpp">
+      <Filter>Source Files\hooks\memory</Filter>
     </ClCompile>
-    <ClCompile Include="game\engine_tick\engine_tick.cpp">
-      <Filter>Source Files\game\engine_tick</Filter>
+    <ClCompile Include="UI\splash_window.cpp">
+      <Filter>Source Files\UI</Filter>
     </ClCompile>
-    <ClCompile Include="game\actor_begin_play\actor_begin_play.cpp">
-      <Filter>Source Files\game\actor_begin_play</Filter>
+    <ClCompile Include="memory_scanner\scanner.cpp">
+      <Filter>Source Files\memory_scanner</Filter>
     </ClCompile>
-    <ClCompile Include="game\post_login\player_joined.cpp">
-      <Filter>Source Files\game\playerJoined</Filter>
+    <ClCompile Include="memory_scanner\scanner_interface.cpp">
+      <Filter>Source Files\memory_scanner</Filter>
     </ClCompile>
-    <ClCompile Include="game\player_left\player_left.cpp">
-      <Filter>Source Files\game\playerLeft</Filter>
+    <ClCompile Include="plugins\plugin_manager.cpp">
+      <Filter>Source Files\plugins</Filter>
+    </ClCompile>
+    <ClCompile Include="logging\logger.cpp">
+      <Filter>Source Files\logging</Filter>
+    </ClCompile>
+    <ClCompile Include="config\config_manager.cpp">
+      <Filter>Source Files\config</Filter>
+    </ClCompile>
+    <ClCompile Include="auto_update\auto_updater.cpp">
+      <Filter>Source Files\auto_update</Filter>
+    </ClCompile>
+    <ClCompile Include="hooks\game\actor_begin_play\actor_begin_play.cpp">
+      <Filter>Source Files\hooks\game\actor_begin_play</Filter>
+    </ClCompile>
+    <ClCompile Include="hooks\game\engine_init\engine_init.cpp">
+      <Filter>Source Files\hooks\game\engine_init</Filter>
+    </ClCompile>
+    <ClCompile Include="hooks\game\engine_shutdown\engine_shutdown.cpp">
+      <Filter>Source Files\hooks\game\engine_shutdown</Filter>
+    </ClCompile>
+    <ClCompile Include="hooks\game\engine_tick\engine_tick.cpp">
+      <Filter>Source Files\hooks\game\engine_tick</Filter>
+    </ClCompile>
+    <ClCompile Include="hooks\game\experience_load_complete\experience_load_complete.cpp">
+      <Filter>Source Files\hooks\game\experience_load_complete</Filter>
+    </ClCompile>
+    <ClCompile Include="hooks\game\player_left\player_left.cpp">
+      <Filter>Source Files\hooks\game\playerLeft</Filter>
+    </ClCompile>
+    <ClCompile Include="hooks\game\player_joined\player_joined.cpp">
+      <Filter>Source Files\hooks\game\playerJoined</Filter>
+    </ClCompile>
+    <ClCompile Include="hooks\game\save_loaded\save_loaded.cpp">
+      <Filter>Source Files\hooks\game\save_loaded</Filter>
+    </ClCompile>
+    <ClCompile Include="hooks\game\world_begin_play\world_begin_play.cpp">
+      <Filter>Source Files\hooks\game\world_begin_play</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
