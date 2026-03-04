@@ -2,7 +2,7 @@
 #include <cstring>
 #include <malloc.h>
 #include <cstdio>
-#include "logger.h"  // Add ModLoader logger
+#include "logging/logger.h"  // Add ModLoader logger
 
 // ---------------------------------------------------------------------------
 // Lightweight x64 instruction length decoder
