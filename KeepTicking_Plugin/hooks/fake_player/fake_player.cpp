@@ -203,9 +203,9 @@ namespace Hooks::FakePlayer
 		if (step < 1000.0)
 			step = 1000.0;
 
-		LOG_INFO("[FakePlayer] World bounds from %d actors: X[%.0f, %.0f] Y[%.0f, %.0f] Z[%.0f, %.0f]",
+		LOG_DEBUG("[FakePlayer] World bounds from %d actors: X[%.0f, %.0f] Y[%.0f, %.0f] Z[%.0f, %.0f]",
 			validActors, minX, maxX, minY, maxY, minZ, maxZ);
-		LOG_INFO("[FakePlayer] Traversal grid: step=%.0f, Z=%.0f", step, traversalZ);
+		LOG_DEBUG("[FakePlayer] Traversal grid: step=%.0f, Z=%.0f", step, traversalZ);
 
 		// Build snake-pattern waypoints
 		bool reverseY = false;
@@ -224,7 +224,7 @@ namespace Hooks::FakePlayer
 			reverseY = !reverseY;
 		}
 
-		LOG_INFO("[FakePlayer] Generated %zu waypoints from world actor bounds", pts.size());
+		LOG_DEBUG("[FakePlayer] Generated %zu waypoints from world actor bounds", pts.size());
 		return pts;
 	}
 
@@ -561,7 +561,10 @@ namespace Hooks::FakePlayer
 		g_waypointIndex = 0;
 		g_traversing = true;
 
-		LOG_INFO("[FakePlayer] Map traversal STARTED — %zu waypoints, %d per tick",
+		LOG_INFO("[FakePlayer] Server is teleporting the fake player around the map...");
+		LOG_INFO("             This may cause lag until the process is complete.");
+
+		LOG_INFO("[FakePlayer] %zu waypoints, %d per tick",
 			g_waypoints.size(), KeepTickingConfig::Config::GetWaypointsPerTick());
 	}
 
@@ -619,7 +622,7 @@ namespace Hooks::FakePlayer
 			if (g_waypointIndex == 0 || g_waypointIndex == total - 1 || (g_waypointIndex % 50) == 0)
 			{
 			 int pct = (g_waypointIndex * 100) / total;
-			 LOG_INFO("[FakePlayer] Traversal %d/%d (%d%%) -> (%.0f, %.0f, %.0f) %s",
+			 LOG_DEBUG("[FakePlayer] Traversal %d/%d (%d%%) -> (%.0f, %.0f, %.0f) %s",
 				 g_waypointIndex + 1, total, pct,
 				 wp.x, wp.y, wp.z,
 				 success ? "OK" : "FAIL");

@@ -20,8 +20,32 @@ namespace Hooks::EngineInit
 	static bool g_engineInitialized = false;
 	static long g_callCount = 0;
 
+	// Sync handles set by SetSyncEvents() before Install() is called.
+	static HANDLE g_engineReadyEventHandle   = NULL;
+	static HANDLE g_pluginsLoadedEventHandle = NULL;
+
 	// Callback for plugins to receive engine init events
 	static std::vector<PluginEngineInitCallback> g_pluginCallbacks;
+
+	// Signal the init thread that the engine hook fired, then block until
+	// all plugins have finished loading so they can install their hooks
+	// before the original Init executes.
+	static void WaitForPluginsToLoad()
+	{
+		if (g_engineReadyEventHandle)
+			SetEvent(g_engineReadyEventHandle);
+
+		if (g_pluginsLoadedEventHandle)
+		{
+			static constexpr DWORD kTimeoutMs = 30'000;
+			ModLoaderLogger::LogInfo(L"[EngineInit] Waiting for plugins to load before calling original...");
+			DWORD r = WaitForSingleObject(g_pluginsLoadedEventHandle, kTimeoutMs);
+			if (r == WAIT_TIMEOUT)
+				ModLoaderLogger::LogWarn(L"[EngineInit] Timed out waiting for plugins to load — proceeding anyway");
+			else
+				ModLoaderLogger::LogInfo(L"[EngineInit] Plugins loaded — calling original Init now");
+		}
+	}
 
 	// Shared notification function - called by any successful hook
 	static void NotifyEngineReady(const wchar_t* hookSource)
@@ -34,20 +58,20 @@ namespace Hooks::EngineInit
 
 		g_engineInitialized = true;
 
-		ModLoader::LogInfo(L"[EngineInit] *** ENGINE READY *** (via %s)", hookSource);
+		ModLoaderLogger::LogInfo(L"[EngineInit] *** ENGINE READY *** (via %s)", hookSource);
 
 		// Resolve the engine allocator (FMemory::Malloc / FMemory::Free) now
 		// that the engine is fully initialised.  This must happen before plugin
 		// callbacks fire so they can use IPluginHooks::EngineAlloc / EngineFree.
 		if (!EngineAllocator::Resolve())
 		{
-			ModLoader::LogWarn(L"[EngineInit] Engine allocator resolution failed - "
+			ModLoaderLogger::LogWarn(L"[EngineInit] Engine allocator resolution failed - "
 				L"plugins will not be able to use EngineAlloc/EngineFree");
 		}
 
 		if (!g_pluginCallbacks.empty())
 		{
-			ModLoader::LogDebug(L"[EngineInit] Notifying %zu plugin(s)...", g_pluginCallbacks.size());
+			ModLoaderLogger::LogDebug(L"[EngineInit] Notifying %zu plugin(s)...", g_pluginCallbacks.size());
 			
 			for (size_t i = 0; i < g_pluginCallbacks.size(); ++i)
 			{
@@ -55,7 +79,7 @@ namespace Hooks::EngineInit
 					continue;
 
 				// Safe invocation of plugin callbacks
-				ModLoader::LogTrace(L"[EngineInit]   Calling plugin callback #%zu", i + 1);
+				ModLoaderLogger::LogTrace(L"[EngineInit]   Calling plugin callback #%zu", i + 1);
 
 				try
 				{
@@ -63,15 +87,15 @@ namespace Hooks::EngineInit
 				}
 				catch (const std::exception& e)
 				{
-					ModLoader::LogError(L"[EngineInit] Exception in callback: %S", e.what());
+					ModLoaderLogger::LogError(L"[EngineInit] Exception in callback: %S", e.what());
 				}
 				catch (...)
 				{
-					ModLoader::LogError(L"[EngineInit] Unknown exception in callback");
+					ModLoaderLogger::LogError(L"[EngineInit] Unknown exception in callback");
 				}
 			}
 
-			ModLoader::LogDebug(L"[EngineInit] All plugin callbacks completed");
+			ModLoaderLogger::LogDebug(L"[EngineInit] All plugin callbacks completed");
 		}
 	}
 
@@ -80,26 +104,28 @@ namespace Hooks::EngineInit
 	{
 		long callNum = InterlockedIncrement(&g_callCount);
 
-		ModLoader::LogInfo(L"[EngineInit] FEngineLoop::Init called (#%ld)", callNum);
-		ModLoader::LogDebug(L"[EngineInit]   FEngineLoop=%p, Thread=%lu", thisPtr, GetCurrentThreadId());
+		ModLoaderLogger::LogInfo(L"[EngineInit] FEngineLoop::Init called (#%ld)", callNum);
+		ModLoaderLogger::LogDebug(L"[EngineInit]   FEngineLoop=%p, Thread=%lu", thisPtr, GetCurrentThreadId());
+
+		WaitForPluginsToLoad();
 
 		// Call original
 		int32_t result = 0;
 		if (g_engineLoopOriginal)
 		{
-			ModLoader::LogDebug(L"[EngineInit]   Calling original FEngineLoop::Init...");
+			ModLoaderLogger::LogDebug(L"[EngineInit]   Calling original FEngineLoop::Init...");
 			result = g_engineLoopOriginal(thisPtr);
-			ModLoader::LogDebug(L"[EngineInit]   Original returned: %d", result);
+			ModLoaderLogger::LogDebug(L"[EngineInit]   Original returned: %d", result);
 		}
 		else
 		{
-			ModLoader::LogError(L"[EngineInit] Original function pointer is null!");
+			ModLoaderLogger::LogError(L"[EngineInit] Original function pointer is null!");
 		}
 
 		// Notify plugins that engine is ready
 		NotifyEngineReady(L"FEngineLoop::Init");
 
-		ModLoader::LogDebug(L"[EngineInit] FEngineLoop::Init complete (#%ld)", callNum);
+		ModLoaderLogger::LogDebug(L"[EngineInit] FEngineLoop::Init complete (#%ld)", callNum);
 		return result;
 	}
 
@@ -108,33 +134,41 @@ namespace Hooks::EngineInit
 	{
 		long callNum = InterlockedIncrement(&g_callCount);
 
-		ModLoader::LogInfo(L"[EngineInit] UGameEngine::Init called (#%ld)", callNum);
-		ModLoader::LogDebug(L"[EngineInit]   GameEngine=%p, EngineLoop=%p, Thread=%lu", 
+		ModLoaderLogger::LogInfo(L"[EngineInit] UGameEngine::Init called (#%ld)", callNum);
+		ModLoaderLogger::LogDebug(L"[EngineInit]   GameEngine=%p, EngineLoop=%p, Thread=%lu",
 			thisPtr, InEngineLoop, GetCurrentThreadId());
+
+		WaitForPluginsToLoad();
 
 		// Call original
 		bool result = false;
 		if (g_gameEngineOriginal)
 		{
-			ModLoader::LogDebug(L"[EngineInit]   Calling original UGameEngine::Init...");
+			ModLoaderLogger::LogDebug(L"[EngineInit]   Calling original UGameEngine::Init...");
 			result = g_gameEngineOriginal(thisPtr, InEngineLoop);
-			ModLoader::LogDebug(L"[EngineInit]   Original returned: %s", result ? L"true" : L"false");
+			ModLoaderLogger::LogDebug(L"[EngineInit]   Original returned: %s", result ? L"true" : L"false");
 		}
 		else
 		{
-			ModLoader::LogError(L"[EngineInit] Original function pointer is null!");
+			ModLoaderLogger::LogError(L"[EngineInit] Original function pointer is null!");
 		}
 
 		// Notify plugins that engine is ready (if not already notified)
 		NotifyEngineReady(L"UGameEngine::Init");
 
-		ModLoader::LogDebug(L"[EngineInit] UGameEngine::Init complete (#%ld)", callNum);
+		ModLoaderLogger::LogDebug(L"[EngineInit] UGameEngine::Init complete (#%ld)", callNum);
 		return result;
+	}
+
+	void SetSyncEvents(HANDLE engineReadyEvent, HANDLE pluginsLoadedEvent)
+	{
+		g_engineReadyEventHandle   = engineReadyEvent;
+		g_pluginsLoadedEventHandle = pluginsLoadedEvent;
 	}
 
 	bool Install()
 	{
-		ModLoader::LogInfo(L"[EngineInit] Installing engine initialization hooks...");
+		ModLoaderLogger::LogInfo(L"[EngineInit] Installing engine initialization hooks...");
 
 		bool anyHookSucceeded = false;
 
@@ -143,17 +177,17 @@ namespace Hooks::EngineInit
 			const char* pattern = ScanPatterns::FEngineLoop_Init;
 				
 
-			ModLoader::LogInfo(L"[EngineInit] Scanning for FEngineLoop::Init...");
-			ModLoader::LogDebug(L"[EngineInit]   Pattern: %S", pattern);
+			ModLoaderLogger::LogInfo(L"[EngineInit] Scanning for FEngineLoop::Init...");
+			ModLoaderLogger::LogDebug(L"[EngineInit]   Pattern: %S", pattern);
 
-			uintptr_t addr = Scanner::FindPatternInMainModule(pattern);
+			uintptr_t addr = Scanner::FindPatternInMainModule("FEngineLoop::Init", pattern);
 
 			if (addr)
 			{
 				HMODULE mainModule = GetModuleHandleW(nullptr);
 				auto base = reinterpret_cast<uintptr_t>(mainModule);
 
-				ModLoader::LogInfo(L"[EngineInit] [OK] FEngineLoop::Init found at 0x%llX (base+0x%llX)",
+				ModLoaderLogger::LogDebug(L"[EngineInit] [OK] FEngineLoop::Init found at 0x%llX (base+0x%llX)",
 					static_cast<unsigned long long>(addr),
 					static_cast<unsigned long long>(addr - base));
 
@@ -164,17 +198,17 @@ namespace Hooks::EngineInit
 
 				if (hookOk)
 				{
-					ModLoader::LogInfo(L"[EngineInit] [OK] FEngineLoop::Init hook installed successfully");
+					ModLoaderLogger::LogInfo(L"[EngineInit] [OK] FEngineLoop::Init hook installed successfully");
 					anyHookSucceeded = true;
 				}
 				else
 				{
-					ModLoader::LogWarn(L"[EngineInit] [FAIL] FEngineLoop::Init hook installation failed");
+					ModLoaderLogger::LogWarn(L"[EngineInit] [FAIL] FEngineLoop::Init hook installation failed");
 				}
 			}
 			else
 			{
-				ModLoader::LogWarn(L"[EngineInit] [FAIL] FEngineLoop::Init pattern not found - will try fallback");
+				ModLoaderLogger::LogWarn(L"[EngineInit] [FAIL] FEngineLoop::Init pattern not found - will try fallback");
 			}
 		}
 
@@ -183,17 +217,17 @@ namespace Hooks::EngineInit
 			const char* pattern = ScanPatterns::UGameEngine_Init;
 				
 
-			ModLoader::LogInfo(L"[EngineInit] Scanning for UGameEngine::Init (fallback)...");
-			ModLoader::LogDebug(L"[EngineInit]   Pattern: %S", pattern);
+			ModLoaderLogger::LogInfo(L"[EngineInit] Scanning for UGameEngine::Init (fallback)...");
+			ModLoaderLogger::LogDebug(L"[EngineInit]   Pattern: %S", pattern);
 
-			uintptr_t addr = Scanner::FindPatternInMainModule(pattern);
+			uintptr_t addr = Scanner::FindPatternInMainModule("UGameEngine::Init", pattern);
 
 			if (addr)
 			{
 				HMODULE mainModule = GetModuleHandleW(nullptr);
 				auto base = reinterpret_cast<uintptr_t>(mainModule);
 
-				ModLoader::LogInfo(L"[EngineInit] [OK] UGameEngine::Init found at 0x%llX (base+0x%llX)",
+				ModLoaderLogger::LogDebug(L"[EngineInit] [OK] UGameEngine::Init found at 0x%llX (base+0x%llX)",
 					static_cast<unsigned long long>(addr),
 					static_cast<unsigned long long>(addr - base));
 
@@ -204,29 +238,29 @@ namespace Hooks::EngineInit
 
 				if (hookOk)
 				{
-					ModLoader::LogInfo(L"[EngineInit] [OK] UGameEngine::Init hook installed successfully");
+					ModLoaderLogger::LogInfo(L"[EngineInit] [OK] UGameEngine::Init hook installed successfully");
 					anyHookSucceeded = true;
 				}
 				else
 				{
-					ModLoader::LogWarn(L"[EngineInit] [FAIL] UGameEngine::Init hook installation failed");
+					ModLoaderLogger::LogWarn(L"[EngineInit] [FAIL] UGameEngine::Init hook installation failed");
 				}
 			}
 			else
 			{
-				ModLoader::LogWarn(L"[EngineInit] [FAIL] UGameEngine::Init pattern not found");
+				ModLoaderLogger::LogWarn(L"[EngineInit] [FAIL] UGameEngine::Init pattern not found");
 			}
 		}
 
 		// Final status
 		if (anyHookSucceeded)
 		{
-			ModLoader::LogInfo(L"[EngineInit] At least one engine init hook installed - engine ready detection active");
+			ModLoaderLogger::LogInfo(L"[EngineInit] At least one engine init hook installed - engine ready detection active");
 		}
 		else
 		{
-			ModLoader::LogError(L"[EngineInit] CRITICAL: No engine init hooks could be installed!");
-			ModLoader::LogError(L"[EngineInit] Plugins requiring engine init callbacks will NOT work!");
+			ModLoaderLogger::LogError(L"[EngineInit] CRITICAL: No engine init hooks could be installed!");
+			ModLoaderLogger::LogError(L"[EngineInit] Plugins requiring engine init callbacks will NOT work!");
 		}
 
 		return anyHookSucceeded;
@@ -234,7 +268,7 @@ namespace Hooks::EngineInit
 
 	void Remove()
 	{
-		ModLoader::LogInfo(L"[EngineInit] Removing engine init hooks...");
+		ModLoaderLogger::LogInfo(L"[EngineInit] Removing engine init hooks...");
 		
 		g_engineLoopHook.Remove();
 		g_gameEngineHook.Remove();
@@ -242,7 +276,7 @@ namespace Hooks::EngineInit
 		// Clear plugin callbacks
 		g_pluginCallbacks.clear();
 		
-		ModLoader::LogInfo(L"[EngineInit] All hooks removed");
+		ModLoaderLogger::LogInfo(L"[EngineInit] All hooks removed");
 	}
 
 	bool IsEngineInitialized()
@@ -254,30 +288,30 @@ namespace Hooks::EngineInit
 	{
 		if (!callback)
 		{
-			ModLoader::LogWarn(L"[EngineInit] RegisterPluginCallback: null callback provided");
+			ModLoaderLogger::LogWarn(L"[EngineInit] RegisterPluginCallback: null callback provided");
 			return;
 		}
 
 		g_pluginCallbacks.push_back(callback);
-		ModLoader::LogDebug(L"[EngineInit] Plugin callback registered (%zu total)", g_pluginCallbacks.size());
+		ModLoaderLogger::LogDebug(L"[EngineInit] Plugin callback registered (%zu total)", g_pluginCallbacks.size());
 
 		// If the engine is already initialized, invoke the callback immediately
 		// so that late-registering plugins (loaded after the hook fires) still
 		// receive the notification.
 		if (g_engineInitialized)
 		{
-			ModLoader::LogInfo(L"[EngineInit] Engine already initialized - invoking callback immediately");
+			ModLoaderLogger::LogDebug(L"[EngineInit] Engine already initialized - invoking callback immediately");
 			try
 			{
 				callback();
 			}
 			catch (const std::exception& e)
 			{
-				ModLoader::LogError(L"[EngineInit] Exception in late callback: %S", e.what());
+				ModLoaderLogger::LogError(L"[EngineInit] Exception in late callback: %S", e.what());
 			}
 			catch (...)
 			{
-				ModLoader::LogError(L"[EngineInit] Unknown exception in late callback");
+				ModLoaderLogger::LogError(L"[EngineInit] Unknown exception in late callback");
 			}
 		}
 	}
@@ -288,7 +322,7 @@ namespace Hooks::EngineInit
 		if (it != g_pluginCallbacks.end())
 		{
 			g_pluginCallbacks.erase(it);
-			ModLoader::LogDebug(L"[EngineInit] Plugin callback unregistered (%zu remaining)", g_pluginCallbacks.size());
+			ModLoaderLogger::LogDebug(L"[EngineInit] Plugin callback unregistered (%zu remaining)", g_pluginCallbacks.size());
 		}
 	}
 
@@ -297,7 +331,7 @@ namespace Hooks::EngineInit
 		// Legacy compatibility - just use RegisterPluginCallback
 		if (callback)
 		{
-			ModLoader::LogWarn(L"[EngineInit] SetEngineInitCallback is deprecated, use RegisterPluginCallback");
+			ModLoaderLogger::LogWarn(L"[EngineInit] SetEngineInitCallback is deprecated, use RegisterPluginCallback");
 			RegisterPluginCallback(callback);
 		}
 	}

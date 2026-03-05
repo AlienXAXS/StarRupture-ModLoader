@@ -208,12 +208,10 @@ echo Deploy complete.</Command>
       <ModuleDefinitionFile>$(ProjectDir)dwmapi.def</ModuleDefinitionFile>
     </Link>
     <PostBuildEvent>
-      <Command>echo Deploying dwmapi.dll to $(GameDeployDir)...
-if not exist "$(GameDeployDir)" mkdir "$(GameDeployDir)"
-copy /Y "$(TargetPath)" "$(GameDeployDir)$(TargetFileName)"
-if exist "$(TargetDir)$(TargetName).pdb" copy /Y "$(TargetDir)$(TargetName).pdb" "$(GameDeployDir)$(TargetName).pdb"
-echo Deploy complete.</Command>
-      <Message>Copying dwmapi.dll to game server directory...</Message>
+      <Command>
+      </Command>
+      <Message>
+      </Message>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Client Release|x64'">
@@ -327,6 +325,7 @@ echo Deploy complete.</Command>
     <ClInclude Include="plugins\plugin_interface.h" />
     <ClInclude Include="plugins\plugin_manager.h" />
     <ClInclude Include="UI\splash_window.h" />
+    <ClInclude Include="utils\thread_utils.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="$(StarRuptureSDKSourceDir)Basic.cpp">

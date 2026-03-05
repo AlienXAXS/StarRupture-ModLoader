@@ -11,7 +11,14 @@ namespace RailJunctionFixerConfig
 			"Enabled",
 			ConfigValueType::Boolean,
 			"false",
-			"Enable the rail junction fixer. WARNING: Experimental! Only enable if you experience rail junction save/load issues."
+			"Enable or disable the plugin."
+		},
+		{
+			"PluginSettings",
+			"FixRailJunctions",
+			ConfigValueType::Boolean,
+			"false",
+			"Enable the rail junction fixer."
 		}
 	};
 
@@ -35,9 +42,14 @@ namespace RailJunctionFixerConfig
 			}
 		}
 
-		static bool IsEnabled()
+		static bool IsPluginEnabled()
 		{
 			return s_config ? s_config->ReadBool("RailJunctionFixer", "General", "Enabled", false) : false;
+		}
+
+		static bool IsRailFixerEnabled()
+		{
+			return s_config ? s_config->ReadBool("RailJunctionFixer", "PluginSettings", "FixRailJunctions", false) : false;
 		}
 
 	private:

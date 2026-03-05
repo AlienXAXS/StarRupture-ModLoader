@@ -43,24 +43,24 @@ namespace Hooks::EngineTick
 
 	bool Install()
 	{
-		ModLoader::LogInfo(L"[EngineTick] Installing UGameEngine::Tick hook...");
+		ModLoaderLogger::LogInfo(L"[EngineTick] Installing UGameEngine::Tick hook...");
 
 		const char* pattern = ScanPatterns::UGameEngine_Tick;
 
-		ModLoader::LogDebug(L"[EngineTick]   Pattern: %S", pattern);
+		ModLoaderLogger::LogDebug(L"[EngineTick]   Pattern: %S", pattern);
 
-		uintptr_t addr = Scanner::FindPatternInMainModule(pattern);
+		uintptr_t addr = Scanner::FindPatternInMainModule("UGameEngine::Tick", pattern);
 
 		if (!addr)
 		{
-			ModLoader::LogError(L"[EngineTick] UGameEngine::Tick pattern not found");
+			ModLoaderLogger::LogError(L"[EngineTick] UGameEngine::Tick pattern not found");
 			return false;
 		}
 
 		HMODULE mainModule = GetModuleHandleW(nullptr);
 		auto base = reinterpret_cast<uintptr_t>(mainModule);
 
-		ModLoader::LogInfo(L"[EngineTick] UGameEngine::Tick found at 0x%llX (base+0x%llX)",
+		ModLoaderLogger::LogInfo(L"[EngineTick] UGameEngine::Tick found at 0x%llX (base+0x%llX)",
 			static_cast<unsigned long long>(addr),
 			static_cast<unsigned long long>(addr - base));
 
@@ -70,16 +70,16 @@ namespace Hooks::EngineTick
 			reinterpret_cast<void**>(&g_original));
 
 		if (hookOk)
-			ModLoader::LogInfo(L"[EngineTick] Hook installed successfully");
+			ModLoaderLogger::LogInfo(L"[EngineTick] Hook installed successfully");
 		else
-			ModLoader::LogError(L"[EngineTick] Hook installation failed");
+			ModLoaderLogger::LogError(L"[EngineTick] Hook installation failed");
 
 		return hookOk;
 	}
 
 	void Remove()
 	{
-		ModLoader::LogInfo(L"[EngineTick] Removing hook...");
+		ModLoaderLogger::LogInfo(L"[EngineTick] Removing hook...");
 		g_hook.Remove();
 		g_pluginCallbacks.clear();
 	}
@@ -93,23 +93,23 @@ namespace Hooks::EngineTick
 	{
 		if (!callback)
 		{
-			ModLoader::LogWarn(L"[EngineTick] RegisterPluginCallback: null callback provided");
+			ModLoaderLogger::LogWarn(L"[EngineTick] RegisterPluginCallback: null callback provided");
 			return;
 		}
 
 		// Lazily install the hook on first registration
 		if (!g_hook.installed)
 		{
-			ModLoader::LogInfo(L"[EngineTick] First callback registered - installing hook now...");
+			ModLoaderLogger::LogInfo(L"[EngineTick] First callback registered - installing hook now...");
 			if (!Install())
 			{
-				ModLoader::LogError(L"[EngineTick] Failed to install hook for engine tick callback!");
+				ModLoaderLogger::LogError(L"[EngineTick] Failed to install hook for engine tick callback!");
 				return;
 			}
 		}
 
 		g_pluginCallbacks.push_back(callback);
-		ModLoader::LogDebug(L"[EngineTick] Plugin callback registered (%zu total)", g_pluginCallbacks.size());
+		ModLoaderLogger::LogDebug(L"[EngineTick] Plugin callback registered (%zu total)", g_pluginCallbacks.size());
 	}
 
 	void UnregisterPluginCallback(PluginEngineTickCallback callback)
@@ -118,7 +118,7 @@ namespace Hooks::EngineTick
 		if (it != g_pluginCallbacks.end())
 		{
 			g_pluginCallbacks.erase(it);
-			ModLoader::LogDebug(L"[EngineTick] Plugin callback unregistered (%zu remaining)", g_pluginCallbacks.size());
+			ModLoaderLogger::LogDebug(L"[EngineTick] Plugin callback unregistered (%zu remaining)", g_pluginCallbacks.size());
 		}
 	}
 }

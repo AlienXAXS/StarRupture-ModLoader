@@ -3,7 +3,7 @@
 #include <windows.h>
 #include "plugins/plugin_interface.h"  // Use the global interface definition
 
-namespace ModLoader
+namespace ModLoaderLogger
 {
     // Initialize the config manager
     void InitializeConfigManager();

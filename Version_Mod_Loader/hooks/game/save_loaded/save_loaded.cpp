@@ -22,32 +22,32 @@ namespace Hooks::SaveLoaded
 	{
 		long callNum = InterlockedIncrement(&g_callCount);
 
-		ModLoader::LogInfo(L"[SaveLoaded] UCrMassSaveSubsystem::OnSaveLoaded called (#%ld)", callNum);
-		ModLoader::LogDebug(L"[SaveLoaded]   this=%p, Thread=%lu", thisPtr, GetCurrentThreadId());
+		ModLoaderLogger::LogInfo(L"[SaveLoaded] UCrMassSaveSubsystem::OnSaveLoaded called (#%ld)", callNum);
+		ModLoaderLogger::LogDebug(L"[SaveLoaded]   this=%p, Thread=%lu", thisPtr, GetCurrentThreadId());
 
 		// Call original first so the save is fully loaded before we notify plugins
 		if (g_original)
 		{
-			ModLoader::LogDebug(L"[SaveLoaded]   Calling original OnSaveLoaded...");
+			ModLoaderLogger::LogDebug(L"[SaveLoaded]   Calling original OnSaveLoaded...");
 			g_original(thisPtr);
-			ModLoader::LogDebug(L"[SaveLoaded]   Original returned");
+			ModLoaderLogger::LogDebug(L"[SaveLoaded]   Original returned");
 		}
 		else
 		{
-			ModLoader::LogError(L"[SaveLoaded] Original function pointer is null!");
+			ModLoaderLogger::LogError(L"[SaveLoaded] Original function pointer is null!");
 		}
 
 		// Notify registered plugins
 		if (!g_pluginCallbacks.empty())
 		{
-			ModLoader::LogDebug(L"[SaveLoaded] Notifying %zu plugin(s)...", g_pluginCallbacks.size());
+			ModLoaderLogger::LogDebug(L"[SaveLoaded] Notifying %zu plugin(s)...", g_pluginCallbacks.size());
 
 			for (size_t i = 0; i < g_pluginCallbacks.size(); ++i)
 			{
 				if (!g_pluginCallbacks[i])
 					continue;
 
-				ModLoader::LogTrace(L"[SaveLoaded]Calling plugin callback #%zu", i + 1);
+				ModLoaderLogger::LogTrace(L"[SaveLoaded]Calling plugin callback #%zu", i + 1);
 
 				try
 				{
@@ -55,41 +55,41 @@ namespace Hooks::SaveLoaded
 				}
 				catch (const std::exception& e)
 				{
-					ModLoader::LogError(L"[SaveLoaded] Exception in callback: %S", e.what());
+					ModLoaderLogger::LogError(L"[SaveLoaded] Exception in callback: %S", e.what());
 				}
 				catch (...)
 				{
-					ModLoader::LogError(L"[SaveLoaded] Unknown exception in callback");
+					ModLoaderLogger::LogError(L"[SaveLoaded] Unknown exception in callback");
 				}
 			}
 
-			ModLoader::LogDebug(L"[SaveLoaded] All plugin callbacks completed");
+			ModLoaderLogger::LogDebug(L"[SaveLoaded] All plugin callbacks completed");
 		}
 
-		ModLoader::LogDebug(L"[SaveLoaded] OnSaveLoaded complete (#%ld)", callNum);
+		ModLoaderLogger::LogDebug(L"[SaveLoaded] OnSaveLoaded complete (#%ld)", callNum);
 	}
 
 	bool Install()
 	{
-		ModLoader::LogInfo(L"[SaveLoaded] Installing hook...");
+		ModLoaderLogger::LogInfo(L"[SaveLoaded] Installing hook...");
 
 		const char* pattern = ScanPatterns::UCrMassSaveSubsystem_OnSaveLoaded;
 
-		ModLoader::LogInfo(L"[SaveLoaded] Scanning for UCrMassSaveSubsystem::OnSaveLoaded...");
-		ModLoader::LogDebug(L"[SaveLoaded]   Pattern: %S", pattern);
+		ModLoaderLogger::LogInfo(L"[SaveLoaded] Scanning for UCrMassSaveSubsystem::OnSaveLoaded...");
+		ModLoaderLogger::LogDebug(L"[SaveLoaded]   Pattern: %S", pattern);
 
-		uintptr_t addr = Scanner::FindPatternInMainModule(pattern);
+		uintptr_t addr = Scanner::FindPatternInMainModule("UCrMassSaveSubsystem::OnSaveLoaded", pattern);
 
 		if (!addr)
 		{
-			ModLoader::LogError(L"[SaveLoaded] UCrMassSaveSubsystem::OnSaveLoaded pattern not found");
+			ModLoaderLogger::LogError(L"[SaveLoaded] UCrMassSaveSubsystem::OnSaveLoaded pattern not found");
 			return false;
 		}
 
 		HMODULE mainModule = GetModuleHandleW(nullptr);
 		auto base = reinterpret_cast<uintptr_t>(mainModule);
 
-		ModLoader::LogInfo(L"[SaveLoaded] UCrMassSaveSubsystem::OnSaveLoaded found at 0x%llX (base+0x%llX)",
+		ModLoaderLogger::LogInfo(L"[SaveLoaded] UCrMassSaveSubsystem::OnSaveLoaded found at 0x%llX (base+0x%llX)",
 			static_cast<unsigned long long>(addr),
 			static_cast<unsigned long long>(addr - base));
 
@@ -99,16 +99,16 @@ namespace Hooks::SaveLoaded
 			reinterpret_cast<void**>(&g_original));
 
 		if (hookOk)
-			ModLoader::LogInfo(L"[SaveLoaded] Hook installed successfully");
+			ModLoaderLogger::LogInfo(L"[SaveLoaded] Hook installed successfully");
 		else
-			ModLoader::LogError(L"[SaveLoaded] Hook installation failed");
+			ModLoaderLogger::LogError(L"[SaveLoaded] Hook installation failed");
 
 		return hookOk;
 	}
 
 	void Remove()
 	{
-		ModLoader::LogInfo(L"[SaveLoaded] Removing hook...");
+		ModLoaderLogger::LogInfo(L"[SaveLoaded] Removing hook...");
 		g_hook.Remove();
 		g_pluginCallbacks.clear();
 	}
@@ -122,23 +122,23 @@ namespace Hooks::SaveLoaded
 	{
 		if (!callback)
 		{
-			ModLoader::LogWarn(L"[SaveLoaded] RegisterPluginCallback: null callback provided");
+			ModLoaderLogger::LogWarn(L"[SaveLoaded] RegisterPluginCallback: null callback provided");
 			return;
 		}
 
 		// Lazily install the hook on first registration
 		if (!g_hook.installed)
 		{
-			ModLoader::LogInfo(L"[SaveLoaded] First callback registered — installing hook now...");
+			ModLoaderLogger::LogInfo(L"[SaveLoaded] First callback registered — installing hook now...");
 			if (!Install())
 			{
-				ModLoader::LogError(L"[SaveLoaded] Failed to install hook for save-loaded callback!");
+				ModLoaderLogger::LogError(L"[SaveLoaded] Failed to install hook for save-loaded callback!");
 				return;
 			}
 		}
 
 		g_pluginCallbacks.push_back(callback);
-		ModLoader::LogDebug(L"[SaveLoaded] Plugin callback registered (%zu total)", g_pluginCallbacks.size());
+		ModLoaderLogger::LogDebug(L"[SaveLoaded] Plugin callback registered (%zu total)", g_pluginCallbacks.size());
 	}
 
 	void UnregisterPluginCallback(PluginSaveLoadedCallback callback)
@@ -147,7 +147,7 @@ namespace Hooks::SaveLoaded
 		if (it != g_pluginCallbacks.end())
 		{
 			g_pluginCallbacks.erase(it);
-			ModLoader::LogDebug(L"[SaveLoaded] Plugin callback unregistered (%zu remaining)", g_pluginCallbacks.size());
+			ModLoaderLogger::LogDebug(L"[SaveLoaded] Plugin callback unregistered (%zu remaining)", g_pluginCallbacks.size());
 		}
 	}
 }

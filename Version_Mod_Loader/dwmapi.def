@@ -1,46 +1,148 @@
 LIBRARY dwmapi
 EXPORTS
-    DwmpDxGetWindowSharedSurface=vp_DwmpDxGetWindowSharedSurface @1
-    DwmpDxUpdateWindowSharedSurface=vp_DwmpDxUpdateWindowSharedSurface @2
-    DwmEnableComposition=vp_DwmEnableComposition @3
-    DllCanUnloadNow=vp_DllCanUnloadNow @12
-    DllGetClassObject=vp_DllGetClassObject @16
-    DwmAttachMilContent=vp_DwmAttachMilContent @17
-    DwmDefWindowProc=vp_DwmDefWindowProc @18
-    DwmDetachMilContent=vp_DwmDetachMilContent @19
-    DwmEnableBlurBehindWindow=vp_DwmEnableBlurBehindWindow @20
-    DwmEnableMMCSS=vp_DwmEnableMMCSS @21
-    DwmExtendFrameIntoClientArea=vp_DwmExtendFrameIntoClientArea @22
-    DwmFlush=vp_DwmFlush @23
-    DwmGetColorizationColor=vp_DwmGetColorizationColor @24
-    DwmGetCompositionTimingInfo=vp_DwmGetCompositionTimingInfo @26
-    DwmGetGraphicsStreamClient=vp_DwmGetGraphicsStreamClient @27
-    DwmpGetColorizationParameters=vp_DwmpGetColorizationParameters @28
-    DwmpDxgiIsThreadDesktopComposited=vp_DwmpDxgiIsThreadDesktopComposited @29
-    DwmGetGraphicsStreamTransformHint=vp_DwmGetGraphicsStreamTransformHint @30
-    DwmGetTransportAttributes=vp_DwmGetTransportAttributes @31
-    DwmpSetColorizationParameters=vp_DwmpSetColorizationParameters @32
-    DwmGetUnmetTabRequirements=vp_DwmGetUnmetTabRequirements @34
-    DwmGetWindowAttribute=vp_DwmGetWindowAttribute @35
-    DwmpRenderFlick=vp_DwmpRenderFlick @36
-    DwmpAllocateSecurityDescriptor=vp_DwmpAllocateSecurityDescriptor @37
-    DwmpFreeSecurityDescriptor=vp_DwmpFreeSecurityDescriptor @38
-    DwmpEnableDDASupport=vp_DwmpEnableDDASupport @44
-    DwmInvalidateIconicBitmaps=vp_DwmInvalidateIconicBitmaps @50
-    DwmTetherTextContact=vp_DwmTetherTextContact @57
-    DwmpUpdateProxyWindowForCapture=vp_DwmpUpdateProxyWindowForCapture @84
-    DwmIsCompositionEnabled=vp_DwmIsCompositionEnabled @85
-    DwmModifyPreviousDxFrameDuration=vp_DwmModifyPreviousDxFrameDuration @86
-    DwmQueryThumbnailSourceSize=vp_DwmQueryThumbnailSourceSize @87
-    DwmRegisterThumbnail=vp_DwmRegisterThumbnail @88
-    DwmRenderGesture=vp_DwmRenderGesture @89
-    DwmSetDxFrameDuration=vp_DwmSetDxFrameDuration @90
-    DwmSetIconicLivePreviewBitmap=vp_DwmSetIconicLivePreviewBitmap @91
-    DwmSetIconicThumbnail=vp_DwmSetIconicThumbnail @92
-    DwmSetPresentParameters=vp_DwmSetPresentParameters @93
-    DwmSetWindowAttribute=vp_DwmSetWindowAttribute @94
-    DwmShowContact=vp_DwmShowContact @95
-    DwmTetherContact=vp_DwmTetherContact @96
-    DwmTransitionOwnedWindow=vp_DwmTransitionOwnedWindow @97
-    DwmUnregisterThumbnail=vp_DwmUnregisterThumbnail @98
-    DwmUpdateThumbnailProperties=vp_DwmUpdateThumbnailProperties @99
+    ; Named exports (ordinals 1-99) — alias to the matching vp_ordN stub
+    DwmpDxGetWindowSharedSurface=vp_ord1 @1
+    DwmpDxUpdateWindowSharedSurface=vp_ord2 @2
+    DwmEnableComposition=vp_ord3 @3
+    DllCanUnloadNow=vp_ord12 @12
+    DllGetClassObject=vp_ord16 @16
+    DwmAttachMilContent=vp_ord17 @17
+    DwmDefWindowProc=vp_ord18 @18
+    DwmDetachMilContent=vp_ord19 @19
+    DwmEnableBlurBehindWindow=vp_ord20 @20
+    DwmEnableMMCSS=vp_ord21 @21
+    DwmExtendFrameIntoClientArea=vp_ord22 @22
+    DwmFlush=vp_ord23 @23
+    DwmGetColorizationColor=vp_ord24 @24
+    DwmGetCompositionTimingInfo=vp_ord26 @26
+    DwmGetGraphicsStreamClient=vp_ord27 @27
+    DwmpGetColorizationParameters=vp_ord28 @28
+    DwmpDxgiIsThreadDesktopComposited=vp_ord29 @29
+    DwmGetGraphicsStreamTransformHint=vp_ord30 @30
+    DwmGetTransportAttributes=vp_ord31 @31
+    DwmpSetColorizationParameters=vp_ord32 @32
+    DwmGetUnmetTabRequirements=vp_ord34 @34
+    DwmGetWindowAttribute=vp_ord35 @35
+    DwmpRenderFlick=vp_ord36 @36
+    DwmpAllocateSecurityDescriptor=vp_ord37 @37
+    DwmpFreeSecurityDescriptor=vp_ord38 @38
+    DwmpEnableDDASupport=vp_ord44 @44
+    DwmInvalidateIconicBitmaps=vp_ord50 @50
+    DwmTetherTextContact=vp_ord57 @57
+    DwmpUpdateProxyWindowForCapture=vp_ord84 @84
+    DwmIsCompositionEnabled=vp_ord85 @85
+    DwmModifyPreviousDxFrameDuration=vp_ord86 @86
+    DwmQueryThumbnailSourceSize=vp_ord87 @87
+    DwmRegisterThumbnail=vp_ord88 @88
+    DwmRenderGesture=vp_ord89 @89
+    DwmSetDxFrameDuration=vp_ord90 @90
+    DwmSetIconicLivePreviewBitmap=vp_ord91 @91
+    DwmSetIconicThumbnail=vp_ord92 @92
+    DwmSetPresentParameters=vp_ord93 @93
+    DwmSetWindowAttribute=vp_ord94 @94
+    DwmShowContact=vp_ord95 @95
+    DwmTetherContact=vp_ord96 @96
+    DwmTransitionOwnedWindow=vp_ord97 @97
+    DwmUnregisterThumbnail=vp_ord98 @98
+    DwmUpdateThumbnailProperties=vp_ord99 @99
+
+    ; Ordinal-only (NONAME) entries for Windows 10 exports (ordinals 100-198)
+    vp_ord100 @100 NONAME
+    vp_ord101 @101 NONAME
+    vp_ord102 @102 NONAME
+    vp_ord103 @103 NONAME
+    vp_ord104 @104 NONAME
+    vp_ord105 @105 NONAME
+    vp_ord106 @106 NONAME
+    vp_ord107 @107 NONAME
+    vp_ord108 @108 NONAME
+    vp_ord109 @109 NONAME
+    vp_ord110 @110 NONAME
+    vp_ord111 @111 NONAME
+    vp_ord112 @112 NONAME
+    vp_ord113 @113 NONAME
+    vp_ord114 @114 NONAME
+    vp_ord115 @115 NONAME
+    vp_ord116 @116 NONAME
+    vp_ord117 @117 NONAME
+    vp_ord118 @118 NONAME
+    vp_ord119 @119 NONAME
+    vp_ord120 @120 NONAME
+    vp_ord121 @121 NONAME
+    vp_ord122 @122 NONAME
+    vp_ord123 @123 NONAME
+    vp_ord124 @124 NONAME
+    vp_ord125 @125 NONAME
+    vp_ord126 @126 NONAME
+    vp_ord127 @127 NONAME
+    vp_ord128 @128 NONAME
+    vp_ord129 @129 NONAME
+    vp_ord130 @130 NONAME
+    vp_ord131 @131 NONAME
+    vp_ord132 @132 NONAME
+    vp_ord133 @133 NONAME
+    vp_ord134 @134 NONAME
+    vp_ord135 @135 NONAME
+    vp_ord136 @136 NONAME
+    vp_ord137 @137 NONAME
+    vp_ord138 @138 NONAME
+    vp_ord139 @139 NONAME
+    vp_ord140 @140 NONAME
+    vp_ord141 @141 NONAME
+    vp_ord142 @142 NONAME
+    vp_ord143 @143 NONAME
+    vp_ord144 @144 NONAME
+    vp_ord145 @145 NONAME
+    vp_ord146 @146 NONAME
+    vp_ord147 @147 NONAME
+    vp_ord148 @148 NONAME
+    vp_ord149 @149 NONAME
+    vp_ord150 @150 NONAME
+    vp_ord151 @151 NONAME
+    vp_ord152 @152 NONAME
+    vp_ord153 @153 NONAME
+    vp_ord154 @154 NONAME
+    vp_ord155 @155 NONAME
+    vp_ord156 @156 NONAME
+    vp_ord157 @157 NONAME
+    vp_ord158 @158 NONAME
+    vp_ord159 @159 NONAME
+    vp_ord160 @160 NONAME
+    vp_ord161 @161 NONAME
+    vp_ord162 @162 NONAME
+    vp_ord163 @163 NONAME
+    vp_ord164 @164 NONAME
+    vp_ord165 @165 NONAME
+    vp_ord166 @166 NONAME
+    vp_ord167 @167 NONAME
+    vp_ord168 @168 NONAME
+    vp_ord169 @169 NONAME
+    vp_ord170 @170 NONAME
+    vp_ord171 @171 NONAME
+    vp_ord172 @172 NONAME
+    vp_ord173 @173 NONAME
+    vp_ord174 @174 NONAME
+    vp_ord175 @175 NONAME
+    vp_ord176 @176 NONAME
+    vp_ord177 @177 NONAME
+    vp_ord178 @178 NONAME
+    vp_ord179 @179 NONAME
+    vp_ord180 @180 NONAME
+    vp_ord181 @181 NONAME
+    vp_ord182 @182 NONAME
+    vp_ord183 @183 NONAME
+    vp_ord184 @184 NONAME
+    vp_ord185 @185 NONAME
+    vp_ord186 @186 NONAME
+    vp_ord187 @187 NONAME
+    vp_ord188 @188 NONAME
+    vp_ord189 @189 NONAME
+    vp_ord190 @190 NONAME
+    vp_ord191 @191 NONAME
+    vp_ord192 @192 NONAME
+    vp_ord193 @193 NONAME
+    vp_ord194 @194 NONAME
+    vp_ord195 @195 NONAME
+    vp_ord196 @196 NONAME
+    vp_ord197 @197 NONAME
+    vp_ord198 @198 NONAME

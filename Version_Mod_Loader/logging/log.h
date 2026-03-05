@@ -28,7 +28,7 @@
 // Thread Safety: All logging operations are protected by a critical section.
 // ---------------------------------------------------------------------------
 
-namespace Log
+namespace LogToFile
 {
 	// Log level enum — anything below the active level is suppressed
 	enum class Level : int

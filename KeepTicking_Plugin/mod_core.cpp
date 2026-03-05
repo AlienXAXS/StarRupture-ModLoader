@@ -167,7 +167,7 @@ void ModCore::Initialize(IPluginScanner* scanner, IPluginHooks* hooks)
 		if (hooks->RegisterExperienceLoadCompleteCallback)
 		{
 			hooks->RegisterExperienceLoadCompleteCallback(OnExperienceLoadComplete);
-			LOG_INFO("Registered for ExperienceLoadComplete callback (map traversal)");
+			LOG_DEBUG("Registered for ExperienceLoadComplete callback (map traversal)");
 		}
 		else
 		{
@@ -178,7 +178,7 @@ void ModCore::Initialize(IPluginScanner* scanner, IPluginHooks* hooks)
 		if (hooks->RegisterEngineTickCallback)
 		{
 			hooks->RegisterEngineTickCallback(OnEngineTick);
-			LOG_INFO("Registered for EngineTick callback (traversal driver)");
+			LOG_DEBUG("Registered for EngineTick callback (traversal driver)");
 		}
 		else
 		{
@@ -189,7 +189,7 @@ void ModCore::Initialize(IPluginScanner* scanner, IPluginHooks* hooks)
 		if (hooks->RegisterPlayerJoinedCallback)
 		{
 			hooks->RegisterPlayerJoinedCallback(OnPlayerJoined);
-			LOG_INFO("Registered for PlayerJoined callback (fake player management)");
+			LOG_DEBUG("Registered for PlayerJoined callback (fake player management)");
 		}
 		else
 		{
@@ -199,7 +199,7 @@ void ModCore::Initialize(IPluginScanner* scanner, IPluginHooks* hooks)
 		if (hooks->RegisterPlayerLeftCallback)
 		{
 			hooks->RegisterPlayerLeftCallback(OnPlayerLeft);
-			LOG_INFO("Registered for PlayerLeft callback (fake player management)");
+			LOG_DEBUG("Registered for PlayerLeft callback (fake player management)");
 		}
 		else
 		{

@@ -21,6 +21,11 @@ namespace Hooks::EngineInit
     // Callback signature for plugins
     typedef void (*PluginEngineInitCallback)();
 
+    // Provide the synchronisation events created in DllMain so the detour can
+    // signal engine-ready and wait for all plugins to finish loading before
+    // letting the original Init proceed.
+    void SetSyncEvents(HANDLE engineReadyEvent, HANDLE pluginsLoadedEvent);
+
     // Install the hooks (tries multiple patterns for reliability)
     // Returns true if at least one hook was successful
     bool Install();

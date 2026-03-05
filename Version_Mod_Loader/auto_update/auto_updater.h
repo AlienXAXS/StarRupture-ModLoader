@@ -36,7 +36,7 @@
 #  define AUTOUPDATE_DEFAULT_MANIFEST_URL ""
 #endif
 
-namespace ModLoader
+namespace ModLoaderLogger
 {
 	// Fetch the remote manifest, compare build_tag against update_state.ini,
 	// and download any outdated or missing plugin DLLs into the Plugins dir.

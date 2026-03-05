@@ -1,5 +1,6 @@
 #include "plugin_manager.h"
 #include "plugin_interface.h"
+#include "logging/log.h"
 #include "logging/logger.h"
 #include "config/config_manager.h"
 #include "memory_scanner/scanner_interface.h"
@@ -7,7 +8,7 @@
 #include <vector>
 #include <string>
 
-namespace ModLoader
+namespace ModLoaderLogger
 {
 	// Structure to hold loaded plugin information
 	struct LoadedPlugin

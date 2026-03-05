@@ -38,7 +38,7 @@ namespace Scanner
     std::vector<uintptr_t> FindAllPatternsInModule(HMODULE module, const std::string& pattern);
 
     // Convenience: scan the main process module.
-    uintptr_t FindPatternInMainModule(const std::string& pattern);
+    uintptr_t FindPatternInMainModule(const std::string& patternName, const std::string& pattern);
 
     // Convenience: find all matches in main module.
     std::vector<uintptr_t> FindAllPatternsInMainModule(const std::string& pattern);

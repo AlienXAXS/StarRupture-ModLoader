@@ -40,40 +40,13 @@ static PluginInfo s_pluginInfo = {
 // UCrDedicatedServerSettingsComp::ParseSettings pattern
 // "48 8B C4 55 41 54 48 8D 6C 24"
 // -----------------------------------------------------------------------
-static constexpr const char* PARSE_SETTINGS_PATTERN = "48 8B C4 55 41 54 48 8D 6C 24";
+static constexpr const char* DEDSERVER_SETTINGS_COMP_PARSE_SETTINGS_PATTERN = "48 8B C4 55 41 54 48 8D 6C 24";
 
 // -----------------------------------------------------------------------
 // Engine lifecycle callbacks
 // -----------------------------------------------------------------------
 static void OnEngineInit()
 {
-    LOG_INFO("Engine initialised – scanning for UCrDedicatedServerSettingsComp::ParseSettings...");
-
-    uintptr_t addr = g_scanner->FindPatternInMainModule(PARSE_SETTINGS_PATTERN);
-    if (addr == 0)
-    {
-        LOG_ERROR("Pattern scan failed – could not locate ParseSettings");
-        return;
-    }
-
-    LOG_INFO("Found ParseSettings at 0x%llX", static_cast<unsigned long long>(addr));
-    ParseSettingsHook::Install(addr);
-
-    // Apply max players patch if configured
-    int maxPlayers = ServerUtilityConfig::Config::GetMaxPlayers();
-    if (maxPlayers > 0)
-    {
-        LOG_INFO("MaxPlayers configured to %d - applying patch...", maxPlayers);
-        MaxPlayersHook::Install(maxPlayers);
-
-        // Auto-assign professions for players joining when MaxPlayers is patched
-        AutoProfessionHook::Install();
-    }
-    else
-    {
-        LOG_INFO("MaxPlayers is 0 — using game default (no patch)");
-    }
-
     // Start the RCON / Steam Query subsystem
     Rcon::Init();
 
@@ -108,6 +81,26 @@ static void OnEngineTick(float deltaSeconds)
     Rcon::OnTick(deltaSeconds);
 }
 
+static bool IsServerBinary()
+{
+    wchar_t path[MAX_PATH] = { 0 };
+    if (GetModuleFileNameW(nullptr, path, MAX_PATH) == 0)
+    {
+        // If desired, log failure via GetLogger(); keep simple here.
+        return false;
+    }
+
+    // Extract filename part
+    wchar_t* filename = wcsrchr(path, L'\\');
+    if (!filename)
+        filename = wcsrchr(path, L'/');
+
+    const wchar_t* exeName = filename ? (filename + 1) : path;
+
+    // Case-insensitive compare
+    return _wcsicmp(exeName, L"StarRuptureServerEOS-Win64-Shipping.exe") == 0;
+}
+
 // -----------------------------------------------------------------------
 // Plugin exports
 // -----------------------------------------------------------------------
@@ -131,6 +124,18 @@ extern "C"
         // Initialize config system with schema
         ServerUtilityConfig::Config::Initialize(config);
 
+        if (!ServerUtilityConfig::Config::IsPluginEnabled())
+        {
+            LOG_INFO("Plugin is disabled in config - skipping initialization");
+            return true;
+		}
+
+        if (!IsServerBinary())
+        {
+            LOG_WARN("This plugin is intended for dedicated server use only - skipping initialization");
+            return true;
+		}
+
         if (!hooks->RegisterEngineInitCallback)
         {
             LOG_ERROR("RegisterEngineInitCallback not available – loader version mismatch?");
@@ -138,12 +143,12 @@ extern "C"
         }
 
         hooks->RegisterEngineInitCallback(OnEngineInit);
-        LOG_INFO("Registered for engine init callback");
+        LOG_DEBUG("Registered for engine init callback");
 
         if (hooks->RegisterEngineShutdownCallback)
         {
             hooks->RegisterEngineShutdownCallback(OnEngineShutdown);
-            LOG_INFO("Registered for engine shutdown callback");
+            LOG_DEBUG("Registered for engine shutdown callback");
         }
         else
         {
@@ -153,32 +158,42 @@ extern "C"
         if (hooks->RegisterAnyWorldBeginPlayCallback)
         {
             hooks->RegisterAnyWorldBeginPlayCallback(OnAnyWorldBeginPlay);
-            LOG_INFO("Registered for any-world begin play callback (RCON player tracking)");
+            LOG_DEBUG("Registered for any-world begin play callback (RCON player tracking)");
         }
 
         if (hooks->RegisterExperienceLoadCompleteCallback)
         {
             hooks->RegisterExperienceLoadCompleteCallback(OnExperienceLoadComplete);
-            LOG_INFO("Registered for experience load complete callback (RCON player refresh)");
+            LOG_DEBUG("Registered for experience load complete callback (RCON player refresh)");
         }
 
         if (hooks->RegisterEngineTickCallback)
         {
             hooks->RegisterEngineTickCallback(OnEngineTick);
-            LOG_INFO("Registered for engine tick callback (game-thread task dispatch)");
+            LOG_DEBUG("Registered for engine tick callback (game-thread task dispatch)");
         }
 
-        LOG_INFO("Plugin initialised. Awaiting engine ready signal.");
-        LOG_INFO("Usage: launch the server with the following parameters:");
-        LOG_INFO("  -SessionName=<name> [-SaveGameInterval=<seconds>]");
-        LOG_INFO("  -RconPort=<port> -RconPassword=<password>");
-        LOG_INFO("When SessionName is present, DSSettings.txt is completely bypassed.");
-        LOG_INFO("  SaveGameName: Always 'AutoSave0.sav'");
-        LOG_INFO("  SaveGameInterval: Defaults to 300 seconds (5 minutes) if not specified");
-        LOG_INFO("  StartNewGame / LoadSavedGame: Derived automatically from save file existence");
-        LOG_INFO("RCON requires both -RconPort= and -RconPassword= to be set.");
-        LOG_INFO("Save location checked: <binDir>\\..\\..\\Saved\\SaveGames\\<SessionName>\\AutoSave0.sav");
-        LOG_INFO("  (navigates up 2 directories from binary: Win64 -> Binaries -> <root>)");
+        LOG_INFO("Engine initialised - scanning for UCrDedicatedServerSettingsComp::ParseSettings...");
+
+        uintptr_t addr = g_scanner->FindPatternInMainModule(DEDSERVER_SETTINGS_COMP_PARSE_SETTINGS_PATTERN);
+        if (addr == 0)
+        {
+            LOG_ERROR("Pattern scan failed – could not locate ParseSettings");
+        } else {
+            LOG_INFO("Found ParseSettings at 0x%llX", static_cast<unsigned long long>(addr));
+            ParseSettingsHook::Install(addr);
+        }
+
+        // Apply max players patch if configured
+        int maxPlayers = ServerUtilityConfig::Config::GetMaxPlayers();
+        if (maxPlayers > 0)
+        {
+            LOG_INFO("MaxPlayers configured to %d - applying patch...", maxPlayers);
+            MaxPlayersHook::Install(maxPlayers);
+
+            // Auto-assign professions for players joining when MaxPlayers is patched
+            AutoProfessionHook::Install();
+        }
 
         return true;
     }

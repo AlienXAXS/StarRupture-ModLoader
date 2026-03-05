@@ -87,7 +87,7 @@ jobs:
         run: |
           $tag      = "${{ steps.tag.outputs.TAG }}"
           # IMPORTANT: Keep this in sync with PLUGIN_INTERFACE_VERSION in plugin_interface.h
-          $ifaceVer = 12
+          $ifaceVer = 13
 
           foreach ($variant in @("Client", "Server")) {
             $plugins = @()

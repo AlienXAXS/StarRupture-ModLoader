@@ -67,6 +67,9 @@
     <Filter Include="Source Files\config">
       <UniqueIdentifier>{0a9a1e21-213e-4f0b-a7cb-3a54f59d8021}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Source Files\utils">
+      <UniqueIdentifier>{e3a7c1f2-9b4d-4e8a-b2c5-6f0d1e3a7b9c}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="dwmapi_proxy.h">
@@ -137,6 +140,9 @@
     </ClInclude>
     <ClInclude Include="hooks\game\world_begin_play\world_begin_play.h">
       <Filter>Source Files\hooks\game\world_begin_play</Filter>
+    </ClInclude>
+    <ClInclude Include="utils\thread_utils.h">
+      <Filter>Source Files\utils</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

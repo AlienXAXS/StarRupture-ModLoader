@@ -2,7 +2,7 @@
 
 #include <windows.h>
 
-namespace ModLoader
+namespace ModLoaderLogger
 {
     // Initialize the plugin manager
     void InitializePluginManager();

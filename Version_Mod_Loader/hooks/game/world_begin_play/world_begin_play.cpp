@@ -28,20 +28,20 @@ namespace Hooks::WorldBeginPlay
 		long callNum = InterlockedIncrement(&g_callCount);
 
 		// Always log the world begin play event for debugging
-		ModLoader::LogDebug(L"[WorldBeginPlay] World begin play detected (#%ld)", callNum);
+		ModLoaderLogger::LogDebug(L"[WorldBeginPlay] World begin play detected (#%ld)", callNum);
 
 		// Get world name
 		std::string worldName;
 		if (inWorld)
 		{
 			worldName = inWorld->GetName();
-			ModLoader::LogDebug(L"[WorldBeginPlay]   World: %S", worldName.c_str());
+			ModLoaderLogger::LogDebug(L"[WorldBeginPlay]   World: %S", worldName.c_str());
 		}
 
 		// --- Notify any-world callbacks (fires for ALL worlds) ---
 		if (!g_anyWorldCallbacks.empty())
 		{
-			ModLoader::LogDebug(L"[WorldBeginPlay] Notifying %zu any-world callback(s) for '%S'...",
+			ModLoaderLogger::LogDebug(L"[WorldBeginPlay] Notifying %zu any-world callback(s) for '%S'...",
 				g_anyWorldCallbacks.size(), worldName.c_str());
 
 			for (size_t i = 0; i < g_anyWorldCallbacks.size(); ++i)
@@ -55,11 +55,11 @@ namespace Hooks::WorldBeginPlay
 				}
 				catch (const std::exception& e)
 				{
-					ModLoader::LogError(L"[WorldBeginPlay] Exception in any-world callback: %S", e.what());
+					ModLoaderLogger::LogError(L"[WorldBeginPlay] Exception in any-world callback: %S", e.what());
 				}
 				catch (...)
 				{
-					ModLoader::LogError(L"[WorldBeginPlay] Unknown exception in any-world callback");
+					ModLoaderLogger::LogError(L"[WorldBeginPlay] Unknown exception in any-world callback");
 				}
 			}
 		}
@@ -70,7 +70,7 @@ namespace Hooks::WorldBeginPlay
 		if (!isChimeraWorld)
 		{
 			// Not ChimeraMain — call original and return (ChimeraMain callbacks not fired)
-			ModLoader::LogInfo(L"[WorldBeginPlay]   Skipping ChimeraMain callbacks - not ChimeraMain world");
+			ModLoaderLogger::LogInfo(L"[WorldBeginPlay]   Skipping ChimeraMain callbacks - not ChimeraMain world");
 			if (g_original)
 			{
 				g_original(inWorld);
@@ -79,31 +79,31 @@ namespace Hooks::WorldBeginPlay
 		}
 
 		// This is ChimeraMain - proceed with full logging and initialization
-		ModLoader::LogInfo(L"[WorldBeginPlay] ChimeraMain world begin play detected (#%ld)", callNum);
+		ModLoaderLogger::LogInfo(L"[WorldBeginPlay] ChimeraMain world begin play detected (#%ld)", callNum);
 
 		// Call original
-		ModLoader::LogDebug(L"[WorldBeginPlay]   Calling original OnWorldBeginPlay...");
+		ModLoaderLogger::LogDebug(L"[WorldBeginPlay]   Calling original OnWorldBeginPlay...");
 		if (g_original)
 		{
 			g_original(inWorld);
-			ModLoader::LogDebug(L"[WorldBeginPlay]   Original returned");
+			ModLoaderLogger::LogDebug(L"[WorldBeginPlay]   Original returned");
 		}
 		else
 		{
-			ModLoader::LogError(L"[WorldBeginPlay] Original function pointer is null!");
+			ModLoaderLogger::LogError(L"[WorldBeginPlay] Original function pointer is null!");
 		}
 
 		// Notify ChimeraMain-only registered plugins (with error isolation)
 		if (!g_pluginCallbacks.empty())
 		{
-			ModLoader::LogDebug(L"[WorldBeginPlay] Notifying %zu ChimeraMain plugin(s)...", g_pluginCallbacks.size());
+			ModLoaderLogger::LogDebug(L"[WorldBeginPlay] Notifying %zu ChimeraMain plugin(s)...", g_pluginCallbacks.size());
 
 			for (size_t i = 0; i < g_pluginCallbacks.size(); ++i)
 			{
 				if (!g_pluginCallbacks[i])
 					continue;
 
-				ModLoader::LogTrace(L"[WorldBeginPlay]   Calling plugin callback #%zu", i + 1);
+				ModLoaderLogger::LogTrace(L"[WorldBeginPlay]   Calling plugin callback #%zu", i + 1);
 
 				try
 				{
@@ -111,42 +111,42 @@ namespace Hooks::WorldBeginPlay
 				}
 				catch (const std::exception& e)
 				{
-					ModLoader::LogError(L"[WorldBeginPlay] Exception in callback: %S", e.what());
+					ModLoaderLogger::LogError(L"[WorldBeginPlay] Exception in callback: %S", e.what());
 				}
 				catch (...)
 				{
-					ModLoader::LogError(L"[WorldBeginPlay] Unknown exception in callback");
+					ModLoaderLogger::LogError(L"[WorldBeginPlay] Unknown exception in callback");
 				}
 			}
 
-			ModLoader::LogDebug(L"[WorldBeginPlay] All plugin callbacks completed");
+			ModLoaderLogger::LogDebug(L"[WorldBeginPlay] All plugin callbacks completed");
 		}
 
-		ModLoader::LogDebug(L"[WorldBeginPlay] OnWorldBeginPlay complete (#%ld)", callNum);
+		ModLoaderLogger::LogDebug(L"[WorldBeginPlay] OnWorldBeginPlay complete (#%ld)", callNum);
 	}
 
 	bool Install()
 	{
-		ModLoader::LogInfo(L"[WorldBeginPlay] Installing hook...");
+		ModLoaderLogger::LogInfo(L"[WorldBeginPlay] Installing hook...");
 
 		// Pattern sourced from scan_patterns.h (differs between client and server builds)
 		const char* pattern = ScanPatterns::UWorld_BeginPlay;
 
-		ModLoader::LogInfo(L"[WorldBeginPlay] Scanning for OnWorldBeginPlay...");
-		ModLoader::LogDebug(L"[WorldBeginPlay]   Pattern: %S", pattern);
+		ModLoaderLogger::LogInfo(L"[WorldBeginPlay] Scanning for OnWorldBeginPlay...");
+		ModLoaderLogger::LogDebug(L"[WorldBeginPlay]   Pattern: %S", pattern);
 
-		uintptr_t addr = Scanner::FindPatternInMainModule(pattern);
+		uintptr_t addr = Scanner::FindPatternInMainModule("UGame::OnWorldBeginPlay", pattern);
 
 		if (!addr)
 		{
-			ModLoader::LogError(L"[WorldBeginPlay] OnWorldBeginPlay pattern not found");
+			ModLoaderLogger::LogError(L"[WorldBeginPlay] OnWorldBeginPlay pattern not found");
 			return false;
 		}
 
 		HMODULE mainModule = GetModuleHandleW(nullptr);
 		auto base = reinterpret_cast<uintptr_t>(mainModule);
 
-		ModLoader::LogDebug(L"[WorldBeginPlay] OnWorldBeginPlay found at 0x%llX (base+0x%llX)",
+		ModLoaderLogger::LogDebug(L"[WorldBeginPlay] OnWorldBeginPlay found at 0x%llX (base+0x%llX)",
 			static_cast<unsigned long long>(addr),
 			static_cast<unsigned long long>(addr - base));
 
@@ -156,16 +156,16 @@ namespace Hooks::WorldBeginPlay
 			reinterpret_cast<void**>(&g_original));
 
 		if (hookOk)
-			ModLoader::LogInfo(L"[WorldBeginPlay] Hook installed successfully (filtering for ChimeraMain worlds)");
+			ModLoaderLogger::LogInfo(L"[WorldBeginPlay] Hook installed successfully (filtering for ChimeraMain worlds)");
 		else
-			ModLoader::LogError(L"[WorldBeginPlay] Hook installation failed");
+			ModLoaderLogger::LogError(L"[WorldBeginPlay] Hook installation failed");
 
 		return hookOk;
 	}
 
 	void Remove()
 	{
-		ModLoader::LogInfo(L"[WorldBeginPlay] Removing hook...");
+		ModLoaderLogger::LogInfo(L"[WorldBeginPlay] Removing hook...");
 		g_hook.Remove();
 
 		// Clear all callbacks
@@ -187,23 +187,23 @@ namespace Hooks::WorldBeginPlay
 	{
 		if (!callback)
 		{
-			ModLoader::LogWarn(L"[WorldBeginPlay] RegisterPluginCallback: null callback provided");
+			ModLoaderLogger::LogWarn(L"[WorldBeginPlay] RegisterPluginCallback: null callback provided");
 			return;
 		}
 
 		// Lazily install the hook on first registration
 		if (!g_hook.installed)
 		{
-			ModLoader::LogInfo(L"[WorldBeginPlay] First ChimeraMain callback registered — installing hook now...");
+			ModLoaderLogger::LogInfo(L"[WorldBeginPlay] First ChimeraMain callback registered — installing hook now...");
 			if (!Install())
 			{
-				ModLoader::LogError(L"[WorldBeginPlay] Failed to install hook for ChimeraMain callback!");
+				ModLoaderLogger::LogError(L"[WorldBeginPlay] Failed to install hook for ChimeraMain callback!");
 				return;
 			}
 		}
 
 		g_pluginCallbacks.push_back(callback);
-		ModLoader::LogDebug(L"[WorldBeginPlay] Plugin callback registered (%zu total)", g_pluginCallbacks.size());
+		ModLoaderLogger::LogDebug(L"[WorldBeginPlay] Plugin callback registered (%zu total)", g_pluginCallbacks.size());
 	}
 
 	void UnregisterPluginCallback(PluginWorldBeginPlayCallback callback)
@@ -212,7 +212,7 @@ namespace Hooks::WorldBeginPlay
 		if (it != g_pluginCallbacks.end())
 		{
 			g_pluginCallbacks.erase(it);
-			ModLoader::LogDebug(L"[WorldBeginPlay] Plugin callback unregistered (%zu remaining)", g_pluginCallbacks.size());
+			ModLoaderLogger::LogDebug(L"[WorldBeginPlay] Plugin callback unregistered (%zu remaining)", g_pluginCallbacks.size());
 		}
 	}
 
@@ -220,23 +220,23 @@ namespace Hooks::WorldBeginPlay
 	{
 		if (!callback)
 		{
-			ModLoader::LogWarn(L"[WorldBeginPlay] RegisterAnyWorldCallback: null callback provided");
+			ModLoaderLogger::LogWarn(L"[WorldBeginPlay] RegisterAnyWorldCallback: null callback provided");
 			return;
 		}
 
 		// Lazily install the hook on first any-world registration
 		if (!g_hook.installed)
 		{
-			ModLoader::LogInfo(L"[WorldBeginPlay] First any-world callback registered — installing hook now...");
+			ModLoaderLogger::LogInfo(L"[WorldBeginPlay] First any-world callback registered — installing hook now...");
 			if (!Install())
 			{
-				ModLoader::LogError(L"[WorldBeginPlay] Failed to install hook for any-world callback!");
+				ModLoaderLogger::LogError(L"[WorldBeginPlay] Failed to install hook for any-world callback!");
 				return;
 			}
 		}
 
 		g_anyWorldCallbacks.push_back(callback);
-		ModLoader::LogDebug(L"[WorldBeginPlay] Any-world callback registered (%zu total)", g_anyWorldCallbacks.size());
+		ModLoaderLogger::LogDebug(L"[WorldBeginPlay] Any-world callback registered (%zu total)", g_anyWorldCallbacks.size());
 	}
 
 	void UnregisterAnyWorldCallback(PluginAnyWorldBeginPlayCallback callback)
@@ -245,7 +245,7 @@ namespace Hooks::WorldBeginPlay
 		if (it != g_anyWorldCallbacks.end())
 		{
 			g_anyWorldCallbacks.erase(it);
-			ModLoader::LogDebug(L"[WorldBeginPlay] Any-world callback unregistered (%zu remaining)", g_anyWorldCallbacks.size());
+			ModLoaderLogger::LogDebug(L"[WorldBeginPlay] Any-world callback unregistered (%zu remaining)", g_anyWorldCallbacks.size());
 		}
 	}
 }
