@@ -20,8 +20,32 @@ namespace Hooks::EngineInit
 	static bool g_engineInitialized = false;
 	static long g_callCount = 0;
 
+	// Sync handles set by SetSyncEvents() before Install() is called.
+	static HANDLE g_engineReadyEventHandle   = NULL;
+	static HANDLE g_pluginsLoadedEventHandle = NULL;
+
 	// Callback for plugins to receive engine init events
 	static std::vector<PluginEngineInitCallback> g_pluginCallbacks;
+
+	// Signal the init thread that the engine hook fired, then block until
+	// all plugins have finished loading so they can install their hooks
+	// before the original Init executes.
+	static void WaitForPluginsToLoad()
+	{
+		if (g_engineReadyEventHandle)
+			SetEvent(g_engineReadyEventHandle);
+
+		if (g_pluginsLoadedEventHandle)
+		{
+			static constexpr DWORD kTimeoutMs = 30'000;
+			ModLoaderLogger::LogInfo(L"[EngineInit] Waiting for plugins to load before calling original...");
+			DWORD r = WaitForSingleObject(g_pluginsLoadedEventHandle, kTimeoutMs);
+			if (r == WAIT_TIMEOUT)
+				ModLoaderLogger::LogWarn(L"[EngineInit] Timed out waiting for plugins to load — proceeding anyway");
+			else
+				ModLoaderLogger::LogInfo(L"[EngineInit] Plugins loaded — calling original Init now");
+		}
+	}
 
 	// Shared notification function - called by any successful hook
 	static void NotifyEngineReady(const wchar_t* hookSource)
@@ -83,6 +107,8 @@ namespace Hooks::EngineInit
 		ModLoaderLogger::LogInfo(L"[EngineInit] FEngineLoop::Init called (#%ld)", callNum);
 		ModLoaderLogger::LogDebug(L"[EngineInit]   FEngineLoop=%p, Thread=%lu", thisPtr, GetCurrentThreadId());
 
+		WaitForPluginsToLoad();
+
 		// Call original
 		int32_t result = 0;
 		if (g_engineLoopOriginal)
@@ -109,8 +135,10 @@ namespace Hooks::EngineInit
 		long callNum = InterlockedIncrement(&g_callCount);
 
 		ModLoaderLogger::LogInfo(L"[EngineInit] UGameEngine::Init called (#%ld)", callNum);
-		ModLoaderLogger::LogDebug(L"[EngineInit]   GameEngine=%p, EngineLoop=%p, Thread=%lu", 
+		ModLoaderLogger::LogDebug(L"[EngineInit]   GameEngine=%p, EngineLoop=%p, Thread=%lu",
 			thisPtr, InEngineLoop, GetCurrentThreadId());
+
+		WaitForPluginsToLoad();
 
 		// Call original
 		bool result = false;
@@ -130,6 +158,12 @@ namespace Hooks::EngineInit
 
 		ModLoaderLogger::LogDebug(L"[EngineInit] UGameEngine::Init complete (#%ld)", callNum);
 		return result;
+	}
+
+	void SetSyncEvents(HANDLE engineReadyEvent, HANDLE pluginsLoadedEvent)
+	{
+		g_engineReadyEventHandle   = engineReadyEvent;
+		g_pluginsLoadedEventHandle = pluginsLoadedEvent;
 	}
 
 	bool Install()
