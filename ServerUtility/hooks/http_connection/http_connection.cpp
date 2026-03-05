@@ -378,7 +378,7 @@ void HttpConnectionHook::Install()
 	// we look for "mov edx, 0x194" (BA 94 01 00 00) then the following E8 CALL.
 	g_errorFuncAddr = FindErrorFunction(addr);
 	if (g_errorFuncAddr)
-		LOG_INFO("[RemoteVulnerabilityPatcher] Found FHttpServerResponse::Error at 0x%llX",
+		LOG_DEBUG("[RemoteVulnerabilityPatcher] Found FHttpServerResponse::Error at 0x%llX",
 			static_cast<unsigned long long>(g_errorFuncAddr));
 	else
 		LOG_WARN("[RemoteVulnerabilityPatcher] Could not locate FHttpServerResponse::Error — blocked requests will drop the connection instead of receiving a 403");

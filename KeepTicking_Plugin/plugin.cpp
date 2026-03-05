@@ -46,8 +46,12 @@ __declspec(dllexport) bool PluginInit(IPluginLogger* logger, IPluginConfig* conf
 
 	// Initialize config system with schema - creates default config if needed
 	KeepTickingConfig::Config::Initialize(config);
-	LOG_INFO("Config initialized (PreventServerSleep: %s)", 
-		KeepTickingConfig::Config::ShouldPreventServerSleep() ? "true" : "false");
+
+	if (!KeepTickingConfig::Config::IsPluginEnabled())
+	{
+		LOG_INFO("Plugin is disabled in config - skipping initialization");	
+		return true;
+	}
 
 	ModCore::Initialize(scanner, hooks);
 

@@ -271,11 +271,8 @@ void Rcon::Init()
 
 	if (port == 0 || password.empty())
 	{
-		if (port == 0)
-			LOG_INFO("[Rcon] No -RconPort= provided – RCON subsystem will not start");
-		if (password.empty())
-			LOG_INFO("[Rcon] No -RconPassword= provided – RCON subsystem will not start");
-		LOG_INFO("[Rcon] To enable RCON, launch with: -RconPort=<port> -RconPassword=<password>");
+		if (port == 0 || password.empty())
+			LOG_INFO("[Rcon] No Startup Parameters Provided - RCON subsystem will not start");
 		return;
 	}
 

@@ -3,7 +3,7 @@
 #include <cstdarg>
 #include <stdio.h>
 
-namespace ModLoader
+namespace ModLoaderLogger
 {
 	static CRITICAL_SECTION g_logLock;
 	static bool g_logInitialized = false;
@@ -17,19 +17,19 @@ namespace ModLoader
 		switch (level)
 		{
 		case PluginLogLevel::Trace:
-			Log::Trace("[Plugin:%s] %s", pluginName, message);
+			LogToFile::Trace("[Plugin:%s] %s", pluginName, message);
 			break;
 		case PluginLogLevel::Debug:
-			Log::Debug("[Plugin:%s] %s", pluginName, message);
+			LogToFile::Debug("[Plugin:%s] %s", pluginName, message);
 			break;
 		case PluginLogLevel::Info:
-			Log::Info("[Plugin:%s] %s", pluginName, message);
+			LogToFile::Info("[Plugin:%s] %s", pluginName, message);
 			break;
 		case PluginLogLevel::Warn:
-			Log::Warn("[Plugin:%s] %s", pluginName, message);
+			LogToFile::Warn("[Plugin:%s] %s", pluginName, message);
 			break;
 		case PluginLogLevel::Error:
-			Log::Error("[Plugin:%s] %s", pluginName, message);
+			LogToFile::Error("[Plugin:%s] %s", pluginName, message);
 			break;
 		}
 	}
@@ -98,12 +98,12 @@ namespace ModLoader
 	{
 		InitializeCriticalSection(&g_logLock);
 		g_logInitialized = true;
-		Log::Info("[ModLoader] Logger initialized (using Log:: backend)");
+		LogToFile::Info("[ModLoader] Logger initialized (using Log:: backend)");
 	}
 
 	void ShutdownLogger()
 	{
-		Log::Info("[ModLoader] Logger shutting down");
+		LogToFile::Info("[ModLoader] Logger shutting down");
 		g_logInitialized = false;
 		DeleteCriticalSection(&g_logLock);
 	}
@@ -128,7 +128,7 @@ namespace ModLoader
 		char narrowBuffer[1024];
 		WideCharToMultiByte(CP_UTF8, 0, buffer, -1, narrowBuffer, sizeof(narrowBuffer), nullptr, nullptr);
 
-		Log::Trace("[ModLoader] %s", narrowBuffer);
+		LogToFile::Trace("[ModLoader] %s", narrowBuffer);
 	}
 
 	void LogDebug(const wchar_t* format, ...)
@@ -144,7 +144,7 @@ namespace ModLoader
 		char narrowBuffer[1024];
 		WideCharToMultiByte(CP_UTF8, 0, buffer, -1, narrowBuffer, sizeof(narrowBuffer), nullptr, nullptr);
 
-		Log::Debug("[ModLoader] %s", narrowBuffer);
+		LogToFile::Debug("[ModLoader] %s", narrowBuffer);
 	}
 
 	void LogInfo(const wchar_t* format, ...)
@@ -160,7 +160,7 @@ namespace ModLoader
 		char narrowBuffer[1024];
 		WideCharToMultiByte(CP_UTF8, 0, buffer, -1, narrowBuffer, sizeof(narrowBuffer), nullptr, nullptr);
 
-		Log::Info("[ModLoader] %s", narrowBuffer);
+		LogToFile::Info("[ModLoader] %s", narrowBuffer);
 	}
 
 	void LogWarn(const wchar_t* format, ...)
@@ -176,7 +176,7 @@ namespace ModLoader
 		char narrowBuffer[1024];
 		WideCharToMultiByte(CP_UTF8, 0, buffer, -1, narrowBuffer, sizeof(narrowBuffer), nullptr, nullptr);
 
-		Log::Warn("[ModLoader] %s", narrowBuffer);
+		LogToFile::Warn("[ModLoader] %s", narrowBuffer);
 	}
 
 	void LogError(const wchar_t* format, ...)
@@ -192,7 +192,7 @@ namespace ModLoader
 		char narrowBuffer[1024];
 		WideCharToMultiByte(CP_UTF8, 0, buffer, -1, narrowBuffer, sizeof(narrowBuffer), nullptr, nullptr);
 
-		Log::Error("[ModLoader] %s", narrowBuffer);
+		LogToFile::Error("[ModLoader] %s", narrowBuffer);
 	}
 
 	// Keep legacy LogMessage for compatibility - maps to Info level
@@ -209,6 +209,6 @@ namespace ModLoader
 		char narrowBuffer[1024];
 		WideCharToMultiByte(CP_UTF8, 0, buffer, -1, narrowBuffer, sizeof(narrowBuffer), nullptr, nullptr);
 
-		Log::Info("[ModLoader] %s", narrowBuffer);
+		LogToFile::Info("[ModLoader] %s", narrowBuffer);
 	}
 }

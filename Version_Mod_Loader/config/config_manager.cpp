@@ -4,7 +4,7 @@
 #include <fstream>
 #include <sstream>
 
-namespace ModLoader
+namespace ModLoaderLogger
 {
 	static wchar_t g_configDirectory[MAX_PATH] = {};
 	static CRITICAL_SECTION g_configLock;
@@ -211,19 +211,19 @@ namespace ModLoader
 				WriteDefaultValue(pluginName, entry);
 				addedCount++;
 
-				LogMessage(L"[ConfigManager] Added missing config entry: %S.%S = %S", 
+				LogDebug(L"[ConfigManager] Added missing config entry: %S.%S = %S", 
 					entry.section, entry.key, entry.defaultValue);
 			}
 		}
 
 		if (addedCount > 0)
 		{
-			LogMessage(L"[ConfigManager] Validated config for '%s': added %d missing entries", 
+			LogDebug(L"[ConfigManager] Validated config for '%s': added %d missing entries", 
 				wPluginName, addedCount);
 		}
 		else
 		{
-			LogMessage(L"[ConfigManager] Config for '%s' is complete", wPluginName);
+			LogDebug(L"[ConfigManager] Config for '%s' is complete", wPluginName);
 		}
 	}
 
@@ -232,7 +232,7 @@ namespace ModLoader
 	{
 		if (!g_configInitialized || !pluginName || !schema || !schema->entries)
 		{
-			LogMessage(L"[ConfigManager] InitializeFromSchema failed: invalid parameters");
+			LogError(L"[ConfigManager] InitializeFromSchema failed: invalid parameters");
 			return false;
 		}
 
@@ -249,7 +249,7 @@ namespace ModLoader
 
 		if (!configExists)
 		{
-			LogMessage(L"[ConfigManager] Creating new config for '%s' with %d entries", wPluginName, schema->entryCount);
+			LogDebug(L"[ConfigManager] Creating new config for '%s' with %d entries", wPluginName, schema->entryCount);
 
 			// Create config file with all defaults
 			for (int i = 0; i < schema->entryCount; ++i)
@@ -271,12 +271,12 @@ namespace ModLoader
 				WriteDefaultValue(pluginName, entry);
 			}
 
-			LogMessage(L"[ConfigManager] Config created: %s", configPath);
+			LogDebug(L"[ConfigManager] Config created: %s", configPath);
 			return true;
 		}
 		else
 		{
-			LogMessage(L"[ConfigManager] Config exists for '%s', validating entries...", wPluginName);
+			LogDebug(L"[ConfigManager] Config exists for '%s', validating entries...", wPluginName);
 			ConfigValidateConfig(pluginName, schema);
 			return true;
 		}
@@ -319,11 +319,11 @@ namespace ModLoader
 		if (attribs == INVALID_FILE_ATTRIBUTES)
 		{
 			CreateDirectoryW(g_configDirectory, nullptr);
-			LogMessage(L"Created config directory: %s", g_configDirectory);
+			LogDebug(L"Created config directory: %s", g_configDirectory);
 		}
 
 		g_configInitialized = true;
-		LogMessage(L"Config manager initialized: %s", g_configDirectory);
+		LogInfo(L"Config manager initialized: %s", g_configDirectory);
 	}
 
 	void ShutdownConfigManager()

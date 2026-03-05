@@ -3,7 +3,7 @@
 #include <vector>
 #include <string>
 
-namespace ModLoader
+namespace ModLoaderLogger
 {
     // Wrapper functions that convert C-style calls to C++ Scanner namespace calls
     

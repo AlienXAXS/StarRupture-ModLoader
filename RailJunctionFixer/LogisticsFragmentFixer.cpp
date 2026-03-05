@@ -395,7 +395,7 @@ namespace RailJunctionFixer
 
 	void LogisticsFragmentFixer::SignalSocketEntities()
 	{
-		LOG_INFO("SignalSocketEntities: Re-initializing logistics sockets after save load...");
+		LOG_DEBUG("SignalSocketEntities: Re-initializing logistics sockets after save load...");
 
 		// ---- 1. Get UWorld via SDK ----
 		SDK::UWorld* world = SDK::UWorld::GetWorld();
@@ -404,7 +404,7 @@ namespace RailJunctionFixer
 			LOG_ERROR("  UWorld::GetWorld() returned null - cannot signal entities");
 			return;
 		}
-		LOG_INFO("  UWorld at %p ('%s')", static_cast<void*>(world), world->GetName().c_str());
+		LOG_DEBUG("  UWorld at %p ('%s')", static_cast<void*>(world), world->GetName().c_str());
 
 		// ---- 2. Resolve native function pointers ----
 		HMODULE mainModule = GetModuleHandleW(nullptr);
@@ -419,7 +419,7 @@ namespace RailJunctionFixer
 			if (addr != 0)
 			{
 				fnSignalEntity = reinterpret_cast<SignalEntityFn>(addr);
-				LOG_INFO("  SignalEntity at 0x%llX (base + 0x%llX) -- pattern scan OK",
+				LOG_DEBUG("  SignalEntity at 0x%llX (base + 0x%llX) -- pattern scan OK",
 					static_cast<unsigned long long>(addr),
 					static_cast<unsigned long long>(addr - moduleBase));
 			}
@@ -445,7 +445,7 @@ namespace RailJunctionFixer
 			if (addr != 0)
 			{
 				fnGetArchetype = reinterpret_cast<GetArchetypeForEntityFn>(addr);
-				LOG_INFO("  GetArchetypeForEntity at 0x%llX (base + 0x%llX) -- pattern scan OK",
+				LOG_DEBUG("  GetArchetypeForEntity at 0x%llX (base + 0x%llX) -- pattern scan OK",
 					static_cast<unsigned long long>(addr),
 					static_cast<unsigned long long>(addr - moduleBase));
 			}
@@ -474,7 +474,7 @@ namespace RailJunctionFixer
 			if (constructed.ComparisonIndex != 0)
 			{
 				socketSignalName = constructed;
-				LOG_INFO("  Signal FName '%s': CompIdx=0x%X",
+				LOG_DEBUG("  Signal FName '%s': CompIdx=0x%X",
 					signalNameStr.c_str(), socketSignalName.ComparisonIndex);
 			}
 			else
@@ -519,14 +519,14 @@ namespace RailJunctionFixer
 
 								// Read the raw pointer from TSharedPtr
 								void* sharedPtrObj = ReadAt<void*>(subsystemAddr, 0x38);
-								LOG_INFO("  UMassEntitySubsystem at %p", static_cast<void*>(obj));
+								LOG_DEBUG("  UMassEntitySubsystem at %p", static_cast<void*>(obj));
 								LOG_DEBUG("    +0x38 = %p (TSharedPtr.Object)", sharedPtrObj);
 								LOG_DEBUG("    +0x40 = %p (TSharedPtr.RefController)", ReadAt<void*>(subsystemAddr, 0x40));
 
 								if (sharedPtrObj)
 								{
 									entityManager = sharedPtrObj;
-									LOG_INFO("  FMassEntityManager at %p", entityManager);
+									LOG_DEBUG("  FMassEntityManager at %p", entityManager);
 								}
 								else
 								{
@@ -588,7 +588,7 @@ namespace RailJunctionFixer
 						if (obj->IsA(persistentIDClass))
 						{
 							persistentIDSubsystem = static_cast<SDK::UCrMassPersistentIDSubsystem*>(obj);
-							LOG_INFO("  UCrMassPersistentIDSubsystem at %p (Outer=World)",
+							LOG_DEBUG("  UCrMassPersistentIDSubsystem at %p (Outer=World)",
 								static_cast<void*>(persistentIDSubsystem));
 							break;
 						}
@@ -607,7 +607,7 @@ namespace RailJunctionFixer
 			{
 				auto& idHandleMap = persistentIDSubsystem->IDHandleMap;
 				int mapCount = idHandleMap.Num();
-				LOG_INFO("  IDHandleMap contains %d entries", mapCount);
+				LOG_DEBUG("  IDHandleMap contains %d entries", mapCount);
 
 				for (auto it = begin(idHandleMap); it != end(idHandleMap); ++it)
 				{
@@ -618,7 +618,7 @@ namespace RailJunctionFixer
 					}
 				}
 
-				LOG_INFO("  Collected %zu valid entity handles from IDHandleMap", handles.size());
+				LOG_DEBUG("  Collected %zu valid entity handles from IDHandleMap", handles.size());
 			}
 			catch (...)
 			{
@@ -649,7 +649,7 @@ namespace RailJunctionFixer
 							if (!signalSubsystem && comp->SignalSubsystem)
 							{
 								signalSubsystem = comp->SignalSubsystem;
-								LOG_INFO("  UMassSignalSubsystem at %p (from CrMassActorComponent)",
+								LOG_DEBUG("  UMassSignalSubsystem at %p (from CrMassActorComponent)",
 									static_cast<void*>(signalSubsystem));
 							}
 
@@ -691,7 +691,7 @@ namespace RailJunctionFixer
 								if (delegateSub->SignalSubsystem)
 								{
 									signalSubsystem = delegateSub->SignalSubsystem;
-									LOG_INFO("  UMassSignalSubsystem at %p (from CrMassSignalDelegateSubsystem)",
+									LOG_DEBUG("  UMassSignalSubsystem at %p (from CrMassSignalDelegateSubsystem)",
 										static_cast<void*>(signalSubsystem));
 								}
 								break;
@@ -747,7 +747,7 @@ namespace RailJunctionFixer
 		{
 			LOG_WARN("  No entity handles found - no persistent entities exist");
 			LOG_WARN("  This may be normal if no buildings exist yet");
-			LOG_INFO("SignalSocketEntities: complete");
+			LOG_DEBUG("SignalSocketEntities: complete");
 			return;
 		}
 
@@ -819,7 +819,7 @@ namespace RailJunctionFixer
 
 			if (errorCount < 3)
 			{
-				LOG_INFO("  Archetype filter: %zu / %zu entities have CrLogisticsSocketsFragment "
+				LOG_DEBUG("  Archetype filter: %zu / %zu entities have CrLogisticsSocketsFragment "
 					"(%zu unique archetypes, checked %zu, errors %zu)",
 					socketHandles.size(), handles.size(), archetypeCache.size(),
 					checkedCount, errorCount);
@@ -844,7 +844,7 @@ namespace RailJunctionFixer
 
 					if (signalCount % 100 == 0)
 					{
-						LOG_INFO("  ... signaled %zu / %zu entities so far",
+						LOG_DEBUG("  ... signaled %zu / %zu entities so far",
 							signalCount, socketHandles.size());
 					}
 				}
@@ -856,27 +856,6 @@ namespace RailJunctionFixer
 				LOG_WARN("  No entities with CrLogisticsSocketsFragment found");
 				LOG_WARN("  This may be normal if no buildings with logistics sockets exist yet");
 			}
-		}
-		else
-		{
-			// No filtering -- signal all persistent entities.
-			// The signal processor's archetype query will naturally skip entities
-			// that don't have CrLogisticsSocketsFragment, so this is functionally
-			// correct but sends unnecessary signals.
-			if (!fnGetArchetype)
-			{
-				LOG_INFO("  Entity filtering not available (GetArchetypeForEntity pattern not found)");
-			}
-			LOG_INFO("  Signaling ALL %zu persistent entities with '%s' (signal processor will filter by archetype)...",
-				handles.size(), signalNameStr.c_str());
-
-			for (const auto& handle : handles)
-			{
-				fnSignalEntity(static_cast<void*>(signalSubsystem),
-					socketSignalName, handle);
-			}
-
-			LOG_INFO("  Socket signal sent to %zu entities (unfiltered)", handles.size());
 		}
 
 		LOG_INFO("SignalSocketEntities: complete");

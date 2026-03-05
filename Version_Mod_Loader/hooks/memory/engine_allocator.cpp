@@ -85,7 +85,7 @@ static void DumpBytes(const wchar_t* label, uintptr_t addr, size_t count)
     size_t pos = 0;
     for (size_t i = 0; i < count && pos + 3 < sizeof(hexBuf); ++i)
         pos += snprintf(hexBuf + pos, sizeof(hexBuf) - pos, "%02X ", bytes[i]);
-    ModLoader::LogDebug(L"[EngineAllocator] %s at 0x%llX: %S", label,
+    ModLoaderLogger::LogDebug(L"[EngineAllocator] %s at 0x%llX: %S", label,
         static_cast<unsigned long long>(addr), hexBuf);
 }
 
@@ -118,7 +118,7 @@ static uintptr_t ExtractGMallocAddress(uintptr_t funcAddr, size_t scanLen = 64)
 
         uintptr_t globalAddr = funcAddr + i + 7 + static_cast<uintptr_t>(static_cast<intptr_t>(disp32));
 
-        ModLoader::LogDebug(L"[EngineAllocator] Found RIP-relative MOV at +0x%zX -> global at 0x%llX",
+        ModLoaderLogger::LogDebug(L"[EngineAllocator] Found RIP-relative MOV at +0x%zX -> global at 0x%llX",
           i, static_cast<unsigned long long>(globalAddr));
         return globalAddr;
     }
@@ -131,7 +131,7 @@ static uintptr_t ExtractGMallocAddress(uintptr_t funcAddr, size_t scanLen = 64)
 // ---------------------------------------------------------------------------
 static bool SmokeTestAllocator(FMemoryMalloc_t mallocFn, FMemoryFree_t freeFn)
 {
-  ModLoader::LogDebug(L"[EngineAllocator] Smoke testing Malloc=0x%llX  Free=0x%llX ...",
+  ModLoaderLogger::LogDebug(L"[EngineAllocator] Smoke testing Malloc=0x%llX  Free=0x%llX ...",
    static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(mallocFn)),
         static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(freeFn)));
 
@@ -140,20 +140,20 @@ static bool SmokeTestAllocator(FMemoryMalloc_t mallocFn, FMemoryFree_t freeFn)
 void* ptr = mallocFn(64, 16);
         if (!ptr)
         {
-       ModLoader::LogWarn(L"[EngineAllocator] Smoke test: Malloc returned null");
+       ModLoaderLogger::LogWarn(L"[EngineAllocator] Smoke test: Malloc returned null");
       return false;
         }
 
         memset(ptr, 0xAB, 64);
       freeFn(ptr);
 
-        ModLoader::LogInfo(L"[EngineAllocator] Smoke test PASSED");
+        ModLoaderLogger::LogInfo(L"[EngineAllocator] Smoke test PASSED");
  return true;
     }
     __except (EXCEPTION_EXECUTE_HANDLER)
     {
       DWORD code = GetExceptionCode();
-        ModLoader::LogError(L"[EngineAllocator] Smoke test FAILED - exception 0x%08lX", code);
+        ModLoaderLogger::LogError(L"[EngineAllocator] Smoke test FAILED - exception 0x%08lX", code);
      return false;
     }
 }
@@ -166,21 +166,21 @@ static uintptr_t FindMallocViaPattern()
     uintptr_t callSite = Scanner::FindPatternInMainModule(MALLOC_CALL_PATTERN);
     if (callSite == 0)
     {
-  ModLoader::LogWarn(L"[EngineAllocator] Malloc call-site pattern not found");
+  ModLoaderLogger::LogWarn(L"[EngineAllocator] Malloc call-site pattern not found");
         return 0;
   }
 
-    ModLoader::LogInfo(L"[EngineAllocator] Malloc call-site pattern matched at 0x%llX",
+    ModLoaderLogger::LogInfo(L"[EngineAllocator] Malloc call-site pattern matched at 0x%llX",
         static_cast<unsigned long long>(callSite));
 
     uintptr_t mallocAddr = ResolveE8Call(callSite);
     if (mallocAddr == 0)
     {
-  ModLoader::LogWarn(L"[EngineAllocator] Failed to decode E8 CALL at pattern match");
+  ModLoaderLogger::LogWarn(L"[EngineAllocator] Failed to decode E8 CALL at pattern match");
         return 0;
  }
 
-    ModLoader::LogInfo(L"[EngineAllocator] FMemory::Malloc = 0x%llX",
+    ModLoaderLogger::LogInfo(L"[EngineAllocator] FMemory::Malloc = 0x%llX",
     static_cast<unsigned long long>(mallocAddr));
 DumpBytes(L"FMemory::Malloc", mallocAddr, 64);
     return mallocAddr;
@@ -195,7 +195,7 @@ static uintptr_t FindFreeViaGMalloc(uintptr_t refFuncAddr, uintptr_t gmallocAddr
     if (refFuncAddr == 0 || gmallocAddr == 0)
         return 0;
 
-    ModLoader::LogInfo(L"[EngineAllocator] Scanning ref function at 0x%llX for calls referencing GMalloc 0x%llX...",
+    ModLoaderLogger::LogInfo(L"[EngineAllocator] Scanning ref function at 0x%llX for calls referencing GMalloc 0x%llX...",
         static_cast<unsigned long long>(refFuncAddr),
         static_cast<unsigned long long>(gmallocAddr));
 
@@ -212,14 +212,14 @@ static uintptr_t FindFreeViaGMalloc(uintptr_t refFuncAddr, uintptr_t gmallocAddr
         uintptr_t candidateGMalloc = ExtractGMallocAddress(target, 64);
         if (candidateGMalloc == gmallocAddr)
         {
-   ModLoader::LogInfo(L"[EngineAllocator] FMemory::Free = 0x%llX (from ref+0x%zX, same GMalloc)",
+   ModLoaderLogger::LogInfo(L"[EngineAllocator] FMemory::Free = 0x%llX (from ref+0x%zX, same GMalloc)",
 static_cast<unsigned long long>(target), offset);
      DumpBytes(L"FMemory::Free", target, 64);
         return target;
         }
     }
 
-    ModLoader::LogWarn(L"[EngineAllocator] No call target references GMalloc 0x%llX",
+    ModLoaderLogger::LogWarn(L"[EngineAllocator] No call target references GMalloc 0x%llX",
         static_cast<unsigned long long>(gmallocAddr));
     return 0;
 }
@@ -240,7 +240,7 @@ static uintptr_t FindFreeViaOffset(uintptr_t refFuncAddr, uintptr_t mallocAddr)
     const auto* callByte = reinterpret_cast<const uint8_t*>(freeCallSite);
   if (*callByte != 0xE8)
     {
-   ModLoader::LogWarn(L"[EngineAllocator] Byte at offset 0x%zX is 0x%02X, not 0xE8",
+   ModLoaderLogger::LogWarn(L"[EngineAllocator] Byte at offset 0x%zX is 0x%02X, not 0xE8",
     PARSESETTINGS_FREE_CALL_OFFSET, *callByte);
         return 0;
     }
@@ -249,7 +249,7 @@ static uintptr_t FindFreeViaOffset(uintptr_t refFuncAddr, uintptr_t mallocAddr)
     if (freeAddr == 0 || !IsReadableMemory(freeAddr, 64))
         return 0;
 
-    ModLoader::LogInfo(L"[EngineAllocator] Candidate FMemory::Free = 0x%llX (via offset fallback)",
+    ModLoaderLogger::LogInfo(L"[EngineAllocator] Candidate FMemory::Free = 0x%llX (via offset fallback)",
   static_cast<unsigned long long>(freeAddr));
  DumpBytes(L"FMemory::Free candidate", freeAddr, 64);
 
@@ -257,7 +257,7 @@ static uintptr_t FindFreeViaOffset(uintptr_t refFuncAddr, uintptr_t mallocAddr)
     if (!SmokeTestAllocator(reinterpret_cast<FMemoryMalloc_t>(mallocAddr),
   reinterpret_cast<FMemoryFree_t>(freeAddr)))
     {
-        ModLoader::LogWarn(L"[EngineAllocator] Offset fallback smoke test FAILED");
+        ModLoaderLogger::LogWarn(L"[EngineAllocator] Offset fallback smoke test FAILED");
         return 0;
     }
 
@@ -270,13 +270,13 @@ static uintptr_t FindFreeViaOffset(uintptr_t refFuncAddr, uintptr_t mallocAddr)
 
 bool EngineAllocator::Resolve()
 {
-    ModLoader::LogInfo(L"[EngineAllocator] Resolving FMemory::Malloc and FMemory::Free...");
+    ModLoaderLogger::LogInfo(L"[EngineAllocator] Resolving FMemory::Malloc and FMemory::Free...");
 
     // Step 1: Find FMemory::Malloc
     uintptr_t mallocAddr = FindMallocViaPattern();
     if (mallocAddr == 0)
     {
-        ModLoader::LogError(L"[EngineAllocator] Could not find FMemory::Malloc");
+        ModLoaderLogger::LogError(L"[EngineAllocator] Could not find FMemory::Malloc");
         return false;
     }
 
@@ -284,7 +284,7 @@ bool EngineAllocator::Resolve()
     uintptr_t gmallocAddr = ExtractGMallocAddress(mallocAddr, 64);
     if (gmallocAddr != 0)
     {
-  ModLoader::LogInfo(L"[EngineAllocator] GMalloc global at 0x%llX",
+  ModLoaderLogger::LogInfo(L"[EngineAllocator] GMalloc global at 0x%llX",
         static_cast<unsigned long long>(gmallocAddr));
     }
 
@@ -292,7 +292,7 @@ bool EngineAllocator::Resolve()
     uintptr_t refFuncAddr = Scanner::FindPatternInMainModule(PARSE_SETTINGS_PATTERN);
     if (refFuncAddr != 0)
     {
-        ModLoader::LogInfo(L"[EngineAllocator] Reference function found at 0x%llX",
+        ModLoaderLogger::LogInfo(L"[EngineAllocator] Reference function found at 0x%llX",
             static_cast<unsigned long long>(refFuncAddr));
     }
 
@@ -306,13 +306,13 @@ bool EngineAllocator::Resolve()
     // Step 5: Fallback - use known offset
     if (freeAddr == 0 && refFuncAddr != 0)
     {
-        ModLoader::LogWarn(L"[EngineAllocator] GMalloc cross-reference failed, trying offset fallback...");
+        ModLoaderLogger::LogWarn(L"[EngineAllocator] GMalloc cross-reference failed, trying offset fallback...");
         freeAddr = FindFreeViaOffset(refFuncAddr, mallocAddr);
     }
 
     if (freeAddr == 0)
   {
-        ModLoader::LogError(L"[EngineAllocator] Could not find FMemory::Free");
+        ModLoaderLogger::LogError(L"[EngineAllocator] Could not find FMemory::Free");
         return false;
     }
 
@@ -320,7 +320,7 @@ bool EngineAllocator::Resolve()
     if (!SmokeTestAllocator(reinterpret_cast<FMemoryMalloc_t>(mallocAddr),
   reinterpret_cast<FMemoryFree_t>(freeAddr)))
     {
-        ModLoader::LogError(L"[EngineAllocator] Final smoke test FAILED");
+        ModLoaderLogger::LogError(L"[EngineAllocator] Final smoke test FAILED");
         return false;
     }
 
@@ -328,7 +328,7 @@ bool EngineAllocator::Resolve()
     g_engineMalloc = reinterpret_cast<FMemoryMalloc_t>(mallocAddr);
     g_engineFree   = reinterpret_cast<FMemoryFree_t>(freeAddr);
 
-    ModLoader::LogInfo(L"[EngineAllocator] SUCCESS - FMemory::Malloc=0x%llX, FMemory::Free=0x%llX",
+    ModLoaderLogger::LogInfo(L"[EngineAllocator] SUCCESS - FMemory::Malloc=0x%llX, FMemory::Free=0x%llX",
   static_cast<unsigned long long>(mallocAddr),
         static_cast<unsigned long long>(freeAddr));
 
@@ -339,7 +339,7 @@ void EngineAllocator::Shutdown()
 {
     g_engineMalloc = nullptr;
     g_engineFree   = nullptr;
-    ModLoader::LogInfo(L"[EngineAllocator] Shut down");
+    ModLoaderLogger::LogInfo(L"[EngineAllocator] Shut down");
 }
 
 bool EngineAllocator::IsAvailable()

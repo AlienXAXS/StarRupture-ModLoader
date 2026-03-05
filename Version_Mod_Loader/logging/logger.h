@@ -3,7 +3,7 @@
 #include <windows.h>
 #include "plugins/plugin_interface.h"
 
-namespace ModLoader
+namespace ModLoaderLogger
 {
     // Initialize the logger
     void InitializeLogger();

@@ -63,18 +63,18 @@ static int g_failedCount = 0;
 
 static bool ResolveExport(const char* name, FARPROC& out)
 {
-	Log::Trace("  Resolving export: %s", name);
+	LogToFile::Trace("  Resolving export: %s", name);
 
 	out = GetProcAddress(g_realDwmapiDll, name);
 	if (!out)
 	{
 		++g_failedCount;
-		Log::Warn("  Not found: %s (error %lu) — will return 0 if called", name, GetLastError());
+		LogToFile::Warn("  Not found: %s (error %lu) — will return 0 if called", name, GetLastError());
 		return false;
 	}
 
 	++g_resolvedCount;
-	Log::Debug("  Resolved: %-40s -> 0x%llX", name,
+	LogToFile::Debug("  Resolved: %-40s -> 0x%llX", name,
 		static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(out)));
 	return true;
 }
@@ -85,30 +85,30 @@ static bool ResolveExport(const char* name, FARPROC& out)
 
 bool DwmapiProxy::Initialize()
 {
-	Log::Info("DwmapiProxy::Initialize() starting");
+	LogToFile::Info("DwmapiProxy::Initialize() starting");
 
 	// Build the path to the real dwmapi.dll in System32
 	wchar_t systemDir[MAX_PATH]{};
 	GetSystemDirectoryW(systemDir, MAX_PATH);
-	Log::Debug("System directory: %ls", systemDir);
+	LogToFile::Debug("System directory: %ls", systemDir);
 
 	wchar_t realPath[MAX_PATH]{};
 	swprintf_s(realPath, L"%s\\dwmapi.dll", systemDir);
-	Log::Info("Loading real dwmapi.dll from: %ls", realPath);
+	LogToFile::Info("Loading real dwmapi.dll from: %ls", realPath);
 
 	g_realDwmapiDll = LoadLibraryW(realPath);
 	if (!g_realDwmapiDll)
 	{
-		Log::Error("LoadLibraryW failed for real dwmapi.dll (error %lu)", GetLastError());
-		Log::LogWin32Error("LoadLibraryW(dwmapi.dll)");
+		LogToFile::Error("LoadLibraryW failed for real dwmapi.dll (error %lu)", GetLastError());
+		LogToFile::LogWin32Error("LoadLibraryW(dwmapi.dll)");
 		return false;
 	}
 
-	Log::Info("Real dwmapi.dll loaded at 0x%llX",
+	LogToFile::Info("Real dwmapi.dll loaded at 0x%llX",
 		static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(g_realDwmapiDll)));
 
 	// Resolve every export — failures are warnings, not fatal (some are undocumented internals)
-	Log::Info("Resolving all 44 dwmapi.dll exports...");
+	LogToFile::Info("Resolving all 44 dwmapi.dll exports...");
 	g_resolvedCount = 0;
 	g_failedCount = 0;
 
@@ -157,29 +157,29 @@ bool DwmapiProxy::Initialize()
 	ResolveExport("DwmUnregisterThumbnail",             g_origDwmUnregisterThumbnail);
 	ResolveExport("DwmUpdateThumbnailProperties",       g_origDwmUpdateThumbnailProperties);
 
-	Log::Info("Export resolution complete: %d resolved, %d not found", g_resolvedCount, g_failedCount);
+	LogToFile::Info("Export resolution complete: %d resolved, %d not found", g_resolvedCount, g_failedCount);
 
 	return true;
 }
 
 void DwmapiProxy::Shutdown()
 {
-	Log::Info("DwmapiProxy::Shutdown() starting");
+	LogToFile::Info("DwmapiProxy::Shutdown() starting");
 
 	if (g_realDwmapiDll)
 	{
-		Log::Debug("Freeing real dwmapi.dll (handle 0x%llX)",
+		LogToFile::Debug("Freeing real dwmapi.dll (handle 0x%llX)",
 			static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(g_realDwmapiDll)));
 		FreeLibrary(g_realDwmapiDll);
 		g_realDwmapiDll = nullptr;
-		Log::Info("Real dwmapi.dll unloaded");
+		LogToFile::Info("Real dwmapi.dll unloaded");
 	}
 	else
 	{
-		Log::Debug("Real dwmapi.dll was already null — nothing to free");
+		LogToFile::Debug("Real dwmapi.dll was already null — nothing to free");
 	}
 
-	Log::Info("DwmapiProxy::Shutdown() complete");
+	LogToFile::Info("DwmapiProxy::Shutdown() complete");
 }
 
 // ---------------------------------------------------------------------------

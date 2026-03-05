@@ -14,7 +14,7 @@
 #include <unordered_map>
 #include <mutex>
 
-namespace ModLoader
+namespace ModLoaderLogger
 {
 	// Store hook objects by handle
 	static std::unordered_map<HookHandle, Hooks::Hook*> g_hookMap;

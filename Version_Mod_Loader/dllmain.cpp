@@ -59,11 +59,11 @@ static void OnEngineInitForUELog()
 {
 	if (UELog::Initialize(Scanner::FindPatternInMainModule))
 	{
-		Log::Info("[ModLoader] UE log bridge active - messages will also appear in StarRupture.log");
+		LogToFile::Info("[ModLoader] UE log bridge active - messages will also appear in StarRupture.log");
 	}
 	else
 	{
-		Log::Warn("[ModLoader] UE log bridge failed to initialize - BasicLogV pattern not found");
+		LogToFile::Warn("[ModLoader] UE log bridge failed to initialize - BasicLogV pattern not found");
 	}
 
 	// Load UE4SS on a background thread so that LoadLibraryW does not run
@@ -109,28 +109,28 @@ static DWORD WINAPI MainInitThreadProc(LPVOID)
 	Splash::SetStatus(L"Initializing logger...");
 	Splash::SetProgress(0.20f);
 
-	ModLoader::InitializeLogger();
-	ModLoader::LogMessage(L"======================================");
-	ModLoader::LogMessage(L"  AlienX's Mod Loader initialized");
-	ModLoader::LogMessage(L"======================================");
+	ModLoaderLogger::InitializeLogger();
+	ModLoaderLogger::LogMessage(L"======================================");
+	ModLoaderLogger::LogMessage(L"  AlienX's Mod Loader initialized");
+	ModLoaderLogger::LogMessage(L"======================================");
 
 	Splash::SetStatus(L"Here Goes Nothin' ...");
 	Splash::SetProgress(0.30f);
 
-	ModLoader::InitializeConfigManager();
-	ModLoader::InitializePluginManager();
+	ModLoaderLogger::InitializeConfigManager();
+	ModLoaderLogger::InitializePluginManager();
 
 	// Auto-update runs here, outside the loader lock, so WinHTTP can work.
 	// Downloaded DLLs are in place for this boot's plugin load.
 	Splash::SetStatus(L"Checking for plugin updates...");
 	Splash::SetProgress(0.35f);
-	ModLoader::RunAutoUpdate();
+	ModLoaderLogger::RunAutoUpdate();
 
 	// Install core game hooks BEFORE loading plugins
 	Splash::SetStatus(L"Installing core game hooks...");
 	Splash::SetProgress(0.40f);
 
-	ModLoader::LogMessage(L"Installing core game hooks...");
+	ModLoaderLogger::LogMessage(L"Installing core game hooks...");
 	// NOTE: WorldBeginPlay hook is installed lazily on first
 	// RegisterAnyWorldBeginPlayCallback / RegisterWorldBeginPlayCallback call.
 
@@ -139,13 +139,13 @@ static DWORD WINAPI MainInitThreadProc(LPVOID)
 
 	if (Hooks::EngineInit::Install())
 	{
-		ModLoader::LogMessage(L"  EngineInit hook installed");
+		ModLoaderLogger::LogDebug(L"  EngineInit hook installed");
 		// Register UE log bridge — initialised once the engine is up
 		Hooks::EngineInit::RegisterPluginCallback(OnEngineInitForUELog);
 	}
 	else
 	{
-		ModLoader::LogMessage(L"  WARNING: EngineInit hook failed to install");
+		ModLoaderLogger::LogWarn(L"  WARNING: EngineInit hook failed to install");
 	}
 
 	Splash::SetStatus(L"Installing EngineShutdown hook...");
@@ -153,22 +153,22 @@ static DWORD WINAPI MainInitThreadProc(LPVOID)
 
 	if (Hooks::EngineShutdown::Install())
 	{
-		ModLoader::LogMessage(L"  EngineShutdown hook installed");
+		ModLoaderLogger::LogDebug(L"  EngineShutdown hook installed");
 	}
 	else
 	{
-		ModLoader::LogMessage(L"  WARNING: EngineShutdown hook failed to install - plugins will not receive shutdown callbacks");
+		ModLoaderLogger::LogWarn(L"  WARNING: EngineShutdown hook failed to install - plugins will not receive shutdown callbacks");
 	}
 
 	Splash::SetStatus(L"Loading plugins...");
 	Splash::SetProgress(0.75f);
 
-	ModLoader::LoadAllPlugins();
+	ModLoaderLogger::LoadAllPlugins();
 
 	Splash::SetStatus(L"Initialization complete!");
 	Splash::SetProgress(1.0f);
 
-	ModLoader::LogMessage(L"Mod loader initialization complete");
+	ModLoaderLogger::LogInfo(L"Mod loader initialization complete");
 
 	// Signal DLL_PROCESS_DETACH that init is complete and it is safe to start
 	// the shutdown sequence (UnloadAllPlugins etc.).
@@ -188,45 +188,45 @@ static DWORD WINAPI MainInitThreadProc(LPVOID)
 
 static void LogStartupEnvironment()
 {
-	Log::Info("Process ID: %lu", GetCurrentProcessId());
+	LogToFile::Info("Process ID: %lu", GetCurrentProcessId());
 
 	wchar_t exePath[MAX_PATH]{};
 	GetModuleFileNameW(nullptr, exePath, MAX_PATH);
-	Log::Info("Executable: %ls", exePath);
+	LogToFile::Info("Executable: %ls", exePath);
 
 	wchar_t cwd[MAX_PATH]{};
 	GetCurrentDirectoryW(MAX_PATH, cwd);
-	Log::Info("Working directory: %ls", cwd);
+	LogToFile::Info("Working directory: %ls", cwd);
 
-	Log::Info("Command line: %ls", GetCommandLineW());
+	LogToFile::Info("Command line: %ls", GetCommandLineW());
 
 	HMODULE mainModule = GetModuleHandleW(nullptr);
 	MODULEINFO mi{};
 	if (GetModuleInformation(GetCurrentProcess(), mainModule, &mi, sizeof(mi)))
 	{
-		Log::Info("Main module base: 0x%llX", static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(mi.lpBaseOfDll)));
-		Log::Info("Main module size: 0x%lX (%lu KB)", static_cast<unsigned long>(mi.SizeOfImage), mi.SizeOfImage / 1024);
-		Log::Info("Main module entry: 0x%llX", static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(mi.EntryPoint)));
+		LogToFile::Info("Main module base: 0x%llX", static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(mi.lpBaseOfDll)));
+		LogToFile::Info("Main module size: 0x%lX (%lu KB)", static_cast<unsigned long>(mi.SizeOfImage), mi.SizeOfImage / 1024);
+		LogToFile::Info("Main module entry: 0x%llX", static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(mi.EntryPoint)));
 	}
 	else
 	{
-		Log::Warn("Could not retrieve main module info");
+		LogToFile::Warn("Could not retrieve main module info");
 	}
 
-	if (IsWindows10OrGreater())           Log::Info("OS version: Windows 10 or greater");
-	else if (IsWindows8Point1OrGreater()) Log::Info("OS version: Windows 8.1");
-	else if (IsWindows8OrGreater())       Log::Info("OS version: Windows 8");
-	else if (IsWindows7OrGreater())       Log::Info("OS version: Windows 7");
-	else if (IsWindowsVistaOrGreater())   Log::Info("OS version: Windows Vista");
-	else                                  Log::Info("OS version: Windows XP or older");
+	if (IsWindows10OrGreater())           LogToFile::Info("OS version: Windows 10 or greater");
+	else if (IsWindows8Point1OrGreater()) LogToFile::Info("OS version: Windows 8.1");
+	else if (IsWindows8OrGreater())       LogToFile::Info("OS version: Windows 8");
+	else if (IsWindows7OrGreater())       LogToFile::Info("OS version: Windows 7");
+	else if (IsWindowsVistaOrGreater())   LogToFile::Info("OS version: Windows Vista");
+	else                                  LogToFile::Info("OS version: Windows XP or older");
 
-	Log::Info("OS type: %s", IsWindowsServer() ? "Server" : "Client/Workstation");
+	LogToFile::Info("OS type: %s", IsWindowsServer() ? "Server" : "Client/Workstation");
 
 	MEMORYSTATUSEX memStatus{};
 	memStatus.dwLength = sizeof(memStatus);
 	if (GlobalMemoryStatusEx(&memStatus))
 	{
-		Log::Info("System RAM: %llu MB total, %llu MB available",
+		LogToFile::Info("System RAM: %llu MB total, %llu MB available",
 			memStatus.ullTotalPhys / (1024 * 1024),
 			memStatus.ullAvailPhys / (1024 * 1024));
 	}
@@ -245,7 +245,7 @@ static void LoadUE4SS()
 
 	if (!GetPrivateProfileIntW(L"UE4SS", L"Enabled", 1, iniPath))
 	{
-		Log::Info("UE4SS loading disabled in modloader.ini");
+		LogToFile::Info("UE4SS loading disabled in modloader.ini");
 		return;
 	}
 
@@ -259,17 +259,17 @@ static void LoadUE4SS()
 	if (slash) *(slash + 1) = L'\0';
 	wcsncat_s(fullPath, relPath, _TRUNCATE);
 
-	Log::Info("Loading UE4SS from: %ls", fullPath);
+	LogToFile::Info("Loading UE4SS from: %ls", fullPath);
 
 	HMODULE hUE4SS = LoadLibraryW(fullPath);
 	if (hUE4SS)
 	{
-		Log::Info("UE4SS loaded successfully (handle 0x%llX)",
+		LogToFile::Info("UE4SS loaded successfully (handle 0x%llX)",
 			static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(hUE4SS)));
 	}
 	else
 	{
-		Log::Warn("UE4SS failed to load (error %lu): %ls", GetLastError(), fullPath);
+		LogToFile::Warn("UE4SS failed to load (error %lu): %ls", GetLastError(), fullPath);
 	}
 }
 
@@ -286,10 +286,10 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 		DisableThreadLibraryCalls(hModule);
 
 		// Initialise our low-level file logger — simple file I/O, no LoadLibrary.
-		Log::Initialize();
-		Log::Info("======================================================");
-		Log::Info("  StarRupture Mod Loader (dwmapi.dll proxy) loaded");
-		Log::Info("======================================================");
+		LogToFile::Initialize();
+		LogToFile::Info("======================================================");
+		LogToFile::Info("  StarRupture Mod Loader (dwmapi.dll proxy) loaded");
+		LogToFile::Info("======================================================");
 
 		// Initialise the dwmapi forwarding table synchronously.  This MUST
 		// happen in DllMain before any caller can reach our dwmapi exports,
@@ -300,23 +300,23 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 		// window.  We open the splash at the top of MainInitThreadProc so that
 		// every call originates from that one thread.
 
-		Log::Info("Initializing dwmapi.dll proxy...");
+		LogToFile::Info("Initializing dwmapi.dll proxy...");
 		if (!DwmapiProxy::Initialize())
 		{
-			Log::Error("FATAL: Failed to initialize dwmapi proxy -- DLL load aborted");
-			Log::Shutdown();
+			LogToFile::Error("FATAL: Failed to initialize dwmapi proxy -- DLL load aborted");
+			LogToFile::Shutdown();
 			return FALSE;
 		}
-		Log::Info("Dwmapi proxy initialized successfully");
+		LogToFile::Info("Dwmapi proxy initialized successfully");
 
 		// Create the synchronisation event used by DLL_PROCESS_DETACH to wait
 		// for the init thread before running the shutdown sequence.
 		g_pluginsLoadedEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
 		if (!g_pluginsLoadedEvent)
 		{
-			Log::Error("FATAL: Failed to create init-done event (%lu)", GetLastError());
+			LogToFile::Error("FATAL: Failed to create init-done event (%lu)", GetLastError());
 			DwmapiProxy::Shutdown();
-			Log::Shutdown();
+			LogToFile::Shutdown();
 			return FALSE;
 		}
 
@@ -328,11 +328,11 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 		if (!g_mainInitThread)
 		{
 			DWORD err = GetLastError();
-			Log::Error("FATAL: Failed to create main init thread (%lu)", err);
+			LogToFile::Error("FATAL: Failed to create main init thread (%lu)", err);
 			CloseHandle(g_pluginsLoadedEvent);
 			g_pluginsLoadedEvent = NULL;
 			DwmapiProxy::Shutdown();
-			Log::Shutdown();
+			LogToFile::Shutdown();
 			return FALSE;
 		}
 
@@ -351,8 +351,8 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 		// reclaim everything; we do not need to clean up in that case.
 		if (lpReserved != nullptr)
 		{
-			Log::Info("Process terminating - skipping shutdown to avoid loader-lock / allocator corruption");
-			Log::Shutdown();
+			LogToFile::Info("Process terminating - skipping shutdown to avoid loader-lock / allocator corruption");
+			LogToFile::Shutdown();
 			break;
 		}
 
@@ -364,7 +364,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 		if (g_pluginsLoadedEvent)
 		{
 			if (WaitForSingleObject(g_pluginsLoadedEvent, 30000) == WAIT_TIMEOUT)
-				Log::Warn("Timed out waiting for init thread — proceeding with shutdown anyway");
+				LogToFile::Warn("Timed out waiting for init thread — proceeding with shutdown anyway");
 			CloseHandle(g_pluginsLoadedEvent);
 			g_pluginsLoadedEvent = NULL;
 		}
@@ -375,22 +375,22 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 			g_mainInitThread = NULL;
 		}
 
-		ModLoader::LogMessage(L"======================================");
-		ModLoader::LogMessage(L"  Version_Mod_Loader shutting down");
-		ModLoader::LogMessage(L"======================================");
+		ModLoaderLogger::LogInfo(L"======================================");
+		ModLoaderLogger::LogInfo(L"       Modloader shutting down!");
+		ModLoaderLogger::LogInfo(L"======================================");
 
 		// CRITICAL: Remove engine shutdown hook and clear callbacks FIRST
 		// This prevents the hook from firing with dangling function pointers
 		// after plugins are unloaded
-		ModLoader::LogMessage(L"Removing engine shutdown hook...");
+		ModLoaderLogger::LogInfo(L"Removing engine shutdown hook...");
 		Hooks::EngineShutdown::Remove();
-		ModLoader::LogMessage(L"Engine shutdown hook removed");
+		ModLoaderLogger::LogInfo(L"Engine shutdown hook removed");
 
 		// Now safe to unload plugins
-		ModLoader::UnloadAllPlugins();
+		ModLoaderLogger::UnloadAllPlugins();
 
 		// Remove remaining core game hooks
-		ModLoader::LogMessage(L"Removing remaining core game hooks...");
+		ModLoaderLogger::LogInfo(L"Removing remaining core game hooks...");
 		Hooks::EngineInit::Remove();
 		Hooks::WorldBeginPlay::Remove();
 		Hooks::SaveLoaded::Remove();
@@ -399,15 +399,15 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 		Hooks::PlayerJoined::Remove();
 		Hooks::PlayerLeft::Remove();
 
-		ModLoader::ShutdownPluginManager();
-		ModLoader::ShutdownConfigManager();
-		ModLoader::ShutdownLogger();
+		ModLoaderLogger::ShutdownPluginManager();
+		ModLoaderLogger::ShutdownConfigManager();
+		ModLoaderLogger::ShutdownLogger();
 
-		Log::Info("Shutting down dwmapi proxy...");
+		ModLoaderLogger::LogInfo(L"Shutting down dwmapi proxy...");
 		DwmapiProxy::Shutdown();
 
-		Log::Info("Goodbye!");
-		Log::Shutdown();
+		ModLoaderLogger::LogInfo(L"Goodbye!");
+		ModLoaderLogger::ShutdownLogger();
 	}
 	break;
 

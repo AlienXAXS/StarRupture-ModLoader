@@ -2,7 +2,7 @@
 
 #include "plugins/plugin_interface.h"
 
-namespace ModLoader
+namespace ModLoaderLogger
 {
     // Get the global hooks interface for plugins
     IPluginHooks* GetPluginHooks();

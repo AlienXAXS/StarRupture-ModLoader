@@ -66,7 +66,7 @@ static void __fastcall Hook_MassEntityConfigWBP(void* thisPtr, SDK::UWorld* inWo
 
 	// Apply the hierarchy patch BEFORE the original runs so it is in place
 	// before entity archetypes are compiled (BuildTemplate / IsChildOf calls).
-	if (RailJunctionFixerConfig::Config::IsEnabled())
+	if (RailJunctionFixerConfig::Config::IsRailFixerEnabled())
 	{
 		if (!RailJunctionFixer::LogisticsFragmentFixer::Initialize())
 			LOG_ERROR("LogisticsFragmentFixer: Failed to apply hierarchy patch");
@@ -140,7 +140,7 @@ static void RemoveMassEntityConfigWBPHook()
 
 static void OnExperienceLoadComplete()
 {
-	if (!RailJunctionFixerConfig::Config::IsEnabled())
+	if (!RailJunctionFixerConfig::Config::IsRailFixerEnabled())
 		return;
 
 	LOG_INFO("ExperienceLoadComplete: Experience fully loaded - running junction repair");
@@ -153,27 +153,13 @@ static void OnExperienceLoadComplete()
 	}
 
 	std::string worldName = world->GetName();
-	LOG_INFO("ExperienceLoadComplete: Current world is '%s' at %p", worldName.c_str(), static_cast<void*>(world));
+	LOG_DEBUG("ExperienceLoadComplete: Current world is '%s' at %p", worldName.c_str(), static_cast<void*>(world));
 
 	if (worldName != "ChimeraMain") return;
 
-	LOG_INFO("SaveLoaded: Save finished loading - signaling socket entities for re-initialization");
+	LOG_DEBUG("SaveLoaded: Save finished loading - signaling socket entities for re-initialization");
 	RailJunctionFixer::LogisticsFragmentFixer::SignalSocketEntities();
 	RailJunctionFixer::RailScanner::ScanRailSocketState(world);
-}
-
-// ----------------------------------------------------------------
-// Save-loaded callback
-// ----------------------------------------------------------------
-// Called by the mod loader when UCrMassSaveSubsystem::OnSaveLoaded
-// fires - the save is fully loaded. We use this to signal socket
-// entities so that stale FMassEntityHandle values are rebuilt.
-// ----------------------------------------------------------------
-
-static void OnSaveLoaded()
-{
-	if (!RailJunctionFixerConfig::Config::IsEnabled())
-		return;
 }
 
 // Engine init callback - called after FEngineLoop::Init returns.
@@ -184,18 +170,8 @@ static void OnEngineInit()
 	LOG_INFO("Engine initialized");
 
 	// Register for save-loaded callback to signal socket entities after a save loads
-	if (RailJunctionFixerConfig::Config::IsEnabled())
+	if (RailJunctionFixerConfig::Config::IsRailFixerEnabled())
 	{
-		if (g_hooks && g_hooks->RegisterSaveLoadedCallback)
-		{
-			g_hooks->RegisterSaveLoadedCallback(OnSaveLoaded);
-			LOG_INFO("Registered for save-loaded callback (socket entity signaling)");
-		}
-		else
-		{
-			LOG_WARN("RegisterSaveLoadedCallback not available - socket re-init after save load will NOT run");
-		}
-
 		// Register for experience-load-complete callback to run the rail scanner.
 		// This fires after all Mass Entity BP actors are fully spawned, which is
 		// later than OnSaveLoaded -- giving all actor data time to settle.
@@ -229,12 +205,6 @@ static void OnEngineInit()
 static void OnEngineShutdown()
 {
 	LOG_INFO("Engine shutting down - cleaning up...");
-
-	// Unregister save-loaded callback
-	if (g_hooks && g_hooks->UnregisterSaveLoadedCallback)
-	{
-		g_hooks->UnregisterSaveLoadedCallback(OnSaveLoaded);
-	}
 
 	// Unregister experience-load-complete callback
 	if (g_hooks && g_hooks->UnregisterExperienceLoadCompleteCallback)
@@ -273,8 +243,12 @@ extern "C" {
 
 		// Initialize config system with schema - creates default config if needed
 		RailJunctionFixerConfig::Config::Initialize(config);
-		LOG_INFO("Config initialized (Enabled: %s)",
-			RailJunctionFixerConfig::Config::IsEnabled() ? "true" : "false");
+
+		if (!RailJunctionFixerConfig::Config::IsPluginEnabled())
+		{
+			LOG_INFO("Plugin is disabled in config - skipping initialization");	
+			return true;
+		}
 
 		// Install the UCrMassEntityConfigLoaderSubsystem::OnWorldBeginPlay hook NOW,
 		// before FEngineLoop::Init runs. The subsystem fires OnWorldBeginPlay inside

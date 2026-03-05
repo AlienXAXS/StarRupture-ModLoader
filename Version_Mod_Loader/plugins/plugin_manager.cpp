@@ -7,7 +7,7 @@
 #include <vector>
 #include <string>
 
-namespace ModLoader
+namespace ModLoaderLogger
 {
 	// Structure to hold loaded plugin information
 	struct LoadedPlugin

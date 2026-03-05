@@ -7,14 +7,21 @@ namespace ServerUtilityConfig
 	// Config schema definition
 	static const ConfigEntry CONFIG_ENTRIES[] = {
 		{
-			"Server",
+			"General",
+			"Enabled",
+			ConfigValueType::Boolean,
+			"false",
+			"Enable or disable the plugin."
+		},
+		{
+			"PluginSettings",
 			"MaxPlayers",
 			ConfigValueType::Integer,
 			"0",
 			"Override the hardcoded max player limit (default game limit is 4). Set to 0 to leave unchanged."
 		},
 		{
-			"Security",
+			"PluginSettings",
 			"RemoteVulnerabilityPatch",
 			ConfigValueType::Boolean,
 			"true",
@@ -42,11 +49,16 @@ namespace ServerUtilityConfig
 			}
 		}
 
+		static bool IsPluginEnabled()
+		{
+			return s_config ? s_config->ReadBool("ServerUtility", "General", "Enabled", false) : false;
+		}
+
 		// Returns the configured max player count.
 		// 0 means "don't patch / use game default".
 		static int GetMaxPlayers()
 		{
-			int val = s_config ? s_config->ReadInt("ServerUtility", "Server", "MaxPlayers", 0) : 0;
+			int val = s_config ? s_config->ReadInt("ServerUtility", "PluginSettings", "MaxPlayers", 0) : 0;
 			if (val < 0) val = 0;
 			if (val > 127) val = 127;
 			return val;
@@ -55,7 +67,7 @@ namespace ServerUtilityConfig
 		// Returns true if the RemoteVulnerabilityPatch is enabled (default: true).
 		static bool GetRemoteVulnerabilityPatch()
 		{
-			return s_config ? s_config->ReadBool("ServerUtility", "Security", "RemoteVulnerabilityPatch", true) : true;
+			return s_config ? s_config->ReadBool("ServerUtility", "PluginSettings", "RemoteVulnerabilityPatch", true) : true;
 		}
 
 	private:

@@ -47,7 +47,7 @@ static constexpr const char* PARSE_SETTINGS_PATTERN = "48 8B C4 55 41 54 48 8D 6
 // -----------------------------------------------------------------------
 static void OnEngineInit()
 {
-    LOG_INFO("Engine initialised – scanning for UCrDedicatedServerSettingsComp::ParseSettings...");
+    LOG_INFO("Engine initialised - scanning for UCrDedicatedServerSettingsComp::ParseSettings...");
 
     uintptr_t addr = g_scanner->FindPatternInMainModule(PARSE_SETTINGS_PATTERN);
     if (addr == 0)
@@ -68,10 +68,6 @@ static void OnEngineInit()
 
         // Auto-assign professions for players joining when MaxPlayers is patched
         AutoProfessionHook::Install();
-    }
-    else
-    {
-        LOG_INFO("MaxPlayers is 0 — using game default (no patch)");
     }
 
     // Start the RCON / Steam Query subsystem
@@ -131,6 +127,12 @@ extern "C"
         // Initialize config system with schema
         ServerUtilityConfig::Config::Initialize(config);
 
+        if (!ServerUtilityConfig::Config::IsPluginEnabled())
+        {
+            LOG_INFO("Plugin is disabled in config - skipping initialization");
+            return true;
+		}
+
         if (!hooks->RegisterEngineInitCallback)
         {
             LOG_ERROR("RegisterEngineInitCallback not available – loader version mismatch?");
@@ -138,12 +140,12 @@ extern "C"
         }
 
         hooks->RegisterEngineInitCallback(OnEngineInit);
-        LOG_INFO("Registered for engine init callback");
+        LOG_DEBUG("Registered for engine init callback");
 
         if (hooks->RegisterEngineShutdownCallback)
         {
             hooks->RegisterEngineShutdownCallback(OnEngineShutdown);
-            LOG_INFO("Registered for engine shutdown callback");
+            LOG_DEBUG("Registered for engine shutdown callback");
         }
         else
         {
@@ -153,32 +155,20 @@ extern "C"
         if (hooks->RegisterAnyWorldBeginPlayCallback)
         {
             hooks->RegisterAnyWorldBeginPlayCallback(OnAnyWorldBeginPlay);
-            LOG_INFO("Registered for any-world begin play callback (RCON player tracking)");
+            LOG_DEBUG("Registered for any-world begin play callback (RCON player tracking)");
         }
 
         if (hooks->RegisterExperienceLoadCompleteCallback)
         {
             hooks->RegisterExperienceLoadCompleteCallback(OnExperienceLoadComplete);
-            LOG_INFO("Registered for experience load complete callback (RCON player refresh)");
+            LOG_DEBUG("Registered for experience load complete callback (RCON player refresh)");
         }
 
         if (hooks->RegisterEngineTickCallback)
         {
             hooks->RegisterEngineTickCallback(OnEngineTick);
-            LOG_INFO("Registered for engine tick callback (game-thread task dispatch)");
+            LOG_DEBUG("Registered for engine tick callback (game-thread task dispatch)");
         }
-
-        LOG_INFO("Plugin initialised. Awaiting engine ready signal.");
-        LOG_INFO("Usage: launch the server with the following parameters:");
-        LOG_INFO("  -SessionName=<name> [-SaveGameInterval=<seconds>]");
-        LOG_INFO("  -RconPort=<port> -RconPassword=<password>");
-        LOG_INFO("When SessionName is present, DSSettings.txt is completely bypassed.");
-        LOG_INFO("  SaveGameName: Always 'AutoSave0.sav'");
-        LOG_INFO("  SaveGameInterval: Defaults to 300 seconds (5 minutes) if not specified");
-        LOG_INFO("  StartNewGame / LoadSavedGame: Derived automatically from save file existence");
-        LOG_INFO("RCON requires both -RconPort= and -RconPassword= to be set.");
-        LOG_INFO("Save location checked: <binDir>\\..\\..\\Saved\\SaveGames\\<SessionName>\\AutoSave0.sav");
-        LOG_INFO("  (navigates up 2 directories from binary: Win64 -> Binaries -> <root>)");
 
         return true;
     }

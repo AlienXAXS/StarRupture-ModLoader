@@ -319,18 +319,12 @@ static HookHandle       g_hookHandle = nullptr;
 // ---------------------------------------------------------------------------
 static __int64 __fastcall Hook_ParseSettings(void* thisPtr)
 {
-	static std::atomic<int> callCount = 0;
-	int currentCall = ++callCount;
-
-	LOG_INFO("[Hook_ParseSettings] ===== CALL #%d START =====", currentCall);
-	LOG_DEBUG("[Hook_ParseSettings] Called with thisPtr=0x%p", thisPtr);
 
 	// Validate thisPtr
 	if (!thisPtr)
 	{
 		LOG_ERROR("[Hook_ParseSettings] thisPtr is NULL - delegating to original");
 		__int64 result = g_originalParseSettings(thisPtr);
-		LOG_INFO("[Hook_ParseSettings] ===== CALL #%d END (NULL ptr, delegated) =====", currentCall);
 		return result;
 	}
 
@@ -339,7 +333,6 @@ static __int64 __fastcall Hook_ParseSettings(void* thisPtr)
 	{
 		LOG_ERROR("[Hook_ParseSettings] thisPtr (0x%p) points to invalid memory - delegating to original", thisPtr);
 		__int64 result = g_originalParseSettings(thisPtr);
-		LOG_INFO("[Hook_ParseSettings] ===== CALL #%d END (invalid memory, delegated) =====", currentCall);
 		return result;
 	}
 
@@ -347,7 +340,6 @@ static __int64 __fastcall Hook_ParseSettings(void* thisPtr)
 	{
 		LOG_DEBUG("[Hook_ParseSettings] Required command-line parameters not present - delegating to DSSettings.txt");
 		__int64 result = g_originalParseSettings(thisPtr);
-		LOG_INFO("[Hook_ParseSettings] ===== CALL #%d END (no params, delegated) =====", currentCall);
 		return result;
 	}
 
@@ -355,11 +347,10 @@ static __int64 __fastcall Hook_ParseSettings(void* thisPtr)
 	{
 		LOG_ERROR("[Hook_ParseSettings] Engine allocator not resolved - cannot safely set FStrings, delegating to original");
 		__int64 result = g_originalParseSettings(thisPtr);
-		LOG_INFO("[Hook_ParseSettings] ===== CALL #%d END (no allocator, delegated) =====", currentCall);
 		return result;
 	}
 
-	LOG_INFO("[Hook_ParseSettings] Command-line parameters detected - bypassing original (no DSSettings.txt needed)");
+	LOG_DEBUG("[Hook_ParseSettings] Command-line parameters detected - bypassing original (no DSSettings.txt needed)");
 
 	// -----------------------------------------------------------------------
 	// Step 1: Parse command-line parameters.
@@ -373,14 +364,14 @@ static __int64 __fastcall Hook_ParseSettings(void* thisPtr)
 	{
 		saveInterval = _wtoi(saveGameInterval.c_str());
 		LOG_INFO("  SessionName  = %ls", sessionName.c_str());
-		LOG_INFO("SaveGameName     = %ls (fixed)", SAVE_GAME_NAME);
-		LOG_INFO("  SaveGameInterval = %d seconds (from command line)", saveInterval);
+		LOG_INFO("  SaveGameName = %ls", SAVE_GAME_NAME);
+		LOG_INFO("  SaveGameInterval = %d seconds", saveInterval);
 	}
 	else
 	{
 		LOG_INFO("  SessionName  = %ls", sessionName.c_str());
-		LOG_INFO("  SaveGameName     = %ls (fixed)", SAVE_GAME_NAME);
-		LOG_INFO("  SaveGameInterval = %d seconds (default)", saveInterval);
+		LOG_INFO("  SaveGameName = %ls (fixed)", SAVE_GAME_NAME);
+		LOG_INFO("  SaveGameInterval = %d seconds", saveInterval);
 	}
 
 	const bool hasSave = SaveGameExists(sessionName);
@@ -440,7 +431,6 @@ static __int64 __fastcall Hook_ParseSettings(void* thisPtr)
 		LOG_ERROR("[Hook_ParseSettings] C++ exception while setting fields: %s", ex.what());
 		LOG_ERROR("[Hook_ParseSettings] Falling back to original function");
 		__int64 result = g_originalParseSettings(thisPtr);
-		LOG_INFO("[Hook_ParseSettings] ===== CALL #%d END (exception, fell back to original) =====", currentCall);
 		return result;
 	}
 	catch (...)
@@ -448,7 +438,6 @@ static __int64 __fastcall Hook_ParseSettings(void* thisPtr)
 		LOG_ERROR("[Hook_ParseSettings] Unknown exception while setting fields");
 		LOG_ERROR("[Hook_ParseSettings] Falling back to original function");
 		__int64 result = g_originalParseSettings(thisPtr);
-		LOG_INFO("[Hook_ParseSettings] ===== CALL #%d END (exception, fell back to original) =====", currentCall);
 		return result;
 	}
 
@@ -461,7 +450,7 @@ static __int64 __fastcall Hook_ParseSettings(void* thisPtr)
 
 		if (sessionStr->Data && sessionStr->Num > 0)
 		{
-			LOG_INFO("[Hook_ParseSettings] Readback SessionName: \"%ls\" (Num=%d, Max=%d)",
+			LOG_DEBUG("[Hook_ParseSettings] Readback SessionName: \"%ls\" (Num=%d, Max=%d)",
 				sessionStr->Data, sessionStr->Num, sessionStr->Max);
 		}
 		else
@@ -471,7 +460,7 @@ static __int64 __fastcall Hook_ParseSettings(void* thisPtr)
 
 		if (saveStr->Data && saveStr->Num > 0)
 		{
-			LOG_INFO("[Hook_ParseSettings] Readback SaveGameName: \"%ls\" (Num=%d, Max=%d)",
+			LOG_DEBUG("[Hook_ParseSettings] Readback SaveGameName: \"%ls\" (Num=%d, Max=%d)",
 				saveStr->Data, saveStr->Num, saveStr->Max);
 		}
 		else
@@ -484,8 +473,6 @@ static __int64 __fastcall Hook_ParseSettings(void* thisPtr)
 		*FieldAccessor::GetSaveGameInterval(thisPtr),
 		*FieldAccessor::GetStartNewGame(thisPtr) ? "true" : "false",
 		*FieldAccessor::GetLoadSavedGame(thisPtr) ? "true" : "false");
-
-	LOG_INFO("[Hook_ParseSettings] ===== CALL #%d END (success, original NOT called) =====", currentCall);
 
 	// Return 1 (success) — we've populated all five fields.
 	return 1;
@@ -660,7 +647,7 @@ static bool SmokeTestAllocator(FMemoryMalloc_t mallocFn, FMemoryFree_t freeFn)
 		memset(ptr, 0xAB, 64);
 		freeFn(ptr);
 
-		LOG_INFO("[SmokeTestAllocator] PASSED - Malloc/Free cycle completed successfully");
+		LOG_DEBUG("[SmokeTestAllocator] PASSED - Malloc/Free cycle completed successfully");
 		return true;
 	}
 	__except (EXCEPTION_EXECUTE_HANDLER)
@@ -714,7 +701,7 @@ static uintptr_t FindFreeViaGMalloc(uintptr_t gmallocAddr)
 	if (g_parseSettingsAddress == 0 || gmallocAddr == 0)
 		return 0;
 
-	LOG_INFO("[FindFree] Scanning ParseSettings at 0x%llX for calls referencing GMalloc 0x%llX...",
+	LOG_DEBUG("[FindFree] Scanning ParseSettings at 0x%llX for calls referencing GMalloc 0x%llX...",
 		static_cast<unsigned long long>(g_parseSettingsAddress),
 		static_cast<unsigned long long>(gmallocAddr));
 
@@ -744,9 +731,9 @@ static uintptr_t FindFreeViaGMalloc(uintptr_t gmallocAddr)
 		uintptr_t candidateGMalloc = ExtractGMallocAddress(target, 64);
 		if (candidateGMalloc == gmallocAddr)
 		{
-			LOG_INFO("[FindFree] FMemory::Free = 0x%llX (from ParseSettings+0x%zX, same GMalloc)",
+			LOG_DEBUG("[FindFree] FMemory::Free = 0x%llX (from ParseSettings+0x%zX, same GMalloc)",
 				static_cast<unsigned long long>(target), offset);
-			LOG_INFO("[FindFree]   Scanned %d E8 candidates (%d readable) before match",
+			LOG_DEBUG("[FindFree]   Scanned %d E8 candidates (%d readable) before match",
 				callsFound, callsReadable);
 			DumpBytes("FMemory::Free", target, 64);
 			return target;

@@ -37,18 +37,18 @@ namespace Hooks::ActorBeginPlay
 			}
 			catch (const std::exception& e)
 			{
-				ModLoader::LogError(L"[ActorBeginPlay] Exception in callback: %S", e.what());
+				ModLoaderLogger::LogError(L"[ActorBeginPlay] Exception in callback: %S", e.what());
 			}
 			catch (...)
 			{
-				ModLoader::LogError(L"[ActorBeginPlay] Unknown exception in callback");
+				ModLoaderLogger::LogError(L"[ActorBeginPlay] Unknown exception in callback");
 			}
 		}
 	}
 
 	bool Install()
 	{
-		ModLoader::LogInfo(L"[ActorBeginPlay] Installing hook...");
+		ModLoaderLogger::LogInfo(L"[ActorBeginPlay] Installing hook...");
 
 		// The pattern matches unique interior bytes inside AActor::BeginPlay,
 		// NOT the function prologue.  We find the interior match first, then
@@ -60,11 +60,11 @@ namespace Hooks::ActorBeginPlay
 
 		if (!interiorAddr)
 		{
-			ModLoader::LogError(L"[ActorBeginPlay] AActor::BeginPlay interior pattern not found");
+			ModLoaderLogger::LogError(L"[ActorBeginPlay] AActor::BeginPlay interior pattern not found");
 			return false;
 		}
 
-		ModLoader::LogInfo(L"[ActorBeginPlay] Interior pattern matched at 0x%llX (base+0x%llX) - "
+		ModLoaderLogger::LogInfo(L"[ActorBeginPlay] Interior pattern matched at 0x%llX (base+0x%llX) - "
 			L"reverse-scanning for function prologue...",
 			static_cast<unsigned long long>(interiorAddr),
 			static_cast<unsigned long long>(interiorAddr - base));
@@ -84,7 +84,7 @@ namespace Hooks::ActorBeginPlay
 		{
 			const uint8_t* c = reinterpret_cast<const uint8_t*>(interiorAddr - offset);
 
-			ModLoader::LogTrace(L"[ActorBeginPlay]   -%3zu: %02X %02X %02X %02X",
+			ModLoaderLogger::LogTrace(L"[ActorBeginPlay]   -%3zu: %02X %02X %02X %02X",
 				offset, c[0], c[1], c[2], c[3]);
 
 			// Current byte is NOT padding, but the byte before it IS padding or RET.
@@ -97,7 +97,7 @@ namespace Hooks::ActorBeginPlay
 				if (prevByte == 0xCC || prevByte == 0x90 || prevByte == 0xC3)
 				{
 					addr = interiorAddr - offset;
-					ModLoader::LogTrace(L"[ActorBeginPlay]   ^ function entry at offset -%zu "
+					ModLoaderLogger::LogTrace(L"[ActorBeginPlay]   ^ function entry at offset -%zu "
 						L"(prev byte: %02X, first instr byte: %02X)", offset, prevByte, c[0]);
 					break;
 				}
@@ -109,7 +109,7 @@ namespace Hooks::ActorBeginPlay
 					if (prev2[0] == 0x66 && prev2[1] == 0x90)
 					{
 						addr = interiorAddr - offset;
-						ModLoader::LogTrace(L"[ActorBeginPlay]   ^ function entry at offset -%zu "
+						ModLoaderLogger::LogTrace(L"[ActorBeginPlay]   ^ function entry at offset -%zu "
 							L"(prev bytes: 66 90, first instr byte: %02X)", offset, c[0]);
 						break;
 					}
@@ -119,13 +119,13 @@ namespace Hooks::ActorBeginPlay
 
 		if (!addr)
 		{
-			ModLoader::LogError(L"[ActorBeginPlay] Failed to find function entry point "
+			ModLoaderLogger::LogError(L"[ActorBeginPlay] Failed to find function entry point "
 				L"(padding boundary) within %zu bytes before interior match",
 				maxScanBack);
 			return false;
 		}
 
-		ModLoader::LogInfo(L"[ActorBeginPlay] AActor::BeginPlay entry at 0x%llX (base+0x%llX), "
+		ModLoaderLogger::LogInfo(L"[ActorBeginPlay] AActor::BeginPlay entry at 0x%llX (base+0x%llX), "
 			L"%lld bytes before interior match",
 			static_cast<unsigned long long>(addr),
 			static_cast<unsigned long long>(addr - base),
@@ -137,16 +137,16 @@ namespace Hooks::ActorBeginPlay
 			reinterpret_cast<void**>(&g_original));
 
 		if (hookOk)
-			ModLoader::LogInfo(L"[ActorBeginPlay] Hook installed successfully");
+			ModLoaderLogger::LogInfo(L"[ActorBeginPlay] Hook installed successfully");
 		else
-			ModLoader::LogError(L"[ActorBeginPlay] Hook installation failed");
+			ModLoaderLogger::LogError(L"[ActorBeginPlay] Hook installation failed");
 
 		return hookOk;
 	}
 
 	void Remove()
 	{
-		ModLoader::LogInfo(L"[ActorBeginPlay] Removing hook...");
+		ModLoaderLogger::LogInfo(L"[ActorBeginPlay] Removing hook...");
 		g_hook.Remove();
 		g_pluginCallbacks.clear();
 	}
@@ -160,23 +160,23 @@ namespace Hooks::ActorBeginPlay
 	{
 		if (!callback)
 		{
-			ModLoader::LogWarn(L"[ActorBeginPlay] RegisterPluginCallback: null callback provided");
+			ModLoaderLogger::LogWarn(L"[ActorBeginPlay] RegisterPluginCallback: null callback provided");
 			return;
 		}
 
 		// Lazily install the hook on first registration
 		if (!g_hook.installed)
 		{
-			ModLoader::LogInfo(L"[ActorBeginPlay] First callback registered - installing hook now...");
+			ModLoaderLogger::LogInfo(L"[ActorBeginPlay] First callback registered - installing hook now...");
 			if (!Install())
 			{
-				ModLoader::LogError(L"[ActorBeginPlay] Failed to install hook for actor-begin-play callback!");
+				ModLoaderLogger::LogError(L"[ActorBeginPlay] Failed to install hook for actor-begin-play callback!");
 				return;
 			}
 		}
 
 		g_pluginCallbacks.push_back(callback);
-		ModLoader::LogDebug(L"[ActorBeginPlay] Plugin callback registered (%zu total)", g_pluginCallbacks.size());
+		ModLoaderLogger::LogDebug(L"[ActorBeginPlay] Plugin callback registered (%zu total)", g_pluginCallbacks.size());
 	}
 
 	void UnregisterPluginCallback(PluginActorBeginPlayCallback callback)
@@ -185,7 +185,7 @@ namespace Hooks::ActorBeginPlay
 		if (it != g_pluginCallbacks.end())
 		{
 			g_pluginCallbacks.erase(it);
-			ModLoader::LogDebug(L"[ActorBeginPlay] Plugin callback unregistered (%zu remaining)", g_pluginCallbacks.size());
+			ModLoaderLogger::LogDebug(L"[ActorBeginPlay] Plugin callback unregistered (%zu remaining)", g_pluginCallbacks.size());
 		}
 	}
 }
