@@ -24,6 +24,7 @@
 
 #include "auto_update/auto_updater.h"
 
+#include <tlhelp32.h>
 
 #include <Psapi.h>
 #include <VersionHelpers.h>
@@ -57,13 +58,13 @@ static void LogStartupEnvironment();
 // ---------------------------------------------------------------------------
 static void OnEngineInitForUELog()
 {
-	if (UELog::Initialize(Scanner::FindPatternInMainModule))
+	// after - adapter lambda provides a pattern name for logging
+	if (UELog::Initialize(+[](const std::string& pattern) -> uintptr_t {
+		// "BASIC_LOGV" is the descriptive name used in scanner logs for this pattern
+		return Scanner::FindPatternInMainModule(std::string("BASIC_LOGV"), pattern);
+		}))
 	{
 		LogToFile::Info("[ModLoader] UE log bridge active - messages will also appear in StarRupture.log");
-	}
-	else
-	{
-		LogToFile::Warn("[ModLoader] UE log bridge failed to initialize - BasicLogV pattern not found");
 	}
 
 	// Load UE4SS on a background thread so that LoadLibraryW does not run
@@ -79,6 +80,55 @@ static void OnEngineInitForUELog()
 		std::this_thread::sleep_for(std::chrono::milliseconds(500));
 		LoadUE4SS();
 	}).detach();
+}
+
+static std::vector<HANDLE> SuspendOtherThreads()
+{
+	std::vector<HANDLE> handles;
+	const DWORD selfTid = GetCurrentThreadId();
+	const DWORD pid = GetCurrentProcessId();
+
+	HANDLE hSnap = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+	if (hSnap == INVALID_HANDLE_VALUE)
+	{
+		LogToFile::Warn("[PluginManager] SuspendOtherThreads: snapshot failed (%lu) — loading without suspension", GetLastError());
+		return handles;
+	}
+
+	THREADENTRY32 te{};
+	te.dwSize = sizeof(te);
+
+	if (Thread32First(hSnap, &te))
+	{
+		do
+		{
+			if (te.th32OwnerProcessID != pid) continue;
+			if (te.th32ThreadID == selfTid)   continue;
+
+			HANDLE hThread = OpenThread(THREAD_SUSPEND_RESUME, FALSE, te.th32ThreadID);
+			if (!hThread) continue;
+
+			SuspendThread(hThread);
+			handles.push_back(hThread);
+			LogToFile::Debug("[PluginManager] Suspended thread %lu", te.th32ThreadID);
+
+		} while (Thread32Next(hSnap, &te));
+	}
+
+	CloseHandle(hSnap);
+	LogToFile::Info("[PluginManager] Suspended %zu thread(s) for plugin load window", handles.size());
+	return handles;
+}
+
+static void ResumeOtherThreads(std::vector<HANDLE>& handles)
+{
+	for (HANDLE h : handles)
+	{
+		ResumeThread(h);
+		CloseHandle(h);
+	}
+	LogToFile::Info("[PluginManager] Resumed %zu thread(s) after plugin load", handles.size());
+	handles.clear();
 }
 
 // ---------------------------------------------------------------------------
@@ -100,6 +150,9 @@ static DWORD WINAPI MainInitThreadProc(LPVOID)
 	// the same thread that owns the HWND.  Running everything here keeps the
 	// ownership consistent and avoids cross-thread UpdateWindow / PumpMessages
 	// failures.  DllMain returns in microseconds so the visual delay is nil.
+
+	auto threadSuspension = SuspendOtherThreads();
+
 	Splash::Show();
 	Splash::SetStatus(L"Starting mod loader...");
 	Splash::SetProgress(0.0f);
@@ -111,7 +164,7 @@ static DWORD WINAPI MainInitThreadProc(LPVOID)
 
 	ModLoaderLogger::InitializeLogger();
 	ModLoaderLogger::LogMessage(L"======================================");
-	ModLoaderLogger::LogMessage(L"  AlienX's Mod Loader initialized");
+	ModLoaderLogger::LogMessage(L"  AlienX's Mod Loader Starting");
 	ModLoaderLogger::LogMessage(L"======================================");
 
 	Splash::SetStatus(L"Here Goes Nothin' ...");
@@ -178,6 +231,8 @@ static DWORD WINAPI MainInitThreadProc(LPVOID)
 	// Brief pause so the user can see 100%, then close the splash.
 	Sleep(600);
 	Splash::Close();
+
+	ResumeOtherThreads(threadSuspension);
 
 	return 0;
 }
