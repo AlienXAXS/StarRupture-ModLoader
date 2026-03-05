@@ -104,6 +104,26 @@ static void OnEngineTick(float deltaSeconds)
     Rcon::OnTick(deltaSeconds);
 }
 
+static bool IsServerBinary()
+{
+    wchar_t path[MAX_PATH] = { 0 };
+    if (GetModuleFileNameW(nullptr, path, MAX_PATH) == 0)
+    {
+        // If desired, log failure via GetLogger(); keep simple here.
+        return false;
+    }
+
+    // Extract filename part
+    wchar_t* filename = wcsrchr(path, L'\\');
+    if (!filename)
+        filename = wcsrchr(path, L'/');
+
+    const wchar_t* exeName = filename ? (filename + 1) : path;
+
+    // Case-insensitive compare
+    return _wcsicmp(exeName, L"StarRuptureServerEOS-Win64-Shipping.exe") == 0;
+}
+
 // -----------------------------------------------------------------------
 // Plugin exports
 // -----------------------------------------------------------------------
@@ -130,6 +150,12 @@ extern "C"
         if (!ServerUtilityConfig::Config::IsPluginEnabled())
         {
             LOG_INFO("Plugin is disabled in config - skipping initialization");
+            return true;
+		}
+
+        if (!IsServerBinary())
+        {
+            LOG_WARN("This plugin is intended for dedicated server use only - skipping initialization");
             return true;
 		}
 
