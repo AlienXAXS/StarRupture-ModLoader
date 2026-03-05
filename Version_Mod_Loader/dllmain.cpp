@@ -24,7 +24,7 @@
 
 #include "auto_update/auto_updater.h"
 
-#include <tlhelp32.h>
+#include "utils/thread_utils.h"
 
 #include <Psapi.h>
 #include <VersionHelpers.h>
@@ -47,20 +47,45 @@ static HANDLE g_mainInitThread = NULL;
 // loaded yet.
 static HANDLE g_pluginsLoadedEvent = NULL;
 
+// Signalled (auto-reset) by OnEngineInitForUELog when the UE engine is fully
+// up.  MainInitThreadProc waits on this before calling LoadAllPlugins so that
+// plugins install their hooks into a fully initialised engine — no thread
+// suspension needed, no loader-lock deadlocks.
+static HANDLE g_engineReadyEvent = NULL;
+
 // ---------------------------------------------------------------------------
 // Forward declarations
 // ---------------------------------------------------------------------------
+static DWORD WINAPI MainInitThreadProc(LPVOID);
 static void LoadUE4SS();
 static void LogStartupEnvironment();
+
+// APC trampoline: fired on the game main thread when it enters an alertable
+// wait.  We must NOT call MainInitThreadProc directly here — it blocks on
+// MsgWaitForMultipleObjects waiting for the EngineInit detour, which itself
+// runs on this same (main) thread, causing a deadlock.  Instead we spawn a
+// dedicated thread and return immediately so the main thread stays free to
+// call FEngineLoop::Init (which triggers the hook we are waiting for).
+static VOID CALLBACK MainInitApcProc(ULONG_PTR)
+{
+	g_mainInitThread = CreateThread(nullptr, 0, MainInitThreadProc, nullptr, 0, nullptr);
+	if (!g_mainInitThread)
+	{
+		LogToFile::Error("FATAL: Failed to create main init thread from APC (%lu)", GetLastError());
+		// Unblock DLL_PROCESS_DETACH so it does not hang waiting for plugins.
+		if (g_pluginsLoadedEvent)
+			SetEvent(g_pluginsLoadedEvent);
+	}
+}
 
 // ---------------------------------------------------------------------------
 // Called by EngineInit hook once the UE engine is up — safe to call BasicLogV
 // ---------------------------------------------------------------------------
 static void OnEngineInitForUELog()
 {
-	// after - adapter lambda provides a pattern name for logging
+	// Initialise the UE log bridge so subsequent messages also appear in
+	// StarRupture.log via BasicLogV.
 	if (UELog::Initialize(+[](const std::string& pattern) -> uintptr_t {
-		// "BASIC_LOGV" is the descriptive name used in scanner logs for this pattern
 		return Scanner::FindPatternInMainModule(std::string("BASIC_LOGV"), pattern);
 		}))
 	{
@@ -82,55 +107,6 @@ static void OnEngineInitForUELog()
 	}).detach();
 }
 
-static std::vector<HANDLE> SuspendOtherThreads()
-{
-	std::vector<HANDLE> handles;
-	const DWORD selfTid = GetCurrentThreadId();
-	const DWORD pid = GetCurrentProcessId();
-
-	HANDLE hSnap = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
-	if (hSnap == INVALID_HANDLE_VALUE)
-	{
-		LogToFile::Warn("[PluginManager] SuspendOtherThreads: snapshot failed (%lu) — loading without suspension", GetLastError());
-		return handles;
-	}
-
-	THREADENTRY32 te{};
-	te.dwSize = sizeof(te);
-
-	if (Thread32First(hSnap, &te))
-	{
-		do
-		{
-			if (te.th32OwnerProcessID != pid) continue;
-			if (te.th32ThreadID == selfTid)   continue;
-
-			HANDLE hThread = OpenThread(THREAD_SUSPEND_RESUME, FALSE, te.th32ThreadID);
-			if (!hThread) continue;
-
-			SuspendThread(hThread);
-			handles.push_back(hThread);
-			LogToFile::Debug("[PluginManager] Suspended thread %lu", te.th32ThreadID);
-
-		} while (Thread32Next(hSnap, &te));
-	}
-
-	CloseHandle(hSnap);
-	LogToFile::Info("[PluginManager] Suspended %zu thread(s) for plugin load window", handles.size());
-	return handles;
-}
-
-static void ResumeOtherThreads(std::vector<HANDLE>& handles)
-{
-	for (HANDLE h : handles)
-	{
-		ResumeThread(h);
-		CloseHandle(h);
-	}
-	LogToFile::Info("[PluginManager] Resumed %zu thread(s) after plugin load", handles.size());
-	handles.clear();
-}
-
 // ---------------------------------------------------------------------------
 // Main initialisation thread
 //
@@ -142,6 +118,15 @@ static void ResumeOtherThreads(std::vector<HANDLE>& handles)
 //     error 5023 if we try to use the thread pool from inside the lock.
 //   • By running here we are already outside the loader lock, so WinHTTP,
 //     hook installation, and plugin LoadLibrary calls all work normally.
+//
+// Plugin loading is deliberately deferred until the engine signals it is
+// ready (via g_engineReadyEvent).  This guarantees that when PluginInit runs,
+// the UE engine is fully initialised and it is safe for plugins to install
+// hooks into game code.  Plugin OnEngineInit callbacks still fire: because
+// the engine is already up by the time PluginInit is called, any call to
+// IPluginHooks::RegisterEngineInitCallback inside PluginInit triggers the
+// late-registration path in Hooks::EngineInit::RegisterPluginCallback, which
+// invokes the callback immediately.
 // ---------------------------------------------------------------------------
 static DWORD WINAPI MainInitThreadProc(LPVOID)
 {
@@ -150,8 +135,6 @@ static DWORD WINAPI MainInitThreadProc(LPVOID)
 	// the same thread that owns the HWND.  Running everything here keeps the
 	// ownership consistent and avoids cross-thread UpdateWindow / PumpMessages
 	// failures.  DllMain returns in microseconds so the visual delay is nil.
-
-	auto threadSuspension = SuspendOtherThreads();
 
 	Splash::Show();
 	Splash::SetStatus(L"Starting mod loader...");
@@ -188,21 +171,30 @@ static DWORD WINAPI MainInitThreadProc(LPVOID)
 	// RegisterAnyWorldBeginPlayCallback / RegisterWorldBeginPlayCallback call.
 
 	Splash::SetStatus(L"Installing EngineInit hook...");
-	Splash::SetProgress(0.55f);
+	Splash::SetProgress(0.50f);
+
+	// Pass both events so the detour can signal engine-ready and then wait
+	// for all plugins to load before letting the original Init proceed.
+	Hooks::EngineInit::SetSyncEvents(g_engineReadyEvent, g_pluginsLoadedEvent);
 
 	if (Hooks::EngineInit::Install())
 	{
 		ModLoaderLogger::LogDebug(L"  EngineInit hook installed");
-		// Register UE log bridge — initialised once the engine is up
+		// OnEngineInitForUELog initialises the UE log bridge and loads UE4SS
+		// after the original Init has returned.
 		Hooks::EngineInit::RegisterPluginCallback(OnEngineInitForUELog);
 	}
 	else
 	{
-		ModLoaderLogger::LogWarn(L"  WARNING: EngineInit hook failed to install");
+		ModLoaderLogger::LogWarn(L"  WARNING: EngineInit hook failed to install — loading plugins immediately");
+		// The detour will never fire to signal engine-ready, so unblock the
+		// wait below manually so plugin loading can still proceed.
+		if (g_engineReadyEvent)
+			SetEvent(g_engineReadyEvent);
 	}
 
 	Splash::SetStatus(L"Installing EngineShutdown hook...");
-	Splash::SetProgress(0.65f);
+	Splash::SetProgress(0.60f);
 
 	if (Hooks::EngineShutdown::Install())
 	{
@@ -213,8 +205,49 @@ static DWORD WINAPI MainInitThreadProc(LPVOID)
 		ModLoaderLogger::LogWarn(L"  WARNING: EngineShutdown hook failed to install - plugins will not receive shutdown callbacks");
 	}
 
+	// Wait for the engine to finish initialising before loading plugins.
+	// We pump the thread message queue while waiting so the splash window
+	// stays responsive.  A 2-minute timeout acts as a final safety net.
+	Splash::SetStatus(L"Waiting for engine...");
+	Splash::SetProgress(0.70f);
+
+	LogToFile::Info("[ModLoader] Waiting for engine initialization...");
+
+	if (g_engineReadyEvent)
+	{
+		static constexpr DWORD kEngineWaitTimeoutMs = 120'000; // 2 minutes
+		HANDLE waitHandles[] = { g_engineReadyEvent };
+		for (;;)
+		{
+			DWORD r = MsgWaitForMultipleObjects(1, waitHandles, FALSE, kEngineWaitTimeoutMs, QS_ALLINPUT);
+			if (r == WAIT_OBJECT_0)
+			{
+				LogToFile::Info("[ModLoader] Engine ready — proceeding to load plugins");
+				break;
+			}
+			if (r == WAIT_OBJECT_0 + 1)
+			{
+				// Drain the message queue so the splash stays alive.
+				MSG msg;
+				while (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE))
+				{
+					TranslateMessage(&msg);
+					DispatchMessage(&msg);
+				}
+				continue;
+			}
+			// WAIT_TIMEOUT or unexpected error
+			LogToFile::Warn("[ModLoader] Timed out waiting for engine init (%lu ms) — loading plugins anyway", kEngineWaitTimeoutMs);
+			break;
+		}
+
+		CloseHandle(g_engineReadyEvent);
+		g_engineReadyEvent = NULL;
+	}
+
+	// Engine is up — safe to load plugins and let them install hooks.
 	Splash::SetStatus(L"Loading plugins...");
-	Splash::SetProgress(0.75f);
+	Splash::SetProgress(0.80f);
 
 	ModLoaderLogger::LoadAllPlugins();
 
@@ -231,8 +264,6 @@ static DWORD WINAPI MainInitThreadProc(LPVOID)
 	// Brief pause so the user can see 100%, then close the splash.
 	Sleep(600);
 	Splash::Close();
-
-	ResumeOtherThreads(threadSuspension);
 
 	return 0;
 }
@@ -364,35 +395,61 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 		}
 		LogToFile::Info("Dwmapi proxy initialized successfully");
 
+		// Create the engine-ready event before spawning the init thread so
+		// there is no race between the thread registering the callback and
+		// OnEngineInitForUELog trying to signal the event.
+		g_engineReadyEvent = CreateEventW(nullptr, FALSE, FALSE, nullptr);
+		if (!g_engineReadyEvent)
+		{
+			LogToFile::Error("FATAL: Failed to create engine-ready event (%lu)", GetLastError());
+			DwmapiProxy::Shutdown();
+			LogToFile::Shutdown();
+			return FALSE;
+		}
+
 		// Create the synchronisation event used by DLL_PROCESS_DETACH to wait
 		// for the init thread before running the shutdown sequence.
 		g_pluginsLoadedEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
 		if (!g_pluginsLoadedEvent)
 		{
 			LogToFile::Error("FATAL: Failed to create init-done event (%lu)", GetLastError());
+			CloseHandle(g_engineReadyEvent);
+			g_engineReadyEvent = NULL;
 			DwmapiProxy::Shutdown();
 			LogToFile::Shutdown();
 			return FALSE;
 		}
 
-		// Spawn the main init thread and return immediately, releasing the
-		// loader lock.  Everything else (splash, auto-update, hooks, plugin
-		// loading) runs in that thread where WinHTTP and LoadLibrary work
-		// normally, and where all splash calls share the same owning thread.
-		g_mainInitThread = CreateThread(nullptr, 0, MainInitThreadProc, nullptr, 0, nullptr);
-		if (!g_mainInitThread)
+		// If DllMain is running on the game's main thread, queue an APC so
+		// MainInitThreadProc fires the next time that thread enters an alertable
+		// wait (after the loader lock is released).  Otherwise spawn a dedicated
+		// thread as normal — the spawned thread is never the main thread, so
+		// it won't contend with game logic running there.
+		if (GetCurrentThreadId() == get_main_thread_id())
 		{
-			DWORD err = GetLastError();
-			LogToFile::Error("FATAL: Failed to create main init thread (%lu)", err);
-			CloseHandle(g_pluginsLoadedEvent);
-			g_pluginsLoadedEvent = NULL;
-			DwmapiProxy::Shutdown();
-			LogToFile::Shutdown();
-			return FALSE;
+			LogToFile::Info("DllMain on main thread — deferring init via QueueUserAPC");
+			QueueUserAPC((PAPCFUNC)MainInitApcProc, GetCurrentThread(), (ULONG_PTR)hModule);
+			// g_mainInitThread stays NULL; DLL_PROCESS_DETACH guards with if()
+		}
+		else
+		{
+			g_mainInitThread = CreateThread(nullptr, 0, MainInitThreadProc, nullptr, 0, nullptr);
+			if (!g_mainInitThread)
+			{
+				DWORD err = GetLastError();
+				LogToFile::Error("FATAL: Failed to create main init thread (%lu)", err);
+				CloseHandle(g_pluginsLoadedEvent);
+				g_pluginsLoadedEvent = NULL;
+				CloseHandle(g_engineReadyEvent);
+				g_engineReadyEvent = NULL;
+				DwmapiProxy::Shutdown();
+				LogToFile::Shutdown();
+				return FALSE;
+			}
 		}
 
 		// Return TRUE immediately — loader lock is now released and the init
-		// thread can proceed with WinHTTP, hook patching, and plugin loading.
+		// work can proceed (either via the APC or the spawned thread).
 	}
 	break;
 
@@ -409,6 +466,14 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 			LogToFile::Info("Process terminating - skipping shutdown to avoid loader-lock / allocator corruption");
 			LogToFile::Shutdown();
 			break;
+		}
+
+		// Clean up the engine-ready event if the init thread didn't get to it
+		// (e.g. if FreeLibrary is called very early).
+		if (g_engineReadyEvent)
+		{
+			CloseHandle(g_engineReadyEvent);
+			g_engineReadyEvent = NULL;
 		}
 
 		// Wait for the init thread to finish so we never try to unload plugins

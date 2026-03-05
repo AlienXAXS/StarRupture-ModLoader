@@ -325,6 +325,7 @@ echo Deploy complete.</Command>
     <ClInclude Include="plugins\plugin_interface.h" />
     <ClInclude Include="plugins\plugin_manager.h" />
     <ClInclude Include="UI\splash_window.h" />
+    <ClInclude Include="utils\thread_utils.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="$(StarRuptureSDKSourceDir)Basic.cpp">
