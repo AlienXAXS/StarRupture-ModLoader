@@ -291,7 +291,6 @@ void Rcon::Init()
 
 	LOG_INFO("[Rcon] Query port : %d", port);
 	LOG_INFO("[Rcon] Server name: %s", servName.c_str());
-	LOG_INFO("[Rcon] RCON password is set");
 
 	// Register built-in commands
 	auto& cmds = CommandHandler::Get();
@@ -335,7 +334,7 @@ void Rcon::Shutdown()
 
 void Rcon::OnAnyWorldBeginPlay(SDK::UWorld* world, const char* worldName)
 {
-	LOG_INFO("[Rcon] World begin play: %s", worldName ? worldName : "(null)");
+	LOG_DEBUG("[Rcon] World begin play: %s", worldName ? worldName : "(null)");
 
 	g_currentWorld.store(static_cast<void*>(world), std::memory_order_release);
 
@@ -351,7 +350,7 @@ void Rcon::OnAnyWorldBeginPlay(SDK::UWorld* world, const char* worldName)
 
 void Rcon::OnExperienceLoadComplete()
 {
-	LOG_INFO("[Rcon] Experience load complete – refreshing player state");
+	LOG_DEBUG("[Rcon] Experience load complete – refreshing player state");
 	void* world = g_currentWorld.load(std::memory_order_acquire);
 	CollectPlayers(world);
 
