@@ -27,7 +27,7 @@
 // v12: Added RegisterPlayerLeftCallback / UnregisterPlayerLeftCallback
 //      to IPluginHooks for receiving notifications when ACrGameModeBase::Logout fires
 //      (player controller about to be destroyed — still valid at callback time)
-#define PLUGIN_INTERFACE_VERSION 12
+#define PLUGIN_INTERFACE_VERSION 13
 
 // Log levels
 enum class PluginLogLevel
