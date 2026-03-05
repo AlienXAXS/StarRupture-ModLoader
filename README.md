@@ -1,6 +1,6 @@
 # StarRupture ModLoader
 
-A plugin-based mod loader for [Star Rupture](https://store.steampowered.com/app/1187400/Star_Rupture/). Loads automatically via DLL proxy injection — no game files are modified.
+A plugin-based mod loader for [StarRupture](https://store.steampowered.com/app/1631270/StarRupture/). Loads automatically via DLL proxy injection — no game files are modified.
 
 Like this project? Give it a ⭐ here on GitHub!
 
