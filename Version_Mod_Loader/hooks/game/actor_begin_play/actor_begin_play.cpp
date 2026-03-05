@@ -53,7 +53,7 @@ namespace Hooks::ActorBeginPlay
 		// The pattern matches unique interior bytes inside AActor::BeginPlay,
 		// NOT the function prologue.  We find the interior match first, then
 		// walk backwards to locate the actual function entry point.
-		uintptr_t interiorAddr = Scanner::FindPatternInMainModule(ScanPatterns::AActor_BeginPlay);
+		uintptr_t interiorAddr = Scanner::FindPatternInMainModule("AActorBeginPlay", ScanPatterns::AActor_BeginPlay);
 
 		HMODULE mainModule = GetModuleHandleW(nullptr);
 		auto base = reinterpret_cast<uintptr_t>(mainModule);

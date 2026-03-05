@@ -40,36 +40,13 @@ static PluginInfo s_pluginInfo = {
 // UCrDedicatedServerSettingsComp::ParseSettings pattern
 // "48 8B C4 55 41 54 48 8D 6C 24"
 // -----------------------------------------------------------------------
-static constexpr const char* PARSE_SETTINGS_PATTERN = "48 8B C4 55 41 54 48 8D 6C 24";
+static constexpr const char* DEDSERVER_SETTINGS_COMP_PARSE_SETTINGS_PATTERN = "48 8B C4 55 41 54 48 8D 6C 24";
 
 // -----------------------------------------------------------------------
 // Engine lifecycle callbacks
 // -----------------------------------------------------------------------
 static void OnEngineInit()
 {
-    LOG_INFO("Engine initialised - scanning for UCrDedicatedServerSettingsComp::ParseSettings...");
-
-    uintptr_t addr = g_scanner->FindPatternInMainModule(PARSE_SETTINGS_PATTERN);
-    if (addr == 0)
-    {
-        LOG_ERROR("Pattern scan failed – could not locate ParseSettings");
-        return;
-    }
-
-    LOG_INFO("Found ParseSettings at 0x%llX", static_cast<unsigned long long>(addr));
-    ParseSettingsHook::Install(addr);
-
-    // Apply max players patch if configured
-    int maxPlayers = ServerUtilityConfig::Config::GetMaxPlayers();
-    if (maxPlayers > 0)
-    {
-        LOG_INFO("MaxPlayers configured to %d - applying patch...", maxPlayers);
-        MaxPlayersHook::Install(maxPlayers);
-
-        // Auto-assign professions for players joining when MaxPlayers is patched
-        AutoProfessionHook::Install();
-    }
-
     // Start the RCON / Steam Query subsystem
     Rcon::Init();
 
@@ -194,6 +171,28 @@ extern "C"
         {
             hooks->RegisterEngineTickCallback(OnEngineTick);
             LOG_DEBUG("Registered for engine tick callback (game-thread task dispatch)");
+        }
+
+        LOG_INFO("Engine initialised - scanning for UCrDedicatedServerSettingsComp::ParseSettings...");
+
+        uintptr_t addr = g_scanner->FindPatternInMainModule(DEDSERVER_SETTINGS_COMP_PARSE_SETTINGS_PATTERN);
+        if (addr == 0)
+        {
+            LOG_ERROR("Pattern scan failed – could not locate ParseSettings");
+        } else {
+            LOG_INFO("Found ParseSettings at 0x%llX", static_cast<unsigned long long>(addr));
+            ParseSettingsHook::Install(addr);
+        }
+
+        // Apply max players patch if configured
+        int maxPlayers = ServerUtilityConfig::Config::GetMaxPlayers();
+        if (maxPlayers > 0)
+        {
+            LOG_INFO("MaxPlayers configured to %d - applying patch...", maxPlayers);
+            MaxPlayersHook::Install(maxPlayers);
+
+            // Auto-assign professions for players joining when MaxPlayers is patched
+            AutoProfessionHook::Install();
         }
 
         return true;

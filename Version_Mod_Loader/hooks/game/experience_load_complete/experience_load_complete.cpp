@@ -78,7 +78,7 @@ namespace Hooks::ExperienceLoadComplete
 		ModLoaderLogger::LogInfo(L"[ExperienceLoadComplete] Scanning for UCrExperienceManagerComponent::OnExperienceLoadComplete...");
 		ModLoaderLogger::LogDebug(L"[ExperienceLoadComplete]   Pattern: %S", pattern);
 
-		uintptr_t addr = Scanner::FindPatternInMainModule(pattern);
+		uintptr_t addr = Scanner::FindPatternInMainModule("UCrExperienceManagerComponent::OnExperienceLoadComplete", pattern);
 
 		if (!addr)
 		{

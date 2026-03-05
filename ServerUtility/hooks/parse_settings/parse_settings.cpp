@@ -45,9 +45,6 @@ struct EngineString
 typedef void* (__cdecl* FMemoryMalloc_t)(size_t Count, uint32_t Alignment);
 typedef void(__cdecl* FMemoryFree_t)(void* Original);
 
-static FMemoryMalloc_t g_engineMalloc = nullptr;
-static FMemoryFree_t   g_engineFree = nullptr;
-
 // ---------------------------------------------------------------------------
 // Field accessor namespace for UCrDedicatedServerSettingsComp
 // Offsets verified against IDA pseudocode of ParseSettings.
@@ -118,7 +115,10 @@ static bool AssignEngineString(EngineString* str, const wchar_t* value)
 	if (!str)
 		return false;
 
-	if (!g_engineMalloc || !g_engineFree)
+	auto* hooks = GetHooks();
+
+
+	if (!hooks->EngineAlloc || !hooks->EngineFree)
 	{
 		LOG_ERROR("[AssignEngineString] Engine allocator not resolved!");
 		return false;
@@ -135,7 +135,7 @@ static bool AssignEngineString(EngineString* str, const wchar_t* value)
 		{
 			LOG_DEBUG("[AssignEngineString] Freeing old Data at %p (Num=%d, Max=%d)",
 				static_cast<void*>(str->Data), str->Num, str->Max);
-			g_engineFree(str->Data);
+			hooks->EngineFree(str->Data);
 		}
 		else
 		{
@@ -162,7 +162,7 @@ static bool AssignEngineString(EngineString* str, const wchar_t* value)
 	// UE5 FString uses alignment of __STDCPP_DEFAULT_NEW_ALIGNMENT__ which is
 	// typically 16 on x64 MSVC.  FMallocBinned2 expects the same alignment
 	// that was used at allocation time, so we use 16 to match.
-	void* newData = g_engineMalloc(byteSize, 16);
+	void* newData = hooks->EngineAlloc(byteSize, 16);
 	if (!newData)
 	{
 		LOG_ERROR("[AssignEngineString] FMemory::Malloc(%zu, 16) returned null!", byteSize);
@@ -343,7 +343,8 @@ static __int64 __fastcall Hook_ParseSettings(void* thisPtr)
 		return result;
 	}
 
-	if (!g_engineMalloc || !g_engineFree)
+	auto* hooks = GetHooks();
+	if (!hooks->EngineAlloc || !hooks->EngineFree)
 	{
 		LOG_ERROR("[Hook_ParseSettings] Engine allocator not resolved - cannot safely set FStrings, delegating to original");
 		__int64 result = g_originalParseSettings(thisPtr);
@@ -519,7 +520,7 @@ static constexpr size_t PARSESETTINGS_FREE_CALL_OFFSET = 0x16F;
 // This sequence (save result, null-check, branch) is extremely common after
 // Malloc calls, but the full pattern with the trailing bytes is unique enough.
 // ---------------------------------------------------------------------------
-static const char* MALLOC_CALL_PATTERN =
+static const char* FMEMORY_MALLOC_PATTERN =
 "E8 ?? ?? ?? ?? 48 8B D8 48 85 C0 0F 84 ?? ?? ?? ?? "
 "33 D2 41 B8 ?? ?? ?? ?? 48 8B C8 E8 ?? ?? ?? ?? "
 "0F 10 05 ?? ?? ?? ?? 33 C0 48 C7 43 ?? ?? ?? ?? ?? "
@@ -671,7 +672,7 @@ static uintptr_t FindMallocViaPattern()
 		return 0;
 	}
 
-	uintptr_t callSite = scanner->FindPatternInMainModule(MALLOC_CALL_PATTERN);
+	uintptr_t callSite = scanner->FindPatternInMainModule(FMEMORY_MALLOC_PATTERN);
 	if (callSite == 0)
 	{
 		LOG_WARN("[FindMalloc] Malloc call-site pattern not found");
@@ -798,79 +799,6 @@ static uintptr_t FindFreeViaOffset(uintptr_t mallocAddr)
 	return freeAddr;
 }
 
-// ---------------------------------------------------------------------------
-// Resolve both FMemory::Malloc and FMemory::Free from the game binary.
-//
-// Strategy:
-//   1. Find FMemory::Malloc via a unique call-site pattern.
-//   2. Extract the GMalloc global address from Malloc's body.
-//   3. Scan ParseSettings for E8 CALLs whose targets also reference GMalloc
-//      → that gives us FMemory::Free.
-//   4. Fallback: use a known offset from ParseSettings to locate Free.
-//   5. Smoke-test the pair under SEH before committing.
-// ---------------------------------------------------------------------------
-static bool ResolveEngineAllocator()
-{
-	LOG_INFO("[ResolveEngineAllocator] Resolving FMemory::Malloc and FMemory::Free...");
-
-	// Step 1: Find FMemory::Malloc
-	uintptr_t mallocAddr = FindMallocViaPattern();
-	if (mallocAddr == 0)
-	{
-		LOG_ERROR("[ResolveEngineAllocator] Could not find FMemory::Malloc");
-		return false;
-	}
-
-	// Step 2: Extract GMalloc address from Malloc's body
-	uintptr_t gmallocAddr = ExtractGMallocAddress(mallocAddr, 64);
-	if (gmallocAddr == 0)
-	{
-		LOG_WARN("[ResolveEngineAllocator] Could not extract GMalloc address from Malloc body");
-	}
-	else
-	{
-		LOG_INFO("[ResolveEngineAllocator] GMalloc global at 0x%llX",
-			static_cast<unsigned long long>(gmallocAddr));
-	}
-
-	// Step 3: Find FMemory::Free via GMalloc cross-reference in ParseSettings
-	uintptr_t freeAddr = 0;
-	if (gmallocAddr != 0)
-	{
-		freeAddr = FindFreeViaGMalloc(gmallocAddr);
-	}
-
-	// Step 4: Fallback - use known offset from ParseSettings
-	if (freeAddr == 0)
-	{
-		LOG_WARN("[ResolveEngineAllocator] GMalloc cross-reference failed, trying offset fallback...");
-		freeAddr = FindFreeViaOffset(mallocAddr);
-	}
-
-	if (freeAddr == 0)
-	{
-		LOG_ERROR("[ResolveEngineAllocator] Could not find FMemory::Free");
-		return false;
-	}
-
-	// Step 5: Smoke test the Malloc/Free pair
-	if (!SmokeTestAllocator(reinterpret_cast<FMemoryMalloc_t>(mallocAddr),
-		reinterpret_cast<FMemoryFree_t>(freeAddr)))
-	{
-		LOG_ERROR("[ResolveEngineAllocator] Smoke test FAILED - not safe to use these allocators");
-		return false;
-	}
-
-	// Commit
-	g_engineMalloc = reinterpret_cast<FMemoryMalloc_t>(mallocAddr);
-	g_engineFree = reinterpret_cast<FMemoryFree_t>(freeAddr);
-
-	LOG_INFO("[ResolveEngineAllocator] SUCCESS - FMemory::Malloc=0x%llX, FMemory::Free=0x%llX",
-		static_cast<unsigned long long>(mallocAddr),
-		static_cast<unsigned long long>(freeAddr));
-
-	return true;
-}
 
 // ---------------------------------------------------------------------------
 // Public API: ParseSettingsHook namespace
@@ -888,13 +816,6 @@ void ParseSettingsHook::Install(uintptr_t targetAddress)
 
 	// Store the address for use by engine allocator resolution
 	g_parseSettingsAddress = targetAddress;
-
-	// Resolve engine allocator (FMemory::Malloc / FMemory::Free)
-	if (!ResolveEngineAllocator())
-	{
-		LOG_WARN("[ParseSettingsHook::Install] Engine allocator resolution failed - "
-			"hook will still be installed but FString overrides will be disabled");
-	}
 
 	// Install the inline hook via the mod loader's hook interface
 	auto* hooks = GetHooks();
@@ -940,8 +861,6 @@ void ParseSettingsHook::Remove()
 
 	g_hookHandle = nullptr;
 	g_originalParseSettings = nullptr;
-	g_engineMalloc = nullptr;
-	g_engineFree = nullptr;
 	g_parseSettingsAddress = 0;
 
 	LOG_INFO("[ParseSettingsHook::Remove] Hook removed successfully");

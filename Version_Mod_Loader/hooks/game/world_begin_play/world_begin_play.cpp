@@ -135,7 +135,7 @@ namespace Hooks::WorldBeginPlay
 		ModLoaderLogger::LogInfo(L"[WorldBeginPlay] Scanning for OnWorldBeginPlay...");
 		ModLoaderLogger::LogDebug(L"[WorldBeginPlay]   Pattern: %S", pattern);
 
-		uintptr_t addr = Scanner::FindPatternInMainModule(pattern);
+		uintptr_t addr = Scanner::FindPatternInMainModule("UGame::OnWorldBeginPlay", pattern);
 
 		if (!addr)
 		{

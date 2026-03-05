@@ -79,7 +79,7 @@ namespace Hooks::PlayerLeft
 		ModLoaderLogger::LogInfo(L"[PlayerLeft] Scanning for ACrGameModeBase::Logout...");
 		ModLoaderLogger::LogDebug(L"[PlayerLeft]   Pattern: %S", pattern);
 
-		uintptr_t addr = Scanner::FindPatternInMainModule(pattern);
+		uintptr_t addr = Scanner::FindPatternInMainModule("ACrGameModeBase::Logout", pattern);
 
 		if (!addr)
 		{

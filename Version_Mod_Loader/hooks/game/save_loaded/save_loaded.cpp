@@ -78,7 +78,7 @@ namespace Hooks::SaveLoaded
 		ModLoaderLogger::LogInfo(L"[SaveLoaded] Scanning for UCrMassSaveSubsystem::OnSaveLoaded...");
 		ModLoaderLogger::LogDebug(L"[SaveLoaded]   Pattern: %S", pattern);
 
-		uintptr_t addr = Scanner::FindPatternInMainModule(pattern);
+		uintptr_t addr = Scanner::FindPatternInMainModule("UCrMassSaveSubsystem::OnSaveLoaded", pattern);
 
 		if (!addr)
 		{

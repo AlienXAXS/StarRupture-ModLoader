@@ -1,5 +1,6 @@
 #include "plugin_manager.h"
 #include "plugin_interface.h"
+#include "logging/log.h"
 #include "logging/logger.h"
 #include "config/config_manager.h"
 #include "memory_scanner/scanner_interface.h"

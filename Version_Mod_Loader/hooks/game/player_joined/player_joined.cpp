@@ -79,7 +79,7 @@ namespace Hooks::PlayerJoined
 		ModLoaderLogger::LogInfo(L"[PlayerJoined] Scanning for ACrGameModeBase::PostLogin...");
 		ModLoaderLogger::LogDebug(L"[PlayerJoined]   Pattern: %S", pattern);
 
-		uintptr_t addr = Scanner::FindPatternInMainModule(pattern);
+		uintptr_t addr = Scanner::FindPatternInMainModule("ACrGameModeBase::PostLogin", pattern);
 
 		if (!addr)
 		{

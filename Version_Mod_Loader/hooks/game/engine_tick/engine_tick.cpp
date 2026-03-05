@@ -49,7 +49,7 @@ namespace Hooks::EngineTick
 
 		ModLoaderLogger::LogDebug(L"[EngineTick]   Pattern: %S", pattern);
 
-		uintptr_t addr = Scanner::FindPatternInMainModule(pattern);
+		uintptr_t addr = Scanner::FindPatternInMainModule("UGameEngine::Tick", pattern);
 
 		if (!addr)
 		{

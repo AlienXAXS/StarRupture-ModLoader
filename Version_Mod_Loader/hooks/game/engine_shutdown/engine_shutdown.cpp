@@ -110,7 +110,7 @@ namespace Hooks::EngineShutdown
 			ModLoaderLogger::LogInfo(L"[EngineShutdown] Scanning for FEngineLoop::Exit...");
 			ModLoaderLogger::LogDebug(L"[EngineShutdown]   Pattern: %S", pattern);
 
-			uintptr_t addr = Scanner::FindPatternInMainModule(pattern);
+			uintptr_t addr = Scanner::FindPatternInMainModule("FEngineLoop::Exit", pattern);
 			if (addr)
 			{
 				ModLoaderLogger::LogDebug(L"[EngineShutdown] [OK] FEngineLoop::Exit found at 0x%llX (base+0x%llX)",
@@ -145,7 +145,7 @@ namespace Hooks::EngineShutdown
 			ModLoaderLogger::LogInfo(L"[EngineShutdown] Scanning for UEngine::PreExit (fallback)...");
 			ModLoaderLogger::LogDebug(L"[EngineShutdown]   Pattern: %S", pattern);
 
-			uintptr_t addr = Scanner::FindPatternInMainModule(pattern);
+			uintptr_t addr = Scanner::FindPatternInMainModule("UEngine::PreExit", pattern);
 			if (addr)
 			{
 				ModLoaderLogger::LogDebug(L"[EngineShutdown] [OK] UEngine::PreExit found at 0x%llX (base+0x%llX)",

@@ -146,7 +146,7 @@ namespace Hooks::EngineInit
 			ModLoaderLogger::LogInfo(L"[EngineInit] Scanning for FEngineLoop::Init...");
 			ModLoaderLogger::LogDebug(L"[EngineInit]   Pattern: %S", pattern);
 
-			uintptr_t addr = Scanner::FindPatternInMainModule(pattern);
+			uintptr_t addr = Scanner::FindPatternInMainModule("FEngineLoop::Init", pattern);
 
 			if (addr)
 			{
@@ -186,7 +186,7 @@ namespace Hooks::EngineInit
 			ModLoaderLogger::LogInfo(L"[EngineInit] Scanning for UGameEngine::Init (fallback)...");
 			ModLoaderLogger::LogDebug(L"[EngineInit]   Pattern: %S", pattern);
 
-			uintptr_t addr = Scanner::FindPatternInMainModule(pattern);
+			uintptr_t addr = Scanner::FindPatternInMainModule("UGameEngine::Init", pattern);
 
 			if (addr)
 			{

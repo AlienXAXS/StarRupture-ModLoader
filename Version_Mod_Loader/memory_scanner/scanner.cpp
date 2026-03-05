@@ -178,10 +178,10 @@ uintptr_t Scanner::FindPatternInModule(HMODULE module, const std::string& patter
 	return result;
 }
 
-uintptr_t Scanner::FindPatternInMainModule(const std::string& pattern)
+uintptr_t Scanner::FindPatternInMainModule(const std::string& patternName, const std::string& pattern)
 {
 	HMODULE mainModule = GetModuleHandleW(nullptr);
-	ModLoaderLogger::LogDebug(L"[Scanner] FindPatternInMainModule: main module = 0x%llX",
+	ModLoaderLogger::LogDebug(L"[Scanner] FindPatternInMainModule: [%S] main module = 0x%llX", patternName.c_str(),
 		static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(mainModule)));
 	return FindPatternInModule(mainModule, pattern);
 }
