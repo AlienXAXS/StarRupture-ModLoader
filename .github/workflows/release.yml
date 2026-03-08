@@ -85,9 +85,15 @@ jobs:
       - name: Generate manifests
         shell: pwsh
         run: |
-          $tag      = "${{ steps.tag.outputs.TAG }}"
-          # IMPORTANT: Keep this in sync with PLUGIN_INTERFACE_VERSION_MAX in plugin_interface.h
-          $ifaceVer = 13
+          $tag = "${{ steps.tag.outputs.TAG }}"
+
+          # Read PLUGIN_INTERFACE_VERSION_MAX directly from the header so this
+          # value never drifts out of sync with the compiled binary.
+          $header   = Get-Content "Version_Mod_Loader\plugins\plugin_interface.h" -Raw
+          $match    = [regex]::Match($header, '#define\s+PLUGIN_INTERFACE_VERSION_MAX\s+(\d+)')
+          if (-not $match.Success) { throw "Could not find PLUGIN_INTERFACE_VERSION_MAX in plugin_interface.h" }
+          $ifaceVer = [int]$match.Groups[1].Value
+          Write-Host "Interface version: $ifaceVer"
 
           foreach ($variant in @("Client", "Server")) {
             $plugins = @()
