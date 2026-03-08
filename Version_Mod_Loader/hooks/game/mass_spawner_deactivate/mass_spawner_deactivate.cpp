@@ -142,15 +142,6 @@ namespace Hooks::MassSpawnerDeactivate
             ModLoaderLogger::LogWarn(L"[MassSpawnerDeactivate] RegisterBeforeCallback: null callback provided");
             return;
         }
-        if (!g_hook.installed)
-        {
-            ModLoaderLogger::LogInfo(L"[MassSpawnerDeactivate] First callback registered — installing hook now...");
-            if (!Install())
-            {
-                ModLoaderLogger::LogError(L"[MassSpawnerDeactivate] Failed to install hook — callback not registered");
-                return;
-            }
-        }
         g_beforeCallbacks.push_back(callback);
         ModLoaderLogger::LogDebug(L"[MassSpawnerDeactivate] Before callback registered (%zu total)", g_beforeCallbacks.size());
     }
@@ -171,15 +162,6 @@ namespace Hooks::MassSpawnerDeactivate
         {
             ModLoaderLogger::LogWarn(L"[MassSpawnerDeactivate] RegisterAfterCallback: null callback provided");
             return;
-        }
-        if (!g_hook.installed)
-        {
-            ModLoaderLogger::LogInfo(L"[MassSpawnerDeactivate] First callback registered — installing hook now...");
-            if (!Install())
-            {
-                ModLoaderLogger::LogError(L"[MassSpawnerDeactivate] Failed to install hook — callback not registered");
-                return;
-            }
         }
         g_afterCallbacks.push_back(callback);
         ModLoaderLogger::LogDebug(L"[MassSpawnerDeactivate] After callback registered (%zu total)", g_afterCallbacks.size());

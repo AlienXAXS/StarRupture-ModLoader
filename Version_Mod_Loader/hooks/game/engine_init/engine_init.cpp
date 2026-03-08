@@ -3,6 +3,9 @@
 #include "logging/logger.h"
 #include "memory_scanner/scanner.h"
 #include "hooks/memory/engine_allocator.h"
+#include "hooks/game/mass_spawner_activate/mass_spawner_activate.h"
+#include "hooks/game/mass_spawner_deactivate/mass_spawner_deactivate.h"
+#include "hooks/game/mass_do_spawning/mass_do_spawning.h"
 #include <vector>
 #include <algorithm>
 #include "../scan_patterns.h"
@@ -68,6 +71,14 @@ namespace Hooks::EngineInit
 			ModLoaderLogger::LogWarn(L"[EngineInit] Engine allocator resolution failed - "
 				L"plugins will not be able to use EngineAlloc/EngineFree");
 		}
+
+		// Install spawner hooks eagerly now that pattern scanning is available.
+		// These must be up before any plugin OnEngineInit callback runs so
+		// plugins can rely on the hooks being present without race conditions.
+		ModLoaderLogger::LogInfo(L"[EngineInit] Installing spawner hooks...");
+		Hooks::MassSpawnerActivate::Install();
+		Hooks::MassSpawnerDeactivate::Install();
+		Hooks::MassDoSpawning::Install();
 
 		if (!g_pluginCallbacks.empty())
 		{

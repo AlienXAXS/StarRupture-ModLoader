@@ -141,15 +141,6 @@ namespace Hooks::MassDoSpawning
             ModLoaderLogger::LogWarn(L"[MassDoSpawning] RegisterBeforeCallback: null callback provided");
             return;
         }
-        if (!g_hook.installed)
-        {
-            ModLoaderLogger::LogInfo(L"[MassDoSpawning] First callback registered — installing hook now...");
-            if (!Install())
-            {
-                ModLoaderLogger::LogError(L"[MassDoSpawning] Failed to install hook — callback not registered");
-                return;
-            }
-        }
         g_beforeCallbacks.push_back(callback);
         ModLoaderLogger::LogDebug(L"[MassDoSpawning] Before callback registered (%zu total)", g_beforeCallbacks.size());
     }
@@ -170,15 +161,6 @@ namespace Hooks::MassDoSpawning
         {
             ModLoaderLogger::LogWarn(L"[MassDoSpawning] RegisterAfterCallback: null callback provided");
             return;
-        }
-        if (!g_hook.installed)
-        {
-            ModLoaderLogger::LogInfo(L"[MassDoSpawning] First callback registered — installing hook now...");
-            if (!Install())
-            {
-                ModLoaderLogger::LogError(L"[MassDoSpawning] Failed to install hook — callback not registered");
-                return;
-            }
         }
         g_afterCallbacks.push_back(callback);
         ModLoaderLogger::LogDebug(L"[MassDoSpawning] After callback registered (%zu total)", g_afterCallbacks.size());

@@ -21,6 +21,9 @@
 #include "hooks/game/actor_begin_play/actor_begin_play.h"
 #include "hooks/game/player_joined/player_joined.h"
 #include "hooks/game/player_left/player_left.h"
+#include "hooks/game/mass_spawner_activate/mass_spawner_activate.h"
+#include "hooks/game/mass_spawner_deactivate/mass_spawner_deactivate.h"
+#include "hooks/game/mass_do_spawning/mass_do_spawning.h"
 
 #include "auto_update/auto_updater.h"
 
@@ -518,6 +521,9 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 		Hooks::ActorBeginPlay::Remove();
 		Hooks::PlayerJoined::Remove();
 		Hooks::PlayerLeft::Remove();
+		Hooks::MassSpawnerActivate::Remove();
+		Hooks::MassSpawnerDeactivate::Remove();
+		Hooks::MassDoSpawning::Remove();
 
 		ModLoaderLogger::ShutdownPluginManager();
 		ModLoaderLogger::ShutdownConfigManager();
