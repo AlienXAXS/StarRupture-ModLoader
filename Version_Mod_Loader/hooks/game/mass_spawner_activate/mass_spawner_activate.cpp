@@ -3,6 +3,7 @@
 #include "logging/logger.h"
 #include "memory_scanner/scanner.h"
 #include "../scan_patterns.h"
+#include "utils/mem_utils.h"
 #include <vector>
 #include <algorithm>
 
@@ -91,13 +92,18 @@ namespace Hooks::MassSpawnerActivate
         const char* pattern = ScanPatterns::AAbstractMassEnemySpawner_ActivateSpawner;
         if (!pattern || pattern[0] == '\0')
         {
-            ModLoaderLogger::LogWarn(L"[MassSpawnerActivate] Pattern not set (TODO: fill via IDA/x64dbg) — hook not installed");
+            ModLoaderLogger::LogWarn(L"[MassSpawnerActivate] Pattern not set — hook not installed");
             return false;
         }
 
-        ModLoaderLogger::LogDebug(L"[MassSpawnerActivate]   Pattern: %S", pattern);
-        uintptr_t addr = Scanner::FindPatternInMainModule("AAbstractMassEnemySpawner::ActivateSpawner", pattern);
-        if (!addr)
+        // The pattern matches AMegaMachineMassEnemySpawner::EnableSpawning,
+        // which ends with a JMP into the real AAbstractMassEnemySpawner::ActivateSpawner.
+        // We scan for the wrapper, then decode the E9 JMP at the known offset to get
+        // the real target address.
+        ModLoaderLogger::LogDebug(L"[MassSpawnerActivate] Scanning for EnableSpawning wrapper...");
+        uintptr_t wrapperAddr = Scanner::FindPatternInMainModule(
+            "AMegaMachineMassEnemySpawner::EnableSpawning", pattern);
+        if (!wrapperAddr)
         {
             ModLoaderLogger::LogError(L"[MassSpawnerActivate] Pattern scan failed — hook not installed");
             return false;
@@ -105,7 +111,27 @@ namespace Hooks::MassSpawnerActivate
 
         HMODULE mainModule = GetModuleHandleW(nullptr);
         auto base = reinterpret_cast<uintptr_t>(mainModule);
-        ModLoaderLogger::LogInfo(L"[MassSpawnerActivate] Found at 0x%llX (base+0x%llX)",
+        ModLoaderLogger::LogDebug(L"[MassSpawnerActivate] EnableSpawning at 0x%llX (base+0x%llX)",
+            static_cast<unsigned long long>(wrapperAddr),
+            static_cast<unsigned long long>(wrapperAddr - base));
+
+        // Decode the E9 JMP at wrapperAddr + offset to find ActivateSpawner
+        uintptr_t jmpAddr = wrapperAddr + ScanPatterns::AAbstractMassEnemySpawner_ActivateSpawner_Offset;
+        ModLoaderLogger::LogDebug(L"[MassSpawnerActivate] Resolving JMP at 0x%llX (offset +0x%X)",
+            static_cast<unsigned long long>(jmpAddr),
+            ScanPatterns::AAbstractMassEnemySpawner_ActivateSpawner_Offset);
+
+        uintptr_t addr = MemUtils::ResolveRelJmp(jmpAddr);
+        if (!addr)
+        {
+            ModLoaderLogger::LogError(
+                L"[MassSpawnerActivate] Expected E9 JMP at offset +0x%X — byte was 0x%02X, not 0xE9",
+                ScanPatterns::AAbstractMassEnemySpawner_ActivateSpawner_Offset,
+                static_cast<unsigned>(*reinterpret_cast<const uint8_t*>(jmpAddr)));
+            return false;
+        }
+
+        ModLoaderLogger::LogInfo(L"[MassSpawnerActivate] ActivateSpawner resolved to 0x%llX (base+0x%llX)",
             static_cast<unsigned long long>(addr),
             static_cast<unsigned long long>(addr - base));
 

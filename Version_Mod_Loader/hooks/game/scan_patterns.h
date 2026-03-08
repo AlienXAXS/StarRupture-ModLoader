@@ -53,8 +53,9 @@ namespace ScanPatterns
 		"48 8B C4 55 56 57 48 81 EC ?? ?? ?? ?? 33 F6";
 
 	// AAbstractMassEnemySpawner::ActivateSpawner(AAbstractMassEnemySpawner* this, bool bDisableAggroLock)
-	// TODO: fill pattern via IDA/x64dbg — leave empty until found (hook will no-op gracefully)
-	inline constexpr const char* AAbstractMassEnemySpawner_ActivateSpawner = "";
+	// This is actually ?EnableSpawning@AMegaMachineMassEnemySpawner@@UEAAXXZ with a offset to find ActivateSpawner
+	inline constexpr const char* AAbstractMassEnemySpawner_ActivateSpawner = "48 89 5C 24 ?? 57 48 83 EC ?? 48 8B 81 ?? ?? ?? ?? 48 8B D9 33 D2";
+	inline constexpr const int AAbstractMassEnemySpawner_ActivateSpawner_Offset = 0x3E;
 
 	// AAbstractMassEnemySpawner::DeactivateSpawner(AAbstractMassEnemySpawner* this, bool bPermanently)
 	// TODO: fill pattern via IDA/x64dbg — leave empty until found (hook will no-op gracefully)

@@ -1,6 +1,7 @@
 #include "engine_allocator.h"
 #include "logging/logger.h"
 #include "memory_scanner/scanner.h"
+#include "utils/mem_utils.h"
 
 #include <Windows.h>
 #include <cstdint>
@@ -29,47 +30,11 @@ static constexpr size_t FMEMORY_REF_TO_MALLOC_OFFSET = 17;
 static const char* FMEMORY_FREE_PATTERN = "48 85 C9 74 ?? 53 48 83 EC ?? 48 8B D9 48 8B 0D";
 
 // ---------------------------------------------------------------------------
-// Helper: check if an address range is readable (committed memory).
-// ---------------------------------------------------------------------------
-static bool IsReadableMemory(uintptr_t addr, size_t size)
-{
-	MEMORY_BASIC_INFORMATION mbi;
-	if (VirtualQuery(reinterpret_cast<const void*>(addr), &mbi, sizeof(mbi)) == 0)
-		return false;
-	if (mbi.State != MEM_COMMIT)
-		return false;
-	if (mbi.Protect & (PAGE_GUARD | PAGE_NOACCESS))
-		return false;
-	uintptr_t regionEnd = reinterpret_cast<uintptr_t>(mbi.BaseAddress) + mbi.RegionSize;
-	if (addr + size > regionEnd)
-		return false;
-	return true;
-}
-
-// ---------------------------------------------------------------------------
-// Helper: resolve an E8 rel32 CALL instruction at a given address.
-// Caller must ensure the address is readable.
-// ---------------------------------------------------------------------------
-static uintptr_t ResolveE8Call(uintptr_t addr)
-{
-	if (!IsReadableMemory(addr, 5))
-		return 0;
-
-	const auto* bytes = reinterpret_cast<const uint8_t*>(addr);
-	if (bytes[0] != 0xE8)
-		return 0;
-
-	int32_t rel32;
-	memcpy(&rel32, bytes + 1, sizeof(int32_t));
-	return addr + 5 + static_cast<uintptr_t>(static_cast<intptr_t>(rel32));
-}
-
-// ---------------------------------------------------------------------------
 // Helper: dump the first N bytes at an address as hex for diagnostics.
 // ---------------------------------------------------------------------------
 static void DumpBytes(const wchar_t* label, uintptr_t addr, size_t count)
 {
-	if (!IsReadableMemory(addr, count))
+	if (!MemUtils::IsReadableMemory(addr, count))
 	{
 		ModLoaderLogger::LogWarn(L"[EngineAllocator] %s at0x%llX not readable", label,
 			static_cast<unsigned long long>(addr));
@@ -92,7 +57,7 @@ static void DumpBytes(const wchar_t* label, uintptr_t addr, size_t count)
 // ---------------------------------------------------------------------------
 static uintptr_t ExtractGMallocAddress(uintptr_t funcAddr, size_t scanLen = 264)
 {
-	if (!IsReadableMemory(funcAddr, scanLen))
+	if (!MemUtils::IsReadableMemory(funcAddr, scanLen))
 		return 0;
 
 	const auto* bytes = reinterpret_cast<const uint8_t*>(funcAddr);
@@ -171,7 +136,7 @@ static uintptr_t FindMallocViaRefPattern()
 		static_cast<unsigned long long>(refAddr));
 
 	uintptr_t callSite = refAddr + FMEMORY_REF_TO_MALLOC_OFFSET;
-	if (!IsReadableMemory(callSite, 5))
+	if (!MemUtils::IsReadableMemory(callSite, 5))
 	{
 		ModLoaderLogger::LogWarn(L"[EngineAllocator] Call site at ref+%zu not readable", FMEMORY_REF_TO_MALLOC_OFFSET);
 		return 0;
@@ -185,8 +150,8 @@ static uintptr_t FindMallocViaRefPattern()
 		return 0;
 	}
 
-	uintptr_t mallocAddr = ResolveE8Call(callSite);
-	if (mallocAddr == 0 || !IsReadableMemory(mallocAddr, 16))
+	uintptr_t mallocAddr = MemUtils::ResolveRelCall(callSite);
+	if (mallocAddr == 0 || !MemUtils::IsReadableMemory(mallocAddr, 16))
 	{
 		ModLoaderLogger::LogWarn(L"[EngineAllocator] Failed to resolve malloc target from call at0x%llX",
 			static_cast<unsigned long long>(callSite));
@@ -231,11 +196,11 @@ static uintptr_t FindFreeViaGMalloc(uintptr_t refFuncAddr, uintptr_t gmallocAddr
 	for (size_t offset = 0; offset < 0x400; ++offset)
 	{
 		uintptr_t instrAddr = refFuncAddr + offset;
-		uintptr_t target = ResolveE8Call(instrAddr);
+		uintptr_t target = MemUtils::ResolveRelCall(instrAddr);
 		if (target == 0)
 			continue;
 
-		if (!IsReadableMemory(target, 64))
+		if (!MemUtils::IsReadableMemory(target, 64))
 			continue;
 
 		uintptr_t candidateGMalloc = ExtractGMallocAddress(target, 64);

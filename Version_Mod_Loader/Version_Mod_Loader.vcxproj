@@ -315,6 +315,7 @@ echo Deploy complete.</Command>
     <ClInclude Include="hooks\game\mass_spawner_deactivate\mass_spawner_deactivate.h" />
     <ClInclude Include="hooks\game\mass_do_spawning\mass_do_spawning.h" />
     <ClInclude Include="hooks\game\save_loaded\save_loaded.h" />
+    <ClInclude Include="hooks\game\scan_patterns.h" />
     <ClInclude Include="hooks\game\world_begin_play\world_begin_play.h" />
     <ClInclude Include="hooks\hooks_common.h" />
     <ClInclude Include="hooks\hooks_interface.h" />
@@ -329,6 +330,7 @@ echo Deploy complete.</Command>
     <ClInclude Include="plugins\plugin_manager.h" />
     <ClInclude Include="UI\splash_window.h" />
     <ClInclude Include="utils\thread_utils.h" />
+    <ClInclude Include="utils\mem_utils.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="$(StarRuptureSDKSourceDir)Basic.cpp">

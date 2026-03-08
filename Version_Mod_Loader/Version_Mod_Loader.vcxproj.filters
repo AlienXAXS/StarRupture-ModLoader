@@ -147,6 +147,9 @@
     <ClInclude Include="utils\thread_utils.h">
       <Filter>Source Files\utils</Filter>
     </ClInclude>
+    <ClInclude Include="utils\mem_utils.h">
+      <Filter>Source Files\utils</Filter>
+    </ClInclude>
     <ClInclude Include="hooks\game\mass_do_spawning\mass_do_spawning.h">
       <Filter>Source Files\hooks\game\spawning</Filter>
     </ClInclude>
@@ -155,6 +158,9 @@
     </ClInclude>
     <ClInclude Include="hooks\game\mass_spawner_deactivate\mass_spawner_deactivate.h">
       <Filter>Source Files\hooks\game\spawning</Filter>
+    </ClInclude>
+    <ClInclude Include="hooks\game\scan_patterns.h">
+      <Filter>Source Files\hooks\game</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
