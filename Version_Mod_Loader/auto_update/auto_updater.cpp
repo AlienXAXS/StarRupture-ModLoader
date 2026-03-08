@@ -542,13 +542,14 @@ void ModLoaderLogger::RunAutoUpdate()
 
 	// Gate on interface version
 	int manifestIfaceVer = JsonExtractInt(manifest, "interface_version", -1);
-	LogToFile::Debug("[AutoUpdate] Manifest interface_version=%d, loader PLUGIN_INTERFACE_VERSION=%d",
-		manifestIfaceVer, PLUGIN_INTERFACE_VERSION);
+	LogToFile::Debug("[AutoUpdate] Manifest interface_version=%d, loader range=[%d, %d]",
+		manifestIfaceVer, PLUGIN_INTERFACE_VERSION_MIN, PLUGIN_INTERFACE_VERSION_MAX);
 
-	if (manifestIfaceVer != PLUGIN_INTERFACE_VERSION)
+	if (manifestIfaceVer < PLUGIN_INTERFACE_VERSION_MIN ||
+		manifestIfaceVer > PLUGIN_INTERFACE_VERSION_MAX)
 	{
-		LogToFile::Warn("[AutoUpdate] Interface version mismatch — manifest=%d, loader=%d",
-			manifestIfaceVer, PLUGIN_INTERFACE_VERSION);
+		LogToFile::Warn("[AutoUpdate] Interface version %d not in supported range [%d, %d] — skipping update",
+			manifestIfaceVer, PLUGIN_INTERFACE_VERSION_MIN, PLUGIN_INTERFACE_VERSION_MAX);
 		LogToFile::Info("[AutoUpdate] Skipping update; plugins built for a different interface version "
 			"cannot be safely loaded by this loader");
 		return;

@@ -86,7 +86,7 @@ jobs:
         shell: pwsh
         run: |
           $tag      = "${{ steps.tag.outputs.TAG }}"
-          # IMPORTANT: Keep this in sync with PLUGIN_INTERFACE_VERSION in plugin_interface.h
+          # IMPORTANT: Keep this in sync with PLUGIN_INTERFACE_VERSION_MAX in plugin_interface.h
           $ifaceVer = 13
 
           foreach ($variant in @("Client", "Server")) {

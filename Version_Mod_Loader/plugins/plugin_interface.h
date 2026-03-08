@@ -3,7 +3,11 @@
 #include <windows.h>
 #include <cstdint>
 
-// Plugin interface version - increment when breaking changes are made
+// Plugin interface version history - increment MAX when new hooks/features are added.
+// Increment MIN only when an ABI-breaking change is unavoidable.
+// Loader accepts any plugin whose interfaceVersion is in [MIN, MAX].
+// Plugins compiled against older (but still supported) headers load without recompilation
+// because all interface structs are append-only â€” new fields are always added at the end.
 // v2: Added RegisterEngineShutdownCallback / UnregisterEngineShutdownCallback to IPluginHooks
 // v3: Replaced std::vector return types in IPluginScanner with caller-buffer API to fix
 //     cross-DLL heap corruption (EXCEPTION_ACCESS_VIOLATION on plugin load)
@@ -26,8 +30,10 @@
 //      (player controller fully connected and ready on server)
 // v12: Added RegisterPlayerLeftCallback / UnregisterPlayerLeftCallback
 //      to IPluginHooks for receiving notifications when ACrGameModeBase::Logout fires
-//      (player controller about to be destroyed — still valid at callback time)
-#define PLUGIN_INTERFACE_VERSION 13
+//      (player controller about to be destroyed ï¿½ still valid at callback time)
+#define PLUGIN_INTERFACE_VERSION_MIN 5   // oldest plugin ABI still accepted by this loader
+#define PLUGIN_INTERFACE_VERSION_MAX 13  // current interface version (this header)
+#define PLUGIN_INTERFACE_VERSION PLUGIN_INTERFACE_VERSION_MAX  // alias used by plugins in PluginInfo
 
 // Log levels
 enum class PluginLogLevel
@@ -237,7 +243,7 @@ struct IPluginHooks
     // Any-world begin play callbacks (v6)
     //
     // Unlike RegisterWorldBeginPlayCallback (ChimeraMain only), these fire for
-    // every world that begins play — the world name is passed as a C string.
+    // every world that begins play ï¿½ the world name is passed as a C string.
     // Callback signature: void OnAnyWorldBeginPlay(SDK::UWorld* world, const char* worldName)
     // -----------------------------------------------------------------------
 
@@ -247,7 +253,7 @@ struct IPluginHooks
     // -----------------------------------------------------------------------
     // Save-loaded callbacks (v7)
     //
-    // Fires when UCrMassSaveSubsystem::OnSaveLoaded completes — i.e. after
+    // Fires when UCrMassSaveSubsystem::OnSaveLoaded completes ï¿½ i.e. after
     // the save has finished loading and all actors should be spawned.
     // Callback signature: void OnSaveLoaded()
     // -----------------------------------------------------------------------
@@ -259,7 +265,7 @@ struct IPluginHooks
     // Experience-load-complete callbacks (v8)
     //
     // Fires when UCrExperienceManagerComponent::OnExperienceLoadComplete
-    // completes — this is significantly later than OnSaveLoaded and indicates
+    // completes ï¿½ this is significantly later than OnSaveLoaded and indicates
     // the map/gameplay experience is fully ready with all actors spawned.
     // Callback signature: void OnExperienceLoadComplete()
     // -----------------------------------------------------------------------
@@ -272,7 +278,7 @@ struct IPluginHooks
     //
     // Fires every frame on the game thread (UGameEngine::Tick).  Useful for
     // draining task queues or performing periodic game-thread work.
-  // Keep callbacks fast — they run every frame.
+  // Keep callbacks fast ï¿½ they run every frame.
     // Callback signature: void OnEngineTick(float deltaSeconds)
     // -----------------------------------------------------------------------
 
@@ -283,8 +289,8 @@ struct IPluginHooks
     // Actor begin-play callbacks (v10)
     //
     // Fires when any AActor::BeginPlay is called.  The actor pointer is
-    // passed as void* — cast to SDK::AActor* in the plugin.
-    // Performance note: this fires for EVERY actor — keep callbacks fast.
+    // passed as void* ï¿½ cast to SDK::AActor* in the plugin.
+    // Performance note: this fires for EVERY actor ï¿½ keep callbacks fast.
   // Callback signature: void OnActorBeginPlay(void* actor)
     // -----------------------------------------------------------------------
 
@@ -296,9 +302,9 @@ struct IPluginHooks
     //
     // Fires when ACrGameModeBase::PostLogin completes on the server.
     // At this point the player controller is fully networked, replicated,
-    // and ready — but may not yet possess a pawn (the game normally waits
+    // and ready ï¿½ but may not yet possess a pawn (the game normally waits
     // for the profession selection UI).
-    // The player controller pointer is passed as void* — cast to
+    // The player controller pointer is passed as void* ï¿½ cast to
     // SDK::APlayerController* or SDK::ACrPlayerControllerBase* in the plugin.
     // Callback signature: void OnPlayerJoined(void* playerController)
     // -----------------------------------------------------------------------
@@ -309,10 +315,10 @@ struct IPluginHooks
     // -----------------------------------------------------------------------
     // Player-left callbacks (v12)
     //
-    // Fires when ACrGameModeBase::Logout is called on the server — i.e. when
+    // Fires when ACrGameModeBase::Logout is called on the server ï¿½ i.e. when
     // a player disconnects, is kicked, or the session ends.  Callbacks are
     // invoked BEFORE the original Logout so the controller is still valid.
-    // The exiting controller pointer is passed as void* — cast to
+    // The exiting controller pointer is passed as void* ï¿½ cast to
     // SDK::AController* or SDK::ACrPlayerControllerBase* in the plugin.
     // Callback signature: void OnPlayerLeft(void* exitingController)
     // -----------------------------------------------------------------------
