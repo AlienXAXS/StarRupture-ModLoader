@@ -51,4 +51,21 @@ namespace ScanPatterns
 	// ACrGameModeBase::Logout(ACrGameModeBase* this, AController* Exiting)
 	inline constexpr const char* ACrGameModeBase_Logout =
 		"48 8B C4 55 56 57 48 81 EC ?? ?? ?? ?? 33 F6";
+
+	// AAbstractMassEnemySpawner::ActivateSpawner(AAbstractMassEnemySpawner* this, bool bDisableAggroLock)
+	// This is actually ?EnableSpawning@AMegaMachineMassEnemySpawner@@UEAAXXZ with a offset to find ActivateSpawner
+	inline constexpr const char* AAbstractMassEnemySpawner_ActivateSpawner = 
+		"48 89 5C 24 ?? 57 48 83 EC ?? 48 8B 81 ?? ?? ?? ?? 48 8B D9 33 D2";
+	inline constexpr const int AAbstractMassEnemySpawner_ActivateSpawner_Offset =
+		0x3E;
+
+	// AAbstractMassEnemySpawner::DeactivateSpawner(AAbstractMassEnemySpawner* this, bool bPermanently)
+	// TODO: fill pattern via IDA/x64dbg — leave empty until found (hook will no-op gracefully)
+	inline constexpr const char* AAbstractMassEnemySpawner_DeactivateSpawner = 
+		"40 53 48 83 EC ?? 88 54 24 ?? 48 8B D9 48 8B 15 ?? ?? ?? ?? E8 ?? ?? ?? ?? ?? ?? ?? 4C 8D 44 24 ?? 48 8B D0 48 8B CB 41 FF 91 ?? ?? ?? ?? 48 83 C4 ?? 5B C3 ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? 48 8B C4";
+
+	// AMassSpawner::DoSpawning(AMassSpawner* this)
+	// TODO: fill pattern via IDA/x64dbg — leave empty until found (hook will no-op gracefully)
+	inline constexpr const char* AMassSpawner_DoSpawning = 
+		"40 55 57 48 8D 6C 24 ?? 48 81 EC ?? ?? ?? ?? 83 B9 ?? ?? ?? ?? ?? 48 8B F9 75";
 }

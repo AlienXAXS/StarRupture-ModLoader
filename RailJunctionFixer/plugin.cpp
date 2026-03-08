@@ -102,7 +102,7 @@ static bool InstallMassEntityConfigWBPHook()
 		static_cast<unsigned long long>(addr),
 		static_cast<unsigned long long>(addr - base));
 
-	g_massEntityConfigWBPHookHandle = g_hooks->InstallHook(
+	g_massEntityConfigWBPHookHandle = g_hooks->Hooks->Install(
 		addr,
 		reinterpret_cast<void*>(&Hook_MassEntityConfigWBP),
 		reinterpret_cast<void**>(&g_originalMassEntityConfigWBP));
@@ -122,7 +122,7 @@ static void RemoveMassEntityConfigWBPHook()
 	if (g_massEntityConfigWBPHookHandle && g_hooks)
 	{
 		LOG_INFO("Removing UCrMassEntityConfigLoaderSubsystem::OnWorldBeginPlay hook...");
-		g_hooks->RemoveHook(g_massEntityConfigWBPHookHandle);
+		g_hooks->Hooks->Remove(g_massEntityConfigWBPHookHandle);
 		g_massEntityConfigWBPHookHandle = nullptr;
 		g_originalMassEntityConfigWBP = nullptr;
 		LOG_INFO("UCrMassEntityConfigLoaderSubsystem::OnWorldBeginPlay hook removed");
@@ -175,26 +175,26 @@ static void OnEngineInit()
 		// Register for experience-load-complete callback to run the rail scanner.
 		// This fires after all Mass Entity BP actors are fully spawned, which is
 		// later than OnSaveLoaded -- giving all actor data time to settle.
-		if (g_hooks && g_hooks->RegisterExperienceLoadCompleteCallback)
+		if (g_hooks && g_hooks->World)
 		{
-			g_hooks->RegisterExperienceLoadCompleteCallback(OnExperienceLoadComplete);
+			g_hooks->World->RegisterOnExperienceLoadComplete(OnExperienceLoadComplete);
 			LOG_INFO("Registered for experience-load-complete callback (rail socket scan)");
 		}
 		else
 		{
-			LOG_WARN("RegisterExperienceLoadCompleteCallback not available - rail socket scan will NOT run");
+			LOG_WARN("World sub-interface not available - rail socket scan will NOT run");
 		}
 
 		// Register for actor begin-play callback to TRACE log every spawned actor.
 		// This is installed after engine init so the hook targets live engine code.
-		if (g_hooks && g_hooks->RegisterActorBeginPlayCallback)
+		if (g_hooks && g_hooks->Actors)
 		{
-			g_hooks->RegisterActorBeginPlayCallback(RailJunctionFixer::RailScanner::OnActorBeginPlay);
+			g_hooks->Actors->RegisterOnActorBeginPlay(RailJunctionFixer::RailScanner::OnActorBeginPlay);
 			LOG_INFO("Registered for actor-begin-play callback (TRACE diagnostics)");
 		}
 		else
 		{
-			LOG_WARN("RegisterActorBeginPlayCallback not available - actor spawn diagnostics will NOT run");
+			LOG_WARN("Actors sub-interface not available - actor spawn diagnostics will NOT run");
 		}
 	}
 }
@@ -207,16 +207,12 @@ static void OnEngineShutdown()
 	LOG_INFO("Engine shutting down - cleaning up...");
 
 	// Unregister experience-load-complete callback
-	if (g_hooks && g_hooks->UnregisterExperienceLoadCompleteCallback)
-	{
-		g_hooks->UnregisterExperienceLoadCompleteCallback(OnExperienceLoadComplete);
-	}
+	if (g_hooks && g_hooks->World)
+		g_hooks->World->UnregisterOnExperienceLoadComplete(OnExperienceLoadComplete);
 
 	// Unregister actor begin-play callback
-	if (g_hooks && g_hooks->UnregisterActorBeginPlayCallback)
-	{
-		g_hooks->UnregisterActorBeginPlayCallback(RailJunctionFixer::RailScanner::OnActorBeginPlay);
-	}
+	if (g_hooks && g_hooks->Actors)
+		g_hooks->Actors->UnregisterOnActorBeginPlay(RailJunctionFixer::RailScanner::OnActorBeginPlay);
 
 	RailJunctionFixer::LogisticsFragmentFixer::Shutdown();
 
@@ -262,18 +258,12 @@ extern "C" {
 			LOG_ERROR("UCrMassEntityConfigLoaderSubsystem::OnWorldBeginPlay hook FAILED - hierarchy patch will not be applied");
 		}
 
-		hooks->RegisterEngineInitCallback(OnEngineInit);
+
+		hooks->Engine->RegisterOnInit(OnEngineInit);
 		LOG_INFO("Registered for engine init callback");
 
-		if (hooks->RegisterEngineShutdownCallback)
-		{
-			hooks->RegisterEngineShutdownCallback(OnEngineShutdown);
-			LOG_INFO("Registered for engine shutdown callback");
-		}
-		else
-		{
-			LOG_WARN("RegisterEngineShutdownCallback not available - UStruct restore will not run before engine teardown");
-		}
+		hooks->Engine->RegisterOnShutdown(OnEngineShutdown);
+		LOG_INFO("Registered for engine shutdown callback");
 
 		return true;
 	}

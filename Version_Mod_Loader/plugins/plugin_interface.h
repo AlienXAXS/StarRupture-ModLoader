@@ -3,7 +3,11 @@
 #include <windows.h>
 #include <cstdint>
 
-// Plugin interface version - increment when breaking changes are made
+// Plugin interface version history - increment MAX when new hooks/features are added.
+// Increment MIN only when an ABI-breaking change is unavoidable.
+// Loader accepts any plugin whose interfaceVersion is in [MIN, MAX].
+// Plugins compiled against older (but still supported) headers load without recompilation
+// because all interface structs are append-only — new fields are always added at the end.
 // v2: Added RegisterEngineShutdownCallback / UnregisterEngineShutdownCallback to IPluginHooks
 // v3: Replaced std::vector return types in IPluginScanner with caller-buffer API to fix
 //     cross-DLL heap corruption (EXCEPTION_ACCESS_VIOLATION on plugin load)
@@ -26,8 +30,23 @@
 //      (player controller fully connected and ready on server)
 // v12: Added RegisterPlayerLeftCallback / UnregisterPlayerLeftCallback
 //      to IPluginHooks for receiving notifications when ACrGameModeBase::Logout fires
-//      (player controller about to be destroyed � still valid at callback time)
-#define PLUGIN_INTERFACE_VERSION 13
+//      (player controller about to be destroyed — still valid at callback time)
+// v14: Replaced flat function-pointer fields (v1-v12) with typed sub-interface pointers.
+//      IPluginHooks now contains only 7 sub-interface pointers — all functionality
+//      accessed via hooks->Group->Method(...). MIN bumped to 14 (ABI break).
+//      Added 10 named callback typedefs (PluginEngineInitCallback, etc.).
+//      Sub-interfaces:
+//        Spawner  — Before/After hooks for ActivateSpawner, DeactivateSpawner, DoSpawning
+//                   (Before callbacks return bool; true cancels + suppresses After callbacks)
+//        Hooks    — low-level hook install/remove/query  (hooks->Hooks->Install)
+//        Memory   — patch/nop/read/alloc utilities       (hooks->Memory->Patch)
+//        Engine   — init/shutdown/tick subscriptions     (hooks->Engine->RegisterOnInit)
+//        World    — world-begin-play/save/experience     (hooks->World->RegisterOnWorldBeginPlay)
+//        Players  — player joined/left subscriptions     (hooks->Players->RegisterOnPlayerJoined)
+//        Actors   — actor begin-play subscriptions       (hooks->Actors->RegisterOnActorBeginPlay)
+#define PLUGIN_INTERFACE_VERSION_MIN 14  // oldest plugin ABI still accepted by this loader
+#define PLUGIN_INTERFACE_VERSION_MAX 14  // current interface version (this header)
+#define PLUGIN_INTERFACE_VERSION PLUGIN_INTERFACE_VERSION_MAX  // alias used by plugins in PluginInfo
 
 // Log levels
 enum class PluginLogLevel
@@ -110,7 +129,7 @@ struct IPluginConfig
     // Creates config file with defaults if it doesn't exist
     // Returns true if config was loaded/created successfully
     bool (*InitializeFromSchema)(const char* pluginName, const ConfigSchema* schema);
-    
+
     // Validate and repair config file based on schema
     // Adds missing entries with defaults, preserves existing values
     void (*ValidateConfig)(const char* pluginName, const ConfigSchema* schema);
@@ -183,142 +202,182 @@ typedef void* HookHandle;
 // Forward declare SDK::UWorld for callback
 namespace SDK { class UWorld; }
 
-// Hook interface provided by mod loader
-// Allows plugins to install inline hooks without needing the full implementation
+// ============================================================
+// Event callback typedefs (v14)
+// Named equivalents of the anonymous inline types used in the flat IPluginHooks
+// fields. Used by the typed sub-interface structs (IPluginEngineEvents, etc.)
+// and may also be used by plugin authors for cleaner callback declarations.
+// ============================================================
+
+typedef void (*PluginEngineInitCallback)();
+typedef void (*PluginEngineShutdownCallback)();
+typedef void (*PluginEngineTickCallback)(float deltaSeconds);
+typedef void (*PluginWorldBeginPlayCallback)(SDK::UWorld* world);
+typedef void (*PluginAnyWorldBeginPlayCallback)(SDK::UWorld* world, const char* worldName);
+typedef void (*PluginSaveLoadedCallback)();
+typedef void (*PluginExperienceLoadCompleteCallback)();
+typedef void (*PluginActorBeginPlayCallback)(void* actor);
+typedef void (*PluginPlayerJoinedCallback)(void* playerController);
+typedef void (*PluginPlayerLeftCallback)(void* exitingController);
+
+// ============================================================
+// Spawner hook callback typedefs (v14)
+// Used with IPluginSpawnerHooks accessible via hooks->Spawner
+// ============================================================
+
+// AAbstractMassEnemySpawner::ActivateSpawner — Before: return true to cancel
+typedef bool (*PluginBeforeActivateSpawnerCallback)(void* spawner, bool bDisableAggroLock);
+// AAbstractMassEnemySpawner::ActivateSpawner — After: fires only if not cancelled
+typedef void (*PluginAfterActivateSpawnerCallback)(void* spawner, bool bDisableAggroLock);
+
+// AAbstractMassEnemySpawner::DeactivateSpawner — Before: return true to cancel
+typedef bool (*PluginBeforeDeactivateSpawnerCallback)(void* spawner, bool bPermanently);
+// AAbstractMassEnemySpawner::DeactivateSpawner — After: fires only if not cancelled
+typedef void (*PluginAfterDeactivateSpawnerCallback)(void* spawner, bool bPermanently);
+
+// AMassSpawner::DoSpawning — Before: return true to cancel the batch spawn
+typedef bool (*PluginBeforeDoSpawningCallback)(void* spawner);
+// AMassSpawner::DoSpawning — After: fires only if not cancelled
+typedef void (*PluginAfterDoSpawningCallback)(void* spawner);
+
+// ============================================================
+// IPluginHookUtils — low-level hook install/remove/query (v14)
+// Access via: hooks->Hooks->Install(...)
+// ============================================================
+struct IPluginHookUtils
+{
+    HookHandle (*Install)(uintptr_t targetAddress, void* detourFunction, void** originalFunction);
+    void       (*Remove)(HookHandle handle);
+    bool       (*IsInstalled)(HookHandle handle);
+};
+
+// ============================================================
+// IPluginMemoryUtils — memory patch/nop/read/alloc utilities (v14)
+// Access via: hooks->Memory->Patch(...)
+// ============================================================
+struct IPluginMemoryUtils
+{
+    bool  (*Patch)(uintptr_t address, const uint8_t* data, size_t size);
+    bool  (*Nop)(uintptr_t address, size_t size);
+    bool  (*Read)(uintptr_t address, void* buffer, size_t size);
+    void* (*Alloc)(size_t count, uint32_t alignment);
+    void  (*Free)(void* ptr);
+    bool  (*IsAllocatorAvailable)();
+};
+
+// ============================================================
+// IPluginEngineEvents — engine lifecycle event subscriptions (v14)
+// Access via: hooks->Engine->RegisterOnInit(...)
+// ============================================================
+struct IPluginEngineEvents
+{
+    void (*RegisterOnInit)(PluginEngineInitCallback);
+    void (*UnregisterOnInit)(PluginEngineInitCallback);
+    void (*RegisterOnShutdown)(PluginEngineShutdownCallback);
+    void (*UnregisterOnShutdown)(PluginEngineShutdownCallback);
+    void (*RegisterOnTick)(PluginEngineTickCallback);
+    void (*UnregisterOnTick)(PluginEngineTickCallback);
+};
+
+// ============================================================
+// IPluginWorldEvents — world / level event subscriptions (v14)
+// Access via: hooks->World->RegisterOnWorldBeginPlay(...)
+// ============================================================
+struct IPluginWorldEvents
+{
+    void (*RegisterOnWorldBeginPlay)(PluginWorldBeginPlayCallback);
+    void (*UnregisterOnWorldBeginPlay)(PluginWorldBeginPlayCallback);
+    void (*RegisterOnAnyWorldBeginPlay)(PluginAnyWorldBeginPlayCallback);
+    void (*UnregisterOnAnyWorldBeginPlay)(PluginAnyWorldBeginPlayCallback);
+    void (*RegisterOnSaveLoaded)(PluginSaveLoadedCallback);
+    void (*UnregisterOnSaveLoaded)(PluginSaveLoadedCallback);
+    void (*RegisterOnExperienceLoadComplete)(PluginExperienceLoadCompleteCallback);
+    void (*UnregisterOnExperienceLoadComplete)(PluginExperienceLoadCompleteCallback);
+};
+
+// ============================================================
+// IPluginPlayerEvents — player join/leave event subscriptions (v14)
+// Access via: hooks->Players->RegisterOnPlayerJoined(...)
+// ============================================================
+struct IPluginPlayerEvents
+{
+    void (*RegisterOnPlayerJoined)(PluginPlayerJoinedCallback);
+    void (*UnregisterOnPlayerJoined)(PluginPlayerJoinedCallback);
+    void (*RegisterOnPlayerLeft)(PluginPlayerLeftCallback);
+    void (*UnregisterOnPlayerLeft)(PluginPlayerLeftCallback);
+};
+
+// ============================================================
+// IPluginActorEvents — actor lifecycle event subscriptions (v14)
+// Access via: hooks->Actors->RegisterOnActorBeginPlay(...)
+// ============================================================
+struct IPluginActorEvents
+{
+    void (*RegisterOnActorBeginPlay)(PluginActorBeginPlayCallback);
+    void (*UnregisterOnActorBeginPlay)(PluginActorBeginPlayCallback);
+};
+
+// ============================================================
+// IPluginSpawnerHooks — enemy spawner Before/After hook group (v14)
+// Access via: hooks->Spawner->RegisterOnBeforeActivate(...)
+// Before callbacks run in registration order; any returning true cancels the
+// operation and suppresses the original call and all After callbacks.
+// ============================================================
+struct IPluginSpawnerHooks
+{
+    // -----------------------------------------------------------------------
+    // AAbstractMassEnemySpawner::ActivateSpawner(bool bDisableAggroLock) (v14)
+    // Before: fires before the spawner activates. Return true to cancel.
+    // After:  fires after the spawner has activated (only if not cancelled).
+    // Spawner pointer is AAbstractMassEnemySpawner* passed as void*.
+    // -----------------------------------------------------------------------
+    void (*RegisterOnBeforeActivate)(PluginBeforeActivateSpawnerCallback callback);
+    void (*UnregisterOnBeforeActivate)(PluginBeforeActivateSpawnerCallback callback);
+    void (*RegisterOnAfterActivate)(PluginAfterActivateSpawnerCallback callback);
+    void (*UnregisterOnAfterActivate)(PluginAfterActivateSpawnerCallback callback);
+
+    // -----------------------------------------------------------------------
+    // AAbstractMassEnemySpawner::DeactivateSpawner(bool bPermanently) (v14)
+    // Before: fires before the spawner deactivates. Return true to cancel.
+    // After:  fires after the spawner has deactivated (only if not cancelled).
+    // Spawner pointer is AAbstractMassEnemySpawner* passed as void*.
+    // -----------------------------------------------------------------------
+    void (*RegisterOnBeforeDeactivate)(PluginBeforeDeactivateSpawnerCallback callback);
+    void (*UnregisterOnBeforeDeactivate)(PluginBeforeDeactivateSpawnerCallback callback);
+    void (*RegisterOnAfterDeactivate)(PluginAfterDeactivateSpawnerCallback callback);
+    void (*UnregisterOnAfterDeactivate)(PluginAfterDeactivateSpawnerCallback callback);
+
+    // -----------------------------------------------------------------------
+    // AMassSpawner::DoSpawning() (v14)
+    // Before: fires before the Mass Entity batch is spawned. Return true to cancel.
+    // After:  fires after the batch has been spawned (only if not cancelled).
+    // Spawner pointer is AMassSpawner* passed as void*.
+    // -----------------------------------------------------------------------
+    void (*RegisterOnBeforeDoSpawning)(PluginBeforeDoSpawningCallback callback);
+    void (*UnregisterOnBeforeDoSpawning)(PluginBeforeDoSpawningCallback callback);
+    void (*RegisterOnAfterDoSpawning)(PluginAfterDoSpawningCallback callback);
+    void (*UnregisterOnAfterDoSpawning)(PluginAfterDoSpawningCallback callback);
+};
+
+// ============================================================
+// IPluginHooks — top-level hook interface provided by the mod loader (v14)
+// Contains only typed sub-interface pointers. Access functionality via the
+// named group, e.g.:
+//   hooks->Engine->RegisterOnInit(&MyInit);
+//   hooks->Players->RegisterOnPlayerJoined(&MyJoinCb);
+//   hooks->Memory->Patch(addr, bytes, len);
+//   hooks->Hooks->Install(addr, detour, &original);
+//   hooks->Spawner->RegisterOnBeforeActivate(&MyBeforeCb);
+// ============================================================
 struct IPluginHooks
 {
-    // Install an inline hook at the target address
-    // Returns a hook handle on success, nullptr on failure
-    // The originalFunc pointer is set to a trampoline that can call the original function
-    HookHandle (*InstallHook)(uintptr_t targetAddress, void* detourFunction, void** originalFunction);
-
-    // Remove a hook and restore original bytes
-    void (*RemoveHook)(HookHandle handle);
-
-    // Check if a hook is currently installed
-    bool (*IsHookInstalled)(HookHandle handle);
-
-    // Memory patching utilities
-    bool (*PatchMemory)(uintptr_t address, const uint8_t* data, size_t size);
-    bool (*NopMemory)(uintptr_t address, size_t size);
-    bool (*ReadMemory)(uintptr_t address, void* buffer, size_t size);
-    
-    // Register for world begin play events (ChimeraMain world only)
-    // Callback signature: void OnWorldBeginPlay(SDK::UWorld* world)
-    void (*RegisterWorldBeginPlayCallback)(void (*callback)(SDK::UWorld*));
-    
-    // Unregister world begin play callback
-    void (*UnregisterWorldBeginPlayCallback)(void (*callback)(SDK::UWorld*));
-
-    // Register for engine initialization events
-    // Callback signature: void OnEngineInit()
-    void (*RegisterEngineInitCallback)(void (*callback)());
-
-    // Unregister engine init callback
-    void (*UnregisterEngineInitCallback)(void (*callback)());
-
-    // Register for engine shutdown events - fires before UObject system tears down.
-    // Use this to clean up any patches/allocations that reference engine-owned memory.
-    // Callback signature: void OnEngineShutdown()
-    void (*RegisterEngineShutdownCallback)(void (*callback)());
-
-    // Unregister engine shutdown callback
-    void (*UnregisterEngineShutdownCallback)(void (*callback)());
-
-    // -----------------------------------------------------------------------
-    // Engine memory allocator (v5)
-    // -----------------------------------------------------------------------
-
-    void* (*EngineAlloc)(size_t count, uint32_t alignment);
-    void (*EngineFree)(void* ptr);
-    bool (*IsEngineAllocatorAvailable)();
-
-    // -----------------------------------------------------------------------
-    // Any-world begin play callbacks (v6)
-    //
-    // Unlike RegisterWorldBeginPlayCallback (ChimeraMain only), these fire for
-    // every world that begins play � the world name is passed as a C string.
-    // Callback signature: void OnAnyWorldBeginPlay(SDK::UWorld* world, const char* worldName)
-    // -----------------------------------------------------------------------
-
-    void (*RegisterAnyWorldBeginPlayCallback)(void (*callback)(SDK::UWorld*, const char*));
-    void (*UnregisterAnyWorldBeginPlayCallback)(void (*callback)(SDK::UWorld*, const char*));
-
-    // -----------------------------------------------------------------------
-    // Save-loaded callbacks (v7)
-    //
-    // Fires when UCrMassSaveSubsystem::OnSaveLoaded completes � i.e. after
-    // the save has finished loading and all actors should be spawned.
-    // Callback signature: void OnSaveLoaded()
-    // -----------------------------------------------------------------------
-
-    void (*RegisterSaveLoadedCallback)(void (*callback)());
-    void (*UnregisterSaveLoadedCallback)(void (*callback)());
-
-    // -----------------------------------------------------------------------
-    // Experience-load-complete callbacks (v8)
-    //
-    // Fires when UCrExperienceManagerComponent::OnExperienceLoadComplete
-    // completes � this is significantly later than OnSaveLoaded and indicates
-    // the map/gameplay experience is fully ready with all actors spawned.
-    // Callback signature: void OnExperienceLoadComplete()
-    // -----------------------------------------------------------------------
-
-    void (*RegisterExperienceLoadCompleteCallback)(void (*callback)());
-    void (*UnregisterExperienceLoadCompleteCallback)(void (*callback)());
-
-    // -----------------------------------------------------------------------
-    // Engine tick callbacks (v9)
-    //
-    // Fires every frame on the game thread (UGameEngine::Tick).  Useful for
-    // draining task queues or performing periodic game-thread work.
-  // Keep callbacks fast � they run every frame.
-    // Callback signature: void OnEngineTick(float deltaSeconds)
-    // -----------------------------------------------------------------------
-
-    void (*RegisterEngineTickCallback)(void (*callback)(float));
-    void (*UnregisterEngineTickCallback)(void (*callback)(float));
-
-    // -----------------------------------------------------------------------
-    // Actor begin-play callbacks (v10)
-    //
-    // Fires when any AActor::BeginPlay is called.  The actor pointer is
-    // passed as void* � cast to SDK::AActor* in the plugin.
-    // Performance note: this fires for EVERY actor � keep callbacks fast.
-  // Callback signature: void OnActorBeginPlay(void* actor)
-    // -----------------------------------------------------------------------
-
-    void (*RegisterActorBeginPlayCallback)(void (*callback)(void*));
-    void (*UnregisterActorBeginPlayCallback)(void (*callback)(void*));
-
-    // -----------------------------------------------------------------------
-    // Player-joined callbacks (v11)
-    //
-    // Fires when ACrGameModeBase::PostLogin completes on the server.
-    // At this point the player controller is fully networked, replicated,
-    // and ready � but may not yet possess a pawn (the game normally waits
-    // for the profession selection UI).
-    // The player controller pointer is passed as void* � cast to
-    // SDK::APlayerController* or SDK::ACrPlayerControllerBase* in the plugin.
-    // Callback signature: void OnPlayerJoined(void* playerController)
-    // -----------------------------------------------------------------------
-
-    void (*RegisterPlayerJoinedCallback)(void (*callback)(void*));
-    void (*UnregisterPlayerJoinedCallback)(void (*callback)(void*));
-
-    // -----------------------------------------------------------------------
-    // Player-left callbacks (v12)
-    //
-    // Fires when ACrGameModeBase::Logout is called on the server � i.e. when
-    // a player disconnects, is kicked, or the session ends.  Callbacks are
-    // invoked BEFORE the original Logout so the controller is still valid.
-    // The exiting controller pointer is passed as void* � cast to
-    // SDK::AController* or SDK::ACrPlayerControllerBase* in the plugin.
-    // Callback signature: void OnPlayerLeft(void* exitingController)
-    // -----------------------------------------------------------------------
-
-    void (*RegisterPlayerLeftCallback)(void (*callback)(void*));
-    void (*UnregisterPlayerLeftCallback)(void (*callback)(void*));
+    IPluginSpawnerHooks* Spawner;   // v14 — enemy spawner Before/After hooks
+    IPluginHookUtils*    Hooks;     // v14 — low-level hook install/remove/query
+    IPluginMemoryUtils*  Memory;    // v14 — memory patch/nop/read/alloc
+    IPluginEngineEvents* Engine;    // v14 — engine init/shutdown/tick subscriptions
+    IPluginWorldEvents*  World;     // v14 — world begin-play / save / experience subscriptions
+    IPluginPlayerEvents* Players;   // v14 — player joined/left subscriptions
+    IPluginActorEvents*  Actors;    // v14 — actor begin-play subscriptions
 };
 
 // Plugin metadata structure

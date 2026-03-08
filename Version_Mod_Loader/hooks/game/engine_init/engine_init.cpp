@@ -3,6 +3,9 @@
 #include "logging/logger.h"
 #include "memory_scanner/scanner.h"
 #include "hooks/memory/engine_allocator.h"
+#include "hooks/game/mass_spawner_activate/mass_spawner_activate.h"
+#include "hooks/game/mass_spawner_deactivate/mass_spawner_deactivate.h"
+#include "hooks/game/mass_do_spawning/mass_do_spawning.h"
 #include <vector>
 #include <algorithm>
 #include "../scan_patterns.h"

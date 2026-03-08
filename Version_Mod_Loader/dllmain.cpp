@@ -21,6 +21,9 @@
 #include "hooks/game/actor_begin_play/actor_begin_play.h"
 #include "hooks/game/player_joined/player_joined.h"
 #include "hooks/game/player_left/player_left.h"
+#include "hooks/game/mass_spawner_activate/mass_spawner_activate.h"
+#include "hooks/game/mass_spawner_deactivate/mass_spawner_deactivate.h"
+#include "hooks/game/mass_do_spawning/mass_do_spawning.h"
 
 #include "auto_update/auto_updater.h"
 
@@ -204,6 +207,16 @@ static DWORD WINAPI MainInitThreadProc(LPVOID)
 	{
 		ModLoaderLogger::LogWarn(L"  WARNING: EngineShutdown hook failed to install - plugins will not receive shutdown callbacks");
 	}
+
+	Splash::SetStatus(L"Installing spawner hooks...");
+	Splash::SetProgress(0.65f);	
+	// Install spawner hooks eagerly now that pattern scanning is available.
+	// These must be up before any plugin OnEngineInit callback runs so
+	// plugins can rely on the hooks being present without race conditions.
+	ModLoaderLogger::LogInfo(L"[EngineInit] Installing spawner hooks...");
+	Hooks::MassSpawnerActivate::Install();
+	Hooks::MassSpawnerDeactivate::Install();
+	Hooks::MassDoSpawning::Install();
 
 	// Wait for the engine to finish initialising before loading plugins.
 	// We pump the thread message queue while waiting so the splash window
@@ -518,6 +531,9 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 		Hooks::ActorBeginPlay::Remove();
 		Hooks::PlayerJoined::Remove();
 		Hooks::PlayerLeft::Remove();
+		Hooks::MassSpawnerActivate::Remove();
+		Hooks::MassSpawnerDeactivate::Remove();
+		Hooks::MassDoSpawning::Remove();
 
 		ModLoaderLogger::ShutdownPluginManager();
 		ModLoaderLogger::ShutdownConfigManager();

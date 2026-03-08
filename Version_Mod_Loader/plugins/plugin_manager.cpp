@@ -65,11 +65,14 @@ namespace ModLoaderLogger
 			return false;
 		}
 
-		// Validate interface version
-		if (info->interfaceVersion != PLUGIN_INTERFACE_VERSION)
+		// Validate interface version — accept any plugin in the supported [MIN, MAX] range
+		if (info->interfaceVersion < PLUGIN_INTERFACE_VERSION_MIN ||
+			info->interfaceVersion > PLUGIN_INTERFACE_VERSION_MAX)
 		{
-			LogMessage(L"Plugin interface version mismatch (expected %d, got %d): %s",
-				PLUGIN_INTERFACE_VERSION, info->interfaceVersion, dllPath.c_str());
+			LogMessage(L"Plugin interface version %d not in supported range [%d, %d]: %s",
+				info->interfaceVersion,
+				PLUGIN_INTERFACE_VERSION_MIN, PLUGIN_INTERFACE_VERSION_MAX,
+				dllPath.c_str());
 			FreeLibrary(hModule);
 			return false;
 		}

@@ -70,6 +70,9 @@
     <Filter Include="Source Files\utils">
       <UniqueIdentifier>{e3a7c1f2-9b4d-4e8a-b2c5-6f0d1e3a7b9c}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Source Files\hooks\game\spawning">
+      <UniqueIdentifier>{9a63f03d-8ae0-43a7-b82d-46b696cc8370}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="dwmapi_proxy.h">
@@ -144,6 +147,21 @@
     <ClInclude Include="utils\thread_utils.h">
       <Filter>Source Files\utils</Filter>
     </ClInclude>
+    <ClInclude Include="utils\mem_utils.h">
+      <Filter>Source Files\utils</Filter>
+    </ClInclude>
+    <ClInclude Include="hooks\game\mass_do_spawning\mass_do_spawning.h">
+      <Filter>Source Files\hooks\game\spawning</Filter>
+    </ClInclude>
+    <ClInclude Include="hooks\game\mass_spawner_activate\mass_spawner_activate.h">
+      <Filter>Source Files\hooks\game\spawning</Filter>
+    </ClInclude>
+    <ClInclude Include="hooks\game\mass_spawner_deactivate\mass_spawner_deactivate.h">
+      <Filter>Source Files\hooks\game\spawning</Filter>
+    </ClInclude>
+    <ClInclude Include="hooks\game\scan_patterns.h">
+      <Filter>Source Files\hooks\game</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="dllmain.cpp">
@@ -217,6 +235,15 @@
     </ClCompile>
     <ClCompile Include="hooks\game\world_begin_play\world_begin_play.cpp">
       <Filter>Source Files\hooks\game\world_begin_play</Filter>
+    </ClCompile>
+    <ClCompile Include="hooks\game\mass_do_spawning\mass_do_spawning.cpp">
+      <Filter>Source Files\hooks\game\spawning</Filter>
+    </ClCompile>
+    <ClCompile Include="hooks\game\mass_spawner_activate\mass_spawner_activate.cpp">
+      <Filter>Source Files\hooks\game\spawning</Filter>
+    </ClCompile>
+    <ClCompile Include="hooks\game\mass_spawner_deactivate\mass_spawner_deactivate.cpp">
+      <Filter>Source Files\hooks\game\spawning</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

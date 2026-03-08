@@ -74,13 +74,13 @@ typedef PasswordEngineString* (__fastcall* SetPassword_t)(
 	PasswordEngineString* inPassword);
 
 // ---------------------------------------------------------------------------
-// Hook state – SetPassword (-Password=)
+// Hook state ï¿½ SetPassword (-Password=)
 // ---------------------------------------------------------------------------
 static SetPassword_t g_originalSetPassword = nullptr;
 static HookHandle    g_hookHandleSetPassword = nullptr;
 
 // ---------------------------------------------------------------------------
-// Hook state – SetPlayerPassword (-PlayerPassword=)
+// Hook state ï¿½ SetPlayerPassword (-PlayerPassword=)
 // ---------------------------------------------------------------------------
 static SetPassword_t g_originalSetPlayerPassword = nullptr;
 static HookHandle    g_hookHandleSetPlayerPassword = nullptr;
@@ -167,7 +167,7 @@ static PasswordEngineString* __fastcall Hook_SetPlayerPassword(
 void SetPasswordHook::Install(uintptr_t setPasswordAddress, uintptr_t setPlayerPasswordAddress)
 {
 	auto* hooks = GetHooks();
-	if (!hooks || !hooks->InstallHook)
+	if (!hooks || !hooks->Hooks)
 	{
 		LOG_ERROR("[SetPasswordHook::Install] Hook interface not available!");
 		return;
@@ -185,7 +185,7 @@ void SetPasswordHook::Install(uintptr_t setPasswordAddress, uintptr_t setPlayerP
 			LOG_INFO("[SetPasswordHook::Install] Installing SetPassword hook at 0x%llX...",
 				static_cast<unsigned long long>(setPasswordAddress));
 
-			g_hookHandleSetPassword = hooks->InstallHook(
+			g_hookHandleSetPassword = hooks->Hooks->Install(
 				setPasswordAddress,
 				reinterpret_cast<void*>(&Hook_SetPassword),
 				reinterpret_cast<void**>(&g_originalSetPassword));
@@ -213,7 +213,7 @@ void SetPasswordHook::Install(uintptr_t setPasswordAddress, uintptr_t setPlayerP
 			LOG_INFO("[SetPasswordHook::Install] Installing SetPlayerPassword hook at 0x%llX...",
 				static_cast<unsigned long long>(setPlayerPasswordAddress));
 
-			g_hookHandleSetPlayerPassword = hooks->InstallHook(
+			g_hookHandleSetPlayerPassword = hooks->Hooks->Install(
 				setPlayerPasswordAddress,
 				reinterpret_cast<void*>(&Hook_SetPlayerPassword),
 				reinterpret_cast<void**>(&g_originalSetPlayerPassword));
@@ -237,8 +237,8 @@ void SetPasswordHook::Remove()
 	if (g_hookHandleSetPassword)
 	{
 		LOG_INFO("[SetPasswordHook::Remove] Removing SetPassword hook (handle=%p)...", g_hookHandleSetPassword);
-		if (hooks && hooks->RemoveHook)
-			hooks->RemoveHook(g_hookHandleSetPassword);
+		if (hooks && hooks->Hooks)
+			hooks->Hooks->Remove(g_hookHandleSetPassword);
 		else
 			LOG_WARN("[SetPasswordHook::Remove] Hook interface not available");
 
@@ -249,8 +249,8 @@ void SetPasswordHook::Remove()
 	if (g_hookHandleSetPlayerPassword)
 	{
 		LOG_INFO("[SetPasswordHook::Remove] Removing SetPlayerPassword hook (handle=%p)...", g_hookHandleSetPlayerPassword);
-		if (hooks && hooks->RemoveHook)
-			hooks->RemoveHook(g_hookHandleSetPlayerPassword);
+		if (hooks && hooks->Hooks)
+			hooks->Hooks->Remove(g_hookHandleSetPlayerPassword);
 		else
 			LOG_WARN("[SetPasswordHook::Remove] Hook interface not available");
 

@@ -16,7 +16,7 @@
 //   ret          ; C3
 //
 // Total: 6 bytes.  The original prologue is at least 6 bytes long (starts
-// with `48 8B C4 48 89 50 xx` — 7 bytes), so this is safe.
+// with `48 8B C4 48 89 50 xx` ï¿½ 7 bytes), so this is safe.
 // ---------------------------------------------------------------------------
 
 static constexpr const char* GET_PROFESSION_PATTERN =
@@ -51,7 +51,7 @@ void AutoProfessionHook::Install()
 	uintptr_t addr = scanner->FindPatternInMainModule(GET_PROFESSION_PATTERN);
 	if (addr == 0)
 	{
-		LOG_ERROR("[AutoProfession] Pattern scan failed — could not locate GetProfessionForNewPlayer");
+		LOG_ERROR("[AutoProfession] Pattern scan failed ï¿½ could not locate GetProfessionForNewPlayer");
 		return;
 	}
 
@@ -63,7 +63,7 @@ void AutoProfessionHook::Install()
 		static_cast<unsigned long long>(addr - base));
 
 	// Save original bytes so we can restore them on Remove()
-	if (!hooks->ReadMemory(addr, g_originalBytes, PATCH_SIZE))
+	if (!hooks->Memory->Read(addr, g_originalBytes, PATCH_SIZE))
 	{
 		LOG_ERROR("[AutoProfession] Failed to read original bytes at 0x%llX",
 			static_cast<unsigned long long>(addr));
@@ -75,7 +75,7 @@ void AutoProfessionHook::Install()
 		g_originalBytes[3], g_originalBytes[4], g_originalBytes[5]);
 
 	// Apply the patch: mov eax, 1 ; ret
-	if (!hooks->PatchMemory(addr, PATCH_BYTES, PATCH_SIZE))
+	if (!hooks->Memory->Patch(addr, PATCH_BYTES, PATCH_SIZE))
 	{
 		LOG_ERROR("[AutoProfession] PatchMemory failed at 0x%llX",
 			static_cast<unsigned long long>(addr));
@@ -85,7 +85,7 @@ void AutoProfessionHook::Install()
 	g_patchAddress = addr;
 	g_patched = true;
 
-	LOG_INFO("[AutoProfession] SUCCESS — GetProfessionForNewPlayer patched to always return Soldier (1)");
+	LOG_INFO("[AutoProfession] SUCCESS ï¿½ GetProfessionForNewPlayer patched to always return Soldier (1)");
 }
 
 void AutoProfessionHook::Remove()
@@ -97,9 +97,9 @@ void AutoProfessionHook::Remove()
 	}
 
 	auto* hooks = GetHooks();
-	if (hooks && hooks->PatchMemory)
+	if (hooks && hooks->Memory)
 	{
-		if (hooks->PatchMemory(g_patchAddress, g_originalBytes, PATCH_SIZE))
+		if (hooks->Memory->Patch(g_patchAddress, g_originalBytes, PATCH_SIZE))
 		{
 			LOG_INFO("[AutoProfession] Restored original GetProfessionForNewPlayer prologue at 0x%llX",
 				static_cast<unsigned long long>(g_patchAddress));

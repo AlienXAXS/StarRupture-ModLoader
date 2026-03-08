@@ -46,7 +46,7 @@ void MaxPlayersHook::Install(int maxPlayers)
 {
 	if (maxPlayers <= 0)
 	{
-		LOG_INFO("[MaxPlayers] MaxPlayers is 0 or negative — patch disabled");
+		LOG_INFO("[MaxPlayers] MaxPlayers is 0 or negative ï¿½ patch disabled");
 		return;
 	}
 
@@ -94,10 +94,10 @@ void MaxPlayersHook::Install(int maxPlayers)
 			LOG_INFO("[MaxPlayers] Found `cmp ebx, 0x%02X` at PreLogin+0x%zX (abs 0x%llX)",
 				currentLimit, offset, static_cast<unsigned long long>(cmpAddr));
 
-			// Sanity: the original should be a small player count (1–32 ish)
+			// Sanity: the original should be a small player count (1ï¿½32 ish)
 			if (currentLimit == 0 || currentLimit > 64)
 			{
-				LOG_WARN("[MaxPlayers] Unexpected original limit %d — this might be the wrong instruction, continuing scan...",
+				LOG_WARN("[MaxPlayers] Unexpected original limit %d ï¿½ this might be the wrong instruction, continuing scan...",
 					currentLimit);
 				cmpAddr = 0;
 				continue;
@@ -118,7 +118,7 @@ void MaxPlayersHook::Install(int maxPlayers)
 	uintptr_t immAddr = cmpAddr + 2;
 
 	// Read the original value
-	if (!hooks->ReadMemory(immAddr, &g_originalValue, 1))
+	if (!hooks->Memory->Read(immAddr, &g_originalValue, 1))
 	{
 		LOG_ERROR("[MaxPlayers] Failed to read original byte at 0x%llX",
 			static_cast<unsigned long long>(immAddr));
@@ -129,13 +129,13 @@ void MaxPlayersHook::Install(int maxPlayers)
 
 	if (g_originalValue == static_cast<uint8_t>(maxPlayers))
 	{
-		LOG_INFO("[MaxPlayers] Value is already %d — no patch needed", maxPlayers);
+		LOG_INFO("[MaxPlayers] Value is already %d ï¿½ no patch needed", maxPlayers);
 		return;
 	}
 
 	// Step 3: Patch the immediate byte
 	uint8_t newValue = static_cast<uint8_t>(maxPlayers);
-	if (!hooks->PatchMemory(immAddr, &newValue, 1))
+	if (!hooks->Memory->Patch(immAddr, &newValue, 1))
 	{
 		LOG_ERROR("[MaxPlayers] PatchMemory failed at 0x%llX",
 			static_cast<unsigned long long>(immAddr));
@@ -158,9 +158,9 @@ void MaxPlayersHook::Remove()
 	}
 
 	auto* hooks = GetHooks();
-	if (hooks && hooks->PatchMemory)
+	if (hooks && hooks->Memory)
 	{
-		if (hooks->PatchMemory(g_patchAddress, &g_originalValue, 1))
+		if (hooks->Memory->Patch(g_patchAddress, &g_originalValue, 1))
 		{
 			LOG_INFO("[MaxPlayers] Restored original max players value %d at 0x%llX",
 				g_originalValue, static_cast<unsigned long long>(g_patchAddress));
