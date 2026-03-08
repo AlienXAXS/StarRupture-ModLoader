@@ -11,6 +11,9 @@
 #include "hooks/game/actor_begin_play/actor_begin_play.h"
 #include "hooks/game/player_joined/player_joined.h"
 #include "hooks/game/player_left/player_left.h"
+#include "hooks/game/mass_spawner_activate/mass_spawner_activate.h"
+#include "hooks/game/mass_spawner_deactivate/mass_spawner_deactivate.h"
+#include "hooks/game/mass_do_spawning/mass_do_spawning.h"
 #include <unordered_map>
 #include <mutex>
 
@@ -388,8 +391,159 @@ namespace ModLoaderLogger
 		LogDebug(L"[HooksInterface] PlayerLeft callback unregistered for plugin");
 	}
 
+	// --- Spawner sub-interface wrappers (v14) ---
+
+	static void HooksRegisterOnBeforeActivate(PluginBeforeActivateSpawnerCallback callback)
+	{
+		if (!callback) { LogWarn(L"[HooksInterface] RegisterOnBeforeActivate: null callback"); return; }
+		Hooks::MassSpawnerActivate::RegisterBeforeCallback(callback);
+		LogDebug(L"[HooksInterface] OnBeforeActivate callback registered");
+	}
+
+	static void HooksUnregisterOnBeforeActivate(PluginBeforeActivateSpawnerCallback callback)
+	{
+		if (!callback) { LogWarn(L"[HooksInterface] UnregisterOnBeforeActivate: null callback"); return; }
+		Hooks::MassSpawnerActivate::UnregisterBeforeCallback(callback);
+		LogDebug(L"[HooksInterface] OnBeforeActivate callback unregistered");
+	}
+
+	static void HooksRegisterOnAfterActivate(PluginAfterActivateSpawnerCallback callback)
+	{
+		if (!callback) { LogWarn(L"[HooksInterface] RegisterOnAfterActivate: null callback"); return; }
+		Hooks::MassSpawnerActivate::RegisterAfterCallback(callback);
+		LogDebug(L"[HooksInterface] OnAfterActivate callback registered");
+	}
+
+	static void HooksUnregisterOnAfterActivate(PluginAfterActivateSpawnerCallback callback)
+	{
+		if (!callback) { LogWarn(L"[HooksInterface] UnregisterOnAfterActivate: null callback"); return; }
+		Hooks::MassSpawnerActivate::UnregisterAfterCallback(callback);
+		LogDebug(L"[HooksInterface] OnAfterActivate callback unregistered");
+	}
+
+	static void HooksRegisterOnBeforeDeactivate(PluginBeforeDeactivateSpawnerCallback callback)
+	{
+		if (!callback) { LogWarn(L"[HooksInterface] RegisterOnBeforeDeactivate: null callback"); return; }
+		Hooks::MassSpawnerDeactivate::RegisterBeforeCallback(callback);
+		LogDebug(L"[HooksInterface] OnBeforeDeactivate callback registered");
+	}
+
+	static void HooksUnregisterOnBeforeDeactivate(PluginBeforeDeactivateSpawnerCallback callback)
+	{
+		if (!callback) { LogWarn(L"[HooksInterface] UnregisterOnBeforeDeactivate: null callback"); return; }
+		Hooks::MassSpawnerDeactivate::UnregisterBeforeCallback(callback);
+		LogDebug(L"[HooksInterface] OnBeforeDeactivate callback unregistered");
+	}
+
+	static void HooksRegisterOnAfterDeactivate(PluginAfterDeactivateSpawnerCallback callback)
+	{
+		if (!callback) { LogWarn(L"[HooksInterface] RegisterOnAfterDeactivate: null callback"); return; }
+		Hooks::MassSpawnerDeactivate::RegisterAfterCallback(callback);
+		LogDebug(L"[HooksInterface] OnAfterDeactivate callback registered");
+	}
+
+	static void HooksUnregisterOnAfterDeactivate(PluginAfterDeactivateSpawnerCallback callback)
+	{
+		if (!callback) { LogWarn(L"[HooksInterface] UnregisterOnAfterDeactivate: null callback"); return; }
+		Hooks::MassSpawnerDeactivate::UnregisterAfterCallback(callback);
+		LogDebug(L"[HooksInterface] OnAfterDeactivate callback unregistered");
+	}
+
+	static void HooksRegisterOnBeforeDoSpawning(PluginBeforeDoSpawningCallback callback)
+	{
+		if (!callback) { LogWarn(L"[HooksInterface] RegisterOnBeforeDoSpawning: null callback"); return; }
+		Hooks::MassDoSpawning::RegisterBeforeCallback(callback);
+		LogDebug(L"[HooksInterface] OnBeforeDoSpawning callback registered");
+	}
+
+	static void HooksUnregisterOnBeforeDoSpawning(PluginBeforeDoSpawningCallback callback)
+	{
+		if (!callback) { LogWarn(L"[HooksInterface] UnregisterOnBeforeDoSpawning: null callback"); return; }
+		Hooks::MassDoSpawning::UnregisterBeforeCallback(callback);
+		LogDebug(L"[HooksInterface] OnBeforeDoSpawning callback unregistered");
+	}
+
+	static void HooksRegisterOnAfterDoSpawning(PluginAfterDoSpawningCallback callback)
+	{
+		if (!callback) { LogWarn(L"[HooksInterface] RegisterOnAfterDoSpawning: null callback"); return; }
+		Hooks::MassDoSpawning::RegisterAfterCallback(callback);
+		LogDebug(L"[HooksInterface] OnAfterDoSpawning callback registered");
+	}
+
+	static void HooksUnregisterOnAfterDoSpawning(PluginAfterDoSpawningCallback callback)
+	{
+		if (!callback) { LogWarn(L"[HooksInterface] UnregisterOnAfterDoSpawning: null callback"); return; }
+		Hooks::MassDoSpawning::UnregisterAfterCallback(callback);
+		LogDebug(L"[HooksInterface] OnAfterDoSpawning callback unregistered");
+	}
+
+	// Spawner sub-interface struct (v14)
+	static IPluginSpawnerHooks g_spawnerHooks = {
+		HooksRegisterOnBeforeActivate,
+		HooksUnregisterOnBeforeActivate,
+		HooksRegisterOnAfterActivate,
+		HooksUnregisterOnAfterActivate,
+		HooksRegisterOnBeforeDeactivate,
+		HooksUnregisterOnBeforeDeactivate,
+		HooksRegisterOnAfterDeactivate,
+		HooksUnregisterOnAfterDeactivate,
+		HooksRegisterOnBeforeDoSpawning,
+		HooksUnregisterOnBeforeDoSpawning,
+		HooksRegisterOnAfterDoSpawning,
+		HooksUnregisterOnAfterDoSpawning
+	};
+
+	// Utility sub-interface structs (v14) — populated from existing wrapper functions
+	static IPluginHookUtils g_hookUtils = {
+		HooksInstallHook,
+		HooksRemoveHook,
+		HooksIsHookInstalled
+	};
+
+	static IPluginMemoryUtils g_memoryUtils = {
+		HooksPatchMemory,
+		HooksNopMemory,
+		HooksReadMemory,
+		HooksEngineAlloc,
+		HooksEngineFree,
+		HooksIsEngineAllocatorAvailable
+	};
+
+	static IPluginEngineEvents g_engineEvents = {
+		HooksRegisterEngineInitCallback,
+		HooksUnregisterEngineInitCallback,
+		HooksRegisterEngineShutdownCallback,
+		HooksUnregisterEngineShutdownCallback,
+		HooksRegisterEngineTickCallback,
+		HooksUnregisterEngineTickCallback
+	};
+
+	static IPluginWorldEvents g_worldEvents = {
+		HooksRegisterWorldBeginPlayCallback,
+		HooksUnregisterWorldBeginPlayCallback,
+		HooksRegisterAnyWorldBeginPlayCallback,
+		HooksUnregisterAnyWorldBeginPlayCallback,
+		HooksRegisterSaveLoadedCallback,
+		HooksUnregisterSaveLoadedCallback,
+		HooksRegisterExperienceLoadCompleteCallback,
+		HooksUnregisterExperienceLoadCompleteCallback
+	};
+
+	static IPluginPlayerEvents g_playerEvents = {
+		HooksRegisterPlayerJoinedCallback,
+		HooksUnregisterPlayerJoinedCallback,
+		HooksRegisterPlayerLeftCallback,
+		HooksUnregisterPlayerLeftCallback
+	};
+
+	static IPluginActorEvents g_actorEvents = {
+		HooksRegisterActorBeginPlayCallback,
+		HooksUnregisterActorBeginPlayCallback
+	};
+
 	// Global hooks interface instance
 	static IPluginHooks g_pluginHooks = {
+		// ---- v1-v12 flat fields (unchanged — ABI compatibility) ----
 		HooksInstallHook,
 		HooksRemoveHook,
 		HooksIsHookInstalled,
@@ -418,7 +572,15 @@ namespace ModLoaderLogger
 		HooksRegisterPlayerJoinedCallback,
 		HooksUnregisterPlayerJoinedCallback,
 		HooksRegisterPlayerLeftCallback,
-		HooksUnregisterPlayerLeftCallback
+		HooksUnregisterPlayerLeftCallback,
+		// ---- v14 sub-interface pointers ----
+		&g_spawnerHooks,
+		&g_hookUtils,
+		&g_memoryUtils,
+		&g_engineEvents,
+		&g_worldEvents,
+		&g_playerEvents,
+		&g_actorEvents
 	};
 
 	IPluginHooks* GetPluginHooks()

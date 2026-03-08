@@ -160,50 +160,28 @@ void ModCore::Initialize(IPluginScanner* scanner, IPluginHooks* hooks)
 	// Register for world begin play events
 	if (hooks)
 	{
-		hooks->RegisterWorldBeginPlayCallback(OnWorldBeginPlay);
-		LOG_DEBUG("Registered for WorldBeginPlay events");
-
-		// Register for experience load complete — triggers map traversal
-		if (hooks->RegisterExperienceLoadCompleteCallback)
+		if (hooks->World)
 		{
-			hooks->RegisterExperienceLoadCompleteCallback(OnExperienceLoadComplete);
+			hooks->World->RegisterOnWorldBeginPlay(OnWorldBeginPlay);
+			LOG_DEBUG("Registered for WorldBeginPlay events");
+
+			hooks->World->RegisterOnExperienceLoadComplete(OnExperienceLoadComplete);
 			LOG_DEBUG("Registered for ExperienceLoadComplete callback (map traversal)");
 		}
-		else
-		{
-			LOG_WARN("RegisterExperienceLoadCompleteCallback not available");
-		}
 
-		// Register for engine tick — drives per-frame teleportation
-		if (hooks->RegisterEngineTickCallback)
+		if (hooks->Engine)
 		{
-			hooks->RegisterEngineTickCallback(OnEngineTick);
+			hooks->Engine->RegisterOnTick(OnEngineTick);
 			LOG_DEBUG("Registered for EngineTick callback (traversal driver)");
 		}
-		else
-		{
-			LOG_WARN("RegisterEngineTickCallback not available");
-		}
 
-		// Register for player joined/left — manage fake player lifecycle
-		if (hooks->RegisterPlayerJoinedCallback)
+		if (hooks->Players)
 		{
-			hooks->RegisterPlayerJoinedCallback(OnPlayerJoined);
+			hooks->Players->RegisterOnPlayerJoined(OnPlayerJoined);
 			LOG_DEBUG("Registered for PlayerJoined callback (fake player management)");
-		}
-		else
-		{
-			LOG_WARN("RegisterPlayerJoinedCallback not available — fake player won't auto-despawn on player join");
-		}
 
-		if (hooks->RegisterPlayerLeftCallback)
-		{
-			hooks->RegisterPlayerLeftCallback(OnPlayerLeft);
+			hooks->Players->RegisterOnPlayerLeft(OnPlayerLeft);
 			LOG_DEBUG("Registered for PlayerLeft callback (fake player management)");
-		}
-		else
-		{
-			LOG_WARN("RegisterPlayerLeftCallback not available — fake player won't auto-respawn on last player leave");
 		}
 	}
 
@@ -222,19 +200,20 @@ void ModCore::Shutdown()
 	// Unregister callbacks
 	if (auto hooks = GetHooks())
 	{
-		hooks->UnregisterWorldBeginPlayCallback(OnWorldBeginPlay);
+		if (hooks->World)
+		{
+			hooks->World->UnregisterOnWorldBeginPlay(OnWorldBeginPlay);
+			hooks->World->UnregisterOnExperienceLoadComplete(OnExperienceLoadComplete);
+		}
 
-		if (hooks->UnregisterExperienceLoadCompleteCallback)
-			hooks->UnregisterExperienceLoadCompleteCallback(OnExperienceLoadComplete);
+		if (hooks->Engine)
+			hooks->Engine->UnregisterOnTick(OnEngineTick);
 
-		if (hooks->UnregisterEngineTickCallback)
-			hooks->UnregisterEngineTickCallback(OnEngineTick);
-
-		if (hooks->UnregisterPlayerJoinedCallback)
-			hooks->UnregisterPlayerJoinedCallback(OnPlayerJoined);
-
-		if (hooks->UnregisterPlayerLeftCallback)
-			hooks->UnregisterPlayerLeftCallback(OnPlayerLeft);
+		if (hooks->Players)
+		{
+			hooks->Players->UnregisterOnPlayerJoined(OnPlayerJoined);
+			hooks->Players->UnregisterOnPlayerLeft(OnPlayerLeft);
+		}
 	}
 
 	Hooks::FakePlayer::Remove();

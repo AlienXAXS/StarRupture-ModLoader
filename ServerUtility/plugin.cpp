@@ -136,41 +136,28 @@ extern "C"
             return true;
 		}
 
-        if (!hooks->RegisterEngineInitCallback)
+        if (!hooks->Engine)
         {
-            LOG_ERROR("RegisterEngineInitCallback not available – loader version mismatch?");
+            LOG_ERROR("Engine sub-interface not available – loader version mismatch?");
             return false;
         }
 
-        hooks->RegisterEngineInitCallback(OnEngineInit);
+        hooks->Engine->RegisterOnInit(OnEngineInit);
         LOG_DEBUG("Registered for engine init callback");
 
-        if (hooks->RegisterEngineShutdownCallback)
-        {
-            hooks->RegisterEngineShutdownCallback(OnEngineShutdown);
-            LOG_DEBUG("Registered for engine shutdown callback");
-        }
-        else
-        {
-            LOG_WARN("RegisterEngineShutdownCallback not available – hook may not be removed cleanly on shutdown");
-        }
+        hooks->Engine->RegisterOnShutdown(OnEngineShutdown);
+        LOG_DEBUG("Registered for engine shutdown callback");
 
-        if (hooks->RegisterAnyWorldBeginPlayCallback)
+        hooks->Engine->RegisterOnTick(OnEngineTick);
+        LOG_DEBUG("Registered for engine tick callback (game-thread task dispatch)");
+
+        if (hooks->World)
         {
-            hooks->RegisterAnyWorldBeginPlayCallback(OnAnyWorldBeginPlay);
+            hooks->World->RegisterOnAnyWorldBeginPlay(OnAnyWorldBeginPlay);
             LOG_DEBUG("Registered for any-world begin play callback (RCON player tracking)");
-        }
 
-        if (hooks->RegisterExperienceLoadCompleteCallback)
-        {
-            hooks->RegisterExperienceLoadCompleteCallback(OnExperienceLoadComplete);
+            hooks->World->RegisterOnExperienceLoadComplete(OnExperienceLoadComplete);
             LOG_DEBUG("Registered for experience load complete callback (RCON player refresh)");
-        }
-
-        if (hooks->RegisterEngineTickCallback)
-        {
-            hooks->RegisterEngineTickCallback(OnEngineTick);
-            LOG_DEBUG("Registered for engine tick callback (game-thread task dispatch)");
         }
 
         LOG_INFO("Engine initialised - scanning for UCrDedicatedServerSettingsComp::ParseSettings...");
@@ -208,14 +195,14 @@ extern "C"
 
         if (g_hooks)
         {
-            if (g_hooks->UnregisterAnyWorldBeginPlayCallback)
-                g_hooks->UnregisterAnyWorldBeginPlayCallback(OnAnyWorldBeginPlay);
+            if (g_hooks->World)
+            {
+                g_hooks->World->UnregisterOnAnyWorldBeginPlay(OnAnyWorldBeginPlay);
+                g_hooks->World->UnregisterOnExperienceLoadComplete(OnExperienceLoadComplete);
+            }
 
-            if (g_hooks->UnregisterExperienceLoadCompleteCallback)
-                g_hooks->UnregisterExperienceLoadCompleteCallback(OnExperienceLoadComplete);
-
-            if (g_hooks->UnregisterEngineTickCallback)
-                g_hooks->UnregisterEngineTickCallback(OnEngineTick);
+            if (g_hooks->Engine)
+                g_hooks->Engine->UnregisterOnTick(OnEngineTick);
         }
 
         g_logger  = nullptr;

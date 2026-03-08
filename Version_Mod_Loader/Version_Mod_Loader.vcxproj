@@ -311,6 +311,9 @@ echo Deploy complete.</Command>
     <ClInclude Include="hooks\game\experience_load_complete\experience_load_complete.h" />
     <ClInclude Include="hooks\game\player_joined\player_joined.h" />
     <ClInclude Include="hooks\game\player_left\player_left.h" />
+    <ClInclude Include="hooks\game\mass_spawner_activate\mass_spawner_activate.h" />
+    <ClInclude Include="hooks\game\mass_spawner_deactivate\mass_spawner_deactivate.h" />
+    <ClInclude Include="hooks\game\mass_do_spawning\mass_do_spawning.h" />
     <ClInclude Include="hooks\game\save_loaded\save_loaded.h" />
     <ClInclude Include="hooks\game\world_begin_play\world_begin_play.h" />
     <ClInclude Include="hooks\hooks_common.h" />
@@ -349,6 +352,9 @@ echo Deploy complete.</Command>
     <ClCompile Include="hooks\game\experience_load_complete\experience_load_complete.cpp" />
     <ClCompile Include="hooks\game\player_joined\player_joined.cpp" />
     <ClCompile Include="hooks\game\player_left\player_left.cpp" />
+    <ClCompile Include="hooks\game\mass_spawner_activate\mass_spawner_activate.cpp" />
+    <ClCompile Include="hooks\game\mass_spawner_deactivate\mass_spawner_deactivate.cpp" />
+    <ClCompile Include="hooks\game\mass_do_spawning\mass_do_spawning.cpp" />
     <ClCompile Include="hooks\game\save_loaded\save_loaded.cpp" />
     <ClCompile Include="hooks\game\world_begin_play\world_begin_play.cpp" />
     <ClCompile Include="hooks\hooks_common.cpp" />

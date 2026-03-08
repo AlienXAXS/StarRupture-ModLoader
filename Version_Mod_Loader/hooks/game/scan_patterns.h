@@ -51,4 +51,16 @@ namespace ScanPatterns
 	// ACrGameModeBase::Logout(ACrGameModeBase* this, AController* Exiting)
 	inline constexpr const char* ACrGameModeBase_Logout =
 		"48 8B C4 55 56 57 48 81 EC ?? ?? ?? ?? 33 F6";
+
+	// AAbstractMassEnemySpawner::ActivateSpawner(AAbstractMassEnemySpawner* this, bool bDisableAggroLock)
+	// TODO: fill pattern via IDA/x64dbg — leave empty until found (hook will no-op gracefully)
+	inline constexpr const char* AAbstractMassEnemySpawner_ActivateSpawner = "";
+
+	// AAbstractMassEnemySpawner::DeactivateSpawner(AAbstractMassEnemySpawner* this, bool bPermanently)
+	// TODO: fill pattern via IDA/x64dbg — leave empty until found (hook will no-op gracefully)
+	inline constexpr const char* AAbstractMassEnemySpawner_DeactivateSpawner = "";
+
+	// AMassSpawner::DoSpawning(AMassSpawner* this)
+	// TODO: fill pattern via IDA/x64dbg — leave empty until found (hook will no-op gracefully)
+	inline constexpr const char* AMassSpawner_DoSpawning = "";
 }
