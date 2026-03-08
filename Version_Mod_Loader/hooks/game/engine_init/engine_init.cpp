@@ -72,14 +72,6 @@ namespace Hooks::EngineInit
 				L"plugins will not be able to use EngineAlloc/EngineFree");
 		}
 
-		// Install spawner hooks eagerly now that pattern scanning is available.
-		// These must be up before any plugin OnEngineInit callback runs so
-		// plugins can rely on the hooks being present without race conditions.
-		ModLoaderLogger::LogInfo(L"[EngineInit] Installing spawner hooks...");
-		Hooks::MassSpawnerActivate::Install();
-		Hooks::MassSpawnerDeactivate::Install();
-		Hooks::MassDoSpawning::Install();
-
 		if (!g_pluginCallbacks.empty())
 		{
 			ModLoaderLogger::LogDebug(L"[EngineInit] Notifying %zu plugin(s)...", g_pluginCallbacks.size());

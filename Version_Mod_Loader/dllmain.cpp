@@ -208,6 +208,16 @@ static DWORD WINAPI MainInitThreadProc(LPVOID)
 		ModLoaderLogger::LogWarn(L"  WARNING: EngineShutdown hook failed to install - plugins will not receive shutdown callbacks");
 	}
 
+	Splash::SetStatus(L"Installing spawner hooks...");
+	Splash::SetProgress(0.65f);	
+	// Install spawner hooks eagerly now that pattern scanning is available.
+	// These must be up before any plugin OnEngineInit callback runs so
+	// plugins can rely on the hooks being present without race conditions.
+	ModLoaderLogger::LogInfo(L"[EngineInit] Installing spawner hooks...");
+	Hooks::MassSpawnerActivate::Install();
+	Hooks::MassSpawnerDeactivate::Install();
+	Hooks::MassDoSpawning::Install();
+
 	// Wait for the engine to finish initialising before loading plugins.
 	// We pump the thread message queue while waiting so the splash window
 	// stays responsive.  A 2-minute timeout acts as a final safety net.
