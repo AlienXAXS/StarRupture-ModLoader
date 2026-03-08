@@ -118,7 +118,7 @@ static bool AssignEngineString(EngineString* str, const wchar_t* value)
 	auto* hooks = GetHooks();
 
 
-	if (!hooks->EngineAlloc || !hooks->EngineFree)
+	if (!hooks->Memory)
 	{
 		LOG_ERROR("[AssignEngineString] Engine allocator not resolved!");
 		return false;
@@ -135,7 +135,7 @@ static bool AssignEngineString(EngineString* str, const wchar_t* value)
 		{
 			LOG_DEBUG("[AssignEngineString] Freeing old Data at %p (Num=%d, Max=%d)",
 				static_cast<void*>(str->Data), str->Num, str->Max);
-			hooks->EngineFree(str->Data);
+			hooks->Memory->Free(str->Data);
 		}
 		else
 		{
@@ -162,7 +162,7 @@ static bool AssignEngineString(EngineString* str, const wchar_t* value)
 	// UE5 FString uses alignment of __STDCPP_DEFAULT_NEW_ALIGNMENT__ which is
 	// typically 16 on x64 MSVC.  FMallocBinned2 expects the same alignment
 	// that was used at allocation time, so we use 16 to match.
-	void* newData = hooks->EngineAlloc(byteSize, 16);
+	void* newData = hooks->Memory->Alloc(byteSize, 16);
 	if (!newData)
 	{
 		LOG_ERROR("[AssignEngineString] FMemory::Malloc(%zu, 16) returned null!", byteSize);
@@ -344,7 +344,7 @@ static __int64 __fastcall Hook_ParseSettings(void* thisPtr)
 	}
 
 	auto* hooks = GetHooks();
-	if (!hooks->EngineAlloc || !hooks->EngineFree)
+	if (!hooks->Memory)
 	{
 		LOG_ERROR("[Hook_ParseSettings] Engine allocator not resolved - cannot safely set FStrings, delegating to original");
 		__int64 result = g_originalParseSettings(thisPtr);
@@ -819,13 +819,13 @@ void ParseSettingsHook::Install(uintptr_t targetAddress)
 
 	// Install the inline hook via the mod loader's hook interface
 	auto* hooks = GetHooks();
-	if (!hooks || !hooks->InstallHook)
+	if (!hooks || !hooks->Hooks)
 	{
 		LOG_ERROR("[ParseSettingsHook::Install] Hook interface not available!");
 		return;
 	}
 
-	g_hookHandle = hooks->InstallHook(
+	g_hookHandle = hooks->Hooks->Install(
 		targetAddress,
 		reinterpret_cast<void*>(&Hook_ParseSettings),
 		reinterpret_cast<void**>(&g_originalParseSettings));
@@ -850,9 +850,9 @@ void ParseSettingsHook::Remove()
 	LOG_INFO("[ParseSettingsHook::Remove] Removing hook (handle=%p)...", g_hookHandle);
 
 	auto* hooks = GetHooks();
-	if (hooks && hooks->RemoveHook)
+	if (hooks && hooks->Hooks)
 	{
-		hooks->RemoveHook(g_hookHandle);
+		hooks->Hooks->Remove(g_hookHandle);
 	}
 	else
 	{

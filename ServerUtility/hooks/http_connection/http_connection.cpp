@@ -241,7 +241,7 @@ static void SendBlockedResponse(__int64 a1, __int64 a3)
 	}
 
 	auto* hooks = GetHooks();
-	if (!hooks || !hooks->IsEngineAllocatorAvailable())
+	if (!hooks || !hooks->Memory || !hooks->Memory->IsAllocatorAvailable())
 	{
 		LOG_WARN("[RemoteVulnerabilityPatcher] Engine allocator unavailable — connection dropped without response");
 		return;
@@ -253,7 +253,7 @@ static void SendBlockedResponse(__int64 a1, __int64 a3)
 	static const int32_t kErrorCodeChars = (int32_t)(sizeof(kErrorCode) / sizeof(wchar_t)); // includes null
 
 	wchar_t* errData = static_cast<wchar_t*>(
-		hooks->EngineAlloc(sizeof(kErrorCode), 4));
+		hooks->Memory->Alloc(sizeof(kErrorCode), 4));
 	if (!errData)
 	{
 		LOG_WARN("[RemoteVulnerabilityPatcher] EngineAlloc failed — connection dropped without response");
@@ -271,7 +271,7 @@ static void SendBlockedResponse(__int64 a1, __int64 a3)
 
 	// Free error code data if not taken (i.e. Error() copied rather than moved).
 	if (errCodeStr.Data)
-		hooks->EngineFree(errCodeStr.Data);
+		hooks->Memory->Free(errCodeStr.Data);
 
 	if (!response)
 	{
@@ -383,7 +383,7 @@ void HttpConnectionHook::Install()
 	else
 		LOG_WARN("[RemoteVulnerabilityPatcher] Could not locate FHttpServerResponse::Error — blocked requests will drop the connection instead of receiving a 403");
 
-	g_hookHandle = hooks->InstallHook(
+	g_hookHandle = hooks->Hooks->Install(
 		addr,
 		reinterpret_cast<void*>(&Hook_ProcessRequest),
 		reinterpret_cast<void**>(&g_originalProcessRequest));
@@ -408,8 +408,8 @@ void HttpConnectionHook::Remove()
 	LOG_INFO("[RemoteVulnerabilityPatcher] Removing hook (handle=%p)...", g_hookHandle);
 
 	auto* hooks = GetHooks();
-	if (hooks && hooks->RemoveHook)
-		hooks->RemoveHook(g_hookHandle);
+	if (hooks && hooks->Hooks)
+		hooks->Hooks->Remove(g_hookHandle);
 	else
 		LOG_WARN("[RemoteVulnerabilityPatcher] Hook interface not available - cannot remove hook cleanly");
 
