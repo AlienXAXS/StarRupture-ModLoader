@@ -25,7 +25,7 @@ namespace Hooks::FakePlayer
 	static SDK::APawn* g_fakePawn = nullptr;
 	static bool g_debugVisibleMode = false;
 
-	// UWorld::RemoveController — removes controller from PlayerControllerList
+	// UWorld::RemoveController - removes controller from PlayerControllerList
 	typedef void(__fastcall* UWorld_RemoveController_t)(SDK::UWorld* world, SDK::AController* controller);
 	static UWorld_RemoveController_t g_removeControllerFn = nullptr;
 
