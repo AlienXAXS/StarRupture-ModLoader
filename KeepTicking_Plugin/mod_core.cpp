@@ -72,11 +72,22 @@ static void OnEngineTick(float deltaSeconds)
 }
 
 // ---------------------------------------------------------------------------
-// Callback when engine initializes
+// Callback for spawner activation (ACrSpawner::Activate) — used to stop spawns when no one is online
 // ---------------------------------------------------------------------------
-
-static void OnEngineInitialized()
+static bool OnBeforeActivateSpawner(void* spawner, bool agroLock)
 {
+	if (!KeepTickingConfig::Config::ShouldPreventServerSleep())
+		return true; // allow activation as normal if the plugin setting is disabled
+
+	return Hooks::FakePlayer::PreventSpawnerActivation(spawner);
+}
+
+static bool OnBeforeDoSpawning(void* spawner)
+{
+	if (!KeepTickingConfig::Config::ShouldPreventServerSleep())
+		return true; // allow activation as normal if the plugin setting is disabled
+
+	return Hooks::FakePlayer::PreventSpawnerActivation(spawner);
 }
 
 // ---------------------------------------------------------------------------
@@ -174,6 +185,12 @@ void ModCore::Initialize(IPluginScanner* scanner, IPluginHooks* hooks)
 
 			hooks->World->RegisterOnExperienceLoadComplete(OnExperienceLoadComplete);
 			LOG_DEBUG("Registered for ExperienceLoadComplete callback (map traversal)");
+		}
+
+		if (hooks->Spawner)
+		{
+			hooks->Spawner->RegisterOnBeforeActivate(OnBeforeActivateSpawner);
+			hooks->Spawner->RegisterOnBeforeDoSpawning(OnBeforeDoSpawning);
 		}
 
 		if (hooks->Engine)

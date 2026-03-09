@@ -31,4 +31,7 @@ namespace Hooks::FakePlayer
 
 	// Called each engine tick to advance traversal (teleport to next waypoint)
 	void TickTraversal();
+
+	// Called from spawner activation callback to determine if spawns should be blocked
+	bool PreventSpawnerActivation(void* spawner);
 }
