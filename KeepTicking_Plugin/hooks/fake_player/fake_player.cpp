@@ -37,7 +37,7 @@ namespace Hooks::FakePlayer
 		double x, y, z;
 	};
 
-	// Helper to safely get actor location � isolated for SEH compatibility
+	// Helper to safely get actor location - isolated for SEH compatibility
 	static bool SafeGetActorLocation(SDK::AActor* actor, SDK::FVector& outLoc)
 	{
 		__try
