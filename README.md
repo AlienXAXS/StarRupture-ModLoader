@@ -10,7 +10,6 @@ Like this project? Give it a ⭐ here on GitHub!
 
 ### 🔧 KeepTicking *(Server)*
 Prevents a dedicated server from sleeping when no players are online. Without this, all of your machines will stop producing items.
-*Note: Local vermin will still spawn until this plugin is updated*
 
 ### 🛤️ RailJunctionFixer *(Client & Server)*
 Fixes rail junction save/load issues at runtime. Without this fix, rail junctions may lose their connections after loading a save causing logistic drones to teleport between rails when Logistic Drones travel over 3 and 5 lane Junctions.
