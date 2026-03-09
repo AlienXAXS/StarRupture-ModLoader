@@ -74,13 +74,13 @@ typedef PasswordEngineString* (__fastcall* SetPassword_t)(
 	PasswordEngineString* inPassword);
 
 // ---------------------------------------------------------------------------
-// Hook state � SetPassword (-Password=)
+// Hook state - SetPassword (-Password=)
 // ---------------------------------------------------------------------------
 static SetPassword_t g_originalSetPassword = nullptr;
 static HookHandle    g_hookHandleSetPassword = nullptr;
 
 // ---------------------------------------------------------------------------
-// Hook state � SetPlayerPassword (-PlayerPassword=)
+// Hook state - SetPlayerPassword (-PlayerPassword=)
 // ---------------------------------------------------------------------------
 static SetPassword_t g_originalSetPlayerPassword = nullptr;
 static HookHandle    g_hookHandleSetPlayerPassword = nullptr;

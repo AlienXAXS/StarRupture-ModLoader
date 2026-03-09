@@ -29,6 +29,9 @@
 
 #include "utils/thread_utils.h"
 
+#include "DbgHelp.h"
+#pragma comment(lib, "DbgHelp.lib")
+
 #include <Psapi.h>
 #include <VersionHelpers.h>
 #include <thread>
@@ -383,6 +386,10 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 	case DLL_PROCESS_ATTACH:
 	{
 		DisableThreadLibraryCalls(hModule);
+
+		// Call DBGHelp to refresh the module list and ensure our own symbols are available for stack traces from the very start.
+		SymRefreshModuleList(GetCurrentProcess());
+
 
 		// Initialise our low-level file logger — simple file I/O, no LoadLibrary.
 		LogToFile::Initialize();

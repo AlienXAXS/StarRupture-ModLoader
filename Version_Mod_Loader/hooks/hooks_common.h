@@ -34,7 +34,7 @@ namespace Hooks
 
         // Install a hook at `target`. Writes a 14-byte absolute JMP (x64).
         // `originalFunc` receives a pointer to a trampoline that calls the
-        // original code � cast it to the right function pointer type.
+        // original code - cast it to the right function pointer type.
         bool Install(uintptr_t target, void* detour, void** originalFunc);
 
         // Remove the hook, restoring original bytes.

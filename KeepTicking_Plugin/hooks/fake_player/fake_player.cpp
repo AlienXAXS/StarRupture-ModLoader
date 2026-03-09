@@ -4,6 +4,7 @@
 #include "plugin_config.h"
 #include "Engine_classes.hpp"
 #include "Chimera_classes.hpp"
+#include "MassAIPrototypeEnemyRuntime_classes.hpp"
 #include "Chimera_functions.cpp"
 
 #define _USE_MATH_DEFINES
@@ -25,6 +26,10 @@ namespace Hooks::FakePlayer
 	static SDK::APawn* g_fakePawn = nullptr;
 	static bool g_debugVisibleMode = false;
 
+	// UWorld::RemoveController - removes controller from PlayerControllerList
+	typedef void(__fastcall* UWorld_RemoveController_t)(SDK::UWorld* world, SDK::AController* controller);
+	static UWorld_RemoveController_t g_removeControllerFn = nullptr;
+
 	// --- Map traversal state ---
 	static bool g_traversing = false;
 	static int g_waypointIndex = 0;
@@ -33,7 +38,7 @@ namespace Hooks::FakePlayer
 		double x, y, z;
 	};
 
-	// Helper to safely get actor location — isolated for SEH compatibility
+	// Helper to safely get actor location - isolated for SEH compatibility
 	static bool SafeGetActorLocation(SDK::AActor* actor, SDK::FVector& outLoc)
 	{
 		__try
@@ -47,7 +52,7 @@ namespace Hooks::FakePlayer
 		}
 	}
 
-	// Helper to safely teleport pawn — isolated for SEH compatibility
+	// Helper to safely teleport pawn - isolated for SEH compatibility
 	static bool SafeSetActorLocation(SDK::APawn* pawn, const SDK::FVector& loc)
 	{
 		__try
@@ -66,7 +71,7 @@ namespace Hooks::FakePlayer
 	{
 		std::vector<Waypoint> pts;
 
-		LOG_DEBUG("[FakePlayer] BuildWaypointGridFromWorldActors() — enter");
+		LOG_DEBUG("[FakePlayer] BuildWaypointGridFromWorldActors() - enter");
 
 		SDK::UWorld* world = SDK::UWorld::GetWorld();
 		if (!world)
@@ -190,7 +195,7 @@ namespace Hooks::FakePlayer
 		double avgZ = (minZ + maxZ) * 0.5;
 		double traversalZ = (std::max)(avgZ + 1000.0, 3000.0); // At least 3000 units up
 
-		// Grid step — aim for ~25000 units but adapt to map size
+		// Grid step - aim for ~25000 units but adapt to map size
 		constexpr double preferredStep = 25000.0;
 		double rangeX = maxX - minX;
 		double rangeY = maxY - minY;
@@ -357,9 +362,6 @@ namespace Hooks::FakePlayer
 	
 		LOG_DEBUG("[FakePlayer] Setting controller bCanBeDamaged = false");
 		g_fakeController->bCanBeDamaged = false;
-
-		// Set the player profession to NONE to avoid any unintended interactions with game systems that check this property
-		g_fakeController->ServerPossesPawnByProfessionType(SDK::EProfessionType::NONE, false);
 		
 		if (!g_debugVisibleMode)
 		{
@@ -416,6 +418,7 @@ namespace Hooks::FakePlayer
 					primComp->SetSimulatePhysics(false);
 					primComp->SetEnableGravity(false);
 					primComp->SetCollisionEnabled(SDK::ECollisionEnabled::NoCollision);
+					primComp->SetIsReplicated(false);
 				}
 			}
 			LOG_DEBUG("[FakePlayer] All primitive components configured");
@@ -425,18 +428,10 @@ namespace Hooks::FakePlayer
 		g_fakeController->Possess(g_fakePawn);
 		LOG_DEBUG("[FakePlayer] Possess() completed");
 
-		LOG_INFO("[FakePlayer] Calling HandleStartingNewPlayer...");
-		gameMode->HandleStartingNewPlayer(g_fakeController);
-		LOG_DEBUG("[FakePlayer] HandleStartingNewPlayer completed");
-		
-		LOG_INFO("[FakePlayer] Calling K2_PostLogin...");
-		gameMode->K2_PostLogin(g_fakeController);
-		LOG_DEBUG("[FakePlayer] K2_PostLogin completed");
-
 		g_playerActive = true;
 		InterlockedIncrement(&g_callCount);
 
-		LOG_INFO("[FakePlayer] === SpawnFakePlayer() COMPLETE — fake player active! ===");
+		LOG_INFO("[FakePlayer] === SpawnFakePlayer() COMPLETE - fake player active! ===");
 	}
 
 	void DespawnFakePlayer()
@@ -455,6 +450,25 @@ namespace Hooks::FakePlayer
 		// Get the world and game mode for proper logout
 		SDK::UWorld* world = SDK::UWorld::GetWorld();
 		SDK::AGameModeBase* gameMode = world ? world->AuthorityGameMode : nullptr;
+
+		// Step 2b: Remove from PlayerArray
+		if (g_fakeController && g_fakeController->PlayerState)
+		{
+			SDK::UWorld* world = SDK::UWorld::GetWorld();
+			if (world && world->GameState)
+			{
+				auto& playerArray = world->GameState->PlayerArray;
+				for (SDK::int32 i = 0; i < playerArray.Num(); i++)
+				{
+					if (playerArray[i] == g_fakeController->PlayerState)
+					{
+						playerArray.Remove(i);
+						LOG_DEBUG("[FakePlayer] Removed fake PlayerState from PlayerArray at index %d", i);
+						break;
+					}
+				}
+			}
+		}
 
 		// Step 1: UnPossess the pawn from the controller
 		if (g_fakeController)
@@ -512,9 +526,27 @@ namespace Hooks::FakePlayer
 			}
 		}
 
-		// Step 4: Destroy the controller actor
+		// Step 4: Remove from PlayerControllerList, then destroy controller
 		if (g_fakeController)
 		{
+			if (g_removeControllerFn && world)
+			{
+				LOG_DEBUG("[FakePlayer] Calling UWorld::RemoveController...");
+				__try
+				{
+					g_removeControllerFn(world, g_fakeController);
+					LOG_DEBUG("[FakePlayer] UWorld::RemoveController completed");
+				}
+				__except (1)
+				{
+					LOG_WARN("[FakePlayer] Exception during UWorld::RemoveController");
+				}
+			}
+			else
+			{
+				LOG_WARN("[FakePlayer] UWorld::RemoveController unavailable â€” skipping controller list cleanup");
+			}
+
 			LOG_DEBUG("[FakePlayer] Destroying fake controller actor...");
 			__try
 			{
@@ -535,12 +567,12 @@ namespace Hooks::FakePlayer
 	}
 
 	// ---------------------------------------------------------------
-	// Map traversal — teleport the fake player across waypoints
+	// Map traversal - teleport the fake player across waypoints
 	// ---------------------------------------------------------------
 
 	void StartMapTraversal()
 	{
-		LOG_INFO("[FakePlayer] StartMapTraversal() — enter");
+		LOG_INFO("[FakePlayer] StartMapTraversal() - enter");
 
 		if (!g_playerActive || !g_fakePawn)
 		{
@@ -583,6 +615,26 @@ namespace Hooks::FakePlayer
 		return g_traversing;
 	}
 
+	void MoveFakePlayerFarAway()
+	{
+		//X=-178601.10 Y=213682.05 Z=100.00
+		// Teleport the pawn
+		SDK::FVector newLocation;
+		newLocation.X = -178601.10;
+		newLocation.Y = 213682.05;
+		newLocation.Z = 100.00;
+
+		bool success = SafeSetActorLocation(g_fakePawn, newLocation);
+		if (success)
+		{
+			LOG_INFO("[FakePlayer] Fake player moved to far away location after traversal");
+		}
+		else
+		{
+			LOG_WARN("[FakePlayer] Failed to move fake player to far away location after traversal");
+		}
+	}
+
 	void TickTraversal()
 	{
 		if (!g_traversing || !g_fakePawn || !g_playerActive)
@@ -591,7 +643,7 @@ namespace Hooks::FakePlayer
 		if (g_waypointIndex >= static_cast<int>(g_waypoints.size()))
 		{
 			// Completed full pass
-			LOG_INFO("[FakePlayer] Map traversal COMPLETE — visited all %zu waypoints", g_waypoints.size());
+			LOG_INFO("[FakePlayer] Map traversal COMPLETE - visited all %zu waypoints", g_waypoints.size());
 			g_traversing = false;
 			return;
 		}
@@ -612,7 +664,7 @@ namespace Hooks::FakePlayer
 			bool success = SafeSetActorLocation(g_fakePawn, newLocation);
 			if (!success && g_waypointIndex == 0)
 			{
-				LOG_ERROR("[FakePlayer] SafeSetActorLocation FAILED/EXCEPTION at waypoint %d (%.0f, %.0f, %.0f) — stopping traversal",
+				LOG_ERROR("[FakePlayer] SafeSetActorLocation FAILED/EXCEPTION at waypoint %d (%.0f, %.0f, %.0f) - stopping traversal",
 					g_waypointIndex, wp.x, wp.y, wp.z);
 				g_traversing = false;
 				return;
@@ -633,9 +685,43 @@ namespace Hooks::FakePlayer
 
 		if (g_waypointIndex >= total)
 		{
-			LOG_INFO("[FakePlayer] Map traversal COMPLETE — visited all %zu waypoints", g_waypoints.size());
+			LOG_INFO("[FakePlayer] Map traversal COMPLETE - visited all %zu waypoints", g_waypoints.size());
 			g_traversing = false;
+
+			MoveFakePlayerFarAway();
 		}
+	}
+
+	// Use this to prevent the spawner from activating if the fake player is already active.
+	bool PreventSpawnerActivation(void* spawner)
+	{
+		if (!g_playerActive || !g_fakePawn)
+			return false;
+
+		SDK::UObject* obj = static_cast<SDK::UObject*>(spawner);
+
+		if (obj->IsA(SDK::AMassSpawner::StaticClass()))
+		{
+			SDK::AMassSpawner* massSpawner = static_cast<SDK::AMassSpawner*>(spawner);
+			SDK::FVector loc{};
+			SafeGetActorLocation(massSpawner, loc);
+			LOG_DEBUG("[FakePlayer] Blocking AMassSpawner '%s' at (%.0f, %.0f, %.0f) - fake player active",
+				massSpawner->GetName().c_str(), loc.X, loc.Y, loc.Z);
+		}
+		else if (obj->IsA(SDK::AAbstractMassEnemySpawner::StaticClass()))
+		{
+			SDK::AAbstractMassEnemySpawner* enemySpawner = static_cast<SDK::AAbstractMassEnemySpawner*>(spawner);
+			SDK::FVector loc{};
+			SafeGetActorLocation(enemySpawner, loc);
+			LOG_DEBUG("[FakePlayer] Blocking AAbstractMassEnemySpawner '%s' at (%.0f, %.0f, %.0f) - fake player active",
+				enemySpawner->GetName().c_str(), loc.X, loc.Y, loc.Z);
+		}
+		else
+		{
+			LOG_DEBUG("[FakePlayer] Blocking unknown spawner activation (%p) - fake player active", spawner);
+		}
+
+		return true;
 	}
 
 	// ---------------------------------------------------------------
@@ -643,6 +729,25 @@ namespace Hooks::FakePlayer
 	bool Install()
 	{
 		LOG_INFO("FakePlayer: Spawn/despawn system ready");
+
+		IPluginScanner* scanner = GetScanner();
+		if (scanner)
+		{
+			uintptr_t addr = scanner->FindPatternInMainModule(
+				"48 89 54 24 ?? 48 89 4C 24 ?? 53 56 57 41 54 48 81 EC");
+
+			if (addr)
+			{
+				g_removeControllerFn = reinterpret_cast<UWorld_RemoveController_t>(addr);
+				LOG_INFO("[FakePlayer] UWorld::RemoveController found at 0x%llX", (unsigned long long)addr);
+			}
+			else
+			{
+				LOG_ERROR("[FakePlayer] UWorld::RemoveController pattern not found â€” disabling plugin");
+				return false;
+			}
+		}
+
 		return true;
 	}
 

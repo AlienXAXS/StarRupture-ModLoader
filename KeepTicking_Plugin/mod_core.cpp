@@ -72,11 +72,22 @@ static void OnEngineTick(float deltaSeconds)
 }
 
 // ---------------------------------------------------------------------------
-// Callback when engine initializes
+// Callback for spawner activation (ACrSpawner::Activate) — used to stop spawns when no one is online
 // ---------------------------------------------------------------------------
-
-static void OnEngineInitialized()
+static bool OnBeforeActivateSpawner(void* spawner, bool agroLock)
 {
+	if (!KeepTickingConfig::Config::ShouldPreventServerSleep())
+		return true; // allow activation as normal if the plugin setting is disabled
+
+	return Hooks::FakePlayer::PreventSpawnerActivation(spawner);
+}
+
+static bool OnBeforeDoSpawning(void* spawner)
+{
+	if (!KeepTickingConfig::Config::ShouldPreventServerSleep())
+		return true; // allow activation as normal if the plugin setting is disabled
+
+	return Hooks::FakePlayer::PreventSpawnerActivation(spawner);
 }
 
 // ---------------------------------------------------------------------------
@@ -156,7 +167,14 @@ static void OnPlayerLeft(void* exitingController)
 void ModCore::Initialize(IPluginScanner* scanner, IPluginHooks* hooks)
 {
 	LOG_INFO("ModCore initializing...");
-	
+
+	// Initialize fake player hook first — required patterns must be found before we register any callbacks
+	if (!Hooks::FakePlayer::Install())
+	{
+		LOG_ERROR("FakePlayer install failed — required patterns not found, plugin disabled");
+		return;
+	}
+
 	// Register for world begin play events
 	if (hooks)
 	{
@@ -167,6 +185,12 @@ void ModCore::Initialize(IPluginScanner* scanner, IPluginHooks* hooks)
 
 			hooks->World->RegisterOnExperienceLoadComplete(OnExperienceLoadComplete);
 			LOG_DEBUG("Registered for ExperienceLoadComplete callback (map traversal)");
+		}
+
+		if (hooks->Spawner)
+		{
+			hooks->Spawner->RegisterOnBeforeActivate(OnBeforeActivateSpawner);
+			hooks->Spawner->RegisterOnBeforeDoSpawning(OnBeforeDoSpawning);
 		}
 
 		if (hooks->Engine)
@@ -183,12 +207,6 @@ void ModCore::Initialize(IPluginScanner* scanner, IPluginHooks* hooks)
 			hooks->Players->RegisterOnPlayerLeft(OnPlayerLeft);
 			LOG_DEBUG("Registered for PlayerLeft callback (fake player management)");
 		}
-	}
-
-	// Initialize fake player hook
-	if (!Hooks::FakePlayer::Install())
-	{
-		LOG_WARN("Failed to install FakePlayer hook");
 	}
 }
 
