@@ -156,7 +156,14 @@ static void OnPlayerLeft(void* exitingController)
 void ModCore::Initialize(IPluginScanner* scanner, IPluginHooks* hooks)
 {
 	LOG_INFO("ModCore initializing...");
-	
+
+	// Initialize fake player hook first — required patterns must be found before we register any callbacks
+	if (!Hooks::FakePlayer::Install())
+	{
+		LOG_ERROR("FakePlayer install failed — required patterns not found, plugin disabled");
+		return;
+	}
+
 	// Register for world begin play events
 	if (hooks)
 	{
@@ -183,12 +190,6 @@ void ModCore::Initialize(IPluginScanner* scanner, IPluginHooks* hooks)
 			hooks->Players->RegisterOnPlayerLeft(OnPlayerLeft);
 			LOG_DEBUG("Registered for PlayerLeft callback (fake player management)");
 		}
-	}
-
-	// Initialize fake player hook
-	if (!Hooks::FakePlayer::Install())
-	{
-		LOG_WARN("Failed to install FakePlayer hook");
 	}
 }
 

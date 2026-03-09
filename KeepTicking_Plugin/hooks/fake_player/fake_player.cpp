@@ -698,7 +698,8 @@ namespace Hooks::FakePlayer
 			}
 			else
 			{
-				LOG_WARN("[FakePlayer] UWorld::RemoveController pattern not found — controller list cleanup unavailable");
+				LOG_ERROR("[FakePlayer] UWorld::RemoveController pattern not found — disabling plugin");
+				return false;
 			}
 		}
 
