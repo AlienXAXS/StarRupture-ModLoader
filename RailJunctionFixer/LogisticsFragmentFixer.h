@@ -8,9 +8,9 @@ namespace RailJunctionFixer
     // UStruct offsets for hierarchy chain patching
     namespace UStructOff
     {
-        constexpr size_t InheritanceChain = 0x30;  // uintptr_t* � array of ancestor identities
-        constexpr size_t HierarchyDepth = 0x38;    // int32_t � depth in hierarchy
-        constexpr size_t SuperStruct = 0x40;       // uintptr_t � pointer to parent UStruct
+        constexpr size_t InheritanceChain = 0x30;  // uintptr_t* - array of ancestor identities
+        constexpr size_t HierarchyDepth = 0x38;    // int32_t - depth in hierarchy
+        constexpr size_t SuperStruct = 0x40;       // uintptr_t - pointer to parent UStruct
     }
 
     // Template helper to read a value at an offset from a pointer

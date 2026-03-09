@@ -46,7 +46,7 @@ void MaxPlayersHook::Install(int maxPlayers)
 {
 	if (maxPlayers <= 0)
 	{
-		LOG_INFO("[MaxPlayers] MaxPlayers is 0 or negative � patch disabled");
+		LOG_INFO("[MaxPlayers] MaxPlayers is 0 or negative - patch disabled");
 		return;
 	}
 
@@ -94,10 +94,10 @@ void MaxPlayersHook::Install(int maxPlayers)
 			LOG_INFO("[MaxPlayers] Found `cmp ebx, 0x%02X` at PreLogin+0x%zX (abs 0x%llX)",
 				currentLimit, offset, static_cast<unsigned long long>(cmpAddr));
 
-			// Sanity: the original should be a small player count (1�32 ish)
+			// Sanity: the original should be a small player count (1-32 ish)
 			if (currentLimit == 0 || currentLimit > 64)
 			{
-				LOG_WARN("[MaxPlayers] Unexpected original limit %d � this might be the wrong instruction, continuing scan...",
+				LOG_WARN("[MaxPlayers] Unexpected original limit %d - this might be the wrong instruction, continuing scan...",
 					currentLimit);
 				cmpAddr = 0;
 				continue;
@@ -129,7 +129,7 @@ void MaxPlayersHook::Install(int maxPlayers)
 
 	if (g_originalValue == static_cast<uint8_t>(maxPlayers))
 	{
-		LOG_INFO("[MaxPlayers] Value is already %d � no patch needed", maxPlayers);
+		LOG_INFO("[MaxPlayers] Value is already %d - no patch needed", maxPlayers);
 		return;
 	}
 

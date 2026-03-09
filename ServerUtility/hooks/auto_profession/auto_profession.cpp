@@ -16,7 +16,7 @@
 //   ret          ; C3
 //
 // Total: 6 bytes.  The original prologue is at least 6 bytes long (starts
-// with `48 8B C4 48 89 50 xx` � 7 bytes), so this is safe.
+// with `48 8B C4 48 89 50 xx` - 7 bytes), so this is safe.
 // ---------------------------------------------------------------------------
 
 static constexpr const char* GET_PROFESSION_PATTERN =
@@ -51,7 +51,7 @@ void AutoProfessionHook::Install()
 	uintptr_t addr = scanner->FindPatternInMainModule(GET_PROFESSION_PATTERN);
 	if (addr == 0)
 	{
-		LOG_ERROR("[AutoProfession] Pattern scan failed � could not locate GetProfessionForNewPlayer");
+		LOG_ERROR("[AutoProfession] Pattern scan failed - could not locate GetProfessionForNewPlayer");
 		return;
 	}
 
@@ -85,7 +85,7 @@ void AutoProfessionHook::Install()
 	g_patchAddress = addr;
 	g_patched = true;
 
-	LOG_INFO("[AutoProfession] SUCCESS � GetProfessionForNewPlayer patched to always return Soldier (1)");
+	LOG_INFO("[AutoProfession] SUCCESS - GetProfessionForNewPlayer patched to always return Soldier (1)");
 }
 
 void AutoProfessionHook::Remove()
