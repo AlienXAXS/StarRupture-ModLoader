@@ -4,17 +4,16 @@
     <ClCompile Include="dllmain.cpp" />
     <ClCompile Include="plugin.cpp" />
     <ClCompile Include="mod_core.cpp" />
-    <ClCompile Include="hooks\fake_player\fake_player.cpp" />
     <ClCompile Include="plugin_config.cpp" />
     <ClCompile Include="sdk_helpers.cpp" />
     <ClCompile Include="$(StarRuptureSDKSourceDir)Basic.cpp" />
     <ClCompile Include="$(StarRuptureSDKSourceDir)CoreUObject_functions.cpp" />
     <ClCompile Include="$(StarRuptureSDKSourceDir)Engine_functions.cpp" />
+    <ClCompile Include="hooks\fake_player\fake_player.cpp">
+      <Filter>hooks\fake_player</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="hooks\fake_player\fake_player.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="hooks.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -33,10 +32,19 @@
     <ClInclude Include="sdk_helpers.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="hooks\fake_player\fake_player.h">
+      <Filter>hooks\fake_player</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="Header Files">
       <UniqueIdentifier>{8c502c1d-b945-4d61-a94b-87c4faa5ef6f}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="hooks">
+      <UniqueIdentifier>{3f93b2b1-4515-4120-a4ee-6d13b0ec96df}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="hooks\fake_player">
+      <UniqueIdentifier>{40c0239f-9b0a-437a-b897-2102498272b5}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
 </Project>

@@ -25,6 +25,10 @@ namespace Hooks::FakePlayer
 	static SDK::APawn* g_fakePawn = nullptr;
 	static bool g_debugVisibleMode = false;
 
+	// UWorld::RemoveController â€” removes controller from PlayerControllerList
+	typedef void(__fastcall* UWorld_RemoveController_t)(SDK::UWorld* world, SDK::AController* controller);
+	static UWorld_RemoveController_t g_removeControllerFn = nullptr;
+
 	// --- Map traversal state ---
 	static bool g_traversing = false;
 	static int g_waypointIndex = 0;
@@ -33,7 +37,7 @@ namespace Hooks::FakePlayer
 		double x, y, z;
 	};
 
-	// Helper to safely get actor location — isolated for SEH compatibility
+	// Helper to safely get actor location ï¿½ isolated for SEH compatibility
 	static bool SafeGetActorLocation(SDK::AActor* actor, SDK::FVector& outLoc)
 	{
 		__try
@@ -47,7 +51,7 @@ namespace Hooks::FakePlayer
 		}
 	}
 
-	// Helper to safely teleport pawn — isolated for SEH compatibility
+	// Helper to safely teleport pawn ï¿½ isolated for SEH compatibility
 	static bool SafeSetActorLocation(SDK::APawn* pawn, const SDK::FVector& loc)
 	{
 		__try
@@ -66,7 +70,7 @@ namespace Hooks::FakePlayer
 	{
 		std::vector<Waypoint> pts;
 
-		LOG_DEBUG("[FakePlayer] BuildWaypointGridFromWorldActors() — enter");
+		LOG_DEBUG("[FakePlayer] BuildWaypointGridFromWorldActors() ï¿½ enter");
 
 		SDK::UWorld* world = SDK::UWorld::GetWorld();
 		if (!world)
@@ -190,7 +194,7 @@ namespace Hooks::FakePlayer
 		double avgZ = (minZ + maxZ) * 0.5;
 		double traversalZ = (std::max)(avgZ + 1000.0, 3000.0); // At least 3000 units up
 
-		// Grid step — aim for ~25000 units but adapt to map size
+		// Grid step ï¿½ aim for ~25000 units but adapt to map size
 		constexpr double preferredStep = 25000.0;
 		double rangeX = maxX - minX;
 		double rangeY = maxY - minY;
@@ -436,7 +440,7 @@ namespace Hooks::FakePlayer
 		g_playerActive = true;
 		InterlockedIncrement(&g_callCount);
 
-		LOG_INFO("[FakePlayer] === SpawnFakePlayer() COMPLETE — fake player active! ===");
+		LOG_INFO("[FakePlayer] === SpawnFakePlayer() COMPLETE ï¿½ fake player active! ===");
 	}
 
 	void DespawnFakePlayer()
@@ -455,6 +459,25 @@ namespace Hooks::FakePlayer
 		// Get the world and game mode for proper logout
 		SDK::UWorld* world = SDK::UWorld::GetWorld();
 		SDK::AGameModeBase* gameMode = world ? world->AuthorityGameMode : nullptr;
+
+		// Step 2b: Remove from PlayerArray
+		if (g_fakeController && g_fakeController->PlayerState)
+		{
+			SDK::UWorld* world = SDK::UWorld::GetWorld();
+			if (world && world->GameState)
+			{
+				auto& playerArray = world->GameState->PlayerArray;
+				for (SDK::int32 i = 0; i < playerArray.Num(); i++)
+				{
+					if (playerArray[i] == g_fakeController->PlayerState)
+					{
+						playerArray.Remove(i);
+						LOG_DEBUG("[FakePlayer] Removed fake PlayerState from PlayerArray at index %d", i);
+						break;
+					}
+				}
+			}
+		}
 
 		// Step 1: UnPossess the pawn from the controller
 		if (g_fakeController)
@@ -512,9 +535,27 @@ namespace Hooks::FakePlayer
 			}
 		}
 
-		// Step 4: Destroy the controller actor
+		// Step 4: Remove from PlayerControllerList, then destroy controller
 		if (g_fakeController)
 		{
+			if (g_removeControllerFn && world)
+			{
+				LOG_DEBUG("[FakePlayer] Calling UWorld::RemoveController...");
+				__try
+				{
+					g_removeControllerFn(world, g_fakeController);
+					LOG_DEBUG("[FakePlayer] UWorld::RemoveController completed");
+				}
+				__except (1)
+				{
+					LOG_WARN("[FakePlayer] Exception during UWorld::RemoveController");
+				}
+			}
+			else
+			{
+				LOG_WARN("[FakePlayer] UWorld::RemoveController unavailable â€” skipping controller list cleanup");
+			}
+
 			LOG_DEBUG("[FakePlayer] Destroying fake controller actor...");
 			__try
 			{
@@ -535,12 +576,12 @@ namespace Hooks::FakePlayer
 	}
 
 	// ---------------------------------------------------------------
-	// Map traversal — teleport the fake player across waypoints
+	// Map traversal ï¿½ teleport the fake player across waypoints
 	// ---------------------------------------------------------------
 
 	void StartMapTraversal()
 	{
-		LOG_INFO("[FakePlayer] StartMapTraversal() — enter");
+		LOG_INFO("[FakePlayer] StartMapTraversal() ï¿½ enter");
 
 		if (!g_playerActive || !g_fakePawn)
 		{
@@ -591,7 +632,7 @@ namespace Hooks::FakePlayer
 		if (g_waypointIndex >= static_cast<int>(g_waypoints.size()))
 		{
 			// Completed full pass
-			LOG_INFO("[FakePlayer] Map traversal COMPLETE — visited all %zu waypoints", g_waypoints.size());
+			LOG_INFO("[FakePlayer] Map traversal COMPLETE ï¿½ visited all %zu waypoints", g_waypoints.size());
 			g_traversing = false;
 			return;
 		}
@@ -612,7 +653,7 @@ namespace Hooks::FakePlayer
 			bool success = SafeSetActorLocation(g_fakePawn, newLocation);
 			if (!success && g_waypointIndex == 0)
 			{
-				LOG_ERROR("[FakePlayer] SafeSetActorLocation FAILED/EXCEPTION at waypoint %d (%.0f, %.0f, %.0f) — stopping traversal",
+				LOG_ERROR("[FakePlayer] SafeSetActorLocation FAILED/EXCEPTION at waypoint %d (%.0f, %.0f, %.0f) ï¿½ stopping traversal",
 					g_waypointIndex, wp.x, wp.y, wp.z);
 				g_traversing = false;
 				return;
@@ -633,7 +674,7 @@ namespace Hooks::FakePlayer
 
 		if (g_waypointIndex >= total)
 		{
-			LOG_INFO("[FakePlayer] Map traversal COMPLETE — visited all %zu waypoints", g_waypoints.size());
+			LOG_INFO("[FakePlayer] Map traversal COMPLETE ï¿½ visited all %zu waypoints", g_waypoints.size());
 			g_traversing = false;
 		}
 	}
@@ -643,6 +684,24 @@ namespace Hooks::FakePlayer
 	bool Install()
 	{
 		LOG_INFO("FakePlayer: Spawn/despawn system ready");
+
+		IPluginScanner* scanner = GetScanner();
+		if (scanner)
+		{
+			uintptr_t addr = scanner->FindPatternInMainModule(
+				"48 89 54 24 ?? 48 89 4C 24 ?? 53 56 57 41 54 48 81 EC");
+
+			if (addr)
+			{
+				g_removeControllerFn = reinterpret_cast<UWorld_RemoveController_t>(addr);
+				LOG_INFO("[FakePlayer] UWorld::RemoveController found at 0x%llX", (unsigned long long)addr);
+			}
+			else
+			{
+				LOG_WARN("[FakePlayer] UWorld::RemoveController pattern not found â€” controller list cleanup unavailable");
+			}
+		}
+
 		return true;
 	}
 
