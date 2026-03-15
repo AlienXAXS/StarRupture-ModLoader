@@ -1,4 +1,4 @@
-// dllmain.cpp : Defines the entry point for the DLL application.
+﻿// dllmain.cpp : Defines the entry point for the DLL application.
 #include "logging/log.h"
 #include "logging/ue_log.h"
 #include "logging/logger.h"
@@ -34,10 +34,13 @@
 
 #include <Psapi.h>
 #include <VersionHelpers.h>
+#include <winver.h>
 #include <thread>
 #include <chrono>
+#include <vector>
 
 #pragma comment(lib, "psapi.lib")
+#pragma comment(lib, "version.lib")
 
 // ---------------------------------------------------------------------------
 // Globals shared between DllMain and the main init thread
@@ -55,9 +58,12 @@ static HANDLE g_pluginsLoadedEvent = NULL;
 
 // Signalled (auto-reset) by OnEngineInitForUELog when the UE engine is fully
 // up.  MainInitThreadProc waits on this before calling LoadAllPlugins so that
-// plugins install their hooks into a fully initialised engine — no thread
+// plugins install their hooks into a fully initialised engine -- no thread
 // suspension needed, no loader-lock deadlocks.
 static HANDLE g_engineReadyEvent = NULL;
+
+// Required suffix for the game version, read from the executable's version
+static constexpr wchar_t kRequiredVersionSuffix[] = L"CL-114046";
 
 // ---------------------------------------------------------------------------
 // Forward declarations
@@ -67,7 +73,7 @@ static void LoadUE4SS();
 static void LogStartupEnvironment();
 
 // APC trampoline: fired on the game main thread when it enters an alertable
-// wait.  We must NOT call MainInitThreadProc directly here — it blocks on
+// wait.  We must NOT call MainInitThreadProc directly here -- it blocks on
 // MsgWaitForMultipleObjects waiting for the EngineInit detour, which itself
 // runs on this same (main) thread, causing a deadlock.  Instead we spawn a
 // dedicated thread and return immediately so the main thread stays free to
@@ -85,7 +91,7 @@ static VOID CALLBACK MainInitApcProc(ULONG_PTR)
 }
 
 // ---------------------------------------------------------------------------
-// Called by EngineInit hook once the UE engine is up — safe to call BasicLogV
+// Called by EngineInit hook once the UE engine is up -- safe to call BasicLogV
 // ---------------------------------------------------------------------------
 static void OnEngineInitForUELog()
 {
@@ -114,15 +120,76 @@ static void OnEngineInitForUELog()
 }
 
 // ---------------------------------------------------------------------------
+// Game version check
+//
+// Reads the "ProductVersion" string from the main executable's version
+// resource and verifies that it ends with the expected changelist suffix.
+// Returns true if the version is compatible; populates outActualVersion in
+// both the success and failure cases so the caller can log it.
+// ---------------------------------------------------------------------------
+
+static bool CheckGameVersion(std::wstring& outActualVersion)
+{
+	wchar_t exePath[MAX_PATH]{};
+	GetModuleFileNameW(nullptr, exePath, MAX_PATH);
+
+	DWORD dummy = 0;
+	const DWORD infoSize = GetFileVersionInfoSizeW(exePath, &dummy);
+	if (infoSize == 0)
+	{
+		outActualVersion = L"<unavailable>";
+		return false;
+	}
+
+	std::vector<BYTE> buf(infoSize);
+	if (!GetFileVersionInfoW(exePath, 0, infoSize, buf.data()))
+	{
+		outActualVersion = L"<unreadable>";
+		return false;
+	}
+
+	// Use the first available translation to build the query path.
+	struct LangCodepage { WORD lang; WORD codepage; };
+	LangCodepage* translations = nullptr;
+	UINT cbTranslations = 0;
+	VerQueryValueW(buf.data(), L"\\VarFileInfo\\Translation",
+	               reinterpret_cast<LPVOID*>(&translations), &cbTranslations);
+
+	wchar_t query[64]{};
+	if (translations && cbTranslations >= sizeof(LangCodepage))
+		swprintf_s(query, L"\\StringFileInfo\\%04x%04x\\ProductVersion",
+		           translations[0].lang, translations[0].codepage);
+	else
+		wcscpy_s(query, L"\\StringFileInfo\\040904b0\\ProductVersion");
+
+	wchar_t* productVersion = nullptr;
+	UINT versionLen = 0;
+	if (!VerQueryValueW(buf.data(), query,
+	                    reinterpret_cast<LPVOID*>(&productVersion), &versionLen)
+	    || !productVersion || versionLen == 0)
+	{
+		outActualVersion = L"<not found>";
+		return false;
+	}
+
+	outActualVersion = productVersion;
+
+	const size_t reqLen    = wcslen(kRequiredVersionSuffix);
+	const size_t actualLen = outActualVersion.size();
+	return actualLen >= reqLen
+	    && outActualVersion.compare(actualLen - reqLen, reqLen, kRequiredVersionSuffix) == 0;
+}
+
+// ---------------------------------------------------------------------------
 // Main initialisation thread
 //
 // Owns everything that would previously have run inside DLL_PROCESS_ATTACH
 // but cannot safely run there because:
-//   • WinHTTP (used by RunAutoUpdate) lazily loads TLS/DNS DLLs via
+//   * WinHTTP (used by RunAutoUpdate) lazily loads TLS/DNS DLLs via
 //     LoadLibrary.  LoadLibrary needs the loader lock, which DllMain holds
-//     for its entire duration — causing an immediate deadlock if we wait, or
+//     for its entire duration -- causing an immediate deadlock if we wait, or
 //     error 5023 if we try to use the thread pool from inside the lock.
-//   • By running here we are already outside the loader lock, so WinHTTP,
+//   * By running here we are already outside the loader lock, so WinHTTP,
 //     hook installation, and plugin LoadLibrary calls all work normally.
 //
 // Plugin loading is deliberately deferred until the engine signals it is
@@ -137,7 +204,7 @@ static void OnEngineInitForUELog()
 static DWORD WINAPI MainInitThreadProc(LPVOID)
 {
 	// Open the splash here, not in DllMain.  The splash window has no internal
-	// message thread — Show/SetStatus/SetProgress/Close must all be called from
+	// message thread -- Show/SetStatus/SetProgress/Close must all be called from
 	// the same thread that owns the HWND.  Running everything here keeps the
 	// ownership consistent and avoids cross-thread UpdateWindow / PumpMessages
 	// failures.  DllMain returns in microseconds so the visual delay is nil.
@@ -145,6 +212,54 @@ static DWORD WINAPI MainInitThreadProc(LPVOID)
 	Splash::Show();
 	Splash::SetStatus(L"Starting mod loader...");
 	Splash::SetProgress(0.0f);
+
+	// Verify the game binary is the expected version before installing any hooks.
+	// If the CL doesn't match we display a timed error and bail out cleanly.
+	{
+		std::wstring gameVersion;
+		if (!CheckGameVersion(gameVersion))
+		{
+			LogToFile::Error("[ModLoader] VERSION MISMATCH: expected suffix '%ls', got '%ls'",
+			                 kRequiredVersionSuffix, gameVersion.c_str());
+			LogToFile::Error("[ModLoader] Hook installation aborted -- update to the correct game build.");
+
+			// Only show the splash and countdown on client builds -- on server builds we just log the error and exit immediately since there's no UI to show it on.
+#if defined(MODLOADER_CLIENT_BUILD)
+			Splash::SetErrorMode();
+			Splash::SetStatus(L"Wrong game version! Please update to the correct build.");
+
+			for (int countdown = 10; countdown > 0; --countdown)
+			{
+				wchar_t msg[256];
+				swprintf_s(msg, L"Wrong game version! Will not load ModLoader (%ds)",
+				           kRequiredVersionSuffix, countdown);
+				Splash::SetStatus(msg);
+
+				// Sleep one second in 50 ms increments to keep the window responsive.
+				for (int ms = 0; ms < 1000; ms += 50)
+				{
+					Sleep(50);
+					MSG wmsg;
+					while (PeekMessageW(&wmsg, nullptr, 0, 0, PM_REMOVE))
+					{
+						TranslateMessage(&wmsg);
+						DispatchMessageW(&wmsg);
+					}
+				}
+			}
+
+			// Unblock DLL_PROCESS_DETACH so it doesn't hang waiting for init.
+			if (g_pluginsLoadedEvent)
+				SetEvent(g_pluginsLoadedEvent);
+
+			Splash::Close();
+#endif
+
+			return 0;
+		}
+
+		LogToFile::Info("[ModLoader] Game version OK: %ls", gameVersion.c_str());
+	}
 
 	LogStartupEnvironment();
 
@@ -192,7 +307,7 @@ static DWORD WINAPI MainInitThreadProc(LPVOID)
 	}
 	else
 	{
-		ModLoaderLogger::LogWarn(L"  WARNING: EngineInit hook failed to install — loading plugins immediately");
+		ModLoaderLogger::LogWarn(L"  WARNING: EngineInit hook failed to install -- loading plugins immediately");
 		// The detour will never fire to signal engine-ready, so unblock the
 		// wait below manually so plugin loading can still proceed.
 		if (g_engineReadyEvent)
@@ -238,7 +353,7 @@ static DWORD WINAPI MainInitThreadProc(LPVOID)
 			DWORD r = MsgWaitForMultipleObjects(1, waitHandles, FALSE, kEngineWaitTimeoutMs, QS_ALLINPUT);
 			if (r == WAIT_OBJECT_0)
 			{
-				LogToFile::Info("[ModLoader] Engine ready — proceeding to load plugins");
+				LogToFile::Info("[ModLoader] Engine ready -- proceeding to load plugins");
 				break;
 			}
 			if (r == WAIT_OBJECT_0 + 1)
@@ -253,7 +368,7 @@ static DWORD WINAPI MainInitThreadProc(LPVOID)
 				continue;
 			}
 			// WAIT_TIMEOUT or unexpected error
-			LogToFile::Warn("[ModLoader] Timed out waiting for engine init (%lu ms) — loading plugins anyway", kEngineWaitTimeoutMs);
+			LogToFile::Warn("[ModLoader] Timed out waiting for engine init (%lu ms) -- loading plugins anyway", kEngineWaitTimeoutMs);
 			break;
 		}
 
@@ -261,7 +376,7 @@ static DWORD WINAPI MainInitThreadProc(LPVOID)
 		g_engineReadyEvent = NULL;
 	}
 
-	// Engine is up — safe to load plugins and let them install hooks.
+	// Engine is up -- safe to load plugins and let them install hooks.
 	Splash::SetStatus(L"Loading plugins...");
 	Splash::SetProgress(0.80f);
 
@@ -391,7 +506,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 		SymRefreshModuleList(GetCurrentProcess());
 
 
-		// Initialise our low-level file logger — simple file I/O, no LoadLibrary.
+		// Initialise our low-level file logger -- simple file I/O, no LoadLibrary.
 		LogToFile::Initialize();
 		LogToFile::Info("======================================================");
 		LogToFile::Info("  StarRupture Mod Loader (dwmapi.dll proxy) loaded");
@@ -401,7 +516,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 		// happen in DllMain before any caller can reach our dwmapi exports,
 		// and before we release the loader lock.
 		// NOTE: Splash::Show() is intentionally NOT called here.  The splash
-		// uses a plain HWND with no internal thread — all calls (Show, SetStatus,
+		// uses a plain HWND with no internal thread -- all calls (Show, SetStatus,
 		// SetProgress, Close) must be made from the same thread that owns the
 		// window.  We open the splash at the top of MainInitThreadProc so that
 		// every call originates from that one thread.
@@ -443,11 +558,11 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 		// If DllMain is running on the game's main thread, queue an APC so
 		// MainInitThreadProc fires the next time that thread enters an alertable
 		// wait (after the loader lock is released).  Otherwise spawn a dedicated
-		// thread as normal — the spawned thread is never the main thread, so
+		// thread as normal -- the spawned thread is never the main thread, so
 		// it won't contend with game logic running there.
 		if (GetCurrentThreadId() == get_main_thread_id())
 		{
-			LogToFile::Info("DllMain on main thread — deferring init via QueueUserAPC");
+			LogToFile::Info("DllMain on main thread -- deferring init via QueueUserAPC");
 			QueueUserAPC((PAPCFUNC)MainInitApcProc, GetCurrentThread(), (ULONG_PTR)hModule);
 			// g_mainInitThread stays NULL; DLL_PROCESS_DETACH guards with if()
 		}
@@ -468,7 +583,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 			}
 		}
 
-		// Return TRUE immediately — loader lock is now released and the init
+		// Return TRUE immediately -- loader lock is now released and the init
 		// work can proceed (either via the APC or the spawned thread).
 	}
 	break;
@@ -504,7 +619,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 		if (g_pluginsLoadedEvent)
 		{
 			if (WaitForSingleObject(g_pluginsLoadedEvent, 30000) == WAIT_TIMEOUT)
-				LogToFile::Warn("Timed out waiting for init thread — proceeding with shutdown anyway");
+				LogToFile::Warn("Timed out waiting for init thread -- proceeding with shutdown anyway");
 			CloseHandle(g_pluginsLoadedEvent);
 			g_pluginsLoadedEvent = NULL;
 		}

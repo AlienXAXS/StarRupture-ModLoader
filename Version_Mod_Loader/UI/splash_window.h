@@ -1,7 +1,7 @@
-#pragma once
+ï»¿#pragma once
 
 // ---------------------------------------------------------------------------
-// Splash Window — client-only startup progress overlay
+// Splash Window -- client-only startup progress overlay
 //
 // Shows a small always-on-top window during mod loader initialization.
 // Only active when MODLOADER_CLIENT_BUILD is defined; all calls are
@@ -15,12 +15,16 @@ namespace Splash
     void Show();
 
     // Update the status text shown on the splash window.
-    // Thread-safe — can be called from any thread.
+    // Thread-safe -- can be called from any thread.
     void SetStatus(const wchar_t* text);
 
-    // Update the progress bar (0.0 – 1.0).
-    // Thread-safe — can be called from any thread.
+    // Update the progress bar (0.0 -- 1.0).
+    // Thread-safe -- can be called from any thread.
     void SetProgress(float fraction);
+
+    // Switch the progress bar to red and fill it completely.
+    // Call before displaying an error/countdown message.
+    void SetErrorMode();
 
     // Close the splash window and clean up the background thread.
     // Blocks briefly until the window thread exits.
