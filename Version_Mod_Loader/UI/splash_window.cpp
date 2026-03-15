@@ -1,7 +1,7 @@
-#include "splash_window.h"
+ï»¿#include "splash_window.h"
 
 // ---------------------------------------------------------------------------
-// Splash window — only compiles real code for client builds.
+// Splash window -- only compiles real code for client builds.
 // Server builds get empty stubs so callers don't need #ifdefs.
 // ---------------------------------------------------------------------------
 
@@ -32,7 +32,7 @@ static constexpr int BAR_X  = MARGIN;
 static constexpr int BAR_WIDTH  = SPLASH_WIDTH - MARGIN * 2;
 
 // ---------------------------------------------------------------------------
-// State — all accessed on the main thread only (no locks needed)
+// State -- all accessed on the main thread only (no locks needed)
 // ---------------------------------------------------------------------------
 static wchar_t g_statusText[256] = L"Initializing...";
 static float   g_progress   = 0.0f;
@@ -170,7 +170,7 @@ static void PumpMessages()
 }
 
 // ---------------------------------------------------------------------------
-// Public API — all called on the main thread from DllMain
+// Public API -- all called on the main thread from DllMain
 // ---------------------------------------------------------------------------
 
 void Splash::Show()
@@ -257,11 +257,31 @@ void Splash::Close()
 	}
 }
 
-#else // Server build — empty stubs
+void Splash::SetErrorMode()
+{
+	if (!g_hwnd)
+		return;
+
+	// Replace the fill brush with red to signal an error state.
+	if (g_barFgBrush)
+	{
+		DeleteObject(g_barFgBrush);
+		g_barFgBrush = CreateSolidBrush(RGB(200, 50, 50));
+	}
+
+	g_progress = 1.0f;
+
+	InvalidateRect(g_hwnd, nullptr, FALSE);
+	UpdateWindow(g_hwnd);
+	PumpMessages();
+}
+
+#else // Server build -- empty stubs
 
 void Splash::Show() {}
 void Splash::SetStatus(const wchar_t*) {}
 void Splash::SetProgress(float) {}
+void Splash::SetErrorMode() {}
 void Splash::Close() {}
 
 #endif // MODLOADER_CLIENT_BUILD
