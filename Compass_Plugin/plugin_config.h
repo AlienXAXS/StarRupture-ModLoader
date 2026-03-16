@@ -6,8 +6,8 @@ namespace CompassConfig
 {
 	static const ConfigEntry CONFIG_ENTRIES[] = {
 		// ----- General -----
-		{ "General", "Enabled",                  ConfigValueType::Boolean, "true",    "Enable or disable the compass overlay" },
-		{ "General", "TextOnly",                 ConfigValueType::Boolean, "true",   "Force text-only mode — never draw icon textures (useful for debugging)" },
+		{ "General", "Enabled",                  ConfigValueType::Boolean, "false",    "Enable or disable the compass overlay" },
+		{ "General", "TextOnly",                 ConfigValueType::Boolean, "false",   "Force text-only mode — never draw icon textures (useful for debugging)" },
 
 		// ----- Compass bar -----
 		{ "Compass", "Scale",                    ConfigValueType::Float,   "1.2",     "Compass size multiplier" },
@@ -21,18 +21,18 @@ namespace CompassConfig
 
 		// ----- Base Cores -----
 		{ "BaseCores", "Enabled",                ConfigValueType::Boolean, "true",    "Show base core markers on the compass" },
-		{ "BaseCores", "Distance",               ConfigValueType::Float,   "50000.0",     "Max render distance in UU (0 = unlimited)" },
+		{ "BaseCores", "Distance",               ConfigValueType::Float,   "20000.0",     "Max render distance in UU (0 = unlimited)" },
 
 		// ----- Map Markers -----
 		{ "Markers", "Enabled",                  ConfigValueType::Boolean, "true",    "Master toggle for all POI markers" },
 		{ "Markers", "ShowAntena",               ConfigValueType::Boolean, "true",    "Show antenna POI markers" },
-		{ "Markers", "AntenaDistance",           ConfigValueType::Float,   "10000.0", "Antenna max render distance in UU (0 = unlimited)" },
+		{ "Markers", "AntenaDistance",           ConfigValueType::Float,   "15000.0", "Antenna max render distance in UU (0 = unlimited)" },
 		{ "Markers", "ShowAbandonedBase",        ConfigValueType::Boolean, "true",    "Show abandoned base POI markers" },
 		{ "Markers", "AbandonedBaseDistance",    ConfigValueType::Float,   "10000.0", "Abandoned base max render distance in UU (0 = unlimited)" },
 		{ "Markers", "ShowCave",                 ConfigValueType::Boolean, "true",    "Show cave POI markers" },
 		{ "Markers", "CaveDistance",             ConfigValueType::Float,   "10000.0", "Cave max render distance in UU (0 = unlimited)" },
 		{ "Markers", "ShowObelisk",              ConfigValueType::Boolean, "true",    "Show obelisk POI markers" },
-		{ "Markers", "ObeliskDistance",          ConfigValueType::Float,   "10000.0", "Obelisk max render distance in UU (0 = unlimited)" },
+		{ "Markers", "ObeliskDistance",          ConfigValueType::Float,   "7500.0", "Obelisk max render distance in UU (0 = unlimited)" },
 
 		// ----- Dead Bodies -----
 		{ "Bodies", "Enabled",                   ConfigValueType::Boolean, "true",    "Show dead body markers on the compass" },
