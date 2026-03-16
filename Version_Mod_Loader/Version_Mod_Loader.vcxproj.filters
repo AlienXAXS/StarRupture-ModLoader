@@ -245,6 +245,9 @@
     <ClCompile Include="hooks\game\mass_spawner_deactivate\mass_spawner_deactivate.cpp">
       <Filter>Source Files\hooks\game\spawning</Filter>
     </ClCompile>
+    <ClCompile Include="$(StarRuptureSDKSourceDir)UMG_functions.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="dwmapi.def">

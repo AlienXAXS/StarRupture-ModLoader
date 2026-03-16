@@ -3,12 +3,60 @@
 #include <string>
 #include <fstream>
 #include <sstream>
+#include <unordered_map>
 
 namespace ModLoaderLogger
 {
 	static wchar_t g_configDirectory[MAX_PATH] = {};
 	static CRITICAL_SECTION g_configLock;
 	static bool g_configInitialized = false;
+
+	// ---------------------------------------------------------------------------
+	// File-mtime cache — eliminates per-frame GetPrivateProfileStringW calls.
+	// The mtime of each INI file is checked at most every 500 ms. On change,
+	// the cache for that file is cleared so values repopulate on the next read,
+	// giving transparent live-reload to all plugins at no per-frame cost.
+	// Must always be accessed with g_configLock held.
+	// ---------------------------------------------------------------------------
+
+	struct PluginFileCache
+	{
+		FILETIME  lastMtime        = {};
+		ULONGLONG lastMtimeCheckMs = 0; // GetTickCount64() of last mtime check
+		std::unordered_map<std::string, std::string> entries; // "Section\nKey" → value
+	};
+
+	static std::unordered_map<std::wstring, PluginFileCache> g_fileCache;
+	static constexpr ULONGLONG kMtimeCheckIntervalMs = 500;
+
+	static FILETIME GetFileMtime(const wchar_t* path)
+	{
+		WIN32_FILE_ATTRIBUTE_DATA info = {};
+		GetFileAttributesExW(path, GetFileExInfoStandard, &info);
+		return info.ftLastWriteTime;
+	}
+
+	// Returns cached string for (path, "Section\nKey"), or nullptr on miss.
+	// Invalidates the entire file cache if the file's mtime has changed.
+	// Must be called with g_configLock held.
+	static const std::string* CacheLookup(PluginFileCache& fc, const wchar_t* path, const std::string& cacheKey)
+	{
+		const ULONGLONG now = GetTickCount64();
+		if (now - fc.lastMtimeCheckMs >= kMtimeCheckIntervalMs)
+		{
+			fc.lastMtimeCheckMs = now;
+			const FILETIME mt = GetFileMtime(path);
+			if (mt.dwLowDateTime != fc.lastMtime.dwLowDateTime ||
+				mt.dwHighDateTime != fc.lastMtime.dwHighDateTime)
+			{
+				fc.lastMtime = mt;
+				fc.entries.clear(); // file changed on disk — repopulate on demand
+			}
+		}
+
+		auto it = fc.entries.find(cacheKey);
+		return (it != fc.entries.end()) ? &it->second : nullptr;
+	}
 
 	// Build path to plugin's config file
 	static bool GetPluginConfigPath(const char* pluginName, wchar_t* outPath, int maxLen)
@@ -35,25 +83,38 @@ namespace ModLoaderLogger
 		if (!GetPluginConfigPath(pluginName, configPath, MAX_PATH))
 			return false;
 
-		// Convert section and key to wide strings
+		// Build "Section\nKey" cache key
+		std::string cacheKey;
+		cacheKey.reserve(strlen(section) + 1 + strlen(key));
+		cacheKey += section;
+		cacheKey += '\n';
+		cacheKey += key;
+
+		EnterCriticalSection(&g_configLock);
+
+		PluginFileCache& fc = g_fileCache[configPath];
+		if (const std::string* cached = CacheLookup(fc, configPath, cacheKey))
+		{
+			strncpy_s(outValue, maxLen, cached->c_str(), _TRUNCATE);
+			LeaveCriticalSection(&g_configLock);
+			return true;
+		}
+
+		// Cache miss — read from INI, populate cache
 		wchar_t wSection[256], wKey[256];
 		MultiByteToWideChar(CP_UTF8, 0, section, -1, wSection, 256);
 		MultiByteToWideChar(CP_UTF8, 0, key, -1, wKey, 256);
 
-		// Convert default value to wide string
 		wchar_t wDefault[1024] = L"";
 		if (defaultValue)
-		{
 			MultiByteToWideChar(CP_UTF8, 0, defaultValue, -1, wDefault, 1024);
-		}
-
-		EnterCriticalSection(&g_configLock);
 
 		wchar_t wValue[1024];
 		GetPrivateProfileStringW(wSection, wKey, wDefault, wValue, 1024, configPath);
 
-		// Convert back to UTF8
 		WideCharToMultiByte(CP_UTF8, 0, wValue, -1, outValue, maxLen, nullptr, nullptr);
+
+		fc.entries[cacheKey] = outValue;
 
 		LeaveCriticalSection(&g_configLock);
 		return true;
@@ -68,7 +129,6 @@ namespace ModLoaderLogger
 		if (!GetPluginConfigPath(pluginName, configPath, MAX_PATH))
 			return false;
 
-		// Convert to wide strings
 		wchar_t wSection[256], wKey[256], wValue[1024];
 		MultiByteToWideChar(CP_UTF8, 0, section, -1, wSection, 256);
 		MultiByteToWideChar(CP_UTF8, 0, key, -1, wKey, 256);
@@ -76,8 +136,22 @@ namespace ModLoaderLogger
 
 		EnterCriticalSection(&g_configLock);
 		BOOL result = WritePrivateProfileStringW(wSection, wKey, wValue, configPath);
-		LeaveCriticalSection(&g_configLock);
 
+		// Invalidate the cached entry so the next read reflects the write immediately,
+		// without waiting for the 500 ms mtime check to fire.
+		if (result)
+		{
+			std::string cacheKey;
+			cacheKey.reserve(strlen(section) + 1 + strlen(key));
+			cacheKey += section;
+			cacheKey += '\n';
+			cacheKey += key;
+			auto it = g_fileCache.find(configPath);
+			if (it != g_fileCache.end())
+				it->second.entries.erase(cacheKey);
+		}
+
+		LeaveCriticalSection(&g_configLock);
 		return result != 0;
 	}
 
@@ -156,12 +230,74 @@ namespace ModLoaderLogger
 		// Use a unique default that's unlikely to be a real value
 		const wchar_t* uniqueDefault = L"__CONFIG_KEY_NOT_FOUND__";
 		wchar_t wValue[1024];
-		
+
 		EnterCriticalSection(&g_configLock);
 		GetPrivateProfileStringW(wSection, wKey, uniqueDefault, wValue, 1024, configPath);
 		LeaveCriticalSection(&g_configLock);
 
 		return wcscmp(wValue, uniqueDefault) != 0;
+	}
+
+	// Write a brand-new config file from schema defaults with blank lines between sections.
+	// Uses _wfopen directly so the file is clean UTF-8/ASCII from the start,
+	// avoiding any encoding quirks from WritePrivateProfileStringW.
+	static void WriteFormattedNewConfig(const ConfigSchema* schema, const wchar_t* configPath)
+	{
+		std::string content;
+		const char* lastSection = nullptr;
+
+		for (int i = 0; i < schema->entryCount; ++i)
+		{
+			const ConfigEntry& entry = schema->entries[i];
+
+			if (!lastSection || strcmp(lastSection, entry.section) != 0)
+			{
+				if (lastSection)
+					content += "\r\n"; // blank line between sections
+				content += "[";
+				content += entry.section;
+				content += "]\r\n";
+				lastSection = entry.section;
+			}
+
+			// Format value the same way WriteDefaultValue does
+			char valueBuf[64] = {};
+			switch (entry.type)
+			{
+			case ConfigValueType::Boolean:
+			{
+				bool b = (_stricmp(entry.defaultValue, "true") == 0 ||
+					_stricmp(entry.defaultValue, "1") == 0 ||
+					_stricmp(entry.defaultValue, "yes") == 0);
+				snprintf(valueBuf, sizeof(valueBuf), "%d", b ? 1 : 0);
+				break;
+			}
+			case ConfigValueType::Integer:
+				snprintf(valueBuf, sizeof(valueBuf), "%d", atoi(entry.defaultValue));
+				break;
+			case ConfigValueType::Float:
+				snprintf(valueBuf, sizeof(valueBuf), "%.6f", static_cast<float>(atof(entry.defaultValue)));
+				break;
+			default:
+				snprintf(valueBuf, sizeof(valueBuf), "%s", entry.defaultValue);
+				break;
+			}
+
+			content += entry.key;
+			content += "=";
+			content += valueBuf;
+			content += "\r\n";
+		}
+
+		EnterCriticalSection(&g_configLock);
+		FILE* f = nullptr;
+		errno_t errnoVal = _wfopen_s(&f, configPath, L"wb");
+		if (errnoVal == 0 && f)
+		{
+			fwrite(content.c_str(), 1, content.size(), f);
+			fclose(f);
+		}
+		LeaveCriticalSection(&g_configLock);
 	}
 
 	// Helper to convert default value string to appropriate type and write
@@ -179,13 +315,13 @@ namespace ModLoaderLogger
 			ConfigWriteFloat(pluginName, entry.section, entry.key, static_cast<float>(atof(entry.defaultValue)));
 			break;
 		case ConfigValueType::Boolean:
-			{
-				bool boolVal = (_stricmp(entry.defaultValue, "true") == 0 || 
-							   _stricmp(entry.defaultValue, "1") == 0 ||
-							   _stricmp(entry.defaultValue, "yes") == 0);
-				ConfigWriteBool(pluginName, entry.section, entry.key, boolVal);
-			}
-			break;
+		{
+			bool boolVal = (_stricmp(entry.defaultValue, "true") == 0 ||
+				_stricmp(entry.defaultValue, "1") == 0 ||
+				_stricmp(entry.defaultValue, "yes") == 0);
+			ConfigWriteBool(pluginName, entry.section, entry.key, boolVal);
+		}
+		break;
 		}
 	}
 
@@ -211,14 +347,14 @@ namespace ModLoaderLogger
 				WriteDefaultValue(pluginName, entry);
 				addedCount++;
 
-				LogDebug(L"[ConfigManager] Added missing config entry: %S.%S = %S", 
+				LogDebug(L"[ConfigManager] Added missing config entry: %S.%S = %S",
 					entry.section, entry.key, entry.defaultValue);
 			}
 		}
 
 		if (addedCount > 0)
 		{
-			LogDebug(L"[ConfigManager] Validated config for '%s': added %d missing entries", 
+			LogDebug(L"[ConfigManager] Validated config for '%s': added %d missing entries",
 				wPluginName, addedCount);
 		}
 		else
@@ -250,27 +386,7 @@ namespace ModLoaderLogger
 		if (!configExists)
 		{
 			LogDebug(L"[ConfigManager] Creating new config for '%s' with %d entries", wPluginName, schema->entryCount);
-
-			// Create config file with all defaults
-			for (int i = 0; i < schema->entryCount; ++i)
-			{
-				const ConfigEntry& entry = schema->entries[i];
-
-				// Write description as comment if provided
-				if (entry.description && entry.description[0] != '\0')
-				{
-					// Write comment line (INI files support ; for comments)
-					wchar_t wSection[256];
-					MultiByteToWideChar(CP_UTF8, 0, entry.section, -1, wSection, 256);
-					
-					// Note: WritePrivateProfileString doesn't support comments,
-					// but we can document this in a readme or use a separate comment system
-				}
-
-				// Write default value
-				WriteDefaultValue(pluginName, entry);
-			}
-
+			WriteFormattedNewConfig(schema, configPath);
 			LogDebug(L"[ConfigManager] Config created: %s", configPath);
 			return true;
 		}

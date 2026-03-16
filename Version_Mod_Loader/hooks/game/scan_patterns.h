@@ -36,9 +36,14 @@ namespace ScanPatterns
 	inline constexpr const char* UMassSignalSubsystem_SignalEntity = 
 		"48 89 5C 24 ?? 4C 89 44 24 ?? 57 48 83 EC ?? 48 8B DA 48 8B F9 45 85 C0";
 
+#if defined(MODLOADER_CLIENT_BUILD)
+	inline constexpr const char* UGameEngine_Tick =
+		"40 55 53 56 41 54 41 56 48 8D 6C 24 ?? 48 81 EC ?? ?? ?? ?? 0F 29 BC 24 ?? ?? ?? ?? 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 45 ?? 0F 29 B4 24";
+#elif defined(MODLOADER_SERVER_BUILD)
 	// UGameEngine::Tick(float DeltaSeconds, bool bIdleMode)
 	inline constexpr const char* UGameEngine_Tick = 
 		"4C 8B DC 48 81 EC ?? ?? ?? ?? 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 84 24 ?? ?? ?? ?? 49 89 5B ?? 49 89 6B ?? 49 89 73 ?? 49 89 7B ?? 4D 89 63 ?? 45 0F B6 E0";
+#endif
 
 	// AActor::BeginPlay (v1 pattern, function prologue - fires at the very start of the function before any instructions)
 	inline constexpr const char* AActor_BeginPlay =
