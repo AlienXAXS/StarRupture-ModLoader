@@ -342,6 +342,10 @@ echo Deploy complete.</Command>
     <ClCompile Include="$(StarRuptureSDKSourceDir)Engine_functions.cpp">
       <Visible>false</Visible>
     </ClCompile>
+    <ClCompile Include="$(StarRuptureSDKSourceDir)UMG_functions.cpp">
+      <Visible>false</Visible>
+      <ExcludedFromBuild Condition="'$(Configuration)' != 'Client Debug' And '$(Configuration)' != 'Client Release'">true</ExcludedFromBuild>
+    </ClCompile>
     <ClCompile Include="auto_update\auto_updater.cpp" />
     <ClCompile Include="config\config_manager.cpp" />
     <ClCompile Include="dllmain.cpp">
