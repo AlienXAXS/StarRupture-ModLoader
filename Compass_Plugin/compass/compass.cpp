@@ -185,11 +185,49 @@ namespace Compass
 	// disk / the package cache so the player never needs to open the map first.
 	// Falls back to FindObjectFastImpl (GObjects scan) when not yet registered.
 	// Throttled to one attempt per second to avoid per-frame overhead.
+	//
+	// GC protection strategy (two layers):
+	//   Primary  — push each texture into UWorld::ExtraReferencedObjects, a
+	//              UPROPERTY TArray<UObject*> that the GC traverses as a live
+	//              reference. This is the engine-sanctioned way to root objects
+	//              from code that cannot use UPROPERTY itself (no UHT in a DLL).
+	//   Fallback — PinToRoot() sets EInternalObjectFlags::RootSet + RF_MarkAsRootSet
+	//              + NeverStream directly, matching UObject::AddToRoot() internals.
+	//              Guards the gap when world is null during a level transition.
 	// ---------------------------------------------------------------------------
-	static void EnsureTextures()
+	static SDK::UWorld* s_lastPinnedWorld = nullptr;
+
+	// Helper: push obj into world->ExtraReferencedObjects (avoids duplicates by
+	// scanning the existing entries; the array is small so linear scan is fine).
+	static auto AnchorInWorld = [](SDK::UWorld* world, SDK::UObject* obj) -> void
+	{
+		if (!world || !obj) return;
+		auto& arr = world->ExtraReferencedObjects;
+		for (int i = 0; i < arr.Num(); ++i)
+			if (arr[i] == obj) return; // already present
+		arr.Add(obj);
+	};
+
+	static void EnsureTextures(SDK::UWorld* world)
 	{
 		// Without StaticLoadObject there is no way to load textures — use text fallback.
 		if (!g_StaticLoadObject) return;
+
+		// On world change: re-anchor all currently loaded textures in the new world's
+		// ExtraReferencedObjects so the GC reference graph is always up-to-date.
+		if (world && world != s_lastPinnedWorld)
+		{
+			s_lastPinnedWorld = world;
+			SDK::UObject* slots[] = {
+				s_tex.player, s_tex.baseCore, s_tex.body,
+				s_tex.antena, s_tex.abandonedBase, s_tex.cave,
+				s_tex.obelisk, s_tex.customPin,
+			};
+			int reanchored = 0;
+			for (auto* obj : slots)
+				if (obj) { AnchorInWorld(world, obj); ++reanchored; }
+			LOG_INFO("[Compass] World changed — re-anchored %d textures in ExtraReferencedObjects", reanchored);
+		}
 
 		struct TexEntry { SDK::UTexture*& slot; const wchar_t* fullPath; };
 		TexEntry entries[] = {
@@ -200,7 +238,7 @@ namespace Compass
 			{ s_tex.abandonedBase, L"/Game/Chimera/UI/Map/Markers/T_UI_abandonedBase_mapIcon.T_UI_abandonedBase_mapIcon" },
 			{ s_tex.cave,          L"/Game/Chimera/UI/Map/Markers/T_UI_cave_mapIcon.T_UI_cave_mapIcon"                   },
 			{ s_tex.obelisk,       L"/Game/Chimera/UI/Map/Markers/T_UI_obelisk_mapIcon.T_UI_obelisk_mapIcon"             },
-		{ s_tex.customPin,     L"/Game/Chimera/UI/Map/Markers/T_UI_marker_mapIcon.T_UI_marker_mapIcon"               },
+			{ s_tex.customPin,     L"/Game/Chimera/UI/Map/Markers/T_UI_marker_mapIcon.T_UI_marker_mapIcon"               },
 		};
 
 		// Per-frame pass: if a previously-loaded slot is now invalid, reload it immediately
@@ -215,7 +253,12 @@ namespace Compass
 			LOG_WARN("[Compass] Texture %p invalidated — reloading immediately", (void*)e.slot);
 			e.slot = nullptr;
 			auto* obj = g_StaticLoadObject(nullptr, nullptr, e.fullPath, nullptr, 0, nullptr, true, nullptr);
-			if (obj) { e.slot = static_cast<SDK::UTexture*>(obj); PinToRoot(obj); }
+			if (obj)
+			{
+				e.slot = static_cast<SDK::UTexture*>(obj);
+				PinToRoot(obj);
+				AnchorInWorld(world, obj);
+			}
 			if (!e.slot) anyNull = true;
 		}
 
@@ -231,7 +274,12 @@ namespace Compass
 		{
 			if (e.slot) continue;
 			auto* obj = g_StaticLoadObject(nullptr, nullptr, e.fullPath, nullptr, 0, nullptr, true, nullptr);
-			if (obj) { e.slot = static_cast<SDK::UTexture*>(obj); PinToRoot(obj); }
+			if (obj)
+			{
+				e.slot = static_cast<SDK::UTexture*>(obj);
+				PinToRoot(obj);
+				AnchorInWorld(world, obj);
+			}
 		}
 
 		LOG_DEBUG("[Compass] Texture resolve: player=%p core=%p body=%p antenna=%p abandonedBase=%p cave=%p obelisk=%p customPin=%p",
@@ -363,7 +411,7 @@ namespace Compass
 
 		const bool textOnly = s_cfg.textOnly;
 		if (!textOnly)
-			EnsureTextures();
+			EnsureTextures(world);
 
 		SDK::APlayerController* pc = hud->GetOwningPlayerController();
 		if (!pc)
