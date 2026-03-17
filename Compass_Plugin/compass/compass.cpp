@@ -206,6 +206,8 @@ namespace Compass
 		for (int i = 0; i < arr.Num(); ++i)
 			if (arr[i] == obj) return; // already present
 		arr.Add(obj);
+		LOG_DEBUG("[Compass] AnchorInWorld: texture %p added to world %p ExtraReferencedObjects (count now %d)",
+			(void*)obj, (void*)world, arr.Num());
 	};
 
 	static void EnsureTextures(SDK::UWorld* world)
