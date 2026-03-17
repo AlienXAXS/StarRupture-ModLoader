@@ -183,53 +183,21 @@ namespace Compass
 	// Texture cache — resolved once (or re-resolved if GC'd).
 	// When g_StaticLoadObject is available it forces the asset to load from
 	// disk / the package cache so the player never needs to open the map first.
-	// Falls back to FindObjectFastImpl (GObjects scan) when not yet registered.
 	// Throttled to one attempt per second to avoid per-frame overhead.
 	//
-	// GC protection strategy (two layers):
-	//   Primary  — push each texture into UWorld::ExtraReferencedObjects, a
-	//              UPROPERTY TArray<UObject*> that the GC traverses as a live
-	//              reference. This is the engine-sanctioned way to root objects
-	//              from code that cannot use UPROPERTY itself (no UHT in a DLL).
-	//   Fallback — PinToRoot() sets EInternalObjectFlags::RootSet + RF_MarkAsRootSet
-	//              + NeverStream directly, matching UObject::AddToRoot() internals.
-	//              Guards the gap when world is null during a level transition.
+	// GC protection: PinToRoot() sets EInternalObjectFlags::RootSet (matching
+	// UObject::AddToRoot() internals) + RF_MarkAsRootSet + NeverStream.
+	// If the engine still cycles a texture during the streaming-in phase,
+	// IsValidTexture() detects it and StaticLoadObject reloads it immediately.
+	// NOTE: UWorld::ExtraReferencedObjects was attempted as a secondary anchor
+	// but TArray::Add() from an external DLL uses the CRT heap rather than
+	// FMemory, so the game's TArray never sees the addition (count stays 0).
+	// PinToRoot + the reload loop is the reliable path for a plugin DLL.
 	// ---------------------------------------------------------------------------
-	static SDK::UWorld* s_lastPinnedWorld = nullptr;
-
-	// Helper: push obj into world->ExtraReferencedObjects (avoids duplicates by
-	// scanning the existing entries; the array is small so linear scan is fine).
-	static auto AnchorInWorld = [](SDK::UWorld* world, SDK::UObject* obj) -> void
-	{
-		if (!world || !obj) return;
-		auto& arr = world->ExtraReferencedObjects;
-		for (int i = 0; i < arr.Num(); ++i)
-			if (arr[i] == obj) return; // already present
-		arr.Add(obj);
-		LOG_DEBUG("[Compass] AnchorInWorld: texture %p added to world %p ExtraReferencedObjects (count now %d)",
-			(void*)obj, (void*)world, arr.Num());
-	};
-
-	static void EnsureTextures(SDK::UWorld* world)
+	static void EnsureTextures()
 	{
 		// Without StaticLoadObject there is no way to load textures — use text fallback.
 		if (!g_StaticLoadObject) return;
-
-		// On world change: re-anchor all currently loaded textures in the new world's
-		// ExtraReferencedObjects so the GC reference graph is always up-to-date.
-		if (world && world != s_lastPinnedWorld)
-		{
-			s_lastPinnedWorld = world;
-			SDK::UObject* slots[] = {
-				s_tex.player, s_tex.baseCore, s_tex.body,
-				s_tex.antena, s_tex.abandonedBase, s_tex.cave,
-				s_tex.obelisk, s_tex.customPin,
-			};
-			int reanchored = 0;
-			for (auto* obj : slots)
-				if (obj) { AnchorInWorld(world, obj); ++reanchored; }
-			LOG_INFO("[Compass] World changed — re-anchored %d textures in ExtraReferencedObjects", reanchored);
-		}
 
 		struct TexEntry { SDK::UTexture*& slot; const wchar_t* fullPath; };
 		TexEntry entries[] = {
@@ -259,7 +227,6 @@ namespace Compass
 			{
 				e.slot = static_cast<SDK::UTexture*>(obj);
 				PinToRoot(obj);
-				AnchorInWorld(world, obj);
 			}
 			if (!e.slot) anyNull = true;
 		}
@@ -280,7 +247,6 @@ namespace Compass
 			{
 				e.slot = static_cast<SDK::UTexture*>(obj);
 				PinToRoot(obj);
-				AnchorInWorld(world, obj);
 			}
 		}
 
@@ -413,7 +379,7 @@ namespace Compass
 
 		const bool textOnly = s_cfg.textOnly;
 		if (!textOnly)
-			EnsureTextures(world);
+			EnsureTextures();
 
 		SDK::APlayerController* pc = hud->GetOwningPlayerController();
 		if (!pc)
