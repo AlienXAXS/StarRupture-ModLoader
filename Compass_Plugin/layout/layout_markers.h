@@ -73,7 +73,9 @@ inline std::vector<MarkerEntry> ScanMarkers(SDK::UWorld* world)
 		const auto state = static_cast<PoiState>(static_cast<int>(marker->GetPointOfInterestState()));
 		const auto type  = static_cast<PoiType>(static_cast<int>(marker->GetPointOfInterestType()));
 
-		if (state == PoiState::Hidden || state == PoiState::Disabled)
+		// Skip Hidden and Disabled markers — they are not shown on the player's map.
+		// Exception: Antena markers are always shown on the map even when Hidden/Disabled, so we include them regardless of state.
+		if ((state == PoiState::Hidden || state == PoiState::Disabled) && type != PoiType::Antena)
 		{
 			filteredState++;
 			continue;
