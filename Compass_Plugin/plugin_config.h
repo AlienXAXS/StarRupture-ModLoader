@@ -34,9 +34,16 @@ namespace CompassConfig
 		{ "Markers", "ShowObelisk",              ConfigValueType::Boolean, "true",    "Show obelisk POI markers" },
 		{ "Markers", "ObeliskDistance",          ConfigValueType::Float,   "7500.0", "Obelisk max render distance in UU (0 = unlimited)" },
 
-		// ----- Dead Bodies -----
-		{ "Bodies", "Enabled",                   ConfigValueType::Boolean, "true",    "Show dead body markers on the compass" },
-		{ "Bodies", "Distance",                  ConfigValueType::Float,   "10000.0", "Max render distance in UU (0 = unlimited)" },
+		// ----- Foundables (Dead Bodies + Drones) -----
+		{ "Foundables", "Enabled",               ConfigValueType::Boolean, "true",    "Show foundable markers (dead bodies, drones) on the compass" },
+		{ "Foundables", "ShowDeadBody",          ConfigValueType::Boolean, "true",    "Show dead body foundable markers" },
+		{ "Foundables", "DeadBodyDistance",      ConfigValueType::Float,   "10000.0", "Dead body max render distance in UU (0 = unlimited)" },
+		{ "Foundables", "ShowDrone",             ConfigValueType::Boolean, "true",    "Show drone foundable markers" },
+		{ "Foundables", "DroneDistance",         ConfigValueType::Float,   "10000.0", "Drone max render distance in UU (0 = unlimited)" },
+
+		// ----- Enemies -----
+		{ "Enemies", "Enabled",                  ConfigValueType::Boolean, "true",    "Show enemy dots on the compass bar" },
+		{ "Enemies", "Distance",                 ConfigValueType::Float,   "5000.0",  "Max render distance in UU (0 = unlimited)" },
 
 		// ----- Custom Pins -----
 		{ "CustomPins", "Enabled",               ConfigValueType::Boolean, "true",    "Show player-placed custom map pins on the compass" },
@@ -65,6 +72,15 @@ namespace CompassConfig
 		float caveDistance;
 		bool  showObelisk;
 		float obeliskDistance;
+	};
+
+	struct FoundableSettings
+	{
+		bool  enabled;
+		bool  showDeadBody;
+		float deadBodyDistance;
+		bool  showDrone;
+		float droneDistance;
 	};
 
 	class Config
@@ -140,11 +156,22 @@ namespace CompassConfig
 			};
 		}
 
-		static EntitySettings GetBodies()
+		static FoundableSettings GetFoundables()
 		{
 			return {
-				s_config ? s_config->ReadBool ("Compass", "Bodies", "Enabled",  true)     : true,
-				s_config ? s_config->ReadFloat("Compass", "Bodies", "Distance", 10000.0f) : 10000.0f
+				s_config ? s_config->ReadBool ("Compass", "Foundables", "Enabled",          true)     : true,
+				s_config ? s_config->ReadBool ("Compass", "Foundables", "ShowDeadBody",      true)     : true,
+				s_config ? s_config->ReadFloat("Compass", "Foundables", "DeadBodyDistance",  10000.0f) : 10000.0f,
+				s_config ? s_config->ReadBool ("Compass", "Foundables", "ShowDrone",         true)     : true,
+				s_config ? s_config->ReadFloat("Compass", "Foundables", "DroneDistance",     10000.0f) : 10000.0f,
+			};
+		}
+
+		static EntitySettings GetEnemies()
+		{
+			return {
+				s_config ? s_config->ReadBool ("Compass", "Enemies", "Enabled",  true)    : true,
+				s_config ? s_config->ReadFloat("Compass", "Enemies", "Distance", 5000.0f) : 5000.0f
 			};
 		}
 

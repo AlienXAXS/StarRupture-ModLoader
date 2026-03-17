@@ -32,6 +32,9 @@
     <ClInclude Include="compass\compass.h">
       <Filter>compass</Filter>
     </ClInclude>
+    <ClInclude Include="compass\compass_textures.h">
+      <Filter>compass</Filter>
+    </ClInclude>
     <ClInclude Include="layout\layout.h">
       <Filter>layout</Filter>
     </ClInclude>
@@ -44,7 +47,10 @@
     <ClInclude Include="layout\layout_markers.h">
       <Filter>layout</Filter>
     </ClInclude>
-    <ClInclude Include="layout\layout_bodies.h">
+    <ClInclude Include="layout\layout_foundables.h">
+      <Filter>layout</Filter>
+    </ClInclude>
+    <ClInclude Include="layout\layout_enemies.h">
       <Filter>layout</Filter>
     </ClInclude>
     <ClInclude Include="layout\layout_hlod.h">
