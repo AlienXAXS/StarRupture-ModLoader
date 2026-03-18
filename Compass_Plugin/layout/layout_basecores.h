@@ -15,7 +15,7 @@ struct BaseCoreEntry
 	SDK::uint8   upgradeLevel;
 	bool         bIsAttacked;
 	bool         bIsInfected;
-	std::string  name;
+	std::wstring name;
 };
 
 // Returns all ACrBaseCore actors in the level, with custom names resolved.
@@ -55,8 +55,10 @@ inline std::vector<BaseCoreEntry> ScanBaseCores(SDK::UWorld* world)
 		// 1. Player-set custom name
 		if (nameSys)
 		{
-			e.name = nameSys->GetBuildingCustomName(core).ToString();
-			LOG_TRACE("[Compass] ScanBaseCores[%d]: custom name = '%s'", i, e.name.c_str());
+			SDK::FString fs = nameSys->GetBuildingCustomName(core);
+			const wchar_t* p = fs.CStr();
+			e.name = (p && fs.Num() > 0) ? p : L"";
+			LOG_TRACE("[Compass] ScanBaseCores[%d]: custom name = '%ls'", i, e.name.c_str());
 		}
 
 		// 2. Interaction component display name
@@ -68,16 +70,20 @@ inline std::vector<BaseCoreEntry> ScanBaseCores(SDK::UWorld* world)
 			{
 				auto* ic = static_cast<SDK::UCrInteractionComponent*>(comps[j]);
 				if (!ic) continue;
-				e.name = ic->GetInteractionDisplayName().ToString();
+				{
+					SDK::FText ft = ic->GetInteractionDisplayName();
+					const wchar_t* p = ft.GetStringRef().CStr();
+					e.name = (p && ft.GetStringRef().Num() > 0) ? p : L"";
+				}
 				if (!e.name.empty()) break;
 			}
 		}
 
 		// 3. Hard fallback
 		if (e.name.empty())
-			e.name = "Base Core";
+			e.name = L"Base Core";
 
-		LOG_TRACE("[Compass] ScanBaseCores[%d]: '%s' at (%.0f, %.0f, %.0f)",
+		LOG_TRACE("[Compass] ScanBaseCores[%d]: '%ls' at (%.0f, %.0f, %.0f)",
 			i, e.name.c_str(), e.location.X, e.location.Y, e.location.Z);
 		result.push_back(e);
 	}
@@ -180,7 +186,7 @@ inline std::vector<BaseCoreEntry> ScanBaseCores(SDK::UWorld* world)
 
 		if (bmd.Num() > 0)
 		{
-			// Fresh data available — rebuild the distant-core cache
+			// Fresh data available -- rebuild the distant-core cache
 			s_distantCoreCache.clear();
 			for (int i = 0; i < bmd.Num(); i++)
 			{
@@ -197,24 +203,8 @@ inline std::vector<BaseCoreEntry> ScanBaseCores(SDK::UWorld* world)
 		}
 		else
 		{
-			LOG_TRACE("[ScanBaseCores] bmd is empty — UCrMapManuSubsystem may not have ticked yet, cache has %d entries",
+			LOG_TRACE("[ScanBaseCores] bmd is empty -- waiting for subsystem tick, cache has %d entries",
 				(int)s_distantCoreCache.size());
-
-			// UCrMapManuSubsystem::UpdateMapMenuData only calls GatherBuildingsData when
-			// byte+3816 on the local PC is non-zero (the "map is open" flag).
-			// Force it here so the subsystem populates BMD on its next tick.
-			SDK::APlayerController* localPC =
-				SDK::UGameplayStatics::GetPlayerController(world, 0);
-			LOG_TRACE("[ScanBaseCores] Forcing map-open flag: localPC=%p", (void*)localPC);
-			if (localPC)
-			{
-				*(uint8_t*)((char*)localPC + 3816) = 1;
-				LOG_TRACE("[ScanBaseCores] Set byte+3816=1 on localPC %p", (void*)localPC);
-			}
-			else
-			{
-				LOG_WARN("[ScanBaseCores] GetPlayerController(0) returned null — cannot force flag");
-			}
 		}
 	}
 	else
@@ -241,7 +231,7 @@ inline std::vector<BaseCoreEntry> ScanBaseCores(SDK::UWorld* world)
 		e.upgradeLevel = 0;
 		e.bIsAttacked  = false;
 		e.bIsInfected  = false;
-		e.name         = "Base Core";
+		e.name         = L"Base Core";
 		result.push_back(e);
 		++added;
 	}

@@ -1,4 +1,4 @@
-#include "compass.h"
+﻿#include "compass.h"
 #include "compass_textures.h"
 #include "plugin_helpers.h"
 #include "plugin_config.h"
@@ -59,6 +59,7 @@ namespace Compass
 		float    posY;
 		float    widthFraction;
 		int      entityScanInterval;
+		SDK::FLinearColor lineColor;
 		CompassConfig::EntitySettings    players;
 		CompassConfig::EntitySettings    cores;
 		CompassConfig::MarkerSettings    markers;
@@ -77,6 +78,8 @@ namespace Compass
 		s_cfg.posY                = CompassConfig::Config::GetPosY();
 		s_cfg.widthFraction       = CompassConfig::Config::GetWidthFraction();
 		s_cfg.entityScanInterval  = CompassConfig::Config::GetEntityScanInterval();
+		CompassConfig::Config::GetLineColor(
+			s_cfg.lineColor.R, s_cfg.lineColor.G, s_cfg.lineColor.B, s_cfg.lineColor.A);
 		s_cfg.players             = CompassConfig::Config::GetPlayers();
 		s_cfg.cores               = CompassConfig::Config::GetBaseCores();
 		s_cfg.markers             = CompassConfig::Config::GetMarkers();
@@ -153,6 +156,14 @@ namespace Compass
 		LOG_DEBUG("[Compass] Scan complete: %d players, %d cores, %d POIs (%d caves), %d bodies, %d drones, %d enemies, %d custompins",
 			(int)s_playerMarkers.size(), (int)s_cores.size(),
 			(int)s_markers.size(), caveCount, bodyCount, droneCount, (int)s_enemies.size(), (int)s_customPins.size());
+
+		// Signal the subsystem AFTER reading so the next gameplay tick (which runs
+		// before our next PostRender) sees the flag and refreshes its data in time
+		// for our next scan. Setting it before the reads would only affect the tick
+		// AFTER this frame anyway, making it equivalent but less clear in intent.
+		SDK::APlayerController* localPC = SDK::UGameplayStatics::GetPlayerController(world, 0);
+		if (localPC)
+			*(uint8_t*)((char*)localPC + 3816) = 1;
 	}
 
 	// ---------------------------------------------------------------------------
@@ -238,7 +249,10 @@ namespace Compass
 		static constexpr SDK::FLinearColor black1   { 0.0f, 0.0f,  0.0f, 1.0f };
 
 		// --- Horizontal compass line ---
-		hud->DrawLine(left, posY, right, posY, dimWhite, 1.5f * scale);
+		// DrawLine ignores alpha (uses FBatchedElements which has no translucent blend).
+		// DrawRect uses FCanvasTileItem with SE_BLEND_Translucent, so alpha works.
+		const float lineH = 1.5f * scale;
+		hud->DrawRect(s_cfg.lineColor, left, posY - lineH * 0.5f, right - left, lineH);
 
 		// --- Cardinal ticks + labels (above the line) ---
 		for (const auto& c : CARDINALS)
@@ -419,7 +433,7 @@ namespace Compass
 				const float alpha = DistAlpha(sqrtf(distSq), cfgPlayers.distance);
 				if (alpha <= 0.0f) continue;
 				const float sx = ToScreenX(p.location);
-				std::wstring wn(p.playerName.begin(), p.playerName.end());
+				const std::wstring wn = p.playerName;
 				drawQueue.push_back({ distSq, [=]{ DrawEntityIconWithLabel(sx, s_tex.player, wn.c_str(), colPlayer, alpha); } });
 			}
 		}
@@ -432,7 +446,7 @@ namespace Compass
 				const float alpha = DistAlpha(sqrtf(distSq), cfgCores.distance);
 				if (alpha <= 0.0f) continue;
 				const float sx = ToScreenX(c.location);
-				std::wstring wn(c.name.begin(), c.name.end());
+				const std::wstring wn = c.name;
 				drawQueue.push_back({ distSq, [=]{ DrawEntityIconWithLabel(sx, s_tex.baseCore, wn.c_str(), colCore, alpha); } });
 			}
 		}
@@ -488,9 +502,7 @@ namespace Compass
 					pin.color.R, pin.color.G, pin.color.B,
 					pin.color.A > 0.0f ? pin.color.A : 1.0f
 				};
-				std::wstring label = pin.playerName.empty()
-					? L"Pin"
-					: std::wstring(pin.playerName.begin(), pin.playerName.end());
+				const std::wstring label = pin.playerName.empty() ? L"Pin" : pin.playerName;
 				drawQueue.push_back({ distSq, [=]{ DrawEntityIconWithLabel(sx, s_tex.customPin, label.c_str(), col, alpha); } });
 			}
 		}

@@ -12,7 +12,7 @@ namespace Layout
 struct PlayerMarkerEntry
 {
 	SDK::FVector  location;      // X,Y from FVector2f; Z set to 0
-	std::string   playerName;
+	std::wstring  playerName;
 	SDK::FLinearColor color;
 	float         rotationZ;
 	SDK::uint8    flags;         // EPlayerMarkerFlags
@@ -35,13 +35,17 @@ inline std::vector<PlayerMarkerEntry> ScanPlayerMarkers(SDK::UWorld* world)
 		return result;
 
 	// Resolve local player name so we can skip our own dot.
-	std::string localName;
+	std::wstring localName;
 	SDK::APlayerController* localPC = SDK::UGameplayStatics::GetPlayerController(world, 0);
 	if (localPC && localPC->PlayerState)
-		localName = localPC->PlayerState->PlayerNamePrivate.ToString();
+	{
+		const wchar_t* lp = localPC->PlayerState->PlayerNamePrivate.CStr();
+		if (lp && localPC->PlayerState->PlayerNamePrivate.Num() > 0)
+			localName = lp;
+	}
 
 	auto& data = mapHelper->PlayersMarkerDataContainer.PlayersMarkerData;
-	LOG_TRACE("[ScanPlayerMarkers] mapHelper=%p data.Num()=%d localName='%s'",
+	LOG_TRACE("[ScanPlayerMarkers] mapHelper=%p data.Num()=%d localName='%ls'",
 		(void*)mapHelper, data.Num(), localName.c_str());
 
 	for (int i = 0; i < data.Num(); i++)
@@ -49,20 +53,19 @@ inline std::vector<PlayerMarkerEntry> ScanPlayerMarkers(SDK::UWorld* world)
 		const auto& item = data[i];
 
 		PlayerMarkerEntry e;
-		std::string rawName = item.Player.ToString();
+		const wchar_t* p = item.Player.CStr();
+		e.playerName = (p && item.Player.Num() > 0) ? p : L"";
 
 		// Skip the local player - no need to show yourself.
-		if (!localName.empty() && rawName == localName)
+		if (!localName.empty() && e.playerName == localName)
 			continue;
-
-		e.playerName = rawName;
 
 		e.location   = { item.Location.X, item.Location.Y, 0.0f };
 		e.color      = item.PlayerColor;
 		e.rotationZ  = item.RotationZ;
 		e.flags      = static_cast<SDK::uint8>(item.PlayerMarkerFlags);
 
-		LOG_TRACE("[ScanPlayerMarkers] [%d] player='%s' loc=(%.0f,%.0f) flags=%d",
+		LOG_TRACE("[ScanPlayerMarkers] [%d] player='%ls' loc=(%.0f,%.0f) flags=%d",
 			i, e.playerName.c_str(), e.location.X, e.location.Y, (int)e.flags);
 
 		result.push_back(e);
