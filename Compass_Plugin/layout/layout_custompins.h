@@ -12,12 +12,12 @@ namespace Layout
 struct CustomPinEntry
 {
 	SDK::FVector      location;     // X,Y from FVector2f; Z set to 0
-	std::string       playerName;
+	std::wstring      playerName;
 	SDK::FLinearColor color;
 };
 
 // Returns all personal map markers from ACrGameStateBase::PlayerPersonalMarkers.
-// These are custom pins placed by any player — replicated to all clients via GameState.
+// These are custom pins placed by any player -- replicated to all clients via GameState.
 inline std::vector<CustomPinEntry> ScanCustomPins(SDK::UWorld* world)
 {
 	std::vector<CustomPinEntry> result;
@@ -38,11 +38,14 @@ inline std::vector<CustomPinEntry> ScanCustomPins(SDK::UWorld* world)
 		const auto& item = pins[i];
 
 		CustomPinEntry e;
-		e.location   = { item.MarkerPosition.X, item.MarkerPosition.Y, 0.0f };
-		e.playerName = item.PlayerName.ToString() + "'s Marker";
-		e.color      = item.PlayerColor;
+		e.location = { item.MarkerPosition.X, item.MarkerPosition.Y, 0.0f };
+		const wchar_t* p = item.PlayerName.CStr();
+		e.playerName = (p && item.PlayerName.Num() > 0)
+			? (std::wstring(p) + L"'s Marker")
+			: L"'s Marker";
+		e.color = item.PlayerColor;
 
-		LOG_TRACE("[ScanCustomPins] [%d] player='%s' loc=(%.0f,%.0f)",
+		LOG_TRACE("[ScanCustomPins] [%d] player='%ls' loc=(%.0f,%.0f)",
 			i, e.playerName.c_str(), e.location.X, e.location.Y);
 
 		result.push_back(e);

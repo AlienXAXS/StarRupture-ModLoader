@@ -1,6 +1,8 @@
 #pragma once
 
 #include "plugin_interface.h"
+#include <cstdio>
+#include <cstring>
 
 namespace CompassConfig
 {
@@ -10,10 +12,11 @@ namespace CompassConfig
 		{ "General", "TextOnly",                 ConfigValueType::Boolean, "false",   "Force text-only mode — never draw icon textures (useful for debugging)" },
 
 		// ----- Compass bar -----
-		{ "Compass", "Scale",                    ConfigValueType::Float,   "1.2",     "Compass size multiplier" },
-		{ "Compass", "PosY",                     ConfigValueType::Float,   "60.0",    "Pixels from top of screen to the compass line" },
-		{ "Compass", "WidthFraction",            ConfigValueType::Float,   "0.50",    "Half-width as fraction of screen width (0.20 = 40% total)" },
-		{ "Compass", "EntityScanInterval",       ConfigValueType::Integer, "90",      "Frames between entity scans (90 = ~1.5s at 60fps)" },
+		{ "Compass", "Scale",                    ConfigValueType::Float,   "1.2",              "Compass size multiplier" },
+		{ "Compass", "PosY",                     ConfigValueType::Float,   "60.0",             "Pixels from top of screen to the compass line" },
+		{ "Compass", "WidthFraction",            ConfigValueType::Float,   "0.50",             "Half-width as fraction of screen width (0.20 = 40% total)" },
+		{ "Compass", "EntityScanInterval",       ConfigValueType::Integer, "90",               "Frames between entity scans (90 = ~1.5s at 60fps)" },
+		{ "Compass", "LineColor",                ConfigValueType::String,  "1.0, 1.0, 1.0, 0.4", "Horizontal bar colour as R, G, B, A (each 0.0-1.0). Invalid input uses the default." },
 
 		// ----- Players -----
 		{ "Players", "Enabled",                  ConfigValueType::Boolean, "true",    "Show other player markers on the compass" },
@@ -122,6 +125,32 @@ namespace CompassConfig
 		static int GetEntityScanInterval()
 		{
 			return s_config ? s_config->ReadInt("Compass", "Compass", "EntityScanInterval", 90) : 90;
+		}
+
+		// Returns the horizontal bar colour from config, or the default {1,1,1,0.4} on any
+		// parse error or out-of-range component. Format: "R, G, B, A" (each 0.0-1.0).
+		static void GetLineColor(float& r, float& g, float& b, float& a)
+		{
+			// Defaults
+			r = 1.0f; g = 1.0f; b = 1.0f; a = 0.4f;
+
+			if (!s_config) return;
+
+			char buf[64] = {};
+			if (!s_config->ReadString("Compass", "Compass", "LineColor", buf, (int)sizeof(buf), ""))
+				return;
+
+			float tr, tg, tb, ta;
+			// Accept "R, G, B, A" or "R,G,B,A" (with or without spaces)
+			if (sscanf_s(buf, "%f , %f , %f , %f", &tr, &tg, &tb, &ta) != 4)
+				return;
+
+			// All components must be in [0, 1]
+			if (tr < 0.0f || tr > 1.0f || tg < 0.0f || tg > 1.0f ||
+				tb < 0.0f || tb > 1.0f || ta < 0.0f || ta > 1.0f)
+				return;
+
+			r = tr; g = tg; b = tb; a = ta;
 		}
 
 		// ----- Entity settings -----

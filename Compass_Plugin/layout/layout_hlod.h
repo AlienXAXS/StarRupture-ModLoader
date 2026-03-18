@@ -113,7 +113,7 @@ inline void ScanHLOD(SDK::UWorld* world,
 				e.upgradeLevel = 0;
 				e.bIsAttacked  = false;
 				e.bIsInfected  = false;
-				e.name         = "Base Core";
+				e.name         = L"Base Core";
 				inOutCores.push_back(e);
 				hlodAdded++;
 				LOG_TRACE("[ScanHLOD] Added distant BaseCore (mesh='%s') at (%.0f,%.0f,%.0f)",
