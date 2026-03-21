@@ -50,6 +50,17 @@ namespace Cmd_Stop
         return "Server is shutting down gracefully...\n";
     }
 
+    void TriggerShutdown()
+    {
+        if (!g_requestExit)
+        {
+            LOG_ERROR("[ConsoleCtrl] RequestExit not resolved - cannot shut down gracefully.");
+            return;
+        }
+        LOG_INFO("[ConsoleCtrl] Calling FWindowsPlatformMisc::RequestExit(false) from console ctrl handler...");
+        g_requestExit(false, L"Console ctrl event");
+    }
+
     void Register(CommandHandler& handler)
     {
         // Resolve RequestExit at registration time (engine is already up)
