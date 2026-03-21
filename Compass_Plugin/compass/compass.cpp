@@ -59,6 +59,7 @@ namespace Compass
 		float    posY;
 		float    widthFraction;
 		int      entityScanInterval;
+		int      playerScanInterval;
 		SDK::FLinearColor lineColor;
 		CompassConfig::EntitySettings    players;
 		CompassConfig::EntitySettings    cores;
@@ -78,6 +79,7 @@ namespace Compass
 		s_cfg.posY                = CompassConfig::Config::GetPosY();
 		s_cfg.widthFraction       = CompassConfig::Config::GetWidthFraction();
 		s_cfg.entityScanInterval  = CompassConfig::Config::GetEntityScanInterval();
+		s_cfg.playerScanInterval  = CompassConfig::Config::GetPlayerScanInterval();
 		CompassConfig::Config::GetLineColor(
 			s_cfg.lineColor.R, s_cfg.lineColor.G, s_cfg.lineColor.B, s_cfg.lineColor.A);
 		s_cfg.players             = CompassConfig::Config::GetPlayers();
@@ -92,7 +94,50 @@ namespace Compass
 	// Throttled entity cache
 	// ---------------------------------------------------------------------------
 
-	static int  s_scanTick = 0;
+	static int  s_scanTick       = 0;
+	static int  s_playerScanTick = 0;
+
+	// ---------------------------------------------------------------------------
+	// GatherPlayersData -- direct call to UCrMapManuSubsystem::GatherPlayersData
+	// ---------------------------------------------------------------------------
+	// Calling this before ScanPlayerMarkers forces the subsystem to refresh its
+	// PlayersMarkerDataContainer immediately, rather than waiting for the game to
+	// set the flag at localPC+3816 and process it on the next gameplay tick.
+	// ---------------------------------------------------------------------------
+
+	typedef void(__fastcall* GatherPlayersData_t)(void* thisSubsystem);
+	static GatherPlayersData_t g_gatherPlayersDataFn = nullptr;
+	static void*               g_mapManuSubsystem    = nullptr;
+	static SDK::UWorld*        g_mapManuWorld        = nullptr;
+
+	static bool CallGatherPlayersData(GatherPlayersData_t fn, void* subsystem)
+	{
+		__try { fn(subsystem); return true; }
+		__except (EXCEPTION_EXECUTE_HANDLER) { return false; }
+	}
+
+	static void* FindMapManuSubsystem(SDK::UWorld* world)
+	{
+		SDK::TUObjectArray* arr = SDK::UObject::GObjects.GetTypedPtr();
+		if (!arr) return nullptr;
+
+		try
+		{
+			for (int32_t i = 0; i < arr->NumElements; ++i)
+			{
+				SDK::UObject* obj = arr->GetByIndex(i);
+				if (!obj || !obj->Class) continue;
+				if (obj->Outer != static_cast<SDK::UObject*>(world)) continue;
+
+				std::string className = obj->Class->GetName();
+				if (className == "CrMapManuSubsystem")
+					return obj;
+			}
+		}
+		catch (...) {}
+
+		return nullptr;
+	}
 	static std::vector<Layout::BaseCoreEntry>      s_cores;
 	static std::vector<Layout::MarkerEntry>        s_markers; // all visible POIs (incl. caves)
 	static std::vector<Layout::FoundableEntry>     s_foundables;
@@ -124,11 +169,6 @@ namespace Compass
 		try { s_enemies = Layout::ScanEnemies(world); }
 		catch (...) { LOG_WARN("[Compass] Exception in ScanEnemies -- cache cleared"); s_enemies.clear(); }
 		LOG_TRACE("[Compass] >> ScanEnemies done (%d)", (int)s_enemies.size());
-
-		LOG_TRACE("[Compass] >> ScanPlayerMarkers...");
-		try { s_playerMarkers = Layout::ScanPlayerMarkers(world); }
-		catch (...) { LOG_WARN("[Compass] Exception in ScanPlayerMarkers -- cache cleared"); s_playerMarkers.clear(); }
-		LOG_TRACE("[Compass] >> ScanPlayerMarkers done (%d)", (int)s_playerMarkers.size());
 
 		LOG_TRACE("[Compass] >> ScanCustomPins...");
 		try { s_customPins = Layout::ScanCustomPins(world); }
@@ -217,7 +257,39 @@ namespace Compass
 		SDK::UFont* labelFont  = SDK::UEngine::GetEngine() ? SDK::UEngine::GetEngine()->LargeFont : nullptr;
 		SDK::UFont* entityFont = labelFont; // same font as cardinals for bigger entity text
 
-		// --- Throttled entity scan ---
+		// --- Throttled player scan (fast) ---
+		if (++s_playerScanTick >= s_cfg.playerScanInterval)
+		{
+			s_playerScanTick = 0;
+
+			// Force an immediate refresh of PlayersMarkerDataContainer before reading it.
+			// Without this, the container only updates when the game processes the flag
+			// at localPC+3816, which happens at the slow entityScanInterval rate.
+			if (g_gatherPlayersDataFn)
+			{
+				if (world != g_mapManuWorld)
+				{
+					g_mapManuSubsystem = nullptr;
+					g_mapManuWorld     = world;
+				}
+				if (!g_mapManuSubsystem)
+					g_mapManuSubsystem = FindMapManuSubsystem(world);
+
+				if (g_mapManuSubsystem)
+				{
+					if (!CallGatherPlayersData(g_gatherPlayersDataFn, g_mapManuSubsystem))
+					{
+						LOG_WARN("[Compass] Exception in GatherPlayersData -- resetting subsystem cache");
+						g_mapManuSubsystem = nullptr;
+					}
+				}
+			}
+
+			try { s_playerMarkers = Layout::ScanPlayerMarkers(world); }
+			catch (...) { LOG_WARN("[Compass] Exception in ScanPlayerMarkers -- cache cleared"); s_playerMarkers.clear(); }
+		}
+
+		// --- Throttled full entity scan (slow) ---
 		if (++s_scanTick >= s_cfg.entityScanInterval)
 		{
 			s_scanTick = 0;
@@ -607,6 +679,18 @@ namespace Compass
 		{
 			LOG_ERROR("[Compass] Install called with null interfaces");
 			return false;
+		}
+
+		uintptr_t gatherAddr = scanner->FindPatternInMainModule(
+			"40 55 41 56 48 8D AC 24 ?? ?? ?? ?? 48 81 EC ?? ?? ?? ?? 48 89 9C 24");
+		if (gatherAddr)
+		{
+			g_gatherPlayersDataFn = reinterpret_cast<GatherPlayersData_t>(gatherAddr);
+			LOG_INFO("[Compass] GatherPlayersData found at 0x%llX", (unsigned long long)gatherAddr);
+		}
+		else
+		{
+			LOG_WARN("[Compass] GatherPlayersData pattern not found -- player markers may not update in real time");
 		}
 
 		uintptr_t addr = scanner->FindPatternInMainModule(CompassPatterns::AHUD_PostRender);
