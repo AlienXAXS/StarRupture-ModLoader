@@ -238,10 +238,15 @@ namespace ModLoaderLogger
 		return wcscmp(wValue, uniqueDefault) != 0;
 	}
 
-	// Write a brand-new config file from schema defaults with blank lines between sections.
+	// Write a config file from the schema, with "; description" comment lines above each key.
 	// Uses _wfopen directly so the file is clean UTF-8/ASCII from the start,
 	// avoiding any encoding quirks from WritePrivateProfileStringW.
-	static void WriteFormattedNewConfig(const ConfigSchema* schema, const wchar_t* configPath)
+	//
+	// overrides: optional map of "Section\nKey" -> raw value string.
+	//   When a key is present in the map its existing value is written instead of
+	//   the schema default, preserving user settings when reformatting an existing file.
+	static void WriteFormattedConfig(const ConfigSchema* schema, const wchar_t* configPath,
+		const std::unordered_map<std::string, std::string>* overrides = nullptr)
 	{
 		std::string content;
 		const char* lastSection = nullptr;
@@ -260,43 +265,86 @@ namespace ModLoaderLogger
 				lastSection = entry.section;
 			}
 
-			// Format value the same way WriteDefaultValue does
-			char valueBuf[64] = {};
-			switch (entry.type)
+			// Determine the value to write: prefer override, fall back to schema default
+			std::string valueStr;
+			if (overrides)
 			{
-			case ConfigValueType::Boolean:
-			{
-				bool b = (_stricmp(entry.defaultValue, "true") == 0 ||
-					_stricmp(entry.defaultValue, "1") == 0 ||
-					_stricmp(entry.defaultValue, "yes") == 0);
-				snprintf(valueBuf, sizeof(valueBuf), "%d", b ? 1 : 0);
-				break;
+				std::string cacheKey = entry.section;
+				cacheKey += '\n';
+				cacheKey += entry.key;
+				auto it = overrides->find(cacheKey);
+				if (it != overrides->end())
+					valueStr = it->second;
 			}
-			case ConfigValueType::Integer:
-				snprintf(valueBuf, sizeof(valueBuf), "%d", atoi(entry.defaultValue));
-				break;
-			case ConfigValueType::Float:
-				snprintf(valueBuf, sizeof(valueBuf), "%.6f", static_cast<float>(atof(entry.defaultValue)));
-				break;
-			default:
-				snprintf(valueBuf, sizeof(valueBuf), "%s", entry.defaultValue);
-				break;
+
+			if (valueStr.empty())
+			{
+				char valueBuf[64] = {};
+				switch (entry.type)
+				{
+				case ConfigValueType::Boolean:
+				{
+					bool b = (_stricmp(entry.defaultValue, "true") == 0 ||
+						_stricmp(entry.defaultValue, "1") == 0 ||
+						_stricmp(entry.defaultValue, "yes") == 0);
+					snprintf(valueBuf, sizeof(valueBuf), "%d", b ? 1 : 0);
+					break;
+				}
+				case ConfigValueType::Integer:
+					snprintf(valueBuf, sizeof(valueBuf), "%d", atoi(entry.defaultValue));
+					break;
+				case ConfigValueType::Float:
+					snprintf(valueBuf, sizeof(valueBuf), "%.6f", static_cast<float>(atof(entry.defaultValue)));
+					break;
+				default:
+					snprintf(valueBuf, sizeof(valueBuf), "%s", entry.defaultValue);
+					break;
+				}
+				valueStr = valueBuf;
+			}
+
+			if (entry.description && entry.description[0])
+			{
+				content += "; ";
+				content += entry.description;
+				content += "\r\n";
 			}
 
 			content += entry.key;
 			content += "=";
-			content += valueBuf;
+			content += valueStr;
 			content += "\r\n";
 		}
 
 		EnterCriticalSection(&g_configLock);
-		FILE* f = nullptr;
-		errno_t errnoVal = _wfopen_s(&f, configPath, L"wb");
-		if (errnoVal == 0 && f)
+
+		// Skip the write if the file already matches the generated content
+		bool needsWrite = true;
+		FILE* existing = nullptr;
+		if (_wfopen_s(&existing, configPath, L"rb") == 0 && existing)
 		{
-			fwrite(content.c_str(), 1, content.size(), f);
-			fclose(f);
+			fseek(existing, 0, SEEK_END);
+			long fileSize = ftell(existing);
+			fseek(existing, 0, SEEK_SET);
+			if (fileSize == static_cast<long>(content.size()))
+			{
+				std::string existingContent(fileSize, '\0');
+				fread(&existingContent[0], 1, fileSize, existing);
+				needsWrite = (existingContent != content);
+			}
+			fclose(existing);
 		}
+
+		if (needsWrite)
+		{
+			FILE* f = nullptr;
+			if (_wfopen_s(&f, configPath, L"wb") == 0 && f)
+			{
+				fwrite(content.c_str(), 1, content.size(), f);
+				fclose(f);
+			}
+		}
+
 		LeaveCriticalSection(&g_configLock);
 	}
 
@@ -386,14 +434,62 @@ namespace ModLoaderLogger
 		if (!configExists)
 		{
 			LogDebug(L"[ConfigManager] Creating new config for '%s' with %d entries", wPluginName, schema->entryCount);
-			WriteFormattedNewConfig(schema, configPath);
+			WriteFormattedConfig(schema, configPath);
 			LogDebug(L"[ConfigManager] Config created: %s", configPath);
 			return true;
 		}
 		else
 		{
-			LogDebug(L"[ConfigManager] Config exists for '%s', validating entries...", wPluginName);
-			ConfigValidateConfig(pluginName, schema);
+			// Read all current values from the existing file, then rewrite it with
+			// comment lines above each key. This adds comments to existing configs
+			// without losing any user-configured values.
+			LogDebug(L"[ConfigManager] Reformatting config for '%s' with comments, preserving values...", wPluginName);
+
+			std::unordered_map<std::string, std::string> currentValues;
+			wchar_t wSection[256], wKey[256], wValue[1024];
+			const wchar_t* sentinel = L"__MISSING__";
+
+			for (int i = 0; i < schema->entryCount; ++i)
+			{
+				const ConfigEntry& entry = schema->entries[i];
+				MultiByteToWideChar(CP_UTF8, 0, entry.section, -1, wSection, 256);
+				MultiByteToWideChar(CP_UTF8, 0, entry.key,     -1, wKey,     256);
+
+				EnterCriticalSection(&g_configLock);
+				GetPrivateProfileStringW(wSection, wKey, sentinel, wValue, 1024, configPath);
+				LeaveCriticalSection(&g_configLock);
+
+				if (wcscmp(wValue, sentinel) != 0)
+				{
+					char value[1024];
+					WideCharToMultiByte(CP_UTF8, 0, wValue, -1, value, sizeof(value), nullptr, nullptr);
+					std::string cacheKey = entry.section;
+					cacheKey += '\n';
+					cacheKey += entry.key;
+					currentValues[cacheKey] = value;
+				}
+			}
+
+			FILETIME mtimeBefore = GetFileMtime(configPath);
+			WriteFormattedConfig(schema, configPath, &currentValues);
+			FILETIME mtimeAfter = GetFileMtime(configPath);
+
+			bool fileChanged = (mtimeBefore.dwLowDateTime  != mtimeAfter.dwLowDateTime ||
+			                    mtimeBefore.dwHighDateTime != mtimeAfter.dwHighDateTime);
+
+			if (fileChanged)
+			{
+				// Invalidate the file cache so the next read picks up the rewritten file
+				EnterCriticalSection(&g_configLock);
+				g_fileCache.erase(configPath);
+				LeaveCriticalSection(&g_configLock);
+				LogDebug(L"[ConfigManager] Config reformatted for '%s' (%zu values preserved)",
+					wPluginName, currentValues.size());
+			}
+			else
+			{
+				LogDebug(L"[ConfigManager] Config for '%s' already up to date, no rewrite needed", wPluginName);
+			}
 			return true;
 		}
 	}
