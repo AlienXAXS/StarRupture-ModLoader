@@ -15,15 +15,20 @@
 namespace UI::PluginPanelRegistry
 {
     // Register a panel.  desc and all strings it points to must remain valid
-    // until UnregisterPanel is called.
-    void RegisterPanel(const PluginPanelDesc* desc);
+    // until UnregisterPanel is called.  Returns an opaque PanelHandle
+    // (internally PanelEntry*), or null on failure.
+    PanelHandle RegisterPanel(const PluginPanelDesc* desc);
 
-    // Remove a panel by window title.
-    void UnregisterPanel(const char* windowTitle);
+    // Remove a panel using the handle returned by RegisterPanel.
+    void UnregisterPanel(PanelHandle handle);
 
     // Register/unregister a config-change notification callback.
     void RegisterOnConfigChanged(PluginConfigChangedCallback callback);
     void UnregisterOnConfigChanged(PluginConfigChangedCallback callback);
+
+    // Open or close a panel using the handle returned by RegisterPanel.
+    void SetPanelOpen(PanelHandle handle);
+    void SetPanelClose(PanelHandle handle);
 
     // Called by modloader_window to fire config-change notifications.
     void FireConfigChanged(const char* section, const char* key, const char* newValue);

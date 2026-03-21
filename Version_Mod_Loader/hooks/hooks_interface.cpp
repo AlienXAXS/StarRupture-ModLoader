@@ -591,14 +591,14 @@ namespace ModLoaderLogger
 
 	// --- UI sub-interface wrappers (v15, client only) ---
 
-	static void HooksRegisterPanel(const PluginPanelDesc* desc)
+	static PanelHandle HooksRegisterPanel(const PluginPanelDesc* desc)
 	{
-		UI::PluginPanelRegistry::RegisterPanel(desc);
+		return UI::PluginPanelRegistry::RegisterPanel(desc);
 	}
 
-	static void HooksUnregisterPanel(const char* windowTitle)
+	static void HooksUnregisterPanel(PanelHandle handle)
 	{
-		UI::PluginPanelRegistry::UnregisterPanel(windowTitle);
+		UI::PluginPanelRegistry::UnregisterPanel(handle);
 	}
 
 	static void HooksRegisterOnConfigChanged(PluginConfigChangedCallback callback)
@@ -613,12 +613,24 @@ namespace ModLoaderLogger
 		UI::PluginPanelRegistry::UnregisterOnConfigChanged(callback);
 	}
 
+	static void HooksSetPanelOpen(PanelHandle handle)
+	{
+		UI::PluginPanelRegistry::SetPanelOpen(handle);
+	}
+
+	static void HooksSetPanelClose(PanelHandle handle)
+	{
+		UI::PluginPanelRegistry::SetPanelClose(handle);
+	}
+
 	// UI sub-interface struct (v15)
 	static IPluginUIEvents g_uiEvents = {
 		HooksRegisterPanel,
 		HooksUnregisterPanel,
 		HooksRegisterOnConfigChanged,
-		HooksUnregisterOnConfigChanged
+		HooksUnregisterOnConfigChanged,
+		HooksSetPanelOpen,
+		HooksSetPanelClose
 	};
 #endif // MODLOADER_CLIENT_BUILD
 

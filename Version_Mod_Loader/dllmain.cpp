@@ -394,10 +394,27 @@ static DWORD WINAPI MainInitThreadProc(LPVOID)
 	// during their PluginInit call and have them active immediately.
 	Hooks::Input::InstallInputProcessor();
 
-	// Initialize ImGui D3D12 backend.  This hooks IDXGISwapChain::Present,
-	// reads the OpenKey from modloader.ini, and registers the internal toggle
-	// keybind.  Must be called after the input processor is installed.
-	UI::ImGuiBackend::Initialize();
+	// Check modloader.ini [UI] Enabled before starting ImGui.
+	// Allows users to disable the overlay entirely if it causes issues.
+	static bool s_imguiEnabled = true;
+	{
+		wchar_t mlIniPath[MAX_PATH]{};
+		GetModuleFileNameW(nullptr, mlIniPath, MAX_PATH);
+		wchar_t* lastSlash = wcsrchr(mlIniPath, L'\\');
+		if (lastSlash)
+			wcscpy_s(lastSlash + 1,
+				static_cast<rsize_t>(MAX_PATH - (lastSlash + 1 - mlIniPath)),
+				L"modloader.ini");
+		s_imguiEnabled = (GetPrivateProfileIntW(L"UI", L"Enabled", 1, mlIniPath) != 0);
+	}
+
+	if (s_imguiEnabled)
+	{
+		// Initialize ImGui D3D12 backend.  This hooks IDXGISwapChain::Present,
+		// reads the OpenKey from modloader.ini, and registers the internal toggle
+		// keybind.  Must be called after the input processor is installed.
+		UI::ImGuiBackend::Initialize();
+	}
 
 	// Delay D3D12 resource init until WorldBeginPlay fires.  By that point
 	// Streamline and the UE5 viewport are fully stable, avoiding E_ABORT crashes.
@@ -406,7 +423,8 @@ static DWORD WINAPI MainInitThreadProc(LPVOID)
 	static auto s_onWorldReady = [](SDK::UWorld* world, const char* worldName)
 	{
 		s_currentWorld = world;
-		UI::ImGuiBackend::SetRenderingReady();
+		if (s_imguiEnabled)
+			UI::ImGuiBackend::SetRenderingReady();
 		bool isMainMenu = worldName && strstr(worldName, "Map_MainMenu") != nullptr;
 		UI::Overlay::SetVisible(isMainMenu);
 		UI::GlobalSettings::SetWorldName(worldName ? worldName : "");
@@ -715,7 +733,8 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 		Hooks::MassSpawnerDeactivate::Remove();
 		Hooks::MassDoSpawning::Remove();
 #ifdef MODLOADER_CLIENT_BUILD
-		UI::ImGuiBackend::Shutdown();
+		if (s_imguiEnabled)
+			UI::ImGuiBackend::Shutdown();
 		Hooks::Input::RemoveInputProcessor();
 #endif
 

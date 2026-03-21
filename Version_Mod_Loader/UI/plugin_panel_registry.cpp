@@ -5,6 +5,7 @@
 
 #include "imgui/imgui.h"
 #include <mutex>
+#include <list>
 #include <vector>
 #include <algorithm>
 #include <cstring>
@@ -18,33 +19,38 @@ namespace UI::PluginPanelRegistry
     };
 
     static std::mutex s_mutex;
-    static std::vector<PanelEntry> s_panels;
+    static std::list<PanelEntry> s_panels;   // list: insertion never invalidates existing pointers
     static std::vector<PluginConfigChangedCallback> s_configCallbacks;
 
-    void RegisterPanel(const PluginPanelDesc* desc)
+    PanelHandle RegisterPanel(const PluginPanelDesc* desc)
     {
         if (!desc || !desc->windowTitle || !desc->renderFn)
-            return;
+            return nullptr;
 
         std::lock_guard<std::mutex> lock(s_mutex);
         // Prevent duplicate titles
         for (auto& e : s_panels)
             if (_stricmp(e.desc->windowTitle, desc->windowTitle) == 0)
-                return;
+                return nullptr;
         s_panels.push_back({ desc, false });
+        return static_cast<PanelHandle>(&s_panels.back());
     }
 
-    void UnregisterPanel(const char* windowTitle)
+    void UnregisterPanel(PanelHandle handle)
     {
-        if (!windowTitle) return;
+        if (!handle) return;
+        PanelEntry* target = static_cast<PanelEntry*>(handle);
 
         std::lock_guard<std::mutex> lock(s_mutex);
-        s_panels.erase(
-            std::remove_if(s_panels.begin(), s_panels.end(),
-                [&](const PanelEntry& e) {
-                    return _stricmp(e.desc->windowTitle, windowTitle) == 0;
-                }),
-            s_panels.end());
+        for (auto it = s_panels.begin(); it != s_panels.end(); ++it)
+        {
+            if (&(*it) == target)
+            {
+                s_panels.erase(it);
+                return;
+            }
+        }
+        // Handle not found — caller passed a stale or invalid handle; ignore silently.
     }
 
     void RegisterOnConfigChanged(PluginConfigChangedCallback callback)
@@ -68,6 +74,31 @@ namespace UI::PluginPanelRegistry
         std::lock_guard<std::mutex> lock(s_mutex);
         for (auto cb : s_configCallbacks)
             cb(section, key, newValue);
+    }
+
+    // Returns the PanelEntry* if the handle is a known registered panel, otherwise null.
+    // Must be called with s_mutex held.
+    static PanelEntry* FindEntry(PanelHandle handle)
+    {
+        if (!handle) return nullptr;
+        PanelEntry* target = static_cast<PanelEntry*>(handle);
+        for (auto& e : s_panels)
+            if (&e == target) return target;
+        return nullptr;
+    }
+
+    void SetPanelOpen(PanelHandle handle)
+    {
+        std::lock_guard<std::mutex> lock(s_mutex);
+        if (PanelEntry* e = FindEntry(handle))
+            e->isOpen = true;
+    }
+
+    void SetPanelClose(PanelHandle handle)
+    {
+        std::lock_guard<std::mutex> lock(s_mutex);
+        if (PanelEntry* e = FindEntry(handle))
+            e->isOpen = false;
     }
 
     void RenderPanelButtons(IModLoaderImGui* imgui)

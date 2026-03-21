@@ -50,10 +50,13 @@
 //      Input is non-null on client builds only; always nullptr on server/generic builds.
 //        Input    — keybind event subscriptions          (hooks->Input->RegisterKeybind)
 //      Also added (folded into v15 before first release):
-//      IModLoaderImGui function table, PluginImGuiRenderCallback, PluginPanelDesc,
+//      IModLoaderImGui function table, PluginImGuiRenderCallback, PluginPanelDesc, PanelHandle,
 //      PluginConfigChangedCallback, IPluginUIEvents sub-interface, and UI pointer in IPluginHooks.
 //      UI is non-null on client builds only; always nullptr on server/generic builds.
 //        UI       — custom panel registration + config-change callbacks (hooks->UI->RegisterPanel)
+//      RegisterPanel now returns a PanelHandle (opaque pointer stable for the plugin's lifetime).
+//      SetPanelOpen / SetPanelClose both take PanelHandle instead of a title string, so a plugin
+//      can only open/close its own panels (it cannot affect panels owned by other plugins).
 #define PLUGIN_INTERFACE_VERSION_MIN 14  // oldest plugin ABI still accepted by this loader
 #define PLUGIN_INTERFACE_VERSION_MAX 15  // current interface version (this header)
 #define PLUGIN_INTERFACE_VERSION PLUGIN_INTERFACE_VERSION_MAX  // alias used by plugins in PluginInfo
@@ -526,6 +529,11 @@ struct PluginPanelDesc
     PluginImGuiRenderCallback renderFn;
 };
 
+// Opaque handle returned by IPluginUIEvents::SetPanelOpen.
+// Pass it to SetPanelClose to close the same panel.
+// Null means the panel was not found or the UI backend is disabled.
+typedef void* PanelHandle;
+
 // Config-change notification — fired after the modloader UI writes a new value.
 // section / key: the INI section and key that changed.
 // newValue: the new value as a string (same representation as the INI file).
@@ -539,12 +547,22 @@ typedef void (*PluginConfigChangedCallback)(const char* section, const char* key
 struct IPluginUIEvents
 {
     // Register a custom panel button + window.  desc must remain valid until Unregister.
-    void (*RegisterPanel)(const PluginPanelDesc* desc);
-    // Unregister by window title.
-    void (*UnregisterPanel)(const char* windowTitle);
+    // Returns a PanelHandle that uniquely identifies this panel.
+    // Store this handle — it is required for UnregisterPanel, SetPanelOpen, and SetPanelClose.
+    // Returns null if registration failed (duplicate title, null fields, UI disabled).
+    PanelHandle (*RegisterPanel)(const PluginPanelDesc* desc);
+    // Unregister a panel using the handle returned by RegisterPanel.  Call during PluginShutdown.
+    // Silently ignored if handle is null.
+    void (*UnregisterPanel)(PanelHandle handle);
     // Receive a notification whenever the modloader UI writes a config value.
     void (*RegisterOnConfigChanged)(PluginConfigChangedCallback callback);
     void (*UnregisterOnConfigChanged)(PluginConfigChangedCallback callback);
+    // Open a registered panel window using the handle returned by RegisterPanel.
+    // Silently ignored if handle is null.
+    void (*SetPanelOpen)(PanelHandle handle);
+    // Close a registered panel window using the handle returned by RegisterPanel.
+    // Silently ignored if handle is null.
+    void (*SetPanelClose)(PanelHandle handle);
 };
 
 // ============================================================
