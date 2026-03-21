@@ -18,7 +18,7 @@ static IPluginHooks* g_hooks = nullptr;
 
 // Plugin metadata
 #ifndef MODLOADER_BUILD_TAG
-#define MODLOADER_BUILD_TAG "dev"
+#define MODLOADER_BUILD_TAG "0.3"
 #endif
 
 static PluginInfo s_pluginInfo = {

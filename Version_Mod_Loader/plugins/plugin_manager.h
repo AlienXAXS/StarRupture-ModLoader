@@ -1,6 +1,7 @@
 #pragma once
 
 #include <windows.h>
+#include "plugins/plugin_interface.h"
 
 namespace ModLoaderLogger
 {
@@ -18,4 +19,9 @@ namespace ModLoaderLogger
 
     // Get the number of currently loaded plugins
     int GetLoadedPluginCount();
+
+    // Copy up to maxCount PluginInfo pointers into outInfos.
+    // Returns the total number of loaded plugins (may exceed maxCount).
+    // Returned pointers remain valid as long as plugins are loaded.
+    int GetLoadedPluginInfos(const PluginInfo** outInfos, int maxCount);
 }

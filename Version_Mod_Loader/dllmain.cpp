@@ -29,6 +29,15 @@
 
 #include "utils/thread_utils.h"
 
+#ifdef MODLOADER_CLIENT_BUILD
+#include "hooks/input/input_processor.h"
+#include "hooks/game/engine_tick/engine_tick.h"
+#include "UI/imgui_backend.h"
+#include "UI/overlay.h"
+#include "UI/global_settings.h"
+#include "Engine_classes.hpp"
+#endif
+
 #include "DbgHelp.h"
 #pragma comment(lib, "DbgHelp.lib")
 
@@ -380,6 +389,73 @@ static DWORD WINAPI MainInitThreadProc(LPVOID)
 	Splash::SetStatus(L"Loading plugins...");
 	Splash::SetProgress(0.80f);
 
+#ifdef MODLOADER_CLIENT_BUILD
+	// Install the keybind input processor so plugins can register keybinds
+	// during their PluginInit call and have them active immediately.
+	Hooks::Input::InstallInputProcessor();
+
+	// Check modloader.ini [UI] Enabled before starting ImGui.
+	// Allows users to disable the overlay entirely if it causes issues.
+	static bool s_imguiEnabled = true;
+	{
+		wchar_t mlIniPath[MAX_PATH]{};
+		GetModuleFileNameW(nullptr, mlIniPath, MAX_PATH);
+		wchar_t* lastSlash = wcsrchr(mlIniPath, L'\\');
+		if (lastSlash)
+			wcscpy_s(lastSlash + 1,
+				static_cast<rsize_t>(MAX_PATH - (lastSlash + 1 - mlIniPath)),
+				L"modloader.ini");
+		s_imguiEnabled = (GetPrivateProfileIntW(L"UI", L"Enabled", 1, mlIniPath) != 0);
+	}
+
+	if (s_imguiEnabled)
+	{
+		// Initialize ImGui D3D12 backend.  This hooks IDXGISwapChain::Present,
+		// reads the OpenKey from modloader.ini, and registers the internal toggle
+		// keybind.  Must be called after the input processor is installed.
+		UI::ImGuiBackend::Initialize();
+	}
+
+	// Delay D3D12 resource init until WorldBeginPlay fires.  By that point
+	// Streamline and the UE5 viewport are fully stable, avoiding E_ABORT crashes.
+	// Also show the overlay watermark only on the main menu world.
+	static SDK::UWorld* s_currentWorld = nullptr;
+	static auto s_onWorldReady = [](SDK::UWorld* world, const char* worldName)
+	{
+		s_currentWorld = world;
+		if (s_imguiEnabled)
+			UI::ImGuiBackend::SetRenderingReady();
+		bool isMainMenu = worldName && strstr(worldName, "Map_MainMenu") != nullptr;
+		UI::Overlay::SetVisible(isMainMenu);
+		UI::GlobalSettings::SetWorldName(worldName ? worldName : "");
+	};
+	Hooks::WorldBeginPlay::RegisterAnyWorldCallback(s_onWorldReady);
+
+	// Register a per-frame game-thread callback to read the local player's
+	// position and cache it for the HUD overlay.  Called on the game thread
+	// so SDK UFunction calls (ProcessEvent) are safe here.
+	static auto s_onTick = [](float /*deltaSeconds*/)
+	{
+		SDK::APlayerController* pc = SDK::UGameplayStatics::GetPlayerController(s_currentWorld, 0);
+		if (!pc)
+		{
+			UI::GlobalSettings::SetPlayerPosition(0, 0, 0, false);
+			return;
+		}
+
+		SDK::APawn* pawn = pc->K2_GetPawn();
+		if (!pawn)
+		{
+			UI::GlobalSettings::SetPlayerPosition(0, 0, 0, false);
+			return;
+		}
+
+		SDK::FVector loc = pawn->K2_GetActorLocation();
+		UI::GlobalSettings::SetPlayerPosition(loc.X, loc.Y, loc.Z, true);
+	};
+	Hooks::EngineTick::RegisterPluginCallback(s_onTick);
+#endif
+
 	ModLoaderLogger::LoadAllPlugins();
 
 	Splash::SetStatus(L"Initialization complete!");
@@ -656,6 +732,11 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 		Hooks::MassSpawnerActivate::Remove();
 		Hooks::MassSpawnerDeactivate::Remove();
 		Hooks::MassDoSpawning::Remove();
+#ifdef MODLOADER_CLIENT_BUILD
+		if (s_imguiEnabled)
+			UI::ImGuiBackend::Shutdown();
+		Hooks::Input::RemoveInputProcessor();
+#endif
 
 		ModLoaderLogger::ShutdownPluginManager();
 		ModLoaderLogger::ShutdownConfigManager();

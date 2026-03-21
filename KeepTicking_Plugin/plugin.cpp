@@ -17,7 +17,7 @@ IPluginScanner* GetScanner() { return g_scanner; }
 IPluginHooks* GetHooks() { return g_hooks; }
 
 #ifndef MODLOADER_BUILD_TAG
-#define MODLOADER_BUILD_TAG "dev"
+#define MODLOADER_BUILD_TAG "0.5"
 #endif
 
 static PluginInfo s_pluginInfo = {

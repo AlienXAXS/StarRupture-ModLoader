@@ -44,8 +44,21 @@
 //        World    — world-begin-play/save/experience     (hooks->World->RegisterOnWorldBeginPlay)
 //        Players  — player joined/left subscriptions     (hooks->Players->RegisterOnPlayerJoined)
 //        Actors   — actor begin-play subscriptions       (hooks->Actors->RegisterOnActorBeginPlay)
+// v15: Added EModKey enum, EModKeyEvent enum, PluginKeybindCallback typedef,
+//      IPluginInputEvents sub-interface, and Input pointer in IPluginHooks.
+//      Input sub-interface supports registration by EModKey enum or by UE key name string.
+//      Input is non-null on client builds only; always nullptr on server/generic builds.
+//        Input    — keybind event subscriptions          (hooks->Input->RegisterKeybind)
+//      Also added (folded into v15 before first release):
+//      IModLoaderImGui function table, PluginImGuiRenderCallback, PluginPanelDesc, PanelHandle,
+//      PluginConfigChangedCallback, IPluginUIEvents sub-interface, and UI pointer in IPluginHooks.
+//      UI is non-null on client builds only; always nullptr on server/generic builds.
+//        UI       — custom panel registration + config-change callbacks (hooks->UI->RegisterPanel)
+//      RegisterPanel now returns a PanelHandle (opaque pointer stable for the plugin's lifetime).
+//      SetPanelOpen / SetPanelClose both take PanelHandle instead of a title string, so a plugin
+//      can only open/close its own panels (it cannot affect panels owned by other plugins).
 #define PLUGIN_INTERFACE_VERSION_MIN 14  // oldest plugin ABI still accepted by this loader
-#define PLUGIN_INTERFACE_VERSION_MAX 14  // current interface version (this header)
+#define PLUGIN_INTERFACE_VERSION_MAX 15  // current interface version (this header)
 #define PLUGIN_INTERFACE_VERSION PLUGIN_INTERFACE_VERSION_MAX  // alias used by plugins in PluginInfo
 
 // Log levels
@@ -70,11 +83,13 @@ enum class ConfigValueType
 // Config entry definition for auto-generation
 struct ConfigEntry
 {
-    const char* section;     // INI section name (e.g., "General", "Advanced")
-    const char* key;            // INI key name
+    const char* section;      // INI section name (e.g., "General", "Advanced")
+    const char* key;          // INI key name
     ConfigValueType type;     // Value type
-    const char* defaultValue;   // Default value as string (converted based on type)
-    const char* description;    // Optional description/comment
+    const char* defaultValue; // Default value as string (converted based on type)
+    const char* description;  // Optional description/comment
+    float rangeMin;           // Slider min -- ignored when rangeMax <= rangeMin
+    float rangeMax;           // Slider max -- when rangeMax > rangeMin a slider is shown
 };
 
 // Config schema - defines all config entries for a plugin
@@ -360,6 +375,197 @@ struct IPluginSpawnerHooks
 };
 
 // ============================================================
+// EModKey — enumeration of keys that can be bound by plugins (v15)
+// Maps directly to Unreal Engine EKeys names and Win32 VK codes.
+// Use with IPluginInputEvents::RegisterKeybind or RegisterKeybindByName.
+// ============================================================
+enum class EModKey : uint32_t
+{
+    // Function keys
+    F1 = 0, F2, F3, F4, F5, F6, F7, F8, F9, F10, F11, F12,
+
+    // Letters
+    A, B, C, D, E, F, G, H, I, J, K, L, M,
+    N, O, P, Q, R, S, T, U, V, W, X, Y, Z,
+
+    // Digit row
+    Zero, One, Two, Three, Four, Five, Six, Seven, Eight, Nine,
+
+    // Control keys
+    Escape, Tab, CapsLock, SpaceBar, Enter, BackSpace, Delete, Insert,
+
+    // Modifier keys
+    LeftShift, RightShift, LeftControl, RightControl, LeftAlt, RightAlt,
+
+    // Navigation keys
+    Up, Down, Left, Right, Home, End, PageUp, PageDown,
+
+    // Punctuation / OEM keys
+    Tilde, Hyphen, Equals, LeftBracket, RightBracket, Backslash,
+    Semicolon, Apostrophe, Comma, Period, Slash,
+
+    // Numpad digits
+    NumPadZero, NumPadOne, NumPadTwo, NumPadThree, NumPadFour,
+    NumPadFive, NumPadSix, NumPadSeven, NumPadEight, NumPadNine,
+
+    // Numpad operators
+    Add, Subtract, Multiply, Divide, Decimal,
+
+    // Mouse buttons
+    LeftMouseButton, RightMouseButton, MiddleMouseButton,
+    ThumbMouseButton, ThumbMouseButton2,
+
+    Unknown  // sentinel / error value
+};
+
+// ============================================================
+// EModKeyEvent — key state transitions reported to keybind callbacks (v15)
+// ============================================================
+enum class EModKeyEvent : uint32_t
+{
+    Pressed  = 0,   // fired once when the key goes from up to down
+    Released = 1    // fired once when the key goes from down to up
+};
+
+// ============================================================
+// PluginKeybindCallback — signature for keybind event callbacks (v15)
+// key   : the key that changed state
+// event : Pressed or Released
+// ============================================================
+typedef void (*PluginKeybindCallback)(EModKey key, EModKeyEvent event);
+
+// ============================================================
+// IPluginInputEvents — keybind event subscriptions (v15, client only)
+// Access via: hooks->Input->RegisterKeybind(...)
+// hooks->Input is nullptr on server and generic builds.
+// Both the enum API and the string API resolve to the same underlying handler.
+// UE key name strings are case-insensitive ("F1", "LeftShift", "Tilde", etc.)
+// ============================================================
+struct IPluginInputEvents
+{
+    // Register a callback for a specific key+event (by enum)
+    void (*RegisterKeybind)(EModKey key, EModKeyEvent event, PluginKeybindCallback callback);
+    // Unregister a previously registered callback (by enum)
+    void (*UnregisterKeybind)(EModKey key, EModKeyEvent event, PluginKeybindCallback callback);
+
+    // Register a callback for a specific key+event (by UE key name string)
+    // keyName is matched case-insensitively, e.g. "F1", "LeftShift", "Tilde"
+    void (*RegisterKeybindByName)(const char* keyName, EModKeyEvent event, PluginKeybindCallback callback);
+    // Unregister a previously registered callback (by UE key name string)
+    void (*UnregisterKeybindByName)(const char* keyName, EModKeyEvent event, PluginKeybindCallback callback);
+};
+
+// ============================================================
+// IModLoaderImGui — ImGui function table exposed to plugins (v15)
+// The modloader owns Dear ImGui; plugins must NOT call ImGui:: directly.
+// Call through this table inside a PluginImGuiRenderCallback.
+// All text parameters are plain C strings — format with snprintf before calling.
+// ============================================================
+struct IModLoaderImGui
+{
+    // --- Text ---
+    void (*Text)(const char* text);
+    void (*TextColored)(float r, float g, float b, float a, const char* text);
+    void (*TextDisabled)(const char* text);
+    void (*TextWrapped)(const char* text);
+    void (*LabelText)(const char* label, const char* text);
+    void (*SeparatorText)(const char* label);
+
+    // --- Inputs (return true when value changed) ---
+    bool (*InputText)(const char* label, char* buf, size_t buf_size);
+    bool (*InputInt)(const char* label, int* v, int step, int step_fast);
+    bool (*InputFloat)(const char* label, float* v, float step, float step_fast, const char* format);
+    bool (*Checkbox)(const char* label, bool* v);
+    bool (*SliderFloat)(const char* label, float* v, float v_min, float v_max, const char* format);
+    bool (*SliderInt)(const char* label, int* v, int v_min, int v_max, const char* format);
+
+    // --- Buttons ---
+    bool (*Button)(const char* label);
+    bool (*SmallButton)(const char* label);
+
+    // --- Layout ---
+    void (*SameLine)(float offset_from_start_x, float spacing);
+    void (*NewLine)();
+    void (*Separator)();
+    void (*Spacing)();
+    void (*Indent)(float indent_w);
+    void (*Unindent)(float indent_w);
+
+    // --- ID stack ---
+    void (*PushIDStr)(const char* str_id);
+    void (*PushIDInt)(int int_id);
+    void (*PopID)();
+
+    // --- Combo / Selectable ---
+    bool (*BeginCombo)(const char* label, const char* preview_value);
+    bool (*Selectable)(const char* label, bool selected);
+    void (*EndCombo)();
+
+    // --- Tree / Collapsible ---
+    bool (*CollapsingHeader)(const char* label);
+    bool (*TreeNodeStr)(const char* label);
+    void (*TreePop)();
+
+    // --- Color ---
+    bool (*ColorEdit3)(const char* label, float col[3]);
+    bool (*ColorEdit4)(const char* label, float col[4]);
+
+    // --- Misc ---
+    void (*SetTooltip)(const char* text);
+    bool (*IsItemHovered)();
+    void (*SetNextItemWidth)(float item_width);
+};
+
+// Render callback for a plugin-registered custom panel.
+// Called by the modloader each frame while the panel window is open.
+// imgui: the function table above — use it for all ImGui calls.
+typedef void (*PluginImGuiRenderCallback)(IModLoaderImGui* imgui);
+
+// Descriptor passed to IPluginUIEvents::RegisterPanel.
+struct PluginPanelDesc
+{
+    const char* buttonLabel;        // button label shown in ModLoader Config tab
+    const char* windowTitle;        // ImGui window title (must be globally unique)
+    PluginImGuiRenderCallback renderFn;
+};
+
+// Opaque handle returned by IPluginUIEvents::SetPanelOpen.
+// Pass it to SetPanelClose to close the same panel.
+// Null means the panel was not found or the UI backend is disabled.
+typedef void* PanelHandle;
+
+// Config-change notification — fired after the modloader UI writes a new value.
+// section / key: the INI section and key that changed.
+// newValue: the new value as a string (same representation as the INI file).
+typedef void (*PluginConfigChangedCallback)(const char* section, const char* key, const char* newValue);
+
+// ============================================================
+// IPluginUIEvents — UI registration (v15, client only)
+// Access via: hooks->UI->RegisterPanel(...)
+// hooks->UI is nullptr on server and generic builds.
+// ============================================================
+struct IPluginUIEvents
+{
+    // Register a custom panel button + window.  desc must remain valid until Unregister.
+    // Returns a PanelHandle that uniquely identifies this panel.
+    // Store this handle — it is required for UnregisterPanel, SetPanelOpen, and SetPanelClose.
+    // Returns null if registration failed (duplicate title, null fields, UI disabled).
+    PanelHandle (*RegisterPanel)(const PluginPanelDesc* desc);
+    // Unregister a panel using the handle returned by RegisterPanel.  Call during PluginShutdown.
+    // Silently ignored if handle is null.
+    void (*UnregisterPanel)(PanelHandle handle);
+    // Receive a notification whenever the modloader UI writes a config value.
+    void (*RegisterOnConfigChanged)(PluginConfigChangedCallback callback);
+    void (*UnregisterOnConfigChanged)(PluginConfigChangedCallback callback);
+    // Open a registered panel window using the handle returned by RegisterPanel.
+    // Silently ignored if handle is null.
+    void (*SetPanelOpen)(PanelHandle handle);
+    // Close a registered panel window using the handle returned by RegisterPanel.
+    // Silently ignored if handle is null.
+    void (*SetPanelClose)(PanelHandle handle);
+};
+
+// ============================================================
 // IPluginHooks — top-level hook interface provided by the mod loader (v14)
 // Contains only typed sub-interface pointers. Access functionality via the
 // named group, e.g.:
@@ -368,6 +574,7 @@ struct IPluginSpawnerHooks
 //   hooks->Memory->Patch(addr, bytes, len);
 //   hooks->Hooks->Install(addr, detour, &original);
 //   hooks->Spawner->RegisterOnBeforeActivate(&MyBeforeCb);
+//   hooks->Input->RegisterKeybind(EModKey::F1, EModKeyEvent::Pressed, &MyKeyCb);
 // ============================================================
 struct IPluginHooks
 {
@@ -378,6 +585,8 @@ struct IPluginHooks
     IPluginWorldEvents*  World;     // v14 — world begin-play / save / experience subscriptions
     IPluginPlayerEvents* Players;   // v14 — player joined/left subscriptions
     IPluginActorEvents*  Actors;    // v14 — actor begin-play subscriptions
+    IPluginInputEvents*  Input;     // v15 — keybind subscriptions (client only, null on server)
+    IPluginUIEvents*     UI;        // v15 — custom panel registration + config-change callbacks (client only, null on server)
 };
 
 // Plugin metadata structure

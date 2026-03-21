@@ -26,7 +26,7 @@ IPluginHooks*   GetHooks()   { return g_hooks;   }
 // Plugin metadata
 // -----------------------------------------------------------------------
 #ifndef MODLOADER_BUILD_TAG
-#define MODLOADER_BUILD_TAG "dev"
+#define MODLOADER_BUILD_TAG "0.4"
 #endif
 
 static PluginInfo s_pluginInfo = {

@@ -231,4 +231,18 @@ namespace ModLoaderLogger
 		LeaveCriticalSection(&g_pluginLock);
 		return count;
 	}
+
+	int GetLoadedPluginInfos(const PluginInfo** outInfos, int maxCount)
+	{
+		EnterCriticalSection(&g_pluginLock);
+		int total = static_cast<int>(g_loadedPlugins.size());
+		if (outInfos && maxCount > 0)
+		{
+			int toCopy = total < maxCount ? total : maxCount;
+			for (int i = 0; i < toCopy; ++i)
+				outInfos[i] = g_loadedPlugins[i].info;
+		}
+		LeaveCriticalSection(&g_pluginLock);
+		return total;
+	}
 }

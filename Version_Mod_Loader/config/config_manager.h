@@ -16,4 +16,7 @@ namespace ModLoaderLogger
 
     // Get the global config interface (uses the interface from plugin_interface.h)
     IPluginConfig* GetPluginConfig();
+
+    // Returns the ConfigSchema registered by the plugin, or nullptr if none.
+    const ConfigSchema* GetPluginSchema(const char* pluginName);
 }

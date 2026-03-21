@@ -29,6 +29,8 @@ namespace ModLoaderLogger
 	static std::unordered_map<std::wstring, PluginFileCache> g_fileCache;
 	static constexpr ULONGLONG kMtimeCheckIntervalMs = 500;
 
+	static std::unordered_map<std::string, const ConfigSchema*> g_schemas;
+
 	static FILETIME GetFileMtime(const wchar_t* path)
 	{
 		WIN32_FILE_ATTRIBUTE_DATA info = {};
@@ -204,7 +206,13 @@ namespace ModLoaderLogger
 
 	static bool ConfigReadBool(const char* pluginName, const char* section, const char* key, bool defaultValue)
 	{
-		return ConfigReadInt(pluginName, section, key, defaultValue ? 1 : 0) != 0;
+		char buf[16] = {};
+		const char* def = defaultValue ? "1" : "0";
+		if (!ConfigReadString(pluginName, section, key, buf, sizeof(buf), def))
+			return defaultValue;
+		return (_stricmp(buf, "true") == 0 ||
+		        _stricmp(buf, "yes")  == 0 ||
+		        strcmp(buf, "1")      == 0);
 	}
 
 	static bool ConfigWriteBool(const char* pluginName, const char* section, const char* key, bool value)
@@ -420,6 +428,8 @@ namespace ModLoaderLogger
 			return false;
 		}
 
+		g_schemas[pluginName] = schema;
+
 		wchar_t configPath[MAX_PATH];
 		if (!GetPluginConfigPath(pluginName, configPath, MAX_PATH))
 			return false;
@@ -552,5 +562,12 @@ namespace ModLoaderLogger
 	IPluginConfig* GetPluginConfig()
 	{
 		return &g_pluginConfig;
+	}
+
+	const ConfigSchema* GetPluginSchema(const char* pluginName)
+	{
+		if (!pluginName) return nullptr;
+		auto it = g_schemas.find(pluginName);
+		return (it != g_schemas.end()) ? it->second : nullptr;
 	}
 }
