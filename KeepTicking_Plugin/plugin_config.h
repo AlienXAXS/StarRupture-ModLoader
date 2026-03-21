@@ -33,6 +33,13 @@ namespace KeepTickingConfig
 			ConfigValueType::Integer,
 			"10",
 			"Number of waypoints the fake player teleports through per engine tick (higher = faster traversal)"
+		},
+		{
+			"PluginSettings",
+			"DisableTraversal",
+			ConfigValueType::Boolean,
+			"false",
+			"Disable the fake player map traversal teleportation entirely (fake player still spawns to keep server alive)"
 		}
 	};
 
@@ -69,6 +76,11 @@ namespace KeepTickingConfig
 		static bool IsDebugVisibleModeEnabled()
 		{
 			return s_config ? s_config->ReadBool("KeepTicking", "PluginSettings", "DebugVisibleMode", false) : false;
+		}
+
+		static bool IsTraversalDisabled()
+		{
+			return s_config ? s_config->ReadBool("KeepTicking", "PluginSettings", "DisableTraversal", false) : false;
 		}
 
 		static int GetWaypointsPerTick()

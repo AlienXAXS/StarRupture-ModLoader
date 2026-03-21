@@ -51,6 +51,12 @@ static void OnWorldBeginPlay(SDK::UWorld* world)
 
 static void OnExperienceLoadComplete()
 {
+	if (KeepTickingConfig::Config::IsTraversalDisabled())
+	{
+		LOG_INFO("[ModCore] ExperienceLoadComplete fired — traversal disabled by config");
+		return;
+	}
+
 	LOG_INFO("[ModCore] ExperienceLoadComplete fired — starting map traversal");
 
 	if (!Hooks::FakePlayer::IsPlayerActive())
@@ -151,8 +157,8 @@ static void OnPlayerLeft(void* exitingController)
 
 		Hooks::FakePlayer::SpawnFakePlayer();
 
-		// Restart map traversal if the player is now active
-		if (Hooks::FakePlayer::IsPlayerActive())
+		// Restart map traversal if the player is now active and traversal is enabled
+		if (Hooks::FakePlayer::IsPlayerActive() && !KeepTickingConfig::Config::IsTraversalDisabled())
 		{
 			LOG_INFO("[ModCore] Fake player respawned — restarting map traversal");
 			Hooks::FakePlayer::StartMapTraversal();
