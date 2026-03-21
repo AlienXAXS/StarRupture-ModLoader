@@ -74,6 +74,11 @@ static HANDLE g_engineReadyEvent = NULL;
 // Required suffix for the game version, read from the executable's version
 static constexpr wchar_t kRequiredVersionSuffix[] = L"CL-114046";
 
+#ifdef MODLOADER_CLIENT_BUILD
+// Set during init from modloader.ini [UI] Enabled; read during shutdown.
+static bool s_imguiEnabled = true;
+#endif
+
 // ---------------------------------------------------------------------------
 // Forward declarations
 // ---------------------------------------------------------------------------
@@ -396,7 +401,6 @@ static DWORD WINAPI MainInitThreadProc(LPVOID)
 
 	// Check modloader.ini [UI] Enabled before starting ImGui.
 	// Allows users to disable the overlay entirely if it causes issues.
-	static bool s_imguiEnabled = true;
 	{
 		wchar_t mlIniPath[MAX_PATH]{};
 		GetModuleFileNameW(nullptr, mlIniPath, MAX_PATH);
