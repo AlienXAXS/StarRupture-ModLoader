@@ -6,6 +6,7 @@
 #include "hooks/auto_profession/auto_profession.h"
 #include "hooks/http_connection/http_connection.h"
 #include "rcon/rcon.h"
+#include "rcon/console_ctrl.h"
 
 // -----------------------------------------------------------------------
 // Global plugin interface pointers
@@ -50,13 +51,17 @@ static void OnEngineInit()
     // Start the RCON / Steam Query subsystem
     Rcon::Init();
 
+    // Install console control handler (CTRL+C, CTRL+BREAK, window close, etc.)
+    ConsoleCtrl::Install();
+
     // Install FHttpConnection::ProcessRequest hook
     HttpConnectionHook::Install();
 }
 
 static void OnEngineShutdown()
 {
-    LOG_INFO("Engine shutting down – removing hooks...");
+    LOG_INFO("Engine shutting down - removing hooks...");
+    ConsoleCtrl::Remove();
     ParseSettingsHook::Remove();
     MaxPlayersHook::Remove();
     AutoProfessionHook::Remove();

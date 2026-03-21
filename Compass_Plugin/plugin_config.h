@@ -15,7 +15,8 @@ namespace CompassConfig
 		{ "Compass", "Scale",                    ConfigValueType::Float,   "1.2",              "Compass size multiplier" },
 		{ "Compass", "PosY",                     ConfigValueType::Float,   "60.0",             "Pixels from top of screen to the compass line" },
 		{ "Compass", "WidthFraction",            ConfigValueType::Float,   "0.50",             "Half-width as fraction of screen width (0.20 = 40% total)" },
-		{ "Compass", "EntityScanInterval",       ConfigValueType::Integer, "90",               "Frames between entity scans (90 = ~1.5s at 60fps)" },
+		{ "Compass", "EntityScanInterval",       ConfigValueType::Integer, "90",               "Frames between full entity scans for static things like POIs and cores (90 = ~1.5s at 60fps)" },
+	{ "Compass", "PlayerScanInterval",      ConfigValueType::Integer, "3",                "Frames between player position scans (3 = ~20 updates/sec at 60fps)" },
 		{ "Compass", "LineColor",                ConfigValueType::String,  "1.0, 1.0, 1.0, 0.4", "Horizontal bar colour as R, G, B, A (each 0.0-1.0). Invalid input uses the default." },
 
 		// ----- Players -----
@@ -125,6 +126,13 @@ namespace CompassConfig
 		static int GetEntityScanInterval()
 		{
 			return s_config ? s_config->ReadInt("Compass", "Compass", "EntityScanInterval", 90) : 90;
+		}
+
+		static int GetPlayerScanInterval()
+		{
+			int val = s_config ? s_config->ReadInt("Compass", "Compass", "PlayerScanInterval", 3) : 3;
+			if (val < 1) val = 1;
+			return val;
 		}
 
 		// Returns the horizontal bar colour from config, or the default {1,1,1,0.4} on any
