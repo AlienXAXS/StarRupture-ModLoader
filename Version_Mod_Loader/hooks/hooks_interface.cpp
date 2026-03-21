@@ -14,6 +14,11 @@
 #include "hooks/game/mass_spawner_activate/mass_spawner_activate.h"
 #include "hooks/game/mass_spawner_deactivate/mass_spawner_deactivate.h"
 #include "hooks/game/mass_do_spawning/mass_do_spawning.h"
+#ifdef MODLOADER_CLIENT_BUILD
+#include "hooks/input/keybind_registry.h"
+#include "hooks/input/input_processor.h"
+#include "UI/plugin_panel_registry.h"
+#endif
 #include <unordered_map>
 #include <mutex>
 
@@ -541,6 +546,82 @@ namespace ModLoaderLogger
 		HooksUnregisterActorBeginPlayCallback
 	};
 
+	// --- Input sub-interface wrappers (v15, client only) ---
+
+#ifdef MODLOADER_CLIENT_BUILD
+	static void HooksRegisterKeybind(EModKey key, EModKeyEvent event, PluginKeybindCallback callback)
+	{
+		if (!callback) { LogWarn(L"[HooksInterface] RegisterKeybind: null callback"); return; }
+		Hooks::Input::RegisterKeybind(key, event, callback);
+		LogDebug(L"[HooksInterface] Keybind registered (enum key=%u, event=%u)",
+			static_cast<unsigned>(key), static_cast<unsigned>(event));
+	}
+
+	static void HooksUnregisterKeybind(EModKey key, EModKeyEvent event, PluginKeybindCallback callback)
+	{
+		if (!callback) return;
+		Hooks::Input::UnregisterKeybind(key, event, callback);
+		LogDebug(L"[HooksInterface] Keybind unregistered (enum key=%u, event=%u)",
+			static_cast<unsigned>(key), static_cast<unsigned>(event));
+	}
+
+	static void HooksRegisterKeybindByName(const char* keyName, EModKeyEvent event, PluginKeybindCallback callback)
+	{
+		if (!callback || !keyName) { LogWarn(L"[HooksInterface] RegisterKeybindByName: null argument"); return; }
+		Hooks::Input::RegisterKeybindByName(keyName, event, callback);
+		LogDebug(L"[HooksInterface] Keybind registered (name=%S, event=%u)",
+			keyName, static_cast<unsigned>(event));
+	}
+
+	static void HooksUnregisterKeybindByName(const char* keyName, EModKeyEvent event, PluginKeybindCallback callback)
+	{
+		if (!callback || !keyName) return;
+		Hooks::Input::UnregisterKeybindByName(keyName, event, callback);
+		LogDebug(L"[HooksInterface] Keybind unregistered (name=%S, event=%u)",
+			keyName, static_cast<unsigned>(event));
+	}
+
+	// Input sub-interface struct (v15)
+	static IPluginInputEvents g_inputEvents = {
+		HooksRegisterKeybind,
+		HooksUnregisterKeybind,
+		HooksRegisterKeybindByName,
+		HooksUnregisterKeybindByName
+	};
+
+	// --- UI sub-interface wrappers (v15, client only) ---
+
+	static void HooksRegisterPanel(const PluginPanelDesc* desc)
+	{
+		UI::PluginPanelRegistry::RegisterPanel(desc);
+	}
+
+	static void HooksUnregisterPanel(const char* windowTitle)
+	{
+		UI::PluginPanelRegistry::UnregisterPanel(windowTitle);
+	}
+
+	static void HooksRegisterOnConfigChanged(PluginConfigChangedCallback callback)
+	{
+		if (!callback) { LogWarn(L"[HooksInterface] RegisterOnConfigChanged: null callback"); return; }
+		UI::PluginPanelRegistry::RegisterOnConfigChanged(callback);
+	}
+
+	static void HooksUnregisterOnConfigChanged(PluginConfigChangedCallback callback)
+	{
+		if (!callback) return;
+		UI::PluginPanelRegistry::UnregisterOnConfigChanged(callback);
+	}
+
+	// UI sub-interface struct (v15)
+	static IPluginUIEvents g_uiEvents = {
+		HooksRegisterPanel,
+		HooksUnregisterPanel,
+		HooksRegisterOnConfigChanged,
+		HooksUnregisterOnConfigChanged
+	};
+#endif // MODLOADER_CLIENT_BUILD
+
 	// Global hooks interface instance
 	static IPluginHooks g_pluginHooks = {
 		&g_spawnerHooks,
@@ -549,7 +630,14 @@ namespace ModLoaderLogger
 		&g_engineEvents,
 		&g_worldEvents,
 		&g_playerEvents,
-		&g_actorEvents
+		&g_actorEvents,
+#ifdef MODLOADER_CLIENT_BUILD
+		&g_inputEvents,   // v15 — keybind events (client only)
+		&g_uiEvents       // v15 — custom panel + config-change callbacks (client only)
+#else
+		nullptr,          // v15 — Input is null on server/generic builds
+		nullptr           // v15 — UI is null on server/generic builds
+#endif
 	};
 
 	IPluginHooks* GetPluginHooks()

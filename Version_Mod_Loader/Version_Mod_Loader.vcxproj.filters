@@ -73,6 +73,15 @@
     <Filter Include="Source Files\hooks\game\spawning">
       <UniqueIdentifier>{9a63f03d-8ae0-43a7-b82d-46b696cc8370}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Source Files\hooks\input">
+      <UniqueIdentifier>{e7b1d3f2-4a8c-4f5e-b9c3-2d6e0a1f7c84}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\UI\imgui">
+      <UniqueIdentifier>{d1f3a2b4-7c8e-4f9d-a0b1-3e5c6d7f8a9b}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\UI\modloader">
+      <UniqueIdentifier>{f2a4b6c8-9d0e-4f1a-b2c3-5d7e8f9a0b1c}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="dwmapi_proxy.h">
@@ -83,6 +92,36 @@
     </ClInclude>
     <ClInclude Include="hooks\hooks_interface.h">
       <Filter>Source Files\hooks</Filter>
+    </ClInclude>
+    <ClInclude Include="hooks\input\keybind_registry.h">
+      <Filter>Source Files\hooks\input</Filter>
+    </ClInclude>
+    <ClInclude Include="hooks\input\input_processor.h">
+      <Filter>Source Files\hooks\input</Filter>
+    </ClInclude>
+    <ClInclude Include="imgui\imgui.h">
+      <Filter>Source Files\UI\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="imgui\imgui_internal.h">
+      <Filter>Source Files\UI\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="imgui\backends\imgui_impl_dx12.h">
+      <Filter>Source Files\UI\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="imgui\backends\imgui_impl_win32.h">
+      <Filter>Source Files\UI\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="UI\imgui_backend.h">
+      <Filter>Source Files\UI\modloader</Filter>
+    </ClInclude>
+    <ClInclude Include="UI\modloader_window.h">
+      <Filter>Source Files\UI\modloader</Filter>
+    </ClInclude>
+    <ClInclude Include="UI\overlay.h">
+      <Filter>Source Files\UI\modloader</Filter>
+    </ClInclude>
+    <ClInclude Include="UI\plugin_panel_registry.h">
+      <Filter>Source Files\UI\modloader</Filter>
     </ClInclude>
     <ClInclude Include="UI\splash_window.h">
       <Filter>Source Files\UI</Filter>
@@ -162,6 +201,9 @@
     <ClInclude Include="hooks\game\scan_patterns.h">
       <Filter>Source Files\hooks\game</Filter>
     </ClInclude>
+    <ClInclude Include="UI\global_settings.h">
+      <Filter>Source Files\UI</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="dllmain.cpp">
@@ -185,8 +227,44 @@
     <ClCompile Include="hooks\hooks_interface.cpp">
       <Filter>Source Files\hooks</Filter>
     </ClCompile>
+    <ClCompile Include="hooks\input\keybind_registry.cpp">
+      <Filter>Source Files\hooks\input</Filter>
+    </ClCompile>
+    <ClCompile Include="hooks\input\input_processor.cpp">
+      <Filter>Source Files\hooks\input</Filter>
+    </ClCompile>
     <ClCompile Include="hooks\memory\engine_allocator.cpp">
       <Filter>Source Files\hooks\memory</Filter>
+    </ClCompile>
+    <ClCompile Include="imgui\imgui.cpp">
+      <Filter>Source Files\UI\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="imgui\imgui_draw.cpp">
+      <Filter>Source Files\UI\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="imgui\imgui_tables.cpp">
+      <Filter>Source Files\UI\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="imgui\imgui_widgets.cpp">
+      <Filter>Source Files\UI\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="imgui\backends\imgui_impl_dx12.cpp">
+      <Filter>Source Files\UI\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="imgui\backends\imgui_impl_win32.cpp">
+      <Filter>Source Files\UI\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="UI\imgui_backend.cpp">
+      <Filter>Source Files\UI\modloader</Filter>
+    </ClCompile>
+    <ClCompile Include="UI\modloader_window.cpp">
+      <Filter>Source Files\UI\modloader</Filter>
+    </ClCompile>
+    <ClCompile Include="UI\overlay.cpp">
+      <Filter>Source Files\UI\modloader</Filter>
+    </ClCompile>
+    <ClCompile Include="UI\plugin_panel_registry.cpp">
+      <Filter>Source Files\UI\modloader</Filter>
     </ClCompile>
     <ClCompile Include="UI\splash_window.cpp">
       <Filter>Source Files\UI</Filter>
@@ -247,6 +325,9 @@
     </ClCompile>
     <ClCompile Include="$(StarRuptureSDKSourceDir)UMG_functions.cpp">
       <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="UI\global_settings.cpp">
+      <Filter>Source Files\UI</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

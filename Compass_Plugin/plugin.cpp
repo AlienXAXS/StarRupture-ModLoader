@@ -15,13 +15,13 @@ IPluginScanner* GetScanner() { return g_scanner; }
 IPluginHooks*   GetHooks()   { return g_hooks;   }
 
 #ifndef MODLOADER_BUILD_TAG
-#define MODLOADER_BUILD_TAG "dev"
+#define MODLOADER_BUILD_TAG "0.2"
 #endif
 
 static PluginInfo s_pluginInfo = {
 	"Compass",
 	MODLOADER_BUILD_TAG,
-	"",
+	"AlienX",
 	"Client-side HUD compass overlay",
 	PLUGIN_INTERFACE_VERSION
 };

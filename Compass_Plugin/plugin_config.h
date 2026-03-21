@@ -12,46 +12,46 @@ namespace CompassConfig
 		{ "General", "TextOnly",                 ConfigValueType::Boolean, "false",   "Force text-only mode — never draw icon textures (useful for debugging)" },
 
 		// ----- Compass bar -----
-		{ "Compass", "Scale",                    ConfigValueType::Float,   "1.2",              "Compass size multiplier" },
-		{ "Compass", "PosY",                     ConfigValueType::Float,   "60.0",             "Pixels from top of screen to the compass line" },
-		{ "Compass", "WidthFraction",            ConfigValueType::Float,   "0.50",             "Half-width as fraction of screen width (0.20 = 40% total)" },
-		{ "Compass", "EntityScanInterval",       ConfigValueType::Integer, "90",               "Frames between full entity scans for static things like POIs and cores (90 = ~1.5s at 60fps)" },
-	{ "Compass", "PlayerScanInterval",      ConfigValueType::Integer, "3",                "Frames between player position scans (3 = ~20 updates/sec at 60fps)" },
+		{ "Compass", "Scale",                    ConfigValueType::Float,   "1.2",              "Compass size multiplier",                                             0.1f,  5.0f  },
+		{ "Compass", "PosY",                     ConfigValueType::Float,   "60.0",             "Pixels from top of screen to the compass line",                       0.0f,  800.0f },
+		{ "Compass", "WidthFraction",            ConfigValueType::Float,   "0.50",             "Half-width as fraction of screen width (0.20 = 40% total)",           0.05f, 1.0f  },
+		{ "Compass", "EntityScanInterval",       ConfigValueType::Integer, "90",               "Frames between full entity scans (90 = ~1.5s at 60fps)",              10,    600   },
+		{ "Compass", "PlayerScanInterval",       ConfigValueType::Integer, "3",                "Frames between player position scans (3 = ~20 updates/sec at 60fps)", 1,     120   },
 		{ "Compass", "LineColor",                ConfigValueType::String,  "1.0, 1.0, 1.0, 0.4", "Horizontal bar colour as R, G, B, A (each 0.0-1.0). Invalid input uses the default." },
 
 		// ----- Players -----
 		{ "Players", "Enabled",                  ConfigValueType::Boolean, "true",    "Show other player markers on the compass" },
-		{ "Players", "Distance",                 ConfigValueType::Float,   "0.0",     "Max render distance in UU (0 = unlimited)" },
+		{ "Players", "Distance",                 ConfigValueType::Float,   "0.0",     "Max render distance in UU (0 = unlimited)",           0.0f, 50000.0f },
 
 		// ----- Base Cores -----
 		{ "BaseCores", "Enabled",                ConfigValueType::Boolean, "true",    "Show base core markers on the compass" },
-		{ "BaseCores", "Distance",               ConfigValueType::Float,   "20000.0",     "Max render distance in UU (0 = unlimited)" },
+		{ "BaseCores", "Distance",               ConfigValueType::Float,   "20000.0", "Max render distance in UU (0 = unlimited)",           0.0f, 50000.0f },
 
 		// ----- Map Markers -----
 		{ "Markers", "Enabled",                  ConfigValueType::Boolean, "true",    "Master toggle for all POI markers" },
 		{ "Markers", "ShowAntena",               ConfigValueType::Boolean, "true",    "Show antenna POI markers" },
-		{ "Markers", "AntenaDistance",           ConfigValueType::Float,   "15000.0", "Antenna max render distance in UU (0 = unlimited)" },
+		{ "Markers", "AntenaDistance",           ConfigValueType::Float,   "15000.0", "Antenna max render distance in UU (0 = unlimited)",   0.0f, 50000.0f },
 		{ "Markers", "ShowAbandonedBase",        ConfigValueType::Boolean, "true",    "Show abandoned base POI markers" },
-		{ "Markers", "AbandonedBaseDistance",    ConfigValueType::Float,   "10000.0", "Abandoned base max render distance in UU (0 = unlimited)" },
+		{ "Markers", "AbandonedBaseDistance",    ConfigValueType::Float,   "10000.0", "Abandoned base max render distance in UU (0 = unlimited)", 0.0f, 50000.0f },
 		{ "Markers", "ShowCave",                 ConfigValueType::Boolean, "true",    "Show cave POI markers" },
-		{ "Markers", "CaveDistance",             ConfigValueType::Float,   "10000.0", "Cave max render distance in UU (0 = unlimited)" },
+		{ "Markers", "CaveDistance",             ConfigValueType::Float,   "10000.0", "Cave max render distance in UU (0 = unlimited)",      0.0f, 50000.0f },
 		{ "Markers", "ShowObelisk",              ConfigValueType::Boolean, "true",    "Show obelisk POI markers" },
-		{ "Markers", "ObeliskDistance",          ConfigValueType::Float,   "7500.0", "Obelisk max render distance in UU (0 = unlimited)" },
+		{ "Markers", "ObeliskDistance",          ConfigValueType::Float,   "7500.0",  "Obelisk max render distance in UU (0 = unlimited)",   0.0f, 50000.0f },
 
 		// ----- Foundables (Dead Bodies + Drones) -----
 		{ "Foundables", "Enabled",               ConfigValueType::Boolean, "true",    "Show foundable markers (dead bodies, drones) on the compass" },
 		{ "Foundables", "ShowDeadBody",          ConfigValueType::Boolean, "true",    "Show dead body foundable markers" },
-		{ "Foundables", "DeadBodyDistance",      ConfigValueType::Float,   "10000.0", "Dead body max render distance in UU (0 = unlimited)" },
+		{ "Foundables", "DeadBodyDistance",      ConfigValueType::Float,   "10000.0", "Dead body max render distance in UU (0 = unlimited)", 0.0f, 50000.0f },
 		{ "Foundables", "ShowDrone",             ConfigValueType::Boolean, "true",    "Show drone foundable markers" },
-		{ "Foundables", "DroneDistance",         ConfigValueType::Float,   "10000.0", "Drone max render distance in UU (0 = unlimited)" },
+		{ "Foundables", "DroneDistance",         ConfigValueType::Float,   "10000.0", "Drone max render distance in UU (0 = unlimited)",     0.0f, 50000.0f },
 
 		// ----- Enemies -----
 		{ "Enemies", "Enabled",                  ConfigValueType::Boolean, "true",    "Show enemy dots on the compass bar" },
-		{ "Enemies", "Distance",                 ConfigValueType::Float,   "5000.0",  "Max render distance in UU (0 = unlimited)" },
+		{ "Enemies", "Distance",                 ConfigValueType::Float,   "5000.0",  "Max render distance in UU (0 = unlimited)",           0.0f, 50000.0f },
 
 		// ----- Custom Pins -----
 		{ "CustomPins", "Enabled",               ConfigValueType::Boolean, "true",    "Show player-placed custom map pins on the compass" },
-		{ "CustomPins", "Distance",              ConfigValueType::Float,   "0.0",     "Max render distance in UU (0 = unlimited)" },
+		{ "CustomPins", "Distance",              ConfigValueType::Float,   "0.0",     "Max render distance in UU (0 = unlimited)",           0.0f, 50000.0f },
 	};
 
 	static const ConfigSchema SCHEMA = {
@@ -165,15 +165,15 @@ namespace CompassConfig
 		static EntitySettings GetPlayers()
 		{
 			return {
-				s_config ? s_config->ReadBool ("Compass", "Players", "Enabled",  true)  : true,
-				s_config ? s_config->ReadFloat("Compass", "Players", "Distance", 0.0f)  : 0.0f
+				s_config ? s_config->ReadBool("Compass", "Players", "Enabled",  true) : true,
+				s_config ? s_config->ReadFloat("Compass", "Players", "Distance", 0.0f) : 0.0f
 			};
 		}
 
 		static EntitySettings GetBaseCores()
 		{
 			return {
-				s_config ? s_config->ReadBool ("Compass", "BaseCores", "Enabled",  true) : true,
+				s_config ? s_config->ReadBool("Compass", "BaseCores", "Enabled",  true) : true,
 				s_config ? s_config->ReadFloat("Compass", "BaseCores", "Distance", 0.0f) : 0.0f
 			};
 		}
@@ -181,14 +181,14 @@ namespace CompassConfig
 		static MarkerSettings GetMarkers()
 		{
 			return {
-				s_config ? s_config->ReadBool ("Compass", "Markers", "Enabled",               true)     : true,
-				s_config ? s_config->ReadBool ("Compass", "Markers", "ShowAntena",             true)     : true,
+				s_config ? s_config->ReadBool("Compass", "Markers", "Enabled",               true) : true,
+				s_config ? s_config->ReadBool("Compass", "Markers", "ShowAntena",             true) : true,
 				s_config ? s_config->ReadFloat("Compass", "Markers", "AntenaDistance",         10000.0f) : 10000.0f,
-				s_config ? s_config->ReadBool ("Compass", "Markers", "ShowAbandonedBase",      true)     : true,
+				s_config ? s_config->ReadBool("Compass", "Markers", "ShowAbandonedBase",      true) : true,
 				s_config ? s_config->ReadFloat("Compass", "Markers", "AbandonedBaseDistance",  10000.0f) : 10000.0f,
-				s_config ? s_config->ReadBool ("Compass", "Markers", "ShowCave",               true)     : true,
+				s_config ? s_config->ReadBool("Compass", "Markers", "ShowCave",               true) : true,
 				s_config ? s_config->ReadFloat("Compass", "Markers", "CaveDistance",           10000.0f) : 10000.0f,
-				s_config ? s_config->ReadBool ("Compass", "Markers", "ShowObelisk",            true)     : true,
+				s_config ? s_config->ReadBool("Compass", "Markers", "ShowObelisk",            true) : true,
 				s_config ? s_config->ReadFloat("Compass", "Markers", "ObeliskDistance",        10000.0f) : 10000.0f,
 			};
 		}
@@ -196,10 +196,10 @@ namespace CompassConfig
 		static FoundableSettings GetFoundables()
 		{
 			return {
-				s_config ? s_config->ReadBool ("Compass", "Foundables", "Enabled",          true)     : true,
-				s_config ? s_config->ReadBool ("Compass", "Foundables", "ShowDeadBody",      true)     : true,
+				s_config ? s_config->ReadBool("Compass", "Foundables", "Enabled",          true) : true,
+				s_config ? s_config->ReadBool("Compass", "Foundables", "ShowDeadBody",      true) : true,
 				s_config ? s_config->ReadFloat("Compass", "Foundables", "DeadBodyDistance",  10000.0f) : 10000.0f,
-				s_config ? s_config->ReadBool ("Compass", "Foundables", "ShowDrone",         true)     : true,
+				s_config ? s_config->ReadBool("Compass", "Foundables", "ShowDrone",         true) : true,
 				s_config ? s_config->ReadFloat("Compass", "Foundables", "DroneDistance",     10000.0f) : 10000.0f,
 			};
 		}
@@ -207,7 +207,7 @@ namespace CompassConfig
 		static EntitySettings GetEnemies()
 		{
 			return {
-				s_config ? s_config->ReadBool ("Compass", "Enemies", "Enabled",  true)    : true,
+				s_config ? s_config->ReadBool("Compass", "Enemies", "Enabled",  true) : true,
 				s_config ? s_config->ReadFloat("Compass", "Enemies", "Distance", 5000.0f) : 5000.0f
 			};
 		}
@@ -215,7 +215,7 @@ namespace CompassConfig
 		static EntitySettings GetCustomPins()
 		{
 			return {
-				s_config ? s_config->ReadBool ("Compass", "CustomPins", "Enabled",  true) : true,
+				s_config ? s_config->ReadBool("Compass", "CustomPins", "Enabled",  true) : true,
 				s_config ? s_config->ReadFloat("Compass", "CustomPins", "Distance", 0.0f) : 0.0f
 			};
 		}
