@@ -7,39 +7,37 @@
 
 namespace Layout
 {
-
-struct PlayerEntry
-{
-	SDK::FVector location;
-	std::string  name;
-};
-
-// Returns all players in the level, excluding localPawn.
-inline std::vector<PlayerEntry> ScanPlayers(SDK::UWorld* world, SDK::APawn* localPawn)
-{
-	std::vector<PlayerEntry> result;
-	if (!world || !world->PersistentLevel)
-		return result;
-
-	auto& actors = world->PersistentLevel->Actors;
-	for (int i = 0; i < actors.Num(); i++)
+	struct PlayerEntry
 	{
-		SDK::AActor* actor = actors[i];
-		if (!actor || actor == localPawn)
-			continue;
-		if (!actor->IsA(SDK::ACrCharacterPlayerBase::StaticClass()))
-			continue;
+		SDK::FVector location;
+		std::string name;
+	};
 
-		PlayerEntry e;
-		e.location = actor->K2_GetActorLocation();
+	// Returns all players in the level, excluding localPawn.
+	inline std::vector<PlayerEntry> ScanPlayers(SDK::UWorld* world, SDK::APawn* localPawn)
+	{
+		std::vector<PlayerEntry> result;
+		if (!world || !world->PersistentLevel)
+			return result;
 
-		auto* state = static_cast<SDK::APawn*>(actor)->PlayerState;
-		if (state)
-			e.name = state->PlayerNamePrivate.ToString();
+		auto& actors = world->PersistentLevel->Actors;
+		for (int i = 0; i < actors.Num(); i++)
+		{
+			SDK::AActor* actor = actors[i];
+			if (!actor || actor == localPawn)
+				continue;
+			if (!actor->IsA(SDK::ACrCharacterPlayerBase::StaticClass()))
+				continue;
 
-		result.push_back(e);
+			PlayerEntry e;
+			e.location = actor->K2_GetActorLocation();
+
+			auto* state = static_cast<SDK::APawn*>(actor)->PlayerState;
+			if (state)
+				e.name = state->PlayerNamePrivate.ToString();
+
+			result.push_back(e);
+		}
+		return result;
 	}
-	return result;
-}
-
 } // namespace Layout

@@ -7,10 +7,10 @@
 
 namespace ModCore
 {
-    // Run on a background thread after DLL load.
-    // Scans for patterns and installs hooks/patches.
-    void Initialize(IPluginScanner* scanner, IPluginHooks* hooks);
+	// Run on a background thread after DLL load.
+	// Scans for patterns and installs hooks/patches.
+	void Initialize(IPluginScanner * scanner, IPluginHooks * hooks);
 
-    // Cleanup — remove hooks, restore patches.
-    void Shutdown();
+	// Cleanup — remove hooks, restore patches.
+	void Shutdown();
 }

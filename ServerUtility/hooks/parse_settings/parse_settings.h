@@ -8,9 +8,9 @@
 // component, bypassing the DSSettings.txt code path entirely.
 namespace ParseSettingsHook
 {
-    // Called once the engine is ready and the pattern has been located.
-    void Install(uintptr_t targetAddress);
+	// Called once the engine is ready and the pattern has been located.
+	void Install(uintptr_t targetAddress);
 
-    // Called on engine shutdown to cleanly remove the hook.
-    void Remove();
+	// Called on engine shutdown to cleanly remove the hook.
+	void Remove();
 }

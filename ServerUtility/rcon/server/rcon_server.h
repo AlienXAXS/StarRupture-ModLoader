@@ -29,40 +29,40 @@
 class RconServer
 {
 public:
-    RconServer();
-    ~RconServer();
+	RconServer();
+	~RconServer();
 
-    // Start listening on the given port with the given password.
-    // Returns false if the socket cannot be bound.
-    bool Start(uint16_t port, const std::string& password);
+	// Start listening on the given port with the given password.
+	// Returns false if the socket cannot be bound.
+	bool Start(uint16_t port, const std::string& password);
 
-    void Stop();
+	void Stop();
 
-    bool IsRunning() const { return m_running.load(); }
+	bool IsRunning() const { return m_running.load(); }
 
 private:
-    void ListenLoop();
-    void HandleClient(SOCKET clientSock);
-    bool RecvPacket(SOCKET s, int32_t& outId, int32_t& outType, std::string& outBody);
-    bool SendPacket(SOCKET s, int32_t id, int32_t type, const std::string& body);
+	void ListenLoop();
+	void HandleClient(SOCKET clientSock);
+	bool RecvPacket(SOCKET s, int32_t& outId, int32_t& outType, std::string& outBody);
+	bool SendPacket(SOCKET s, int32_t id, int32_t type, const std::string& body);
 
-    // Track connected client sockets so Stop() can close them.
-    void RegisterClient(SOCKET s);
-    void UnregisterClient(SOCKET s);
-    void CloseAllClients();
+	// Track connected client sockets so Stop() can close them.
+	void RegisterClient(SOCKET s);
+	void UnregisterClient(SOCKET s);
+	void CloseAllClients();
 
-    SOCKET            m_listenSocket = INVALID_SOCKET;
-    std::thread       m_listenThread;
-    std::atomic<bool> m_running{ false };
-    std::string       m_password;
+	SOCKET m_listenSocket = INVALID_SOCKET;
+	std::thread m_listenThread;
+	std::atomic<bool> m_running{false};
+	std::string m_password;
 
-    // Active client sockets (protected by m_clientsMutex)
-    std::mutex       m_clientsMutex;
-    std::vector<SOCKET> m_clientSockets;
+	// Active client sockets (protected by m_clientsMutex)
+	std::mutex m_clientsMutex;
+	std::vector<SOCKET> m_clientSockets;
 
-    // Source Engine RCON packet types
-    static constexpr int32_t TYPE_RESPONSE_VALUE = 0; // server -> client: command result
-    static constexpr int32_t TYPE_AUTH_RESPONSE  = 2; // server -> client: auth result
-    static constexpr int32_t TYPE_EXECCOMMAND    = 2; // client -> server: run command
-    static constexpr int32_t TYPE_AUTH           = 3; // client -> server: authenticate
+	// Source Engine RCON packet types
+	static constexpr int32_t TYPE_RESPONSE_VALUE = 0; // server -> client: command result
+	static constexpr int32_t TYPE_AUTH_RESPONSE = 2; // server -> client: auth result
+	static constexpr int32_t TYPE_EXECCOMMAND = 2; // client -> server: run command
+	static constexpr int32_t TYPE_AUTH = 3; // client -> server: authenticate
 };

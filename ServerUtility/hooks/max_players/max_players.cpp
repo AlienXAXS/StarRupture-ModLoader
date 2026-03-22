@@ -17,8 +17,8 @@
 // We scan forward from the pattern match to find this `cmp ebx, imm8`
 // instruction and patch the immediate byte (04) to the desired value.
 // ---------------------------------------------------------------------------
-static constexpr const char* PRELOGIN_PATTERN =
-"48 89 5C 24 ?? 48 89 6C 24 ?? 48 89 74 24 ?? 57 41 56 41 57 48 83 EC ?? 80 3D ?? ?? ?? ?? ?? 49 8B E9";
+static constexpr auto PRELOGIN_PATTERN =
+	"48 89 5C 24 ?? 48 89 6C 24 ?? 48 89 74 24 ?? 57 41 56 41 57 48 83 EC ?? 80 3D ?? ?? ?? ?? ?? 49 8B E9";
 
 // Maximum number of bytes to scan forward from the pattern match to find
 // the `cmp ebx, imm8` instruction.  PreLogin is not a huge function.
@@ -35,9 +35,9 @@ static constexpr uint8_t JL_OPCODE = 0x7C;
 // ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
-static uintptr_t g_patchAddress = 0;   // Address of the immediate byte (the "4")
-static uint8_t   g_originalValue = 0;   // Original value at that address
-static bool      g_patched = false;
+static uintptr_t g_patchAddress = 0; // Address of the immediate byte (the "4")
+static uint8_t g_originalValue = 0; // Original value at that address
+static bool g_patched = false;
 
 // ---------------------------------------------------------------------------
 // Implementation
@@ -76,10 +76,10 @@ void MaxPlayersHook::Install(int maxPlayers)
 	}
 
 	LOG_INFO("[MaxPlayers] Found PreLogin at 0x%llX",
-		static_cast<unsigned long long>(preLoginAddr));
+	         static_cast<unsigned long long>(preLoginAddr));
 
 	// Step 2: Scan forward for `83 FB xx 7C xx`
-	const uint8_t* bytes = reinterpret_cast<const uint8_t*>(preLoginAddr);
+	auto bytes = reinterpret_cast<const uint8_t*>(preLoginAddr);
 	uintptr_t cmpAddr = 0;
 
 	for (size_t offset = 0; offset + 4 < SCAN_WINDOW; ++offset)
@@ -92,12 +92,13 @@ void MaxPlayersHook::Install(int maxPlayers)
 			uint8_t currentLimit = bytes[offset + 2];
 
 			LOG_INFO("[MaxPlayers] Found `cmp ebx, 0x%02X` at PreLogin+0x%zX (abs 0x%llX)",
-				currentLimit, offset, static_cast<unsigned long long>(cmpAddr));
+			         currentLimit, offset, static_cast<unsigned long long>(cmpAddr));
 
 			// Sanity: the original should be a small player count (1-32 ish)
 			if (currentLimit == 0 || currentLimit > 64)
 			{
-				LOG_WARN("[MaxPlayers] Unexpected original limit %d - this might be the wrong instruction, continuing scan...",
+				LOG_WARN(
+					"[MaxPlayers] Unexpected original limit %d - this might be the wrong instruction, continuing scan...",
 					currentLimit);
 				cmpAddr = 0;
 				continue;
@@ -110,7 +111,7 @@ void MaxPlayersHook::Install(int maxPlayers)
 	if (cmpAddr == 0)
 	{
 		LOG_ERROR("[MaxPlayers] Could not find `cmp ebx, imm8; jl` in PreLogin body (scanned 0x%zX bytes)",
-			SCAN_WINDOW);
+		          SCAN_WINDOW);
 		return;
 	}
 
@@ -121,7 +122,7 @@ void MaxPlayersHook::Install(int maxPlayers)
 	if (!hooks->Memory->Read(immAddr, &g_originalValue, 1))
 	{
 		LOG_ERROR("[MaxPlayers] Failed to read original byte at 0x%llX",
-			static_cast<unsigned long long>(immAddr));
+		          static_cast<unsigned long long>(immAddr));
 		return;
 	}
 
@@ -138,7 +139,7 @@ void MaxPlayersHook::Install(int maxPlayers)
 	if (!hooks->Memory->Patch(immAddr, &newValue, 1))
 	{
 		LOG_ERROR("[MaxPlayers] PatchMemory failed at 0x%llX",
-			static_cast<unsigned long long>(immAddr));
+		          static_cast<unsigned long long>(immAddr));
 		return;
 	}
 
@@ -146,7 +147,7 @@ void MaxPlayersHook::Install(int maxPlayers)
 	g_patched = true;
 
 	LOG_INFO("[MaxPlayers] SUCCESS - max players patched from %d to %d (at 0x%llX)",
-		g_originalValue, maxPlayers, static_cast<unsigned long long>(immAddr));
+	         g_originalValue, maxPlayers, static_cast<unsigned long long>(immAddr));
 }
 
 void MaxPlayersHook::Remove()
@@ -163,12 +164,12 @@ void MaxPlayersHook::Remove()
 		if (hooks->Memory->Patch(g_patchAddress, &g_originalValue, 1))
 		{
 			LOG_INFO("[MaxPlayers] Restored original max players value %d at 0x%llX",
-				g_originalValue, static_cast<unsigned long long>(g_patchAddress));
+			         g_originalValue, static_cast<unsigned long long>(g_patchAddress));
 		}
 		else
 		{
 			LOG_WARN("[MaxPlayers] Failed to restore original byte at 0x%llX",
-				static_cast<unsigned long long>(g_patchAddress));
+			         static_cast<unsigned long long>(g_patchAddress));
 		}
 	}
 

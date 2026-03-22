@@ -9,7 +9,7 @@
 namespace Hooks::SaveLoaded
 {
 	// UCrMassSaveSubsystem::OnSaveLoaded(UCrMassSaveSubsystem* this)
-	typedef void(__fastcall* OnSaveLoaded_t)(void* thisPtr);
+	using OnSaveLoaded_t = void(__fastcall*)(void* thisPtr);
 
 	static Hook g_hook;
 	static OnSaveLoaded_t g_original = nullptr;
@@ -90,8 +90,8 @@ namespace Hooks::SaveLoaded
 		auto base = reinterpret_cast<uintptr_t>(mainModule);
 
 		ModLoaderLogger::LogInfo(L"[SaveLoaded] UCrMassSaveSubsystem::OnSaveLoaded found at 0x%llX (base+0x%llX)",
-			static_cast<unsigned long long>(addr),
-			static_cast<unsigned long long>(addr - base));
+		                         static_cast<unsigned long long>(addr),
+		                         static_cast<unsigned long long>(addr - base));
 
 		bool hookOk = g_hook.Install(
 			addr,
@@ -147,7 +147,8 @@ namespace Hooks::SaveLoaded
 		if (it != g_pluginCallbacks.end())
 		{
 			g_pluginCallbacks.erase(it);
-			ModLoaderLogger::LogDebug(L"[SaveLoaded] Plugin callback unregistered (%zu remaining)", g_pluginCallbacks.size());
+			ModLoaderLogger::LogDebug(L"[SaveLoaded] Plugin callback unregistered (%zu remaining)",
+			                          g_pluginCallbacks.size());
 		}
 	}
 }

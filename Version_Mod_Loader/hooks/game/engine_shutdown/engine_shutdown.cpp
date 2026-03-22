@@ -10,18 +10,18 @@
 namespace Hooks::EngineShutdown
 {
 	// Hook 1: FEngineLoop::Exit (primary)
-	typedef void(__fastcall* FEngineLoop_Exit_t)(void* thisPtr);
+	using FEngineLoop_Exit_t = void(__fastcall*)(void* thisPtr);
 	static Hook g_engineLoopExitHook;
 	static FEngineLoop_Exit_t g_engineLoopExitOriginal = nullptr;
 
 	// Hook 2: UEngine::PreExit (fallback) - fires before GC flushes objects
-	typedef void(__fastcall* UEngine_PreExit_t)(void* thisPtr);
+	using UEngine_PreExit_t = void(__fastcall*)(void* thisPtr);
 	static Hook g_enginePreExitHook;
 	static UEngine_PreExit_t g_enginePreExitOriginal = nullptr;
 
 	// Only notify plugins once regardless of which hook fires first
 	static bool g_shutdownFired = false;
-	static bool g_shutdownInProgress = false;  // Add flag to track if we're cleaning up
+	static bool g_shutdownInProgress = false; // Add flag to track if we're cleaning up
 
 	// Registered plugin callbacks
 	static std::vector<PluginEngineShutdownCallback> g_pluginCallbacks;
@@ -40,7 +40,8 @@ namespace Hooks::EngineShutdown
 
 		g_shutdownFired = true;
 
-		ModLoaderLogger::LogInfo(L"[EngineShutdown] *** ENGINE SHUTTING DOWN *** (via %s) - notifying plugins", hookSource);
+		ModLoaderLogger::LogInfo(L"[EngineShutdown] *** ENGINE SHUTTING DOWN *** (via %s) - notifying plugins",
+		                         hookSource);
 
 		for (size_t i = 0; i < g_pluginCallbacks.size(); ++i)
 		{
@@ -105,7 +106,7 @@ namespace Hooks::EngineShutdown
 		// Hook 1: FEngineLoop::Exit (primary)
 		{
 			const char* pattern = ScanPatterns::FEngineLoop_Exit;
-				
+
 
 			ModLoaderLogger::LogInfo(L"[EngineShutdown] Scanning for FEngineLoop::Exit...");
 			ModLoaderLogger::LogDebug(L"[EngineShutdown]   Pattern: %S", pattern);
@@ -114,8 +115,8 @@ namespace Hooks::EngineShutdown
 			if (addr)
 			{
 				ModLoaderLogger::LogDebug(L"[EngineShutdown] [OK] FEngineLoop::Exit found at 0x%llX (base+0x%llX)",
-					static_cast<unsigned long long>(addr),
-					static_cast<unsigned long long>(addr - base));
+				                          static_cast<unsigned long long>(addr),
+				                          static_cast<unsigned long long>(addr - base));
 
 				bool hookOk = g_engineLoopExitHook.Install(
 					addr,
@@ -134,7 +135,8 @@ namespace Hooks::EngineShutdown
 			}
 			else
 			{
-				ModLoaderLogger::LogWarn(L"[EngineShutdown] [FAIL] FEngineLoop::Exit pattern not found - will try fallback");
+				ModLoaderLogger::LogWarn(
+					L"[EngineShutdown] [FAIL] FEngineLoop::Exit pattern not found - will try fallback");
 			}
 		}
 
@@ -149,8 +151,8 @@ namespace Hooks::EngineShutdown
 			if (addr)
 			{
 				ModLoaderLogger::LogDebug(L"[EngineShutdown] [OK] UEngine::PreExit found at 0x%llX (base+0x%llX)",
-					static_cast<unsigned long long>(addr),
-					static_cast<unsigned long long>(addr - base));
+				                          static_cast<unsigned long long>(addr),
+				                          static_cast<unsigned long long>(addr - base));
 
 				bool hookOk = g_enginePreExitHook.Install(
 					addr,
@@ -174,9 +176,11 @@ namespace Hooks::EngineShutdown
 		}
 
 		if (anyHookSucceeded)
-			ModLoaderLogger::LogDebug(L"[EngineShutdown] At least one shutdown hook installed - engine shutdown detection active");
+			ModLoaderLogger::LogDebug(
+				L"[EngineShutdown] At least one shutdown hook installed - engine shutdown detection active");
 		else
-			ModLoaderLogger::LogError(L"[EngineShutdown] CRITICAL: No shutdown hooks installed - plugins will NOT receive shutdown callbacks!");
+			ModLoaderLogger::LogError(
+				L"[EngineShutdown] CRITICAL: No shutdown hooks installed - plugins will NOT receive shutdown callbacks!");
 
 		return anyHookSucceeded;
 	}
@@ -218,7 +222,8 @@ namespace Hooks::EngineShutdown
 		if (it != g_pluginCallbacks.end())
 		{
 			g_pluginCallbacks.erase(it);
-			ModLoaderLogger::LogDebug(L"[EngineShutdown] Plugin callback unregistered (%zu remaining)", g_pluginCallbacks.size());
+			ModLoaderLogger::LogDebug(L"[EngineShutdown] Plugin callback unregistered (%zu remaining)",
+			                          g_pluginCallbacks.size());
 		}
 	}
 }

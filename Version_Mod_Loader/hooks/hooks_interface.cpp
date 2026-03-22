@@ -32,7 +32,7 @@ namespace ModLoaderLogger
 	// Create a unique handle for a hook
 	static HookHandle CreateHandle(Hooks::Hook* hook)
 	{
-		HookHandle handle = reinterpret_cast<HookHandle>(g_nextHandleId++);
+		auto handle = reinterpret_cast<HookHandle>(g_nextHandleId++);
 
 		std::lock_guard<std::mutex> lock(g_hookMapMutex);
 		g_hookMap[handle] = hook;
@@ -71,13 +71,13 @@ namespace ModLoaderLogger
 		}
 
 		// Allocate a new hook object
-		Hooks::Hook* hook = new Hooks::Hook();
+		auto hook = new Hooks::Hook();
 
 		// Try to install the hook
 		if (!hook->Install(targetAddress, detourFunction, originalFunction))
 		{
 			LogMessage(L"[HooksInterface] ERROR: Hook installation failed at 0x%llX",
-				static_cast<unsigned long long>(targetAddress));
+			           static_cast<unsigned long long>(targetAddress));
 			delete hook;
 			return nullptr;
 		}
@@ -85,7 +85,7 @@ namespace ModLoaderLogger
 		// Create and return handle
 		HookHandle handle = CreateHandle(hook);
 		LogMessage(L"[HooksInterface] Hook installed successfully: handle=%p, target=0x%llX",
-			handle, static_cast<unsigned long long>(targetAddress));
+		           handle, static_cast<unsigned long long>(targetAddress));
 
 		return handle;
 	}
@@ -400,84 +400,132 @@ namespace ModLoaderLogger
 
 	static void HooksRegisterOnBeforeActivate(PluginBeforeActivateSpawnerCallback callback)
 	{
-		if (!callback) { LogWarn(L"[HooksInterface] RegisterOnBeforeActivate: null callback"); return; }
+		if (!callback)
+		{
+			LogWarn(L"[HooksInterface] RegisterOnBeforeActivate: null callback");
+			return;
+		}
 		Hooks::MassSpawnerActivate::RegisterBeforeCallback(callback);
 		LogDebug(L"[HooksInterface] OnBeforeActivate callback registered");
 	}
 
 	static void HooksUnregisterOnBeforeActivate(PluginBeforeActivateSpawnerCallback callback)
 	{
-		if (!callback) { LogWarn(L"[HooksInterface] UnregisterOnBeforeActivate: null callback"); return; }
+		if (!callback)
+		{
+			LogWarn(L"[HooksInterface] UnregisterOnBeforeActivate: null callback");
+			return;
+		}
 		Hooks::MassSpawnerActivate::UnregisterBeforeCallback(callback);
 		LogDebug(L"[HooksInterface] OnBeforeActivate callback unregistered");
 	}
 
 	static void HooksRegisterOnAfterActivate(PluginAfterActivateSpawnerCallback callback)
 	{
-		if (!callback) { LogWarn(L"[HooksInterface] RegisterOnAfterActivate: null callback"); return; }
+		if (!callback)
+		{
+			LogWarn(L"[HooksInterface] RegisterOnAfterActivate: null callback");
+			return;
+		}
 		Hooks::MassSpawnerActivate::RegisterAfterCallback(callback);
 		LogDebug(L"[HooksInterface] OnAfterActivate callback registered");
 	}
 
 	static void HooksUnregisterOnAfterActivate(PluginAfterActivateSpawnerCallback callback)
 	{
-		if (!callback) { LogWarn(L"[HooksInterface] UnregisterOnAfterActivate: null callback"); return; }
+		if (!callback)
+		{
+			LogWarn(L"[HooksInterface] UnregisterOnAfterActivate: null callback");
+			return;
+		}
 		Hooks::MassSpawnerActivate::UnregisterAfterCallback(callback);
 		LogDebug(L"[HooksInterface] OnAfterActivate callback unregistered");
 	}
 
 	static void HooksRegisterOnBeforeDeactivate(PluginBeforeDeactivateSpawnerCallback callback)
 	{
-		if (!callback) { LogWarn(L"[HooksInterface] RegisterOnBeforeDeactivate: null callback"); return; }
+		if (!callback)
+		{
+			LogWarn(L"[HooksInterface] RegisterOnBeforeDeactivate: null callback");
+			return;
+		}
 		Hooks::MassSpawnerDeactivate::RegisterBeforeCallback(callback);
 		LogDebug(L"[HooksInterface] OnBeforeDeactivate callback registered");
 	}
 
 	static void HooksUnregisterOnBeforeDeactivate(PluginBeforeDeactivateSpawnerCallback callback)
 	{
-		if (!callback) { LogWarn(L"[HooksInterface] UnregisterOnBeforeDeactivate: null callback"); return; }
+		if (!callback)
+		{
+			LogWarn(L"[HooksInterface] UnregisterOnBeforeDeactivate: null callback");
+			return;
+		}
 		Hooks::MassSpawnerDeactivate::UnregisterBeforeCallback(callback);
 		LogDebug(L"[HooksInterface] OnBeforeDeactivate callback unregistered");
 	}
 
 	static void HooksRegisterOnAfterDeactivate(PluginAfterDeactivateSpawnerCallback callback)
 	{
-		if (!callback) { LogWarn(L"[HooksInterface] RegisterOnAfterDeactivate: null callback"); return; }
+		if (!callback)
+		{
+			LogWarn(L"[HooksInterface] RegisterOnAfterDeactivate: null callback");
+			return;
+		}
 		Hooks::MassSpawnerDeactivate::RegisterAfterCallback(callback);
 		LogDebug(L"[HooksInterface] OnAfterDeactivate callback registered");
 	}
 
 	static void HooksUnregisterOnAfterDeactivate(PluginAfterDeactivateSpawnerCallback callback)
 	{
-		if (!callback) { LogWarn(L"[HooksInterface] UnregisterOnAfterDeactivate: null callback"); return; }
+		if (!callback)
+		{
+			LogWarn(L"[HooksInterface] UnregisterOnAfterDeactivate: null callback");
+			return;
+		}
 		Hooks::MassSpawnerDeactivate::UnregisterAfterCallback(callback);
 		LogDebug(L"[HooksInterface] OnAfterDeactivate callback unregistered");
 	}
 
 	static void HooksRegisterOnBeforeDoSpawning(PluginBeforeDoSpawningCallback callback)
 	{
-		if (!callback) { LogWarn(L"[HooksInterface] RegisterOnBeforeDoSpawning: null callback"); return; }
+		if (!callback)
+		{
+			LogWarn(L"[HooksInterface] RegisterOnBeforeDoSpawning: null callback");
+			return;
+		}
 		Hooks::MassDoSpawning::RegisterBeforeCallback(callback);
 		LogDebug(L"[HooksInterface] OnBeforeDoSpawning callback registered");
 	}
 
 	static void HooksUnregisterOnBeforeDoSpawning(PluginBeforeDoSpawningCallback callback)
 	{
-		if (!callback) { LogWarn(L"[HooksInterface] UnregisterOnBeforeDoSpawning: null callback"); return; }
+		if (!callback)
+		{
+			LogWarn(L"[HooksInterface] UnregisterOnBeforeDoSpawning: null callback");
+			return;
+		}
 		Hooks::MassDoSpawning::UnregisterBeforeCallback(callback);
 		LogDebug(L"[HooksInterface] OnBeforeDoSpawning callback unregistered");
 	}
 
 	static void HooksRegisterOnAfterDoSpawning(PluginAfterDoSpawningCallback callback)
 	{
-		if (!callback) { LogWarn(L"[HooksInterface] RegisterOnAfterDoSpawning: null callback"); return; }
+		if (!callback)
+		{
+			LogWarn(L"[HooksInterface] RegisterOnAfterDoSpawning: null callback");
+			return;
+		}
 		Hooks::MassDoSpawning::RegisterAfterCallback(callback);
 		LogDebug(L"[HooksInterface] OnAfterDoSpawning callback registered");
 	}
 
 	static void HooksUnregisterOnAfterDoSpawning(PluginAfterDoSpawningCallback callback)
 	{
-		if (!callback) { LogWarn(L"[HooksInterface] UnregisterOnAfterDoSpawning: null callback"); return; }
+		if (!callback)
+		{
+			LogWarn(L"[HooksInterface] UnregisterOnAfterDoSpawning: null callback");
+			return;
+		}
 		Hooks::MassDoSpawning::UnregisterAfterCallback(callback);
 		LogDebug(L"[HooksInterface] OnAfterDoSpawning callback unregistered");
 	}
@@ -551,10 +599,14 @@ namespace ModLoaderLogger
 #ifdef MODLOADER_CLIENT_BUILD
 	static void HooksRegisterKeybind(EModKey key, EModKeyEvent event, PluginKeybindCallback callback)
 	{
-		if (!callback) { LogWarn(L"[HooksInterface] RegisterKeybind: null callback"); return; }
+		if (!callback)
+		{
+			LogWarn(L"[HooksInterface] RegisterKeybind: null callback");
+			return;
+		}
 		Hooks::Input::RegisterKeybind(key, event, callback);
 		LogDebug(L"[HooksInterface] Keybind registered (enum key=%u, event=%u)",
-			static_cast<unsigned>(key), static_cast<unsigned>(event));
+		         static_cast<unsigned>(key), static_cast<unsigned>(event));
 	}
 
 	static void HooksUnregisterKeybind(EModKey key, EModKeyEvent event, PluginKeybindCallback callback)
@@ -562,15 +614,19 @@ namespace ModLoaderLogger
 		if (!callback) return;
 		Hooks::Input::UnregisterKeybind(key, event, callback);
 		LogDebug(L"[HooksInterface] Keybind unregistered (enum key=%u, event=%u)",
-			static_cast<unsigned>(key), static_cast<unsigned>(event));
+		         static_cast<unsigned>(key), static_cast<unsigned>(event));
 	}
 
 	static void HooksRegisterKeybindByName(const char* keyName, EModKeyEvent event, PluginKeybindCallback callback)
 	{
-		if (!callback || !keyName) { LogWarn(L"[HooksInterface] RegisterKeybindByName: null argument"); return; }
+		if (!callback || !keyName)
+		{
+			LogWarn(L"[HooksInterface] RegisterKeybindByName: null argument");
+			return;
+		}
 		Hooks::Input::RegisterKeybindByName(keyName, event, callback);
 		LogDebug(L"[HooksInterface] Keybind registered (name=%S, event=%u)",
-			keyName, static_cast<unsigned>(event));
+		         keyName, static_cast<unsigned>(event));
 	}
 
 	static void HooksUnregisterKeybindByName(const char* keyName, EModKeyEvent event, PluginKeybindCallback callback)
@@ -578,7 +634,7 @@ namespace ModLoaderLogger
 		if (!callback || !keyName) return;
 		Hooks::Input::UnregisterKeybindByName(keyName, event, callback);
 		LogDebug(L"[HooksInterface] Keybind unregistered (name=%S, event=%u)",
-			keyName, static_cast<unsigned>(event));
+		         keyName, static_cast<unsigned>(event));
 	}
 
 	// Input sub-interface struct (v15)
@@ -603,7 +659,11 @@ namespace ModLoaderLogger
 
 	static void HooksRegisterOnConfigChanged(PluginConfigChangedCallback callback)
 	{
-		if (!callback) { LogWarn(L"[HooksInterface] RegisterOnConfigChanged: null callback"); return; }
+		if (!callback)
+		{
+			LogWarn(L"[HooksInterface] RegisterOnConfigChanged: null callback");
+			return;
+		}
 		UI::PluginPanelRegistry::RegisterOnConfigChanged(callback);
 	}
 
@@ -644,11 +704,11 @@ namespace ModLoaderLogger
 		&g_playerEvents,
 		&g_actorEvents,
 #ifdef MODLOADER_CLIENT_BUILD
-		&g_inputEvents,   // v15 — keybind events (client only)
-		&g_uiEvents       // v15 — custom panel + config-change callbacks (client only)
+		&g_inputEvents, // v15 — keybind events (client only)
+		&g_uiEvents // v15 — custom panel + config-change callbacks (client only)
 #else
-		nullptr,          // v15 — Input is null on server/generic builds
-		nullptr           // v15 — UI is null on server/generic builds
+		nullptr, // v15 — Input is null on server/generic builds
+		nullptr // v15 — UI is null on server/generic builds
 #endif
 	};
 

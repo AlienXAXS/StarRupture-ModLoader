@@ -18,21 +18,21 @@
 
 namespace Hooks::EngineTick
 {
-    // Callback signature for plugins
-    typedef void (*PluginEngineTickCallback)(float deltaSeconds);
+	// Callback signature for plugins
+	using PluginEngineTickCallback = void(*)(float deltaSeconds);
 
-// Install the hook
-    bool Install();
+	// Install the hook
+	bool Install();
 
-    // Remove the hook
-    void Remove();
+	// Remove the hook
+	void Remove();
 
-    // Returns true if the hook is currently installed
-    bool IsInstalled();
+	// Returns true if the hook is currently installed
+	bool IsInstalled();
 
-    // Register a plugin callback to be notified every game-thread tick
-    void RegisterPluginCallback(PluginEngineTickCallback callback);
+	// Register a plugin callback to be notified every game-thread tick
+	void RegisterPluginCallback(PluginEngineTickCallback callback);
 
-    // Unregister a plugin callback
-  void UnregisterPluginCallback(PluginEngineTickCallback callback);
+	// Unregister a plugin callback
+	void UnregisterPluginCallback(PluginEngineTickCallback callback);
 }

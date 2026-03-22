@@ -27,14 +27,15 @@ namespace Hooks::FakePlayer
 	static bool g_debugVisibleMode = false;
 
 	// UWorld::RemoveController - removes controller from PlayerControllerList
-	typedef void(__fastcall* UWorld_RemoveController_t)(SDK::UWorld* world, SDK::AController* controller);
+	using UWorld_RemoveController_t = void(__fastcall*)(SDK::UWorld* world, SDK::AController* controller);
 	static UWorld_RemoveController_t g_removeControllerFn = nullptr;
 
 	// --- Map traversal state ---
 	static bool g_traversing = false;
 	static int g_waypointIndex = 0;
 
-	struct Waypoint {
+	struct Waypoint
+	{
 		double x, y, z;
 	};
 
@@ -97,19 +98,19 @@ namespace Hooks::FakePlayer
 			constexpr double minX = -450000.0;
 			constexpr double maxX = -200000.0;
 			constexpr double minY = -150000.0;
-			constexpr double maxY =   50000.0;
-			constexpr double z    =    3000.0;
-			constexpr double step =   25000.0;
+			constexpr double maxY = 50000.0;
+			constexpr double z = 3000.0;
+			constexpr double step = 25000.0;
 
 			bool reverseY = false;
 			for (double x = minX; x <= maxX; x += step)
 			{
 				if (!reverseY)
 					for (double y = minY; y <= maxY; y += step)
-						pts.push_back({ x, y, z });
+						pts.push_back({x, y, z});
 				else
 					for (double y = maxY; y >= minY; y -= step)
-						pts.push_back({ x, y, z });
+						pts.push_back({x, y, z});
 				reverseY = !reverseY;
 			}
 			LOG_DEBUG("[FakePlayer] Fallback generated %zu waypoints", pts.size());
@@ -117,9 +118,9 @@ namespace Hooks::FakePlayer
 		}
 
 		// Compute AABB from all actor positions
-		double minX =  DBL_MAX, maxX = -DBL_MAX;
-		double minY =  DBL_MAX, maxY = -DBL_MAX;
-		double minZ =  DBL_MAX, maxZ = -DBL_MAX;
+		double minX = DBL_MAX, maxX = -DBL_MAX;
+		double minY = DBL_MAX, maxY = -DBL_MAX;
+		double minZ = DBL_MAX, maxZ = -DBL_MAX;
 		int validActors = 0;
 		int skippedNull = 0;
 		int skippedOrigin = 0;
@@ -158,25 +159,25 @@ namespace Hooks::FakePlayer
 		}
 
 		LOG_DEBUG("[FakePlayer] Actor scan: %d valid, %d null, %d at origin, %d errored (of %d total)",
-			validActors, skippedNull, skippedOrigin, skippedError, actorCount);
+		          validActors, skippedNull, skippedOrigin, skippedError, actorCount);
 
 		if (validActors == 0)
 		{
 			LOG_WARN("[FakePlayer] No valid actor positions found, using fallback bounds");
 			constexpr double step = 25000.0;
-			constexpr double z    = 3000.0;
+			constexpr double z = 3000.0;
 			double fbMinX = -450000.0, fbMaxX = -200000.0;
-			double fbMinY = -150000.0, fbMaxY =  50000.0;
+			double fbMinY = -150000.0, fbMaxY = 50000.0;
 
 			bool reverseY = false;
 			for (double x = fbMinX; x <= fbMaxX; x += step)
 			{
 				if (!reverseY)
 					for (double y = fbMinY; y <= fbMaxY; y += step)
-						pts.push_back({ x, y, z });
+						pts.push_back({x, y, z});
 				else
 					for (double y = fbMaxY; y >= fbMinY; y -= step)
-						pts.push_back({ x, y, z });
+						pts.push_back({x, y, z});
 				reverseY = !reverseY;
 			}
 			LOG_DEBUG("[FakePlayer] Fallback generated %zu waypoints", pts.size());
@@ -209,7 +210,7 @@ namespace Hooks::FakePlayer
 			step = 1000.0;
 
 		LOG_DEBUG("[FakePlayer] World bounds from %d actors: X[%.0f, %.0f] Y[%.0f, %.0f] Z[%.0f, %.0f]",
-			validActors, minX, maxX, minY, maxY, minZ, maxZ);
+		          validActors, minX, maxX, minY, maxY, minZ, maxZ);
 		LOG_DEBUG("[FakePlayer] Traversal grid: step=%.0f, Z=%.0f", step, traversalZ);
 
 		// Build snake-pattern waypoints
@@ -218,13 +219,13 @@ namespace Hooks::FakePlayer
 		{
 			if (!reverseY)
 			{
-			 for (double y = minY; y <= maxY; y += step)
-					pts.push_back({ x, y, traversalZ });
+				for (double y = minY; y <= maxY; y += step)
+					pts.push_back({x, y, traversalZ});
 			}
 			else
 			{
 				for (double y = maxY; y >= minY; y -= step)
-					pts.push_back({ x, y, traversalZ });
+					pts.push_back({x, y, traversalZ});
 			}
 			reverseY = !reverseY;
 		}
@@ -318,7 +319,7 @@ namespace Hooks::FakePlayer
 		scalePtr[2] = 1.0;
 
 		LOG_DEBUG("[FakePlayer] Transform set: pos=(%.2f, %.2f, %.2f) quat=(%.4f, %.4f, %.4f, %.4f)",
-			transPtr[0], transPtr[1], transPtr[2], qx, qy, qz, qw);
+		          transPtr[0], transPtr[1], transPtr[2], qx, qy, qz, qw);
 
 		LOG_DEBUG("[FakePlayer] Getting ACrPlayerControllerBase::StaticClass()...");
 		SDK::UClass* controllerClass = SDK::ACrPlayerControllerBase::StaticClass();
@@ -346,9 +347,10 @@ namespace Hooks::FakePlayer
 		LOG_DEBUG("[FakePlayer] Controller deferred spawn OK: %p", g_fakeController);
 
 		LOG_DEBUG("[FakePlayer] Calling FinishSpawningActor on controller...");
-		SDK::UGameplayStatics::FinishSpawningActor(g_fakeController, spawnTransform, SDK::ESpawnActorScaleMethod::MultiplyWithRoot);
+		SDK::UGameplayStatics::FinishSpawningActor(g_fakeController, spawnTransform,
+		                                           SDK::ESpawnActorScaleMethod::MultiplyWithRoot);
 		LOG_DEBUG("[FakePlayer] Controller FinishSpawningActor completed");
-		
+
 		LOG_INFO("[FakePlayer] Controller spawned: %s", g_fakeController->GetFullName().c_str());
 
 		if (g_fakeController->PlayerState)
@@ -359,10 +361,10 @@ namespace Hooks::FakePlayer
 		{
 			LOG_WARN("[FakePlayer] PlayerState is NULL!");
 		}
-	
+
 		LOG_DEBUG("[FakePlayer] Setting controller bCanBeDamaged = false");
 		g_fakeController->bCanBeDamaged = false;
-		
+
 		if (!g_debugVisibleMode)
 		{
 			LOG_DEBUG("[FakePlayer] Setting controller collision OFF, tick OFF");
@@ -393,14 +395,15 @@ namespace Hooks::FakePlayer
 		g_fakeController->bAlwaysRelevant = true;
 
 		LOG_DEBUG("[FakePlayer] Calling FinishSpawningActor on pawn...");
-		SDK::UGameplayStatics::FinishSpawningActor(g_fakePawn, spawnTransform, SDK::ESpawnActorScaleMethod::MultiplyWithRoot);
+		SDK::UGameplayStatics::FinishSpawningActor(g_fakePawn, spawnTransform,
+		                                           SDK::ESpawnActorScaleMethod::MultiplyWithRoot);
 		LOG_DEBUG("[FakePlayer] Pawn FinishSpawningActor completed");
-		
+
 		LOG_INFO("[FakePlayer] Pawn spawned: %s", g_fakePawn->GetFullName().c_str());
 
 		LOG_DEBUG("[FakePlayer] Setting pawn bCanBeDamaged = false");
 		g_fakePawn->bCanBeDamaged = false;
-		
+
 		if (!g_debugVisibleMode)
 		{
 			LOG_DEBUG("[FakePlayer] Setting pawn collision OFF, tick OFF");
@@ -408,11 +411,12 @@ namespace Hooks::FakePlayer
 			g_fakePawn->SetActorTickEnabled(false);
 
 			LOG_DEBUG("[FakePlayer] Getting pawn components to disable physics/collision...");
-			SDK::TArray<SDK::UActorComponent*> components = g_fakePawn->K2_GetComponentsByClass(SDK::UPrimitiveComponent::StaticClass());
+			SDK::TArray<SDK::UActorComponent*> components = g_fakePawn->K2_GetComponentsByClass(
+				SDK::UPrimitiveComponent::StaticClass());
 			LOG_DEBUG("[FakePlayer] Pawn has %d primitive components", components.Num());
 			for (int i = 0; i < components.Num(); i++)
 			{
-				SDK::UPrimitiveComponent* primComp = static_cast<SDK::UPrimitiveComponent*>(components[i]);
+				auto primComp = static_cast<SDK::UPrimitiveComponent*>(components[i]);
 				if (primComp)
 				{
 					primComp->SetSimulatePhysics(false);
@@ -562,7 +566,7 @@ namespace Hooks::FakePlayer
 		g_fakePawn = nullptr;
 		g_fakeController = nullptr;
 		g_playerActive = false;
-		
+
 		LOG_INFO("[FakePlayer] Fake player fully despawned and cleaned up");
 	}
 
@@ -577,7 +581,7 @@ namespace Hooks::FakePlayer
 		if (!g_playerActive || !g_fakePawn)
 		{
 			LOG_WARN("[FakePlayer] Cannot start traversal - fake player not active (active=%d, pawn=%p)",
-				g_playerActive, g_fakePawn);
+			         g_playerActive, g_fakePawn);
 			return;
 		}
 
@@ -597,7 +601,7 @@ namespace Hooks::FakePlayer
 		LOG_INFO("             This may cause lag until the process is complete.");
 
 		LOG_INFO("[FakePlayer] %zu waypoints, %d per tick",
-			g_waypoints.size(), KeepTickingConfig::Config::GetWaypointsPerTick());
+		         g_waypoints.size(), KeepTickingConfig::Config::GetWaypointsPerTick());
 	}
 
 	void StopMapTraversal()
@@ -607,7 +611,7 @@ namespace Hooks::FakePlayer
 
 		g_traversing = false;
 		LOG_INFO("[FakePlayer] Map traversal STOPPED at waypoint %d/%zu",
-			g_waypointIndex, g_waypoints.size());
+		         g_waypointIndex, g_waypoints.size());
 	}
 
 	bool IsTraversing()
@@ -664,7 +668,8 @@ namespace Hooks::FakePlayer
 			bool success = SafeSetActorLocation(g_fakePawn, newLocation);
 			if (!success && g_waypointIndex == 0)
 			{
-				LOG_ERROR("[FakePlayer] SafeSetActorLocation FAILED/EXCEPTION at waypoint %d (%.0f, %.0f, %.0f) - stopping traversal",
+				LOG_ERROR(
+					"[FakePlayer] SafeSetActorLocation FAILED/EXCEPTION at waypoint %d (%.0f, %.0f, %.0f) - stopping traversal",
 					g_waypointIndex, wp.x, wp.y, wp.z);
 				g_traversing = false;
 				return;
@@ -673,11 +678,11 @@ namespace Hooks::FakePlayer
 			// Log progress periodically (every 10 waypoints or first/last)
 			if (g_waypointIndex == 0 || g_waypointIndex == total - 1 || (g_waypointIndex % 50) == 0)
 			{
-			 int pct = (g_waypointIndex * 100) / total;
-			 LOG_DEBUG("[FakePlayer] Traversal %d/%d (%d%%) -> (%.0f, %.0f, %.0f) %s",
-				 g_waypointIndex + 1, total, pct,
-				 wp.x, wp.y, wp.z,
-				 success ? "OK" : "FAIL");
+				int pct = (g_waypointIndex * 100) / total;
+				LOG_DEBUG("[FakePlayer] Traversal %d/%d (%d%%) -> (%.0f, %.0f, %.0f) %s",
+				          g_waypointIndex + 1, total, pct,
+				          wp.x, wp.y, wp.z,
+				          success ? "OK" : "FAIL");
 			}
 
 			g_waypointIndex++;
@@ -698,23 +703,23 @@ namespace Hooks::FakePlayer
 		if (!g_playerActive || !g_fakePawn)
 			return false;
 
-		SDK::UObject* obj = static_cast<SDK::UObject*>(spawner);
+		auto obj = static_cast<SDK::UObject*>(spawner);
 
 		if (obj->IsA(SDK::AMassSpawner::StaticClass()))
 		{
-			SDK::AMassSpawner* massSpawner = static_cast<SDK::AMassSpawner*>(spawner);
+			auto massSpawner = static_cast<SDK::AMassSpawner*>(spawner);
 			SDK::FVector loc{};
 			SafeGetActorLocation(massSpawner, loc);
 			LOG_DEBUG("[FakePlayer] Blocking AMassSpawner '%s' at (%.0f, %.0f, %.0f) - fake player active",
-				massSpawner->GetName().c_str(), loc.X, loc.Y, loc.Z);
+			          massSpawner->GetName().c_str(), loc.X, loc.Y, loc.Z);
 		}
 		else if (obj->IsA(SDK::AAbstractMassEnemySpawner::StaticClass()))
 		{
-			SDK::AAbstractMassEnemySpawner* enemySpawner = static_cast<SDK::AAbstractMassEnemySpawner*>(spawner);
+			auto enemySpawner = static_cast<SDK::AAbstractMassEnemySpawner*>(spawner);
 			SDK::FVector loc{};
 			SafeGetActorLocation(enemySpawner, loc);
 			LOG_DEBUG("[FakePlayer] Blocking AAbstractMassEnemySpawner '%s' at (%.0f, %.0f, %.0f) - fake player active",
-				enemySpawner->GetName().c_str(), loc.X, loc.Y, loc.Z);
+			          enemySpawner->GetName().c_str(), loc.X, loc.Y, loc.Z);
 		}
 		else
 		{
@@ -739,7 +744,8 @@ namespace Hooks::FakePlayer
 			if (addr)
 			{
 				g_removeControllerFn = reinterpret_cast<UWorld_RemoveController_t>(addr);
-				LOG_INFO("[FakePlayer] UWorld::RemoveController found at 0x%llX", (unsigned long long)addr);
+				LOG_INFO("[FakePlayer] UWorld::RemoveController found at 0x%llX",
+				         static_cast<unsigned long long>(addr));
 			}
 			else
 			{

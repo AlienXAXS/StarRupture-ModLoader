@@ -14,10 +14,10 @@ namespace Hooks
 	// Check if byte is a legacy prefix
 	static bool IsLegacyPrefix(uint8_t b)
 	{
-		return (b == 0xF0 || b == 0xF2 || b == 0xF3 ||  // LOCK, REPNE, REP
-			b == 0x2E || b == 0x36 || b == 0x3E ||  // Segment overrides
+		return (b == 0xF0 || b == 0xF2 || b == 0xF3 || // LOCK, REPNE, REP
+			b == 0x2E || b == 0x36 || b == 0x3E || // Segment overrides
 			b == 0x26 || b == 0x64 || b == 0x65 ||
-			b == 0x66 || b == 0x67);      // Operand/Address size
+			b == 0x66 || b == 0x67); // Operand/Address size
 	}
 
 	// Check if byte is a REX prefix (0x40-0x4F)
@@ -111,31 +111,68 @@ namespace Hooks
 			// Single-byte opcode - determine if it has ModR/M
 			switch (opcode)
 			{
-				// Instructions WITHOUT ModR/M
-			case 0x50: case 0x51: case 0x52: case 0x53: // PUSH r64
-			case 0x54: case 0x55: case 0x56: case 0x57:
-			case 0x58: case 0x59: case 0x5A: case 0x5B: // POP r64
-			case 0x5C: case 0x5D: case 0x5E: case 0x5F:
-			case 0x90: case 0x91: case 0x92: case 0x93: // XCHG, NOP
-			case 0x94: case 0x95: case 0x96: case 0x97:
-			case 0x98: case 0x99: case 0x9C: case 0x9D: // CBW, CWD, PUSHF, POPF
-			case 0x9E: case 0x9F: // SAHF, LAHF
-			case 0xC3: case 0xC9: case 0xCC: case 0xF4: // RET, LEAVE, INT3, HLT
+			// Instructions WITHOUT ModR/M
+			case 0x50:
+			case 0x51:
+			case 0x52:
+			case 0x53: // PUSH r64
+			case 0x54:
+			case 0x55:
+			case 0x56:
+			case 0x57:
+			case 0x58:
+			case 0x59:
+			case 0x5A:
+			case 0x5B: // POP r64
+			case 0x5C:
+			case 0x5D:
+			case 0x5E:
+			case 0x5F:
+			case 0x90:
+			case 0x91:
+			case 0x92:
+			case 0x93: // XCHG, NOP
+			case 0x94:
+			case 0x95:
+			case 0x96:
+			case 0x97:
+			case 0x98:
+			case 0x99:
+			case 0x9C:
+			case 0x9D: // CBW, CWD, PUSHF, POPF
+			case 0x9E:
+			case 0x9F: // SAHF, LAHF
+			case 0xC3:
+			case 0xC9:
+			case 0xCC:
+			case 0xF4: // RET, LEAVE, INT3, HLT
 			case 0xC2: // RET imm16
 				if (opcode == 0xC2)
 					immSize = 2;
 				hasModRM = false;
 				break;
 
-				// Instructions with immediate values (no ModR/M)
-			case 0xB0: case 0xB1: case 0xB2: case 0xB3: // MOV r8, imm8
-			case 0xB4: case 0xB5: case 0xB6: case 0xB7:
+			// Instructions with immediate values (no ModR/M)
+			case 0xB0:
+			case 0xB1:
+			case 0xB2:
+			case 0xB3: // MOV r8, imm8
+			case 0xB4:
+			case 0xB5:
+			case 0xB6:
+			case 0xB7:
 				immSize = 1;
 				hasModRM = false;
 				break;
 
-			case 0xB8: case 0xB9: case 0xBA: case 0xBB: // MOV r32/r64, imm32/imm64
-			case 0xBC: case 0xBD: case 0xBE: case 0xBF:
+			case 0xB8:
+			case 0xB9:
+			case 0xBA:
+			case 0xBB: // MOV r32/r64, imm32/imm64
+			case 0xBC:
+			case 0xBD:
+			case 0xBE:
+			case 0xBF:
 				// With REX.W: imm64 (8 bytes), without: imm32 (4 bytes)
 				immSize = hasRexW ? 8 : 4;
 				hasModRM = false;
@@ -151,22 +188,36 @@ namespace Hooks
 				hasModRM = false;
 				break;
 
-			case 0xE8: case 0xE9: // CALL, JMP rel32
+			case 0xE8:
+			case 0xE9: // CALL, JMP rel32
 				immSize = 4;
 				hasModRM = false;
 				break;
 
 			case 0xEB: // JMP rel8
-			case 0x70: case 0x71: case 0x72: case 0x73: // Jcc rel8
-			case 0x74: case 0x75: case 0x76: case 0x77:
-			case 0x78: case 0x79: case 0x7A: case 0x7B:
-			case 0x7C: case 0x7D: case 0x7E: case 0x7F:
+			case 0x70:
+			case 0x71:
+			case 0x72:
+			case 0x73: // Jcc rel8
+			case 0x74:
+			case 0x75:
+			case 0x76:
+			case 0x77:
+			case 0x78:
+			case 0x79:
+			case 0x7A:
+			case 0x7B:
+			case 0x7C:
+			case 0x7D:
+			case 0x7E:
+			case 0x7F:
 				immSize = 1;
 				hasModRM = false;
 				break;
 
-				// Arithmetic/logic with immediate operands (have ModR/M + immediate)
-			case 0x80: case 0x82: // ADD/OR/ADC/SBB/AND/SUB/XOR/CMP r/m8, imm8
+			// Arithmetic/logic with immediate operands (have ModR/M + immediate)
+			case 0x80:
+			case 0x82: // ADD/OR/ADC/SBB/AND/SUB/XOR/CMP r/m8, imm8
 				hasModRM = true;
 				immSize = 1;
 				break;
@@ -181,7 +232,8 @@ namespace Hooks
 				immSize = 1;
 				break;
 
-			case 0xC0: case 0xC1: // Shift/rotate r/m by imm8
+			case 0xC0:
+			case 0xC1: // Shift/rotate r/m by imm8
 				hasModRM = true;
 				immSize = 1;
 				break;
@@ -221,7 +273,7 @@ namespace Hooks
 				}
 				break;
 
-				// Most other opcodes have ModR/M (no immediate)
+			// Most other opcodes have ModR/M (no immediate)
 			default:
 				hasModRM = true;
 				break;
@@ -298,19 +350,21 @@ namespace Hooks
 
 			if (instrLen == 0 || instrLen > 15)
 			{
-				ModLoaderLogger::LogDebug(L"[Hooks] CalculateStolenBytes: invalid instruction at offset %zu (length=%zu)",
+				ModLoaderLogger::LogDebug(
+					L"[Hooks] CalculateStolenBytes: invalid instruction at offset %zu (length=%zu)",
 					totalLen, instrLen);
 				return 0;
 			}
 
 			ModLoaderLogger::LogDebug(L"[Hooks]   Instruction #%zu at offset %zu: %zu bytes",
-				instrCount + 1, totalLen, instrLen);
+			                          instrCount + 1, totalLen, instrLen);
 
 			totalLen += instrLen;
 			instrCount++;
 		}
 
-		ModLoaderLogger::LogDebug(L"[Hooks] CalculateStolenBytes: stealing %zu bytes (%zu instructions) to cover minimum %zu bytes",
+		ModLoaderLogger::LogDebug(
+			L"[Hooks] CalculateStolenBytes: stealing %zu bytes (%zu instructions) to cover minimum %zu bytes",
 			totalLen, instrCount, minBytes);
 
 		return totalLen;
@@ -323,26 +377,26 @@ namespace Hooks
 	bool Patch(uintptr_t address, const uint8_t* data, size_t size)
 	{
 		ModLoaderLogger::LogDebug(L"[Hooks] Patch: writing %zu bytes at 0x%llX", size,
-			static_cast<unsigned long long>(address));
+		                          static_cast<unsigned long long>(address));
 
 		// Read the current bytes first for the log
 		uint8_t oldBytes[64]{};
 		size_t readSize = (size <= sizeof(oldBytes)) ? size : sizeof(oldBytes);
 		SIZE_T bytesRead = 0;
 		if (ReadProcessMemory(GetCurrentProcess(), reinterpret_cast<const void*>(address),
-			oldBytes, readSize, &bytesRead))
+		                      oldBytes, readSize, &bytesRead))
 		{
 			ModLoaderLogger::LogDebug(L"[Hooks] Bytes before patch: [...]");
 		}
 
 		DWORD oldProtect = 0;
 		ModLoaderLogger::LogDebug(L"[Hooks] Patch: calling VirtualProtect(0x%llX, %zu, PAGE_EXECUTE_READWRITE)",
-			static_cast<unsigned long long>(address), size);
+		                          static_cast<unsigned long long>(address), size);
 
 		if (!VirtualProtect(reinterpret_cast<void*>(address), size, PAGE_EXECUTE_READWRITE, &oldProtect))
 		{
 			ModLoaderLogger::LogMessage(L"[Hooks] ERROR: Patch: VirtualProtect failed at 0x%llX (error %lu)",
-				static_cast<unsigned long long>(address), GetLastError());
+			                            static_cast<unsigned long long>(address), GetLastError());
 			return false;
 		}
 
@@ -361,15 +415,16 @@ namespace Hooks
 		uint8_t verifyBuf[64]{};
 		if (readSize <= sizeof(verifyBuf) &&
 			ReadProcessMemory(GetCurrentProcess(), reinterpret_cast<const void*>(address),
-				verifyBuf, readSize, &bytesRead))
+			                  verifyBuf, readSize, &bytesRead))
 		{
 			bool verified = (memcmp(verifyBuf, data, readSize) == 0);
 			if (verified)
-				ModLoaderLogger::LogDebug(L"[Hooks] Patch: write verified OK at 0x%llX", static_cast<unsigned long long>(address));
+				ModLoaderLogger::LogDebug(L"[Hooks] Patch: write verified OK at 0x%llX",
+				                          static_cast<unsigned long long>(address));
 			else
 			{
 				ModLoaderLogger::LogMessage(L"[Hooks] ERROR: Patch: VERIFICATION FAILED at 0x%llX – bytes don't match!",
-					static_cast<unsigned long long>(address));
+				                            static_cast<unsigned long long>(address));
 			}
 		}
 
@@ -379,16 +434,18 @@ namespace Hooks
 	bool Nop(uintptr_t address, size_t size)
 	{
 		ModLoaderLogger::LogDebug(L"[Hooks] NOP: filling %zu bytes with 0x90 at 0x%llX",
-			size, static_cast<unsigned long long>(address));
+		                          size, static_cast<unsigned long long>(address));
 
 		auto* nops = static_cast<uint8_t*>(_alloca(size));
 		memset(nops, 0x90, size);
 		bool result = Patch(address, nops, size);
 
 		if (result)
-			ModLoaderLogger::LogDebug(L"[Hooks] NOP: success at 0x%llX (%zu bytes)", static_cast<unsigned long long>(address), size);
+			ModLoaderLogger::LogDebug(L"[Hooks] NOP: success at 0x%llX (%zu bytes)",
+			                          static_cast<unsigned long long>(address), size);
 		else
-			ModLoaderLogger::LogMessage(L"[Hooks] ERROR: NOP: failed at 0x%llX", static_cast<unsigned long long>(address));
+			ModLoaderLogger::LogMessage(L"[Hooks] ERROR: NOP: failed at 0x%llX",
+			                            static_cast<unsigned long long>(address));
 
 		return result;
 	}
@@ -396,7 +453,7 @@ namespace Hooks
 	bool ReadMemory(uintptr_t address, void* buffer, size_t size)
 	{
 		ModLoaderLogger::LogDebug(L"[Hooks] ReadMemory: reading %zu bytes from 0x%llX",
-			size, static_cast<unsigned long long>(address));
+		                          size, static_cast<unsigned long long>(address));
 
 		SIZE_T bytesRead = 0;
 		bool success = ReadProcessMemory(
@@ -407,10 +464,12 @@ namespace Hooks
 			&bytesRead) && bytesRead == size;
 
 		if (success)
-			ModLoaderLogger::LogDebug(L"[Hooks] ReadMemory: read %llu bytes successfully", static_cast<unsigned long long>(bytesRead));
+			ModLoaderLogger::LogDebug(L"[Hooks] ReadMemory: read %llu bytes successfully",
+			                          static_cast<unsigned long long>(bytesRead));
 		else
 		{
-			ModLoaderLogger::LogMessage(L"[Hooks] ERROR: ReadMemory: failed at 0x%llX (requested %zu, got %llu, error %lu)",
+			ModLoaderLogger::LogMessage(
+				L"[Hooks] ERROR: ReadMemory: failed at 0x%llX (requested %zu, got %llu, error %lu)",
 				static_cast<unsigned long long>(address), size,
 				static_cast<unsigned long long>(bytesRead), GetLastError());
 		}
@@ -428,13 +487,13 @@ namespace Hooks
 	bool Hook::Install(uintptr_t targetAddr, void* detourFunc, void** originalFunc)
 	{
 		ModLoaderLogger::LogDebug(L"[Hooks] Hook::Install: target=0x%llX  detour=0x%llX",
-			static_cast<unsigned long long>(targetAddr),
-			static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(detourFunc)));
+		                          static_cast<unsigned long long>(targetAddr),
+		                          static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(detourFunc)));
 
 		if (installed)
 		{
 			ModLoaderLogger::LogWarn(L"[Hooks] Hook::Install: hook already installed at 0x%llX – aborting",
-				static_cast<unsigned long long>(target));
+			                         static_cast<unsigned long long>(target));
 			return false;
 		}
 
@@ -446,7 +505,7 @@ namespace Hooks
 		if (!ReadMemory(target, codeBuffer, sizeof(codeBuffer)))
 		{
 			ModLoaderLogger::LogError(L"[Hooks] Hook::Install: failed to read code at 0x%llX for analysis",
-				static_cast<unsigned long long>(target));
+			                          static_cast<unsigned long long>(target));
 			return false;
 		}
 
@@ -455,13 +514,14 @@ namespace Hooks
 
 		if (patchSize == 0 || patchSize > sizeof(originalBytes))
 		{
-			ModLoaderLogger::LogError(L"[Hooks] ERROR: Hook::Install: failed to calculate stolen bytes (got %zu, max %zu)",
+			ModLoaderLogger::LogError(
+				L"[Hooks] ERROR: Hook::Install: failed to calculate stolen bytes (got %zu, max %zu)",
 				patchSize, sizeof(originalBytes));
 			return false;
 		}
 
 		ModLoaderLogger::LogDebug(L"[Hooks] Hook::Install: JMP size=%zu bytes, dynamically calculated stolen bytes=%zu",
-			kJmpSize, patchSize);
+		                          kJmpSize, patchSize);
 
 		// Save original bytes
 		memcpy(originalBytes, codeBuffer, patchSize);
@@ -481,27 +541,28 @@ namespace Hooks
 		// Up to ~14 stolen instructions, worst case all are short jumps: 14*4 = 56 bytes extra
 		static constexpr size_t kExpansionHeadroom = 64;
 		size_t trampolineSize = patchSize + kExpansionHeadroom + kJmpSize;
-		ModLoaderLogger::LogDebug(L"[Hooks] Hook::Install: allocating trampoline (%zu bytes = %zu stolen + %zu expansion headroom + %zu JMP back)",
+		ModLoaderLogger::LogDebug(
+			L"[Hooks] Hook::Install: allocating trampoline (%zu bytes = %zu stolen + %zu expansion headroom + %zu JMP back)",
 			trampolineSize, patchSize, kExpansionHeadroom, kJmpSize);
 
 		trampoline = nullptr;
 
 		// Try to allocate within ±2GB of target using VirtualAlloc with address hints
 		// This allows RIP-relative instructions to work correctly
-		const size_t maxDistance = 0x7FFFFFFF; // 2GB (max for signed 32-bit offset)
+		constexpr size_t maxDistance = 0x7FFFFFFF; // 2GB (max for signed 32-bit offset)
 		uintptr_t minAddr = (target > maxDistance) ? (target - maxDistance) : 0;
 		uintptr_t maxAddr = target + maxDistance;
 
 		// Align to allocation granularity (64KB on Windows)
-		const size_t allocGranularity = 64 * 1024;
+		constexpr size_t allocGranularity = 64 * 1024;
 		minAddr = (minAddr / allocGranularity) * allocGranularity;
 		maxAddr = (maxAddr / allocGranularity) * allocGranularity;
 
 		ModLoaderLogger::LogDebug(L"[Hooks] Hook::Install: attempting to allocate trampoline near target");
 		ModLoaderLogger::LogDebug(L"[Hooks]   Target address:     0x%016llX", static_cast<unsigned long long>(target));
 		ModLoaderLogger::LogDebug(L"[Hooks]   Acceptable range:   0x%016llX - 0x%016llX",
-			static_cast<unsigned long long>(minAddr),
-			static_cast<unsigned long long>(maxAddr));
+		                          static_cast<unsigned long long>(minAddr),
+		                          static_cast<unsigned long long>(maxAddr));
 		ModLoaderLogger::LogDebug(L"[Hooks]   Max distance:       +/-%zu MB", maxDistance / (1024 * 1024));
 
 		// Try multiple candidate addresses around the target
@@ -552,26 +613,24 @@ namespace Hooks
 
 						// Calculate actual distance
 						int64_t actualDistance = static_cast<int64_t>(reinterpret_cast<uintptr_t>(trampoline)) -
-						          static_cast<int64_t>(target);
+							static_cast<int64_t>(target);
 
 						// Verify it's within 32-bit range
 						if (actualDistance >= INT32_MIN && actualDistance <= INT32_MAX)
 						{
 							ModLoaderLogger::LogDebug(L"[Hooks]   [OK] Allocated trampoline in free region:");
 							ModLoaderLogger::LogDebug(L"[Hooks]     Address:    0x%016llX",
-								static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(trampoline)));
+							                          static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(
+								                          trampoline)));
 							ModLoaderLogger::LogDebug(L"[Hooks]     Distance:        %+lld bytes (%+.2f MB)",
-								actualDistance, actualDistance / (1024.0 * 1024.0));
+							                          actualDistance, actualDistance / (1024.0 * 1024.0));
 							ModLoaderLogger::LogDebug(L"[Hooks]     Regions checked: %d", regionsChecked);
 							break;
 						}
-						else
-						{
-							// Somehow got address out of range, free it
-							ModLoaderLogger::LogDebug(L"[Hooks]   Allocated out of range, freeing and continuing");
-							VirtualFree(trampoline, 0, MEM_RELEASE);
-							trampoline = nullptr;
-						}
+						// Somehow got address out of range, free it
+						ModLoaderLogger::LogDebug(L"[Hooks]   Allocated out of range, freeing and continuing");
+						VirtualFree(trampoline, 0, MEM_RELEASE);
+						trampoline = nullptr;
 					}
 				}
 			}
@@ -591,7 +650,8 @@ namespace Hooks
 		// Fallback: allocate anywhere if near allocation failed
 		if (!trampoline)
 		{
-			ModLoaderLogger::LogError(L"[Hooks] WARN: Hook::Install: could not allocate trampoline near target after 1000 attempts");
+			ModLoaderLogger::LogError(
+				L"[Hooks] WARN: Hook::Install: could not allocate trampoline near target after 1000 attempts");
 			ModLoaderLogger::LogError(L"[Hooks] WARN:   Falling back to system-chosen address");
 			ModLoaderLogger::LogError(L"[Hooks] WARN:   RIP-relative instructions will NOT work correctly!");
 
@@ -601,7 +661,8 @@ namespace Hooks
 
 		if (!trampoline)
 		{
-			ModLoaderLogger::LogError(L"[Hooks] ERROR: Hook::Install: VirtualAlloc for trampoline failed (error %lu)", GetLastError());
+			ModLoaderLogger::LogError(L"[Hooks] ERROR: Hook::Install: VirtualAlloc for trampoline failed (error %lu)",
+			                          GetLastError());
 			return false;
 		}
 
@@ -611,9 +672,9 @@ namespace Hooks
 		ModLoaderLogger::LogDebug(L"[Hooks] Hook::Install: trampoline final location:");
 		ModLoaderLogger::LogDebug(L"[Hooks]   Address:  0x%016llX", static_cast<unsigned long long>(trampolineAddr));
 		ModLoaderLogger::LogDebug(L"[Hooks]   Distance: %+lld bytes (%+.2f MB)",
-			finalDistance, finalDistance / (1024.0 * 1024.0));
+		                          finalDistance, finalDistance / (1024.0 * 1024.0));
 		ModLoaderLogger::LogDebug(L"[Hooks]   In range: %s",
-			(finalDistance >= INT32_MIN && finalDistance <= INT32_MAX) ? L"YES" : L"NO");
+		                          (finalDistance >= INT32_MIN && finalDistance <= INT32_MAX) ? L"YES" : L"NO");
 
 		// === RIP-RELATIVE INSTRUCTION RELOCATION ===
 		// Walk the original stolen bytes, writing relocated instructions into the
@@ -636,7 +697,8 @@ namespace Hooks
 
 			if (instrLen == 0 || instrLen > 15)
 			{
-				ModLoaderLogger::LogError(L"[Hooks] Hook::Install: relocation scan hit invalid instruction at offset %zu", offset);
+				ModLoaderLogger::LogError(
+					L"[Hooks] Hook::Install: relocation scan hit invalid instruction at offset %zu", offset);
 				// Copy remaining bytes verbatim and bail
 				size_t remaining = patchSize - offset;
 				memcpy(trampoline + writeCursor, instrStart, remaining);
@@ -685,12 +747,15 @@ namespace Hooks
 				uintptr_t origInstrEnd = target + offset + instrLen;
 				uintptr_t absTarget = origInstrEnd + rel8;
 
-				ModLoaderLogger::LogDebug(L"[Hooks]   Found JMP rel8 at src offset +0x%zX: expanding to JMP rel32", offset);
-				ModLoaderLogger::LogDebug(L"[Hooks]     Absolute target: 0x%016llX", static_cast<unsigned long long>(absTarget));
+				ModLoaderLogger::LogDebug(L"[Hooks]   Found JMP rel8 at src offset +0x%zX: expanding to JMP rel32",
+				                          offset);
+				ModLoaderLogger::LogDebug(L"[Hooks]     Absolute target: 0x%016llX",
+				                          static_cast<unsigned long long>(absTarget));
 
 				if (!canRelocate)
 				{
-					ModLoaderLogger::LogDebug(L"[Hooks]     [FAIL] CANNOT RELOCATE: trampoline too far from original code!");
+					ModLoaderLogger::LogDebug(
+						L"[Hooks]     [FAIL] CANNOT RELOCATE: trampoline too far from original code!");
 					memcpy(trampoline + writeCursor, instrStart, instrLen);
 					writeCursor += instrLen;
 				}
@@ -701,7 +766,8 @@ namespace Hooks
 					int64_t newDisp64 = static_cast<int64_t>(absTarget) - static_cast<int64_t>(newInstrEnd);
 					if (newDisp64 < INT32_MIN || newDisp64 > INT32_MAX)
 					{
-						ModLoaderLogger::LogDebug(L"[Hooks]     [FAIL] RELOCATION FAILED: new displacement doesn't fit in 32 bits!");
+						ModLoaderLogger::LogDebug(
+							L"[Hooks]     [FAIL] RELOCATION FAILED: new displacement doesn't fit in 32 bits!");
 						memcpy(trampoline + writeCursor, instrStart, instrLen);
 						writeCursor += instrLen;
 					}
@@ -712,7 +778,8 @@ namespace Hooks
 						memcpy(trampoline + writeCursor + 1, &newDisp, 4);
 						writeCursor += 5;
 						relocatedCount++;
-						ModLoaderLogger::LogDebug(L"[Hooks]     [OK] Expanded JMP rel8 -> JMP rel32 (new disp: 0x%08X)", static_cast<uint32_t>(newDisp));
+						ModLoaderLogger::LogDebug(L"[Hooks]     [OK] Expanded JMP rel8 -> JMP rel32 (new disp: 0x%08X)",
+						                          static_cast<uint32_t>(newDisp));
 					}
 				}
 				offset += instrLen;
@@ -727,12 +794,15 @@ namespace Hooks
 				uintptr_t absTarget = origInstrEnd + rel8;
 				uint8_t nearOpcode = 0x80 + (opcode - 0x70); // 70->80, 71->81, ... 7F->8F
 
-				ModLoaderLogger::LogDebug(L"[Hooks]   Found Jcc rel8 (0x%02X) at src offset +0x%zX: expanding to Jcc rel32", opcode, offset);
-				ModLoaderLogger::LogDebug(L"[Hooks]     Absolute target: 0x%016llX", static_cast<unsigned long long>(absTarget));
+				ModLoaderLogger::LogDebug(
+					L"[Hooks]   Found Jcc rel8 (0x%02X) at src offset +0x%zX: expanding to Jcc rel32", opcode, offset);
+				ModLoaderLogger::LogDebug(L"[Hooks]     Absolute target: 0x%016llX",
+				                          static_cast<unsigned long long>(absTarget));
 
 				if (!canRelocate)
 				{
-					ModLoaderLogger::LogDebug(L"[Hooks]     [FAIL] CANNOT RELOCATE: trampoline too far from original code!");
+					ModLoaderLogger::LogDebug(
+						L"[Hooks]     [FAIL] CANNOT RELOCATE: trampoline too far from original code!");
 					memcpy(trampoline + writeCursor, instrStart, instrLen);
 					writeCursor += instrLen;
 				}
@@ -743,7 +813,8 @@ namespace Hooks
 					int64_t newDisp64 = static_cast<int64_t>(absTarget) - static_cast<int64_t>(newInstrEnd);
 					if (newDisp64 < INT32_MIN || newDisp64 > INT32_MAX)
 					{
-						ModLoaderLogger::LogDebug(L"[Hooks]     [FAIL] RELOCATION FAILED: new displacement doesn't fit in 32 bits!");
+						ModLoaderLogger::LogDebug(
+							L"[Hooks]     [FAIL] RELOCATION FAILED: new displacement doesn't fit in 32 bits!");
 						memcpy(trampoline + writeCursor, instrStart, instrLen);
 						writeCursor += instrLen;
 					}
@@ -755,7 +826,9 @@ namespace Hooks
 						memcpy(trampoline + writeCursor + 2, &newDisp, 4);
 						writeCursor += 6;
 						relocatedCount++;
-						ModLoaderLogger::LogDebug(L"[Hooks]     [OK] Expanded Jcc rel8 -> 0F 8%X rel32 (new disp: 0x%08X)", nearOpcode & 0x0F, static_cast<uint32_t>(newDisp));
+						ModLoaderLogger::LogDebug(
+							L"[Hooks]     [OK] Expanded Jcc rel8 -> 0F 8%X rel32 (new disp: 0x%08X)", nearOpcode & 0x0F,
+							static_cast<uint32_t>(newDisp));
 					}
 				}
 				offset += instrLen;
@@ -775,9 +848,12 @@ namespace Hooks
 				uintptr_t origInstrEnd = target + offset + instrLen;
 				uintptr_t absTarget = origInstrEnd + origDisp;
 
-				ModLoaderLogger::LogDebug(L"[Hooks]   Found %S at src offset +0x%zX (instr len %zu):", name, offset, instrLen);
-				ModLoaderLogger::LogDebug(L"[Hooks]     Original disp32: 0x%08X (%+d)", static_cast<uint32_t>(origDisp), origDisp);
-				ModLoaderLogger::LogDebug(L"[Hooks]     Absolute target: 0x%016llX", static_cast<unsigned long long>(absTarget));
+				ModLoaderLogger::LogDebug(L"[Hooks]   Found %S at src offset +0x%zX (instr len %zu):", name, offset,
+				                          instrLen);
+				ModLoaderLogger::LogDebug(L"[Hooks]     Original disp32: 0x%08X (%+d)", static_cast<uint32_t>(origDisp),
+				                          origDisp);
+				ModLoaderLogger::LogDebug(L"[Hooks]     Absolute target: 0x%016llX",
+				                          static_cast<unsigned long long>(absTarget));
 
 				if (canRelocate)
 				{
@@ -788,16 +864,19 @@ namespace Hooks
 						int32_t newDisp = static_cast<int32_t>(newDisp64);
 						memcpy(&trampoline[dispOff], &newDisp, sizeof(newDisp));
 						relocatedCount++;
-						ModLoaderLogger::LogDebug(L"[Hooks]     [OK] Relocated (new disp: 0x%08X)", static_cast<uint32_t>(newDisp));
+						ModLoaderLogger::LogDebug(L"[Hooks]     [OK] Relocated (new disp: 0x%08X)",
+						                          static_cast<uint32_t>(newDisp));
 					}
 					else
 					{
-						ModLoaderLogger::LogDebug(L"[Hooks]     [FAIL] RELOCATION FAILED: new displacement doesn't fit in 32 bits!");
+						ModLoaderLogger::LogDebug(
+							L"[Hooks]     [FAIL] RELOCATION FAILED: new displacement doesn't fit in 32 bits!");
 					}
 				}
 				else
 				{
-					ModLoaderLogger::LogDebug(L"[Hooks]     [FAIL] CANNOT RELOCATE: trampoline too far from original code!");
+					ModLoaderLogger::LogDebug(
+						L"[Hooks]     [FAIL] CANNOT RELOCATE: trampoline too far from original code!");
 				}
 
 				writeCursor += instrLen;
@@ -819,9 +898,12 @@ namespace Hooks
 					uintptr_t origInstrEnd = target + offset + instrLen;
 					uintptr_t absTarget = origInstrEnd + origDisp;
 
-					ModLoaderLogger::LogDebug(L"[Hooks]   Found Jcc rel32 at src offset +0x%zX (instr len %zu):", offset, instrLen);
-					ModLoaderLogger::LogDebug(L"[Hooks]     Original disp32: 0x%08X (%+d)", static_cast<uint32_t>(origDisp), origDisp);
-					ModLoaderLogger::LogDebug(L"[Hooks]     Absolute target: 0x%016llX", static_cast<unsigned long long>(absTarget));
+					ModLoaderLogger::LogDebug(L"[Hooks]   Found Jcc rel32 at src offset +0x%zX (instr len %zu):",
+					                          offset, instrLen);
+					ModLoaderLogger::LogDebug(L"[Hooks]     Original disp32: 0x%08X (%+d)",
+					                          static_cast<uint32_t>(origDisp), origDisp);
+					ModLoaderLogger::LogDebug(L"[Hooks]     Absolute target: 0x%016llX",
+					                          static_cast<unsigned long long>(absTarget));
 
 					if (canRelocate)
 					{
@@ -832,16 +914,19 @@ namespace Hooks
 							int32_t newDisp = static_cast<int32_t>(newDisp64);
 							memcpy(&trampoline[dispOff], &newDisp, sizeof(newDisp));
 							relocatedCount++;
-							ModLoaderLogger::LogDebug(L"[Hooks]     [OK] Relocated (new disp: 0x%08X)", static_cast<uint32_t>(newDisp));
+							ModLoaderLogger::LogDebug(L"[Hooks]     [OK] Relocated (new disp: 0x%08X)",
+							                          static_cast<uint32_t>(newDisp));
 						}
 						else
 						{
-							ModLoaderLogger::LogDebug(L"[Hooks]     [FAIL] RELOCATION FAILED: new displacement doesn't fit in 32 bits!");
+							ModLoaderLogger::LogDebug(
+								L"[Hooks]     [FAIL] RELOCATION FAILED: new displacement doesn't fit in 32 bits!");
 						}
 					}
 					else
 					{
-						ModLoaderLogger::LogDebug(L"[Hooks]     [FAIL] CANNOT RELOCATE: trampoline too far from original code!");
+						ModLoaderLogger::LogDebug(
+							L"[Hooks]     [FAIL] CANNOT RELOCATE: trampoline too far from original code!");
 					}
 
 					writeCursor += instrLen;
@@ -869,7 +954,7 @@ namespace Hooks
 					{
 						uint8_t modrm = *q;
 						uint8_t mod = (modrm >> 6) & 0x03;
-						uint8_t rm  = modrm & 0x07;
+						uint8_t rm = modrm & 0x07;
 						if (mod == 0x00 && rm == 0x05)
 						{
 							// RIP-relative addressing
@@ -880,9 +965,12 @@ namespace Hooks
 							uintptr_t origInstrEnd = target + offset + instrLen;
 							uintptr_t absTarget = origInstrEnd + origDisp;
 
-							ModLoaderLogger::LogDebug(L"[Hooks]   Found RIP-relative [rip+disp32] at src offset +0x%zX:", offset);
-							ModLoaderLogger::LogDebug(L"[Hooks]     Original disp32: 0x%08X (%+d)", static_cast<uint32_t>(origDisp), origDisp);
-							ModLoaderLogger::LogDebug(L"[Hooks]     Absolute target: 0x%016llX", static_cast<unsigned long long>(absTarget));
+							ModLoaderLogger::LogDebug(
+								L"[Hooks]   Found RIP-relative [rip+disp32] at src offset +0x%zX:", offset);
+							ModLoaderLogger::LogDebug(L"[Hooks]     Original disp32: 0x%08X (%+d)",
+							                          static_cast<uint32_t>(origDisp), origDisp);
+							ModLoaderLogger::LogDebug(L"[Hooks]     Absolute target: 0x%016llX",
+							                          static_cast<unsigned long long>(absTarget));
 
 							if (canRelocate)
 							{
@@ -893,16 +981,19 @@ namespace Hooks
 									int32_t newDisp = static_cast<int32_t>(newDisp64);
 									memcpy(&trampoline[dispOff], &newDisp, sizeof(newDisp));
 									relocatedCount++;
-									ModLoaderLogger::LogDebug(L"[Hooks]     [OK] Relocated (new disp: 0x%08X)", static_cast<uint32_t>(newDisp));
+									ModLoaderLogger::LogDebug(L"[Hooks]     [OK] Relocated (new disp: 0x%08X)",
+									                          static_cast<uint32_t>(newDisp));
 								}
 								else
 								{
-									ModLoaderLogger::LogDebug(L"[Hooks]     [FAIL] RELOCATION FAILED: new displacement doesn't fit in 32 bits!");
+									ModLoaderLogger::LogDebug(
+										L"[Hooks]     [FAIL] RELOCATION FAILED: new displacement doesn't fit in 32 bits!");
 								}
 							}
 							else
 							{
-								ModLoaderLogger::LogDebug(L"[Hooks]     [FAIL] CANNOT RELOCATE: trampoline too far from original code!");
+								ModLoaderLogger::LogDebug(
+									L"[Hooks]     [FAIL] CANNOT RELOCATE: trampoline too far from original code!");
 							}
 						}
 					}
@@ -915,12 +1006,15 @@ namespace Hooks
 
 		if (relocatedCount > 0)
 		{
-			ModLoaderLogger::LogDebug(L"[Hooks] Hook::Install: relocated/expanded %d instruction(s) (%zu bytes written to trampoline)",
+			ModLoaderLogger::LogDebug(
+				L"[Hooks] Hook::Install: relocated/expanded %d instruction(s) (%zu bytes written to trampoline)",
 				relocatedCount, writeCursor);
 		}
 		else
 		{
-			ModLoaderLogger::LogDebug(L"[Hooks] Hook::Install: no instructions needed relocation (%zu bytes written to trampoline)", writeCursor);
+			ModLoaderLogger::LogDebug(
+				L"[Hooks] Hook::Install: no instructions needed relocation (%zu bytes written to trampoline)",
+				writeCursor);
 		}
 
 		// Write JMP back to (target + patchSize) after the relocated instructions
@@ -934,7 +1028,7 @@ namespace Hooks
 		memcpy(&trampoline[writeCursor + 6], &returnAddr, sizeof(returnAddr));
 
 		ModLoaderLogger::LogDebug(L"[Hooks] Hook::Install: trampoline JMP back at offset +0x%zX to 0x%016llX",
-			writeCursor, static_cast<unsigned long long>(returnAddr));
+		                          writeCursor, static_cast<unsigned long long>(returnAddr));
 
 		// Log final trampoline bytes
 		{
@@ -952,7 +1046,7 @@ namespace Hooks
 		// Give the caller a pointer to the trampoline so they can call the original
 		*originalFunc = trampoline;
 		ModLoaderLogger::LogDebug(L"[Hooks] Hook::Install: original function pointer set to trampoline at 0x%p",
-			static_cast<void*>(trampoline));
+		                          static_cast<void*>(trampoline));
 
 		// Build the JMP patch for the target
 		uint8_t jmpPatch[kJmpSize];
@@ -966,11 +1060,11 @@ namespace Hooks
 
 		// Write the patch
 		ModLoaderLogger::LogDebug(L"[Hooks] Hook::Install: writing JMP patch at 0x%llX...",
-			static_cast<unsigned long long>(target));
+		                          static_cast<unsigned long long>(target));
 		if (!Patch(target, jmpPatch, kJmpSize))
 		{
 			ModLoaderLogger::LogMessage(L"[Hooks] ERROR: Hook::Install: failed to write JMP patch at 0x%llX",
-				static_cast<unsigned long long>(target));
+			                            static_cast<unsigned long long>(target));
 			VirtualFree(trampoline, 0, MEM_RELEASE);
 			trampoline = nullptr;
 			return false;
@@ -996,22 +1090,23 @@ namespace Hooks
 		}
 
 		ModLoaderLogger::LogInfo(L"[Hooks] Hook::Remove: restoring 0x%llX (%zu bytes)",
-			static_cast<unsigned long long>(target), patchSize);
+		                         static_cast<unsigned long long>(target), patchSize);
 
 		// Restore original bytes
-		Hooks::Patch(target, originalBytes, patchSize);
+		Patch(target, originalBytes, patchSize);
 
 		// Free trampoline
 		if (trampoline)
 		{
-			ModLoaderLogger::LogDebug(L"[Hooks] Hook::Remove: freeing trampoline at 0x%p", static_cast<void*>(trampoline));
+			ModLoaderLogger::LogDebug(L"[Hooks] Hook::Remove: freeing trampoline at 0x%p",
+			                          static_cast<void*>(trampoline));
 			VirtualFree(trampoline, 0, MEM_RELEASE);
 			trampoline = nullptr;
 		}
 
 		installed = false;
 		ModLoaderLogger::LogInfo(L"[Hooks] Hook::Remove: hook at 0x%llX removed successfully",
-			static_cast<unsigned long long>(target));
+		                         static_cast<unsigned long long>(target));
 	}
 
 	// ---------------------------------------------------------------------------
@@ -1029,7 +1124,7 @@ namespace Hooks
 		if (installed)
 		{
 			ModLoaderLogger::LogWarn(L"[Hooks] WARN: VTableHook::Install: already installed at vtable 0x%llX slot %zu",
-				static_cast<unsigned long long>(vtableAddr), slotIndex);
+			                         static_cast<unsigned long long>(vtableAddr), slotIndex);
 			return false;
 		}
 
@@ -1043,14 +1138,15 @@ namespace Hooks
 		}
 
 		ModLoaderLogger::LogDebug(L"[Hooks] VTableHook::Install: object=0x%llX vtable=0x%llX slot=%zu",
-			static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(objectInstance)),
-			static_cast<unsigned long long>(vtable),
-			vtableSlotIdx);
+		                          static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(objectInstance)),
+		                          static_cast<unsigned long long>(vtable),
+		                          vtableSlotIdx);
 
 		return InstallByVTableAddr(vtable, vtableSlotIdx, detour, outOriginal);
 	}
 
-	bool VTableHook::InstallByVTableAddr(uintptr_t vtableAddress, size_t vtableSlotIdx, void* detour, void** outOriginal)
+	bool VTableHook::InstallByVTableAddr(uintptr_t vtableAddress, size_t vtableSlotIdx, void* detour,
+	                                     void** outOriginal)
 	{
 		if (installed)
 		{
@@ -1065,20 +1161,20 @@ namespace Hooks
 		uintptr_t slotAddr = vtableAddr + (slotIndex * sizeof(uintptr_t));
 
 		ModLoaderLogger::LogDebug(L"[Hooks] VTableHook: vtable=0x%llX slot[%zu]=0x%llX",
-			static_cast<unsigned long long>(vtableAddr),
-			slotIndex,
-			static_cast<unsigned long long>(slotAddr));
+		                          static_cast<unsigned long long>(vtableAddr),
+		                          slotIndex,
+		                          static_cast<unsigned long long>(slotAddr));
 
 		// Read the original function pointer from the vtable slot
 		if (!ReadMemory(slotAddr, &originalFunc, sizeof(originalFunc)))
 		{
 			ModLoaderLogger::LogError(L"[Hooks] ERROR: VTableHook: failed to read vtable slot at 0x%llX",
-				static_cast<unsigned long long>(slotAddr));
+			                          static_cast<unsigned long long>(slotAddr));
 			return false;
 		}
 
 		ModLoaderLogger::LogDebug(L"[Hooks] VTableHook: original function at slot[%zu] = 0x%llX",
-			slotIndex, static_cast<unsigned long long>(originalFunc));
+		                          slotIndex, static_cast<unsigned long long>(originalFunc));
 
 		// Give the caller the original function pointer so they can call through
 		*outOriginal = reinterpret_cast<void*>(originalFunc);
@@ -1088,7 +1184,7 @@ namespace Hooks
 		if (!Patch(slotAddr, reinterpret_cast<const uint8_t*>(&detourAddr), sizeof(detourAddr)))
 		{
 			ModLoaderLogger::LogError(L"[Hooks] ERROR: VTableHook: failed to patch vtable slot at 0x%llX",
-				static_cast<unsigned long long>(slotAddr));
+			                          static_cast<unsigned long long>(slotAddr));
 			return false;
 		}
 
@@ -1115,14 +1211,13 @@ namespace Hooks
 		uintptr_t slotAddr = vtableAddr + (slotIndex * sizeof(uintptr_t));
 
 		ModLoaderLogger::LogInfo(L"[Hooks] VTableHook::Remove: restoring slot[%zu] at 0x%llX to original 0x%llX",
-			slotIndex,
-			static_cast<unsigned long long>(slotAddr),
-			static_cast<unsigned long long>(originalFunc));
+		                         slotIndex,
+		                         static_cast<unsigned long long>(slotAddr),
+		                         static_cast<unsigned long long>(originalFunc));
 
 		Patch(slotAddr, reinterpret_cast<const uint8_t*>(&originalFunc), sizeof(originalFunc));
 
 		installed = false;
 		ModLoaderLogger::LogMessage(L"[Hooks] VTableHook::Remove: vtable hook removed successfully");
 	}
-
 }

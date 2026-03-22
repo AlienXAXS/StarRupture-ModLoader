@@ -14,34 +14,34 @@
 
 namespace Hooks::EngineInit
 {
-    // Original function signatures
-    typedef int32_t (__fastcall *FEngineLoop_Init_t)(void* thisPtr);
-    typedef bool (__fastcall *UGameEngine_Init_t)(void* thisPtr, void* InEngineLoop);
+	// Original function signatures
+	using FEngineLoop_Init_t = int32_t(__fastcall *)(void* thisPtr);
+	using UGameEngine_Init_t = bool(__fastcall *)(void* thisPtr, void* InEngineLoop);
 
-    // Callback signature for plugins
-    typedef void (*PluginEngineInitCallback)();
+	// Callback signature for plugins
+	using PluginEngineInitCallback = void(*)();
 
-    // Provide the synchronisation events created in DllMain so the detour can
-    // signal engine-ready and wait for all plugins to finish loading before
-    // letting the original Init proceed.
-    void SetSyncEvents(HANDLE engineReadyEvent, HANDLE pluginsLoadedEvent);
+	// Provide the synchronisation events created in DllMain so the detour can
+	// signal engine-ready and wait for all plugins to finish loading before
+	// letting the original Init proceed.
+	void SetSyncEvents(HANDLE engineReadyEvent, HANDLE pluginsLoadedEvent);
 
-    // Install the hooks (tries multiple patterns for reliability)
-    // Returns true if at least one hook was successful
-    bool Install();
+	// Install the hooks (tries multiple patterns for reliability)
+	// Returns true if at least one hook was successful
+	bool Install();
 
-    // Remove all hooks
-    void Remove();
+	// Remove all hooks
+	void Remove();
 
-    // Check if engine has initialized
-    bool IsEngineInitialized();
+	// Check if engine has initialized
+	bool IsEngineInitialized();
 
-    // Register a plugin callback to be notified when engine initializes
-    void RegisterPluginCallback(PluginEngineInitCallback callback);
+	// Register a plugin callback to be notified when engine initializes
+	void RegisterPluginCallback(PluginEngineInitCallback callback);
 
-    // Unregister a plugin callback
-    void UnregisterPluginCallback(PluginEngineInitCallback callback);
+	// Unregister a plugin callback
+	void UnregisterPluginCallback(PluginEngineInitCallback callback);
 
-    // Legacy compatibility - set single callback (deprecated, use RegisterPluginCallback)
-    void SetEngineInitCallback(void (*callback)());
+	// Legacy compatibility - set single callback (deprecated, use RegisterPluginCallback)
+	void SetEngineInitCallback(void (*callback)());
 }

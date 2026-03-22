@@ -25,22 +25,22 @@
 
 namespace Hooks::PlayerLeft
 {
-    // Callback signature for plugins.
-    // Receives the AController* of the departing player (as void*).
-    typedef void (*PluginPlayerLeftCallback)(void* exitingController);
+	// Callback signature for plugins.
+	// Receives the AController* of the departing player (as void*).
+	using PluginPlayerLeftCallback = void(*)(void* exitingController);
 
-    // Install the hook
-    bool Install();
+	// Install the hook
+	bool Install();
 
-    // Remove the hook
-    void Remove();
+	// Remove the hook
+	void Remove();
 
-    // Returns true if the hook is currently installed
- bool IsInstalled();
+	// Returns true if the hook is currently installed
+	bool IsInstalled();
 
-    // Register a plugin callback to be notified when a player leaves
-    void RegisterPluginCallback(PluginPlayerLeftCallback callback);
+	// Register a plugin callback to be notified when a player leaves
+	void RegisterPluginCallback(PluginPlayerLeftCallback callback);
 
-    // Unregister a plugin callback
-    void UnregisterPluginCallback(PluginPlayerLeftCallback callback);
+	// Unregister a plugin callback
+	void UnregisterPluginCallback(PluginPlayerLeftCallback callback);
 }

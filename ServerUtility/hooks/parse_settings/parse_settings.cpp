@@ -27,9 +27,9 @@
 // Layout matches UE4/UE5 TArray<TCHAR> used as FString storage.
 struct EngineString
 {
-	wchar_t* Data;   // AllocatorInstance.Data
-	int32_t  Num;    // ArrayNum  (includes null terminator)
-	int32_t  Max;    // ArrayMax
+	wchar_t* Data; // AllocatorInstance.Data
+	int32_t Num; // ArrayNum  (includes null terminator)
+	int32_t Max; // ArrayMax
 };
 
 // ---------------------------------------------------------------------------
@@ -42,8 +42,8 @@ struct EngineString
 // Using these ensures that when the GC later calls FMemory::Free on an
 // FString::Data pointer we set, it sees a valid FMallocBinned2 block.
 // ---------------------------------------------------------------------------
-typedef void* (__cdecl* FMemoryMalloc_t)(size_t Count, uint32_t Alignment);
-typedef void(__cdecl* FMemoryFree_t)(void* Original);
+using FMemoryMalloc_t = void* (__cdecl*)(size_t Count, uint32_t Alignment);
+using FMemoryFree_t = void(__cdecl*)(void* Original);
 
 // ---------------------------------------------------------------------------
 // Field accessor namespace for UCrDedicatedServerSettingsComp
@@ -51,11 +51,11 @@ typedef void(__cdecl* FMemoryFree_t)(void* Original);
 // ---------------------------------------------------------------------------
 namespace FieldAccessor
 {
-	constexpr size_t OFFSET_SESSION_NAME     = 0xB8; // (char*)this + 184
-	constexpr size_t OFFSET_SAVEGAME_NAME    = 0xC8; // (char*)this + 200
-	constexpr size_t OFFSET_SAVE_INTERVAL    = 0xD8; // (_DWORD*)this + 54 → 216
-	constexpr size_t OFFSET_START_NEW_GAME   = 0xDC; // (_BYTE*)this + 220
-	constexpr size_t OFFSET_LOAD_SAVED_GAME  = 0xDD; // (_BYTE*)this + 221
+	constexpr size_t OFFSET_SESSION_NAME = 0xB8; // (char*)this + 184
+	constexpr size_t OFFSET_SAVEGAME_NAME = 0xC8; // (char*)this + 200
+	constexpr size_t OFFSET_SAVE_INTERVAL = 0xD8; // (_DWORD*)this + 54 → 216
+	constexpr size_t OFFSET_START_NEW_GAME = 0xDC; // (_BYTE*)this + 220
+	constexpr size_t OFFSET_LOAD_SAVED_GAME = 0xDD; // (_BYTE*)this + 221
 
 	inline EngineString* GetSessionName(void* thisPtr)
 	{
@@ -86,11 +86,11 @@ namespace FieldAccessor
 // ---------------------------------------------------------------------------
 // Command-line parameter names
 // ---------------------------------------------------------------------------
-static constexpr const wchar_t* PARAM_SESSION_NAME = L"-SessionName=";
-static constexpr const wchar_t* PARAM_SAVE_INTERVAL = L"-SaveGameInterval=";
+static constexpr auto PARAM_SESSION_NAME = L"-SessionName=";
+static constexpr auto PARAM_SAVE_INTERVAL = L"-SaveGameInterval=";
 
 // Save game name is always AutoSave0
-static constexpr const wchar_t* SAVE_GAME_NAME = L"AutoSave0.sav";
+static constexpr auto SAVE_GAME_NAME = L"AutoSave0.sav";
 
 // Default save interval in seconds (5 minutes)
 static constexpr int DEFAULT_SAVE_INTERVAL = 300;
@@ -134,13 +134,13 @@ static bool AssignEngineString(EngineString* str, const wchar_t* value)
 		if (looksValid)
 		{
 			LOG_DEBUG("[AssignEngineString] Freeing old Data at %p (Num=%d, Max=%d)",
-				static_cast<void*>(str->Data), str->Num, str->Max);
+			          static_cast<void*>(str->Data), str->Num, str->Max);
 			hooks->Memory->Free(str->Data);
 		}
 		else
 		{
 			LOG_WARN("[AssignEngineString] Skipping free of suspicious Data=%p (Num=%d, Max=%d) - likely uninitialized",
-				static_cast<void*>(str->Data), str->Num, str->Max);
+			         static_cast<void*>(str->Data), str->Num, str->Max);
 		}
 
 		str->Data = nullptr;
@@ -176,7 +176,7 @@ static bool AssignEngineString(EngineString* str, const wchar_t* value)
 	str->Max = numElements;
 
 	LOG_DEBUG("[AssignEngineString] Allocated new Data at %p (Num=%d, Max=%d)",
-		newData, str->Num, str->Max);
+	          newData, str->Num, str->Max);
 
 	return true;
 }
@@ -297,9 +297,9 @@ static bool SaveGameExists(const std::wstring& sessionName)
 // ---------------------------------------------------------------------------
 // Hook state
 // ---------------------------------------------------------------------------
-typedef __int64(__fastcall* ParseSettings_t)(void* thisPtr);
-static ParseSettings_t  g_originalParseSettings = nullptr;
-static HookHandle       g_hookHandle = nullptr;
+using ParseSettings_t = __int64(__fastcall*)(void* thisPtr);
+static ParseSettings_t g_originalParseSettings = nullptr;
+static HookHandle g_hookHandle = nullptr;
 
 // ---------------------------------------------------------------------------
 // Detour
@@ -319,7 +319,6 @@ static HookHandle       g_hookHandle = nullptr;
 // ---------------------------------------------------------------------------
 static __int64 __fastcall Hook_ParseSettings(void* thisPtr)
 {
-
 	// Validate thisPtr
 	if (!thisPtr)
 	{
@@ -346,7 +345,8 @@ static __int64 __fastcall Hook_ParseSettings(void* thisPtr)
 	auto* hooks = GetHooks();
 	if (!hooks->Memory)
 	{
-		LOG_ERROR("[Hook_ParseSettings] Engine allocator not resolved - cannot safely set FStrings, delegating to original");
+		LOG_ERROR(
+			"[Hook_ParseSettings] Engine allocator not resolved - cannot safely set FStrings, delegating to original");
 		__int64 result = g_originalParseSettings(thisPtr);
 		return result;
 	}
@@ -380,8 +380,8 @@ static __int64 __fastcall Hook_ParseSettings(void* thisPtr)
 	const bool bLoadSaved = hasSave;
 
 	LOG_INFO("  AutoSave found   = %s  ->  %s",
-		hasSave ? "yes" : "no",
-		hasSave ? "loading existing session" : "starting new session");
+	         hasSave ? "yes" : "no",
+	         hasSave ? "loading existing session" : "starting new session");
 
 	// -----------------------------------------------------------------------
 	// Step 2: Write all five fields directly onto the component.
@@ -425,7 +425,7 @@ static __int64 __fastcall Hook_ParseSettings(void* thisPtr)
 		*FieldAccessor::GetStartNewGame(thisPtr) = bStartNew;
 		*FieldAccessor::GetLoadSavedGame(thisPtr) = bLoadSaved;
 		LOG_DEBUG("[Hook_ParseSettings] bStartNewGame=%s, bLoadSavedGame=%s",
-			bStartNew ? "true" : "false", bLoadSaved ? "true" : "false");
+		          bStartNew ? "true" : "false", bLoadSaved ? "true" : "false");
 	}
 	catch (const std::exception& ex)
 	{
@@ -452,7 +452,7 @@ static __int64 __fastcall Hook_ParseSettings(void* thisPtr)
 		if (sessionStr->Data && sessionStr->Num > 0)
 		{
 			LOG_DEBUG("[Hook_ParseSettings] Readback SessionName: \"%ls\" (Num=%d, Max=%d)",
-				sessionStr->Data, sessionStr->Num, sessionStr->Max);
+			          sessionStr->Data, sessionStr->Num, sessionStr->Max);
 		}
 		else
 		{
@@ -462,7 +462,7 @@ static __int64 __fastcall Hook_ParseSettings(void* thisPtr)
 		if (saveStr->Data && saveStr->Num > 0)
 		{
 			LOG_DEBUG("[Hook_ParseSettings] Readback SaveGameName: \"%ls\" (Num=%d, Max=%d)",
-				saveStr->Data, saveStr->Num, saveStr->Max);
+			          saveStr->Data, saveStr->Num, saveStr->Max);
 		}
 		else
 		{
@@ -471,9 +471,9 @@ static __int64 __fastcall Hook_ParseSettings(void* thisPtr)
 	}
 
 	LOG_INFO("[Hook_ParseSettings] Settings applied (SaveGameInterval=%d, bStartNewGame=%s, bLoadSavedGame=%s)",
-		*FieldAccessor::GetSaveGameInterval(thisPtr),
-		*FieldAccessor::GetStartNewGame(thisPtr) ? "true" : "false",
-		*FieldAccessor::GetLoadSavedGame(thisPtr) ? "true" : "false");
+	         *FieldAccessor::GetSaveGameInterval(thisPtr),
+	         *FieldAccessor::GetStartNewGame(thisPtr) ? "true" : "false",
+	         *FieldAccessor::GetLoadSavedGame(thisPtr) ? "true" : "false");
 
 	// Return 1 (success) — we've populated all five fields.
 	return 1;
@@ -520,11 +520,11 @@ static constexpr size_t PARSESETTINGS_FREE_CALL_OFFSET = 0x16F;
 // This sequence (save result, null-check, branch) is extremely common after
 // Malloc calls, but the full pattern with the trailing bytes is unique enough.
 // ---------------------------------------------------------------------------
-static const char* FMEMORY_MALLOC_PATTERN =
-"E8 ?? ?? ?? ?? 48 8B D8 48 85 C0 0F 84 ?? ?? ?? ?? "
-"33 D2 41 B8 ?? ?? ?? ?? 48 8B C8 E8 ?? ?? ?? ?? "
-"0F 10 05 ?? ?? ?? ?? 33 C0 48 C7 43 ?? ?? ?? ?? ?? "
-"80 63 ?? ?? 48 89 43";
+static auto FMEMORY_MALLOC_PATTERN =
+	"E8 ?? ?? ?? ?? 48 8B D8 48 85 C0 0F 84 ?? ?? ?? ?? "
+	"33 D2 41 B8 ?? ?? ?? ?? 48 8B C8 E8 ?? ?? ?? ?? "
+	"0F 10 05 ?? ?? ?? ?? 33 C0 48 C7 43 ?? ?? ?? ?? ?? "
+	"80 63 ?? ?? 48 89 43";
 
 // ---------------------------------------------------------------------------
 // Helper: resolve an E8 rel32 CALL instruction at a given address.
@@ -590,7 +590,7 @@ static uintptr_t ExtractGMallocAddress(uintptr_t funcAddr, size_t scanLen = 64)
 	if (!IsReadableMemory(funcAddr, scanLen))
 	{
 		LOG_DEBUG("[ExtractGMallocAddress] Address 0x%llX (len %zu) is not readable",
-			static_cast<unsigned long long>(funcAddr), scanLen);
+		          static_cast<unsigned long long>(funcAddr), scanLen);
 		return 0;
 	}
 
@@ -617,12 +617,12 @@ static uintptr_t ExtractGMallocAddress(uintptr_t funcAddr, size_t scanLen = 64)
 		uintptr_t globalAddr = funcAddr + i + 7 + static_cast<uintptr_t>(static_cast<intptr_t>(disp32));
 
 		LOG_DEBUG("[ExtractGMallocAddress] Found RIP-relative MOV at +0x%zX (%02X %02X %02X) -> global at 0x%llX",
-			i, bytes[i], bytes[i + 1], bytes[i + 2], static_cast<unsigned long long>(globalAddr));
+		          i, bytes[i], bytes[i + 1], bytes[i + 2], static_cast<unsigned long long>(globalAddr));
 		return globalAddr;
 	}
 
 	LOG_DEBUG("[ExtractGMallocAddress] No RIP-relative MOV found in first %zu bytes of 0x%llX",
-		scanLen, static_cast<unsigned long long>(funcAddr));
+	          scanLen, static_cast<unsigned long long>(funcAddr));
 	return 0;
 }
 
@@ -632,8 +632,8 @@ static uintptr_t ExtractGMallocAddress(uintptr_t funcAddr, size_t scanLen = 64)
 static bool SmokeTestAllocator(FMemoryMalloc_t mallocFn, FMemoryFree_t freeFn)
 {
 	LOG_DEBUG("[SmokeTestAllocator] Testing Malloc=0x%llX  Free=0x%llX ...",
-		static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(mallocFn)),
-		static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(freeFn)));
+	          static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(mallocFn)),
+	          static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(freeFn)));
 
 	__try
 	{
@@ -703,8 +703,8 @@ static uintptr_t FindFreeViaGMalloc(uintptr_t gmallocAddr)
 		return 0;
 
 	LOG_DEBUG("[FindFree] Scanning ParseSettings at 0x%llX for calls referencing GMalloc 0x%llX...",
-		static_cast<unsigned long long>(g_parseSettingsAddress),
-		static_cast<unsigned long long>(gmallocAddr));
+	          static_cast<unsigned long long>(g_parseSettingsAddress),
+	          static_cast<unsigned long long>(gmallocAddr));
 
 	int callsFound = 0;
 	int callsReadable = 0;
@@ -722,7 +722,7 @@ static uintptr_t FindFreeViaGMalloc(uintptr_t gmallocAddr)
 		if (!IsReadableMemory(target, 64))
 		{
 			LOG_DEBUG("[FindFree]   +0x%03zX -> 0x%llX (NOT READABLE, skipping)",
-				offset, static_cast<unsigned long long>(target));
+			          offset, static_cast<unsigned long long>(target));
 			continue;
 		}
 
@@ -733,18 +733,18 @@ static uintptr_t FindFreeViaGMalloc(uintptr_t gmallocAddr)
 		if (candidateGMalloc == gmallocAddr)
 		{
 			LOG_DEBUG("[FindFree] FMemory::Free = 0x%llX (from ParseSettings+0x%zX, same GMalloc)",
-				static_cast<unsigned long long>(target), offset);
+			          static_cast<unsigned long long>(target), offset);
 			LOG_DEBUG("[FindFree]   Scanned %d E8 candidates (%d readable) before match",
-				callsFound, callsReadable);
+			          callsFound, callsReadable);
 			DumpBytes("FMemory::Free", target, 64);
 			return target;
 		}
 	}
 
 	LOG_WARN("[FindFree] No call target in ParseSettings references GMalloc 0x%llX",
-		static_cast<unsigned long long>(gmallocAddr));
+	         static_cast<unsigned long long>(gmallocAddr));
 	LOG_WARN("[FindFree]   Scanned %d E8 candidates (%d readable), none matched",
-		callsFound, callsReadable);
+	         callsFound, callsReadable);
 	return 0;
 }
 
@@ -768,7 +768,7 @@ static uintptr_t FindFreeViaOffset(uintptr_t mallocAddr)
 	if (*callByte != 0xE8)
 	{
 		LOG_WARN("[FindFree:Offset] Byte at ParseSettings+0x%zX is 0x%02X, not 0xE8",
-			PARSESETTINGS_FREE_CALL_OFFSET, *callByte);
+		         PARSESETTINGS_FREE_CALL_OFFSET, *callByte);
 		return 0;
 	}
 
@@ -780,17 +780,17 @@ static uintptr_t FindFreeViaOffset(uintptr_t mallocAddr)
 	if (!IsReadableMemory(freeAddr, 64))
 	{
 		LOG_WARN("[FindFree:Offset] Resolved target 0x%llX is not readable",
-			static_cast<unsigned long long>(freeAddr));
+		         static_cast<unsigned long long>(freeAddr));
 		return 0;
 	}
 
 	LOG_INFO("[FindFree:Offset] Candidate FMemory::Free = 0x%llX (from ParseSettings+0x%zX)",
-		static_cast<unsigned long long>(freeAddr), PARSESETTINGS_FREE_CALL_OFFSET);
+	         static_cast<unsigned long long>(freeAddr), PARSESETTINGS_FREE_CALL_OFFSET);
 	DumpBytes("FMemory::Free candidate", freeAddr, 64);
 
 	// Validate with smoke test
 	if (!SmokeTestAllocator(reinterpret_cast<FMemoryMalloc_t>(mallocAddr),
-		reinterpret_cast<FMemoryFree_t>(freeAddr)))
+	                        reinterpret_cast<FMemoryFree_t>(freeAddr)))
 	{
 		LOG_WARN("[FindFree:Offset] Smoke test FAILED for offset candidate");
 		return 0;
@@ -806,7 +806,7 @@ static uintptr_t FindFreeViaOffset(uintptr_t mallocAddr)
 void ParseSettingsHook::Install(uintptr_t targetAddress)
 {
 	LOG_INFO("[ParseSettingsHook::Install] Installing hook at 0x%llX...",
-		static_cast<unsigned long long>(targetAddress));
+	         static_cast<unsigned long long>(targetAddress));
 
 	if (g_hookHandle)
 	{

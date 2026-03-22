@@ -20,22 +20,22 @@
 
 namespace Hooks::PlayerJoined
 {
-    // Callback signature for plugins.
-    // Receives the APlayerController* of the newly-logged-in player (as void*).
-    typedef void (*PluginPlayerJoinedCallback)(void* playerController);
+	// Callback signature for plugins.
+	// Receives the APlayerController* of the newly-logged-in player (as void*).
+	using PluginPlayerJoinedCallback = void(*)(void* playerController);
 
-    // Install the hook
-    bool Install();
+	// Install the hook
+	bool Install();
 
-    // Remove the hook
-    void Remove();
+	// Remove the hook
+	void Remove();
 
-    // Returns true if the hook is currently installed
-    bool IsInstalled();
+	// Returns true if the hook is currently installed
+	bool IsInstalled();
 
-    // Register a plugin callback to be notified when a player joins
-    void RegisterPluginCallback(PluginPlayerJoinedCallback callback);
+	// Register a plugin callback to be notified when a player joins
+	void RegisterPluginCallback(PluginPlayerJoinedCallback callback);
 
-    // Unregister a plugin callback
-    void UnregisterPluginCallback(PluginPlayerJoinedCallback callback);
+	// Unregister a plugin callback
+	void UnregisterPluginCallback(PluginPlayerJoinedCallback callback);
 }

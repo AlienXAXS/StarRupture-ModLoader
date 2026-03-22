@@ -3,10 +3,10 @@
 #include "plugin_interface.h"
 
 // Forward declarations to access global plugin interfaces
-IPluginLogger*  GetLogger();
-IPluginConfig*  GetConfig();
+IPluginLogger* GetLogger();
+IPluginConfig* GetConfig();
 IPluginScanner* GetScanner();
-IPluginHooks*   GetHooks();
+IPluginHooks* GetHooks();
 
 // Convenience macros for logging
 #define LOG_TRACE(format, ...) if (auto logger = GetLogger()) logger->Trace("ServerUtility", format, ##__VA_ARGS__)

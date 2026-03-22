@@ -9,7 +9,7 @@
 namespace Hooks::PlayerJoined
 {
 	// ACrGameModeBase::PostLogin(ACrGameModeBase* this, APlayerController* NewPlayer)
-	typedef void(__fastcall* PostLogin_t)(void* thisPtr, void* newPlayer);
+	using PostLogin_t = void(__fastcall*)(void* thisPtr, void* newPlayer);
 
 	static Hook g_hook;
 	static PostLogin_t g_original = nullptr;
@@ -24,7 +24,7 @@ namespace Hooks::PlayerJoined
 
 		ModLoaderLogger::LogInfo(L"[PlayerJoined] ACrGameModeBase::PostLogin called (#%ld)", callNum);
 		ModLoaderLogger::LogDebug(L"[PlayerJoined]   this=%p, NewPlayer=%p, Thread=%lu",
-			thisPtr, newPlayer, GetCurrentThreadId());
+		                          thisPtr, newPlayer, GetCurrentThreadId());
 
 		// Call original first so the player is fully set up before we notify plugins
 		if (g_original)
@@ -91,8 +91,8 @@ namespace Hooks::PlayerJoined
 		auto base = reinterpret_cast<uintptr_t>(mainModule);
 
 		ModLoaderLogger::LogInfo(L"[PlayerJoined] ACrGameModeBase::PostLogin found at 0x%llX (base+0x%llX)",
-			static_cast<unsigned long long>(addr),
-			static_cast<unsigned long long>(addr - base));
+		                         static_cast<unsigned long long>(addr),
+		                         static_cast<unsigned long long>(addr - base));
 
 		bool hookOk = g_hook.Install(
 			addr,
@@ -148,7 +148,8 @@ namespace Hooks::PlayerJoined
 		if (it != g_pluginCallbacks.end())
 		{
 			g_pluginCallbacks.erase(it);
-			ModLoaderLogger::LogDebug(L"[PlayerJoined] Plugin callback unregistered (%zu remaining)", g_pluginCallbacks.size());
+			ModLoaderLogger::LogDebug(L"[PlayerJoined] Plugin callback unregistered (%zu remaining)",
+			                          g_pluginCallbacks.size());
 		}
 	}
 }

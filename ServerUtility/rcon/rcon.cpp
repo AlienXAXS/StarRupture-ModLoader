@@ -43,16 +43,16 @@
 // ---------------------------------------------------------------------------
 // Module-level state
 // ---------------------------------------------------------------------------
-static RconServer  g_rconServer;
+static RconServer g_rconServer;
 static QueryServer g_queryServer;
 
-static std::thread       g_refreshThread;
-static std::atomic<bool> g_refreshRunning{ false };
+static std::thread g_refreshThread;
+static std::atomic<bool> g_refreshRunning{false};
 
 // Current world pointer — written from the game thread, read (under SEH) from
 // the refresh thread.  Plain pointer; no ref-counting needed since we clear it
 // in OnEngineShutdown before the world is destroyed.
-static std::atomic<void*> g_currentWorld{ nullptr };
+static std::atomic<void*> g_currentWorld{nullptr};
 
 // ---------------------------------------------------------------------------
 // Command-line helpers (wchar_t variant, mirrors parse_settings.cpp)
@@ -104,14 +104,14 @@ static std::string ReadRconPassword()
 
 	// Convert wide string to UTF-8
 	const int len = WideCharToMultiByte(CP_UTF8, 0,
-		val.c_str(), static_cast<int>(val.size()),
-		nullptr, 0, nullptr, nullptr);
+	                                    val.c_str(), static_cast<int>(val.size()),
+	                                    nullptr, 0, nullptr, nullptr);
 	if (len <= 0) return {};
 
 	std::string out(static_cast<size_t>(len), '\0');
 	WideCharToMultiByte(CP_UTF8, 0,
-		val.c_str(), static_cast<int>(val.size()),
-		out.data(), len, nullptr, nullptr);
+	                    val.c_str(), static_cast<int>(val.size()),
+	                    out.data(), len, nullptr, nullptr);
 	return out;
 }
 
@@ -122,14 +122,14 @@ static std::string ReadSessionName()
 		return "StarRupture Server";
 
 	const int len = WideCharToMultiByte(CP_UTF8, 0,
-		val.c_str(), static_cast<int>(val.size()),
-		nullptr, 0, nullptr, nullptr);
+	                                    val.c_str(), static_cast<int>(val.size()),
+	                                    nullptr, 0, nullptr, nullptr);
 	if (len <= 0) return "StarRupture Server";
 
 	std::string out(static_cast<size_t>(len), '\0');
 	WideCharToMultiByte(CP_UTF8, 0,
-		val.c_str(), static_cast<int>(val.size()),
-		out.data(), len, nullptr, nullptr);
+	                    val.c_str(), static_cast<int>(val.size()),
+	                    out.data(), len, nullptr, nullptr);
 	return out;
 }
 
@@ -144,9 +144,9 @@ static std::string ReadSessionName()
 #if RCON_HAS_SDK
 struct RawPlayerData
 {
-	const char* namePtr;   // points into FString internal buffer (transient!)
-	int   nameLen;
-	uint8_t     ping;
+	const char* namePtr; // points into FString internal buffer (transient!)
+	int nameLen;
+	uint8_t ping;
 };
 
 static constexpr int MAX_RAW_PLAYERS = 128;
@@ -174,15 +174,15 @@ static int CollectPlayersRaw_SEH(void* worldPtr, RawPlayerData* outRaw)
 				continue;
 
 			// Grab the raw TCHAR* – this is a wchar_t* internally.
-					 // We'll do the conversion outside __try.
+			// We'll do the conversion outside __try.
 			outRaw[written].namePtr = nullptr;
 			outRaw[written].nameLen = ps->PlayerNamePrivate.Num();
 			outRaw[written].ping = ps->CompressedPing;
 
 			// The SDK FString stores wchar_t internally; ToString() returns
-		   // std::string, but that involves a destructor. Instead store the
-		  // raw data ptr and length so we can convert safely outside SEH.
-			   // FString's Data() returns the internal wchar_t buffer pointer.
+			// std::string, but that involves a destructor. Instead store the
+			// raw data ptr and length so we can convert safely outside SEH.
+			// FString's Data() returns the internal wchar_t buffer pointer.
 			outRaw[written].namePtr = reinterpret_cast<const char*>(ps->PlayerNamePrivate.CStr());
 			++written;
 		}
@@ -192,7 +192,7 @@ static int CollectPlayersRaw_SEH(void* worldPtr, RawPlayerData* outRaw)
 	__except (EXCEPTION_EXECUTE_HANDLER)
 	{
 		LOG_WARN("[Rcon] Exception while collecting player state (0x%08lX) – skipping",
-			GetExceptionCode());
+		         GetExceptionCode());
 		return -1;
 	}
 }
@@ -220,7 +220,7 @@ static void CollectPlayers(void* worldPtr)
 		info.duration = 0.0f;
 
 		// The SDK FString is wchar_t internally; convert to narrow string.
-		const wchar_t* wstr = reinterpret_cast<const wchar_t*>(rawBuf[i].namePtr);
+		auto wstr = reinterpret_cast<const wchar_t*>(rawBuf[i].namePtr);
 		int wlen = rawBuf[i].nameLen - 1; // exclude null terminator
 		if (wlen > 0)
 		{
@@ -266,7 +266,7 @@ void Rcon::Init()
 {
 	LOG_INFO("[Rcon] Initialising RCON / Query subsystem...");
 
-	const uint16_t    port = ReadRconPort();
+	const uint16_t port = ReadRconPort();
 	const std::string password = ReadRconPassword();
 
 	if (port == 0 || password.empty())
@@ -336,7 +336,7 @@ void Rcon::OnAnyWorldBeginPlay(SDK::UWorld* world, const char* worldName)
 {
 	LOG_DEBUG("[Rcon] World begin play: %s", worldName ? worldName : "(null)");
 
-	g_currentWorld.store(static_cast<void*>(world), std::memory_order_release);
+	g_currentWorld.store(world, std::memory_order_release);
 
 	if (worldName && *worldName)
 		ServerState::Get().SetWorldName(worldName);

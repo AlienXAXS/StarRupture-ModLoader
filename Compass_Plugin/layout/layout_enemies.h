@@ -17,41 +17,39 @@
 
 namespace Layout
 {
-
-struct EnemyEntry
-{
-	SDK::FVector location;
-};
-
-inline std::vector<EnemyEntry> ScanEnemies(SDK::UWorld* world)
-{
-	std::vector<EnemyEntry> result;
-	if (!world)
-		return result;
-
-	SDK::TArray<SDK::AActor*> actors;
-	SDK::UGameplayStatics::GetAllActorsOfClass(world, SDK::AMassEnemyCharacterBase::StaticClass(), &actors);
-	LOG_TRACE("[ScanEnemies] GetAllActorsOfClass returned %d actors", actors.Num());
-
-	for (int i = 0; i < actors.Num(); i++)
+	struct EnemyEntry
 	{
-		SDK::AActor* actor = actors[i];
-		if (!actor)
-			continue;
+		SDK::FVector location;
+	};
 
-		auto* enemy = static_cast<SDK::AMassEnemyCharacterBase*>(actor);
+	inline std::vector<EnemyEntry> ScanEnemies(SDK::UWorld* world)
+	{
+		std::vector<EnemyEntry> result;
+		if (!world)
+			return result;
 
-		// Dissolve > 0 means the death/dissolve sequence has started -- skip
-		if (enemy->Dissolve > 0.0f)
-			continue;
+		SDK::TArray<SDK::AActor*> actors;
+		SDK::UGameplayStatics::GetAllActorsOfClass(world, SDK::AMassEnemyCharacterBase::StaticClass(), &actors);
+		LOG_TRACE("[ScanEnemies] GetAllActorsOfClass returned %d actors", actors.Num());
 
-		EnemyEntry e;
-		e.location = enemy->K2_GetActorLocation();
-		result.push_back(e);
+		for (int i = 0; i < actors.Num(); i++)
+		{
+			SDK::AActor* actor = actors[i];
+			if (!actor)
+				continue;
+
+			auto* enemy = static_cast<SDK::AMassEnemyCharacterBase*>(actor);
+
+			// Dissolve > 0 means the death/dissolve sequence has started -- skip
+			if (enemy->Dissolve > 0.0f)
+				continue;
+
+			EnemyEntry e;
+			e.location = enemy->K2_GetActorLocation();
+			result.push_back(e);
+		}
+
+		LOG_TRACE("[ScanEnemies] kept %d live enemies", static_cast<int>(result.size()));
+		return result;
 	}
-
-	LOG_TRACE("[ScanEnemies] kept %d live enemies", (int)result.size());
-	return result;
-}
-
 } // namespace Layout

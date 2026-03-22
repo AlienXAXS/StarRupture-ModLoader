@@ -23,7 +23,7 @@ namespace Cmd_Save
 	// to the appropriate save file.  We call it directly to force an
 	// immediate save on demand.
 	// -----------------------------------------------------------------------
-	static constexpr const char* SAVE_PATTERN =
+	static constexpr auto SAVE_PATTERN =
 		"48 89 5C 24 ?? 48 89 6C 24 ?? 48 89 74 24 ?? 57 48 83 EC ?? 48 8B F9 E8 ?? ?? ?? ?? 33 ED 48 8B D8 48 85 C0 74 ?? E8 ?? ?? ?? ?? 48 8B 53 ?? 4C 8D 40 ?? 48 63 40 ?? 3B 42 ?? 7F ?? 48 8B C8 48 8B 42 ?? ?? ?? ?? ?? 74 ?? 48 8B DD 48 8D 54 24 ?? 48 8B CB E8 ?? ?? ?? ?? 48 63 5C 24";
 
 	using SaveNextSaveGame_t = void(__fastcall*)(void* thisPtr);
@@ -96,7 +96,7 @@ namespace Cmd_Save
 
 #if CMD_SAVE_HAS_SDK
 		LOG_INFO("[RCON] Forcing world save via UCrSaveSubsystem::SaveNextSaveGame "
-			     "(instance at %p, name: %s)...", subsystem, subsystem->GetName().c_str());
+		         "(instance at %p, name: %s)...", subsystem, subsystem->GetName().c_str());
 #endif
 
 		DWORD exCode = TryCallSave(subsystem);
@@ -125,7 +125,7 @@ namespace Cmd_Save
 			{
 				g_saveFunc = reinterpret_cast<SaveNextSaveGame_t>(addr);
 				LOG_INFO("[RCON] UCrSaveSubsystem::SaveNextSaveGame resolved at 0x%llX",
-					static_cast<unsigned long long>(addr));
+				         static_cast<unsigned long long>(addr));
 			}
 			else
 			{
@@ -135,7 +135,7 @@ namespace Cmd_Save
 		}
 
 		handler.Register(
-			{ "save", "savegame", "forcesave" },
+			{"save", "savegame", "forcesave"},
 			"Force an immediate save of the current world state",
 			Handle);
 	}

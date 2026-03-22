@@ -18,22 +18,22 @@
 
 namespace Hooks::ActorBeginPlay
 {
-    // Callback signature for plugins.
- // Receives the raw AActor* pointer (as void*) — plugins cast to SDK::AActor*.
-    typedef void (*PluginActorBeginPlayCallback)(void* actor);
+	// Callback signature for plugins.
+	// Receives the raw AActor* pointer (as void*) — plugins cast to SDK::AActor*.
+	using PluginActorBeginPlayCallback = void(*)(void* actor);
 
-    // Install the hook
- bool Install();
+	// Install the hook
+	bool Install();
 
-    // Remove the hook
-    void Remove();
+	// Remove the hook
+	void Remove();
 
-    // Returns true if the hook is currently installed
-    bool IsInstalled();
+	// Returns true if the hook is currently installed
+	bool IsInstalled();
 
-    // Register a plugin callback to be notified when any actor begins play
-    void RegisterPluginCallback(PluginActorBeginPlayCallback callback);
+	// Register a plugin callback to be notified when any actor begins play
+	void RegisterPluginCallback(PluginActorBeginPlayCallback callback);
 
-    // Unregister a plugin callback
-    void UnregisterPluginCallback(PluginActorBeginPlayCallback callback);
+	// Unregister a plugin callback
+	void UnregisterPluginCallback(PluginActorBeginPlayCallback callback);
 }
