@@ -15,9 +15,12 @@
 #include "logging/log.h"
 
 #include <d3d12.h>
+#include <dxgi1_2.h>
 #include <dxgi1_4.h>
+#include <dxgi1_6.h>
 #include <atomic>
 #include <cstring>
+#include <intrin.h>
 
 #pragma comment(lib, "d3d12.lib")
 #pragma comment(lib, "dxgi.lib")
@@ -28,6 +31,8 @@
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 static HRESULT STDMETHODCALLTYPE HookedPresent(IDXGISwapChain* swapChain, UINT syncInterval, UINT flags);
 static void    STDMETHODCALLTYPE HookedECL(ID3D12CommandQueue* pQueue, UINT NumCmdLists, ID3D12CommandList* const* ppCmdLists);
+static HRESULT STDMETHODCALLTYPE HookedCreateSwapChainForHwnd(void* pFactory, IUnknown* pDevice, HWND hWnd,
+    const void* pDesc, const void* pFullscreenDesc, void* pRestrictToOutput, void* ppSwapChain);
 
 // ---------------------------------------------------------------------------
 // D3D12 per-frame resources
@@ -98,6 +103,25 @@ namespace
     void** g_eclVtableSlot = nullptr;
     using ExecCmdListsFn = void(STDMETHODCALLTYPE*)(ID3D12CommandQueue*, UINT, ID3D12CommandList* const*);
     ExecCmdListsFn g_originalECL = nullptr;
+
+    // g_creationQueue: captured from IDXGIFactory2::CreateSwapChainForHwnd.
+    // This is the queue DXGI implicitly synchronises with on Present -- always
+    // correct for non-Streamline systems.  Weak reference; UE5 owns the lifetime.
+    ID3D12CommandQueue* g_creationQueue = nullptr;
+
+    // True if sl.interposer.dll was loaded at Initialize() time.
+    // When Streamline is active we prefer g_capturedQueue (ECL heuristic) over
+    // g_creationQueue because Streamline's composition queue is the one that
+    // actually touches the back buffer last.
+    bool g_streamlineActive = false;
+
+    // IDXGIFactory2::CreateSwapChainForHwnd vtable patch (slot 15).
+    // Typed as void* for parameters we don't inspect -- avoids dxgi1_2.h type
+    // availability issues at namespace scope; ABI is identical (all pointer-sized).
+    void** g_cscfhVtableSlot = nullptr;
+    using CreateSCFHFn = HRESULT(STDMETHODCALLTYPE*)(void*, IUnknown*, HWND,
+        const void*, const void*, void*, void*);
+    CreateSCFHFn g_originalCSCFH = nullptr;
 }
 
 // ---------------------------------------------------------------------------
@@ -139,14 +163,68 @@ static DXGI_FORMAT NormalizeForImGui(DXGI_FORMAT fmt)
 {
     switch (fmt)
     {
+    // SRGB formats are not valid as RTV -- strip the gamma flag.
     case DXGI_FORMAT_R8G8B8A8_UNORM_SRGB:  return DXGI_FORMAT_R8G8B8A8_UNORM;
     case DXGI_FORMAT_B8G8R8A8_UNORM_SRGB:  return DXGI_FORMAT_B8G8R8A8_UNORM;
     case DXGI_FORMAT_B8G8R8X8_UNORM_SRGB:  return DXGI_FORMAT_B8G8R8X8_UNORM;
+    // UINT formats cause driver errors with ImGui's float4 shader output -- use UNORM.
     case DXGI_FORMAT_R10G10B10A2_UINT:      return DXGI_FORMAT_R10G10B10A2_UNORM;
     case DXGI_FORMAT_R8G8B8A8_UINT:         return DXGI_FORMAT_R8G8B8A8_UNORM;
     case DXGI_FORMAT_R16G16B16A16_UINT:     return DXGI_FORMAT_R16G16B16A16_UNORM;
-    default:                                return fmt;
+    // HDR formats that are already valid as RTV -- pass through unchanged.
+    case DXGI_FORMAT_R10G10B10A2_UNORM:     // HDR10
+    case DXGI_FORMAT_R16G16B16A16_FLOAT:    // scRGB / HDR linear
+    case DXGI_FORMAT_R8G8B8A8_UNORM:
+    case DXGI_FORMAT_B8G8R8A8_UNORM:
+    case DXGI_FORMAT_B8G8R8X8_UNORM:
+        return fmt;
+    default:
+        // Unrecognised format -- pass through and hope for the best.
+        // Log so crash reports can identify new cases that need handling.
+        LogToFile::Info("[ImGuiBackend] NormalizeForImGui: unrecognised format %u -- "
+                        "using as-is. Please report this with your GPU/display info.",
+                        static_cast<unsigned>(fmt));
+        return fmt;
     }
+}
+
+// ---------------------------------------------------------------------------
+// HookedCreateSwapChainForHwnd
+//
+// Captures the ID3D12CommandQueue* passed by UE5 at swap chain creation.
+// That queue is what DXGI implicitly synchronises with on Present -- the
+// definitive correct queue for non-Streamline systems.
+// Only the first DIRECT queue is captured (UE5 creates exactly one real
+// swap chain; Streamline may create additional ones internally).
+// ---------------------------------------------------------------------------
+static HRESULT STDMETHODCALLTYPE HookedCreateSwapChainForHwnd(
+    void*        pFactory,
+    IUnknown*    pDevice,
+    HWND         hWnd,
+    const void*  pDesc,
+    const void*  pFullscreenDesc,
+    void*        pRestrictToOutput,
+    void*        ppSwapChain)
+{
+    if (pDevice && !g_creationQueue)
+    {
+        ID3D12CommandQueue* q = nullptr;
+        if (SUCCEEDED(pDevice->QueryInterface(IID_PPV_ARGS(&q))))
+        {
+            if (q->GetDesc().Type == D3D12_COMMAND_LIST_TYPE_DIRECT)
+            {
+                g_creationQueue = q;  // borrowed -- UE5 owns lifetime
+                q->Release();         // release extra ref from QueryInterface
+                LogToFile::Info("[ImGuiBackend] CreateSwapChainForHwnd: captured creation queue 0x%p",
+                    static_cast<void*>(g_creationQueue));
+            }
+            else
+            {
+                q->Release();
+            }
+        }
+    }
+    return g_originalCSCFH(pFactory, pDevice, hWnd, pDesc, pFullscreenDesc, pRestrictToOutput, ppSwapChain);
 }
 
 // ---------------------------------------------------------------------------
@@ -266,19 +344,75 @@ static bool CreateDeviceD3D(HWND hWnd)
         g_eclVtableSlot   = &qvtable[10];
         g_originalECL     = reinterpret_cast<ExecCmdListsFn>(qvtable[10]);
 
+        {
+            char eclModName[MAX_PATH] = "<unknown>";
+            HMODULE hEclMod = nullptr;
+            if (GetModuleHandleExA(
+                    GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                    GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                    static_cast<LPCSTR>(static_cast<void*>(g_originalECL)), &hEclMod))
+                GetModuleFileNameA(hEclMod, eclModName, sizeof(eclModName));
+            LogToFile::Info("[ImGuiBackend] ID3D12CommandQueue::ECL vtable[10] = 0x%llX  module: %s",
+                static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(g_originalECL)), eclModName);
+        }
+
         DWORD eclProtect = 0;
         if (VirtualProtect(g_eclVtableSlot, sizeof(void*), PAGE_READWRITE, &eclProtect))
         {
             *g_eclVtableSlot = reinterpret_cast<void*>(&HookedECL);
             VirtualProtect(g_eclVtableSlot, sizeof(void*), eclProtect, &eclProtect);
-            LogToFile::Info("[ImGuiBackend] ECL vtable[10] patched -> HookedECL (original=0x%llX)",
-                static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(g_originalECL)));
+            LogToFile::Info("[ImGuiBackend] ECL vtable[10] patched -> HookedECL");
         }
         else
         {
             LogToFile::Error("[ImGuiBackend] VirtualProtect failed for ECL vtable -- cross-queue sync disabled");
             g_eclVtableSlot = nullptr;
             g_originalECL   = nullptr;
+        }
+    }
+
+    // Patch IDXGIFactory2::CreateSwapChainForHwnd vtable[15] with HookedCreateSwapChainForHwnd.
+    // The vtable is shared across all IDXGIFactory2 instances from the same dxgi.dll, so
+    // patching from our temporary factory intercepts UE5's real swap chain creation.
+    if (ok)
+    {
+        IDXGIFactory2* factory2 = nullptr;
+        if (SUCCEEDED(factory->QueryInterface(IID_PPV_ARGS(&factory2))))
+        {
+            void** fvtable     = *reinterpret_cast<void***>(factory2);
+            g_cscfhVtableSlot  = &fvtable[15];
+            g_originalCSCFH    = reinterpret_cast<CreateSCFHFn>(fvtable[15]);
+
+            {
+                char cscfhModName[MAX_PATH] = "<unknown>";
+                HMODULE hCscfhMod = nullptr;
+                if (GetModuleHandleExA(
+                        GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                        GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                        static_cast<LPCSTR>(static_cast<void*>(g_originalCSCFH)), &hCscfhMod))
+                    GetModuleFileNameA(hCscfhMod, cscfhModName, sizeof(cscfhModName));
+                LogToFile::Info("[ImGuiBackend] IDXGIFactory2::CSCFH vtable[15] = 0x%llX  module: %s",
+                    static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(g_originalCSCFH)), cscfhModName);
+            }
+
+            DWORD cscfhProtect = 0;
+            if (VirtualProtect(g_cscfhVtableSlot, sizeof(void*), PAGE_READWRITE, &cscfhProtect))
+            {
+                *g_cscfhVtableSlot = reinterpret_cast<void*>(&HookedCreateSwapChainForHwnd);
+                VirtualProtect(g_cscfhVtableSlot, sizeof(void*), cscfhProtect, &cscfhProtect);
+                LogToFile::Info("[ImGuiBackend] CSCFH vtable[15] patched -> HookedCreateSwapChainForHwnd");
+            }
+            else
+            {
+                LogToFile::Error("[ImGuiBackend] VirtualProtect failed for CSCFH vtable -- creation queue capture disabled");
+                g_cscfhVtableSlot = nullptr;
+                g_originalCSCFH   = nullptr;
+            }
+            factory2->Release();
+        }
+        else
+        {
+            LogToFile::Error("[ImGuiBackend] QueryInterface(IDXGIFactory2) failed -- creation queue capture disabled");
         }
     }
 
@@ -317,6 +451,43 @@ static bool InitD3D12Resources(IDXGISwapChain* swapChain)
     g_hwnd      = scDesc.OutputWindow;
     g_swapChain = swapChain;
 
+    // Select the queue to submit ImGui commands on BEFORE touching D3D12 resources.
+    // This must happen first to avoid a COM reference leak: if we set g_device via
+    // bb->GetDevice() and then return false (queue not ready), the next call would
+    // AddRef g_device again without releasing the previous reference.
+    //
+    // Queue selection strategy:
+    //   Streamline active  -> g_capturedQueue (last DIRECT ECL before Present):
+    //                         Streamline's composition queue is the one that touched
+    //                         the back buffer last; submitting elsewhere causes TDR.
+    //   No Streamline      -> g_creationQueue (captured from CreateSwapChainForHwnd):
+    //                         This is the queue DXGI implicitly syncs with on Present
+    //                         and is always correct for plain UE5 / AMD / Intel setups.
+    //   Fallback           -> g_capturedQueue if creation queue is somehow unavailable.
+    ID3D12CommandQueue* chosenQueue = nullptr;
+    if (g_streamlineActive)
+    {
+        chosenQueue = g_capturedQueue;
+        if (chosenQueue)
+            LogToFile::Info("[ImGuiBackend] Streamline active -- using ECL-captured queue 0x%p",
+                static_cast<void*>(chosenQueue));
+    }
+    else
+    {
+        chosenQueue = g_creationQueue ? g_creationQueue : g_capturedQueue;
+        if (chosenQueue)
+            LogToFile::Info("[ImGuiBackend] No Streamline -- using creation queue 0x%p",
+                static_cast<void*>(chosenQueue));
+    }
+
+    if (!chosenQueue)
+    {
+        // Neither hook has fired yet.  Return false WITHOUT setting g_device so
+        // HookedPresent retries next frame instead of permanently disabling ImGui.
+        LogToFile::Debug("[ImGuiBackend] Queue not yet captured -- deferring D3D12 init");
+        return false;
+    }
+
     // Get UE5's device and the real GPU resource format from back buffer 0.
     // Streamline wraps IDXGISwapChain::GetDesc and may return an internal format
     // rather than the real DXGI_FORMAT.  ID3D12Resource::GetDesc() bypasses the
@@ -332,10 +503,13 @@ static bool InitD3D12Resources(IDXGISwapChain* swapChain)
     bb->Release();
 
     g_rtvFormat = NormalizeForImGui(bbResDesc.Format);
-    LogToFile::Info("[ImGuiBackend] sc_desc_fmt=%u  resource_fmt=%u  rtv_fmt=%u",
+    LogToFile::Info("[ImGuiBackend] SwapChain: size=%ux%u buffers=%u fmt=%u->%u effect=%u flags=0x%X",
+        scDesc.BufferDesc.Width, scDesc.BufferDesc.Height,
+        scDesc.BufferCount,
         static_cast<unsigned>(scDesc.BufferDesc.Format),
-        static_cast<unsigned>(bbResDesc.Format),
-        static_cast<unsigned>(g_rtvFormat));
+        static_cast<unsigned>(g_rtvFormat),
+        static_cast<unsigned>(scDesc.SwapEffect),
+        scDesc.Flags);
 
     if (FAILED(hr))
     {
@@ -343,18 +517,27 @@ static bool InitD3D12Resources(IDXGISwapChain* swapChain)
         return false;
     }
 
-    // Borrow UE5's rendering queue for our ImGui submissions.
-    // Using the SAME queue as UE5 means D3D12's per-queue resource state tracking
-    // is consistent: this queue already knows the back buffer is in PRESENT state
-    // (UE5 transitioned it here before calling Present).  A separate queue would
-    // have no record of that transition and cause DXGI_ERROR_DRIVER_INTERNAL_ERROR.
-    if (!g_capturedQueue)
-    {
-        LogToFile::Error("[ImGuiBackend] g_capturedQueue not set -- ECL hook has not fired yet");
-        return false;
-    }
-    g_cmdQueue = g_capturedQueue;  // borrowed -- do NOT Release in cleanup
-    LogToFile::Info("[ImGuiBackend] Using captured queue 0x%p for ImGui submission", static_cast<void*>(g_cmdQueue));
+    g_cmdQueue = chosenQueue;  // borrowed -- do NOT Release in cleanup
+
+    // Log whether the two capture methods agree -- mismatch on a non-Streamline
+    // system means the ECL heuristic saw a different queue than DXGI was told to use.
+    if (g_creationQueue && g_capturedQueue)
+        LogToFile::Info("[ImGuiBackend] Queue check: creation=0x%p  ecl-captured=0x%p  match=%s",
+            static_cast<void*>(g_creationQueue),
+            static_cast<void*>(g_capturedQueue),
+            g_creationQueue == g_capturedQueue ? "YES" : "no");
+
+    // Determine NodeMask from the device's node count.
+    // NodeMask=1 is correct for all single-GPU systems (node 0).
+    // On multi-GPU setups we log a warning and still use 1 (primary node);
+    // multi-node heap creation requires per-node adapter enumeration which
+    // is out of scope for now.
+    UINT nodeCount = g_device->GetNodeCount();
+    UINT nodeMask  = 1u;
+    LogToFile::Info("[ImGuiBackend] D3D12 node count: %u  NodeMask=0x%X", nodeCount, nodeMask);
+    if (nodeCount > 1)
+        LogToFile::Info("[ImGuiBackend] Multi-GPU system detected (%u nodes) -- using NodeMask=1 (primary). "
+                        "If descriptor heap creation fails, report your GPU configuration.", nodeCount);
 
     // Per-frame fence (prevents reusing an allocator while GPU is still busy).
     if (FAILED(g_device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&g_fence))))
@@ -376,7 +559,7 @@ static bool InitD3D12Resources(IDXGISwapChain* swapChain)
         desc.Type           = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
         desc.NumDescriptors = g_frameCount;
         desc.Flags          = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
-        desc.NodeMask       = 1;
+        desc.NodeMask       = nodeMask;
         if (FAILED(g_device->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&g_rtvHeap))))
         {
             LogToFile::Error("[ImGuiBackend] Failed to create RTV heap");
@@ -391,7 +574,7 @@ static bool InitD3D12Resources(IDXGISwapChain* swapChain)
         desc.Type           = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
         desc.NumDescriptors = 1;
         desc.Flags          = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-        desc.NodeMask       = 1;
+        desc.NodeMask       = nodeMask;
         if (FAILED(g_device->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&g_srvHeap))))
         {
             LogToFile::Error("[ImGuiBackend] Failed to create SRV heap");
@@ -536,11 +719,14 @@ static HRESULT STDMETHODCALLTYPE HookedPresent(IDXGISwapChain* swapChain, UINT s
     if (g_shutdown)
         return g_originalPresent(swapChain, syncInterval, flags);
 
-    // Reentrancy guard: Streamline calls the underlying Present from within its
-    // own Present wrapper.  Without this our hook fires a second time from
-    // Streamline's internal call.
-    static thread_local bool s_inPresent = false;
-    if (s_inPresent)
+    // Reentrancy guard: prevents both recursive calls (Streamline calls the real
+    // Present from within its own Present wrapper) and simultaneous calls from
+    // multiple threads (some middleware and overlay SDKs call Present off the
+    // render thread).  An atomic owner-thread check handles both cases.
+    static std::atomic<DWORD> s_presentOwnerThread{ 0 };
+    DWORD tid      = GetCurrentThreadId();
+    DWORD expected = 0;
+    if (!s_presentOwnerThread.compare_exchange_strong(expected, tid))
         return g_originalPresent(swapChain, syncInterval, flags);
 
     // Wait for WorldBeginPlay before touching D3D12.
@@ -548,7 +734,10 @@ static HRESULT STDMETHODCALLTYPE HookedPresent(IDXGISwapChain* swapChain, UINT s
     if (!g_initialized)
     {
         if (!g_renderingReady)
+        {
+            s_presentOwnerThread.store(0, std::memory_order_release);
             return g_originalPresent(swapChain, syncInterval, flags);
+        }
 
         if (!InitD3D12Resources(swapChain))
         {
@@ -559,14 +748,18 @@ static HRESULT STDMETHODCALLTYPE HookedPresent(IDXGISwapChain* swapChain, UINT s
             }
             // else: size filter rejected this swap chain, try again next frame.
         }
+        s_presentOwnerThread.store(0, std::memory_order_release);
         return g_originalPresent(swapChain, syncInterval, flags);
     }
 
     // Only render on the swap chain we initialised on.
     if (swapChain != g_swapChain)
+    {
+        s_presentOwnerThread.store(0, std::memory_order_release);
         return g_originalPresent(swapChain, syncInterval, flags);
+    }
 
-    s_inPresent = true;
+    // s_presentOwnerThread is now set to tid -- release it on every exit path below.
 
     static std::atomic<UINT64> s_renderFrame{ 0 };
     UINT64 frameIdx = s_renderFrame.fetch_add(1);
@@ -599,7 +792,7 @@ static HRESULT STDMETHODCALLTYPE HookedPresent(IDXGISwapChain* swapChain, UINT s
     if (FAILED(swapChain->GetBuffer(bufferIdx, IID_PPV_ARGS(&backBuffer))))
     {
         LogToFile::Error("[ImGuiBackend] Frame %llu  GetBuffer(%u) failed", frameIdx, bufferIdx);
-        s_inPresent = false;
+        s_presentOwnerThread.store(0, std::memory_order_release);
         return g_originalPresent(swapChain, syncInterval, flags);
     }
 
@@ -699,7 +892,7 @@ static HRESULT STDMETHODCALLTYPE HookedPresent(IDXGISwapChain* swapChain, UINT s
         LogToFile::Error("[ImGuiBackend] g_originalPresent failed: 0x%08X (frame %llu)",
             static_cast<unsigned>(hr), frameIdx);
 
-    s_inPresent = false;
+    s_presentOwnerThread.store(0, std::memory_order_release);
     return hr;
 }
 
@@ -797,6 +990,115 @@ namespace UI::ImGuiBackend
 {
     void Initialize()
     {
+        // Detect Streamline and common overlays before installing any hooks.
+        // Logged once so crash reports immediately show the system configuration.
+        g_streamlineActive = GetModuleHandleW(L"sl.interposer.dll") != nullptr;
+        LogToFile::Info("[ImGuiBackend] Streamline: %s", g_streamlineActive ? "YES" : "no");
+
+        {
+            bool rtss    = GetModuleHandleW(L"RTSSHooks64.dll")           != nullptr;
+            bool discord = GetModuleHandleW(L"DiscordHook64.dll")         != nullptr;
+            bool steam   = GetModuleHandleW(L"gameoverlayrenderer64.dll") != nullptr;
+            LogToFile::Info("[ImGuiBackend] Overlays detected: RTSS=%s  Discord=%s  Steam=%s",
+                rtss ? "YES" : "no", discord ? "YES" : "no", steam ? "YES" : "no");
+            if (rtss)
+                LogToFile::Info("[ImGuiBackend] RTSS (RivaTuner/Afterburner) detected -- "
+                                "if the overlay crashes, disable RTSS and report the issue");
+        }
+
+        // Log system diagnostics so crash reports have full hardware/OS context.
+        {
+            // --- Executable path ---
+            char exePath[MAX_PATH] = {};
+            GetModuleFileNameA(nullptr, exePath, MAX_PATH);
+            LogToFile::Info("[ImGuiBackend] Exe: %s", exePath);
+
+            // --- Windows build (RtlGetVersion bypasses compat shims) ---
+            using RtlGetVersionFn = LONG(WINAPI*)(OSVERSIONINFOEXW*);
+            OSVERSIONINFOEXW osv = { sizeof(osv) };
+            auto rtlGetVersion = reinterpret_cast<RtlGetVersionFn>(
+                GetProcAddress(GetModuleHandleW(L"ntdll.dll"), "RtlGetVersion"));
+            if (rtlGetVersion) rtlGetVersion(&osv);
+            LogToFile::Info("[ImGuiBackend] OS: Windows %lu.%lu build %lu",
+                osv.dwMajorVersion, osv.dwMinorVersion, osv.dwBuildNumber);
+
+            // --- CPU ---
+            char cpuName[49] = {};
+            int  cpuInfo[4]  = {};
+            __cpuid(cpuInfo, 0x80000002); memcpy(cpuName,      cpuInfo, 16);
+            __cpuid(cpuInfo, 0x80000003); memcpy(cpuName + 16, cpuInfo, 16);
+            __cpuid(cpuInfo, 0x80000004); memcpy(cpuName + 32, cpuInfo, 16);
+            const char* cpu = cpuName;
+            while (*cpu == ' ') ++cpu;
+
+            SYSTEM_INFO si = {};
+            GetSystemInfo(&si);
+
+            MEMORYSTATUSEX mem = { sizeof(mem) };
+            GlobalMemoryStatusEx(&mem);
+            ULONGLONG ramMB = mem.ullTotalPhys / (1024ull * 1024ull);
+
+            LogToFile::Info("[ImGuiBackend] CPU: %s (%u cores) | RAM: %llu MB",
+                cpu, static_cast<unsigned>(si.dwNumberOfProcessors), ramMB);
+
+            // --- GPUs (enumerate all adapters) ---
+            IDXGIFactory1* diagFactory = nullptr;
+            if (SUCCEEDED(CreateDXGIFactory1(IID_PPV_ARGS(&diagFactory))))
+            {
+                IDXGIAdapter* adapter = nullptr;
+                for (UINT ai = 0; diagFactory->EnumAdapters(ai, &adapter) != DXGI_ERROR_NOT_FOUND; ++ai)
+                {
+                    DXGI_ADAPTER_DESC desc = {};
+                    if (SUCCEEDED(adapter->GetDesc(&desc)))
+                    {
+                        ULONGLONG dedicMB  = desc.DedicatedVideoMemory  / (1024ull * 1024ull);
+                        ULONGLONG sharedMB = desc.SharedSystemMemory     / (1024ull * 1024ull);
+
+                        // Check HDR support via IDXGIOutput6 on the first output of this adapter.
+                        bool hdr = false;
+                        int  displayW = 0, displayH = 0, refreshHz = 0;
+                        IDXGIOutput* output = nullptr;
+                        if (SUCCEEDED(adapter->EnumOutputs(0, &output)))
+                        {
+                            DXGI_OUTPUT_DESC od = {};
+                            if (SUCCEEDED(output->GetDesc(&od)))
+                            {
+                                displayW = od.DesktopCoordinates.right  - od.DesktopCoordinates.left;
+                                displayH = od.DesktopCoordinates.bottom - od.DesktopCoordinates.top;
+
+                                // Refresh rate from EnumDisplaySettings -- DXGI_OUTPUT_DESC1 doesn't carry it.
+                                DEVMODEW dm = {};
+                                dm.dmSize = sizeof(dm);
+                                if (EnumDisplaySettingsW(od.DeviceName, ENUM_CURRENT_SETTINGS, &dm))
+                                    refreshHz = static_cast<int>(dm.dmDisplayFrequency);
+                            }
+                            IDXGIOutput6* out6 = nullptr;
+                            if (SUCCEEDED(output->QueryInterface(IID_PPV_ARGS(&out6))))
+                            {
+                                DXGI_OUTPUT_DESC1 od1 = {};
+                                if (SUCCEEDED(out6->GetDesc1(&od1)))
+                                    hdr = (od1.ColorSpace == DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020);
+                                out6->Release();
+                            }
+                            output->Release();
+                        }
+
+                        LogToFile::Info(
+                            "[ImGuiBackend] GPU[%u]: %ls (VendorId=0x%04X DevId=0x%04X) | "
+                            "VRAM: %llu MB dedicated, %llu MB shared | "
+                            "Display: %dx%d @%dHz | HDR: %s",
+                            ai, desc.Description,
+                            desc.VendorId, desc.DeviceId,
+                            dedicMB, sharedMB,
+                            displayW, displayH, refreshHz,
+                            hdr ? "YES" : "no");
+                    }
+                    adapter->Release();
+                }
+                diagFactory->Release();
+            }
+        }
+
         // Read the overlay open key from modloader.ini (next to game exe).
         // If the key is absent, write the default so the file self-documents.
         char openKeyName[32] = "F2";
@@ -873,6 +1175,17 @@ namespace UI::ImGuiBackend
             VirtualProtect(g_eclVtableSlot, sizeof(void*), oldProtect, &oldProtect);
             g_eclVtableSlot = nullptr;
             g_originalECL   = nullptr;
+        }
+
+        // Restore the CreateSwapChainForHwnd vtable entry.
+        if (g_cscfhVtableSlot && g_originalCSCFH)
+        {
+            DWORD oldProtect = 0;
+            VirtualProtect(g_cscfhVtableSlot, sizeof(void*), PAGE_READWRITE, &oldProtect);
+            *g_cscfhVtableSlot = reinterpret_cast<void*>(g_originalCSCFH);
+            VirtualProtect(g_cscfhVtableSlot, sizeof(void*), oldProtect, &oldProtect);
+            g_cscfhVtableSlot = nullptr;
+            g_originalCSCFH   = nullptr;
         }
 
         if (g_initialized)
