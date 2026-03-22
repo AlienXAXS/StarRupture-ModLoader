@@ -706,7 +706,22 @@ static void STDMETHODCALLTYPE HookedECL(ID3D12CommandQueue* pQueue,
 	{
 		D3D12_COMMAND_QUEUE_DESC d = pQueue->GetDesc();
 		if (d.Type == D3D12_COMMAND_LIST_TYPE_DIRECT)
+		{
+			ID3D12CommandQueue* prev = g_capturedQueue;
 			g_capturedQueue = pQueue;
+
+			// Log if the queue changes post-init.
+			// On Streamline systems this can happen when the game transitions
+			// state (e.g. loading -> main menu), exposing a new internal queue.
+			// g_cmdQueue is locked at init time and unaffected -- this log helps
+			// confirm whether queue instability is the source of device removal.
+			if (g_initialized && prev && prev != pQueue)
+				LogToFile::Info("[ImGuiBackend] ECL queue changed post-init: "
+					"old=0x%p  new=0x%p  submit queue (g_cmdQueue=0x%p) unchanged",
+					static_cast<void*>(prev),
+					static_cast<void*>(pQueue),
+					static_cast<void*>(g_cmdQueue));
+		}
 	}
 	g_originalECL(pQueue, NumCmdLists, ppCmdLists);
 }
@@ -765,8 +780,9 @@ static HRESULT STDMETHODCALLTYPE HookedPresent(IDXGISwapChain* swapChain, UINT s
 	UINT64 frameIdx = s_renderFrame.fetch_add(1);
 
 	if (frameIdx == 0)
-		LogToFile::Info("[ImGuiBackend] First render: device=0x%p queue=0x%p buffers=%u fmt=%u",
-			static_cast<void*>(g_device), static_cast<void*>(g_capturedQueue),
+		LogToFile::Info("[ImGuiBackend] First render: device=0x%p submit-queue=0x%p ecl-current=0x%p buffers=%u fmt=%u",
+			static_cast<void*>(g_device), static_cast<void*>(g_cmdQueue),
+			static_cast<void*>(g_capturedQueue),
 			g_frameCount, static_cast<unsigned>(g_rtvFormat));
 
 	// Current back buffer index.
@@ -866,9 +882,14 @@ static HRESULT STDMETHODCALLTYPE HookedPresent(IDXGISwapChain* swapChain, UINT s
 	g_cmdList->ResourceBarrier(1, &barrier);
 	g_cmdList->Close();
 
-	// Submit on g_capturedQueue (see comment above -- the queue that last touched
-	// the back buffer).  Fall back to g_cmdQueue if capture hasn't fired yet.
-	ID3D12CommandQueue* submitQueue = g_capturedQueue ? g_capturedQueue : g_cmdQueue;
+	// Submit on g_cmdQueue -- the queue locked in at InitD3D12Resources time.
+	// Do NOT use the live g_capturedQueue here: it is updated on every ECL call
+	// from any thread and can change mid-session (e.g. loading -> main menu
+	// transition exposes a new Streamline-internal queue).  Submitting a fence
+	// signal from a queue on a different device causes DXGI_ERROR_DEVICE_REMOVED.
+	// g_cmdQueue was verified against the swap chain back buffer's device at init
+	// and will not change for the lifetime of this swap chain.
+	ID3D12CommandQueue* submitQueue = g_cmdQueue;
 	ID3D12CommandList* cmdLists[] = { g_cmdList };
 	submitQueue->ExecuteCommandLists(1, cmdLists);
 
