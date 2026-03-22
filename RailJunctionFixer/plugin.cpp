@@ -199,25 +199,31 @@ static void OnEngineInit()
 	}
 }
 
-// Engine shutdown callback - called before UObject system tears down
-// This is the correct place to restore UStruct patches so the engine
-// doesn't encounter our VirtualAlloc'd memory during its own teardown.
+// Shared cleanup — called from both OnEngineShutdown and PluginShutdown.
+// Guards against double-calls via g_hooks nullptr check.
+static void DoFullCleanup()
+{
+	// Remove the low-level WBP hook first so no further calls into our code
+	// can happen while we unwind everything else.
+	RemoveMassEntityConfigWBPHook();
+
+	if (g_hooks)
+	{
+		if (g_hooks->World)
+			g_hooks->World->UnregisterOnExperienceLoadComplete(OnExperienceLoadComplete);
+
+		if (g_hooks->Actors)
+			g_hooks->Actors->UnregisterOnActorBeginPlay(RailJunctionFixer::RailScanner::OnActorBeginPlay);
+	}
+
+	RailJunctionFixer::LogisticsFragmentFixer::Shutdown();
+}
+
+// Engine shutdown callback - called before UObject system tears down.
 static void OnEngineShutdown()
 {
 	LOG_INFO("Engine shutting down - cleaning up...");
-
-	// Unregister experience-load-complete callback
-	if (g_hooks && g_hooks->World)
-		g_hooks->World->UnregisterOnExperienceLoadComplete(OnExperienceLoadComplete);
-
-	// Unregister actor begin-play callback
-	if (g_hooks && g_hooks->Actors)
-		g_hooks->Actors->UnregisterOnActorBeginPlay(RailJunctionFixer::RailScanner::OnActorBeginPlay);
-
-	RailJunctionFixer::LogisticsFragmentFixer::Shutdown();
-
-	// Remove the mass entity config loader subsystem hook
-	RemoveMassEntityConfigWBPHook();
+	DoFullCleanup();
 }
 
 extern "C" {
@@ -272,13 +278,19 @@ extern "C" {
 	{
 		LOG_INFO("Plugin shutting down...");
 
-		// NOTE: Do NOT touch engine callback lists or engine-owned memory here.
-		// PluginShutdown is called from DLL_PROCESS_DETACH only if lpReserved==nullptr
-		// (explicit FreeLibrary), but in practice server shutdown always goes through
-		// ExitProcess (lpReserved!=nullptr) so this function is never called.
-		//
-		// UStruct restoration is handled in OnEngineShutdown() which fires via the
-		// FEngineLoop::Exit hook - before the UObject system tears down.
+		// PluginShutdown is now called on explicit hot-unload (FreeLibrary from the
+		// mod loader UI) as well as on process exit. We must do a full teardown here
+		// to ensure no code or callbacks in this DLL remain reachable after unload.
+
+		// Unregister engine-level callbacks so they don't fire into unloaded memory.
+		if (g_hooks && g_hooks->Engine)
+		{
+			g_hooks->Engine->UnregisterOnInit(OnEngineInit);
+			g_hooks->Engine->UnregisterOnShutdown(OnEngineShutdown);
+		}
+
+		// Remove the WBP hook, unregister world/actor callbacks, restore structs.
+		DoFullCleanup();
 
 		g_logger = nullptr;
 		g_config = nullptr;
