@@ -20,27 +20,34 @@ namespace ModLoaderLogger
 		PluginShutdownFunc shutdown;
 		std::wstring fileName;
 		bool isInitialized;
+
+		// Cached display strings — valid even after FreeLibrary.
+		std::string cachedName;
+		std::string cachedVersion;
+		std::string cachedAuthor;
 	};
 
 	static std::vector<LoadedPlugin> g_loadedPlugins;
 	static CRITICAL_SECTION g_pluginLock;
 	static bool g_managerInitialized = false;
 
-	// Load a single plugin DLL
-	static bool LoadPlugin(const std::wstring& dllPath)
+	// Inner load helper: performs LoadLibrary, GetProcAddress, GetPluginInfo,
+	// version check, and PluginInit on an existing LoadedPlugin record.
+	// rec.fileName must be set before calling. On success: hModule, info,
+	// function pointers, cached strings, and isInitialized are all populated.
+	// On failure: any resources acquired are released and the record is left clean.
+	static bool LoadPluginIntoRecord(LoadedPlugin& rec)
 	{
-		LogMessage(L"Loading plugin: %s", dllPath.c_str());
+		LogMessage(L"Loading plugin: %s", rec.fileName.c_str());
 
-		// Load the DLL
-		HMODULE hModule = LoadLibraryW(dllPath.c_str());
+		HMODULE hModule = LoadLibraryW(rec.fileName.c_str());
 		if (!hModule)
 		{
 			DWORD error = GetLastError();
-			LogMessage(L"Failed to load plugin DLL: %s (error: %lu)", dllPath.c_str(), error);
+			LogMessage(L"Failed to load plugin DLL: %s (error: %lu)", rec.fileName.c_str(), error);
 			return false;
 		}
 
-		// Get plugin functions
 		GetPluginInfoFunc getInfo = reinterpret_cast<GetPluginInfoFunc>(
 			GetProcAddress(hModule, PLUGIN_GET_INFO_FUNC_NAME));
 		PluginInitFunc init = reinterpret_cast<PluginInitFunc>(
@@ -48,31 +55,28 @@ namespace ModLoaderLogger
 		PluginShutdownFunc shutdown = reinterpret_cast<PluginShutdownFunc>(
 			GetProcAddress(hModule, PLUGIN_SHUTDOWN_FUNC_NAME));
 
-		// Validate required functions
 		if (!getInfo || !init || !shutdown)
 		{
-			LogMessage(L"Plugin missing required exports: %s", dllPath.c_str());
+			LogMessage(L"Plugin missing required exports: %s", rec.fileName.c_str());
 			FreeLibrary(hModule);
 			return false;
 		}
 
-		// Get plugin info
 		PluginInfo* info = getInfo();
 		if (!info)
 		{
-			LogMessage(L"Plugin GetPluginInfo returned nullptr: %s", dllPath.c_str());
+			LogMessage(L"Plugin GetPluginInfo returned nullptr: %s", rec.fileName.c_str());
 			FreeLibrary(hModule);
 			return false;
 		}
 
-		// Validate interface version — accept any plugin in the supported [MIN, MAX] range
 		if (info->interfaceVersion < PLUGIN_INTERFACE_VERSION_MIN ||
 			info->interfaceVersion > PLUGIN_INTERFACE_VERSION_MAX)
 		{
 			LogMessage(L"Plugin interface version %d not in supported range [%d, %d]: %s",
 				info->interfaceVersion,
 				PLUGIN_INTERFACE_VERSION_MIN, PLUGIN_INTERFACE_VERSION_MAX,
-				dllPath.c_str());
+				rec.fileName.c_str());
 			FreeLibrary(hModule);
 			return false;
 		}
@@ -80,29 +84,39 @@ namespace ModLoaderLogger
 		LogMessage(L"Plugin info - Name: %S, Version: %S, Author: %S",
 			info->name, info->version, info->author);
 
-		// Initialize the plugin with logger, config, scanner, and hooks
 		if (!init(GetPluginLogger(), GetPluginConfig(), GetPluginScanner(), GetPluginHooks()))
 		{
-			LogMessage(L"Plugin initialization failed: %s", dllPath.c_str());
+			LogMessage(L"Plugin initialization failed: %s", rec.fileName.c_str());
 			FreeLibrary(hModule);
 			return false;
 		}
 
-		// Store plugin info
-		LoadedPlugin plugin = {};
-		plugin.hModule = hModule;
-		plugin.info = info;
-		plugin.getInfo = getInfo;
-		plugin.init = init;
-		plugin.shutdown = shutdown;
-		plugin.fileName = dllPath;
-		plugin.isInitialized = true;
-
-		EnterCriticalSection(&g_pluginLock);
-		g_loadedPlugins.push_back(plugin);
-		LeaveCriticalSection(&g_pluginLock);
+		rec.hModule        = hModule;
+		rec.info           = info;
+		rec.getInfo        = getInfo;
+		rec.init           = init;
+		rec.shutdown       = shutdown;
+		rec.isInitialized  = true;
+		rec.cachedName     = info->name    ? info->name    : "";
+		rec.cachedVersion  = info->version ? info->version : "";
+		rec.cachedAuthor   = info->author  ? info->author  : "";
 
 		LogMessage(L"Successfully loaded plugin: %S v%S", info->name, info->version);
+		return true;
+	}
+
+	// Load a single plugin DLL by path (used during startup scan).
+	static bool LoadPlugin(const std::wstring& dllPath)
+	{
+		LoadedPlugin rec = {};
+		rec.fileName = dllPath;
+
+		if (!LoadPluginIntoRecord(rec))
+			return false;
+
+		EnterCriticalSection(&g_pluginLock);
+		g_loadedPlugins.push_back(std::move(rec));
+		LeaveCriticalSection(&g_pluginLock);
 		return true;
 	}
 
@@ -182,7 +196,6 @@ namespace ModLoaderLogger
 			wchar_t dllPath[MAX_PATH] = {};
 			swprintf_s(dllPath, L"%s\\%s", modsPath, findData.cFileName);
 
-			// Try to load the plugin
 			if (LoadPlugin(dllPath))
 			{
 				loadedCount++;
@@ -205,7 +218,7 @@ namespace ModLoaderLogger
 		{
 			if (plugin.isInitialized)
 			{
-				LogMessage(L"Shutting down plugin: %S", plugin.info->name);
+				LogMessage(L"Shutting down plugin: %S", plugin.cachedName.c_str());
 				plugin.shutdown();
 				plugin.isInitialized = false;
 			}
@@ -214,6 +227,7 @@ namespace ModLoaderLogger
 			{
 				FreeLibrary(plugin.hModule);
 				plugin.hModule = nullptr;
+				plugin.info    = nullptr;
 			}
 		}
 
@@ -227,7 +241,9 @@ namespace ModLoaderLogger
 	int GetLoadedPluginCount()
 	{
 		EnterCriticalSection(&g_pluginLock);
-		int count = static_cast<int>(g_loadedPlugins.size());
+		int count = 0;
+		for (const auto& p : g_loadedPlugins)
+			if (p.isInitialized) count++;
 		LeaveCriticalSection(&g_pluginLock);
 		return count;
 	}
@@ -235,14 +251,98 @@ namespace ModLoaderLogger
 	int GetLoadedPluginInfos(const PluginInfo** outInfos, int maxCount)
 	{
 		EnterCriticalSection(&g_pluginLock);
-		int total = static_cast<int>(g_loadedPlugins.size());
-		if (outInfos && maxCount > 0)
+		int total = 0;
+		for (int i = 0; i < static_cast<int>(g_loadedPlugins.size()); ++i)
 		{
-			int toCopy = total < maxCount ? total : maxCount;
-			for (int i = 0; i < toCopy; ++i)
-				outInfos[i] = g_loadedPlugins[i].info;
+			if (!g_loadedPlugins[i].isInitialized) continue;
+			if (outInfos && total < maxCount)
+				outInfos[total] = g_loadedPlugins[i].info;
+			total++;
 		}
 		LeaveCriticalSection(&g_pluginLock);
 		return total;
+	}
+
+	int GetAllPluginStatuses(PluginStatus* out, int maxCount)
+	{
+		EnterCriticalSection(&g_pluginLock);
+		int total = static_cast<int>(g_loadedPlugins.size());
+		if (out && maxCount > 0)
+		{
+			int toCopy = total < maxCount ? total : maxCount;
+			for (int i = 0; i < toCopy; ++i)
+			{
+				const LoadedPlugin& p = g_loadedPlugins[i];
+				strncpy_s(out[i].name,    p.cachedName.c_str(),    _TRUNCATE);
+				strncpy_s(out[i].version, p.cachedVersion.c_str(), _TRUNCATE);
+				strncpy_s(out[i].author,  p.cachedAuthor.c_str(),  _TRUNCATE);
+				out[i].isLoaded = p.isInitialized;
+			}
+		}
+		LeaveCriticalSection(&g_pluginLock);
+		return total;
+	}
+
+	bool UnloadPlugin(int index)
+	{
+		EnterCriticalSection(&g_pluginLock);
+
+		if (index < 0 || index >= static_cast<int>(g_loadedPlugins.size()) ||
+			!g_loadedPlugins[index].isInitialized)
+		{
+			LeaveCriticalSection(&g_pluginLock);
+			return false;
+		}
+
+		LoadedPlugin& p = g_loadedPlugins[index];
+		LogMessage(L"Unloading plugin: %S", p.cachedName.c_str());
+		p.shutdown();
+		p.isInitialized = false;
+		FreeLibrary(p.hModule);
+		p.hModule = nullptr;
+		p.info    = nullptr;
+
+		LeaveCriticalSection(&g_pluginLock);
+		LogMessage(L"Plugin unloaded: %S", p.cachedName.c_str());
+		return true;
+	}
+
+	bool ReloadPlugin(int index)
+	{
+		EnterCriticalSection(&g_pluginLock);
+
+		if (index < 0 || index >= static_cast<int>(g_loadedPlugins.size()))
+		{
+			LeaveCriticalSection(&g_pluginLock);
+			return false;
+		}
+
+		LoadedPlugin& p = g_loadedPlugins[index];
+		LogMessage(L"Reloading plugin: %S", p.cachedName.c_str());
+
+		// Unload if currently running
+		if (p.isInitialized)
+		{
+			p.shutdown();
+			p.isInitialized = false;
+		}
+		if (p.hModule)
+		{
+			FreeLibrary(p.hModule);
+			p.hModule = nullptr;
+			p.info    = nullptr;
+		}
+
+		// fileName is preserved — reload from same path
+		bool ok = LoadPluginIntoRecord(p);
+
+		LeaveCriticalSection(&g_pluginLock);
+
+		if (ok)
+			LogMessage(L"Plugin reloaded successfully: %S", p.cachedName.c_str());
+		else
+			LogMessage(L"Plugin reload failed for index %d", index);
+
+		return ok;
 	}
 }

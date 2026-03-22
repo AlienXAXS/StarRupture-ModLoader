@@ -740,7 +740,7 @@ namespace RailJunctionFixer
 			return;
 		}
 
-		LOG_INFO("  Found %zu entity handles total from persistent ID map", handles.size());
+		LOG_DEBUG("  Found %zu entity handles total from persistent ID map", handles.size());
 
 		// ---- 7. Filter and signal entities ----
 		if (handles.empty())

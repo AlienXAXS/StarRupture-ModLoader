@@ -183,7 +183,7 @@ namespace RailJunctionFixer {
 		// ---------------------------------------------------------------------------
 		void ScanRailSocketState(SDK::UWorld* world)
 		{
-			LOG_INFO("RailScanner: ---- Begin rail socket scan ----");
+			LOG_DEBUG("RailScanner: ---- Begin rail socket scan ----");
 
 			if (!world)
 			{
@@ -204,7 +204,7 @@ namespace RailJunctionFixer {
 				return;
 			}
 
-			LOG_INFO("RailScanner: railClass=%p  junctionClass=%p",
+			LOG_DEBUG("RailScanner: railClass=%p  junctionClass=%p",
 				static_cast<void*>(railClass), static_cast<void*>(junctionClass));
 
 			// ------------------------------------------------------------------
@@ -233,7 +233,7 @@ namespace RailJunctionFixer {
 				return;
 			}
 
-			LOG_INFO("RailScanner: Iterating GObjects (%d elements) for ACrDronePathPointConnection...",
+			LOG_DEBUG("RailScanner: Iterating GObjects (%d elements) for ACrDronePathPointConnection...",
 				objArray->NumElements);
 
 			for (int32_t i = 0; i < objArray->NumElements; ++i)
@@ -295,7 +295,7 @@ namespace RailJunctionFixer {
 					junctionMap[endJunction].push_back({ actor, endPos, false, -1 });
 			}
 
-			LOG_INFO("RailScanner: ACrDronePathPointConnection pass: found %d actor(s)", nRailsTotal);
+			LOG_DEBUG("RailScanner: ACrDronePathPointConnection pass: found %d actor(s)", nRailsTotal);
 
 			// ------------------------------------------------------------------
 			// 2b. MassSpawner fallback: if no ACrDronePathPointConnection actors
@@ -314,7 +314,7 @@ namespace RailJunctionFixer {
 				}
 				else
 				{
-					LOG_INFO("RailScanner: Falling back to ACrDronePathPointConnectionMassSpawner...");
+					LOG_DEBUG("RailScanner: Falling back to ACrDronePathPointConnectionMassSpawner...");
 					int nSpawners = 0;
 
 					for (int32_t i = 0; i < objArray->NumElements; ++i)
@@ -359,18 +359,18 @@ namespace RailJunctionFixer {
 							junctionMap[endJunction].push_back({ actor, endPos, false, -1 });
 					}
 
-					LOG_INFO("RailScanner: MassSpawner fallback: found %d spawner actor(s)", nSpawners);
+					LOG_DEBUG("RailScanner: MassSpawner fallback: found %d spawner actor(s)", nSpawners);
 				}
 			}
 
-			LOG_INFO("RailScanner: Collection complete:");
-			LOG_INFO("  Total rail actors found  : %d", nRailsTotal);
-			LOG_INFO("  Null spline component    : %d", nNullSpline);
-			LOG_INFO("  Missing start junction   : %d", nMissingStart);
-			LOG_INFO("  Missing end junction     : %d", nMissingEnd);
-			LOG_INFO("  Missing both junctions   : %d", nMissingBoth);
-			LOG_INFO("  Spline read errors (SEH) : %d", nSplineError);
-			LOG_INFO("  Distinct junctions seen  : %d", (int)junctionMap.size());
+			LOG_DEBUG("RailScanner: Collection complete:");
+			LOG_DEBUG("  Total rail actors found  : %d", nRailsTotal);
+			LOG_DEBUG("  Null spline component    : %d", nNullSpline);
+			LOG_DEBUG("  Missing start junction   : %d", nMissingStart);
+			LOG_DEBUG("  Missing end junction     : %d", nMissingEnd);
+			LOG_DEBUG("  Missing both junctions   : %d", nMissingBoth);
+			LOG_DEBUG("  Spline read errors (SEH) : %d", nSplineError);
+			LOG_DEBUG("  Distinct junctions seen  : %d", (int)junctionMap.size());
 
 			// ------------------------------------------------------------------
 			// 3. Analyse each junction
@@ -480,7 +480,7 @@ namespace RailJunctionFixer {
 				if (junctionClass)
 					isJunctionClass = TryIsA(junction, junctionClass);
 
-				LOG_INFO("RailScanner: Junction %p [%s] -- %d rail(s), "
+				LOG_DEBUG("RailScanner: Junction %p [%s] -- %d rail(s), "
 					"transform=%s, geomConflicts=%d",
 					junction,
 					isJunctionClass ? "CrDronePathPoint" : "unknown-class",
@@ -493,7 +493,7 @@ namespace RailJunctionFixer {
 				{
 					int idx = sortedIdx[rank];
 					const RailEnd& re = railEnds[idx];
-					LOG_INFO("  propSocket %d: rail=%p  %s-end"
+					LOG_DEBUG("  propSocket %d: rail=%p  %s-end"
 						"  pos=(%.1f, %.1f, %.1f)"
 						"  proj=%.1f",
 						rank,
@@ -509,12 +509,12 @@ namespace RailJunctionFixer {
 			// ------------------------------------------------------------------
 			// 4. Final summary
 			// ------------------------------------------------------------------
-			LOG_INFO("RailScanner: ---- Scan summary ----");
-			LOG_INFO("  Rail actors          : %d", nRailsTotal);
-			LOG_INFO("  Junctions referenced : %d", (int)junctionMap.size());
-			LOG_INFO("  Geometry conflicts   : %d junctions, %d pairs",
+			LOG_DEBUG("RailScanner: ---- Scan summary ----");
+			LOG_DEBUG("  Rail actors          : %d", nRailsTotal);
+			LOG_DEBUG("  Junctions referenced : %d", (int)junctionMap.size());
+			LOG_DEBUG("  Geometry conflicts   : %d junctions, %d pairs",
 				nJunctionsWithGeomIssue, nGeomConflictPairs);
-			LOG_INFO("RailScanner: ---- End rail socket scan ----");
+			LOG_DEBUG("RailScanner: ---- End rail socket scan ----");
 
 			// ------------------------------------------------------------------
 			// TODO (next step): Read Mass entity socket fragment data to detect
