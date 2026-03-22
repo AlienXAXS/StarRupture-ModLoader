@@ -51,10 +51,10 @@ IPluginHooks* GetHooks() { return g_hooks; }
 // subsystem compiles entity archetypes (BuildTemplate calls).
 // ----------------------------------------------------------------
 
-static constexpr const char* MASS_ENTITY_CONFIG_WBP_PATTERN =
-"48 89 5C 24 ?? 48 89 74 24 ?? 57 48 81 EC ?? ?? ?? ?? 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 84 24 ?? ?? ?? ?? 48 8B FA 48 8B F1 E8 ?? ?? ?? ?? 48 8D 4C 24";
+static constexpr auto MASS_ENTITY_CONFIG_WBP_PATTERN =
+	"48 89 5C 24 ?? 48 89 74 24 ?? 57 48 81 EC ?? ?? ?? ?? 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 84 24 ?? ?? ?? ?? 48 8B FA 48 8B F1 E8 ?? ?? ?? ?? 48 8D 4C 24";
 
-typedef void(__fastcall* MassEntityConfigWBP_t)(void* thisPtr, SDK::UWorld* inWorld);
+using MassEntityConfigWBP_t = void(__fastcall*)(void* thisPtr, SDK::UWorld* inWorld);
 static MassEntityConfigWBP_t g_originalMassEntityConfigWBP = nullptr;
 static HookHandle g_massEntityConfigWBPHookHandle = nullptr;
 
@@ -62,7 +62,7 @@ static void __fastcall Hook_MassEntityConfigWBP(void* thisPtr, SDK::UWorld* inWo
 {
 	std::string worldName = inWorld ? inWorld->GetName() : "(null)";
 	LOG_INFO("UCrMassEntityConfigLoaderSubsystem::OnWorldBeginPlay fired - this=%p, World=%p '%s'",
-		thisPtr, static_cast<void*>(inWorld), worldName.c_str());
+	         thisPtr, static_cast<void*>(inWorld), worldName.c_str());
 
 	// Apply the hierarchy patch BEFORE the original runs so it is in place
 	// before entity archetypes are compiled (BuildTemplate / IsChildOf calls).
@@ -99,8 +99,8 @@ static bool InstallMassEntityConfigWBPHook()
 	HMODULE mainModule = GetModuleHandleW(nullptr);
 	auto base = reinterpret_cast<uintptr_t>(mainModule);
 	LOG_INFO("UCrMassEntityConfigLoaderSubsystem::OnWorldBeginPlay found at 0x%llX (base+0x%llX)",
-		static_cast<unsigned long long>(addr),
-		static_cast<unsigned long long>(addr - base));
+	         static_cast<unsigned long long>(addr),
+	         static_cast<unsigned long long>(addr - base));
 
 	g_massEntityConfigWBPHookHandle = g_hooks->Hooks->Install(
 		addr,
@@ -199,91 +199,103 @@ static void OnEngineInit()
 	}
 }
 
-// Engine shutdown callback - called before UObject system tears down
-// This is the correct place to restore UStruct patches so the engine
-// doesn't encounter our VirtualAlloc'd memory during its own teardown.
+// Shared cleanup — called from both OnEngineShutdown and PluginShutdown.
+// Guards against double-calls via g_hooks nullptr check.
+static void DoFullCleanup()
+{
+	// Remove the low-level WBP hook first so no further calls into our code
+	// can happen while we unwind everything else.
+	RemoveMassEntityConfigWBPHook();
+
+	if (g_hooks)
+	{
+		if (g_hooks->World)
+			g_hooks->World->UnregisterOnExperienceLoadComplete(OnExperienceLoadComplete);
+
+		if (g_hooks->Actors)
+			g_hooks->Actors->UnregisterOnActorBeginPlay(RailJunctionFixer::RailScanner::OnActorBeginPlay);
+	}
+
+	RailJunctionFixer::LogisticsFragmentFixer::Shutdown();
+}
+
+// Engine shutdown callback - called before UObject system tears down.
 static void OnEngineShutdown()
 {
 	LOG_INFO("Engine shutting down - cleaning up...");
-
-	// Unregister experience-load-complete callback
-	if (g_hooks && g_hooks->World)
-		g_hooks->World->UnregisterOnExperienceLoadComplete(OnExperienceLoadComplete);
-
-	// Unregister actor begin-play callback
-	if (g_hooks && g_hooks->Actors)
-		g_hooks->Actors->UnregisterOnActorBeginPlay(RailJunctionFixer::RailScanner::OnActorBeginPlay);
-
-	RailJunctionFixer::LogisticsFragmentFixer::Shutdown();
-
-	// Remove the mass entity config loader subsystem hook
-	RemoveMassEntityConfigWBPHook();
+	DoFullCleanup();
 }
 
 extern "C" {
+__declspec(dllexport) PluginInfo* GetPluginInfo()
+{
+	return &s_pluginInfo;
+}
 
-	__declspec(dllexport) PluginInfo* GetPluginInfo()
+__declspec(dllexport) bool PluginInit(IPluginLogger* logger, IPluginConfig* config, IPluginScanner* scanner,
+                                      IPluginHooks* hooks)
+{
+	// Store plugin interface pointers
+	g_logger = logger;
+	g_config = config;
+	g_scanner = scanner;
+	g_hooks = hooks;
+
+	LOG_INFO("Plugin initializing...");
+
+	// Initialize config system with schema - creates default config if needed
+	RailJunctionFixerConfig::Config::Initialize(config);
+
+	if (!RailJunctionFixerConfig::Config::IsPluginEnabled())
 	{
-		return &s_pluginInfo;
-	}
-
-	__declspec(dllexport) bool PluginInit(IPluginLogger* logger, IPluginConfig* config, IPluginScanner* scanner, IPluginHooks* hooks)
-	{
-		// Store plugin interface pointers
-		g_logger = logger;
-		g_config = config;
-		g_scanner = scanner;
-		g_hooks = hooks;
-
-		LOG_INFO("Plugin initializing...");
-
-		// Initialize config system with schema - creates default config if needed
-		RailJunctionFixerConfig::Config::Initialize(config);
-
-		if (!RailJunctionFixerConfig::Config::IsPluginEnabled())
-		{
-			LOG_INFO("Plugin is disabled in config - skipping initialization");	
-			return true;
-		}
-
-		// Install the UCrMassEntityConfigLoaderSubsystem::OnWorldBeginPlay hook NOW,
-		// before FEngineLoop::Init runs. The subsystem fires OnWorldBeginPlay inside
-		// FEngineLoop::Init, so this must be in place before the engine starts up.
-		if (InstallMassEntityConfigWBPHook())
-		{
-			LOG_INFO("UCrMassEntityConfigLoaderSubsystem::OnWorldBeginPlay hook installed");
-		}
-		else
-		{
-			LOG_ERROR("UCrMassEntityConfigLoaderSubsystem::OnWorldBeginPlay hook FAILED - hierarchy patch will not be applied");
-		}
-
-
-		hooks->Engine->RegisterOnInit(OnEngineInit);
-		LOG_INFO("Registered for engine init callback");
-
-		hooks->Engine->RegisterOnShutdown(OnEngineShutdown);
-		LOG_INFO("Registered for engine shutdown callback");
-
+		LOG_INFO("Plugin is disabled in config - skipping initialization");
 		return true;
 	}
 
-	__declspec(dllexport) void PluginShutdown()
+	// Install the UCrMassEntityConfigLoaderSubsystem::OnWorldBeginPlay hook NOW,
+	// before FEngineLoop::Init runs. The subsystem fires OnWorldBeginPlay inside
+	// FEngineLoop::Init, so this must be in place before the engine starts up.
+	if (InstallMassEntityConfigWBPHook())
 	{
-		LOG_INFO("Plugin shutting down...");
-
-		// NOTE: Do NOT touch engine callback lists or engine-owned memory here.
-		// PluginShutdown is called from DLL_PROCESS_DETACH only if lpReserved==nullptr
-		// (explicit FreeLibrary), but in practice server shutdown always goes through
-		// ExitProcess (lpReserved!=nullptr) so this function is never called.
-		//
-		// UStruct restoration is handled in OnEngineShutdown() which fires via the
-		// FEngineLoop::Exit hook - before the UObject system tears down.
-
-		g_logger = nullptr;
-		g_config = nullptr;
-		g_scanner = nullptr;
-		g_hooks = nullptr;
+		LOG_INFO("UCrMassEntityConfigLoaderSubsystem::OnWorldBeginPlay hook installed");
+	}
+	else
+	{
+		LOG_ERROR(
+			"UCrMassEntityConfigLoaderSubsystem::OnWorldBeginPlay hook FAILED - hierarchy patch will not be applied");
 	}
 
+
+	hooks->Engine->RegisterOnInit(OnEngineInit);
+	LOG_INFO("Registered for engine init callback");
+
+	hooks->Engine->RegisterOnShutdown(OnEngineShutdown);
+	LOG_INFO("Registered for engine shutdown callback");
+
+	return true;
+}
+
+__declspec(dllexport) void PluginShutdown()
+{
+	LOG_INFO("Plugin shutting down...");
+
+	// PluginShutdown is now called on explicit hot-unload (FreeLibrary from the
+	// mod loader UI) as well as on process exit. We must do a full teardown here
+	// to ensure no code or callbacks in this DLL remain reachable after unload.
+
+	// Unregister engine-level callbacks so they don't fire into unloaded memory.
+	if (g_hooks && g_hooks->Engine)
+	{
+		g_hooks->Engine->UnregisterOnInit(OnEngineInit);
+		g_hooks->Engine->UnregisterOnShutdown(OnEngineShutdown);
+	}
+
+	// Remove the WBP hook, unregister world/actor callbacks, restore structs.
+	DoFullCleanup();
+
+	g_logger = nullptr;
+	g_config = nullptr;
+	g_scanner = nullptr;
+	g_hooks = nullptr;
+}
 } // extern "C"

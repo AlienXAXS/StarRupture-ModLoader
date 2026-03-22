@@ -5,7 +5,7 @@
 namespace RailJunctionFixerConfig
 {
 	// Config schema definition
-	static const ConfigEntry CONFIG_ENTRIES[] = {
+	static constexpr ConfigEntry CONFIG_ENTRIES[] = {
 		{
 			"General",
 			"Enabled",
@@ -22,7 +22,7 @@ namespace RailJunctionFixerConfig
 		}
 	};
 
-	static const ConfigSchema SCHEMA = {
+	static constexpr ConfigSchema SCHEMA = {
 		CONFIG_ENTRIES,
 		sizeof(CONFIG_ENTRIES) / sizeof(ConfigEntry)
 	};
@@ -34,7 +34,7 @@ namespace RailJunctionFixerConfig
 		static void Initialize(IPluginConfig* config)
 		{
 			s_config = config;
-			
+
 			// Initialize config from schema
 			if (s_config)
 			{
@@ -49,7 +49,9 @@ namespace RailJunctionFixerConfig
 
 		static bool IsRailFixerEnabled()
 		{
-			return s_config ? s_config->ReadBool("RailJunctionFixer", "PluginSettings", "FixRailJunctions", false) : false;
+			return s_config
+				       ? s_config->ReadBool("RailJunctionFixer", "PluginSettings", "FixRailJunctions", false)
+				       : false;
 		}
 
 	private:

@@ -55,7 +55,7 @@ namespace KeepTickingConfig
 		static void Initialize(IPluginConfig* config)
 		{
 			s_config = config;
-			
+
 			// Initialize config from schema
 			if (s_config)
 			{

@@ -9,7 +9,7 @@
 namespace Hooks::ActorBeginPlay
 {
 	// AActor::BeginPlay(AActor* this)
-	typedef void(__fastcall* AActor_BeginPlay_t)(void* thisPtr);
+	using AActor_BeginPlay_t = void(__fastcall*)(void* thisPtr);
 
 	static Hook g_hook;
 	static AActor_BeginPlay_t g_original = nullptr;
@@ -65,9 +65,9 @@ namespace Hooks::ActorBeginPlay
 		}
 
 		ModLoaderLogger::LogInfo(L"[ActorBeginPlay] Interior pattern matched at 0x%llX (base+0x%llX) - "
-			L"reverse-scanning for function prologue...",
-			static_cast<unsigned long long>(interiorAddr),
-			static_cast<unsigned long long>(interiorAddr - base));
+		                         L"reverse-scanning for function prologue...",
+		                         static_cast<unsigned long long>(interiorAddr),
+		                         static_cast<unsigned long long>(interiorAddr - base));
 
 		// Walk backwards to find the function entry point.
 		// x64 functions are aligned and preceded by padding bytes:
@@ -82,10 +82,10 @@ namespace Hooks::ActorBeginPlay
 		uintptr_t addr = 0;
 		for (size_t offset = 1; offset <= maxScanBack; ++offset)
 		{
-			const uint8_t* c = reinterpret_cast<const uint8_t*>(interiorAddr - offset);
+			auto c = reinterpret_cast<const uint8_t*>(interiorAddr - offset);
 
 			ModLoaderLogger::LogTrace(L"[ActorBeginPlay]   -%3zu: %02X %02X %02X %02X",
-				offset, c[0], c[1], c[2], c[3]);
+			                          offset, c[0], c[1], c[2], c[3]);
 
 			// Current byte is NOT padding, but the byte before it IS padding or RET.
 			// That means we've found the first instruction of the function.
@@ -98,19 +98,19 @@ namespace Hooks::ActorBeginPlay
 				{
 					addr = interiorAddr - offset;
 					ModLoaderLogger::LogTrace(L"[ActorBeginPlay]   ^ function entry at offset -%zu "
-						L"(prev byte: %02X, first instr byte: %02X)", offset, prevByte, c[0]);
+					                          L"(prev byte: %02X, first instr byte: %02X)", offset, prevByte, c[0]);
 					break;
 				}
 
 				// Check for 2-byte NOP (66 90) preceding
 				if (offset > 2)
 				{
-					const uint8_t* prev2 = reinterpret_cast<const uint8_t*>(interiorAddr - offset - 2);
+					auto prev2 = reinterpret_cast<const uint8_t*>(interiorAddr - offset - 2);
 					if (prev2[0] == 0x66 && prev2[1] == 0x90)
 					{
 						addr = interiorAddr - offset;
 						ModLoaderLogger::LogTrace(L"[ActorBeginPlay]   ^ function entry at offset -%zu "
-							L"(prev bytes: 66 90, first instr byte: %02X)", offset, c[0]);
+						                          L"(prev bytes: 66 90, first instr byte: %02X)", offset, c[0]);
 						break;
 					}
 				}
@@ -120,16 +120,16 @@ namespace Hooks::ActorBeginPlay
 		if (!addr)
 		{
 			ModLoaderLogger::LogError(L"[ActorBeginPlay] Failed to find function entry point "
-				L"(padding boundary) within %zu bytes before interior match",
-				maxScanBack);
+			                          L"(padding boundary) within %zu bytes before interior match",
+			                          maxScanBack);
 			return false;
 		}
 
 		ModLoaderLogger::LogInfo(L"[ActorBeginPlay] AActor::BeginPlay entry at 0x%llX (base+0x%llX), "
-			L"%lld bytes before interior match",
-			static_cast<unsigned long long>(addr),
-			static_cast<unsigned long long>(addr - base),
-			static_cast<long long>(interiorAddr - addr));
+		                         L"%lld bytes before interior match",
+		                         static_cast<unsigned long long>(addr),
+		                         static_cast<unsigned long long>(addr - base),
+		                         static_cast<long long>(interiorAddr - addr));
 
 		bool hookOk = g_hook.Install(
 			addr,
@@ -185,7 +185,8 @@ namespace Hooks::ActorBeginPlay
 		if (it != g_pluginCallbacks.end())
 		{
 			g_pluginCallbacks.erase(it);
-			ModLoaderLogger::LogDebug(L"[ActorBeginPlay] Plugin callback unregistered (%zu remaining)", g_pluginCallbacks.size());
+			ModLoaderLogger::LogDebug(L"[ActorBeginPlay] Plugin callback unregistered (%zu remaining)",
+			                          g_pluginCallbacks.size());
 		}
 	}
 }

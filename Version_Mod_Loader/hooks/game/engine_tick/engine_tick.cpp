@@ -9,7 +9,7 @@
 namespace Hooks::EngineTick
 {
 	// UGameEngine::Tick(UGameEngine* this, float DeltaSeconds, bool bIdleMode)
-	typedef void(__fastcall* UGameEngine_Tick_t)(void* thisPtr, float deltaSeconds, bool bIdleMode);
+	using UGameEngine_Tick_t = void(__fastcall*)(void* thisPtr, float deltaSeconds, bool bIdleMode);
 
 	static Hook g_hook;
 	static UGameEngine_Tick_t g_original = nullptr;
@@ -61,8 +61,8 @@ namespace Hooks::EngineTick
 		auto base = reinterpret_cast<uintptr_t>(mainModule);
 
 		ModLoaderLogger::LogInfo(L"[EngineTick] UGameEngine::Tick found at 0x%llX (base+0x%llX)",
-			static_cast<unsigned long long>(addr),
-			static_cast<unsigned long long>(addr - base));
+		                         static_cast<unsigned long long>(addr),
+		                         static_cast<unsigned long long>(addr - base));
 
 		bool hookOk = g_hook.Install(
 			addr,
@@ -118,7 +118,8 @@ namespace Hooks::EngineTick
 		if (it != g_pluginCallbacks.end())
 		{
 			g_pluginCallbacks.erase(it);
-			ModLoaderLogger::LogDebug(L"[EngineTick] Plugin callback unregistered (%zu remaining)", g_pluginCallbacks.size());
+			ModLoaderLogger::LogDebug(L"[EngineTick] Plugin callback unregistered (%zu remaining)",
+			                          g_pluginCallbacks.size());
 		}
 	}
 }

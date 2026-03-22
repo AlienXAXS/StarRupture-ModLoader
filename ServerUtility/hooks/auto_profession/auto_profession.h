@@ -16,10 +16,10 @@
 
 namespace AutoProfessionHook
 {
-    // Scan for GetProfessionForNewPlayer and patch its prologue.
-    // Call once after the scanner is available and MaxPlayers is enabled.
-    void Install();
+	// Scan for GetProfessionForNewPlayer and patch its prologue.
+	// Call once after the scanner is available and MaxPlayers is enabled.
+	void Install();
 
-    // Restore the original prologue bytes on shutdown.
-    void Remove();
+	// Restore the original prologue bytes on shutdown.
+	void Remove();
 }

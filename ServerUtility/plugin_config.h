@@ -5,7 +5,7 @@
 namespace ServerUtilityConfig
 {
 	// Config schema definition
-	static const ConfigEntry CONFIG_ENTRIES[] = {
+	static constexpr ConfigEntry CONFIG_ENTRIES[] = {
 		{
 			"General",
 			"Enabled",
@@ -29,7 +29,7 @@ namespace ServerUtilityConfig
 		}
 	};
 
-	static const ConfigSchema SCHEMA = {
+	static constexpr ConfigSchema SCHEMA = {
 		CONFIG_ENTRIES,
 		sizeof(CONFIG_ENTRIES) / sizeof(ConfigEntry)
 	};
@@ -67,7 +67,9 @@ namespace ServerUtilityConfig
 		// Returns true if the RemoteVulnerabilityPatch is enabled (default: true).
 		static bool GetRemoteVulnerabilityPatch()
 		{
-			return s_config ? s_config->ReadBool("ServerUtility", "PluginSettings", "RemoteVulnerabilityPatch", true) : true;
+			return s_config
+				       ? s_config->ReadBool("ServerUtility", "PluginSettings", "RemoteVulnerabilityPatch", true)
+				       : true;
 		}
 
 	private:

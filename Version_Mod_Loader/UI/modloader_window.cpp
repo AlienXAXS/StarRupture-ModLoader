@@ -113,12 +113,12 @@ namespace UI::ModLoaderWindow
 
     static void RenderPluginsTab()
     {
-        static const PluginInfo* infos[64];
-        int count = ModLoaderLogger::GetLoadedPluginInfos(infos, 64);
+        static ModLoaderLogger::PluginStatus statuses[64];
+        int count = ModLoaderLogger::GetAllPluginStatuses(statuses, 64);
 
         if (count == 0)
         {
-            ImGui::TextDisabled("No plugins loaded.");
+            ImGui::TextDisabled("No plugins found.");
             return;
         }
 
@@ -128,28 +128,62 @@ namespace UI::ModLoaderWindow
             ImGuiTableFlags_ScrollY |
             ImGuiTableFlags_SizingStretchProp;
 
-        if (ImGui::BeginTable("##plugins", 4, tableFlags))
+        if (ImGui::BeginTable("##plugins", 5, tableFlags))
         {
-            ImGui::TableSetupColumn("Name",        ImGuiTableColumnFlags_WidthStretch);
-            ImGui::TableSetupColumn("Version",     ImGuiTableColumnFlags_WidthFixed, 70.0f);
-            ImGui::TableSetupColumn("Author",      ImGuiTableColumnFlags_WidthStretch);
-            ImGui::TableSetupColumn("Status",      ImGuiTableColumnFlags_WidthFixed, 60.0f);
+            ImGui::TableSetupColumn("Name",    ImGuiTableColumnFlags_WidthStretch);
+            ImGui::TableSetupColumn("Version", ImGuiTableColumnFlags_WidthFixed,  70.0f);
+            ImGui::TableSetupColumn("Author",  ImGuiTableColumnFlags_WidthStretch);
+            ImGui::TableSetupColumn("Status",  ImGuiTableColumnFlags_WidthFixed,  65.0f);
+            ImGui::TableSetupColumn("Actions", ImGuiTableColumnFlags_WidthFixed, 175.0f);
             ImGui::TableHeadersRow();
 
             for (int i = 0; i < count; ++i)
             {
-                const PluginInfo* info = infos[i];
+                const ModLoaderLogger::PluginStatus& s = statuses[i];
                 ImGui::TableNextRow();
-                ImGui::TableSetColumnIndex(0); ImGui::TextUnformatted(info->name    ? info->name    : "?");
-                ImGui::TableSetColumnIndex(1); ImGui::TextUnformatted(info->version ? info->version : "?");
-                ImGui::TableSetColumnIndex(2); ImGui::TextUnformatted(info->author  ? info->author  : "?");
-                ImGui::TableSetColumnIndex(3); ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "Active");
+
+                ImGui::TableSetColumnIndex(0);
+                ImGui::TextUnformatted(s.name[0] ? s.name : "?");
+
+                ImGui::TableSetColumnIndex(1);
+                ImGui::TextUnformatted(s.version[0] ? s.version : "?");
+
+                ImGui::TableSetColumnIndex(2);
+                ImGui::TextUnformatted(s.author[0] ? s.author : "?");
+
+                ImGui::TableSetColumnIndex(3);
+                if (s.isLoaded)
+                    ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "Loaded");
+                else
+                    ImGui::TextDisabled("Unloaded");
+
+                ImGui::TableSetColumnIndex(4);
+                ImGui::PushID(i);
+
+                // Unload — active only when loaded
+                if (!s.isLoaded) ImGui::BeginDisabled();
+                if (ImGui::SmallButton("Unload"))
+                    ModLoaderLogger::UnloadPlugin(i);
+                if (!s.isLoaded) ImGui::EndDisabled();
+
+                ImGui::SameLine();
+
+                // Load — active only when unloaded
+                if (s.isLoaded) ImGui::BeginDisabled();
+                if (ImGui::SmallButton("Load"))
+                    ModLoaderLogger::ReloadPlugin(i);
+                if (s.isLoaded) ImGui::EndDisabled();
+
+                ImGui::SameLine();
+
+                // Reload — always active
+                if (ImGui::SmallButton("Reload"))
+                    ModLoaderLogger::ReloadPlugin(i);
+
+                ImGui::PopID();
             }
             ImGui::EndTable();
         }
-
-        ImGui::Spacing();
-        ImGui::TextDisabled("Hot reload / stop / start will be available in a future update.");
     }
 
     // Returns the ConfigEntry for (section, key) from schema, or nullptr.

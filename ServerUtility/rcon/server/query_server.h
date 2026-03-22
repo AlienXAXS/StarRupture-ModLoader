@@ -28,34 +28,34 @@
 class QueryServer
 {
 public:
-    QueryServer();
-    ~QueryServer();
+	QueryServer();
+	~QueryServer();
 
-    bool Start(uint16_t port);
-    void Stop();
+	bool Start(uint16_t port);
+	void Stop();
 
-    bool IsRunning() const { return m_running.load(); }
+	bool IsRunning() const { return m_running.load(); }
 
 private:
-    void ReceiveLoop();
-    void HandlePacket(const uint8_t* data, int len, const sockaddr_in& from);
+	void ReceiveLoop();
+	void HandlePacket(const uint8_t* data, int len, const sockaddr_in& from);
 
-    void HandleA2sInfo  (const sockaddr_in& from);
-    void HandleA2sPlayer(const sockaddr_in& from, const uint8_t* data, int len);
-    void HandleA2sRules (const sockaddr_in& from);
+	void HandleA2sInfo(const sockaddr_in& from);
+	void HandleA2sPlayer(const sockaddr_in& from, const uint8_t* data, int len);
+	void HandleA2sRules(const sockaddr_in& from);
 
-    void Send(const sockaddr_in& to, const std::vector<uint8_t>& data);
+	void Send(const sockaddr_in& to, const std::vector<uint8_t>& data);
 
-    static std::vector<uint8_t> BuildA2sInfoResponse();
-    static std::vector<uint8_t> BuildA2sPlayerChallenge(uint32_t challenge);
-    static std::vector<uint8_t> BuildA2sPlayerResponse();
-    static std::vector<uint8_t> BuildA2sRulesResponse();
+	static std::vector<uint8_t> BuildA2sInfoResponse();
+	static std::vector<uint8_t> BuildA2sPlayerChallenge(uint32_t challenge);
+	static std::vector<uint8_t> BuildA2sPlayerResponse();
+	static std::vector<uint8_t> BuildA2sRulesResponse();
 
-    SOCKET            m_socket  = INVALID_SOCKET;
-    std::thread       m_thread;
-    std::atomic<bool> m_running{ false };
+	SOCKET m_socket = INVALID_SOCKET;
+	std::thread m_thread;
+	std::atomic<bool> m_running{false};
 
-    // Per-client challenge tracking (IP+port → challenge number)
-    uint32_t                            m_nextChallenge = 0x12345678u;
-    std::unordered_map<uint64_t, uint32_t> m_challenges;
+	// Per-client challenge tracking (IP+port → challenge number)
+	uint32_t m_nextChallenge = 0x12345678u;
+	std::unordered_map<uint64_t, uint32_t> m_challenges;
 };

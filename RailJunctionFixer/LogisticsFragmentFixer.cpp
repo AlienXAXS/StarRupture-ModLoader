@@ -15,17 +15,17 @@
 namespace RailJunctionFixer
 {
 	uintptr_t* LogisticsFragmentFixer::s_newChain = nullptr;
-	uintptr_t  LogisticsFragmentFixer::s_socketsStruct = 0;
+	uintptr_t LogisticsFragmentFixer::s_socketsStruct = 0;
 	uintptr_t* LogisticsFragmentFixer::s_origChain = nullptr;
-	int32_t    LogisticsFragmentFixer::s_origDepth = 0;
-	uintptr_t  LogisticsFragmentFixer::s_origSuperStruct = 0;
-	void*      LogisticsFragmentFixer::s_socketsFragmentStruct = nullptr;
+	int32_t LogisticsFragmentFixer::s_origDepth = 0;
+	uintptr_t LogisticsFragmentFixer::s_origSuperStruct = 0;
+	void* LogisticsFragmentFixer::s_socketsFragmentStruct = nullptr;
 
 	bool LogisticsFragmentFixer::PatchHierarchyChain(uintptr_t socketsStruct, uintptr_t savableStruct)
 	{
 		// Read current chain info for sockets fragment
 		int32_t sockDepth = ReadAt<int32_t>(socketsStruct, UStructOff::HierarchyDepth);
-		uintptr_t* sockChain = ReadAt<uintptr_t*>(socketsStruct, UStructOff::InheritanceChain);
+		auto sockChain = ReadAt<uintptr_t*>(socketsStruct, UStructOff::InheritanceChain);
 
 		// Read savable fragment's info
 		int32_t savDepth = ReadAt<int32_t>(savableStruct, UStructOff::HierarchyDepth);
@@ -34,10 +34,10 @@ namespace RailJunctionFixer
 
 		LOG_DEBUG("PatchHierarchyChain:");
 		LOG_DEBUG("  sockets depth=%d, chain=0x%llX, identity=0x%llX",
-			sockDepth, (unsigned long long)(uintptr_t)sockChain,
-			(unsigned long long)sockIdentity);
+		          sockDepth, static_cast<unsigned long long>((uintptr_t)sockChain),
+		          static_cast<unsigned long long>(sockIdentity));
 		LOG_DEBUG("  savable depth=%d, identity=0x%llX",
-			savDepth, (unsigned long long)savIdentity);
+		          savDepth, static_cast<unsigned long long>(savIdentity));
 
 		if (!sockChain || sockDepth < 0 || sockDepth > 30)
 		{
@@ -49,8 +49,8 @@ namespace RailJunctionFixer
 		if (sockChain[sockDepth] != sockIdentity)
 		{
 			LOG_ERROR("chain[self_depth] (0x%llX) != self identity (0x%llX)",
-				(unsigned long long)sockChain[sockDepth],
-				(unsigned long long)sockIdentity);
+			          static_cast<unsigned long long>(sockChain[sockDepth]),
+			          static_cast<unsigned long long>(sockIdentity));
 			return false;
 		}
 
@@ -68,9 +68,9 @@ namespace RailJunctionFixer
 		LOG_DEBUG("Building new chain: %d -> %d entries", sockDepth + 1, newSize);
 
 		// Allocate permanent memory for the new chain
-		s_newChain = (uintptr_t*)VirtualAlloc(
+		s_newChain = static_cast<uintptr_t*>(VirtualAlloc(
 			nullptr, newSize * sizeof(uintptr_t),
-			MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+			MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE));
 		if (!s_newChain)
 		{
 			LOG_ERROR("VirtualAlloc failed for new chain");
@@ -96,9 +96,9 @@ namespace RailJunctionFixer
 		for (int i = 0; i < newSize; ++i)
 		{
 			LOG_DEBUG("  newChain[%d] = 0x%llX%s%s",
-				i, (unsigned long long)s_newChain[i],
-				(s_newChain[i] == savIdentity) ? " [SAVABLE]" : "",
-				(s_newChain[i] == sockIdentity) ? " [SELF]" : "");
+			          i, static_cast<unsigned long long>(s_newChain[i]),
+			          (s_newChain[i] == savIdentity) ? " [SAVABLE]" : "",
+			          (s_newChain[i] == sockIdentity) ? " [SELF]" : "");
 		}
 
 		// Save originals for restoration on shutdown
@@ -124,7 +124,7 @@ namespace RailJunctionFixer
 		VirtualProtect((void*)patchStart, 0x18, oldProtect, &oldProtect);
 
 		// Verify
-		uintptr_t* verifyChain = ReadAt<uintptr_t*>(socketsStruct, UStructOff::InheritanceChain);
+		auto verifyChain = ReadAt<uintptr_t*>(socketsStruct, UStructOff::InheritanceChain);
 		int32_t verifyDepth = ReadAt<int32_t>(socketsStruct, UStructOff::HierarchyDepth);
 		uintptr_t verifySuper = ReadAt<uintptr_t>(socketsStruct, UStructOff::SuperStruct);
 
@@ -219,8 +219,8 @@ namespace RailJunctionFixer
 			auto* currentSuper = socketsStruct->SuperStruct;
 			LOG_INFO("CrLogisticsSocketsFragment at 0x%llX", reinterpret_cast<uintptr_t>(socketsStruct));
 			LOG_INFO("Current SuperStruct at 0x%llX (%s)",
-				reinterpret_cast<uintptr_t>(currentSuper),
-				currentSuper ? currentSuper->GetName().c_str() : "nullptr");
+			         reinterpret_cast<uintptr_t>(currentSuper),
+			         currentSuper ? currentSuper->GetName().c_str() : "nullptr");
 			LOG_INFO("CrMassSavableFragment at 0x%llX", reinterpret_cast<uintptr_t>(savableStruct));
 
 			// Verify we're patching what we expect (SuperStruct should be FMassFragment)
@@ -243,11 +243,8 @@ namespace RailJunctionFixer
 				s_socketsFragmentStruct = static_cast<void*>(socketsStruct);
 				return true;
 			}
-			else
-			{
-				LOG_ERROR("Failed to patch hierarchy chain");
-				return false;
-			}
+			LOG_ERROR("Failed to patch hierarchy chain");
+			return false;
 		}
 		catch (const std::exception& e)
 		{
@@ -316,8 +313,8 @@ namespace RailJunctionFixer
 	// by value in register since it fits in 8 bytes (confirmed by IDA disassembly).
 	// Found via pattern scan at runtime for future-proofing across game updates.
 	using SignalEntityFn = void (__fastcall*)(void* signalSubsystem,
-		SDK::FName signalName,
-		SDK::FMassEntityHandle handle);
+	                                          SDK::FName signalName,
+	                                          SDK::FMassEntityHandle handle);
 
 	// GetArchetypeForEntity function signature (native):
 	//   FMassArchetypeHandle FMassEntityManager::GetArchetypeForEntity(FMassEntityHandle entity)
@@ -344,20 +341,20 @@ namespace RailJunctionFixer
 	// into the output buffer via the hidden return pointer.
 	struct FMassArchetypeHandle
 	{
-		void* DataPtr;// FMassArchetypeData*
+		void* DataPtr; // FMassArchetypeData*
 		void* RefController; // TSharedReferencer reference controller
 	};
 
 	using GetArchetypeForEntityFn = void (__fastcall*)(void* thisEntityManager,
-		FMassArchetypeHandle* outResult,
-		SDK::FMassEntityHandle entity);
+	                                                   FMassArchetypeHandle* outResult,
+	                                                   SDK::FMassEntityHandle entity);
 
 	// Pattern for FMassEntityManager::GetArchetypeForEntity
-	static constexpr const char* PATTERN_GetArchetypeForEntity =
+	static constexpr auto PATTERN_GetArchetypeForEntity =
 		"48 89 5C 24 ?? 48 89 74 24 ?? 57 48 83 EC ?? 48 8B FA 49 8B D8 49 8B D0 48 8B F1 E8 ?? ?? ?? ?? 84 C0";
 
 	// Pattern for UMassSignalSubsystem::SignalEntity
-	static constexpr const char* PATTERN_SignalEntity =
+	static constexpr auto PATTERN_SignalEntity =
 		"48 89 5C 24 ?? 4C 89 44 24 ?? 57 48 83 EC ?? 48 8B DA 48 8B F9 45 85 C0";
 
 	// Check whether an archetype's data contains a specific UScriptStruct* pointer.
@@ -420,8 +417,8 @@ namespace RailJunctionFixer
 			{
 				fnSignalEntity = reinterpret_cast<SignalEntityFn>(addr);
 				LOG_DEBUG("  SignalEntity at 0x%llX (base + 0x%llX) -- pattern scan OK",
-					static_cast<unsigned long long>(addr),
-					static_cast<unsigned long long>(addr - moduleBase));
+				          static_cast<unsigned long long>(addr),
+				          static_cast<unsigned long long>(addr - moduleBase));
 			}
 			else
 			{
@@ -446,8 +443,8 @@ namespace RailJunctionFixer
 			{
 				fnGetArchetype = reinterpret_cast<GetArchetypeForEntityFn>(addr);
 				LOG_DEBUG("  GetArchetypeForEntity at 0x%llX (base + 0x%llX) -- pattern scan OK",
-					static_cast<unsigned long long>(addr),
-					static_cast<unsigned long long>(addr - moduleBase));
+				          static_cast<unsigned long long>(addr),
+				          static_cast<unsigned long long>(addr - moduleBase));
 			}
 			else
 			{
@@ -463,7 +460,7 @@ namespace RailJunctionFixer
 		{
 			char buf[256] = {};
 			config->ReadString("RailJunctionFixer", "Advanced", "SocketSignalName",
-				buf, sizeof(buf), signalNameStr.c_str());
+			                   buf, sizeof(buf), signalNameStr.c_str());
 			signalNameStr = buf;
 		}
 
@@ -475,12 +472,12 @@ namespace RailJunctionFixer
 			{
 				socketSignalName = constructed;
 				LOG_DEBUG("  Signal FName '%s': CompIdx=0x%X",
-					signalNameStr.c_str(), socketSignalName.ComparisonIndex);
+				          signalNameStr.c_str(), socketSignalName.ComparisonIndex);
 			}
 			else
 			{
 				LOG_ERROR("  StringToName('%s') returned ComparisonIndex=0 - name not registered",
-					signalNameStr.c_str());
+				          signalNameStr.c_str());
 				return;
 			}
 		}
@@ -518,10 +515,11 @@ namespace RailJunctionFixer
 								auto subsystemAddr = reinterpret_cast<uintptr_t>(obj);
 
 								// Read the raw pointer from TSharedPtr
-								void* sharedPtrObj = ReadAt<void*>(subsystemAddr, 0x38);
+								auto sharedPtrObj = ReadAt<void*>(subsystemAddr, 0x38);
 								LOG_DEBUG("  UMassEntitySubsystem at %p", static_cast<void*>(obj));
 								LOG_DEBUG("    +0x38 = %p (TSharedPtr.Object)", sharedPtrObj);
-								LOG_DEBUG("    +0x40 = %p (TSharedPtr.RefController)", ReadAt<void*>(subsystemAddr, 0x40));
+								LOG_DEBUG("    +0x40 = %p (TSharedPtr.RefController)",
+								          ReadAt<void*>(subsystemAddr, 0x40));
 
 								if (sharedPtrObj)
 								{
@@ -539,7 +537,7 @@ namespace RailJunctionFixer
 									for (size_t off = 0x30; off < 0x48; off += 8)
 									{
 										LOG_WARN("    +0x%02zX = 0x%016llX", off,
-											static_cast<unsigned long long>(ReadAt<uintptr_t>(subsystemAddr, off)));
+										         static_cast<unsigned long long>(ReadAt<uintptr_t>(subsystemAddr, off)));
 									}
 								}
 								break;
@@ -589,7 +587,7 @@ namespace RailJunctionFixer
 						{
 							persistentIDSubsystem = static_cast<SDK::UCrMassPersistentIDSubsystem*>(obj);
 							LOG_DEBUG("  UCrMassPersistentIDSubsystem at %p (Outer=World)",
-								static_cast<void*>(persistentIDSubsystem));
+							          static_cast<void*>(persistentIDSubsystem));
 							break;
 						}
 					}
@@ -650,7 +648,7 @@ namespace RailJunctionFixer
 							{
 								signalSubsystem = comp->SignalSubsystem;
 								LOG_DEBUG("  UMassSignalSubsystem at %p (from CrMassActorComponent)",
-									static_cast<void*>(signalSubsystem));
+								          static_cast<void*>(signalSubsystem));
 							}
 
 							SDK::FMassEntityHandle handle = comp->EntityHandle;
@@ -692,7 +690,7 @@ namespace RailJunctionFixer
 								{
 									signalSubsystem = delegateSub->SignalSubsystem;
 									LOG_DEBUG("  UMassSignalSubsystem at %p (from CrMassSignalDelegateSubsystem)",
-										static_cast<void*>(signalSubsystem));
+									          static_cast<void*>(signalSubsystem));
 								}
 								break;
 							}
@@ -722,7 +720,7 @@ namespace RailJunctionFixer
 					{
 						signalSubsystem = static_cast<SDK::UMassSignalSubsystem*>(obj);
 						LOG_INFO("  UMassSignalSubsystem at %p (Outer=World)",
-							static_cast<void*>(signalSubsystem));
+						         static_cast<void*>(signalSubsystem));
 						break;
 					}
 				}
@@ -740,7 +738,7 @@ namespace RailJunctionFixer
 			return;
 		}
 
-		LOG_INFO("  Found %zu entity handles total from persistent ID map", handles.size());
+		LOG_DEBUG("  Found %zu entity handles total from persistent ID map", handles.size());
 
 		// ---- 7. Filter and signal entities ----
 		if (handles.empty())
@@ -804,13 +802,13 @@ namespace RailJunctionFixer
 					if (errorCount == 1)
 					{
 						LOG_ERROR("  Exception during GetArchetypeForEntity for entity [%d,%d] - "
-							"pattern match may be incorrect, disabling filtering",
-							handle.Index, handle.SerialNumber);
+						          "pattern match may be incorrect, disabling filtering",
+						          handle.Index, handle.SerialNumber);
 					}
 					if (errorCount >= 3)
 					{
 						LOG_ERROR("  Multiple exceptions during archetype check -- "
-							"falling back to signaling all %zu entities", handles.size());
+						          "falling back to signaling all %zu entities", handles.size());
 						socketHandles = std::move(handles);
 						break;
 					}
@@ -820,32 +818,32 @@ namespace RailJunctionFixer
 			if (errorCount < 3)
 			{
 				LOG_DEBUG("  Archetype filter: %zu / %zu entities have CrLogisticsSocketsFragment "
-					"(%zu unique archetypes, checked %zu, errors %zu)",
-					socketHandles.size(), handles.size(), archetypeCache.size(),
-					checkedCount, errorCount);
+				          "(%zu unique archetypes, checked %zu, errors %zu)",
+				          socketHandles.size(), handles.size(), archetypeCache.size(),
+				          checkedCount, errorCount);
 			}
 
 			if (!socketHandles.empty())
 			{
 				LOG_INFO("  Signaling %zu socket entities with '%s'...",
-					socketHandles.size(), signalNameStr.c_str());
+				         socketHandles.size(), signalNameStr.c_str());
 
 				size_t signalCount = 0;
 				for (const auto& handle : socketHandles)
 				{
 					LOG_DEBUG("  -> SignalEntity [%d,%d] (idx=%d, serial=%d)",
-						handle.Index, handle.SerialNumber,
-						handle.Index, handle.SerialNumber);
+					          handle.Index, handle.SerialNumber,
+					          handle.Index, handle.SerialNumber);
 
 					fnSignalEntity(static_cast<void*>(signalSubsystem),
-						socketSignalName, handle);
+					               socketSignalName, handle);
 
 					++signalCount;
 
 					if (signalCount % 100 == 0)
 					{
 						LOG_DEBUG("  ... signaled %zu / %zu entities so far",
-							signalCount, socketHandles.size());
+						          signalCount, socketHandles.size());
 					}
 				}
 

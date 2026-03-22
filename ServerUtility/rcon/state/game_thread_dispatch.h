@@ -27,11 +27,11 @@
 // ---------------------------------------------------------------------------
 namespace GameThreadDispatch
 {
-    // Post a callable that returns std::string.  Returns a future the calling
-    // thread can block on.  Thread-safe; may be called from any thread.
-    std::future<std::string> Post(std::function<std::string()> fn);
+	// Post a callable that returns std::string.  Returns a future the calling
+	// thread can block on.  Thread-safe; may be called from any thread.
+	std::future<std::string> Post(std::function<std::string()> fn);
 
-    // Execute all queued tasks on the calling thread.
-    // MUST be called from the game thread only.
-    void Drain();
+	// Execute all queued tasks on the calling thread.
+	// MUST be called from the game thread only.
+	void Drain();
 }

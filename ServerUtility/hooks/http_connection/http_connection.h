@@ -12,10 +12,10 @@
 
 namespace HttpConnectionHook
 {
-    // Scan for FHttpConnection::ProcessRequest and install the detour.
-    // Call once after the engine is ready.
-    void Install();
+	// Scan for FHttpConnection::ProcessRequest and install the detour.
+	// Call once after the engine is ready.
+	void Install();
 
-    // Remove the detour and restore the original function.
-    void Remove();
+	// Remove the detour and restore the original function.
+	void Remove();
 }

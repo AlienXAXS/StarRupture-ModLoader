@@ -9,7 +9,7 @@
 namespace Hooks::PlayerLeft
 {
 	// ACrGameModeBase::Logout(ACrGameModeBase* this, AController* Exiting)
-	typedef void(__fastcall* Logout_t)(void* thisPtr, void* exiting);
+	using Logout_t = void(__fastcall*)(void* thisPtr, void* exiting);
 
 	static Hook g_hook;
 	static Logout_t g_original = nullptr;
@@ -24,7 +24,7 @@ namespace Hooks::PlayerLeft
 
 		ModLoaderLogger::LogInfo(L"[PlayerLeft] ACrGameModeBase::Logout called (#%ld)", callNum);
 		ModLoaderLogger::LogDebug(L"[PlayerLeft]   this=%p, Exiting=%p, Thread=%lu",
-			thisPtr, exiting, GetCurrentThreadId());
+		                          thisPtr, exiting, GetCurrentThreadId());
 
 		// Notify plugins BEFORE calling original so the controller is still valid
 		if (!g_pluginCallbacks.empty())
@@ -91,8 +91,8 @@ namespace Hooks::PlayerLeft
 		auto base = reinterpret_cast<uintptr_t>(mainModule);
 
 		ModLoaderLogger::LogInfo(L"[PlayerLeft] ACrGameModeBase::Logout found at 0x%llX (base+0x%llX)",
-			static_cast<unsigned long long>(addr),
-			static_cast<unsigned long long>(addr - base));
+		                         static_cast<unsigned long long>(addr),
+		                         static_cast<unsigned long long>(addr - base));
 
 		bool hookOk = g_hook.Install(
 			addr,
@@ -148,7 +148,8 @@ namespace Hooks::PlayerLeft
 		if (it != g_pluginCallbacks.end())
 		{
 			g_pluginCallbacks.erase(it);
-			ModLoaderLogger::LogDebug(L"[PlayerLeft] Plugin callback unregistered (%zu remaining)", g_pluginCallbacks.size());
+			ModLoaderLogger::LogDebug(L"[PlayerLeft] Plugin callback unregistered (%zu remaining)",
+			                          g_pluginCallbacks.size());
 		}
 	}
 }

@@ -9,7 +9,7 @@
 namespace Hooks::ExperienceLoadComplete
 {
 	// UCrExperienceManagerComponent::OnExperienceLoadComplete(UCrExperienceManagerComponent* this)
-	typedef void(__fastcall* OnExperienceLoadComplete_t)(void* thisPtr);
+	using OnExperienceLoadComplete_t = void(__fastcall*)(void* thisPtr);
 
 	static Hook g_hook;
 	static OnExperienceLoadComplete_t g_original = nullptr;
@@ -22,7 +22,8 @@ namespace Hooks::ExperienceLoadComplete
 	{
 		long callNum = InterlockedIncrement(&g_callCount);
 
-		ModLoaderLogger::LogInfo(L"[ExperienceLoadComplete] UCrExperienceManagerComponent::OnExperienceLoadComplete called (#%ld)", callNum);
+		ModLoaderLogger::LogInfo(
+			L"[ExperienceLoadComplete] UCrExperienceManagerComponent::OnExperienceLoadComplete called (#%ld)", callNum);
 		ModLoaderLogger::LogDebug(L"[ExperienceLoadComplete]   this=%p, Thread=%lu", thisPtr, GetCurrentThreadId());
 
 		// Call original first so the experience is fully loaded before we notify plugins
@@ -75,21 +76,25 @@ namespace Hooks::ExperienceLoadComplete
 
 		const char* pattern = ScanPatterns::UCrExperienceManagerComponent_OnExperienceLoadComplete;
 
-		ModLoaderLogger::LogInfo(L"[ExperienceLoadComplete] Scanning for UCrExperienceManagerComponent::OnExperienceLoadComplete...");
+		ModLoaderLogger::LogInfo(
+			L"[ExperienceLoadComplete] Scanning for UCrExperienceManagerComponent::OnExperienceLoadComplete...");
 		ModLoaderLogger::LogDebug(L"[ExperienceLoadComplete]   Pattern: %S", pattern);
 
-		uintptr_t addr = Scanner::FindPatternInMainModule("UCrExperienceManagerComponent::OnExperienceLoadComplete", pattern);
+		uintptr_t addr = Scanner::FindPatternInMainModule("UCrExperienceManagerComponent::OnExperienceLoadComplete",
+		                                                  pattern);
 
 		if (!addr)
 		{
-			ModLoaderLogger::LogError(L"[ExperienceLoadComplete] UCrExperienceManagerComponent::OnExperienceLoadComplete pattern not found");
+			ModLoaderLogger::LogError(
+				L"[ExperienceLoadComplete] UCrExperienceManagerComponent::OnExperienceLoadComplete pattern not found");
 			return false;
 		}
 
 		HMODULE mainModule = GetModuleHandleW(nullptr);
 		auto base = reinterpret_cast<uintptr_t>(mainModule);
 
-		ModLoaderLogger::LogInfo(L"[ExperienceLoadComplete] UCrExperienceManagerComponent::OnExperienceLoadComplete found at 0x%llX (base+0x%llX)",
+		ModLoaderLogger::LogInfo(
+			L"[ExperienceLoadComplete] UCrExperienceManagerComponent::OnExperienceLoadComplete found at 0x%llX (base+0x%llX)",
 			static_cast<unsigned long long>(addr),
 			static_cast<unsigned long long>(addr - base));
 
@@ -132,13 +137,15 @@ namespace Hooks::ExperienceLoadComplete
 			ModLoaderLogger::LogInfo(L"[ExperienceLoadComplete] First callback registered — installing hook now...");
 			if (!Install())
 			{
-				ModLoaderLogger::LogError(L"[ExperienceLoadComplete] Failed to install hook for experience-load-complete callback!");
+				ModLoaderLogger::LogError(
+					L"[ExperienceLoadComplete] Failed to install hook for experience-load-complete callback!");
 				return;
 			}
 		}
 
 		g_pluginCallbacks.push_back(callback);
-		ModLoaderLogger::LogDebug(L"[ExperienceLoadComplete] Plugin callback registered (%zu total)", g_pluginCallbacks.size());
+		ModLoaderLogger::LogDebug(L"[ExperienceLoadComplete] Plugin callback registered (%zu total)",
+		                          g_pluginCallbacks.size());
 	}
 
 	void UnregisterPluginCallback(PluginExperienceLoadCompleteCallback callback)
@@ -147,7 +154,8 @@ namespace Hooks::ExperienceLoadComplete
 		if (it != g_pluginCallbacks.end())
 		{
 			g_pluginCallbacks.erase(it);
-			ModLoaderLogger::LogDebug(L"[ExperienceLoadComplete] Plugin callback unregistered (%zu remaining)", g_pluginCallbacks.size());
+			ModLoaderLogger::LogDebug(L"[ExperienceLoadComplete] Plugin callback unregistered (%zu remaining)",
+			                          g_pluginCallbacks.size());
 		}
 	}
 }

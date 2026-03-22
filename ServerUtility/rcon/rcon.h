@@ -1,7 +1,10 @@
 #pragma once
 
 // Forward-declare UWorld so callers don't need the full SDK header
-namespace SDK { class UWorld; }
+namespace SDK
+{
+	class UWorld;
+}
 
 // Main entry point for the RCON / Steam Query subsystem.
 //
@@ -13,17 +16,17 @@ namespace SDK { class UWorld; }
 //   RegisterExperienceLoadCompleteCallback -> Rcon::OnExperienceLoadComplete
 namespace Rcon
 {
-    // Reads -QueryPort= and -RconPassword=, starts TCP + UDP servers,
-    // registers commands, and launches the background player-refresh thread.
-    void Init();
+	// Reads -QueryPort= and -RconPassword=, starts TCP + UDP servers,
+	// registers commands, and launches the background player-refresh thread.
+	void Init();
 
-    // Stops all servers and the refresh thread; cleans up Winsock.
-    void Shutdown();
+	// Stops all servers and the refresh thread; cleans up Winsock.
+	void Shutdown();
 
-    // Game-thread callbacks – safe to call from the registered hook callbacks.
-    void OnAnyWorldBeginPlay(SDK::UWorld* world, const char* worldName);
-    void OnExperienceLoadComplete();
+	// Game-thread callbacks – safe to call from the registered hook callbacks.
+	void OnAnyWorldBeginPlay(SDK::UWorld* world, const char* worldName);
+	void OnExperienceLoadComplete();
 
-    // Per-frame game-thread tick — drains the GameThreadDispatch task queue.
-    void OnTick(float deltaSeconds);
+	// Per-frame game-thread tick — drains the GameThreadDispatch task queue.
+	void OnTick(float deltaSeconds);
 }

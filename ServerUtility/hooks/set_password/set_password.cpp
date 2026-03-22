@@ -13,15 +13,15 @@
 struct PasswordEngineString
 {
 	wchar_t* Data;
-	int32_t  Num; // includes null terminator
-	int32_t  Max;
+	int32_t Num; // includes null terminator
+	int32_t Max;
 };
 
 // ---------------------------------------------------------------------------
 // Command-line parameter names
 // ---------------------------------------------------------------------------
-static constexpr const wchar_t* PARAM_PASSWORD = L"-Password=";
-static constexpr const wchar_t* PARAM_PLAYER_PASSWORD = L"-PlayerPassword=";
+static constexpr auto PARAM_PASSWORD = L"-Password=";
+static constexpr auto PARAM_PLAYER_PASSWORD = L"-PlayerPassword=";
 
 // ---------------------------------------------------------------------------
 // Helper: parse a single command-line parameter value.
@@ -68,7 +68,7 @@ static bool GetCommandLineParam(const wchar_t* paramName, std::wstring& out)
 // The caller provides a stack-allocated FString for 'result' and a pointer
 // to the password FString.  The function returns 'result' (pass-through).
 // ---------------------------------------------------------------------------
-typedef PasswordEngineString* (__fastcall* SetPassword_t)(
+using SetPassword_t = PasswordEngineString* (__fastcall*)(
 	void* thisPtr,
 	PasswordEngineString* result,
 	PasswordEngineString* inPassword);
@@ -77,13 +77,13 @@ typedef PasswordEngineString* (__fastcall* SetPassword_t)(
 // Hook state - SetPassword (-Password=)
 // ---------------------------------------------------------------------------
 static SetPassword_t g_originalSetPassword = nullptr;
-static HookHandle    g_hookHandleSetPassword = nullptr;
+static HookHandle g_hookHandleSetPassword = nullptr;
 
 // ---------------------------------------------------------------------------
 // Hook state - SetPlayerPassword (-PlayerPassword=)
 // ---------------------------------------------------------------------------
 static SetPassword_t g_originalSetPlayerPassword = nullptr;
-static HookHandle    g_hookHandleSetPlayerPassword = nullptr;
+static HookHandle g_hookHandleSetPlayerPassword = nullptr;
 
 // ---------------------------------------------------------------------------
 // Detour: SetPassword
@@ -183,7 +183,7 @@ void SetPasswordHook::Install(uintptr_t setPasswordAddress, uintptr_t setPlayerP
 		else
 		{
 			LOG_INFO("[SetPasswordHook::Install] Installing SetPassword hook at 0x%llX...",
-				static_cast<unsigned long long>(setPasswordAddress));
+			         static_cast<unsigned long long>(setPasswordAddress));
 
 			g_hookHandleSetPassword = hooks->Hooks->Install(
 				setPasswordAddress,
@@ -192,8 +192,8 @@ void SetPasswordHook::Install(uintptr_t setPasswordAddress, uintptr_t setPlayerP
 
 			if (g_hookHandleSetPassword)
 				LOG_INFO("[SetPasswordHook::Install] SetPassword hook installed (handle=%p)", g_hookHandleSetPassword);
-			else
-				LOG_ERROR("[SetPasswordHook::Install] SetPassword InstallHook failed!");
+				else
+					LOG_ERROR("[SetPasswordHook::Install] SetPassword InstallHook failed!");
 		}
 	}
 	else
@@ -211,7 +211,7 @@ void SetPasswordHook::Install(uintptr_t setPasswordAddress, uintptr_t setPlayerP
 		else
 		{
 			LOG_INFO("[SetPasswordHook::Install] Installing SetPlayerPassword hook at 0x%llX...",
-				static_cast<unsigned long long>(setPlayerPasswordAddress));
+			         static_cast<unsigned long long>(setPlayerPasswordAddress));
 
 			g_hookHandleSetPlayerPassword = hooks->Hooks->Install(
 				setPlayerPasswordAddress,
@@ -219,9 +219,10 @@ void SetPasswordHook::Install(uintptr_t setPasswordAddress, uintptr_t setPlayerP
 				reinterpret_cast<void**>(&g_originalSetPlayerPassword));
 
 			if (g_hookHandleSetPlayerPassword)
-				LOG_INFO("[SetPasswordHook::Install] SetPlayerPassword hook installed (handle=%p)", g_hookHandleSetPlayerPassword);
-			else
-				LOG_ERROR("[SetPasswordHook::Install] SetPlayerPassword InstallHook failed!");
+				LOG_INFO("[SetPasswordHook::Install] SetPlayerPassword hook installed (handle=%p)",
+			         g_hookHandleSetPlayerPassword);
+				else
+					LOG_ERROR("[SetPasswordHook::Install] SetPlayerPassword InstallHook failed!");
 		}
 	}
 	else
@@ -248,7 +249,8 @@ void SetPasswordHook::Remove()
 
 	if (g_hookHandleSetPlayerPassword)
 	{
-		LOG_INFO("[SetPasswordHook::Remove] Removing SetPlayerPassword hook (handle=%p)...", g_hookHandleSetPlayerPassword);
+		LOG_INFO("[SetPasswordHook::Remove] Removing SetPlayerPassword hook (handle=%p)...",
+		         g_hookHandleSetPlayerPassword);
 		if (hooks && hooks->Hooks)
 			hooks->Hooks->Remove(g_hookHandleSetPlayerPassword);
 		else

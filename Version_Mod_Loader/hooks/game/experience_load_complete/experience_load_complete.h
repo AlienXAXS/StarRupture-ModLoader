@@ -17,21 +17,21 @@
 
 namespace Hooks::ExperienceLoadComplete
 {
-    // Callback signature for plugins
-    typedef void (*PluginExperienceLoadCompleteCallback)();
+	// Callback signature for plugins
+	using PluginExperienceLoadCompleteCallback = void(*)();
 
-    // Install the hook
-    bool Install();
+	// Install the hook
+	bool Install();
 
-    // Remove the hook
-    void Remove();
+	// Remove the hook
+	void Remove();
 
-    // Returns true if the hook is currently installed
-    bool IsInstalled();
+	// Returns true if the hook is currently installed
+	bool IsInstalled();
 
-    // Register a plugin callback to be notified when the experience finishes loading
-    void RegisterPluginCallback(PluginExperienceLoadCompleteCallback callback);
+	// Register a plugin callback to be notified when the experience finishes loading
+	void RegisterPluginCallback(PluginExperienceLoadCompleteCallback callback);
 
-    // Unregister a plugin callback
-    void UnregisterPluginCallback(PluginExperienceLoadCompleteCallback callback);
+	// Unregister a plugin callback
+	void UnregisterPluginCallback(PluginExperienceLoadCompleteCallback callback);
 }

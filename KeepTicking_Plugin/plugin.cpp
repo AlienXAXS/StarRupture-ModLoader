@@ -30,7 +30,7 @@ static PluginInfo s_pluginInfo = {
 
 static bool IsServerBinary()
 {
-	wchar_t path[MAX_PATH] = { 0 };
+	wchar_t path[MAX_PATH] = {0};
 	if (GetModuleFileNameW(nullptr, path, MAX_PATH) == 0)
 	{
 		// If desired, log failure via GetLogger(); keep simple here.
@@ -49,13 +49,13 @@ static bool IsServerBinary()
 }
 
 extern "C" {
-
 __declspec(dllexport) PluginInfo* GetPluginInfo()
 {
 	return &s_pluginInfo;
 }
 
-__declspec(dllexport) bool PluginInit(IPluginLogger* logger, IPluginConfig* config, IPluginScanner* scanner, IPluginHooks* hooks)
+__declspec(dllexport) bool PluginInit(IPluginLogger* logger, IPluginConfig* config, IPluginScanner* scanner,
+                                      IPluginHooks* hooks)
 {
 	// Store plugin interface pointers
 	g_logger = logger;
@@ -70,7 +70,7 @@ __declspec(dllexport) bool PluginInit(IPluginLogger* logger, IPluginConfig* conf
 
 	if (!KeepTickingConfig::Config::IsPluginEnabled())
 	{
-		LOG_INFO("Plugin is disabled in config - skipping initialization");	
+		LOG_INFO("Plugin is disabled in config - skipping initialization");
 		return true;
 	}
 
@@ -97,5 +97,4 @@ __declspec(dllexport) void PluginShutdown()
 	g_scanner = nullptr;
 	g_hooks = nullptr;
 }
-
 } // extern "C"

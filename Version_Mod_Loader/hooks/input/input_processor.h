@@ -11,9 +11,9 @@
 
 namespace Hooks::Input
 {
-    // Install: registers the per-frame polling callback into the engine tick.
-    void InstallInputProcessor();
+	// Install: registers the per-frame polling callback into the engine tick.
+	void InstallInputProcessor();
 
-    // Remove: unregisters the polling callback.
-    void RemoveInputProcessor();
+	// Remove: unregisters the polling callback.
+	void RemoveInputProcessor();
 }

@@ -11,10 +11,10 @@
 // configured MaxPlayers value.
 namespace MaxPlayersHook
 {
-  // Called once the engine is ready.
-    // maxPlayers: the desired maximum (1–127, clamped).  0 = disabled / don't patch.
-    void Install(int maxPlayers);
+	// Called once the engine is ready.
+	// maxPlayers: the desired maximum (1–127, clamped).  0 = disabled / don't patch.
+	void Install(int maxPlayers);
 
-    // Called on engine shutdown to restore the original byte.
-    void Remove();
+	// Called on engine shutdown to restore the original byte.
+	void Remove();
 }

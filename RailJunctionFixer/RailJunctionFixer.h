@@ -11,7 +11,8 @@
 #endif
 
 // This class is exported from the dll
-class RAILJUNCTIONFIXER_API CRailJunctionFixer {
+class RAILJUNCTIONFIXER_API CRailJunctionFixer
+{
 public:
 	CRailJunctionFixer(void);
 	// TODO: add your methods here.

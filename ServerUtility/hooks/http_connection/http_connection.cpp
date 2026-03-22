@@ -26,27 +26,27 @@
 // 48 89 5C 24 ?? 55 56 41 54 41 56 41 57 48 8D 6C 24 ?? 48 81 EC ?? ?? ?? ?? 83 79
 // ---------------------------------------------------------------------------
 
-static constexpr const char* PROCESS_REQUEST_PATTERN =
+static constexpr auto PROCESS_REQUEST_PATTERN =
 	"48 89 5C 24 ?? 55 56 41 54 41 56 41 57 48 8D 6C 24 ?? 48 81 EC ?? ?? ?? ?? 83 79";
 
-static constexpr size_t URL_OFFSET  = 16;
+static constexpr size_t URL_OFFSET = 16;
 static constexpr size_t BODY_OFFSET = 280;
 
-static constexpr const char* REMOTE_CALL_URL     = "/remote/object/call";
-static constexpr const char* ALLOWED_OBJECT_PATH =
+static constexpr auto REMOTE_CALL_URL = "/remote/object/call";
+static constexpr auto ALLOWED_OBJECT_PATH =
 	"/Game/Chimera/Maps/DedicatedServerStart.DedicatedServerStart:PersistentLevel.BP_DedicatedServerSettingsActor_C_1.DedicatedServerSettingsComp";
 
 // ---------------------------------------------------------------------------
 // Hook state
 // ---------------------------------------------------------------------------
-typedef void(__fastcall* ProcessRequest_t)(__int64 a1, uint64_t* a2, __int64 a3);
+using ProcessRequest_t = void(__fastcall*)(__int64 a1, uint64_t* a2, __int64 a3);
 static ProcessRequest_t g_originalProcessRequest = nullptr;
-static HookHandle       g_hookHandle             = nullptr;
+static HookHandle g_hookHandle = nullptr;
 
 // Address of FHttpServerResponse::Error — resolved at install time by scanning
 // the bytes of ProcessRequest for "mov edx, 404 (0x194)" followed by a CALL.
 // typedef: void __fastcall FHttpServerResponse_Error(void** outPtr, int32 code, FString* errCode, FString* errMsg)
-typedef void(__fastcall* FHttpServerResponseError_t)(void** outPtr, int32_t code, void* errCode, void* errMsg);
+using FHttpServerResponseError_t = void(__fastcall*)(void** outPtr, int32_t code, void* errCode, void* errMsg);
 static uintptr_t g_errorFuncAddr = 0;
 
 // ---------------------------------------------------------------------------
@@ -94,10 +94,10 @@ static std::string ReadFStringUtf8(uintptr_t req, size_t offset)
 	while (len < numChars && wbuf[len]) ++len;
 	if (!len) return {};
 
-	int needed = WideCharToMultiByte(CP_UTF8, 0, wbuf.data(), (int)len, nullptr, 0, nullptr, nullptr);
+	int needed = WideCharToMultiByte(CP_UTF8, 0, wbuf.data(), static_cast<int>(len), nullptr, 0, nullptr, nullptr);
 	if (needed <= 0) return {};
 	std::string out(needed, '\0');
-	WideCharToMultiByte(CP_UTF8, 0, wbuf.data(), (int)len, &out[0], needed, nullptr, nullptr);
+	WideCharToMultiByte(CP_UTF8, 0, wbuf.data(), static_cast<int>(len), &out[0], needed, nullptr, nullptr);
 	return out;
 }
 
@@ -112,11 +112,11 @@ static std::string ReadByteArray(uintptr_t req, size_t offset)
 	if (TryReadBytes(req + offset + 8, &num, sizeof(num)) != sizeof(num) || num <= 0 || num > 16 * 1024 * 1024)
 		return {};
 
-	if (!IsReadableMemory(dataPtr, (size_t)num))
+	if (!IsReadableMemory(dataPtr, static_cast<size_t>(num)))
 		return {};
 
-	std::string out((size_t)num, '\0');
-	if (TryReadBytes(dataPtr, &out[0], (size_t)num) != (size_t)num)
+	std::string out(static_cast<size_t>(num), '\0');
+	if (TryReadBytes(dataPtr, &out[0], static_cast<size_t>(num)) != static_cast<size_t>(num))
 		return {};
 	return out;
 }
@@ -132,7 +132,8 @@ static std::string ExtractJsonString(const std::string& json, const char* key)
 	if (pos == std::string::npos) return {};
 	pos += needle.size();
 
-	while (pos < json.size() && (json[pos] == ' ' || json[pos] == '\t' || json[pos] == ':' || json[pos] == '\n' || json[pos] == '\r'))
+	while (pos < json.size() && (json[pos] == ' ' || json[pos] == '\t' || json[pos] == ':' || json[pos] == '\n' || json[
+		pos] == '\r'))
 		++pos;
 
 	if (pos >= json.size() || json[pos] != '"') return {};
@@ -147,13 +148,20 @@ static std::string ExtractJsonString(const std::string& json, const char* key)
 			++pos;
 			switch (json[pos])
 			{
-				case '"':  value += '"';  break;
-				case '\\': value += '\\'; break;
-				case '/':  value += '/';  break;
-				case 'n':  value += '\n'; break;
-				case 'r':  value += '\r'; break;
-				case 't':  value += '\t'; break;
-				default:   value += json[pos]; break;
+			case '"': value += '"';
+				break;
+			case '\\': value += '\\';
+				break;
+			case '/': value += '/';
+				break;
+			case 'n': value += '\n';
+				break;
+			case 'r': value += '\r';
+				break;
+			case 't': value += '\t';
+				break;
+			default: value += json[pos];
+				break;
 			}
 		}
 		else
@@ -178,7 +186,7 @@ static uintptr_t FindErrorFunction(uintptr_t processRequestAddr)
 	if (got < 16) return 0;
 
 	// BA 94 01 00 00 = mov edx, 194h (404)
-	static const uint8_t kMov404[] = { 0xBA, 0x94, 0x01, 0x00, 0x00 };
+	static const uint8_t kMov404[] = {0xBA, 0x94, 0x01, 0x00, 0x00};
 
 	for (size_t i = 0; i + 40 < got; ++i)
 	{
@@ -225,18 +233,19 @@ static uintptr_t FindErrorFunction(uintptr_t processRequestAddr)
 struct FakeString
 {
 	wchar_t* Data;
-	int32_t  Num;
-	int32_t  Max;
+	int32_t Num;
+	int32_t Max;
 };
 
-typedef void(__fastcall* CallbackInvokeFn)(__int64 callable, void** response);
-typedef __int64(__fastcall* CallbackGetTargetFn)(__int64 storage);
+using CallbackInvokeFn = void(__fastcall*)(__int64 callable, void** response);
+using CallbackGetTargetFn = __int64(__fastcall*)(__int64 storage);
 
 static void SendBlockedResponse(__int64 a1, __int64 a3)
 {
 	if (!g_errorFuncAddr)
 	{
-		LOG_WARN("[RemoteVulnerabilityPatcher] FHttpServerResponse::Error not located — connection dropped without response");
+		LOG_WARN(
+			"[RemoteVulnerabilityPatcher] FHttpServerResponse::Error not located — connection dropped without response");
 		return;
 	}
 
@@ -249,10 +258,10 @@ static void SendBlockedResponse(__int64 a1, __int64 a3)
 
 	// Build engine-heap-allocated FString for the error code.
 	// Using the same naming convention as UE5's built-in error codes.
-	static const wchar_t kErrorCode[] = L"errors.com.epicgames.httpserver.forbidden";
-	static const int32_t kErrorCodeChars = (int32_t)(sizeof(kErrorCode) / sizeof(wchar_t)); // includes null
+	static constexpr wchar_t kErrorCode[] = L"errors.com.epicgames.httpserver.forbidden";
+	static constexpr int32_t kErrorCodeChars = sizeof(kErrorCode) / sizeof(wchar_t); // includes null
 
-	wchar_t* errData = static_cast<wchar_t*>(
+	auto errData = static_cast<wchar_t*>(
 		hooks->Memory->Alloc(sizeof(kErrorCode), 4));
 	if (!errData)
 	{
@@ -261,8 +270,8 @@ static void SendBlockedResponse(__int64 a1, __int64 a3)
 	}
 	memcpy(errData, kErrorCode, sizeof(kErrorCode));
 
-	FakeString errCodeStr = { errData, kErrorCodeChars - 1, kErrorCodeChars }; // Num excludes null
-	FakeString emptyStr   = { nullptr, 0, 0 };
+	FakeString errCodeStr = {errData, kErrorCodeChars - 1, kErrorCodeChars}; // Num excludes null
+	FakeString emptyStr = {nullptr, 0, 0};
 
 	// Create the 403 response.  Error() will move-from the FStrings (Data → null on move).
 	void* response = nullptr;
@@ -275,7 +284,8 @@ static void SendBlockedResponse(__int64 a1, __int64 a3)
 
 	if (!response)
 	{
-		LOG_WARN("[RemoteVulnerabilityPatcher] FHttpServerResponse::Error returned null — connection dropped without response");
+		LOG_WARN(
+			"[RemoteVulnerabilityPatcher] FHttpServerResponse::Error returned null — connection dropped without response");
 		return;
 	}
 
@@ -294,15 +304,15 @@ static void SendBlockedResponse(__int64 a1, __int64 a3)
 	// Replicates the invocation sequence from the ProcessRequest pseudocode exactly.
 	__try
 	{
-		CallbackInvokeFn  invoke  = *reinterpret_cast<CallbackInvokeFn*>(a3);
-		__int64           storage =  a3 + 16;
+		CallbackInvokeFn invoke = *reinterpret_cast<CallbackInvokeFn*>(a3);
+		__int64 storage = a3 + 16;
 
 		if (*reinterpret_cast<__int64*>(a3 + 40))
 			storage = *reinterpret_cast<__int64*>(a3 + 40);
 
-		__int64*           vtable    = *reinterpret_cast<__int64**>(storage);
-		CallbackGetTargetFn getTarget =  reinterpret_cast<CallbackGetTargetFn>(vtable[1]);
-		__int64            target    =  getTarget(storage);
+		__int64* vtable = *reinterpret_cast<__int64**>(storage);
+		auto getTarget = reinterpret_cast<CallbackGetTargetFn>(vtable[1]);
+		__int64 target = getTarget(storage);
 
 		invoke(target, &response);
 	}
@@ -322,14 +332,14 @@ static void __fastcall Hook_ProcessRequest(__int64 a1, uint64_t* a2, __int64 a3)
 		uint64_t p = 0;
 		if (TryReadBytes(reinterpret_cast<uintptr_t>(a2), &p, sizeof(p)) == sizeof(p) && p != 0)
 		{
-			std::string url  = ReadFStringUtf8(static_cast<uintptr_t>(p), URL_OFFSET);
-			std::string body = ReadByteArray(static_cast<uintptr_t>(p), BODY_OFFSET);
+			std::string url = ReadFStringUtf8(p, URL_OFFSET);
+			std::string body = ReadByteArray(p, BODY_OFFSET);
 
 			// Security: block unauthorized /remote/object/call requests
 			if (ServerUtilityConfig::Config::GetRemoteVulnerabilityPatch()
 				&& url == REMOTE_CALL_URL)
 			{
-				std::string objectPath   = ExtractJsonString(body, "objectPath");
+				std::string objectPath = ExtractJsonString(body, "objectPath");
 				std::string functionName = ExtractJsonString(body, "functionName");
 
 				if (objectPath.find(ALLOWED_OBJECT_PATH) == std::string::npos)
@@ -354,7 +364,7 @@ static void __fastcall Hook_ProcessRequest(__int64 a1, uint64_t* a2, __int64 a3)
 void HttpConnectionHook::Install()
 {
 	auto* scanner = GetScanner();
-	auto* hooks   = GetHooks();
+	auto* hooks = GetHooks();
 	if (!scanner || !hooks)
 	{
 		LOG_ERROR("[RemoteVulnerabilityPatcher] Scanner or hooks interface not available");
@@ -366,12 +376,13 @@ void HttpConnectionHook::Install()
 	uintptr_t addr = scanner->FindPatternInMainModule(PROCESS_REQUEST_PATTERN);
 	if (addr == 0)
 	{
-		LOG_ERROR("[RemoteVulnerabilityPatcher] Pattern scan failed - could not locate FHttpConnection::ProcessRequest");
+		LOG_ERROR(
+			"[RemoteVulnerabilityPatcher] Pattern scan failed - could not locate FHttpConnection::ProcessRequest");
 		return;
 	}
 
 	LOG_INFO("[RemoteVulnerabilityPatcher] Found FHttpConnection::ProcessRequest at 0x%llX",
-		static_cast<unsigned long long>(addr));
+	         static_cast<unsigned long long>(addr));
 
 	// Scan ProcessRequest's own bytes to find FHttpServerResponse::Error.
 	// The function calls Error(out, 404, errCode, errMsg) for the not-found path —
@@ -379,9 +390,10 @@ void HttpConnectionHook::Install()
 	g_errorFuncAddr = FindErrorFunction(addr);
 	if (g_errorFuncAddr)
 		LOG_DEBUG("[RemoteVulnerabilityPatcher] Found FHttpServerResponse::Error at 0x%llX",
-			static_cast<unsigned long long>(g_errorFuncAddr));
-	else
-		LOG_WARN("[RemoteVulnerabilityPatcher] Could not locate FHttpServerResponse::Error — blocked requests will drop the connection instead of receiving a 403");
+	          static_cast<unsigned long long>(g_errorFuncAddr));
+		else
+			LOG_WARN(
+			"[RemoteVulnerabilityPatcher] Could not locate FHttpServerResponse::Error — blocked requests will drop the connection instead of receiving a 403");
 
 	g_hookHandle = hooks->Hooks->Install(
 		addr,
@@ -413,9 +425,9 @@ void HttpConnectionHook::Remove()
 	else
 		LOG_WARN("[RemoteVulnerabilityPatcher] Hook interface not available - cannot remove hook cleanly");
 
-	g_hookHandle             = nullptr;
+	g_hookHandle = nullptr;
 	g_originalProcessRequest = nullptr;
-	g_errorFuncAddr          = 0;
+	g_errorFuncAddr = 0;
 
 	LOG_INFO("[RemoteVulnerabilityPatcher] Hook removed successfully");
 }

@@ -18,31 +18,36 @@ namespace Compass
 	// Hook state
 	// ---------------------------------------------------------------------------
 
-	typedef void(__fastcall* PostRender_t)(SDK::AHUD* self);
+	using PostRender_t = void(__fastcall*)(SDK::AHUD* self);
 
 	static PostRender_t g_originalPostRender = nullptr;
-	static HookHandle   g_hookHandle         = nullptr;
+	static HookHandle g_hookHandle = nullptr;
 
 	// ---------------------------------------------------------------------------
 	// Cardinal direction table
 	// ---------------------------------------------------------------------------
 
-	struct Cardinal { const wchar_t* label; float worldYaw; };
+	struct Cardinal
+	{
+		const wchar_t* label;
+		float worldYaw;
+	};
+
 	static constexpr Cardinal CARDINALS[] = {
-		{ L"N",   0.0f  }, { L"NE",  45.0f }, { L"E",  90.0f  },
-		{ L"SE", 135.0f }, { L"S",  180.0f }, { L"SW", 225.0f },
-		{ L"W",  270.0f }, { L"NW", 315.0f },
+		{L"N", 0.0f}, {L"NE", 45.0f}, {L"E", 90.0f},
+		{L"SE", 135.0f}, {L"S", 180.0f}, {L"SW", 225.0f},
+		{L"W", 270.0f}, {L"NW", 315.0f},
 	};
 
 	static SDK::UTexture* GetPoiTexture(Layout::PoiType type)
 	{
 		switch (type)
 		{
-		case Layout::PoiType::Antena:        return s_tex.antena;
+		case Layout::PoiType::Antena: return s_tex.antena;
 		case Layout::PoiType::AbandonedBase: return s_tex.abandonedBase;
-		case Layout::PoiType::Cave:          return s_tex.cave;
-		case Layout::PoiType::Obelisk:       return s_tex.obelisk;
-		default:                             return nullptr;
+		case Layout::PoiType::Cave: return s_tex.cave;
+		case Layout::PoiType::Obelisk: return s_tex.obelisk;
+		default: return nullptr;
 		}
 	}
 
@@ -54,48 +59,48 @@ namespace Compass
 
 	struct DrawConfig
 	{
-		bool     textOnly;
-		float    scale;
-		float    posY;
-		float    widthFraction;
-		int      entityScanInterval;
-		int      playerScanInterval;
+		bool textOnly;
+		float scale;
+		float posY;
+		float widthFraction;
+		int entityScanInterval;
+		int playerScanInterval;
 		SDK::FLinearColor lineColor;
-		CompassConfig::EntitySettings    players;
-		CompassConfig::EntitySettings    cores;
-		CompassConfig::MarkerSettings    markers;
+		CompassConfig::EntitySettings players;
+		CompassConfig::EntitySettings cores;
+		CompassConfig::MarkerSettings markers;
 		CompassConfig::FoundableSettings foundables;
-		CompassConfig::EntitySettings    enemies;
-		CompassConfig::EntitySettings    customPins;
+		CompassConfig::EntitySettings enemies;
+		CompassConfig::EntitySettings customPins;
 	};
 
 	static DrawConfig s_cfg = {};
-	static int s_cfgTick    = 120; // start at max so first frame refreshes
+	static int s_cfgTick = 120; // start at max so first frame refreshes
 
 	static void RefreshConfig()
 	{
-		s_cfg.textOnly            = CompassConfig::Config::IsTextOnly();
-		s_cfg.scale               = CompassConfig::Config::GetScale();
-		s_cfg.posY                = CompassConfig::Config::GetPosY();
-		s_cfg.widthFraction       = CompassConfig::Config::GetWidthFraction();
-		s_cfg.entityScanInterval  = CompassConfig::Config::GetEntityScanInterval();
-		s_cfg.playerScanInterval  = CompassConfig::Config::GetPlayerScanInterval();
+		s_cfg.textOnly = CompassConfig::Config::IsTextOnly();
+		s_cfg.scale = CompassConfig::Config::GetScale();
+		s_cfg.posY = CompassConfig::Config::GetPosY();
+		s_cfg.widthFraction = CompassConfig::Config::GetWidthFraction();
+		s_cfg.entityScanInterval = CompassConfig::Config::GetEntityScanInterval();
+		s_cfg.playerScanInterval = CompassConfig::Config::GetPlayerScanInterval();
 		CompassConfig::Config::GetLineColor(
 			s_cfg.lineColor.R, s_cfg.lineColor.G, s_cfg.lineColor.B, s_cfg.lineColor.A);
-		s_cfg.players             = CompassConfig::Config::GetPlayers();
-		s_cfg.cores               = CompassConfig::Config::GetBaseCores();
-		s_cfg.markers             = CompassConfig::Config::GetMarkers();
-		s_cfg.foundables          = CompassConfig::Config::GetFoundables();
-		s_cfg.enemies             = CompassConfig::Config::GetEnemies();
-		s_cfg.customPins          = CompassConfig::Config::GetCustomPins();
+		s_cfg.players = CompassConfig::Config::GetPlayers();
+		s_cfg.cores = CompassConfig::Config::GetBaseCores();
+		s_cfg.markers = CompassConfig::Config::GetMarkers();
+		s_cfg.foundables = CompassConfig::Config::GetFoundables();
+		s_cfg.enemies = CompassConfig::Config::GetEnemies();
+		s_cfg.customPins = CompassConfig::Config::GetCustomPins();
 	}
 
 	// ---------------------------------------------------------------------------
 	// Throttled entity cache
 	// ---------------------------------------------------------------------------
 
-	static int  s_scanTick       = 0;
-	static int  s_playerScanTick = 0;
+	static int s_scanTick = 0;
+	static int s_playerScanTick = 0;
 
 	// ---------------------------------------------------------------------------
 	// GatherPlayersData -- direct call to UCrMapManuSubsystem::GatherPlayersData
@@ -105,14 +110,18 @@ namespace Compass
 	// set the flag at localPC+3816 and process it on the next gameplay tick.
 	// ---------------------------------------------------------------------------
 
-	typedef void(__fastcall* GatherPlayersData_t)(void* thisSubsystem);
+	using GatherPlayersData_t = void(__fastcall*)(void* thisSubsystem);
 	static GatherPlayersData_t g_gatherPlayersDataFn = nullptr;
-	static void*               g_mapManuSubsystem    = nullptr;
-	static SDK::UWorld*        g_mapManuWorld        = nullptr;
+	static void* g_mapManuSubsystem = nullptr;
+	static SDK::UWorld* g_mapManuWorld = nullptr;
 
 	static bool CallGatherPlayersData(GatherPlayersData_t fn, void* subsystem)
 	{
-		__try { fn(subsystem); return true; }
+		__try
+		{
+			fn(subsystem);
+			return true;
+		}
 		__except (EXCEPTION_EXECUTE_HANDLER) { return false; }
 	}
 
@@ -134,46 +143,69 @@ namespace Compass
 					return obj;
 			}
 		}
-		catch (...) {}
+		catch (...)
+		{
+		}
 
 		return nullptr;
 	}
-	static std::vector<Layout::BaseCoreEntry>      s_cores;
-	static std::vector<Layout::MarkerEntry>        s_markers; // all visible POIs (incl. caves)
-	static std::vector<Layout::FoundableEntry>     s_foundables;
-	static std::vector<Layout::EnemyEntry>         s_enemies;
-	static std::vector<Layout::PlayerMarkerEntry>  s_playerMarkers;
-	static std::vector<Layout::CustomPinEntry>     s_customPins;
+
+	static std::vector<Layout::BaseCoreEntry> s_cores;
+	static std::vector<Layout::MarkerEntry> s_markers; // all visible POIs (incl. caves)
+	static std::vector<Layout::FoundableEntry> s_foundables;
+	static std::vector<Layout::EnemyEntry> s_enemies;
+	static std::vector<Layout::PlayerMarkerEntry> s_playerMarkers;
+	static std::vector<Layout::CustomPinEntry> s_customPins;
 	static std::string s_lastWorldName; // tracks world changes for log-on-change
 
 	static void RefreshEntities(SDK::UWorld* world)
 	{
-		LOG_TRACE("[Compass] RefreshEntities: world=%p", (void*)world);
+		LOG_TRACE("[Compass] RefreshEntities: world=%p", static_cast<void*>(world));
 
 		LOG_TRACE("[Compass] >> ScanBaseCores...");
 		try { s_cores = Layout::ScanBaseCores(world); }
-		catch (...) { LOG_WARN("[Compass] Exception in ScanBaseCores -- cache cleared"); s_cores.clear(); }
-		LOG_TRACE("[Compass] >> ScanBaseCores done (%d)", (int)s_cores.size());
+		catch (...)
+		{
+			LOG_WARN("[Compass] Exception in ScanBaseCores -- cache cleared");
+			s_cores.clear();
+		}
+		LOG_TRACE("[Compass] >> ScanBaseCores done (%d)", static_cast<int>(s_cores.size()));
 
 		LOG_TRACE("[Compass] >> ScanMarkers...");
 		try { s_markers = Layout::ScanMarkers(world); }
-		catch (...) { LOG_WARN("[Compass] Exception in ScanMarkers -- cache cleared"); s_markers.clear(); }
-		LOG_TRACE("[Compass] >> ScanMarkers done (%d)", (int)s_markers.size());
+		catch (...)
+		{
+			LOG_WARN("[Compass] Exception in ScanMarkers -- cache cleared");
+			s_markers.clear();
+		}
+		LOG_TRACE("[Compass] >> ScanMarkers done (%d)", static_cast<int>(s_markers.size()));
 
 		LOG_TRACE("[Compass] >> ScanFoundables...");
 		try { s_foundables = Layout::ScanFoundables(world); }
-		catch (...) { LOG_WARN("[Compass] Exception in ScanFoundables -- cache cleared"); s_foundables.clear(); }
-		LOG_TRACE("[Compass] >> ScanFoundables done (%d)", (int)s_foundables.size());
+		catch (...)
+		{
+			LOG_WARN("[Compass] Exception in ScanFoundables -- cache cleared");
+			s_foundables.clear();
+		}
+		LOG_TRACE("[Compass] >> ScanFoundables done (%d)", static_cast<int>(s_foundables.size()));
 
 		LOG_TRACE("[Compass] >> ScanEnemies...");
 		try { s_enemies = Layout::ScanEnemies(world); }
-		catch (...) { LOG_WARN("[Compass] Exception in ScanEnemies -- cache cleared"); s_enemies.clear(); }
-		LOG_TRACE("[Compass] >> ScanEnemies done (%d)", (int)s_enemies.size());
+		catch (...)
+		{
+			LOG_WARN("[Compass] Exception in ScanEnemies -- cache cleared");
+			s_enemies.clear();
+		}
+		LOG_TRACE("[Compass] >> ScanEnemies done (%d)", static_cast<int>(s_enemies.size()));
 
 		LOG_TRACE("[Compass] >> ScanCustomPins...");
 		try { s_customPins = Layout::ScanCustomPins(world); }
-		catch (...) { LOG_WARN("[Compass] Exception in ScanCustomPins -- cache cleared"); s_customPins.clear(); }
-		LOG_TRACE("[Compass] >> ScanCustomPins done (%d)", (int)s_customPins.size());
+		catch (...)
+		{
+			LOG_WARN("[Compass] Exception in ScanCustomPins -- cache cleared");
+			s_customPins.clear();
+		}
+		LOG_TRACE("[Compass] >> ScanCustomPins done (%d)", static_cast<int>(s_customPins.size()));
 
 		// HLOD fallback: appends distant markers/cores not yet in the streaming radius.
 		// Deduplicates against already-found real actor entries by proximity.
@@ -181,7 +213,7 @@ namespace Compass
 		try { Layout::ScanHLOD(world, s_markers, s_cores); }
 		catch (...) { LOG_WARN("[Compass] Exception in ScanHLOD -- ignored"); }
 		LOG_TRACE("[Compass] >> ScanHLOD done (markers=%d cores=%d after merge)",
-			(int)s_markers.size(), (int)s_cores.size());
+		          static_cast<int>(s_markers.size()), static_cast<int>(s_cores.size()));
 
 		int caveCount = 0;
 		for (const auto& m : s_markers)
@@ -193,9 +225,11 @@ namespace Compass
 			if (f.type == Layout::FoundableType::DeadBody) ++bodyCount;
 			else if (f.type == Layout::FoundableType::Drone) ++droneCount;
 		}
-		LOG_DEBUG("[Compass] Scan complete: %d players, %d cores, %d POIs (%d caves), %d bodies, %d drones, %d enemies, %d custompins",
-			(int)s_playerMarkers.size(), (int)s_cores.size(),
-			(int)s_markers.size(), caveCount, bodyCount, droneCount, (int)s_enemies.size(), (int)s_customPins.size());
+		LOG_DEBUG(
+			"[Compass] Scan complete: %d players, %d cores, %d POIs (%d caves), %d bodies, %d drones, %d enemies, %d custompins",
+			static_cast<int>(s_playerMarkers.size()), static_cast<int>(s_cores.size()),
+			static_cast<int>(s_markers.size()), caveCount, bodyCount, droneCount, static_cast<int>(s_enemies.size()),
+			static_cast<int>(s_customPins.size()));
 
 		// Signal the subsystem AFTER reading so the next gameplay tick (which runs
 		// before our next PostRender) sees the flag and refreshes its data in time
@@ -228,21 +262,21 @@ namespace Compass
 		if (!pc)
 			return;
 
-		SDK::APawn*  localPawn = pc->K2_GetPawn();
+		SDK::APawn* localPawn = pc->K2_GetPawn();
 		SDK::FVector playerLoc = localPawn ? localPawn->K2_GetActorLocation() : SDK::FVector{};
 
 		SDK::FRotator controlRot = pc->GetControlRotation();
 		// rawYaw: UE-space (0 = East). Used for entity bearing math.
 		// yaw:    compass-convention (0 = North). Used for cardinal placement.
 		const float rawYaw = static_cast<float>(controlRot.Yaw);
-		const float yaw    = rawYaw + 90.0f;
+		const float yaw = rawYaw + 90.0f;
 
-		const float scale     = s_cfg.scale;
-		const float posY      = s_cfg.posY;
+		const float scale = s_cfg.scale;
+		const float posY = s_cfg.posY;
 		const float halfWidth = canvas->SizeX * 0.5f * s_cfg.widthFraction * scale;
-		const float centerX   = canvas->SizeX * 0.5f;
-		const float left      = centerX - halfWidth;
-		const float right     = centerX + halfWidth;
+		const float centerX = canvas->SizeX * 0.5f;
+		const float left = centerX - halfWidth;
+		const float right = centerX + halfWidth;
 
 		// One-time config dump to help diagnose sizing/position issues
 		static bool s_firstDraw = true;
@@ -250,11 +284,11 @@ namespace Compass
 		{
 			s_firstDraw = false;
 			LOG_INFO("[Compass] First draw -- scale=%.2f posY=%.1f widthFraction=%.2f scanInterval=%d canvas=%dx%d",
-				scale, posY, s_cfg.widthFraction, s_cfg.entityScanInterval,
-				(int)canvas->SizeX, (int)canvas->SizeY);
+			         scale, posY, s_cfg.widthFraction, s_cfg.entityScanInterval,
+			         static_cast<int>(canvas->SizeX), static_cast<int>(canvas->SizeY));
 		}
 
-		SDK::UFont* labelFont  = SDK::UEngine::GetEngine() ? SDK::UEngine::GetEngine()->LargeFont : nullptr;
+		SDK::UFont* labelFont = SDK::UEngine::GetEngine() ? SDK::UEngine::GetEngine()->LargeFont : nullptr;
 		SDK::UFont* entityFont = labelFont; // same font as cardinals for bigger entity text
 
 		// --- Throttled player scan (fast) ---
@@ -270,7 +304,7 @@ namespace Compass
 				if (world != g_mapManuWorld)
 				{
 					g_mapManuSubsystem = nullptr;
-					g_mapManuWorld     = world;
+					g_mapManuWorld = world;
 				}
 				if (!g_mapManuSubsystem)
 					g_mapManuSubsystem = FindMapManuSubsystem(world);
@@ -286,7 +320,11 @@ namespace Compass
 			}
 
 			try { s_playerMarkers = Layout::ScanPlayerMarkers(world); }
-			catch (...) { LOG_WARN("[Compass] Exception in ScanPlayerMarkers -- cache cleared"); s_playerMarkers.clear(); }
+			catch (...)
+			{
+				LOG_WARN("[Compass] Exception in ScanPlayerMarkers -- cache cleared");
+				s_playerMarkers.clear();
+			}
 		}
 
 		// --- Throttled full entity scan (slow) ---
@@ -297,11 +335,12 @@ namespace Compass
 		}
 
 		// --- Helper: world position -> compass screenX ---
-		auto ToScreenX = [&](const SDK::FVector& pos) -> float {
+		auto ToScreenX = [&](const SDK::FVector& pos) -> float
+		{
 			const float dx = pos.X - playerLoc.X;
 			const float dy = pos.Y - playerLoc.Y;
 			float delta = atan2f(dy, dx) * (180.0f / 3.14159265358979f) - rawYaw;
-			while (delta >  180.0f) delta -= 360.0f;
+			while (delta > 180.0f) delta -= 360.0f;
 			while (delta < -180.0f) delta += 360.0f;
 			return centerX + (delta / 90.0f) * halfWidth;
 		};
@@ -309,16 +348,16 @@ namespace Compass
 		auto InBounds = [&](float x) { return x >= left && x <= right; };
 
 		// --- Colors ---
-		static constexpr SDK::FLinearColor white    { 1.0f, 1.0f, 1.0f, 0.9f };
-		static constexpr SDK::FLinearColor dimWhite { 1.0f, 1.0f, 1.0f, 0.4f };
-		static constexpr SDK::FLinearColor yellow   { 1.0f, 0.85f, 0.0f, 1.0f };
-		static constexpr SDK::FLinearColor colPlayer{ 0.3f, 0.8f,  1.0f, 1.0f }; // cyan
-		static constexpr SDK::FLinearColor colCore  { 1.0f, 0.5f,  0.0f, 1.0f }; // orange
-		static constexpr SDK::FLinearColor colMarker{ 1.0f, 1.0f,  0.0f, 1.0f }; // yellow
-		static constexpr SDK::FLinearColor colBody  { 0.7f, 0.7f,  0.7f, 1.0f }; // grey
-		static constexpr SDK::FLinearColor colDrone { 0.4f, 0.9f,  0.5f, 1.0f }; // green
-		static constexpr SDK::FLinearColor colEnemy { 1.0f, 0.15f, 0.15f, 1.0f }; // red
-		static constexpr SDK::FLinearColor black1   { 0.0f, 0.0f,  0.0f, 1.0f };
+		static constexpr SDK::FLinearColor white{1.0f, 1.0f, 1.0f, 0.9f};
+		static constexpr SDK::FLinearColor dimWhite{1.0f, 1.0f, 1.0f, 0.4f};
+		static constexpr SDK::FLinearColor yellow{1.0f, 0.85f, 0.0f, 1.0f};
+		static constexpr SDK::FLinearColor colPlayer{0.3f, 0.8f, 1.0f, 1.0f}; // cyan
+		static constexpr SDK::FLinearColor colCore{1.0f, 0.5f, 0.0f, 1.0f}; // orange
+		static constexpr SDK::FLinearColor colMarker{1.0f, 1.0f, 0.0f, 1.0f}; // yellow
+		static constexpr SDK::FLinearColor colBody{0.7f, 0.7f, 0.7f, 1.0f}; // grey
+		static constexpr SDK::FLinearColor colDrone{0.4f, 0.9f, 0.5f, 1.0f}; // green
+		static constexpr SDK::FLinearColor colEnemy{1.0f, 0.15f, 0.15f, 1.0f}; // red
+		static constexpr SDK::FLinearColor black1{0.0f, 0.0f, 0.0f, 1.0f};
 
 		// --- Horizontal compass line ---
 		// DrawLine ignores alpha (uses FBatchedElements which has no translucent blend).
@@ -330,7 +369,7 @@ namespace Compass
 		for (const auto& c : CARDINALS)
 		{
 			float delta = c.worldYaw - yaw;
-			while (delta >  180.0f) delta -= 360.0f;
+			while (delta > 180.0f) delta -= 360.0f;
 			while (delta < -180.0f) delta += 360.0f;
 
 			const float screenX = centerX + (delta / 90.0f) * halfWidth;
@@ -340,49 +379,51 @@ namespace Compass
 			hud->DrawLine(screenX, posY - 6.0f * scale, screenX, posY + 4.0f * scale, white, 1.0f * scale);
 
 			// Label above the tick
-			SDK::FString   label(c.label);
-			SDK::FVector2D sz = canvas->K2_TextSize(labelFont, label, { scale, scale });
+			SDK::FString label(c.label);
+			SDK::FVector2D sz = canvas->K2_TextSize(labelFont, label, {scale, scale});
 			canvas->K2_DrawText(labelFont, label,
-				{ screenX - sz.X * 0.5f, posY - 9.0f * scale - sz.Y },
-				{ scale, scale }, white, 0.0f,
-				{ 0.0f, 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f },
-				false, false, true, black1);
+			                    {screenX - sz.X * 0.5f, posY - 9.0f * scale - sz.Y},
+			                    {scale, scale}, white, 0.0f,
+			                    {0.0f, 0.0f, 0.0f, 0.0f}, {0.0f, 0.0f},
+			                    false, false, true, black1);
 		}
 
 		// --- Center notch (current heading, above the line) ---
 		hud->DrawLine(centerX, posY - 22.0f * scale, centerX, posY + 6.0f * scale, yellow, 2.5f * scale);
 
 		// --- Config: per-entity settings (from cache) ---
-		const auto& cfgPlayers    = s_cfg.players;
-		const auto& cfgCores      = s_cfg.cores;
-		const auto& cfgMarkers    = s_cfg.markers;
+		const auto& cfgPlayers = s_cfg.players;
+		const auto& cfgCores = s_cfg.cores;
+		const auto& cfgMarkers = s_cfg.markers;
 		const auto& cfgFoundables = s_cfg.foundables;
-		const auto& cfgEnemies    = s_cfg.enemies;
+		const auto& cfgEnemies = s_cfg.enemies;
 		const auto& cfgCustomPins = s_cfg.customPins;
 
 		// --- Helper: distance-based alpha (fade starts at 80% of max) ---
-		auto DistAlpha = [](float dist, float maxDist) -> float {
+		auto DistAlpha = [](float dist, float maxDist) -> float
+		{
 			if (maxDist <= 0.0f) return 1.0f;
 			const float fadeStart = maxDist * 0.8f;
 			if (dist <= fadeStart) return 1.0f;
-			if (dist >= maxDist)   return 0.0f;
+			if (dist >= maxDist) return 0.0f;
 			return (maxDist - dist) / (maxDist - fadeStart);
 		};
 
 		// --- Entity markers (below the line) ---
 
 		// Shared edge-fade calculation
-		auto EdgeAlpha = [&](float screenX) -> float {
+		auto EdgeAlpha = [&](float screenX) -> float
+		{
 			const float edgeFadeZone = halfWidth * 0.12f;
 			return fminf(
-				fminf((screenX - left)  / edgeFadeZone, 1.0f),
+				fminf((screenX - left) / edgeFadeZone, 1.0f),
 				fminf((right - screenX) / edgeFadeZone, 1.0f)
 			);
 		};
 
 		// Draw icon texture (with text fallback). White tint preserves art colours.
 		auto DrawEntityIcon = [&](float screenX, SDK::UTexture* tex,
-			const wchar_t* fallbackSym, SDK::FLinearColor colour, float alpha)
+		                          const wchar_t* fallbackSym, SDK::FLinearColor colour, float alpha)
 		{
 			if (!InBounds(screenX)) return;
 			const float finalAlpha = alpha * EdgeAlpha(screenX);
@@ -393,31 +434,31 @@ namespace Compass
 			if (!textOnly && tex && IsValidTexture(tex))
 			{
 				const float iconSize = 22.0f * scale;
-				SDK::FLinearColor tint{ 1.0f, 1.0f, 1.0f, finalAlpha };
+				SDK::FLinearColor tint{1.0f, 1.0f, 1.0f, finalAlpha};
 				hud->DrawTexture(tex,
-					screenX - iconSize * 0.5f, posY + 10.0f * scale, iconSize, iconSize,
-					0.0f, 0.0f, 1.0f, 1.0f,
-					tint, SDK::EBlendMode::BLEND_Translucent,
-					1.0f, false, 0.0f, { 0.5f, 0.5f });
+				                 screenX - iconSize * 0.5f, posY + 10.0f * scale, iconSize, iconSize,
+				                 0.0f, 0.0f, 1.0f, 1.0f,
+				                 tint, SDK::EBlendMode::BLEND_Translucent,
+				                 1.0f, false, 0.0f, {0.5f, 0.5f});
 			}
 			else
 			{
 				colour.A *= finalAlpha;
 				const float es = scale * 1.25f;
-				SDK::FString   s(fallbackSym);
-				SDK::FVector2D sz = canvas->K2_TextSize(entityFont, s, { es, es });
-				SDK::FLinearColor outline{ 0.0f, 0.0f, 0.0f, finalAlpha };
+				SDK::FString s(fallbackSym);
+				SDK::FVector2D sz = canvas->K2_TextSize(entityFont, s, {es, es});
+				SDK::FLinearColor outline{0.0f, 0.0f, 0.0f, finalAlpha};
 				canvas->K2_DrawText(entityFont, s,
-					{ screenX - sz.X * 0.5f, posY + 16.0f * scale },
-					{ es, es }, colour, 0.0f,
-					{ 0.0f, 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f },
-					false, false, true, outline);
+				                    {screenX - sz.X * 0.5f, posY + 16.0f * scale},
+				                    {es, es}, colour, 0.0f,
+				                    {0.0f, 0.0f, 0.0f, 0.0f}, {0.0f, 0.0f},
+				                    false, false, true, outline);
 			}
 		};
 
 		// Draw icon + name label below (used for base cores which have custom names).
 		auto DrawEntityIconWithLabel = [&](float screenX, SDK::UTexture* tex,
-			const wchar_t* label, SDK::FLinearColor colour, float alpha)
+		                                   const wchar_t* label, SDK::FLinearColor colour, float alpha)
 		{
 			if (!InBounds(screenX)) return;
 			const float finalAlpha = alpha * EdgeAlpha(screenX);
@@ -430,57 +471,60 @@ namespace Compass
 			const bool showIcon = !textOnly && tex && IsValidTexture(tex);
 			if (showIcon)
 			{
-				SDK::FLinearColor tint{ 1.0f, 1.0f, 1.0f, finalAlpha };
+				SDK::FLinearColor tint{1.0f, 1.0f, 1.0f, finalAlpha};
 				hud->DrawTexture(tex,
-					screenX - iconSize * 0.5f, posY + 10.0f * scale, iconSize, iconSize,
-					0.0f, 0.0f, 1.0f, 1.0f,
-					tint, SDK::EBlendMode::BLEND_Translucent,
-					1.0f, false, 0.0f, { 0.5f, 0.5f });
+				                 screenX - iconSize * 0.5f, posY + 10.0f * scale, iconSize, iconSize,
+				                 0.0f, 0.0f, 1.0f, 1.0f,
+				                 tint, SDK::EBlendMode::BLEND_Translucent,
+				                 1.0f, false, 0.0f, {0.5f, 0.5f});
 			}
 
 			// Name label below the icon (or below stem if no icon)
 			colour.A *= finalAlpha;
 			const float es = scale * 1.0f;
-			SDK::FString   s(label);
-			SDK::FVector2D sz = canvas->K2_TextSize(entityFont, s, { es, es });
-			SDK::FLinearColor outline{ 0.0f, 0.0f, 0.0f, finalAlpha };
+			SDK::FString s(label);
+			SDK::FVector2D sz = canvas->K2_TextSize(entityFont, s, {es, es});
+			SDK::FLinearColor outline{0.0f, 0.0f, 0.0f, finalAlpha};
 			const float labelY = posY + 10.0f * scale + (showIcon ? iconSize : 6.0f * scale);
 			canvas->K2_DrawText(entityFont, s,
-				{ screenX - sz.X * 0.5f, labelY },
-				{ es, es }, colour, 0.0f,
-				{ 0.0f, 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f },
-				false, false, true, outline);
+			                    {screenX - sz.X * 0.5f, labelY},
+			                    {es, es}, colour, 0.0f,
+			                    {0.0f, 0.0f, 0.0f, 0.0f}, {0.0f, 0.0f},
+			                    false, false, true, outline);
 		};
 
 		// --- POI helpers (used when building the draw queue below) ---
-		auto PoiTypeEnabled = [&](Layout::PoiType t) -> bool {
+		auto PoiTypeEnabled = [&](Layout::PoiType t) -> bool
+		{
 			switch (t)
 			{
-			case Layout::PoiType::Antena:        return cfgMarkers.showAntena;
+			case Layout::PoiType::Antena: return cfgMarkers.showAntena;
 			case Layout::PoiType::AbandonedBase: return cfgMarkers.showAbandonedBase;
-			case Layout::PoiType::Cave:          return cfgMarkers.showCave;
-			case Layout::PoiType::Obelisk:       return cfgMarkers.showObelisk;
-			default:                             return false;
+			case Layout::PoiType::Cave: return cfgMarkers.showCave;
+			case Layout::PoiType::Obelisk: return cfgMarkers.showObelisk;
+			default: return false;
 			}
 		};
-		auto PoiSymbol = [](Layout::PoiType t) -> const wchar_t* {
+		auto PoiSymbol = [](Layout::PoiType t) -> const wchar_t*
+		{
 			switch (t)
 			{
-			case Layout::PoiType::Antena:        return L"A";
+			case Layout::PoiType::Antena: return L"A";
 			case Layout::PoiType::AbandonedBase: return L"Ab";
-			case Layout::PoiType::Cave:          return L"C";
-			case Layout::PoiType::Obelisk:       return L"Ob";
-			default:                             return L"?";
+			case Layout::PoiType::Cave: return L"C";
+			case Layout::PoiType::Obelisk: return L"Ob";
+			default: return L"?";
 			}
 		};
-		auto PoiDistance = [&](Layout::PoiType t) -> float {
+		auto PoiDistance = [&](Layout::PoiType t) -> float
+		{
 			switch (t)
 			{
-			case Layout::PoiType::Antena:        return cfgMarkers.antenaDistance;
+			case Layout::PoiType::Antena: return cfgMarkers.antenaDistance;
 			case Layout::PoiType::AbandonedBase: return cfgMarkers.abandonedBaseDistance;
-			case Layout::PoiType::Cave:          return cfgMarkers.caveDistance;
-			case Layout::PoiType::Obelisk:       return cfgMarkers.obeliskDistance;
-			default:                             return 0.0f;
+			case Layout::PoiType::Cave: return cfgMarkers.caveDistance;
+			case Layout::PoiType::Obelisk: return cfgMarkers.obeliskDistance;
+			default: return 0.0f;
 			}
 		};
 
@@ -488,7 +532,11 @@ namespace Compass
 		// Unified draw queue -- all visible entities sorted by distance descending
 		// so that the closest entity is always drawn last (rendered on top).
 		// ---------------------------------------------------------------------------
-		struct DrawCall { float distSq; std::function<void()> fn; };
+		struct DrawCall
+		{
+			float distSq;
+			std::function<void()> fn;
+		};
 		std::vector<DrawCall> drawQueue;
 		drawQueue.reserve(
 			s_playerMarkers.size() + s_cores.size() +
@@ -506,7 +554,9 @@ namespace Compass
 				if (alpha <= 0.0f) continue;
 				const float sx = ToScreenX(p.location);
 				const std::wstring wn = p.playerName;
-				drawQueue.push_back({ distSq, [=]{ DrawEntityIconWithLabel(sx, s_tex.player, wn.c_str(), colPlayer, alpha); } });
+				drawQueue.push_back({
+					distSq, [=] { DrawEntityIconWithLabel(sx, s_tex.player, wn.c_str(), colPlayer, alpha); }
+				});
 			}
 		}
 		if (cfgCores.enabled)
@@ -519,7 +569,9 @@ namespace Compass
 				if (alpha <= 0.0f) continue;
 				const float sx = ToScreenX(c.location);
 				const std::wstring wn = c.name;
-				drawQueue.push_back({ distSq, [=]{ DrawEntityIconWithLabel(sx, s_tex.baseCore, wn.c_str(), colCore, alpha); } });
+				drawQueue.push_back({
+					distSq, [=] { DrawEntityIconWithLabel(sx, s_tex.baseCore, wn.c_str(), colCore, alpha); }
+				});
 			}
 		}
 		// ForgottenEngine and OrbitalLander are filtered out in ScanMarkers.
@@ -535,18 +587,18 @@ namespace Compass
 				const float sx = ToScreenX(m.location);
 				SDK::UTexture* tex = GetPoiTexture(m.type);
 				const wchar_t* sym = PoiSymbol(m.type);
-				drawQueue.push_back({ distSq, [=]{ DrawEntityIcon(sx, tex, sym, colMarker, alpha); } });
+				drawQueue.push_back({distSq, [=] { DrawEntityIcon(sx, tex, sym, colMarker, alpha); }});
 			}
 		}
 		if (cfgFoundables.enabled)
 		{
 			for (const auto& f : s_foundables)
 			{
-				const bool isBody  = f.type == Layout::FoundableType::DeadBody;
+				const bool isBody = f.type == Layout::FoundableType::DeadBody;
 				const bool isDrone = f.type == Layout::FoundableType::Drone;
 
-				if (isBody  && !cfgFoundables.showDeadBody) continue;
-				if (isDrone && !cfgFoundables.showDrone)    continue;
+				if (isBody && !cfgFoundables.showDeadBody) continue;
+				if (isDrone && !cfgFoundables.showDrone) continue;
 
 				const float maxDist = isBody ? cfgFoundables.deadBodyDistance : cfgFoundables.droneDistance;
 				const float dx = f.location.X - playerLoc.X, dy = f.location.Y - playerLoc.Y;
@@ -555,9 +607,9 @@ namespace Compass
 				if (alpha <= 0.0f) continue;
 				const float sx = ToScreenX(f.location);
 				if (isBody)
-					drawQueue.push_back({ distSq, [=]{ DrawEntityIcon(sx, s_tex.body,  L"D",  colBody,  alpha); } });
+					drawQueue.push_back({distSq, [=] { DrawEntityIcon(sx, s_tex.body, L"D", colBody, alpha); }});
 				else
-					drawQueue.push_back({ distSq, [=]{ DrawEntityIcon(sx, s_tex.drone, L"Dr", colDrone, alpha); } });
+					drawQueue.push_back({distSq, [=] { DrawEntityIcon(sx, s_tex.drone, L"Dr", colDrone, alpha); }});
 			}
 		}
 		// --- Personal map pins (ACrGameStateBase::PlayerPersonalMarkers) ---
@@ -575,13 +627,15 @@ namespace Compass
 					pin.color.A > 0.0f ? pin.color.A : 1.0f
 				};
 				const std::wstring label = pin.playerName.empty() ? L"Pin" : pin.playerName;
-				drawQueue.push_back({ distSq, [=]{ DrawEntityIconWithLabel(sx, s_tex.customPin, label.c_str(), col, alpha); } });
+				drawQueue.push_back({
+					distSq, [=] { DrawEntityIconWithLabel(sx, s_tex.customPin, label.c_str(), col, alpha); }
+				});
 			}
 		}
 
 		// Sort furthest-first so closest entities paint on top.
 		std::sort(drawQueue.begin(), drawQueue.end(),
-			[](const DrawCall& a, const DrawCall& b) { return a.distSq > b.distSq; });
+		          [](const DrawCall& a, const DrawCall& b) { return a.distSq > b.distSq; });
 
 		for (const auto& dc : drawQueue)
 			dc.fn();
@@ -610,11 +664,11 @@ namespace Compass
 				if (finalAlpha <= 0.0f) continue;
 
 				// Glow halo
-				SDK::FLinearColor glow{ colEnemy.R, colEnemy.G, colEnemy.B, 0.25f * finalAlpha };
+				SDK::FLinearColor glow{colEnemy.R, colEnemy.G, colEnemy.B, 0.25f * finalAlpha};
 				hud->DrawRect(glow, sx - halfGlow, posY - halfGlow, dotGlow, dotGlow);
 
 				// Bright core
-				SDK::FLinearColor core{ colEnemy.R, colEnemy.G, colEnemy.B, finalAlpha };
+				SDK::FLinearColor core{colEnemy.R, colEnemy.G, colEnemy.B, finalAlpha};
 				hud->DrawRect(core, sx - halfCore, posY - halfCore, dotCore, dotCore);
 			}
 		}
@@ -638,26 +692,32 @@ namespace Compass
 		if (!CompassConfig::Config::IsEnabled())
 			return;
 
-		try {
+		try
+		{
 			world = SDK::UWorld::GetWorld();
 			if (!world)
 			{
 				LOG_TRACE("[Compass] PostRender: no world");
 				return;
 			}
-		} catch (...) {
+		}
+		catch (...)
+		{
 			LOG_ERROR("[Compass] Exception in GetWorld -- skipping compass draw");
 			return;
 		}
 
-		try {
+		try
+		{
 			worldName = world->GetName();
 			if (worldName != s_lastWorldName)
 			{
 				LOG_INFO("[Compass] World changed: '%s'", worldName.c_str());
 				s_lastWorldName = worldName;
 			}
-		} catch (...) {
+		}
+		catch (...)
+		{
 			LOG_ERROR("[Compass] Exception in GetName");
 			return;
 		}
@@ -686,7 +746,7 @@ namespace Compass
 		if (gatherAddr)
 		{
 			g_gatherPlayersDataFn = reinterpret_cast<GatherPlayersData_t>(gatherAddr);
-			LOG_INFO("[Compass] GatherPlayersData found at 0x%llX", (unsigned long long)gatherAddr);
+			LOG_INFO("[Compass] GatherPlayersData found at 0x%llX", static_cast<unsigned long long>(gatherAddr));
 		}
 		else
 		{
@@ -703,11 +763,12 @@ namespace Compass
 		g_hookHandle = hooks->Hooks->Install(addr, (void*)Hooked_PostRender, (void**)&g_originalPostRender);
 		if (!g_hookHandle)
 		{
-			LOG_ERROR("[Compass] Failed to install hook on AHUD::PostRender at 0x%llX", (unsigned long long)addr);
+			LOG_ERROR("[Compass] Failed to install hook on AHUD::PostRender at 0x%llX",
+			          static_cast<unsigned long long>(addr));
 			return false;
 		}
 
-		LOG_INFO("[Compass] Hooked AHUD::PostRender at 0x%llX", (unsigned long long)addr);
+		LOG_INFO("[Compass] Hooked AHUD::PostRender at 0x%llX", static_cast<unsigned long long>(addr));
 		return true;
 	}
 

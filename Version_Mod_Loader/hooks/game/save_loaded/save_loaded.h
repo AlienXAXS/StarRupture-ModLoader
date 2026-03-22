@@ -15,21 +15,21 @@
 
 namespace Hooks::SaveLoaded
 {
-    // Callback signature for plugins
-    typedef void (*PluginSaveLoadedCallback)();
+	// Callback signature for plugins
+	using PluginSaveLoadedCallback = void(*)();
 
-    // Install the hook
-  bool Install();
+	// Install the hook
+	bool Install();
 
-    // Remove the hook
-    void Remove();
+	// Remove the hook
+	void Remove();
 
-    // Returns true if the hook is currently installed
-    bool IsInstalled();
+	// Returns true if the hook is currently installed
+	bool IsInstalled();
 
-    // Register a plugin callback to be notified when a save finishes loading
-    void RegisterPluginCallback(PluginSaveLoadedCallback callback);
+	// Register a plugin callback to be notified when a save finishes loading
+	void RegisterPluginCallback(PluginSaveLoadedCallback callback);
 
-  // Unregister a plugin callback
-    void UnregisterPluginCallback(PluginSaveLoadedCallback callback);
+	// Unregister a plugin callback
+	void UnregisterPluginCallback(PluginSaveLoadedCallback callback);
 }
