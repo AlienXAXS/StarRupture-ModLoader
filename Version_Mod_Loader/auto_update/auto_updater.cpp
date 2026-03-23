@@ -510,7 +510,11 @@ static bool DownloadPlugin(const char* url,
 
 void ModLoaderLogger::RunAutoUpdate()
 {
-	LogToFile::Info("[AutoUpdate] Starting auto-update check");
+#ifdef MODLOADER_BUILD_TAG
+	LogToFile::Info("[AutoUpdate] Starting auto-update check (current version: %s)", MODLOADER_BUILD_TAG);
+#else
+	LogToFile::Info("[AutoUpdate] Starting auto-update check (current version: unknown)");
+#endif
 
 	AutoUpdateConfig cfg = ReadAutoUpdateConfig();
 
