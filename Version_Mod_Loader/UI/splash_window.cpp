@@ -1,4 +1,4 @@
-﻿#include "splash_window.h"
+#include "splash_window.h"
 
 // ---------------------------------------------------------------------------
 // Splash window -- only compiles real code for client builds.
@@ -28,15 +28,19 @@ static constexpr int TITLE_Y    = MARGIN;
 static constexpr int STATUS_Y   = 48;
 static constexpr int BAR_Y      = 80;
 static constexpr int BAR_HEIGHT = 18;
-static constexpr int BAR_X  = MARGIN;
+static constexpr int BAR_X      = MARGIN;
 static constexpr int BAR_WIDTH  = SPLASH_WIDTH - MARGIN * 2;
 
+// Close button occupies the same rect as the progress bar.
+static constexpr RECT CLOSE_BTN_RECT = { BAR_X, BAR_Y, BAR_X + BAR_WIDTH, BAR_Y + BAR_HEIGHT };
+
 // ---------------------------------------------------------------------------
-// State -- all accessed on the main thread only (no locks needed)
+// State -- all accessed on the splash window's own thread
 // ---------------------------------------------------------------------------
 static wchar_t g_statusText[256] = L"Initializing...";
-static float   g_progress   = 0.0f;
-static HWND    g_hwnd    = nullptr;
+static float   g_progress        = 0.0f;
+static bool    g_showCloseButton = false; // error mode: replace bar with Close button
+static HWND    g_hwnd            = nullptr;
 static bool    g_classRegistered = false;
 
 static constexpr const wchar_t* CLASS_NAME = L"StarRuptureModLoaderSplash";
@@ -48,7 +52,7 @@ static HBRUSH g_bgBrush    = nullptr;
 static HBRUSH g_barBgBrush = nullptr;
 static HBRUSH g_barFgBrush = nullptr;
 static HFONT  g_titleFont  = nullptr;
-static HFONT  g_bodyFont = nullptr;
+static HFONT  g_bodyFont   = nullptr;
 
 static void CreateGdiObjects()
 {
@@ -70,10 +74,10 @@ static void CreateGdiObjects()
 static void DestroyGdiObjects()
 {
 	if (g_bgBrush)    { DeleteObject(g_bgBrush);    g_bgBrush    = nullptr; }
-	if (g_barBgBrush) { DeleteObject(g_barBgBrush);  g_barBgBrush = nullptr; }
-	if (g_barFgBrush) { DeleteObject(g_barFgBrush);  g_barFgBrush = nullptr; }
-	if (g_titleFont)  { DeleteObject(g_titleFont);   g_titleFont  = nullptr; }
-	if (g_bodyFont)   { DeleteObject(g_bodyFont);    g_bodyFont   = nullptr; }
+	if (g_barBgBrush) { DeleteObject(g_barBgBrush); g_barBgBrush = nullptr; }
+	if (g_barFgBrush) { DeleteObject(g_barFgBrush); g_barFgBrush = nullptr; }
+	if (g_titleFont)  { DeleteObject(g_titleFont);  g_titleFont  = nullptr; }
+	if (g_bodyFont)   { DeleteObject(g_bodyFont);   g_bodyFont   = nullptr; }
 }
 
 // ---------------------------------------------------------------------------
@@ -96,33 +100,51 @@ static void OnPaint(HWND hwnd)
 	RECT titleRect = { MARGIN, TITLE_Y, SPLASH_WIDTH - MARGIN, STATUS_Y };
 	DrawTextW(hdc, L"StarRupture Mod Loader", -1, &titleRect, DT_LEFT | DT_SINGLELINE);
 
-	// Status text
+	// Status text -- word-wrap in error mode so longer messages fit on two lines
 	SelectObject(hdc, g_bodyFont);
 	SetTextColor(hdc, TEXT_COLOR);
 	RECT statusRect = { MARGIN, STATUS_Y, SPLASH_WIDTH - MARGIN, BAR_Y - 4 };
-	DrawTextW(hdc, g_statusText, -1, &statusRect, DT_LEFT | DT_SINGLELINE | DT_END_ELLIPSIS);
+	if (g_showCloseButton)
+		DrawTextW(hdc, g_statusText, -1, &statusRect, DT_LEFT | DT_WORDBREAK);
+	else
+		DrawTextW(hdc, g_statusText, -1, &statusRect, DT_LEFT | DT_SINGLELINE | DT_END_ELLIPSIS);
 
-	// Progress bar background
-	RECT barBg = { BAR_X, BAR_Y, BAR_X + BAR_WIDTH, BAR_Y + BAR_HEIGHT };
-	FillRect(hdc, &barBg, g_barBgBrush);
-
-	// Progress bar fill
-	float pct = g_progress;
-	if (pct < 0.0f) pct = 0.0f;
-	if (pct > 1.0f) pct = 1.0f;
-	int fillWidth = static_cast<int>(BAR_WIDTH * pct);
-	if (fillWidth > 0)
+	if (g_showCloseButton)
 	{
-		RECT barFg = { BAR_X, BAR_Y, BAR_X + fillWidth, BAR_Y + BAR_HEIGHT };
-		FillRect(hdc, &barFg, g_barFgBrush);
-	}
+		// Close Game button in place of the progress bar.
+		HBRUSH btnBrush = CreateSolidBrush(RGB(160, 40, 40));
+		RECT btn = CLOSE_BTN_RECT;
+		FillRect(hdc, &btn, btnBrush);
+		DeleteObject(btnBrush);
 
-	// Percentage text centered on bar
-	wchar_t pctText[16];
-	swprintf_s(pctText, L"%d%%", static_cast<int>(pct * 100.0f));
-	SetTextColor(hdc, RGB(255, 255, 255));
-	RECT barTextRect = { BAR_X, BAR_Y, BAR_X + BAR_WIDTH, BAR_Y + BAR_HEIGHT };
-	DrawTextW(hdc, pctText, -1, &barTextRect, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+		SelectObject(hdc, g_bodyFont);
+		SetTextColor(hdc, RGB(255, 255, 255));
+		DrawTextW(hdc, L"Click here to close the game", -1, &btn, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+	}
+	else
+	{
+		// Progress bar background
+		RECT barBg = { BAR_X, BAR_Y, BAR_X + BAR_WIDTH, BAR_Y + BAR_HEIGHT };
+		FillRect(hdc, &barBg, g_barBgBrush);
+
+		// Progress bar fill
+		float pct = g_progress;
+		if (pct < 0.0f) pct = 0.0f;
+		if (pct > 1.0f) pct = 1.0f;
+		int fillWidth = static_cast<int>(BAR_WIDTH * pct);
+		if (fillWidth > 0)
+		{
+			RECT barFg = { BAR_X, BAR_Y, BAR_X + fillWidth, BAR_Y + BAR_HEIGHT };
+			FillRect(hdc, &barFg, g_barFgBrush);
+		}
+
+		// Percentage text centered on bar
+		wchar_t pctText[16];
+		swprintf_s(pctText, L"%d%%", static_cast<int>(pct * 100.0f));
+		SetTextColor(hdc, RGB(255, 255, 255));
+		RECT barTextRect = { BAR_X, BAR_Y, BAR_X + BAR_WIDTH, BAR_Y + BAR_HEIGHT };
+		DrawTextW(hdc, pctText, -1, &barTextRect, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+	}
 
 	EndPaint(hwnd, &ps);
 }
@@ -142,7 +164,31 @@ static LRESULT CALLBACK SplashWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
 		return 1;
 
 	case WM_NCHITTEST:
+	{
+		// When the Close button is visible, let clicks in its rect fall through
+		// as client-area hits so WM_LBUTTONUP fires instead of dragging.
+		if (g_showCloseButton)
+		{
+			POINT pt = { (LONG)(short)LOWORD(lParam), (LONG)(short)HIWORD(lParam) };
+			ScreenToClient(hwnd, &pt);
+			RECT btn = CLOSE_BTN_RECT;
+			if (PtInRect(&btn, pt))
+				return HTCLIENT;
+		}
 		return HTCAPTION;
+	}
+
+	case WM_LBUTTONUP:
+	{
+		if (g_showCloseButton)
+		{
+			POINT pt = { (LONG)(short)LOWORD(lParam), (LONG)(short)HIWORD(lParam) };
+			RECT btn = CLOSE_BTN_RECT;
+			if (PtInRect(&btn, pt))
+				ExitProcess(0);
+		}
+		return 0;
+	}
 
 	case WM_DESTROY:
 		return 0;
@@ -175,18 +221,19 @@ static void PumpMessages()
 
 void Splash::Show()
 {
-	g_progress = 0.0f;
+	g_progress        = 0.0f;
+	g_showCloseButton = false;
 	wcscpy_s(g_statusText, L"Initializing...");
 
 	CreateGdiObjects();
 
 	if (!g_classRegistered)
 	{
-		WNDCLASSEXW wc = {};
-		wc.cbSize     = sizeof(wc);
-		wc.lpfnWndProc   = SplashWndProc;
+		WNDCLASSEXW wc    = {};
+		wc.cbSize         = sizeof(wc);
+		wc.lpfnWndProc    = SplashWndProc;
 		wc.hInstance      = GetModuleHandleW(nullptr);
-		wc.hCursor    = LoadCursorW(nullptr, IDC_ARROW);
+		wc.hCursor        = LoadCursorW(nullptr, IDC_ARROW);
 		wc.lpszClassName  = CLASS_NAME;
 		wc.hbrBackground  = nullptr;
 
@@ -262,14 +309,15 @@ void Splash::SetErrorMode()
 	if (!g_hwnd)
 		return;
 
-	// Replace the fill brush with red to signal an error state.
+	// Switch bar brush to red.
 	if (g_barFgBrush)
 	{
 		DeleteObject(g_barFgBrush);
 		g_barFgBrush = CreateSolidBrush(RGB(200, 50, 50));
 	}
 
-	g_progress = 1.0f;
+	g_progress        = 1.0f;
+	g_showCloseButton = true;
 
 	InvalidateRect(g_hwnd, nullptr, FALSE);
 	UpdateWindow(g_hwnd);

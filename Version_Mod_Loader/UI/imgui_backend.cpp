@@ -13,6 +13,7 @@
 #include "hooks/hooks_common.h"
 #include "hooks/input/keybind_registry.h"
 #include "logging/log.h"
+#include "splash_window.h"
 
 #include <d3d12.h>
 #include <dxgi1_2.h>
@@ -910,8 +911,56 @@ static HRESULT STDMETHODCALLTYPE HookedPresent(IDXGISwapChain* swapChain, UINT s
 	HRESULT hr = g_originalPresent(swapChain, syncInterval, flags);
 
 	if (FAILED(hr))
+	{
 		LogToFile::Error("[ImGuiBackend] g_originalPresent failed: 0x%08X (frame %llu)",
 			static_cast<unsigned>(hr), frameIdx);
+
+		// On device removal, shut ImGui down immediately and surface a splash
+		// error. Use a flag so this only fires once even if Present keeps firing.
+		static std::atomic<bool> s_deviceLostNotified{ false };
+		bool expected = false;
+		if (s_deviceLostNotified.compare_exchange_strong(expected, true))
+		{
+			g_shutdown = true;
+
+			// Proactively write [UI] Enabled=0 to modloader.ini so the overlay
+			// is disabled automatically on next launch -- no manual editing needed.
+			wchar_t iniPath[MAX_PATH]{};
+			GetModuleFileNameW(nullptr, iniPath, MAX_PATH);
+			wchar_t* lastSlash = wcsrchr(iniPath, L'\\');
+			if (lastSlash)
+				wcscpy_s(lastSlash + 1,
+					static_cast<rsize_t>(MAX_PATH - (lastSlash + 1 - iniPath)),
+					L"modloader.ini");
+			WritePrivateProfileStringW(L"UI", L"Enabled", L"0", iniPath);
+
+			LogToFile::Error("[ImGuiBackend] ImGui disabled. "
+				"[UI] Enabled=0 written to modloader.ini -- overlay off on next launch.");
+
+			// Spawn a dedicated thread to own and pump the error splash.
+			// The window MUST be created on the thread that pumps its messages --
+			// creating it here on the render thread would leave it unresponsive
+			// because the render thread never runs a GetMessage loop.
+			CreateThread(nullptr, 0, [](void*) -> DWORD
+			{
+				Splash::Show();
+				Splash::SetErrorMode();
+				Splash::SetStatus(L"ImGui error: GPU device lost. Overlay disabled for next launch.");
+				// Pump messages until ExitProcess (Close button) kills the process.
+				MSG msg;
+				while (GetMessageW(&msg, nullptr, 0, 0))
+				{
+					TranslateMessage(&msg);
+					DispatchMessageW(&msg);
+				}
+				return 0;
+			}, nullptr, 0, nullptr);
+		}
+		else
+		{
+			g_shutdown = true;
+		}
+	}
 
 	s_presentOwnerThread.store(0, std::memory_order_release);
 	return hr;
