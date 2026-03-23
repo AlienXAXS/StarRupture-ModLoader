@@ -401,6 +401,8 @@ static DWORD WINAPI MainInitThreadProc(LPVOID)
 
 	// Check modloader.ini [UI] Enabled before starting ImGui.
 	// Allows users to disable the overlay entirely if it causes issues.
+	// Write the default (1) back if the key doesn't exist yet so users can
+	// see and edit the setting without having to know it exists.
 	{
 		wchar_t mlIniPath[MAX_PATH]{};
 		GetModuleFileNameW(nullptr, mlIniPath, MAX_PATH);
@@ -409,7 +411,15 @@ static DWORD WINAPI MainInitThreadProc(LPVOID)
 			wcscpy_s(lastSlash + 1,
 				static_cast<rsize_t>(MAX_PATH - (lastSlash + 1 - mlIniPath)),
 				L"modloader.ini");
-		s_imguiEnabled = (GetPrivateProfileIntW(L"UI", L"Enabled", 1, mlIniPath) != 0);
+
+		// Use a sentinel default (-1) to detect whether the key is absent.
+		int val = GetPrivateProfileIntW(L"UI", L"Enabled", -1, mlIniPath);
+		if (val == -1)
+		{
+			WritePrivateProfileStringW(L"UI", L"Enabled", L"1", mlIniPath);
+			val = 1;
+		}
+		s_imguiEnabled = (val != 0);
 	}
 
 	if (s_imguiEnabled)
