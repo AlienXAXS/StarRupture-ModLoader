@@ -716,7 +716,7 @@ static void STDMETHODCALLTYPE HookedECL(ID3D12CommandQueue* pQueue,
 			// g_cmdQueue is locked at init time and unaffected -- this log helps
 			// confirm whether queue instability is the source of device removal.
 			if (g_initialized && prev && prev != pQueue)
-				LogToFile::Info("[ImGuiBackend] ECL queue changed post-init: "
+				LogToFile::Trace("[ImGuiBackend] ECL queue changed post-init: "
 					"old=0x%p  new=0x%p  submit queue (g_cmdQueue=0x%p) unchanged",
 					static_cast<void*>(prev),
 					static_cast<void*>(pQueue),
