@@ -31,12 +31,7 @@ namespace UI::Overlay
 
     void Render()
     {
-        bool showFPS    = UI::GlobalSettings::GetShowFPS();
-        bool showWorld  = UI::GlobalSettings::GetShowWorldName();
-        bool showPos    = UI::GlobalSettings::GetShowPlayerPosition();
-        bool anyHud     = showFPS || showWorld || showPos;
-
-        if (!s_visible && !anyHud)
+        if (!s_visible)
             return;
 
         ImGuiIO& io = ImGui::GetIO();
@@ -59,19 +54,50 @@ namespace UI::Overlay
 
         if (ImGui::Begin("##modloader_overlay", nullptr, flags))
         {
-            // Build one line: [FPS | ] [World | ] [x y z | ] ModLoader ... | F2
-            char buf[256];
-            int  pos = 0;
+            int pluginCount = ModLoaderLogger::GetLoadedPluginCount();
+            ImGui::Text("AlienX's Mod Loader %s | %d Plugin%s Loaded | %s To Open UI",
+                        MODLOADER_BUILD_TAG,
+                        pluginCount,
+                        pluginCount == 1 ? "" : "s",
+                        s_openKeyName);
+        }
+        ImGui::End();
+    }
+
+    void RenderHud()
+    {
+        // Draggable HUD info box -- shown in the top-left whenever any HUD
+        // option is enabled, regardless of which world is currently loaded.
+        bool showFPS   = UI::GlobalSettings::GetShowFPS();
+        bool showWorld = UI::GlobalSettings::GetShowWorldName();
+        bool showPos   = UI::GlobalSettings::GetShowPlayerPosition();
+
+        if (!showFPS && !showWorld && !showPos)
+            return;
+
+        ImGui::SetNextWindowPos(ImVec2(10.0f, 10.0f), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowBgAlpha(0.55f);
+
+        ImGuiWindowFlags flags =
+            ImGuiWindowFlags_NoCollapse         |
+            ImGuiWindowFlags_AlwaysAutoResize   |
+            ImGuiWindowFlags_NoScrollbar        |
+            ImGuiWindowFlags_NoFocusOnAppearing |
+            ImGuiWindowFlags_NoNav;
+        // Note: no NoMove / NoSavedSettings -- the box is draggable and its
+        // position is persisted to modloader_imgui.ini between sessions.
+
+        if (ImGui::Begin("Info##hud_box", nullptr, flags))
+        {
+            ImGuiIO& io = ImGui::GetIO();
 
             if (showFPS)
-                pos += snprintf(buf + pos, sizeof(buf) - pos,
-                                "%.0f FPS | ", io.Framerate);
+                ImGui::Text("FPS: %.0f", io.Framerate);
 
             if (showWorld)
             {
                 const char* name = UI::GlobalSettings::GetWorldName();
-                pos += snprintf(buf + pos, sizeof(buf) - pos,
-                                "%s | ", (name && name[0]) ? name : "Unknown");
+                ImGui::Text("World: %s", (name && name[0]) ? name : "Unknown");
             }
 
             if (showPos)
@@ -80,28 +106,12 @@ namespace UI::Overlay
                 bool valid;
                 UI::GlobalSettings::GetPlayerPosition(&x, &y, &z, &valid);
                 if (valid)
-                    pos += snprintf(buf + pos, sizeof(buf) - pos,
-                                    "%.0f %.0f %.0f | ", x, y, z);
+                    ImGui::Text("Pos: %.0f  %.0f  %.0f", x, y, z);
                 else
-                    pos += snprintf(buf + pos, sizeof(buf) - pos, "-- | ");
+                    ImGui::TextDisabled("Pos: --");
             }
-
-            int pluginCount = ModLoaderLogger::GetLoadedPluginCount();
-            snprintf(buf + pos, sizeof(buf) - pos,
-                     "AlienX's Mod Loader %s | %d Plugin%s Loaded | %s To Open UI",
-                     MODLOADER_BUILD_TAG,
-                     pluginCount,
-                     pluginCount == 1 ? "" : "s",
-                     s_openKeyName);
-
-            ImGui::TextUnformatted(buf);
         }
         ImGui::End();
-    }
-
-    void RenderHud()
-    {
-        // HUD items are now part of Render() -- nothing to do here.
     }
 }
 
