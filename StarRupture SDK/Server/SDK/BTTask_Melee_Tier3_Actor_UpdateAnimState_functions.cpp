@@ -17,26 +17,6 @@
 namespace SDK
 {
 
-// Function BTTask_Melee_Tier3_Actor_UpdateAnimState.BTTask_Melee_Tier3_Actor_UpdateAnimState_C.ExecuteUbergraph_BTTask_Melee_Tier3_Actor_UpdateAnimState
-// (Final, UbergraphFunction)
-// Parameters:
-// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-
-void UBTTask_Melee_Tier3_Actor_UpdateAnimState_C::ExecuteUbergraph_BTTask_Melee_Tier3_Actor_UpdateAnimState(int32 EntryPoint)
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BTTask_Melee_Tier3_Actor_UpdateAnimState_C", "ExecuteUbergraph_BTTask_Melee_Tier3_Actor_UpdateAnimState");
-
-	Params::BTTask_Melee_Tier3_Actor_UpdateAnimState_C_ExecuteUbergraph_BTTask_Melee_Tier3_Actor_UpdateAnimState Parms{};
-
-	Parms.EntryPoint = EntryPoint;
-
-	UObject::ProcessEvent(Func, &Parms);
-}
-
-
 // Function BTTask_Melee_Tier3_Actor_UpdateAnimState.BTTask_Melee_Tier3_Actor_UpdateAnimState_C.ReceiveExecuteAI
 // (Event, Protected, BlueprintEvent)
 // Parameters:
@@ -54,6 +34,26 @@ void UBTTask_Melee_Tier3_Actor_UpdateAnimState_C::ReceiveExecuteAI(class AAICont
 
 	Parms.OwnerController = OwnerController;
 	Parms.ControlledPawn = ControlledPawn;
+
+	UObject::ProcessEvent(Func, &Parms);
+}
+
+
+// Function BTTask_Melee_Tier3_Actor_UpdateAnimState.BTTask_Melee_Tier3_Actor_UpdateAnimState_C.ExecuteUbergraph_BTTask_Melee_Tier3_Actor_UpdateAnimState
+// (Final, UbergraphFunction)
+// Parameters:
+// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+
+void UBTTask_Melee_Tier3_Actor_UpdateAnimState_C::ExecuteUbergraph_BTTask_Melee_Tier3_Actor_UpdateAnimState(int32 EntryPoint)
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BTTask_Melee_Tier3_Actor_UpdateAnimState_C", "ExecuteUbergraph_BTTask_Melee_Tier3_Actor_UpdateAnimState");
+
+	Params::BTTask_Melee_Tier3_Actor_UpdateAnimState_C_ExecuteUbergraph_BTTask_Melee_Tier3_Actor_UpdateAnimState Parms{};
+
+	Parms.EntryPoint = EntryPoint;
 
 	UObject::ProcessEvent(Func, &Parms);
 }

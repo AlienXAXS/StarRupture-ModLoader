@@ -17,21 +17,35 @@
 namespace SDK
 {
 
-// Function BP_Melee_Tier2_Actor_Character.BP_Melee_Tier2_Actor_Character_C.ExecuteUbergraph_BP_Melee_Tier2_Actor_Character
-// (Final, UbergraphFunction)
-// Parameters:
-// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+// Function BP_Melee_Tier2_Actor_Character.BP_Melee_Tier2_Actor_Character_C.UserConstructionScript
+// (Event, Public, BlueprintCallable, BlueprintEvent)
 
-void ABP_Melee_Tier2_Actor_Character_C::ExecuteUbergraph_BP_Melee_Tier2_Actor_Character(int32 EntryPoint)
+void ABP_Melee_Tier2_Actor_Character_C::UserConstructionScript()
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_Melee_Tier2_Actor_Character_C", "ExecuteUbergraph_BP_Melee_Tier2_Actor_Character");
+		Func = Class->GetFunction("BP_Melee_Tier2_Actor_Character_C", "UserConstructionScript");
 
-	Params::BP_Melee_Tier2_Actor_Character_C_ExecuteUbergraph_BP_Melee_Tier2_Actor_Character Parms{};
+	UObject::ProcessEvent(Func, nullptr);
+}
 
-	Parms.EntryPoint = EntryPoint;
+
+// Function BP_Melee_Tier2_Actor_Character.BP_Melee_Tier2_Actor_Character_C.SetWeakpointStateImpl
+// (Public, BlueprintCallable, BlueprintEvent)
+// Parameters:
+// bool                                    IsActive                                               (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+
+void ABP_Melee_Tier2_Actor_Character_C::SetWeakpointStateImpl(bool IsActive)
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BP_Melee_Tier2_Actor_Character_C", "SetWeakpointStateImpl");
+
+	Params::BP_Melee_Tier2_Actor_Character_C_SetWeakpointStateImpl Parms{};
+
+	Parms.IsActive = IsActive;
 
 	UObject::ProcessEvent(Func, &Parms);
 }
@@ -57,37 +71,23 @@ void ABP_Melee_Tier2_Actor_Character_C::SetWeakpointState(bool InIsActive)
 }
 
 
-// Function BP_Melee_Tier2_Actor_Character.BP_Melee_Tier2_Actor_Character_C.SetWeakpointStateImpl
-// (Public, BlueprintCallable, BlueprintEvent)
+// Function BP_Melee_Tier2_Actor_Character.BP_Melee_Tier2_Actor_Character_C.ExecuteUbergraph_BP_Melee_Tier2_Actor_Character
+// (Final, UbergraphFunction)
 // Parameters:
-// bool                                    IsActive                                               (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 
-void ABP_Melee_Tier2_Actor_Character_C::SetWeakpointStateImpl(bool IsActive)
+void ABP_Melee_Tier2_Actor_Character_C::ExecuteUbergraph_BP_Melee_Tier2_Actor_Character(int32 EntryPoint)
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_Melee_Tier2_Actor_Character_C", "SetWeakpointStateImpl");
+		Func = Class->GetFunction("BP_Melee_Tier2_Actor_Character_C", "ExecuteUbergraph_BP_Melee_Tier2_Actor_Character");
 
-	Params::BP_Melee_Tier2_Actor_Character_C_SetWeakpointStateImpl Parms{};
+	Params::BP_Melee_Tier2_Actor_Character_C_ExecuteUbergraph_BP_Melee_Tier2_Actor_Character Parms{};
 
-	Parms.IsActive = IsActive;
+	Parms.EntryPoint = EntryPoint;
 
 	UObject::ProcessEvent(Func, &Parms);
-}
-
-
-// Function BP_Melee_Tier2_Actor_Character.BP_Melee_Tier2_Actor_Character_C.UserConstructionScript
-// (Event, Public, BlueprintCallable, BlueprintEvent)
-
-void ABP_Melee_Tier2_Actor_Character_C::UserConstructionScript()
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BP_Melee_Tier2_Actor_Character_C", "UserConstructionScript");
-
-	UObject::ProcessEvent(Func, nullptr);
 }
 
 }

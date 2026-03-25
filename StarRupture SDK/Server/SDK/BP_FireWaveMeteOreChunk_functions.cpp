@@ -17,29 +17,113 @@
 namespace SDK
 {
 
-// Function BP_FireWaveMeteOreChunk.BP_FireWaveMeteOreChunk_C.BP_OnEnviroWaveStarted
-// (Event, Protected, HasOutParams, BlueprintEvent)
-// Parameters:
-// EEnviroWave                             InWaveType                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-// EEnviroWaveStage                        InWaveStage                                            (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-// const struct FCrEnviroWaveSettings&     InWaveSettings                                         (ConstParm, BlueprintVisible, BlueprintReadOnly, Parm, OutParm, ReferenceParm, NoDestructor)
-// float                                   InWaveProgress                                         (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+// Function BP_FireWaveMeteOreChunk.BP_FireWaveMeteOreChunk_C.ReceiveBeginPlay
+// (Event, Protected, BlueprintEvent)
 
-void ABP_FireWaveMeteOreChunk_C::BP_OnEnviroWaveStarted(EEnviroWave InWaveType, EEnviroWaveStage InWaveStage, const struct FCrEnviroWaveSettings& InWaveSettings, float InWaveProgress)
+void ABP_FireWaveMeteOreChunk_C::ReceiveBeginPlay()
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_FireWaveMeteOreChunk_C", "BP_OnEnviroWaveStarted");
+		Func = Class->GetFunction("BP_FireWaveMeteOreChunk_C", "ReceiveBeginPlay");
 
-	Params::BP_FireWaveMeteOreChunk_C_BP_OnEnviroWaveStarted Parms{};
+	UObject::ProcessEvent(Func, nullptr);
+}
 
-	Parms.InWaveType = InWaveType;
-	Parms.InWaveStage = InWaveStage;
-	Parms.InWaveSettings = std::move(InWaveSettings);
-	Parms.InWaveProgress = InWaveProgress;
+
+// Function BP_FireWaveMeteOreChunk.BP_FireWaveMeteOreChunk_C.OnResourceDepletedCosmeticsStart
+// (Event, Public, BlueprintEvent)
+
+void ABP_FireWaveMeteOreChunk_C::OnResourceDepletedCosmeticsStart()
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BP_FireWaveMeteOreChunk_C", "OnResourceDepletedCosmeticsStart");
+
+	UObject::ProcessEvent(Func, nullptr);
+}
+
+
+// Function BP_FireWaveMeteOreChunk.BP_FireWaveMeteOreChunk_C.FireDecalTimeline__UpdateFunc
+// (BlueprintEvent)
+
+void ABP_FireWaveMeteOreChunk_C::FireDecalTimeline__UpdateFunc()
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BP_FireWaveMeteOreChunk_C", "FireDecalTimeline__UpdateFunc");
+
+	UObject::ProcessEvent(Func, nullptr);
+}
+
+
+// Function BP_FireWaveMeteOreChunk.BP_FireWaveMeteOreChunk_C.FireDecalTimeline__FinishedFunc
+// (BlueprintEvent)
+
+void ABP_FireWaveMeteOreChunk_C::FireDecalTimeline__FinishedFunc()
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BP_FireWaveMeteOreChunk_C", "FireDecalTimeline__FinishedFunc");
+
+	UObject::ProcessEvent(Func, nullptr);
+}
+
+
+// Function BP_FireWaveMeteOreChunk.BP_FireWaveMeteOreChunk_C.FireDecalFade
+// (BlueprintCallable, BlueprintEvent)
+// Parameters:
+// const bool                              bIsFadeOut                                             (ConstParm, BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+
+void ABP_FireWaveMeteOreChunk_C::FireDecalFade(const bool bIsFadeOut)
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BP_FireWaveMeteOreChunk_C", "FireDecalFade");
+
+	Params::BP_FireWaveMeteOreChunk_C_FireDecalFade Parms{};
+
+	Parms.bIsFadeOut = bIsFadeOut;
 
 	UObject::ProcessEvent(Func, &Parms);
+}
+
+
+// Function BP_FireWaveMeteOreChunk.BP_FireWaveMeteOreChunk_C.ExecuteUbergraph_BP_FireWaveMeteOreChunk
+// (Final, UbergraphFunction, HasDefaults)
+// Parameters:
+// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+
+void ABP_FireWaveMeteOreChunk_C::ExecuteUbergraph_BP_FireWaveMeteOreChunk(int32 EntryPoint)
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BP_FireWaveMeteOreChunk_C", "ExecuteUbergraph_BP_FireWaveMeteOreChunk");
+
+	Params::BP_FireWaveMeteOreChunk_C_ExecuteUbergraph_BP_FireWaveMeteOreChunk Parms{};
+
+	Parms.EntryPoint = EntryPoint;
+
+	UObject::ProcessEvent(Func, &Parms);
+}
+
+
+// Function BP_FireWaveMeteOreChunk.BP_FireWaveMeteOreChunk_C.BP_OnSpawnedWithResourceDepleted
+// (Event, Public, BlueprintEvent)
+
+void ABP_FireWaveMeteOreChunk_C::BP_OnSpawnedWithResourceDepleted()
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BP_FireWaveMeteOreChunk_C", "BP_OnSpawnedWithResourceDepleted");
+
+	UObject::ProcessEvent(Func, nullptr);
 }
 
 
@@ -67,113 +151,29 @@ void ABP_FireWaveMeteOreChunk_C::BP_OnGrowbackSubstageChanged(const struct FCrEn
 }
 
 
-// Function BP_FireWaveMeteOreChunk.BP_FireWaveMeteOreChunk_C.BP_OnSpawnedWithResourceDepleted
-// (Event, Public, BlueprintEvent)
-
-void ABP_FireWaveMeteOreChunk_C::BP_OnSpawnedWithResourceDepleted()
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BP_FireWaveMeteOreChunk_C", "BP_OnSpawnedWithResourceDepleted");
-
-	UObject::ProcessEvent(Func, nullptr);
-}
-
-
-// Function BP_FireWaveMeteOreChunk.BP_FireWaveMeteOreChunk_C.ExecuteUbergraph_BP_FireWaveMeteOreChunk
-// (Final, UbergraphFunction, HasDefaults)
+// Function BP_FireWaveMeteOreChunk.BP_FireWaveMeteOreChunk_C.BP_OnEnviroWaveStarted
+// (Event, Protected, HasOutParams, BlueprintEvent)
 // Parameters:
-// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+// EEnviroWave                             InWaveType                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+// EEnviroWaveStage                        InWaveStage                                            (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+// const struct FCrEnviroWaveSettings&     InWaveSettings                                         (ConstParm, BlueprintVisible, BlueprintReadOnly, Parm, OutParm, ReferenceParm, NoDestructor)
+// float                                   InWaveProgress                                         (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 
-void ABP_FireWaveMeteOreChunk_C::ExecuteUbergraph_BP_FireWaveMeteOreChunk(int32 EntryPoint)
+void ABP_FireWaveMeteOreChunk_C::BP_OnEnviroWaveStarted(EEnviroWave InWaveType, EEnviroWaveStage InWaveStage, const struct FCrEnviroWaveSettings& InWaveSettings, float InWaveProgress)
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_FireWaveMeteOreChunk_C", "ExecuteUbergraph_BP_FireWaveMeteOreChunk");
+		Func = Class->GetFunction("BP_FireWaveMeteOreChunk_C", "BP_OnEnviroWaveStarted");
 
-	Params::BP_FireWaveMeteOreChunk_C_ExecuteUbergraph_BP_FireWaveMeteOreChunk Parms{};
+	Params::BP_FireWaveMeteOreChunk_C_BP_OnEnviroWaveStarted Parms{};
 
-	Parms.EntryPoint = EntryPoint;
+	Parms.InWaveType = InWaveType;
+	Parms.InWaveStage = InWaveStage;
+	Parms.InWaveSettings = std::move(InWaveSettings);
+	Parms.InWaveProgress = InWaveProgress;
 
 	UObject::ProcessEvent(Func, &Parms);
-}
-
-
-// Function BP_FireWaveMeteOreChunk.BP_FireWaveMeteOreChunk_C.FireDecalFade
-// (BlueprintCallable, BlueprintEvent)
-// Parameters:
-// const bool                              bIsFadeOut                                             (ConstParm, BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-
-void ABP_FireWaveMeteOreChunk_C::FireDecalFade(const bool bIsFadeOut)
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BP_FireWaveMeteOreChunk_C", "FireDecalFade");
-
-	Params::BP_FireWaveMeteOreChunk_C_FireDecalFade Parms{};
-
-	Parms.bIsFadeOut = bIsFadeOut;
-
-	UObject::ProcessEvent(Func, &Parms);
-}
-
-
-// Function BP_FireWaveMeteOreChunk.BP_FireWaveMeteOreChunk_C.FireDecalTimeline__FinishedFunc
-// (BlueprintEvent)
-
-void ABP_FireWaveMeteOreChunk_C::FireDecalTimeline__FinishedFunc()
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BP_FireWaveMeteOreChunk_C", "FireDecalTimeline__FinishedFunc");
-
-	UObject::ProcessEvent(Func, nullptr);
-}
-
-
-// Function BP_FireWaveMeteOreChunk.BP_FireWaveMeteOreChunk_C.FireDecalTimeline__UpdateFunc
-// (BlueprintEvent)
-
-void ABP_FireWaveMeteOreChunk_C::FireDecalTimeline__UpdateFunc()
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BP_FireWaveMeteOreChunk_C", "FireDecalTimeline__UpdateFunc");
-
-	UObject::ProcessEvent(Func, nullptr);
-}
-
-
-// Function BP_FireWaveMeteOreChunk.BP_FireWaveMeteOreChunk_C.OnResourceDepletedCosmeticsStart
-// (Event, Public, BlueprintEvent)
-
-void ABP_FireWaveMeteOreChunk_C::OnResourceDepletedCosmeticsStart()
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BP_FireWaveMeteOreChunk_C", "OnResourceDepletedCosmeticsStart");
-
-	UObject::ProcessEvent(Func, nullptr);
-}
-
-
-// Function BP_FireWaveMeteOreChunk.BP_FireWaveMeteOreChunk_C.ReceiveBeginPlay
-// (Event, Protected, BlueprintEvent)
-
-void ABP_FireWaveMeteOreChunk_C::ReceiveBeginPlay()
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BP_FireWaveMeteOreChunk_C", "ReceiveBeginPlay");
-
-	UObject::ProcessEvent(Func, nullptr);
 }
 
 }

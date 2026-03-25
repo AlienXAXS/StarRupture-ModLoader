@@ -12,8 +12,8 @@
 
 #include "Engine_structs.hpp"
 #include "CoreUObject_structs.hpp"
-#include "MassAIPrototypeEnemyRuntime_structs.hpp"
 #include "BP_BaseAI_classes.hpp"
+#include "MassAIPrototypeEnemyRuntime_structs.hpp"
 
 
 namespace SDK
@@ -59,27 +59,27 @@ public:
 	class UAudioComponent*                        RangedLongAttackEnviroSoundComp;                   // 0x0CB8(0x0008)(Edit, BlueprintVisible, ZeroConstructor, DisableEditOnInstance, InstancedReference, NoDestructor, HasGetValueTypeHash)
 
 public:
-	void AttachWeakpoint();
-	void CacheLongAoePoints(const TArray<struct FVector>& Points);
-	void ExecuteUbergraph_BP_Melee_Tier3_Actor_Character(int32 EntryPoint);
-	TArray<struct FVector> GetCachedLongAoePoints();
-	EMovementAttackStage GetMovementAttackStage();
-	void OnAiDied(const struct FHitResult& HitResult, const struct FGameplayTag& KillingDamageTag);
-	void OnRangedAttackTimerFinished();
-	void ReceiveBeginPlay();
-	void ReceiveEndPlay(EEndPlayReason EndPlayReason);
-	void ReceiveTick(float DeltaSeconds);
-	void SetHasAggroTarget(bool bNewHasAggroTarget);
-	void SetIsAggroEyeColor(bool NewIsAggro);
-	void SetIsBoostedEyeColor(bool NewIsBoosted);
-	void SetIsCoverActive(bool bNewIsCoverActive);
-	void SetIsJumpEyeBehaviour(bool NewIsJumpEyeBehaviour);
-	void SetIsUpCover(bool bNewIsUpCover);
-	void SetMovementAttackStage(EMovementAttackStage MovementAttackStage_0);
-	void SetRangedAttackTimer(bool SetTimerActive, double TimeToRangedAttack);
-	void ShowLongAoeAttackEffect();
-	void UpdateAnimState();
 	void UserConstructionScript();
+	void UpdateAnimState();
+	void ShowLongAoeAttackEffect();
+	void SetRangedAttackTimer(bool SetTimerActive, double TimeToRangedAttack);
+	void SetMovementAttackStage(EMovementAttackStage MovementAttackStage_0);
+	void SetIsUpCover(bool bNewIsUpCover);
+	void SetIsJumpEyeBehaviour(bool NewIsJumpEyeBehaviour);
+	void SetIsCoverActive(bool bNewIsCoverActive);
+	void SetIsBoostedEyeColor(bool NewIsBoosted);
+	void SetIsAggroEyeColor(bool NewIsAggro);
+	void SetHasAggroTarget(bool bNewHasAggroTarget);
+	void ReceiveTick(float DeltaSeconds);
+	void ReceiveEndPlay(EEndPlayReason EndPlayReason);
+	void ReceiveBeginPlay();
+	void OnRangedAttackTimerFinished();
+	void OnAiDied(const struct FHitResult& HitResult, const struct FGameplayTag& KillingDamageTag);
+	EMovementAttackStage GetMovementAttackStage();
+	TArray<struct FVector> GetCachedLongAoePoints();
+	void ExecuteUbergraph_BP_Melee_Tier3_Actor_Character(int32 EntryPoint);
+	void CacheLongAoePoints(const TArray<struct FVector>& Points);
+	void AttachWeakpoint();
 
 public:
 	static class UClass* StaticClass()

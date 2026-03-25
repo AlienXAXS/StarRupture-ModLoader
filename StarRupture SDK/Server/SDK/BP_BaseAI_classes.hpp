@@ -28,16 +28,16 @@ public:
 	struct FLinearColor                           IdleEyeColor;                                      // 0x0BE8(0x0010)(Edit, BlueprintVisible, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 
 public:
-	void CalculateDeathSequenceData(const struct FHitResult& LastHitResult, bool bIsLastHitGrenadeHit, struct FVector* RagdollImpulseForce, struct FVector* RagdollImpulseLocation, struct FTransform* DeathSequenceActorWorldLocation, struct FTransform* DeathSequenceMeshWorldLocation);
-	void ExecuteUbergraph_BP_BaseAI(int32 EntryPoint);
-	void HideAndDisableActor();
-	void NotifyAggroTargetChanged(bool bHasAggroTarget);
-	bool NotifyNearbyPlayerCharactersAboutSpawn();
-	void OnAiDied(const struct FHitResult& HitResult, const struct FGameplayTag& KillingDamageTag);
-	void OnDamage(class AActor* Actor, const struct FHitResult& HitResult, float InDamage);
-	void ReceiveBeginPlay();
-	void SetIsAggroEyeColor(bool NewIsAggro);
 	void SetIsBoostedEyeColor(bool NewIsBoosted);
+	void SetIsAggroEyeColor(bool NewIsAggro);
+	void ReceiveBeginPlay();
+	void OnDamage(class AActor* Actor, const struct FHitResult& HitResult, float InDamage);
+	void OnAiDied(const struct FHitResult& HitResult, const struct FGameplayTag& KillingDamageTag);
+	bool NotifyNearbyPlayerCharactersAboutSpawn();
+	void NotifyAggroTargetChanged(bool bHasAggroTarget);
+	void HideAndDisableActor();
+	void ExecuteUbergraph_BP_BaseAI(int32 EntryPoint);
+	void CalculateDeathSequenceData(const struct FHitResult& LastHitResult, bool bIsLastHitGrenadeHit, struct FVector* RagdollImpulseForce, struct FVector* RagdollImpulseLocation, struct FTransform* DeathSequenceActorWorldLocation, struct FTransform* DeathSequenceMeshWorldLocation);
 
 	struct FColor GetIdleEyeColor() const;
 

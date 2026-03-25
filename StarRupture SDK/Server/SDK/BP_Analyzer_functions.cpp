@@ -17,26 +17,6 @@
 namespace SDK
 {
 
-// Function BP_Analyzer.BP_Analyzer_C.ExecuteUbergraph_BP_Analyzer
-// (Final, UbergraphFunction)
-// Parameters:
-// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-
-void ABP_Analyzer_C::ExecuteUbergraph_BP_Analyzer(int32 EntryPoint)
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BP_Analyzer_C", "ExecuteUbergraph_BP_Analyzer");
-
-	Params::BP_Analyzer_C_ExecuteUbergraph_BP_Analyzer Parms{};
-
-	Parms.EntryPoint = EntryPoint;
-
-	UObject::ProcessEvent(Func, &Parms);
-}
-
-
 // Function BP_Analyzer.BP_Analyzer_C.OnUIOpened
 // (Event, Public, BlueprintEvent)
 // Parameters:
@@ -52,6 +32,26 @@ void ABP_Analyzer_C::OnUIOpened(bool bOpened)
 	Params::BP_Analyzer_C_OnUIOpened Parms{};
 
 	Parms.bOpened = bOpened;
+
+	UObject::ProcessEvent(Func, &Parms);
+}
+
+
+// Function BP_Analyzer.BP_Analyzer_C.ExecuteUbergraph_BP_Analyzer
+// (Final, UbergraphFunction)
+// Parameters:
+// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+
+void ABP_Analyzer_C::ExecuteUbergraph_BP_Analyzer(int32 EntryPoint)
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BP_Analyzer_C", "ExecuteUbergraph_BP_Analyzer");
+
+	Params::BP_Analyzer_C_ExecuteUbergraph_BP_Analyzer Parms{};
+
+	Parms.EntryPoint = EntryPoint;
 
 	UObject::ProcessEvent(Func, &Parms);
 }

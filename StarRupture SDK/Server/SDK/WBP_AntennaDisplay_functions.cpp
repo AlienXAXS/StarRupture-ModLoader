@@ -17,61 +17,43 @@
 namespace SDK
 {
 
-// Function WBP_AntennaDisplay.WBP_AntennaDisplay_C.Init
+// Function WBP_AntennaDisplay.WBP_AntennaDisplay_C.SetState
 // (Public, BlueprintCallable, BlueprintEvent)
 // Parameters:
-// double                                  Percent_0                                              (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+// ECrAntennaState                         State                                                  (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+// const struct FLinearColor&              StateColor                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 
-void UWBP_AntennaDisplay_C::Init(double Percent_0)
+void UWBP_AntennaDisplay_C::SetState(ECrAntennaState State, const struct FLinearColor& StateColor)
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("WBP_AntennaDisplay_C", "Init");
+		Func = Class->GetFunction("WBP_AntennaDisplay_C", "SetState");
 
-	Params::WBP_AntennaDisplay_C_Init Parms{};
+	Params::WBP_AntennaDisplay_C_SetState Parms{};
 
-	Parms.Percent_0 = Percent_0;
+	Parms.State = State;
+	Parms.StateColor = std::move(StateColor);
 
 	UObject::ProcessEvent(Func, &Parms);
 }
 
 
-// Function WBP_AntennaDisplay.WBP_AntennaDisplay_C.SetBackgroundColor
+// Function WBP_AntennaDisplay.WBP_AntennaDisplay_C.SetProgressColor
 // (Public, BlueprintCallable, BlueprintEvent)
 // Parameters:
 // const struct FLinearColor&              Color                                                  (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 
-void UWBP_AntennaDisplay_C::SetBackgroundColor(const struct FLinearColor& Color)
+void UWBP_AntennaDisplay_C::SetProgressColor(const struct FLinearColor& Color)
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("WBP_AntennaDisplay_C", "SetBackgroundColor");
+		Func = Class->GetFunction("WBP_AntennaDisplay_C", "SetProgressColor");
 
-	Params::WBP_AntennaDisplay_C_SetBackgroundColor Parms{};
+	Params::WBP_AntennaDisplay_C_SetProgressColor Parms{};
 
 	Parms.Color = std::move(Color);
-
-	UObject::ProcessEvent(Func, &Parms);
-}
-
-
-// Function WBP_AntennaDisplay.WBP_AntennaDisplay_C.SetPercent
-// (Public, HasDefaults, BlueprintCallable, BlueprintEvent)
-// Parameters:
-// double                                  Percent_0                                              (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-
-void UWBP_AntennaDisplay_C::SetPercent(double Percent_0)
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("WBP_AntennaDisplay_C", "SetPercent");
-
-	Params::WBP_AntennaDisplay_C_SetPercent Parms{};
-
-	Parms.Percent_0 = Percent_0;
 
 	UObject::ProcessEvent(Func, &Parms);
 }
@@ -105,19 +87,39 @@ void UWBP_AntennaDisplay_C::SetPercentageIcon(const struct FLinearColor& Color, 
 }
 
 
-// Function WBP_AntennaDisplay.WBP_AntennaDisplay_C.SetProgressColor
-// (Public, BlueprintCallable, BlueprintEvent)
+// Function WBP_AntennaDisplay.WBP_AntennaDisplay_C.SetPercent
+// (Public, HasDefaults, BlueprintCallable, BlueprintEvent)
 // Parameters:
-// const struct FLinearColor&              Color                                                  (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+// double                                  Percent_0                                              (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 
-void UWBP_AntennaDisplay_C::SetProgressColor(const struct FLinearColor& Color)
+void UWBP_AntennaDisplay_C::SetPercent(double Percent_0)
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("WBP_AntennaDisplay_C", "SetProgressColor");
+		Func = Class->GetFunction("WBP_AntennaDisplay_C", "SetPercent");
 
-	Params::WBP_AntennaDisplay_C_SetProgressColor Parms{};
+	Params::WBP_AntennaDisplay_C_SetPercent Parms{};
+
+	Parms.Percent_0 = Percent_0;
+
+	UObject::ProcessEvent(Func, &Parms);
+}
+
+
+// Function WBP_AntennaDisplay.WBP_AntennaDisplay_C.SetBackgroundColor
+// (Public, BlueprintCallable, BlueprintEvent)
+// Parameters:
+// const struct FLinearColor&              Color                                                  (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+
+void UWBP_AntennaDisplay_C::SetBackgroundColor(const struct FLinearColor& Color)
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("WBP_AntennaDisplay_C", "SetBackgroundColor");
+
+	Params::WBP_AntennaDisplay_C_SetBackgroundColor Parms{};
 
 	Parms.Color = std::move(Color);
 
@@ -125,23 +127,21 @@ void UWBP_AntennaDisplay_C::SetProgressColor(const struct FLinearColor& Color)
 }
 
 
-// Function WBP_AntennaDisplay.WBP_AntennaDisplay_C.SetState
+// Function WBP_AntennaDisplay.WBP_AntennaDisplay_C.Init
 // (Public, BlueprintCallable, BlueprintEvent)
 // Parameters:
-// ECrAntennaState                         State                                                  (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-// const struct FLinearColor&              StateColor                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+// double                                  Percent_0                                              (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 
-void UWBP_AntennaDisplay_C::SetState(ECrAntennaState State, const struct FLinearColor& StateColor)
+void UWBP_AntennaDisplay_C::Init(double Percent_0)
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("WBP_AntennaDisplay_C", "SetState");
+		Func = Class->GetFunction("WBP_AntennaDisplay_C", "Init");
 
-	Params::WBP_AntennaDisplay_C_SetState Parms{};
+	Params::WBP_AntennaDisplay_C_Init Parms{};
 
-	Parms.State = State;
-	Parms.StateColor = std::move(StateColor);
+	Parms.Percent_0 = Percent_0;
 
 	UObject::ProcessEvent(Func, &Parms);
 }

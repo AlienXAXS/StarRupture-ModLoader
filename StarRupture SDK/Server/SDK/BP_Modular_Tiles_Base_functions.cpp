@@ -17,23 +17,17 @@
 namespace SDK
 {
 
-// Function BP_Modular_Tiles_Base.BP_Modular_Tiles_Base_C.ExecuteUbergraph_BP_Modular_Tiles_Base
-// (Final, UbergraphFunction, HasDefaults)
-// Parameters:
-// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+// Function BP_Modular_Tiles_Base.BP_Modular_Tiles_Base_C.UserConstructionScript
+// (Event, Public, HasDefaults, BlueprintCallable, BlueprintEvent)
 
-void ABP_Modular_Tiles_Base_C::ExecuteUbergraph_BP_Modular_Tiles_Base(int32 EntryPoint)
+void ABP_Modular_Tiles_Base_C::UserConstructionScript()
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_Modular_Tiles_Base_C", "ExecuteUbergraph_BP_Modular_Tiles_Base");
+		Func = Class->GetFunction("BP_Modular_Tiles_Base_C", "UserConstructionScript");
 
-	Params::BP_Modular_Tiles_Base_C_ExecuteUbergraph_BP_Modular_Tiles_Base Parms{};
-
-	Parms.EntryPoint = EntryPoint;
-
-	UObject::ProcessEvent(Func, &Parms);
+	UObject::ProcessEvent(Func, nullptr);
 }
 
 
@@ -51,17 +45,23 @@ void ABP_Modular_Tiles_Base_C::ReceiveBeginPlay()
 }
 
 
-// Function BP_Modular_Tiles_Base.BP_Modular_Tiles_Base_C.UserConstructionScript
-// (Event, Public, HasDefaults, BlueprintCallable, BlueprintEvent)
+// Function BP_Modular_Tiles_Base.BP_Modular_Tiles_Base_C.ExecuteUbergraph_BP_Modular_Tiles_Base
+// (Final, UbergraphFunction, HasDefaults)
+// Parameters:
+// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 
-void ABP_Modular_Tiles_Base_C::UserConstructionScript()
+void ABP_Modular_Tiles_Base_C::ExecuteUbergraph_BP_Modular_Tiles_Base(int32 EntryPoint)
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_Modular_Tiles_Base_C", "UserConstructionScript");
+		Func = Class->GetFunction("BP_Modular_Tiles_Base_C", "ExecuteUbergraph_BP_Modular_Tiles_Base");
 
-	UObject::ProcessEvent(Func, nullptr);
+	Params::BP_Modular_Tiles_Base_C_ExecuteUbergraph_BP_Modular_Tiles_Base Parms{};
+
+	Parms.EntryPoint = EntryPoint;
+
+	UObject::ProcessEvent(Func, &Parms);
 }
 
 

@@ -26,8 +26,8 @@ public:
 	bool                                          Hidden;                                            // 0x00B0(0x0001)(Edit, BlueprintVisible, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 
 public:
-	void ExecuteUbergraph_BTTask_Animal_Crab_SetTentaclesState(int32 EntryPoint);
 	void ReceiveExecuteAI(class AAIController* OwnerController, class APawn* ControlledPawn);
+	void ExecuteUbergraph_BTTask_Animal_Crab_SetTentaclesState(int32 EntryPoint);
 
 public:
 	static class UClass* StaticClass()

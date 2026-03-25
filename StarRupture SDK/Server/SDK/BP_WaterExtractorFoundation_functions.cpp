@@ -17,23 +17,37 @@
 namespace SDK
 {
 
-// Function BP_WaterExtractorFoundation.BP_WaterExtractorFoundation_C.ExecuteUbergraph_BP_WaterExtractorFoundation
-// (Final, UbergraphFunction)
+// Function BP_WaterExtractorFoundation.BP_WaterExtractorFoundation_C.ReceiveTick
+// (Event, Public, BlueprintEvent)
 // Parameters:
-// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+// float                                   DeltaSeconds                                           (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 
-void ABP_WaterExtractorFoundation_C::ExecuteUbergraph_BP_WaterExtractorFoundation(int32 EntryPoint)
+void ABP_WaterExtractorFoundation_C::ReceiveTick(float DeltaSeconds)
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_WaterExtractorFoundation_C", "ExecuteUbergraph_BP_WaterExtractorFoundation");
+		Func = Class->GetFunction("BP_WaterExtractorFoundation_C", "ReceiveTick");
 
-	Params::BP_WaterExtractorFoundation_C_ExecuteUbergraph_BP_WaterExtractorFoundation Parms{};
+	Params::BP_WaterExtractorFoundation_C_ReceiveTick Parms{};
 
-	Parms.EntryPoint = EntryPoint;
+	Parms.DeltaSeconds = DeltaSeconds;
 
 	UObject::ProcessEvent(Func, &Parms);
+}
+
+
+// Function BP_WaterExtractorFoundation.BP_WaterExtractorFoundation_C.ReceiveBeginPlay
+// (Event, Protected, BlueprintEvent)
+
+void ABP_WaterExtractorFoundation_C::ReceiveBeginPlay()
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BP_WaterExtractorFoundation_C", "ReceiveBeginPlay");
+
+	UObject::ProcessEvent(Func, nullptr);
 }
 
 
@@ -57,35 +71,21 @@ void ABP_WaterExtractorFoundation_C::ReceiveActorBeginOverlap(class AActor* Othe
 }
 
 
-// Function BP_WaterExtractorFoundation.BP_WaterExtractorFoundation_C.ReceiveBeginPlay
-// (Event, Protected, BlueprintEvent)
-
-void ABP_WaterExtractorFoundation_C::ReceiveBeginPlay()
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BP_WaterExtractorFoundation_C", "ReceiveBeginPlay");
-
-	UObject::ProcessEvent(Func, nullptr);
-}
-
-
-// Function BP_WaterExtractorFoundation.BP_WaterExtractorFoundation_C.ReceiveTick
-// (Event, Public, BlueprintEvent)
+// Function BP_WaterExtractorFoundation.BP_WaterExtractorFoundation_C.ExecuteUbergraph_BP_WaterExtractorFoundation
+// (Final, UbergraphFunction)
 // Parameters:
-// float                                   DeltaSeconds                                           (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 
-void ABP_WaterExtractorFoundation_C::ReceiveTick(float DeltaSeconds)
+void ABP_WaterExtractorFoundation_C::ExecuteUbergraph_BP_WaterExtractorFoundation(int32 EntryPoint)
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_WaterExtractorFoundation_C", "ReceiveTick");
+		Func = Class->GetFunction("BP_WaterExtractorFoundation_C", "ExecuteUbergraph_BP_WaterExtractorFoundation");
 
-	Params::BP_WaterExtractorFoundation_C_ReceiveTick Parms{};
+	Params::BP_WaterExtractorFoundation_C_ExecuteUbergraph_BP_WaterExtractorFoundation Parms{};
 
-	Parms.DeltaSeconds = DeltaSeconds;
+	Parms.EntryPoint = EntryPoint;
 
 	UObject::ProcessEvent(Func, &Parms);
 }

@@ -17,6 +17,20 @@
 namespace SDK
 {
 
+// Function BP_Exploder_Tier1_Actor_AIController.BP_Exploder_Tier1_Actor_AIController_C.ReceiveBeginPlay
+// (Event, Protected, BlueprintEvent)
+
+void ABP_Exploder_Tier1_Actor_AIController_C::ReceiveBeginPlay()
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BP_Exploder_Tier1_Actor_AIController_C", "ReceiveBeginPlay");
+
+	UObject::ProcessEvent(Func, nullptr);
+}
+
+
 // Function BP_Exploder_Tier1_Actor_AIController.BP_Exploder_Tier1_Actor_AIController_C.ExecuteUbergraph_BP_Exploder_Tier1_Actor_AIController
 // (Final, UbergraphFunction)
 // Parameters:
@@ -34,20 +48,6 @@ void ABP_Exploder_Tier1_Actor_AIController_C::ExecuteUbergraph_BP_Exploder_Tier1
 	Parms.EntryPoint = EntryPoint;
 
 	UObject::ProcessEvent(Func, &Parms);
-}
-
-
-// Function BP_Exploder_Tier1_Actor_AIController.BP_Exploder_Tier1_Actor_AIController_C.ReceiveBeginPlay
-// (Event, Protected, BlueprintEvent)
-
-void ABP_Exploder_Tier1_Actor_AIController_C::ReceiveBeginPlay()
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BP_Exploder_Tier1_Actor_AIController_C", "ReceiveBeginPlay");
-
-	UObject::ProcessEvent(Func, nullptr);
 }
 
 }

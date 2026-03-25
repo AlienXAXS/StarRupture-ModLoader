@@ -71,15 +71,15 @@ public:
 	TArray<class UMaterialInstanceDynamic*>       AllStaticMeshesDynamicMaterials;                   // 0x0648(0x0010)(Edit, BlueprintVisible, DisableEditOnInstance)
 
 public:
-	void BP_OnSpawnedWithResourceDepleted();
-	void ExecuteUbergraph_BP_QuartzOre(int32 EntryPoint);
-	void OnResourceDepletedCosmeticsStart();
-	void ReceiveBeginPlay();
-	void SetAllStaticMeshesToHidden();
-	void SetAllStaticMeshesToVisible();
-	void SetupAndProcessDissolveForAllStaticMeshes();
-	void Timeline__FinishedFunc();
 	void Timeline__UpdateFunc();
+	void Timeline__FinishedFunc();
+	void SetupAndProcessDissolveForAllStaticMeshes();
+	void SetAllStaticMeshesToVisible();
+	void SetAllStaticMeshesToHidden();
+	void ReceiveBeginPlay();
+	void OnResourceDepletedCosmeticsStart();
+	void ExecuteUbergraph_BP_QuartzOre(int32 EntryPoint);
+	void BP_OnSpawnedWithResourceDepleted();
 
 public:
 	static class UClass* StaticClass()

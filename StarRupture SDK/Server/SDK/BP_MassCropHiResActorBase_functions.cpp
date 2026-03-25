@@ -17,23 +17,17 @@
 namespace SDK
 {
 
-// Function BP_MassCropHiResActorBase.BP_MassCropHiResActorBase_C.ExecuteUbergraph_BP_MassCropHiResActorBase
-// (Final, UbergraphFunction)
-// Parameters:
-// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+// Function BP_MassCropHiResActorBase.BP_MassCropHiResActorBase_C.OnResourceReplenishedCosmeticsStart
+// (Event, Public, BlueprintEvent)
 
-void ABP_MassCropHiResActorBase_C::ExecuteUbergraph_BP_MassCropHiResActorBase(int32 EntryPoint)
+void ABP_MassCropHiResActorBase_C::OnResourceReplenishedCosmeticsStart()
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_MassCropHiResActorBase_C", "ExecuteUbergraph_BP_MassCropHiResActorBase");
+		Func = Class->GetFunction("BP_MassCropHiResActorBase_C", "OnResourceReplenishedCosmeticsStart");
 
-	Params::BP_MassCropHiResActorBase_C_ExecuteUbergraph_BP_MassCropHiResActorBase Parms{};
-
-	Parms.EntryPoint = EntryPoint;
-
-	UObject::ProcessEvent(Func, &Parms);
+	UObject::ProcessEvent(Func, nullptr);
 }
 
 
@@ -51,17 +45,23 @@ void ABP_MassCropHiResActorBase_C::OnCropDepletedCosmeticsStart()
 }
 
 
-// Function BP_MassCropHiResActorBase.BP_MassCropHiResActorBase_C.OnResourceReplenishedCosmeticsStart
-// (Event, Public, BlueprintEvent)
+// Function BP_MassCropHiResActorBase.BP_MassCropHiResActorBase_C.ExecuteUbergraph_BP_MassCropHiResActorBase
+// (Final, UbergraphFunction)
+// Parameters:
+// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 
-void ABP_MassCropHiResActorBase_C::OnResourceReplenishedCosmeticsStart()
+void ABP_MassCropHiResActorBase_C::ExecuteUbergraph_BP_MassCropHiResActorBase(int32 EntryPoint)
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_MassCropHiResActorBase_C", "OnResourceReplenishedCosmeticsStart");
+		Func = Class->GetFunction("BP_MassCropHiResActorBase_C", "ExecuteUbergraph_BP_MassCropHiResActorBase");
 
-	UObject::ProcessEvent(Func, nullptr);
+	Params::BP_MassCropHiResActorBase_C_ExecuteUbergraph_BP_MassCropHiResActorBase Parms{};
+
+	Parms.EntryPoint = EntryPoint;
+
+	UObject::ProcessEvent(Func, &Parms);
 }
 
 }

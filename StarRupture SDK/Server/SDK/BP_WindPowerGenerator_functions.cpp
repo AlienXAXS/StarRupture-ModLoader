@@ -17,23 +17,17 @@
 namespace SDK
 {
 
-// Function BP_WindPowerGenerator.BP_WindPowerGenerator_C.ExecuteUbergraph_BP_WindPowerGenerator
-// (Final, UbergraphFunction)
-// Parameters:
-// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+// Function BP_WindPowerGenerator.BP_WindPowerGenerator_C.ReceiveBeginPlay
+// (Event, Protected, BlueprintEvent)
 
-void ABP_WindPowerGenerator_C::ExecuteUbergraph_BP_WindPowerGenerator(int32 EntryPoint)
+void ABP_WindPowerGenerator_C::ReceiveBeginPlay()
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_WindPowerGenerator_C", "ExecuteUbergraph_BP_WindPowerGenerator");
+		Func = Class->GetFunction("BP_WindPowerGenerator_C", "ReceiveBeginPlay");
 
-	Params::BP_WindPowerGenerator_C_ExecuteUbergraph_BP_WindPowerGenerator Parms{};
-
-	Parms.EntryPoint = EntryPoint;
-
-	UObject::ProcessEvent(Func, &Parms);
+	UObject::ProcessEvent(Func, nullptr);
 }
 
 
@@ -57,17 +51,23 @@ void ABP_WindPowerGenerator_C::PostPlayBuildingEffect(bool bWasBuildingEffectPla
 }
 
 
-// Function BP_WindPowerGenerator.BP_WindPowerGenerator_C.ReceiveBeginPlay
-// (Event, Protected, BlueprintEvent)
+// Function BP_WindPowerGenerator.BP_WindPowerGenerator_C.ExecuteUbergraph_BP_WindPowerGenerator
+// (Final, UbergraphFunction)
+// Parameters:
+// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 
-void ABP_WindPowerGenerator_C::ReceiveBeginPlay()
+void ABP_WindPowerGenerator_C::ExecuteUbergraph_BP_WindPowerGenerator(int32 EntryPoint)
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_WindPowerGenerator_C", "ReceiveBeginPlay");
+		Func = Class->GetFunction("BP_WindPowerGenerator_C", "ExecuteUbergraph_BP_WindPowerGenerator");
 
-	UObject::ProcessEvent(Func, nullptr);
+	Params::BP_WindPowerGenerator_C_ExecuteUbergraph_BP_WindPowerGenerator Parms{};
+
+	Parms.EntryPoint = EntryPoint;
+
+	UObject::ProcessEvent(Func, &Parms);
 }
 
 }

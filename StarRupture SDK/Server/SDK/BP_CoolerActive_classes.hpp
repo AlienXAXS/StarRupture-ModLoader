@@ -63,12 +63,12 @@ public:
 	TArray<class UStaticMeshComponent*>           OrderedPipes;                                      // 0x0788(0x0010)(Edit, BlueprintVisible, DisableEditOnInstance, ContainsInstancedReference)
 
 public:
-	void ExecuteUbergraph_BP_CoolerActive(int32 EntryPoint);
-	void OnHeaterCoolerConnectionsChanged(const TArray<class FName>& ConnectedSockets);
-	void OnHeaterCoolerInventoryChanged(float UsedSpaceNormalized);
-	void OnHeaterCoolerStateChanged(ECrMassHeaterCoolerState State);
-	void OnSocketConnected(class FName SocketName);
 	void OnSocketDisconnected(class FName SocketName);
+	void OnSocketConnected(class FName SocketName);
+	void OnHeaterCoolerStateChanged(ECrMassHeaterCoolerState State);
+	void OnHeaterCoolerInventoryChanged(float UsedSpaceNormalized);
+	void OnHeaterCoolerConnectionsChanged(const TArray<class FName>& ConnectedSockets);
+	void ExecuteUbergraph_BP_CoolerActive(int32 EntryPoint);
 
 public:
 	static class UClass* StaticClass()

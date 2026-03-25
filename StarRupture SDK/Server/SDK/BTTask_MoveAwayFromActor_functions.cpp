@@ -17,26 +17,6 @@
 namespace SDK
 {
 
-// Function BTTask_MoveAwayFromActor.BTTask_MoveAwayFromActor_C.ExecuteUbergraph_BTTask_MoveAwayFromActor
-// (Final, UbergraphFunction)
-// Parameters:
-// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-
-void UBTTask_MoveAwayFromActor_C::ExecuteUbergraph_BTTask_MoveAwayFromActor(int32 EntryPoint)
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BTTask_MoveAwayFromActor_C", "ExecuteUbergraph_BTTask_MoveAwayFromActor");
-
-	Params::BTTask_MoveAwayFromActor_C_ExecuteUbergraph_BTTask_MoveAwayFromActor Parms{};
-
-	Parms.EntryPoint = EntryPoint;
-
-	UObject::ProcessEvent(Func, &Parms);
-}
-
-
 // Function BTTask_MoveAwayFromActor.BTTask_MoveAwayFromActor_C.ReceiveExecuteAI
 // (Event, Protected, BlueprintEvent)
 // Parameters:
@@ -54,6 +34,26 @@ void UBTTask_MoveAwayFromActor_C::ReceiveExecuteAI(class AAIController* OwnerCon
 
 	Parms.OwnerController = OwnerController;
 	Parms.ControlledPawn = ControlledPawn;
+
+	UObject::ProcessEvent(Func, &Parms);
+}
+
+
+// Function BTTask_MoveAwayFromActor.BTTask_MoveAwayFromActor_C.ExecuteUbergraph_BTTask_MoveAwayFromActor
+// (Final, UbergraphFunction)
+// Parameters:
+// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+
+void UBTTask_MoveAwayFromActor_C::ExecuteUbergraph_BTTask_MoveAwayFromActor(int32 EntryPoint)
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BTTask_MoveAwayFromActor_C", "ExecuteUbergraph_BTTask_MoveAwayFromActor");
+
+	Params::BTTask_MoveAwayFromActor_C_ExecuteUbergraph_BTTask_MoveAwayFromActor Parms{};
+
+	Parms.EntryPoint = EntryPoint;
 
 	UObject::ProcessEvent(Func, &Parms);
 }

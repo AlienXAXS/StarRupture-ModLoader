@@ -47,20 +47,20 @@ public:
 	int32                                         PlayersOverlappedCount;                            // 0x0468(0x0004)(Edit, BlueprintVisible, ZeroConstructor, DisableEditOnInstance, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 
 public:
-	void ExecuteUbergraph_BP_FE_entrance_door(int32 EntryPoint);
-	void HideBattery();
-	void OnPlayerEntered(class UPrimitiveComponent* OverlappedComponent, class AActor* OtherActor, class UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const struct FHitResult& SweepResult);
-	void OnPlayerExited(class UPrimitiveComponent* OverlappedComponent, class AActor* OtherActor, class UPrimitiveComponent* OtherComp, int32 OtherBodyIndex);
-	void OnUnlocked(class AActor* ActorActivating);
-	void OnUpdateDoorOpenState();
-	void OnUpdateDoorOpenStateImmediate();
-	void OnUpdateDoorVisuals();
-	void PlayClose();
-	void PlayOpen();
-	void ReceiveBeginPlay();
-	void ShowBattery();
-	void Timeline__FinishedFunc();
 	void Timeline__UpdateFunc();
+	void Timeline__FinishedFunc();
+	void ShowBattery();
+	void ReceiveBeginPlay();
+	void PlayOpen();
+	void PlayClose();
+	void OnUpdateDoorVisuals();
+	void OnUpdateDoorOpenStateImmediate();
+	void OnUpdateDoorOpenState();
+	void OnUnlocked(class AActor* ActorActivating);
+	void OnPlayerExited(class UPrimitiveComponent* OverlappedComponent, class AActor* OtherActor, class UPrimitiveComponent* OtherComp, int32 OtherBodyIndex);
+	void OnPlayerEntered(class UPrimitiveComponent* OverlappedComponent, class AActor* OtherActor, class UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const struct FHitResult& SweepResult);
+	void HideBattery();
+	void ExecuteUbergraph_BP_FE_entrance_door(int32 EntryPoint);
 
 public:
 	static class UClass* StaticClass()

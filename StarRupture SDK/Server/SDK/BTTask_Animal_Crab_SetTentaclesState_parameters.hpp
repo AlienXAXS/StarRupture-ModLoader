@@ -14,6 +14,16 @@
 namespace SDK::Params
 {
 
+// Function BTTask_Animal_Crab_SetTentaclesState.BTTask_Animal_Crab_SetTentaclesState_C.ReceiveExecuteAI
+// 0x0010 (0x0010 - 0x0000)
+struct BTTask_Animal_Crab_SetTentaclesState_C_ReceiveExecuteAI final
+{
+public:
+	class AAIController*                          OwnerController;                                   // 0x0000(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
+	class APawn*                                  ControlledPawn;                                    // 0x0008(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BTTask_Animal_Crab_SetTentaclesState_C_ReceiveExecuteAI;
+
 // Function BTTask_Animal_Crab_SetTentaclesState.BTTask_Animal_Crab_SetTentaclesState_C.ExecuteUbergraph_BTTask_Animal_Crab_SetTentaclesState
 // 0x0048 (0x0048 - 0x0000)
 struct BTTask_Animal_Crab_SetTentaclesState_C_ExecuteUbergraph_BTTask_Animal_Crab_SetTentaclesState final
@@ -32,16 +42,6 @@ public:
 	bool                                          CallFunc_NotEqual_BoolBool_ReturnValue;            // 0x0042(0x0001)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 };
 DUMPER7_ASSERTS_BTTask_Animal_Crab_SetTentaclesState_C_ExecuteUbergraph_BTTask_Animal_Crab_SetTentaclesState;
-
-// Function BTTask_Animal_Crab_SetTentaclesState.BTTask_Animal_Crab_SetTentaclesState_C.ReceiveExecuteAI
-// 0x0010 (0x0010 - 0x0000)
-struct BTTask_Animal_Crab_SetTentaclesState_C_ReceiveExecuteAI final
-{
-public:
-	class AAIController*                          OwnerController;                                   // 0x0000(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
-	class APawn*                                  ControlledPawn;                                    // 0x0008(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BTTask_Animal_Crab_SetTentaclesState_C_ReceiveExecuteAI;
 
 }
 

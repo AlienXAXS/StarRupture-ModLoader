@@ -43,9 +43,9 @@ public:
 	bool                                          AfterEndPlay;                                      // 0x0751(0x0001)(Edit, BlueprintVisible, ZeroConstructor, DisableEditOnInstance, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 
 public:
-	void ExecuteUbergraph_BP_AcidExtractor(int32 EntryPoint);
-	void OnBuildingStateChanged(ECrBuildingState InState);
 	void SetupSkeletalMesh();
+	void OnBuildingStateChanged(ECrBuildingState InState);
+	void ExecuteUbergraph_BP_AcidExtractor(int32 EntryPoint);
 
 public:
 	static class UClass* StaticClass()

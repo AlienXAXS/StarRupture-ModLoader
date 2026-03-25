@@ -17,6 +17,20 @@
 namespace SDK
 {
 
+// Function BP_ForgottenEngine_MissingPart_EngineControlStation.BP_ForgottenEngine_MissingPart_EngineControlStation_C.OnMachineActivated
+// (Event, Public, BlueprintEvent)
+
+void ABP_ForgottenEngine_MissingPart_EngineControlStation_C::OnMachineActivated()
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BP_ForgottenEngine_MissingPart_EngineControlStation_C", "OnMachineActivated");
+
+	UObject::ProcessEvent(Func, nullptr);
+}
+
+
 // Function BP_ForgottenEngine_MissingPart_EngineControlStation.BP_ForgottenEngine_MissingPart_EngineControlStation_C.ExecuteUbergraph_BP_ForgottenEngine_MissingPart_EngineControlStation
 // (Final, UbergraphFunction)
 // Parameters:
@@ -34,20 +48,6 @@ void ABP_ForgottenEngine_MissingPart_EngineControlStation_C::ExecuteUbergraph_BP
 	Parms.EntryPoint = EntryPoint;
 
 	UObject::ProcessEvent(Func, &Parms);
-}
-
-
-// Function BP_ForgottenEngine_MissingPart_EngineControlStation.BP_ForgottenEngine_MissingPart_EngineControlStation_C.OnMachineActivated
-// (Event, Public, BlueprintEvent)
-
-void ABP_ForgottenEngine_MissingPart_EngineControlStation_C::OnMachineActivated()
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BP_ForgottenEngine_MissingPart_EngineControlStation_C", "OnMachineActivated");
-
-	UObject::ProcessEvent(Func, nullptr);
 }
 
 }

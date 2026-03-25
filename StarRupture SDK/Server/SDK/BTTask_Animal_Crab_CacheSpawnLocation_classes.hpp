@@ -27,8 +27,8 @@ public:
 	struct FBlackboardKeySelector                 SpawnLocation_BBKey;                               // 0x00B0(0x0028)(Edit, BlueprintVisible)
 
 public:
-	void ExecuteUbergraph_BTTask_Animal_Crab_CacheSpawnLocation(int32 EntryPoint);
 	void ReceiveExecuteAI(class AAIController* OwnerController, class APawn* ControlledPawn);
+	void ExecuteUbergraph_BTTask_Animal_Crab_CacheSpawnLocation(int32 EntryPoint);
 
 public:
 	static class UClass* StaticClass()

@@ -52,16 +52,16 @@ public:
 	double                                        CurrentSpread;                                     // 0x0540(0x0008)(Edit, BlueprintVisible, ZeroConstructor, DisableEditOnInstance, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 
 public:
-	void Construct();
-	void Destruct();
-	void ExecuteUbergraph_WBP_Rifle_Magnifier_ScopeOverlay(int32 EntryPoint);
-	struct FSlateBrush Get_ScopeOverlay_Brush();
-	void OnTagAdded_D02CEFB39C498EBE74FA8694A90AFD2C(const struct FGameplayTag& Tag);
-	void OnTagRemoved_D02CEFB39C498EBE74FA8694A90AFD2C(const struct FGameplayTag& Tag);
-	void PawnChanged(class APawn* OldPawn, class APawn* NewPawn);
-	void Tick(const struct FGeometry& MyGeometry, float InDeltaTime);
-	void UpdateCrosshairSpread(double Delta_Seconds);
 	void UpdateOverlayColors();
+	void UpdateCrosshairSpread(double Delta_Seconds);
+	void Tick(const struct FGeometry& MyGeometry, float InDeltaTime);
+	void PawnChanged(class APawn* OldPawn, class APawn* NewPawn);
+	void OnTagRemoved_D02CEFB39C498EBE74FA8694A90AFD2C(const struct FGameplayTag& Tag);
+	void OnTagAdded_D02CEFB39C498EBE74FA8694A90AFD2C(const struct FGameplayTag& Tag);
+	struct FSlateBrush Get_ScopeOverlay_Brush();
+	void ExecuteUbergraph_WBP_Rifle_Magnifier_ScopeOverlay(int32 EntryPoint);
+	void Destruct();
+	void Construct();
 
 public:
 	static class UClass* StaticClass()

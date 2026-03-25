@@ -17,35 +17,43 @@
 namespace SDK
 {
 
-// Function BP_UniversalStorage.BP_UniversalStorage_C.ExecuteUbergraph_BP_UniversalStorage
-// (Final, UbergraphFunction, HasDefaults)
-// Parameters:
-// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+// Function BP_UniversalStorage.BP_UniversalStorage_C.Timeline_shelves__UpdateFunc
+// (BlueprintEvent)
 
-void ABP_UniversalStorage_C::ExecuteUbergraph_BP_UniversalStorage(int32 EntryPoint)
+void ABP_UniversalStorage_C::Timeline_shelves__UpdateFunc()
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_UniversalStorage_C", "ExecuteUbergraph_BP_UniversalStorage");
+		Func = Class->GetFunction("BP_UniversalStorage_C", "Timeline_shelves__UpdateFunc");
 
-	Params::BP_UniversalStorage_C_ExecuteUbergraph_BP_UniversalStorage Parms{};
-
-	Parms.EntryPoint = EntryPoint;
-
-	UObject::ProcessEvent(Func, &Parms);
+	UObject::ProcessEvent(Func, nullptr);
 }
 
 
-// Function BP_UniversalStorage.BP_UniversalStorage_C.GetMaterialInstance
-// (Public, BlueprintCallable, BlueprintEvent)
+// Function BP_UniversalStorage.BP_UniversalStorage_C.Timeline_shelves__FinishedFunc
+// (BlueprintEvent)
 
-void ABP_UniversalStorage_C::GetMaterialInstance()
+void ABP_UniversalStorage_C::Timeline_shelves__FinishedFunc()
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_UniversalStorage_C", "GetMaterialInstance");
+		Func = Class->GetFunction("BP_UniversalStorage_C", "Timeline_shelves__FinishedFunc");
+
+	UObject::ProcessEvent(Func, nullptr);
+}
+
+
+// Function BP_UniversalStorage.BP_UniversalStorage_C.ReceiveBeginPlay
+// (Event, Protected, BlueprintEvent)
+
+void ABP_UniversalStorage_C::ReceiveBeginPlay()
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BP_UniversalStorage_C", "ReceiveBeginPlay");
 
 	UObject::ProcessEvent(Func, nullptr);
 }
@@ -71,45 +79,37 @@ void ABP_UniversalStorage_C::PostPlayBuildingEffect(bool bWasBuildingEffectPlaye
 }
 
 
-// Function BP_UniversalStorage.BP_UniversalStorage_C.ReceiveBeginPlay
-// (Event, Protected, BlueprintEvent)
+// Function BP_UniversalStorage.BP_UniversalStorage_C.GetMaterialInstance
+// (Public, BlueprintCallable, BlueprintEvent)
 
-void ABP_UniversalStorage_C::ReceiveBeginPlay()
+void ABP_UniversalStorage_C::GetMaterialInstance()
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_UniversalStorage_C", "ReceiveBeginPlay");
+		Func = Class->GetFunction("BP_UniversalStorage_C", "GetMaterialInstance");
 
 	UObject::ProcessEvent(Func, nullptr);
 }
 
 
-// Function BP_UniversalStorage.BP_UniversalStorage_C.Timeline_shelves__FinishedFunc
-// (BlueprintEvent)
+// Function BP_UniversalStorage.BP_UniversalStorage_C.ExecuteUbergraph_BP_UniversalStorage
+// (Final, UbergraphFunction, HasDefaults)
+// Parameters:
+// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 
-void ABP_UniversalStorage_C::Timeline_shelves__FinishedFunc()
+void ABP_UniversalStorage_C::ExecuteUbergraph_BP_UniversalStorage(int32 EntryPoint)
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_UniversalStorage_C", "Timeline_shelves__FinishedFunc");
+		Func = Class->GetFunction("BP_UniversalStorage_C", "ExecuteUbergraph_BP_UniversalStorage");
 
-	UObject::ProcessEvent(Func, nullptr);
-}
+	Params::BP_UniversalStorage_C_ExecuteUbergraph_BP_UniversalStorage Parms{};
 
+	Parms.EntryPoint = EntryPoint;
 
-// Function BP_UniversalStorage.BP_UniversalStorage_C.Timeline_shelves__UpdateFunc
-// (BlueprintEvent)
-
-void ABP_UniversalStorage_C::Timeline_shelves__UpdateFunc()
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BP_UniversalStorage_C", "Timeline_shelves__UpdateFunc");
-
-	UObject::ProcessEvent(Func, nullptr);
+	UObject::ProcessEvent(Func, &Parms);
 }
 
 }

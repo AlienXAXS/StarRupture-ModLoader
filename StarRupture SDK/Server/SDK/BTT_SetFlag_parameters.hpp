@@ -14,6 +14,16 @@
 namespace SDK::Params
 {
 
+// Function BTT_SetFlag.BTT_SetFlag_C.ReceiveExecuteAI
+// 0x0010 (0x0010 - 0x0000)
+struct BTT_SetFlag_C_ReceiveExecuteAI final
+{
+public:
+	class AAIController*                          OwnerController;                                   // 0x0000(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
+	class APawn*                                  ControlledPawn;                                    // 0x0008(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BTT_SetFlag_C_ReceiveExecuteAI;
+
 // Function BTT_SetFlag.BTT_SetFlag_C.ExecuteUbergraph_BTT_SetFlag
 // 0x0018 (0x0018 - 0x0000)
 struct BTT_SetFlag_C_ExecuteUbergraph_BTT_SetFlag final
@@ -25,16 +35,6 @@ public:
 	class APawn*                                  K2Node_Event_ControlledPawn;                       // 0x0010(0x0008)(ZeroConstructor, NoDestructor, HasGetValueTypeHash)
 };
 DUMPER7_ASSERTS_BTT_SetFlag_C_ExecuteUbergraph_BTT_SetFlag;
-
-// Function BTT_SetFlag.BTT_SetFlag_C.ReceiveExecuteAI
-// 0x0010 (0x0010 - 0x0000)
-struct BTT_SetFlag_C_ReceiveExecuteAI final
-{
-public:
-	class AAIController*                          OwnerController;                                   // 0x0000(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
-	class APawn*                                  ControlledPawn;                                    // 0x0008(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BTT_SetFlag_C_ReceiveExecuteAI;
 
 }
 

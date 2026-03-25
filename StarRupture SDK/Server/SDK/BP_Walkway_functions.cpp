@@ -17,59 +17,53 @@
 namespace SDK
 {
 
-// Function BP_Walkway.BP_Walkway_C.CanBePooled
-// (Event, Public, HasOutParams, BlueprintCallable, BlueprintEvent)
+// Function BP_Walkway.BP_Walkway_C.PrepareForGame
+// (Event, Public, BlueprintCallable, BlueprintEvent)
+
+void ABP_Walkway_C::PrepareForGame()
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BP_Walkway_C", "PrepareForGame");
+
+	UObject::ProcessEvent(Func, nullptr);
+}
+
+
+// Function BP_Walkway.BP_Walkway_C.OnSplineReady
+// (Event, Public, BlueprintEvent)
+// Parameters:
+// class USplineComponent*                 InSpline                                               (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, InstancedReference, NoDestructor, HasGetValueTypeHash)
+
+void ABP_Walkway_C::OnSplineReady(class USplineComponent* InSpline)
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BP_Walkway_C", "OnSplineReady");
+
+	Params::BP_Walkway_C_OnSplineReady Parms{};
+
+	Parms.InSpline = InSpline;
+
+	UObject::ProcessEvent(Func, &Parms);
+}
+
+
+// Function BP_Walkway.BP_Walkway_C.IsRamp
+// (Public, HasOutParams, BlueprintCallable, BlueprintEvent, BlueprintPure)
 // Parameters:
 // bool                                    ReturnValue                                            (Parm, OutParm, ZeroConstructor, ReturnParm, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 
-bool ABP_Walkway_C::CanBePooled()
+bool ABP_Walkway_C::IsRamp()
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_Walkway_C", "CanBePooled");
+		Func = Class->GetFunction("BP_Walkway_C", "IsRamp");
 
-	Params::BP_Walkway_C_CanBePooled Parms{};
-
-	UObject::ProcessEvent(Func, &Parms);
-
-	return Parms.ReturnValue;
-}
-
-
-// Function BP_Walkway.BP_Walkway_C.ExecuteUbergraph_BP_Walkway
-// (Final, UbergraphFunction)
-// Parameters:
-// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-
-void ABP_Walkway_C::ExecuteUbergraph_BP_Walkway(int32 EntryPoint)
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BP_Walkway_C", "ExecuteUbergraph_BP_Walkway");
-
-	Params::BP_Walkway_C_ExecuteUbergraph_BP_Walkway Parms{};
-
-	Parms.EntryPoint = EntryPoint;
-
-	UObject::ProcessEvent(Func, &Parms);
-}
-
-
-// Function BP_Walkway.BP_Walkway_C.GetRampAngle
-// (Public, HasOutParams, BlueprintCallable, BlueprintEvent, BlueprintPure)
-// Parameters:
-// double                                  ReturnValue                                            (Parm, OutParm, ZeroConstructor, ReturnParm, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-
-double ABP_Walkway_C::GetRampAngle()
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BP_Walkway_C", "GetRampAngle");
-
-	Params::BP_Walkway_C_GetRampAngle Parms{};
+	Params::BP_Walkway_C_IsRamp Parms{};
 
 	UObject::ProcessEvent(Func, &Parms);
 
@@ -97,19 +91,19 @@ bool ABP_Walkway_C::IsLadder()
 }
 
 
-// Function BP_Walkway.BP_Walkway_C.IsRamp
+// Function BP_Walkway.BP_Walkway_C.GetRampAngle
 // (Public, HasOutParams, BlueprintCallable, BlueprintEvent, BlueprintPure)
 // Parameters:
-// bool                                    ReturnValue                                            (Parm, OutParm, ZeroConstructor, ReturnParm, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+// double                                  ReturnValue                                            (Parm, OutParm, ZeroConstructor, ReturnParm, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 
-bool ABP_Walkway_C::IsRamp()
+double ABP_Walkway_C::GetRampAngle()
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_Walkway_C", "IsRamp");
+		Func = Class->GetFunction("BP_Walkway_C", "GetRampAngle");
 
-	Params::BP_Walkway_C_IsRamp Parms{};
+	Params::BP_Walkway_C_GetRampAngle Parms{};
 
 	UObject::ProcessEvent(Func, &Parms);
 
@@ -117,37 +111,43 @@ bool ABP_Walkway_C::IsRamp()
 }
 
 
-// Function BP_Walkway.BP_Walkway_C.OnSplineReady
-// (Event, Public, BlueprintEvent)
+// Function BP_Walkway.BP_Walkway_C.ExecuteUbergraph_BP_Walkway
+// (Final, UbergraphFunction)
 // Parameters:
-// class USplineComponent*                 InSpline                                               (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, InstancedReference, NoDestructor, HasGetValueTypeHash)
+// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 
-void ABP_Walkway_C::OnSplineReady(class USplineComponent* InSpline)
+void ABP_Walkway_C::ExecuteUbergraph_BP_Walkway(int32 EntryPoint)
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_Walkway_C", "OnSplineReady");
+		Func = Class->GetFunction("BP_Walkway_C", "ExecuteUbergraph_BP_Walkway");
 
-	Params::BP_Walkway_C_OnSplineReady Parms{};
+	Params::BP_Walkway_C_ExecuteUbergraph_BP_Walkway Parms{};
 
-	Parms.InSpline = InSpline;
+	Parms.EntryPoint = EntryPoint;
 
 	UObject::ProcessEvent(Func, &Parms);
 }
 
 
-// Function BP_Walkway.BP_Walkway_C.PrepareForGame
-// (Event, Public, BlueprintCallable, BlueprintEvent)
+// Function BP_Walkway.BP_Walkway_C.CanBePooled
+// (Event, Public, HasOutParams, BlueprintCallable, BlueprintEvent)
+// Parameters:
+// bool                                    ReturnValue                                            (Parm, OutParm, ZeroConstructor, ReturnParm, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 
-void ABP_Walkway_C::PrepareForGame()
+bool ABP_Walkway_C::CanBePooled()
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_Walkway_C", "PrepareForGame");
+		Func = Class->GetFunction("BP_Walkway_C", "CanBePooled");
 
-	UObject::ProcessEvent(Func, nullptr);
+	Params::BP_Walkway_C_CanBePooled Parms{};
+
+	UObject::ProcessEvent(Func, &Parms);
+
+	return Parms.ReturnValue;
 }
 
 }

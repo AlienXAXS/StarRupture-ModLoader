@@ -14,17 +14,18 @@
 namespace SDK::Params
 {
 
-// Function WBP_PersonalStorageNameBig.WBP_PersonalStorageNameBig_C.GetText
-// 0x0038 (0x0038 - 0x0000)
-struct WBP_PersonalStorageNameBig_C_GetText final
+// Function WBP_PersonalStorageNameBig.WBP_PersonalStorageNameBig_C.UpdateName
+// 0x0040 (0x0040 - 0x0000)
+struct WBP_PersonalStorageNameBig_C_UpdateName final
 {
 public:
-	class FText                                   ReturnValue;                                       // 0x0000(0x0010)(Parm, OutParm, ReturnParm)
-	class UCrBuildingCustomNameSubsystem*         CallFunc_GetWorldSubsystem_ReturnValue;            // 0x0010(0x0008)(ZeroConstructor, NoDestructor, HasGetValueTypeHash)
-	class FString                                 CallFunc_GetBuildingCustomName_ReturnValue;        // 0x0018(0x0010)(ZeroConstructor, HasGetValueTypeHash)
-	class FText                                   CallFunc_Conv_StringToText_ReturnValue;            // 0x0028(0x0010)()
+	class ACrBuildingActorBase*                   Owning_Building;                                   // 0x0000(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
+	class FText                                   ReturnValue;                                       // 0x0008(0x0010)(Parm, OutParm, ReturnParm)
+	class UCrBuildingCustomNameSubsystem*         CallFunc_GetWorldSubsystem_ReturnValue;            // 0x0018(0x0008)(ZeroConstructor, NoDestructor, HasGetValueTypeHash)
+	class FString                                 CallFunc_GetBuildingCustomName_ReturnValue;        // 0x0020(0x0010)(ZeroConstructor, HasGetValueTypeHash)
+	class FText                                   CallFunc_Conv_StringToText_ReturnValue;            // 0x0030(0x0010)()
 };
-DUMPER7_ASSERTS_WBP_PersonalStorageNameBig_C_GetText;
+DUMPER7_ASSERTS_WBP_PersonalStorageNameBig_C_UpdateName;
 
 // Function WBP_PersonalStorageNameBig.WBP_PersonalStorageNameBig_C.SetHeight
 // 0x0018 (0x0018 - 0x0000)
@@ -38,18 +39,17 @@ public:
 };
 DUMPER7_ASSERTS_WBP_PersonalStorageNameBig_C_SetHeight;
 
-// Function WBP_PersonalStorageNameBig.WBP_PersonalStorageNameBig_C.UpdateName
-// 0x0040 (0x0040 - 0x0000)
-struct WBP_PersonalStorageNameBig_C_UpdateName final
+// Function WBP_PersonalStorageNameBig.WBP_PersonalStorageNameBig_C.GetText
+// 0x0038 (0x0038 - 0x0000)
+struct WBP_PersonalStorageNameBig_C_GetText final
 {
 public:
-	class ACrBuildingActorBase*                   Owning_Building;                                   // 0x0000(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
-	class FText                                   ReturnValue;                                       // 0x0008(0x0010)(Parm, OutParm, ReturnParm)
-	class UCrBuildingCustomNameSubsystem*         CallFunc_GetWorldSubsystem_ReturnValue;            // 0x0018(0x0008)(ZeroConstructor, NoDestructor, HasGetValueTypeHash)
-	class FString                                 CallFunc_GetBuildingCustomName_ReturnValue;        // 0x0020(0x0010)(ZeroConstructor, HasGetValueTypeHash)
-	class FText                                   CallFunc_Conv_StringToText_ReturnValue;            // 0x0030(0x0010)()
+	class FText                                   ReturnValue;                                       // 0x0000(0x0010)(Parm, OutParm, ReturnParm)
+	class UCrBuildingCustomNameSubsystem*         CallFunc_GetWorldSubsystem_ReturnValue;            // 0x0010(0x0008)(ZeroConstructor, NoDestructor, HasGetValueTypeHash)
+	class FString                                 CallFunc_GetBuildingCustomName_ReturnValue;        // 0x0018(0x0010)(ZeroConstructor, HasGetValueTypeHash)
+	class FText                                   CallFunc_Conv_StringToText_ReturnValue;            // 0x0028(0x0010)()
 };
-DUMPER7_ASSERTS_WBP_PersonalStorageNameBig_C_UpdateName;
+DUMPER7_ASSERTS_WBP_PersonalStorageNameBig_C_GetText;
 
 }
 

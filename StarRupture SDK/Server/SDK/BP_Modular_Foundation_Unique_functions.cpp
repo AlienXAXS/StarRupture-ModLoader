@@ -17,23 +17,17 @@
 namespace SDK
 {
 
-// Function BP_Modular_Foundation_Unique.BP_Modular_Foundation_Unique_C.ExecuteUbergraph_BP_Modular_Foundation_Unique
-// (Final, UbergraphFunction, HasDefaults)
-// Parameters:
-// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+// Function BP_Modular_Foundation_Unique.BP_Modular_Foundation_Unique_C.UserConstructionScript
+// (Event, Public, BlueprintCallable, BlueprintEvent)
 
-void ABP_Modular_Foundation_Unique_C::ExecuteUbergraph_BP_Modular_Foundation_Unique(int32 EntryPoint)
+void ABP_Modular_Foundation_Unique_C::UserConstructionScript()
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_Modular_Foundation_Unique_C", "ExecuteUbergraph_BP_Modular_Foundation_Unique");
+		Func = Class->GetFunction("BP_Modular_Foundation_Unique_C", "UserConstructionScript");
 
-	Params::BP_Modular_Foundation_Unique_C_ExecuteUbergraph_BP_Modular_Foundation_Unique Parms{};
-
-	Parms.EntryPoint = EntryPoint;
-
-	UObject::ProcessEvent(Func, &Parms);
+	UObject::ProcessEvent(Func, nullptr);
 }
 
 
@@ -51,17 +45,23 @@ void ABP_Modular_Foundation_Unique_C::ReceiveBeginPlay()
 }
 
 
-// Function BP_Modular_Foundation_Unique.BP_Modular_Foundation_Unique_C.UserConstructionScript
-// (Event, Public, BlueprintCallable, BlueprintEvent)
+// Function BP_Modular_Foundation_Unique.BP_Modular_Foundation_Unique_C.ExecuteUbergraph_BP_Modular_Foundation_Unique
+// (Final, UbergraphFunction, HasDefaults)
+// Parameters:
+// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 
-void ABP_Modular_Foundation_Unique_C::UserConstructionScript()
+void ABP_Modular_Foundation_Unique_C::ExecuteUbergraph_BP_Modular_Foundation_Unique(int32 EntryPoint)
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_Modular_Foundation_Unique_C", "UserConstructionScript");
+		Func = Class->GetFunction("BP_Modular_Foundation_Unique_C", "ExecuteUbergraph_BP_Modular_Foundation_Unique");
 
-	UObject::ProcessEvent(Func, nullptr);
+	Params::BP_Modular_Foundation_Unique_C_ExecuteUbergraph_BP_Modular_Foundation_Unique Parms{};
+
+	Parms.EntryPoint = EntryPoint;
+
+	UObject::ProcessEvent(Func, &Parms);
 }
 
 

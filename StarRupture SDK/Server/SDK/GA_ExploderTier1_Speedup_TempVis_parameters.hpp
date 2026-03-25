@@ -17,6 +17,26 @@
 namespace SDK::Params
 {
 
+// Function GA_ExploderTier1_Speedup_TempVis.GA_ExploderTier1_Speedup_TempVis_C.K2_OnEndAbility
+// 0x0001 (0x0001 - 0x0000)
+struct GA_ExploderTier1_Speedup_TempVis_C_K2_OnEndAbility final
+{
+public:
+	bool                                          bWasCancelled;                                     // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_GA_ExploderTier1_Speedup_TempVis_C_K2_OnEndAbility;
+
+// Function GA_ExploderTier1_Speedup_TempVis.GA_ExploderTier1_Speedup_TempVis_C.GetSpeedupEyeColorByAiTag
+// 0x001C (0x001C - 0x0000)
+struct GA_ExploderTier1_Speedup_TempVis_C_GetSpeedupEyeColorByAiTag final
+{
+public:
+	struct FGameplayTag                           AiTag;                                             // 0x0000(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, NoDestructor, HasGetValueTypeHash)
+	struct FLinearColor                           EyeColor;                                          // 0x0008(0x0010)(Parm, OutParm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+	bool                                          GameplayTagsK2Node_SwitchGameplayTag_CmpSuccess;   // 0x0018(0x0001)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_GA_ExploderTier1_Speedup_TempVis_C_GetSpeedupEyeColorByAiTag;
+
 // Function GA_ExploderTier1_Speedup_TempVis.GA_ExploderTier1_Speedup_TempVis_C.ExecuteUbergraph_GA_ExploderTier1_Speedup_TempVis
 // 0x0090 (0x0090 - 0x0000)
 struct GA_ExploderTier1_Speedup_TempVis_C_ExecuteUbergraph_GA_ExploderTier1_Speedup_TempVis final
@@ -53,26 +73,6 @@ public:
 	double                                        CallFunc_Greater_DoubleDouble_A_ImplicitCast;      // 0x0088(0x0008)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 };
 DUMPER7_ASSERTS_GA_ExploderTier1_Speedup_TempVis_C_ExecuteUbergraph_GA_ExploderTier1_Speedup_TempVis;
-
-// Function GA_ExploderTier1_Speedup_TempVis.GA_ExploderTier1_Speedup_TempVis_C.GetSpeedupEyeColorByAiTag
-// 0x001C (0x001C - 0x0000)
-struct GA_ExploderTier1_Speedup_TempVis_C_GetSpeedupEyeColorByAiTag final
-{
-public:
-	struct FGameplayTag                           AiTag;                                             // 0x0000(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, NoDestructor, HasGetValueTypeHash)
-	struct FLinearColor                           EyeColor;                                          // 0x0008(0x0010)(Parm, OutParm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-	bool                                          GameplayTagsK2Node_SwitchGameplayTag_CmpSuccess;   // 0x0018(0x0001)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_GA_ExploderTier1_Speedup_TempVis_C_GetSpeedupEyeColorByAiTag;
-
-// Function GA_ExploderTier1_Speedup_TempVis.GA_ExploderTier1_Speedup_TempVis_C.K2_OnEndAbility
-// 0x0001 (0x0001 - 0x0000)
-struct GA_ExploderTier1_Speedup_TempVis_C_K2_OnEndAbility final
-{
-public:
-	bool                                          bWasCancelled;                                     // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_GA_ExploderTier1_Speedup_TempVis_C_K2_OnEndAbility;
 
 }
 

@@ -17,6 +17,24 @@
 namespace SDK::Params
 {
 
+// Function BP_SonicDrill.BP_SonicDrill_C.ReceiveEndPlay
+// 0x0001 (0x0001 - 0x0000)
+struct BP_SonicDrill_C_ReceiveEndPlay final
+{
+public:
+	EEndPlayReason                                EndPlayReason;                                     // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BP_SonicDrill_C_ReceiveEndPlay;
+
+// Function BP_SonicDrill.BP_SonicDrill_C.OnBuildingStateChanged
+// 0x0001 (0x0001 - 0x0000)
+struct BP_SonicDrill_C_OnBuildingStateChanged final
+{
+public:
+	ECrBuildingState                              InState;                                           // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BP_SonicDrill_C_OnBuildingStateChanged;
+
 // Function BP_SonicDrill.BP_SonicDrill_C.ExecuteUbergraph_BP_SonicDrill
 // 0x0008 (0x0008 - 0x0000)
 struct BP_SonicDrill_C_ExecuteUbergraph_BP_SonicDrill final
@@ -28,24 +46,6 @@ public:
 	ECrBuildingState                              K2Node_Event_InState;                              // 0x0006(0x0001)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 };
 DUMPER7_ASSERTS_BP_SonicDrill_C_ExecuteUbergraph_BP_SonicDrill;
-
-// Function BP_SonicDrill.BP_SonicDrill_C.OnBuildingStateChanged
-// 0x0001 (0x0001 - 0x0000)
-struct BP_SonicDrill_C_OnBuildingStateChanged final
-{
-public:
-	ECrBuildingState                              InState;                                           // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BP_SonicDrill_C_OnBuildingStateChanged;
-
-// Function BP_SonicDrill.BP_SonicDrill_C.ReceiveEndPlay
-// 0x0001 (0x0001 - 0x0000)
-struct BP_SonicDrill_C_ReceiveEndPlay final
-{
-public:
-	EEndPlayReason                                EndPlayReason;                                     // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BP_SonicDrill_C_ReceiveEndPlay;
 
 // Function BP_SonicDrill.BP_SonicDrill_C.GetBuildingMeshes
 // 0x0018 (0x0018 - 0x0000)

@@ -14,6 +14,16 @@
 namespace SDK::Params
 {
 
+// Function BTTask_Animal_Panzerhund_SaveDangerSignalTimestamp.BTTask_Animal_Panzerhund_SaveDangerSignalTimestamp_C.ReceiveExecuteAI
+// 0x0010 (0x0010 - 0x0000)
+struct BTTask_Animal_Panzerhund_SaveDangerSignalTimestamp_C_ReceiveExecuteAI final
+{
+public:
+	class AAIController*                          OwnerController;                                   // 0x0000(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
+	class APawn*                                  ControlledPawn;                                    // 0x0008(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BTTask_Animal_Panzerhund_SaveDangerSignalTimestamp_C_ReceiveExecuteAI;
+
 // Function BTTask_Animal_Panzerhund_SaveDangerSignalTimestamp.BTTask_Animal_Panzerhund_SaveDangerSignalTimestamp_C.ExecuteUbergraph_BTTask_Animal_Panzerhund_SaveDangerSignalTimestamp
 // 0x0028 (0x0028 - 0x0000)
 struct BTTask_Animal_Panzerhund_SaveDangerSignalTimestamp_C_ExecuteUbergraph_BTTask_Animal_Panzerhund_SaveDangerSignalTimestamp final
@@ -27,16 +37,6 @@ public:
 	float                                         CallFunc_SetBlackboardValueAsFloat_Value_ImplicitCast; // 0x0020(0x0004)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 };
 DUMPER7_ASSERTS_BTTask_Animal_Panzerhund_SaveDangerSignalTimestamp_C_ExecuteUbergraph_BTTask_Animal_Panzerhund_SaveDangerSignalTimestamp;
-
-// Function BTTask_Animal_Panzerhund_SaveDangerSignalTimestamp.BTTask_Animal_Panzerhund_SaveDangerSignalTimestamp_C.ReceiveExecuteAI
-// 0x0010 (0x0010 - 0x0000)
-struct BTTask_Animal_Panzerhund_SaveDangerSignalTimestamp_C_ReceiveExecuteAI final
-{
-public:
-	class AAIController*                          OwnerController;                                   // 0x0000(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
-	class APawn*                                  ControlledPawn;                                    // 0x0008(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BTTask_Animal_Panzerhund_SaveDangerSignalTimestamp_C_ReceiveExecuteAI;
 
 }
 

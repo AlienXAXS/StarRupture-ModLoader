@@ -63,15 +63,15 @@ public:
 	float                                         AnimBlendAlpha;                                    // 0x0750(0x0004)(Edit, BlueprintVisible, ZeroConstructor, DisableEditOnInstance, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 
 public:
-	void Attach_meshes();
-	void ExecuteUbergraph_BP_FE_Armory(int32 EntryPoint);
-	void Idle_timeline__FinishedFunc();
-	void Idle_timeline__UpdateFunc();
-	void LeftArmVFX(double LaserLength);
-	void OnBuildingStateChanged(ECrBuildingState InState);
-	void OnUIOpened(bool bOpened);
-	void ReceiveBeginPlay();
 	void RightArmVFX(double LaserLength);
+	void ReceiveBeginPlay();
+	void OnUIOpened(bool bOpened);
+	void OnBuildingStateChanged(ECrBuildingState InState);
+	void LeftArmVFX(double LaserLength);
+	void Idle_timeline__UpdateFunc();
+	void Idle_timeline__FinishedFunc();
+	void ExecuteUbergraph_BP_FE_Armory(int32 EntryPoint);
+	void Attach_meshes();
 
 public:
 	static class UClass* StaticClass()

@@ -15,7 +15,7 @@
 // ---------------------------------------------------------------------------
 // Layout constants
 // ---------------------------------------------------------------------------
-static constexpr int   SPLASH_WIDTH  = 420;
+static constexpr int   SPLASH_WIDTH  = 520;
 static constexpr int   SPLASH_HEIGHT = 130;
 static constexpr DWORD BG_COLOR      = RGB(24, 24, 28);
 static constexpr DWORD TEXT_COLOR    = RGB(200, 200, 210);
@@ -39,6 +39,7 @@ static constexpr RECT CLOSE_BTN_RECT = { BAR_X, BAR_Y, BAR_X + BAR_WIDTH, BAR_Y 
 // ---------------------------------------------------------------------------
 static wchar_t g_statusText[256] = L"Initializing...";
 static float   g_progress        = 0.0f;
+static bool    g_errorMode       = false; // error mode: red bar + word-wrap status text
 static bool    g_showCloseButton = false; // error mode: replace bar with Close button
 static HWND    g_hwnd            = nullptr;
 static bool    g_classRegistered = false;
@@ -104,7 +105,7 @@ static void OnPaint(HWND hwnd)
 	SelectObject(hdc, g_bodyFont);
 	SetTextColor(hdc, TEXT_COLOR);
 	RECT statusRect = { MARGIN, STATUS_Y, SPLASH_WIDTH - MARGIN, BAR_Y - 4 };
-	if (g_showCloseButton)
+	if (g_errorMode)
 		DrawTextW(hdc, g_statusText, -1, &statusRect, DT_LEFT | DT_WORDBREAK);
 	else
 		DrawTextW(hdc, g_statusText, -1, &statusRect, DT_LEFT | DT_SINGLELINE | DT_END_ELLIPSIS);
@@ -222,6 +223,7 @@ static void PumpMessages()
 void Splash::Show()
 {
 	g_progress        = 0.0f;
+	g_errorMode       = false;
 	g_showCloseButton = false;
 	wcscpy_s(g_statusText, L"Initializing...");
 
@@ -304,7 +306,7 @@ void Splash::Close()
 	}
 }
 
-void Splash::SetErrorMode()
+void Splash::SetErrorMode(bool showCloseButton)
 {
 	if (!g_hwnd)
 		return;
@@ -317,7 +319,8 @@ void Splash::SetErrorMode()
 	}
 
 	g_progress        = 1.0f;
-	g_showCloseButton = true;
+	g_errorMode       = true;
+	g_showCloseButton = showCloseButton;
 
 	InvalidateRect(g_hwnd, nullptr, FALSE);
 	UpdateWindow(g_hwnd);
@@ -329,7 +332,7 @@ void Splash::SetErrorMode()
 void Splash::Show() {}
 void Splash::SetStatus(const wchar_t*) {}
 void Splash::SetProgress(float) {}
-void Splash::SetErrorMode() {}
+void Splash::SetErrorMode(bool) {}
 void Splash::Close() {}
 
 #endif // MODLOADER_CLIENT_BUILD

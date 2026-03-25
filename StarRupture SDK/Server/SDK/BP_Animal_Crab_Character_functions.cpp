@@ -17,23 +17,167 @@
 namespace SDK
 {
 
-// Function BP_Animal_Crab_Character.BP_Animal_Crab_Character_C.AreTentaclesHidden
-// (Event, Public, HasOutParams, BlueprintCallable, BlueprintEvent)
-// Parameters:
-// bool                                    ReturnValue                                            (Parm, OutParm, ZeroConstructor, ReturnParm, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+// Function BP_Animal_Crab_Character.BP_Animal_Crab_Character_C.StopCatach
+// (BlueprintCallable, BlueprintEvent)
 
-bool ABP_Animal_Crab_Character_C::AreTentaclesHidden()
+void ABP_Animal_Crab_Character_C::StopCatach()
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_Animal_Crab_Character_C", "AreTentaclesHidden");
+		Func = Class->GetFunction("BP_Animal_Crab_Character_C", "StopCatach");
 
-	Params::BP_Animal_Crab_Character_C_AreTentaclesHidden Parms{};
+	UObject::ProcessEvent(Func, nullptr);
+}
+
+
+// Function BP_Animal_Crab_Character.BP_Animal_Crab_Character_C.SimulateCatchTimeline__UpdateFunc
+// (BlueprintEvent)
+
+void ABP_Animal_Crab_Character_C::SimulateCatchTimeline__UpdateFunc()
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BP_Animal_Crab_Character_C", "SimulateCatchTimeline__UpdateFunc");
+
+	UObject::ProcessEvent(Func, nullptr);
+}
+
+
+// Function BP_Animal_Crab_Character.BP_Animal_Crab_Character_C.SimulateCatchTimeline__FinishedFunc
+// (BlueprintEvent)
+
+void ABP_Animal_Crab_Character_C::SimulateCatchTimeline__FinishedFunc()
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BP_Animal_Crab_Character_C", "SimulateCatchTimeline__FinishedFunc");
+
+	UObject::ProcessEvent(Func, nullptr);
+}
+
+
+// Function BP_Animal_Crab_Character.BP_Animal_Crab_Character_C.SimulateCatch
+// (BlueprintCallable, BlueprintEvent)
+
+void ABP_Animal_Crab_Character_C::SimulateCatch()
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BP_Animal_Crab_Character_C", "SimulateCatch");
+
+	UObject::ProcessEvent(Func, nullptr);
+}
+
+
+// Function BP_Animal_Crab_Character.BP_Animal_Crab_Character_C.SetTentaclesHidden
+// (Event, Public, BlueprintCallable, BlueprintEvent)
+// Parameters:
+// bool                                    bHidden_0                                              (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+
+void ABP_Animal_Crab_Character_C::SetTentaclesHidden(bool bHidden_0)
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BP_Animal_Crab_Character_C", "SetTentaclesHidden");
+
+	Params::BP_Animal_Crab_Character_C_SetTentaclesHidden Parms{};
+
+	Parms.bHidden_0 = bHidden_0;
+
+	UObject::ProcessEvent(Func, &Parms);
+}
+
+
+// Function BP_Animal_Crab_Character.BP_Animal_Crab_Character_C.ReceiveTick
+// (Event, Public, BlueprintEvent)
+// Parameters:
+// float                                   DeltaSeconds_0                                         (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+
+void ABP_Animal_Crab_Character_C::ReceiveTick(float DeltaSeconds_0)
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BP_Animal_Crab_Character_C", "ReceiveTick");
+
+	Params::BP_Animal_Crab_Character_C_ReceiveTick Parms{};
+
+	Parms.DeltaSeconds_0 = DeltaSeconds_0;
+
+	UObject::ProcessEvent(Func, &Parms);
+}
+
+
+// Function BP_Animal_Crab_Character.BP_Animal_Crab_Character_C.ReceiveBeginPlay
+// (Event, Protected, BlueprintEvent)
+
+void ABP_Animal_Crab_Character_C::ReceiveBeginPlay()
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BP_Animal_Crab_Character_C", "ReceiveBeginPlay");
+
+	UObject::ProcessEvent(Func, nullptr);
+}
+
+
+// Function BP_Animal_Crab_Character.BP_Animal_Crab_Character_C.OnRep_AreTentaclesHiddenState
+// (BlueprintCallable, BlueprintEvent)
+
+void ABP_Animal_Crab_Character_C::OnRep_AreTentaclesHiddenState()
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BP_Animal_Crab_Character_C", "OnRep_AreTentaclesHiddenState");
+
+	UObject::ProcessEvent(Func, nullptr);
+}
+
+
+// Function BP_Animal_Crab_Character.BP_Animal_Crab_Character_C.GetCrabUpdateStateComponent
+// (Event, Public, HasOutParams, BlueprintCallable, BlueprintEvent)
+// Parameters:
+// class UCrAiAnimalCrabUpdateStateComponent*ReturnValue                                            (Parm, OutParm, ZeroConstructor, ReturnParm, InstancedReference, NoDestructor, HasGetValueTypeHash)
+
+class UCrAiAnimalCrabUpdateStateComponent* ABP_Animal_Crab_Character_C::GetCrabUpdateStateComponent()
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BP_Animal_Crab_Character_C", "GetCrabUpdateStateComponent");
+
+	Params::BP_Animal_Crab_Character_C_GetCrabUpdateStateComponent Parms{};
 
 	UObject::ProcessEvent(Func, &Parms);
 
 	return Parms.ReturnValue;
+}
+
+
+// Function BP_Animal_Crab_Character.BP_Animal_Crab_Character_C.ExecuteUbergraph_BP_Animal_Crab_Character
+// (Final, UbergraphFunction, HasDefaults)
+// Parameters:
+// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+
+void ABP_Animal_Crab_Character_C::ExecuteUbergraph_BP_Animal_Crab_Character(int32 EntryPoint)
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BP_Animal_Crab_Character_C", "ExecuteUbergraph_BP_Animal_Crab_Character");
+
+	Params::BP_Animal_Crab_Character_C_ExecuteUbergraph_BP_Animal_Crab_Character Parms{};
+
+	Parms.EntryPoint = EntryPoint;
+
+	UObject::ProcessEvent(Func, &Parms);
 }
 
 
@@ -65,167 +209,23 @@ void ABP_Animal_Crab_Character_C::BndEvt__BP_Animal_Crab_Character_CapsuleCompon
 }
 
 
-// Function BP_Animal_Crab_Character.BP_Animal_Crab_Character_C.ExecuteUbergraph_BP_Animal_Crab_Character
-// (Final, UbergraphFunction, HasDefaults)
-// Parameters:
-// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-
-void ABP_Animal_Crab_Character_C::ExecuteUbergraph_BP_Animal_Crab_Character(int32 EntryPoint)
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BP_Animal_Crab_Character_C", "ExecuteUbergraph_BP_Animal_Crab_Character");
-
-	Params::BP_Animal_Crab_Character_C_ExecuteUbergraph_BP_Animal_Crab_Character Parms{};
-
-	Parms.EntryPoint = EntryPoint;
-
-	UObject::ProcessEvent(Func, &Parms);
-}
-
-
-// Function BP_Animal_Crab_Character.BP_Animal_Crab_Character_C.GetCrabUpdateStateComponent
+// Function BP_Animal_Crab_Character.BP_Animal_Crab_Character_C.AreTentaclesHidden
 // (Event, Public, HasOutParams, BlueprintCallable, BlueprintEvent)
 // Parameters:
-// class UCrAiAnimalCrabUpdateStateComponent*ReturnValue                                            (Parm, OutParm, ZeroConstructor, ReturnParm, InstancedReference, NoDestructor, HasGetValueTypeHash)
+// bool                                    ReturnValue                                            (Parm, OutParm, ZeroConstructor, ReturnParm, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 
-class UCrAiAnimalCrabUpdateStateComponent* ABP_Animal_Crab_Character_C::GetCrabUpdateStateComponent()
+bool ABP_Animal_Crab_Character_C::AreTentaclesHidden()
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_Animal_Crab_Character_C", "GetCrabUpdateStateComponent");
+		Func = Class->GetFunction("BP_Animal_Crab_Character_C", "AreTentaclesHidden");
 
-	Params::BP_Animal_Crab_Character_C_GetCrabUpdateStateComponent Parms{};
+	Params::BP_Animal_Crab_Character_C_AreTentaclesHidden Parms{};
 
 	UObject::ProcessEvent(Func, &Parms);
 
 	return Parms.ReturnValue;
-}
-
-
-// Function BP_Animal_Crab_Character.BP_Animal_Crab_Character_C.OnRep_AreTentaclesHiddenState
-// (BlueprintCallable, BlueprintEvent)
-
-void ABP_Animal_Crab_Character_C::OnRep_AreTentaclesHiddenState()
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BP_Animal_Crab_Character_C", "OnRep_AreTentaclesHiddenState");
-
-	UObject::ProcessEvent(Func, nullptr);
-}
-
-
-// Function BP_Animal_Crab_Character.BP_Animal_Crab_Character_C.ReceiveBeginPlay
-// (Event, Protected, BlueprintEvent)
-
-void ABP_Animal_Crab_Character_C::ReceiveBeginPlay()
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BP_Animal_Crab_Character_C", "ReceiveBeginPlay");
-
-	UObject::ProcessEvent(Func, nullptr);
-}
-
-
-// Function BP_Animal_Crab_Character.BP_Animal_Crab_Character_C.ReceiveTick
-// (Event, Public, BlueprintEvent)
-// Parameters:
-// float                                   DeltaSeconds_0                                         (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-
-void ABP_Animal_Crab_Character_C::ReceiveTick(float DeltaSeconds_0)
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BP_Animal_Crab_Character_C", "ReceiveTick");
-
-	Params::BP_Animal_Crab_Character_C_ReceiveTick Parms{};
-
-	Parms.DeltaSeconds_0 = DeltaSeconds_0;
-
-	UObject::ProcessEvent(Func, &Parms);
-}
-
-
-// Function BP_Animal_Crab_Character.BP_Animal_Crab_Character_C.SetTentaclesHidden
-// (Event, Public, BlueprintCallable, BlueprintEvent)
-// Parameters:
-// bool                                    bHidden_0                                              (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-
-void ABP_Animal_Crab_Character_C::SetTentaclesHidden(bool bHidden_0)
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BP_Animal_Crab_Character_C", "SetTentaclesHidden");
-
-	Params::BP_Animal_Crab_Character_C_SetTentaclesHidden Parms{};
-
-	Parms.bHidden_0 = bHidden_0;
-
-	UObject::ProcessEvent(Func, &Parms);
-}
-
-
-// Function BP_Animal_Crab_Character.BP_Animal_Crab_Character_C.SimulateCatch
-// (BlueprintCallable, BlueprintEvent)
-
-void ABP_Animal_Crab_Character_C::SimulateCatch()
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BP_Animal_Crab_Character_C", "SimulateCatch");
-
-	UObject::ProcessEvent(Func, nullptr);
-}
-
-
-// Function BP_Animal_Crab_Character.BP_Animal_Crab_Character_C.SimulateCatchTimeline__FinishedFunc
-// (BlueprintEvent)
-
-void ABP_Animal_Crab_Character_C::SimulateCatchTimeline__FinishedFunc()
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BP_Animal_Crab_Character_C", "SimulateCatchTimeline__FinishedFunc");
-
-	UObject::ProcessEvent(Func, nullptr);
-}
-
-
-// Function BP_Animal_Crab_Character.BP_Animal_Crab_Character_C.SimulateCatchTimeline__UpdateFunc
-// (BlueprintEvent)
-
-void ABP_Animal_Crab_Character_C::SimulateCatchTimeline__UpdateFunc()
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BP_Animal_Crab_Character_C", "SimulateCatchTimeline__UpdateFunc");
-
-	UObject::ProcessEvent(Func, nullptr);
-}
-
-
-// Function BP_Animal_Crab_Character.BP_Animal_Crab_Character_C.StopCatach
-// (BlueprintCallable, BlueprintEvent)
-
-void ABP_Animal_Crab_Character_C::StopCatach()
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BP_Animal_Crab_Character_C", "StopCatach");
-
-	UObject::ProcessEvent(Func, nullptr);
 }
 
 }

@@ -85,18 +85,18 @@ public:
 	TArray<class USceneComponent*>                ArrayShelvesPivots;                                // 0x07F0(0x0010)(Edit, BlueprintVisible, DisableEditOnInstance, ContainsInstancedReference)
 
 public:
-	void DoorsClose();
-	void DoorsOpen();
-	void Drone_land();
-	void ExecuteUbergraph_BP_PackageReceiver(int32 EntryPoint);
-	void OnBuildingStateChanged(ECrBuildingState InState);
-	void OnItemsReceived();
-	void PostPlayBuildingEffect(bool bWasBuildingEffectPlayed);
-	void ReceiveBeginPlay();
-	void Timeline_0__FinishedFunc();
-	void Timeline_0__UpdateFunc();
-	void Timeline__FinishedFunc();
 	void Timeline__UpdateFunc();
+	void Timeline__FinishedFunc();
+	void Timeline_0__UpdateFunc();
+	void Timeline_0__FinishedFunc();
+	void ReceiveBeginPlay();
+	void PostPlayBuildingEffect(bool bWasBuildingEffectPlayed);
+	void OnItemsReceived();
+	void OnBuildingStateChanged(ECrBuildingState InState);
+	void ExecuteUbergraph_BP_PackageReceiver(int32 EntryPoint);
+	void Drone_land();
+	void DoorsOpen();
+	void DoorsClose();
 
 public:
 	static class UClass* StaticClass()

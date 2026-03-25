@@ -28,8 +28,8 @@ public:
 	float                                         Duration;                                          // 0x00D8(0x0004)(Edit, BlueprintVisible, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 
 public:
-	void ExecuteUbergraph_BTTask_Melee_Tier3_Actor_LockMoveTargetForDuration(int32 EntryPoint);
 	void ReceiveExecuteAI(class AAIController* OwnerController, class APawn* ControlledPawn);
+	void ExecuteUbergraph_BTTask_Melee_Tier3_Actor_LockMoveTargetForDuration(int32 EntryPoint);
 
 public:
 	static class UClass* StaticClass()

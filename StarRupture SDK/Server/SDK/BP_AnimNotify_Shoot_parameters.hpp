@@ -16,18 +16,6 @@
 namespace SDK::Params
 {
 
-// Function BP_AnimNotify_Shoot.BP_AnimNotify_Shoot_C.CreateAiAction
-// 0x0028 (0x0028 - 0x0000)
-struct BP_AnimNotify_Shoot_C_CreateAiAction final
-{
-public:
-	class AActor*                                 Actor;                                             // 0x0000(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
-	class UCrAiAction*                            ReturnValue;                                       // 0x0008(0x0008)(Parm, OutParm, ZeroConstructor, ReturnParm, NoDestructor, HasGetValueTypeHash)
-	TScriptInterface<class IMassEnemyActor>       K2Node_DynamicCast_AsMass_Enemy_Actor;             // 0x0010(0x0010)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-	bool                                          K2Node_DynamicCast_bSuccess;                       // 0x0020(0x0001)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BP_AnimNotify_Shoot_C_CreateAiAction;
-
 // Function BP_AnimNotify_Shoot.BP_AnimNotify_Shoot_C.Received_Notify
 // 0x0068 (0x0068 - 0x0000)
 struct BP_AnimNotify_Shoot_C_Received_Notify final
@@ -44,6 +32,18 @@ public:
 	bool                                          CallFunc_IsValid_ReturnValue;                      // 0x0061(0x0001)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 };
 DUMPER7_ASSERTS_BP_AnimNotify_Shoot_C_Received_Notify;
+
+// Function BP_AnimNotify_Shoot.BP_AnimNotify_Shoot_C.CreateAiAction
+// 0x0028 (0x0028 - 0x0000)
+struct BP_AnimNotify_Shoot_C_CreateAiAction final
+{
+public:
+	class AActor*                                 Actor;                                             // 0x0000(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
+	class UCrAiAction*                            ReturnValue;                                       // 0x0008(0x0008)(Parm, OutParm, ZeroConstructor, ReturnParm, NoDestructor, HasGetValueTypeHash)
+	TScriptInterface<class IMassEnemyActor>       K2Node_DynamicCast_AsMass_Enemy_Actor;             // 0x0010(0x0010)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+	bool                                          K2Node_DynamicCast_bSuccess;                       // 0x0020(0x0001)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BP_AnimNotify_Shoot_C_CreateAiAction;
 
 }
 

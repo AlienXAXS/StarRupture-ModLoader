@@ -46,16 +46,16 @@ public:
 	struct FVector                                CurrentRotation;                                   // 0x0758(0x0018)(Edit, BlueprintVisible, ZeroConstructor, DisableEditOnInstance, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 
 public:
-	void BP_OnInventoryChanged();
-	void CosmeticHit(const struct FHitResult& InHit);
-	void CosmeticTurretMalfunctionEnded();
-	void CosmeticTurretMalfunctionStarted();
-	void ExecuteUbergraph_BP_TurretTier2(int32 EntryPoint);
-	void ReceiveBeginPlay();
-	void Timeline__FinishedFunc();
-	void Timeline__UpdateFunc();
-	void UpdateAmmoCounter();
 	void UpdateCosmeticsBasedOnAttackDirection(const struct FVector& OutCurrentAttackDirection);
+	void UpdateAmmoCounter();
+	void Timeline__UpdateFunc();
+	void Timeline__FinishedFunc();
+	void ReceiveBeginPlay();
+	void ExecuteUbergraph_BP_TurretTier2(int32 EntryPoint);
+	void CosmeticTurretMalfunctionStarted();
+	void CosmeticTurretMalfunctionEnded();
+	void CosmeticHit(const struct FHitResult& InHit);
+	void BP_OnInventoryChanged();
 
 public:
 	static class UClass* StaticClass()

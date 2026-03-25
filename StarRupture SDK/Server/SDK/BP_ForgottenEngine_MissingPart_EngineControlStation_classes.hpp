@@ -26,8 +26,8 @@ public:
 	class UStaticMeshComponent*                   Cube;                                              // 0x06E0(0x0008)(BlueprintVisible, ZeroConstructor, InstancedReference, NonTransactional, NoDestructor, HasGetValueTypeHash)
 
 public:
-	void ExecuteUbergraph_BP_ForgottenEngine_MissingPart_EngineControlStation(int32 EntryPoint);
 	void OnMachineActivated();
+	void ExecuteUbergraph_BP_ForgottenEngine_MissingPart_EngineControlStation(int32 EntryPoint);
 
 public:
 	static class UClass* StaticClass()

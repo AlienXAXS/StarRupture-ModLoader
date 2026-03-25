@@ -17,77 +17,77 @@
 namespace SDK
 {
 
-// Function BP_TurretTier1.BP_TurretTier1_C.BP_OnInventoryChanged
-// (Event, Protected, BlueprintEvent)
-
-void ABP_TurretTier1_C::BP_OnInventoryChanged()
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BP_TurretTier1_C", "BP_OnInventoryChanged");
-
-	UObject::ProcessEvent(Func, nullptr);
-}
-
-
-// Function BP_TurretTier1.BP_TurretTier1_C.CosmeticDryFire
-// (Event, Public, BlueprintEvent)
-
-void ABP_TurretTier1_C::CosmeticDryFire()
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BP_TurretTier1_C", "CosmeticDryFire");
-
-	UObject::ProcessEvent(Func, nullptr);
-}
-
-
-// Function BP_TurretTier1.BP_TurretTier1_C.CosmeticHit
+// Function BP_TurretTier1.BP_TurretTier1_C.UpdateCosmeticsBasedOnAttackDirection
 // (Event, Public, HasOutParams, BlueprintEvent)
 // Parameters:
-// const struct FHitResult&                InHit                                                  (ConstParm, BlueprintVisible, BlueprintReadOnly, Parm, OutParm, ReferenceParm, IsPlainOldData, NoDestructor, ContainsInstancedReference)
+// const struct FVector&                   OutCurrentAttackDirection                              (ConstParm, BlueprintVisible, BlueprintReadOnly, Parm, OutParm, ZeroConstructor, ReferenceParm, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 
-void ABP_TurretTier1_C::CosmeticHit(const struct FHitResult& InHit)
+void ABP_TurretTier1_C::UpdateCosmeticsBasedOnAttackDirection(const struct FVector& OutCurrentAttackDirection)
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_TurretTier1_C", "CosmeticHit");
+		Func = Class->GetFunction("BP_TurretTier1_C", "UpdateCosmeticsBasedOnAttackDirection");
 
-	Params::BP_TurretTier1_C_CosmeticHit Parms{};
+	Params::BP_TurretTier1_C_UpdateCosmeticsBasedOnAttackDirection Parms{};
 
-	Parms.InHit = std::move(InHit);
+	Parms.OutCurrentAttackDirection = std::move(OutCurrentAttackDirection);
 
 	UObject::ProcessEvent(Func, &Parms);
 }
 
 
-// Function BP_TurretTier1.BP_TurretTier1_C.CosmeticTurretMalfunctionEnded
-// (Event, Public, BlueprintEvent)
+// Function BP_TurretTier1.BP_TurretTier1_C.UpdateAmmoCounter
+// (BlueprintCallable, BlueprintEvent)
 
-void ABP_TurretTier1_C::CosmeticTurretMalfunctionEnded()
+void ABP_TurretTier1_C::UpdateAmmoCounter()
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_TurretTier1_C", "CosmeticTurretMalfunctionEnded");
+		Func = Class->GetFunction("BP_TurretTier1_C", "UpdateAmmoCounter");
 
 	UObject::ProcessEvent(Func, nullptr);
 }
 
 
-// Function BP_TurretTier1.BP_TurretTier1_C.CosmeticTurretMalfunctionStarted
-// (Event, Public, BlueprintEvent)
+// Function BP_TurretTier1.BP_TurretTier1_C.Timeline__UpdateFunc
+// (BlueprintEvent)
 
-void ABP_TurretTier1_C::CosmeticTurretMalfunctionStarted()
+void ABP_TurretTier1_C::Timeline__UpdateFunc()
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_TurretTier1_C", "CosmeticTurretMalfunctionStarted");
+		Func = Class->GetFunction("BP_TurretTier1_C", "Timeline__UpdateFunc");
+
+	UObject::ProcessEvent(Func, nullptr);
+}
+
+
+// Function BP_TurretTier1.BP_TurretTier1_C.Timeline__FinishedFunc
+// (BlueprintEvent)
+
+void ABP_TurretTier1_C::Timeline__FinishedFunc()
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BP_TurretTier1_C", "Timeline__FinishedFunc");
+
+	UObject::ProcessEvent(Func, nullptr);
+}
+
+
+// Function BP_TurretTier1.BP_TurretTier1_C.ReceiveBeginPlay
+// (Event, Protected, BlueprintEvent)
+
+void ABP_TurretTier1_C::ReceiveBeginPlay()
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BP_TurretTier1_C", "ReceiveBeginPlay");
 
 	UObject::ProcessEvent(Func, nullptr);
 }
@@ -113,79 +113,79 @@ void ABP_TurretTier1_C::ExecuteUbergraph_BP_TurretTier1(int32 EntryPoint)
 }
 
 
-// Function BP_TurretTier1.BP_TurretTier1_C.ReceiveBeginPlay
-// (Event, Protected, BlueprintEvent)
+// Function BP_TurretTier1.BP_TurretTier1_C.CosmeticTurretMalfunctionStarted
+// (Event, Public, BlueprintEvent)
 
-void ABP_TurretTier1_C::ReceiveBeginPlay()
+void ABP_TurretTier1_C::CosmeticTurretMalfunctionStarted()
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_TurretTier1_C", "ReceiveBeginPlay");
+		Func = Class->GetFunction("BP_TurretTier1_C", "CosmeticTurretMalfunctionStarted");
 
 	UObject::ProcessEvent(Func, nullptr);
 }
 
 
-// Function BP_TurretTier1.BP_TurretTier1_C.Timeline__FinishedFunc
-// (BlueprintEvent)
+// Function BP_TurretTier1.BP_TurretTier1_C.CosmeticTurretMalfunctionEnded
+// (Event, Public, BlueprintEvent)
 
-void ABP_TurretTier1_C::Timeline__FinishedFunc()
+void ABP_TurretTier1_C::CosmeticTurretMalfunctionEnded()
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_TurretTier1_C", "Timeline__FinishedFunc");
+		Func = Class->GetFunction("BP_TurretTier1_C", "CosmeticTurretMalfunctionEnded");
 
 	UObject::ProcessEvent(Func, nullptr);
 }
 
 
-// Function BP_TurretTier1.BP_TurretTier1_C.Timeline__UpdateFunc
-// (BlueprintEvent)
-
-void ABP_TurretTier1_C::Timeline__UpdateFunc()
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BP_TurretTier1_C", "Timeline__UpdateFunc");
-
-	UObject::ProcessEvent(Func, nullptr);
-}
-
-
-// Function BP_TurretTier1.BP_TurretTier1_C.UpdateAmmoCounter
-// (BlueprintCallable, BlueprintEvent)
-
-void ABP_TurretTier1_C::UpdateAmmoCounter()
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BP_TurretTier1_C", "UpdateAmmoCounter");
-
-	UObject::ProcessEvent(Func, nullptr);
-}
-
-
-// Function BP_TurretTier1.BP_TurretTier1_C.UpdateCosmeticsBasedOnAttackDirection
+// Function BP_TurretTier1.BP_TurretTier1_C.CosmeticHit
 // (Event, Public, HasOutParams, BlueprintEvent)
 // Parameters:
-// const struct FVector&                   OutCurrentAttackDirection                              (ConstParm, BlueprintVisible, BlueprintReadOnly, Parm, OutParm, ZeroConstructor, ReferenceParm, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+// const struct FHitResult&                InHit                                                  (ConstParm, BlueprintVisible, BlueprintReadOnly, Parm, OutParm, ReferenceParm, IsPlainOldData, NoDestructor, ContainsInstancedReference)
 
-void ABP_TurretTier1_C::UpdateCosmeticsBasedOnAttackDirection(const struct FVector& OutCurrentAttackDirection)
+void ABP_TurretTier1_C::CosmeticHit(const struct FHitResult& InHit)
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_TurretTier1_C", "UpdateCosmeticsBasedOnAttackDirection");
+		Func = Class->GetFunction("BP_TurretTier1_C", "CosmeticHit");
 
-	Params::BP_TurretTier1_C_UpdateCosmeticsBasedOnAttackDirection Parms{};
+	Params::BP_TurretTier1_C_CosmeticHit Parms{};
 
-	Parms.OutCurrentAttackDirection = std::move(OutCurrentAttackDirection);
+	Parms.InHit = std::move(InHit);
 
 	UObject::ProcessEvent(Func, &Parms);
+}
+
+
+// Function BP_TurretTier1.BP_TurretTier1_C.CosmeticDryFire
+// (Event, Public, BlueprintEvent)
+
+void ABP_TurretTier1_C::CosmeticDryFire()
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BP_TurretTier1_C", "CosmeticDryFire");
+
+	UObject::ProcessEvent(Func, nullptr);
+}
+
+
+// Function BP_TurretTier1.BP_TurretTier1_C.BP_OnInventoryChanged
+// (Event, Protected, BlueprintEvent)
+
+void ABP_TurretTier1_C::BP_OnInventoryChanged()
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BP_TurretTier1_C", "BP_OnInventoryChanged");
+
+	UObject::ProcessEvent(Func, nullptr);
 }
 
 }

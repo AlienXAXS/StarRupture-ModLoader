@@ -26,10 +26,10 @@ public:
 	class UBoxComponent*                          PillarCollisions;                                  // 0x0878(0x0008)(BlueprintVisible, ZeroConstructor, InstancedReference, NonTransactional, NoDestructor, HasGetValueTypeHash)
 
 public:
-	void ExecuteUbergraph_BP_CoolerActive_Foundation(int32 EntryPoint);
-	void ReceiveActorBeginOverlap(class AActor* OtherActor);
-	void ReceiveBeginPlay();
 	void ReceiveTick(float DeltaSeconds);
+	void ReceiveBeginPlay();
+	void ReceiveActorBeginOverlap(class AActor* OtherActor);
+	void ExecuteUbergraph_BP_CoolerActive_Foundation(int32 EntryPoint);
 
 public:
 	static class UClass* StaticClass()

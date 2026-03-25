@@ -10,8 +10,8 @@
 
 #include "Basic.hpp"
 
-#include "E_Animal_Crab_TentaclesState_structs.hpp"
 #include "Engine_structs.hpp"
+#include "E_Animal_Crab_TentaclesState_structs.hpp"
 #include "BP_BaseAI_classes.hpp"
 
 
@@ -57,18 +57,18 @@ public:
 	double                                        HitDamageDelay;                                    // 0x0D18(0x0008)(Edit, BlueprintVisible, ZeroConstructor, DisableEditOnInstance, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 
 public:
-	bool AreTentaclesHidden();
-	void BndEvt__BP_Animal_Crab_Character_CapsuleComponent_K2Node_ComponentBoundEvent_0_ComponentHitSignature__DelegateSignature(class UPrimitiveComponent* HitComponent, class AActor* OtherActor, class UPrimitiveComponent* OtherComp, const struct FVector& NormalImpulse, const struct FHitResult& Hit);
-	void ExecuteUbergraph_BP_Animal_Crab_Character(int32 EntryPoint);
-	class UCrAiAnimalCrabUpdateStateComponent* GetCrabUpdateStateComponent();
-	void OnRep_AreTentaclesHiddenState();
-	void ReceiveBeginPlay();
-	void ReceiveTick(float DeltaSeconds_0);
-	void SetTentaclesHidden(bool bHidden_0);
-	void SimulateCatch();
-	void SimulateCatchTimeline__FinishedFunc();
-	void SimulateCatchTimeline__UpdateFunc();
 	void StopCatach();
+	void SimulateCatchTimeline__UpdateFunc();
+	void SimulateCatchTimeline__FinishedFunc();
+	void SimulateCatch();
+	void SetTentaclesHidden(bool bHidden_0);
+	void ReceiveTick(float DeltaSeconds_0);
+	void ReceiveBeginPlay();
+	void OnRep_AreTentaclesHiddenState();
+	class UCrAiAnimalCrabUpdateStateComponent* GetCrabUpdateStateComponent();
+	void ExecuteUbergraph_BP_Animal_Crab_Character(int32 EntryPoint);
+	void BndEvt__BP_Animal_Crab_Character_CapsuleComponent_K2Node_ComponentBoundEvent_0_ComponentHitSignature__DelegateSignature(class UPrimitiveComponent* HitComponent, class AActor* OtherActor, class UPrimitiveComponent* OtherComp, const struct FVector& NormalImpulse, const struct FHitResult& Hit);
+	bool AreTentaclesHidden();
 
 public:
 	static class UClass* StaticClass()

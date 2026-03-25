@@ -17,26 +17,6 @@
 namespace SDK
 {
 
-// Function BTTask_Animal_Crab_CacheSpawnLocation.BTTask_Animal_Crab_CacheSpawnLocation_C.ExecuteUbergraph_BTTask_Animal_Crab_CacheSpawnLocation
-// (Final, UbergraphFunction)
-// Parameters:
-// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-
-void UBTTask_Animal_Crab_CacheSpawnLocation_C::ExecuteUbergraph_BTTask_Animal_Crab_CacheSpawnLocation(int32 EntryPoint)
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BTTask_Animal_Crab_CacheSpawnLocation_C", "ExecuteUbergraph_BTTask_Animal_Crab_CacheSpawnLocation");
-
-	Params::BTTask_Animal_Crab_CacheSpawnLocation_C_ExecuteUbergraph_BTTask_Animal_Crab_CacheSpawnLocation Parms{};
-
-	Parms.EntryPoint = EntryPoint;
-
-	UObject::ProcessEvent(Func, &Parms);
-}
-
-
 // Function BTTask_Animal_Crab_CacheSpawnLocation.BTTask_Animal_Crab_CacheSpawnLocation_C.ReceiveExecuteAI
 // (Event, Protected, BlueprintEvent)
 // Parameters:
@@ -54,6 +34,26 @@ void UBTTask_Animal_Crab_CacheSpawnLocation_C::ReceiveExecuteAI(class AAIControl
 
 	Parms.OwnerController = OwnerController;
 	Parms.ControlledPawn = ControlledPawn;
+
+	UObject::ProcessEvent(Func, &Parms);
+}
+
+
+// Function BTTask_Animal_Crab_CacheSpawnLocation.BTTask_Animal_Crab_CacheSpawnLocation_C.ExecuteUbergraph_BTTask_Animal_Crab_CacheSpawnLocation
+// (Final, UbergraphFunction)
+// Parameters:
+// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+
+void UBTTask_Animal_Crab_CacheSpawnLocation_C::ExecuteUbergraph_BTTask_Animal_Crab_CacheSpawnLocation(int32 EntryPoint)
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BTTask_Animal_Crab_CacheSpawnLocation_C", "ExecuteUbergraph_BTTask_Animal_Crab_CacheSpawnLocation");
+
+	Params::BTTask_Animal_Crab_CacheSpawnLocation_C_ExecuteUbergraph_BTTask_Animal_Crab_CacheSpawnLocation Parms{};
+
+	Parms.EntryPoint = EntryPoint;
 
 	UObject::ProcessEvent(Func, &Parms);
 }

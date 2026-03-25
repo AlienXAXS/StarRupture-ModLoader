@@ -17,6 +17,15 @@
 namespace SDK::Params
 {
 
+// Function BP_Modular_Foundation_Unique.BP_Modular_Foundation_Unique_C.UserConstructionScript
+// 0x0004 (0x0004 - 0x0000)
+struct BP_Modular_Foundation_Unique_C_UserConstructionScript final
+{
+public:
+	int32                                         MapperBufferSize;                                  // 0x0000(0x0004)(Edit, BlueprintVisible, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BP_Modular_Foundation_Unique_C_UserConstructionScript;
+
 // Function BP_Modular_Foundation_Unique.BP_Modular_Foundation_Unique_C.ExecuteUbergraph_BP_Modular_Foundation_Unique
 // 0x0380 (0x0380 - 0x0000)
 struct BP_Modular_Foundation_Unique_C_ExecuteUbergraph_BP_Modular_Foundation_Unique final
@@ -90,15 +99,6 @@ public:
 	struct FVector                                CallFunc_BreakHitResult_TraceEnd_1;                // 0x0368(0x0018)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 };
 DUMPER7_ASSERTS_BP_Modular_Foundation_Unique_C_ExecuteUbergraph_BP_Modular_Foundation_Unique;
-
-// Function BP_Modular_Foundation_Unique.BP_Modular_Foundation_Unique_C.UserConstructionScript
-// 0x0004 (0x0004 - 0x0000)
-struct BP_Modular_Foundation_Unique_C_UserConstructionScript final
-{
-public:
-	int32                                         MapperBufferSize;                                  // 0x0000(0x0004)(Edit, BlueprintVisible, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BP_Modular_Foundation_Unique_C_UserConstructionScript;
 
 // Function BP_Modular_Foundation_Unique.BP_Modular_Foundation_Unique_C.GetBuildingMeshes
 // 0x0018 (0x0018 - 0x0000)

@@ -32,10 +32,10 @@ public:
 	double                                        TrajectorySimulationSpeed;                         // 0x0338(0x0008)(Edit, BlueprintVisible, ZeroConstructor, DisableEditOnInstance, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 
 public:
-	void ExecuteUbergraph_BP_Foundable_Enemy_Loot_Base(int32 EntryPoint);
-	void ReceiveBeginPlay();
-	void ReceiveTick(float DeltaSeconds);
 	void SimulateDrop(const struct FVector& StartLocation);
+	void ReceiveTick(float DeltaSeconds);
+	void ReceiveBeginPlay();
+	void ExecuteUbergraph_BP_Foundable_Enemy_Loot_Base(int32 EntryPoint);
 
 public:
 	static class UClass* StaticClass()

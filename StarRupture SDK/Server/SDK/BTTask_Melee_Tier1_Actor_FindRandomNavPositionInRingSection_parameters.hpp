@@ -16,6 +16,16 @@
 namespace SDK::Params
 {
 
+// Function BTTask_Melee_Tier1_Actor_FindRandomNavPositionInRingSection.BTTask_Melee_Tier1_Actor_FindRandomNavPositionInRingSection_C.ReceiveExecuteAI
+// 0x0010 (0x0010 - 0x0000)
+struct BTTask_Melee_Tier1_Actor_FindRandomNavPositionInRingSection_C_ReceiveExecuteAI final
+{
+public:
+	class AAIController*                          OwnerController;                                   // 0x0000(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
+	class APawn*                                  ControlledPawn;                                    // 0x0008(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BTTask_Melee_Tier1_Actor_FindRandomNavPositionInRingSection_C_ReceiveExecuteAI;
+
 // Function BTTask_Melee_Tier1_Actor_FindRandomNavPositionInRingSection.BTTask_Melee_Tier1_Actor_FindRandomNavPositionInRingSection_C.ExecuteUbergraph_BTTask_Melee_Tier1_Actor_FindRandomNavPositionInRingSection
 // 0x0190 (0x0190 - 0x0000)
 struct BTTask_Melee_Tier1_Actor_FindRandomNavPositionInRingSection_C_ExecuteUbergraph_BTTask_Melee_Tier1_Actor_FindRandomNavPositionInRingSection final
@@ -57,16 +67,6 @@ public:
 	float                                         CallFunc_RotateAngleAxis_AngleDeg_ImplicitCast;    // 0x018C(0x0004)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 };
 DUMPER7_ASSERTS_BTTask_Melee_Tier1_Actor_FindRandomNavPositionInRingSection_C_ExecuteUbergraph_BTTask_Melee_Tier1_Actor_FindRandomNavPositionInRingSection;
-
-// Function BTTask_Melee_Tier1_Actor_FindRandomNavPositionInRingSection.BTTask_Melee_Tier1_Actor_FindRandomNavPositionInRingSection_C.ReceiveExecuteAI
-// 0x0010 (0x0010 - 0x0000)
-struct BTTask_Melee_Tier1_Actor_FindRandomNavPositionInRingSection_C_ReceiveExecuteAI final
-{
-public:
-	class AAIController*                          OwnerController;                                   // 0x0000(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
-	class APawn*                                  ControlledPawn;                                    // 0x0008(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BTTask_Melee_Tier1_Actor_FindRandomNavPositionInRingSection_C_ReceiveExecuteAI;
 
 }
 

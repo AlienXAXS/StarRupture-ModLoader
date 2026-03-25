@@ -50,10 +50,10 @@ public:
 	class USceneComponent*                        DroneAccess;                                       // 0x0788(0x0008)(BlueprintVisible, ZeroConstructor, InstancedReference, NonTransactional, NoDestructor, HasGetValueTypeHash)
 
 public:
-	void ExecuteUbergraph_BP_Forge(int32 EntryPoint);
-	void OnBuildingStateChanged(ECrBuildingState InState);
-	void OnItemCraftingComplete();
 	void SetupSkeletalMesh();
+	void OnItemCraftingComplete();
+	void OnBuildingStateChanged(ECrBuildingState InState);
+	void ExecuteUbergraph_BP_Forge(int32 EntryPoint);
 
 public:
 	static class UClass* StaticClass()

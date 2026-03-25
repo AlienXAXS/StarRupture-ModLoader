@@ -42,13 +42,13 @@ public:
 	class UAudioComponent*                        SFX_Loop;                                          // 0x0750(0x0008)(Edit, BlueprintVisible, ZeroConstructor, DisableEditOnInstance, InstancedReference, NoDestructor, HasGetValueTypeHash)
 
 public:
-	void Arms_timeline__FinishedFunc();
-	void Arms_timeline__UpdateFunc();
-	void ExecuteUbergraph_BP_Recycler(int32 EntryPoint);
-	void OnBuildingStateChanged(ECrBuildingState InState);
-	void OnUIOpened(bool bOpened);
-	void ReceiveBeginPlay();
 	void UserConstructionScript();
+	void ReceiveBeginPlay();
+	void OnUIOpened(bool bOpened);
+	void OnBuildingStateChanged(ECrBuildingState InState);
+	void ExecuteUbergraph_BP_Recycler(int32 EntryPoint);
+	void Arms_timeline__UpdateFunc();
+	void Arms_timeline__FinishedFunc();
 
 public:
 	static class UClass* StaticClass()

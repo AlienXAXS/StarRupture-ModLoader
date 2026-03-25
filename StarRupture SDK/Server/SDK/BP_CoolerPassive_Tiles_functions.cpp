@@ -17,23 +17,37 @@
 namespace SDK
 {
 
-// Function BP_CoolerPassive_Tiles.BP_CoolerPassive_Tiles_C.ExecuteUbergraph_BP_CoolerPassive_Tiles
-// (Final, UbergraphFunction)
+// Function BP_CoolerPassive_Tiles.BP_CoolerPassive_Tiles_C.ReceiveTick
+// (Event, Public, BlueprintEvent)
 // Parameters:
-// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+// float                                   DeltaSeconds                                           (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 
-void ABP_CoolerPassive_Tiles_C::ExecuteUbergraph_BP_CoolerPassive_Tiles(int32 EntryPoint)
+void ABP_CoolerPassive_Tiles_C::ReceiveTick(float DeltaSeconds)
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_CoolerPassive_Tiles_C", "ExecuteUbergraph_BP_CoolerPassive_Tiles");
+		Func = Class->GetFunction("BP_CoolerPassive_Tiles_C", "ReceiveTick");
 
-	Params::BP_CoolerPassive_Tiles_C_ExecuteUbergraph_BP_CoolerPassive_Tiles Parms{};
+	Params::BP_CoolerPassive_Tiles_C_ReceiveTick Parms{};
 
-	Parms.EntryPoint = EntryPoint;
+	Parms.DeltaSeconds = DeltaSeconds;
 
 	UObject::ProcessEvent(Func, &Parms);
+}
+
+
+// Function BP_CoolerPassive_Tiles.BP_CoolerPassive_Tiles_C.ReceiveBeginPlay
+// (Event, Protected, BlueprintEvent)
+
+void ABP_CoolerPassive_Tiles_C::ReceiveBeginPlay()
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BP_CoolerPassive_Tiles_C", "ReceiveBeginPlay");
+
+	UObject::ProcessEvent(Func, nullptr);
 }
 
 
@@ -57,35 +71,21 @@ void ABP_CoolerPassive_Tiles_C::ReceiveActorBeginOverlap(class AActor* OtherActo
 }
 
 
-// Function BP_CoolerPassive_Tiles.BP_CoolerPassive_Tiles_C.ReceiveBeginPlay
-// (Event, Protected, BlueprintEvent)
-
-void ABP_CoolerPassive_Tiles_C::ReceiveBeginPlay()
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BP_CoolerPassive_Tiles_C", "ReceiveBeginPlay");
-
-	UObject::ProcessEvent(Func, nullptr);
-}
-
-
-// Function BP_CoolerPassive_Tiles.BP_CoolerPassive_Tiles_C.ReceiveTick
-// (Event, Public, BlueprintEvent)
+// Function BP_CoolerPassive_Tiles.BP_CoolerPassive_Tiles_C.ExecuteUbergraph_BP_CoolerPassive_Tiles
+// (Final, UbergraphFunction)
 // Parameters:
-// float                                   DeltaSeconds                                           (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 
-void ABP_CoolerPassive_Tiles_C::ReceiveTick(float DeltaSeconds)
+void ABP_CoolerPassive_Tiles_C::ExecuteUbergraph_BP_CoolerPassive_Tiles(int32 EntryPoint)
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_CoolerPassive_Tiles_C", "ReceiveTick");
+		Func = Class->GetFunction("BP_CoolerPassive_Tiles_C", "ExecuteUbergraph_BP_CoolerPassive_Tiles");
 
-	Params::BP_CoolerPassive_Tiles_C_ReceiveTick Parms{};
+	Params::BP_CoolerPassive_Tiles_C_ExecuteUbergraph_BP_CoolerPassive_Tiles Parms{};
 
-	Parms.DeltaSeconds = DeltaSeconds;
+	Parms.EntryPoint = EntryPoint;
 
 	UObject::ProcessEvent(Func, &Parms);
 }

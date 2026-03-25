@@ -17,55 +17,15 @@
 namespace SDK
 {
 
-// Function BP_GasExtractor.BP_GasExtractor_C.ExecuteUbergraph_BP_GasExtractor
-// (Final, UbergraphFunction, HasDefaults)
-// Parameters:
-// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-
-void ABP_GasExtractor_C::ExecuteUbergraph_BP_GasExtractor(int32 EntryPoint)
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BP_GasExtractor_C", "ExecuteUbergraph_BP_GasExtractor");
-
-	Params::BP_GasExtractor_C_ExecuteUbergraph_BP_GasExtractor Parms{};
-
-	Parms.EntryPoint = EntryPoint;
-
-	UObject::ProcessEvent(Func, &Parms);
-}
-
-
-// Function BP_GasExtractor.BP_GasExtractor_C.OnBuildingStateChanged
+// Function BP_GasExtractor.BP_GasExtractor_C.SetupSkeletalMesh
 // (Event, Public, BlueprintEvent)
-// Parameters:
-// ECrBuildingState                        InState                                                (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 
-void ABP_GasExtractor_C::OnBuildingStateChanged(ECrBuildingState InState)
+void ABP_GasExtractor_C::SetupSkeletalMesh()
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_GasExtractor_C", "OnBuildingStateChanged");
-
-	Params::BP_GasExtractor_C_OnBuildingStateChanged Parms{};
-
-	Parms.InState = InState;
-
-	UObject::ProcessEvent(Func, &Parms);
-}
-
-
-// Function BP_GasExtractor.BP_GasExtractor_C.ReceiveBeginPlay
-// (Event, Protected, BlueprintEvent)
-
-void ABP_GasExtractor_C::ReceiveBeginPlay()
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BP_GasExtractor_C", "ReceiveBeginPlay");
+		Func = Class->GetFunction("BP_GasExtractor_C", "SetupSkeletalMesh");
 
 	UObject::ProcessEvent(Func, nullptr);
 }
@@ -91,17 +51,57 @@ void ABP_GasExtractor_C::ReceiveTick(float DeltaSeconds)
 }
 
 
-// Function BP_GasExtractor.BP_GasExtractor_C.SetupSkeletalMesh
-// (Event, Public, BlueprintEvent)
+// Function BP_GasExtractor.BP_GasExtractor_C.ReceiveBeginPlay
+// (Event, Protected, BlueprintEvent)
 
-void ABP_GasExtractor_C::SetupSkeletalMesh()
+void ABP_GasExtractor_C::ReceiveBeginPlay()
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_GasExtractor_C", "SetupSkeletalMesh");
+		Func = Class->GetFunction("BP_GasExtractor_C", "ReceiveBeginPlay");
 
 	UObject::ProcessEvent(Func, nullptr);
+}
+
+
+// Function BP_GasExtractor.BP_GasExtractor_C.OnBuildingStateChanged
+// (Event, Public, BlueprintEvent)
+// Parameters:
+// ECrBuildingState                        InState                                                (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+
+void ABP_GasExtractor_C::OnBuildingStateChanged(ECrBuildingState InState)
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BP_GasExtractor_C", "OnBuildingStateChanged");
+
+	Params::BP_GasExtractor_C_OnBuildingStateChanged Parms{};
+
+	Parms.InState = InState;
+
+	UObject::ProcessEvent(Func, &Parms);
+}
+
+
+// Function BP_GasExtractor.BP_GasExtractor_C.ExecuteUbergraph_BP_GasExtractor
+// (Final, UbergraphFunction, HasDefaults)
+// Parameters:
+// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+
+void ABP_GasExtractor_C::ExecuteUbergraph_BP_GasExtractor(int32 EntryPoint)
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BP_GasExtractor_C", "ExecuteUbergraph_BP_GasExtractor");
+
+	Params::BP_GasExtractor_C_ExecuteUbergraph_BP_GasExtractor Parms{};
+
+	Parms.EntryPoint = EntryPoint;
+
+	UObject::ProcessEvent(Func, &Parms);
 }
 
 

@@ -14,6 +14,24 @@
 namespace SDK::Params
 {
 
+// Function BP_BaseCore_Foundation4x4.BP_BaseCore_Foundation4x4_C.ReceiveTick
+// 0x0004 (0x0004 - 0x0000)
+struct BP_BaseCore_Foundation4x4_C_ReceiveTick final
+{
+public:
+	float                                         DeltaSeconds;                                      // 0x0000(0x0004)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BP_BaseCore_Foundation4x4_C_ReceiveTick;
+
+// Function BP_BaseCore_Foundation4x4.BP_BaseCore_Foundation4x4_C.ReceiveActorBeginOverlap
+// 0x0008 (0x0008 - 0x0000)
+struct BP_BaseCore_Foundation4x4_C_ReceiveActorBeginOverlap final
+{
+public:
+	class AActor*                                 OtherActor;                                        // 0x0000(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BP_BaseCore_Foundation4x4_C_ReceiveActorBeginOverlap;
+
 // Function BP_BaseCore_Foundation4x4.BP_BaseCore_Foundation4x4_C.ExecuteUbergraph_BP_BaseCore_Foundation4x4
 // 0x0018 (0x0018 - 0x0000)
 struct BP_BaseCore_Foundation4x4_C_ExecuteUbergraph_BP_BaseCore_Foundation4x4 final
@@ -25,24 +43,6 @@ public:
 	float                                         K2Node_Event_DeltaSeconds;                         // 0x0010(0x0004)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 };
 DUMPER7_ASSERTS_BP_BaseCore_Foundation4x4_C_ExecuteUbergraph_BP_BaseCore_Foundation4x4;
-
-// Function BP_BaseCore_Foundation4x4.BP_BaseCore_Foundation4x4_C.ReceiveActorBeginOverlap
-// 0x0008 (0x0008 - 0x0000)
-struct BP_BaseCore_Foundation4x4_C_ReceiveActorBeginOverlap final
-{
-public:
-	class AActor*                                 OtherActor;                                        // 0x0000(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BP_BaseCore_Foundation4x4_C_ReceiveActorBeginOverlap;
-
-// Function BP_BaseCore_Foundation4x4.BP_BaseCore_Foundation4x4_C.ReceiveTick
-// 0x0004 (0x0004 - 0x0000)
-struct BP_BaseCore_Foundation4x4_C_ReceiveTick final
-{
-public:
-	float                                         DeltaSeconds;                                      // 0x0000(0x0004)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BP_BaseCore_Foundation4x4_C_ReceiveTick;
 
 }
 

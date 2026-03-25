@@ -32,19 +32,19 @@ public:
 	class UMaterialInstanceDynamic*               Outside_TerminalBg_DynamicMaterial;                // 0x03C8(0x0008)(Edit, BlueprintVisible, ZeroConstructor, DisableEditOnInstance, NoDestructor, HasGetValueTypeHash)
 
 public:
-	void ExecuteUbergraph_BP_Airlock_Door_Base(int32 EntryPoint);
-	void Get_EmissiveColor(EDoorState State, struct FSlateColor* Color, struct FLinearColor* Linear_Color);
-	void Get_TerminalColor(EDoorState Door_State, struct FSlateColor* Color, struct FLinearColor* Linear_Color);
-	void Get_TerminalIcon(EDoorState Door_State, class UTexture2D** Texture);
-	void GetDoorTextureForDoorState(EDoorState Door_State, class UTexture2D** Texture);
-	void GetTextureForRequiredItem();
-	bool PlayDoorCloseSound();
-	bool PlayDoorOpenSound();
-	bool PlayInteractionSuccessfulSound();
-	bool PlayInteractionUnSuccessfulSound();
-	void SetDynamicMaterial(class UStaticMeshComponent* StaticMesh, class UMaterialInstanceDynamic* MaterialInstanceDynamic);
-	void UpdateMaterials();
 	void UserConstructionScript();
+	void UpdateMaterials();
+	void SetDynamicMaterial(class UStaticMeshComponent* StaticMesh, class UMaterialInstanceDynamic* MaterialInstanceDynamic);
+	bool PlayInteractionUnSuccessfulSound();
+	bool PlayInteractionSuccessfulSound();
+	bool PlayDoorOpenSound();
+	bool PlayDoorCloseSound();
+	void GetTextureForRequiredItem();
+	void GetDoorTextureForDoorState(EDoorState Door_State, class UTexture2D** Texture);
+	void Get_TerminalIcon(EDoorState Door_State, class UTexture2D** Texture);
+	void Get_TerminalColor(EDoorState Door_State, struct FSlateColor* Color, struct FLinearColor* Linear_Color);
+	void Get_EmissiveColor(EDoorState State, struct FSlateColor* Color, struct FLinearColor* Linear_Color);
+	void ExecuteUbergraph_BP_Airlock_Door_Base(int32 EntryPoint);
 
 public:
 	static class UClass* StaticClass()

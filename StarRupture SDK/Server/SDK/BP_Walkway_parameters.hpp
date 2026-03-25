@@ -16,25 +16,39 @@
 namespace SDK::Params
 {
 
-// Function BP_Walkway.BP_Walkway_C.CanBePooled
-// 0x0001 (0x0001 - 0x0000)
-struct BP_Walkway_C_CanBePooled final
+// Function BP_Walkway.BP_Walkway_C.OnSplineReady
+// 0x0008 (0x0008 - 0x0000)
+struct BP_Walkway_C_OnSplineReady final
+{
+public:
+	class USplineComponent*                       InSpline;                                          // 0x0000(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, InstancedReference, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BP_Walkway_C_OnSplineReady;
+
+// Function BP_Walkway.BP_Walkway_C.IsRamp
+// 0x0018 (0x0018 - 0x0000)
+struct BP_Walkway_C_IsRamp final
 {
 public:
 	bool                                          ReturnValue;                                       // 0x0000(0x0001)(Parm, OutParm, ZeroConstructor, ReturnParm, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+	uint8                                         Pad_1[0x7];                                        // 0x0001(0x0007)(Fixing Size After Last Property [ Dumper-7 ])
+	double                                        CallFunc_GetRampAngle_ReturnValue;                 // 0x0008(0x0008)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+	bool                                          CallFunc_GreaterEqual_DoubleDouble_ReturnValue;    // 0x0010(0x0001)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+	bool                                          CallFunc_Not_PreBool_ReturnValue;                  // 0x0011(0x0001)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 };
-DUMPER7_ASSERTS_BP_Walkway_C_CanBePooled;
+DUMPER7_ASSERTS_BP_Walkway_C_IsRamp;
 
-// Function BP_Walkway.BP_Walkway_C.ExecuteUbergraph_BP_Walkway
-// 0x0010 (0x0010 - 0x0000)
-struct BP_Walkway_C_ExecuteUbergraph_BP_Walkway final
+// Function BP_Walkway.BP_Walkway_C.IsLadder
+// 0x0018 (0x0018 - 0x0000)
+struct BP_Walkway_C_IsLadder final
 {
 public:
-	int32                                         EntryPoint;                                        // 0x0000(0x0004)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-	uint8                                         Pad_4[0x4];                                        // 0x0004(0x0004)(Fixing Size After Last Property [ Dumper-7 ])
-	class USplineComponent*                       K2Node_Event_InSpline;                             // 0x0008(0x0008)(ZeroConstructor, InstancedReference, NoDestructor, HasGetValueTypeHash)
+	bool                                          ReturnValue;                                       // 0x0000(0x0001)(Parm, OutParm, ZeroConstructor, ReturnParm, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+	uint8                                         Pad_1[0x7];                                        // 0x0001(0x0007)(Fixing Size After Last Property [ Dumper-7 ])
+	double                                        CallFunc_GetRampAngle_ReturnValue;                 // 0x0008(0x0008)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+	bool                                          CallFunc_GreaterEqual_DoubleDouble_ReturnValue;    // 0x0010(0x0001)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 };
-DUMPER7_ASSERTS_BP_Walkway_C_ExecuteUbergraph_BP_Walkway;
+DUMPER7_ASSERTS_BP_Walkway_C_IsLadder;
 
 // Function BP_Walkway.BP_Walkway_C.GetRampAngle
 // 0x00D0 (0x00D0 - 0x0000)
@@ -59,39 +73,25 @@ public:
 };
 DUMPER7_ASSERTS_BP_Walkway_C_GetRampAngle;
 
-// Function BP_Walkway.BP_Walkway_C.IsLadder
-// 0x0018 (0x0018 - 0x0000)
-struct BP_Walkway_C_IsLadder final
+// Function BP_Walkway.BP_Walkway_C.ExecuteUbergraph_BP_Walkway
+// 0x0010 (0x0010 - 0x0000)
+struct BP_Walkway_C_ExecuteUbergraph_BP_Walkway final
+{
+public:
+	int32                                         EntryPoint;                                        // 0x0000(0x0004)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+	uint8                                         Pad_4[0x4];                                        // 0x0004(0x0004)(Fixing Size After Last Property [ Dumper-7 ])
+	class USplineComponent*                       K2Node_Event_InSpline;                             // 0x0008(0x0008)(ZeroConstructor, InstancedReference, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BP_Walkway_C_ExecuteUbergraph_BP_Walkway;
+
+// Function BP_Walkway.BP_Walkway_C.CanBePooled
+// 0x0001 (0x0001 - 0x0000)
+struct BP_Walkway_C_CanBePooled final
 {
 public:
 	bool                                          ReturnValue;                                       // 0x0000(0x0001)(Parm, OutParm, ZeroConstructor, ReturnParm, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-	uint8                                         Pad_1[0x7];                                        // 0x0001(0x0007)(Fixing Size After Last Property [ Dumper-7 ])
-	double                                        CallFunc_GetRampAngle_ReturnValue;                 // 0x0008(0x0008)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-	bool                                          CallFunc_GreaterEqual_DoubleDouble_ReturnValue;    // 0x0010(0x0001)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 };
-DUMPER7_ASSERTS_BP_Walkway_C_IsLadder;
-
-// Function BP_Walkway.BP_Walkway_C.IsRamp
-// 0x0018 (0x0018 - 0x0000)
-struct BP_Walkway_C_IsRamp final
-{
-public:
-	bool                                          ReturnValue;                                       // 0x0000(0x0001)(Parm, OutParm, ZeroConstructor, ReturnParm, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-	uint8                                         Pad_1[0x7];                                        // 0x0001(0x0007)(Fixing Size After Last Property [ Dumper-7 ])
-	double                                        CallFunc_GetRampAngle_ReturnValue;                 // 0x0008(0x0008)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-	bool                                          CallFunc_GreaterEqual_DoubleDouble_ReturnValue;    // 0x0010(0x0001)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-	bool                                          CallFunc_Not_PreBool_ReturnValue;                  // 0x0011(0x0001)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BP_Walkway_C_IsRamp;
-
-// Function BP_Walkway.BP_Walkway_C.OnSplineReady
-// 0x0008 (0x0008 - 0x0000)
-struct BP_Walkway_C_OnSplineReady final
-{
-public:
-	class USplineComponent*                       InSpline;                                          // 0x0000(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, InstancedReference, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BP_Walkway_C_OnSplineReady;
+DUMPER7_ASSERTS_BP_Walkway_C_CanBePooled;
 
 }
 

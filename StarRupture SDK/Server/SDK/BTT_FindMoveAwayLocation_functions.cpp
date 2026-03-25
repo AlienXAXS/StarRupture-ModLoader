@@ -17,26 +17,6 @@
 namespace SDK
 {
 
-// Function BTT_FindMoveAwayLocation.BTT_FindMoveAwayLocation_C.ExecuteUbergraph_BTT_FindMoveAwayLocation
-// (Final, UbergraphFunction)
-// Parameters:
-// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-
-void UBTT_FindMoveAwayLocation_C::ExecuteUbergraph_BTT_FindMoveAwayLocation(int32 EntryPoint)
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BTT_FindMoveAwayLocation_C", "ExecuteUbergraph_BTT_FindMoveAwayLocation");
-
-	Params::BTT_FindMoveAwayLocation_C_ExecuteUbergraph_BTT_FindMoveAwayLocation Parms{};
-
-	Parms.EntryPoint = EntryPoint;
-
-	UObject::ProcessEvent(Func, &Parms);
-}
-
-
 // Function BTT_FindMoveAwayLocation.BTT_FindMoveAwayLocation_C.ReceiveExecuteAI
 // (Event, Protected, BlueprintEvent)
 // Parameters:
@@ -54,6 +34,26 @@ void UBTT_FindMoveAwayLocation_C::ReceiveExecuteAI(class AAIController* OwnerCon
 
 	Parms.OwnerController = OwnerController;
 	Parms.ControlledPawn_0 = ControlledPawn_0;
+
+	UObject::ProcessEvent(Func, &Parms);
+}
+
+
+// Function BTT_FindMoveAwayLocation.BTT_FindMoveAwayLocation_C.ExecuteUbergraph_BTT_FindMoveAwayLocation
+// (Final, UbergraphFunction)
+// Parameters:
+// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+
+void UBTT_FindMoveAwayLocation_C::ExecuteUbergraph_BTT_FindMoveAwayLocation(int32 EntryPoint)
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BTT_FindMoveAwayLocation_C", "ExecuteUbergraph_BTT_FindMoveAwayLocation");
+
+	Params::BTT_FindMoveAwayLocation_C_ExecuteUbergraph_BTT_FindMoveAwayLocation Parms{};
+
+	Parms.EntryPoint = EntryPoint;
 
 	UObject::ProcessEvent(Func, &Parms);
 }

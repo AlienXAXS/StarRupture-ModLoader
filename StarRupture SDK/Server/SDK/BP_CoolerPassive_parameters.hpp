@@ -16,6 +16,42 @@
 namespace SDK::Params
 {
 
+// Function BP_CoolerPassive.BP_CoolerPassive_C.OnSocketDisconnected
+// 0x0008 (0x0008 - 0x0000)
+struct BP_CoolerPassive_C_OnSocketDisconnected final
+{
+public:
+	class FName                                   SocketName;                                        // 0x0000(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BP_CoolerPassive_C_OnSocketDisconnected;
+
+// Function BP_CoolerPassive.BP_CoolerPassive_C.OnSocketConnected
+// 0x0008 (0x0008 - 0x0000)
+struct BP_CoolerPassive_C_OnSocketConnected final
+{
+public:
+	class FName                                   SocketName;                                        // 0x0000(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BP_CoolerPassive_C_OnSocketConnected;
+
+// Function BP_CoolerPassive.BP_CoolerPassive_C.OnHeaterCoolerStateChanged
+// 0x0001 (0x0001 - 0x0000)
+struct BP_CoolerPassive_C_OnHeaterCoolerStateChanged final
+{
+public:
+	ECrMassHeaterCoolerState                      State;                                             // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BP_CoolerPassive_C_OnHeaterCoolerStateChanged;
+
+// Function BP_CoolerPassive.BP_CoolerPassive_C.OnHeaterCoolerConnectionsChanged
+// 0x0010 (0x0010 - 0x0000)
+struct BP_CoolerPassive_C_OnHeaterCoolerConnectionsChanged final
+{
+public:
+	TArray<class FName>                           ConnectedSockets;                                  // 0x0000(0x0010)(ConstParm, BlueprintVisible, BlueprintReadOnly, Parm, OutParm, ReferenceParm)
+};
+DUMPER7_ASSERTS_BP_CoolerPassive_C_OnHeaterCoolerConnectionsChanged;
+
 // Function BP_CoolerPassive.BP_CoolerPassive_C.ExecuteUbergraph_BP_CoolerPassive
 // 0x0020 (0x0020 - 0x0000)
 struct BP_CoolerPassive_C_ExecuteUbergraph_BP_CoolerPassive final
@@ -27,42 +63,6 @@ public:
 	ECrMassHeaterCoolerState                      K2Node_Event_State;                                // 0x0018(0x0001)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 };
 DUMPER7_ASSERTS_BP_CoolerPassive_C_ExecuteUbergraph_BP_CoolerPassive;
-
-// Function BP_CoolerPassive.BP_CoolerPassive_C.OnHeaterCoolerConnectionsChanged
-// 0x0010 (0x0010 - 0x0000)
-struct BP_CoolerPassive_C_OnHeaterCoolerConnectionsChanged final
-{
-public:
-	TArray<class FName>                           ConnectedSockets;                                  // 0x0000(0x0010)(ConstParm, BlueprintVisible, BlueprintReadOnly, Parm, OutParm, ReferenceParm)
-};
-DUMPER7_ASSERTS_BP_CoolerPassive_C_OnHeaterCoolerConnectionsChanged;
-
-// Function BP_CoolerPassive.BP_CoolerPassive_C.OnHeaterCoolerStateChanged
-// 0x0001 (0x0001 - 0x0000)
-struct BP_CoolerPassive_C_OnHeaterCoolerStateChanged final
-{
-public:
-	ECrMassHeaterCoolerState                      State;                                             // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BP_CoolerPassive_C_OnHeaterCoolerStateChanged;
-
-// Function BP_CoolerPassive.BP_CoolerPassive_C.OnSocketConnected
-// 0x0008 (0x0008 - 0x0000)
-struct BP_CoolerPassive_C_OnSocketConnected final
-{
-public:
-	class FName                                   SocketName;                                        // 0x0000(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BP_CoolerPassive_C_OnSocketConnected;
-
-// Function BP_CoolerPassive.BP_CoolerPassive_C.OnSocketDisconnected
-// 0x0008 (0x0008 - 0x0000)
-struct BP_CoolerPassive_C_OnSocketDisconnected final
-{
-public:
-	class FName                                   SocketName;                                        // 0x0000(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BP_CoolerPassive_C_OnSocketDisconnected;
 
 }
 

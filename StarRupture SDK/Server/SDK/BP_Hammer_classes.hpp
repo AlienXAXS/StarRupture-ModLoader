@@ -52,10 +52,10 @@ public:
 	int32                                         PrimitiveDataAnimTimeIdx;                          // 0x0798(0x0004)(Edit, BlueprintVisible, ZeroConstructor, DisableEditOnInstance, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 
 public:
-	void ExecuteUbergraph_BP_Hammer(int32 EntryPoint);
-	void OnBuildingStateChanged(ECrBuildingState InState);
-	void PlayFX();
 	void ReceiveBeginPlay();
+	void PlayFX();
+	void OnBuildingStateChanged(ECrBuildingState InState);
+	void ExecuteUbergraph_BP_Hammer(int32 EntryPoint);
 
 public:
 	static class UClass* StaticClass()

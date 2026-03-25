@@ -17,23 +17,17 @@
 namespace SDK
 {
 
-// Function BP_SolarPowerGenerator.BP_SolarPowerGenerator_C.ExecuteUbergraph_BP_SolarPowerGenerator
-// (Final, UbergraphFunction, HasDefaults)
-// Parameters:
-// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+// Function BP_SolarPowerGenerator.BP_SolarPowerGenerator_C.SetupSkeletalMesh
+// (Event, Public, BlueprintEvent)
 
-void ABP_SolarPowerGenerator_C::ExecuteUbergraph_BP_SolarPowerGenerator(int32 EntryPoint)
+void ABP_SolarPowerGenerator_C::SetupSkeletalMesh()
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_SolarPowerGenerator_C", "ExecuteUbergraph_BP_SolarPowerGenerator");
+		Func = Class->GetFunction("BP_SolarPowerGenerator_C", "SetupSkeletalMesh");
 
-	Params::BP_SolarPowerGenerator_C_ExecuteUbergraph_BP_SolarPowerGenerator Parms{};
-
-	Parms.EntryPoint = EntryPoint;
-
-	UObject::ProcessEvent(Func, &Parms);
+	UObject::ProcessEvent(Func, nullptr);
 }
 
 
@@ -57,17 +51,23 @@ void ABP_SolarPowerGenerator_C::PostPlayBuildingEffect(bool bWasBuildingEffectPl
 }
 
 
-// Function BP_SolarPowerGenerator.BP_SolarPowerGenerator_C.SetupSkeletalMesh
-// (Event, Public, BlueprintEvent)
+// Function BP_SolarPowerGenerator.BP_SolarPowerGenerator_C.ExecuteUbergraph_BP_SolarPowerGenerator
+// (Final, UbergraphFunction, HasDefaults)
+// Parameters:
+// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 
-void ABP_SolarPowerGenerator_C::SetupSkeletalMesh()
+void ABP_SolarPowerGenerator_C::ExecuteUbergraph_BP_SolarPowerGenerator(int32 EntryPoint)
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_SolarPowerGenerator_C", "SetupSkeletalMesh");
+		Func = Class->GetFunction("BP_SolarPowerGenerator_C", "ExecuteUbergraph_BP_SolarPowerGenerator");
 
-	UObject::ProcessEvent(Func, nullptr);
+	Params::BP_SolarPowerGenerator_C_ExecuteUbergraph_BP_SolarPowerGenerator Parms{};
+
+	Parms.EntryPoint = EntryPoint;
+
+	UObject::ProcessEvent(Func, &Parms);
 }
 
 

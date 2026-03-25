@@ -16,14 +16,14 @@
 namespace SDK::Params
 {
 
-// Function BP_CloningBed.BP_CloningBed_C.ChangeWindowMaterial
-// 0x0008 (0x0008 - 0x0000)
-struct BP_CloningBed_C_ChangeWindowMaterial final
+// Function BP_CloningBed.BP_CloningBed_C.OnBuildingOwnershipChanged
+// 0x0001 (0x0001 - 0x0000)
+struct BP_CloningBed_C_OnBuildingOwnershipChanged final
 {
 public:
-	class UMaterialInterface*                     Material;                                          // 0x0000(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
+	ECrBuildingOwnership                          NewOwnership;                                      // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 };
-DUMPER7_ASSERTS_BP_CloningBed_C_ChangeWindowMaterial;
+DUMPER7_ASSERTS_BP_CloningBed_C_OnBuildingOwnershipChanged;
 
 // Function BP_CloningBed.BP_CloningBed_C.ExecuteUbergraph_BP_CloningBed
 // 0x00D0 (0x00D0 - 0x0000)
@@ -67,14 +67,14 @@ public:
 };
 DUMPER7_ASSERTS_BP_CloningBed_C_ExecuteUbergraph_BP_CloningBed;
 
-// Function BP_CloningBed.BP_CloningBed_C.OnBuildingOwnershipChanged
-// 0x0001 (0x0001 - 0x0000)
-struct BP_CloningBed_C_OnBuildingOwnershipChanged final
+// Function BP_CloningBed.BP_CloningBed_C.ChangeWindowMaterial
+// 0x0008 (0x0008 - 0x0000)
+struct BP_CloningBed_C_ChangeWindowMaterial final
 {
 public:
-	ECrBuildingOwnership                          NewOwnership;                                      // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+	class UMaterialInterface*                     Material;                                          // 0x0000(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
 };
-DUMPER7_ASSERTS_BP_CloningBed_C_OnBuildingOwnershipChanged;
+DUMPER7_ASSERTS_BP_CloningBed_C_ChangeWindowMaterial;
 
 // Function BP_CloningBed.BP_CloningBed_C.GetInteractionAdditionalTextFromOwnership
 // 0x0030 (0x0030 - 0x0000)

@@ -37,13 +37,13 @@ public:
 	bool                                          LoopAudio;                                         // 0x02F0(0x0001)(Edit, BlueprintVisible, ZeroConstructor, DisableEditOnInstance, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 
 public:
-	void ExecuteUbergraph_BP_MaterializedItemCrate(int32 EntryPoint);
-	void Interrupt(bool Visibility);
-	void Materialize_Package_In_Loop(double Duration_0);
-	void MaterializePackageOnce(double Duration_0);
-	void PlaySound();
-	void ReceiveBeginPlay();
 	void UserConstructionScript();
+	void ReceiveBeginPlay();
+	void PlaySound();
+	void MaterializePackageOnce(double Duration_0);
+	void Materialize_Package_In_Loop(double Duration_0);
+	void Interrupt(bool Visibility);
+	void ExecuteUbergraph_BP_MaterializedItemCrate(int32 EntryPoint);
 
 public:
 	static class UClass* StaticClass()

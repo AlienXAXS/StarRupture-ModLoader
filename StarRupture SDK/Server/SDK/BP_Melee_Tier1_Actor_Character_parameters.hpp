@@ -19,19 +19,61 @@
 namespace SDK::Params
 {
 
-// Function BP_Melee_Tier1_Actor_Character.BP_Melee_Tier1_Actor_Character_C.CanChangeEyeColor
-// 0x0020 (0x0020 - 0x0000)
-struct BP_Melee_Tier1_Actor_Character_C_CanChangeEyeColor final
+// Function BP_Melee_Tier1_Actor_Character.BP_Melee_Tier1_Actor_Character_C.UserConstructionScript
+// 0x0002 (0x0002 - 0x0000)
+struct BP_Melee_Tier1_Actor_Character_C_UserConstructionScript final
 {
 public:
-	bool                                          Result;                                            // 0x0000(0x0001)(Parm, OutParm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-	uint8                                         Pad_1[0x7];                                        // 0x0001(0x0007)(Fixing Size After Last Property [ Dumper-7 ])
-	class UAnimInstance*                          CallFunc_GetAnimInstance_ReturnValue;              // 0x0008(0x0008)(ZeroConstructor, NoDestructor, HasGetValueTypeHash)
-	class UMassEnemyAnimationInstance*            K2Node_DynamicCast_AsMass_Enemy_Animation_Instance; // 0x0010(0x0008)(ZeroConstructor, NoDestructor, HasGetValueTypeHash)
-	bool                                          K2Node_DynamicCast_bSuccess;                       // 0x0018(0x0001)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-	bool                                          CallFunc_NotEqual_ByteByte_ReturnValue;            // 0x0019(0x0001)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+	bool                                          CallFunc_K2_AttachToComponent_ReturnValue;         // 0x0000(0x0001)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+	bool                                          CallFunc_K2_AttachToComponent_ReturnValue_1;       // 0x0001(0x0001)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 };
-DUMPER7_ASSERTS_BP_Melee_Tier1_Actor_Character_C_CanChangeEyeColor;
+DUMPER7_ASSERTS_BP_Melee_Tier1_Actor_Character_C_UserConstructionScript;
+
+// Function BP_Melee_Tier1_Actor_Character.BP_Melee_Tier1_Actor_Character_C.SetIsJumpEyeBehaviour
+// 0x0001 (0x0001 - 0x0000)
+struct BP_Melee_Tier1_Actor_Character_C_SetIsJumpEyeBehaviour final
+{
+public:
+	bool                                          NewIsJumpEyeBehaviour;                             // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BP_Melee_Tier1_Actor_Character_C_SetIsJumpEyeBehaviour;
+
+// Function BP_Melee_Tier1_Actor_Character.BP_Melee_Tier1_Actor_Character_C.SetIsBoostedEyeColor
+// 0x0001 (0x0001 - 0x0000)
+struct BP_Melee_Tier1_Actor_Character_C_SetIsBoostedEyeColor final
+{
+public:
+	bool                                          NewIsBoosted;                                      // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BP_Melee_Tier1_Actor_Character_C_SetIsBoostedEyeColor;
+
+// Function BP_Melee_Tier1_Actor_Character.BP_Melee_Tier1_Actor_Character_C.SetIsAggroEyeColor
+// 0x0001 (0x0001 - 0x0000)
+struct BP_Melee_Tier1_Actor_Character_C_SetIsAggroEyeColor final
+{
+public:
+	bool                                          NewIsAggro;                                        // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BP_Melee_Tier1_Actor_Character_C_SetIsAggroEyeColor;
+
+// Function BP_Melee_Tier1_Actor_Character.BP_Melee_Tier1_Actor_Character_C.OnVisualVariationChanged
+// 0x0018 (0x0018 - 0x0000)
+struct BP_Melee_Tier1_Actor_Character_C_OnVisualVariationChanged final
+{
+public:
+	struct FVector                                NewVisualVariationSeed;                            // 0x0000(0x0018)(ConstParm, BlueprintVisible, BlueprintReadOnly, Parm, OutParm, ZeroConstructor, ReferenceParm, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BP_Melee_Tier1_Actor_Character_C_OnVisualVariationChanged;
+
+// Function BP_Melee_Tier1_Actor_Character.BP_Melee_Tier1_Actor_Character_C.OnAiDied
+// 0x0108 (0x0108 - 0x0000)
+struct BP_Melee_Tier1_Actor_Character_C_OnAiDied final
+{
+public:
+	struct FHitResult                             HitResult;                                         // 0x0000(0x0100)(ConstParm, BlueprintVisible, BlueprintReadOnly, Parm, OutParm, ReferenceParm, IsPlainOldData, NoDestructor, ContainsInstancedReference)
+	struct FGameplayTag                           KillingDamageTag;                                  // 0x0100(0x0008)(ConstParm, BlueprintVisible, BlueprintReadOnly, Parm, OutParm, ReferenceParm, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BP_Melee_Tier1_Actor_Character_C_OnAiDied;
 
 // Function BP_Melee_Tier1_Actor_Character.BP_Melee_Tier1_Actor_Character_C.ExecuteUbergraph_BP_Melee_Tier1_Actor_Character
 // 0x0180 (0x0180 - 0x0000)
@@ -64,61 +106,19 @@ public:
 };
 DUMPER7_ASSERTS_BP_Melee_Tier1_Actor_Character_C_ExecuteUbergraph_BP_Melee_Tier1_Actor_Character;
 
-// Function BP_Melee_Tier1_Actor_Character.BP_Melee_Tier1_Actor_Character_C.OnAiDied
-// 0x0108 (0x0108 - 0x0000)
-struct BP_Melee_Tier1_Actor_Character_C_OnAiDied final
+// Function BP_Melee_Tier1_Actor_Character.BP_Melee_Tier1_Actor_Character_C.CanChangeEyeColor
+// 0x0020 (0x0020 - 0x0000)
+struct BP_Melee_Tier1_Actor_Character_C_CanChangeEyeColor final
 {
 public:
-	struct FHitResult                             HitResult;                                         // 0x0000(0x0100)(ConstParm, BlueprintVisible, BlueprintReadOnly, Parm, OutParm, ReferenceParm, IsPlainOldData, NoDestructor, ContainsInstancedReference)
-	struct FGameplayTag                           KillingDamageTag;                                  // 0x0100(0x0008)(ConstParm, BlueprintVisible, BlueprintReadOnly, Parm, OutParm, ReferenceParm, NoDestructor, HasGetValueTypeHash)
+	bool                                          Result;                                            // 0x0000(0x0001)(Parm, OutParm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+	uint8                                         Pad_1[0x7];                                        // 0x0001(0x0007)(Fixing Size After Last Property [ Dumper-7 ])
+	class UAnimInstance*                          CallFunc_GetAnimInstance_ReturnValue;              // 0x0008(0x0008)(ZeroConstructor, NoDestructor, HasGetValueTypeHash)
+	class UMassEnemyAnimationInstance*            K2Node_DynamicCast_AsMass_Enemy_Animation_Instance; // 0x0010(0x0008)(ZeroConstructor, NoDestructor, HasGetValueTypeHash)
+	bool                                          K2Node_DynamicCast_bSuccess;                       // 0x0018(0x0001)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+	bool                                          CallFunc_NotEqual_ByteByte_ReturnValue;            // 0x0019(0x0001)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 };
-DUMPER7_ASSERTS_BP_Melee_Tier1_Actor_Character_C_OnAiDied;
-
-// Function BP_Melee_Tier1_Actor_Character.BP_Melee_Tier1_Actor_Character_C.OnVisualVariationChanged
-// 0x0018 (0x0018 - 0x0000)
-struct BP_Melee_Tier1_Actor_Character_C_OnVisualVariationChanged final
-{
-public:
-	struct FVector                                NewVisualVariationSeed;                            // 0x0000(0x0018)(ConstParm, BlueprintVisible, BlueprintReadOnly, Parm, OutParm, ZeroConstructor, ReferenceParm, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BP_Melee_Tier1_Actor_Character_C_OnVisualVariationChanged;
-
-// Function BP_Melee_Tier1_Actor_Character.BP_Melee_Tier1_Actor_Character_C.SetIsAggroEyeColor
-// 0x0001 (0x0001 - 0x0000)
-struct BP_Melee_Tier1_Actor_Character_C_SetIsAggroEyeColor final
-{
-public:
-	bool                                          NewIsAggro;                                        // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BP_Melee_Tier1_Actor_Character_C_SetIsAggroEyeColor;
-
-// Function BP_Melee_Tier1_Actor_Character.BP_Melee_Tier1_Actor_Character_C.SetIsBoostedEyeColor
-// 0x0001 (0x0001 - 0x0000)
-struct BP_Melee_Tier1_Actor_Character_C_SetIsBoostedEyeColor final
-{
-public:
-	bool                                          NewIsBoosted;                                      // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BP_Melee_Tier1_Actor_Character_C_SetIsBoostedEyeColor;
-
-// Function BP_Melee_Tier1_Actor_Character.BP_Melee_Tier1_Actor_Character_C.SetIsJumpEyeBehaviour
-// 0x0001 (0x0001 - 0x0000)
-struct BP_Melee_Tier1_Actor_Character_C_SetIsJumpEyeBehaviour final
-{
-public:
-	bool                                          NewIsJumpEyeBehaviour;                             // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BP_Melee_Tier1_Actor_Character_C_SetIsJumpEyeBehaviour;
-
-// Function BP_Melee_Tier1_Actor_Character.BP_Melee_Tier1_Actor_Character_C.UserConstructionScript
-// 0x0002 (0x0002 - 0x0000)
-struct BP_Melee_Tier1_Actor_Character_C_UserConstructionScript final
-{
-public:
-	bool                                          CallFunc_K2_AttachToComponent_ReturnValue;         // 0x0000(0x0001)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-	bool                                          CallFunc_K2_AttachToComponent_ReturnValue_1;       // 0x0001(0x0001)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BP_Melee_Tier1_Actor_Character_C_UserConstructionScript;
+DUMPER7_ASSERTS_BP_Melee_Tier1_Actor_Character_C_CanChangeEyeColor;
 
 }
 

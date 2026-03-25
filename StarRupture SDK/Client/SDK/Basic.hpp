@@ -33,11 +33,11 @@ using namespace UC;
 */
 namespace Offsets
 {
-	constexpr int32 GObjects          = 0x0E137A40;
-	constexpr int32 AppendString      = 0x014A4B60;
-	constexpr int32 GNames            = 0x0DFFA400;
-	constexpr int32 GWorld            = 0x0DE096D0;
-	constexpr int32 ProcessEvent      = 0x0176FD10;
+	constexpr int32 GObjects          = 0x0E138A40;
+	constexpr int32 AppendString      = 0x014A4BA0;
+	constexpr int32 GNames            = 0x0DFFB400;
+	constexpr int32 GWorld            = 0x0DE0A6D0;
+	constexpr int32 ProcessEvent      = 0x0176FD50;
 	constexpr int32 ProcessEventIdx   = 0x0000004C;
 }
 
@@ -69,7 +69,7 @@ class UFunction;
 
 class FName;
 
-namespace BasicFilesImpleUtils
+namespace BasicFilesImplUtils
 {
 	// Helper functions for GetStaticClass and GetStaticBPGeneratedClass
 	UClass* FindClassByName(const std::string& Name, bool bByFullName = false);
@@ -86,6 +86,8 @@ namespace BasicFilesImpleUtils
 	UFunction* FindFunctionByFName(const FName* Name);
 
 	FName StringToName(const wchar_t* Name);
+
+	UObject* GetDefaultObjectImpl(UClass* ClassInstance);
 }
 
 const FName& GetStaticName(const wchar_t* Name, FName& StaticName);
@@ -96,10 +98,10 @@ class UClass* GetStaticClassImpl(const char* Name, class UClass*& StaticClass)
 	if (StaticClass == nullptr)
 	{
 		if constexpr (bIsFullName) {
-			StaticClass = BasicFilesImpleUtils::FindClassByFullName(Name);
+			StaticClass = BasicFilesImplUtils::FindClassByFullName(Name);
 		}
 		else /* default */ {
-			StaticClass = BasicFilesImpleUtils::FindClassByName(Name);
+			StaticClass = BasicFilesImplUtils::FindClassByName(Name);
 		}
 	}
 
@@ -114,8 +116,8 @@ class UClass* GetStaticBPGeneratedClass(const char* Name, int32& ClassIdx, uint6
 		{
 			if (Class)
 			{
-				Index = BasicFilesImpleUtils::GetObjectIndex(Class);
-				ClassName = BasicFilesImpleUtils::GetObjFNameAsUInt64(Class);
+				Index = BasicFilesImplUtils::GetObjectIndex(Class);
+				ClassName = BasicFilesImplUtils::GetObjFNameAsUInt64(Class);
 			}
 
 			return Class;
@@ -125,26 +127,26 @@ class UClass* GetStaticBPGeneratedClass(const char* Name, int32& ClassIdx, uint6
 	if constexpr (bIsFullName)
 	{
 		if (ClassIdx == 0x0) [[unlikely]]
-			return SetClassIndex(BasicFilesImpleUtils::FindClassByFullName(Name), ClassIdx, ClassNameIdx);
+			return SetClassIndex(BasicFilesImplUtils::FindClassByFullName(Name), ClassIdx, ClassNameIdx);
 
-		UClass* ClassObj = static_cast<UClass*>(BasicFilesImpleUtils::GetObjectByIndex(ClassIdx));
+		UClass* ClassObj = reinterpret_cast<UClass*>(BasicFilesImplUtils::GetObjectByIndex(ClassIdx));
 
 		/* Could use cast flags too to save some string comparisons */
-		if (!ClassObj || BasicFilesImpleUtils::GetObjFNameAsUInt64(ClassObj) != ClassNameIdx)
-			return SetClassIndex(BasicFilesImpleUtils::FindClassByFullName(Name), ClassIdx, ClassNameIdx);
+		if (!ClassObj || BasicFilesImplUtils::GetObjFNameAsUInt64(ClassObj) != ClassNameIdx)
+			return SetClassIndex(BasicFilesImplUtils::FindClassByFullName(Name), ClassIdx, ClassNameIdx);
 
 		return ClassObj;
 	}
 	else /* Default, use just the name to find an object*/
 	{
 		if (ClassIdx == 0x0) [[unlikely]]
-			return SetClassIndex(BasicFilesImpleUtils::FindClassByName(Name), ClassIdx, ClassNameIdx);
+			return SetClassIndex(BasicFilesImplUtils::FindClassByName(Name), ClassIdx, ClassNameIdx);
 
-		UClass* ClassObj = static_cast<UClass*>(BasicFilesImpleUtils::GetObjectByIndex(ClassIdx));
+		UClass* ClassObj = reinterpret_cast<UClass*>(BasicFilesImplUtils::GetObjectByIndex(ClassIdx));
 
 		/* Could use cast flags too to save some string comparisons */
-		if (!ClassObj || BasicFilesImpleUtils::GetObjFNameAsUInt64(ClassObj) != ClassNameIdx)
-			return SetClassIndex(BasicFilesImpleUtils::FindClassByName(Name), ClassIdx, ClassNameIdx);
+		if (!ClassObj || BasicFilesImplUtils::GetObjFNameAsUInt64(ClassObj) != ClassNameIdx)
+			return SetClassIndex(BasicFilesImplUtils::FindClassByName(Name), ClassIdx, ClassNameIdx);
 
 		return ClassObj;
 	}
@@ -153,14 +155,7 @@ class UClass* GetStaticBPGeneratedClass(const char* Name, int32& ClassIdx, uint6
 template<class ClassType>
 ClassType* GetDefaultObjImpl()
 {
-	UClass* StaticClass = ClassType::StaticClass();
-
-	if (StaticClass)
-	{
-		return reinterpret_cast<ClassType*>(StaticClass->ClassDefaultObject);
-	}
-
-	return nullptr;
+	return reinterpret_cast<ClassType*>(BasicFilesImplUtils::GetDefaultObjectImpl(ClassType::StaticClass()));
 }
 
 #define STATIC_CLASS_IMPL(NameString) \
@@ -455,6 +450,17 @@ public:
 		return ClassPtr != Other;
 	}
 };
+
+// Predefined struct FStructBaseChain
+// 0x0010 (0x0010 - 0x0000)
+struct FStructBaseChain
+{
+public:
+	FStructBaseChain**                            StructBaseChainArray;                              // 0x0000(0x0008)(NOT AUTO-GENERATED PROPERTY)
+	int32                                         NumStructBasesInChainMinusOne;                     // 0x0008(0x0004)(NOT AUTO-GENERATED PROPERTY)
+};
+DUMPER7_ASSERTS_FStructBaseChain;
+
 namespace FTextImpl
 {
 // Predefined struct FTextData
@@ -803,7 +809,7 @@ inline bool operator&(EEnumClass Left, EEnumClass Right)																								
 	return (((std::underlying_type<EEnumClass>::type)(Left) & (std::underlying_type<EEnumClass>::type)(Right)) == (std::underlying_type<EEnumClass>::type)(Right));		\
 }																																										
 
-enum class EObjectFlags : int32
+enum class EObjectFlags : uint32
 {
 	NoFlags							= 0x00000000,
 

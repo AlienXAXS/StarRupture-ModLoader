@@ -29,14 +29,14 @@ public:
 	double                                        InjuryPoseAlpha;                                   // 0x0C18(0x0008)(Edit, BlueprintVisible, Net, ZeroConstructor, DisableEditOnInstance, IsPlainOldData, RepNotify, NoDestructor, HasGetValueTypeHash)
 
 public:
-	void ExecuteUbergraph_BP_Ranged_Tier2_LOD0_Character(int32 EntryPoint);
-	void OnAiDied(const struct FHitResult& HitResult, const struct FGameplayTag& KillingDamageTag);
-	void OnDamage(class AActor* Actor, const struct FHitResult& HitResult, float InDamage);
-	void OnRep_InjuryPoseAlpha();
-	void ReceiveBeginPlay();
-	void SetIsAggroEyeColor(bool NewIsAggro);
-	void SetIsBoostedEyeColor(bool NewIsBoosted);
 	void UserConstructionScript();
+	void SetIsBoostedEyeColor(bool NewIsBoosted);
+	void SetIsAggroEyeColor(bool NewIsAggro);
+	void ReceiveBeginPlay();
+	void OnRep_InjuryPoseAlpha();
+	void OnDamage(class AActor* Actor, const struct FHitResult& HitResult, float InDamage);
+	void OnAiDied(const struct FHitResult& HitResult, const struct FGameplayTag& KillingDamageTag);
+	void ExecuteUbergraph_BP_Ranged_Tier2_LOD0_Character(int32 EntryPoint);
 
 public:
 	static class UClass* StaticClass()

@@ -51,16 +51,16 @@ public:
 	TArray<class UMaterialInstanceDynamic*>       DarkDecalsMaterials;                               // 0x0340(0x0010)(Edit, BlueprintVisible, DisableEditOnInstance)
 
 public:
-	void DecalDarkTimeline__FinishedFunc();
-	void DecalDarkTimeline__UpdateFunc();
-	void DecalLightTimeline__FinishedFunc();
-	void DecalLightTimeline__UpdateFunc();
-	void ExecuteUbergraph_BP_Melee_Tier3_LongAoE_SlamAttack(int32 EntryPoint);
-	void FadeTimeline__FinishedFunc();
-	void FadeTimeline__UpdateFunc();
-	void LightFadeTimeline__FinishedFunc();
-	void LightFadeTimeline__UpdateFunc();
 	void ReceiveBeginPlay();
+	void LightFadeTimeline__UpdateFunc();
+	void LightFadeTimeline__FinishedFunc();
+	void FadeTimeline__UpdateFunc();
+	void FadeTimeline__FinishedFunc();
+	void ExecuteUbergraph_BP_Melee_Tier3_LongAoE_SlamAttack(int32 EntryPoint);
+	void DecalLightTimeline__UpdateFunc();
+	void DecalLightTimeline__FinishedFunc();
+	void DecalDarkTimeline__UpdateFunc();
+	void DecalDarkTimeline__FinishedFunc();
 
 public:
 	static class UClass* StaticClass()

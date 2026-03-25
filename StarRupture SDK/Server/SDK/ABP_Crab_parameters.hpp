@@ -16,15 +16,6 @@
 namespace SDK::Params
 {
 
-// Function ABP_Crab.ABP_Crab_C.AnimGraph
-// 0x0010 (0x0010 - 0x0000)
-struct ABP_Crab_C_AnimGraph final
-{
-public:
-	struct FPoseLink                              AnimGraph_0;                                       // 0x0000(0x0010)(Parm, OutParm, NoDestructor)
-};
-DUMPER7_ASSERTS_ABP_Crab_C_AnimGraph;
-
 // Function ABP_Crab.ABP_Crab_C.ExecuteUbergraph_ABP_Crab
 // 0x0020 (0x0020 - 0x0000)
 struct ABP_Crab_C_ExecuteUbergraph_ABP_Crab final
@@ -46,6 +37,15 @@ public:
 	double                                        CallFunc_Less_DoubleDouble_A_ImplicitCast;         // 0x0018(0x0008)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 };
 DUMPER7_ASSERTS_ABP_Crab_C_ExecuteUbergraph_ABP_Crab;
+
+// Function ABP_Crab.ABP_Crab_C.AnimGraph
+// 0x0010 (0x0010 - 0x0000)
+struct ABP_Crab_C_AnimGraph final
+{
+public:
+	struct FPoseLink                              AnimGraph_0;                                       // 0x0000(0x0010)(Parm, OutParm, NoDestructor)
+};
+DUMPER7_ASSERTS_ABP_Crab_C_AnimGraph;
 
 }
 

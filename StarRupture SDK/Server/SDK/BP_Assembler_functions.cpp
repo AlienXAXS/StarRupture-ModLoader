@@ -17,23 +17,31 @@
 namespace SDK
 {
 
-// Function BP_Assembler.BP_Assembler_C.ExecuteUbergraph_BP_Assembler
-// (Final, UbergraphFunction, HasDefaults)
-// Parameters:
-// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+// Function BP_Assembler.BP_Assembler_C.SetupSkeletalMesh
+// (Event, Public, BlueprintEvent)
 
-void ABP_Assembler_C::ExecuteUbergraph_BP_Assembler(int32 EntryPoint)
+void ABP_Assembler_C::SetupSkeletalMesh()
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_Assembler_C", "ExecuteUbergraph_BP_Assembler");
+		Func = Class->GetFunction("BP_Assembler_C", "SetupSkeletalMesh");
 
-	Params::BP_Assembler_C_ExecuteUbergraph_BP_Assembler Parms{};
+	UObject::ProcessEvent(Func, nullptr);
+}
 
-	Parms.EntryPoint = EntryPoint;
 
-	UObject::ProcessEvent(Func, &Parms);
+// Function BP_Assembler.BP_Assembler_C.OnItemCraftingComplete
+// (Event, Public, BlueprintEvent)
+
+void ABP_Assembler_C::OnItemCraftingComplete()
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BP_Assembler_C", "OnItemCraftingComplete");
+
+	UObject::ProcessEvent(Func, nullptr);
 }
 
 
@@ -57,31 +65,23 @@ void ABP_Assembler_C::OnBuildingStateChanged(ECrBuildingState InState)
 }
 
 
-// Function BP_Assembler.BP_Assembler_C.OnItemCraftingComplete
-// (Event, Public, BlueprintEvent)
+// Function BP_Assembler.BP_Assembler_C.ExecuteUbergraph_BP_Assembler
+// (Final, UbergraphFunction, HasDefaults)
+// Parameters:
+// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 
-void ABP_Assembler_C::OnItemCraftingComplete()
+void ABP_Assembler_C::ExecuteUbergraph_BP_Assembler(int32 EntryPoint)
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_Assembler_C", "OnItemCraftingComplete");
+		Func = Class->GetFunction("BP_Assembler_C", "ExecuteUbergraph_BP_Assembler");
 
-	UObject::ProcessEvent(Func, nullptr);
-}
+	Params::BP_Assembler_C_ExecuteUbergraph_BP_Assembler Parms{};
 
+	Parms.EntryPoint = EntryPoint;
 
-// Function BP_Assembler.BP_Assembler_C.SetupSkeletalMesh
-// (Event, Public, BlueprintEvent)
-
-void ABP_Assembler_C::SetupSkeletalMesh()
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BP_Assembler_C", "SetupSkeletalMesh");
-
-	UObject::ProcessEvent(Func, nullptr);
+	UObject::ProcessEvent(Func, &Parms);
 }
 
 

@@ -29,10 +29,10 @@ public:
 	int32                                         FilterMaterialIndex;                               // 0x06F8(0x0004)(Edit, BlueprintVisible, ZeroConstructor, DisableEditOnInstance, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 
 public:
-	void ExecuteUbergraph_BP_DroneRailT1(int32 EntryPoint);
-	void OnSetItemFilter();
-	void SetColorTint(const int32 Color, int32 PrimitiveDataIndex);
 	void UpdateMaterialForSelectedFilter();
+	void SetColorTint(const int32 Color, int32 PrimitiveDataIndex);
+	void OnSetItemFilter();
+	void ExecuteUbergraph_BP_DroneRailT1(int32 EntryPoint);
 
 public:
 	static class UClass* StaticClass()

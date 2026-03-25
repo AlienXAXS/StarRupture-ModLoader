@@ -17,6 +17,20 @@
 namespace SDK
 {
 
+// Function BP_Animal_Crab_AiController.BP_Animal_Crab_AiController_C.ReceiveBeginPlay
+// (Event, Protected, BlueprintEvent)
+
+void ABP_Animal_Crab_AiController_C::ReceiveBeginPlay()
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BP_Animal_Crab_AiController_C", "ReceiveBeginPlay");
+
+	UObject::ProcessEvent(Func, nullptr);
+}
+
+
 // Function BP_Animal_Crab_AiController.BP_Animal_Crab_AiController_C.ExecuteUbergraph_BP_Animal_Crab_AiController
 // (Final, UbergraphFunction)
 // Parameters:
@@ -34,20 +48,6 @@ void ABP_Animal_Crab_AiController_C::ExecuteUbergraph_BP_Animal_Crab_AiControlle
 	Parms.EntryPoint = EntryPoint;
 
 	UObject::ProcessEvent(Func, &Parms);
-}
-
-
-// Function BP_Animal_Crab_AiController.BP_Animal_Crab_AiController_C.ReceiveBeginPlay
-// (Event, Protected, BlueprintEvent)
-
-void ABP_Animal_Crab_AiController_C::ReceiveBeginPlay()
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BP_Animal_Crab_AiController_C", "ReceiveBeginPlay");
-
-	UObject::ProcessEvent(Func, nullptr);
 }
 
 }

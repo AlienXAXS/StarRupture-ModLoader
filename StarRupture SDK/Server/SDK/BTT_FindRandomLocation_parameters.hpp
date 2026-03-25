@@ -16,6 +16,16 @@
 namespace SDK::Params
 {
 
+// Function BTT_FindRandomLocation.BTT_FindRandomLocation_C.ReceiveExecuteAI
+// 0x0010 (0x0010 - 0x0000)
+struct BTT_FindRandomLocation_C_ReceiveExecuteAI final
+{
+public:
+	class AAIController*                          OwnerController;                                   // 0x0000(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
+	class APawn*                                  ControlledPawn;                                    // 0x0008(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BTT_FindRandomLocation_C_ReceiveExecuteAI;
+
 // Function BTT_FindRandomLocation.BTT_FindRandomLocation_C.ExecuteUbergraph_BTT_FindRandomLocation
 // 0x0060 (0x0060 - 0x0000)
 struct BTT_FindRandomLocation_C_ExecuteUbergraph_BTT_FindRandomLocation final
@@ -35,16 +45,6 @@ public:
 	float                                         CallFunc_BPGetManagedRandomPointOnNavmesh_Radius_ImplicitCast; // 0x005C(0x0004)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 };
 DUMPER7_ASSERTS_BTT_FindRandomLocation_C_ExecuteUbergraph_BTT_FindRandomLocation;
-
-// Function BTT_FindRandomLocation.BTT_FindRandomLocation_C.ReceiveExecuteAI
-// 0x0010 (0x0010 - 0x0000)
-struct BTT_FindRandomLocation_C_ReceiveExecuteAI final
-{
-public:
-	class AAIController*                          OwnerController;                                   // 0x0000(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
-	class APawn*                                  ControlledPawn;                                    // 0x0008(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BTT_FindRandomLocation_C_ReceiveExecuteAI;
 
 }
 

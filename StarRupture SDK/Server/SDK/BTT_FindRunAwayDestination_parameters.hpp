@@ -16,6 +16,16 @@
 namespace SDK::Params
 {
 
+// Function BTT_FindRunAwayDestination.BTT_FindRunAwayDestination_C.ReceiveExecuteAI
+// 0x0010 (0x0010 - 0x0000)
+struct BTT_FindRunAwayDestination_C_ReceiveExecuteAI final
+{
+public:
+	class AAIController*                          OwnerController;                                   // 0x0000(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
+	class APawn*                                  ControlledPawn;                                    // 0x0008(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BTT_FindRunAwayDestination_C_ReceiveExecuteAI;
+
 // Function BTT_FindRunAwayDestination.BTT_FindRunAwayDestination_C.ExecuteUbergraph_BTT_FindRunAwayDestination
 // 0x0060 (0x0060 - 0x0000)
 struct BTT_FindRunAwayDestination_C_ExecuteUbergraph_BTT_FindRunAwayDestination final
@@ -33,16 +43,6 @@ public:
 	bool                                          CallFunc_K2_GetRandomReachablePointInRadius_ReturnValue; // 0x0058(0x0001)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 };
 DUMPER7_ASSERTS_BTT_FindRunAwayDestination_C_ExecuteUbergraph_BTT_FindRunAwayDestination;
-
-// Function BTT_FindRunAwayDestination.BTT_FindRunAwayDestination_C.ReceiveExecuteAI
-// 0x0010 (0x0010 - 0x0000)
-struct BTT_FindRunAwayDestination_C_ReceiveExecuteAI final
-{
-public:
-	class AAIController*                          OwnerController;                                   // 0x0000(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
-	class APawn*                                  ControlledPawn;                                    // 0x0008(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BTT_FindRunAwayDestination_C_ReceiveExecuteAI;
 
 }
 

@@ -45,11 +45,11 @@ public:
 	TArray<class UMeshComponent*>                 tab_meshes;                                        // 0x0760(0x0010)(Edit, BlueprintVisible, DisableEditOnInstance, ContainsInstancedReference)
 
 public:
-	void ExecuteUbergraph_BP_Crafter(int32 EntryPoint);
-	void Get_Meshes(class USceneComponent* Static_0, class USceneComponent* Animated_0, TArray<class UMeshComponent*>* NewParam);
-	void OnBuildingStateChanged(ECrBuildingState InState);
-	void OnItemCraftingComplete();
 	void SetupSkeletalMesh();
+	void OnItemCraftingComplete();
+	void OnBuildingStateChanged(ECrBuildingState InState);
+	void Get_Meshes(class USceneComponent* Static_0, class USceneComponent* Animated_0, TArray<class UMeshComponent*>* NewParam);
+	void ExecuteUbergraph_BP_Crafter(int32 EntryPoint);
 
 public:
 	static class UClass* StaticClass()

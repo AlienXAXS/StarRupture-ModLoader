@@ -17,23 +17,37 @@
 namespace SDK
 {
 
-// Function BP_MechanicalDrillFoundation.BP_MechanicalDrillFoundation_C.ExecuteUbergraph_BP_MechanicalDrillFoundation
-// (Final, UbergraphFunction)
+// Function BP_MechanicalDrillFoundation.BP_MechanicalDrillFoundation_C.ReceiveTick
+// (Event, Public, BlueprintEvent)
 // Parameters:
-// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+// float                                   DeltaSeconds                                           (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 
-void ABP_MechanicalDrillFoundation_C::ExecuteUbergraph_BP_MechanicalDrillFoundation(int32 EntryPoint)
+void ABP_MechanicalDrillFoundation_C::ReceiveTick(float DeltaSeconds)
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_MechanicalDrillFoundation_C", "ExecuteUbergraph_BP_MechanicalDrillFoundation");
+		Func = Class->GetFunction("BP_MechanicalDrillFoundation_C", "ReceiveTick");
 
-	Params::BP_MechanicalDrillFoundation_C_ExecuteUbergraph_BP_MechanicalDrillFoundation Parms{};
+	Params::BP_MechanicalDrillFoundation_C_ReceiveTick Parms{};
 
-	Parms.EntryPoint = EntryPoint;
+	Parms.DeltaSeconds = DeltaSeconds;
 
 	UObject::ProcessEvent(Func, &Parms);
+}
+
+
+// Function BP_MechanicalDrillFoundation.BP_MechanicalDrillFoundation_C.ReceiveBeginPlay
+// (Event, Protected, BlueprintEvent)
+
+void ABP_MechanicalDrillFoundation_C::ReceiveBeginPlay()
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BP_MechanicalDrillFoundation_C", "ReceiveBeginPlay");
+
+	UObject::ProcessEvent(Func, nullptr);
 }
 
 
@@ -57,35 +71,21 @@ void ABP_MechanicalDrillFoundation_C::ReceiveActorBeginOverlap(class AActor* Oth
 }
 
 
-// Function BP_MechanicalDrillFoundation.BP_MechanicalDrillFoundation_C.ReceiveBeginPlay
-// (Event, Protected, BlueprintEvent)
-
-void ABP_MechanicalDrillFoundation_C::ReceiveBeginPlay()
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BP_MechanicalDrillFoundation_C", "ReceiveBeginPlay");
-
-	UObject::ProcessEvent(Func, nullptr);
-}
-
-
-// Function BP_MechanicalDrillFoundation.BP_MechanicalDrillFoundation_C.ReceiveTick
-// (Event, Public, BlueprintEvent)
+// Function BP_MechanicalDrillFoundation.BP_MechanicalDrillFoundation_C.ExecuteUbergraph_BP_MechanicalDrillFoundation
+// (Final, UbergraphFunction)
 // Parameters:
-// float                                   DeltaSeconds                                           (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 
-void ABP_MechanicalDrillFoundation_C::ReceiveTick(float DeltaSeconds)
+void ABP_MechanicalDrillFoundation_C::ExecuteUbergraph_BP_MechanicalDrillFoundation(int32 EntryPoint)
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_MechanicalDrillFoundation_C", "ReceiveTick");
+		Func = Class->GetFunction("BP_MechanicalDrillFoundation_C", "ExecuteUbergraph_BP_MechanicalDrillFoundation");
 
-	Params::BP_MechanicalDrillFoundation_C_ReceiveTick Parms{};
+	Params::BP_MechanicalDrillFoundation_C_ExecuteUbergraph_BP_MechanicalDrillFoundation Parms{};
 
-	Parms.DeltaSeconds = DeltaSeconds;
+	Parms.EntryPoint = EntryPoint;
 
 	UObject::ProcessEvent(Func, &Parms);
 }

@@ -16,6 +16,16 @@
 namespace SDK::Params
 {
 
+// Function BTTask_Animal_Panzerhund_CacheSpawnLocation.BTTask_Animal_Panzerhund_CacheSpawnLocation_C.ReceiveExecuteAI
+// 0x0010 (0x0010 - 0x0000)
+struct BTTask_Animal_Panzerhund_CacheSpawnLocation_C_ReceiveExecuteAI final
+{
+public:
+	class AAIController*                          OwnerController;                                   // 0x0000(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
+	class APawn*                                  ControlledPawn;                                    // 0x0008(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BTTask_Animal_Panzerhund_CacheSpawnLocation_C_ReceiveExecuteAI;
+
 // Function BTTask_Animal_Panzerhund_CacheSpawnLocation.BTTask_Animal_Panzerhund_CacheSpawnLocation_C.ExecuteUbergraph_BTTask_Animal_Panzerhund_CacheSpawnLocation
 // 0x0030 (0x0030 - 0x0000)
 struct BTTask_Animal_Panzerhund_CacheSpawnLocation_C_ExecuteUbergraph_BTTask_Animal_Panzerhund_CacheSpawnLocation final
@@ -28,16 +38,6 @@ public:
 	struct FVector                                CallFunc_K2_GetActorLocation_ReturnValue;          // 0x0018(0x0018)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 };
 DUMPER7_ASSERTS_BTTask_Animal_Panzerhund_CacheSpawnLocation_C_ExecuteUbergraph_BTTask_Animal_Panzerhund_CacheSpawnLocation;
-
-// Function BTTask_Animal_Panzerhund_CacheSpawnLocation.BTTask_Animal_Panzerhund_CacheSpawnLocation_C.ReceiveExecuteAI
-// 0x0010 (0x0010 - 0x0000)
-struct BTTask_Animal_Panzerhund_CacheSpawnLocation_C_ReceiveExecuteAI final
-{
-public:
-	class AAIController*                          OwnerController;                                   // 0x0000(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
-	class APawn*                                  ControlledPawn;                                    // 0x0008(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BTTask_Animal_Panzerhund_CacheSpawnLocation_C_ReceiveExecuteAI;
 
 }
 

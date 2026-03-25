@@ -46,11 +46,11 @@ public:
 	class UAudioComponent*                        SFX_Loop;                                          // 0x06F8(0x0008)(Edit, BlueprintVisible, ZeroConstructor, DisableEditOnInstance, InstancedReference, NoDestructor, HasGetValueTypeHash)
 
 public:
-	void ExecuteUbergraph_BP_CoolerPassive(int32 EntryPoint);
-	void OnHeaterCoolerConnectionsChanged(const TArray<class FName>& ConnectedSockets);
-	void OnHeaterCoolerStateChanged(ECrMassHeaterCoolerState State);
-	void OnSocketConnected(class FName SocketName);
 	void OnSocketDisconnected(class FName SocketName);
+	void OnSocketConnected(class FName SocketName);
+	void OnHeaterCoolerStateChanged(ECrMassHeaterCoolerState State);
+	void OnHeaterCoolerConnectionsChanged(const TArray<class FName>& ConnectedSockets);
+	void ExecuteUbergraph_BP_CoolerPassive(int32 EntryPoint);
 
 public:
 	static class UClass* StaticClass()

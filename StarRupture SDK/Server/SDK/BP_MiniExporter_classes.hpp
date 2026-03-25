@@ -48,13 +48,13 @@ public:
 	TArray<class FName>                           SocketNames;                                       // 0x0788(0x0010)(Edit, BlueprintVisible, DisableEditOnInstance)
 
 public:
-	void Attach_meshes();
-	void Close();
-	void ExecuteUbergraph_BP_MiniExporter(int32 EntryPoint);
-	void Fire();
-	void Open();
-	void Play_whole_sequence();
 	void ReceiveBeginPlay();
+	void Play_whole_sequence();
+	void Open();
+	void Fire();
+	void ExecuteUbergraph_BP_MiniExporter(int32 EntryPoint);
+	void Close();
+	void Attach_meshes();
 
 	void GetBuildingMeshes(class UMeshComponent** MainBody, TArray<class UMeshComponent*>* AdditionalMeshes) const;
 

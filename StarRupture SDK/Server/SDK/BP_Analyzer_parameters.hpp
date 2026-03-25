@@ -14,6 +14,15 @@
 namespace SDK::Params
 {
 
+// Function BP_Analyzer.BP_Analyzer_C.OnUIOpened
+// 0x0001 (0x0001 - 0x0000)
+struct BP_Analyzer_C_OnUIOpened final
+{
+public:
+	bool                                          bOpened;                                           // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BP_Analyzer_C_OnUIOpened;
+
 // Function BP_Analyzer.BP_Analyzer_C.ExecuteUbergraph_BP_Analyzer
 // 0x0008 (0x0008 - 0x0000)
 struct BP_Analyzer_C_ExecuteUbergraph_BP_Analyzer final
@@ -23,15 +32,6 @@ public:
 	bool                                          K2Node_Event_bOpened;                              // 0x0004(0x0001)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 };
 DUMPER7_ASSERTS_BP_Analyzer_C_ExecuteUbergraph_BP_Analyzer;
-
-// Function BP_Analyzer.BP_Analyzer_C.OnUIOpened
-// 0x0001 (0x0001 - 0x0000)
-struct BP_Analyzer_C_OnUIOpened final
-{
-public:
-	bool                                          bOpened;                                           // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BP_Analyzer_C_OnUIOpened;
 
 }
 

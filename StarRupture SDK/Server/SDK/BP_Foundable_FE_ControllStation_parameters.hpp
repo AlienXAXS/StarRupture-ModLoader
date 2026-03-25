@@ -17,6 +17,16 @@
 namespace SDK::Params
 {
 
+// Function BP_Foundable_FE_ControllStation.BP_Foundable_FE_ControllStation_C.OnStorageEmptied
+// 0x0002 (0x0002 - 0x0000)
+struct BP_Foundable_FE_ControllStation_C_OnStorageEmptied final
+{
+public:
+	bool                                          ReturnValue;                                       // 0x0000(0x0001)(Parm, OutParm, ZeroConstructor, ReturnParm, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+	bool                                          CallFunc_OnStorageEmptied_ReturnValue;             // 0x0001(0x0001)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BP_Foundable_FE_ControllStation_C_OnStorageEmptied;
+
 // Function BP_Foundable_FE_ControllStation.BP_Foundable_FE_ControllStation_C.ExecuteUbergraph_BP_Foundable_FE_ControllStation
 // 0x0270 (0x0270 - 0x0000)
 struct BP_Foundable_FE_ControllStation_C_ExecuteUbergraph_BP_Foundable_FE_ControllStation final
@@ -35,16 +45,6 @@ public:
 	float                                         CallFunc_MakeRotator_Yaw_ImplicitCast;             // 0x0268(0x0004)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 };
 DUMPER7_ASSERTS_BP_Foundable_FE_ControllStation_C_ExecuteUbergraph_BP_Foundable_FE_ControllStation;
-
-// Function BP_Foundable_FE_ControllStation.BP_Foundable_FE_ControllStation_C.OnStorageEmptied
-// 0x0002 (0x0002 - 0x0000)
-struct BP_Foundable_FE_ControllStation_C_OnStorageEmptied final
-{
-public:
-	bool                                          ReturnValue;                                       // 0x0000(0x0001)(Parm, OutParm, ZeroConstructor, ReturnParm, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-	bool                                          CallFunc_OnStorageEmptied_ReturnValue;             // 0x0001(0x0001)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BP_Foundable_FE_ControllStation_C_OnStorageEmptied;
 
 }
 

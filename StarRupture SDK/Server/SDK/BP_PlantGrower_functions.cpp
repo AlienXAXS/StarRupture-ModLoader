@@ -17,35 +17,15 @@
 namespace SDK
 {
 
-// Function BP_PlantGrower.BP_PlantGrower_C.ExecuteUbergraph_BP_PlantGrower
-// (Final, UbergraphFunction)
-// Parameters:
-// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+// Function BP_PlantGrower.BP_PlantGrower_C.Timeline__UpdateFunc
+// (BlueprintEvent)
 
-void ABP_PlantGrower_C::ExecuteUbergraph_BP_PlantGrower(int32 EntryPoint)
+void ABP_PlantGrower_C::Timeline__UpdateFunc()
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_PlantGrower_C", "ExecuteUbergraph_BP_PlantGrower");
-
-	Params::BP_PlantGrower_C_ExecuteUbergraph_BP_PlantGrower Parms{};
-
-	Parms.EntryPoint = EntryPoint;
-
-	UObject::ProcessEvent(Func, &Parms);
-}
-
-
-// Function BP_PlantGrower.BP_PlantGrower_C.ReceiveBeginPlay
-// (Event, Protected, BlueprintEvent)
-
-void ABP_PlantGrower_C::ReceiveBeginPlay()
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BP_PlantGrower_C", "ReceiveBeginPlay");
+		Func = Class->GetFunction("BP_PlantGrower_C", "Timeline__UpdateFunc");
 
 	UObject::ProcessEvent(Func, nullptr);
 }
@@ -65,17 +45,37 @@ void ABP_PlantGrower_C::Timeline__FinishedFunc()
 }
 
 
-// Function BP_PlantGrower.BP_PlantGrower_C.Timeline__UpdateFunc
-// (BlueprintEvent)
+// Function BP_PlantGrower.BP_PlantGrower_C.ReceiveBeginPlay
+// (Event, Protected, BlueprintEvent)
 
-void ABP_PlantGrower_C::Timeline__UpdateFunc()
+void ABP_PlantGrower_C::ReceiveBeginPlay()
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_PlantGrower_C", "Timeline__UpdateFunc");
+		Func = Class->GetFunction("BP_PlantGrower_C", "ReceiveBeginPlay");
 
 	UObject::ProcessEvent(Func, nullptr);
+}
+
+
+// Function BP_PlantGrower.BP_PlantGrower_C.ExecuteUbergraph_BP_PlantGrower
+// (Final, UbergraphFunction)
+// Parameters:
+// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+
+void ABP_PlantGrower_C::ExecuteUbergraph_BP_PlantGrower(int32 EntryPoint)
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BP_PlantGrower_C", "ExecuteUbergraph_BP_PlantGrower");
+
+	Params::BP_PlantGrower_C_ExecuteUbergraph_BP_PlantGrower Parms{};
+
+	Parms.EntryPoint = EntryPoint;
+
+	UObject::ProcessEvent(Func, &Parms);
 }
 
 }

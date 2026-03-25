@@ -16,6 +16,16 @@
 namespace SDK
 {
 
+// ScriptStruct ABP_SuitWorkshop.ABP_SuitWorkshop_C.AnimBlueprintGeneratedMutableData
+// 0x0007 (0x0008 - 0x0001)
+struct ABP_SuitWorkshop::FAnimBlueprintGeneratedMutableData final : public FAnimBlueprintMutableData
+{
+public:
+	uint8                                         Pad_1[0x3];                                        // 0x0001(0x0003)(Fixing Size After Last Property [ Dumper-7 ])
+	float                                         __FloatProperty;                                   // 0x0004(0x0004)(BlueprintVisible, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_ABP_SuitWorkshop__FAnimBlueprintGeneratedMutableData;
+
 // ScriptStruct ABP_SuitWorkshop.ABP_SuitWorkshop_C.AnimBlueprintGeneratedConstantData
 // 0x0167 (0x0168 - 0x0001)
 struct ABP_SuitWorkshop::FAnimBlueprintGeneratedConstantData final : public FAnimBlueprintConstantData
@@ -40,16 +50,6 @@ public:
 	struct FAnimNodeExposedValueHandler_PropertyAccess AnimGraphNode_BlendSpacePlayer;               // 0x0138(0x0030)()
 };
 DUMPER7_ASSERTS_ABP_SuitWorkshop__FAnimBlueprintGeneratedConstantData;
-
-// ScriptStruct ABP_SuitWorkshop.ABP_SuitWorkshop_C.AnimBlueprintGeneratedMutableData
-// 0x0007 (0x0008 - 0x0001)
-struct ABP_SuitWorkshop::FAnimBlueprintGeneratedMutableData final : public FAnimBlueprintMutableData
-{
-public:
-	uint8                                         Pad_1[0x3];                                        // 0x0001(0x0003)(Fixing Size After Last Property [ Dumper-7 ])
-	float                                         __FloatProperty;                                   // 0x0004(0x0004)(BlueprintVisible, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_ABP_SuitWorkshop__FAnimBlueprintGeneratedMutableData;
 
 }
 

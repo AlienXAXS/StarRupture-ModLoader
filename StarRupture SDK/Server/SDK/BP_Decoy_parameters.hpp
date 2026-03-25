@@ -16,6 +16,15 @@
 namespace SDK::Params
 {
 
+// Function BP_Decoy.BP_Decoy_C.OnBuildingStateChanged
+// 0x0001 (0x0001 - 0x0000)
+struct BP_Decoy_C_OnBuildingStateChanged final
+{
+public:
+	ECrBuildingState                              InState;                                           // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BP_Decoy_C_OnBuildingStateChanged;
+
 // Function BP_Decoy.BP_Decoy_C.ExecuteUbergraph_BP_Decoy
 // 0x0008 (0x0008 - 0x0000)
 struct BP_Decoy_C_ExecuteUbergraph_BP_Decoy final
@@ -28,15 +37,6 @@ public:
 	bool                                          CallFunc_IsActive_ReturnValue_1;                   // 0x0007(0x0001)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 };
 DUMPER7_ASSERTS_BP_Decoy_C_ExecuteUbergraph_BP_Decoy;
-
-// Function BP_Decoy.BP_Decoy_C.OnBuildingStateChanged
-// 0x0001 (0x0001 - 0x0000)
-struct BP_Decoy_C_OnBuildingStateChanged final
-{
-public:
-	ECrBuildingState                              InState;                                           // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BP_Decoy_C_OnBuildingStateChanged;
 
 }
 

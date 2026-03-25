@@ -16,6 +16,16 @@
 namespace SDK::Params
 {
 
+// Function BTTask_MoveAwayFromActor.BTTask_MoveAwayFromActor_C.ReceiveExecuteAI
+// 0x0010 (0x0010 - 0x0000)
+struct BTTask_MoveAwayFromActor_C_ReceiveExecuteAI final
+{
+public:
+	class AAIController*                          OwnerController;                                   // 0x0000(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
+	class APawn*                                  ControlledPawn;                                    // 0x0008(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BTTask_MoveAwayFromActor_C_ReceiveExecuteAI;
+
 // Function BTTask_MoveAwayFromActor.BTTask_MoveAwayFromActor_C.ExecuteUbergraph_BTTask_MoveAwayFromActor
 // 0x00D0 (0x00D0 - 0x0000)
 struct BTTask_MoveAwayFromActor_C_ExecuteUbergraph_BTTask_MoveAwayFromActor final
@@ -37,16 +47,6 @@ public:
 	struct FVector                                CallFunc_Add_VectorVector_ReturnValue;             // 0x00B8(0x0018)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 };
 DUMPER7_ASSERTS_BTTask_MoveAwayFromActor_C_ExecuteUbergraph_BTTask_MoveAwayFromActor;
-
-// Function BTTask_MoveAwayFromActor.BTTask_MoveAwayFromActor_C.ReceiveExecuteAI
-// 0x0010 (0x0010 - 0x0000)
-struct BTTask_MoveAwayFromActor_C_ReceiveExecuteAI final
-{
-public:
-	class AAIController*                          OwnerController;                                   // 0x0000(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
-	class APawn*                                  ControlledPawn;                                    // 0x0008(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BTTask_MoveAwayFromActor_C_ReceiveExecuteAI;
 
 }
 

@@ -14,24 +14,15 @@
 namespace SDK::Params
 {
 
-// Function BP_Melee_Tier2_Actor_Character.BP_Melee_Tier2_Actor_Character_C.ExecuteUbergraph_BP_Melee_Tier2_Actor_Character
-// 0x0008 (0x0008 - 0x0000)
-struct BP_Melee_Tier2_Actor_Character_C_ExecuteUbergraph_BP_Melee_Tier2_Actor_Character final
+// Function BP_Melee_Tier2_Actor_Character.BP_Melee_Tier2_Actor_Character_C.UserConstructionScript
+// 0x0010 (0x0010 - 0x0000)
+struct BP_Melee_Tier2_Actor_Character_C_UserConstructionScript final
 {
 public:
-	int32                                         EntryPoint;                                        // 0x0000(0x0004)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-	bool                                          K2Node_Event_InIsActive;                           // 0x0004(0x0001)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+	class UMaterialInterface*                     CallFunc_GetMaterial_ReturnValue;                  // 0x0000(0x0008)(ZeroConstructor, NoDestructor, HasGetValueTypeHash)
+	class UMaterialInstanceDynamic*               CallFunc_CreateDynamicMaterialInstance_ReturnValue; // 0x0008(0x0008)(ZeroConstructor, NoDestructor, HasGetValueTypeHash)
 };
-DUMPER7_ASSERTS_BP_Melee_Tier2_Actor_Character_C_ExecuteUbergraph_BP_Melee_Tier2_Actor_Character;
-
-// Function BP_Melee_Tier2_Actor_Character.BP_Melee_Tier2_Actor_Character_C.SetWeakpointState
-// 0x0001 (0x0001 - 0x0000)
-struct BP_Melee_Tier2_Actor_Character_C_SetWeakpointState final
-{
-public:
-	bool                                          InIsActive;                                        // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BP_Melee_Tier2_Actor_Character_C_SetWeakpointState;
+DUMPER7_ASSERTS_BP_Melee_Tier2_Actor_Character_C_UserConstructionScript;
 
 // Function BP_Melee_Tier2_Actor_Character.BP_Melee_Tier2_Actor_Character_C.SetWeakpointStateImpl
 // 0x0002 (0x0002 - 0x0000)
@@ -43,15 +34,24 @@ public:
 };
 DUMPER7_ASSERTS_BP_Melee_Tier2_Actor_Character_C_SetWeakpointStateImpl;
 
-// Function BP_Melee_Tier2_Actor_Character.BP_Melee_Tier2_Actor_Character_C.UserConstructionScript
-// 0x0010 (0x0010 - 0x0000)
-struct BP_Melee_Tier2_Actor_Character_C_UserConstructionScript final
+// Function BP_Melee_Tier2_Actor_Character.BP_Melee_Tier2_Actor_Character_C.SetWeakpointState
+// 0x0001 (0x0001 - 0x0000)
+struct BP_Melee_Tier2_Actor_Character_C_SetWeakpointState final
 {
 public:
-	class UMaterialInterface*                     CallFunc_GetMaterial_ReturnValue;                  // 0x0000(0x0008)(ZeroConstructor, NoDestructor, HasGetValueTypeHash)
-	class UMaterialInstanceDynamic*               CallFunc_CreateDynamicMaterialInstance_ReturnValue; // 0x0008(0x0008)(ZeroConstructor, NoDestructor, HasGetValueTypeHash)
+	bool                                          InIsActive;                                        // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 };
-DUMPER7_ASSERTS_BP_Melee_Tier2_Actor_Character_C_UserConstructionScript;
+DUMPER7_ASSERTS_BP_Melee_Tier2_Actor_Character_C_SetWeakpointState;
+
+// Function BP_Melee_Tier2_Actor_Character.BP_Melee_Tier2_Actor_Character_C.ExecuteUbergraph_BP_Melee_Tier2_Actor_Character
+// 0x0008 (0x0008 - 0x0000)
+struct BP_Melee_Tier2_Actor_Character_C_ExecuteUbergraph_BP_Melee_Tier2_Actor_Character final
+{
+public:
+	int32                                         EntryPoint;                                        // 0x0000(0x0004)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+	bool                                          K2Node_Event_InIsActive;                           // 0x0004(0x0001)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BP_Melee_Tier2_Actor_Character_C_ExecuteUbergraph_BP_Melee_Tier2_Actor_Character;
 
 }
 

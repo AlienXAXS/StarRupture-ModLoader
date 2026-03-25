@@ -17,23 +17,17 @@
 namespace SDK
 {
 
-// Function BP_AcidExtractor.BP_AcidExtractor_C.ExecuteUbergraph_BP_AcidExtractor
-// (Final, UbergraphFunction, HasDefaults)
-// Parameters:
-// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+// Function BP_AcidExtractor.BP_AcidExtractor_C.SetupSkeletalMesh
+// (Event, Public, BlueprintEvent)
 
-void ABP_AcidExtractor_C::ExecuteUbergraph_BP_AcidExtractor(int32 EntryPoint)
+void ABP_AcidExtractor_C::SetupSkeletalMesh()
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_AcidExtractor_C", "ExecuteUbergraph_BP_AcidExtractor");
+		Func = Class->GetFunction("BP_AcidExtractor_C", "SetupSkeletalMesh");
 
-	Params::BP_AcidExtractor_C_ExecuteUbergraph_BP_AcidExtractor Parms{};
-
-	Parms.EntryPoint = EntryPoint;
-
-	UObject::ProcessEvent(Func, &Parms);
+	UObject::ProcessEvent(Func, nullptr);
 }
 
 
@@ -57,17 +51,23 @@ void ABP_AcidExtractor_C::OnBuildingStateChanged(ECrBuildingState InState)
 }
 
 
-// Function BP_AcidExtractor.BP_AcidExtractor_C.SetupSkeletalMesh
-// (Event, Public, BlueprintEvent)
+// Function BP_AcidExtractor.BP_AcidExtractor_C.ExecuteUbergraph_BP_AcidExtractor
+// (Final, UbergraphFunction, HasDefaults)
+// Parameters:
+// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 
-void ABP_AcidExtractor_C::SetupSkeletalMesh()
+void ABP_AcidExtractor_C::ExecuteUbergraph_BP_AcidExtractor(int32 EntryPoint)
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_AcidExtractor_C", "SetupSkeletalMesh");
+		Func = Class->GetFunction("BP_AcidExtractor_C", "ExecuteUbergraph_BP_AcidExtractor");
 
-	UObject::ProcessEvent(Func, nullptr);
+	Params::BP_AcidExtractor_C_ExecuteUbergraph_BP_AcidExtractor Parms{};
+
+	Parms.EntryPoint = EntryPoint;
+
+	UObject::ProcessEvent(Func, &Parms);
 }
 
 }

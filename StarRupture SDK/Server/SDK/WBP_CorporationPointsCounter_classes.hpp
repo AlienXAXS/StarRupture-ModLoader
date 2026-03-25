@@ -39,8 +39,8 @@ public:
 	struct FSlateBrush                            CorporationPointTier2Icon;                         // 0x0550(0x00B0)(Edit, BlueprintVisible)
 
 public:
-	void ExecuteUbergraph_WBP_CorporationPointsCounter(int32 EntryPoint);
 	void PreConstruct(bool IsDesignTime);
+	void ExecuteUbergraph_WBP_CorporationPointsCounter(int32 EntryPoint);
 
 public:
 	static class UClass* StaticClass()

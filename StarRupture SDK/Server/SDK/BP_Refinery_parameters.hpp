@@ -16,6 +16,15 @@
 namespace SDK::Params
 {
 
+// Function BP_Refinery.BP_Refinery_C.OnBuildingStateChanged
+// 0x0001 (0x0001 - 0x0000)
+struct BP_Refinery_C_OnBuildingStateChanged final
+{
+public:
+	ECrBuildingState                              InState;                                           // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BP_Refinery_C_OnBuildingStateChanged;
+
 // Function BP_Refinery.BP_Refinery_C.ExecuteUbergraph_BP_Refinery
 // 0x00B0 (0x00B0 - 0x0000)
 struct BP_Refinery_C_ExecuteUbergraph_BP_Refinery final
@@ -51,15 +60,6 @@ public:
 	bool                                          CallFunc_K2_AttachToComponent_ReturnValue;         // 0x00A9(0x0001)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 };
 DUMPER7_ASSERTS_BP_Refinery_C_ExecuteUbergraph_BP_Refinery;
-
-// Function BP_Refinery.BP_Refinery_C.OnBuildingStateChanged
-// 0x0001 (0x0001 - 0x0000)
-struct BP_Refinery_C_OnBuildingStateChanged final
-{
-public:
-	ECrBuildingState                              InState;                                           // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BP_Refinery_C_OnBuildingStateChanged;
 
 // Function BP_Refinery.BP_Refinery_C.Get Meshes
 // 0x00B0 (0x00B0 - 0x0000)

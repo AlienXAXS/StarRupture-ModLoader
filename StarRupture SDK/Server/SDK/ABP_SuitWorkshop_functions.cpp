@@ -17,246 +17,35 @@
 namespace SDK
 {
 
-// Function ABP_SuitWorkshop.ABP_SuitWorkshop_C.AnimGraph
-// (HasOutParams, BlueprintCallable, BlueprintEvent)
+// Function ABP_SuitWorkshop.ABP_SuitWorkshop_C.ExecuteUbergraph_ABP_SuitWorkshop
+// (Final, UbergraphFunction)
 // Parameters:
-// struct FPoseLink*                       AnimGraph_0                                            (Parm, OutParm, NoDestructor)
+// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 
-void UABP_SuitWorkshop_C::AnimGraph(struct FPoseLink* AnimGraph_0)
+void UABP_SuitWorkshop_C::ExecuteUbergraph_ABP_SuitWorkshop(int32 EntryPoint)
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("ABP_SuitWorkshop_C", "AnimGraph");
+		Func = Class->GetFunction("ABP_SuitWorkshop_C", "ExecuteUbergraph_ABP_SuitWorkshop");
 
-	Params::ABP_SuitWorkshop_C_AnimGraph Parms{};
+	Params::ABP_SuitWorkshop_C_ExecuteUbergraph_ABP_SuitWorkshop Parms{};
+
+	Parms.EntryPoint = EntryPoint;
 
 	UObject::ProcessEvent(Func, &Parms);
-
-	if (AnimGraph_0 != nullptr)
-		*AnimGraph_0 = std::move(Parms.AnimGraph_0);
 }
 
 
-// Function ABP_SuitWorkshop.ABP_SuitWorkshop_C.AnimNotify_A_arm_laser_1
-// (BlueprintCallable, BlueprintEvent)
+// Function ABP_SuitWorkshop.ABP_SuitWorkshop_C.EvaluateGraphExposedInputs_ExecuteUbergraph_ABP_SuitWorkshop_AnimGraphNode_BlendSpacePlayer_42EF01434F2AB123C96389A2D4555290
+// (BlueprintEvent)
 
-void UABP_SuitWorkshop_C::AnimNotify_A_arm_laser_1()
+void UABP_SuitWorkshop_C::EvaluateGraphExposedInputs_ExecuteUbergraph_ABP_SuitWorkshop_AnimGraphNode_BlendSpacePlayer_42EF01434F2AB123C96389A2D4555290()
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("ABP_SuitWorkshop_C", "AnimNotify_A_arm_laser_1");
-
-	UObject::ProcessEvent(Func, nullptr);
-}
-
-
-// Function ABP_SuitWorkshop.ABP_SuitWorkshop_C.AnimNotify_A_arm_laser_2
-// (BlueprintCallable, BlueprintEvent)
-
-void UABP_SuitWorkshop_C::AnimNotify_A_arm_laser_2()
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("ABP_SuitWorkshop_C", "AnimNotify_A_arm_laser_2");
-
-	UObject::ProcessEvent(Func, nullptr);
-}
-
-
-// Function ABP_SuitWorkshop.ABP_SuitWorkshop_C.AnimNotify_A_arm_laser_3
-// (BlueprintCallable, BlueprintEvent)
-
-void UABP_SuitWorkshop_C::AnimNotify_A_arm_laser_3()
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("ABP_SuitWorkshop_C", "AnimNotify_A_arm_laser_3");
-
-	UObject::ProcessEvent(Func, nullptr);
-}
-
-
-// Function ABP_SuitWorkshop.ABP_SuitWorkshop_C.AnimNotify_A_arm_laser_4
-// (BlueprintCallable, BlueprintEvent)
-
-void UABP_SuitWorkshop_C::AnimNotify_A_arm_laser_4()
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("ABP_SuitWorkshop_C", "AnimNotify_A_arm_laser_4");
-
-	UObject::ProcessEvent(Func, nullptr);
-}
-
-
-// Function ABP_SuitWorkshop.ABP_SuitWorkshop_C.AnimNotify_B_arm_laser_1
-// (BlueprintCallable, BlueprintEvent)
-
-void UABP_SuitWorkshop_C::AnimNotify_B_arm_laser_1()
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("ABP_SuitWorkshop_C", "AnimNotify_B_arm_laser_1");
-
-	UObject::ProcessEvent(Func, nullptr);
-}
-
-
-// Function ABP_SuitWorkshop.ABP_SuitWorkshop_C.AnimNotify_B_arm_laser_2
-// (BlueprintCallable, BlueprintEvent)
-
-void UABP_SuitWorkshop_C::AnimNotify_B_arm_laser_2()
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("ABP_SuitWorkshop_C", "AnimNotify_B_arm_laser_2");
-
-	UObject::ProcessEvent(Func, nullptr);
-}
-
-
-// Function ABP_SuitWorkshop.ABP_SuitWorkshop_C.AnimNotify_B_arm_laser_3
-// (BlueprintCallable, BlueprintEvent)
-
-void UABP_SuitWorkshop_C::AnimNotify_B_arm_laser_3()
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("ABP_SuitWorkshop_C", "AnimNotify_B_arm_laser_3");
-
-	UObject::ProcessEvent(Func, nullptr);
-}
-
-
-// Function ABP_SuitWorkshop.ABP_SuitWorkshop_C.AnimNotify_B_arm_laser_4
-// (BlueprintCallable, BlueprintEvent)
-
-void UABP_SuitWorkshop_C::AnimNotify_B_arm_laser_4()
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("ABP_SuitWorkshop_C", "AnimNotify_B_arm_laser_4");
-
-	UObject::ProcessEvent(Func, nullptr);
-}
-
-
-// Function ABP_SuitWorkshop.ABP_SuitWorkshop_C.AnimNotify_C_arm_laser_1
-// (BlueprintCallable, BlueprintEvent)
-
-void UABP_SuitWorkshop_C::AnimNotify_C_arm_laser_1()
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("ABP_SuitWorkshop_C", "AnimNotify_C_arm_laser_1");
-
-	UObject::ProcessEvent(Func, nullptr);
-}
-
-
-// Function ABP_SuitWorkshop.ABP_SuitWorkshop_C.AnimNotify_C_arm_laser_2
-// (BlueprintCallable, BlueprintEvent)
-
-void UABP_SuitWorkshop_C::AnimNotify_C_arm_laser_2()
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("ABP_SuitWorkshop_C", "AnimNotify_C_arm_laser_2");
-
-	UObject::ProcessEvent(Func, nullptr);
-}
-
-
-// Function ABP_SuitWorkshop.ABP_SuitWorkshop_C.AnimNotify_C_arm_laser_3
-// (BlueprintCallable, BlueprintEvent)
-
-void UABP_SuitWorkshop_C::AnimNotify_C_arm_laser_3()
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("ABP_SuitWorkshop_C", "AnimNotify_C_arm_laser_3");
-
-	UObject::ProcessEvent(Func, nullptr);
-}
-
-
-// Function ABP_SuitWorkshop.ABP_SuitWorkshop_C.AnimNotify_C_arm_laser_4
-// (BlueprintCallable, BlueprintEvent)
-
-void UABP_SuitWorkshop_C::AnimNotify_C_arm_laser_4()
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("ABP_SuitWorkshop_C", "AnimNotify_C_arm_laser_4");
-
-	UObject::ProcessEvent(Func, nullptr);
-}
-
-
-// Function ABP_SuitWorkshop.ABP_SuitWorkshop_C.AnimNotify_D_arm_laser_1
-// (BlueprintCallable, BlueprintEvent)
-
-void UABP_SuitWorkshop_C::AnimNotify_D_arm_laser_1()
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("ABP_SuitWorkshop_C", "AnimNotify_D_arm_laser_1");
-
-	UObject::ProcessEvent(Func, nullptr);
-}
-
-
-// Function ABP_SuitWorkshop.ABP_SuitWorkshop_C.AnimNotify_D_arm_laser_2
-// (BlueprintCallable, BlueprintEvent)
-
-void UABP_SuitWorkshop_C::AnimNotify_D_arm_laser_2()
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("ABP_SuitWorkshop_C", "AnimNotify_D_arm_laser_2");
-
-	UObject::ProcessEvent(Func, nullptr);
-}
-
-
-// Function ABP_SuitWorkshop.ABP_SuitWorkshop_C.AnimNotify_D_arm_laser_3
-// (BlueprintCallable, BlueprintEvent)
-
-void UABP_SuitWorkshop_C::AnimNotify_D_arm_laser_3()
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("ABP_SuitWorkshop_C", "AnimNotify_D_arm_laser_3");
-
-	UObject::ProcessEvent(Func, nullptr);
-}
-
-
-// Function ABP_SuitWorkshop.ABP_SuitWorkshop_C.AnimNotify_D_arm_laser_4
-// (BlueprintCallable, BlueprintEvent)
-
-void UABP_SuitWorkshop_C::AnimNotify_D_arm_laser_4()
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("ABP_SuitWorkshop_C", "AnimNotify_D_arm_laser_4");
+		Func = Class->GetFunction("ABP_SuitWorkshop_C", "EvaluateGraphExposedInputs_ExecuteUbergraph_ABP_SuitWorkshop_AnimGraphNode_BlendSpacePlayer_42EF01434F2AB123C96389A2D4555290");
 
 	UObject::ProcessEvent(Func, nullptr);
 }
@@ -276,37 +65,248 @@ void UABP_SuitWorkshop_C::BlueprintBeginPlay()
 }
 
 
-// Function ABP_SuitWorkshop.ABP_SuitWorkshop_C.EvaluateGraphExposedInputs_ExecuteUbergraph_ABP_SuitWorkshop_AnimGraphNode_BlendSpacePlayer_42EF01434F2AB123C96389A2D4555290
-// (BlueprintEvent)
+// Function ABP_SuitWorkshop.ABP_SuitWorkshop_C.AnimNotify_D_arm_laser_4
+// (BlueprintCallable, BlueprintEvent)
 
-void UABP_SuitWorkshop_C::EvaluateGraphExposedInputs_ExecuteUbergraph_ABP_SuitWorkshop_AnimGraphNode_BlendSpacePlayer_42EF01434F2AB123C96389A2D4555290()
+void UABP_SuitWorkshop_C::AnimNotify_D_arm_laser_4()
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("ABP_SuitWorkshop_C", "EvaluateGraphExposedInputs_ExecuteUbergraph_ABP_SuitWorkshop_AnimGraphNode_BlendSpacePlayer_42EF01434F2AB123C96389A2D4555290");
+		Func = Class->GetFunction("ABP_SuitWorkshop_C", "AnimNotify_D_arm_laser_4");
 
 	UObject::ProcessEvent(Func, nullptr);
 }
 
 
-// Function ABP_SuitWorkshop.ABP_SuitWorkshop_C.ExecuteUbergraph_ABP_SuitWorkshop
-// (Final, UbergraphFunction)
-// Parameters:
-// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+// Function ABP_SuitWorkshop.ABP_SuitWorkshop_C.AnimNotify_D_arm_laser_3
+// (BlueprintCallable, BlueprintEvent)
 
-void UABP_SuitWorkshop_C::ExecuteUbergraph_ABP_SuitWorkshop(int32 EntryPoint)
+void UABP_SuitWorkshop_C::AnimNotify_D_arm_laser_3()
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("ABP_SuitWorkshop_C", "ExecuteUbergraph_ABP_SuitWorkshop");
+		Func = Class->GetFunction("ABP_SuitWorkshop_C", "AnimNotify_D_arm_laser_3");
 
-	Params::ABP_SuitWorkshop_C_ExecuteUbergraph_ABP_SuitWorkshop Parms{};
+	UObject::ProcessEvent(Func, nullptr);
+}
 
-	Parms.EntryPoint = EntryPoint;
+
+// Function ABP_SuitWorkshop.ABP_SuitWorkshop_C.AnimNotify_D_arm_laser_2
+// (BlueprintCallable, BlueprintEvent)
+
+void UABP_SuitWorkshop_C::AnimNotify_D_arm_laser_2()
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("ABP_SuitWorkshop_C", "AnimNotify_D_arm_laser_2");
+
+	UObject::ProcessEvent(Func, nullptr);
+}
+
+
+// Function ABP_SuitWorkshop.ABP_SuitWorkshop_C.AnimNotify_D_arm_laser_1
+// (BlueprintCallable, BlueprintEvent)
+
+void UABP_SuitWorkshop_C::AnimNotify_D_arm_laser_1()
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("ABP_SuitWorkshop_C", "AnimNotify_D_arm_laser_1");
+
+	UObject::ProcessEvent(Func, nullptr);
+}
+
+
+// Function ABP_SuitWorkshop.ABP_SuitWorkshop_C.AnimNotify_C_arm_laser_4
+// (BlueprintCallable, BlueprintEvent)
+
+void UABP_SuitWorkshop_C::AnimNotify_C_arm_laser_4()
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("ABP_SuitWorkshop_C", "AnimNotify_C_arm_laser_4");
+
+	UObject::ProcessEvent(Func, nullptr);
+}
+
+
+// Function ABP_SuitWorkshop.ABP_SuitWorkshop_C.AnimNotify_C_arm_laser_3
+// (BlueprintCallable, BlueprintEvent)
+
+void UABP_SuitWorkshop_C::AnimNotify_C_arm_laser_3()
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("ABP_SuitWorkshop_C", "AnimNotify_C_arm_laser_3");
+
+	UObject::ProcessEvent(Func, nullptr);
+}
+
+
+// Function ABP_SuitWorkshop.ABP_SuitWorkshop_C.AnimNotify_C_arm_laser_2
+// (BlueprintCallable, BlueprintEvent)
+
+void UABP_SuitWorkshop_C::AnimNotify_C_arm_laser_2()
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("ABP_SuitWorkshop_C", "AnimNotify_C_arm_laser_2");
+
+	UObject::ProcessEvent(Func, nullptr);
+}
+
+
+// Function ABP_SuitWorkshop.ABP_SuitWorkshop_C.AnimNotify_C_arm_laser_1
+// (BlueprintCallable, BlueprintEvent)
+
+void UABP_SuitWorkshop_C::AnimNotify_C_arm_laser_1()
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("ABP_SuitWorkshop_C", "AnimNotify_C_arm_laser_1");
+
+	UObject::ProcessEvent(Func, nullptr);
+}
+
+
+// Function ABP_SuitWorkshop.ABP_SuitWorkshop_C.AnimNotify_B_arm_laser_4
+// (BlueprintCallable, BlueprintEvent)
+
+void UABP_SuitWorkshop_C::AnimNotify_B_arm_laser_4()
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("ABP_SuitWorkshop_C", "AnimNotify_B_arm_laser_4");
+
+	UObject::ProcessEvent(Func, nullptr);
+}
+
+
+// Function ABP_SuitWorkshop.ABP_SuitWorkshop_C.AnimNotify_B_arm_laser_3
+// (BlueprintCallable, BlueprintEvent)
+
+void UABP_SuitWorkshop_C::AnimNotify_B_arm_laser_3()
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("ABP_SuitWorkshop_C", "AnimNotify_B_arm_laser_3");
+
+	UObject::ProcessEvent(Func, nullptr);
+}
+
+
+// Function ABP_SuitWorkshop.ABP_SuitWorkshop_C.AnimNotify_B_arm_laser_2
+// (BlueprintCallable, BlueprintEvent)
+
+void UABP_SuitWorkshop_C::AnimNotify_B_arm_laser_2()
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("ABP_SuitWorkshop_C", "AnimNotify_B_arm_laser_2");
+
+	UObject::ProcessEvent(Func, nullptr);
+}
+
+
+// Function ABP_SuitWorkshop.ABP_SuitWorkshop_C.AnimNotify_B_arm_laser_1
+// (BlueprintCallable, BlueprintEvent)
+
+void UABP_SuitWorkshop_C::AnimNotify_B_arm_laser_1()
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("ABP_SuitWorkshop_C", "AnimNotify_B_arm_laser_1");
+
+	UObject::ProcessEvent(Func, nullptr);
+}
+
+
+// Function ABP_SuitWorkshop.ABP_SuitWorkshop_C.AnimNotify_A_arm_laser_4
+// (BlueprintCallable, BlueprintEvent)
+
+void UABP_SuitWorkshop_C::AnimNotify_A_arm_laser_4()
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("ABP_SuitWorkshop_C", "AnimNotify_A_arm_laser_4");
+
+	UObject::ProcessEvent(Func, nullptr);
+}
+
+
+// Function ABP_SuitWorkshop.ABP_SuitWorkshop_C.AnimNotify_A_arm_laser_3
+// (BlueprintCallable, BlueprintEvent)
+
+void UABP_SuitWorkshop_C::AnimNotify_A_arm_laser_3()
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("ABP_SuitWorkshop_C", "AnimNotify_A_arm_laser_3");
+
+	UObject::ProcessEvent(Func, nullptr);
+}
+
+
+// Function ABP_SuitWorkshop.ABP_SuitWorkshop_C.AnimNotify_A_arm_laser_2
+// (BlueprintCallable, BlueprintEvent)
+
+void UABP_SuitWorkshop_C::AnimNotify_A_arm_laser_2()
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("ABP_SuitWorkshop_C", "AnimNotify_A_arm_laser_2");
+
+	UObject::ProcessEvent(Func, nullptr);
+}
+
+
+// Function ABP_SuitWorkshop.ABP_SuitWorkshop_C.AnimNotify_A_arm_laser_1
+// (BlueprintCallable, BlueprintEvent)
+
+void UABP_SuitWorkshop_C::AnimNotify_A_arm_laser_1()
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("ABP_SuitWorkshop_C", "AnimNotify_A_arm_laser_1");
+
+	UObject::ProcessEvent(Func, nullptr);
+}
+
+
+// Function ABP_SuitWorkshop.ABP_SuitWorkshop_C.AnimGraph
+// (HasOutParams, BlueprintCallable, BlueprintEvent)
+// Parameters:
+// struct FPoseLink*                       AnimGraph_0                                            (Parm, OutParm, NoDestructor)
+
+void UABP_SuitWorkshop_C::AnimGraph(struct FPoseLink* AnimGraph_0)
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("ABP_SuitWorkshop_C", "AnimGraph");
+
+	Params::ABP_SuitWorkshop_C_AnimGraph Parms{};
 
 	UObject::ProcessEvent(Func, &Parms);
+
+	if (AnimGraph_0 != nullptr)
+		*AnimGraph_0 = std::move(Parms.AnimGraph_0);
 }
 
 }

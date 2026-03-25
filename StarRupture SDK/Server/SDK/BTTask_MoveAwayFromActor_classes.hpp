@@ -30,8 +30,8 @@ public:
 	struct FBlackboardKeySelector                 SelfActorKey;                                      // 0x0108(0x0028)(Edit, BlueprintVisible)
 
 public:
-	void ExecuteUbergraph_BTTask_MoveAwayFromActor(int32 EntryPoint);
 	void ReceiveExecuteAI(class AAIController* OwnerController, class APawn* ControlledPawn);
+	void ExecuteUbergraph_BTTask_MoveAwayFromActor(int32 EntryPoint);
 
 public:
 	static class UClass* StaticClass()

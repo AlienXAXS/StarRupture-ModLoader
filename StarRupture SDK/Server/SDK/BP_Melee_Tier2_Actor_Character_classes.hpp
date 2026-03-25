@@ -27,10 +27,10 @@ public:
 	class UMaterialInstanceDynamic*               WeakpointMaterial;                                 // 0x0C08(0x0008)(Edit, BlueprintVisible, ZeroConstructor, DisableEditOnInstance, NoDestructor, HasGetValueTypeHash)
 
 public:
-	void ExecuteUbergraph_BP_Melee_Tier2_Actor_Character(int32 EntryPoint);
-	void SetWeakpointState(bool InIsActive);
-	void SetWeakpointStateImpl(bool IsActive);
 	void UserConstructionScript();
+	void SetWeakpointStateImpl(bool IsActive);
+	void SetWeakpointState(bool InIsActive);
+	void ExecuteUbergraph_BP_Melee_Tier2_Actor_Character(int32 EntryPoint);
 
 public:
 	static class UClass* StaticClass()

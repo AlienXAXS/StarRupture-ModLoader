@@ -26,9 +26,9 @@ public:
 	class UAbilitySystemComponent*                PlayerAbilitySystem_0;                             // 0x02D8(0x0008)(Edit, BlueprintVisible, ZeroConstructor, DisableEditOnInstance, InstancedReference, NoDestructor, HasGetValueTypeHash)
 
 public:
-	void ExecuteUbergraph_BP_Ranged_Tier3_DamageAura(int32 EntryPoint);
-	void ReceiveActorBeginOverlap(class AActor* OtherActor);
 	void ReceiveActorEndOverlap(class AActor* OtherActor);
+	void ReceiveActorBeginOverlap(class AActor* OtherActor);
+	void ExecuteUbergraph_BP_Ranged_Tier3_DamageAura(int32 EntryPoint);
 
 public:
 	static class UClass* StaticClass()

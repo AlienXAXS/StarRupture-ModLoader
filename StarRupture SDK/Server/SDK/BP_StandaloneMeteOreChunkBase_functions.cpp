@@ -17,15 +17,57 @@
 namespace SDK
 {
 
-// Function BP_StandaloneMeteOreChunkBase.BP_StandaloneMeteOreChunkBase_C.BP_OnSpawnedWithResourceDepleted
-// (Event, Public, BlueprintEvent)
+// Function BP_StandaloneMeteOreChunkBase.BP_StandaloneMeteOreChunkBase_C.Timeline__UpdateFunc
+// (BlueprintEvent)
 
-void ABP_StandaloneMeteOreChunkBase_C::BP_OnSpawnedWithResourceDepleted()
+void ABP_StandaloneMeteOreChunkBase_C::Timeline__UpdateFunc()
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_StandaloneMeteOreChunkBase_C", "BP_OnSpawnedWithResourceDepleted");
+		Func = Class->GetFunction("BP_StandaloneMeteOreChunkBase_C", "Timeline__UpdateFunc");
+
+	UObject::ProcessEvent(Func, nullptr);
+}
+
+
+// Function BP_StandaloneMeteOreChunkBase.BP_StandaloneMeteOreChunkBase_C.Timeline__FinishedFunc
+// (BlueprintEvent)
+
+void ABP_StandaloneMeteOreChunkBase_C::Timeline__FinishedFunc()
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BP_StandaloneMeteOreChunkBase_C", "Timeline__FinishedFunc");
+
+	UObject::ProcessEvent(Func, nullptr);
+}
+
+
+// Function BP_StandaloneMeteOreChunkBase.BP_StandaloneMeteOreChunkBase_C.ReceiveBeginPlay
+// (Event, Protected, BlueprintEvent)
+
+void ABP_StandaloneMeteOreChunkBase_C::ReceiveBeginPlay()
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BP_StandaloneMeteOreChunkBase_C", "ReceiveBeginPlay");
+
+	UObject::ProcessEvent(Func, nullptr);
+}
+
+
+// Function BP_StandaloneMeteOreChunkBase.BP_StandaloneMeteOreChunkBase_C.OnResourceDepletedCosmeticsStart
+// (Event, Public, BlueprintEvent)
+
+void ABP_StandaloneMeteOreChunkBase_C::OnResourceDepletedCosmeticsStart()
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BP_StandaloneMeteOreChunkBase_C", "OnResourceDepletedCosmeticsStart");
 
 	UObject::ProcessEvent(Func, nullptr);
 }
@@ -51,57 +93,15 @@ void ABP_StandaloneMeteOreChunkBase_C::ExecuteUbergraph_BP_StandaloneMeteOreChun
 }
 
 
-// Function BP_StandaloneMeteOreChunkBase.BP_StandaloneMeteOreChunkBase_C.OnResourceDepletedCosmeticsStart
+// Function BP_StandaloneMeteOreChunkBase.BP_StandaloneMeteOreChunkBase_C.BP_OnSpawnedWithResourceDepleted
 // (Event, Public, BlueprintEvent)
 
-void ABP_StandaloneMeteOreChunkBase_C::OnResourceDepletedCosmeticsStart()
+void ABP_StandaloneMeteOreChunkBase_C::BP_OnSpawnedWithResourceDepleted()
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_StandaloneMeteOreChunkBase_C", "OnResourceDepletedCosmeticsStart");
-
-	UObject::ProcessEvent(Func, nullptr);
-}
-
-
-// Function BP_StandaloneMeteOreChunkBase.BP_StandaloneMeteOreChunkBase_C.ReceiveBeginPlay
-// (Event, Protected, BlueprintEvent)
-
-void ABP_StandaloneMeteOreChunkBase_C::ReceiveBeginPlay()
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BP_StandaloneMeteOreChunkBase_C", "ReceiveBeginPlay");
-
-	UObject::ProcessEvent(Func, nullptr);
-}
-
-
-// Function BP_StandaloneMeteOreChunkBase.BP_StandaloneMeteOreChunkBase_C.Timeline__FinishedFunc
-// (BlueprintEvent)
-
-void ABP_StandaloneMeteOreChunkBase_C::Timeline__FinishedFunc()
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BP_StandaloneMeteOreChunkBase_C", "Timeline__FinishedFunc");
-
-	UObject::ProcessEvent(Func, nullptr);
-}
-
-
-// Function BP_StandaloneMeteOreChunkBase.BP_StandaloneMeteOreChunkBase_C.Timeline__UpdateFunc
-// (BlueprintEvent)
-
-void ABP_StandaloneMeteOreChunkBase_C::Timeline__UpdateFunc()
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BP_StandaloneMeteOreChunkBase_C", "Timeline__UpdateFunc");
+		Func = Class->GetFunction("BP_StandaloneMeteOreChunkBase_C", "BP_OnSpawnedWithResourceDepleted");
 
 	UObject::ProcessEvent(Func, nullptr);
 }

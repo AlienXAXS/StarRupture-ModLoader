@@ -57,10 +57,10 @@ public:
 	struct FVector4                               BeamColor0;                                        // 0x0800(0x0020)(Edit, BlueprintVisible, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 
 public:
-	void ExecuteUbergraph_BP_Assembler(int32 EntryPoint);
-	void OnBuildingStateChanged(ECrBuildingState InState);
-	void OnItemCraftingComplete();
 	void SetupSkeletalMesh();
+	void OnItemCraftingComplete();
+	void OnBuildingStateChanged(ECrBuildingState InState);
+	void ExecuteUbergraph_BP_Assembler(int32 EntryPoint);
 
 	void Get_Meshes(class USceneComponent* Static_0, class USceneComponent* Animated_0, TArray<class UMeshComponent*>* NewParam) const;
 

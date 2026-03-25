@@ -61,25 +61,25 @@ public:
 	float                                         Deactivated_Transition_Duration;                   // 0x0398(0x0004)(Edit, BlueprintVisible, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 
 public:
-	void BP_OnDamageProtectionChanged(bool IsActive);
-	void BP_OnDestroyed();
-	void BP_OnInfectionJustSpawned();
-	void Dissolve__FinishedFunc();
-	void Dissolve__UpdateFunc();
-	void ExecuteUbergraph_BP_StandaloneInfectionCyst(int32 EntryPoint);
-	void ImmunityActivated();
-	void ImmunityDeactivated();
-	void ImmunityTransition__FinishedFunc();
-	void ImmunityTransition__UpdateFunc();
-	void Infection_grow();
-	void K2_OnDamageTaken_1(class AActor* InInstigator, const struct FHitResult& HitResult, float InDamage);
-	void OnDamageTaken_Multicast();
-	void OnGrowthProgress(float Progress);
-	void ReceiveBeginPlay();
-	void ReceiveEndPlay(EEndPlayReason EndPlayReason);
-	void Scale_cyst__FinishedFunc();
-	void Scale_cyst__UpdateFunc();
 	void Set_half_time();
+	void Scale_cyst__UpdateFunc();
+	void Scale_cyst__FinishedFunc();
+	void ReceiveEndPlay(EEndPlayReason EndPlayReason);
+	void ReceiveBeginPlay();
+	void OnGrowthProgress(float Progress);
+	void OnDamageTaken_Multicast();
+	void K2_OnDamageTaken_1(class AActor* InInstigator, const struct FHitResult& HitResult, float InDamage);
+	void Infection_grow();
+	void ImmunityTransition__UpdateFunc();
+	void ImmunityTransition__FinishedFunc();
+	void ImmunityDeactivated();
+	void ImmunityActivated();
+	void ExecuteUbergraph_BP_StandaloneInfectionCyst(int32 EntryPoint);
+	void Dissolve__UpdateFunc();
+	void Dissolve__FinishedFunc();
+	void BP_OnInfectionJustSpawned();
+	void BP_OnDestroyed();
+	void BP_OnDamageProtectionChanged(bool IsActive);
 
 public:
 	static class UClass* StaticClass()

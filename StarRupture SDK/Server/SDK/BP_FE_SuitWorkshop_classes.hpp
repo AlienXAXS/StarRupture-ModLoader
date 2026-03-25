@@ -62,17 +62,17 @@ public:
 	class UAudioComponent*                        WorkingLoopSound;                                  // 0x0748(0x0008)(Edit, BlueprintVisible, ZeroConstructor, DisableEditOnInstance, InstancedReference, NoDestructor, HasGetValueTypeHash)
 
 public:
-	void Arm_A_VFX();
-	void Arm_B_VFX();
-	void Arm_C_VFX();
-	void Arm_D_VFX();
-	void AttachMeshes();
-	void ExecuteUbergraph_BP_FE_SuitWorkshop(int32 EntryPoint);
-	void OnBuildingStateChanged(ECrBuildingState InState);
-	void OnUIOpened(bool bOpened);
-	void ReceiveBeginPlay();
-	void Timeline__FinishedFunc();
 	void Timeline__UpdateFunc();
+	void Timeline__FinishedFunc();
+	void ReceiveBeginPlay();
+	void OnUIOpened(bool bOpened);
+	void OnBuildingStateChanged(ECrBuildingState InState);
+	void ExecuteUbergraph_BP_FE_SuitWorkshop(int32 EntryPoint);
+	void AttachMeshes();
+	void Arm_D_VFX();
+	void Arm_C_VFX();
+	void Arm_B_VFX();
+	void Arm_A_VFX();
 
 public:
 	static class UClass* StaticClass()

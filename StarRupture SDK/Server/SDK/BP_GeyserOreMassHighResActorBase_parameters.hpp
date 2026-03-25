@@ -16,23 +16,32 @@
 namespace SDK::Params
 {
 
-// Function BP_GeyserOreMassHighResActorBase.BP_GeyserOreMassHighResActorBase_C.BndEvt__BP_OreMassHighResActorBase_DepletedNiagaraSystem_K2Node_ComponentBoundEvent_1_OnNiagaraSystemFinished__DelegateSignature
-// 0x0008 (0x0008 - 0x0000)
-struct BP_GeyserOreMassHighResActorBase_C_BndEvt__BP_OreMassHighResActorBase_DepletedNiagaraSystem_K2Node_ComponentBoundEvent_1_OnNiagaraSystemFinished__DelegateSignature final
+// Function BP_GeyserOreMassHighResActorBase.BP_GeyserOreMassHighResActorBase_C.OnMiningWeakSpotDepletedCosmeticsStart
+// 0x0060 (0x0060 - 0x0000)
+struct BP_GeyserOreMassHighResActorBase_C_OnMiningWeakSpotDepletedCosmeticsStart final
 {
 public:
-	class UNiagaraComponent*                      PSystem;                                           // 0x0000(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, InstancedReference, NoDestructor, HasGetValueTypeHash)
+	struct FTransform                             CosmeticTransform;                                 // 0x0000(0x0060)(BlueprintVisible, BlueprintReadOnly, Parm, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 };
-DUMPER7_ASSERTS_BP_GeyserOreMassHighResActorBase_C_BndEvt__BP_OreMassHighResActorBase_DepletedNiagaraSystem_K2Node_ComponentBoundEvent_1_OnNiagaraSystemFinished__DelegateSignature;
+DUMPER7_ASSERTS_BP_GeyserOreMassHighResActorBase_C_OnMiningWeakSpotDepletedCosmeticsStart;
 
-// Function BP_GeyserOreMassHighResActorBase.BP_GeyserOreMassHighResActorBase_C.BndEvt__BP_OreMassHighResActorBase_DepletedWeakSpotSystem_K2Node_ComponentBoundEvent_0_OnNiagaraSystemFinished__DelegateSignature
+// Function BP_GeyserOreMassHighResActorBase.BP_GeyserOreMassHighResActorBase_C.OnLoaded_800BCDF1400ED570091EE3B4035FA14A
 // 0x0008 (0x0008 - 0x0000)
-struct BP_GeyserOreMassHighResActorBase_C_BndEvt__BP_OreMassHighResActorBase_DepletedWeakSpotSystem_K2Node_ComponentBoundEvent_0_OnNiagaraSystemFinished__DelegateSignature final
+struct BP_GeyserOreMassHighResActorBase_C_OnLoaded_800BCDF1400ED570091EE3B4035FA14A final
 {
 public:
-	class UNiagaraComponent*                      PSystem;                                           // 0x0000(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, InstancedReference, NoDestructor, HasGetValueTypeHash)
+	class UObject*                                Loaded;                                            // 0x0000(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
 };
-DUMPER7_ASSERTS_BP_GeyserOreMassHighResActorBase_C_BndEvt__BP_OreMassHighResActorBase_DepletedWeakSpotSystem_K2Node_ComponentBoundEvent_0_OnNiagaraSystemFinished__DelegateSignature;
+DUMPER7_ASSERTS_BP_GeyserOreMassHighResActorBase_C_OnLoaded_800BCDF1400ED570091EE3B4035FA14A;
+
+// Function BP_GeyserOreMassHighResActorBase.BP_GeyserOreMassHighResActorBase_C.OnLoaded_289CDE4840164C5933F5318A1A408B42
+// 0x0008 (0x0008 - 0x0000)
+struct BP_GeyserOreMassHighResActorBase_C_OnLoaded_289CDE4840164C5933F5318A1A408B42 final
+{
+public:
+	class UObject*                                Loaded;                                            // 0x0000(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BP_GeyserOreMassHighResActorBase_C_OnLoaded_289CDE4840164C5933F5318A1A408B42;
 
 // Function BP_GeyserOreMassHighResActorBase.BP_GeyserOreMassHighResActorBase_C.ExecuteUbergraph_BP_GeyserOreMassHighResActorBase
 // 0x01F0 (0x01F0 - 0x0000)
@@ -69,32 +78,23 @@ public:
 };
 DUMPER7_ASSERTS_BP_GeyserOreMassHighResActorBase_C_ExecuteUbergraph_BP_GeyserOreMassHighResActorBase;
 
-// Function BP_GeyserOreMassHighResActorBase.BP_GeyserOreMassHighResActorBase_C.OnLoaded_289CDE4840164C5933F5318A1A408B42
+// Function BP_GeyserOreMassHighResActorBase.BP_GeyserOreMassHighResActorBase_C.BndEvt__BP_OreMassHighResActorBase_DepletedWeakSpotSystem_K2Node_ComponentBoundEvent_0_OnNiagaraSystemFinished__DelegateSignature
 // 0x0008 (0x0008 - 0x0000)
-struct BP_GeyserOreMassHighResActorBase_C_OnLoaded_289CDE4840164C5933F5318A1A408B42 final
+struct BP_GeyserOreMassHighResActorBase_C_BndEvt__BP_OreMassHighResActorBase_DepletedWeakSpotSystem_K2Node_ComponentBoundEvent_0_OnNiagaraSystemFinished__DelegateSignature final
 {
 public:
-	class UObject*                                Loaded;                                            // 0x0000(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
+	class UNiagaraComponent*                      PSystem;                                           // 0x0000(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, InstancedReference, NoDestructor, HasGetValueTypeHash)
 };
-DUMPER7_ASSERTS_BP_GeyserOreMassHighResActorBase_C_OnLoaded_289CDE4840164C5933F5318A1A408B42;
+DUMPER7_ASSERTS_BP_GeyserOreMassHighResActorBase_C_BndEvt__BP_OreMassHighResActorBase_DepletedWeakSpotSystem_K2Node_ComponentBoundEvent_0_OnNiagaraSystemFinished__DelegateSignature;
 
-// Function BP_GeyserOreMassHighResActorBase.BP_GeyserOreMassHighResActorBase_C.OnLoaded_800BCDF1400ED570091EE3B4035FA14A
+// Function BP_GeyserOreMassHighResActorBase.BP_GeyserOreMassHighResActorBase_C.BndEvt__BP_OreMassHighResActorBase_DepletedNiagaraSystem_K2Node_ComponentBoundEvent_1_OnNiagaraSystemFinished__DelegateSignature
 // 0x0008 (0x0008 - 0x0000)
-struct BP_GeyserOreMassHighResActorBase_C_OnLoaded_800BCDF1400ED570091EE3B4035FA14A final
+struct BP_GeyserOreMassHighResActorBase_C_BndEvt__BP_OreMassHighResActorBase_DepletedNiagaraSystem_K2Node_ComponentBoundEvent_1_OnNiagaraSystemFinished__DelegateSignature final
 {
 public:
-	class UObject*                                Loaded;                                            // 0x0000(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
+	class UNiagaraComponent*                      PSystem;                                           // 0x0000(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, InstancedReference, NoDestructor, HasGetValueTypeHash)
 };
-DUMPER7_ASSERTS_BP_GeyserOreMassHighResActorBase_C_OnLoaded_800BCDF1400ED570091EE3B4035FA14A;
-
-// Function BP_GeyserOreMassHighResActorBase.BP_GeyserOreMassHighResActorBase_C.OnMiningWeakSpotDepletedCosmeticsStart
-// 0x0060 (0x0060 - 0x0000)
-struct BP_GeyserOreMassHighResActorBase_C_OnMiningWeakSpotDepletedCosmeticsStart final
-{
-public:
-	struct FTransform                             CosmeticTransform;                                 // 0x0000(0x0060)(BlueprintVisible, BlueprintReadOnly, Parm, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BP_GeyserOreMassHighResActorBase_C_OnMiningWeakSpotDepletedCosmeticsStart;
+DUMPER7_ASSERTS_BP_GeyserOreMassHighResActorBase_C_BndEvt__BP_OreMassHighResActorBase_DepletedNiagaraSystem_K2Node_ComponentBoundEvent_1_OnNiagaraSystemFinished__DelegateSignature;
 
 }
 

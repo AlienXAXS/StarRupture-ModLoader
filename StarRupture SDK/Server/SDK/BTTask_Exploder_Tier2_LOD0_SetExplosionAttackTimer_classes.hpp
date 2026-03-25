@@ -29,8 +29,8 @@ public:
 	struct FBlackboardKeySelector                 TimeToExplodeKey;                                  // 0x00B8(0x0028)(Edit, BlueprintVisible)
 
 public:
-	void ExecuteUbergraph_BTTask_Exploder_Tier2_LOD0_SetExplosionAttackTimer(int32 EntryPoint);
 	void ReceiveExecuteAI(class AAIController* OwnerController, class APawn* ControlledPawn);
+	void ExecuteUbergraph_BTTask_Exploder_Tier2_LOD0_SetExplosionAttackTimer(int32 EntryPoint);
 
 public:
 	static class UClass* StaticClass()

@@ -14,6 +14,30 @@
 namespace SDK::Params
 {
 
+// Function BP_DroneRailT1.BP_DroneRailT1_C.UpdateMaterialForSelectedFilter
+// 0x0020 (0x0020 - 0x0000)
+struct BP_DroneRailT1_C_UpdateMaterialForSelectedFilter final
+{
+public:
+	bool                                          Temp_bool_Variable;                                // 0x0000(0x0001)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+	uint8                                         Pad_1[0x7];                                        // 0x0001(0x0007)(Fixing Size After Last Property [ Dumper-7 ])
+	const class UAuItemDataBase*                  CallFunc_GetFilter_ReturnValue;                    // 0x0008(0x0008)(ConstParm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
+	bool                                          CallFunc_IsValid_ReturnValue;                      // 0x0010(0x0001)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+	uint8                                         Pad_11[0x7];                                       // 0x0011(0x0007)(Fixing Size After Last Property [ Dumper-7 ])
+	class UMaterialInterface*                     K2Node_Select_Default;                             // 0x0018(0x0008)(ZeroConstructor, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BP_DroneRailT1_C_UpdateMaterialForSelectedFilter;
+
+// Function BP_DroneRailT1.BP_DroneRailT1_C.SetColorTint
+// 0x0008 (0x0008 - 0x0000)
+struct BP_DroneRailT1_C_SetColorTint final
+{
+public:
+	int32                                         Color;                                             // 0x0000(0x0004)(ConstParm, BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+	int32                                         PrimitiveDataIndex;                                // 0x0004(0x0004)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BP_DroneRailT1_C_SetColorTint;
+
 // Function BP_DroneRailT1.BP_DroneRailT1_C.ExecuteUbergraph_BP_DroneRailT1
 // 0x0038 (0x0038 - 0x0000)
 struct BP_DroneRailT1_C_ExecuteUbergraph_BP_DroneRailT1 final
@@ -33,30 +57,6 @@ public:
 	float                                         CallFunc_SetCustomPrimitiveDataFloat_Value_ImplicitCast; // 0x0030(0x0004)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 };
 DUMPER7_ASSERTS_BP_DroneRailT1_C_ExecuteUbergraph_BP_DroneRailT1;
-
-// Function BP_DroneRailT1.BP_DroneRailT1_C.SetColorTint
-// 0x0008 (0x0008 - 0x0000)
-struct BP_DroneRailT1_C_SetColorTint final
-{
-public:
-	int32                                         Color;                                             // 0x0000(0x0004)(ConstParm, BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-	int32                                         PrimitiveDataIndex;                                // 0x0004(0x0004)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BP_DroneRailT1_C_SetColorTint;
-
-// Function BP_DroneRailT1.BP_DroneRailT1_C.UpdateMaterialForSelectedFilter
-// 0x0020 (0x0020 - 0x0000)
-struct BP_DroneRailT1_C_UpdateMaterialForSelectedFilter final
-{
-public:
-	bool                                          Temp_bool_Variable;                                // 0x0000(0x0001)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-	uint8                                         Pad_1[0x7];                                        // 0x0001(0x0007)(Fixing Size After Last Property [ Dumper-7 ])
-	const class UAuItemDataBase*                  CallFunc_GetFilter_ReturnValue;                    // 0x0008(0x0008)(ConstParm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
-	bool                                          CallFunc_IsValid_ReturnValue;                      // 0x0010(0x0001)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-	uint8                                         Pad_11[0x7];                                       // 0x0011(0x0007)(Fixing Size After Last Property [ Dumper-7 ])
-	class UMaterialInterface*                     K2Node_Select_Default;                             // 0x0018(0x0008)(ZeroConstructor, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BP_DroneRailT1_C_UpdateMaterialForSelectedFilter;
 
 }
 

@@ -16,6 +16,24 @@
 namespace SDK::Params
 {
 
+// Function BP_MechanicalDrill.BP_MechanicalDrill_C.OnResourceDetected
+// 0x0008 (0x0008 - 0x0000)
+struct BP_MechanicalDrill_C_OnResourceDetected final
+{
+public:
+	TSubclassOf<class UCrItemDataBase>            OreItemClass;                                      // 0x0000(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, UObjectWrapper, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BP_MechanicalDrill_C_OnResourceDetected;
+
+// Function BP_MechanicalDrill.BP_MechanicalDrill_C.OnBuildingStateChanged
+// 0x0001 (0x0001 - 0x0000)
+struct BP_MechanicalDrill_C_OnBuildingStateChanged final
+{
+public:
+	ECrBuildingState                              InState;                                           // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BP_MechanicalDrill_C_OnBuildingStateChanged;
+
 // Function BP_MechanicalDrill.BP_MechanicalDrill_C.ExecuteUbergraph_BP_MechanicalDrill
 // 0x0018 (0x0018 - 0x0000)
 struct BP_MechanicalDrill_C_ExecuteUbergraph_BP_MechanicalDrill final
@@ -29,24 +47,6 @@ public:
 	ECrBuildingState                              K2Node_Event_InState;                              // 0x0015(0x0001)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 };
 DUMPER7_ASSERTS_BP_MechanicalDrill_C_ExecuteUbergraph_BP_MechanicalDrill;
-
-// Function BP_MechanicalDrill.BP_MechanicalDrill_C.OnBuildingStateChanged
-// 0x0001 (0x0001 - 0x0000)
-struct BP_MechanicalDrill_C_OnBuildingStateChanged final
-{
-public:
-	ECrBuildingState                              InState;                                           // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BP_MechanicalDrill_C_OnBuildingStateChanged;
-
-// Function BP_MechanicalDrill.BP_MechanicalDrill_C.OnResourceDetected
-// 0x0008 (0x0008 - 0x0000)
-struct BP_MechanicalDrill_C_OnResourceDetected final
-{
-public:
-	TSubclassOf<class UCrItemDataBase>            OreItemClass;                                      // 0x0000(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, UObjectWrapper, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BP_MechanicalDrill_C_OnResourceDetected;
 
 }
 

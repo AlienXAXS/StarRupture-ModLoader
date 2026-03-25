@@ -26,9 +26,9 @@ public:
 	class ACrBuildingActorBase*                   Building;                                          // 0x03B0(0x0008)(Edit, BlueprintVisible, ZeroConstructor, DisableEditOnTemplate, DisableEditOnInstance, NoDestructor, HasGetValueTypeHash)
 
 public:
-	class FText GetText();
-	void SetHeight(int32 InHeight);
 	class FText UpdateName(class ACrBuildingActorBase* Owning_Building);
+	void SetHeight(int32 InHeight);
+	class FText GetText();
 
 public:
 	static class UClass* StaticClass()

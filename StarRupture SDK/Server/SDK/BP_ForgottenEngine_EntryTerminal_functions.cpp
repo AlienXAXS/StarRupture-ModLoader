@@ -17,23 +17,17 @@
 namespace SDK
 {
 
-// Function BP_ForgottenEngine_EntryTerminal.BP_ForgottenEngine_EntryTerminal_C.ExecuteUbergraph_BP_ForgottenEngine_EntryTerminal
-// (Final, UbergraphFunction)
-// Parameters:
-// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+// Function BP_ForgottenEngine_EntryTerminal.BP_ForgottenEngine_EntryTerminal_C.ReceiveBeginPlay
+// (Event, Protected, BlueprintEvent)
 
-void ABP_ForgottenEngine_EntryTerminal_C::ExecuteUbergraph_BP_ForgottenEngine_EntryTerminal(int32 EntryPoint)
+void ABP_ForgottenEngine_EntryTerminal_C::ReceiveBeginPlay()
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_ForgottenEngine_EntryTerminal_C", "ExecuteUbergraph_BP_ForgottenEngine_EntryTerminal");
+		Func = Class->GetFunction("BP_ForgottenEngine_EntryTerminal_C", "ReceiveBeginPlay");
 
-	Params::BP_ForgottenEngine_EntryTerminal_C_ExecuteUbergraph_BP_ForgottenEngine_EntryTerminal Parms{};
-
-	Parms.EntryPoint = EntryPoint;
-
-	UObject::ProcessEvent(Func, &Parms);
+	UObject::ProcessEvent(Func, nullptr);
 }
 
 
@@ -51,17 +45,23 @@ void ABP_ForgottenEngine_EntryTerminal_C::OnMachineActivated()
 }
 
 
-// Function BP_ForgottenEngine_EntryTerminal.BP_ForgottenEngine_EntryTerminal_C.ReceiveBeginPlay
-// (Event, Protected, BlueprintEvent)
+// Function BP_ForgottenEngine_EntryTerminal.BP_ForgottenEngine_EntryTerminal_C.ExecuteUbergraph_BP_ForgottenEngine_EntryTerminal
+// (Final, UbergraphFunction)
+// Parameters:
+// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 
-void ABP_ForgottenEngine_EntryTerminal_C::ReceiveBeginPlay()
+void ABP_ForgottenEngine_EntryTerminal_C::ExecuteUbergraph_BP_ForgottenEngine_EntryTerminal(int32 EntryPoint)
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_ForgottenEngine_EntryTerminal_C", "ReceiveBeginPlay");
+		Func = Class->GetFunction("BP_ForgottenEngine_EntryTerminal_C", "ExecuteUbergraph_BP_ForgottenEngine_EntryTerminal");
 
-	UObject::ProcessEvent(Func, nullptr);
+	Params::BP_ForgottenEngine_EntryTerminal_C_ExecuteUbergraph_BP_ForgottenEngine_EntryTerminal Parms{};
+
+	Parms.EntryPoint = EntryPoint;
+
+	UObject::ProcessEvent(Func, &Parms);
 }
 
 }

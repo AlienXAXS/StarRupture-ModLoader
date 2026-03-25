@@ -18,6 +18,33 @@
 namespace SDK::Params
 {
 
+// Function BP_Recycler.BP_Recycler_C.UserConstructionScript
+// 0x0010 (0x0010 - 0x0000)
+struct BP_Recycler_C_UserConstructionScript final
+{
+public:
+	TArray<class UStaticMeshComponent*>           K2Node_MakeArray_Array;                            // 0x0000(0x0010)(ReferenceParm, ContainsInstancedReference)
+};
+DUMPER7_ASSERTS_BP_Recycler_C_UserConstructionScript;
+
+// Function BP_Recycler.BP_Recycler_C.OnUIOpened
+// 0x0001 (0x0001 - 0x0000)
+struct BP_Recycler_C_OnUIOpened final
+{
+public:
+	bool                                          bOpened;                                           // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BP_Recycler_C_OnUIOpened;
+
+// Function BP_Recycler.BP_Recycler_C.OnBuildingStateChanged
+// 0x0001 (0x0001 - 0x0000)
+struct BP_Recycler_C_OnBuildingStateChanged final
+{
+public:
+	ECrBuildingState                              InState;                                           // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BP_Recycler_C_OnBuildingStateChanged;
+
 // Function BP_Recycler.BP_Recycler_C.ExecuteUbergraph_BP_Recycler
 // 0x0288 (0x0288 - 0x0000)
 struct BP_Recycler_C_ExecuteUbergraph_BP_Recycler final
@@ -45,33 +72,6 @@ public:
 	double                                        CallFunc_MakeVector_Y_ImplicitCast_1;              // 0x0280(0x0008)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 };
 DUMPER7_ASSERTS_BP_Recycler_C_ExecuteUbergraph_BP_Recycler;
-
-// Function BP_Recycler.BP_Recycler_C.OnBuildingStateChanged
-// 0x0001 (0x0001 - 0x0000)
-struct BP_Recycler_C_OnBuildingStateChanged final
-{
-public:
-	ECrBuildingState                              InState;                                           // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BP_Recycler_C_OnBuildingStateChanged;
-
-// Function BP_Recycler.BP_Recycler_C.OnUIOpened
-// 0x0001 (0x0001 - 0x0000)
-struct BP_Recycler_C_OnUIOpened final
-{
-public:
-	bool                                          bOpened;                                           // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BP_Recycler_C_OnUIOpened;
-
-// Function BP_Recycler.BP_Recycler_C.UserConstructionScript
-// 0x0010 (0x0010 - 0x0000)
-struct BP_Recycler_C_UserConstructionScript final
-{
-public:
-	TArray<class UStaticMeshComponent*>           K2Node_MakeArray_Array;                            // 0x0000(0x0010)(ReferenceParm, ContainsInstancedReference)
-};
-DUMPER7_ASSERTS_BP_Recycler_C_UserConstructionScript;
 
 }
 

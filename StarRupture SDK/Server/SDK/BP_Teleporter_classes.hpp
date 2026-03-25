@@ -59,15 +59,15 @@ public:
 	bool                                          Cyl_boost_slowdown;                                // 0x0721(0x0001)(Edit, BlueprintVisible, ZeroConstructor, DisableEditOnInstance, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 
 public:
-	void BndEvt__BP_Teleporter_OpenBoxCollision_K2Node_ComponentBoundEvent_0_ComponentBeginOverlapSignature__DelegateSignature(class UPrimitiveComponent* OverlappedComponent, class AActor* OtherActor, class UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const struct FHitResult& SweepResult);
-	void BndEvt__BP_Teleporter_OpenBoxCollision_K2Node_ComponentBoundEvent_1_ComponentEndOverlapSignature__DelegateSignature(class UPrimitiveComponent* OverlappedComponent, class AActor* OtherActor, class UPrimitiveComponent* OtherComp, int32 OtherBodyIndex);
-	void CylindersUpdate();
-	void ExecuteUbergraph_BP_Teleporter(int32 EntryPoint);
-	void Get_Meshes(class USceneComponent* Static_0, class USceneComponent* Dynamic, TArray<class USceneComponent*>* NewParam);
-	void OnBuildingStateChanged(ECrBuildingState InState);
-	void OnPlayerArrived(bool bLocalPlayer);
-	void OnTeleporterUsed(bool bLocalPlayer);
 	void UserConstructionScript();
+	void OnTeleporterUsed(bool bLocalPlayer);
+	void OnPlayerArrived(bool bLocalPlayer);
+	void OnBuildingStateChanged(ECrBuildingState InState);
+	void Get_Meshes(class USceneComponent* Static_0, class USceneComponent* Dynamic, TArray<class USceneComponent*>* NewParam);
+	void ExecuteUbergraph_BP_Teleporter(int32 EntryPoint);
+	void CylindersUpdate();
+	void BndEvt__BP_Teleporter_OpenBoxCollision_K2Node_ComponentBoundEvent_1_ComponentEndOverlapSignature__DelegateSignature(class UPrimitiveComponent* OverlappedComponent, class AActor* OtherActor, class UPrimitiveComponent* OtherComp, int32 OtherBodyIndex);
+	void BndEvt__BP_Teleporter_OpenBoxCollision_K2Node_ComponentBoundEvent_0_ComponentBeginOverlapSignature__DelegateSignature(class UPrimitiveComponent* OverlappedComponent, class AActor* OtherActor, class UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const struct FHitResult& SweepResult);
 
 public:
 	static class UClass* StaticClass()

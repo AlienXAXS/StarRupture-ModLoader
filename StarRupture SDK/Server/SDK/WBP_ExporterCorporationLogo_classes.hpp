@@ -29,10 +29,10 @@ public:
 	class ACrBuildingActorBase*                   Building;                                          // 0x03B8(0x0008)(Edit, BlueprintVisible, ZeroConstructor, DisableEditOnTemplate, DisableEditOnInstance, NoDestructor, HasGetValueTypeHash)
 
 public:
-	void ExecuteUbergraph_WBP_ExporterCorporationLogo(int32 EntryPoint);
-	class FText GetText();
-	void SetCorporationLogo(class UObject* CorporationLogo_0, bool IsDefault);
 	class FText UpdateName(class ACrBuildingActorBase* Owning_Building);
+	void SetCorporationLogo(class UObject* CorporationLogo_0, bool IsDefault);
+	class FText GetText();
+	void ExecuteUbergraph_WBP_ExporterCorporationLogo(int32 EntryPoint);
 
 public:
 	static class UClass* StaticClass()

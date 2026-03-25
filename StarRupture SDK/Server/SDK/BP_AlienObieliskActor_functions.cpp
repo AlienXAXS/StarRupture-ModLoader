@@ -17,49 +17,15 @@
 namespace SDK
 {
 
-// Function BP_AlienObieliskActor.BP_AlienObieliskActor_C.ExecuteUbergraph_BP_AlienObieliskActor
-// (Final, UbergraphFunction)
-// Parameters:
-// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+// Function BP_AlienObieliskActor.BP_AlienObieliskActor_C.TimeRemap__UpdateFunc
+// (BlueprintEvent)
 
-void ABP_AlienObieliskActor_C::ExecuteUbergraph_BP_AlienObieliskActor(int32 EntryPoint)
+void ABP_AlienObieliskActor_C::TimeRemap__UpdateFunc()
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_AlienObieliskActor_C", "ExecuteUbergraph_BP_AlienObieliskActor");
-
-	Params::BP_AlienObieliskActor_C_ExecuteUbergraph_BP_AlienObieliskActor Parms{};
-
-	Parms.EntryPoint = EntryPoint;
-
-	UObject::ProcessEvent(Func, &Parms);
-}
-
-
-// Function BP_AlienObieliskActor.BP_AlienObieliskActor_C.ReceiveBeginPlay
-// (Event, Protected, BlueprintEvent)
-
-void ABP_AlienObieliskActor_C::ReceiveBeginPlay()
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BP_AlienObieliskActor_C", "ReceiveBeginPlay");
-
-	UObject::ProcessEvent(Func, nullptr);
-}
-
-
-// Function BP_AlienObieliskActor.BP_AlienObieliskActor_C.SequencerTrigger
-// (BlueprintCallable, BlueprintEvent)
-
-void ABP_AlienObieliskActor_C::SequencerTrigger()
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BP_AlienObieliskActor_C", "SequencerTrigger");
+		Func = Class->GetFunction("BP_AlienObieliskActor_C", "TimeRemap__UpdateFunc");
 
 	UObject::ProcessEvent(Func, nullptr);
 }
@@ -79,17 +45,51 @@ void ABP_AlienObieliskActor_C::TimeRemap__FinishedFunc()
 }
 
 
-// Function BP_AlienObieliskActor.BP_AlienObieliskActor_C.TimeRemap__UpdateFunc
-// (BlueprintEvent)
+// Function BP_AlienObieliskActor.BP_AlienObieliskActor_C.SequencerTrigger
+// (BlueprintCallable, BlueprintEvent)
 
-void ABP_AlienObieliskActor_C::TimeRemap__UpdateFunc()
+void ABP_AlienObieliskActor_C::SequencerTrigger()
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_AlienObieliskActor_C", "TimeRemap__UpdateFunc");
+		Func = Class->GetFunction("BP_AlienObieliskActor_C", "SequencerTrigger");
 
 	UObject::ProcessEvent(Func, nullptr);
+}
+
+
+// Function BP_AlienObieliskActor.BP_AlienObieliskActor_C.ReceiveBeginPlay
+// (Event, Protected, BlueprintEvent)
+
+void ABP_AlienObieliskActor_C::ReceiveBeginPlay()
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BP_AlienObieliskActor_C", "ReceiveBeginPlay");
+
+	UObject::ProcessEvent(Func, nullptr);
+}
+
+
+// Function BP_AlienObieliskActor.BP_AlienObieliskActor_C.ExecuteUbergraph_BP_AlienObieliskActor
+// (Final, UbergraphFunction)
+// Parameters:
+// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+
+void ABP_AlienObieliskActor_C::ExecuteUbergraph_BP_AlienObieliskActor(int32 EntryPoint)
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BP_AlienObieliskActor_C", "ExecuteUbergraph_BP_AlienObieliskActor");
+
+	Params::BP_AlienObieliskActor_C_ExecuteUbergraph_BP_AlienObieliskActor Parms{};
+
+	Parms.EntryPoint = EntryPoint;
+
+	UObject::ProcessEvent(Func, &Parms);
 }
 
 }

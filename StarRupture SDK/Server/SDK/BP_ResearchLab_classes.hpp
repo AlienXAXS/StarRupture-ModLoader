@@ -56,10 +56,10 @@ public:
 	ECrBuildingState                              BuildingState;                                     // 0x07C0(0x0001)(Edit, BlueprintVisible, ZeroConstructor, DisableEditOnInstance, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 
 public:
-	void ExecuteUbergraph_BP_ResearchLab(int32 EntryPoint);
-	void Get_Meshes(class USceneComponent* Static_0, class USceneComponent* Animated_0, TArray<class UMeshComponent*>* NewParam);
-	void OnBuildingStateChanged(ECrBuildingState InState);
 	void SetupSkeletalMesh();
+	void OnBuildingStateChanged(ECrBuildingState InState);
+	void Get_Meshes(class USceneComponent* Static_0, class USceneComponent* Animated_0, TArray<class UMeshComponent*>* NewParam);
+	void ExecuteUbergraph_BP_ResearchLab(int32 EntryPoint);
 
 public:
 	static class UClass* StaticClass()

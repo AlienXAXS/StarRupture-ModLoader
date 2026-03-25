@@ -17,6 +17,20 @@
 namespace SDK
 {
 
+// Function BP_Melee_Tier2_Actor_AiController.BP_Melee_Tier2_Actor_AiController_C.ReceiveBeginPlay
+// (Event, Protected, BlueprintEvent)
+
+void ABP_Melee_Tier2_Actor_AiController_C::ReceiveBeginPlay()
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BP_Melee_Tier2_Actor_AiController_C", "ReceiveBeginPlay");
+
+	UObject::ProcessEvent(Func, nullptr);
+}
+
+
 // Function BP_Melee_Tier2_Actor_AiController.BP_Melee_Tier2_Actor_AiController_C.ExecuteUbergraph_BP_Melee_Tier2_Actor_AiController
 // (Final, UbergraphFunction)
 // Parameters:
@@ -34,20 +48,6 @@ void ABP_Melee_Tier2_Actor_AiController_C::ExecuteUbergraph_BP_Melee_Tier2_Actor
 	Parms.EntryPoint = EntryPoint;
 
 	UObject::ProcessEvent(Func, &Parms);
-}
-
-
-// Function BP_Melee_Tier2_Actor_AiController.BP_Melee_Tier2_Actor_AiController_C.ReceiveBeginPlay
-// (Event, Protected, BlueprintEvent)
-
-void ABP_Melee_Tier2_Actor_AiController_C::ReceiveBeginPlay()
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BP_Melee_Tier2_Actor_AiController_C", "ReceiveBeginPlay");
-
-	UObject::ProcessEvent(Func, nullptr);
 }
 
 }

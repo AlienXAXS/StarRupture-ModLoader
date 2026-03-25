@@ -17,17 +17,14 @@
 namespace SDK::Params
 {
 
-// Function BP_Gatherable_Plant_h.BP_Gatherable_Plant_h_C.BP_OnWaveChangedUpdate
-// 0x0004 (0x0004 - 0x0000)
-struct BP_Gatherable_Plant_h_C_BP_OnWaveChangedUpdate final
+// Function BP_Gatherable_Plant_h.BP_Gatherable_Plant_h_C.ReceiveEndPlay
+// 0x0001 (0x0001 - 0x0000)
+struct BP_Gatherable_Plant_h_C_ReceiveEndPlay final
 {
 public:
-	EEnviroWave                                   WaveType;                                          // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-	EEnviroWaveStage                              WaveStage;                                         // 0x0001(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-	EEnviroWaveFadeoutSubstage                    FadeoutSubstage;                                   // 0x0002(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-	EEnviroWaveGrowbackSubstage                   GrowbackSubstage;                                  // 0x0003(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+	EEndPlayReason                                EndPlayReason;                                     // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 };
-DUMPER7_ASSERTS_BP_Gatherable_Plant_h_C_BP_OnWaveChangedUpdate;
+DUMPER7_ASSERTS_BP_Gatherable_Plant_h_C_ReceiveEndPlay;
 
 // Function BP_Gatherable_Plant_h.BP_Gatherable_Plant_h_C.ExecuteUbergraph_BP_Gatherable_Plant_h
 // 0x0020 (0x0020 - 0x0000)
@@ -48,14 +45,17 @@ public:
 };
 DUMPER7_ASSERTS_BP_Gatherable_Plant_h_C_ExecuteUbergraph_BP_Gatherable_Plant_h;
 
-// Function BP_Gatherable_Plant_h.BP_Gatherable_Plant_h_C.ReceiveEndPlay
-// 0x0001 (0x0001 - 0x0000)
-struct BP_Gatherable_Plant_h_C_ReceiveEndPlay final
+// Function BP_Gatherable_Plant_h.BP_Gatherable_Plant_h_C.BP_OnWaveChangedUpdate
+// 0x0004 (0x0004 - 0x0000)
+struct BP_Gatherable_Plant_h_C_BP_OnWaveChangedUpdate final
 {
 public:
-	EEndPlayReason                                EndPlayReason;                                     // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+	EEnviroWave                                   WaveType;                                          // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+	EEnviroWaveStage                              WaveStage;                                         // 0x0001(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+	EEnviroWaveFadeoutSubstage                    FadeoutSubstage;                                   // 0x0002(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+	EEnviroWaveGrowbackSubstage                   GrowbackSubstage;                                  // 0x0003(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 };
-DUMPER7_ASSERTS_BP_Gatherable_Plant_h_C_ReceiveEndPlay;
+DUMPER7_ASSERTS_BP_Gatherable_Plant_h_C_BP_OnWaveChangedUpdate;
 
 }
 

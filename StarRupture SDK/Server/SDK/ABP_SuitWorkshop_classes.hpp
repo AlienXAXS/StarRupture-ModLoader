@@ -36,26 +36,26 @@ public:
 	class ABP_SuitWorkshop_C*                     BP_SuitWorkshop_reference;                         // 0x04D8(0x0008)(Edit, BlueprintVisible, ZeroConstructor, DisableEditOnTemplate, DisableEditOnInstance, NoDestructor, HasGetValueTypeHash)
 
 public:
-	void AnimGraph(struct FPoseLink* AnimGraph_0);
-	void AnimNotify_A_arm_laser_1();
-	void AnimNotify_A_arm_laser_2();
-	void AnimNotify_A_arm_laser_3();
-	void AnimNotify_A_arm_laser_4();
-	void AnimNotify_B_arm_laser_1();
-	void AnimNotify_B_arm_laser_2();
-	void AnimNotify_B_arm_laser_3();
-	void AnimNotify_B_arm_laser_4();
-	void AnimNotify_C_arm_laser_1();
-	void AnimNotify_C_arm_laser_2();
-	void AnimNotify_C_arm_laser_3();
-	void AnimNotify_C_arm_laser_4();
-	void AnimNotify_D_arm_laser_1();
-	void AnimNotify_D_arm_laser_2();
-	void AnimNotify_D_arm_laser_3();
-	void AnimNotify_D_arm_laser_4();
-	void BlueprintBeginPlay();
-	void EvaluateGraphExposedInputs_ExecuteUbergraph_ABP_SuitWorkshop_AnimGraphNode_BlendSpacePlayer_42EF01434F2AB123C96389A2D4555290();
 	void ExecuteUbergraph_ABP_SuitWorkshop(int32 EntryPoint);
+	void EvaluateGraphExposedInputs_ExecuteUbergraph_ABP_SuitWorkshop_AnimGraphNode_BlendSpacePlayer_42EF01434F2AB123C96389A2D4555290();
+	void BlueprintBeginPlay();
+	void AnimNotify_D_arm_laser_4();
+	void AnimNotify_D_arm_laser_3();
+	void AnimNotify_D_arm_laser_2();
+	void AnimNotify_D_arm_laser_1();
+	void AnimNotify_C_arm_laser_4();
+	void AnimNotify_C_arm_laser_3();
+	void AnimNotify_C_arm_laser_2();
+	void AnimNotify_C_arm_laser_1();
+	void AnimNotify_B_arm_laser_4();
+	void AnimNotify_B_arm_laser_3();
+	void AnimNotify_B_arm_laser_2();
+	void AnimNotify_B_arm_laser_1();
+	void AnimNotify_A_arm_laser_4();
+	void AnimNotify_A_arm_laser_3();
+	void AnimNotify_A_arm_laser_2();
+	void AnimNotify_A_arm_laser_1();
+	void AnimGraph(struct FPoseLink* AnimGraph_0);
 
 public:
 	static class UClass* StaticClass()

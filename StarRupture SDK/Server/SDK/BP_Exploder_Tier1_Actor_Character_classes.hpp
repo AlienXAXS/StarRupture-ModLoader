@@ -11,8 +11,8 @@
 #include "Basic.hpp"
 
 #include "Engine_structs.hpp"
-#include "BP_BaseAI_classes.hpp"
 #include "AuActorPlacement_structs.hpp"
+#include "BP_BaseAI_classes.hpp"
 
 
 namespace SDK
@@ -34,23 +34,23 @@ public:
 	struct FAuAPMassSpawnedEntityType             ExplosionSphereEntity;                             // 0x0C38(0x0038)(Edit, BlueprintVisible, DisableEditOnInstance)
 
 public:
-	void CanChangeEyeColor(bool* Result);
-	void ExecuteUbergraph_BP_Exploder_Tier1_Actor_Character(int32 EntryPoint);
-	void OnAiDied(const struct FHitResult& HitResult, const struct FGameplayTag& KillingDamageTag);
-	void OnDiedFromGas(const struct FHitResult& LastHit, const struct FGameplayTag& KillingDamageTag);
-	void OnEnableActivationTimer();
-	void OnEnableExplosionTimer();
-	void ReceiveTick(float DeltaSeconds);
-	void SetIsAggroEyeColor(bool NewIsAggro);
-	void SetIsBoostedEyeColor(bool NewIsBoosted);
-	void StartActivationTimer();
-	void StartExplosionTimer();
-	void TryApplySpeedup();
-	void TryApplySpeedupRemoveActivator();
 	void UserConstructionScript();
+	void TryApplySpeedupRemoveActivator();
+	void TryApplySpeedup();
+	void StartExplosionTimer();
+	void StartActivationTimer();
+	void SetIsBoostedEyeColor(bool NewIsBoosted);
+	void SetIsAggroEyeColor(bool NewIsAggro);
+	void ReceiveTick(float DeltaSeconds);
+	void OnEnableExplosionTimer();
+	void OnEnableActivationTimer();
+	void OnDiedFromGas(const struct FHitResult& LastHit, const struct FGameplayTag& KillingDamageTag);
+	void OnAiDied(const struct FHitResult& HitResult, const struct FGameplayTag& KillingDamageTag);
+	void ExecuteUbergraph_BP_Exploder_Tier1_Actor_Character(int32 EntryPoint);
+	void CanChangeEyeColor(bool* Result);
 
-	bool IsExploderDead() const;
 	bool ShouldSpawnHugeCollision() const;
+	bool IsExploderDead() const;
 
 public:
 	static class UClass* StaticClass()

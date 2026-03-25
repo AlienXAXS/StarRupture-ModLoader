@@ -18,6 +18,24 @@
 namespace SDK::Params
 {
 
+// Function BP_PackageReceiver.BP_PackageReceiver_C.PostPlayBuildingEffect
+// 0x0001 (0x0001 - 0x0000)
+struct BP_PackageReceiver_C_PostPlayBuildingEffect final
+{
+public:
+	bool                                          bWasBuildingEffectPlayed;                          // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BP_PackageReceiver_C_PostPlayBuildingEffect;
+
+// Function BP_PackageReceiver.BP_PackageReceiver_C.OnBuildingStateChanged
+// 0x0001 (0x0001 - 0x0000)
+struct BP_PackageReceiver_C_OnBuildingStateChanged final
+{
+public:
+	ECrBuildingState                              InState;                                           // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BP_PackageReceiver_C_OnBuildingStateChanged;
+
 // Function BP_PackageReceiver.BP_PackageReceiver_C.ExecuteUbergraph_BP_PackageReceiver
 // 0x0310 (0x0310 - 0x0000)
 struct BP_PackageReceiver_C_ExecuteUbergraph_BP_PackageReceiver final
@@ -62,24 +80,6 @@ public:
 	double                                        CallFunc_Lerp_Alpha_ImplicitCast_1;                // 0x0308(0x0008)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 };
 DUMPER7_ASSERTS_BP_PackageReceiver_C_ExecuteUbergraph_BP_PackageReceiver;
-
-// Function BP_PackageReceiver.BP_PackageReceiver_C.OnBuildingStateChanged
-// 0x0001 (0x0001 - 0x0000)
-struct BP_PackageReceiver_C_OnBuildingStateChanged final
-{
-public:
-	ECrBuildingState                              InState;                                           // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BP_PackageReceiver_C_OnBuildingStateChanged;
-
-// Function BP_PackageReceiver.BP_PackageReceiver_C.PostPlayBuildingEffect
-// 0x0001 (0x0001 - 0x0000)
-struct BP_PackageReceiver_C_PostPlayBuildingEffect final
-{
-public:
-	bool                                          bWasBuildingEffectPlayed;                          // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BP_PackageReceiver_C_PostPlayBuildingEffect;
 
 }
 

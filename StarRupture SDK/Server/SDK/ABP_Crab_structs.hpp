@@ -16,6 +16,17 @@
 namespace SDK
 {
 
+// ScriptStruct ABP_Crab.ABP_Crab_C.AnimBlueprintGeneratedMutableData
+// 0x000B (0x000C - 0x0001)
+struct ABP_Crab::FAnimBlueprintGeneratedMutableData final : public FAnimBlueprintMutableData
+{
+public:
+	uint8                                         Pad_1[0x3];                                        // 0x0001(0x0003)(Fixing Size After Last Property [ Dumper-7 ])
+	float                                         __FloatProperty;                                   // 0x0004(0x0004)(BlueprintVisible, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+	float                                         __FloatProperty_0;                                 // 0x0008(0x0004)(BlueprintVisible, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_ABP_Crab__FAnimBlueprintGeneratedMutableData;
+
 // ScriptStruct ABP_Crab.ABP_Crab_C.AnimBlueprintGeneratedConstantData
 // 0x079F (0x07A0 - 0x0001)
 struct ABP_Crab::FAnimBlueprintGeneratedConstantData final : public FAnimBlueprintConstantData
@@ -88,17 +99,6 @@ public:
 	struct FAnimNodeExposedValueHandler_PropertyAccess AnimGraphNode_StateMachine;                   // 0x0770(0x0030)()
 };
 DUMPER7_ASSERTS_ABP_Crab__FAnimBlueprintGeneratedConstantData;
-
-// ScriptStruct ABP_Crab.ABP_Crab_C.AnimBlueprintGeneratedMutableData
-// 0x000B (0x000C - 0x0001)
-struct ABP_Crab::FAnimBlueprintGeneratedMutableData final : public FAnimBlueprintMutableData
-{
-public:
-	uint8                                         Pad_1[0x3];                                        // 0x0001(0x0003)(Fixing Size After Last Property [ Dumper-7 ])
-	float                                         __FloatProperty;                                   // 0x0004(0x0004)(BlueprintVisible, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-	float                                         __FloatProperty_0;                                 // 0x0008(0x0004)(BlueprintVisible, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_ABP_Crab__FAnimBlueprintGeneratedMutableData;
 
 }
 

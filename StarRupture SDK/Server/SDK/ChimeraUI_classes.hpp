@@ -6559,7 +6559,7 @@ DUMPER7_ASSERTS_UCrUW_CrosshairBase;
 
 // Class ChimeraUI.CrUW_CrosshairDot
 // 0x0018 (0x03F8 - 0x03E0)
-class UCrUW_CrosshairDot : public UCrUW_CrosshairBase
+class UCrUW_CrosshairDot final : public UCrUW_CrosshairBase
 {
 public:
 	float                                         LookingAtBuildingDotScale;                         // 0x03E0(0x0004)(Edit, ZeroConstructor, DisableEditOnInstance, IsPlainOldData, NoDestructor, Protected, HasGetValueTypeHash, NativeAccessSpecifierProtected)

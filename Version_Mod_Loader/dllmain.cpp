@@ -72,7 +72,7 @@ static HANDLE g_pluginsLoadedEvent = NULL;
 static HANDLE g_engineReadyEvent = NULL;
 
 // Required suffix for the game version, read from the executable's version
-static constexpr wchar_t kRequiredVersionSuffix[] = L"CL-114046";
+static constexpr wchar_t kRequiredVersionSuffix[] = L"CL-115725";
 
 #ifdef MODLOADER_CLIENT_BUILD
 // Set during init from modloader.ini [UI] Enabled; read during shutdown.
@@ -239,7 +239,7 @@ static DWORD WINAPI MainInitThreadProc(LPVOID)
 
 			// Only show the splash and countdown on client builds -- on server builds we just log the error and exit immediately since there's no UI to show it on.
 #if defined(MODLOADER_CLIENT_BUILD)
-			Splash::SetErrorMode();
+			Splash::SetErrorMode(false);
 			Splash::SetStatus(L"Wrong game version! Please update to the correct build.");
 
 			for (int countdown = 10; countdown > 0; --countdown)

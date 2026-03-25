@@ -14,6 +14,15 @@
 namespace SDK::Params
 {
 
+// Function BP_ResearchTerminal.BP_ResearchTerminal_C.OnUIOpened
+// 0x0001 (0x0001 - 0x0000)
+struct BP_ResearchTerminal_C_OnUIOpened final
+{
+public:
+	bool                                          bOpened;                                           // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BP_ResearchTerminal_C_OnUIOpened;
+
 // Function BP_ResearchTerminal.BP_ResearchTerminal_C.ExecuteUbergraph_BP_ResearchTerminal
 // 0x0020 (0x0020 - 0x0000)
 struct BP_ResearchTerminal_C_ExecuteUbergraph_BP_ResearchTerminal final
@@ -27,15 +36,6 @@ public:
 	bool                                          K2Node_DynamicCast_bSuccess;                       // 0x0018(0x0001)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 };
 DUMPER7_ASSERTS_BP_ResearchTerminal_C_ExecuteUbergraph_BP_ResearchTerminal;
-
-// Function BP_ResearchTerminal.BP_ResearchTerminal_C.OnUIOpened
-// 0x0001 (0x0001 - 0x0000)
-struct BP_ResearchTerminal_C_OnUIOpened final
-{
-public:
-	bool                                          bOpened;                                           // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BP_ResearchTerminal_C_OnUIOpened;
 
 }
 

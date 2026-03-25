@@ -21,8 +21,8 @@ namespace SDK
 class ABP_Modular_StairsBarrierFlatL_C final : public ACrCustomBuilding
 {
 public:
-	void GetBuildingMeshes(class UMeshComponent** MainBody, TArray<class UMeshComponent*>* AdditionalMeshes) const;
 	void GetBuildingProgressMeshes(float BuildingProgressPercentage, TArray<class UMeshComponent*>* OutMeshesToHide, TArray<class UMeshComponent*>* OutMeshesToShow) const;
+	void GetBuildingMeshes(class UMeshComponent** MainBody, TArray<class UMeshComponent*>* AdditionalMeshes) const;
 
 public:
 	static class UClass* StaticClass()

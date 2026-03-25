@@ -11,8 +11,8 @@
 #include "Basic.hpp"
 
 #include "ABP_Ranged_Tier1_Ragdoll_structs.hpp"
-#include "Engine_structs.hpp"
 #include "AnimGraphRuntime_structs.hpp"
+#include "Engine_structs.hpp"
 #include "Chimera_classes.hpp"
 
 

@@ -17,23 +17,31 @@
 namespace SDK
 {
 
-// Function BP_LaserDrill.BP_LaserDrill_C.ExecuteUbergraph_BP_LaserDrill
-// (Final, UbergraphFunction, HasDefaults)
-// Parameters:
-// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+// Function BP_LaserDrill.BP_LaserDrill_C.SetupSkeletalMesh
+// (Event, Public, BlueprintEvent)
 
-void ABP_LaserDrill_C::ExecuteUbergraph_BP_LaserDrill(int32 EntryPoint)
+void ABP_LaserDrill_C::SetupSkeletalMesh()
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_LaserDrill_C", "ExecuteUbergraph_BP_LaserDrill");
+		Func = Class->GetFunction("BP_LaserDrill_C", "SetupSkeletalMesh");
 
-	Params::BP_LaserDrill_C_ExecuteUbergraph_BP_LaserDrill Parms{};
+	UObject::ProcessEvent(Func, nullptr);
+}
 
-	Parms.EntryPoint = EntryPoint;
 
-	UObject::ProcessEvent(Func, &Parms);
+// Function BP_LaserDrill.BP_LaserDrill_C.OnConstructionFinished
+// (BlueprintEvent)
+
+void ABP_LaserDrill_C::OnConstructionFinished()
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BP_LaserDrill_C", "OnConstructionFinished");
+
+	UObject::ProcessEvent(Func, nullptr);
 }
 
 
@@ -57,31 +65,23 @@ void ABP_LaserDrill_C::OnBuildingStateChanged(ECrBuildingState InState)
 }
 
 
-// Function BP_LaserDrill.BP_LaserDrill_C.OnConstructionFinished
-// (BlueprintEvent)
+// Function BP_LaserDrill.BP_LaserDrill_C.ExecuteUbergraph_BP_LaserDrill
+// (Final, UbergraphFunction, HasDefaults)
+// Parameters:
+// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 
-void ABP_LaserDrill_C::OnConstructionFinished()
+void ABP_LaserDrill_C::ExecuteUbergraph_BP_LaserDrill(int32 EntryPoint)
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_LaserDrill_C", "OnConstructionFinished");
+		Func = Class->GetFunction("BP_LaserDrill_C", "ExecuteUbergraph_BP_LaserDrill");
 
-	UObject::ProcessEvent(Func, nullptr);
-}
+	Params::BP_LaserDrill_C_ExecuteUbergraph_BP_LaserDrill Parms{};
 
+	Parms.EntryPoint = EntryPoint;
 
-// Function BP_LaserDrill.BP_LaserDrill_C.SetupSkeletalMesh
-// (Event, Public, BlueprintEvent)
-
-void ABP_LaserDrill_C::SetupSkeletalMesh()
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BP_LaserDrill_C", "SetupSkeletalMesh");
-
-	UObject::ProcessEvent(Func, nullptr);
+	UObject::ProcessEvent(Func, &Parms);
 }
 
 

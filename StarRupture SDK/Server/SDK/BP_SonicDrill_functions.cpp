@@ -17,23 +17,37 @@
 namespace SDK
 {
 
-// Function BP_SonicDrill.BP_SonicDrill_C.ExecuteUbergraph_BP_SonicDrill
-// (Final, UbergraphFunction)
+// Function BP_SonicDrill.BP_SonicDrill_C.ReceiveEndPlay
+// (Event, Protected, BlueprintEvent)
 // Parameters:
-// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+// EEndPlayReason                          EndPlayReason                                          (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 
-void ABP_SonicDrill_C::ExecuteUbergraph_BP_SonicDrill(int32 EntryPoint)
+void ABP_SonicDrill_C::ReceiveEndPlay(EEndPlayReason EndPlayReason)
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_SonicDrill_C", "ExecuteUbergraph_BP_SonicDrill");
+		Func = Class->GetFunction("BP_SonicDrill_C", "ReceiveEndPlay");
 
-	Params::BP_SonicDrill_C_ExecuteUbergraph_BP_SonicDrill Parms{};
+	Params::BP_SonicDrill_C_ReceiveEndPlay Parms{};
 
-	Parms.EntryPoint = EntryPoint;
+	Parms.EndPlayReason = EndPlayReason;
 
 	UObject::ProcessEvent(Func, &Parms);
+}
+
+
+// Function BP_SonicDrill.BP_SonicDrill_C.OnConstructionFinished
+// (BlueprintEvent)
+
+void ABP_SonicDrill_C::OnConstructionFinished()
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BP_SonicDrill_C", "OnConstructionFinished");
+
+	UObject::ProcessEvent(Func, nullptr);
 }
 
 
@@ -57,35 +71,21 @@ void ABP_SonicDrill_C::OnBuildingStateChanged(ECrBuildingState InState)
 }
 
 
-// Function BP_SonicDrill.BP_SonicDrill_C.OnConstructionFinished
-// (BlueprintEvent)
-
-void ABP_SonicDrill_C::OnConstructionFinished()
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BP_SonicDrill_C", "OnConstructionFinished");
-
-	UObject::ProcessEvent(Func, nullptr);
-}
-
-
-// Function BP_SonicDrill.BP_SonicDrill_C.ReceiveEndPlay
-// (Event, Protected, BlueprintEvent)
+// Function BP_SonicDrill.BP_SonicDrill_C.ExecuteUbergraph_BP_SonicDrill
+// (Final, UbergraphFunction)
 // Parameters:
-// EEndPlayReason                          EndPlayReason                                          (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 
-void ABP_SonicDrill_C::ReceiveEndPlay(EEndPlayReason EndPlayReason)
+void ABP_SonicDrill_C::ExecuteUbergraph_BP_SonicDrill(int32 EntryPoint)
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_SonicDrill_C", "ReceiveEndPlay");
+		Func = Class->GetFunction("BP_SonicDrill_C", "ExecuteUbergraph_BP_SonicDrill");
 
-	Params::BP_SonicDrill_C_ReceiveEndPlay Parms{};
+	Params::BP_SonicDrill_C_ExecuteUbergraph_BP_SonicDrill Parms{};
 
-	Parms.EndPlayReason = EndPlayReason;
+	Parms.EntryPoint = EntryPoint;
 
 	UObject::ProcessEvent(Func, &Parms);
 }

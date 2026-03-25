@@ -17,6 +17,15 @@
 namespace SDK::Params
 {
 
+// Function BP_DroneStation.BP_DroneStation_C.PostPlayBuildingEffect
+// 0x0001 (0x0001 - 0x0000)
+struct BP_DroneStation_C_PostPlayBuildingEffect final
+{
+public:
+	bool                                          bWasBuildingEffectPlayed;                          // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BP_DroneStation_C_PostPlayBuildingEffect;
+
 // Function BP_DroneStation.BP_DroneStation_C.ExecuteUbergraph_BP_DroneStation
 // 0x02B8 (0x02B8 - 0x0000)
 struct BP_DroneStation_C_ExecuteUbergraph_BP_DroneStation final
@@ -55,15 +64,6 @@ public:
 	double                                        CallFunc_Lerp_Alpha_ImplicitCast;                  // 0x02B0(0x0008)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 };
 DUMPER7_ASSERTS_BP_DroneStation_C_ExecuteUbergraph_BP_DroneStation;
-
-// Function BP_DroneStation.BP_DroneStation_C.PostPlayBuildingEffect
-// 0x0001 (0x0001 - 0x0000)
-struct BP_DroneStation_C_PostPlayBuildingEffect final
-{
-public:
-	bool                                          bWasBuildingEffectPlayed;                          // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BP_DroneStation_C_PostPlayBuildingEffect;
 
 }
 

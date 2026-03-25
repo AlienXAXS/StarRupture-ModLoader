@@ -16,6 +16,45 @@
 namespace SDK::Params
 {
 
+// Function BP_StorageDepot.BP_StorageDepot_C.UpdateItemCount
+// 0x0008 (0x0008 - 0x0000)
+struct BP_StorageDepot_C_UpdateItemCount final
+{
+public:
+	int32                                         Count;                                             // 0x0000(0x0004)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+	int32                                         MaxCount;                                          // 0x0004(0x0004)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BP_StorageDepot_C_UpdateItemCount;
+
+// Function BP_StorageDepot.BP_StorageDepot_C.UpdateFilter
+// 0x0008 (0x0008 - 0x0000)
+struct BP_StorageDepot_C_UpdateFilter final
+{
+public:
+	const class UAuItemDataBase*                  ItemFilter;                                        // 0x0000(0x0008)(ConstParm, BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BP_StorageDepot_C_UpdateFilter;
+
+// Function BP_StorageDepot.BP_StorageDepot_C.PostPlayBuildingEffect
+// 0x0001 (0x0001 - 0x0000)
+struct BP_StorageDepot_C_PostPlayBuildingEffect final
+{
+public:
+	bool                                          bWasBuildingEffectPlayed;                          // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BP_StorageDepot_C_PostPlayBuildingEffect;
+
+// Function BP_StorageDepot.BP_StorageDepot_C.GetMaterialInstance
+// 0x0018 (0x0018 - 0x0000)
+struct BP_StorageDepot_C_GetMaterialInstance final
+{
+public:
+	class UMaterialInstanceDynamic*               MaterialInstance;                                  // 0x0000(0x0008)(Parm, OutParm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
+	class UMaterialInstanceDynamic*               CallFunc_CreateDynamicMaterialInstance_ReturnValue; // 0x0008(0x0008)(ZeroConstructor, NoDestructor, HasGetValueTypeHash)
+	bool                                          CallFunc_IsValid_ReturnValue;                      // 0x0010(0x0001)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BP_StorageDepot_C_GetMaterialInstance;
+
 // Function BP_StorageDepot.BP_StorageDepot_C.ExecuteUbergraph_BP_StorageDepot
 // 0x04A0 (0x04A0 - 0x0000)
 struct BP_StorageDepot_C_ExecuteUbergraph_BP_StorageDepot final
@@ -77,45 +116,6 @@ public:
 	float                                         CallFunc_SetScalarParameterValue_Value_ImplicitCast; // 0x0490(0x0004)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 };
 DUMPER7_ASSERTS_BP_StorageDepot_C_ExecuteUbergraph_BP_StorageDepot;
-
-// Function BP_StorageDepot.BP_StorageDepot_C.GetMaterialInstance
-// 0x0018 (0x0018 - 0x0000)
-struct BP_StorageDepot_C_GetMaterialInstance final
-{
-public:
-	class UMaterialInstanceDynamic*               MaterialInstance;                                  // 0x0000(0x0008)(Parm, OutParm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
-	class UMaterialInstanceDynamic*               CallFunc_CreateDynamicMaterialInstance_ReturnValue; // 0x0008(0x0008)(ZeroConstructor, NoDestructor, HasGetValueTypeHash)
-	bool                                          CallFunc_IsValid_ReturnValue;                      // 0x0010(0x0001)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BP_StorageDepot_C_GetMaterialInstance;
-
-// Function BP_StorageDepot.BP_StorageDepot_C.PostPlayBuildingEffect
-// 0x0001 (0x0001 - 0x0000)
-struct BP_StorageDepot_C_PostPlayBuildingEffect final
-{
-public:
-	bool                                          bWasBuildingEffectPlayed;                          // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BP_StorageDepot_C_PostPlayBuildingEffect;
-
-// Function BP_StorageDepot.BP_StorageDepot_C.UpdateFilter
-// 0x0008 (0x0008 - 0x0000)
-struct BP_StorageDepot_C_UpdateFilter final
-{
-public:
-	const class UAuItemDataBase*                  ItemFilter;                                        // 0x0000(0x0008)(ConstParm, BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BP_StorageDepot_C_UpdateFilter;
-
-// Function BP_StorageDepot.BP_StorageDepot_C.UpdateItemCount
-// 0x0008 (0x0008 - 0x0000)
-struct BP_StorageDepot_C_UpdateItemCount final
-{
-public:
-	int32                                         Count;                                             // 0x0000(0x0004)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-	int32                                         MaxCount;                                          // 0x0004(0x0004)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BP_StorageDepot_C_UpdateItemCount;
 
 }
 

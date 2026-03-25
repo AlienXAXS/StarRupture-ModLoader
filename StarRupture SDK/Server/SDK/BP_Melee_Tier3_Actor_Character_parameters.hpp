@@ -19,14 +19,149 @@
 namespace SDK::Params
 {
 
-// Function BP_Melee_Tier3_Actor_Character.BP_Melee_Tier3_Actor_Character_C.CacheLongAoePoints
-// 0x0010 (0x0010 - 0x0000)
-struct BP_Melee_Tier3_Actor_Character_C_CacheLongAoePoints final
+// Function BP_Melee_Tier3_Actor_Character.BP_Melee_Tier3_Actor_Character_C.UserConstructionScript
+// 0x0001 (0x0001 - 0x0000)
+struct BP_Melee_Tier3_Actor_Character_C_UserConstructionScript final
 {
 public:
-	TArray<struct FVector>                        Points;                                            // 0x0000(0x0010)(ConstParm, BlueprintVisible, BlueprintReadOnly, Parm, OutParm, ReferenceParm)
+	bool                                          CallFunc_K2_AttachToComponent_ReturnValue;         // 0x0000(0x0001)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 };
-DUMPER7_ASSERTS_BP_Melee_Tier3_Actor_Character_C_CacheLongAoePoints;
+DUMPER7_ASSERTS_BP_Melee_Tier3_Actor_Character_C_UserConstructionScript;
+
+// Function BP_Melee_Tier3_Actor_Character.BP_Melee_Tier3_Actor_Character_C.SetRangedAttackTimer
+// 0x0038 (0x0038 - 0x0000)
+struct BP_Melee_Tier3_Actor_Character_C_SetRangedAttackTimer final
+{
+public:
+	bool                                          SetTimerActive;                                    // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+	uint8                                         Pad_1[0x7];                                        // 0x0001(0x0007)(Fixing Size After Last Property [ Dumper-7 ])
+	double                                        TimeToRangedAttack;                                // 0x0008(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+	TDelegate<void()>                             K2Node_CreateDelegate_OutputDelegate;              // 0x0010(0x0018)(ZeroConstructor, HasGetValueTypeHash)
+	struct FTimerHandle                           CallFunc_K2_SetTimerDelegate_ReturnValue;          // 0x0028(0x0008)(NoDestructor, HasGetValueTypeHash)
+	float                                         CallFunc_K2_SetTimerDelegate_Time_ImplicitCast;    // 0x0030(0x0004)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BP_Melee_Tier3_Actor_Character_C_SetRangedAttackTimer;
+
+// Function BP_Melee_Tier3_Actor_Character.BP_Melee_Tier3_Actor_Character_C.SetMovementAttackStage
+// 0x0001 (0x0001 - 0x0000)
+struct BP_Melee_Tier3_Actor_Character_C_SetMovementAttackStage final
+{
+public:
+	EMovementAttackStage                          MovementAttackStage_0;                             // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BP_Melee_Tier3_Actor_Character_C_SetMovementAttackStage;
+
+// Function BP_Melee_Tier3_Actor_Character.BP_Melee_Tier3_Actor_Character_C.SetIsUpCover
+// 0x0001 (0x0001 - 0x0000)
+struct BP_Melee_Tier3_Actor_Character_C_SetIsUpCover final
+{
+public:
+	bool                                          bNewIsUpCover;                                     // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BP_Melee_Tier3_Actor_Character_C_SetIsUpCover;
+
+// Function BP_Melee_Tier3_Actor_Character.BP_Melee_Tier3_Actor_Character_C.SetIsJumpEyeBehaviour
+// 0x0001 (0x0001 - 0x0000)
+struct BP_Melee_Tier3_Actor_Character_C_SetIsJumpEyeBehaviour final
+{
+public:
+	bool                                          NewIsJumpEyeBehaviour;                             // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BP_Melee_Tier3_Actor_Character_C_SetIsJumpEyeBehaviour;
+
+// Function BP_Melee_Tier3_Actor_Character.BP_Melee_Tier3_Actor_Character_C.SetIsCoverActive
+// 0x0001 (0x0001 - 0x0000)
+struct BP_Melee_Tier3_Actor_Character_C_SetIsCoverActive final
+{
+public:
+	bool                                          bNewIsCoverActive;                                 // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BP_Melee_Tier3_Actor_Character_C_SetIsCoverActive;
+
+// Function BP_Melee_Tier3_Actor_Character.BP_Melee_Tier3_Actor_Character_C.SetIsBoostedEyeColor
+// 0x0001 (0x0001 - 0x0000)
+struct BP_Melee_Tier3_Actor_Character_C_SetIsBoostedEyeColor final
+{
+public:
+	bool                                          NewIsBoosted;                                      // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BP_Melee_Tier3_Actor_Character_C_SetIsBoostedEyeColor;
+
+// Function BP_Melee_Tier3_Actor_Character.BP_Melee_Tier3_Actor_Character_C.SetIsAggroEyeColor
+// 0x0001 (0x0001 - 0x0000)
+struct BP_Melee_Tier3_Actor_Character_C_SetIsAggroEyeColor final
+{
+public:
+	bool                                          NewIsAggro;                                        // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BP_Melee_Tier3_Actor_Character_C_SetIsAggroEyeColor;
+
+// Function BP_Melee_Tier3_Actor_Character.BP_Melee_Tier3_Actor_Character_C.SetHasAggroTarget
+// 0x0001 (0x0001 - 0x0000)
+struct BP_Melee_Tier3_Actor_Character_C_SetHasAggroTarget final
+{
+public:
+	bool                                          bNewHasAggroTarget;                                // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BP_Melee_Tier3_Actor_Character_C_SetHasAggroTarget;
+
+// Function BP_Melee_Tier3_Actor_Character.BP_Melee_Tier3_Actor_Character_C.ReceiveTick
+// 0x0004 (0x0004 - 0x0000)
+struct BP_Melee_Tier3_Actor_Character_C_ReceiveTick final
+{
+public:
+	float                                         DeltaSeconds;                                      // 0x0000(0x0004)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BP_Melee_Tier3_Actor_Character_C_ReceiveTick;
+
+// Function BP_Melee_Tier3_Actor_Character.BP_Melee_Tier3_Actor_Character_C.ReceiveEndPlay
+// 0x0001 (0x0001 - 0x0000)
+struct BP_Melee_Tier3_Actor_Character_C_ReceiveEndPlay final
+{
+public:
+	EEndPlayReason                                EndPlayReason;                                     // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BP_Melee_Tier3_Actor_Character_C_ReceiveEndPlay;
+
+// Function BP_Melee_Tier3_Actor_Character.BP_Melee_Tier3_Actor_Character_C.OnRangedAttackTimerFinished
+// 0x0018 (0x0018 - 0x0000)
+struct BP_Melee_Tier3_Actor_Character_C_OnRangedAttackTimerFinished final
+{
+public:
+	class FName                                   IsRangedAttackedPlannedKey;                        // 0x0000(0x0008)(Edit, BlueprintVisible, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+	ECrEnemyAttackType                            RangedAttack;                                      // 0x0008(0x0001)(Edit, BlueprintVisible, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+	uint8                                         Pad_9[0x7];                                        // 0x0009(0x0007)(Fixing Size After Last Property [ Dumper-7 ])
+	class UBlackboardComponent*                   CallFunc_GetBlackboard_ReturnValue;                // 0x0010(0x0008)(ZeroConstructor, InstancedReference, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BP_Melee_Tier3_Actor_Character_C_OnRangedAttackTimerFinished;
+
+// Function BP_Melee_Tier3_Actor_Character.BP_Melee_Tier3_Actor_Character_C.OnAiDied
+// 0x0108 (0x0108 - 0x0000)
+struct BP_Melee_Tier3_Actor_Character_C_OnAiDied final
+{
+public:
+	struct FHitResult                             HitResult;                                         // 0x0000(0x0100)(ConstParm, BlueprintVisible, BlueprintReadOnly, Parm, OutParm, ReferenceParm, IsPlainOldData, NoDestructor, ContainsInstancedReference)
+	struct FGameplayTag                           KillingDamageTag;                                  // 0x0100(0x0008)(ConstParm, BlueprintVisible, BlueprintReadOnly, Parm, OutParm, ReferenceParm, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BP_Melee_Tier3_Actor_Character_C_OnAiDied;
+
+// Function BP_Melee_Tier3_Actor_Character.BP_Melee_Tier3_Actor_Character_C.GetMovementAttackStage
+// 0x0001 (0x0001 - 0x0000)
+struct BP_Melee_Tier3_Actor_Character_C_GetMovementAttackStage final
+{
+public:
+	EMovementAttackStage                          ReturnValue;                                       // 0x0000(0x0001)(Parm, OutParm, ZeroConstructor, ReturnParm, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BP_Melee_Tier3_Actor_Character_C_GetMovementAttackStage;
+
+// Function BP_Melee_Tier3_Actor_Character.BP_Melee_Tier3_Actor_Character_C.GetCachedLongAoePoints
+// 0x0010 (0x0010 - 0x0000)
+struct BP_Melee_Tier3_Actor_Character_C_GetCachedLongAoePoints final
+{
+public:
+	TArray<struct FVector>                        ReturnValue;                                       // 0x0000(0x0010)(Parm, OutParm, ReturnParm)
+};
+DUMPER7_ASSERTS_BP_Melee_Tier3_Actor_Character_C_GetCachedLongAoePoints;
 
 // Function BP_Melee_Tier3_Actor_Character.BP_Melee_Tier3_Actor_Character_C.ExecuteUbergraph_BP_Melee_Tier3_Actor_Character
 // 0x04A0 (0x04A0 - 0x0000)
@@ -130,149 +265,14 @@ public:
 };
 DUMPER7_ASSERTS_BP_Melee_Tier3_Actor_Character_C_ExecuteUbergraph_BP_Melee_Tier3_Actor_Character;
 
-// Function BP_Melee_Tier3_Actor_Character.BP_Melee_Tier3_Actor_Character_C.GetCachedLongAoePoints
+// Function BP_Melee_Tier3_Actor_Character.BP_Melee_Tier3_Actor_Character_C.CacheLongAoePoints
 // 0x0010 (0x0010 - 0x0000)
-struct BP_Melee_Tier3_Actor_Character_C_GetCachedLongAoePoints final
+struct BP_Melee_Tier3_Actor_Character_C_CacheLongAoePoints final
 {
 public:
-	TArray<struct FVector>                        ReturnValue;                                       // 0x0000(0x0010)(Parm, OutParm, ReturnParm)
+	TArray<struct FVector>                        Points;                                            // 0x0000(0x0010)(ConstParm, BlueprintVisible, BlueprintReadOnly, Parm, OutParm, ReferenceParm)
 };
-DUMPER7_ASSERTS_BP_Melee_Tier3_Actor_Character_C_GetCachedLongAoePoints;
-
-// Function BP_Melee_Tier3_Actor_Character.BP_Melee_Tier3_Actor_Character_C.GetMovementAttackStage
-// 0x0001 (0x0001 - 0x0000)
-struct BP_Melee_Tier3_Actor_Character_C_GetMovementAttackStage final
-{
-public:
-	EMovementAttackStage                          ReturnValue;                                       // 0x0000(0x0001)(Parm, OutParm, ZeroConstructor, ReturnParm, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BP_Melee_Tier3_Actor_Character_C_GetMovementAttackStage;
-
-// Function BP_Melee_Tier3_Actor_Character.BP_Melee_Tier3_Actor_Character_C.OnAiDied
-// 0x0108 (0x0108 - 0x0000)
-struct BP_Melee_Tier3_Actor_Character_C_OnAiDied final
-{
-public:
-	struct FHitResult                             HitResult;                                         // 0x0000(0x0100)(ConstParm, BlueprintVisible, BlueprintReadOnly, Parm, OutParm, ReferenceParm, IsPlainOldData, NoDestructor, ContainsInstancedReference)
-	struct FGameplayTag                           KillingDamageTag;                                  // 0x0100(0x0008)(ConstParm, BlueprintVisible, BlueprintReadOnly, Parm, OutParm, ReferenceParm, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BP_Melee_Tier3_Actor_Character_C_OnAiDied;
-
-// Function BP_Melee_Tier3_Actor_Character.BP_Melee_Tier3_Actor_Character_C.OnRangedAttackTimerFinished
-// 0x0018 (0x0018 - 0x0000)
-struct BP_Melee_Tier3_Actor_Character_C_OnRangedAttackTimerFinished final
-{
-public:
-	class FName                                   IsRangedAttackedPlannedKey;                        // 0x0000(0x0008)(Edit, BlueprintVisible, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-	ECrEnemyAttackType                            RangedAttack;                                      // 0x0008(0x0001)(Edit, BlueprintVisible, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-	uint8                                         Pad_9[0x7];                                        // 0x0009(0x0007)(Fixing Size After Last Property [ Dumper-7 ])
-	class UBlackboardComponent*                   CallFunc_GetBlackboard_ReturnValue;                // 0x0010(0x0008)(ZeroConstructor, InstancedReference, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BP_Melee_Tier3_Actor_Character_C_OnRangedAttackTimerFinished;
-
-// Function BP_Melee_Tier3_Actor_Character.BP_Melee_Tier3_Actor_Character_C.ReceiveEndPlay
-// 0x0001 (0x0001 - 0x0000)
-struct BP_Melee_Tier3_Actor_Character_C_ReceiveEndPlay final
-{
-public:
-	EEndPlayReason                                EndPlayReason;                                     // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BP_Melee_Tier3_Actor_Character_C_ReceiveEndPlay;
-
-// Function BP_Melee_Tier3_Actor_Character.BP_Melee_Tier3_Actor_Character_C.ReceiveTick
-// 0x0004 (0x0004 - 0x0000)
-struct BP_Melee_Tier3_Actor_Character_C_ReceiveTick final
-{
-public:
-	float                                         DeltaSeconds;                                      // 0x0000(0x0004)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BP_Melee_Tier3_Actor_Character_C_ReceiveTick;
-
-// Function BP_Melee_Tier3_Actor_Character.BP_Melee_Tier3_Actor_Character_C.SetHasAggroTarget
-// 0x0001 (0x0001 - 0x0000)
-struct BP_Melee_Tier3_Actor_Character_C_SetHasAggroTarget final
-{
-public:
-	bool                                          bNewHasAggroTarget;                                // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BP_Melee_Tier3_Actor_Character_C_SetHasAggroTarget;
-
-// Function BP_Melee_Tier3_Actor_Character.BP_Melee_Tier3_Actor_Character_C.SetIsAggroEyeColor
-// 0x0001 (0x0001 - 0x0000)
-struct BP_Melee_Tier3_Actor_Character_C_SetIsAggroEyeColor final
-{
-public:
-	bool                                          NewIsAggro;                                        // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BP_Melee_Tier3_Actor_Character_C_SetIsAggroEyeColor;
-
-// Function BP_Melee_Tier3_Actor_Character.BP_Melee_Tier3_Actor_Character_C.SetIsBoostedEyeColor
-// 0x0001 (0x0001 - 0x0000)
-struct BP_Melee_Tier3_Actor_Character_C_SetIsBoostedEyeColor final
-{
-public:
-	bool                                          NewIsBoosted;                                      // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BP_Melee_Tier3_Actor_Character_C_SetIsBoostedEyeColor;
-
-// Function BP_Melee_Tier3_Actor_Character.BP_Melee_Tier3_Actor_Character_C.SetIsCoverActive
-// 0x0001 (0x0001 - 0x0000)
-struct BP_Melee_Tier3_Actor_Character_C_SetIsCoverActive final
-{
-public:
-	bool                                          bNewIsCoverActive;                                 // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BP_Melee_Tier3_Actor_Character_C_SetIsCoverActive;
-
-// Function BP_Melee_Tier3_Actor_Character.BP_Melee_Tier3_Actor_Character_C.SetIsJumpEyeBehaviour
-// 0x0001 (0x0001 - 0x0000)
-struct BP_Melee_Tier3_Actor_Character_C_SetIsJumpEyeBehaviour final
-{
-public:
-	bool                                          NewIsJumpEyeBehaviour;                             // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BP_Melee_Tier3_Actor_Character_C_SetIsJumpEyeBehaviour;
-
-// Function BP_Melee_Tier3_Actor_Character.BP_Melee_Tier3_Actor_Character_C.SetIsUpCover
-// 0x0001 (0x0001 - 0x0000)
-struct BP_Melee_Tier3_Actor_Character_C_SetIsUpCover final
-{
-public:
-	bool                                          bNewIsUpCover;                                     // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BP_Melee_Tier3_Actor_Character_C_SetIsUpCover;
-
-// Function BP_Melee_Tier3_Actor_Character.BP_Melee_Tier3_Actor_Character_C.SetMovementAttackStage
-// 0x0001 (0x0001 - 0x0000)
-struct BP_Melee_Tier3_Actor_Character_C_SetMovementAttackStage final
-{
-public:
-	EMovementAttackStage                          MovementAttackStage_0;                             // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BP_Melee_Tier3_Actor_Character_C_SetMovementAttackStage;
-
-// Function BP_Melee_Tier3_Actor_Character.BP_Melee_Tier3_Actor_Character_C.SetRangedAttackTimer
-// 0x0038 (0x0038 - 0x0000)
-struct BP_Melee_Tier3_Actor_Character_C_SetRangedAttackTimer final
-{
-public:
-	bool                                          SetTimerActive;                                    // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-	uint8                                         Pad_1[0x7];                                        // 0x0001(0x0007)(Fixing Size After Last Property [ Dumper-7 ])
-	double                                        TimeToRangedAttack;                                // 0x0008(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-	TDelegate<void()>                             K2Node_CreateDelegate_OutputDelegate;              // 0x0010(0x0018)(ZeroConstructor, HasGetValueTypeHash)
-	struct FTimerHandle                           CallFunc_K2_SetTimerDelegate_ReturnValue;          // 0x0028(0x0008)(NoDestructor, HasGetValueTypeHash)
-	float                                         CallFunc_K2_SetTimerDelegate_Time_ImplicitCast;    // 0x0030(0x0004)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BP_Melee_Tier3_Actor_Character_C_SetRangedAttackTimer;
-
-// Function BP_Melee_Tier3_Actor_Character.BP_Melee_Tier3_Actor_Character_C.UserConstructionScript
-// 0x0001 (0x0001 - 0x0000)
-struct BP_Melee_Tier3_Actor_Character_C_UserConstructionScript final
-{
-public:
-	bool                                          CallFunc_K2_AttachToComponent_ReturnValue;         // 0x0000(0x0001)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BP_Melee_Tier3_Actor_Character_C_UserConstructionScript;
+DUMPER7_ASSERTS_BP_Melee_Tier3_Actor_Character_C_CacheLongAoePoints;
 
 }
 

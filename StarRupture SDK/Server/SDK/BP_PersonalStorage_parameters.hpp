@@ -14,6 +14,29 @@
 namespace SDK::Params
 {
 
+// Function BP_PersonalStorage.BP_PersonalStorage_C.OnUIOpened
+// 0x0001 (0x0001 - 0x0000)
+struct BP_PersonalStorage_C_OnUIOpened final
+{
+public:
+	bool                                          bOpened;                                           // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BP_PersonalStorage_C_OnUIOpened;
+
+// Function BP_PersonalStorage.BP_PersonalStorage_C.OnNameChanged
+// 0x0038 (0x0038 - 0x0000)
+struct BP_PersonalStorage_C_OnNameChanged final
+{
+public:
+	class FString                                 NewName;                                           // 0x0000(0x0010)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, HasGetValueTypeHash)
+	class UUserWidget*                            CallFunc_GetWidget_ReturnValue;                    // 0x0010(0x0008)(ZeroConstructor, InstancedReference, NoDestructor, HasGetValueTypeHash)
+	class UWBP_PersonalStorageName_C*             K2Node_DynamicCast_AsWBP_Personal_Storage_Name;    // 0x0018(0x0008)(ZeroConstructor, InstancedReference, NoDestructor, HasGetValueTypeHash)
+	bool                                          K2Node_DynamicCast_bSuccess;                       // 0x0020(0x0001)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+	uint8                                         Pad_21[0x7];                                       // 0x0021(0x0007)(Fixing Size After Last Property [ Dumper-7 ])
+	class FText                                   CallFunc_UpdateName_ReturnValue;                   // 0x0028(0x0010)()
+};
+DUMPER7_ASSERTS_BP_PersonalStorage_C_OnNameChanged;
+
 // Function BP_PersonalStorage.BP_PersonalStorage_C.ExecuteUbergraph_BP_PersonalStorage
 // 0x0098 (0x0098 - 0x0000)
 struct BP_PersonalStorage_C_ExecuteUbergraph_BP_PersonalStorage final
@@ -45,29 +68,6 @@ public:
 	TDelegate<void(const class FString& NewName)> K2Node_CreateDelegate_OutputDelegate;              // 0x0080(0x0018)(ZeroConstructor, HasGetValueTypeHash)
 };
 DUMPER7_ASSERTS_BP_PersonalStorage_C_ExecuteUbergraph_BP_PersonalStorage;
-
-// Function BP_PersonalStorage.BP_PersonalStorage_C.OnNameChanged
-// 0x0038 (0x0038 - 0x0000)
-struct BP_PersonalStorage_C_OnNameChanged final
-{
-public:
-	class FString                                 NewName;                                           // 0x0000(0x0010)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, HasGetValueTypeHash)
-	class UUserWidget*                            CallFunc_GetWidget_ReturnValue;                    // 0x0010(0x0008)(ZeroConstructor, InstancedReference, NoDestructor, HasGetValueTypeHash)
-	class UWBP_PersonalStorageName_C*             K2Node_DynamicCast_AsWBP_Personal_Storage_Name;    // 0x0018(0x0008)(ZeroConstructor, InstancedReference, NoDestructor, HasGetValueTypeHash)
-	bool                                          K2Node_DynamicCast_bSuccess;                       // 0x0020(0x0001)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-	uint8                                         Pad_21[0x7];                                       // 0x0021(0x0007)(Fixing Size After Last Property [ Dumper-7 ])
-	class FText                                   CallFunc_UpdateName_ReturnValue;                   // 0x0028(0x0010)()
-};
-DUMPER7_ASSERTS_BP_PersonalStorage_C_OnNameChanged;
-
-// Function BP_PersonalStorage.BP_PersonalStorage_C.OnUIOpened
-// 0x0001 (0x0001 - 0x0000)
-struct BP_PersonalStorage_C_OnUIOpened final
-{
-public:
-	bool                                          bOpened;                                           // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BP_PersonalStorage_C_OnUIOpened;
 
 }
 

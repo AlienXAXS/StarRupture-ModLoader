@@ -10,6 +10,7 @@
 
 #include "Basic.hpp"
 
+#include "EPlayerState_structs.hpp"
 #include "ModularGameplay_structs.hpp"
 #include "AuActorPlacement_structs.hpp"
 #include "Chimera_structs.hpp"
@@ -18,7 +19,6 @@
 #include "GameplayTags_structs.hpp"
 #include "ContextualDialog_structs.hpp"
 #include "InputCore_structs.hpp"
-#include "EPlayerState_structs.hpp"
 #include "EnhancedInput_structs.hpp"
 #include "GameplayAbilities_structs.hpp"
 #include "AuItems_structs.hpp"

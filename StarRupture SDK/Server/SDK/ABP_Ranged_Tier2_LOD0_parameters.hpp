@@ -19,37 +19,14 @@
 namespace SDK::Params
 {
 
-// Function ABP_Ranged_Tier2_LOD0.ABP_Ranged_Tier2_LOD0_C.AnimGraph
-// 0x0010 (0x0010 - 0x0000)
-struct ABP_Ranged_Tier2_LOD0_C_AnimGraph final
+// Function ABP_Ranged_Tier2_LOD0.ABP_Ranged_Tier2_LOD0_C.OnJumpTimeSet
+// 0x0004 (0x0004 - 0x0000)
+struct ABP_Ranged_Tier2_LOD0_C_OnJumpTimeSet final
 {
 public:
-	struct FPoseLink                              AnimGraph_0;                                       // 0x0000(0x0010)(Parm, OutParm, NoDestructor)
+	float                                         Time;                                              // 0x0000(0x0004)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 };
-DUMPER7_ASSERTS_ABP_Ranged_Tier2_LOD0_C_AnimGraph;
-
-// Function ABP_Ranged_Tier2_LOD0.ABP_Ranged_Tier2_LOD0_C.AttackConduitOnUpdate
-// 0x0038 (0x0038 - 0x0000)
-struct ABP_Ranged_Tier2_LOD0_C_AttackConduitOnUpdate final
-{
-public:
-	struct FAnimUpdateContext                     Context;                                           // 0x0000(0x0010)(ConstParm, BlueprintVisible, BlueprintReadOnly, Parm, OutParm, ReferenceParm)
-	struct FAnimNodeReference                     Node;                                              // 0x0010(0x0010)(ConstParm, BlueprintVisible, BlueprintReadOnly, Parm, OutParm, ReferenceParm, NoDestructor)
-	struct FAnimationStateResultReference         CallFunc_ConvertToAnimationStateResultPure_AnimationState; // 0x0020(0x0010)(NoDestructor)
-	bool                                          CallFunc_ConvertToAnimationStateResultPure_Result; // 0x0030(0x0001)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-	bool                                          CallFunc_IsStateBlendingOut_ReturnValue;           // 0x0031(0x0001)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_ABP_Ranged_Tier2_LOD0_C_AttackConduitOnUpdate;
-
-// Function ABP_Ranged_Tier2_LOD0.ABP_Ranged_Tier2_LOD0_C.BPOnLocomotionTypeChanged
-// 0x0002 (0x0002 - 0x0000)
-struct ABP_Ranged_Tier2_LOD0_C_BPOnLocomotionTypeChanged final
-{
-public:
-	ECrEnemyLocomotionType                        OldLocomotionType;                                 // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-	ECrEnemyLocomotionType                        NewLocomotionType;                                 // 0x0001(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_ABP_Ranged_Tier2_LOD0_C_BPOnLocomotionTypeChanged;
+DUMPER7_ASSERTS_ABP_Ranged_Tier2_LOD0_C_OnJumpTimeSet;
 
 // Function ABP_Ranged_Tier2_LOD0.ABP_Ranged_Tier2_LOD0_C.ExecuteUbergraph_ABP_Ranged_Tier2_LOD0
 // 0x04A0 (0x04A0 - 0x0000)
@@ -403,14 +380,37 @@ public:
 };
 DUMPER7_ASSERTS_ABP_Ranged_Tier2_LOD0_C_ExecuteUbergraph_ABP_Ranged_Tier2_LOD0;
 
-// Function ABP_Ranged_Tier2_LOD0.ABP_Ranged_Tier2_LOD0_C.OnJumpTimeSet
-// 0x0004 (0x0004 - 0x0000)
-struct ABP_Ranged_Tier2_LOD0_C_OnJumpTimeSet final
+// Function ABP_Ranged_Tier2_LOD0.ABP_Ranged_Tier2_LOD0_C.BPOnLocomotionTypeChanged
+// 0x0002 (0x0002 - 0x0000)
+struct ABP_Ranged_Tier2_LOD0_C_BPOnLocomotionTypeChanged final
 {
 public:
-	float                                         Time;                                              // 0x0000(0x0004)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+	ECrEnemyLocomotionType                        OldLocomotionType;                                 // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+	ECrEnemyLocomotionType                        NewLocomotionType;                                 // 0x0001(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 };
-DUMPER7_ASSERTS_ABP_Ranged_Tier2_LOD0_C_OnJumpTimeSet;
+DUMPER7_ASSERTS_ABP_Ranged_Tier2_LOD0_C_BPOnLocomotionTypeChanged;
+
+// Function ABP_Ranged_Tier2_LOD0.ABP_Ranged_Tier2_LOD0_C.AttackConduitOnUpdate
+// 0x0038 (0x0038 - 0x0000)
+struct ABP_Ranged_Tier2_LOD0_C_AttackConduitOnUpdate final
+{
+public:
+	struct FAnimUpdateContext                     Context;                                           // 0x0000(0x0010)(ConstParm, BlueprintVisible, BlueprintReadOnly, Parm, OutParm, ReferenceParm)
+	struct FAnimNodeReference                     Node;                                              // 0x0010(0x0010)(ConstParm, BlueprintVisible, BlueprintReadOnly, Parm, OutParm, ReferenceParm, NoDestructor)
+	struct FAnimationStateResultReference         CallFunc_ConvertToAnimationStateResultPure_AnimationState; // 0x0020(0x0010)(NoDestructor)
+	bool                                          CallFunc_ConvertToAnimationStateResultPure_Result; // 0x0030(0x0001)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+	bool                                          CallFunc_IsStateBlendingOut_ReturnValue;           // 0x0031(0x0001)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_ABP_Ranged_Tier2_LOD0_C_AttackConduitOnUpdate;
+
+// Function ABP_Ranged_Tier2_LOD0.ABP_Ranged_Tier2_LOD0_C.AnimGraph
+// 0x0010 (0x0010 - 0x0000)
+struct ABP_Ranged_Tier2_LOD0_C_AnimGraph final
+{
+public:
+	struct FPoseLink                              AnimGraph_0;                                       // 0x0000(0x0010)(Parm, OutParm, NoDestructor)
+};
+DUMPER7_ASSERTS_ABP_Ranged_Tier2_LOD0_C_AnimGraph;
 
 }
 

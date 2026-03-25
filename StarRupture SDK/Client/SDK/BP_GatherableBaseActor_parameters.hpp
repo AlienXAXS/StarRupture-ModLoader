@@ -11,8 +11,8 @@
 #include "Basic.hpp"
 
 #include "CoreUObject_structs.hpp"
-#include "Chimera_structs.hpp"
 #include "ST_GatherablePlantIstnacedData_structs.hpp"
+#include "Chimera_structs.hpp"
 
 
 namespace SDK::Params

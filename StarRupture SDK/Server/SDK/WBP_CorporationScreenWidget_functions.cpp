@@ -17,121 +17,21 @@
 namespace SDK
 {
 
-// Function WBP_CorporationScreenWidget.WBP_CorporationScreenWidget_C.ExecuteUbergraph_WBP_CorporationScreenWidget
-// (Final, UbergraphFunction, HasDefaults)
-// Parameters:
-// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-
-void UWBP_CorporationScreenWidget_C::ExecuteUbergraph_WBP_CorporationScreenWidget(int32 EntryPoint)
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("WBP_CorporationScreenWidget_C", "ExecuteUbergraph_WBP_CorporationScreenWidget");
-
-	Params::WBP_CorporationScreenWidget_C_ExecuteUbergraph_WBP_CorporationScreenWidget Parms{};
-
-	Parms.EntryPoint = EntryPoint;
-
-	UObject::ProcessEvent(Func, &Parms);
-}
-
-
-// Function WBP_CorporationScreenWidget.WBP_CorporationScreenWidget_C.Get_CorpoProgress_Percent
-// (Public, HasOutParams, BlueprintCallable, BlueprintEvent, BlueprintPure)
-// Parameters:
-// float                                   ReturnValue                                            (Parm, OutParm, ZeroConstructor, ReturnParm, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-
-float UWBP_CorporationScreenWidget_C::Get_CorpoProgress_Percent()
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("WBP_CorporationScreenWidget_C", "Get_CorpoProgress_Percent");
-
-	Params::WBP_CorporationScreenWidget_C_Get_CorpoProgress_Percent Parms{};
-
-	UObject::ProcessEvent(Func, &Parms);
-
-	return Parms.ReturnValue;
-}
-
-
-// Function WBP_CorporationScreenWidget.WBP_CorporationScreenWidget_C.HasAllRewardsClaimed
+// Function WBP_CorporationScreenWidget.WBP_CorporationScreenWidget_C.UpdateCorporationPercent
 // (Event, Public, BlueprintEvent)
 // Parameters:
-// bool                                    bClaimed                                               (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+// float                                   InPercent                                              (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 
-void UWBP_CorporationScreenWidget_C::HasAllRewardsClaimed(bool bClaimed)
+void UWBP_CorporationScreenWidget_C::UpdateCorporationPercent(float InPercent)
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("WBP_CorporationScreenWidget_C", "HasAllRewardsClaimed");
+		Func = Class->GetFunction("WBP_CorporationScreenWidget_C", "UpdateCorporationPercent");
 
-	Params::WBP_CorporationScreenWidget_C_HasAllRewardsClaimed Parms{};
+	Params::WBP_CorporationScreenWidget_C_UpdateCorporationPercent Parms{};
 
-	Parms.bClaimed = bClaimed;
-
-	UObject::ProcessEvent(Func, &Parms);
-}
-
-
-// Function WBP_CorporationScreenWidget.WBP_CorporationScreenWidget_C.PreConstruct
-// (BlueprintCosmetic, Event, Public, BlueprintEvent)
-// Parameters:
-// bool                                    IsDesignTime                                           (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-
-void UWBP_CorporationScreenWidget_C::PreConstruct(bool IsDesignTime)
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("WBP_CorporationScreenWidget_C", "PreConstruct");
-
-	Params::WBP_CorporationScreenWidget_C_PreConstruct Parms{};
-
-	Parms.IsDesignTime = IsDesignTime;
-
-	UObject::ProcessEvent(Func, &Parms);
-}
-
-
-// Function WBP_CorporationScreenWidget.WBP_CorporationScreenWidget_C.SetMax
-// (Event, Public, BlueprintEvent)
-// Parameters:
-// bool                                    BMax                                                   (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-
-void UWBP_CorporationScreenWidget_C::SetMax(bool BMax)
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("WBP_CorporationScreenWidget_C", "SetMax");
-
-	Params::WBP_CorporationScreenWidget_C_SetMax Parms{};
-
-	Parms.BMax = BMax;
-
-	UObject::ProcessEvent(Func, &Parms);
-}
-
-
-// Function WBP_CorporationScreenWidget.WBP_CorporationScreenWidget_C.SetupData
-// (Event, Public, BlueprintEvent)
-// Parameters:
-// class UCrCorporationData*               Data                                                   (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
-
-void UWBP_CorporationScreenWidget_C::SetupData(class UCrCorporationData* Data)
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("WBP_CorporationScreenWidget_C", "SetupData");
-
-	Params::WBP_CorporationScreenWidget_C_SetupData Parms{};
-
-	Parms.Data = Data;
+	Parms.InPercent = InPercent;
 
 	UObject::ProcessEvent(Func, &Parms);
 }
@@ -157,21 +57,121 @@ void UWBP_CorporationScreenWidget_C::UpdateCorporationLevel(int32 Level)
 }
 
 
-// Function WBP_CorporationScreenWidget.WBP_CorporationScreenWidget_C.UpdateCorporationPercent
+// Function WBP_CorporationScreenWidget.WBP_CorporationScreenWidget_C.SetupData
 // (Event, Public, BlueprintEvent)
 // Parameters:
-// float                                   InPercent                                              (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+// class UCrCorporationData*               Data                                                   (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
 
-void UWBP_CorporationScreenWidget_C::UpdateCorporationPercent(float InPercent)
+void UWBP_CorporationScreenWidget_C::SetupData(class UCrCorporationData* Data)
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("WBP_CorporationScreenWidget_C", "UpdateCorporationPercent");
+		Func = Class->GetFunction("WBP_CorporationScreenWidget_C", "SetupData");
 
-	Params::WBP_CorporationScreenWidget_C_UpdateCorporationPercent Parms{};
+	Params::WBP_CorporationScreenWidget_C_SetupData Parms{};
 
-	Parms.InPercent = InPercent;
+	Parms.Data = Data;
+
+	UObject::ProcessEvent(Func, &Parms);
+}
+
+
+// Function WBP_CorporationScreenWidget.WBP_CorporationScreenWidget_C.SetMax
+// (Event, Public, BlueprintEvent)
+// Parameters:
+// bool                                    BMax                                                   (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+
+void UWBP_CorporationScreenWidget_C::SetMax(bool BMax)
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("WBP_CorporationScreenWidget_C", "SetMax");
+
+	Params::WBP_CorporationScreenWidget_C_SetMax Parms{};
+
+	Parms.BMax = BMax;
+
+	UObject::ProcessEvent(Func, &Parms);
+}
+
+
+// Function WBP_CorporationScreenWidget.WBP_CorporationScreenWidget_C.PreConstruct
+// (BlueprintCosmetic, Event, Public, BlueprintEvent)
+// Parameters:
+// bool                                    IsDesignTime                                           (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+
+void UWBP_CorporationScreenWidget_C::PreConstruct(bool IsDesignTime)
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("WBP_CorporationScreenWidget_C", "PreConstruct");
+
+	Params::WBP_CorporationScreenWidget_C_PreConstruct Parms{};
+
+	Parms.IsDesignTime = IsDesignTime;
+
+	UObject::ProcessEvent(Func, &Parms);
+}
+
+
+// Function WBP_CorporationScreenWidget.WBP_CorporationScreenWidget_C.HasAllRewardsClaimed
+// (Event, Public, BlueprintEvent)
+// Parameters:
+// bool                                    bClaimed                                               (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+
+void UWBP_CorporationScreenWidget_C::HasAllRewardsClaimed(bool bClaimed)
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("WBP_CorporationScreenWidget_C", "HasAllRewardsClaimed");
+
+	Params::WBP_CorporationScreenWidget_C_HasAllRewardsClaimed Parms{};
+
+	Parms.bClaimed = bClaimed;
+
+	UObject::ProcessEvent(Func, &Parms);
+}
+
+
+// Function WBP_CorporationScreenWidget.WBP_CorporationScreenWidget_C.Get_CorpoProgress_Percent
+// (Public, HasOutParams, BlueprintCallable, BlueprintEvent, BlueprintPure)
+// Parameters:
+// float                                   ReturnValue                                            (Parm, OutParm, ZeroConstructor, ReturnParm, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+
+float UWBP_CorporationScreenWidget_C::Get_CorpoProgress_Percent()
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("WBP_CorporationScreenWidget_C", "Get_CorpoProgress_Percent");
+
+	Params::WBP_CorporationScreenWidget_C_Get_CorpoProgress_Percent Parms{};
+
+	UObject::ProcessEvent(Func, &Parms);
+
+	return Parms.ReturnValue;
+}
+
+
+// Function WBP_CorporationScreenWidget.WBP_CorporationScreenWidget_C.ExecuteUbergraph_WBP_CorporationScreenWidget
+// (Final, UbergraphFunction, HasDefaults)
+// Parameters:
+// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+
+void UWBP_CorporationScreenWidget_C::ExecuteUbergraph_WBP_CorporationScreenWidget(int32 EntryPoint)
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("WBP_CorporationScreenWidget_C", "ExecuteUbergraph_WBP_CorporationScreenWidget");
+
+	Params::WBP_CorporationScreenWidget_C_ExecuteUbergraph_WBP_CorporationScreenWidget Parms{};
+
+	Parms.EntryPoint = EntryPoint;
 
 	UObject::ProcessEvent(Func, &Parms);
 }

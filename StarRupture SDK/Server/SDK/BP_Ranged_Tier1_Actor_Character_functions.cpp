@@ -17,152 +17,29 @@
 namespace SDK
 {
 
-// Function BP_Ranged_Tier1_Actor_Character.BP_Ranged_Tier1_Actor_Character_C.CanChangeEyeColor
-// (Public, HasOutParams, BlueprintCallable, BlueprintEvent)
-// Parameters:
-// bool*                                   Result                                                 (Parm, OutParm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+// Function BP_Ranged_Tier1_Actor_Character.BP_Ranged_Tier1_Actor_Character_C.UserConstructionScript
+// (Event, Public, BlueprintCallable, BlueprintEvent)
 
-void ABP_Ranged_Tier1_Actor_Character_C::CanChangeEyeColor(bool* Result)
+void ABP_Ranged_Tier1_Actor_Character_C::UserConstructionScript()
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_Ranged_Tier1_Actor_Character_C", "CanChangeEyeColor");
-
-	Params::BP_Ranged_Tier1_Actor_Character_C_CanChangeEyeColor Parms{};
-
-	UObject::ProcessEvent(Func, &Parms);
-
-	if (Result != nullptr)
-		*Result = Parms.Result;
-}
-
-
-// Function BP_Ranged_Tier1_Actor_Character.BP_Ranged_Tier1_Actor_Character_C.ExecuteUbergraph_BP_Ranged_Tier1_Actor_Character
-// (Final, UbergraphFunction, HasDefaults)
-// Parameters:
-// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-
-void ABP_Ranged_Tier1_Actor_Character_C::ExecuteUbergraph_BP_Ranged_Tier1_Actor_Character(int32 EntryPoint)
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BP_Ranged_Tier1_Actor_Character_C", "ExecuteUbergraph_BP_Ranged_Tier1_Actor_Character");
-
-	Params::BP_Ranged_Tier1_Actor_Character_C_ExecuteUbergraph_BP_Ranged_Tier1_Actor_Character Parms{};
-
-	Parms.EntryPoint = EntryPoint;
-
-	UObject::ProcessEvent(Func, &Parms);
-}
-
-
-// Function BP_Ranged_Tier1_Actor_Character.BP_Ranged_Tier1_Actor_Character_C.OnAiDied
-// (Event, Public, HasOutParams, BlueprintEvent)
-// Parameters:
-// const struct FHitResult&                HitResult                                              (ConstParm, BlueprintVisible, BlueprintReadOnly, Parm, OutParm, ReferenceParm, IsPlainOldData, NoDestructor, ContainsInstancedReference)
-// const struct FGameplayTag&              KillingDamageTag                                       (ConstParm, BlueprintVisible, BlueprintReadOnly, Parm, OutParm, ReferenceParm, NoDestructor, HasGetValueTypeHash)
-
-void ABP_Ranged_Tier1_Actor_Character_C::OnAiDied(const struct FHitResult& HitResult, const struct FGameplayTag& KillingDamageTag)
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BP_Ranged_Tier1_Actor_Character_C", "OnAiDied");
-
-	Params::BP_Ranged_Tier1_Actor_Character_C_OnAiDied Parms{};
-
-	Parms.HitResult = std::move(HitResult);
-	Parms.KillingDamageTag = std::move(KillingDamageTag);
-
-	UObject::ProcessEvent(Func, &Parms);
-}
-
-
-// Function BP_Ranged_Tier1_Actor_Character.BP_Ranged_Tier1_Actor_Character_C.OnDissolveValueSet
-// (Event, Protected, BlueprintEvent)
-// Parameters:
-// float                                   NewDissolveProgress                                    (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-
-void ABP_Ranged_Tier1_Actor_Character_C::OnDissolveValueSet(float NewDissolveProgress)
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BP_Ranged_Tier1_Actor_Character_C", "OnDissolveValueSet");
-
-	Params::BP_Ranged_Tier1_Actor_Character_C_OnDissolveValueSet Parms{};
-
-	Parms.NewDissolveProgress = NewDissolveProgress;
-
-	UObject::ProcessEvent(Func, &Parms);
-}
-
-
-// Function BP_Ranged_Tier1_Actor_Character.BP_Ranged_Tier1_Actor_Character_C.OnRep_LastHit
-// (Public, BlueprintCallable, BlueprintEvent)
-
-void ABP_Ranged_Tier1_Actor_Character_C::OnRep_LastHit()
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BP_Ranged_Tier1_Actor_Character_C", "OnRep_LastHit");
+		Func = Class->GetFunction("BP_Ranged_Tier1_Actor_Character_C", "UserConstructionScript");
 
 	UObject::ProcessEvent(Func, nullptr);
 }
 
 
-// Function BP_Ranged_Tier1_Actor_Character.BP_Ranged_Tier1_Actor_Character_C.SetIsAggroEyeColor
-// (Event, Public, BlueprintCallable, BlueprintEvent)
-// Parameters:
-// bool                                    NewIsAggro                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+// Function BP_Ranged_Tier1_Actor_Character.BP_Ranged_Tier1_Actor_Character_C.StartRagdollEvent
+// (BlueprintCallable, BlueprintEvent)
 
-void ABP_Ranged_Tier1_Actor_Character_C::SetIsAggroEyeColor(bool NewIsAggro)
+void ABP_Ranged_Tier1_Actor_Character_C::StartRagdollEvent()
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_Ranged_Tier1_Actor_Character_C", "SetIsAggroEyeColor");
-
-	Params::BP_Ranged_Tier1_Actor_Character_C_SetIsAggroEyeColor Parms{};
-
-	Parms.NewIsAggro = NewIsAggro;
-
-	UObject::ProcessEvent(Func, &Parms);
-}
-
-
-// Function BP_Ranged_Tier1_Actor_Character.BP_Ranged_Tier1_Actor_Character_C.SetIsBoostedEyeColor
-// (Event, Public, BlueprintCallable, BlueprintEvent)
-// Parameters:
-// bool                                    NewIsBoosted                                           (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-
-void ABP_Ranged_Tier1_Actor_Character_C::SetIsBoostedEyeColor(bool NewIsBoosted)
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BP_Ranged_Tier1_Actor_Character_C", "SetIsBoostedEyeColor");
-
-	Params::BP_Ranged_Tier1_Actor_Character_C_SetIsBoostedEyeColor Parms{};
-
-	Parms.NewIsBoosted = NewIsBoosted;
-
-	UObject::ProcessEvent(Func, &Parms);
-}
-
-
-// Function BP_Ranged_Tier1_Actor_Character.BP_Ranged_Tier1_Actor_Character_C.SetupRagdollMesh
-// (Public, HasDefaults, BlueprintCallable, BlueprintEvent)
-
-void ABP_Ranged_Tier1_Actor_Character_C::SetupRagdollMesh()
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BP_Ranged_Tier1_Actor_Character_C", "SetupRagdollMesh");
+		Func = Class->GetFunction("BP_Ranged_Tier1_Actor_Character_C", "StartRagdollEvent");
 
 	UObject::ProcessEvent(Func, nullptr);
 }
@@ -194,31 +71,154 @@ void ABP_Ranged_Tier1_Actor_Character_C::StartRagdoll(const struct FHitResult& L
 }
 
 
-// Function BP_Ranged_Tier1_Actor_Character.BP_Ranged_Tier1_Actor_Character_C.StartRagdollEvent
-// (BlueprintCallable, BlueprintEvent)
+// Function BP_Ranged_Tier1_Actor_Character.BP_Ranged_Tier1_Actor_Character_C.SetupRagdollMesh
+// (Public, HasDefaults, BlueprintCallable, BlueprintEvent)
 
-void ABP_Ranged_Tier1_Actor_Character_C::StartRagdollEvent()
+void ABP_Ranged_Tier1_Actor_Character_C::SetupRagdollMesh()
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_Ranged_Tier1_Actor_Character_C", "StartRagdollEvent");
+		Func = Class->GetFunction("BP_Ranged_Tier1_Actor_Character_C", "SetupRagdollMesh");
 
 	UObject::ProcessEvent(Func, nullptr);
 }
 
 
-// Function BP_Ranged_Tier1_Actor_Character.BP_Ranged_Tier1_Actor_Character_C.UserConstructionScript
+// Function BP_Ranged_Tier1_Actor_Character.BP_Ranged_Tier1_Actor_Character_C.SetIsBoostedEyeColor
 // (Event, Public, BlueprintCallable, BlueprintEvent)
+// Parameters:
+// bool                                    NewIsBoosted                                           (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 
-void ABP_Ranged_Tier1_Actor_Character_C::UserConstructionScript()
+void ABP_Ranged_Tier1_Actor_Character_C::SetIsBoostedEyeColor(bool NewIsBoosted)
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_Ranged_Tier1_Actor_Character_C", "UserConstructionScript");
+		Func = Class->GetFunction("BP_Ranged_Tier1_Actor_Character_C", "SetIsBoostedEyeColor");
+
+	Params::BP_Ranged_Tier1_Actor_Character_C_SetIsBoostedEyeColor Parms{};
+
+	Parms.NewIsBoosted = NewIsBoosted;
+
+	UObject::ProcessEvent(Func, &Parms);
+}
+
+
+// Function BP_Ranged_Tier1_Actor_Character.BP_Ranged_Tier1_Actor_Character_C.SetIsAggroEyeColor
+// (Event, Public, BlueprintCallable, BlueprintEvent)
+// Parameters:
+// bool                                    NewIsAggro                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+
+void ABP_Ranged_Tier1_Actor_Character_C::SetIsAggroEyeColor(bool NewIsAggro)
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BP_Ranged_Tier1_Actor_Character_C", "SetIsAggroEyeColor");
+
+	Params::BP_Ranged_Tier1_Actor_Character_C_SetIsAggroEyeColor Parms{};
+
+	Parms.NewIsAggro = NewIsAggro;
+
+	UObject::ProcessEvent(Func, &Parms);
+}
+
+
+// Function BP_Ranged_Tier1_Actor_Character.BP_Ranged_Tier1_Actor_Character_C.OnRep_LastHit
+// (Public, BlueprintCallable, BlueprintEvent)
+
+void ABP_Ranged_Tier1_Actor_Character_C::OnRep_LastHit()
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BP_Ranged_Tier1_Actor_Character_C", "OnRep_LastHit");
 
 	UObject::ProcessEvent(Func, nullptr);
+}
+
+
+// Function BP_Ranged_Tier1_Actor_Character.BP_Ranged_Tier1_Actor_Character_C.OnDissolveValueSet
+// (Event, Protected, BlueprintEvent)
+// Parameters:
+// float                                   NewDissolveProgress                                    (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+
+void ABP_Ranged_Tier1_Actor_Character_C::OnDissolveValueSet(float NewDissolveProgress)
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BP_Ranged_Tier1_Actor_Character_C", "OnDissolveValueSet");
+
+	Params::BP_Ranged_Tier1_Actor_Character_C_OnDissolveValueSet Parms{};
+
+	Parms.NewDissolveProgress = NewDissolveProgress;
+
+	UObject::ProcessEvent(Func, &Parms);
+}
+
+
+// Function BP_Ranged_Tier1_Actor_Character.BP_Ranged_Tier1_Actor_Character_C.OnAiDied
+// (Event, Public, HasOutParams, BlueprintEvent)
+// Parameters:
+// const struct FHitResult&                HitResult                                              (ConstParm, BlueprintVisible, BlueprintReadOnly, Parm, OutParm, ReferenceParm, IsPlainOldData, NoDestructor, ContainsInstancedReference)
+// const struct FGameplayTag&              KillingDamageTag                                       (ConstParm, BlueprintVisible, BlueprintReadOnly, Parm, OutParm, ReferenceParm, NoDestructor, HasGetValueTypeHash)
+
+void ABP_Ranged_Tier1_Actor_Character_C::OnAiDied(const struct FHitResult& HitResult, const struct FGameplayTag& KillingDamageTag)
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BP_Ranged_Tier1_Actor_Character_C", "OnAiDied");
+
+	Params::BP_Ranged_Tier1_Actor_Character_C_OnAiDied Parms{};
+
+	Parms.HitResult = std::move(HitResult);
+	Parms.KillingDamageTag = std::move(KillingDamageTag);
+
+	UObject::ProcessEvent(Func, &Parms);
+}
+
+
+// Function BP_Ranged_Tier1_Actor_Character.BP_Ranged_Tier1_Actor_Character_C.ExecuteUbergraph_BP_Ranged_Tier1_Actor_Character
+// (Final, UbergraphFunction, HasDefaults)
+// Parameters:
+// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+
+void ABP_Ranged_Tier1_Actor_Character_C::ExecuteUbergraph_BP_Ranged_Tier1_Actor_Character(int32 EntryPoint)
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BP_Ranged_Tier1_Actor_Character_C", "ExecuteUbergraph_BP_Ranged_Tier1_Actor_Character");
+
+	Params::BP_Ranged_Tier1_Actor_Character_C_ExecuteUbergraph_BP_Ranged_Tier1_Actor_Character Parms{};
+
+	Parms.EntryPoint = EntryPoint;
+
+	UObject::ProcessEvent(Func, &Parms);
+}
+
+
+// Function BP_Ranged_Tier1_Actor_Character.BP_Ranged_Tier1_Actor_Character_C.CanChangeEyeColor
+// (Public, HasOutParams, BlueprintCallable, BlueprintEvent)
+// Parameters:
+// bool*                                   Result                                                 (Parm, OutParm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+
+void ABP_Ranged_Tier1_Actor_Character_C::CanChangeEyeColor(bool* Result)
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BP_Ranged_Tier1_Actor_Character_C", "CanChangeEyeColor");
+
+	Params::BP_Ranged_Tier1_Actor_Character_C_CanChangeEyeColor Parms{};
+
+	UObject::ProcessEvent(Func, &Parms);
+
+	if (Result != nullptr)
+		*Result = Parms.Result;
 }
 
 }

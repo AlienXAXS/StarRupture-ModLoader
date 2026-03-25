@@ -40,12 +40,12 @@ public:
 	class USoundBase*                             ResourceDepletedSound;                             // 0x0530(0x0008)(Edit, BlueprintVisible, ZeroConstructor, DisableEditOnInstance, NoDestructor, HasGetValueTypeHash)
 
 public:
-	void BP_OnSpawnedWithResourceDepleted();
-	void ExecuteUbergraph_BP_StandaloneMeteOreChunkBase(int32 EntryPoint);
-	void OnResourceDepletedCosmeticsStart();
-	void ReceiveBeginPlay();
-	void Timeline__FinishedFunc();
 	void Timeline__UpdateFunc();
+	void Timeline__FinishedFunc();
+	void ReceiveBeginPlay();
+	void OnResourceDepletedCosmeticsStart();
+	void ExecuteUbergraph_BP_StandaloneMeteOreChunkBase(int32 EntryPoint);
+	void BP_OnSpawnedWithResourceDepleted();
 
 public:
 	static class UClass* StaticClass()

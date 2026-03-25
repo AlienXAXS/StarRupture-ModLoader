@@ -1,6 +1,7 @@
 ﻿#include "LogisticsFragmentFixer.h"
 #include "plugin_helpers.h"
 #include "plugin_config.h"
+#include "Basic.hpp"
 #include "Engine_classes.hpp"
 #include "CoreUObject_classes.hpp"
 #include "MassEntity_structs.hpp"
@@ -467,7 +468,7 @@ namespace RailJunctionFixer
 		try
 		{
 			std::wstring wSignalName(signalNameStr.begin(), signalNameStr.end());
-			SDK::FName constructed = SDK::BasicFilesImpleUtils::StringToName(wSignalName.c_str());
+			SDK::FName constructed = SDK::BasicFilesImplUtils::StringToName(wSignalName.c_str());
 			if (constructed.ComparisonIndex != 0)
 			{
 				socketSignalName = constructed;

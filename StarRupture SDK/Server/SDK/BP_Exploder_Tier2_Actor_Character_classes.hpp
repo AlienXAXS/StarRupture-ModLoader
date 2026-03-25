@@ -11,8 +11,8 @@
 #include "Basic.hpp"
 
 #include "Engine_structs.hpp"
-#include "BP_BaseAI_classes.hpp"
 #include "AuActorPlacement_structs.hpp"
+#include "BP_BaseAI_classes.hpp"
 #include "MassAIPrototypeEnemyRuntime_structs.hpp"
 
 
@@ -33,12 +33,12 @@ public:
 	ECrEnemyAttackType                            Attack_Type;                                       // 0x0C88(0x0001)(Edit, BlueprintVisible, ZeroConstructor, DisableEditOnInstance, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 
 public:
-	void ExecuteUbergraph_BP_Exploder_Tier2_Actor_Character(int32 EntryPoint);
-	void OnExplosionAttackTimerFinished();
-	void ReceiveTick(float DeltaSeconds);
-	void SetExplosionAttackTimer(bool bSetTimerActive, double TimeToExplode);
-	void Spawn_Explosion_Sphere_At_Current_Location(const struct FAuAPMassSpawnedEntityType& EntityType);
 	void UserConstructionScript();
+	void Spawn_Explosion_Sphere_At_Current_Location(const struct FAuAPMassSpawnedEntityType& EntityType);
+	void SetExplosionAttackTimer(bool bSetTimerActive, double TimeToExplode);
+	void ReceiveTick(float DeltaSeconds);
+	void OnExplosionAttackTimerFinished();
+	void ExecuteUbergraph_BP_Exploder_Tier2_Actor_Character(int32 EntryPoint);
 
 public:
 	static class UClass* StaticClass()

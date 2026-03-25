@@ -17,23 +17,31 @@
 namespace SDK
 {
 
-// Function BP_Forge.BP_Forge_C.ExecuteUbergraph_BP_Forge
-// (Final, UbergraphFunction, HasDefaults)
-// Parameters:
-// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+// Function BP_Forge.BP_Forge_C.SetupSkeletalMesh
+// (Event, Public, BlueprintEvent)
 
-void ABP_Forge_C::ExecuteUbergraph_BP_Forge(int32 EntryPoint)
+void ABP_Forge_C::SetupSkeletalMesh()
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_Forge_C", "ExecuteUbergraph_BP_Forge");
+		Func = Class->GetFunction("BP_Forge_C", "SetupSkeletalMesh");
 
-	Params::BP_Forge_C_ExecuteUbergraph_BP_Forge Parms{};
+	UObject::ProcessEvent(Func, nullptr);
+}
 
-	Parms.EntryPoint = EntryPoint;
 
-	UObject::ProcessEvent(Func, &Parms);
+// Function BP_Forge.BP_Forge_C.OnItemCraftingComplete
+// (Event, Public, BlueprintEvent)
+
+void ABP_Forge_C::OnItemCraftingComplete()
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BP_Forge_C", "OnItemCraftingComplete");
+
+	UObject::ProcessEvent(Func, nullptr);
 }
 
 
@@ -57,31 +65,23 @@ void ABP_Forge_C::OnBuildingStateChanged(ECrBuildingState InState)
 }
 
 
-// Function BP_Forge.BP_Forge_C.OnItemCraftingComplete
-// (Event, Public, BlueprintEvent)
+// Function BP_Forge.BP_Forge_C.ExecuteUbergraph_BP_Forge
+// (Final, UbergraphFunction, HasDefaults)
+// Parameters:
+// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 
-void ABP_Forge_C::OnItemCraftingComplete()
+void ABP_Forge_C::ExecuteUbergraph_BP_Forge(int32 EntryPoint)
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_Forge_C", "OnItemCraftingComplete");
+		Func = Class->GetFunction("BP_Forge_C", "ExecuteUbergraph_BP_Forge");
 
-	UObject::ProcessEvent(Func, nullptr);
-}
+	Params::BP_Forge_C_ExecuteUbergraph_BP_Forge Parms{};
 
+	Parms.EntryPoint = EntryPoint;
 
-// Function BP_Forge.BP_Forge_C.SetupSkeletalMesh
-// (Event, Public, BlueprintEvent)
-
-void ABP_Forge_C::SetupSkeletalMesh()
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BP_Forge_C", "SetupSkeletalMesh");
-
-	UObject::ProcessEvent(Func, nullptr);
+	UObject::ProcessEvent(Func, &Parms);
 }
 
 }

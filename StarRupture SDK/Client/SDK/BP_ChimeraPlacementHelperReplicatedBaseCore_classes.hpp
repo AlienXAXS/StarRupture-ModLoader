@@ -10,8 +10,8 @@
 
 #include "Basic.hpp"
 
-#include "BP_ChimeraPlacementHelperReplicatedBase_classes.hpp"
 #include "Engine_structs.hpp"
+#include "BP_ChimeraPlacementHelperReplicatedBase_classes.hpp"
 
 
 namespace SDK

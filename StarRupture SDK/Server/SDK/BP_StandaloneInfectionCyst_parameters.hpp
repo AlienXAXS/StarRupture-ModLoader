@@ -17,14 +17,34 @@
 namespace SDK::Params
 {
 
-// Function BP_StandaloneInfectionCyst.BP_StandaloneInfectionCyst_C.BP_OnDamageProtectionChanged
+// Function BP_StandaloneInfectionCyst.BP_StandaloneInfectionCyst_C.ReceiveEndPlay
 // 0x0001 (0x0001 - 0x0000)
-struct BP_StandaloneInfectionCyst_C_BP_OnDamageProtectionChanged final
+struct BP_StandaloneInfectionCyst_C_ReceiveEndPlay final
 {
 public:
-	bool                                          IsActive;                                          // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+	EEndPlayReason                                EndPlayReason;                                     // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 };
-DUMPER7_ASSERTS_BP_StandaloneInfectionCyst_C_BP_OnDamageProtectionChanged;
+DUMPER7_ASSERTS_BP_StandaloneInfectionCyst_C_ReceiveEndPlay;
+
+// Function BP_StandaloneInfectionCyst.BP_StandaloneInfectionCyst_C.OnGrowthProgress
+// 0x0004 (0x0004 - 0x0000)
+struct BP_StandaloneInfectionCyst_C_OnGrowthProgress final
+{
+public:
+	float                                         Progress;                                          // 0x0000(0x0004)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BP_StandaloneInfectionCyst_C_OnGrowthProgress;
+
+// Function BP_StandaloneInfectionCyst.BP_StandaloneInfectionCyst_C.K2_OnDamageTaken_1
+// 0x0110 (0x0110 - 0x0000)
+struct BP_StandaloneInfectionCyst_C_K2_OnDamageTaken_1 final
+{
+public:
+	class AActor*                                 InInstigator;                                      // 0x0000(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
+	struct FHitResult                             HitResult;                                         // 0x0008(0x0100)(ConstParm, BlueprintVisible, BlueprintReadOnly, Parm, OutParm, ReferenceParm, IsPlainOldData, NoDestructor, ContainsInstancedReference)
+	float                                         InDamage;                                          // 0x0108(0x0004)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BP_StandaloneInfectionCyst_C_K2_OnDamageTaken_1;
 
 // Function BP_StandaloneInfectionCyst.BP_StandaloneInfectionCyst_C.ExecuteUbergraph_BP_StandaloneInfectionCyst
 // 0x0400 (0x0400 - 0x0000)
@@ -103,34 +123,14 @@ public:
 };
 DUMPER7_ASSERTS_BP_StandaloneInfectionCyst_C_ExecuteUbergraph_BP_StandaloneInfectionCyst;
 
-// Function BP_StandaloneInfectionCyst.BP_StandaloneInfectionCyst_C.K2_OnDamageTaken_1
-// 0x0110 (0x0110 - 0x0000)
-struct BP_StandaloneInfectionCyst_C_K2_OnDamageTaken_1 final
-{
-public:
-	class AActor*                                 InInstigator;                                      // 0x0000(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
-	struct FHitResult                             HitResult;                                         // 0x0008(0x0100)(ConstParm, BlueprintVisible, BlueprintReadOnly, Parm, OutParm, ReferenceParm, IsPlainOldData, NoDestructor, ContainsInstancedReference)
-	float                                         InDamage;                                          // 0x0108(0x0004)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BP_StandaloneInfectionCyst_C_K2_OnDamageTaken_1;
-
-// Function BP_StandaloneInfectionCyst.BP_StandaloneInfectionCyst_C.OnGrowthProgress
-// 0x0004 (0x0004 - 0x0000)
-struct BP_StandaloneInfectionCyst_C_OnGrowthProgress final
-{
-public:
-	float                                         Progress;                                          // 0x0000(0x0004)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BP_StandaloneInfectionCyst_C_OnGrowthProgress;
-
-// Function BP_StandaloneInfectionCyst.BP_StandaloneInfectionCyst_C.ReceiveEndPlay
+// Function BP_StandaloneInfectionCyst.BP_StandaloneInfectionCyst_C.BP_OnDamageProtectionChanged
 // 0x0001 (0x0001 - 0x0000)
-struct BP_StandaloneInfectionCyst_C_ReceiveEndPlay final
+struct BP_StandaloneInfectionCyst_C_BP_OnDamageProtectionChanged final
 {
 public:
-	EEndPlayReason                                EndPlayReason;                                     // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+	bool                                          IsActive;                                          // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 };
-DUMPER7_ASSERTS_BP_StandaloneInfectionCyst_C_ReceiveEndPlay;
+DUMPER7_ASSERTS_BP_StandaloneInfectionCyst_C_BP_OnDamageProtectionChanged;
 
 }
 

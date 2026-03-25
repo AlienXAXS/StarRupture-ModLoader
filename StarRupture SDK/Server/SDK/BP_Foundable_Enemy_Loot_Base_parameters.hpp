@@ -17,6 +17,24 @@
 namespace SDK::Params
 {
 
+// Function BP_Foundable_Enemy_Loot_Base.BP_Foundable_Enemy_Loot_Base_C.SimulateDrop
+// 0x0018 (0x0018 - 0x0000)
+struct BP_Foundable_Enemy_Loot_Base_C_SimulateDrop final
+{
+public:
+	struct FVector                                StartLocation;                                     // 0x0000(0x0018)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BP_Foundable_Enemy_Loot_Base_C_SimulateDrop;
+
+// Function BP_Foundable_Enemy_Loot_Base.BP_Foundable_Enemy_Loot_Base_C.ReceiveTick
+// 0x0004 (0x0004 - 0x0000)
+struct BP_Foundable_Enemy_Loot_Base_C_ReceiveTick final
+{
+public:
+	float                                         DeltaSeconds;                                      // 0x0000(0x0004)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BP_Foundable_Enemy_Loot_Base_C_ReceiveTick;
+
 // Function BP_Foundable_Enemy_Loot_Base.BP_Foundable_Enemy_Loot_Base_C.ExecuteUbergraph_BP_Foundable_Enemy_Loot_Base
 // 0x02D0 (0x02D0 - 0x0000)
 struct BP_Foundable_Enemy_Loot_Base_C_ExecuteUbergraph_BP_Foundable_Enemy_Loot_Base final
@@ -52,24 +70,6 @@ public:
 	double                                        CallFunc_GreaterEqual_DoubleDouble_B_ImplicitCast; // 0x02C8(0x0008)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 };
 DUMPER7_ASSERTS_BP_Foundable_Enemy_Loot_Base_C_ExecuteUbergraph_BP_Foundable_Enemy_Loot_Base;
-
-// Function BP_Foundable_Enemy_Loot_Base.BP_Foundable_Enemy_Loot_Base_C.ReceiveTick
-// 0x0004 (0x0004 - 0x0000)
-struct BP_Foundable_Enemy_Loot_Base_C_ReceiveTick final
-{
-public:
-	float                                         DeltaSeconds;                                      // 0x0000(0x0004)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BP_Foundable_Enemy_Loot_Base_C_ReceiveTick;
-
-// Function BP_Foundable_Enemy_Loot_Base.BP_Foundable_Enemy_Loot_Base_C.SimulateDrop
-// 0x0018 (0x0018 - 0x0000)
-struct BP_Foundable_Enemy_Loot_Base_C_SimulateDrop final
-{
-public:
-	struct FVector                                StartLocation;                                     // 0x0000(0x0018)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BP_Foundable_Enemy_Loot_Base_C_SimulateDrop;
 
 }
 

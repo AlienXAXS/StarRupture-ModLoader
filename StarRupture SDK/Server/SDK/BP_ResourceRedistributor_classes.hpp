@@ -52,11 +52,11 @@ public:
 	bool                                          IsAnyIconSelected;                                 // 0x0720(0x0001)(Edit, BlueprintVisible, ZeroConstructor, DisableEditOnInstance, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 
 public:
-	void ExecuteUbergraph_BP_ResourceRedistributor(int32 EntryPoint);
-	void GetMaterialInstance(class UMaterialInstanceDynamic** MaterialInstance);
-	void GetMaterialInstanceIcon(class UMaterialInstanceDynamic** MaterialInstance);
-	void UpdateFilter(const class UAuItemDataBase* ItemFilter);
 	void UpdateItemCount(int32 Count, int32 MaxCount);
+	void UpdateFilter(const class UAuItemDataBase* ItemFilter);
+	void GetMaterialInstanceIcon(class UMaterialInstanceDynamic** MaterialInstance);
+	void GetMaterialInstance(class UMaterialInstanceDynamic** MaterialInstance);
+	void ExecuteUbergraph_BP_ResourceRedistributor(int32 EntryPoint);
 
 public:
 	static class UClass* StaticClass()

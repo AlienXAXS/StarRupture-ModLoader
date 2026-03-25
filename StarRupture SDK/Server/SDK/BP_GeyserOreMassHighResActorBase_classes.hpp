@@ -32,13 +32,13 @@ public:
 	class UNiagaraComponent*                      DepletedNiagaraSystem;                             // 0x03B0(0x0008)(Edit, BlueprintVisible, ZeroConstructor, DisableEditOnInstance, InstancedReference, NoDestructor, HasGetValueTypeHash)
 
 public:
-	void BndEvt__BP_OreMassHighResActorBase_DepletedNiagaraSystem_K2Node_ComponentBoundEvent_1_OnNiagaraSystemFinished__DelegateSignature(class UNiagaraComponent* PSystem);
-	void BndEvt__BP_OreMassHighResActorBase_DepletedWeakSpotSystem_K2Node_ComponentBoundEvent_0_OnNiagaraSystemFinished__DelegateSignature(class UNiagaraComponent* PSystem);
-	void ExecuteUbergraph_BP_GeyserOreMassHighResActorBase(int32 EntryPoint);
-	void OnLoaded_289CDE4840164C5933F5318A1A408B42(class UObject* Loaded);
-	void OnLoaded_800BCDF1400ED570091EE3B4035FA14A(class UObject* Loaded);
-	void OnMiningWeakSpotDepletedCosmeticsStart(const struct FTransform& CosmeticTransform);
 	void OnResourceDepletedCosmeticsStart();
+	void OnMiningWeakSpotDepletedCosmeticsStart(const struct FTransform& CosmeticTransform);
+	void OnLoaded_800BCDF1400ED570091EE3B4035FA14A(class UObject* Loaded);
+	void OnLoaded_289CDE4840164C5933F5318A1A408B42(class UObject* Loaded);
+	void ExecuteUbergraph_BP_GeyserOreMassHighResActorBase(int32 EntryPoint);
+	void BndEvt__BP_OreMassHighResActorBase_DepletedWeakSpotSystem_K2Node_ComponentBoundEvent_0_OnNiagaraSystemFinished__DelegateSignature(class UNiagaraComponent* PSystem);
+	void BndEvt__BP_OreMassHighResActorBase_DepletedNiagaraSystem_K2Node_ComponentBoundEvent_1_OnNiagaraSystemFinished__DelegateSignature(class UNiagaraComponent* PSystem);
 
 public:
 	static class UClass* StaticClass()

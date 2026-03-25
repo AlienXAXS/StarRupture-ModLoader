@@ -16,6 +16,15 @@
 namespace SDK::Params
 {
 
+// Function BP_FoodProcessor.BP_FoodProcessor_C.OnBuildingStateChanged
+// 0x0001 (0x0001 - 0x0000)
+struct BP_FoodProcessor_C_OnBuildingStateChanged final
+{
+public:
+	ECrBuildingState                              InState;                                           // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BP_FoodProcessor_C_OnBuildingStateChanged;
+
 // Function BP_FoodProcessor.BP_FoodProcessor_C.ExecuteUbergraph_BP_FoodProcessor
 // 0x0050 (0x0050 - 0x0000)
 struct BP_FoodProcessor_C_ExecuteUbergraph_BP_FoodProcessor final
@@ -39,15 +48,6 @@ public:
 	bool                                          CallFunc_Contains_ReturnValue;                     // 0x0048(0x0001)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 };
 DUMPER7_ASSERTS_BP_FoodProcessor_C_ExecuteUbergraph_BP_FoodProcessor;
-
-// Function BP_FoodProcessor.BP_FoodProcessor_C.OnBuildingStateChanged
-// 0x0001 (0x0001 - 0x0000)
-struct BP_FoodProcessor_C_OnBuildingStateChanged final
-{
-public:
-	ECrBuildingState                              InState;                                           // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BP_FoodProcessor_C_OnBuildingStateChanged;
 
 }
 

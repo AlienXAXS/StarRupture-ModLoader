@@ -18,6 +18,24 @@
 namespace SDK::Params
 {
 
+// Function BP_RailDroneBase.BP_RailDroneBase_C.OnRequestInvalidStateChanged
+// 0x0001 (0x0001 - 0x0000)
+struct BP_RailDroneBase_C_OnRequestInvalidStateChanged final
+{
+public:
+	bool                                          bAborted;                                          // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BP_RailDroneBase_C_OnRequestInvalidStateChanged;
+
+// Function BP_RailDroneBase.BP_RailDroneBase_C.OnCarriedItemChanged
+// 0x0030 (0x0030 - 0x0000)
+struct BP_RailDroneBase_C_OnCarriedItemChanged final
+{
+public:
+	struct FAuSimpleItem                          Item;                                              // 0x0000(0x0030)(ConstParm, BlueprintVisible, BlueprintReadOnly, Parm, OutParm, ReferenceParm, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BP_RailDroneBase_C_OnCarriedItemChanged;
+
 // Function BP_RailDroneBase.BP_RailDroneBase_C.ExecuteUbergraph_BP_RailDroneBase
 // 0x0290 (0x0290 - 0x0000)
 struct BP_RailDroneBase_C_ExecuteUbergraph_BP_RailDroneBase final
@@ -44,24 +62,6 @@ public:
 	class UAudioComponent*                        CallFunc_SpawnSound2D_ReturnValue;                 // 0x0288(0x0008)(ZeroConstructor, InstancedReference, NoDestructor, HasGetValueTypeHash)
 };
 DUMPER7_ASSERTS_BP_RailDroneBase_C_ExecuteUbergraph_BP_RailDroneBase;
-
-// Function BP_RailDroneBase.BP_RailDroneBase_C.OnCarriedItemChanged
-// 0x0030 (0x0030 - 0x0000)
-struct BP_RailDroneBase_C_OnCarriedItemChanged final
-{
-public:
-	struct FAuSimpleItem                          Item;                                              // 0x0000(0x0030)(ConstParm, BlueprintVisible, BlueprintReadOnly, Parm, OutParm, ReferenceParm, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BP_RailDroneBase_C_OnCarriedItemChanged;
-
-// Function BP_RailDroneBase.BP_RailDroneBase_C.OnRequestInvalidStateChanged
-// 0x0001 (0x0001 - 0x0000)
-struct BP_RailDroneBase_C_OnRequestInvalidStateChanged final
-{
-public:
-	bool                                          bAborted;                                          // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BP_RailDroneBase_C_OnRequestInvalidStateChanged;
 
 // Function BP_RailDroneBase.BP_RailDroneBase_C.GetCargoComponent
 // 0x0008 (0x0008 - 0x0000)

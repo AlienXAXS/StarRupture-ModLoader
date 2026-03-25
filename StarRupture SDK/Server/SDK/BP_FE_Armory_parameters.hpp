@@ -16,6 +16,42 @@
 namespace SDK::Params
 {
 
+// Function BP_FE_Armory.BP_FE_Armory_C.RightArmVFX
+// 0x0008 (0x0008 - 0x0000)
+struct BP_FE_Armory_C_RightArmVFX final
+{
+public:
+	double                                        LaserLength;                                       // 0x0000(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BP_FE_Armory_C_RightArmVFX;
+
+// Function BP_FE_Armory.BP_FE_Armory_C.OnUIOpened
+// 0x0001 (0x0001 - 0x0000)
+struct BP_FE_Armory_C_OnUIOpened final
+{
+public:
+	bool                                          bOpened;                                           // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BP_FE_Armory_C_OnUIOpened;
+
+// Function BP_FE_Armory.BP_FE_Armory_C.OnBuildingStateChanged
+// 0x0001 (0x0001 - 0x0000)
+struct BP_FE_Armory_C_OnBuildingStateChanged final
+{
+public:
+	ECrBuildingState                              InState;                                           // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BP_FE_Armory_C_OnBuildingStateChanged;
+
+// Function BP_FE_Armory.BP_FE_Armory_C.LeftArmVFX
+// 0x0008 (0x0008 - 0x0000)
+struct BP_FE_Armory_C_LeftArmVFX final
+{
+public:
+	double                                        LaserLength;                                       // 0x0000(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BP_FE_Armory_C_LeftArmVFX;
+
 // Function BP_FE_Armory.BP_FE_Armory_C.ExecuteUbergraph_BP_FE_Armory
 // 0x00E0 (0x00E0 - 0x0000)
 struct BP_FE_Armory_C_ExecuteUbergraph_BP_FE_Armory final
@@ -70,42 +106,6 @@ public:
 	double                                        CallFunc_GreaterEqual_DoubleDouble_A_ImplicitCast; // 0x00D8(0x0008)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 };
 DUMPER7_ASSERTS_BP_FE_Armory_C_ExecuteUbergraph_BP_FE_Armory;
-
-// Function BP_FE_Armory.BP_FE_Armory_C.LeftArmVFX
-// 0x0008 (0x0008 - 0x0000)
-struct BP_FE_Armory_C_LeftArmVFX final
-{
-public:
-	double                                        LaserLength;                                       // 0x0000(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BP_FE_Armory_C_LeftArmVFX;
-
-// Function BP_FE_Armory.BP_FE_Armory_C.OnBuildingStateChanged
-// 0x0001 (0x0001 - 0x0000)
-struct BP_FE_Armory_C_OnBuildingStateChanged final
-{
-public:
-	ECrBuildingState                              InState;                                           // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BP_FE_Armory_C_OnBuildingStateChanged;
-
-// Function BP_FE_Armory.BP_FE_Armory_C.OnUIOpened
-// 0x0001 (0x0001 - 0x0000)
-struct BP_FE_Armory_C_OnUIOpened final
-{
-public:
-	bool                                          bOpened;                                           // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BP_FE_Armory_C_OnUIOpened;
-
-// Function BP_FE_Armory.BP_FE_Armory_C.RightArmVFX
-// 0x0008 (0x0008 - 0x0000)
-struct BP_FE_Armory_C_RightArmVFX final
-{
-public:
-	double                                        LaserLength;                                       // 0x0000(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BP_FE_Armory_C_RightArmVFX;
 
 }
 

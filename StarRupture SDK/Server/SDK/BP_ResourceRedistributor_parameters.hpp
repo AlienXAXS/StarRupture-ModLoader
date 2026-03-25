@@ -14,6 +14,47 @@
 namespace SDK::Params
 {
 
+// Function BP_ResourceRedistributor.BP_ResourceRedistributor_C.UpdateItemCount
+// 0x0008 (0x0008 - 0x0000)
+struct BP_ResourceRedistributor_C_UpdateItemCount final
+{
+public:
+	int32                                         Count;                                             // 0x0000(0x0004)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+	int32                                         MaxCount;                                          // 0x0004(0x0004)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BP_ResourceRedistributor_C_UpdateItemCount;
+
+// Function BP_ResourceRedistributor.BP_ResourceRedistributor_C.UpdateFilter
+// 0x0008 (0x0008 - 0x0000)
+struct BP_ResourceRedistributor_C_UpdateFilter final
+{
+public:
+	const class UAuItemDataBase*                  ItemFilter;                                        // 0x0000(0x0008)(ConstParm, BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BP_ResourceRedistributor_C_UpdateFilter;
+
+// Function BP_ResourceRedistributor.BP_ResourceRedistributor_C.GetMaterialInstanceIcon
+// 0x0018 (0x0018 - 0x0000)
+struct BP_ResourceRedistributor_C_GetMaterialInstanceIcon final
+{
+public:
+	class UMaterialInstanceDynamic*               MaterialInstance;                                  // 0x0000(0x0008)(Parm, OutParm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
+	class UMaterialInstanceDynamic*               CallFunc_CreateDynamicMaterialInstance_ReturnValue; // 0x0008(0x0008)(ZeroConstructor, NoDestructor, HasGetValueTypeHash)
+	bool                                          CallFunc_IsValid_ReturnValue;                      // 0x0010(0x0001)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BP_ResourceRedistributor_C_GetMaterialInstanceIcon;
+
+// Function BP_ResourceRedistributor.BP_ResourceRedistributor_C.GetMaterialInstance
+// 0x0018 (0x0018 - 0x0000)
+struct BP_ResourceRedistributor_C_GetMaterialInstance final
+{
+public:
+	class UMaterialInstanceDynamic*               MaterialInstance;                                  // 0x0000(0x0008)(Parm, OutParm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
+	class UMaterialInstanceDynamic*               CallFunc_CreateDynamicMaterialInstance_ReturnValue; // 0x0008(0x0008)(ZeroConstructor, NoDestructor, HasGetValueTypeHash)
+	bool                                          CallFunc_IsValid_ReturnValue;                      // 0x0010(0x0001)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BP_ResourceRedistributor_C_GetMaterialInstance;
+
 // Function BP_ResourceRedistributor.BP_ResourceRedistributor_C.ExecuteUbergraph_BP_ResourceRedistributor
 // 0x0058 (0x0058 - 0x0000)
 struct BP_ResourceRedistributor_C_ExecuteUbergraph_BP_ResourceRedistributor final
@@ -35,47 +76,6 @@ public:
 	float                                         CallFunc_SetScalarParameterValue_Value_ImplicitCast; // 0x0050(0x0004)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 };
 DUMPER7_ASSERTS_BP_ResourceRedistributor_C_ExecuteUbergraph_BP_ResourceRedistributor;
-
-// Function BP_ResourceRedistributor.BP_ResourceRedistributor_C.GetMaterialInstance
-// 0x0018 (0x0018 - 0x0000)
-struct BP_ResourceRedistributor_C_GetMaterialInstance final
-{
-public:
-	class UMaterialInstanceDynamic*               MaterialInstance;                                  // 0x0000(0x0008)(Parm, OutParm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
-	class UMaterialInstanceDynamic*               CallFunc_CreateDynamicMaterialInstance_ReturnValue; // 0x0008(0x0008)(ZeroConstructor, NoDestructor, HasGetValueTypeHash)
-	bool                                          CallFunc_IsValid_ReturnValue;                      // 0x0010(0x0001)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BP_ResourceRedistributor_C_GetMaterialInstance;
-
-// Function BP_ResourceRedistributor.BP_ResourceRedistributor_C.GetMaterialInstanceIcon
-// 0x0018 (0x0018 - 0x0000)
-struct BP_ResourceRedistributor_C_GetMaterialInstanceIcon final
-{
-public:
-	class UMaterialInstanceDynamic*               MaterialInstance;                                  // 0x0000(0x0008)(Parm, OutParm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
-	class UMaterialInstanceDynamic*               CallFunc_CreateDynamicMaterialInstance_ReturnValue; // 0x0008(0x0008)(ZeroConstructor, NoDestructor, HasGetValueTypeHash)
-	bool                                          CallFunc_IsValid_ReturnValue;                      // 0x0010(0x0001)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BP_ResourceRedistributor_C_GetMaterialInstanceIcon;
-
-// Function BP_ResourceRedistributor.BP_ResourceRedistributor_C.UpdateFilter
-// 0x0008 (0x0008 - 0x0000)
-struct BP_ResourceRedistributor_C_UpdateFilter final
-{
-public:
-	const class UAuItemDataBase*                  ItemFilter;                                        // 0x0000(0x0008)(ConstParm, BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BP_ResourceRedistributor_C_UpdateFilter;
-
-// Function BP_ResourceRedistributor.BP_ResourceRedistributor_C.UpdateItemCount
-// 0x0008 (0x0008 - 0x0000)
-struct BP_ResourceRedistributor_C_UpdateItemCount final
-{
-public:
-	int32                                         Count;                                             // 0x0000(0x0004)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-	int32                                         MaxCount;                                          // 0x0004(0x0004)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BP_ResourceRedistributor_C_UpdateItemCount;
 
 }
 

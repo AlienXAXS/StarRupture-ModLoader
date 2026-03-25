@@ -17,23 +17,45 @@
 namespace SDK
 {
 
-// Function BP_Refinery.BP_Refinery_C.ExecuteUbergraph_BP_Refinery
-// (Final, UbergraphFunction, HasDefaults)
-// Parameters:
-// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+// Function BP_Refinery.BP_Refinery_C.SetupSkeletalMesh
+// (Event, Public, BlueprintEvent)
 
-void ABP_Refinery_C::ExecuteUbergraph_BP_Refinery(int32 EntryPoint)
+void ABP_Refinery_C::SetupSkeletalMesh()
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_Refinery_C", "ExecuteUbergraph_BP_Refinery");
+		Func = Class->GetFunction("BP_Refinery_C", "SetupSkeletalMesh");
 
-	Params::BP_Refinery_C_ExecuteUbergraph_BP_Refinery Parms{};
+	UObject::ProcessEvent(Func, nullptr);
+}
 
-	Parms.EntryPoint = EntryPoint;
 
-	UObject::ProcessEvent(Func, &Parms);
+// Function BP_Refinery.BP_Refinery_C.ReceiveBeginPlay
+// (Event, Protected, BlueprintEvent)
+
+void ABP_Refinery_C::ReceiveBeginPlay()
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BP_Refinery_C", "ReceiveBeginPlay");
+
+	UObject::ProcessEvent(Func, nullptr);
+}
+
+
+// Function BP_Refinery.BP_Refinery_C.OnItemCraftingComplete
+// (Event, Public, BlueprintEvent)
+
+void ABP_Refinery_C::OnItemCraftingComplete()
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BP_Refinery_C", "OnItemCraftingComplete");
+
+	UObject::ProcessEvent(Func, nullptr);
 }
 
 
@@ -57,45 +79,23 @@ void ABP_Refinery_C::OnBuildingStateChanged(ECrBuildingState InState)
 }
 
 
-// Function BP_Refinery.BP_Refinery_C.OnItemCraftingComplete
-// (Event, Public, BlueprintEvent)
+// Function BP_Refinery.BP_Refinery_C.ExecuteUbergraph_BP_Refinery
+// (Final, UbergraphFunction, HasDefaults)
+// Parameters:
+// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 
-void ABP_Refinery_C::OnItemCraftingComplete()
+void ABP_Refinery_C::ExecuteUbergraph_BP_Refinery(int32 EntryPoint)
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_Refinery_C", "OnItemCraftingComplete");
+		Func = Class->GetFunction("BP_Refinery_C", "ExecuteUbergraph_BP_Refinery");
 
-	UObject::ProcessEvent(Func, nullptr);
-}
+	Params::BP_Refinery_C_ExecuteUbergraph_BP_Refinery Parms{};
 
+	Parms.EntryPoint = EntryPoint;
 
-// Function BP_Refinery.BP_Refinery_C.ReceiveBeginPlay
-// (Event, Protected, BlueprintEvent)
-
-void ABP_Refinery_C::ReceiveBeginPlay()
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BP_Refinery_C", "ReceiveBeginPlay");
-
-	UObject::ProcessEvent(Func, nullptr);
-}
-
-
-// Function BP_Refinery.BP_Refinery_C.SetupSkeletalMesh
-// (Event, Public, BlueprintEvent)
-
-void ABP_Refinery_C::SetupSkeletalMesh()
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BP_Refinery_C", "SetupSkeletalMesh");
-
-	UObject::ProcessEvent(Func, nullptr);
+	UObject::ProcessEvent(Func, &Parms);
 }
 
 

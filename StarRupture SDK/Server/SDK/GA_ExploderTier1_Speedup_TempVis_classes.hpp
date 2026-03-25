@@ -25,10 +25,10 @@ public:
 	struct FPointerToUberGraphFrame               UberGraphFrame;                                    // 0x0508(0x0008)(ZeroConstructor, Transient, DuplicateTransient)
 
 public:
-	void ExecuteUbergraph_GA_ExploderTier1_Speedup_TempVis(int32 EntryPoint);
-	void GetSpeedupEyeColorByAiTag(const struct FGameplayTag& AiTag, struct FLinearColor* EyeColor);
-	void K2_ActivateAbility();
 	void K2_OnEndAbility(bool bWasCancelled);
+	void K2_ActivateAbility();
+	void GetSpeedupEyeColorByAiTag(const struct FGameplayTag& AiTag, struct FLinearColor* EyeColor);
+	void ExecuteUbergraph_GA_ExploderTier1_Speedup_TempVis(int32 EntryPoint);
 
 public:
 	static class UClass* StaticClass()

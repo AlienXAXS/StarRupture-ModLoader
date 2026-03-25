@@ -36,12 +36,12 @@ public:
 	class UStaticMeshComponent*                   Cargo;                                             // 0x0498(0x0008)(BlueprintVisible, ZeroConstructor, InstancedReference, NonTransactional, NoDestructor, HasGetValueTypeHash)
 
 public:
-	void ExecuteUbergraph_BP_RailDroneBase(int32 EntryPoint);
-	void OnCarriedItemChanged(const struct FAuSimpleItem& Item);
-	void OnPickUpRequested();
-	void OnPrepareForGame();
-	void OnPrepareForPooling();
 	void OnRequestInvalidStateChanged(bool bAborted);
+	void OnPrepareForPooling();
+	void OnPrepareForGame();
+	void OnPickUpRequested();
+	void OnCarriedItemChanged(const struct FAuSimpleItem& Item);
+	void ExecuteUbergraph_BP_RailDroneBase(int32 EntryPoint);
 
 	class UStaticMeshComponent* GetCargoComponent() const;
 

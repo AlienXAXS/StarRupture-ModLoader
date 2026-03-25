@@ -17,131 +17,35 @@
 namespace SDK
 {
 
-// Function WBP_Rifle_Magnifier_ScopeOverlay.WBP_Rifle_Magnifier_ScopeOverlay_C.Construct
-// (BlueprintCosmetic, Event, Public, BlueprintEvent)
+// Function WBP_Rifle_Magnifier_ScopeOverlay.WBP_Rifle_Magnifier_ScopeOverlay_C.UpdateOverlayColors
+// (Public, HasDefaults, BlueprintCallable, BlueprintEvent)
 
-void UWBP_Rifle_Magnifier_ScopeOverlay_C::Construct()
+void UWBP_Rifle_Magnifier_ScopeOverlay_C::UpdateOverlayColors()
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("WBP_Rifle_Magnifier_ScopeOverlay_C", "Construct");
+		Func = Class->GetFunction("WBP_Rifle_Magnifier_ScopeOverlay_C", "UpdateOverlayColors");
 
 	UObject::ProcessEvent(Func, nullptr);
 }
 
 
-// Function WBP_Rifle_Magnifier_ScopeOverlay.WBP_Rifle_Magnifier_ScopeOverlay_C.Destruct
-// (BlueprintCosmetic, Event, Public, BlueprintEvent)
-
-void UWBP_Rifle_Magnifier_ScopeOverlay_C::Destruct()
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("WBP_Rifle_Magnifier_ScopeOverlay_C", "Destruct");
-
-	UObject::ProcessEvent(Func, nullptr);
-}
-
-
-// Function WBP_Rifle_Magnifier_ScopeOverlay.WBP_Rifle_Magnifier_ScopeOverlay_C.ExecuteUbergraph_WBP_Rifle_Magnifier_ScopeOverlay
-// (Final, UbergraphFunction, HasDefaults)
+// Function WBP_Rifle_Magnifier_ScopeOverlay.WBP_Rifle_Magnifier_ScopeOverlay_C.UpdateCrosshairSpread
+// (Public, BlueprintCallable, BlueprintEvent)
 // Parameters:
-// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+// double                                  Delta_Seconds                                          (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 
-void UWBP_Rifle_Magnifier_ScopeOverlay_C::ExecuteUbergraph_WBP_Rifle_Magnifier_ScopeOverlay(int32 EntryPoint)
+void UWBP_Rifle_Magnifier_ScopeOverlay_C::UpdateCrosshairSpread(double Delta_Seconds)
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("WBP_Rifle_Magnifier_ScopeOverlay_C", "ExecuteUbergraph_WBP_Rifle_Magnifier_ScopeOverlay");
+		Func = Class->GetFunction("WBP_Rifle_Magnifier_ScopeOverlay_C", "UpdateCrosshairSpread");
 
-	Params::WBP_Rifle_Magnifier_ScopeOverlay_C_ExecuteUbergraph_WBP_Rifle_Magnifier_ScopeOverlay Parms{};
+	Params::WBP_Rifle_Magnifier_ScopeOverlay_C_UpdateCrosshairSpread Parms{};
 
-	Parms.EntryPoint = EntryPoint;
-
-	UObject::ProcessEvent(Func, &Parms);
-}
-
-
-// Function WBP_Rifle_Magnifier_ScopeOverlay.WBP_Rifle_Magnifier_ScopeOverlay_C.Get_ScopeOverlay_Brush
-// (Public, HasOutParams, BlueprintCallable, BlueprintEvent, BlueprintPure)
-// Parameters:
-// struct FSlateBrush                      ReturnValue                                            (Parm, OutParm, ReturnParm)
-
-struct FSlateBrush UWBP_Rifle_Magnifier_ScopeOverlay_C::Get_ScopeOverlay_Brush()
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("WBP_Rifle_Magnifier_ScopeOverlay_C", "Get_ScopeOverlay_Brush");
-
-	Params::WBP_Rifle_Magnifier_ScopeOverlay_C_Get_ScopeOverlay_Brush Parms{};
-
-	UObject::ProcessEvent(Func, &Parms);
-
-	return Parms.ReturnValue;
-}
-
-
-// Function WBP_Rifle_Magnifier_ScopeOverlay.WBP_Rifle_Magnifier_ScopeOverlay_C.OnTagAdded_D02CEFB39C498EBE74FA8694A90AFD2C
-// (BlueprintCallable, BlueprintEvent)
-// Parameters:
-// const struct FGameplayTag&              Tag                                                    (BlueprintVisible, BlueprintReadOnly, Parm, NoDestructor, HasGetValueTypeHash)
-
-void UWBP_Rifle_Magnifier_ScopeOverlay_C::OnTagAdded_D02CEFB39C498EBE74FA8694A90AFD2C(const struct FGameplayTag& Tag)
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("WBP_Rifle_Magnifier_ScopeOverlay_C", "OnTagAdded_D02CEFB39C498EBE74FA8694A90AFD2C");
-
-	Params::WBP_Rifle_Magnifier_ScopeOverlay_C_OnTagAdded_D02CEFB39C498EBE74FA8694A90AFD2C Parms{};
-
-	Parms.Tag = std::move(Tag);
-
-	UObject::ProcessEvent(Func, &Parms);
-}
-
-
-// Function WBP_Rifle_Magnifier_ScopeOverlay.WBP_Rifle_Magnifier_ScopeOverlay_C.OnTagRemoved_D02CEFB39C498EBE74FA8694A90AFD2C
-// (BlueprintCallable, BlueprintEvent)
-// Parameters:
-// const struct FGameplayTag&              Tag                                                    (BlueprintVisible, BlueprintReadOnly, Parm, NoDestructor, HasGetValueTypeHash)
-
-void UWBP_Rifle_Magnifier_ScopeOverlay_C::OnTagRemoved_D02CEFB39C498EBE74FA8694A90AFD2C(const struct FGameplayTag& Tag)
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("WBP_Rifle_Magnifier_ScopeOverlay_C", "OnTagRemoved_D02CEFB39C498EBE74FA8694A90AFD2C");
-
-	Params::WBP_Rifle_Magnifier_ScopeOverlay_C_OnTagRemoved_D02CEFB39C498EBE74FA8694A90AFD2C Parms{};
-
-	Parms.Tag = std::move(Tag);
-
-	UObject::ProcessEvent(Func, &Parms);
-}
-
-
-// Function WBP_Rifle_Magnifier_ScopeOverlay.WBP_Rifle_Magnifier_ScopeOverlay_C.PawnChanged
-// (BlueprintCallable, BlueprintEvent)
-// Parameters:
-// class APawn*                            OldPawn                                                (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
-// class APawn*                            NewPawn                                                (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
-
-void UWBP_Rifle_Magnifier_ScopeOverlay_C::PawnChanged(class APawn* OldPawn, class APawn* NewPawn)
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("WBP_Rifle_Magnifier_ScopeOverlay_C", "PawnChanged");
-
-	Params::WBP_Rifle_Magnifier_ScopeOverlay_C_PawnChanged Parms{};
-
-	Parms.OldPawn = OldPawn;
-	Parms.NewPawn = NewPawn;
+	Parms.Delta_Seconds = Delta_Seconds;
 
 	UObject::ProcessEvent(Func, &Parms);
 }
@@ -169,35 +73,131 @@ void UWBP_Rifle_Magnifier_ScopeOverlay_C::Tick(const struct FGeometry& MyGeometr
 }
 
 
-// Function WBP_Rifle_Magnifier_ScopeOverlay.WBP_Rifle_Magnifier_ScopeOverlay_C.UpdateCrosshairSpread
-// (Public, BlueprintCallable, BlueprintEvent)
+// Function WBP_Rifle_Magnifier_ScopeOverlay.WBP_Rifle_Magnifier_ScopeOverlay_C.PawnChanged
+// (BlueprintCallable, BlueprintEvent)
 // Parameters:
-// double                                  Delta_Seconds                                          (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+// class APawn*                            OldPawn                                                (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
+// class APawn*                            NewPawn                                                (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
 
-void UWBP_Rifle_Magnifier_ScopeOverlay_C::UpdateCrosshairSpread(double Delta_Seconds)
+void UWBP_Rifle_Magnifier_ScopeOverlay_C::PawnChanged(class APawn* OldPawn, class APawn* NewPawn)
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("WBP_Rifle_Magnifier_ScopeOverlay_C", "UpdateCrosshairSpread");
+		Func = Class->GetFunction("WBP_Rifle_Magnifier_ScopeOverlay_C", "PawnChanged");
 
-	Params::WBP_Rifle_Magnifier_ScopeOverlay_C_UpdateCrosshairSpread Parms{};
+	Params::WBP_Rifle_Magnifier_ScopeOverlay_C_PawnChanged Parms{};
 
-	Parms.Delta_Seconds = Delta_Seconds;
+	Parms.OldPawn = OldPawn;
+	Parms.NewPawn = NewPawn;
 
 	UObject::ProcessEvent(Func, &Parms);
 }
 
 
-// Function WBP_Rifle_Magnifier_ScopeOverlay.WBP_Rifle_Magnifier_ScopeOverlay_C.UpdateOverlayColors
-// (Public, HasDefaults, BlueprintCallable, BlueprintEvent)
+// Function WBP_Rifle_Magnifier_ScopeOverlay.WBP_Rifle_Magnifier_ScopeOverlay_C.OnTagRemoved_D02CEFB39C498EBE74FA8694A90AFD2C
+// (BlueprintCallable, BlueprintEvent)
+// Parameters:
+// const struct FGameplayTag&              Tag                                                    (BlueprintVisible, BlueprintReadOnly, Parm, NoDestructor, HasGetValueTypeHash)
 
-void UWBP_Rifle_Magnifier_ScopeOverlay_C::UpdateOverlayColors()
+void UWBP_Rifle_Magnifier_ScopeOverlay_C::OnTagRemoved_D02CEFB39C498EBE74FA8694A90AFD2C(const struct FGameplayTag& Tag)
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("WBP_Rifle_Magnifier_ScopeOverlay_C", "UpdateOverlayColors");
+		Func = Class->GetFunction("WBP_Rifle_Magnifier_ScopeOverlay_C", "OnTagRemoved_D02CEFB39C498EBE74FA8694A90AFD2C");
+
+	Params::WBP_Rifle_Magnifier_ScopeOverlay_C_OnTagRemoved_D02CEFB39C498EBE74FA8694A90AFD2C Parms{};
+
+	Parms.Tag = std::move(Tag);
+
+	UObject::ProcessEvent(Func, &Parms);
+}
+
+
+// Function WBP_Rifle_Magnifier_ScopeOverlay.WBP_Rifle_Magnifier_ScopeOverlay_C.OnTagAdded_D02CEFB39C498EBE74FA8694A90AFD2C
+// (BlueprintCallable, BlueprintEvent)
+// Parameters:
+// const struct FGameplayTag&              Tag                                                    (BlueprintVisible, BlueprintReadOnly, Parm, NoDestructor, HasGetValueTypeHash)
+
+void UWBP_Rifle_Magnifier_ScopeOverlay_C::OnTagAdded_D02CEFB39C498EBE74FA8694A90AFD2C(const struct FGameplayTag& Tag)
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("WBP_Rifle_Magnifier_ScopeOverlay_C", "OnTagAdded_D02CEFB39C498EBE74FA8694A90AFD2C");
+
+	Params::WBP_Rifle_Magnifier_ScopeOverlay_C_OnTagAdded_D02CEFB39C498EBE74FA8694A90AFD2C Parms{};
+
+	Parms.Tag = std::move(Tag);
+
+	UObject::ProcessEvent(Func, &Parms);
+}
+
+
+// Function WBP_Rifle_Magnifier_ScopeOverlay.WBP_Rifle_Magnifier_ScopeOverlay_C.Get_ScopeOverlay_Brush
+// (Public, HasOutParams, BlueprintCallable, BlueprintEvent, BlueprintPure)
+// Parameters:
+// struct FSlateBrush                      ReturnValue                                            (Parm, OutParm, ReturnParm)
+
+struct FSlateBrush UWBP_Rifle_Magnifier_ScopeOverlay_C::Get_ScopeOverlay_Brush()
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("WBP_Rifle_Magnifier_ScopeOverlay_C", "Get_ScopeOverlay_Brush");
+
+	Params::WBP_Rifle_Magnifier_ScopeOverlay_C_Get_ScopeOverlay_Brush Parms{};
+
+	UObject::ProcessEvent(Func, &Parms);
+
+	return Parms.ReturnValue;
+}
+
+
+// Function WBP_Rifle_Magnifier_ScopeOverlay.WBP_Rifle_Magnifier_ScopeOverlay_C.ExecuteUbergraph_WBP_Rifle_Magnifier_ScopeOverlay
+// (Final, UbergraphFunction, HasDefaults)
+// Parameters:
+// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+
+void UWBP_Rifle_Magnifier_ScopeOverlay_C::ExecuteUbergraph_WBP_Rifle_Magnifier_ScopeOverlay(int32 EntryPoint)
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("WBP_Rifle_Magnifier_ScopeOverlay_C", "ExecuteUbergraph_WBP_Rifle_Magnifier_ScopeOverlay");
+
+	Params::WBP_Rifle_Magnifier_ScopeOverlay_C_ExecuteUbergraph_WBP_Rifle_Magnifier_ScopeOverlay Parms{};
+
+	Parms.EntryPoint = EntryPoint;
+
+	UObject::ProcessEvent(Func, &Parms);
+}
+
+
+// Function WBP_Rifle_Magnifier_ScopeOverlay.WBP_Rifle_Magnifier_ScopeOverlay_C.Destruct
+// (BlueprintCosmetic, Event, Public, BlueprintEvent)
+
+void UWBP_Rifle_Magnifier_ScopeOverlay_C::Destruct()
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("WBP_Rifle_Magnifier_ScopeOverlay_C", "Destruct");
+
+	UObject::ProcessEvent(Func, nullptr);
+}
+
+
+// Function WBP_Rifle_Magnifier_ScopeOverlay.WBP_Rifle_Magnifier_ScopeOverlay_C.Construct
+// (BlueprintCosmetic, Event, Public, BlueprintEvent)
+
+void UWBP_Rifle_Magnifier_ScopeOverlay_C::Construct()
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("WBP_Rifle_Magnifier_ScopeOverlay_C", "Construct");
 
 	UObject::ProcessEvent(Func, nullptr);
 }

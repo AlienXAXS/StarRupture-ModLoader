@@ -29,12 +29,12 @@ public:
 	class USceneComponent*                        DefaultSceneRoot;                                  // 0x0300(0x0008)(BlueprintVisible, ZeroConstructor, InstancedReference, NonTransactional, NoDestructor, HasGetValueTypeHash)
 
 public:
-	void ExecuteUbergraph_BP_Foundable_Base(int32 EntryPoint);
-	bool OnStorageEmptied();
-	void PlayEmptiedSound();
-	void ReceiveBeginPlay();
-	void UpdateFoundableVisibilityForStorageState(bool BeginPlay);
 	void UpdateMaterialsForStorageState();
+	void UpdateFoundableVisibilityForStorageState(bool BeginPlay);
+	void ReceiveBeginPlay();
+	void PlayEmptiedSound();
+	bool OnStorageEmptied();
+	void ExecuteUbergraph_BP_Foundable_Base(int32 EntryPoint);
 
 public:
 	static class UClass* StaticClass()

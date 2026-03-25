@@ -14,6 +14,16 @@
 namespace SDK::Params
 {
 
+// Function BTTask_Exploder_Tier2_LOD0_SetExplosionAttackTimer.BTTask_Exploder_Tier2_LOD0_SetExplosionAttackTimer_C.ReceiveExecuteAI
+// 0x0010 (0x0010 - 0x0000)
+struct BTTask_Exploder_Tier2_LOD0_SetExplosionAttackTimer_C_ReceiveExecuteAI final
+{
+public:
+	class AAIController*                          OwnerController;                                   // 0x0000(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
+	class APawn*                                  ControlledPawn;                                    // 0x0008(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BTTask_Exploder_Tier2_LOD0_SetExplosionAttackTimer_C_ReceiveExecuteAI;
+
 // Function BTTask_Exploder_Tier2_LOD0_SetExplosionAttackTimer.BTTask_Exploder_Tier2_LOD0_SetExplosionAttackTimer_C.ExecuteUbergraph_BTTask_Exploder_Tier2_LOD0_SetExplosionAttackTimer
 // 0x0030 (0x0030 - 0x0000)
 struct BTTask_Exploder_Tier2_LOD0_SetExplosionAttackTimer_C_ExecuteUbergraph_BTTask_Exploder_Tier2_LOD0_SetExplosionAttackTimer final
@@ -29,16 +39,6 @@ public:
 	double                                        CallFunc_SetExplosionAttackTimer_TimeToExplode_ImplicitCast; // 0x0028(0x0008)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 };
 DUMPER7_ASSERTS_BTTask_Exploder_Tier2_LOD0_SetExplosionAttackTimer_C_ExecuteUbergraph_BTTask_Exploder_Tier2_LOD0_SetExplosionAttackTimer;
-
-// Function BTTask_Exploder_Tier2_LOD0_SetExplosionAttackTimer.BTTask_Exploder_Tier2_LOD0_SetExplosionAttackTimer_C.ReceiveExecuteAI
-// 0x0010 (0x0010 - 0x0000)
-struct BTTask_Exploder_Tier2_LOD0_SetExplosionAttackTimer_C_ReceiveExecuteAI final
-{
-public:
-	class AAIController*                          OwnerController;                                   // 0x0000(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
-	class APawn*                                  ControlledPawn;                                    // 0x0008(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BTTask_Exploder_Tier2_LOD0_SetExplosionAttackTimer_C_ReceiveExecuteAI;
 
 }
 

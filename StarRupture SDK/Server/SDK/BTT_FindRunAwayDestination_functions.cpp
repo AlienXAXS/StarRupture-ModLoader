@@ -17,26 +17,6 @@
 namespace SDK
 {
 
-// Function BTT_FindRunAwayDestination.BTT_FindRunAwayDestination_C.ExecuteUbergraph_BTT_FindRunAwayDestination
-// (Final, UbergraphFunction)
-// Parameters:
-// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-
-void UBTT_FindRunAwayDestination_C::ExecuteUbergraph_BTT_FindRunAwayDestination(int32 EntryPoint)
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BTT_FindRunAwayDestination_C", "ExecuteUbergraph_BTT_FindRunAwayDestination");
-
-	Params::BTT_FindRunAwayDestination_C_ExecuteUbergraph_BTT_FindRunAwayDestination Parms{};
-
-	Parms.EntryPoint = EntryPoint;
-
-	UObject::ProcessEvent(Func, &Parms);
-}
-
-
 // Function BTT_FindRunAwayDestination.BTT_FindRunAwayDestination_C.ReceiveExecuteAI
 // (Event, Protected, BlueprintEvent)
 // Parameters:
@@ -54,6 +34,26 @@ void UBTT_FindRunAwayDestination_C::ReceiveExecuteAI(class AAIController* OwnerC
 
 	Parms.OwnerController = OwnerController;
 	Parms.ControlledPawn = ControlledPawn;
+
+	UObject::ProcessEvent(Func, &Parms);
+}
+
+
+// Function BTT_FindRunAwayDestination.BTT_FindRunAwayDestination_C.ExecuteUbergraph_BTT_FindRunAwayDestination
+// (Final, UbergraphFunction)
+// Parameters:
+// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+
+void UBTT_FindRunAwayDestination_C::ExecuteUbergraph_BTT_FindRunAwayDestination(int32 EntryPoint)
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BTT_FindRunAwayDestination_C", "ExecuteUbergraph_BTT_FindRunAwayDestination");
+
+	Params::BTT_FindRunAwayDestination_C_ExecuteUbergraph_BTT_FindRunAwayDestination Parms{};
+
+	Parms.EntryPoint = EntryPoint;
 
 	UObject::ProcessEvent(Func, &Parms);
 }

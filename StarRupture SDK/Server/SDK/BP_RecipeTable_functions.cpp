@@ -17,23 +17,17 @@
 namespace SDK
 {
 
-// Function BP_RecipeTable.BP_RecipeTable_C.ExecuteUbergraph_BP_RecipeTable
-// (Final, UbergraphFunction)
-// Parameters:
-// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+// Function BP_RecipeTable.BP_RecipeTable_C.ReceiveBeginPlay
+// (Event, Protected, BlueprintEvent)
 
-void ABP_RecipeTable_C::ExecuteUbergraph_BP_RecipeTable(int32 EntryPoint)
+void ABP_RecipeTable_C::ReceiveBeginPlay()
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_RecipeTable_C", "ExecuteUbergraph_BP_RecipeTable");
+		Func = Class->GetFunction("BP_RecipeTable_C", "ReceiveBeginPlay");
 
-	Params::BP_RecipeTable_C_ExecuteUbergraph_BP_RecipeTable Parms{};
-
-	Parms.EntryPoint = EntryPoint;
-
-	UObject::ProcessEvent(Func, &Parms);
+	UObject::ProcessEvent(Func, nullptr);
 }
 
 
@@ -57,17 +51,23 @@ void ABP_RecipeTable_C::OnUIOpened(bool bOpened)
 }
 
 
-// Function BP_RecipeTable.BP_RecipeTable_C.ReceiveBeginPlay
-// (Event, Protected, BlueprintEvent)
+// Function BP_RecipeTable.BP_RecipeTable_C.ExecuteUbergraph_BP_RecipeTable
+// (Final, UbergraphFunction)
+// Parameters:
+// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 
-void ABP_RecipeTable_C::ReceiveBeginPlay()
+void ABP_RecipeTable_C::ExecuteUbergraph_BP_RecipeTable(int32 EntryPoint)
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_RecipeTable_C", "ReceiveBeginPlay");
+		Func = Class->GetFunction("BP_RecipeTable_C", "ExecuteUbergraph_BP_RecipeTable");
 
-	UObject::ProcessEvent(Func, nullptr);
+	Params::BP_RecipeTable_C_ExecuteUbergraph_BP_RecipeTable Parms{};
+
+	Parms.EntryPoint = EntryPoint;
+
+	UObject::ProcessEvent(Func, &Parms);
 }
 
 }

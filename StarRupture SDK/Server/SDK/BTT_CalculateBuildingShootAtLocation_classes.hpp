@@ -38,8 +38,8 @@ public:
 	struct FVector                                TopExtentsOffset;                                  // 0x0190(0x0018)(Edit, BlueprintVisible, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 
 public:
-	void ExecuteUbergraph_BTT_CalculateBuildingShootAtLocation(int32 EntryPoint);
 	void ReceiveExecuteAI(class AAIController* OwnerController, class APawn* ControlledPawn);
+	void ExecuteUbergraph_BTT_CalculateBuildingShootAtLocation(int32 EntryPoint);
 
 public:
 	static class UClass* StaticClass()

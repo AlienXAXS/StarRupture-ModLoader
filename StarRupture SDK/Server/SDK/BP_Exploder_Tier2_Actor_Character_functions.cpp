@@ -17,55 +17,35 @@
 namespace SDK
 {
 
-// Function BP_Exploder_Tier2_Actor_Character.BP_Exploder_Tier2_Actor_Character_C.ExecuteUbergraph_BP_Exploder_Tier2_Actor_Character
-// (Final, UbergraphFunction)
-// Parameters:
-// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+// Function BP_Exploder_Tier2_Actor_Character.BP_Exploder_Tier2_Actor_Character_C.UserConstructionScript
+// (Event, Public, BlueprintCallable, BlueprintEvent)
 
-void ABP_Exploder_Tier2_Actor_Character_C::ExecuteUbergraph_BP_Exploder_Tier2_Actor_Character(int32 EntryPoint)
+void ABP_Exploder_Tier2_Actor_Character_C::UserConstructionScript()
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_Exploder_Tier2_Actor_Character_C", "ExecuteUbergraph_BP_Exploder_Tier2_Actor_Character");
-
-	Params::BP_Exploder_Tier2_Actor_Character_C_ExecuteUbergraph_BP_Exploder_Tier2_Actor_Character Parms{};
-
-	Parms.EntryPoint = EntryPoint;
-
-	UObject::ProcessEvent(Func, &Parms);
-}
-
-
-// Function BP_Exploder_Tier2_Actor_Character.BP_Exploder_Tier2_Actor_Character_C.OnExplosionAttackTimerFinished
-// (Public, BlueprintCallable, BlueprintEvent)
-
-void ABP_Exploder_Tier2_Actor_Character_C::OnExplosionAttackTimerFinished()
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BP_Exploder_Tier2_Actor_Character_C", "OnExplosionAttackTimerFinished");
+		Func = Class->GetFunction("BP_Exploder_Tier2_Actor_Character_C", "UserConstructionScript");
 
 	UObject::ProcessEvent(Func, nullptr);
 }
 
 
-// Function BP_Exploder_Tier2_Actor_Character.BP_Exploder_Tier2_Actor_Character_C.ReceiveTick
-// (Event, Public, BlueprintEvent)
+// Function BP_Exploder_Tier2_Actor_Character.BP_Exploder_Tier2_Actor_Character_C.Spawn Explosion Sphere At Current Location
+// (Public, BlueprintCallable, BlueprintEvent)
 // Parameters:
-// float                                   DeltaSeconds                                           (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+// const struct FAuAPMassSpawnedEntityType&EntityType                                             (BlueprintVisible, BlueprintReadOnly, Parm)
 
-void ABP_Exploder_Tier2_Actor_Character_C::ReceiveTick(float DeltaSeconds)
+void ABP_Exploder_Tier2_Actor_Character_C::Spawn_Explosion_Sphere_At_Current_Location(const struct FAuAPMassSpawnedEntityType& EntityType)
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_Exploder_Tier2_Actor_Character_C", "ReceiveTick");
+		Func = Class->GetFunction("BP_Exploder_Tier2_Actor_Character_C", "Spawn Explosion Sphere At Current Location");
 
-	Params::BP_Exploder_Tier2_Actor_Character_C_ReceiveTick Parms{};
+	Params::BP_Exploder_Tier2_Actor_Character_C_Spawn_Explosion_Sphere_At_Current_Location Parms{};
 
-	Parms.DeltaSeconds = DeltaSeconds;
+	Parms.EntityType = std::move(EntityType);
 
 	UObject::ProcessEvent(Func, &Parms);
 }
@@ -93,37 +73,57 @@ void ABP_Exploder_Tier2_Actor_Character_C::SetExplosionAttackTimer(bool bSetTime
 }
 
 
-// Function BP_Exploder_Tier2_Actor_Character.BP_Exploder_Tier2_Actor_Character_C.Spawn Explosion Sphere At Current Location
-// (Public, BlueprintCallable, BlueprintEvent)
+// Function BP_Exploder_Tier2_Actor_Character.BP_Exploder_Tier2_Actor_Character_C.ReceiveTick
+// (Event, Public, BlueprintEvent)
 // Parameters:
-// const struct FAuAPMassSpawnedEntityType&EntityType                                             (BlueprintVisible, BlueprintReadOnly, Parm)
+// float                                   DeltaSeconds                                           (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 
-void ABP_Exploder_Tier2_Actor_Character_C::Spawn_Explosion_Sphere_At_Current_Location(const struct FAuAPMassSpawnedEntityType& EntityType)
+void ABP_Exploder_Tier2_Actor_Character_C::ReceiveTick(float DeltaSeconds)
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_Exploder_Tier2_Actor_Character_C", "Spawn Explosion Sphere At Current Location");
+		Func = Class->GetFunction("BP_Exploder_Tier2_Actor_Character_C", "ReceiveTick");
 
-	Params::BP_Exploder_Tier2_Actor_Character_C_Spawn_Explosion_Sphere_At_Current_Location Parms{};
+	Params::BP_Exploder_Tier2_Actor_Character_C_ReceiveTick Parms{};
 
-	Parms.EntityType = std::move(EntityType);
+	Parms.DeltaSeconds = DeltaSeconds;
 
 	UObject::ProcessEvent(Func, &Parms);
 }
 
 
-// Function BP_Exploder_Tier2_Actor_Character.BP_Exploder_Tier2_Actor_Character_C.UserConstructionScript
-// (Event, Public, BlueprintCallable, BlueprintEvent)
+// Function BP_Exploder_Tier2_Actor_Character.BP_Exploder_Tier2_Actor_Character_C.OnExplosionAttackTimerFinished
+// (Public, BlueprintCallable, BlueprintEvent)
 
-void ABP_Exploder_Tier2_Actor_Character_C::UserConstructionScript()
+void ABP_Exploder_Tier2_Actor_Character_C::OnExplosionAttackTimerFinished()
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_Exploder_Tier2_Actor_Character_C", "UserConstructionScript");
+		Func = Class->GetFunction("BP_Exploder_Tier2_Actor_Character_C", "OnExplosionAttackTimerFinished");
 
 	UObject::ProcessEvent(Func, nullptr);
+}
+
+
+// Function BP_Exploder_Tier2_Actor_Character.BP_Exploder_Tier2_Actor_Character_C.ExecuteUbergraph_BP_Exploder_Tier2_Actor_Character
+// (Final, UbergraphFunction)
+// Parameters:
+// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+
+void ABP_Exploder_Tier2_Actor_Character_C::ExecuteUbergraph_BP_Exploder_Tier2_Actor_Character(int32 EntryPoint)
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BP_Exploder_Tier2_Actor_Character_C", "ExecuteUbergraph_BP_Exploder_Tier2_Actor_Character");
+
+	Params::BP_Exploder_Tier2_Actor_Character_C_ExecuteUbergraph_BP_Exploder_Tier2_Actor_Character Parms{};
+
+	Parms.EntryPoint = EntryPoint;
+
+	UObject::ProcessEvent(Func, &Parms);
 }
 
 }

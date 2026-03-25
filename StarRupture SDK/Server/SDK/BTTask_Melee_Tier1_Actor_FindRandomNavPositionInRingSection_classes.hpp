@@ -37,8 +37,8 @@ public:
 	struct FBlackboardKeySelector                 OutResultPosition;                                 // 0x0160(0x0028)(Edit, BlueprintVisible)
 
 public:
-	void ExecuteUbergraph_BTTask_Melee_Tier1_Actor_FindRandomNavPositionInRingSection(int32 EntryPoint);
 	void ReceiveExecuteAI(class AAIController* OwnerController, class APawn* ControlledPawn);
+	void ExecuteUbergraph_BTTask_Melee_Tier1_Actor_FindRandomNavPositionInRingSection(int32 EntryPoint);
 
 public:
 	static class UClass* StaticClass()

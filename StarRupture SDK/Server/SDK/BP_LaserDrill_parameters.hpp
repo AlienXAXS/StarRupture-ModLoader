@@ -16,6 +16,15 @@
 namespace SDK::Params
 {
 
+// Function BP_LaserDrill.BP_LaserDrill_C.OnBuildingStateChanged
+// 0x0001 (0x0001 - 0x0000)
+struct BP_LaserDrill_C_OnBuildingStateChanged final
+{
+public:
+	ECrBuildingState                              InState;                                           // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BP_LaserDrill_C_OnBuildingStateChanged;
+
 // Function BP_LaserDrill.BP_LaserDrill_C.ExecuteUbergraph_BP_LaserDrill
 // 0x00C0 (0x00C0 - 0x0000)
 struct BP_LaserDrill_C_ExecuteUbergraph_BP_LaserDrill final
@@ -54,15 +63,6 @@ public:
 	bool                                          CallFunc_Contains_ReturnValue;                     // 0x00B8(0x0001)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 };
 DUMPER7_ASSERTS_BP_LaserDrill_C_ExecuteUbergraph_BP_LaserDrill;
-
-// Function BP_LaserDrill.BP_LaserDrill_C.OnBuildingStateChanged
-// 0x0001 (0x0001 - 0x0000)
-struct BP_LaserDrill_C_OnBuildingStateChanged final
-{
-public:
-	ECrBuildingState                              InState;                                           // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BP_LaserDrill_C_OnBuildingStateChanged;
 
 // Function BP_LaserDrill.BP_LaserDrill_C.Get Meshes
 // 0x00B0 (0x00B0 - 0x0000)

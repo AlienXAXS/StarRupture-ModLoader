@@ -16,6 +16,15 @@
 namespace SDK::Params
 {
 
+// Function BP_Forge.BP_Forge_C.OnBuildingStateChanged
+// 0x0001 (0x0001 - 0x0000)
+struct BP_Forge_C_OnBuildingStateChanged final
+{
+public:
+	ECrBuildingState                              InState;                                           // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BP_Forge_C_OnBuildingStateChanged;
+
 // Function BP_Forge.BP_Forge_C.ExecuteUbergraph_BP_Forge
 // 0x00F8 (0x00F8 - 0x0000)
 struct BP_Forge_C_ExecuteUbergraph_BP_Forge final
@@ -68,15 +77,6 @@ public:
 	bool                                          CallFunc_K2_AttachToComponent_ReturnValue_5;       // 0x00F5(0x0001)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 };
 DUMPER7_ASSERTS_BP_Forge_C_ExecuteUbergraph_BP_Forge;
-
-// Function BP_Forge.BP_Forge_C.OnBuildingStateChanged
-// 0x0001 (0x0001 - 0x0000)
-struct BP_Forge_C_OnBuildingStateChanged final
-{
-public:
-	ECrBuildingState                              InState;                                           // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BP_Forge_C_OnBuildingStateChanged;
 
 }
 

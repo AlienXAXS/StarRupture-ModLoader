@@ -17,6 +17,16 @@
 namespace SDK
 {
 
+// ScriptStruct ABP_Ranged_Tier3_Actor.ABP_Ranged_Tier3_Actor_C.AnimBlueprintGeneratedMutableData
+// 0x0007 (0x0008 - 0x0001)
+struct ABP_Ranged_Tier3_Actor::FAnimBlueprintGeneratedMutableData final : public FAnimBlueprintMutableData
+{
+public:
+	uint8                                         Pad_1[0x3];                                        // 0x0001(0x0003)(Fixing Size After Last Property [ Dumper-7 ])
+	float                                         __FloatProperty;                                   // 0x0004(0x0004)(BlueprintVisible, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_ABP_Ranged_Tier3_Actor__FAnimBlueprintGeneratedMutableData;
+
 // ScriptStruct ABP_Ranged_Tier3_Actor.ABP_Ranged_Tier3_Actor_C.AnimBlueprintGeneratedConstantData
 // 0x0D67 (0x0D68 - 0x0001)
 struct ABP_Ranged_Tier3_Actor::FAnimBlueprintGeneratedConstantData final : public FAnimBlueprintConstantData
@@ -130,16 +140,6 @@ public:
 	struct FAnimNodeExposedValueHandler_PropertyAccess AnimGraphNode_TwoWayBlend;                    // 0x0D38(0x0030)()
 };
 DUMPER7_ASSERTS_ABP_Ranged_Tier3_Actor__FAnimBlueprintGeneratedConstantData;
-
-// ScriptStruct ABP_Ranged_Tier3_Actor.ABP_Ranged_Tier3_Actor_C.AnimBlueprintGeneratedMutableData
-// 0x0007 (0x0008 - 0x0001)
-struct ABP_Ranged_Tier3_Actor::FAnimBlueprintGeneratedMutableData final : public FAnimBlueprintMutableData
-{
-public:
-	uint8                                         Pad_1[0x3];                                        // 0x0001(0x0003)(Fixing Size After Last Property [ Dumper-7 ])
-	float                                         __FloatProperty;                                   // 0x0004(0x0004)(BlueprintVisible, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_ABP_Ranged_Tier3_Actor__FAnimBlueprintGeneratedMutableData;
 
 }
 

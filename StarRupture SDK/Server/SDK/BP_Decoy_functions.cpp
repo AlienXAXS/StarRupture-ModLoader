@@ -17,26 +17,6 @@
 namespace SDK
 {
 
-// Function BP_Decoy.BP_Decoy_C.ExecuteUbergraph_BP_Decoy
-// (Final, UbergraphFunction)
-// Parameters:
-// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-
-void ABP_Decoy_C::ExecuteUbergraph_BP_Decoy(int32 EntryPoint)
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BP_Decoy_C", "ExecuteUbergraph_BP_Decoy");
-
-	Params::BP_Decoy_C_ExecuteUbergraph_BP_Decoy Parms{};
-
-	Parms.EntryPoint = EntryPoint;
-
-	UObject::ProcessEvent(Func, &Parms);
-}
-
-
 // Function BP_Decoy.BP_Decoy_C.OnBuildingStateChanged
 // (Event, Public, BlueprintEvent)
 // Parameters:
@@ -52,6 +32,26 @@ void ABP_Decoy_C::OnBuildingStateChanged(ECrBuildingState InState)
 	Params::BP_Decoy_C_OnBuildingStateChanged Parms{};
 
 	Parms.InState = InState;
+
+	UObject::ProcessEvent(Func, &Parms);
+}
+
+
+// Function BP_Decoy.BP_Decoy_C.ExecuteUbergraph_BP_Decoy
+// (Final, UbergraphFunction)
+// Parameters:
+// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+
+void ABP_Decoy_C::ExecuteUbergraph_BP_Decoy(int32 EntryPoint)
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BP_Decoy_C", "ExecuteUbergraph_BP_Decoy");
+
+	Params::BP_Decoy_C_ExecuteUbergraph_BP_Decoy Parms{};
+
+	Parms.EntryPoint = EntryPoint;
 
 	UObject::ProcessEvent(Func, &Parms);
 }

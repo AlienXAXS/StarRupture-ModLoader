@@ -25,8 +25,8 @@ public:
 	struct FPointerToUberGraphFrame               UberGraphFrame;                                    // 0x0098(0x0008)(ZeroConstructor, Transient, DuplicateTransient)
 
 public:
-	void ExecuteUbergraph_BTService_Melee_Tier3_Actor_UpdateAnimState(int32 EntryPoint);
 	void ReceiveTickAI(class AAIController* OwnerController, class APawn* ControlledPawn, float DeltaSeconds);
+	void ExecuteUbergraph_BTService_Melee_Tier3_Actor_UpdateAnimState(int32 EntryPoint);
 
 public:
 	static class UClass* StaticClass()

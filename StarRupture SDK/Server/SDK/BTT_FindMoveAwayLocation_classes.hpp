@@ -34,8 +34,8 @@ public:
 	class AActor*                                 TargetActor;                                       // 0x0120(0x0008)(Edit, BlueprintVisible, ZeroConstructor, DisableEditOnTemplate, DisableEditOnInstance, NoDestructor, HasGetValueTypeHash)
 
 public:
-	void ExecuteUbergraph_BTT_FindMoveAwayLocation(int32 EntryPoint);
 	void ReceiveExecuteAI(class AAIController* OwnerController, class APawn* ControlledPawn_0);
+	void ExecuteUbergraph_BTT_FindMoveAwayLocation(int32 EntryPoint);
 
 public:
 	static class UClass* StaticClass()

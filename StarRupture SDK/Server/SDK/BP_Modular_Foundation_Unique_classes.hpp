@@ -31,9 +31,9 @@ public:
 	struct FVector                                StartingPos;                                       // 0x0850(0x0018)(Edit, BlueprintVisible, ZeroConstructor, DisableEditOnInstance, IsPlainOldData, NoDestructor, AdvancedDisplay, HasGetValueTypeHash)
 
 public:
-	void ExecuteUbergraph_BP_Modular_Foundation_Unique(int32 EntryPoint);
-	void ReceiveBeginPlay();
 	void UserConstructionScript();
+	void ReceiveBeginPlay();
+	void ExecuteUbergraph_BP_Modular_Foundation_Unique(int32 EntryPoint);
 
 	void GetBuildingMeshes(class UMeshComponent** MainBody, TArray<class UMeshComponent*>* AdditionalMeshes) const;
 

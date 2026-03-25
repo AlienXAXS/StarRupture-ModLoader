@@ -14,6 +14,17 @@
 namespace SDK::Params
 {
 
+// Function BTService_Melee_Tier3_Actor_UpdateAnimState.BTService_Melee_Tier3_Actor_UpdateAnimState_C.ReceiveTickAI
+// 0x0018 (0x0018 - 0x0000)
+struct BTService_Melee_Tier3_Actor_UpdateAnimState_C_ReceiveTickAI final
+{
+public:
+	class AAIController*                          OwnerController;                                   // 0x0000(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
+	class APawn*                                  ControlledPawn;                                    // 0x0008(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
+	float                                         DeltaSeconds;                                      // 0x0010(0x0004)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BTService_Melee_Tier3_Actor_UpdateAnimState_C_ReceiveTickAI;
+
 // Function BTService_Melee_Tier3_Actor_UpdateAnimState.BTService_Melee_Tier3_Actor_UpdateAnimState_C.ExecuteUbergraph_BTService_Melee_Tier3_Actor_UpdateAnimState
 // 0x0038 (0x0038 - 0x0000)
 struct BTService_Melee_Tier3_Actor_UpdateAnimState_C_ExecuteUbergraph_BTService_Melee_Tier3_Actor_UpdateAnimState final
@@ -29,17 +40,6 @@ public:
 	bool                                          K2Node_DynamicCast_bSuccess;                       // 0x0030(0x0001)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 };
 DUMPER7_ASSERTS_BTService_Melee_Tier3_Actor_UpdateAnimState_C_ExecuteUbergraph_BTService_Melee_Tier3_Actor_UpdateAnimState;
-
-// Function BTService_Melee_Tier3_Actor_UpdateAnimState.BTService_Melee_Tier3_Actor_UpdateAnimState_C.ReceiveTickAI
-// 0x0018 (0x0018 - 0x0000)
-struct BTService_Melee_Tier3_Actor_UpdateAnimState_C_ReceiveTickAI final
-{
-public:
-	class AAIController*                          OwnerController;                                   // 0x0000(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
-	class APawn*                                  ControlledPawn;                                    // 0x0008(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
-	float                                         DeltaSeconds;                                      // 0x0010(0x0004)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BTService_Melee_Tier3_Actor_UpdateAnimState_C_ReceiveTickAI;
 
 }
 

@@ -17,23 +17,65 @@
 namespace SDK
 {
 
-// Function BP_RailDroneBase.BP_RailDroneBase_C.ExecuteUbergraph_BP_RailDroneBase
-// (Final, UbergraphFunction, HasDefaults)
+// Function BP_RailDroneBase.BP_RailDroneBase_C.OnRequestInvalidStateChanged
+// (Event, Public, BlueprintEvent)
 // Parameters:
-// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+// bool                                    bAborted                                               (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 
-void ABP_RailDroneBase_C::ExecuteUbergraph_BP_RailDroneBase(int32 EntryPoint)
+void ABP_RailDroneBase_C::OnRequestInvalidStateChanged(bool bAborted)
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_RailDroneBase_C", "ExecuteUbergraph_BP_RailDroneBase");
+		Func = Class->GetFunction("BP_RailDroneBase_C", "OnRequestInvalidStateChanged");
 
-	Params::BP_RailDroneBase_C_ExecuteUbergraph_BP_RailDroneBase Parms{};
+	Params::BP_RailDroneBase_C_OnRequestInvalidStateChanged Parms{};
 
-	Parms.EntryPoint = EntryPoint;
+	Parms.bAborted = bAborted;
 
 	UObject::ProcessEvent(Func, &Parms);
+}
+
+
+// Function BP_RailDroneBase.BP_RailDroneBase_C.OnPrepareForPooling
+// (Event, Public, BlueprintEvent)
+
+void ABP_RailDroneBase_C::OnPrepareForPooling()
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BP_RailDroneBase_C", "OnPrepareForPooling");
+
+	UObject::ProcessEvent(Func, nullptr);
+}
+
+
+// Function BP_RailDroneBase.BP_RailDroneBase_C.OnPrepareForGame
+// (Event, Public, BlueprintEvent)
+
+void ABP_RailDroneBase_C::OnPrepareForGame()
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BP_RailDroneBase_C", "OnPrepareForGame");
+
+	UObject::ProcessEvent(Func, nullptr);
+}
+
+
+// Function BP_RailDroneBase.BP_RailDroneBase_C.OnPickUpRequested
+// (Event, Public, BlueprintEvent)
+
+void ABP_RailDroneBase_C::OnPickUpRequested()
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BP_RailDroneBase_C", "OnPickUpRequested");
+
+	UObject::ProcessEvent(Func, nullptr);
 }
 
 
@@ -57,63 +99,21 @@ void ABP_RailDroneBase_C::OnCarriedItemChanged(const struct FAuSimpleItem& Item)
 }
 
 
-// Function BP_RailDroneBase.BP_RailDroneBase_C.OnPickUpRequested
-// (Event, Public, BlueprintEvent)
-
-void ABP_RailDroneBase_C::OnPickUpRequested()
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BP_RailDroneBase_C", "OnPickUpRequested");
-
-	UObject::ProcessEvent(Func, nullptr);
-}
-
-
-// Function BP_RailDroneBase.BP_RailDroneBase_C.OnPrepareForGame
-// (Event, Public, BlueprintEvent)
-
-void ABP_RailDroneBase_C::OnPrepareForGame()
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BP_RailDroneBase_C", "OnPrepareForGame");
-
-	UObject::ProcessEvent(Func, nullptr);
-}
-
-
-// Function BP_RailDroneBase.BP_RailDroneBase_C.OnPrepareForPooling
-// (Event, Public, BlueprintEvent)
-
-void ABP_RailDroneBase_C::OnPrepareForPooling()
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BP_RailDroneBase_C", "OnPrepareForPooling");
-
-	UObject::ProcessEvent(Func, nullptr);
-}
-
-
-// Function BP_RailDroneBase.BP_RailDroneBase_C.OnRequestInvalidStateChanged
-// (Event, Public, BlueprintEvent)
+// Function BP_RailDroneBase.BP_RailDroneBase_C.ExecuteUbergraph_BP_RailDroneBase
+// (Final, UbergraphFunction, HasDefaults)
 // Parameters:
-// bool                                    bAborted                                               (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 
-void ABP_RailDroneBase_C::OnRequestInvalidStateChanged(bool bAborted)
+void ABP_RailDroneBase_C::ExecuteUbergraph_BP_RailDroneBase(int32 EntryPoint)
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_RailDroneBase_C", "OnRequestInvalidStateChanged");
+		Func = Class->GetFunction("BP_RailDroneBase_C", "ExecuteUbergraph_BP_RailDroneBase");
 
-	Params::BP_RailDroneBase_C_OnRequestInvalidStateChanged Parms{};
+	Params::BP_RailDroneBase_C_ExecuteUbergraph_BP_RailDroneBase Parms{};
 
-	Parms.bAborted = bAborted;
+	Parms.EntryPoint = EntryPoint;
 
 	UObject::ProcessEvent(Func, &Parms);
 }

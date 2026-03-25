@@ -17,19 +17,22 @@
 namespace SDK
 {
 
-// Function WBP_PersonalStorageNameBig.WBP_PersonalStorageNameBig_C.GetText
-// (Public, HasOutParams, HasDefaults, BlueprintCallable, BlueprintEvent, BlueprintPure)
+// Function WBP_PersonalStorageNameBig.WBP_PersonalStorageNameBig_C.UpdateName
+// (Public, HasOutParams, HasDefaults, BlueprintCallable, BlueprintEvent)
 // Parameters:
+// class ACrBuildingActorBase*             Owning_Building                                        (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
 // class FText                             ReturnValue                                            (Parm, OutParm, ReturnParm)
 
-class FText UWBP_PersonalStorageNameBig_C::GetText()
+class FText UWBP_PersonalStorageNameBig_C::UpdateName(class ACrBuildingActorBase* Owning_Building)
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("WBP_PersonalStorageNameBig_C", "GetText");
+		Func = Class->GetFunction("WBP_PersonalStorageNameBig_C", "UpdateName");
 
-	Params::WBP_PersonalStorageNameBig_C_GetText Parms{};
+	Params::WBP_PersonalStorageNameBig_C_UpdateName Parms{};
+
+	Parms.Owning_Building = Owning_Building;
 
 	UObject::ProcessEvent(Func, &Parms);
 
@@ -57,22 +60,19 @@ void UWBP_PersonalStorageNameBig_C::SetHeight(int32 InHeight)
 }
 
 
-// Function WBP_PersonalStorageNameBig.WBP_PersonalStorageNameBig_C.UpdateName
-// (Public, HasOutParams, HasDefaults, BlueprintCallable, BlueprintEvent)
+// Function WBP_PersonalStorageNameBig.WBP_PersonalStorageNameBig_C.GetText
+// (Public, HasOutParams, HasDefaults, BlueprintCallable, BlueprintEvent, BlueprintPure)
 // Parameters:
-// class ACrBuildingActorBase*             Owning_Building                                        (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
 // class FText                             ReturnValue                                            (Parm, OutParm, ReturnParm)
 
-class FText UWBP_PersonalStorageNameBig_C::UpdateName(class ACrBuildingActorBase* Owning_Building)
+class FText UWBP_PersonalStorageNameBig_C::GetText()
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("WBP_PersonalStorageNameBig_C", "UpdateName");
+		Func = Class->GetFunction("WBP_PersonalStorageNameBig_C", "GetText");
 
-	Params::WBP_PersonalStorageNameBig_C_UpdateName Parms{};
-
-	Parms.Owning_Building = Owning_Building;
+	Params::WBP_PersonalStorageNameBig_C_GetText Parms{};
 
 	UObject::ProcessEvent(Func, &Parms);
 

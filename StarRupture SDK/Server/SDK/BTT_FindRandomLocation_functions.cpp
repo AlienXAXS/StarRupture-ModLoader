@@ -17,26 +17,6 @@
 namespace SDK
 {
 
-// Function BTT_FindRandomLocation.BTT_FindRandomLocation_C.ExecuteUbergraph_BTT_FindRandomLocation
-// (Final, UbergraphFunction)
-// Parameters:
-// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-
-void UBTT_FindRandomLocation_C::ExecuteUbergraph_BTT_FindRandomLocation(int32 EntryPoint)
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BTT_FindRandomLocation_C", "ExecuteUbergraph_BTT_FindRandomLocation");
-
-	Params::BTT_FindRandomLocation_C_ExecuteUbergraph_BTT_FindRandomLocation Parms{};
-
-	Parms.EntryPoint = EntryPoint;
-
-	UObject::ProcessEvent(Func, &Parms);
-}
-
-
 // Function BTT_FindRandomLocation.BTT_FindRandomLocation_C.ReceiveExecuteAI
 // (Event, Protected, BlueprintEvent)
 // Parameters:
@@ -54,6 +34,26 @@ void UBTT_FindRandomLocation_C::ReceiveExecuteAI(class AAIController* OwnerContr
 
 	Parms.OwnerController = OwnerController;
 	Parms.ControlledPawn = ControlledPawn;
+
+	UObject::ProcessEvent(Func, &Parms);
+}
+
+
+// Function BTT_FindRandomLocation.BTT_FindRandomLocation_C.ExecuteUbergraph_BTT_FindRandomLocation
+// (Final, UbergraphFunction)
+// Parameters:
+// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+
+void UBTT_FindRandomLocation_C::ExecuteUbergraph_BTT_FindRandomLocation(int32 EntryPoint)
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BTT_FindRandomLocation_C", "ExecuteUbergraph_BTT_FindRandomLocation");
+
+	Params::BTT_FindRandomLocation_C_ExecuteUbergraph_BTT_FindRandomLocation Parms{};
+
+	Parms.EntryPoint = EntryPoint;
 
 	UObject::ProcessEvent(Func, &Parms);
 }

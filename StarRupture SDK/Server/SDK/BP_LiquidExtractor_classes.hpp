@@ -38,9 +38,9 @@ public:
 	class USceneComponent*                        DroneSpawn;                                        // 0x0728(0x0008)(BlueprintVisible, ZeroConstructor, InstancedReference, NonTransactional, NoDestructor, HasGetValueTypeHash)
 
 public:
-	void ExecuteUbergraph_BP_LiquidExtractor(int32 EntryPoint);
-	void OnBuildingStateChanged(ECrBuildingState InState);
 	void ReceiveBeginPlay();
+	void OnBuildingStateChanged(ECrBuildingState InState);
+	void ExecuteUbergraph_BP_LiquidExtractor(int32 EntryPoint);
 
 public:
 	static class UClass* StaticClass()

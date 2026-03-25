@@ -38,11 +38,11 @@ public:
 	float                                         OverrideTimeValue;                                 // 0x030C(0x0004)(Edit, BlueprintVisible, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 
 public:
-	void ExecuteUbergraph_BP_AlienObieliskActor(int32 EntryPoint);
-	void ReceiveBeginPlay();
-	void SequencerTrigger();
-	void TimeRemap__FinishedFunc();
 	void TimeRemap__UpdateFunc();
+	void TimeRemap__FinishedFunc();
+	void SequencerTrigger();
+	void ReceiveBeginPlay();
+	void ExecuteUbergraph_BP_AlienObieliskActor(int32 EntryPoint);
 
 public:
 	static class UClass* StaticClass()

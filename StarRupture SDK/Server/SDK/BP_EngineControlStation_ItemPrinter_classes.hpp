@@ -38,13 +38,13 @@ public:
 	class UAudioComponent*                        WorkingLoopSound;                                  // 0x0730(0x0008)(Edit, BlueprintVisible, ZeroConstructor, DisableEditOnInstance, InstancedReference, NoDestructor, HasGetValueTypeHash)
 
 public:
-	void ExecuteUbergraph_BP_EngineControlStation_ItemPrinter(int32 EntryPoint);
-	void Get_Meshes(class USceneComponent* Static_0, class USceneComponent* Animated_0, TArray<class UMeshComponent*>* NewParam);
-	void OnBuildingStateChanged(ECrBuildingState InState);
-	void OnItemCraftingComplete();
-	void OnUIOpened(bool bOpened);
-	void ReceiveBeginPlay();
 	void SetupSkeletalMesh();
+	void ReceiveBeginPlay();
+	void OnUIOpened(bool bOpened);
+	void OnItemCraftingComplete();
+	void OnBuildingStateChanged(ECrBuildingState InState);
+	void Get_Meshes(class USceneComponent* Static_0, class USceneComponent* Animated_0, TArray<class UMeshComponent*>* NewParam);
+	void ExecuteUbergraph_BP_EngineControlStation_ItemPrinter(int32 EntryPoint);
 
 public:
 	static class UClass* StaticClass()

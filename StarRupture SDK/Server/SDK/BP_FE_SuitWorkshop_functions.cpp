@@ -17,91 +17,63 @@
 namespace SDK
 {
 
-// Function BP_FE_SuitWorkshop.BP_FE_SuitWorkshop_C.Arm_A_VFX
-// (BlueprintCallable, BlueprintEvent)
+// Function BP_FE_SuitWorkshop.BP_FE_SuitWorkshop_C.Timeline__UpdateFunc
+// (BlueprintEvent)
 
-void ABP_FE_SuitWorkshop_C::Arm_A_VFX()
+void ABP_FE_SuitWorkshop_C::Timeline__UpdateFunc()
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_FE_SuitWorkshop_C", "Arm_A_VFX");
+		Func = Class->GetFunction("BP_FE_SuitWorkshop_C", "Timeline__UpdateFunc");
 
 	UObject::ProcessEvent(Func, nullptr);
 }
 
 
-// Function BP_FE_SuitWorkshop.BP_FE_SuitWorkshop_C.Arm_B_VFX
-// (BlueprintCallable, BlueprintEvent)
+// Function BP_FE_SuitWorkshop.BP_FE_SuitWorkshop_C.Timeline__FinishedFunc
+// (BlueprintEvent)
 
-void ABP_FE_SuitWorkshop_C::Arm_B_VFX()
+void ABP_FE_SuitWorkshop_C::Timeline__FinishedFunc()
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_FE_SuitWorkshop_C", "Arm_B_VFX");
+		Func = Class->GetFunction("BP_FE_SuitWorkshop_C", "Timeline__FinishedFunc");
 
 	UObject::ProcessEvent(Func, nullptr);
 }
 
 
-// Function BP_FE_SuitWorkshop.BP_FE_SuitWorkshop_C.Arm_C_VFX
-// (BlueprintCallable, BlueprintEvent)
+// Function BP_FE_SuitWorkshop.BP_FE_SuitWorkshop_C.ReceiveBeginPlay
+// (Event, Protected, BlueprintEvent)
 
-void ABP_FE_SuitWorkshop_C::Arm_C_VFX()
+void ABP_FE_SuitWorkshop_C::ReceiveBeginPlay()
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_FE_SuitWorkshop_C", "Arm_C_VFX");
+		Func = Class->GetFunction("BP_FE_SuitWorkshop_C", "ReceiveBeginPlay");
 
 	UObject::ProcessEvent(Func, nullptr);
 }
 
 
-// Function BP_FE_SuitWorkshop.BP_FE_SuitWorkshop_C.Arm_D_VFX
-// (BlueprintCallable, BlueprintEvent)
-
-void ABP_FE_SuitWorkshop_C::Arm_D_VFX()
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BP_FE_SuitWorkshop_C", "Arm_D_VFX");
-
-	UObject::ProcessEvent(Func, nullptr);
-}
-
-
-// Function BP_FE_SuitWorkshop.BP_FE_SuitWorkshop_C.AttachMeshes
-// (BlueprintCallable, BlueprintEvent)
-
-void ABP_FE_SuitWorkshop_C::AttachMeshes()
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BP_FE_SuitWorkshop_C", "AttachMeshes");
-
-	UObject::ProcessEvent(Func, nullptr);
-}
-
-
-// Function BP_FE_SuitWorkshop.BP_FE_SuitWorkshop_C.ExecuteUbergraph_BP_FE_SuitWorkshop
-// (Final, UbergraphFunction, HasDefaults)
+// Function BP_FE_SuitWorkshop.BP_FE_SuitWorkshop_C.OnUIOpened
+// (Event, Public, BlueprintEvent)
 // Parameters:
-// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+// bool                                    bOpened                                                (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 
-void ABP_FE_SuitWorkshop_C::ExecuteUbergraph_BP_FE_SuitWorkshop(int32 EntryPoint)
+void ABP_FE_SuitWorkshop_C::OnUIOpened(bool bOpened)
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_FE_SuitWorkshop_C", "ExecuteUbergraph_BP_FE_SuitWorkshop");
+		Func = Class->GetFunction("BP_FE_SuitWorkshop_C", "OnUIOpened");
 
-	Params::BP_FE_SuitWorkshop_C_ExecuteUbergraph_BP_FE_SuitWorkshop Parms{};
+	Params::BP_FE_SuitWorkshop_C_OnUIOpened Parms{};
 
-	Parms.EntryPoint = EntryPoint;
+	Parms.bOpened = bOpened;
 
 	UObject::ProcessEvent(Func, &Parms);
 }
@@ -127,63 +99,91 @@ void ABP_FE_SuitWorkshop_C::OnBuildingStateChanged(ECrBuildingState InState)
 }
 
 
-// Function BP_FE_SuitWorkshop.BP_FE_SuitWorkshop_C.OnUIOpened
-// (Event, Public, BlueprintEvent)
+// Function BP_FE_SuitWorkshop.BP_FE_SuitWorkshop_C.ExecuteUbergraph_BP_FE_SuitWorkshop
+// (Final, UbergraphFunction, HasDefaults)
 // Parameters:
-// bool                                    bOpened                                                (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 
-void ABP_FE_SuitWorkshop_C::OnUIOpened(bool bOpened)
+void ABP_FE_SuitWorkshop_C::ExecuteUbergraph_BP_FE_SuitWorkshop(int32 EntryPoint)
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_FE_SuitWorkshop_C", "OnUIOpened");
+		Func = Class->GetFunction("BP_FE_SuitWorkshop_C", "ExecuteUbergraph_BP_FE_SuitWorkshop");
 
-	Params::BP_FE_SuitWorkshop_C_OnUIOpened Parms{};
+	Params::BP_FE_SuitWorkshop_C_ExecuteUbergraph_BP_FE_SuitWorkshop Parms{};
 
-	Parms.bOpened = bOpened;
+	Parms.EntryPoint = EntryPoint;
 
 	UObject::ProcessEvent(Func, &Parms);
 }
 
 
-// Function BP_FE_SuitWorkshop.BP_FE_SuitWorkshop_C.ReceiveBeginPlay
-// (Event, Protected, BlueprintEvent)
+// Function BP_FE_SuitWorkshop.BP_FE_SuitWorkshop_C.AttachMeshes
+// (BlueprintCallable, BlueprintEvent)
 
-void ABP_FE_SuitWorkshop_C::ReceiveBeginPlay()
+void ABP_FE_SuitWorkshop_C::AttachMeshes()
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_FE_SuitWorkshop_C", "ReceiveBeginPlay");
+		Func = Class->GetFunction("BP_FE_SuitWorkshop_C", "AttachMeshes");
 
 	UObject::ProcessEvent(Func, nullptr);
 }
 
 
-// Function BP_FE_SuitWorkshop.BP_FE_SuitWorkshop_C.Timeline__FinishedFunc
-// (BlueprintEvent)
+// Function BP_FE_SuitWorkshop.BP_FE_SuitWorkshop_C.Arm_D_VFX
+// (BlueprintCallable, BlueprintEvent)
 
-void ABP_FE_SuitWorkshop_C::Timeline__FinishedFunc()
+void ABP_FE_SuitWorkshop_C::Arm_D_VFX()
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_FE_SuitWorkshop_C", "Timeline__FinishedFunc");
+		Func = Class->GetFunction("BP_FE_SuitWorkshop_C", "Arm_D_VFX");
 
 	UObject::ProcessEvent(Func, nullptr);
 }
 
 
-// Function BP_FE_SuitWorkshop.BP_FE_SuitWorkshop_C.Timeline__UpdateFunc
-// (BlueprintEvent)
+// Function BP_FE_SuitWorkshop.BP_FE_SuitWorkshop_C.Arm_C_VFX
+// (BlueprintCallable, BlueprintEvent)
 
-void ABP_FE_SuitWorkshop_C::Timeline__UpdateFunc()
+void ABP_FE_SuitWorkshop_C::Arm_C_VFX()
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_FE_SuitWorkshop_C", "Timeline__UpdateFunc");
+		Func = Class->GetFunction("BP_FE_SuitWorkshop_C", "Arm_C_VFX");
+
+	UObject::ProcessEvent(Func, nullptr);
+}
+
+
+// Function BP_FE_SuitWorkshop.BP_FE_SuitWorkshop_C.Arm_B_VFX
+// (BlueprintCallable, BlueprintEvent)
+
+void ABP_FE_SuitWorkshop_C::Arm_B_VFX()
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BP_FE_SuitWorkshop_C", "Arm_B_VFX");
+
+	UObject::ProcessEvent(Func, nullptr);
+}
+
+
+// Function BP_FE_SuitWorkshop.BP_FE_SuitWorkshop_C.Arm_A_VFX
+// (BlueprintCallable, BlueprintEvent)
+
+void ABP_FE_SuitWorkshop_C::Arm_A_VFX()
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BP_FE_SuitWorkshop_C", "Arm_A_VFX");
 
 	UObject::ProcessEvent(Func, nullptr);
 }

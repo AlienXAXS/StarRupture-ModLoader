@@ -17,15 +17,99 @@
 namespace SDK
 {
 
-// Function BP_QuartzOre.BP_QuartzOre_C.BP_OnSpawnedWithResourceDepleted
-// (Event, Public, BlueprintEvent)
+// Function BP_QuartzOre.BP_QuartzOre_C.Timeline__UpdateFunc
+// (BlueprintEvent)
 
-void ABP_QuartzOre_C::BP_OnSpawnedWithResourceDepleted()
+void ABP_QuartzOre_C::Timeline__UpdateFunc()
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_QuartzOre_C", "BP_OnSpawnedWithResourceDepleted");
+		Func = Class->GetFunction("BP_QuartzOre_C", "Timeline__UpdateFunc");
+
+	UObject::ProcessEvent(Func, nullptr);
+}
+
+
+// Function BP_QuartzOre.BP_QuartzOre_C.Timeline__FinishedFunc
+// (BlueprintEvent)
+
+void ABP_QuartzOre_C::Timeline__FinishedFunc()
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BP_QuartzOre_C", "Timeline__FinishedFunc");
+
+	UObject::ProcessEvent(Func, nullptr);
+}
+
+
+// Function BP_QuartzOre.BP_QuartzOre_C.SetupAndProcessDissolveForAllStaticMeshes
+// (Public, HasDefaults, BlueprintCallable, BlueprintEvent)
+
+void ABP_QuartzOre_C::SetupAndProcessDissolveForAllStaticMeshes()
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BP_QuartzOre_C", "SetupAndProcessDissolveForAllStaticMeshes");
+
+	UObject::ProcessEvent(Func, nullptr);
+}
+
+
+// Function BP_QuartzOre.BP_QuartzOre_C.SetAllStaticMeshesToVisible
+// (Public, HasDefaults, BlueprintCallable, BlueprintEvent)
+
+void ABP_QuartzOre_C::SetAllStaticMeshesToVisible()
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BP_QuartzOre_C", "SetAllStaticMeshesToVisible");
+
+	UObject::ProcessEvent(Func, nullptr);
+}
+
+
+// Function BP_QuartzOre.BP_QuartzOre_C.SetAllStaticMeshesToHidden
+// (Public, HasDefaults, BlueprintCallable, BlueprintEvent)
+
+void ABP_QuartzOre_C::SetAllStaticMeshesToHidden()
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BP_QuartzOre_C", "SetAllStaticMeshesToHidden");
+
+	UObject::ProcessEvent(Func, nullptr);
+}
+
+
+// Function BP_QuartzOre.BP_QuartzOre_C.ReceiveBeginPlay
+// (Event, Protected, BlueprintEvent)
+
+void ABP_QuartzOre_C::ReceiveBeginPlay()
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BP_QuartzOre_C", "ReceiveBeginPlay");
+
+	UObject::ProcessEvent(Func, nullptr);
+}
+
+
+// Function BP_QuartzOre.BP_QuartzOre_C.OnResourceDepletedCosmeticsStart
+// (Event, Public, BlueprintEvent)
+
+void ABP_QuartzOre_C::OnResourceDepletedCosmeticsStart()
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BP_QuartzOre_C", "OnResourceDepletedCosmeticsStart");
 
 	UObject::ProcessEvent(Func, nullptr);
 }
@@ -51,99 +135,15 @@ void ABP_QuartzOre_C::ExecuteUbergraph_BP_QuartzOre(int32 EntryPoint)
 }
 
 
-// Function BP_QuartzOre.BP_QuartzOre_C.OnResourceDepletedCosmeticsStart
+// Function BP_QuartzOre.BP_QuartzOre_C.BP_OnSpawnedWithResourceDepleted
 // (Event, Public, BlueprintEvent)
 
-void ABP_QuartzOre_C::OnResourceDepletedCosmeticsStart()
+void ABP_QuartzOre_C::BP_OnSpawnedWithResourceDepleted()
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_QuartzOre_C", "OnResourceDepletedCosmeticsStart");
-
-	UObject::ProcessEvent(Func, nullptr);
-}
-
-
-// Function BP_QuartzOre.BP_QuartzOre_C.ReceiveBeginPlay
-// (Event, Protected, BlueprintEvent)
-
-void ABP_QuartzOre_C::ReceiveBeginPlay()
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BP_QuartzOre_C", "ReceiveBeginPlay");
-
-	UObject::ProcessEvent(Func, nullptr);
-}
-
-
-// Function BP_QuartzOre.BP_QuartzOre_C.SetAllStaticMeshesToHidden
-// (Public, HasDefaults, BlueprintCallable, BlueprintEvent)
-
-void ABP_QuartzOre_C::SetAllStaticMeshesToHidden()
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BP_QuartzOre_C", "SetAllStaticMeshesToHidden");
-
-	UObject::ProcessEvent(Func, nullptr);
-}
-
-
-// Function BP_QuartzOre.BP_QuartzOre_C.SetAllStaticMeshesToVisible
-// (Public, HasDefaults, BlueprintCallable, BlueprintEvent)
-
-void ABP_QuartzOre_C::SetAllStaticMeshesToVisible()
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BP_QuartzOre_C", "SetAllStaticMeshesToVisible");
-
-	UObject::ProcessEvent(Func, nullptr);
-}
-
-
-// Function BP_QuartzOre.BP_QuartzOre_C.SetupAndProcessDissolveForAllStaticMeshes
-// (Public, HasDefaults, BlueprintCallable, BlueprintEvent)
-
-void ABP_QuartzOre_C::SetupAndProcessDissolveForAllStaticMeshes()
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BP_QuartzOre_C", "SetupAndProcessDissolveForAllStaticMeshes");
-
-	UObject::ProcessEvent(Func, nullptr);
-}
-
-
-// Function BP_QuartzOre.BP_QuartzOre_C.Timeline__FinishedFunc
-// (BlueprintEvent)
-
-void ABP_QuartzOre_C::Timeline__FinishedFunc()
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BP_QuartzOre_C", "Timeline__FinishedFunc");
-
-	UObject::ProcessEvent(Func, nullptr);
-}
-
-
-// Function BP_QuartzOre.BP_QuartzOre_C.Timeline__UpdateFunc
-// (BlueprintEvent)
-
-void ABP_QuartzOre_C::Timeline__UpdateFunc()
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BP_QuartzOre_C", "Timeline__UpdateFunc");
+		Func = Class->GetFunction("BP_QuartzOre_C", "BP_OnSpawnedWithResourceDepleted");
 
 	UObject::ProcessEvent(Func, nullptr);
 }

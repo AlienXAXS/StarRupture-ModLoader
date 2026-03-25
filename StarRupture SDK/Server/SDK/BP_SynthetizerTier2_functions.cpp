@@ -17,26 +17,6 @@
 namespace SDK
 {
 
-// Function BP_SynthetizerTier2.BP_SynthetizerTier2_C.ExecuteUbergraph_BP_SynthetizerTier2
-// (Final, UbergraphFunction)
-// Parameters:
-// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-
-void ABP_SynthetizerTier2_C::ExecuteUbergraph_BP_SynthetizerTier2(int32 EntryPoint)
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BP_SynthetizerTier2_C", "ExecuteUbergraph_BP_SynthetizerTier2");
-
-	Params::BP_SynthetizerTier2_C_ExecuteUbergraph_BP_SynthetizerTier2 Parms{};
-
-	Parms.EntryPoint = EntryPoint;
-
-	UObject::ProcessEvent(Func, &Parms);
-}
-
-
 // Function BP_SynthetizerTier2.BP_SynthetizerTier2_C.OnBuildingStateChanged
 // (Event, Public, BlueprintEvent)
 // Parameters:
@@ -52,6 +32,26 @@ void ABP_SynthetizerTier2_C::OnBuildingStateChanged(ECrBuildingState InState)
 	Params::BP_SynthetizerTier2_C_OnBuildingStateChanged Parms{};
 
 	Parms.InState = InState;
+
+	UObject::ProcessEvent(Func, &Parms);
+}
+
+
+// Function BP_SynthetizerTier2.BP_SynthetizerTier2_C.ExecuteUbergraph_BP_SynthetizerTier2
+// (Final, UbergraphFunction)
+// Parameters:
+// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+
+void ABP_SynthetizerTier2_C::ExecuteUbergraph_BP_SynthetizerTier2(int32 EntryPoint)
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BP_SynthetizerTier2_C", "ExecuteUbergraph_BP_SynthetizerTier2");
+
+	Params::BP_SynthetizerTier2_C_ExecuteUbergraph_BP_SynthetizerTier2 Parms{};
+
+	Parms.EntryPoint = EntryPoint;
 
 	UObject::ProcessEvent(Func, &Parms);
 }

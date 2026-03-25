@@ -17,77 +17,63 @@
 namespace SDK
 {
 
-// Function BP_CloningBed.BP_CloningBed_C.BedFree value__FinishedFunc
+// Function BP_CloningBed.BP_CloningBed_C.Window Opacity__UpdateFunc
 // (BlueprintEvent)
 
-void ABP_CloningBed_C::BedFree_value__FinishedFunc()
+void ABP_CloningBed_C::Window_Opacity__UpdateFunc()
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_CloningBed_C", "BedFree value__FinishedFunc");
+		Func = Class->GetFunction("BP_CloningBed_C", "Window Opacity__UpdateFunc");
 
 	UObject::ProcessEvent(Func, nullptr);
 }
 
 
-// Function BP_CloningBed.BP_CloningBed_C.BedFree value__UpdateFunc
+// Function BP_CloningBed.BP_CloningBed_C.Window Opacity__FinishedFunc
 // (BlueprintEvent)
 
-void ABP_CloningBed_C::BedFree_value__UpdateFunc()
+void ABP_CloningBed_C::Window_Opacity__FinishedFunc()
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_CloningBed_C", "BedFree value__UpdateFunc");
+		Func = Class->GetFunction("BP_CloningBed_C", "Window Opacity__FinishedFunc");
 
 	UObject::ProcessEvent(Func, nullptr);
 }
 
 
-// Function BP_CloningBed.BP_CloningBed_C.BedOwnedTaken value__FinishedFunc
-// (BlueprintEvent)
+// Function BP_CloningBed.BP_CloningBed_C.ReceiveBeginPlay
+// (Event, Protected, BlueprintEvent)
 
-void ABP_CloningBed_C::BedOwnedTaken_value__FinishedFunc()
+void ABP_CloningBed_C::ReceiveBeginPlay()
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_CloningBed_C", "BedOwnedTaken value__FinishedFunc");
+		Func = Class->GetFunction("BP_CloningBed_C", "ReceiveBeginPlay");
 
 	UObject::ProcessEvent(Func, nullptr);
 }
 
 
-// Function BP_CloningBed.BP_CloningBed_C.BedOwnedTaken value__UpdateFunc
-// (BlueprintEvent)
-
-void ABP_CloningBed_C::BedOwnedTaken_value__UpdateFunc()
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BP_CloningBed_C", "BedOwnedTaken value__UpdateFunc");
-
-	UObject::ProcessEvent(Func, nullptr);
-}
-
-
-// Function BP_CloningBed.BP_CloningBed_C.ChangeWindowMaterial
-// (Public, BlueprintCallable, BlueprintEvent)
+// Function BP_CloningBed.BP_CloningBed_C.OnBuildingOwnershipChanged
+// (Event, Public, BlueprintEvent)
 // Parameters:
-// class UMaterialInterface*               Material                                               (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
+// ECrBuildingOwnership                    NewOwnership                                           (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 
-void ABP_CloningBed_C::ChangeWindowMaterial(class UMaterialInterface* Material)
+void ABP_CloningBed_C::OnBuildingOwnershipChanged(ECrBuildingOwnership NewOwnership)
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_CloningBed_C", "ChangeWindowMaterial");
+		Func = Class->GetFunction("BP_CloningBed_C", "OnBuildingOwnershipChanged");
 
-	Params::BP_CloningBed_C_ChangeWindowMaterial Parms{};
+	Params::BP_CloningBed_C_OnBuildingOwnershipChanged Parms{};
 
-	Parms.Material = Material;
+	Parms.NewOwnership = NewOwnership;
 
 	UObject::ProcessEvent(Func, &Parms);
 }
@@ -113,63 +99,77 @@ void ABP_CloningBed_C::ExecuteUbergraph_BP_CloningBed(int32 EntryPoint)
 }
 
 
-// Function BP_CloningBed.BP_CloningBed_C.OnBuildingOwnershipChanged
-// (Event, Public, BlueprintEvent)
+// Function BP_CloningBed.BP_CloningBed_C.ChangeWindowMaterial
+// (Public, BlueprintCallable, BlueprintEvent)
 // Parameters:
-// ECrBuildingOwnership                    NewOwnership                                           (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+// class UMaterialInterface*               Material                                               (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
 
-void ABP_CloningBed_C::OnBuildingOwnershipChanged(ECrBuildingOwnership NewOwnership)
+void ABP_CloningBed_C::ChangeWindowMaterial(class UMaterialInterface* Material)
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_CloningBed_C", "OnBuildingOwnershipChanged");
+		Func = Class->GetFunction("BP_CloningBed_C", "ChangeWindowMaterial");
 
-	Params::BP_CloningBed_C_OnBuildingOwnershipChanged Parms{};
+	Params::BP_CloningBed_C_ChangeWindowMaterial Parms{};
 
-	Parms.NewOwnership = NewOwnership;
+	Parms.Material = Material;
 
 	UObject::ProcessEvent(Func, &Parms);
 }
 
 
-// Function BP_CloningBed.BP_CloningBed_C.ReceiveBeginPlay
-// (Event, Protected, BlueprintEvent)
+// Function BP_CloningBed.BP_CloningBed_C.BedOwnedTaken value__UpdateFunc
+// (BlueprintEvent)
 
-void ABP_CloningBed_C::ReceiveBeginPlay()
+void ABP_CloningBed_C::BedOwnedTaken_value__UpdateFunc()
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_CloningBed_C", "ReceiveBeginPlay");
+		Func = Class->GetFunction("BP_CloningBed_C", "BedOwnedTaken value__UpdateFunc");
 
 	UObject::ProcessEvent(Func, nullptr);
 }
 
 
-// Function BP_CloningBed.BP_CloningBed_C.Window Opacity__FinishedFunc
+// Function BP_CloningBed.BP_CloningBed_C.BedOwnedTaken value__FinishedFunc
 // (BlueprintEvent)
 
-void ABP_CloningBed_C::Window_Opacity__FinishedFunc()
+void ABP_CloningBed_C::BedOwnedTaken_value__FinishedFunc()
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_CloningBed_C", "Window Opacity__FinishedFunc");
+		Func = Class->GetFunction("BP_CloningBed_C", "BedOwnedTaken value__FinishedFunc");
 
 	UObject::ProcessEvent(Func, nullptr);
 }
 
 
-// Function BP_CloningBed.BP_CloningBed_C.Window Opacity__UpdateFunc
+// Function BP_CloningBed.BP_CloningBed_C.BedFree value__UpdateFunc
 // (BlueprintEvent)
 
-void ABP_CloningBed_C::Window_Opacity__UpdateFunc()
+void ABP_CloningBed_C::BedFree_value__UpdateFunc()
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_CloningBed_C", "Window Opacity__UpdateFunc");
+		Func = Class->GetFunction("BP_CloningBed_C", "BedFree value__UpdateFunc");
+
+	UObject::ProcessEvent(Func, nullptr);
+}
+
+
+// Function BP_CloningBed.BP_CloningBed_C.BedFree value__FinishedFunc
+// (BlueprintEvent)
+
+void ABP_CloningBed_C::BedFree_value__FinishedFunc()
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BP_CloningBed_C", "BedFree value__FinishedFunc");
 
 	UObject::ProcessEvent(Func, nullptr);
 }

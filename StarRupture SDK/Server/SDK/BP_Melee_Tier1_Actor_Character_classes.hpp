@@ -33,16 +33,16 @@ public:
 	double                                        FakeStrafeMagnitudeMod;                            // 0x0C38(0x0008)(Edit, BlueprintVisible, ZeroConstructor, DisableEditOnInstance, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 
 public:
-	void CanChangeEyeColor(bool* Result);
-	void ExecuteUbergraph_BP_Melee_Tier1_Actor_Character(int32 EntryPoint);
-	void OnAiDied(const struct FHitResult& HitResult, const struct FGameplayTag& KillingDamageTag);
-	void OnVisualVariationChanged(const struct FVector& NewVisualVariationSeed);
-	void SetIsAggroEyeColor(bool NewIsAggro);
-	void SetIsBoostedEyeColor(bool NewIsBoosted);
-	void SetIsJumpEyeBehaviour(bool NewIsJumpEyeBehaviour);
-	void TryApplySpeedup();
-	void TryApplySpeedupRemoveActivator();
 	void UserConstructionScript();
+	void TryApplySpeedupRemoveActivator();
+	void TryApplySpeedup();
+	void SetIsJumpEyeBehaviour(bool NewIsJumpEyeBehaviour);
+	void SetIsBoostedEyeColor(bool NewIsBoosted);
+	void SetIsAggroEyeColor(bool NewIsAggro);
+	void OnVisualVariationChanged(const struct FVector& NewVisualVariationSeed);
+	void OnAiDied(const struct FHitResult& HitResult, const struct FGameplayTag& KillingDamageTag);
+	void ExecuteUbergraph_BP_Melee_Tier1_Actor_Character(int32 EntryPoint);
+	void CanChangeEyeColor(bool* Result);
 
 public:
 	static class UClass* StaticClass()

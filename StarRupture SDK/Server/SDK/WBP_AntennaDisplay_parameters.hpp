@@ -19,39 +19,26 @@
 namespace SDK::Params
 {
 
-// Function WBP_AntennaDisplay.WBP_AntennaDisplay_C.Init
+// Function WBP_AntennaDisplay.WBP_AntennaDisplay_C.SetState
 // 0x0018 (0x0018 - 0x0000)
-struct WBP_AntennaDisplay_C_Init final
+struct WBP_AntennaDisplay_C_SetState final
 {
 public:
-	double                                        Percent_0;                                         // 0x0000(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-	class UMaterialInstanceDynamic*               CallFunc_CreateDynamicMaterialInstance_ReturnValue; // 0x0008(0x0008)(ZeroConstructor, NoDestructor, HasGetValueTypeHash)
-	float                                         CallFunc_SetScalarParameterValue_Value_ImplicitCast; // 0x0010(0x0004)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+	ECrAntennaState                               State;                                             // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+	uint8                                         Pad_1[0x3];                                        // 0x0001(0x0003)(Fixing Size After Last Property [ Dumper-7 ])
+	struct FLinearColor                           StateColor;                                        // 0x0004(0x0010)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+	bool                                          K2Node_SwitchEnum_CmpSuccess;                      // 0x0014(0x0001)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 };
-DUMPER7_ASSERTS_WBP_AntennaDisplay_C_Init;
+DUMPER7_ASSERTS_WBP_AntennaDisplay_C_SetState;
 
-// Function WBP_AntennaDisplay.WBP_AntennaDisplay_C.SetBackgroundColor
-// 0x0020 (0x0020 - 0x0000)
-struct WBP_AntennaDisplay_C_SetBackgroundColor final
+// Function WBP_AntennaDisplay.WBP_AntennaDisplay_C.SetProgressColor
+// 0x0010 (0x0010 - 0x0000)
+struct WBP_AntennaDisplay_C_SetProgressColor final
 {
 public:
 	struct FLinearColor                           Color;                                             // 0x0000(0x0010)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-	struct FLinearColor                           K2Node_MakeStruct_LinearColor;                     // 0x0010(0x0010)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 };
-DUMPER7_ASSERTS_WBP_AntennaDisplay_C_SetBackgroundColor;
-
-// Function WBP_AntennaDisplay.WBP_AntennaDisplay_C.SetPercent
-// 0x0030 (0x0030 - 0x0000)
-struct WBP_AntennaDisplay_C_SetPercent final
-{
-public:
-	double                                        Percent_0;                                         // 0x0000(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-	double                                        CallFunc_Multiply_DoubleDouble_ReturnValue;        // 0x0008(0x0008)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-	int64                                         CallFunc_Conv_DoubleToInt64_ReturnValue;           // 0x0010(0x0008)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-	class FText                                   CallFunc_Conv_Int64ToText_ReturnValue;             // 0x0018(0x0010)()
-	float                                         CallFunc_SetScalarParameterValue_Value_ImplicitCast; // 0x0028(0x0004)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_WBP_AntennaDisplay_C_SetPercent;
+DUMPER7_ASSERTS_WBP_AntennaDisplay_C_SetProgressColor;
 
 // Function WBP_AntennaDisplay.WBP_AntennaDisplay_C.SetPercentageIcon
 // 0x0078 (0x0078 - 0x0000)
@@ -72,26 +59,39 @@ public:
 };
 DUMPER7_ASSERTS_WBP_AntennaDisplay_C_SetPercentageIcon;
 
-// Function WBP_AntennaDisplay.WBP_AntennaDisplay_C.SetProgressColor
-// 0x0010 (0x0010 - 0x0000)
-struct WBP_AntennaDisplay_C_SetProgressColor final
+// Function WBP_AntennaDisplay.WBP_AntennaDisplay_C.SetPercent
+// 0x0030 (0x0030 - 0x0000)
+struct WBP_AntennaDisplay_C_SetPercent final
+{
+public:
+	double                                        Percent_0;                                         // 0x0000(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+	double                                        CallFunc_Multiply_DoubleDouble_ReturnValue;        // 0x0008(0x0008)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+	int64                                         CallFunc_Conv_DoubleToInt64_ReturnValue;           // 0x0010(0x0008)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+	class FText                                   CallFunc_Conv_Int64ToText_ReturnValue;             // 0x0018(0x0010)()
+	float                                         CallFunc_SetScalarParameterValue_Value_ImplicitCast; // 0x0028(0x0004)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_WBP_AntennaDisplay_C_SetPercent;
+
+// Function WBP_AntennaDisplay.WBP_AntennaDisplay_C.SetBackgroundColor
+// 0x0020 (0x0020 - 0x0000)
+struct WBP_AntennaDisplay_C_SetBackgroundColor final
 {
 public:
 	struct FLinearColor                           Color;                                             // 0x0000(0x0010)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+	struct FLinearColor                           K2Node_MakeStruct_LinearColor;                     // 0x0010(0x0010)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 };
-DUMPER7_ASSERTS_WBP_AntennaDisplay_C_SetProgressColor;
+DUMPER7_ASSERTS_WBP_AntennaDisplay_C_SetBackgroundColor;
 
-// Function WBP_AntennaDisplay.WBP_AntennaDisplay_C.SetState
+// Function WBP_AntennaDisplay.WBP_AntennaDisplay_C.Init
 // 0x0018 (0x0018 - 0x0000)
-struct WBP_AntennaDisplay_C_SetState final
+struct WBP_AntennaDisplay_C_Init final
 {
 public:
-	ECrAntennaState                               State;                                             // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-	uint8                                         Pad_1[0x3];                                        // 0x0001(0x0003)(Fixing Size After Last Property [ Dumper-7 ])
-	struct FLinearColor                           StateColor;                                        // 0x0004(0x0010)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-	bool                                          K2Node_SwitchEnum_CmpSuccess;                      // 0x0014(0x0001)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+	double                                        Percent_0;                                         // 0x0000(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+	class UMaterialInstanceDynamic*               CallFunc_CreateDynamicMaterialInstance_ReturnValue; // 0x0008(0x0008)(ZeroConstructor, NoDestructor, HasGetValueTypeHash)
+	float                                         CallFunc_SetScalarParameterValue_Value_ImplicitCast; // 0x0010(0x0004)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 };
-DUMPER7_ASSERTS_WBP_AntennaDisplay_C_SetState;
+DUMPER7_ASSERTS_WBP_AntennaDisplay_C_Init;
 
 }
 

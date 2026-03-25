@@ -17,37 +17,23 @@
 namespace SDK
 {
 
-// Function BP_Foundable_Enemy_Loot_Base.BP_Foundable_Enemy_Loot_Base_C.ExecuteUbergraph_BP_Foundable_Enemy_Loot_Base
-// (Final, UbergraphFunction, HasDefaults)
+// Function BP_Foundable_Enemy_Loot_Base.BP_Foundable_Enemy_Loot_Base_C.SimulateDrop
+// (BlueprintCallable, BlueprintEvent)
 // Parameters:
-// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+// const struct FVector&                   StartLocation                                          (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 
-void ABP_Foundable_Enemy_Loot_Base_C::ExecuteUbergraph_BP_Foundable_Enemy_Loot_Base(int32 EntryPoint)
+void ABP_Foundable_Enemy_Loot_Base_C::SimulateDrop(const struct FVector& StartLocation)
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_Foundable_Enemy_Loot_Base_C", "ExecuteUbergraph_BP_Foundable_Enemy_Loot_Base");
+		Func = Class->GetFunction("BP_Foundable_Enemy_Loot_Base_C", "SimulateDrop");
 
-	Params::BP_Foundable_Enemy_Loot_Base_C_ExecuteUbergraph_BP_Foundable_Enemy_Loot_Base Parms{};
+	Params::BP_Foundable_Enemy_Loot_Base_C_SimulateDrop Parms{};
 
-	Parms.EntryPoint = EntryPoint;
+	Parms.StartLocation = std::move(StartLocation);
 
 	UObject::ProcessEvent(Func, &Parms);
-}
-
-
-// Function BP_Foundable_Enemy_Loot_Base.BP_Foundable_Enemy_Loot_Base_C.ReceiveBeginPlay
-// (Event, Protected, BlueprintEvent)
-
-void ABP_Foundable_Enemy_Loot_Base_C::ReceiveBeginPlay()
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BP_Foundable_Enemy_Loot_Base_C", "ReceiveBeginPlay");
-
-	UObject::ProcessEvent(Func, nullptr);
 }
 
 
@@ -71,21 +57,35 @@ void ABP_Foundable_Enemy_Loot_Base_C::ReceiveTick(float DeltaSeconds)
 }
 
 
-// Function BP_Foundable_Enemy_Loot_Base.BP_Foundable_Enemy_Loot_Base_C.SimulateDrop
-// (BlueprintCallable, BlueprintEvent)
-// Parameters:
-// const struct FVector&                   StartLocation                                          (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+// Function BP_Foundable_Enemy_Loot_Base.BP_Foundable_Enemy_Loot_Base_C.ReceiveBeginPlay
+// (Event, Protected, BlueprintEvent)
 
-void ABP_Foundable_Enemy_Loot_Base_C::SimulateDrop(const struct FVector& StartLocation)
+void ABP_Foundable_Enemy_Loot_Base_C::ReceiveBeginPlay()
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_Foundable_Enemy_Loot_Base_C", "SimulateDrop");
+		Func = Class->GetFunction("BP_Foundable_Enemy_Loot_Base_C", "ReceiveBeginPlay");
 
-	Params::BP_Foundable_Enemy_Loot_Base_C_SimulateDrop Parms{};
+	UObject::ProcessEvent(Func, nullptr);
+}
 
-	Parms.StartLocation = std::move(StartLocation);
+
+// Function BP_Foundable_Enemy_Loot_Base.BP_Foundable_Enemy_Loot_Base_C.ExecuteUbergraph_BP_Foundable_Enemy_Loot_Base
+// (Final, UbergraphFunction, HasDefaults)
+// Parameters:
+// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+
+void ABP_Foundable_Enemy_Loot_Base_C::ExecuteUbergraph_BP_Foundable_Enemy_Loot_Base(int32 EntryPoint)
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BP_Foundable_Enemy_Loot_Base_C", "ExecuteUbergraph_BP_Foundable_Enemy_Loot_Base");
+
+	Params::BP_Foundable_Enemy_Loot_Base_C_ExecuteUbergraph_BP_Foundable_Enemy_Loot_Base Parms{};
+
+	Parms.EntryPoint = EntryPoint;
 
 	UObject::ProcessEvent(Func, &Parms);
 }

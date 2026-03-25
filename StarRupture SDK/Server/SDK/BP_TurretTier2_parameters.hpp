@@ -17,14 +17,14 @@
 namespace SDK::Params
 {
 
-// Function BP_TurretTier2.BP_TurretTier2_C.CosmeticHit
-// 0x0100 (0x0100 - 0x0000)
-struct BP_TurretTier2_C_CosmeticHit final
+// Function BP_TurretTier2.BP_TurretTier2_C.UpdateCosmeticsBasedOnAttackDirection
+// 0x0018 (0x0018 - 0x0000)
+struct BP_TurretTier2_C_UpdateCosmeticsBasedOnAttackDirection final
 {
 public:
-	struct FHitResult                             InHit;                                             // 0x0000(0x0100)(ConstParm, BlueprintVisible, BlueprintReadOnly, Parm, OutParm, ReferenceParm, IsPlainOldData, NoDestructor, ContainsInstancedReference)
+	struct FVector                                OutCurrentAttackDirection;                         // 0x0000(0x0018)(ConstParm, BlueprintVisible, BlueprintReadOnly, Parm, OutParm, ZeroConstructor, ReferenceParm, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 };
-DUMPER7_ASSERTS_BP_TurretTier2_C_CosmeticHit;
+DUMPER7_ASSERTS_BP_TurretTier2_C_UpdateCosmeticsBasedOnAttackDirection;
 
 // Function BP_TurretTier2.BP_TurretTier2_C.ExecuteUbergraph_BP_TurretTier2
 // 0x0910 (0x0910 - 0x0000)
@@ -133,14 +133,14 @@ public:
 };
 DUMPER7_ASSERTS_BP_TurretTier2_C_ExecuteUbergraph_BP_TurretTier2;
 
-// Function BP_TurretTier2.BP_TurretTier2_C.UpdateCosmeticsBasedOnAttackDirection
-// 0x0018 (0x0018 - 0x0000)
-struct BP_TurretTier2_C_UpdateCosmeticsBasedOnAttackDirection final
+// Function BP_TurretTier2.BP_TurretTier2_C.CosmeticHit
+// 0x0100 (0x0100 - 0x0000)
+struct BP_TurretTier2_C_CosmeticHit final
 {
 public:
-	struct FVector                                OutCurrentAttackDirection;                         // 0x0000(0x0018)(ConstParm, BlueprintVisible, BlueprintReadOnly, Parm, OutParm, ZeroConstructor, ReferenceParm, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+	struct FHitResult                             InHit;                                             // 0x0000(0x0100)(ConstParm, BlueprintVisible, BlueprintReadOnly, Parm, OutParm, ReferenceParm, IsPlainOldData, NoDestructor, ContainsInstancedReference)
 };
-DUMPER7_ASSERTS_BP_TurretTier2_C_UpdateCosmeticsBasedOnAttackDirection;
+DUMPER7_ASSERTS_BP_TurretTier2_C_CosmeticHit;
 
 }
 

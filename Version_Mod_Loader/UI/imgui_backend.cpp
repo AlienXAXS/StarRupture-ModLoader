@@ -609,7 +609,7 @@ static bool InitD3D12Resources(IDXGISwapChain* swapChain)
 	ImGuiIO& io = ImGui::GetIO();
 	io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard
 		| ImGuiConfigFlags_NoMouseCursorChange; // don't touch OS cursor by default
-	io.IniFilename = nullptr;  // no imgui.ini on disk
+	io.IniFilename = "modloader_imgui.ini";  // persists all window positions/sizes between sessions
 
 	ImGui::StyleColorsDark();
 
@@ -716,12 +716,15 @@ static void STDMETHODCALLTYPE HookedECL(ID3D12CommandQueue* pQueue,
 			// state (e.g. loading -> main menu), exposing a new internal queue.
 			// g_cmdQueue is locked at init time and unaffected -- this log helps
 			// confirm whether queue instability is the source of device removal.
+			/*
+			 * This is really spammy, even for TRACE
 			if (g_initialized && prev && prev != pQueue)
 				LogToFile::Trace("[ImGuiBackend] ECL queue changed post-init: "
 					"old=0x%p  new=0x%p  submit queue (g_cmdQueue=0x%p) unchanged",
 					static_cast<void*>(prev),
 					static_cast<void*>(pQueue),
 					static_cast<void*>(g_cmdQueue));
+					*/
 		}
 	}
 	g_originalECL(pQueue, NumCmdLists, ppCmdLists);

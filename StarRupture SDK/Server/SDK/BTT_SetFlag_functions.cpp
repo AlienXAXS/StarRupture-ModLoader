@@ -17,26 +17,6 @@
 namespace SDK
 {
 
-// Function BTT_SetFlag.BTT_SetFlag_C.ExecuteUbergraph_BTT_SetFlag
-// (Final, UbergraphFunction)
-// Parameters:
-// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-
-void UBTT_SetFlag_C::ExecuteUbergraph_BTT_SetFlag(int32 EntryPoint)
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BTT_SetFlag_C", "ExecuteUbergraph_BTT_SetFlag");
-
-	Params::BTT_SetFlag_C_ExecuteUbergraph_BTT_SetFlag Parms{};
-
-	Parms.EntryPoint = EntryPoint;
-
-	UObject::ProcessEvent(Func, &Parms);
-}
-
-
 // Function BTT_SetFlag.BTT_SetFlag_C.ReceiveExecuteAI
 // (Event, Protected, BlueprintEvent)
 // Parameters:
@@ -54,6 +34,26 @@ void UBTT_SetFlag_C::ReceiveExecuteAI(class AAIController* OwnerController, clas
 
 	Parms.OwnerController = OwnerController;
 	Parms.ControlledPawn = ControlledPawn;
+
+	UObject::ProcessEvent(Func, &Parms);
+}
+
+
+// Function BTT_SetFlag.BTT_SetFlag_C.ExecuteUbergraph_BTT_SetFlag
+// (Final, UbergraphFunction)
+// Parameters:
+// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+
+void UBTT_SetFlag_C::ExecuteUbergraph_BTT_SetFlag(int32 EntryPoint)
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BTT_SetFlag_C", "ExecuteUbergraph_BTT_SetFlag");
+
+	Params::BTT_SetFlag_C_ExecuteUbergraph_BTT_SetFlag Parms{};
+
+	Parms.EntryPoint = EntryPoint;
 
 	UObject::ProcessEvent(Func, &Parms);
 }

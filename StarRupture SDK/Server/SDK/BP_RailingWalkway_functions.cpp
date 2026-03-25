@@ -17,39 +17,39 @@
 namespace SDK
 {
 
-// Function BP_RailingWalkway.BP_RailingWalkway_C.ExecuteUbergraph_BP_RailingWalkway
-// (Final, UbergraphFunction, HasDefaults)
+// Function BP_RailingWalkway.BP_RailingWalkway_C.OnSplineReady
+// (Event, Public, BlueprintEvent)
 // Parameters:
-// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+// class USplineComponent*                 InSpline                                               (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, InstancedReference, NoDestructor, HasGetValueTypeHash)
 
-void ABP_RailingWalkway_C::ExecuteUbergraph_BP_RailingWalkway(int32 EntryPoint)
+void ABP_RailingWalkway_C::OnSplineReady(class USplineComponent* InSpline)
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_RailingWalkway_C", "ExecuteUbergraph_BP_RailingWalkway");
+		Func = Class->GetFunction("BP_RailingWalkway_C", "OnSplineReady");
 
-	Params::BP_RailingWalkway_C_ExecuteUbergraph_BP_RailingWalkway Parms{};
+	Params::BP_RailingWalkway_C_OnSplineReady Parms{};
 
-	Parms.EntryPoint = EntryPoint;
+	Parms.InSpline = InSpline;
 
 	UObject::ProcessEvent(Func, &Parms);
 }
 
 
-// Function BP_RailingWalkway.BP_RailingWalkway_C.GetRampAngle
+// Function BP_RailingWalkway.BP_RailingWalkway_C.IsRamp
 // (Public, HasOutParams, BlueprintCallable, BlueprintEvent, BlueprintPure)
 // Parameters:
-// double                                  ReturnValue                                            (Parm, OutParm, ZeroConstructor, ReturnParm, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+// bool                                    ReturnValue                                            (Parm, OutParm, ZeroConstructor, ReturnParm, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 
-double ABP_RailingWalkway_C::GetRampAngle()
+bool ABP_RailingWalkway_C::IsRamp()
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_RailingWalkway_C", "GetRampAngle");
+		Func = Class->GetFunction("BP_RailingWalkway_C", "IsRamp");
 
-	Params::BP_RailingWalkway_C_GetRampAngle Parms{};
+	Params::BP_RailingWalkway_C_IsRamp Parms{};
 
 	UObject::ProcessEvent(Func, &Parms);
 
@@ -77,19 +77,19 @@ bool ABP_RailingWalkway_C::IsLadder()
 }
 
 
-// Function BP_RailingWalkway.BP_RailingWalkway_C.IsRamp
+// Function BP_RailingWalkway.BP_RailingWalkway_C.GetRampAngle
 // (Public, HasOutParams, BlueprintCallable, BlueprintEvent, BlueprintPure)
 // Parameters:
-// bool                                    ReturnValue                                            (Parm, OutParm, ZeroConstructor, ReturnParm, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+// double                                  ReturnValue                                            (Parm, OutParm, ZeroConstructor, ReturnParm, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 
-bool ABP_RailingWalkway_C::IsRamp()
+double ABP_RailingWalkway_C::GetRampAngle()
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_RailingWalkway_C", "IsRamp");
+		Func = Class->GetFunction("BP_RailingWalkway_C", "GetRampAngle");
 
-	Params::BP_RailingWalkway_C_IsRamp Parms{};
+	Params::BP_RailingWalkway_C_GetRampAngle Parms{};
 
 	UObject::ProcessEvent(Func, &Parms);
 
@@ -97,21 +97,21 @@ bool ABP_RailingWalkway_C::IsRamp()
 }
 
 
-// Function BP_RailingWalkway.BP_RailingWalkway_C.OnSplineReady
-// (Event, Public, BlueprintEvent)
+// Function BP_RailingWalkway.BP_RailingWalkway_C.ExecuteUbergraph_BP_RailingWalkway
+// (Final, UbergraphFunction, HasDefaults)
 // Parameters:
-// class USplineComponent*                 InSpline                                               (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, InstancedReference, NoDestructor, HasGetValueTypeHash)
+// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 
-void ABP_RailingWalkway_C::OnSplineReady(class USplineComponent* InSpline)
+void ABP_RailingWalkway_C::ExecuteUbergraph_BP_RailingWalkway(int32 EntryPoint)
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_RailingWalkway_C", "OnSplineReady");
+		Func = Class->GetFunction("BP_RailingWalkway_C", "ExecuteUbergraph_BP_RailingWalkway");
 
-	Params::BP_RailingWalkway_C_OnSplineReady Parms{};
+	Params::BP_RailingWalkway_C_ExecuteUbergraph_BP_RailingWalkway Parms{};
 
-	Parms.InSpline = InSpline;
+	Parms.EntryPoint = EntryPoint;
 
 	UObject::ProcessEvent(Func, &Parms);
 }

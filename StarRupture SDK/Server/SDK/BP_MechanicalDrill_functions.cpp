@@ -17,55 +17,15 @@
 namespace SDK
 {
 
-// Function BP_MechanicalDrill.BP_MechanicalDrill_C.ExecuteUbergraph_BP_MechanicalDrill
-// (Final, UbergraphFunction)
-// Parameters:
-// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+// Function BP_MechanicalDrill.BP_MechanicalDrill_C.ReceiveBeginPlay
+// (Event, Protected, BlueprintEvent)
 
-void ABP_MechanicalDrill_C::ExecuteUbergraph_BP_MechanicalDrill(int32 EntryPoint)
+void ABP_MechanicalDrill_C::ReceiveBeginPlay()
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_MechanicalDrill_C", "ExecuteUbergraph_BP_MechanicalDrill");
-
-	Params::BP_MechanicalDrill_C_ExecuteUbergraph_BP_MechanicalDrill Parms{};
-
-	Parms.EntryPoint = EntryPoint;
-
-	UObject::ProcessEvent(Func, &Parms);
-}
-
-
-// Function BP_MechanicalDrill.BP_MechanicalDrill_C.OnBuildingStateChanged
-// (Event, Public, BlueprintEvent)
-// Parameters:
-// ECrBuildingState                        InState                                                (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-
-void ABP_MechanicalDrill_C::OnBuildingStateChanged(ECrBuildingState InState)
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BP_MechanicalDrill_C", "OnBuildingStateChanged");
-
-	Params::BP_MechanicalDrill_C_OnBuildingStateChanged Parms{};
-
-	Parms.InState = InState;
-
-	UObject::ProcessEvent(Func, &Parms);
-}
-
-
-// Function BP_MechanicalDrill.BP_MechanicalDrill_C.OnConstructionFinished
-// (BlueprintEvent)
-
-void ABP_MechanicalDrill_C::OnConstructionFinished()
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BP_MechanicalDrill_C", "OnConstructionFinished");
+		Func = Class->GetFunction("BP_MechanicalDrill_C", "ReceiveBeginPlay");
 
 	UObject::ProcessEvent(Func, nullptr);
 }
@@ -91,17 +51,57 @@ void ABP_MechanicalDrill_C::OnResourceDetected(TSubclassOf<class UCrItemDataBase
 }
 
 
-// Function BP_MechanicalDrill.BP_MechanicalDrill_C.ReceiveBeginPlay
-// (Event, Protected, BlueprintEvent)
+// Function BP_MechanicalDrill.BP_MechanicalDrill_C.OnConstructionFinished
+// (BlueprintEvent)
 
-void ABP_MechanicalDrill_C::ReceiveBeginPlay()
+void ABP_MechanicalDrill_C::OnConstructionFinished()
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_MechanicalDrill_C", "ReceiveBeginPlay");
+		Func = Class->GetFunction("BP_MechanicalDrill_C", "OnConstructionFinished");
 
 	UObject::ProcessEvent(Func, nullptr);
+}
+
+
+// Function BP_MechanicalDrill.BP_MechanicalDrill_C.OnBuildingStateChanged
+// (Event, Public, BlueprintEvent)
+// Parameters:
+// ECrBuildingState                        InState                                                (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+
+void ABP_MechanicalDrill_C::OnBuildingStateChanged(ECrBuildingState InState)
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BP_MechanicalDrill_C", "OnBuildingStateChanged");
+
+	Params::BP_MechanicalDrill_C_OnBuildingStateChanged Parms{};
+
+	Parms.InState = InState;
+
+	UObject::ProcessEvent(Func, &Parms);
+}
+
+
+// Function BP_MechanicalDrill.BP_MechanicalDrill_C.ExecuteUbergraph_BP_MechanicalDrill
+// (Final, UbergraphFunction)
+// Parameters:
+// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+
+void ABP_MechanicalDrill_C::ExecuteUbergraph_BP_MechanicalDrill(int32 EntryPoint)
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BP_MechanicalDrill_C", "ExecuteUbergraph_BP_MechanicalDrill");
+
+	Params::BP_MechanicalDrill_C_ExecuteUbergraph_BP_MechanicalDrill Parms{};
+
+	Parms.EntryPoint = EntryPoint;
+
+	UObject::ProcessEvent(Func, &Parms);
 }
 
 }

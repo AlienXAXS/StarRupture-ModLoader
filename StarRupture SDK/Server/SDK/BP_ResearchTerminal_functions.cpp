@@ -17,23 +17,17 @@
 namespace SDK
 {
 
-// Function BP_ResearchTerminal.BP_ResearchTerminal_C.ExecuteUbergraph_BP_ResearchTerminal
-// (Final, UbergraphFunction)
-// Parameters:
-// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+// Function BP_ResearchTerminal.BP_ResearchTerminal_C.ReceiveBeginPlay
+// (Event, Protected, BlueprintEvent)
 
-void ABP_ResearchTerminal_C::ExecuteUbergraph_BP_ResearchTerminal(int32 EntryPoint)
+void ABP_ResearchTerminal_C::ReceiveBeginPlay()
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_ResearchTerminal_C", "ExecuteUbergraph_BP_ResearchTerminal");
+		Func = Class->GetFunction("BP_ResearchTerminal_C", "ReceiveBeginPlay");
 
-	Params::BP_ResearchTerminal_C_ExecuteUbergraph_BP_ResearchTerminal Parms{};
-
-	Parms.EntryPoint = EntryPoint;
-
-	UObject::ProcessEvent(Func, &Parms);
+	UObject::ProcessEvent(Func, nullptr);
 }
 
 
@@ -57,17 +51,23 @@ void ABP_ResearchTerminal_C::OnUIOpened(bool bOpened)
 }
 
 
-// Function BP_ResearchTerminal.BP_ResearchTerminal_C.ReceiveBeginPlay
-// (Event, Protected, BlueprintEvent)
+// Function BP_ResearchTerminal.BP_ResearchTerminal_C.ExecuteUbergraph_BP_ResearchTerminal
+// (Final, UbergraphFunction)
+// Parameters:
+// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 
-void ABP_ResearchTerminal_C::ReceiveBeginPlay()
+void ABP_ResearchTerminal_C::ExecuteUbergraph_BP_ResearchTerminal(int32 EntryPoint)
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_ResearchTerminal_C", "ReceiveBeginPlay");
+		Func = Class->GetFunction("BP_ResearchTerminal_C", "ExecuteUbergraph_BP_ResearchTerminal");
 
-	UObject::ProcessEvent(Func, nullptr);
+	Params::BP_ResearchTerminal_C_ExecuteUbergraph_BP_ResearchTerminal Parms{};
+
+	Parms.EntryPoint = EntryPoint;
+
+	UObject::ProcessEvent(Func, &Parms);
 }
 
 }

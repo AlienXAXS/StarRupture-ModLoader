@@ -63,17 +63,17 @@ public:
 	TArray<class UStaticMeshComponent*>           Array_Shelves;                                     // 0x0740(0x0010)(Edit, BlueprintVisible, DisableEditOnInstance, ContainsInstancedReference)
 
 public:
-	void Door_Timeline__FinishedFunc();
-	void Door_Timeline__UpdateFunc();
-	void Drone_start();
-	void ExecuteUbergraph_BP_PackageSender(int32 EntryPoint);
-	void Get_Meshes(class USceneComponent* Static_0, class USceneComponent* Dynamic, TArray<class USceneComponent*>* NewParam);
-	void OnItemsSent();
-	void PostPlayBuildingEffect(bool bWasBuildingEffectPlayed);
-	void ReceiveBeginPlay();
-	void SetupSkeletalMesh();
-	void Timeline__FinishedFunc();
 	void Timeline__UpdateFunc();
+	void Timeline__FinishedFunc();
+	void SetupSkeletalMesh();
+	void ReceiveBeginPlay();
+	void PostPlayBuildingEffect(bool bWasBuildingEffectPlayed);
+	void OnItemsSent();
+	void Get_Meshes(class USceneComponent* Static_0, class USceneComponent* Dynamic, TArray<class USceneComponent*>* NewParam);
+	void ExecuteUbergraph_BP_PackageSender(int32 EntryPoint);
+	void Drone_start();
+	void Door_Timeline__UpdateFunc();
+	void Door_Timeline__FinishedFunc();
 
 public:
 	static class UClass* StaticClass()

@@ -17,21 +17,105 @@
 namespace SDK
 {
 
-// Function BP_Storage.BP_Storage_C.ExecuteUbergraph_BP_Storage
-// (Final, UbergraphFunction, HasDefaults)
+// Function BP_Storage.BP_Storage_C.UpdateItemCount
+// (Event, Public, BlueprintEvent)
 // Parameters:
-// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+// int32                                   Count                                                  (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+// int32                                   MaxCount                                               (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 
-void ABP_Storage_C::ExecuteUbergraph_BP_Storage(int32 EntryPoint)
+void ABP_Storage_C::UpdateItemCount(int32 Count, int32 MaxCount)
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_Storage_C", "ExecuteUbergraph_BP_Storage");
+		Func = Class->GetFunction("BP_Storage_C", "UpdateItemCount");
 
-	Params::BP_Storage_C_ExecuteUbergraph_BP_Storage Parms{};
+	Params::BP_Storage_C_UpdateItemCount Parms{};
 
-	Parms.EntryPoint = EntryPoint;
+	Parms.Count = Count;
+	Parms.MaxCount = MaxCount;
+
+	UObject::ProcessEvent(Func, &Parms);
+}
+
+
+// Function BP_Storage.BP_Storage_C.UpdateFilter
+// (Event, Public, BlueprintEvent)
+// Parameters:
+// const class UAuItemDataBase*            ItemFilter                                             (ConstParm, BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
+
+void ABP_Storage_C::UpdateFilter(const class UAuItemDataBase* ItemFilter)
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BP_Storage_C", "UpdateFilter");
+
+	Params::BP_Storage_C_UpdateFilter Parms{};
+
+	Parms.ItemFilter = ItemFilter;
+
+	UObject::ProcessEvent(Func, &Parms);
+}
+
+
+// Function BP_Storage.BP_Storage_C.Timeline_shelves__UpdateFunc
+// (BlueprintEvent)
+
+void ABP_Storage_C::Timeline_shelves__UpdateFunc()
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BP_Storage_C", "Timeline_shelves__UpdateFunc");
+
+	UObject::ProcessEvent(Func, nullptr);
+}
+
+
+// Function BP_Storage.BP_Storage_C.Timeline_shelves__FinishedFunc
+// (BlueprintEvent)
+
+void ABP_Storage_C::Timeline_shelves__FinishedFunc()
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BP_Storage_C", "Timeline_shelves__FinishedFunc");
+
+	UObject::ProcessEvent(Func, nullptr);
+}
+
+
+// Function BP_Storage.BP_Storage_C.ReceiveBeginPlay
+// (Event, Protected, BlueprintEvent)
+
+void ABP_Storage_C::ReceiveBeginPlay()
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BP_Storage_C", "ReceiveBeginPlay");
+
+	UObject::ProcessEvent(Func, nullptr);
+}
+
+
+// Function BP_Storage.BP_Storage_C.PostPlayBuildingEffect
+// (Event, Public, BlueprintEvent)
+// Parameters:
+// bool                                    bWasBuildingEffectPlayed                               (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+
+void ABP_Storage_C::PostPlayBuildingEffect(bool bWasBuildingEffectPlayed)
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BP_Storage_C", "PostPlayBuildingEffect");
+
+	Params::BP_Storage_C_PostPlayBuildingEffect Parms{};
+
+	Parms.bWasBuildingEffectPlayed = bWasBuildingEffectPlayed;
 
 	UObject::ProcessEvent(Func, &Parms);
 }
@@ -58,105 +142,21 @@ void ABP_Storage_C::GetMaterialInstance(class UMaterialInstanceDynamic** Materia
 }
 
 
-// Function BP_Storage.BP_Storage_C.PostPlayBuildingEffect
-// (Event, Public, BlueprintEvent)
+// Function BP_Storage.BP_Storage_C.ExecuteUbergraph_BP_Storage
+// (Final, UbergraphFunction, HasDefaults)
 // Parameters:
-// bool                                    bWasBuildingEffectPlayed                               (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 
-void ABP_Storage_C::PostPlayBuildingEffect(bool bWasBuildingEffectPlayed)
+void ABP_Storage_C::ExecuteUbergraph_BP_Storage(int32 EntryPoint)
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_Storage_C", "PostPlayBuildingEffect");
+		Func = Class->GetFunction("BP_Storage_C", "ExecuteUbergraph_BP_Storage");
 
-	Params::BP_Storage_C_PostPlayBuildingEffect Parms{};
+	Params::BP_Storage_C_ExecuteUbergraph_BP_Storage Parms{};
 
-	Parms.bWasBuildingEffectPlayed = bWasBuildingEffectPlayed;
-
-	UObject::ProcessEvent(Func, &Parms);
-}
-
-
-// Function BP_Storage.BP_Storage_C.ReceiveBeginPlay
-// (Event, Protected, BlueprintEvent)
-
-void ABP_Storage_C::ReceiveBeginPlay()
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BP_Storage_C", "ReceiveBeginPlay");
-
-	UObject::ProcessEvent(Func, nullptr);
-}
-
-
-// Function BP_Storage.BP_Storage_C.Timeline_shelves__FinishedFunc
-// (BlueprintEvent)
-
-void ABP_Storage_C::Timeline_shelves__FinishedFunc()
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BP_Storage_C", "Timeline_shelves__FinishedFunc");
-
-	UObject::ProcessEvent(Func, nullptr);
-}
-
-
-// Function BP_Storage.BP_Storage_C.Timeline_shelves__UpdateFunc
-// (BlueprintEvent)
-
-void ABP_Storage_C::Timeline_shelves__UpdateFunc()
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BP_Storage_C", "Timeline_shelves__UpdateFunc");
-
-	UObject::ProcessEvent(Func, nullptr);
-}
-
-
-// Function BP_Storage.BP_Storage_C.UpdateFilter
-// (Event, Public, BlueprintEvent)
-// Parameters:
-// const class UAuItemDataBase*            ItemFilter                                             (ConstParm, BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
-
-void ABP_Storage_C::UpdateFilter(const class UAuItemDataBase* ItemFilter)
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BP_Storage_C", "UpdateFilter");
-
-	Params::BP_Storage_C_UpdateFilter Parms{};
-
-	Parms.ItemFilter = ItemFilter;
-
-	UObject::ProcessEvent(Func, &Parms);
-}
-
-
-// Function BP_Storage.BP_Storage_C.UpdateItemCount
-// (Event, Public, BlueprintEvent)
-// Parameters:
-// int32                                   Count                                                  (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-// int32                                   MaxCount                                               (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-
-void ABP_Storage_C::UpdateItemCount(int32 Count, int32 MaxCount)
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BP_Storage_C", "UpdateItemCount");
-
-	Params::BP_Storage_C_UpdateItemCount Parms{};
-
-	Parms.Count = Count;
-	Parms.MaxCount = MaxCount;
+	Parms.EntryPoint = EntryPoint;
 
 	UObject::ProcessEvent(Func, &Parms);
 }

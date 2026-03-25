@@ -40,9 +40,9 @@ public:
 	TArray<class UMeshComponent*>                 tab_meshes;                                        // 0x06B8(0x0010)(Edit, BlueprintVisible, DisableEditOnInstance, ContainsInstancedReference)
 
 public:
-	void ExecuteUbergraph_BP_SolarPowerGenerator(int32 EntryPoint);
-	void PostPlayBuildingEffect(bool bWasBuildingEffectPlayed);
 	void SetupSkeletalMesh();
+	void PostPlayBuildingEffect(bool bWasBuildingEffectPlayed);
+	void ExecuteUbergraph_BP_SolarPowerGenerator(int32 EntryPoint);
 
 	void Get_Meshes(class USceneComponent* Static_0, class USceneComponent* Animated_0, TArray<class UMeshComponent*>* NewParam) const;
 

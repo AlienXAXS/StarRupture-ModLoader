@@ -16,6 +16,24 @@
 namespace SDK::Params
 {
 
+// Function BP_Ranged_Tier2_LOD0_DamageAura.BP_Ranged_Tier2_LOD0_DamageAura_C.ReceiveActorEndOverlap
+// 0x0008 (0x0008 - 0x0000)
+struct BP_Ranged_Tier2_LOD0_DamageAura_C_ReceiveActorEndOverlap final
+{
+public:
+	class AActor*                                 OtherActor;                                        // 0x0000(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BP_Ranged_Tier2_LOD0_DamageAura_C_ReceiveActorEndOverlap;
+
+// Function BP_Ranged_Tier2_LOD0_DamageAura.BP_Ranged_Tier2_LOD0_DamageAura_C.ReceiveActorBeginOverlap
+// 0x0008 (0x0008 - 0x0000)
+struct BP_Ranged_Tier2_LOD0_DamageAura_C_ReceiveActorBeginOverlap final
+{
+public:
+	class AActor*                                 OtherActor;                                        // 0x0000(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BP_Ranged_Tier2_LOD0_DamageAura_C_ReceiveActorBeginOverlap;
+
 // Function BP_Ranged_Tier2_LOD0_DamageAura.BP_Ranged_Tier2_LOD0_DamageAura_C.ExecuteUbergraph_BP_Ranged_Tier2_LOD0_DamageAura
 // 0x0048 (0x0048 - 0x0000)
 struct BP_Ranged_Tier2_LOD0_DamageAura_C_ExecuteUbergraph_BP_Ranged_Tier2_LOD0_DamageAura final
@@ -37,24 +55,6 @@ public:
 	struct FActiveGameplayEffectHandle            CallFunc_BP_ApplyGameplayEffectToSelf_ReturnValue; // 0x003C(0x0008)(NoDestructor, HasGetValueTypeHash)
 };
 DUMPER7_ASSERTS_BP_Ranged_Tier2_LOD0_DamageAura_C_ExecuteUbergraph_BP_Ranged_Tier2_LOD0_DamageAura;
-
-// Function BP_Ranged_Tier2_LOD0_DamageAura.BP_Ranged_Tier2_LOD0_DamageAura_C.ReceiveActorBeginOverlap
-// 0x0008 (0x0008 - 0x0000)
-struct BP_Ranged_Tier2_LOD0_DamageAura_C_ReceiveActorBeginOverlap final
-{
-public:
-	class AActor*                                 OtherActor;                                        // 0x0000(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BP_Ranged_Tier2_LOD0_DamageAura_C_ReceiveActorBeginOverlap;
-
-// Function BP_Ranged_Tier2_LOD0_DamageAura.BP_Ranged_Tier2_LOD0_DamageAura_C.ReceiveActorEndOverlap
-// 0x0008 (0x0008 - 0x0000)
-struct BP_Ranged_Tier2_LOD0_DamageAura_C_ReceiveActorEndOverlap final
-{
-public:
-	class AActor*                                 OtherActor;                                        // 0x0000(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BP_Ranged_Tier2_LOD0_DamageAura_C_ReceiveActorEndOverlap;
 
 }
 

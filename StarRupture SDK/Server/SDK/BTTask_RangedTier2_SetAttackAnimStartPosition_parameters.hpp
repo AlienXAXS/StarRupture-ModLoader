@@ -14,6 +14,16 @@
 namespace SDK::Params
 {
 
+// Function BTTask_RangedTier2_SetAttackAnimStartPosition.BTTask_RangedTier2_SetAttackAnimStartPosition_C.ReceiveExecuteAI
+// 0x0010 (0x0010 - 0x0000)
+struct BTTask_RangedTier2_SetAttackAnimStartPosition_C_ReceiveExecuteAI final
+{
+public:
+	class AAIController*                          OwnerController;                                   // 0x0000(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
+	class APawn*                                  ControlledPawn;                                    // 0x0008(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BTTask_RangedTier2_SetAttackAnimStartPosition_C_ReceiveExecuteAI;
+
 // Function BTTask_RangedTier2_SetAttackAnimStartPosition.BTTask_RangedTier2_SetAttackAnimStartPosition_C.ExecuteUbergraph_BTTask_RangedTier2_SetAttackAnimStartPosition
 // 0x0048 (0x0048 - 0x0000)
 struct BTTask_RangedTier2_SetAttackAnimStartPosition_C_ExecuteUbergraph_BTTask_RangedTier2_SetAttackAnimStartPosition final
@@ -33,16 +43,6 @@ public:
 	bool                                          K2Node_DynamicCast_bSuccess;                       // 0x0040(0x0001)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 };
 DUMPER7_ASSERTS_BTTask_RangedTier2_SetAttackAnimStartPosition_C_ExecuteUbergraph_BTTask_RangedTier2_SetAttackAnimStartPosition;
-
-// Function BTTask_RangedTier2_SetAttackAnimStartPosition.BTTask_RangedTier2_SetAttackAnimStartPosition_C.ReceiveExecuteAI
-// 0x0010 (0x0010 - 0x0000)
-struct BTTask_RangedTier2_SetAttackAnimStartPosition_C_ReceiveExecuteAI final
-{
-public:
-	class AAIController*                          OwnerController;                                   // 0x0000(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
-	class APawn*                                  ControlledPawn;                                    // 0x0008(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BTTask_RangedTier2_SetAttackAnimStartPosition_C_ReceiveExecuteAI;
 
 }
 

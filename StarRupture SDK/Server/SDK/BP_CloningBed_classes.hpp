@@ -45,16 +45,16 @@ public:
 	class UMaterialInstanceDynamic*               BedWindowMI;                                       // 0x06C0(0x0008)(Edit, BlueprintVisible, ZeroConstructor, DisableEditOnInstance, NoDestructor, HasGetValueTypeHash)
 
 public:
-	void BedFree_value__FinishedFunc();
-	void BedFree_value__UpdateFunc();
-	void BedOwnedTaken_value__FinishedFunc();
-	void BedOwnedTaken_value__UpdateFunc();
-	void ChangeWindowMaterial(class UMaterialInterface* Material);
-	void ExecuteUbergraph_BP_CloningBed(int32 EntryPoint);
-	void OnBuildingOwnershipChanged(ECrBuildingOwnership NewOwnership);
-	void ReceiveBeginPlay();
-	void Window_Opacity__FinishedFunc();
 	void Window_Opacity__UpdateFunc();
+	void Window_Opacity__FinishedFunc();
+	void ReceiveBeginPlay();
+	void OnBuildingOwnershipChanged(ECrBuildingOwnership NewOwnership);
+	void ExecuteUbergraph_BP_CloningBed(int32 EntryPoint);
+	void ChangeWindowMaterial(class UMaterialInterface* Material);
+	void BedOwnedTaken_value__UpdateFunc();
+	void BedOwnedTaken_value__FinishedFunc();
+	void BedFree_value__UpdateFunc();
+	void BedFree_value__FinishedFunc();
 
 	class FText GetInteractionAdditionalTextFromOwnership(ECrBuildingOwnership InOwnership) const;
 

@@ -17,24 +17,55 @@
 namespace SDK
 {
 
-// Function BTService_GapAttackUpdate.BTService_GapAttackUpdate_C.CanPerformGapAttack
-// (Public, HasOutParams, BlueprintCallable, BlueprintEvent, BlueprintPure)
+// Function BTService_GapAttackUpdate.BTService_GapAttackUpdate_C.ReceiveTickAI
+// (Event, Protected, BlueprintEvent)
 // Parameters:
-// bool*                                   Result                                                 (Parm, OutParm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+// class AAIController*                    OwnerController                                        (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
+// class APawn*                            ControlledPawn                                         (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
+// float                                   DeltaSeconds                                           (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 
-void UBTService_GapAttackUpdate_C::CanPerformGapAttack(bool* Result)
+void UBTService_GapAttackUpdate_C::ReceiveTickAI(class AAIController* OwnerController, class APawn* ControlledPawn, float DeltaSeconds)
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BTService_GapAttackUpdate_C", "CanPerformGapAttack");
+		Func = Class->GetFunction("BTService_GapAttackUpdate_C", "ReceiveTickAI");
 
-	Params::BTService_GapAttackUpdate_C_CanPerformGapAttack Parms{};
+	Params::BTService_GapAttackUpdate_C_ReceiveTickAI Parms{};
+
+	Parms.OwnerController = OwnerController;
+	Parms.ControlledPawn = ControlledPawn;
+	Parms.DeltaSeconds = DeltaSeconds;
 
 	UObject::ProcessEvent(Func, &Parms);
+}
 
-	if (Result != nullptr)
-		*Result = Parms.Result;
+
+// Function BTService_GapAttackUpdate.BTService_GapAttackUpdate_C.OnDeactivateGapAttack
+// (BlueprintCallable, BlueprintEvent)
+
+void UBTService_GapAttackUpdate_C::OnDeactivateGapAttack()
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BTService_GapAttackUpdate_C", "OnDeactivateGapAttack");
+
+	UObject::ProcessEvent(Func, nullptr);
+}
+
+
+// Function BTService_GapAttackUpdate.BTService_GapAttackUpdate_C.OnActivateGapAttack
+// (BlueprintCallable, BlueprintEvent)
+
+void UBTService_GapAttackUpdate_C::OnActivateGapAttack()
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BTService_GapAttackUpdate_C", "OnActivateGapAttack");
+
+	UObject::ProcessEvent(Func, nullptr);
 }
 
 
@@ -58,55 +89,24 @@ void UBTService_GapAttackUpdate_C::ExecuteUbergraph_BTService_GapAttackUpdate(in
 }
 
 
-// Function BTService_GapAttackUpdate.BTService_GapAttackUpdate_C.OnActivateGapAttack
-// (BlueprintCallable, BlueprintEvent)
-
-void UBTService_GapAttackUpdate_C::OnActivateGapAttack()
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BTService_GapAttackUpdate_C", "OnActivateGapAttack");
-
-	UObject::ProcessEvent(Func, nullptr);
-}
-
-
-// Function BTService_GapAttackUpdate.BTService_GapAttackUpdate_C.OnDeactivateGapAttack
-// (BlueprintCallable, BlueprintEvent)
-
-void UBTService_GapAttackUpdate_C::OnDeactivateGapAttack()
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BTService_GapAttackUpdate_C", "OnDeactivateGapAttack");
-
-	UObject::ProcessEvent(Func, nullptr);
-}
-
-
-// Function BTService_GapAttackUpdate.BTService_GapAttackUpdate_C.ReceiveTickAI
-// (Event, Protected, BlueprintEvent)
+// Function BTService_GapAttackUpdate.BTService_GapAttackUpdate_C.CanPerformGapAttack
+// (Public, HasOutParams, BlueprintCallable, BlueprintEvent, BlueprintPure)
 // Parameters:
-// class AAIController*                    OwnerController                                        (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
-// class APawn*                            ControlledPawn                                         (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
-// float                                   DeltaSeconds                                           (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+// bool*                                   Result                                                 (Parm, OutParm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 
-void UBTService_GapAttackUpdate_C::ReceiveTickAI(class AAIController* OwnerController, class APawn* ControlledPawn, float DeltaSeconds)
+void UBTService_GapAttackUpdate_C::CanPerformGapAttack(bool* Result)
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BTService_GapAttackUpdate_C", "ReceiveTickAI");
+		Func = Class->GetFunction("BTService_GapAttackUpdate_C", "CanPerformGapAttack");
 
-	Params::BTService_GapAttackUpdate_C_ReceiveTickAI Parms{};
-
-	Parms.OwnerController = OwnerController;
-	Parms.ControlledPawn = ControlledPawn;
-	Parms.DeltaSeconds = DeltaSeconds;
+	Params::BTService_GapAttackUpdate_C_CanPerformGapAttack Parms{};
 
 	UObject::ProcessEvent(Func, &Parms);
+
+	if (Result != nullptr)
+		*Result = Parms.Result;
 }
 
 }

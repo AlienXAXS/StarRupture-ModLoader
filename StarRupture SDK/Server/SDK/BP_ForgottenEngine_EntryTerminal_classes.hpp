@@ -27,9 +27,9 @@ public:
 	class ABP_FE_entrance_door_C*                 EntranceDoor;                                      // 0x06E8(0x0008)(Edit, BlueprintVisible, ZeroConstructor, DisableEditOnTemplate, DisableEditOnInstance, NoDestructor, HasGetValueTypeHash)
 
 public:
-	void ExecuteUbergraph_BP_ForgottenEngine_EntryTerminal(int32 EntryPoint);
-	void OnMachineActivated();
 	void ReceiveBeginPlay();
+	void OnMachineActivated();
+	void ExecuteUbergraph_BP_ForgottenEngine_EntryTerminal(int32 EntryPoint);
 
 public:
 	static class UClass* StaticClass()

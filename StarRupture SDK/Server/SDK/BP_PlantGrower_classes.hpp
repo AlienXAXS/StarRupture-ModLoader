@@ -31,10 +31,10 @@ public:
 	class UTimelineComponent*                     Timeline;                                          // 0x06E8(0x0008)(BlueprintVisible, ZeroConstructor, InstancedReference, NoDestructor, HasGetValueTypeHash)
 
 public:
-	void ExecuteUbergraph_BP_PlantGrower(int32 EntryPoint);
-	void ReceiveBeginPlay();
-	void Timeline__FinishedFunc();
 	void Timeline__UpdateFunc();
+	void Timeline__FinishedFunc();
+	void ReceiveBeginPlay();
+	void ExecuteUbergraph_BP_PlantGrower(int32 EntryPoint);
 
 public:
 	static class UClass* StaticClass()

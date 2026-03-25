@@ -14,6 +14,43 @@
 namespace SDK::Params
 {
 
+// Function BP_MaterializedItemCrate.BP_MaterializedItemCrate_C.UserConstructionScript
+// 0x0010 (0x0010 - 0x0000)
+struct BP_MaterializedItemCrate_C_UserConstructionScript final
+{
+public:
+	double                                        CallFunc_Divide_DoubleDouble_ReturnValue;          // 0x0000(0x0008)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+	float                                         CallFunc_SetCustomPrimitiveDataFloat_Value_ImplicitCast; // 0x0008(0x0004)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BP_MaterializedItemCrate_C_UserConstructionScript;
+
+// Function BP_MaterializedItemCrate.BP_MaterializedItemCrate_C.MaterializePackageOnce
+// 0x0008 (0x0008 - 0x0000)
+struct BP_MaterializedItemCrate_C_MaterializePackageOnce final
+{
+public:
+	double                                        Duration_0;                                        // 0x0000(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BP_MaterializedItemCrate_C_MaterializePackageOnce;
+
+// Function BP_MaterializedItemCrate.BP_MaterializedItemCrate_C.Materialize Package In Loop
+// 0x0008 (0x0008 - 0x0000)
+struct BP_MaterializedItemCrate_C_Materialize_Package_In_Loop final
+{
+public:
+	double                                        Duration_0;                                        // 0x0000(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BP_MaterializedItemCrate_C_Materialize_Package_In_Loop;
+
+// Function BP_MaterializedItemCrate.BP_MaterializedItemCrate_C.Interrupt
+// 0x0001 (0x0001 - 0x0000)
+struct BP_MaterializedItemCrate_C_Interrupt final
+{
+public:
+	bool                                          Visibility;                                        // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BP_MaterializedItemCrate_C_Interrupt;
+
 // Function BP_MaterializedItemCrate.BP_MaterializedItemCrate_C.ExecuteUbergraph_BP_MaterializedItemCrate
 // 0x0068 (0x0068 - 0x0000)
 struct BP_MaterializedItemCrate_C_ExecuteUbergraph_BP_MaterializedItemCrate final
@@ -44,43 +81,6 @@ public:
 	float                                         CallFunc_Delay_Duration_ImplicitCast_1;            // 0x0060(0x0004)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 };
 DUMPER7_ASSERTS_BP_MaterializedItemCrate_C_ExecuteUbergraph_BP_MaterializedItemCrate;
-
-// Function BP_MaterializedItemCrate.BP_MaterializedItemCrate_C.Interrupt
-// 0x0001 (0x0001 - 0x0000)
-struct BP_MaterializedItemCrate_C_Interrupt final
-{
-public:
-	bool                                          Visibility;                                        // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BP_MaterializedItemCrate_C_Interrupt;
-
-// Function BP_MaterializedItemCrate.BP_MaterializedItemCrate_C.Materialize Package In Loop
-// 0x0008 (0x0008 - 0x0000)
-struct BP_MaterializedItemCrate_C_Materialize_Package_In_Loop final
-{
-public:
-	double                                        Duration_0;                                        // 0x0000(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BP_MaterializedItemCrate_C_Materialize_Package_In_Loop;
-
-// Function BP_MaterializedItemCrate.BP_MaterializedItemCrate_C.MaterializePackageOnce
-// 0x0008 (0x0008 - 0x0000)
-struct BP_MaterializedItemCrate_C_MaterializePackageOnce final
-{
-public:
-	double                                        Duration_0;                                        // 0x0000(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BP_MaterializedItemCrate_C_MaterializePackageOnce;
-
-// Function BP_MaterializedItemCrate.BP_MaterializedItemCrate_C.UserConstructionScript
-// 0x0010 (0x0010 - 0x0000)
-struct BP_MaterializedItemCrate_C_UserConstructionScript final
-{
-public:
-	double                                        CallFunc_Divide_DoubleDouble_ReturnValue;          // 0x0000(0x0008)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-	float                                         CallFunc_SetCustomPrimitiveDataFloat_Value_ImplicitCast; // 0x0008(0x0004)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BP_MaterializedItemCrate_C_UserConstructionScript;
 
 }
 

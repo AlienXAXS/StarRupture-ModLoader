@@ -14,6 +14,15 @@
 namespace SDK::Params
 {
 
+// Function BP_WindPowerGenerator.BP_WindPowerGenerator_C.PostPlayBuildingEffect
+// 0x0001 (0x0001 - 0x0000)
+struct BP_WindPowerGenerator_C_PostPlayBuildingEffect final
+{
+public:
+	bool                                          bWasBuildingEffectPlayed;                          // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BP_WindPowerGenerator_C_PostPlayBuildingEffect;
+
 // Function BP_WindPowerGenerator.BP_WindPowerGenerator_C.ExecuteUbergraph_BP_WindPowerGenerator
 // 0x0008 (0x0008 - 0x0000)
 struct BP_WindPowerGenerator_C_ExecuteUbergraph_BP_WindPowerGenerator final
@@ -23,15 +32,6 @@ public:
 	bool                                          K2Node_Event_bWasBuildingEffectPlayed;             // 0x0004(0x0001)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 };
 DUMPER7_ASSERTS_BP_WindPowerGenerator_C_ExecuteUbergraph_BP_WindPowerGenerator;
-
-// Function BP_WindPowerGenerator.BP_WindPowerGenerator_C.PostPlayBuildingEffect
-// 0x0001 (0x0001 - 0x0000)
-struct BP_WindPowerGenerator_C_PostPlayBuildingEffect final
-{
-public:
-	bool                                          bWasBuildingEffectPlayed;                          // 0x0000(0x0001)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BP_WindPowerGenerator_C_PostPlayBuildingEffect;
 
 }
 

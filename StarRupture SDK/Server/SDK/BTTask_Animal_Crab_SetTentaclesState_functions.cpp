@@ -17,26 +17,6 @@
 namespace SDK
 {
 
-// Function BTTask_Animal_Crab_SetTentaclesState.BTTask_Animal_Crab_SetTentaclesState_C.ExecuteUbergraph_BTTask_Animal_Crab_SetTentaclesState
-// (Final, UbergraphFunction)
-// Parameters:
-// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-
-void UBTTask_Animal_Crab_SetTentaclesState_C::ExecuteUbergraph_BTTask_Animal_Crab_SetTentaclesState(int32 EntryPoint)
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BTTask_Animal_Crab_SetTentaclesState_C", "ExecuteUbergraph_BTTask_Animal_Crab_SetTentaclesState");
-
-	Params::BTTask_Animal_Crab_SetTentaclesState_C_ExecuteUbergraph_BTTask_Animal_Crab_SetTentaclesState Parms{};
-
-	Parms.EntryPoint = EntryPoint;
-
-	UObject::ProcessEvent(Func, &Parms);
-}
-
-
 // Function BTTask_Animal_Crab_SetTentaclesState.BTTask_Animal_Crab_SetTentaclesState_C.ReceiveExecuteAI
 // (Event, Protected, BlueprintEvent)
 // Parameters:
@@ -54,6 +34,26 @@ void UBTTask_Animal_Crab_SetTentaclesState_C::ReceiveExecuteAI(class AAIControll
 
 	Parms.OwnerController = OwnerController;
 	Parms.ControlledPawn = ControlledPawn;
+
+	UObject::ProcessEvent(Func, &Parms);
+}
+
+
+// Function BTTask_Animal_Crab_SetTentaclesState.BTTask_Animal_Crab_SetTentaclesState_C.ExecuteUbergraph_BTTask_Animal_Crab_SetTentaclesState
+// (Final, UbergraphFunction)
+// Parameters:
+// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+
+void UBTTask_Animal_Crab_SetTentaclesState_C::ExecuteUbergraph_BTTask_Animal_Crab_SetTentaclesState(int32 EntryPoint)
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BTTask_Animal_Crab_SetTentaclesState_C", "ExecuteUbergraph_BTTask_Animal_Crab_SetTentaclesState");
+
+	Params::BTTask_Animal_Crab_SetTentaclesState_C_ExecuteUbergraph_BTTask_Animal_Crab_SetTentaclesState Parms{};
+
+	Parms.EntryPoint = EntryPoint;
 
 	UObject::ProcessEvent(Func, &Parms);
 }

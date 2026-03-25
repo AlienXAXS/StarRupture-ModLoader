@@ -228,7 +228,7 @@ DUMPER7_ASSERTS_UCompositeCameraShakePattern;
 
 // Class EngineCameras.DefaultCameraShakeBase
 // 0x0000 (0x00E0 - 0x00E0)
-class UDefaultCameraShakeBase : public UCameraShakeBase
+class UDefaultCameraShakeBase final : public UCameraShakeBase
 {
 public:
 	static class UClass* StaticClass()

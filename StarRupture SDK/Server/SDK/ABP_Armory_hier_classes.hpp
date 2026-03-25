@@ -36,17 +36,17 @@ public:
 	class ABP_Armory_C*                           BP_Armory_reference;                               // 0x05B8(0x0008)(Edit, BlueprintVisible, ZeroConstructor, DisableEditOnTemplate, DisableEditOnInstance, NoDestructor, HasGetValueTypeHash)
 
 public:
-	void AnimGraph(struct FPoseLink* AnimGraph_0);
-	void AnimNotify_Left_arm_laser_1();
-	void AnimNotify_Left_arm_laser_2();
-	void AnimNotify_Left_arm_laser_3();
-	void AnimNotify_Left_arm_laser_4();
-	void AnimNotify_Right_arm_laser_1();
-	void AnimNotify_Right_arm_laser_2();
-	void AnimNotify_Right_arm_laser_3();
-	void AnimNotify_Right_arm_laser_4();
-	void BlueprintBeginPlay();
 	void ExecuteUbergraph_ABP_Armory_hier(int32 EntryPoint);
+	void BlueprintBeginPlay();
+	void AnimNotify_Right_arm_laser_4();
+	void AnimNotify_Right_arm_laser_3();
+	void AnimNotify_Right_arm_laser_2();
+	void AnimNotify_Right_arm_laser_1();
+	void AnimNotify_Left_arm_laser_4();
+	void AnimNotify_Left_arm_laser_3();
+	void AnimNotify_Left_arm_laser_2();
+	void AnimNotify_Left_arm_laser_1();
+	void AnimGraph(struct FPoseLink* AnimGraph_0);
 
 public:
 	static class UClass* StaticClass()

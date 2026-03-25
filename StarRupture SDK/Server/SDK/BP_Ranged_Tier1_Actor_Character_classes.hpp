@@ -31,17 +31,17 @@ public:
 	bool                                          Is_Grenade_Hit;                                    // 0x0D28(0x0001)(Edit, BlueprintVisible, Net, ZeroConstructor, DisableEditOnInstance, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 
 public:
-	void CanChangeEyeColor(bool* Result);
-	void ExecuteUbergraph_BP_Ranged_Tier1_Actor_Character(int32 EntryPoint);
-	void OnAiDied(const struct FHitResult& HitResult, const struct FGameplayTag& KillingDamageTag);
-	void OnDissolveValueSet(float NewDissolveProgress);
-	void OnRep_LastHit();
-	void SetIsAggroEyeColor(bool NewIsAggro);
-	void SetIsBoostedEyeColor(bool NewIsBoosted);
-	void SetupRagdollMesh();
-	void StartRagdoll(const struct FHitResult& LastHit_0, double MaxHitImpulseForce, double MinHitImpulseForce, double MaxImpulseDistance);
-	void StartRagdollEvent();
 	void UserConstructionScript();
+	void StartRagdollEvent();
+	void StartRagdoll(const struct FHitResult& LastHit_0, double MaxHitImpulseForce, double MinHitImpulseForce, double MaxImpulseDistance);
+	void SetupRagdollMesh();
+	void SetIsBoostedEyeColor(bool NewIsBoosted);
+	void SetIsAggroEyeColor(bool NewIsAggro);
+	void OnRep_LastHit();
+	void OnDissolveValueSet(float NewDissolveProgress);
+	void OnAiDied(const struct FHitResult& HitResult, const struct FGameplayTag& KillingDamageTag);
+	void ExecuteUbergraph_BP_Ranged_Tier1_Actor_Character(int32 EntryPoint);
+	void CanChangeEyeColor(bool* Result);
 
 public:
 	static class UClass* StaticClass()

@@ -17,83 +17,55 @@
 namespace SDK
 {
 
-// Function BP_Armory.BP_Armory_C.Attach_meshes
+// Function BP_Armory.BP_Armory_C.RightArmVFX
 // (BlueprintCallable, BlueprintEvent)
-
-void ABP_Armory_C::Attach_meshes()
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BP_Armory_C", "Attach_meshes");
-
-	UObject::ProcessEvent(Func, nullptr);
-}
-
-
-// Function BP_Armory.BP_Armory_C.ExecuteUbergraph_BP_Armory
-// (Final, UbergraphFunction, HasDefaults)
 // Parameters:
-// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+// double                                  LaserLength                                            (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 
-void ABP_Armory_C::ExecuteUbergraph_BP_Armory(int32 EntryPoint)
+void ABP_Armory_C::RightArmVFX(double LaserLength)
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_Armory_C", "ExecuteUbergraph_BP_Armory");
+		Func = Class->GetFunction("BP_Armory_C", "RightArmVFX");
 
-	Params::BP_Armory_C_ExecuteUbergraph_BP_Armory Parms{};
+	Params::BP_Armory_C_RightArmVFX Parms{};
 
-	Parms.EntryPoint = EntryPoint;
+	Parms.LaserLength = LaserLength;
 
 	UObject::ProcessEvent(Func, &Parms);
 }
 
 
-// Function BP_Armory.BP_Armory_C.Idle_timeline__FinishedFunc
-// (BlueprintEvent)
+// Function BP_Armory.BP_Armory_C.ReceiveBeginPlay
+// (Event, Protected, BlueprintEvent)
 
-void ABP_Armory_C::Idle_timeline__FinishedFunc()
+void ABP_Armory_C::ReceiveBeginPlay()
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_Armory_C", "Idle_timeline__FinishedFunc");
+		Func = Class->GetFunction("BP_Armory_C", "ReceiveBeginPlay");
 
 	UObject::ProcessEvent(Func, nullptr);
 }
 
 
-// Function BP_Armory.BP_Armory_C.Idle_timeline__UpdateFunc
-// (BlueprintEvent)
-
-void ABP_Armory_C::Idle_timeline__UpdateFunc()
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BP_Armory_C", "Idle_timeline__UpdateFunc");
-
-	UObject::ProcessEvent(Func, nullptr);
-}
-
-
-// Function BP_Armory.BP_Armory_C.LeftArmVFX
-// (BlueprintCallable, BlueprintEvent)
+// Function BP_Armory.BP_Armory_C.OnUIOpened
+// (Event, Public, BlueprintEvent)
 // Parameters:
-// double                                  LaserLength                                            (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+// bool                                    bOpened                                                (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 
-void ABP_Armory_C::LeftArmVFX(double LaserLength)
+void ABP_Armory_C::OnUIOpened(bool bOpened)
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_Armory_C", "LeftArmVFX");
+		Func = Class->GetFunction("BP_Armory_C", "OnUIOpened");
 
-	Params::BP_Armory_C_LeftArmVFX Parms{};
+	Params::BP_Armory_C_OnUIOpened Parms{};
 
-	Parms.LaserLength = LaserLength;
+	Parms.bOpened = bOpened;
 
 	UObject::ProcessEvent(Func, &Parms);
 }
@@ -119,57 +91,85 @@ void ABP_Armory_C::OnBuildingStateChanged(ECrBuildingState InState)
 }
 
 
-// Function BP_Armory.BP_Armory_C.OnUIOpened
-// (Event, Public, BlueprintEvent)
+// Function BP_Armory.BP_Armory_C.LeftArmVFX
+// (BlueprintCallable, BlueprintEvent)
 // Parameters:
-// bool                                    bOpened                                                (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+// double                                  LaserLength                                            (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 
-void ABP_Armory_C::OnUIOpened(bool bOpened)
+void ABP_Armory_C::LeftArmVFX(double LaserLength)
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_Armory_C", "OnUIOpened");
+		Func = Class->GetFunction("BP_Armory_C", "LeftArmVFX");
 
-	Params::BP_Armory_C_OnUIOpened Parms{};
+	Params::BP_Armory_C_LeftArmVFX Parms{};
 
-	Parms.bOpened = bOpened;
+	Parms.LaserLength = LaserLength;
 
 	UObject::ProcessEvent(Func, &Parms);
 }
 
 
-// Function BP_Armory.BP_Armory_C.ReceiveBeginPlay
-// (Event, Protected, BlueprintEvent)
+// Function BP_Armory.BP_Armory_C.Idle_timeline__UpdateFunc
+// (BlueprintEvent)
 
-void ABP_Armory_C::ReceiveBeginPlay()
+void ABP_Armory_C::Idle_timeline__UpdateFunc()
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_Armory_C", "ReceiveBeginPlay");
+		Func = Class->GetFunction("BP_Armory_C", "Idle_timeline__UpdateFunc");
 
 	UObject::ProcessEvent(Func, nullptr);
 }
 
 
-// Function BP_Armory.BP_Armory_C.RightArmVFX
-// (BlueprintCallable, BlueprintEvent)
-// Parameters:
-// double                                  LaserLength                                            (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+// Function BP_Armory.BP_Armory_C.Idle_timeline__FinishedFunc
+// (BlueprintEvent)
 
-void ABP_Armory_C::RightArmVFX(double LaserLength)
+void ABP_Armory_C::Idle_timeline__FinishedFunc()
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_Armory_C", "RightArmVFX");
+		Func = Class->GetFunction("BP_Armory_C", "Idle_timeline__FinishedFunc");
 
-	Params::BP_Armory_C_RightArmVFX Parms{};
+	UObject::ProcessEvent(Func, nullptr);
+}
 
-	Parms.LaserLength = LaserLength;
+
+// Function BP_Armory.BP_Armory_C.ExecuteUbergraph_BP_Armory
+// (Final, UbergraphFunction, HasDefaults)
+// Parameters:
+// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+
+void ABP_Armory_C::ExecuteUbergraph_BP_Armory(int32 EntryPoint)
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BP_Armory_C", "ExecuteUbergraph_BP_Armory");
+
+	Params::BP_Armory_C_ExecuteUbergraph_BP_Armory Parms{};
+
+	Parms.EntryPoint = EntryPoint;
 
 	UObject::ProcessEvent(Func, &Parms);
+}
+
+
+// Function BP_Armory.BP_Armory_C.Attach_meshes
+// (BlueprintCallable, BlueprintEvent)
+
+void ABP_Armory_C::Attach_meshes()
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BP_Armory_C", "Attach_meshes");
+
+	UObject::ProcessEvent(Func, nullptr);
 }
 
 }

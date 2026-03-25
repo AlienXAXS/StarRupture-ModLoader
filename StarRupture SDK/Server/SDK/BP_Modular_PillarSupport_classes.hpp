@@ -27,8 +27,8 @@ public:
 	class UStaticMeshComponent*                   PoleCapBottomDetail;                               // 0x0840(0x0008)(BlueprintVisible, ZeroConstructor, InstancedReference, NonTransactional, NoDestructor, HasGetValueTypeHash)
 
 public:
-	void ExecuteUbergraph_BP_Modular_PillarSupport(int32 EntryPoint);
 	void ReceiveBeginPlay();
+	void ExecuteUbergraph_BP_Modular_PillarSupport(int32 EntryPoint);
 
 public:
 	static class UClass* StaticClass()

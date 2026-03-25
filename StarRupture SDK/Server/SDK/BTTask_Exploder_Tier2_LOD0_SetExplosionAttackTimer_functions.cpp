@@ -17,26 +17,6 @@
 namespace SDK
 {
 
-// Function BTTask_Exploder_Tier2_LOD0_SetExplosionAttackTimer.BTTask_Exploder_Tier2_LOD0_SetExplosionAttackTimer_C.ExecuteUbergraph_BTTask_Exploder_Tier2_LOD0_SetExplosionAttackTimer
-// (Final, UbergraphFunction)
-// Parameters:
-// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
-
-void UBTTask_Exploder_Tier2_LOD0_SetExplosionAttackTimer_C::ExecuteUbergraph_BTTask_Exploder_Tier2_LOD0_SetExplosionAttackTimer(int32 EntryPoint)
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BTTask_Exploder_Tier2_LOD0_SetExplosionAttackTimer_C", "ExecuteUbergraph_BTTask_Exploder_Tier2_LOD0_SetExplosionAttackTimer");
-
-	Params::BTTask_Exploder_Tier2_LOD0_SetExplosionAttackTimer_C_ExecuteUbergraph_BTTask_Exploder_Tier2_LOD0_SetExplosionAttackTimer Parms{};
-
-	Parms.EntryPoint = EntryPoint;
-
-	UObject::ProcessEvent(Func, &Parms);
-}
-
-
 // Function BTTask_Exploder_Tier2_LOD0_SetExplosionAttackTimer.BTTask_Exploder_Tier2_LOD0_SetExplosionAttackTimer_C.ReceiveExecuteAI
 // (Event, Protected, BlueprintEvent)
 // Parameters:
@@ -54,6 +34,26 @@ void UBTTask_Exploder_Tier2_LOD0_SetExplosionAttackTimer_C::ReceiveExecuteAI(cla
 
 	Parms.OwnerController = OwnerController;
 	Parms.ControlledPawn = ControlledPawn;
+
+	UObject::ProcessEvent(Func, &Parms);
+}
+
+
+// Function BTTask_Exploder_Tier2_LOD0_SetExplosionAttackTimer.BTTask_Exploder_Tier2_LOD0_SetExplosionAttackTimer_C.ExecuteUbergraph_BTTask_Exploder_Tier2_LOD0_SetExplosionAttackTimer
+// (Final, UbergraphFunction)
+// Parameters:
+// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+
+void UBTTask_Exploder_Tier2_LOD0_SetExplosionAttackTimer_C::ExecuteUbergraph_BTTask_Exploder_Tier2_LOD0_SetExplosionAttackTimer(int32 EntryPoint)
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BTTask_Exploder_Tier2_LOD0_SetExplosionAttackTimer_C", "ExecuteUbergraph_BTTask_Exploder_Tier2_LOD0_SetExplosionAttackTimer");
+
+	Params::BTTask_Exploder_Tier2_LOD0_SetExplosionAttackTimer_C_ExecuteUbergraph_BTTask_Exploder_Tier2_LOD0_SetExplosionAttackTimer Parms{};
+
+	Parms.EntryPoint = EntryPoint;
 
 	UObject::ProcessEvent(Func, &Parms);
 }

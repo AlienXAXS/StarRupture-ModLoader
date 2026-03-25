@@ -36,19 +36,19 @@ public:
 	bool                                          FastAlarmCoreAttacked;                             // 0x06B9(0x0001)(Edit, BlueprintVisible, ZeroConstructor, DisableEditOnInstance, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 
 public:
-	void BP_OnActiveCoolingChanged(bool ActiveCooling);
-	void BP_OnBaseCoreInfectionActorDestroyed(bool LastActor, const struct FVector& ActorLocation);
-	void BP_OnBeingAttackedStateChanged(bool bUnderAttack);
-	void BP_OnInfectedChanged();
-	void BP_OnInfectionChanged(float Infection, bool InfectionActive);
-	void BP_OnUpgreadLevelChanged(uint8 NewUpgreadLevel, bool Immediately);
-	void BP_UpdateBaseCoreArea();
-	void ExecuteUbergraph_BP_BaseCore(int32 EntryPoint);
-	void IsPlayingAttackSound(bool* Result);
-	void PlayAlarm(bool Slow, bool Fast);
-	void ReceiveBeginPlay();
-	void ReceiveEndPlay(EEndPlayReason EndPlayReason);
 	void SetBaseCoreAreaVisibility(bool Visible);
+	void ReceiveEndPlay(EEndPlayReason EndPlayReason);
+	void ReceiveBeginPlay();
+	void PlayAlarm(bool Slow, bool Fast);
+	void IsPlayingAttackSound(bool* Result);
+	void ExecuteUbergraph_BP_BaseCore(int32 EntryPoint);
+	void BP_UpdateBaseCoreArea();
+	void BP_OnUpgreadLevelChanged(uint8 NewUpgreadLevel, bool Immediately);
+	void BP_OnInfectionChanged(float Infection, bool InfectionActive);
+	void BP_OnInfectedChanged();
+	void BP_OnBeingAttackedStateChanged(bool bUnderAttack);
+	void BP_OnBaseCoreInfectionActorDestroyed(bool LastActor, const struct FVector& ActorLocation);
+	void BP_OnActiveCoolingChanged(bool ActiveCooling);
 
 public:
 	static class UClass* StaticClass()

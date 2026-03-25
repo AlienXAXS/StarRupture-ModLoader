@@ -17,35 +17,15 @@
 namespace SDK
 {
 
-// Function BP_DroneRailT1.BP_DroneRailT1_C.ExecuteUbergraph_BP_DroneRailT1
-// (Final, UbergraphFunction)
-// Parameters:
-// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+// Function BP_DroneRailT1.BP_DroneRailT1_C.UpdateMaterialForSelectedFilter
+// (Public, BlueprintCallable, BlueprintEvent)
 
-void ABP_DroneRailT1_C::ExecuteUbergraph_BP_DroneRailT1(int32 EntryPoint)
+void ABP_DroneRailT1_C::UpdateMaterialForSelectedFilter()
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_DroneRailT1_C", "ExecuteUbergraph_BP_DroneRailT1");
-
-	Params::BP_DroneRailT1_C_ExecuteUbergraph_BP_DroneRailT1 Parms{};
-
-	Parms.EntryPoint = EntryPoint;
-
-	UObject::ProcessEvent(Func, &Parms);
-}
-
-
-// Function BP_DroneRailT1.BP_DroneRailT1_C.OnSetItemFilter
-// (Event, Public, BlueprintEvent)
-
-void ABP_DroneRailT1_C::OnSetItemFilter()
-{
-	static class UFunction* Func = nullptr;
-
-	if (Func == nullptr)
-		Func = Class->GetFunction("BP_DroneRailT1_C", "OnSetItemFilter");
+		Func = Class->GetFunction("BP_DroneRailT1_C", "UpdateMaterialForSelectedFilter");
 
 	UObject::ProcessEvent(Func, nullptr);
 }
@@ -73,17 +53,37 @@ void ABP_DroneRailT1_C::SetColorTint(const int32 Color, int32 PrimitiveDataIndex
 }
 
 
-// Function BP_DroneRailT1.BP_DroneRailT1_C.UpdateMaterialForSelectedFilter
-// (Public, BlueprintCallable, BlueprintEvent)
+// Function BP_DroneRailT1.BP_DroneRailT1_C.OnSetItemFilter
+// (Event, Public, BlueprintEvent)
 
-void ABP_DroneRailT1_C::UpdateMaterialForSelectedFilter()
+void ABP_DroneRailT1_C::OnSetItemFilter()
 {
 	static class UFunction* Func = nullptr;
 
 	if (Func == nullptr)
-		Func = Class->GetFunction("BP_DroneRailT1_C", "UpdateMaterialForSelectedFilter");
+		Func = Class->GetFunction("BP_DroneRailT1_C", "OnSetItemFilter");
 
 	UObject::ProcessEvent(Func, nullptr);
+}
+
+
+// Function BP_DroneRailT1.BP_DroneRailT1_C.ExecuteUbergraph_BP_DroneRailT1
+// (Final, UbergraphFunction)
+// Parameters:
+// int32                                   EntryPoint                                             (BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
+
+void ABP_DroneRailT1_C::ExecuteUbergraph_BP_DroneRailT1(int32 EntryPoint)
+{
+	static class UFunction* Func = nullptr;
+
+	if (Func == nullptr)
+		Func = Class->GetFunction("BP_DroneRailT1_C", "ExecuteUbergraph_BP_DroneRailT1");
+
+	Params::BP_DroneRailT1_C_ExecuteUbergraph_BP_DroneRailT1 Parms{};
+
+	Parms.EntryPoint = EntryPoint;
+
+	UObject::ProcessEvent(Func, &Parms);
 }
 
 }

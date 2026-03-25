@@ -16,6 +16,16 @@
 namespace SDK::Params
 {
 
+// Function BTT_FindMoveAwayLocation.BTT_FindMoveAwayLocation_C.ReceiveExecuteAI
+// 0x0010 (0x0010 - 0x0000)
+struct BTT_FindMoveAwayLocation_C_ReceiveExecuteAI final
+{
+public:
+	class AAIController*                          OwnerController;                                   // 0x0000(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
+	class APawn*                                  ControlledPawn_0;                                  // 0x0008(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
+};
+DUMPER7_ASSERTS_BTT_FindMoveAwayLocation_C_ReceiveExecuteAI;
+
 // Function BTT_FindMoveAwayLocation.BTT_FindMoveAwayLocation_C.ExecuteUbergraph_BTT_FindMoveAwayLocation
 // 0x0150 (0x0150 - 0x0000)
 struct BTT_FindMoveAwayLocation_C_ExecuteUbergraph_BTT_FindMoveAwayLocation final
@@ -43,16 +53,6 @@ public:
 	bool                                          CallFunc_BPFindClosestPointOnNavmesh_ReturnValue;  // 0x0148(0x0001)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash)
 };
 DUMPER7_ASSERTS_BTT_FindMoveAwayLocation_C_ExecuteUbergraph_BTT_FindMoveAwayLocation;
-
-// Function BTT_FindMoveAwayLocation.BTT_FindMoveAwayLocation_C.ReceiveExecuteAI
-// 0x0010 (0x0010 - 0x0000)
-struct BTT_FindMoveAwayLocation_C_ReceiveExecuteAI final
-{
-public:
-	class AAIController*                          OwnerController;                                   // 0x0000(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
-	class APawn*                                  ControlledPawn_0;                                  // 0x0008(0x0008)(BlueprintVisible, BlueprintReadOnly, Parm, ZeroConstructor, NoDestructor, HasGetValueTypeHash)
-};
-DUMPER7_ASSERTS_BTT_FindMoveAwayLocation_C_ReceiveExecuteAI;
 
 }
 
