@@ -609,7 +609,7 @@ static bool InitD3D12Resources(IDXGISwapChain* swapChain)
 	ImGuiIO& io = ImGui::GetIO();
 	io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard
 		| ImGuiConfigFlags_NoMouseCursorChange; // don't touch OS cursor by default
-	io.IniFilename = nullptr;  // no imgui.ini on disk
+	io.IniFilename = "modloader_imgui.ini";  // persists all window positions/sizes between sessions
 
 	ImGui::StyleColorsDark();
 
