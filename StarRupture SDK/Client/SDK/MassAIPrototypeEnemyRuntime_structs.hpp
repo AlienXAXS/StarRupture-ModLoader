@@ -2312,8 +2312,6 @@ DUMPER7_ASSERTS_FMassEnemyStateTreeTaskBaseInstanceData;
 #pragma pack(push, 0x1)
 struct alignas(0x01) FMassEnemyTimedTaskInstanceData : public FMassEnemyStateTreeTaskBaseInstanceData
 {
-public:
-	uint8                                         Pad_0[0x1];                                        // 0x0000(0x0001)(Fixing Struct Size After Last Property [ Dumper-7 ])
 };
 #pragma pack(pop)
 DUMPER7_ASSERTS_FMassEnemyTimedTaskInstanceData;
