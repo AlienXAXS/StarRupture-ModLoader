@@ -72,7 +72,7 @@ static HANDLE g_pluginsLoadedEvent = NULL;
 static HANDLE g_engineReadyEvent = NULL;
 
 // Required suffix for the game version, read from the executable's version
-static constexpr wchar_t kRequiredVersionSuffix[] = L"CL-114046";
+static constexpr wchar_t kRequiredVersionSuffix[] = L"CL-115725";
 
 #ifdef MODLOADER_CLIENT_BUILD
 // Set during init from modloader.ini [UI] Enabled; read during shutdown.
