@@ -716,12 +716,15 @@ static void STDMETHODCALLTYPE HookedECL(ID3D12CommandQueue* pQueue,
 			// state (e.g. loading -> main menu), exposing a new internal queue.
 			// g_cmdQueue is locked at init time and unaffected -- this log helps
 			// confirm whether queue instability is the source of device removal.
+			/*
+			 * This is really spammy, even for TRACE
 			if (g_initialized && prev && prev != pQueue)
 				LogToFile::Trace("[ImGuiBackend] ECL queue changed post-init: "
 					"old=0x%p  new=0x%p  submit queue (g_cmdQueue=0x%p) unchanged",
 					static_cast<void*>(prev),
 					static_cast<void*>(pQueue),
 					static_cast<void*>(g_cmdQueue));
+					*/
 		}
 	}
 	g_originalECL(pQueue, NumCmdLists, ppCmdLists);
