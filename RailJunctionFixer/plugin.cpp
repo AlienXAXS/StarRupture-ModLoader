@@ -66,7 +66,7 @@ static void __fastcall Hook_MassEntityConfigWBP(void* thisPtr, SDK::UWorld* inWo
 
 	// Apply the hierarchy patch BEFORE the original runs so it is in place
 	// before entity archetypes are compiled (BuildTemplate / IsChildOf calls).
-	if (RailJunctionFixerConfig::Config::IsRailFixerEnabled())
+	if (RailJunctionFixerConfig::Config::IsPluginEnabled())
 	{
 		if (!RailJunctionFixer::LogisticsFragmentFixer::Initialize())
 			LOG_ERROR("LogisticsFragmentFixer: Failed to apply hierarchy patch");
@@ -140,7 +140,7 @@ static void RemoveMassEntityConfigWBPHook()
 
 static void OnExperienceLoadComplete()
 {
-	if (!RailJunctionFixerConfig::Config::IsRailFixerEnabled())
+	if (!RailJunctionFixerConfig::Config::IsPluginEnabled())
 		return;
 
 	LOG_INFO("ExperienceLoadComplete: Experience fully loaded - running junction repair");
@@ -170,7 +170,7 @@ static void OnEngineInit()
 	LOG_INFO("Engine initialized");
 
 	// Register for save-loaded callback to signal socket entities after a save loads
-	if (RailJunctionFixerConfig::Config::IsRailFixerEnabled())
+	if (RailJunctionFixerConfig::Config::IsPluginEnabled())
 	{
 		// Register for experience-load-complete callback to run the rail scanner.
 		// This fires after all Mass Entity BP actors are fully spawned, which is

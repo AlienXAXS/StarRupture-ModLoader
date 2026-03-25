@@ -12,13 +12,6 @@ namespace RailJunctionFixerConfig
 			ConfigValueType::Boolean,
 			"false",
 			"Enable or disable the plugin."
-		},
-		{
-			"PluginSettings",
-			"FixRailJunctions",
-			ConfigValueType::Boolean,
-			"false",
-			"Enable the rail junction fixer."
 		}
 	};
 
@@ -45,13 +38,6 @@ namespace RailJunctionFixerConfig
 		static bool IsPluginEnabled()
 		{
 			return s_config ? s_config->ReadBool("RailJunctionFixer", "General", "Enabled", false) : false;
-		}
-
-		static bool IsRailFixerEnabled()
-		{
-			return s_config
-				       ? s_config->ReadBool("RailJunctionFixer", "PluginSettings", "FixRailJunctions", false)
-				       : false;
 		}
 
 	private:
