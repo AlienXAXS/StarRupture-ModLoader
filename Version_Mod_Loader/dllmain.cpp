@@ -240,26 +240,13 @@ static DWORD WINAPI MainInitThreadProc(LPVOID)
 			// Only show the splash and countdown on client builds -- on server builds we just log the error and exit immediately since there's no UI to show it on.
 #if defined(MODLOADER_CLIENT_BUILD)
 			Splash::SetErrorMode(false);
-			Splash::SetStatus(L"Wrong game version! Please update to the correct build.");
+			Splash::SetStatus(L"Wrong game version! Game will start without plugins & mod loader.");
 
-			for (int countdown = 10; countdown > 0; --countdown)
+			for (int countdown = 5; countdown > 0; --countdown)
 			{
 				wchar_t msg[256];
-				swprintf_s(msg, L"Wrong game version! Will not load ModLoader (%ds)",
-				           kRequiredVersionSuffix, countdown);
-				Splash::SetStatus(msg);
 
-				// Sleep one second in 50 ms increments to keep the window responsive.
-				for (int ms = 0; ms < 1000; ms += 50)
-				{
-					Sleep(50);
-					MSG wmsg;
-					while (PeekMessageW(&wmsg, nullptr, 0, 0, PM_REMOVE))
-					{
-						TranslateMessage(&wmsg);
-						DispatchMessageW(&wmsg);
-					}
-				}
+				Sleep(1000);
 			}
 
 			// Unblock DLL_PROCESS_DETACH so it doesn't hang waiting for init.
