@@ -2,17 +2,18 @@
 #include "plugin_config.h"
 #include "plugin_helpers.h"
 
+// Win32 headers define DrawText as a macro (DrawTextW/DrawTextA depending on
+// the character-set setting). Undefine it BEFORE including Engine_classes.hpp
+// so the preprocessor does not rename AHUD::DrawText to AHUD::DrawTextW inside
+// the class definition itself.
+#ifdef DrawText
+#undef DrawText
+#endif
+
 #include "Engine_classes.hpp"
 
 #include <cstdio>
 #include <cstring>
-
-// Win32 headers define DrawText as a macro (DrawTextW/DrawTextA depending on
-// the character-set setting). Undefine it here so calls to SDK::AHUD::DrawText
-// resolve to the actual SDK function and not the Win32 macro.
-#ifdef DrawText
-#undef DrawText
-#endif
 
 // ---------------------------------------------------------------------------
 // AHUD::PostRender byte pattern (IDA-style, ?? = wildcard).
