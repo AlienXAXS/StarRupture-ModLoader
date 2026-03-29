@@ -16,7 +16,9 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ExamplePlugin", "ExamplePlu
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ServerUtility", "ServerUtility\ServerUtility.vcxproj", "{C4D1E2F3-6A7B-4C8D-9E0F-1A2B3C4D5E6F}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Compass", "Compass_Plugin\Compass_Plugin.vcxproj", "{3D4E5F60-7182-4A3B-9C5D-E6F708192A3B}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Compass_Plugin", "Compass_Plugin\Compass_Plugin.vcxproj", "{3D4E5F60-7182-4A3B-9C5D-E6F708192A3B}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "SRCheats", "SRCheats_Plugin\SRCheats.vcxproj", "{DF1AC3E2-8464-45F9-A5E5-1F68D11A32FD}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -62,14 +64,14 @@ Global
 		{B1E1F993-67C7-45C5-9FD6-7DA1F00DBF4E}.Server Debug|x64.Build.0 = Server Debug|x64
 		{B1E1F993-67C7-45C5-9FD6-7DA1F00DBF4E}.Server Release|x64.ActiveCfg = Server Release|x64
 		{B1E1F993-67C7-45C5-9FD6-7DA1F00DBF4E}.Server Release|x64.Build.0 = Server Release|x64
-		{E8F3A2D4-5C9B-4F1E-8A7D-3B2C1D4E5F6A}.Client Debug|x64.ActiveCfg = Debug|x64
-		{E8F3A2D4-5C9B-4F1E-8A7D-3B2C1D4E5F6A}.Client Release|x64.ActiveCfg = Release|x64
+		{E8F3A2D4-5C9B-4F1E-8A7D-3B2C1D4E5F6A}.Client Debug|x64.ActiveCfg = Client Debug|x64
+		{E8F3A2D4-5C9B-4F1E-8A7D-3B2C1D4E5F6A}.Client Release|x64.ActiveCfg = Client Release|x64
 		{E8F3A2D4-5C9B-4F1E-8A7D-3B2C1D4E5F6A}.Debug|x64.ActiveCfg = Debug|x64
 		{E8F3A2D4-5C9B-4F1E-8A7D-3B2C1D4E5F6A}.Debug|x64.Build.0 = Debug|x64
 		{E8F3A2D4-5C9B-4F1E-8A7D-3B2C1D4E5F6A}.Release|x64.ActiveCfg = Release|x64
 		{E8F3A2D4-5C9B-4F1E-8A7D-3B2C1D4E5F6A}.Release|x64.Build.0 = Release|x64
-		{E8F3A2D4-5C9B-4F1E-8A7D-3B2C1D4E5F6A}.Server Debug|x64.ActiveCfg = Debug|x64
-		{E8F3A2D4-5C9B-4F1E-8A7D-3B2C1D4E5F6A}.Server Release|x64.ActiveCfg = Release|x64
+		{E8F3A2D4-5C9B-4F1E-8A7D-3B2C1D4E5F6A}.Server Debug|x64.ActiveCfg = Server Debug|x64
+		{E8F3A2D4-5C9B-4F1E-8A7D-3B2C1D4E5F6A}.Server Release|x64.ActiveCfg = Server Release|x64
 		{C4D1E2F3-6A7B-4C8D-9E0F-1A2B3C4D5E6F}.Client Debug|x64.ActiveCfg = Debug|x64
 		{C4D1E2F3-6A7B-4C8D-9E0F-1A2B3C4D5E6F}.Client Release|x64.ActiveCfg = Release|x64
 		{C4D1E2F3-6A7B-4C8D-9E0F-1A2B3C4D5E6F}.Debug|x64.ActiveCfg = Debug|x64
@@ -88,6 +90,16 @@ Global
 		{3D4E5F60-7182-4A3B-9C5D-E6F708192A3B}.Release|x64.ActiveCfg = Client Release|x64
 		{3D4E5F60-7182-4A3B-9C5D-E6F708192A3B}.Server Debug|x64.ActiveCfg = Client Debug|x64
 		{3D4E5F60-7182-4A3B-9C5D-E6F708192A3B}.Server Release|x64.ActiveCfg = Client Release|x64
+		{DF1AC3E2-8464-45F9-A5E5-1F68D11A32FD}.Client Debug|x64.ActiveCfg = Client Debug|x64
+		{DF1AC3E2-8464-45F9-A5E5-1F68D11A32FD}.Client Debug|x64.Build.0 = Client Debug|x64
+		{DF1AC3E2-8464-45F9-A5E5-1F68D11A32FD}.Client Release|x64.ActiveCfg = Client Release|x64
+		{DF1AC3E2-8464-45F9-A5E5-1F68D11A32FD}.Client Release|x64.Build.0 = Client Release|x64
+		{DF1AC3E2-8464-45F9-A5E5-1F68D11A32FD}.Debug|x64.ActiveCfg = Debug|x64
+		{DF1AC3E2-8464-45F9-A5E5-1F68D11A32FD}.Debug|x64.Build.0 = Debug|x64
+		{DF1AC3E2-8464-45F9-A5E5-1F68D11A32FD}.Release|x64.ActiveCfg = Release|x64
+		{DF1AC3E2-8464-45F9-A5E5-1F68D11A32FD}.Release|x64.Build.0 = Release|x64
+		{DF1AC3E2-8464-45F9-A5E5-1F68D11A32FD}.Server Debug|x64.ActiveCfg = Server Debug|x64
+		{DF1AC3E2-8464-45F9-A5E5-1F68D11A32FD}.Server Release|x64.ActiveCfg = Server Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -98,6 +110,7 @@ Global
 		{E8F3A2D4-5C9B-4F1E-8A7D-3B2C1D4E5F6A} = {02EA681E-C7D8-13C7-8484-4AC65E1B71E8}
 		{C4D1E2F3-6A7B-4C8D-9E0F-1A2B3C4D5E6F} = {02EA681E-C7D8-13C7-8484-4AC65E1B71E8}
 		{3D4E5F60-7182-4A3B-9C5D-E6F708192A3B} = {02EA681E-C7D8-13C7-8484-4AC65E1B71E8}
+		{DF1AC3E2-8464-45F9-A5E5-1F68D11A32FD} = {02EA681E-C7D8-13C7-8484-4AC65E1B71E8}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {821D00E1-6E9E-43A6-9817-CEF50642F49B}

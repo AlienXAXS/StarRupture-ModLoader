@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="ui">
+      <UniqueIdentifier>{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="cheats">
+      <UniqueIdentifier>{D4E5F6A7-B8C9-0123-DEF0-234567890123}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="cheats\player">
+      <UniqueIdentifier>{B2C3D4E5-F6A7-8901-BCDE-F12345678901}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="cheats\world">
+      <UniqueIdentifier>{C3D4E5F6-A7B8-9012-CDEF-123456789012}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="sdk">
+      <UniqueIdentifier>{E5F6A7B8-C9D0-1234-EF01-345678901234}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="plugin.h" />
+    <ClInclude Include="plugin_helpers.h" />
+    <ClInclude Include="plugin_interface.h" />
+    <ClInclude Include="plugin_config.h" />
+    <ClInclude Include="ui\cheats_panel.h">
+      <Filter>ui</Filter>
+    </ClInclude>
+    <ClInclude Include="cheats\player\player_cheats.h">
+      <Filter>cheats\player</Filter>
+    </ClInclude>
+    <ClInclude Include="cheats\world\world_cheats.h">
+      <Filter>cheats\world</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="dllmain.cpp" />
+    <ClCompile Include="plugin.cpp" />
+    <ClCompile Include="plugin_config.cpp" />
+    <ClCompile Include="ui\cheats_panel.cpp">
+      <Filter>ui</Filter>
+    </ClCompile>
+    <ClCompile Include="cheats\player\player_cheats.cpp">
+      <Filter>cheats\player</Filter>
+    </ClCompile>
+    <ClCompile Include="cheats\world\world_cheats.cpp">
+      <Filter>cheats\world</Filter>
+    </ClCompile>
+    <ClCompile Include="$(StarRuptureSDKSourceDir)Basic.cpp">
+      <Filter>sdk</Filter>
+    </ClCompile>
+    <ClCompile Include="$(StarRuptureSDKSourceDir)CoreUObject_functions.cpp">
+      <Filter>sdk</Filter>
+    </ClCompile>
+    <ClCompile Include="$(StarRuptureSDKSourceDir)Engine_functions.cpp">
+      <Filter>sdk</Filter>
+    </ClCompile>
+    <ClCompile Include="$(StarRuptureSDKSourceDir)Chimera_functions.cpp">
+      <Filter>sdk</Filter>
+    </ClCompile>
+    <ClCompile Include="Util.cpp">
+      <Filter>cheats</Filter>
+    </ClCompile>
+  </ItemGroup>
+</Project>
