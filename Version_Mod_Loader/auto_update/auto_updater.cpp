@@ -200,8 +200,8 @@ static std::string HttpGet(const char* url, const char* label = "resource")
 	}
 
 	// Cap individual operation timeouts so we never block startup indefinitely.
-	// resolve=5s, connect=10s, send=30s, receive=30s
-	WinHttpSetTimeouts(hSession, 5000, 10000, 30000, 30000);
+	// resolve=3s, connect=5s (~8s max for unreachable host), send=15s, receive=30s
+	WinHttpSetTimeouts(hSession, 3000, 5000, 15000, 30000);
 
 	INTERNET_PORT port = (uc.nPort != 0) ? uc.nPort : INTERNET_DEFAULT_HTTPS_PORT;
 	HINTERNET hConnect = WinHttpConnect(hSession, host, port, 0);
@@ -286,17 +286,31 @@ static std::string HttpGet(const char* url, const char* label = "resource")
 	std::string body;
 	body.reserve(65536);
 
-	DWORD available = 0;
-	while (WinHttpQueryDataAvailable(hRequest, &available) && available > 0)
+	bool readOk = true;
+	for (;;)
 	{
+		DWORD available = 0;
+		if (!WinHttpQueryDataAvailable(hRequest, &available))
+		{
+			DWORD err = GetLastError();
+			LogToFile::Warn(
+				"[AutoUpdate] HttpGet [%s]: WinHttpQueryDataAvailable failed (%lu: %s) -- %zu bytes received so far",
+				label, err, FormatWinHttpError(err).c_str(), body.size());
+			readOk = false;
+			break;
+		}
+		if (available == 0)
+			break; // normal end of response
+
 		std::string chunk(available, '\0');
 		DWORD bytesRead = 0;
 		if (!WinHttpReadData(hRequest, chunk.data(), available, &bytesRead))
 		{
 			DWORD err = GetLastError();
-			LogToFile::Debug(
-				"[AutoUpdate] HttpGet [%s]: WinHttpReadData failed mid-stream (%lu: %s) — %zu bytes received so far",
+			LogToFile::Warn(
+				"[AutoUpdate] HttpGet [%s]: WinHttpReadData failed mid-stream (%lu: %s) -- %zu bytes received so far",
 				label, err, FormatWinHttpError(err).c_str(), body.size());
+			readOk = false;
 			break;
 		}
 		chunk.resize(bytesRead);
@@ -306,6 +320,12 @@ static std::string HttpGet(const char* url, const char* label = "resource")
 	WinHttpCloseHandle(hRequest);
 	WinHttpCloseHandle(hConnect);
 	WinHttpCloseHandle(hSession);
+
+	if (!readOk)
+	{
+		LogToFile::Warn("[AutoUpdate] HttpGet [%s]: incomplete download -- discarding partial data to avoid corrupt file on disk", label);
+		return {};
+	}
 
 	LogToFile::Debug("[AutoUpdate] HttpGet [%s]: received %zu bytes", label, body.size());
 	return body;
