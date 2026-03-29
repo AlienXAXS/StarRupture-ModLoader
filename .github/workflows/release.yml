@@ -12,10 +12,14 @@ jobs:
     runs-on: windows-latest
     permissions:
       contents: write  # Required to create releases and upload assets
+    outputs:
+      tag: ${{ steps.tag.outputs.TAG }}
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          submodules: true
 
       - name: Add MSBuild to PATH
         uses: microsoft/setup-msbuild@v2
@@ -69,6 +73,15 @@ jobs:
               Write-Host "Staged [$target]: $($_.Name)"
             }
           }
+
+      - name: Upload dwmapi.dll artifacts for SDK sync
+        uses: actions/upload-artifact@v4
+        with:
+          name: modloader-dlls
+          path: |
+            staging/Client/dwmapi.dll
+            staging/Server/dwmapi.dll
+          retention-days: 1
 
       - name: Prepare individual plugin assets
         shell: pwsh
@@ -155,3 +168,74 @@ jobs:
           gh release create $tag @assets `
             --title "StarRupture ModLoader $tag" `
             --generate-notes
+
+  sync-plugin-sdk:
+    needs: build
+    runs-on: windows-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout main repo
+        uses: actions/checkout@v4
+        with:
+          path: main
+
+      - name: Checkout plugin SDK repo
+        uses: actions/checkout@v4
+        with:
+          repository: AlienXAXS/StarRupture-Plugin-SDK
+          token: ${{ secrets.SDK_REPO_PAT }}
+          path: sdk
+
+      - name: Download pre-built dwmapi.dll artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: modloader-dlls
+          path: modloader-dlls
+
+      - name: Sync headers into plugin SDK repo
+        shell: pwsh
+        run: |
+          # plugin_interface.h -> include/
+          New-Item -ItemType Directory -Force "sdk\include" | Out-Null
+          Copy-Item "main\Version_Mod_Loader\plugins\plugin_interface.h" "sdk\include\plugin_interface.h" -Force
+
+          # PluginDevelopment.md
+          Copy-Item "main\PluginDevelopment.md" "sdk\PluginDevelopment.md" -Force
+
+          Write-Host "Sync complete."
+
+      - name: Commit and push to SDK repo
+        shell: pwsh
+        run: |
+          cd sdk
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          $diff = git diff --cached --name-only
+          if (-not $diff) {
+            Write-Host "No changes to commit."
+            exit 0
+          }
+          git commit -m "Sync from modloader ${{ needs.build.outputs.tag }}"
+          git push
+
+      - name: Create SDK release with pre-built dwmapi.dll
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.SDK_REPO_PAT }}
+        run: |
+          $tag = "${{ needs.build.outputs.tag }}"
+
+          # Rename the artifacts to make Client vs Server clear
+          Copy-Item "modloader-dlls\Client\dwmapi.dll" "dwmapi-Client.dll"
+          Copy-Item "modloader-dlls\Server\dwmapi.dll" "dwmapi-Server.dll"
+
+          cd sdk
+          gh release create $tag `
+            --repo AlienXAXS/StarRupture-Plugin-SDK `
+            --title "Plugin SDK $tag" `
+            --notes "Auto-synced from modloader $tag.`n`nDownload ``dwmapi-Client.dll`` or ``dwmapi-Server.dll`` to test your plugin locally (rename to ``dwmapi.dll`` before deploying)." `
+            "..\dwmapi-Client.dll" `
+            "..\dwmapi-Server.dll"

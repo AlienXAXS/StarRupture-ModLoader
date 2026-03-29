@@ -2,6 +2,8 @@
 
 > End-user documentation is in [README.md](README.md) and [How To Use](How%20To%20Use.md).
 
+> **Building a plugin?** Use the [StarRupture-Plugin-SDK](https://github.com/AlienXAXS/StarRupture-Plugin-SDK) repo — it contains the headers, UE5 SDK, ExamplePlugin template, and pre-built `dwmapi.dll` releases. You do **not** need to fork or build the modloader itself.
+
 This guide covers building the mod loader from source, creating new plugins, the full plugin API, and the interface version changelog.
 
 ---

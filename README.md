@@ -40,7 +40,9 @@ Adds a heads-up compass bar to the game HUD showing nearby entities and points o
 The compass bar position, width, scale, and line colour are all configurable. Per-category render distances can be set in Unreal Units (0 = unlimited). Config is in `Plugins\config\Compass.ini`.
 
 ### 📝 ExamplePlugin *(Template)*
-A starter template for plugin development. Demonstrates the plugin lifecycle, config system, and logging — does not modify gameplay. See the [Developer Guide](PluginDevelopment.md) if you want to create your own plugins.
+A starter template for plugin development. Demonstrates the plugin lifecycle, config system, and logging — does not modify gameplay.
+
+**Want to build your own plugin?** Use the [StarRupture-Plugin-SDK](https://github.com/AlienXAXS/StarRupture-Plugin-SDK) repo — it has everything you need (headers, UE5 SDK, ExamplePlugin, pre-built `dwmapi.dll`) without requiring a fork of this repo. See the [Developer Guide](PluginDevelopment.md) for the full API reference.
 
 ---
 
