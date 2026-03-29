@@ -26,6 +26,12 @@ namespace Hooks::EngineInit
 	// letting the original Init proceed.
 	void SetSyncEvents(HANDLE engineReadyEvent, HANDLE pluginsLoadedEvent);
 
+	// Provide the event that the detour should signal once it has fully
+	// unwound (after NotifyEngineReady returns).  The UE4SS loader thread
+	// waits on this instead of a fixed sleep so it never loads while the
+	// hook call-stack or GPU driver initialisation is still active.
+	void SetUE4SSReadyEvent(HANDLE ue4ssReadyEvent);
+
 	// Install the hooks (tries multiple patterns for reliability)
 	// Returns true if at least one hook was successful
 	bool Install();

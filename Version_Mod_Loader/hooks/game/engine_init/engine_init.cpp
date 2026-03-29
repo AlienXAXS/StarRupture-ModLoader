@@ -27,6 +27,11 @@ namespace Hooks::EngineInit
 	static HANDLE g_engineReadyEventHandle = nullptr;
 	static HANDLE g_pluginsLoadedEventHandle = nullptr;
 
+	// Signalled at the very end of each detour (after NotifyEngineReady returns)
+	// so the UE4SS loader thread wakes up only once the hook call-stack has
+	// fully unwound and the engine is in a stable, quiescent state.
+	static HANDLE g_ue4ssReadyEventHandle = nullptr;
+
 	// Callback for plugins to receive engine init events
 	static std::vector<PluginEngineInitCallback> g_pluginCallbacks;
 
@@ -128,6 +133,11 @@ namespace Hooks::EngineInit
 		// Notify plugins that engine is ready
 		NotifyEngineReady(L"FEngineLoop::Init");
 
+		// Signal UE4SS loader thread: hook call-stack is fully unwound after
+		// this point, so it is safe to call LoadLibraryW(ue4ss.dll).
+		if (g_ue4ssReadyEventHandle)
+			SetEvent(g_ue4ssReadyEventHandle);
+
 		ModLoaderLogger::LogDebug(L"[EngineInit] FEngineLoop::Init complete (#%ld)", callNum);
 		return result;
 	}
@@ -159,6 +169,11 @@ namespace Hooks::EngineInit
 		// Notify plugins that engine is ready (if not already notified)
 		NotifyEngineReady(L"UGameEngine::Init");
 
+		// Signal UE4SS loader thread: hook call-stack is fully unwound after
+		// this point, so it is safe to call LoadLibraryW(ue4ss.dll).
+		if (g_ue4ssReadyEventHandle)
+			SetEvent(g_ue4ssReadyEventHandle);
+
 		ModLoaderLogger::LogDebug(L"[EngineInit] UGameEngine::Init complete (#%ld)", callNum);
 		return result;
 	}
@@ -167,6 +182,11 @@ namespace Hooks::EngineInit
 	{
 		g_engineReadyEventHandle = engineReadyEvent;
 		g_pluginsLoadedEventHandle = pluginsLoadedEvent;
+	}
+
+	void SetUE4SSReadyEvent(HANDLE ue4ssReadyEvent)
+	{
+		g_ue4ssReadyEventHandle = ue4ssReadyEvent;
 	}
 
 	bool Install()

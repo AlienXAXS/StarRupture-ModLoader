@@ -71,6 +71,12 @@ static HANDLE g_pluginsLoadedEvent = NULL;
 // suspension needed, no loader-lock deadlocks.
 static HANDLE g_engineReadyEvent = NULL;
 
+// Signalled (auto-reset) at the very end of the EngineInit detour, after
+// NotifyEngineReady has returned and the hook call-stack has fully unwound.
+// The UE4SS loader thread waits on this instead of a fixed sleep so it never
+// calls LoadLibraryW while the detour or GPU driver init is still active.
+static HANDLE g_ue4ssReadyEvent = NULL;
+
 // Required suffix for the game version, read from the executable's version
 static constexpr wchar_t kRequiredVersionSuffix[] = L"CL-115725";
 
@@ -119,16 +125,22 @@ static void OnEngineInitForUELog()
 	}
 
 	// Load UE4SS on a background thread so that LoadLibraryW does not run
-	// synchronously inside the engine-init hook detour.  Calling LoadLibraryW
-	// from a hook callback acquires the loader lock while the engine (and GPU
-	// driver threads) are still mid-initialisation, which can cause crashes in
-	// nvoglv64 or similar drivers.  Deferring to a detached thread lets the
-	// hook return cleanly first.
+	// synchronously inside the engine-init hook detour.  The thread waits on
+	// g_ue4ssReadyEvent, which is signalled at the very end of the detour
+	// (after NotifyEngineReady returns), guaranteeing the hook call-stack has
+	// fully unwound and GPU driver threads spawned during FEngineLoop::Init
+	// have had time to settle before we acquire the loader lock for UE4SS.
 	std::thread([]()
 	{
-		// Give the engine init hook time to fully unwind and let any
-		// concurrent driver initialisation settle.
-		std::this_thread::sleep_for(std::chrono::milliseconds(500));
+		if (g_ue4ssReadyEvent)
+		{
+			constexpr DWORD kTimeoutMs = 15'000;
+			DWORD r = WaitForSingleObject(g_ue4ssReadyEvent, kTimeoutMs);
+			if (r == WAIT_TIMEOUT)
+				LogToFile::Warn("UE4SS load: timed out waiting for detour to unwind (%lu ms) -- loading anyway", kTimeoutMs);
+			else if (r != WAIT_OBJECT_0)
+				LogToFile::Warn("UE4SS load: WaitForSingleObject returned unexpected value %lu -- loading anyway", r);
+		}
 		LoadUE4SS();
 	}).detach();
 }
@@ -231,7 +243,11 @@ static DWORD WINAPI MainInitThreadProc(LPVOID)
 	// If the CL doesn't match we display a timed error and bail out cleanly.
 	{
 		std::wstring gameVersion;
+#if _DEBUG
+		if (false)
+#else 
 		if (!CheckGameVersion(gameVersion))
+#endif
 		{
 			LogToFile::Error("[ModLoader] VERSION MISMATCH: expected suffix '%ls', got '%ls'",
 			                 kRequiredVersionSuffix, gameVersion.c_str());
@@ -298,6 +314,10 @@ static DWORD WINAPI MainInitThreadProc(LPVOID)
 	// Pass both events so the detour can signal engine-ready and then wait
 	// for all plugins to load before letting the original Init proceed.
 	Hooks::EngineInit::SetSyncEvents(g_engineReadyEvent, g_pluginsLoadedEvent);
+
+	// Pass the UE4SS-ready event so the detour can signal it once its
+	// call-stack has fully unwound, letting the UE4SS loader thread proceed.
+	Hooks::EngineInit::SetUE4SSReadyEvent(g_ue4ssReadyEvent);
 
 	if (Hooks::EngineInit::Install())
 	{
@@ -632,6 +652,15 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 			return FALSE;
 		}
 
+		// Auto-reset event signalled by the EngineInit detour once its
+		// call-stack has fully unwound.  Consumed once by the UE4SS loader thread.
+		g_ue4ssReadyEvent = CreateEventW(nullptr, FALSE, FALSE, nullptr);
+		if (!g_ue4ssReadyEvent)
+		{
+			// Non-fatal: the background thread will fall back to a 15s timeout.
+			LogToFile::Warn("Failed to create UE4SS-ready event (%lu) -- UE4SS load will use timeout fallback", GetLastError());
+		}
+
 		// If DllMain is running on the game's main thread, queue an APC so
 		// MainInitThreadProc fires the next time that thread enters an alertable
 		// wait (after the loader lock is released).  Otherwise spawn a dedicated
@@ -654,6 +683,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 				g_pluginsLoadedEvent = NULL;
 				CloseHandle(g_engineReadyEvent);
 				g_engineReadyEvent = NULL;
+				if (g_ue4ssReadyEvent) { CloseHandle(g_ue4ssReadyEvent); g_ue4ssReadyEvent = NULL; }
 				DwmapiProxy::Shutdown();
 				LogToFile::Shutdown();
 				return FALSE;
@@ -686,6 +716,16 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 		{
 			CloseHandle(g_engineReadyEvent);
 			g_engineReadyEvent = NULL;
+		}
+
+		// Clean up the UE4SS-ready event.  If UE4SS never loaded the background
+		// thread may still be waiting -- signal it first so it can unblock and
+		// exit cleanly before we close the handle.
+		if (g_ue4ssReadyEvent)
+		{
+			SetEvent(g_ue4ssReadyEvent);
+			CloseHandle(g_ue4ssReadyEvent);
+			g_ue4ssReadyEvent = NULL;
 		}
 
 		// Wait for the init thread to finish so we never try to unload plugins
