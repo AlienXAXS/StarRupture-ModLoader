@@ -464,6 +464,12 @@ namespace UI::ModLoaderWindow
     void Toggle()
     {
         s_isOpen = !s_isOpen;
+
+        // When the main UI closes, dismiss all open plugin panel windows too.
+        // Without this, panels stay visible after F2 with no way to close them
+        // (the simulated cursor is gone and the main window is no longer shown).
+        if (!s_isOpen)
+            UI::PluginPanelRegistry::CloseAllPanels();
     }
 
     bool IsOpen()

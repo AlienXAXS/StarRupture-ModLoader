@@ -126,6 +126,16 @@ namespace
 }
 
 // ---------------------------------------------------------------------------
+// Returns true whenever any modloader UI surface is visible and should own
+// the mouse and swallow game input.  Covers both the main modloader window
+// and any open plugin panel windows.
+// ---------------------------------------------------------------------------
+static bool ShouldCaptureInput()
+{
+	return UI::ModLoaderWindow::IsOpen() || UI::PluginPanelRegistry::AnyPanelOpen();
+}
+
+// ---------------------------------------------------------------------------
 // WndProc subclass -- forwards messages to ImGui, swallows input when UI open
 // ---------------------------------------------------------------------------
 static LRESULT CALLBACK HookedWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
@@ -133,7 +143,7 @@ static LRESULT CALLBACK HookedWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 	if (ImGui_ImplWin32_WndProcHandler(hWnd, msg, wParam, lParam))
 		return true;
 
-	if (UI::ModLoaderWindow::IsOpen())
+	if (ShouldCaptureInput())
 	{
 		switch (msg)
 		{
@@ -846,12 +856,12 @@ static HRESULT STDMETHODCALLTYPE HookedPresent(IDXGISwapChain* swapChain, UINT s
 	barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
 	g_cmdList->ResourceBarrier(1, &barrier);
 
-	// Cursor management: only active while the modloader window is open.
-	// Cursor management: hand control to ImGui only while the modloader window
-	// is open.  NoMouseCursorChange prevents ImGui's Win32 backend from calling
+	// Cursor management: hand control to ImGui whenever any modloader UI
+	// surface is visible (main window OR any open plugin panel).
+	// NoMouseCursorChange prevents ImGui's Win32 backend from calling
 	// SetCursor() every frame -- without it, it fights UE5's cursor management
 	// and causes visible flickering whenever our window is closed.
-	bool uiOpen = UI::ModLoaderWindow::IsOpen();
+	bool uiOpen = ShouldCaptureInput();
 	ImGuiIO& frameIO = ImGui::GetIO();
 	if (uiOpen)
 	{
