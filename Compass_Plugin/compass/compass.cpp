@@ -225,7 +225,7 @@ namespace Compass
 			if (f.type == Layout::FoundableType::DeadBody) ++bodyCount;
 			else if (f.type == Layout::FoundableType::Drone) ++droneCount;
 		}
-		LOG_DEBUG(
+		LOG_TRACE(
 			"[Compass] Scan complete: %d players, %d cores, %d POIs (%d caves), %d bodies, %d drones, %d enemies, %d custompins",
 			static_cast<int>(s_playerMarkers.size()), static_cast<int>(s_cores.size()),
 			static_cast<int>(s_markers.size()), caveCount, bodyCount, droneCount, static_cast<int>(s_enemies.size()),
