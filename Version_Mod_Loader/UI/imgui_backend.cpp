@@ -10,6 +10,7 @@
 #include "overlay.h"
 #include "global_settings.h"
 #include "plugin_panel_registry.h"
+#include "plugin_widget_registry.h"
 #include "hooks/hooks_common.h"
 #include "hooks/input/keybind_registry.h"
 #include "logging/log.h"
@@ -873,6 +874,7 @@ static HRESULT STDMETHODCALLTYPE HookedPresent(IDXGISwapChain* swapChain, UINT s
 	UI::Overlay::RenderHud();
 	UI::ModLoaderWindow::Render(&g_imguiAPI);
 	UI::PluginPanelRegistry::RenderPanelWindows(&g_imguiAPI);
+	UI::PluginWidgetRegistry::RenderWidgets(&g_imguiAPI);
 
 	ImGui::Render();
 

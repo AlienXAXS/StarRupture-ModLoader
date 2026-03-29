@@ -330,6 +330,7 @@ echo Deploy complete.</Command>
     <ClInclude Include="UI\modloader_window.h" />
     <ClInclude Include="UI\overlay.h" />
     <ClInclude Include="UI\plugin_panel_registry.h" />
+    <ClInclude Include="UI\plugin_widget_registry.h" />
     <ClInclude Include="hooks\memory\engine_allocator.h" />
     <ClInclude Include="logging\log.h" />
     <ClInclude Include="logging\logger.h" />
@@ -413,6 +414,9 @@ echo Deploy complete.</Command>
       <ExcludedFromBuild Condition="'$(Configuration)' != 'Client Debug' And '$(Configuration)' != 'Client Release'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="UI\plugin_panel_registry.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)' != 'Client Debug' And '$(Configuration)' != 'Client Release'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="UI\plugin_widget_registry.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)' != 'Client Debug' And '$(Configuration)' != 'Client Release'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="hooks\memory\engine_allocator.cpp" />

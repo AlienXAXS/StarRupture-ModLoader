@@ -57,8 +57,13 @@
 //      RegisterPanel now returns a PanelHandle (opaque pointer stable for the plugin's lifetime).
 //      SetPanelOpen / SetPanelClose both take PanelHandle instead of a title string, so a plugin
 //      can only open/close its own panels (it cannot affect panels owned by other plugins).
+// v16: Added PluginWidgetDesc, WidgetHandle, RegisterWidget, UnregisterWidget, and SetWidgetVisible
+//      to IPluginUIEvents.  Widgets are always-on ImGui windows rendered every frame regardless of
+//      whether the modloader window is open.  Plugin authors can call SetWidgetVisible to hide or
+//      show a widget (e.g. in response to a keybind or config option).
+//        UI       — always-on widget registration           (hooks->UI->RegisterWidget)
 #define PLUGIN_INTERFACE_VERSION_MIN 14  // oldest plugin ABI still accepted by this loader
-#define PLUGIN_INTERFACE_VERSION_MAX 15  // current interface version (this header)
+#define PLUGIN_INTERFACE_VERSION_MAX 16  // current interface version (this header)
 #define PLUGIN_INTERFACE_VERSION PLUGIN_INTERFACE_VERSION_MAX  // alias used by plugins in PluginInfo
 
 // Log levels
@@ -534,14 +539,27 @@ struct PluginPanelDesc
 // Null means the panel was not found or the UI backend is disabled.
 typedef void* PanelHandle;
 
+// Opaque handle returned by IPluginUIEvents::RegisterWidget.
+// Pass it to UnregisterWidget during PluginShutdown.
+// Null means registration failed or the UI backend is disabled.
+typedef void* WidgetHandle;
+
+// Descriptor passed to IPluginUIEvents::RegisterWidget.
+struct PluginWidgetDesc
+{
+    const char* name;                   // ImGui window title (must be globally unique)
+    PluginImGuiRenderCallback renderFn;
+};
+
 // Config-change notification — fired after the modloader UI writes a new value.
 // section / key: the INI section and key that changed.
 // newValue: the new value as a string (same representation as the INI file).
 typedef void (*PluginConfigChangedCallback)(const char* section, const char* key, const char* newValue);
 
 // ============================================================
-// IPluginUIEvents — UI registration (v15, client only)
+// IPluginUIEvents — UI registration (v16, client only)
 // Access via: hooks->UI->RegisterPanel(...)
+//             hooks->UI->RegisterWidget(...)
 // hooks->UI is nullptr on server and generic builds.
 // ============================================================
 struct IPluginUIEvents
@@ -563,6 +581,18 @@ struct IPluginUIEvents
     // Close a registered panel window using the handle returned by RegisterPanel.
     // Silently ignored if handle is null.
     void (*SetPanelClose)(PanelHandle handle);
+    // Register an always-on widget window rendered every frame.
+    // desc and all strings it points to must remain valid until UnregisterWidget is called.
+    // Returns a WidgetHandle that uniquely identifies this widget.
+    // Returns null if registration failed (duplicate name, null fields, UI disabled).
+    WidgetHandle (*RegisterWidget)(const PluginWidgetDesc* desc);
+    // Unregister a widget using the handle returned by RegisterWidget.  Call during PluginShutdown.
+    // Silently ignored if handle is null.
+    void (*UnregisterWidget)(WidgetHandle handle);
+    // Show or hide a widget window.  Widgets are visible by default after registration.
+    // Use this to let players toggle a widget (e.g. via a keybind or config option).
+    // Silently ignored if handle is null.
+    void (*SetWidgetVisible)(WidgetHandle handle, bool visible);
 };
 
 // ============================================================
