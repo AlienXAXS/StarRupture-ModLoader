@@ -79,7 +79,7 @@ namespace Layout
 		if (SDK::ALODActor::StaticClass())
 			SDK::UGameplayStatics::GetAllActorsOfClass(world, SDK::ALODActor::StaticClass(), &lodList);
 
-		LOG_DEBUG("[ScanHLOD] GetAllActorsOfClass: WorldPartitionHLOD=%d  LODActor=%d",
+		LOG_TRACE("[ScanHLOD] GetAllActorsOfClass: WorldPartitionHLOD=%d  LODActor=%d",
 		          wpHlodList.Num(), lodList.Num());
 
 		auto ProcessActor = [&](SDK::AActor* actor)
@@ -168,6 +168,6 @@ namespace Layout
 		for (int i = 0; i < wpHlodList.Num(); i++) ProcessActor(wpHlodList[i]);
 		for (int i = 0; i < lodList.Num(); i++) ProcessActor(lodList[i]);
 
-		LOG_DEBUG("[ScanHLOD] Done — actors checked=%d, entries added=%d", hlodActors, hlodAdded);
+		LOG_TRACE("[ScanHLOD] Done — actors checked=%d, entries added=%d", hlodActors, hlodAdded);
 	}
 } // namespace Layout

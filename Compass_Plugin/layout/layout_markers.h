@@ -57,7 +57,7 @@ namespace Layout
 
 		SDK::TArray<SDK::AActor*> actors;
 		SDK::UGameplayStatics::GetAllActorsOfClass(world, SDK::ACrPointOfInterestMarkerActor::StaticClass(), &actors);
-		LOG_DEBUG("[ScanMarkers] GetAllActorsOfClass returned %d actors", actors.Num());
+		LOG_TRACE("[ScanMarkers] GetAllActorsOfClass returned %d actors", actors.Num());
 
 		int filteredState = 0;
 		int filteredType = 0;
@@ -98,7 +98,7 @@ namespace Layout
 			result.push_back(e);
 		}
 
-		LOG_DEBUG("[ScanMarkers] Done — total=%d filtered_state=%d filtered_type=%d kept=%d",
+		LOG_TRACE("[ScanMarkers] Done — total=%d filtered_state=%d filtered_type=%d kept=%d",
 		          actors.Num(), filteredState, filteredType, static_cast<int>(result.size()));
 
 		return result;
