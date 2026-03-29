@@ -123,6 +123,9 @@
     <ClInclude Include="UI\plugin_panel_registry.h">
       <Filter>Source Files\UI\modloader</Filter>
     </ClInclude>
+    <ClInclude Include="UI\plugin_widget_registry.h">
+      <Filter>Source Files\UI\modloader</Filter>
+    </ClInclude>
     <ClInclude Include="UI\splash_window.h">
       <Filter>Source Files\UI</Filter>
     </ClInclude>
@@ -264,6 +267,9 @@
       <Filter>Source Files\UI\modloader</Filter>
     </ClCompile>
     <ClCompile Include="UI\plugin_panel_registry.cpp">
+      <Filter>Source Files\UI\modloader</Filter>
+    </ClCompile>
+    <ClCompile Include="UI\plugin_widget_registry.cpp">
       <Filter>Source Files\UI\modloader</Filter>
     </ClCompile>
     <ClCompile Include="UI\splash_window.cpp">

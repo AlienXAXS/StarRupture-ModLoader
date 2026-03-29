@@ -18,6 +18,7 @@
 #include "hooks/input/keybind_registry.h"
 #include "hooks/input/input_processor.h"
 #include "UI/plugin_panel_registry.h"
+#include "UI/plugin_widget_registry.h"
 #endif
 #include <unordered_map>
 #include <mutex>
@@ -683,14 +684,32 @@ namespace ModLoaderLogger
 		UI::PluginPanelRegistry::SetPanelClose(handle);
 	}
 
-	// UI sub-interface struct (v15)
+	static WidgetHandle HooksRegisterWidget(const PluginWidgetDesc* desc)
+	{
+		return UI::PluginWidgetRegistry::RegisterWidget(desc);
+	}
+
+	static void HooksUnregisterWidget(WidgetHandle handle)
+	{
+		UI::PluginWidgetRegistry::UnregisterWidget(handle);
+	}
+
+	static void HooksSetWidgetVisible(WidgetHandle handle, bool visible)
+	{
+		UI::PluginWidgetRegistry::SetWidgetVisible(handle, visible);
+	}
+
+	// UI sub-interface struct (v16)
 	static IPluginUIEvents g_uiEvents = {
 		HooksRegisterPanel,
 		HooksUnregisterPanel,
 		HooksRegisterOnConfigChanged,
 		HooksUnregisterOnConfigChanged,
 		HooksSetPanelOpen,
-		HooksSetPanelClose
+		HooksSetPanelClose,
+		HooksRegisterWidget,       // v16
+		HooksUnregisterWidget,     // v16
+		HooksSetWidgetVisible      // v16
 	};
 #endif // MODLOADER_CLIENT_BUILD
 
