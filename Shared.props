@@ -8,7 +8,7 @@
        active configuration.
        ============================================================ -->
   <PropertyGroup Condition="'$(Configuration)' == 'Debug' Or '$(Configuration)' == 'Release'">
-    <StarRuptureSDKSourceDir>$(SolutionDir)StarRupture SDK\SDK\</StarRuptureSDKSourceDir>
+    <StarRuptureSDKSourceDir>$(SolutionDir)StarRupture SDK\Server\SDK\</StarRuptureSDKSourceDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)' == 'Client Debug' Or '$(Configuration)' == 'Client Release'">
     <StarRuptureSDKSourceDir>$(SolutionDir)StarRupture SDK\Client\SDK\</StarRuptureSDKSourceDir>
