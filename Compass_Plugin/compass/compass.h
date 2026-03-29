@@ -4,8 +4,9 @@
 
 namespace Compass
 {
-	// Install the AHUD::PostRender hook.  Returns false if no pattern was found.
-	bool Install(IPluginScanner* scanner, IPluginHooks* hooks);
+	// Register the AHUD::PostRender callback via the modloader HUD hook interface.
+	// Returns false if the HUD interface is unavailable (server build) or registration fails.
+	bool Install(IPluginHooks* hooks);
 
 	// Remove the hook and clean up all state.
 	void Remove(IPluginHooks* hooks);

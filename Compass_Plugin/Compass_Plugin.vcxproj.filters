@@ -26,9 +26,6 @@
     <ClInclude Include="plugin_config.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="compass_patterns.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="compass\compass.h">
       <Filter>compass</Filter>
     </ClInclude>

@@ -2,9 +2,28 @@
 
 namespace ScanPatterns
 {
+	// CoreUObject::StaticLoadObject — synchronously loads (or returns the already-loaded instance
+	// of) any UObject asset by full path.  Available on all build types.
+	// Signature: UObject* StaticLoadObject(UClass*, UObject* Outer, const wchar_t* Name,
+	//   const wchar_t* Filename, uint32 LoadFlags, UPackageMap*,
+	//   bool bAllowObjectReconciliation, const FLinkerInstancingContext*)
+	inline constexpr auto StaticLoadObject =
+		"40 55 53 56 41 54 41 55 41 57 48 8D AC 24 ?? ?? ?? ?? 48 81 EC ?? ?? ?? ?? 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 85 ?? ?? ?? ?? 0F B6 85";
+
 #if defined(MODLOADER_CLIENT_BUILD)
-#elif defined(MODLOADER_SERVER_BUILD)
+	// AHUD::PostRender — called every frame on the game thread; hud->Canvas is valid inside.
+	// ACrHUD does not override this, so AHUD::PostRender is the hook target.
+	// Signature: void AHUD::PostRender()
+	inline constexpr auto AHUD_PostRender =
+		"40 55 53 48 8D 6C 24 ?? 48 81 EC ?? ?? ?? ?? 48 8B D9 E8 ?? ?? ?? ?? 48 85 C0";
+
+	// UCrMapManuSubsystem::GatherPlayersData — forces an immediate refresh of
+	// PlayersMarkerDataContainer, bypassing the game's tick-rate update.
+	// Signature: void UCrMapManuSubsystem::GatherPlayersData()
+	inline constexpr auto GatherPlayersData =
+		"40 55 41 56 48 8D AC 24 ?? ?? ?? ?? 48 81 EC ?? ?? ?? ?? 48 89 9C 24";
 #endif
+
 	inline constexpr auto UWorld_BeginPlay =
 		"48 83 EC ?? 48 89 5C 24 ?? 48 8B D9 E8 ?? ?? ?? ?? 84 C0 74 ?? 48 8B CB";
 

@@ -32,6 +32,7 @@
 #ifdef MODLOADER_CLIENT_BUILD
 #include "hooks/input/input_processor.h"
 #include "hooks/game/engine_tick/engine_tick.h"
+#include "hooks/game/hud_post_render/hud_post_render.h"
 #include "UI/imgui_backend.h"
 #include "UI/overlay.h"
 #include "UI/global_settings.h"
@@ -405,6 +406,10 @@ static DWORD WINAPI MainInitThreadProc(LPVOID)
 	// Install the keybind input processor so plugins can register keybinds
 	// during their PluginInit call and have them active immediately.
 	Hooks::Input::InstallInputProcessor();
+
+	// Install the AHUD::PostRender hook so plugins can register per-frame HUD
+	// callbacks and the GatherPlayersData address is resolved before plugins load.
+	Hooks::HUDPostRender::Install();
 
 	// Check modloader.ini [UI] Enabled before starting ImGui.
 	// Allows users to disable the overlay entirely if it causes issues.

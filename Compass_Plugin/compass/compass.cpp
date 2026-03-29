@@ -2,7 +2,6 @@
 #include "compass_textures.h"
 #include "plugin_helpers.h"
 #include "plugin_config.h"
-#include "compass_patterns.h"
 #include "Engine_classes.hpp"
 #include "ChimeraUI_classes.hpp"
 #include "../layout/layout.h"
@@ -15,13 +14,11 @@
 namespace Compass
 {
 	// ---------------------------------------------------------------------------
-	// Hook state
+	// HUD hook state
 	// ---------------------------------------------------------------------------
 
-	using PostRender_t = void(__fastcall*)(SDK::AHUD* self);
-
-	static PostRender_t g_originalPostRender = nullptr;
-	static HookHandle g_hookHandle = nullptr;
+	// Hooks interface kept for Remove() to unregister the callback.
+	static IPluginHooks* g_hooks = nullptr;
 
 	// ---------------------------------------------------------------------------
 	// Cardinal direction table
@@ -675,16 +672,16 @@ namespace Compass
 	}
 
 	// ---------------------------------------------------------------------------
-	// Detour
+	// AHUD::PostRender callback (registered via hooks->HUD->RegisterOnPostRender)
+	// The modloader calls the original AHUD::PostRender before invoking this, so
+	// the engine HUD is always drawn first.
 	// ---------------------------------------------------------------------------
 
-	static void __fastcall Hooked_PostRender(SDK::AHUD* self)
+	static void OnHUDPostRender(void* hudPtr)
 	{
+		SDK::AHUD* self = static_cast<SDK::AHUD*>(hudPtr);
 		std::string worldName;
 		SDK::UWorld* world;
-
-		if (g_originalPostRender)
-			g_originalPostRender(self);
 
 		if (!self || !self->Canvas)
 			return;
@@ -733,54 +730,50 @@ namespace Compass
 	// Install / Remove
 	// ---------------------------------------------------------------------------
 
-	bool Install(IPluginScanner* scanner, IPluginHooks* hooks)
+	bool Install(IPluginHooks* hooks)
 	{
-		if (!scanner || !hooks || !hooks->Hooks)
+		if (!hooks)
 		{
-			LOG_ERROR("[Compass] Install called with null interfaces");
+			LOG_ERROR("[Compass] Install called with null hooks interface");
 			return false;
 		}
 
-		uintptr_t gatherAddr = scanner->FindPatternInMainModule(
-			"40 55 41 56 48 8D AC 24 ?? ?? ?? ?? 48 81 EC ?? ?? ?? ?? 48 89 9C 24");
+		if (!hooks->HUD)
+		{
+			LOG_ERROR("[Compass] hooks->HUD is null -- compass requires a client build");
+			return false;
+		}
+
+		// Resolve GatherPlayersData from the modloader's pre-scanned address cache.
+		uintptr_t gatherAddr = hooks->HUD->GetGatherPlayersDataAddress();
 		if (gatherAddr)
 		{
 			g_gatherPlayersDataFn = reinterpret_cast<GatherPlayersData_t>(gatherAddr);
-			LOG_INFO("[Compass] GatherPlayersData found at 0x%llX", static_cast<unsigned long long>(gatherAddr));
+			LOG_INFO("[Compass] GatherPlayersData at 0x%llX", static_cast<unsigned long long>(gatherAddr));
 		}
 		else
 		{
-			LOG_WARN("[Compass] GatherPlayersData pattern not found -- player markers may not update in real time");
+			LOG_WARN("[Compass] GatherPlayersData address not available -- player markers may not update in real time");
 		}
 
-		uintptr_t addr = scanner->FindPatternInMainModule(CompassPatterns::AHUD_PostRender);
-		if (!addr)
-		{
-			LOG_ERROR("[Compass] AHUD::PostRender pattern not found in main module");
-			return false;
-		}
+		// Register the per-frame PostRender callback via the modloader HUD interface.
+		// The modloader owns the AHUD::PostRender hook and fires callbacks after calling the original.
+		hooks->HUD->RegisterOnPostRender(OnHUDPostRender);
+		g_hooks = hooks;
 
-		g_hookHandle = hooks->Hooks->Install(addr, (void*)Hooked_PostRender, (void**)&g_originalPostRender);
-		if (!g_hookHandle)
-		{
-			LOG_ERROR("[Compass] Failed to install hook on AHUD::PostRender at 0x%llX",
-			          static_cast<unsigned long long>(addr));
-			return false;
-		}
-
-		LOG_INFO("[Compass] Hooked AHUD::PostRender at 0x%llX", static_cast<unsigned long long>(addr));
+		LOG_INFO("[Compass] PostRender callback registered");
 		return true;
 	}
 
 	void Remove(IPluginHooks* hooks)
 	{
-		if (g_hookHandle && hooks && hooks->Hooks)
+		if (g_hooks && g_hooks->HUD)
 		{
-			hooks->Hooks->Remove(g_hookHandle);
-			g_hookHandle = nullptr;
-			LOG_INFO("[Compass] PostRender hook removed");
+			g_hooks->HUD->UnregisterOnPostRender(OnHUDPostRender);
+			LOG_INFO("[Compass] PostRender callback unregistered");
 		}
 
-		g_originalPostRender = nullptr;
+		g_hooks = nullptr;
+		g_gatherPlayersDataFn = nullptr;
 	}
 }

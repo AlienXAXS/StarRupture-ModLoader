@@ -2,7 +2,6 @@
 #include "plugin_helpers.h"
 #include "plugin_config.h"
 #include "compass/compass.h"
-#include <compass_patterns.h>
 
 static IPluginLogger*  g_logger  = nullptr;
 static IPluginConfig*  g_config  = nullptr;
@@ -53,20 +52,16 @@ extern "C" {
 
 		// Resolve StaticLoadObject so textures can be force-loaded without
 		// requiring the player to open the map first.
-		if (CompassPatterns::StaticLoadObject)
+		// Address is pre-scanned by the modloader at startup via hooks->Engine.
 		{
-			uintptr_t slo = scanner->FindPatternInMainModule(CompassPatterns::StaticLoadObject);
+			uintptr_t slo = hooks->Engine->GetStaticLoadObjectAddress();
 			if (slo)
 				Compass::SetStaticLoadObject(slo);
 			else
-				LOG_WARN("StaticLoadObject pattern not found — map textures require player to open map first");
-		}
-		else
-		{
-			LOG_WARN("StaticLoadObject pattern not set — map textures require player to open map first");
+				LOG_WARN("StaticLoadObject address not available -- map textures require player to open map first");
 		}
 
-		if (!Compass::Install(scanner, hooks))
+		if (!Compass::Install(hooks))
 		{
 			LOG_WARN("Compass hook install failed — compass will not render");
 			// Return true so the plugin still loads; compass just won't draw
