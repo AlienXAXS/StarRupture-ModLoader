@@ -30,6 +30,15 @@ namespace UI::PluginPanelRegistry
     void SetPanelOpen(PanelHandle handle);
     void SetPanelClose(PanelHandle handle);
 
+    // Close every open plugin panel at once.  Called when F2 closes the main
+    // UI so no orphaned panel windows are left on screen.
+    void CloseAllPanels();
+
+    // Returns true if at least one plugin panel window is currently open.
+    // Used by imgui_backend to decide whether to capture the mouse even when
+    // the main modloader window is closed.
+    bool AnyPanelOpen();
+
     // Called by modloader_window to fire config-change notifications.
     void FireConfigChanged(const char* section, const char* key, const char* newValue);
 
