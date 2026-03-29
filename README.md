@@ -26,8 +26,21 @@ Adds remote administration to a dedicated server:
 
 See the [RCON & Query documentation](ServerUtility/RCON_README.md) for protocol details, supported commands, and client compatibility.
 
+### 🧭 Compass *(Client)*
+Adds a heads-up compass bar to the game HUD showing nearby entities and points of interest in the direction you are facing.
+
+**What it shows (each category can be toggled and distance-limited independently):**
+- Other players
+- Base cores
+- Map markers — antennas, abandoned bases, caves, obelisks
+- Foundables — dead bodies and drones
+- Enemies
+- Custom player-placed map pins
+
+The compass bar position, width, scale, and line colour are all configurable. Per-category render distances can be set in Unreal Units (0 = unlimited). Config is in `Plugins\config\Compass.ini`.
+
 ### 📝 ExamplePlugin *(Template)*
-A starter template for plugin development. Demonstrates the plugin lifecycle, config system, and logging — does not modify gameplay. See the [Developer Guide](DEVELOPERS.md) if you want to create your own plugins.
+A starter template for plugin development. Demonstrates the plugin lifecycle, config system, and logging — does not modify gameplay. See the [Developer Guide](PluginDevelopment.md) if you want to create your own plugins.
 
 ---
 
@@ -85,7 +98,7 @@ When `-SessionName=` is present, `DSSettings.txt` is not needed. The save game n
 
 ## Development
 
-Want to create your own plugins or contribute? See the **[Developer Guide](DEVELOPERS.md)**.
+Want to create your own plugins or contribute? See the **[Developer Guide](PluginDevelopment.md)**.
 
 ---
 
