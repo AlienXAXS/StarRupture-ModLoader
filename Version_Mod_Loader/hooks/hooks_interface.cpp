@@ -14,11 +14,14 @@
 #include "hooks/game/mass_spawner_activate/mass_spawner_activate.h"
 #include "hooks/game/mass_spawner_deactivate/mass_spawner_deactivate.h"
 #include "hooks/game/mass_do_spawning/mass_do_spawning.h"
+#include "memory_scanner/scanner.h"
+#include "hooks/game/scan_patterns.h"
 #ifdef MODLOADER_CLIENT_BUILD
 #include "hooks/input/keybind_registry.h"
 #include "hooks/input/input_processor.h"
 #include "UI/plugin_panel_registry.h"
 #include "UI/plugin_widget_registry.h"
+#include "hooks/game/hud_post_render/hud_post_render.h"
 #endif
 #include <unordered_map>
 #include <mutex>
@@ -325,6 +328,22 @@ namespace ModLoaderLogger
 		LogDebug(L"[HooksInterface] EngineTick callback unregistered for plugin");
 	}
 
+	// v16 — resolved address of CoreUObject::StaticLoadObject (all builds)
+	// Scanned once on first call; result cached for all subsequent callers.
+	static uintptr_t g_staticLoadObjectAddr    = 0;
+	static bool      g_staticLoadObjectScanned = false;
+
+	static uintptr_t HooksGetStaticLoadObjectAddress()
+	{
+		if (!g_staticLoadObjectScanned)
+		{
+			g_staticLoadObjectScanned = true;
+			g_staticLoadObjectAddr = Scanner::FindPatternInMainModule(
+				"StaticLoadObject", ScanPatterns::StaticLoadObject);
+		}
+		return g_staticLoadObjectAddr;
+	}
+
 	static void HooksRegisterActorBeginPlayCallback(void (*callback)(void*))
 	{
 		if (!callback)
@@ -569,7 +588,8 @@ namespace ModLoaderLogger
 		HooksRegisterEngineShutdownCallback,
 		HooksUnregisterEngineShutdownCallback,
 		HooksRegisterEngineTickCallback,
-		HooksUnregisterEngineTickCallback
+		HooksUnregisterEngineTickCallback,
+		HooksGetStaticLoadObjectAddress   // v16
 	};
 
 	static IPluginWorldEvents g_worldEvents = {
@@ -711,6 +731,30 @@ namespace ModLoaderLogger
 		HooksUnregisterWidget,     // v16
 		HooksSetWidgetVisible      // v16
 	};
+
+	// --- HUD sub-interface wrappers (v16, client only) ---
+
+	static void HooksRegisterOnPostRender(PluginHUDPostRenderCallback cb)
+	{
+		Hooks::HUDPostRender::RegisterPluginCallback(cb);
+	}
+
+	static void HooksUnregisterOnPostRender(PluginHUDPostRenderCallback cb)
+	{
+		Hooks::HUDPostRender::UnregisterPluginCallback(cb);
+	}
+
+	static uintptr_t HooksGetGatherPlayersDataAddress()
+	{
+		return Hooks::HUDPostRender::GetGatherPlayersDataAddress();
+	}
+
+	// HUD sub-interface struct (v16)
+	static IPluginHUDEvents g_hudEvents = {
+		HooksRegisterOnPostRender,
+		HooksUnregisterOnPostRender,
+		HooksGetGatherPlayersDataAddress
+	};
 #endif // MODLOADER_CLIENT_BUILD
 
 	// Global hooks interface instance
@@ -723,11 +767,13 @@ namespace ModLoaderLogger
 		&g_playerEvents,
 		&g_actorEvents,
 #ifdef MODLOADER_CLIENT_BUILD
-		&g_inputEvents, // v15 — keybind events (client only)
-		&g_uiEvents // v15 — custom panel + config-change callbacks (client only)
+		&g_inputEvents,  // v15 — keybind events (client only)
+		&g_uiEvents,     // v15 — custom panel + config-change callbacks (client only)
+		&g_hudEvents     // v16 — AHUD::PostRender callbacks + HUD function addresses (client only)
 #else
-		nullptr, // v15 — Input is null on server/generic builds
-		nullptr // v15 — UI is null on server/generic builds
+		nullptr,         // v15 — Input is null on server/generic builds
+		nullptr,         // v15 — UI is null on server/generic builds
+		nullptr          // v16 — HUD is null on server/generic builds
 #endif
 	};
 

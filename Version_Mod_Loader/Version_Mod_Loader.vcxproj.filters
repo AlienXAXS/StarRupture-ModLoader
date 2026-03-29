@@ -40,6 +40,9 @@
     <Filter Include="Source Files\hooks\game\engine_tick">
       <UniqueIdentifier>{ad840a96-d535-42f9-9386-22100e859737}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Source Files\hooks\game\hud_post_render">
+      <UniqueIdentifier>{b2e7f3a1-c891-4d56-8f23-1a2b3c4d5e6f}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Source Files\hooks\game\actor_begin_play">
       <UniqueIdentifier>{75a11838-a61f-4b73-bad6-773b6425b24e}</UniqueIdentifier>
     </Filter>
@@ -170,6 +173,9 @@
     </ClInclude>
     <ClInclude Include="hooks\game\engine_tick\engine_tick.h">
       <Filter>Source Files\hooks\game\engine_tick</Filter>
+    </ClInclude>
+    <ClInclude Include="hooks\game\hud_post_render\hud_post_render.h">
+      <Filter>Source Files\hooks\game\hud_post_render</Filter>
     </ClInclude>
     <ClInclude Include="hooks\game\experience_load_complete\experience_load_complete.h">
       <Filter>Source Files\hooks\game\experience_load_complete</Filter>
@@ -304,6 +310,9 @@
     </ClCompile>
     <ClCompile Include="hooks\game\engine_tick\engine_tick.cpp">
       <Filter>Source Files\hooks\game\engine_tick</Filter>
+    </ClCompile>
+    <ClCompile Include="hooks\game\hud_post_render\hud_post_render.cpp">
+      <Filter>Source Files\hooks\game\hud_post_render</Filter>
     </ClCompile>
     <ClCompile Include="hooks\game\experience_load_complete\experience_load_complete.cpp">
       <Filter>Source Files\hooks\game\experience_load_complete</Filter>

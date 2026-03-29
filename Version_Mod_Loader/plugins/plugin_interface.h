@@ -62,6 +62,14 @@
 //      whether the modloader window is open.  Plugin authors can call SetWidgetVisible to hide or
 //      show a widget (e.g. in response to a keybind or config option).
 //        UI       — always-on widget registration           (hooks->UI->RegisterWidget)
+//      Also added (folded into v16 before first release):
+//      PluginHUDPostRenderCallback, IPluginHUDEvents sub-interface, and HUD pointer in IPluginHooks.
+//      HUD is non-null on client builds only; always nullptr on server/generic builds.
+//        HUD      — AHUD::PostRender callbacks + GatherPlayersData address (hooks->HUD->RegisterOnPostRender)
+//      Extended IPluginEngineEvents with GetStaticLoadObjectAddress() on all build types.
+//      Patterns for AHUD_PostRender, StaticLoadObject, and GatherPlayersData moved from
+//      compass_patterns.h into the modloader's scan_patterns.h and owned by the modloader.
+//      hooks->HUD and hooks->UI and hooks->Input are all nullptr on server — always null-check.
 #define PLUGIN_INTERFACE_VERSION_MIN 14  // oldest plugin ABI still accepted by this loader
 #define PLUGIN_INTERFACE_VERSION_MAX 16  // current interface version (this header)
 #define PLUGIN_INTERFACE_VERSION PLUGIN_INTERFACE_VERSION_MAX  // alias used by plugins in PluginInfo
@@ -239,6 +247,8 @@ typedef void (*PluginExperienceLoadCompleteCallback)();
 typedef void (*PluginActorBeginPlayCallback)(void* actor);
 typedef void (*PluginPlayerJoinedCallback)(void* playerController);
 typedef void (*PluginPlayerLeftCallback)(void* exitingController);
+// v16 (client only) — fired after AHUD::PostRender; hud is AHUD* cast to void*
+typedef void (*PluginHUDPostRenderCallback)(void* hud);
 
 // ============================================================
 // Spawner hook callback typedefs (v14)
@@ -297,6 +307,9 @@ struct IPluginEngineEvents
     void (*UnregisterOnShutdown)(PluginEngineShutdownCallback);
     void (*RegisterOnTick)(PluginEngineTickCallback);
     void (*UnregisterOnTick)(PluginEngineTickCallback);
+    // v16 — resolved address of CoreUObject::StaticLoadObject, or 0 if not found.
+    // Available on all build types.
+    uintptr_t (*GetStaticLoadObjectAddress)();
 };
 
 // ============================================================
@@ -596,6 +609,24 @@ struct IPluginUIEvents
 };
 
 // ============================================================
+// IPluginHUDEvents — HUD hook subscriptions (v16, client only)
+// Access via: hooks->HUD->RegisterOnPostRender(...)
+// hooks->HUD is nullptr on server and generic builds — always null-check before use.
+// ============================================================
+struct IPluginHUDEvents
+{
+    // Register a per-frame callback fired after AHUD::PostRender.
+    // The engine draws its own HUD before plugins are notified.
+    // hud is the raw AHUD* — cast to SDK::AHUD* inside your callback.
+    void      (*RegisterOnPostRender)(PluginHUDPostRenderCallback callback);
+    void      (*UnregisterOnPostRender)(PluginHUDPostRenderCallback callback);
+    // Resolved address of UCrMapManuSubsystem::GatherPlayersData, or 0 if not found.
+    // Cast to a function pointer and call with the subsystem instance to force an
+    // immediate refresh of PlayersMarkerDataContainer.
+    uintptr_t (*GetGatherPlayersDataAddress)();
+};
+
+// ============================================================
 // IPluginHooks — top-level hook interface provided by the mod loader (v14)
 // Contains only typed sub-interface pointers. Access functionality via the
 // named group, e.g.:
@@ -605,6 +636,7 @@ struct IPluginUIEvents
 //   hooks->Hooks->Install(addr, detour, &original);
 //   hooks->Spawner->RegisterOnBeforeActivate(&MyBeforeCb);
 //   hooks->Input->RegisterKeybind(EModKey::F1, EModKeyEvent::Pressed, &MyKeyCb);
+//   hooks->HUD->RegisterOnPostRender(&MyPostRenderCb);  // client only, null-check first
 // ============================================================
 struct IPluginHooks
 {
@@ -617,6 +649,7 @@ struct IPluginHooks
     IPluginActorEvents*  Actors;    // v14 — actor begin-play subscriptions
     IPluginInputEvents*  Input;     // v15 — keybind subscriptions (client only, null on server)
     IPluginUIEvents*     UI;        // v15 — custom panel registration + config-change callbacks (client only, null on server)
+    IPluginHUDEvents*    HUD;       // v16 — AHUD::PostRender callbacks + HUD function addresses (client only, null on server)
 };
 
 // Plugin metadata structure
