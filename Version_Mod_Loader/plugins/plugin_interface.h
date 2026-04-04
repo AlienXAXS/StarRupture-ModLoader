@@ -70,8 +70,17 @@
 //      Patterns for AHUD_PostRender, StaticLoadObject, and GatherPlayersData moved from
 //      compass_patterns.h into the modloader's scan_patterns.h and owned by the modloader.
 //      hooks->HUD and hooks->UI and hooks->Input are all nullptr on server — always null-check.
+// v17: Added PluginNetworkMessageCallback, IPluginNetworkChannel sub-interface, and Network pointer
+//      in IPluginHooks for server-to-client plugin packet messaging over UE's own network stack.
+//      Transport: APlayerController::ClientMessage RPC (Server->Client direction out of the box).
+//      Packets are POD structs serialized with memcpy; the loader wraps them in a tagged envelope.
+//      Network is non-null on server AND client builds; nullptr on generic (plain Debug/Release) builds.
+//        Network  — plugin-to-plugin net channel  (hooks->Network->SendPacketToClient)
+//      Plugin authors should use plugin_network_helpers.h template wrappers (SendPacketToPlayer<T>,
+//      SendPacketToAllPlayers<T>, OnReceive<T>) rather than calling IPluginNetworkChannel directly.
+//      Always null-check hooks->Network — it is nullptr on generic builds.
 #define PLUGIN_INTERFACE_VERSION_MIN 14  // oldest plugin ABI still accepted by this loader
-#define PLUGIN_INTERFACE_VERSION_MAX 16  // current interface version (this header)
+#define PLUGIN_INTERFACE_VERSION_MAX 17  // current interface version (this header)
 #define PLUGIN_INTERFACE_VERSION PLUGIN_INTERFACE_VERSION_MAX  // alias used by plugins in PluginInfo
 
 // Log levels
@@ -249,6 +258,13 @@ typedef void (*PluginPlayerJoinedCallback)(void* playerController);
 typedef void (*PluginPlayerLeftCallback)(void* exitingController);
 // v16 (client only) — fired after AHUD::PostRender; hud is AHUD* cast to void*
 typedef void (*PluginHUDPostRenderCallback)(void* hud);
+// v17 — fired on the client when a server packet arrives for this plugin+typeTag.
+// pluginName : the name the server-side plugin passed to SendPacketToClient/SendPacketToAllPlayers
+// typeTag    : identifies the packet type (use typeid(T).name() via plugin_network_helpers.h)
+// data       : decoded payload bytes — exactly 'size' bytes; pointer is valid only during this call
+// size       : byte count of the payload; always > 0
+typedef void (*PluginNetworkMessageCallback)(const char* pluginName, const char* typeTag,
+                                             const uint8_t* data, size_t size);
 
 // ============================================================
 // Spawner hook callback typedefs (v14)
@@ -627,6 +643,53 @@ struct IPluginHUDEvents
 };
 
 // ============================================================
+// IPluginNetworkChannel — server-to-client plugin packet messaging (v17)
+// Access via: hooks->Network->SendPacketToClient(...)
+// hooks->Network is non-null on server AND client builds; nullptr on generic (Debug/Release) builds.
+// Always null-check hooks->Network before use.
+//
+// Packet payloads must be plain-old-data (POD) structs with no pointers, no vtables,
+// and no std containers.  The same plugin DLL running on both ends guarantees identical
+// struct layout so plain memcpy serialization works without a schema.
+//
+// Prefer the typed wrappers in plugin_network_helpers.h (SendPacketToPlayer<T>,
+// SendPacketToAllPlayers<T>, OnReceive<T>) over calling these functions directly.
+// ============================================================
+struct IPluginNetworkChannel
+{
+    // True when called from a server build; false on a client build.
+    bool (*IsServer)();
+
+    // Server-side: send a raw packet to a single player.
+    // playerController : the APlayerController* for the target player (cast to void*)
+    // pluginName       : your plugin's name (from GetPluginInfo()->name)
+    // typeTag          : arbitrary string identifying the packet type
+    // data             : payload bytes; copied before the call returns
+    // size             : byte count of the payload (max ~1 KB recommended)
+    // No-op on client builds.
+    void (*SendPacketToClient)(void* playerController, const char* pluginName,
+                               const char* typeTag, const uint8_t* data, size_t size);
+
+    // Server-side: send a raw packet to all currently connected players.
+    // pluginName / typeTag / data / size: same semantics as SendPacketToClient.
+    // No-op on client builds.
+    void (*SendPacketToAllPlayers)(const char* pluginName, const char* typeTag,
+                                   const uint8_t* data, size_t size);
+
+    // Client-side: register a handler for packets arriving with the given pluginName+typeTag pair.
+    // Multiple handlers for the same pair are supported.
+    // No-op on server builds.
+    void (*RegisterMessageHandler)(const char* pluginName, const char* typeTag,
+                                   PluginNetworkMessageCallback callback);
+
+    // Client-side: unregister a previously registered handler.
+    // Silently ignored if the handler was not registered.
+    // No-op on server builds.
+    void (*UnregisterMessageHandler)(const char* pluginName, const char* typeTag,
+                                     PluginNetworkMessageCallback callback);
+};
+
+// ============================================================
 // IPluginHooks — top-level hook interface provided by the mod loader (v14)
 // Contains only typed sub-interface pointers. Access functionality via the
 // named group, e.g.:
@@ -637,6 +700,7 @@ struct IPluginHUDEvents
 //   hooks->Spawner->RegisterOnBeforeActivate(&MyBeforeCb);
 //   hooks->Input->RegisterKeybind(EModKey::F1, EModKeyEvent::Pressed, &MyKeyCb);
 //   hooks->HUD->RegisterOnPostRender(&MyPostRenderCb);  // client only, null-check first
+//   hooks->Network->SendPacketToAllPlayers(name, tag, data, size);  // server+client, null-check first
 // ============================================================
 struct IPluginHooks
 {
@@ -649,7 +713,8 @@ struct IPluginHooks
     IPluginActorEvents*  Actors;    // v14 — actor begin-play subscriptions
     IPluginInputEvents*  Input;     // v15 — keybind subscriptions (client only, null on server)
     IPluginUIEvents*     UI;        // v15 — custom panel registration + config-change callbacks (client only, null on server)
-    IPluginHUDEvents*    HUD;       // v16 — AHUD::PostRender callbacks + HUD function addresses (client only, null on server)
+    IPluginHUDEvents*        HUD;     // v16 — AHUD::PostRender callbacks + HUD function addresses (client only, null on server)
+    IPluginNetworkChannel*   Network; // v17 — plugin-to-plugin net channel (server+client builds; null on generic)
 };
 
 // Plugin metadata structure

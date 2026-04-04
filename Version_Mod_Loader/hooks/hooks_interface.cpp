@@ -1,6 +1,7 @@
 #include "hooks_interface.h"
 #include "hooks_common.h"
 #include "logging/logger.h"
+#include "network_channel/network_channel.h"
 #include "hooks/memory/engine_allocator.h"
 #include "hooks/game/world_begin_play/world_begin_play.h"
 #include "hooks/game/engine_init/engine_init.h"
@@ -769,16 +770,21 @@ namespace ModLoaderLogger
 #ifdef MODLOADER_CLIENT_BUILD
 		&g_inputEvents,  // v15 — keybind events (client only)
 		&g_uiEvents,     // v15 — custom panel + config-change callbacks (client only)
-		&g_hudEvents     // v16 — AHUD::PostRender callbacks + HUD function addresses (client only)
+		&g_hudEvents,    // v16 — AHUD::PostRender callbacks + HUD function addresses (client only)
 #else
 		nullptr,         // v15 — Input is null on server/generic builds
 		nullptr,         // v15 — UI is null on server/generic builds
-		nullptr          // v16 — HUD is null on server/generic builds
+		nullptr,         // v16 — HUD is null on server/generic builds
 #endif
+		nullptr          // v17 -- Network; filled in below by GetPluginHooks()
 	};
 
 	IPluginHooks* GetPluginHooks()
 	{
+		// Resolve the network channel pointer on first call.
+		// NetworkChannel::GetInterface() returns nullptr on generic builds.
+		if (!g_pluginHooks.Network)
+			g_pluginHooks.Network = NetworkChannel::GetInterface();
 		return &g_pluginHooks;
 	}
 }
