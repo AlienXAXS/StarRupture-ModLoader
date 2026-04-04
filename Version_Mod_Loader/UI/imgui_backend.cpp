@@ -1089,14 +1089,6 @@ namespace UI::ImGuiBackend
 			if (rtss)
 				LogToFile::Info("[ImGuiBackend] RTSS (RivaTuner/Afterburner) detected -- "
 					"if the overlay crashes, disable RTSS and report the issue");
-
-			if (steam && g_streamlineActive)
-			{
-				LogToFile::Warn("[ImGuiBackend] Streamline + Steam overlay detected -- "
-					"skipping ImGui initialization to avoid Present recursion. "
-					"Disable Steam overlay or DLSS Frame Generation to re-enable the UI.");
-				return;
-			}
 		}
 
 		// Log system diagnostics so crash reports have full hardware/OS context.
