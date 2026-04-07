@@ -26,10 +26,6 @@ namespace Hooks::FakePlayer
 	static SDK::APawn* g_fakePawn = nullptr;
 	static bool g_debugVisibleMode = false;
 
-	// UWorld::RemoveController - removes controller from PlayerControllerList
-	using UWorld_RemoveController_t = void(__fastcall*)(SDK::UWorld* world, SDK::AController* controller);
-	static UWorld_RemoveController_t g_removeControllerFn = nullptr;
-
 	// --- Map traversal state ---
 	static bool g_traversing = false;
 	static int g_waypointIndex = 0;
@@ -530,31 +526,16 @@ namespace Hooks::FakePlayer
 			}
 		}
 
-		// Step 4: Remove from PlayerControllerList, then destroy controller
+		// Step 4: Destroy the controller.
+		// AController::Destroyed() (called by K2_DestroyActor) automatically calls
+		// UWorld::RemoveController -- no manual call needed here.
 		if (g_fakeController)
 		{
-			if (g_removeControllerFn && world)
-			{
-				LOG_DEBUG("[FakePlayer] Calling UWorld::RemoveController...");
-				__try
-				{
-					g_removeControllerFn(world, g_fakeController);
-					LOG_DEBUG("[FakePlayer] UWorld::RemoveController completed");
-				}
-				__except (1)
-				{
-					LOG_WARN("[FakePlayer] Exception during UWorld::RemoveController");
-				}
-			}
-			else
-			{
-				LOG_WARN("[FakePlayer] UWorld::RemoveController unavailable — skipping controller list cleanup");
-			}
-
 			LOG_DEBUG("[FakePlayer] Destroying fake controller actor...");
 			__try
 			{
 				g_fakeController->K2_DestroyActor();
+				LOG_DEBUG("[FakePlayer] Fake controller K2_DestroyActor completed");
 			}
 			__except (1)
 			{
@@ -734,26 +715,6 @@ namespace Hooks::FakePlayer
 	bool Install()
 	{
 		LOG_INFO("FakePlayer: Spawn/despawn system ready");
-
-		IPluginScanner* scanner = GetScanner();
-		if (scanner)
-		{
-			uintptr_t addr = scanner->FindPatternInMainModule(
-				"48 89 54 24 ?? 48 89 4C 24 ?? 53 56 57 41 54 48 81 EC");
-
-			if (addr)
-			{
-				g_removeControllerFn = reinterpret_cast<UWorld_RemoveController_t>(addr);
-				LOG_INFO("[FakePlayer] UWorld::RemoveController found at 0x%llX",
-				         static_cast<unsigned long long>(addr));
-			}
-			else
-			{
-				LOG_ERROR("[FakePlayer] UWorld::RemoveController pattern not found — disabling plugin");
-				return false;
-			}
-		}
-
 		return true;
 	}
 
