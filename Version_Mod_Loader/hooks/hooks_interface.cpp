@@ -3,6 +3,7 @@
 #include "logging/logger.h"
 #include "network_channel/network_channel.h"
 #include "hooks/memory/engine_allocator.h"
+#include "utils/game_thread_dispatch.h"
 #include "hooks/game/world_begin_play/world_begin_play.h"
 #include "hooks/game/engine_init/engine_init.h"
 #include "hooks/game/engine_shutdown/engine_shutdown.h"
@@ -329,7 +330,7 @@ namespace ModLoaderLogger
 		LogDebug(L"[HooksInterface] EngineTick callback unregistered for plugin");
 	}
 
-	// v16 — resolved address of CoreUObject::StaticLoadObject (all builds)
+	// v16 -- resolved address of CoreUObject::StaticLoadObject (all builds)
 	// Scanned once on first call; result cached for all subsequent callers.
 	static uintptr_t g_staticLoadObjectAddr    = 0;
 	static bool      g_staticLoadObjectScanned = false;
@@ -343,6 +344,13 @@ namespace ModLoaderLogger
 				"StaticLoadObject", ScanPatterns::StaticLoadObject);
 		}
 		return g_staticLoadObjectAddr;
+	}
+
+	// v18 -- game thread dispatch (all builds)
+	static void HooksPostToGameThread(PluginGameThreadCallback fn, void* context)
+	{
+		if (!fn) return;
+		GameThreadDispatch::PostVoid([fn, context]() { fn(context); });
 	}
 
 	static void HooksRegisterActorBeginPlayCallback(void (*callback)(void*))
@@ -590,7 +598,8 @@ namespace ModLoaderLogger
 		HooksUnregisterEngineShutdownCallback,
 		HooksRegisterEngineTickCallback,
 		HooksUnregisterEngineTickCallback,
-		HooksGetStaticLoadObjectAddress   // v16
+		HooksGetStaticLoadObjectAddress,  // v16
+		HooksPostToGameThread             // v18
 	};
 
 	static IPluginWorldEvents g_worldEvents = {

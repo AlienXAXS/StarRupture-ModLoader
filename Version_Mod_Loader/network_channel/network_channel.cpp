@@ -13,6 +13,10 @@
 #include "hooks/game/client_message/client_message.h"
 #endif
 
+#ifdef MODLOADER_SERVER_BUILD
+#include "hooks/game/server_chat_commit/server_chat_commit.h"
+#endif
+
 #include <mutex>
 #include <vector>
 #include <string>
@@ -172,6 +176,33 @@ namespace
         return result;
     }
 
+    // Shared handler key format: "pluginName\x01typeTag"
+    static std::string MakeHandlerKey(const char* pluginName, const char* typeTag)
+    {
+        std::string key(pluginName);
+        key += '\x01';
+        key += typeTag;
+        return key;
+    }
+
+    // SEH wrapper for ProcessEvent.
+    // Must contain NO C++ objects with destructors (MSVC C2712 restriction).
+    // The caller is responsible for adjusting UFunction flags before calling and
+    // restoring them afterwards.
+    static void CallProcessEventSEH(SDK::UObject* obj, SDK::UFunction* func, void* parms)
+    {
+        __try
+        {
+            obj->ProcessEvent(func, parms);
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER)
+        {
+            ModLoaderLogger::LogError(
+                L"[NetworkChannel] SEH exception in ProcessEvent (code 0x%08lX)",
+                GetExceptionCode());
+        }
+    }
+
 } // anonymous namespace
 
 // ============================================================
@@ -248,27 +279,24 @@ namespace
             g_clientMsgFunc->FunctionFlags = savedFlags & ~kFuncNative;
         }
 
-        __try
-        {
-            ClientMsgParms parms{};
-            parms.strData     = wide.data();
-            parms.strNum      = wlen;       // includes null terminator
-            parms.strMax      = wlen;
-            parms.nameIndex   = 0;          // NAME_None
-            parms.nameNumber  = 0;
-            parms.msgLifeTime = 0.0f;
+        ClientMsgParms parms{};
+        parms.strData     = wide.data();
+        parms.strNum      = wlen;       // includes null terminator
+        parms.strMax      = wlen;
+        parms.nameIndex   = 0;          // NAME_None
+        parms.nameNumber  = 0;
+        parms.msgLifeTime = 0.0f;
 
-            auto* obj = reinterpret_cast<SDK::UObject*>(playerController);
-            obj->ProcessEvent(g_clientMsgFunc, &parms);
-        }
-        __except (EXCEPTION_EXECUTE_HANDLER)
-        {
-            ModLoaderLogger::LogError(L"[NetworkChannel] SEH exception in ProcessEvent for ClientMessage");
-        }
+        auto* obj = reinterpret_cast<SDK::UObject*>(playerController);
+        CallProcessEventSEH(obj, g_clientMsgFunc, &parms);
 
-        // Restore flags regardless of exception
+        // Restore flags; CallProcessEventSEH handles any SEH exception internally
         g_clientMsgFunc->FunctionFlags = savedFlags;
     }
+
+    // Server-side handler registry for Client->Server messages
+    static std::mutex g_serverMutex;
+    static std::unordered_map<std::string, std::vector<PluginNetworkServerMessageCallback>> g_serverHandlers;
 
     // IPluginNetworkChannel function implementations -- server build
 
@@ -323,12 +351,52 @@ namespace
 
     static void NC_RegisterMessageHandler(const char*, const char*, PluginNetworkMessageCallback)
     {
-        // No-op on server -- server only sends, never receives
+        // No-op on server -- server only sends to clients, never receives ClientMessage
     }
 
     static void NC_UnregisterMessageHandler(const char*, const char*, PluginNetworkMessageCallback)
     {
         // No-op on server
+    }
+
+    // Client->Server: no-op on server side (server only receives)
+    static void NC_SendPacketToServer(const char*, const char*, const uint8_t*, size_t)
+    {
+        // No-op on server
+    }
+
+    static void NC_RegisterServerMessageHandler(const char* pluginName, const char* typeTag,
+                                                PluginNetworkServerMessageCallback callback)
+    {
+        if (!pluginName || !typeTag || !callback) return;
+        std::string key = MakeHandlerKey(pluginName, typeTag);
+        {
+            std::lock_guard<std::mutex> lk(g_serverMutex);
+            g_serverHandlers[key].push_back(callback);
+        }
+        ModLoaderLogger::LogDebug(
+            L"[NetworkChannel] Server handler registered for plugin='%S' tag='%S'",
+            pluginName, typeTag);
+
+        // Lazily install the ServerChatCommit ProcessEvent hook on first registration
+        if (!Hooks::ServerChatCommit::IsInstalled())
+            Hooks::ServerChatCommit::Install();
+    }
+
+    static void NC_UnregisterServerMessageHandler(const char* pluginName, const char* typeTag,
+                                                  PluginNetworkServerMessageCallback callback)
+    {
+        if (!pluginName || !typeTag || !callback) return;
+        std::string key = MakeHandlerKey(pluginName, typeTag);
+        std::lock_guard<std::mutex> lk(g_serverMutex);
+        auto it = g_serverHandlers.find(key);
+        if (it != g_serverHandlers.end())
+        {
+            auto& vec = it->second;
+            vec.erase(std::remove(vec.begin(), vec.end(), callback), vec.end());
+            if (vec.empty())
+                g_serverHandlers.erase(it);
+        }
     }
 
 #endif // MODLOADER_SERVER_BUILD
@@ -337,16 +405,36 @@ namespace
 
     static std::mutex g_mutex;
 
-    // Handler registry: key = "pluginName\x01typeTag"  -> list of callbacks
+    // Handler registry for Server->Client messages: key = "pluginName\x01typeTag"
     static std::unordered_map<std::string, std::vector<PluginNetworkMessageCallback>> g_handlers;
 
-    static std::string MakeHandlerKey(const char* pluginName, const char* typeTag)
+    // Cached ServerChatCommit UFunction pointer -- resolved lazily for client->server sends.
+    static SDK::UFunction* g_serverChatFunc = nullptr;
+
+    static void EnsureServerChatFunc()
     {
-        std::string key(pluginName);
-        key += '\x01';
-        key += typeTag;
-        return key;
+        if (g_serverChatFunc) return;
+
+        g_serverChatFunc = SDK::UObject::FindObjectFast<SDK::UFunction>(
+            "ServerChatCommit", SDK::EClassCastFlags::Function);
+
+        if (g_serverChatFunc)
+            ModLoaderLogger::LogInfo(L"[NetworkChannel] ServerChatCommit UFunction resolved at %p",
+                                     static_cast<void*>(g_serverChatFunc));
+        else
+            ModLoaderLogger::LogWarn(L"[NetworkChannel] ServerChatCommit UFunction not found in GObjects yet");
     }
+
+    // Params layout for ACrPlayerControllerBase::ServerChatCommit (16 bytes).
+    // Matches CrPlayerControllerBase_ServerChatCommit in Chimera_parameters.hpp.
+    struct alignas(8) ServerChatCommitParms
+    {
+        // FString Text (0x0000, 0x0010): wchar_t* Data, int32 Num, int32 Max
+        wchar_t* strData;  // +0x00
+        int32_t  strNum;   // +0x08  (includes null terminator)
+        int32_t  strMax;   // +0x0C
+    };
+    static_assert(sizeof(ServerChatCommitParms) == 0x10, "ServerChatCommitParms size mismatch");
 
     static bool NC_IsServer() { return false; }
 
@@ -392,6 +480,80 @@ namespace
         }
     }
 
+    // Client->Server send: encode envelope and call ServerChatCommit via ProcessEvent
+    // without FUNC_Native so UE replicates to the server.
+    static void NC_SendPacketToServer(const char* pluginName, const char* typeTag,
+                                      const uint8_t* data, size_t size)
+    {
+        if (!pluginName || !typeTag || !data || size == 0) return;
+
+        if (size > 1400)
+        {
+            ModLoaderLogger::LogWarn(
+                L"[NetworkChannel] SendPacketToServer: payload %zu bytes exceeds 1400-byte limit for plugin '%S'",
+                size, pluginName);
+        }
+
+        EnsureServerChatFunc();
+        if (!g_serverChatFunc)
+        {
+            ModLoaderLogger::LogWarn(L"[NetworkChannel] SendPacketToServer: ServerChatCommit UFunction not yet in GObjects");
+            return;
+        }
+
+        SDK::UWorld* world = SDK::UWorld::GetWorld();
+        if (!world)
+        {
+            ModLoaderLogger::LogWarn(L"[NetworkChannel] SendPacketToServer: UWorld not available");
+            return;
+        }
+
+        void* localPC = SDK::UGameplayStatics::GetPlayerController(world, 0);
+        if (!localPC)
+        {
+            ModLoaderLogger::LogWarn(L"[NetworkChannel] SendPacketToServer: local PlayerController not found");
+            return;
+        }
+
+        std::string env = BuildEnvelope(pluginName, typeTag, data, size);
+
+        // Convert to wide for FString
+        int wlen = MultiByteToWideChar(CP_UTF8, 0, env.c_str(), -1, nullptr, 0);
+        if (wlen <= 0) return;
+        std::wstring wide(static_cast<size_t>(wlen), L'\0');
+        MultiByteToWideChar(CP_UTF8, 0, env.c_str(), -1, wide.data(), wlen);
+
+        // Clear FUNC_Native so UE replicates the NetServer RPC to the server
+        const uint32_t kFuncNative = 0x400;
+        const uint32_t savedFlags  = g_serverChatFunc->FunctionFlags;
+        if (savedFlags & kFuncNative)
+            g_serverChatFunc->FunctionFlags = savedFlags & ~kFuncNative;
+
+        ServerChatCommitParms parms{};
+        parms.strData = wide.data();
+        parms.strNum  = wlen; // includes null terminator
+        parms.strMax  = wlen;
+
+        auto* obj = reinterpret_cast<SDK::UObject*>(localPC);
+        CallProcessEventSEH(obj, g_serverChatFunc, &parms);
+
+        // Restore flags; CallProcessEventSEH handles any SEH exception internally
+        g_serverChatFunc->FunctionFlags = savedFlags;
+    }
+
+    // Client->Server receive handlers are server-only; these are no-ops on client
+    static void NC_RegisterServerMessageHandler(const char*, const char*,
+                                                PluginNetworkServerMessageCallback)
+    {
+        // No-op on client
+    }
+
+    static void NC_UnregisterServerMessageHandler(const char*, const char*,
+                                                  PluginNetworkServerMessageCallback)
+    {
+        // No-op on client
+    }
+
 #endif // MODLOADER_CLIENT_BUILD
 
     // Static IPluginNetworkChannel instance (shared between server and client)
@@ -402,6 +564,9 @@ namespace
         NC_SendPacketToAllPlayers,
         NC_RegisterMessageHandler,
         NC_UnregisterMessageHandler,
+        NC_SendPacketToServer,
+        NC_RegisterServerMessageHandler,
+        NC_UnregisterServerMessageHandler,
     };
 
 } // anonymous namespace
@@ -462,6 +627,65 @@ void NetworkChannel::DispatchClientMessage(const wchar_t* str, int numCharsWithN
 #endif // MODLOADER_CLIENT_BUILD
 
 // ============================================================
+// DispatchServerMessage  (server build only)
+// Called from server_chat_commit.cpp ProcessEvent hook.
+// Returns true if the message was a mod envelope (consumed); false for normal chat.
+// ============================================================
+
+#ifdef MODLOADER_SERVER_BUILD
+bool NetworkChannel::DispatchServerMessage(void* senderUObject, const wchar_t* str, int numCharsWithNull)
+{
+    if (!str || numCharsWithNull <= static_cast<int>(kEnvPrefixLen)) return false;
+
+    // Convert wide string to narrow for envelope parsing
+    int nbytes = WideCharToMultiByte(CP_UTF8, 0, str, numCharsWithNull - 1, nullptr, 0, nullptr, nullptr);
+    if (nbytes <= 0) return false;
+
+    std::string narrow(static_cast<size_t>(nbytes), '\0');
+    WideCharToMultiByte(CP_UTF8, 0, str, numCharsWithNull - 1, narrow.data(), nbytes, nullptr, nullptr);
+
+    ParsedEnvelope env = ParseEnvelope(narrow.c_str(), static_cast<size_t>(nbytes));
+    if (!env.valid) return false;
+
+    // Dispatch to registered server-side handlers
+    std::string key = MakeHandlerKey(env.pluginName.c_str(), env.typeTag.c_str());
+
+    std::vector<PluginNetworkServerMessageCallback> callbacks;
+    {
+        std::lock_guard<std::mutex> lk(g_serverMutex);
+        auto it = g_serverHandlers.find(key);
+        if (it == g_serverHandlers.end()) return true; // valid envelope but no handler -- still consumed
+        callbacks = it->second; // copy snapshot
+    }
+
+    for (auto* cb : callbacks)
+    {
+        if (!cb) continue;
+        try
+        {
+            cb(senderUObject,
+               env.pluginName.c_str(), env.typeTag.c_str(),
+               env.payload.data(), env.payload.size());
+        }
+        catch (const std::exception& ex)
+        {
+            ModLoaderLogger::LogError(
+                L"[NetworkChannel] Exception in server handler for plugin='%S' tag='%S': %S",
+                env.pluginName.c_str(), env.typeTag.c_str(), ex.what());
+        }
+        catch (...)
+        {
+            ModLoaderLogger::LogError(
+                L"[NetworkChannel] Unknown exception in server handler for plugin='%S' tag='%S'",
+                env.pluginName.c_str(), env.typeTag.c_str());
+        }
+    }
+
+    return true; // mod envelope consumed -- caller should suppress original chat
+}
+#endif // MODLOADER_SERVER_BUILD
+
+// ============================================================
 // Public API
 // ============================================================
 
@@ -487,6 +711,11 @@ void NetworkChannel::Initialize()
 void NetworkChannel::Shutdown()
 {
 #ifdef MODLOADER_SERVER_BUILD
+    Hooks::ServerChatCommit::Remove();
+    {
+        std::lock_guard<std::mutex> lk(g_serverMutex);
+        g_serverHandlers.clear();
+    }
     g_clientMsgFunc = nullptr;
     ModLoaderLogger::LogInfo(L"[NetworkChannel] Server network channel shut down");
 #endif
@@ -497,6 +726,7 @@ void NetworkChannel::Shutdown()
         std::lock_guard<std::mutex> lk(g_mutex);
         g_handlers.clear();
     }
+    g_serverChatFunc = nullptr;
     ModLoaderLogger::LogInfo(L"[NetworkChannel] Client network channel shut down");
 #endif
 }

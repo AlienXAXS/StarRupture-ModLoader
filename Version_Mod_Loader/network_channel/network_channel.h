@@ -3,17 +3,20 @@
 #include "../plugins/plugin_interface.h"
 
 // ============================================================
-// NetworkChannel -- implements IPluginNetworkChannel (v17)
+// NetworkChannel -- implements IPluginNetworkChannel (v18)
 //
-// Server build:  maintains the connected-player list via PlayerJoined/Left hooks;
-//                sends packets via APlayerController::ClientMessage ProcessEvent call
-//                (without FUNC_Native flag so UE replicates to the owning client).
+// Server build:  sends Server->Client packets via APlayerController::ClientMessage
+//                ProcessEvent call (without FUNC_Native so UE replicates to the client).
+//                Receives Client->Server packets via the ServerChatCommit ProcessEvent hook.
 //
 // Client build:  hooks UObject::ProcessEvent globally; filters calls targeting the
 //                ClientMessage UFunction; dispatches tagged payloads to registered
 //                plugin handlers.
+//                Sends Client->Server packets via ACrPlayerControllerBase::ServerChatCommit
+//                ProcessEvent call (without FUNC_Native so UE replicates to the server).
 //
-// Generic build: both send and receive no-op; Network pointer in IPluginHooks is nullptr.
+// Generic build: all send/receive operations are no-ops; Network pointer in IPluginHooks
+//                is nullptr.
 // ============================================================
 
 namespace NetworkChannel
@@ -34,6 +37,14 @@ namespace NetworkChannel
     // from the FString S parameter.  Parses the [MOD:...] envelope and dispatches
     // to registered plugin handlers.
     void DispatchClientMessage(const wchar_t* str, int numCharsWithNull);
+#endif
+
+#ifdef MODLOADER_SERVER_BUILD
+    // Called by the server_chat_commit ProcessEvent hook with the sender UObject* and the
+    // raw wchar_t payload from the FString Text parameter.
+    // Returns true if the message was a mod envelope and was consumed (caller should suppress
+    // the original call); returns false if the message is normal chat (caller must forward).
+    bool DispatchServerMessage(void* senderUObject, const wchar_t* str, int numCharsWithNull);
 #endif
 
 } // namespace NetworkChannel

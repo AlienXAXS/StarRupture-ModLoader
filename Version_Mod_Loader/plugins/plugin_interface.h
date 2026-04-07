@@ -75,12 +75,22 @@
 //      Transport: APlayerController::ClientMessage RPC (Server->Client direction out of the box).
 //      Packets are POD structs serialized with memcpy; the loader wraps them in a tagged envelope.
 //      Network is non-null on server AND client builds; nullptr on generic (plain Debug/Release) builds.
-//        Network  — plugin-to-plugin net channel  (hooks->Network->SendPacketToClient)
+//        Network  -- plugin-to-plugin net channel  (hooks->Network->SendPacketToClient)
 //      Plugin authors should use plugin_network_helpers.h template wrappers (SendPacketToPlayer<T>,
 //      SendPacketToAllPlayers<T>, OnReceive<T>) rather than calling IPluginNetworkChannel directly.
-//      Always null-check hooks->Network — it is nullptr on generic builds.
+//      Always null-check hooks->Network -- it is nullptr on generic builds.
+// v18: Added PostToGameThread to IPluginEngineEvents for safe cross-thread dispatch onto the game
+//      thread from background threads (RCON handlers, network callbacks, etc.).
+//      Added PluginGameThreadCallback typedef.
+//        Engine   -- PostToGameThread posts a fire-and-forget callback to run on the next tick
+//      Added client-to-server direction to IPluginNetworkChannel:
+//        SendPacketToServer -- client-only, sends a packet up to the server via ServerChatCommit RPC
+//        RegisterServerMessageHandler / UnregisterServerMessageHandler -- server-only, receive packets
+//      Added PluginNetworkServerMessageCallback typedef (includes senderPlayerController).
+//      Plugin authors should use Network::SendPacketToServer<T> and Network::OnServerReceive<T>
+//      from plugin_network_helpers.h rather than calling IPluginNetworkChannel directly.
 #define PLUGIN_INTERFACE_VERSION_MIN 14  // oldest plugin ABI still accepted by this loader
-#define PLUGIN_INTERFACE_VERSION_MAX 17  // current interface version (this header)
+#define PLUGIN_INTERFACE_VERSION_MAX 18  // current interface version (this header)
 #define PLUGIN_INTERFACE_VERSION PLUGIN_INTERFACE_VERSION_MAX  // alias used by plugins in PluginInfo
 
 // Log levels
@@ -258,13 +268,24 @@ typedef void (*PluginPlayerJoinedCallback)(void* playerController);
 typedef void (*PluginPlayerLeftCallback)(void* exitingController);
 // v16 (client only) — fired after AHUD::PostRender; hud is AHUD* cast to void*
 typedef void (*PluginHUDPostRenderCallback)(void* hud);
-// v17 — fired on the client when a server packet arrives for this plugin+typeTag.
+// v17 -- fired on the client when a server packet arrives for this plugin+typeTag.
 // pluginName : the name the server-side plugin passed to SendPacketToClient/SendPacketToAllPlayers
 // typeTag    : identifies the packet type (use typeid(T).name() via plugin_network_helpers.h)
-// data       : decoded payload bytes — exactly 'size' bytes; pointer is valid only during this call
+// data       : decoded payload bytes -- exactly 'size' bytes; pointer is valid only during this call
 // size       : byte count of the payload; always > 0
 typedef void (*PluginNetworkMessageCallback)(const char* pluginName, const char* typeTag,
                                              const uint8_t* data, size_t size);
+
+// v18 -- fired on the server when a client packet arrives for this plugin+typeTag.
+// senderPlayerController : the APlayerController* of the sending client cast to void*
+// pluginName / typeTag / data / size : same semantics as PluginNetworkMessageCallback
+typedef void (*PluginNetworkServerMessageCallback)(void* senderPlayerController,
+                                                   const char* pluginName, const char* typeTag,
+                                                   const uint8_t* data, size_t size);
+
+// v18 -- callback type for PostToGameThread.
+// context : the void* passed to PostToGameThread; cast to your own struct inside the callback.
+typedef void (*PluginGameThreadCallback)(void* context);
 
 // ============================================================
 // Spawner hook callback typedefs (v14)
@@ -323,9 +344,14 @@ struct IPluginEngineEvents
     void (*UnregisterOnShutdown)(PluginEngineShutdownCallback);
     void (*RegisterOnTick)(PluginEngineTickCallback);
     void (*UnregisterOnTick)(PluginEngineTickCallback);
-    // v16 — resolved address of CoreUObject::StaticLoadObject, or 0 if not found.
+    // v16 -- resolved address of CoreUObject::StaticLoadObject, or 0 if not found.
     // Available on all build types.
     uintptr_t (*GetStaticLoadObjectAddress)();
+    // v18 -- post a fire-and-forget callback onto the game thread.
+    // fn is called from the game thread during the next engine tick.
+    // context is passed unchanged to fn; pass nullptr if you have no state.
+    // Thread-safe; may be called from any thread (RCON handlers, network callbacks, etc.).
+    void (*PostToGameThread)(PluginGameThreadCallback fn, void* context);
 };
 
 // ============================================================
@@ -687,6 +713,26 @@ struct IPluginNetworkChannel
     // No-op on server builds.
     void (*UnregisterMessageHandler)(const char* pluginName, const char* typeTag,
                                      PluginNetworkMessageCallback callback);
+
+    // v18 -- Client-side: send a raw packet to the server.
+    // pluginName / typeTag / data / size: same semantics as SendPacketToClient.
+    // Transport: ACrPlayerControllerBase::ServerChatCommit (NetServer RPC).
+    // No-op on server builds.
+    void (*SendPacketToServer)(const char* pluginName, const char* typeTag,
+                               const uint8_t* data, size_t size);
+
+    // v18 -- Server-side: register a handler for packets arriving from any client.
+    // callback receives the sender's APlayerController* (cast to void*) along with
+    // the standard pluginName/typeTag/data/size fields.
+    // No-op on client builds.
+    void (*RegisterServerMessageHandler)(const char* pluginName, const char* typeTag,
+                                         PluginNetworkServerMessageCallback callback);
+
+    // v18 -- Server-side: unregister a previously registered server-message handler.
+    // Silently ignored if the handler was not registered.
+    // No-op on client builds.
+    void (*UnregisterServerMessageHandler)(const char* pluginName, const char* typeTag,
+                                           PluginNetworkServerMessageCallback callback);
 };
 
 // ============================================================
@@ -701,6 +747,7 @@ struct IPluginNetworkChannel
 //   hooks->Input->RegisterKeybind(EModKey::F1, EModKeyEvent::Pressed, &MyKeyCb);
 //   hooks->HUD->RegisterOnPostRender(&MyPostRenderCb);  // client only, null-check first
 //   hooks->Network->SendPacketToAllPlayers(name, tag, data, size);  // server+client, null-check first
+//   hooks->Engine->PostToGameThread(&MyFn, ctx);                    // any thread -> game thread (v18)
 // ============================================================
 struct IPluginHooks
 {

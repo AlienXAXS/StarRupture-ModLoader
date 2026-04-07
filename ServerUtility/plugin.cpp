@@ -7,6 +7,7 @@
 #include "hooks/http_connection/http_connection.h"
 #include "rcon/rcon.h"
 #include "rcon/console_ctrl.h"
+#include "rcon/commands/command_handler.h"
 
 // -----------------------------------------------------------------------
 // Global plugin interface pointers
@@ -88,22 +89,7 @@ static void OnEngineTick(float deltaSeconds)
 
 static bool IsServerBinary()
 {
-	wchar_t path[MAX_PATH] = {0};
-	if (GetModuleFileNameW(nullptr, path, MAX_PATH) == 0)
-	{
-		// If desired, log failure via GetLogger(); keep simple here.
-		return false;
-	}
-
-	// Extract filename part
-	wchar_t* filename = wcsrchr(path, L'\\');
-	if (!filename)
-		filename = wcsrchr(path, L'/');
-
-	const wchar_t* exeName = filename ? (filename + 1) : path;
-
-	// Case-insensitive compare
-	return _wcsicmp(exeName, L"StarRuptureServerEOS-Win64-Shipping.exe") == 0;
+	return g_hooks->Network->IsServer();
 }
 
 // -----------------------------------------------------------------------
@@ -142,9 +128,13 @@ __declspec(dllexport) bool PluginInit(IPluginLogger* logger, IPluginConfig* conf
 
 	if (!hooks->Engine)
 	{
-		LOG_ERROR("Engine sub-interface not available – loader version mismatch?");
+		LOG_ERROR("Engine sub-interface not available - loader version mismatch?");
 		return false;
 	}
+
+	// Give the command handler access to the hooks so it can dispatch game-thread
+	// commands via hooks->Engine->PostToGameThread.
+	CommandHandler::Get().SetHooks(hooks);
 
 	hooks->Engine->RegisterOnInit(OnEngineInit);
 	LOG_DEBUG("Registered for engine init callback");

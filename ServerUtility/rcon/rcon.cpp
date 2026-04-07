@@ -11,7 +11,6 @@
 #include "plugin_helpers.h"
 
 #include "state/server_state.h"
-#include "state/game_thread_dispatch.h"
 #include "server/rcon_server.h"
 #include "server/query_server.h"
 #include "commands/command_handler.h"
@@ -343,25 +342,17 @@ void Rcon::OnAnyWorldBeginPlay(SDK::UWorld* world, const char* worldName)
 
 	// Do an immediate player collection on the game thread (it's the safest moment)
 	CollectPlayers(world);
-
-	// Drain any tasks queued by RCON command handlers that need the game thread
-	GameThreadDispatch::Drain();
 }
 
 void Rcon::OnExperienceLoadComplete()
 {
-	LOG_DEBUG("[Rcon] Experience load complete – refreshing player state");
+	LOG_DEBUG("[Rcon] Experience load complete - refreshing player state");
 	void* world = g_currentWorld.load(std::memory_order_acquire);
 	CollectPlayers(world);
-
-	// Drain any tasks queued by RCON command handlers that need the game thread
-	GameThreadDispatch::Drain();
 }
 
 void Rcon::OnTick(float /*deltaSeconds*/)
 {
-	// Drain any tasks queued by RCON command handlers that need the game thread.
-	// This runs every frame on the game thread, so posted tasks (e.g. save
-	// commands) are picked up promptly rather than waiting for a one-shot event.
-	GameThreadDispatch::Drain();
+	// Game-thread drain is now handled by the modloader's engine_tick hook
+	// (GameThreadDispatch::Drain is called every tick from engine_tick.cpp).
 }

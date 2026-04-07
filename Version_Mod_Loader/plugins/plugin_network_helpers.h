@@ -1,7 +1,7 @@
 #pragma once
 
 // ============================================================
-// plugin_network_helpers.h  (v17)
+// plugin_network_helpers.h  (v18)
 //
 // Typed packet helpers for the IPluginNetworkChannel API.
 //
@@ -139,6 +139,76 @@ PluginNetworkMessageCallback OnReceive(IPluginHooks* hooks, const char* pluginNa
 
     Handler::Callback() = std::move(cb);
     hooks->Network->RegisterMessageHandler(pluginName, typeid(T).name(), &Handler::Dispatch);
+    return &Handler::Dispatch;
+}
+
+// ----------------------------------------------------------------
+// SendPacketToServer<T>
+// Client-side: send a typed packet to the server.
+//   hooks      : the IPluginHooks* from PluginInit
+//   pluginName : your plugin's name (from GetPluginInfo()->name)
+//   pkt        : the packet to send
+// ----------------------------------------------------------------
+template<typename T>
+void SendPacketToServer(IPluginHooks* hooks, const char* pluginName, const T& pkt)
+{
+    static_assert(std::is_trivially_copyable_v<T>,
+        "Network::SendPacketToServer<T>: T must be trivially copyable "
+        "(no pointers, vtables, or std containers)");
+    if (!hooks || !hooks->Network) return;
+    hooks->Network->SendPacketToServer(
+        pluginName,
+        typeid(T).name(),
+        reinterpret_cast<const uint8_t*>(&pkt),
+        sizeof(T));
+}
+
+// ----------------------------------------------------------------
+// OnServerReceive<T>
+// Server-side: register a typed handler for Client->Server packets.
+//   hooks      : the IPluginHooks* from PluginInit
+//   pluginName : your plugin's name -- must match the sender's pluginName
+//   cb         : callback invoked with senderPlayerController (void*) and
+//                a const T& on each matching packet.
+//                Called from the game thread (ServerChatCommit detour).
+//
+// Returns the raw PluginNetworkServerMessageCallback pointer so it can be
+// passed to hooks->Network->UnregisterServerMessageHandler during PluginShutdown.
+// ----------------------------------------------------------------
+template<typename T>
+PluginNetworkServerMessageCallback OnServerReceive(
+    IPluginHooks* hooks,
+    const char* pluginName,
+    std::function<void(void* senderPC, const T&)> cb)
+{
+    static_assert(std::is_trivially_copyable_v<T>,
+        "Network::OnServerReceive<T>: T must be trivially copyable "
+        "(no pointers, vtables, or std containers)");
+    if (!hooks || !hooks->Network || !cb) return nullptr;
+
+    // Per-T static storage -- each template instantiation gets its own slot.
+    struct Handler
+    {
+        static std::function<void(void*, const T&)>& Callback()
+        {
+            static std::function<void(void*, const T&)> s;
+            return s;
+        }
+
+        static void Dispatch(void* senderPC,
+                             const char* /*pluginName*/, const char* /*typeTag*/,
+                             const uint8_t* data, size_t size)
+        {
+            if (size != sizeof(T)) return; // size guard against malformed packets
+            T pkt;
+            std::memcpy(&pkt, data, sizeof(T));
+            auto& fn = Callback();
+            if (fn) fn(senderPC, pkt);
+        }
+    };
+
+    Handler::Callback() = std::move(cb);
+    hooks->Network->RegisterServerMessageHandler(pluginName, typeid(T).name(), &Handler::Dispatch);
     return &Handler::Dispatch;
 }
 

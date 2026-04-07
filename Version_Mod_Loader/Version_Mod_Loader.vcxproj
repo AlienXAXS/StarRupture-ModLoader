@@ -327,6 +327,7 @@ echo Deploy complete.</Command>
     <ClInclude Include="imgui\backends\imgui_impl_dx12.h" />
     <ClInclude Include="imgui\backends\imgui_impl_win32.h" />
     <ClInclude Include="network_channel\network_channel.h" />
+    <ClInclude Include="plugins\plugin_network_helpers.h" />
     <ClInclude Include="UI\imgui_backend.h" />
     <ClInclude Include="UI\global_settings.h" />
     <ClInclude Include="UI\modloader_window.h" />
@@ -370,6 +371,8 @@ echo Deploy complete.</Command>
     <ClCompile Include="hooks\game\engine_shutdown\engine_shutdown.cpp" />
     <ClCompile Include="hooks\game\engine_tick\engine_tick.cpp" />
     <ClCompile Include="hooks\game\client_message\client_message.cpp" />
+    <ClCompile Include="hooks\game\server_chat_commit\server_chat_commit.cpp" />
+    <ClCompile Include="utils\game_thread_dispatch.cpp" />
     <ClCompile Include="hooks\game\hud_post_render\hud_post_render.cpp" />
     <ClCompile Include="hooks\game\experience_load_complete\experience_load_complete.cpp" />
     <ClCompile Include="hooks\game\player_joined\player_joined.cpp" />
