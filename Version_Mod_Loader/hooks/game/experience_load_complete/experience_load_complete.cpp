@@ -2,6 +2,7 @@
 #include "experience_load_complete.h"
 #include "logging/logger.h"
 #include "memory_scanner/scanner.h"
+#include "../ufunction_resolve.h"
 #include "../scan_patterns.h"
 #include <vector>
 #include <algorithm>
@@ -20,11 +21,15 @@ namespace Hooks::ExperienceLoadComplete
 
 	static void __fastcall Detour(void* thisPtr)
 	{
+		void* const callerAddr = _ReturnAddress();
+
 		long callNum = InterlockedIncrement(&g_callCount);
 
 		ModLoaderLogger::LogInfo(
 			L"[ExperienceLoadComplete] UCrExperienceManagerComponent::OnExperienceLoadComplete called (#%ld)", callNum);
 		ModLoaderLogger::LogDebug(L"[ExperienceLoadComplete]   this=%p, Thread=%lu", thisPtr, GetCurrentThreadId());
+		ModLoaderLogger::LogTrace(L"[ExperienceLoadComplete]   Called from: %S",
+		                          Hooks::GetCallerModuleName(callerAddr).c_str());
 
 		// Call original first so the experience is fully loaded before we notify plugins
 		if (g_original)
@@ -48,7 +53,8 @@ namespace Hooks::ExperienceLoadComplete
 				if (!g_pluginCallbacks[i])
 					continue;
 
-				ModLoaderLogger::LogTrace(L"[ExperienceLoadComplete] Calling plugin callback #%zu", i + 1);
+				ModLoaderLogger::LogTrace(L"[ExperienceLoadComplete] Calling plugin callback #%zu (%S)",
+				                          i + 1, Hooks::GetCallerModuleName((void*)g_pluginCallbacks[i]).c_str());
 
 				try
 				{
@@ -74,29 +80,17 @@ namespace Hooks::ExperienceLoadComplete
 	{
 		ModLoaderLogger::LogInfo(L"[ExperienceLoadComplete] Installing hook...");
 
-		const char* pattern = ScanPatterns::UCrExperienceManagerComponent_OnExperienceLoadComplete;
-
-		ModLoaderLogger::LogInfo(
-			L"[ExperienceLoadComplete] Scanning for UCrExperienceManagerComponent::OnExperienceLoadComplete...");
-		ModLoaderLogger::LogDebug(L"[ExperienceLoadComplete]   Pattern: %S", pattern);
-
-		uintptr_t addr = Scanner::FindPatternInMainModule("UCrExperienceManagerComponent::OnExperienceLoadComplete",
-		                                                  pattern);
-
+		uintptr_t addr = Hooks::ResolveUFunctionNativeAddr(
+			"CrExperienceManagerComponent", "OnExperienceLoadComplete");
 		if (!addr)
 		{
-			ModLoaderLogger::LogError(
-				L"[ExperienceLoadComplete] UCrExperienceManagerComponent::OnExperienceLoadComplete pattern not found");
-			return false;
+			ModLoaderLogger::LogDebug(L"[ExperienceLoadComplete] Not a UFUNCTION -- falling back to pattern scan");
+			addr = Scanner::FindPatternInMainModule(
+				"UCrExperienceManagerComponent::OnExperienceLoadComplete",
+				ScanPatterns::UCrExperienceManagerComponent_OnExperienceLoadComplete);
 		}
-
-		HMODULE mainModule = GetModuleHandleW(nullptr);
-		auto base = reinterpret_cast<uintptr_t>(mainModule);
-
-		ModLoaderLogger::LogInfo(
-			L"[ExperienceLoadComplete] UCrExperienceManagerComponent::OnExperienceLoadComplete found at 0x%llX (base+0x%llX)",
-			static_cast<unsigned long long>(addr),
-			static_cast<unsigned long long>(addr - base));
+		if (!addr)
+			return false;
 
 		bool hookOk = g_hook.Install(
 			addr,
@@ -134,7 +128,7 @@ namespace Hooks::ExperienceLoadComplete
 		// Lazily install the hook on first registration
 		if (!g_hook.installed)
 		{
-			ModLoaderLogger::LogInfo(L"[ExperienceLoadComplete] First callback registered — installing hook now...");
+			ModLoaderLogger::LogInfo(L"[ExperienceLoadComplete] First callback registered ï¿½ installing hook now...");
 			if (!Install())
 			{
 				ModLoaderLogger::LogError(

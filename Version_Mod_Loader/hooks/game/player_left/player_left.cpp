@@ -2,6 +2,7 @@
 #include "player_left.h"
 #include "logging/logger.h"
 #include "memory_scanner/scanner.h"
+#include "../ufunction_resolve.h"
 #include "../scan_patterns.h"
 #include <vector>
 #include <algorithm>
@@ -20,11 +21,15 @@ namespace Hooks::PlayerLeft
 
 	static void __fastcall Detour(void* thisPtr, void* exiting)
 	{
+		void* const callerAddr = _ReturnAddress();
+
 		long callNum = InterlockedIncrement(&g_callCount);
 
 		ModLoaderLogger::LogInfo(L"[PlayerLeft] ACrGameModeBase::Logout called (#%ld)", callNum);
 		ModLoaderLogger::LogDebug(L"[PlayerLeft]   this=%p, Exiting=%p, Thread=%lu",
 		                          thisPtr, exiting, GetCurrentThreadId());
+		ModLoaderLogger::LogTrace(L"[PlayerLeft]   Called from: %S",
+		                          Hooks::GetCallerModuleName(callerAddr).c_str());
 
 		// Notify plugins BEFORE calling original so the controller is still valid
 		if (!g_pluginCallbacks.empty())
@@ -36,7 +41,8 @@ namespace Hooks::PlayerLeft
 				if (!g_pluginCallbacks[i])
 					continue;
 
-				ModLoaderLogger::LogTrace(L"[PlayerLeft] Calling plugin callback #%zu", i + 1);
+				ModLoaderLogger::LogTrace(L"[PlayerLeft] Calling plugin callback #%zu (%S)",
+				                          i + 1, Hooks::GetCallerModuleName((void*)g_pluginCallbacks[i]).c_str());
 
 				try
 				{
@@ -55,7 +61,7 @@ namespace Hooks::PlayerLeft
 			ModLoaderLogger::LogDebug(L"[PlayerLeft] All plugin callbacks completed");
 		}
 
-		// Call original AFTER notifying plugins — the original tears down the controller
+		// Call original AFTER notifying plugins ï¿½ the original tears down the controller
 		if (g_original)
 		{
 			ModLoaderLogger::LogDebug(L"[PlayerLeft]   Calling original Logout...");
@@ -74,25 +80,15 @@ namespace Hooks::PlayerLeft
 	{
 		ModLoaderLogger::LogInfo(L"[PlayerLeft] Installing hook...");
 
-		const char* pattern = ScanPatterns::ACrGameModeBase_Logout;
-
-		ModLoaderLogger::LogInfo(L"[PlayerLeft] Scanning for ACrGameModeBase::Logout...");
-		ModLoaderLogger::LogDebug(L"[PlayerLeft]   Pattern: %S", pattern);
-
-		uintptr_t addr = Scanner::FindPatternInMainModule("ACrGameModeBase::Logout", pattern);
-
+		uintptr_t addr = Hooks::ResolveUFunctionNativeAddr("CrGameModeBase", "Logout");
 		if (!addr)
 		{
-			ModLoaderLogger::LogError(L"[PlayerLeft] ACrGameModeBase::Logout pattern not found");
-			return false;
+			ModLoaderLogger::LogDebug(L"[PlayerLeft] Not a UFUNCTION -- falling back to pattern scan");
+			addr = Scanner::FindPatternInMainModule(
+				"ACrGameModeBase::Logout", ScanPatterns::ACrGameModeBase_Logout);
 		}
-
-		HMODULE mainModule = GetModuleHandleW(nullptr);
-		auto base = reinterpret_cast<uintptr_t>(mainModule);
-
-		ModLoaderLogger::LogInfo(L"[PlayerLeft] ACrGameModeBase::Logout found at 0x%llX (base+0x%llX)",
-		                         static_cast<unsigned long long>(addr),
-		                         static_cast<unsigned long long>(addr - base));
+		if (!addr)
+			return false;
 
 		bool hookOk = g_hook.Install(
 			addr,

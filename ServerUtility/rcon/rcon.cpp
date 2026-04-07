@@ -48,11 +48,6 @@ static QueryServer g_queryServer;
 static std::thread g_refreshThread;
 static std::atomic<bool> g_refreshRunning{false};
 
-// Current world pointer — written from the game thread, read (under SEH) from
-// the refresh thread.  Plain pointer; no ref-counting needed since we clear it
-// in OnEngineShutdown before the world is destroyed.
-static std::atomic<void*> g_currentWorld{nullptr};
-
 // ---------------------------------------------------------------------------
 // Command-line helpers (wchar_t variant, mirrors parse_settings.cpp)
 // ---------------------------------------------------------------------------
@@ -197,13 +192,14 @@ static int CollectPlayersRaw_SEH(void* worldPtr, RawPlayerData* outRaw)
 }
 #endif
 
-static void CollectPlayers(void* worldPtr)
+static void CollectPlayers()
 {
-	if (!worldPtr) return;
-
 #if RCON_HAS_SDK
+	auto* world = static_cast<SDK::UWorld*>(SDK::UWorld::GetWorld());
+	if (!world) return;
+
 	RawPlayerData rawBuf[MAX_RAW_PLAYERS];
-	int rawCount = CollectPlayersRaw_SEH(worldPtr, rawBuf);
+	int rawCount = CollectPlayersRaw_SEH(world, rawBuf);
 	if (rawCount <= 0) return;
 
 	std::vector<PlayerInfo> players;
@@ -236,8 +232,6 @@ static void CollectPlayers(void* worldPtr)
 	}
 
 	ServerState::Get().UpdatePlayers(std::move(players));
-#else
-	(void)worldPtr;
 #endif
 }
 
@@ -248,9 +242,7 @@ static void RefreshLoop()
 {
 	while (g_refreshRunning)
 	{
-		void* world = g_currentWorld.load(std::memory_order_acquire);
-		if (world)
-			CollectPlayers(world);
+		CollectPlayers();
 
 		// Sleep in 500 ms chunks so shutdown is responsive
 		for (int i = 0; i < 10 && g_refreshRunning; ++i)
@@ -314,9 +306,6 @@ void Rcon::Shutdown()
 {
 	LOG_INFO("[Rcon] Shutting down...");
 
-	// Clear world pointer first so the refresh thread stops accessing engine memory
-	g_currentWorld.store(nullptr, std::memory_order_release);
-
 	// Stop refresh thread
 	g_refreshRunning = false;
 	if (g_refreshThread.joinable())
@@ -331,28 +320,3 @@ void Rcon::Shutdown()
 	LOG_INFO("[Rcon] Shutdown complete");
 }
 
-void Rcon::OnAnyWorldBeginPlay(SDK::UWorld* world, const char* worldName)
-{
-	LOG_DEBUG("[Rcon] World begin play: %s", worldName ? worldName : "(null)");
-
-	g_currentWorld.store(world, std::memory_order_release);
-
-	if (worldName && *worldName)
-		ServerState::Get().SetWorldName(worldName);
-
-	// Do an immediate player collection on the game thread (it's the safest moment)
-	CollectPlayers(world);
-}
-
-void Rcon::OnExperienceLoadComplete()
-{
-	LOG_DEBUG("[Rcon] Experience load complete - refreshing player state");
-	void* world = g_currentWorld.load(std::memory_order_acquire);
-	CollectPlayers(world);
-}
-
-void Rcon::OnTick(float /*deltaSeconds*/)
-{
-	// Game-thread drain is now handled by the modloader's engine_tick hook
-	// (GameThreadDispatch::Drain is called every tick from engine_tick.cpp).
-}

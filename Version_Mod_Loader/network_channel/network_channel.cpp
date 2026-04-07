@@ -263,6 +263,10 @@ namespace
             return;
         }
 
+        ModLoaderLogger::LogTrace(L"[NetworkChannel] SendEnvelope: PC=%p func=%p flags=0x%08X envelope=%zu bytes",
+                                  playerController, static_cast<void*>(g_clientMsgFunc),
+                                  g_clientMsgFunc->FunctionFlags, envelope.size());
+
         // Convert narrow envelope to wide for FString
         int wlen = MultiByteToWideChar(CP_UTF8, 0, envelope.c_str(), -1, nullptr, 0);
         if (wlen <= 0) return;
@@ -287,11 +291,15 @@ namespace
         parms.nameNumber  = 0;
         parms.msgLifeTime = 0.0f;
 
+        ModLoaderLogger::LogTrace(L"[NetworkChannel] SendEnvelope: FUNC_Native was %s -- calling ProcessEvent",
+                                  (savedFlags & kFuncNative) ? L"SET (cleared for send)" : L"already clear");
+
         auto* obj = reinterpret_cast<SDK::UObject*>(playerController);
         CallProcessEventSEH(obj, g_clientMsgFunc, &parms);
 
         // Restore flags; CallProcessEventSEH handles any SEH exception internally
         g_clientMsgFunc->FunctionFlags = savedFlags;
+        ModLoaderLogger::LogTrace(L"[NetworkChannel] SendEnvelope: ProcessEvent returned, flags restored");
     }
 
     // Server-side handler registry for Client->Server messages
@@ -377,10 +385,6 @@ namespace
         ModLoaderLogger::LogDebug(
             L"[NetworkChannel] Server handler registered for plugin='%S' tag='%S'",
             pluginName, typeTag);
-
-        // Lazily install the ServerChatCommit ProcessEvent hook on first registration
-        if (!Hooks::ServerChatCommit::IsInstalled())
-            Hooks::ServerChatCommit::Install();
     }
 
     static void NC_UnregisterServerMessageHandler(const char* pluginName, const char* typeTag,
@@ -697,7 +701,9 @@ IPluginNetworkChannel* NetworkChannel::GetInterface()
 void NetworkChannel::Initialize()
 {
 #ifdef MODLOADER_SERVER_BUILD
-    // Nothing to do -- player controllers are queried live from GObjects at send time.
+    ModLoaderLogger::LogDebug(L"[NetworkChannel] Initialize: installing ProcessEvent hook...");
+    if (!Hooks::ServerChatCommit::IsInstalled())
+        Hooks::ServerChatCommit::Install();
     ModLoaderLogger::LogInfo(L"[NetworkChannel] Server network channel initialized");
 #endif
 

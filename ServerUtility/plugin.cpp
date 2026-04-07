@@ -72,21 +72,6 @@ static void OnEngineShutdown()
 	Rcon::Shutdown();
 }
 
-static void OnAnyWorldBeginPlay(SDK::UWorld* world, const char* worldName)
-{
-	Rcon::OnAnyWorldBeginPlay(world, worldName);
-}
-
-static void OnExperienceLoadComplete()
-{
-	Rcon::OnExperienceLoadComplete();
-}
-
-static void OnEngineTick(float deltaSeconds)
-{
-	Rcon::OnTick(deltaSeconds);
-}
-
 static bool IsServerBinary()
 {
 	return g_hooks->Network->IsServer();
@@ -142,18 +127,6 @@ __declspec(dllexport) bool PluginInit(IPluginLogger* logger, IPluginConfig* conf
 	hooks->Engine->RegisterOnShutdown(OnEngineShutdown);
 	LOG_DEBUG("Registered for engine shutdown callback");
 
-	hooks->Engine->RegisterOnTick(OnEngineTick);
-	LOG_DEBUG("Registered for engine tick callback (game-thread task dispatch)");
-
-	if (hooks->World)
-	{
-		hooks->World->RegisterOnAnyWorldBeginPlay(OnAnyWorldBeginPlay);
-		LOG_DEBUG("Registered for any-world begin play callback (RCON player tracking)");
-
-		hooks->World->RegisterOnExperienceLoadComplete(OnExperienceLoadComplete);
-		LOG_DEBUG("Registered for experience load complete callback (RCON player refresh)");
-	}
-
 	LOG_INFO("Engine initialised - scanning for UCrDedicatedServerSettingsComp::ParseSettings...");
 
 	uintptr_t addr = g_scanner->FindPatternInMainModule(DEDSERVER_SETTINGS_COMP_PARSE_SETTINGS_PATTERN);
@@ -188,18 +161,6 @@ __declspec(dllexport) void PluginShutdown()
 	// Hook removal and RCON shutdown are handled in OnEngineShutdown() which fires
 	// before UObject teardown.  By the time PluginShutdown is called (explicit
 	// FreeLibrary only) those resources have already been released.
-
-	if (g_hooks)
-	{
-		if (g_hooks->World)
-		{
-			g_hooks->World->UnregisterOnAnyWorldBeginPlay(OnAnyWorldBeginPlay);
-			g_hooks->World->UnregisterOnExperienceLoadComplete(OnExperienceLoadComplete);
-		}
-
-		if (g_hooks->Engine)
-			g_hooks->Engine->UnregisterOnTick(OnEngineTick);
-	}
 
 	g_logger = nullptr;
 	g_config = nullptr;

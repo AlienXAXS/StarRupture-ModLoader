@@ -84,24 +84,17 @@ namespace ModLoaderLogger
 		LogMessage(L"Plugin info - Name: %S, Version: %S, Author: %S",
 			info->name, info->version, info->author);
 
-		if (!init(GetPluginLogger(), GetPluginConfig(), GetPluginScanner(), GetPluginHooks()))
-		{
-			LogMessage(L"Plugin initialization failed: %s", rec.fileName.c_str());
-			FreeLibrary(hModule);
-			return false;
-		}
-
 		rec.hModule        = hModule;
 		rec.info           = info;
 		rec.getInfo        = getInfo;
 		rec.init           = init;
 		rec.shutdown       = shutdown;
-		rec.isInitialized  = true;
+		rec.isInitialized  = false;  // deferred -- InitAllLoadedPlugins() calls PluginInit
 		rec.cachedName     = info->name    ? info->name    : "";
 		rec.cachedVersion  = info->version ? info->version : "";
 		rec.cachedAuthor   = info->author  ? info->author  : "";
 
-		LogMessage(L"Successfully loaded plugin: %S v%S", info->name, info->version);
+		LogMessage(L"Successfully loaded plugin DLL: %S v%S (PluginInit deferred)", info->name, info->version);
 		return true;
 	}
 
@@ -205,7 +198,47 @@ namespace ModLoaderLogger
 
 		FindClose(hFind);
 
-		LogMessage(L"Loaded %d plugin(s) from Plugins", loadedCount);
+		LogMessage(L"Loaded %d plugin DLL(s) from Plugins (PluginInit deferred)", loadedCount);
+	}
+
+	void InitAllLoadedPlugins()
+	{
+		if (!g_managerInitialized)
+		{
+			LogMessage(L"ERROR: Plugin manager not initialized");
+			return;
+		}
+
+		EnterCriticalSection(&g_pluginLock);
+
+		int initCount  = 0;
+		int failCount  = 0;
+		int totalDeferred = 0;
+
+		for (auto& plugin : g_loadedPlugins)
+		{
+			if (plugin.isInitialized || !plugin.init)
+				continue;
+
+			totalDeferred++;
+			LogMessage(L"Calling PluginInit for: %S v%S", plugin.cachedName.c_str(), plugin.cachedVersion.c_str());
+
+			if (plugin.init(GetPluginLogger(), GetPluginConfig(), GetPluginScanner(), GetPluginHooks()))
+			{
+				plugin.isInitialized = true;
+				initCount++;
+				LogMessage(L"Plugin initialized: %S", plugin.cachedName.c_str());
+			}
+			else
+			{
+				failCount++;
+				LogMessage(L"Plugin initialization failed: %S", plugin.cachedName.c_str());
+			}
+		}
+
+		LeaveCriticalSection(&g_pluginLock);
+
+		LogMessage(L"InitAllLoadedPlugins: %d initialized, %d failed (of %d deferred)", initCount, failCount, totalDeferred);
 	}
 
 	void UnloadAllPlugins()
@@ -339,9 +372,15 @@ namespace ModLoaderLogger
 		LeaveCriticalSection(&g_pluginLock);
 
 		if (ok)
-			LogMessage(L"Plugin reloaded successfully: %S", p.cachedName.c_str());
+		{
+			// Engine is already running at reload time, so call PluginInit immediately.
+			InitAllLoadedPlugins();
+			LogMessage(L"Plugin reloaded and initialized: %S", p.cachedName.c_str());
+		}
 		else
+		{
 			LogMessage(L"Plugin reload failed for index %d", index);
+		}
 
 		return ok;
 	}

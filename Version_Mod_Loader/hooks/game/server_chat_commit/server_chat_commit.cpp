@@ -30,6 +30,8 @@ namespace Hooks::ServerChatCommit
     {
         if (g_serverChatFunc) return false; // already cached
 
+        ModLoaderLogger::LogDebug(L"[ServerChatCommit] TryResolveServerChatFunc: starting FindObjectFast...");
+
         g_serverChatFunc = SDK::UObject::FindObjectFast<SDK::UFunction>(
             "ServerChatCommit", SDK::EClassCastFlags::Function);
 
@@ -37,16 +39,39 @@ namespace Hooks::ServerChatCommit
             ModLoaderLogger::LogInfo(
                 L"[ServerChatCommit] ServerChatCommit UFunction resolved at %p",
                 static_cast<void*>(g_serverChatFunc));
+        else
+            ModLoaderLogger::LogDebug(L"[ServerChatCommit] TryResolveServerChatFunc: not found yet");
 
         return g_serverChatFunc != nullptr;
     }
 
+    // Tracks how many times the detour has fired, for early-call diagnostics.
+    static uint32_t g_detourCallCount = 0;
+
     // Detour for UObject::ProcessEvent
     static void __fastcall Detour(SDK::UObject* self, SDK::UFunction* func, void* parms)
     {
+        ++g_detourCallCount;
+
+        // Log the first few calls so we can see exactly what the engine is doing
+        // when our hook fires (especially during early world loading).
+        if (g_detourCallCount <= 5)
+        {
+            ModLoaderLogger::LogDebug(
+                L"[ServerChatCommit] Detour call #%u: self=%p func=%p",
+                g_detourCallCount,
+                static_cast<void*>(self),
+                static_cast<void*>(func));
+        }
+
         // Lazily resolve the UFunction we are listening for -- only once, O(GObjects) cost
         if (!g_serverChatFunc)
+        {
+            ModLoaderLogger::LogDebug(
+                L"[ServerChatCommit] Detour call #%u: func not cached yet, attempting resolve",
+                g_detourCallCount);
             TryResolveServerChatFunc();
+        }
 
         // Fast-path: only act on ServerChatCommit calls
         if (func && func == g_serverChatFunc)
@@ -99,9 +124,12 @@ namespace Hooks::ServerChatCommit
 
     void Remove()
     {
+        ModLoaderLogger::LogDebug(
+            L"[ServerChatCommit] Removing hook (fired %u times total)", g_detourCallCount);
         g_hook.Remove();
-        g_original       = nullptr;
-        g_serverChatFunc = nullptr;
+        g_original        = nullptr;
+        g_serverChatFunc  = nullptr;
+        g_detourCallCount = 0;
         ModLoaderLogger::LogInfo(L"[ServerChatCommit] ProcessEvent hook removed");
     }
 

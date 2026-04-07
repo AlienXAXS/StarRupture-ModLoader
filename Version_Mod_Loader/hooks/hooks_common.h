@@ -2,7 +2,9 @@
 
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
+#include <intrin.h>
 #include <cstdint>
+#include <string>
 
 // ---------------------------------------------------------------------------
 // Common hooking infrastructure
@@ -40,6 +42,47 @@ namespace Hooks
 		// Remove the hook, restoring original bytes.
 		void Remove();
 	};
+
+	// ---------------------------------------------------------------------------
+	// Caller module identification
+	//
+	// Returns the base filename (e.g. "StarRupture-Win64-Shipping.exe") of the
+	// module that contains `addr`.  Pass _ReturnAddress() from inside a detour
+	// to find out which DLL/EXE called into the hooked function.
+	//
+	// IMPORTANT: call _ReturnAddress() in the detour itself, NOT inside this
+	// function -- the intrinsic reads the current stack frame's return address,
+	// so it must be called at the site where you want the caller identified.
+	//
+	// Typical usage in a detour:
+	//   ModLoaderLogger::LogTrace(L"[MyHook] Caller: %S",
+	//       Hooks::GetCallerModuleName(_ReturnAddress()).c_str());
+	// ---------------------------------------------------------------------------
+	inline std::string GetCallerModuleName(void* addr)
+	{
+		if (!addr)
+			return "<null>";
+
+		HMODULE hMod = nullptr;
+		if (!GetModuleHandleExW(
+			GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+			GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+			reinterpret_cast<LPCWSTR>(addr),
+			&hMod) || !hMod)
+			return "<unknown>";
+
+		wchar_t path[MAX_PATH]{};
+		if (!GetModuleFileNameW(hMod, path, MAX_PATH))
+			return "<unknown>";
+
+		// Strip directory — only keep the filename portion
+		const wchar_t* slash = wcsrchr(path, L'\\');
+		const wchar_t* name  = slash ? slash + 1 : path;
+
+		char buf[MAX_PATH]{};
+		WideCharToMultiByte(CP_ACP, 0, name, -1, buf, MAX_PATH, nullptr, nullptr);
+		return buf;
+	}
 
 	// Simple memory patching utilities
 	bool Patch(uintptr_t address, const uint8_t* data, size_t size);

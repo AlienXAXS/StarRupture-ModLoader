@@ -24,6 +24,7 @@
 #include "hooks/game/mass_spawner_activate/mass_spawner_activate.h"
 #include "hooks/game/mass_spawner_deactivate/mass_spawner_deactivate.h"
 #include "hooks/game/mass_do_spawning/mass_do_spawning.h"
+#include "hooks/game/game_instance_init/game_instance_init.h"
 
 #include "auto_update/auto_updater.h"
 
@@ -349,7 +350,7 @@ static DWORD WINAPI MainInitThreadProc(LPVOID)
 	}
 
 	Splash::SetStatus(L"Installing spawner hooks...");
-	Splash::SetProgress(0.65f);	
+	Splash::SetProgress(0.60f);
 	// Install spawner hooks eagerly now that pattern scanning is available.
 	// These must be up before any plugin OnEngineInit callback runs so
 	// plugins can rely on the hooks being present without race conditions.
@@ -357,6 +358,17 @@ static DWORD WINAPI MainInitThreadProc(LPVOID)
 	Hooks::MassSpawnerActivate::Install();
 	Hooks::MassSpawnerDeactivate::Install();
 	Hooks::MassDoSpawning::Install();
+
+	Splash::SetStatus(L"Installing GameInstance hook...");
+	Splash::SetProgress(0.65f);
+	// Install UGameInstance::Init hook.  Pattern scanning works at any time
+	// (reads .text section), so we install early here.  The detour calls
+	// InitAllLoadedPlugins() after the original returns, which is the first
+	// point where GObjects is fully populated and safe for UFunction lookups.
+	if (Hooks::GameInstanceInit::Install())
+		ModLoaderLogger::LogDebug(L"  GameInstanceInit hook installed");
+	else
+		ModLoaderLogger::LogWarn(L"  WARNING: GameInstanceInit hook failed -- plugins will not be initialized");
 
 	// Wait for the engine to finish initialising before loading plugins.
 	// We pump the thread message queue while waiting so the splash window
@@ -398,18 +410,17 @@ static DWORD WINAPI MainInitThreadProc(LPVOID)
 		g_engineReadyEvent = NULL;
 	}
 
-	// Engine is up -- safe to load plugins and let them install hooks.
-	Splash::SetStatus(L"Loading plugins...");
+	// Engine is up -- safe to scan and load plugin DLLs.
+	// PluginInit is NOT called here; it is deferred until UGameInstance::Init
+	// fires (via the GameInstanceInit hook), at which point GObjects is fully
+	// populated and UFunction lookups are safe.
+	Splash::SetStatus(L"Loading plugin DLLs...");
 	Splash::SetProgress(0.80f);
 
 #ifdef MODLOADER_CLIENT_BUILD
 	// Install the keybind input processor so plugins can register keybinds
 	// during their PluginInit call and have them active immediately.
 	Hooks::Input::InstallInputProcessor();
-
-	// Install the AHUD::PostRender hook so plugins can register per-frame HUD
-	// callbacks and the GatherPlayersData address is resolved before plugins load.
-	Hooks::HUDPostRender::Install();
 
 	// Check modloader.ini [UI] Enabled before starting ImGui.
 	// Allows users to disable the overlay entirely if it causes issues.
@@ -484,10 +495,10 @@ static DWORD WINAPI MainInitThreadProc(LPVOID)
 
 	ModLoaderLogger::LoadAllPlugins();
 
-	Splash::SetStatus(L"Initialization complete!");
+	Splash::SetStatus(L"Plugin DLLs loaded -- waiting for game instance...");
 	Splash::SetProgress(1.0f);
 
-	ModLoaderLogger::LogInfo(L"Mod loader initialization complete");
+	ModLoaderLogger::LogInfo(L"Mod loader injection complete - Yay!");
 
 	// Signal DLL_PROCESS_DETACH that init is complete and it is safe to start
 	// the shutdown sequence (UnloadAllPlugins etc.).
@@ -495,7 +506,7 @@ static DWORD WINAPI MainInitThreadProc(LPVOID)
 		SetEvent(g_pluginsLoadedEvent);
 
 	// Brief pause so the user can see 100%, then close the splash.
-	Sleep(600);
+	Sleep(1200);
 	Splash::Close();
 
 	return 0;

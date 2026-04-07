@@ -4,6 +4,7 @@
 #include "logging/logger.h"
 #include "memory_scanner/scanner.h"
 #include "../scan_patterns.h"
+#include "../ufunction_resolve.h"
 #include <vector>
 #include <algorithm>
 
@@ -86,15 +87,9 @@ namespace Hooks::HUDPostRender
 		}
 
 		// --- GatherPlayersData (optional, cached for plugins to use) ---
-		g_gatherPlayersDataAddr = Scanner::FindPatternInMainModule(
-			"GatherPlayersData", ScanPatterns::GatherPlayersData);
-
-		if (g_gatherPlayersDataAddr)
-			ModLoaderLogger::LogInfo(L"[HUDPostRender] GatherPlayersData at 0x%llX (base+0x%llX)",
-			                         static_cast<unsigned long long>(g_gatherPlayersDataAddr),
-			                         static_cast<unsigned long long>(g_gatherPlayersDataAddr - base));
-		else
-			ModLoaderLogger::LogWarn(L"[HUDPostRender] GatherPlayersData pattern not found -- "
+		g_gatherPlayersDataAddr = Hooks::ResolveUFunctionNativeAddr("CrMapManuSubsystem", "GatherPlayersData");
+		if (!g_gatherPlayersDataAddr)
+			ModLoaderLogger::LogWarn(L"[HUDPostRender] GatherPlayersData not found -- "
 			                         L"player markers may not update in real time");
 
 		return true;
