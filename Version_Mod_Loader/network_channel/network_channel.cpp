@@ -214,92 +214,79 @@ namespace
 
 #ifdef MODLOADER_SERVER_BUILD
 
-    // Cached ClientMessage UFunction pointer.
+    // Cached ClientSaveStringToTxt UFunction pointer.
     // Resolved lazily on first send via UObject::FindObjectFast<UFunction>.
-    static SDK::UFunction* g_clientMsgFunc = nullptr;
+    static SDK::UFunction* g_clientSaveTxtFunc = nullptr;
 
-    // Resolve the ClientMessage UFunction from GObjects if not already cached.
-    static void EnsureClientMsgFunc()
+    // Resolve the ClientSaveStringToTxt UFunction from GObjects if not already cached.
+    static void EnsureClientSaveTxtFunc()
     {
-        if (g_clientMsgFunc) return;
+        if (g_clientSaveTxtFunc) return;
 
-        g_clientMsgFunc = SDK::UObject::FindObjectFast<SDK::UFunction>(
-            "ClientMessage", SDK::EClassCastFlags::Function);
+        g_clientSaveTxtFunc = SDK::UObject::FindObjectFast<SDK::UFunction>(
+            "ClientSaveStringToTxt", SDK::EClassCastFlags::Function);
 
-        if (g_clientMsgFunc)
-            ModLoaderLogger::LogInfo(L"[NetworkChannel] ClientMessage UFunction resolved at %p",
-                                     static_cast<void*>(g_clientMsgFunc));
+        if (g_clientSaveTxtFunc)
+            ModLoaderLogger::LogInfo(L"[NetworkChannel] ClientSaveStringToTxt UFunction resolved at %p",
+                                     static_cast<void*>(g_clientSaveTxtFunc));
         else
-            ModLoaderLogger::LogWarn(L"[NetworkChannel] ClientMessage UFunction not found in GObjects yet");
+            ModLoaderLogger::LogWarn(L"[NetworkChannel] ClientSaveStringToTxt UFunction not found in GObjects yet");
     }
 
-    // Raw params layout for APlayerController::ClientMessage (32 bytes).
-    // Matches Params::PlayerController_ClientMessage in Engine_parameters.hpp exactly.
-    struct alignas(8) ClientMsgParms
+    // Params layout for ACrPlayerControllerBase::ClientSaveStringToTxt (0x20 bytes).
+    // Matches CrPlayerControllerBase_ClientSaveStringToTxt in Chimera_parameters.hpp.
+    // We use InString for the mod envelope and Path as a sentinel ("MOD_NET").
+    struct alignas(8) ClientSaveTxtParms
     {
-        // FString S  (0x0000, 16 bytes): wchar_t* Data, int32 NumElements, int32 MaxElements
-        wchar_t* strData;    // +0x00
-        int32_t  strNum;     // +0x08  (includes null terminator)
-        int32_t  strMax;     // +0x0C
-        // FName Type  (0x0010, 8 bytes): int32 ComparisonIndex, uint32 Number
-        int32_t  nameIndex;  // +0x10  (NAME_None = 0)
-        uint32_t nameNumber; // +0x14
-        // float MsgLifeTime  (0x0018)
-        float    msgLifeTime; // +0x18
-        // padding
-        uint8_t  pad[4];     // +0x1C
+        // FString InString (0x0000, 0x0010)
+        wchar_t* inStrData; // +0x00
+        int32_t  inStrNum;  // +0x08  (includes null terminator)
+        int32_t  inStrMax;  // +0x0C
+        // FString Path (0x0010, 0x0010)
+        wchar_t* pathData;  // +0x10
+        int32_t  pathNum;   // +0x18  (includes null terminator)
+        int32_t  pathMax;   // +0x1C
     };
-    static_assert(sizeof(ClientMsgParms) == 0x20, "ClientMsgParms size mismatch");
+    static_assert(sizeof(ClientSaveTxtParms) == 0x20, "ClientSaveTxtParms size mismatch");
+
+    // Sentinel written into Path to tag mod traffic.  Must match client_message.cpp.
+    static const wchar_t* kPathSentinel = L"MOD_NET";
+    static const int      kPathSentinelLen = 8; // 7 chars + null terminator
 
     // Send the narrow-string envelope to one player controller via ProcessEvent.
-    // FUNC_Native (0x400) must NOT be set on the UFunction -- without it UE replicates
-    // the call through the NetConnection to the owning client.
+    // FUNC_Native is left as-is: for a FUNC_NetClient function on a dedicated server
+    // UE routes it to the client's NetConnection regardless of the Native flag.
     static void SendEnvelopeToPlayer(void* playerController, const std::string& envelope)
     {
-        EnsureClientMsgFunc();
-        if (!g_clientMsgFunc)
+        EnsureClientSaveTxtFunc();
+        if (!g_clientSaveTxtFunc)
         {
-            ModLoaderLogger::LogWarn(L"[NetworkChannel] SendEnvelope: ClientMessage UFunction not yet in GObjects");
+            ModLoaderLogger::LogWarn(L"[NetworkChannel] SendEnvelope: ClientSaveStringToTxt UFunction not yet in GObjects");
             return;
         }
 
-        ModLoaderLogger::LogTrace(L"[NetworkChannel] SendEnvelope: PC=%p func=%p flags=0x%08X envelope=%zu bytes",
-                                  playerController, static_cast<void*>(g_clientMsgFunc),
-                                  g_clientMsgFunc->FunctionFlags, envelope.size());
+        ModLoaderLogger::LogDebug(L"[NetworkChannel] SendEnvelope: PC=%p func=%p flags=0x%08X envelope=%zu bytes",
+                                  playerController, static_cast<void*>(g_clientSaveTxtFunc),
+                                  g_clientSaveTxtFunc->FunctionFlags, envelope.size());
 
-        // Convert narrow envelope to wide for FString
+        // Convert narrow envelope to wide for FString InString
         int wlen = MultiByteToWideChar(CP_UTF8, 0, envelope.c_str(), -1, nullptr, 0);
         if (wlen <= 0) return;
-        std::wstring wide(static_cast<size_t>(wlen), L'\0');
-        MultiByteToWideChar(CP_UTF8, 0, envelope.c_str(), -1, wide.data(), wlen);
-        // wlen already includes null terminator
+        std::wstring wideEnv(static_cast<size_t>(wlen), L'\0');
+        MultiByteToWideChar(CP_UTF8, 0, envelope.c_str(), -1, wideEnv.data(), wlen);
 
-        // Ensure FUNC_Native is NOT set (do not touch it otherwise to avoid race conditions)
-        const uint32_t kFuncNative = 0x400;
-        const uint32_t savedFlags  = g_clientMsgFunc->FunctionFlags;
-        if (savedFlags & kFuncNative)
-        {
-            // Temporarily clear it so UE routes through replication
-            g_clientMsgFunc->FunctionFlags = savedFlags & ~kFuncNative;
-        }
-
-        ClientMsgParms parms{};
-        parms.strData     = wide.data();
-        parms.strNum      = wlen;       // includes null terminator
-        parms.strMax      = wlen;
-        parms.nameIndex   = 0;          // NAME_None
-        parms.nameNumber  = 0;
-        parms.msgLifeTime = 0.0f;
-
-        ModLoaderLogger::LogTrace(L"[NetworkChannel] SendEnvelope: FUNC_Native was %s -- calling ProcessEvent",
-                                  (savedFlags & kFuncNative) ? L"SET (cleared for send)" : L"already clear");
+        ClientSaveTxtParms parms{};
+        parms.inStrData = wideEnv.data();
+        parms.inStrNum  = wlen;                  // includes null terminator
+        parms.inStrMax  = wlen;
+        parms.pathData  = const_cast<wchar_t*>(kPathSentinel);
+        parms.pathNum   = kPathSentinelLen;
+        parms.pathMax   = kPathSentinelLen;
 
         auto* obj = reinterpret_cast<SDK::UObject*>(playerController);
-        CallProcessEventSEH(obj, g_clientMsgFunc, &parms);
+        CallProcessEventSEH(obj, g_clientSaveTxtFunc, &parms);
 
-        // Restore flags; CallProcessEventSEH handles any SEH exception internally
-        g_clientMsgFunc->FunctionFlags = savedFlags;
-        ModLoaderLogger::LogTrace(L"[NetworkChannel] SendEnvelope: ProcessEvent returned, flags restored");
+        ModLoaderLogger::LogDebug(L"[NetworkChannel] SendEnvelope: ProcessEvent returned");
     }
 
     // Server-side handler registry for Client->Server messages
@@ -412,33 +399,33 @@ namespace
     // Handler registry for Server->Client messages: key = "pluginName\x01typeTag"
     static std::unordered_map<std::string, std::vector<PluginNetworkMessageCallback>> g_handlers;
 
-    // Cached ServerChatCommit UFunction pointer -- resolved lazily for client->server sends.
-    static SDK::UFunction* g_serverChatFunc = nullptr;
+    // Cached ServerExecuteConsoleCommand UFunction pointer -- resolved lazily for client->server sends.
+    static SDK::UFunction* g_serverExecCmdFunc = nullptr;
 
-    static void EnsureServerChatFunc()
+    static void EnsureServerExecCmdFunc()
     {
-        if (g_serverChatFunc) return;
+        if (g_serverExecCmdFunc) return;
 
-        g_serverChatFunc = SDK::UObject::FindObjectFast<SDK::UFunction>(
-            "ServerChatCommit", SDK::EClassCastFlags::Function);
+        g_serverExecCmdFunc = SDK::UObject::FindObjectFast<SDK::UFunction>(
+            "ServerExecuteConsoleCommand", SDK::EClassCastFlags::Function);
 
-        if (g_serverChatFunc)
-            ModLoaderLogger::LogInfo(L"[NetworkChannel] ServerChatCommit UFunction resolved at %p",
-                                     static_cast<void*>(g_serverChatFunc));
+        if (g_serverExecCmdFunc)
+            ModLoaderLogger::LogInfo(L"[NetworkChannel] ServerExecuteConsoleCommand UFunction resolved at %p",
+                                     static_cast<void*>(g_serverExecCmdFunc));
         else
-            ModLoaderLogger::LogWarn(L"[NetworkChannel] ServerChatCommit UFunction not found in GObjects yet");
+            ModLoaderLogger::LogWarn(L"[NetworkChannel] ServerExecuteConsoleCommand UFunction not found in GObjects yet");
     }
 
-    // Params layout for ACrPlayerControllerBase::ServerChatCommit (16 bytes).
-    // Matches CrPlayerControllerBase_ServerChatCommit in Chimera_parameters.hpp.
-    struct alignas(8) ServerChatCommitParms
+    // Params layout for ACrPlayerControllerBase::ServerExecuteConsoleCommand (16 bytes).
+    // Matches CrPlayerControllerBase_ServerExecuteConsoleCommand in Chimera_parameters.hpp.
+    struct alignas(8) ServerExecCmdParms
     {
-        // FString Text (0x0000, 0x0010): wchar_t* Data, int32 Num, int32 Max
+        // FString Command (0x0000, 0x0010): wchar_t* Data, int32 Num, int32 Max
         wchar_t* strData;  // +0x00
         int32_t  strNum;   // +0x08  (includes null terminator)
         int32_t  strMax;   // +0x0C
     };
-    static_assert(sizeof(ServerChatCommitParms) == 0x10, "ServerChatCommitParms size mismatch");
+    static_assert(sizeof(ServerExecCmdParms) == 0x10, "ServerExecCmdParms size mismatch");
 
     static bool NC_IsServer() { return false; }
 
@@ -484,8 +471,9 @@ namespace
         }
     }
 
-    // Client->Server send: encode envelope and call ServerChatCommit via ProcessEvent
-    // without FUNC_Native so UE replicates to the server.
+    // Client->Server send: encode envelope and call ServerExecuteConsoleCommand via ProcessEvent.
+    // FUNC_Native is left as-is: for a FUNC_NetServer function on the client UE routes it
+    // to the server's NetConnection regardless of the Native flag.
     static void NC_SendPacketToServer(const char* pluginName, const char* typeTag,
                                       const uint8_t* data, size_t size)
     {
@@ -498,10 +486,10 @@ namespace
                 size, pluginName);
         }
 
-        EnsureServerChatFunc();
-        if (!g_serverChatFunc)
+        EnsureServerExecCmdFunc();
+        if (!g_serverExecCmdFunc)
         {
-            ModLoaderLogger::LogWarn(L"[NetworkChannel] SendPacketToServer: ServerChatCommit UFunction not yet in GObjects");
+            ModLoaderLogger::LogWarn(L"[NetworkChannel] SendPacketToServer: ServerExecuteConsoleCommand UFunction not yet in GObjects");
             return;
         }
 
@@ -527,22 +515,13 @@ namespace
         std::wstring wide(static_cast<size_t>(wlen), L'\0');
         MultiByteToWideChar(CP_UTF8, 0, env.c_str(), -1, wide.data(), wlen);
 
-        // Clear FUNC_Native so UE replicates the NetServer RPC to the server
-        const uint32_t kFuncNative = 0x400;
-        const uint32_t savedFlags  = g_serverChatFunc->FunctionFlags;
-        if (savedFlags & kFuncNative)
-            g_serverChatFunc->FunctionFlags = savedFlags & ~kFuncNative;
-
-        ServerChatCommitParms parms{};
+        ServerExecCmdParms parms{};
         parms.strData = wide.data();
         parms.strNum  = wlen; // includes null terminator
         parms.strMax  = wlen;
 
         auto* obj = reinterpret_cast<SDK::UObject*>(localPC);
-        CallProcessEventSEH(obj, g_serverChatFunc, &parms);
-
-        // Restore flags; CallProcessEventSEH handles any SEH exception internally
-        g_serverChatFunc->FunctionFlags = savedFlags;
+        CallProcessEventSEH(obj, g_serverExecCmdFunc, &parms);
     }
 
     // Client->Server receive handlers are server-only; these are no-ops on client
@@ -722,7 +701,7 @@ void NetworkChannel::Shutdown()
         std::lock_guard<std::mutex> lk(g_serverMutex);
         g_serverHandlers.clear();
     }
-    g_clientMsgFunc = nullptr;
+    g_clientSaveTxtFunc = nullptr;
     ModLoaderLogger::LogInfo(L"[NetworkChannel] Server network channel shut down");
 #endif
 
@@ -732,7 +711,7 @@ void NetworkChannel::Shutdown()
         std::lock_guard<std::mutex> lk(g_mutex);
         g_handlers.clear();
     }
-    g_serverChatFunc = nullptr;
+    g_serverExecCmdFunc = nullptr;
     ModLoaderLogger::LogInfo(L"[NetworkChannel] Client network channel shut down");
 #endif
 }

@@ -4,133 +4,120 @@
 #include "server_chat_commit.h"
 #include "network_channel/network_channel.h"
 #include "logging/logger.h"
-
-// SDK headers for UObject, UFunction, Offsets, and InSDKUtils::GetImageBase()
 #include "CoreUObject_classes.hpp"
 #include <hooks/hooks_common.h>
 
+// ---------------------------------------------------------------------------
+// ServerExecuteConsoleCommand hook  (server builds only)
+//
+// ACrPlayerControllerBase::ServerExecuteConsoleCommand is a NetServer RPC
+// (client calls it, server executes it) with a single FString Command param.
+//
+// We repurpose it as a silent Client->Server data channel.  When a command
+// starts with "[MOD:" it is a mod envelope:
+//   - Dispatch to NetworkChannel::DispatchServerMessage
+//   - Do NOT call the original (suppress console command execution)
+// All other commands pass straight through to the real handler.
+//
+// Hooking ExecFunction directly catches both:
+//   - UObject::ProcessEvent path (local game code calling it)
+//   - FObjectReplicator::ReceivedRPC path (actual network delivery)
+//
+// Params layout (Chimera_parameters.hpp CrPlayerControllerBase_ServerExecuteConsoleCommand):
+//   +0x00  FString Command  { wchar_t* Data, int32 Num, int32 Max }
+//   Total: 0x10 bytes
+// ---------------------------------------------------------------------------
+
 namespace Hooks::ServerChatCommit
 {
-    // ProcessEvent signature: (UObject* self, UFunction* func, void* parms)
-    using ProcessEvent_t = void(__fastcall*)(SDK::UObject* self,
-                                             SDK::UFunction* func,
-                                             void* parms);
+    // exec signature: (UObject* Context, FFrame& Stack, void* Result)
+    using ExecFunc_t = void(__fastcall*)(void* context, void* stack, void* result);
 
-    static Hook           g_hook;
-    static ProcessEvent_t g_original = nullptr;
+    // FFrame::Locals is at offset 0x20 in UE5 (vptr + Node + Object + Code)
+    static constexpr size_t kFFrameLocalsOffset = 0x20;
 
-    // Cached pointer to the ServerChatCommit UFunction.  Resolved lazily on first
-    // ProcessEvent call that has a non-null UFunction.
-    static SDK::UFunction* g_serverChatFunc = nullptr;
+    // Mod envelope prefix used by network_channel.cpp
+    static constexpr wchar_t  kModPrefix[]    = L"[MOD:";
+    static constexpr int32_t  kModPrefixChars = 5;
 
-    // Try to resolve the ServerChatCommit UFunction from GObjects.
-    // Uses FindObjectFast which searches by short name -- there is only one
-    // UFunction named "ServerChatCommit" in the player controller class hierarchy.
-    static bool TryResolveServerChatFunc()
+    static Hook            g_hook;
+    static ExecFunc_t      g_origExec           = nullptr;
+    static SDK::UFunction* g_serverExecCmdFunc   = nullptr;
+
+    static void __fastcall ExecHook(void* context, void* stack, void* result)
     {
-        if (g_serverChatFunc) return false; // already cached
+        void* locals = *reinterpret_cast<void**>(static_cast<uint8_t*>(stack) + kFFrameLocalsOffset);
 
-        ModLoaderLogger::LogDebug(L"[ServerChatCommit] TryResolveServerChatFunc: starting FindObjectFast...");
-
-        g_serverChatFunc = SDK::UObject::FindObjectFast<SDK::UFunction>(
-            "ServerChatCommit", SDK::EClassCastFlags::Function);
-
-        if (g_serverChatFunc)
-            ModLoaderLogger::LogInfo(
-                L"[ServerChatCommit] ServerChatCommit UFunction resolved at %p",
-                static_cast<void*>(g_serverChatFunc));
-        else
-            ModLoaderLogger::LogDebug(L"[ServerChatCommit] TryResolveServerChatFunc: not found yet");
-
-        return g_serverChatFunc != nullptr;
-    }
-
-    // Tracks how many times the detour has fired, for early-call diagnostics.
-    static uint32_t g_detourCallCount = 0;
-
-    // Detour for UObject::ProcessEvent
-    static void __fastcall Detour(SDK::UObject* self, SDK::UFunction* func, void* parms)
-    {
-        ++g_detourCallCount;
-
-        // Log the first few calls so we can see exactly what the engine is doing
-        // when our hook fires (especially during early world loading).
-        if (g_detourCallCount <= 5)
+        if (locals)
         {
-            ModLoaderLogger::LogDebug(
-                L"[ServerChatCommit] Detour call #%u: self=%p func=%p",
-                g_detourCallCount,
-                static_cast<void*>(self),
-                static_cast<void*>(func));
-        }
-
-        // Lazily resolve the UFunction we are listening for -- only once, O(GObjects) cost
-        if (!g_serverChatFunc)
-        {
-            ModLoaderLogger::LogDebug(
-                L"[ServerChatCommit] Detour call #%u: func not cached yet, attempting resolve",
-                g_detourCallCount);
-            TryResolveServerChatFunc();
-        }
-
-        // Fast-path: only act on ServerChatCommit calls
-        if (func && func == g_serverChatFunc)
-        {
-            // Params layout (matches Chimera_parameters.hpp CrPlayerControllerBase_ServerChatCommit):
-            //   +0x00  FString Text = { wchar_t* Data (+0), int32 Num (+8), int32 Max (+0x0C) }
-            // Total size: 0x10 bytes
             struct FStringView { wchar_t* Data; int32_t Num; int32_t Max; };
-            auto* s = reinterpret_cast<FStringView*>(parms);
-            if (s->Data && s->Num > 0)
+            auto* cmd = reinterpret_cast<FStringView*>(locals);
+
+            if (cmd->Data && cmd->Num >= kModPrefixChars + 1 &&
+                wcsncmp(cmd->Data, kModPrefix, kModPrefixChars) == 0)
             {
-                // Dispatch first; if it is a mod envelope the channel will consume it
-                // and return true, meaning we should NOT call the original (suppress chat).
-                bool consumed = NetworkChannel::DispatchServerMessage(self, s->Data, s->Num);
+                ModLoaderLogger::LogInfo(
+                    L"[ServerChatCommit] Mod envelope received from context=%p Num=%d",
+                    context, cmd->Num);
+
+                // context is the APlayerController that sent the RPC
+                bool consumed = NetworkChannel::DispatchServerMessage(context, cmd->Data, cmd->Num);
                 if (consumed)
-                    return; // suppress original -- do not let mod traffic appear as chat
+                    return; // suppress original -- don't execute as a console command
             }
         }
 
-        if (g_original)
-            g_original(self, func, parms);
+        if (g_origExec)
+            g_origExec(context, stack, result);
     }
 
     bool Install()
     {
         if (g_hook.installed) return true;
 
-        HMODULE mainModule = GetModuleHandleW(nullptr);
-        auto base = reinterpret_cast<uintptr_t>(mainModule);
+        g_serverExecCmdFunc = SDK::UObject::FindObjectFast<SDK::UFunction>(
+            "ServerExecuteConsoleCommand", SDK::EClassCastFlags::Function);
 
-        // ProcessEvent is a well-known function at a fixed image offset.
-        // The address comes from the server SDK's Offsets::ProcessEvent.
-        uintptr_t addr = SDK::InSDKUtils::GetImageBase() + SDK::Offsets::ProcessEvent;
+        if (!g_serverExecCmdFunc)
+        {
+            ModLoaderLogger::LogError(
+                L"[ServerChatCommit] ServerExecuteConsoleCommand UFunction not found in GObjects");
+            return false;
+        }
 
-        ModLoaderLogger::LogInfo(L"[ServerChatCommit] Installing ProcessEvent hook at 0x%llX (base+0x%llX)",
-                                  static_cast<unsigned long long>(addr),
-                                  static_cast<unsigned long long>(addr - base));
+        auto execAddr = reinterpret_cast<uintptr_t>(g_serverExecCmdFunc->ExecFunction);
+        if (!execAddr)
+        {
+            ModLoaderLogger::LogError(L"[ServerChatCommit] ExecFunction pointer is null");
+            return false;
+        }
 
-        bool ok = g_hook.Install(addr,
-                                 reinterpret_cast<void*>(&Detour),
-                                 reinterpret_cast<void**>(&g_original));
+        HMODULE mainMod = GetModuleHandleW(nullptr);
+        auto base = reinterpret_cast<uintptr_t>(mainMod);
+        ModLoaderLogger::LogInfo(
+            L"[ServerChatCommit] Hooking ServerExecuteConsoleCommand ExecFunction at 0x%llX (base+0x%llX)",
+            static_cast<unsigned long long>(execAddr),
+            static_cast<unsigned long long>(execAddr - base));
+
+        bool ok = g_hook.Install(
+            execAddr,
+            reinterpret_cast<void*>(&ExecHook),
+            reinterpret_cast<void**>(&g_origExec));
 
         if (ok)
-            ModLoaderLogger::LogInfo(L"[ServerChatCommit] ProcessEvent hook installed");
+            ModLoaderLogger::LogInfo(L"[ServerChatCommit] ExecFunction hook installed successfully");
         else
-            ModLoaderLogger::LogError(L"[ServerChatCommit] ProcessEvent hook installation failed");
+            ModLoaderLogger::LogError(L"[ServerChatCommit] ExecFunction hook installation failed");
 
         return ok;
     }
 
     void Remove()
     {
-        ModLoaderLogger::LogDebug(
-            L"[ServerChatCommit] Removing hook (fired %u times total)", g_detourCallCount);
         g_hook.Remove();
-        g_original        = nullptr;
-        g_serverChatFunc  = nullptr;
-        g_detourCallCount = 0;
-        ModLoaderLogger::LogInfo(L"[ServerChatCommit] ProcessEvent hook removed");
+        g_origExec         = nullptr;
+        g_serverExecCmdFunc = nullptr;
+        ModLoaderLogger::LogInfo(L"[ServerChatCommit] ExecFunction hook removed");
     }
 
     bool IsInstalled()

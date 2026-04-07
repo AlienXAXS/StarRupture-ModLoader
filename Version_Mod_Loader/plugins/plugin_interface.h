@@ -733,6 +733,17 @@ struct IPluginNetworkChannel
     // No-op on client builds.
     void (*UnregisterServerMessageHandler)(const char* pluginName, const char* typeTag,
                                            PluginNetworkServerMessageCallback callback);
+
+    // v18 -- Server-only: exclude a PlayerController from SendPacketToAllPlayers sends.
+    // Intended for plugin-spawned controllers (e.g. fake/AI players) that have no real
+    // network connection.  Sending to them is a silent no-op anyway, but registering an
+    // exclusion avoids the wasted ProcessEvent call and log noise.
+    // No-op on client builds.  Passing null is a no-op.
+    void (*ExcludeFromBroadcast)(void* playerController);
+
+    // v18 -- Server-only: undo a previous ExcludeFromBroadcast registration.
+    // No-op on client builds or if the controller was not registered.
+    void (*UnexcludeFromBroadcast)(void* playerController);
 };
 
 // ============================================================

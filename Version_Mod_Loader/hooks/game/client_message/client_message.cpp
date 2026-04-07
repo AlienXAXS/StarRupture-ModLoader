@@ -8,19 +8,26 @@
 #include "hooks/game/game_instance_init/game_instance_init.h"
 
 // ---------------------------------------------------------------------------
-// Why ExecFunction and not ProcessEvent:
+// ClientSaveStringToTxt hook  (client builds only)
 //
-// Incoming "Client" RPCs from the server are received by FObjectReplicator::
-// ReceivedRPC, which builds an FFrame and calls UFunction::ExecFunction
-// DIRECTLY -- it never goes through UObject::ProcessEvent.  Hooking
-// ProcessEvent therefore misses all network-delivered packets.
+// ACrPlayerControllerBase::ClientSaveStringToTxt is a game debug RPC
+// (Net, NetReliable, NetClient) that the server sends to the client.
 //
-// Hooking ExecFunction on the resolved ClientMessage UFunction intercepts
-// both paths:
-//   - Normal local call:  ProcessEvent -> FFrame -> ExecFunction (hooked)
-//   - Network RPC path:   FObjectReplicator::ReceivedRPC -> FFrame -> ExecFunction (hooked)
+// We repurpose it as a silent data channel by using a "MOD_NET" sentinel
+// in the Path parameter.  When the sentinel is detected:
+//   - Dispatch InString to NetworkChannel (envelope decode + plugin handlers)
+//   - Do NOT call the original exec (suppress the file-write side effect)
+// Non-mod calls pass straight through to the original.
 //
-// FFrame::Locals (offset 0x20) is the raw parameter buffer in both paths.
+// Two interception paths cover all receive scenarios:
+//   ProcessEvent observer: fires when the game calls via UObject::ProcessEvent.
+//   ExecFunction hook:     fires when the network layer calls ExecFunction
+//                          directly (FObjectReplicator::ReceivedRPC path).
+//
+// Params layout (Chimera_parameters.hpp CrPlayerControllerBase_ClientSaveStringToTxt):
+//   +0x00  FString InString  { wchar_t* Data, int32 Num, int32 Max }
+//   +0x10  FString Path      { wchar_t* Data, int32 Num, int32 Max }
+//   Total: 0x20 bytes
 // ---------------------------------------------------------------------------
 
 namespace Hooks::ClientMessage
@@ -28,46 +35,68 @@ namespace Hooks::ClientMessage
     // exec signature: (UObject* Context, FFrame& Stack, void* Result)
     using ExecFunc_t = void(__fastcall*)(void* context, void* stack, void* result);
 
-    // FFrame::Locals is at offset 0x20 in UE5 (after vptr + Node + Object + Code)
+    // FFrame::Locals is at offset 0x20 in UE5 (vptr + Node + Object + Code)
     static constexpr size_t kFFrameLocalsOffset = 0x20;
 
-    static Hook            g_hook;
-    static ExecFunc_t      g_origExec      = nullptr;
-    static SDK::UFunction* g_clientMsgFunc = nullptr;
+    // Sentinel string written into the Path parameter to tag mod traffic.
+    // Must match the value used by network_channel.cpp on the server send path.
+    static constexpr wchar_t  kSentinel[]    = L"MOD_NET";
+    static constexpr int32_t  kSentinelChars = 7; // not counting null terminator
 
-    // ProcessEvent observer -- fires for every ProcessEvent call; used as a
-    // diagnostic alongside the ExecFunction hook to determine which path the
-    // client-side RPC actually takes.
+    static Hook            g_hook;
+    static ExecFunc_t      g_origExec         = nullptr;
+    static SDK::UFunction* g_clientSaveTxtFunc = nullptr;
+
+    struct FStringView { wchar_t* Data; int32_t Num; int32_t Max; };
+
+    // Returns true if the Path FString matches the sentinel "MOD_NET".
+    static bool IsModSentinel(const FStringView* path)
+    {
+        // Num includes null terminator, so "MOD_NET\0" → Num == 8
+        return path && path->Data && path->Num >= kSentinelChars + 1 &&
+               wcsncmp(path->Data, kSentinel, kSentinelChars) == 0;
+    }
+
+    // ProcessEvent observer -- fires for every ProcessEvent call.
+    // Params here is a raw CrPlayerControllerBase_ClientSaveStringToTxt struct.
     static void ProcessEventObserver(void* /*obj*/, void* fn, void* params)
     {
-        if (fn != g_clientMsgFunc) return;
-        ModLoaderLogger::LogInfo(L"[ClientMessage] ProcessEvent observer fired: fn=%p params=%p", fn, params);
-        if (params)
-        {
-            struct FStringView { wchar_t* Data; int32_t Num; int32_t Max; };
-            auto* s = reinterpret_cast<FStringView*>(params);
-            ModLoaderLogger::LogInfo(L"[ClientMessage] ProcessEvent params: Data=%p Num=%d", s->Data, s->Num);
-            if (s->Data && s->Num > 0)
-                NetworkChannel::DispatchClientMessage(s->Data, s->Num);
-        }
+        if (fn != g_clientSaveTxtFunc) return;
+        if (!params) return;
+
+        auto* p = reinterpret_cast<FStringView*>(params); // InString at [0], Path at [1]
+        if (!IsModSentinel(&p[1])) return;
+
+        ModLoaderLogger::LogInfo(L"[ClientMessage] ProcessEvent observer fired (mod traffic): Num=%d", p[0].Num);
+        if (p[0].Data && p[0].Num > 0)
+            NetworkChannel::DispatchClientMessage(p[0].Data, p[0].Num);
+        // Do NOT call original -- suppress the file-write side effect
     }
 
     static void __fastcall ExecHook(void* context, void* stack, void* result)
     {
-        // Read FFrame::Locals -- the raw parameter buffer
+        // Read FFrame::Locals -- the raw parameter struct
         void* locals = *reinterpret_cast<void**>(static_cast<uint8_t*>(stack) + kFFrameLocalsOffset);
 
         ModLoaderLogger::LogInfo(L"[ClientMessage] ExecHook fired: context=%p locals=%p", context, locals);
 
         if (locals)
         {
-            // Layout matches ClientMsgParms on the send side:
-            //   +0x00 FString S  { wchar_t* Data, int32 Num, int32 Max }
-            struct FStringView { wchar_t* Data; int32_t Num; int32_t Max; };
-            auto* s = reinterpret_cast<FStringView*>(locals);
-            ModLoaderLogger::LogDebug(L"[ClientMessage] Params: Data=%p Num=%d", s->Data, s->Num);
-            if (s->Data && s->Num > 0)
-                NetworkChannel::DispatchClientMessage(s->Data, s->Num);
+            auto* p = reinterpret_cast<FStringView*>(locals); // InString at [0], Path at [1]
+
+            if (IsModSentinel(&p[1]))
+            {
+                ModLoaderLogger::LogInfo(L"[ClientMessage] Mod sentinel detected: InStr.Num=%d", p[0].Num);
+                if (p[0].Data && p[0].Num > 0)
+                    NetworkChannel::DispatchClientMessage(p[0].Data, p[0].Num);
+                // Suppress original -- no file write
+                if (g_origExec)
+                    g_origExec(context, stack, result);
+                return;
+            }
+
+            ModLoaderLogger::LogDebug(L"[ClientMessage] Non-mod ExecHook: Path.Num=%d -- passing through",
+                                      p[1].Num);
         }
 
         if (g_origExec)
@@ -78,19 +107,18 @@ namespace Hooks::ClientMessage
     {
         if (g_hook.installed) return true;
 
-        // GObjects is ready at this point (called after first ProcessEvent / PluginInit)
-        g_clientMsgFunc = SDK::UObject::FindObjectFast<SDK::UFunction>(
-            "ClientMessage", SDK::EClassCastFlags::Function);
+        g_clientSaveTxtFunc = SDK::UObject::FindObjectFast<SDK::UFunction>(
+            "ClientSaveStringToTxt", SDK::EClassCastFlags::Function);
 
-        if (!g_clientMsgFunc)
+        if (!g_clientSaveTxtFunc)
         {
-            ModLoaderLogger::LogError(L"[ClientMessage] ClientMessage UFunction not found in GObjects");
+            ModLoaderLogger::LogError(L"[ClientMessage] ClientSaveStringToTxt UFunction not found in GObjects");
             return false;
         }
-        ModLoaderLogger::LogInfo(L"[ClientMessage] ClientMessage UFunction at %p",
-                                  static_cast<void*>(g_clientMsgFunc));
+        ModLoaderLogger::LogInfo(L"[ClientMessage] ClientSaveStringToTxt UFunction at %p",
+                                  static_cast<void*>(g_clientSaveTxtFunc));
 
-        auto execAddr = reinterpret_cast<uintptr_t>(g_clientMsgFunc->ExecFunction);
+        auto execAddr = reinterpret_cast<uintptr_t>(g_clientSaveTxtFunc->ExecFunction);
         if (!execAddr)
         {
             ModLoaderLogger::LogError(L"[ClientMessage] ExecFunction pointer is null");
@@ -113,8 +141,7 @@ namespace Hooks::ClientMessage
         else
             ModLoaderLogger::LogError(L"[ClientMessage] ExecFunction hook installation failed");
 
-        // Also register a ProcessEvent observer as a parallel diagnostic.
-        // If ProcessEvent fires but ExecFunction doesn't, the RPC takes a different path.
+        // ProcessEvent observer as a parallel receive path
         Hooks::GameInstanceInit::RegisterProcessEventCallback(&ProcessEventObserver);
         ModLoaderLogger::LogInfo(L"[ClientMessage] ProcessEvent observer registered");
 
@@ -125,9 +152,9 @@ namespace Hooks::ClientMessage
     {
         Hooks::GameInstanceInit::UnregisterProcessEventCallback(&ProcessEventObserver);
         g_hook.Remove();
-        g_origExec      = nullptr;
-        g_clientMsgFunc = nullptr;
-        ModLoaderLogger::LogInfo(L"[ClientMessage] ExecFunction hook removed");
+        g_origExec          = nullptr;
+        g_clientSaveTxtFunc = nullptr;
+        ModLoaderLogger::LogInfo(L"[ClientMessage] Hooks removed");
     }
 
     bool IsInstalled()
