@@ -123,6 +123,7 @@ namespace Hooks::ClientMessage
 
     void Remove()
     {
+        Hooks::GameInstanceInit::UnregisterProcessEventCallback(&ProcessEventObserver);
         g_hook.Remove();
         g_origExec      = nullptr;
         g_clientMsgFunc = nullptr;
