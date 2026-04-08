@@ -42,6 +42,7 @@ The compass bar position, width, scale, and line colour are all configurable. Pe
 ## Developing Your Own Plugins
 
 Use the [StarRupture-Plugin-SDK](https://github.com/AlienXAXS/StarRupture-Plugin-SDK) repo — it has everything you need (headers, UE5 SDK, an example plugin, and a pre-built `dwmapi.dll`) without requiring a fork of this repo.
+
 ---
 
 ## Installation
