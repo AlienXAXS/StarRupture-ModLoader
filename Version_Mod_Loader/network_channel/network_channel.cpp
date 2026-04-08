@@ -342,8 +342,7 @@ namespace
 
         for (int32_t i = 0; i < actors.Num(); ++i)
         {
-            if (!IsExcluded(actors[i]))
-                SendEnvelopeToPlayer(actors[i], env);
+        	SendEnvelopeToPlayer(actors[i], env);
         }
     }
 
