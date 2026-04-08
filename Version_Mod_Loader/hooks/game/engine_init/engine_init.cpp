@@ -10,6 +10,72 @@
 #include <algorithm>
 #include "../scan_patterns.h"
 
+// ---------------------------------------------------------------------------
+// SEH crash diagnostics
+//
+// Wraps a call to the original FEngineLoop::Init in a structured exception
+// handler so we can log the faulting address and register state before the
+// process terminates.  Must be a standalone function with no C++ objects
+// that have destructors in scope (MSVC C2712 restriction).
+// ---------------------------------------------------------------------------
+
+// POD context captured inside the SEH filter -- no destructor, safe inside __try.
+struct EngineCrashContext
+{
+	DWORD    code;
+	void*    address;
+	ULONG64  rip, rsp, rbp;
+	ULONG64  rcx, rdx, r8, r9;
+	ULONG64  r10, r11;
+	bool     captured;
+};
+
+static LONG CrashFilter(EXCEPTION_POINTERS* ep, EngineCrashContext* ctx)
+{
+	ctx->code    = ep->ExceptionRecord->ExceptionCode;
+	ctx->address = ep->ExceptionRecord->ExceptionAddress;
+	ctx->rip = ep->ContextRecord->Rip;
+	ctx->rsp = ep->ContextRecord->Rsp;
+	ctx->rbp = ep->ContextRecord->Rbp;
+	ctx->rcx = ep->ContextRecord->Rcx;
+	ctx->rdx = ep->ContextRecord->Rdx;
+	ctx->r8  = ep->ContextRecord->R8;
+	ctx->r9  = ep->ContextRecord->R9;
+	ctx->r10 = ep->ContextRecord->R10;
+	ctx->r11 = ep->ContextRecord->R11;
+	ctx->captured = true;
+	return EXCEPTION_EXECUTE_HANDLER;
+}
+
+// Returns the original's return value, or -1 on exception.
+// ctx->captured will be true if an exception was caught.
+static int32_t CallEngineLoopInitSEH(Hooks::EngineInit::FEngineLoop_Init_t fn, void* thisPtr,
+                                     EngineCrashContext* ctx)
+{
+	__try
+	{
+		return fn(thisPtr);
+	}
+	__except (CrashFilter(GetExceptionInformation(), ctx))
+	{
+		return -1;
+	}
+}
+
+// Same wrapper for the UGameEngine::Init fallback hook (bool return).
+static bool CallGameEngineInitSEH(Hooks::EngineInit::UGameEngine_Init_t fn, void* thisPtr,
+                                  void* inEngineLoop, EngineCrashContext* ctx)
+{
+	__try
+	{
+		return fn(thisPtr, inEngineLoop);
+	}
+	__except (CrashFilter(GetExceptionInformation(), ctx))
+	{
+		return false;
+	}
+}
+
 namespace Hooks::EngineInit
 {
 	// Hook objects for multiple initialization points
@@ -117,13 +183,39 @@ namespace Hooks::EngineInit
 
 		WaitForPluginsToLoad();
 
-		// Call original
+		// Call original under SEH so any crash is logged with full register context
 		int32_t result = 0;
 		if (g_engineLoopOriginal)
 		{
 			ModLoaderLogger::LogDebug(L"[EngineInit]   Calling original FEngineLoop::Init...");
-			result = g_engineLoopOriginal(thisPtr);
-			ModLoaderLogger::LogDebug(L"[EngineInit]   Original returned: %d", result);
+
+			EngineCrashContext crashCtx{};
+			result = CallEngineLoopInitSEH(g_engineLoopOriginal, thisPtr, &crashCtx);
+
+			if (crashCtx.captured)
+			{
+				HMODULE mainMod = GetModuleHandleW(nullptr);
+				auto base = reinterpret_cast<ULONG64>(mainMod);
+				ModLoaderLogger::LogError(L"[EngineInit] *** CRASH INSIDE FEngineLoop::Init ***");
+				ModLoaderLogger::LogError(L"[EngineInit]   Exception : 0x%08lX", crashCtx.code);
+				ModLoaderLogger::LogError(L"[EngineInit]   Fault addr: %p  (exe+0x%llX)",
+				                          crashCtx.address,
+				                          reinterpret_cast<ULONG64>(crashCtx.address) - base);
+				ModLoaderLogger::LogError(L"[EngineInit]   RIP=0x%016llX  (exe+0x%llX)",
+				                          crashCtx.rip, crashCtx.rip - base);
+				ModLoaderLogger::LogError(L"[EngineInit]   RSP=0x%016llX  RBP=0x%016llX",
+				                          crashCtx.rsp, crashCtx.rbp);
+				ModLoaderLogger::LogError(L"[EngineInit]   RCX=0x%016llX  RDX=0x%016llX",
+				                          crashCtx.rcx, crashCtx.rdx);
+				ModLoaderLogger::LogError(L"[EngineInit]   R8 =0x%016llX  R9 =0x%016llX",
+				                          crashCtx.r8,  crashCtx.r9);
+				ModLoaderLogger::LogError(L"[EngineInit]   R10=0x%016llX  R11=0x%016llX",
+				                          crashCtx.r10, crashCtx.r11);
+			}
+			else
+			{
+				ModLoaderLogger::LogDebug(L"[EngineInit]   Original returned: %d", result);
+			}
 		}
 		else
 		{
@@ -153,13 +245,40 @@ namespace Hooks::EngineInit
 
 		WaitForPluginsToLoad();
 
-		// Call original
+		// Call original under SEH so any crash deep inside (e.g. during UEngine::Browse
+		// or WorldBeginPlay subsystem hooks) is caught and logged with full register context.
 		bool result = false;
 		if (g_gameEngineOriginal)
 		{
 			ModLoaderLogger::LogDebug(L"[EngineInit]   Calling original UGameEngine::Init...");
-			result = g_gameEngineOriginal(thisPtr, InEngineLoop);
-			ModLoaderLogger::LogDebug(L"[EngineInit]   Original returned: %s", result ? L"true" : L"false");
+
+			EngineCrashContext crashCtx{};
+			result = CallGameEngineInitSEH(g_gameEngineOriginal, thisPtr, InEngineLoop, &crashCtx);
+
+			if (crashCtx.captured)
+			{
+				HMODULE mainMod = GetModuleHandleW(nullptr);
+				auto base = reinterpret_cast<ULONG64>(mainMod);
+				ModLoaderLogger::LogError(L"[EngineInit] *** CRASH INSIDE UGameEngine::Init ***");
+				ModLoaderLogger::LogError(L"[EngineInit]   Exception : 0x%08lX", crashCtx.code);
+				ModLoaderLogger::LogError(L"[EngineInit]   Fault addr: %p  (exe+0x%llX)",
+				                          crashCtx.address,
+				                          reinterpret_cast<ULONG64>(crashCtx.address) - base);
+				ModLoaderLogger::LogError(L"[EngineInit]   RIP=0x%016llX  (exe+0x%llX)",
+				                          crashCtx.rip, crashCtx.rip - base);
+				ModLoaderLogger::LogError(L"[EngineInit]   RSP=0x%016llX  RBP=0x%016llX",
+				                          crashCtx.rsp, crashCtx.rbp);
+				ModLoaderLogger::LogError(L"[EngineInit]   RCX=0x%016llX  RDX=0x%016llX",
+				                          crashCtx.rcx, crashCtx.rdx);
+				ModLoaderLogger::LogError(L"[EngineInit]   R8 =0x%016llX  R9 =0x%016llX",
+				                          crashCtx.r8,  crashCtx.r9);
+				ModLoaderLogger::LogError(L"[EngineInit]   R10=0x%016llX  R11=0x%016llX",
+				                          crashCtx.r10, crashCtx.r11);
+			}
+			else
+			{
+				ModLoaderLogger::LogDebug(L"[EngineInit]   Original returned: %s", result ? L"true" : L"false");
+			}
 		}
 		else
 		{

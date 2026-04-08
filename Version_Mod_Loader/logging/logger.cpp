@@ -9,79 +9,80 @@ namespace ModLoaderLogger
 	static bool g_logInitialized = false;
 
 	// Universal logger implementation for plugins
-	static void PluginLog(PluginLogLevel level, const char* pluginName, const char* message)
+	static void PluginLog(PluginLogLevel level, const IPluginSelf* self, const char* message)
 	{
 		if (!g_logInitialized) return;
+		const char* name = (self && self->name) ? self->name : "?";
 
 		// Map plugin log level to Log:: system
 		switch (level)
 		{
 		case PluginLogLevel::Trace:
-			LogToFile::Trace("[Plugin:%s] %s", pluginName, message);
+			LogToFile::Trace("[Plugin:%s] %s", name, message);
 			break;
 		case PluginLogLevel::Debug:
-			LogToFile::Debug("[Plugin:%s] %s", pluginName, message);
+			LogToFile::Debug("[Plugin:%s] %s", name, message);
 			break;
 		case PluginLogLevel::Info:
-			LogToFile::Info("[Plugin:%s] %s", pluginName, message);
+			LogToFile::Info("[Plugin:%s] %s", name, message);
 			break;
 		case PluginLogLevel::Warn:
-			LogToFile::Warn("[Plugin:%s] %s", pluginName, message);
+			LogToFile::Warn("[Plugin:%s] %s", name, message);
 			break;
 		case PluginLogLevel::Error:
-			LogToFile::Error("[Plugin:%s] %s", pluginName, message);
+			LogToFile::Error("[Plugin:%s] %s", name, message);
 			break;
 		}
 	}
 
-	static void PluginLogTrace(const char* pluginName, const char* format, ...)
+	static void PluginLogTrace(const IPluginSelf* self, const char* format, ...)
 	{
 		char buffer[1024];
 		va_list args;
 		va_start(args, format);
 		vsnprintf(buffer, sizeof(buffer), format, args);
 		va_end(args);
-		PluginLog(PluginLogLevel::Trace, pluginName, buffer);
+		PluginLog(PluginLogLevel::Trace, self, buffer);
 	}
 
-	static void PluginLogDebug(const char* pluginName, const char* format, ...)
+	static void PluginLogDebug(const IPluginSelf* self, const char* format, ...)
 	{
 		char buffer[1024];
 		va_list args;
 		va_start(args, format);
 		vsnprintf(buffer, sizeof(buffer), format, args);
 		va_end(args);
-		PluginLog(PluginLogLevel::Debug, pluginName, buffer);
+		PluginLog(PluginLogLevel::Debug, self, buffer);
 	}
 
-	static void PluginLogInfo(const char* pluginName, const char* format, ...)
+	static void PluginLogInfo(const IPluginSelf* self, const char* format, ...)
 	{
 		char buffer[1024];
 		va_list args;
 		va_start(args, format);
 		vsnprintf(buffer, sizeof(buffer), format, args);
 		va_end(args);
-		PluginLog(PluginLogLevel::Info, pluginName, buffer);
+		PluginLog(PluginLogLevel::Info, self, buffer);
 	}
 
-	static void PluginLogWarn(const char* pluginName, const char* format, ...)
+	static void PluginLogWarn(const IPluginSelf* self, const char* format, ...)
 	{
 		char buffer[1024];
 		va_list args;
 		va_start(args, format);
 		vsnprintf(buffer, sizeof(buffer), format, args);
 		va_end(args);
-		PluginLog(PluginLogLevel::Warn, pluginName, buffer);
+		PluginLog(PluginLogLevel::Warn, self, buffer);
 	}
 
-	static void PluginLogError(const char* pluginName, const char* format, ...)
+	static void PluginLogError(const IPluginSelf* self, const char* format, ...)
 	{
 		char buffer[1024];
 		va_list args;
 		va_start(args, format);
 		vsnprintf(buffer, sizeof(buffer), format, args);
 		va_end(args);
-		PluginLog(PluginLogLevel::Error, pluginName, buffer);
+		PluginLog(PluginLogLevel::Error, self, buffer);
 	}
 
 	// Global logger instance

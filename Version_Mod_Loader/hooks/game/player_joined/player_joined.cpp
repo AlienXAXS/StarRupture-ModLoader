@@ -2,6 +2,7 @@
 #include "player_joined.h"
 #include "logging/logger.h"
 #include "memory_scanner/scanner.h"
+#include "../ufunction_resolve.h"
 #include "../scan_patterns.h"
 #include <vector>
 #include <algorithm>
@@ -20,11 +21,15 @@ namespace Hooks::PlayerJoined
 
 	static void __fastcall Detour(void* thisPtr, void* newPlayer)
 	{
+		void* const callerAddr = _ReturnAddress();
+
 		long callNum = InterlockedIncrement(&g_callCount);
 
 		ModLoaderLogger::LogInfo(L"[PlayerJoined] ACrGameModeBase::PostLogin called (#%ld)", callNum);
 		ModLoaderLogger::LogDebug(L"[PlayerJoined]   this=%p, NewPlayer=%p, Thread=%lu",
 		                          thisPtr, newPlayer, GetCurrentThreadId());
+		ModLoaderLogger::LogTrace(L"[PlayerJoined]   Called from: %S",
+		                          Hooks::GetCallerModuleName(callerAddr).c_str());
 
 		// Call original first so the player is fully set up before we notify plugins
 		if (g_original)
@@ -48,7 +53,8 @@ namespace Hooks::PlayerJoined
 				if (!g_pluginCallbacks[i])
 					continue;
 
-				ModLoaderLogger::LogTrace(L"[PlayerJoined] Calling plugin callback #%zu", i + 1);
+				ModLoaderLogger::LogTrace(L"[PlayerJoined] Calling plugin callback #%zu (%S)",
+				                          i + 1, Hooks::GetCallerModuleName((void*)g_pluginCallbacks[i]).c_str());
 
 				try
 				{
@@ -74,25 +80,15 @@ namespace Hooks::PlayerJoined
 	{
 		ModLoaderLogger::LogInfo(L"[PlayerJoined] Installing hook...");
 
-		const char* pattern = ScanPatterns::ACrGameModeBase_PostLogin;
-
-		ModLoaderLogger::LogInfo(L"[PlayerJoined] Scanning for ACrGameModeBase::PostLogin...");
-		ModLoaderLogger::LogDebug(L"[PlayerJoined]   Pattern: %S", pattern);
-
-		uintptr_t addr = Scanner::FindPatternInMainModule("ACrGameModeBase::PostLogin", pattern);
-
+		uintptr_t addr = Hooks::ResolveUFunctionNativeAddr("CrGameModeBase", "PostLogin");
 		if (!addr)
 		{
-			ModLoaderLogger::LogError(L"[PlayerJoined] ACrGameModeBase::PostLogin pattern not found");
-			return false;
+			ModLoaderLogger::LogDebug(L"[PlayerJoined] Not a UFUNCTION -- falling back to pattern scan");
+			addr = Scanner::FindPatternInMainModule(
+				"ACrGameModeBase::PostLogin", ScanPatterns::ACrGameModeBase_PostLogin);
 		}
-
-		HMODULE mainModule = GetModuleHandleW(nullptr);
-		auto base = reinterpret_cast<uintptr_t>(mainModule);
-
-		ModLoaderLogger::LogInfo(L"[PlayerJoined] ACrGameModeBase::PostLogin found at 0x%llX (base+0x%llX)",
-		                         static_cast<unsigned long long>(addr),
-		                         static_cast<unsigned long long>(addr - base));
+		if (!addr)
+			return false;
 
 		bool hookOk = g_hook.Install(
 			addr,

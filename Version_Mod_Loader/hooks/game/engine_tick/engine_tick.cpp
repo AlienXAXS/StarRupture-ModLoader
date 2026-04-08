@@ -3,6 +3,7 @@
 #include "logging/logger.h"
 #include "memory_scanner/scanner.h"
 #include "../scan_patterns.h"
+#include "utils/game_thread_dispatch.h"
 #include <vector>
 #include <algorithm>
 
@@ -23,7 +24,10 @@ namespace Hooks::EngineTick
 		if (g_original)
 			g_original(thisPtr, deltaSeconds, bIdleMode);
 
-		// Notify registered plugins — keep this path fast (no logging per-frame)
+		// Drain any tasks posted to the game thread from background threads
+		GameThreadDispatch::Drain();
+
+		// Notify registered plugins ï¿½ keep this path fast (no logging per-frame)
 		for (size_t i = 0; i < g_pluginCallbacks.size(); ++i)
 		{
 			if (g_pluginCallbacks[i])

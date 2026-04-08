@@ -244,7 +244,7 @@ namespace UI::ModLoaderWindow
             }
             else
             {
-                if (ImGui::InputInt(id, &ival, 1, 10, ImGuiInputTextFlags_EnterReturnsTrue))
+                if (ImGui::InputInt(id, &ival, 1, 10))
                 {
                     snprintf(kv.value, sizeof(kv.value), "%d", ival);
                     CommitConfigChange(pluginName, kv);
@@ -273,8 +273,7 @@ namespace UI::ModLoaderWindow
             }
             else
             {
-                if (ImGui::InputFloat(id, &fval, 0.0f, 0.0f, "%.6g",
-                                      ImGuiInputTextFlags_EnterReturnsTrue))
+                if (ImGui::InputFloat(id, &fval, 0.0f, 0.0f, "%.6g"))
                 {
                     snprintf(kv.value, sizeof(kv.value), "%.6g", fval);
                     CommitConfigChange(pluginName, kv);

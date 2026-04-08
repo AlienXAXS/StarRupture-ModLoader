@@ -2,6 +2,7 @@
 #include "world_begin_play.h"
 #include "logging/logger.h"
 #include "memory_scanner/scanner.h"
+#include "../ufunction_resolve.h"
 #include "../scan_patterns.h"
 #include "../SDK.hpp"
 #include "Engine_classes.hpp"
@@ -11,9 +12,11 @@
 
 namespace Hooks::WorldBeginPlay
 {
-	// UCrSessionWorldLoaderSubsystem::OnWorldBeginPlay signature
-	// Uses proper SDK types
-	using OnWorldBeginPlay_t = void(__fastcall*)(SDK::UWorld* inWorld);
+	// UCrSessionWorldLoaderSubsystem::OnWorldBeginPlay()
+	// x64 __fastcall member function: RCX = this (subsystem) only.
+	// There is NO UWorld* parameter -- the subsystem fetches the world internally.
+	// The world is retrieved via SDK::UWorld::GetWorld() after the original runs.
+	using OnWorldBeginPlay_t = void(__fastcall*)(void* subsystemThis);
 
 	static Hook g_hook;
 	static OnWorldBeginPlay_t g_original = nullptr;
@@ -23,19 +26,42 @@ namespace Hooks::WorldBeginPlay
 	static std::vector<PluginWorldBeginPlayCallback> g_pluginCallbacks;
 	static std::vector<PluginAnyWorldBeginPlayCallback> g_anyWorldCallbacks;
 
-	static void __fastcall Detour(SDK::UWorld* inWorld)
+	static void __fastcall Detour(void* subsystemThis)
 	{
+		// Capture return address before any other calls alter the stack frame.
+		void* const callerAddr = _ReturnAddress();
+
 		long callNum = InterlockedIncrement(&g_callCount);
 
-		// Always log the world begin play event for debugging
-		ModLoaderLogger::LogDebug(L"[WorldBeginPlay] World begin play detected (#%ld)", callNum);
+		ModLoaderLogger::LogDebug(L"[WorldBeginPlay] World begin play detected (#%ld) subsystem=%p Thread=%lu",
+		                          callNum, subsystemThis, GetCurrentThreadId());
+		ModLoaderLogger::LogTrace(L"[WorldBeginPlay]   Called from: %S",
+		                          Hooks::GetCallerModuleName(callerAddr).c_str());
 
-		// Get world name
+		// Call original first so the world is fully initialised before we read from it.
+		ModLoaderLogger::LogDebug(L"[WorldBeginPlay]   Calling original OnWorldBeginPlay...");
+		if (g_original)
+		{
+			g_original(subsystemThis);
+			ModLoaderLogger::LogDebug(L"[WorldBeginPlay]   Original returned");
+		}
+		else
+		{
+			ModLoaderLogger::LogError(L"[WorldBeginPlay] Original function pointer is null!");
+		}
+
+		// Fetch the world via the engine's own getter now that the original has run.
+		auto* inWorld = static_cast<SDK::UWorld*>(SDK::UWorld::GetWorld());
 		std::string worldName;
 		if (inWorld)
 		{
+			ModLoaderLogger::LogDebug(L"[WorldBeginPlay]   inWorld=%p, reading name...", inWorld);
 			worldName = inWorld->GetName();
 			ModLoaderLogger::LogDebug(L"[WorldBeginPlay]   World: %S", worldName.c_str());
+		}
+		else
+		{
+			ModLoaderLogger::LogWarn(L"[WorldBeginPlay]   GetWorld() returned null after original ran");
 		}
 
 		// --- Notify any-world callbacks (fires for ALL worlds) ---
@@ -51,7 +77,10 @@ namespace Hooks::WorldBeginPlay
 
 				try
 				{
+					ModLoaderLogger::LogTrace(L"[WorldBeginPlay] Calling any-world callback #%zu (%S) for world '%S'",
+					                          i + 1, Hooks::GetCallerModuleName((void*)g_anyWorldCallbacks[i]).c_str(), worldName.c_str());
 					g_anyWorldCallbacks[i](inWorld, worldName.c_str());
+					ModLoaderLogger::LogTrace(L"[WorldBeginPlay] Finished any-world callback #%zu", i + 1);
 				}
 				catch (const std::exception& e)
 				{
@@ -69,31 +98,13 @@ namespace Hooks::WorldBeginPlay
 
 		if (!isChimeraWorld)
 		{
-			// Not ChimeraMain — call original and return (ChimeraMain callbacks not fired)
-			ModLoaderLogger::LogInfo(L"[WorldBeginPlay]   Skipping ChimeraMain callbacks - not ChimeraMain world");
-			if (g_original)
-			{
-				g_original(inWorld);
-			}
+			ModLoaderLogger::LogInfo(L"[WorldBeginPlay]   Not ChimeraMain world - skipping ChimeraMain callbacks");
 			return;
 		}
 
-		// This is ChimeraMain - proceed with full logging and initialization
+		// This is ChimeraMain - notify registered plugins
 		ModLoaderLogger::LogInfo(L"[WorldBeginPlay] ChimeraMain world begin play detected (#%ld)", callNum);
 
-		// Call original
-		ModLoaderLogger::LogDebug(L"[WorldBeginPlay]   Calling original OnWorldBeginPlay...");
-		if (g_original)
-		{
-			g_original(inWorld);
-			ModLoaderLogger::LogDebug(L"[WorldBeginPlay]   Original returned");
-		}
-		else
-		{
-			ModLoaderLogger::LogError(L"[WorldBeginPlay] Original function pointer is null!");
-		}
-
-		// Notify ChimeraMain-only registered plugins (with error isolation)
 		if (!g_pluginCallbacks.empty())
 		{
 			ModLoaderLogger::LogDebug(L"[WorldBeginPlay] Notifying %zu ChimeraMain plugin(s)...",
@@ -104,7 +115,8 @@ namespace Hooks::WorldBeginPlay
 				if (!g_pluginCallbacks[i])
 					continue;
 
-				ModLoaderLogger::LogTrace(L"[WorldBeginPlay]   Calling plugin callback #%zu", i + 1);
+				ModLoaderLogger::LogTrace(L"[WorldBeginPlay]   Calling ChimeraMain callback #%zu (%S)",
+				                          i + 1, Hooks::GetCallerModuleName((void*)g_pluginCallbacks[i]).c_str());
 
 				try
 				{
@@ -130,26 +142,16 @@ namespace Hooks::WorldBeginPlay
 	{
 		ModLoaderLogger::LogInfo(L"[WorldBeginPlay] Installing hook...");
 
-		// Pattern sourced from scan_patterns.h (differs between client and server builds)
-		const char* pattern = ScanPatterns::UWorld_BeginPlay;
-
-		ModLoaderLogger::LogInfo(L"[WorldBeginPlay] Scanning for OnWorldBeginPlay...");
-		ModLoaderLogger::LogDebug(L"[WorldBeginPlay]   Pattern: %S", pattern);
-
-		uintptr_t addr = Scanner::FindPatternInMainModule("UGame::OnWorldBeginPlay", pattern);
-
+		uintptr_t addr = Hooks::ResolveUFunctionNativeAddr("World", "BeginPlay");
 		if (!addr)
 		{
-			ModLoaderLogger::LogError(L"[WorldBeginPlay] OnWorldBeginPlay pattern not found");
-			return false;
+			ModLoaderLogger::LogDebug(L"[WorldBeginPlay] Not a UFUNCTION -- falling back to pattern scan");
+			addr = Scanner::FindPatternInMainModule(
+				"UWorld::BeginPlay",
+				ScanPatterns::UWorld_BeginPlay);
 		}
-
-		HMODULE mainModule = GetModuleHandleW(nullptr);
-		auto base = reinterpret_cast<uintptr_t>(mainModule);
-
-		ModLoaderLogger::LogDebug(L"[WorldBeginPlay] OnWorldBeginPlay found at 0x%llX (base+0x%llX)",
-		                          static_cast<unsigned long long>(addr),
-		                          static_cast<unsigned long long>(addr - base));
+		if (!addr)
+			return false;
 
 		bool hookOk = g_hook.Install(
 			addr,
@@ -157,8 +159,7 @@ namespace Hooks::WorldBeginPlay
 			reinterpret_cast<void**>(&g_original));
 
 		if (hookOk)
-			ModLoaderLogger::LogInfo(
-				L"[WorldBeginPlay] Hook installed successfully (filtering for ChimeraMain worlds)");
+			ModLoaderLogger::LogInfo(L"[WorldBeginPlay] Hook installed successfully");
 		else
 			ModLoaderLogger::LogError(L"[WorldBeginPlay] Hook installation failed");
 
@@ -197,7 +198,7 @@ namespace Hooks::WorldBeginPlay
 		if (!g_hook.installed)
 		{
 			ModLoaderLogger::LogInfo(
-				L"[WorldBeginPlay] First ChimeraMain callback registered — installing hook now...");
+				L"[WorldBeginPlay] First ChimeraMain callback registered ï¿½ installing hook now...");
 			if (!Install())
 			{
 				ModLoaderLogger::LogError(L"[WorldBeginPlay] Failed to install hook for ChimeraMain callback!");
@@ -231,7 +232,7 @@ namespace Hooks::WorldBeginPlay
 		// Lazily install the hook on first any-world registration
 		if (!g_hook.installed)
 		{
-			ModLoaderLogger::LogInfo(L"[WorldBeginPlay] First any-world callback registered — installing hook now...");
+			ModLoaderLogger::LogInfo(L"[WorldBeginPlay] First any-world callback registered ï¿½ installing hook now...");
 			if (!Install())
 			{
 				ModLoaderLogger::LogError(L"[WorldBeginPlay] Failed to install hook for any-world callback!");

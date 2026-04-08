@@ -7,20 +7,15 @@
 #include "hooks/http_connection/http_connection.h"
 #include "rcon/rcon.h"
 #include "rcon/console_ctrl.h"
+#include "rcon/commands/command_handler.h"
 
 // -----------------------------------------------------------------------
-// Global plugin interface pointers
+// Global plugin self pointer
 // -----------------------------------------------------------------------
-static IPluginLogger* g_logger = nullptr;
-static IPluginConfig* g_config = nullptr;
-static IPluginScanner* g_scanner = nullptr;
-static IPluginHooks* g_hooks = nullptr;
+static IPluginSelf* g_self = nullptr;
 
-// Getters used by plugin_helpers.h macros and hook implementations
-IPluginLogger* GetLogger() { return g_logger; }
-IPluginConfig* GetConfig() { return g_config; }
-IPluginScanner* GetScanner() { return g_scanner; }
-IPluginHooks* GetHooks() { return g_hooks; }
+// Getter used by plugin_helpers.h macros and hook implementations
+IPluginSelf* GetSelf() { return g_self; }
 
 // -----------------------------------------------------------------------
 // Plugin metadata
@@ -71,39 +66,9 @@ static void OnEngineShutdown()
 	Rcon::Shutdown();
 }
 
-static void OnAnyWorldBeginPlay(SDK::UWorld* world, const char* worldName)
-{
-	Rcon::OnAnyWorldBeginPlay(world, worldName);
-}
-
-static void OnExperienceLoadComplete()
-{
-	Rcon::OnExperienceLoadComplete();
-}
-
-static void OnEngineTick(float deltaSeconds)
-{
-	Rcon::OnTick(deltaSeconds);
-}
-
 static bool IsServerBinary()
 {
-	wchar_t path[MAX_PATH] = {0};
-	if (GetModuleFileNameW(nullptr, path, MAX_PATH) == 0)
-	{
-		// If desired, log failure via GetLogger(); keep simple here.
-		return false;
-	}
-
-	// Extract filename part
-	wchar_t* filename = wcsrchr(path, L'\\');
-	if (!filename)
-		filename = wcsrchr(path, L'/');
-
-	const wchar_t* exeName = filename ? (filename + 1) : path;
-
-	// Case-insensitive compare
-	return _wcsicmp(exeName, L"StarRuptureServerEOS-Win64-Shipping.exe") == 0;
+	return g_self->hooks->Network->IsServer();
 }
 
 // -----------------------------------------------------------------------
@@ -115,18 +80,14 @@ __declspec(dllexport) PluginInfo* GetPluginInfo()
 	return &s_pluginInfo;
 }
 
-__declspec(dllexport) bool PluginInit(IPluginLogger* logger, IPluginConfig* config,
-                                      IPluginScanner* scanner, IPluginHooks* hooks)
+__declspec(dllexport) bool PluginInit(IPluginSelf* self)
 {
-	g_logger = logger;
-	g_config = config;
-	g_scanner = scanner;
-	g_hooks = hooks;
+	g_self = self;
 
 	LOG_INFO("Plugin initialising...");
 
 	// Initialize config system with schema
-	ServerUtilityConfig::Config::Initialize(config);
+	ServerUtilityConfig::Config::Initialize(self);
 
 	if (!ServerUtilityConfig::Config::IsPluginEnabled())
 	{
@@ -140,33 +101,25 @@ __declspec(dllexport) bool PluginInit(IPluginLogger* logger, IPluginConfig* conf
 		return true;
 	}
 
-	if (!hooks->Engine)
+	if (!g_self->hooks->Engine)
 	{
-		LOG_ERROR("Engine sub-interface not available – loader version mismatch?");
+		LOG_ERROR("Engine sub-interface not available - loader version mismatch?");
 		return false;
 	}
 
-	hooks->Engine->RegisterOnInit(OnEngineInit);
+	// Give the command handler access to the hooks so it can dispatch game-thread
+	// commands via hooks->Engine->PostToGameThread.
+	CommandHandler::Get().SetHooks(g_self->hooks);
+
+	g_self->hooks->Engine->RegisterOnInit(OnEngineInit);
 	LOG_DEBUG("Registered for engine init callback");
 
-	hooks->Engine->RegisterOnShutdown(OnEngineShutdown);
+	g_self->hooks->Engine->RegisterOnShutdown(OnEngineShutdown);
 	LOG_DEBUG("Registered for engine shutdown callback");
-
-	hooks->Engine->RegisterOnTick(OnEngineTick);
-	LOG_DEBUG("Registered for engine tick callback (game-thread task dispatch)");
-
-	if (hooks->World)
-	{
-		hooks->World->RegisterOnAnyWorldBeginPlay(OnAnyWorldBeginPlay);
-		LOG_DEBUG("Registered for any-world begin play callback (RCON player tracking)");
-
-		hooks->World->RegisterOnExperienceLoadComplete(OnExperienceLoadComplete);
-		LOG_DEBUG("Registered for experience load complete callback (RCON player refresh)");
-	}
 
 	LOG_INFO("Engine initialised - scanning for UCrDedicatedServerSettingsComp::ParseSettings...");
 
-	uintptr_t addr = g_scanner->FindPatternInMainModule(DEDSERVER_SETTINGS_COMP_PARSE_SETTINGS_PATTERN);
+	uintptr_t addr = g_self->scanner->FindPatternInMainModule(DEDSERVER_SETTINGS_COMP_PARSE_SETTINGS_PATTERN);
 	if (addr == 0)
 	{
 		LOG_ERROR("Pattern scan failed – could not locate ParseSettings");
@@ -199,21 +152,6 @@ __declspec(dllexport) void PluginShutdown()
 	// before UObject teardown.  By the time PluginShutdown is called (explicit
 	// FreeLibrary only) those resources have already been released.
 
-	if (g_hooks)
-	{
-		if (g_hooks->World)
-		{
-			g_hooks->World->UnregisterOnAnyWorldBeginPlay(OnAnyWorldBeginPlay);
-			g_hooks->World->UnregisterOnExperienceLoadComplete(OnExperienceLoadComplete);
-		}
-
-		if (g_hooks->Engine)
-			g_hooks->Engine->UnregisterOnTick(OnEngineTick);
-	}
-
-	g_logger = nullptr;
-	g_config = nullptr;
-	g_scanner = nullptr;
-	g_hooks = nullptr;
+	g_self = nullptr;
 }
 } // extern "C"

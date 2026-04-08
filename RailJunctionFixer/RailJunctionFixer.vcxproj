@@ -315,30 +315,12 @@
     <None Include="README.md" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="LogisticsFragmentFixer.h" />
     <ClInclude Include="plugin.h" />
-    <ClInclude Include="plugin_config.h" />
     <ClInclude Include="plugin_helpers.h" />
-    <ClInclude Include="rail_scanner.h" />
-    <ClInclude Include="RailJunctionFixer.h" />
-    <ClInclude Include="StringHelpers.h" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="$(StarRuptureSDKSourceDir)Basic.cpp">
-      <Visible>false</Visible>
-    </ClCompile>
-    <ClCompile Include="$(StarRuptureSDKSourceDir)CoreUObject_functions.cpp">
-      <Visible>false</Visible>
-    </ClCompile>
-    <ClCompile Include="$(StarRuptureSDKSourceDir)Engine_functions.cpp">
-      <Visible>false</Visible>
-    </ClCompile>
     <ClCompile Include="dllmain.cpp" />
-    <ClCompile Include="LogisticsFragmentFixer.cpp" />
     <ClCompile Include="plugin.cpp" />
-    <ClCompile Include="plugin_config.cpp" />
-    <ClCompile Include="RailJunctionFixer.cpp" />
-    <ClCompile Include="rail_scanner.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

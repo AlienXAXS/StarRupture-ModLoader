@@ -4,6 +4,7 @@
 #include <vector>
 #include <functional>
 #include <initializer_list>
+#include "plugin_interface.h"  // for IPluginHooks
 
 using CommandFunc = std::function<std::string(const std::string& args)>;
 
@@ -12,7 +13,7 @@ struct CommandRegistration
 	std::vector<std::string> aliases;
 	std::string description;
 	CommandFunc handler;
-	bool gameThread; // true = dispatch to game thread via GameThreadDispatch
+	bool gameThread; // true = dispatch to game thread via PostToGameThread
 };
 
 // Command registry with alias support.
@@ -21,6 +22,10 @@ class CommandHandler
 {
 public:
 	static CommandHandler& Get();
+
+	// Set the hooks interface -- must be called before Execute is first used for
+	// game-thread commands.  Provided by PluginInit.
+	void SetHooks(IPluginHooks* hooks);
 
 	// Register a command with one or more aliases (first alias shown in help).
 	// gameThread: if true (default), the handler is automatically dispatched to
@@ -33,8 +38,8 @@ public:
 
 	// Execute a command line; splits on first space into verb + args.
 	// If the matched command was registered with gameThread=true, the handler
-	// is posted to GameThreadDispatch and the calling thread blocks until it
-	// completes (30 s timeout).
+	// is posted to the game thread via hooks->Engine->PostToGameThread and
+	// the calling thread blocks until it completes (30 s timeout).
 	std::string Execute(const std::string& cmdLine) const;
 
 	// Return a formatted help string listing all commands and aliases
@@ -42,4 +47,5 @@ public:
 
 private:
 	std::vector<CommandRegistration> m_commands;
+	IPluginHooks* m_hooks = nullptr;
 };

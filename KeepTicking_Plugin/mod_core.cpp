@@ -42,7 +42,16 @@ static void OnWorldBeginPlay(SDK::UWorld* world)
 	bool shouldPreventSleep = KeepTickingConfig::Config::ShouldPreventServerSleep();
 	// Spawn fake player to trick the game into staying active
 	if (shouldPreventSleep)
+	{
 		Hooks::FakePlayer::SpawnFakePlayer();
+		// Exclude from network broadcasts -- fake player has no real connection
+		auto* hooks = GetHooks();
+		if (hooks && hooks->Network)
+		{
+			void* fakePC = Hooks::FakePlayer::GetFakeController();
+			if (fakePC) hooks->Network->ExcludeFromBroadcast(fakePC);
+		}
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -120,6 +129,13 @@ static void OnPlayerJoined(void* playerController)
 	if (realPlayers >= 1 && Hooks::FakePlayer::IsPlayerActive())
 	{
 		LOG_INFO("[ModCore] Real player present — despawning fake player");
+		// Unexclude before despawning so the pointer doesn't linger in the exclusion list
+		auto* hooks = GetHooks();
+		if (hooks && hooks->Network)
+		{
+			void* fakePC = Hooks::FakePlayer::GetFakeController();
+			if (fakePC) hooks->Network->UnexcludeFromBroadcast(fakePC);
+		}
 		Hooks::FakePlayer::StopMapTraversal();
 		Hooks::FakePlayer::DespawnFakePlayer();
 	}
@@ -156,6 +172,14 @@ static void OnPlayerLeft(void* exitingController)
 		Hooks::FakePlayer::SetDebugVisibleMode(debugVisible);
 
 		Hooks::FakePlayer::SpawnFakePlayer();
+
+		// Exclude from network broadcasts -- fake player has no real connection
+		auto* hooks = GetHooks();
+		if (hooks && hooks->Network)
+		{
+			void* fakePC = Hooks::FakePlayer::GetFakeController();
+			if (fakePC) hooks->Network->ExcludeFromBroadcast(fakePC);
+		}
 
 		// Restart map traversal if the player is now active and traversal is enabled
 		if (Hooks::FakePlayer::IsPlayerActive() && !KeepTickingConfig::Config::IsTraversalDisabled())

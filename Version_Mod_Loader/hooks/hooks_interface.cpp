@@ -1,7 +1,9 @@
 #include "hooks_interface.h"
 #include "hooks_common.h"
 #include "logging/logger.h"
+#include "network_channel/network_channel.h"
 #include "hooks/memory/engine_allocator.h"
+#include "utils/game_thread_dispatch.h"
 #include "hooks/game/world_begin_play/world_begin_play.h"
 #include "hooks/game/engine_init/engine_init.h"
 #include "hooks/game/engine_shutdown/engine_shutdown.h"
@@ -328,7 +330,7 @@ namespace ModLoaderLogger
 		LogDebug(L"[HooksInterface] EngineTick callback unregistered for plugin");
 	}
 
-	// v16 — resolved address of CoreUObject::StaticLoadObject (all builds)
+	// v16 -- resolved address of CoreUObject::StaticLoadObject (all builds)
 	// Scanned once on first call; result cached for all subsequent callers.
 	static uintptr_t g_staticLoadObjectAddr    = 0;
 	static bool      g_staticLoadObjectScanned = false;
@@ -342,6 +344,13 @@ namespace ModLoaderLogger
 				"StaticLoadObject", ScanPatterns::StaticLoadObject);
 		}
 		return g_staticLoadObjectAddr;
+	}
+
+	// v18 -- game thread dispatch (all builds)
+	static void HooksPostToGameThread(PluginGameThreadCallback fn, void* context)
+	{
+		if (!fn) return;
+		GameThreadDispatch::PostVoid([fn, context]() { fn(context); });
 	}
 
 	static void HooksRegisterActorBeginPlayCallback(void (*callback)(void*))
@@ -589,7 +598,8 @@ namespace ModLoaderLogger
 		HooksUnregisterEngineShutdownCallback,
 		HooksRegisterEngineTickCallback,
 		HooksUnregisterEngineTickCallback,
-		HooksGetStaticLoadObjectAddress   // v16
+		HooksGetStaticLoadObjectAddress,  // v16
+		HooksPostToGameThread             // v18
 	};
 
 	static IPluginWorldEvents g_worldEvents = {
@@ -769,16 +779,21 @@ namespace ModLoaderLogger
 #ifdef MODLOADER_CLIENT_BUILD
 		&g_inputEvents,  // v15 — keybind events (client only)
 		&g_uiEvents,     // v15 — custom panel + config-change callbacks (client only)
-		&g_hudEvents     // v16 — AHUD::PostRender callbacks + HUD function addresses (client only)
+		&g_hudEvents,    // v16 — AHUD::PostRender callbacks + HUD function addresses (client only)
 #else
 		nullptr,         // v15 — Input is null on server/generic builds
 		nullptr,         // v15 — UI is null on server/generic builds
-		nullptr          // v16 — HUD is null on server/generic builds
+		nullptr,         // v16 — HUD is null on server/generic builds
 #endif
+		nullptr          // v17 -- Network; filled in below by GetPluginHooks()
 	};
 
 	IPluginHooks* GetPluginHooks()
 	{
+		// Resolve the network channel pointer on first call.
+		// NetworkChannel::GetInterface() returns nullptr on generic builds.
+		if (!g_pluginHooks.Network)
+			g_pluginHooks.Network = NetworkChannel::GetInterface();
 		return &g_pluginHooks;
 	}
 }

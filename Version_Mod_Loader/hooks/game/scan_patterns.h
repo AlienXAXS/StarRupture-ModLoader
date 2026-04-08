@@ -16,16 +16,20 @@ namespace ScanPatterns
 	// Signature: void AHUD::PostRender()
 	inline constexpr auto AHUD_PostRender =
 		"40 55 53 48 8D 6C 24 ?? 48 81 EC ?? ?? ?? ?? 48 8B D9 E8 ?? ?? ?? ?? 48 85 C0";
-
-	// UCrMapManuSubsystem::GatherPlayersData — forces an immediate refresh of
-	// PlayersMarkerDataContainer, bypassing the game's tick-rate update.
-	// Signature: void UCrMapManuSubsystem::GatherPlayersData()
-	inline constexpr auto GatherPlayersData =
-		"40 55 41 56 48 8D AC 24 ?? ?? ?? ?? 48 81 EC ?? ?? ?? ?? 48 89 9C 24";
 #endif
 
-	inline constexpr auto UWorld_BeginPlay =
-		"48 83 EC ?? 48 89 5C 24 ?? 48 8B D9 E8 ?? ?? ?? ?? 84 C0 74 ?? 48 8B CB";
+	// UObject::ProcessEvent -- called for every UFUNCTION dispatch in the game.
+	// Hooking this once and immediately unlatching after the first call is the
+	// most reliable way to detect that GObjects is fully populated (the engine
+	// must have processed at least one event before reaching here).
+	// Signature: void UObject::ProcessEvent(UObject* this, UFunction* fn, void* params)
+	inline constexpr auto UObject_ProcessEvent =
+		"40 55 56 57 41 54 41 55 41 56 41 57 48 81 EC ?? ?? ?? ?? 48 8D 6C 24 ?? 48 89 9D ?? ?? ?? ?? 48 8B 05 ?? ?? ?? ?? 48 33 C5 48 89 85 ?? ?? ?? ?? 8B 59";
+
+	// UGameInstance::Init -- fires after UGameEngine::Init, kept for reference.
+	// Signature: void UGameInstance::Init(UGameInstance* this)
+	inline constexpr auto UGameInstance_Init =
+		"40 55 57 48 8D 6C 24 ?? 48 81 EC ?? ?? ?? ?? 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 45 ?? 48 8B 15";
 
 	inline constexpr auto FEngineLoop_Init =
 		"4C 8B DC 55 57 49 8D AB ?? ?? ?? ?? 48 81 EC ?? ?? ?? ?? 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 85 ?? ?? ?? ?? 49 89 5B ?? 48 8D 15";
@@ -39,13 +43,29 @@ namespace ScanPatterns
 	inline constexpr auto UEngine_PreExit =
 		"E8 ?? ?? ?? ?? 48 83 3D ?? ?? ?? ?? ?? 75 ?? 4C 8D 0D ?? ?? ?? ?? 41 B8 ?? ?? ?? ?? 48 8D 15 ?? ?? ?? ?? 48 8D 0D ?? ?? ?? ?? E8 ?? ?? ?? ?? 84 C0 74 ?? 90 ?? 48 8B 0D ?? ?? ?? ?? 48 8B 15";
 
+	// ACrGameModeBase::PostLogin(ACrGameModeBase* this, APlayerController* NewPlayer)
+	// Native C++ override -- not a UFUNCTION, not in GObjects Children list.
+	inline constexpr auto ACrGameModeBase_PostLogin =
+		"48 8B C4 53 56 57 48 83 EC ?? 48 89 68 ?? 48 8B F2";
+
+	// ACrGameModeBase::Logout(ACrGameModeBase* this, AController* Exiting)
+	// Native C++ override -- not a UFUNCTION, not in GObjects Children list.
+	inline constexpr auto ACrGameModeBase_Logout =
+		"48 8B C4 55 56 57 48 81 EC ?? ?? ?? ?? 33 F6";
+
 	// UCrMassSaveSubsystem::OnSaveLoaded(UCrMassSaveSubsystem *this)
+	// Native C++ callback -- not a UFUNCTION, not in GObjects Children list.
 	inline constexpr auto UCrMassSaveSubsystem_OnSaveLoaded =
 		"4C 8B DC 55 57 49 8D AB ?? ?? ?? ?? 48 81 EC ?? ?? ?? ?? 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 85 ?? ?? ?? ?? 49 89 5B ?? B8";
 
 	// UCrExperienceManagerComponent::OnExperienceLoadComplete(UCrExperienceManagerComponent *this)
+	// Native C++ callback -- not a UFUNCTION, not in GObjects Children list.
 	inline constexpr auto UCrExperienceManagerComponent_OnExperienceLoadComplete =
 		"48 89 4C 24 ?? 55 53 56 41 54 41 55 48 8D 6C 24 ?? 48 81 EC ?? ?? ?? ?? 83 B9";
+
+	// UWorld::BeginPlay() -- engine-level native call, not a UFUNCTION.
+	inline constexpr auto UWorld_BeginPlay =
+		"48 83 EC ?? 48 89 5C 24 ?? 48 8B D9 E8 ?? ?? ?? ?? 84 C0 74 ?? 48 8B CB";
 
 	// FMassEntityManager::GetArchetypeForEntity(FMassEntityHandle)
 	inline constexpr auto FMassEntityManager_GetArchetypeForEntity =
@@ -63,18 +83,6 @@ namespace ScanPatterns
 	inline constexpr auto UGameEngine_Tick =
 		"4C 8B DC 48 81 EC ?? ?? ?? ?? 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 84 24 ?? ?? ?? ?? 49 89 5B ?? 49 89 6B ?? 49 89 73 ?? 49 89 7B ?? 4D 89 63 ?? 45 0F B6 E0";
 #endif
-
-	// AActor::BeginPlay (v1 pattern, function prologue - fires at the very start of the function before any instructions)
-	inline constexpr auto AActor_BeginPlay =
-		"48 8B 07 48 8B CF F3 0F 10 4F 64 FF 90 00 04 00 00 45 33 C0 B2 01 48 8B CF E8 ?? ?? ?? ?? 33 F6";
-
-	// ACrGameModeBase::PostLogin(ACrGameModeBase* this, APlayerController* NewPlayer)
-	inline constexpr auto ACrGameModeBase_PostLogin =
-		"48 8B C4 53 56 57 48 83 EC ?? 48 89 68 ?? 48 8B F2";
-
-	// ACrGameModeBase::Logout(ACrGameModeBase* this, AController* Exiting)
-	inline constexpr auto ACrGameModeBase_Logout =
-		"48 8B C4 55 56 57 48 81 EC ?? ?? ?? ?? 33 F6";
 
 	// AAbstractMassEnemySpawner::ActivateSpawner(AAbstractMassEnemySpawner* this, bool bDisableAggroLock)
 	// This is actually ?EnableSpawning@AMegaMachineMassEnemySpawner@@UEAAXXZ with a offset to find ActivateSpawner

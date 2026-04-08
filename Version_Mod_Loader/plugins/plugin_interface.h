@@ -3,75 +3,14 @@
 #include <windows.h>
 #include <cstdint>
 
-// Plugin interface version history - increment MAX when new hooks/features are added.
-// Increment MIN only when an ABI-breaking change is unavoidable.
-// Loader accepts any plugin whose interfaceVersion is in [MIN, MAX].
-// Plugins compiled against older (but still supported) headers load without recompilation
-// because all interface structs are append-only — new fields are always added at the end.
-// v2: Added RegisterEngineShutdownCallback / UnregisterEngineShutdownCallback to IPluginHooks
-// v3: Replaced std::vector return types in IPluginScanner with caller-buffer API to fix
-//     cross-DLL heap corruption (EXCEPTION_ACCESS_VIOLATION on plugin load)
-// v4: Added FindXrefsToAddress / FindXrefsToAddressInModule / FindXrefsToAddressInMainModule
-//     to IPluginScanner for function-pointer cross-reference scanning
-// v5: Added EngineAlloc / EngineFree / IsEngineAllocatorAvailable to IPluginHooks
-//     for safe FString / engine-owned memory manipulation from plugins
-// v6: Added RegisterAnyWorldBeginPlayCallback / UnregisterAnyWorldBeginPlayCallback to IPluginHooks
-//     for receiving notifications when ANY world begins play (not just ChimeraMain)
-// v7: Added RegisterSaveLoadedCallback / UnregisterSaveLoadedCallback to IPluginHooks
-//     for receiving notifications when UCrMassSaveSubsystem::OnSaveLoaded fires (save fully loaded)
-// v8: Added RegisterExperienceLoadCompleteCallback / UnregisterExperienceLoadCompleteCallback
-//     to IPluginHooks for receiving notifications when UCrExperienceManagerComponent::OnExperienceLoadComplete fires
-// v9: Added RegisterEngineTickCallback / UnregisterEngineTickCallback to IPluginHooks
-//     for receiving per-frame game-thread tick notifications (UGameEngine::Tick)
-// v10: Added RegisterActorBeginPlayCallback / UnregisterActorBeginPlayCallback
-//      to IPluginHooks for receiving notifications when any AActor::BeginPlay fires
-// v11: Added RegisterPlayerJoinedCallback / UnregisterPlayerJoinedCallback
-//      to IPluginHooks for receiving notifications when ACrGameModeBase::PostLogin fires
-//      (player controller fully connected and ready on server)
-// v12: Added RegisterPlayerLeftCallback / UnregisterPlayerLeftCallback
-//      to IPluginHooks for receiving notifications when ACrGameModeBase::Logout fires
-//      (player controller about to be destroyed — still valid at callback time)
-// v14: Replaced flat function-pointer fields (v1-v12) with typed sub-interface pointers.
-//      IPluginHooks now contains only 7 sub-interface pointers — all functionality
-//      accessed via hooks->Group->Method(...). MIN bumped to 14 (ABI break).
-//      Added 10 named callback typedefs (PluginEngineInitCallback, etc.).
-//      Sub-interfaces:
-//        Spawner  — Before/After hooks for ActivateSpawner, DeactivateSpawner, DoSpawning
-//                   (Before callbacks return bool; true cancels + suppresses After callbacks)
-//        Hooks    — low-level hook install/remove/query  (hooks->Hooks->Install)
-//        Memory   — patch/nop/read/alloc utilities       (hooks->Memory->Patch)
-//        Engine   — init/shutdown/tick subscriptions     (hooks->Engine->RegisterOnInit)
-//        World    — world-begin-play/save/experience     (hooks->World->RegisterOnWorldBeginPlay)
-//        Players  — player joined/left subscriptions     (hooks->Players->RegisterOnPlayerJoined)
-//        Actors   — actor begin-play subscriptions       (hooks->Actors->RegisterOnActorBeginPlay)
-// v15: Added EModKey enum, EModKeyEvent enum, PluginKeybindCallback typedef,
-//      IPluginInputEvents sub-interface, and Input pointer in IPluginHooks.
-//      Input sub-interface supports registration by EModKey enum or by UE key name string.
-//      Input is non-null on client builds only; always nullptr on server/generic builds.
-//        Input    — keybind event subscriptions          (hooks->Input->RegisterKeybind)
-//      Also added (folded into v15 before first release):
-//      IModLoaderImGui function table, PluginImGuiRenderCallback, PluginPanelDesc, PanelHandle,
-//      PluginConfigChangedCallback, IPluginUIEvents sub-interface, and UI pointer in IPluginHooks.
-//      UI is non-null on client builds only; always nullptr on server/generic builds.
-//        UI       — custom panel registration + config-change callbacks (hooks->UI->RegisterPanel)
-//      RegisterPanel now returns a PanelHandle (opaque pointer stable for the plugin's lifetime).
-//      SetPanelOpen / SetPanelClose both take PanelHandle instead of a title string, so a plugin
-//      can only open/close its own panels (it cannot affect panels owned by other plugins).
-// v16: Added PluginWidgetDesc, WidgetHandle, RegisterWidget, UnregisterWidget, and SetWidgetVisible
-//      to IPluginUIEvents.  Widgets are always-on ImGui windows rendered every frame regardless of
-//      whether the modloader window is open.  Plugin authors can call SetWidgetVisible to hide or
-//      show a widget (e.g. in response to a keybind or config option).
-//        UI       — always-on widget registration           (hooks->UI->RegisterWidget)
-//      Also added (folded into v16 before first release):
-//      PluginHUDPostRenderCallback, IPluginHUDEvents sub-interface, and HUD pointer in IPluginHooks.
-//      HUD is non-null on client builds only; always nullptr on server/generic builds.
-//        HUD      — AHUD::PostRender callbacks + GatherPlayersData address (hooks->HUD->RegisterOnPostRender)
-//      Extended IPluginEngineEvents with GetStaticLoadObjectAddress() on all build types.
-//      Patterns for AHUD_PostRender, StaticLoadObject, and GatherPlayersData moved from
-//      compass_patterns.h into the modloader's scan_patterns.h and owned by the modloader.
-//      hooks->HUD and hooks->UI and hooks->Input are all nullptr on server — always null-check.
-#define PLUGIN_INTERFACE_VERSION_MIN 14  // oldest plugin ABI still accepted by this loader
-#define PLUGIN_INTERFACE_VERSION_MAX 16  // current interface version (this header)
+// v19: Introduced IPluginSelf — a single struct bundling name, version, logger, config, scanner,
+//      and hooks. PluginInit now receives IPluginSelf* instead of four separate pointers.
+//      Removed const char* pluginName from IPluginLogger, IPluginConfig, and IPluginNetworkChannel;
+//      replaced with const IPluginSelf* so the loader can identify the calling plugin without
+//      plugins having to duplicate their own name string in every call.
+//      MIN bumped to 19 (ABI break — all plugins must be recompiled against this header).
+#define PLUGIN_INTERFACE_VERSION_MIN 19  // oldest plugin ABI still accepted by this loader
+#define PLUGIN_INTERFACE_VERSION_MAX 19  // current interface version (this header)
 #define PLUGIN_INTERFACE_VERSION PLUGIN_INTERFACE_VERSION_MAX  // alias used by plugins in PluginInfo
 
 // Log levels
@@ -112,55 +51,58 @@ struct ConfigSchema
     int entryCount;          // Number of entries in array
 };
 
+// Forward declaration — IPluginSelf is defined after IPluginHooks (all sub-interfaces must be complete first).
+struct IPluginSelf;
+
 // Universal logger interface provided by mod loader
 struct IPluginLogger
 {
     // Log a message with the specified level
-    void (*Log)(PluginLogLevel level, const char* pluginName, const char* message);
+    void (*Log)(PluginLogLevel level, const IPluginSelf* self, const char* message);
 
     // Convenience methods
-    void (*Trace)(const char* pluginName, const char* format, ...);
-    void (*Debug)(const char* pluginName, const char* format, ...);
-    void (*Info)(const char* pluginName, const char* format, ...);
-    void (*Warn)(const char* pluginName, const char* format, ...);
-    void (*Error)(const char* pluginName, const char* format, ...);
+    void (*Trace)(const IPluginSelf* self, const char* format, ...);
+    void (*Debug)(const IPluginSelf* self, const char* format, ...);
+    void (*Info) (const IPluginSelf* self, const char* format, ...);
+    void (*Warn) (const IPluginSelf* self, const char* format, ...);
+    void (*Error)(const IPluginSelf* self, const char* format, ...);
 };
 
 // Config manager interface provided by mod loader
 struct IPluginConfig
 {
     // Read string value from plugin's config file
-    bool (*ReadString)(const char* pluginName, const char* section, const char* key, char* outValue, int maxLen, const char* defaultValue);
+    bool (*ReadString)(const IPluginSelf* self, const char* section, const char* key, char* outValue, int maxLen, const char* defaultValue);
 
     // Write string value to plugin's config file
-    bool (*WriteString)(const char* pluginName, const char* section, const char* key, const char* value);
+    bool (*WriteString)(const IPluginSelf* self, const char* section, const char* key, const char* value);
 
     // Read integer value from plugin's config file
-    int (*ReadInt)(const char* pluginName, const char* section, const char* key, int defaultValue);
+    int (*ReadInt)(const IPluginSelf* self, const char* section, const char* key, int defaultValue);
 
     // Write integer value to plugin's config file
-    bool (*WriteInt)(const char* pluginName, const char* section, const char* key, int value);
+    bool (*WriteInt)(const IPluginSelf* self, const char* section, const char* key, int value);
 
     // Read float value from plugin's config file
-    float (*ReadFloat)(const char* pluginName, const char* section, const char* key, float defaultValue);
+    float (*ReadFloat)(const IPluginSelf* self, const char* section, const char* key, float defaultValue);
 
     // Write float value to plugin's config file
-    bool (*WriteFloat)(const char* pluginName, const char* section, const char* key, float value);
+    bool (*WriteFloat)(const IPluginSelf* self, const char* section, const char* key, float value);
 
     // Read boolean value from plugin's config file
-    bool (*ReadBool)(const char* pluginName, const char* section, const char* key, bool defaultValue);
+    bool (*ReadBool)(const IPluginSelf* self, const char* section, const char* key, bool defaultValue);
 
     // Write boolean value to plugin's config file
-    bool (*WriteBool)(const char* pluginName, const char* section, const char* key, bool value);
+    bool (*WriteBool)(const IPluginSelf* self, const char* section, const char* key, bool value);
 
     // Initialize plugin config from schema
     // Creates config file with defaults if it doesn't exist
     // Returns true if config was loaded/created successfully
-    bool (*InitializeFromSchema)(const char* pluginName, const ConfigSchema* schema);
+    bool (*InitializeFromSchema)(const IPluginSelf* self, const ConfigSchema* schema);
 
     // Validate and repair config file based on schema
     // Adds missing entries with defaults, preserves existing values
-    void (*ValidateConfig)(const char* pluginName, const ConfigSchema* schema);
+    void (*ValidateConfig)(const IPluginSelf* self, const ConfigSchema* schema);
 };
 
 // A single cross-reference result returned by the xref scanner.
@@ -249,6 +191,24 @@ typedef void (*PluginPlayerJoinedCallback)(void* playerController);
 typedef void (*PluginPlayerLeftCallback)(void* exitingController);
 // v16 (client only) — fired after AHUD::PostRender; hud is AHUD* cast to void*
 typedef void (*PluginHUDPostRenderCallback)(void* hud);
+// v17 -- fired on the client when a server packet arrives for this plugin+typeTag.
+// pluginName : the name the server-side plugin passed to SendPacketToClient/SendPacketToAllClients
+// typeTag    : identifies the packet type (use typeid(T).name() via plugin_network_helpers.h)
+// data       : decoded payload bytes -- exactly 'size' bytes; pointer is valid only during this call
+// size       : byte count of the payload; always > 0
+typedef void (*PluginNetworkMessageCallback)(const char* pluginName, const char* typeTag,
+                                             const uint8_t* data, size_t size);
+
+// v18 -- fired on the server when a client packet arrives for this plugin+typeTag.
+// senderPlayerController : the APlayerController* of the sending client cast to void*
+// pluginName / typeTag / data / size : same semantics as PluginNetworkMessageCallback
+typedef void (*PluginNetworkServerMessageCallback)(void* senderPlayerController,
+                                                   const char* pluginName, const char* typeTag,
+                                                   const uint8_t* data, size_t size);
+
+// v18 -- callback type for PostToGameThread.
+// context : the void* passed to PostToGameThread; cast to your own struct inside the callback.
+typedef void (*PluginGameThreadCallback)(void* context);
 
 // ============================================================
 // Spawner hook callback typedefs (v14)
@@ -307,9 +267,14 @@ struct IPluginEngineEvents
     void (*UnregisterOnShutdown)(PluginEngineShutdownCallback);
     void (*RegisterOnTick)(PluginEngineTickCallback);
     void (*UnregisterOnTick)(PluginEngineTickCallback);
-    // v16 — resolved address of CoreUObject::StaticLoadObject, or 0 if not found.
+    // v16 -- resolved address of CoreUObject::StaticLoadObject, or 0 if not found.
     // Available on all build types.
     uintptr_t (*GetStaticLoadObjectAddress)();
+    // v18 -- post a fire-and-forget callback onto the game thread.
+    // fn is called from the game thread during the next engine tick.
+    // context is passed unchanged to fn; pass nullptr if you have no state.
+    // Thread-safe; may be called from any thread (RCON handlers, network callbacks, etc.).
+    void (*PostToGameThread)(PluginGameThreadCallback fn, void* context);
 };
 
 // ============================================================
@@ -627,6 +592,84 @@ struct IPluginHUDEvents
 };
 
 // ============================================================
+// IPluginNetworkChannel — server-to-client plugin packet messaging (v17)
+// Access via: hooks->Network->SendPacketToClient(...)
+// hooks->Network is non-null on server AND client builds; nullptr on generic (Debug/Release) builds.
+// Always null-check hooks->Network before use.
+//
+// Packet payloads must be plain-old-data (POD) structs with no pointers, no vtables,
+// and no std containers.  The same plugin DLL running on both ends guarantees identical
+// struct layout so plain memcpy serialization works without a schema.
+//
+// Prefer the typed wrappers in plugin_network_helpers.h (SendPacketToPlayer<T>,
+// SendPacketToAllClients<T>, OnReceive<T>) over calling these functions directly.
+// ============================================================
+struct IPluginNetworkChannel
+{
+    // True when called from a server build; false on a client build.
+    bool (*IsServer)();
+
+    // Server-side: send a raw packet to a single player.
+    // playerController : the APlayerController* for the target player (cast to void*)
+    // self             : the calling plugin's IPluginSelf (name is used for packet routing)
+    // typeTag          : arbitrary string identifying the packet type
+    // data             : payload bytes; copied before the call returns
+    // size             : byte count of the payload (max ~1 KB recommended)
+    // No-op on client builds.
+    void (*SendPacketToClient)(void* playerController, const IPluginSelf* self,
+                               const char* typeTag, const uint8_t* data, size_t size);
+
+    // Server-side: send a raw packet to all currently connected players.
+    // self / typeTag / data / size: same semantics as SendPacketToClient.
+    // No-op on client builds.
+    void (*SendPacketToAllClients)(const IPluginSelf* self, const char* typeTag,
+                                   const uint8_t* data, size_t size);
+
+    // Client-side: register a handler for packets arriving with the given self->name+typeTag pair.
+    // Multiple handlers for the same pair are supported.
+    // No-op on server builds.
+    void (*RegisterMessageHandler)(const IPluginSelf* self, const char* typeTag,
+                                   PluginNetworkMessageCallback callback);
+
+    // Client-side: unregister a previously registered handler.
+    // Silently ignored if the handler was not registered.
+    // No-op on server builds.
+    void (*UnregisterMessageHandler)(const IPluginSelf* self, const char* typeTag,
+                                     PluginNetworkMessageCallback callback);
+
+    // v18 -- Client-side: send a raw packet to the server.
+    // self / typeTag / data / size: same semantics as SendPacketToClient.
+    // Transport: ACrPlayerControllerBase::ServerChatCommit (NetServer RPC).
+    // No-op on server builds.
+    void (*SendPacketToServer)(const IPluginSelf* self, const char* typeTag,
+                               const uint8_t* data, size_t size);
+
+    // v18 -- Server-side: register a handler for packets arriving from any client.
+    // callback receives the sender's APlayerController* (cast to void*) along with
+    // the standard pluginName/typeTag/data/size fields.
+    // No-op on client builds.
+    void (*RegisterServerMessageHandler)(const IPluginSelf* self, const char* typeTag,
+                                         PluginNetworkServerMessageCallback callback);
+
+    // v18 -- Server-side: unregister a previously registered server-message handler.
+    // Silently ignored if the handler was not registered.
+    // No-op on client builds.
+    void (*UnregisterServerMessageHandler)(const IPluginSelf* self, const char* typeTag,
+                                           PluginNetworkServerMessageCallback callback);
+
+    // v18 -- Server-only: exclude a PlayerController from SendPacketToAllClients sends.
+    // Intended for plugin-spawned controllers (e.g. fake/AI players) that have no real
+    // network connection.  Sending to them is a silent no-op anyway, but registering an
+    // exclusion avoids the wasted ProcessEvent call and log noise.
+    // No-op on client builds.  Passing null is a no-op.
+    void (*ExcludeFromBroadcast)(void* playerController);
+
+    // v18 -- Server-only: undo a previous ExcludeFromBroadcast registration.
+    // No-op on client builds or if the controller was not registered.
+    void (*UnexcludeFromBroadcast)(void* playerController);
+};
+
+// ============================================================
 // IPluginHooks — top-level hook interface provided by the mod loader (v14)
 // Contains only typed sub-interface pointers. Access functionality via the
 // named group, e.g.:
@@ -637,6 +680,8 @@ struct IPluginHUDEvents
 //   hooks->Spawner->RegisterOnBeforeActivate(&MyBeforeCb);
 //   hooks->Input->RegisterKeybind(EModKey::F1, EModKeyEvent::Pressed, &MyKeyCb);
 //   hooks->HUD->RegisterOnPostRender(&MyPostRenderCb);  // client only, null-check first
+//   hooks->Network->SendPacketToAllClients(name, tag, data, size);  // server+client, null-check first
+//   hooks->Engine->PostToGameThread(&MyFn, ctx);                    // any thread -> game thread (v18)
 // ============================================================
 struct IPluginHooks
 {
@@ -649,7 +694,8 @@ struct IPluginHooks
     IPluginActorEvents*  Actors;    // v14 — actor begin-play subscriptions
     IPluginInputEvents*  Input;     // v15 — keybind subscriptions (client only, null on server)
     IPluginUIEvents*     UI;        // v15 — custom panel registration + config-change callbacks (client only, null on server)
-    IPluginHUDEvents*    HUD;       // v16 — AHUD::PostRender callbacks + HUD function addresses (client only, null on server)
+    IPluginHUDEvents*        HUD;     // v16 — AHUD::PostRender callbacks + HUD function addresses (client only, null on server)
+    IPluginNetworkChannel*   Network; // v17 — plugin-to-plugin net channel (server+client builds; null on generic)
 };
 
 // Plugin metadata structure
@@ -662,10 +708,26 @@ struct PluginInfo
     int interfaceVersion;
 };
 
+// ============================================================
+// IPluginSelf — plugin identity + all service interfaces (v19)
+// Passed to PluginInit. The pointer is stable for the plugin's
+// entire lifetime — plugins may store it and use it for all
+// subsequent calls to logger, config, scanner, and hooks.
+// ============================================================
+struct IPluginSelf
+{
+    const char*      name;     // from PluginInfo::name
+    const char*      version;  // from PluginInfo::version
+    IPluginLogger*   logger;
+    IPluginConfig*   config;
+    IPluginScanner*  scanner;
+    IPluginHooks*    hooks;
+};
+
 // Plugin interface - all plugins must implement these functions
 // These should be exported with extern "C" __declspec(dllexport)
 typedef PluginInfo* (*GetPluginInfoFunc)();
-typedef bool (*PluginInitFunc)(IPluginLogger* logger, IPluginConfig* config, IPluginScanner* scanner, IPluginHooks* hooks);
+typedef bool (*PluginInitFunc)(IPluginSelf* self);
 typedef void (*PluginShutdownFunc)();
 
 // Function names that plugins must export
