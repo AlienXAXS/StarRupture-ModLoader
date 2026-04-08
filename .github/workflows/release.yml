@@ -201,9 +201,6 @@ jobs:
           New-Item -ItemType Directory -Force "sdk\include" | Out-Null
           Copy-Item "main\Version_Mod_Loader\plugins\plugin_interface.h" "sdk\include\plugin_interface.h" -Force
 
-          # PluginDevelopment.md
-          Copy-Item "main\PluginDevelopment.md" "sdk\PluginDevelopment.md" -Force
-
           Write-Host "Sync complete."
 
       - name: Commit and push to SDK repo
