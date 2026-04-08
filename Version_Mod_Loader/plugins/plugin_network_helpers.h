@@ -18,14 +18,14 @@
 //   };
 //
 //   // 2. In PluginInit, check hooks->Network and register by build side:
-//   if (hooks->Network) {
-//       if (hooks->Network->IsServer()) {
-//           hooks->Engine->RegisterOnTick([](float) {
+//   if (self->hooks->Network) {
+//       if (self->hooks->Network->IsServer()) {
+//           self->hooks->Engine->RegisterOnTick([](float) {
 //               TimerPacket pkt{ GetTime(), CountPlayers(), GetPhase(), {} };
-//               Network::SendPacketToAllClients(g_hooks, "MyPlugin", pkt);
+//               Network::SendPacketToAllClients(g_self->hooks, g_self, pkt);
 //           });
 //       } else {
-//           Network::OnReceive<TimerPacket>(g_hooks, "MyPlugin",
+//           Network::OnReceive<TimerPacket>(self->hooks, self,
 //               [](const TimerPacket& p) {
 //                   g_display.time  = p.currentTime;
 //                   g_display.alive = p.playersAlive;
@@ -54,13 +54,13 @@ namespace Network
 // ----------------------------------------------------------------
 // SendPacketToPlayer<T>
 // Server-side: send a typed packet to a single player.
-//   hooks            : the IPluginHooks* from PluginInit
-//   pluginName       : your plugin's name (from GetPluginInfo()->name)
+//   hooks            : the IPluginHooks* from PluginInit (or g_self->hooks)
+//   self             : the calling plugin's IPluginSelf* (name used for routing)
 //   playerController : the APlayerController* for the target player (void*)
 //   pkt              : the packet to send
 // ----------------------------------------------------------------
 template<typename T>
-void SendPacketToPlayer(IPluginHooks* hooks, const char* pluginName,
+void SendPacketToPlayer(IPluginHooks* hooks, const IPluginSelf* self,
                         void* playerController, const T& pkt)
 {
     static_assert(std::is_trivially_copyable_v<T>,
@@ -69,7 +69,7 @@ void SendPacketToPlayer(IPluginHooks* hooks, const char* pluginName,
     if (!hooks || !hooks->Network) return;
     hooks->Network->SendPacketToClient(
         playerController,
-        pluginName,
+        self,
         typeid(T).name(),
         reinterpret_cast<const uint8_t*>(&pkt),
         sizeof(T));
@@ -78,19 +78,19 @@ void SendPacketToPlayer(IPluginHooks* hooks, const char* pluginName,
 // ----------------------------------------------------------------
 // SendPacketToAllClients<T>
 // Server-side: broadcast a typed packet to all connected players.
-//   hooks      : the IPluginHooks* from PluginInit
-//   pluginName : your plugin's name (from GetPluginInfo()->name)
-//   pkt        : the packet to broadcast
+//   hooks : the IPluginHooks* from PluginInit (or g_self->hooks)
+//   self  : the calling plugin's IPluginSelf* (name used for routing)
+//   pkt   : the packet to broadcast
 // ----------------------------------------------------------------
 template<typename T>
-void SendPacketToAllClients(IPluginHooks* hooks, const char* pluginName, const T& pkt)
+void SendPacketToAllClients(IPluginHooks* hooks, const IPluginSelf* self, const T& pkt)
 {
     static_assert(std::is_trivially_copyable_v<T>,
         "Network::SendPacketToAllClients<T>: T must be trivially copyable "
         "(no pointers, vtables, or std containers)");
     if (!hooks || !hooks->Network) return;
     hooks->Network->SendPacketToAllClients(
-        pluginName,
+        self,
         typeid(T).name(),
         reinterpret_cast<const uint8_t*>(&pkt),
         sizeof(T));
@@ -99,16 +99,16 @@ void SendPacketToAllClients(IPluginHooks* hooks, const char* pluginName, const T
 // ----------------------------------------------------------------
 // OnReceive<T>
 // Client-side: register a typed handler for incoming packets.
-//   hooks      : the IPluginHooks* from PluginInit
-//   pluginName : your plugin's name -- must match the sender's pluginName
-//   cb         : callback invoked with a const T& on each matching packet.
-//                Called from the game thread.
+//   hooks : the IPluginHooks* from PluginInit (or g_self->hooks)
+//   self  : the calling plugin's IPluginSelf* -- name must match the sender's
+//   cb    : callback invoked with a const T& on each matching packet.
+//           Called from the game thread.
 //
 // Returns the raw PluginNetworkMessageCallback pointer so it can be
 // passed to hooks->Network->UnregisterMessageHandler during PluginShutdown.
 // ----------------------------------------------------------------
 template<typename T>
-PluginNetworkMessageCallback OnReceive(IPluginHooks* hooks, const char* pluginName,
+PluginNetworkMessageCallback OnReceive(IPluginHooks* hooks, const IPluginSelf* self,
                                        std::function<void(const T&)> cb)
 {
     static_assert(std::is_trivially_copyable_v<T>,
@@ -138,26 +138,26 @@ PluginNetworkMessageCallback OnReceive(IPluginHooks* hooks, const char* pluginNa
     };
 
     Handler::Callback() = std::move(cb);
-    hooks->Network->RegisterMessageHandler(pluginName, typeid(T).name(), &Handler::Dispatch);
+    hooks->Network->RegisterMessageHandler(self, typeid(T).name(), &Handler::Dispatch);
     return &Handler::Dispatch;
 }
 
 // ----------------------------------------------------------------
 // SendPacketToServer<T>
 // Client-side: send a typed packet to the server.
-//   hooks      : the IPluginHooks* from PluginInit
-//   pluginName : your plugin's name (from GetPluginInfo()->name)
-//   pkt        : the packet to send
+//   hooks : the IPluginHooks* from PluginInit (or g_self->hooks)
+//   self  : the calling plugin's IPluginSelf* (name used for routing)
+//   pkt   : the packet to send
 // ----------------------------------------------------------------
 template<typename T>
-void SendPacketToServer(IPluginHooks* hooks, const char* pluginName, const T& pkt)
+void SendPacketToServer(IPluginHooks* hooks, const IPluginSelf* self, const T& pkt)
 {
     static_assert(std::is_trivially_copyable_v<T>,
         "Network::SendPacketToServer<T>: T must be trivially copyable "
         "(no pointers, vtables, or std containers)");
     if (!hooks || !hooks->Network) return;
     hooks->Network->SendPacketToServer(
-        pluginName,
+        self,
         typeid(T).name(),
         reinterpret_cast<const uint8_t*>(&pkt),
         sizeof(T));
@@ -166,11 +166,11 @@ void SendPacketToServer(IPluginHooks* hooks, const char* pluginName, const T& pk
 // ----------------------------------------------------------------
 // OnServerReceive<T>
 // Server-side: register a typed handler for Client->Server packets.
-//   hooks      : the IPluginHooks* from PluginInit
-//   pluginName : your plugin's name -- must match the sender's pluginName
-//   cb         : callback invoked with senderPlayerController (void*) and
-//                a const T& on each matching packet.
-//                Called from the game thread (ServerChatCommit detour).
+//   hooks : the IPluginHooks* from PluginInit (or g_self->hooks)
+//   self  : the calling plugin's IPluginSelf* -- name must match the sender's
+//   cb    : callback invoked with senderPlayerController (void*) and
+//           a const T& on each matching packet.
+//           Called from the game thread (ServerChatCommit detour).
 //
 // Returns the raw PluginNetworkServerMessageCallback pointer so it can be
 // passed to hooks->Network->UnregisterServerMessageHandler during PluginShutdown.
@@ -178,7 +178,7 @@ void SendPacketToServer(IPluginHooks* hooks, const char* pluginName, const T& pk
 template<typename T>
 PluginNetworkServerMessageCallback OnServerReceive(
     IPluginHooks* hooks,
-    const char* pluginName,
+    const IPluginSelf* self,
     std::function<void(void* senderPC, const T&)> cb)
 {
     static_assert(std::is_trivially_copyable_v<T>,
@@ -208,7 +208,7 @@ PluginNetworkServerMessageCallback OnServerReceive(
     };
 
     Handler::Callback() = std::move(cb);
-    hooks->Network->RegisterServerMessageHandler(pluginName, typeid(T).name(), &Handler::Dispatch);
+    hooks->Network->RegisterServerMessageHandler(self, typeid(T).name(), &Handler::Dispatch);
     return &Handler::Dispatch;
 }
 

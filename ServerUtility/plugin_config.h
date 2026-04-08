@@ -38,27 +38,27 @@ namespace ServerUtilityConfig
 	class Config
 	{
 	public:
-		static void Initialize(IPluginConfig* config)
+		static void Initialize(IPluginSelf* self)
 		{
-			s_config = config;
+			s_self = self;
 
 			// Initialize config from schema
-			if (s_config)
+			if (s_self)
 			{
-				s_config->InitializeFromSchema("ServerUtility", &SCHEMA);
+				s_self->config->InitializeFromSchema(s_self, &SCHEMA);
 			}
 		}
 
 		static bool IsPluginEnabled()
 		{
-			return s_config ? s_config->ReadBool("ServerUtility", "General", "Enabled", false) : false;
+			return s_self ? s_self->config->ReadBool(s_self, "General", "Enabled", false) : false;
 		}
 
 		// Returns the configured max player count.
 		// 0 means "don't patch / use game default".
 		static int GetMaxPlayers()
 		{
-			int val = s_config ? s_config->ReadInt("ServerUtility", "PluginSettings", "MaxPlayers", 0) : 0;
+			int val = s_self ? s_self->config->ReadInt(s_self, "PluginSettings", "MaxPlayers", 0) : 0;
 			if (val < 0) val = 0;
 			if (val > 127) val = 127;
 			return val;
@@ -67,12 +67,12 @@ namespace ServerUtilityConfig
 		// Returns true if the RemoteVulnerabilityPatch is enabled (default: true).
 		static bool GetRemoteVulnerabilityPatch()
 		{
-			return s_config
-				       ? s_config->ReadBool("ServerUtility", "PluginSettings", "RemoteVulnerabilityPatch", true)
+			return s_self
+				       ? s_self->config->ReadBool(s_self, "PluginSettings", "RemoteVulnerabilityPatch", true)
 				       : true;
 		}
 
 	private:
-		static IPluginConfig* s_config;
+		static IPluginSelf* s_self;
 	};
 }

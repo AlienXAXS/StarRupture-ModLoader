@@ -2,5 +2,5 @@
 
 namespace ServerUtilityConfig
 {
-	IPluginConfig* Config::s_config = nullptr;
+	IPluginSelf* Config::s_self = nullptr;
 }

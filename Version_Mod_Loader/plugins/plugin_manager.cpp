@@ -25,6 +25,10 @@ namespace ModLoaderLogger
 		std::string cachedName;
 		std::string cachedVersion;
 		std::string cachedAuthor;
+
+		// Stable identity struct passed to PluginInit and retained by the plugin.
+		// name/version point into cachedName/cachedVersion so they outlive PluginInfo.
+		IPluginSelf self;
 	};
 
 	static std::vector<LoadedPlugin> g_loadedPlugins;
@@ -93,6 +97,16 @@ namespace ModLoaderLogger
 		rec.cachedName     = info->name    ? info->name    : "";
 		rec.cachedVersion  = info->version ? info->version : "";
 		rec.cachedAuthor   = info->author  ? info->author  : "";
+
+		// Populate the stable identity struct. name/version point into the cached std::strings.
+		// The service pointers (logger/config/scanner/hooks) are filled in InitAllLoadedPlugins
+		// once the engine is ready, just before PluginInit is called.
+		rec.self.name    = rec.cachedName.c_str();
+		rec.self.version = rec.cachedVersion.c_str();
+		rec.self.logger  = nullptr;
+		rec.self.config  = nullptr;
+		rec.self.scanner = nullptr;
+		rec.self.hooks   = nullptr;
 
 		LogMessage(L"Successfully loaded plugin DLL: %S v%S (PluginInit deferred)", info->name, info->version);
 		return true;
@@ -223,7 +237,13 @@ namespace ModLoaderLogger
 			totalDeferred++;
 			LogMessage(L"Calling PluginInit for: %S v%S", plugin.cachedName.c_str(), plugin.cachedVersion.c_str());
 
-			if (plugin.init(GetPluginLogger(), GetPluginConfig(), GetPluginScanner(), GetPluginHooks()))
+			// Fill service pointers now that the engine is ready
+			plugin.self.logger  = GetPluginLogger();
+			plugin.self.config  = GetPluginConfig();
+			plugin.self.scanner = GetPluginScanner();
+			plugin.self.hooks   = GetPluginHooks();
+
+			if (plugin.init(&plugin.self))
 			{
 				plugin.isInitialized = true;
 				initCount++;

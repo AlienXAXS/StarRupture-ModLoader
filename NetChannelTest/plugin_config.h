@@ -29,26 +29,26 @@ namespace NetChannelTestConfig
 	class Config
 	{
 	public:
-		static void Initialize(IPluginConfig* config)
+		static void Initialize(IPluginSelf* self)
 		{
-			s_config = config;
-			if (s_config)
-				s_config->InitializeFromSchema("NetChannelTest", &SCHEMA);
+			s_self = self;
+			if (s_self)
+				s_self->config->InitializeFromSchema(s_self, &SCHEMA);
 		}
 
 		static bool IsEnabled()
 		{
-			return s_config ? s_config->ReadBool("NetChannelTest", "General", "Enabled", true) : true;
+			return s_self ? s_self->config->ReadBool(s_self, "General", "Enabled", true) : true;
 		}
 
 		static int GetSendIntervalTicks()
 		{
-			int val = s_config ? s_config->ReadInt("NetChannelTest", "General", "SendIntervalTicks", 300) : 300;
+			int val = s_self ? s_self->config->ReadInt(s_self, "General", "SendIntervalTicks", 300) : 300;
 			if (val < 1) val = 1;
 			return val;
 		}
 
 	private:
-		static IPluginConfig* s_config;
+		static IPluginSelf* s_self;
 	};
 }

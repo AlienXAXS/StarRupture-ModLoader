@@ -297,35 +297,35 @@ namespace
 
     static bool NC_IsServer() { return true; }
 
-    static void NC_SendPacketToClient(void* playerController, const char* pluginName,
+    static void NC_SendPacketToClient(void* playerController, const IPluginSelf* self,
                                       const char* typeTag, const uint8_t* data, size_t size)
     {
-        if (!playerController || !pluginName || !typeTag || !data || size == 0) return;
+        if (!playerController || !self || !self->name || !typeTag || !data || size == 0) return;
 
         if (size > 1400)
         {
             ModLoaderLogger::LogWarn(
                 L"[NetworkChannel] Payload %zu bytes exceeds 1400-byte recommended limit for plugin '%S'",
-                size, pluginName);
+                size, self->name);
         }
 
-        std::string env = BuildEnvelope(pluginName, typeTag, data, size);
+        std::string env = BuildEnvelope(self->name, typeTag, data, size);
         SendEnvelopeToPlayer(playerController, env);
     }
 
-    static void NC_SendPacketToAllClients(const char* pluginName, const char* typeTag,
+    static void NC_SendPacketToAllClients(const IPluginSelf* self, const char* typeTag,
                                           const uint8_t* data, size_t size)
     {
-        if (!pluginName || !typeTag || !data || size == 0) return;
+        if (!self || !self->name || !typeTag || !data || size == 0) return;
 
         if (size > 1400)
         {
             ModLoaderLogger::LogWarn(
                 L"[NetworkChannel] Payload %zu bytes exceeds 1400-byte recommended limit for plugin '%S'",
-                size, pluginName);
+                size, self->name);
         }
 
-        std::string env = BuildEnvelope(pluginName, typeTag, data, size);
+        std::string env = BuildEnvelope(self->name, typeTag, data, size);
 
         SDK::UWorld* world = SDK::UWorld::GetWorld();
         if (!world)
@@ -346,41 +346,41 @@ namespace
         }
     }
 
-    static void NC_RegisterMessageHandler(const char*, const char*, PluginNetworkMessageCallback)
+    static void NC_RegisterMessageHandler(const IPluginSelf*, const char*, PluginNetworkMessageCallback)
     {
         // No-op on server -- server only sends to clients, never receives ClientMessage
     }
 
-    static void NC_UnregisterMessageHandler(const char*, const char*, PluginNetworkMessageCallback)
+    static void NC_UnregisterMessageHandler(const IPluginSelf*, const char*, PluginNetworkMessageCallback)
     {
         // No-op on server
     }
 
     // Client->Server: no-op on server side (server only receives)
-    static void NC_SendPacketToServer(const char*, const char*, const uint8_t*, size_t)
+    static void NC_SendPacketToServer(const IPluginSelf*, const char*, const uint8_t*, size_t)
     {
         // No-op on server
     }
 
-    static void NC_RegisterServerMessageHandler(const char* pluginName, const char* typeTag,
+    static void NC_RegisterServerMessageHandler(const IPluginSelf* self, const char* typeTag,
                                                 PluginNetworkServerMessageCallback callback)
     {
-        if (!pluginName || !typeTag || !callback) return;
-        std::string key = MakeHandlerKey(pluginName, typeTag);
+        if (!self || !self->name || !typeTag || !callback) return;
+        std::string key = MakeHandlerKey(self->name, typeTag);
         {
             std::lock_guard<std::mutex> lk(g_serverMutex);
             g_serverHandlers[key].push_back(callback);
         }
         ModLoaderLogger::LogDebug(
             L"[NetworkChannel] Server handler registered for plugin='%S' tag='%S'",
-            pluginName, typeTag);
+            self->name, typeTag);
     }
 
-    static void NC_UnregisterServerMessageHandler(const char* pluginName, const char* typeTag,
+    static void NC_UnregisterServerMessageHandler(const IPluginSelf* self, const char* typeTag,
                                                   PluginNetworkServerMessageCallback callback)
     {
-        if (!pluginName || !typeTag || !callback) return;
-        std::string key = MakeHandlerKey(pluginName, typeTag);
+        if (!self || !self->name || !typeTag || !callback) return;
+        std::string key = MakeHandlerKey(self->name, typeTag);
         std::lock_guard<std::mutex> lk(g_serverMutex);
         auto it = g_serverHandlers.find(key);
         if (it != g_serverHandlers.end())
@@ -463,37 +463,37 @@ namespace
 
     static bool NC_IsServer() { return false; }
 
-    static void NC_SendPacketToClient(void*, const char*, const char*, const uint8_t*, size_t)
+    static void NC_SendPacketToClient(void*, const IPluginSelf*, const char*, const uint8_t*, size_t)
     {
         // No-op on client -- client does not send to players
     }
 
-    static void NC_SendPacketToAllClients(const char*, const char*, const uint8_t*, size_t)
+    static void NC_SendPacketToAllClients(const IPluginSelf*, const char*, const uint8_t*, size_t)
     {
         // No-op on client
     }
 
-    static void NC_RegisterMessageHandler(const char* pluginName, const char* typeTag,
+    static void NC_RegisterMessageHandler(const IPluginSelf* self, const char* typeTag,
                                           PluginNetworkMessageCallback callback)
     {
-        if (!pluginName || !typeTag || !callback) return;
-        std::string key = MakeHandlerKey(pluginName, typeTag);
+        if (!self || !self->name || !typeTag || !callback) return;
+        std::string key = MakeHandlerKey(self->name, typeTag);
         {
             std::lock_guard<std::mutex> lk(g_mutex);
             g_handlers[key].push_back(callback);
         }
         ModLoaderLogger::LogDebug(L"[NetworkChannel] Handler registered for plugin='%S' tag='%S'",
-                                  pluginName, typeTag);
+                                  self->name, typeTag);
         // Install the ProcessEvent hook lazily on first registration
         if (!Hooks::ClientMessage::IsInstalled())
             Hooks::ClientMessage::Install();
     }
 
-    static void NC_UnregisterMessageHandler(const char* pluginName, const char* typeTag,
+    static void NC_UnregisterMessageHandler(const IPluginSelf* self, const char* typeTag,
                                             PluginNetworkMessageCallback callback)
     {
-        if (!pluginName || !typeTag || !callback) return;
-        std::string key = MakeHandlerKey(pluginName, typeTag);
+        if (!self || !self->name || !typeTag || !callback) return;
+        std::string key = MakeHandlerKey(self->name, typeTag);
         std::lock_guard<std::mutex> lk(g_mutex);
         auto it = g_handlers.find(key);
         if (it != g_handlers.end())
@@ -508,16 +508,16 @@ namespace
     // Client->Server send: encode envelope and call ServerExecuteConsoleCommand via ProcessEvent.
     // FUNC_Native is left as-is: for a FUNC_NetServer function on the client UE routes it
     // to the server's NetConnection regardless of the Native flag.
-    static void NC_SendPacketToServer(const char* pluginName, const char* typeTag,
+    static void NC_SendPacketToServer(const IPluginSelf* self, const char* typeTag,
                                       const uint8_t* data, size_t size)
     {
-        if (!pluginName || !typeTag || !data || size == 0) return;
+        if (!self || !self->name || !typeTag || !data || size == 0) return;
 
         if (size > 1400)
         {
             ModLoaderLogger::LogWarn(
                 L"[NetworkChannel] SendPacketToServer: payload %zu bytes exceeds 1400-byte limit for plugin '%S'",
-                size, pluginName);
+                size, self->name);
         }
 
         EnsureServerExecCmdFunc();
@@ -541,7 +541,7 @@ namespace
             return;
         }
 
-        std::string env = BuildEnvelope(pluginName, typeTag, data, size);
+        std::string env = BuildEnvelope(self->name, typeTag, data, size);
 
         // Convert to wide for FString
         int wlen = MultiByteToWideChar(CP_UTF8, 0, env.c_str(), -1, nullptr, 0);
@@ -559,13 +559,13 @@ namespace
     }
 
     // Client->Server receive handlers are server-only; these are no-ops on client
-    static void NC_RegisterServerMessageHandler(const char*, const char*,
+    static void NC_RegisterServerMessageHandler(const IPluginSelf*, const char*,
                                                 PluginNetworkServerMessageCallback)
     {
         // No-op on client
     }
 
-    static void NC_UnregisterServerMessageHandler(const char*, const char*,
+    static void NC_UnregisterServerMessageHandler(const IPluginSelf*, const char*,
                                                   PluginNetworkServerMessageCallback)
     {
         // No-op on client

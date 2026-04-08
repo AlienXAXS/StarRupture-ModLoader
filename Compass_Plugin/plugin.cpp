@@ -3,15 +3,9 @@
 #include "plugin_config.h"
 #include "compass/compass.h"
 
-static IPluginLogger*  g_logger  = nullptr;
-static IPluginConfig*  g_config  = nullptr;
-static IPluginScanner* g_scanner = nullptr;
-static IPluginHooks*   g_hooks   = nullptr;
+static IPluginSelf* g_self = nullptr;
 
-IPluginLogger*  GetLogger()  { return g_logger;  }
-IPluginConfig*  GetConfig()  { return g_config;  }
-IPluginScanner* GetScanner() { return g_scanner; }
-IPluginHooks*   GetHooks()   { return g_hooks;   }
+IPluginSelf* GetSelf() { return g_self; }
 
 #ifndef MODLOADER_BUILD_TAG
 #define MODLOADER_BUILD_TAG "0.2"
@@ -32,16 +26,13 @@ extern "C" {
 		return &s_pluginInfo;
 	}
 
-	__declspec(dllexport) bool PluginInit(IPluginLogger* logger, IPluginConfig* config, IPluginScanner* scanner, IPluginHooks* hooks)
+	__declspec(dllexport) bool PluginInit(IPluginSelf* self)
 	{
-		g_logger  = logger;
-		g_config  = config;
-		g_scanner = scanner;
-		g_hooks   = hooks;
+		g_self = self;
 
 		LOG_INFO("Compass plugin initializing...");
 
-		CompassConfig::Config::Initialize(config);
+		CompassConfig::Config::Initialize(self);
 
 		if (!CompassConfig::Config::IsEnabled())
 		{
@@ -54,14 +45,14 @@ extern "C" {
 		// requiring the player to open the map first.
 		// Address is pre-scanned by the modloader at startup via hooks->Engine.
 		{
-			uintptr_t slo = hooks->Engine->GetStaticLoadObjectAddress();
+			uintptr_t slo = self->hooks->Engine->GetStaticLoadObjectAddress();
 			if (slo)
 				Compass::SetStaticLoadObject(slo);
 			else
 				LOG_WARN("StaticLoadObject address not available -- map textures require player to open map first");
 		}
 
-		if (!Compass::Install(hooks))
+		if (!Compass::Install(self->hooks))
 		{
 			LOG_WARN("Compass hook install failed — compass will not render");
 			// Return true so the plugin still loads; compass just won't draw
@@ -76,12 +67,9 @@ extern "C" {
 	{
 		LOG_INFO("Compass plugin shutting down...");
 
-		Compass::Remove(g_hooks);
+		Compass::Remove(g_self ? g_self->hooks : nullptr);
 
-		g_logger  = nullptr;
-		g_config  = nullptr;
-		g_scanner = nullptr;
-		g_hooks   = nullptr;
+		g_self = nullptr;
 	}
 
 } // extern "C"

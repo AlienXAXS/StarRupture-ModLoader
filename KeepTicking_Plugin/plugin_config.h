@@ -52,46 +52,46 @@ namespace KeepTickingConfig
 	class Config
 	{
 	public:
-		static void Initialize(IPluginConfig* config)
+		static void Initialize(IPluginSelf* self)
 		{
-			s_config = config;
+			s_self = self;
 
 			// Initialize config from schema
-			if (s_config)
+			if (s_self)
 			{
-				s_config->InitializeFromSchema("KeepTicking", &SCHEMA);
+				s_self->config->InitializeFromSchema(s_self, &SCHEMA);
 			}
 		}
 
 		static bool IsPluginEnabled()
 		{
-			return s_config ? s_config->ReadBool("KeepTicking", "General", "Enabled", false) : false;
+			return s_self ? s_self->config->ReadBool(s_self, "General", "Enabled", false) : false;
 		}
 
 		static bool ShouldPreventServerSleep()
 		{
-			return s_config ? s_config->ReadBool("KeepTicking", "PluginSettings", "PreventServerSleep", false) : false;
+			return s_self ? s_self->config->ReadBool(s_self, "PluginSettings", "PreventServerSleep", false) : false;
 		}
 
 		static bool IsDebugVisibleModeEnabled()
 		{
-			return s_config ? s_config->ReadBool("KeepTicking", "PluginSettings", "DebugVisibleMode", false) : false;
+			return s_self ? s_self->config->ReadBool(s_self, "PluginSettings", "DebugVisibleMode", false) : false;
 		}
 
 		static bool IsTraversalDisabled()
 		{
-			return s_config ? s_config->ReadBool("KeepTicking", "PluginSettings", "DisableTraversal", false) : false;
+			return s_self ? s_self->config->ReadBool(s_self, "PluginSettings", "DisableTraversal", false) : false;
 		}
 
 		static int GetWaypointsPerTick()
 		{
-			int val = s_config ? s_config->ReadInt("KeepTicking", "PluginSettings", "WaypointsPerTick", 10) : 10;
+			int val = s_self ? s_self->config->ReadInt(s_self, "PluginSettings", "WaypointsPerTick", 10) : 10;
 			if (val < 1) val = 1;
 			if (val > 100) val = 100;
 			return val;
 		}
 
 	private:
-		static IPluginConfig* s_config;
+		static IPluginSelf* s_self;
 	};
 }
