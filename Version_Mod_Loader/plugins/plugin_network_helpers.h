@@ -22,7 +22,7 @@
 //       if (hooks->Network->IsServer()) {
 //           hooks->Engine->RegisterOnTick([](float) {
 //               TimerPacket pkt{ GetTime(), CountPlayers(), GetPhase(), {} };
-//               Network::SendPacketToAllPlayers(g_hooks, "MyPlugin", pkt);
+//               Network::SendPacketToAllClients(g_hooks, "MyPlugin", pkt);
 //           });
 //       } else {
 //           Network::OnReceive<TimerPacket>(g_hooks, "MyPlugin",
@@ -76,20 +76,20 @@ void SendPacketToPlayer(IPluginHooks* hooks, const char* pluginName,
 }
 
 // ----------------------------------------------------------------
-// SendPacketToAllPlayers<T>
+// SendPacketToAllClients<T>
 // Server-side: broadcast a typed packet to all connected players.
 //   hooks      : the IPluginHooks* from PluginInit
 //   pluginName : your plugin's name (from GetPluginInfo()->name)
 //   pkt        : the packet to broadcast
 // ----------------------------------------------------------------
 template<typename T>
-void SendPacketToAllPlayers(IPluginHooks* hooks, const char* pluginName, const T& pkt)
+void SendPacketToAllClients(IPluginHooks* hooks, const char* pluginName, const T& pkt)
 {
     static_assert(std::is_trivially_copyable_v<T>,
-        "Network::SendPacketToAllPlayers<T>: T must be trivially copyable "
+        "Network::SendPacketToAllClients<T>: T must be trivially copyable "
         "(no pointers, vtables, or std containers)");
     if (!hooks || !hooks->Network) return;
-    hooks->Network->SendPacketToAllPlayers(
+    hooks->Network->SendPacketToAllClients(
         pluginName,
         typeid(T).name(),
         reinterpret_cast<const uint8_t*>(&pkt),

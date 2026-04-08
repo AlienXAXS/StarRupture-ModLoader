@@ -110,7 +110,7 @@ extern "C" {
 				pkt.sendCount = s_sendCount;
 				pkt.uptime    = s_uptime;
 
-				Network::SendPacketToAllPlayers(g_hooks, "NetChannelTest", pkt);
+				Network::SendPacketToAllClients(g_hooks, "NetChannelTest", pkt);
 
 				LOG_DEBUG("Sent TestPacket #%u (tick=%u uptime=%.1fs)", s_sendCount, s_tickCount, s_uptime);
 			});

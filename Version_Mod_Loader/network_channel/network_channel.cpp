@@ -313,7 +313,7 @@ namespace
         SendEnvelopeToPlayer(playerController, env);
     }
 
-    static void NC_SendPacketToAllPlayers(const char* pluginName, const char* typeTag,
+    static void NC_SendPacketToAllClients(const char* pluginName, const char* typeTag,
                                           const uint8_t* data, size_t size)
     {
         if (!pluginName || !typeTag || !data || size == 0) return;
@@ -330,7 +330,7 @@ namespace
         SDK::UWorld* world = SDK::UWorld::GetWorld();
         if (!world)
         {
-            ModLoaderLogger::LogWarn(L"[NetworkChannel] SendPacketToAllPlayers: UWorld not available");
+            ModLoaderLogger::LogWarn(L"[NetworkChannel] SendPacketToAllClients: UWorld not available");
             return;
         }
 
@@ -341,7 +341,10 @@ namespace
             &actors);
 
         for (int32_t i = 0; i < actors.Num(); ++i)
-            SendEnvelopeToPlayer(actors[i], env);
+        {
+            if (!IsExcluded(actors[i]))
+                SendEnvelopeToPlayer(actors[i], env);
+        }
     }
 
     static void NC_RegisterMessageHandler(const char*, const char*, PluginNetworkMessageCallback)
@@ -390,6 +393,38 @@ namespace
         }
     }
 
+    // Broadcast exclusion list -- controllers registered here are skipped by SendPacketToAllClients.
+    static std::mutex g_excludeMutex;
+    static std::vector<void*> g_excludedControllers;
+
+    static void NC_ExcludeFromBroadcast(void* playerController)
+    {
+        if (!playerController) return;
+        std::lock_guard<std::mutex> lk(g_excludeMutex);
+        for (auto* p : g_excludedControllers)
+            if (p == playerController) return; // already registered
+        g_excludedControllers.push_back(playerController);
+        ModLoaderLogger::LogDebug(L"[NetworkChannel] ExcludeFromBroadcast: %p registered", playerController);
+    }
+
+    static void NC_UnexcludeFromBroadcast(void* playerController)
+    {
+        if (!playerController) return;
+        std::lock_guard<std::mutex> lk(g_excludeMutex);
+        g_excludedControllers.erase(
+            std::remove(g_excludedControllers.begin(), g_excludedControllers.end(), playerController),
+            g_excludedControllers.end());
+        ModLoaderLogger::LogDebug(L"[NetworkChannel] UnexcludeFromBroadcast: %p removed", playerController);
+    }
+
+    static bool IsExcluded(void* playerController)
+    {
+        std::lock_guard<std::mutex> lk(g_excludeMutex);
+        for (auto* p : g_excludedControllers)
+            if (p == playerController) return true;
+        return false;
+    }
+
 #endif // MODLOADER_SERVER_BUILD
 
 #ifdef MODLOADER_CLIENT_BUILD
@@ -434,7 +469,7 @@ namespace
         // No-op on client -- client does not send to players
     }
 
-    static void NC_SendPacketToAllPlayers(const char*, const char*, const uint8_t*, size_t)
+    static void NC_SendPacketToAllClients(const char*, const char*, const uint8_t*, size_t)
     {
         // No-op on client
     }
@@ -537,6 +572,10 @@ namespace
         // No-op on client
     }
 
+    // Broadcast exclusion is server-only; no-ops on client
+    static void NC_ExcludeFromBroadcast(void*) {}
+    static void NC_UnexcludeFromBroadcast(void*) {}
+
 #endif // MODLOADER_CLIENT_BUILD
 
     // Static IPluginNetworkChannel instance (shared between server and client)
@@ -544,12 +583,14 @@ namespace
     {
         NC_IsServer,
         NC_SendPacketToClient,
-        NC_SendPacketToAllPlayers,
+        NC_SendPacketToAllClients,
         NC_RegisterMessageHandler,
         NC_UnregisterMessageHandler,
         NC_SendPacketToServer,
         NC_RegisterServerMessageHandler,
         NC_UnregisterServerMessageHandler,
+        NC_ExcludeFromBroadcast,
+        NC_UnexcludeFromBroadcast,
     };
 
 } // anonymous namespace
@@ -702,6 +743,10 @@ void NetworkChannel::Shutdown()
         g_serverHandlers.clear();
     }
     g_clientSaveTxtFunc = nullptr;
+    {
+        std::lock_guard<std::mutex> lk(g_excludeMutex);
+        g_excludedControllers.clear();
+    }
     ModLoaderLogger::LogInfo(L"[NetworkChannel] Server network channel shut down");
 #endif
 

@@ -77,7 +77,7 @@
 //      Network is non-null on server AND client builds; nullptr on generic (plain Debug/Release) builds.
 //        Network  -- plugin-to-plugin net channel  (hooks->Network->SendPacketToClient)
 //      Plugin authors should use plugin_network_helpers.h template wrappers (SendPacketToPlayer<T>,
-//      SendPacketToAllPlayers<T>, OnReceive<T>) rather than calling IPluginNetworkChannel directly.
+//      SendPacketToAllClients<T>, OnReceive<T>) rather than calling IPluginNetworkChannel directly.
 //      Always null-check hooks->Network -- it is nullptr on generic builds.
 // v18: Added PostToGameThread to IPluginEngineEvents for safe cross-thread dispatch onto the game
 //      thread from background threads (RCON handlers, network callbacks, etc.).
@@ -269,7 +269,7 @@ typedef void (*PluginPlayerLeftCallback)(void* exitingController);
 // v16 (client only) — fired after AHUD::PostRender; hud is AHUD* cast to void*
 typedef void (*PluginHUDPostRenderCallback)(void* hud);
 // v17 -- fired on the client when a server packet arrives for this plugin+typeTag.
-// pluginName : the name the server-side plugin passed to SendPacketToClient/SendPacketToAllPlayers
+// pluginName : the name the server-side plugin passed to SendPacketToClient/SendPacketToAllClients
 // typeTag    : identifies the packet type (use typeid(T).name() via plugin_network_helpers.h)
 // data       : decoded payload bytes -- exactly 'size' bytes; pointer is valid only during this call
 // size       : byte count of the payload; always > 0
@@ -679,7 +679,7 @@ struct IPluginHUDEvents
 // struct layout so plain memcpy serialization works without a schema.
 //
 // Prefer the typed wrappers in plugin_network_helpers.h (SendPacketToPlayer<T>,
-// SendPacketToAllPlayers<T>, OnReceive<T>) over calling these functions directly.
+// SendPacketToAllClients<T>, OnReceive<T>) over calling these functions directly.
 // ============================================================
 struct IPluginNetworkChannel
 {
@@ -699,7 +699,7 @@ struct IPluginNetworkChannel
     // Server-side: send a raw packet to all currently connected players.
     // pluginName / typeTag / data / size: same semantics as SendPacketToClient.
     // No-op on client builds.
-    void (*SendPacketToAllPlayers)(const char* pluginName, const char* typeTag,
+    void (*SendPacketToAllClients)(const char* pluginName, const char* typeTag,
                                    const uint8_t* data, size_t size);
 
     // Client-side: register a handler for packets arriving with the given pluginName+typeTag pair.
@@ -734,7 +734,7 @@ struct IPluginNetworkChannel
     void (*UnregisterServerMessageHandler)(const char* pluginName, const char* typeTag,
                                            PluginNetworkServerMessageCallback callback);
 
-    // v18 -- Server-only: exclude a PlayerController from SendPacketToAllPlayers sends.
+    // v18 -- Server-only: exclude a PlayerController from SendPacketToAllClients sends.
     // Intended for plugin-spawned controllers (e.g. fake/AI players) that have no real
     // network connection.  Sending to them is a silent no-op anyway, but registering an
     // exclusion avoids the wasted ProcessEvent call and log noise.
@@ -757,7 +757,7 @@ struct IPluginNetworkChannel
 //   hooks->Spawner->RegisterOnBeforeActivate(&MyBeforeCb);
 //   hooks->Input->RegisterKeybind(EModKey::F1, EModKeyEvent::Pressed, &MyKeyCb);
 //   hooks->HUD->RegisterOnPostRender(&MyPostRenderCb);  // client only, null-check first
-//   hooks->Network->SendPacketToAllPlayers(name, tag, data, size);  // server+client, null-check first
+//   hooks->Network->SendPacketToAllClients(name, tag, data, size);  // server+client, null-check first
 //   hooks->Engine->PostToGameThread(&MyFn, ctx);                    // any thread -> game thread (v18)
 // ============================================================
 struct IPluginHooks

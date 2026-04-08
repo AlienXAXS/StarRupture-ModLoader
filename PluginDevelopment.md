@@ -29,6 +29,7 @@ This guide covers building the mod loader from source, creating new plugins, the
      - [hooks->Input (IPluginInputEvents) -- Client only](#hooksinput)
      - [hooks->UI (IPluginUIEvents) -- Client only](#hooksui)
      - [hooks->HUD (IPluginHUDEvents) -- Client only](#hookshud)
+     - [hooks->Network (IPluginNetworkChannel) -- Server/Client only](#hooksnetwork)
 6. [Interface Version Changelog](#interface-version-changelog)
 7. [Troubleshooting](#troubleshooting)
 
@@ -332,12 +333,15 @@ hooks->Actors    -- actor lifecycle
 hooks->Spawner   -- enemy spawner Before/After hooks
 hooks->Hooks     -- low-level hook install / remove / query
 hooks->Memory    -- memory patch / nop / read / alloc
-hooks->Input     -- keybind subscriptions      (CLIENT ONLY -- null on server)
-hooks->UI        -- ImGui panels and widgets   (CLIENT ONLY -- null on server)
-hooks->HUD       -- AHUD PostRender callbacks  (CLIENT ONLY -- null on server)
+hooks->Network   -- plugin-to-plugin network packets   (SERVER+CLIENT ONLY -- null on generic)
+hooks->Input     -- keybind subscriptions              (CLIENT ONLY -- null on server)
+hooks->UI        -- ImGui panels and widgets           (CLIENT ONLY -- null on server)
+hooks->HUD       -- AHUD PostRender callbacks          (CLIENT ONLY -- null on server)
 ```
 
-**Client-only sub-interfaces (`Input`, `UI`, `HUD`) are always `nullptr` on server and generic builds.** Always null-check before use:
+**Client-only sub-interfaces (`Input`, `UI`, `HUD`) are always `nullptr` on server and generic builds.**
+**`Network` is `nullptr` on generic (non-client, non-server) builds.**
+Always null-check before use:
 
 ```cpp
 if (hooks->HUD) {
@@ -657,6 +661,178 @@ uintptr_t gatherAddr = hooks->HUD->GetGatherPlayersDataAddress();
 
 ---
 
+#### hooks->Network
+
+`IPluginNetworkChannel` -- typed plugin-to-plugin packet messaging between server and client builds. **Null on generic (non-server, non-client) builds. Always null-check before use.**
+
+The same plugin DLL is loaded on both server and client. Because both sides share the same binary, POD structs can be used directly as packet types -- layout is guaranteed identical with no serialisation schema required.
+
+##### Checking which side you are on
+
+```cpp
+if (!hooks->Network) return; // generic build, no network support
+
+if (hooks->Network->IsServer()) {
+    // running on the dedicated server
+} else {
+    // running on the client
+}
+```
+
+##### Defining a packet type
+
+Packet types must be plain-old-data (POD) structs -- no pointers, no virtual functions, no `std::` containers. Add explicit padding to keep the layout deterministic across compilers.
+
+```cpp
+struct TimerPacket {
+    float    currentTime;    // seconds elapsed
+    int32_t  playersAlive;
+    uint8_t  phase;
+    uint8_t  pad[3];         // explicit padding for deterministic size
+};
+```
+
+##### Server sending to all clients
+
+```cpp
+// From any server-side callback (e.g. OnTick, OnPlayerJoined)
+TimerPacket pkt{ GetTime(), CountPlayers(), GetPhase(), {} };
+hooks->Network->SendPacketToAllClients(
+    "MyPlugin",          // must match GetPluginInfo()->name exactly
+    "TimerPacket",       // type tag -- arbitrary string, unique per packet type
+    reinterpret_cast<const uint8_t*>(&pkt),
+    sizeof(pkt));
+```
+
+##### Server sending to one specific client
+
+```cpp
+// playerController is the void* from OnPlayerJoined / OnPlayerLeft callbacks
+hooks->Network->SendPacketToClient(
+    playerController,
+    "MyPlugin",
+    "TimerPacket",
+    reinterpret_cast<const uint8_t*>(&pkt),
+    sizeof(pkt));
+```
+
+##### Client receiving a packet from the server
+
+```cpp
+static void OnTimerPacket(const char* /*plugin*/, const char* /*tag*/,
+                          const uint8_t* data, size_t size)
+{
+    if (size != sizeof(TimerPacket)) return; // size guard
+    TimerPacket pkt;
+    memcpy(&pkt, data, sizeof(pkt));
+    g_display.time        = pkt.currentTime;
+    g_display.playerCount = pkt.playersAlive;
+}
+
+// Register in PluginInit (client side)
+if (hooks->Network && !hooks->Network->IsServer()) {
+    hooks->Network->RegisterMessageHandler("MyPlugin", "TimerPacket", &OnTimerPacket);
+}
+
+// Unregister in PluginShutdown
+if (hooks->Network) {
+    hooks->Network->UnregisterMessageHandler("MyPlugin", "TimerPacket", &OnTimerPacket);
+}
+```
+
+##### Client sending to the server
+
+```cpp
+struct AckPacket {
+    int32_t receivedCount;
+    uint8_t pad[4];
+};
+
+AckPacket ack{ g_receivedCount, {} };
+hooks->Network->SendPacketToServer(
+    "MyPlugin",
+    "AckPacket",
+    reinterpret_cast<const uint8_t*>(&ack),
+    sizeof(ack));
+```
+
+##### Server receiving a packet from a client
+
+The `senderPlayerController` parameter is the `APlayerController*` of the sending client cast as `void*`.
+
+```cpp
+static void OnAckPacket(void* senderPC, const char* /*plugin*/, const char* /*tag*/,
+                        const uint8_t* data, size_t size)
+{
+    if (size != sizeof(AckPacket)) return;
+    AckPacket ack;
+    memcpy(&ack, data, sizeof(ack));
+    LOG_INFO("[MyPlugin] Client %p acked count=%d", senderPC, ack.receivedCount);
+}
+
+// Register in PluginInit (server side)
+if (hooks->Network && hooks->Network->IsServer()) {
+    hooks->Network->RegisterServerMessageHandler("MyPlugin", "AckPacket", &OnAckPacket);
+}
+
+// Unregister in PluginShutdown
+if (hooks->Network) {
+    hooks->Network->UnregisterServerMessageHandler("MyPlugin", "AckPacket", &OnAckPacket);
+}
+```
+
+##### Full example -- server broadcasts a timer, client echoes an ack
+
+```cpp
+bool PluginInit(IPluginLogger* logger, IPluginConfig*, IPluginScanner*, IPluginHooks* hooks)
+{
+    g_hooks = hooks;
+    if (!hooks->Network) return true; // generic build, skip
+
+    if (hooks->Network->IsServer()) {
+        // Broadcast timer every tick
+        hooks->Engine->RegisterOnTick([](float) {
+            if (!g_hooks->Network) return;
+            TimerPacket pkt{ GetTime(), CountPlayers(), GetPhase(), {} };
+            g_hooks->Network->SendPacketToAllClients("MyPlugin", "TimerPacket",
+                reinterpret_cast<const uint8_t*>(&pkt), sizeof(pkt));
+        });
+        // Receive acks from clients
+        hooks->Network->RegisterServerMessageHandler("MyPlugin", "AckPacket", &OnAckPacket);
+    } else {
+        // Receive timer from server, update local display
+        hooks->Network->RegisterMessageHandler("MyPlugin", "TimerPacket", &OnTimerPacket);
+    }
+    return true;
+}
+
+void PluginShutdown()
+{
+    if (g_hooks && g_hooks->Network) {
+        g_hooks->Network->UnregisterMessageHandler("MyPlugin", "TimerPacket", &OnTimerPacket);
+        g_hooks->Network->UnregisterServerMessageHandler("MyPlugin", "AckPacket", &OnAckPacket);
+    }
+}
+```
+
+##### Excluding a controller from broadcasts
+
+If your plugin spawns a fake or AI `APlayerController` that has no real network connection, register it as excluded so `SendPacketToAllClients` skips it. No-op on client builds.
+
+```cpp
+void* fakePC = SpawnFakeController();
+if (hooks->Network) hooks->Network->ExcludeFromBroadcast(fakePC);
+
+// When the fake controller is destroyed:
+if (hooks->Network) hooks->Network->UnexcludeFromBroadcast(fakePC);
+```
+
+##### Payload size limit
+
+Keep individual packet payloads under **1400 bytes** to avoid UDP fragmentation. For larger state, send incremental diffs rather than full snapshots. The loader logs a warning when this limit is exceeded.
+
+---
+
 ## Interface Version Changelog
 
 The loader accepts plugins whose `interfaceVersion` is in `[PLUGIN_INTERFACE_VERSION_MIN, PLUGIN_INTERFACE_VERSION_MAX]`. All interface structs are append-only so older plugins still load without recompilation as long as they are within the supported range.
@@ -679,8 +855,10 @@ The loader accepts plugins whose `interfaceVersion` is in `[PLUGIN_INTERFACE_VER
 | v14     | **yes**     | **ABI break.** Replaced all flat callbacks with typed sub-interface pointers. `IPluginHooks` now contains only group pointers (`Spawner`, `Hooks`, `Memory`, `Engine`, `World`, `Players`, `Actors`). Access via `hooks->Engine->RegisterOnInit(...)`. Added 10 named callback typedefs. MIN bumped to 14. |
 | v15     | no          | Added `EModKey`, `EModKeyEvent`, `PluginKeybindCallback`, `IPluginInputEvents` and `hooks->Input` (client only, nullptr on server/generic). Also folded: `IModLoaderImGui` function table, `PluginImGuiRenderCallback`, `PluginPanelDesc`, `PanelHandle`, `PluginConfigChangedCallback`, `IPluginUIEvents` and `hooks->UI` (client only). `RegisterPanel` returns a `PanelHandle`; `SetPanelOpen`/`SetPanelClose` take a handle instead of a title string. |
 | v16     | no          | Added `PluginWidgetDesc`, `WidgetHandle`, `RegisterWidget`, `UnregisterWidget`, `SetWidgetVisible` to `IPluginUIEvents` for always-on overlay windows. Added `PluginHUDPostRenderCallback`, `IPluginHUDEvents`, `hooks->HUD` (client only, nullptr on server/generic) with `RegisterOnPostRender` and `GetGatherPlayersDataAddress`. Extended `IPluginEngineEvents` with `GetStaticLoadObjectAddress()` (all builds). Byte patterns for `AHUD_PostRender`, `StaticLoadObject`, and `GatherPlayersData` moved from `Compass_Plugin` into the modloader's `scan_patterns.h`. |
+| v17     | no          | Added `PluginNetworkMessageCallback`, `IPluginNetworkChannel`, and `hooks->Network` (server+client builds; null on generic). Server->Client channel via `SendPacketToClient` / `SendPacketToAllClients` / `RegisterMessageHandler` / `UnregisterMessageHandler`. Prefer template helpers from `plugin_network_helpers.h` over calling `IPluginNetworkChannel` directly. |
+| v18     | no          | Extended `IPluginNetworkChannel` with Client->Server direction: `SendPacketToServer` (client only), `RegisterServerMessageHandler` / `UnregisterServerMessageHandler` (server only). Added `ExcludeFromBroadcast` / `UnexcludeFromBroadcast` (server only) to skip fake/AI controllers in `SendPacketToAllClients`. |
 
-The current `PLUGIN_INTERFACE_VERSION_MIN` is **14** and `PLUGIN_INTERFACE_VERSION_MAX` is **16**.
+The current `PLUGIN_INTERFACE_VERSION_MIN` is **14** and `PLUGIN_INTERFACE_VERSION_MAX` is **18**.
 
 ---
 
