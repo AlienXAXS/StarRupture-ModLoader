@@ -11,10 +11,8 @@ Like this project? Give it a ⭐ here on GitHub!
 ### 🔧 KeepTicking *(Server)*
 Prevents a dedicated server from sleeping when no players are online. Without this, all of your machines will stop producing items.
 
-### 🛤️ RailJunctionFixer *(Client & Server)*
-Fixes rail junction save/load issues at runtime. Without this fix, rail junctions may lose their connections after loading a save causing logistic drones to teleport between rails when Logistic Drones travel over 3 and 5 lane Junctions.
-
-*Note: Existing rails cannot be fixed automatically, at least a method has not been found.  You can use [this](https://wilhelm-af.github.io/StarRupture-JunctionFixer/) to fix existing rails though outside of the game first.*
+### 🛤️ RailJunctionFixer *(Deprecated — safe to delete)*
+The rail junction bug has been fixed by the developers in the latest game update. This plugin is now a no-op stub and will be removed in a future release. It is safe to delete `RailJunctionFixer.dll` from your `Plugins\` folder.
 
 ### 🖥️ ServerUtility *(Server)*
 Adds remote administration to a dedicated server:
@@ -39,11 +37,11 @@ Adds a heads-up compass bar to the game HUD showing nearby entities and points o
 
 The compass bar position, width, scale, and line colour are all configurable. Per-category render distances can be set in Unreal Units (0 = unlimited). Config is in `Plugins\config\Compass.ini`.
 
-### 📝 ExamplePlugin *(Template)*
-A starter template for plugin development. Demonstrates the plugin lifecycle, config system, and logging — does not modify gameplay.
+---
 
-**Want to build your own plugin?** Use the [StarRupture-Plugin-SDK](https://github.com/AlienXAXS/StarRupture-Plugin-SDK) repo — it has everything you need (headers, UE5 SDK, ExamplePlugin, pre-built `dwmapi.dll`) without requiring a fork of this repo. See the [Developer Guide](PluginDevelopment.md) for the full API reference.
+## Developing Your Own Plugins
 
+Use the [StarRupture-Plugin-SDK](https://github.com/AlienXAXS/StarRupture-Plugin-SDK) repo — it has everything you need (headers, UE5 SDK, an example plugin, and a pre-built `dwmapi.dll`) without requiring a fork of this repo.
 ---
 
 ## Installation
@@ -92,15 +90,8 @@ When `-SessionName=` is present, `DSSettings.txt` is not needed. The save game n
 |---|---|
 | Plugins not loading | Make sure DLLs are in the `Plugins\` folder and `Enabled=1` is set in each plugin's `.ini` file. |
 | RCON won't start | Both `-RconPort=` and `-RconPassword=` must be provided on the command line. |
-| Rail junctions still broken | Enable RailJunctionFixer in the plugins `.ini` file. |
 | Server sleeps when empty | Enable KeepTicking in the plugins `.ini` file. |
 | Logs / diagnostics | Check `modloader.log` for detailed output.  Enable debug log level by setting `Level=DEBUG` in `modloader.ini`. |
-
----
-
-## Development
-
-Want to create your own plugins or contribute? See the **[Developer Guide](PluginDevelopment.md)**.
 
 ---
 
@@ -109,7 +100,6 @@ Want to create your own plugins or contribute? See the **[Developer Guide](Plugi
 - **[Dumper-7](https://github.com/Encryqed/Dumper-7)** — Unreal Engine SDK generation
 - **[MinHook](https://github.com/TsudaKageyu/minhook)** — Function hooking library
 - **[nlohmann/json](https://github.com/nlohmann/json)** — JSON parsing
-- **[Wilhelm-af](https://github.com/Wilhelm-af)** — Rail junction fix logic
 
 ## Disclaimer
 
