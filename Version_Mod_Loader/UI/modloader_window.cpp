@@ -427,6 +427,8 @@ namespace UI::ModLoaderWindow
         ImGui::Spacing();
         ImGui::TextUnformatted("StarRupture ModLoader By AlienX");
         ImGui::Spacing();
+        ImGui::TextUnformatted("  Thanks for using my ModLoader!");
+        ImGui::Spacing();
         ImGui::TextDisabled("Build: " MODLOADER_BUILD_TAG);
 
         char imguiVer[64];

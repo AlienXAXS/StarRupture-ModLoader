@@ -53,8 +53,8 @@ namespace Hooks
         {
             // Walk the same SuperStruct chain GetFunction uses and dump every
             // function name found so the caller can see what is actually available.
-            ModLoaderLogger::LogError(
-                L"[Hooks] ResolveUFunction: '%S::%S' not found -- available functions can be seen with TRACE enabled.", className, funcName);
+            ModLoaderLogger::LogWarn(
+                L"[Hooks] Resolve UFunction: '%S::%S' not found, attempting alternative hook.", className, funcName);
 
             for (const SDK::UStruct* Clss = cls; Clss; Clss = Clss->SuperStruct)
             {

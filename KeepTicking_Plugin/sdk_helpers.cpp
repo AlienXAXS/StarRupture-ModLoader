@@ -1,6 +1,5 @@
 #include "sdk_helpers.h"
 #include "plugin_helpers.h"
-#include "../StarRupture SDK/Server/SDK/Engine_classes.hpp"
 
 namespace SDKHelpers
 {
