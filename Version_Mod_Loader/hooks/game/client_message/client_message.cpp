@@ -90,8 +90,6 @@ namespace Hooks::ClientMessage
                 if (p[0].Data && p[0].Num > 0)
                     NetworkChannel::DispatchClientMessage(p[0].Data, p[0].Num);
                 // Suppress original -- no file write
-                if (g_origExec)
-                    g_origExec(context, stack, result);
                 return;
             }
 

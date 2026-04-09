@@ -1,4 +1,7 @@
 #include "plugin_manager.h"
+
+#include <memory>
+
 #include "plugin_interface.h"
 #include "logging/log.h"
 #include "logging/logger.h"
@@ -26,14 +29,21 @@ namespace ModLoaderLogger
 		std::string cachedVersion;
 		std::string cachedAuthor;
 
-		// Stable identity struct passed to PluginInit and retained by the plugin.
+		// Stable identity struct passed to PluginInit and retained by the plugin->
 		// name/version point into cachedName/cachedVersion so they outlive PluginInfo.
 		IPluginSelf self;
 	};
 
-	static std::vector<LoadedPlugin> g_loadedPlugins;
+	std::vector<std::unique_ptr<LoadedPlugin>> g_loadedPlugins;
 	static CRITICAL_SECTION g_pluginLock;
 	static bool g_managerInitialized = false;
+
+	// Update self pointers after loading or reloading a plugin, so they point to the cached strings.
+	static void RefreshSelfPointers(LoadedPlugin& rec)
+	{
+		rec.self.name = rec.cachedName.c_str();
+		rec.self.version = rec.cachedVersion.c_str();
+	}
 
 	// Inner load helper: performs LoadLibrary, GetProcAddress, GetPluginInfo,
 	// version check, and PluginInit on an existing LoadedPlugin record.
@@ -98,16 +108,6 @@ namespace ModLoaderLogger
 		rec.cachedVersion  = info->version ? info->version : "";
 		rec.cachedAuthor   = info->author  ? info->author  : "";
 
-		// Populate the stable identity struct. name/version point into the cached std::strings.
-		// The service pointers (logger/config/scanner/hooks) are filled in InitAllLoadedPlugins
-		// once the engine is ready, just before PluginInit is called.
-		rec.self.name    = rec.cachedName.c_str();
-		rec.self.version = rec.cachedVersion.c_str();
-		rec.self.logger  = nullptr;
-		rec.self.config  = nullptr;
-		rec.self.scanner = nullptr;
-		rec.self.hooks   = nullptr;
-
 		LogMessage(L"Successfully loaded plugin DLL: %S v%S (PluginInit deferred)", info->name, info->version);
 		return true;
 	}
@@ -115,11 +115,19 @@ namespace ModLoaderLogger
 	// Load a single plugin DLL by path (used during startup scan).
 	static bool LoadPlugin(const std::wstring& dllPath)
 	{
-		LoadedPlugin rec = {};
-		rec.fileName = dllPath;
+		auto rec = std::make_unique<LoadedPlugin>();
+		rec->fileName = dllPath;
 
-		if (!LoadPluginIntoRecord(rec))
+		if (!LoadPluginIntoRecord(*rec))
 			return false;
+
+		RefreshSelfPointers(*rec);
+		rec->self.name = rec->cachedName.c_str();
+		rec->self.version = rec->cachedVersion.c_str();
+		rec->self.logger = nullptr;
+		rec->self.config = nullptr;
+		rec->self.scanner = nullptr;
+		rec->self.hooks = nullptr;
 
 		EnterCriticalSection(&g_pluginLock);
 		g_loadedPlugins.push_back(std::move(rec));
@@ -231,28 +239,28 @@ namespace ModLoaderLogger
 
 		for (auto& plugin : g_loadedPlugins)
 		{
-			if (plugin.isInitialized || !plugin.init)
+			if (plugin->isInitialized || !plugin->init)
 				continue;
 
 			totalDeferred++;
-			LogMessage(L"Calling PluginInit for: %S v%S", plugin.cachedName.c_str(), plugin.cachedVersion.c_str());
+			LogMessage(L"Calling PluginInit for: %S v%S", plugin->cachedName.c_str(), plugin->cachedVersion.c_str());
 
 			// Fill service pointers now that the engine is ready
-			plugin.self.logger  = GetPluginLogger();
-			plugin.self.config  = GetPluginConfig();
-			plugin.self.scanner = GetPluginScanner();
-			plugin.self.hooks   = GetPluginHooks();
+			plugin->self.logger  = GetPluginLogger();
+			plugin->self.config  = GetPluginConfig();
+			plugin->self.scanner = GetPluginScanner();
+			plugin->self.hooks   = GetPluginHooks();
 
-			if (plugin.init(&plugin.self))
+			if (plugin->init(&plugin->self))
 			{
-				plugin.isInitialized = true;
+				plugin->isInitialized = true;
 				initCount++;
-				LogMessage(L"Plugin initialized: %S", plugin.cachedName.c_str());
+				LogMessage(L"Plugin initialized: %S", plugin->cachedName.c_str());
 			}
 			else
 			{
 				failCount++;
-				LogMessage(L"Plugin initialization failed: %S", plugin.cachedName.c_str());
+				LogMessage(L"Plugin initialization failed: %S", plugin->cachedName.c_str());
 			}
 		}
 
@@ -269,18 +277,18 @@ namespace ModLoaderLogger
 
 		for (auto& plugin : g_loadedPlugins)
 		{
-			if (plugin.isInitialized)
+			if (plugin->isInitialized)
 			{
-				LogMessage(L"Shutting down plugin: %S", plugin.cachedName.c_str());
-				plugin.shutdown();
-				plugin.isInitialized = false;
+				LogMessage(L"Shutting down plugin: %S", plugin->cachedName.c_str());
+				plugin->shutdown();
+				plugin->isInitialized = false;
 			}
 
-			if (plugin.hModule)
+			if (plugin->hModule)
 			{
-				FreeLibrary(plugin.hModule);
-				plugin.hModule = nullptr;
-				plugin.info    = nullptr;
+				FreeLibrary(plugin->hModule);
+				plugin->hModule = nullptr;
+				plugin->info    = nullptr;
 			}
 		}
 
@@ -296,7 +304,7 @@ namespace ModLoaderLogger
 		EnterCriticalSection(&g_pluginLock);
 		int count = 0;
 		for (const auto& p : g_loadedPlugins)
-			if (p.isInitialized) count++;
+			if (p->isInitialized) count++;
 		LeaveCriticalSection(&g_pluginLock);
 		return count;
 	}
@@ -307,9 +315,9 @@ namespace ModLoaderLogger
 		int total = 0;
 		for (int i = 0; i < static_cast<int>(g_loadedPlugins.size()); ++i)
 		{
-			if (!g_loadedPlugins[i].isInitialized) continue;
+			if (!g_loadedPlugins[i]->isInitialized) continue;
 			if (outInfos && total < maxCount)
-				outInfos[total] = g_loadedPlugins[i].info;
+				outInfos[total] = g_loadedPlugins[i]->info;
 			total++;
 		}
 		LeaveCriticalSection(&g_pluginLock);
@@ -325,7 +333,7 @@ namespace ModLoaderLogger
 			int toCopy = total < maxCount ? total : maxCount;
 			for (int i = 0; i < toCopy; ++i)
 			{
-				const LoadedPlugin& p = g_loadedPlugins[i];
+				const LoadedPlugin& p = *g_loadedPlugins[i];
 				strncpy_s(out[i].name,    p.cachedName.c_str(),    _TRUNCATE);
 				strncpy_s(out[i].version, p.cachedVersion.c_str(), _TRUNCATE);
 				strncpy_s(out[i].author,  p.cachedAuthor.c_str(),  _TRUNCATE);
@@ -341,13 +349,13 @@ namespace ModLoaderLogger
 		EnterCriticalSection(&g_pluginLock);
 
 		if (index < 0 || index >= static_cast<int>(g_loadedPlugins.size()) ||
-			!g_loadedPlugins[index].isInitialized)
+			!g_loadedPlugins[index]->isInitialized)
 		{
 			LeaveCriticalSection(&g_pluginLock);
 			return false;
 		}
 
-		LoadedPlugin& p = g_loadedPlugins[index];
+		LoadedPlugin& p = *g_loadedPlugins[index];
 		LogMessage(L"Unloading plugin: %S", p.cachedName.c_str());
 		p.shutdown();
 		p.isInitialized = false;
@@ -370,7 +378,7 @@ namespace ModLoaderLogger
 			return false;
 		}
 
-		LoadedPlugin& p = g_loadedPlugins[index];
+		LoadedPlugin& p = *g_loadedPlugins[index];
 		LogMessage(L"Reloading plugin: %S", p.cachedName.c_str());
 
 		// Unload if currently running
@@ -394,6 +402,7 @@ namespace ModLoaderLogger
 		if (ok)
 		{
 			// Engine is already running at reload time, so call PluginInit immediately.
+			RefreshSelfPointers(p);
 			InitAllLoadedPlugins();
 			LogMessage(L"Plugin reloaded and initialized: %S", p.cachedName.c_str());
 		}
