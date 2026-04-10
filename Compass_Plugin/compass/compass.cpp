@@ -672,6 +672,44 @@ namespace Compass
 	}
 
 	// ---------------------------------------------------------------------------
+	// World end play callback — clears all stale state before the world tears down.
+	// Prevents crashes on save reload when the new UWorld reuses the same address.
+	// ---------------------------------------------------------------------------
+
+	static void OnBeforeWorldEndPlay(SDK::UWorld* /*world*/, const char* worldName)
+	{
+		LOG_INFO("[Compass] OnBeforeWorldEndPlay: '%s' — clearing all caches and stale pointers", worldName);
+
+		// Clear entity caches so they aren't accessed with stale data on the next world.
+		s_cores.clear();
+		s_markers.clear();
+		s_foundables.clear();
+		s_enemies.clear();
+		s_playerMarkers.clear();
+		s_customPins.clear();
+
+		// Reset subsystem pointers — the CrMapManuSubsystem is being destroyed with the world.
+		g_mapManuSubsystem = nullptr;
+		g_mapManuWorld = nullptr;
+
+		// Reset texture world anchor so EnsureTextures re-anchors in the new world.
+		s_lastPinnedWorld = nullptr;
+
+		// Reset world name tracking.
+		s_lastWorldName.clear();
+
+		// Reset scan throttle counters so scans fire immediately in the new world.
+		s_scanTick = 0;
+		s_playerScanTick = 0;
+
+		// Notify layout scanners to force reset their internal statics on next call,
+		// even if the new world reuses the same pointer address as this one.
+		Layout::NotifyWorldEndPlay();
+
+		LOG_INFO("[Compass] OnBeforeWorldEndPlay: cleanup complete");
+	}
+
+	// ---------------------------------------------------------------------------
 	// AHUD::PostRender callback (registered via hooks->HUD->RegisterOnPostRender)
 	// The modloader calls the original AHUD::PostRender before invoking this, so
 	// the engine HUD is always drawn first.
@@ -759,6 +797,10 @@ namespace Compass
 		// Register the per-frame PostRender callback via the modloader HUD interface.
 		// The modloader owns the AHUD::PostRender hook and fires callbacks after calling the original.
 		hooks->HUD->RegisterOnPostRender(OnHUDPostRender);
+
+		// Register world end play callback to clear stale state before world teardown.
+		hooks->World->RegisterOnBeforeWorldEndPlay(OnBeforeWorldEndPlay);
+
 		g_hooks = hooks;
 
 		LOG_INFO("[Compass] PostRender callback registered");
@@ -771,6 +813,12 @@ namespace Compass
 		{
 			g_hooks->HUD->UnregisterOnPostRender(OnHUDPostRender);
 			LOG_INFO("[Compass] PostRender callback unregistered");
+		}
+
+		if (g_hooks && g_hooks->World)
+		{
+			g_hooks->World->UnregisterOnBeforeWorldEndPlay(OnBeforeWorldEndPlay);
+			LOG_INFO("[Compass] OnBeforeWorldEndPlay callback unregistered");
 		}
 
 		g_hooks = nullptr;

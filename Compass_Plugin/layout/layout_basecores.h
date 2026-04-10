@@ -8,6 +8,11 @@
 
 namespace Layout
 {
+	// Namespace-scope so ResetBaseCoreState() can reach them.
+	inline std::vector<SDK::FVector> s_distantCoreCache;
+	inline bool s_helperSpawnAttempted = false;
+	inline SDK::ACrMapMenuDataReplicationHelper* s_fakeHelper = nullptr;
+
 	struct BaseCoreEntry
 	{
 		SDK::FVector location;
@@ -107,27 +112,10 @@ namespace Layout
 		// ---------------------------------------------------------------------------
 
 		// Persistent cache of distant core locations (survives empty bmd scans).
-		// All statics are auto-reset when the world pointer changes.
-		static SDK::UWorld* s_lastWorld = nullptr;
-		static std::vector<SDK::FVector> s_distantCoreCache;
-		static bool s_helperSpawnAttempted = false;
-		static SDK::ACrMapMenuDataReplicationHelper* s_fakeHelper = nullptr;
+		// Reset via ResetBaseCoreState() on world end play.
 
-		if (world != s_lastWorld)
-		{
-			LOG_TRACE("[ScanBaseCores] World changed (%p -> %p) — resetting distant-core statics",
-			          static_cast<void*>(s_lastWorld), static_cast<void*>(world));
-			s_lastWorld = world;
-			s_distantCoreCache.clear();
-			s_helperSpawnAttempted = false;
-			s_fakeHelper = nullptr;
-		}
-		else
-		{
-			LOG_TRACE("[ScanBaseCores] World unchanged (%p), spawnAttempted=%d fakeHelper=%p",
-			          static_cast<void*>(world), static_cast<int>(s_helperSpawnAttempted),
-			          static_cast<void*>(s_fakeHelper));
-		}
+		LOG_TRACE("[ScanBaseCores] spawnAttempted=%d fakeHelper=%p",
+		          static_cast<int>(s_helperSpawnAttempted), static_cast<void*>(s_fakeHelper));
 
 		auto* gameState = world->GameState
 			                  ? static_cast<SDK::ACrGameStateBase*>(world->GameState)
@@ -246,5 +234,12 @@ namespace Layout
 		          added, static_cast<int>(s_distantCoreCache.size()) - added, static_cast<int>(result.size()));
 
 		return result;
+	}
+	inline void ResetBaseCoreState()
+	{
+		LOG_TRACE("[ScanBaseCores] ResetBaseCoreState — clearing distant-core statics");
+		s_distantCoreCache.clear();
+		s_helperSpawnAttempted = false;
+		s_fakeHelper = nullptr;
 	}
 } // namespace Layout
