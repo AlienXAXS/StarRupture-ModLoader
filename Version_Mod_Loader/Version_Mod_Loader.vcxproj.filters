@@ -25,6 +25,9 @@
     <Filter Include="Source Files\hooks\game\world_begin_play">
       <UniqueIdentifier>{1154c2bd-a19a-4194-8578-590069b83ce9}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Source Files\hooks\game\world_end_play">
+      <UniqueIdentifier>{3a7b2e1f-c4d5-4e6a-9f0b-8c1d2e3f4a5b}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Source Files\hooks\game\engine_init">
       <UniqueIdentifier>{5e68a0e8-3d63-4d34-bee2-9de7ea5c385f}</UniqueIdentifier>
     </Filter>
@@ -210,6 +213,9 @@
     <ClInclude Include="hooks\game\world_begin_play\world_begin_play.h">
       <Filter>Source Files\hooks\game\world_begin_play</Filter>
     </ClInclude>
+    <ClInclude Include="hooks\game\world_end_play\world_end_play.h">
+      <Filter>Source Files\hooks\game\world_end_play</Filter>
+    </ClInclude>
     <ClInclude Include="utils\thread_utils.h">
       <Filter>Source Files\utils</Filter>
     </ClInclude>
@@ -364,6 +370,9 @@
     </ClCompile>
     <ClCompile Include="hooks\game\world_begin_play\world_begin_play.cpp">
       <Filter>Source Files\hooks\game\world_begin_play</Filter>
+    </ClCompile>
+    <ClCompile Include="hooks\game\world_end_play\world_end_play.cpp">
+      <Filter>Source Files\hooks\game\world_end_play</Filter>
     </ClCompile>
     <ClCompile Include="hooks\game\mass_do_spawning\mass_do_spawning.cpp">
       <Filter>Source Files\hooks\game\spawning</Filter>

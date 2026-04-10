@@ -67,6 +67,10 @@ namespace ScanPatterns
 	inline constexpr auto UWorld_BeginPlay =
 		"48 83 EC ?? 48 89 5C 24 ?? 48 8B D9 E8 ?? ?? ?? ?? 84 C0 74 ?? 48 8B CB";
 
+	// UWorld::EndPlay() -- engine-level native call, not a UFUNCTION.
+	inline constexpr auto UWorld_EndPlay =
+		"40 55 41 56 48 81 EC ?? ?? ?? ?? 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 84 24 ?? ?? ?? ?? F6 81";
+
 	// FMassEntityManager::GetArchetypeForEntity(FMassEntityHandle)
 	inline constexpr auto FMassEntityManager_GetArchetypeForEntity =
 		"48 89 5C 24 ?? 48 89 74 24 ?? 57 48 83 EC ?? 48 8B FA 49 8B D8 49 8B D0 48 8B F1 E8 ?? ?? ?? ?? 84 C0";

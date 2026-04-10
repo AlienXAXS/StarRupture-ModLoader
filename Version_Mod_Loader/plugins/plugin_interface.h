@@ -9,8 +9,10 @@
 //      replaced with const IPluginSelf* so the loader can identify the calling plugin without
 //      plugins having to duplicate their own name string in every call.
 //      MIN bumped to 19 (ABI break — all plugins must be recompiled against this header).
+// v20: Added OnBeforeWorldEndPlay / OnAfterWorldEndPlay to IPluginWorldEvents.
+//      MIN remains 19 — loader accepts v19 plugins (they won't use the new callbacks).
 #define PLUGIN_INTERFACE_VERSION_MIN 19  // oldest plugin ABI still accepted by this loader
-#define PLUGIN_INTERFACE_VERSION_MAX 19  // current interface version (this header)
+#define PLUGIN_INTERFACE_VERSION_MAX 20  // current interface version (this header)
 #define PLUGIN_INTERFACE_VERSION PLUGIN_INTERFACE_VERSION_MAX  // alias used by plugins in PluginInfo
 
 // Log levels
@@ -189,6 +191,7 @@ typedef void (*PluginExperienceLoadCompleteCallback)();
 typedef void (*PluginActorBeginPlayCallback)(void* actor);
 typedef void (*PluginPlayerJoinedCallback)(void* playerController);
 typedef void (*PluginPlayerLeftCallback)(void* exitingController);
+typedef void (*PluginWorldEndPlayCallback)(SDK::UWorld* world, const char* worldName);
 // v16 (client only) — fired after AHUD::PostRender; hud is AHUD* cast to void*
 typedef void (*PluginHUDPostRenderCallback)(void* hud);
 // v17 -- fired on the client when a server packet arrives for this plugin+typeTag.
@@ -291,6 +294,12 @@ struct IPluginWorldEvents
     void (*UnregisterOnSaveLoaded)(PluginSaveLoadedCallback);
     void (*RegisterOnExperienceLoadComplete)(PluginExperienceLoadCompleteCallback);
     void (*UnregisterOnExperienceLoadComplete)(PluginExperienceLoadCompleteCallback);
+    // Fired before UWorld::EndPlay runs (world still valid). world/worldName valid for the call duration.
+    void (*RegisterOnBeforeWorldEndPlay)(PluginWorldEndPlayCallback);
+    void (*UnregisterOnBeforeWorldEndPlay)(PluginWorldEndPlayCallback);
+    // Fired after UWorld::EndPlay runs. world pointer may be partially torn down; use worldName only.
+    void (*RegisterOnAfterWorldEndPlay)(PluginWorldEndPlayCallback);
+    void (*UnregisterOnAfterWorldEndPlay)(PluginWorldEndPlayCallback);
 };
 
 // ============================================================

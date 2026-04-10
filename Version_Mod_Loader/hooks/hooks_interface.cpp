@@ -5,6 +5,7 @@
 #include "hooks/memory/engine_allocator.h"
 #include "utils/game_thread_dispatch.h"
 #include "hooks/game/world_begin_play/world_begin_play.h"
+#include "hooks/game/world_end_play/world_end_play.h"
 #include "hooks/game/engine_init/engine_init.h"
 #include "hooks/game/engine_shutdown/engine_shutdown.h"
 #include "hooks/game/save_loaded/save_loaded.h"
@@ -559,6 +560,42 @@ namespace ModLoaderLogger
 		LogDebug(L"[HooksInterface] OnAfterDoSpawning callback unregistered");
 	}
 
+	static void HooksRegisterOnBeforeWorldEndPlay(PluginWorldEndPlayCallback callback)
+	{
+		if (!callback)
+		{
+			LogWarn(L"[HooksInterface] RegisterOnBeforeWorldEndPlay: null callback");
+			return;
+		}
+		Hooks::WorldEndPlay::RegisterBeforeCallback(callback);
+		LogDebug(L"[HooksInterface] OnBeforeWorldEndPlay callback registered");
+	}
+
+	static void HooksUnregisterOnBeforeWorldEndPlay(PluginWorldEndPlayCallback callback)
+	{
+		if (!callback) return;
+		Hooks::WorldEndPlay::UnregisterBeforeCallback(callback);
+		LogDebug(L"[HooksInterface] OnBeforeWorldEndPlay callback unregistered");
+	}
+
+	static void HooksRegisterOnAfterWorldEndPlay(PluginWorldEndPlayCallback callback)
+	{
+		if (!callback)
+		{
+			LogWarn(L"[HooksInterface] RegisterOnAfterWorldEndPlay: null callback");
+			return;
+		}
+		Hooks::WorldEndPlay::RegisterAfterCallback(callback);
+		LogDebug(L"[HooksInterface] OnAfterWorldEndPlay callback registered");
+	}
+
+	static void HooksUnregisterOnAfterWorldEndPlay(PluginWorldEndPlayCallback callback)
+	{
+		if (!callback) return;
+		Hooks::WorldEndPlay::UnregisterAfterCallback(callback);
+		LogDebug(L"[HooksInterface] OnAfterWorldEndPlay callback unregistered");
+	}
+
 	// Spawner sub-interface struct (v14)
 	static IPluginSpawnerHooks g_spawnerHooks = {
 		HooksRegisterOnBeforeActivate,
@@ -610,7 +647,11 @@ namespace ModLoaderLogger
 		HooksRegisterSaveLoadedCallback,
 		HooksUnregisterSaveLoadedCallback,
 		HooksRegisterExperienceLoadCompleteCallback,
-		HooksUnregisterExperienceLoadCompleteCallback
+		HooksUnregisterExperienceLoadCompleteCallback,
+		HooksRegisterOnBeforeWorldEndPlay,
+		HooksUnregisterOnBeforeWorldEndPlay,
+		HooksRegisterOnAfterWorldEndPlay,
+		HooksUnregisterOnAfterWorldEndPlay
 	};
 
 	static IPluginPlayerEvents g_playerEvents = {
