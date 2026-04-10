@@ -27,8 +27,66 @@ jobs:
       - name: Generate release tag
         id: tag
         shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          $tag = "release-$(Get-Date -Format 'yyyy.MM.dd-HHmmss')"
+          function Parse-Semver([string]$v) {
+            if ($v -match '^v?(\d+)\.(\d+)\.(\d+)$') {
+              return [int[]]@([int]$Matches[1], [int]$Matches[2], [int]$Matches[3])
+            }
+            return $null
+          }
+          function Compare-Semver([int[]]$a, [int[]]$b) {
+            for ($i = 0; $i -lt 3; $i++) {
+              if ($a[$i] -lt $b[$i]) { return -1 }
+              if ($a[$i] -gt $b[$i]) { return  1 }
+            }
+            return 0
+          }
+
+          $latestParsed = $null
+          $releaseTags = gh release list --limit 100 --json tagName |
+            ConvertFrom-Json | Select-Object -ExpandProperty tagName |
+            Where-Object { $_ -match '^v\d+\.\d+\.\d+$' }
+
+          foreach ($t in $releaseTags) {
+            $parsed = Parse-Semver $t
+            if ($parsed -and ($latestParsed -eq $null -or (Compare-Semver $parsed $latestParsed) -gt 0)) {
+              $latestParsed = $parsed
+            }
+          }
+
+          if ($latestParsed -eq $null) {
+            Write-Host "No semver tags found, bootstrapping from v0.0.0"
+            $latestParsed = [int[]]@(0, 0, 0)
+          } else {
+            Write-Host "Latest semver tag: v$($latestParsed[0]).$($latestParsed[1]).$($latestParsed[2])"
+          }
+
+          $autoParsed = [int[]]@($latestParsed[0], $latestParsed[1], $latestParsed[2] + 1)
+
+          $versionFile = Join-Path $env:GITHUB_WORKSPACE "version"
+          $fileParsed  = $null
+          if (Test-Path $versionFile) {
+            $raw = (Get-Content $versionFile -Raw).Trim()
+            $fileParsed = Parse-Semver $raw
+            if ($fileParsed) {
+              Write-Host "version file specifies: $raw"
+            } else {
+              Write-Warning "version file '$raw' is not valid semver, ignoring."
+            }
+          }
+
+          $chosen = $autoParsed
+          if ($fileParsed -and (Compare-Semver $fileParsed $autoParsed) -gt 0) {
+            $chosen = $fileParsed
+            Write-Host "version file is higher, using it."
+          } else {
+            Write-Host "Auto-increment wins."
+          }
+
+          $tag = "v$($chosen[0]).$($chosen[1]).$($chosen[2])"
+          Write-Host "Final tag: $tag"
           echo "TAG=$tag" >> $env:GITHUB_OUTPUT
 
       - name: Build Client Release
