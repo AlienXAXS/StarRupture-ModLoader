@@ -25,6 +25,9 @@ namespace UI::GlobalSettings
     // Store the ini path so Save() can be called without a parameter later.
     void SetIniPath(const wchar_t* iniPath);
 
+    // Retrieve the stored ini path (e.g. for persisting other settings).
+    const wchar_t* GetIniPath();
+
     // -----------------------------------------------------------------------
     // Settings toggles (read from render thread, written from UI thread)
     // -----------------------------------------------------------------------

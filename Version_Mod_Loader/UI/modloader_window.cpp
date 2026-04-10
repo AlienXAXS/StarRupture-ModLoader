@@ -419,6 +419,25 @@ namespace UI::ModLoaderWindow
             UI::GlobalSettings::SetShowPlayerPosition(showPos);
 
         ImGui::Spacing();
+        ImGui::SeparatorText("Logging");
+        ImGui::Spacing();
+
+        static const char*    s_levelNames[]   = { "Trace", "Debug", "Info", "Warn", "Error" };
+        static const wchar_t* s_levelNamesIni[] = { L"TRACE", L"DEBUG", L"INFO", L"WARN", L"ERROR" };
+        int currentLevel = static_cast<int>(LogToFile::g_minLevel);
+        if (ImGui::Combo("Log Level", &currentLevel, s_levelNames, 5))
+        {
+            LogToFile::g_minLevel = static_cast<LogToFile::Level>(currentLevel);
+            const wchar_t* iniPath = UI::GlobalSettings::GetIniPath();
+            if (iniPath && iniPath[0] != L'\0')
+                WritePrivateProfileStringW(L"Logging", L"Level", s_levelNamesIni[currentLevel], iniPath);
+        }
+        ImGui::SameLine();
+        ImGui::TextDisabled("(?)");
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Takes effect immediately. Persisted to modloader.ini.");
+
+        ImGui::Spacing();
         ImGui::TextDisabled("Settings are saved to modloader.ini immediately.");
     }
 
