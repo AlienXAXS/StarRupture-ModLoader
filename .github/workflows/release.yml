@@ -72,6 +72,16 @@ jobs:
               Copy-Item $_.FullName $modsDir
               Write-Host "Staged [$target]: $($_.Name)"
             }
+
+            # Copy every .pdb found in Plugins
+            Get-ChildItem "build\$config\Plugins\*.pdb" | ForEach-Object {
+              Copy-Item $_.FullName $modsDir
+              Write-Host "Staged [$target] PDB: $($_.Name)"
+            }
+
+            # Copy root-level dwmapi.pdb if present
+            $pdb = "build\$config\dwmapi.pdb"
+            if (Test-Path $pdb) { Copy-Item $pdb "$staging\dwmapi.pdb" }
           }
 
       - name: Upload dwmapi.dll artifacts for SDK sync
