@@ -49,6 +49,12 @@ namespace Hooks::FakePlayer
 		}
 	}
 
+	// Helper to safely destroy an actor - isolated for SEH compatibility
+	static void SafeDestroyActor(SDK::AActor* actor)
+	{
+		__try { actor->K2_DestroyActor(); } __except (1) {}
+	}
+
 	// Helper to safely teleport pawn - isolated for SEH compatibility
 	static bool SafeSetActorLocation(SDK::APawn* pawn, const SDK::FVector& loc)
 	{
@@ -380,7 +386,9 @@ namespace Hooks::FakePlayer
 		if (!g_fakePawn)
 		{
 			LOG_ERROR("[FakePlayer] Failed to spawn pawn (BeginDeferredActorSpawnFromClass returned null)");
-			g_fakeController = nullptr; // Don't destroy during shutdown
+			// Controller was already fully spawned — destroy it so it doesn't leak into the world
+			SafeDestroyActor(g_fakeController);
+			g_fakeController = nullptr;
 			return;
 		}
 		LOG_DEBUG("[FakePlayer] Pawn deferred spawn OK: %p", g_fakePawn);
@@ -444,23 +452,30 @@ namespace Hooks::FakePlayer
 
 		LOG_INFO("[FakePlayer] Despawning fake player...");
 
-		// Stop traversal if running
+		// Mark inactive immediately to block re-entrancy from engine callbacks
+		// triggered during destruction (e.g. Logout firing back into DespawnFakePlayer).
+		g_playerActive = false;
 		g_traversing = false;
+
+		// Snapshot and clear global pointers up-front so any re-entrant call sees nulls.
+		SDK::ACrPlayerControllerBase* fakeController = g_fakeController;
+		SDK::APawn*                   fakePawn       = g_fakePawn;
+		g_fakeController = nullptr;
+		g_fakePawn       = nullptr;
 
 		// Get the world and game mode for proper logout
 		SDK::UWorld* world = SDK::UWorld::GetWorld();
 		SDK::AGameModeBase* gameMode = world ? world->AuthorityGameMode : nullptr;
 
-		// Step 2b: Remove from PlayerArray
-		if (g_fakeController && g_fakeController->PlayerState)
+		// Step 1: Remove from PlayerArray
+		if (fakeController && fakeController->PlayerState)
 		{
-			SDK::UWorld* world = SDK::UWorld::GetWorld();
 			if (world && world->GameState)
 			{
 				auto& playerArray = world->GameState->PlayerArray;
 				for (SDK::int32 i = 0; i < playerArray.Num(); i++)
 				{
-					if (playerArray[i] == g_fakeController->PlayerState)
+					if (playerArray[i] == fakeController->PlayerState)
 					{
 						playerArray.Remove(i);
 						LOG_DEBUG("[FakePlayer] Removed fake PlayerState from PlayerArray at index %d", i);
@@ -470,13 +485,13 @@ namespace Hooks::FakePlayer
 			}
 		}
 
-		// Step 1: UnPossess the pawn from the controller
-		if (g_fakeController)
+		// Step 2: UnPossess the pawn from the controller
+		if (fakeController)
 		{
 			LOG_DEBUG("[FakePlayer] UnPossessing pawn from controller...");
 			__try
 			{
-				g_fakeController->UnPossess();
+				fakeController->UnPossess();
 			}
 			__except (1)
 			{
@@ -484,13 +499,13 @@ namespace Hooks::FakePlayer
 			}
 		}
 
-		// Step 2: Notify game mode to clean up player state via K2_OnLogout
-		if (gameMode && g_fakeController)
+		// Step 3: Notify game mode to clean up player state via K2_OnLogout
+		if (gameMode && fakeController)
 		{
 			LOG_DEBUG("[FakePlayer] Calling GameMode->K2_OnLogout on fake controller...");
 			__try
 			{
-				gameMode->K2_OnLogout(g_fakeController);
+				gameMode->K2_OnLogout(fakeController);
 			}
 			__except (1)
 			{
@@ -498,13 +513,13 @@ namespace Hooks::FakePlayer
 			}
 		}
 
-		// Step 2b: Destroy the PlayerState if it exists
-		if (g_fakeController && g_fakeController->PlayerState)
+		// Step 4: Destroy the PlayerState if it exists
+		if (fakeController && fakeController->PlayerState)
 		{
 			LOG_DEBUG("[FakePlayer] Destroying PlayerState...");
 			__try
 			{
-				g_fakeController->PlayerState->K2_DestroyActor();
+				fakeController->PlayerState->K2_DestroyActor();
 			}
 			__except (1)
 			{
@@ -512,13 +527,13 @@ namespace Hooks::FakePlayer
 			}
 		}
 
-		// Step 3: Destroy the pawn actor
-		if (g_fakePawn)
+		// Step 5: Destroy the pawn actor
+		if (fakePawn)
 		{
 			LOG_DEBUG("[FakePlayer] Destroying fake pawn actor...");
 			__try
 			{
-				g_fakePawn->K2_DestroyActor();
+				fakePawn->K2_DestroyActor();
 			}
 			__except (1)
 			{
@@ -526,15 +541,15 @@ namespace Hooks::FakePlayer
 			}
 		}
 
-		// Step 4: Destroy the controller.
+		// Step 6: Destroy the controller.
 		// AController::Destroyed() (called by K2_DestroyActor) automatically calls
 		// UWorld::RemoveController -- no manual call needed here.
-		if (g_fakeController)
+		if (fakeController)
 		{
 			LOG_DEBUG("[FakePlayer] Destroying fake controller actor...");
 			__try
 			{
-				g_fakeController->K2_DestroyActor();
+				fakeController->K2_DestroyActor();
 				LOG_DEBUG("[FakePlayer] Fake controller K2_DestroyActor completed");
 			}
 			__except (1)
@@ -542,11 +557,6 @@ namespace Hooks::FakePlayer
 				LOG_WARN("[FakePlayer] Exception during controller K2_DestroyActor");
 			}
 		}
-
-		// Step 5: Clear pointers and state
-		g_fakePawn = nullptr;
-		g_fakeController = nullptr;
-		g_playerActive = false;
 
 		LOG_INFO("[FakePlayer] Fake player fully despawned and cleaned up");
 	}
@@ -602,8 +612,10 @@ namespace Hooks::FakePlayer
 
 	void MoveFakePlayerFarAway()
 	{
+		if (!g_fakePawn)
+			return;
+
 		//X=-178601.10 Y=213682.05 Z=100.00
-		// Teleport the pawn
 		SDK::FVector newLocation;
 		newLocation.X = -178601.10;
 		newLocation.Y = 213682.05;
@@ -647,7 +659,7 @@ namespace Hooks::FakePlayer
 			newLocation.Z = wp.z;
 
 			bool success = SafeSetActorLocation(g_fakePawn, newLocation);
-			if (!success && g_waypointIndex == 0)
+			if (!success)
 			{
 				LOG_ERROR(
 					"[FakePlayer] SafeSetActorLocation FAILED/EXCEPTION at waypoint %d (%.0f, %.0f, %.0f) - stopping traversal",
