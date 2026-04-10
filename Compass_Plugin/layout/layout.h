@@ -12,3 +12,13 @@
 #include "layout_hlod.h"
 #include "layout_playermarkers.h"
 #include "layout_custompins.h"
+
+namespace Layout
+{
+	// Call this when the world is about to end (OnBeforeWorldEndPlay).
+	// Resets all layout scanner state immediately so the next world starts clean.
+	inline void NotifyWorldEndPlay()
+	{
+		ResetBaseCoreState();
+	}
+}

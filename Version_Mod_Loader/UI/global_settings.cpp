@@ -47,6 +47,11 @@ namespace UI::GlobalSettings
             wcsncpy_s(s_iniPath, iniPath, _TRUNCATE);
     }
 
+    const wchar_t* GetIniPath()
+    {
+        return s_iniPath;
+    }
+
     void Load(const wchar_t* iniPath)
     {
         SetIniPath(iniPath);

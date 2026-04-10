@@ -9,7 +9,7 @@
 
 namespace Hooks::PlayerJoined
 {
-	// ACrGameModeBase::PostLogin(ACrGameModeBase* this, APlayerController* NewPlayer)
+	// AGameModeBase::PostLogin(AGameModeBase* this, APlayerController* NewPlayer)
 	using PostLogin_t = void(__fastcall*)(void* thisPtr, void* newPlayer);
 
 	static Hook g_hook;
@@ -25,7 +25,7 @@ namespace Hooks::PlayerJoined
 
 		long callNum = InterlockedIncrement(&g_callCount);
 
-		ModLoaderLogger::LogInfo(L"[PlayerJoined] ACrGameModeBase::PostLogin called (#%ld)", callNum);
+		ModLoaderLogger::LogInfo(L"[PlayerJoined] AGameModeBase::PostLogin called (#%ld)", callNum);
 		ModLoaderLogger::LogDebug(L"[PlayerJoined]   this=%p, NewPlayer=%p, Thread=%lu",
 		                          thisPtr, newPlayer, GetCurrentThreadId());
 		ModLoaderLogger::LogTrace(L"[PlayerJoined]   Called from: %S",
@@ -85,7 +85,7 @@ namespace Hooks::PlayerJoined
 		{
 			ModLoaderLogger::LogDebug(L"[PlayerJoined] Not a UFUNCTION -- falling back to pattern scan");
 			addr = Scanner::FindPatternInMainModule(
-				"ACrGameModeBase::PostLogin", ScanPatterns::ACrGameModeBase_PostLogin);
+				"AGameModeBase::PostLogin", ScanPatterns::AGameModeBase_PostLogin);
 		}
 		if (!addr)
 			return false;
