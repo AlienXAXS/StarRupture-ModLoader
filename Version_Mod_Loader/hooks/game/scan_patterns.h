@@ -43,15 +43,15 @@ namespace ScanPatterns
 	inline constexpr auto UEngine_PreExit =
 		"E8 ?? ?? ?? ?? 48 83 3D ?? ?? ?? ?? ?? 75 ?? 4C 8D 0D ?? ?? ?? ?? 41 B8 ?? ?? ?? ?? 48 8D 15 ?? ?? ?? ?? 48 8D 0D ?? ?? ?? ?? E8 ?? ?? ?? ?? 84 C0 74 ?? 90 ?? 48 8B 0D ?? ?? ?? ?? 48 8B 15";
 
-	// ACrGameModeBase::PostLogin(ACrGameModeBase* this, APlayerController* NewPlayer)
+	// AGameModeBase::PostLogin(AGameModeBase *this, struct APlayerController *a2)
 	// Native C++ override -- not a UFUNCTION, not in GObjects Children list.
-	inline constexpr auto ACrGameModeBase_PostLogin =
-		"48 8B C4 53 56 57 48 83 EC ?? 48 89 68 ?? 48 8B F2";
+	inline constexpr auto AGameModeBase_PostLogin =
+		"40 56 41 56 48 83 EC ?? ?? ?? ?? 48 8B F2 4C 8B F1";
 
-	// ACrGameModeBase::Logout(ACrGameModeBase* this, AController* Exiting)
+	// AGameModeBase::Logout(AGameModeBase *this, struct AController *a2)
 	// Native C++ override -- not a UFUNCTION, not in GObjects Children list.
-	inline constexpr auto ACrGameModeBase_Logout =
-		"48 8B C4 55 56 57 48 81 EC ?? ?? ?? ?? 33 F6";
+	inline constexpr auto AGameModeBase_Logout =
+		"48 85 D2 0F 84 ?? ?? ?? ?? 55 41 57 48 83 EC ?? 48 8B EA 4C 8B F9 E8 ?? ?? ?? ?? 4C 8B 45 ?? 4C 8D 48 ?? 48 63 40 ?? 41 3B 40 ?? 0F 8F ?? ?? ?? ?? 48 8B D0 49 8B 40 ?? ?? ?? ?? ?? 0F 85 ?? ?? ?? ?? 48 89 5C 24";
 
 	// UCrMassSaveSubsystem::OnSaveLoaded(UCrMassSaveSubsystem *this)
 	// Native C++ callback -- not a UFUNCTION, not in GObjects Children list.

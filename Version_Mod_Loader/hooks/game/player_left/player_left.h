@@ -4,7 +4,7 @@
 #include <cstdint>
 
 // ---------------------------------------------------------------------------
-// ACrGameModeBase::Logout Hook  (Player Left)
+// AGameModeBase::Logout Hook  (Player Left)
 //
 // Purpose: Fires when a player controller is about to be destroyed on the
 //          server — i.e. the player has disconnected, been kicked, or the
@@ -13,7 +13,7 @@
 //          possessed pawn, etc.).
 //
 // Hook point:
-//   ACrGameModeBase::Logout(ACrGameModeBase* this, AController* Exiting)
+//   AGameModeBase::Logout(AGameModeBase* this, AController* Exiting)
 //
 // Plugins receive the raw AController* as void* and can cast to
 // SDK::AController* or SDK::ACrPlayerControllerBase*.

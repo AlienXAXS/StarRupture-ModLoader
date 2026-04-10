@@ -4,7 +4,7 @@
 #include <cstdint>
 
 // ---------------------------------------------------------------------------
-// ACrGameModeBase::PostLogin Hook  (Player Joined)
+// AGameModeBase::PostLogin Hook  (Player Joined)
 //
 // Purpose: Fires when a player controller has fully completed login on the
 //       server.  At this point the controller is networked, replicated,
@@ -12,7 +12,7 @@
 //    normally waits for the profession selection UI).
 //
 // Hook point:
-//   ACrGameModeBase::PostLogin(ACrGameModeBase* this, APlayerController* NewPlayer)
+//   AGameModeBase::PostLogin(AGameModeBase* this, APlayerController* NewPlayer)
 //
 // Plugins receive the raw APlayerController* as void* and can cast to
 // SDK::APlayerController* or SDK::ACrPlayerControllerBase*.

@@ -9,7 +9,7 @@
 
 namespace Hooks::PlayerLeft
 {
-	// ACrGameModeBase::Logout(ACrGameModeBase* this, AController* Exiting)
+	// AGameModeBase::Logout(AGameModeBase* this, AController* Exiting)
 	using Logout_t = void(__fastcall*)(void* thisPtr, void* exiting);
 
 	static Hook g_hook;
@@ -25,7 +25,7 @@ namespace Hooks::PlayerLeft
 
 		long callNum = InterlockedIncrement(&g_callCount);
 
-		ModLoaderLogger::LogInfo(L"[PlayerLeft] ACrGameModeBase::Logout called (#%ld)", callNum);
+		ModLoaderLogger::LogInfo(L"[PlayerLeft] AGameModeBase::Logout called (#%ld)", callNum);
 		ModLoaderLogger::LogDebug(L"[PlayerLeft]   this=%p, Exiting=%p, Thread=%lu",
 		                          thisPtr, exiting, GetCurrentThreadId());
 		ModLoaderLogger::LogTrace(L"[PlayerLeft]   Called from: %S",
@@ -85,7 +85,7 @@ namespace Hooks::PlayerLeft
 		{
 			ModLoaderLogger::LogDebug(L"[PlayerLeft] Not a UFUNCTION -- falling back to pattern scan");
 			addr = Scanner::FindPatternInMainModule(
-				"ACrGameModeBase::Logout", ScanPatterns::ACrGameModeBase_Logout);
+				"AGameModeBase::Logout", ScanPatterns::AGameModeBase_Logout);
 		}
 		if (!addr)
 			return false;
