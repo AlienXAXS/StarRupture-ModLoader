@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|x64">
@@ -153,7 +153,8 @@
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
   <PropertyGroup Label="UserMacros">
-    <GameDeployDir>F:\starrupture\server\StarRupture\Binaries\Win64\</GameDeployDir>
+    <!-- GameDeployDir is defined per-machine in Version_Mod_Loader.vcxproj.user (gitignored). -->
+    <!-- Set it there to enable automatic deploy after build. -->
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <TargetName>dwmapi</TargetName>
@@ -216,6 +217,7 @@
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
       <AdditionalIncludeDirectories>$(SolutionDir)StarRupture SDK\Server\;$(SolutionDir)StarRupture SDK\Server\SDK;$(ProjectDir);$(SolutionDir)src;$(SolutionDir)Version_Mod_Loader;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <DebugInformationFormat>None</DebugInformationFormat>
+      <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -223,14 +225,7 @@
       <EnableUAC>false</EnableUAC>
       <ModuleDefinitionFile>$(ProjectDir)dwmapi.def</ModuleDefinitionFile>
     </Link>
-    <PostBuildEvent>
-      <Command>echo Deploying dwmapi.dll to $(GameDeployDir)...
-if not exist "$(GameDeployDir)" mkdir "$(GameDeployDir)"
-copy /Y "$(TargetPath)" "$(GameDeployDir)$(TargetFileName)"
-if exist "$(TargetDir)$(TargetName).pdb" copy /Y "$(TargetDir)$(TargetName).pdb" "$(GameDeployDir)$(TargetName).pdb"
-echo Deploy complete.</Command>
-      <Message>Copying dwmapi.dll to game server directory...</Message>
-    </PostBuildEvent>
+
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
@@ -255,14 +250,7 @@ echo Deploy complete.</Command>
       <EnableUAC>false</EnableUAC>
       <ModuleDefinitionFile>$(ProjectDir)dwmapi.def</ModuleDefinitionFile>
     </Link>
-    <PostBuildEvent>
-      <Command>echo Deploying dwmapi.dll to $(GameDeployDir)...
-if not exist "$(GameDeployDir)" mkdir "$(GameDeployDir)"
-copy /Y "$(TargetPath)" "$(GameDeployDir)$(TargetFileName)"
-if exist "$(TargetDir)$(TargetName).pdb" copy /Y "$(TargetDir)$(TargetName).pdb" "$(GameDeployDir)$(TargetName).pdb"
-echo Deploy complete.</Command>
-      <Message>Copying dwmapi.dll to game server directory...</Message>
-    </PostBuildEvent>
+
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Client Debug|x64'">
     <ClCompile>
@@ -275,6 +263,7 @@ echo Deploy complete.</Command>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
       <AdditionalIncludeDirectories>$(ProjectDir)imgui;$(StarRuptureSDKConfigDir);$(SolutionDir)StarRupture SDK\Server\;$(SolutionDir)StarRupture SDK\Server\SDK;$(ProjectDir);$(SolutionDir)src;$(SolutionDir)Version_Mod_Loader;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -312,14 +301,7 @@ echo Deploy complete.</Command>
       <EnableUAC>false</EnableUAC>
       <ModuleDefinitionFile>$(ProjectDir)dwmapi.def</ModuleDefinitionFile>
     </Link>
-    <PostBuildEvent>
-      <Command>echo Deploying dwmapi.dll to $(GameDeployDir)...
-if not exist "$(GameDeployDir)" mkdir "$(GameDeployDir)"
-copy /Y "$(TargetPath)" "$(GameDeployDir)$(TargetFileName)"
-if exist "$(TargetDir)$(TargetName).pdb" copy /Y "$(TargetDir)$(TargetName).pdb" "$(GameDeployDir)$(TargetName).pdb"
-echo Deploy complete.</Command>
-      <Message>Copying dwmapi.dll to game server directory...</Message>
-    </PostBuildEvent>
+
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Server Debug|x64'">
     <ClCompile>
@@ -332,6 +314,7 @@ echo Deploy complete.</Command>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
       <AdditionalIncludeDirectories>$(StarRuptureSDKConfigDir);$(SolutionDir)StarRupture SDK\Server\;$(SolutionDir)StarRupture SDK\Server\SDK;$(ProjectDir);$(SolutionDir)src;$(SolutionDir)Version_Mod_Loader;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -339,14 +322,7 @@ echo Deploy complete.</Command>
       <EnableUAC>false</EnableUAC>
       <ModuleDefinitionFile>$(ProjectDir)dwmapi.def</ModuleDefinitionFile>
     </Link>
-    <PostBuildEvent>
-      <Command>echo Deploying dwmapi.dll to $(GameDeployDir)...
-if not exist "$(GameDeployDir)" mkdir "$(GameDeployDir)"
-copy /Y "$(TargetPath)" "$(GameDeployDir)$(TargetFileName)"
-if exist "$(TargetDir)$(TargetName).pdb" copy /Y "$(TargetDir)$(TargetName).pdb" "$(GameDeployDir)$(TargetName).pdb"
-echo Deploy complete.</Command>
-      <Message>Copying dwmapi.dll to game server directory...</Message>
-    </PostBuildEvent>
+
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Server Release|x64'">
     <ClCompile>
@@ -371,14 +347,7 @@ echo Deploy complete.</Command>
       <EnableUAC>false</EnableUAC>
       <ModuleDefinitionFile>$(ProjectDir)dwmapi.def</ModuleDefinitionFile>
     </Link>
-    <PostBuildEvent>
-      <Command>echo Deploying dwmapi.dll to $(GameDeployDir)...
-if not exist "$(GameDeployDir)" mkdir "$(GameDeployDir)"
-copy /Y "$(TargetPath)" "$(GameDeployDir)$(TargetFileName)"
-if exist "$(TargetDir)$(TargetName).pdb" copy /Y "$(TargetDir)$(TargetName).pdb" "$(GameDeployDir)$(TargetName).pdb"
-echo Deploy complete.</Command>
-      <Message>Copying dwmapi.dll to game server directory...</Message>
-    </PostBuildEvent>
+
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Local SDK Client Debug|x64'">
     <ClCompile>
@@ -391,6 +360,7 @@ echo Deploy complete.</Command>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
       <AdditionalIncludeDirectories>$(ProjectDir)imgui;$(StarRuptureSDKConfigDir);$(ProjectDir);$(SolutionDir)src;$(SolutionDir)Version_Mod_Loader;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -428,14 +398,7 @@ echo Deploy complete.</Command>
       <EnableUAC>false</EnableUAC>
       <ModuleDefinitionFile>$(ProjectDir)dwmapi.def</ModuleDefinitionFile>
     </Link>
-    <PostBuildEvent>
-      <Command>echo Deploying dwmapi.dll to $(GameDeployDir)...
-if not exist "$(GameDeployDir)" mkdir "$(GameDeployDir)"
-copy /Y "$(TargetPath)" "$(GameDeployDir)$(TargetFileName)"
-if exist "$(TargetDir)$(TargetName).pdb" copy /Y "$(TargetDir)$(TargetName).pdb" "$(GameDeployDir)$(TargetName).pdb"
-echo Deploy complete.</Command>
-      <Message>Copying dwmapi.dll to game server directory...</Message>
-    </PostBuildEvent>
+
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Local SDK Server Debug|x64'">
     <ClCompile>
@@ -448,6 +411,7 @@ echo Deploy complete.</Command>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
       <AdditionalIncludeDirectories>$(StarRuptureSDKConfigDir);$(ProjectDir);$(SolutionDir)src;$(SolutionDir)Version_Mod_Loader;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -455,14 +419,7 @@ echo Deploy complete.</Command>
       <EnableUAC>false</EnableUAC>
       <ModuleDefinitionFile>$(ProjectDir)dwmapi.def</ModuleDefinitionFile>
     </Link>
-    <PostBuildEvent>
-      <Command>echo Deploying dwmapi.dll to $(GameDeployDir)...
-if not exist "$(GameDeployDir)" mkdir "$(GameDeployDir)"
-copy /Y "$(TargetPath)" "$(GameDeployDir)$(TargetFileName)"
-if exist "$(TargetDir)$(TargetName).pdb" copy /Y "$(TargetDir)$(TargetName).pdb" "$(GameDeployDir)$(TargetName).pdb"
-echo Deploy complete.</Command>
-      <Message>Copying dwmapi.dll to game server directory...</Message>
-    </PostBuildEvent>
+
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Local SDK Server Release|x64'">
     <ClCompile>
@@ -487,14 +444,7 @@ echo Deploy complete.</Command>
       <EnableUAC>false</EnableUAC>
       <ModuleDefinitionFile>$(ProjectDir)dwmapi.def</ModuleDefinitionFile>
     </Link>
-    <PostBuildEvent>
-      <Command>echo Deploying dwmapi.dll to $(GameDeployDir)...
-if not exist "$(GameDeployDir)" mkdir "$(GameDeployDir)"
-copy /Y "$(TargetPath)" "$(GameDeployDir)$(TargetFileName)"
-if exist "$(TargetDir)$(TargetName).pdb" copy /Y "$(TargetDir)$(TargetName).pdb" "$(GameDeployDir)$(TargetName).pdb"
-echo Deploy complete.</Command>
-      <Message>Copying dwmapi.dll to game server directory...</Message>
-    </PostBuildEvent>
+
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="auto_update\auto_updater.h" />
