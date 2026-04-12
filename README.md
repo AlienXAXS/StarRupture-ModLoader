@@ -11,9 +11,6 @@ Like this project? Give it a ⭐ here on GitHub!
 ### 🔧 KeepTicking *(Server)*
 Prevents a dedicated server from sleeping when no players are online. Without this, all of your machines will stop producing items.
 
-### 🛤️ RailJunctionFixer *(Deprecated — safe to delete)*
-The rail junction bug has been fixed by the developers in the latest game update. This plugin is now a no-op stub and will be removed in a future release. It is safe to delete `RailJunctionFixer.dll` from your `Plugins\` folder.
-
 ### 🖥️ ServerUtility *(Server)*
 Adds remote administration to a dedicated server:
 
