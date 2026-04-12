@@ -260,6 +260,10 @@ void Rcon::Init()
 	const uint16_t port = ReadRconPort();
 	const std::string password = ReadRconPassword();
 
+	// always register the stop command so we can shut down even if no password/port is configured
+	auto& cmds = CommandHandler::Get();
+	Cmd_Stop::Register(cmds);
+
 	if (port == 0 || password.empty())
 	{
 		if (port == 0 || password.empty())
@@ -284,9 +288,8 @@ void Rcon::Init()
 	LOG_INFO("[Rcon] Server name: %s", servName.c_str());
 
 	// Register built-in commands
-	auto& cmds = CommandHandler::Get();
+	
 	Cmd_Players::Register(cmds);
-	Cmd_Stop::Register(cmds);
 	Cmd_Save::Register(cmds);
 
 	// Start UDP query server (always)

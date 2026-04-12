@@ -3,6 +3,10 @@
 #include "plugin_config.h"
 #include "plugin_network_helpers.h"
 
+#include <mutex>
+#include <cstdio>
+#include <cstring>
+
 static IPluginSelf* g_self = nullptr;
 
 IPluginSelf* GetSelf() { return g_self; }
@@ -26,6 +30,60 @@ struct AckPacket
 static uint32_t s_tickCount = 0;
 static uint32_t s_sendCount = 0;
 static float    s_uptime = 0.0f;
+
+// ---------------------------------------------------------------------------
+// World name — written from the world-begin-play callback, read from the
+// HTTP route callback (different threads). Protected by a mutex.
+// ---------------------------------------------------------------------------
+static std::mutex  s_worldNameMutex;
+static char        s_worldName[256] = "<unknown>";
+
+static void OnAnyWorldBeginPlay(SDK::UWorld* /*world*/, const char* worldName)
+{
+	std::lock_guard lock(s_worldNameMutex);
+	if (worldName && worldName[0])
+		strncpy_s(s_worldName, worldName, _TRUNCATE);
+	else
+		strncpy_s(s_worldName, "<unknown>", _TRUNCATE);
+}
+
+// Typed alias so the function pointer matches PluginAnyWorldBeginPlayCallback exactly.
+static const PluginAnyWorldBeginPlayCallback k_OnAnyWorldBeginPlay = &OnAnyWorldBeginPlay;
+
+static void OnApiRoute(const PluginHttpRequest* req, PluginHttpResponse* resp)
+{
+	// Copy stats atomically enough for a debug endpoint (plain reads of
+	// 32-bit values are atomic on x86-64; uptime is a float so read once).
+	const uint32_t ticks     = s_tickCount;
+	const uint32_t sends     = s_sendCount;
+	const float  uptime    = s_uptime;
+
+	char worldName[256];
+	{
+		std::lock_guard lock(s_worldNameMutex);
+		strncpy_s(worldName, s_worldName, _TRUNCATE);
+	}
+
+	static char s_jsonBuf[512];
+	const int written = snprintf(s_jsonBuf, sizeof(s_jsonBuf),
+		"{\n"
+		"  \"plugin\": \"NetChannelTest\",\n"
+		"  \"worldName\": \"%s\",\n"
+		"  \"tickCount\": %u,\n"
+		"  \"sendCount\": %u,\n"
+		"  \"uptime\": %.2f\n"
+		"}",
+		worldName, ticks, sends, uptime);
+
+	resp->statusCode  = 200;
+	resp->contentType = "application/json";
+	resp->body     = s_jsonBuf;
+	resp->bodyLen     = (written > 0) ? static_cast<size_t>(written) : 0;
+
+	if (g_self)
+		LOG_DEBUG("HTTP /api/ served: world=%s ticks=%u sends=%u uptime=%.1f",
+			worldName, ticks, sends, uptime);
+}
 
 // Server->Client receive handle (client side)
 static PluginNetworkMessageCallback s_receiveHandle = nullptr;
@@ -84,6 +142,7 @@ extern "C" {
 					LOG_INFO("Received AckPacket from client: ackedSendCount=%u", ack.ackedSendCount);
 				});
 
+			/*
 			self->hooks->Engine->RegisterOnTick([](float deltaTime) {
 				if (!g_self || !g_self->hooks->Network) return;
 
@@ -105,6 +164,32 @@ extern "C" {
 
 				LOG_DEBUG("Sent TestPacket #%u (tick=%u uptime=%.1fs)", s_sendCount, s_tickCount, s_uptime);
 			});
+			*/
+
+			// ---------------------------------------------------------------
+			// HTTP routes (v22, server only)
+			// ---------------------------------------------------------------
+			if (self->hooks->HttpServer)
+			{
+				// Track world name for the API route
+				self->hooks->World->RegisterOnAnyWorldBeginPlay(k_OnAnyWorldBeginPlay);
+
+				// Raw JSON API: GET /netchanneltest/api/
+				if (self->hooks->HttpServer->AddRawRoute(self, "api", OnApiRoute))
+					LOG_INFO("HTTP raw route registered: /netchanneltest/api/");
+				else
+					LOG_WARN("HTTP raw route registration failed (already registered?)");
+
+				/* Static file route: /netchanneltest/ui/  ->  Plugins\NetChannelTest\ui\ */
+				if (self->hooks->HttpServer->AddRoute(self, "ui"))
+					LOG_INFO("HTTP static route registered: /netchanneltest/ui/");
+				else
+					LOG_WARN("HTTP static route registration failed (already registered?)");
+			}
+			else
+			{
+				LOG_INFO("HttpServer not available (client build or loader < v22) -- HTTP routes skipped");
+			}
 		}
 		else
 		{
@@ -148,6 +233,17 @@ extern "C" {
 						g_self, typeid(AckPacket).name(), s_serverReceiveHandle);
 					s_serverReceiveHandle = nullptr;
 				}
+
+				// Unregister HTTP routes and world name callback
+				if (g_self->hooks->HttpServer)
+				{
+					g_self->hooks->HttpServer->RemoveRawRoute(g_self, "api");
+					g_self->hooks->HttpServer->RemoveRoute(g_self, "ui");
+					LOG_INFO("HTTP routes unregistered");
+				}
+
+				if (g_self->hooks->World)
+					g_self->hooks->World->UnregisterOnAnyWorldBeginPlay(k_OnAnyWorldBeginPlay);
 			}
 			else
 			{
@@ -163,6 +259,11 @@ extern "C" {
 		s_tickCount = 0;
 		s_sendCount = 0;
 		s_uptime    = 0.0f;
+
+		{
+			std::lock_guard lock(s_worldNameMutex);
+			strncpy_s(s_worldName, "<unknown>", _TRUNCATE);
+		}
 
 		g_self = nullptr;
 	}
