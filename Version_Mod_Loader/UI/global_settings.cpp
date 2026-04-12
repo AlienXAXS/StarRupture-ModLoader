@@ -25,6 +25,10 @@ namespace UI::GlobalSettings
     static double s_posZ                = 0.0;
     static bool   s_posValid            = false;
 
+    // Update notification -- written by auto-updater thread, read by render thread.
+    // A plain bool write/read is atomic on x86-64 so no mutex is needed here.
+    static bool   s_updateAvailable     = false;
+
     // -----------------------------------------------------------------------
     // INI helpers
     // -----------------------------------------------------------------------
@@ -117,6 +121,9 @@ namespace UI::GlobalSettings
         if (z)     *z     = s_posZ;
         if (valid) *valid = s_posValid;
     }
+
+    void SetUpdateAvailable(bool available) { s_updateAvailable = available; }
+    bool GetUpdateAvailable()               { return s_updateAvailable; }
 }
 
 #endif // MODLOADER_CLIENT_BUILD

@@ -5,6 +5,10 @@
 #include "logging/log.h"
 #include "plugins/plugin_interface.h"
 
+#ifdef MODLOADER_CLIENT_BUILD
+#include "UI/global_settings.h"
+#endif
+
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <winhttp.h>
@@ -698,6 +702,10 @@ void ModLoaderLogger::RunAutoUpdate()
 
 	LogToFile::Info("[AutoUpdate] Update available: [%s] -> [%s]",
 	                effectiveLocalTag[0] ? effectiveLocalTag : "<none>", remoteBuildTag.c_str());
+
+#ifdef MODLOADER_CLIENT_BUILD
+	UI::GlobalSettings::SetUpdateAvailable(true);
+#endif
 
 	// Download each plugin entry — but ONLY if the user already has it installed.
 	// Plugins absent from disk were deliberately not installed and must not be

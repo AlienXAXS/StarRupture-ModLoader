@@ -60,6 +60,14 @@ namespace UI::Overlay
                         pluginCount,
                         pluginCount == 1 ? "" : "s",
                         s_openKeyName);
+
+            if (UI::GlobalSettings::GetUpdateAvailable())
+            {
+				ImGui::SameLine();
+                ImGui::Text("|");
+                ImGui::SameLine();
+                ImGui::TextColored(ImVec4(1.0f, 0.2f, 0.2f, 1.0f), "Mod Loader update available -- please update!");
+            }
         }
         ImGui::End();
     }
