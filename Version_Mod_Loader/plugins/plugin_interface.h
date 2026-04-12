@@ -223,7 +223,7 @@ struct IPluginInputEvents
 struct IModLoaderImGui
 {
 	void (*Text)(const char* text);
-	void (*TextColored)(float r, float g, float a, const char* text);
+	void (*TextColored)(float r, float g, float b, float a, const char* text);
 	void (*TextDisabled)(const char* text);
 	void (*TextWrapped)(const char* text);
 	void (*LabelText)(const char* label, const char* text);

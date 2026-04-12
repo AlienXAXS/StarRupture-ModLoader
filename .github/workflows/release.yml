@@ -32,22 +32,36 @@ jobs:
         run: |
           function Parse-Semver([string]$v) {
             if ($v -match '^v?(\d+)\.(\d+)\.(\d+)$') {
-              return [int[]]@([int]$Matches[1], [int]$Matches[2], [int]$Matches[3])
+              return @{
+                Major = [int]$Matches[1]
+                Minor = [int]$Matches[2]
+                Patch = [int]$Matches[3]
+              }
             }
             return $null
           }
 
-          function Compare-Semver([int[]]$a, [int[]]$b) {
-            for ($i = 0; $i -lt 3; $i++) {
-              if ($a[$i] -lt $b[$i]) { return -1 }
-              if ($a[$i] -gt $b[$i]) { return  1 }
-            }
+          function Compare-Semver($a, $b) {
+            if ($a.Major -lt $b.Major) { return -1 }
+            if ($a.Major -gt $b.Major) { return  1 }
+
+            if ($a.Minor -lt $b.Minor) { return -1 }
+            if ($a.Minor -gt $b.Minor) { return  1 }
+
+            if ($a.Patch -lt $b.Patch) { return -1 }
+            if ($a.Patch -gt $b.Patch) { return  1 }
+
             return 0
+          }
+
+          function Format-Semver($v) {
+            return "v$($v.Major).$($v.Minor).$($v.Patch)"
           }
 
           $latestParsed = $null
           $releaseTags = gh release list --limit 100 --json tagName |
-            ConvertFrom-Json | Select-Object -ExpandProperty tagName |
+            ConvertFrom-Json |
+            Select-Object -ExpandProperty tagName |
             Where-Object { $_ -match '^v\d+\.\d+\.\d+$' }
 
           foreach ($t in $releaseTags) {
@@ -59,19 +73,25 @@ jobs:
 
           if ($latestParsed -eq $null) {
             Write-Host "No semver tags found, bootstrapping from v0.0.0"
-            $latestParsed = [int[]]@(0, 0, 0)
+            $latestParsed = @{ Major = 0; Minor = 0; Patch = 0 }
           } else {
-            Write-Host "Latest semver tag: v$($latestParsed[0]).$($latestParsed[1]).$($latestParsed[2])"
+            Write-Host "Latest semver tag: $(Format-Semver $latestParsed)"
           }
 
-          # Auto-increment MINOR, reset PATCH to 0
-          $autoParsed = [int[]]@($latestParsed[0], $latestParsed[1] + 1, 0)
+          # bump MINOR, reset PATCH
+          $autoParsed = @{
+            Major = $latestParsed.Major
+            Minor = $latestParsed.Minor + 1
+            Patch = 0
+          }
 
           $versionFile = Join-Path $env:GITHUB_WORKSPACE "version"
-          $fileParsed  = $null
+          $fileParsed = $null
+
           if (Test-Path $versionFile) {
             $raw = (Get-Content $versionFile -Raw).Trim()
             $fileParsed = Parse-Semver $raw
+
             if ($fileParsed) {
               Write-Host "version file specifies: $raw"
             } else {
@@ -87,7 +107,16 @@ jobs:
             Write-Host "Auto-increment minor wins."
           }
 
-          $tag = "v$($chosen[0]).$($chosen[1]).$($chosen[2])"
+          Write-Host "DEBUG latest = $(Format-Semver $latestParsed)"
+          Write-Host "DEBUG auto   = $(Format-Semver $autoParsed)"
+          if ($fileParsed) {
+            Write-Host "DEBUG file   = $(Format-Semver $fileParsed)"
+          } else {
+            Write-Host "DEBUG file   = <none>"
+          }
+          Write-Host "DEBUG chosen = $(Format-Semver $chosen)"
+
+          $tag = Format-Semver $chosen
           Write-Host "Final tag: $tag"
           echo "TAG=$tag" >> $env:GITHUB_OUTPUT
 
