@@ -36,6 +36,7 @@ jobs:
             }
             return $null
           }
+
           function Compare-Semver([int[]]$a, [int[]]$b) {
             for ($i = 0; $i -lt 3; $i++) {
               if ($a[$i] -lt $b[$i]) { return -1 }
@@ -63,7 +64,8 @@ jobs:
             Write-Host "Latest semver tag: v$($latestParsed[0]).$($latestParsed[1]).$($latestParsed[2])"
           }
 
-          $autoParsed = [int[]]@($latestParsed[0], $latestParsed[1], $latestParsed[2] + 1)
+          # Auto-increment MINOR, reset PATCH to 0
+          $autoParsed = [int[]]@($latestParsed[0], $latestParsed[1] + 1, 0)
 
           $versionFile = Join-Path $env:GITHUB_WORKSPACE "version"
           $fileParsed  = $null
@@ -82,7 +84,7 @@ jobs:
             $chosen = $fileParsed
             Write-Host "version file is higher, using it."
           } else {
-            Write-Host "Auto-increment wins."
+            Write-Host "Auto-increment minor wins."
           }
 
           $tag = "v$($chosen[0]).$($chosen[1]).$($chosen[2])"
