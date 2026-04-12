@@ -507,6 +507,7 @@
     <ClInclude Include="imgui\imgui_internal.h" />
     <ClInclude Include="imgui\backends\imgui_impl_dx12.h" />
     <ClInclude Include="imgui\backends\imgui_impl_win32.h" />
+    <ClInclude Include="logging\logger_interface.h" />
     <ClInclude Include="network_channel\network_channel.h" />
     <ClInclude Include="plugins\plugin_network_helpers.h" />
     <ClInclude Include="UI\imgui_backend.h" />

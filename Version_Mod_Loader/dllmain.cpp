@@ -294,7 +294,7 @@ static DWORD WINAPI MainInitThreadProc(LPVOID)
 	Splash::SetProgress(0.30f);
 
 	ModLoaderLogger::InitializeConfigManager();
-	ModLoaderLogger::InitializePluginManager();
+	PluginManager::InitializePluginManager();
 
 	// Auto-update runs here, outside the loader lock, so WinHTTP can work.
 	// Downloaded DLLs are in place for this boot's plugin load.
@@ -493,7 +493,7 @@ static DWORD WINAPI MainInitThreadProc(LPVOID)
 	Hooks::EngineTick::RegisterPluginCallback(s_onTick);
 #endif
 
-	ModLoaderLogger::LoadAllPlugins();
+	PluginManager::LoadAllPlugins();
 
 	Splash::SetStatus(L"Plugin DLLs loaded -- waiting for game instance...");
 	Splash::SetProgress(1.0f);
@@ -775,7 +775,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 		ModLoaderLogger::LogInfo(L"Engine shutdown hook removed");
 
 		// Now safe to unload plugins
-		ModLoaderLogger::UnloadAllPlugins();
+		PluginManager::UnloadAllPlugins();
 
 		// Remove remaining core game hooks
 		ModLoaderLogger::LogInfo(L"Removing remaining core game hooks...");
@@ -795,7 +795,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 		Hooks::Input::RemoveInputProcessor();
 #endif
 
-		ModLoaderLogger::ShutdownPluginManager();
+		PluginManager::ShutdownPluginManager();
 		ModLoaderLogger::ShutdownConfigManager();
 		ModLoaderLogger::ShutdownLogger();
 

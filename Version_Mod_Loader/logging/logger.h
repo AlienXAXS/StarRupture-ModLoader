@@ -11,9 +11,6 @@ namespace ModLoaderLogger
     // Shutdown the logger
     void ShutdownLogger();
 
-    // Get the global plugin logger instance
-    IPluginLogger* GetPluginLogger();
-
     // Log functions for the mod loader itself - with log levels
     void LogTrace(const wchar_t* format, ...);
     void LogDebug(const wchar_t* format, ...);

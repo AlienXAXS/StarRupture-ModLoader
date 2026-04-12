@@ -23,7 +23,7 @@ namespace Hooks::GameInstanceInit
 		if (InterlockedCompareExchange(&g_initFired, 1, 0) == 0)
 		{
 			ModLoaderLogger::LogInfo(L"[GameInstanceInit] First ProcessEvent -- GObjects ready, initializing plugins");
-			ModLoaderLogger::InitAllLoadedPlugins();
+			PluginManager::InitAllLoadedPlugins();
 		}
 
 		// Dispatch to registered observers before calling original.

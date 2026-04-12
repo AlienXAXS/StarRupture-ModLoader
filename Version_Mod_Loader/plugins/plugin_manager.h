@@ -3,7 +3,7 @@
 #include <windows.h>
 #include "plugins/plugin_interface.h"
 
-namespace ModLoaderLogger
+namespace PluginManager
 {
     // Snapshot of a single plugin's state, safe to read after FreeLibrary.
     struct PluginStatus
