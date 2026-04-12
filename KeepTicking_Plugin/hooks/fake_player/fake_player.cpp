@@ -442,6 +442,37 @@ namespace Hooks::FakePlayer
 		LOG_INFO("[FakePlayer] === SpawnFakePlayer() COMPLETE - fake player active! ===");
 	}
 
+	static void SafeNativeLogout(SDK::AGameModeBase* gameMode, SDK::ACrPlayerControllerBase* controller)
+	{
+		auto g_hooks = GetHooks();
+		auto g_nativeLogout = reinterpret_cast<void(__fastcall*)(void* gameMode, void* controller)>(g_hooks->NativePointers->PlayerLeft());
+		if (!g_nativeLogout)
+		{
+			OutputDebugStringA("[FakePlayer] SafeNativeLogout: g_nativeLogout is null - pattern scan failed at Install()\n");
+			return;
+		}
+		__try
+		{
+			g_nativeLogout(gameMode, controller);
+		}
+		__except (1)
+		{
+			OutputDebugStringA("[FakePlayer] Exception during native AGameModeBase::Logout\n");
+		}
+	}
+
+	static void SafeRemovePlayer(SDK::APlayerController* controller, bool destroyPawn)
+	{
+		__try
+		{
+			SDK::UGameplayStatics::RemovePlayer(controller, destroyPawn);
+		}
+		__except (1)
+		{
+			OutputDebugStringA("[FakePlayer] Exception during UGameplayStatics::RemovePlayer\n");
+		}
+	}
+
 	void DespawnFakePlayer()
 	{
 		if (!g_playerActive)
@@ -452,113 +483,47 @@ namespace Hooks::FakePlayer
 
 		LOG_INFO("[FakePlayer] Despawning fake player...");
 
-		// Mark inactive immediately to block re-entrancy from engine callbacks
-		// triggered during destruction (e.g. Logout firing back into DespawnFakePlayer).
 		g_playerActive = false;
 		g_traversing = false;
 
-		// Snapshot and clear global pointers up-front so any re-entrant call sees nulls.
-		SDK::ACrPlayerControllerBase* fakeController = g_fakeController;
-		SDK::APawn*                   fakePawn       = g_fakePawn;
+		// Clear our tracked pointers — the loop below will find and destroy all
+		// controllers (including ours) by querying the world directly.
 		g_fakeController = nullptr;
-		g_fakePawn       = nullptr;
+		g_fakePawn = nullptr;
 
-		// Get the world and game mode for proper logout
 		SDK::UWorld* world = SDK::UWorld::GetWorld();
-		SDK::AGameModeBase* gameMode = world ? world->AuthorityGameMode : nullptr;
-
-		// Step 1: Remove from PlayerArray
-		if (fakeController && fakeController->PlayerState)
+		if (!world)
 		{
-			if (world && world->GameState)
-			{
-				auto& playerArray = world->GameState->PlayerArray;
-				for (SDK::int32 i = 0; i < playerArray.Num(); i++)
-				{
-					if (playerArray[i] == fakeController->PlayerState)
-					{
-						playerArray.Remove(i);
-						LOG_DEBUG("[FakePlayer] Removed fake PlayerState from PlayerArray at index %d", i);
-						break;
-					}
-				}
-			}
+			LOG_WARN("[FakePlayer] DespawnFakePlayer: world is null, cannot enumerate controllers");
+			return;
 		}
 
-		// Step 2: UnPossess the pawn from the controller
-		if (fakeController)
-		{
-			LOG_DEBUG("[FakePlayer] UnPossessing pawn from controller...");
-			__try
-			{
-				fakeController->UnPossess();
-			}
-			__except (1)
-			{
-				LOG_WARN("[FakePlayer] Exception during UnPossess");
-			}
-		}
+		// Collect all player controllers currently in the world.
+		// Iterate a snapshot — RemovePlayer modifies the world's controller list,
+		// so we must not hold a live TArray reference across calls.
+		SDK::TArray<SDK::AActor*> found;
+		SDK::UGameplayStatics::GetAllActorsOfClass(
+			world, SDK::ACrPlayerControllerBase::StaticClass(), &found);
 
-		// Step 3: Notify game mode to clean up player state via K2_OnLogout
-		if (gameMode && fakeController)
-		{
-			LOG_DEBUG("[FakePlayer] Calling GameMode->K2_OnLogout on fake controller...");
-			__try
-			{
-				gameMode->K2_OnLogout(fakeController);
-			}
-			__except (1)
-			{
-				LOG_WARN("[FakePlayer] Exception during K2_OnLogout");
-			}
-		}
-
-		// Step 4: Destroy the PlayerState if it exists
-		if (fakeController && fakeController->PlayerState)
-		{
-			LOG_DEBUG("[FakePlayer] Destroying PlayerState...");
-			__try
-			{
-				fakeController->PlayerState->K2_DestroyActor();
-			}
-			__except (1)
-			{
-				LOG_WARN("[FakePlayer] Exception during PlayerState K2_DestroyActor");
-			}
-		}
-
-		// Step 5: Destroy the pawn actor
-		if (fakePawn)
-		{
-			LOG_DEBUG("[FakePlayer] Destroying fake pawn actor...");
-			__try
-			{
-				fakePawn->K2_DestroyActor();
-			}
-			__except (1)
-			{
-				LOG_WARN("[FakePlayer] Exception during pawn K2_DestroyActor");
-			}
-		}
-
-		// Step 6: Destroy the controller.
-		// AController::Destroyed() (called by K2_DestroyActor) automatically calls
-		// UWorld::RemoveController -- no manual call needed here.
-		if (fakeController)
-		{
-			LOG_DEBUG("[FakePlayer] Destroying fake controller actor...");
-			__try
-			{
-				fakeController->K2_DestroyActor();
-				LOG_DEBUG("[FakePlayer] Fake controller K2_DestroyActor completed");
-			}
-			__except (1)
-			{
-				LOG_WARN("[FakePlayer] Exception during controller K2_DestroyActor");
-			}
-		}
-
+		int total = found.Num();
 		LOG_INFO("[FakePlayer] Fake player fully despawned and cleaned up");
+
+		// Verify — any remaining controllers are unexpected.
+		SDK::TArray<SDK::AActor*> remaining;
+		SDK::UGameplayStatics::GetAllActorsOfClass(
+			world, SDK::ACrPlayerControllerBase::StaticClass(), &remaining);
+
+		int leftover = remaining.Num();
+		if (leftover == 0)
+		{
+			LOG_INFO("[FakePlayer] All player controllers removed successfully");
+		}
+		else
+		{
+			LOG_WARN("[FakePlayer] %d controller(s) still present after cleanup:", leftover);
+			for (int i = 0; i < leftover; i++)
+				LOG_WARN("[FakePlayer]   [%d] %p", i, static_cast<void*>(remaining[i]));
+		}
 	}
 
 	// ---------------------------------------------------------------
