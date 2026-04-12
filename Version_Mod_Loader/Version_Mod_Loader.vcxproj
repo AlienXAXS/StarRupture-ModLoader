@@ -224,12 +224,10 @@
       <ModuleDefinitionFile>$(ProjectDir)dwmapi.def</ModuleDefinitionFile>
     </Link>
     <PostBuildEvent>
-      <Command>echo Deploying dwmapi.dll to $(GameDeployDir)...
-if not exist "$(GameDeployDir)" mkdir "$(GameDeployDir)"
-copy /Y "$(TargetPath)" "$(GameDeployDir)$(TargetFileName)"
-if exist "$(TargetDir)$(TargetName).pdb" copy /Y "$(TargetDir)$(TargetName).pdb" "$(GameDeployDir)$(TargetName).pdb"
-echo Deploy complete.</Command>
-      <Message>Copying dwmapi.dll to game server directory...</Message>
+      <Command>
+      </Command>
+      <Message>
+      </Message>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -256,12 +254,10 @@ echo Deploy complete.</Command>
       <ModuleDefinitionFile>$(ProjectDir)dwmapi.def</ModuleDefinitionFile>
     </Link>
     <PostBuildEvent>
-      <Command>echo Deploying dwmapi.dll to $(GameDeployDir)...
-if not exist "$(GameDeployDir)" mkdir "$(GameDeployDir)"
-copy /Y "$(TargetPath)" "$(GameDeployDir)$(TargetFileName)"
-if exist "$(TargetDir)$(TargetName).pdb" copy /Y "$(TargetDir)$(TargetName).pdb" "$(GameDeployDir)$(TargetName).pdb"
-echo Deploy complete.</Command>
-      <Message>Copying dwmapi.dll to game server directory...</Message>
+      <Command>
+      </Command>
+      <Message>
+      </Message>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Client Debug|x64'">
@@ -313,12 +309,10 @@ echo Deploy complete.</Command>
       <ModuleDefinitionFile>$(ProjectDir)dwmapi.def</ModuleDefinitionFile>
     </Link>
     <PostBuildEvent>
-      <Command>echo Deploying dwmapi.dll to $(GameDeployDir)...
-if not exist "$(GameDeployDir)" mkdir "$(GameDeployDir)"
-copy /Y "$(TargetPath)" "$(GameDeployDir)$(TargetFileName)"
-if exist "$(TargetDir)$(TargetName).pdb" copy /Y "$(TargetDir)$(TargetName).pdb" "$(GameDeployDir)$(TargetName).pdb"
-echo Deploy complete.</Command>
-      <Message>Copying dwmapi.dll to game server directory...</Message>
+      <Command>
+      </Command>
+      <Message>
+      </Message>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Server Debug|x64'">
@@ -340,12 +334,10 @@ echo Deploy complete.</Command>
       <ModuleDefinitionFile>$(ProjectDir)dwmapi.def</ModuleDefinitionFile>
     </Link>
     <PostBuildEvent>
-      <Command>echo Deploying dwmapi.dll to $(GameDeployDir)...
-if not exist "$(GameDeployDir)" mkdir "$(GameDeployDir)"
-copy /Y "$(TargetPath)" "$(GameDeployDir)$(TargetFileName)"
-if exist "$(TargetDir)$(TargetName).pdb" copy /Y "$(TargetDir)$(TargetName).pdb" "$(GameDeployDir)$(TargetName).pdb"
-echo Deploy complete.</Command>
-      <Message>Copying dwmapi.dll to game server directory...</Message>
+      <Command>
+      </Command>
+      <Message>
+      </Message>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Server Release|x64'">
@@ -372,12 +364,10 @@ echo Deploy complete.</Command>
       <ModuleDefinitionFile>$(ProjectDir)dwmapi.def</ModuleDefinitionFile>
     </Link>
     <PostBuildEvent>
-      <Command>echo Deploying dwmapi.dll to $(GameDeployDir)...
-if not exist "$(GameDeployDir)" mkdir "$(GameDeployDir)"
-copy /Y "$(TargetPath)" "$(GameDeployDir)$(TargetFileName)"
-if exist "$(TargetDir)$(TargetName).pdb" copy /Y "$(TargetDir)$(TargetName).pdb" "$(GameDeployDir)$(TargetName).pdb"
-echo Deploy complete.</Command>
-      <Message>Copying dwmapi.dll to game server directory...</Message>
+      <Command>
+      </Command>
+      <Message>
+      </Message>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Local SDK Client Debug|x64'">
@@ -429,12 +419,10 @@ echo Deploy complete.</Command>
       <ModuleDefinitionFile>$(ProjectDir)dwmapi.def</ModuleDefinitionFile>
     </Link>
     <PostBuildEvent>
-      <Command>echo Deploying dwmapi.dll to $(GameDeployDir)...
-if not exist "$(GameDeployDir)" mkdir "$(GameDeployDir)"
-copy /Y "$(TargetPath)" "$(GameDeployDir)$(TargetFileName)"
-if exist "$(TargetDir)$(TargetName).pdb" copy /Y "$(TargetDir)$(TargetName).pdb" "$(GameDeployDir)$(TargetName).pdb"
-echo Deploy complete.</Command>
-      <Message>Copying dwmapi.dll to game server directory...</Message>
+      <Command>
+      </Command>
+      <Message>
+      </Message>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Local SDK Server Debug|x64'">
@@ -456,12 +444,10 @@ echo Deploy complete.</Command>
       <ModuleDefinitionFile>$(ProjectDir)dwmapi.def</ModuleDefinitionFile>
     </Link>
     <PostBuildEvent>
-      <Command>echo Deploying dwmapi.dll to $(GameDeployDir)...
-if not exist "$(GameDeployDir)" mkdir "$(GameDeployDir)"
-copy /Y "$(TargetPath)" "$(GameDeployDir)$(TargetFileName)"
-if exist "$(TargetDir)$(TargetName).pdb" copy /Y "$(TargetDir)$(TargetName).pdb" "$(GameDeployDir)$(TargetName).pdb"
-echo Deploy complete.</Command>
-      <Message>Copying dwmapi.dll to game server directory...</Message>
+      <Command>
+      </Command>
+      <Message>
+      </Message>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Local SDK Server Release|x64'">
@@ -488,12 +474,10 @@ echo Deploy complete.</Command>
       <ModuleDefinitionFile>$(ProjectDir)dwmapi.def</ModuleDefinitionFile>
     </Link>
     <PostBuildEvent>
-      <Command>echo Deploying dwmapi.dll to $(GameDeployDir)...
-if not exist "$(GameDeployDir)" mkdir "$(GameDeployDir)"
-copy /Y "$(TargetPath)" "$(GameDeployDir)$(TargetFileName)"
-if exist "$(TargetDir)$(TargetName).pdb" copy /Y "$(TargetDir)$(TargetName).pdb" "$(GameDeployDir)$(TargetName).pdb"
-echo Deploy complete.</Command>
-      <Message>Copying dwmapi.dll to game server directory...</Message>
+      <Command>
+      </Command>
+      <Message>
+      </Message>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
