@@ -24,6 +24,7 @@
 #include "hooks/game/mass_spawner_activate/mass_spawner_activate.h"
 #include "hooks/game/mass_spawner_deactivate/mass_spawner_deactivate.h"
 #include "hooks/game/mass_do_spawning/mass_do_spawning.h"
+#include "network_channel/network_channel.h"
 #include "hooks/game/game_instance_init/game_instance_init.h"
 
 #include "auto_update/auto_updater.h"
@@ -786,6 +787,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 
 		// Now safe to unload plugins
 		ModLoaderLogger::UnloadAllPlugins();
+		NetworkChannel::Shutdown();
 
 		// Remove remaining core game hooks
 		ModLoaderLogger::LogInfo(L"Removing remaining core game hooks...");

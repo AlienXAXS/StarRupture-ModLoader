@@ -5,6 +5,7 @@
 #include "network_channel/network_channel.h"
 #include "logging/logger.h"
 #include "CoreUObject_classes.hpp"
+#include "hooks/game/game_instance_init/game_instance_init.h"
 #include <hooks/hooks_common.h>
 
 // ---------------------------------------------------------------------------
@@ -44,36 +45,107 @@ namespace Hooks::ServerChatCommit
     static ExecFunc_t      g_origExec           = nullptr;
     static SDK::UFunction* g_serverExecCmdFunc   = nullptr;
 
+    struct FStringView { wchar_t* Data; int32_t Num; int32_t Max; };
+
+    static bool TryDispatchEnvelope(void* senderContext, FStringView* cmd, bool allowNeuter)
+    {
+        if (!cmd || !cmd->Data || cmd->Num < kModPrefixChars + 1)
+            return false;
+
+        ModLoaderLogger::LogTrace(
+            L"[ServerChatCommit] Command candidate data=%p num=%d max=%d sender=%p",
+            cmd->Data,
+            cmd->Num,
+            cmd->Max,
+            senderContext);
+
+        if (wcsncmp(cmd->Data, kModPrefix, kModPrefixChars) != 0)
+            return false;
+
+        bool consumed = NetworkChannel::DispatchServerMessage(senderContext, cmd->Data, cmd->Num);
+        if (!consumed)
+        {
+            ModLoaderLogger::LogWarn(
+                L"[ServerChatCommit] DispatchServerMessage returned false for context=%p",
+                senderContext);
+        }
+
+        if (allowNeuter)
+        {
+            // Prevent the original handler from logging "Command not recognized"
+            // when we already identified the payload as mod-loader traffic.
+            cmd->Data[0] = L'\0';
+            cmd->Num = 1;
+        }
+
+        return consumed;
+    }
+
+    static void ProcessEventObserver(void* obj, void* fn, void* params)
+    {
+        if (fn != g_serverExecCmdFunc || !params)
+            return;
+
+        auto* cmd = reinterpret_cast<FStringView*>(params);
+        if (TryDispatchEnvelope(obj, cmd, true))
+        {
+            ModLoaderLogger::LogTrace(
+                L"[ServerChatCommit] ProcessEvent observer consumed mod envelope for context=%p",
+                obj);
+        }
+    }
+
     static void __fastcall ExecHook(void* context, void* stack, void* result)
     {
+        ModLoaderLogger::LogTrace(
+            L"[ServerChatCommit] ExecHook enter context=%p stack=%p result=%p orig=%p",
+            context,
+            stack,
+            result,
+            reinterpret_cast<void*>(g_origExec));
+
         void* locals = *reinterpret_cast<void**>(static_cast<uint8_t*>(stack) + kFFrameLocalsOffset);
+        ModLoaderLogger::LogTrace(L"[ServerChatCommit] ExecHook locals=%p", locals);
 
         if (locals)
         {
-            struct FStringView { wchar_t* Data; int32_t Num; int32_t Max; };
             auto* cmd = reinterpret_cast<FStringView*>(locals);
 
-            if (cmd->Data && cmd->Num >= kModPrefixChars + 1 &&
-                wcsncmp(cmd->Data, kModPrefix, kModPrefixChars) == 0)
+            if (TryDispatchEnvelope(context, cmd, false))
             {
-                ModLoaderLogger::LogInfo(
-                    L"[ServerChatCommit] Mod envelope received from context=%p Num=%d",
-                    context, cmd->Num);
-
-                // context is the APlayerController that sent the RPC
-                bool consumed = NetworkChannel::DispatchServerMessage(context, cmd->Data, cmd->Num);
-                if (consumed)
-                    return; // suppress original -- don't execute as a console command
+                return; // suppress original -- don't execute as a console command
             }
+        }
+        else
+        {
+            auto* node = *reinterpret_cast<void**>(static_cast<uint8_t*>(stack) + 0x08);
+            auto* object = *reinterpret_cast<void**>(static_cast<uint8_t*>(stack) + 0x10);
+            auto* code = *reinterpret_cast<void**>(static_cast<uint8_t*>(stack) + 0x18);
+            ModLoaderLogger::LogTrace(
+                L"[ServerChatCommit] ExecHook has null locals; node=%p object=%p code=%p -- forwarding to original ExecFunction",
+                node,
+                object,
+                code);
         }
 
         if (g_origExec)
+        {
+            ModLoaderLogger::LogTrace(L"[ServerChatCommit] Calling original ExecFunction for context=%p", context);
             g_origExec(context, stack, result);
+        }
+        else
+        {
+            ModLoaderLogger::LogError(L"[ServerChatCommit] Original ExecFunction pointer is null during ExecHook");
+        }
     }
 
     bool Install()
     {
-        if (g_hook.installed) return true;
+        if (g_hook.installed)
+        {
+            ModLoaderLogger::LogInfo(L"[ServerChatCommit] Install skipped; hook already installed");
+            return true;
+        }
 
         g_serverExecCmdFunc = SDK::UObject::FindObjectFast<SDK::UFunction>(
             "ServerExecuteConsoleCommand", SDK::EClassCastFlags::Function);
@@ -109,11 +181,18 @@ namespace Hooks::ServerChatCommit
         else
             ModLoaderLogger::LogError(L"[ServerChatCommit] ExecFunction hook installation failed");
 
+        Hooks::GameInstanceInit::RegisterProcessEventCallback(&ProcessEventObserver);
+        ModLoaderLogger::LogInfo(L"[ServerChatCommit] ProcessEvent observer registered");
+
         return ok;
     }
 
     void Remove()
     {
+        Hooks::GameInstanceInit::UnregisterProcessEventCallback(&ProcessEventObserver);
+        ModLoaderLogger::LogInfo(
+            L"[ServerChatCommit] Removing ExecFunction hook (installed=%s)",
+            g_hook.installed ? L"true" : L"false");
         g_hook.Remove();
         g_origExec         = nullptr;
         g_serverExecCmdFunc = nullptr;
