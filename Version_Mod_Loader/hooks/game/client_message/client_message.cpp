@@ -160,6 +160,11 @@ namespace Hooks::ClientMessage
         return g_hook.installed;
     }
 
+    uintptr_t GetOriginalPtr()
+    {
+        return reinterpret_cast<uintptr_t>(g_origExec);
+    }
+
 } // namespace Hooks::ClientMessage
 
 #endif // MODLOADER_CLIENT_BUILD

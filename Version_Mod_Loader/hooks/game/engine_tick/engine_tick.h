@@ -35,4 +35,8 @@ namespace Hooks::EngineTick
 
 	// Unregister a plugin callback
 	void UnregisterPluginCallback(PluginEngineTickCallback callback);
+
+	// Returns the trampoline address of the original UGameEngine::Tick, or 0 if not yet installed.
+	// Cast to: void(__fastcall*)(void* thisPtr, float deltaSeconds, bool bIdleMode)
+	uintptr_t GetOriginalPtr();
 }

@@ -34,4 +34,9 @@ namespace Hooks::ExperienceLoadComplete
 
 	// Unregister a plugin callback
 	void UnregisterPluginCallback(PluginExperienceLoadCompleteCallback callback);
+
+	// Returns the trampoline address of the original UCrExperienceManagerComponent::OnExperienceLoadComplete,
+	// or 0 if not yet installed.
+	// Cast to: void(__fastcall*)(void* thisPtr)
+	uintptr_t GetOriginalPtr();
 }

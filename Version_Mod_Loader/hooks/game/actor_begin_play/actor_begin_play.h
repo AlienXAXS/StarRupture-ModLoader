@@ -36,4 +36,8 @@ namespace Hooks::ActorBeginPlay
 
 	// Unregister a plugin callback
 	void UnregisterPluginCallback(PluginActorBeginPlayCallback callback);
+
+	// Returns the trampoline address of the original AActor::BeginPlay, or 0 if not yet installed.
+	// Cast to: void(__fastcall*)(void* thisPtr)
+	uintptr_t GetOriginalPtr();
 }

@@ -25,6 +25,7 @@
 #include "UI/plugin_panel_registry.h"
 #include "UI/plugin_widget_registry.h"
 #include "hooks/game/hud_post_render/hud_post_render.h"
+#include "hooks/game/client_message/client_message.h"
 #endif
 #include <unordered_map>
 #include <mutex>
@@ -808,6 +809,54 @@ namespace ModLoaderLogger
 	};
 #endif // MODLOADER_CLIENT_BUILD
 
+	// --- Native pointer wrappers (v21) ---
+
+	static uintptr_t NativeEngineLoopInit()   { return Hooks::EngineInit::GetOriginalPtrEngineLoopInit(); }
+	static uintptr_t NativeGameEngineInit()   { return Hooks::EngineInit::GetOriginalPtrGameEngineInit(); }
+	static uintptr_t NativeEngineLoopExit()   { return Hooks::EngineShutdown::GetOriginalPtrEngineLoopExit(); }
+	static uintptr_t NativeEnginePreExit()  { return Hooks::EngineShutdown::GetOriginalPtrEnginePreExit(); }
+	static uintptr_t NativeEngineTick()  { return Hooks::EngineTick::GetOriginalPtr(); }
+	static uintptr_t NativeWorldBeginPlay()   { return Hooks::WorldBeginPlay::GetOriginalPtr(); }
+	static uintptr_t NativeWorldEndPlay()     { return Hooks::WorldEndPlay::GetOriginalPtr(); }
+	static uintptr_t NativeSaveLoaded()       { return Hooks::SaveLoaded::GetOriginalPtr(); }
+	static uintptr_t NativeExperienceLoadComplete() { return Hooks::ExperienceLoadComplete::GetOriginalPtr(); }
+	static uintptr_t NativeActorBeginPlay()   { return Hooks::ActorBeginPlay::GetOriginalPtr(); }
+	static uintptr_t NativePlayerJoined()     { return Hooks::PlayerJoined::GetOriginalPtr(); }
+	static uintptr_t NativePlayerLeft()       { return Hooks::PlayerLeft::GetOriginalPtr(); }
+	static uintptr_t NativeSpawnerActivate()  { return Hooks::MassSpawnerActivate::GetOriginalPtr(); }
+	static uintptr_t NativeSpawnerDeactivate(){ return Hooks::MassSpawnerDeactivate::GetOriginalPtr(); }
+	static uintptr_t NativeSpawnerDoSpawning(){ return Hooks::MassDoSpawning::GetOriginalPtr(); }
+#ifdef MODLOADER_CLIENT_BUILD
+	static uintptr_t NativeHUDPostRender()    { return Hooks::HUDPostRender::GetOriginalPtr(); }
+	static uintptr_t NativeClientMessageExec(){ return Hooks::ClientMessage::GetOriginalPtr(); }
+#endif
+
+	// Native pointers sub-interface struct (v21)
+	static IPluginNativePointers g_nativePointers = {
+		NativeEngineLoopInit,
+		NativeGameEngineInit,
+		NativeEngineLoopExit,
+		NativeEnginePreExit,
+		NativeEngineTick,
+		NativeWorldBeginPlay,
+		NativeWorldEndPlay,
+		NativeSaveLoaded,
+		NativeExperienceLoadComplete,
+		NativeActorBeginPlay,
+		NativePlayerJoined,
+		NativePlayerLeft,
+		NativeSpawnerActivate,
+		NativeSpawnerDeactivate,
+		NativeSpawnerDoSpawning,
+#ifdef MODLOADER_CLIENT_BUILD
+		NativeHUDPostRender,      // client only
+		NativeClientMessageExec   // client only
+#else
+		nullptr,        // HUDPostRender — null on server/generic builds
+		nullptr          // ClientMessageExec — null on server/generic builds
+#endif
+	};
+
 	// Global hooks interface instance
 	static IPluginHooks g_pluginHooks = {
 		&g_spawnerHooks,
@@ -818,15 +867,16 @@ namespace ModLoaderLogger
 		&g_playerEvents,
 		&g_actorEvents,
 #ifdef MODLOADER_CLIENT_BUILD
-		&g_inputEvents,  // v15 — keybind events (client only)
-		&g_uiEvents,     // v15 — custom panel + config-change callbacks (client only)
-		&g_hudEvents,    // v16 — AHUD::PostRender callbacks + HUD function addresses (client only)
+		&g_inputEvents,    // v15 — keybind events (client only)
+		&g_uiEvents,         // v15 — custom panel + config-change callbacks (client only)
+		&g_hudEvents,        // v16 — AHUD::PostRender callbacks + HUD function addresses (client only)
 #else
-		nullptr,         // v15 — Input is null on server/generic builds
-		nullptr,         // v15 — UI is null on server/generic builds
-		nullptr,         // v16 — HUD is null on server/generic builds
+		nullptr,          // v15 — Input is null on server/generic builds
+		nullptr,             // v15 — UI is null on server/generic builds
+		nullptr,       // v16 — HUD is null on server/generic builds
 #endif
-		nullptr          // v17 -- Network; filled in below by GetPluginHooks()
+		nullptr,             // v17 — Network; filled in below by GetPluginHooks()
+		&g_nativePointers    // v21 — trampoline addresses for all managed hooks
 	};
 
 	IPluginHooks* GetPluginHooks()

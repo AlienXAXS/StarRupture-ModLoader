@@ -46,4 +46,8 @@ namespace Hooks::WorldBeginPlay
 
 	// Unregister an any-world callback
 	void UnregisterAnyWorldCallback(PluginAnyWorldBeginPlayCallback callback);
+
+	// Returns the trampoline address of the original UCrSessionWorldLoaderSubsystem::OnWorldBeginPlay, or 0 if not yet installed.
+	// Cast to: void(__fastcall*)(void* subsystemThis)
+	uintptr_t GetOriginalPtr();
 }

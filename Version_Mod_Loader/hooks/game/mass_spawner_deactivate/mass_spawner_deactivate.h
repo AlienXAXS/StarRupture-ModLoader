@@ -21,4 +21,9 @@ namespace Hooks::MassSpawnerDeactivate
 	void UnregisterBeforeCallback(BeforeCallback callback);
 	void RegisterAfterCallback(AfterCallback callback);
 	void UnregisterAfterCallback(AfterCallback callback);
+
+	// Returns the trampoline address of the original AAbstractMassEnemySpawner::DeactivateSpawner,
+	// or 0 if not yet installed.
+	// Cast to: void(__fastcall*)(void* thisPtr, bool bPermanently)
+	uintptr_t GetOriginalPtr();
 }

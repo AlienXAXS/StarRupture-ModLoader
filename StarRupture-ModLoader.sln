@@ -131,8 +131,7 @@ Global
 		{F1A2B3C4-D5E6-4789-90AB-CDEF12345678}.Local SDK Server Release|x64.Build.0 = Local SDK Server Release|x64
 		{F1A2B3C4-D5E6-4789-90AB-CDEF12345678}.Release|x64.ActiveCfg = Release|x64
 		{F1A2B3C4-D5E6-4789-90AB-CDEF12345678}.Release|x64.Build.0 = Release|x64
-		{F1A2B3C4-D5E6-4789-90AB-CDEF12345678}.Server Debug|x64.ActiveCfg = Server Debug|x64
-		{F1A2B3C4-D5E6-4789-90AB-CDEF12345678}.Server Debug|x64.Build.0 = Server Debug|x64
+		{F1A2B3C4-D5E6-4789-90AB-CDEF12345678}.Server Debug|x64.ActiveCfg = Server Release|x64
 		{F1A2B3C4-D5E6-4789-90AB-CDEF12345678}.Server Release|x64.ActiveCfg = Server Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution

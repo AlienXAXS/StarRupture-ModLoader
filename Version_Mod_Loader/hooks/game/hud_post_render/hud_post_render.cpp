@@ -152,6 +152,11 @@ namespace Hooks::HUDPostRender
 	{
 		return g_gatherPlayersDataAddr;
 	}
+
+	uintptr_t GetOriginalPtr()
+	{
+		return reinterpret_cast<uintptr_t>(g_original);
+	}
 }
 
 #endif // MODLOADER_CLIENT_BUILD

@@ -27,6 +27,11 @@ namespace Hooks::ClientMessage
 
     // Returns true if the observer is currently registered.
     bool IsInstalled();
+
+    // Returns the trampoline address of the original ACrPlayerControllerBase::ClientSaveStringToTxt
+    // ExecFunction, or 0 if not yet installed.
+    // Cast to: void(__fastcall*)(void* context, void* stack, void* result)
+    uintptr_t GetOriginalPtr();
 }
 
 #endif // MODLOADER_CLIENT_BUILD
