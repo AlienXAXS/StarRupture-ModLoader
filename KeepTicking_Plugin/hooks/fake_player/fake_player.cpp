@@ -49,12 +49,6 @@ namespace Hooks::FakePlayer
 		}
 	}
 
-	// Helper to safely destroy an actor - isolated for SEH compatibility
-	static void SafeDestroyActor(SDK::AActor* actor)
-	{
-		__try { actor->K2_DestroyActor(); } __except (1) {}
-	}
-
 	// Helper to safely teleport pawn - isolated for SEH compatibility
 	static bool SafeSetActorLocation(SDK::APawn* pawn, const SDK::FVector& loc)
 	{
@@ -386,11 +380,10 @@ namespace Hooks::FakePlayer
 		if (!g_fakePawn)
 		{
 			LOG_ERROR("[FakePlayer] Failed to spawn pawn (BeginDeferredActorSpawnFromClass returned null)");
-			// Controller was already fully spawned — destroy it so it doesn't leak into the world
-			SafeDestroyActor(g_fakeController);
 			g_fakeController = nullptr;
 			return;
 		}
+
 		LOG_DEBUG("[FakePlayer] Pawn deferred spawn OK: %p", g_fakePawn);
 
 		LOG_DEBUG("[FakePlayer] Setting pawn replication properties...");
@@ -440,90 +433,6 @@ namespace Hooks::FakePlayer
 		InterlockedIncrement(&g_callCount);
 
 		LOG_INFO("[FakePlayer] === SpawnFakePlayer() COMPLETE - fake player active! ===");
-	}
-
-	static void SafeNativeLogout(SDK::AGameModeBase* gameMode, SDK::ACrPlayerControllerBase* controller)
-	{
-		auto g_hooks = GetHooks();
-		auto g_nativeLogout = reinterpret_cast<void(__fastcall*)(void* gameMode, void* controller)>(g_hooks->NativePointers->PlayerLeft());
-		if (!g_nativeLogout)
-		{
-			OutputDebugStringA("[FakePlayer] SafeNativeLogout: g_nativeLogout is null - pattern scan failed at Install()\n");
-			return;
-		}
-		__try
-		{
-			g_nativeLogout(gameMode, controller);
-		}
-		__except (1)
-		{
-			OutputDebugStringA("[FakePlayer] Exception during native AGameModeBase::Logout\n");
-		}
-	}
-
-	static void SafeRemovePlayer(SDK::APlayerController* controller, bool destroyPawn)
-	{
-		__try
-		{
-			SDK::UGameplayStatics::RemovePlayer(controller, destroyPawn);
-		}
-		__except (1)
-		{
-			OutputDebugStringA("[FakePlayer] Exception during UGameplayStatics::RemovePlayer\n");
-		}
-	}
-
-	void DespawnFakePlayer()
-	{
-		if (!g_playerActive)
-		{
-			LOG_DEBUG("[FakePlayer] No fake player to despawn");
-			return;
-		}
-
-		LOG_INFO("[FakePlayer] Despawning fake player...");
-
-		g_playerActive = false;
-		g_traversing = false;
-
-		// Clear our tracked pointers — the loop below will find and destroy all
-		// controllers (including ours) by querying the world directly.
-		g_fakeController = nullptr;
-		g_fakePawn = nullptr;
-
-		SDK::UWorld* world = SDK::UWorld::GetWorld();
-		if (!world)
-		{
-			LOG_WARN("[FakePlayer] DespawnFakePlayer: world is null, cannot enumerate controllers");
-			return;
-		}
-
-		// Collect all player controllers currently in the world.
-		// Iterate a snapshot — RemovePlayer modifies the world's controller list,
-		// so we must not hold a live TArray reference across calls.
-		SDK::TArray<SDK::AActor*> found;
-		SDK::UGameplayStatics::GetAllActorsOfClass(
-			world, SDK::ACrPlayerControllerBase::StaticClass(), &found);
-
-		int total = found.Num();
-		LOG_INFO("[FakePlayer] Fake player fully despawned and cleaned up");
-
-		// Verify — any remaining controllers are unexpected.
-		SDK::TArray<SDK::AActor*> remaining;
-		SDK::UGameplayStatics::GetAllActorsOfClass(
-			world, SDK::ACrPlayerControllerBase::StaticClass(), &remaining);
-
-		int leftover = remaining.Num();
-		if (leftover == 0)
-		{
-			LOG_INFO("[FakePlayer] All player controllers removed successfully");
-		}
-		else
-		{
-			LOG_WARN("[FakePlayer] %d controller(s) still present after cleanup:", leftover);
-			for (int i = 0; i < leftover; i++)
-				LOG_WARN("[FakePlayer]   [%d] %p", i, static_cast<void*>(remaining[i]));
-		}
 	}
 
 	// ---------------------------------------------------------------
