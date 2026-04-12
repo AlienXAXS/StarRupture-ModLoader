@@ -237,6 +237,9 @@
     <ClInclude Include="hooks\game\game_instance_init\game_instance_init.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="logging\logger_interface.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="dllmain.cpp">

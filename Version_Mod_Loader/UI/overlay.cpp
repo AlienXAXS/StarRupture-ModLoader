@@ -54,7 +54,7 @@ namespace UI::Overlay
 
         if (ImGui::Begin("##modloader_overlay", nullptr, flags))
         {
-            int pluginCount = ModLoaderLogger::GetLoadedPluginCount();
+            int pluginCount = PluginManager::GetLoadedPluginCount();
             ImGui::Text("AlienX's Mod Loader %s | %d Plugin%s Loaded | %s To Open UI",
                         MODLOADER_BUILD_TAG,
                         pluginCount,

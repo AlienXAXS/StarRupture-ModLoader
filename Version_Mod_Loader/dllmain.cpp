@@ -295,7 +295,7 @@ static DWORD WINAPI MainInitThreadProc(LPVOID)
 	Splash::SetProgress(0.30f);
 
 	ModLoaderLogger::InitializeConfigManager();
-	ModLoaderLogger::InitializePluginManager();
+	PluginManager::InitializePluginManager();
 
 	// Auto-update runs here, outside the loader lock, so WinHTTP can work.
 	// Downloaded DLLs are in place for this boot's plugin load.
@@ -494,7 +494,7 @@ static DWORD WINAPI MainInitThreadProc(LPVOID)
 	Hooks::EngineTick::RegisterPluginCallback(s_onTick);
 #endif
 
-	ModLoaderLogger::LoadAllPlugins();
+	PluginManager::LoadAllPlugins();
 
 	// Bug fix: if the GameInstanceInit one-shot latch fired before plugins
 	// were loaded (server startup race / 120s timeout scenario), plugins
@@ -807,7 +807,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 		Hooks::Input::RemoveInputProcessor();
 #endif
 
-		ModLoaderLogger::ShutdownPluginManager();
+		PluginManager::ShutdownPluginManager();
 		ModLoaderLogger::ShutdownConfigManager();
 		ModLoaderLogger::ShutdownLogger();
 

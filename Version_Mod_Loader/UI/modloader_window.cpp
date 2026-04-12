@@ -113,8 +113,8 @@ namespace UI::ModLoaderWindow
 
     static void RenderPluginsTab()
     {
-        static ModLoaderLogger::PluginStatus statuses[64];
-        int count = ModLoaderLogger::GetAllPluginStatuses(statuses, 64);
+        static PluginManager::PluginStatus statuses[64];
+        int count = PluginManager::GetAllPluginStatuses(statuses, 64);
 
         if (count == 0)
         {
@@ -139,7 +139,7 @@ namespace UI::ModLoaderWindow
 
             for (int i = 0; i < count; ++i)
             {
-                const ModLoaderLogger::PluginStatus& s = statuses[i];
+                const PluginManager::PluginStatus& s = statuses[i];
                 ImGui::TableNextRow();
 
                 ImGui::TableSetColumnIndex(0);
@@ -163,7 +163,7 @@ namespace UI::ModLoaderWindow
                 // Unload — active only when loaded
                 if (!s.isLoaded) ImGui::BeginDisabled();
                 if (ImGui::SmallButton("Unload"))
-                    ModLoaderLogger::UnloadPlugin(i);
+                    PluginManager::UnloadPlugin(i);
                 if (!s.isLoaded) ImGui::EndDisabled();
 
                 ImGui::SameLine();
@@ -171,14 +171,14 @@ namespace UI::ModLoaderWindow
                 // Load — active only when unloaded
                 if (s.isLoaded) ImGui::BeginDisabled();
                 if (ImGui::SmallButton("Load"))
-                    ModLoaderLogger::ReloadPlugin(i);
+                    PluginManager::ReloadPlugin(i);
                 if (s.isLoaded) ImGui::EndDisabled();
 
                 ImGui::SameLine();
 
                 // Reload — always active
                 if (ImGui::SmallButton("Reload"))
-                    ModLoaderLogger::ReloadPlugin(i);
+                    PluginManager::ReloadPlugin(i);
 
                 ImGui::PopID();
             }
@@ -323,7 +323,7 @@ namespace UI::ModLoaderWindow
     static void RenderConfigTab(IModLoaderImGui* imgui)
     {
         static const PluginInfo* infos[64];
-        int count = ModLoaderLogger::GetLoadedPluginInfos(infos, 64);
+        int count = PluginManager::GetLoadedPluginInfos(infos, 64);
 
         if (count == 0)
         {
@@ -458,7 +458,7 @@ namespace UI::ModLoaderWindow
         ImGui::SeparatorText("Loaded Plugins");
 
         static const PluginInfo* infos[64];
-        int count = ModLoaderLogger::GetLoadedPluginInfos(infos, 64);
+        int count = PluginManager::GetLoadedPluginInfos(infos, 64);
         for (int i = 0; i < count; ++i)
         {
             const PluginInfo* info = infos[i];
