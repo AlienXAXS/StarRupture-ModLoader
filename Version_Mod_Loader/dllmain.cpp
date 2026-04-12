@@ -495,6 +495,16 @@ static DWORD WINAPI MainInitThreadProc(LPVOID)
 
 	ModLoaderLogger::LoadAllPlugins();
 
+	// Bug fix: if the GameInstanceInit one-shot latch fired before plugins
+	// were loaded (server startup race / 120s timeout scenario), plugins
+	// were left in "deferred" state and PluginInit was never called.
+	// Detect this and call InitAllLoadedPlugins now that the DLLs are loaded.
+	if (Hooks::GameInstanceInit::HasFired())
+	{
+		ModLoaderLogger::LogInfo(L"[dllmain] GameInstanceInit already fired before plugins loaded -- calling InitAllLoadedPlugins now");
+		ModLoaderLogger::InitAllLoadedPlugins();
+	}
+
 	Splash::SetStatus(L"Plugin DLLs loaded -- waiting for game instance...");
 	Splash::SetProgress(1.0f);
 

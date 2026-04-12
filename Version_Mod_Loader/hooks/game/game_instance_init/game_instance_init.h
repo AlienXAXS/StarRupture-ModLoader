@@ -24,6 +24,10 @@ namespace Hooks::GameInstanceInit
 	bool Install();
 	void Remove();
 
+	// Returns true if the one-shot init latch has already fired.
+	// Used by dllmain to detect the race where plugins loaded after the latch.
+	bool HasFired();
+
 	void RegisterProcessEventCallback(ProcessEventCallback cb);
 	void UnregisterProcessEventCallback(ProcessEventCallback cb);
 }
