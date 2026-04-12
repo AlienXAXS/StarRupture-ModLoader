@@ -66,6 +66,11 @@ namespace Hooks::GameInstanceInit
 		return ok;
 	}
 
+	bool HasFired()
+	{
+		return InterlockedCompareExchange(&g_initFired, 1, 1) == 1;
+	}
+
 	void Remove()
 	{
 		ModLoaderLogger::LogInfo(L"[GameInstanceInit] Removing hook...");

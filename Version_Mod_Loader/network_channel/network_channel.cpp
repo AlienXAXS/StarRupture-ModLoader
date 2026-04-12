@@ -125,6 +125,13 @@ namespace
         env += szSize;
         env += ":]";
         env += b64;
+        ModLoaderLogger::LogTrace(
+            L"[NetworkChannel] BuildEnvelope: plugin='%S' tag='%S' payload=%zu bytes base64=%zu chars total=%zu chars",
+            pluginName,
+            typeTag,
+            size,
+            b64.size(),
+            env.size());
         return env;
     }
 
@@ -133,6 +140,9 @@ namespace
         std::string pluginName;
         std::string typeTag;
         std::vector<uint8_t> payload;
+        size_t declaredSize = 0;
+        size_t encodedPayloadChars = 0;
+        const char* failureReason = "not_parsed";
         bool valid = false;
     };
 
@@ -140,7 +150,9 @@ namespace
     ParsedEnvelope ParseEnvelope(const char* str, size_t len)
     {
         ParsedEnvelope result;
+        result.failureReason = "too_short";
         if (len < kEnvPrefixLen + 4) return result;
+        result.failureReason = "missing_prefix";
         if (memcmp(str, kEnvPrefix, kEnvPrefixLen) != 0) return result;
 
         const char* p = str + kEnvPrefixLen;
@@ -148,30 +160,46 @@ namespace
 
         // pluginName
         const char* colon1 = static_cast<const char*>(memchr(p, ':', end - p));
+        result.failureReason = "missing_plugin_separator";
         if (!colon1) return result;
         result.pluginName.assign(p, colon1);
 
-        // typeTag
+        // The type tag may itself contain ':' (e.g. MSVC typeid names with namespaces).
+        // Parse from the end by locating the final ":]" marker that terminates the size field,
+        // then use the previous ':' as the typeTag/size separator.
+        const char* close = nullptr;
+        for (const char* scan = end - 1; scan > colon1 + 1; --scan)
+        {
+            if (*scan == ']' && *(scan - 1) == ':')
+            {
+                close = scan;
+                break;
+            }
+        }
+        result.failureReason = "missing_closing_bracket";
+        if (!close) return result;
+
+        const char* sizeColon = close - 1;
+        const char* typeColon = sizeColon - 1;
+        while (typeColon > colon1 && *typeColon != ':')
+            --typeColon;
+        result.failureReason = "missing_typetag_separator";
+        if (typeColon <= colon1 || *typeColon != ':') return result;
+
         p = colon1 + 1;
-        const char* colon2 = static_cast<const char*>(memchr(p, ':', end - p));
-        if (!colon2) return result;
-        result.typeTag.assign(p, colon2);
+        result.typeTag.assign(p, typeColon);
 
-        // size
-        p = colon2 + 1;
-        const char* colonBracket = static_cast<const char*>(memchr(p, ':', end - p));
-        if (!colonBracket) return result;
-        size_t declaredSize = static_cast<size_t>(atoi(p));
+        const char* sizeStart = typeColon + 1;
+        result.declaredSize = static_cast<size_t>(atoi(sizeStart));
 
-        // check for ":]"
-        p = colonBracket + 1;
-        if (p >= end || *p != ']') return result;
-        p++; // skip ']'
-
-        // base64 payload
+        // base64 payload starts right after the closing ']'
+        p = close + 1;
+        result.encodedPayloadChars = static_cast<size_t>(end - p);
         result.payload = Base64Decode(p, static_cast<size_t>(end - p));
-        if (result.payload.size() != declaredSize) return result;
+        result.failureReason = "payload_size_mismatch";
+        if (result.payload.size() != result.declaredSize) return result;
 
+        result.failureReason = nullptr;
         result.valid = true;
         return result;
     }
@@ -265,7 +293,7 @@ namespace
             return;
         }
 
-        ModLoaderLogger::LogDebug(L"[NetworkChannel] SendEnvelope: PC=%p func=%p flags=0x%08X envelope=%zu bytes",
+        ModLoaderLogger::LogTrace(L"[NetworkChannel] SendEnvelope: PC=%p func=%p flags=0x%08X envelope=%zu bytes",
                                   playerController, static_cast<void*>(g_clientSaveTxtFunc),
                                   g_clientSaveTxtFunc->FunctionFlags, envelope.size());
 
@@ -286,7 +314,7 @@ namespace
         auto* obj = reinterpret_cast<SDK::UObject*>(playerController);
         CallProcessEventSEH(obj, g_clientSaveTxtFunc, &parms);
 
-        ModLoaderLogger::LogDebug(L"[NetworkChannel] SendEnvelope: ProcessEvent returned");
+        ModLoaderLogger::LogTrace(L"[NetworkChannel] SendEnvelope: ProcessEvent returned");
     }
 
     // Server-side handler registry for Client->Server messages
@@ -296,11 +324,19 @@ namespace
     // IPluginNetworkChannel function implementations -- server build
 
     static bool NC_IsServer() { return true; }
+    static bool IsExcluded(void* playerController);
 
     static void NC_SendPacketToClient(void* playerController, const IPluginSelf* self,
                                       const char* typeTag, const uint8_t* data, size_t size)
     {
         if (!playerController || !self || !self->name || !typeTag || !data || size == 0) return;
+
+        ModLoaderLogger::LogTrace(
+            L"[NetworkChannel] SendPacketToClient: player=%p plugin='%S' tag='%S' payload=%zu bytes",
+            playerController,
+            self->name,
+            typeTag,
+            size);
 
         if (size > 1400)
         {
@@ -317,6 +353,12 @@ namespace
                                           const uint8_t* data, size_t size)
     {
         if (!self || !self->name || !typeTag || !data || size == 0) return;
+
+        ModLoaderLogger::LogTrace(
+            L"[NetworkChannel] SendPacketToAllClients: plugin='%S' tag='%S' payload=%zu bytes",
+            self->name,
+            typeTag,
+            size);
 
         if (size > 1400)
         {
@@ -340,9 +382,20 @@ namespace
             SDK::ACrPlayerControllerBase::StaticClass(),
             &actors);
 
+        ModLoaderLogger::LogTrace(
+            L"[NetworkChannel] SendPacketToAllClients: found %d player controllers",
+            actors.Num());
+
         for (int32_t i = 0; i < actors.Num(); ++i)
         {
-        	SendEnvelopeToPlayer(actors[i], env);
+	        if (IsExcluded(actors[i]))
+	        {
+	            ModLoaderLogger::LogTrace(
+	                L"[NetworkChannel] SendPacketToAllClients: skipping excluded controller %p",
+	                actors[i]);
+	            continue;
+	        }
+	        SendEnvelopeToPlayer(actors[i], env);
         }
     }
 
@@ -370,6 +423,11 @@ namespace
         {
             std::lock_guard<std::mutex> lk(g_serverMutex);
             g_serverHandlers[key].push_back(callback);
+            ModLoaderLogger::LogDebug(
+                L"[NetworkChannel] Server handler count for plugin='%S' tag='%S' is now %zu",
+                self->name,
+                typeTag,
+                g_serverHandlers[key].size());
         }
         ModLoaderLogger::LogDebug(
             L"[NetworkChannel] Server handler registered for plugin='%S' tag='%S'",
@@ -387,6 +445,11 @@ namespace
         {
             auto& vec = it->second;
             vec.erase(std::remove(vec.begin(), vec.end(), callback), vec.end());
+            ModLoaderLogger::LogDebug(
+                L"[NetworkChannel] Server handler count for plugin='%S' tag='%S' after unregister is %zu",
+                self->name,
+                typeTag,
+                vec.size());
             if (vec.empty())
                 g_serverHandlers.erase(it);
         }
@@ -481,8 +544,13 @@ namespace
         {
             std::lock_guard<std::mutex> lk(g_mutex);
             g_handlers[key].push_back(callback);
+            ModLoaderLogger::LogTrace(
+                L"[NetworkChannel] Client handler count for plugin='%S' tag='%S' is now %zu",
+                self->name,
+                typeTag,
+                g_handlers[key].size());
         }
-        ModLoaderLogger::LogDebug(L"[NetworkChannel] Handler registered for plugin='%S' tag='%S'",
+        ModLoaderLogger::LogTrace(L"[NetworkChannel] Handler registered for plugin='%S' tag='%S'",
                                   self->name, typeTag);
         // Install the ProcessEvent hook lazily on first registration
         if (!Hooks::ClientMessage::IsInstalled())
@@ -513,6 +581,12 @@ namespace
     {
         if (!self || !self->name || !typeTag || !data || size == 0) return;
 
+        ModLoaderLogger::LogTrace(
+            L"[NetworkChannel] SendPacketToServer: plugin='%S' tag='%S' payload=%zu bytes",
+            self->name,
+            typeTag,
+            size);
+
         if (size > 1400)
         {
             ModLoaderLogger::LogWarn(
@@ -542,6 +616,12 @@ namespace
         }
 
         std::string env = BuildEnvelope(self->name, typeTag, data, size);
+        ModLoaderLogger::LogTrace(
+            L"[NetworkChannel] SendPacketToServer: localPC=%p func=%p flags=0x%08X envelope=%zu chars",
+            localPC,
+            static_cast<void*>(g_serverExecCmdFunc),
+            g_serverExecCmdFunc ? g_serverExecCmdFunc->FunctionFlags : 0u,
+            env.size());
 
         // Convert to wide for FString
         int wlen = MultiByteToWideChar(CP_UTF8, 0, env.c_str(), -1, nullptr, 0);
@@ -556,6 +636,10 @@ namespace
 
         auto* obj = reinterpret_cast<SDK::UObject*>(localPC);
         CallProcessEventSEH(obj, g_serverExecCmdFunc, &parms);
+        ModLoaderLogger::LogTrace(
+            L"[NetworkChannel] SendPacketToServer: ProcessEvent returned for plugin='%S' tag='%S'",
+            self->name,
+            typeTag);
     }
 
     // Client->Server receive handlers are server-only; these are no-ops on client
@@ -602,17 +686,49 @@ namespace
 #ifdef MODLOADER_CLIENT_BUILD
 void NetworkChannel::DispatchClientMessage(const wchar_t* str, int numCharsWithNull)
 {
-    if (!str || numCharsWithNull <= static_cast<int>(kEnvPrefixLen)) return;
+    if (!str)
+    {
+        ModLoaderLogger::LogTrace(L"[NetworkChannel] DispatchClientMessage: null string");
+        return;
+    }
+    if (numCharsWithNull <= static_cast<int>(kEnvPrefixLen))
+    {
+        ModLoaderLogger::LogTrace(
+            L"[NetworkChannel] DispatchClientMessage: string too short (%d chars incl null)",
+            numCharsWithNull);
+        return;
+    }
 
     // Convert wide string to narrow for envelope parsing
     int nbytes = WideCharToMultiByte(CP_UTF8, 0, str, numCharsWithNull - 1, nullptr, 0, nullptr, nullptr);
-    if (nbytes <= 0) return;
+    if (nbytes <= 0)
+    {
+        ModLoaderLogger::LogWarn(
+            L"[NetworkChannel] DispatchClientMessage: WideCharToMultiByte failed for %d chars",
+            numCharsWithNull);
+        return;
+    }
 
     std::string narrow(static_cast<size_t>(nbytes), '\0');
     WideCharToMultiByte(CP_UTF8, 0, str, numCharsWithNull - 1, narrow.data(), nbytes, nullptr, nullptr);
 
     ParsedEnvelope env = ParseEnvelope(narrow.c_str(), static_cast<size_t>(nbytes));
-    if (!env.valid) return;
+    if (!env.valid)
+    {
+        ModLoaderLogger::LogTrace(
+            L"[NetworkChannel] DispatchClientMessage: invalid envelope reason='%S' input=%d bytes",
+            env.failureReason ? env.failureReason : "unknown",
+            nbytes);
+        return;
+    }
+
+    ModLoaderLogger::LogTrace(
+        L"[NetworkChannel] DispatchClientMessage: parsed plugin='%S' tag='%S' declared=%zu decoded=%zu base64=%zu",
+        env.pluginName.c_str(),
+        env.typeTag.c_str(),
+        env.declaredSize,
+        env.payload.size(),
+        env.encodedPayloadChars);
 
     // Dispatch to registered handlers
     std::string key = MakeHandlerKey(env.pluginName.c_str(), env.typeTag.c_str());
@@ -621,9 +737,22 @@ void NetworkChannel::DispatchClientMessage(const wchar_t* str, int numCharsWithN
     {
         std::lock_guard<std::mutex> lk(g_mutex);
         auto it = g_handlers.find(key);
-        if (it == g_handlers.end()) return;
+        if (it == g_handlers.end())
+        {
+            ModLoaderLogger::LogTrace(
+                L"[NetworkChannel] DispatchClientMessage: no handler for plugin='%S' tag='%S'",
+                env.pluginName.c_str(),
+                env.typeTag.c_str());
+            return;
+        }
         callbacks = it->second; // copy snapshot
     }
+
+    ModLoaderLogger::LogTrace(
+        L"[NetworkChannel] DispatchClientMessage: dispatching to %zu handler(s) for plugin='%S' tag='%S'",
+        callbacks.size(),
+        env.pluginName.c_str(),
+        env.typeTag.c_str());
 
     for (auto* cb : callbacks)
     {
@@ -658,17 +787,53 @@ void NetworkChannel::DispatchClientMessage(const wchar_t* str, int numCharsWithN
 #ifdef MODLOADER_SERVER_BUILD
 bool NetworkChannel::DispatchServerMessage(void* senderUObject, const wchar_t* str, int numCharsWithNull)
 {
-    if (!str || numCharsWithNull <= static_cast<int>(kEnvPrefixLen)) return false;
+    if (!str)
+    {
+        ModLoaderLogger::LogTrace(L"[NetworkChannel] DispatchServerMessage: null string from sender=%p", senderUObject);
+        return false;
+    }
+    if (numCharsWithNull <= static_cast<int>(kEnvPrefixLen))
+    {
+        ModLoaderLogger::LogTrace(
+            L"[NetworkChannel] DispatchServerMessage: string too short (%d chars incl null) from sender=%p",
+            numCharsWithNull,
+            senderUObject);
+        return false;
+    }
 
     // Convert wide string to narrow for envelope parsing
     int nbytes = WideCharToMultiByte(CP_UTF8, 0, str, numCharsWithNull - 1, nullptr, 0, nullptr, nullptr);
-    if (nbytes <= 0) return false;
+    if (nbytes <= 0)
+    {
+        ModLoaderLogger::LogWarn(
+            L"[NetworkChannel] DispatchServerMessage: WideCharToMultiByte failed for sender=%p chars=%d",
+            senderUObject,
+            numCharsWithNull);
+        return false;
+    }
 
     std::string narrow(static_cast<size_t>(nbytes), '\0');
     WideCharToMultiByte(CP_UTF8, 0, str, numCharsWithNull - 1, narrow.data(), nbytes, nullptr, nullptr);
 
     ParsedEnvelope env = ParseEnvelope(narrow.c_str(), static_cast<size_t>(nbytes));
-    if (!env.valid) return false;
+    if (!env.valid)
+    {
+        ModLoaderLogger::LogWarn(
+            L"[NetworkChannel] DispatchServerMessage: invalid envelope from sender=%p reason='%S' input=%d bytes",
+            senderUObject,
+            env.failureReason ? env.failureReason : "unknown",
+            nbytes);
+        return false;
+    }
+
+    ModLoaderLogger::LogTrace(
+        L"[NetworkChannel] DispatchServerMessage: parsed sender=%p plugin='%S' tag='%S' declared=%zu decoded=%zu base64=%zu",
+        senderUObject,
+        env.pluginName.c_str(),
+        env.typeTag.c_str(),
+        env.declaredSize,
+        env.payload.size(),
+        env.encodedPayloadChars);
 
     // Dispatch to registered server-side handlers
     std::string key = MakeHandlerKey(env.pluginName.c_str(), env.typeTag.c_str());
@@ -677,9 +842,23 @@ bool NetworkChannel::DispatchServerMessage(void* senderUObject, const wchar_t* s
     {
         std::lock_guard<std::mutex> lk(g_serverMutex);
         auto it = g_serverHandlers.find(key);
-        if (it == g_serverHandlers.end()) return true; // valid envelope but no handler -- still consumed
+        if (it == g_serverHandlers.end())
+        {
+            ModLoaderLogger::LogWarn(
+                L"[NetworkChannel] DispatchServerMessage: no server handler for plugin='%S' tag='%S' sender=%p",
+                env.pluginName.c_str(),
+                env.typeTag.c_str(),
+                senderUObject);
+            return true; // valid envelope but no handler -- still consumed
+        }
         callbacks = it->second; // copy snapshot
     }
+
+    ModLoaderLogger::LogTrace(
+        L"[NetworkChannel] DispatchServerMessage: dispatching to %zu server handler(s) for plugin='%S' tag='%S'",
+        callbacks.size(),
+        env.pluginName.c_str(),
+        env.typeTag.c_str());
 
     for (auto* cb : callbacks)
     {

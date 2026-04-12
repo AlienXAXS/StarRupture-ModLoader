@@ -24,6 +24,7 @@
 #include "hooks/game/mass_spawner_activate/mass_spawner_activate.h"
 #include "hooks/game/mass_spawner_deactivate/mass_spawner_deactivate.h"
 #include "hooks/game/mass_do_spawning/mass_do_spawning.h"
+#include "network_channel/network_channel.h"
 #include "hooks/game/game_instance_init/game_instance_init.h"
 
 #include "auto_update/auto_updater.h"
@@ -495,6 +496,16 @@ static DWORD WINAPI MainInitThreadProc(LPVOID)
 
 	PluginManager::LoadAllPlugins();
 
+	// Bug fix: if the GameInstanceInit one-shot latch fired before plugins
+	// were loaded (server startup race / 120s timeout scenario), plugins
+	// were left in "deferred" state and PluginInit was never called.
+	// Detect this and call InitAllLoadedPlugins now that the DLLs are loaded.
+	if (Hooks::GameInstanceInit::HasFired())
+	{
+		ModLoaderLogger::LogInfo(L"[dllmain] GameInstanceInit already fired before plugins loaded -- calling InitAllLoadedPlugins now");
+		ModLoaderLogger::InitAllLoadedPlugins();
+	}
+
 	Splash::SetStatus(L"Plugin DLLs loaded -- waiting for game instance...");
 	Splash::SetProgress(1.0f);
 
@@ -775,7 +786,8 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 		ModLoaderLogger::LogInfo(L"Engine shutdown hook removed");
 
 		// Now safe to unload plugins
-		PluginManager::UnloadAllPlugins();
+		ModLoaderLogger::UnloadAllPlugins();
+		NetworkChannel::Shutdown();
 
 		// Remove remaining core game hooks
 		ModLoaderLogger::LogInfo(L"Removing remaining core game hooks...");

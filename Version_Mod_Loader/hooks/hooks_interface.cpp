@@ -878,13 +878,21 @@ namespace ModLoaderLogger
 		nullptr,             // v17 — Network; filled in below by GetPluginHooks()
 		&g_nativePointers    // v21 — trampoline addresses for all managed hooks
 	};
+	static bool g_networkChannelInitialized = false;
 
 	IPluginHooks* GetPluginHooks()
 	{
 		// Resolve the network channel pointer on first call.
 		// NetworkChannel::GetInterface() returns nullptr on generic builds.
 		if (!g_pluginHooks.Network)
+		{
 			g_pluginHooks.Network = NetworkChannel::GetInterface();
+			if (g_pluginHooks.Network && !g_networkChannelInitialized)
+			{
+				NetworkChannel::Initialize();
+				g_networkChannelInitialized = true;
+			}
+		}
 		return &g_pluginHooks;
 	}
 }
