@@ -38,4 +38,8 @@ namespace Hooks::PlayerJoined
 
 	// Unregister a plugin callback
 	void UnregisterPluginCallback(PluginPlayerJoinedCallback callback);
+
+	// Returns the trampoline address of the original AGameModeBase::PostLogin, or 0 if not yet installed.
+	// Cast to: void(__fastcall*)(void* thisPtr, void* newPlayer)
+	uintptr_t GetOriginalPtr();
 }

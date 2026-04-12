@@ -51,6 +51,10 @@ namespace Hooks::HUDPostRender
 	// Returns the resolved address of UCrMapManuSubsystem::GatherPlayersData,
 	// or 0 if the pattern was not found during Install().
 	uintptr_t GetGatherPlayersDataAddress();
+
+	// Returns the trampoline address of the original AHUD::PostRender, or 0 if not yet installed.
+	// Cast to: void(__fastcall*)(void* thisPtr)
+	uintptr_t GetOriginalPtr();
 }
 
 #endif // MODLOADER_CLIENT_BUILD

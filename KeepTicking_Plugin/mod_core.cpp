@@ -4,6 +4,7 @@
 #include "hooks/fake_player/fake_player.h"
 #include "sdk_helpers.h"
 #include "Engine_classes.hpp"
+#include "Chimera_classes.hpp"
 
 // ---------------------------------------------------------------------------
 // Helper: query the engine for the real (networked) player count.
@@ -84,6 +85,34 @@ static void OnExperienceLoadComplete()
 static void OnEngineTick(float deltaSeconds)
 {
 	Hooks::FakePlayer::TickTraversal();
+
+	// Every 300 ticks: audit remaining player controllers and log any leftovers
+	static int s_tickCount = 0;
+	if (++s_tickCount >= 300)
+	{
+		s_tickCount = 0;
+
+		SDK::UWorld* world = SDK::UWorld::GetWorld();
+		if (world)
+		{
+			// Verify — any remaining controllers are unexpected.
+			SDK::TArray<SDK::AActor*> remaining;
+			SDK::UGameplayStatics::GetAllActorsOfClass(
+				world, SDK::ACrPlayerControllerBase::StaticClass(), &remaining);
+
+			int leftover = remaining.Num();
+			if (leftover == 0)
+			{
+				LOG_TRACE("[FakePlayer] No Player Controllers Remains");
+			}
+			else
+			{
+				LOG_TRACE("[FakePlayer] %d controller(s) are present:", leftover);
+				for (int i = 0; i < leftover; i++)
+					LOG_TRACE("[FakePlayer]   [%d] %p", i, static_cast<void*>(remaining[i]));
+			}
+		}
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -124,21 +153,22 @@ static void OnPlayerJoined(void* playerController)
 	int realPlayers = GetRealPlayerCount();
 	LOG_INFO("[ModCore] PlayerJoined: real player count from engine is %d", realPlayers);
 
+	// TEMP TEST: fake player is kept alive for the entire server session — never despawn on join.
 	// A real player is now connected — remove the fake player
 	// (realPlayers >= 1 because PostLogin fires after the connection is established)
-	if (realPlayers >= 1 && Hooks::FakePlayer::IsPlayerActive())
-	{
-		LOG_INFO("[ModCore] Real player present — despawning fake player");
-		// Unexclude before despawning so the pointer doesn't linger in the exclusion list
-		auto* hooks = GetHooks();
-		if (hooks && hooks->Network)
-		{
-			void* fakePC = Hooks::FakePlayer::GetFakeController();
-			if (fakePC) hooks->Network->UnexcludeFromBroadcast(fakePC);
-		}
-		Hooks::FakePlayer::StopMapTraversal();
-		Hooks::FakePlayer::DespawnFakePlayer();
-	}
+	//if (realPlayers >= 1 && Hooks::FakePlayer::IsPlayerActive())
+	//{
+	//	LOG_INFO("[ModCore] Real player present — despawning fake player");
+	//	// Unexclude before despawning so the pointer doesn't linger in the exclusion list
+	//	auto* hooks = GetHooks();
+	//	if (hooks && hooks->Network)
+	//	{
+	//		void* fakePC = Hooks::FakePlayer::GetFakeController();
+	//		if (fakePC) hooks->Network->UnexcludeFromBroadcast(fakePC);
+	//	}
+	//	Hooks::FakePlayer::StopMapTraversal();
+	//	Hooks::FakePlayer::DespawnFakePlayer();
+	//}
 }
 
 // ---------------------------------------------------------------------------
@@ -163,31 +193,32 @@ static void OnPlayerLeft(void* exitingController)
 	int realPlayers = GetRealPlayerCount();
 	LOG_INFO("[ModCore] PlayerLeft: real player count from engine is %d (departing player still counted)", realPlayers);
 
+	// TEMP TEST: fake player is kept alive for the entire server session — no respawn needed on leave.
 	// Last real player is leaving — respawn the fake player
-	if (realPlayers <= 1 && !Hooks::FakePlayer::IsPlayerActive())
-	{
-		LOG_INFO("[ModCore] Last real player leaving — respawning fake player");
+	//if (realPlayers <= 1 && !Hooks::FakePlayer::IsPlayerActive())
+	//{
+	//	LOG_INFO("[ModCore] Last real player leaving — respawning fake player");
 
-		bool debugVisible = KeepTickingConfig::Config::IsDebugVisibleModeEnabled();
-		Hooks::FakePlayer::SetDebugVisibleMode(debugVisible);
+	//	bool debugVisible = KeepTickingConfig::Config::IsDebugVisibleModeEnabled();
+	//	Hooks::FakePlayer::SetDebugVisibleMode(debugVisible);
 
-		Hooks::FakePlayer::SpawnFakePlayer();
+	//	Hooks::FakePlayer::SpawnFakePlayer();
 
-		// Exclude from network broadcasts -- fake player has no real connection
-		auto* hooks = GetHooks();
-		if (hooks && hooks->Network)
-		{
-			void* fakePC = Hooks::FakePlayer::GetFakeController();
-			if (fakePC) hooks->Network->ExcludeFromBroadcast(fakePC);
-		}
+	//	// Exclude from network broadcasts -- fake player has no real connection
+	//	auto* hooks = GetHooks();
+	//	if (hooks && hooks->Network)
+	//	{
+	//		void* fakePC = Hooks::FakePlayer::GetFakeController();
+	//		if (fakePC) hooks->Network->ExcludeFromBroadcast(fakePC);
+	//	}
 
-		// Restart map traversal if the player is now active and traversal is enabled
-		if (Hooks::FakePlayer::IsPlayerActive() && !KeepTickingConfig::Config::IsTraversalDisabled())
-		{
-			LOG_INFO("[ModCore] Fake player respawned — restarting map traversal");
-			Hooks::FakePlayer::StartMapTraversal();
-		}
-	}
+	//	// Restart map traversal if the player is now active and traversal is enabled
+	//	if (Hooks::FakePlayer::IsPlayerActive() && !KeepTickingConfig::Config::IsTraversalDisabled())
+	//	{
+	//		LOG_INFO("[ModCore] Fake player respawned — restarting map traversal");
+	//		Hooks::FakePlayer::StartMapTraversal();
+	//	}
+	//}
 }
 
 // ---------------------------------------------------------------------------

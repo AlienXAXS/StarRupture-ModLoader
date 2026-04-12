@@ -32,4 +32,8 @@ namespace Hooks::SaveLoaded
 
 	// Unregister a plugin callback
 	void UnregisterPluginCallback(PluginSaveLoadedCallback callback);
+
+	// Returns the trampoline address of the original UCrMassSaveSubsystem::OnSaveLoaded, or 0 if not yet installed.
+	// Cast to: void(__fastcall*)(void* thisPtr)
+	uintptr_t GetOriginalPtr();
 }

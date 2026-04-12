@@ -43,4 +43,8 @@ namespace Hooks::PlayerLeft
 
 	// Unregister a plugin callback
 	void UnregisterPluginCallback(PluginPlayerLeftCallback callback);
+
+	// Returns the trampoline address of the original AGameModeBase::Logout, or 0 if not yet installed.
+	// Cast to: void(__fastcall*)(void* thisPtr, void* exiting)
+	uintptr_t GetOriginalPtr();
 }

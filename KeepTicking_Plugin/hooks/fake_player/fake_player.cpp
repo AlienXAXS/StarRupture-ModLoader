@@ -49,12 +49,6 @@ namespace Hooks::FakePlayer
 		}
 	}
 
-	// Helper to safely destroy an actor - isolated for SEH compatibility
-	static void SafeDestroyActor(SDK::AActor* actor)
-	{
-		__try { actor->K2_DestroyActor(); } __except (1) {}
-	}
-
 	// Helper to safely teleport pawn - isolated for SEH compatibility
 	static bool SafeSetActorLocation(SDK::APawn* pawn, const SDK::FVector& loc)
 	{
@@ -386,11 +380,10 @@ namespace Hooks::FakePlayer
 		if (!g_fakePawn)
 		{
 			LOG_ERROR("[FakePlayer] Failed to spawn pawn (BeginDeferredActorSpawnFromClass returned null)");
-			// Controller was already fully spawned — destroy it so it doesn't leak into the world
-			SafeDestroyActor(g_fakeController);
 			g_fakeController = nullptr;
 			return;
 		}
+
 		LOG_DEBUG("[FakePlayer] Pawn deferred spawn OK: %p", g_fakePawn);
 
 		LOG_DEBUG("[FakePlayer] Setting pawn replication properties...");
@@ -440,125 +433,6 @@ namespace Hooks::FakePlayer
 		InterlockedIncrement(&g_callCount);
 
 		LOG_INFO("[FakePlayer] === SpawnFakePlayer() COMPLETE - fake player active! ===");
-	}
-
-	void DespawnFakePlayer()
-	{
-		if (!g_playerActive)
-		{
-			LOG_DEBUG("[FakePlayer] No fake player to despawn");
-			return;
-		}
-
-		LOG_INFO("[FakePlayer] Despawning fake player...");
-
-		// Mark inactive immediately to block re-entrancy from engine callbacks
-		// triggered during destruction (e.g. Logout firing back into DespawnFakePlayer).
-		g_playerActive = false;
-		g_traversing = false;
-
-		// Snapshot and clear global pointers up-front so any re-entrant call sees nulls.
-		SDK::ACrPlayerControllerBase* fakeController = g_fakeController;
-		SDK::APawn*                   fakePawn       = g_fakePawn;
-		g_fakeController = nullptr;
-		g_fakePawn       = nullptr;
-
-		// Get the world and game mode for proper logout
-		SDK::UWorld* world = SDK::UWorld::GetWorld();
-		SDK::AGameModeBase* gameMode = world ? world->AuthorityGameMode : nullptr;
-
-		// Step 1: Remove from PlayerArray
-		if (fakeController && fakeController->PlayerState)
-		{
-			if (world && world->GameState)
-			{
-				auto& playerArray = world->GameState->PlayerArray;
-				for (SDK::int32 i = 0; i < playerArray.Num(); i++)
-				{
-					if (playerArray[i] == fakeController->PlayerState)
-					{
-						playerArray.Remove(i);
-						LOG_DEBUG("[FakePlayer] Removed fake PlayerState from PlayerArray at index %d", i);
-						break;
-					}
-				}
-			}
-		}
-
-		// Step 2: UnPossess the pawn from the controller
-		if (fakeController)
-		{
-			LOG_DEBUG("[FakePlayer] UnPossessing pawn from controller...");
-			__try
-			{
-				fakeController->UnPossess();
-			}
-			__except (1)
-			{
-				LOG_WARN("[FakePlayer] Exception during UnPossess");
-			}
-		}
-
-		// Step 3: Notify game mode to clean up player state via K2_OnLogout
-		if (gameMode && fakeController)
-		{
-			LOG_DEBUG("[FakePlayer] Calling GameMode->K2_OnLogout on fake controller...");
-			__try
-			{
-				gameMode->K2_OnLogout(fakeController);
-			}
-			__except (1)
-			{
-				LOG_WARN("[FakePlayer] Exception during K2_OnLogout");
-			}
-		}
-
-		// Step 4: Destroy the PlayerState if it exists
-		if (fakeController && fakeController->PlayerState)
-		{
-			LOG_DEBUG("[FakePlayer] Destroying PlayerState...");
-			__try
-			{
-				fakeController->PlayerState->K2_DestroyActor();
-			}
-			__except (1)
-			{
-				LOG_WARN("[FakePlayer] Exception during PlayerState K2_DestroyActor");
-			}
-		}
-
-		// Step 5: Destroy the pawn actor
-		if (fakePawn)
-		{
-			LOG_DEBUG("[FakePlayer] Destroying fake pawn actor...");
-			__try
-			{
-				fakePawn->K2_DestroyActor();
-			}
-			__except (1)
-			{
-				LOG_WARN("[FakePlayer] Exception during pawn K2_DestroyActor");
-			}
-		}
-
-		// Step 6: Destroy the controller.
-		// AController::Destroyed() (called by K2_DestroyActor) automatically calls
-		// UWorld::RemoveController -- no manual call needed here.
-		if (fakeController)
-		{
-			LOG_DEBUG("[FakePlayer] Destroying fake controller actor...");
-			__try
-			{
-				fakeController->K2_DestroyActor();
-				LOG_DEBUG("[FakePlayer] Fake controller K2_DestroyActor completed");
-			}
-			__except (1)
-			{
-				LOG_WARN("[FakePlayer] Exception during controller K2_DestroyActor");
-			}
-		}
-
-		LOG_INFO("[FakePlayer] Fake player fully despawned and cleaned up");
 	}
 
 	// ---------------------------------------------------------------

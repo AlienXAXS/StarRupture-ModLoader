@@ -480,4 +480,14 @@ namespace Hooks::EngineInit
 			RegisterPluginCallback(callback);
 		}
 	}
+
+	uintptr_t GetOriginalPtrEngineLoopInit()
+	{
+		return reinterpret_cast<uintptr_t>(g_engineLoopOriginal);
+	}
+
+	uintptr_t GetOriginalPtrGameEngineInit()
+	{
+		return reinterpret_cast<uintptr_t>(g_gameEngineOriginal);
+	}
 }

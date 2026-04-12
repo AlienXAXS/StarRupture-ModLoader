@@ -27,7 +27,7 @@ namespace Hooks::EngineTick
 		// Drain any tasks posted to the game thread from background threads
 		GameThreadDispatch::Drain();
 
-		// Notify registered plugins � keep this path fast (no logging per-frame)
+		// Notify registered plugins – keep this path fast (no logging per-frame)
 		for (size_t i = 0; i < g_pluginCallbacks.size(); ++i)
 		{
 			if (g_pluginCallbacks[i])
@@ -125,5 +125,10 @@ namespace Hooks::EngineTick
 			ModLoaderLogger::LogDebug(L"[EngineTick] Plugin callback unregistered (%zu remaining)",
 			                          g_pluginCallbacks.size());
 		}
+	}
+
+	uintptr_t GetOriginalPtr()
+	{
+		return reinterpret_cast<uintptr_t>(g_original);
 	}
 }

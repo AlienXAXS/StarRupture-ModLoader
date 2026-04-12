@@ -50,4 +50,12 @@ namespace Hooks::EngineInit
 
 	// Legacy compatibility - set single callback (deprecated, use RegisterPluginCallback)
 	void SetEngineInitCallback(void (*callback)());
+
+	// Returns the trampoline address of the original FEngineLoop::Init, or 0 if not installed.
+	// Cast to: int32_t(__fastcall*)(void* thisPtr)
+	uintptr_t GetOriginalPtrEngineLoopInit();
+
+	// Returns the trampoline address of the original UGameEngine::Init, or 0 if not installed.
+	// Cast to: bool(__fastcall*)(void* thisPtr, void* InEngineLoop)
+	uintptr_t GetOriginalPtrGameEngineInit();
 }

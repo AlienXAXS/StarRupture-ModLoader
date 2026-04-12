@@ -21,4 +21,9 @@ namespace Hooks::MassDoSpawning
 	void UnregisterBeforeCallback(BeforeCallback callback);
 	void RegisterAfterCallback(AfterCallback callback);
 	void UnregisterAfterCallback(AfterCallback callback);
+
+	// Returns the trampoline address of the original AMassSpawner::DoSpawning,
+	// or 0 if not yet installed.
+	// Cast to: void(__fastcall*)(void* thisPtr)
+	uintptr_t GetOriginalPtr();
 }

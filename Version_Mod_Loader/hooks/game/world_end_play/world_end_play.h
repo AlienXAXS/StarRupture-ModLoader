@@ -43,4 +43,8 @@ namespace Hooks::WorldEndPlay
 
 	// Unregister an after callback
 	void UnregisterAfterCallback(PluginWorldEndPlayCallback callback);
+
+	// Returns the trampoline address of the original UWorld::EndPlay, or 0 if not yet installed.
+	// Cast to: void(__fastcall*)(void* worldThis)
+	uintptr_t GetOriginalPtr();
 }

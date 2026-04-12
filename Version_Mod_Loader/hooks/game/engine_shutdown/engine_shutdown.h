@@ -32,4 +32,12 @@ namespace Hooks::EngineShutdown
 
 	// Unregister a plugin callback
 	void UnregisterPluginCallback(PluginEngineShutdownCallback callback);
+
+	// Returns the trampoline address of the original FEngineLoop::Exit, or 0 if not installed.
+	// Cast to: void(__fastcall*)(void* thisPtr)
+	uintptr_t GetOriginalPtrEngineLoopExit();
+
+	// Returns the trampoline address of the original UEngine::PreExit, or 0 if not installed.
+	// Cast to: void(__fastcall*)(void* thisPtr)
+	uintptr_t GetOriginalPtrEnginePreExit();
 }

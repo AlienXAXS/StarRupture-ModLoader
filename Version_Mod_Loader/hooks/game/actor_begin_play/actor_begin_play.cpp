@@ -113,4 +113,9 @@ namespace Hooks::ActorBeginPlay
 			                          g_pluginCallbacks.size());
 		}
 	}
+
+	uintptr_t GetOriginalPtr()
+	{
+		return reinterpret_cast<uintptr_t>(g_original);
+	}
 }

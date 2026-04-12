@@ -226,4 +226,14 @@ namespace Hooks::EngineShutdown
 			                          g_pluginCallbacks.size());
 		}
 	}
+
+	uintptr_t GetOriginalPtrEngineLoopExit()
+	{
+		return reinterpret_cast<uintptr_t>(g_engineLoopExitOriginal);
+	}
+
+	uintptr_t GetOriginalPtrEnginePreExit()
+	{
+		return reinterpret_cast<uintptr_t>(g_enginePreExitOriginal);
+	}
 }
