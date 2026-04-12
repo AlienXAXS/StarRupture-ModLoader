@@ -19,6 +19,9 @@
 #include "hooks/game/mass_do_spawning/mass_do_spawning.h"
 #include "memory_scanner/scanner.h"
 #include "hooks/game/scan_patterns.h"
+#ifdef MODLOADER_SERVER_BUILD
+#include "hooks/http/http_server_hook.h"
+#endif
 #ifdef MODLOADER_CLIENT_BUILD
 #include "hooks/input/keybind_registry.h"
 #include "hooks/input/input_processor.h"
@@ -857,6 +860,70 @@ namespace ModLoaderLogger
 #endif
 	};
 
+	// -----------------------------------------------------------------------
+	// IPluginHttpServer wrappers (v22, server only)
+	// -----------------------------------------------------------------------
+
+#ifdef MODLOADER_SERVER_BUILD
+	static bool HooksHttpServerAddRoute(const IPluginSelf* self, const char* folderName)
+	{
+		if (!self || !self->name || !folderName)
+		{
+			LogWarn(L"[HooksInterface] HttpServer::AddRoute: null argument");
+			return false;
+		}
+		return Hooks::HttpServer::AddRoute(self->name, folderName);
+	}
+
+	static void HooksHttpServerRemoveRoute(const IPluginSelf* self, const char* folderName)
+	{
+		if (!self || !self->name || !folderName) return;
+		Hooks::HttpServer::RemoveRoute(self->name, folderName);
+	}
+
+	static void HooksHttpServerRegisterOnRawRequest(PluginHttpRequestFilterCallback callback)
+	{
+		if (!callback)
+		{
+			LogWarn(L"[HooksInterface] HttpServer::RegisterOnRawRequest: null callback");
+			return;
+		}
+		Hooks::HttpServer::RegisterRawRequestFilter(callback);
+	}
+
+	static void HooksHttpServerUnregisterOnRawRequest(PluginHttpRequestFilterCallback callback)
+	{
+		if (!callback) return;
+		Hooks::HttpServer::UnregisterRawRequestFilter(callback);
+	}
+
+	static bool HooksHttpServerAddRawRoute(const IPluginSelf* self, const char* urlPrefix,
+	      PluginHttpRouteCallback callback)
+	{
+		if (!self || !self->name || !urlPrefix || !callback)
+		{
+			LogWarn(L"[HooksInterface] HttpServer::AddRawRoute: null argument");
+			return false;
+		}
+		return Hooks::HttpServer::AddRawRoute(self->name, urlPrefix, callback);
+	}
+
+	static void HooksHttpServerRemoveRawRoute(const IPluginSelf* self, const char* urlPrefix)
+	{
+		if (!self || !self->name || !urlPrefix) return;
+		Hooks::HttpServer::RemoveRawRoute(self->name, urlPrefix);
+	}
+
+	static IPluginHttpServer g_httpServer = {
+		HooksHttpServerAddRoute,
+		HooksHttpServerRemoveRoute,
+		HooksHttpServerRegisterOnRawRequest,
+		HooksHttpServerUnregisterOnRawRequest,
+		HooksHttpServerAddRawRoute,
+		HooksHttpServerRemoveRawRoute,
+	};
+#endif // MODLOADER_SERVER_BUILD
+
 	// Global hooks interface instance
 	static IPluginHooks g_pluginHooks = {
 		&g_spawnerHooks,
@@ -873,10 +940,15 @@ namespace ModLoaderLogger
 #else
 		nullptr,          // v15 — Input is null on server/generic builds
 		nullptr,             // v15 — UI is null on server/generic builds
-		nullptr,       // v16 — HUD is null on server/generic builds
+		nullptr,    // v16 — HUD is null on server/generic builds
 #endif
-		nullptr,             // v17 — Network; filled in below by GetPluginHooks()
-		&g_nativePointers    // v21 — trampoline addresses for all managed hooks
+		nullptr,      // v17 — Network; filled in below by GetPluginHooks()
+		&g_nativePointers,   // v21 — trampoline addresses for all managed hooks
+#ifdef MODLOADER_SERVER_BUILD
+		&g_httpServer // v22 — HTTP static-file routes + raw-request filters (server only)
+#else
+		nullptr       // v22 — HttpServer is null on client/generic builds
+#endif
 	};
 	static bool g_networkChannelInitialized = false;
 

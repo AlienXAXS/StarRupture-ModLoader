@@ -27,6 +27,10 @@
 #include "network_channel/network_channel.h"
 #include "hooks/game/game_instance_init/game_instance_init.h"
 
+#ifdef MODLOADER_SERVER_BUILD
+#include "hooks/http/http_server_hook.h"
+#endif
+
 #include "auto_update/auto_updater.h"
 
 #include "utils/thread_utils.h"
@@ -360,6 +364,14 @@ static DWORD WINAPI MainInitThreadProc(LPVOID)
 	Hooks::MassSpawnerDeactivate::Install();
 	Hooks::MassDoSpawning::Install();
 
+#ifdef MODLOADER_SERVER_BUILD
+	Splash::SetStatus(L"Installing HTTP server hook...");
+	if (Hooks::HttpServer::Install())
+		ModLoaderLogger::LogDebug(L"  HttpServer hook installed");
+	else
+		ModLoaderLogger::LogWarn(L"  WARNING: HttpServer hook failed — static file routes and request filters will not function");
+#endif
+
 	Splash::SetStatus(L"Installing GameInstance hook...");
 	Splash::SetProgress(0.65f);
 	// Install UGameInstance::Init hook.  Pattern scanning works at any time
@@ -503,7 +515,7 @@ static DWORD WINAPI MainInitThreadProc(LPVOID)
 	if (Hooks::GameInstanceInit::HasFired())
 	{
 		ModLoaderLogger::LogInfo(L"[dllmain] GameInstanceInit already fired before plugins loaded -- calling InitAllLoadedPlugins now");
-		ModLoaderLogger::InitAllLoadedPlugins();
+		PluginManager::InitAllLoadedPlugins();
 	}
 
 	Splash::SetStatus(L"Plugin DLLs loaded -- waiting for game instance...");
@@ -786,7 +798,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 		ModLoaderLogger::LogInfo(L"Engine shutdown hook removed");
 
 		// Now safe to unload plugins
-		ModLoaderLogger::UnloadAllPlugins();
+		PluginManager::UnloadAllPlugins();
 		NetworkChannel::Shutdown();
 
 		// Remove remaining core game hooks
@@ -801,6 +813,9 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 		Hooks::MassSpawnerActivate::Remove();
 		Hooks::MassSpawnerDeactivate::Remove();
 		Hooks::MassDoSpawning::Remove();
+#ifdef MODLOADER_SERVER_BUILD
+		Hooks::HttpServer::Remove();
+#endif
 #ifdef MODLOADER_CLIENT_BUILD
 		if (s_imguiEnabled)
 			UI::ImGuiBackend::Shutdown();

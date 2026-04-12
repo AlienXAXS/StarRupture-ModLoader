@@ -97,6 +97,12 @@
     <Filter Include="Source Files\UI\modloader">
       <UniqueIdentifier>{f2a4b6c8-9d0e-4f1a-b2c3-5d7e8f9a0b1c}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Source Files\hooks\game\game_instance">
+      <UniqueIdentifier>{10a31f74-27ab-48fd-b200-79a0f0a9e443}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\hooks\game\FHttpServerRequest">
+      <UniqueIdentifier>{06d5eb1a-4870-4cab-b7a0-4f47674a29b9}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="dwmapi_proxy.h">
@@ -238,6 +244,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="logging\logger_interface.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="hooks\http\http_server_hook.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
@@ -387,7 +396,10 @@
       <Filter>Source Files\UI</Filter>
     </ClCompile>
     <ClCompile Include="hooks\game\game_instance_init\game_instance_init.cpp">
-      <Filter>Source Files</Filter>
+      <Filter>Source Files\hooks\game\game_instance</Filter>
+    </ClCompile>
+    <ClCompile Include="hooks\http\http_server_hook.cpp">
+      <Filter>Source Files\hooks\game\FHttpServerRequest</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

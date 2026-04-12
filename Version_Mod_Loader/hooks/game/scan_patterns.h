@@ -79,6 +79,16 @@ namespace ScanPatterns
 	inline constexpr auto UMassSignalSubsystem_SignalEntity =
 		"48 89 5C 24 ?? 4C 89 44 24 ?? 57 48 83 EC ?? 48 8B DA 48 8B F9 45 85 C0";
 
+	// FHttpConnection::ProcessRequest(FHttpConnection* this, TSharedPtr<FHttpServerRequest> request,
+	//   TFunction<void(TUniquePtr<FHttpServerResponse>&&)> onComplete)
+	// Used only on server builds; defined unconditionally so it compiles on all configs.
+	// Confirmed offsets inside FHttpServerRequest (verified experimentally):
+	// obj+0   : HTTP verb  FString { wchar_t* Data @+0,  int32 Num @+8  }
+	//   obj+16  : RelativePath FString { wchar_t* Data @+16, int32 Num @+24 }
+	//   obj+280 : Body TArray<uint8> { uint8* Data @+280, int32 Num @+288 }
+	inline constexpr auto FHttpConnection_ProcessRequest =
+		"48 89 5C 24 ?? 55 56 41 54 41 56 41 57 48 8D 6C 24 ?? 48 81 EC ?? ?? ?? ?? 83 79";
+
 #if defined(MODLOADER_CLIENT_BUILD)
 	inline constexpr const char* UGameEngine_Tick =
 		"40 55 53 56 41 54 41 56 48 8D 6C 24 ?? 48 81 EC ?? ?? ?? ?? 0F 29 BC 24 ?? ?? ?? ?? 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 45 ?? 0F 29 B4 24";
@@ -104,4 +114,10 @@ namespace ScanPatterns
 	// TODO: fill pattern via IDA/x64dbg — leave empty until found (hook will no-op gracefully)
 	inline constexpr auto AMassSpawner_DoSpawning =
 		"40 55 57 48 8D 6C 24 ?? 48 81 EC ?? ?? ?? ?? 83 B9 ?? ?? ?? ?? ?? 48 8B F9 75";
+
+	// FHttpServerResponse::Create(__int64 *retStorage, const TArray<uint8>& body, const FString& contentType)
+	// Used to construct a 200 OK response for mod-owned HTTP routes.
+	// Confirmed via IDA: FPerfCounters::ProcessStatsRequest calls this with body in RDX, FString in R8.
+	inline constexpr auto FHttpServerResponse_Create =
+		"48 89 5C 24 ?? 55 56 57 41 54 41 55 41 56 41 57 48 8D 6C 24 ?? 48 81 EC ?? ?? ?? ?? 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 45 ?? 48 8B F9 4D 8B E0";
 }
