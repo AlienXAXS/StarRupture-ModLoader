@@ -1,18 +1,32 @@
-name: 'New PR Notification'
+name: 'Repo Notifications'
+
 on:
-  pull_request: 
-    types: [opened, reopened]
+  issues:
+    types: [opened, reopened, closed]
+  pull_request:
+    types: [opened, reopened, closed]
 
 jobs:
-  notify:
+  notify-issue:
+    if: github.event_name == 'issues'
     runs-on: ubuntu-latest
     steps:
-      - name: Send Discord notification
+      - name: Send issue notification
         uses: stegzilla/discord-notify@v2
         with:
           webhook_url: ${{ secrets.DISCORD_WEBHOOK }}
-          title: New Item In Repo!
+          title: Issue Update
+          message: "**${{ github.event.issue.title }}**\n**Creator:** ${{ github.event.issue.user.login }}\n${{ github.event.issue.html_url }}"
+          username: GitHub Issue Notifier
+
+  notify-pr:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send PR notification
+        uses: stegzilla/discord-notify@v2
+        with:
+          webhook_url: ${{ secrets.DISCORD_WEBHOOK }}
+          title: PR Update
           message: "**${{ github.event.pull_request.title }}**\n**Creator:** ${{ github.event.pull_request.user.login }}\n${{ github.event.pull_request.html_url }}"
-          include_image: true
-          avatar_url: https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png
           username: GitHub PR Notifier
