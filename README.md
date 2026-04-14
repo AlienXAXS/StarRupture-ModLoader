@@ -6,6 +6,12 @@ Like this project? Give it a ⭐ here on GitHub!
 
 ---
 
+## Discord
+You can join our Discord server to chat about the mod loader.
+[Join Today](https://discord.gg/QUzsGKe5Bz)
+
+---
+
 ## Plugins
 
 ### 🔧 KeepTicking *(Server)*
