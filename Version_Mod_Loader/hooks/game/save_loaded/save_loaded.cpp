@@ -2,6 +2,7 @@
 #include "save_loaded.h"
 #include "logging/logger.h"
 #include "memory_scanner/scanner.h"
+#include "../ufunction_resolve.h"
 #include "../scan_patterns.h"
 #include <vector>
 #include <algorithm>
@@ -9,7 +10,7 @@
 namespace Hooks::SaveLoaded
 {
 	// UCrMassSaveSubsystem::OnSaveLoaded(UCrMassSaveSubsystem* this)
-	typedef void(__fastcall* OnSaveLoaded_t)(void* thisPtr);
+	using OnSaveLoaded_t = void(__fastcall*)(void* thisPtr);
 
 	static Hook g_hook;
 	static OnSaveLoaded_t g_original = nullptr;
@@ -20,10 +21,14 @@ namespace Hooks::SaveLoaded
 
 	static void __fastcall Detour(void* thisPtr)
 	{
+		void* const callerAddr = _ReturnAddress();
+
 		long callNum = InterlockedIncrement(&g_callCount);
 
 		ModLoaderLogger::LogInfo(L"[SaveLoaded] UCrMassSaveSubsystem::OnSaveLoaded called (#%ld)", callNum);
 		ModLoaderLogger::LogDebug(L"[SaveLoaded]   this=%p, Thread=%lu", thisPtr, GetCurrentThreadId());
+		ModLoaderLogger::LogTrace(L"[SaveLoaded]   Called from: %S",
+		                          Hooks::GetCallerModuleName(callerAddr).c_str());
 
 		// Call original first so the save is fully loaded before we notify plugins
 		if (g_original)
@@ -47,7 +52,8 @@ namespace Hooks::SaveLoaded
 				if (!g_pluginCallbacks[i])
 					continue;
 
-				ModLoaderLogger::LogTrace(L"[SaveLoaded]Calling plugin callback #%zu", i + 1);
+				ModLoaderLogger::LogTrace(L"[SaveLoaded] Calling plugin callback #%zu (%S)",
+				                          i + 1, Hooks::GetCallerModuleName((void*)g_pluginCallbacks[i]).c_str());
 
 				try
 				{
@@ -73,25 +79,16 @@ namespace Hooks::SaveLoaded
 	{
 		ModLoaderLogger::LogInfo(L"[SaveLoaded] Installing hook...");
 
-		const char* pattern = ScanPatterns::UCrMassSaveSubsystem_OnSaveLoaded;
-
-		ModLoaderLogger::LogInfo(L"[SaveLoaded] Scanning for UCrMassSaveSubsystem::OnSaveLoaded...");
-		ModLoaderLogger::LogDebug(L"[SaveLoaded]   Pattern: %S", pattern);
-
-		uintptr_t addr = Scanner::FindPatternInMainModule("UCrMassSaveSubsystem::OnSaveLoaded", pattern);
-
+		uintptr_t addr = Hooks::ResolveUFunctionNativeAddr("CrMassSaveSubsystem", "OnSaveLoaded");
 		if (!addr)
 		{
-			ModLoaderLogger::LogError(L"[SaveLoaded] UCrMassSaveSubsystem::OnSaveLoaded pattern not found");
-			return false;
+			ModLoaderLogger::LogDebug(L"[SaveLoaded] Not a UFUNCTION -- falling back to pattern scan");
+			addr = Scanner::FindPatternInMainModule(
+				"UCrMassSaveSubsystem::OnSaveLoaded",
+				ScanPatterns::UCrMassSaveSubsystem_OnSaveLoaded);
 		}
-
-		HMODULE mainModule = GetModuleHandleW(nullptr);
-		auto base = reinterpret_cast<uintptr_t>(mainModule);
-
-		ModLoaderLogger::LogInfo(L"[SaveLoaded] UCrMassSaveSubsystem::OnSaveLoaded found at 0x%llX (base+0x%llX)",
-			static_cast<unsigned long long>(addr),
-			static_cast<unsigned long long>(addr - base));
+		if (!addr)
+			return false;
 
 		bool hookOk = g_hook.Install(
 			addr,
@@ -129,7 +126,7 @@ namespace Hooks::SaveLoaded
 		// Lazily install the hook on first registration
 		if (!g_hook.installed)
 		{
-			ModLoaderLogger::LogInfo(L"[SaveLoaded] First callback registered — installing hook now...");
+			ModLoaderLogger::LogInfo(L"[SaveLoaded] First callback registered ï¿½ installing hook now...");
 			if (!Install())
 			{
 				ModLoaderLogger::LogError(L"[SaveLoaded] Failed to install hook for save-loaded callback!");
@@ -147,7 +144,13 @@ namespace Hooks::SaveLoaded
 		if (it != g_pluginCallbacks.end())
 		{
 			g_pluginCallbacks.erase(it);
-			ModLoaderLogger::LogDebug(L"[SaveLoaded] Plugin callback unregistered (%zu remaining)", g_pluginCallbacks.size());
+			ModLoaderLogger::LogDebug(L"[SaveLoaded] Plugin callback unregistered (%zu remaining)",
+			                          g_pluginCallbacks.size());
 		}
+	}
+
+	uintptr_t GetOriginalPtr()
+	{
+		return reinterpret_cast<uintptr_t>(g_original);
 	}
 }

@@ -8,13 +8,19 @@
        active configuration.
        ============================================================ -->
   <PropertyGroup Condition="'$(Configuration)' == 'Debug' Or '$(Configuration)' == 'Release'">
-    <StarRuptureSDKSourceDir>$(SolutionDir)StarRupture SDK\SDK\</StarRuptureSDKSourceDir>
+    <StarRuptureSDKSourceDir>$(SolutionDir)StarRupture SDK\Server\SDK\</StarRuptureSDKSourceDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)' == 'Client Debug' Or '$(Configuration)' == 'Client Release'">
     <StarRuptureSDKSourceDir>$(SolutionDir)StarRupture SDK\Client\SDK\</StarRuptureSDKSourceDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)' == 'Server Debug' Or '$(Configuration)' == 'Server Release'">
     <StarRuptureSDKSourceDir>$(SolutionDir)StarRupture SDK\Server\SDK\</StarRuptureSDKSourceDir>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)' == 'Local SDK Client Debug' Or '$(Configuration)' == 'Local SDK Client Release'">
+    <StarRuptureSDKSourceDir>$(SolutionDir)Local StarRupture SDK\Client\SDK\</StarRuptureSDKSourceDir>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)' == 'Local SDK Server Debug' Or '$(Configuration)' == 'Local SDK Server Release'">
+    <StarRuptureSDKSourceDir>$(SolutionDir)Local StarRupture SDK\Server\SDK\</StarRuptureSDKSourceDir>
   </PropertyGroup>
 
   <!-- ============================================================
@@ -28,6 +34,12 @@
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)' == 'Server Debug' Or '$(Configuration)' == 'Server Release'">
     <StarRuptureSDKConfigDir>$(SolutionDir)StarRupture SDK\Server\;$(SolutionDir)StarRupture SDK\Server\SDK\</StarRuptureSDKConfigDir>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)' == 'Local SDK Client Debug' Or '$(Configuration)' == 'Local SDK Client Release'">
+    <StarRuptureSDKConfigDir>$(SolutionDir)Local StarRupture SDK\Client\;$(SolutionDir)Local StarRupture SDK\Client\SDK\</StarRuptureSDKConfigDir>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)' == 'Local SDK Server Debug' Or '$(Configuration)' == 'Local SDK Server Release'">
+    <StarRuptureSDKConfigDir>$(SolutionDir)Local StarRupture SDK\Server\;$(SolutionDir)Local StarRupture SDK\Server\SDK\</StarRuptureSDKConfigDir>
   </PropertyGroup>
 
   <!-- ============================================================
@@ -47,6 +59,16 @@
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)' == 'Server Debug' Or '$(Configuration)' == 'Server Release'">
+    <ClCompile>
+      <PreprocessorDefinitions>MODLOADER_SERVER_BUILD;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)' == 'Local SDK Client Debug' Or '$(Configuration)' == 'Local SDK Client Release'">
+    <ClCompile>
+      <PreprocessorDefinitions>MODLOADER_CLIENT_BUILD;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)' == 'Local SDK Server Debug' Or '$(Configuration)' == 'Local SDK Server Release'">
     <ClCompile>
       <PreprocessorDefinitions>MODLOADER_SERVER_BUILD;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>

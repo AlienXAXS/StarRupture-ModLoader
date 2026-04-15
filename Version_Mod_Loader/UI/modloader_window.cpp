@@ -113,8 +113,8 @@ namespace UI::ModLoaderWindow
 
     static void RenderPluginsTab()
     {
-        static ModLoaderLogger::PluginStatus statuses[64];
-        int count = ModLoaderLogger::GetAllPluginStatuses(statuses, 64);
+        static PluginManager::PluginStatus statuses[64];
+        int count = PluginManager::GetAllPluginStatuses(statuses, 64);
 
         if (count == 0)
         {
@@ -139,7 +139,7 @@ namespace UI::ModLoaderWindow
 
             for (int i = 0; i < count; ++i)
             {
-                const ModLoaderLogger::PluginStatus& s = statuses[i];
+                const PluginManager::PluginStatus& s = statuses[i];
                 ImGui::TableNextRow();
 
                 ImGui::TableSetColumnIndex(0);
@@ -163,7 +163,7 @@ namespace UI::ModLoaderWindow
                 // Unload — active only when loaded
                 if (!s.isLoaded) ImGui::BeginDisabled();
                 if (ImGui::SmallButton("Unload"))
-                    ModLoaderLogger::UnloadPlugin(i);
+                    PluginManager::UnloadPlugin(i);
                 if (!s.isLoaded) ImGui::EndDisabled();
 
                 ImGui::SameLine();
@@ -171,14 +171,14 @@ namespace UI::ModLoaderWindow
                 // Load — active only when unloaded
                 if (s.isLoaded) ImGui::BeginDisabled();
                 if (ImGui::SmallButton("Load"))
-                    ModLoaderLogger::ReloadPlugin(i);
+                    PluginManager::ReloadPlugin(i);
                 if (s.isLoaded) ImGui::EndDisabled();
 
                 ImGui::SameLine();
 
                 // Reload — always active
                 if (ImGui::SmallButton("Reload"))
-                    ModLoaderLogger::ReloadPlugin(i);
+                    PluginManager::ReloadPlugin(i);
 
                 ImGui::PopID();
             }
@@ -244,7 +244,7 @@ namespace UI::ModLoaderWindow
             }
             else
             {
-                if (ImGui::InputInt(id, &ival, 1, 10, ImGuiInputTextFlags_EnterReturnsTrue))
+                if (ImGui::InputInt(id, &ival, 1, 10))
                 {
                     snprintf(kv.value, sizeof(kv.value), "%d", ival);
                     CommitConfigChange(pluginName, kv);
@@ -273,8 +273,7 @@ namespace UI::ModLoaderWindow
             }
             else
             {
-                if (ImGui::InputFloat(id, &fval, 0.0f, 0.0f, "%.6g",
-                                      ImGuiInputTextFlags_EnterReturnsTrue))
+                if (ImGui::InputFloat(id, &fval, 0.0f, 0.0f, "%.6g"))
                 {
                     snprintf(kv.value, sizeof(kv.value), "%.6g", fval);
                     CommitConfigChange(pluginName, kv);
@@ -324,7 +323,7 @@ namespace UI::ModLoaderWindow
     static void RenderConfigTab(IModLoaderImGui* imgui)
     {
         static const PluginInfo* infos[64];
-        int count = ModLoaderLogger::GetLoadedPluginInfos(infos, 64);
+        int count = PluginManager::GetLoadedPluginInfos(infos, 64);
 
         if (count == 0)
         {
@@ -420,6 +419,25 @@ namespace UI::ModLoaderWindow
             UI::GlobalSettings::SetShowPlayerPosition(showPos);
 
         ImGui::Spacing();
+        ImGui::SeparatorText("Logging");
+        ImGui::Spacing();
+
+        static const char*    s_levelNames[]   = { "Trace", "Debug", "Info", "Warn", "Error" };
+        static const wchar_t* s_levelNamesIni[] = { L"TRACE", L"DEBUG", L"INFO", L"WARN", L"ERROR" };
+        int currentLevel = static_cast<int>(LogToFile::g_minLevel);
+        if (ImGui::Combo("Log Level", &currentLevel, s_levelNames, 5))
+        {
+            LogToFile::g_minLevel = static_cast<LogToFile::Level>(currentLevel);
+            const wchar_t* iniPath = UI::GlobalSettings::GetIniPath();
+            if (iniPath && iniPath[0] != L'\0')
+                WritePrivateProfileStringW(L"Logging", L"Level", s_levelNamesIni[currentLevel], iniPath);
+        }
+        ImGui::SameLine();
+        ImGui::TextDisabled("(?)");
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Takes effect immediately. Persisted to modloader.ini.");
+
+        ImGui::Spacing();
         ImGui::TextDisabled("Settings are saved to modloader.ini immediately.");
     }
 
@@ -427,6 +445,8 @@ namespace UI::ModLoaderWindow
     {
         ImGui::Spacing();
         ImGui::TextUnformatted("StarRupture ModLoader By AlienX");
+        ImGui::Spacing();
+        ImGui::TextUnformatted("  Thanks for using my ModLoader!");
         ImGui::Spacing();
         ImGui::TextDisabled("Build: " MODLOADER_BUILD_TAG);
 
@@ -438,7 +458,7 @@ namespace UI::ModLoaderWindow
         ImGui::SeparatorText("Loaded Plugins");
 
         static const PluginInfo* infos[64];
-        int count = ModLoaderLogger::GetLoadedPluginInfos(infos, 64);
+        int count = PluginManager::GetLoadedPluginInfos(infos, 64);
         for (int i = 0; i < count; ++i)
         {
             const PluginInfo* info = infos[i];
@@ -464,6 +484,12 @@ namespace UI::ModLoaderWindow
     void Toggle()
     {
         s_isOpen = !s_isOpen;
+
+        // When the main UI closes, dismiss all open plugin panel windows too.
+        // Without this, panels stay visible after F2 with no way to close them
+        // (the simulated cursor is gone and the main window is no longer shown).
+        if (!s_isOpen)
+            UI::PluginPanelRegistry::CloseAllPanels();
     }
 
     bool IsOpen()

@@ -18,8 +18,8 @@ Enabled=1       ; set to 0 to skip ImGui initialisation (no hooks, no rendering)
 OpenKey=F2      ; key that opens/closes the ModLoader window
 ```
 
-If `Enabled=0` your panel callbacks will never fire and `hooks->UI` will still be non-null, but
-`RegisterPanel` is a no-op because the backend never starts.
+If `Enabled=0` your panel and widget callbacks will never fire and `hooks->UI` will still be
+non-null, but `RegisterPanel` and `RegisterWidget` are no-ops because the backend never starts.
 
 ---
 
@@ -141,6 +141,95 @@ bool PluginInit(IPluginLogger* logger, IPluginConfig* config,
 `SetPanelOpen` / `SetPanelClose` are silently ignored if the handle is null (e.g. UI backend
 disabled). The panel does **not** need to be visible in the ModLoader Config tab first —
 `SetPanelOpen` is equivalent to the user clicking the button there.
+
+---
+
+## Registering an Always-On Widget
+
+Widgets are ImGui windows that render **every frame** regardless of whether the ModLoader window
+is open. Use them for persistent HUD overlays — status info, debug values, player-togglable
+displays — anything that should stay on screen during normal gameplay.
+
+Unlike panels (which only render while the user has them open via the Config tab), widget windows
+are always visible once registered. Visibility can be toggled programmatically via
+`SetWidgetVisible`.
+
+### 1. Write a render callback
+
+The signature is identical to a panel render callback.
+
+```cpp
+static void MyWidgetRender(IModLoaderImGui* imgui)
+{
+    char buf[64];
+    snprintf(buf, sizeof(buf), "Enemies nearby: %d", g_nearbyCount);
+    imgui->Text(buf);
+
+    snprintf(buf, sizeof(buf), "Status: %s", g_status);
+    imgui->TextColored(0.2f, 1.0f, 0.2f, 1.0f, buf);
+}
+```
+
+### 2. Declare a PluginWidgetDesc
+
+```cpp
+static const PluginWidgetDesc k_myWidget = {
+    "My Plugin HUD",   // ImGui window title — must be globally unique; also shown as the title bar
+    MyWidgetRender     // render callback
+};
+```
+
+### 3. Register in PluginInit
+
+```cpp
+static IPluginHooks* g_hooks  = nullptr;
+static WidgetHandle  g_widget = nullptr;
+
+bool PluginInit(IPluginLogger* logger, IPluginConfig* config,
+                IPluginScanner* scanner, IPluginHooks* hooks)
+{
+    g_hooks = hooks;
+
+    if (hooks->UI)
+        g_widget = hooks->UI->RegisterWidget(&k_myWidget);
+
+    return true;
+}
+```
+
+### 4. Unregister in PluginShutdown
+
+```cpp
+void PluginShutdown()
+{
+    if (g_hooks && g_hooks->UI)
+        g_hooks->UI->UnregisterWidget(g_widget);
+    g_widget = nullptr;
+}
+```
+
+### 5. Toggling visibility
+
+Widgets are visible by default. Call `SetWidgetVisible` at any time — from a keybind, a config
+change callback, or anywhere else — to let players hide or show the widget:
+
+```cpp
+static bool s_widgetVisible = true;
+
+static void OnToggleWidget(EModKey, EModKeyEvent)
+{
+    if (!g_hooks || !g_hooks->UI || !g_widget) return;
+    s_widgetVisible = !s_widgetVisible;
+    g_hooks->UI->SetWidgetVisible(g_widget, s_widgetVisible);
+}
+
+// In PluginInit, after registering the widget:
+if (hooks->Input)
+    hooks->Input->RegisterKeybind(EModKey::F6, EModKeyEvent::Pressed, OnToggleWidget);
+```
+
+The widget window position and size are saved to `modloader_imgui.ini` automatically, so the
+player's chosen position persists between sessions.
 
 ---
 
@@ -378,9 +467,13 @@ static void MyPanelRender(IModLoaderImGui* imgui)
   SDK functions, allocate engine memory, or take locks that the game thread might be holding.
   Use `hooks->Engine->RegisterOnTick` for game-thread work and share state via a lock or atomic.
 
-- **Static state is fine.** Panel render callbacks run every frame while the panel is open.
-  `static` local variables inside them persist across frames, which is the standard ImGui pattern
-  for edit buffers and selection state.
+- **Static state is fine.** Panel and widget render callbacks run every frame (widgets always;
+  panels while open). `static` local variables inside them persist across frames, which is the
+  standard ImGui pattern for edit buffers and selection state.
+
+- **Widget callbacks run every frame, even when the game is loading.** Guard against null or
+  stale game-state pointers inside widget render callbacks; they are called more aggressively than
+  panel callbacks.
 
 - **Window titles must be unique.** ImGui uses the window title as an ID. If two plugins register
   panels with the same `windowTitle` they will share a window. Use your plugin name as a prefix

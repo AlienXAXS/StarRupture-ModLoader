@@ -4,7 +4,7 @@
 #include <cstdint>
 
 // ---------------------------------------------------------------------------
-// ACrGameModeBase::Logout Hook  (Player Left)
+// AGameModeBase::Logout Hook  (Player Left)
 //
 // Purpose: Fires when a player controller is about to be destroyed on the
 //          server — i.e. the player has disconnected, been kicked, or the
@@ -13,7 +13,7 @@
 //          possessed pawn, etc.).
 //
 // Hook point:
-//   ACrGameModeBase::Logout(ACrGameModeBase* this, AController* Exiting)
+//   AGameModeBase::Logout(AGameModeBase* this, AController* Exiting)
 //
 // Plugins receive the raw AController* as void* and can cast to
 // SDK::AController* or SDK::ACrPlayerControllerBase*.
@@ -25,22 +25,26 @@
 
 namespace Hooks::PlayerLeft
 {
-    // Callback signature for plugins.
-    // Receives the AController* of the departing player (as void*).
-    typedef void (*PluginPlayerLeftCallback)(void* exitingController);
+	// Callback signature for plugins.
+	// Receives the AController* of the departing player (as void*).
+	using PluginPlayerLeftCallback = void(*)(void* exitingController);
 
-    // Install the hook
-    bool Install();
+	// Install the hook
+	bool Install();
 
-    // Remove the hook
-    void Remove();
+	// Remove the hook
+	void Remove();
 
-    // Returns true if the hook is currently installed
- bool IsInstalled();
+	// Returns true if the hook is currently installed
+	bool IsInstalled();
 
-    // Register a plugin callback to be notified when a player leaves
-    void RegisterPluginCallback(PluginPlayerLeftCallback callback);
+	// Register a plugin callback to be notified when a player leaves
+	void RegisterPluginCallback(PluginPlayerLeftCallback callback);
 
-    // Unregister a plugin callback
-    void UnregisterPluginCallback(PluginPlayerLeftCallback callback);
+	// Unregister a plugin callback
+	void UnregisterPluginCallback(PluginPlayerLeftCallback callback);
+
+	// Returns the trampoline address of the original AGameModeBase::Logout, or 0 if not yet installed.
+	// Cast to: void(__fastcall*)(void* thisPtr, void* exiting)
+	uintptr_t GetOriginalPtr();
 }

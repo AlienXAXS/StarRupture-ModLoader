@@ -5,6 +5,10 @@
 #include "logging/log.h"
 #include "plugins/plugin_interface.h"
 
+#ifdef MODLOADER_CLIENT_BUILD
+#include "UI/global_settings.h"
+#endif
+
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <winhttp.h>
@@ -49,15 +53,15 @@ static AutoUpdateConfig ReadAutoUpdateConfig()
 	{
 		// Fall back to the compiled-in default (set by CI)
 		strncpy_s(cfg.manifestUrl, sizeof(cfg.manifestUrl),
-			AUTOUPDATE_DEFAULT_MANIFEST_URL, _TRUNCATE);
+		          AUTOUPDATE_DEFAULT_MANIFEST_URL, _TRUNCATE);
 		cfg.urlFromIni = false;
 		LogToFile::Debug("[AutoUpdate] ManifestUrl: using compiled-in default");
 	}
 	else
 	{
 		WideCharToMultiByte(CP_UTF8, 0, wUrl, -1,
-			cfg.manifestUrl, sizeof(cfg.manifestUrl),
-			nullptr, nullptr);
+		                    cfg.manifestUrl, sizeof(cfg.manifestUrl),
+		                    nullptr, nullptr);
 		cfg.urlFromIni = true;
 		LogToFile::Debug("[AutoUpdate] ManifestUrl: overridden via modloader.ini");
 	}
@@ -75,8 +79,8 @@ static void GetUpdateStateIniPath(wchar_t* outPath, DWORD maxLen)
 	wchar_t* slash = wcsrchr(outPath, L'\\');
 	if (slash)
 		wcscpy_s(slash + 1,
-			static_cast<rsize_t>(maxLen - static_cast<DWORD>(slash + 1 - outPath)),
-			L"update_state.ini");
+		         maxLen - static_cast<DWORD>(slash + 1 - outPath),
+		         L"update_state.ini");
 }
 
 static void ReadStoredBuildTag(char* outTag, int maxLen)
@@ -103,7 +107,8 @@ static void WriteStoredBuildTag(const char* tag)
 	else
 	{
 		DWORD err = GetLastError();
-		LogToFile::Warn("[AutoUpdate] Failed to write build tag to update_state.ini (%lu: %s)", err, FormatWinHttpError(err).c_str());
+		LogToFile::Warn("[AutoUpdate] Failed to write build tag to update_state.ini (%lu: %s)", err,
+		                FormatWinHttpError(err).c_str());
 	}
 }
 
@@ -122,7 +127,7 @@ static std::string FormatWinHttpError(DWORD err)
 	{
 		DWORD n = FormatMessageA(
 			FORMAT_MESSAGE_FROM_HMODULE | FORMAT_MESSAGE_IGNORE_INSERTS,
-			hWinHttp, err, 0, buf, static_cast<DWORD>(sizeof(buf) - 1), nullptr);
+			hWinHttp, err, 0, buf, sizeof(buf) - 1, nullptr);
 		if (n > 0)
 		{
 			// Strip trailing CR/LF/spaces inserted by FormatMessage
@@ -135,7 +140,7 @@ static std::string FormatWinHttpError(DWORD err)
 	// Fall back to the system error message table
 	DWORD n = FormatMessageA(
 		FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
-		nullptr, err, 0, buf, static_cast<DWORD>(sizeof(buf) - 1), nullptr);
+		nullptr, err, 0, buf, sizeof(buf) - 1, nullptr);
 	if (n > 0)
 	{
 		while (n > 0 && (buf[n - 1] == '\r' || buf[n - 1] == '\n' || buf[n - 1] == ' '))
@@ -158,7 +163,8 @@ static std::string HttpGet(const char* url, const char* label = "resource")
 	if (MultiByteToWideChar(CP_UTF8, 0, url, -1, wUrl, 1024) == 0)
 	{
 		DWORD err = GetLastError();
-		LogToFile::Debug("[AutoUpdate] HttpGet [%s]: URL encoding failed (%lu: %s)", label, err, FormatWinHttpError(err).c_str());
+		LogToFile::Debug("[AutoUpdate] HttpGet [%s]: URL encoding failed (%lu: %s)", label, err,
+		                 FormatWinHttpError(err).c_str());
 		return {};
 	}
 
@@ -166,16 +172,20 @@ static std::string HttpGet(const char* url, const char* label = "resource")
 	URL_COMPONENTS uc{};
 	uc.dwStructSize = sizeof(uc);
 	wchar_t host[256]{}, path[768]{};
-	uc.lpszHostName   = host; uc.dwHostNameLength   = 256;
-	uc.lpszUrlPath    = path; uc.dwUrlPathLength    = 768;
+	uc.lpszHostName = host;
+	uc.dwHostNameLength = 256;
+	uc.lpszUrlPath = path;
+	uc.dwUrlPathLength = 768;
 	if (!WinHttpCrackUrl(wUrl, 0, 0, &uc))
 	{
 		DWORD err = GetLastError();
-		LogToFile::Debug("[AutoUpdate] HttpGet [%s]: WinHttpCrackUrl failed (%lu: %s)", label, err, FormatWinHttpError(err).c_str());
+		LogToFile::Debug("[AutoUpdate] HttpGet [%s]: WinHttpCrackUrl failed (%lu: %s)", label, err,
+		                 FormatWinHttpError(err).c_str());
 		return {};
 	}
 
-	LogToFile::Debug("[AutoUpdate] HttpGet [%s]: host=%ls path=%ls port=%d", label, host, path, (int)uc.nPort);
+	LogToFile::Debug("[AutoUpdate] HttpGet [%s]: host=%ls path=%ls port=%d", label, host, path,
+	                 static_cast<int>(uc.nPort));
 
 	// WINHTTP_ACCESS_TYPE_NO_PROXY: connect directly without reading IE/user
 	// proxy registry settings.  Dedicated game servers run as SYSTEM which has
@@ -184,24 +194,26 @@ static std::string HttpGet(const char* url, const char* label = "resource")
 	HINTERNET hSession = WinHttpOpen(
 		L"StarRupture-ModLoader-AutoUpdate/1.0",
 		WINHTTP_ACCESS_TYPE_NO_PROXY,
-		WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
+		nullptr, nullptr, 0);
 	if (!hSession)
 	{
 		DWORD err = GetLastError();
-		LogToFile::Debug("[AutoUpdate] HttpGet [%s]: WinHttpOpen failed (%lu: %s)", label, err, FormatWinHttpError(err).c_str());
+		LogToFile::Debug("[AutoUpdate] HttpGet [%s]: WinHttpOpen failed (%lu: %s)", label, err,
+		                 FormatWinHttpError(err).c_str());
 		return {};
 	}
 
 	// Cap individual operation timeouts so we never block startup indefinitely.
-	// resolve=5s, connect=10s, send=30s, receive=30s
-	WinHttpSetTimeouts(hSession, 5000, 10000, 30000, 30000);
+	// resolve=3s, connect=5s (~8s max for unreachable host), send=15s, receive=30s
+	WinHttpSetTimeouts(hSession, 3000, 5000, 15000, 30000);
 
 	INTERNET_PORT port = (uc.nPort != 0) ? uc.nPort : INTERNET_DEFAULT_HTTPS_PORT;
 	HINTERNET hConnect = WinHttpConnect(hSession, host, port, 0);
 	if (!hConnect)
 	{
 		DWORD err = GetLastError();
-		LogToFile::Debug("[AutoUpdate] HttpGet [%s]: WinHttpConnect failed (%lu: %s)", label, err, FormatWinHttpError(err).c_str());
+		LogToFile::Debug("[AutoUpdate] HttpGet [%s]: WinHttpConnect failed (%lu: %s)", label, err,
+		                 FormatWinHttpError(err).c_str());
 		WinHttpCloseHandle(hSession);
 		return {};
 	}
@@ -209,11 +221,12 @@ static std::string HttpGet(const char* url, const char* label = "resource")
 	DWORD reqFlags = WINHTTP_FLAG_SECURE;
 	HINTERNET hRequest = WinHttpOpenRequest(
 		hConnect, L"GET", path,
-		nullptr, WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, reqFlags);
+		nullptr, nullptr, nullptr, reqFlags);
 	if (!hRequest)
 	{
 		DWORD err = GetLastError();
-		LogToFile::Debug("[AutoUpdate] HttpGet [%s]: WinHttpOpenRequest failed (%lu: %s)", label, err, FormatWinHttpError(err).c_str());
+		LogToFile::Debug("[AutoUpdate] HttpGet [%s]: WinHttpOpenRequest failed (%lu: %s)", label, err,
+		                 FormatWinHttpError(err).c_str());
 		WinHttpCloseHandle(hConnect);
 		WinHttpCloseHandle(hSession);
 		return {};
@@ -222,15 +235,16 @@ static std::string HttpGet(const char* url, const char* label = "resource")
 	// Follow GitHub CDN redirects automatically
 	DWORD redirectPolicy = WINHTTP_OPTION_REDIRECT_POLICY_ALWAYS;
 	WinHttpSetOption(hRequest, WINHTTP_OPTION_REDIRECT_POLICY,
-		&redirectPolicy, sizeof(redirectPolicy));
+	                 &redirectPolicy, sizeof(redirectPolicy));
 
 	LogToFile::Debug("[AutoUpdate] HttpGet [%s]: sending request...", label);
 
-	if (!WinHttpSendRequest(hRequest, WINHTTP_NO_ADDITIONAL_HEADERS, 0,
-		WINHTTP_NO_REQUEST_DATA, 0, 0, 0))
+	if (!WinHttpSendRequest(hRequest, nullptr, 0,
+	                        nullptr, 0, 0, 0))
 	{
 		DWORD err = GetLastError();
-		LogToFile::Debug("[AutoUpdate] HttpGet [%s]: WinHttpSendRequest failed (%lu: %s)", label, err, FormatWinHttpError(err).c_str());
+		LogToFile::Debug("[AutoUpdate] HttpGet [%s]: WinHttpSendRequest failed (%lu: %s)", label, err,
+		                 FormatWinHttpError(err).c_str());
 		WinHttpCloseHandle(hRequest);
 		WinHttpCloseHandle(hConnect);
 		WinHttpCloseHandle(hSession);
@@ -240,7 +254,8 @@ static std::string HttpGet(const char* url, const char* label = "resource")
 	if (!WinHttpReceiveResponse(hRequest, nullptr))
 	{
 		DWORD err = GetLastError();
-		LogToFile::Debug("[AutoUpdate] HttpGet [%s]: WinHttpReceiveResponse failed (%lu: %s)", label, err, FormatWinHttpError(err).c_str());
+		LogToFile::Debug("[AutoUpdate] HttpGet [%s]: WinHttpReceiveResponse failed (%lu: %s)", label, err,
+		                 FormatWinHttpError(err).c_str());
 		WinHttpCloseHandle(hRequest);
 		WinHttpCloseHandle(hConnect);
 		WinHttpCloseHandle(hSession);
@@ -251,9 +266,9 @@ static std::string HttpGet(const char* url, const char* label = "resource")
 	DWORD statusCode = 0;
 	DWORD statusSize = sizeof(statusCode);
 	WinHttpQueryHeaders(hRequest,
-		WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
-		WINHTTP_HEADER_NAME_BY_INDEX,
-		&statusCode, &statusSize, WINHTTP_NO_HEADER_INDEX);
+	                    WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
+	                    nullptr,
+	                    &statusCode, &statusSize, nullptr);
 
 	LogToFile::Debug("[AutoUpdate] HttpGet [%s]: HTTP %lu", label, statusCode);
 
@@ -275,16 +290,31 @@ static std::string HttpGet(const char* url, const char* label = "resource")
 	std::string body;
 	body.reserve(65536);
 
-	DWORD available = 0;
-	while (WinHttpQueryDataAvailable(hRequest, &available) && available > 0)
+	bool readOk = true;
+	for (;;)
 	{
+		DWORD available = 0;
+		if (!WinHttpQueryDataAvailable(hRequest, &available))
+		{
+			DWORD err = GetLastError();
+			LogToFile::Warn(
+				"[AutoUpdate] HttpGet [%s]: WinHttpQueryDataAvailable failed (%lu: %s) -- %zu bytes received so far",
+				label, err, FormatWinHttpError(err).c_str(), body.size());
+			readOk = false;
+			break;
+		}
+		if (available == 0)
+			break; // normal end of response
+
 		std::string chunk(available, '\0');
 		DWORD bytesRead = 0;
 		if (!WinHttpReadData(hRequest, chunk.data(), available, &bytesRead))
 		{
 			DWORD err = GetLastError();
-			LogToFile::Debug("[AutoUpdate] HttpGet [%s]: WinHttpReadData failed mid-stream (%lu: %s) — %zu bytes received so far",
+			LogToFile::Warn(
+				"[AutoUpdate] HttpGet [%s]: WinHttpReadData failed mid-stream (%lu: %s) -- %zu bytes received so far",
 				label, err, FormatWinHttpError(err).c_str(), body.size());
+			readOk = false;
 			break;
 		}
 		chunk.resize(bytesRead);
@@ -294,6 +324,12 @@ static std::string HttpGet(const char* url, const char* label = "resource")
 	WinHttpCloseHandle(hRequest);
 	WinHttpCloseHandle(hConnect);
 	WinHttpCloseHandle(hSession);
+
+	if (!readOk)
+	{
+		LogToFile::Warn("[AutoUpdate] HttpGet [%s]: incomplete download -- discarding partial data to avoid corrupt file on disk", label);
+		return {};
+	}
 
 	LogToFile::Debug("[AutoUpdate] HttpGet [%s]: received %zu bytes", label, body.size());
 	return body;
@@ -377,7 +413,7 @@ static std::vector<std::string> JsonExtractObjectArray(
 	size_t i = apos + 1;
 	while (i < json.size())
 	{
-		if (json[i] == ' '  || json[i] == '\t' ||
+		if (json[i] == ' ' || json[i] == '\t' ||
 			json[i] == '\r' || json[i] == '\n' || json[i] == ',')
 		{
 			++i;
@@ -402,7 +438,7 @@ static std::vector<std::string> JsonExtractObjectArray(
 				}
 				else
 				{
-					if      (c == '"') { inString = true; }
+					if (c == '"') { inString = true; }
 					else if (c == '{') { ++depth; }
 					else if (c == '}')
 					{
@@ -434,14 +470,14 @@ static std::vector<std::string> JsonExtractObjectArray(
 // the final path.  Returns true on success; the original DLL is never removed
 // unless the new file is fully written and placed.
 static bool DownloadPlugin(const char* url,
-	const wchar_t* pluginsDir,
-	const wchar_t* filename,
-	const char*    displayName)
+                           const wchar_t* pluginsDir,
+                           const wchar_t* filename,
+                           const char* displayName)
 {
 	wchar_t tmpPath[MAX_PATH]{};
 	wchar_t finalPath[MAX_PATH]{};
-	swprintf_s(tmpPath,   L"%s\\%s.tmp", pluginsDir, filename);
-	swprintf_s(finalPath, L"%s\\%s",     pluginsDir, filename);
+	swprintf_s(tmpPath, L"%s\\%s.tmp", pluginsDir, filename);
+	swprintf_s(finalPath, L"%s\\%s", pluginsDir, filename);
 
 	std::string body = HttpGet(url, displayName);
 	if (body.empty())
@@ -453,12 +489,12 @@ static bool DownloadPlugin(const char* url,
 	LogToFile::Debug("[AutoUpdate] Download [%s]: writing %zu bytes to temp file", displayName, body.size());
 
 	HANDLE hFile = CreateFileW(tmpPath, GENERIC_WRITE, 0, nullptr,
-		CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+	                           CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
 	if (hFile == INVALID_HANDLE_VALUE)
 	{
 		DWORD err = GetLastError();
 		LogToFile::Debug("[AutoUpdate] Download [%s]: CreateFileW failed for temp path (%lu: %s): %ls",
-			displayName, err, FormatWinHttpError(err).c_str(), tmpPath);
+		                 displayName, err, FormatWinHttpError(err).c_str(), tmpPath);
 		return false;
 	}
 
@@ -470,7 +506,7 @@ static bool DownloadPlugin(const char* url,
 	if (!ok || written != static_cast<DWORD>(body.size()))
 	{
 		LogToFile::Debug("[AutoUpdate] Download [%s]: WriteFile incomplete — wrote %lu of %zu bytes (error %lu)",
-			displayName, written, body.size(), writeErr);
+		                 displayName, written, body.size(), writeErr);
 		DeleteFileW(tmpPath);
 		return false;
 	}
@@ -483,7 +519,7 @@ static bool DownloadPlugin(const char* url,
 	{
 		DWORD err = GetLastError();
 		LogToFile::Debug("[AutoUpdate] Download [%s]: MoveFileExW failed (%lu: %s) — temp file removed",
-			displayName, err, FormatWinHttpError(err).c_str());
+		                 displayName, err, FormatWinHttpError(err).c_str());
 		DeleteFileW(tmpPath);
 		return false;
 	}
@@ -493,12 +529,372 @@ static bool DownloadPlugin(const char* url,
 }
 
 // ===========================================================================
+// Section G — Per-plugin sidecar manifest updates
+//
+// Each plugin DLL may ship a companion sidecar file with the same base name
+// and a .json extension, e.g. Plugins\ServerUtility.json.  The sidecar
+// contains a single "manifest_url" field pointing to the plugin author's own
+// update manifest.  This lets third-party plugins self-host their updates
+// independently of the central modloader release cycle.
+//
+// Sidecar format (Plugins\MyPlugin.json):
+//   {
+//     "manifest_url": "https://example.com/myplugin/manifest.json"
+//   }
+//
+// Remote per-plugin manifest format:
+//   {
+//     "plugin_name":           "MyPlugin",
+//     "version":               "1.2.0",
+//     "interface_version_min": 19,
+//     "interface_version_max": 22,
+//     "download_url":          "https://example.com/releases/MyPlugin-1.2.0.dll"
+//   }
+//
+// The last-downloaded version per plugin is stored in update_state.ini under
+// [PluginVersions], keyed by the DLL filename (e.g. "MyPlugin.dll=1.2.0").
+// If the remote version differs from the stored version the DLL is replaced
+// using the same atomic .tmp -> rename pattern as the central updater.
+// ===========================================================================
+
+struct PluginSidecar
+{
+    std::string dllFilename;  // e.g. "MyPlugin.dll"
+    std::string manifestUrl;  // value of "manifest_url" in the sidecar JSON
+};
+
+// Read the entire content of a file on disk into a std::string.
+// Returns an empty string on any error.
+static std::string ReadFileToString(const wchar_t* path)
+{
+    HANDLE hFile = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ,
+                               nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (hFile == INVALID_HANDLE_VALUE)
+        return {};
+
+    LARGE_INTEGER size{};
+    if (!GetFileSizeEx(hFile, &size) || size.QuadPart == 0 || size.QuadPart > (1 << 20))
+    {
+        CloseHandle(hFile);
+        return {};
+    }
+
+    std::string buf(static_cast<size_t>(size.QuadPart), '\0');
+    DWORD bytesRead = 0;
+    BOOL ok = ReadFile(hFile, buf.data(), static_cast<DWORD>(buf.size()), &bytesRead, nullptr);
+    CloseHandle(hFile);
+
+    if (!ok || bytesRead != static_cast<DWORD>(buf.size()))
+        return {};
+
+    return buf;
+}
+
+// Read "manifest_url" from a sidecar JSON file on disk.
+// Returns empty string on any error (file missing, field absent, etc.).
+static std::string ReadSidecarManifestUrl(const wchar_t* jsonPath)
+{
+    std::string content = ReadFileToString(jsonPath);
+    if (content.empty())
+        return {};
+    return JsonExtractString(content, "manifest_url");
+}
+
+// Scan the Plugins directory for *.json files that have a matching *.dll.
+// Returns one PluginSidecar per valid pairing.
+static std::vector<PluginSidecar> ScanForSidecars(const wchar_t* pluginsDir)
+{
+    std::vector<PluginSidecar> results;
+
+    wchar_t pattern[MAX_PATH]{};
+    swprintf_s(pattern, L"%s\\*.json", pluginsDir);
+
+    WIN32_FIND_DATAW fd{};
+    HANDLE hFind = FindFirstFileW(pattern, &fd);
+    if (hFind == INVALID_HANDLE_VALUE)
+        return results;
+
+    do
+    {
+        // Skip directories
+        if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+            continue;
+
+        // Build full path to the .json sidecar
+        wchar_t jsonPath[MAX_PATH]{};
+        swprintf_s(jsonPath, L"%s\\%s", pluginsDir, fd.cFileName);
+
+        // Derive the expected DLL name by replacing .json extension with .dll
+        wchar_t dllName[MAX_PATH]{};
+        wcscpy_s(dllName, fd.cFileName);
+        wchar_t* dot = wcsrchr(dllName, L'.');
+        if (!dot)
+            continue;
+        wcscpy_s(dot, static_cast<rsize_t>(MAX_PATH - (dot - dllName)), L".dll");
+
+        // Only process if a matching DLL actually exists on disk
+        wchar_t dllPath[MAX_PATH]{};
+        swprintf_s(dllPath, L"%s\\%s", pluginsDir, dllName);
+        if (GetFileAttributesW(dllPath) == INVALID_FILE_ATTRIBUTES)
+        {
+            // Sidecar present but DLL absent — plugin was removed, skip silently
+            char narrowName[256]{};
+            WideCharToMultiByte(CP_UTF8, 0, fd.cFileName, -1, narrowName, sizeof(narrowName), nullptr, nullptr);
+            LogToFile::Debug("[AutoUpdate][Sidecar] '%s' has no matching DLL — skipping", narrowName);
+            continue;
+        }
+
+        std::string manifestUrl = ReadSidecarManifestUrl(jsonPath);
+        if (manifestUrl.empty())
+        {
+            char narrowName[256]{};
+            WideCharToMultiByte(CP_UTF8, 0, fd.cFileName, -1, narrowName, sizeof(narrowName), nullptr, nullptr);
+            LogToFile::Warn("[AutoUpdate][Sidecar] '%s' is missing 'manifest_url' — skipping", narrowName);
+            continue;
+        }
+
+        char narrowDll[256]{};
+        WideCharToMultiByte(CP_UTF8, 0, dllName, -1, narrowDll, sizeof(narrowDll), nullptr, nullptr);
+
+        PluginSidecar sc;
+        sc.dllFilename  = narrowDll;
+        sc.manifestUrl  = manifestUrl;
+        results.push_back(std::move(sc));
+
+    } while (FindNextFileW(hFind, &fd));
+
+    FindClose(hFind);
+    return results;
+}
+
+// Read the stored version for a plugin from update_state.ini [PluginVersions].
+// Returns empty string if not found.
+static std::string ReadPluginVersion(const wchar_t* iniPath, const char* dllFilename)
+{
+    wchar_t wKey[256]{};
+    MultiByteToWideChar(CP_UTF8, 0, dllFilename, -1, wKey, 256);
+
+    wchar_t wVal[256]{};
+    GetPrivateProfileStringW(L"PluginVersions", wKey, L"", wVal, 256, iniPath);
+
+    char val[256]{};
+    WideCharToMultiByte(CP_UTF8, 0, wVal, -1, val, sizeof(val), nullptr, nullptr);
+    return val;
+}
+
+// Write the stored version for a plugin to update_state.ini [PluginVersions].
+static void WritePluginVersion(const wchar_t* iniPath,
+                                const char* dllFilename,
+                                const char* version)
+{
+    wchar_t wKey[256]{}, wVal[256]{};
+    MultiByteToWideChar(CP_UTF8, 0, dllFilename, -1, wKey, 256);
+    MultiByteToWideChar(CP_UTF8, 0, version,     -1, wVal, 256);
+
+    if (WritePrivateProfileStringW(L"PluginVersions", wKey, wVal, iniPath))
+        LogToFile::Debug("[AutoUpdate][Sidecar] Stored version for '%s': %s", dllFilename, version);
+    else
+    {
+        DWORD err = GetLastError();
+        LogToFile::Warn("[AutoUpdate][Sidecar] Failed to write version for '%s' (%lu: %s)",
+                        dllFilename, err, FormatWinHttpError(err).c_str());
+    }
+}
+
+// Fetch and process a single per-plugin manifest.
+// Downloads the plugin DLL if the remote version differs from stored.
+static void ProcessPluginSidecar(const PluginSidecar& sc,
+                                  const wchar_t* pluginsDir,
+                                  const wchar_t* stateIniPath)
+{
+    LogToFile::Debug("[AutoUpdate][Sidecar] Checking '%s' via %s",
+                     sc.dllFilename.c_str(), sc.manifestUrl.c_str());
+
+    std::string json = HttpGet(sc.manifestUrl.c_str(), sc.dllFilename.c_str());
+    if (json.empty())
+    {
+        LogToFile::Warn("[AutoUpdate][Sidecar] '%s' — manifest fetch failed, skipping",
+                        sc.dllFilename.c_str());
+        return;
+    }
+
+    std::string remoteVersion  = JsonExtractString(json, "version");
+    std::string downloadUrl    = JsonExtractString(json, "download_url");
+    std::string pluginName     = JsonExtractString(json, "plugin_name");
+    int ifaceMin = JsonExtractInt(json, "interface_version_min", -1);
+    int ifaceMax = JsonExtractInt(json, "interface_version_max", -1);
+
+    const char* displayName = pluginName.empty() ? sc.dllFilename.c_str() : pluginName.c_str();
+
+    if (remoteVersion.empty())
+    {
+        LogToFile::Warn("[AutoUpdate][Sidecar] '%s' — manifest missing 'version' field, skipping",
+                        displayName);
+        return;
+    }
+
+    if (downloadUrl.empty())
+    {
+        LogToFile::Warn("[AutoUpdate][Sidecar] '%s' — manifest missing 'download_url' field, skipping",
+                        displayName);
+        return;
+    }
+
+    // Interface version gate — skip if the plugin declares a range that does
+    // not overlap with what this loader supports.
+    if (ifaceMin != -1 && ifaceMax != -1)
+    {
+        if (ifaceMax < PLUGIN_INTERFACE_VERSION_MIN ||
+            ifaceMin > PLUGIN_INTERFACE_VERSION_MAX)
+        {
+            LogToFile::Warn("[AutoUpdate][Sidecar] '%s' v%s requires interface [%d, %d], "
+                            "loader supports [%d, %d] — skipping",
+                            displayName, remoteVersion.c_str(),
+                            ifaceMin, ifaceMax,
+                            PLUGIN_INTERFACE_VERSION_MIN, PLUGIN_INTERFACE_VERSION_MAX);
+            return;
+        }
+    }
+
+    std::string storedVersion = ReadPluginVersion(stateIniPath, sc.dllFilename.c_str());
+
+    LogToFile::Debug("[AutoUpdate][Sidecar] '%s' stored=%s remote=%s",
+                     displayName,
+                     storedVersion.empty() ? "<none>" : storedVersion.c_str(),
+                     remoteVersion.c_str());
+
+    if (!storedVersion.empty() && storedVersion == remoteVersion)
+    {
+        LogToFile::Info("[AutoUpdate][Sidecar] '%s' — up to date (%s)", displayName, remoteVersion.c_str());
+        return;
+    }
+
+    LogToFile::Info("[AutoUpdate][Sidecar] '%s' — update available: [%s] -> [%s]",
+                    displayName,
+                    storedVersion.empty() ? "<none>" : storedVersion.c_str(),
+                    remoteVersion.c_str());
+
+    wchar_t wFilename[256]{};
+    MultiByteToWideChar(CP_UTF8, 0, sc.dllFilename.c_str(), -1, wFilename, 256);
+
+    if (DownloadPlugin(downloadUrl.c_str(), pluginsDir, wFilename, displayName))
+    {
+        LogToFile::Info("[AutoUpdate][Sidecar] '%s' — updated to %s", displayName, remoteVersion.c_str());
+        WritePluginVersion(stateIniPath, sc.dllFilename.c_str(), remoteVersion.c_str());
+    }
+    else
+    {
+        LogToFile::Warn("[AutoUpdate][Sidecar] '%s' — download failed; existing file kept", displayName);
+    }
+}
+
+// Scan the Plugins directory for sidecar JSON files and process each one.
+static void RunPerPluginUpdates(const wchar_t* pluginsDir)
+{
+    auto sidecars = ScanForSidecars(pluginsDir);
+
+    if (sidecars.empty())
+    {
+        LogToFile::Debug("[AutoUpdate][Sidecar] No plugin sidecars found in %ls", pluginsDir);
+        return;
+    }
+
+    LogToFile::Info("[AutoUpdate][Sidecar] Found %zu plugin sidecar(s)", sidecars.size());
+
+    wchar_t stateIniPath[MAX_PATH]{};
+    GetUpdateStateIniPath(stateIniPath, MAX_PATH);
+
+    for (const auto& sc : sidecars)
+        ProcessPluginSidecar(sc, pluginsDir, stateIniPath);
+}
+
+// ===========================================================================
 // Section F — Orchestrator
 // ===========================================================================
 
+// Central manifest update pass — checks whether a new modloader release exists
+// and notifies the user if so.  Plugin updates are handled independently via
+// per-plugin sidecar manifests (Section G).
+static void RunCentralManifestUpdate(const AutoUpdateConfig& cfg)
+{
+	if (cfg.manifestUrl[0] == '\0')
+	{
+		LogToFile::Info("[AutoUpdate] No manifest URL configured (dev / generic build) — skipping central update");
+		return;
+	}
+
+	LogToFile::Info("[AutoUpdate] Manifest URL: %s%s",
+	                cfg.manifestUrl,
+	                cfg.urlFromIni ? " (from modloader.ini)" : " (compiled-in default)");
+
+	std::string manifest = HttpGet(cfg.manifestUrl, "manifest");
+	if (manifest.empty())
+	{
+		LogToFile::Warn("[AutoUpdate] Manifest fetch failed — skipping modloader version check");
+		return;
+	}
+
+	LogToFile::Debug("[AutoUpdate] Manifest received (%zu bytes)", manifest.size());
+
+	std::string remoteBuildTag = JsonExtractString(manifest, "build_tag");
+	if (remoteBuildTag.empty())
+	{
+		LogToFile::Warn("[AutoUpdate] Manifest is missing 'build_tag' field — skipping");
+		return;
+	}
+
+	LogToFile::Debug("[AutoUpdate] Remote build_tag: %s", remoteBuildTag.c_str());
+
+	// The build tag stamped into this DLL by CI (via /p:ModLoaderBuildTag=...).
+	// Empty on dev/generic builds.
+#ifdef MODLOADER_BUILD_TAG
+	const char* compiledTag = MODLOADER_BUILD_TAG;
+#else
+	const char* compiledTag = "";
+#endif
+
+	// Read stored tag (written by a previous run) and choose the effective local version.
+	char storedTag[256]{};
+	ReadStoredBuildTag(storedTag, sizeof(storedTag));
+	LogToFile::Debug("[AutoUpdate] Stored build_tag:   %s", storedTag[0] ? storedTag : "<none>");
+	LogToFile::Debug("[AutoUpdate] Compiled build_tag: %s", compiledTag[0] ? compiledTag : "<none>");
+
+	const char* effectiveLocalTag = storedTag[0] ? storedTag : compiledTag;
+
+	if (effectiveLocalTag[0] != '\0' &&
+		strcmp(effectiveLocalTag, remoteBuildTag.c_str()) == 0)
+	{
+		LogToFile::Info("[AutoUpdate] Modloader is up to date (%s)", effectiveLocalTag);
+
+		// First boot after a fresh install from a ZIP — persist the tag so
+		// future boots skip the fetch entirely once no update is available.
+		if (storedTag[0] == '\0' && compiledTag[0] != '\0')
+		{
+			LogToFile::Debug("[AutoUpdate] First run after fresh install — writing update_state.ini");
+			WriteStoredBuildTag(compiledTag);
+		}
+		return;
+	}
+
+	LogToFile::Info("[AutoUpdate] Modloader update available: [%s] -> [%s]",
+	                effectiveLocalTag[0] ? effectiveLocalTag : "<none>", remoteBuildTag.c_str());
+
+#ifdef MODLOADER_CLIENT_BUILD
+	UI::GlobalSettings::SetUpdateAvailable(true);
+#endif
+
+	// Write the new tag so the notification is not shown again until the
+	// user actually updates (i.e. replaces dwmapi.dll with the new build).
+	WriteStoredBuildTag(remoteBuildTag.c_str());
+}
+
 void ModLoaderLogger::RunAutoUpdate()
 {
-	LogToFile::Info("[AutoUpdate] Starting auto-update check");
+#ifdef MODLOADER_BUILD_TAG
+	LogToFile::Info("[AutoUpdate] Starting auto-update check (current version: %s)", MODLOADER_BUILD_TAG);
+#else
+	LogToFile::Info("[AutoUpdate] Starting auto-update check (current version: unknown)");
+#endif
 
 	AutoUpdateConfig cfg = ReadAutoUpdateConfig();
 
@@ -508,233 +904,24 @@ void ModLoaderLogger::RunAutoUpdate()
 		return;
 	}
 
-	if (cfg.manifestUrl[0] == '\0')
-	{
-		LogToFile::Info("[AutoUpdate] No manifest URL configured (dev / generic build) — skipping");
-		return;
-	}
-
-	LogToFile::Info("[AutoUpdate] Manifest URL: %s%s",
-		cfg.manifestUrl,
-		cfg.urlFromIni ? " (from modloader.ini)" : " (compiled-in default)");
-
-	// Derive the base download URL by stripping the manifest filename.
-	// e.g. ".../releases/download/TAG/manifest-server.json"
-	//   -> ".../releases/download/TAG/"
-	// Individual plugin DLLs are then fetched as baseDownloadUrl + filename.
-	std::string baseDownloadUrl = cfg.manifestUrl;
-	{
-		size_t lastSlash = baseDownloadUrl.rfind('/');
-		if (lastSlash != std::string::npos)
-			baseDownloadUrl.resize(lastSlash + 1); // keep trailing '/'
-	}
-	LogToFile::Debug("[AutoUpdate] Base download URL: %s", baseDownloadUrl.c_str());
-
-	std::string manifest = HttpGet(cfg.manifestUrl, "manifest");
-	if (manifest.empty())
-	{
-		LogToFile::Warn("[AutoUpdate] Manifest fetch failed — see above for details (network error or HTTP error)");
-		LogToFile::Info("[AutoUpdate] Skipping update; existing plugins will be loaded as-is");
-		return;
-	}
-
-	LogToFile::Debug("[AutoUpdate] Manifest received (%zu bytes)", manifest.size());
-
-	// Gate on interface version
-	int manifestIfaceVer = JsonExtractInt(manifest, "interface_version", -1);
-	LogToFile::Debug("[AutoUpdate] Manifest interface_version=%d, loader range=[%d, %d]",
-		manifestIfaceVer, PLUGIN_INTERFACE_VERSION_MIN, PLUGIN_INTERFACE_VERSION_MAX);
-
-	if (manifestIfaceVer < PLUGIN_INTERFACE_VERSION_MIN ||
-		manifestIfaceVer > PLUGIN_INTERFACE_VERSION_MAX)
-	{
-		LogToFile::Warn("[AutoUpdate] Interface version %d not in supported range [%d, %d] — skipping update",
-			manifestIfaceVer, PLUGIN_INTERFACE_VERSION_MIN, PLUGIN_INTERFACE_VERSION_MAX);
-		LogToFile::Info("[AutoUpdate] Skipping update; plugins built for a different interface version "
-			"cannot be safely loaded by this loader");
-		return;
-	}
-
-	std::string remoteBuildTag = JsonExtractString(manifest, "build_tag");
-	if (remoteBuildTag.empty())
-	{
-		LogToFile::Warn("[AutoUpdate] Manifest is missing 'build_tag' field — skipping update");
-		return;
-	}
-
-	LogToFile::Debug("[AutoUpdate] Remote build_tag: %s", remoteBuildTag.c_str());
-
-	// Determine plugins directory
+	// Determine and ensure the Plugins directory exists.  Both the central
+	// manifest pass and the per-plugin sidecar pass need it.
 	wchar_t pluginsDir[MAX_PATH]{};
 	GetModuleFileNameW(nullptr, pluginsDir, MAX_PATH);
 	wchar_t* slash = wcsrchr(pluginsDir, L'\\');
 	if (slash)
 		wcscpy_s(slash + 1,
-			static_cast<rsize_t>(MAX_PATH - static_cast<DWORD>(slash + 1 - pluginsDir)),
-			L"Plugins");
-
+		         MAX_PATH - static_cast<DWORD>(slash + 1 - pluginsDir),
+		         L"Plugins");
 	LogToFile::Debug("[AutoUpdate] Plugins directory: %ls", pluginsDir);
-
-	// Ensure Plugins directory exists (in case we're running before first load)
 	CreateDirectoryW(pluginsDir, nullptr);
 
-	// The build tag stamped into this DLL by CI (via /p:ModLoaderBuildTag=...).
-	// Empty on dev/generic builds.  Used as a fallback when update_state.ini
-	// does not exist yet (fresh install from a ZIP archive).
-#ifdef MODLOADER_BUILD_TAG
-	const char* compiledTag = MODLOADER_BUILD_TAG;
-#else
-	const char* compiledTag = "";
-#endif
+	// Central manifest pass — checks for a new modloader release and notifies
+	// the user.  Skipped on dev builds (no URL).
+	RunCentralManifestUpdate(cfg);
 
-	// Read stored tag (written by a previous auto-update run)
-	char storedTag[256]{};
-	ReadStoredBuildTag(storedTag, sizeof(storedTag));
-	LogToFile::Debug("[AutoUpdate] Stored build_tag:   %s", storedTag[0] ? storedTag : "<none>");
-	LogToFile::Debug("[AutoUpdate] Compiled build_tag: %s", compiledTag[0] ? compiledTag : "<none>");
-
-	// Determine the effective local version:
-	//   • If update_state.ini exists, use it — it tracks what the auto-updater
-	//     last downloaded and is authoritative after the first run.
-	//   • Otherwise fall back to the tag compiled into this DLL.  On a fresh
-	//     install from a ZIP the DLL and all plugin DLLs share the same build
-	//     tag, so if it matches the manifest there is nothing to download.
-	const char* effectiveLocalTag = storedTag[0] ? storedTag : compiledTag;
-
-	// Parse plugin list
-	auto pluginEntries = JsonExtractObjectArray(manifest, "plugins");
-	LogToFile::Info("[AutoUpdate] Manifest lists %zu plugin(s)", pluginEntries.size());
-
-	if (pluginEntries.empty())
-	{
-		LogToFile::Warn("[AutoUpdate] Manifest contains no plugin entries — nothing to update");
-		return;
-	}
-
-	// Log the full plugin list at debug level
-	for (size_t idx = 0; idx < pluginEntries.size(); ++idx)
-	{
-		std::string n = JsonExtractString(pluginEntries[idx], "name");
-		std::string f = JsonExtractString(pluginEntries[idx], "filename");
-		std::string a = JsonExtractString(pluginEntries[idx], "asset_filename");
-		if (a.empty()) a = f; // backwards compat
-		LogToFile::Debug("[AutoUpdate]   [%zu] name='%s'  filename='%s'  asset='%s'  url='%s%s'",
-			idx, n.c_str(), f.c_str(), a.c_str(), baseDownloadUrl.c_str(), a.c_str());
-	}
-
-	bool tagsMatch = (effectiveLocalTag[0] != '\0' &&
-	                  strcmp(effectiveLocalTag, remoteBuildTag.c_str()) == 0);
-
-	if (tagsMatch)
-	{
-		// Already up to date — plugins on disk match the manifest version.
-		LogToFile::Info("[AutoUpdate] Already up to date (%s)", effectiveLocalTag);
-
-		// If we matched via the compiled tag rather than a stored tag, this is
-		// the first boot after a fresh install from a ZIP.  Write update_state.ini
-		// now so future boots skip the manifest comparison entirely.
-		if (storedTag[0] == '\0' && compiledTag[0] != '\0')
-		{
-			LogToFile::Debug("[AutoUpdate] First run after fresh install — writing update_state.ini");
-			WriteStoredBuildTag(compiledTag);
-		}
-
-		// Log per-plugin status at debug level for diagnostics
-		for (const auto& entry : pluginEntries)
-		{
-			std::string filename = JsonExtractString(entry, "filename");
-			if (filename.empty()) continue;
-
-			wchar_t wFilename[256]{};
-			MultiByteToWideChar(CP_UTF8, 0, filename.c_str(), -1, wFilename, 256);
-
-			wchar_t dllPath[MAX_PATH]{};
-			swprintf_s(dllPath, L"%s\\%s", pluginsDir, wFilename);
-
-			if (GetFileAttributesW(dllPath) == INVALID_FILE_ATTRIBUTES)
-				LogToFile::Debug("[AutoUpdate]   '%s' — not installed, skipping", filename.c_str());
-			else
-				LogToFile::Debug("[AutoUpdate]   '%s' — installed and up to date", filename.c_str());
-		}
-
-		return;
-	}
-
-	LogToFile::Info("[AutoUpdate] Update available: [%s] -> [%s]",
-		effectiveLocalTag[0] ? effectiveLocalTag : "<none>", remoteBuildTag.c_str());
-
-	// Download each plugin entry — but ONLY if the user already has it installed.
-	// Plugins absent from disk were deliberately not installed and must not be
-	// force-downloaded just because they appear in the manifest.
-	int downloaded = 0;
-	int skipped    = 0;
-	int failed     = 0;
-
-	for (const auto& entry : pluginEntries)
-	{
-		std::string name        = JsonExtractString(entry, "name");
-		std::string filename    = JsonExtractString(entry, "filename");
-		const char* displayName = name.empty() ? filename.c_str() : name.c_str();
-
-		if (filename.empty())
-		{
-			LogToFile::Warn("[AutoUpdate] Skipping malformed plugin entry — missing 'filename'");
-			++failed;
-			continue;
-		}
-
-		// asset_filename is the name of the GitHub release asset (e.g. "ServerUtility-Server.dll").
-		// filename is the local name used on disk (e.g. "ServerUtility.dll").
-		// They differ because both Client and Server variants are uploaded to the same
-		// release, so the assets carry a variant suffix to avoid collisions.
-		std::string assetFilename = JsonExtractString(entry, "asset_filename");
-		if (assetFilename.empty())
-			assetFilename = filename; // backwards compat with manifests that lack the field
-
-		// Build the download URL from the base (derived from the manifest URL)
-		// and the asset filename, e.g. ".../TAG/ServerUtility-Server.dll"
-		std::string downloadUrl = baseDownloadUrl + assetFilename;
-
-		wchar_t wFilename[256]{};
-		MultiByteToWideChar(CP_UTF8, 0, filename.c_str(), -1, wFilename, 256);
-
-		// First gate: only update plugins the user has chosen to install
-		wchar_t dllPath[MAX_PATH]{};
-		swprintf_s(dllPath, L"%s\\%s", pluginsDir, wFilename);
-		if (GetFileAttributesW(dllPath) == INVALID_FILE_ATTRIBUTES)
-		{
-			LogToFile::Debug("[AutoUpdate] '%s' — not installed on disk, skipping", displayName);
-			++skipped;
-			continue;
-		}
-
-		LogToFile::Info("[AutoUpdate] Updating %s ...", displayName);
-
-		if (DownloadPlugin(downloadUrl.c_str(), pluginsDir, wFilename, displayName))
-		{
-			LogToFile::Info("[AutoUpdate] %s — updated successfully", displayName);
-			++downloaded;
-		}
-		else
-		{
-			LogToFile::Warn("[AutoUpdate] %s — update FAILED; existing file will be kept and loaded", displayName);
-			++failed;
-		}
-	}
-
-	LogToFile::Info("[AutoUpdate] Pass complete: %d downloaded, %d skipped, %d failed",
-		downloaded, skipped, failed);
-
-	// Only persist the new build tag when everything succeeded
-	if (failed == 0)
-	{
-		WriteStoredBuildTag(remoteBuildTag.c_str());
-		LogToFile::Info("[AutoUpdate] Build tag updated to [%s]", remoteBuildTag.c_str());
-	}
-	else
-	{
-		LogToFile::Warn("[AutoUpdate] %d plugin(s) failed to download — build tag NOT updated; "
-			"update will be retried on next boot", failed);
-		LogToFile::Info("[AutoUpdate] Existing plugins on disk will be loaded as-is");
-	}
+	// Per-plugin sidecar pass — updates any plugin that ships a .json sidecar
+	// pointing at its own manifest.  Runs regardless of whether a central
+	// manifest URL is configured, so third-party plugins always get checked.
+	RunPerPluginUpdates(pluginsDir);
 }

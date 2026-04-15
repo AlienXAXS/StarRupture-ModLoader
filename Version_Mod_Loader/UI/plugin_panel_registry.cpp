@@ -101,6 +101,21 @@ namespace UI::PluginPanelRegistry
             e->isOpen = false;
     }
 
+    void CloseAllPanels()
+    {
+        std::lock_guard<std::mutex> lock(s_mutex);
+        for (auto& e : s_panels)
+            e.isOpen = false;
+    }
+
+    bool AnyPanelOpen()
+    {
+        std::lock_guard<std::mutex> lock(s_mutex);
+        for (const auto& e : s_panels)
+            if (e.isOpen) return true;
+        return false;
+    }
+
     void RenderPanelButtons(IModLoaderImGui* imgui)
     {
         std::lock_guard<std::mutex> lock(s_mutex);

@@ -1,0 +1,3 @@
+[submodule "StarRupture SDK"]
+	path = StarRupture SDK
+	url = https://github.com/AlienXAXS/StarRupture-Game-SDK.git

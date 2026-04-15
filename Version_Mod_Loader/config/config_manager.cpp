@@ -21,7 +21,7 @@ namespace ModLoaderLogger
 
 	struct PluginFileCache
 	{
-		FILETIME  lastMtime        = {};
+		FILETIME lastMtime = {};
 		ULONGLONG lastMtimeCheckMs = 0; // GetTickCount64() of last mtime check
 		std::unordered_map<std::string, std::string> entries; // "Section\nKey" → value
 	};
@@ -61,14 +61,14 @@ namespace ModLoaderLogger
 	}
 
 	// Build path to plugin's config file
-	static bool GetPluginConfigPath(const char* pluginName, wchar_t* outPath, int maxLen)
+	static bool GetPluginConfigPath(const IPluginSelf* self, wchar_t* outPath, int maxLen)
 	{
-		if (!pluginName || !outPath || maxLen < MAX_PATH)
+		if (!self || !self->name || !outPath || maxLen < MAX_PATH)
 			return false;
 
 		// Convert plugin name to wide string
 		wchar_t wPluginName[256];
-		MultiByteToWideChar(CP_UTF8, 0, pluginName, -1, wPluginName, 256);
+		MultiByteToWideChar(CP_UTF8, 0, self->name, -1, wPluginName, 256);
 
 		// Build path: Plugins\config\PluginName.ini
 		swprintf_s(outPath, maxLen, L"%s\\%s.ini", g_configDirectory, wPluginName);
@@ -76,13 +76,14 @@ namespace ModLoaderLogger
 	}
 
 	// Implementation functions
-	static bool ConfigReadString(const char* pluginName, const char* section, const char* key, char* outValue, int maxLen, const char* defaultValue)
+	static bool ConfigReadString(const IPluginSelf* self, const char* section, const char* key, char* outValue,
+	                             int maxLen, const char* defaultValue)
 	{
-		if (!g_configInitialized || !pluginName || !section || !key || !outValue)
+		if (!g_configInitialized || !self || !self->name || !section || !key || !outValue)
 			return false;
 
 		wchar_t configPath[MAX_PATH];
-		if (!GetPluginConfigPath(pluginName, configPath, MAX_PATH))
+		if (!GetPluginConfigPath(self, configPath, MAX_PATH))
 			return false;
 
 		// Build "Section\nKey" cache key
@@ -122,13 +123,13 @@ namespace ModLoaderLogger
 		return true;
 	}
 
-	static bool ConfigWriteString(const char* pluginName, const char* section, const char* key, const char* value)
+	static bool ConfigWriteString(const IPluginSelf* self, const char* section, const char* key, const char* value)
 	{
-		if (!g_configInitialized || !pluginName || !section || !key || !value)
+		if (!g_configInitialized || !self || !self->name || !section || !key || !value)
 			return false;
 
 		wchar_t configPath[MAX_PATH];
-		if (!GetPluginConfigPath(pluginName, configPath, MAX_PATH))
+		if (!GetPluginConfigPath(self, configPath, MAX_PATH))
 			return false;
 
 		wchar_t wSection[256], wKey[256], wValue[1024];
@@ -157,13 +158,13 @@ namespace ModLoaderLogger
 		return result != 0;
 	}
 
-	static int ConfigReadInt(const char* pluginName, const char* section, const char* key, int defaultValue)
+	static int ConfigReadInt(const IPluginSelf* self, const char* section, const char* key, int defaultValue)
 	{
-		if (!g_configInitialized || !pluginName || !section || !key)
+		if (!g_configInitialized || !self || !self->name || !section || !key)
 			return defaultValue;
 
 		wchar_t configPath[MAX_PATH];
-		if (!GetPluginConfigPath(pluginName, configPath, MAX_PATH))
+		if (!GetPluginConfigPath(self, configPath, MAX_PATH))
 			return defaultValue;
 
 		// Convert to wide strings
@@ -178,56 +179,56 @@ namespace ModLoaderLogger
 		return value;
 	}
 
-	static bool ConfigWriteInt(const char* pluginName, const char* section, const char* key, int value)
+	static bool ConfigWriteInt(const IPluginSelf* self, const char* section, const char* key, int value)
 	{
 		char buffer[32];
 		snprintf(buffer, sizeof(buffer), "%d", value);
-		return ConfigWriteString(pluginName, section, key, buffer);
+		return ConfigWriteString(self, section, key, buffer);
 	}
 
-	static float ConfigReadFloat(const char* pluginName, const char* section, const char* key, float defaultValue)
+	static float ConfigReadFloat(const IPluginSelf* self, const char* section, const char* key, float defaultValue)
 	{
 		char defaultStr[32];
 		snprintf(defaultStr, sizeof(defaultStr), "%.6f", defaultValue);
 
 		char valueStr[32];
-		if (!ConfigReadString(pluginName, section, key, valueStr, sizeof(valueStr), defaultStr))
+		if (!ConfigReadString(self, section, key, valueStr, sizeof(valueStr), defaultStr))
 			return defaultValue;
 
 		return static_cast<float>(atof(valueStr));
 	}
 
-	static bool ConfigWriteFloat(const char* pluginName, const char* section, const char* key, float value)
+	static bool ConfigWriteFloat(const IPluginSelf* self, const char* section, const char* key, float value)
 	{
 		char buffer[32];
 		snprintf(buffer, sizeof(buffer), "%.6f", value);
-		return ConfigWriteString(pluginName, section, key, buffer);
+		return ConfigWriteString(self, section, key, buffer);
 	}
 
-	static bool ConfigReadBool(const char* pluginName, const char* section, const char* key, bool defaultValue)
+	static bool ConfigReadBool(const IPluginSelf* self, const char* section, const char* key, bool defaultValue)
 	{
 		char buf[16] = {};
 		const char* def = defaultValue ? "1" : "0";
-		if (!ConfigReadString(pluginName, section, key, buf, sizeof(buf), def))
+		if (!ConfigReadString(self, section, key, buf, sizeof(buf), def))
 			return defaultValue;
 		return (_stricmp(buf, "true") == 0 ||
-		        _stricmp(buf, "yes")  == 0 ||
-		        strcmp(buf, "1")      == 0);
+			_stricmp(buf, "yes") == 0 ||
+			strcmp(buf, "1") == 0);
 	}
 
-	static bool ConfigWriteBool(const char* pluginName, const char* section, const char* key, bool value)
+	static bool ConfigWriteBool(const IPluginSelf* self, const char* section, const char* key, bool value)
 	{
-		return ConfigWriteInt(pluginName, section, key, value ? 1 : 0);
+		return ConfigWriteInt(self, section, key, value ? 1 : 0);
 	}
 
 	// Check if a key exists in the config file
-	static bool ConfigKeyExists(const char* pluginName, const char* section, const char* key)
+	static bool ConfigKeyExists(const IPluginSelf* self, const char* section, const char* key)
 	{
-		if (!g_configInitialized || !pluginName || !section || !key)
+		if (!g_configInitialized || !self || !self->name || !section || !key)
 			return false;
 
 		wchar_t configPath[MAX_PATH];
-		if (!GetPluginConfigPath(pluginName, configPath, MAX_PATH))
+		if (!GetPluginConfigPath(self, configPath, MAX_PATH))
 			return false;
 
 		// Convert section and key to wide strings
@@ -236,7 +237,7 @@ namespace ModLoaderLogger
 		MultiByteToWideChar(CP_UTF8, 0, key, -1, wKey, 256);
 
 		// Use a unique default that's unlikely to be a real value
-		const wchar_t* uniqueDefault = L"__CONFIG_KEY_NOT_FOUND__";
+		auto uniqueDefault = L"__CONFIG_KEY_NOT_FOUND__";
 		wchar_t wValue[1024];
 
 		EnterCriticalSection(&g_configLock);
@@ -254,7 +255,7 @@ namespace ModLoaderLogger
 	//   When a key is present in the map its existing value is written instead of
 	//   the schema default, preserving user settings when reformatting an existing file.
 	static void WriteFormattedConfig(const ConfigSchema* schema, const wchar_t* configPath,
-		const std::unordered_map<std::string, std::string>* overrides = nullptr)
+	                                 const std::unordered_map<std::string, std::string>* overrides = nullptr)
 	{
 		std::string content;
 		const char* lastSection = nullptr;
@@ -291,13 +292,13 @@ namespace ModLoaderLogger
 				switch (entry.type)
 				{
 				case ConfigValueType::Boolean:
-				{
-					bool b = (_stricmp(entry.defaultValue, "true") == 0 ||
-						_stricmp(entry.defaultValue, "1") == 0 ||
-						_stricmp(entry.defaultValue, "yes") == 0);
-					snprintf(valueBuf, sizeof(valueBuf), "%d", b ? 1 : 0);
-					break;
-				}
+					{
+						bool b = (_stricmp(entry.defaultValue, "true") == 0 ||
+							_stricmp(entry.defaultValue, "1") == 0 ||
+							_stricmp(entry.defaultValue, "yes") == 0);
+						snprintf(valueBuf, sizeof(valueBuf), "%d", b ? 1 : 0);
+						break;
+					}
 				case ConfigValueType::Integer:
 					snprintf(valueBuf, sizeof(valueBuf), "%d", atoi(entry.defaultValue));
 					break;
@@ -357,38 +358,38 @@ namespace ModLoaderLogger
 	}
 
 	// Helper to convert default value string to appropriate type and write
-	static void WriteDefaultValue(const char* pluginName, const ConfigEntry& entry)
+	static void WriteDefaultValue(const IPluginSelf* self, const ConfigEntry& entry)
 	{
 		switch (entry.type)
 		{
 		case ConfigValueType::String:
-			ConfigWriteString(pluginName, entry.section, entry.key, entry.defaultValue);
+			ConfigWriteString(self, entry.section, entry.key, entry.defaultValue);
 			break;
 		case ConfigValueType::Integer:
-			ConfigWriteInt(pluginName, entry.section, entry.key, atoi(entry.defaultValue));
+			ConfigWriteInt(self, entry.section, entry.key, atoi(entry.defaultValue));
 			break;
 		case ConfigValueType::Float:
-			ConfigWriteFloat(pluginName, entry.section, entry.key, static_cast<float>(atof(entry.defaultValue)));
+			ConfigWriteFloat(self, entry.section, entry.key, static_cast<float>(atof(entry.defaultValue)));
 			break;
 		case ConfigValueType::Boolean:
-		{
-			bool boolVal = (_stricmp(entry.defaultValue, "true") == 0 ||
-				_stricmp(entry.defaultValue, "1") == 0 ||
-				_stricmp(entry.defaultValue, "yes") == 0);
-			ConfigWriteBool(pluginName, entry.section, entry.key, boolVal);
-		}
-		break;
+			{
+				bool boolVal = (_stricmp(entry.defaultValue, "true") == 0 ||
+					_stricmp(entry.defaultValue, "1") == 0 ||
+					_stricmp(entry.defaultValue, "yes") == 0);
+				ConfigWriteBool(self, entry.section, entry.key, boolVal);
+			}
+			break;
 		}
 	}
 
 	// Validate config and add missing entries
-	static void ConfigValidateConfig(const char* pluginName, const ConfigSchema* schema)
+	static void ConfigValidateConfig(const IPluginSelf* self, const ConfigSchema* schema)
 	{
-		if (!g_configInitialized || !pluginName || !schema || !schema->entries)
+		if (!g_configInitialized || !self || !self->name || !schema || !schema->entries)
 			return;
 
 		wchar_t wPluginName[256];
-		MultiByteToWideChar(CP_UTF8, 0, pluginName, -1, wPluginName, 256);
+		MultiByteToWideChar(CP_UTF8, 0, self->name, -1, wPluginName, 256);
 
 		int addedCount = 0;
 
@@ -397,21 +398,21 @@ namespace ModLoaderLogger
 			const ConfigEntry& entry = schema->entries[i];
 
 			// Check if key exists
-			if (!ConfigKeyExists(pluginName, entry.section, entry.key))
+			if (!ConfigKeyExists(self, entry.section, entry.key))
 			{
 				// Key missing - add with default value
-				WriteDefaultValue(pluginName, entry);
+				WriteDefaultValue(self, entry);
 				addedCount++;
 
 				LogDebug(L"[ConfigManager] Added missing config entry: %S.%S = %S",
-					entry.section, entry.key, entry.defaultValue);
+				         entry.section, entry.key, entry.defaultValue);
 			}
 		}
 
 		if (addedCount > 0)
 		{
 			LogDebug(L"[ConfigManager] Validated config for '%s': added %d missing entries",
-				wPluginName, addedCount);
+			         wPluginName, addedCount);
 		}
 		else
 		{
@@ -420,23 +421,23 @@ namespace ModLoaderLogger
 	}
 
 	// Initialize config from schema
-	static bool ConfigInitializeFromSchema(const char* pluginName, const ConfigSchema* schema)
+	static bool ConfigInitializeFromSchema(const IPluginSelf* self, const ConfigSchema* schema)
 	{
-		if (!g_configInitialized || !pluginName || !schema || !schema->entries)
+		if (!g_configInitialized || !self || !self->name || !schema || !schema->entries)
 		{
 			LogError(L"[ConfigManager] InitializeFromSchema failed: invalid parameters");
 			return false;
 		}
 
-		g_schemas[pluginName] = schema;
+		g_schemas[self->name] = schema;
 
 		wchar_t configPath[MAX_PATH];
-		if (!GetPluginConfigPath(pluginName, configPath, MAX_PATH))
+		if (!GetPluginConfigPath(self, configPath, MAX_PATH))
 			return false;
 
 		// Convert plugin name for logging
 		wchar_t wPluginName[256];
-		MultiByteToWideChar(CP_UTF8, 0, pluginName, -1, wPluginName, 256);
+		MultiByteToWideChar(CP_UTF8, 0, self->name, -1, wPluginName, 256);
 
 		// Check if config file exists
 		bool configExists = (GetFileAttributesW(configPath) != INVALID_FILE_ATTRIBUTES);
@@ -448,60 +449,57 @@ namespace ModLoaderLogger
 			LogDebug(L"[ConfigManager] Config created: %s", configPath);
 			return true;
 		}
+		// Read all current values from the existing file, then rewrite it with
+		// comment lines above each key. This adds comments to existing configs
+		// without losing any user-configured values.
+		LogDebug(L"[ConfigManager] Reformatting config for '%s' with comments, preserving values...", wPluginName);
+
+		std::unordered_map<std::string, std::string> currentValues;
+		wchar_t wSection[256], wKey[256], wValue[1024];
+		auto sentinel = L"__MISSING__";
+
+		for (int i = 0; i < schema->entryCount; ++i)
+		{
+			const ConfigEntry& entry = schema->entries[i];
+			MultiByteToWideChar(CP_UTF8, 0, entry.section, -1, wSection, 256);
+			MultiByteToWideChar(CP_UTF8, 0, entry.key, -1, wKey, 256);
+
+			EnterCriticalSection(&g_configLock);
+			GetPrivateProfileStringW(wSection, wKey, sentinel, wValue, 1024, configPath);
+			LeaveCriticalSection(&g_configLock);
+
+			if (wcscmp(wValue, sentinel) != 0)
+			{
+				char value[1024];
+				WideCharToMultiByte(CP_UTF8, 0, wValue, -1, value, sizeof(value), nullptr, nullptr);
+				std::string cacheKey = entry.section;
+				cacheKey += '\n';
+				cacheKey += entry.key;
+				currentValues[cacheKey] = value;
+			}
+		}
+
+		FILETIME mtimeBefore = GetFileMtime(configPath);
+		WriteFormattedConfig(schema, configPath, &currentValues);
+		FILETIME mtimeAfter = GetFileMtime(configPath);
+
+		bool fileChanged = (mtimeBefore.dwLowDateTime != mtimeAfter.dwLowDateTime ||
+			mtimeBefore.dwHighDateTime != mtimeAfter.dwHighDateTime);
+
+		if (fileChanged)
+		{
+			// Invalidate the file cache so the next read picks up the rewritten file
+			EnterCriticalSection(&g_configLock);
+			g_fileCache.erase(configPath);
+			LeaveCriticalSection(&g_configLock);
+			LogDebug(L"[ConfigManager] Config reformatted for '%s' (%zu values preserved)",
+			         wPluginName, currentValues.size());
+		}
 		else
 		{
-			// Read all current values from the existing file, then rewrite it with
-			// comment lines above each key. This adds comments to existing configs
-			// without losing any user-configured values.
-			LogDebug(L"[ConfigManager] Reformatting config for '%s' with comments, preserving values...", wPluginName);
-
-			std::unordered_map<std::string, std::string> currentValues;
-			wchar_t wSection[256], wKey[256], wValue[1024];
-			const wchar_t* sentinel = L"__MISSING__";
-
-			for (int i = 0; i < schema->entryCount; ++i)
-			{
-				const ConfigEntry& entry = schema->entries[i];
-				MultiByteToWideChar(CP_UTF8, 0, entry.section, -1, wSection, 256);
-				MultiByteToWideChar(CP_UTF8, 0, entry.key,     -1, wKey,     256);
-
-				EnterCriticalSection(&g_configLock);
-				GetPrivateProfileStringW(wSection, wKey, sentinel, wValue, 1024, configPath);
-				LeaveCriticalSection(&g_configLock);
-
-				if (wcscmp(wValue, sentinel) != 0)
-				{
-					char value[1024];
-					WideCharToMultiByte(CP_UTF8, 0, wValue, -1, value, sizeof(value), nullptr, nullptr);
-					std::string cacheKey = entry.section;
-					cacheKey += '\n';
-					cacheKey += entry.key;
-					currentValues[cacheKey] = value;
-				}
-			}
-
-			FILETIME mtimeBefore = GetFileMtime(configPath);
-			WriteFormattedConfig(schema, configPath, &currentValues);
-			FILETIME mtimeAfter = GetFileMtime(configPath);
-
-			bool fileChanged = (mtimeBefore.dwLowDateTime  != mtimeAfter.dwLowDateTime ||
-			                    mtimeBefore.dwHighDateTime != mtimeAfter.dwHighDateTime);
-
-			if (fileChanged)
-			{
-				// Invalidate the file cache so the next read picks up the rewritten file
-				EnterCriticalSection(&g_configLock);
-				g_fileCache.erase(configPath);
-				LeaveCriticalSection(&g_configLock);
-				LogDebug(L"[ConfigManager] Config reformatted for '%s' (%zu values preserved)",
-					wPluginName, currentValues.size());
-			}
-			else
-			{
-				LogDebug(L"[ConfigManager] Config for '%s' already up to date, no rewrite needed", wPluginName);
-			}
-			return true;
+			LogDebug(L"[ConfigManager] Config for '%s' already up to date, no rewrite needed", wPluginName);
 		}
+		return true;
 	}
 
 	// Global config interface instance

@@ -24,7 +24,10 @@ namespace Splash
 
     // Switch the progress bar to red and fill it completely.
     // Call before displaying an error/countdown message.
-    void SetErrorMode();
+    // Pass showCloseButton=false when the game will continue without mods
+    // (e.g. version mismatch) so the splash closes on its own rather than
+    // requiring the user to click a "close game" button.
+    void SetErrorMode(bool showCloseButton = true);
 
     // Close the splash window and clean up the background thread.
     // Blocks briefly until the window thread exits.

@@ -3,227 +3,85 @@
 #include <windows.h>
 #include <cstdint>
 
-// Plugin interface version history - increment MAX when new hooks/features are added.
-// Increment MIN only when an ABI-breaking change is unavoidable.
-// Loader accepts any plugin whose interfaceVersion is in [MIN, MAX].
-// Plugins compiled against older (but still supported) headers load without recompilation
-// because all interface structs are append-only — new fields are always added at the end.
-// v2: Added RegisterEngineShutdownCallback / UnregisterEngineShutdownCallback to IPluginHooks
-// v3: Replaced std::vector return types in IPluginScanner with caller-buffer API to fix
-//     cross-DLL heap corruption (EXCEPTION_ACCESS_VIOLATION on plugin load)
-// v4: Added FindXrefsToAddress / FindXrefsToAddressInModule / FindXrefsToAddressInMainModule
-//     to IPluginScanner for function-pointer cross-reference scanning
-// v5: Added EngineAlloc / EngineFree / IsEngineAllocatorAvailable to IPluginHooks
-//     for safe FString / engine-owned memory manipulation from plugins
-// v6: Added RegisterAnyWorldBeginPlayCallback / UnregisterAnyWorldBeginPlayCallback to IPluginHooks
-//     for receiving notifications when ANY world begins play (not just ChimeraMain)
-// v7: Added RegisterSaveLoadedCallback / UnregisterSaveLoadedCallback to IPluginHooks
-//     for receiving notifications when UCrMassSaveSubsystem::OnSaveLoaded fires (save fully loaded)
-// v8: Added RegisterExperienceLoadCompleteCallback / UnregisterExperienceLoadCompleteCallback
-//     to IPluginHooks for receiving notifications when UCrExperienceManagerComponent::OnExperienceLoadComplete fires
-// v9: Added RegisterEngineTickCallback / UnregisterEngineTickCallback to IPluginHooks
-//     for receiving per-frame game-thread tick notifications (UGameEngine::Tick)
-// v10: Added RegisterActorBeginPlayCallback / UnregisterActorBeginPlayCallback
-//      to IPluginHooks for receiving notifications when any AActor::BeginPlay fires
-// v11: Added RegisterPlayerJoinedCallback / UnregisterPlayerJoinedCallback
-//      to IPluginHooks for receiving notifications when ACrGameModeBase::PostLogin fires
-//      (player controller fully connected and ready on server)
-// v12: Added RegisterPlayerLeftCallback / UnregisterPlayerLeftCallback
-//      to IPluginHooks for receiving notifications when ACrGameModeBase::Logout fires
-//      (player controller about to be destroyed — still valid at callback time)
-// v14: Replaced flat function-pointer fields (v1-v12) with typed sub-interface pointers.
-//      IPluginHooks now contains only 7 sub-interface pointers — all functionality
-//      accessed via hooks->Group->Method(...). MIN bumped to 14 (ABI break).
-//      Added 10 named callback typedefs (PluginEngineInitCallback, etc.).
-//      Sub-interfaces:
-//        Spawner  — Before/After hooks for ActivateSpawner, DeactivateSpawner, DoSpawning
-//                   (Before callbacks return bool; true cancels + suppresses After callbacks)
-//        Hooks    — low-level hook install/remove/query  (hooks->Hooks->Install)
-//        Memory   — patch/nop/read/alloc utilities       (hooks->Memory->Patch)
-//        Engine   — init/shutdown/tick subscriptions     (hooks->Engine->RegisterOnInit)
-//        World    — world-begin-play/save/experience     (hooks->World->RegisterOnWorldBeginPlay)
-//        Players  — player joined/left subscriptions     (hooks->Players->RegisterOnPlayerJoined)
-//        Actors   — actor begin-play subscriptions       (hooks->Actors->RegisterOnActorBeginPlay)
-// v15: Added EModKey enum, EModKeyEvent enum, PluginKeybindCallback typedef,
-//      IPluginInputEvents sub-interface, and Input pointer in IPluginHooks.
-//      Input sub-interface supports registration by EModKey enum or by UE key name string.
-//      Input is non-null on client builds only; always nullptr on server/generic builds.
-//        Input    — keybind event subscriptions          (hooks->Input->RegisterKeybind)
-//      Also added (folded into v15 before first release):
-//      IModLoaderImGui function table, PluginImGuiRenderCallback, PluginPanelDesc, PanelHandle,
-//      PluginConfigChangedCallback, IPluginUIEvents sub-interface, and UI pointer in IPluginHooks.
-//      UI is non-null on client builds only; always nullptr on server/generic builds.
-//        UI       — custom panel registration + config-change callbacks (hooks->UI->RegisterPanel)
-//      RegisterPanel now returns a PanelHandle (opaque pointer stable for the plugin's lifetime).
-//      SetPanelOpen / SetPanelClose both take PanelHandle instead of a title string, so a plugin
-//      can only open/close its own panels (it cannot affect panels owned by other plugins).
-#define PLUGIN_INTERFACE_VERSION_MIN 14  // oldest plugin ABI still accepted by this loader
-#define PLUGIN_INTERFACE_VERSION_MAX 15  // current interface version (this header)
-#define PLUGIN_INTERFACE_VERSION PLUGIN_INTERFACE_VERSION_MAX  // alias used by plugins in PluginInfo
+// v19: Introduced IPluginSelf.  MIN bumped to 19.
+// v20: Added OnBeforeWorldEndPlay / OnAfterWorldEndPlay.  MIN remains 19.
+// v21: Added IPluginNativePointers.  MIN remains 19.
+// v22: Added IPluginHttpServer (hooks->HttpServer).
+//   Static file route registration (AddRoute/RemoveRoute), raw-request
+//      filter hook (RegisterOnRawRequest/UnregisterOnRawRequest), and
+//  raw-response route registration (AddRawRoute/RemoveRawRoute).
+//      URL scheme: /<pluginName>/<routeName>/...  (case-insensitive).
+//      Static files are served from <exe_dir>\Plugins\<pluginName>\<folderName>\.
+//      Raw-response routes let plugins handle arbitrary URL prefixes and write
+//      any response body + content-type directly (e.g. JSON API endpoints).
+//   Server builds only; nullptr on client/generic builds.
+//      MIN remains 19.
+#define PLUGIN_INTERFACE_VERSION_MIN 19
+#define PLUGIN_INTERFACE_VERSION_MAX 22
+#define PLUGIN_INTERFACE_VERSION PLUGIN_INTERFACE_VERSION_MAX
 
-// Log levels
-enum class PluginLogLevel
-{
-    Trace = 0,
-    Debug = 1,
-    Info = 2,
-    Warn = 3,
-    Error = 4
-};
+enum class PluginLogLevel { Trace = 0, Debug = 1, Info = 2, Warn = 3, Error = 4 };
+enum class ConfigValueType { String, Integer, Float, Boolean };
 
-// Config value types
-enum class ConfigValueType
-{
-    String,
-    Integer,
-    Float,
-    Boolean
-};
-
-// Config entry definition for auto-generation
 struct ConfigEntry
 {
-    const char* section;      // INI section name (e.g., "General", "Advanced")
-    const char* key;          // INI key name
-    ConfigValueType type;     // Value type
-    const char* defaultValue; // Default value as string (converted based on type)
-    const char* description;  // Optional description/comment
-    float rangeMin;           // Slider min -- ignored when rangeMax <= rangeMin
-    float rangeMax;           // Slider max -- when rangeMax > rangeMin a slider is shown
+	const char* section;
+	const char* key;
+	ConfigValueType type;
+	const char* defaultValue;
+	const char* description;
+	float rangeMin;
+	float rangeMax;
 };
 
-// Config schema - defines all config entries for a plugin
-struct ConfigSchema
-{
-    const ConfigEntry* entries; // Array of config entries
-    int entryCount;          // Number of entries in array
-};
+struct ConfigSchema { const ConfigEntry* entries; int entryCount; };
 
-// Universal logger interface provided by mod loader
+struct IPluginSelf; // forward — defined after all sub-interfaces
+
 struct IPluginLogger
 {
-    // Log a message with the specified level
-    void (*Log)(PluginLogLevel level, const char* pluginName, const char* message);
-
-    // Convenience methods
-    void (*Trace)(const char* pluginName, const char* format, ...);
-    void (*Debug)(const char* pluginName, const char* format, ...);
-    void (*Info)(const char* pluginName, const char* format, ...);
-    void (*Warn)(const char* pluginName, const char* format, ...);
-    void (*Error)(const char* pluginName, const char* format, ...);
+	void (*Log)(PluginLogLevel level, const IPluginSelf* self, const char* message);
+	void (*Trace)(const IPluginSelf* self, const char* format, ...);
+	void (*Debug)(const IPluginSelf* self, const char* format, ...);
+	void (*Info) (const IPluginSelf* self, const char* format, ...);
+	void (*Warn) (const IPluginSelf* self, const char* format, ...);
+	void (*Error)(const IPluginSelf* self, const char* format, ...);
 };
 
-// Config manager interface provided by mod loader
 struct IPluginConfig
 {
-    // Read string value from plugin's config file
-    bool (*ReadString)(const char* pluginName, const char* section, const char* key, char* outValue, int maxLen, const char* defaultValue);
-
-    // Write string value to plugin's config file
-    bool (*WriteString)(const char* pluginName, const char* section, const char* key, const char* value);
-
-    // Read integer value from plugin's config file
-    int (*ReadInt)(const char* pluginName, const char* section, const char* key, int defaultValue);
-
-    // Write integer value to plugin's config file
-    bool (*WriteInt)(const char* pluginName, const char* section, const char* key, int value);
-
-    // Read float value from plugin's config file
-    float (*ReadFloat)(const char* pluginName, const char* section, const char* key, float defaultValue);
-
-    // Write float value to plugin's config file
-    bool (*WriteFloat)(const char* pluginName, const char* section, const char* key, float value);
-
-    // Read boolean value from plugin's config file
-    bool (*ReadBool)(const char* pluginName, const char* section, const char* key, bool defaultValue);
-
-    // Write boolean value to plugin's config file
-    bool (*WriteBool)(const char* pluginName, const char* section, const char* key, bool value);
-
-    // Initialize plugin config from schema
-    // Creates config file with defaults if it doesn't exist
-    // Returns true if config was loaded/created successfully
-    bool (*InitializeFromSchema)(const char* pluginName, const ConfigSchema* schema);
-
-    // Validate and repair config file based on schema
-    // Adds missing entries with defaults, preserves existing values
-    void (*ValidateConfig)(const char* pluginName, const ConfigSchema* schema);
+	bool  (*ReadString)(const IPluginSelf* self, const char* section, const char* key, char* outValue, int maxLen, const char* defaultValue);
+	bool  (*WriteString)(const IPluginSelf* self, const char* section, const char* key, const char* value);
+	int   (*ReadInt)(const IPluginSelf* self, const char* section, const char* key, int defaultValue);
+	bool  (*WriteInt)(const IPluginSelf* self, const char* section, const char* key, int value);
+	float (*ReadFloat)(const IPluginSelf* self, const char* section, const char* key, float defaultValue);
+	bool  (*WriteFloat)(const IPluginSelf* self, const char* section, const char* key, float value);
+	bool  (*ReadBool)(const IPluginSelf* self, const char* section, const char* key, bool defaultValue);
+	bool  (*WriteBool)(const IPluginSelf* self, const char* section, const char* key, bool value);
+	bool  (*InitializeFromSchema)(const IPluginSelf* self, const ConfigSchema* schema);
+	void  (*ValidateConfig)(const IPluginSelf* self, const ConfigSchema* schema);
 };
 
-// A single cross-reference result returned by the xref scanner.
-// isRelative: true  = relative near CALL (E8) or JMP (E9) instruction
-//             false = absolute 8-byte function pointer (vtable, data, etc.)
-struct PluginXRef
-{
-    uintptr_t address;    // Address of the referencing instruction / pointer slot
-    bool      isRelative; // true = relative CALL/JMP  |  false = absolute pointer
-};
+struct PluginXRef { uintptr_t address; bool isRelative; };
 
-// Pattern scanner interface provided by mod loader
-// Use IDA-style patterns: "48 89 5C 24 ?? 57 48 83 EC 20" where ?? is wildcard
 struct IPluginScanner
 {
-    // Find the first occurrence of a pattern in the main executable module
-    // Returns the absolute address of the match, or 0 if not found
-    uintptr_t (*FindPatternInMainModule)(const char* pattern);
-
-    // Find the first occurrence of a pattern in a specific module
-    // Returns the absolute address of the match, or 0 if not found
-    uintptr_t (*FindPatternInModule)(HMODULE module, const char* pattern);
-
-    // Find all occurrences of a pattern in the main executable module.
-    // Writes up to maxResults addresses into outAddresses and returns the total match count.
-    // Pass outAddresses=nullptr / maxResults=0 to query the count without writing.
-    // Safe across DLL boundaries - no heap ownership transfer.
-    int (*FindAllPatternsInMainModule)(const char* pattern, uintptr_t* outAddresses, int maxResults);
-
-    // Find all occurrences of a pattern in a specific module.
-    // Writes up to maxResults addresses into outAddresses and returns the total match count.
-    // Pass outAddresses=nullptr / maxResults=0 to query the count without writing.
-    // Safe across DLL boundaries - no heap ownership transfer.
-    int (*FindAllPatternsInModule)(HMODULE module, const char* pattern, uintptr_t* outAddresses, int maxResults);
-
-    // Find a unique pattern from a list of candidates
-    // Returns the address if exactly one pattern matches exactly once
-    // Returns 0 if no patterns match uniquely
-    // outPatternIndex (if provided) is set to the index of the matching pattern
-    uintptr_t (*FindUniquePattern)(const char** patterns, int patternCount, int* outPatternIndex);
-
-    // XRef scanning - find all locations that reference a given address.
-    //
-    // Two reference types are detected:
-    //   - Absolute 8-byte pointer: any 8-byte-aligned slot whose value equals
-    //     targetAddress exactly (vtables, function-pointer arrays, global data).
-    //   - Relative near CALL (E8) / JMP (E9): instruction whose computed target
-    //     equals targetAddress.
-    //
-    // All three variants use the caller-buffer pattern (safe across DLL boundaries):
-    //   pass outXRefs=nullptr / maxResults=0 to query the count only.
-    //
-    // FindXrefsToAddress          - scan an arbitrary memory range [start, start+size)
-    // FindXrefsToAddressInModule  - scan an entire PE module
-    // FindXrefsToAddressInMainModule - convenience: scans the main .exe module
-    int (*FindXrefsToAddress)(uintptr_t targetAddress, uintptr_t start, size_t size,
-                              PluginXRef* outXRefs, int maxResults);
-    int (*FindXrefsToAddressInModule)(uintptr_t targetAddress, HMODULE module,
-                                      PluginXRef* outXRefs, int maxResults);
-    int (*FindXrefsToAddressInMainModule)(uintptr_t targetAddress,
-                                          PluginXRef* outXRefs, int maxResults);
+	uintptr_t (*FindPatternInMainModule)(const char* pattern);
+	uintptr_t (*FindPatternInModule)(HMODULE module, const char* pattern);
+	int (*FindAllPatternsInMainModule)(const char* pattern, uintptr_t* outAddresses, int maxResults);
+	int (*FindAllPatternsInModule)(HMODULE module, const char* pattern, uintptr_t* outAddresses, int maxResults);
+	uintptr_t (*FindUniquePattern)(const char** patterns, int patternCount, int* outPatternIndex);
+	int (*FindXrefsToAddress)(uintptr_t targetAddress, uintptr_t start, size_t size, PluginXRef* outXRefs, int maxResults);
+	int (*FindXrefsToAddressInModule)(uintptr_t targetAddress, HMODULE module, PluginXRef* outXRefs, int maxResults);
+	int (*FindXrefsToAddressInMainModule)(uintptr_t targetAddress, PluginXRef* outXRefs, int maxResults);
 };
 
-// Opaque hook handle - plugins don't need to know the internals
 typedef void* HookHandle;
-
-// Forward declare SDK::UWorld for callback
 namespace SDK { class UWorld; }
 
-// ============================================================
-// Event callback typedefs (v14)
-// Named equivalents of the anonymous inline types used in the flat IPluginHooks
-// fields. Used by the typed sub-interface structs (IPluginEngineEvents, etc.)
-// and may also be used by plugin authors for cleaner callback declarations.
-// ============================================================
-
+// ---------------------------------------------------------------------------
+// Callback typedefs (v14+)
+// ---------------------------------------------------------------------------
 typedef void (*PluginEngineInitCallback)();
 typedef void (*PluginEngineShutdownCallback)();
 typedef void (*PluginEngineTickCallback)(float deltaSeconds);
@@ -234,378 +92,422 @@ typedef void (*PluginExperienceLoadCompleteCallback)();
 typedef void (*PluginActorBeginPlayCallback)(void* actor);
 typedef void (*PluginPlayerJoinedCallback)(void* playerController);
 typedef void (*PluginPlayerLeftCallback)(void* exitingController);
+typedef void (*PluginWorldEndPlayCallback)(SDK::UWorld* world, const char* worldName);
+typedef void (*PluginHUDPostRenderCallback)(void* hud);
+typedef void (*PluginNetworkMessageCallback)(const char* pluginName, const char* typeTag, const uint8_t* data, size_t size);
+typedef void (*PluginNetworkServerMessageCallback)(void* senderPlayerController, const char* pluginName, const char* typeTag, const uint8_t* data, size_t size);
+typedef void (*PluginGameThreadCallback)(void* context);
 
-// ============================================================
-// Spawner hook callback typedefs (v14)
-// Used with IPluginSpawnerHooks accessible via hooks->Spawner
-// ============================================================
-
-// AAbstractMassEnemySpawner::ActivateSpawner — Before: return true to cancel
 typedef bool (*PluginBeforeActivateSpawnerCallback)(void* spawner, bool bDisableAggroLock);
-// AAbstractMassEnemySpawner::ActivateSpawner — After: fires only if not cancelled
 typedef void (*PluginAfterActivateSpawnerCallback)(void* spawner, bool bDisableAggroLock);
-
-// AAbstractMassEnemySpawner::DeactivateSpawner — Before: return true to cancel
 typedef bool (*PluginBeforeDeactivateSpawnerCallback)(void* spawner, bool bPermanently);
-// AAbstractMassEnemySpawner::DeactivateSpawner — After: fires only if not cancelled
 typedef void (*PluginAfterDeactivateSpawnerCallback)(void* spawner, bool bPermanently);
-
-// AMassSpawner::DoSpawning — Before: return true to cancel the batch spawn
 typedef bool (*PluginBeforeDoSpawningCallback)(void* spawner);
-// AMassSpawner::DoSpawning — After: fires only if not cancelled
 typedef void (*PluginAfterDoSpawningCallback)(void* spawner);
 
-// ============================================================
-// IPluginHookUtils — low-level hook install/remove/query (v14)
-// Access via: hooks->Hooks->Install(...)
-// ============================================================
+// ---------------------------------------------------------------------------
+// Sub-interface structs (v14)
+// ---------------------------------------------------------------------------
 struct IPluginHookUtils
 {
-    HookHandle (*Install)(uintptr_t targetAddress, void* detourFunction, void** originalFunction);
-    void       (*Remove)(HookHandle handle);
-    bool       (*IsInstalled)(HookHandle handle);
+	HookHandle (*Install)(uintptr_t targetAddress, void* detourFunction, void** originalFunction);
+	void       (*Remove)(HookHandle handle);
+	bool       (*IsInstalled)(HookHandle handle);
 };
 
-// ============================================================
-// IPluginMemoryUtils — memory patch/nop/read/alloc utilities (v14)
-// Access via: hooks->Memory->Patch(...)
-// ============================================================
 struct IPluginMemoryUtils
 {
-    bool  (*Patch)(uintptr_t address, const uint8_t* data, size_t size);
-    bool  (*Nop)(uintptr_t address, size_t size);
-    bool  (*Read)(uintptr_t address, void* buffer, size_t size);
-    void* (*Alloc)(size_t count, uint32_t alignment);
-    void  (*Free)(void* ptr);
-    bool  (*IsAllocatorAvailable)();
+	bool  (*Patch)(uintptr_t address, const uint8_t* data, size_t size);
+	bool  (*Nop)(uintptr_t address, size_t size);
+	bool  (*Read)(uintptr_t address, void* buffer, size_t size);
+	void* (*Alloc)(size_t count, uint32_t alignment);
+	void  (*Free)(void* ptr);
+	bool  (*IsAllocatorAvailable)();
 };
 
-// ============================================================
-// IPluginEngineEvents — engine lifecycle event subscriptions (v14)
-// Access via: hooks->Engine->RegisterOnInit(...)
-// ============================================================
 struct IPluginEngineEvents
 {
-    void (*RegisterOnInit)(PluginEngineInitCallback);
-    void (*UnregisterOnInit)(PluginEngineInitCallback);
-    void (*RegisterOnShutdown)(PluginEngineShutdownCallback);
-    void (*UnregisterOnShutdown)(PluginEngineShutdownCallback);
-    void (*RegisterOnTick)(PluginEngineTickCallback);
-    void (*UnregisterOnTick)(PluginEngineTickCallback);
+	void      (*RegisterOnInit)(PluginEngineInitCallback);
+	void      (*UnregisterOnInit)(PluginEngineInitCallback);
+	void      (*RegisterOnShutdown)(PluginEngineShutdownCallback);
+	void      (*UnregisterOnShutdown)(PluginEngineShutdownCallback);
+	void      (*RegisterOnTick)(PluginEngineTickCallback);
+	void    (*UnregisterOnTick)(PluginEngineTickCallback);
+	uintptr_t (*GetStaticLoadObjectAddress)();           // v16
+	void      (*PostToGameThread)(PluginGameThreadCallback fn, void* context); // v18
 };
 
-// ============================================================
-// IPluginWorldEvents — world / level event subscriptions (v14)
-// Access via: hooks->World->RegisterOnWorldBeginPlay(...)
-// ============================================================
 struct IPluginWorldEvents
 {
-    void (*RegisterOnWorldBeginPlay)(PluginWorldBeginPlayCallback);
-    void (*UnregisterOnWorldBeginPlay)(PluginWorldBeginPlayCallback);
-    void (*RegisterOnAnyWorldBeginPlay)(PluginAnyWorldBeginPlayCallback);
-    void (*UnregisterOnAnyWorldBeginPlay)(PluginAnyWorldBeginPlayCallback);
-    void (*RegisterOnSaveLoaded)(PluginSaveLoadedCallback);
-    void (*UnregisterOnSaveLoaded)(PluginSaveLoadedCallback);
-    void (*RegisterOnExperienceLoadComplete)(PluginExperienceLoadCompleteCallback);
-    void (*UnregisterOnExperienceLoadComplete)(PluginExperienceLoadCompleteCallback);
+	void (*RegisterOnWorldBeginPlay)(PluginWorldBeginPlayCallback);
+	void (*UnregisterOnWorldBeginPlay)(PluginWorldBeginPlayCallback);
+	void (*RegisterOnAnyWorldBeginPlay)(PluginAnyWorldBeginPlayCallback);
+	void (*UnregisterOnAnyWorldBeginPlay)(PluginAnyWorldBeginPlayCallback);
+	void (*RegisterOnSaveLoaded)(PluginSaveLoadedCallback);
+	void (*UnregisterOnSaveLoaded)(PluginSaveLoadedCallback);
+	void (*RegisterOnExperienceLoadComplete)(PluginExperienceLoadCompleteCallback);
+	void (*UnregisterOnExperienceLoadComplete)(PluginExperienceLoadCompleteCallback);
+	void (*RegisterOnBeforeWorldEndPlay)(PluginWorldEndPlayCallback);   // v20
+	void (*UnregisterOnBeforeWorldEndPlay)(PluginWorldEndPlayCallback); // v20
+	void (*RegisterOnAfterWorldEndPlay)(PluginWorldEndPlayCallback);    // v20
+	void (*UnregisterOnAfterWorldEndPlay)(PluginWorldEndPlayCallback);  // v20
 };
 
-// ============================================================
-// IPluginPlayerEvents — player join/leave event subscriptions (v14)
-// Access via: hooks->Players->RegisterOnPlayerJoined(...)
-// ============================================================
 struct IPluginPlayerEvents
 {
-    void (*RegisterOnPlayerJoined)(PluginPlayerJoinedCallback);
-    void (*UnregisterOnPlayerJoined)(PluginPlayerJoinedCallback);
-    void (*RegisterOnPlayerLeft)(PluginPlayerLeftCallback);
-    void (*UnregisterOnPlayerLeft)(PluginPlayerLeftCallback);
+	void (*RegisterOnPlayerJoined)(PluginPlayerJoinedCallback);
+	void (*UnregisterOnPlayerJoined)(PluginPlayerJoinedCallback);
+	void (*RegisterOnPlayerLeft)(PluginPlayerLeftCallback);
+	void (*UnregisterOnPlayerLeft)(PluginPlayerLeftCallback);
 };
 
-// ============================================================
-// IPluginActorEvents — actor lifecycle event subscriptions (v14)
-// Access via: hooks->Actors->RegisterOnActorBeginPlay(...)
-// ============================================================
 struct IPluginActorEvents
 {
-    void (*RegisterOnActorBeginPlay)(PluginActorBeginPlayCallback);
-    void (*UnregisterOnActorBeginPlay)(PluginActorBeginPlayCallback);
+	void (*RegisterOnActorBeginPlay)(PluginActorBeginPlayCallback);
+	void (*UnregisterOnActorBeginPlay)(PluginActorBeginPlayCallback);
 };
 
-// ============================================================
-// IPluginSpawnerHooks — enemy spawner Before/After hook group (v14)
-// Access via: hooks->Spawner->RegisterOnBeforeActivate(...)
-// Before callbacks run in registration order; any returning true cancels the
-// operation and suppresses the original call and all After callbacks.
-// ============================================================
 struct IPluginSpawnerHooks
 {
-    // -----------------------------------------------------------------------
-    // AAbstractMassEnemySpawner::ActivateSpawner(bool bDisableAggroLock) (v14)
-    // Before: fires before the spawner activates. Return true to cancel.
-    // After:  fires after the spawner has activated (only if not cancelled).
-    // Spawner pointer is AAbstractMassEnemySpawner* passed as void*.
-    // -----------------------------------------------------------------------
-    void (*RegisterOnBeforeActivate)(PluginBeforeActivateSpawnerCallback callback);
-    void (*UnregisterOnBeforeActivate)(PluginBeforeActivateSpawnerCallback callback);
-    void (*RegisterOnAfterActivate)(PluginAfterActivateSpawnerCallback callback);
-    void (*UnregisterOnAfterActivate)(PluginAfterActivateSpawnerCallback callback);
-
-    // -----------------------------------------------------------------------
-    // AAbstractMassEnemySpawner::DeactivateSpawner(bool bPermanently) (v14)
-    // Before: fires before the spawner deactivates. Return true to cancel.
-    // After:  fires after the spawner has deactivated (only if not cancelled).
-    // Spawner pointer is AAbstractMassEnemySpawner* passed as void*.
-    // -----------------------------------------------------------------------
-    void (*RegisterOnBeforeDeactivate)(PluginBeforeDeactivateSpawnerCallback callback);
-    void (*UnregisterOnBeforeDeactivate)(PluginBeforeDeactivateSpawnerCallback callback);
-    void (*RegisterOnAfterDeactivate)(PluginAfterDeactivateSpawnerCallback callback);
-    void (*UnregisterOnAfterDeactivate)(PluginAfterDeactivateSpawnerCallback callback);
-
-    // -----------------------------------------------------------------------
-    // AMassSpawner::DoSpawning() (v14)
-    // Before: fires before the Mass Entity batch is spawned. Return true to cancel.
-    // After:  fires after the batch has been spawned (only if not cancelled).
-    // Spawner pointer is AMassSpawner* passed as void*.
-    // -----------------------------------------------------------------------
-    void (*RegisterOnBeforeDoSpawning)(PluginBeforeDoSpawningCallback callback);
-    void (*UnregisterOnBeforeDoSpawning)(PluginBeforeDoSpawningCallback callback);
-    void (*RegisterOnAfterDoSpawning)(PluginAfterDoSpawningCallback callback);
-    void (*UnregisterOnAfterDoSpawning)(PluginAfterDoSpawningCallback callback);
+	void (*RegisterOnBeforeActivate)(PluginBeforeActivateSpawnerCallback callback);
+	void (*UnregisterOnBeforeActivate)(PluginBeforeActivateSpawnerCallback callback);
+	void (*RegisterOnAfterActivate)(PluginAfterActivateSpawnerCallback callback);
+	void (*UnregisterOnAfterActivate)(PluginAfterActivateSpawnerCallback callback);
+	void (*RegisterOnBeforeDeactivate)(PluginBeforeDeactivateSpawnerCallback callback);
+	void (*UnregisterOnBeforeDeactivate)(PluginBeforeDeactivateSpawnerCallback callback);
+	void (*RegisterOnAfterDeactivate)(PluginAfterDeactivateSpawnerCallback callback);
+	void (*UnregisterOnAfterDeactivate)(PluginAfterDeactivateSpawnerCallback callback);
+	void (*RegisterOnBeforeDoSpawning)(PluginBeforeDoSpawningCallback callback);
+	void (*UnregisterOnBeforeDoSpawning)(PluginBeforeDoSpawningCallback callback);
+	void (*RegisterOnAfterDoSpawning)(PluginAfterDoSpawningCallback callback);
+	void (*UnregisterOnAfterDoSpawning)(PluginAfterDoSpawningCallback callback);
 };
 
-// ============================================================
-// EModKey — enumeration of keys that can be bound by plugins (v15)
-// Maps directly to Unreal Engine EKeys names and Win32 VK codes.
-// Use with IPluginInputEvents::RegisterKeybind or RegisterKeybindByName.
-// ============================================================
+// ---------------------------------------------------------------------------
+// Input (v15, client only)
+// ---------------------------------------------------------------------------
 enum class EModKey : uint32_t
 {
-    // Function keys
-    F1 = 0, F2, F3, F4, F5, F6, F7, F8, F9, F10, F11, F12,
-
-    // Letters
-    A, B, C, D, E, F, G, H, I, J, K, L, M,
-    N, O, P, Q, R, S, T, U, V, W, X, Y, Z,
-
-    // Digit row
-    Zero, One, Two, Three, Four, Five, Six, Seven, Eight, Nine,
-
-    // Control keys
-    Escape, Tab, CapsLock, SpaceBar, Enter, BackSpace, Delete, Insert,
-
-    // Modifier keys
-    LeftShift, RightShift, LeftControl, RightControl, LeftAlt, RightAlt,
-
-    // Navigation keys
-    Up, Down, Left, Right, Home, End, PageUp, PageDown,
-
-    // Punctuation / OEM keys
-    Tilde, Hyphen, Equals, LeftBracket, RightBracket, Backslash,
-    Semicolon, Apostrophe, Comma, Period, Slash,
-
-    // Numpad digits
-    NumPadZero, NumPadOne, NumPadTwo, NumPadThree, NumPadFour,
-    NumPadFive, NumPadSix, NumPadSeven, NumPadEight, NumPadNine,
-
-    // Numpad operators
-    Add, Subtract, Multiply, Divide, Decimal,
-
-    // Mouse buttons
-    LeftMouseButton, RightMouseButton, MiddleMouseButton,
-    ThumbMouseButton, ThumbMouseButton2,
-
-    Unknown  // sentinel / error value
+	F1 = 0, F2, F3, F4, F5, F6, F7, F8, F9, F10, F11, F12,
+	A, B, C, D, E, F, G, H, I, J, K, L, M,
+	N, O, P, Q, R, S, T, U, V, W, X, Y, Z,
+	Zero, One, Two, Three, Four, Five, Six, Seven, Eight, Nine,
+	Escape, Tab, CapsLock, SpaceBar, Enter, BackSpace, Delete, Insert,
+	LeftShift, RightShift, LeftControl, RightControl, LeftAlt, RightAlt,
+	Up, Down, Left, Right, Home, End, PageUp, PageDown,
+	Tilde, Hyphen, Equals, LeftBracket, RightBracket, Backslash,
+	Semicolon, Apostrophe, Comma, Period, Slash,
+	NumPadZero, NumPadOne, NumPadTwo, NumPadThree, NumPadFour,
+	NumPadFive, NumPadSix, NumPadSeven, NumPadEight, NumPadNine,
+	Add, Subtract, Multiply, Divide, Decimal,
+	LeftMouseButton, RightMouseButton, MiddleMouseButton,
+	ThumbMouseButton, ThumbMouseButton2,
+	Unknown
 };
 
-// ============================================================
-// EModKeyEvent — key state transitions reported to keybind callbacks (v15)
-// ============================================================
-enum class EModKeyEvent : uint32_t
-{
-    Pressed  = 0,   // fired once when the key goes from up to down
-    Released = 1    // fired once when the key goes from down to up
-};
+enum class EModKeyEvent : uint32_t { Pressed = 0, Released = 1 };
 
-// ============================================================
-// PluginKeybindCallback — signature for keybind event callbacks (v15)
-// key   : the key that changed state
-// event : Pressed or Released
-// ============================================================
 typedef void (*PluginKeybindCallback)(EModKey key, EModKeyEvent event);
 
-// ============================================================
-// IPluginInputEvents — keybind event subscriptions (v15, client only)
-// Access via: hooks->Input->RegisterKeybind(...)
-// hooks->Input is nullptr on server and generic builds.
-// Both the enum API and the string API resolve to the same underlying handler.
-// UE key name strings are case-insensitive ("F1", "LeftShift", "Tilde", etc.)
-// ============================================================
 struct IPluginInputEvents
 {
-    // Register a callback for a specific key+event (by enum)
-    void (*RegisterKeybind)(EModKey key, EModKeyEvent event, PluginKeybindCallback callback);
-    // Unregister a previously registered callback (by enum)
-    void (*UnregisterKeybind)(EModKey key, EModKeyEvent event, PluginKeybindCallback callback);
-
-    // Register a callback for a specific key+event (by UE key name string)
-    // keyName is matched case-insensitively, e.g. "F1", "LeftShift", "Tilde"
-    void (*RegisterKeybindByName)(const char* keyName, EModKeyEvent event, PluginKeybindCallback callback);
-    // Unregister a previously registered callback (by UE key name string)
-    void (*UnregisterKeybindByName)(const char* keyName, EModKeyEvent event, PluginKeybindCallback callback);
+	void (*RegisterKeybind)(EModKey key, EModKeyEvent event, PluginKeybindCallback callback);
+	void (*UnregisterKeybind)(EModKey key, EModKeyEvent event, PluginKeybindCallback callback);
+	void (*RegisterKeybindByName)(const char* keyName, EModKeyEvent event, PluginKeybindCallback callback);
+	void (*UnregisterKeybindByName)(const char* keyName, EModKeyEvent event, PluginKeybindCallback callback);
 };
 
-// ============================================================
-// IModLoaderImGui — ImGui function table exposed to plugins (v15)
-// The modloader owns Dear ImGui; plugins must NOT call ImGui:: directly.
-// Call through this table inside a PluginImGuiRenderCallback.
-// All text parameters are plain C strings — format with snprintf before calling.
-// ============================================================
+// ---------------------------------------------------------------------------
+// UI (v15–v16, client only)
+// ---------------------------------------------------------------------------
 struct IModLoaderImGui
 {
-    // --- Text ---
-    void (*Text)(const char* text);
-    void (*TextColored)(float r, float g, float b, float a, const char* text);
-    void (*TextDisabled)(const char* text);
-    void (*TextWrapped)(const char* text);
-    void (*LabelText)(const char* label, const char* text);
-    void (*SeparatorText)(const char* label);
-
-    // --- Inputs (return true when value changed) ---
-    bool (*InputText)(const char* label, char* buf, size_t buf_size);
-    bool (*InputInt)(const char* label, int* v, int step, int step_fast);
-    bool (*InputFloat)(const char* label, float* v, float step, float step_fast, const char* format);
-    bool (*Checkbox)(const char* label, bool* v);
-    bool (*SliderFloat)(const char* label, float* v, float v_min, float v_max, const char* format);
-    bool (*SliderInt)(const char* label, int* v, int v_min, int v_max, const char* format);
-
-    // --- Buttons ---
-    bool (*Button)(const char* label);
-    bool (*SmallButton)(const char* label);
-
-    // --- Layout ---
-    void (*SameLine)(float offset_from_start_x, float spacing);
-    void (*NewLine)();
-    void (*Separator)();
-    void (*Spacing)();
-    void (*Indent)(float indent_w);
-    void (*Unindent)(float indent_w);
-
-    // --- ID stack ---
-    void (*PushIDStr)(const char* str_id);
-    void (*PushIDInt)(int int_id);
-    void (*PopID)();
-
-    // --- Combo / Selectable ---
-    bool (*BeginCombo)(const char* label, const char* preview_value);
-    bool (*Selectable)(const char* label, bool selected);
-    void (*EndCombo)();
-
-    // --- Tree / Collapsible ---
-    bool (*CollapsingHeader)(const char* label);
-    bool (*TreeNodeStr)(const char* label);
-    void (*TreePop)();
-
-    // --- Color ---
-    bool (*ColorEdit3)(const char* label, float col[3]);
-    bool (*ColorEdit4)(const char* label, float col[4]);
-
-    // --- Misc ---
-    void (*SetTooltip)(const char* text);
-    bool (*IsItemHovered)();
-    void (*SetNextItemWidth)(float item_width);
+	void (*Text)(const char* text);
+	void (*TextColored)(float r, float g, float b, float a, const char* text);
+	void (*TextDisabled)(const char* text);
+	void (*TextWrapped)(const char* text);
+	void (*LabelText)(const char* label, const char* text);
+	void (*SeparatorText)(const char* label);
+	bool (*InputText)(const char* label, char* buf, size_t buf_size);
+	bool (*InputInt)(const char* label, int* v, int step, int step_fast);
+	bool (*InputFloat)(const char* label, float* v, float step, float step_fast, const char* format);
+	bool (*Checkbox)(const char* label, bool* v);
+	bool (*SliderFloat)(const char* label, float* v, float v_min, float v_max, const char* format);
+	bool (*SliderInt)(const char* label, int* v, int v_min, int v_max, const char* format);
+	bool (*Button)(const char* label);
+	bool (*SmallButton)(const char* label);
+	void (*SameLine)(float offset_from_start_x, float spacing);
+	void (*NewLine)();
+	void (*Separator)();
+	void (*Spacing)();
+	void (*Indent)(float indent_w);
+	void (*Unindent)(float indent_w);
+	void (*PushIDStr)(const char* str_id);
+	void (*PushIDInt)(int int_id);
+	void (*PopID)();
+	bool (*BeginCombo)(const char* label, const char* preview_value);
+	bool (*Selectable)(const char* label, bool selected);
+	void (*EndCombo)();
+	bool (*CollapsingHeader)(const char* label);
+	bool (*TreeNodeStr)(const char* label);
+	void (*TreePop)();
+	bool (*ColorEdit3)(const char* label, float col[3]);
+	bool (*ColorEdit4)(const char* label, float col[4]);
+	void (*SetTooltip)(const char* text);
+	bool (*IsItemHovered)();
+	void (*SetNextItemWidth)(float item_width);
 };
 
-// Render callback for a plugin-registered custom panel.
-// Called by the modloader each frame while the panel window is open.
-// imgui: the function table above — use it for all ImGui calls.
 typedef void (*PluginImGuiRenderCallback)(IModLoaderImGui* imgui);
 
-// Descriptor passed to IPluginUIEvents::RegisterPanel.
 struct PluginPanelDesc
 {
-    const char* buttonLabel;        // button label shown in ModLoader Config tab
-    const char* windowTitle;        // ImGui window title (must be globally unique)
-    PluginImGuiRenderCallback renderFn;
+	const char* buttonLabel;
+	const char* windowTitle;
+	PluginImGuiRenderCallback renderFn;
 };
 
-// Opaque handle returned by IPluginUIEvents::SetPanelOpen.
-// Pass it to SetPanelClose to close the same panel.
-// Null means the panel was not found or the UI backend is disabled.
 typedef void* PanelHandle;
+typedef void* WidgetHandle;
 
-// Config-change notification — fired after the modloader UI writes a new value.
-// section / key: the INI section and key that changed.
-// newValue: the new value as a string (same representation as the INI file).
+struct PluginWidgetDesc
+{
+	const char* name;
+	PluginImGuiRenderCallback renderFn;
+};
+
 typedef void (*PluginConfigChangedCallback)(const char* section, const char* key, const char* newValue);
 
-// ============================================================
-// IPluginUIEvents — UI registration (v15, client only)
-// Access via: hooks->UI->RegisterPanel(...)
-// hooks->UI is nullptr on server and generic builds.
-// ============================================================
 struct IPluginUIEvents
 {
-    // Register a custom panel button + window.  desc must remain valid until Unregister.
-    // Returns a PanelHandle that uniquely identifies this panel.
-    // Store this handle — it is required for UnregisterPanel, SetPanelOpen, and SetPanelClose.
-    // Returns null if registration failed (duplicate title, null fields, UI disabled).
-    PanelHandle (*RegisterPanel)(const PluginPanelDesc* desc);
-    // Unregister a panel using the handle returned by RegisterPanel.  Call during PluginShutdown.
-    // Silently ignored if handle is null.
-    void (*UnregisterPanel)(PanelHandle handle);
-    // Receive a notification whenever the modloader UI writes a config value.
-    void (*RegisterOnConfigChanged)(PluginConfigChangedCallback callback);
-    void (*UnregisterOnConfigChanged)(PluginConfigChangedCallback callback);
-    // Open a registered panel window using the handle returned by RegisterPanel.
-    // Silently ignored if handle is null.
-    void (*SetPanelOpen)(PanelHandle handle);
-    // Close a registered panel window using the handle returned by RegisterPanel.
-    // Silently ignored if handle is null.
-    void (*SetPanelClose)(PanelHandle handle);
+	PanelHandle  (*RegisterPanel)(const PluginPanelDesc* desc);
+	void         (*UnregisterPanel)(PanelHandle handle);
+	void         (*RegisterOnConfigChanged)(PluginConfigChangedCallback callback);
+	void         (*UnregisterOnConfigChanged)(PluginConfigChangedCallback callback);
+	void         (*SetPanelOpen)(PanelHandle handle);
+	void       (*SetPanelClose)(PanelHandle handle);
+	WidgetHandle (*RegisterWidget)(const PluginWidgetDesc* desc);      // v16
+	void      (*UnregisterWidget)(WidgetHandle handle);   // v16
+	void         (*SetWidgetVisible)(WidgetHandle handle, bool visible); // v16
 };
 
+struct IPluginHUDEvents
+{
+	void      (*RegisterOnPostRender)(PluginHUDPostRenderCallback callback);
+	void  (*UnregisterOnPostRender)(PluginHUDPostRenderCallback callback);
+	uintptr_t (*GetGatherPlayersDataAddress)();
+};
+
+// ---------------------------------------------------------------------------
+// Network channel (v17–v18)
+// ---------------------------------------------------------------------------
+struct IPluginNetworkChannel
+{
+	bool (*IsServer)();
+	void (*SendPacketToClient)(void* playerController, const IPluginSelf* self, const char* typeTag, const uint8_t* data, size_t size);
+	void (*SendPacketToAllClients)(const IPluginSelf* self, const char* typeTag, const uint8_t* data, size_t size);
+	void (*RegisterMessageHandler)(const IPluginSelf* self, const char* typeTag, PluginNetworkMessageCallback callback);
+	void (*UnregisterMessageHandler)(const IPluginSelf* self, const char* typeTag, PluginNetworkMessageCallback callback);
+	void (*SendPacketToServer)(const IPluginSelf* self, const char* typeTag, const uint8_t* data, size_t size);  // v18
+	void (*RegisterServerMessageHandler)(const IPluginSelf* self, const char* typeTag, PluginNetworkServerMessageCallback callback); // v18
+	void (*UnregisterServerMessageHandler)(const IPluginSelf* self, const char* typeTag, PluginNetworkServerMessageCallback callback); // v18
+	void (*ExcludeFromBroadcast)(void* playerController);    // v18
+	void (*UnexcludeFromBroadcast)(void* playerController);  // v18
+};
+
+// ---------------------------------------------------------------------------
+// Native pointers (v21)
+// ---------------------------------------------------------------------------
+struct IPluginNativePointers
+{
+	uintptr_t (*EngineLoopInit)();
+	uintptr_t (*GameEngineInit)();
+	uintptr_t (*EngineLoopExit)();
+	uintptr_t (*EnginePreExit)();
+	uintptr_t (*EngineTick)();
+	uintptr_t (*WorldBeginPlay)();
+	uintptr_t (*WorldEndPlay)();
+	uintptr_t (*SaveLoaded)();
+	uintptr_t (*ExperienceLoadComplete)();
+	uintptr_t (*ActorBeginPlay)();
+	uintptr_t (*PlayerJoined)();
+	uintptr_t (*PlayerLeft)();
+	uintptr_t (*SpawnerActivate)();
+	uintptr_t (*SpawnerDeactivate)();
+	uintptr_t (*SpawnerDoSpawning)();
+	uintptr_t (*HUDPostRender)();   // client only (nullptr on server/generic)
+	uintptr_t (*ClientMessageExec)();  // client only (nullptr on server/generic)
+};
+
+// ---------------------------------------------------------------------------
+// HTTP server (v22, server only)
+// ---------------------------------------------------------------------------
+
+// HTTP verb reported to OnRawRequest filter callbacks.
+enum class HttpMethod : uint8_t
+{
+	Get = 0, Post = 1, Put = 2, Delete = 3,
+	Patch = 4, Options = 5, Head = 6, Other = 7,
+};
+
+// Return value for OnRawRequest filter callbacks.
+enum class HttpRequestAction : uint8_t
+{
+	Approve = 0, // Continue processing (route handlers, then original engine handler).
+	Deny    = 1, // Send 403 Forbidden; stop all further processing.
+};
+
+// Read-only snapshot of the incoming request. Pointers valid only for the callback duration.
+// body is NOT null-terminated — use bodyLen.
+struct PluginHttpRequest
+{
+	const char* url;     // UTF-8, null-terminated, e.g. "/remote/object/call"
+	const char* body;    // Raw body bytes; nullptr when bodyLen == 0
+	size_t      bodyLen;
+	HttpMethod  method;
+};
+
+// Signature for raw-request filter callbacks.
+typedef HttpRequestAction (*PluginHttpRequestFilterCallback)(const PluginHttpRequest* req);
+
+// ---------------------------------------------------------------------------
+// Raw-response routes (v22)
+//
+// A plugin-owned HTTP handler. The modloader calls the callback whenever an
+// incoming URL starts with /<pluginName>/<urlPrefix>/ (case-insensitive).
+// The plugin populates PluginHttpResponse to control what is sent back.
+// If the callback leaves body/bodyLen at zero, a 200 with an empty body is sent.
+// To send a non-200 status, set statusCode accordingly.
+// The callback is always called from the HTTP connection thread — do NOT block
+// indefinitely or access UObjects without proper synchronisation.
+// ---------------------------------------------------------------------------
+
+// Response descriptor filled by the plugin's route callback.
+// All fields must remain valid until the callback returns.
+// The modloader copies body bytes and the content-type string before returning.
+struct PluginHttpResponse
+{
+	int      statusCode;   // HTTP status code, e.g. 200, 404, 500. Default: 200.
+	const char* contentType;  // MIME type string, e.g. "application/json". Default: "text/plain".
+	const char* body; // Response body bytes. May be nullptr when bodyLen == 0.
+	size_t      bodyLen;      // Byte count of body. 0 produces an empty body.
+};
+
+// Callback signature for raw-response routes.
+// req  : read-only incoming request snapshot — same semantics as filter callbacks.
+// resp : output descriptor — plugin fills this before returning.
+//        All pointer fields in resp must stay valid until the function returns;
+// the modloader copies them immediately after.
+typedef void (*PluginHttpRouteCallback)(const PluginHttpRequest* req, PluginHttpResponse* resp);
+
 // ============================================================
-// IPluginHooks — top-level hook interface provided by the mod loader (v14)
-// Contains only typed sub-interface pointers. Access functionality via the
-// named group, e.g.:
-//   hooks->Engine->RegisterOnInit(&MyInit);
-//   hooks->Players->RegisterOnPlayerJoined(&MyJoinCb);
-//   hooks->Memory->Patch(addr, bytes, len);
-//   hooks->Hooks->Install(addr, detour, &original);
-//   hooks->Spawner->RegisterOnBeforeActivate(&MyBeforeCb);
-//   hooks->Input->RegisterKeybind(EModKey::F1, EModKeyEvent::Pressed, &MyKeyCb);
+// IPluginHttpServer — HTTP intercept interface (v22, server only)
+//
+// hooks->HttpServer is nullptr on client and generic builds.
+//
+// URL scheme:  /<pluginName>/<routeName>/...  (always case-insensitive)
+//   Static files:   /<self->name>/<folderName>/path/to/file.html
+//          → served from <exe_dir>\Plugins\<self->name>\<folderName>\
+//   Raw routes:     /<self->name>/<urlPrefix>/any/sub/path
+//          → callback receives the full original URL
+//
+// Processing order for every incoming request:
+//   1. Raw-request filters  — RegisterOnRawRequest / UnregisterOnRawRequest
+//        First Deny sends 403 and stops all further processing.
+//   2. Raw-response routes  — AddRawRoute / RemoveRawRoute
+//   Plugin-owned handler; plugin writes status, content-type, and body.
+//   3. Static-file routes   — AddRoute / RemoveRoute
+//        Files served from disk with a 200 and an inferred MIME type.
+//   4. Pass-through     — original engine handler (produces 404 for unknown paths).
 // ============================================================
+struct IPluginHttpServer
+{
+	// -----------------------------------------------------------------------
+	// Static-file routes
+	// -----------------------------------------------------------------------
+
+	// Register a static-file route.
+	// URL matched (case-insensitive): /<self->name>/<folderName>/...
+	// Files served from:     <exe_dir>\Plugins\<self->name>\<folderName>\
+	// Returns false if already registered or folderName is empty/null.
+	bool (*AddRoute)(const IPluginSelf* self, const char* folderName);
+
+	// Unregister a static-file route. No-op if not registered.
+	void (*RemoveRoute)(const IPluginSelf* self, const char* folderName);
+
+	// -----------------------------------------------------------------------
+	// Raw-request filters
+	// -----------------------------------------------------------------------
+
+	// Register a raw-request filter. Fires for every HTTP request before routes.
+	// Return Deny to send 403; return Approve to continue. First Deny wins.
+	void (*RegisterOnRawRequest)(PluginHttpRequestFilterCallback callback);
+
+	// Unregister a raw-request filter. No-op if not registered.
+	void (*UnregisterOnRawRequest)(PluginHttpRequestFilterCallback callback);
+
+	// -----------------------------------------------------------------------
+	// Raw-response routes (v22)
+	// -----------------------------------------------------------------------
+
+	// Register a plugin-owned HTTP handler.
+	// urlPrefix  : route name, e.g. "api".
+	// Matched URL (case-insensitive): /<self->name>/<urlPrefix>/...
+	// callback   : called when a matching request arrives; plugin fills PluginHttpResponse.
+	// Returns false if already registered or urlPrefix is empty/null.
+	bool (*AddRawRoute)(const IPluginSelf* self, const char* urlPrefix, PluginHttpRouteCallback callback);
+
+	// Unregister a previously added raw-response route. No-op if not registered.
+	// Always call during PluginShutdown to avoid dangling callback pointers.
+	void (*RemoveRawRoute)(const IPluginSelf* self, const char* urlPrefix);
+};
+
+// ---------------------------------------------------------------------------
+// Top-level hooks interface (v14+)
+// ---------------------------------------------------------------------------
 struct IPluginHooks
 {
-    IPluginSpawnerHooks* Spawner;   // v14 — enemy spawner Before/After hooks
-    IPluginHookUtils*    Hooks;     // v14 — low-level hook install/remove/query
-    IPluginMemoryUtils*  Memory;    // v14 — memory patch/nop/read/alloc
-    IPluginEngineEvents* Engine;    // v14 — engine init/shutdown/tick subscriptions
-    IPluginWorldEvents*  World;     // v14 — world begin-play / save / experience subscriptions
-    IPluginPlayerEvents* Players;   // v14 — player joined/left subscriptions
-    IPluginActorEvents*  Actors;    // v14 — actor begin-play subscriptions
-    IPluginInputEvents*  Input;     // v15 — keybind subscriptions (client only, null on server)
-    IPluginUIEvents*     UI;        // v15 — custom panel registration + config-change callbacks (client only, null on server)
+	IPluginSpawnerHooks*   Spawner;        // v14
+	IPluginHookUtils*  Hooks;    // v14
+	IPluginMemoryUtils*    Memory;         // v14
+	IPluginEngineEvents*   Engine;         // v14
+	IPluginWorldEvents*    World;          // v14
+	IPluginPlayerEvents* Players;        // v14
+	IPluginActorEvents*    Actors;       // v14
+	IPluginInputEvents*    Input;          // v15 — client only, null on server
+	IPluginUIEvents*  UI;          // v15 — client only, null on server
+	IPluginHUDEvents*      HUD;// v16 — client only, null on server
+	IPluginNetworkChannel* Network;   // v17 — server+client; null on generic
+	IPluginNativePointers* NativePointers; // v21
+	IPluginHttpServer*     HttpServer;     // v22 — server only, null on client/generic
 };
 
-// Plugin metadata structure
+// ---------------------------------------------------------------------------
+// Plugin metadata and identity
+// ---------------------------------------------------------------------------
 struct PluginInfo
 {
-    const char* name;
-    const char* version;
-    const char* author;
-    const char* description;
-    int interfaceVersion;
+	const char* name;
+	const char* version;
+	const char* author;
+	const char* description;
+	int interfaceVersion;
 };
 
-// Plugin interface - all plugins must implement these functions
-// These should be exported with extern "C" __declspec(dllexport)
-typedef PluginInfo* (*GetPluginInfoFunc)();
-typedef bool (*PluginInitFunc)(IPluginLogger* logger, IPluginConfig* config, IPluginScanner* scanner, IPluginHooks* hooks);
-typedef void (*PluginShutdownFunc)();
+struct IPluginSelf
+{
+	const char*     name;
+	const char*     version;
+	IPluginLogger*  logger;
+	IPluginConfig*  config;
+	IPluginScanner* scanner;
+	IPluginHooks*   hooks;
+};
 
-// Function names that plugins must export
-#define PLUGIN_GET_INFO_FUNC_NAME "GetPluginInfo"
-#define PLUGIN_INIT_FUNC_NAME "PluginInit"
-#define PLUGIN_SHUTDOWN_FUNC_NAME "PluginShutdown"
+typedef PluginInfo* (*GetPluginInfoFunc)();
+typedef bool        (*PluginInitFunc)(IPluginSelf* self);
+typedef void        (*PluginShutdownFunc)();
+
+#define PLUGIN_GET_INFO_FUNC_NAME  "GetPluginInfo"
+#define PLUGIN_INIT_FUNC_NAME      "PluginInit"
+#define PLUGIN_SHUTDOWN_FUNC_NAME  "PluginShutdown"

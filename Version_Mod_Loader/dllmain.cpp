@@ -24,6 +24,12 @@
 #include "hooks/game/mass_spawner_activate/mass_spawner_activate.h"
 #include "hooks/game/mass_spawner_deactivate/mass_spawner_deactivate.h"
 #include "hooks/game/mass_do_spawning/mass_do_spawning.h"
+#include "network_channel/network_channel.h"
+#include "hooks/game/game_instance_init/game_instance_init.h"
+
+#ifdef MODLOADER_SERVER_BUILD
+#include "hooks/http/http_server_hook.h"
+#endif
 
 #include "auto_update/auto_updater.h"
 
@@ -32,6 +38,7 @@
 #ifdef MODLOADER_CLIENT_BUILD
 #include "hooks/input/input_processor.h"
 #include "hooks/game/engine_tick/engine_tick.h"
+#include "hooks/game/hud_post_render/hud_post_render.h"
 #include "UI/imgui_backend.h"
 #include "UI/overlay.h"
 #include "UI/global_settings.h"
@@ -71,8 +78,14 @@ static HANDLE g_pluginsLoadedEvent = NULL;
 // suspension needed, no loader-lock deadlocks.
 static HANDLE g_engineReadyEvent = NULL;
 
+// Signalled (auto-reset) at the very end of the EngineInit detour, after
+// NotifyEngineReady has returned and the hook call-stack has fully unwound.
+// The UE4SS loader thread waits on this instead of a fixed sleep so it never
+// calls LoadLibraryW while the detour or GPU driver init is still active.
+static HANDLE g_ue4ssReadyEvent = NULL;
+
 // Required suffix for the game version, read from the executable's version
-static constexpr wchar_t kRequiredVersionSuffix[] = L"CL-114046";
+static constexpr wchar_t kRequiredVersionSuffix[] = L"CL-118258";
 
 #ifdef MODLOADER_CLIENT_BUILD
 // Set during init from modloader.ini [UI] Enabled; read during shutdown.
@@ -119,16 +132,22 @@ static void OnEngineInitForUELog()
 	}
 
 	// Load UE4SS on a background thread so that LoadLibraryW does not run
-	// synchronously inside the engine-init hook detour.  Calling LoadLibraryW
-	// from a hook callback acquires the loader lock while the engine (and GPU
-	// driver threads) are still mid-initialisation, which can cause crashes in
-	// nvoglv64 or similar drivers.  Deferring to a detached thread lets the
-	// hook return cleanly first.
+	// synchronously inside the engine-init hook detour.  The thread waits on
+	// g_ue4ssReadyEvent, which is signalled at the very end of the detour
+	// (after NotifyEngineReady returns), guaranteeing the hook call-stack has
+	// fully unwound and GPU driver threads spawned during FEngineLoop::Init
+	// have had time to settle before we acquire the loader lock for UE4SS.
 	std::thread([]()
 	{
-		// Give the engine init hook time to fully unwind and let any
-		// concurrent driver initialisation settle.
-		std::this_thread::sleep_for(std::chrono::milliseconds(500));
+		if (g_ue4ssReadyEvent)
+		{
+			constexpr DWORD kTimeoutMs = 15'000;
+			DWORD r = WaitForSingleObject(g_ue4ssReadyEvent, kTimeoutMs);
+			if (r == WAIT_TIMEOUT)
+				LogToFile::Warn("UE4SS load: timed out waiting for detour to unwind (%lu ms) -- loading anyway", kTimeoutMs);
+			else if (r != WAIT_OBJECT_0)
+				LogToFile::Warn("UE4SS load: WaitForSingleObject returned unexpected value %lu -- loading anyway", r);
+		}
 		LoadUE4SS();
 	}).detach();
 }
@@ -231,7 +250,11 @@ static DWORD WINAPI MainInitThreadProc(LPVOID)
 	// If the CL doesn't match we display a timed error and bail out cleanly.
 	{
 		std::wstring gameVersion;
+#if _DEBUG
+		if (false)
+#else 
 		if (!CheckGameVersion(gameVersion))
+#endif
 		{
 			LogToFile::Error("[ModLoader] VERSION MISMATCH: expected suffix '%ls', got '%ls'",
 			                 kRequiredVersionSuffix, gameVersion.c_str());
@@ -239,27 +262,14 @@ static DWORD WINAPI MainInitThreadProc(LPVOID)
 
 			// Only show the splash and countdown on client builds -- on server builds we just log the error and exit immediately since there's no UI to show it on.
 #if defined(MODLOADER_CLIENT_BUILD)
-			Splash::SetErrorMode();
-			Splash::SetStatus(L"Wrong game version! Please update to the correct build.");
+			Splash::SetErrorMode(false);
+			Splash::SetStatus(L"Wrong game version! Game will start without plugins & mod loader.");
 
-			for (int countdown = 10; countdown > 0; --countdown)
+			for (int countdown = 5; countdown > 0; --countdown)
 			{
 				wchar_t msg[256];
-				swprintf_s(msg, L"Wrong game version! Will not load ModLoader (%ds)",
-				           kRequiredVersionSuffix, countdown);
-				Splash::SetStatus(msg);
 
-				// Sleep one second in 50 ms increments to keep the window responsive.
-				for (int ms = 0; ms < 1000; ms += 50)
-				{
-					Sleep(50);
-					MSG wmsg;
-					while (PeekMessageW(&wmsg, nullptr, 0, 0, PM_REMOVE))
-					{
-						TranslateMessage(&wmsg);
-						DispatchMessageW(&wmsg);
-					}
-				}
+				Sleep(1000);
 			}
 
 			// Unblock DLL_PROCESS_DETACH so it doesn't hang waiting for init.
@@ -289,7 +299,7 @@ static DWORD WINAPI MainInitThreadProc(LPVOID)
 	Splash::SetProgress(0.30f);
 
 	ModLoaderLogger::InitializeConfigManager();
-	ModLoaderLogger::InitializePluginManager();
+	PluginManager::InitializePluginManager();
 
 	// Auto-update runs here, outside the loader lock, so WinHTTP can work.
 	// Downloaded DLLs are in place for this boot's plugin load.
@@ -311,6 +321,10 @@ static DWORD WINAPI MainInitThreadProc(LPVOID)
 	// Pass both events so the detour can signal engine-ready and then wait
 	// for all plugins to load before letting the original Init proceed.
 	Hooks::EngineInit::SetSyncEvents(g_engineReadyEvent, g_pluginsLoadedEvent);
+
+	// Pass the UE4SS-ready event so the detour can signal it once its
+	// call-stack has fully unwound, letting the UE4SS loader thread proceed.
+	Hooks::EngineInit::SetUE4SSReadyEvent(g_ue4ssReadyEvent);
 
 	if (Hooks::EngineInit::Install())
 	{
@@ -341,7 +355,7 @@ static DWORD WINAPI MainInitThreadProc(LPVOID)
 	}
 
 	Splash::SetStatus(L"Installing spawner hooks...");
-	Splash::SetProgress(0.65f);	
+	Splash::SetProgress(0.60f);
 	// Install spawner hooks eagerly now that pattern scanning is available.
 	// These must be up before any plugin OnEngineInit callback runs so
 	// plugins can rely on the hooks being present without race conditions.
@@ -349,6 +363,25 @@ static DWORD WINAPI MainInitThreadProc(LPVOID)
 	Hooks::MassSpawnerActivate::Install();
 	Hooks::MassSpawnerDeactivate::Install();
 	Hooks::MassDoSpawning::Install();
+
+#ifdef MODLOADER_SERVER_BUILD
+	Splash::SetStatus(L"Installing HTTP server hook...");
+	if (Hooks::HttpServer::Install())
+		ModLoaderLogger::LogDebug(L"  HttpServer hook installed");
+	else
+		ModLoaderLogger::LogWarn(L"  WARNING: HttpServer hook failed — static file routes and request filters will not function");
+#endif
+
+	Splash::SetStatus(L"Installing GameInstance hook...");
+	Splash::SetProgress(0.65f);
+	// Install UGameInstance::Init hook.  Pattern scanning works at any time
+	// (reads .text section), so we install early here.  The detour calls
+	// InitAllLoadedPlugins() after the original returns, which is the first
+	// point where GObjects is fully populated and safe for UFunction lookups.
+	if (Hooks::GameInstanceInit::Install())
+		ModLoaderLogger::LogDebug(L"  GameInstanceInit hook installed");
+	else
+		ModLoaderLogger::LogWarn(L"  WARNING: GameInstanceInit hook failed -- plugins will not be initialized");
 
 	// Wait for the engine to finish initialising before loading plugins.
 	// We pump the thread message queue while waiting so the splash window
@@ -390,8 +423,11 @@ static DWORD WINAPI MainInitThreadProc(LPVOID)
 		g_engineReadyEvent = NULL;
 	}
 
-	// Engine is up -- safe to load plugins and let them install hooks.
-	Splash::SetStatus(L"Loading plugins...");
+	// Engine is up -- safe to scan and load plugin DLLs.
+	// PluginInit is NOT called here; it is deferred until UGameInstance::Init
+	// fires (via the GameInstanceInit hook), at which point GObjects is fully
+	// populated and UFunction lookups are safe.
+	Splash::SetStatus(L"Loading plugin DLLs...");
 	Splash::SetProgress(0.80f);
 
 #ifdef MODLOADER_CLIENT_BUILD
@@ -401,6 +437,8 @@ static DWORD WINAPI MainInitThreadProc(LPVOID)
 
 	// Check modloader.ini [UI] Enabled before starting ImGui.
 	// Allows users to disable the overlay entirely if it causes issues.
+	// Write the default (1) back if the key doesn't exist yet so users can
+	// see and edit the setting without having to know it exists.
 	{
 		wchar_t mlIniPath[MAX_PATH]{};
 		GetModuleFileNameW(nullptr, mlIniPath, MAX_PATH);
@@ -409,7 +447,15 @@ static DWORD WINAPI MainInitThreadProc(LPVOID)
 			wcscpy_s(lastSlash + 1,
 				static_cast<rsize_t>(MAX_PATH - (lastSlash + 1 - mlIniPath)),
 				L"modloader.ini");
-		s_imguiEnabled = (GetPrivateProfileIntW(L"UI", L"Enabled", 1, mlIniPath) != 0);
+
+		// Use a sentinel default (-1) to detect whether the key is absent.
+		int val = GetPrivateProfileIntW(L"UI", L"Enabled", -1, mlIniPath);
+		if (val == -1)
+		{
+			WritePrivateProfileStringW(L"UI", L"Enabled", L"1", mlIniPath);
+			val = 1;
+		}
+		s_imguiEnabled = (val != 0);
 	}
 
 	if (s_imguiEnabled)
@@ -460,12 +506,22 @@ static DWORD WINAPI MainInitThreadProc(LPVOID)
 	Hooks::EngineTick::RegisterPluginCallback(s_onTick);
 #endif
 
-	ModLoaderLogger::LoadAllPlugins();
+	PluginManager::LoadAllPlugins();
 
-	Splash::SetStatus(L"Initialization complete!");
+	// Bug fix: if the GameInstanceInit one-shot latch fired before plugins
+	// were loaded (server startup race / 120s timeout scenario), plugins
+	// were left in "deferred" state and PluginInit was never called.
+	// Detect this and call InitAllLoadedPlugins now that the DLLs are loaded.
+	if (Hooks::GameInstanceInit::HasFired())
+	{
+		ModLoaderLogger::LogInfo(L"[dllmain] GameInstanceInit already fired before plugins loaded -- calling InitAllLoadedPlugins now");
+		PluginManager::InitAllLoadedPlugins();
+	}
+
+	Splash::SetStatus(L"Plugin DLLs loaded -- waiting for game instance...");
 	Splash::SetProgress(1.0f);
 
-	ModLoaderLogger::LogInfo(L"Mod loader initialization complete");
+	ModLoaderLogger::LogInfo(L"Mod loader injection complete - Yay!");
 
 	// Signal DLL_PROCESS_DETACH that init is complete and it is safe to start
 	// the shutdown sequence (UnloadAllPlugins etc.).
@@ -473,7 +529,7 @@ static DWORD WINAPI MainInitThreadProc(LPVOID)
 		SetEvent(g_pluginsLoadedEvent);
 
 	// Brief pause so the user can see 100%, then close the splash.
-	Sleep(600);
+	Sleep(1200);
 	Splash::Close();
 
 	return 0;
@@ -635,6 +691,15 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 			return FALSE;
 		}
 
+		// Auto-reset event signalled by the EngineInit detour once its
+		// call-stack has fully unwound.  Consumed once by the UE4SS loader thread.
+		g_ue4ssReadyEvent = CreateEventW(nullptr, FALSE, FALSE, nullptr);
+		if (!g_ue4ssReadyEvent)
+		{
+			// Non-fatal: the background thread will fall back to a 15s timeout.
+			LogToFile::Warn("Failed to create UE4SS-ready event (%lu) -- UE4SS load will use timeout fallback", GetLastError());
+		}
+
 		// If DllMain is running on the game's main thread, queue an APC so
 		// MainInitThreadProc fires the next time that thread enters an alertable
 		// wait (after the loader lock is released).  Otherwise spawn a dedicated
@@ -657,6 +722,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 				g_pluginsLoadedEvent = NULL;
 				CloseHandle(g_engineReadyEvent);
 				g_engineReadyEvent = NULL;
+				if (g_ue4ssReadyEvent) { CloseHandle(g_ue4ssReadyEvent); g_ue4ssReadyEvent = NULL; }
 				DwmapiProxy::Shutdown();
 				LogToFile::Shutdown();
 				return FALSE;
@@ -691,6 +757,16 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 			g_engineReadyEvent = NULL;
 		}
 
+		// Clean up the UE4SS-ready event.  If UE4SS never loaded the background
+		// thread may still be waiting -- signal it first so it can unblock and
+		// exit cleanly before we close the handle.
+		if (g_ue4ssReadyEvent)
+		{
+			SetEvent(g_ue4ssReadyEvent);
+			CloseHandle(g_ue4ssReadyEvent);
+			g_ue4ssReadyEvent = NULL;
+		}
+
 		// Wait for the init thread to finish so we never try to unload plugins
 		// that haven't been loaded yet, or tear down hooks before they are set.
 		// g_pluginsLoadedEvent is signalled (and doesn't need LoadLibrary to be
@@ -722,7 +798,8 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 		ModLoaderLogger::LogInfo(L"Engine shutdown hook removed");
 
 		// Now safe to unload plugins
-		ModLoaderLogger::UnloadAllPlugins();
+		PluginManager::UnloadAllPlugins();
+		NetworkChannel::Shutdown();
 
 		// Remove remaining core game hooks
 		ModLoaderLogger::LogInfo(L"Removing remaining core game hooks...");
@@ -736,13 +813,16 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 		Hooks::MassSpawnerActivate::Remove();
 		Hooks::MassSpawnerDeactivate::Remove();
 		Hooks::MassDoSpawning::Remove();
+#ifdef MODLOADER_SERVER_BUILD
+		Hooks::HttpServer::Remove();
+#endif
 #ifdef MODLOADER_CLIENT_BUILD
 		if (s_imguiEnabled)
 			UI::ImGuiBackend::Shutdown();
 		Hooks::Input::RemoveInputProcessor();
 #endif
 
-		ModLoaderLogger::ShutdownPluginManager();
+		PluginManager::ShutdownPluginManager();
 		ModLoaderLogger::ShutdownConfigManager();
 		ModLoaderLogger::ShutdownLogger();
 

@@ -3,7 +3,7 @@
 #include <windows.h>
 #include "plugins/plugin_interface.h"
 
-namespace ModLoaderLogger
+namespace PluginManager
 {
     // Snapshot of a single plugin's state, safe to read after FreeLibrary.
     struct PluginStatus
@@ -20,8 +20,13 @@ namespace ModLoaderLogger
     // Shutdown the plugin manager
     void ShutdownPluginManager();
 
-    // Load all plugins from the Plugins directory
+    // Load all plugin DLLs from the Plugins directory (no PluginInit called).
+    // Call InitAllLoadedPlugins() once the engine is ready to complete init.
     void LoadAllPlugins();
+
+    // Call PluginInit on every loaded-but-not-yet-initialized plugin.
+    // Safe to call only after UGameInstance::Init has run (GObjects ready).
+    void InitAllLoadedPlugins();
 
     // Unload all plugins
     void UnloadAllPlugins();

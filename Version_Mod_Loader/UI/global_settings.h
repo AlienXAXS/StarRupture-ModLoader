@@ -25,6 +25,9 @@ namespace UI::GlobalSettings
     // Store the ini path so Save() can be called without a parameter later.
     void SetIniPath(const wchar_t* iniPath);
 
+    // Retrieve the stored ini path (e.g. for persisting other settings).
+    const wchar_t* GetIniPath();
+
     // -----------------------------------------------------------------------
     // Settings toggles (read from render thread, written from UI thread)
     // -----------------------------------------------------------------------
@@ -46,6 +49,15 @@ namespace UI::GlobalSettings
     // x/y/z in Unreal units (cm).  valid=false when no pawn is available.
     void SetPlayerPosition(double x, double y, double z, bool valid);
     void GetPlayerPosition(double* x, double* y, double* z, bool* valid);
+
+    // -----------------------------------------------------------------------
+    // Update notification (written by auto-updater thread, read by render thread)
+    // -----------------------------------------------------------------------
+
+    // Set to true when the auto-updater detects the local version is behind
+    // the remote manifest.  Displayed as a red warning in the overlay.
+    void SetUpdateAvailable(bool available);
+    bool GetUpdateAvailable();
 }
 
 #endif // MODLOADER_CLIENT_BUILD

@@ -1,8 +1,11 @@
 #include "hooks_interface.h"
 #include "hooks_common.h"
 #include "logging/logger.h"
+#include "network_channel/network_channel.h"
 #include "hooks/memory/engine_allocator.h"
+#include "utils/game_thread_dispatch.h"
 #include "hooks/game/world_begin_play/world_begin_play.h"
+#include "hooks/game/world_end_play/world_end_play.h"
 #include "hooks/game/engine_init/engine_init.h"
 #include "hooks/game/engine_shutdown/engine_shutdown.h"
 #include "hooks/game/save_loaded/save_loaded.h"
@@ -14,10 +17,18 @@
 #include "hooks/game/mass_spawner_activate/mass_spawner_activate.h"
 #include "hooks/game/mass_spawner_deactivate/mass_spawner_deactivate.h"
 #include "hooks/game/mass_do_spawning/mass_do_spawning.h"
+#include "memory_scanner/scanner.h"
+#include "hooks/game/scan_patterns.h"
+#ifdef MODLOADER_SERVER_BUILD
+#include "hooks/http/http_server_hook.h"
+#endif
 #ifdef MODLOADER_CLIENT_BUILD
 #include "hooks/input/keybind_registry.h"
 #include "hooks/input/input_processor.h"
 #include "UI/plugin_panel_registry.h"
+#include "UI/plugin_widget_registry.h"
+#include "hooks/game/hud_post_render/hud_post_render.h"
+#include "hooks/game/client_message/client_message.h"
 #endif
 #include <unordered_map>
 #include <mutex>
@@ -32,7 +43,7 @@ namespace ModLoaderLogger
 	// Create a unique handle for a hook
 	static HookHandle CreateHandle(Hooks::Hook* hook)
 	{
-		HookHandle handle = reinterpret_cast<HookHandle>(g_nextHandleId++);
+		auto handle = reinterpret_cast<HookHandle>(g_nextHandleId++);
 
 		std::lock_guard<std::mutex> lock(g_hookMapMutex);
 		g_hookMap[handle] = hook;
@@ -71,13 +82,13 @@ namespace ModLoaderLogger
 		}
 
 		// Allocate a new hook object
-		Hooks::Hook* hook = new Hooks::Hook();
+		auto hook = new Hooks::Hook();
 
 		// Try to install the hook
 		if (!hook->Install(targetAddress, detourFunction, originalFunction))
 		{
 			LogMessage(L"[HooksInterface] ERROR: Hook installation failed at 0x%llX",
-				static_cast<unsigned long long>(targetAddress));
+			           static_cast<unsigned long long>(targetAddress));
 			delete hook;
 			return nullptr;
 		}
@@ -85,7 +96,7 @@ namespace ModLoaderLogger
 		// Create and return handle
 		HookHandle handle = CreateHandle(hook);
 		LogMessage(L"[HooksInterface] Hook installed successfully: handle=%p, target=0x%llX",
-			handle, static_cast<unsigned long long>(targetAddress));
+		           handle, static_cast<unsigned long long>(targetAddress));
 
 		return handle;
 	}
@@ -324,6 +335,29 @@ namespace ModLoaderLogger
 		LogDebug(L"[HooksInterface] EngineTick callback unregistered for plugin");
 	}
 
+	// v16 -- resolved address of CoreUObject::StaticLoadObject (all builds)
+	// Scanned once on first call; result cached for all subsequent callers.
+	static uintptr_t g_staticLoadObjectAddr    = 0;
+	static bool      g_staticLoadObjectScanned = false;
+
+	static uintptr_t HooksGetStaticLoadObjectAddress()
+	{
+		if (!g_staticLoadObjectScanned)
+		{
+			g_staticLoadObjectScanned = true;
+			g_staticLoadObjectAddr = Scanner::FindPatternInMainModule(
+				"StaticLoadObject", ScanPatterns::StaticLoadObject);
+		}
+		return g_staticLoadObjectAddr;
+	}
+
+	// v18 -- game thread dispatch (all builds)
+	static void HooksPostToGameThread(PluginGameThreadCallback fn, void* context)
+	{
+		if (!fn) return;
+		GameThreadDispatch::PostVoid([fn, context]() { fn(context); });
+	}
+
 	static void HooksRegisterActorBeginPlayCallback(void (*callback)(void*))
 	{
 		if (!callback)
@@ -400,86 +434,170 @@ namespace ModLoaderLogger
 
 	static void HooksRegisterOnBeforeActivate(PluginBeforeActivateSpawnerCallback callback)
 	{
-		if (!callback) { LogWarn(L"[HooksInterface] RegisterOnBeforeActivate: null callback"); return; }
+		if (!callback)
+		{
+			LogWarn(L"[HooksInterface] RegisterOnBeforeActivate: null callback");
+			return;
+		}
 		Hooks::MassSpawnerActivate::RegisterBeforeCallback(callback);
 		LogDebug(L"[HooksInterface] OnBeforeActivate callback registered");
 	}
 
 	static void HooksUnregisterOnBeforeActivate(PluginBeforeActivateSpawnerCallback callback)
 	{
-		if (!callback) { LogWarn(L"[HooksInterface] UnregisterOnBeforeActivate: null callback"); return; }
+		if (!callback)
+		{
+			LogWarn(L"[HooksInterface] UnregisterOnBeforeActivate: null callback");
+			return;
+		}
 		Hooks::MassSpawnerActivate::UnregisterBeforeCallback(callback);
 		LogDebug(L"[HooksInterface] OnBeforeActivate callback unregistered");
 	}
 
 	static void HooksRegisterOnAfterActivate(PluginAfterActivateSpawnerCallback callback)
 	{
-		if (!callback) { LogWarn(L"[HooksInterface] RegisterOnAfterActivate: null callback"); return; }
+		if (!callback)
+		{
+			LogWarn(L"[HooksInterface] RegisterOnAfterActivate: null callback");
+			return;
+		}
 		Hooks::MassSpawnerActivate::RegisterAfterCallback(callback);
 		LogDebug(L"[HooksInterface] OnAfterActivate callback registered");
 	}
 
 	static void HooksUnregisterOnAfterActivate(PluginAfterActivateSpawnerCallback callback)
 	{
-		if (!callback) { LogWarn(L"[HooksInterface] UnregisterOnAfterActivate: null callback"); return; }
+		if (!callback)
+		{
+			LogWarn(L"[HooksInterface] UnregisterOnAfterActivate: null callback");
+			return;
+		}
 		Hooks::MassSpawnerActivate::UnregisterAfterCallback(callback);
 		LogDebug(L"[HooksInterface] OnAfterActivate callback unregistered");
 	}
 
 	static void HooksRegisterOnBeforeDeactivate(PluginBeforeDeactivateSpawnerCallback callback)
 	{
-		if (!callback) { LogWarn(L"[HooksInterface] RegisterOnBeforeDeactivate: null callback"); return; }
+		if (!callback)
+		{
+			LogWarn(L"[HooksInterface] RegisterOnBeforeDeactivate: null callback");
+			return;
+		}
 		Hooks::MassSpawnerDeactivate::RegisterBeforeCallback(callback);
 		LogDebug(L"[HooksInterface] OnBeforeDeactivate callback registered");
 	}
 
 	static void HooksUnregisterOnBeforeDeactivate(PluginBeforeDeactivateSpawnerCallback callback)
 	{
-		if (!callback) { LogWarn(L"[HooksInterface] UnregisterOnBeforeDeactivate: null callback"); return; }
+		if (!callback)
+		{
+			LogWarn(L"[HooksInterface] UnregisterOnBeforeDeactivate: null callback");
+			return;
+		}
 		Hooks::MassSpawnerDeactivate::UnregisterBeforeCallback(callback);
 		LogDebug(L"[HooksInterface] OnBeforeDeactivate callback unregistered");
 	}
 
 	static void HooksRegisterOnAfterDeactivate(PluginAfterDeactivateSpawnerCallback callback)
 	{
-		if (!callback) { LogWarn(L"[HooksInterface] RegisterOnAfterDeactivate: null callback"); return; }
+		if (!callback)
+		{
+			LogWarn(L"[HooksInterface] RegisterOnAfterDeactivate: null callback");
+			return;
+		}
 		Hooks::MassSpawnerDeactivate::RegisterAfterCallback(callback);
 		LogDebug(L"[HooksInterface] OnAfterDeactivate callback registered");
 	}
 
 	static void HooksUnregisterOnAfterDeactivate(PluginAfterDeactivateSpawnerCallback callback)
 	{
-		if (!callback) { LogWarn(L"[HooksInterface] UnregisterOnAfterDeactivate: null callback"); return; }
+		if (!callback)
+		{
+			LogWarn(L"[HooksInterface] UnregisterOnAfterDeactivate: null callback");
+			return;
+		}
 		Hooks::MassSpawnerDeactivate::UnregisterAfterCallback(callback);
 		LogDebug(L"[HooksInterface] OnAfterDeactivate callback unregistered");
 	}
 
 	static void HooksRegisterOnBeforeDoSpawning(PluginBeforeDoSpawningCallback callback)
 	{
-		if (!callback) { LogWarn(L"[HooksInterface] RegisterOnBeforeDoSpawning: null callback"); return; }
+		if (!callback)
+		{
+			LogWarn(L"[HooksInterface] RegisterOnBeforeDoSpawning: null callback");
+			return;
+		}
 		Hooks::MassDoSpawning::RegisterBeforeCallback(callback);
 		LogDebug(L"[HooksInterface] OnBeforeDoSpawning callback registered");
 	}
 
 	static void HooksUnregisterOnBeforeDoSpawning(PluginBeforeDoSpawningCallback callback)
 	{
-		if (!callback) { LogWarn(L"[HooksInterface] UnregisterOnBeforeDoSpawning: null callback"); return; }
+		if (!callback)
+		{
+			LogWarn(L"[HooksInterface] UnregisterOnBeforeDoSpawning: null callback");
+			return;
+		}
 		Hooks::MassDoSpawning::UnregisterBeforeCallback(callback);
 		LogDebug(L"[HooksInterface] OnBeforeDoSpawning callback unregistered");
 	}
 
 	static void HooksRegisterOnAfterDoSpawning(PluginAfterDoSpawningCallback callback)
 	{
-		if (!callback) { LogWarn(L"[HooksInterface] RegisterOnAfterDoSpawning: null callback"); return; }
+		if (!callback)
+		{
+			LogWarn(L"[HooksInterface] RegisterOnAfterDoSpawning: null callback");
+			return;
+		}
 		Hooks::MassDoSpawning::RegisterAfterCallback(callback);
 		LogDebug(L"[HooksInterface] OnAfterDoSpawning callback registered");
 	}
 
 	static void HooksUnregisterOnAfterDoSpawning(PluginAfterDoSpawningCallback callback)
 	{
-		if (!callback) { LogWarn(L"[HooksInterface] UnregisterOnAfterDoSpawning: null callback"); return; }
+		if (!callback)
+		{
+			LogWarn(L"[HooksInterface] UnregisterOnAfterDoSpawning: null callback");
+			return;
+		}
 		Hooks::MassDoSpawning::UnregisterAfterCallback(callback);
 		LogDebug(L"[HooksInterface] OnAfterDoSpawning callback unregistered");
+	}
+
+	static void HooksRegisterOnBeforeWorldEndPlay(PluginWorldEndPlayCallback callback)
+	{
+		if (!callback)
+		{
+			LogWarn(L"[HooksInterface] RegisterOnBeforeWorldEndPlay: null callback");
+			return;
+		}
+		Hooks::WorldEndPlay::RegisterBeforeCallback(callback);
+		LogDebug(L"[HooksInterface] OnBeforeWorldEndPlay callback registered");
+	}
+
+	static void HooksUnregisterOnBeforeWorldEndPlay(PluginWorldEndPlayCallback callback)
+	{
+		if (!callback) return;
+		Hooks::WorldEndPlay::UnregisterBeforeCallback(callback);
+		LogDebug(L"[HooksInterface] OnBeforeWorldEndPlay callback unregistered");
+	}
+
+	static void HooksRegisterOnAfterWorldEndPlay(PluginWorldEndPlayCallback callback)
+	{
+		if (!callback)
+		{
+			LogWarn(L"[HooksInterface] RegisterOnAfterWorldEndPlay: null callback");
+			return;
+		}
+		Hooks::WorldEndPlay::RegisterAfterCallback(callback);
+		LogDebug(L"[HooksInterface] OnAfterWorldEndPlay callback registered");
+	}
+
+	static void HooksUnregisterOnAfterWorldEndPlay(PluginWorldEndPlayCallback callback)
+	{
+		if (!callback) return;
+		Hooks::WorldEndPlay::UnregisterAfterCallback(callback);
+		LogDebug(L"[HooksInterface] OnAfterWorldEndPlay callback unregistered");
 	}
 
 	// Spawner sub-interface struct (v14)
@@ -520,7 +638,9 @@ namespace ModLoaderLogger
 		HooksRegisterEngineShutdownCallback,
 		HooksUnregisterEngineShutdownCallback,
 		HooksRegisterEngineTickCallback,
-		HooksUnregisterEngineTickCallback
+		HooksUnregisterEngineTickCallback,
+		HooksGetStaticLoadObjectAddress,  // v16
+		HooksPostToGameThread             // v18
 	};
 
 	static IPluginWorldEvents g_worldEvents = {
@@ -531,7 +651,11 @@ namespace ModLoaderLogger
 		HooksRegisterSaveLoadedCallback,
 		HooksUnregisterSaveLoadedCallback,
 		HooksRegisterExperienceLoadCompleteCallback,
-		HooksUnregisterExperienceLoadCompleteCallback
+		HooksUnregisterExperienceLoadCompleteCallback,
+		HooksRegisterOnBeforeWorldEndPlay,
+		HooksUnregisterOnBeforeWorldEndPlay,
+		HooksRegisterOnAfterWorldEndPlay,
+		HooksUnregisterOnAfterWorldEndPlay
 	};
 
 	static IPluginPlayerEvents g_playerEvents = {
@@ -551,10 +675,14 @@ namespace ModLoaderLogger
 #ifdef MODLOADER_CLIENT_BUILD
 	static void HooksRegisterKeybind(EModKey key, EModKeyEvent event, PluginKeybindCallback callback)
 	{
-		if (!callback) { LogWarn(L"[HooksInterface] RegisterKeybind: null callback"); return; }
+		if (!callback)
+		{
+			LogWarn(L"[HooksInterface] RegisterKeybind: null callback");
+			return;
+		}
 		Hooks::Input::RegisterKeybind(key, event, callback);
 		LogDebug(L"[HooksInterface] Keybind registered (enum key=%u, event=%u)",
-			static_cast<unsigned>(key), static_cast<unsigned>(event));
+		         static_cast<unsigned>(key), static_cast<unsigned>(event));
 	}
 
 	static void HooksUnregisterKeybind(EModKey key, EModKeyEvent event, PluginKeybindCallback callback)
@@ -562,15 +690,19 @@ namespace ModLoaderLogger
 		if (!callback) return;
 		Hooks::Input::UnregisterKeybind(key, event, callback);
 		LogDebug(L"[HooksInterface] Keybind unregistered (enum key=%u, event=%u)",
-			static_cast<unsigned>(key), static_cast<unsigned>(event));
+		         static_cast<unsigned>(key), static_cast<unsigned>(event));
 	}
 
 	static void HooksRegisterKeybindByName(const char* keyName, EModKeyEvent event, PluginKeybindCallback callback)
 	{
-		if (!callback || !keyName) { LogWarn(L"[HooksInterface] RegisterKeybindByName: null argument"); return; }
+		if (!callback || !keyName)
+		{
+			LogWarn(L"[HooksInterface] RegisterKeybindByName: null argument");
+			return;
+		}
 		Hooks::Input::RegisterKeybindByName(keyName, event, callback);
 		LogDebug(L"[HooksInterface] Keybind registered (name=%S, event=%u)",
-			keyName, static_cast<unsigned>(event));
+		         keyName, static_cast<unsigned>(event));
 	}
 
 	static void HooksUnregisterKeybindByName(const char* keyName, EModKeyEvent event, PluginKeybindCallback callback)
@@ -578,7 +710,7 @@ namespace ModLoaderLogger
 		if (!callback || !keyName) return;
 		Hooks::Input::UnregisterKeybindByName(keyName, event, callback);
 		LogDebug(L"[HooksInterface] Keybind unregistered (name=%S, event=%u)",
-			keyName, static_cast<unsigned>(event));
+		         keyName, static_cast<unsigned>(event));
 	}
 
 	// Input sub-interface struct (v15)
@@ -603,7 +735,11 @@ namespace ModLoaderLogger
 
 	static void HooksRegisterOnConfigChanged(PluginConfigChangedCallback callback)
 	{
-		if (!callback) { LogWarn(L"[HooksInterface] RegisterOnConfigChanged: null callback"); return; }
+		if (!callback)
+		{
+			LogWarn(L"[HooksInterface] RegisterOnConfigChanged: null callback");
+			return;
+		}
 		UI::PluginPanelRegistry::RegisterOnConfigChanged(callback);
 	}
 
@@ -623,16 +759,170 @@ namespace ModLoaderLogger
 		UI::PluginPanelRegistry::SetPanelClose(handle);
 	}
 
-	// UI sub-interface struct (v15)
+	static WidgetHandle HooksRegisterWidget(const PluginWidgetDesc* desc)
+	{
+		return UI::PluginWidgetRegistry::RegisterWidget(desc);
+	}
+
+	static void HooksUnregisterWidget(WidgetHandle handle)
+	{
+		UI::PluginWidgetRegistry::UnregisterWidget(handle);
+	}
+
+	static void HooksSetWidgetVisible(WidgetHandle handle, bool visible)
+	{
+		UI::PluginWidgetRegistry::SetWidgetVisible(handle, visible);
+	}
+
+	// UI sub-interface struct (v16)
 	static IPluginUIEvents g_uiEvents = {
 		HooksRegisterPanel,
 		HooksUnregisterPanel,
 		HooksRegisterOnConfigChanged,
 		HooksUnregisterOnConfigChanged,
 		HooksSetPanelOpen,
-		HooksSetPanelClose
+		HooksSetPanelClose,
+		HooksRegisterWidget,       // v16
+		HooksUnregisterWidget,     // v16
+		HooksSetWidgetVisible      // v16
+	};
+
+	// --- HUD sub-interface wrappers (v16, client only) ---
+
+	static void HooksRegisterOnPostRender(PluginHUDPostRenderCallback cb)
+	{
+		Hooks::HUDPostRender::RegisterPluginCallback(cb);
+	}
+
+	static void HooksUnregisterOnPostRender(PluginHUDPostRenderCallback cb)
+	{
+		Hooks::HUDPostRender::UnregisterPluginCallback(cb);
+	}
+
+	static uintptr_t HooksGetGatherPlayersDataAddress()
+	{
+		return Hooks::HUDPostRender::GetGatherPlayersDataAddress();
+	}
+
+	// HUD sub-interface struct (v16)
+	static IPluginHUDEvents g_hudEvents = {
+		HooksRegisterOnPostRender,
+		HooksUnregisterOnPostRender,
+		HooksGetGatherPlayersDataAddress
 	};
 #endif // MODLOADER_CLIENT_BUILD
+
+	// --- Native pointer wrappers (v21) ---
+
+	static uintptr_t NativeEngineLoopInit()   { return Hooks::EngineInit::GetOriginalPtrEngineLoopInit(); }
+	static uintptr_t NativeGameEngineInit()   { return Hooks::EngineInit::GetOriginalPtrGameEngineInit(); }
+	static uintptr_t NativeEngineLoopExit()   { return Hooks::EngineShutdown::GetOriginalPtrEngineLoopExit(); }
+	static uintptr_t NativeEnginePreExit()  { return Hooks::EngineShutdown::GetOriginalPtrEnginePreExit(); }
+	static uintptr_t NativeEngineTick()  { return Hooks::EngineTick::GetOriginalPtr(); }
+	static uintptr_t NativeWorldBeginPlay()   { return Hooks::WorldBeginPlay::GetOriginalPtr(); }
+	static uintptr_t NativeWorldEndPlay()     { return Hooks::WorldEndPlay::GetOriginalPtr(); }
+	static uintptr_t NativeSaveLoaded()       { return Hooks::SaveLoaded::GetOriginalPtr(); }
+	static uintptr_t NativeExperienceLoadComplete() { return Hooks::ExperienceLoadComplete::GetOriginalPtr(); }
+	static uintptr_t NativeActorBeginPlay()   { return Hooks::ActorBeginPlay::GetOriginalPtr(); }
+	static uintptr_t NativePlayerJoined()     { return Hooks::PlayerJoined::GetOriginalPtr(); }
+	static uintptr_t NativePlayerLeft()       { return Hooks::PlayerLeft::GetOriginalPtr(); }
+	static uintptr_t NativeSpawnerActivate()  { return Hooks::MassSpawnerActivate::GetOriginalPtr(); }
+	static uintptr_t NativeSpawnerDeactivate(){ return Hooks::MassSpawnerDeactivate::GetOriginalPtr(); }
+	static uintptr_t NativeSpawnerDoSpawning(){ return Hooks::MassDoSpawning::GetOriginalPtr(); }
+#ifdef MODLOADER_CLIENT_BUILD
+	static uintptr_t NativeHUDPostRender()    { return Hooks::HUDPostRender::GetOriginalPtr(); }
+	static uintptr_t NativeClientMessageExec(){ return Hooks::ClientMessage::GetOriginalPtr(); }
+#endif
+
+	// Native pointers sub-interface struct (v21)
+	static IPluginNativePointers g_nativePointers = {
+		NativeEngineLoopInit,
+		NativeGameEngineInit,
+		NativeEngineLoopExit,
+		NativeEnginePreExit,
+		NativeEngineTick,
+		NativeWorldBeginPlay,
+		NativeWorldEndPlay,
+		NativeSaveLoaded,
+		NativeExperienceLoadComplete,
+		NativeActorBeginPlay,
+		NativePlayerJoined,
+		NativePlayerLeft,
+		NativeSpawnerActivate,
+		NativeSpawnerDeactivate,
+		NativeSpawnerDoSpawning,
+#ifdef MODLOADER_CLIENT_BUILD
+		NativeHUDPostRender,      // client only
+		NativeClientMessageExec   // client only
+#else
+		nullptr,        // HUDPostRender — null on server/generic builds
+		nullptr          // ClientMessageExec — null on server/generic builds
+#endif
+	};
+
+	// -----------------------------------------------------------------------
+	// IPluginHttpServer wrappers (v22, server only)
+	// -----------------------------------------------------------------------
+
+#ifdef MODLOADER_SERVER_BUILD
+	static bool HooksHttpServerAddRoute(const IPluginSelf* self, const char* folderName)
+	{
+		if (!self || !self->name || !folderName)
+		{
+			LogWarn(L"[HooksInterface] HttpServer::AddRoute: null argument");
+			return false;
+		}
+		return Hooks::HttpServer::AddRoute(self->name, folderName);
+	}
+
+	static void HooksHttpServerRemoveRoute(const IPluginSelf* self, const char* folderName)
+	{
+		if (!self || !self->name || !folderName) return;
+		Hooks::HttpServer::RemoveRoute(self->name, folderName);
+	}
+
+	static void HooksHttpServerRegisterOnRawRequest(PluginHttpRequestFilterCallback callback)
+	{
+		if (!callback)
+		{
+			LogWarn(L"[HooksInterface] HttpServer::RegisterOnRawRequest: null callback");
+			return;
+		}
+		Hooks::HttpServer::RegisterRawRequestFilter(callback);
+	}
+
+	static void HooksHttpServerUnregisterOnRawRequest(PluginHttpRequestFilterCallback callback)
+	{
+		if (!callback) return;
+		Hooks::HttpServer::UnregisterRawRequestFilter(callback);
+	}
+
+	static bool HooksHttpServerAddRawRoute(const IPluginSelf* self, const char* urlPrefix,
+	      PluginHttpRouteCallback callback)
+	{
+		if (!self || !self->name || !urlPrefix || !callback)
+		{
+			LogWarn(L"[HooksInterface] HttpServer::AddRawRoute: null argument");
+			return false;
+		}
+		return Hooks::HttpServer::AddRawRoute(self->name, urlPrefix, callback);
+	}
+
+	static void HooksHttpServerRemoveRawRoute(const IPluginSelf* self, const char* urlPrefix)
+	{
+		if (!self || !self->name || !urlPrefix) return;
+		Hooks::HttpServer::RemoveRawRoute(self->name, urlPrefix);
+	}
+
+	static IPluginHttpServer g_httpServer = {
+		HooksHttpServerAddRoute,
+		HooksHttpServerRemoveRoute,
+		HooksHttpServerRegisterOnRawRequest,
+		HooksHttpServerUnregisterOnRawRequest,
+		HooksHttpServerAddRawRoute,
+		HooksHttpServerRemoveRawRoute,
+	};
+#endif // MODLOADER_SERVER_BUILD
 
 	// Global hooks interface instance
 	static IPluginHooks g_pluginHooks = {
@@ -644,16 +934,37 @@ namespace ModLoaderLogger
 		&g_playerEvents,
 		&g_actorEvents,
 #ifdef MODLOADER_CLIENT_BUILD
-		&g_inputEvents,   // v15 — keybind events (client only)
-		&g_uiEvents       // v15 — custom panel + config-change callbacks (client only)
+		&g_inputEvents,    // v15 — keybind events (client only)
+		&g_uiEvents,         // v15 — custom panel + config-change callbacks (client only)
+		&g_hudEvents,        // v16 — AHUD::PostRender callbacks + HUD function addresses (client only)
 #else
 		nullptr,          // v15 — Input is null on server/generic builds
-		nullptr           // v15 — UI is null on server/generic builds
+		nullptr,             // v15 — UI is null on server/generic builds
+		nullptr,    // v16 — HUD is null on server/generic builds
+#endif
+		nullptr,      // v17 — Network; filled in below by GetPluginHooks()
+		&g_nativePointers,   // v21 — trampoline addresses for all managed hooks
+#ifdef MODLOADER_SERVER_BUILD
+		&g_httpServer // v22 — HTTP static-file routes + raw-request filters (server only)
+#else
+		nullptr       // v22 — HttpServer is null on client/generic builds
 #endif
 	};
+	static bool g_networkChannelInitialized = false;
 
 	IPluginHooks* GetPluginHooks()
 	{
+		// Resolve the network channel pointer on first call.
+		// NetworkChannel::GetInterface() returns nullptr on generic builds.
+		if (!g_pluginHooks.Network)
+		{
+			g_pluginHooks.Network = NetworkChannel::GetInterface();
+			if (g_pluginHooks.Network && !g_networkChannelInitialized)
+			{
+				NetworkChannel::Initialize();
+				g_networkChannelInitialized = true;
+			}
+		}
 		return &g_pluginHooks;
 	}
 }

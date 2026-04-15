@@ -10,9 +10,11 @@
 #include "overlay.h"
 #include "global_settings.h"
 #include "plugin_panel_registry.h"
+#include "plugin_widget_registry.h"
 #include "hooks/hooks_common.h"
 #include "hooks/input/keybind_registry.h"
 #include "logging/log.h"
+#include "splash_window.h"
 
 #include <d3d12.h>
 #include <dxgi1_2.h>
@@ -125,6 +127,16 @@ namespace
 }
 
 // ---------------------------------------------------------------------------
+// Returns true whenever any modloader UI surface is visible and should own
+// the mouse and swallow game input.  Covers both the main modloader window
+// and any open plugin panel windows.
+// ---------------------------------------------------------------------------
+static bool ShouldCaptureInput()
+{
+	return UI::ModLoaderWindow::IsOpen() || UI::PluginPanelRegistry::AnyPanelOpen();
+}
+
+// ---------------------------------------------------------------------------
 // WndProc subclass -- forwards messages to ImGui, swallows input when UI open
 // ---------------------------------------------------------------------------
 static LRESULT CALLBACK HookedWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
@@ -132,7 +144,7 @@ static LRESULT CALLBACK HookedWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 	if (ImGui_ImplWin32_WndProcHandler(hWnd, msg, wParam, lParam))
 		return true;
 
-	if (UI::ModLoaderWindow::IsOpen())
+	if (ShouldCaptureInput())
 	{
 		switch (msg)
 		{
@@ -608,7 +620,7 @@ static bool InitD3D12Resources(IDXGISwapChain* swapChain)
 	ImGuiIO& io = ImGui::GetIO();
 	io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard
 		| ImGuiConfigFlags_NoMouseCursorChange; // don't touch OS cursor by default
-	io.IniFilename = nullptr;  // no imgui.ini on disk
+	io.IniFilename = "modloader_imgui.ini";  // persists all window positions/sizes between sessions
 
 	ImGui::StyleColorsDark();
 
@@ -706,7 +718,25 @@ static void STDMETHODCALLTYPE HookedECL(ID3D12CommandQueue* pQueue,
 	{
 		D3D12_COMMAND_QUEUE_DESC d = pQueue->GetDesc();
 		if (d.Type == D3D12_COMMAND_LIST_TYPE_DIRECT)
+		{
+			ID3D12CommandQueue* prev = g_capturedQueue;
 			g_capturedQueue = pQueue;
+
+			// Log if the queue changes post-init.
+			// On Streamline systems this can happen when the game transitions
+			// state (e.g. loading -> main menu), exposing a new internal queue.
+			// g_cmdQueue is locked at init time and unaffected -- this log helps
+			// confirm whether queue instability is the source of device removal.
+			/*
+			 * This is really spammy, even for TRACE
+			if (g_initialized && prev && prev != pQueue)
+				LogToFile::Trace("[ImGuiBackend] ECL queue changed post-init: "
+					"old=0x%p  new=0x%p  submit queue (g_cmdQueue=0x%p) unchanged",
+					static_cast<void*>(prev),
+					static_cast<void*>(pQueue),
+					static_cast<void*>(g_cmdQueue));
+					*/
+		}
 	}
 	g_originalECL(pQueue, NumCmdLists, ppCmdLists);
 }
@@ -765,8 +795,9 @@ static HRESULT STDMETHODCALLTYPE HookedPresent(IDXGISwapChain* swapChain, UINT s
 	UINT64 frameIdx = s_renderFrame.fetch_add(1);
 
 	if (frameIdx == 0)
-		LogToFile::Info("[ImGuiBackend] First render: device=0x%p queue=0x%p buffers=%u fmt=%u",
-			static_cast<void*>(g_device), static_cast<void*>(g_capturedQueue),
+		LogToFile::Info("[ImGuiBackend] First render: device=0x%p submit-queue=0x%p ecl-current=0x%p buffers=%u fmt=%u",
+			static_cast<void*>(g_device), static_cast<void*>(g_cmdQueue),
+			static_cast<void*>(g_capturedQueue),
 			g_frameCount, static_cast<unsigned>(g_rtvFormat));
 
 	// Current back buffer index.
@@ -826,12 +857,12 @@ static HRESULT STDMETHODCALLTYPE HookedPresent(IDXGISwapChain* swapChain, UINT s
 	barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
 	g_cmdList->ResourceBarrier(1, &barrier);
 
-	// Cursor management: only active while the modloader window is open.
-	// Cursor management: hand control to ImGui only while the modloader window
-	// is open.  NoMouseCursorChange prevents ImGui's Win32 backend from calling
+	// Cursor management: hand control to ImGui whenever any modloader UI
+	// surface is visible (main window OR any open plugin panel).
+	// NoMouseCursorChange prevents ImGui's Win32 backend from calling
 	// SetCursor() every frame -- without it, it fights UE5's cursor management
 	// and causes visible flickering whenever our window is closed.
-	bool uiOpen = UI::ModLoaderWindow::IsOpen();
+	bool uiOpen = ShouldCaptureInput();
 	ImGuiIO& frameIO = ImGui::GetIO();
 	if (uiOpen)
 	{
@@ -853,6 +884,7 @@ static HRESULT STDMETHODCALLTYPE HookedPresent(IDXGISwapChain* swapChain, UINT s
 	UI::Overlay::RenderHud();
 	UI::ModLoaderWindow::Render(&g_imguiAPI);
 	UI::PluginPanelRegistry::RenderPanelWindows(&g_imguiAPI);
+	UI::PluginWidgetRegistry::RenderWidgets(&g_imguiAPI);
 
 	ImGui::Render();
 
@@ -866,9 +898,14 @@ static HRESULT STDMETHODCALLTYPE HookedPresent(IDXGISwapChain* swapChain, UINT s
 	g_cmdList->ResourceBarrier(1, &barrier);
 	g_cmdList->Close();
 
-	// Submit on g_capturedQueue (see comment above -- the queue that last touched
-	// the back buffer).  Fall back to g_cmdQueue if capture hasn't fired yet.
-	ID3D12CommandQueue* submitQueue = g_capturedQueue ? g_capturedQueue : g_cmdQueue;
+	// Submit on g_cmdQueue -- the queue locked in at InitD3D12Resources time.
+	// Do NOT use the live g_capturedQueue here: it is updated on every ECL call
+	// from any thread and can change mid-session (e.g. loading -> main menu
+	// transition exposes a new Streamline-internal queue).  Submitting a fence
+	// signal from a queue on a different device causes DXGI_ERROR_DEVICE_REMOVED.
+	// g_cmdQueue was verified against the swap chain back buffer's device at init
+	// and will not change for the lifetime of this swap chain.
+	ID3D12CommandQueue* submitQueue = g_cmdQueue;
 	ID3D12CommandList* cmdLists[] = { g_cmdList };
 	submitQueue->ExecuteCommandLists(1, cmdLists);
 
@@ -889,8 +926,56 @@ static HRESULT STDMETHODCALLTYPE HookedPresent(IDXGISwapChain* swapChain, UINT s
 	HRESULT hr = g_originalPresent(swapChain, syncInterval, flags);
 
 	if (FAILED(hr))
+	{
 		LogToFile::Error("[ImGuiBackend] g_originalPresent failed: 0x%08X (frame %llu)",
 			static_cast<unsigned>(hr), frameIdx);
+
+		// On device removal, shut ImGui down immediately and surface a splash
+		// error. Use a flag so this only fires once even if Present keeps firing.
+		static std::atomic<bool> s_deviceLostNotified{ false };
+		bool expected = false;
+		if (s_deviceLostNotified.compare_exchange_strong(expected, true))
+		{
+			g_shutdown = true;
+
+			// Proactively write [UI] Enabled=0 to modloader.ini so the overlay
+			// is disabled automatically on next launch -- no manual editing needed.
+			wchar_t iniPath[MAX_PATH]{};
+			GetModuleFileNameW(nullptr, iniPath, MAX_PATH);
+			wchar_t* lastSlash = wcsrchr(iniPath, L'\\');
+			if (lastSlash)
+				wcscpy_s(lastSlash + 1,
+					static_cast<rsize_t>(MAX_PATH - (lastSlash + 1 - iniPath)),
+					L"modloader.ini");
+			WritePrivateProfileStringW(L"UI", L"Enabled", L"0", iniPath);
+
+			LogToFile::Error("[ImGuiBackend] ImGui disabled. "
+				"[UI] Enabled=0 written to modloader.ini -- overlay off on next launch.");
+
+			// Spawn a dedicated thread to own and pump the error splash.
+			// The window MUST be created on the thread that pumps its messages --
+			// creating it here on the render thread would leave it unresponsive
+			// because the render thread never runs a GetMessage loop.
+			CreateThread(nullptr, 0, [](void*) -> DWORD
+			{
+				Splash::Show();
+				Splash::SetErrorMode();
+				Splash::SetStatus(L"ImGui error: GPU device lost. Overlay disabled for next launch.");
+				// Pump messages until ExitProcess (Close button) kills the process.
+				MSG msg;
+				while (GetMessageW(&msg, nullptr, 0, 0))
+				{
+					TranslateMessage(&msg);
+					DispatchMessageW(&msg);
+				}
+				return 0;
+			}, nullptr, 0, nullptr);
+		}
+		else
+		{
+			g_shutdown = true;
+		}
+	}
 
 	s_presentOwnerThread.store(0, std::memory_order_release);
 	return hr;

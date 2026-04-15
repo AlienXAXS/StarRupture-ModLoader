@@ -25,6 +25,9 @@
     <Filter Include="Source Files\hooks\game\world_begin_play">
       <UniqueIdentifier>{1154c2bd-a19a-4194-8578-590069b83ce9}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Source Files\hooks\game\world_end_play">
+      <UniqueIdentifier>{3a7b2e1f-c4d5-4e6a-9f0b-8c1d2e3f4a5b}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Source Files\hooks\game\engine_init">
       <UniqueIdentifier>{5e68a0e8-3d63-4d34-bee2-9de7ea5c385f}</UniqueIdentifier>
     </Filter>
@@ -39,6 +42,18 @@
     </Filter>
     <Filter Include="Source Files\hooks\game\engine_tick">
       <UniqueIdentifier>{ad840a96-d535-42f9-9386-22100e859737}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\hooks\game\client_message">
+      <UniqueIdentifier>{e3f9a1b2-d047-4e78-9c34-2b3c4d5e6f70}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\hooks\game\server_chat_commit">
+      <UniqueIdentifier>{a7b3c5d9-e1f4-4a6b-8c0d-2e4f6a8b0c2d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\hooks\game\hud_post_render">
+      <UniqueIdentifier>{b2e7f3a1-c891-4d56-8f23-1a2b3c4d5e6f}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\network_channel">
+      <UniqueIdentifier>{f4a0b2c3-e158-4f89-ad45-3c4d5e6f7a81}</UniqueIdentifier>
     </Filter>
     <Filter Include="Source Files\hooks\game\actor_begin_play">
       <UniqueIdentifier>{75a11838-a61f-4b73-bad6-773b6425b24e}</UniqueIdentifier>
@@ -82,6 +97,12 @@
     <Filter Include="Source Files\UI\modloader">
       <UniqueIdentifier>{f2a4b6c8-9d0e-4f1a-b2c3-5d7e8f9a0b1c}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Source Files\hooks\game\game_instance">
+      <UniqueIdentifier>{10a31f74-27ab-48fd-b200-79a0f0a9e443}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\hooks\game\FHttpServerRequest">
+      <UniqueIdentifier>{06d5eb1a-4870-4cab-b7a0-4f47674a29b9}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="dwmapi_proxy.h">
@@ -121,6 +142,9 @@
       <Filter>Source Files\UI\modloader</Filter>
     </ClInclude>
     <ClInclude Include="UI\plugin_panel_registry.h">
+      <Filter>Source Files\UI\modloader</Filter>
+    </ClInclude>
+    <ClInclude Include="UI\plugin_widget_registry.h">
       <Filter>Source Files\UI\modloader</Filter>
     </ClInclude>
     <ClInclude Include="UI\splash_window.h">
@@ -168,6 +192,9 @@
     <ClInclude Include="hooks\game\engine_tick\engine_tick.h">
       <Filter>Source Files\hooks\game\engine_tick</Filter>
     </ClInclude>
+    <ClInclude Include="hooks\game\hud_post_render\hud_post_render.h">
+      <Filter>Source Files\hooks\game\hud_post_render</Filter>
+    </ClInclude>
     <ClInclude Include="hooks\game\experience_load_complete\experience_load_complete.h">
       <Filter>Source Files\hooks\game\experience_load_complete</Filter>
     </ClInclude>
@@ -182,6 +209,9 @@
     </ClInclude>
     <ClInclude Include="hooks\game\world_begin_play\world_begin_play.h">
       <Filter>Source Files\hooks\game\world_begin_play</Filter>
+    </ClInclude>
+    <ClInclude Include="hooks\game\world_end_play\world_end_play.h">
+      <Filter>Source Files\hooks\game\world_end_play</Filter>
     </ClInclude>
     <ClInclude Include="utils\thread_utils.h">
       <Filter>Source Files\utils</Filter>
@@ -203,6 +233,21 @@
     </ClInclude>
     <ClInclude Include="UI\global_settings.h">
       <Filter>Source Files\UI</Filter>
+    </ClInclude>
+    <ClInclude Include="network_channel\network_channel.h">
+      <Filter>Source Files\network_channel</Filter>
+    </ClInclude>
+    <ClInclude Include="plugins\plugin_network_helpers.h">
+      <Filter>Source Files\plugins</Filter>
+    </ClInclude>
+    <ClInclude Include="hooks\game\game_instance_init\game_instance_init.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="logging\logger_interface.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="hooks\http\http_server_hook.h">
+      <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -266,6 +311,9 @@
     <ClCompile Include="UI\plugin_panel_registry.cpp">
       <Filter>Source Files\UI\modloader</Filter>
     </ClCompile>
+    <ClCompile Include="UI\plugin_widget_registry.cpp">
+      <Filter>Source Files\UI\modloader</Filter>
+    </ClCompile>
     <ClCompile Include="UI\splash_window.cpp">
       <Filter>Source Files\UI</Filter>
     </ClCompile>
@@ -299,6 +347,21 @@
     <ClCompile Include="hooks\game\engine_tick\engine_tick.cpp">
       <Filter>Source Files\hooks\game\engine_tick</Filter>
     </ClCompile>
+    <ClCompile Include="hooks\game\client_message\client_message.cpp">
+      <Filter>Source Files\hooks\game\client_message</Filter>
+    </ClCompile>
+    <ClCompile Include="hooks\game\server_chat_commit\server_chat_commit.cpp">
+      <Filter>Source Files\hooks\game\server_chat_commit</Filter>
+    </ClCompile>
+    <ClCompile Include="utils\game_thread_dispatch.cpp">
+      <Filter>Source Files\utils</Filter>
+    </ClCompile>
+    <ClCompile Include="hooks\game\hud_post_render\hud_post_render.cpp">
+      <Filter>Source Files\hooks\game\hud_post_render</Filter>
+    </ClCompile>
+    <ClCompile Include="network_channel\network_channel.cpp">
+      <Filter>Source Files\network_channel</Filter>
+    </ClCompile>
     <ClCompile Include="hooks\game\experience_load_complete\experience_load_complete.cpp">
       <Filter>Source Files\hooks\game\experience_load_complete</Filter>
     </ClCompile>
@@ -314,6 +377,9 @@
     <ClCompile Include="hooks\game\world_begin_play\world_begin_play.cpp">
       <Filter>Source Files\hooks\game\world_begin_play</Filter>
     </ClCompile>
+    <ClCompile Include="hooks\game\world_end_play\world_end_play.cpp">
+      <Filter>Source Files\hooks\game\world_end_play</Filter>
+    </ClCompile>
     <ClCompile Include="hooks\game\mass_do_spawning\mass_do_spawning.cpp">
       <Filter>Source Files\hooks\game\spawning</Filter>
     </ClCompile>
@@ -328,6 +394,12 @@
     </ClCompile>
     <ClCompile Include="UI\global_settings.cpp">
       <Filter>Source Files\UI</Filter>
+    </ClCompile>
+    <ClCompile Include="hooks\game\game_instance_init\game_instance_init.cpp">
+      <Filter>Source Files\hooks\game\game_instance</Filter>
+    </ClCompile>
+    <ClCompile Include="hooks\http\http_server_hook.cpp">
+      <Filter>Source Files\hooks\game\FHttpServerRequest</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

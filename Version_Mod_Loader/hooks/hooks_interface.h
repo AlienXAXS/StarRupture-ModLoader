@@ -4,6 +4,6 @@
 
 namespace ModLoaderLogger
 {
-    // Get the global hooks interface for plugins
-    IPluginHooks* GetPluginHooks();
+	// Get the global hooks interface for plugins
+	IPluginHooks* GetPluginHooks();
 }
