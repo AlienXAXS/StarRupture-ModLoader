@@ -142,104 +142,59 @@ jobs:
             /m `
             /v:minimal
 
-      - name: Stage release layout
-        shell: pwsh
-        run: |
-          foreach ($target in @("Client", "Server")) {
-            $config  = "$target Release"
-            $staging = "$env:GITHUB_WORKSPACE\staging\$target"
-            $modsDir = "$staging\Plugins"
-
-            New-Item -ItemType Directory -Force -Path $staging | Out-Null
-            New-Item -ItemType Directory -Force -Path $modsDir | Out-Null
-
-            # dwmapi.dll goes in the root
-            Copy-Item "build\$config\dwmapi.dll" "$staging\dwmapi.dll"
-
-            # Copy every .dll found in Plugins - no exp/lib files
-            Get-ChildItem "build\$config\Plugins\*.dll" | ForEach-Object {
-              Copy-Item $_.FullName $modsDir
-              Write-Host "Staged [$target]: $($_.Name)"
-            }
-
-            # Copy every .pdb found in Plugins
-            Get-ChildItem "build\$config\Plugins\*.pdb" | ForEach-Object {
-              Copy-Item $_.FullName $modsDir
-              Write-Host "Staged [$target] PDB: $($_.Name)"
-            }
-
-            # Copy root-level dwmapi.pdb if present
-            $pdb = "build\$config\dwmapi.pdb"
-            if (Test-Path $pdb) { Copy-Item $pdb "$staging\dwmapi.pdb" }
-          }
-
       - name: Upload dwmapi.dll artifacts for SDK sync
         uses: actions/upload-artifact@v4
         with:
           name: modloader-dlls
           path: |
-            staging/Client/dwmapi.dll
-            staging/Server/dwmapi.dll
+            build/Client Release/dwmapi.dll
+            build/Server Release/dwmapi.dll
           retention-days: 1
 
-      - name: Prepare individual plugin assets
-        shell: pwsh
-        run: |
-          # Copy each plugin DLL as <Name>-<Variant>.dll for individual download
-          foreach ($variant in @("Client", "Server")) {
-            Get-ChildItem "build\$variant Release\Plugins\*.dll" | ForEach-Object {
-              $dest = "$env:GITHUB_WORKSPACE\$($_.BaseName)-$variant.dll"
-              Copy-Item $_.FullName $dest
-              Write-Host "Prepared individual asset: $($_.BaseName)-$variant.dll"
-            }
-          }
-
-      - name: Generate manifests
+      - name: Generate all release assets
         shell: pwsh
         run: |
           $tag = "${{ steps.tag.outputs.TAG }}"
+          $repo = "${{ github.repository }}"
+          $ws   = $env:GITHUB_WORKSPACE
 
-          # Read PLUGIN_INTERFACE_VERSION_MAX directly from the header so this
-          # value never drifts out of sync with the compiled binary.
-          $header   = Get-Content "Version_Mod_Loader\plugins\plugin_interface.h" -Raw
-          $match    = [regex]::Match($header, '#define\s+PLUGIN_INTERFACE_VERSION_MAX\s+(\d+)')
-          if (-not $match.Success) { throw "Could not find PLUGIN_INTERFACE_VERSION_MAX in plugin_interface.h" }
-          $ifaceVer = [int]$match.Groups[1].Value
-          Write-Host "Interface version: $ifaceVer"
+          # Read interface version constants from the header so they never drift
+          # out of sync with what was actually compiled.
+          $header = Get-Content "$ws\Version_Mod_Loader\plugins\plugin_interface.h" -Raw
+          $matchMin = [regex]::Match($header, '#define\s+PLUGIN_INTERFACE_VERSION_MIN\s+(\d+)')
+          $matchMax = [regex]::Match($header, '#define\s+PLUGIN_INTERFACE_VERSION_MAX\s+(\d+)')
+          if (-not $matchMin.Success) { throw "Could not find PLUGIN_INTERFACE_VERSION_MIN in plugin_interface.h" }
+          if (-not $matchMax.Success) { throw "Could not find PLUGIN_INTERFACE_VERSION_MAX in plugin_interface.h" }
+          $ifaceMin = [int]$matchMin.Groups[1].Value
+          $ifaceMax = [int]$matchMax.Groups[1].Value
+          Write-Host "Interface version range: [$ifaceMin, $ifaceMax]"
 
-          foreach ($variant in @("Client", "Server")) {
-            $plugins = @()
-
-            Get-ChildItem "build\$variant Release\Plugins\*.dll" | ForEach-Object {
-              $name = $_.BaseName
-              $plugins += [ordered]@{
-                name           = $name
-                filename       = "$name.dll"           # local name written to Plugins\
-                asset_filename = "$name-$variant.dll"  # GitHub release asset name
-                version        = $tag
-              }
-            }
-
-            $manifest = [ordered]@{
-              build_tag         = $tag
-              interface_version = $ifaceVer
-              plugins           = $plugins
-            }
-
-            $outPath = "$env:GITHUB_WORKSPACE\manifest-$($variant.ToLower()).json"
-            $manifest | ConvertTo-Json -Depth 3 | Out-File -FilePath $outPath -Encoding utf8NoBOM
-            Write-Host "Generated: $outPath"
-            Get-Content $outPath
+          # ---------------------------------------------------------------------------
+          # 1. Modloader manifests  (central version check — no plugin list)
+          # ---------------------------------------------------------------------------
+          foreach ($variant in @("client", "server")) {
+            $manifest = [ordered]@{ build_tag = $tag }
+            $out = "$ws\manifest-$variant.json"
+            $manifest | ConvertTo-Json -Depth 1 | Out-File $out -Encoding utf8NoBOM
+            Write-Host "Generated modloader manifest: $out"
+            Get-Content $out
           }
 
-      - name: Create ZIP archives
-        shell: pwsh
-        run: |
-          $tag = "${{ steps.tag.outputs.TAG }}"
-          foreach ($target in @("Client", "Server")) {
-            $zipPath = "$env:GITHUB_WORKSPACE\StarRupture-ModLoader-$target-$tag.zip"
-            Compress-Archive -Path "$env:GITHUB_WORKSPACE\staging\$target\*" -DestinationPath $zipPath
-            Write-Host "Created ZIP: $zipPath"
+          # ---------------------------------------------------------------------------
+          # 2. Modloader ZIPs  (dwmapi.dll only — plugins are shipped separately)
+          # ---------------------------------------------------------------------------
+          foreach ($variant in @("Client", "Server")) {
+            $stagingDir = "$ws\staging\modloader\$variant"
+            New-Item -ItemType Directory -Force $stagingDir | Out-Null
+
+            Copy-Item "build\$variant Release\dwmapi.dll" "$stagingDir\dwmapi.dll"
+
+            $pdb = "build\$variant Release\dwmapi.pdb"
+            if (Test-Path $pdb) { Copy-Item $pdb "$stagingDir\dwmapi.pdb" }
+
+            $zipPath = "$ws\StarRupture-ModLoader-$variant-$tag.zip"
+            Compress-Archive -Path "$stagingDir\*" -DestinationPath $zipPath
+            Write-Host "Created modloader ZIP: $zipPath"
           }
 
       - name: Create GitHub Release
@@ -247,22 +202,33 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          $tag       = "${{ steps.tag.outputs.TAG }}"
-          $clientZip = "$env:GITHUB_WORKSPACE\StarRupture-ModLoader-Client-$tag.zip"
-          $serverZip = "$env:GITHUB_WORKSPACE\StarRupture-ModLoader-Server-$tag.zip"
+          $tag = "${{ steps.tag.outputs.TAG }}"
+          $ws  = $env:GITHUB_WORKSPACE
 
-          # Collect all assets: ZIPs + manifests + individual plugin DLLs
-          $assets = @(
-            $clientZip,
-            $serverZip,
-            "$env:GITHUB_WORKSPACE\manifest-client.json",
-            "$env:GITHUB_WORKSPACE\manifest-server.json"
-          )
+          $assets = [System.Collections.Generic.List[string]]::new()
 
-          Get-ChildItem "$env:GITHUB_WORKSPACE\*-Client.dll",
-                        "$env:GITHUB_WORKSPACE\*-Server.dll" | ForEach-Object {
-            $assets += $_.FullName
-          }
+          # Modloader ZIPs
+          Get-ChildItem "$ws\StarRupture-ModLoader-*-$tag.zip" | ForEach-Object { $assets.Add($_.FullName) }
+
+          # Modloader manifests
+          $assets.Add("$ws\manifest-client.json")
+          $assets.Add("$ws\manifest-server.json")
+
+          # Per-plugin ZIPs
+          Get-ChildItem "$ws\*-Client-$tag.zip", "$ws\*-Server-$tag.zip" |
+            Where-Object { $_.Name -notlike "StarRupture-ModLoader-*" } |
+            ForEach-Object { $assets.Add($_.FullName) }
+
+          # Per-plugin individual DLLs (auto-updater download targets)
+          Get-ChildItem "$ws\*-Client.dll", "$ws\*-Server.dll" |
+            ForEach-Object { $assets.Add($_.FullName) }
+
+          # Per-plugin update manifests
+          Get-ChildItem "$ws\*-client-manifest.json", "$ws\*-server-manifest.json" |
+            ForEach-Object { $assets.Add($_.FullName) }
+
+          Write-Host "Uploading $($assets.Count) asset(s):"
+          $assets | ForEach-Object { Write-Host "  $_" }
 
           gh release create $tag @assets `
             --title "StarRupture ModLoader $tag" `
@@ -324,9 +290,11 @@ jobs:
         run: |
           $tag = "${{ needs.build.outputs.tag }}"
 
-          # Rename the artifacts to make Client vs Server clear
-          Copy-Item "modloader-dlls\Client\dwmapi.dll" "dwmapi-Client.dll"
-          Copy-Item "modloader-dlls\Server\dwmapi.dll" "dwmapi-Server.dll"
+          # The artifact download preserves the directory structure from the path globs:
+          #   modloader-dlls/build/Client Release/dwmapi.dll
+          #   modloader-dlls/build/Server Release/dwmapi.dll
+          Copy-Item "modloader-dlls\build\Client Release\dwmapi.dll" "dwmapi-Client.dll"
+          Copy-Item "modloader-dlls\build\Server Release\dwmapi.dll" "dwmapi-Server.dll"
 
           cd sdk
           gh release create $tag `
