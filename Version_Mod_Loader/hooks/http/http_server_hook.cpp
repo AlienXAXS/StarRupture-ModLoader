@@ -986,10 +986,45 @@ namespace Hooks::HttpServer
 			uint64_t p = 0;
 			if (TryReadBytes(reinterpret_cast<uintptr_t>(a2), &p, sizeof(p)) == sizeof(p) && p != 0)
 			{
-				std::string verbLower = ReadFStringUtf8Lower(p, k_VerbOffset);
-				std::string urlLower = ReadFStringUtf8Lower(p, k_UrlOffset);
-				std::string urlOrig = ReadFStringUtf8(p, k_UrlOffset);
-				std::string body = ReadByteArray(p, k_BodyOffset);
+				// ---------------------------------------------------------------------------
+				// Resolve the actual FHttpServerRequest* from the TSharedPtr.
+				//
+				// UE5 TSharedPtr<T> layout (x64):
+				//   +0x00  T*      Object pointer   <- this is what *a2 gives us
+				//   +0x08  FSharedReferencer*  Reference controller
+				//
+				// So p == *a2 should already BE the FHttpServerRequest*, not a ref-controller.
+				// However, in some UE builds / inlining scenarios the compiler passes the
+				// TSharedPtr storage address itself rather than dereferencing it, meaning
+				// p is a pointer-to-pointer.  We detect this by sanity-checking the verb
+				// FString::Num field (at req+8): a valid HTTP verb is 2–7 chars.
+				// If Num is out of that range, follow one extra level of indirection.
+				// ---------------------------------------------------------------------------
+				uint64_t req = p;
+
+				int32_t verbNum = 0;
+				if (TryReadBytes(req + k_VerbOffset + 8, &verbNum, sizeof(verbNum)) == sizeof(verbNum)
+					&& (verbNum < 1 || verbNum > 16))
+				{
+					// p doesn't look like a request object — try treating it as a pointer-to-object.
+					uint64_t inner = 0;
+					if (TryReadBytes(p, &inner, sizeof(inner)) == sizeof(inner) && inner != 0)
+					{
+						int32_t innerVerbNum = 0;
+						if (TryReadBytes(inner + k_VerbOffset + 8, &innerVerbNum, sizeof(innerVerbNum)) == sizeof(innerVerbNum)
+							&& innerVerbNum >= 1 && innerVerbNum <= 16)
+						{
+							ModLoaderLogger::LogTrace(L"[HttpServer] Detour: followed extra TSharedPtr deref (verbNum=%d -> inner verbNum=%d)",
+								verbNum, innerVerbNum);
+							req = inner;
+						}
+					}
+				}
+
+				std::string verbLower = ReadFStringUtf8Lower(req, k_VerbOffset);
+				std::string urlLower  = ReadFStringUtf8Lower(req, k_UrlOffset);
+				std::string urlOrig   = ReadFStringUtf8(req, k_UrlOffset);
+				std::string body      = ReadByteArray(req, k_BodyOffset);
 
 				// Normalise: strip query-string / fragment, then ensure a trailing slash
 				// so that /foo/bar and /foo/bar/ both match the registered prefix /foo/bar/.

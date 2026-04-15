@@ -2,49 +2,13 @@
 
 A plugin-based mod loader for [StarRupture](https://store.steampowered.com/app/1631270/StarRupture/). Loads automatically via DLL proxy injection — no game files are modified.
 
-Like this project? Give it a ⭐ here on GitHub!
+Like this project? Give it a star here on GitHub!
 
 ---
 
 ## Discord
-You can join our Discord server to chat about the mod loader.
-[Join Today](https://discord.gg/QUzsGKe5Bz)
 
----
-
-## Plugins
-
-### 🔧 KeepTicking *(Server)*
-Prevents a dedicated server from sleeping when no players are online. Without this, all of your machines will stop producing items.
-
-### 🖥️ ServerUtility *(Server)*
-Adds remote administration to a dedicated server:
-
-- **Command-line server settings** — pass `-SessionName=`, `-SaveGameInterval=`, etc. to bypass `DSSettings.txt` entirely. Automatically detects existing saves and sets `StartNewGame` / `LoadSavedGame` accordingly.
-- **Source RCON** — authenticated remote command execution (TCP) compatible with any standard RCON client.
-- **Steam A2S Query** — server browser integration (UDP) for player counts, server name, and map info.
-- **Remote Vulnerability Patch** — blocks a known exploit in the game's built-in HTTP server that allows unauthenticated remote code execution. Enabled by default. See the [vulnerability announcement](https://wiki.starrupture-utilities.com/en/dedicated-server/Vulnerability-Announcement) for details.
-
-See the [RCON & Query documentation](ServerUtility/RCON_README.md) for protocol details, supported commands, and client compatibility.
-
-### 🧭 Compass *(Client)*
-Adds a heads-up compass bar to the game HUD showing nearby entities and points of interest in the direction you are facing.
-
-**What it shows (each category can be toggled and distance-limited independently):**
-- Other players
-- Base cores
-- Map markers — antennas, abandoned bases, caves, obelisks
-- Foundables — dead bodies and drones
-- Enemies
-- Custom player-placed map pins
-
-The compass bar position, width, scale, and line colour are all configurable. Per-category render distances can be set in Unreal Units (0 = unlimited). Config is in `Plugins\config\Compass.ini`.
-
----
-
-## Developing Your Own Plugins
-
-Use the [StarRupture-Plugin-SDK](https://github.com/AlienXAXS/StarRupture-Plugin-SDK) repo — it has everything you need (headers, UE5 SDK, an example plugin, and a pre-built `dwmapi.dll`) without requiring a fork of this repo.
+[Join our Discord server](https://discord.gg/QUzsGKe5Bz) to chat about the mod loader and plugins.
 
 ---
 
@@ -68,23 +32,19 @@ Use the [StarRupture-Plugin-SDK](https://github.com/AlienXAXS/StarRupture-Plugin
 
 ---
 
-## ServerUtility — Command-Line Parameters
+## Plugins
 
-When running a dedicated server with ServerUtility enabled, these parameters replace `DSSettings.txt`:
-
-| Parameter | Required | Description |
+| Plugin | Target | Description |
 |---|---|---|
-| `-SessionName=<name>` | Yes | Session/server name |
-| `-SaveGameInterval=<seconds>` | No | Autosave interval (default: `300`) |
-| `-RconPort=<port>` | No | TCP/UDP port for RCON and Steam Query |
-| `-RconPassword=<password>` | No | Password for RCON authentication |
+| [KeepTicking](https://github.com/AlienXAXS/StarRupture-Plugin-KeepTicking) | Server | Prevents a dedicated server from sleeping when no players are online |
+| [ServerUtility](https://github.com/AlienXAXS/StarRupture-Plugin-ServerUtility) | Server | Command-line server settings, Source RCON, Steam A2S Query, and remote vulnerability patch |
+| [Compass](https://github.com/AlienXAXS/StarRupture-Plugin-Compass) | Client | Adds a HUD compass bar showing nearby players, bases, markers, and points of interest |
 
-**Example:**
-```
-StarRuptureGameSteam-Win64-Shipping.exe -SessionName="My Server" -SaveGameInterval=600 -RconPort=27015 -RconPassword=secret
-```
+---
 
-When `-SessionName=` is present, `DSSettings.txt` is not needed. The save game name is always `AutoSave0.sav`, and `StartNewGame` / `LoadSavedGame` are set automatically based on whether an existing save file is found.
+## Developing Your Own Plugins
+
+Use the [StarRupture-Plugin-SDK](https://github.com/AlienXAXS/StarRupture-Plugin-SDK) — it has everything you need (headers, UE5 SDK, an example plugin, and a pre-built `dwmapi.dll`) without requiring a fork of this repo.
 
 ---
 
@@ -94,8 +54,8 @@ When `-SessionName=` is present, `DSSettings.txt` is not needed. The save game n
 |---|---|
 | Plugins not loading | Make sure DLLs are in the `Plugins\` folder and `Enabled=1` is set in each plugin's `.ini` file. |
 | RCON won't start | Both `-RconPort=` and `-RconPassword=` must be provided on the command line. |
-| Server sleeps when empty | Enable KeepTicking in the plugins `.ini` file. |
-| Logs / diagnostics | Check `modloader.log` for detailed output.  Enable debug log level by setting `Level=DEBUG` in `modloader.ini`. |
+| Server sleeps when empty | Enable KeepTicking in `Plugins\config\KeepTicking.ini`. |
+| Logs / diagnostics | Check `modloader.log` for detailed output. Enable debug logging by setting `Level=DEBUG` in `modloader.ini`. |
 
 ---
 
@@ -105,10 +65,12 @@ When `-SessionName=` is present, `DSSettings.txt` is not needed. The save game n
 - **[MinHook](https://github.com/TsudaKageyu/minhook)** — Function hooking library
 - **[nlohmann/json](https://github.com/nlohmann/json)** — JSON parsing
 
+---
+
 ## Disclaimer
 
-This is a modding tool for educational purposes. Use at your own risk. The authors are not responsible for any damage caused by using this software.  While I will do everything possible to ensure that your save files will still work in future updates, I cannot be certain that your save files will always load.
+This is a modding tool for educational purposes. Use at your own risk. The authors are not responsible for any damage caused by using this software. While every effort is made to ensure save file compatibility across updates, this cannot be guaranteed.
 
 ---
 
-**Game:** Star Rupture · **Engine:** Unreal Engine 5 · **Mod Loader Version:** 1.0.0
+**Game:** Star Rupture · **Engine:** Unreal Engine 5
