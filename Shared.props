@@ -1,12 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
 
-
-
-  <PropertyGroup>
-    <GameSDKRoot Condition="'$(GameSDKRoot)' == ''">C:\Users\markp\Documents\GitHub\StarRupture-Game-SDK</GameSDKRoot>
-  </PropertyGroup>
-
   <!-- ============================================================
        StarRuptureSDKSourceDir
        Points to the SDK subdirectory containing Basic.cpp,
@@ -14,13 +8,13 @@
        active configuration.
        ============================================================ -->
   <PropertyGroup Condition="'$(Configuration)' == 'Debug' Or '$(Configuration)' == 'Release'">
-    <StarRuptureSDKSourceDir>$(GameSDKRoot)\Server\SDK\</StarRuptureSDKSourceDir>
+    <StarRuptureSDKSourceDir>$(SolutionDir)StarRupture SDK\Server\SDK\</StarRuptureSDKSourceDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)' == 'Client Debug' Or '$(Configuration)' == 'Client Release'">
-    <StarRuptureSDKSourceDir>$(GameSDKRoot)\Client\SDK\</StarRuptureSDKSourceDir>
+    <StarRuptureSDKSourceDir>$(SolutionDir)StarRupture SDK\Client\SDK\</StarRuptureSDKSourceDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)' == 'Server Debug' Or '$(Configuration)' == 'Server Release'">
-    <StarRuptureSDKSourceDir>$(GameSDKRoot)\Server\SDK\</StarRuptureSDKSourceDir>
+    <StarRuptureSDKSourceDir>$(SolutionDir)StarRupture SDK\Server\SDK\</StarRuptureSDKSourceDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)' == 'Local SDK Client Debug' Or '$(Configuration)' == 'Local SDK Client Release'">
     <StarRuptureSDKSourceDir>$(SolutionDir)Local StarRupture SDK\Client\SDK\</StarRuptureSDKSourceDir>
@@ -36,10 +30,10 @@
        generated SDK sub-directory headers.
        ============================================================ -->
   <PropertyGroup Condition="'$(Configuration)' == 'Client Debug' Or '$(Configuration)' == 'Client Release'">
-    <StarRuptureSDKConfigDir>$(GameSDKRoot)\Client\;$(GameSDKRoot)\Client\SDK\</StarRuptureSDKConfigDir>
+    <StarRuptureSDKConfigDir>$(SolutionDir)StarRupture SDK\Client\;$(SolutionDir)StarRupture SDK\Client\SDK\</StarRuptureSDKConfigDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)' == 'Server Debug' Or '$(Configuration)' == 'Server Release'">
-    <StarRuptureSDKConfigDir>$(GameSDKRoot)\Server\;$(GameSDKRoot)\Server\SDK\</StarRuptureSDKConfigDir>
+    <StarRuptureSDKConfigDir>$(SolutionDir)StarRupture SDK\Server\;$(SolutionDir)StarRupture SDK\Server\SDK\</StarRuptureSDKConfigDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)' == 'Local SDK Client Debug' Or '$(Configuration)' == 'Local SDK Client Release'">
     <StarRuptureSDKConfigDir>$(SolutionDir)Local StarRupture SDK\Client\;$(SolutionDir)Local StarRupture SDK\Client\SDK\</StarRuptureSDKConfigDir>
