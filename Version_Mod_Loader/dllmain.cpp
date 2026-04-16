@@ -85,7 +85,7 @@ static HANDLE g_engineReadyEvent = NULL;
 static HANDLE g_ue4ssReadyEvent = NULL;
 
 // Required suffix for the game version, read from the executable's version
-static constexpr wchar_t kRequiredVersionSuffix[] = L"CL-118258";
+static constexpr wchar_t kRequiredVersionSuffix[] = L"CL-118629";
 
 #ifdef MODLOADER_CLIENT_BUILD
 // Set during init from modloader.ini [UI] Enabled; read during shutdown.
