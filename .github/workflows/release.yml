@@ -142,13 +142,19 @@ jobs:
             /m `
             /v:minimal
 
+      - name: Stage dwmapi.dll artifacts for SDK sync
+        shell: pwsh
+        run: |
+          Copy-Item "build\Client Release\dwmapi.dll" "dwmapi-Client.dll"
+          Copy-Item "build\Server Release\dwmapi.dll" "dwmapi-Server.dll"
+
       - name: Upload dwmapi.dll artifacts for SDK sync
         uses: actions/upload-artifact@v4
         with:
           name: modloader-dlls
           path: |
-            build/Client Release/dwmapi.dll
-            build/Server Release/dwmapi.dll
+            dwmapi-Client.dll
+            dwmapi-Server.dll
           retention-days: 1
 
       - name: Generate all release assets
@@ -290,11 +296,11 @@ jobs:
         run: |
           $tag = "${{ needs.build.outputs.tag }}"
 
-          # The artifact download preserves the directory structure from the path globs:
-          #   modloader-dlls/build/Client Release/dwmapi.dll
-          #   modloader-dlls/build/Server Release/dwmapi.dll
-          Copy-Item "modloader-dlls\build\Client Release\dwmapi.dll" "dwmapi-Client.dll"
-          Copy-Item "modloader-dlls\build\Server Release\dwmapi.dll" "dwmapi-Server.dll"
+          # The artifact is uploaded as flat files:
+          #   modloader-dlls/dwmapi-Client.dll
+          #   modloader-dlls/dwmapi-Server.dll
+          Copy-Item "modloader-dlls\dwmapi-Client.dll" "dwmapi-Client.dll"
+          Copy-Item "modloader-dlls\dwmapi-Server.dll" "dwmapi-Server.dll"
 
           cd sdk
           gh release create $tag `
