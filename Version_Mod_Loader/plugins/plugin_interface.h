@@ -16,8 +16,9 @@
 //      any response body + content-type directly (e.g. JSON API endpoints).
 //   Server builds only; nullptr on client/generic builds.
 //      MIN remains 19.
-#define PLUGIN_INTERFACE_VERSION_MIN 19
-#define PLUGIN_INTERFACE_VERSION_MAX 22
+// v23 - SR Hotfix update 22/04/2026 118961
+#define PLUGIN_INTERFACE_VERSION_MIN 23
+#define PLUGIN_INTERFACE_VERSION_MAX 23
 #define PLUGIN_INTERFACE_VERSION PLUGIN_INTERFACE_VERSION_MAX
 
 enum class PluginLogLevel { Trace = 0, Debug = 1, Info = 2, Warn = 3, Error = 4 };

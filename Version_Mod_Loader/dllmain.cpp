@@ -1,59 +1,52 @@
 ﻿// dllmain.cpp : Defines the entry point for the DLL application.
-#include "logging/log.h"
-#include "logging/ue_log.h"
-#include "logging/logger.h"
-
 #include "dwmapi_proxy.h"
-
 #include "config/config_manager.h"
-
-#include "plugins/plugin_manager.h"
-
-#include "memory_scanner/scanner.h"
-
-#include "UI/splash_window.h"
-
-#include "hooks/game/world_begin_play/world_begin_play.h"
+#include "hooks/game/actor_begin_play/actor_begin_play.h"
 #include "hooks/game/engine_init/engine_init.h"
 #include "hooks/game/engine_shutdown/engine_shutdown.h"
-#include "hooks/game/save_loaded/save_loaded.h"
 #include "hooks/game/experience_load_complete/experience_load_complete.h"
-#include "hooks/game/actor_begin_play/actor_begin_play.h"
-#include "hooks/game/player_joined/player_joined.h"
-#include "hooks/game/player_left/player_left.h"
+#include "hooks/game/game_instance_init/game_instance_init.h"
+#include "hooks/game/mass_do_spawning/mass_do_spawning.h"
 #include "hooks/game/mass_spawner_activate/mass_spawner_activate.h"
 #include "hooks/game/mass_spawner_deactivate/mass_spawner_deactivate.h"
-#include "hooks/game/mass_do_spawning/mass_do_spawning.h"
+#include "hooks/game/player_joined/player_joined.h"
+#include "hooks/game/player_left/player_left.h"
+#include "hooks/game/save_loaded/save_loaded.h"
+#include "hooks/game/world_begin_play/world_begin_play.h"
+#include "logging/log.h"
+#include "logging/logger.h"
+#include "logging/ue_log.h"
+#include "memory_scanner/scanner.h"
 #include "network_channel/network_channel.h"
-#include "hooks/game/game_instance_init/game_instance_init.h"
+#include "plugins/plugin_manager.h"
+#include "UI/splash_window.h"
 
 #ifdef MODLOADER_SERVER_BUILD
 #include "hooks/http/http_server_hook.h"
 #endif
 
 #include "auto_update/auto_updater.h"
-
 #include "utils/thread_utils.h"
 
 #ifdef MODLOADER_CLIENT_BUILD
-#include "hooks/input/input_processor.h"
+#include "Engine_classes.hpp"
 #include "hooks/game/engine_tick/engine_tick.h"
 #include "hooks/game/hud_post_render/hud_post_render.h"
+#include "hooks/input/input_processor.h"
+#include "UI/global_settings.h"
 #include "UI/imgui_backend.h"
 #include "UI/overlay.h"
-#include "UI/global_settings.h"
-#include "Engine_classes.hpp"
 #endif
 
 #include "DbgHelp.h"
 #pragma comment(lib, "DbgHelp.lib")
 
+#include <chrono>
 #include <Psapi.h>
+#include <thread>
+#include <vector>
 #include <VersionHelpers.h>
 #include <winver.h>
-#include <thread>
-#include <chrono>
-#include <vector>
 
 #pragma comment(lib, "psapi.lib")
 #pragma comment(lib, "version.lib")
@@ -84,27 +77,60 @@ static HANDLE g_engineReadyEvent = NULL;
 // calls LoadLibraryW while the detour or GPU driver init is still active.
 static HANDLE g_ue4ssReadyEvent = NULL;
 
-// Required suffix for the game version, read from the executable's version
-static constexpr wchar_t kRequiredVersionSuffix[] = L"CL-118629";
+// Required suffix for the game version, read from the executable's version resource.
+static constexpr wchar_t kRequiredVersionSuffix[] = L"CL-118961";
 
 #ifdef MODLOADER_CLIENT_BUILD
 // Set during init from modloader.ini [UI] Enabled; read during shutdown.
 static bool s_imguiEnabled = true;
+
+// Current world pointer -- written by the WorldBeginPlay callback, read by the
+// per-tick callback.  Both run on the game thread so no locking is needed.
+static SDK::UWorld* s_currentWorld = nullptr;
 #endif
 
 // ---------------------------------------------------------------------------
 // Forward declarations
 // ---------------------------------------------------------------------------
 static DWORD WINAPI MainInitThreadProc(LPVOID);
-static void LoadUE4SS();
-static void LogStartupEnvironment();
+static void       LoadUE4SS();
+static void   LogStartupEnvironment();
+static bool         VerifyGameVersion();
+static void InstallAllHooks();
+static void       RemoveAllHooks();
+static void         WaitForEngineReady();
+#ifdef MODLOADER_CLIENT_BUILD
+static void       InitClientUI();
+static void ShutdownClientUI();
+#endif
+static void     ShutdownAll();
 
+// ---------------------------------------------------------------------------
+// Path utility: returns the directory containing the game executable,
+// with a trailing backslash, optionally with a filename appended.
+// ---------------------------------------------------------------------------
+static std::wstring GetExeDir()
+{
+	wchar_t path[MAX_PATH]{};
+	GetModuleFileNameW(nullptr, path, MAX_PATH);
+	wchar_t* slash = wcsrchr(path, L'\\');
+	if (slash) *(slash + 1) = L'\0';
+	return path;
+}
+
+static std::wstring GetExeDirPath(const wchar_t* filename)
+{
+	return GetExeDir() + filename;
+}
+
+// ---------------------------------------------------------------------------
 // APC trampoline: fired on the game main thread when it enters an alertable
 // wait.  We must NOT call MainInitThreadProc directly here -- it blocks on
 // MsgWaitForMultipleObjects waiting for the EngineInit detour, which itself
 // runs on this same (main) thread, causing a deadlock.  Instead we spawn a
 // dedicated thread and return immediately so the main thread stays free to
 // call FEngineLoop::Init (which triggers the hook we are waiting for).
+// ---------------------------------------------------------------------------
 static VOID CALLBACK MainInitApcProc(ULONG_PTR)
 {
 	g_mainInitThread = CreateThread(nullptr, 0, MainInitThreadProc, nullptr, 0, nullptr);
@@ -160,7 +186,6 @@ static void OnEngineInitForUELog()
 // Returns true if the version is compatible; populates outActualVersion in
 // both the success and failure cases so the caller can log it.
 // ---------------------------------------------------------------------------
-
 static bool CheckGameVersion(std::wstring& outActualVersion)
 {
 	wchar_t exePath[MAX_PATH]{};
@@ -186,7 +211,7 @@ static bool CheckGameVersion(std::wstring& outActualVersion)
 	LangCodepage* translations = nullptr;
 	UINT cbTranslations = 0;
 	VerQueryValueW(buf.data(), L"\\VarFileInfo\\Translation",
-	               reinterpret_cast<LPVOID*>(&translations), &cbTranslations);
+	         reinterpret_cast<LPVOID*>(&translations), &cbTranslations);
 
 	wchar_t query[64]{};
 	if (translations && cbTranslations >= sizeof(LangCodepage))
@@ -198,7 +223,7 @@ static bool CheckGameVersion(std::wstring& outActualVersion)
 	wchar_t* productVersion = nullptr;
 	UINT versionLen = 0;
 	if (!VerQueryValueW(buf.data(), query,
-	                    reinterpret_cast<LPVOID*>(&productVersion), &versionLen)
+	    reinterpret_cast<LPVOID*>(&productVersion), &versionLen)
 	    || !productVersion || versionLen == 0)
 	{
 		outActualVersion = L"<not found>";
@@ -214,103 +239,56 @@ static bool CheckGameVersion(std::wstring& outActualVersion)
 }
 
 // ---------------------------------------------------------------------------
-// Main initialisation thread
-//
-// Owns everything that would previously have run inside DLL_PROCESS_ATTACH
-// but cannot safely run there because:
-//   * WinHTTP (used by RunAutoUpdate) lazily loads TLS/DNS DLLs via
-//     LoadLibrary.  LoadLibrary needs the loader lock, which DllMain holds
-//     for its entire duration -- causing an immediate deadlock if we wait, or
-//     error 5023 if we try to use the thread pool from inside the lock.
-//   * By running here we are already outside the loader lock, so WinHTTP,
-//     hook installation, and plugin LoadLibrary calls all work normally.
-//
-// Plugin loading is deliberately deferred until the engine signals it is
-// ready (via g_engineReadyEvent).  This guarantees that when PluginInit runs,
-// the UE engine is fully initialised and it is safe for plugins to install
-// hooks into game code.  Plugin OnEngineInit callbacks still fire: because
-// the engine is already up by the time PluginInit is called, any call to
-// IPluginHooks::RegisterEngineInitCallback inside PluginInit triggers the
-// late-registration path in Hooks::EngineInit::RegisterPluginCallback, which
-// invokes the callback immediately.
+// Version verification with splash feedback on mismatch.
+// Returns true if init should continue, false if it should abort.
 // ---------------------------------------------------------------------------
-static DWORD WINAPI MainInitThreadProc(LPVOID)
+static bool VerifyGameVersion()
 {
-	// Open the splash here, not in DllMain.  The splash window has no internal
-	// message thread -- Show/SetStatus/SetProgress/Close must all be called from
-	// the same thread that owns the HWND.  Running everything here keeps the
-	// ownership consistent and avoids cross-thread UpdateWindow / PumpMessages
-	// failures.  DllMain returns in microseconds so the visual delay is nil.
+	std::wstring gameVersion;
 
-	Splash::Show();
-	Splash::SetStatus(L"Starting mod loader...");
-	Splash::SetProgress(0.0f);
-
-	// Verify the game binary is the expected version before installing any hooks.
-	// If the CL doesn't match we display a timed error and bail out cleanly.
-	{
-		std::wstring gameVersion;
 #if _DEBUG
-		if (false)
-#else 
-		if (!CheckGameVersion(gameVersion))
+	const bool versionOk = true;
+#else
+	const bool versionOk = CheckGameVersion(gameVersion);
 #endif
+
+	if (!versionOk)
+	{
+		LogToFile::Error("[ModLoader] VERSION MISMATCH: expected suffix '%ls', got '%ls'",
+		 kRequiredVersionSuffix, gameVersion.c_str());
+		LogToFile::Error("[ModLoader] Hook installation aborted -- update to the correct game build.");
+
+		// On client builds, show a visible countdown before closing the splash.
+		// On server builds there is no UI, so we just log and fall through to abort.
+#ifdef MODLOADER_CLIENT_BUILD
+		Splash::SetErrorMode(false);
+		for (int countdown = 5; countdown > 0; --countdown)
 		{
-			LogToFile::Error("[ModLoader] VERSION MISMATCH: expected suffix '%ls', got '%ls'",
-			                 kRequiredVersionSuffix, gameVersion.c_str());
-			LogToFile::Error("[ModLoader] Hook installation aborted -- update to the correct game build.");
-
-			// Only show the splash and countdown on client builds -- on server builds we just log the error and exit immediately since there's no UI to show it on.
-#if defined(MODLOADER_CLIENT_BUILD)
-			Splash::SetErrorMode(false);
-			Splash::SetStatus(L"Wrong game version! Game will start without plugins & mod loader.");
-
-			for (int countdown = 5; countdown > 0; --countdown)
-			{
-				wchar_t msg[256];
-
-				Sleep(1000);
-			}
-
-			// Unblock DLL_PROCESS_DETACH so it doesn't hang waiting for init.
-			if (g_pluginsLoadedEvent)
-				SetEvent(g_pluginsLoadedEvent);
-
-			Splash::Close();
+			wchar_t msg[64];
+			swprintf_s(msg, L"Wrong game version! Closing in %d...", countdown);
+			Splash::SetStatus(msg);
+			Sleep(1000);
+		}
+		Splash::Close();
 #endif
 
-			return 0;
-		}
+		// Unblock DLL_PROCESS_DETACH on all build types.
+		if (g_pluginsLoadedEvent)
+			SetEvent(g_pluginsLoadedEvent);
 
-		LogToFile::Info("[ModLoader] Game version OK: %ls", gameVersion.c_str());
+		return false;
 	}
 
-	LogStartupEnvironment();
+	LogToFile::Info("[ModLoader] Game version OK: %ls", gameVersion.c_str());
+	return true;
+}
 
-	Splash::SetStatus(L"Initializing logger...");
-	Splash::SetProgress(0.20f);
-
-	ModLoaderLogger::InitializeLogger();
-	ModLoaderLogger::LogMessage(L"======================================");
-	ModLoaderLogger::LogMessage(L"  AlienX's Mod Loader Starting");
-	ModLoaderLogger::LogMessage(L"======================================");
-
-	Splash::SetStatus(L"Here Goes Nothin' ...");
-	Splash::SetProgress(0.30f);
-
-	ModLoaderLogger::InitializeConfigManager();
-	PluginManager::InitializePluginManager();
-
-	// Auto-update runs here, outside the loader lock, so WinHTTP can work.
-	// Downloaded DLLs are in place for this boot's plugin load.
-	Splash::SetStatus(L"Checking for plugin updates...");
-	Splash::SetProgress(0.35f);
-	ModLoaderLogger::RunAutoUpdate();
-
-	// Install core game hooks BEFORE loading plugins
-	Splash::SetStatus(L"Installing core game hooks...");
-	Splash::SetProgress(0.40f);
-
+// ---------------------------------------------------------------------------
+// Install all core game hooks.
+// Called once from MainInitThreadProc after early init is complete.
+// ---------------------------------------------------------------------------
+static void InstallAllHooks()
+{
 	ModLoaderLogger::LogMessage(L"Installing core game hooks...");
 	// NOTE: WorldBeginPlay hook is installed lazily on first
 	// RegisterAnyWorldBeginPlayCallback / RegisterWorldBeginPlayCallback call.
@@ -343,19 +321,16 @@ static DWORD WINAPI MainInitThreadProc(LPVOID)
 	}
 
 	Splash::SetStatus(L"Installing EngineShutdown hook...");
-	Splash::SetProgress(0.60f);
+	Splash::SetProgress(0.55f);
 
 	if (Hooks::EngineShutdown::Install())
-	{
 		ModLoaderLogger::LogDebug(L"  EngineShutdown hook installed");
-	}
 	else
-	{
 		ModLoaderLogger::LogWarn(L"  WARNING: EngineShutdown hook failed to install - plugins will not receive shutdown callbacks");
-	}
 
 	Splash::SetStatus(L"Installing spawner hooks...");
 	Splash::SetProgress(0.60f);
+
 	// Install spawner hooks eagerly now that pattern scanning is available.
 	// These must be up before any plugin OnEngineInit callback runs so
 	// plugins can rely on the hooks being present without race conditions.
@@ -374,6 +349,7 @@ static DWORD WINAPI MainInitThreadProc(LPVOID)
 
 	Splash::SetStatus(L"Installing GameInstance hook...");
 	Splash::SetProgress(0.65f);
+
 	// Install UGameInstance::Init hook.  Pattern scanning works at any time
 	// (reads .text section), so we install early here.  The detour calls
 	// InitAllLoadedPlugins() after the original returns, which is the first
@@ -382,81 +358,94 @@ static DWORD WINAPI MainInitThreadProc(LPVOID)
 		ModLoaderLogger::LogDebug(L"  GameInstanceInit hook installed");
 	else
 		ModLoaderLogger::LogWarn(L"  WARNING: GameInstanceInit hook failed -- plugins will not be initialized");
+}
 
-	// Wait for the engine to finish initialising before loading plugins.
-	// We pump the thread message queue while waiting so the splash window
-	// stays responsive.  A 2-minute timeout acts as a final safety net.
+// ---------------------------------------------------------------------------
+// Remove all core game hooks.
+// Called during shutdown before subsystems are torn down.
+// ---------------------------------------------------------------------------
+static void RemoveAllHooks()
+{
+	ModLoaderLogger::LogInfo(L"Removing remaining core game hooks...");
+	Hooks::EngineInit::Remove();
+	Hooks::WorldBeginPlay::Remove();
+	Hooks::SaveLoaded::Remove();
+	Hooks::ExperienceLoadComplete::Remove();
+	Hooks::ActorBeginPlay::Remove();
+	Hooks::PlayerJoined::Remove();
+	Hooks::PlayerLeft::Remove();
+	Hooks::MassSpawnerActivate::Remove();
+	Hooks::MassSpawnerDeactivate::Remove();
+	Hooks::MassDoSpawning::Remove();
+#ifdef MODLOADER_SERVER_BUILD
+	Hooks::HttpServer::Remove();
+#endif
+}
+
+// ---------------------------------------------------------------------------
+// Wait for the engine to signal it is ready, pumping messages meanwhile so
+// the splash window stays responsive.  Two-minute timeout as a safety net.
+// ---------------------------------------------------------------------------
+static void WaitForEngineReady()
+{
+	if (!g_engineReadyEvent)
+		return;
+
 	Splash::SetStatus(L"Waiting for engine...");
 	Splash::SetProgress(0.70f);
-
 	LogToFile::Info("[ModLoader] Waiting for engine initialization...");
 
-	if (g_engineReadyEvent)
+	static constexpr DWORD kEngineWaitTimeoutMs = 120'000; // 2 minutes
+	HANDLE waitHandles[] = { g_engineReadyEvent };
+	for (;;)
 	{
-		static constexpr DWORD kEngineWaitTimeoutMs = 120'000; // 2 minutes
-		HANDLE waitHandles[] = { g_engineReadyEvent };
-		for (;;)
+		DWORD r = MsgWaitForMultipleObjects(1, waitHandles, FALSE, kEngineWaitTimeoutMs, QS_ALLINPUT);
+		if (r == WAIT_OBJECT_0)
 		{
-			DWORD r = MsgWaitForMultipleObjects(1, waitHandles, FALSE, kEngineWaitTimeoutMs, QS_ALLINPUT);
-			if (r == WAIT_OBJECT_0)
-			{
-				LogToFile::Info("[ModLoader] Engine ready -- proceeding to load plugins");
-				break;
-			}
-			if (r == WAIT_OBJECT_0 + 1)
-			{
-				// Drain the message queue so the splash stays alive.
-				MSG msg;
-				while (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE))
-				{
-					TranslateMessage(&msg);
-					DispatchMessage(&msg);
-				}
-				continue;
-			}
-			// WAIT_TIMEOUT or unexpected error
-			LogToFile::Warn("[ModLoader] Timed out waiting for engine init (%lu ms) -- loading plugins anyway", kEngineWaitTimeoutMs);
+			LogToFile::Info("[ModLoader] Engine ready -- proceeding to load plugins");
 			break;
 		}
-
-		CloseHandle(g_engineReadyEvent);
-		g_engineReadyEvent = NULL;
+		if (r == WAIT_OBJECT_0 + 1)
+		{
+			// Drain the message queue so the splash stays alive.
+			MSG msg;
+			while (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE))
+			{
+				TranslateMessage(&msg);
+				DispatchMessage(&msg);
+			}
+			continue;
+		}
+		// WAIT_TIMEOUT or unexpected error
+		LogToFile::Warn("[ModLoader] Timed out waiting for engine init (%lu ms) -- loading plugins anyway", kEngineWaitTimeoutMs);
+		break;
 	}
 
-	// Engine is up -- safe to scan and load plugin DLLs.
-	// PluginInit is NOT called here; it is deferred until UGameInstance::Init
-	// fires (via the GameInstanceInit hook), at which point GObjects is fully
-	// populated and UFunction lookups are safe.
-	Splash::SetStatus(L"Loading plugin DLLs...");
-	Splash::SetProgress(0.80f);
+	CloseHandle(g_engineReadyEvent);
+	g_engineReadyEvent = NULL;
+}
 
+// ---------------------------------------------------------------------------
+// Client-only UI initialisation / shutdown
+// ---------------------------------------------------------------------------
 #ifdef MODLOADER_CLIENT_BUILD
+
+static void InitClientUI()
+{
 	// Install the keybind input processor so plugins can register keybinds
 	// during their PluginInit call and have them active immediately.
 	Hooks::Input::InstallInputProcessor();
 
-	// Check modloader.ini [UI] Enabled before starting ImGui.
-	// Allows users to disable the overlay entirely if it causes issues.
-	// Write the default (1) back if the key doesn't exist yet so users can
-	// see and edit the setting without having to know it exists.
+	// Read [UI] Enabled from modloader.ini.  Write the default (1) back if
+	// the key doesn't exist yet so users can discover and edit the setting.
+	const std::wstring iniPath = GetExeDirPath(L"modloader.ini");
+	int val = GetPrivateProfileIntW(L"UI", L"Enabled", -1, iniPath.c_str());
+	if (val == -1)
 	{
-		wchar_t mlIniPath[MAX_PATH]{};
-		GetModuleFileNameW(nullptr, mlIniPath, MAX_PATH);
-		wchar_t* lastSlash = wcsrchr(mlIniPath, L'\\');
-		if (lastSlash)
-			wcscpy_s(lastSlash + 1,
-				static_cast<rsize_t>(MAX_PATH - (lastSlash + 1 - mlIniPath)),
-				L"modloader.ini");
-
-		// Use a sentinel default (-1) to detect whether the key is absent.
-		int val = GetPrivateProfileIntW(L"UI", L"Enabled", -1, mlIniPath);
-		if (val == -1)
-		{
-			WritePrivateProfileStringW(L"UI", L"Enabled", L"1", mlIniPath);
-			val = 1;
-		}
-		s_imguiEnabled = (val != 0);
+		WritePrivateProfileStringW(L"UI", L"Enabled", L"1", iniPath.c_str());
+		val = 1;
 	}
+	s_imguiEnabled = (val != 0);
 
 	if (s_imguiEnabled)
 	{
@@ -469,13 +458,12 @@ static DWORD WINAPI MainInitThreadProc(LPVOID)
 	// Delay D3D12 resource init until WorldBeginPlay fires.  By that point
 	// Streamline and the UE5 viewport are fully stable, avoiding E_ABORT crashes.
 	// Also show the overlay watermark only on the main menu world.
-	static SDK::UWorld* s_currentWorld = nullptr;
 	static auto s_onWorldReady = [](SDK::UWorld* world, const char* worldName)
 	{
 		s_currentWorld = world;
 		if (s_imguiEnabled)
 			UI::ImGuiBackend::SetRenderingReady();
-		bool isMainMenu = worldName && strstr(worldName, "Map_MainMenu") != nullptr;
+		const bool isMainMenu = worldName && strstr(worldName, "Map_MainMenu") != nullptr;
 		UI::Overlay::SetVisible(isMainMenu);
 		UI::GlobalSettings::SetWorldName(worldName ? worldName : "");
 	};
@@ -492,18 +480,170 @@ static DWORD WINAPI MainInitThreadProc(LPVOID)
 			UI::GlobalSettings::SetPlayerPosition(0, 0, 0, false);
 			return;
 		}
-
 		SDK::APawn* pawn = pc->K2_GetPawn();
 		if (!pawn)
 		{
 			UI::GlobalSettings::SetPlayerPosition(0, 0, 0, false);
 			return;
 		}
-
 		SDK::FVector loc = pawn->K2_GetActorLocation();
 		UI::GlobalSettings::SetPlayerPosition(loc.X, loc.Y, loc.Z, true);
 	};
 	Hooks::EngineTick::RegisterPluginCallback(s_onTick);
+}
+
+static void ShutdownClientUI()
+{
+	if (s_imguiEnabled)
+		UI::ImGuiBackend::Shutdown();
+	Hooks::Input::RemoveInputProcessor();
+}
+
+#endif // MODLOADER_CLIENT_BUILD
+
+// ---------------------------------------------------------------------------
+// Full shutdown sequence.
+// Only called on an explicit FreeLibrary -- process-exit teardown is skipped
+// entirely (lpReserved != nullptr is handled in DLL_PROCESS_DETACH before
+// this is reached) to avoid loader-lock / allocator-corruption crashes.
+// ---------------------------------------------------------------------------
+static void ShutdownAll()
+{
+	// Release any synchronisation handles the init thread may not have
+	// cleaned up (e.g. FreeLibrary called before engine ever started).
+	if (g_engineReadyEvent)
+	{
+		CloseHandle(g_engineReadyEvent);
+		g_engineReadyEvent = NULL;
+	}
+
+	// Signal the UE4SS background thread (if still waiting) before closing
+	// the handle so it can unblock and exit cleanly.
+	if (g_ue4ssReadyEvent)
+	{
+		SetEvent(g_ue4ssReadyEvent);
+		CloseHandle(g_ue4ssReadyEvent);
+		g_ue4ssReadyEvent = NULL;
+	}
+
+	// Wait for the init thread to finish before tearing down any subsystem.
+	// g_pluginsLoadedEvent does not need LoadLibrary to be waited on, so
+	// there is no deadlock risk even though the loader lock is held here.
+	if (g_pluginsLoadedEvent)
+	{
+		if (WaitForSingleObject(g_pluginsLoadedEvent, 30'000) == WAIT_TIMEOUT)
+			LogToFile::Warn("Timed out waiting for init thread -- proceeding with shutdown anyway");
+		CloseHandle(g_pluginsLoadedEvent);
+		g_pluginsLoadedEvent = NULL;
+	}
+
+	if (g_mainInitThread)
+	{
+		CloseHandle(g_mainInitThread);
+		g_mainInitThread = NULL;
+	}
+
+	ModLoaderLogger::LogInfo(L"======================================");
+	ModLoaderLogger::LogInfo(L"       Modloader shutting down!");
+	ModLoaderLogger::LogInfo(L"======================================");
+
+	// CRITICAL: Remove the EngineShutdown hook and clear its callbacks FIRST.
+	// This prevents the hook from firing with dangling function pointers
+	// after plugins have been unloaded.
+	ModLoaderLogger::LogInfo(L"Removing engine shutdown hook...");
+	Hooks::EngineShutdown::Remove();
+
+	PluginManager::UnloadAllPlugins();
+	NetworkChannel::Shutdown();
+
+	RemoveAllHooks();
+
+#ifdef MODLOADER_CLIENT_BUILD
+	ShutdownClientUI();
+#endif
+
+	PluginManager::ShutdownPluginManager();
+	ModLoaderLogger::ShutdownConfigManager();
+
+	ModLoaderLogger::LogInfo(L"Shutting down dwmapi proxy...");
+	ModLoaderLogger::LogInfo(L"Goodbye!");
+	ModLoaderLogger::ShutdownLogger();
+
+	DwmapiProxy::Shutdown();
+	LogToFile::Shutdown();
+}
+
+// ---------------------------------------------------------------------------
+// Main initialisation thread
+//
+// Owns everything that would previously have run inside DLL_PROCESS_ATTACH
+// but cannot safely run there because:
+//   * WinHTTP (used by RunAutoUpdate) lazily loads TLS/DNS DLLs via
+//     LoadLibrary.  LoadLibrary needs the loader lock, which DllMain holds
+//     for its entire duration -- causing an immediate deadlock if we wait, or
+//     error 5023 if we try to use the thread pool from inside the lock.
+//   * By running here we are already outside the loader lock, so WinHTTP,
+//     hook installation, and plugin LoadLibrary calls all work normally.
+//
+// Plugin loading is deliberately deferred until the engine signals it is
+// ready (via g_engineReadyEvent).  This guarantees that when PluginInit runs,
+// the UE engine is fully initialised and it is safe for plugins to install
+// hooks into game code.  Plugin OnEngineInit callbacks still fire: because
+// the engine is already up by the time PluginInit is called, any call to
+// IPluginHooks::RegisterEngineInitCallback inside PluginInit triggers the
+// late-registration path in Hooks::EngineInit::RegisterPluginCallback, which
+// invokes the callback immediately.
+// ---------------------------------------------------------------------------
+static DWORD WINAPI MainInitThreadProc(LPVOID)
+{
+	// Open the splash here, not in DllMain.  The splash window has no internal
+	// message thread -- Show/SetStatus/SetProgress/Close must all be called from
+	// the same thread that owns the HWND.  Running everything here keeps the
+	// ownership consistent and avoids cross-thread UpdateWindow / PumpMessages
+	// failures.  DllMain returns in microseconds so the visual delay is nil.
+	Splash::Show();
+	Splash::SetStatus(L"Starting mod loader...");
+	Splash::SetProgress(0.0f);
+
+	if (!VerifyGameVersion())
+		return 0;
+
+	LogStartupEnvironment();
+
+	Splash::SetStatus(L"Initializing logger...");
+	Splash::SetProgress(0.20f);
+	ModLoaderLogger::InitializeLogger();
+	ModLoaderLogger::LogMessage(L"======================================");
+	ModLoaderLogger::LogMessage(L"  AlienX's Mod Loader Starting");
+	ModLoaderLogger::LogMessage(L"======================================");
+
+	Splash::SetStatus(L"Here Goes Nothin' ...");
+	Splash::SetProgress(0.30f);
+	ModLoaderLogger::InitializeConfigManager();
+	PluginManager::InitializePluginManager();
+
+	// Auto-update runs here, outside the loader lock, so WinHTTP can work.
+	// Downloaded DLLs are in place for this boot's plugin load.
+	Splash::SetStatus(L"Checking for plugin updates...");
+	Splash::SetProgress(0.35f);
+	ModLoaderLogger::RunAutoUpdate();
+
+	Splash::SetStatus(L"Installing core game hooks...");
+	Splash::SetProgress(0.40f);
+	InstallAllHooks();
+
+	// Block until the engine signals it is fully initialised.
+	WaitForEngineReady();
+
+	// Engine is up -- safe to scan and load plugin DLLs.
+	// PluginInit is NOT called here; it is deferred until UGameInstance::Init
+	// fires (via the GameInstanceInit hook), at which point GObjects is fully
+	// populated and UFunction lookups are safe.
+	Splash::SetStatus(L"Loading plugin DLLs...");
+	Splash::SetProgress(0.80f);
+
+#ifdef MODLOADER_CLIENT_BUILD
+	InitClientUI();
 #endif
 
 	PluginManager::LoadAllPlugins();
@@ -520,7 +660,6 @@ static DWORD WINAPI MainInitThreadProc(LPVOID)
 
 	Splash::SetStatus(L"Plugin DLLs loaded -- waiting for game instance...");
 	Splash::SetProgress(1.0f);
-
 	ModLoaderLogger::LogInfo(L"Mod loader injection complete - Yay!");
 
 	// Signal DLL_PROCESS_DETACH that init is complete and it is safe to start
@@ -566,12 +705,12 @@ static void LogStartupEnvironment()
 		LogToFile::Warn("Could not retrieve main module info");
 	}
 
-	if (IsWindows10OrGreater())           LogToFile::Info("OS version: Windows 10 or greater");
+	if (IsWindows10OrGreater()) LogToFile::Info("OS version: Windows 10 or greater");
 	else if (IsWindows8Point1OrGreater()) LogToFile::Info("OS version: Windows 8.1");
 	else if (IsWindows8OrGreater())       LogToFile::Info("OS version: Windows 8");
-	else if (IsWindows7OrGreater())       LogToFile::Info("OS version: Windows 7");
+	else if (IsWindows7OrGreater())    LogToFile::Info("OS version: Windows 7");
 	else if (IsWindowsVistaOrGreater())   LogToFile::Info("OS version: Windows Vista");
-	else                                  LogToFile::Info("OS version: Windows XP or older");
+	else   LogToFile::Info("OS version: Windows XP or older");
 
 	LogToFile::Info("OS type: %s", IsWindowsServer() ? "Server" : "Client/Workstation");
 
@@ -587,34 +726,23 @@ static void LogStartupEnvironment()
 
 static void LoadUE4SS()
 {
-	// Build the modloader.ini path next to the game exe
-	wchar_t iniPath[MAX_PATH]{};
-	GetModuleFileNameW(nullptr, iniPath, MAX_PATH);
-	wchar_t* lastSlash = wcsrchr(iniPath, L'\\');
-	if (lastSlash)
-		wcscpy_s(lastSlash + 1,
-			static_cast<rsize_t>(MAX_PATH - (lastSlash + 1 - iniPath)),
-			L"modloader.ini");
+	const std::wstring iniPath = GetExeDirPath(L"modloader.ini");
 
-	if (!GetPrivateProfileIntW(L"UE4SS", L"Enabled", 1, iniPath))
+	if (!GetPrivateProfileIntW(L"UE4SS", L"Enabled", 1, iniPath.c_str()))
 	{
 		LogToFile::Info("UE4SS loading disabled in modloader.ini");
 		return;
 	}
 
 	wchar_t relPath[MAX_PATH]{};
-	GetPrivateProfileStringW(L"UE4SS", L"Path", L"ue4ss\\ue4ss.dll", relPath, MAX_PATH, iniPath);
+	GetPrivateProfileStringW(L"UE4SS", L"Path", L"ue4ss\\ue4ss.dll", relPath, MAX_PATH, iniPath.c_str());
 
-	// Resolve relative to the exe directory
-	wchar_t fullPath[MAX_PATH]{};
-	GetModuleFileNameW(nullptr, fullPath, MAX_PATH);
-	wchar_t* slash = wcsrchr(fullPath, L'\\');
-	if (slash) *(slash + 1) = L'\0';
-	wcsncat_s(fullPath, relPath, _TRUNCATE);
+	// Resolve the (potentially relative) path against the exe directory.
+	const std::wstring fullPath = GetExeDir() + relPath;
 
-	LogToFile::Info("Loading UE4SS from: %ls", fullPath);
+	LogToFile::Info("Loading UE4SS from: %ls", fullPath.c_str());
 
-	HMODULE hUE4SS = LoadLibraryW(fullPath);
+	HMODULE hUE4SS = LoadLibraryW(fullPath.c_str());
 	if (hUE4SS)
 	{
 		LogToFile::Info("UE4SS loaded successfully (handle 0x%llX)",
@@ -622,7 +750,7 @@ static void LoadUE4SS()
 	}
 	else
 	{
-		LogToFile::Warn("UE4SS failed to load (error %lu): %ls", GetLastError(), fullPath);
+		LogToFile::Warn("UE4SS failed to load (error %lu): %ls", GetLastError(), fullPath.c_str());
 	}
 }
 
@@ -638,9 +766,9 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 	{
 		DisableThreadLibraryCalls(hModule);
 
-		// Call DBGHelp to refresh the module list and ensure our own symbols are available for stack traces from the very start.
+		// Refresh the module list so our own symbols are available for stack
+		// traces from the very start.
 		SymRefreshModuleList(GetCurrentProcess());
-
 
 		// Initialise our low-level file logger -- simple file I/O, no LoadLibrary.
 		LogToFile::Initialize();
@@ -656,7 +784,6 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 		// SetProgress, Close) must be made from the same thread that owns the
 		// window.  We open the splash at the top of MainInitThreadProc so that
 		// every call originates from that one thread.
-
 		LogToFile::Info("Initializing dwmapi.dll proxy...");
 		if (!DwmapiProxy::Initialize())
 		{
@@ -684,8 +811,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 		if (!g_pluginsLoadedEvent)
 		{
 			LogToFile::Error("FATAL: Failed to create init-done event (%lu)", GetLastError());
-			CloseHandle(g_engineReadyEvent);
-			g_engineReadyEvent = NULL;
+			CloseHandle(g_engineReadyEvent); g_engineReadyEvent = NULL;
 			DwmapiProxy::Shutdown();
 			LogToFile::Shutdown();
 			return FALSE;
@@ -716,12 +842,9 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 			g_mainInitThread = CreateThread(nullptr, 0, MainInitThreadProc, nullptr, 0, nullptr);
 			if (!g_mainInitThread)
 			{
-				DWORD err = GetLastError();
-				LogToFile::Error("FATAL: Failed to create main init thread (%lu)", err);
-				CloseHandle(g_pluginsLoadedEvent);
-				g_pluginsLoadedEvent = NULL;
-				CloseHandle(g_engineReadyEvent);
-				g_engineReadyEvent = NULL;
+				LogToFile::Error("FATAL: Failed to create main init thread (%lu)", GetLastError());
+				CloseHandle(g_pluginsLoadedEvent); g_pluginsLoadedEvent = NULL;
+				CloseHandle(g_engineReadyEvent);   g_engineReadyEvent   = NULL;
 				if (g_ue4ssReadyEvent) { CloseHandle(g_ue4ssReadyEvent); g_ue4ssReadyEvent = NULL; }
 				DwmapiProxy::Shutdown();
 				LogToFile::Shutdown();
@@ -749,88 +872,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 			break;
 		}
 
-		// Clean up the engine-ready event if the init thread didn't get to it
-		// (e.g. if FreeLibrary is called very early).
-		if (g_engineReadyEvent)
-		{
-			CloseHandle(g_engineReadyEvent);
-			g_engineReadyEvent = NULL;
-		}
-
-		// Clean up the UE4SS-ready event.  If UE4SS never loaded the background
-		// thread may still be waiting -- signal it first so it can unblock and
-		// exit cleanly before we close the handle.
-		if (g_ue4ssReadyEvent)
-		{
-			SetEvent(g_ue4ssReadyEvent);
-			CloseHandle(g_ue4ssReadyEvent);
-			g_ue4ssReadyEvent = NULL;
-		}
-
-		// Wait for the init thread to finish so we never try to unload plugins
-		// that haven't been loaded yet, or tear down hooks before they are set.
-		// g_pluginsLoadedEvent is signalled (and doesn't need LoadLibrary to be
-		// waited on), so there is no deadlock risk even though the loader lock
-		// is held here.
-		if (g_pluginsLoadedEvent)
-		{
-			if (WaitForSingleObject(g_pluginsLoadedEvent, 30000) == WAIT_TIMEOUT)
-				LogToFile::Warn("Timed out waiting for init thread -- proceeding with shutdown anyway");
-			CloseHandle(g_pluginsLoadedEvent);
-			g_pluginsLoadedEvent = NULL;
-		}
-
-		if (g_mainInitThread)
-		{
-			CloseHandle(g_mainInitThread);
-			g_mainInitThread = NULL;
-		}
-
-		ModLoaderLogger::LogInfo(L"======================================");
-		ModLoaderLogger::LogInfo(L"       Modloader shutting down!");
-		ModLoaderLogger::LogInfo(L"======================================");
-
-		// CRITICAL: Remove engine shutdown hook and clear callbacks FIRST
-		// This prevents the hook from firing with dangling function pointers
-		// after plugins are unloaded
-		ModLoaderLogger::LogInfo(L"Removing engine shutdown hook...");
-		Hooks::EngineShutdown::Remove();
-		ModLoaderLogger::LogInfo(L"Engine shutdown hook removed");
-
-		// Now safe to unload plugins
-		PluginManager::UnloadAllPlugins();
-		NetworkChannel::Shutdown();
-
-		// Remove remaining core game hooks
-		ModLoaderLogger::LogInfo(L"Removing remaining core game hooks...");
-		Hooks::EngineInit::Remove();
-		Hooks::WorldBeginPlay::Remove();
-		Hooks::SaveLoaded::Remove();
-		Hooks::ExperienceLoadComplete::Remove();
-		Hooks::ActorBeginPlay::Remove();
-		Hooks::PlayerJoined::Remove();
-		Hooks::PlayerLeft::Remove();
-		Hooks::MassSpawnerActivate::Remove();
-		Hooks::MassSpawnerDeactivate::Remove();
-		Hooks::MassDoSpawning::Remove();
-#ifdef MODLOADER_SERVER_BUILD
-		Hooks::HttpServer::Remove();
-#endif
-#ifdef MODLOADER_CLIENT_BUILD
-		if (s_imguiEnabled)
-			UI::ImGuiBackend::Shutdown();
-		Hooks::Input::RemoveInputProcessor();
-#endif
-
-		PluginManager::ShutdownPluginManager();
-		ModLoaderLogger::ShutdownConfigManager();
-		ModLoaderLogger::ShutdownLogger();
-
-		ModLoaderLogger::LogInfo(L"Shutting down dwmapi proxy...");
-		DwmapiProxy::Shutdown();
-
-		ModLoaderLogger::LogInfo(L"Goodbye!");
-		ModLoaderLogger::ShutdownLogger();
+		ShutdownAll();
 	}
 	break;
 
