@@ -16,7 +16,7 @@
 namespace UI::Overlay
 {
     static char s_openKeyName[16] = "F2";
-    static bool s_visible         = false;
+    static bool s_visible         = true;
 
     void SetOpenKeyName(const char* keyName)
     {

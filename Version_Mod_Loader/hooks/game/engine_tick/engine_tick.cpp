@@ -22,12 +22,13 @@ namespace Hooks::EngineTick
 	{
 		// Call original first so the engine tick completes before we notify plugins
 		if (g_original)
+		{
 			g_original(thisPtr, deltaSeconds, bIdleMode);
+		}
 
 		// Drain any tasks posted to the game thread from background threads
 		GameThreadDispatch::Drain();
 
-		// Notify registered plugins – keep this path fast (no logging per-frame)
 		for (size_t i = 0; i < g_pluginCallbacks.size(); ++i)
 		{
 			if (g_pluginCallbacks[i])
@@ -40,7 +41,12 @@ namespace Hooks::EngineTick
 				{
 					// Swallow exceptions to avoid crashing the main loop.
 					// Log only once per callback to avoid spam.
+					ModLoaderLogger::LogError(L"[EngineTick::Detour] Exception caught in callback %zu", i + 1);
 				}
+			}
+			else
+			{
+				ModLoaderLogger::LogWarn(L"[EngineTick::Detour] Callback %zu is NULL", i + 1);
 			}
 		}
 	}

@@ -7,8 +7,6 @@
 
 #if defined(MODLOADER_CLIENT_BUILD)
 
-#define WIN32_LEAN_AND_MEAN
-#include <Windows.h>
 #include <cstdio>
 #include <cstring>
 
@@ -16,50 +14,99 @@
 // Layout constants
 // ---------------------------------------------------------------------------
 static constexpr int   SPLASH_WIDTH  = 520;
-static constexpr int   SPLASH_HEIGHT = 130;
+static constexpr int   SPLASH_HEIGHT = 185;
 static constexpr DWORD BG_COLOR      = RGB(24, 24, 28);
 static constexpr DWORD TEXT_COLOR    = RGB(200, 200, 210);
 static constexpr DWORD BAR_BG_COLOR  = RGB(50, 50, 58);
 static constexpr DWORD BAR_FG_COLOR  = RGB(80, 160, 255);
+static constexpr DWORD SUB_BAR_COLOR = RGB(60, 130, 200);
 static constexpr DWORD TITLE_COLOR   = RGB(255, 255, 255);
 
-static constexpr int MARGIN     = 16;
-static constexpr int TITLE_Y    = MARGIN;
-static constexpr int STATUS_Y   = 48;
-static constexpr int BAR_Y      = 80;
-static constexpr int BAR_HEIGHT = 18;
-static constexpr int BAR_X      = MARGIN;
-static constexpr int BAR_WIDTH  = SPLASH_WIDTH - MARGIN * 2;
+static constexpr int MARGIN      = 16;
+static constexpr int TITLE_Y     = 14;
+static constexpr int STATUS_Y    = 44;
+static constexpr int BAR_Y       = 66;
+static constexpr int BAR_HEIGHT  = 18;
+static constexpr int BAR_X       = MARGIN;
+static constexpr int BAR_WIDTH   = SPLASH_WIDTH - MARGIN * 2;
 
-// Close button occupies the same rect as the progress bar.
+static constexpr int DIVIDER_Y      = 100;   // horizontal rule between sections
+static constexpr int SUB_STATUS_Y   = 120;
+static constexpr int SUB_BAR_Y      = 140;
+static constexpr int SUB_BAR_HEIGHT = 14;
+
+static constexpr DWORD DIVIDER_COLOR  = RGB(55, 55, 65);
+static constexpr DWORD DIM_TEXT_COLOR = RGB(100, 100, 110);
+
+// Close button occupies the same rect as the main progress bar.
 static constexpr RECT CLOSE_BTN_RECT = { BAR_X, BAR_Y, BAR_X + BAR_WIDTH, BAR_Y + BAR_HEIGHT };
 
 // ---------------------------------------------------------------------------
-// State -- all accessed on the splash window's own thread
+// State
+//
+// g_stateLock guards all readable state so SetSubStatus / SetSubProgress /
+// ClearSubBar can be called safely from any thread (e.g. InitAllLoadedPlugins
+// runs on the game main thread while the splash owner thread is lingering).
+// OnPaint snapshots everything under the lock at the start so it never holds
+// the lock while doing GDI work.
 // ---------------------------------------------------------------------------
-static wchar_t g_statusText[256] = L"Initializing...";
-static float   g_progress        = 0.0f;
-static bool    g_errorMode       = false; // error mode: red bar + word-wrap status text
-static bool    g_showCloseButton = false; // error mode: replace bar with Close button
-static HWND    g_hwnd            = nullptr;
-static bool    g_classRegistered = false;
+static CRITICAL_SECTION g_stateLock;
+static bool             g_stateLockInit  = false;
+static DWORD            g_splashThreadId = 0;   // thread that owns the HWND
+
+static wchar_t g_statusText[256]    = L"Initializing...";
+static float   g_progress           = 0.0f;
+static bool    g_errorMode          = false;
+static bool    g_showCloseButton    = false;
+static wchar_t g_subStatusText[256] = L"";
+static float   g_subProgress        = 0.0f;
+static HWND    g_hwnd               = nullptr;
+static bool    g_classRegistered    = false;
+
+// Request a repaint from any thread.
+// If called on the splash thread, update synchronously.
+// If called from another thread, post WM_APP and let the splash thread paint.
+static void RequestRepaint()
+{
+	if (!g_hwnd) return;
+	InvalidateRect(g_hwnd, nullptr, FALSE);
+	if (GetCurrentThreadId() == g_splashThreadId)
+	{
+		UpdateWindow(g_hwnd);
+		// Drain window messages so the splash stays alive.
+		MSG msg;
+		while (PeekMessageW(&msg, g_hwnd, 0, 0, PM_REMOVE))
+		{
+			TranslateMessage(&msg);
+			DispatchMessageW(&msg);
+		}
+	}
+	else
+	{
+		// WM_APP tells the splash thread to call UpdateWindow on its own.
+		PostMessage(g_hwnd, WM_APP, 0, 0);
+	}
+}
 
 static constexpr const wchar_t* CLASS_NAME = L"StarRuptureModLoaderSplash";
 
 // ---------------------------------------------------------------------------
 // GDI objects
 // ---------------------------------------------------------------------------
-static HBRUSH g_bgBrush    = nullptr;
-static HBRUSH g_barBgBrush = nullptr;
-static HBRUSH g_barFgBrush = nullptr;
-static HFONT  g_titleFont  = nullptr;
-static HFONT  g_bodyFont   = nullptr;
+static HBRUSH g_bgBrush       = nullptr;
+static HBRUSH g_barBgBrush    = nullptr;
+static HBRUSH g_barFgBrush    = nullptr;
+static HBRUSH g_subBarFgBrush = nullptr;
+static HFONT  g_titleFont     = nullptr;
+static HFONT  g_bodyFont      = nullptr;
+static HFONT  g_smallFont     = nullptr;
 
 static void CreateGdiObjects()
 {
-	g_bgBrush    = CreateSolidBrush(BG_COLOR);
-	g_barBgBrush = CreateSolidBrush(BAR_BG_COLOR);
-	g_barFgBrush = CreateSolidBrush(BAR_FG_COLOR);
+	g_bgBrush       = CreateSolidBrush(BG_COLOR);
+	g_barBgBrush    = CreateSolidBrush(BAR_BG_COLOR);
+	g_barFgBrush    = CreateSolidBrush(BAR_FG_COLOR);
+	g_subBarFgBrush = CreateSolidBrush(SUB_BAR_COLOR);
 
 	g_titleFont = CreateFontW(
 		-18, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
@@ -70,15 +117,22 @@ static void CreateGdiObjects()
 		-14, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
 		DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
 		CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_SWISS, L"Segoe UI");
+
+	g_smallFont = CreateFontW(
+		-12, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+		DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+		CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_SWISS, L"Segoe UI");
 }
 
 static void DestroyGdiObjects()
 {
-	if (g_bgBrush)    { DeleteObject(g_bgBrush);    g_bgBrush    = nullptr; }
-	if (g_barBgBrush) { DeleteObject(g_barBgBrush); g_barBgBrush = nullptr; }
-	if (g_barFgBrush) { DeleteObject(g_barFgBrush); g_barFgBrush = nullptr; }
-	if (g_titleFont)  { DeleteObject(g_titleFont);  g_titleFont  = nullptr; }
-	if (g_bodyFont)   { DeleteObject(g_bodyFont);   g_bodyFont   = nullptr; }
+	if (g_bgBrush)       { DeleteObject(g_bgBrush);       g_bgBrush       = nullptr; }
+	if (g_barBgBrush)    { DeleteObject(g_barBgBrush);    g_barBgBrush    = nullptr; }
+	if (g_barFgBrush)    { DeleteObject(g_barFgBrush);    g_barFgBrush    = nullptr; }
+	if (g_subBarFgBrush) { DeleteObject(g_subBarFgBrush); g_subBarFgBrush = nullptr; }
+	if (g_titleFont)     { DeleteObject(g_titleFont);     g_titleFont     = nullptr; }
+	if (g_bodyFont)      { DeleteObject(g_bodyFont);      g_bodyFont      = nullptr; }
+	if (g_smallFont)     { DeleteObject(g_smallFont);     g_smallFont     = nullptr; }
 }
 
 // ---------------------------------------------------------------------------
@@ -86,6 +140,22 @@ static void DestroyGdiObjects()
 // ---------------------------------------------------------------------------
 static void OnPaint(HWND hwnd)
 {
+	// Snapshot all shared state before any GDI work so we never hold the lock
+	// while calling into the display driver.
+	wchar_t statusText[256], subStatusText[256];
+	float   progress, subProgress;
+	bool    errorMode, showCloseButton;
+	{
+		EnterCriticalSection(&g_stateLock);
+		wcscpy_s(statusText,    g_statusText);
+		wcscpy_s(subStatusText, g_subStatusText);
+		progress        = g_progress;
+		subProgress     = g_subProgress;
+		errorMode       = g_errorMode;
+		showCloseButton = g_showCloseButton;
+		LeaveCriticalSection(&g_stateLock);
+	}
+
 	PAINTSTRUCT ps;
 	HDC hdc = BeginPaint(hwnd, &ps);
 
@@ -105,12 +175,12 @@ static void OnPaint(HWND hwnd)
 	SelectObject(hdc, g_bodyFont);
 	SetTextColor(hdc, TEXT_COLOR);
 	RECT statusRect = { MARGIN, STATUS_Y, SPLASH_WIDTH - MARGIN, BAR_Y - 4 };
-	if (g_errorMode)
-		DrawTextW(hdc, g_statusText, -1, &statusRect, DT_LEFT | DT_WORDBREAK);
+	if (errorMode)
+		DrawTextW(hdc, statusText, -1, &statusRect, DT_LEFT | DT_WORDBREAK);
 	else
-		DrawTextW(hdc, g_statusText, -1, &statusRect, DT_LEFT | DT_SINGLELINE | DT_END_ELLIPSIS);
+		DrawTextW(hdc, statusText, -1, &statusRect, DT_LEFT | DT_SINGLELINE | DT_END_ELLIPSIS);
 
-	if (g_showCloseButton)
+	if (showCloseButton)
 	{
 		// Close Game button in place of the progress bar.
 		HBRUSH btnBrush = CreateSolidBrush(RGB(160, 40, 40));
@@ -129,7 +199,7 @@ static void OnPaint(HWND hwnd)
 		FillRect(hdc, &barBg, g_barBgBrush);
 
 		// Progress bar fill
-		float pct = g_progress;
+		float pct = progress;
 		if (pct < 0.0f) pct = 0.0f;
 		if (pct > 1.0f) pct = 1.0f;
 		int fillWidth = static_cast<int>(BAR_WIDTH * pct);
@@ -145,6 +215,47 @@ static void OnPaint(HWND hwnd)
 		SetTextColor(hdc, RGB(255, 255, 255));
 		RECT barTextRect = { BAR_X, BAR_Y, BAR_X + BAR_WIDTH, BAR_Y + BAR_HEIGHT };
 		DrawTextW(hdc, pctText, -1, &barTextRect, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+
+		// Horizontal divider between the main section and the sub section.
+		{
+			HBRUSH divBrush = CreateSolidBrush(DIVIDER_COLOR);
+			RECT divRect = { 0, DIVIDER_Y, SPLASH_WIDTH, DIVIDER_Y + 1 };
+			FillRect(hdc, &divRect, divBrush);
+			DeleteObject(divBrush);
+		}
+
+		if (subStatusText[0] != L'\0')
+		{
+			// Sub-status label
+			SelectObject(hdc, g_smallFont);
+			SetTextColor(hdc, TEXT_COLOR);
+			RECT subLabelRect = { BAR_X, SUB_STATUS_Y, BAR_X + BAR_WIDTH, SUB_BAR_Y - 2 };
+			DrawTextW(hdc, subStatusText, -1, &subLabelRect, DT_LEFT | DT_SINGLELINE | DT_END_ELLIPSIS);
+
+			// Sub bar background
+			RECT subBg = { BAR_X, SUB_BAR_Y, BAR_X + BAR_WIDTH, SUB_BAR_Y + SUB_BAR_HEIGHT };
+			FillRect(hdc, &subBg, g_barBgBrush);
+
+			// Sub bar fill
+			float subPct = subProgress;
+			if (subPct < 0.0f) subPct = 0.0f;
+			if (subPct > 1.0f) subPct = 1.0f;
+			int subFill = static_cast<int>(BAR_WIDTH * subPct);
+			if (subFill > 0)
+			{
+				RECT subFg = { BAR_X, SUB_BAR_Y, BAR_X + subFill, SUB_BAR_Y + SUB_BAR_HEIGHT };
+				FillRect(hdc, &subFg, g_subBarFgBrush);
+			}
+		}
+		else
+		{
+			// No active sub-status -- show a centred placeholder in the lower panel.
+			SelectObject(hdc, g_smallFont);
+			SetTextColor(hdc, DIM_TEXT_COLOR);
+			RECT placeholderRect = { BAR_X, DIVIDER_Y + 1, BAR_X + BAR_WIDTH, SPLASH_HEIGHT };
+			DrawTextW(hdc, L"No Extra Information", -1, &placeholderRect,
+			          DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+		}
 	}
 
 	EndPaint(hwnd, &ps);
@@ -191,6 +302,12 @@ static LRESULT CALLBACK SplashWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
 		return 0;
 	}
 
+	case WM_APP:
+		// Cross-thread repaint request: state was already written; just paint.
+		InvalidateRect(hwnd, nullptr, FALSE);
+		UpdateWindow(hwnd);
+		return 0;
+
 	case WM_DESTROY:
 		return 0;
 
@@ -199,22 +316,6 @@ static LRESULT CALLBACK SplashWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
 	}
 }
 
-// ---------------------------------------------------------------------------
-// Pump any pending messages for the splash window so it stays responsive.
-// Called from SetStatus / SetProgress on the main thread.
-// ---------------------------------------------------------------------------
-static void PumpMessages()
-{
-	if (!g_hwnd)
-		return;
-
-	MSG msg;
-	while (PeekMessageW(&msg, g_hwnd, 0, 0, PM_REMOVE))
-	{
-		TranslateMessage(&msg);
-		DispatchMessageW(&msg);
-	}
-}
 
 // ---------------------------------------------------------------------------
 // Public API -- all called on the main thread from DllMain
@@ -222,9 +323,17 @@ static void PumpMessages()
 
 void Splash::Show()
 {
-	g_progress        = 0.0f;
-	g_errorMode       = false;
-	g_showCloseButton = false;
+	if (!g_stateLockInit)
+	{
+		InitializeCriticalSection(&g_stateLock);
+		g_stateLockInit = true;
+	}
+	g_splashThreadId     = GetCurrentThreadId();
+	g_progress           = 0.0f;
+	g_errorMode          = false;
+	g_showCloseButton    = false;
+	g_subProgress        = 0.0f;
+	g_subStatusText[0]   = L'\0';
 	wcscpy_s(g_statusText, L"Initializing...");
 
 	CreateGdiObjects();
@@ -260,32 +369,26 @@ void Splash::Show()
 	{
 		ShowWindow(g_hwnd, SW_SHOWNOACTIVATE);
 		UpdateWindow(g_hwnd);
-		PumpMessages();
+		{ MSG msg; while (PeekMessageW(&msg, g_hwnd, 0, 0, PM_REMOVE)) { TranslateMessage(&msg); DispatchMessageW(&msg); } }
 	}
 }
 
 void Splash::SetStatus(const wchar_t* text)
 {
-	if (!g_hwnd || !text)
-		return;
-
+	if (!g_hwnd || !text) return;
+	EnterCriticalSection(&g_stateLock);
 	wcscpy_s(g_statusText, text);
-
-	InvalidateRect(g_hwnd, nullptr, FALSE);
-	UpdateWindow(g_hwnd);
-	PumpMessages();
+	LeaveCriticalSection(&g_stateLock);
+	RequestRepaint();
 }
 
 void Splash::SetProgress(float fraction)
 {
-	if (!g_hwnd)
-		return;
-
+	if (!g_hwnd) return;
+	EnterCriticalSection(&g_stateLock);
 	g_progress = fraction;
-
-	InvalidateRect(g_hwnd, nullptr, FALSE);
-	UpdateWindow(g_hwnd);
-	PumpMessages();
+	LeaveCriticalSection(&g_stateLock);
+	RequestRepaint();
 }
 
 void Splash::Close()
@@ -294,8 +397,15 @@ void Splash::Close()
 		return;
 
 	DestroyWindow(g_hwnd);
-	PumpMessages();
-	g_hwnd = nullptr;
+	// Drain any remaining messages for this window.
+	MSG msg;
+	while (PeekMessageW(&msg, g_hwnd, 0, 0, PM_REMOVE))
+	{
+		TranslateMessage(&msg);
+		DispatchMessageW(&msg);
+	}
+	g_hwnd           = nullptr;
+	g_splashThreadId = 0;
 
 	DestroyGdiObjects();
 
@@ -304,27 +414,81 @@ void Splash::Close()
 		UnregisterClassW(CLASS_NAME, GetModuleHandleW(nullptr));
 		g_classRegistered = false;
 	}
+
+	if (g_stateLockInit)
+	{
+		DeleteCriticalSection(&g_stateLock);
+		g_stateLockInit = false;
+	}
+}
+
+void Splash::SetSubStatus(const wchar_t* text)
+{
+	if (!g_hwnd) return;
+	EnterCriticalSection(&g_stateLock);
+	wcscpy_s(g_subStatusText, text ? text : L"");
+	LeaveCriticalSection(&g_stateLock);
+	RequestRepaint();
+}
+
+void Splash::SetSubProgress(float fraction)
+{
+	if (!g_hwnd) return;
+	EnterCriticalSection(&g_stateLock);
+	g_subProgress = fraction;
+	LeaveCriticalSection(&g_stateLock);
+	RequestRepaint();
+}
+
+void Splash::ClearSubBar()
+{
+	if (!g_hwnd) return;
+	EnterCriticalSection(&g_stateLock);
+	g_subStatusText[0] = L'\0';
+	g_subProgress      = 0.0f;
+	LeaveCriticalSection(&g_stateLock);
+	RequestRepaint();
+}
+
+void Splash::Linger(DWORD ms)
+{
+	if (!g_hwnd) { Sleep(ms); return; }
+
+	DWORD deadline = GetTickCount() + ms;
+	for (;;)
+	{
+		DWORD now = GetTickCount();
+		if (now >= deadline) break;
+		DWORD remaining = deadline - now;
+		// Wake on new messages or at 50ms intervals so we stay responsive.
+		MsgWaitForMultipleObjects(0, nullptr, FALSE, min(remaining, 50ul), QS_ALLINPUT);
+		MSG msg;
+		while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE))
+		{
+			TranslateMessage(&msg);
+			DispatchMessageW(&msg);
+		}
+	}
 }
 
 void Splash::SetErrorMode(bool showCloseButton)
 {
-	if (!g_hwnd)
-		return;
+	if (!g_hwnd) return;
 
-	// Switch bar brush to red.
+	// Switch bar brush to red -- GDI object swap must be on the splash thread.
 	if (g_barFgBrush)
 	{
 		DeleteObject(g_barFgBrush);
 		g_barFgBrush = CreateSolidBrush(RGB(200, 50, 50));
 	}
 
+	EnterCriticalSection(&g_stateLock);
 	g_progress        = 1.0f;
 	g_errorMode       = true;
 	g_showCloseButton = showCloseButton;
+	LeaveCriticalSection(&g_stateLock);
 
-	InvalidateRect(g_hwnd, nullptr, FALSE);
-	UpdateWindow(g_hwnd);
-	PumpMessages();
+	RequestRepaint();
 }
 
 #else // Server build -- empty stubs
@@ -333,6 +497,10 @@ void Splash::Show() {}
 void Splash::SetStatus(const wchar_t*) {}
 void Splash::SetProgress(float) {}
 void Splash::SetErrorMode(bool) {}
+void Splash::SetSubStatus(const wchar_t*) {}
+void Splash::SetSubProgress(float) {}
+void Splash::ClearSubBar() {}
+void Splash::Linger(DWORD ms) { Sleep(ms); }
 void Splash::Close() {}
 
 #endif // MODLOADER_CLIENT_BUILD

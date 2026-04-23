@@ -12,6 +12,10 @@
 #include <vector>
 #include <string>
 
+#ifdef MODLOADER_CLIENT_BUILD
+#include "UI/splash_window.h"
+#endif
+
 namespace PluginManager
 {
 	// Structure to hold loaded plugin information
@@ -30,6 +34,8 @@ namespace PluginManager
 		std::string cachedVersion;
 		std::string cachedAuthor;
 
+		bool isOutOfDate;  // true when DLL was found but rejected due to version mismatch
+
 		// Stable identity struct passed to PluginInit and retained by the plugin->
 		// name/version point into cachedName/cachedVersion so they outlive PluginInfo.
 		IPluginSelf self;
@@ -38,6 +44,8 @@ namespace PluginManager
 	std::vector<std::unique_ptr<LoadedPlugin>> g_loadedPlugins;
 	static CRITICAL_SECTION g_pluginLock;
 	static bool g_managerInitialized = false;
+	static bool   g_startupComplete    = false;
+	static HANDLE g_initCompleteEvent  = NULL;
 
 	// Update self pointers after loading or reloading a plugin, so they point to the cached strings.
 	static void RefreshSelfPointers(LoadedPlugin& rec)
@@ -92,6 +100,11 @@ namespace PluginManager
 				info->interfaceVersion,
 				PLUGIN_INTERFACE_VERSION_MIN, PLUGIN_INTERFACE_VERSION_MAX,
 				rec.fileName.c_str());
+			// Cache what we can from the DLL so the UI can display it.
+			rec.cachedName    = info->name    ? info->name    : "";
+			rec.cachedVersion = info->version ? info->version : "";
+			rec.cachedAuthor  = info->author  ? info->author  : "";
+			rec.isOutOfDate   = true;
 			FreeLibrary(hModule);
 			return false;
 		}
@@ -118,9 +131,19 @@ namespace PluginManager
 	{
 		auto rec = std::make_unique<LoadedPlugin>();
 		rec->fileName = dllPath;
+		rec->isOutOfDate = false;
 
 		if (!LoadPluginIntoRecord(*rec))
+		{
+			// If version check populated cached strings, keep the record visible in the UI.
+			if (rec->isOutOfDate)
+			{
+				EnterCriticalSection(&g_pluginLock);
+				g_loadedPlugins.push_back(std::move(rec));
+				LeaveCriticalSection(&g_pluginLock);
+			}
 			return false;
+		}
 
 		RefreshSelfPointers(*rec);
 		rec->self.name = rec->cachedName.c_str();
@@ -139,6 +162,7 @@ namespace PluginManager
 	void InitializePluginManager()
 	{
 		InitializeCriticalSection(&g_pluginLock);
+		g_initCompleteEvent  = CreateEventW(nullptr, TRUE, FALSE, nullptr);
 		g_managerInitialized = true;
 		ModLoaderLogger::LogMessage(L"Plugin manager initialized");
 	}
@@ -147,6 +171,7 @@ namespace PluginManager
 	{
 		g_managerInitialized = false;
 		DeleteCriticalSection(&g_pluginLock);
+		if (g_initCompleteEvent) { CloseHandle(g_initCompleteEvent); g_initCompleteEvent = NULL; }
 		ModLoaderLogger::LogMessage(L"Plugin manager shutdown");
 	}
 
@@ -158,24 +183,16 @@ namespace PluginManager
 			return;
 		}
 
-		// Get the directory of the current executable
 		wchar_t exePath[MAX_PATH] = {};
 		GetModuleFileNameW(nullptr, exePath, MAX_PATH);
-
-		// Remove the filename to get the directory
 		wchar_t* lastSlash = wcsrchr(exePath, L'\\');
-		if (lastSlash)
-		{
-			*lastSlash = L'\0';
-		}
+		if (lastSlash) *lastSlash = L'\0';
 
-		// Build path to Plugins directory
 		wchar_t modsPath[MAX_PATH] = {};
 		swprintf_s(modsPath, L"%s\\Plugins", exePath);
 
 		ModLoaderLogger::LogMessage(L"Searching for plugins in: %s", modsPath);
 
-		// Check if directory exists
 		DWORD attribs = GetFileAttributesW(modsPath);
 		if (attribs == INVALID_FILE_ATTRIBUTES || !(attribs & FILE_ATTRIBUTE_DIRECTORY))
 		{
@@ -187,39 +204,57 @@ namespace PluginManager
 			}
 		}
 
-		// Build search pattern
+		// Pre-collect paths so we know the total count for progress reporting.
 		wchar_t searchPattern[MAX_PATH] = {};
 		swprintf_s(searchPattern, L"%s\\*.dll", modsPath);
 
-		// Enumerate all DLL files
+		std::vector<std::wstring> dllPaths;
 		WIN32_FIND_DATAW findData = {};
 		HANDLE hFind = FindFirstFileW(searchPattern, &findData);
+		if (hFind != INVALID_HANDLE_VALUE)
+		{
+			do
+			{
+				if (!(findData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY))
+				{
+					wchar_t dllPath[MAX_PATH] = {};
+					swprintf_s(dllPath, L"%s\\%s", modsPath, findData.cFileName);
+					dllPaths.push_back(dllPath);
+				}
+			} while (FindNextFileW(hFind, &findData));
+			FindClose(hFind);
+		}
 
-		if (hFind == INVALID_HANDLE_VALUE)
+		if (dllPaths.empty())
 		{
 			ModLoaderLogger::LogMessage(L"No plugins found in Plugins directory");
 			return;
 		}
 
+		int total       = static_cast<int>(dllPaths.size());
 		int loadedCount = 0;
-		do
+
+		for (int i = 0; i < total; ++i)
 		{
-			// Skip directories
-			if (findData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
-				continue;
+			// Extract bare filename for the status label.
+			const wchar_t* fileName = dllPaths[i].c_str();
+			const wchar_t* slash    = wcsrchr(fileName, L'\\');
+			const wchar_t* name     = slash ? slash + 1 : fileName;
 
-			// Build full path to DLL
-			wchar_t dllPath[MAX_PATH] = {};
-			swprintf_s(dllPath, L"%s\\%s", modsPath, findData.cFileName);
+#ifdef MODLOADER_CLIENT_BUILD
+			wchar_t msg[128];
+			swprintf_s(msg, L"Loading %s (%d/%d)", name, i + 1, total);
+			Splash::SetSubStatus(msg);
+			Splash::SetSubProgress(static_cast<float>(i) / static_cast<float>(total));
+#endif
 
-			if (LoadPlugin(dllPath))
-			{
+			if (LoadPlugin(dllPaths[i]))
 				loadedCount++;
-			}
+		}
 
-		} while (FindNextFileW(hFind, &findData));
-
-		FindClose(hFind);
+#ifdef MODLOADER_CLIENT_BUILD
+		Splash::ClearSubBar();
+#endif
 
 		ModLoaderLogger::LogMessage(L"Loaded %d plugin DLL(s) from Plugins (PluginInit deferred)", loadedCount);
 	}
@@ -234,17 +269,31 @@ namespace PluginManager
 
 		EnterCriticalSection(&g_pluginLock);
 
-		int initCount  = 0;
-		int failCount  = 0;
+		// Pre-count deferred plugins so we can show accurate (i/total) progress.
 		int totalDeferred = 0;
+		for (const auto& plugin : g_loadedPlugins)
+			if (!plugin->isInitialized && plugin->init) totalDeferred++;
+
+		int initCount = 0;
+		int failCount = 0;
+		int current   = 0;
 
 		for (auto& plugin : g_loadedPlugins)
 		{
 			if (plugin->isInitialized || !plugin->init)
 				continue;
 
-			totalDeferred++;
+			current++;
 			ModLoaderLogger::LogMessage(L"Calling PluginInit for: %S v%S", plugin->cachedName.c_str(), plugin->cachedVersion.c_str());
+
+#ifdef MODLOADER_CLIENT_BUILD
+			{
+				wchar_t msg[128];
+				swprintf_s(msg, L"Initializing %S (%d/%d)", plugin->cachedName.c_str(), current, totalDeferred);
+				Splash::SetSubStatus(msg);
+				Splash::SetSubProgress(static_cast<float>(current - 1) / static_cast<float>(totalDeferred));
+			}
+#endif
 
 			plugin->self.logger  = ModLoaderLogger::GetPluginLogger();
 			plugin->self.config  = ModLoaderLogger::GetPluginConfig();
@@ -266,7 +315,12 @@ namespace PluginManager
 
 		LeaveCriticalSection(&g_pluginLock);
 
+#ifdef MODLOADER_CLIENT_BUILD
+		Splash::ClearSubBar();
+#endif
+
 		ModLoaderLogger::LogMessage(L"InitAllLoadedPlugins: %d initialized, %d failed (of %d deferred)", initCount, failCount, totalDeferred);
+		if (g_initCompleteEvent) SetEvent(g_initCompleteEvent);
 	}
 
 	void UnloadAllPlugins()
@@ -337,7 +391,8 @@ namespace PluginManager
 				strncpy_s(out[i].name,    p.cachedName.c_str(),    _TRUNCATE);
 				strncpy_s(out[i].version, p.cachedVersion.c_str(), _TRUNCATE);
 				strncpy_s(out[i].author,  p.cachedAuthor.c_str(),  _TRUNCATE);
-				out[i].isLoaded = p.isInitialized;
+				out[i].isLoaded     = p.isInitialized;
+				out[i].isOutOfDate  = p.isOutOfDate;
 			}
 		}
 		LeaveCriticalSection(&g_pluginLock);
@@ -381,7 +436,6 @@ namespace PluginManager
 		LoadedPlugin& p = *g_loadedPlugins[index];
 		ModLoaderLogger::LogMessage(L"Reloading plugin: %S", p.cachedName.c_str());
 
-		// Unload if currently running
 		if (p.isInitialized)
 		{
 			p.shutdown();
@@ -394,7 +448,6 @@ namespace PluginManager
 			p.info    = nullptr;
 		}
 
-		// fileName is preserved — reload from same path
 		bool ok = LoadPluginIntoRecord(p);
 
 		LeaveCriticalSection(&g_pluginLock);
@@ -411,5 +464,21 @@ namespace PluginManager
 		}
 
 		return ok;
+	}
+
+	HANDLE GetPluginsInitializedEvent()
+	{
+		return g_initCompleteEvent;
+	}
+
+	bool IsStartupComplete()
+	{
+		return g_startupComplete;
+	}
+
+	void MarkStartupComplete()
+	{
+		g_startupComplete = true;
+		ModLoaderLogger::LogMessage(L"Plugin startup phase complete");
 	}
 }

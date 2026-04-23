@@ -7,6 +7,7 @@
 
 #ifdef MODLOADER_CLIENT_BUILD
 #include "UI/global_settings.h"
+#include "UI/splash_window.h"
 #endif
 
 #define WIN32_LEAN_AND_MEAN
@@ -705,7 +706,8 @@ static void WritePluginVersion(const wchar_t* iniPath,
 // Downloads the plugin DLL if the remote version differs from stored.
 static void ProcessPluginSidecar(const PluginSidecar& sc,
                                   const wchar_t* pluginsDir,
-                                  const wchar_t* stateIniPath)
+                                  const wchar_t* stateIniPath,
+                                  int index, int total)
 {
     LogToFile::Debug("[AutoUpdate][Sidecar] Checking '%s' via %s",
                      sc.dllFilename.c_str(), sc.manifestUrl.c_str());
@@ -774,6 +776,14 @@ static void ProcessPluginSidecar(const PluginSidecar& sc,
                     storedVersion.empty() ? "<none>" : storedVersion.c_str(),
                     remoteVersion.c_str());
 
+#ifdef MODLOADER_CLIENT_BUILD
+    {
+        wchar_t msg[128];
+        swprintf_s(msg, L"Updating %S (%d/%d)", displayName, index + 1, total);
+        Splash::SetSubStatus(msg);
+    }
+#endif
+
     wchar_t wFilename[256]{};
     MultiByteToWideChar(CP_UTF8, 0, sc.dllFilename.c_str(), -1, wFilename, 256);
 
@@ -797,6 +807,7 @@ static void RunPerPluginUpdates(const wchar_t* pluginsDir)
     {
         LogToFile::Debug("[AutoUpdate][Sidecar] No plugin sidecars found in %ls", pluginsDir);
         return;
+
     }
 
     LogToFile::Info("[AutoUpdate][Sidecar] Found %zu plugin sidecar(s)", sidecars.size());
@@ -804,8 +815,21 @@ static void RunPerPluginUpdates(const wchar_t* pluginsDir)
     wchar_t stateIniPath[MAX_PATH]{};
     GetUpdateStateIniPath(stateIniPath, MAX_PATH);
 
-    for (const auto& sc : sidecars)
-        ProcessPluginSidecar(sc, pluginsDir, stateIniPath);
+    int total = static_cast<int>(sidecars.size());
+    for (int i = 0; i < total; ++i)
+    {
+#ifdef MODLOADER_CLIENT_BUILD
+        wchar_t msg[128];
+        swprintf_s(msg, L"Checking %S (%d/%d)", sidecars[i].dllFilename.c_str(), i + 1, total);
+        Splash::SetSubStatus(msg);
+        Splash::SetSubProgress(static_cast<float>(i) / static_cast<float>(total));
+#endif
+        ProcessPluginSidecar(sidecars[i], pluginsDir, stateIniPath, i, total);
+    }
+
+#ifdef MODLOADER_CLIENT_BUILD
+    Splash::ClearSubBar();
+#endif
 }
 
 // ===========================================================================

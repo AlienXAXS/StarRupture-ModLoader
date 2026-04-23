@@ -66,7 +66,7 @@ namespace
 
 	// Set true by SetRenderingReady() once WorldBeginPlay fires.
 	// Gates D3D12 resource init to avoid conflicts with Streamline/UE5 startup.
-	std::atomic<bool> g_renderingReady = false;
+	std::atomic<bool> g_renderingReady = true;
 
 	std::atomic<bool> g_initialized = false;
 	std::atomic<bool> g_shutdown = false;

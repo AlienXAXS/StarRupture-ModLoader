@@ -57,7 +57,8 @@
 
 // Handle to the main initialisation thread (kept so DLL_PROCESS_DETACH can
 // wait for it in the FreeLibrary case before tearing down subsystems).
-static HANDLE g_mainInitThread = NULL;
+static HANDLE g_mainInitThread   = NULL;
+static HANDLE g_autoUpdateThread = NULL;
 
 // Signalled (manual-reset) by the init thread once all plugins are loaded and
 // all hooks are installed.  DLL_PROCESS_DETACH waits on this before running
@@ -93,17 +94,23 @@ static SDK::UWorld* s_currentWorld = nullptr;
 // Forward declarations
 // ---------------------------------------------------------------------------
 static DWORD WINAPI MainInitThreadProc(LPVOID);
-static void       LoadUE4SS();
-static void   LogStartupEnvironment();
+static DWORD WINAPI AutoUpdateThreadProc(LPVOID);
+static void         InitSubsystems();
+static void         InstallHooksPhase();
+static void         WaitForEnginePhase();
+static void         LoadPluginsPhase();
+static void         InitPluginsIfReady();
+static void         LoadUE4SS();
+static void         LogStartupEnvironment();
 static bool         VerifyGameVersion();
-static void InstallAllHooks();
-static void       RemoveAllHooks();
+static void         InstallAllHooks();
+static void         RemoveAllHooks();
 static void         WaitForEngineReady();
 #ifdef MODLOADER_CLIENT_BUILD
-static void       InitClientUI();
-static void ShutdownClientUI();
+static void         InitClientUI();
+static void         ShutdownClientUI();
 #endif
-static void     ShutdownAll();
+static void         ShutdownAll();
 
 // ---------------------------------------------------------------------------
 // Path utility: returns the directory containing the game executable,
@@ -294,7 +301,7 @@ static void InstallAllHooks()
 	// RegisterAnyWorldBeginPlayCallback / RegisterWorldBeginPlayCallback call.
 
 	Splash::SetStatus(L"Installing EngineInit hook...");
-	Splash::SetProgress(0.50f);
+	Splash::SetProgress(0.20f);
 
 	// Pass both events so the detour can signal engine-ready and then wait
 	// for all plugins to load before letting the original Init proceed.
@@ -321,7 +328,7 @@ static void InstallAllHooks()
 	}
 
 	Splash::SetStatus(L"Installing EngineShutdown hook...");
-	Splash::SetProgress(0.55f);
+	Splash::SetProgress(0.25f);
 
 	if (Hooks::EngineShutdown::Install())
 		ModLoaderLogger::LogDebug(L"  EngineShutdown hook installed");
@@ -329,7 +336,7 @@ static void InstallAllHooks()
 		ModLoaderLogger::LogWarn(L"  WARNING: EngineShutdown hook failed to install - plugins will not receive shutdown callbacks");
 
 	Splash::SetStatus(L"Installing spawner hooks...");
-	Splash::SetProgress(0.60f);
+	Splash::SetProgress(0.30f);
 
 	// Install spawner hooks eagerly now that pattern scanning is available.
 	// These must be up before any plugin OnEngineInit callback runs so
@@ -348,7 +355,7 @@ static void InstallAllHooks()
 #endif
 
 	Splash::SetStatus(L"Installing GameInstance hook...");
-	Splash::SetProgress(0.65f);
+	Splash::SetProgress(0.40f);
 
 	// Install UGameInstance::Init hook.  Pattern scanning works at any time
 	// (reads .text section), so we install early here.  The detour calls
@@ -392,7 +399,7 @@ static void WaitForEngineReady()
 		return;
 
 	Splash::SetStatus(L"Waiting for engine...");
-	Splash::SetProgress(0.70f);
+	Splash::SetProgress(0.45f);
 	LogToFile::Info("[ModLoader] Waiting for engine initialization...");
 
 	static constexpr DWORD kEngineWaitTimeoutMs = 120'000; // 2 minutes
@@ -432,10 +439,6 @@ static void WaitForEngineReady()
 
 static void InitClientUI()
 {
-	// Install the keybind input processor so plugins can register keybinds
-	// during their PluginInit call and have them active immediately.
-	Hooks::Input::InstallInputProcessor();
-
 	// Read [UI] Enabled from modloader.ini.  Write the default (1) back if
 	// the key doesn't exist yet so users can discover and edit the setting.
 	const std::wstring iniPath = GetExeDirPath(L"modloader.ini");
@@ -461,8 +464,10 @@ static void InitClientUI()
 	static auto s_onWorldReady = [](SDK::UWorld* world, const char* worldName)
 	{
 		s_currentWorld = world;
-		if (s_imguiEnabled)
-			UI::ImGuiBackend::SetRenderingReady();
+
+		//if (s_imguiEnabled)
+		//	UI::ImGuiBackend::SetRenderingReady();
+
 		const bool isMainMenu = worldName && strstr(worldName, "Map_MainMenu") != nullptr;
 		UI::Overlay::SetVisible(isMainMenu);
 		UI::GlobalSettings::SetWorldName(worldName ? worldName : "");
@@ -509,6 +514,15 @@ static void ShutdownClientUI()
 // ---------------------------------------------------------------------------
 static void ShutdownAll()
 {
+	// If auto-update thread is still running (e.g. FreeLibrary before engine ready),
+	// wait for it so we don't tear down WinHTTP while it's in use.
+	if (g_autoUpdateThread)
+	{
+		WaitForSingleObject(g_autoUpdateThread, 15'000);
+		CloseHandle(g_autoUpdateThread);
+		g_autoUpdateThread = NULL;
+	}
+
 	// Release any synchronisation handles the init thread may not have
 	// cleaned up (e.g. FreeLibrary called before engine ever started).
 	if (g_engineReadyEvent)
@@ -594,13 +608,87 @@ static void ShutdownAll()
 // late-registration path in Hooks::EngineInit::RegisterPluginCallback, which
 // invokes the callback immediately.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Auto-update runs on its own thread in parallel with hook installation and
+// the engine-ready wait.  This lets plugin updates download concurrently with
+// engine initialization so startup is faster.  MainInitThreadProc joins this
+// thread after the engine is ready (gate 2) before loading plugins, ensuring
+// all updated DLLs are on disk before LoadAllPlugins scans the directory.
+// ---------------------------------------------------------------------------
+static DWORD WINAPI AutoUpdateThreadProc(LPVOID)
+{
+	ModLoaderLogger::RunAutoUpdate();
+	return 0;
+}
+
+// ---------------------------------------------------------------------------
+// Named startup phases -- called in sequence from MainInitThreadProc.
+// ---------------------------------------------------------------------------
+
+static void InitSubsystems()
+{
+	Splash::SetStatus(L"Initializing logger...");
+	Splash::SetProgress(0.05f);
+	ModLoaderLogger::InitializeLogger();
+	ModLoaderLogger::LogMessage(L"======================================");
+	ModLoaderLogger::LogMessage(L"  AlienX's Mod Loader Starting");
+	ModLoaderLogger::LogMessage(L"======================================");
+
+	ModLoaderLogger::InitializeConfigManager();
+	PluginManager::InitializePluginManager();
+}
+
+static void InstallHooksPhase()
+{
+	Splash::SetStatus(L"Installing core game hooks...");
+	Splash::SetProgress(0.15f);
+	InstallAllHooks();
+}
+
+static void WaitForEnginePhase()
+{
+	// WaitForEngineReady updates splash status internally.
+	WaitForEngineReady();
+	Splash::SetProgress(0.50f);
+}
+
+static void LoadPluginsPhase()
+{
+	Splash::SetStatus(L"Loading plugin DLLs...");
+	Splash::SetProgress(0.50f);
+	PluginManager::LoadAllPlugins();
+	Splash::SetProgress(0.85f);
+}
+
+static void InitPluginsIfReady()
+{
+	// Bug fix: if GameInstanceInit one-shot latch fired before plugins were
+	// loaded (server startup race / 120s timeout scenario), PluginInit was
+	// never called.  Detect this and call InitAllLoadedPlugins now.
+	if (Hooks::GameInstanceInit::HasFired())
+	{
+		ModLoaderLogger::LogInfo(L"[dllmain] GameInstanceInit already fired before plugins loaded -- calling InitAllLoadedPlugins now");
+		PluginManager::InitAllLoadedPlugins();
+	}
+	PluginManager::MarkStartupComplete();
+}
+
+// ---------------------------------------------------------------------------
+// Main initialization thread.
+//
+// Runs outside the loader lock so WinHTTP (auto-update), LoadLibrary (plugin
+// DLLs), and MsgWaitForMultipleObjects (engine-ready wait) can all work.
+//
+// Two-gate ordering guarantee before LoadAllPlugins:
+//   Gate 1: g_engineReadyEvent -- engine is fully initialized (WaitForEnginePhase)
+//   Gate 2: g_autoUpdateThread -- all plugin DLLs are downloaded (join thread)
+// Both must be satisfied before we scan the Plugins directory.
+// ---------------------------------------------------------------------------
 static DWORD WINAPI MainInitThreadProc(LPVOID)
 {
 	// Open the splash here, not in DllMain.  The splash window has no internal
 	// message thread -- Show/SetStatus/SetProgress/Close must all be called from
-	// the same thread that owns the HWND.  Running everything here keeps the
-	// ownership consistent and avoids cross-thread UpdateWindow / PumpMessages
-	// failures.  DllMain returns in microseconds so the visual delay is nil.
+	// the same thread that owns the HWND.
 	Splash::Show();
 	Splash::SetStatus(L"Starting mod loader...");
 	Splash::SetProgress(0.0f);
@@ -609,66 +697,78 @@ static DWORD WINAPI MainInitThreadProc(LPVOID)
 		return 0;
 
 	LogStartupEnvironment();
+	InitSubsystems();
 
-	Splash::SetStatus(L"Initializing logger...");
-	Splash::SetProgress(0.20f);
-	ModLoaderLogger::InitializeLogger();
-	ModLoaderLogger::LogMessage(L"======================================");
-	ModLoaderLogger::LogMessage(L"  AlienX's Mod Loader Starting");
-	ModLoaderLogger::LogMessage(L"======================================");
+	Hooks::Input::InstallInputProcessor();
+	Hooks::WorldBeginPlay::Install();
+	Hooks::EngineTick::Install();
 
-	Splash::SetStatus(L"Here Goes Nothin' ...");
-	Splash::SetProgress(0.30f);
-	ModLoaderLogger::InitializeConfigManager();
-	PluginManager::InitializePluginManager();
+	// Kick off auto-update in parallel with hook installation and engine wait.
+	// The splash sub-bar will show per-plugin update progress from that thread.
+	Splash::SetStatus(L"Checking for updates and installing hooks...");
+	g_autoUpdateThread = CreateThread(nullptr, 0, AutoUpdateThreadProc, nullptr, 0, nullptr);
+	if (!g_autoUpdateThread)
+		LogToFile::Warn("[ModLoader] Failed to create auto-update thread (%lu) -- running synchronously", GetLastError());
 
-	// Auto-update runs here, outside the loader lock, so WinHTTP can work.
-	// Downloaded DLLs are in place for this boot's plugin load.
-	Splash::SetStatus(L"Checking for plugin updates...");
-	Splash::SetProgress(0.35f);
-	ModLoaderLogger::RunAutoUpdate();
+	if (g_autoUpdateThread)
+	{
+		InstallHooksPhase();
+		WaitForEnginePhase();
 
-	Splash::SetStatus(L"Installing core game hooks...");
-	Splash::SetProgress(0.40f);
-	InstallAllHooks();
-
-	// Block until the engine signals it is fully initialised.
-	WaitForEngineReady();
-
-	// Engine is up -- safe to scan and load plugin DLLs.
-	// PluginInit is NOT called here; it is deferred until UGameInstance::Init
-	// fires (via the GameInstanceInit hook), at which point GObjects is fully
-	// populated and UFunction lookups are safe.
-	Splash::SetStatus(L"Loading plugin DLLs...");
-	Splash::SetProgress(0.80f);
+		// Gate 2: ensure auto-update has finished before we scan Plugins dir.
+		Splash::SetStatus(L"Waiting for update check to complete...");
+		WaitForSingleObject(g_autoUpdateThread, INFINITE);
+		CloseHandle(g_autoUpdateThread);
+		g_autoUpdateThread = NULL;
+	}
+	else
+	{
+		// Fallback: run synchronously if thread creation failed.
+		Splash::SetStatus(L"Checking for plugin updates...");
+		Splash::SetProgress(0.10f);
+		ModLoaderLogger::RunAutoUpdate();
+		InstallHooksPhase();
+		WaitForEnginePhase();
+	}
 
 #ifdef MODLOADER_CLIENT_BUILD
 	InitClientUI();
 #endif
 
-	PluginManager::LoadAllPlugins();
+	LoadPluginsPhase();
+	InitPluginsIfReady();
 
-	// Bug fix: if the GameInstanceInit one-shot latch fired before plugins
-	// were loaded (server startup race / 120s timeout scenario), plugins
-	// were left in "deferred" state and PluginInit was never called.
-	// Detect this and call InitAllLoadedPlugins now that the DLLs are loaded.
-	if (Hooks::GameInstanceInit::HasFired())
+	// Wait for InitAllLoadedPlugins to complete -- it may fire on the game
+	// thread via the GameInstanceInit hook rather than synchronously above.
+	// Keep pumping messages so the splash stays responsive.
 	{
-		ModLoaderLogger::LogInfo(L"[dllmain] GameInstanceInit already fired before plugins loaded -- calling InitAllLoadedPlugins now");
-		PluginManager::InitAllLoadedPlugins();
+		HANDLE hEvent = PluginManager::GetPluginsInitializedEvent();
+		if (hEvent && WaitForSingleObject(hEvent, 0) != WAIT_OBJECT_0)
+		{
+			Splash::SetStatus(L"Waiting for game engine...");
+			while (WaitForSingleObject(hEvent, 0) != WAIT_OBJECT_0)
+			{
+				MSG msg;
+				while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE))
+				{
+					TranslateMessage(&msg);
+					DispatchMessageW(&msg);
+				}
+				MsgWaitForMultipleObjects(1, &hEvent, FALSE, 50, QS_ALLINPUT);
+			}
+		}
 	}
 
-	Splash::SetStatus(L"Plugin DLLs loaded -- waiting for game instance...");
+	Splash::SetStatus(L"Ready.");
 	Splash::SetProgress(1.0f);
 	ModLoaderLogger::LogInfo(L"Mod loader injection complete - Yay!");
 
-	// Signal DLL_PROCESS_DETACH that init is complete and it is safe to start
-	// the shutdown sequence (UnloadAllPlugins etc.).
+	// Signal DLL_PROCESS_DETACH that init is complete.
 	if (g_pluginsLoadedEvent)
 		SetEvent(g_pluginsLoadedEvent);
 
-	// Brief pause so the user can see 100%, then close the splash.
-	Sleep(1200);
+	// Linger briefly so the "Ready." state is visible before closing.
+	Splash::Linger(1200);
 	Splash::Close();
 
 	return 0;
