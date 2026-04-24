@@ -14,6 +14,10 @@
 
 namespace UI::PluginPanelRegistry
 {
+    // Set the plugin name to associate with the next RegisterPanel call(s).
+    // Call before PluginInit, clear to nullptr after.
+    void SetCurrentRegistrationPlugin(const char* name);
+
     // Register a panel.  desc and all strings it points to must remain valid
     // until UnregisterPanel is called.  Returns an opaque PanelHandle
     // (internally PanelEntry*), or null on failure.
@@ -42,9 +46,9 @@ namespace UI::PluginPanelRegistry
     // Called by modloader_window to fire config-change notifications.
     void FireConfigChanged(const char* section, const char* key, const char* newValue);
 
-    // Renders a row of "Open" buttons for all registered panels.
+    // Renders "Open" buttons for panels belonging to pluginName (null = all).
     // Call from inside an ImGui window; handles Begin/End for each panel window.
-    void RenderPanelButtons(IModLoaderImGui* imgui);
+    void RenderPanelButtons(IModLoaderImGui* imgui, const char* pluginName = nullptr);
 
     // Renders all open panel windows.  Call once per frame at the top level
     // (outside any other ImGui window).

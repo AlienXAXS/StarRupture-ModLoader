@@ -372,6 +372,11 @@ namespace UI::ModLoaderWindow
                 LoadConfigEntries(info->name);
             }
 
+            // Plugin panels button row (shown before config entries)
+            ImGui::SeparatorText("Plugin Tools");
+            UI::PluginPanelRegistry::RenderPanelButtons(imgui, info->name);
+            ImGui::Spacing();
+
             if (s_configEntries.empty())
             {
                 ImGui::TextDisabled("No config file found for this plugin.");
@@ -386,7 +391,6 @@ namespace UI::ModLoaderWindow
                 const char* curSection = nullptr;
                 for (auto& kv : s_configEntries)
                 {
-                    // Section header
                     if (!curSection || strcmp(curSection, kv.section) != 0)
                     {
                         if (curSection) ImGui::Spacing();
@@ -397,11 +401,6 @@ namespace UI::ModLoaderWindow
                     const ConfigEntry* entry = FindSchemaEntry(schema, kv.section, kv.key);
                     RenderConfigEntry(kv, entry, info->name);
                 }
-
-                // Plugin panels button row
-                ImGui::Spacing();
-                ImGui::SeparatorText("Plugin Tools");
-                UI::PluginPanelRegistry::RenderPanelButtons(imgui);
             }
         }
 

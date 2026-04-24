@@ -14,6 +14,7 @@
 
 #ifdef MODLOADER_CLIENT_BUILD
 #include "UI/splash_window.h"
+#include "UI/plugin_panel_registry.h"
 #endif
 
 namespace PluginManager
@@ -300,6 +301,9 @@ namespace PluginManager
 			plugin->self.scanner = ModLoaderLogger::GetPluginScanner();
 			plugin->self.hooks   = ModLoaderLogger::GetPluginHooks();
 
+#ifdef MODLOADER_CLIENT_BUILD
+			UI::PluginPanelRegistry::SetCurrentRegistrationPlugin(plugin->cachedName.c_str());
+#endif
 			if (plugin->init(&plugin->self))
 			{
 				plugin->isInitialized = true;
@@ -311,6 +315,9 @@ namespace PluginManager
 				failCount++;
 				ModLoaderLogger::LogMessage(L"Plugin initialization failed: %S", plugin->cachedName.c_str());
 			}
+#ifdef MODLOADER_CLIENT_BUILD
+			UI::PluginPanelRegistry::SetCurrentRegistrationPlugin(nullptr);
+#endif
 		}
 
 		LeaveCriticalSection(&g_pluginLock);
