@@ -103,9 +103,15 @@
     <Filter Include="Source Files\hooks\game\FHttpServerRequest">
       <UniqueIdentifier>{06d5eb1a-4870-4cab-b7a0-4f47674a29b9}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Source Files\core">
+      <UniqueIdentifier>{a1b2c3d4-e5f6-7890-abcd-ef1234567890}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="dwmapi_proxy.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="game_type_checker.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="hooks\hooks_common.h">
@@ -219,6 +225,33 @@
     <ClInclude Include="utils\mem_utils.h">
       <Filter>Source Files\utils</Filter>
     </ClInclude>
+    <ClInclude Include="core\globals.h">
+      <Filter>Source Files\core</Filter>
+    </ClInclude>
+    <ClInclude Include="core\startup_utils.h">
+      <Filter>Source Files\core</Filter>
+    </ClInclude>
+    <ClInclude Include="core\version_check.h">
+      <Filter>Source Files\core</Filter>
+    </ClInclude>
+    <ClInclude Include="core\engine_sync.h">
+      <Filter>Source Files\core</Filter>
+    </ClInclude>
+    <ClInclude Include="core\hook_management.h">
+      <Filter>Source Files\core</Filter>
+    </ClInclude>
+    <ClInclude Include="core\client_ui.h">
+      <Filter>Source Files\core</Filter>
+    </ClInclude>
+    <ClInclude Include="core\shutdown.h">
+      <Filter>Source Files\core</Filter>
+    </ClInclude>
+    <ClInclude Include="core\init_phases.h">
+      <Filter>Source Files\core</Filter>
+    </ClInclude>
+    <ClInclude Include="core\init_thread.h">
+      <Filter>Source Files\core</Filter>
+    </ClInclude>
     <ClInclude Include="hooks\game\mass_do_spawning\mass_do_spawning.h">
       <Filter>Source Files\hooks\game\spawning</Filter>
     </ClInclude>
@@ -251,6 +284,33 @@
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="core\globals.cpp">
+      <Filter>Source Files\core</Filter>
+    </ClCompile>
+    <ClCompile Include="core\startup_utils.cpp">
+      <Filter>Source Files\core</Filter>
+    </ClCompile>
+    <ClCompile Include="core\version_check.cpp">
+      <Filter>Source Files\core</Filter>
+    </ClCompile>
+    <ClCompile Include="core\engine_sync.cpp">
+      <Filter>Source Files\core</Filter>
+    </ClCompile>
+    <ClCompile Include="core\hook_management.cpp">
+      <Filter>Source Files\core</Filter>
+    </ClCompile>
+    <ClCompile Include="core\client_ui.cpp">
+      <Filter>Source Files\core</Filter>
+    </ClCompile>
+    <ClCompile Include="core\shutdown.cpp">
+      <Filter>Source Files\core</Filter>
+    </ClCompile>
+    <ClCompile Include="core\init_phases.cpp">
+      <Filter>Source Files\core</Filter>
+    </ClCompile>
+    <ClCompile Include="core\init_thread.cpp">
+      <Filter>Source Files\core</Filter>
+    </ClCompile>
     <ClCompile Include="dllmain.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>

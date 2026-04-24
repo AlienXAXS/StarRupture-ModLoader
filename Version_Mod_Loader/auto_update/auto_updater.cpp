@@ -851,10 +851,18 @@ static void RunCentralManifestUpdate(const AutoUpdateConfig& cfg)
 	                cfg.manifestUrl,
 	                cfg.urlFromIni ? " (from modloader.ini)" : " (compiled-in default)");
 
+#ifdef MODLOADER_CLIENT_BUILD
+	Splash::SetSubStatus(L"Fetching update manifest...");
+	Splash::SetSubProgress(0.0f);
+#endif
+
 	std::string manifest = HttpGet(cfg.manifestUrl, "manifest");
 	if (manifest.empty())
 	{
 		LogToFile::Warn("[AutoUpdate] Manifest fetch failed — skipping modloader version check");
+#ifdef MODLOADER_CLIENT_BUILD
+		Splash::SetSubStatus(L"Update check failed (no connection?)");
+#endif
 		return;
 	}
 
@@ -897,6 +905,10 @@ static void RunCentralManifestUpdate(const AutoUpdateConfig& cfg)
 			LogToFile::Debug("[AutoUpdate] First run after fresh install — writing update_state.ini");
 			WriteStoredBuildTag(compiledTag);
 		}
+#ifdef MODLOADER_CLIENT_BUILD
+		Splash::SetSubStatus(L"Modloader is up to date");
+		Splash::SetSubProgress(1.0f);
+#endif
 		return;
 	}
 
@@ -905,6 +917,8 @@ static void RunCentralManifestUpdate(const AutoUpdateConfig& cfg)
 
 #ifdef MODLOADER_CLIENT_BUILD
 	UI::GlobalSettings::SetUpdateAvailable(true);
+	Splash::SetSubStatus(L"Modloader update available!");
+	Splash::SetSubProgress(1.0f);
 #endif
 
 	// Write the new tag so the notification is not shown again until the
@@ -942,10 +956,18 @@ void ModLoaderLogger::RunAutoUpdate()
 
 	// Central manifest pass — checks for a new modloader release and notifies
 	// the user.  Skipped on dev builds (no URL).
+#ifdef MODLOADER_CLIENT_BUILD
+	Splash::SetSubStatus(L"Checking for modloader update...");
+	Splash::SetSubProgress(0.0f);
+#endif
 	RunCentralManifestUpdate(cfg);
 
 	// Per-plugin sidecar pass — updates any plugin that ships a .json sidecar
 	// pointing at its own manifest.  Runs regardless of whether a central
 	// manifest URL is configured, so third-party plugins always get checked.
+#ifdef MODLOADER_CLIENT_BUILD
+	Splash::SetSubStatus(L"Checking for plugin updates...");
+	Splash::SetSubProgress(0.0f);
+#endif
 	RunPerPluginUpdates(pluginsDir);
 }

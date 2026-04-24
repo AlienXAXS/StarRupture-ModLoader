@@ -521,6 +521,7 @@
     <ClInclude Include="logging\log.h" />
     <ClInclude Include="logging\logger.h" />
     <ClInclude Include="dwmapi_proxy.h" />
+    <ClInclude Include="game_type_checker.h" />
     <ClInclude Include="logging\ue_log.h" />
     <ClInclude Include="memory_scanner\scanner.h" />
     <ClInclude Include="memory_scanner\scanner_interface.h" />
@@ -529,6 +530,15 @@
     <ClInclude Include="UI\splash_window.h" />
     <ClInclude Include="utils\thread_utils.h" />
     <ClInclude Include="utils\mem_utils.h" />
+    <ClInclude Include="core\globals.h" />
+    <ClInclude Include="core\startup_utils.h" />
+    <ClInclude Include="core\version_check.h" />
+    <ClInclude Include="core\engine_sync.h" />
+    <ClInclude Include="core\hook_management.h" />
+    <ClInclude Include="core\client_ui.h" />
+    <ClInclude Include="core\shutdown.h" />
+    <ClInclude Include="core\init_phases.h" />
+    <ClInclude Include="core\init_thread.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="$(StarRuptureSDKSourceDir)Basic.cpp">
@@ -546,6 +556,17 @@
     </ClCompile>
     <ClCompile Include="auto_update\auto_updater.cpp" />
     <ClCompile Include="config\config_manager.cpp" />
+    <ClCompile Include="core\globals.cpp" />
+    <ClCompile Include="core\startup_utils.cpp" />
+    <ClCompile Include="core\version_check.cpp" />
+    <ClCompile Include="core\engine_sync.cpp" />
+    <ClCompile Include="core\hook_management.cpp" />
+    <ClCompile Include="core\client_ui.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)' != 'Client Debug' And '$(Configuration)' != 'Client Release' And '$(Configuration)' != 'Local SDK Client Debug' And '$(Configuration)' != 'Local SDK Client Release'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="core\shutdown.cpp" />
+    <ClCompile Include="core\init_phases.cpp" />
+    <ClCompile Include="core\init_thread.cpp" />
     <ClCompile Include="dllmain.cpp">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
