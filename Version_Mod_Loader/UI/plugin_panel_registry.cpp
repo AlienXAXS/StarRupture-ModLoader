@@ -16,11 +16,21 @@ namespace UI::PluginPanelRegistry
     {
         const PluginPanelDesc* desc;
         bool isOpen;
+        char pluginName[64];   // set at registration time via SetCurrentRegistrationPlugin
     };
 
     static std::mutex s_mutex;
     static std::list<PanelEntry> s_panels;   // list: insertion never invalidates existing pointers
     static std::vector<PluginConfigChangedCallback> s_configCallbacks;
+    static char s_currentPlugin[64];   // set by plugin_manager before each PluginInit call
+
+    void SetCurrentRegistrationPlugin(const char* name)
+    {
+        if (name)
+            strncpy_s(s_currentPlugin, name, _TRUNCATE);
+        else
+            s_currentPlugin[0] = '\0';
+    }
 
     PanelHandle RegisterPanel(const PluginPanelDesc* desc)
     {
@@ -32,7 +42,11 @@ namespace UI::PluginPanelRegistry
         for (auto& e : s_panels)
             if (_stricmp(e.desc->windowTitle, desc->windowTitle) == 0)
                 return nullptr;
-        s_panels.push_back({ desc, false });
+        PanelEntry entry = {};
+        entry.desc   = desc;
+        entry.isOpen = false;
+        strncpy_s(entry.pluginName, s_currentPlugin, _TRUNCATE);
+        s_panels.push_back(entry);
         return static_cast<PanelHandle>(&s_panels.back());
     }
 
@@ -116,11 +130,16 @@ namespace UI::PluginPanelRegistry
         return false;
     }
 
-    void RenderPanelButtons(IModLoaderImGui* imgui)
+    void RenderPanelButtons(IModLoaderImGui* imgui, const char* pluginName)
     {
         std::lock_guard<std::mutex> lock(s_mutex);
         for (auto& entry : s_panels)
         {
+            // Skip if this panel belongs to a different plugin.
+            // Panels with no recorded owner (empty pluginName) show for all plugins.
+            if (pluginName && entry.pluginName[0] != '\0' &&
+                _stricmp(entry.pluginName, pluginName) != 0)
+                continue;
             const char* label = entry.desc->buttonLabel ? entry.desc->buttonLabel : entry.desc->windowTitle;
             if (imgui->Button(label))
                 entry.isOpen = true;

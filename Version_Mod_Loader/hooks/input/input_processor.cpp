@@ -17,23 +17,12 @@ namespace Hooks::Input
 	// -----------------------------------------------------------------------
 	// Maps VK code -> true if the key was down at the end of the previous tick.
 	static std::map<int, bool> s_prevKeyState;
-	// Tick counter to track callback invocations
-	static int s_tickCounter = 0;
-	static const int LOGGING_INTERVAL = 300; // Log every 300 ticks
 
 	// -----------------------------------------------------------------------
 	// Per-frame poll callback — registered into the engine tick
 	// -----------------------------------------------------------------------
 	static void OnEngineTick(float /*deltaSeconds*/)
 	{
-		++s_tickCounter;
-
-		// Log state every LOGGING_INTERVAL ticks
-		if (s_tickCounter % LOGGING_INTERVAL == 0)
-		{
-			ModLoaderLogger::LogDebug(L"[InputProcessor] OnEngineTick fired: tick #%d", s_tickCounter);
-		}
-
 		// Retrieve the set of keys that have at least one registered callback.
 		// This is rebuilt each tick so newly registered keys are picked up immediately.
 		auto activeKeys = GetActiveKeys();
@@ -79,13 +68,11 @@ namespace Hooks::Input
 
 		ModLoaderLogger::LogDebug(L"[InputProcessor] Installing input processor, registering engine tick callback");
 		Hooks::EngineTick::RegisterPluginCallback(OnEngineTick);
-		s_tickCounter = 0; // Reset tick counter on install
 		ModLoaderLogger::LogInfo(L"[InputProcessor] Engine tick callback registered (keybind polling active)");
 	}
 
 	void RemoveInputProcessor()
 	{
-		ModLoaderLogger::LogDebug(L"[InputProcessor] Removing input processor (total ticks: %d)", s_tickCounter);
 		Hooks::EngineTick::UnregisterPluginCallback(OnEngineTick);
 		s_prevKeyState.clear();
 		Shutdown(); // clear all registered keybinds
