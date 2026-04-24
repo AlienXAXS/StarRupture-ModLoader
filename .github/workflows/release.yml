@@ -1,11 +1,12 @@
 name: Build and Release
 
 on:
-  push:
-    branches:
-      - main
-    paths-ignore:
-      - '**/*.md'
+  workflow_dispatch:
+    inputs:
+      sync_plugin_sdk:
+        description: 'Sync Plugin SDK repo (header, DLLs, release)?'
+        type: boolean
+        default: false
 
 jobs:
   build:
@@ -242,6 +243,7 @@ jobs:
 
   sync-plugin-sdk:
     needs: build
+    if: ${{ github.event.inputs.sync_plugin_sdk == 'true' }}
     runs-on: windows-latest
     permissions:
       contents: read
