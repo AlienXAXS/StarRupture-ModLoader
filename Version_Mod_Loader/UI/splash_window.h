@@ -1,5 +1,8 @@
 ﻿#pragma once
 
+#define WIN32_LEAN_AND_MEAN
+#include <Windows.h>
+
 // ---------------------------------------------------------------------------
 // Splash Window -- client-only startup progress overlay
 //
@@ -28,6 +31,22 @@ namespace Splash
     // (e.g. version mismatch) so the splash closes on its own rather than
     // requiring the user to click a "close game" button.
     void SetErrorMode(bool showCloseButton = true);
+
+    // Update the secondary status label shown below the main progress bar.
+    // Pass an empty string or call ClearSubBar() to hide the secondary section.
+    void SetSubStatus(const wchar_t* text);
+
+    // Update the secondary progress bar fill (0.0 -- 1.0).
+    void SetSubProgress(float fraction);
+
+    // Hide the secondary bar and clear its label.
+    void ClearSubBar();
+
+    // Pump messages for the given duration (milliseconds) so cross-thread
+    // repaint requests (WM_APP) posted during e.g. PluginInit are dispatched
+    // before the splash closes.  Call this instead of Sleep() during the
+    // final "hold" period.
+    void Linger(DWORD ms);
 
     // Close the splash window and clean up the background thread.
     // Blocks briefly until the window thread exits.

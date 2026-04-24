@@ -133,7 +133,7 @@ namespace UI::ModLoaderWindow
             ImGui::TableSetupColumn("Name",    ImGuiTableColumnFlags_WidthStretch);
             ImGui::TableSetupColumn("Version", ImGuiTableColumnFlags_WidthFixed,  70.0f);
             ImGui::TableSetupColumn("Author",  ImGuiTableColumnFlags_WidthStretch);
-            ImGui::TableSetupColumn("Status",  ImGuiTableColumnFlags_WidthFixed,  65.0f);
+            ImGui::TableSetupColumn("Status",  ImGuiTableColumnFlags_WidthFixed,  90.0f);
             ImGui::TableSetupColumn("Actions", ImGuiTableColumnFlags_WidthFixed, 175.0f);
             ImGui::TableHeadersRow();
 
@@ -152,7 +152,9 @@ namespace UI::ModLoaderWindow
                 ImGui::TextUnformatted(s.author[0] ? s.author : "?");
 
                 ImGui::TableSetColumnIndex(3);
-                if (s.isLoaded)
+                if (s.isOutOfDate)
+                    ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.1f, 1.0f), "Out of date");
+                else if (s.isLoaded)
                     ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "Loaded");
                 else
                     ImGui::TextDisabled("Unloaded");
@@ -160,25 +162,32 @@ namespace UI::ModLoaderWindow
                 ImGui::TableSetColumnIndex(4);
                 ImGui::PushID(i);
 
-                // Unload — active only when loaded
-                if (!s.isLoaded) ImGui::BeginDisabled();
-                if (ImGui::SmallButton("Unload"))
-                    PluginManager::UnloadPlugin(i);
-                if (!s.isLoaded) ImGui::EndDisabled();
+                if (s.isOutOfDate)
+                {
+                    ImGui::TextDisabled("Incompatible version");
+                }
+                else
+                {
+                    // Unload — active only when loaded
+                    if (!s.isLoaded) ImGui::BeginDisabled();
+                    if (ImGui::SmallButton("Unload"))
+                        PluginManager::UnloadPlugin(i);
+                    if (!s.isLoaded) ImGui::EndDisabled();
 
-                ImGui::SameLine();
+                    ImGui::SameLine();
 
-                // Load — active only when unloaded
-                if (s.isLoaded) ImGui::BeginDisabled();
-                if (ImGui::SmallButton("Load"))
-                    PluginManager::ReloadPlugin(i);
-                if (s.isLoaded) ImGui::EndDisabled();
+                    // Load — active only when unloaded
+                    if (s.isLoaded) ImGui::BeginDisabled();
+                    if (ImGui::SmallButton("Load"))
+                        PluginManager::ReloadPlugin(i);
+                    if (s.isLoaded) ImGui::EndDisabled();
 
-                ImGui::SameLine();
+                    ImGui::SameLine();
 
-                // Reload — always active
-                if (ImGui::SmallButton("Reload"))
-                    PluginManager::ReloadPlugin(i);
+                    // Reload — always active
+                    if (ImGui::SmallButton("Reload"))
+                        PluginManager::ReloadPlugin(i);
+                }
 
                 ImGui::PopID();
             }

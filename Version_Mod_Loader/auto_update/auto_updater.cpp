@@ -7,6 +7,7 @@
 
 #ifdef MODLOADER_CLIENT_BUILD
 #include "UI/global_settings.h"
+#include "UI/splash_window.h"
 #endif
 
 #define WIN32_LEAN_AND_MEAN
@@ -705,7 +706,8 @@ static void WritePluginVersion(const wchar_t* iniPath,
 // Downloads the plugin DLL if the remote version differs from stored.
 static void ProcessPluginSidecar(const PluginSidecar& sc,
                                   const wchar_t* pluginsDir,
-                                  const wchar_t* stateIniPath)
+                                  const wchar_t* stateIniPath,
+                                  int index, int total)
 {
     LogToFile::Debug("[AutoUpdate][Sidecar] Checking '%s' via %s",
                      sc.dllFilename.c_str(), sc.manifestUrl.c_str());
@@ -774,6 +776,14 @@ static void ProcessPluginSidecar(const PluginSidecar& sc,
                     storedVersion.empty() ? "<none>" : storedVersion.c_str(),
                     remoteVersion.c_str());
 
+#ifdef MODLOADER_CLIENT_BUILD
+    {
+        wchar_t msg[128];
+        swprintf_s(msg, L"Updating %S (%d/%d)", displayName, index + 1, total);
+        Splash::SetSubStatus(msg);
+    }
+#endif
+
     wchar_t wFilename[256]{};
     MultiByteToWideChar(CP_UTF8, 0, sc.dllFilename.c_str(), -1, wFilename, 256);
 
@@ -797,6 +807,7 @@ static void RunPerPluginUpdates(const wchar_t* pluginsDir)
     {
         LogToFile::Debug("[AutoUpdate][Sidecar] No plugin sidecars found in %ls", pluginsDir);
         return;
+
     }
 
     LogToFile::Info("[AutoUpdate][Sidecar] Found %zu plugin sidecar(s)", sidecars.size());
@@ -804,8 +815,21 @@ static void RunPerPluginUpdates(const wchar_t* pluginsDir)
     wchar_t stateIniPath[MAX_PATH]{};
     GetUpdateStateIniPath(stateIniPath, MAX_PATH);
 
-    for (const auto& sc : sidecars)
-        ProcessPluginSidecar(sc, pluginsDir, stateIniPath);
+    int total = static_cast<int>(sidecars.size());
+    for (int i = 0; i < total; ++i)
+    {
+#ifdef MODLOADER_CLIENT_BUILD
+        wchar_t msg[128];
+        swprintf_s(msg, L"Checking %S (%d/%d)", sidecars[i].dllFilename.c_str(), i + 1, total);
+        Splash::SetSubStatus(msg);
+        Splash::SetSubProgress(static_cast<float>(i) / static_cast<float>(total));
+#endif
+        ProcessPluginSidecar(sidecars[i], pluginsDir, stateIniPath, i, total);
+    }
+
+#ifdef MODLOADER_CLIENT_BUILD
+    Splash::ClearSubBar();
+#endif
 }
 
 // ===========================================================================
@@ -827,10 +851,18 @@ static void RunCentralManifestUpdate(const AutoUpdateConfig& cfg)
 	                cfg.manifestUrl,
 	                cfg.urlFromIni ? " (from modloader.ini)" : " (compiled-in default)");
 
+#ifdef MODLOADER_CLIENT_BUILD
+	Splash::SetSubStatus(L"Fetching update manifest...");
+	Splash::SetSubProgress(0.0f);
+#endif
+
 	std::string manifest = HttpGet(cfg.manifestUrl, "manifest");
 	if (manifest.empty())
 	{
 		LogToFile::Warn("[AutoUpdate] Manifest fetch failed — skipping modloader version check");
+#ifdef MODLOADER_CLIENT_BUILD
+		Splash::SetSubStatus(L"Update check failed (no connection?)");
+#endif
 		return;
 	}
 
@@ -873,6 +905,10 @@ static void RunCentralManifestUpdate(const AutoUpdateConfig& cfg)
 			LogToFile::Debug("[AutoUpdate] First run after fresh install — writing update_state.ini");
 			WriteStoredBuildTag(compiledTag);
 		}
+#ifdef MODLOADER_CLIENT_BUILD
+		Splash::SetSubStatus(L"Modloader is up to date");
+		Splash::SetSubProgress(1.0f);
+#endif
 		return;
 	}
 
@@ -881,6 +917,8 @@ static void RunCentralManifestUpdate(const AutoUpdateConfig& cfg)
 
 #ifdef MODLOADER_CLIENT_BUILD
 	UI::GlobalSettings::SetUpdateAvailable(true);
+	Splash::SetSubStatus(L"Modloader update available!");
+	Splash::SetSubProgress(1.0f);
 #endif
 
 	// Write the new tag so the notification is not shown again until the
@@ -918,10 +956,18 @@ void ModLoaderLogger::RunAutoUpdate()
 
 	// Central manifest pass — checks for a new modloader release and notifies
 	// the user.  Skipped on dev builds (no URL).
+#ifdef MODLOADER_CLIENT_BUILD
+	Splash::SetSubStatus(L"Checking for modloader update...");
+	Splash::SetSubProgress(0.0f);
+#endif
 	RunCentralManifestUpdate(cfg);
 
 	// Per-plugin sidecar pass — updates any plugin that ships a .json sidecar
 	// pointing at its own manifest.  Runs regardless of whether a central
 	// manifest URL is configured, so third-party plugins always get checked.
+#ifdef MODLOADER_CLIENT_BUILD
+	Splash::SetSubStatus(L"Checking for plugin updates...");
+	Splash::SetSubProgress(0.0f);
+#endif
 	RunPerPluginUpdates(pluginsDir);
 }

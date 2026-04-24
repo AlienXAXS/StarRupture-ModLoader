@@ -4,6 +4,7 @@
 #include "memory_scanner/scanner.h"
 #include "../ufunction_resolve.h"
 #include "../scan_patterns.h"
+#include "plugins/plugin_manager.h"
 #include <vector>
 #include <algorithm>
 
@@ -18,6 +19,9 @@ namespace Hooks::ExperienceLoadComplete
 
 	// Callback for plugins to receive experience-load-complete events
 	static std::vector<PluginExperienceLoadCompleteCallback> g_pluginCallbacks;
+
+	// Late-registration state.
+	static bool g_hasFired = false;
 
 	static void __fastcall Detour(void* thisPtr)
 	{
@@ -73,6 +77,7 @@ namespace Hooks::ExperienceLoadComplete
 			ModLoaderLogger::LogDebug(L"[ExperienceLoadComplete] All plugin callbacks completed");
 		}
 
+		g_hasFired = true;
 		ModLoaderLogger::LogDebug(L"[ExperienceLoadComplete] OnExperienceLoadComplete complete (#%ld)", callNum);
 	}
 
@@ -110,6 +115,7 @@ namespace Hooks::ExperienceLoadComplete
 		ModLoaderLogger::LogInfo(L"[ExperienceLoadComplete] Removing hook...");
 		g_hook.Remove();
 		g_pluginCallbacks.clear();
+		g_hasFired = false;
 	}
 
 	bool IsInstalled()
@@ -140,6 +146,14 @@ namespace Hooks::ExperienceLoadComplete
 		g_pluginCallbacks.push_back(callback);
 		ModLoaderLogger::LogDebug(L"[ExperienceLoadComplete] Plugin callback registered (%zu total)",
 		                          g_pluginCallbacks.size());
+
+		// Late-registration replay: if already fired during startup, invoke immediately.
+		if (g_hasFired && !PluginManager::IsStartupComplete())
+		{
+			ModLoaderLogger::LogDebug(L"[ExperienceLoadComplete] Late-registration replay: firing callback immediately");
+			try { callback(); }
+			catch (...) { ModLoaderLogger::LogError(L"[ExperienceLoadComplete] Exception in late-registration callback"); }
+		}
 	}
 
 	void UnregisterPluginCallback(PluginExperienceLoadCompleteCallback callback)

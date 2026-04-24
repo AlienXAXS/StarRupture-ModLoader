@@ -102,23 +102,10 @@ namespace Hooks::EngineInit
 	static std::vector<PluginEngineInitCallback> g_pluginCallbacks;
 
 	// Signal the init thread that the engine hook fired, then block until
-	// all plugins have finished loading so they can install their hooks
-	// before the original Init executes.
 	static void WaitForPluginsToLoad()
 	{
 		if (g_engineReadyEventHandle)
 			SetEvent(g_engineReadyEventHandle);
-
-		if (g_pluginsLoadedEventHandle)
-		{
-			static constexpr DWORD kTimeoutMs = 30'000;
-			ModLoaderLogger::LogInfo(L"[EngineInit] Waiting for plugins to load before calling original...");
-			DWORD r = WaitForSingleObject(g_pluginsLoadedEventHandle, kTimeoutMs);
-			if (r == WAIT_TIMEOUT)
-				ModLoaderLogger::LogWarn(L"[EngineInit] Timed out waiting for plugins to load — proceeding anyway");
-			else
-				ModLoaderLogger::LogInfo(L"[EngineInit] Plugins loaded — calling original Init now");
-		}
 	}
 
 	// Shared notification function - called by any successful hook

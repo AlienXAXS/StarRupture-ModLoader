@@ -7,6 +7,7 @@
 #include "../SDK.hpp"
 #include "Engine_classes.hpp"
 #include "CoreUObject_classes.hpp"
+#include "plugins/plugin_manager.h"
 #include <vector>
 #include <algorithm>
 
@@ -25,6 +26,14 @@ namespace Hooks::WorldBeginPlay
 	// Callback for plugins to receive world begin play events
 	static std::vector<PluginWorldBeginPlayCallback> g_pluginCallbacks;
 	static std::vector<PluginAnyWorldBeginPlayCallback> g_anyWorldCallbacks;
+
+	// Late-registration state: track last worlds so callbacks registered
+	// during startup (after the hook fired) still receive the event.
+	static bool            g_chimeraHasFired  = false;
+	static SDK::UWorld*    g_lastChimeraWorld = nullptr;
+	static bool            g_anyWorldHasFired = false;
+	static SDK::UWorld*    g_lastAnyWorld     = nullptr;
+	static std::string     g_lastAnyWorldName;
 
 	static void __fastcall Detour(void* subsystemThis)
 	{
@@ -64,6 +73,11 @@ namespace Hooks::WorldBeginPlay
 			ModLoaderLogger::LogWarn(L"[WorldBeginPlay]   GetWorld() returned null after original ran");
 		}
 
+		// Record any-world fired state for late-registration replay.
+		g_anyWorldHasFired = true;
+		g_lastAnyWorld     = inWorld;
+		g_lastAnyWorldName = worldName;
+
 		// --- Notify any-world callbacks (fires for ALL worlds) ---
 		if (!g_anyWorldCallbacks.empty())
 		{
@@ -101,6 +115,10 @@ namespace Hooks::WorldBeginPlay
 			ModLoaderLogger::LogInfo(L"[WorldBeginPlay]   Not ChimeraMain world - skipping ChimeraMain callbacks");
 			return;
 		}
+
+		// Record ChimeraMain fired state for late-registration replay.
+		g_chimeraHasFired  = true;
+		g_lastChimeraWorld = inWorld;
 
 		// This is ChimeraMain - notify registered plugins
 		ModLoaderLogger::LogInfo(L"[WorldBeginPlay] ChimeraMain world begin play detected (#%ld)", callNum);
@@ -171,9 +189,13 @@ namespace Hooks::WorldBeginPlay
 		ModLoaderLogger::LogInfo(L"[WorldBeginPlay] Removing hook...");
 		g_hook.Remove();
 
-		// Clear all callbacks
 		g_pluginCallbacks.clear();
 		g_anyWorldCallbacks.clear();
+		g_chimeraHasFired  = false;
+		g_lastChimeraWorld = nullptr;
+		g_anyWorldHasFired = false;
+		g_lastAnyWorld     = nullptr;
+		g_lastAnyWorldName.clear();
 	}
 
 	bool IsInstalled()
@@ -208,6 +230,16 @@ namespace Hooks::WorldBeginPlay
 
 		g_pluginCallbacks.push_back(callback);
 		ModLoaderLogger::LogDebug(L"[WorldBeginPlay] Plugin callback registered (%zu total)", g_pluginCallbacks.size());
+
+		// Late-registration replay: if ChimeraMain already fired during startup,
+		// invoke immediately so plugins initialized after the event don't miss it.
+		// Skipped for runtime hot-reloads (startup is complete by then).
+		if (g_chimeraHasFired && g_lastChimeraWorld && !PluginManager::IsStartupComplete())
+		{
+			ModLoaderLogger::LogDebug(L"[WorldBeginPlay] Late-registration replay: firing ChimeraMain callback immediately");
+			try { callback(g_lastChimeraWorld); }
+			catch (...) { ModLoaderLogger::LogError(L"[WorldBeginPlay] Exception in late-registration ChimeraMain callback"); }
+		}
 	}
 
 	void UnregisterPluginCallback(PluginWorldBeginPlayCallback callback)
@@ -243,6 +275,15 @@ namespace Hooks::WorldBeginPlay
 		g_anyWorldCallbacks.push_back(callback);
 		ModLoaderLogger::LogDebug(L"[WorldBeginPlay] Any-world callback registered (%zu total)",
 		                          g_anyWorldCallbacks.size());
+
+		// Late-registration replay: if any world fired during startup, invoke now.
+		if (g_anyWorldHasFired && g_lastAnyWorld && !PluginManager::IsStartupComplete())
+		{
+			ModLoaderLogger::LogDebug(L"[WorldBeginPlay] Late-registration replay: firing any-world callback immediately for '%S'",
+			                          g_lastAnyWorldName.c_str());
+			try { callback(g_lastAnyWorld, g_lastAnyWorldName.c_str()); }
+			catch (...) { ModLoaderLogger::LogError(L"[WorldBeginPlay] Exception in late-registration any-world callback"); }
+		}
 	}
 
 	void UnregisterAnyWorldCallback(PluginAnyWorldBeginPlayCallback callback)

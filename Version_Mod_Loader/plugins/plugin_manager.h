@@ -12,6 +12,7 @@ namespace PluginManager
         char version[32];
         char author[64];
         bool isLoaded;
+        bool isOutOfDate;
     };
 
     // Initialize the plugin manager
@@ -52,4 +53,16 @@ namespace PluginManager
     // loads it again from the same file path.
     // Returns false if index is out of range or the DLL fails to load/init.
     bool ReloadPlugin(int index);
+
+    // Returns true after the initial startup batch of InitAllLoadedPlugins completes.
+    // Used by hooks to gate late-registration replay: only replay during startup, not
+    // after runtime hot-reloads.
+    bool IsStartupComplete();
+
+    // Called by dllmain after the initial plugin init batch to close the startup window.
+    void MarkStartupComplete();
+
+    // Manual-reset event signalled when InitAllLoadedPlugins completes.
+    // MainInitThreadProc pumps messages waiting on this before closing the splash.
+    HANDLE GetPluginsInitializedEvent();
 }
