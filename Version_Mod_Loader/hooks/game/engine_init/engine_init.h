@@ -42,6 +42,11 @@ namespace Hooks::EngineInit
 	// Check if engine has initialized
 	bool IsEngineInitialized();
 
+	// Fallback: called from WorldBeginPlay when Map_MainMenu fires before the
+	// normal engine-init hooks have had a chance to run.  Safe to call even if
+	// the engine is already initialized -- the internal once-guard will no-op it.
+	void TriggerEngineReadyFallback(const wchar_t* reason);
+
 	// Register a plugin callback to be notified when engine initializes
 	void RegisterPluginCallback(PluginEngineInitCallback callback);
 

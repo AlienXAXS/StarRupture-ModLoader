@@ -8,6 +8,7 @@
 #include "Engine_classes.hpp"
 #include "CoreUObject_classes.hpp"
 #include "plugins/plugin_manager.h"
+#include "hooks/game/engine_init/engine_init.h"
 #include <vector>
 #include <algorithm>
 
@@ -29,6 +30,7 @@ namespace Hooks::WorldBeginPlay
 
 	// Late-registration state: track last worlds so callbacks registered
 	// during startup (after the hook fired) still receive the event.
+	static bool            g_mainMenuFallbackFired = false;
 	static bool            g_chimeraHasFired  = false;
 	static SDK::UWorld*    g_lastChimeraWorld = nullptr;
 	static bool            g_anyWorldHasFired = false;
@@ -77,6 +79,14 @@ namespace Hooks::WorldBeginPlay
 		g_anyWorldHasFired = true;
 		g_lastAnyWorld     = inWorld;
 		g_lastAnyWorldName = worldName;
+
+		// If the engine-init hooks never fired, Map_MainMenu proves the engine is ready.
+		if (!g_mainMenuFallbackFired && worldName.find("Map_MainMenu") != std::string::npos)
+		{
+			g_mainMenuFallbackFired = true;
+			ModLoaderLogger::LogWarn(L"[WorldBeginPlay] Map_MainMenu detected -- triggering engine-ready fallback");
+			Hooks::EngineInit::TriggerEngineReadyFallback(L"Map_MainMenu WorldBeginPlay fallback");
+		}
 
 		// --- Notify any-world callbacks (fires for ALL worlds) ---
 		if (!g_anyWorldCallbacks.empty())

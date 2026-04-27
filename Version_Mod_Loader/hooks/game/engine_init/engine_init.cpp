@@ -160,6 +160,12 @@ namespace Hooks::EngineInit
 		}
 	}
 
+	void TriggerEngineReadyFallback(const wchar_t* reason)
+	{
+		NotifyEngineReady(reason);
+		WaitForPluginsToLoad();
+	}
+
 	// Hook 1: FEngineLoop::Init (primary)
 	static int32_t __fastcall FEngineLoop_Init_Detour(void* thisPtr)
 	{
