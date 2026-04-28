@@ -10,9 +10,9 @@
 
 namespace Hooks::WorldEndPlay
 {
-	// UWorld::EndPlay()
-	// x64 __fastcall member function: RCX = this (UWorld*)
-	using OnWorldEndPlay_t = void(__fastcall*)(void* worldThis);
+	// UWorld::EndPlay(EEndPlayReason::Type)
+	// x64 __fastcall member function: RCX = this (UWorld*), RDX = reason (uint8 enum)
+	using OnWorldEndPlay_t = char(__fastcall*)(void* worldThis, int endPlayReason);
 
 	static Hook g_hook;
 	static OnWorldEndPlay_t g_original = nullptr;
@@ -21,7 +21,7 @@ namespace Hooks::WorldEndPlay
 	static std::vector<PluginWorldEndPlayCallback> g_beforeCallbacks;
 	static std::vector<PluginWorldEndPlayCallback> g_afterCallbacks;
 
-	static void __fastcall Detour(void* worldThis)
+	static char __fastcall Detour(void* worldThis, int endPlayReason)
 	{
 		long callNum = InterlockedIncrement(&g_callCount);
 
@@ -68,16 +68,18 @@ namespace Hooks::WorldEndPlay
 		}
 
 		// --- Call original ---
-		ModLoaderLogger::LogDebug(L"[WorldEndPlay]   Calling original UWorld::EndPlay...");
+		ModLoaderLogger::LogDebug(L"[WorldEndPlay]   Calling original UWorld::EndPlay (reason=%d)...", endPlayReason);
 		if (g_original)
 		{
-			g_original(worldThis);
+			g_original(worldThis, endPlayReason);
 			ModLoaderLogger::LogDebug(L"[WorldEndPlay]   Original returned");
 		}
 		else
 		{
 			ModLoaderLogger::LogError(L"[WorldEndPlay] Original function pointer is null!");
 		}
+
+		return 0;
 
 		// --- After callbacks ---
 		if (!g_afterCallbacks.empty())

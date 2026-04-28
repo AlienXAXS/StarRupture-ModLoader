@@ -15,6 +15,7 @@
 #include "../hooks/game/player_left/player_left.h"
 #include "../hooks/game/save_loaded/save_loaded.h"
 #include "../hooks/game/world_begin_play/world_begin_play.h"
+#include "../hooks/game/world_end_play/world_end_play.h"
 
 #ifdef MODLOADER_SERVER_BUILD
 #include "../hooks/http/http_server_hook.h"
@@ -80,6 +81,7 @@ void RemoveAllHooks()
     ModLoaderLogger::LogInfo(L"Removing remaining core game hooks...");
     Hooks::EngineInit::Remove();
     Hooks::WorldBeginPlay::Remove();
+    Hooks::WorldEndPlay::Remove();
     Hooks::SaveLoaded::Remove();
     Hooks::ExperienceLoadComplete::Remove();
     Hooks::ActorBeginPlay::Remove();
