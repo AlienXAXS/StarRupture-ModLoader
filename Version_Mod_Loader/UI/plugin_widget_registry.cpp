@@ -71,12 +71,13 @@ namespace UI::PluginWidgetRegistry
 
     void RenderWidgets(IModLoaderImGui* imgui)
     {
-        // Snapshot visible entries to avoid holding lock during render callbacks
-        std::vector<WidgetEntry*> toRender;
+        // Snapshot entry data by value so that concurrent UnregisterWidget calls
+        // cannot free a WidgetEntry while we are iterating below.
+        std::vector<WidgetEntry> toRender;
         {
             std::lock_guard<std::mutex> lock(s_mutex);
             for (auto& e : s_widgets)
-                if (e.isVisible) toRender.push_back(&e);
+                if (e.isVisible) toRender.push_back(e);
         }
 
         constexpr ImGuiWindowFlags kWidgetFlags =
@@ -85,11 +86,11 @@ namespace UI::PluginWidgetRegistry
             ImGuiWindowFlags_NoFocusOnAppearing |
             ImGuiWindowFlags_NoNav;
 
-        for (WidgetEntry* entry : toRender)
+        for (const WidgetEntry& entry : toRender)
         {
-            if (ImGui::Begin(entry->desc->name, nullptr, kWidgetFlags))
+            if (ImGui::Begin(entry.desc->name, nullptr, kWidgetFlags))
             {
-                entry->desc->renderFn(imgui);
+                entry.desc->renderFn(imgui);
             }
             ImGui::End();
         }
