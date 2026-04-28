@@ -17,8 +17,13 @@
 //   Server builds only; nullptr on client/generic builds.
 //      MIN remains 19.
 // v23 - SR Hotfix update 22/04/2026 118961
+// v24: Added scaling/metrics functions to IModLoaderImGui (GetFontSize, GetTextLineHeight,
+//      GetTextLineHeightWithSpacing, GetFrameHeight, GetFrameHeightWithSpacing, CalcTextSize,
+//      SetWindowFontScale, GetContentRegionAvail, GetDisplaySize).
+//      Added PluginWindowHints struct and windowHints field to PluginWidgetDesc.
+//      MIN remains 23.
 #define PLUGIN_INTERFACE_VERSION_MIN 23
-#define PLUGIN_INTERFACE_VERSION_MAX 23
+#define PLUGIN_INTERFACE_VERSION_MAX 24
 #define PLUGIN_INTERFACE_VERSION PLUGIN_INTERFACE_VERSION_MAX
 
 enum class PluginLogLevel { Trace = 0, Debug = 1, Info = 2, Warn = 3, Error = 4 };
@@ -219,7 +224,7 @@ struct IPluginInputEvents
 };
 
 // ---------------------------------------------------------------------------
-// UI (v15–v16, client only)
+// UI (v15–v16, client only; extended v24)
 // ---------------------------------------------------------------------------
 struct IModLoaderImGui
 {
@@ -257,9 +262,39 @@ struct IModLoaderImGui
 	void (*SetTooltip)(const char* text);
 	bool (*IsItemHovered)();
 	void (*SetNextItemWidth)(float item_width);
+
+	// Font / text metrics
+	float (*GetFontSize)();
+	float (*GetTextLineHeight)();
+	float (*GetTextLineHeightWithSpacing)();
+	float (*GetFrameHeight)();
+	float (*GetFrameHeightWithSpacing)();
+	void  (*CalcTextSize)(const char* text, float* out_x, float* out_y, bool hide_text_after_double_hash, float wrap_width);
+
+	// Per-window font scale (call inside your render callback)
+	void  (*SetWindowFontScale)(float scale);
+
+	// Content / display size queries
+	void  (*GetContentRegionAvail)(float* out_x, float* out_y);
+	void  (*GetDisplaySize)(float* out_x, float* out_y);
 };
 
 typedef void (*PluginImGuiRenderCallback)(IModLoaderImGui* imgui);
+
+// Optional size/position hints for RegisterWidget windows.
+// Set width/height to 0 for no size hint. Set pos_x/pos_y to -1 to skip positioning.
+// size_cond / pos_cond: 0 = Always, 1 = FirstUseEver.
+struct PluginWindowHints
+{
+	float width;
+	float height;
+	float pos_x;
+	float pos_y;
+	float pivot_x;
+	float pivot_y;
+	int   size_cond;
+	int   pos_cond;
+};
 
 struct PluginPanelDesc
 {
@@ -273,8 +308,9 @@ typedef void* WidgetHandle;
 
 struct PluginWidgetDesc
 {
-	const char* name;
+	const char*               name;
 	PluginImGuiRenderCallback renderFn;
+	const PluginWindowHints*  windowHints;  // optional, may be nullptr
 };
 
 typedef void (*PluginConfigChangedCallback)(const char* section, const char* key, const char* newValue);

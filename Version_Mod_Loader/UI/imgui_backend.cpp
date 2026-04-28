@@ -1028,6 +1028,31 @@ namespace ImGuiWrappers
 	static void SetTooltip(const char* t) { ImGui::SetTooltip("%s", t); }
 	static bool IsItemHovered() { return ImGui::IsItemHovered(); }
 	static void SetNextItemWidth(float w) { ImGui::SetNextItemWidth(w); }
+
+	static float GetFontSize() { return ImGui::GetFontSize(); }
+	static float GetTextLineHeight() { return ImGui::GetTextLineHeight(); }
+	static float GetTextLineHeightWithSpacing() { return ImGui::GetTextLineHeightWithSpacing(); }
+	static float GetFrameHeight() { return ImGui::GetFrameHeight(); }
+	static float GetFrameHeightWithSpacing() { return ImGui::GetFrameHeightWithSpacing(); }
+	static void  CalcTextSize(const char* text, float* ox, float* oy, bool hide, float wrap)
+	{
+		ImVec2 s = ImGui::CalcTextSize(text, nullptr, hide, wrap);
+		if (ox) *ox = s.x;
+		if (oy) *oy = s.y;
+	}
+	static void SetWindowFontScale(float scale) { ImGui::SetWindowFontScale(scale); }
+	static void GetContentRegionAvail(float* ox, float* oy)
+	{
+		ImVec2 v = ImGui::GetContentRegionAvail();
+		if (ox) *ox = v.x;
+		if (oy) *oy = v.y;
+	}
+	static void GetDisplaySize(float* ox, float* oy)
+	{
+		ImGuiIO& io = ImGui::GetIO();
+		if (ox) *ox = io.DisplaySize.x;
+		if (oy) *oy = io.DisplaySize.y;
+	}
 }
 
 static void PopulateImGuiAPI()
@@ -1066,6 +1091,15 @@ static void PopulateImGuiAPI()
 	g_imguiAPI.SetTooltip = ImGuiWrappers::SetTooltip;
 	g_imguiAPI.IsItemHovered = ImGuiWrappers::IsItemHovered;
 	g_imguiAPI.SetNextItemWidth = ImGuiWrappers::SetNextItemWidth;
+	g_imguiAPI.GetFontSize = ImGuiWrappers::GetFontSize;
+	g_imguiAPI.GetTextLineHeight = ImGuiWrappers::GetTextLineHeight;
+	g_imguiAPI.GetTextLineHeightWithSpacing = ImGuiWrappers::GetTextLineHeightWithSpacing;
+	g_imguiAPI.GetFrameHeight = ImGuiWrappers::GetFrameHeight;
+	g_imguiAPI.GetFrameHeightWithSpacing = ImGuiWrappers::GetFrameHeightWithSpacing;
+	g_imguiAPI.CalcTextSize = ImGuiWrappers::CalcTextSize;
+	g_imguiAPI.SetWindowFontScale = ImGuiWrappers::SetWindowFontScale;
+	g_imguiAPI.GetContentRegionAvail = ImGuiWrappers::GetContentRegionAvail;
+	g_imguiAPI.GetDisplaySize = ImGuiWrappers::GetDisplaySize;
 }
 
 // ---------------------------------------------------------------------------

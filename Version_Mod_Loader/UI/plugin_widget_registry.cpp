@@ -80,15 +80,28 @@ namespace UI::PluginWidgetRegistry
                 if (e.isVisible) toRender.push_back(e);
         }
 
-        constexpr ImGuiWindowFlags kWidgetFlags =
-            ImGuiWindowFlags_NoCollapse       |
-            ImGuiWindowFlags_AlwaysAutoResize |
+        constexpr ImGuiWindowFlags kWidgetFlagsBase =
+            ImGuiWindowFlags_NoCollapse         |
             ImGuiWindowFlags_NoFocusOnAppearing |
             ImGuiWindowFlags_NoNav;
 
         for (const WidgetEntry& entry : toRender)
         {
-            if (ImGui::Begin(entry.desc->name, nullptr, kWidgetFlags))
+            ImGuiWindowFlags flags = kWidgetFlagsBase;
+            const PluginWindowHints* hints = entry.desc->windowHints;
+            if (hints)
+            {
+                if (hints->width > 0.0f || hints->height > 0.0f)
+                    ImGui::SetNextWindowSize(ImVec2(hints->width, hints->height), (ImGuiCond)hints->size_cond);
+                if (hints->pos_x >= 0.0f && hints->pos_y >= 0.0f)
+                    ImGui::SetNextWindowPos(ImVec2(hints->pos_x, hints->pos_y), (ImGuiCond)hints->pos_cond, ImVec2(hints->pivot_x, hints->pivot_y));
+            }
+            else
+            {
+                flags |= ImGuiWindowFlags_AlwaysAutoResize;
+            }
+
+            if (ImGui::Begin(entry.desc->name, nullptr, flags))
             {
                 entry.desc->renderFn(imgui);
             }
