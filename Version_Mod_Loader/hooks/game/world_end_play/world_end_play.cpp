@@ -52,17 +52,13 @@ namespace Hooks::WorldEndPlay
 				if (!g_beforeCallbacks[i])
 					continue;
 
-				try
+				__try
 				{
 					g_beforeCallbacks[i](inWorld, worldName.c_str());
 				}
-				catch (const std::exception& e)
+				__except (EXCEPTION_EXECUTE_HANDLER)
 				{
-					ModLoaderLogger::LogError(L"[WorldEndPlay] Exception in before callback #%zu: %S", i + 1, e.what());
-				}
-				catch (...)
-				{
-					ModLoaderLogger::LogError(L"[WorldEndPlay] Unknown exception in before callback #%zu", i + 1);
+					ModLoaderLogger::LogError(L"[WorldEndPlay] SEH exception in before callback #%zu (code=0x%08X)", i + 1, GetExceptionCode());
 				}
 			}
 		}
@@ -79,8 +75,6 @@ namespace Hooks::WorldEndPlay
 			ModLoaderLogger::LogError(L"[WorldEndPlay] Original function pointer is null!");
 		}
 
-		return 0;
-
 		// --- After callbacks ---
 		if (!g_afterCallbacks.empty())
 		{
@@ -92,17 +86,13 @@ namespace Hooks::WorldEndPlay
 				if (!g_afterCallbacks[i])
 					continue;
 
-				try
+				__try
 				{
 					g_afterCallbacks[i](inWorld, worldName.c_str());
 				}
-				catch (const std::exception& e)
+				__except (EXCEPTION_EXECUTE_HANDLER)
 				{
-					ModLoaderLogger::LogError(L"[WorldEndPlay] Exception in after callback #%zu: %S", i + 1, e.what());
-				}
-				catch (...)
-				{
-					ModLoaderLogger::LogError(L"[WorldEndPlay] Unknown exception in after callback #%zu", i + 1);
+					ModLoaderLogger::LogError(L"[WorldEndPlay] SEH exception in after callback #%zu (code=0x%08X)", i + 1, GetExceptionCode());
 				}
 			}
 		}
