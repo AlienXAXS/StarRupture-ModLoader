@@ -21,6 +21,19 @@ namespace Hooks::WorldEndPlay
 	static std::vector<PluginWorldEndPlayCallback> g_beforeCallbacks;
 	static std::vector<PluginWorldEndPlayCallback> g_afterCallbacks;
 
+	// SEH wrapper — must be in its own function with no C++ objects to satisfy C2712.
+	static void InvokeCallbackSEH(PluginWorldEndPlayCallback cb, SDK::UWorld* world, const char* name, size_t idx, const wchar_t* phase)
+	{
+		__try
+		{
+			cb(world, name);
+		}
+		__except (EXCEPTION_EXECUTE_HANDLER)
+		{
+			ModLoaderLogger::LogError(L"[WorldEndPlay] SEH exception in %s callback #%zu (code=0x%08X)", phase, idx + 1, GetExceptionCode());
+		}
+	}
+
 	static char __fastcall Detour(void* worldThis, int endPlayReason)
 	{
 		long callNum = InterlockedIncrement(&g_callCount);
@@ -28,7 +41,6 @@ namespace Hooks::WorldEndPlay
 		ModLoaderLogger::LogDebug(L"[WorldEndPlay] World end play detected (#%ld) world=%p Thread=%lu",
 		                          callNum, worldThis, GetCurrentThreadId());
 
-		// Fetch world name before the original runs (world is still valid here).
 		auto* inWorld = static_cast<SDK::UWorld*>(worldThis);
 		std::string worldName;
 		if (inWorld)
@@ -44,26 +56,11 @@ namespace Hooks::WorldEndPlay
 		// --- Before callbacks ---
 		if (!g_beforeCallbacks.empty())
 		{
-			ModLoaderLogger::LogDebug(L"[WorldEndPlay] Notifying %zu before callback(s)...",
-			                          g_beforeCallbacks.size());
-
+			ModLoaderLogger::LogDebug(L"[WorldEndPlay] Notifying %zu before callback(s)...", g_beforeCallbacks.size());
 			for (size_t i = 0; i < g_beforeCallbacks.size(); ++i)
 			{
-				if (!g_beforeCallbacks[i])
-					continue;
-
-				try
-				{
-					g_beforeCallbacks[i](inWorld, worldName.c_str());
-				}
-				catch (const std::exception& e)
-				{
-					ModLoaderLogger::LogError(L"[WorldEndPlay] Exception in before callback #%zu: %S", i + 1, e.what());
-				}
-				catch (...)
-				{
-					ModLoaderLogger::LogError(L"[WorldEndPlay] Unknown exception in before callback #%zu", i + 1);
-				}
+				if (g_beforeCallbacks[i])
+					InvokeCallbackSEH(g_beforeCallbacks[i], inWorld, worldName.c_str(), i, L"before");
 			}
 		}
 
@@ -79,35 +76,19 @@ namespace Hooks::WorldEndPlay
 			ModLoaderLogger::LogError(L"[WorldEndPlay] Original function pointer is null!");
 		}
 
-		return 0;
-
 		// --- After callbacks ---
 		if (!g_afterCallbacks.empty())
 		{
-			ModLoaderLogger::LogDebug(L"[WorldEndPlay] Notifying %zu after callback(s)...",
-			                          g_afterCallbacks.size());
-
+			ModLoaderLogger::LogDebug(L"[WorldEndPlay] Notifying %zu after callback(s)...", g_afterCallbacks.size());
 			for (size_t i = 0; i < g_afterCallbacks.size(); ++i)
 			{
-				if (!g_afterCallbacks[i])
-					continue;
-
-				try
-				{
-					g_afterCallbacks[i](inWorld, worldName.c_str());
-				}
-				catch (const std::exception& e)
-				{
-					ModLoaderLogger::LogError(L"[WorldEndPlay] Exception in after callback #%zu: %S", i + 1, e.what());
-				}
-				catch (...)
-				{
-					ModLoaderLogger::LogError(L"[WorldEndPlay] Unknown exception in after callback #%zu", i + 1);
-				}
+				if (g_afterCallbacks[i])
+					InvokeCallbackSEH(g_afterCallbacks[i], inWorld, worldName.c_str(), i, L"after");
 			}
 		}
 
 		ModLoaderLogger::LogDebug(L"[WorldEndPlay] EndPlay complete (#%ld)", callNum);
+		return 0; // Return value is ignored by the caller, so we can return anything.
 	}
 
 	bool Install()
