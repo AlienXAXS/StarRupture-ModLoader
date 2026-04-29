@@ -621,6 +621,7 @@ static bool InitD3D12Resources(IDXGISwapChain* swapChain)
 	io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard
 		| ImGuiConfigFlags_NoMouseCursorChange; // don't touch OS cursor by default
 	io.IniFilename = "modloader_imgui.ini";  // persists all window positions/sizes between sessions
+	ImGui::GetStyle().FontScaleMain = UI::GlobalSettings::GetFontScale();
 
 	ImGui::StyleColorsDark();
 

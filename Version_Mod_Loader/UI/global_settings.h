@@ -40,6 +40,9 @@ namespace UI::GlobalSettings
     bool GetShowPlayerPosition();
     void SetShowPlayerPosition(bool v);
 
+    float GetFontScale();
+    void  SetFontScale(float scale);
+
     // -----------------------------------------------------------------------
     // Live data (written from game thread, read from render thread)
     // -----------------------------------------------------------------------

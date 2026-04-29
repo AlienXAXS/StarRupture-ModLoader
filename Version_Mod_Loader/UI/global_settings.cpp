@@ -5,6 +5,7 @@
 
 #include <cstring>
 #include <cstdio>
+#include <imgui.h>
 
 namespace UI::GlobalSettings
 {
@@ -14,9 +15,10 @@ namespace UI::GlobalSettings
     static wchar_t s_iniPath[MAX_PATH] = {};
 
     // Toggles
-    static bool s_showFPS            = false;
-    static bool s_showWorldName      = false;
-    static bool s_showPlayerPosition = false;
+    static bool  s_showFPS            = false;
+    static bool  s_showWorldName      = false;
+    static bool  s_showPlayerPosition = false;
+    static float s_fontScale          = 1.0f;
 
     // Live data -- written on game thread, read on render thread.
     static char   s_worldName[128]      = {};
@@ -62,6 +64,17 @@ namespace UI::GlobalSettings
         s_showFPS            = ReadBool(L"HUD", L"ShowFPS",            false);
         s_showWorldName      = ReadBool(L"HUD", L"ShowWorldName",      false);
         s_showPlayerPosition = ReadBool(L"HUD", L"ShowPlayerPosition", false);
+
+        wchar_t buf[32] = {};
+        GetPrivateProfileStringW(L"UI", L"FontScale", L"1.00", buf, 32, s_iniPath);
+        float parsed = 1.0f;
+        if (swscanf_s(buf, L"%f", &parsed) == 1)
+        {
+            if (parsed < 0.75f) parsed = 0.75f;
+            if (parsed > 1.50f) parsed = 1.50f;
+        }
+        s_fontScale = parsed;
+        // ImGui context is not yet created here; scale is applied in InitD3D12Resources().
     }
 
     void Save(const wchar_t* /*iniPath*/)
@@ -69,6 +82,21 @@ namespace UI::GlobalSettings
         WriteBool(L"HUD", L"ShowFPS",            s_showFPS);
         WriteBool(L"HUD", L"ShowWorldName",      s_showWorldName);
         WriteBool(L"HUD", L"ShowPlayerPosition", s_showPlayerPosition);
+
+        wchar_t buf[32] = {};
+        swprintf_s(buf, L"%.2f", s_fontScale);
+        WritePrivateProfileStringW(L"UI", L"FontScale", buf, s_iniPath);
+    }
+
+    float GetFontScale() { return s_fontScale; }
+
+    void SetFontScale(float scale)
+    {
+        if (scale < 0.75f) scale = 0.75f;
+        if (scale > 1.50f) scale = 1.50f;
+        s_fontScale = scale;
+        Save(nullptr);
+        ImGui::GetStyle().FontScaleMain = s_fontScale;
     }
 
     bool GetShowFPS()            { return s_showFPS; }

@@ -9,6 +9,7 @@
 #include "config/config_manager.h"
 #include "global_settings.h"
 #include "logging/log.h"
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -130,11 +131,12 @@ namespace UI::ModLoaderWindow
 
         if (ImGui::BeginTable("##plugins", 5, tableFlags))
         {
+            float fs = ImGui::GetFontSize();
             ImGui::TableSetupColumn("Name",    ImGuiTableColumnFlags_WidthStretch);
-            ImGui::TableSetupColumn("Version", ImGuiTableColumnFlags_WidthFixed,  70.0f);
+            ImGui::TableSetupColumn("Version", ImGuiTableColumnFlags_WidthFixed,  fs * 5.4f);
             ImGui::TableSetupColumn("Author",  ImGuiTableColumnFlags_WidthStretch);
-            ImGui::TableSetupColumn("Status",  ImGuiTableColumnFlags_WidthFixed,  90.0f);
-            ImGui::TableSetupColumn("Actions", ImGuiTableColumnFlags_WidthFixed, 175.0f);
+            ImGui::TableSetupColumn("Status",  ImGuiTableColumnFlags_WidthFixed,  fs * 6.9f);
+            ImGui::TableSetupColumn("Actions", ImGuiTableColumnFlags_WidthFixed,  fs * 13.5f);
             ImGui::TableHeadersRow();
 
             for (int i = 0; i < count; ++i)
@@ -444,6 +446,27 @@ namespace UI::ModLoaderWindow
         ImGui::TextDisabled("(?)");
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("Takes effect immediately. Persisted to modloader.ini.");
+
+        ImGui::Spacing();
+        ImGui::SeparatorText("UI");
+        ImGui::Spacing();
+
+        static const char*  s_sizeLabels[] = { "Small", "Normal", "Large", "Extra Large" };
+        static const float  s_sizeScales[] = { 0.75f,   1.00f,   1.25f,   1.50f };
+        static const int    s_sizeCount    = 4;
+
+        float curScale = UI::GlobalSettings::GetFontScale();
+        int   curIdx   = 1;
+        for (int i = 0; i < s_sizeCount; ++i)
+            if (fabsf(s_sizeScales[i] - curScale) < 0.01f) { curIdx = i; break; }
+
+        if (ImGui::Combo("Text Size", &curIdx, s_sizeLabels, s_sizeCount))
+            UI::GlobalSettings::SetFontScale(s_sizeScales[curIdx]);
+
+        ImGui::SameLine();
+        ImGui::TextDisabled("(?)");
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Scales all ImGui window text. Takes effect immediately.");
 
         ImGui::Spacing();
         ImGui::TextDisabled("Settings are saved to modloader.ini immediately.");
