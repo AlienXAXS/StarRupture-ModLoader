@@ -34,6 +34,19 @@ namespace Hooks::WorldEndPlay
 		}
 	}
 
+	// SEH wrapper for original function — must be in its own function with no C++ objects to satisfy C2712.
+	static void CallOriginalSEH(void* worldThis, int endPlayReason)
+	{
+		__try
+		{
+			g_original(worldThis, endPlayReason);
+		}
+		__except (EXCEPTION_EXECUTE_HANDLER)
+		{
+			ModLoaderLogger::LogError(L"[WorldEndPlay] SEH exception in original UWorld::EndPlay (code=0x%08X)", GetExceptionCode());
+		}
+	}
+
 	static char __fastcall Detour(void* worldThis, int endPlayReason)
 	{
 		long callNum = InterlockedIncrement(&g_callCount);
@@ -68,7 +81,7 @@ namespace Hooks::WorldEndPlay
 		ModLoaderLogger::LogDebug(L"[WorldEndPlay]   Calling original UWorld::EndPlay (reason=%d)...", endPlayReason);
 		if (g_original)
 		{
-			g_original(worldThis, endPlayReason);
+			CallOriginalSEH(inWorld, endPlayReason);
 			ModLoaderLogger::LogDebug(L"[WorldEndPlay]   Original returned");
 		}
 		else
