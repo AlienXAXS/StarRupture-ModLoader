@@ -110,8 +110,9 @@ namespace PluginManager
 			return false;
 		}
 
-		ModLoaderLogger::LogMessage(L"Plugin info - Name: %S, Version: %S, Author: %S",
-			info->name, info->version, info->author);
+		ModLoaderLogger::LogMessage(L"Plugin info - Name: %S, Version: %S, Author: %S, Interface: %d (modloader expects [%d, %d])",
+			info->name, info->version, info->author,
+			info->interfaceVersion, PLUGIN_INTERFACE_VERSION_MIN, PLUGIN_INTERFACE_VERSION_MAX);
 
 		rec.hModule        = hModule;
 		rec.info           = info;
