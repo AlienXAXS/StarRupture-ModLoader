@@ -9,7 +9,7 @@
 
 #pragma comment(lib, "version.lib")
 
-static constexpr wchar_t kRequiredVersionSuffix[] = L"CL-118961";
+static constexpr wchar_t kRequiredVersionSuffix[] = L"CL-119405";
 
 static bool CheckGameVersion(std::wstring& outActualVersion)
 {
