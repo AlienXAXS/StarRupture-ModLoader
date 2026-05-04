@@ -22,8 +22,8 @@
 //      SetWindowFontScale, GetContentRegionAvail, GetDisplaySize).
 //      Added PluginWindowHints struct and windowHints field to PluginWidgetDesc.
 //      MIN remains 23.
-#define PLUGIN_INTERFACE_VERSION_MIN 23
-#define PLUGIN_INTERFACE_VERSION_MAX 24
+#define PLUGIN_INTERFACE_VERSION_MIN 25
+#define PLUGIN_INTERFACE_VERSION_MAX 25
 #define PLUGIN_INTERFACE_VERSION PLUGIN_INTERFACE_VERSION_MAX
 
 enum class PluginLogLevel { Trace = 0, Debug = 1, Info = 2, Warn = 3, Error = 4 };
