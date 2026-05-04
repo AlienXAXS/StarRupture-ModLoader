@@ -36,10 +36,10 @@ namespace UI::Overlay
 
         ImGuiIO& io = ImGui::GetIO();
 
-        // Bottom-right corner, 10 px from edges
+        // Bottom-left corner, 10 px from edges
         const float PAD = 10.0f;
-        ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x - PAD, io.DisplaySize.y - PAD),
-                                ImGuiCond_Always, ImVec2(1.0f, 1.0f));
+        ImGui::SetNextWindowPos(ImVec2(PAD, io.DisplaySize.y - PAD),
+                                ImGuiCond_Always, ImVec2(0.0f, 1.0f));
         ImGui::SetNextWindowBgAlpha(0.55f);
         ImGui::SetNextWindowSize(ImVec2(0, 0));
 
