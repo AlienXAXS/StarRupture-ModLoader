@@ -53,6 +53,9 @@ namespace Hooks::EngineTick
 
 	bool Install()
 	{
+		if (g_hook.installed)
+			return true;
+
 		ModLoaderLogger::LogInfo(L"[EngineTick] Installing UGameEngine::Tick hook...");
 
 		const char* pattern = ScanPatterns::UGameEngine_Tick;
