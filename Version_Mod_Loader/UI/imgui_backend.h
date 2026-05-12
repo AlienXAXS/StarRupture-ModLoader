@@ -37,6 +37,10 @@ namespace UI::ImGuiBackend
 
     // Returns the IModLoaderImGui function table (valid after Initialize).
     IModLoaderImGui* GetImGuiAPI();
+
+    // Request a font atlas rebuild on the next rendered frame.
+    // Safe to call from any thread.  No-op before D3D12 resources are initialised.
+    void RequestFontRebuild();
 }
 
 #endif // MODLOADER_CLIENT_BUILD
