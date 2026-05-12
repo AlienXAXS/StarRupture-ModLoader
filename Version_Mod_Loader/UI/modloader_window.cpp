@@ -469,6 +469,63 @@ namespace UI::ModLoaderWindow
             ImGui::SetTooltip("Scales all ImGui window text. Takes effect immediately.");
 
         ImGui::Spacing();
+
+        // Font family combo -- only show entries whose font file exists on disk.
+        struct FontOption { const char* iniKey; const char* displayName; const wchar_t* primaryPath; };
+        static const FontOption s_fontOptions[] =
+        {
+            { "Default",  "Default (built-in)",   nullptr                              },
+            { "Arial",    "Arial",                 L"C:\\Windows\\Fonts\\arial.ttf"    },
+            { "YaHei",    "Microsoft YaHei",       L"C:\\Windows\\Fonts\\msyh.ttc"     },
+            { "Meiryo",   "Meiryo",                L"C:\\Windows\\Fonts\\meiryo.ttc"   },
+            { "Malgun",   "Malgun Gothic",         L"C:\\Windows\\Fonts\\malgun.ttf"   },
+            { "ArialCJK", "Arial + CJK (merged)",  L"C:\\Windows\\Fonts\\arial.ttf"   },
+        };
+        static const int s_fontOptionCount = static_cast<int>(sizeof(s_fontOptions) / sizeof(s_fontOptions[0]));
+
+        // Build the list of available fonts once (file existence check).
+        static int  s_availableIdx[8]   = {};
+        static int  s_availableCount    = 0;
+        static bool s_fontsEnumerated   = false;
+        if (!s_fontsEnumerated)
+        {
+            for (int i = 0; i < s_fontOptionCount; ++i)
+            {
+                if (s_fontOptions[i].primaryPath == nullptr ||
+                    GetFileAttributesW(s_fontOptions[i].primaryPath) != INVALID_FILE_ATTRIBUTES)
+                {
+                    s_availableIdx[s_availableCount++] = i;
+                }
+            }
+            s_fontsEnumerated = true;
+        }
+
+        const char* curFamily = UI::GlobalSettings::GetFontFamily();
+        int curFamilyAvail = 0;
+        for (int i = 0; i < s_availableCount; ++i)
+            if (strcmp(s_fontOptions[s_availableIdx[i]].iniKey, curFamily) == 0) { curFamilyAvail = i; break; }
+
+        if (ImGui::BeginCombo("Font Family", s_fontOptions[s_availableIdx[curFamilyAvail]].displayName))
+        {
+            for (int i = 0; i < s_availableCount; ++i)
+            {
+                const FontOption& opt = s_fontOptions[s_availableIdx[i]];
+                bool selected = (i == curFamilyAvail);
+                if (ImGui::Selectable(opt.displayName, selected))
+                    UI::GlobalSettings::SetFontFamily(opt.iniKey);
+                if (selected)
+                    ImGui::SetItemDefaultFocus();
+            }
+            ImGui::EndCombo();
+        }
+        ImGui::SameLine();
+        ImGui::TextDisabled("(?)");
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Choose the font used for all overlay text.\n"
+                "CJK fonts include Chinese/Japanese and are larger (~5MB atlas).\n"
+                "Takes effect immediately.");
+
+        ImGui::Spacing();
         ImGui::TextDisabled("Settings are saved to modloader.ini immediately.");
     }
 

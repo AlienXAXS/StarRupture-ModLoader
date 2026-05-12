@@ -7,6 +7,10 @@
 #include <cstdio>
 #include <imgui.h>
 
+// Forward declaration to avoid including imgui_backend.h (which is a higher-level
+// header that does not include global_settings.h -- keeping the dependency one-way).
+namespace UI::ImGuiBackend { void RequestFontRebuild(); }
+
 namespace UI::GlobalSettings
 {
     // -----------------------------------------------------------------------
@@ -19,6 +23,7 @@ namespace UI::GlobalSettings
     static bool  s_showWorldName      = false;
     static bool  s_showPlayerPosition = false;
     static float s_fontScale          = 1.0f;
+    static char  s_fontFamily[32]     = "Default";
 
     // Live data -- written on game thread, read on render thread.
     static char   s_worldName[128]      = {};
@@ -75,6 +80,14 @@ namespace UI::GlobalSettings
         }
         s_fontScale = parsed;
         // ImGui context is not yet created here; scale is applied in InitD3D12Resources().
+
+        wchar_t familyBuf[32] = {};
+        GetPrivateProfileStringW(L"UI", L"FontFamily", L"Default", familyBuf, 32, s_iniPath);
+        // Convert narrow ASCII key -- all valid keys are plain ASCII
+        char narrowBuf[32] = {};
+        for (int i = 0; i < 31 && familyBuf[i]; ++i)
+            narrowBuf[i] = static_cast<char>(familyBuf[i]);
+        strncpy_s(s_fontFamily, narrowBuf, _TRUNCATE);
     }
 
     void Save(const wchar_t* /*iniPath*/)
@@ -86,6 +99,21 @@ namespace UI::GlobalSettings
         wchar_t buf[32] = {};
         swprintf_s(buf, L"%.2f", s_fontScale);
         WritePrivateProfileStringW(L"UI", L"FontScale", buf, s_iniPath);
+
+        wchar_t familyBuf[32] = {};
+        for (int i = 0; i < 31 && s_fontFamily[i]; ++i)
+            familyBuf[i] = static_cast<wchar_t>(s_fontFamily[i]);
+        WritePrivateProfileStringW(L"UI", L"FontFamily", familyBuf, s_iniPath);
+    }
+
+    const char* GetFontFamily() { return s_fontFamily; }
+
+    void SetFontFamily(const char* key)
+    {
+        if (!key) key = "Default";
+        strncpy_s(s_fontFamily, key, _TRUNCATE);
+        Save(nullptr);
+        UI::ImGuiBackend::RequestFontRebuild();
     }
 
     float GetFontScale() { return s_fontScale; }

@@ -43,6 +43,12 @@ namespace UI::GlobalSettings
     float GetFontScale();
     void  SetFontScale(float scale);
 
+    // Font family key stored in modloader.ini [UI] FontFamily.
+    // Returns one of the iniKey strings from the curated font list
+    // (e.g. "Default", "Arial", "YaHei", "Meiryo", "Malgun", "ArialCJK").
+    const char* GetFontFamily();
+    void        SetFontFamily(const char* key);
+
     // -----------------------------------------------------------------------
     // Live data (written from game thread, read from render thread)
     // -----------------------------------------------------------------------

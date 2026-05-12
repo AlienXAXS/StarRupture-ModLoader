@@ -89,6 +89,30 @@ namespace
 
 	IModLoaderImGui g_imguiAPI = {};
 
+	// -------------------------------------------------------------------------
+	// Font rebuild state
+	// -------------------------------------------------------------------------
+	std::atomic<bool> g_pendingFontRebuild{ false };
+
+	struct FontEntry
+	{
+		const char*    iniKey;       // value stored in modloader.ini [UI] FontFamily
+		const char*    displayName;  // shown in the UI combo box
+		const wchar_t* primaryPath;  // nullptr = use ImGui built-in font
+		const wchar_t* mergePath;    // nullptr = no merged font
+	};
+
+	static const FontEntry k_fonts[] =
+	{
+		{ "Default",  "Default (built-in)",  nullptr,                              nullptr                              },
+		{ "Arial",    "Arial",               L"C:\\Windows\\Fonts\\arial.ttf",     nullptr                              },
+		{ "YaHei",    "Microsoft YaHei",     L"C:\\Windows\\Fonts\\msyh.ttc",      nullptr                              },
+		{ "Meiryo",   "Meiryo",              L"C:\\Windows\\Fonts\\meiryo.ttc",    nullptr                              },
+		{ "Malgun",   "Malgun Gothic",       L"C:\\Windows\\Fonts\\malgun.ttf",    nullptr                              },
+		{ "ArialCJK", "Arial + CJK (merged)",L"C:\\Windows\\Fonts\\arial.ttf",     L"C:\\Windows\\Fonts\\msyh.ttc"     },
+	};
+	static const int k_fontCount = static_cast<int>(sizeof(k_fonts) / sizeof(k_fonts[0]));
+
 	using PresentFn = HRESULT(STDMETHODCALLTYPE*)(IDXGISwapChain*, UINT, UINT);
 	PresentFn g_originalPresent = nullptr;
 
@@ -437,6 +461,104 @@ static bool CreateDeviceD3D(HWND hWnd)
 }
 
 // ---------------------------------------------------------------------------
+// RebuildFontAtlas
+// Loads the font selected in GlobalSettings::GetFontFamily(), rebuilds the
+// ImGui font atlas, and re-uploads the font texture to the GPU.
+//
+// When called during initial setup (g_initialized == false): skips the
+// GPU-idle wait and InvalidateDeviceObjects -- the backend is freshly inited
+// so no old texture exists to destroy.
+//
+// When called mid-session (g_pendingFontRebuild flag): waits for GPU idle,
+// invalidates the existing texture, rebuilds, and recreates.
+// ---------------------------------------------------------------------------
+static void RebuildFontAtlas(bool initialSetup)
+{
+	if (!initialSetup)
+	{
+		// Wait for the GPU to finish all pending work before destroying resources.
+		UINT64 signalVal = ++g_fenceValue;
+		g_cmdQueue->Signal(g_fence, signalVal);
+		if (g_fence->GetCompletedValue() < signalVal)
+		{
+			g_fence->SetEventOnCompletion(signalVal, g_fenceEvent);
+			WaitForSingleObject(g_fenceEvent, 1000);
+		}
+		ImGui_ImplDX12_InvalidateDeviceObjects();
+	}
+
+	ImGuiIO& io = ImGui::GetIO();
+	io.Fonts->Clear();
+
+	const char* family = UI::GlobalSettings::GetFontFamily();
+
+	// Find the matching font entry (fall back to Default if not found).
+	const FontEntry* entry = &k_fonts[0];
+	for (int i = 0; i < k_fontCount; ++i)
+	{
+		if (strcmp(k_fonts[i].iniKey, family) == 0)
+		{
+			entry = &k_fonts[i];
+			break;
+		}
+	}
+
+	// Base font size loaded into the atlas.  FontScaleMain scales on top of this.
+	const float kBasePx = 15.0f;
+
+	if (entry->primaryPath == nullptr)
+	{
+		// Built-in: let ImGui add its default font automatically.
+		// (Fonts->Clear() above means it will be re-added by NewFrame if empty.)
+		io.Fonts->AddFontDefault();
+	}
+	else
+	{
+		// Glyph ranges -- static so they outlive Build().
+		static const ImWchar s_latinCyrillic[] =
+		{
+			0x0020, 0x00FF, // Basic Latin + Latin Supplement
+			0x0400, 0x052F, // Cyrillic + Supplement
+			0
+		};
+
+		// Check file exists before trying to load.
+		char narrowPath[MAX_PATH] = {};
+		WideCharToMultiByte(CP_UTF8, 0, entry->primaryPath, -1, narrowPath, MAX_PATH, nullptr, nullptr);
+
+		ImFont* baseFont = io.Fonts->AddFontFromFileTTF(narrowPath, kBasePx, nullptr, s_latinCyrillic);
+		if (!baseFont)
+		{
+			LogToFile::Warn("[ImGuiBackend] Failed to load font '%s' -- falling back to built-in", narrowPath);
+			io.Fonts->Clear();
+			io.Fonts->AddFontDefault();
+		}
+		else if (entry->mergePath != nullptr)
+		{
+			// Merge CJK glyphs on top of the base font.
+			// Two passes: Chinese Simplified common (~2500 chars) then Japanese.
+			char mergePathNarrow[MAX_PATH] = {};
+			WideCharToMultiByte(CP_UTF8, 0, entry->mergePath, -1, mergePathNarrow, MAX_PATH, nullptr, nullptr);
+
+			ImFontConfig mergeCfg;
+			mergeCfg.MergeMode = true;
+			mergeCfg.PixelSnapH = true;
+			io.Fonts->AddFontFromFileTTF(mergePathNarrow, kBasePx, &mergeCfg,
+				io.Fonts->GetGlyphRangesChineseSimplifiedCommon());
+			io.Fonts->AddFontFromFileTTF(mergePathNarrow, kBasePx, &mergeCfg,
+				io.Fonts->GetGlyphRangesJapanese());
+		}
+	}
+
+	ImGui_ImplDX12_CreateDeviceObjects();
+
+	// Re-apply the font scale since CreateDeviceObjects resets ImGui internals.
+	ImGui::GetStyle().FontScaleMain = UI::GlobalSettings::GetFontScale();
+
+	LogToFile::Info("[ImGuiBackend] Font atlas rebuilt: family='%s'", family);
+}
+
+// ---------------------------------------------------------------------------
 // InitD3D12Resources
 // Called once from HookedPresent after g_renderingReady is set.
 // Gets UE5's device from the back buffer and creates all rendering objects on it.
@@ -621,7 +743,6 @@ static bool InitD3D12Resources(IDXGISwapChain* swapChain)
 	io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard
 		| ImGuiConfigFlags_NoMouseCursorChange; // don't touch OS cursor by default
 	io.IniFilename = "modloader_imgui.ini";  // persists all window positions/sizes between sessions
-	ImGui::GetStyle().FontScaleMain = UI::GlobalSettings::GetFontScale();
 
 	ImGui::StyleColorsDark();
 
@@ -649,6 +770,9 @@ static bool InitD3D12Resources(IDXGISwapChain* swapChain)
 	dx12info.SrvDescriptorAllocFn = SrvAllocFn;
 	dx12info.SrvDescriptorFreeFn = SrvFreeFn;
 	ImGui_ImplDX12_Init(&dx12info);
+
+	// Build the font atlas for the user's chosen font family.
+	RebuildFontAtlas(/*initialSetup=*/true);
 
 	// Subclass the game HWND for mouse/keyboard forwarding.
 	g_origWndProc = reinterpret_cast<WNDPROC>(
@@ -876,6 +1000,11 @@ static HRESULT STDMETHODCALLTYPE HookedPresent(IDXGISwapChain* swapChain, UINT s
 		frameIO.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
 		frameIO.MouseDrawCursor = false;
 	}
+
+	// Rebuild font atlas if the user changed the font family.
+	// Must happen before NewFrame to avoid using a destroyed font texture.
+	if (g_pendingFontRebuild.exchange(false))
+		RebuildFontAtlas(/*initialSetup=*/false);
 
 	ImGui_ImplDX12_NewFrame();
 	ImGui_ImplWin32_NewFrame();
@@ -1329,6 +1458,12 @@ namespace UI::ImGuiBackend
 	IModLoaderImGui* GetImGuiAPI()
 	{
 		return &g_imguiAPI;
+	}
+
+	void RequestFontRebuild()
+	{
+		if (g_initialized)
+			g_pendingFontRebuild.store(true, std::memory_order_release);
 	}
 }
 
