@@ -536,17 +536,24 @@ static void RebuildFontAtlas(bool initialSetup)
 		else if (entry->mergePath != nullptr)
 		{
 			// Merge CJK glyphs on top of the base font.
-			// Two passes: Chinese Simplified common (~2500 chars) then Japanese.
+			// Ranges defined inline -- avoids relying on deprecated ImGui helper functions.
+			static const ImWchar s_cjkRanges[] =
+			{
+				0x2000, 0x206F, // General Punctuation
+				0x3000, 0x30FF, // CJK Symbols, Hiragana, Katakana
+				0x31F0, 0x31FF, // Katakana Phonetic Extensions
+				0xFF00, 0xFFEF, // Halfwidth/Fullwidth Forms
+				0x4E00, 0x9FAF, // CJK Unified Ideographs (common subset)
+				0
+			};
+
 			char mergePathNarrow[MAX_PATH] = {};
 			WideCharToMultiByte(CP_UTF8, 0, entry->mergePath, -1, mergePathNarrow, MAX_PATH, nullptr, nullptr);
 
 			ImFontConfig mergeCfg;
 			mergeCfg.MergeMode = true;
 			mergeCfg.PixelSnapH = true;
-			io.Fonts->AddFontFromFileTTF(mergePathNarrow, kBasePx, &mergeCfg,
-				io.Fonts->GetGlyphRangesChineseSimplifiedCommon());
-			io.Fonts->AddFontFromFileTTF(mergePathNarrow, kBasePx, &mergeCfg,
-				io.Fonts->GetGlyphRangesJapanese());
+			io.Fonts->AddFontFromFileTTF(mergePathNarrow, kBasePx, &mergeCfg, s_cjkRanges);
 		}
 	}
 
