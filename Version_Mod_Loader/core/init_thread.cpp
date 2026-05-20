@@ -17,6 +17,7 @@
 #ifdef MODLOADER_CLIENT_BUILD
 #include "../hooks/input/input_processor.h"
 #endif
+#include <hooks/input/input_hook.h>
 
 DWORD WINAPI MainInitThreadProc(LPVOID)
 {
@@ -50,6 +51,8 @@ DWORD WINAPI MainInitThreadProc(LPVOID)
 
     Hooks::WorldBeginPlay::Install();
     Hooks::EngineTick::Install();
+
+    Hooks::InputHook::Install();
 
     Splash::SetStatus(L"Checking for updates and installing hooks...");
     g_autoUpdateThread = CreateThread(nullptr, 0, AutoUpdateThreadProc, nullptr, 0, nullptr);
