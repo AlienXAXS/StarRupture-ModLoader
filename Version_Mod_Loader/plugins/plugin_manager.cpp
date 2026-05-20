@@ -14,6 +14,7 @@
 
 #ifdef MODLOADER_CLIENT_BUILD
 #include "UI/splash_window.h"
+#include "UI/modloader_window.h"
 #include "UI/plugin_panel_registry.h"
 #endif
 
@@ -310,6 +311,10 @@ namespace PluginManager
 				plugin->isInitialized = true;
 				initCount++;
 				ModLoaderLogger::LogMessage(L"Plugin initialized: %S", plugin->cachedName.c_str());
+#ifdef MODLOADER_CLIENT_BUILD
+				// Load blocking state so input suppression is active before any key press.
+				UI::ModLoaderWindow::LoadBlockingStateForPlugin(plugin->cachedName.c_str());
+#endif
 			}
 			else
 			{

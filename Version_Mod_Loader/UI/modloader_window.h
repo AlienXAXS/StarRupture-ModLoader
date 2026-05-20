@@ -23,6 +23,12 @@ namespace UI::ModLoaderWindow
 
     // Returns true when the window is open (used to block game input).
     bool IsOpen();
+
+    // Called by plugin_manager after each plugin's PluginInit completes.
+    // Reads the plugin's INI and applies any <key>Blocking flags to the
+    // runtime blocking map so keybind suppression is active from the first
+    // key event, not deferred until the config panel is first opened.
+    void LoadBlockingStateForPlugin(const char* pluginName);
 }
 
 #endif // MODLOADER_CLIENT_BUILD

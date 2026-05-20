@@ -13,6 +13,7 @@
 #include "plugin_widget_registry.h"
 #include "hooks/hooks_common.h"
 #include "hooks/input/keybind_registry.h"
+#include "hooks/input/input_hook.h"
 #include "logging/log.h"
 #include "splash_window.h"
 
@@ -1408,6 +1409,7 @@ namespace UI::ImGuiBackend
 	void Shutdown()
 	{
 		g_shutdown = true;
+		Hooks::InputHook::Remove();
 
 		// Restore the original vtable entry.
 		if (g_vtableSlot && g_originalPresent)
@@ -1460,6 +1462,7 @@ namespace UI::ImGuiBackend
 	{
 		g_renderingReady = true;
 		LogToFile::Info("[ImGuiBackend] Rendering ready -- D3D12 init will proceed on next Present");
+		Hooks::InputHook::Install();
 	}
 
 	IModLoaderImGui* GetImGuiAPI()

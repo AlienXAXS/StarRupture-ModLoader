@@ -5,6 +5,8 @@
 #include <windows.h>
 #include <mutex>
 #include <map>
+#include <unordered_map>
+#include <string>
 #include <vector>
 #include <algorithm>
 #include <cstring>
@@ -187,6 +189,9 @@ namespace Hooks::Input
 	static std::vector<CallbackEntry>      s_callbacks;
 	static std::vector<NamedComboEntry>    s_namedCombos;
 	static std::vector<ComboCallbackEntry> s_comboCallbacks;
+	// Blocking map: canonical combo string (e.g. "Ctrl+C") -> blocking enabled.
+	// Protected by s_mutex. Default absent = non-blocking.
+	static std::unordered_map<std::string, bool> s_blockingMap;
 	static std::mutex s_mutex;
 	static bool s_initialized = false;
 
@@ -207,6 +212,7 @@ namespace Hooks::Input
 		s_callbacks.clear();
 		s_namedCombos.clear();
 		s_comboCallbacks.clear();
+		s_blockingMap.clear();
 		s_initialized = false;
 		ModLoaderLogger::LogInfo(L"[KeybindRegistry] Shutdown - all keybinds cleared");
 	}
@@ -532,6 +538,40 @@ namespace Hooks::Input
 			                                e.event == event && e.callback == callback;
 		                         });
 		s_comboCallbacks.erase(it, s_comboCallbacks.end());
+	}
+
+	// -----------------------------------------------------------------------
+	// Blocking map
+	// -----------------------------------------------------------------------
+	void SetComboBlocking(const char* comboStr, bool blocking)
+	{
+		if (!comboStr || !*comboStr) return;
+
+		// Normalise to a canonical string by round-tripping through Parse/Format.
+		EModKeyModifiers mods = EModKeyMod_None;
+		EModKey key = ParseComboString(comboStr, mods);
+		if (key == EModKey::Unknown) return;
+
+		char canonical[64];
+		FormatComboString(key, mods, canonical, sizeof(canonical));
+
+		std::lock_guard<std::mutex> lock(s_mutex);
+		if (blocking)
+			s_blockingMap[canonical] = true;
+		else
+			s_blockingMap.erase(canonical);
+	}
+
+	bool ShouldBlock(EModKey key, EModKeyModifiers mods)
+	{
+		if (key == EModKey::Unknown) return false;
+
+		char canonical[64];
+		FormatComboString(key, mods, canonical, sizeof(canonical));
+
+		std::lock_guard<std::mutex> lock(s_mutex);
+		auto it = s_blockingMap.find(canonical);
+		return (it != s_blockingMap.end()) && it->second;
 	}
 
 	// -----------------------------------------------------------------------

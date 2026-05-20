@@ -102,6 +102,26 @@ namespace UI::ModLoaderWindow
                 s_configEntries.push_back(entry);
             }
         }
+
+        // For each Keybind entry in the schema, read and apply the companion
+        // <key>Blocking flag so the runtime blocking state is always current
+        // when the config panel is opened.
+        const ConfigSchema* schema = ModLoaderLogger::GetPluginSchema(pluginName);
+        if (schema)
+        {
+            for (auto& kv : s_configEntries)
+            {
+                const ConfigEntry* schEntry = FindSchemaEntry(schema, kv.section, kv.key);
+                if (!schEntry || schEntry->type != ConfigValueType::Keybind) continue;
+                if (!kv.value[0]) continue;
+
+                wchar_t wsec[64], wblkKey[128];
+                swprintf_s(wsec, L"%S", kv.section);
+                swprintf_s(wblkKey, L"%SBlocking", kv.key);
+                bool blocking = (GetPrivateProfileIntW(wsec, wblkKey, 0, iniPath) != 0);
+                Hooks::Input::SetComboBlocking(kv.value, blocking);
+            }
+        }
     }
 
     // Write a changed value back to disk and fire config-change notifications.
@@ -119,10 +139,23 @@ namespace UI::ModLoaderWindow
         WritePrivateProfileStringW(wsec, wkey, wval, iniPath);
 
         // If this is a Keybind entry and the value actually changed, live-rebind
-        // any active keybind registrations for this plugin.
+        // any active keybind registrations for this plugin and transfer blocking state.
         if (entry && entry->type == ConfigValueType::Keybind &&
             oldValue && strcmp(oldValue, kv.value) != 0)
         {
+            // Transfer blocking state from the old combo to the new one.
+            // Read from INI (the ground truth) rather than the runtime map so this
+            // works correctly even if the map entry was never explicitly set.
+            {
+                wchar_t blkSec[64], wblkKey[128];
+                swprintf_s(blkSec, L"%S", kv.section);
+                swprintf_s(wblkKey, L"%SBlocking", kv.key);
+                bool wasBlocking = (GetPrivateProfileIntW(blkSec, wblkKey, 0, iniPath) != 0);
+                Hooks::Input::SetComboBlocking(kv.value, wasBlocking);
+                // Remove any stale entry for the old combo so it does not linger.
+                Hooks::Input::SetComboBlocking(oldValue, false);
+            }
+
             Hooks::Input::UpdateKeybindByName(pluginName, oldValue, kv.value);
         }
 
@@ -338,6 +371,41 @@ namespace UI::ModLoaderWindow
                 ImGui::OpenPopup("##rebind_modal");
             }
             widgetHovered = ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal);
+
+            // Blocking checkbox -- lets the user decide whether this keybind
+            // should consume the input (preventing the game from also reacting).
+            ImGui::SameLine();
+            {
+                wchar_t iniPath[MAX_PATH];
+                wchar_t wsec[64], wblkKey[128];
+                bool bBlocking = false;
+                if (GetPluginIniPath(pluginName, iniPath, MAX_PATH))
+                {
+                    swprintf_s(wsec, L"%S", kv.section);
+                    swprintf_s(wblkKey, L"%SBlocking", kv.key);
+                    bBlocking = (GetPrivateProfileIntW(wsec, wblkKey, 0, iniPath) != 0);
+                }
+                char chkId[160];
+                snprintf(chkId, sizeof(chkId), "Blocking##blk_%s_%s", kv.section, kv.key);
+                if (ImGui::Checkbox(chkId, &bBlocking))
+                {
+                    // Persist to INI
+                    wchar_t iniPath2[MAX_PATH];
+                    if (GetPluginIniPath(pluginName, iniPath2, MAX_PATH))
+                    {
+                        wchar_t wsec2[64], wblkKey2[128];
+                        swprintf_s(wsec2, L"%S", kv.section);
+                        swprintf_s(wblkKey2, L"%SBlocking", kv.key);
+                        WritePrivateProfileStringW(wsec2, wblkKey2, bBlocking ? L"1" : L"0", iniPath2);
+                    }
+                    // Apply to runtime blocking map
+                    Hooks::Input::SetComboBlocking(kv.value, bBlocking);
+                }
+                if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
+                    ImGui::SetTooltip("When ticked, this key combo is consumed by the plugin --\n"
+                                      "the game will not also react to it.\n"
+                                      "Enable if the key conflicts with a game action.");
+            }
         }
         else
         {
@@ -736,6 +804,43 @@ namespace UI::ModLoaderWindow
     bool IsOpen()
     {
         return s_isOpen;
+    }
+
+    // Called by plugin_manager after each plugin's PluginInit completes so that
+    // blocking state is active from the very first key event, not deferred until
+    // the user opens the config panel for that plugin.
+    void LoadBlockingStateForPlugin(const char* pluginName)
+    {
+        if (!pluginName || !*pluginName) return;
+
+        wchar_t iniPath[MAX_PATH];
+        if (!GetPluginIniPath(pluginName, iniPath, MAX_PATH)) return;
+
+        const ConfigSchema* schema = ModLoaderLogger::GetPluginSchema(pluginName);
+        if (!schema) return;
+
+        for (int i = 0; i < schema->entryCount; ++i)
+        {
+            const ConfigEntry& e = schema->entries[i];
+            if (e.type != ConfigValueType::Keybind) continue;
+            if (!e.section || !e.key) continue;
+
+            // Read the current combo value from INI
+            wchar_t wsec[64], wkey[128], wblkKey[128];
+            swprintf_s(wsec, L"%S", e.section);
+            swprintf_s(wkey, L"%S", e.key);
+            swprintf_s(wblkKey, L"%SBlocking", e.key);
+
+            wchar_t comboW[256] = {};
+            GetPrivateProfileStringW(wsec, wkey, L"", comboW, ARRAYSIZE(comboW), iniPath);
+            if (!comboW[0]) continue;
+
+            char combo[256];
+            snprintf(combo, sizeof(combo), "%ls", comboW);
+
+            bool blocking = (GetPrivateProfileIntW(wsec, wblkKey, 0, iniPath) != 0);
+            Hooks::Input::SetComboBlocking(combo, blocking);
+        }
     }
 
     void Render(IModLoaderImGui* imgui)

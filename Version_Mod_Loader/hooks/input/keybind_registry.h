@@ -61,6 +61,18 @@ namespace Hooks::Input
 	// mods == EModKeyMod_None produces just the key name.
 	const char* FormatComboString(EModKey key, EModKeyModifiers mods, char* outBuf, size_t outLen);
 
+	// --- Blocking ---
+	// Mark a canonical combo string (e.g. "Ctrl+C", "F5") as blocking or non-blocking.
+	// When blocking is true, the InputKey detour returns false for that combo,
+	// preventing UE5 from processing the key. Stored per-combo in a runtime map;
+	// persisted to the plugin INI by the config UI.
+	void SetComboBlocking(const char* comboStr, bool blocking);
+
+	// Returns true if the given (key, mods) combination is currently set to blocking.
+	// Uses FormatComboString to produce the canonical key and looks it up in the map.
+	// Returns false (non-blocking) by default when no entry exists.
+	bool ShouldBlock(EModKey key, EModKeyModifiers mods);
+
 	// --- Dispatch ---
 	// Fires simple callbacks (mod-unaware).
 	void Dispatch(EModKey key, EModKeyEvent event);

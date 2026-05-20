@@ -16,6 +16,13 @@ namespace ScanPatterns
 	// Signature: void AHUD::PostRender()
 	inline constexpr auto AHUD_PostRender =
 		"40 55 53 48 8D 6C 24 ?? 48 81 EC ?? ?? ?? ?? 48 8B D9 E8 ?? ?? ?? ?? 48 85 C0";
+
+	// UGameViewportClient::InputKey -- intercepts all keyboard/mouse input before UE5 processes it.
+	// Returning false (0) from our detour consumes the event (game will not react to it).
+	// Signature: __int64 __fastcall UGameViewportClient::InputKey(
+	//               UGameViewportClient* this, const FInputKeyEventArgs* InEventArgs)
+	inline constexpr auto UGameViewportClient_InputKey =
+		"48 8B C4 55 53 57 41 55 48 8D 68 ?? 48 81 EC ?? ?? ?? ?? 48 8B 5A";
 #endif
 
 	// UObject::ProcessEvent -- called for every UFUNCTION dispatch in the game.
