@@ -8,7 +8,6 @@
 #include "hooks/hooks_common.h"
 #include "hooks/game/scan_patterns.h"
 #include "memory_scanner/scanner.h"
-#include "UI/modloader_window.h"
 #include "logging/logger.h"
 
 #include <windows.h>
@@ -50,9 +49,12 @@ namespace Hooks::InputHook
 
     // -----------------------------------------------------------------------
     // FName -> EModKey lazy cache
-    // On Pressed events we scan GetAsyncKeyState to find which VK is down,
-    // map it to an EModKey, and cache the FName ComparisonIndex.
-    // On Released events the key is already up so we rely on the cache.
+    // Dispatch already happened in HookedWndProc (covers all game states).
+    // This hook only needs to resolve the key in order to check ShouldBlock
+    // and return false (0) to consume the input from the UE5 input stack.
+    //
+    // On Pressed events we scan GetAsyncKeyState to identify the VK and cache
+    // the FName ComparisonIndex.  On Released events we use the warm cache.
     // -----------------------------------------------------------------------
     static std::unordered_map<uint32_t, EModKey> s_fnameCache;
     static std::mutex                            s_fnameMutex;
@@ -72,8 +74,6 @@ namespace Hooks::InputHook
         s_fnameCache[fnameIdx] = mk;
     }
 
-    // Scan the VK table for a key that is currently physically held.
-    // Called only on Pressed events (key still down when hook fires).
     static EModKey ScanVKTableForDownKey()
     {
         auto activeKeys = Hooks::Input::GetActiveKeys();
@@ -85,16 +85,13 @@ namespace Hooks::InputHook
         return EModKey::Unknown;
     }
 
-    // Returns true if the VK code belongs to a modifier key.
-    static bool IsModifierVK(int vk)
-    {
-        return vk == VK_LCONTROL || vk == VK_RCONTROL ||
-               vk == VK_LSHIFT   || vk == VK_RSHIFT   ||
-               vk == VK_LMENU    || vk == VK_RMENU;
-    }
-
     // -----------------------------------------------------------------------
-    // Detour
+    // Detour -- blocking only
+    //
+    // Keybind callbacks are dispatched in HookedWndProc which fires for every
+    // key message in all game states (main menu, loading screen, in-game).
+    // This detour's sole job is to return false (0) when the key is marked
+    // as blocking, consuming it from UE5's input stack.
     // -----------------------------------------------------------------------
     static __int64 __fastcall Detour(void* This, const void* InEventArgs)
     {
@@ -105,57 +102,27 @@ namespace Hooks::InputHook
 
         EInputEvent ueEvent = *reinterpret_cast<const EInputEvent*>(args + ARGS_EVENT_OFFSET);
 
-        // Ignore key repeat events entirely -- we only care about edges.
-        if (ueEvent == EInputEvent::Repeat)
+        // Only act on Pressed edges -- that is all we need for blocking.
+        if (ueEvent != EInputEvent::Pressed)
             return g_original ? g_original(This, InEventArgs) : 0;
-
-        EModKeyEvent modEvent = (ueEvent == EInputEvent::Pressed)
-                                    ? EModKeyEvent::Pressed
-                                    : EModKeyEvent::Released;
 
         uint32_t fnameIdx = *reinterpret_cast<const uint32_t*>(args + ARGS_FNAME_IDX_OFFSET);
 
-        // Resolve FName index to EModKey.
         EModKey mk = LookupFNameCache(fnameIdx);
         if (mk == EModKey::Unknown)
         {
-            if (modEvent == EModKeyEvent::Pressed)
-            {
-                mk = ScanVKTableForDownKey();
-                if (mk != EModKey::Unknown)
-                    CacheFName(fnameIdx, mk);
-            }
-            else
-            {
-                // Released for an unknown key — just pass through.
-                return g_original ? g_original(This, InEventArgs) : 0;
-            }
+            mk = ScanVKTableForDownKey();
+            if (mk != EModKey::Unknown)
+                CacheFName(fnameIdx, mk);
         }
 
         if (mk == EModKey::Unknown)
             return g_original ? g_original(This, InEventArgs) : 0;
 
-        // Do not dispatch modifier keys (Ctrl/Shift/Alt) as standalone keybinds.
-        int vk = Hooks::Input::ModKeyToVK(mk);
-        if (IsModifierVK(vk))
-            return g_original ? g_original(This, InEventArgs) : 0;
-
-        // Sample current modifier mask.
         EModKeyModifiers mods = Hooks::Input::SampleCurrentModifiers();
 
-        // While the modloader UI is open, suppress all plugin keybind dispatch
-        // to prevent accidental keybind fires while interacting with the UI.
-        if (!UI::ModLoaderWindow::IsOpen())
-        {
-            Hooks::Input::Dispatch(mk, modEvent);
-            Hooks::Input::DispatchCombo(mk, mods, modEvent);
-
-            if (Hooks::Input::ShouldBlock(mk, mods))
-            {
-                // Return false (0) -- UE5 treats that as "input consumed".
-                return 0;
-            }
-        }
+        if (Hooks::Input::ShouldBlock(mk, mods))
+            return 0; // consumed -- UE5 never processes this key
 
         return g_original ? g_original(This, InEventArgs) : 0;
     }
