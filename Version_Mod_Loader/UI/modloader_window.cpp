@@ -269,28 +269,40 @@ namespace UI::ModLoaderWindow
         return nullptr;
     }
 
-    // Render a single config row using type information from schema entry (may be null).
+    // Render one config row inside an already-open 3-column table:
+    //   Col 0 (Label)   -- setting name, description tooltip on hover
+    //   Col 1 (Widget)  -- the editable control, fills available width
+    //   Col 2 (Actions) -- blocking checkbox (keybind only) + reset button
     static void RenderConfigEntry(ConfigKV& kv, const ConfigEntry* e, const char* pluginName)
     {
+        ImGui::TableNextRow();
+
         char id[128];
         snprintf(id, sizeof(id), "##%s_%s", kv.section, kv.key);
 
-        // Show reset button for all entries except General.Enabled
         bool showReset = e && e->defaultValue && e->defaultValue[0] &&
                          !(strcmp(kv.section, "General") == 0 && strcmp(kv.key, "Enabled") == 0);
 
-        // Width to reserve for the reset button: frame height (square button) + spacing
-        float resetBtnW = ImGui::GetFrameHeight() + ImGui::GetStyle().ItemSpacing.x;
-        float inputWidth = showReset ? -resetBtnW : -1.0f;
+        // ---- Col 0: label ------------------------------------------------
+        ImGui::TableSetColumnIndex(0);
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted(kv.key);
+        if (e && e->description && e->description[0] &&
+            ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
+            ImGui::SetTooltip("%s", e->description);
+
+        // ---- Col 1: widget -----------------------------------------------
+        ImGui::TableSetColumnIndex(1);
+        ImGui::SetNextItemWidth(-FLT_MIN); // fill the column
 
         bool widgetHovered = false;
 
         if (e && e->type == ConfigValueType::Boolean)
         {
             bool bval = (strcmp(kv.value, "true") == 0 || strcmp(kv.value, "1") == 0);
-            char label[128];
-            snprintf(label, sizeof(label), "%s%s", kv.key, id);
-            if (ImGui::Checkbox(label, &bval))
+            char lbl[128];
+            snprintf(lbl, sizeof(lbl), "##chk%s", id);
+            if (ImGui::Checkbox(lbl, &bval))
             {
                 strncpy_s(kv.value, bval ? "true" : "false", _TRUNCATE);
                 CommitConfigChange(pluginName, kv);
@@ -301,9 +313,6 @@ namespace UI::ModLoaderWindow
         {
             int ival = atoi(kv.value);
             bool hasRange = e->rangeMax > e->rangeMin;
-            ImGui::TextUnformatted(kv.key);
-            ImGui::SameLine();
-            ImGui::SetNextItemWidth(inputWidth);
             if (hasRange)
             {
                 if (ImGui::SliderInt(id, &ival, (int)e->rangeMin, (int)e->rangeMax))
@@ -330,9 +339,6 @@ namespace UI::ModLoaderWindow
         {
             float fval = strtof(kv.value, nullptr);
             bool hasRange = e->rangeMax > e->rangeMin;
-            ImGui::TextUnformatted(kv.key);
-            ImGui::SameLine();
-            ImGui::SetNextItemWidth(inputWidth);
             if (hasRange)
             {
                 if (ImGui::SliderFloat(id, &fval, e->rangeMin, e->rangeMax, "%.6g"))
@@ -357,66 +363,27 @@ namespace UI::ModLoaderWindow
         }
         else if (e && e->type == ConfigValueType::Keybind)
         {
-            ImGui::TextUnformatted(kv.key);
-            ImGui::SameLine();
-            // Show the current binding as a disabled label
+            // Current bind label + Rebind button, side by side, left-aligned.
             const char* bindLabel = (kv.value[0] != '\0') ? kv.value : "(none)";
+            ImGui::AlignTextToFramePadding();
             ImGui::TextDisabled("%s", bindLabel);
             ImGui::SameLine();
             char rebindId[160];
             snprintf(rebindId, sizeof(rebindId), "Rebind##rb_%s_%s", kv.section, kv.key);
             if (ImGui::SmallButton(rebindId))
             {
-                strncpy_s(s_rebind.section,    kv.section,    _TRUNCATE);
-                strncpy_s(s_rebind.cfgKey,     kv.key,        _TRUNCATE);
-                strncpy_s(s_rebind.pluginName, pluginName,    _TRUNCATE);
+                strncpy_s(s_rebind.section,    kv.section, _TRUNCATE);
+                strncpy_s(s_rebind.cfgKey,     kv.key,     _TRUNCATE);
+                strncpy_s(s_rebind.pluginName, pluginName, _TRUNCATE);
                 s_rebind.waitingForRelease = true;
                 s_rebind.active            = true;
                 ImGui::OpenPopup("##rebind_modal");
             }
             widgetHovered = ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal);
-
-            // Blocking checkbox -- lets the user decide whether this keybind
-            // should consume the input (preventing the game from also reacting).
-            ImGui::SameLine();
-            {
-                wchar_t iniPath[MAX_PATH];
-                wchar_t wsec[64], wblkKey[128];
-                bool bBlocking = false;
-                if (GetPluginIniPath(pluginName, iniPath, MAX_PATH))
-                {
-                    swprintf_s(wsec, L"%S", kv.section);
-                    swprintf_s(wblkKey, L"%SBlocking", kv.key);
-                    bBlocking = (GetPrivateProfileIntW(wsec, wblkKey, 0, iniPath) != 0);
-                }
-                char chkId[160];
-                snprintf(chkId, sizeof(chkId), "Blocking##blk_%s_%s", kv.section, kv.key);
-                if (ImGui::Checkbox(chkId, &bBlocking))
-                {
-                    // Persist to INI
-                    wchar_t iniPath2[MAX_PATH];
-                    if (GetPluginIniPath(pluginName, iniPath2, MAX_PATH))
-                    {
-                        wchar_t wsec2[64], wblkKey2[128];
-                        swprintf_s(wsec2, L"%S", kv.section);
-                        swprintf_s(wblkKey2, L"%SBlocking", kv.key);
-                        WritePrivateProfileStringW(wsec2, wblkKey2, bBlocking ? L"1" : L"0", iniPath2);
-                    }
-                    // Apply to runtime blocking map
-                    Hooks::Input::SetComboBlocking(kv.value, bBlocking);
-                }
-                if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
-                    ImGui::SetTooltip("When ticked, this key combo is consumed by the plugin --\n"
-                                      "the game will not also react to it.\n"
-                                      "Enable if the key conflicts with a game action.");
-            }
         }
         else
         {
-            // String or no schema entry: raw text input (original behaviour)
-            ImGui::TextUnformatted(kv.key);
-            ImGui::SameLine();
-            ImGui::SetNextItemWidth(inputWidth);
+            // String or unknown schema entry: plain text input.
             if (ImGui::InputText(id, kv.value, sizeof(kv.value),
                                  ImGuiInputTextFlags_EnterReturnsTrue))
                 CommitConfigChange(pluginName, kv);
@@ -425,16 +392,50 @@ namespace UI::ModLoaderWindow
             widgetHovered = ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal);
         }
 
-        // Description tooltip (captured before the reset button changes IsItemHovered)
         if (e && e->description && e->description[0] && widgetHovered)
             ImGui::SetTooltip("%s", e->description);
 
-        // Reset button
+        // ---- Col 2: actions ----------------------------------------------
+        ImGui::TableSetColumnIndex(2);
+
+        // Blocking checkbox (keybind rows only).
+        if (e && e->type == ConfigValueType::Keybind)
+        {
+            wchar_t iniPath[MAX_PATH];
+            bool bBlocking = false;
+            if (GetPluginIniPath(pluginName, iniPath, MAX_PATH))
+            {
+                wchar_t wsec[64], wblkKey[128];
+                swprintf_s(wsec,    L"%S",        kv.section);
+                swprintf_s(wblkKey, L"%SBlocking", kv.key);
+                bBlocking = (GetPrivateProfileIntW(wsec, wblkKey, 0, iniPath) != 0);
+            }
+            char chkId[160];
+            snprintf(chkId, sizeof(chkId), "##blk_%s_%s", kv.section, kv.key);
+            if (ImGui::Checkbox(chkId, &bBlocking))
+            {
+                wchar_t iniPath2[MAX_PATH];
+                if (GetPluginIniPath(pluginName, iniPath2, MAX_PATH))
+                {
+                    wchar_t wsec2[64], wblkKey2[128];
+                    swprintf_s(wsec2,    L"%S",        kv.section);
+                    swprintf_s(wblkKey2, L"%SBlocking", kv.key);
+                    WritePrivateProfileStringW(wsec2, wblkKey2, bBlocking ? L"1" : L"0", iniPath2);
+                }
+                Hooks::Input::SetComboBlocking(kv.value, bBlocking);
+            }
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
+                ImGui::SetTooltip("Block: when ticked, this combo is consumed by the\n"
+                                  "plugin -- the game will not also react to it.\n"
+                                  "Enable if the key conflicts with a game action.");
+            ImGui::SameLine();
+        }
+
+        // Reset button.
         if (showReset)
         {
             char resetId[160];
             snprintf(resetId, sizeof(resetId), "R##r_%s_%s", kv.section, kv.key);
-            ImGui::SameLine();
             if (ImGui::SmallButton(resetId))
             {
                 strncpy_s(kv.value, e->defaultValue, _TRUNCATE);
@@ -613,19 +614,53 @@ namespace UI::ModLoaderWindow
                 ImGui::TextDisabled("Hover a setting for its description.  Changes are saved immediately.");
                 ImGui::Spacing();
 
+                // Actions column width: blocking checkbox + spacing + reset button.
+                // Sized to fit the widest possible content (keybind rows).
+                const float fh       = ImGui::GetFrameHeight();
+                const float spacing  = ImGui::GetStyle().ItemSpacing.x;
+                const float actionsW = fh + spacing + fh * 0.75f; // checkbox + R button
+
+                // One 3-column table per section so separators span full width
+                // and all rows within a section share the same column edges.
+                //   Col 0  Label   -- fixed 160px
+                //   Col 1  Widget  -- stretches to fill remaining space
+                //   Col 2  Actions -- fixed (blocking checkbox + reset)
+                const ImGuiTableFlags tblFlags =
+                    ImGuiTableFlags_BordersInnerH |
+                    ImGuiTableFlags_PadOuterX;
+
                 const char* curSection = nullptr;
+                bool        tableOpen  = false;
+
                 for (auto& kv : s_configEntries)
                 {
                     if (!curSection || strcmp(curSection, kv.section) != 0)
                     {
+                        if (tableOpen) { ImGui::EndTable(); tableOpen = false; }
                         if (curSection) ImGui::Spacing();
+
                         ImGui::SeparatorText(kv.section);
                         curSection = kv.section;
+
+                        char tblId[128];
+                        snprintf(tblId, sizeof(tblId), "##cfg_%s", kv.section);
+                        if (ImGui::BeginTable(tblId, 3, tblFlags))
+                        {
+                            ImGui::TableSetupColumn("##lbl",    ImGuiTableColumnFlags_WidthFixed,   160.0f);
+                            ImGui::TableSetupColumn("##widget", ImGuiTableColumnFlags_WidthStretch);
+                            ImGui::TableSetupColumn("##acts",   ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, actionsW);
+                            tableOpen = true;
+                        }
                     }
 
-                    const ConfigEntry* entry = FindSchemaEntry(schema, kv.section, kv.key);
-                    RenderConfigEntry(kv, entry, info->name);
+                    if (tableOpen)
+                    {
+                        const ConfigEntry* entry = FindSchemaEntry(schema, kv.section, kv.key);
+                        RenderConfigEntry(kv, entry, info->name);
+                    }
                 }
+
+                if (tableOpen) ImGui::EndTable();
             }
         }
 
