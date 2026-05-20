@@ -24,9 +24,21 @@ namespace Hooks::Input
 	void RegisterKeybind(EModKey key, EModKeyEvent event, PluginKeybindCallback callback);
 	void UnregisterKeybind(EModKey key, EModKeyEvent event, PluginKeybindCallback callback);
 
-	// --- Callback registration (by UE key name string) ---
-	void RegisterKeybindByName(const char* keyName, EModKeyEvent event, PluginKeybindCallback callback);
-	void UnregisterKeybindByName(const char* keyName, EModKeyEvent event, PluginKeybindCallback callback);
+	// --- Callback registration (by name string, plain or combo) ---
+	// Accepts "F5" or combo strings like "Ctrl+C", "Shift+F5", "Ctrl+Shift+Delete".
+	// Routes to plain or combo storage automatically; callback signature is the same either way.
+	void RegisterKeybindByName(const char* combo, EModKeyEvent event, PluginKeybindCallback callback);
+	void UnregisterKeybindByName(const char* combo, EModKeyEvent event, PluginKeybindCallback callback);
+
+	// Called by the config UI when a Keybind config entry changes value.
+	// Finds all by-name registrations for pluginName whose stored combo matches
+	// oldCombo and re-registers them with newCombo in-place.
+	void UpdateKeybindByName(const char* pluginName, const char* oldCombo, const char* newCombo);
+
+	// --- Advanced combo registration (v28) ---
+	// Register by enum + modifier mask; callback receives the mods at fire time.
+	void RegisterKeybindCombo(EModKey key, EModKeyModifiers mods, EModKeyEvent event, PluginKeybindComboCallback callback);
+	void UnregisterKeybindCombo(EModKey key, EModKeyModifiers mods, EModKeyEvent event, PluginKeybindComboCallback callback);
 
 	// --- Lookup helpers ---
 
@@ -42,11 +54,20 @@ namespace Hooks::Input
 	// Returns the EModKey for a UE key name string (case-insensitive), or EModKey::Unknown.
 	EModKey NameToModKey(const char* name);
 
-	// --- Dispatch ---
-	// Called by the input processor each frame to fire registered callbacks.
-	void Dispatch(EModKey key, EModKeyEvent event);
+	// Returns the current modifier bitmask by sampling GetAsyncKeyState.
+	EModKeyModifiers SampleCurrentModifiers();
 
-	// Returns the set of (EModKey, VK) pairs that have at least one registered callback.
-	// Used by the input processor to know which keys to poll.
+	// Formats a combo string into outBuf (e.g. "Ctrl+F5"). Returns outBuf.
+	// mods == EModKeyMod_None produces just the key name.
+	const char* FormatComboString(EModKey key, EModKeyModifiers mods, char* outBuf, size_t outLen);
+
+	// --- Dispatch ---
+	// Fires simple callbacks (mod-unaware).
+	void Dispatch(EModKey key, EModKeyEvent event);
+	// Fires named-combo and advanced-combo callbacks for the given key + current mods.
+	void DispatchCombo(EModKey key, EModKeyModifiers mods, EModKeyEvent event);
+
+	// Returns the set of (EModKey, VK) pairs that have at least one registered callback
+	// (simple or combo).  Used by the input processor to know which keys to poll.
 	std::vector<std::pair<EModKey, int>> GetActiveKeys();
 }

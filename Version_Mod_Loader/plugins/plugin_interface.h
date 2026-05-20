@@ -23,11 +23,11 @@
 //      Added PluginWindowHints struct and windowHints field to PluginWidgetDesc.
 //      MIN remains 23.
 #define PLUGIN_INTERFACE_VERSION_MIN 26
-#define PLUGIN_INTERFACE_VERSION_MAX 26
+#define PLUGIN_INTERFACE_VERSION_MAX 30
 #define PLUGIN_INTERFACE_VERSION PLUGIN_INTERFACE_VERSION_MAX
 
 enum class PluginLogLevel { Trace = 0, Debug = 1, Info = 2, Warn = 3, Error = 4 };
-enum class ConfigValueType { String, Integer, Float, Boolean };
+enum class ConfigValueType { String, Integer, Float, Boolean, Keybind };
 
 struct ConfigEntry
 {
@@ -213,14 +213,43 @@ enum class EModKey : uint32_t
 
 enum class EModKeyEvent : uint32_t { Pressed = 0, Released = 1 };
 
+// Modifier bitmask used with combo keybinds (v28).
+// Each flag covers both Left and Right variants of that modifier key.
+enum EModKeyModifiers : uint32_t
+{
+	EModKeyMod_None  = 0,
+	EModKeyMod_Ctrl  = 1 << 0,
+	EModKeyMod_Shift = 1 << 1,
+	EModKeyMod_Alt   = 1 << 2,
+};
+
 typedef void (*PluginKeybindCallback)(EModKey key, EModKeyEvent event);
+
+// Combo callback — receives the base key, the modifier bitmask held at the
+// moment of the transition, and the event type (v28).
+typedef void (*PluginKeybindComboCallback)(EModKey key, EModKeyModifiers mods, EModKeyEvent event);
 
 struct IPluginInputEvents
 {
+	// v15 — register by enum; fires on key transition regardless of modifier state.
 	void (*RegisterKeybind)(EModKey key, EModKeyEvent event, PluginKeybindCallback callback);
 	void (*UnregisterKeybind)(EModKey key, EModKeyEvent event, PluginKeybindCallback callback);
-	void (*RegisterKeybindByName)(const char* keyName, EModKeyEvent event, PluginKeybindCallback callback);
-	void (*UnregisterKeybindByName)(const char* keyName, EModKeyEvent event, PluginKeybindCallback callback);
+
+	// v15/v30 — register by name string.  Accepts plain key names ("F5") and
+	// combo strings ("Ctrl+C", "Shift+F5", "Ctrl+Shift+Delete").  Modifier tokens
+	// are case-insensitive.  The callback receives the base key and event; the
+	// modifiers are implicit in the name you registered.
+	// The modloader tracks these registrations and automatically re-registers
+	// the keybind when the user rebinds it in the plugin config UI.
+	void (*RegisterKeybindByName)(const char* combo, EModKeyEvent event, PluginKeybindCallback callback);
+	void (*UnregisterKeybindByName)(const char* combo, EModKeyEvent event, PluginKeybindCallback callback);
+
+	// v28 — advanced: register by enum + explicit modifier mask.  Fires only when
+	// the key transitions with exactly those modifiers held.  The callback receives
+	// the modifier mask at fire time.  Use this only when you need the mods passed
+	// back; most plugins should use RegisterKeybindByName instead.
+	void (*RegisterKeybindCombo)(EModKey key, EModKeyModifiers mods, EModKeyEvent event, PluginKeybindComboCallback callback);
+	void (*UnregisterKeybindCombo)(EModKey key, EModKeyModifiers mods, EModKeyEvent event, PluginKeybindComboCallback callback);
 };
 
 // ---------------------------------------------------------------------------

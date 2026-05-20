@@ -21,8 +21,23 @@ namespace Hooks::Input
 	// -----------------------------------------------------------------------
 	// Per-frame poll callback — registered into the engine tick
 	// -----------------------------------------------------------------------
+
+	// Returns true if a window belonging to this process is in the foreground.
+	// Prevents keybind callbacks from firing when the player alt-tabs away.
+	static bool IsGameFocused()
+	{
+		HWND fg = GetForegroundWindow();
+		if (!fg) return false;
+		DWORD pid = 0;
+		GetWindowThreadProcessId(fg, &pid);
+		return pid == GetCurrentProcessId();
+	}
+
 	static void OnEngineTick(float /*deltaSeconds*/)
 	{
+		if (!IsGameFocused())
+			return;
+
 		// Retrieve the set of keys that have at least one registered callback.
 		// This is rebuilt each tick so newly registered keys are picked up immediately.
 		auto activeKeys = GetActiveKeys();
@@ -46,13 +61,17 @@ namespace Hooks::Input
 			{
 				// Key just went down — fire Pressed callbacks
 				ModLoaderLogger::LogDebug(L"[InputProcessor] Key pressed: VK=0x%02X, EModKey=%d", vk, key);
+				EModKeyModifiers mods = SampleCurrentModifiers();
 				Dispatch(key, EModKeyEvent::Pressed);
+				DispatchCombo(key, mods, EModKeyEvent::Pressed);
 			}
 			else if (!isDown && wasDown)
 			{
 				// Key just came up — fire Released callbacks
 				ModLoaderLogger::LogDebug(L"[InputProcessor] Key released: VK=0x%02X, EModKey=%d", vk, key);
+				EModKeyModifiers mods = SampleCurrentModifiers();
 				Dispatch(key, EModKeyEvent::Released);
+				DispatchCombo(key, mods, EModKeyEvent::Released);
 			}
 
 			s_prevKeyState[vk] = isDown;

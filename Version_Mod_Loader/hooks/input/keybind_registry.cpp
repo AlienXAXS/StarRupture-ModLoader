@@ -162,7 +162,31 @@ namespace Hooks::Input
 		PluginKeybindCallback callback;
 	};
 
-	static std::vector<CallbackEntry> s_callbacks;
+	// Named-combo entries: registered via RegisterKeybindByName("Ctrl+F5", ...).
+	// Stores the original combo string so UpdateKeybindByName can find and
+	// update registrations in-place when the user rebinds in the config UI.
+	struct NamedComboEntry
+	{
+		EModKey          key;
+		EModKeyModifiers mods;
+		EModKeyEvent     event;
+		PluginKeybindCallback callback;
+		char comboStr[64];  // original combo string, e.g. "Ctrl+F5" or "F5"
+	};
+
+	// Advanced-combo entries: registered via RegisterKeybindCombo (enum + explicit mods).
+	// Uses PluginKeybindComboCallback — mods are passed back to the caller.
+	struct ComboCallbackEntry
+	{
+		EModKey          key;
+		EModKeyModifiers mods;
+		EModKeyEvent     event;
+		PluginKeybindComboCallback callback;
+	};
+
+	static std::vector<CallbackEntry>      s_callbacks;
+	static std::vector<NamedComboEntry>    s_namedCombos;
+	static std::vector<ComboCallbackEntry> s_comboCallbacks;
 	static std::mutex s_mutex;
 	static bool s_initialized = false;
 
@@ -181,6 +205,8 @@ namespace Hooks::Input
 	{
 		std::lock_guard<std::mutex> lock(s_mutex);
 		s_callbacks.clear();
+		s_namedCombos.clear();
+		s_comboCallbacks.clear();
 		s_initialized = false;
 		ModLoaderLogger::LogInfo(L"[KeybindRegistry] Shutdown - all keybinds cleared");
 	}
@@ -241,6 +267,80 @@ namespace Hooks::Input
 	}
 
 	// -----------------------------------------------------------------------
+	// Combo string helpers (must precede registration functions that call them)
+	// -----------------------------------------------------------------------
+
+	// Parse "Ctrl+Shift+F5" into mods + base key.
+	// Returns EModKey::Unknown on parse failure.
+	static EModKey ParseComboString(const char* combo, EModKeyModifiers& outMods)
+	{
+		outMods = EModKeyMod_None;
+		if (!combo || !*combo)
+			return EModKey::Unknown;
+
+		char buf[128];
+		strncpy_s(buf, combo, _TRUNCATE);
+
+		EModKey baseKey = EModKey::Unknown;
+		char* ctx = nullptr;
+		char* token = strtok_s(buf, "+", &ctx);
+		while (token)
+		{
+			while (*token == ' ') ++token;
+			size_t len = strlen(token);
+			while (len > 0 && token[len - 1] == ' ') token[--len] = '\0';
+
+			auto ieq = [](const char* a, const char* b) -> bool
+			{
+				while (*a && *b)
+				{
+					if (tolower((unsigned char)*a) != tolower((unsigned char)*b))
+						return false;
+					++a; ++b;
+				}
+				return *a == '\0' && *b == '\0';
+			};
+
+			if (ieq(token, "ctrl") || ieq(token, "control"))
+				outMods = static_cast<EModKeyModifiers>(outMods | EModKeyMod_Ctrl);
+			else if (ieq(token, "shift"))
+				outMods = static_cast<EModKeyModifiers>(outMods | EModKeyMod_Shift);
+			else if (ieq(token, "alt"))
+				outMods = static_cast<EModKeyModifiers>(outMods | EModKeyMod_Alt);
+			else
+			{
+				EModKey k = NameToModKey(token);
+				if (k != EModKey::Unknown)
+					baseKey = k;
+			}
+			token = strtok_s(nullptr, "+", &ctx);
+		}
+		return baseKey;
+	}
+
+	const char* FormatComboString(EModKey key, EModKeyModifiers mods, char* outBuf, size_t outLen)
+	{
+		const char* keyName = ModKeyToName(key);
+		if (!keyName) keyName = "Unknown";
+
+		if (mods == EModKeyMod_None)
+		{
+			strncpy_s(outBuf, outLen, keyName, _TRUNCATE);
+			return outBuf;
+		}
+
+		char tmp[128] = {};
+		if (mods & EModKeyMod_Ctrl)  { if (tmp[0]) strncat_s(tmp, "+", _TRUNCATE); strncat_s(tmp, "Ctrl",  _TRUNCATE); }
+		if (mods & EModKeyMod_Shift) { if (tmp[0]) strncat_s(tmp, "+", _TRUNCATE); strncat_s(tmp, "Shift", _TRUNCATE); }
+		if (mods & EModKeyMod_Alt)   { if (tmp[0]) strncat_s(tmp, "+", _TRUNCATE); strncat_s(tmp, "Alt",   _TRUNCATE); }
+		strncat_s(tmp, "+", _TRUNCATE);
+		strncat_s(tmp, keyName, _TRUNCATE);
+
+		strncpy_s(outBuf, outLen, tmp, _TRUNCATE);
+		return outBuf;
+	}
+
+	// -----------------------------------------------------------------------
 	// Registration
 	// -----------------------------------------------------------------------
 	void RegisterKeybind(EModKey key, EModKeyEvent event, PluginKeybindCallback callback)
@@ -287,30 +387,151 @@ namespace Hooks::Input
 		s_callbacks.erase(it, s_callbacks.end());
 	}
 
-	void RegisterKeybindByName(const char* keyName, EModKeyEvent event, PluginKeybindCallback callback)
+	void RegisterKeybindByName(const char* combo, EModKeyEvent event, PluginKeybindCallback callback)
 	{
-		if (!keyName || !*keyName)
+		if (!combo || !*combo)
 		{
-			ModLoaderLogger::LogWarn(L"[KeybindRegistry] RegisterKeybindByName: null/empty name ignored");
+			ModLoaderLogger::LogWarn(L"[KeybindRegistry] RegisterKeybindByName: null/empty string ignored");
+			return;
+		}
+		if (!callback)
+		{
+			ModLoaderLogger::LogWarn(L"[KeybindRegistry] RegisterKeybindByName: null callback ignored");
 			return;
 		}
 
-		EModKey key = NameToModKey(keyName);
+		EModKeyModifiers mods = EModKeyMod_None;
+		EModKey key = ParseComboString(combo, mods);
 		if (key == EModKey::Unknown)
 		{
-			ModLoaderLogger::LogWarn(L"[KeybindRegistry] RegisterKeybindByName: unknown key name '%S'", keyName);
+			ModLoaderLogger::LogWarn(L"[KeybindRegistry] RegisterKeybindByName: could not parse '%S'", combo);
 			return;
 		}
 
-		RegisterKeybind(key, event, callback);
+		// All by-name registrations go into s_namedCombos so UpdateKeybindByName
+		// can always locate and patch them when the user rebinds via the config UI.
+		std::lock_guard<std::mutex> lock(s_mutex);
+		for (auto& e : s_namedCombos)
+		{
+			if (e.key == key && e.mods == mods && e.event == event && e.callback == callback)
+				return; // duplicate
+		}
+
+		NamedComboEntry entry = {};
+		entry.key      = key;
+		entry.mods     = mods;
+		entry.event    = event;
+		entry.callback = callback;
+		strncpy_s(entry.comboStr, combo, _TRUNCATE);
+		s_namedCombos.push_back(entry);
+
+		ModLoaderLogger::LogDebug(L"[KeybindRegistry] Registered named bind: combo=%S event=%u (total=%zu)",
+		                          combo, static_cast<unsigned>(event), s_namedCombos.size());
 	}
 
-	void UnregisterKeybindByName(const char* keyName, EModKeyEvent event, PluginKeybindCallback callback)
+	void UnregisterKeybindByName(const char* combo, EModKeyEvent event, PluginKeybindCallback callback)
 	{
-		if (!keyName || !*keyName || !callback) return;
-		EModKey key = NameToModKey(keyName);
-		if (key != EModKey::Unknown)
-			UnregisterKeybind(key, event, callback);
+		if (!combo || !*combo || !callback) return;
+
+		EModKeyModifiers mods = EModKeyMod_None;
+		EModKey key = ParseComboString(combo, mods);
+		if (key == EModKey::Unknown) return;
+
+		std::lock_guard<std::mutex> lock(s_mutex);
+		auto it = std::remove_if(s_namedCombos.begin(), s_namedCombos.end(),
+		                         [&](const NamedComboEntry& e)
+		                         {
+			                         return e.key == key && e.mods == mods &&
+			                                e.event == event && e.callback == callback;
+		                         });
+		s_namedCombos.erase(it, s_namedCombos.end());
+	}
+
+	void UpdateKeybindByName(const char* pluginName, const char* oldCombo, const char* newCombo)
+	{
+		if (!oldCombo || !newCombo || !*newCombo) return;
+
+		EModKeyModifiers newMods = EModKeyMod_None;
+		EModKey newKey = ParseComboString(newCombo, newMods);
+		if (newKey == EModKey::Unknown)
+		{
+			ModLoaderLogger::LogWarn(L"[KeybindRegistry] UpdateKeybindByName: could not parse new combo '%S'", newCombo);
+			return;
+		}
+
+		std::lock_guard<std::mutex> lock(s_mutex);
+		int updated = 0;
+		for (auto& e : s_namedCombos)
+		{
+			if (strcmp(e.comboStr, oldCombo) != 0) continue;
+
+			e.key  = newKey;
+			e.mods = newMods;
+			strncpy_s(e.comboStr, newCombo, _TRUNCATE);
+			++updated;
+		}
+
+		if (updated > 0)
+			ModLoaderLogger::LogDebug(L"[KeybindRegistry] Live-rebound %d registration(s) for plugin=%S: %S -> %S",
+			                          updated, pluginName ? pluginName : "?", oldCombo, newCombo);
+	}
+
+	// -----------------------------------------------------------------------
+	// Modifier sampling
+	// -----------------------------------------------------------------------
+	EModKeyModifiers SampleCurrentModifiers()
+	{
+		EModKeyModifiers mods = EModKeyMod_None;
+		if ((GetAsyncKeyState(VK_LCONTROL) | GetAsyncKeyState(VK_RCONTROL)) & 0x8000)
+			mods = static_cast<EModKeyModifiers>(mods | EModKeyMod_Ctrl);
+		if ((GetAsyncKeyState(VK_LSHIFT) | GetAsyncKeyState(VK_RSHIFT)) & 0x8000)
+			mods = static_cast<EModKeyModifiers>(mods | EModKeyMod_Shift);
+		if ((GetAsyncKeyState(VK_LMENU) | GetAsyncKeyState(VK_RMENU)) & 0x8000)
+			mods = static_cast<EModKeyModifiers>(mods | EModKeyMod_Alt);
+		return mods;
+	}
+
+	// -----------------------------------------------------------------------
+	// Combo registration (v28)
+	// -----------------------------------------------------------------------
+	void RegisterKeybindCombo(EModKey key, EModKeyModifiers mods, EModKeyEvent event, PluginKeybindComboCallback callback)
+	{
+		if (!callback)
+		{
+			ModLoaderLogger::LogWarn(L"[KeybindRegistry] RegisterKeybindCombo: null callback ignored");
+			return;
+		}
+		if (key == EModKey::Unknown)
+		{
+			ModLoaderLogger::LogWarn(L"[KeybindRegistry] RegisterKeybindCombo: EModKey::Unknown ignored");
+			return;
+		}
+
+		std::lock_guard<std::mutex> lock(s_mutex);
+		for (auto& e : s_comboCallbacks)
+		{
+			if (e.key == key && e.mods == mods && e.event == event && e.callback == callback)
+				return;
+		}
+		s_comboCallbacks.push_back({key, mods, event, callback});
+
+		char combo[64];
+		FormatComboString(key, mods, combo, sizeof(combo));
+		ModLoaderLogger::LogDebug(L"[KeybindRegistry] Registered combo: %S event=%u (total=%zu)",
+		                          combo, static_cast<unsigned>(event), s_comboCallbacks.size());
+	}
+
+	void UnregisterKeybindCombo(EModKey key, EModKeyModifiers mods, EModKeyEvent event, PluginKeybindComboCallback callback)
+	{
+		if (!callback) return;
+		std::lock_guard<std::mutex> lock(s_mutex);
+		auto it = std::remove_if(s_comboCallbacks.begin(), s_comboCallbacks.end(),
+		                         [&](const ComboCallbackEntry& e)
+		                         {
+			                         return e.key == key && e.mods == mods &&
+			                                e.event == event && e.callback == callback;
+		                         });
+		s_comboCallbacks.erase(it, s_comboCallbacks.end());
 	}
 
 	// -----------------------------------------------------------------------
@@ -342,31 +563,65 @@ namespace Hooks::Input
 	}
 
 	// -----------------------------------------------------------------------
+	// DispatchCombo — fires combo callbacks whose (key, mods, event) match
+	// -----------------------------------------------------------------------
+	void DispatchCombo(EModKey key, EModKeyModifiers mods, EModKeyEvent event)
+	{
+		// Snapshot both named-combo and advanced-combo lists under lock.
+		std::vector<PluginKeybindCallback>      namedToCall;
+		std::vector<PluginKeybindComboCallback> advToCall;
+		{
+			std::lock_guard<std::mutex> lock(s_mutex);
+			for (auto& e : s_namedCombos)
+			{
+				if (e.key != key || e.event != event) continue;
+				// Named entries with no mods fire regardless of current modifier state
+				// (same behaviour as the old plain RegisterKeybind path).
+				// Named entries with mods require an exact match.
+				if (e.mods == EModKeyMod_None || e.mods == mods)
+					namedToCall.push_back(e.callback);
+			}
+			for (auto& e : s_comboCallbacks)
+			{
+				if (e.key == key && e.mods == mods && e.event == event)
+					advToCall.push_back(e.callback);
+			}
+		}
+
+		for (auto cb : namedToCall)
+		{
+			if (cb) try { cb(key, event); } catch (...) {}
+		}
+		for (auto cb : advToCall)
+		{
+			if (cb) try { cb(key, mods, event); } catch (...) {}
+		}
+	}
+
+	// -----------------------------------------------------------------------
 	// GetActiveKeys — returns (EModKey, VK) pairs with at least one callback
+	// (simple or combo).
 	// -----------------------------------------------------------------------
 	std::vector<std::pair<EModKey, int>> GetActiveKeys()
 	{
 		std::vector<std::pair<EModKey, int>> result;
 
+		auto addIfNew = [&](EModKey k)
+		{
+			for (auto& r : result)
+				if (r.first == k) return;
+			int vk = ModKeyToVK(k);
+			if (vk != 0)
+				result.push_back({k, vk});
+		};
+
 		std::lock_guard<std::mutex> lock(s_mutex);
 		for (auto& e : s_callbacks)
-		{
-			// Add if not already in result
-			bool found = false;
-			for (auto& r : result)
-				if (r.first == e.key)
-				{
-					found = true;
-					break;
-				}
-
-			if (!found)
-			{
-				int vk = ModKeyToVK(e.key);
-				if (vk != 0)
-					result.push_back({e.key, vk});
-			}
-		}
+			addIfNew(e.key);
+		for (auto& e : s_namedCombos)
+			addIfNew(e.key);
+		for (auto& e : s_comboCallbacks)
+			addIfNew(e.key);
 
 		return result;
 	}
