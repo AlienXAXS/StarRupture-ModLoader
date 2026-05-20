@@ -55,6 +55,10 @@ namespace UI::ModLoaderWindow
     // Helpers
     // -----------------------------------------------------------------------
 
+    // Forward declaration (defined after RenderPluginsTab).
+    static const ConfigEntry* FindSchemaEntry(const ConfigSchema* schema,
+                                              const char* section, const char* key);
+
     // Build the absolute path to <pluginName>.ini under the config directory.
     static bool GetPluginIniPath(const char* pluginName, wchar_t* outPath, size_t outLen)
     {
