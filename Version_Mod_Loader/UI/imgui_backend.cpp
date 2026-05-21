@@ -245,12 +245,13 @@ static LRESULT CALLBACK HookedWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 	if (ImGui_ImplWin32_WndProcHandler(hWnd, msg, wParam, lParam))
 		return true;
 
-	// Dispatch plugin keybind callbacks and optionally swallow the message.
-	// Only fires when the modloader UI is not open (same gate as InputKey hook).
-	if (!ShouldCaptureInput())
+	// Dispatch plugin keybind callbacks unconditionally so that toggle-style
+	// keybinds (e.g. F2) can close the UI even while it is open.
+	// Only swallow blocking messages when the UI is not capturing input.
 	{
-		if (DispatchKeybindMessage(msg, wParam, lParam))
-			return 0; // blocking -- swallow before UE5 sees it
+		bool blocked = DispatchKeybindMessage(msg, wParam, lParam);
+		if (!ShouldCaptureInput() && blocked)
+			return 0;
 	}
 
 	if (ShouldCaptureInput())

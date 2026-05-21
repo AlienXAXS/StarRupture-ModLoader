@@ -1,6 +1,7 @@
 ﻿#include "pch.h"
 #include "engine_init.h"
 #include "logging/logger.h"
+#include "logging/log.h"
 #include "memory_scanner/scanner.h"
 #include "hooks/memory/engine_allocator.h"
 #include "hooks/game/mass_spawner_activate/mass_spawner_activate.h"
@@ -89,9 +90,10 @@ namespace Hooks::EngineInit
 	static bool g_engineInitialized = false;
 	static long g_callCount = 0;
 
-	// Sync handles set by SetSyncEvents() before Install() is called.
+	// Sync handles set before Install() is called.
 	static HANDLE g_engineReadyEventHandle = nullptr;
 	static HANDLE g_pluginsLoadedEventHandle = nullptr;
+	static HANDLE g_pluginsReadyEventHandle = nullptr;
 
 	// Signalled at the very end of each detour (after NotifyEngineReady returns)
 	// so the UE4SS loader thread wakes up only once the hook call-stack has
@@ -101,11 +103,22 @@ namespace Hooks::EngineInit
 	// Callback for plugins to receive engine init events
 	static std::vector<PluginEngineInitCallback> g_pluginCallbacks;
 
-	// Signal the init thread that the engine hook fired, then block until
+	// Signal the init thread that the engine is ready, then block the main
+	// thread until all plugins have been initialised.
 	static void WaitForPluginsToLoad()
 	{
 		if (g_engineReadyEventHandle)
 			SetEvent(g_engineReadyEventHandle);
+
+		if (g_pluginsReadyEventHandle)
+		{
+			LogToFile::Info("[EngineInit] Main thread sleeping -- waiting for plugins to initialise");
+			const DWORD result = WaitForSingleObject(g_pluginsReadyEventHandle, 120000);
+			if (result == WAIT_TIMEOUT)
+				LogToFile::Warn("[EngineInit] Timed out waiting for plugins -- resuming main thread anyway");
+			else
+				LogToFile::Info("[EngineInit] Plugins ready -- main thread resuming");
+		}
 	}
 
 	// Shared notification function - called by any successful hook
@@ -174,8 +187,6 @@ namespace Hooks::EngineInit
 		ModLoaderLogger::LogInfo(L"[EngineInit] FEngineLoop::Init called (#%ld)", callNum);
 		ModLoaderLogger::LogDebug(L"[EngineInit]   FEngineLoop=%p, Thread=%lu", thisPtr, GetCurrentThreadId());
 
-		WaitForPluginsToLoad();
-
 		// Call original under SEH so any crash is logged with full register context
 		int32_t result = 0;
 		if (g_engineLoopOriginal)
@@ -215,8 +226,10 @@ namespace Hooks::EngineInit
 			ModLoaderLogger::LogError(L"[EngineInit] Original function pointer is null!");
 		}
 
-		// Notify plugins that engine is ready
+		// Notify plugins that engine is ready, then sleep the main thread until
+		// the init thread has finished initialising all plugins.
 		NotifyEngineReady(L"FEngineLoop::Init");
+		WaitForPluginsToLoad();
 
 		// Signal UE4SS loader thread: hook call-stack is fully unwound after
 		// this point, so it is safe to call LoadLibraryW(ue4ss.dll).
@@ -235,8 +248,6 @@ namespace Hooks::EngineInit
 		ModLoaderLogger::LogInfo(L"[EngineInit] UGameEngine::Init called (#%ld)", callNum);
 		ModLoaderLogger::LogDebug(L"[EngineInit]   GameEngine=%p, EngineLoop=%p, Thread=%lu",
 		                          thisPtr, InEngineLoop, GetCurrentThreadId());
-
-		WaitForPluginsToLoad();
 
 		// Call original under SEH so any crash deep inside (e.g. during UEngine::Browse
 		// or WorldBeginPlay subsystem hooks) is caught and logged with full register context.
@@ -278,8 +289,10 @@ namespace Hooks::EngineInit
 			ModLoaderLogger::LogError(L"[EngineInit] Original function pointer is null!");
 		}
 
-		// Notify plugins that engine is ready (if not already notified)
+		// Notify plugins that engine is ready, then sleep the main thread until
+		// the init thread has finished initialising all plugins.
 		NotifyEngineReady(L"UGameEngine::Init");
+		WaitForPluginsToLoad();
 
 		// Signal UE4SS loader thread: hook call-stack is fully unwound after
 		// this point, so it is safe to call LoadLibraryW(ue4ss.dll).
@@ -299,6 +312,11 @@ namespace Hooks::EngineInit
 	void SetUE4SSReadyEvent(HANDLE ue4ssReadyEvent)
 	{
 		g_ue4ssReadyEventHandle = ue4ssReadyEvent;
+	}
+
+	void SetPluginsReadyEvent(HANDLE pluginsReadyEvent)
+	{
+		g_pluginsReadyEventHandle = pluginsReadyEvent;
 	}
 
 	bool Install()

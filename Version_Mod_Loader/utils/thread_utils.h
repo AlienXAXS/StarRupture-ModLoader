@@ -66,3 +66,29 @@ inline auto get_main_thread_id() -> DWORD
     CloseHandle(snapshot);
     return mainThreadId;
 }
+
+// Suspends the main game thread and returns an open handle to it.
+// Returns NULL if the main thread cannot be identified or opened.
+// The caller must pass the handle back to resume_main_thread().
+inline HANDLE suspend_main_thread()
+{
+    DWORD tid = get_main_thread_id();
+    if (!tid || tid == GetCurrentThreadId())
+        return NULL;
+
+    HANDLE h = OpenThread(THREAD_SUSPEND_RESUME, FALSE, tid);
+    if (!h)
+        return NULL;
+
+    SuspendThread(h);
+    return h;
+}
+
+// Resumes the main game thread and closes the handle returned by suspend_main_thread().
+inline void resume_main_thread(HANDLE h)
+{
+    if (!h)
+        return;
+    ResumeThread(h);
+    CloseHandle(h);
+}

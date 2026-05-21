@@ -30,7 +30,7 @@ void InitSubsystems()
 void InstallHooksPhase()
 {
     Splash::SetStatus(L"Installing core game hooks...");
-    Splash::SetProgress(0.15f);
+    Splash::SetProgress(0.05f);
     InstallAllHooks();
 }
 
@@ -48,12 +48,11 @@ void LoadPluginsPhase()
     Splash::SetProgress(0.85f);
 }
 
-void InitPluginsIfReady()
+void InitPluginsPhase()
 {
-    if (Hooks::GameInstanceInit::HasFired())
-    {
-        ModLoaderLogger::LogInfo(L"[dllmain] GameInstanceInit already fired before plugins loaded -- calling InitAllLoadedPlugins now");
-        PluginManager::InitAllLoadedPlugins();
-    }
+    // Engine init has completed and the main thread is held before we get here,
+    // so it is always safe to call PluginInit now -- no need to wait for GameInstanceInit.
+    ModLoaderLogger::LogInfo(L"[init] Calling PluginInit on all loaded plugins");
+    PluginManager::InitAllLoadedPlugins();
     PluginManager::MarkStartupComplete();
 }
