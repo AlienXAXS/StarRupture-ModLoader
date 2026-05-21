@@ -47,12 +47,11 @@ DWORD WINAPI MainInitThreadProc(LPVOID)
 
 #ifdef MODLOADER_CLIENT_BUILD
     Hooks::Input::InstallInputProcessor();
+    Hooks::InputHook::Install();
 #endif
 
     Hooks::WorldBeginPlay::Install();
     Hooks::EngineTick::Install();
-
-    Hooks::InputHook::Install();
 
     Splash::SetStatus(L"Checking for updates and installing hooks...");
     g_autoUpdateThread = CreateThread(nullptr, 0, AutoUpdateThreadProc, nullptr, 0, nullptr);
