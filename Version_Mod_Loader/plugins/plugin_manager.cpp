@@ -20,6 +20,59 @@
 
 namespace PluginManager
 {
+	// SEH helpers for catching crashes inside plugin-supplied functions.
+	// Must be plain POD functions with no C++ objects (C2712).
+	struct PluginCrashCtx { DWORD code; uintptr_t addr; };
+	static PluginCrashCtx g_lastPluginCrash;
+
+	static LONG PluginCrashFilter(EXCEPTION_POINTERS* ep)
+	{
+		g_lastPluginCrash.code = ep->ExceptionRecord->ExceptionCode;
+		g_lastPluginCrash.addr = reinterpret_cast<uintptr_t>(ep->ExceptionRecord->ExceptionAddress);
+		return EXCEPTION_EXECUTE_HANDLER;
+	}
+
+	// Logs a caught crash, showing the fault RVA relative to the plugin's own DLL so the
+	// plugin author can locate the crash in their own binary (e.g. with a map file or PDB).
+	static void LogPluginCrash(const char* pluginName, HMODULE hModule, const wchar_t* context)
+	{
+		uintptr_t base   = reinterpret_cast<uintptr_t>(hModule);
+		uintptr_t offset = (base && g_lastPluginCrash.addr >= base) ? g_lastPluginCrash.addr - base : 0;
+		ModLoaderLogger::LogError(
+			L"[PluginManager] Plugin '%S' CRASHED during %s -- code=0x%08X  fault=0x%llX  (+0x%llX from plugin DLL base)",
+			pluginName, context,
+			g_lastPluginCrash.code,
+			static_cast<unsigned long long>(g_lastPluginCrash.addr),
+			static_cast<unsigned long long>(offset));
+	}
+
+	static bool CallShutdownSEH(PluginShutdownFunc fn)
+	{
+		g_lastPluginCrash = {};
+		__try { fn(); return true; }
+		__except (PluginCrashFilter(GetExceptionInformation())) { return false; }
+	}
+
+	struct InitSEHResult { bool crashed; bool retval; };
+	static InitSEHResult CallInitSEH(PluginInitFunc fn, IPluginSelf* self)
+	{
+		InitSEHResult r = {};
+		g_lastPluginCrash = {};
+		__try { r.retval = fn(self) != 0; }
+		__except (PluginCrashFilter(GetExceptionInformation())) { r.crashed = true; }
+		return r;
+	}
+
+	static PluginInfo* CallGetInfoSEH(GetPluginInfoFunc fn)
+	{
+		PluginInfo* result = nullptr;
+		g_lastPluginCrash = {};
+		__try { result = fn(); }
+		__except (PluginCrashFilter(GetExceptionInformation())) {}
+		return result;
+	}
+
+
 	// Structure to hold loaded plugin information
 	struct LoadedPlugin
 	{
@@ -87,10 +140,23 @@ namespace PluginManager
 			return false;
 		}
 
-		PluginInfo* info = getInfo();
+		PluginInfo* info = CallGetInfoSEH(getInfo);
 		if (!info)
 		{
-			ModLoaderLogger::LogMessage(L"Plugin GetPluginInfo returned nullptr: %s", rec.fileName.c_str());
+			if (g_lastPluginCrash.code)
+			{
+				uintptr_t base   = reinterpret_cast<uintptr_t>(hModule);
+				uintptr_t offset = (base && g_lastPluginCrash.addr >= base) ? g_lastPluginCrash.addr - base : 0;
+				ModLoaderLogger::LogError(
+					L"[PluginManager] Plugin '%s' CRASHED in GetPluginInfo -- code=0x%08X  fault=0x%llX  (+0x%llX from plugin DLL base)",
+					rec.fileName.c_str(), g_lastPluginCrash.code,
+					static_cast<unsigned long long>(g_lastPluginCrash.addr),
+					static_cast<unsigned long long>(offset));
+			}
+			else
+			{
+				ModLoaderLogger::LogMessage(L"Plugin GetPluginInfo returned nullptr: %s", rec.fileName.c_str());
+			}
 			FreeLibrary(hModule);
 			return false;
 		}
@@ -262,6 +328,49 @@ namespace PluginManager
 		ModLoaderLogger::LogMessage(L"Loaded %d plugin DLL(s) from Plugins (PluginInit deferred)", loadedCount);
 	}
 
+	// Calls PluginInit on a single record that has been loaded but not yet initialized.
+	// Caller must hold g_pluginLock. Returns true if the plugin is now initialized.
+	static bool InitPluginRecord(LoadedPlugin& plugin)
+	{
+		ModLoaderLogger::LogMessage(L"Calling PluginInit for: %S v%S", plugin.cachedName.c_str(), plugin.cachedVersion.c_str());
+
+		plugin.self.logger  = ModLoaderLogger::GetPluginLogger();
+		plugin.self.config  = ModLoaderLogger::GetPluginConfig();
+		plugin.self.scanner = ModLoaderLogger::GetPluginScanner();
+		plugin.self.hooks   = ModLoaderLogger::GetPluginHooks();
+
+#ifdef MODLOADER_CLIENT_BUILD
+		UI::PluginPanelRegistry::SetCurrentRegistrationPlugin(plugin.cachedName.c_str());
+#endif
+
+		InitSEHResult initResult = CallInitSEH(plugin.init, &plugin.self);
+		bool success = false;
+
+		if (initResult.crashed)
+		{
+			LogPluginCrash(plugin.cachedName.c_str(), plugin.hModule, L"PluginInit");
+			ModLoaderLogger::LogError(L"Plugin '%S' crashed during PluginInit -- it has been left unloaded", plugin.cachedName.c_str());
+		}
+		else if (initResult.retval)
+		{
+			plugin.isInitialized = true;
+			success = true;
+			ModLoaderLogger::LogMessage(L"Plugin initialized: %S", plugin.cachedName.c_str());
+#ifdef MODLOADER_CLIENT_BUILD
+			UI::ModLoaderWindow::LoadBlockingStateForPlugin(plugin.cachedName.c_str());
+#endif
+		}
+		else
+		{
+			ModLoaderLogger::LogMessage(L"Plugin initialization failed: %S", plugin.cachedName.c_str());
+		}
+
+#ifdef MODLOADER_CLIENT_BUILD
+		UI::PluginPanelRegistry::SetCurrentRegistrationPlugin(nullptr);
+#endif
+		return success;
+	}
+
 	void InitAllLoadedPlugins()
 	{
 		if (!g_managerInitialized)
@@ -287,7 +396,6 @@ namespace PluginManager
 				continue;
 
 			current++;
-			ModLoaderLogger::LogMessage(L"Calling PluginInit for: %S v%S", plugin->cachedName.c_str(), plugin->cachedVersion.c_str());
 
 #ifdef MODLOADER_CLIENT_BUILD
 			{
@@ -298,32 +406,10 @@ namespace PluginManager
 			}
 #endif
 
-			plugin->self.logger  = ModLoaderLogger::GetPluginLogger();
-			plugin->self.config  = ModLoaderLogger::GetPluginConfig();
-			plugin->self.scanner = ModLoaderLogger::GetPluginScanner();
-			plugin->self.hooks   = ModLoaderLogger::GetPluginHooks();
-
-#ifdef MODLOADER_CLIENT_BUILD
-			UI::PluginPanelRegistry::SetCurrentRegistrationPlugin(plugin->cachedName.c_str());
-#endif
-			if (plugin->init(&plugin->self))
-			{
-				plugin->isInitialized = true;
+			if (InitPluginRecord(*plugin))
 				initCount++;
-				ModLoaderLogger::LogMessage(L"Plugin initialized: %S", plugin->cachedName.c_str());
-#ifdef MODLOADER_CLIENT_BUILD
-				// Load blocking state so input suppression is active before any key press.
-				UI::ModLoaderWindow::LoadBlockingStateForPlugin(plugin->cachedName.c_str());
-#endif
-			}
 			else
-			{
 				failCount++;
-				ModLoaderLogger::LogMessage(L"Plugin initialization failed: %S", plugin->cachedName.c_str());
-			}
-#ifdef MODLOADER_CLIENT_BUILD
-			UI::PluginPanelRegistry::SetCurrentRegistrationPlugin(nullptr);
-#endif
 		}
 
 		LeaveCriticalSection(&g_pluginLock);
@@ -347,7 +433,8 @@ namespace PluginManager
 			if (plugin->isInitialized)
 			{
 				ModLoaderLogger::LogMessage(L"Shutting down plugin: %S", plugin->cachedName.c_str());
-				plugin->shutdown();
+				if (!CallShutdownSEH(plugin->shutdown))
+					LogPluginCrash(plugin->cachedName.c_str(), plugin->hModule, L"PluginShutdown (unload all)");
 				plugin->isInitialized = false;
 			}
 
@@ -425,7 +512,8 @@ namespace PluginManager
 
 		LoadedPlugin& p = *g_loadedPlugins[index];
 		ModLoaderLogger::LogMessage(L"Unloading plugin: %S", p.cachedName.c_str());
-		p.shutdown();
+		if (!CallShutdownSEH(p.shutdown))
+			LogPluginCrash(p.cachedName.c_str(), p.hModule, L"PluginShutdown (unload)");
 		p.isInitialized = false;
 		FreeLibrary(p.hModule);
 		p.hModule = nullptr;
@@ -451,7 +539,8 @@ namespace PluginManager
 
 		if (p.isInitialized)
 		{
-			p.shutdown();
+			if (!CallShutdownSEH(p.shutdown))
+				LogPluginCrash(p.cachedName.c_str(), p.hModule, L"PluginShutdown (reload)");
 			p.isInitialized = false;
 		}
 		if (p.hModule)
@@ -463,16 +552,19 @@ namespace PluginManager
 
 		bool ok = LoadPluginIntoRecord(p);
 
-		LeaveCriticalSection(&g_pluginLock);
-
 		if (ok)
 		{
 			RefreshSelfPointers(p);
-			InitAllLoadedPlugins();
-			ModLoaderLogger::LogMessage(L"Plugin reloaded and initialized: %S", p.cachedName.c_str());
+			bool inited = InitPluginRecord(p);
+			LeaveCriticalSection(&g_pluginLock);
+			if (inited)
+				ModLoaderLogger::LogMessage(L"Plugin reloaded and initialized: %S", p.cachedName.c_str());
+			else
+				ModLoaderLogger::LogMessage(L"Plugin reloaded but PluginInit failed: %S", p.cachedName.c_str());
 		}
 		else
 		{
+			LeaveCriticalSection(&g_pluginLock);
 			ModLoaderLogger::LogMessage(L"Plugin reload failed for index %d", index);
 		}
 
