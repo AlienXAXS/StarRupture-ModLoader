@@ -3,6 +3,10 @@ name: Build and Release
 on:
   workflow_dispatch:
     inputs:
+      version:
+        description: 'Version override (e.g. 1.2.3) — leave blank to auto-increment'
+        type: string
+        default: ''
       sync_plugin_sdk:
         description: 'Sync Plugin SDK repo (header, DLLs, release)?'
         type: boolean
@@ -100,8 +104,22 @@ jobs:
             }
           }
 
+          $inputVersion = "${{ github.event.inputs.version }}".Trim()
+          $inputParsed  = $null
+          if ($inputVersion -ne '') {
+            $inputParsed = Parse-Semver $inputVersion
+            if ($inputParsed) {
+              Write-Host "Workflow input specifies: $inputVersion (override — skipping file and auto-increment)"
+            } else {
+              Write-Warning "Workflow input '$inputVersion' is not valid semver, ignoring."
+            }
+          }
+
           $chosen = $autoParsed
-          if ($fileParsed -and (Compare-Semver $fileParsed $autoParsed) -gt 0) {
+          if ($inputParsed) {
+            $chosen = $inputParsed
+            Write-Host "Input version wins."
+          } elseif ($fileParsed -and (Compare-Semver $fileParsed $autoParsed) -gt 0) {
             $chosen = $fileParsed
             Write-Host "version file is higher, using it."
           } else {
@@ -114,6 +132,11 @@ jobs:
             Write-Host "DEBUG file   = $(Format-Semver $fileParsed)"
           } else {
             Write-Host "DEBUG file   = <none>"
+          }
+          if ($inputParsed) {
+            Write-Host "DEBUG input  = $(Format-Semver $inputParsed)"
+          } else {
+            Write-Host "DEBUG input  = <none>"
           }
           Write-Host "DEBUG chosen = $(Format-Semver $chosen)"
 
