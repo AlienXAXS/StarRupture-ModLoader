@@ -95,6 +95,7 @@ namespace UI::PluginWidgetRegistry
                     ImGui::SetNextWindowSize(ImVec2(hints->width, hints->height), (ImGuiCond)hints->size_cond);
                 if (hints->pos_x >= 0.0f && hints->pos_y >= 0.0f)
                     ImGui::SetNextWindowPos(ImVec2(hints->pos_x, hints->pos_y), (ImGuiCond)hints->pos_cond, ImVec2(hints->pivot_x, hints->pivot_y));
+                flags |= (ImGuiWindowFlags)hints->extra_window_flags;
             }
             else
             {

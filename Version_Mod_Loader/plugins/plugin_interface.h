@@ -22,8 +22,11 @@
 //      SetWindowFontScale, GetContentRegionAvail, GetDisplaySize).
 //      Added PluginWindowHints struct and windowHints field to PluginWidgetDesc.
 //      MIN remains 23.
+// v31: Added extra_window_flags to PluginWindowHints.
+//      Allows plugins to pass additional ImGuiWindowFlags (e.g. NoTitleBar, NoResize).
+//      0 = no extra flags (default behaviour unchanged). MIN remains 26.
 #define PLUGIN_INTERFACE_VERSION_MIN 26
-#define PLUGIN_INTERFACE_VERSION_MAX 30
+#define PLUGIN_INTERFACE_VERSION_MAX 31
 #define PLUGIN_INTERFACE_VERSION PLUGIN_INTERFACE_VERSION_MAX
 
 enum class PluginLogLevel { Trace = 0, Debug = 1, Info = 2, Warn = 3, Error = 4 };
@@ -310,6 +313,16 @@ struct IModLoaderImGui
 
 typedef void (*PluginImGuiRenderCallback)(IModLoaderImGui* imgui);
 
+// Flags for PluginWindowHints::extra_window_flags (v31).
+// Values mirror ImGuiWindowFlags so plugins do not need imgui.h.
+#define PluginWindowFlags_NoTitleBar        (1 << 0)
+#define PluginWindowFlags_NoResize          (1 << 1)
+#define PluginWindowFlags_NoMove            (1 << 2)
+#define PluginWindowFlags_NoScrollbar       (1 << 3)
+#define PluginWindowFlags_NoBackground      (1 << 7)
+#define PluginWindowFlags_NoSavedSettings   (1 << 8)
+#define PluginWindowFlags_NoMouseInputs     (1 << 9)
+
 // Optional size/position hints for RegisterWidget windows.
 // Set width/height to 0 for no size hint. Set pos_x/pos_y to -1 to skip positioning.
 // size_cond / pos_cond: 0 = Always, 1 = FirstUseEver.
@@ -323,6 +336,7 @@ struct PluginWindowHints
 	float pivot_y;
 	int   size_cond;
 	int   pos_cond;
+	int   extra_window_flags;  // v31: OR'd into ImGuiWindowFlags; 0 = default
 };
 
 struct PluginPanelDesc

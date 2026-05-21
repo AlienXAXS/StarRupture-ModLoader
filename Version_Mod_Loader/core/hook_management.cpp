@@ -30,6 +30,7 @@ void InstallAllHooks()
 
     Hooks::EngineInit::SetSyncEvents(g_engineReadyEvent, g_pluginsLoadedEvent);
     Hooks::EngineInit::SetUE4SSReadyEvent(g_ue4ssReadyEvent);
+    Hooks::EngineInit::SetPluginsReadyEvent(g_pluginsReadyEvent);
 
     if (Hooks::EngineInit::Install())
     {
@@ -41,6 +42,8 @@ void InstallAllHooks()
         ModLoaderLogger::LogWarn(L"  WARNING: EngineInit hook failed to install -- loading plugins immediately");
         if (g_engineReadyEvent)
             SetEvent(g_engineReadyEvent);
+        if (g_pluginsReadyEvent)
+            SetEvent(g_pluginsReadyEvent);
     }
 
     Splash::SetStatus(L"Installing EngineShutdown hook...");

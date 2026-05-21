@@ -6,4 +6,4 @@ void InitSubsystems();
 void InstallHooksPhase();
 void WaitForEnginePhase();
 void LoadPluginsPhase();
-void InitPluginsIfReady();
+void InitPluginsPhase();

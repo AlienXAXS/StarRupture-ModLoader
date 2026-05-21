@@ -7,3 +7,4 @@ extern HANDLE g_autoUpdateThread;
 extern HANDLE g_pluginsLoadedEvent;
 extern HANDLE g_engineReadyEvent;
 extern HANDLE g_ue4ssReadyEvent;
+extern HANDLE g_pluginsReadyEvent;

@@ -44,6 +44,7 @@ namespace UI::ModLoaderWindow
     struct RebindState
     {
         bool active           = false;
+        bool pendingOpen      = false; // set inside a table; OpenPopup deferred to modal site
         char section[64]      = {};
         char cfgKey[64]       = {};   // the INI key name (not keyboard key)
         char pluginName[64]   = {};
@@ -377,7 +378,7 @@ namespace UI::ModLoaderWindow
                 strncpy_s(s_rebind.pluginName, pluginName, _TRUNCATE);
                 s_rebind.waitingForRelease = true;
                 s_rebind.active            = true;
-                ImGui::OpenPopup("##rebind_modal");
+                s_rebind.pendingOpen       = true; // OpenPopup deferred — called from outside the table
             }
             widgetHovered = ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal);
         }
@@ -458,6 +459,14 @@ namespace UI::ModLoaderWindow
     {
         if (!s_rebind.active)
             return;
+
+        // OpenPopup must be called at the same ID-stack level as BeginPopupModal.
+        // The button that sets pendingOpen lives inside a BeginTable, so we defer here.
+        if (s_rebind.pendingOpen)
+        {
+            ImGui::OpenPopup("##rebind_modal");
+            s_rebind.pendingOpen = false;
+        }
 
         ImVec2 center = ImGui::GetMainViewport()->GetCenter();
         ImGui::SetNextWindowPos(center, ImGuiCond_Always, ImVec2(0.5f, 0.5f));

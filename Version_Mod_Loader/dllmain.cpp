@@ -59,6 +59,18 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
             LogToFile::Warn("Failed to create UE4SS-ready event (%lu) -- UE4SS load will use timeout fallback", GetLastError());
         }
 
+        g_pluginsReadyEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+        if (!g_pluginsReadyEvent)
+        {
+            LogToFile::Error("FATAL: Failed to create plugins-ready event (%lu)", GetLastError());
+            CloseHandle(g_pluginsLoadedEvent); g_pluginsLoadedEvent = NULL;
+            CloseHandle(g_engineReadyEvent);   g_engineReadyEvent   = NULL;
+            if (g_ue4ssReadyEvent) { CloseHandle(g_ue4ssReadyEvent); g_ue4ssReadyEvent = NULL; }
+            DwmapiProxy::Shutdown();
+            LogToFile::Shutdown();
+            return FALSE;
+        }
+
         if (GetCurrentThreadId() == get_main_thread_id())
         {
             LogToFile::Info("DllMain on main thread -- deferring init via QueueUserAPC");

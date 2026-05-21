@@ -32,6 +32,11 @@ namespace Hooks::EngineInit
 	// hook call-stack or GPU driver initialisation is still active.
 	void SetUE4SSReadyEvent(HANDLE ue4ssReadyEvent);
 
+	// Provide the event the detour should wait on after engine init completes.
+	// The main thread will block here until the init thread signals that all
+	// plugins have been fully initialised.
+	void SetPluginsReadyEvent(HANDLE pluginsReadyEvent);
+
 	// Install the hooks (tries multiple patterns for reliability)
 	// Returns true if at least one hook was successful
 	bool Install();
