@@ -693,32 +693,54 @@ namespace ModLoaderLogger
 		         static_cast<unsigned>(key), static_cast<unsigned>(event));
 	}
 
-	static void HooksRegisterKeybindByName(const char* keyName, EModKeyEvent event, PluginKeybindCallback callback)
+	static void HooksRegisterKeybindByName(const char* combo, EModKeyEvent event, PluginKeybindCallback callback)
 	{
-		if (!callback || !keyName)
+		if (!callback || !combo)
 		{
 			LogWarn(L"[HooksInterface] RegisterKeybindByName: null argument");
 			return;
 		}
-		Hooks::Input::RegisterKeybindByName(keyName, event, callback);
-		LogDebug(L"[HooksInterface] Keybind registered (name=%S, event=%u)",
-		         keyName, static_cast<unsigned>(event));
+		Hooks::Input::RegisterKeybindByName(combo, event, callback);
+		LogDebug(L"[HooksInterface] Keybind registered (combo=%S, event=%u)",
+		         combo, static_cast<unsigned>(event));
 	}
 
-	static void HooksUnregisterKeybindByName(const char* keyName, EModKeyEvent event, PluginKeybindCallback callback)
+	static void HooksUnregisterKeybindByName(const char* combo, EModKeyEvent event, PluginKeybindCallback callback)
 	{
-		if (!callback || !keyName) return;
-		Hooks::Input::UnregisterKeybindByName(keyName, event, callback);
-		LogDebug(L"[HooksInterface] Keybind unregistered (name=%S, event=%u)",
-		         keyName, static_cast<unsigned>(event));
+		if (!callback || !combo) return;
+		Hooks::Input::UnregisterKeybindByName(combo, event, callback);
+		LogDebug(L"[HooksInterface] Keybind unregistered (combo=%S, event=%u)",
+		         combo, static_cast<unsigned>(event));
 	}
 
-	// Input sub-interface struct (v15)
+	static void HooksRegisterKeybindCombo(EModKey key, EModKeyModifiers mods, EModKeyEvent event, PluginKeybindComboCallback callback)
+	{
+		if (!callback)
+		{
+			LogWarn(L"[HooksInterface] RegisterKeybindCombo: null callback");
+			return;
+		}
+		Hooks::Input::RegisterKeybindCombo(key, mods, event, callback);
+		LogDebug(L"[HooksInterface] Combo keybind registered (key=%u, mods=%u, event=%u)",
+		         static_cast<unsigned>(key), static_cast<unsigned>(mods), static_cast<unsigned>(event));
+	}
+
+	static void HooksUnregisterKeybindCombo(EModKey key, EModKeyModifiers mods, EModKeyEvent event, PluginKeybindComboCallback callback)
+	{
+		if (!callback) return;
+		Hooks::Input::UnregisterKeybindCombo(key, mods, event, callback);
+		LogDebug(L"[HooksInterface] Combo keybind unregistered (key=%u, mods=%u, event=%u)",
+		         static_cast<unsigned>(key), static_cast<unsigned>(mods), static_cast<unsigned>(event));
+	}
+
+	// Input sub-interface struct (v15, extended v28/v29)
 	static IPluginInputEvents g_inputEvents = {
 		HooksRegisterKeybind,
 		HooksUnregisterKeybind,
-		HooksRegisterKeybindByName,
-		HooksUnregisterKeybindByName
+		HooksRegisterKeybindByName,   // v29: now handles plain keys and combos transparently
+		HooksUnregisterKeybindByName,
+		HooksRegisterKeybindCombo,    // v28: advanced — enum + mods, callback receives mods
+		HooksUnregisterKeybindCombo   // v28
 	};
 
 	// --- UI sub-interface wrappers (v15, client only) ---

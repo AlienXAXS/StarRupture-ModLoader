@@ -126,6 +126,9 @@
     <ClInclude Include="hooks\input\input_processor.h">
       <Filter>Source Files\hooks\input</Filter>
     </ClInclude>
+    <ClInclude Include="hooks\input\input_hook.h">
+      <Filter>Source Files\hooks\input</Filter>
+    </ClInclude>
     <ClInclude Include="imgui\imgui.h">
       <Filter>Source Files\UI\imgui</Filter>
     </ClInclude>
@@ -336,6 +339,9 @@
       <Filter>Source Files\hooks\input</Filter>
     </ClCompile>
     <ClCompile Include="hooks\input\input_processor.cpp">
+      <Filter>Source Files\hooks\input</Filter>
+    </ClCompile>
+    <ClCompile Include="hooks\input\input_hook.cpp">
       <Filter>Source Files\hooks\input</Filter>
     </ClCompile>
     <ClCompile Include="hooks\memory\engine_allocator.cpp">

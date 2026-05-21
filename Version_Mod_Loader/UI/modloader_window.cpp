@@ -9,6 +9,7 @@
 #include "config/config_manager.h"
 #include "global_settings.h"
 #include "logging/log.h"
+#include "hooks/input/keybind_registry.h"
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -40,9 +41,23 @@ namespace UI::ModLoaderWindow
     static std::vector<ConfigKV> s_configEntries;
     static int  s_lastConfigPlugin = -1;  // plugin index for cached entries
 
+    struct RebindState
+    {
+        bool active           = false;
+        char section[64]      = {};
+        char cfgKey[64]       = {};   // the INI key name (not keyboard key)
+        char pluginName[64]   = {};
+        bool waitingForRelease = false;
+    };
+    static RebindState s_rebind;
+
     // -----------------------------------------------------------------------
     // Helpers
     // -----------------------------------------------------------------------
+
+    // Forward declaration (defined after RenderPluginsTab).
+    static const ConfigEntry* FindSchemaEntry(const ConfigSchema* schema,
+                                              const char* section, const char* key);
 
     // Build the absolute path to <pluginName>.ini under the config directory.
     static bool GetPluginIniPath(const char* pluginName, wchar_t* outPath, size_t outLen)
@@ -91,10 +106,32 @@ namespace UI::ModLoaderWindow
                 s_configEntries.push_back(entry);
             }
         }
+
+        // For each Keybind entry in the schema, read and apply the companion
+        // <key>Blocking flag so the runtime blocking state is always current
+        // when the config panel is opened.
+        const ConfigSchema* schema = ModLoaderLogger::GetPluginSchema(pluginName);
+        if (schema)
+        {
+            for (auto& kv : s_configEntries)
+            {
+                const ConfigEntry* schEntry = FindSchemaEntry(schema, kv.section, kv.key);
+                if (!schEntry || schEntry->type != ConfigValueType::Keybind) continue;
+                if (!kv.value[0]) continue;
+
+                wchar_t wsec[64], wblkKey[128];
+                swprintf_s(wsec, L"%S", kv.section);
+                swprintf_s(wblkKey, L"%SBlocking", kv.key);
+                bool blocking = (GetPrivateProfileIntW(wsec, wblkKey, 0, iniPath) != 0);
+                Hooks::Input::SetComboBlocking(kv.value, blocking);
+            }
+        }
     }
 
     // Write a changed value back to disk and fire config-change notifications.
-    static void CommitConfigChange(const char* pluginName, ConfigKV& kv)
+    static void CommitConfigChange(const char* pluginName, ConfigKV& kv,
+                                   const char* oldValue = nullptr,
+                                   const ConfigEntry* entry = nullptr)
     {
         wchar_t iniPath[MAX_PATH];
         if (!GetPluginIniPath(pluginName, iniPath, MAX_PATH)) return;
@@ -104,6 +141,27 @@ namespace UI::ModLoaderWindow
         swprintf_s(wkey, L"%S", kv.key);
         swprintf_s(wval, L"%S", kv.value);
         WritePrivateProfileStringW(wsec, wkey, wval, iniPath);
+
+        // If this is a Keybind entry and the value actually changed, live-rebind
+        // any active keybind registrations for this plugin and transfer blocking state.
+        if (entry && entry->type == ConfigValueType::Keybind &&
+            oldValue && strcmp(oldValue, kv.value) != 0)
+        {
+            // Transfer blocking state from the old combo to the new one.
+            // Read from INI (the ground truth) rather than the runtime map so this
+            // works correctly even if the map entry was never explicitly set.
+            {
+                wchar_t blkSec[64], wblkKey[128];
+                swprintf_s(blkSec, L"%S", kv.section);
+                swprintf_s(wblkKey, L"%SBlocking", kv.key);
+                bool wasBlocking = (GetPrivateProfileIntW(blkSec, wblkKey, 0, iniPath) != 0);
+                Hooks::Input::SetComboBlocking(kv.value, wasBlocking);
+                // Remove any stale entry for the old combo so it does not linger.
+                Hooks::Input::SetComboBlocking(oldValue, false);
+            }
+
+            Hooks::Input::UpdateKeybindByName(pluginName, oldValue, kv.value);
+        }
 
         UI::PluginPanelRegistry::FireConfigChanged(kv.section, kv.key, kv.value);
     }
@@ -211,28 +269,40 @@ namespace UI::ModLoaderWindow
         return nullptr;
     }
 
-    // Render a single config row using type information from schema entry (may be null).
+    // Render one config row inside an already-open 3-column table:
+    //   Col 0 (Label)   -- setting name, description tooltip on hover
+    //   Col 1 (Widget)  -- the editable control, fills available width
+    //   Col 2 (Actions) -- blocking checkbox (keybind only) + reset button
     static void RenderConfigEntry(ConfigKV& kv, const ConfigEntry* e, const char* pluginName)
     {
+        ImGui::TableNextRow();
+
         char id[128];
         snprintf(id, sizeof(id), "##%s_%s", kv.section, kv.key);
 
-        // Show reset button for all entries except General.Enabled
         bool showReset = e && e->defaultValue && e->defaultValue[0] &&
                          !(strcmp(kv.section, "General") == 0 && strcmp(kv.key, "Enabled") == 0);
 
-        // Width to reserve for the reset button: frame height (square button) + spacing
-        float resetBtnW = ImGui::GetFrameHeight() + ImGui::GetStyle().ItemSpacing.x;
-        float inputWidth = showReset ? -resetBtnW : -1.0f;
+        // ---- Col 0: label ------------------------------------------------
+        ImGui::TableSetColumnIndex(0);
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted(kv.key);
+        if (e && e->description && e->description[0] &&
+            ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
+            ImGui::SetTooltip("%s", e->description);
+
+        // ---- Col 1: widget -----------------------------------------------
+        ImGui::TableSetColumnIndex(1);
+        ImGui::SetNextItemWidth(-FLT_MIN); // fill the column
 
         bool widgetHovered = false;
 
         if (e && e->type == ConfigValueType::Boolean)
         {
             bool bval = (strcmp(kv.value, "true") == 0 || strcmp(kv.value, "1") == 0);
-            char label[128];
-            snprintf(label, sizeof(label), "%s%s", kv.key, id);
-            if (ImGui::Checkbox(label, &bval))
+            char lbl[128];
+            snprintf(lbl, sizeof(lbl), "##chk%s", id);
+            if (ImGui::Checkbox(lbl, &bval))
             {
                 strncpy_s(kv.value, bval ? "true" : "false", _TRUNCATE);
                 CommitConfigChange(pluginName, kv);
@@ -243,9 +313,6 @@ namespace UI::ModLoaderWindow
         {
             int ival = atoi(kv.value);
             bool hasRange = e->rangeMax > e->rangeMin;
-            ImGui::TextUnformatted(kv.key);
-            ImGui::SameLine();
-            ImGui::SetNextItemWidth(inputWidth);
             if (hasRange)
             {
                 if (ImGui::SliderInt(id, &ival, (int)e->rangeMin, (int)e->rangeMax))
@@ -272,9 +339,6 @@ namespace UI::ModLoaderWindow
         {
             float fval = strtof(kv.value, nullptr);
             bool hasRange = e->rangeMax > e->rangeMin;
-            ImGui::TextUnformatted(kv.key);
-            ImGui::SameLine();
-            ImGui::SetNextItemWidth(inputWidth);
             if (hasRange)
             {
                 if (ImGui::SliderFloat(id, &fval, e->rangeMin, e->rangeMax, "%.6g"))
@@ -297,12 +361,29 @@ namespace UI::ModLoaderWindow
             }
             widgetHovered = ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal);
         }
+        else if (e && e->type == ConfigValueType::Keybind)
+        {
+            // Current bind label + Rebind button, side by side, left-aligned.
+            const char* bindLabel = (kv.value[0] != '\0') ? kv.value : "(none)";
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextDisabled("%s", bindLabel);
+            ImGui::SameLine();
+            char rebindId[160];
+            snprintf(rebindId, sizeof(rebindId), "Rebind##rb_%s_%s", kv.section, kv.key);
+            if (ImGui::SmallButton(rebindId))
+            {
+                strncpy_s(s_rebind.section,    kv.section, _TRUNCATE);
+                strncpy_s(s_rebind.cfgKey,     kv.key,     _TRUNCATE);
+                strncpy_s(s_rebind.pluginName, pluginName, _TRUNCATE);
+                s_rebind.waitingForRelease = true;
+                s_rebind.active            = true;
+                ImGui::OpenPopup("##rebind_modal");
+            }
+            widgetHovered = ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal);
+        }
         else
         {
-            // String or no schema entry: raw text input (original behaviour)
-            ImGui::TextUnformatted(kv.key);
-            ImGui::SameLine();
-            ImGui::SetNextItemWidth(inputWidth);
+            // String or unknown schema entry: plain text input.
             if (ImGui::InputText(id, kv.value, sizeof(kv.value),
                                  ImGuiInputTextFlags_EnterReturnsTrue))
                 CommitConfigChange(pluginName, kv);
@@ -311,16 +392,50 @@ namespace UI::ModLoaderWindow
             widgetHovered = ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal);
         }
 
-        // Description tooltip (captured before the reset button changes IsItemHovered)
         if (e && e->description && e->description[0] && widgetHovered)
             ImGui::SetTooltip("%s", e->description);
 
-        // Reset button
+        // ---- Col 2: actions ----------------------------------------------
+        ImGui::TableSetColumnIndex(2);
+
+        // Blocking checkbox (keybind rows only).
+        if (e && e->type == ConfigValueType::Keybind)
+        {
+            wchar_t iniPath[MAX_PATH];
+            bool bBlocking = false;
+            if (GetPluginIniPath(pluginName, iniPath, MAX_PATH))
+            {
+                wchar_t wsec[64], wblkKey[128];
+                swprintf_s(wsec,    L"%S",        kv.section);
+                swprintf_s(wblkKey, L"%SBlocking", kv.key);
+                bBlocking = (GetPrivateProfileIntW(wsec, wblkKey, 0, iniPath) != 0);
+            }
+            char chkId[160];
+            snprintf(chkId, sizeof(chkId), "##blk_%s_%s", kv.section, kv.key);
+            if (ImGui::Checkbox(chkId, &bBlocking))
+            {
+                wchar_t iniPath2[MAX_PATH];
+                if (GetPluginIniPath(pluginName, iniPath2, MAX_PATH))
+                {
+                    wchar_t wsec2[64], wblkKey2[128];
+                    swprintf_s(wsec2,    L"%S",        kv.section);
+                    swprintf_s(wblkKey2, L"%SBlocking", kv.key);
+                    WritePrivateProfileStringW(wsec2, wblkKey2, bBlocking ? L"1" : L"0", iniPath2);
+                }
+                Hooks::Input::SetComboBlocking(kv.value, bBlocking);
+            }
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
+                ImGui::SetTooltip("Block: when ticked, this combo is consumed by the\n"
+                                  "plugin -- the game will not also react to it.\n"
+                                  "Enable if the key conflicts with a game action.");
+            ImGui::SameLine();
+        }
+
+        // Reset button.
         if (showReset)
         {
             char resetId[160];
             snprintf(resetId, sizeof(resetId), "R##r_%s_%s", kv.section, kv.key);
-            ImGui::SameLine();
             if (ImGui::SmallButton(resetId))
             {
                 strncpy_s(kv.value, e->defaultValue, _TRUNCATE);
@@ -328,6 +443,115 @@ namespace UI::ModLoaderWindow
             }
             if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
                 ImGui::SetTooltip("Reset to default: %s", e->defaultValue);
+        }
+    }
+
+    // Returns true if the given VK is a modifier key (Ctrl/Shift/Alt left or right).
+    static bool IsModifierVK(int vk)
+    {
+        return vk == VK_LCONTROL || vk == VK_RCONTROL ||
+               vk == VK_LSHIFT   || vk == VK_RSHIFT   ||
+               vk == VK_LMENU    || vk == VK_RMENU;
+    }
+
+    static void RenderRebindModal()
+    {
+        if (!s_rebind.active)
+            return;
+
+        ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+        ImGui::SetNextWindowPos(center, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+        ImGui::SetNextWindowSize(ImVec2(340, 110), ImGuiCond_Always);
+
+        if (ImGui::BeginPopupModal("##rebind_modal", nullptr,
+                                   ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoTitleBar))
+        {
+            ImGui::TextUnformatted("Press a key (with optional Ctrl/Shift/Alt), or ESC to cancel.");
+            ImGui::Spacing();
+            ImGui::TextDisabled("Binding: %s / %s", s_rebind.section, s_rebind.cfgKey);
+            ImGui::Spacing();
+
+            // Phase 1: wait for all keys to be released so the button click doesn't register.
+            if (s_rebind.waitingForRelease)
+            {
+                bool anyDown = false;
+                for (int vk = 0x01; vk <= 0xFE; ++vk)
+                {
+                    if (GetAsyncKeyState(vk) & 0x8000) { anyDown = true; break; }
+                }
+                if (!anyDown)
+                    s_rebind.waitingForRelease = false;
+
+                ImGui::TextDisabled("(release keys...)");
+                ImGui::EndPopup();
+                return;
+            }
+
+            // Phase 2: ESC cancels.
+            if (GetAsyncKeyState(VK_ESCAPE) & 0x8000)
+            {
+                s_rebind.active = false;
+                ImGui::CloseCurrentPopup();
+                ImGui::EndPopup();
+                return;
+            }
+
+            // Show live modifier state as feedback while waiting for the base key.
+            EModKeyModifiers curMods = Hooks::Input::SampleCurrentModifiers();
+            {
+                char preview[64] = {};
+                if (curMods & EModKeyMod_Ctrl)  { if (preview[0]) strncat_s(preview, " + ", _TRUNCATE); strncat_s(preview, "Ctrl",  _TRUNCATE); }
+                if (curMods & EModKeyMod_Shift) { if (preview[0]) strncat_s(preview, " + ", _TRUNCATE); strncat_s(preview, "Shift", _TRUNCATE); }
+                if (curMods & EModKeyMod_Alt)   { if (preview[0]) strncat_s(preview, " + ", _TRUNCATE); strncat_s(preview, "Alt",   _TRUNCATE); }
+                if (preview[0])
+                    strncat_s(preview, " + ...", _TRUNCATE);
+                else
+                    strncpy_s(preview, "...", _TRUNCATE);
+                ImGui::Text("%s", preview);
+            }
+
+            // Phase 3: scan for a non-modifier key press.
+            for (int vk = 0x01; vk <= 0xFE; ++vk)
+            {
+                if (vk == VK_ESCAPE)      continue;
+                if (IsModifierVK(vk))     continue;
+                if (!(GetAsyncKeyState(vk) & 0x8000)) continue;
+
+                EModKey mk = Hooks::Input::VKToModKey(vk);
+                if (mk == EModKey::Unknown) continue;
+
+                // Build the combo string and write it to the config entry.
+                char comboStr[64];
+                Hooks::Input::FormatComboString(mk, curMods, comboStr, sizeof(comboStr));
+
+                for (auto& kv : s_configEntries)
+                {
+                    if (strcmp(kv.section, s_rebind.section) == 0 &&
+                        strcmp(kv.key, s_rebind.cfgKey) == 0)
+                    {
+                        char oldValue[256];
+                        strncpy_s(oldValue, kv.value, _TRUNCATE);
+                        strncpy_s(kv.value, comboStr, _TRUNCATE);
+
+                        // Find the schema entry so CommitConfigChange can trigger live-rebind.
+                        const ConfigSchema* schema = ModLoaderLogger::GetPluginSchema(s_rebind.pluginName);
+                        const ConfigEntry* schEntry = FindSchemaEntry(schema, kv.section, kv.key);
+                        CommitConfigChange(s_rebind.pluginName, kv, oldValue, schEntry);
+                        break;
+                    }
+                }
+
+                s_rebind.active = false;
+                ImGui::CloseCurrentPopup();
+                break;
+            }
+
+            ImGui::EndPopup();
+        }
+        else
+        {
+            // Popup was closed externally.
+            s_rebind.active = false;
         }
     }
 
@@ -390,21 +614,57 @@ namespace UI::ModLoaderWindow
                 ImGui::TextDisabled("Hover a setting for its description.  Changes are saved immediately.");
                 ImGui::Spacing();
 
+                // Actions column width: blocking checkbox + spacing + reset button.
+                // Sized to fit the widest possible content (keybind rows).
+                const float fh       = ImGui::GetFrameHeight();
+                const float spacing  = ImGui::GetStyle().ItemSpacing.x;
+                const float actionsW = fh + spacing + fh * 0.75f; // checkbox + R button
+
+                // One 3-column table per section so separators span full width
+                // and all rows within a section share the same column edges.
+                //   Col 0  Label   -- fixed 160px
+                //   Col 1  Widget  -- stretches to fill remaining space
+                //   Col 2  Actions -- fixed (blocking checkbox + reset)
+                const ImGuiTableFlags tblFlags =
+                    ImGuiTableFlags_BordersInnerH |
+                    ImGuiTableFlags_PadOuterX;
+
                 const char* curSection = nullptr;
+                bool        tableOpen  = false;
+
                 for (auto& kv : s_configEntries)
                 {
                     if (!curSection || strcmp(curSection, kv.section) != 0)
                     {
+                        if (tableOpen) { ImGui::EndTable(); tableOpen = false; }
                         if (curSection) ImGui::Spacing();
+
                         ImGui::SeparatorText(kv.section);
                         curSection = kv.section;
+
+                        char tblId[128];
+                        snprintf(tblId, sizeof(tblId), "##cfg_%s", kv.section);
+                        if (ImGui::BeginTable(tblId, 3, tblFlags))
+                        {
+                            ImGui::TableSetupColumn("##lbl",    ImGuiTableColumnFlags_WidthFixed,   160.0f);
+                            ImGui::TableSetupColumn("##widget", ImGuiTableColumnFlags_WidthStretch);
+                            ImGui::TableSetupColumn("##acts",   ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, actionsW);
+                            tableOpen = true;
+                        }
                     }
 
-                    const ConfigEntry* entry = FindSchemaEntry(schema, kv.section, kv.key);
-                    RenderConfigEntry(kv, entry, info->name);
+                    if (tableOpen)
+                    {
+                        const ConfigEntry* entry = FindSchemaEntry(schema, kv.section, kv.key);
+                        RenderConfigEntry(kv, entry, info->name);
+                    }
                 }
+
+                if (tableOpen) ImGui::EndTable();
             }
         }
+
+        RenderRebindModal();
 
         ImGui::EndChild();
     }
@@ -583,6 +843,43 @@ namespace UI::ModLoaderWindow
     bool IsOpen()
     {
         return s_isOpen;
+    }
+
+    // Called by plugin_manager after each plugin's PluginInit completes so that
+    // blocking state is active from the very first key event, not deferred until
+    // the user opens the config panel for that plugin.
+    void LoadBlockingStateForPlugin(const char* pluginName)
+    {
+        if (!pluginName || !*pluginName) return;
+
+        wchar_t iniPath[MAX_PATH];
+        if (!GetPluginIniPath(pluginName, iniPath, MAX_PATH)) return;
+
+        const ConfigSchema* schema = ModLoaderLogger::GetPluginSchema(pluginName);
+        if (!schema) return;
+
+        for (int i = 0; i < schema->entryCount; ++i)
+        {
+            const ConfigEntry& e = schema->entries[i];
+            if (e.type != ConfigValueType::Keybind) continue;
+            if (!e.section || !e.key) continue;
+
+            // Read the current combo value from INI
+            wchar_t wsec[64], wkey[128], wblkKey[128];
+            swprintf_s(wsec, L"%S", e.section);
+            swprintf_s(wkey, L"%S", e.key);
+            swprintf_s(wblkKey, L"%SBlocking", e.key);
+
+            wchar_t comboW[256] = {};
+            GetPrivateProfileStringW(wsec, wkey, L"", comboW, ARRAYSIZE(comboW), iniPath);
+            if (!comboW[0]) continue;
+
+            char combo[256];
+            snprintf(combo, sizeof(combo), "%ls", comboW);
+
+            bool blocking = (GetPrivateProfileIntW(wsec, wblkKey, 0, iniPath) != 0);
+            Hooks::Input::SetComboBlocking(combo, blocking);
+        }
     }
 
     void Render(IModLoaderImGui* imgui)

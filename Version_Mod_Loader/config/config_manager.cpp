@@ -479,8 +479,67 @@ namespace ModLoaderLogger
 			}
 		}
 
+		// Collect modloader-injected keys (e.g. <KeybindKey>Blocking) that are not
+		// in the plugin schema. WriteFormattedConfig only emits schema keys, so these
+		// would be silently dropped on every reformat without this rescue pass.
+		struct ExtraKV { std::wstring section, key, value; };
+		std::vector<ExtraKV> extraKeys;
+		{
+			wchar_t secBuf[4096] = {};
+			EnterCriticalSection(&g_configLock);
+			GetPrivateProfileSectionNamesW(secBuf, ARRAYSIZE(secBuf), configPath);
+			LeaveCriticalSection(&g_configLock);
+
+			for (const wchar_t* sec = secBuf; *sec; sec += wcslen(sec) + 1)
+			{
+				wchar_t kvBuf[8192] = {};
+				EnterCriticalSection(&g_configLock);
+				GetPrivateProfileSectionW(sec, kvBuf, ARRAYSIZE(kvBuf), configPath);
+				LeaveCriticalSection(&g_configLock);
+
+				for (const wchar_t* kv = kvBuf; *kv; kv += wcslen(kv) + 1)
+				{
+					const wchar_t* eq = wcschr(kv, L'=');
+					if (!eq) continue;
+					int keyLen = static_cast<int>(eq - kv);
+					// Only keep keys whose name ends in "Blocking"
+					static constexpr wchar_t kSuffix[] = L"Blocking";
+					static constexpr int kSuffixLen = 8;
+					if (keyLen <= kSuffixLen) continue;
+					if (wcsncmp(kv + keyLen - kSuffixLen, kSuffix, kSuffixLen) != 0) continue;
+
+					// Skip if it is already a schema entry (shouldn't happen, but be safe)
+					char narSec[64] = {}, narKey[128] = {};
+					snprintf(narSec, sizeof(narSec), "%ls", sec);
+					snprintf(narKey, sizeof(narKey), "%.*ls", keyLen, kv);
+					bool inSchema = false;
+					for (int i = 0; i < schema->entryCount && !inSchema; ++i)
+						if (_stricmp(schema->entries[i].section, narSec) == 0 &&
+						    _stricmp(schema->entries[i].key, narKey) == 0)
+							inSchema = true;
+					if (inSchema) continue;
+
+					ExtraKV ekv;
+					ekv.section = sec;
+					ekv.key     = std::wstring(kv, keyLen);
+					ekv.value   = eq + 1;
+					extraKeys.push_back(ekv);
+				}
+			}
+		}
+
 		FILETIME mtimeBefore = GetFileMtime(configPath);
 		WriteFormattedConfig(schema, configPath, &currentValues);
+
+		// Restore any extra *Blocking keys that were not part of the schema
+		if (!extraKeys.empty())
+		{
+			EnterCriticalSection(&g_configLock);
+			for (const auto& ekv : extraKeys)
+				WritePrivateProfileStringW(ekv.section.c_str(), ekv.key.c_str(), ekv.value.c_str(), configPath);
+			LeaveCriticalSection(&g_configLock);
+		}
+
 		FILETIME mtimeAfter = GetFileMtime(configPath);
 
 		bool fileChanged = (mtimeBefore.dwLowDateTime != mtimeAfter.dwLowDateTime ||

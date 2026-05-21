@@ -13,6 +13,7 @@
 #include "plugin_widget_registry.h"
 #include "hooks/hooks_common.h"
 #include "hooks/input/keybind_registry.h"
+#include "hooks/input/input_hook.h"
 #include "logging/log.h"
 #include "splash_window.h"
 
@@ -161,12 +162,96 @@ static bool ShouldCaptureInput()
 }
 
 // ---------------------------------------------------------------------------
+// Keybind dispatch from WM messages
+//
+// Called for every key/mouse message before the game sees it.  Fires plugin
+// keybind callbacks and returns true if the message should be swallowed
+// (blocking mode -- return 0 from WndProc so UE5 never processes it).
+//
+// Works in ALL game states: main menu, loading screens, and in-game.
+// The UGameViewportClient::InputKey hook is responsible for the in-game
+// blocking path only; dispatch always originates here.
+// ---------------------------------------------------------------------------
+static bool DispatchKeybindMessage(UINT msg, WPARAM wParam, LPARAM lParam)
+{
+	using namespace Hooks::Input;
+
+	EModKey      mk    = EModKey::Unknown;
+	EModKeyEvent event = EModKeyEvent::Pressed;
+
+	switch (msg)
+	{
+	case WM_KEYDOWN:
+	case WM_SYSKEYDOWN:
+		// lParam bit 30: key was already down (auto-repeat) -- ignore repeats.
+		if (lParam & (1 << 30)) return false;
+		mk    = VKToModKey(static_cast<int>(wParam));
+		event = EModKeyEvent::Pressed;
+		break;
+
+	case WM_KEYUP:
+	case WM_SYSKEYUP:
+		mk    = VKToModKey(static_cast<int>(wParam));
+		event = EModKeyEvent::Released;
+		break;
+
+	case WM_LBUTTONDOWN: mk = EModKey::LeftMouseButton;   event = EModKeyEvent::Pressed;  break;
+	case WM_LBUTTONUP:   mk = EModKey::LeftMouseButton;   event = EModKeyEvent::Released; break;
+	case WM_RBUTTONDOWN: mk = EModKey::RightMouseButton;  event = EModKeyEvent::Pressed;  break;
+	case WM_RBUTTONUP:   mk = EModKey::RightMouseButton;  event = EModKeyEvent::Released; break;
+	case WM_MBUTTONDOWN: mk = EModKey::MiddleMouseButton; event = EModKeyEvent::Pressed;  break;
+	case WM_MBUTTONUP:   mk = EModKey::MiddleMouseButton; event = EModKeyEvent::Released; break;
+
+	case WM_XBUTTONDOWN:
+		mk    = (GET_XBUTTON_WPARAM(wParam) == XBUTTON1)
+		            ? EModKey::ThumbMouseButton
+		            : EModKey::ThumbMouseButton2;
+		event = EModKeyEvent::Pressed;
+		break;
+	case WM_XBUTTONUP:
+		mk    = (GET_XBUTTON_WPARAM(wParam) == XBUTTON1)
+		            ? EModKey::ThumbMouseButton
+		            : EModKey::ThumbMouseButton2;
+		event = EModKeyEvent::Released;
+		break;
+
+	default:
+		return false;
+	}
+
+	if (mk == EModKey::Unknown) return false;
+
+	// Do not fire standalone modifier keys as keybinds.
+	int vk = ModKeyToVK(mk);
+	if (vk == VK_LCONTROL || vk == VK_RCONTROL ||
+	    vk == VK_LSHIFT   || vk == VK_RSHIFT   ||
+	    vk == VK_LMENU    || vk == VK_RMENU)
+		return false;
+
+	EModKeyModifiers mods = SampleCurrentModifiers();
+
+	Dispatch(mk, event);
+	DispatchCombo(mk, mods, event);
+
+	// Tell the caller to swallow this message if blocking is enabled.
+	return ShouldBlock(mk, mods);
+}
+
+// ---------------------------------------------------------------------------
 // WndProc subclass -- forwards messages to ImGui, swallows input when UI open
 // ---------------------------------------------------------------------------
 static LRESULT CALLBACK HookedWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
 	if (ImGui_ImplWin32_WndProcHandler(hWnd, msg, wParam, lParam))
 		return true;
+
+	// Dispatch plugin keybind callbacks and optionally swallow the message.
+	// Only fires when the modloader UI is not open (same gate as InputKey hook).
+	if (!ShouldCaptureInput())
+	{
+		if (DispatchKeybindMessage(msg, wParam, lParam))
+			return 0; // blocking -- swallow before UE5 sees it
+	}
 
 	if (ShouldCaptureInput())
 	{
@@ -1408,6 +1493,7 @@ namespace UI::ImGuiBackend
 	void Shutdown()
 	{
 		g_shutdown = true;
+		Hooks::InputHook::Remove();
 
 		// Restore the original vtable entry.
 		if (g_vtableSlot && g_originalPresent)
