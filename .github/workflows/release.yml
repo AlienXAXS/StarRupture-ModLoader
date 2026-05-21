@@ -11,9 +11,14 @@ on:
         description: 'Sync Plugin SDK repo (header, DLLs, release)?'
         type: boolean
         default: false
+      sync_only:
+        description: 'Sync Plugin SDK only — skip build and release, sync latest release to SDK repo'
+        type: boolean
+        default: false
 
 jobs:
   build:
+    if: ${{ github.event.inputs.sync_only != 'true' }}
     runs-on: windows-latest
     permissions:
       contents: write  # Required to create releases and upload assets
@@ -266,12 +271,38 @@ jobs:
 
   sync-plugin-sdk:
     needs: build
-    if: ${{ github.event.inputs.sync_plugin_sdk == 'true' }}
+    if: |
+      always() &&
+      (github.event.inputs.sync_plugin_sdk == 'true' || github.event.inputs.sync_only == 'true') &&
+      (needs.build.result == 'success' || needs.build.result == 'skipped')
     runs-on: windows-latest
     permissions:
       contents: read
 
     steps:
+      - name: Resolve tag and DLL source
+        id: resolve
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BUILD_TAG: ${{ needs.build.outputs.tag }}
+        run: |
+          if ($env:BUILD_TAG -and $env:BUILD_TAG -ne '') {
+            # Fresh build — tag came from the build job
+            Write-Host "Using tag from build job: $env:BUILD_TAG"
+            echo "TAG=$env:BUILD_TAG" >> $env:GITHUB_OUTPUT
+            echo "FROM_ARTIFACT=true"  >> $env:GITHUB_OUTPUT
+          } else {
+            # Sync-only — fetch the latest release tag from this repo
+            $tag = gh release list --repo ${{ github.repository }} --limit 1 --json tagName |
+              ConvertFrom-Json |
+              Select-Object -ExpandProperty tagName
+            if (-not $tag) { Write-Error "No releases found to sync."; exit 1 }
+            Write-Host "Sync-only mode — using latest release tag: $tag"
+            echo "TAG=$tag"           >> $env:GITHUB_OUTPUT
+            echo "FROM_ARTIFACT=false" >> $env:GITHUB_OUTPUT
+          }
+
       - name: Checkout main repo
         uses: actions/checkout@v4
         with:
@@ -284,19 +315,33 @@ jobs:
           token: ${{ secrets.SDK_REPO_PAT }}
           path: sdk
 
-      - name: Download pre-built dwmapi.dll artifacts
+      - name: Download pre-built dwmapi.dll artifacts (from build job)
+        if: ${{ steps.resolve.outputs.FROM_ARTIFACT == 'true' }}
         uses: actions/download-artifact@v4
         with:
           name: modloader-dlls
           path: modloader-dlls
 
+      - name: Download pre-built dwmapi.dll artifacts (from latest release)
+        if: ${{ steps.resolve.outputs.FROM_ARTIFACT == 'false' }}
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tag = "${{ steps.resolve.outputs.TAG }}"
+          New-Item -ItemType Directory -Force modloader-dlls | Out-Null
+          gh release download $tag `
+            --repo ${{ github.repository }} `
+            --pattern "dwmapi-Client.dll" `
+            --pattern "dwmapi-Server.dll" `
+            --dir modloader-dlls
+          Write-Host "Downloaded DLLs from release $tag"
+
       - name: Sync headers into plugin SDK repo
         shell: pwsh
         run: |
-          # plugin_interface.h -> include/
           New-Item -ItemType Directory -Force "sdk\include" | Out-Null
           Copy-Item "main\Version_Mod_Loader\plugins\plugin_interface.h" "sdk\include\plugin_interface.h" -Force
-
           Write-Host "Sync complete."
 
       - name: Commit and push to SDK repo
@@ -311,7 +356,7 @@ jobs:
             Write-Host "No changes to commit."
             exit 0
           }
-          git commit -m "Sync from modloader ${{ needs.build.outputs.tag }}"
+          git commit -m "Sync from modloader ${{ steps.resolve.outputs.TAG }}"
           git push
 
       - name: Create SDK release with pre-built dwmapi.dll
@@ -319,11 +364,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.SDK_REPO_PAT }}
         run: |
-          $tag = "${{ needs.build.outputs.tag }}"
+          $tag = "${{ steps.resolve.outputs.TAG }}"
 
-          # The artifact is uploaded as flat files:
-          #   modloader-dlls/dwmapi-Client.dll
-          #   modloader-dlls/dwmapi-Server.dll
           Copy-Item "modloader-dlls\dwmapi-Client.dll" "dwmapi-Client.dll"
           Copy-Item "modloader-dlls\dwmapi-Server.dll" "dwmapi-Server.dll"
 
