@@ -52,6 +52,9 @@
     <Filter Include="Source Files\hooks\game\hud_post_render">
       <UniqueIdentifier>{b2e7f3a1-c891-4d56-8f23-1a2b3c4d5e6f}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Source Files\hooks\game\session_info">
+      <UniqueIdentifier>{c3f8a2b0-d912-4e67-9034-2b3c4d5e6f70}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Source Files\network_channel">
       <UniqueIdentifier>{f4a0b2c3-e158-4f89-ad45-3c4d5e6f7a81}</UniqueIdentifier>
     </Filter>
@@ -203,6 +206,9 @@
     </ClInclude>
     <ClInclude Include="hooks\game\hud_post_render\hud_post_render.h">
       <Filter>Source Files\hooks\game\hud_post_render</Filter>
+    </ClInclude>
+    <ClInclude Include="hooks\game\session_info\session_info.h">
+      <Filter>Source Files\hooks\game\session_info</Filter>
     </ClInclude>
     <ClInclude Include="hooks\game\experience_load_complete\experience_load_complete.h">
       <Filter>Source Files\hooks\game\experience_load_complete</Filter>
@@ -424,6 +430,9 @@
     </ClCompile>
     <ClCompile Include="hooks\game\hud_post_render\hud_post_render.cpp">
       <Filter>Source Files\hooks\game\hud_post_render</Filter>
+    </ClCompile>
+    <ClCompile Include="hooks\game\session_info\session_info.cpp">
+      <Filter>Source Files\hooks\game\session_info</Filter>
     </ClCompile>
     <ClCompile Include="network_channel\network_channel.cpp">
       <Filter>Source Files\network_channel</Filter>

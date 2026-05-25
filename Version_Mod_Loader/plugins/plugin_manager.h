@@ -13,6 +13,7 @@ namespace PluginManager
         char author[64];
         bool isLoaded;
         bool isOutOfDate;
+        bool needsModLoaderUpdate;
     };
 
     // Initialize the plugin manager

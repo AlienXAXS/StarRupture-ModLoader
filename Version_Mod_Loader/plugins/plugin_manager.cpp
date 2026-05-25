@@ -89,7 +89,8 @@ namespace PluginManager
 		std::string cachedVersion;
 		std::string cachedAuthor;
 
-		bool isOutOfDate;  // true when DLL was found but rejected due to version mismatch
+		bool isOutOfDate;            // true when plugin interface version is too old
+		bool needsModLoaderUpdate;   // true when plugin interface version is too new
 
 		// Stable identity struct passed to PluginInit and retained by the plugin->
 		// name/version point into cachedName/cachedVersion so they outlive PluginInfo.
@@ -169,10 +170,11 @@ namespace PluginManager
 				PLUGIN_INTERFACE_VERSION_MIN, PLUGIN_INTERFACE_VERSION_MAX,
 				rec.fileName.c_str());
 			// Cache what we can from the DLL so the UI can display it.
-			rec.cachedName    = info->name    ? info->name    : "";
-			rec.cachedVersion = info->version ? info->version : "";
-			rec.cachedAuthor  = info->author  ? info->author  : "";
-			rec.isOutOfDate   = true;
+			rec.cachedName          = info->name    ? info->name    : "";
+			rec.cachedVersion       = info->version ? info->version : "";
+			rec.cachedAuthor        = info->author  ? info->author  : "";
+			rec.isOutOfDate         = true;
+			rec.needsModLoaderUpdate = (info->interfaceVersion > PLUGIN_INTERFACE_VERSION_MAX);
 			FreeLibrary(hModule);
 			return false;
 		}
@@ -200,7 +202,8 @@ namespace PluginManager
 	{
 		auto rec = std::make_unique<LoadedPlugin>();
 		rec->fileName = dllPath;
-		rec->isOutOfDate = false;
+		rec->isOutOfDate         = false;
+		rec->needsModLoaderUpdate = false;
 
 		if (!LoadPluginIntoRecord(*rec))
 		{
@@ -491,8 +494,9 @@ namespace PluginManager
 				strncpy_s(out[i].name,    p.cachedName.c_str(),    _TRUNCATE);
 				strncpy_s(out[i].version, p.cachedVersion.c_str(), _TRUNCATE);
 				strncpy_s(out[i].author,  p.cachedAuthor.c_str(),  _TRUNCATE);
-				out[i].isLoaded     = p.isInitialized;
-				out[i].isOutOfDate  = p.isOutOfDate;
+				out[i].isLoaded              = p.isInitialized;
+				out[i].isOutOfDate           = p.isOutOfDate;
+				out[i].needsModLoaderUpdate  = p.needsModLoaderUpdate;
 			}
 		}
 		LeaveCriticalSection(&g_pluginLock);

@@ -25,12 +25,24 @@
 // v31: Added extra_window_flags to PluginWindowHints.
 //      Allows plugins to pass additional ImGuiWindowFlags (e.g. NoTitleBar, NoResize).
 //      0 = no extra flags (default behaviour unchanged). MIN remains 26.
+// v32: Added IPluginClientSessionInfo (client only, null on server/generic).
+//      Exposes GetSessionOnlineMode, IsMultiplayer, IsServer query functions.
 #define PLUGIN_INTERFACE_VERSION_MIN 26
-#define PLUGIN_INTERFACE_VERSION_MAX 31
+#define PLUGIN_INTERFACE_VERSION_MAX 32
 #define PLUGIN_INTERFACE_VERSION PLUGIN_INTERFACE_VERSION_MAX
 
 enum class PluginLogLevel { Trace = 0, Debug = 1, Info = 2, Warn = 3, Error = 4 };
 enum class ConfigValueType { String, Integer, Float, Boolean, Keybind };
+
+// Session online mode — mirrors ECrOnlineSessionMode / ECommonSessionOnlineMode from the game.
+// Offline = solo/standalone, LAN/Online = multiplayer session.
+enum class EPluginSessionOnlineMode : uint8_t
+{
+    Offline = 0,
+    LAN     = 1,
+    Online  = 2,
+    Unknown = 255
+};
 
 struct ConfigEntry
 {
@@ -543,6 +555,23 @@ struct IPluginHttpServer
 };
 
 // ---------------------------------------------------------------------------
+// Client session info (v32) — client only, null on server/generic
+// ---------------------------------------------------------------------------
+struct IPluginClientSessionInfo
+{
+    // Returns the current online mode read from UCrSessionSubsystem.
+    // Offline = solo/standalone, LAN or Online = connected to a session.
+    // Returns Unknown if the subsystem is not yet available.
+    EPluginSessionOnlineMode (*GetSessionOnlineMode)();
+
+    // Convenience: true if GetSessionOnlineMode() != Offline and != Unknown.
+    bool (*IsMultiplayer)();
+
+    // True when UCrSessionSubsystem::bIsServer is set (i.e. this instance is acting as server).
+    bool (*IsServer)();
+};
+
+// ---------------------------------------------------------------------------
 // Top-level hooks interface (v14+)
 // ---------------------------------------------------------------------------
 struct IPluginHooks
@@ -560,6 +589,7 @@ struct IPluginHooks
 	IPluginNetworkChannel* Network;   // v17 — server+client; null on generic
 	IPluginNativePointers* NativePointers; // v21
 	IPluginHttpServer*     HttpServer;     // v22 — server only, null on client/generic
+	IPluginClientSessionInfo* ClientSession; // v32 — client only, null on server/generic
 };
 
 // ---------------------------------------------------------------------------

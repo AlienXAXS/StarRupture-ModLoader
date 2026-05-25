@@ -29,6 +29,7 @@
 #include "UI/plugin_widget_registry.h"
 #include "hooks/game/hud_post_render/hud_post_render.h"
 #include "hooks/game/client_message/client_message.h"
+#include "hooks/game/session_info/session_info.h"
 #endif
 #include <unordered_map>
 #include <mutex>
@@ -832,6 +833,30 @@ namespace ModLoaderLogger
 		HooksUnregisterOnPostRender,
 		HooksGetGatherPlayersDataAddress
 	};
+
+	// --- Client session info wrappers (v32) ---
+
+	static EPluginSessionOnlineMode HooksGetSessionOnlineMode()
+	{
+		return Hooks::SessionInfo::GetSessionOnlineMode();
+	}
+
+	static bool HooksIsMultiplayer()
+	{
+		return Hooks::SessionInfo::IsMultiplayer();
+	}
+
+	static bool HooksIsServer()
+	{
+		return Hooks::SessionInfo::IsServer();
+	}
+
+	// Client session info sub-interface struct (v32)
+	static IPluginClientSessionInfo g_clientSessionInfo = {
+		HooksGetSessionOnlineMode,
+		HooksIsMultiplayer,
+		HooksIsServer
+	};
 #endif // MODLOADER_CLIENT_BUILD
 
 	// --- Native pointer wrappers (v21) ---
@@ -956,20 +981,25 @@ namespace ModLoaderLogger
 		&g_playerEvents,
 		&g_actorEvents,
 #ifdef MODLOADER_CLIENT_BUILD
-		&g_inputEvents,    // v15 — keybind events (client only)
+		&g_inputEvents,      // v15 — keybind events (client only)
 		&g_uiEvents,         // v15 — custom panel + config-change callbacks (client only)
 		&g_hudEvents,        // v16 — AHUD::PostRender callbacks + HUD function addresses (client only)
 #else
-		nullptr,          // v15 — Input is null on server/generic builds
+		nullptr,             // v15 — Input is null on server/generic builds
 		nullptr,             // v15 — UI is null on server/generic builds
-		nullptr,    // v16 — HUD is null on server/generic builds
+		nullptr,             // v16 — HUD is null on server/generic builds
 #endif
-		nullptr,      // v17 — Network; filled in below by GetPluginHooks()
+		nullptr,             // v17 — Network; filled in below by GetPluginHooks()
 		&g_nativePointers,   // v21 — trampoline addresses for all managed hooks
 #ifdef MODLOADER_SERVER_BUILD
-		&g_httpServer // v22 — HTTP static-file routes + raw-request filters (server only)
+		&g_httpServer,       // v22 — HTTP static-file routes + raw-request filters (server only)
 #else
-		nullptr       // v22 — HttpServer is null on client/generic builds
+		nullptr,             // v22 — HttpServer is null on client/generic builds
+#endif
+#ifdef MODLOADER_CLIENT_BUILD
+		&g_clientSessionInfo // v32 — session mode query functions (client only)
+#else
+		nullptr              // v32 — ClientSession is null on server/generic builds
 #endif
 	};
 	static bool g_networkChannelInitialized = false;
