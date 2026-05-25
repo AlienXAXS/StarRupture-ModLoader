@@ -214,7 +214,7 @@ namespace UI::ModLoaderWindow
 
                 ImGui::TableSetColumnIndex(3);
                 if (s.isOutOfDate)
-                    ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.1f, 1.0f), "Out of date");
+                    ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.1f, 1.0f), "Needs Update");
                 else if (s.isLoaded)
                     ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "Loaded");
                 else
@@ -225,7 +225,9 @@ namespace UI::ModLoaderWindow
 
                 if (s.isOutOfDate)
                 {
-                    ImGui::TextDisabled("Incompatible version");
+                    ImGui::TextDisabled(s.needsModLoaderUpdate
+                        ? "Please Update Mod Loader Version"
+                        : "Please Update The Plugin");
                 }
                 else
                 {
@@ -904,7 +906,7 @@ namespace UI::ModLoaderWindow
             ImVec2(0.5f, 0.5f));
 
         ImGuiWindowFlags flags = ImGuiWindowFlags_None;
-        if (!ImGui::Begin("ModLoader##main", &s_isOpen, flags))
+        if (!ImGui::Begin("Mod Loader##main", &s_isOpen, flags))
         {
             ImGui::End();
             return;
