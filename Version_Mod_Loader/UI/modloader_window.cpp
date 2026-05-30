@@ -213,7 +213,9 @@ namespace UI::ModLoaderWindow
                 ImGui::TextUnformatted(s.author[0] ? s.author : "?");
 
                 ImGui::TableSetColumnIndex(3);
-                if (s.isOutOfDate)
+                if (s.isWrongTarget)
+                    ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "Cannot Load");
+                else if (s.isOutOfDate)
                     ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.1f, 1.0f), "Needs Update");
                 else if (s.isLoaded)
                     ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "Loaded");
@@ -223,7 +225,11 @@ namespace UI::ModLoaderWindow
                 ImGui::TableSetColumnIndex(4);
                 ImGui::PushID(i);
 
-                if (s.isOutOfDate)
+                if (s.isWrongTarget)
+                {
+                    ImGui::TextDisabled("You're either trying to load a Server plugin on the Client, or vice versa");
+                }
+                else if (s.isOutOfDate)
                 {
                     ImGui::TextDisabled(s.needsModLoaderUpdate
                         ? "Please Update Mod Loader Version"

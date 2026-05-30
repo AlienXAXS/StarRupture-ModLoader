@@ -91,6 +91,7 @@ namespace PluginManager
 
 		bool isOutOfDate;            // true when plugin interface version is too old
 		bool needsModLoaderUpdate;   // true when plugin interface version is too new
+		bool isWrongTarget;          // true when plugin was built for a different build target
 
 		// Stable identity struct passed to PluginInit and retained by the plugin->
 		// name/version point into cachedName/cachedVersion so they outlive PluginInfo.
@@ -179,6 +180,31 @@ namespace PluginManager
 			return false;
 		}
 
+		rec.isWrongTarget = false;
+
+#if defined(MODLOADER_CLIENT_BUILD)
+		constexpr int currentTarget = PLUGIN_TARGET_CLIENT;
+		constexpr const char* currentTargetName = "client";
+		constexpr const char* expectedTargetName = "server";
+#else
+		constexpr int currentTarget = PLUGIN_TARGET_SERVER;
+		constexpr const char* currentTargetName = "server";
+		constexpr const char* expectedTargetName = "client";
+#endif
+
+		if (info->pluginTarget != currentTarget)
+		{
+			ModLoaderLogger::LogMessage(
+				L"Plugin '%S' was built for a %S build but this is a %S build -- refusing to load.",
+				info->name ? info->name : "(unknown)", expectedTargetName, currentTargetName);
+			rec.cachedName    = info->name    ? info->name    : "";
+			rec.cachedVersion = info->version ? info->version : "";
+			rec.cachedAuthor  = info->author  ? info->author  : "";
+			rec.isWrongTarget = true;
+			FreeLibrary(hModule);
+			return false;
+		}
+
 		ModLoaderLogger::LogMessage(L"Plugin info - Name: %S, Version: %S, Author: %S, Interface: %d (modloader expects [%d, %d])",
 			info->name, info->version, info->author,
 			info->interfaceVersion, PLUGIN_INTERFACE_VERSION_MIN, PLUGIN_INTERFACE_VERSION_MAX);
@@ -204,11 +230,12 @@ namespace PluginManager
 		rec->fileName = dllPath;
 		rec->isOutOfDate         = false;
 		rec->needsModLoaderUpdate = false;
+		rec->isWrongTarget        = false;
 
 		if (!LoadPluginIntoRecord(*rec))
 		{
-			// If version check populated cached strings, keep the record visible in the UI.
-			if (rec->isOutOfDate)
+			// Keep the record visible in the UI for out-of-date or wrong-target plugins.
+			if (rec->isOutOfDate || rec->isWrongTarget)
 			{
 				EnterCriticalSection(&g_pluginLock);
 				g_loadedPlugins.push_back(std::move(rec));
@@ -497,6 +524,7 @@ namespace PluginManager
 				out[i].isLoaded              = p.isInitialized;
 				out[i].isOutOfDate           = p.isOutOfDate;
 				out[i].needsModLoaderUpdate  = p.needsModLoaderUpdate;
+				out[i].isWrongTarget         = p.isWrongTarget;
 			}
 		}
 		LeaveCriticalSection(&g_pluginLock);
@@ -553,6 +581,10 @@ namespace PluginManager
 			p.hModule = nullptr;
 			p.info    = nullptr;
 		}
+
+		p.isOutOfDate         = false;
+		p.needsModLoaderUpdate = false;
+		p.isWrongTarget        = false;
 
 		bool ok = LoadPluginIntoRecord(p);
 

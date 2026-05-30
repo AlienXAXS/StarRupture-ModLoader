@@ -14,6 +14,7 @@ namespace PluginManager
         bool isLoaded;
         bool isOutOfDate;
         bool needsModLoaderUpdate;
+        bool isWrongTarget;
     };
 
     // Initialize the plugin manager

@@ -27,8 +27,11 @@
 //      0 = no extra flags (default behaviour unchanged). MIN remains 26.
 // v32: Added IPluginClientSessionInfo (client only, null on server/generic).
 //      Exposes GetSessionOnlineMode, IsMultiplayer, IsServer query functions.
-#define PLUGIN_INTERFACE_VERSION_MIN 26
-#define PLUGIN_INTERFACE_VERSION_MAX 32
+// v33: Added pluginTarget field to PluginInfo. Every plugin must now declare
+//      PLUGIN_TARGET_CLIENT or PLUGIN_TARGET_SERVER. The loader rejects plugins
+//      that don't match the current build target.
+#define PLUGIN_INTERFACE_VERSION_MIN 33
+#define PLUGIN_INTERFACE_VERSION_MAX 33
 #define PLUGIN_INTERFACE_VERSION PLUGIN_INTERFACE_VERSION_MAX
 
 enum class PluginLogLevel { Trace = 0, Debug = 1, Info = 2, Warn = 3, Error = 4 };
@@ -593,6 +596,18 @@ struct IPluginHooks
 };
 
 // ---------------------------------------------------------------------------
+// Plugin build target
+// ---------------------------------------------------------------------------
+enum PluginTarget : int
+{
+    PLUGIN_TARGET_CLIENT = 0,
+    PLUGIN_TARGET_SERVER = 1,
+};
+
+#define PLUGIN_TARGET_CLIENT_ONLY  PLUGIN_TARGET_CLIENT
+#define PLUGIN_TARGET_SERVER_ONLY  PLUGIN_TARGET_SERVER
+
+// ---------------------------------------------------------------------------
 // Plugin metadata and identity
 // ---------------------------------------------------------------------------
 struct PluginInfo
@@ -602,6 +617,7 @@ struct PluginInfo
 	const char* author;
 	const char* description;
 	int interfaceVersion;
+	int pluginTarget;  // PluginTarget value -- required
 };
 
 struct IPluginSelf
