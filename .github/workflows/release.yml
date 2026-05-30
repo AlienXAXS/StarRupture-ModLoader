@@ -276,6 +276,7 @@ jobs:
           file_group_id: ${{ secrets.NEXUS_SR_ML_CLIENT_GROUP_ID }}
           filename: ${{ github.workspace }}\StarRupture-ModLoader-Client-${{ steps.tag.outputs.TAG }}.zip
           archive_existing_file: true
+          allow_mod_manager_download: false
           display_name: "StarRupture ModLoader Client ${{ steps.tag.outputs.TAG }}"
           description: "Changelog: https://github.com/${{ github.repository }}/releases/tag/${{ steps.tag.outputs.TAG }}"
           version: ${{ steps.tag.outputs.TAG }}
@@ -287,6 +288,7 @@ jobs:
           file_group_id: ${{ secrets.NEXUS_SR_ML_SERVER_GROUP_ID }}
           filename: ${{ github.workspace }}\StarRupture-ModLoader-Server-${{ steps.tag.outputs.TAG }}.zip
           archive_existing_file: true
+          allow_mod_manager_download: false
           display_name: "StarRupture ModLoader Server ${{ steps.tag.outputs.TAG }}"
           description: "Changelog: https://github.com/${{ github.repository }}/releases/tag/${{ steps.tag.outputs.TAG }}"
           version: ${{ steps.tag.outputs.TAG }}
