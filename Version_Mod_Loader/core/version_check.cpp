@@ -83,15 +83,12 @@ bool VerifyGameVersion()
         for (int countdown = 5; countdown > 0; --countdown)
         {
             wchar_t msg[64];
-            swprintf_s(msg, L"Wrong game version! Closing in %d...", countdown);
+            swprintf_s(msg, L"Invalid Game Version - Plugins will not be loaded (%d)", countdown);
             Splash::SetStatus(msg);
             Sleep(1000);
         }
         Splash::Close();
 #endif
-
-        if (g_pluginsLoadedEvent)
-            SetEvent(g_pluginsLoadedEvent);
 
         return false;
     }
