@@ -101,7 +101,7 @@ DWORD WINAPI MainInitThreadProc(LPVOID)
 
     Splash::SetStatus(L"Ready.");
     Splash::SetProgress(1.0f);
-    ModLoaderLogger::LogInfo(L"Mod loader injection complete - Yay!");
+    ModLoaderLogger::LogInfo(L"Mod loader initialised successfully.");
 
     if (g_pluginsLoadedEvent)
         SetEvent(g_pluginsLoadedEvent);
