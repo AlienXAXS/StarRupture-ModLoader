@@ -149,6 +149,22 @@ jobs:
           Write-Host "Final tag: $tag"
           echo "TAG=$tag" >> $env:GITHUB_OUTPUT
 
+      - name: Patch version.rc with release tag
+        shell: pwsh
+        run: |
+          $tag = "${{ steps.tag.outputs.TAG }}" -replace '^v',''
+          $parts = $tag -split '\.'
+          while ($parts.Count -lt 4) { $parts += '0' }
+          $commas  = $parts[0..3] -join ','
+          $dots    = $parts[0..3] -join '.'
+          $rc = Get-Content "Version_Mod_Loader\version.rc" -Raw
+          $rc = $rc -replace 'FILEVERSION\s+[\d,]+',    "FILEVERSION     $commas"
+          $rc = $rc -replace 'PRODUCTVERSION\s+[\d,]+', "PRODUCTVERSION  $commas"
+          $rc = $rc -replace '"FileVersion",\s+"[^"]*"',    "`"FileVersion`",      `"$dots`""
+          $rc = $rc -replace '"ProductVersion",\s+"[^"]*"', "`"ProductVersion`",   `"$dots`""
+          Set-Content "Version_Mod_Loader\version.rc" $rc -Encoding UTF8NoBOM
+          Write-Host "version.rc patched to $dots"
+
       - name: Build Client Release
         run: |
           msbuild "StarRupture-ModLoader.sln" `
