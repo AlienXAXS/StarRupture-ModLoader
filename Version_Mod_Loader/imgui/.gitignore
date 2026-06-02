@@ -1,7 +1,5 @@
-## Misc artifacts
+## OSX artifacts
 .DS_Store
-.claude
-.vscode
 
 ## Dear ImGui artifacts
 imgui.ini
@@ -56,6 +54,9 @@ examples/example_sdl3_wgpu/web/*
 ## JetBrains IDE artifacts
 .idea
 cmake-build-*
+
+## VS code artifacts
+.vscode
 
 ## Unix executables from our example Makefiles
 examples/example_apple_metal/example_apple_metal
