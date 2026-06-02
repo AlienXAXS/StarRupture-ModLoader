@@ -334,7 +334,8 @@ jobs:
     if: |
       always() &&
       (github.event.inputs.sync_plugin_sdk == 'true' || github.event.inputs.sync_only == 'true') &&
-      (needs.build.result == 'success' || needs.build.result == 'skipped')
+      (needs.build.result == 'success' || needs.build.result == 'skipped') &&
+      needs.build.outputs.is_preview != 'true'
     runs-on: windows-latest
     permissions:
       contents: read
