@@ -32,6 +32,13 @@ DWORD WINAPI MainInitThreadProc(LPVOID)
     }
 
     Splash::Show();
+
+    // Version check before hook installation -- if the game build is wrong
+    // we must not install hooks (the engine init hook would block the main
+    // thread waiting on g_pluginsReadyEvent which would never be signalled).
+    if (!VerifyGameVersion())
+        return 0;
+
     InstallHooksPhase();
     LogToFile::Info("[init] Stage 1 complete -- hooks installed, main thread running");
 
@@ -42,9 +49,6 @@ DWORD WINAPI MainInitThreadProc(LPVOID)
     // ------------------------------------------------------------------
     Splash::SetStatus(L"Starting mod loader...");
     Splash::SetProgress(0.0f);
-
-    if (!VerifyGameVersion())
-        return 0;
 
     LogStartupEnvironment();
     InitSubsystems();

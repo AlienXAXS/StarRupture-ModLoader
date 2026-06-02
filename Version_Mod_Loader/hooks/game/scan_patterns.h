@@ -17,6 +17,11 @@ namespace ScanPatterns
 	inline constexpr auto AHUD_PostRender =
 		"40 55 53 48 8D 6C 24 ?? 48 81 EC ?? ?? ?? ?? 48 8B D9 E8 ?? ?? ?? ?? 48 85 C0";
 
+	// UCrMapManuSubsystem::GatherPlayersData(UCrMapManuSubsystem* this)
+	// Native C++ function -- not a UFUNCTION, must be found via AOB scan.
+	inline constexpr auto UCrMapManuSubsystem_GatherPlayersData =
+		"40 55 53 56 48 8D AC 24 ?? ?? ?? ?? 48 81 EC ?? ?? ?? ?? 48 8B D9 E8";
+
 	// UGameViewportClient::InputKey -- intercepts all keyboard/mouse input before UE5 processes it.
 	// Returning false (0) from our detour consumes the event (game will not react to it).
 	// Signature: __int64 __fastcall UGameViewportClient::InputKey(
