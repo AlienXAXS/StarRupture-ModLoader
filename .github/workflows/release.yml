@@ -7,6 +7,14 @@ on:
         description: 'Version override (e.g. 1.2.3) — leave blank to auto-increment'
         type: string
         default: ''
+      preview:
+        description: 'Preview release — custom tag suffix, marks as pre-release, skips Nexus upload'
+        type: boolean
+        default: false
+      preview_tag:
+        description: 'Preview tag suffix (e.g. beta.1, rc.1) — only used when Preview is enabled'
+        type: string
+        default: 'preview'
       sync_plugin_sdk:
         description: 'Sync Plugin SDK repo (header, DLLs, release)?'
         type: boolean
@@ -23,7 +31,8 @@ jobs:
     permissions:
       contents: write  # Required to create releases and upload assets
     outputs:
-      tag: ${{ steps.tag.outputs.TAG }}
+      tag:        ${{ steps.tag.outputs.TAG }}
+      is_preview: ${{ steps.tag.outputs.IS_PREVIEW }}
 
     steps:
       - name: Checkout repository
@@ -146,10 +155,13 @@ jobs:
           Write-Host "DEBUG chosen = $(Format-Semver $chosen)"
 
           $tag = Format-Semver $chosen
+          $isPreview = "${{ github.event.inputs.preview }}" -eq 'true'
+          if ($isPreview) {
+            $suffix = "${{ github.event.inputs.preview_tag }}".Trim()
+            if ($suffix -eq '') { $suffix = 'preview' }
+            $tag = "$tag-$suffix"
+          }
           Write-Host "Final tag: $tag"
-<<<<<<< Updated upstream
-          echo "TAG=$tag" >> $env:GITHUB_OUTPUT
-=======
           echo "TAG=$tag"          >> $env:GITHUB_OUTPUT
           echo "IS_PREVIEW=$($isPreview.ToString().ToLower())" >> $env:GITHUB_OUTPUT
 
@@ -168,7 +180,6 @@ jobs:
           $rc = $rc -replace '"ProductVersion",\s+"[^"]*"', "`"ProductVersion`",   `"$dots`""
           Set-Content "Version_Mod_Loader\version.rc" $rc -Encoding UTF8NoBOM
           Write-Host "version.rc patched to $dots"
->>>>>>> Stashed changes
 
       - name: Build Client Release
         run: |
@@ -286,11 +297,14 @@ jobs:
           Write-Host "Uploading $($assets.Count) asset(s):"
           $assets | ForEach-Object { Write-Host "  $_" }
 
-          gh release create $tag @assets `
-            --title "StarRupture ModLoader $tag" `
-            --generate-notes
+          $flags = @('--title', "StarRupture ModLoader $tag", '--generate-notes')
+          if ("${{ steps.tag.outputs.IS_PREVIEW }}" -eq 'true') {
+            $flags += '--prerelease'
+          }
+          gh release create $tag @assets @flags
 
       - name: Upload Client build to Nexus Mods
+        if: ${{ steps.tag.outputs.IS_PREVIEW != 'true' }}
         uses: Nexus-Mods/upload-action@main
         with:
           api_key: ${{ secrets.NEXUS_APIKEY }}
@@ -303,6 +317,7 @@ jobs:
           version: ${{ steps.tag.outputs.TAG }}
 
       - name: Upload Server build to Nexus Mods
+        if: ${{ steps.tag.outputs.IS_PREVIEW != 'true' }}
         uses: Nexus-Mods/upload-action@main
         with:
           api_key: ${{ secrets.NEXUS_APIKEY }}
@@ -319,7 +334,8 @@ jobs:
     if: |
       always() &&
       (github.event.inputs.sync_plugin_sdk == 'true' || github.event.inputs.sync_only == 'true') &&
-      (needs.build.result == 'success' || needs.build.result == 'skipped')
+      (needs.build.result == 'success' || needs.build.result == 'skipped') &&
+      needs.build.outputs.is_preview != 'true'
     runs-on: windows-latest
     permissions:
       contents: read
