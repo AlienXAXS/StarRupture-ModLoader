@@ -30,8 +30,9 @@
 // v33: Added pluginTarget field to PluginInfo. Every plugin must now declare
 //      PLUGIN_TARGET_CLIENT or PLUGIN_TARGET_SERVER. The loader rejects plugins
 //      that don't match the current build target.
-#define PLUGIN_INTERFACE_VERSION_MIN 33
-#define PLUGIN_INTERFACE_VERSION_MAX 33
+// v34: Game had an update, needed interface bump
+#define PLUGIN_INTERFACE_VERSION_MIN 34
+#define PLUGIN_INTERFACE_VERSION_MAX 34
 #define PLUGIN_INTERFACE_VERSION PLUGIN_INTERFACE_VERSION_MAX
 
 enum class PluginLogLevel { Trace = 0, Debug = 1, Info = 2, Warn = 3, Error = 4 };
