@@ -278,6 +278,18 @@ namespace UI::ModLoaderWindow
         return nullptr;
     }
 
+    static void FormatFloat(char* buf, size_t sz, float v)
+    {
+        snprintf(buf, sz, "%.6f", v);
+        char* dot = strchr(buf, '.');
+        if (dot)
+        {
+            char* end = buf + strlen(buf) - 1;
+            while (end > dot && *end == '0') *end-- = '\0';
+            if (end == dot) *end = '\0';
+        }
+    }
+
     // Render one config row inside an already-open 3-column table:
     //   Col 0 (Label)   -- setting name, description tooltip on hover
     //   Col 1 (Widget)  -- the editable control, fills available width
@@ -350,21 +362,21 @@ namespace UI::ModLoaderWindow
             bool hasRange = e->rangeMax > e->rangeMin;
             if (hasRange)
             {
-                if (ImGui::SliderFloat(id, &fval, e->rangeMin, e->rangeMax, "%.6g"))
-                    snprintf(kv.value, sizeof(kv.value), "%.6g", fval);
+                if (ImGui::SliderFloat(id, &fval, e->rangeMin, e->rangeMax, "%.6f"))
+                    FormatFloat(kv.value, sizeof(kv.value), fval);
                 if (ImGui::IsItemDeactivated())
                     CommitConfigChange(pluginName, kv);
             }
             else
             {
-                if (ImGui::InputFloat(id, &fval, 0.0f, 0.0f, "%.6g"))
+                if (ImGui::InputFloat(id, &fval, 0.0f, 0.0f, "%.6f"))
                 {
-                    snprintf(kv.value, sizeof(kv.value), "%.6g", fval);
+                    FormatFloat(kv.value, sizeof(kv.value), fval);
                     CommitConfigChange(pluginName, kv);
                 }
                 if (ImGui::IsItemDeactivatedAfterEdit())
                 {
-                    snprintf(kv.value, sizeof(kv.value), "%.6g", fval);
+                    FormatFloat(kv.value, sizeof(kv.value), fval);
                     CommitConfigChange(pluginName, kv);
                 }
             }
