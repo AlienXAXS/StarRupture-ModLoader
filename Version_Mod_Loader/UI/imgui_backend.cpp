@@ -1275,6 +1275,230 @@ namespace ImGuiWrappers
 		if (ox) *ox = io.DisplaySize.x;
 		if (oy) *oy = io.DisplaySize.y;
 	}
+	static void SetWindowFontScale(float s) { ImGui::SetWindowFontScale(s); }
+
+	// v35
+	// v36 -- window queries
+	static bool IsWindowAppearing() { return ImGui::IsWindowAppearing(); }
+	static bool IsWindowCollapsed() { return ImGui::IsWindowCollapsed(); }
+	static bool IsWindowFocused(int f) { return ImGui::IsWindowFocused((ImGuiFocusedFlags)f); }
+	static bool IsWindowHovered(int f) { return ImGui::IsWindowHovered((ImGuiHoveredFlags)f); }
+	static void GetWindowPos(float* ox, float* oy) { ImVec2 v = ImGui::GetWindowPos(); if (ox) *ox = v.x; if (oy) *oy = v.y; }
+	static void GetWindowSize(float* ox, float* oy) { ImVec2 v = ImGui::GetWindowSize(); if (ox) *ox = v.x; if (oy) *oy = v.y; }
+	static void SetNextWindowBgAlpha(float a) { ImGui::SetNextWindowBgAlpha(a); }
+
+	// v36 -- scroll
+	static float GetScrollX() { return ImGui::GetScrollX(); }
+	static float GetScrollY() { return ImGui::GetScrollY(); }
+	static void SetScrollX(float v) { ImGui::SetScrollX(v); }
+	static void SetScrollY(float v) { ImGui::SetScrollY(v); }
+	static float GetScrollMaxX() { return ImGui::GetScrollMaxX(); }
+	static float GetScrollMaxY() { return ImGui::GetScrollMaxY(); }
+	static void SetScrollHereX(float r) { ImGui::SetScrollHereX(r); }
+	static void SetScrollHereY(float r) { ImGui::SetScrollHereY(r); }
+
+	// v36 -- grouping / alignment
+	static void BeginGroup() { ImGui::BeginGroup(); }
+	static void EndGroup() { ImGui::EndGroup(); }
+	static void AlignTextToFramePadding() { ImGui::AlignTextToFramePadding(); }
+
+	// v36 -- extended cursor
+	static float GetCursorPosY() { return ImGui::GetCursorPosY(); }
+	static void SetCursorPosY(float y) { ImGui::SetCursorPosY(y); }
+	static void SetCursorPos(float x, float y) { ImGui::SetCursorPos(ImVec2(x, y)); }
+	static void GetCursorScreenPos(float* ox, float* oy) { ImVec2 v = ImGui::GetCursorScreenPos(); if (ox) *ox = v.x; if (oy) *oy = v.y; }
+	static void SetCursorScreenPos(float x, float y) { ImGui::SetCursorScreenPos(ImVec2(x, y)); }
+	static void GetCursorStartPos(float* ox, float* oy) { ImVec2 v = ImGui::GetCursorStartPos(); if (ox) *ox = v.x; if (oy) *oy = v.y; }
+	static float CalcItemWidth() { return ImGui::CalcItemWidth(); }
+	static void PushTextWrapPos(float x) { ImGui::PushTextWrapPos(x); }
+	static void PopTextWrapPos() { ImGui::PopTextWrapPos(); }
+
+	// v36 -- style extras
+	static void PushStyleVarX(int idx, float x) { ImGui::PushStyleVarX((ImGuiStyleVar)idx, x); }
+	static void PushStyleVarY(int idx, float y) { ImGui::PushStyleVarY((ImGuiStyleVar)idx, y); }
+	static void PushItemFlag(int opt, bool en) { ImGui::PushItemFlag((ImGuiItemFlags)opt, en); }
+	static void PopItemFlag() { ImGui::PopItemFlag(); }
+
+	// v36 -- text helpers
+	static void BulletText(const char* t) { ImGui::BulletText("%s", t); }
+	static void Bullet() { ImGui::Bullet(); }
+
+	// v36 -- buttons / widgets
+	static bool ButtonSized(const char* l, float w, float h) { return ImGui::Button(l, ImVec2(w, h)); }
+	static bool InvisibleButton(const char* id, float w, float h) { return ImGui::InvisibleButton(id, ImVec2(w, h)); }
+	static bool ArrowButton(const char* id, int dir) { return ImGui::ArrowButton(id, (ImGuiDir)dir); }
+	static bool RadioButton(const char* l, bool a) { return ImGui::RadioButton(l, a); }
+	static bool RadioButtonInt(const char* l, int* v, int vb) { return ImGui::RadioButton(l, v, vb); }
+	static void ProgressBar(float f, float w, float h, const char* ov) { ImGui::ProgressBar(f, ImVec2(w, h), ov); }
+	static bool CheckboxFlagsInt(const char* l, int* f, int fv) { return ImGui::CheckboxFlags(l, f, fv); }
+	static bool SelectableFull(const char* l, bool s, int f, float w, float h) { return ImGui::Selectable(l, s, (ImGuiSelectableFlags)f, ImVec2(w, h)); }
+	static bool TextLink(const char* l) { return ImGui::TextLink(l); }
+
+	// v36 -- input extras
+	static bool InputTextMultiline(const char* l, char* buf, size_t sz, float w, float h) { return ImGui::InputTextMultiline(l, buf, sz, ImVec2(w, h)); }
+	static bool InputTextWithHint(const char* l, const char* hint, char* buf, size_t sz) { return ImGui::InputTextWithHint(l, hint, buf, sz); }
+	static bool InputFloat2(const char* l, float v[2]) { return ImGui::InputFloat2(l, v); }
+	static bool InputFloat3(const char* l, float v[3]) { return ImGui::InputFloat3(l, v); }
+	static bool InputFloat4(const char* l, float v[4]) { return ImGui::InputFloat4(l, v); }
+	static bool InputInt2(const char* l, int v[2]) { return ImGui::InputInt2(l, v); }
+	static bool InputInt3(const char* l, int v[3]) { return ImGui::InputInt3(l, v); }
+	static bool InputInt4(const char* l, int v[4]) { return ImGui::InputInt4(l, v); }
+
+	// v36 -- drag widgets
+	static bool DragFloat(const char* l, float* v, float spd, float mn, float mx, const char* fmt) { return ImGui::DragFloat(l, v, spd, mn, mx, fmt ? fmt : "%.3f"); }
+	static bool DragFloat2(const char* l, float v[2], float spd, float mn, float mx, const char* fmt) { return ImGui::DragFloat2(l, v, spd, mn, mx, fmt ? fmt : "%.3f"); }
+	static bool DragFloat3(const char* l, float v[3], float spd, float mn, float mx, const char* fmt) { return ImGui::DragFloat3(l, v, spd, mn, mx, fmt ? fmt : "%.3f"); }
+	static bool DragFloat4(const char* l, float v[4], float spd, float mn, float mx, const char* fmt) { return ImGui::DragFloat4(l, v, spd, mn, mx, fmt ? fmt : "%.3f"); }
+	static bool DragInt(const char* l, int* v, float spd, int mn, int mx, const char* fmt) { return ImGui::DragInt(l, v, spd, mn, mx, fmt ? fmt : "%d"); }
+	static bool DragInt2(const char* l, int v[2], float spd, int mn, int mx, const char* fmt) { return ImGui::DragInt2(l, v, spd, mn, mx, fmt ? fmt : "%d"); }
+	static bool DragInt3(const char* l, int v[3], float spd, int mn, int mx, const char* fmt) { return ImGui::DragInt3(l, v, spd, mn, mx, fmt ? fmt : "%d"); }
+	static bool DragInt4(const char* l, int v[4], float spd, int mn, int mx, const char* fmt) { return ImGui::DragInt4(l, v, spd, mn, mx, fmt ? fmt : "%d"); }
+	static bool DragFloatRange2(const char* l, float* vmn, float* vmx, float spd, float mn, float mx, const char* fmt) { return ImGui::DragFloatRange2(l, vmn, vmx, spd, mn, mx, fmt ? fmt : "%.3f"); }
+	static bool DragIntRange2(const char* l, int* vmn, int* vmx, float spd, int mn, int mx, const char* fmt) { return ImGui::DragIntRange2(l, vmn, vmx, spd, mn, mx, fmt ? fmt : "%d"); }
+
+	// v36 -- vertical sliders + angle
+	static bool VSliderFloat(const char* l, float w, float h, float* v, float mn, float mx, const char* fmt) { return ImGui::VSliderFloat(l, ImVec2(w, h), v, mn, mx, fmt ? fmt : "%.3f"); }
+	static bool VSliderInt(const char* l, float w, float h, int* v, int mn, int mx, const char* fmt) { return ImGui::VSliderInt(l, ImVec2(w, h), v, mn, mx, fmt ? fmt : "%d"); }
+	static bool SliderAngle(const char* l, float* vr, float dmn, float dmx) { return ImGui::SliderAngle(l, vr, dmn, dmx); }
+
+	// v36 -- color pickers / button
+	static bool ColorPicker3(const char* l, float c[3]) { return ImGui::ColorPicker3(l, c); }
+	static bool ColorPicker4(const char* l, float c[4]) { return ImGui::ColorPicker4(l, c); }
+	static bool ColorButton(const char* id, float r, float g, float b, float a, float w, float h) { return ImGui::ColorButton(id, ImVec4(r, g, b, a), 0, ImVec2(w, h)); }
+
+	// v36 -- plot
+	static void PlotLines(const char* l, const float* vs, int cnt, int off, const char* ov, float mn, float mx, float gw, float gh) { ImGui::PlotLines(l, vs, cnt, off, ov, mn, mx, ImVec2(gw, gh)); }
+	static void PlotHistogram(const char* l, const float* vs, int cnt, int off, const char* ov, float mn, float mx, float gw, float gh) { ImGui::PlotHistogram(l, vs, cnt, off, ov, mn, mx, ImVec2(gw, gh)); }
+
+	// v36 -- tree extras
+	static bool TreeNodeExStr(const char* l, int f) { return ImGui::TreeNodeEx(l, (ImGuiTreeNodeFlags)f); }
+	static void TreePushStr(const char* id) { ImGui::TreePush(id); }
+	static float GetTreeNodeToLabelSpacing() { return ImGui::GetTreeNodeToLabelSpacing(); }
+	static void SetNextItemOpen(bool open, int cond) { ImGui::SetNextItemOpen(open, (ImGuiCond)cond); }
+
+	// v36 -- listbox
+	static bool BeginListBox(const char* l, float w, float h) { return ImGui::BeginListBox(l, ImVec2(w, h)); }
+	static void EndListBox() { ImGui::EndListBox(); }
+
+	// v36 -- tab bar
+	static bool BeginTabBar(const char* id, int f) { return ImGui::BeginTabBar(id, (ImGuiTabBarFlags)f); }
+	static void EndTabBar() { ImGui::EndTabBar(); }
+	static bool BeginTabItem(const char* l, bool* open, int f) { return ImGui::BeginTabItem(l, open, (ImGuiTabItemFlags)f); }
+	static void EndTabItem() { ImGui::EndTabItem(); }
+	static bool TabItemButton(const char* l, int f) { return ImGui::TabItemButton(l, (ImGuiTabItemFlags)f); }
+
+	// v36 -- menus
+	static bool BeginMenuBar() { return ImGui::BeginMenuBar(); }
+	static void EndMenuBar() { ImGui::EndMenuBar(); }
+	static bool BeginMenu(const char* l, bool en) { return ImGui::BeginMenu(l, en); }
+	static void EndMenu() { ImGui::EndMenu(); }
+	static bool MenuItem(const char* l, const char* sc, bool sel, bool en) { return ImGui::MenuItem(l, sc, sel, en); }
+
+	// v36 -- popups
+	static bool BeginPopup(const char* id, int f) { return ImGui::BeginPopup(id, (ImGuiWindowFlags)f); }
+	static bool BeginPopupModal(const char* name, bool* open, int f) { return ImGui::BeginPopupModal(name, open, (ImGuiWindowFlags)f); }
+	static void EndPopup() { ImGui::EndPopup(); }
+	static void OpenPopup(const char* id, int f) { ImGui::OpenPopup(id, (ImGuiPopupFlags)f); }
+	static void CloseCurrentPopup() { ImGui::CloseCurrentPopup(); }
+	static bool BeginPopupContextItem(const char* id, int f) { return ImGui::BeginPopupContextItem(id, (ImGuiPopupFlags)f); }
+	static bool BeginPopupContextWindow(const char* id, int f) { return ImGui::BeginPopupContextWindow(id, (ImGuiPopupFlags)f); }
+	static bool IsPopupOpen(const char* id, int f) { return ImGui::IsPopupOpen(id, (ImGuiPopupFlags)f); }
+
+	// v36 -- tooltips
+	static bool BeginTooltip() { return ImGui::BeginTooltip(); }
+	static void EndTooltip() { ImGui::EndTooltip(); }
+	static bool BeginItemTooltip() { return ImGui::BeginItemTooltip(); }
+	static void SetItemTooltip(const char* t) { ImGui::SetItemTooltip("%s", t); }
+
+	// v36 -- table extras
+	static void TableNextRow(int f, float h) { ImGui::TableNextRow((ImGuiTableRowFlags)f, h); }
+	static bool TableSetColumnIndex(int col) { return ImGui::TableSetColumnIndex(col); }
+	static void TableSetupColumn(const char* l, int f, float w) { ImGui::TableSetupColumn(l, (ImGuiTableColumnFlags)f, w); }
+	static void TableSetupScrollFreeze(int cols, int rows) { ImGui::TableSetupScrollFreeze(cols, rows); }
+	static void TableHeadersRow() { ImGui::TableHeadersRow(); }
+	static void TableHeader(const char* l) { ImGui::TableHeader(l); }
+	static int TableGetColumnCount() { return ImGui::TableGetColumnCount(); }
+	static int TableGetColumnIndex() { return ImGui::TableGetColumnIndex(); }
+	static int TableGetRowIndex() { return ImGui::TableGetRowIndex(); }
+	static const char* TableGetColumnName(int col) { return ImGui::TableGetColumnName(col); }
+	static void TableSetBgColor(int tgt, unsigned int col, int cn) { ImGui::TableSetBgColor((ImGuiTableBgTarget)tgt, col, cn); }
+
+	// v36 -- item state predicates
+	static bool IsItemActive() { return ImGui::IsItemActive(); }
+	static bool IsItemFocused() { return ImGui::IsItemFocused(); }
+	static bool IsItemVisible() { return ImGui::IsItemVisible(); }
+	static bool IsItemEdited() { return ImGui::IsItemEdited(); }
+	static bool IsItemActivated() { return ImGui::IsItemActivated(); }
+	static bool IsItemDeactivated() { return ImGui::IsItemDeactivated(); }
+	static bool IsItemDeactivatedAfterEdit() { return ImGui::IsItemDeactivatedAfterEdit(); }
+	static bool IsItemToggledOpen() { return ImGui::IsItemToggledOpen(); }
+	static bool IsAnyItemHovered() { return ImGui::IsAnyItemHovered(); }
+	static bool IsAnyItemActive() { return ImGui::IsAnyItemActive(); }
+	static bool IsAnyItemFocused() { return ImGui::IsAnyItemFocused(); }
+	static void GetItemRectMin(float* ox, float* oy) { ImVec2 v = ImGui::GetItemRectMin(); if (ox) *ox = v.x; if (oy) *oy = v.y; }
+	static void GetItemRectMax(float* ox, float* oy) { ImVec2 v = ImGui::GetItemRectMax(); if (ox) *ox = v.x; if (oy) *oy = v.y; }
+	static void GetItemRectSize(float* ox, float* oy) { ImVec2 v = ImGui::GetItemRectSize(); if (ox) *ox = v.x; if (oy) *oy = v.y; }
+	static void SetItemDefaultFocus() { ImGui::SetItemDefaultFocus(); }
+	static void SetKeyboardFocusHere(int off) { ImGui::SetKeyboardFocusHere(off); }
+	static void SetNextItemAllowOverlap() { ImGui::SetNextItemAllowOverlap(); }
+
+	// v36 -- disabled regions
+	static void BeginDisabled(bool d) { ImGui::BeginDisabled(d); }
+	static void EndDisabled() { ImGui::EndDisabled(); }
+
+	// v36 -- clip rect
+	static void PushClipRect(float x0, float y0, float x1, float y1, bool intersect) { ImGui::PushClipRect(ImVec2(x0, y0), ImVec2(x1, y1), intersect); }
+	static void PopClipRect() { ImGui::PopClipRect(); }
+
+	// v36 -- mouse
+	static bool IsMouseDown(int btn) { return ImGui::IsMouseDown(btn); }
+	static bool IsMouseClicked(int btn, bool rep) { return ImGui::IsMouseClicked(btn, rep); }
+	static bool IsMouseReleased(int btn) { return ImGui::IsMouseReleased(btn); }
+	static bool IsMouseDoubleClicked(int btn) { return ImGui::IsMouseDoubleClicked(btn); }
+	static void GetMousePos(float* ox, float* oy) { ImVec2 v = ImGui::GetMousePos(); if (ox) *ox = v.x; if (oy) *oy = v.y; }
+	static bool IsMouseDragging(int btn, float thr) { return ImGui::IsMouseDragging(btn, thr); }
+	static void GetMouseDragDelta(int btn, float thr, float* ox, float* oy) { ImVec2 v = ImGui::GetMouseDragDelta(btn, thr); if (ox) *ox = v.x; if (oy) *oy = v.y; }
+	static void ResetMouseDragDelta(int btn) { ImGui::ResetMouseDragDelta(btn); }
+	static void SetMouseCursor(int t) { ImGui::SetMouseCursor((ImGuiMouseCursor)t); }
+	static bool IsMouseHoveringRect(float x0, float y0, float x1, float y1, bool clip) { return ImGui::IsMouseHoveringRect(ImVec2(x0, y0), ImVec2(x1, y1), clip); }
+
+	// v36 -- color utilities
+	static unsigned int GetColorU32FromCol(int idx, float am) { return ImGui::GetColorU32((ImGuiCol)idx, am); }
+	static unsigned int GetColorU32FromVec4(float r, float g, float b, float a) { return ImGui::GetColorU32(ImVec4(r, g, b, a)); }
+	static void GetStyleColorVec4(int idx, float* or_, float* og, float* ob, float* oa) { const ImVec4& c = ImGui::GetStyleColorVec4((ImGuiCol)idx); if (or_) *or_ = c.x; if (og) *og = c.y; if (ob) *ob = c.z; if (oa) *oa = c.w; }
+	static void ColorConvertRGBtoHSV(float r, float g, float b, float* oh, float* os, float* ov) { ImGui::ColorConvertRGBtoHSV(r, g, b, *oh, *os, *ov); }
+	static void ColorConvertHSVtoRGB(float h, float s, float v, float* or_, float* og, float* ob) { ImGui::ColorConvertHSVtoRGB(h, s, v, *or_, *og, *ob); }
+
+	// v36 -- misc
+	static double GetTime() { return ImGui::GetTime(); }
+	static int GetFrameCount() { return ImGui::GetFrameCount(); }
+	static bool IsRectVisible(float w, float h) { return ImGui::IsRectVisible(ImVec2(w, h)); }
+	static const char* GetClipboardText() { return ImGui::GetClipboardText(); }
+	static void SetClipboardText(const char* t) { ImGui::SetClipboardText(t); }
+	static const char* GetStyleColorName(int idx) { return ImGui::GetStyleColorName((ImGuiCol)idx); }
+
+	// v35 child windows (original placement)
+	static bool BeginChild(const char* id, float sx, float sy, bool border)
+	{
+		return ImGui::BeginChild(id, ImVec2(sx, sy), border ? ImGuiChildFlags_Borders : ImGuiChildFlags_None);
+	}
+	static void EndChild() { ImGui::EndChild(); }
+	static void PushStyleColor(int idx, float r, float g, float b, float a) { ImGui::PushStyleColor(idx, ImVec4(r, g, b, a)); }
+	static void PopStyleColor(int count) { ImGui::PopStyleColor(count); }
+	static void PushStyleVarFloat(int idx, float val) { ImGui::PushStyleVar(idx, val); }
+	static void PushStyleVarVec2(int idx, float x, float y) { ImGui::PushStyleVar(idx, ImVec2(x, y)); }
+	static void PopStyleVar(int count) { ImGui::PopStyleVar(count); }
+	static void PushItemWidth(float w) { ImGui::PushItemWidth(w); }
+	static void PopItemWidth() { ImGui::PopItemWidth(); }
+	static void SetCursorPosX(float x) { ImGui::SetCursorPosX(x); }
+	static float GetCursorPosX() { return ImGui::GetCursorPosX(); }
+	static bool BeginTable(const char* id, int cols, int flags) { return ImGui::BeginTable(id, cols, flags); }
+	static void TableNextColumn() { ImGui::TableNextColumn(); }
+	static void EndTable() { ImGui::EndTable(); }
+	static bool IsItemClicked(int btn) { return ImGui::IsItemClicked(btn); }
+	static float GetWindowWidth() { return ImGui::GetWindowWidth(); }
+	static float GetWindowHeight() { return ImGui::GetWindowHeight(); }
+	static void Dummy(float sx, float sy) { ImGui::Dummy(ImVec2(sx, sy)); }
 }
 
 static void PopulateImGuiAPI()
@@ -1321,6 +1545,178 @@ static void PopulateImGuiAPI()
 	g_imguiAPI.CalcTextSize = ImGuiWrappers::CalcTextSize;
 	g_imguiAPI.GetContentRegionAvail = ImGuiWrappers::GetContentRegionAvail;
 	g_imguiAPI.GetDisplaySize = ImGuiWrappers::GetDisplaySize;
+	g_imguiAPI.SetWindowFontScale = ImGuiWrappers::SetWindowFontScale;
+
+	// v35
+	g_imguiAPI.BeginChild = ImGuiWrappers::BeginChild;
+	g_imguiAPI.EndChild = ImGuiWrappers::EndChild;
+	g_imguiAPI.PushStyleColor = ImGuiWrappers::PushStyleColor;
+	g_imguiAPI.PopStyleColor = ImGuiWrappers::PopStyleColor;
+	g_imguiAPI.PushStyleVarFloat = ImGuiWrappers::PushStyleVarFloat;
+	g_imguiAPI.PushStyleVarVec2 = ImGuiWrappers::PushStyleVarVec2;
+	g_imguiAPI.PopStyleVar = ImGuiWrappers::PopStyleVar;
+	g_imguiAPI.PushItemWidth = ImGuiWrappers::PushItemWidth;
+	g_imguiAPI.PopItemWidth = ImGuiWrappers::PopItemWidth;
+	g_imguiAPI.SetCursorPosX = ImGuiWrappers::SetCursorPosX;
+	g_imguiAPI.GetCursorPosX = ImGuiWrappers::GetCursorPosX;
+	g_imguiAPI.BeginTable = ImGuiWrappers::BeginTable;
+	g_imguiAPI.TableNextColumn = ImGuiWrappers::TableNextColumn;
+	g_imguiAPI.EndTable = ImGuiWrappers::EndTable;
+	g_imguiAPI.IsItemClicked = ImGuiWrappers::IsItemClicked;
+	g_imguiAPI.GetWindowWidth = ImGuiWrappers::GetWindowWidth;
+	g_imguiAPI.GetWindowHeight = ImGuiWrappers::GetWindowHeight;
+	g_imguiAPI.Dummy = ImGuiWrappers::Dummy;
+
+	// v36
+	g_imguiAPI.IsWindowAppearing = ImGuiWrappers::IsWindowAppearing;
+	g_imguiAPI.IsWindowCollapsed = ImGuiWrappers::IsWindowCollapsed;
+	g_imguiAPI.IsWindowFocused = ImGuiWrappers::IsWindowFocused;
+	g_imguiAPI.IsWindowHovered = ImGuiWrappers::IsWindowHovered;
+	g_imguiAPI.GetWindowPos = ImGuiWrappers::GetWindowPos;
+	g_imguiAPI.GetWindowSize = ImGuiWrappers::GetWindowSize;
+	g_imguiAPI.SetNextWindowBgAlpha = ImGuiWrappers::SetNextWindowBgAlpha;
+	g_imguiAPI.GetScrollX = ImGuiWrappers::GetScrollX;
+	g_imguiAPI.GetScrollY = ImGuiWrappers::GetScrollY;
+	g_imguiAPI.SetScrollX = ImGuiWrappers::SetScrollX;
+	g_imguiAPI.SetScrollY = ImGuiWrappers::SetScrollY;
+	g_imguiAPI.GetScrollMaxX = ImGuiWrappers::GetScrollMaxX;
+	g_imguiAPI.GetScrollMaxY = ImGuiWrappers::GetScrollMaxY;
+	g_imguiAPI.SetScrollHereX = ImGuiWrappers::SetScrollHereX;
+	g_imguiAPI.SetScrollHereY = ImGuiWrappers::SetScrollHereY;
+	g_imguiAPI.BeginGroup = ImGuiWrappers::BeginGroup;
+	g_imguiAPI.EndGroup = ImGuiWrappers::EndGroup;
+	g_imguiAPI.AlignTextToFramePadding = ImGuiWrappers::AlignTextToFramePadding;
+	g_imguiAPI.GetCursorPosY = ImGuiWrappers::GetCursorPosY;
+	g_imguiAPI.SetCursorPosY = ImGuiWrappers::SetCursorPosY;
+	g_imguiAPI.SetCursorPos = ImGuiWrappers::SetCursorPos;
+	g_imguiAPI.GetCursorScreenPos = ImGuiWrappers::GetCursorScreenPos;
+	g_imguiAPI.SetCursorScreenPos = ImGuiWrappers::SetCursorScreenPos;
+	g_imguiAPI.GetCursorStartPos = ImGuiWrappers::GetCursorStartPos;
+	g_imguiAPI.CalcItemWidth = ImGuiWrappers::CalcItemWidth;
+	g_imguiAPI.PushTextWrapPos = ImGuiWrappers::PushTextWrapPos;
+	g_imguiAPI.PopTextWrapPos = ImGuiWrappers::PopTextWrapPos;
+	g_imguiAPI.PushStyleVarX = ImGuiWrappers::PushStyleVarX;
+	g_imguiAPI.PushStyleVarY = ImGuiWrappers::PushStyleVarY;
+	g_imguiAPI.PushItemFlag = ImGuiWrappers::PushItemFlag;
+	g_imguiAPI.PopItemFlag = ImGuiWrappers::PopItemFlag;
+	g_imguiAPI.BulletText = ImGuiWrappers::BulletText;
+	g_imguiAPI.Bullet = ImGuiWrappers::Bullet;
+	g_imguiAPI.ButtonSized = ImGuiWrappers::ButtonSized;
+	g_imguiAPI.InvisibleButton = ImGuiWrappers::InvisibleButton;
+	g_imguiAPI.ArrowButton = ImGuiWrappers::ArrowButton;
+	g_imguiAPI.RadioButton = ImGuiWrappers::RadioButton;
+	g_imguiAPI.RadioButtonInt = ImGuiWrappers::RadioButtonInt;
+	g_imguiAPI.ProgressBar = ImGuiWrappers::ProgressBar;
+	g_imguiAPI.CheckboxFlagsInt = ImGuiWrappers::CheckboxFlagsInt;
+	g_imguiAPI.SelectableFull = ImGuiWrappers::SelectableFull;
+	g_imguiAPI.TextLink = ImGuiWrappers::TextLink;
+	g_imguiAPI.InputTextMultiline = ImGuiWrappers::InputTextMultiline;
+	g_imguiAPI.InputTextWithHint = ImGuiWrappers::InputTextWithHint;
+	g_imguiAPI.InputFloat2 = ImGuiWrappers::InputFloat2;
+	g_imguiAPI.InputFloat3 = ImGuiWrappers::InputFloat3;
+	g_imguiAPI.InputFloat4 = ImGuiWrappers::InputFloat4;
+	g_imguiAPI.InputInt2 = ImGuiWrappers::InputInt2;
+	g_imguiAPI.InputInt3 = ImGuiWrappers::InputInt3;
+	g_imguiAPI.InputInt4 = ImGuiWrappers::InputInt4;
+	g_imguiAPI.DragFloat = ImGuiWrappers::DragFloat;
+	g_imguiAPI.DragFloat2 = ImGuiWrappers::DragFloat2;
+	g_imguiAPI.DragFloat3 = ImGuiWrappers::DragFloat3;
+	g_imguiAPI.DragFloat4 = ImGuiWrappers::DragFloat4;
+	g_imguiAPI.DragInt = ImGuiWrappers::DragInt;
+	g_imguiAPI.DragInt2 = ImGuiWrappers::DragInt2;
+	g_imguiAPI.DragInt3 = ImGuiWrappers::DragInt3;
+	g_imguiAPI.DragInt4 = ImGuiWrappers::DragInt4;
+	g_imguiAPI.DragFloatRange2 = ImGuiWrappers::DragFloatRange2;
+	g_imguiAPI.DragIntRange2 = ImGuiWrappers::DragIntRange2;
+	g_imguiAPI.VSliderFloat = ImGuiWrappers::VSliderFloat;
+	g_imguiAPI.VSliderInt = ImGuiWrappers::VSliderInt;
+	g_imguiAPI.SliderAngle = ImGuiWrappers::SliderAngle;
+	g_imguiAPI.ColorPicker3 = ImGuiWrappers::ColorPicker3;
+	g_imguiAPI.ColorPicker4 = ImGuiWrappers::ColorPicker4;
+	g_imguiAPI.ColorButton = ImGuiWrappers::ColorButton;
+	g_imguiAPI.PlotLines = ImGuiWrappers::PlotLines;
+	g_imguiAPI.PlotHistogram = ImGuiWrappers::PlotHistogram;
+	g_imguiAPI.TreeNodeExStr = ImGuiWrappers::TreeNodeExStr;
+	g_imguiAPI.TreePushStr = ImGuiWrappers::TreePushStr;
+	g_imguiAPI.GetTreeNodeToLabelSpacing = ImGuiWrappers::GetTreeNodeToLabelSpacing;
+	g_imguiAPI.SetNextItemOpen = ImGuiWrappers::SetNextItemOpen;
+	g_imguiAPI.BeginListBox = ImGuiWrappers::BeginListBox;
+	g_imguiAPI.EndListBox = ImGuiWrappers::EndListBox;
+	g_imguiAPI.BeginTabBar = ImGuiWrappers::BeginTabBar;
+	g_imguiAPI.EndTabBar = ImGuiWrappers::EndTabBar;
+	g_imguiAPI.BeginTabItem = ImGuiWrappers::BeginTabItem;
+	g_imguiAPI.EndTabItem = ImGuiWrappers::EndTabItem;
+	g_imguiAPI.TabItemButton = ImGuiWrappers::TabItemButton;
+	g_imguiAPI.BeginMenuBar = ImGuiWrappers::BeginMenuBar;
+	g_imguiAPI.EndMenuBar = ImGuiWrappers::EndMenuBar;
+	g_imguiAPI.BeginMenu = ImGuiWrappers::BeginMenu;
+	g_imguiAPI.EndMenu = ImGuiWrappers::EndMenu;
+	g_imguiAPI.MenuItem = ImGuiWrappers::MenuItem;
+	g_imguiAPI.BeginPopup = ImGuiWrappers::BeginPopup;
+	g_imguiAPI.BeginPopupModal = ImGuiWrappers::BeginPopupModal;
+	g_imguiAPI.EndPopup = ImGuiWrappers::EndPopup;
+	g_imguiAPI.OpenPopup = ImGuiWrappers::OpenPopup;
+	g_imguiAPI.CloseCurrentPopup = ImGuiWrappers::CloseCurrentPopup;
+	g_imguiAPI.BeginPopupContextItem = ImGuiWrappers::BeginPopupContextItem;
+	g_imguiAPI.BeginPopupContextWindow = ImGuiWrappers::BeginPopupContextWindow;
+	g_imguiAPI.IsPopupOpen = ImGuiWrappers::IsPopupOpen;
+	g_imguiAPI.BeginTooltip = ImGuiWrappers::BeginTooltip;
+	g_imguiAPI.EndTooltip = ImGuiWrappers::EndTooltip;
+	g_imguiAPI.BeginItemTooltip = ImGuiWrappers::BeginItemTooltip;
+	g_imguiAPI.SetItemTooltip = ImGuiWrappers::SetItemTooltip;
+	g_imguiAPI.TableNextRow = ImGuiWrappers::TableNextRow;
+	g_imguiAPI.TableSetColumnIndex = ImGuiWrappers::TableSetColumnIndex;
+	g_imguiAPI.TableSetupColumn = ImGuiWrappers::TableSetupColumn;
+	g_imguiAPI.TableSetupScrollFreeze = ImGuiWrappers::TableSetupScrollFreeze;
+	g_imguiAPI.TableHeadersRow = ImGuiWrappers::TableHeadersRow;
+	g_imguiAPI.TableHeader = ImGuiWrappers::TableHeader;
+	g_imguiAPI.TableGetColumnCount = ImGuiWrappers::TableGetColumnCount;
+	g_imguiAPI.TableGetColumnIndex = ImGuiWrappers::TableGetColumnIndex;
+	g_imguiAPI.TableGetRowIndex = ImGuiWrappers::TableGetRowIndex;
+	g_imguiAPI.TableGetColumnName = ImGuiWrappers::TableGetColumnName;
+	g_imguiAPI.TableSetBgColor = ImGuiWrappers::TableSetBgColor;
+	g_imguiAPI.IsItemActive = ImGuiWrappers::IsItemActive;
+	g_imguiAPI.IsItemFocused = ImGuiWrappers::IsItemFocused;
+	g_imguiAPI.IsItemVisible = ImGuiWrappers::IsItemVisible;
+	g_imguiAPI.IsItemEdited = ImGuiWrappers::IsItemEdited;
+	g_imguiAPI.IsItemActivated = ImGuiWrappers::IsItemActivated;
+	g_imguiAPI.IsItemDeactivated = ImGuiWrappers::IsItemDeactivated;
+	g_imguiAPI.IsItemDeactivatedAfterEdit = ImGuiWrappers::IsItemDeactivatedAfterEdit;
+	g_imguiAPI.IsItemToggledOpen = ImGuiWrappers::IsItemToggledOpen;
+	g_imguiAPI.IsAnyItemHovered = ImGuiWrappers::IsAnyItemHovered;
+	g_imguiAPI.IsAnyItemActive = ImGuiWrappers::IsAnyItemActive;
+	g_imguiAPI.IsAnyItemFocused = ImGuiWrappers::IsAnyItemFocused;
+	g_imguiAPI.GetItemRectMin = ImGuiWrappers::GetItemRectMin;
+	g_imguiAPI.GetItemRectMax = ImGuiWrappers::GetItemRectMax;
+	g_imguiAPI.GetItemRectSize = ImGuiWrappers::GetItemRectSize;
+	g_imguiAPI.SetItemDefaultFocus = ImGuiWrappers::SetItemDefaultFocus;
+	g_imguiAPI.SetKeyboardFocusHere = ImGuiWrappers::SetKeyboardFocusHere;
+	g_imguiAPI.SetNextItemAllowOverlap = ImGuiWrappers::SetNextItemAllowOverlap;
+	g_imguiAPI.BeginDisabled = ImGuiWrappers::BeginDisabled;
+	g_imguiAPI.EndDisabled = ImGuiWrappers::EndDisabled;
+	g_imguiAPI.PushClipRect = ImGuiWrappers::PushClipRect;
+	g_imguiAPI.PopClipRect = ImGuiWrappers::PopClipRect;
+	g_imguiAPI.IsMouseDown = ImGuiWrappers::IsMouseDown;
+	g_imguiAPI.IsMouseClicked = ImGuiWrappers::IsMouseClicked;
+	g_imguiAPI.IsMouseReleased = ImGuiWrappers::IsMouseReleased;
+	g_imguiAPI.IsMouseDoubleClicked = ImGuiWrappers::IsMouseDoubleClicked;
+	g_imguiAPI.GetMousePos = ImGuiWrappers::GetMousePos;
+	g_imguiAPI.IsMouseDragging = ImGuiWrappers::IsMouseDragging;
+	g_imguiAPI.GetMouseDragDelta = ImGuiWrappers::GetMouseDragDelta;
+	g_imguiAPI.ResetMouseDragDelta = ImGuiWrappers::ResetMouseDragDelta;
+	g_imguiAPI.SetMouseCursor = ImGuiWrappers::SetMouseCursor;
+	g_imguiAPI.IsMouseHoveringRect = ImGuiWrappers::IsMouseHoveringRect;
+	g_imguiAPI.GetColorU32FromCol = ImGuiWrappers::GetColorU32FromCol;
+	g_imguiAPI.GetColorU32FromVec4 = ImGuiWrappers::GetColorU32FromVec4;
+	g_imguiAPI.GetStyleColorVec4 = ImGuiWrappers::GetStyleColorVec4;
+	g_imguiAPI.ColorConvertRGBtoHSV = ImGuiWrappers::ColorConvertRGBtoHSV;
+	g_imguiAPI.ColorConvertHSVtoRGB = ImGuiWrappers::ColorConvertHSVtoRGB;
+	g_imguiAPI.GetTime = ImGuiWrappers::GetTime;
+	g_imguiAPI.GetFrameCount = ImGuiWrappers::GetFrameCount;
+	g_imguiAPI.IsRectVisible = ImGuiWrappers::IsRectVisible;
+	g_imguiAPI.GetClipboardText = ImGuiWrappers::GetClipboardText;
+	g_imguiAPI.SetClipboardText = ImGuiWrappers::SetClipboardText;
+	g_imguiAPI.GetStyleColorName = ImGuiWrappers::GetStyleColorName;
 }
 
 // ---------------------------------------------------------------------------

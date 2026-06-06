@@ -31,9 +31,23 @@
 //      PLUGIN_TARGET_CLIENT or PLUGIN_TARGET_SERVER. The loader rejects plugins
 //      that don't match the current build target.
 // v34: Game had an update, needed interface bump
+// v35: Added layout/sidebar functions to IModLoaderImGui:
+//      BeginChild, EndChild, PushStyleColor, PopStyleColor,
+//      PushStyleVarFloat, PushStyleVarVec2, PopStyleVar,
+//      PushItemWidth, PopItemWidth, SetCursorPosX, GetCursorPosX,
+//      BeginTable, TableNextColumn, EndTable, IsItemClicked,
+//      GetWindowWidth, GetWindowHeight, Dummy.
+//      Also wired SetWindowFontScale which was declared but not populated.
+//      MIN remains 34.
+//      -- Mass expansion of IModLoaderImGui — added ~100 additional ImGui
+//      functions covering: window queries, scroll, groups, extended cursor
+//      control, all drag/slider variants, listbox, tab bar, menus, popups,
+//      tooltips, full table API, item state predicates, disabled regions,
+//      clip rect, mouse queries, color utilities, and misc helpers.
+//      MIN remains 34.
 #define PLUGIN_INTERFACE_VERSION_MIN 34
-#define PLUGIN_INTERFACE_VERSION_MAX 34
-#define PLUGIN_INTERFACE_VERSION PLUGIN_INTERFACE_VERSION_MAX
+#define PLUGIN_INTERFACE_VERSION_MAX 35
+#define PLUGIN_INTERFACE_VERSION 35
 
 enum class PluginLogLevel { Trace = 0, Debug = 1, Info = 2, Warn = 3, Error = 4 };
 enum class ConfigValueType { String, Integer, Float, Boolean, Keybind };
@@ -325,6 +339,235 @@ struct IModLoaderImGui
 	// Content / display size queries
 	void  (*GetContentRegionAvail)(float* out_x, float* out_y);
 	void  (*GetDisplaySize)(float* out_x, float* out_y);
+
+	// v35: Child windows
+	bool (*BeginChild)(const char* id, float size_x, float size_y, bool border);
+	void (*EndChild)();
+
+	// v35: Style color / var stack
+	void (*PushStyleColor)(int idx, float r, float g, float b, float a);
+	void (*PopStyleColor)(int count);
+	void (*PushStyleVarFloat)(int idx, float val);
+	void (*PushStyleVarVec2)(int idx, float x, float y);
+	void (*PopStyleVar)(int count);
+
+	// v35: Item width / cursor control
+	void  (*PushItemWidth)(float item_width);
+	void  (*PopItemWidth)();
+	void  (*SetCursorPosX)(float x);
+	float (*GetCursorPosX)();
+
+	// v35: Table layout
+	bool (*BeginTable)(const char* id, int columns, int flags);
+	void (*TableNextColumn)();
+	void (*EndTable)();
+
+	// v35: Misc queries
+	bool  (*IsItemClicked)(int mouse_button);
+	float (*GetWindowWidth)();
+	float (*GetWindowHeight)();
+	void  (*Dummy)(float size_x, float size_y);
+
+	// -------------------------------------------------------------------------
+	// v36: Window queries
+	// -------------------------------------------------------------------------
+	bool  (*IsWindowAppearing)();
+	bool  (*IsWindowCollapsed)();
+	bool  (*IsWindowFocused)(int flags);
+	bool  (*IsWindowHovered)(int flags);
+	void  (*GetWindowPos)(float* out_x, float* out_y);
+	void  (*GetWindowSize)(float* out_x, float* out_y);
+	void  (*SetNextWindowBgAlpha)(float alpha);
+
+	// v36: Scroll
+	float (*GetScrollX)();
+	float (*GetScrollY)();
+	void  (*SetScrollX)(float scroll_x);
+	void  (*SetScrollY)(float scroll_y);
+	float (*GetScrollMaxX)();
+	float (*GetScrollMaxY)();
+	void  (*SetScrollHereX)(float center_x_ratio);
+	void  (*SetScrollHereY)(float center_y_ratio);
+
+	// v36: Grouping / alignment
+	void  (*BeginGroup)();
+	void  (*EndGroup)();
+	void  (*AlignTextToFramePadding)();
+
+	// v36: Extended cursor control
+	float (*GetCursorPosY)();
+	void  (*SetCursorPosY)(float y);
+	void  (*SetCursorPos)(float x, float y);
+	void  (*GetCursorScreenPos)(float* out_x, float* out_y);
+	void  (*SetCursorScreenPos)(float x, float y);
+	void  (*GetCursorStartPos)(float* out_x, float* out_y);
+	float (*CalcItemWidth)();
+	void  (*PushTextWrapPos)(float wrap_local_pos_x);
+	void  (*PopTextWrapPos)();
+
+	// v36: Style extras (PushStyleVarX/Y from ImGui 1.87+)
+	void  (*PushStyleVarX)(int idx, float val_x);
+	void  (*PushStyleVarY)(int idx, float val_y);
+	void  (*PushItemFlag)(int option, bool enabled);
+	void  (*PopItemFlag)();
+
+	// v36: Text helpers
+	void  (*BulletText)(const char* text);
+	void  (*Bullet)();
+
+	// v36: Buttons / widgets
+	bool  (*ButtonSized)(const char* label, float w, float h);
+	bool  (*InvisibleButton)(const char* str_id, float w, float h);
+	bool  (*ArrowButton)(const char* str_id, int dir);
+	bool  (*RadioButton)(const char* label, bool active);
+	bool  (*RadioButtonInt)(const char* label, int* v, int v_button);
+	void  (*ProgressBar)(float fraction, float w, float h, const char* overlay);
+	bool  (*CheckboxFlagsInt)(const char* label, int* flags, int flags_value);
+	bool  (*SelectableFull)(const char* label, bool selected, int flags, float w, float h);
+	bool  (*TextLink)(const char* label);
+
+	// v36: Input extras
+	bool  (*InputTextMultiline)(const char* label, char* buf, size_t buf_size, float w, float h);
+	bool  (*InputTextWithHint)(const char* label, const char* hint, char* buf, size_t buf_size);
+	bool  (*InputFloat2)(const char* label, float v[2]);
+	bool  (*InputFloat3)(const char* label, float v[3]);
+	bool  (*InputFloat4)(const char* label, float v[4]);
+	bool  (*InputInt2)(const char* label, int v[2]);
+	bool  (*InputInt3)(const char* label, int v[3]);
+	bool  (*InputInt4)(const char* label, int v[4]);
+
+	// v36: Drag widgets
+	bool  (*DragFloat)(const char* label, float* v, float v_speed, float v_min, float v_max, const char* format);
+	bool  (*DragFloat2)(const char* label, float v[2], float v_speed, float v_min, float v_max, const char* format);
+	bool  (*DragFloat3)(const char* label, float v[3], float v_speed, float v_min, float v_max, const char* format);
+	bool  (*DragFloat4)(const char* label, float v[4], float v_speed, float v_min, float v_max, const char* format);
+	bool  (*DragInt)(const char* label, int* v, float v_speed, int v_min, int v_max, const char* format);
+	bool  (*DragInt2)(const char* label, int v[2], float v_speed, int v_min, int v_max, const char* format);
+	bool  (*DragInt3)(const char* label, int v[3], float v_speed, int v_min, int v_max, const char* format);
+	bool  (*DragInt4)(const char* label, int v[4], float v_speed, int v_min, int v_max, const char* format);
+	bool  (*DragFloatRange2)(const char* label, float* v_min, float* v_max, float speed, float mn, float mx, const char* format);
+	bool  (*DragIntRange2)(const char* label, int* v_min, int* v_max, float speed, int mn, int mx, const char* format);
+
+	// v36: Vertical sliders + angle slider
+	bool  (*VSliderFloat)(const char* label, float w, float h, float* v, float v_min, float v_max, const char* format);
+	bool  (*VSliderInt)(const char* label, float w, float h, int* v, int v_min, int v_max, const char* format);
+	bool  (*SliderAngle)(const char* label, float* v_rad, float deg_min, float deg_max);
+
+	// v36: Color pickers / button
+	bool  (*ColorPicker3)(const char* label, float col[3]);
+	bool  (*ColorPicker4)(const char* label, float col[4]);
+	bool  (*ColorButton)(const char* desc_id, float r, float g, float b, float a, float w, float h);
+
+	// v36: Plot
+	void  (*PlotLines)(const char* label, const float* values, int values_count, int values_offset, const char* overlay, float scale_min, float scale_max, float graph_w, float graph_h);
+	void  (*PlotHistogram)(const char* label, const float* values, int values_count, int values_offset, const char* overlay, float scale_min, float scale_max, float graph_w, float graph_h);
+
+	// v36: Tree extras
+	bool  (*TreeNodeExStr)(const char* label, int flags);
+	void  (*TreePushStr)(const char* str_id);
+	float (*GetTreeNodeToLabelSpacing)();
+	void  (*SetNextItemOpen)(bool is_open, int cond);
+
+	// v36: Listbox
+	bool  (*BeginListBox)(const char* label, float w, float h);
+	void  (*EndListBox)();
+
+	// v36: Tab bar
+	bool  (*BeginTabBar)(const char* str_id, int flags);
+	void  (*EndTabBar)();
+	bool  (*BeginTabItem)(const char* label, bool* p_open, int flags);
+	void  (*EndTabItem)();
+	bool  (*TabItemButton)(const char* label, int flags);
+
+	// v36: Menu bar / menus / menu items
+	bool  (*BeginMenuBar)();
+	void  (*EndMenuBar)();
+	bool  (*BeginMenu)(const char* label, bool enabled);
+	void  (*EndMenu)();
+	bool  (*MenuItem)(const char* label, const char* shortcut, bool selected, bool enabled);
+
+	// v36: Popups
+	bool  (*BeginPopup)(const char* str_id, int flags);
+	bool  (*BeginPopupModal)(const char* name, bool* p_open, int flags);
+	void  (*EndPopup)();
+	void  (*OpenPopup)(const char* str_id, int popup_flags);
+	void  (*CloseCurrentPopup)();
+	bool  (*BeginPopupContextItem)(const char* str_id, int popup_flags);
+	bool  (*BeginPopupContextWindow)(const char* str_id, int popup_flags);
+	bool  (*IsPopupOpen)(const char* str_id, int flags);
+
+	// v36: Tooltips
+	bool  (*BeginTooltip)();
+	void  (*EndTooltip)();
+	bool  (*BeginItemTooltip)();
+	void  (*SetItemTooltip)(const char* text);
+
+	// v36: Table extras
+	void  (*TableNextRow)(int row_flags, float min_row_height);
+	bool  (*TableSetColumnIndex)(int column_n);
+	void  (*TableSetupColumn)(const char* label, int flags, float init_width);
+	void  (*TableSetupScrollFreeze)(int cols, int rows);
+	void  (*TableHeadersRow)();
+	void  (*TableHeader)(const char* label);
+	int   (*TableGetColumnCount)();
+	int   (*TableGetColumnIndex)();
+	int   (*TableGetRowIndex)();
+	const char* (*TableGetColumnName)(int column_n);
+	void  (*TableSetBgColor)(int target, unsigned int color, int column_n);
+
+	// v36: Item state predicates
+	bool  (*IsItemActive)();
+	bool  (*IsItemFocused)();
+	bool  (*IsItemVisible)();
+	bool  (*IsItemEdited)();
+	bool  (*IsItemActivated)();
+	bool  (*IsItemDeactivated)();
+	bool  (*IsItemDeactivatedAfterEdit)();
+	bool  (*IsItemToggledOpen)();
+	bool  (*IsAnyItemHovered)();
+	bool  (*IsAnyItemActive)();
+	bool  (*IsAnyItemFocused)();
+	void  (*GetItemRectMin)(float* out_x, float* out_y);
+	void  (*GetItemRectMax)(float* out_x, float* out_y);
+	void  (*GetItemRectSize)(float* out_x, float* out_y);
+	void  (*SetItemDefaultFocus)();
+	void  (*SetKeyboardFocusHere)(int offset);
+	void  (*SetNextItemAllowOverlap)();
+
+	// v36: Disabled regions
+	void  (*BeginDisabled)(bool disabled);
+	void  (*EndDisabled)();
+
+	// v36: Clip rect
+	void  (*PushClipRect)(float min_x, float min_y, float max_x, float max_y, bool intersect_current);
+	void  (*PopClipRect)();
+
+	// v36: Mouse queries
+	bool  (*IsMouseDown)(int button);
+	bool  (*IsMouseClicked)(int button, bool repeat);
+	bool  (*IsMouseReleased)(int button);
+	bool  (*IsMouseDoubleClicked)(int button);
+	void  (*GetMousePos)(float* out_x, float* out_y);
+	bool  (*IsMouseDragging)(int button, float lock_threshold);
+	void  (*GetMouseDragDelta)(int button, float lock_threshold, float* out_x, float* out_y);
+	void  (*ResetMouseDragDelta)(int button);
+	void  (*SetMouseCursor)(int cursor_type);
+	bool  (*IsMouseHoveringRect)(float min_x, float min_y, float max_x, float max_y, bool clip);
+
+	// v36: Color utilities
+	unsigned int (*GetColorU32FromCol)(int idx, float alpha_mul);
+	unsigned int (*GetColorU32FromVec4)(float r, float g, float b, float a);
+	void         (*GetStyleColorVec4)(int idx, float* out_r, float* out_g, float* out_b, float* out_a);
+	void         (*ColorConvertRGBtoHSV)(float r, float g, float b, float* out_h, float* out_s, float* out_v);
+	void         (*ColorConvertHSVtoRGB)(float h, float s, float v, float* out_r, float* out_g, float* out_b);
+
+	// v36: Misc
+	double        (*GetTime)();
+	int           (*GetFrameCount)();
+	bool          (*IsRectVisible)(float w, float h);
+	const char*   (*GetClipboardText)();
+	void          (*SetClipboardText)(const char* text);
+	const char*   (*GetStyleColorName)(int idx);
 };
 
 typedef void (*PluginImGuiRenderCallback)(IModLoaderImGui* imgui);
