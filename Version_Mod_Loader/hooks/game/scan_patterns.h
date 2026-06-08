@@ -24,6 +24,14 @@ namespace ScanPatterns
 	inline constexpr auto StaticLoadObject =
 		"40 55 53 56 41 54 41 55 41 57 48 8D AC 24 ?? ?? ?? ?? 48 81 EC ?? ?? ?? ?? 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 85 ?? ?? ?? ?? 0F B6 85";
 
+	// AActor::InternalGetNetMode — returns the net mode (Standalone/DedicatedServer/
+	// ListenServer/Client) for the actor's owning world. Native C++ function --
+	// not a UFUNCTION, must be found via AOB scan and called directly (no hook).
+	// Available on all build types.
+	// Signature: ENetMode __fastcall AActor::InternalGetNetMode(AActor* this)
+	inline constexpr auto AActor_InternalGetNetMode =
+		"48 89 5C 24 ?? 57 48 83 EC ?? 48 8B D9 E8 ?? ?? ?? ?? 48 8B 9B";
+
 #if defined(MODLOADER_CLIENT_BUILD)
 	// AHUD::PostRender — called every frame on the game thread; hud->Canvas is valid inside.
 	// ACrHUD does not override this, so AHUD::PostRender is the hook target.

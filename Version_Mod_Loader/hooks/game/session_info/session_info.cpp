@@ -1,66 +1,80 @@
 #include "pch.h"
-#ifdef MODLOADER_CLIENT_BUILD
+#if defined(MODLOADER_SERVER_BUILD) || defined(MODLOADER_CLIENT_BUILD)
 
 #include "session_info.h"
 #include "logging/logger.h"
+#include "memory_scanner/scanner.h"
+#include "../scan_patterns.h"
 #include "Engine_classes.hpp"
-#include "Chimera_classes.hpp"
-
-// UCrSessionSubsystem field offsets confirmed via IDA Pro.
-// CommonSessionOnlineMode : uint8  @ 0x006B  (Offline=0, LAN=1, Online=2)
-// bIsServer               : bool   @ 0x006D
-static constexpr size_t k_CommonSessionOnlineModeOffset = 0x006B;
-static constexpr size_t k_bIsServerOffset               = 0x006D;
 
 namespace Hooks::SessionInfo
 {
-    static SDK::UCrSessionSubsystem* GetSubsystem()
+    // ENetMode __fastcall AActor::InternalGetNetMode(AActor* this)
+    // AActor is reflected in the SDK, so we can pass SDK::AActor* directly.
+    using AActor_InternalGetNetMode_t = int(__fastcall*)(SDK::AActor* This);
+
+    static AActor_InternalGetNetMode_t g_original = nullptr;
+
+    bool Install()
+    {
+        ModLoaderLogger::LogInfo(L"[SessionInfo] Scanning for AActor::InternalGetNetMode...");
+
+        uintptr_t addr = Scanner::FindPatternInMainModule(
+            "AActor::InternalGetNetMode", ScanPatterns::AActor_InternalGetNetMode);
+        if (!addr)
+        {
+            ModLoaderLogger::LogError(L"[SessionInfo] Failed to find AActor::InternalGetNetMode pattern");
+            return false;
+        }
+
+        g_original = reinterpret_cast<AActor_InternalGetNetMode_t>(addr);
+        ModLoaderLogger::LogInfo(L"[SessionInfo] Resolved AActor::InternalGetNetMode at 0x%llX", addr);
+        return true;
+    }
+
+    // Any actor will do -- InternalGetNetMode resolves the net mode from the
+    // actor's owning world/level. The game state is reliably present once a
+    // world has begun play.
+    static SDK::AActor* GetAnyActor()
     {
         SDK::UWorld* world = SDK::UWorld::GetWorld();
         if (!world)
             return nullptr;
 
-        auto* subsystem = static_cast<SDK::UCrSessionSubsystem*>(
-            SDK::USubsystemBlueprintLibrary::GetGameInstanceSubsystem(
-                world,
-                SDK::UCrSessionSubsystem::StaticClass()));
-
-        return subsystem;
+        return reinterpret_cast<SDK::AActor*>(world->GameState);
     }
 
-    EPluginSessionOnlineMode GetSessionOnlineMode()
+    EPluginNetMode GetNetMode()
     {
-        const SDK::UCrSessionSubsystem* subsystem = GetSubsystem();
-        if (!subsystem)
-            return EPluginSessionOnlineMode::Unknown;
+        if (!g_original)
+            return EPluginNetMode::Unknown;
 
-        const uint8_t raw = *reinterpret_cast<const uint8_t*>(
-            reinterpret_cast<const uint8_t*>(subsystem) + k_CommonSessionOnlineModeOffset);
+        SDK::AActor* actor = GetAnyActor();
+        if (!actor)
+            return EPluginNetMode::Unknown;
 
+        const int raw = g_original(actor);
         switch (raw)
         {
-        case 0:  return EPluginSessionOnlineMode::Offline;
-        case 1:  return EPluginSessionOnlineMode::LAN;
-        case 2:  return EPluginSessionOnlineMode::Online;
-        default: return EPluginSessionOnlineMode::Unknown;
+        case 0:  return EPluginNetMode::Standalone;
+        case 1:  return EPluginNetMode::DedicatedServer;
+        case 2:  return EPluginNetMode::ListenServer;
+        case 3:  return EPluginNetMode::Client;
+        default: return EPluginNetMode::Unknown;
         }
     }
 
     bool IsMultiplayer()
     {
-        const EPluginSessionOnlineMode mode = GetSessionOnlineMode();
-        return mode == EPluginSessionOnlineMode::LAN || mode == EPluginSessionOnlineMode::Online;
+        const EPluginNetMode mode = GetNetMode();
+        return mode == EPluginNetMode::ListenServer || mode == EPluginNetMode::Client;
     }
 
     bool IsServer()
     {
-        const SDK::UCrSessionSubsystem* subsystem = GetSubsystem();
-        if (!subsystem)
-            return false;
-
-        return *reinterpret_cast<const bool*>(
-            reinterpret_cast<const uint8_t*>(subsystem) + k_bIsServerOffset);
+        const EPluginNetMode mode = GetNetMode();
+        return mode == EPluginNetMode::DedicatedServer || mode == EPluginNetMode::ListenServer;
     }
 }
 
-#endif // MODLOADER_CLIENT_BUILD
+#endif // MODLOADER_SERVER_BUILD || MODLOADER_CLIENT_BUILD

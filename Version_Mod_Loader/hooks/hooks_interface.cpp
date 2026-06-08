@@ -32,6 +32,8 @@
 #include "UI/plugin_widget_registry.h"
 #include "hooks/game/hud_post_render/hud_post_render.h"
 #include "hooks/game/client_message/client_message.h"
+#endif
+#if defined(MODLOADER_SERVER_BUILD) || defined(MODLOADER_CLIENT_BUILD)
 #include "hooks/game/session_info/session_info.h"
 #endif
 #include <unordered_map>
@@ -870,30 +872,33 @@ namespace ModLoaderLogger
 		HooksGetGatherPlayersDataAddress
 	};
 
-	// --- Client session info wrappers (v32) ---
+#endif // MODLOADER_CLIENT_BUILD
 
-	static EPluginSessionOnlineMode HooksGetSessionOnlineMode()
+#if defined(MODLOADER_SERVER_BUILD) || defined(MODLOADER_CLIENT_BUILD)
+	// --- Net mode info wrappers (v36) ---
+
+	static EPluginNetMode HooksGetNetMode()
 	{
-		return Hooks::SessionInfo::GetSessionOnlineMode();
+		return Hooks::SessionInfo::GetNetMode();
 	}
 
-	static bool HooksIsMultiplayer()
+	static bool HooksNetModeIsMultiplayer()
 	{
 		return Hooks::SessionInfo::IsMultiplayer();
 	}
 
-	static bool HooksIsServer()
+	static bool HooksNetModeIsServer()
 	{
 		return Hooks::SessionInfo::IsServer();
 	}
 
-	// Client session info sub-interface struct (v32)
-	static IPluginClientSessionInfo g_clientSessionInfo = {
-		HooksGetSessionOnlineMode,
-		HooksIsMultiplayer,
-		HooksIsServer
+	// Net mode info sub-interface struct (v36)
+	static IPluginNetModeInfo g_netModeInfo = {
+		HooksGetNetMode,
+		HooksNetModeIsMultiplayer,
+		HooksNetModeIsServer
 	};
-#endif // MODLOADER_CLIENT_BUILD
+#endif // MODLOADER_SERVER_BUILD || MODLOADER_CLIENT_BUILD
 
 	// --- Native pointer wrappers (v21) ---
 
@@ -1032,10 +1037,10 @@ namespace ModLoaderLogger
 #else
 		nullptr,             // v22 — HttpServer is null on client/generic builds
 #endif
-#ifdef MODLOADER_CLIENT_BUILD
-		&g_clientSessionInfo, // v32 — session mode query functions (client only)
+#if defined(MODLOADER_SERVER_BUILD) || defined(MODLOADER_CLIENT_BUILD)
+		&g_netModeInfo,      // v36 — net mode query functions (server + client)
 #else
-		nullptr,              // v32 — ClientSession is null on server/generic builds
+		nullptr,             // v36 — NetMode is null on generic builds
 #endif
 		&g_textUtils          // FText localization helpers (AsLocalizable_Advanced, Conv_TextToString)
 	};

@@ -1,33 +1,37 @@
 #pragma once
 
-#ifdef MODLOADER_CLIENT_BUILD
+#if defined(MODLOADER_SERVER_BUILD) || defined(MODLOADER_CLIENT_BUILD)
 
 #include "../../../plugins/plugin_interface.h"
 
 // ---------------------------------------------------------------------------
-// Session Info  (client builds only)
+// Net Mode Info  (server + client builds)
 //
-// Purpose: Exposes query functions so plugins can determine whether the client
-//          is in a solo/offline session or connected to a multiplayer server.
+// Purpose: Exposes query functions so plugins can determine the current
+//          network mode (Standalone / DedicatedServer / ListenServer / Client).
 //
-// No hook is installed. Fields are read directly from UCrSessionSubsystem
-// obtained via UWorld -> OwningGameInstance -> GetGameInstanceSubsystem.
+// Implementation: AOB-scans for AActor::InternalGetNetMode and calls it
+// directly as a trampoline (no hook/detour) against any available actor.
 //
-//   CommonSessionOnlineMode @ 0x006B  (Offline=0, LAN=1, Online=2)
-//   bIsServer               @ 0x006D  (bool, confirmed via IDA Pro)
+//   ENetMode __fastcall AActor::InternalGetNetMode(AActor* this)
 // ---------------------------------------------------------------------------
 
 namespace Hooks::SessionInfo
 {
-    // Returns the current session online mode from UCrSessionSubsystem.
-    // Returns Unknown if the subsystem is unavailable (e.g. called too early).
-    EPluginSessionOnlineMode GetSessionOnlineMode();
+    // Resolves the AActor::InternalGetNetMode trampoline via AOB scan.
+    // Returns false if the pattern could not be found.
+    bool Install();
 
-    // True if GetSessionOnlineMode() is LAN or Online.
+    // Returns the current network mode by calling AActor::InternalGetNetMode
+    // on an available actor. Returns Unknown if the trampoline is not resolved
+    // or no actor is available yet (e.g. called before world begin play).
+    EPluginNetMode GetNetMode();
+
+    // True if GetNetMode() is ListenServer or Client.
     bool IsMultiplayer();
 
-    // True if UCrSessionSubsystem::bIsServer is set.
+    // True if GetNetMode() is DedicatedServer or ListenServer.
     bool IsServer();
 }
 
-#endif // MODLOADER_CLIENT_BUILD
+#endif // MODLOADER_SERVER_BUILD || MODLOADER_CLIENT_BUILD

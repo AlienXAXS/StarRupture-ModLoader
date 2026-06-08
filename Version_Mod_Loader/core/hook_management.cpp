@@ -18,6 +18,9 @@
 #include "../hooks/game/text_localization/text_key.h"
 #include "../hooks/game/world_begin_play/world_begin_play.h"
 #include "../hooks/game/world_end_play/world_end_play.h"
+#if defined(MODLOADER_SERVER_BUILD) || defined(MODLOADER_CLIENT_BUILD)
+#include "../hooks/game/session_info/session_info.h"
+#endif
 
 #ifdef MODLOADER_SERVER_BUILD
 #include "../hooks/http/http_server_hook.h"
@@ -75,6 +78,13 @@ void InstallAllHooks()
         ModLoaderLogger::LogDebug(L"  TextKey hook installed");
     else
         ModLoaderLogger::LogWarn(L"  WARNING: TextKey hook failed to install");
+
+#if defined(MODLOADER_SERVER_BUILD) || defined(MODLOADER_CLIENT_BUILD)
+    if (Hooks::SessionInfo::Install())
+        ModLoaderLogger::LogDebug(L"  SessionInfo (NetMode) resolved");
+    else
+        ModLoaderLogger::LogWarn(L"  WARNING: SessionInfo failed to resolve AActor::InternalGetNetMode -- IPluginNetModeInfo will report Unknown");
+#endif
 
 #ifdef MODLOADER_SERVER_BUILD
     Splash::SetStatus(L"Installing HTTP server hook...");

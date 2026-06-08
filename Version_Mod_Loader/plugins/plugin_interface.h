@@ -48,21 +48,33 @@
 //      --- Added MakeTextKey to IPluginTextUtils (trampoline for FTextKey::FTextKey),
 //      letting plugins build the Namespace/Key FTextKey arguments required by
 //      AsLocalizable_Advanced.  MIN remains 34.
+// v36: Replaced IPluginClientSessionInfo with IPluginNetModeInfo (server + client,
+//      null on generic). The old offset-based UCrSessionSubsystem reads were
+//      replaced with an AOB-resolved trampoline to AActor::InternalGetNetMode,
+//      exposed via the new EPluginNetMode enum (mirrors engine ENetMode) so
+//      plugins can compare against typed names instead of raw integers.
+//      MIN should be bumped, but no one is using it yet.
+
 #define PLUGIN_INTERFACE_VERSION_MIN 34
-#define PLUGIN_INTERFACE_VERSION_MAX 35
-#define PLUGIN_INTERFACE_VERSION 35
+#define PLUGIN_INTERFACE_VERSION_MAX 36
+#define PLUGIN_INTERFACE_VERSION 36
 
 enum class PluginLogLevel { Trace = 0, Debug = 1, Info = 2, Warn = 3, Error = 4 };
 enum class ConfigValueType { String, Integer, Float, Boolean, Keybind };
 
-// Session online mode — mirrors ECrOnlineSessionMode / ECommonSessionOnlineMode from the game.
-// Offline = solo/standalone, LAN/Online = multiplayer session.
-enum class EPluginSessionOnlineMode : uint8_t
+// Network mode — mirrors the engine's ENetMode enum, letting plugins compare
+// against nicely-typed names instead of raw integers when querying GetNetMode().
+//   Standalone      = solo/offline, no networking
+//   DedicatedServer = headless server, no local players
+//   ListenServer    = server with a local player
+//   Client          = connected to a remote server
+enum class EPluginNetMode : uint8_t
 {
-    Offline = 0,
-    LAN     = 1,
-    Online  = 2,
-    Unknown = 255
+    Standalone      = 0,
+    DedicatedServer = 1,
+    ListenServer    = 2,
+    Client          = 3,
+    Unknown         = 255
 };
 
 struct ConfigEntry
@@ -827,19 +839,21 @@ struct IPluginHttpServer
 };
 
 // ---------------------------------------------------------------------------
-// Client session info (v32) — client only, null on server/generic
+// Net mode info (v36) — server + client, null on generic
 // ---------------------------------------------------------------------------
-struct IPluginClientSessionInfo
+struct IPluginNetModeInfo
 {
-    // Returns the current online mode read from UCrSessionSubsystem.
-    // Offline = solo/standalone, LAN or Online = connected to a session.
-    // Returns Unknown if the subsystem is not yet available.
-    EPluginSessionOnlineMode (*GetSessionOnlineMode)();
+    // Returns the current network mode via AActor::InternalGetNetMode, resolved
+    // by AOB scan and invoked directly as a trampoline (no hook/detour).
+    // Returns Unknown if the function could not be resolved or no actor is
+    // available yet to query (e.g. called before world begin play).
+    EPluginNetMode (*GetNetMode)();
 
-    // Convenience: true if GetSessionOnlineMode() != Offline and != Unknown.
+    // Convenience: true if GetNetMode() is ListenServer or Client, i.e. an
+    // active multiplayer session as opposed to a Standalone game.
     bool (*IsMultiplayer)();
 
-    // True when UCrSessionSubsystem::bIsServer is set (i.e. this instance is acting as server).
+    // Convenience: true if GetNetMode() is DedicatedServer or ListenServer.
     bool (*IsServer)();
 };
 
@@ -861,7 +875,7 @@ struct IPluginHooks
 	IPluginNetworkChannel* Network;   // v17 — server+client; null on generic
 	IPluginNativePointers* NativePointers; // v21
 	IPluginHttpServer*     HttpServer;     // v22 — server only, null on client/generic
-	IPluginClientSessionInfo* ClientSession; // v32 — client only, null on server/generic
+	IPluginNetModeInfo*    NetMode;          // v36 — server + client; null on generic
 	IPluginTextUtils*      Text;             // FText localization helpers (AsLocalizable_Advanced, Conv_TextToString)
 };
 
