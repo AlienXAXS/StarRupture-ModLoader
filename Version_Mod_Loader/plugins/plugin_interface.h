@@ -62,10 +62,20 @@
 //      GetAssetDataFastGetAssetAddress -- AOB-resolved during early modloader
 //      startup (Hooks::ObjectLookup), exposed as raw trampoline addresses.
 //      MIN remains 34.
+// v37: Added IPluginImGuiTextures (client only, null on server/generic).
+//      Lets plugins load images from file or memory (WIC: PNG/JPG/BMP/GIF/TIFF),
+//      from raw RGBA pixels, or directly from a live SDK::UTexture2D*, and render
+//      them via Image/ImageButton without any direct D3D12 access.
+//      Up to 64 textures may be live at once.
+//      hooks->ImGuiTextures->{LoadFromFile, LoadFromMemory, LoadFromRGBA,
+//      LoadFromUTexture2D, FreeTexture, GetSize, Image, ImageButton}.
+//      LoadFromUTexture2D wraps the engine-owned GPU texture in-place (no copy).
+//      The UTexture2D must remain alive while the handle is in use.
+//      MIN remains 34.
 
 #define PLUGIN_INTERFACE_VERSION_MIN 34
-#define PLUGIN_INTERFACE_VERSION_MAX 36
-#define PLUGIN_INTERFACE_VERSION 36
+#define PLUGIN_INTERFACE_VERSION_MAX 37
+#define PLUGIN_INTERFACE_VERSION 37
 
 enum class PluginLogLevel { Trace = 0, Debug = 1, Info = 2, Warn = 3, Error = 4 };
 enum class ConfigValueType { String, Integer, Float, Boolean, Keybind };
@@ -139,7 +149,7 @@ struct IPluginScanner
 };
 
 typedef void* HookHandle;
-namespace SDK { class UWorld; }
+namespace SDK { class UWorld; class UTexture2D; }
 
 // ---------------------------------------------------------------------------
 // Callback typedefs (v14+)
@@ -618,6 +628,58 @@ struct IModLoaderImGui
 
 typedef void (*PluginImGuiRenderCallback)(IModLoaderImGui* imgui);
 
+// ---------------------------------------------------------------------------
+// Texture API (v37, client only)
+// ---------------------------------------------------------------------------
+
+// Opaque handle returned by the texture load functions. NULL = invalid/failed.
+typedef void* PluginTextureHandle;
+
+// Interface for loading and rendering images without direct D3D12 access.
+// Retrieved via hooks->ImGuiTextures (client only; nullptr on server/generic).
+//
+// Up to 64 textures may be live at once. Load before or during rendering;
+// free when no longer needed. Image/ImageButton must be called from inside
+// a plugin render callback while an ImGui frame is in progress.
+struct IPluginImGuiTextures
+{
+    // Load from a UTF-8 file path. Supports PNG, JPG, BMP, GIF, TIFF (via WIC).
+    // Returns NULL if D3D12 is not ready yet or if decoding fails.
+    PluginTextureHandle (*LoadFromFile)(const char* utf8_path);
+
+    // Load from encoded image bytes in memory (same formats as LoadFromFile).
+    // data must remain valid only for the duration of this call.
+    PluginTextureHandle (*LoadFromMemory)(const void* data, size_t size);
+
+    // Load from raw 32-bit RGBA pixels (4 bytes/pixel, top-left row-major).
+    // data must remain valid only for the duration of this call.
+    PluginTextureHandle (*LoadFromRGBA)(const unsigned char* rgba, int width, int height);
+
+    // Wrap a live UTexture2D in an ImGui handle without copying pixels.
+    // Creates an SRV directly over the engine-owned GPU resource.
+    // The UTexture2D must remain valid and GPU-resident for as long as the
+    // handle is in use. FreeTexture releases the SRV slot but does NOT
+    // release the underlying D3D12 resource (the engine owns it).
+    // Returns NULL if D3D12 is not ready, the texture has no GPU resource yet,
+    // or no free slots remain.
+    PluginTextureHandle (*LoadFromUTexture2D)(SDK::UTexture2D* texture);
+
+    // Release the texture and free its slot. Safe to call with NULL.
+    // Do not call while the texture may still be rendered on the GPU.
+    void (*FreeTexture)(PluginTextureHandle handle);
+
+    // Query the texture's natural dimensions. Either out pointer may be NULL.
+    void (*GetSize)(PluginTextureHandle handle, int* out_width, int* out_height);
+
+    // Render the texture at the current ImGui cursor position.
+    // Pass width=0, height=0 to use the texture's natural size.
+    void (*Image)(PluginTextureHandle handle, float width, float height);
+
+    // Clickable image button. Returns true if clicked.
+    // Pass width=0, height=0 to use the texture's natural size.
+    bool (*ImageButton)(const char* str_id, PluginTextureHandle handle, float width, float height);
+};
+
 // Flags for PluginWindowHints::extra_window_flags (v31).
 // Values mirror ImGuiWindowFlags so plugins do not need imgui.h.
 #define PluginWindowFlags_NoTitleBar        (1 << 0)
@@ -908,6 +970,7 @@ struct IPluginHooks
 	IPluginHttpServer*     HttpServer;     // v22 — server only, null on client/generic
 	IPluginNetModeInfo*    NetMode;          // v36 — server + client; null on generic
 	IPluginTextUtils*      Text;             // FText localization helpers (AsLocalizable_Advanced, Conv_TextToString)
+	IPluginImGuiTextures*  ImGuiTextures;    // v37 — client only; null on server/generic
 };
 
 // ---------------------------------------------------------------------------

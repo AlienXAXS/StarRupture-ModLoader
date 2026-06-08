@@ -27,6 +27,10 @@
 
 #pragma comment(lib, "d3d12.lib")
 #pragma comment(lib, "dxgi.lib")
+#pragma comment(lib, "windowscodecs.lib")
+
+#include <wincodec.h>
+#include <mutex>
 
 // ---------------------------------------------------------------------------
 // Forward declarations
@@ -89,6 +93,31 @@ namespace
 	WNDPROC g_origWndProc = nullptr;
 
 	IModLoaderImGui g_imguiAPI = {};
+
+	// -------------------------------------------------------------------------
+	// Plugin texture registry (v37)
+	// -------------------------------------------------------------------------
+	static const int MAX_PLUGIN_TEXTURES = 64;
+
+	struct PluginTextureRecord
+	{
+		ID3D12Resource*              resource  = nullptr;
+		D3D12_GPU_DESCRIPTOR_HANDLE  gpuHandle = {};
+		int                          width     = 0;
+		int                          height    = 0;
+		bool                         inUse     = false;
+		// true  = modloader owns this resource (uploaded via our path); Release() on free.
+		// false = engine-owned resource (LoadFromUTexture2D); do NOT Release() on free.
+		bool                         owned     = true;
+	};
+
+	PluginTextureRecord g_pluginTextures[MAX_PLUGIN_TEXTURES] = {};
+	std::mutex          g_textureMutex;
+	UINT                g_srvDescSize = 0;
+	IPluginImGuiTextures g_textureAPI = {};
+
+	// WIC factory — created once on first texture load, released in Shutdown.
+	IWICImagingFactory* g_wicFactory = nullptr;
 
 	// -------------------------------------------------------------------------
 	// Font rebuild state
@@ -795,11 +824,11 @@ static bool InitD3D12Resources(IDXGISwapChain* swapChain)
 		g_rtvDescSize = g_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
 	}
 
-	// SRV descriptor heap (1 slot for ImGui font texture).
+	// SRV descriptor heap: slot 0 = ImGui font atlas, slots 1..MAX_PLUGIN_TEXTURES = plugin textures.
 	{
 		D3D12_DESCRIPTOR_HEAP_DESC desc = {};
 		desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-		desc.NumDescriptors = 1;
+		desc.NumDescriptors = 1 + MAX_PLUGIN_TEXTURES;
 		desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 		desc.NodeMask = nodeMask;
 		if (FAILED(g_device->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&g_srvHeap))))
@@ -807,6 +836,7 @@ static bool InitD3D12Resources(IDXGISwapChain* swapChain)
 			LogToFile::Error("[ImGuiBackend] Failed to create SRV heap");
 			return false;
 		}
+		g_srvDescSize = g_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 	}
 
 	// Per-frame command allocators.
@@ -908,12 +938,27 @@ static void CleanupD3D12Resources()
 	if (g_fence) { g_fence->Release();                g_fence = nullptr; }
 	if (g_fenceEvent) { CloseHandle(g_fenceEvent);         g_fenceEvent = nullptr; }
 	if (g_rtvHeap) { g_rtvHeap->Release();              g_rtvHeap = nullptr; }
+
+	// Release all plugin-owned texture resources before the SRV heap.
+	// Engine-owned textures (LoadFromUTexture2D, owned=false) are NOT Released here.
+	{
+		std::lock_guard<std::mutex> lock(g_textureMutex);
+		for (int i = 0; i < MAX_PLUGIN_TEXTURES; ++i)
+		{
+			if (g_pluginTextures[i].inUse && g_pluginTextures[i].owned && g_pluginTextures[i].resource)
+				g_pluginTextures[i].resource->Release();
+			g_pluginTextures[i] = {};
+		}
+	}
+	if (g_wicFactory) { g_wicFactory->Release(); g_wicFactory = nullptr; }
+
 	if (g_srvHeap) { g_srvHeap->Release();              g_srvHeap = nullptr; }
 	if (g_device) { g_device->Release();               g_device = nullptr; }
 	g_capturedQueue = nullptr;   // weak ref -- do NOT Release
 	g_swapChain = nullptr;
 	g_fenceValue = 0;
 	g_rtvFormat = DXGI_FORMAT_UNKNOWN;
+	g_srvDescSize = 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -1501,6 +1546,469 @@ namespace ImGuiWrappers
 	static void Dummy(float sx, float sy) { ImGui::Dummy(ImVec2(sx, sy)); }
 }
 
+// ---------------------------------------------------------------------------
+// Plugin texture system (v37)
+// ---------------------------------------------------------------------------
+
+// Returns the lazily-created WIC factory; nullptr if WIC is unavailable.
+static IWICImagingFactory* GetWICFactory()
+{
+	if (!g_wicFactory)
+		CoCreateInstance(CLSID_WICImagingFactory, nullptr,
+			CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&g_wicFactory));
+	return g_wicFactory;
+}
+
+// Upload RGBA pixels to a new shader-visible D3D12 texture.
+// Writes an SRV into srvCpuHandle. Returns the texture resource on success.
+// Creates a private temporary command queue so it never conflicts with the
+// main render queue, and blocks until the GPU copy is complete before returning.
+static ID3D12Resource* UploadRGBAToGPU(
+	const uint8_t* rgba, int width, int height,
+	D3D12_CPU_DESCRIPTOR_HANDLE srvCpuHandle)
+{
+	if (!g_device || !rgba || width <= 0 || height <= 0)
+		return nullptr;
+
+	// Default heap texture
+	D3D12_HEAP_PROPERTIES heapProps = {};
+	heapProps.Type = D3D12_HEAP_TYPE_DEFAULT;
+
+	D3D12_RESOURCE_DESC texDesc = {};
+	texDesc.Dimension        = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+	texDesc.Width            = (UINT)width;
+	texDesc.Height           = (UINT)height;
+	texDesc.DepthOrArraySize = 1;
+	texDesc.MipLevels        = 1;
+	texDesc.Format           = DXGI_FORMAT_R8G8B8A8_UNORM;
+	texDesc.SampleDesc.Count = 1;
+	texDesc.Layout           = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+	texDesc.Flags            = D3D12_RESOURCE_FLAG_NONE;
+
+	ID3D12Resource* texResource = nullptr;
+	if (FAILED(g_device->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE,
+		&texDesc, D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&texResource))))
+		return nullptr;
+
+	// Upload heap buffer
+	UINT rowPitch   = ((UINT)width * 4u + D3D12_TEXTURE_DATA_PITCH_ALIGNMENT - 1u)
+	                  & ~(D3D12_TEXTURE_DATA_PITCH_ALIGNMENT - 1u);
+	UINT uploadSize = (UINT)height * rowPitch;
+
+	D3D12_HEAP_PROPERTIES uploadProps = {};
+	uploadProps.Type = D3D12_HEAP_TYPE_UPLOAD;
+
+	D3D12_RESOURCE_DESC uploadDesc = {};
+	uploadDesc.Dimension        = D3D12_RESOURCE_DIMENSION_BUFFER;
+	uploadDesc.Width            = uploadSize;
+	uploadDesc.Height           = 1;
+	uploadDesc.DepthOrArraySize = 1;
+	uploadDesc.MipLevels        = 1;
+	uploadDesc.Format           = DXGI_FORMAT_UNKNOWN;
+	uploadDesc.SampleDesc.Count = 1;
+	uploadDesc.Layout           = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+
+	ID3D12Resource* uploadBuffer = nullptr;
+	if (FAILED(g_device->CreateCommittedResource(&uploadProps, D3D12_HEAP_FLAG_NONE,
+		&uploadDesc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&uploadBuffer))))
+	{
+		texResource->Release();
+		return nullptr;
+	}
+
+	// Copy pixels row-by-row to respect pitch alignment
+	void* mapped = nullptr;
+	D3D12_RANGE mapRange = { 0, uploadSize };
+	if (FAILED(uploadBuffer->Map(0, &mapRange, &mapped)))
+	{
+		uploadBuffer->Release();
+		texResource->Release();
+		return nullptr;
+	}
+	for (int y = 0; y < height; ++y)
+		memcpy((uint8_t*)mapped + (size_t)y * rowPitch,
+		       rgba + (size_t)y * width * 4, (size_t)width * 4);
+	uploadBuffer->Unmap(0, &mapRange);
+
+	// Private command queue for the upload
+	D3D12_COMMAND_QUEUE_DESC queueDesc = {};
+	queueDesc.Type     = D3D12_COMMAND_LIST_TYPE_DIRECT;
+	queueDesc.NodeMask = 1;
+
+	ID3D12CommandQueue*         tmpQueue = nullptr;
+	ID3D12CommandAllocator*     tmpAlloc = nullptr;
+	ID3D12GraphicsCommandList*  tmpList  = nullptr;
+	ID3D12Fence*                tmpFence = nullptr;
+	HANDLE                      tmpEvent = nullptr;
+
+	bool ok =
+		SUCCEEDED(g_device->CreateCommandQueue(&queueDesc, IID_PPV_ARGS(&tmpQueue))) &&
+		SUCCEEDED(g_device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&tmpAlloc))) &&
+		SUCCEEDED(g_device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, tmpAlloc, nullptr, IID_PPV_ARGS(&tmpList))) &&
+		SUCCEEDED(g_device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&tmpFence)));
+
+	if (ok) tmpEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
+
+	if (!ok || !tmpEvent)
+	{
+		if (tmpEvent) CloseHandle(tmpEvent);
+		if (tmpFence) tmpFence->Release();
+		if (tmpList)  tmpList->Release();
+		if (tmpAlloc) tmpAlloc->Release();
+		if (tmpQueue) tmpQueue->Release();
+		uploadBuffer->Release();
+		texResource->Release();
+		return nullptr;
+	}
+
+	// Record copy + transition
+	D3D12_TEXTURE_COPY_LOCATION src = {};
+	src.pResource                          = uploadBuffer;
+	src.Type                               = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
+	src.PlacedFootprint.Footprint.Format   = DXGI_FORMAT_R8G8B8A8_UNORM;
+	src.PlacedFootprint.Footprint.Width    = (UINT)width;
+	src.PlacedFootprint.Footprint.Height   = (UINT)height;
+	src.PlacedFootprint.Footprint.Depth    = 1;
+	src.PlacedFootprint.Footprint.RowPitch = rowPitch;
+
+	D3D12_TEXTURE_COPY_LOCATION dst = {};
+	dst.pResource        = texResource;
+	dst.Type             = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+	dst.SubresourceIndex = 0;
+
+	D3D12_RESOURCE_BARRIER barrier = {};
+	barrier.Type                   = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+	barrier.Transition.pResource   = texResource;
+	barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+	barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_DEST;
+	barrier.Transition.StateAfter  = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+
+	tmpList->CopyTextureRegion(&dst, 0, 0, 0, &src, nullptr);
+	tmpList->ResourceBarrier(1, &barrier);
+	tmpList->Close();
+
+	tmpQueue->ExecuteCommandLists(1, (ID3D12CommandList* const*)&tmpList);
+	tmpQueue->Signal(tmpFence, 1);
+	tmpFence->SetEventOnCompletion(1, tmpEvent);
+	WaitForSingleObject(tmpEvent, INFINITE);
+
+	// Tear down temporary infrastructure and upload buffer
+	CloseHandle(tmpEvent);
+	tmpFence->Release();
+	tmpList->Release();
+	tmpAlloc->Release();
+	tmpQueue->Release();
+	uploadBuffer->Release();
+
+	// Create the shader resource view
+	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+	srvDesc.Format                     = DXGI_FORMAT_R8G8B8A8_UNORM;
+	srvDesc.ViewDimension              = D3D12_SRV_DIMENSION_TEXTURE2D;
+	srvDesc.Texture2D.MipLevels        = 1;
+	srvDesc.Shader4ComponentMapping    = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+	g_device->CreateShaderResourceView(texResource, &srvDesc, srvCpuHandle);
+
+	return texResource;
+}
+
+// Decode an image from an IWICBitmapSource (any format) to a raw RGBA pixel buffer.
+// Returns heap-allocated pixels on success (caller delete[]s it); sets width/height.
+static uint8_t* WICToRGBA(IWICBitmapSource* src, int* out_w, int* out_h)
+{
+	IWICImagingFactory* factory = GetWICFactory();
+	if (!factory) return nullptr;
+
+	IWICFormatConverter* conv = nullptr;
+	if (FAILED(factory->CreateFormatConverter(&conv))) return nullptr;
+
+	HRESULT hr = conv->Initialize(src, GUID_WICPixelFormat32bppRGBA,
+		WICBitmapDitherTypeNone, nullptr, 0.0, WICBitmapPaletteTypeCustom);
+	if (FAILED(hr)) { conv->Release(); return nullptr; }
+
+	UINT w = 0, h = 0;
+	conv->GetSize(&w, &h);
+
+	uint8_t* pixels = new uint8_t[(size_t)w * h * 4];
+	hr = conv->CopyPixels(nullptr, w * 4, w * h * 4, pixels);
+	conv->Release();
+
+	if (FAILED(hr)) { delete[] pixels; return nullptr; }
+	*out_w = (int)w;
+	*out_h = (int)h;
+	return pixels;
+}
+
+// Allocate the next free plugin texture slot (0-based into g_pluginTextures).
+// Must be called with g_textureMutex held. Returns -1 when all slots are used.
+static int AllocTextureSlot()
+{
+	for (int i = 0; i < MAX_PLUGIN_TEXTURES; ++i)
+		if (!g_pluginTextures[i].inUse)
+			return i;
+	return -1;
+}
+
+// Validate that a PluginTextureHandle points at a live record in g_pluginTextures.
+static PluginTextureRecord* ValidateHandle(PluginTextureHandle h)
+{
+	if (!h) return nullptr;
+	auto* rec = static_cast<PluginTextureRecord*>(h);
+	if (rec < g_pluginTextures || rec >= g_pluginTextures + MAX_PLUGIN_TEXTURES) return nullptr;
+	if (!rec->inUse) return nullptr;
+	return rec;
+}
+
+// ---------- IPluginImGuiTextures implementation ----------
+
+static PluginTextureHandle TextureLoadFromRGBA(const unsigned char* rgba, int width, int height)
+{
+	if (!g_device || !rgba || width <= 0 || height <= 0)
+		return nullptr;
+
+	std::lock_guard<std::mutex> lock(g_textureMutex);
+	int slot = AllocTextureSlot();
+	if (slot < 0)
+	{
+		LogToFile::Error("[ImGuiBackend] TextureLoadFromRGBA: all %d slots in use", MAX_PLUGIN_TEXTURES);
+		return nullptr;
+	}
+
+	D3D12_CPU_DESCRIPTOR_HANDLE cpuHandle = g_srvHeap->GetCPUDescriptorHandleForHeapStart();
+	cpuHandle.ptr += (UINT64)(slot + 1) * g_srvDescSize;  // slot 0 is ImGui font atlas
+	D3D12_GPU_DESCRIPTOR_HANDLE gpuHandle = g_srvHeap->GetGPUDescriptorHandleForHeapStart();
+	gpuHandle.ptr += (UINT64)(slot + 1) * g_srvDescSize;
+
+	ID3D12Resource* resource = UploadRGBAToGPU(rgba, width, height, cpuHandle);
+	if (!resource)
+	{
+		LogToFile::Error("[ImGuiBackend] TextureLoadFromRGBA: GPU upload failed (%dx%d)", width, height);
+		return nullptr;
+	}
+
+	PluginTextureRecord& rec = g_pluginTextures[slot];
+	rec.resource  = resource;
+	rec.gpuHandle = gpuHandle;
+	rec.width     = width;
+	rec.height    = height;
+	rec.inUse     = true;
+
+	return &rec;
+}
+
+// ---------------------------------------------------------------------------
+// UTexture2D -> ImGui handle (no pixel copy; wraps the engine's GPU resource)
+// ---------------------------------------------------------------------------
+//
+// UE5 internal layout assumptions (verified against Dumper-7 SDK output):
+//
+//  UTexture::PrivateResource   -- UTexture + 0x120
+//    Confirmed: Dumper-7 shows Pad_120[0x20] in UTexture covering exactly
+//    PrivateResource(8) + PrivateResourceRenderThread(8) +
+//    PrivateAsyncResourceReleaseHandleId(16) = 32 bytes (UE5 source match).
+//
+//  FTexture::TextureRHI raw pointer -- FTextureResource + 0x10
+//    IDA: FTexture : FRenderResource (sizeof=0x48), FRenderResource = 0x10 bytes
+//    (vtable=8 + state/flags=8). TextureRHI (TRefCountPtr<FRHITexture>) is the
+//    first FTexture member at offset 0x10. FTextureResource : FTexture, single
+//    inheritance, so the offset is the same in FTextureResource objects.
+//
+//  FRHITexture::GetNativeResource() -- vtable slot 2
+//    FRHIResource has only virtual ~FRHIResource(); MSVC emits two vtable entries
+//    per virtual destructor: [0] scalar, [1] vector deleting destructor.
+//    FRHITexture::GetNativeResource() is its first virtual => slot [2].
+//    (In shipping builds ENABLE_RHI_VALIDATION is off -- no extra validation virtuals.)
+//
+// If any of these offsets change after a game update, adjust the constants below.
+// ---------------------------------------------------------------------------
+static constexpr ptrdiff_t kUTexture_PrivateResource          = 0x120;
+static constexpr ptrdiff_t kFTextureResource_TextureRHI_Ptr   = 0x10;
+static constexpr int       kFRHITexture_GetNativeResource_Slot = 2;
+
+static PluginTextureHandle TextureLoadFromUTexture2D(SDK::UTexture2D* uTexture2D)
+{
+	if (!g_device || !uTexture2D) return nullptr;
+
+	// Step 1: UTexture::PrivateResource
+	uint8_t* textureBase = reinterpret_cast<uint8_t*>(uTexture2D);
+	void*    resourcePtr = *reinterpret_cast<void**>(textureBase + kUTexture_PrivateResource);
+	if (!resourcePtr) return nullptr;  // texture not streamed/resident yet
+
+	// Step 2: FTextureResource::TextureRHI -> raw FRHITexture*
+	uint8_t* textureResourceBase = reinterpret_cast<uint8_t*>(resourcePtr);
+	void*    rhiTexture = *reinterpret_cast<void**>(textureResourceBase + kFTextureResource_TextureRHI_Ptr);
+	if (!rhiTexture) return nullptr;
+
+	// Step 3: FRHITexture::GetNativeResource() via vtable
+	// Signature: void* __fastcall GetNativeResource(void* this)
+	using GetNativeResourceFn = void*(__fastcall*)(void*);
+	void** vtable = *reinterpret_cast<void***>(rhiTexture);
+	auto getNativeResource = reinterpret_cast<GetNativeResourceFn>(vtable[kFRHITexture_GetNativeResource_Slot]);
+	ID3D12Resource* d3dResource = static_cast<ID3D12Resource*>(getNativeResource(rhiTexture));
+	if (!d3dResource) return nullptr;
+
+	// Query dimensions from the D3D12 resource itself
+	D3D12_RESOURCE_DESC resDesc = d3dResource->GetDesc();
+	int width  = static_cast<int>(resDesc.Width);
+	int height = static_cast<int>(resDesc.Height);
+	if (width <= 0 || height <= 0) return nullptr;
+
+	// Step 4: Allocate a descriptor slot and create an SRV over the existing resource.
+	// No upload needed -- the resource is already GPU-resident.
+	std::lock_guard<std::mutex> lock(g_textureMutex);
+	int slot = AllocTextureSlot();
+	if (slot < 0)
+	{
+		LogToFile::Error("[ImGuiBackend] TextureLoadFromUTexture2D: all %d slots in use", MAX_PLUGIN_TEXTURES);
+		return nullptr;
+	}
+
+	D3D12_CPU_DESCRIPTOR_HANDLE cpuHandle = g_srvHeap->GetCPUDescriptorHandleForHeapStart();
+	cpuHandle.ptr += (UINT64)(slot + 1) * g_srvDescSize;
+	D3D12_GPU_DESCRIPTOR_HANDLE gpuHandle = g_srvHeap->GetGPUDescriptorHandleForHeapStart();
+	gpuHandle.ptr += (UINT64)(slot + 1) * g_srvDescSize;
+
+	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+	srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+	srvDesc.Format                  = resDesc.Format;
+	srvDesc.ViewDimension           = D3D12_SRV_DIMENSION_TEXTURE2D;
+	srvDesc.Texture2D.MostDetailedMip      = 0;
+	srvDesc.Texture2D.MipLevels            = resDesc.MipLevels;
+	srvDesc.Texture2D.PlaneSlice           = 0;
+	srvDesc.Texture2D.ResourceMinLODClamp  = 0.0f;
+	g_device->CreateShaderResourceView(d3dResource, &srvDesc, cpuHandle);
+
+	PluginTextureRecord& rec = g_pluginTextures[slot];
+	rec.resource  = d3dResource;
+	rec.gpuHandle = gpuHandle;
+	rec.width     = width;
+	rec.height    = height;
+	rec.inUse     = true;
+	rec.owned     = false;  // engine owns this resource; we must NOT Release it
+
+	return &rec;
+}
+
+static PluginTextureHandle TextureLoadFromMemory(const void* data, size_t size)
+{
+	if (!data || size == 0) return nullptr;
+
+	IWICImagingFactory* factory = GetWICFactory();
+	if (!factory) return nullptr;
+
+	IWICStream* stream = nullptr;
+	if (FAILED(factory->CreateStream(&stream))) return nullptr;
+	if (FAILED(stream->InitializeFromMemory((BYTE*)data, (DWORD)size)))
+	{
+		stream->Release();
+		return nullptr;
+	}
+
+	IWICBitmapDecoder* decoder = nullptr;
+	HRESULT hr = factory->CreateDecoderFromStream(stream, nullptr,
+		WICDecodeMetadataCacheOnLoad, &decoder);
+	stream->Release();
+	if (FAILED(hr)) return nullptr;
+
+	IWICBitmapFrameDecode* frame = nullptr;
+	hr = decoder->GetFrame(0, &frame);
+	decoder->Release();
+	if (FAILED(hr)) return nullptr;
+
+	int w = 0, h = 0;
+	uint8_t* pixels = WICToRGBA(frame, &w, &h);
+	frame->Release();
+	if (!pixels) return nullptr;
+
+	PluginTextureHandle handle = TextureLoadFromRGBA(pixels, w, h);
+	delete[] pixels;
+	return handle;
+}
+
+static PluginTextureHandle TextureLoadFromFile(const char* utf8_path)
+{
+	if (!utf8_path || !*utf8_path) return nullptr;
+
+	// UTF-8 -> wide string for WIC
+	int wlen = MultiByteToWideChar(CP_UTF8, 0, utf8_path, -1, nullptr, 0);
+	if (wlen <= 0) return nullptr;
+	wchar_t* wpath = new wchar_t[wlen];
+	MultiByteToWideChar(CP_UTF8, 0, utf8_path, -1, wpath, wlen);
+
+	IWICImagingFactory* factory = GetWICFactory();
+	if (!factory) { delete[] wpath; return nullptr; }
+
+	IWICBitmapDecoder* decoder = nullptr;
+	HRESULT hr = factory->CreateDecoderFromFilename(wpath, nullptr, GENERIC_READ,
+		WICDecodeMetadataCacheOnLoad, &decoder);
+	delete[] wpath;
+	if (FAILED(hr)) return nullptr;
+
+	IWICBitmapFrameDecode* frame = nullptr;
+	hr = decoder->GetFrame(0, &frame);
+	decoder->Release();
+	if (FAILED(hr)) return nullptr;
+
+	int w = 0, h = 0;
+	uint8_t* pixels = WICToRGBA(frame, &w, &h);
+	frame->Release();
+	if (!pixels) return nullptr;
+
+	PluginTextureHandle handle = TextureLoadFromRGBA(pixels, w, h);
+	delete[] pixels;
+	return handle;
+}
+
+static void TextureFreeTexture(PluginTextureHandle handle)
+{
+	std::lock_guard<std::mutex> lock(g_textureMutex);
+	PluginTextureRecord* rec = ValidateHandle(handle);
+	if (!rec) return;
+	// Only Release resources we uploaded ourselves; engine-owned resources (owned=false) are not ours to free.
+	if (rec->owned && rec->resource) { rec->resource->Release(); rec->resource = nullptr; }
+	*rec = {};
+}
+
+static void TextureGetSize(PluginTextureHandle handle, int* out_w, int* out_h)
+{
+	PluginTextureRecord* rec = ValidateHandle(handle);
+	if (!rec) return;
+	if (out_w) *out_w = rec->width;
+	if (out_h) *out_h = rec->height;
+}
+
+static void TextureImage(PluginTextureHandle handle, float w, float h)
+{
+	PluginTextureRecord* rec = ValidateHandle(handle);
+	if (!rec) return;
+	float iw = (w == 0.0f) ? (float)rec->width  : w;
+	float ih = (h == 0.0f) ? (float)rec->height : h;
+	ImGui::Image((ImTextureID)rec->gpuHandle.ptr, ImVec2(iw, ih));
+}
+
+static bool TextureImageButton(const char* str_id, PluginTextureHandle handle, float w, float h)
+{
+	if (!str_id) return false;
+	PluginTextureRecord* rec = ValidateHandle(handle);
+	if (!rec) return false;
+	float iw = (w == 0.0f) ? (float)rec->width  : w;
+	float ih = (h == 0.0f) ? (float)rec->height : h;
+	return ImGui::ImageButton(str_id, (ImTextureID)rec->gpuHandle.ptr, ImVec2(iw, ih));
+}
+
+static void PopulateTextureAPI()
+{
+	g_textureAPI.LoadFromFile        = TextureLoadFromFile;
+	g_textureAPI.LoadFromMemory      = TextureLoadFromMemory;
+	g_textureAPI.LoadFromRGBA        = TextureLoadFromRGBA;
+	g_textureAPI.LoadFromUTexture2D  = TextureLoadFromUTexture2D;
+	g_textureAPI.FreeTexture         = TextureFreeTexture;
+	g_textureAPI.GetSize             = TextureGetSize;
+	g_textureAPI.Image               = TextureImage;
+	g_textureAPI.ImageButton         = TextureImageButton;
+}
+
+// ---------------------------------------------------------------------------
+
 static void PopulateImGuiAPI()
 {
 	g_imguiAPI.Text = ImGuiWrappers::Text;
@@ -1859,6 +2367,7 @@ namespace UI::ImGuiBackend
 
 		UI::Overlay::SetOpenKeyName(openKeyName);
 		PopulateImGuiAPI();
+		PopulateTextureAPI();
 
 		// Register the internal toggle keybind (configurable via modloader.ini [UI] OpenKey).
 		{
@@ -1948,6 +2457,11 @@ namespace UI::ImGuiBackend
 	IModLoaderImGui* GetImGuiAPI()
 	{
 		return &g_imguiAPI;
+	}
+
+	IPluginImGuiTextures* GetTextureAPI()
+	{
+		return &g_textureAPI;
 	}
 
 	void RequestFontRebuild()

@@ -30,6 +30,7 @@
 #include "hooks/input/input_processor.h"
 #include "UI/plugin_panel_registry.h"
 #include "UI/plugin_widget_registry.h"
+#include "UI/imgui_backend.h"
 #include "hooks/game/hud_post_render/hud_post_render.h"
 #include "hooks/game/client_message/client_message.h"
 #endif
@@ -1065,7 +1066,12 @@ namespace ModLoaderLogger
 #else
 		nullptr,             // v36 — NetMode is null on generic builds
 #endif
-		&g_textUtils          // FText localization helpers (AsLocalizable_Advanced, Conv_TextToString)
+		&g_textUtils,         // FText localization helpers (AsLocalizable_Advanced, Conv_TextToString)
+#ifdef MODLOADER_CLIENT_BUILD
+		nullptr,              // v37 — ImGuiTextures; filled in below by GetPluginHooks()
+#else
+		nullptr               // v37 — ImGuiTextures is null on server/generic builds
+#endif
 	};
 	static bool g_networkChannelInitialized = false;
 
@@ -1082,6 +1088,11 @@ namespace ModLoaderLogger
 				g_networkChannelInitialized = true;
 			}
 		}
+#ifdef MODLOADER_CLIENT_BUILD
+		// Resolve the ImGui texture API pointer on first call (valid after Initialize).
+		if (!g_pluginHooks.ImGuiTextures)
+			g_pluginHooks.ImGuiTextures = UI::ImGuiBackend::GetTextureAPI();
+#endif
 		return &g_pluginHooks;
 	}
 }
