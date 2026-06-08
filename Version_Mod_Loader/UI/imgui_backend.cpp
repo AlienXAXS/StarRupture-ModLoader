@@ -101,14 +101,18 @@ namespace
 
 	struct PluginTextureRecord
 	{
-		ID3D12Resource*              resource  = nullptr;
-		D3D12_GPU_DESCRIPTOR_HANDLE  gpuHandle = {};
-		int                          width     = 0;
-		int                          height    = 0;
-		bool                         inUse     = false;
+		ID3D12Resource*              resource           = nullptr;
+		D3D12_GPU_DESCRIPTOR_HANDLE  gpuHandle          = {};
+		int                          width              = 0;
+		int                          height             = 0;
+		bool                         inUse              = false;
 		// true  = modloader owns this resource (uploaded via our path); Release() on free.
 		// false = engine-owned resource (LoadFromUTexture2D); do NOT Release() on free.
-		bool                         owned     = true;
+		bool                         owned              = true;
+		// For owned=false: points directly at FD3D12Resource::DefaultResourceState so
+		// IsTextureReady() can re-read the GPU resource state without any further
+		// struct walking.  Null for owned=true (always ready after upload).
+		D3D12_RESOURCE_STATES*       pDefaultResState   = nullptr;
 	};
 
 	PluginTextureRecord g_pluginTextures[MAX_PLUGIN_TEXTURES] = {};
@@ -1812,27 +1816,68 @@ static PluginTextureHandle TextureLoadFromRGBA(const unsigned char* rgba, int wi
 //    first FTexture member at offset 0x10. FTextureResource : FTexture, single
 //    inheritance, so the offset is the same in FTextureResource objects.
 //
-//  FRHITexture::GetNativeResource() -- vtable slot 2
-//    FRHIResource has only virtual ~FRHIResource(); MSVC emits two vtable entries
-//    per virtual destructor: [0] scalar, [1] vector deleting destructor.
-//    FRHITexture::GetNativeResource() is its first virtual => slot [2].
-//    (In shipping builds ENABLE_RHI_VALIDATION is off -- no extra validation virtuals.)
+//  FRHITexture::GetNativeResource() -- vtable slot 5
+//    Confirmed via IDA (FD3D12Texture_vtbl): slots 0-4 are dtor,
+//    SetTrackedAccessFromContext, GetDesc, GetTextureReference,
+//    GetDefaultBindlessHandle.  GetNativeResource is at slot 5.
 //
 // If any of these offsets change after a game update, adjust the constants below.
 // ---------------------------------------------------------------------------
 static constexpr ptrdiff_t kUTexture_PrivateResource          = 0x120;
 static constexpr ptrdiff_t kFTextureResource_TextureRHI_Ptr   = 0x10;
+
+// FD3D12Texture struct walk to FD3D12Resource::DefaultResourceState:
+//   FRHITexture* == FD3D12Texture* (primary base at offset 0)
+//   FD3D12BaseShaderResource subobject at FD3D12Texture +0x60 (sizeof FRHITexture)
+//   FD3D12ResourceLocation ResourceLocation at FD3D12BaseShaderResource +0x48  => +0xA8 total
+//   FD3D12Resource* UnderlyingResource at FD3D12ResourceLocation +0x10          => +0xB8 total (pointer)
+//   D3D12_RESOURCE_STATES DefaultResourceState at FD3D12Resource +0x94
+static constexpr ptrdiff_t kFD3D12Texture_UnderlyingResource_Ptr = 0xB8;
+static constexpr ptrdiff_t kFD3D12Resource_DefaultResourceState  = 0x94;
 // FD3D12Texture vtable layout (confirmed via IDA, StarRuptureGameSteam-Win64-Shipping):
 //   slot 0 (+0x00)  ~FD3D12Texture
 //   slot 1 (+0x08)  SetTrackedAccessFromContext
 //   slot 2 (+0x10)  GetDesc              <-- returns FRHITextureDesc* (this+0x20), NOT the D3D12 resource
 //   slot 3 (+0x18)  GetTextureReference
 //   slot 4 (+0x20)  GetDefaultBindlessHandle
-//   slot 5 (+0x28)  GetNativeResource    <-- correct slot
-//   slot 6 (+0x30)  GetNativeShaderResourceView
+//   slot 5 (+0x28)  GetNativeResource             <-- returns ID3D12Resource* (used for GetDesc/dims only)
+//   slot 6 (+0x30)  GetNativeShaderResourceView   <-- returns D3D12_CPU_DESCRIPTOR_HANDLE.ptr cast to void*
 //   slot 7 (+0x38)  GetTextureBaseRHI
 //   slot 8 (+0x40)  GetWriteMaskProperties
-static constexpr int       kFRHITexture_GetNativeResource_Slot = 5;
+static constexpr int       kFRHITexture_GetNativeResource_Slot          = 5;
+static constexpr int       kFRHITexture_GetNativeShaderResourceView_Slot = 6;
+
+// Map a typeless DXGI format to its UNORM (or UF16 for BC6H) typed equivalent.
+// Engine resources often use typeless formats internally; SRVs require a typed view.
+static DXGI_FORMAT ResolveTypelessForSRV(DXGI_FORMAT fmt)
+{
+	switch (fmt)
+	{
+	case DXGI_FORMAT_R32G32B32A32_TYPELESS: return DXGI_FORMAT_R32G32B32A32_FLOAT;
+	case DXGI_FORMAT_R32G32B32_TYPELESS:    return DXGI_FORMAT_R32G32B32_FLOAT;
+	case DXGI_FORMAT_R16G16B16A16_TYPELESS: return DXGI_FORMAT_R16G16B16A16_UNORM;
+	case DXGI_FORMAT_R32G32_TYPELESS:       return DXGI_FORMAT_R32G32_FLOAT;
+	case DXGI_FORMAT_R32G8X24_TYPELESS:     return DXGI_FORMAT_R32_FLOAT_X8X24_TYPELESS;
+	case DXGI_FORMAT_R10G10B10A2_TYPELESS:  return DXGI_FORMAT_R10G10B10A2_UNORM;
+	case DXGI_FORMAT_R8G8B8A8_TYPELESS:     return DXGI_FORMAT_R8G8B8A8_UNORM;
+	case DXGI_FORMAT_R16G16_TYPELESS:       return DXGI_FORMAT_R16G16_UNORM;
+	case DXGI_FORMAT_R32_TYPELESS:          return DXGI_FORMAT_R32_FLOAT;
+	case DXGI_FORMAT_R24G8_TYPELESS:        return DXGI_FORMAT_R24_UNORM_X8_TYPELESS;
+	case DXGI_FORMAT_R8G8_TYPELESS:         return DXGI_FORMAT_R8G8_UNORM;
+	case DXGI_FORMAT_R16_TYPELESS:          return DXGI_FORMAT_R16_UNORM;
+	case DXGI_FORMAT_R8_TYPELESS:           return DXGI_FORMAT_R8_UNORM;
+	case DXGI_FORMAT_BC1_TYPELESS:          return DXGI_FORMAT_BC1_UNORM;
+	case DXGI_FORMAT_BC2_TYPELESS:          return DXGI_FORMAT_BC2_UNORM;
+	case DXGI_FORMAT_BC3_TYPELESS:          return DXGI_FORMAT_BC3_UNORM;
+	case DXGI_FORMAT_BC4_TYPELESS:          return DXGI_FORMAT_BC4_UNORM;
+	case DXGI_FORMAT_BC5_TYPELESS:          return DXGI_FORMAT_BC5_UNORM;
+	case DXGI_FORMAT_B8G8R8A8_TYPELESS:     return DXGI_FORMAT_B8G8R8A8_UNORM;
+	case DXGI_FORMAT_B8G8R8X8_TYPELESS:     return DXGI_FORMAT_B8G8R8X8_UNORM;
+	case DXGI_FORMAT_BC6H_TYPELESS:         return DXGI_FORMAT_BC6H_UF16;
+	case DXGI_FORMAT_BC7_TYPELESS:          return DXGI_FORMAT_BC7_UNORM;
+	default:                                return fmt;
+	}
+}
 
 static PluginTextureHandle TextureLoadFromUTexture2D(SDK::UTexture2D* uTexture2D)
 {
@@ -1918,6 +1963,42 @@ static PluginTextureHandle TextureLoadFromUTexture2D(SDK::UTexture2D* uTexture2D
 		return nullptr;
 	}
 
+	// Step 4.5: Read FD3D12Resource::DefaultResourceState to confirm the texture is
+	// GPU-resident and in a shader-readable state.  Streaming textures start life in
+	// COPY_DEST (0x400); we must not create an SRV and try to sample them until UE5
+	// has transitioned them to PIXEL_SHADER_RESOURCE.  Returning nullptr lets the
+	// plugin retry next frame.  We also keep a live pointer to DefaultResourceState
+	// so Image/ImageButton can re-check readiness on every draw call.
+	void* underlyingRaw = *reinterpret_cast<void**>(
+		static_cast<uint8_t*>(rhiTexture) + kFD3D12Texture_UnderlyingResource_Ptr);
+	LogToFile::Trace("[ImGuiBackend] LoadFromUTexture2D: FD3D12Resource*=0x%p", underlyingRaw);
+
+	if (!underlyingRaw)
+	{
+		LogToFile::Trace("[ImGuiBackend] LoadFromUTexture2D: UnderlyingResource is null -- not yet allocated");
+		return nullptr;
+	}
+
+	D3D12_RESOURCE_STATES* pDefaultResState = reinterpret_cast<D3D12_RESOURCE_STATES*>(
+		static_cast<uint8_t*>(underlyingRaw) + kFD3D12Resource_DefaultResourceState);
+
+	{
+		constexpr D3D12_RESOURCE_STATES kReadable =
+			D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE |
+			D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+		D3D12_RESOURCE_STATES defaultState = *pDefaultResState;
+		LogToFile::Trace("[ImGuiBackend] LoadFromUTexture2D: DefaultResourceState=0x%X", (unsigned)defaultState);
+		bool ready = (defaultState == D3D12_RESOURCE_STATE_COMMON) ||
+		             ((defaultState & kReadable) != 0);
+		if (!ready)
+		{
+			LogToFile::Warn("[ImGuiBackend] LoadFromUTexture2D: texture not ready "
+				"(DefaultResourceState=0x%X, not PSR/COMMON) -- retry next frame",
+				(unsigned)defaultState);
+			return nullptr;
+		}
+	}
+
 	// Step 5: Allocate a descriptor slot and create an SRV over the existing resource
 	LogToFile::Trace("[ImGuiBackend] LoadFromUTexture2D: allocating SRV slot");
 	std::lock_guard<std::mutex> lock(g_textureMutex);
@@ -1938,27 +2019,33 @@ static PluginTextureHandle TextureLoadFromUTexture2D(SDK::UTexture2D* uTexture2D
 		(unsigned long long)gpuHandle.ptr,
 		g_srvDescSize);
 
+	DXGI_FORMAT srvFormat = ResolveTypelessForSRV(resDesc.Format);
+	if (srvFormat != resDesc.Format)
+		LogToFile::Trace("[ImGuiBackend] LoadFromUTexture2D: typeless format %u -> SRV format %u",
+			(unsigned)resDesc.Format, (unsigned)srvFormat);
+
 	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
 	srvDesc.Shader4ComponentMapping        = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-	srvDesc.Format                         = resDesc.Format;
+	srvDesc.Format                         = srvFormat;
 	srvDesc.ViewDimension                  = D3D12_SRV_DIMENSION_TEXTURE2D;
 	srvDesc.Texture2D.MostDetailedMip      = 0;
 	srvDesc.Texture2D.MipLevels            = resDesc.MipLevels;
 	srvDesc.Texture2D.PlaneSlice           = 0;
 	srvDesc.Texture2D.ResourceMinLODClamp  = 0.0f;
-	LogToFile::Trace("[ImGuiBackend] LoadFromUTexture2D: calling CreateShaderResourceView format=%u mips=%u",
-		(unsigned)srvDesc.Format, (unsigned)srvDesc.Texture2D.MipLevels);
+	LogToFile::Trace("[ImGuiBackend] LoadFromUTexture2D: calling CreateShaderResourceView srvFormat=%u (resource=%u) mips=%u",
+		(unsigned)srvFormat, (unsigned)resDesc.Format, (unsigned)srvDesc.Texture2D.MipLevels);
 
 	g_device->CreateShaderResourceView(d3dResource, &srvDesc, cpuHandle);
 	LogToFile::Trace("[ImGuiBackend] LoadFromUTexture2D: SRV created");
 
 	PluginTextureRecord& rec = g_pluginTextures[slot];
-	rec.resource  = d3dResource;
-	rec.gpuHandle = gpuHandle;
-	rec.width     = width;
-	rec.height    = height;
-	rec.inUse     = true;
-	rec.owned     = false;  // engine owns this resource; we must NOT Release it
+	rec.resource         = d3dResource;
+	rec.gpuHandle        = gpuHandle;
+	rec.width            = width;
+	rec.height           = height;
+	rec.inUse            = true;
+	rec.owned            = false;  // engine owns this resource; we must NOT Release it
+	rec.pDefaultResState = pDefaultResState;
 
 	LogToFile::Trace("[ImGuiBackend] LoadFromUTexture2D: done handle=0x%p slot=%d %dx%d owned=false",
 		(void*)&rec, slot, width, height);
@@ -2053,10 +2140,30 @@ static void TextureGetSize(PluginTextureHandle handle, int* out_w, int* out_h)
 	if (out_h) *out_h = rec->height;
 }
 
+// Returns false if the engine-owned resource is not yet in a shader-readable state.
+static bool IsEngineTextureReady(const PluginTextureRecord* rec)
+{
+	if (!rec->pDefaultResState) return true; // owned upload -- always ready
+
+	constexpr D3D12_RESOURCE_STATES kReadable =
+		D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE |
+		D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+	D3D12_RESOURCE_STATES s = *rec->pDefaultResState;
+
+	if ((s == D3D12_RESOURCE_STATE_COMMON) || ((s & kReadable) != 0))
+		return true;
+
+	LogToFile::Trace("[ImGuiBackend] Image skipped -- engine texture slot=%d not ready (DefaultResourceState=0x%X)",
+		(int)(rec - g_pluginTextures), (unsigned)s);
+
+	return false;
+}
+
 static void TextureImage(PluginTextureHandle handle, float w, float h)
 {
 	PluginTextureRecord* rec = ValidateHandle(handle);
 	if (!rec) return;
+	if (!IsEngineTextureReady(rec)) return;
 	float iw = (w == 0.0f) ? (float)rec->width  : w;
 	float ih = (h == 0.0f) ? (float)rec->height : h;
 	ImGui::Image((ImTextureID)rec->gpuHandle.ptr, ImVec2(iw, ih));
@@ -2067,10 +2174,12 @@ static bool TextureImageButton(const char* str_id, PluginTextureHandle handle, f
 	if (!str_id) return false;
 	PluginTextureRecord* rec = ValidateHandle(handle);
 	if (!rec) return false;
+	if (!IsEngineTextureReady(rec)) return false;
 	float iw = (w == 0.0f) ? (float)rec->width  : w;
 	float ih = (h == 0.0f) ? (float)rec->height : h;
 	return ImGui::ImageButton(str_id, (ImTextureID)rec->gpuHandle.ptr, ImVec2(iw, ih));
 }
+
 
 static int TextureGetFreeSlotCount()
 {

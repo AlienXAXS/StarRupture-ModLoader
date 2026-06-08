@@ -76,6 +76,10 @@
 //      Added GetFreeSlotCount(), GetCapacity().
 //      Load functions now throw std::out_of_range when all slots are in use
 //      (previously returned nullptr silently).
+//      LoadFromUTexture2D now gates on FD3D12Resource::DefaultResourceState --
+//      returns nullptr (without throwing) when streaming is still in flight.
+//      Image/ImageButton silently skip rendering if the engine resource is not
+//      yet in a shader-readable state (same check, re-evaluated each draw call).
 //      MIN remains 34.
 
 #define PLUGIN_INTERFACE_VERSION_MIN 34
