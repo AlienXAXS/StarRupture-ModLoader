@@ -231,6 +231,9 @@
     <ClInclude Include="hooks\game\text_localization\text_localization.h">
       <Filter>Source Files\hooks\game\text_localization</Filter>
     </ClInclude>
+    <ClInclude Include="hooks\game\text_localization\text_key.h">
+      <Filter>Source Files\hooks\game\text_localization</Filter>
+    </ClInclude>
     <ClInclude Include="hooks\game\world_begin_play\world_begin_play.h">
       <Filter>Source Files\hooks\game\world_begin_play</Filter>
     </ClInclude>
@@ -462,6 +465,9 @@
       <Filter>Source Files\hooks\game\save_loaded</Filter>
     </ClCompile>
     <ClCompile Include="hooks\game\text_localization\text_localization.cpp">
+      <Filter>Source Files\hooks\game\text_localization</Filter>
+    </ClCompile>
+    <ClCompile Include="hooks\game\text_localization\text_key.cpp">
       <Filter>Source Files\hooks\game\text_localization</Filter>
     </ClCompile>
     <ClCompile Include="hooks\game\world_begin_play\world_begin_play.cpp">

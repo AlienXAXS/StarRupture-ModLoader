@@ -10,6 +10,7 @@
 #include "hooks/game/engine_shutdown/engine_shutdown.h"
 #include "hooks/game/save_loaded/save_loaded.h"
 #include "hooks/game/text_localization/text_localization.h"
+#include "hooks/game/text_localization/text_key.h"
 #include "hooks/game/experience_load_complete/experience_load_complete.h"
 #include "hooks/game/engine_tick/engine_tick.h"
 #include "hooks/game/actor_begin_play/actor_begin_play.h"
@@ -376,9 +377,15 @@ namespace ModLoaderLogger
 		return g_convTextToStringAddr;
 	}
 
+	static uintptr_t TextMakeTextKey()
+	{
+		return Hooks::TextKey::GetOriginalPtr();
+	}
+
 	static IPluginTextUtils g_textUtils = {
 		TextAsLocalizableAdvanced,
-		TextConvTextToString
+		TextConvTextToString,
+		TextMakeTextKey
 	};
 
 	// v18 -- game thread dispatch (all builds)

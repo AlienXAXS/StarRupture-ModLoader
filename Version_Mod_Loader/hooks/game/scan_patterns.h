@@ -9,6 +9,13 @@ namespace ScanPatterns
 	inline constexpr auto FText_AsLocalizable_Advanced =
 		"48 89 5C 24 ?? 56 57 41 56 48 83 EC ?? 45 33 D2";
 
+	// FTextKey::FTextKey -- builds an interned FTextKey from a wide string.
+	// Native C++ function -- not a UFUNCTION, must be found via AOB scan.
+	// Required to construct the Namespace/Key arguments for AsLocalizable_Advanced.
+	// Signature: void __fastcall FTextKey::FTextKey(FTextKey* this, const wchar_t* InStr)
+	inline constexpr auto FTextKey_FTextKey =
+		"40 53 48 83 EC ?? 33 C0 48 89 54 24 ?? 48 8B D9 48 85 D2 74 ?? ?? ?? ?? 74 ?? 66 0F 1F 44 00 ?? 48 8D 52 ?? FF C0 ?? ?? ?? ?? 75 ?? 89 44 24 ?? 48 8D 54 24 ?? 0F 28 44 24 ?? 66 0F 7F 44 24 ?? E8 ?? ?? ?? ?? 48 8B C3 48 83 C4 ?? 5B C3 ?? ?? 48 89 5C 24";
+
 	// CoreUObject::StaticLoadObject — synchronously loads (or returns the already-loaded instance
 	// of) any UObject asset by full path.  Available on all build types.
 	// Signature: UObject* StaticLoadObject(UClass*, UObject* Outer, const wchar_t* Name,

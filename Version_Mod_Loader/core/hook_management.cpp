@@ -15,6 +15,7 @@
 #include "../hooks/game/player_left/player_left.h"
 #include "../hooks/game/save_loaded/save_loaded.h"
 #include "../hooks/game/text_localization/text_localization.h"
+#include "../hooks/game/text_localization/text_key.h"
 #include "../hooks/game/world_begin_play/world_begin_play.h"
 #include "../hooks/game/world_end_play/world_end_play.h"
 
@@ -70,6 +71,11 @@ void InstallAllHooks()
     else
         ModLoaderLogger::LogWarn(L"  WARNING: TextLocalization hook failed to install");
 
+    if (Hooks::TextKey::Install())
+        ModLoaderLogger::LogDebug(L"  TextKey hook installed");
+    else
+        ModLoaderLogger::LogWarn(L"  WARNING: TextKey hook failed to install");
+
 #ifdef MODLOADER_SERVER_BUILD
     Splash::SetStatus(L"Installing HTTP server hook...");
     if (Hooks::HttpServer::Install())
@@ -102,6 +108,7 @@ void RemoveAllHooks()
     Hooks::MassSpawnerDeactivate::Remove();
     Hooks::MassDoSpawning::Remove();
     Hooks::TextLocalization::Remove();
+    Hooks::TextKey::Remove();
 #ifdef MODLOADER_SERVER_BUILD
     Hooks::HttpServer::Remove();
 #endif

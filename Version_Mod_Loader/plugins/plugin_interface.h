@@ -45,6 +45,9 @@
 //      tooltips, full table API, item state predicates, disabled regions,
 //      clip rect, mouse queries, color utilities, and misc helpers.
 //      MIN remains 34.
+//      --- Added MakeTextKey to IPluginTextUtils (trampoline for FTextKey::FTextKey),
+//      letting plugins build the Namespace/Key FTextKey arguments required by
+//      AsLocalizable_Advanced.  MIN remains 34.
 #define PLUGIN_INTERFACE_VERSION_MIN 34
 #define PLUGIN_INTERFACE_VERSION_MAX 35
 #define PLUGIN_INTERFACE_VERSION 35
@@ -691,6 +694,13 @@ struct IPluginTextUtils
 	// Resolved native address of SDK::UKismetTextLibrary::Conv_TextToString, or 0 if not found.
 	// Cast to: FString*(__fastcall*)(FString* result, const FText* InText)
 	uintptr_t (*Conv_TextToString)();
+
+	// Trampoline address of the original FTextKey::FTextKey(const wchar_t*), or 0 if the hook
+	// failed to install. Use this to build the Namespace/Key arguments required by
+	// AsLocalizable_Advanced -- FTextKey is just an interned-string-table index and cannot
+	// be constructed any other way.
+	// Cast to: void(__fastcall*)(FTextKey* this, const wchar_t* InStr)
+	uintptr_t (*MakeTextKey)();
 };
 
 // ---------------------------------------------------------------------------
