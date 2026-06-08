@@ -11,7 +11,9 @@
 
 static constexpr wchar_t kRequiredVersionSuffix[] = L"CL-120722";
 
-static bool CheckGameVersion(std::wstring& outActualVersion)
+// Reads the raw ProductVersion string from the game executable's version info.
+// Returns false (with a placeholder string) if it could not be read.
+static bool ReadProductVersion(std::wstring& outVersion)
 {
     wchar_t exePath[MAX_PATH]{};
     GetModuleFileNameW(nullptr, exePath, MAX_PATH);
@@ -20,14 +22,14 @@ static bool CheckGameVersion(std::wstring& outActualVersion)
     const DWORD infoSize = GetFileVersionInfoSizeW(exePath, &dummy);
     if (infoSize == 0)
     {
-        outActualVersion = L"<unavailable>";
+        outVersion = L"<unavailable>";
         return false;
     }
 
     std::vector<BYTE> buf(infoSize);
     if (!GetFileVersionInfoW(exePath, 0, infoSize, buf.data()))
     {
-        outActualVersion = L"<unreadable>";
+        outVersion = L"<unreadable>";
         return false;
     }
 
@@ -50,16 +52,31 @@ static bool CheckGameVersion(std::wstring& outActualVersion)
         reinterpret_cast<LPVOID*>(&productVersion), &versionLen)
         || !productVersion || versionLen == 0)
     {
-        outActualVersion = L"<not found>";
+        outVersion = L"<not found>";
         return false;
     }
 
-    outActualVersion = productVersion;
+    outVersion = productVersion;
+    return true;
+}
+
+static bool CheckGameVersion(std::wstring& outActualVersion)
+{
+    if (!ReadProductVersion(outActualVersion))
+        return false;
 
     const size_t reqLen    = wcslen(kRequiredVersionSuffix);
     const size_t actualLen = outActualVersion.size();
     return actualLen >= reqLen
         && outActualVersion.compare(actualLen - reqLen, reqLen, kRequiredVersionSuffix) == 0;
+}
+
+std::wstring GetGameVersionString()
+{
+    std::wstring version;
+    if (!ReadProductVersion(version))
+        return std::wstring();
+    return version;
 }
 
 bool VerifyGameVersion()

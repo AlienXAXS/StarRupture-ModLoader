@@ -1,4 +1,6 @@
 #include "memory_scanner/scanner.h"
+#include "memory_scanner/scan_cache.h"
+#include "core/version_check.h"
 #include "logging/logger.h"
 #include <sstream>
 #include <algorithm>
@@ -183,7 +185,49 @@ uintptr_t Scanner::FindPatternInMainModule(const std::string& patternName, const
 	HMODULE mainModule = GetModuleHandleW(nullptr);
 	ModLoaderLogger::LogDebug(L"[Scanner] FindPatternInMainModule: [%S] main module = 0x%llX", patternName.c_str(),
 		static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(mainModule)));
-	return FindPatternInModule(mainModule, pattern);
+
+	const auto base = reinterpret_cast<uintptr_t>(mainModule);
+	const std::wstring gameVersion = GetGameVersionString();
+
+	// Try the cached offset first -- if the bytes at base+offset still match the
+	// pattern, we can skip the full scan entirely. Re-validating against the live
+	// process means a stale/corrupt cache entry can never yield a wrong address.
+	uintptr_t cachedOffset = 0;
+	if (!gameVersion.empty() && mainModule && ScanCache::TryGetOffset(gameVersion, pattern, cachedOffset))
+	{
+		auto* dos = reinterpret_cast<IMAGE_DOS_HEADER*>(base);
+		if (dos->e_magic == IMAGE_DOS_SIGNATURE)
+		{
+			auto* nt = reinterpret_cast<IMAGE_NT_HEADERS*>(base + dos->e_lfanew);
+			if (nt->Signature == IMAGE_NT_SIGNATURE)
+			{
+				const size_t imageSize = nt->OptionalHeader.SizeOfImage;
+				const auto parsed = ParsePattern(pattern);
+
+				if (!parsed.empty() && cachedOffset + parsed.size() <= imageSize)
+				{
+					const uintptr_t candidate = base + cachedOffset;
+					if (FindPattern(candidate, parsed.size(), parsed) == candidate)
+					{
+						ModLoaderLogger::LogDebug(L"[Scanner]   [%S] cache HIT: 0x%llX (base+0x%llX), skipped full scan",
+							patternName.c_str(),
+							static_cast<unsigned long long>(candidate),
+							static_cast<unsigned long long>(cachedOffset));
+						return candidate;
+					}
+				}
+
+				ModLoaderLogger::LogDebug(L"[Scanner]   [%S] cache entry stale (offset 0x%llX no longer matches) -- falling back to full scan",
+					patternName.c_str(), static_cast<unsigned long long>(cachedOffset));
+			}
+		}
+	}
+
+	const uintptr_t result = FindPatternInModule(mainModule, pattern);
+	if (result && !gameVersion.empty())
+		ScanCache::StoreOffset(gameVersion, pattern, result - base);
+
+	return result;
 }
 
 std::vector<uintptr_t> Scanner::FindAllPatterns(uintptr_t start, size_t size, const std::vector<PatternByte>& pattern)

@@ -526,6 +526,7 @@
     <ClInclude Include="dwmapi_proxy.h" />
     <ClInclude Include="game_type_checker.h" />
     <ClInclude Include="logging\ue_log.h" />
+    <ClInclude Include="memory_scanner\scan_cache.h" />
     <ClInclude Include="memory_scanner\scanner.h" />
     <ClInclude Include="memory_scanner\scanner_interface.h" />
     <ClInclude Include="plugins\plugin_interface.h" />
@@ -647,6 +648,7 @@
     <ClCompile Include="dwmapi_proxy.cpp">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
+    <ClCompile Include="memory_scanner\scan_cache.cpp" />
     <ClCompile Include="memory_scanner\scanner.cpp" />
     <ClCompile Include="memory_scanner\scanner_interface.cpp" />
     <ClCompile Include="plugins\plugin_manager.cpp" />

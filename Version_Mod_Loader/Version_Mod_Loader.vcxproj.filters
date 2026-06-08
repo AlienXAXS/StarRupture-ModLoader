@@ -165,6 +165,9 @@
     <ClInclude Include="UI\splash_window.h">
       <Filter>Source Files\UI</Filter>
     </ClInclude>
+    <ClInclude Include="memory_scanner\scan_cache.h">
+      <Filter>Source Files\memory_scanner</Filter>
+    </ClInclude>
     <ClInclude Include="memory_scanner\scanner.h">
       <Filter>Source Files\memory_scanner</Filter>
     </ClInclude>
@@ -394,6 +397,9 @@
     </ClCompile>
     <ClCompile Include="UI\splash_window.cpp">
       <Filter>Source Files\UI</Filter>
+    </ClCompile>
+    <ClCompile Include="memory_scanner\scan_cache.cpp">
+      <Filter>Source Files\memory_scanner</Filter>
     </ClCompile>
     <ClCompile Include="memory_scanner\scanner.cpp">
       <Filter>Source Files\memory_scanner</Filter>
