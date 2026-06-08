@@ -153,12 +153,12 @@ namespace
 
 // ---------------------------------------------------------------------------
 // Returns true whenever any modloader UI surface is visible and should own
-// the mouse and swallow game input.  Covers both the main modloader window
-// and any open plugin panel windows.
+// the mouse and swallow game input.  Covers the main modloader window, any
+// open plugin panel windows, and any visible plugin widgets.
 // ---------------------------------------------------------------------------
 static bool ShouldCaptureInput()
 {
-	return UI::ModLoaderWindow::IsOpen() || UI::PluginPanelRegistry::AnyPanelOpen();
+	return UI::ModLoaderWindow::IsOpen() || UI::PluginPanelRegistry::AnyPanelOpen() || UI::PluginWidgetRegistry::AnyWidgetVisible();
 }
 
 // ---------------------------------------------------------------------------
