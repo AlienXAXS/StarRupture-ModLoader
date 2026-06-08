@@ -2,6 +2,13 @@
 
 namespace ScanPatterns
 {
+	// FText::AsLocalizable_Advanced -- builds a localizable FText from a namespace/key/source string.
+	// Native C++ function -- not a UFUNCTION, must be found via AOB scan.
+	// Signature: FText* __fastcall FText::AsLocalizable_Advanced(FText* result,
+	//               const FTextKey* Namespace, const FTextKey* Key, const wchar_t* String)
+	inline constexpr auto FText_AsLocalizable_Advanced =
+		"48 89 5C 24 ?? 56 57 41 56 48 83 EC ?? 45 33 D2";
+
 	// CoreUObject::StaticLoadObject — synchronously loads (or returns the already-loaded instance
 	// of) any UObject asset by full path.  Available on all build types.
 	// Signature: UObject* StaticLoadObject(UClass*, UObject* Outer, const wchar_t* Name,

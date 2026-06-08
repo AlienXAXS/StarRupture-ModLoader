@@ -37,6 +37,9 @@
     <Filter Include="Source Files\hooks\game\save_loaded">
       <UniqueIdentifier>{7319e901-1e30-4f85-a398-a6628d90a01d}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Source Files\hooks\game\text_localization">
+      <UniqueIdentifier>{5747158c-1665-4ae9-83a1-154675a7f9b9}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Source Files\hooks\game\experience_load_complete">
       <UniqueIdentifier>{94cb41f4-d4af-4ce1-9e4c-fb122cde2f2a}</UniqueIdentifier>
     </Filter>
@@ -221,6 +224,9 @@
     </ClInclude>
     <ClInclude Include="hooks\game\save_loaded\save_loaded.h">
       <Filter>Source Files\hooks\game\save_loaded</Filter>
+    </ClInclude>
+    <ClInclude Include="hooks\game\text_localization\text_localization.h">
+      <Filter>Source Files\hooks\game\text_localization</Filter>
     </ClInclude>
     <ClInclude Include="hooks\game\world_begin_play\world_begin_play.h">
       <Filter>Source Files\hooks\game\world_begin_play</Filter>
@@ -448,6 +454,9 @@
     </ClCompile>
     <ClCompile Include="hooks\game\save_loaded\save_loaded.cpp">
       <Filter>Source Files\hooks\game\save_loaded</Filter>
+    </ClCompile>
+    <ClCompile Include="hooks\game\text_localization\text_localization.cpp">
+      <Filter>Source Files\hooks\game\text_localization</Filter>
     </ClCompile>
     <ClCompile Include="hooks\game\world_begin_play\world_begin_play.cpp">
       <Filter>Source Files\hooks\game\world_begin_play</Filter>

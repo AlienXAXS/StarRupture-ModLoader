@@ -14,6 +14,7 @@
 #include "../hooks/game/player_joined/player_joined.h"
 #include "../hooks/game/player_left/player_left.h"
 #include "../hooks/game/save_loaded/save_loaded.h"
+#include "../hooks/game/text_localization/text_localization.h"
 #include "../hooks/game/world_begin_play/world_begin_play.h"
 #include "../hooks/game/world_end_play/world_end_play.h"
 
@@ -62,6 +63,13 @@ void InstallAllHooks()
     Hooks::MassSpawnerDeactivate::Install();
     Hooks::MassDoSpawning::Install();
 
+    Splash::SetStatus(L"Installing TextLocalization hook...");
+
+    if (Hooks::TextLocalization::Install())
+        ModLoaderLogger::LogDebug(L"  TextLocalization hook installed");
+    else
+        ModLoaderLogger::LogWarn(L"  WARNING: TextLocalization hook failed to install");
+
 #ifdef MODLOADER_SERVER_BUILD
     Splash::SetStatus(L"Installing HTTP server hook...");
     if (Hooks::HttpServer::Install())
@@ -93,6 +101,7 @@ void RemoveAllHooks()
     Hooks::MassSpawnerActivate::Remove();
     Hooks::MassSpawnerDeactivate::Remove();
     Hooks::MassDoSpawning::Remove();
+    Hooks::TextLocalization::Remove();
 #ifdef MODLOADER_SERVER_BUILD
     Hooks::HttpServer::Remove();
 #endif

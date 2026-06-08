@@ -9,6 +9,7 @@
 #include "hooks/game/engine_init/engine_init.h"
 #include "hooks/game/engine_shutdown/engine_shutdown.h"
 #include "hooks/game/save_loaded/save_loaded.h"
+#include "hooks/game/text_localization/text_localization.h"
 #include "hooks/game/experience_load_complete/experience_load_complete.h"
 #include "hooks/game/engine_tick/engine_tick.h"
 #include "hooks/game/actor_begin_play/actor_begin_play.h"
@@ -19,6 +20,7 @@
 #include "hooks/game/mass_do_spawning/mass_do_spawning.h"
 #include "memory_scanner/scanner.h"
 #include "hooks/game/scan_patterns.h"
+#include "hooks/game/ufunction_resolve.h"
 #ifdef MODLOADER_SERVER_BUILD
 #include "hooks/http/http_server_hook.h"
 #endif
@@ -351,6 +353,33 @@ namespace ModLoaderLogger
 		}
 		return g_staticLoadObjectAddr;
 	}
+
+	// --- Text utilities ---
+
+	static uintptr_t TextAsLocalizableAdvanced()
+	{
+		return Hooks::TextLocalization::GetOriginalPtr();
+	}
+
+	// Resolved address of SDK::UKismetTextLibrary::Conv_TextToString.
+	// Scanned once on first call; result cached for all subsequent callers.
+	static uintptr_t g_convTextToStringAddr    = 0;
+	static bool      g_convTextToStringScanned = false;
+
+	static uintptr_t TextConvTextToString()
+	{
+		if (!g_convTextToStringScanned)
+		{
+			g_convTextToStringScanned = true;
+			g_convTextToStringAddr = Hooks::ResolveUFunctionNativeAddr("KismetTextLibrary", "Conv_TextToString");
+		}
+		return g_convTextToStringAddr;
+	}
+
+	static IPluginTextUtils g_textUtils = {
+		TextAsLocalizableAdvanced,
+		TextConvTextToString
+	};
 
 	// v18 -- game thread dispatch (all builds)
 	static void HooksPostToGameThread(PluginGameThreadCallback fn, void* context)
@@ -997,10 +1026,11 @@ namespace ModLoaderLogger
 		nullptr,             // v22 — HttpServer is null on client/generic builds
 #endif
 #ifdef MODLOADER_CLIENT_BUILD
-		&g_clientSessionInfo // v32 — session mode query functions (client only)
+		&g_clientSessionInfo, // v32 — session mode query functions (client only)
 #else
-		nullptr              // v32 — ClientSession is null on server/generic builds
+		nullptr,              // v32 — ClientSession is null on server/generic builds
 #endif
+		&g_textUtils          // FText localization helpers (AsLocalizable_Advanced, Conv_TextToString)
 	};
 	static bool g_networkChannelInitialized = false;
 

@@ -679,6 +679,21 @@ struct IPluginNativePointers
 };
 
 // ---------------------------------------------------------------------------
+// Text utilities
+// ---------------------------------------------------------------------------
+struct IPluginTextUtils
+{
+	// Trampoline address of the original FText::AsLocalizable_Advanced, or 0 if the hook
+	// failed to install. Cast to:
+	//   FText*(__fastcall*)(FText* result, const FTextKey* Namespace, const FTextKey* Key, const wchar_t* String)
+	uintptr_t (*AsLocalizable_Advanced)();
+
+	// Resolved native address of SDK::UKismetTextLibrary::Conv_TextToString, or 0 if not found.
+	// Cast to: FString*(__fastcall*)(FString* result, const FText* InText)
+	uintptr_t (*Conv_TextToString)();
+};
+
+// ---------------------------------------------------------------------------
 // HTTP server (v22, server only)
 // ---------------------------------------------------------------------------
 
@@ -837,6 +852,7 @@ struct IPluginHooks
 	IPluginNativePointers* NativePointers; // v21
 	IPluginHttpServer*     HttpServer;     // v22 — server only, null on client/generic
 	IPluginClientSessionInfo* ClientSession; // v32 — client only, null on server/generic
+	IPluginTextUtils*      Text;             // FText localization helpers (AsLocalizable_Advanced, Conv_TextToString)
 };
 
 // ---------------------------------------------------------------------------
