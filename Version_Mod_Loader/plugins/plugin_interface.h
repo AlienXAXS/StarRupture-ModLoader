@@ -72,10 +72,15 @@
 //      LoadFromUTexture2D wraps the engine-owned GPU texture in-place (no copy).
 //      The UTexture2D must remain alive while the handle is in use.
 //      MIN remains 34.
+// v38: IPluginImGuiTextures: raised texture slot cap 64 -> 2048.
+//      Added GetFreeSlotCount(), GetCapacity().
+//      Load functions now throw std::out_of_range when all slots are in use
+//      (previously returned nullptr silently).
+//      MIN remains 34.
 
 #define PLUGIN_INTERFACE_VERSION_MIN 34
-#define PLUGIN_INTERFACE_VERSION_MAX 37
-#define PLUGIN_INTERFACE_VERSION 37
+#define PLUGIN_INTERFACE_VERSION_MAX 38
+#define PLUGIN_INTERFACE_VERSION 38
 
 enum class PluginLogLevel { Trace = 0, Debug = 1, Info = 2, Warn = 3, Error = 4 };
 enum class ConfigValueType { String, Integer, Float, Boolean, Keybind };
@@ -638,21 +643,31 @@ typedef void* PluginTextureHandle;
 // Interface for loading and rendering images without direct D3D12 access.
 // Retrieved via hooks->ImGuiTextures (client only; nullptr on server/generic).
 //
-// Up to 64 textures may be live at once. Load before or during rendering;
-// free when no longer needed. Image/ImageButton must be called from inside
-// a plugin render callback while an ImGui frame is in progress.
+// Up to GetCapacity() textures may be live at once (256 as of v38).
+// Load before or during rendering; free when no longer needed.
+// Image/ImageButton must be called from inside a plugin render callback
+// while an ImGui frame is in progress.
+//
+// All Load* functions throw std::out_of_range if no slots are available.
+// They return NULL (without throwing) only when D3D12 is not yet ready or
+// when the specific resource cannot be loaded (bad file, null texture, etc.).
+// Call GetFreeSlotCount() before loading if you need to handle a full registry
+// without catching exceptions.
 struct IPluginImGuiTextures
 {
     // Load from a UTF-8 file path. Supports PNG, JPG, BMP, GIF, TIFF (via WIC).
     // Returns NULL if D3D12 is not ready yet or if decoding fails.
+    // Throws std::out_of_range if all slots are in use.
     PluginTextureHandle (*LoadFromFile)(const char* utf8_path);
 
     // Load from encoded image bytes in memory (same formats as LoadFromFile).
     // data must remain valid only for the duration of this call.
+    // Throws std::out_of_range if all slots are in use.
     PluginTextureHandle (*LoadFromMemory)(const void* data, size_t size);
 
     // Load from raw 32-bit RGBA pixels (4 bytes/pixel, top-left row-major).
     // data must remain valid only for the duration of this call.
+    // Throws std::out_of_range if all slots are in use.
     PluginTextureHandle (*LoadFromRGBA)(const unsigned char* rgba, int width, int height);
 
     // Wrap a live UTexture2D in an ImGui handle without copying pixels.
@@ -660,8 +675,8 @@ struct IPluginImGuiTextures
     // The UTexture2D must remain valid and GPU-resident for as long as the
     // handle is in use. FreeTexture releases the SRV slot but does NOT
     // release the underlying D3D12 resource (the engine owns it).
-    // Returns NULL if D3D12 is not ready, the texture has no GPU resource yet,
-    // or no free slots remain.
+    // Returns NULL if D3D12 is not ready or the texture has no GPU resource yet.
+    // Throws std::out_of_range if all slots are in use.
     PluginTextureHandle (*LoadFromUTexture2D)(SDK::UTexture2D* texture);
 
     // Release the texture and free its slot. Safe to call with NULL.
@@ -678,6 +693,12 @@ struct IPluginImGuiTextures
     // Clickable image button. Returns true if clicked.
     // Pass width=0, height=0 to use the texture's natural size.
     bool (*ImageButton)(const char* str_id, PluginTextureHandle handle, float width, float height);
+
+    // Returns the number of texture slots not currently in use. (v38)
+    int (*GetFreeSlotCount)();
+
+    // Returns the total texture slot capacity. (v38)
+    int (*GetCapacity)();
 };
 
 // Flags for PluginWindowHints::extra_window_flags (v31).

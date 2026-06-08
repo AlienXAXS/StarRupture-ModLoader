@@ -97,7 +97,7 @@ namespace
 	// -------------------------------------------------------------------------
 	// Plugin texture registry (v37)
 	// -------------------------------------------------------------------------
-	static const int MAX_PLUGIN_TEXTURES = 64;
+	static const int MAX_PLUGIN_TEXTURES = 2048;
 
 	struct PluginTextureRecord
 	{
@@ -1770,7 +1770,7 @@ static PluginTextureHandle TextureLoadFromRGBA(const unsigned char* rgba, int wi
 	if (slot < 0)
 	{
 		LogToFile::Error("[ImGuiBackend] TextureLoadFromRGBA: all %d slots in use", MAX_PLUGIN_TEXTURES);
-		return nullptr;
+		throw std::out_of_range("IPluginImGuiTextures: all texture slots are in use -- call FreeTexture or check GetFreeSlotCount");
 	}
 
 	D3D12_CPU_DESCRIPTOR_HANDLE cpuHandle = g_srvHeap->GetCPUDescriptorHandleForHeapStart();
@@ -1925,7 +1925,7 @@ static PluginTextureHandle TextureLoadFromUTexture2D(SDK::UTexture2D* uTexture2D
 	if (slot < 0)
 	{
 		LogToFile::Error("[ImGuiBackend] LoadFromUTexture2D: all %d slots in use", MAX_PLUGIN_TEXTURES);
-		return nullptr;
+		throw std::out_of_range("IPluginImGuiTextures: all texture slots are in use -- call FreeTexture or check GetFreeSlotCount");
 	}
 
 	D3D12_CPU_DESCRIPTOR_HANDLE cpuHandle = g_srvHeap->GetCPUDescriptorHandleForHeapStart();
@@ -2072,6 +2072,21 @@ static bool TextureImageButton(const char* str_id, PluginTextureHandle handle, f
 	return ImGui::ImageButton(str_id, (ImTextureID)rec->gpuHandle.ptr, ImVec2(iw, ih));
 }
 
+static int TextureGetFreeSlotCount()
+{
+	std::lock_guard<std::mutex> lock(g_textureMutex);
+	int free = 0;
+	for (int i = 0; i < MAX_PLUGIN_TEXTURES; ++i)
+		if (!g_pluginTextures[i].inUse)
+			++free;
+	return free;
+}
+
+static int TextureGetCapacity()
+{
+	return MAX_PLUGIN_TEXTURES;
+}
+
 static void PopulateTextureAPI()
 {
 	g_textureAPI.LoadFromFile        = TextureLoadFromFile;
@@ -2082,6 +2097,8 @@ static void PopulateTextureAPI()
 	g_textureAPI.GetSize             = TextureGetSize;
 	g_textureAPI.Image               = TextureImage;
 	g_textureAPI.ImageButton         = TextureImageButton;
+	g_textureAPI.GetFreeSlotCount    = TextureGetFreeSlotCount;
+	g_textureAPI.GetCapacity         = TextureGetCapacity;
 }
 
 // ---------------------------------------------------------------------------
