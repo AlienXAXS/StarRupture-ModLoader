@@ -18,7 +18,8 @@ void InitSubsystems()
 {
     Splash::SetStatus(L"Initializing logger...");
     Splash::SetProgress(0.05f);
-    ModLoaderLogger::InitializeLogger();
+    // Logger is brought online earlier in MainInitThreadProc (before
+    // InstallHooksPhase) so hook-installation logging isn't dropped.
     ModLoaderLogger::LogMessage(L"======================================");
     ModLoaderLogger::LogMessage(L"  AlienX's Mod Loader Starting");
     ModLoaderLogger::LogMessage(L"======================================");

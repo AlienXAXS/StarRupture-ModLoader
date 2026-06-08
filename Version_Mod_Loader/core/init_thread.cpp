@@ -33,6 +33,12 @@ DWORD WINAPI MainInitThreadProc(LPVOID)
 
     Splash::Show();
 
+    // Bring the ModLoaderLogger online before installing hooks -- otherwise
+    // every ModLoaderLogger::Log* call made during hook installation
+    // (LogMessage, LogDebug, LogWarn, etc.) is silently dropped because
+    // g_logInitialized is still false.
+    ModLoaderLogger::InitializeLogger();
+
     // Version check before hook installation -- if the game build is wrong
     // we must not install hooks (the engine init hook would block the main
     // thread waiting on g_pluginsReadyEvent which would never be signalled).
