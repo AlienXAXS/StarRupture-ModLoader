@@ -149,6 +149,54 @@ namespace ScanPatterns
 	inline constexpr auto AMassSpawner_DoSpawning =
 		"40 55 57 48 8D 6C 24 ?? 48 81 EC ?? ?? ?? ?? 83 B9 ?? ?? ?? ?? ?? 48 8B F9 75";
 
+	// UObject* __fastcall StaticFindObject(UClass* Class, FTopLevelAssetPath* ObjectPath, bool ExactClass)
+	// Native C++ function -- not a UFUNCTION, must be found via AOB scan and called directly (no hook).
+	inline constexpr auto StaticFindObject_ByPath =
+		"48 89 6C 24 ?? 48 89 74 24 ?? 57 48 83 EC ?? ?? ?? ?? ?? 41 0F B6 F0 48 8B FA";
+
+	// UObject* __fastcall StaticFindObject(UClass* ObjectClass, UObject* InObjectPackage, const wchar_t* OrigInName, bool bExactClass)
+	// Native C++ function -- not a UFUNCTION, must be found via AOB scan and called directly (no hook).
+	inline constexpr auto StaticFindObject_ByName =
+		"48 89 5C 24 ?? 55 56 57 41 54 41 55 41 56 41 57 48 81 EC ?? ?? ?? ?? 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 84 24 ?? ?? ?? ?? 48 83 FA";
+
+	// UObject* __fastcall StaticFindObjectSafe(UClass* Class, FTopLevelAssetPath* ObjectPath, bool ExactClass)
+	// Native C++ function -- not a UFUNCTION, must be found via AOB scan and called directly (no hook).
+	inline constexpr auto StaticFindObjectSafe_ByPath =
+		"40 53 55 56 48 83 EC ?? 48 8B E9 41 0F B6 F0";
+
+	// UObject* __fastcall StaticFindObjectSafe(UClass* ObjectClass, UObject* ObjectParent, const wchar_t* InName, bool bExactClass)
+	// Native C++ function -- not a UFUNCTION, must be found via AOB scan and called directly (no hook).
+	inline constexpr auto StaticFindObjectSafe_ByName =
+		"48 89 5C 24 ?? 48 89 6C 24 ?? 48 89 74 24 ?? 57 48 83 EC ?? 48 8B E9 41 0F B6 D9 33 C9 49 8B F8";
+
+	// UObject* __fastcall StaticFindObjectFast(UClass* ObjectClass, UObject* ObjectPackage, FName ObjectName,
+	//   bool bExactClass, EObjectFlags ExclusiveFlags, EInternalObjectFlags ExclusiveInternalFlags)
+	// Native C++ function -- not a UFUNCTION, must be found via AOB scan and called directly (no hook).
+	inline constexpr auto StaticFindObjectFast =
+		"48 89 5C 24 ?? 48 89 6C 24 ?? 48 89 74 24 ?? 57 48 83 EC ?? 48 8B E9 41 0F B6 F9 33 C9 49 8B D8 48 8B F2 E8 ?? ?? ?? ?? 84 C0 74";
+
+	// UPackage* __fastcall FindPackage(UObject* InOuter, const wchar_t* PackageName)
+	// Native C++ function -- not a UFUNCTION, must be found via AOB scan and called directly (no hook).
+	inline constexpr auto FindPackage =
+		"48 89 5C 24 ?? 55 56 57 48 81 EC ?? ?? ?? ?? 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 84 24 ?? ?? ?? ?? 48 8D 44 24 ?? 48 89 4C 24";
+
+	// void __fastcall UPackage::FullyLoad(UPackage* this)
+	// Native C++ function -- not a UFUNCTION, must be found via AOB scan and called directly (no hook).
+	inline constexpr auto UPackage_FullyLoad =
+		"48 89 5C 24 ?? 57 48 83 EC ?? 48 83 79 ?? ?? 48 8D 3D ?? ?? ?? ?? 48 8B D9 0F 84";
+
+	// UPackage* __fastcall LoadPackage(UPackage* InOuter, FScriptContainerElement* InLongPackageNameOrFilename,
+	//   unsigned int LoadFlags, FArchive* InReaderOverride, const FLinkerInstancingContext* InstancingContext)
+	// Native C++ function -- not a UFUNCTION, must be found via AOB scan and called directly (no hook).
+	inline constexpr auto LoadPackage =
+		"48 89 5C 24 ?? 48 89 74 24 ?? 48 89 7C 24 ?? 55 41 54 41 55 41 56 41 57 48 8D 6C 24 ?? 48 81 EC ?? ?? ?? ?? 45 33 ED 4D 8B E1";
+
+	// UObject* __fastcall FAssetData::FastGetAsset(FAssetData* this, bool bLoad,
+	//   TMap<FName,FName,FDefaultSetAllocator,TDefaultMapHashableKeyFuncs<FName,FName,0>>* LoadTags)
+	// Native C++ function -- not a UFUNCTION, must be found via AOB scan and called directly (no hook).
+	inline constexpr auto FAssetData_FastGetAsset =
+		"48 89 5C 24 ?? 55 56 57 41 56 41 57 48 81 EC ?? ?? ?? ?? ?? ?? ?? 49 8B F8";
+
 	// FHttpServerResponse::Create(__int64 *retStorage, const TArray<uint8>& body, const FString& contentType)
 	// Used to construct a 200 OK response for mod-owned HTTP routes.
 	// Confirmed via IDA: FPerfCounters::ProcessStatsRequest calls this with body in RDX, FString in R8.

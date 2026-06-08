@@ -36,6 +36,7 @@
 #if defined(MODLOADER_SERVER_BUILD) || defined(MODLOADER_CLIENT_BUILD)
 #include "hooks/game/session_info/session_info.h"
 #endif
+#include "hooks/game/object_lookup/object_lookup.h"
 #include <unordered_map>
 #include <mutex>
 
@@ -356,6 +357,19 @@ namespace ModLoaderLogger
 		}
 		return g_staticLoadObjectAddr;
 	}
+
+	// v36 -- resolved addresses of CoreUObject object/package lookup and loading
+	// functions, scanned during early modloader startup by Hooks::ObjectLookup.
+	// Each thin wrapper just forwards the address resolved at startup.
+	static uintptr_t HooksGetStaticFindObjectByPathAddress()     { return Hooks::ObjectLookup::GetStaticFindObject_ByPathAddress(); }
+	static uintptr_t HooksGetStaticFindObjectByNameAddress()     { return Hooks::ObjectLookup::GetStaticFindObject_ByNameAddress(); }
+	static uintptr_t HooksGetStaticFindObjectSafeByPathAddress() { return Hooks::ObjectLookup::GetStaticFindObjectSafe_ByPathAddress(); }
+	static uintptr_t HooksGetStaticFindObjectSafeByNameAddress() { return Hooks::ObjectLookup::GetStaticFindObjectSafe_ByNameAddress(); }
+	static uintptr_t HooksGetStaticFindObjectFastAddress()       { return Hooks::ObjectLookup::GetStaticFindObjectFastAddress(); }
+	static uintptr_t HooksGetFindPackageAddress()                { return Hooks::ObjectLookup::GetFindPackageAddress(); }
+	static uintptr_t HooksGetPackageFullyLoadAddress()           { return Hooks::ObjectLookup::GetUPackage_FullyLoadAddress(); }
+	static uintptr_t HooksGetLoadPackageAddress()                { return Hooks::ObjectLookup::GetLoadPackageAddress(); }
+	static uintptr_t HooksGetAssetDataFastGetAssetAddress()      { return Hooks::ObjectLookup::GetFAssetData_FastGetAssetAddress(); }
 
 	// --- Text utilities ---
 
@@ -679,7 +693,16 @@ namespace ModLoaderLogger
 		HooksRegisterEngineTickCallback,
 		HooksUnregisterEngineTickCallback,
 		HooksGetStaticLoadObjectAddress,  // v16
-		HooksPostToGameThread             // v18
+		HooksPostToGameThread,            // v18
+		HooksGetStaticFindObjectByPathAddress,     // v36
+		HooksGetStaticFindObjectByNameAddress,     // v36
+		HooksGetStaticFindObjectSafeByPathAddress, // v36
+		HooksGetStaticFindObjectSafeByNameAddress, // v36
+		HooksGetStaticFindObjectFastAddress,       // v36
+		HooksGetFindPackageAddress,                // v36
+		HooksGetPackageFullyLoadAddress,           // v36
+		HooksGetLoadPackageAddress,                // v36
+		HooksGetAssetDataFastGetAssetAddress       // v36
 	};
 
 	static IPluginWorldEvents g_worldEvents = {

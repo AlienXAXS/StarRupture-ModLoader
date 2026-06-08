@@ -490,6 +490,7 @@
     <ClInclude Include="hooks\game\engine_tick\engine_tick.h" />
     <ClInclude Include="hooks\game\hud_post_render\hud_post_render.h" />
     <ClInclude Include="hooks\game\session_info\session_info.h" />
+    <ClInclude Include="hooks\game\object_lookup\object_lookup.h" />
     <ClInclude Include="hooks\game\experience_load_complete\experience_load_complete.h" />
     <ClInclude Include="hooks\game\player_joined\player_joined.h" />
     <ClInclude Include="hooks\game\player_left\player_left.h" />
@@ -586,6 +587,7 @@
     <ClCompile Include="utils\game_thread_dispatch.cpp" />
     <ClCompile Include="hooks\game\hud_post_render\hud_post_render.cpp" />
     <ClCompile Include="hooks\game\session_info\session_info.cpp" />
+    <ClCompile Include="hooks\game\object_lookup\object_lookup.cpp" />
     <ClCompile Include="hooks\game\experience_load_complete\experience_load_complete.cpp" />
     <ClCompile Include="hooks\game\player_joined\player_joined.cpp" />
     <ClCompile Include="hooks\game\player_left\player_left.cpp" />

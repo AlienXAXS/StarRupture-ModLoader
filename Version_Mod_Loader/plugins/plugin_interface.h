@@ -54,6 +54,14 @@
 //      exposed via the new EPluginNetMode enum (mirrors engine ENetMode) so
 //      plugins can compare against typed names instead of raw integers.
 //      MIN should be bumped, but no one is using it yet.
+//      --- Added object/package lookup address resolvers to IPluginEngineEvents:
+//      GetStaticFindObjectByPathAddress, GetStaticFindObjectByNameAddress,
+//      GetStaticFindObjectSafeByPathAddress, GetStaticFindObjectSafeByNameAddress,
+//      GetStaticFindObjectFastAddress, GetFindPackageAddress,
+//      GetPackageFullyLoadAddress, GetLoadPackageAddress,
+//      GetAssetDataFastGetAssetAddress -- AOB-resolved during early modloader
+//      startup (Hooks::ObjectLookup), exposed as raw trampoline addresses.
+//      MIN remains 34.
 
 #define PLUGIN_INTERFACE_VERSION_MIN 34
 #define PLUGIN_INTERFACE_VERSION_MAX 36
@@ -189,6 +197,29 @@ struct IPluginEngineEvents
 	void    (*UnregisterOnTick)(PluginEngineTickCallback);
 	uintptr_t (*GetStaticLoadObjectAddress)();           // v16
 	void      (*PostToGameThread)(PluginGameThreadCallback fn, void* context); // v18
+
+	// v36 -- resolved addresses of CoreUObject object/package lookup and loading
+	// functions, scanned during early modloader startup. Each returns 0 if the
+	// AOB scan failed to resolve the function on the running build.
+	//
+	//   GetStaticFindObjectByPathAddress     -> UObject* __fastcall StaticFindObject(UClass*, FTopLevelAssetPath*, bool)
+	//   GetStaticFindObjectByNameAddress     -> UObject* __fastcall StaticFindObject(UClass*, UObject*, const wchar_t*, bool)
+	//   GetStaticFindObjectSafeByPathAddress -> UObject* __fastcall StaticFindObjectSafe(UClass*, FTopLevelAssetPath*, bool)
+	//   GetStaticFindObjectSafeByNameAddress -> UObject* __fastcall StaticFindObjectSafe(UClass*, UObject*, const wchar_t*, bool)
+	//   GetStaticFindObjectFastAddress       -> UObject* __fastcall StaticFindObjectFast(UClass*, UObject*, FName, bool, EObjectFlags, EInternalObjectFlags)
+	//   GetFindPackageAddress                -> UPackage* __fastcall FindPackage(UObject*, const wchar_t*)
+	//   GetPackageFullyLoadAddress           -> void __fastcall UPackage::FullyLoad(UPackage*)
+	//   GetLoadPackageAddress                -> UPackage* __fastcall LoadPackage(UPackage*, FScriptContainerElement*, unsigned int, FArchive*, const FLinkerInstancingContext*)
+	//   GetAssetDataFastGetAssetAddress      -> UObject* __fastcall FAssetData::FastGetAsset(FAssetData*, bool, TMap<FName,FName,FDefaultSetAllocator,TDefaultMapHashableKeyFuncs<FName,FName,0>>*)
+	uintptr_t (*GetStaticFindObjectByPathAddress)();
+	uintptr_t (*GetStaticFindObjectByNameAddress)();
+	uintptr_t (*GetStaticFindObjectSafeByPathAddress)();
+	uintptr_t (*GetStaticFindObjectSafeByNameAddress)();
+	uintptr_t (*GetStaticFindObjectFastAddress)();
+	uintptr_t (*GetFindPackageAddress)();
+	uintptr_t (*GetPackageFullyLoadAddress)();
+	uintptr_t (*GetLoadPackageAddress)();
+	uintptr_t (*GetAssetDataFastGetAssetAddress)();
 };
 
 struct IPluginWorldEvents

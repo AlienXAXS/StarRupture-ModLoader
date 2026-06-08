@@ -9,6 +9,7 @@
 #include "../hooks/game/experience_load_complete/experience_load_complete.h"
 #include "../hooks/game/game_instance_init/game_instance_init.h"
 #include "../hooks/game/mass_do_spawning/mass_do_spawning.h"
+#include "../hooks/game/object_lookup/object_lookup.h"
 #include "../hooks/game/mass_spawner_activate/mass_spawner_activate.h"
 #include "../hooks/game/mass_spawner_deactivate/mass_spawner_deactivate.h"
 #include "../hooks/game/player_joined/player_joined.h"
@@ -78,6 +79,13 @@ void InstallAllHooks()
         ModLoaderLogger::LogDebug(L"  TextKey hook installed");
     else
         ModLoaderLogger::LogWarn(L"  WARNING: TextKey hook failed to install");
+
+    Splash::SetStatus(L"Resolving object lookup functions...");
+
+    if (Hooks::ObjectLookup::Install())
+        ModLoaderLogger::LogDebug(L"  ObjectLookup functions resolved");
+    else
+        ModLoaderLogger::LogWarn(L"  WARNING: ObjectLookup failed to resolve one or more object/package lookup functions");
 
 #if defined(MODLOADER_SERVER_BUILD) || defined(MODLOADER_CLIENT_BUILD)
     if (Hooks::SessionInfo::Install())
