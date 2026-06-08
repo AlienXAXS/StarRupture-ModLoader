@@ -69,14 +69,6 @@ namespace UI::PluginWidgetRegistry
             e->isVisible = visible;
     }
 
-    bool AnyWidgetVisible()
-    {
-        std::lock_guard<std::mutex> lock(s_mutex);
-        for (auto& e : s_widgets)
-            if (e.isVisible) return true;
-        return false;
-    }
-
     void RenderWidgets(IModLoaderImGui* imgui)
     {
         // Snapshot entry data by value so that concurrent UnregisterWidget calls

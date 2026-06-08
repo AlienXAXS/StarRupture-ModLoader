@@ -26,9 +26,6 @@ namespace UI::PluginWidgetRegistry
     // Show or hide a widget window.  Widgets are visible by default after registration.
     void SetWidgetVisible(WidgetHandle handle, bool visible);
 
-    // Returns true if any registered widget is currently visible.
-    bool AnyWidgetVisible();
-
     // Renders all visible widget windows.  Call once per frame at the top level
     // (outside any other ImGui window).
     void RenderWidgets(IModLoaderImGui* imgui);
