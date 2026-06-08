@@ -1822,43 +1822,109 @@ static PluginTextureHandle TextureLoadFromRGBA(const unsigned char* rgba, int wi
 // ---------------------------------------------------------------------------
 static constexpr ptrdiff_t kUTexture_PrivateResource          = 0x120;
 static constexpr ptrdiff_t kFTextureResource_TextureRHI_Ptr   = 0x10;
-static constexpr int       kFRHITexture_GetNativeResource_Slot = 2;
+// FD3D12Texture vtable layout (confirmed via IDA, StarRuptureGameSteam-Win64-Shipping):
+//   slot 0 (+0x00)  ~FD3D12Texture
+//   slot 1 (+0x08)  SetTrackedAccessFromContext
+//   slot 2 (+0x10)  GetDesc              <-- returns FRHITextureDesc* (this+0x20), NOT the D3D12 resource
+//   slot 3 (+0x18)  GetTextureReference
+//   slot 4 (+0x20)  GetDefaultBindlessHandle
+//   slot 5 (+0x28)  GetNativeResource    <-- correct slot
+//   slot 6 (+0x30)  GetNativeShaderResourceView
+//   slot 7 (+0x38)  GetTextureBaseRHI
+//   slot 8 (+0x40)  GetWriteMaskProperties
+static constexpr int       kFRHITexture_GetNativeResource_Slot = 5;
 
 static PluginTextureHandle TextureLoadFromUTexture2D(SDK::UTexture2D* uTexture2D)
 {
-	if (!g_device || !uTexture2D) return nullptr;
+	LogToFile::Trace("[ImGuiBackend] LoadFromUTexture2D: entry uTexture2D=0x%p g_device=0x%p",
+		(void*)uTexture2D, (void*)g_device);
 
-	// Step 1: UTexture::PrivateResource
+	if (!g_device || !uTexture2D)
+	{
+		LogToFile::Trace("[ImGuiBackend] LoadFromUTexture2D: early-out (device=%s texture=%s)",
+			g_device ? "ok" : "NULL", uTexture2D ? "ok" : "NULL");
+		return nullptr;
+	}
+
+	// Step 1: UTexture::PrivateResource at offset 0x120
 	uint8_t* textureBase = reinterpret_cast<uint8_t*>(uTexture2D);
-	void*    resourcePtr = *reinterpret_cast<void**>(textureBase + kUTexture_PrivateResource);
-	if (!resourcePtr) return nullptr;  // texture not streamed/resident yet
+	LogToFile::Trace("[ImGuiBackend] LoadFromUTexture2D: reading PrivateResource at 0x%p+0x%zX",
+		(void*)textureBase, kUTexture_PrivateResource);
 
-	// Step 2: FTextureResource::TextureRHI -> raw FRHITexture*
+	void* resourcePtr = *reinterpret_cast<void**>(textureBase + kUTexture_PrivateResource);
+	LogToFile::Trace("[ImGuiBackend] LoadFromUTexture2D: FTextureResource*=0x%p", resourcePtr);
+
+	if (!resourcePtr)
+	{
+		LogToFile::Trace("[ImGuiBackend] LoadFromUTexture2D: FTextureResource* is null -- texture not streamed/resident");
+		return nullptr;
+	}
+
+	// Step 2: FTexture::TextureRHI (TRefCountPtr<FRHITexture>) at offset 0x10
 	uint8_t* textureResourceBase = reinterpret_cast<uint8_t*>(resourcePtr);
-	void*    rhiTexture = *reinterpret_cast<void**>(textureResourceBase + kFTextureResource_TextureRHI_Ptr);
-	if (!rhiTexture) return nullptr;
+	LogToFile::Trace("[ImGuiBackend] LoadFromUTexture2D: reading TextureRHI at 0x%p+0x%zX",
+		(void*)textureResourceBase, kFTextureResource_TextureRHI_Ptr);
 
-	// Step 3: FRHITexture::GetNativeResource() via vtable
-	// Signature: void* __fastcall GetNativeResource(void* this)
-	using GetNativeResourceFn = void*(__fastcall*)(void*);
+	void* rhiTexture = *reinterpret_cast<void**>(textureResourceBase + kFTextureResource_TextureRHI_Ptr);
+	LogToFile::Trace("[ImGuiBackend] LoadFromUTexture2D: FRHITexture*=0x%p", rhiTexture);
+
+	if (!rhiTexture)
+	{
+		LogToFile::Trace("[ImGuiBackend] LoadFromUTexture2D: FRHITexture* is null -- RHI not initialized?");
+		return nullptr;
+	}
+
+	// Step 3: FRHITexture::GetNativeResource() via vtable slot 5.
 	void** vtable = *reinterpret_cast<void***>(rhiTexture);
-	auto getNativeResource = reinterpret_cast<GetNativeResourceFn>(vtable[kFRHITexture_GetNativeResource_Slot]);
-	ID3D12Resource* d3dResource = static_cast<ID3D12Resource*>(getNativeResource(rhiTexture));
-	if (!d3dResource) return nullptr;
+	LogToFile::Trace("[ImGuiBackend] LoadFromUTexture2D: vtable=0x%p vtable[%d]=0x%p",
+		(void*)vtable, kFRHITexture_GetNativeResource_Slot,
+		vtable ? vtable[kFRHITexture_GetNativeResource_Slot] : nullptr);
 
-	// Query dimensions from the D3D12 resource itself
+	if (!vtable)
+	{
+		LogToFile::Trace("[ImGuiBackend] LoadFromUTexture2D: vtable is null -- corrupt FRHITexture?");
+		return nullptr;
+	}
+
+	using GetNativeResourceFn = void*(__fastcall*)(void*);
+	auto getNativeResource = reinterpret_cast<GetNativeResourceFn>(vtable[kFRHITexture_GetNativeResource_Slot]);
+	LogToFile::Trace("[ImGuiBackend] LoadFromUTexture2D: calling GetNativeResource fn=0x%p this=0x%p",
+		(void*)(uintptr_t)getNativeResource, rhiTexture);
+
+	ID3D12Resource* d3dResource = static_cast<ID3D12Resource*>(getNativeResource(rhiTexture));
+	LogToFile::Trace("[ImGuiBackend] LoadFromUTexture2D: ID3D12Resource*=0x%p", (void*)d3dResource);
+
+	if (!d3dResource)
+	{
+		LogToFile::Trace("[ImGuiBackend] LoadFromUTexture2D: ID3D12Resource* is null");
+		return nullptr;
+	}
+
+	// Step 4: Query dimensions from the D3D12 resource descriptor
+	LogToFile::Trace("[ImGuiBackend] LoadFromUTexture2D: calling GetDesc() on 0x%p", (void*)d3dResource);
 	D3D12_RESOURCE_DESC resDesc = d3dResource->GetDesc();
 	int width  = static_cast<int>(resDesc.Width);
 	int height = static_cast<int>(resDesc.Height);
-	if (width <= 0 || height <= 0) return nullptr;
+	LogToFile::Trace("[ImGuiBackend] LoadFromUTexture2D: desc %dx%d format=%u mips=%u dim=%u flags=0x%X",
+		width, height,
+		(unsigned)resDesc.Format,
+		(unsigned)resDesc.MipLevels,
+		(unsigned)resDesc.Dimension,
+		(unsigned)resDesc.Flags);
 
-	// Step 4: Allocate a descriptor slot and create an SRV over the existing resource.
-	// No upload needed -- the resource is already GPU-resident.
+	if (width <= 0 || height <= 0)
+	{
+		LogToFile::Trace("[ImGuiBackend] LoadFromUTexture2D: degenerate dimensions %dx%d -- aborting", width, height);
+		return nullptr;
+	}
+
+	// Step 5: Allocate a descriptor slot and create an SRV over the existing resource
+	LogToFile::Trace("[ImGuiBackend] LoadFromUTexture2D: allocating SRV slot");
 	std::lock_guard<std::mutex> lock(g_textureMutex);
 	int slot = AllocTextureSlot();
 	if (slot < 0)
 	{
-		LogToFile::Error("[ImGuiBackend] TextureLoadFromUTexture2D: all %d slots in use", MAX_PLUGIN_TEXTURES);
+		LogToFile::Error("[ImGuiBackend] LoadFromUTexture2D: all %d slots in use", MAX_PLUGIN_TEXTURES);
 		return nullptr;
 	}
 
@@ -1866,16 +1932,25 @@ static PluginTextureHandle TextureLoadFromUTexture2D(SDK::UTexture2D* uTexture2D
 	cpuHandle.ptr += (UINT64)(slot + 1) * g_srvDescSize;
 	D3D12_GPU_DESCRIPTOR_HANDLE gpuHandle = g_srvHeap->GetGPUDescriptorHandleForHeapStart();
 	gpuHandle.ptr += (UINT64)(slot + 1) * g_srvDescSize;
+	LogToFile::Trace("[ImGuiBackend] LoadFromUTexture2D: slot=%d cpuHandle=0x%llX gpuHandle=0x%llX srvDescSize=%u",
+		slot,
+		(unsigned long long)cpuHandle.ptr,
+		(unsigned long long)gpuHandle.ptr,
+		g_srvDescSize);
 
 	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
-	srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-	srvDesc.Format                  = resDesc.Format;
-	srvDesc.ViewDimension           = D3D12_SRV_DIMENSION_TEXTURE2D;
+	srvDesc.Shader4ComponentMapping        = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+	srvDesc.Format                         = resDesc.Format;
+	srvDesc.ViewDimension                  = D3D12_SRV_DIMENSION_TEXTURE2D;
 	srvDesc.Texture2D.MostDetailedMip      = 0;
 	srvDesc.Texture2D.MipLevels            = resDesc.MipLevels;
 	srvDesc.Texture2D.PlaneSlice           = 0;
 	srvDesc.Texture2D.ResourceMinLODClamp  = 0.0f;
+	LogToFile::Trace("[ImGuiBackend] LoadFromUTexture2D: calling CreateShaderResourceView format=%u mips=%u",
+		(unsigned)srvDesc.Format, (unsigned)srvDesc.Texture2D.MipLevels);
+
 	g_device->CreateShaderResourceView(d3dResource, &srvDesc, cpuHandle);
+	LogToFile::Trace("[ImGuiBackend] LoadFromUTexture2D: SRV created");
 
 	PluginTextureRecord& rec = g_pluginTextures[slot];
 	rec.resource  = d3dResource;
@@ -1885,6 +1960,8 @@ static PluginTextureHandle TextureLoadFromUTexture2D(SDK::UTexture2D* uTexture2D
 	rec.inUse     = true;
 	rec.owned     = false;  // engine owns this resource; we must NOT Release it
 
+	LogToFile::Trace("[ImGuiBackend] LoadFromUTexture2D: done handle=0x%p slot=%d %dx%d owned=false",
+		(void*)&rec, slot, width, height);
 	return &rec;
 }
 
