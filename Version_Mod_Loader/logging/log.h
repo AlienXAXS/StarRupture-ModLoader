@@ -415,17 +415,16 @@ namespace LogToFile
 
 			if (ueReady)
 			{
-				if (level >= Level::Info)
+				UELog::ELogVerbosity ueVerbosity;
+				switch (level)
 				{
-					UELog::ELogVerbosity ueVerbosity;
-					switch (level)
-					{
-						case Level::Warn: ueVerbosity = UELog::ELogVerbosity::Warning; break;
-						case Level::Error: ueVerbosity = UELog::ELogVerbosity::Error; break;
-						default: ueVerbosity = UELog::ELogVerbosity::Log; break;
-					}
-					UELog::Write(ueVerbosity, messageBuf);
+					case Level::Trace: ueVerbosity = UELog::ELogVerbosity::VeryVerbose; break;
+					case Level::Debug: ueVerbosity = UELog::ELogVerbosity::Verbose;     break;
+					case Level::Warn:  ueVerbosity = UELog::ELogVerbosity::Warning;     break;
+					case Level::Error: ueVerbosity = UELog::ELogVerbosity::Error;       break;
+					default:           ueVerbosity = UELog::ELogVerbosity::Log;         break;
 				}
+				UELog::Write(ueVerbosity, messageBuf);
 			}
 			else
 			{
