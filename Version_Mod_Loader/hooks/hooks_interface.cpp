@@ -31,6 +31,7 @@
 #include "UI/plugin_panel_registry.h"
 #include "UI/plugin_widget_registry.h"
 #include "UI/imgui_backend.h"
+#include "UI/splash_window.h"
 #include "hooks/game/hud_post_render/hud_post_render.h"
 #include "hooks/game/client_message/client_message.h"
 #endif
@@ -896,6 +897,32 @@ namespace ModLoaderLogger
 		HooksGetGatherPlayersDataAddress
 	};
 
+	// --- Splash feedback wrappers (v40, client only) ---
+
+	static void SplashSetSubStatus(const char* text)
+	{
+		if (!text) return;
+		wchar_t buf[256];
+		MultiByteToWideChar(CP_UTF8, 0, text, -1, buf, 256);
+		Splash::SetSubStatus(buf);
+	}
+
+	static void SplashSetSubProgress(float fraction)
+	{
+		Splash::SetSubProgress(fraction);
+	}
+
+	static void SplashClearSubBar()
+	{
+		Splash::ClearSubBar();
+	}
+
+	static IPluginSplash g_splashInterface = {
+		SplashSetSubStatus,
+		SplashSetSubProgress,
+		SplashClearSubBar
+	};
+
 #endif // MODLOADER_CLIENT_BUILD
 
 #if defined(MODLOADER_SERVER_BUILD) || defined(MODLOADER_CLIENT_BUILD)
@@ -1069,8 +1096,10 @@ namespace ModLoaderLogger
 		&g_textUtils,         // FText localization helpers (AsLocalizable_Advanced, Conv_TextToString)
 #ifdef MODLOADER_CLIENT_BUILD
 		nullptr,              // v37 — ImGuiTextures; filled in below by GetPluginHooks()
+		&g_splashInterface,   // v40 — splash feedback (client only)
 #else
-		nullptr               // v37 — ImGuiTextures is null on server/generic builds
+		nullptr,              // v37 — ImGuiTextures is null on server/generic builds
+		nullptr               // v40 — Splash is null on server/generic builds
 #endif
 	};
 	static bool g_networkChannelInitialized = false;

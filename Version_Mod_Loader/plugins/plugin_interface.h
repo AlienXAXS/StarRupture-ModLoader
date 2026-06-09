@@ -87,10 +87,18 @@
 //      resource, so the handle survives engine GC/eviction.  Plugins must call
 //      FreeTexture when done; handles are no longer auto-expired each frame.
 //      MIN remains 34.
+// v40: Added IPluginSplash (client only, null on server/generic).
+//      Lets plugins push status messages and progress updates to the startup
+//      splash window during PluginInit, giving users feedback when a plugin
+//      takes several seconds to initialise.
+//      hooks->Splash->{SetStatus, SetProgress, SetSubStatus, SetSubProgress, ClearSubBar}.
+//      All text parameters are UTF-8 const char* (converted to wchar internally).
+//      Safe to call from PluginInit; no-ops on server/generic builds.
+//      MIN remains 34.
 
 #define PLUGIN_INTERFACE_VERSION_MIN 34
-#define PLUGIN_INTERFACE_VERSION_MAX 39
-#define PLUGIN_INTERFACE_VERSION 39
+#define PLUGIN_INTERFACE_VERSION_MAX 40
+#define PLUGIN_INTERFACE_VERSION 40
 
 enum class PluginLogLevel { Trace = 0, Debug = 1, Info = 2, Warn = 3, Error = 4 };
 enum class ConfigValueType { String, Integer, Float, Boolean, Keybind };
@@ -1002,6 +1010,26 @@ struct IPluginNetModeInfo
 };
 
 // ---------------------------------------------------------------------------
+// Splash feedback (v40, client only; null on server/generic)
+// ---------------------------------------------------------------------------
+// Lets plugins push messages and progress to the secondary sub-bar on the
+// startup splash window during PluginInit, giving users feedback when a plugin
+// takes several seconds to initialise.  The main status/progress bar is
+// owned by the modloader.  All text is UTF-8.  Safe to call from any thread.
+struct IPluginSplash
+{
+    // Update the secondary status label shown below the main progress bar.
+    // Pass an empty string or call ClearSubBar to hide the secondary section.
+    void (*SetSubStatus)(const char* text);
+
+    // Update the secondary progress bar fill (0.0 to 1.0).
+    void (*SetSubProgress)(float fraction);
+
+    // Hide the secondary bar and clear its label.
+    void (*ClearSubBar)();
+};
+
+// ---------------------------------------------------------------------------
 // Top-level hooks interface (v14+)
 // ---------------------------------------------------------------------------
 struct IPluginHooks
@@ -1022,6 +1050,7 @@ struct IPluginHooks
 	IPluginNetModeInfo*    NetMode;          // v36 — server + client; null on generic
 	IPluginTextUtils*      Text;             // FText localization helpers (AsLocalizable_Advanced, Conv_TextToString)
 	IPluginImGuiTextures*  ImGuiTextures;    // v37 — client only; null on server/generic
+	IPluginSplash*         Splash;           // v40 — client only; null on server/generic
 };
 
 // ---------------------------------------------------------------------------
