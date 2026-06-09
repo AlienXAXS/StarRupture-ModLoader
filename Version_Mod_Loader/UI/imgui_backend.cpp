@@ -170,6 +170,10 @@ namespace
 	// actually touches the back buffer last.
 	bool g_streamlineActive = false;
 
+	// Set to the render thread ID while inside HookedPresent, 0 otherwise.
+	// Used by LoadFromUTexture2D to detect (and warn about) render-thread calls.
+	std::atomic<DWORD> g_presentOwnerThread{ 0 };
+
 	// IDXGIFactory2::CreateSwapChainForHwnd vtable patch (slot 15).
 	// Typed as void* for parameters we don't inspect -- avoids dxgi1_2.h type
 	// availability issues at namespace scope; ABI is identical (all pointer-sized).
@@ -1014,10 +1018,10 @@ static HRESULT STDMETHODCALLTYPE HookedPresent(IDXGISwapChain* swapChain, UINT s
 	// Present from within its own Present wrapper) and simultaneous calls from
 	// multiple threads (some middleware and overlay SDKs call Present off the
 	// render thread).  An atomic owner-thread check handles both cases.
-	static std::atomic<DWORD> s_presentOwnerThread{ 0 };
+	// Also used by LoadFromUTexture2D to warn if called from the render thread.
 	DWORD tid = GetCurrentThreadId();
 	DWORD expected = 0;
-	if (!s_presentOwnerThread.compare_exchange_strong(expected, tid))
+	if (!g_presentOwnerThread.compare_exchange_strong(expected, tid))
 		return g_originalPresent(swapChain, syncInterval, flags);
 
 	// Wait for WorldBeginPlay before touching D3D12.
@@ -1026,7 +1030,7 @@ static HRESULT STDMETHODCALLTYPE HookedPresent(IDXGISwapChain* swapChain, UINT s
 	{
 		if (!g_renderingReady)
 		{
-			s_presentOwnerThread.store(0, std::memory_order_release);
+			g_presentOwnerThread.store(0, std::memory_order_release);
 			return g_originalPresent(swapChain, syncInterval, flags);
 		}
 
@@ -1039,18 +1043,18 @@ static HRESULT STDMETHODCALLTYPE HookedPresent(IDXGISwapChain* swapChain, UINT s
 			}
 			// else: size filter rejected this swap chain, try again next frame.
 		}
-		s_presentOwnerThread.store(0, std::memory_order_release);
+		g_presentOwnerThread.store(0, std::memory_order_release);
 		return g_originalPresent(swapChain, syncInterval, flags);
 	}
 
 	// Only render on the swap chain we initialised on.
 	if (swapChain != g_swapChain)
 	{
-		s_presentOwnerThread.store(0, std::memory_order_release);
+		g_presentOwnerThread.store(0, std::memory_order_release);
 		return g_originalPresent(swapChain, syncInterval, flags);
 	}
 
-	// s_presentOwnerThread is now set to tid -- release it on every exit path below.
+	// g_presentOwnerThread is now set to tid -- release it on every exit path below.
 
 	static std::atomic<UINT64> s_renderFrame{ 0 };
 	UINT64 frameIdx = s_renderFrame.fetch_add(1);
@@ -1084,7 +1088,7 @@ static HRESULT STDMETHODCALLTYPE HookedPresent(IDXGISwapChain* swapChain, UINT s
 	if (FAILED(swapChain->GetBuffer(bufferIdx, IID_PPV_ARGS(&backBuffer))))
 	{
 		LogToFile::Error("[ImGuiBackend] Frame %llu  GetBuffer(%u) failed", frameIdx, bufferIdx);
-		s_presentOwnerThread.store(0, std::memory_order_release);
+		g_presentOwnerThread.store(0, std::memory_order_release);
 		return g_originalPresent(swapChain, syncInterval, flags);
 	}
 
@@ -1243,7 +1247,7 @@ static HRESULT STDMETHODCALLTYPE HookedPresent(IDXGISwapChain* swapChain, UINT s
 		}
 	}
 
-	s_presentOwnerThread.store(0, std::memory_order_release);
+	g_presentOwnerThread.store(0, std::memory_order_release);
 	return hr;
 }
 
@@ -2133,6 +2137,18 @@ static bool GetNativeResourceSEH(
 
 static PluginTextureHandle TextureLoadFromUTexture2D(SDK::UTexture2D* uTexture2D, const char* name)
 {
+	// Warn if called from the render thread (inside HookedPresent).
+	// This causes a 44ms+ GPU stall that crashes Streamline/DLSS.
+	// Load textures from OnExperienceLoadComplete or another game-thread callback instead.
+	{
+		DWORD presentTid = g_presentOwnerThread.load(std::memory_order_acquire);
+		if (presentTid != 0 && presentTid == GetCurrentThreadId())
+			LogToFile::Warn("[ImGuiBackend] LoadFromUTexture2D '%s': called from the render thread -- "
+				"this will stall the GPU pipeline and may crash with DLSS. "
+				"Call from OnExperienceLoadComplete or another game-thread callback instead.",
+				name ? name : "?");
+	}
+
 	LogToFile::Trace("[ImGuiBackend] LoadFromUTexture2D '%s': entry uTexture2D=0x%p g_device=0x%p",
 		name ? name : "?", (void*)uTexture2D, (void*)g_device);
 
