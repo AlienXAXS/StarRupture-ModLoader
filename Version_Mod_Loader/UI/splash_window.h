@@ -42,6 +42,12 @@ namespace Splash
     // Hide the secondary bar and clear its label.
     void ClearSubBar();
 
+    // Returns true while the splash window is open and visible.
+    // Use this to guard plugin calls -- returns false after the splash has
+    // closed (e.g. during a hot-reload after startup).
+    // Thread-safe -- can be called from any thread.
+    bool IsVisible();
+
     // Pump messages for the given duration (milliseconds) so cross-thread
     // repaint requests (WM_APP) posted during e.g. PluginInit are dispatched
     // before the splash closes.  Call this instead of Sleep() during the

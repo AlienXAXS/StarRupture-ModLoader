@@ -899,6 +899,11 @@ namespace ModLoaderLogger
 
 	// --- Splash feedback wrappers (v40, client only) ---
 
+	static bool SplashIsVisible()
+	{
+		return Splash::IsVisible();
+	}
+
 	static void SplashSetSubStatus(const char* text)
 	{
 		if (!text) return;
@@ -918,6 +923,7 @@ namespace ModLoaderLogger
 	}
 
 	static IPluginSplash g_splashInterface = {
+		SplashIsVisible,
 		SplashSetSubStatus,
 		SplashSetSubProgress,
 		SplashClearSubBar

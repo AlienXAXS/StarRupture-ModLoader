@@ -422,6 +422,11 @@ void Splash::Close()
 	}
 }
 
+bool Splash::IsVisible()
+{
+	return g_hwnd != nullptr;
+}
+
 void Splash::SetSubStatus(const wchar_t* text)
 {
 	if (!g_hwnd) return;
@@ -494,6 +499,7 @@ void Splash::SetErrorMode(bool showCloseButton)
 #else // Server build -- empty stubs
 
 void Splash::Show() {}
+bool Splash::IsVisible() { return false; }
 void Splash::SetStatus(const wchar_t*) {}
 void Splash::SetProgress(float) {}
 void Splash::SetErrorMode(bool) {}

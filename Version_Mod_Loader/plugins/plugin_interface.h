@@ -1018,6 +1018,11 @@ struct IPluginNetModeInfo
 // owned by the modloader.  All text is UTF-8.  Safe to call from any thread.
 struct IPluginSplash
 {
+    // Returns true while the splash window is open and visible.
+    // Guard all other calls with this -- returns false after startup completes
+    // or when the plugin is hot-reloaded after the splash has already closed.
+    bool (*IsVisible)();
+
     // Update the secondary status label shown below the main progress bar.
     // Pass an empty string or call ClearSubBar to hide the secondary section.
     void (*SetSubStatus)(const char* text);
