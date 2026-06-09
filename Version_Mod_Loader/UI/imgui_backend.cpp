@@ -113,6 +113,13 @@ namespace
 	PluginTextureRecord g_pluginTextures[MAX_PLUGIN_TEXTURES] = {};
 	std::mutex          g_textureMutex;
 	UINT                g_srvDescSize = 0;
+
+	// Serialises all ImGui context access between the render thread (HookedPresent)
+	// and the game main thread (HookedWndProc / ImGui_ImplWin32_WndProcHandler).
+	// ImGui's InputEventsQueue is not thread-safe: NewFrame() drains it on the
+	// render thread while AddMousePosEvent() appends to it on the main thread,
+	// causing out-of-bounds asserts in FindLatestInputEvent without this lock.
+	std::mutex g_imguiMutex;
 	IPluginImGuiTextures g_textureAPI = {};
 
 	// WIC factory — created once on first texture load, released in Shutdown.
@@ -274,8 +281,11 @@ static bool DispatchKeybindMessage(UINT msg, WPARAM wParam, LPARAM lParam)
 // ---------------------------------------------------------------------------
 static LRESULT CALLBACK HookedWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
-	if (ImGui_ImplWin32_WndProcHandler(hWnd, msg, wParam, lParam))
-		return true;
+	{
+		std::lock_guard<std::mutex> lock(g_imguiMutex);
+		if (ImGui_ImplWin32_WndProcHandler(hWnd, msg, wParam, lParam))
+			return true;
+	}
 
 	// Dispatch plugin keybind callbacks unconditionally so that toggle-style
 	// keybinds (e.g. F2) can close the UI even while it is open.
@@ -1127,40 +1137,44 @@ static HRESULT STDMETHODCALLTYPE HookedPresent(IDXGISwapChain* swapChain, UINT s
 	// NoMouseCursorChange prevents ImGui's Win32 backend from calling
 	// SetCursor() every frame -- without it, it fights UE5's cursor management
 	// and causes visible flickering whenever our window is closed.
-	bool uiOpen = ShouldCaptureInput();
-	ImGuiIO& frameIO = ImGui::GetIO();
-	if (uiOpen)
 	{
-		frameIO.ConfigFlags &= ~ImGuiConfigFlags_NoMouseCursorChange;
-		frameIO.MouseDrawCursor = true;
-		ClipCursor(nullptr);
+		std::lock_guard<std::mutex> imguiLock(g_imguiMutex);
+
+		bool uiOpen = ShouldCaptureInput();
+		ImGuiIO& frameIO = ImGui::GetIO();
+		if (uiOpen)
+		{
+			frameIO.ConfigFlags &= ~ImGuiConfigFlags_NoMouseCursorChange;
+			frameIO.MouseDrawCursor = true;
+			ClipCursor(nullptr);
+		}
+		else
+		{
+			frameIO.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
+			frameIO.MouseDrawCursor = false;
+		}
+
+		// Rebuild font atlas if the user changed the font family.
+		// Must happen before NewFrame to avoid using a destroyed font texture.
+		if (g_pendingFontRebuild.exchange(false))
+			RebuildFontAtlas(/*initialSetup=*/false);
+
+		ImGui_ImplDX12_NewFrame();
+		ImGui_ImplWin32_NewFrame();
+		ImGui::NewFrame();
+
+		UI::Overlay::Render();
+		UI::Overlay::RenderHud();
+		UI::ModLoaderWindow::Render(&g_imguiAPI);
+		UI::PluginPanelRegistry::RenderPanelWindows(&g_imguiAPI);
+		UI::PluginWidgetRegistry::RenderWidgets(&g_imguiAPI);
+
+		ImGui::Render();
+
+		g_cmdList->OMSetRenderTargets(1, &rtvHandle, FALSE, nullptr);
+		g_cmdList->SetDescriptorHeaps(1, &g_srvHeap);
+		ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), g_cmdList);
 	}
-	else
-	{
-		frameIO.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
-		frameIO.MouseDrawCursor = false;
-	}
-
-	// Rebuild font atlas if the user changed the font family.
-	// Must happen before NewFrame to avoid using a destroyed font texture.
-	if (g_pendingFontRebuild.exchange(false))
-		RebuildFontAtlas(/*initialSetup=*/false);
-
-	ImGui_ImplDX12_NewFrame();
-	ImGui_ImplWin32_NewFrame();
-	ImGui::NewFrame();
-
-	UI::Overlay::Render();
-	UI::Overlay::RenderHud();
-	UI::ModLoaderWindow::Render(&g_imguiAPI);
-	UI::PluginPanelRegistry::RenderPanelWindows(&g_imguiAPI);
-	UI::PluginWidgetRegistry::RenderWidgets(&g_imguiAPI);
-
-	ImGui::Render();
-
-	g_cmdList->OMSetRenderTargets(1, &rtvHandle, FALSE, nullptr);
-	g_cmdList->SetDescriptorHeaps(1, &g_srvHeap);
-	ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), g_cmdList);
 
 	// Barrier: RENDER_TARGET -> COMMON.
 	barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
