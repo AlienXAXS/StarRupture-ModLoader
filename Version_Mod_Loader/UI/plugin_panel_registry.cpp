@@ -115,13 +115,6 @@ namespace UI::PluginPanelRegistry
             e->isOpen = false;
     }
 
-    void CloseAllPanels()
-    {
-        std::lock_guard<std::mutex> lock(s_mutex);
-        for (auto& e : s_panels)
-            e.isOpen = false;
-    }
-
     bool AnyPanelOpen()
     {
         std::lock_guard<std::mutex> lock(s_mutex);
