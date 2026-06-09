@@ -1,0 +1,65 @@
+name: Delete unused tags
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Only print tags that would be deleted"
+        required: true
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+
+permissions:
+  contents: write
+
+jobs:
+  delete-unused-tags:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Delete unused tags
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git fetch --tags --prune
+
+          echo "Finding tags not pointing to commits reachable from any branch..."
+
+          unused_tags=()
+
+          while IFS= read -r tag; do
+            commit="$(git rev-list -n 1 "$tag")"
+
+            if ! git branch -r --contains "$commit" | grep -q .; then
+              unused_tags+=("$tag")
+            fi
+          done < <(git tag -l)
+
+          if [ "${#unused_tags[@]}" -eq 0 ]; then
+            echo "No unused tags found."
+            exit 0
+          fi
+
+          echo "Unused tags:"
+          printf '%s\n' "${unused_tags[@]}"
+
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            echo "Dry run enabled. No tags deleted."
+            exit 0
+          fi
+
+          for tag in "${unused_tags[@]}"; do
+            echo "Deleting tag: $tag"
+            git tag -d "$tag"
+            git push origin ":refs/tags/$tag"
+          done
