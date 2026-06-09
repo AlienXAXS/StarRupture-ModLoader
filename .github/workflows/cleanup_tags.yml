@@ -1,4 +1,4 @@
-name: Delete unused tags
+name: Delete tags without releases
 
 on:
   workflow_dispatch:
@@ -26,40 +26,40 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
-      - name: Delete unused tags
+      - name: Delete tags without GitHub releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DRY_RUN: ${{ inputs.dry_run }}
         shell: bash
         run: |
           set -euo pipefail
 
-          git fetch --tags --prune
+          git fetch --tags --force
 
-          echo "Finding tags not pointing to commits reachable from any branch..."
+          echo "Fetching release tags..."
+          gh release list --limit 1000 --json tagName --jq '.[].tagName' | sort -u > release-tags.txt
 
-          unused_tags=()
+          echo "Fetching git tags..."
+          git tag -l | sort -u > git-tags.txt
 
-          while IFS= read -r tag; do
-            commit="$(git rev-list -n 1 "$tag")"
+          echo "Finding tags with no matching GitHub Release..."
+          comm -23 git-tags.txt release-tags.txt > unused-tags.txt
 
-            if ! git branch -r --contains "$commit" | grep -q .; then
-              unused_tags+=("$tag")
-            fi
-          done < <(git tag -l)
-
-          if [ "${#unused_tags[@]}" -eq 0 ]; then
-            echo "No unused tags found."
+          if [ ! -s unused-tags.txt ]; then
+            echo "No tags without releases found."
             exit 0
           fi
 
-          echo "Unused tags:"
-          printf '%s\n' "${unused_tags[@]}"
+          echo "Tags without releases:"
+          cat unused-tags.txt
 
-          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+          if [ "$DRY_RUN" = "true" ]; then
             echo "Dry run enabled. No tags deleted."
             exit 0
           fi
 
-          for tag in "${unused_tags[@]}"; do
+          while IFS= read -r tag; do
             echo "Deleting tag: $tag"
-            git tag -d "$tag"
+            git tag -d "$tag" || true
             git push origin ":refs/tags/$tag"
-          done
+          done < unused-tags.txt
