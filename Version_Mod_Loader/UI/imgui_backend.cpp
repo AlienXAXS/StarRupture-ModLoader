@@ -101,18 +101,13 @@ namespace
 
 	struct PluginTextureRecord
 	{
-		ID3D12Resource*              resource           = nullptr;
-		D3D12_GPU_DESCRIPTOR_HANDLE  gpuHandle          = {};
-		int                          width              = 0;
-		int                          height             = 0;
-		bool                         inUse              = false;
-		// true  = modloader owns this resource (uploaded via our path); Release() on free.
-		// false = engine-owned resource (LoadFromUTexture2D); do NOT Release() on free.
-		bool                         owned              = true;
-		// For owned=false: points directly at FD3D12Resource::DefaultResourceState so
-		// IsTextureReady() can re-read the GPU resource state without any further
-		// struct walking.  Null for owned=true (always ready after upload).
-		D3D12_RESOURCE_STATES*       pDefaultResState   = nullptr;
+		ID3D12Resource*              resource  = nullptr;
+		D3D12_GPU_DESCRIPTOR_HANDLE  gpuHandle = {};
+		int                          width     = 0;
+		int                          height    = 0;
+		bool                         inUse     = false;
+		bool                         owned     = true;  // always true; Release() on free
+		char                         name[64]  = {};    // plugin-supplied label for logging
 	};
 
 	PluginTextureRecord g_pluginTextures[MAX_PLUGIN_TEXTURES] = {};
@@ -943,13 +938,12 @@ static void CleanupD3D12Resources()
 	if (g_fenceEvent) { CloseHandle(g_fenceEvent);         g_fenceEvent = nullptr; }
 	if (g_rtvHeap) { g_rtvHeap->Release();              g_rtvHeap = nullptr; }
 
-	// Release all plugin-owned texture resources before the SRV heap.
-	// Engine-owned textures (LoadFromUTexture2D, owned=false) are NOT Released here.
+	// Release all plugin texture resources before the SRV heap.
 	{
 		std::lock_guard<std::mutex> lock(g_textureMutex);
 		for (int i = 0; i < MAX_PLUGIN_TEXTURES; ++i)
 		{
-			if (g_pluginTextures[i].inUse && g_pluginTextures[i].owned && g_pluginTextures[i].resource)
+			if (g_pluginTextures[i].inUse && g_pluginTextures[i].resource)
 				g_pluginTextures[i].resource->Release();
 			g_pluginTextures[i] = {};
 		}
@@ -1715,6 +1709,132 @@ static ID3D12Resource* UploadRGBAToGPU(
 	return texResource;
 }
 
+// Copy an engine-owned D3D12 texture into a new owned DEFAULT-heap resource.
+// Barriers the engine resource to COPY_SOURCE on a private queue (if needed),
+// performs CopyResource, restores the engine resource state, then transitions
+// the new resource to PIXEL_SHADER_RESOURCE.  Writes an SRV into srvCpuHandle.
+// Blocks until the GPU copy is complete.  Returns the new owned resource, or
+// nullptr on failure.
+//
+// NOTE: the barrier transition of srcResource to COPY_SOURCE is issued on a
+// private queue with no cross-queue fence against the engine's render queue.
+// This is safe only when srcState is COMMON (implicit promotion, no barrier
+// emitted) or when the engine has finished all GPU work on that resource for
+// the current frame -- i.e. call this after a GPU-idle fence if in doubt.
+static ID3D12Resource* CopyEngineTextureToOwned(
+	ID3D12Resource*             srcResource,
+	D3D12_RESOURCE_STATES       srcState,
+	const D3D12_RESOURCE_DESC&  srcDesc,
+	DXGI_FORMAT                 srvFormat,
+	D3D12_CPU_DESCRIPTOR_HANDLE srvCpuHandle)
+{
+	if (!g_device || !srcResource) return nullptr;
+
+	D3D12_HEAP_PROPERTIES heapProps = {};
+	heapProps.Type = D3D12_HEAP_TYPE_DEFAULT;
+
+	D3D12_RESOURCE_DESC dstDesc = srcDesc;
+	dstDesc.Flags = D3D12_RESOURCE_FLAG_NONE;  // we only need to sample it
+
+	ID3D12Resource* dstResource = nullptr;
+	if (FAILED(g_device->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE,
+		&dstDesc, D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&dstResource))))
+		return nullptr;
+
+	D3D12_COMMAND_QUEUE_DESC queueDesc = {};
+	queueDesc.Type     = D3D12_COMMAND_LIST_TYPE_DIRECT;
+	queueDesc.NodeMask = 1;
+
+	ID3D12CommandQueue*        tmpQueue = nullptr;
+	ID3D12CommandAllocator*    tmpAlloc = nullptr;
+	ID3D12GraphicsCommandList* tmpList  = nullptr;
+	ID3D12Fence*               tmpFence = nullptr;
+	HANDLE                     tmpEvent = nullptr;
+
+	bool ok =
+		SUCCEEDED(g_device->CreateCommandQueue(&queueDesc, IID_PPV_ARGS(&tmpQueue))) &&
+		SUCCEEDED(g_device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&tmpAlloc))) &&
+		SUCCEEDED(g_device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, tmpAlloc, nullptr, IID_PPV_ARGS(&tmpList))) &&
+		SUCCEEDED(g_device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&tmpFence)));
+
+	if (ok) tmpEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
+
+	if (!ok || !tmpEvent)
+	{
+		if (tmpEvent) CloseHandle(tmpEvent);
+		if (tmpFence) tmpFence->Release();
+		if (tmpList)  tmpList->Release();
+		if (tmpAlloc) tmpAlloc->Release();
+		if (tmpQueue) tmpQueue->Release();
+		dstResource->Release();
+		return nullptr;
+	}
+
+	// COMMON state resources implicitly promote to COPY_SOURCE -- no barrier needed.
+	// Any other state requires an explicit transition and restore.
+	const bool needSrcBarrier = (srcState != D3D12_RESOURCE_STATE_COMMON) &&
+	                            (srcState != D3D12_RESOURCE_STATE_COPY_SOURCE);
+
+	if (needSrcBarrier)
+	{
+		D3D12_RESOURCE_BARRIER b = {};
+		b.Type                   = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+		b.Transition.pResource   = srcResource;
+		b.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+		b.Transition.StateBefore = srcState;
+		b.Transition.StateAfter  = D3D12_RESOURCE_STATE_COPY_SOURCE;
+		tmpList->ResourceBarrier(1, &b);
+	}
+
+	tmpList->CopyResource(dstResource, srcResource);
+
+	{
+		D3D12_RESOURCE_BARRIER post[2] = {};
+		UINT count = 0;
+
+		if (needSrcBarrier)
+		{
+			post[count].Type                   = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+			post[count].Transition.pResource   = srcResource;
+			post[count].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+			post[count].Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_SOURCE;
+			post[count].Transition.StateAfter  = srcState;
+			++count;
+		}
+
+		post[count].Type                   = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+		post[count].Transition.pResource   = dstResource;
+		post[count].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+		post[count].Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_DEST;
+		post[count].Transition.StateAfter  = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+		++count;
+
+		tmpList->ResourceBarrier(count, post);
+	}
+
+	tmpList->Close();
+	tmpQueue->ExecuteCommandLists(1, (ID3D12CommandList* const*)&tmpList);
+	tmpQueue->Signal(tmpFence, 1);
+	tmpFence->SetEventOnCompletion(1, tmpEvent);
+	WaitForSingleObject(tmpEvent, INFINITE);
+
+	CloseHandle(tmpEvent);
+	tmpFence->Release();
+	tmpList->Release();
+	tmpAlloc->Release();
+	tmpQueue->Release();
+
+	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+	srvDesc.Shader4ComponentMapping        = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+	srvDesc.Format                         = srvFormat;
+	srvDesc.ViewDimension                  = D3D12_SRV_DIMENSION_TEXTURE2D;
+	srvDesc.Texture2D.MipLevels            = srcDesc.MipLevels;
+
+	g_device->CreateShaderResourceView(dstResource, &srvDesc, srvCpuHandle);
+
+	return dstResource;
+}
+
 // Decode an image from an IWICBitmapSource (any format) to a raw RGBA pixel buffer.
 // Returns heap-allocated pixels on success (caller delete[]s it); sets width/height.
 static uint8_t* WICToRGBA(IWICBitmapSource* src, int* out_w, int* out_h)
@@ -1764,7 +1884,7 @@ static PluginTextureRecord* ValidateHandle(PluginTextureHandle h)
 
 // ---------- IPluginImGuiTextures implementation ----------
 
-static PluginTextureHandle TextureLoadFromRGBA(const unsigned char* rgba, int width, int height)
+static PluginTextureHandle TextureLoadFromRGBA(const unsigned char* rgba, int width, int height, const char* name)
 {
 	if (!g_device || !rgba || width <= 0 || height <= 0)
 		return nullptr;
@@ -1773,7 +1893,7 @@ static PluginTextureHandle TextureLoadFromRGBA(const unsigned char* rgba, int wi
 	int slot = AllocTextureSlot();
 	if (slot < 0)
 	{
-		LogToFile::Error("[ImGuiBackend] TextureLoadFromRGBA: all %d slots in use", MAX_PLUGIN_TEXTURES);
+		LogToFile::Error("[ImGuiBackend] TextureLoadFromRGBA '%s': all %d slots in use", name ? name : "?", MAX_PLUGIN_TEXTURES);
 		throw std::out_of_range("IPluginImGuiTextures: all texture slots are in use -- call FreeTexture or check GetFreeSlotCount");
 	}
 
@@ -1785,7 +1905,7 @@ static PluginTextureHandle TextureLoadFromRGBA(const unsigned char* rgba, int wi
 	ID3D12Resource* resource = UploadRGBAToGPU(rgba, width, height, cpuHandle);
 	if (!resource)
 	{
-		LogToFile::Error("[ImGuiBackend] TextureLoadFromRGBA: GPU upload failed (%dx%d)", width, height);
+		LogToFile::Error("[ImGuiBackend] TextureLoadFromRGBA '%s': GPU upload failed (%dx%d)", name ? name : "?", width, height);
 		return nullptr;
 	}
 
@@ -1795,12 +1915,20 @@ static PluginTextureHandle TextureLoadFromRGBA(const unsigned char* rgba, int wi
 	rec.width     = width;
 	rec.height    = height;
 	rec.inUse     = true;
+	if (name) strncpy_s(rec.name, name, _TRUNCATE);
 
+	LogToFile::Debug("[ImGuiBackend] TextureLoadFromRGBA '%s': slot=%d %dx%d", rec.name, slot, width, height);
 	return &rec;
 }
 
 // ---------------------------------------------------------------------------
-// UTexture2D -> ImGui handle (no pixel copy; wraps the engine's GPU resource)
+// UTexture2D -> ImGui handle
+//
+// Copies the engine's GPU texture into a modloader-owned resource so the
+// handle remains valid even if UE5 garbage-collects or evicts the source.
+// The handle persists until the plugin calls FreeTexture() -- it is NOT
+// auto-expired each frame.  Plugins that call this every frame will leak
+// a slot per frame; load once, keep the handle, free when done.
 // ---------------------------------------------------------------------------
 //
 // UE5 internal layout assumptions (verified against Dumper-7 SDK output):
@@ -1823,6 +1951,75 @@ static PluginTextureHandle TextureLoadFromRGBA(const unsigned char* rgba, int wi
 //
 // If any of these offsets change after a game update, adjust the constants below.
 // ---------------------------------------------------------------------------
+// Returns true if p looks like a valid user-mode pointer on x64 Windows:
+//   - non-null
+//   - at least 8-byte aligned (COM / C++ objects)
+//   - below the canonical hole (user space ends at 0x00007FFFFFFFFFFF)
+//   - above the first 64 KB (Windows reserves the low 64 KB; nothing valid lives there)
+static bool IsValidUserPtr(const void* p)
+{
+	uintptr_t v = reinterpret_cast<uintptr_t>(p);
+	return v >= 0x10000u &&
+	       v <  0x0000800000000000ull &&
+	       (v & 7u) == 0;
+}
+
+// Attempt to identify an FRHITexture subclass from its vtable pointer.
+// Tries MSVC RTTI first (vtable[-1] -> RTTICompleteObjectLocator -> type name).
+// Falls back to logging the owning module name and vtable RVA so the caller can
+// look it up manually in IDA/Ghidra.  All reads are SEH-guarded.
+static void LogRHITextureClass(void** vtable)
+{
+	if (!vtable) return;
+
+	// --- RTTI attempt ---
+	// MSVC x64: vtable[-1] = RTTICompleteObjectLocator*
+	//   +0  DWORD signature  (1 = x64)
+	//   +4  DWORD offset
+	//   +8  DWORD cdOffset
+	//   +12 DWORD pTypeDescriptor  (RVA from module base)
+	//   +16 DWORD pClassDescriptor (RVA)
+	//   +20 DWORD pSelf            (RVA of the COL itself -> module base = col - pSelf)
+	// RTTITypeDescriptor layout: void* pVFTable, void* spare, char name[] (decorated)
+	const char* rttiName = nullptr;
+	__try
+	{
+		auto* colDwords = reinterpret_cast<const DWORD*>(vtable[-1]);
+		if (colDwords && colDwords[0] == 1)
+		{
+			DWORD selfRVA    = colDwords[5];
+			DWORD typeRVA    = colDwords[3];
+			uintptr_t modBase = reinterpret_cast<uintptr_t>(colDwords) - selfRVA;
+			const char* td   = reinterpret_cast<const char*>(modBase + typeRVA);
+			// Skip pVFTable (8) + spare (8) to reach the name string
+			rttiName = td + 16;
+		}
+	}
+	__except (EXCEPTION_EXECUTE_HANDLER) {}
+
+	if (rttiName)
+	{
+		LogToFile::Warn("[ImGuiBackend] Unknown FRHITexture subclass (RTTI): %s  vtable=0x%p",
+			rttiName, (void*)vtable);
+		return;
+	}
+
+	// --- Fallback: module + RVA ---
+	HMODULE hMod = nullptr;
+	char modName[MAX_PATH] = "<unknown>";
+	if (GetModuleHandleExA(
+		GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+		reinterpret_cast<LPCSTR>(vtable), &hMod))
+	{
+		GetModuleFileNameA(hMod, modName, sizeof(modName));
+		if (char* slash = strrchr(modName, '\\')) memmove(modName, slash + 1, strlen(slash));
+	}
+	uintptr_t rva = reinterpret_cast<uintptr_t>(vtable)
+	              - reinterpret_cast<uintptr_t>(hMod);
+	LogToFile::Warn("[ImGuiBackend] Unknown FRHITexture subclass (no RTTI): vtable=0x%p  %s+0x%llX",
+		(void*)vtable, modName, (unsigned long long)rva);
+}
+
 static constexpr ptrdiff_t kUTexture_PrivateResource          = 0x120;
 static constexpr ptrdiff_t kFTextureResource_TextureRHI_Ptr   = 0x10;
 
@@ -1879,15 +2076,70 @@ static DXGI_FORMAT ResolveTypelessForSRV(DXGI_FORMAT fmt)
 	}
 }
 
-static PluginTextureHandle TextureLoadFromUTexture2D(SDK::UTexture2D* uTexture2D)
+// Isolated SEH helper: no C++ objects with destructors, so __try is legal here.
+// Reads the vtable from rhiTexture, calls vtable[5] (GetNativeResource), and calls
+// ID3D12Resource::GetDesc().  rhiTexture may be static exe/DLL data that passes
+// IsValidUserPtr but is not a real heap FRHITexture; calling through its vtable into
+// Streamline with a bad 'this' would corrupt Streamline before the AV fires.
+// Returns true and fills out-params on success; logs and returns false on any exception.
+static bool GetNativeResourceSEH(
+	void*                rhiTexture,
+	void***              outVtable,
+	ID3D12Resource**     outResource,
+	D3D12_RESOURCE_DESC* outDesc)
 {
-	LogToFile::Trace("[ImGuiBackend] LoadFromUTexture2D: entry uTexture2D=0x%p g_device=0x%p",
-		(void*)uTexture2D, (void*)g_device);
+	__try
+	{
+		void** vtable = *reinterpret_cast<void***>(rhiTexture);
+		LogToFile::Trace("[ImGuiBackend] LoadFromUTexture2D: vtable=0x%p vtable[%d]=0x%p",
+			(void*)vtable, kFRHITexture_GetNativeResource_Slot,
+			vtable ? vtable[kFRHITexture_GetNativeResource_Slot] : nullptr);
+
+		if (!IsValidUserPtr(vtable))
+		{
+			LogToFile::Trace("[ImGuiBackend] LoadFromUTexture2D: vtable invalid (0x%p) -- corrupt FRHITexture?",
+				(void*)vtable);
+			return false;
+		}
+		*outVtable = vtable;
+
+		using GetNativeResourceFn = void*(__fastcall*)(void*);
+		auto getNativeResource = reinterpret_cast<GetNativeResourceFn>(vtable[kFRHITexture_GetNativeResource_Slot]);
+		LogToFile::Trace("[ImGuiBackend] LoadFromUTexture2D: calling GetNativeResource fn=0x%p this=0x%p",
+			(void*)(uintptr_t)getNativeResource, rhiTexture);
+
+		ID3D12Resource* res = static_cast<ID3D12Resource*>(getNativeResource(rhiTexture));
+		LogToFile::Trace("[ImGuiBackend] LoadFromUTexture2D: ID3D12Resource*=0x%p", (void*)res);
+
+		if (!IsValidUserPtr(res))
+		{
+			LogRHITextureClass(vtable);
+			return false;
+		}
+		*outResource = res;
+
+		LogToFile::Trace("[ImGuiBackend] LoadFromUTexture2D: calling GetDesc() on 0x%p", (void*)res);
+		*outDesc = res->GetDesc();
+		return true;
+	}
+	__except (EXCEPTION_EXECUTE_HANDLER)
+	{
+		LogToFile::Warn("[ImGuiBackend] LoadFromUTexture2D: SEH exception in vtable walk / GetNativeResource / GetDesc"
+			" -- rhiTexture=0x%p is likely static data, not a heap FRHITexture; skipping",
+			rhiTexture);
+		return false;
+	}
+}
+
+static PluginTextureHandle TextureLoadFromUTexture2D(SDK::UTexture2D* uTexture2D, const char* name)
+{
+	LogToFile::Trace("[ImGuiBackend] LoadFromUTexture2D '%s': entry uTexture2D=0x%p g_device=0x%p",
+		name ? name : "?", (void*)uTexture2D, (void*)g_device);
 
 	if (!g_device || !uTexture2D)
 	{
-		LogToFile::Trace("[ImGuiBackend] LoadFromUTexture2D: early-out (device=%s texture=%s)",
-			g_device ? "ok" : "NULL", uTexture2D ? "ok" : "NULL");
+		LogToFile::Trace("[ImGuiBackend] LoadFromUTexture2D '%s': early-out (device=%s texture=%s)",
+			name ? name : "?", g_device ? "ok" : "NULL", uTexture2D ? "ok" : "NULL");
 		return nullptr;
 	}
 
@@ -1899,9 +2151,10 @@ static PluginTextureHandle TextureLoadFromUTexture2D(SDK::UTexture2D* uTexture2D
 	void* resourcePtr = *reinterpret_cast<void**>(textureBase + kUTexture_PrivateResource);
 	LogToFile::Trace("[ImGuiBackend] LoadFromUTexture2D: FTextureResource*=0x%p", resourcePtr);
 
-	if (!resourcePtr)
+	if (!IsValidUserPtr(resourcePtr))
 	{
-		LogToFile::Trace("[ImGuiBackend] LoadFromUTexture2D: FTextureResource* is null -- texture not streamed/resident");
+		LogToFile::Trace("[ImGuiBackend] LoadFromUTexture2D: FTextureResource* invalid (0x%p) -- not streamed/resident or corrupt",
+			resourcePtr);
 		return nullptr;
 	}
 
@@ -1913,41 +2166,20 @@ static PluginTextureHandle TextureLoadFromUTexture2D(SDK::UTexture2D* uTexture2D
 	void* rhiTexture = *reinterpret_cast<void**>(textureResourceBase + kFTextureResource_TextureRHI_Ptr);
 	LogToFile::Trace("[ImGuiBackend] LoadFromUTexture2D: FRHITexture*=0x%p", rhiTexture);
 
-	if (!rhiTexture)
+	if (!IsValidUserPtr(rhiTexture))
 	{
-		LogToFile::Trace("[ImGuiBackend] LoadFromUTexture2D: FRHITexture* is null -- RHI not initialized?");
+		LogToFile::Trace("[ImGuiBackend] LoadFromUTexture2D: FRHITexture* invalid (0x%p) -- RHI not initialized or corrupt",
+			rhiTexture);
 		return nullptr;
 	}
 
-	// Step 3: FRHITexture::GetNativeResource() via vtable slot 5.
-	void** vtable = *reinterpret_cast<void***>(rhiTexture);
-	LogToFile::Trace("[ImGuiBackend] LoadFromUTexture2D: vtable=0x%p vtable[%d]=0x%p",
-		(void*)vtable, kFRHITexture_GetNativeResource_Slot,
-		vtable ? vtable[kFRHITexture_GetNativeResource_Slot] : nullptr);
-
-	if (!vtable)
-	{
-		LogToFile::Trace("[ImGuiBackend] LoadFromUTexture2D: vtable is null -- corrupt FRHITexture?");
+	// Step 3: FRHITexture::GetNativeResource() via vtable slot 5, then GetDesc().
+	// Delegated to GetNativeResourceSEH() to isolate __try from C++ object unwinding.
+	void** vtable       = nullptr;
+	ID3D12Resource* d3dResource = nullptr;
+	D3D12_RESOURCE_DESC resDesc = {};
+	if (!GetNativeResourceSEH(rhiTexture, &vtable, &d3dResource, &resDesc))
 		return nullptr;
-	}
-
-	using GetNativeResourceFn = void*(__fastcall*)(void*);
-	auto getNativeResource = reinterpret_cast<GetNativeResourceFn>(vtable[kFRHITexture_GetNativeResource_Slot]);
-	LogToFile::Trace("[ImGuiBackend] LoadFromUTexture2D: calling GetNativeResource fn=0x%p this=0x%p",
-		(void*)(uintptr_t)getNativeResource, rhiTexture);
-
-	ID3D12Resource* d3dResource = static_cast<ID3D12Resource*>(getNativeResource(rhiTexture));
-	LogToFile::Trace("[ImGuiBackend] LoadFromUTexture2D: ID3D12Resource*=0x%p", (void*)d3dResource);
-
-	if (!d3dResource)
-	{
-		LogToFile::Trace("[ImGuiBackend] LoadFromUTexture2D: ID3D12Resource* is null");
-		return nullptr;
-	}
-
-	// Step 4: Query dimensions from the D3D12 resource descriptor
-	LogToFile::Trace("[ImGuiBackend] LoadFromUTexture2D: calling GetDesc() on 0x%p", (void*)d3dResource);
-	D3D12_RESOURCE_DESC resDesc = d3dResource->GetDesc();
 	int width  = static_cast<int>(resDesc.Width);
 	int height = static_cast<int>(resDesc.Height);
 	LogToFile::Trace("[ImGuiBackend] LoadFromUTexture2D: desc %dx%d format=%u mips=%u dim=%u flags=0x%X",
@@ -1999,13 +2231,14 @@ static PluginTextureHandle TextureLoadFromUTexture2D(SDK::UTexture2D* uTexture2D
 		}
 	}
 
-	// Step 5: Allocate a descriptor slot and create an SRV over the existing resource
+	// Step 5: Allocate a slot, copy the engine resource to our own owned resource,
+	// and create an SRV over it.  We own the copy so it is safe from engine eviction.
 	LogToFile::Trace("[ImGuiBackend] LoadFromUTexture2D: allocating SRV slot");
 	std::lock_guard<std::mutex> lock(g_textureMutex);
 	int slot = AllocTextureSlot();
 	if (slot < 0)
 	{
-		LogToFile::Error("[ImGuiBackend] LoadFromUTexture2D: all %d slots in use", MAX_PLUGIN_TEXTURES);
+		LogToFile::Error("[ImGuiBackend] LoadFromUTexture2D '%s': all %d slots in use", name ? name : "?", MAX_PLUGIN_TEXTURES);
 		throw std::out_of_range("IPluginImGuiTextures: all texture slots are in use -- call FreeTexture or check GetFreeSlotCount");
 	}
 
@@ -2013,46 +2246,41 @@ static PluginTextureHandle TextureLoadFromUTexture2D(SDK::UTexture2D* uTexture2D
 	cpuHandle.ptr += (UINT64)(slot + 1) * g_srvDescSize;
 	D3D12_GPU_DESCRIPTOR_HANDLE gpuHandle = g_srvHeap->GetGPUDescriptorHandleForHeapStart();
 	gpuHandle.ptr += (UINT64)(slot + 1) * g_srvDescSize;
-	LogToFile::Trace("[ImGuiBackend] LoadFromUTexture2D: slot=%d cpuHandle=0x%llX gpuHandle=0x%llX srvDescSize=%u",
-		slot,
-		(unsigned long long)cpuHandle.ptr,
-		(unsigned long long)gpuHandle.ptr,
-		g_srvDescSize);
 
 	DXGI_FORMAT srvFormat = ResolveTypelessForSRV(resDesc.Format);
 	if (srvFormat != resDesc.Format)
 		LogToFile::Trace("[ImGuiBackend] LoadFromUTexture2D: typeless format %u -> SRV format %u",
 			(unsigned)resDesc.Format, (unsigned)srvFormat);
 
-	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
-	srvDesc.Shader4ComponentMapping        = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-	srvDesc.Format                         = srvFormat;
-	srvDesc.ViewDimension                  = D3D12_SRV_DIMENSION_TEXTURE2D;
-	srvDesc.Texture2D.MostDetailedMip      = 0;
-	srvDesc.Texture2D.MipLevels            = resDesc.MipLevels;
-	srvDesc.Texture2D.PlaneSlice           = 0;
-	srvDesc.Texture2D.ResourceMinLODClamp  = 0.0f;
-	LogToFile::Trace("[ImGuiBackend] LoadFromUTexture2D: calling CreateShaderResourceView srvFormat=%u (resource=%u) mips=%u",
-		(unsigned)srvFormat, (unsigned)resDesc.Format, (unsigned)srvDesc.Texture2D.MipLevels);
+	D3D12_RESOURCE_STATES srcState = *pDefaultResState;
+	LogToFile::Trace("[ImGuiBackend] LoadFromUTexture2D: copying engine texture to owned resource "
+		"slot=%d %dx%d srvFormat=%u srcState=0x%X",
+		slot, width, height, (unsigned)srvFormat, (unsigned)srcState);
 
-	g_device->CreateShaderResourceView(d3dResource, &srvDesc, cpuHandle);
-	LogToFile::Trace("[ImGuiBackend] LoadFromUTexture2D: SRV created");
+	ID3D12Resource* ownedResource = CopyEngineTextureToOwned(
+		d3dResource, srcState, resDesc, srvFormat, cpuHandle);
+
+	if (!ownedResource)
+	{
+		LogToFile::Error("[ImGuiBackend] LoadFromUTexture2D '%s': CopyEngineTextureToOwned failed", name ? name : "?");
+		return nullptr;
+	}
 
 	PluginTextureRecord& rec = g_pluginTextures[slot];
-	rec.resource         = d3dResource;
-	rec.gpuHandle        = gpuHandle;
-	rec.width            = width;
-	rec.height           = height;
-	rec.inUse            = true;
-	rec.owned            = false;  // engine owns this resource; we must NOT Release it
-	rec.pDefaultResState = pDefaultResState;
+	rec.resource  = ownedResource;
+	rec.gpuHandle = gpuHandle;
+	rec.width     = width;
+	rec.height    = height;
+	rec.inUse     = true;
+	rec.owned     = true;
+	if (name) strncpy_s(rec.name, name, _TRUNCATE);
 
-	LogToFile::Trace("[ImGuiBackend] LoadFromUTexture2D: done handle=0x%p slot=%d %dx%d owned=false",
-		(void*)&rec, slot, width, height);
+	LogToFile::Debug("[ImGuiBackend] LoadFromUTexture2D '%s': slot=%d %dx%d fmt=%u",
+		rec.name, slot, width, height, (unsigned)resDesc.Format);
 	return &rec;
 }
 
-static PluginTextureHandle TextureLoadFromMemory(const void* data, size_t size)
+static PluginTextureHandle TextureLoadFromMemory(const void* data, size_t size, const char* name)
 {
 	if (!data || size == 0) return nullptr;
 
@@ -2083,12 +2311,12 @@ static PluginTextureHandle TextureLoadFromMemory(const void* data, size_t size)
 	frame->Release();
 	if (!pixels) return nullptr;
 
-	PluginTextureHandle handle = TextureLoadFromRGBA(pixels, w, h);
+	PluginTextureHandle handle = TextureLoadFromRGBA(pixels, w, h, name);
 	delete[] pixels;
 	return handle;
 }
 
-static PluginTextureHandle TextureLoadFromFile(const char* utf8_path)
+static PluginTextureHandle TextureLoadFromFile(const char* utf8_path, const char* name)
 {
 	if (!utf8_path || !*utf8_path) return nullptr;
 
@@ -2117,7 +2345,7 @@ static PluginTextureHandle TextureLoadFromFile(const char* utf8_path)
 	frame->Release();
 	if (!pixels) return nullptr;
 
-	PluginTextureHandle handle = TextureLoadFromRGBA(pixels, w, h);
+	PluginTextureHandle handle = TextureLoadFromRGBA(pixels, w, h, name);
 	delete[] pixels;
 	return handle;
 }
@@ -2140,30 +2368,11 @@ static void TextureGetSize(PluginTextureHandle handle, int* out_w, int* out_h)
 	if (out_h) *out_h = rec->height;
 }
 
-// Returns false if the engine-owned resource is not yet in a shader-readable state.
-static bool IsEngineTextureReady(const PluginTextureRecord* rec)
-{
-	if (!rec->pDefaultResState) return true; // owned upload -- always ready
-
-	constexpr D3D12_RESOURCE_STATES kReadable =
-		D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE |
-		D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
-	D3D12_RESOURCE_STATES s = *rec->pDefaultResState;
-
-	if ((s == D3D12_RESOURCE_STATE_COMMON) || ((s & kReadable) != 0))
-		return true;
-
-	LogToFile::Trace("[ImGuiBackend] Image skipped -- engine texture slot=%d not ready (DefaultResourceState=0x%X)",
-		(int)(rec - g_pluginTextures), (unsigned)s);
-
-	return false;
-}
-
 static void TextureImage(PluginTextureHandle handle, float w, float h)
 {
 	PluginTextureRecord* rec = ValidateHandle(handle);
 	if (!rec) return;
-	if (!IsEngineTextureReady(rec)) return;
+	LogToFile::Trace("[ImGuiBackend] TextureImage '%s': handle=0x%p w=%.0f h=%.0f", rec->name, handle, w, h);
 	float iw = (w == 0.0f) ? (float)rec->width  : w;
 	float ih = (h == 0.0f) ? (float)rec->height : h;
 	ImGui::Image((ImTextureID)rec->gpuHandle.ptr, ImVec2(iw, ih));
@@ -2174,7 +2383,7 @@ static bool TextureImageButton(const char* str_id, PluginTextureHandle handle, f
 	if (!str_id) return false;
 	PluginTextureRecord* rec = ValidateHandle(handle);
 	if (!rec) return false;
-	if (!IsEngineTextureReady(rec)) return false;
+	LogToFile::Trace("[ImGuiBackend] TextureImageButton '%s': str_id=%s handle=0x%p w=%.0f h=%.0f", rec->name, str_id, handle, w, h);
 	float iw = (w == 0.0f) ? (float)rec->width  : w;
 	float ih = (h == 0.0f) ? (float)rec->height : h;
 	return ImGui::ImageButton(str_id, (ImTextureID)rec->gpuHandle.ptr, ImVec2(iw, ih));

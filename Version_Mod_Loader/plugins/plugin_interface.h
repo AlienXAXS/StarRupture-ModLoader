@@ -69,8 +69,7 @@
 //      Up to 64 textures may be live at once.
 //      hooks->ImGuiTextures->{LoadFromFile, LoadFromMemory, LoadFromRGBA,
 //      LoadFromUTexture2D, FreeTexture, GetSize, Image, ImageButton}.
-//      LoadFromUTexture2D wraps the engine-owned GPU texture in-place (no copy).
-//      The UTexture2D must remain alive while the handle is in use.
+//      LoadFromUTexture2D copies the engine texture to a modloader-owned resource.
 //      MIN remains 34.
 // v38: IPluginImGuiTextures: raised texture slot cap 64 -> 2048.
 //      Added GetFreeSlotCount(), GetCapacity().
@@ -81,10 +80,17 @@
 //      Image/ImageButton silently skip rendering if the engine resource is not
 //      yet in a shader-readable state (same check, re-evaluated each draw call).
 //      MIN remains 34.
+// v39: All Load* functions now take a mandatory name parameter (const char*).
+//      The name is logged when the texture is rendered and on load errors to
+//      make it easier to identify which texture is causing problems.
+//      LoadFromUTexture2D now copies the engine texture to a modloader-owned
+//      resource, so the handle survives engine GC/eviction.  Plugins must call
+//      FreeTexture when done; handles are no longer auto-expired each frame.
+//      MIN remains 34.
 
 #define PLUGIN_INTERFACE_VERSION_MIN 34
-#define PLUGIN_INTERFACE_VERSION_MAX 38
-#define PLUGIN_INTERFACE_VERSION 38
+#define PLUGIN_INTERFACE_VERSION_MAX 39
+#define PLUGIN_INTERFACE_VERSION 39
 
 enum class PluginLogLevel { Trace = 0, Debug = 1, Info = 2, Warn = 3, Error = 4 };
 enum class ConfigValueType { String, Integer, Float, Boolean, Keybind };
@@ -652,7 +658,8 @@ typedef void* PluginTextureHandle;
 // Image/ImageButton must be called from inside a plugin render callback
 // while an ImGui frame is in progress.
 //
-// All Load* functions throw std::out_of_range if no slots are available.
+// All Load* functions take a mandatory name parameter used for logging.
+// They throw std::out_of_range if no slots are available.
 // They return NULL (without throwing) only when D3D12 is not yet ready or
 // when the specific resource cannot be loaded (bad file, null texture, etc.).
 // Call GetFreeSlotCount() before loading if you need to handle a full registry
@@ -660,28 +667,30 @@ typedef void* PluginTextureHandle;
 struct IPluginImGuiTextures
 {
     // Load from a UTF-8 file path. Supports PNG, JPG, BMP, GIF, TIFF (via WIC).
+    // name is used in log output to identify this texture. Must not be NULL.
     // Returns NULL if D3D12 is not ready yet or if decoding fails.
     // Throws std::out_of_range if all slots are in use.
-    PluginTextureHandle (*LoadFromFile)(const char* utf8_path);
+    PluginTextureHandle (*LoadFromFile)(const char* utf8_path, const char* name);
 
     // Load from encoded image bytes in memory (same formats as LoadFromFile).
     // data must remain valid only for the duration of this call.
+    // name is used in log output to identify this texture. Must not be NULL.
     // Throws std::out_of_range if all slots are in use.
-    PluginTextureHandle (*LoadFromMemory)(const void* data, size_t size);
+    PluginTextureHandle (*LoadFromMemory)(const void* data, size_t size, const char* name);
 
     // Load from raw 32-bit RGBA pixels (4 bytes/pixel, top-left row-major).
     // data must remain valid only for the duration of this call.
+    // name is used in log output to identify this texture. Must not be NULL.
     // Throws std::out_of_range if all slots are in use.
-    PluginTextureHandle (*LoadFromRGBA)(const unsigned char* rgba, int width, int height);
+    PluginTextureHandle (*LoadFromRGBA)(const unsigned char* rgba, int width, int height, const char* name);
 
-    // Wrap a live UTexture2D in an ImGui handle without copying pixels.
-    // Creates an SRV directly over the engine-owned GPU resource.
-    // The UTexture2D must remain valid and GPU-resident for as long as the
-    // handle is in use. FreeTexture releases the SRV slot but does NOT
-    // release the underlying D3D12 resource (the engine owns it).
+    // Copy a UTexture2D into a modloader-owned GPU resource and return a handle.
+    // The copy is yours to keep; the engine may GC the source freely after this call.
+    // Call FreeTexture when done -- handles are NOT auto-expired each frame.
+    // name is used in log output to identify this texture. Must not be NULL.
     // Returns NULL if D3D12 is not ready or the texture has no GPU resource yet.
     // Throws std::out_of_range if all slots are in use.
-    PluginTextureHandle (*LoadFromUTexture2D)(SDK::UTexture2D* texture);
+    PluginTextureHandle (*LoadFromUTexture2D)(SDK::UTexture2D* texture, const char* name);
 
     // Release the texture and free its slot. Safe to call with NULL.
     // Do not call while the texture may still be rendered on the GPU.
