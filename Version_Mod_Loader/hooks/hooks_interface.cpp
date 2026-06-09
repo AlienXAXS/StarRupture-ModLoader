@@ -922,11 +922,23 @@ namespace ModLoaderLogger
 		Splash::ClearSubBar();
 	}
 
+	static void SplashAcquireHold()
+	{
+		Splash::AcquireHold();
+	}
+
+	static void SplashReleaseHold()
+	{
+		Splash::ReleaseHold();
+	}
+
 	static IPluginSplash g_splashInterface = {
 		SplashIsVisible,
 		SplashSetSubStatus,
 		SplashSetSubProgress,
-		SplashClearSubBar
+		SplashClearSubBar,
+		SplashAcquireHold,
+		SplashReleaseHold
 	};
 
 #endif // MODLOADER_CLIENT_BUILD

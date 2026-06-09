@@ -54,6 +54,12 @@ static CRITICAL_SECTION g_stateLock;
 static bool             g_stateLockInit  = false;
 static DWORD            g_splashThreadId = 0;   // thread that owns the HWND
 
+// Hold counter -- plugins increment this during PluginInit to defer the
+// splash close until their async game-thread work completes.
+// Manipulated via InterlockedIncrement/Decrement so no extra lock is needed.
+static volatile LONG g_holdCount   = 0;
+static HANDLE        g_holdEvent   = nullptr;  // manual-reset, signalled when g_holdCount == 0
+
 static wchar_t g_statusText[256]    = L"Initializing...";
 static float   g_progress           = 0.0f;
 static bool    g_errorMode          = false;
@@ -336,6 +342,10 @@ void Splash::Show()
 	g_subStatusText[0]   = L'\0';
 	wcscpy_s(g_statusText, L"Initializing...");
 
+	g_holdCount = 0;
+	if (!g_holdEvent)
+		g_holdEvent = CreateEventW(nullptr, TRUE, TRUE, nullptr); // manual-reset, initially signalled
+
 	CreateGdiObjects();
 
 	if (!g_classRegistered)
@@ -406,6 +416,9 @@ void Splash::Close()
 	}
 	g_hwnd           = nullptr;
 	g_splashThreadId = 0;
+
+	if (g_holdEvent) { CloseHandle(g_holdEvent); g_holdEvent = nullptr; }
+	g_holdCount = 0;
 
 	DestroyGdiObjects();
 
@@ -496,6 +509,57 @@ void Splash::SetErrorMode(bool showCloseButton)
 	RequestRepaint();
 }
 
+bool Splash::HasHolds()
+{
+	return g_holdCount > 0;
+}
+
+void Splash::AcquireHold()
+{
+	if (!g_holdEvent) return;
+	if (InterlockedIncrement(&g_holdCount) == 1)
+		ResetEvent(g_holdEvent); // first hold -- unsignal so WaitForAllHolds blocks
+}
+
+void Splash::ReleaseHold()
+{
+	if (!g_holdEvent) return;
+	LONG remaining = InterlockedDecrement(&g_holdCount);
+	if (remaining < 0)
+	{
+		// Unbalanced release -- clamp and signal anyway.
+		InterlockedExchange(&g_holdCount, 0);
+		remaining = 0;
+	}
+	if (remaining == 0)
+		SetEvent(g_holdEvent);
+}
+
+bool Splash::WaitForAllHolds(DWORD timeoutMs)
+{
+	if (!g_holdEvent) return true;
+	if (g_holdCount == 0) return true;
+
+	// Pump messages while waiting so the splash window stays responsive.
+	DWORD deadline = GetTickCount() + timeoutMs;
+	for (;;)
+	{
+		DWORD now = GetTickCount();
+		if (now >= deadline) break;
+		DWORD remaining = deadline - now;
+		DWORD r = MsgWaitForMultipleObjects(1, &g_holdEvent, FALSE, min(remaining, 50ul), QS_ALLINPUT);
+		if (r == WAIT_OBJECT_0)
+			return true;
+		MSG msg;
+		while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE))
+		{
+			TranslateMessage(&msg);
+			DispatchMessageW(&msg);
+		}
+	}
+	return g_holdCount == 0;
+}
+
 #else // Server build -- empty stubs
 
 void Splash::Show() {}
@@ -506,6 +570,10 @@ void Splash::SetErrorMode(bool) {}
 void Splash::SetSubStatus(const wchar_t*) {}
 void Splash::SetSubProgress(float) {}
 void Splash::ClearSubBar() {}
+bool Splash::HasHolds() { return false; }
+void Splash::AcquireHold() {}
+void Splash::ReleaseHold() {}
+bool Splash::WaitForAllHolds(DWORD) { return true; }
 void Splash::Linger(DWORD ms) { Sleep(ms); }
 void Splash::Close() {}
 

@@ -95,10 +95,17 @@
 //      All text parameters are UTF-8 const char* (converted to wchar internally).
 //      Safe to call from PluginInit; no-ops on server/generic builds.
 //      MIN remains 34.
+// v41: Added AcquireSplashHold / ReleaseSplashHold to IPluginSplash.
+//      Lets plugins that PostToGameThread during PluginInit keep the splash
+//      open until the async work completes.  Call AcquireSplashHold before
+//      returning from PluginInit, then ReleaseSplashHold when the game-thread
+//      callback finishes.  The init thread waits up to 30 s for all holds to
+//      drain before closing the splash.  Safe to call from any thread.
+//      MIN remains 34.
 
 #define PLUGIN_INTERFACE_VERSION_MIN 34
-#define PLUGIN_INTERFACE_VERSION_MAX 40
-#define PLUGIN_INTERFACE_VERSION 40
+#define PLUGIN_INTERFACE_VERSION_MAX 41
+#define PLUGIN_INTERFACE_VERSION 41
 
 enum class PluginLogLevel { Trace = 0, Debug = 1, Info = 2, Warn = 3, Error = 4 };
 enum class ConfigValueType { String, Integer, Float, Boolean, Keybind };
@@ -1032,6 +1039,18 @@ struct IPluginSplash
 
     // Hide the secondary bar and clear its label.
     void (*ClearSubBar)();
+
+    // Acquire a hold to keep the splash open past the normal startup close.
+    // Call during PluginInit before PostToGameThread if your async work needs
+    // to update the splash.  You MUST call ReleaseSplashHold exactly once when
+    // that work finishes (or fails).  Holds are ref-counted.  No-op if the
+    // splash is already closed.  Safe to call from any thread.
+    void (*AcquireSplashHold)();
+
+    // Release a hold previously acquired with AcquireSplashHold.  When all
+    // holds are released the splash is allowed to proceed to close.
+    // Safe to call from any thread.
+    void (*ReleaseSplashHold)();
 };
 
 // ---------------------------------------------------------------------------

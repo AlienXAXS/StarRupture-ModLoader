@@ -112,7 +112,13 @@ DWORD WINAPI MainInitThreadProc(LPVOID)
     if (g_pluginsLoadedEvent)
         SetEvent(g_pluginsLoadedEvent);
 
-    Splash::Linger(1200);
+    // Wait for any plugins that acquired a splash hold during PluginInit
+    // (e.g. to show progress for a PostToGameThread callback).
+    // 30-second timeout guards against a plugin that forgets to release.
+    if (Splash::HasHolds())
+        Splash::SetStatus(L"Waiting For Plugins To Finish Loading...");
+    Splash::WaitForAllHolds(30'000);
+    Splash::Linger(400);
     Splash::Close();
 
     return 0;

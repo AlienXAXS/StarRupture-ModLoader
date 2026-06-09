@@ -54,6 +54,26 @@ namespace Splash
     // final "hold" period.
     void Linger(DWORD ms);
 
+    // Increment the hold counter to defer the normal Linger/Close sequence.
+    // Call from PluginInit (before returning) if your plugin posts async work
+    // to the game thread that needs to update the splash.  You MUST call
+    // ReleaseHold exactly once when that work finishes (or fails).
+    // Safe to call from any thread.  No-op if the splash is already closed.
+    void AcquireHold();
+
+    // Decrement the hold counter.  When it reaches zero the WaitForAllHolds
+    // call in the init thread unblocks and the splash proceeds to close.
+    // Safe to call from any thread.
+    void ReleaseHold();
+
+    // Returns true if any plugin currently holds the splash open.
+    bool HasHolds();
+
+    // Block until the hold counter reaches zero or timeoutMs elapses.
+    // Returns true if all holds were released, false on timeout.
+    // Called by the init thread after InitAllLoadedPlugins completes.
+    bool WaitForAllHolds(DWORD timeoutMs);
+
     // Close the splash window and clean up the background thread.
     // Blocks briefly until the window thread exits.
     void Close();
