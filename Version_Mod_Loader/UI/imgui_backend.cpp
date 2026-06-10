@@ -119,7 +119,10 @@ namespace
 	// ImGui's InputEventsQueue is not thread-safe: NewFrame() drains it on the
 	// render thread while AddMousePosEvent() appends to it on the main thread,
 	// causing out-of-bounds asserts in FindLatestInputEvent without this lock.
-	std::mutex g_imguiMutex;
+	// Recursive: ImGui_ImplWin32_WndProcHandler can synchronously re-enter
+	// HookedWndProc on the same thread (e.g. SetCursor -> WM_SETCURSOR),
+	// which would deadlock (or throw on debug CRT) with a plain mutex.
+	std::recursive_mutex g_imguiMutex;
 	IPluginImGuiTextures g_textureAPI = {};
 
 	// WIC factory — created once on first texture load, released in Shutdown.
@@ -282,7 +285,7 @@ static bool DispatchKeybindMessage(UINT msg, WPARAM wParam, LPARAM lParam)
 static LRESULT CALLBACK HookedWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
 	{
-		std::lock_guard<std::mutex> lock(g_imguiMutex);
+		std::lock_guard<std::recursive_mutex> lock(g_imguiMutex);
 		if (ImGui_ImplWin32_WndProcHandler(hWnd, msg, wParam, lParam))
 			return true;
 	}
@@ -1138,7 +1141,7 @@ static HRESULT STDMETHODCALLTYPE HookedPresent(IDXGISwapChain* swapChain, UINT s
 	// SetCursor() every frame -- without it, it fights UE5's cursor management
 	// and causes visible flickering whenever our window is closed.
 	{
-		std::lock_guard<std::mutex> imguiLock(g_imguiMutex);
+		std::lock_guard<std::recursive_mutex> imguiLock(g_imguiMutex);
 
 		bool uiOpen = ShouldCaptureInput();
 		ImGuiIO& frameIO = ImGui::GetIO();
