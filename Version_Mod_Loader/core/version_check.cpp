@@ -9,7 +9,7 @@
 
 #pragma comment(lib, "version.lib")
 
-static constexpr wchar_t kRequiredVersionSuffix[] = L"CL-120722";
+static constexpr wchar_t kRequiredVersionSuffix[] = L"CL-121032";
 
 // Reads the raw ProductVersion string from the game executable's version info.
 // Returns false (with a placeholder string) if it could not be read.
