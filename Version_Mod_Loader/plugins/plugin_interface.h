@@ -102,10 +102,11 @@
 //      callback finishes.  The init thread waits up to 30 s for all holds to
 //      drain before closing the splash.  Safe to call from any thread.
 //      MIN remains 34.
+// v42: Needed version bump as game updated
 
-#define PLUGIN_INTERFACE_VERSION_MIN 34
-#define PLUGIN_INTERFACE_VERSION_MAX 41
-#define PLUGIN_INTERFACE_VERSION 41
+#define PLUGIN_INTERFACE_VERSION_MIN 42
+#define PLUGIN_INTERFACE_VERSION_MAX 42
+#define PLUGIN_INTERFACE_VERSION 42
 
 enum class PluginLogLevel { Trace = 0, Debug = 1, Info = 2, Warn = 3, Error = 4 };
 enum class ConfigValueType { String, Integer, Float, Boolean, Keybind };
