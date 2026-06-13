@@ -34,6 +34,20 @@ namespace UI::PluginPanelRegistry
     void SetPanelOpen(PanelHandle handle);
     void SetPanelClose(PanelHandle handle);
 
+    // Register/unregister a panel-closed notification callback. Fired with
+    // the handle of the panel that was closed, whether via the ImGui
+    // titlebar X button (RenderPanelWindows) or via SetPanelClose.
+    void RegisterOnPanelWindowClosed(PluginPanelClosedCallback callback);
+    void UnregisterOnPanelWindowClosed(PluginPanelClosedCallback callback);
+
+    // Acquire/release an input-capture request token. While at least one
+    // token is held, AnyInputCaptureRequested() returns true.
+    void* AcquireInputCapture();
+    void  ReleaseInputCapture(void* token);
+
+    // Returns true if any plugin currently holds an input-capture token.
+    bool AnyInputCaptureRequested();
+
     // Returns true if at least one plugin panel window is currently open.
     // Used by imgui_backend to decide whether to capture the mouse even when
     // the main modloader window is closed.

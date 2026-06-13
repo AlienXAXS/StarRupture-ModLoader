@@ -9,6 +9,7 @@
 #include "hooks/game/scan_patterns.h"
 #include "memory_scanner/scanner.h"
 #include "logging/logger.h"
+#include "UI/plugin_panel_registry.h"
 
 #include <windows.h>
 #include <unordered_map>
@@ -95,6 +96,13 @@ namespace Hooks::InputHook
     // -----------------------------------------------------------------------
     static __int64 __fastcall Detour(void* This, const void* InEventArgs)
     {
+        // While any plugin holds an input-capture token, the game must not
+        // see input at all (any event type -- Pressed/Released/Repeat -- so
+        // we don't leave the game with a stuck "key down" state from a
+        // swallowed Pressed event).
+        if (UI::PluginPanelRegistry::AnyInputCaptureRequested())
+            return 0;
+
         if (!InEventArgs)
             return g_original ? g_original(This, InEventArgs) : 0;
 
