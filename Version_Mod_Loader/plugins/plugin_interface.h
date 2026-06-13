@@ -103,10 +103,20 @@
 //      drain before closing the splash.  Safe to call from any thread.
 //      MIN remains 34.
 // v42: Needed version bump as game updated
+// v43: Added IPluginUIEvents::RegisterOnPanelWindowClosed /
+//      UnregisterOnPanelWindowClosed -- fires PluginPanelClosedCallback(handle)
+//      when a panel window is closed, either via the ImGui titlebar X button
+//      or via a plugin calling SetPanelClose.
+//      Added IPluginUIEvents::AcquireInputCapture / ReleaseInputCapture --
+//      lets any plugin request that the modloader suppress game mouse/
+//      keyboard input (same as while a panel/modloader window is open),
+//      independent of panel/widget state. Reference-counted via opaque
+//      tokens; input stays suppressed until every acquired token is released.
+//      MIN remains 42 (additive fields appended to IPluginUIEvents).
 
 #define PLUGIN_INTERFACE_VERSION_MIN 42
-#define PLUGIN_INTERFACE_VERSION_MAX 42
-#define PLUGIN_INTERFACE_VERSION 42
+#define PLUGIN_INTERFACE_VERSION_MAX 43
+#define PLUGIN_INTERFACE_VERSION 43
 
 enum class PluginLogLevel { Trace = 0, Debug = 1, Info = 2, Warn = 3, Error = 4 };
 enum class ConfigValueType { String, Integer, Float, Boolean, Keybind };
@@ -792,6 +802,11 @@ struct PluginWidgetDesc
 
 typedef void (*PluginConfigChangedCallback)(const char* section, const char* key, const char* newValue);
 
+// v43: Fired when a panel window is closed -- either via the ImGui titlebar
+// X button or via a plugin calling SetPanelClose (e.g. driving its own
+// visibility toggle). handle identifies which panel was closed.
+typedef void (*PluginPanelClosedCallback)(PanelHandle handle);
+
 struct IPluginUIEvents
 {
 	PanelHandle  (*RegisterPanel)(const PluginPanelDesc* desc);
@@ -803,6 +818,21 @@ struct IPluginUIEvents
 	WidgetHandle (*RegisterWidget)(const PluginWidgetDesc* desc);      // v16
 	void      (*UnregisterWidget)(WidgetHandle handle);   // v16
 	void         (*SetWidgetVisible)(WidgetHandle handle, bool visible); // v16
+
+	// v43: Notified whenever any panel is closed (X button or SetPanelClose).
+	void (*RegisterOnPanelWindowClosed)(PluginPanelClosedCallback callback);
+	void (*UnregisterOnPanelWindowClosed)(PluginPanelClosedCallback callback);
+
+	// v43: Request that the modloader suppress game mouse/keyboard input,
+	// the same way it does while a panel/modloader window is open. Useful
+	// for plugins driving their UI via RegisterWidget (which does not
+	// trigger capture on its own). Returns an opaque token; input stays
+	// suppressed as long as at least one token (from any plugin) is held.
+	// Always call ReleaseInputCapture for every acquired token, including
+	// during PluginShutdown -- a leaked token permanently suppresses input
+	// until the modloader restarts.
+	void* (*AcquireInputCapture)();
+	void  (*ReleaseInputCapture)(void* token);
 };
 
 struct IPluginHUDEvents

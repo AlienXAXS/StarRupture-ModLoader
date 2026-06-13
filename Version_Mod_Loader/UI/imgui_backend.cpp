@@ -200,7 +200,9 @@ namespace
 // ---------------------------------------------------------------------------
 static bool ShouldCaptureInput()
 {
-	return UI::ModLoaderWindow::IsOpen() || UI::PluginPanelRegistry::AnyPanelOpen();
+	return UI::ModLoaderWindow::IsOpen()
+		|| UI::PluginPanelRegistry::AnyPanelOpen()
+		|| UI::PluginPanelRegistry::AnyInputCaptureRequested();
 }
 
 // ---------------------------------------------------------------------------
@@ -1211,6 +1213,28 @@ static HRESULT STDMETHODCALLTYPE HookedPresent(IDXGISwapChain* swapChain, UINT s
 	backBuffer->Release();
 
 	HRESULT hr = g_originalPresent(swapChain, syncInterval, flags);
+
+	// Tracks whether we're currently in a run of transient Present failures
+	// (e.g. DXGI_ERROR_INVALID_CALL while the game is minimised/alt-tabbed out
+	// of fullscreen exclusive).  Lets us log once on entry and once on
+	// recovery instead of every frame for as long as the game is minimised.
+	static std::atomic<bool> s_transientPresentFailure{ false };
+
+	if (FAILED(hr) && hr != DXGI_ERROR_DEVICE_REMOVED && hr != DXGI_ERROR_DEVICE_RESET && hr != DXGI_ERROR_DEVICE_HUNG)
+	{
+		// Transient failure -- the device is fine, the game keeps running.
+		// Skip ImGui rendering this frame and retry on the next one.
+		bool expected = false;
+		if (s_transientPresentFailure.compare_exchange_strong(expected, true))
+			LogToFile::Warn("[ImGuiBackend] g_originalPresent transient failure: 0x%08X (frame %llu)",
+				static_cast<unsigned>(hr), frameIdx);
+
+		g_presentOwnerThread.store(0, std::memory_order_release);
+		return hr;
+	}
+
+	if (s_transientPresentFailure.exchange(false))
+		LogToFile::Info("[ImGuiBackend] g_originalPresent recovered (frame %llu)", frameIdx);
 
 	if (FAILED(hr))
 	{

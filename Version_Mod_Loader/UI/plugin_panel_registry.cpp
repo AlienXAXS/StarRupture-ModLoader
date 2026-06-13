@@ -7,6 +7,7 @@
 #include <mutex>
 #include <list>
 #include <vector>
+#include <set>
 #include <algorithm>
 #include <cstring>
 
@@ -22,7 +23,22 @@ namespace UI::PluginPanelRegistry
     static std::mutex s_mutex;
     static std::list<PanelEntry> s_panels;   // list: insertion never invalidates existing pointers
     static std::vector<PluginConfigChangedCallback> s_configCallbacks;
+    static std::vector<PluginPanelClosedCallback> s_panelClosedCallbacks;
+    static std::set<void*> s_captureTokens;
     static char s_currentPlugin[64];   // set by plugin_manager before each PluginInit call
+
+    // Invokes all registered panel-closed callbacks for the given handle.
+    // Must NOT be called while holding s_mutex.
+    static void FirePanelClosed(PanelHandle handle)
+    {
+        std::vector<PluginPanelClosedCallback> callbacks;
+        {
+            std::lock_guard<std::mutex> lock(s_mutex);
+            callbacks = s_panelClosedCallbacks;
+        }
+        for (auto cb : callbacks)
+            cb(handle);
+    }
 
     void SetCurrentRegistrationPlugin(const char* name)
     {
@@ -110,9 +126,58 @@ namespace UI::PluginPanelRegistry
 
     void SetPanelClose(PanelHandle handle)
     {
+        bool wasOpen = false;
+        {
+            std::lock_guard<std::mutex> lock(s_mutex);
+            if (PanelEntry* e = FindEntry(handle))
+            {
+                wasOpen = e->isOpen;
+                e->isOpen = false;
+            }
+        }
+        if (wasOpen)
+            FirePanelClosed(handle);
+    }
+
+    void RegisterOnPanelWindowClosed(PluginPanelClosedCallback callback)
+    {
+        if (!callback) return;
         std::lock_guard<std::mutex> lock(s_mutex);
-        if (PanelEntry* e = FindEntry(handle))
-            e->isOpen = false;
+        s_panelClosedCallbacks.push_back(callback);
+    }
+
+    void UnregisterOnPanelWindowClosed(PluginPanelClosedCallback callback)
+    {
+        if (!callback) return;
+        std::lock_guard<std::mutex> lock(s_mutex);
+        s_panelClosedCallbacks.erase(
+            std::remove(s_panelClosedCallbacks.begin(), s_panelClosedCallbacks.end(), callback),
+            s_panelClosedCallbacks.end());
+    }
+
+    void* AcquireInputCapture()
+    {
+        void* token = new char;
+        std::lock_guard<std::mutex> lock(s_mutex);
+        s_captureTokens.insert(token);
+        return token;
+    }
+
+    void ReleaseInputCapture(void* token)
+    {
+        if (!token) return;
+        std::lock_guard<std::mutex> lock(s_mutex);
+        auto it = s_captureTokens.find(token);
+        if (it == s_captureTokens.end())
+            return; // unknown or already-released token -- ignore
+        s_captureTokens.erase(it);
+        delete static_cast<char*>(token);
+    }
+
+    bool AnyInputCaptureRequested()
+    {
+        std::lock_guard<std::mutex> lock(s_mutex);
+        return !s_captureTokens.empty();
     }
 
     bool AnyPanelOpen()
@@ -159,6 +224,8 @@ namespace UI::PluginPanelRegistry
             }
             ImGui::End();
             entry->isOpen = open;
+            if (!open)
+                FirePanelClosed(static_cast<PanelHandle>(entry));
         }
     }
 }

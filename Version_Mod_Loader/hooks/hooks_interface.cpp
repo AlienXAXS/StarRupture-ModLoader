@@ -860,7 +860,35 @@ namespace ModLoaderLogger
 		UI::PluginWidgetRegistry::SetWidgetVisible(handle, visible);
 	}
 
-	// UI sub-interface struct (v16)
+	// --- v43: panel-closed notifications & input capture ---
+
+	static void HooksRegisterOnPanelWindowClosed(PluginPanelClosedCallback callback)
+	{
+		if (!callback)
+		{
+			LogWarn(L"[HooksInterface] RegisterOnPanelWindowClosed: null callback");
+			return;
+		}
+		UI::PluginPanelRegistry::RegisterOnPanelWindowClosed(callback);
+	}
+
+	static void HooksUnregisterOnPanelWindowClosed(PluginPanelClosedCallback callback)
+	{
+		if (!callback) return;
+		UI::PluginPanelRegistry::UnregisterOnPanelWindowClosed(callback);
+	}
+
+	static void* HooksAcquireInputCapture()
+	{
+		return UI::PluginPanelRegistry::AcquireInputCapture();
+	}
+
+	static void HooksReleaseInputCapture(void* token)
+	{
+		UI::PluginPanelRegistry::ReleaseInputCapture(token);
+	}
+
+	// UI sub-interface struct (v16, extended v43)
 	static IPluginUIEvents g_uiEvents = {
 		HooksRegisterPanel,
 		HooksUnregisterPanel,
@@ -870,7 +898,11 @@ namespace ModLoaderLogger
 		HooksSetPanelClose,
 		HooksRegisterWidget,       // v16
 		HooksUnregisterWidget,     // v16
-		HooksSetWidgetVisible      // v16
+		HooksSetWidgetVisible,     // v16
+		HooksRegisterOnPanelWindowClosed,   // v43
+		HooksUnregisterOnPanelWindowClosed, // v43
+		HooksAcquireInputCapture,           // v43
+		HooksReleaseInputCapture            // v43
 	};
 
 	// --- HUD sub-interface wrappers (v16, client only) ---
