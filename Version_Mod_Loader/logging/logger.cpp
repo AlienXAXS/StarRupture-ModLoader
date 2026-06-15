@@ -122,7 +122,7 @@ namespace ModLoaderLogger
 		wchar_t buffer[1024];
 		va_list args;
 		va_start(args, format);
-		vswprintf_s(buffer, 1024, format, args);
+		_vsnwprintf_s(buffer, 1024, _TRUNCATE, format, args);
 		va_end(args);
 
 		// Convert wide string to narrow for Log:: system
@@ -139,7 +139,7 @@ namespace ModLoaderLogger
 		wchar_t buffer[1024];
 		va_list args;
 		va_start(args, format);
-		vswprintf_s(buffer, 1024, format, args);
+		_vsnwprintf_s(buffer, 1024, _TRUNCATE, format, args);
 		va_end(args);
 
 		char narrowBuffer[1024];
@@ -155,7 +155,7 @@ namespace ModLoaderLogger
 		wchar_t buffer[1024];
 		va_list args;
 		va_start(args, format);
-		vswprintf_s(buffer, 1024, format, args);
+		_vsnwprintf_s(buffer, 1024, _TRUNCATE, format, args);
 		va_end(args);
 
 		char narrowBuffer[1024];
@@ -171,7 +171,7 @@ namespace ModLoaderLogger
 		wchar_t buffer[1024];
 		va_list args;
 		va_start(args, format);
-		vswprintf_s(buffer, 1024, format, args);
+		_vsnwprintf_s(buffer, 1024, _TRUNCATE, format, args);
 		va_end(args);
 
 		char narrowBuffer[1024];
@@ -187,7 +187,7 @@ namespace ModLoaderLogger
 		wchar_t buffer[1024];
 		va_list args;
 		va_start(args, format);
-		vswprintf_s(buffer, 1024, format, args);
+		_vsnwprintf_s(buffer, 1024, _TRUNCATE, format, args);
 		va_end(args);
 
 		char narrowBuffer[1024];
@@ -204,7 +204,7 @@ namespace ModLoaderLogger
 		wchar_t buffer[1024];
 		va_list args;
 		va_start(args, format);
-		vswprintf_s(buffer, 1024, format, args);
+		_vsnwprintf_s(buffer, 1024, _TRUNCATE, format, args);
 		va_end(args);
 
 		char narrowBuffer[1024];

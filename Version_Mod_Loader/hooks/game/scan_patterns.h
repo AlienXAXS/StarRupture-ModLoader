@@ -197,6 +197,13 @@ namespace ScanPatterns
 	inline constexpr auto FAssetData_FastGetAsset =
 		"48 89 5C 24 ?? 55 56 57 41 56 41 57 48 81 EC ?? ?? ?? ?? ?? ?? ?? 49 8B F8";
 
+	// ACrCrafter::NativeOnItemCraftingComplete(ACrCrafter* this, FMassEntityHandle EntityHandle, FName SignalName)
+	// Native C++ signal handler -- not the BlueprintEvent. Plays crafting-complete sounds
+	// and then calls ACrCrafter::OnItemCraftingComplete(this) (the BlueprintEvent, which has
+	// no usable native ExecFunction). This is the real per-craft completion entry point.
+	inline constexpr auto ACrCrafter_NativeOnItemCraftingComplete =
+		"40 56 48 81 EC ?? ?? ?? ?? 48 8B F1 E8 ?? ?? ?? ?? 83 F8";
+
 	// FHttpServerResponse::Create(__int64 *retStorage, const TArray<uint8>& body, const FString& contentType)
 	// Used to construct a 200 OK response for mod-owned HTTP routes.
 	// Confirmed via IDA: FPerfCounters::ProcessStatsRequest calls this with body in RDX, FString in R8.

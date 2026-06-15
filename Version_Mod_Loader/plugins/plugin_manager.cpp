@@ -11,6 +11,9 @@
 #include "hooks/hooks_interface.h"
 #include <vector>
 #include <string>
+#include <dbghelp.h>
+
+#pragma comment(lib, "dbghelp.lib")
 
 #ifdef MODLOADER_CLIENT_BUILD
 #include "UI/splash_window.h"
@@ -22,28 +25,131 @@ namespace PluginManager
 {
 	// SEH helpers for catching crashes inside plugin-supplied functions.
 	// Must be plain POD functions with no C++ objects (C2712).
-	struct PluginCrashCtx { DWORD code; uintptr_t addr; };
+	struct PluginCrashCtx { DWORD code; uintptr_t addr; CONTEXT context; };
 	static PluginCrashCtx g_lastPluginCrash;
 
 	static LONG PluginCrashFilter(EXCEPTION_POINTERS* ep)
 	{
-		g_lastPluginCrash.code = ep->ExceptionRecord->ExceptionCode;
-		g_lastPluginCrash.addr = reinterpret_cast<uintptr_t>(ep->ExceptionRecord->ExceptionAddress);
+		g_lastPluginCrash.code    = ep->ExceptionRecord->ExceptionCode;
+		g_lastPluginCrash.addr    = reinterpret_cast<uintptr_t>(ep->ExceptionRecord->ExceptionAddress);
+		g_lastPluginCrash.context = *ep->ContextRecord;
 		return EXCEPTION_EXECUTE_HANDLER;
+	}
+
+	// Resolves an address to "<module filename>+0x<offset>". Returns "<unknown>+0x0"
+	// if the address doesn't fall inside any loaded module.
+	static void ResolveModuleAndOffset(uintptr_t addr, wchar_t* outName, size_t outNameLen, uintptr_t* outOffset)
+	{
+		wcscpy_s(outName, outNameLen, L"<unknown>");
+		*outOffset = 0;
+
+		HMODULE mod = nullptr;
+		if (GetModuleHandleExW(
+				GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+				reinterpret_cast<LPCWSTR>(addr),
+				&mod) && mod)
+		{
+			wchar_t path[MAX_PATH];
+			if (GetModuleFileNameW(mod, path, MAX_PATH))
+			{
+				// Keep just the filename, not the full path.
+				const wchar_t* fileName = path;
+				if (const wchar_t* slash = wcsrchr(path, L'\\'))
+					fileName = slash + 1;
+				wcscpy_s(outName, outNameLen, fileName);
+			}
+			*outOffset = addr - reinterpret_cast<uintptr_t>(mod);
+		}
+	}
+
+	// Lazily initialise dbghelp's symbol handler so StackWalk64 can unwind across
+	// module boundaries (it needs each module registered to look up its unwind
+	// info via SymFunctionTableAccess64/SymGetModuleBase64). Refresh the module
+	// list on subsequent calls in case plugins were loaded/unloaded since.
+	static void EnsureSymInitialized()
+	{
+		static bool initialized = false;
+		if (!initialized)
+		{
+			SymSetOptions(SYMOPT_DEFERRED_LOADS | SYMOPT_UNDNAME);
+			SymInitialize(GetCurrentProcess(), nullptr, TRUE);
+			initialized = true;
+		}
+		else
+		{
+			SymRefreshModuleList(GetCurrentProcess());
+		}
+	}
+
+	// Walks the call stack at the moment of the crash (captured CONTEXT) and
+	// appends "  -> <module>+0x<offset>" entries to outBuffer, one per line.
+	// No PDBs are shipped with Release builds, so frames are reported as
+	// module+RVA -- match these against a local PDB/map file for the same build.
+	static void AppendStackTrace(wchar_t* outBuffer, size_t outBufferLen)
+	{
+		EnsureSymInitialized();
+
+		CONTEXT ctx = g_lastPluginCrash.context;
+		STACKFRAME64 frame = {};
+		frame.AddrPC.Offset    = ctx.Rip;
+		frame.AddrPC.Mode      = AddrModeFlat;
+		frame.AddrFrame.Offset = ctx.Rbp;
+		frame.AddrFrame.Mode   = AddrModeFlat;
+		frame.AddrStack.Offset = ctx.Rsp;
+		frame.AddrStack.Mode   = AddrModeFlat;
+
+		HANDLE process = GetCurrentProcess();
+		HANDLE thread   = GetCurrentThread();
+
+		static const int kMaxFrames = 24;
+		for (int i = 0; i < kMaxFrames; ++i)
+		{
+			if (!StackWalk64(IMAGE_FILE_MACHINE_AMD64, process, thread, &frame, &ctx,
+					nullptr, SymFunctionTableAccess64, SymGetModuleBase64, nullptr))
+				break;
+			if (frame.AddrPC.Offset == 0)
+				break;
+
+			wchar_t modName[MAX_PATH];
+			uintptr_t modOffset = 0;
+			ResolveModuleAndOffset(static_cast<uintptr_t>(frame.AddrPC.Offset), modName, MAX_PATH, &modOffset);
+
+			wchar_t line[MAX_PATH + 32];
+			swprintf_s(line, L"\n    #%d  %s+0x%llX", i, modName, static_cast<unsigned long long>(modOffset));
+			wcscat_s(outBuffer, outBufferLen, line);
+		}
 	}
 
 	// Logs a caught crash, showing the fault RVA relative to the plugin's own DLL so the
 	// plugin author can locate the crash in their own binary (e.g. with a map file or PDB).
+	//
+	// The fault may not actually be inside the plugin's own module -- it is often inside
+	// a function-pointer call the plugin made into the modloader (or the game) itself.
+	// To make that obvious, also resolve which module the fault address actually falls
+	// in and report the RVA relative to that module's base, followed by a full
+	// module+RVA call stack.
 	static void LogPluginCrash(const char* pluginName, HMODULE hModule, const wchar_t* context)
 	{
 		uintptr_t base   = reinterpret_cast<uintptr_t>(hModule);
 		uintptr_t offset = (base && g_lastPluginCrash.addr >= base) ? g_lastPluginCrash.addr - base : 0;
+
+		wchar_t faultModuleName[MAX_PATH];
+		uintptr_t faultOffset = 0;
+		ResolveModuleAndOffset(g_lastPluginCrash.addr, faultModuleName, MAX_PATH, &faultOffset);
+
+		wchar_t stackTrace[2048] = {};
+		AppendStackTrace(stackTrace, std::size(stackTrace));
+
 		ModLoaderLogger::LogError(
-			L"[PluginManager] Plugin '%S' CRASHED during %s -- code=0x%08X  fault=0x%llX  (+0x%llX from plugin DLL base)",
+			L"[PluginManager] Plugin '%S' CRASHED during %s -- code=0x%08X  fault=0x%llX  (+0x%llX from plugin DLL base)"
+			L"  faultModule=%s+0x%llX  stack:%s",
 			pluginName, context,
 			g_lastPluginCrash.code,
 			static_cast<unsigned long long>(g_lastPluginCrash.addr),
-			static_cast<unsigned long long>(offset));
+			static_cast<unsigned long long>(offset),
+			faultModuleName,
+			static_cast<unsigned long long>(faultOffset),
+			stackTrace);
 	}
 
 	static bool CallShutdownSEH(PluginShutdownFunc fn)
@@ -70,6 +176,38 @@ namespace PluginManager
 		__try { result = fn(); }
 		__except (PluginCrashFilter(GetExceptionInformation())) {}
 		return result;
+	}
+
+	struct LoadLibrarySEHResult { HMODULE hModule; bool crashed; };
+	static LoadLibrarySEHResult LoadLibrarySEH(const wchar_t* path)
+	{
+		LoadLibrarySEHResult r = {};
+		g_lastPluginCrash = {};
+		__try { r.hModule = LoadLibraryW(path); }
+		__except (PluginCrashFilter(GetExceptionInformation())) { r.crashed = true; }
+		return r;
+	}
+
+	// Same as LogPluginCrash but for crashes caught before a plugin name/HMODULE
+	// is known (e.g. a crash inside the plugin's own DllMain during LoadLibrary).
+	static void LogPluginLoadCrash(const wchar_t* fileName, const wchar_t* context)
+	{
+		wchar_t faultModuleName[MAX_PATH];
+		uintptr_t faultOffset = 0;
+		ResolveModuleAndOffset(g_lastPluginCrash.addr, faultModuleName, MAX_PATH, &faultOffset);
+
+		wchar_t stackTrace[2048] = {};
+		AppendStackTrace(stackTrace, std::size(stackTrace));
+
+		ModLoaderLogger::LogError(
+			L"[PluginManager] Plugin DLL '%s' CRASHED during %s -- code=0x%08X  fault=0x%llX"
+			L"  faultModule=%s+0x%llX  stack:%s",
+			fileName, context,
+			g_lastPluginCrash.code,
+			static_cast<unsigned long long>(g_lastPluginCrash.addr),
+			faultModuleName,
+			static_cast<unsigned long long>(faultOffset),
+			stackTrace);
 	}
 
 
@@ -120,7 +258,15 @@ namespace PluginManager
 	{
 		ModLoaderLogger::LogMessage(L"Loading plugin: %s", rec.fileName.c_str());
 
-		HMODULE hModule = LoadLibraryW(rec.fileName.c_str());
+		LoadLibrarySEHResult loadResult = LoadLibrarySEH(rec.fileName.c_str());
+		if (loadResult.crashed)
+		{
+			LogPluginLoadCrash(rec.fileName.c_str(), L"LoadLibrary (plugin DllMain)");
+			ModLoaderLogger::LogError(L"Plugin DLL crashed while loading -- skipping: %s", rec.fileName.c_str());
+			return false;
+		}
+
+		HMODULE hModule = loadResult.hModule;
 		if (!hModule)
 		{
 			DWORD error = GetLastError();
