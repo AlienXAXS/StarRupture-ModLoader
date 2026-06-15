@@ -1154,7 +1154,6 @@ namespace ModLoaderLogger
 		&g_worldEvents,
 		&g_playerEvents,
 		&g_actorEvents,
-		&g_craftingEvents,
 #ifdef MODLOADER_CLIENT_BUILD
 		&g_inputEvents,      // v15 — keybind events (client only)
 		&g_uiEvents,         // v15 — custom panel + config-change callbacks (client only)
@@ -1182,8 +1181,9 @@ namespace ModLoaderLogger
 		&g_splashInterface,   // v40 — splash feedback (client only)
 #else
 		nullptr,              // v37 — ImGuiTextures is null on server/generic builds
-		nullptr               // v40 — Splash is null on server/generic builds
+		nullptr,              // v40 — Splash is null on server/generic builds
 #endif
+		&g_craftingEvents,   // v44 — appended at end to preserve layout for v42/v43 plugins
 	};
 	static bool g_networkChannelInitialized = false;
 

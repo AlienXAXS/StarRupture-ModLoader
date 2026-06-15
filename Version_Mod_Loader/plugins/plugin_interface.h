@@ -120,7 +120,9 @@
 //      FoodProcessor, ItemPrinter, etc.) finishes crafting an item. Callback
 //      receives the ACrCrafter* (as void*), its UCrCraftingComponent* (as void*,
 //      may be null), and the crafter's FMassEntityHandle Index/SerialNumber.
-//      Added CraftingFinished() to IPluginNativePointers.
+//      Added CraftingFinished() to IPluginNativePointers (appended at end).
+//      hooks->Crafting is appended at the end of IPluginHooks (not inserted
+//      in the middle) to preserve struct layout for v42/v43 plugins.
 //      MIN remains 42.
 // v45: IPluginImGuiTextures texture slot cap raised 2048 -> 4096.
 //      Textures are now shared and refcounted by name (case-insensitive):
@@ -1150,7 +1152,6 @@ struct IPluginHooks
 	IPluginWorldEvents*    World;          // v14
 	IPluginPlayerEvents* Players;        // v14
 	IPluginActorEvents*    Actors;       // v14
-	IPluginCraftingEvents* Crafting;       // v44
 	IPluginInputEvents*    Input;          // v15 — client only, null on server
 	IPluginUIEvents*  UI;          // v15 — client only, null on server
 	IPluginHUDEvents*      HUD;// v16 — client only, null on server
@@ -1161,6 +1162,7 @@ struct IPluginHooks
 	IPluginTextUtils*      Text;             // FText localization helpers (AsLocalizable_Advanced, Conv_TextToString)
 	IPluginImGuiTextures*  ImGuiTextures;    // v37 — client only; null on server/generic
 	IPluginSplash*         Splash;           // v40 — client only; null on server/generic
+	IPluginCraftingEvents* Crafting;       // v44 -- appended at end to preserve layout for v42/v43 plugins
 };
 
 // ---------------------------------------------------------------------------
