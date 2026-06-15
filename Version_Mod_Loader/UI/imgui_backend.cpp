@@ -97,7 +97,7 @@ namespace
 	// -------------------------------------------------------------------------
 	// Plugin texture registry (v37)
 	// -------------------------------------------------------------------------
-	static const int MAX_PLUGIN_TEXTURES = 2048;
+	static const int MAX_PLUGIN_TEXTURES = 4096;
 
 	struct PluginTextureRecord
 	{
@@ -107,7 +107,8 @@ namespace
 		int                          height    = 0;
 		bool                         inUse     = false;
 		bool                         owned     = true;  // always true; Release() on free
-		char                         name[64]  = {};    // plugin-supplied label for logging
+		char                         name[64]  = {};    // plugin-supplied label for logging/sharing
+		int                          refCount  = 0;     // number of outstanding Load*/FreeTexture pairs
 	};
 
 	PluginTextureRecord g_pluginTextures[MAX_PLUGIN_TEXTURES] = {};
@@ -1917,6 +1918,21 @@ static int AllocTextureSlot()
 	return -1;
 }
 
+// Find a live, in-use texture record by name (case-insensitive).
+// Must be called with g_textureMutex held. Returns nullptr if name is empty
+// or no in-use record matches.
+static PluginTextureRecord* FindTextureByName(const char* name)
+{
+	if (!name || !*name) return nullptr;
+	for (int i = 0; i < MAX_PLUGIN_TEXTURES; ++i)
+	{
+		PluginTextureRecord& rec = g_pluginTextures[i];
+		if (rec.inUse && _stricmp(rec.name, name) == 0)
+			return &rec;
+	}
+	return nullptr;
+}
+
 // Validate that a PluginTextureHandle points at a live record in g_pluginTextures.
 static PluginTextureRecord* ValidateHandle(PluginTextureHandle h)
 {
@@ -1935,6 +1951,15 @@ static PluginTextureHandle TextureLoadFromRGBA(const unsigned char* rgba, int wi
 		return nullptr;
 
 	std::lock_guard<std::mutex> lock(g_textureMutex);
+
+	if (PluginTextureRecord* existing = FindTextureByName(name))
+	{
+		existing->refCount++;
+		LogToFile::Debug("[ImGuiBackend] TextureLoadFromRGBA '%s': reusing existing texture, refCount=%d",
+			existing->name, existing->refCount);
+		return existing;
+	}
+
 	int slot = AllocTextureSlot();
 	if (slot < 0)
 	{
@@ -1960,6 +1985,7 @@ static PluginTextureHandle TextureLoadFromRGBA(const unsigned char* rgba, int wi
 	rec.width     = width;
 	rec.height    = height;
 	rec.inUse     = true;
+	rec.refCount  = 1;
 	if (name) strncpy_s(rec.name, name, _TRUNCATE);
 
 	LogToFile::Debug("[ImGuiBackend] TextureLoadFromRGBA '%s': slot=%d %dx%d", rec.name, slot, width, height);
@@ -2200,6 +2226,20 @@ static PluginTextureHandle TextureLoadFromUTexture2D(SDK::UTexture2D* uTexture2D
 		return nullptr;
 	}
 
+	// If a texture with this name is already loaded (e.g. another plugin
+	// registered it, or this plugin loaded it earlier), share the existing
+	// GPU resource instead of copying the engine texture again.
+	{
+		std::lock_guard<std::mutex> lock(g_textureMutex);
+		if (PluginTextureRecord* existing = FindTextureByName(name))
+		{
+			existing->refCount++;
+			LogToFile::Debug("[ImGuiBackend] LoadFromUTexture2D '%s': reusing existing texture, refCount=%d",
+				existing->name, existing->refCount);
+			return existing;
+		}
+	}
+
 	// Step 1: UTexture::PrivateResource at offset 0x120
 	uint8_t* textureBase = reinterpret_cast<uint8_t*>(uTexture2D);
 	LogToFile::Trace("[ImGuiBackend] LoadFromUTexture2D: reading PrivateResource at 0x%p+0x%zX",
@@ -2292,6 +2332,17 @@ static PluginTextureHandle TextureLoadFromUTexture2D(SDK::UTexture2D* uTexture2D
 	// and create an SRV over it.  We own the copy so it is safe from engine eviction.
 	LogToFile::Trace("[ImGuiBackend] LoadFromUTexture2D: allocating SRV slot");
 	std::lock_guard<std::mutex> lock(g_textureMutex);
+
+	// Re-check for a name collision in case another thread registered the
+	// same name while we were doing the (unlocked) GPU resource walk above.
+	if (PluginTextureRecord* existing = FindTextureByName(name))
+	{
+		existing->refCount++;
+		LogToFile::Debug("[ImGuiBackend] LoadFromUTexture2D '%s': reusing existing texture (registered concurrently), refCount=%d",
+			existing->name, existing->refCount);
+		return existing;
+	}
+
 	int slot = AllocTextureSlot();
 	if (slot < 0)
 	{
@@ -2330,6 +2381,7 @@ static PluginTextureHandle TextureLoadFromUTexture2D(SDK::UTexture2D* uTexture2D
 	rec.height    = height;
 	rec.inUse     = true;
 	rec.owned     = true;
+	rec.refCount  = 1;
 	if (name) strncpy_s(rec.name, name, _TRUNCATE);
 
 	LogToFile::Debug("[ImGuiBackend] LoadFromUTexture2D '%s': slot=%d %dx%d fmt=%u",
@@ -2412,6 +2464,15 @@ static void TextureFreeTexture(PluginTextureHandle handle)
 	std::lock_guard<std::mutex> lock(g_textureMutex);
 	PluginTextureRecord* rec = ValidateHandle(handle);
 	if (!rec) return;
+
+	// Shared textures (same name registered by multiple plugins/calls) are only
+	// actually released once every owner has called FreeTexture.
+	if (--rec->refCount > 0)
+	{
+		LogToFile::Debug("[ImGuiBackend] FreeTexture '%s': refCount=%d, keeping texture alive", rec->name, rec->refCount);
+		return;
+	}
+
 	// Only Release resources we uploaded ourselves; engine-owned resources (owned=false) are not ours to free.
 	if (rec->owned && rec->resource) { rec->resource->Release(); rec->resource = nullptr; }
 	*rec = {};
