@@ -113,10 +113,29 @@
 //      independent of panel/widget state. Reference-counted via opaque
 //      tokens; input stays suppressed until every acquired token is released.
 //      MIN remains 42 (additive fields appended to IPluginUIEvents).
+// v44: Added IPluginCraftingEvents (hooks->Crafting) -- RegisterOnCraftingFinished /
+//      UnregisterOnCraftingFinished, fired by ACrCrafter::NativeOnItemCraftingComplete
+//      (AOB-resolved native signal handler, not a UFUNCTION) whenever any crafting
+//      building (Crafter, Forge, Refinery, Factory, Assembler, Exporter,
+//      FoodProcessor, ItemPrinter, etc.) finishes crafting an item. Callback
+//      receives the ACrCrafter* (as void*), its UCrCraftingComponent* (as void*,
+//      may be null), and the crafter's FMassEntityHandle Index/SerialNumber.
+//      Added CraftingFinished() to IPluginNativePointers.
+//      MIN remains 42.
+// v45: IPluginImGuiTextures texture slot cap raised 2048 -> 4096.
+//      Textures are now shared and refcounted by name (case-insensitive):
+//      if Load* is called with a name that matches an already-loaded,
+//      in-use texture, the existing GPU resource is reused and its
+//      refcount is incremented instead of creating a new copy. Each
+//      successful Load* call must be paired with exactly one FreeTexture
+//      call; the underlying resource is only released once the refcount
+//      reaches zero. Plugins sharing a texture name must ensure the
+//      underlying image data is identical -- the first registration wins.
+//      MIN remains 42.
 
 #define PLUGIN_INTERFACE_VERSION_MIN 42
-#define PLUGIN_INTERFACE_VERSION_MAX 43
-#define PLUGIN_INTERFACE_VERSION 43
+#define PLUGIN_INTERFACE_VERSION_MAX 45
+#define PLUGIN_INTERFACE_VERSION 45
 
 enum class PluginLogLevel { Trace = 0, Debug = 1, Info = 2, Warn = 3, Error = 4 };
 enum class ConfigValueType { String, Integer, Float, Boolean, Keybind };
@@ -211,6 +230,14 @@ typedef void (*PluginNetworkMessageCallback)(const char* pluginName, const char*
 typedef void (*PluginNetworkServerMessageCallback)(void* senderPlayerController, const char* pluginName, const char* typeTag, const uint8_t* data, size_t size);
 typedef void (*PluginGameThreadCallback)(void* context);
 
+// v44 -- fired whenever any crafting building finishes crafting an item.
+// crafter           : the ACrCrafter* (or subclass) that finished crafting, as void*
+// craftingComponent : the building's UCrCraftingComponent*, as void* (may be null)
+// entityIndex       : FMassEntityHandle::Index for the crafter's Mass entity
+// entitySerial      : FMassEntityHandle::SerialNumber for the crafter's Mass entity
+typedef void (*PluginCraftingFinishedCallback)(void* crafter, void* craftingComponent,
+                                                int32_t entityIndex, int32_t entitySerial);
+
 typedef bool (*PluginBeforeActivateSpawnerCallback)(void* spawner, bool bDisableAggroLock);
 typedef void (*PluginAfterActivateSpawnerCallback)(void* spawner, bool bDisableAggroLock);
 typedef bool (*PluginBeforeDeactivateSpawnerCallback)(void* spawner, bool bPermanently);
@@ -301,6 +328,16 @@ struct IPluginActorEvents
 {
 	void (*RegisterOnActorBeginPlay)(PluginActorBeginPlayCallback);
 	void (*UnregisterOnActorBeginPlay)(PluginActorBeginPlayCallback);
+};
+
+// v44 -- crafting building events.
+struct IPluginCraftingEvents
+{
+	// Fired by ACrCrafter::OnItemCraftingComplete whenever any crafting building
+	// (Crafter, Forge, Refinery, Factory, Assembler, Exporter, FoodProcessor,
+	// ItemPrinter, etc.) finishes crafting an item.
+	void (*RegisterOnCraftingFinished)(PluginCraftingFinishedCallback);
+	void (*UnregisterOnCraftingFinished)(PluginCraftingFinishedCallback);
 };
 
 struct IPluginSpawnerHooks
@@ -702,6 +739,16 @@ typedef void* PluginTextureHandle;
 // They return NULL (without throwing) only when D3D12 is not yet ready or
 // when the specific resource cannot be loaded (bad file, null pointer, etc.).
 // Call GetFreeSlotCount() before loading if you need to avoid the exception.
+//
+// Sharing/refcounting (v45): the name is also used as a sharing key
+// (case-insensitive). If any Load* call is made with a name that matches an
+// already-loaded, in-use texture, the existing GPU resource is reused and its
+// refcount is incremented -- no new slot is consumed and no new GPU work is
+// done. Every successful Load* call (whether it created a new texture or
+// reused an existing one) must be paired with exactly one FreeTexture call;
+// the underlying resource is only released once the refcount drops to zero.
+// If multiple plugins use the same name, they must be referring to the same
+// image -- the first registration's pixel data wins.
 struct IPluginImGuiTextures
 {
     // Load from a UTF-8 file path. Supports PNG, JPG, BMP, GIF, TIFF (via WIC).
@@ -737,6 +784,9 @@ struct IPluginImGuiTextures
 
     // Release the texture and free its slot. Safe to call with NULL.
     // Do not call while the texture may still be rendered on the GPU.
+    // If the texture is shared (loaded by name more than once), this only
+    // decrements its refcount -- the slot is freed once every owner has
+    // called FreeTexture.
     void (*FreeTexture)(PluginTextureHandle handle);
 
     // Query the texture's natural dimensions. Either out pointer may be NULL.
@@ -881,6 +931,10 @@ struct IPluginNativePointers
 	uintptr_t (*SpawnerDoSpawning)();
 	uintptr_t (*HUDPostRender)();   // client only (nullptr on server/generic)
 	uintptr_t (*ClientMessageExec)();  // client only (nullptr on server/generic)
+
+	// v44 -- trampoline address of ACrCrafter::NativeOnItemCraftingComplete.
+	// Cast to: void(__fastcall*)(void* thisPtr, uint64_t entityHandle, uint64_t signalName)
+	uintptr_t (*CraftingFinished)();
 };
 
 // ---------------------------------------------------------------------------
@@ -1096,6 +1150,7 @@ struct IPluginHooks
 	IPluginWorldEvents*    World;          // v14
 	IPluginPlayerEvents* Players;        // v14
 	IPluginActorEvents*    Actors;       // v14
+	IPluginCraftingEvents* Crafting;       // v44
 	IPluginInputEvents*    Input;          // v15 — client only, null on server
 	IPluginUIEvents*  UI;          // v15 — client only, null on server
 	IPluginHUDEvents*      HUD;// v16 — client only, null on server

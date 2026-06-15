@@ -14,6 +14,7 @@
 #include "hooks/game/experience_load_complete/experience_load_complete.h"
 #include "hooks/game/engine_tick/engine_tick.h"
 #include "hooks/game/actor_begin_play/actor_begin_play.h"
+#include "hooks/game/crafting_finished/crafting_finished.h"
 #include "hooks/game/player_joined/player_joined.h"
 #include "hooks/game/player_left/player_left.h"
 #include "hooks/game/mass_spawner_activate/mass_spawner_activate.h"
@@ -437,6 +438,30 @@ namespace ModLoaderLogger
 		LogDebug(L"[HooksInterface] ActorBeginPlay callback unregistered for plugin");
 	}
 
+	static void HooksRegisterCraftingFinishedCallback(void (*callback)(void*, void*, int32_t, int32_t))
+	{
+		if (!callback)
+		{
+			LogWarn(L"[HooksInterface] RegisterCraftingFinishedCallback: null callback");
+			return;
+		}
+
+		Hooks::CraftingFinished::RegisterPluginCallback(callback);
+		LogDebug(L"[HooksInterface] CraftingFinished callback registered for plugin");
+	}
+
+	static void HooksUnregisterCraftingFinishedCallback(void (*callback)(void*, void*, int32_t, int32_t))
+	{
+		if (!callback)
+		{
+			LogWarn(L"[HooksInterface] UnregisterCraftingFinishedCallback: null callback");
+			return;
+		}
+
+		Hooks::CraftingFinished::UnregisterPluginCallback(callback);
+		LogDebug(L"[HooksInterface] CraftingFinished callback unregistered for plugin");
+	}
+
 	static void HooksRegisterPlayerJoinedCallback(void (*callback)(void*))
 	{
 		if (!callback)
@@ -734,6 +759,11 @@ namespace ModLoaderLogger
 		HooksUnregisterActorBeginPlayCallback
 	};
 
+	static IPluginCraftingEvents g_craftingEvents = {
+		HooksRegisterCraftingFinishedCallback,
+		HooksUnregisterCraftingFinishedCallback
+	};
+
 	// --- Input sub-interface wrappers (v15, client only) ---
 
 #ifdef MODLOADER_CLIENT_BUILD
@@ -1018,6 +1048,7 @@ namespace ModLoaderLogger
 	static uintptr_t NativeSpawnerActivate()  { return Hooks::MassSpawnerActivate::GetOriginalPtr(); }
 	static uintptr_t NativeSpawnerDeactivate(){ return Hooks::MassSpawnerDeactivate::GetOriginalPtr(); }
 	static uintptr_t NativeSpawnerDoSpawning(){ return Hooks::MassDoSpawning::GetOriginalPtr(); }
+	static uintptr_t NativeCraftingFinished() { return Hooks::CraftingFinished::GetOriginalPtr(); }
 #ifdef MODLOADER_CLIENT_BUILD
 	static uintptr_t NativeHUDPostRender()    { return Hooks::HUDPostRender::GetOriginalPtr(); }
 	static uintptr_t NativeClientMessageExec(){ return Hooks::ClientMessage::GetOriginalPtr(); }
@@ -1040,6 +1071,7 @@ namespace ModLoaderLogger
 		NativeSpawnerActivate,
 		NativeSpawnerDeactivate,
 		NativeSpawnerDoSpawning,
+		NativeCraftingFinished,
 #ifdef MODLOADER_CLIENT_BUILD
 		NativeHUDPostRender,      // client only
 		NativeClientMessageExec   // client only
@@ -1122,6 +1154,7 @@ namespace ModLoaderLogger
 		&g_worldEvents,
 		&g_playerEvents,
 		&g_actorEvents,
+		&g_craftingEvents,
 #ifdef MODLOADER_CLIENT_BUILD
 		&g_inputEvents,      // v15 — keybind events (client only)
 		&g_uiEvents,         // v15 — custom panel + config-change callbacks (client only)
