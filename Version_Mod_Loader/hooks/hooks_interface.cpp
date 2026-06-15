@@ -1071,14 +1071,14 @@ namespace ModLoaderLogger
 		NativeSpawnerActivate,
 		NativeSpawnerDeactivate,
 		NativeSpawnerDoSpawning,
-		NativeCraftingFinished,
 #ifdef MODLOADER_CLIENT_BUILD
 		NativeHUDPostRender,      // client only
-		NativeClientMessageExec   // client only
+		NativeClientMessageExec,  // client only
 #else
 		nullptr,        // HUDPostRender — null on server/generic builds
-		nullptr          // ClientMessageExec — null on server/generic builds
+		nullptr,         // ClientMessageExec — null on server/generic builds
 #endif
+		NativeCraftingFinished,  // v44 -- appended at end to preserve layout for v42/v43 plugins
 	};
 
 	// -----------------------------------------------------------------------
