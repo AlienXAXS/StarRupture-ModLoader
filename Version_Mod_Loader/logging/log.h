@@ -95,7 +95,7 @@ namespace LogToFile
 	// -----------------------------------------------------------------------
 	inline void LoadConfig()
 	{
-		// Build the INI path next to the game exe
+		// Build the INI path inside the ModLoader subfolder next to the game exe.
 		wchar_t iniPath[MAX_PATH]{};
 		GetModuleFileNameW(nullptr, iniPath, MAX_PATH);
 
@@ -103,7 +103,16 @@ namespace LogToFile
 		if (lastSlash)
 			wcscpy_s(lastSlash + 1,
 				static_cast<rsize_t>(MAX_PATH - (lastSlash + 1 - iniPath)),
-				L"modloader.ini");
+				L"ModLoader\\modloader.ini");
+
+		// Ensure the ModLoader directory exists before touching any files in it.
+		{
+			wchar_t dirPath[MAX_PATH]{};
+			wcsncpy_s(dirPath, iniPath, MAX_PATH);
+			wchar_t* slash = wcsrchr(dirPath, L'\\');
+			if (slash) *slash = L'\0';
+			CreateDirectoryW(dirPath, nullptr);
+		}
 
 		// Check if INI file exists
 		DWORD attribs = GetFileAttributesW(iniPath);
@@ -236,7 +245,7 @@ namespace LogToFile
 			// Load configuration first
 			LoadConfig();
 
-			// Build the log path next to the game exe
+			// Build the log path inside the ModLoader subfolder next to the game exe.
 			if (g_enableFile)
 			{
 				wchar_t modulePath[MAX_PATH]{};
@@ -244,9 +253,12 @@ namespace LogToFile
 
 				wchar_t* lastSlash = wcsrchr(modulePath, L'\\');
 				if (lastSlash)
+				{
 					wcscpy_s(lastSlash + 1,
 						static_cast<rsize_t>(MAX_PATH - (lastSlash + 1 - modulePath)),
-						g_logFileName.c_str());
+						L"ModLoader\\");
+					wcsncat_s(modulePath, g_logFileName.c_str(), MAX_PATH);
+				}
 
 				// Open with FILE_SHARE_READ so other processes (tail, Get-Content, etc.)
 				   // can read the log while we're writing to it.

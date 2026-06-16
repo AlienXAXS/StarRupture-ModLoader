@@ -277,7 +277,7 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableUAC>false</EnableUAC>
       <ModuleDefinitionFile>$(ProjectDir)dwmapi.def</ModuleDefinitionFile>
-      <AdditionalDependencies>$(SolutionDir)build\$(Configuration)\StarRupture-ImGui.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>$(SolutionDir)build\$(Configuration)\ModLoader\StarRupture-ImGui.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PostBuildEvent>
       <Command>
@@ -308,7 +308,7 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableUAC>false</EnableUAC>
       <ModuleDefinitionFile>$(ProjectDir)dwmapi.def</ModuleDefinitionFile>
-      <AdditionalDependencies>$(SolutionDir)build\$(Configuration)\StarRupture-ImGui.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>$(SolutionDir)build\$(Configuration)\ModLoader\StarRupture-ImGui.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PostBuildEvent>
       <Command>
@@ -391,7 +391,7 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableUAC>false</EnableUAC>
       <ModuleDefinitionFile>$(ProjectDir)dwmapi.def</ModuleDefinitionFile>
-      <AdditionalDependencies>$(SolutionDir)build\$(Configuration)\StarRupture-ImGui.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>$(SolutionDir)build\$(Configuration)\ModLoader\StarRupture-ImGui.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PostBuildEvent>
       <Command>
@@ -422,7 +422,7 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableUAC>false</EnableUAC>
       <ModuleDefinitionFile>$(ProjectDir)dwmapi.def</ModuleDefinitionFile>
-      <AdditionalDependencies>$(SolutionDir)build\$(Configuration)\StarRupture-ImGui.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>$(SolutionDir)build\$(Configuration)\ModLoader\StarRupture-ImGui.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PostBuildEvent>
       <Command>

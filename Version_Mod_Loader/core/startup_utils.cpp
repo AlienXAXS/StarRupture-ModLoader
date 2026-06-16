@@ -22,6 +22,18 @@ std::wstring GetExeDirPath(const wchar_t* filename)
     return GetExeDir() + filename;
 }
 
+std::wstring GetModLoaderDir()
+{
+    std::wstring dir = GetExeDir() + L"ModLoader\\";
+    CreateDirectoryW(dir.c_str(), nullptr); // no-op if already exists
+    return dir;
+}
+
+std::wstring GetModLoaderDirPath(const wchar_t* filename)
+{
+    return GetModLoaderDir() + filename;
+}
+
 void LogStartupEnvironment()
 {
     LogToFile::Info("Process ID: %lu", GetCurrentProcessId());
@@ -70,7 +82,7 @@ void LogStartupEnvironment()
 
 void LoadUE4SS()
 {
-    const std::wstring iniPath = GetExeDirPath(L"modloader.ini");
+    const std::wstring iniPath = GetModLoaderDirPath(L"modloader.ini");
 
     if (!GetPrivateProfileIntW(L"UE4SS", L"Enabled", 1, iniPath.c_str()))
     {

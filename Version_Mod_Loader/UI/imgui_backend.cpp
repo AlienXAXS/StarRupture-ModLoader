@@ -1187,7 +1187,7 @@ static HRESULT STDMETHODCALLTYPE HookedPresent(IDXGISwapChain* swapChain, UINT s
 			if (lastSlash)
 				wcscpy_s(lastSlash + 1,
 					static_cast<rsize_t>(MAX_PATH - (lastSlash + 1 - iniPath)),
-					L"modloader.ini");
+					L"ModLoader\\modloader.ini");
 			WritePrivateProfileStringW(L"UI", L"Enabled", L"0", iniPath);
 
 			IMGUI_LOG_ERROR("[ImGuiBackend] ImGui disabled. "

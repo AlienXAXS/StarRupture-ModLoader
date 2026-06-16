@@ -40,7 +40,7 @@ static AutoUpdateConfig ReadAutoUpdateConfig()
 	GetModuleFileNameW(nullptr, iniPath, MAX_PATH);
 	wchar_t* slash = wcsrchr(iniPath, L'\\');
 	if (slash)
-		wcscpy_s(slash + 1, static_cast<rsize_t>(MAX_PATH - (slash + 1 - iniPath)), L"modloader.ini");
+		wcscpy_s(slash + 1, static_cast<rsize_t>(MAX_PATH - (slash + 1 - iniPath)), L"ModLoader\\modloader.ini");
 
 	LogToFile::Debug("[AutoUpdate] Reading config from: %ls", iniPath);
 

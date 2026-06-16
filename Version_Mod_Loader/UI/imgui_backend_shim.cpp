@@ -22,10 +22,17 @@ namespace UI::ImGuiBackend
 {
     void Initialize(const ImGuiRenderCallbacks& cbs)
     {
-        g_hostDll = LoadLibraryW(L"StarRupture-ImGui.dll");
+        wchar_t dllPath[MAX_PATH]{};
+        GetModuleFileNameW(nullptr, dllPath, MAX_PATH);
+        wchar_t* slash = wcsrchr(dllPath, L'\\');
+        if (slash)
+            wcscpy_s(slash + 1, static_cast<rsize_t>(MAX_PATH - (slash + 1 - dllPath)),
+                L"ModLoader\\StarRupture-ImGui.dll");
+
+        g_hostDll = LoadLibraryW(dllPath);
         if (!g_hostDll)
         {
-            LogToFile::Error("[ImGuiBackend] Failed to load StarRupture-ImGui.dll (error %lu)",
+            LogToFile::Error("[ImGuiBackend] Failed to load ModLoader\\StarRupture-ImGui.dll (error %lu)",
                 GetLastError());
             return;
         }

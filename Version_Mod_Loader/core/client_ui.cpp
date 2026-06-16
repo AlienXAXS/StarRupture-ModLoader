@@ -24,7 +24,7 @@ static EModKey      s_openKey      = EModKey::F2;
 
 void InitClientUI()
 {
-    const std::wstring iniPath = GetExeDirPath(L"modloader.ini");
+    const std::wstring iniPath = GetModLoaderDirPath(L"modloader.ini");
     int val = GetPrivateProfileIntW(L"UI", L"Enabled", -1, iniPath.c_str());
     if (val == -1)
     {
