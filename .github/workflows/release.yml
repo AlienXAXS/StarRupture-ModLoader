@@ -259,10 +259,12 @@ jobs:
             $pdb = "build\$variant Release\dwmapi.pdb"
             if (Test-Path $pdb) { Copy-Item $pdb "$stagingDir\dwmapi.pdb" }
 
+            $modloaderDst = "$stagingDir\ModLoader"
+            New-Item -ItemType Directory -Force $modloaderDst | Out-Null
+            Set-Content "$modloaderDst\readme.txt" "Plugins, Logs and Configs have moved here.  Your existing plugins and configs will be migrated here when you start the game" -Encoding utf8NoBOM
+
             $modloaderSrc = "build\$variant Release\ModLoader"
             if (Test-Path $modloaderSrc) {
-              $modloaderDst = "$stagingDir\ModLoader"
-              New-Item -ItemType Directory -Force $modloaderDst | Out-Null
               Copy-Item "$modloaderSrc\*.dll" $modloaderDst -ErrorAction SilentlyContinue
               Copy-Item "$modloaderSrc\*.pdb" $modloaderDst -ErrorAction SilentlyContinue
             }
