@@ -435,7 +435,7 @@ namespace PluginManager
 		if (lastSlash) *lastSlash = L'\0';
 
 		wchar_t modsPath[MAX_PATH] = {};
-		swprintf_s(modsPath, L"%s\\Plugins", exePath);
+		swprintf_s(modsPath, L"%s\\ModLoader\\Plugins", exePath);
 
 		ModLoaderLogger::LogMessage(L"Searching for plugins in: %s", modsPath);
 
@@ -443,6 +443,9 @@ namespace PluginManager
 		if (attribs == INVALID_FILE_ATTRIBUTES || !(attribs & FILE_ATTRIBUTE_DIRECTORY))
 		{
 			ModLoaderLogger::LogMessage(L"Plugins directory not found, creating it...");
+			wchar_t modloaderPath[MAX_PATH]{};
+			swprintf_s(modloaderPath, L"%s\\ModLoader", exePath);
+			CreateDirectoryW(modloaderPath, nullptr);
 			if (!CreateDirectoryW(modsPath, nullptr))
 			{
 				ModLoaderLogger::LogMessage(L"Failed to create Plugins directory (error: %lu)", GetLastError());

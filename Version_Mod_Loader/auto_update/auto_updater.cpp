@@ -950,8 +950,14 @@ void ModLoaderLogger::RunAutoUpdate()
 	if (slash)
 		wcscpy_s(slash + 1,
 		         MAX_PATH - static_cast<DWORD>(slash + 1 - pluginsDir),
-		         L"Plugins");
+		         L"ModLoader\\Plugins");
 	LogToFile::Debug("[AutoUpdate] Plugins directory: %ls", pluginsDir);
+	{
+		wchar_t modloaderPath[MAX_PATH]{};
+		wcscpy_s(modloaderPath, pluginsDir);
+		if (wchar_t* s = wcsrchr(modloaderPath, L'\\')) *s = L'\0';
+		CreateDirectoryW(modloaderPath, nullptr);
+	}
 	CreateDirectoryW(pluginsDir, nullptr);
 
 	// Central manifest pass — checks for a new modloader release and notifies

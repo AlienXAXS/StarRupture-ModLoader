@@ -48,10 +48,10 @@ Global
 		{44EBEBF6-6BFB-4829-8782-F673D3B32FE8}.Client Release|x64.ActiveCfg = Client Release|x64
 		{44EBEBF6-6BFB-4829-8782-F673D3B32FE8}.Client Release|x64.Build.0 = Client Release|x64
 		{44EBEBF6-6BFB-4829-8782-F673D3B32FE8}.Debug|x64.ActiveCfg = Client Debug|x64
-		{44EBEBF6-6BFB-4829-8782-F673D3B32FE8}.Local SDK Client Debug|x64.ActiveCfg = Client Debug|x64
-		{44EBEBF6-6BFB-4829-8782-F673D3B32FE8}.Local SDK Client Debug|x64.Build.0 = Client Debug|x64
-		{44EBEBF6-6BFB-4829-8782-F673D3B32FE8}.Local SDK Client Release|x64.ActiveCfg = Client Release|x64
-		{44EBEBF6-6BFB-4829-8782-F673D3B32FE8}.Local SDK Client Release|x64.Build.0 = Client Release|x64
+		{44EBEBF6-6BFB-4829-8782-F673D3B32FE8}.Local SDK Client Debug|x64.ActiveCfg = Local SDK Client Debug|x64
+		{44EBEBF6-6BFB-4829-8782-F673D3B32FE8}.Local SDK Client Debug|x64.Build.0 = Local SDK Client Debug|x64
+		{44EBEBF6-6BFB-4829-8782-F673D3B32FE8}.Local SDK Client Release|x64.ActiveCfg = Local SDK Client Release|x64
+		{44EBEBF6-6BFB-4829-8782-F673D3B32FE8}.Local SDK Client Release|x64.Build.0 = Local SDK Client Release|x64
 		{44EBEBF6-6BFB-4829-8782-F673D3B32FE8}.Local SDK Server Debug|x64.ActiveCfg = Client Debug|x64
 		{44EBEBF6-6BFB-4829-8782-F673D3B32FE8}.Local SDK Server Release|x64.ActiveCfg = Client Release|x64
 		{44EBEBF6-6BFB-4829-8782-F673D3B32FE8}.Release|x64.ActiveCfg = Client Release|x64
