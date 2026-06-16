@@ -1,21 +1,13 @@
-#include "pch.h"
-#include "imgui_backend.h"
+// StarRupture-ImGui host DLL implementation.
+// Compiled by the StarRupture-ImGui project, NOT the main Mod_Loader project.
+// The main project compiles imgui_backend_shim.cpp instead.
 
-#ifdef MODLOADER_CLIENT_BUILD
-
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#include "imgui_host_interface.h"
 #include "imgui/imgui.h"
 #include "imgui/backends/imgui_impl_dx12.h"
 #include "imgui/backends/imgui_impl_win32.h"
-#include "modloader_window.h"
-#include "overlay.h"
-#include "global_settings.h"
-#include "plugin_panel_registry.h"
-#include "plugin_widget_registry.h"
-#include "hooks/hooks_common.h"
-#include "hooks/input/keybind_registry.h"
-#include "hooks/input/input_hook.h"
-#include "logging/log.h"
-#include "splash_window.h"
 
 #include <d3d12.h>
 #include <dxgi1_2.h>
@@ -24,6 +16,7 @@
 #include <atomic>
 #include <cstring>
 #include <intrin.h>
+#include <cstdarg>
 
 #pragma comment(lib, "d3d12.lib")
 #pragma comment(lib, "dxgi.lib")
@@ -31,6 +24,24 @@
 
 #include <wincodec.h>
 #include <mutex>
+
+// ---------------------------------------------------------------------------
+// Callback table (set by ImGuiHost_Initialize)
+// ---------------------------------------------------------------------------
+static ImGuiRenderCallbacks g_callbacks = {};
+
+// Log helpers - format locally, forward to main DLL logger via callback
+#define IMGUI_LOG_IMPL(lvl, ...) do { \
+    if (g_callbacks.Log) { \
+        char _b[2048]; snprintf(_b, sizeof(_b), __VA_ARGS__); \
+        g_callbacks.Log((lvl), _b); \
+    } \
+} while (0)
+#define IMGUI_LOG_TRACE(...) IMGUI_LOG_IMPL(0, __VA_ARGS__)
+#define IMGUI_LOG_DEBUG(...) IMGUI_LOG_IMPL(1, __VA_ARGS__)
+#define IMGUI_LOG_INFO(...)  IMGUI_LOG_IMPL(2, __VA_ARGS__)
+#define IMGUI_LOG_WARN(...)  IMGUI_LOG_IMPL(3, __VA_ARGS__)
+#define IMGUI_LOG_ERROR(...) IMGUI_LOG_IMPL(4, __VA_ARGS__)
 
 // ---------------------------------------------------------------------------
 // Forward declarations
@@ -199,88 +210,8 @@ namespace
 // the mouse and swallow game input.  Covers both the main modloader window
 // and any open plugin panel windows.
 // ---------------------------------------------------------------------------
-static bool ShouldCaptureInput()
-{
-	return UI::ModLoaderWindow::IsOpen()
-		|| UI::PluginPanelRegistry::AnyPanelOpen()
-		|| UI::PluginPanelRegistry::AnyInputCaptureRequested();
-}
-
-// ---------------------------------------------------------------------------
-// Keybind dispatch from WM messages
-//
-// Called for every key/mouse message before the game sees it.  Fires plugin
-// keybind callbacks and returns true if the message should be swallowed
-// (blocking mode -- return 0 from WndProc so UE5 never processes it).
-//
-// Works in ALL game states: main menu, loading screens, and in-game.
-// The UGameViewportClient::InputKey hook is responsible for the in-game
-// blocking path only; dispatch always originates here.
-// ---------------------------------------------------------------------------
-static bool DispatchKeybindMessage(UINT msg, WPARAM wParam, LPARAM lParam)
-{
-	using namespace Hooks::Input;
-
-	EModKey      mk    = EModKey::Unknown;
-	EModKeyEvent event = EModKeyEvent::Pressed;
-
-	switch (msg)
-	{
-	case WM_KEYDOWN:
-	case WM_SYSKEYDOWN:
-		// lParam bit 30: key was already down (auto-repeat) -- ignore repeats.
-		if (lParam & (1 << 30)) return false;
-		mk    = VKToModKey(static_cast<int>(wParam));
-		event = EModKeyEvent::Pressed;
-		break;
-
-	case WM_KEYUP:
-	case WM_SYSKEYUP:
-		mk    = VKToModKey(static_cast<int>(wParam));
-		event = EModKeyEvent::Released;
-		break;
-
-	case WM_LBUTTONDOWN: mk = EModKey::LeftMouseButton;   event = EModKeyEvent::Pressed;  break;
-	case WM_LBUTTONUP:   mk = EModKey::LeftMouseButton;   event = EModKeyEvent::Released; break;
-	case WM_RBUTTONDOWN: mk = EModKey::RightMouseButton;  event = EModKeyEvent::Pressed;  break;
-	case WM_RBUTTONUP:   mk = EModKey::RightMouseButton;  event = EModKeyEvent::Released; break;
-	case WM_MBUTTONDOWN: mk = EModKey::MiddleMouseButton; event = EModKeyEvent::Pressed;  break;
-	case WM_MBUTTONUP:   mk = EModKey::MiddleMouseButton; event = EModKeyEvent::Released; break;
-
-	case WM_XBUTTONDOWN:
-		mk    = (GET_XBUTTON_WPARAM(wParam) == XBUTTON1)
-		            ? EModKey::ThumbMouseButton
-		            : EModKey::ThumbMouseButton2;
-		event = EModKeyEvent::Pressed;
-		break;
-	case WM_XBUTTONUP:
-		mk    = (GET_XBUTTON_WPARAM(wParam) == XBUTTON1)
-		            ? EModKey::ThumbMouseButton
-		            : EModKey::ThumbMouseButton2;
-		event = EModKeyEvent::Released;
-		break;
-
-	default:
-		return false;
-	}
-
-	if (mk == EModKey::Unknown) return false;
-
-	// Do not fire standalone modifier keys as keybinds.
-	int vk = ModKeyToVK(mk);
-	if (vk == VK_LCONTROL || vk == VK_RCONTROL ||
-	    vk == VK_LSHIFT   || vk == VK_RSHIFT   ||
-	    vk == VK_LMENU    || vk == VK_RMENU)
-		return false;
-
-	EModKeyModifiers mods = SampleCurrentModifiers();
-
-	Dispatch(mk, event);
-	DispatchCombo(mk, mods, event);
-
-	// Tell the caller to swallow this message if blocking is enabled.
-	return ShouldBlock(mk, mods);
-}
+// ShouldCaptureInput and DispatchKeybindMessage are now callbacks in g_callbacks.
+// See ImGuiRenderCallbacks::ShouldCaptureInput and ::DispatchKey.
 
 // ---------------------------------------------------------------------------
 // WndProc subclass -- forwards messages to ImGui, swallows input when UI open
@@ -296,13 +227,14 @@ static LRESULT CALLBACK HookedWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 	// Dispatch plugin keybind callbacks unconditionally so that toggle-style
 	// keybinds (e.g. F2) can close the UI even while it is open.
 	// Only swallow blocking messages when the UI is not capturing input.
+	const bool capturing = (g_callbacks.ShouldCaptureInput ? g_callbacks.ShouldCaptureInput() : false);
 	{
-		bool blocked = DispatchKeybindMessage(msg, wParam, lParam);
-		if (!ShouldCaptureInput() && blocked)
+		bool blocked = (g_callbacks.DispatchKey ? g_callbacks.DispatchKey(msg, wParam, lParam) : false);
+		if (!capturing && blocked)
 			return 0;
 	}
 
-	if (ShouldCaptureInput())
+	if (capturing)
 	{
 		switch (msg)
 		{
@@ -351,7 +283,7 @@ static DXGI_FORMAT NormalizeForImGui(DXGI_FORMAT fmt)
 	default:
 		// Unrecognised format -- pass through and hope for the best.
 		// Log so crash reports can identify new cases that need handling.
-		LogToFile::Info("[ImGuiBackend] NormalizeForImGui: unrecognised format %u -- "
+		IMGUI_LOG_INFO("[ImGuiBackend] NormalizeForImGui: unrecognised format %u -- "
 			"using as-is. Please report this with your GPU/display info.",
 			static_cast<unsigned>(fmt));
 		return fmt;
@@ -385,7 +317,7 @@ static HRESULT STDMETHODCALLTYPE HookedCreateSwapChainForHwnd(
 			{
 				g_creationQueue = q;  // borrowed -- UE5 owns lifetime
 				q->Release();         // release extra ref from QueryInterface
-				LogToFile::Info("[ImGuiBackend] CreateSwapChainForHwnd: captured creation queue 0x%p",
+				IMGUI_LOG_INFO("[ImGuiBackend] CreateSwapChainForHwnd: captured creation queue 0x%p",
 					static_cast<void*>(g_creationQueue));
 			}
 			else
@@ -423,7 +355,7 @@ static bool CreateDeviceD3D(HWND hWnd)
 	IDXGIFactory4* factory = nullptr;
 	if (FAILED(CreateDXGIFactory1(IID_PPV_ARGS(&factory))))
 	{
-		LogToFile::Error("[ImGuiBackend] CreateDXGIFactory1 failed");
+		IMGUI_LOG_ERROR("[ImGuiBackend] CreateDXGIFactory1 failed");
 		return false;
 	}
 
@@ -431,7 +363,7 @@ static bool CreateDeviceD3D(HWND hWnd)
 	ID3D12Device* device = nullptr;
 	if (FAILED(D3D12CreateDevice(nullptr, D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&device))))
 	{
-		LogToFile::Error("[ImGuiBackend] D3D12CreateDevice failed");
+		IMGUI_LOG_ERROR("[ImGuiBackend] D3D12CreateDevice failed");
 		factory->Release();
 		return false;
 	}
@@ -442,7 +374,7 @@ static bool CreateDeviceD3D(HWND hWnd)
 	ID3D12CommandQueue* queue = nullptr;
 	if (FAILED(device->CreateCommandQueue(&qDesc, IID_PPV_ARGS(&queue))))
 	{
-		LogToFile::Error("[ImGuiBackend] CreateCommandQueue failed");
+		IMGUI_LOG_ERROR("[ImGuiBackend] CreateCommandQueue failed");
 		device->Release();
 		factory->Release();
 		return false;
@@ -459,7 +391,7 @@ static bool CreateDeviceD3D(HWND hWnd)
 	IDXGISwapChain1* sc = nullptr;
 	if (FAILED(factory->CreateSwapChainForHwnd(queue, hWnd, &sd, nullptr, nullptr, &sc)))
 	{
-		LogToFile::Error("[ImGuiBackend] CreateSwapChainForHwnd failed");
+		IMGUI_LOG_ERROR("[ImGuiBackend] CreateSwapChainForHwnd failed");
 		queue->Release();
 		device->Release();
 		factory->Release();
@@ -476,7 +408,7 @@ static bool CreateDeviceD3D(HWND hWnd)
 			GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
 			static_cast<LPCSTR>(presentAddr), &hMod))
 			GetModuleFileNameA(hMod, modName, sizeof(modName));
-		LogToFile::Info("[ImGuiBackend] IDXGISwapChain::Present vtable[8] = 0x%llX  module: %s",
+		IMGUI_LOG_INFO("[ImGuiBackend] IDXGISwapChain::Present vtable[8] = 0x%llX  module: %s",
 			static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(presentAddr)),
 			modName);
 	}
@@ -494,13 +426,13 @@ static bool CreateDeviceD3D(HWND hWnd)
 	{
 		*g_vtableSlot = reinterpret_cast<void*>(&HookedPresent);
 		VirtualProtect(g_vtableSlot, sizeof(void*), oldProtect, &oldProtect);
-		LogToFile::Info("[ImGuiBackend] vtable[8] patched -> HookedPresent (original=0x%llX)",
+		IMGUI_LOG_INFO("[ImGuiBackend] vtable[8] patched -> HookedPresent (original=0x%llX)",
 			static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(g_originalPresent)));
 		ok = true;
 	}
 	else
 	{
-		LogToFile::Error("[ImGuiBackend] VirtualProtect failed -- cannot patch Present");
+		IMGUI_LOG_ERROR("[ImGuiBackend] VirtualProtect failed -- cannot patch Present");
 		g_vtableSlot = nullptr;
 		g_originalPresent = nullptr;
 	}
@@ -522,7 +454,7 @@ static bool CreateDeviceD3D(HWND hWnd)
 				GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
 				static_cast<LPCSTR>(static_cast<void*>(g_originalECL)), &hEclMod))
 				GetModuleFileNameA(hEclMod, eclModName, sizeof(eclModName));
-			LogToFile::Info("[ImGuiBackend] ID3D12CommandQueue::ECL vtable[10] = 0x%llX  module: %s",
+			IMGUI_LOG_INFO("[ImGuiBackend] ID3D12CommandQueue::ECL vtable[10] = 0x%llX  module: %s",
 				static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(g_originalECL)), eclModName);
 		}
 
@@ -531,11 +463,11 @@ static bool CreateDeviceD3D(HWND hWnd)
 		{
 			*g_eclVtableSlot = reinterpret_cast<void*>(&HookedECL);
 			VirtualProtect(g_eclVtableSlot, sizeof(void*), eclProtect, &eclProtect);
-			LogToFile::Info("[ImGuiBackend] ECL vtable[10] patched -> HookedECL");
+			IMGUI_LOG_INFO("[ImGuiBackend] ECL vtable[10] patched -> HookedECL");
 		}
 		else
 		{
-			LogToFile::Error("[ImGuiBackend] VirtualProtect failed for ECL vtable -- cross-queue sync disabled");
+			IMGUI_LOG_ERROR("[ImGuiBackend] VirtualProtect failed for ECL vtable -- cross-queue sync disabled");
 			g_eclVtableSlot = nullptr;
 			g_originalECL = nullptr;
 		}
@@ -561,7 +493,7 @@ static bool CreateDeviceD3D(HWND hWnd)
 					GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
 					static_cast<LPCSTR>(static_cast<void*>(g_originalCSCFH)), &hCscfhMod))
 					GetModuleFileNameA(hCscfhMod, cscfhModName, sizeof(cscfhModName));
-				LogToFile::Info("[ImGuiBackend] IDXGIFactory2::CSCFH vtable[15] = 0x%llX  module: %s",
+				IMGUI_LOG_INFO("[ImGuiBackend] IDXGIFactory2::CSCFH vtable[15] = 0x%llX  module: %s",
 					static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(g_originalCSCFH)), cscfhModName);
 			}
 
@@ -570,11 +502,11 @@ static bool CreateDeviceD3D(HWND hWnd)
 			{
 				*g_cscfhVtableSlot = reinterpret_cast<void*>(&HookedCreateSwapChainForHwnd);
 				VirtualProtect(g_cscfhVtableSlot, sizeof(void*), cscfhProtect, &cscfhProtect);
-				LogToFile::Info("[ImGuiBackend] CSCFH vtable[15] patched -> HookedCreateSwapChainForHwnd");
+				IMGUI_LOG_INFO("[ImGuiBackend] CSCFH vtable[15] patched -> HookedCreateSwapChainForHwnd");
 			}
 			else
 			{
-				LogToFile::Error("[ImGuiBackend] VirtualProtect failed for CSCFH vtable -- creation queue capture disabled");
+				IMGUI_LOG_ERROR("[ImGuiBackend] VirtualProtect failed for CSCFH vtable -- creation queue capture disabled");
 				g_cscfhVtableSlot = nullptr;
 				g_originalCSCFH = nullptr;
 			}
@@ -582,7 +514,7 @@ static bool CreateDeviceD3D(HWND hWnd)
 		}
 		else
 		{
-			LogToFile::Error("[ImGuiBackend] QueryInterface(IDXGIFactory2) failed -- creation queue capture disabled");
+			IMGUI_LOG_ERROR("[ImGuiBackend] QueryInterface(IDXGIFactory2) failed -- creation queue capture disabled");
 		}
 	}
 
@@ -624,7 +556,7 @@ static void RebuildFontAtlas(bool initialSetup)
 	ImGuiIO& io = ImGui::GetIO();
 	io.Fonts->Clear();
 
-	const char* family = UI::GlobalSettings::GetFontFamily();
+	const char* family = (g_callbacks.GetFontFamily ? g_callbacks.GetFontFamily() : "Default");
 
 	// Find the matching font entry (fall back to Default if not found).
 	const FontEntry* entry = &k_fonts[0];
@@ -663,7 +595,7 @@ static void RebuildFontAtlas(bool initialSetup)
 		ImFont* baseFont = io.Fonts->AddFontFromFileTTF(narrowPath, kBasePx, nullptr, s_latinCyrillic);
 		if (!baseFont)
 		{
-			LogToFile::Warn("[ImGuiBackend] Failed to load font '%s' -- falling back to built-in", narrowPath);
+			IMGUI_LOG_WARN("[ImGuiBackend] Failed to load font '%s' -- falling back to built-in", narrowPath);
 			io.Fonts->Clear();
 			io.Fonts->AddFontDefault();
 		}
@@ -694,9 +626,9 @@ static void RebuildFontAtlas(bool initialSetup)
 	ImGui_ImplDX12_CreateDeviceObjects();
 
 	// Re-apply the font scale since CreateDeviceObjects resets ImGui internals.
-	ImGui::GetStyle().FontScaleMain = UI::GlobalSettings::GetFontScale();
+	ImGui::GetStyle().FontScaleMain = (g_callbacks.GetFontScale ? g_callbacks.GetFontScale() : 1.0f);
 
-	LogToFile::Info("[ImGuiBackend] Font atlas rebuilt: family='%s'", family);
+	IMGUI_LOG_INFO("[ImGuiBackend] Font atlas rebuilt: family='%s'", family);
 }
 
 // ---------------------------------------------------------------------------
@@ -709,14 +641,14 @@ static bool InitD3D12Resources(IDXGISwapChain* swapChain)
 	DXGI_SWAP_CHAIN_DESC scDesc = {};
 	if (FAILED(swapChain->GetDesc(&scDesc)))
 	{
-		LogToFile::Error("[ImGuiBackend] Failed to get swap chain desc");
+		IMGUI_LOG_ERROR("[ImGuiBackend] Failed to get swap chain desc");
 		return false;
 	}
 
 	// Skip Streamline's small internal swap chains -- only init on the real game viewport.
 	if (scDesc.BufferDesc.Width < 640 || scDesc.BufferDesc.Height < 480)
 	{
-		LogToFile::Info("[ImGuiBackend] Skipping small swap chain (%ux%u)",
+		IMGUI_LOG_INFO("[ImGuiBackend] Skipping small swap chain (%ux%u)",
 			scDesc.BufferDesc.Width, scDesc.BufferDesc.Height);
 		return false;
 	}
@@ -744,14 +676,14 @@ static bool InitD3D12Resources(IDXGISwapChain* swapChain)
 	{
 		chosenQueue = g_capturedQueue;
 		if (chosenQueue)
-			LogToFile::Info("[ImGuiBackend] Streamline active -- using ECL-captured queue 0x%p",
+			IMGUI_LOG_INFO("[ImGuiBackend] Streamline active -- using ECL-captured queue 0x%p",
 				static_cast<void*>(chosenQueue));
 	}
 	else
 	{
 		chosenQueue = g_creationQueue ? g_creationQueue : g_capturedQueue;
 		if (chosenQueue)
-			LogToFile::Info("[ImGuiBackend] No Streamline -- using creation queue 0x%p",
+			IMGUI_LOG_INFO("[ImGuiBackend] No Streamline -- using creation queue 0x%p",
 				static_cast<void*>(chosenQueue));
 	}
 
@@ -759,7 +691,7 @@ static bool InitD3D12Resources(IDXGISwapChain* swapChain)
 	{
 		// Neither hook has fired yet.  Return false WITHOUT setting g_device so
 		// HookedPresent retries next frame instead of permanently disabling ImGui.
-		LogToFile::Debug("[ImGuiBackend] Queue not yet captured -- deferring D3D12 init");
+		IMGUI_LOG_DEBUG("[ImGuiBackend] Queue not yet captured -- deferring D3D12 init");
 		return false;
 	}
 
@@ -770,7 +702,7 @@ static bool InitD3D12Resources(IDXGISwapChain* swapChain)
 	ID3D12Resource* bb = nullptr;
 	if (FAILED(swapChain->GetBuffer(0, IID_PPV_ARGS(&bb))))
 	{
-		LogToFile::Error("[ImGuiBackend] Failed to get back buffer 0");
+		IMGUI_LOG_ERROR("[ImGuiBackend] Failed to get back buffer 0");
 		return false;
 	}
 	D3D12_RESOURCE_DESC bbResDesc = bb->GetDesc();
@@ -778,7 +710,7 @@ static bool InitD3D12Resources(IDXGISwapChain* swapChain)
 	bb->Release();
 
 	g_rtvFormat = NormalizeForImGui(bbResDesc.Format);
-	LogToFile::Info("[ImGuiBackend] SwapChain: size=%ux%u buffers=%u fmt=%u->%u effect=%u flags=0x%X",
+	IMGUI_LOG_INFO("[ImGuiBackend] SwapChain: size=%ux%u buffers=%u fmt=%u->%u effect=%u flags=0x%X",
 		scDesc.BufferDesc.Width, scDesc.BufferDesc.Height,
 		scDesc.BufferCount,
 		static_cast<unsigned>(scDesc.BufferDesc.Format),
@@ -788,7 +720,7 @@ static bool InitD3D12Resources(IDXGISwapChain* swapChain)
 
 	if (FAILED(hr))
 	{
-		LogToFile::Error("[ImGuiBackend] Failed to get D3D12 device from back buffer");
+		IMGUI_LOG_ERROR("[ImGuiBackend] Failed to get D3D12 device from back buffer");
 		return false;
 	}
 
@@ -797,7 +729,7 @@ static bool InitD3D12Resources(IDXGISwapChain* swapChain)
 	// Log whether the two capture methods agree -- mismatch on a non-Streamline
 	// system means the ECL heuristic saw a different queue than DXGI was told to use.
 	if (g_creationQueue && g_capturedQueue)
-		LogToFile::Info("[ImGuiBackend] Queue check: creation=0x%p  ecl-captured=0x%p  match=%s",
+		IMGUI_LOG_INFO("[ImGuiBackend] Queue check: creation=0x%p  ecl-captured=0x%p  match=%s",
 			static_cast<void*>(g_creationQueue),
 			static_cast<void*>(g_capturedQueue),
 			g_creationQueue == g_capturedQueue ? "YES" : "no");
@@ -809,21 +741,21 @@ static bool InitD3D12Resources(IDXGISwapChain* swapChain)
 	// is out of scope for now.
 	UINT nodeCount = g_device->GetNodeCount();
 	UINT nodeMask = 1u;
-	LogToFile::Info("[ImGuiBackend] D3D12 node count: %u  NodeMask=0x%X", nodeCount, nodeMask);
+	IMGUI_LOG_INFO("[ImGuiBackend] D3D12 node count: %u  NodeMask=0x%X", nodeCount, nodeMask);
 	if (nodeCount > 1)
-		LogToFile::Info("[ImGuiBackend] Multi-GPU system detected (%u nodes) -- using NodeMask=1 (primary). "
+		IMGUI_LOG_INFO("[ImGuiBackend] Multi-GPU system detected (%u nodes) -- using NodeMask=1 (primary). "
 			"If descriptor heap creation fails, report your GPU configuration.", nodeCount);
 
 	// Per-frame fence (prevents reusing an allocator while GPU is still busy).
 	if (FAILED(g_device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&g_fence))))
 	{
-		LogToFile::Error("[ImGuiBackend] Failed to create fence");
+		IMGUI_LOG_ERROR("[ImGuiBackend] Failed to create fence");
 		return false;
 	}
 	g_fenceEvent = CreateEventW(nullptr, FALSE, FALSE, nullptr);
 	if (!g_fenceEvent)
 	{
-		LogToFile::Error("[ImGuiBackend] Failed to create fence event");
+		IMGUI_LOG_ERROR("[ImGuiBackend] Failed to create fence event");
 		return false;
 	}
 
@@ -837,7 +769,7 @@ static bool InitD3D12Resources(IDXGISwapChain* swapChain)
 		desc.NodeMask = nodeMask;
 		if (FAILED(g_device->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&g_rtvHeap))))
 		{
-			LogToFile::Error("[ImGuiBackend] Failed to create RTV heap");
+			IMGUI_LOG_ERROR("[ImGuiBackend] Failed to create RTV heap");
 			return false;
 		}
 		g_rtvDescSize = g_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
@@ -852,7 +784,7 @@ static bool InitD3D12Resources(IDXGISwapChain* swapChain)
 		desc.NodeMask = nodeMask;
 		if (FAILED(g_device->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&g_srvHeap))))
 		{
-			LogToFile::Error("[ImGuiBackend] Failed to create SRV heap");
+			IMGUI_LOG_ERROR("[ImGuiBackend] Failed to create SRV heap");
 			return false;
 		}
 		g_srvDescSize = g_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
@@ -864,7 +796,7 @@ static bool InitD3D12Resources(IDXGISwapChain* swapChain)
 		if (FAILED(g_device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT,
 			IID_PPV_ARGS(&g_frames[i].commandAllocator))))
 		{
-			LogToFile::Error("[ImGuiBackend] Failed to create command allocator %u", i);
+			IMGUI_LOG_ERROR("[ImGuiBackend] Failed to create command allocator %u", i);
 			return false;
 		}
 	}
@@ -874,7 +806,7 @@ static bool InitD3D12Resources(IDXGISwapChain* swapChain)
 		g_frames[0].commandAllocator, nullptr, IID_PPV_ARGS(&g_cmdList))) ||
 		FAILED(g_cmdList->Close()))
 	{
-		LogToFile::Error("[ImGuiBackend] Failed to create command list");
+		IMGUI_LOG_ERROR("[ImGuiBackend] Failed to create command list");
 		return false;
 	}
 
@@ -921,7 +853,7 @@ static bool InitD3D12Resources(IDXGISwapChain* swapChain)
 		SetWindowLongPtrW(g_hwnd, GWLP_WNDPROC,
 			reinterpret_cast<LONG_PTR>(HookedWndProc)));
 
-	LogToFile::Info("[ImGuiBackend] D3D12 resources initialized (buffers=%u hwnd=0x%llX)",
+	IMGUI_LOG_INFO("[ImGuiBackend] D3D12 resources initialized (buffers=%u hwnd=0x%llX)",
 		g_frameCount,
 		static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(g_hwnd)));
 
@@ -1011,7 +943,7 @@ static void STDMETHODCALLTYPE HookedECL(ID3D12CommandQueue* pQueue,
 			/*
 			 * This is really spammy, even for TRACE
 			if (g_initialized && prev && prev != pQueue)
-				LogToFile::Trace("[ImGuiBackend] ECL queue changed post-init: "
+				IMGUI_LOG_TRACE("[ImGuiBackend] ECL queue changed post-init: "
 					"old=0x%p  new=0x%p  submit queue (g_cmdQueue=0x%p) unchanged",
 					static_cast<void*>(prev),
 					static_cast<void*>(pQueue),
@@ -1054,7 +986,7 @@ static HRESULT STDMETHODCALLTYPE HookedPresent(IDXGISwapChain* swapChain, UINT s
 		{
 			if (g_device)
 			{
-				LogToFile::Error("[ImGuiBackend] Resource init failed -- ImGui disabled");
+				IMGUI_LOG_ERROR("[ImGuiBackend] Resource init failed -- ImGui disabled");
 				g_shutdown = true;
 			}
 			// else: size filter rejected this swap chain, try again next frame.
@@ -1076,7 +1008,7 @@ static HRESULT STDMETHODCALLTYPE HookedPresent(IDXGISwapChain* swapChain, UINT s
 	UINT64 frameIdx = s_renderFrame.fetch_add(1);
 
 	if (frameIdx == 0)
-		LogToFile::Info("[ImGuiBackend] First render: device=0x%p submit-queue=0x%p ecl-current=0x%p buffers=%u fmt=%u",
+		IMGUI_LOG_INFO("[ImGuiBackend] First render: device=0x%p submit-queue=0x%p ecl-current=0x%p buffers=%u fmt=%u",
 			static_cast<void*>(g_device), static_cast<void*>(g_cmdQueue),
 			static_cast<void*>(g_capturedQueue),
 			g_frameCount, static_cast<unsigned>(g_rtvFormat));
@@ -1103,7 +1035,7 @@ static HRESULT STDMETHODCALLTYPE HookedPresent(IDXGISwapChain* swapChain, UINT s
 	ID3D12Resource* backBuffer = nullptr;
 	if (FAILED(swapChain->GetBuffer(bufferIdx, IID_PPV_ARGS(&backBuffer))))
 	{
-		LogToFile::Error("[ImGuiBackend] Frame %llu  GetBuffer(%u) failed", frameIdx, bufferIdx);
+		IMGUI_LOG_ERROR("[ImGuiBackend] Frame %llu  GetBuffer(%u) failed", frameIdx, bufferIdx);
 		g_presentOwnerThread.store(0, std::memory_order_release);
 		return g_originalPresent(swapChain, syncInterval, flags);
 	}
@@ -1146,7 +1078,7 @@ static HRESULT STDMETHODCALLTYPE HookedPresent(IDXGISwapChain* swapChain, UINT s
 	{
 		std::lock_guard<std::recursive_mutex> imguiLock(g_imguiMutex);
 
-		bool uiOpen = ShouldCaptureInput();
+		bool uiOpen = (g_callbacks.ShouldCaptureInput ? g_callbacks.ShouldCaptureInput() : false);
 		ImGuiIO& frameIO = ImGui::GetIO();
 		if (uiOpen)
 		{
@@ -1169,11 +1101,8 @@ static HRESULT STDMETHODCALLTYPE HookedPresent(IDXGISwapChain* swapChain, UINT s
 		ImGui_ImplWin32_NewFrame();
 		ImGui::NewFrame();
 
-		UI::Overlay::Render();
-		UI::Overlay::RenderHud();
-		UI::ModLoaderWindow::Render(&g_imguiAPI);
-		UI::PluginPanelRegistry::RenderPanelWindows(&g_imguiAPI);
-		UI::PluginWidgetRegistry::RenderWidgets(&g_imguiAPI);
+		if (g_callbacks.RenderFrame)
+			g_callbacks.RenderFrame(&g_imguiAPI);
 
 		ImGui::Render();
 
@@ -1227,7 +1156,7 @@ static HRESULT STDMETHODCALLTYPE HookedPresent(IDXGISwapChain* swapChain, UINT s
 		// Skip ImGui rendering this frame and retry on the next one.
 		bool expected = false;
 		if (s_transientPresentFailure.compare_exchange_strong(expected, true))
-			LogToFile::Warn("[ImGuiBackend] g_originalPresent transient failure: 0x%08X (frame %llu)",
+			IMGUI_LOG_WARN("[ImGuiBackend] g_originalPresent transient failure: 0x%08X (frame %llu)",
 				static_cast<unsigned>(hr), frameIdx);
 
 		g_presentOwnerThread.store(0, std::memory_order_release);
@@ -1235,11 +1164,11 @@ static HRESULT STDMETHODCALLTYPE HookedPresent(IDXGISwapChain* swapChain, UINT s
 	}
 
 	if (s_transientPresentFailure.exchange(false))
-		LogToFile::Info("[ImGuiBackend] g_originalPresent recovered (frame %llu)", frameIdx);
+		IMGUI_LOG_INFO("[ImGuiBackend] g_originalPresent recovered (frame %llu)", frameIdx);
 
 	if (FAILED(hr))
 	{
-		LogToFile::Error("[ImGuiBackend] g_originalPresent failed: 0x%08X (frame %llu)",
+		IMGUI_LOG_ERROR("[ImGuiBackend] g_originalPresent failed: 0x%08X (frame %llu)",
 			static_cast<unsigned>(hr), frameIdx);
 
 		// On device removal, shut ImGui down immediately and surface a splash
@@ -1261,27 +1190,11 @@ static HRESULT STDMETHODCALLTYPE HookedPresent(IDXGISwapChain* swapChain, UINT s
 					L"modloader.ini");
 			WritePrivateProfileStringW(L"UI", L"Enabled", L"0", iniPath);
 
-			LogToFile::Error("[ImGuiBackend] ImGui disabled. "
+			IMGUI_LOG_ERROR("[ImGuiBackend] ImGui disabled. "
 				"[UI] Enabled=0 written to modloader.ini -- overlay off on next launch.");
 
-			// Spawn a dedicated thread to own and pump the error splash.
-			// The window MUST be created on the thread that pumps its messages --
-			// creating it here on the render thread would leave it unresponsive
-			// because the render thread never runs a GetMessage loop.
-			CreateThread(nullptr, 0, [](void*) -> DWORD
-			{
-				Splash::Show();
-				Splash::SetErrorMode();
-				Splash::SetStatus(L"ImGui error: GPU device lost. Overlay disabled for next launch.");
-				// Pump messages until ExitProcess (Close button) kills the process.
-				MSG msg;
-				while (GetMessageW(&msg, nullptr, 0, 0))
-				{
-					TranslateMessage(&msg);
-					DispatchMessageW(&msg);
-				}
-				return 0;
-			}, nullptr, 0, nullptr);
+			if (g_callbacks.OnDeviceLost)
+				g_callbacks.OnDeviceLost(L"ImGui error: GPU device lost. Overlay disabled for next launch.");
 		}
 		else
 		{
@@ -1955,7 +1868,7 @@ static PluginTextureHandle TextureLoadFromRGBA(const unsigned char* rgba, int wi
 	if (PluginTextureRecord* existing = FindTextureByName(name))
 	{
 		existing->refCount++;
-		LogToFile::Debug("[ImGuiBackend] TextureLoadFromRGBA '%s': reusing existing texture, refCount=%d",
+		IMGUI_LOG_DEBUG("[ImGuiBackend] TextureLoadFromRGBA '%s': reusing existing texture, refCount=%d",
 			existing->name, existing->refCount);
 		return existing;
 	}
@@ -1963,7 +1876,7 @@ static PluginTextureHandle TextureLoadFromRGBA(const unsigned char* rgba, int wi
 	int slot = AllocTextureSlot();
 	if (slot < 0)
 	{
-		LogToFile::Error("[ImGuiBackend] TextureLoadFromRGBA '%s': all %d slots in use", name ? name : "?", MAX_PLUGIN_TEXTURES);
+		IMGUI_LOG_ERROR("[ImGuiBackend] TextureLoadFromRGBA '%s': all %d slots in use", name ? name : "?", MAX_PLUGIN_TEXTURES);
 		throw std::out_of_range("IPluginImGuiTextures: all texture slots are in use -- call FreeTexture or check GetFreeSlotCount");
 	}
 
@@ -1975,7 +1888,7 @@ static PluginTextureHandle TextureLoadFromRGBA(const unsigned char* rgba, int wi
 	ID3D12Resource* resource = UploadRGBAToGPU(rgba, width, height, cpuHandle);
 	if (!resource)
 	{
-		LogToFile::Error("[ImGuiBackend] TextureLoadFromRGBA '%s': GPU upload failed (%dx%d)", name ? name : "?", width, height);
+		IMGUI_LOG_ERROR("[ImGuiBackend] TextureLoadFromRGBA '%s': GPU upload failed (%dx%d)", name ? name : "?", width, height);
 		return nullptr;
 	}
 
@@ -1988,7 +1901,7 @@ static PluginTextureHandle TextureLoadFromRGBA(const unsigned char* rgba, int wi
 	rec.refCount  = 1;
 	if (name) strncpy_s(rec.name, name, _TRUNCATE);
 
-	LogToFile::Debug("[ImGuiBackend] TextureLoadFromRGBA '%s': slot=%d %dx%d", rec.name, slot, width, height);
+	IMGUI_LOG_DEBUG("[ImGuiBackend] TextureLoadFromRGBA '%s': slot=%d %dx%d", rec.name, slot, width, height);
 	return &rec;
 }
 
@@ -2070,7 +1983,7 @@ static void LogRHITextureClass(void** vtable)
 
 	if (rttiName)
 	{
-		LogToFile::Warn("[ImGuiBackend] Unknown FRHITexture subclass (RTTI): %s  vtable=0x%p",
+		IMGUI_LOG_WARN("[ImGuiBackend] Unknown FRHITexture subclass (RTTI): %s  vtable=0x%p",
 			rttiName, (void*)vtable);
 		return;
 	}
@@ -2087,7 +2000,7 @@ static void LogRHITextureClass(void** vtable)
 	}
 	uintptr_t rva = reinterpret_cast<uintptr_t>(vtable)
 	              - reinterpret_cast<uintptr_t>(hMod);
-	LogToFile::Warn("[ImGuiBackend] Unknown FRHITexture subclass (no RTTI): vtable=0x%p  %s+0x%llX",
+	IMGUI_LOG_WARN("[ImGuiBackend] Unknown FRHITexture subclass (no RTTI): vtable=0x%p  %s+0x%llX",
 		(void*)vtable, modName, (unsigned long long)rva);
 }
 
@@ -2162,13 +2075,13 @@ static bool GetNativeResourceSEH(
 	__try
 	{
 		void** vtable = *reinterpret_cast<void***>(rhiTexture);
-		LogToFile::Trace("[ImGuiBackend] LoadFromUTexture2D: vtable=0x%p vtable[%d]=0x%p",
+		IMGUI_LOG_TRACE("[ImGuiBackend] LoadFromUTexture2D: vtable=0x%p vtable[%d]=0x%p",
 			(void*)vtable, kFRHITexture_GetNativeResource_Slot,
 			vtable ? vtable[kFRHITexture_GetNativeResource_Slot] : nullptr);
 
 		if (!IsValidUserPtr(vtable))
 		{
-			LogToFile::Trace("[ImGuiBackend] LoadFromUTexture2D: vtable invalid (0x%p) -- corrupt FRHITexture?",
+			IMGUI_LOG_TRACE("[ImGuiBackend] LoadFromUTexture2D: vtable invalid (0x%p) -- corrupt FRHITexture?",
 				(void*)vtable);
 			return false;
 		}
@@ -2176,11 +2089,11 @@ static bool GetNativeResourceSEH(
 
 		using GetNativeResourceFn = void*(__fastcall*)(void*);
 		auto getNativeResource = reinterpret_cast<GetNativeResourceFn>(vtable[kFRHITexture_GetNativeResource_Slot]);
-		LogToFile::Trace("[ImGuiBackend] LoadFromUTexture2D: calling GetNativeResource fn=0x%p this=0x%p",
+		IMGUI_LOG_TRACE("[ImGuiBackend] LoadFromUTexture2D: calling GetNativeResource fn=0x%p this=0x%p",
 			(void*)(uintptr_t)getNativeResource, rhiTexture);
 
 		ID3D12Resource* res = static_cast<ID3D12Resource*>(getNativeResource(rhiTexture));
-		LogToFile::Trace("[ImGuiBackend] LoadFromUTexture2D: ID3D12Resource*=0x%p", (void*)res);
+		IMGUI_LOG_TRACE("[ImGuiBackend] LoadFromUTexture2D: ID3D12Resource*=0x%p", (void*)res);
 
 		if (!IsValidUserPtr(res))
 		{
@@ -2189,13 +2102,13 @@ static bool GetNativeResourceSEH(
 		}
 		*outResource = res;
 
-		LogToFile::Trace("[ImGuiBackend] LoadFromUTexture2D: calling GetDesc() on 0x%p", (void*)res);
+		IMGUI_LOG_TRACE("[ImGuiBackend] LoadFromUTexture2D: calling GetDesc() on 0x%p", (void*)res);
 		*outDesc = res->GetDesc();
 		return true;
 	}
 	__except (EXCEPTION_EXECUTE_HANDLER)
 	{
-		LogToFile::Warn("[ImGuiBackend] LoadFromUTexture2D: SEH exception in vtable walk / GetNativeResource / GetDesc"
+		IMGUI_LOG_WARN("[ImGuiBackend] LoadFromUTexture2D: SEH exception in vtable walk / GetNativeResource / GetDesc"
 			" -- rhiTexture=0x%p is likely static data, not a heap FRHITexture; skipping",
 			rhiTexture);
 		return false;
@@ -2210,18 +2123,18 @@ static PluginTextureHandle TextureLoadFromUTexture2D(SDK::UTexture2D* uTexture2D
 	{
 		DWORD presentTid = g_presentOwnerThread.load(std::memory_order_acquire);
 		if (presentTid != 0 && presentTid == GetCurrentThreadId())
-			LogToFile::Warn("[ImGuiBackend] LoadFromUTexture2D '%s': called from the render thread -- "
+			IMGUI_LOG_WARN("[ImGuiBackend] LoadFromUTexture2D '%s': called from the render thread -- "
 				"this will stall the GPU pipeline and may crash with DLSS. "
 				"Call from OnExperienceLoadComplete or another game-thread callback instead.",
 				name ? name : "?");
 	}
 
-	LogToFile::Trace("[ImGuiBackend] LoadFromUTexture2D '%s': entry uTexture2D=0x%p g_device=0x%p",
+	IMGUI_LOG_TRACE("[ImGuiBackend] LoadFromUTexture2D '%s': entry uTexture2D=0x%p g_device=0x%p",
 		name ? name : "?", (void*)uTexture2D, (void*)g_device);
 
 	if (!g_device || !uTexture2D)
 	{
-		LogToFile::Trace("[ImGuiBackend] LoadFromUTexture2D '%s': early-out (device=%s texture=%s)",
+		IMGUI_LOG_TRACE("[ImGuiBackend] LoadFromUTexture2D '%s': early-out (device=%s texture=%s)",
 			name ? name : "?", g_device ? "ok" : "NULL", uTexture2D ? "ok" : "NULL");
 		return nullptr;
 	}
@@ -2234,7 +2147,7 @@ static PluginTextureHandle TextureLoadFromUTexture2D(SDK::UTexture2D* uTexture2D
 		if (PluginTextureRecord* existing = FindTextureByName(name))
 		{
 			existing->refCount++;
-			LogToFile::Debug("[ImGuiBackend] LoadFromUTexture2D '%s': reusing existing texture, refCount=%d",
+			IMGUI_LOG_DEBUG("[ImGuiBackend] LoadFromUTexture2D '%s': reusing existing texture, refCount=%d",
 				existing->name, existing->refCount);
 			return existing;
 		}
@@ -2242,30 +2155,30 @@ static PluginTextureHandle TextureLoadFromUTexture2D(SDK::UTexture2D* uTexture2D
 
 	// Step 1: UTexture::PrivateResource at offset 0x120
 	uint8_t* textureBase = reinterpret_cast<uint8_t*>(uTexture2D);
-	LogToFile::Trace("[ImGuiBackend] LoadFromUTexture2D: reading PrivateResource at 0x%p+0x%zX",
+	IMGUI_LOG_TRACE("[ImGuiBackend] LoadFromUTexture2D: reading PrivateResource at 0x%p+0x%zX",
 		(void*)textureBase, kUTexture_PrivateResource);
 
 	void* resourcePtr = *reinterpret_cast<void**>(textureBase + kUTexture_PrivateResource);
-	LogToFile::Trace("[ImGuiBackend] LoadFromUTexture2D: FTextureResource*=0x%p", resourcePtr);
+	IMGUI_LOG_TRACE("[ImGuiBackend] LoadFromUTexture2D: FTextureResource*=0x%p", resourcePtr);
 
 	if (!IsValidUserPtr(resourcePtr))
 	{
-		LogToFile::Trace("[ImGuiBackend] LoadFromUTexture2D: FTextureResource* invalid (0x%p) -- not streamed/resident or corrupt",
+		IMGUI_LOG_TRACE("[ImGuiBackend] LoadFromUTexture2D: FTextureResource* invalid (0x%p) -- not streamed/resident or corrupt",
 			resourcePtr);
 		return nullptr;
 	}
 
 	// Step 2: FTexture::TextureRHI (TRefCountPtr<FRHITexture>) at offset 0x10
 	uint8_t* textureResourceBase = reinterpret_cast<uint8_t*>(resourcePtr);
-	LogToFile::Trace("[ImGuiBackend] LoadFromUTexture2D: reading TextureRHI at 0x%p+0x%zX",
+	IMGUI_LOG_TRACE("[ImGuiBackend] LoadFromUTexture2D: reading TextureRHI at 0x%p+0x%zX",
 		(void*)textureResourceBase, kFTextureResource_TextureRHI_Ptr);
 
 	void* rhiTexture = *reinterpret_cast<void**>(textureResourceBase + kFTextureResource_TextureRHI_Ptr);
-	LogToFile::Trace("[ImGuiBackend] LoadFromUTexture2D: FRHITexture*=0x%p", rhiTexture);
+	IMGUI_LOG_TRACE("[ImGuiBackend] LoadFromUTexture2D: FRHITexture*=0x%p", rhiTexture);
 
 	if (!IsValidUserPtr(rhiTexture))
 	{
-		LogToFile::Trace("[ImGuiBackend] LoadFromUTexture2D: FRHITexture* invalid (0x%p) -- RHI not initialized or corrupt",
+		IMGUI_LOG_TRACE("[ImGuiBackend] LoadFromUTexture2D: FRHITexture* invalid (0x%p) -- RHI not initialized or corrupt",
 			rhiTexture);
 		return nullptr;
 	}
@@ -2279,7 +2192,7 @@ static PluginTextureHandle TextureLoadFromUTexture2D(SDK::UTexture2D* uTexture2D
 		return nullptr;
 	int width  = static_cast<int>(resDesc.Width);
 	int height = static_cast<int>(resDesc.Height);
-	LogToFile::Trace("[ImGuiBackend] LoadFromUTexture2D: desc %dx%d format=%u mips=%u dim=%u flags=0x%X",
+	IMGUI_LOG_TRACE("[ImGuiBackend] LoadFromUTexture2D: desc %dx%d format=%u mips=%u dim=%u flags=0x%X",
 		width, height,
 		(unsigned)resDesc.Format,
 		(unsigned)resDesc.MipLevels,
@@ -2288,7 +2201,7 @@ static PluginTextureHandle TextureLoadFromUTexture2D(SDK::UTexture2D* uTexture2D
 
 	if (width <= 0 || height <= 0)
 	{
-		LogToFile::Trace("[ImGuiBackend] LoadFromUTexture2D: degenerate dimensions %dx%d -- aborting", width, height);
+		IMGUI_LOG_TRACE("[ImGuiBackend] LoadFromUTexture2D: degenerate dimensions %dx%d -- aborting", width, height);
 		return nullptr;
 	}
 
@@ -2300,11 +2213,11 @@ static PluginTextureHandle TextureLoadFromUTexture2D(SDK::UTexture2D* uTexture2D
 	// so Image/ImageButton can re-check readiness on every draw call.
 	void* underlyingRaw = *reinterpret_cast<void**>(
 		static_cast<uint8_t*>(rhiTexture) + kFD3D12Texture_UnderlyingResource_Ptr);
-	LogToFile::Trace("[ImGuiBackend] LoadFromUTexture2D: FD3D12Resource*=0x%p", underlyingRaw);
+	IMGUI_LOG_TRACE("[ImGuiBackend] LoadFromUTexture2D: FD3D12Resource*=0x%p", underlyingRaw);
 
 	if (!underlyingRaw)
 	{
-		LogToFile::Trace("[ImGuiBackend] LoadFromUTexture2D: UnderlyingResource is null -- not yet allocated");
+		IMGUI_LOG_TRACE("[ImGuiBackend] LoadFromUTexture2D: UnderlyingResource is null -- not yet allocated");
 		return nullptr;
 	}
 
@@ -2316,12 +2229,12 @@ static PluginTextureHandle TextureLoadFromUTexture2D(SDK::UTexture2D* uTexture2D
 			D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE |
 			D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
 		D3D12_RESOURCE_STATES defaultState = *pDefaultResState;
-		LogToFile::Trace("[ImGuiBackend] LoadFromUTexture2D: DefaultResourceState=0x%X", (unsigned)defaultState);
+		IMGUI_LOG_TRACE("[ImGuiBackend] LoadFromUTexture2D: DefaultResourceState=0x%X", (unsigned)defaultState);
 		bool ready = (defaultState == D3D12_RESOURCE_STATE_COMMON) ||
 		             ((defaultState & kReadable) != 0);
 		if (!ready)
 		{
-			LogToFile::Warn("[ImGuiBackend] LoadFromUTexture2D: texture not ready "
+			IMGUI_LOG_WARN("[ImGuiBackend] LoadFromUTexture2D: texture not ready "
 				"(DefaultResourceState=0x%X, not PSR/COMMON) -- retry next frame",
 				(unsigned)defaultState);
 			return nullptr;
@@ -2330,7 +2243,7 @@ static PluginTextureHandle TextureLoadFromUTexture2D(SDK::UTexture2D* uTexture2D
 
 	// Step 5: Allocate a slot, copy the engine resource to our own owned resource,
 	// and create an SRV over it.  We own the copy so it is safe from engine eviction.
-	LogToFile::Trace("[ImGuiBackend] LoadFromUTexture2D: allocating SRV slot");
+	IMGUI_LOG_TRACE("[ImGuiBackend] LoadFromUTexture2D: allocating SRV slot");
 	std::lock_guard<std::mutex> lock(g_textureMutex);
 
 	// Re-check for a name collision in case another thread registered the
@@ -2338,7 +2251,7 @@ static PluginTextureHandle TextureLoadFromUTexture2D(SDK::UTexture2D* uTexture2D
 	if (PluginTextureRecord* existing = FindTextureByName(name))
 	{
 		existing->refCount++;
-		LogToFile::Debug("[ImGuiBackend] LoadFromUTexture2D '%s': reusing existing texture (registered concurrently), refCount=%d",
+		IMGUI_LOG_DEBUG("[ImGuiBackend] LoadFromUTexture2D '%s': reusing existing texture (registered concurrently), refCount=%d",
 			existing->name, existing->refCount);
 		return existing;
 	}
@@ -2346,7 +2259,7 @@ static PluginTextureHandle TextureLoadFromUTexture2D(SDK::UTexture2D* uTexture2D
 	int slot = AllocTextureSlot();
 	if (slot < 0)
 	{
-		LogToFile::Error("[ImGuiBackend] LoadFromUTexture2D '%s': all %d slots in use", name ? name : "?", MAX_PLUGIN_TEXTURES);
+		IMGUI_LOG_ERROR("[ImGuiBackend] LoadFromUTexture2D '%s': all %d slots in use", name ? name : "?", MAX_PLUGIN_TEXTURES);
 		throw std::out_of_range("IPluginImGuiTextures: all texture slots are in use -- call FreeTexture or check GetFreeSlotCount");
 	}
 
@@ -2357,11 +2270,11 @@ static PluginTextureHandle TextureLoadFromUTexture2D(SDK::UTexture2D* uTexture2D
 
 	DXGI_FORMAT srvFormat = ResolveTypelessForSRV(resDesc.Format);
 	if (srvFormat != resDesc.Format)
-		LogToFile::Trace("[ImGuiBackend] LoadFromUTexture2D: typeless format %u -> SRV format %u",
+		IMGUI_LOG_TRACE("[ImGuiBackend] LoadFromUTexture2D: typeless format %u -> SRV format %u",
 			(unsigned)resDesc.Format, (unsigned)srvFormat);
 
 	D3D12_RESOURCE_STATES srcState = *pDefaultResState;
-	LogToFile::Trace("[ImGuiBackend] LoadFromUTexture2D: copying engine texture to owned resource "
+	IMGUI_LOG_TRACE("[ImGuiBackend] LoadFromUTexture2D: copying engine texture to owned resource "
 		"slot=%d %dx%d srvFormat=%u srcState=0x%X",
 		slot, width, height, (unsigned)srvFormat, (unsigned)srcState);
 
@@ -2370,7 +2283,7 @@ static PluginTextureHandle TextureLoadFromUTexture2D(SDK::UTexture2D* uTexture2D
 
 	if (!ownedResource)
 	{
-		LogToFile::Error("[ImGuiBackend] LoadFromUTexture2D '%s': CopyEngineTextureToOwned failed", name ? name : "?");
+		IMGUI_LOG_ERROR("[ImGuiBackend] LoadFromUTexture2D '%s': CopyEngineTextureToOwned failed", name ? name : "?");
 		return nullptr;
 	}
 
@@ -2384,7 +2297,7 @@ static PluginTextureHandle TextureLoadFromUTexture2D(SDK::UTexture2D* uTexture2D
 	rec.refCount  = 1;
 	if (name) strncpy_s(rec.name, name, _TRUNCATE);
 
-	LogToFile::Debug("[ImGuiBackend] LoadFromUTexture2D '%s': slot=%d %dx%d fmt=%u",
+	IMGUI_LOG_DEBUG("[ImGuiBackend] LoadFromUTexture2D '%s': slot=%d %dx%d fmt=%u",
 		rec.name, slot, width, height, (unsigned)resDesc.Format);
 	return &rec;
 }
@@ -2469,7 +2382,7 @@ static void TextureFreeTexture(PluginTextureHandle handle)
 	// actually released once every owner has called FreeTexture.
 	if (--rec->refCount > 0)
 	{
-		LogToFile::Debug("[ImGuiBackend] FreeTexture '%s': refCount=%d, keeping texture alive", rec->name, rec->refCount);
+		IMGUI_LOG_DEBUG("[ImGuiBackend] FreeTexture '%s': refCount=%d, keeping texture alive", rec->name, rec->refCount);
 		return;
 	}
 
@@ -2490,7 +2403,7 @@ static void TextureImage(PluginTextureHandle handle, float w, float h)
 {
 	PluginTextureRecord* rec = ValidateHandle(handle);
 	if (!rec) return;
-	LogToFile::Trace("[ImGuiBackend] TextureImage '%s': handle=0x%p w=%.0f h=%.0f", rec->name, handle, w, h);
+	IMGUI_LOG_TRACE("[ImGuiBackend] TextureImage '%s': handle=0x%p w=%.0f h=%.0f", rec->name, handle, w, h);
 	float iw = (w == 0.0f) ? (float)rec->width  : w;
 	float ih = (h == 0.0f) ? (float)rec->height : h;
 	ImGui::Image((ImTextureID)rec->gpuHandle.ptr, ImVec2(iw, ih));
@@ -2501,7 +2414,7 @@ static bool TextureImageButton(const char* str_id, PluginTextureHandle handle, f
 	if (!str_id) return false;
 	PluginTextureRecord* rec = ValidateHandle(handle);
 	if (!rec) return false;
-	LogToFile::Trace("[ImGuiBackend] TextureImageButton '%s': str_id=%s handle=0x%p w=%.0f h=%.0f", rec->name, str_id, handle, w, h);
+	IMGUI_LOG_TRACE("[ImGuiBackend] TextureImageButton '%s': str_id=%s handle=0x%p w=%.0f h=%.0f", rec->name, str_id, handle, w, h);
 	float iw = (w == 0.0f) ? (float)rec->width  : w;
 	float ih = (h == 0.0f) ? (float)rec->height : h;
 	return ImGui::ImageButton(str_id, (ImTextureID)rec->gpuHandle.ptr, ImVec2(iw, ih));
@@ -2758,25 +2671,24 @@ static void PopulateImGuiAPI()
 }
 
 // ---------------------------------------------------------------------------
-// Public API
+// Public API -- exported C functions (StarRupture-ImGui.dll)
 // ---------------------------------------------------------------------------
-namespace UI::ImGuiBackend
+extern "C" __declspec(dllexport) void ImGuiHost_Initialize(const ImGuiRenderCallbacks* cbs)
 {
-	void Initialize()
-	{
-		// Detect Streamline and common overlays before installing any hooks.
-		// Logged once so crash reports immediately show the system configuration.
-		g_streamlineActive = GetModuleHandleW(L"sl.interposer.dll") != nullptr;
-		LogToFile::Info("[ImGuiBackend] Streamline: %s", g_streamlineActive ? "YES" : "no");
+	if (cbs) g_callbacks = *cbs;
 
-		{
-			bool rtss = GetModuleHandleW(L"RTSSHooks64.dll") != nullptr;
+	// Detect Streamline and common overlays before installing any hooks.
+	g_streamlineActive = GetModuleHandleW(L"sl.interposer.dll") != nullptr;
+	IMGUI_LOG_INFO("[ImGuiBackend] Streamline: %s", g_streamlineActive ? "YES" : "no");
+
+	{
+		bool rtss = GetModuleHandleW(L"RTSSHooks64.dll") != nullptr;
 			bool discord = GetModuleHandleW(L"DiscordHook64.dll") != nullptr;
 			bool steam = GetModuleHandleW(L"gameoverlayrenderer64.dll") != nullptr;
-			LogToFile::Info("[ImGuiBackend] Overlays detected: RTSS=%s  Discord=%s  Steam=%s",
+			IMGUI_LOG_INFO("[ImGuiBackend] Overlays detected: RTSS=%s  Discord=%s  Steam=%s",
 				rtss ? "YES" : "no", discord ? "YES" : "no", steam ? "YES" : "no");
 			if (rtss)
-				LogToFile::Info("[ImGuiBackend] RTSS (RivaTuner/Afterburner) detected -- "
+				IMGUI_LOG_INFO("[ImGuiBackend] RTSS (RivaTuner/Afterburner) detected -- "
 					"if the overlay crashes, disable RTSS and report the issue");
 		}
 
@@ -2785,7 +2697,7 @@ namespace UI::ImGuiBackend
 			// --- Executable path ---
 			char exePath[MAX_PATH] = {};
 			GetModuleFileNameA(nullptr, exePath, MAX_PATH);
-			LogToFile::Info("[ImGuiBackend] Exe: %s", exePath);
+			IMGUI_LOG_INFO("[ImGuiBackend] Exe: %s", exePath);
 
 			// --- Windows build (RtlGetVersion bypasses compat shims) ---
 			using RtlGetVersionFn = LONG(WINAPI*)(OSVERSIONINFOEXW*);
@@ -2793,7 +2705,7 @@ namespace UI::ImGuiBackend
 			auto rtlGetVersion = reinterpret_cast<RtlGetVersionFn>(
 				GetProcAddress(GetModuleHandleW(L"ntdll.dll"), "RtlGetVersion"));
 			if (rtlGetVersion) rtlGetVersion(&osv);
-			LogToFile::Info("[ImGuiBackend] OS: Windows %lu.%lu build %lu",
+			IMGUI_LOG_INFO("[ImGuiBackend] OS: Windows %lu.%lu build %lu",
 				osv.dwMajorVersion, osv.dwMinorVersion, osv.dwBuildNumber);
 
 			// --- CPU ---
@@ -2812,7 +2724,7 @@ namespace UI::ImGuiBackend
 			GlobalMemoryStatusEx(&mem);
 			ULONGLONG ramMB = mem.ullTotalPhys / (1024ull * 1024ull);
 
-			LogToFile::Info("[ImGuiBackend] CPU: %s (%u cores) | RAM: %llu MB",
+			IMGUI_LOG_INFO("[ImGuiBackend] CPU: %s (%u cores) | RAM: %llu MB",
 				cpu, static_cast<unsigned>(si.dwNumberOfProcessors), ramMB);
 
 			// --- GPUs (enumerate all adapters) ---
@@ -2857,7 +2769,7 @@ namespace UI::ImGuiBackend
 							output->Release();
 						}
 
-						LogToFile::Info(
+						IMGUI_LOG_INFO(
 							"[ImGuiBackend] GPU[%u]: %ls (VendorId=0x%04X DevId=0x%04X) | "
 							"VRAM: %llu MB dedicated, %llu MB shared | "
 							"Display: %dx%d @%dHz | HDR: %s",
@@ -2873,40 +2785,8 @@ namespace UI::ImGuiBackend
 			}
 		}
 
-		// Read the overlay open key from modloader.ini (next to game exe).
-		// If the key is absent, write the default so the file self-documents.
-		char openKeyName[32] = "F2";
-		{
-			wchar_t iniPath[MAX_PATH]{};
-			GetModuleFileNameW(nullptr, iniPath, MAX_PATH);
-			wchar_t* slash = wcsrchr(iniPath, L'\\');
-			if (slash) wcscpy_s(slash + 1, MAX_PATH - (slash + 1 - iniPath), L"modloader.ini");
-
-			constexpr wchar_t kSentinel[] = L"__NOTSET__";
-			wchar_t wKey[32]{};
-			GetPrivateProfileStringW(L"UI", L"OpenKey", kSentinel, wKey, 32, iniPath);
-			if (wcscmp(wKey, kSentinel) == 0)
-			{
-				// Key absent -- write the default so the INI is self-documenting.
-				WritePrivateProfileStringW(L"UI", L"OpenKey", L"F2", iniPath);
-				wcscpy_s(wKey, L"F2");
-			}
-			snprintf(openKeyName, sizeof(openKeyName), "%ls", wKey);
-			UI::GlobalSettings::Load(iniPath);
-		}
-
-		UI::Overlay::SetOpenKeyName(openKeyName);
 		PopulateImGuiAPI();
 		PopulateTextureAPI();
-
-		// Register the internal toggle keybind (configurable via modloader.ini [UI] OpenKey).
-		{
-			EModKey openKey = Hooks::Input::NameToModKey(openKeyName);
-			if (openKey == EModKey::Unknown) openKey = EModKey::F2;
-			static EModKey s_openKey = openKey;
-			Hooks::Input::RegisterKeybind(s_openKey, EModKeyEvent::Pressed,
-				[](EModKey, EModKeyEvent) { UI::ModLoaderWindow::Toggle(); });
-		}
 
 		// Create a minimal hidden window, then call CreateDeviceD3D to build a
 		// temporary D3D12 device + swap chain for vtable extraction.
@@ -2919,17 +2799,17 @@ namespace UI::ImGuiBackend
 			0, 0, 8, 8, nullptr, nullptr, wc.hInstance, nullptr);
 
 		if (!CreateDeviceD3D(tmpHwnd))
-			LogToFile::Error("[ImGuiBackend] CreateDeviceD3D failed -- ImGui will not render");
+			IMGUI_LOG_ERROR("[ImGuiBackend] CreateDeviceD3D failed -- ImGui will not render");
 
 		// Temp window no longer needed -- all D3D12 objects were released inside CreateDeviceD3D.
 		DestroyWindow(tmpHwnd);
 		UnregisterClassW(wc.lpszClassName, GetModuleHandleW(nullptr));
 	}
 
-	void Shutdown()
-	{
-		g_shutdown = true;
-		Hooks::InputHook::Remove();
+extern "C" __declspec(dllexport) void ImGuiHost_Shutdown()
+{
+	g_shutdown = true;
+	if (g_callbacks.RemoveInputHook) g_callbacks.RemoveInputHook();
 
 		// Restore the original vtable entry.
 		if (g_vtableSlot && g_originalPresent)
@@ -2978,27 +2858,24 @@ namespace UI::ImGuiBackend
 		}
 	}
 
-	void SetRenderingReady()
-	{
-		g_renderingReady = true;
-		LogToFile::Info("[ImGuiBackend] Rendering ready -- D3D12 init will proceed on next Present");
-	}
-
-	IModLoaderImGui* GetImGuiAPI()
-	{
-		return &g_imguiAPI;
-	}
-
-	IPluginImGuiTextures* GetTextureAPI()
-	{
-		return &g_textureAPI;
-	}
-
-	void RequestFontRebuild()
-	{
-		if (g_initialized)
-			g_pendingFontRebuild.store(true, std::memory_order_release);
-	}
+extern "C" __declspec(dllexport) void ImGuiHost_SetRenderingReady()
+{
+	g_renderingReady = true;
+	IMGUI_LOG_INFO("[ImGuiBackend] Rendering ready -- D3D12 init will proceed on next Present");
 }
 
-#endif // MODLOADER_CLIENT_BUILD
+extern "C" __declspec(dllexport) IModLoaderImGui* ImGuiHost_GetImGuiAPI()
+{
+	return &g_imguiAPI;
+}
+
+extern "C" __declspec(dllexport) IPluginImGuiTextures* ImGuiHost_GetTextureAPI()
+{
+	return &g_textureAPI;
+}
+
+extern "C" __declspec(dllexport) void ImGuiHost_RequestFontRebuild()
+{
+	if (g_initialized)
+		g_pendingFontRebuild.store(true, std::memory_order_release);
+}

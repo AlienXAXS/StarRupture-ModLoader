@@ -4,6 +4,8 @@ VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Mod_Loader", "Version_Mod_Loader\Version_Mod_Loader.vcxproj", "{98EE5D6F-1FA3-4FAC-960F-6892D0139BF1}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "StarRupture-ImGui", "StarRupture-ImGui\StarRupture-ImGui.vcxproj", "{44EBEBF6-6BFB-4829-8782-F673D3B32FE8}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Client Debug|x64 = Client Debug|x64
@@ -38,6 +40,20 @@ Global
 		{98EE5D6F-1FA3-4FAC-960F-6892D0139BF1}.Server Debug|x64.Build.0 = Server Debug|x64
 		{98EE5D6F-1FA3-4FAC-960F-6892D0139BF1}.Server Release|x64.ActiveCfg = Server Release|x64
 		{98EE5D6F-1FA3-4FAC-960F-6892D0139BF1}.Server Release|x64.Build.0 = Server Release|x64
+		{44EBEBF6-6BFB-4829-8782-F673D3B32FE8}.Client Debug|x64.ActiveCfg = Client Debug|x64
+		{44EBEBF6-6BFB-4829-8782-F673D3B32FE8}.Client Debug|x64.Build.0 = Client Debug|x64
+		{44EBEBF6-6BFB-4829-8782-F673D3B32FE8}.Client Release|x64.ActiveCfg = Client Release|x64
+		{44EBEBF6-6BFB-4829-8782-F673D3B32FE8}.Client Release|x64.Build.0 = Client Release|x64
+		{44EBEBF6-6BFB-4829-8782-F673D3B32FE8}.Debug|x64.ActiveCfg = Client Debug|x64
+		{44EBEBF6-6BFB-4829-8782-F673D3B32FE8}.Local SDK Client Debug|x64.ActiveCfg = Client Debug|x64
+		{44EBEBF6-6BFB-4829-8782-F673D3B32FE8}.Local SDK Client Debug|x64.Build.0 = Client Debug|x64
+		{44EBEBF6-6BFB-4829-8782-F673D3B32FE8}.Local SDK Client Release|x64.ActiveCfg = Client Release|x64
+		{44EBEBF6-6BFB-4829-8782-F673D3B32FE8}.Local SDK Client Release|x64.Build.0 = Client Release|x64
+		{44EBEBF6-6BFB-4829-8782-F673D3B32FE8}.Local SDK Server Debug|x64.ActiveCfg = Client Debug|x64
+		{44EBEBF6-6BFB-4829-8782-F673D3B32FE8}.Local SDK Server Release|x64.ActiveCfg = Client Release|x64
+		{44EBEBF6-6BFB-4829-8782-F673D3B32FE8}.Release|x64.ActiveCfg = Client Release|x64
+		{44EBEBF6-6BFB-4829-8782-F673D3B32FE8}.Server Debug|x64.ActiveCfg = Client Debug|x64
+		{44EBEBF6-6BFB-4829-8782-F673D3B32FE8}.Server Release|x64.ActiveCfg = Client Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

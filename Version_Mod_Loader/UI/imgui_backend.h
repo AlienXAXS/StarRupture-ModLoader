@@ -2,29 +2,28 @@
 
 #ifdef MODLOADER_CLIENT_BUILD
 
-#include "plugins/plugin_interface.h"
+#include "imgui_host_interface.h"
 
 // ---------------------------------------------------------------------------
 // ImGuiBackend
 //
-// D3D12 + Win32 ImGui integration for the client build.
+// Thin loader that loads StarRupture-ImGui.dll and delegates all calls into it.
 //
 // Flow:
-//   Initialize()  — reads OpenKey from modloader.ini, hooks IDXGISwapChain::Present
-//                   and ID3D12CommandQueue::ExecuteCommandLists, registers F2 toggle.
+//   Initialize(cbs) — loads StarRupture-ImGui.dll, passes callbacks, installs hooks.
 //   (first Present call with queue captured) — inits D3D12 resources + ImGui backends.
-//   (each Present) — runs the ImGui frame: overlay, modloader window, plugin panels.
-//   Shutdown()    — removes hooks, releases D3D12 resources, shuts down ImGui backends.
+//   (each Present) — runs the ImGui frame via cbs.RenderFrame callback.
+//   Shutdown()      — unloads the host DLL, releases D3D12 resources.
 //
-// Plugins call ImGui through the IModLoaderImGui table returned by GetImGuiAPI().
+// The caller (client_ui.cpp) builds the ImGuiRenderCallbacks struct to wire
+// the host DLL back into the main DLL's UI/input subsystems.
 // ---------------------------------------------------------------------------
 
 namespace UI::ImGuiBackend
 {
-    // Initialize: install Present hook, read OpenKey, register toggle keybind.
-    // Safe to call early (immediately after engine init).  D3D12 resource
-    // creation is deferred until SetRenderingReady() is called.
-    void Initialize();
+    // Load StarRupture-ImGui.dll, pass callbacks, and install D3D12 Present hooks.
+    // Call from InitClientUI() after loading settings and registering keybinds.
+    void Initialize(const ImGuiRenderCallbacks& cbs);
 
     // Called once the game's rendering pipeline is fully stable (i.e. from a
     // WorldBeginPlay callback).  Until this is called the Present hook passes

@@ -82,4 +82,11 @@ namespace Hooks::Input
 	// Returns the set of (EModKey, VK) pairs that have at least one registered callback
 	// (simple or combo).  Used by the input processor to know which keys to poll.
 	std::vector<std::pair<EModKey, int>> GetActiveKeys();
+
+	// Process a WM_KEY*/WM_MOUSE* window message: translate it to an EModKey,
+	// fire all registered keybind callbacks (simple + combo), and return true if
+	// the message should be swallowed (blocking mode is set for this combo).
+	// Auto-repeat (WM_KEYDOWN with lParam bit 30 set) is silently ignored.
+	// Used by the ImGui host DLL WndProc hook as a callback into the main DLL.
+	bool ProcessWindowMessage(UINT msg, WPARAM wParam, LPARAM lParam);
 }

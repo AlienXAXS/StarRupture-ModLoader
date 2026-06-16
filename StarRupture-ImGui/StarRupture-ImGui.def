@@ -1,0 +1,9 @@
+LIBRARY "StarRupture-ImGui"
+
+EXPORTS
+    ImGuiHost_Initialize
+    ImGuiHost_Shutdown
+    ImGuiHost_SetRenderingReady
+    ImGuiHost_GetImGuiAPI
+    ImGuiHost_GetTextureAPI
+    ImGuiHost_RequestFontRebuild

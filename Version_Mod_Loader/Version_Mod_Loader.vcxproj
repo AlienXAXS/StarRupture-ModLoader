@@ -277,7 +277,6 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableUAC>false</EnableUAC>
       <ModuleDefinitionFile>$(ProjectDir)dwmapi.def</ModuleDefinitionFile>
-      <DelayLoadDLLs>d3d12.dll;dxgi.dll</DelayLoadDLLs>
     </Link>
     <PostBuildEvent>
       <Command>
@@ -308,7 +307,6 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableUAC>false</EnableUAC>
       <ModuleDefinitionFile>$(ProjectDir)dwmapi.def</ModuleDefinitionFile>
-      <DelayLoadDLLs>d3d12.dll;dxgi.dll</DelayLoadDLLs>
     </Link>
     <PostBuildEvent>
       <Command>
@@ -391,7 +389,6 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableUAC>false</EnableUAC>
       <ModuleDefinitionFile>$(ProjectDir)dwmapi.def</ModuleDefinitionFile>
-      <DelayLoadDLLs>d3d12.dll;dxgi.dll</DelayLoadDLLs>
     </Link>
     <PostBuildEvent>
       <Command>
@@ -422,7 +419,6 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableUAC>false</EnableUAC>
       <ModuleDefinitionFile>$(ProjectDir)dwmapi.def</ModuleDefinitionFile>
-      <DelayLoadDLLs>d3d12.dll;dxgi.dll</DelayLoadDLLs>
     </Link>
     <PostBuildEvent>
       <Command>
@@ -622,25 +618,7 @@
     <ClCompile Include="hooks\input\input_hook.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)' != 'Client Debug' And '$(Configuration)' != 'Client Release' And '$(Configuration)' != 'Local SDK Client Debug' And '$(Configuration)' != 'Local SDK Client Release'">true</ExcludedFromBuild>
     </ClCompile>
-    <ClCompile Include="imgui\imgui.cpp">
-      <ExcludedFromBuild Condition="'$(Configuration)' != 'Client Debug' And '$(Configuration)' != 'Client Release' And '$(Configuration)' != 'Local SDK Client Debug' And '$(Configuration)' != 'Local SDK Client Release'">true</ExcludedFromBuild>
-    </ClCompile>
-    <ClCompile Include="imgui\imgui_draw.cpp">
-      <ExcludedFromBuild Condition="'$(Configuration)' != 'Client Debug' And '$(Configuration)' != 'Client Release' And '$(Configuration)' != 'Local SDK Client Debug' And '$(Configuration)' != 'Local SDK Client Release'">true</ExcludedFromBuild>
-    </ClCompile>
-    <ClCompile Include="imgui\imgui_tables.cpp">
-      <ExcludedFromBuild Condition="'$(Configuration)' != 'Client Debug' And '$(Configuration)' != 'Client Release' And '$(Configuration)' != 'Local SDK Client Debug' And '$(Configuration)' != 'Local SDK Client Release'">true</ExcludedFromBuild>
-    </ClCompile>
-    <ClCompile Include="imgui\imgui_widgets.cpp">
-      <ExcludedFromBuild Condition="'$(Configuration)' != 'Client Debug' And '$(Configuration)' != 'Client Release' And '$(Configuration)' != 'Local SDK Client Debug' And '$(Configuration)' != 'Local SDK Client Release'">true</ExcludedFromBuild>
-    </ClCompile>
-    <ClCompile Include="imgui\backends\imgui_impl_dx12.cpp">
-      <ExcludedFromBuild Condition="'$(Configuration)' != 'Client Debug' And '$(Configuration)' != 'Client Release' And '$(Configuration)' != 'Local SDK Client Debug' And '$(Configuration)' != 'Local SDK Client Release'">true</ExcludedFromBuild>
-    </ClCompile>
-    <ClCompile Include="imgui\backends\imgui_impl_win32.cpp">
-      <ExcludedFromBuild Condition="'$(Configuration)' != 'Client Debug' And '$(Configuration)' != 'Client Release' And '$(Configuration)' != 'Local SDK Client Debug' And '$(Configuration)' != 'Local SDK Client Release'">true</ExcludedFromBuild>
-    </ClCompile>
-    <ClCompile Include="UI\imgui_backend.cpp">
+    <ClCompile Include="UI\imgui_backend_shim.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)' != 'Client Debug' And '$(Configuration)' != 'Client Release' And '$(Configuration)' != 'Local SDK Client Debug' And '$(Configuration)' != 'Local SDK Client Release'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="UI\global_settings.cpp">
