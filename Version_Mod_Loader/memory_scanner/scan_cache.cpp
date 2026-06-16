@@ -11,7 +11,7 @@ namespace
 
     std::wstring GetCacheFilePath()
     {
-        return GetExeDirPath(kCacheFileName);
+        return GetModLoaderDirPath(kCacheFileName);
     }
 
     // FNV-1a 64-bit -- turns an arbitrary-length AOB string ("48 8B ?? ?? ...")

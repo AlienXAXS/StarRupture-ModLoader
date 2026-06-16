@@ -181,6 +181,14 @@ jobs:
             $pdb = "build\$variant Release\dwmapi.pdb"
             if (Test-Path $pdb) { Copy-Item $pdb "$stagingDir\dwmapi.pdb" }
 
+            $modloaderSrc = "build\$variant Release\ModLoader"
+            if (Test-Path $modloaderSrc) {
+              $modloaderDst = "$stagingDir\ModLoader"
+              New-Item -ItemType Directory -Force $modloaderDst | Out-Null
+              Copy-Item "$modloaderSrc\*.dll" $modloaderDst -ErrorAction SilentlyContinue
+              Copy-Item "$modloaderSrc\*.pdb" $modloaderDst -ErrorAction SilentlyContinue
+            }
+
             $zipPath = "$ws\StarRupture-ModLoader-$variant-$tag.zip"
             Compress-Archive -Path "$stagingDir\*" -DestinationPath $zipPath
             Write-Host "Created modloader ZIP: $zipPath"

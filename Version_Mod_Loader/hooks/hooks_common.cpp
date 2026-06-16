@@ -605,7 +605,7 @@ namespace Hooks
 						reinterpret_cast<void*>(candidateAddr),
 						trampolineSize,
 						MEM_COMMIT | MEM_RESERVE,
-						PAGE_EXECUTE_READWRITE);
+						PAGE_READWRITE);
 
 					if (allocResult)
 					{
@@ -656,7 +656,7 @@ namespace Hooks
 			ModLoaderLogger::LogError(L"[Hooks] WARN:   RIP-relative instructions will NOT work correctly!");
 
 			trampoline = static_cast<uint8_t*>(
-				VirtualAlloc(nullptr, trampolineSize, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE));
+				VirtualAlloc(nullptr, trampolineSize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE));
 		}
 
 		if (!trampoline)
@@ -1042,6 +1042,11 @@ namespace Hooks
 
 		// Flush instruction cache for trampoline
 		FlushInstructionCache(GetCurrentProcess(), trampoline, trampolineSize);
+
+		// Harden trampoline to RX — allocating RWX in one call is a loud heuristic
+		// trigger; writing RW then protecting to RX is equivalent and much quieter.
+		DWORD oldProtect = 0;
+		VirtualProtect(trampoline, trampolineSize, PAGE_EXECUTE_READ, &oldProtect);
 
 		// Give the caller a pointer to the trampoline so they can call the original
 		*originalFunc = trampoline;

@@ -4,8 +4,8 @@ EXPORTS
     DwmpDxGetWindowSharedSurface=vp_ord1 @1
     DwmpDxUpdateWindowSharedSurface=vp_ord2 @2
     DwmEnableComposition=vp_ord3 @3
-    DllCanUnloadNow=vp_ord12 @12
-    DllGetClassObject=vp_ord16 @16
+    DllCanUnloadNow=vp_ord12 @12 PRIVATE
+    DllGetClassObject=vp_ord16 @16 PRIVATE
     DwmAttachMilContent=vp_ord17 @17
     DwmDefWindowProc=vp_ord18 @18
     DwmDetachMilContent=vp_ord19 @19

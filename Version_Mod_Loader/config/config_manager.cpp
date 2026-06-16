@@ -591,12 +591,17 @@ namespace ModLoaderLogger
 		}
 
 		// Build path to config directory
-		swprintf_s(g_configDirectory, L"%s\\Plugins\\config", exePath);
+		swprintf_s(g_configDirectory, L"%s\\ModLoader\\Plugins\\config", exePath);
 
-		// Create directory if it doesn't exist
+		// Create directory if it doesn't exist (create intermediate dirs first)
 		DWORD attribs = GetFileAttributesW(g_configDirectory);
 		if (attribs == INVALID_FILE_ATTRIBUTES)
 		{
+			wchar_t modloaderPath[MAX_PATH]{}, pluginsPath[MAX_PATH]{};
+			swprintf_s(modloaderPath, L"%s\\ModLoader", exePath);
+			swprintf_s(pluginsPath,   L"%s\\ModLoader\\Plugins", exePath);
+			CreateDirectoryW(modloaderPath, nullptr);
+			CreateDirectoryW(pluginsPath, nullptr);
 			CreateDirectoryW(g_configDirectory, nullptr);
 			LogDebug(L"Created config directory: %s", g_configDirectory);
 		}

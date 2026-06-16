@@ -23,12 +23,12 @@ namespace Hooks::HttpServer
 {
 
 	// ---------------------------------------------------------------------------
-	// FHttpConnection::ProcessRequest — see ScanPatterns::FHttpConnection_ProcessRequest
+	// FHttpConnection::ProcessRequest ï¿½ see ScanPatterns::FHttpConnection_ProcessRequest
 	//
 	// Signature (from IDA):
 	//   void __fastcall FHttpConnection::ProcessRequest(__int64 a1, _QWORD *a2, __int64 a3)
-	// a2  : TSharedPtr<FHttpServerRequest> — *a2 is the raw request pointer.
-	// a3  : TFunction<void(TUniquePtr<FHttpServerResponse>&&)> — response callback.
+	// a2  : TSharedPtr<FHttpServerRequest> ï¿½ *a2 is the raw request pointer.
+	// a3  : TFunction<void(TUniquePtr<FHttpServerResponse>&&)> ï¿½ response callback.
 	//
 	// Confirmed FHttpServerRequest offsets (verified experimentally):
 	//   obj+0   : HTTP verb  FString { wchar_t* Data @+0,  int32 Num @+8  }
@@ -47,15 +47,15 @@ namespace Hooks::HttpServer
 	static ProcessRequest_t g_original = nullptr;
 	static Hooks::Hook      g_hook;
 
-	// FHttpServerResponse::Error — found by scanning ProcessRequest for mov edx, 404 + CALL
+	// FHttpServerResponse::Error ï¿½ found by scanning ProcessRequest for mov edx, 404 + CALL
 	using FHttpServerResponseError_t = void(__fastcall*)(void** outPtr, int32_t code, void* errCode, void* errMsg);
 	static uintptr_t g_errorFuncAddr = 0;
 
-	// FHttpServerResponse::Create — confirmed via IDA (FPerfCounters::ProcessStatsRequest usage).
+	// FHttpServerResponse::Create ï¿½ confirmed via IDA (FPerfCounters::ProcessStatsRequest usage).
 	// Signature (actual ABI, MSVC x64):
-	//   __int64* __fastcall Create(__int64* retStorage,  // RCX — hidden return-value ptr
-	//       const FString& body,  // RDX — body as FString (UTF-16)
-	//    const FString& contentType) // R8 — content-type FString
+	//   __int64* __fastcall Create(__int64* retStorage,  // RCX ï¿½ hidden return-value ptr
+	//       const FString& body,  // RDX ï¿½ body as FString (UTF-16)
+	//    const FString& contentType) // R8 ï¿½ content-type FString
 	// Both body and content-type are FString (wchar_t*, int32 Num, int32 Max).
 	using FHttpServerResponseCreate_t = void(__fastcall*)(__int64* retStorage,
 		void* body,
@@ -78,7 +78,7 @@ namespace Hooks::HttpServer
 
 	// ---------------------------------------------------------------------------
 	// Raw-response route registry (v22)
-	/// SEH-only trampoline — no C++ objects in scope so __try is legal.
+	/// SEH-only trampoline ï¿½ no C++ objects in scope so __try is legal.
 	/// Calls the plugin's route callback; on exception signals a 500 should be sent.
 	// ---------------------------------------------------------------------------
 
@@ -122,7 +122,7 @@ namespace Hooks::HttpServer
 	};
 
 	// ===========================================================================
-	// SEH-only helpers — plain functions, no C++ object unwinding, __try is legal.
+	// SEH-only helpers ï¿½ plain functions, no C++ object unwinding, __try is legal.
 	// ===========================================================================
 
 	static bool IsReadableMemory(uintptr_t addr, size_t size)
@@ -172,7 +172,7 @@ namespace Hooks::HttpServer
 	}
 
 	// ===========================================================================
-	// Higher-level helpers — may use C++ objects
+	// Higher-level helpers ï¿½ may use C++ objects
 	// ===========================================================================
 
 	static size_t TryReadBytes(uintptr_t addr, void* out, size_t len)
@@ -283,13 +283,13 @@ namespace Hooks::HttpServer
 	}
 
 	// ---------------------------------------------------------------------------
-	// FindCreateFunction — direct pattern scan for FHttpServerResponse::Create.
+	// FindCreateFunction ï¿½ direct pattern scan for FHttpServerResponse::Create.
 	// Falls back to the heuristic scan of ProcessRequest if the pattern is not
 	// found (e.g. on a game update before the pattern is refreshed).
 	// ---------------------------------------------------------------------------
 	static uintptr_t FindCreateFunction(uintptr_t processRequestAddr, uintptr_t errorFuncAddr)
 	{
-		// Primary: direct pattern scan — most reliable.
+		// Primary: direct pattern scan ï¿½ most reliable.
 		uintptr_t direct = Scanner::FindPatternInMainModule(
 			"FHttpServerResponse::Create", ScanPatterns::FHttpServerResponse_Create);
 		if (direct)
@@ -375,12 +375,12 @@ namespace Hooks::HttpServer
 		ModLoaderLogger::LogTrace(L"[HttpServer] SendBlockedResponse: building 403 response");
 		if (!g_errorFuncAddr)
 		{
-			ModLoaderLogger::LogWarn(L"[HttpServer] FHttpServerResponse::Error not located — dropping connection");
+			ModLoaderLogger::LogWarn(L"[HttpServer] FHttpServerResponse::Error not located ï¿½ dropping connection");
 			return;
 		}
 		if (!EngineAllocator::IsAvailable())
 		{
-			ModLoaderLogger::LogWarn(L"[HttpServer] Engine allocator unavailable — dropping connection");
+			ModLoaderLogger::LogWarn(L"[HttpServer] Engine allocator unavailable ï¿½ dropping connection");
 			return;
 		}
 
@@ -388,7 +388,7 @@ namespace Hooks::HttpServer
 		static constexpr int32_t kErrCodeChars = static_cast<int32_t>(sizeof(kErrCode) / sizeof(wchar_t));
 
 		auto errData = static_cast<wchar_t*>(EngineAllocator::Alloc(sizeof(kErrCode), 4));
-		if (!errData) { ModLoaderLogger::LogWarn(L"[HttpServer] EngineAlloc failed — dropping connection"); return; }
+		if (!errData) { ModLoaderLogger::LogWarn(L"[HttpServer] EngineAlloc failed ï¿½ dropping connection"); return; }
 		memcpy(errData, kErrCode, sizeof(kErrCode));
 
 		FakeString errCodeStr = { errData, kErrCodeChars - 1, kErrCodeChars };
@@ -400,7 +400,7 @@ namespace Hooks::HttpServer
 
 		if (!response)
 		{
-			ModLoaderLogger::LogWarn(L"[HttpServer] FHttpServerResponse::Error returned null — dropping connection");
+			ModLoaderLogger::LogWarn(L"[HttpServer] FHttpServerResponse::Error returned null ï¿½ dropping connection");
 			return;
 		}
 		ModLoaderLogger::LogTrace(L"[HttpServer] SendBlockedResponse: FHttpServerResponse::Error returned response=0x%p, setting connection state", response);
@@ -420,12 +420,12 @@ namespace Hooks::HttpServer
 		ModLoaderLogger::LogTrace(L"[HttpServer] SendFileResponse: body=%zu bytes, content-type=%s", body.size(), contentType);
 		if (!g_createFuncAddr)
 		{
-			ModLoaderLogger::LogWarn(L"[HttpServer] FHttpServerResponse::Create not located — cannot serve file");
+			ModLoaderLogger::LogWarn(L"[HttpServer] FHttpServerResponse::Create not located ï¿½ cannot serve file");
 			return;
 		}
 		if (!EngineAllocator::IsAvailable())
 		{
-			ModLoaderLogger::LogWarn(L"[HttpServer] Engine allocator unavailable — cannot serve file");
+			ModLoaderLogger::LogWarn(L"[HttpServer] Engine allocator unavailable ï¿½ cannot serve file");
 			return;
 		}
 
@@ -466,7 +466,7 @@ namespace Hooks::HttpServer
 				if (!rawData)
 				{
 					ModLoaderLogger::LogWarn(L"[HttpServer] EngineAlloc for binary body failed (%zu bytes)", body.size());
-					// Fall through — response will have an empty body but correct status/content-type.
+					// Fall through ï¿½ response will have an empty body but correct status/content-type.
 				}
 				else
 				{
@@ -534,7 +534,7 @@ namespace Hooks::HttpServer
 			void* response = responseStorage;
 			if (!response)
 			{
-				ModLoaderLogger::LogWarn(L"[HttpServer] FHttpServerResponse::Create returned null — cannot serve file");
+				ModLoaderLogger::LogWarn(L"[HttpServer] FHttpServerResponse::Create returned null ï¿½ cannot serve file");
 				return;
 			}
 			ModLoaderLogger::LogTrace(L"[HttpServer] SendFileResponse (text): Create returned response=0x%p, setting connection state", response);
@@ -620,7 +620,7 @@ namespace Hooks::HttpServer
 			return;
 		}
 
-		// Create takes FString* for body — convert UTF-8 body bytes to UTF-16.
+		// Create takes FString* for body ï¿½ convert UTF-8 body bytes to UTF-16.
 		wchar_t* bodyData = nullptr;
 		if (bodyLen > 0)
 		{
@@ -720,7 +720,7 @@ namespace Hooks::HttpServer
 	}
 
 	// ---------------------------------------------------------------------------
-	// Static-file route dispatch — Phase 2b
+	// Static-file route dispatch ï¿½ Phase 2b
 	// Returns true if the URL matched a route (served or blocked).
 	/// Returns false to let the original engine handler produce a 404.
 	// ---------------------------------------------------------------------------
@@ -766,8 +766,8 @@ namespace Hooks::HttpServer
 			// Determine whether this looks like a directory or a file request.
 			// A request is treated as a directory request (and triggers default-doc
 			// probing) when:
-			//   1. rel is empty           — bare prefix hit, e.g. /plugin/ui/
-			//   2. rel has no extension   — e.g. /plugin/ui/dashboard  (no dot after last '/')
+			//   1. rel is empty           ï¿½ bare prefix hit, e.g. /plugin/ui/
+			//   2. rel has no extension   ï¿½ e.g. /plugin/ui/dashboard  (no dot after last '/')
 			// A request is treated as a direct file request otherwise.
 			// ---------------------------------------------------------------------------
 			auto IsDirectoryRequest = [](const std::string& r) -> bool
@@ -850,7 +850,7 @@ namespace Hooks::HttpServer
 			if (isDirRequest)
 			{
 				// Probe each default document in priority order.
-				ModLoaderLogger::LogTrace(L"[HttpServer]   directory request — probing default documents under '%S'",
+				ModLoaderLogger::LogTrace(L"[HttpServer]   directory request ï¿½ probing default documents under '%S'",
 					rel.c_str());
 
 				for (const char* defaultDoc : k_DefaultDocs)
@@ -868,7 +868,7 @@ namespace Hooks::HttpServer
 					}
 				}
 
-				// No default document found — fall through to let the engine produce a 404.
+				// No default document found ï¿½ fall through to let the engine produce a 404.
 				ModLoaderLogger::LogDebug(L"[HttpServer] No default document found under route %S for url=%S",
 					route.urlPrefix.c_str(), urlLower.c_str());
 				ModLoaderLogger::LogTrace(L"[HttpServer]   no default doc found, returning false");
@@ -876,7 +876,7 @@ namespace Hooks::HttpServer
 			}
 			else
 			{
-				// Direct file request — resolve and serve exactly what was asked for.
+				// Direct file request ï¿½ resolve and serve exactly what was asked for.
 				std::filesystem::path fsPath = ResolvePath(rel);
 				if (fsPath.empty()) return true; // 403 already sent
 
@@ -888,7 +888,7 @@ namespace Hooks::HttpServer
 					return true;
 				}
 
-				// File genuinely not found — let the engine produce a 404.
+				// File genuinely not found ï¿½ let the engine produce a 404.
 				ModLoaderLogger::LogDebug(L"[HttpServer] File not found: %s", fsPath.c_str());
 				ModLoaderLogger::LogTrace(L"[HttpServer]   file not found, returning false");
 				return false;
@@ -900,11 +900,11 @@ namespace Hooks::HttpServer
 	}
 
 	// ---------------------------------------------------------------------------
-	// Raw-route dispatch — Phase 2a (runs before static-file Phase 2b)
+	// Raw-route dispatch ï¿½ Phase 2a (runs before static-file Phase 2b)
 	// Returns true if a raw route matched (even if the callback left an empty body).
 	// ---------------------------------------------------------------------------
 
-	/// SEH-only trampoline — no C++ objects in scope so __try is legal.
+	/// SEH-only trampoline ï¿½ no C++ objects in scope so __try is legal.
 	/// Calls the plugin's route callback; on exception signals a 500 should be sent.
 	static bool InvokeRawRouteCallbackSEH(PluginHttpRouteCallback cb,
 		const PluginHttpRequest* req, PluginHttpResponse* resp)
@@ -913,7 +913,7 @@ namespace Hooks::HttpServer
 		__except (EXCEPTION_EXECUTE_HANDLER) { return false; }
 	}
 
-	// NOTE: TryServeStaticFile is defined above — no forward declaration needed.
+	// NOTE: TryServeStaticFile is defined above ï¿½ no forward declaration needed.
 
 	static bool TryDispatchRawRoute(__int64 a1, __int64 a3,
 		const std::string& urlLower,
@@ -997,7 +997,7 @@ namespace Hooks::HttpServer
 				// However, in some UE builds / inlining scenarios the compiler passes the
 				// TSharedPtr storage address itself rather than dereferencing it, meaning
 				// p is a pointer-to-pointer.  We detect this by sanity-checking the verb
-				// FString::Num field (at req+8): a valid HTTP verb is 2–7 chars.
+				// FString::Num field (at req+8): a valid HTTP verb is 2ï¿½7 chars.
 				// If Num is out of that range, follow one extra level of indirection.
 				// ---------------------------------------------------------------------------
 				uint64_t req = p;
@@ -1006,7 +1006,7 @@ namespace Hooks::HttpServer
 				if (TryReadBytes(req + k_VerbOffset + 8, &verbNum, sizeof(verbNum)) == sizeof(verbNum)
 					&& (verbNum < 1 || verbNum > 16))
 				{
-					// p doesn't look like a request object — try treating it as a pointer-to-object.
+					// p doesn't look like a request object ï¿½ try treating it as a pointer-to-object.
 					uint64_t inner = 0;
 					if (TryReadBytes(p, &inner, sizeof(inner)) == sizeof(inner) && inner != 0)
 					{
@@ -1099,7 +1099,7 @@ namespace Hooks::HttpServer
 					}
 				}
 
-				// Phase 1: raw-request filters — first Deny wins
+				// Phase 1: raw-request filters ï¿½ first Deny wins
 				{
 					PluginHttpRequest req{};
 					req.url = urlOrig.c_str();
@@ -1129,7 +1129,7 @@ namespace Hooks::HttpServer
 					ModLoaderLogger::LogTrace(L"[HttpServer] Phase 1: all filters approved");
 				}
 
-				// Phase 2a: raw-response routes — plugin-owned handlers
+				// Phase 2a: raw-response routes ï¿½ plugin-owned handlers
 				ModLoaderLogger::LogTrace(L"[HttpServer] Phase 2a: dispatching to raw routes");
 				if (TryDispatchRawRoute(a1, a3, urlLower, urlOrig, verbLower, body))
 				{
@@ -1170,7 +1170,7 @@ namespace Hooks::HttpServer
 			"FHttpConnection::ProcessRequest", ScanPatterns::FHttpConnection_ProcessRequest);
 		if (!addr)
 		{
-			ModLoaderLogger::LogError(L"[HttpServer] Pattern scan failed — hook not installed");
+			ModLoaderLogger::LogError(L"[HttpServer] Pattern scan failed ï¿½ hook not installed");
 			return false;
 		}
 
@@ -1184,14 +1184,14 @@ namespace Hooks::HttpServer
 			ModLoaderLogger::LogDebug(L"[HttpServer] Found FHttpServerResponse::Error at 0x%llX",
 				static_cast<unsigned long long>(g_errorFuncAddr));
 		else
-			ModLoaderLogger::LogWarn(L"[HttpServer] FHttpServerResponse::Error not found — denied requests will drop the connection");
+			ModLoaderLogger::LogWarn(L"[HttpServer] FHttpServerResponse::Error not found ï¿½ denied requests will drop the connection");
 
 		g_createFuncAddr = FindCreateFunction(addr, g_errorFuncAddr);
 		if (g_createFuncAddr)
 			ModLoaderLogger::LogDebug(L"[HttpServer] Found FHttpServerResponse::Create at 0x%llX",
 				static_cast<unsigned long long>(g_createFuncAddr));
 		else
-			ModLoaderLogger::LogWarn(L"[HttpServer] FHttpServerResponse::Create not found — HTTP OK responses will not function");
+			ModLoaderLogger::LogWarn(L"[HttpServer] FHttpServerResponse::Create not found ï¿½ HTTP OK responses will not function");
 
 		bool ok = g_hook.Install(addr, reinterpret_cast<void*>(&Detour), reinterpret_cast<void**>(&g_original));
 
@@ -1224,9 +1224,9 @@ namespace Hooks::HttpServer
 		}
 
 		// Resolve the plugin's directory from the modloader DLL path, not the exe path.
-		// The modloader DLL lives at:  <game>\Binaries\Win64\version.dll  (or similar)
-		// Plugin DLLs live at:         <game>\Binaries\Win64\Plugins\<pluginName>\<pluginName>.dll
-		// Static files live at:    <game>\Binaries\Win64\Plugins\<pluginName>\<folderName>\
+		// The modloader DLL lives at:  <game>\Binaries\Win64\dwmapi.dll
+		// Plugin DLLs live at:         <game>\Binaries\Win64\ModLoader\Plugins\<pluginName>\<pluginName>.dll
+		// Static files live at:        <game>\Binaries\Win64\ModLoader\Plugins\<pluginName>\<folderName>\
 		// We find the modloader DLL path and derive the Plugins directory from its parent.
 		wchar_t dllPath[MAX_PATH]{};
 		HMODULE hSelf = nullptr;
@@ -1243,7 +1243,7 @@ namespace Hooks::HttpServer
 		MultiByteToWideChar(CP_UTF8, 0, folderName, -1, folderNameW, 256);
 
 		wchar_t fsRoot[MAX_PATH]{};
-		swprintf_s(fsRoot, L"%s\\Plugins\\%s\\%s", dllPath, pluginNameW, folderNameW);
+		swprintf_s(fsRoot, L"%s\\ModLoader\\Plugins\\%s\\%s", dllPath, pluginNameW, folderNameW);
 
 		auto toLower = [](std::string s) {
 			std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return static_cast<char>(tolower(c)); });

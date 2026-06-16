@@ -665,6 +665,55 @@ namespace Hooks::Input
 
 		return result;
 	}
+	bool ProcessWindowMessage(UINT msg, WPARAM wParam, LPARAM lParam)
+	{
+		EModKey      mk    = EModKey::Unknown;
+		EModKeyEvent event = EModKeyEvent::Pressed;
+
+		switch (msg)
+		{
+		case WM_KEYDOWN:
+		case WM_SYSKEYDOWN:
+			if (lParam & (1 << 30)) return false; // auto-repeat
+			mk    = VKToModKey(static_cast<int>(wParam));
+			event = EModKeyEvent::Pressed;
+			break;
+		case WM_KEYUP:
+		case WM_SYSKEYUP:
+			mk    = VKToModKey(static_cast<int>(wParam));
+			event = EModKeyEvent::Released;
+			break;
+		case WM_LBUTTONDOWN: mk = EModKey::LeftMouseButton;   event = EModKeyEvent::Pressed;  break;
+		case WM_LBUTTONUP:   mk = EModKey::LeftMouseButton;   event = EModKeyEvent::Released; break;
+		case WM_RBUTTONDOWN: mk = EModKey::RightMouseButton;  event = EModKeyEvent::Pressed;  break;
+		case WM_RBUTTONUP:   mk = EModKey::RightMouseButton;  event = EModKeyEvent::Released; break;
+		case WM_MBUTTONDOWN: mk = EModKey::MiddleMouseButton; event = EModKeyEvent::Pressed;  break;
+		case WM_MBUTTONUP:   mk = EModKey::MiddleMouseButton; event = EModKeyEvent::Released; break;
+		case WM_XBUTTONDOWN:
+			mk    = (GET_XBUTTON_WPARAM(wParam) == XBUTTON1) ? EModKey::ThumbMouseButton : EModKey::ThumbMouseButton2;
+			event = EModKeyEvent::Pressed;
+			break;
+		case WM_XBUTTONUP:
+			mk    = (GET_XBUTTON_WPARAM(wParam) == XBUTTON1) ? EModKey::ThumbMouseButton : EModKey::ThumbMouseButton2;
+			event = EModKeyEvent::Released;
+			break;
+		default:
+			return false;
+		}
+
+		if (mk == EModKey::Unknown) return false;
+
+		int vk = ModKeyToVK(mk);
+		if (vk == VK_LCONTROL || vk == VK_RCONTROL ||
+		    vk == VK_LSHIFT   || vk == VK_RSHIFT   ||
+		    vk == VK_LMENU    || vk == VK_RMENU)
+			return false;
+
+		EModKeyModifiers mods = SampleCurrentModifiers();
+		Dispatch(mk, event);
+		DispatchCombo(mk, mods, event);
+		return ShouldBlock(mk, mods);
+	}
 } // namespace Hooks::Input
 
 #endif // MODLOADER_CLIENT_BUILD
