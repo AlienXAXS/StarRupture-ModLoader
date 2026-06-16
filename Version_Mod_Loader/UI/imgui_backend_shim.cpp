@@ -56,7 +56,10 @@ namespace UI::ImGuiBackend
             FreeLibrary(g_hostDll);
             g_hostDll = nullptr;
         }
-        g_initFn = g_shutdownFn = g_setReadyFn = g_fontRebuildFn = nullptr;
+        g_initFn = nullptr;
+        g_shutdownFn = nullptr;
+        g_setReadyFn = nullptr;
+        g_fontRebuildFn = nullptr;
         g_getAPIFn = nullptr;
         g_getTexFn = nullptr;
     }

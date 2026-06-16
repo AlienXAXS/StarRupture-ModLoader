@@ -88,7 +88,7 @@ void InitClientUI()
         };
         cbs.OnDeviceLost = [](const wchar_t* /*msg*/)
         {
-            UI::SplashWindow::Show();
+            Splash::Show();
         };
         cbs.RemoveInputHook = []()
         {
