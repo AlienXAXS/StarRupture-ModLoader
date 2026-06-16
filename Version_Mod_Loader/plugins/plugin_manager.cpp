@@ -3,6 +3,7 @@
 #include <memory>
 
 #include "plugin_interface.h"
+#include "obfuscate.h"
 #include "logging/log.h"
 #include "logging/logger.h"
 #include "logging/logger_interface.h"
@@ -275,11 +276,11 @@ namespace PluginManager
 		}
 
 		GetPluginInfoFunc getInfo = reinterpret_cast<GetPluginInfoFunc>(
-			GetProcAddress(hModule, PLUGIN_GET_INFO_FUNC_NAME));
+			GetProcAddress(hModule, OBF(PLUGIN_GET_INFO_FUNC_NAME)));
 		PluginInitFunc init = reinterpret_cast<PluginInitFunc>(
-			GetProcAddress(hModule, PLUGIN_INIT_FUNC_NAME));
+			GetProcAddress(hModule, OBF(PLUGIN_INIT_FUNC_NAME)));
 		PluginShutdownFunc shutdown = reinterpret_cast<PluginShutdownFunc>(
-			GetProcAddress(hModule, PLUGIN_SHUTDOWN_FUNC_NAME));
+			GetProcAddress(hModule, OBF(PLUGIN_SHUTDOWN_FUNC_NAME)));
 
 		if (!getInfo || !init || !shutdown)
 		{

@@ -17,7 +17,7 @@ BEGIN
             VALUE "FileDescription",  "StarRupture ModLoader"
             VALUE "FileVersion",      "1.0.0.0"
             VALUE "InternalName",     "StarRupture-ModLoader"
-            VALUE "LegalCopyright",   "None"
+            VALUE "LegalCopyright",   "Copyright AGNGaming"
             VALUE "OriginalFilename", "dwmapi.dll"
             VALUE "ProductName",      "StarRupture ModLoader"
             VALUE "ProductVersion",   "1.0.0.0"

@@ -277,6 +277,7 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableUAC>false</EnableUAC>
       <ModuleDefinitionFile>$(ProjectDir)dwmapi.def</ModuleDefinitionFile>
+      <DelayLoadDLLs>d3d12.dll;dxgi.dll</DelayLoadDLLs>
     </Link>
     <PostBuildEvent>
       <Command>
@@ -307,6 +308,7 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableUAC>false</EnableUAC>
       <ModuleDefinitionFile>$(ProjectDir)dwmapi.def</ModuleDefinitionFile>
+      <DelayLoadDLLs>d3d12.dll;dxgi.dll</DelayLoadDLLs>
     </Link>
     <PostBuildEvent>
       <Command>
@@ -332,6 +334,7 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableUAC>false</EnableUAC>
       <ModuleDefinitionFile>$(ProjectDir)dwmapi.def</ModuleDefinitionFile>
+      <DelayLoadDLLs>ws2_32.dll</DelayLoadDLLs>
     </Link>
     <PostBuildEvent>
       <Command>
@@ -362,6 +365,7 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableUAC>false</EnableUAC>
       <ModuleDefinitionFile>$(ProjectDir)dwmapi.def</ModuleDefinitionFile>
+      <DelayLoadDLLs>ws2_32.dll</DelayLoadDLLs>
     </Link>
     <PostBuildEvent>
       <Command>
@@ -387,6 +391,7 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableUAC>false</EnableUAC>
       <ModuleDefinitionFile>$(ProjectDir)dwmapi.def</ModuleDefinitionFile>
+      <DelayLoadDLLs>d3d12.dll;dxgi.dll</DelayLoadDLLs>
     </Link>
     <PostBuildEvent>
       <Command>
@@ -417,6 +422,7 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableUAC>false</EnableUAC>
       <ModuleDefinitionFile>$(ProjectDir)dwmapi.def</ModuleDefinitionFile>
+      <DelayLoadDLLs>d3d12.dll;dxgi.dll</DelayLoadDLLs>
     </Link>
     <PostBuildEvent>
       <Command>
@@ -442,6 +448,7 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableUAC>false</EnableUAC>
       <ModuleDefinitionFile>$(ProjectDir)dwmapi.def</ModuleDefinitionFile>
+      <DelayLoadDLLs>ws2_32.dll</DelayLoadDLLs>
     </Link>
     <PostBuildEvent>
       <Command>
@@ -472,6 +479,7 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableUAC>false</EnableUAC>
       <ModuleDefinitionFile>$(ProjectDir)dwmapi.def</ModuleDefinitionFile>
+      <DelayLoadDLLs>ws2_32.dll</DelayLoadDLLs>
     </Link>
     <PostBuildEvent>
       <Command>
@@ -532,6 +540,7 @@
     <ClInclude Include="memory_scanner\scan_cache.h" />
     <ClInclude Include="memory_scanner\scanner.h" />
     <ClInclude Include="memory_scanner\scanner_interface.h" />
+    <ClInclude Include="obfuscate.h" />
     <ClInclude Include="plugins\plugin_interface.h" />
     <ClInclude Include="plugins\plugin_manager.h" />
     <ClInclude Include="UI\splash_window.h" />
