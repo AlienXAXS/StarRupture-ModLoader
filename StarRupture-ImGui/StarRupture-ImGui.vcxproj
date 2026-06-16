@@ -56,11 +56,11 @@
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <SDLCheck>false</SDLCheck>
-      <PreprocessorDefinitions>_DEBUG;BUILDING_IMGUI_HOST_DLL;MODLOADER_CLIENT_BUILD;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_DEBUG;BUILDING_IMGUI_HOST_DLL;MODLOADER_CLIENT_BUILD;IMGUI_API=__declspec(dllexport);_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
-      <AdditionalIncludeDirectories>$(SolutionDir)Version_Mod_Loader\imgui;$(SolutionDir)Version_Mod_Loader\imgui\backends;$(SolutionDir)Version_Mod_Loader;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)imgui;$(ProjectDir)imgui\backends;$(SolutionDir)Version_Mod_Loader;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
     </ClCompile>
     <Link>
@@ -77,11 +77,11 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>false</SDLCheck>
-      <PreprocessorDefinitions>NDEBUG;BUILDING_IMGUI_HOST_DLL;MODLOADER_CLIENT_BUILD;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>NDEBUG;BUILDING_IMGUI_HOST_DLL;MODLOADER_CLIENT_BUILD;IMGUI_API=__declspec(dllexport);_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
-      <AdditionalIncludeDirectories>$(SolutionDir)Version_Mod_Loader\imgui;$(SolutionDir)Version_Mod_Loader\imgui\backends;$(SolutionDir)Version_Mod_Loader;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)imgui;$(ProjectDir)imgui\backends;$(SolutionDir)Version_Mod_Loader;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
     </ClCompile>
@@ -97,12 +97,12 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="$(SolutionDir)Version_Mod_Loader\UI\imgui_backend.cpp" />
-    <ClCompile Include="$(SolutionDir)Version_Mod_Loader\imgui\imgui.cpp" />
-    <ClCompile Include="$(SolutionDir)Version_Mod_Loader\imgui\imgui_draw.cpp" />
-    <ClCompile Include="$(SolutionDir)Version_Mod_Loader\imgui\imgui_tables.cpp" />
-    <ClCompile Include="$(SolutionDir)Version_Mod_Loader\imgui\imgui_widgets.cpp" />
-    <ClCompile Include="$(SolutionDir)Version_Mod_Loader\imgui\backends\imgui_impl_dx12.cpp" />
-    <ClCompile Include="$(SolutionDir)Version_Mod_Loader\imgui\backends\imgui_impl_win32.cpp" />
+    <ClCompile Include="$(ProjectDir)imgui\imgui.cpp" />
+    <ClCompile Include="$(ProjectDir)imgui\imgui_draw.cpp" />
+    <ClCompile Include="$(ProjectDir)imgui\imgui_tables.cpp" />
+    <ClCompile Include="$(ProjectDir)imgui\imgui_widgets.cpp" />
+    <ClCompile Include="$(ProjectDir)imgui\backends\imgui_impl_dx12.cpp" />
+    <ClCompile Include="$(ProjectDir)imgui\backends\imgui_impl_win32.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets" />

@@ -5,9 +5,9 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include "imgui_host_interface.h"
-#include "imgui/imgui.h"
-#include "imgui/backends/imgui_impl_dx12.h"
-#include "imgui/backends/imgui_impl_win32.h"
+#include "imgui.h"
+#include "imgui_impl_dx12.h"
+#include "imgui_impl_win32.h"
 
 #include <d3d12.h>
 #include <dxgi1_2.h>
