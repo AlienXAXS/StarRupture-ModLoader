@@ -61,7 +61,9 @@ void InitClientUI()
         };
         cbs.ShouldCaptureInput = []() -> bool
         {
-            return UI::ModLoaderWindow::IsOpen();
+            return UI::ModLoaderWindow::IsOpen()
+                || UI::PluginPanelRegistry::AnyPanelOpen()
+                || UI::PluginPanelRegistry::AnyInputCaptureRequested();
         };
         cbs.DispatchKey = [](UINT msg, WPARAM wParam, LPARAM lParam) -> bool
         {

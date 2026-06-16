@@ -240,10 +240,11 @@ static LRESULT CALLBACK HookedWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 		{
 		case WM_KEYDOWN: case WM_KEYUP: case WM_SYSKEYDOWN: case WM_SYSKEYUP:
 		case WM_CHAR:
-		case WM_LBUTTONDOWN: case WM_LBUTTONUP:
-		case WM_RBUTTONDOWN: case WM_RBUTTONUP:
-		case WM_MBUTTONDOWN: case WM_MBUTTONUP:
-		case WM_MOUSEMOVE:   case WM_MOUSEWHEEL:
+		case WM_LBUTTONDOWN: case WM_LBUTTONUP: case WM_LBUTTONDBLCLK:
+		case WM_RBUTTONDOWN: case WM_RBUTTONUP: case WM_RBUTTONDBLCLK:
+		case WM_MBUTTONDOWN: case WM_MBUTTONUP: case WM_MBUTTONDBLCLK:
+		case WM_XBUTTONDOWN: case WM_XBUTTONUP: case WM_XBUTTONDBLCLK:
+		case WM_MOUSEMOVE:   case WM_MOUSEWHEEL: case WM_MOUSEHWHEEL:
 		case WM_INPUT:      // UE5 uses raw input for camera delta -- swallow it
 		case WM_SETCURSOR:  // prevent UE5 hiding the cursor while our window is open
 			return 0;
@@ -816,7 +817,22 @@ static bool InitD3D12Resources(IDXGISwapChain* swapChain)
 	ImGuiIO& io = ImGui::GetIO();
 	io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard
 		| ImGuiConfigFlags_NoMouseCursorChange; // don't touch OS cursor by default
-	io.IniFilename = "modloader_imgui.ini";  // persists all window positions/sizes between sessions
+	// Build an absolute path so the file lands in the ModLoader folder
+	// regardless of the game process working directory.
+	static char s_iniPath[MAX_PATH] = {};
+	if (s_iniPath[0] == '\0')
+	{
+		wchar_t wpath[MAX_PATH] = {};
+		HMODULE hSelf = nullptr;
+		GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+		                   GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+		                   reinterpret_cast<LPCWSTR>(&ImGuiHost_Initialize), &hSelf);
+		GetModuleFileNameW(hSelf, wpath, MAX_PATH);
+		wchar_t* slash = wcsrchr(wpath, L'\\');
+		if (slash) wcscpy_s(slash + 1, MAX_PATH - (slash + 1 - wpath), L"modloader_imgui.ini");
+		WideCharToMultiByte(CP_UTF8, 0, wpath, -1, s_iniPath, MAX_PATH, nullptr, nullptr);
+	}
+	io.IniFilename = s_iniPath;  // persists all window positions/sizes between sessions
 
 	ImGui::StyleColorsDark();
 
