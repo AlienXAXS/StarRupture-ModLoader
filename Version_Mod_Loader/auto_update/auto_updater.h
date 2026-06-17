@@ -50,7 +50,7 @@
 //   ManifestUrl=            ; Override the compiled-in central manifest URL
 //
 // State (not user-editable):
-//   Plugins\update_state.ini
+//   ModLoader\update_state.ini
 //   [AutoUpdate]
 //   BuildTag=v1.0.0
 //   [PluginVersions]

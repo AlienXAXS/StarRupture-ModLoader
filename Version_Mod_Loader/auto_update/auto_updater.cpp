@@ -71,7 +71,7 @@ static AutoUpdateConfig ReadAutoUpdateConfig()
 }
 
 // ===========================================================================
-// Section B — Update state (Plugins\update_state.ini)
+// Section B — Update state (ModLoader\update_state.ini)
 // ===========================================================================
 
 static void GetUpdateStateIniPath(wchar_t* outPath, DWORD maxLen)
@@ -81,7 +81,7 @@ static void GetUpdateStateIniPath(wchar_t* outPath, DWORD maxLen)
 	if (slash)
 		wcscpy_s(slash + 1,
 		         maxLen - static_cast<DWORD>(slash + 1 - outPath),
-		         L"update_state.ini");
+		         L"ModLoader\\update_state.ini");
 }
 
 static void ReadStoredBuildTag(char* outTag, int maxLen)

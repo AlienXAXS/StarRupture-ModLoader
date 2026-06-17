@@ -49,7 +49,8 @@ static void MigrateLegacyConfigFiles(const wchar_t* exeDir, const wchar_t* modlo
     }
 
     static const wchar_t* kFiles[] = {
-        L"modloader.ini", L"modloader_imgui.ini", L"modloader.txt", L"scan_cache.ini"
+        L"modloader.ini", L"modloader_imgui.ini", L"modloader.txt", L"scan_cache.ini",
+        L"update_state.ini"
     };
     for (const wchar_t* name : kFiles)
     {
