@@ -134,10 +134,11 @@
 //      reaches zero. Plugins sharing a texture name must ensure the
 //      underlying image data is identical -- the first registration wins.
 //      MIN remains 42.
+// v46: New game update, min/max bump
 
-#define PLUGIN_INTERFACE_VERSION_MIN 42
-#define PLUGIN_INTERFACE_VERSION_MAX 45
-#define PLUGIN_INTERFACE_VERSION 45
+#define PLUGIN_INTERFACE_VERSION_MIN 46
+#define PLUGIN_INTERFACE_VERSION_MAX 46
+#define PLUGIN_INTERFACE_VERSION 46
 
 enum class PluginLogLevel { Trace = 0, Debug = 1, Info = 2, Warn = 3, Error = 4 };
 enum class ConfigValueType { String, Integer, Float, Boolean, Keybind };
