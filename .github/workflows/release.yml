@@ -270,7 +270,7 @@ jobs:
             }
 
             $zipPath = "$ws\StarRupture-ModLoader-$variant-$tag.zip"
-            Compress-Archive -Path "$stagingDir\*" -DestinationPath $zipPath
+            & "C:\Program Files\7-Zip\7z.exe" a -tzip $zipPath "$stagingDir\*" | Out-Null
             Write-Host "Created modloader ZIP: $zipPath"
           }
 
