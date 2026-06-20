@@ -40,6 +40,7 @@
 #include "hooks/game/session_info/session_info.h"
 #endif
 #include "hooks/game/object_lookup/object_lookup.h"
+#include "hooks/game/gobject_walk/gobject_walk.h"
 #include <unordered_map>
 #include <mutex>
 
@@ -764,6 +765,96 @@ namespace ModLoaderLogger
 		HooksUnregisterCraftingFinishedCallback
 	};
 
+	// --- Object walker sub-interface wrappers (v47) ---
+
+	// Bridges Hooks::GObjectWalk::ObjectVisitor (internal, SDK::UObject*) to
+	// PluginObjectVisitor (plugin-facing, void*). The two info structs have
+	// identical layout aside from the object pointer's type.
+	struct ObjectWalkerThunkContext
+	{
+		PluginObjectVisitor pluginVisitor;
+		void* pluginUserContext;
+	};
+
+	static bool ObjectWalkerVisitorThunk(const Hooks::GObjectWalk::ObjectInfo& info, void* userContext)
+	{
+		auto* ctx = static_cast<ObjectWalkerThunkContext*>(userContext);
+		if (!ctx || !ctx->pluginVisitor)
+			return false;
+
+		PluginObjectInfo pluginInfo{};
+		pluginInfo.object = info.object;
+		pluginInfo.className = info.className;
+		pluginInfo.objectName = info.objectName;
+		pluginInfo.nameNumber = info.nameNumber;
+		pluginInfo.objectFlags = info.objectFlags;
+		pluginInfo.objectIndex = info.objectIndex;
+
+		return ctx->pluginVisitor(&pluginInfo, ctx->pluginUserContext);
+	}
+
+	static bool ObjectWalkerIsReady()
+	{
+		return Hooks::GObjectWalk::IsReady();
+	}
+
+	static int ObjectWalkerWalkAllObjects(PluginObjectVisitor visitor, void* userContext)
+	{
+		if (!visitor)
+			return 0;
+		ObjectWalkerThunkContext ctx{ visitor, userContext };
+		return Hooks::GObjectWalk::WalkAll(ObjectWalkerVisitorThunk, &ctx);
+	}
+
+	static int ObjectWalkerFindObjectsByClassName(const char* className, PluginObjectVisitor visitor, void* userContext)
+	{
+		if (!className || !visitor)
+			return 0;
+		ObjectWalkerThunkContext ctx{ visitor, userContext };
+		return Hooks::GObjectWalk::FindObjectsByClassName(className, ObjectWalkerVisitorThunk, &ctx);
+	}
+
+	static void* ObjectWalkerFindFirstObjectByName(const char* objectName)
+	{
+		return Hooks::GObjectWalk::FindFirstObjectByName(objectName);
+	}
+
+	static int ObjectWalkerFindObjectsByName(const char* objectName, PluginObjectVisitor visitor, void* userContext)
+	{
+		if (!objectName || !visitor)
+			return 0;
+		ObjectWalkerThunkContext ctx{ visitor, userContext };
+		return Hooks::GObjectWalk::FindObjectsByName(objectName, ObjectWalkerVisitorThunk, &ctx);
+	}
+
+	static bool ObjectWalkerInvokeUFunctionByName(void* object, const char* className, const char* funcName, void* paramsBuffer)
+	{
+		return Hooks::GObjectWalk::InvokeUFunctionByName(
+			static_cast<SDK::UObject*>(object), className, funcName, paramsBuffer);
+	}
+
+	static void* ObjectWalkerResolveUFunction(const char* className, const char* funcName)
+	{
+		return Hooks::GObjectWalk::ResolveUFunction(className, funcName);
+	}
+
+	static bool ObjectWalkerInvokeResolvedUFunction(void* object, void* resolvedFunction, void* paramsBuffer)
+	{
+		return Hooks::GObjectWalk::InvokeResolvedUFunction(
+			static_cast<SDK::UObject*>(object), static_cast<SDK::UFunction*>(resolvedFunction), paramsBuffer);
+	}
+
+	static IPluginObjectWalker g_objectWalker = {
+		ObjectWalkerIsReady,
+		ObjectWalkerWalkAllObjects,
+		ObjectWalkerFindObjectsByClassName,
+		ObjectWalkerFindFirstObjectByName,
+		ObjectWalkerFindObjectsByName,
+		ObjectWalkerInvokeUFunctionByName,
+		ObjectWalkerResolveUFunction,
+		ObjectWalkerInvokeResolvedUFunction
+	};
+
 	// --- Input sub-interface wrappers (v15, client only) ---
 
 #ifdef MODLOADER_CLIENT_BUILD
@@ -1184,6 +1275,7 @@ namespace ModLoaderLogger
 		nullptr,              // v40 — Splash is null on server/generic builds
 #endif
 		&g_craftingEvents,   // v44 — appended at end to preserve layout for v42/v43 plugins
+		&g_objectWalker,     // v47 — appended at end to preserve layout for v44-46 plugins
 	};
 	static bool g_networkChannelInitialized = false;
 

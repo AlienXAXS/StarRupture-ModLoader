@@ -42,6 +42,7 @@ void InstallAllHooks()
     {
         ModLoaderLogger::LogDebug(L"  EngineInit hook installed");
         Hooks::EngineInit::RegisterPluginCallback(OnEngineInitForUELog);
+        Hooks::EngineInit::RegisterPluginCallback(OnEngineInitForGObjectExport);
     }
     else
     {

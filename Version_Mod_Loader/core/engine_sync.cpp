@@ -5,6 +5,7 @@
 #include "../logging/ue_log.h"
 #include "../memory_scanner/scanner.h"
 #include "../UI/splash_window.h"
+#include "../hooks/game/gobject_walk/gobject_walk.h"
 
 #include <thread>
 
@@ -44,6 +45,28 @@ void OnEngineInitForUELog()
         }
         LoadUE4SS();
     }).detach();
+}
+
+// Dev-only: dump every discovered UClass name (and its directly-declared
+// UFunction names) to a flat text file, for manual curation into a generated
+// header of compile-time name constants used for plugin IDE autocomplete.
+// Opt-in via modloader.ini [Debug] ExportKnownGObjects=1 (default 0) so this
+// never runs unexpectedly on a normal launch.
+void OnEngineInitForGObjectExport()
+{
+    const std::wstring iniPath = GetModLoaderDirPath(L"modloader.ini");
+    if (!GetPrivateProfileIntW(L"Debug", L"ExportKnownGObjects", 0, iniPath.c_str()))
+        return;
+
+    const std::wstring outPath = GetModLoaderDirPath(L"known_gobjects_dump.txt");
+    std::string outPathUtf8;
+    outPathUtf8.reserve(outPath.size());
+    for (wchar_t c : outPath)
+        outPathUtf8.push_back(static_cast<char>(c));
+
+    LogToFile::Info("[ModLoader] ExportKnownGObjects enabled -- dumping known classes/functions to %ls", outPath.c_str());
+    int written = Hooks::GObjectWalk::ExportKnownClassesAndFunctions(outPathUtf8.c_str());
+    LogToFile::Info("[ModLoader] GObjects export wrote %d entries", written);
 }
 
 void WaitForEngineReady()

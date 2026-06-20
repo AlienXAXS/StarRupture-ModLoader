@@ -3,4 +3,5 @@
 
 VOID CALLBACK MainInitApcProc(ULONG_PTR param);
 void OnEngineInitForUELog();
+void OnEngineInitForGObjectExport();
 void WaitForEngineReady();
