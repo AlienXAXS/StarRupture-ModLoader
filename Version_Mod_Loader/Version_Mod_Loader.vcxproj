@@ -497,6 +497,7 @@
     <ClInclude Include="config\config_manager.h" />
     <ClInclude Include="hooks\game\actor_begin_play\actor_begin_play.h" />
     <ClInclude Include="hooks\game\crafting_finished\crafting_finished.h" />
+    <ClInclude Include="hooks\game\gobject_walk\gobject_walk.h" />
     <ClInclude Include="hooks\game\engine_init\engine_init.h" />
     <ClInclude Include="hooks\game\game_instance_init\game_instance_init.h" />
     <ClInclude Include="hooks\game\engine_shutdown\engine_shutdown.h" />
@@ -542,6 +543,7 @@
     <ClInclude Include="memory_scanner\scanner_interface.h" />
     <ClInclude Include="obfuscate.h" />
     <ClInclude Include="plugins\plugin_interface.h" />
+    <ClInclude Include="plugins\known_gobjects.generated.h" />
     <ClInclude Include="plugins\plugin_manager.h" />
     <ClInclude Include="UI\splash_window.h" />
     <ClInclude Include="utils\thread_utils.h" />
@@ -588,6 +590,7 @@
     </ClCompile>
     <ClCompile Include="hooks\game\actor_begin_play\actor_begin_play.cpp" />
     <ClCompile Include="hooks\game\crafting_finished\crafting_finished.cpp" />
+    <ClCompile Include="hooks\game\gobject_walk\gobject_walk.cpp" />
     <ClCompile Include="hooks\game\engine_init\engine_init.cpp" />
     <ClCompile Include="hooks\game\game_instance_init\game_instance_init.cpp" />
     <ClCompile Include="hooks\game\engine_shutdown\engine_shutdown.cpp" />
@@ -653,6 +656,7 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="dwmapi.def" />
+    <None Include="plugins\gen_known_gobjects.py" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="version.rc" />
