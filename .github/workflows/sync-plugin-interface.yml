@@ -1,4 +1,4 @@
-name: Sync plugin_interface.h to Plugin SDK
+name: Sync plugin headers to Plugin SDK
 
 on:
   push:
@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - 'Version_Mod_Loader/plugins/plugin_interface.h'
+      - 'Version_Mod_Loader/plugins/known_gobjects.generated.h'
 
 jobs:
   sync:
@@ -24,17 +25,18 @@ jobs:
           token: ${{ secrets.SDK_REPO_PAT }}
           path: sdk
 
-      - name: Copy updated header
+      - name: Copy updated headers
         run: |
           mkdir -p sdk/include
           cp Version_Mod_Loader/plugins/plugin_interface.h sdk/include/plugin_interface.h
+          cp Version_Mod_Loader/plugins/known_gobjects.generated.h sdk/include/known_gobjects.generated.h
 
       - name: Commit and push
         run: |
           cd sdk
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add include/plugin_interface.h
+          git add include/plugin_interface.h include/known_gobjects.generated.h
           git diff --cached --quiet && echo "No changes." && exit 0
-          git commit -m "Update plugin_interface.h from modloader $(cd .. && git rev-parse --short HEAD)"
+          git commit -m "Update plugin headers from modloader $(cd .. && git rev-parse --short HEAD)"
           git push

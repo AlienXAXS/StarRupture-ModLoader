@@ -135,10 +135,21 @@
 //      underlying image data is identical -- the first registration wins.
 //      MIN remains 42.
 // v46: New game update, min/max bump
+// v47: Added IPluginObjectWalker (hooks->ObjectWalker) -- walks SDK::UObject::
+//      GObjects on demand and lets plugins find objects by class/object name
+//      and invoke a UFunction on one by name via ProcessEvent. On-demand only
+//      (every call walks tens of thousands of GObjects entries synchronously);
+//      there is no hook into UObject construction, so nothing fires live as
+//      objects spawn -- callers must trigger a walk and cache results.
+//      InvokeUFunctionByName/InvokeResolvedUFunction perform no parameter
+//      marshaling: paramsBuffer must already match the target UFunction's
+//      native Params layout, since this SDK dump exposes no params-size field
+//      to validate against. Appended at the end of IPluginHooks to preserve
+//      layout for existing plugins. MIN remains 46.
 
 #define PLUGIN_INTERFACE_VERSION_MIN 46
-#define PLUGIN_INTERFACE_VERSION_MAX 46
-#define PLUGIN_INTERFACE_VERSION 46
+#define PLUGIN_INTERFACE_VERSION_MAX 47
+#define PLUGIN_INTERFACE_VERSION 47
 
 enum class PluginLogLevel { Trace = 0, Debug = 1, Info = 2, Warn = 3, Error = 4 };
 enum class ConfigValueType { String, Integer, Float, Boolean, Keybind };
@@ -1144,6 +1155,58 @@ struct IPluginSplash
 // ---------------------------------------------------------------------------
 // Top-level hooks interface (v14+)
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// v47 -- GObjects walking, object lookup by class/name, raw UFunction
+// invocation via ProcessEvent. On-demand only; see changelog comment above.
+// ---------------------------------------------------------------------------
+struct PluginObjectInfo
+{
+	void*       object;
+	const char* className;
+	const char* objectName;
+	uint32_t    nameNumber;
+	uint32_t    objectFlags;
+	int32_t     objectIndex;
+};
+
+// Return false from the visitor only as an early-exit signal where
+// documented (FindObjectsByClassName / FindObjectsByName); ignored by
+// WalkAllObjects.
+typedef bool (*PluginObjectVisitor)(const PluginObjectInfo* info, void* userContext);
+
+struct IPluginObjectWalker
+{
+	// True once GObjects is populated (i.e. after EngineInit). Plugins must
+	// gate all other calls on this returning true.
+	bool (*IsReady)();
+
+	// Walk every live UObject in GObjects, invoking visitor for each that
+	// passes internal pending-kill/garbage filtering. Returns visited count.
+	// EXPENSIVE: tens of thousands of entries. Caller is responsible for
+	// caching results -- do not call this every tick.
+	int (*WalkAllObjects)(PluginObjectVisitor visitor, void* userContext);
+
+	// Convenience: only visits objects whose class short-name matches exactly.
+	int (*FindObjectsByClassName)(const char* className, PluginObjectVisitor visitor, void* userContext);
+
+	// Exact FName string match (ignores instance number); returns first hit or null.
+	void* (*FindFirstObjectByName)(const char* objectName);
+
+	// Exact FName string match; visits all instances (handles Name_N collisions).
+	int (*FindObjectsByName)(const char* objectName, PluginObjectVisitor visitor, void* userContext);
+
+	// Invoke className::funcName on object via ProcessEvent. paramsBuffer must
+	// match the UFunction's native Params struct layout exactly -- no
+	// marshaling is performed. Returns false if object/class/function could
+	// not be resolved.
+	bool (*InvokeUFunctionByName)(void* object, const char* className, const char* funcName, void* paramsBuffer);
+
+	// Resolve once, call many times (avoids repeated name lookups in a loop
+	// that still must remain caller-triggered, not engine-tick-triggered).
+	void* (*ResolveUFunction)(const char* className, const char* funcName);
+	bool (*InvokeResolvedUFunction)(void* object, void* resolvedFunction, void* paramsBuffer);
+};
+
 struct IPluginHooks
 {
 	IPluginSpawnerHooks*   Spawner;        // v14
@@ -1164,6 +1227,7 @@ struct IPluginHooks
 	IPluginImGuiTextures*  ImGuiTextures;    // v37 — client only; null on server/generic
 	IPluginSplash*         Splash;           // v40 — client only; null on server/generic
 	IPluginCraftingEvents* Crafting;       // v44 -- appended at end to preserve layout for v42/v43 plugins
+	IPluginObjectWalker*   ObjectWalker;   // v47 -- appended at end, do not relocate
 };
 
 // ---------------------------------------------------------------------------
