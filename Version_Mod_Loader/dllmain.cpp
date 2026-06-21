@@ -6,7 +6,6 @@
 #include "core/engine_sync.h"
 #include "core/init_thread.h"
 #include "core/shutdown.h"
-
 #include "DbgHelp.h"
 #pragma comment(lib, "DbgHelp.lib")
 

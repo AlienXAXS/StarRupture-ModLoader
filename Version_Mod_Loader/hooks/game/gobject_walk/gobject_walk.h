@@ -29,32 +29,41 @@
 
 namespace Hooks::GObjectWalk
 {
+	// className/objectName are fixed buffers, not pointers -- WalkAllInto and
+	// friends fill outArray and return, so nothing can point at a temporary
+	// std::string that died at the end of the loop iteration that built it.
 	struct ObjectInfo
 	{
-		SDK::UObject* object;      // never null when passed to a visitor
-		const char*   className;   // object->Class->GetName(); valid only during the call
-		const char*   objectName;  // object->GetName(); valid only during the call
+		SDK::UObject* object;      // never null when matched
+		char          className[128];  // truncated if longer
+		char          objectName[256]; // truncated if longer
 		uint32_t      nameNumber;  // object->Name.Number -- UE's own instance disambiguator
 		uint32_t      objectFlags; // raw EObjectFlags bits
 		int32_t       objectIndex; // index into GObjects
 	};
 
-	// Visitor return value is an early-exit signal for the *ByName helpers
-	// (false stops the walk early); WalkAll ignores the return value.
-	using ObjectVisitor = bool(*)(const ObjectInfo& info, void* userContext);
+	// Filters layered on top of the BeginDestroyed/FinishDestroyed skip in
+	// ShouldSkip, so callers never need to know raw EObjectFlags bit values.
+	enum class LookupMode
+	{
+		Both,         // CDOs, archetypes, and live instances
+		InstanceOnly, // skips ClassDefaultObject + ArchetypeObject
+		CDOOnly,      // only ClassDefaultObject
+	};
 
 	// True once GObjects looks populated (mirrors Hooks::EngineInit::IsEngineInitialized()).
 	bool IsReady();
 
-	// Walks every GObjects entry, skipping null Object/Class and objects
-	// flagged BeginDestroyed/FinishDestroyed, calling visitor for the rest.
-	// Returns the number of objects visited. EXPENSIVE -- on-demand only.
-	int WalkAll(ObjectVisitor visitor, void* userContext);
+	// Fills outArray (capacity entries max) with every GObjects entry matching
+	// mode, skipping null Object/Class and BeginDestroyed/FinishDestroyed.
+	// Returns the TOTAL match count, which may exceed capacity -- compare
+	// against capacity to detect truncation. EXPENSIVE -- on-demand only.
+	int WalkAllInto(LookupMode mode, ObjectInfo* outArray, int capacity);
 
-	// Convenience filters layered on WalkAll.
-	int FindObjectsByClassName(const char* className, ObjectVisitor visitor, void* userContext);
+	// Convenience filters layered on WalkAllInto.
+	int FindObjectsByClassNameInto(const char* className, LookupMode mode, ObjectInfo* outArray, int capacity);
 	SDK::UObject* FindFirstObjectByName(const char* objectName); // exact FName string match, first hit
-	int FindObjectsByName(const char* objectName, ObjectVisitor visitor, void* userContext); // handles Name_N collisions
+	int FindObjectsByNameInto(const char* objectName, LookupMode mode, ObjectInfo* outArray, int capacity); // handles Name_N collisions
 
 	// Looks up className::funcName via UClass::GetFunction and calls
 	// object->ProcessEvent(fn, paramsBuffer). paramsBuffer must already match

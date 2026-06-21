@@ -100,11 +100,21 @@ namespace Hooks::DelegateHook
 
 	// Hooks delegatePtr (must point at a TMulticastInlineDelegate<...> --
 	// any arity; InvocationList is always TArray<FScriptDelegate>) by
-	// splicing in a synthetic UFunction cloned from hostClassName::hostFuncName
-	// on hostObject (used only as a field-layout template -- never modified).
-	// See file header for the mechanism and its caveats. Safe to call again
-	// with the same OR a different delegatePtr while other hooks are active --
-	// each call gets its own independent synthetic clone and handle.
+	// splicing in a synthetic UFunction cloned from a template UFunction on
+	// hostObject's class (used only as a field-layout template -- never
+	// modified; see file header). See file header for the mechanism and its
+	// caveats. Safe to call again with the same OR a different delegatePtr
+	// while other hooks are active -- each call gets its own independent
+	// synthetic clone and handle.
+	//
+	// hostClassName/hostFuncName are OPTIONAL. Since the template's only job
+	// is to provide a safe, native FunctionFlags/layout to copy -- its actual
+	// behavior is irrelevant and is never invoked -- there's no reason every
+	// caller should need to find and supply one themselves. Leave both null
+	// (the default) to use the modloader's own built-in template, resolved
+	// once and cached. Only pass your own if you have a specific reason to
+	// (e.g. avoiding a dependency on the built-in default's continued
+	// existence across game updates).
 	//
 	// Returns 0 if the template UFunction can't be resolved, the
 	// FindFunctionByName detour fails to install, or InvocationList can't be
@@ -113,10 +123,10 @@ namespace Hooks::DelegateHook
 	HookHandle HookViaExistingUFunction(
 		void* delegatePtr,
 		SDK::UObject* hostObject,
-		const char* hostClassName,
-		const char* hostFuncName,
 		DelegateCallback callback,
-		void* userContext = nullptr);
+		void* userContext = nullptr,
+		const char* hostClassName = nullptr,
+		const char* hostFuncName = nullptr);
 
 	// Removes the FScriptDelegate entry this handle spliced in and frees its
 	// synthetic clone. False if handle is not (or no longer) active.

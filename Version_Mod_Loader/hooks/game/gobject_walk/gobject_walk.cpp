@@ -6,6 +6,7 @@
 #include <fstream>
 #include <unordered_map>
 #include <string>
+#include <cstring>
 
 namespace Hooks::GObjectWalk
 {
@@ -27,53 +28,37 @@ namespace Hooks::GObjectWalk
 		return false;
 	}
 
-	int WalkAll(ObjectVisitor visitor, void* userContext)
+	static bool PassesLookupMode(SDK::UObject* obj, LookupMode mode)
 	{
-		if (!visitor || !IsReady())
-			return 0;
+		const bool isCDO = obj->Flags & SDK::EObjectFlags::ClassDefaultObject;
+		const bool isArchetype = obj->Flags & SDK::EObjectFlags::ArchetypeObject;
 
-		int visited = 0;
-		const int32_t num = SDK::UObject::GObjects->Num();
-
-		for (int32_t i = 0; i < num; ++i)
+		switch (mode)
 		{
-			SDK::UObject* obj = SDK::UObject::GObjects->GetByIndex(i);
-			if (ShouldSkip(obj))
-				continue;
-
-			std::string className = obj->Class->GetName();
-			std::string objectName = obj->GetName();
-
-			ObjectInfo info{};
-			info.object = obj;
-			info.className = className.c_str();
-			info.objectName = objectName.c_str();
-			info.nameNumber = obj->Name.Number;
-			info.objectFlags = static_cast<uint32_t>(obj->Flags);
-			info.objectIndex = i;
-
-			++visited;
-
-			try
-			{
-				visitor(info, userContext);
-			}
-			catch (const std::exception& e)
-			{
-				ModLoaderLogger::LogError(L"[GObjectWalk] Exception in visitor: %S", e.what());
-			}
-			catch (...)
-			{
-				ModLoaderLogger::LogError(L"[GObjectWalk] Unknown exception in visitor");
-			}
+		case LookupMode::InstanceOnly:
+			return !isCDO && !isArchetype;
+		case LookupMode::CDOOnly:
+			return isCDO;
+		case LookupMode::Both:
+		default:
+			return true;
 		}
-
-		return visited;
 	}
 
-	int FindObjectsByClassName(const char* className, ObjectVisitor visitor, void* userContext)
+	static void FillInfo(ObjectInfo& info, SDK::UObject* obj, const std::string& className,
+		const std::string& objectName, int32_t index)
 	{
-		if (!className || !visitor || !IsReady())
+		info.object = obj;
+		strncpy_s(info.className, className.c_str(), _TRUNCATE);
+		strncpy_s(info.objectName, objectName.c_str(), _TRUNCATE);
+		info.nameNumber = obj->Name.Number;
+		info.objectFlags = static_cast<uint32_t>(obj->Flags);
+		info.objectIndex = index;
+	}
+
+	int WalkAllInto(LookupMode mode, ObjectInfo* outArray, int capacity)
+	{
+		if (!IsReady())
 			return 0;
 
 		int matched = 0;
@@ -82,41 +67,47 @@ namespace Hooks::GObjectWalk
 		for (int32_t i = 0; i < num; ++i)
 		{
 			SDK::UObject* obj = SDK::UObject::GObjects->GetByIndex(i);
-			if (ShouldSkip(obj))
+			if (ShouldSkip(obj) || !PassesLookupMode(obj, mode))
+				continue;
+
+			if (outArray && matched < capacity)
+			{
+				std::string className = obj->Class->GetName();
+				std::string objectName = obj->GetName();
+				FillInfo(outArray[matched], obj, className, objectName, i);
+			}
+
+			++matched;
+		}
+
+		return matched;
+	}
+
+	int FindObjectsByClassNameInto(const char* className, LookupMode mode, ObjectInfo* outArray, int capacity)
+	{
+		if (!className || !IsReady())
+			return 0;
+
+		int matched = 0;
+		const int32_t num = SDK::UObject::GObjects->Num();
+
+		for (int32_t i = 0; i < num; ++i)
+		{
+			SDK::UObject* obj = SDK::UObject::GObjects->GetByIndex(i);
+			if (ShouldSkip(obj) || !PassesLookupMode(obj, mode))
 				continue;
 
 			std::string objClassName = obj->Class->GetName();
 			if (objClassName != className)
 				continue;
 
-			std::string objectName = obj->GetName();
-
-			ObjectInfo info{};
-			info.object = obj;
-			info.className = objClassName.c_str();
-			info.objectName = objectName.c_str();
-			info.nameNumber = obj->Name.Number;
-			info.objectFlags = static_cast<uint32_t>(obj->Flags);
-			info.objectIndex = i;
+			if (outArray && matched < capacity)
+			{
+				std::string objectName = obj->GetName();
+				FillInfo(outArray[matched], obj, objClassName, objectName, i);
+			}
 
 			++matched;
-
-			bool keepGoing = true;
-			try
-			{
-				keepGoing = visitor(info, userContext);
-			}
-			catch (const std::exception& e)
-			{
-				ModLoaderLogger::LogError(L"[GObjectWalk] Exception in visitor: %S", e.what());
-			}
-			catch (...)
-			{
-				ModLoaderLogger::LogError(L"[GObjectWalk] Unknown exception in visitor");
-			}
-
-			if (!keepGoing)
-				break;
 		}
 
 		return matched;
@@ -141,9 +132,9 @@ namespace Hooks::GObjectWalk
 		return nullptr;
 	}
 
-	int FindObjectsByName(const char* objectName, ObjectVisitor visitor, void* userContext)
+	int FindObjectsByNameInto(const char* objectName, LookupMode mode, ObjectInfo* outArray, int capacity)
 	{
-		if (!objectName || !visitor || !IsReady())
+		if (!objectName || !IsReady())
 			return 0;
 
 		int matched = 0;
@@ -152,41 +143,20 @@ namespace Hooks::GObjectWalk
 		for (int32_t i = 0; i < num; ++i)
 		{
 			SDK::UObject* obj = SDK::UObject::GObjects->GetByIndex(i);
-			if (ShouldSkip(obj))
+			if (ShouldSkip(obj) || !PassesLookupMode(obj, mode))
 				continue;
 
 			std::string thisObjectName = obj->GetName();
 			if (thisObjectName != objectName)
 				continue;
 
-			std::string className = obj->Class->GetName();
-
-			ObjectInfo info{};
-			info.object = obj;
-			info.className = className.c_str();
-			info.objectName = thisObjectName.c_str();
-			info.nameNumber = obj->Name.Number;
-			info.objectFlags = static_cast<uint32_t>(obj->Flags);
-			info.objectIndex = i;
+			if (outArray && matched < capacity)
+			{
+				std::string className = obj->Class->GetName();
+				FillInfo(outArray[matched], obj, className, thisObjectName, i);
+			}
 
 			++matched;
-
-			bool keepGoing = true;
-			try
-			{
-				keepGoing = visitor(info, userContext);
-			}
-			catch (const std::exception& e)
-			{
-				ModLoaderLogger::LogError(L"[GObjectWalk] Exception in visitor: %S", e.what());
-			}
-			catch (...)
-			{
-				ModLoaderLogger::LogError(L"[GObjectWalk] Unknown exception in visitor");
-			}
-
-			if (!keepGoing)
-				break;
 		}
 
 		return matched;
