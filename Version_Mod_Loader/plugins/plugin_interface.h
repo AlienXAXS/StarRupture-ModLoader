@@ -157,6 +157,34 @@
 //      DelegateHookHandle values. Appended at the end of IPluginHooks.
 //      v47 is unreleased, so this and IPluginObjectWalker land in the same
 //      version; MIN remains 46.
+//      --- IPluginObjectWalker reworked while still unreleased (no plugins
+//      built against the visitor-based shape yet): WalkAllObjects /
+//      FindObjectsByClassName / FindObjectsByName replaced with *Into
+//      variants that fill a plugin-owned PluginObjectInfo buffer instead of
+//      invoking a callback -- no allocation crosses the DLL boundary in
+//      either direction. Each takes a PluginObjectLookupMode to filter
+//      CDOs/archetypes out of GObjects without the plugin needing to know
+//      raw EObjectFlags bit values. Return value is the total match count
+//      (may exceed capacity; caller can re-call with a bigger buffer if
+//      truncated). FindFirstObjectByName/InvokeUFunctionByName/
+//      ResolveUFunction/InvokeResolvedUFunction are unchanged.
+//      --- Added IPluginObjectProperties (hooks->ObjectProperties) --
+//      resolves a UPROPERTY/FProperty by class name + property name (walks
+//      the live UClass's ChildProperties + SuperStruct chain), then reads/
+//      writes it through typed accessors (Bool/Int/Float/Object) or a raw
+//      escape hatch (GetPropertyRawPtr). Because FProperty::Offset is looked
+//      up fresh against the running build's reflection metadata every call,
+//      a game update that reshuffles struct layout does not require
+//      touching any plugin that goes through this interface instead of
+//      casting raw SDK structs and reading at a compiled-in offset -- only
+//      the property *name* needs to stay the same.
+//      String/Name properties are read-only (FString/FName own their own
+//      backing storage; writing one in place safely needs the engine's own
+//      allocator, out of scope here). Does not cover plain native C++
+//      members with no UPROPERTY/FProperty entry -- those have no reflection
+//      metadata to look up by name. v47 is unreleased, so this lands in the
+//      same version as IPluginObjectWalker/IPluginDelegateHook above.
+//      Appended at the end of IPluginHooks. MIN remains 46.
 
 #define PLUGIN_INTERFACE_VERSION_MIN 46
 #define PLUGIN_INTERFACE_VERSION_MAX 47
@@ -1178,20 +1206,28 @@ struct IPluginSplash
 // v47 -- GObjects walking, object lookup by class/name, raw UFunction
 // invocation via ProcessEvent. On-demand only; see changelog comment above.
 // ---------------------------------------------------------------------------
+// className/objectName are fixed buffers, not pointers -- the *Into functions
+// fill outArray and return, so nothing can point at a temporary that has
+// already been destroyed by the time the caller reads the array. Truncated
+// (rather than failing) if a name is longer than the buffer.
 struct PluginObjectInfo
 {
-	void*       object;
-	const char* className;
-	const char* objectName;
-	uint32_t    nameNumber;
-	uint32_t    objectFlags;
-	int32_t     objectIndex;
+	void*   object;
+	char    className[128];
+	char    objectName[256];
+	uint32_t nameNumber;
+	uint32_t objectFlags;
+	int32_t  objectIndex;
 };
 
-// Return false from the visitor only as an early-exit signal where
-// documented (FindObjectsByClassName / FindObjectsByName); ignored by
-// WalkAllObjects.
-typedef bool (*PluginObjectVisitor)(const PluginObjectInfo* info, void* userContext);
+// Filters layered on top of the existing BeginDestroyed/FinishDestroyed skip,
+// so plugins never need to know raw EObjectFlags bit values themselves.
+enum PluginObjectLookupMode : int32_t
+{
+	PluginObjectLookup_Both         = 0, // CDOs, archetypes, and live instances
+	PluginObjectLookup_InstanceOnly = 1, // skips ClassDefaultObject + ArchetypeObject
+	PluginObjectLookup_CDOOnly      = 2, // only ClassDefaultObject
+};
 
 struct IPluginObjectWalker
 {
@@ -1199,20 +1235,25 @@ struct IPluginObjectWalker
 	// gate all other calls on this returning true.
 	bool (*IsReady)();
 
-	// Walk every live UObject in GObjects, invoking visitor for each that
-	// passes internal pending-kill/garbage filtering. Returns visited count.
+	// Fills outArray (capacity entries max) with every UObject in GObjects
+	// matching mode, in GObjects order. Returns the TOTAL number of matches
+	// found, which may exceed capacity -- compare the return value against
+	// capacity to detect truncation and re-call with a bigger buffer if
+	// needed. outArray is plugin-owned; nothing is allocated by the modloader.
 	// EXPENSIVE: tens of thousands of entries. Caller is responsible for
 	// caching results -- do not call this every tick.
-	int (*WalkAllObjects)(PluginObjectVisitor visitor, void* userContext);
+	int (*WalkAllObjectsInto)(PluginObjectLookupMode mode, PluginObjectInfo* outArray, int capacity);
 
-	// Convenience: only visits objects whose class short-name matches exactly.
-	int (*FindObjectsByClassName)(const char* className, PluginObjectVisitor visitor, void* userContext);
+	// Convenience: only matches objects whose class short-name matches exactly.
+	int (*FindObjectsByClassNameInto)(const char* className, PluginObjectLookupMode mode,
+		PluginObjectInfo* outArray, int capacity);
 
 	// Exact FName string match (ignores instance number); returns first hit or null.
 	void* (*FindFirstObjectByName)(const char* objectName);
 
-	// Exact FName string match; visits all instances (handles Name_N collisions).
-	int (*FindObjectsByName)(const char* objectName, PluginObjectVisitor visitor, void* userContext);
+	// Exact FName string match; matches all instances (handles Name_N collisions).
+	int (*FindObjectsByNameInto)(const char* objectName, PluginObjectLookupMode mode,
+		PluginObjectInfo* outArray, int capacity);
 
 	// Invoke className::funcName on object via ProcessEvent. paramsBuffer must
 	// match the UFunction's native Params struct layout exactly -- no
@@ -1233,9 +1274,10 @@ struct IPluginObjectWalker
 //
 // Mechanism (see delegate_hook.h/.cpp for full detail): a brand-new,
 // privately-named UFunction is cloned from an existing native UFunction
-// (used purely as a safe field-layout template -- hostClassName/hostFuncName
-// can be ANY existing native UFunction in the game, completely unrelated to
-// delegatePtr's owning class) and spliced into the target delegate's
+// (used purely as a safe field-layout template -- its actual behavior is
+// irrelevant and never invoked, so hostClassName/hostFuncName are OPTIONAL;
+// leave them null to use the modloader's own built-in template instead of
+// hunting one down yourself) and spliced into the target delegate's
 // InvocationList. UClass::FindFunctionByName is hooked to resolve this
 // synthetic name privately; every other name -- i.e. everything else in the
 // game -- takes the real, unmodified path. No real UClass's FuncMap/
@@ -1252,9 +1294,15 @@ struct IPluginDelegateHook
 	// (any arity -- InvocationList is always TArray<FScriptDelegate>).
 	// hostObject is the object the delegate will report as broadcasting on
 	// (becomes the FWeakObjectPtr in the spliced FScriptDelegate) -- usually
-	// the same object delegatePtr lives on. hostClassName/hostFuncName name
-	// any existing native UFunction anywhere in the game, used only as a
-	// field-layout template; it is never modified.
+	// the same object delegatePtr lives on.
+	//
+	// hostClassName/hostFuncName are OPTIONAL -- pass nullptr for both (the
+	// common case) to use the modloader's built-in template UFunction. Only
+	// the template's native FunctionFlags/layout are copied; its actual
+	// behavior is irrelevant and never invoked, so there's no reason to
+	// supply your own unless you have a specific reason not to depend on the
+	// modloader's built-in default.
+	//
 	// Returns 0 on failure (template not resolved, FindFunctionByName hook
 	// unavailable, or InvocationList could not be grown); otherwise a handle
 	// for Unhook/IsHooked.
@@ -1268,6 +1316,78 @@ struct IPluginDelegateHook
 
 	// True if handle currently has an active hook installed via this module.
 	bool (*IsHooked)(DelegateHookHandle handle);
+};
+
+// v47 -- Hooks::ObjectProperties. Lets a plugin read/write a UPROPERTY by
+// name instead of casting to a raw SDK struct and reading a compiled-in
+// offset, so a game update that reshuffles struct layout (a Dumper-7
+// re-export) does not require recompiling the plugin -- only the property
+// *name* has to stay the same. PluginPropertyHandle is an opaque FProperty*.
+//
+// Typed accessors validate the property's reflection type before touching
+// memory and return false on a mismatch. GetPropertyRawPtr is the escape
+// hatch for kinds with no typed accessor here (Array/Map/Set/Delegate/...).
+//
+// Does NOT cover plain native C++ members with no UPROPERTY/FProperty entry
+// -- those have no reflection metadata to look up by name and still need a
+// hand-derived raw offset.
+typedef void* PluginPropertyHandle;
+
+enum class PluginPropertyKind : int32_t
+{
+	Unknown = 0,
+	Bool,
+	Int,    // any signed/unsigned integer width 1-8 bytes
+	Float,  // FloatProperty or DoubleProperty
+	Name,
+	Str,
+	Object, // raw-pointer-backed UObject* only (not Weak/Soft/LazyObjectProperty)
+	Struct,
+	Array,
+	Enum,
+	Unsupported, // recognized property type with no typed accessor here
+};
+
+struct IPluginObjectProperties
+{
+	bool (*IsReady)();
+
+	// Resolve a property by class name + property name (walks the class's
+	// ChildProperties + SuperStruct chain). Returns null if not found.
+	PluginPropertyHandle (*FindPropertyByName)(const char* className, const char* propertyName);
+
+	// Convenience: resolves object's class then calls FindPropertyByName.
+	PluginPropertyHandle (*FindPropertyOnObject)(void* object, const char* propertyName);
+
+	PluginPropertyKind (*GetPropertyKind)(PluginPropertyHandle property);
+	size_t  (*GetPropertySize)(PluginPropertyHandle property);     // ElementSize * ArrayDim
+	int32_t (*GetPropertyArrayDim)(PluginPropertyHandle property);
+
+	// Raw escape hatch: container + property's offset, no type checking.
+	void* (*GetPropertyRawPtr)(void* container, PluginPropertyHandle property);
+
+	// Typed getters/setters. Each validates the property's reflection type
+	// before touching memory; returns false on type mismatch or null args.
+	bool (*GetBoolProperty)(void* container, PluginPropertyHandle property, bool* outValue);
+	bool (*SetBoolProperty)(void* container, PluginPropertyHandle property, bool value);
+
+	bool (*GetIntProperty)(void* container, PluginPropertyHandle property, int64_t* outValue);
+	bool (*SetIntProperty)(void* container, PluginPropertyHandle property, int64_t value);
+
+	bool (*GetFloatProperty)(void* container, PluginPropertyHandle property, double* outValue);
+	bool (*SetFloatProperty)(void* container, PluginPropertyHandle property, double value);
+
+	bool (*GetObjectProperty)(void* container, PluginPropertyHandle property, void** outValue);
+	bool (*SetObjectProperty)(void* container, PluginPropertyHandle property, void* value);
+
+	// Read-only -- see file header comment above on why String/Name have no setter.
+	bool (*GetStringProperty)(void* container, PluginPropertyHandle property, char* outBuffer, int bufferSize);
+	bool (*GetNameProperty)(void* container, PluginPropertyHandle property, char* outBuffer, int bufferSize);
+
+	// For struct-typed properties: the nested type's class name, so callers
+	// can recurse FindPropertyByName on inner fields. Empty string if the
+	// property is not a struct property.
+	bool (*GetPropertyStructTypeName)(PluginPropertyHandle property, char* outBuffer, int bufferSize);
 };
 
 struct IPluginHooks
@@ -1292,6 +1412,7 @@ struct IPluginHooks
 	IPluginCraftingEvents* Crafting;       // v44 -- appended at end to preserve layout for v42/v43 plugins
 	IPluginObjectWalker*   ObjectWalker;   // v47 -- appended at end, do not relocate
 	IPluginDelegateHook*   Delegate;       // v47 -- appended at end, do not relocate
+	IPluginObjectProperties* ObjectProperties; // v47 -- appended at end, do not relocate
 };
 
 // ---------------------------------------------------------------------------
