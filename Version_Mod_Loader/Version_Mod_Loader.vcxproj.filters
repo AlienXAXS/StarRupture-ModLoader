@@ -73,6 +73,9 @@
     <Filter Include="Source Files\hooks\game\gobject_walk">
       <UniqueIdentifier>{2f4a7d9b-6c8e-4a1f-b3d2-9e5c7a8f0d1b}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Source Files\hooks\game\delegate_hook">
+      <UniqueIdentifier>{6a1c4e2d-8f3b-4d7a-9c1e-3b5d7f9a1c2e}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Source Files\hooks\game\playerLeft">
       <UniqueIdentifier>{2983d86c-6262-4d24-9514-cca4f13c3394}</UniqueIdentifier>
     </Filter>
@@ -218,6 +221,9 @@
     </ClInclude>
     <ClInclude Include="hooks\game\gobject_walk\gobject_walk.h">
       <Filter>Source Files\hooks\game\gobject_walk</Filter>
+    </ClInclude>
+    <ClInclude Include="hooks\game\delegate_hook\delegate_hook.h">
+      <Filter>Source Files\hooks\game\delegate_hook</Filter>
     </ClInclude>
     <ClInclude Include="hooks\game\engine_init\engine_init.h">
       <Filter>Source Files\hooks\game\engine_init</Filter>
@@ -451,6 +457,9 @@
     </ClCompile>
     <ClCompile Include="hooks\game\gobject_walk\gobject_walk.cpp">
       <Filter>Source Files\hooks\game\gobject_walk</Filter>
+    </ClCompile>
+    <ClCompile Include="hooks\game\delegate_hook\delegate_hook.cpp">
+      <Filter>Source Files\hooks\game\delegate_hook</Filter>
     </ClCompile>
     <ClCompile Include="hooks\game\engine_init\engine_init.cpp">
       <Filter>Source Files\hooks\game\engine_init</Filter>

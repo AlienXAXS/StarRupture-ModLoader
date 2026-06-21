@@ -110,6 +110,7 @@ void InstallAllHooks()
         ModLoaderLogger::LogDebug(L"  GameInstanceInit hook installed");
     else
         ModLoaderLogger::LogWarn(L"  WARNING: GameInstanceInit hook failed -- plugins will not be initialized");
+
 }
 
 void RemoveAllHooks()
