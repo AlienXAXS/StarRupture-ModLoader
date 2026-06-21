@@ -41,9 +41,13 @@
 #endif
 #include "hooks/game/object_lookup/object_lookup.h"
 #include "hooks/game/gobject_walk/gobject_walk.h"
+#include "hooks/game/object_properties/object_properties.h"
 #include "hooks/game/delegate_hook/delegate_hook.h"
 #include <unordered_map>
 #include <mutex>
+#include <vector>
+#include <algorithm>
+#include <cstring>
 
 namespace ModLoaderLogger
 {
@@ -768,30 +772,37 @@ namespace ModLoaderLogger
 
 	// --- Object walker sub-interface wrappers (v47) ---
 
-	// Bridges Hooks::GObjectWalk::ObjectVisitor (internal, SDK::UObject*) to
-	// PluginObjectVisitor (plugin-facing, void*). The two info structs have
-	// identical layout aside from the object pointer's type.
-	struct ObjectWalkerThunkContext
+	// Translates the plugin-facing PluginObjectLookupMode (int32 enum, stable
+	// ABI value) to the internal Hooks::GObjectWalk::LookupMode.
+	static Hooks::GObjectWalk::LookupMode ToInternalLookupMode(PluginObjectLookupMode mode)
 	{
-		PluginObjectVisitor pluginVisitor;
-		void* pluginUserContext;
-	};
+		switch (mode)
+		{
+		case PluginObjectLookup_InstanceOnly:
+			return Hooks::GObjectWalk::LookupMode::InstanceOnly;
+		case PluginObjectLookup_CDOOnly:
+			return Hooks::GObjectWalk::LookupMode::CDOOnly;
+		case PluginObjectLookup_Both:
+		default:
+			return Hooks::GObjectWalk::LookupMode::Both;
+		}
+	}
 
-	static bool ObjectWalkerVisitorThunk(const Hooks::GObjectWalk::ObjectInfo& info, void* userContext)
+	// Fills pluginArray (capacity entries) from internalArray (same count).
+	// The two ObjectInfo/PluginObjectInfo structs have identical layout aside
+	// from the object pointer's type and are filled in lockstep up to capacity.
+	static void CopyObjectInfos(const Hooks::GObjectWalk::ObjectInfo* internalArray, int count,
+		PluginObjectInfo* pluginArray)
 	{
-		auto* ctx = static_cast<ObjectWalkerThunkContext*>(userContext);
-		if (!ctx || !ctx->pluginVisitor)
-			return false;
-
-		PluginObjectInfo pluginInfo{};
-		pluginInfo.object = info.object;
-		pluginInfo.className = info.className;
-		pluginInfo.objectName = info.objectName;
-		pluginInfo.nameNumber = info.nameNumber;
-		pluginInfo.objectFlags = info.objectFlags;
-		pluginInfo.objectIndex = info.objectIndex;
-
-		return ctx->pluginVisitor(&pluginInfo, ctx->pluginUserContext);
+		for (int i = 0; i < count; ++i)
+		{
+			pluginArray[i].object = internalArray[i].object;
+			strncpy_s(pluginArray[i].className, internalArray[i].className, _TRUNCATE);
+			strncpy_s(pluginArray[i].objectName, internalArray[i].objectName, _TRUNCATE);
+			pluginArray[i].nameNumber = internalArray[i].nameNumber;
+			pluginArray[i].objectFlags = internalArray[i].objectFlags;
+			pluginArray[i].objectIndex = internalArray[i].objectIndex;
+		}
 	}
 
 	static bool ObjectWalkerIsReady()
@@ -799,20 +810,30 @@ namespace ModLoaderLogger
 		return Hooks::GObjectWalk::IsReady();
 	}
 
-	static int ObjectWalkerWalkAllObjects(PluginObjectVisitor visitor, void* userContext)
+	static int ObjectWalkerWalkAllObjectsInto(PluginObjectLookupMode mode, PluginObjectInfo* outArray, int capacity)
 	{
-		if (!visitor)
-			return 0;
-		ObjectWalkerThunkContext ctx{ visitor, userContext };
-		return Hooks::GObjectWalk::WalkAll(ObjectWalkerVisitorThunk, &ctx);
+		if (!outArray || capacity <= 0)
+			return Hooks::GObjectWalk::WalkAllInto(ToInternalLookupMode(mode), nullptr, 0);
+
+		std::vector<Hooks::GObjectWalk::ObjectInfo> scratch(static_cast<size_t>(capacity));
+		int total = Hooks::GObjectWalk::WalkAllInto(ToInternalLookupMode(mode), scratch.data(), capacity);
+		CopyObjectInfos(scratch.data(), std::min(total, capacity), outArray);
+		return total;
 	}
 
-	static int ObjectWalkerFindObjectsByClassName(const char* className, PluginObjectVisitor visitor, void* userContext)
+	static int ObjectWalkerFindObjectsByClassNameInto(const char* className, PluginObjectLookupMode mode,
+		PluginObjectInfo* outArray, int capacity)
 	{
-		if (!className || !visitor)
+		if (!className)
 			return 0;
-		ObjectWalkerThunkContext ctx{ visitor, userContext };
-		return Hooks::GObjectWalk::FindObjectsByClassName(className, ObjectWalkerVisitorThunk, &ctx);
+
+		if (!outArray || capacity <= 0)
+			return Hooks::GObjectWalk::FindObjectsByClassNameInto(className, ToInternalLookupMode(mode), nullptr, 0);
+
+		std::vector<Hooks::GObjectWalk::ObjectInfo> scratch(static_cast<size_t>(capacity));
+		int total = Hooks::GObjectWalk::FindObjectsByClassNameInto(className, ToInternalLookupMode(mode), scratch.data(), capacity);
+		CopyObjectInfos(scratch.data(), std::min(total, capacity), outArray);
+		return total;
 	}
 
 	static void* ObjectWalkerFindFirstObjectByName(const char* objectName)
@@ -820,12 +841,19 @@ namespace ModLoaderLogger
 		return Hooks::GObjectWalk::FindFirstObjectByName(objectName);
 	}
 
-	static int ObjectWalkerFindObjectsByName(const char* objectName, PluginObjectVisitor visitor, void* userContext)
+	static int ObjectWalkerFindObjectsByNameInto(const char* objectName, PluginObjectLookupMode mode,
+		PluginObjectInfo* outArray, int capacity)
 	{
-		if (!objectName || !visitor)
+		if (!objectName)
 			return 0;
-		ObjectWalkerThunkContext ctx{ visitor, userContext };
-		return Hooks::GObjectWalk::FindObjectsByName(objectName, ObjectWalkerVisitorThunk, &ctx);
+
+		if (!outArray || capacity <= 0)
+			return Hooks::GObjectWalk::FindObjectsByNameInto(objectName, ToInternalLookupMode(mode), nullptr, 0);
+
+		std::vector<Hooks::GObjectWalk::ObjectInfo> scratch(static_cast<size_t>(capacity));
+		int total = Hooks::GObjectWalk::FindObjectsByNameInto(objectName, ToInternalLookupMode(mode), scratch.data(), capacity);
+		CopyObjectInfos(scratch.data(), std::min(total, capacity), outArray);
+		return total;
 	}
 
 	static bool ObjectWalkerInvokeUFunctionByName(void* object, const char* className, const char* funcName, void* paramsBuffer)
@@ -847,10 +875,10 @@ namespace ModLoaderLogger
 
 	static IPluginObjectWalker g_objectWalker = {
 		ObjectWalkerIsReady,
-		ObjectWalkerWalkAllObjects,
-		ObjectWalkerFindObjectsByClassName,
+		ObjectWalkerWalkAllObjectsInto,
+		ObjectWalkerFindObjectsByClassNameInto,
 		ObjectWalkerFindFirstObjectByName,
-		ObjectWalkerFindObjectsByName,
+		ObjectWalkerFindObjectsByNameInto,
 		ObjectWalkerInvokeUFunctionByName,
 		ObjectWalkerResolveUFunction,
 		ObjectWalkerInvokeResolvedUFunction
@@ -863,8 +891,9 @@ namespace ModLoaderLogger
 		PluginDelegateCallback callback, void* userContext)
 	{
 		return static_cast<DelegateHookHandle>(Hooks::DelegateHook::HookViaExistingUFunction(
-			delegatePtr, static_cast<SDK::UObject*>(hostObject), hostClassName, hostFuncName,
-			reinterpret_cast<Hooks::DelegateHook::DelegateCallback>(callback), userContext));
+			delegatePtr, static_cast<SDK::UObject*>(hostObject),
+			reinterpret_cast<Hooks::DelegateHook::DelegateCallback>(callback), userContext,
+			hostClassName, hostFuncName));
 	}
 
 	static bool DelegateHookUnhook(DelegateHookHandle handle)
@@ -881,6 +910,150 @@ namespace ModLoaderLogger
 		DelegateHookHook,
 		DelegateHookUnhook,
 		DelegateHookIsHooked
+	};
+
+	// --- ObjectProperties sub-interface wrappers (v47) ---
+
+	static bool ObjectPropertiesIsReady()
+	{
+		return Hooks::ObjectProperties::IsReady();
+	}
+
+	static PluginPropertyHandle ObjectPropertiesFindPropertyByName(const char* className, const char* propertyName)
+	{
+		return static_cast<PluginPropertyHandle>(Hooks::ObjectProperties::ResolveProperty(className, propertyName));
+	}
+
+	static PluginPropertyHandle ObjectPropertiesFindPropertyOnObject(void* object, const char* propertyName)
+	{
+		return static_cast<PluginPropertyHandle>(
+			Hooks::ObjectProperties::FindPropertyOnObject(static_cast<SDK::UObject*>(object), propertyName));
+	}
+
+	static PluginPropertyKind ObjectPropertiesGetPropertyKind(PluginPropertyHandle property)
+	{
+		switch (Hooks::ObjectProperties::GetPropertyKind(static_cast<SDK::FProperty*>(property)))
+		{
+		case Hooks::ObjectProperties::PropertyKind::Bool:        return PluginPropertyKind::Bool;
+		case Hooks::ObjectProperties::PropertyKind::Int:         return PluginPropertyKind::Int;
+		case Hooks::ObjectProperties::PropertyKind::Float:       return PluginPropertyKind::Float;
+		case Hooks::ObjectProperties::PropertyKind::Name:        return PluginPropertyKind::Name;
+		case Hooks::ObjectProperties::PropertyKind::Str:         return PluginPropertyKind::Str;
+		case Hooks::ObjectProperties::PropertyKind::Object:      return PluginPropertyKind::Object;
+		case Hooks::ObjectProperties::PropertyKind::Struct:      return PluginPropertyKind::Struct;
+		case Hooks::ObjectProperties::PropertyKind::Array:       return PluginPropertyKind::Array;
+		case Hooks::ObjectProperties::PropertyKind::Enum:        return PluginPropertyKind::Enum;
+		case Hooks::ObjectProperties::PropertyKind::Unsupported: return PluginPropertyKind::Unsupported;
+		default:                                                 return PluginPropertyKind::Unknown;
+		}
+	}
+
+	static size_t ObjectPropertiesGetPropertySize(PluginPropertyHandle property)
+	{
+		return Hooks::ObjectProperties::GetPropertySize(static_cast<SDK::FProperty*>(property));
+	}
+
+	static int32_t ObjectPropertiesGetPropertyArrayDim(PluginPropertyHandle property)
+	{
+		return Hooks::ObjectProperties::GetPropertyArrayDim(static_cast<SDK::FProperty*>(property));
+	}
+
+	static void* ObjectPropertiesGetPropertyRawPtr(void* container, PluginPropertyHandle property)
+	{
+		return Hooks::ObjectProperties::GetPropertyRawPtr(container, static_cast<SDK::FProperty*>(property));
+	}
+
+	static bool ObjectPropertiesGetBoolProperty(void* container, PluginPropertyHandle property, bool* outValue)
+	{
+		return Hooks::ObjectProperties::GetBoolProperty(container, static_cast<SDK::FProperty*>(property), outValue);
+	}
+
+	static bool ObjectPropertiesSetBoolProperty(void* container, PluginPropertyHandle property, bool value)
+	{
+		return Hooks::ObjectProperties::SetBoolProperty(container, static_cast<SDK::FProperty*>(property), value);
+	}
+
+	static bool ObjectPropertiesGetIntProperty(void* container, PluginPropertyHandle property, int64_t* outValue)
+	{
+		return Hooks::ObjectProperties::GetIntProperty(container, static_cast<SDK::FProperty*>(property), outValue);
+	}
+
+	static bool ObjectPropertiesSetIntProperty(void* container, PluginPropertyHandle property, int64_t value)
+	{
+		return Hooks::ObjectProperties::SetIntProperty(container, static_cast<SDK::FProperty*>(property), value);
+	}
+
+	static bool ObjectPropertiesGetFloatProperty(void* container, PluginPropertyHandle property, double* outValue)
+	{
+		return Hooks::ObjectProperties::GetFloatProperty(container, static_cast<SDK::FProperty*>(property), outValue);
+	}
+
+	static bool ObjectPropertiesSetFloatProperty(void* container, PluginPropertyHandle property, double value)
+	{
+		return Hooks::ObjectProperties::SetFloatProperty(container, static_cast<SDK::FProperty*>(property), value);
+	}
+
+	static bool ObjectPropertiesGetObjectProperty(void* container, PluginPropertyHandle property, void** outValue)
+	{
+		SDK::UObject* obj = nullptr;
+		if (!Hooks::ObjectProperties::GetObjectProperty(container, static_cast<SDK::FProperty*>(property), &obj))
+			return false;
+		*outValue = obj;
+		return true;
+	}
+
+	static bool ObjectPropertiesSetObjectProperty(void* container, PluginPropertyHandle property, void* value)
+	{
+		return Hooks::ObjectProperties::SetObjectProperty(
+			container, static_cast<SDK::FProperty*>(property), static_cast<SDK::UObject*>(value));
+	}
+
+	static bool ObjectPropertiesGetStringProperty(void* container, PluginPropertyHandle property, char* outBuffer, int bufferSize)
+	{
+		return Hooks::ObjectProperties::GetStringProperty(container, static_cast<SDK::FProperty*>(property), outBuffer, bufferSize);
+	}
+
+	static bool ObjectPropertiesGetNameProperty(void* container, PluginPropertyHandle property, char* outBuffer, int bufferSize)
+	{
+		return Hooks::ObjectProperties::GetNameProperty(container, static_cast<SDK::FProperty*>(property), outBuffer, bufferSize);
+	}
+
+	static bool ObjectPropertiesGetPropertyStructTypeName(PluginPropertyHandle property, char* outBuffer, int bufferSize)
+	{
+		if (!outBuffer || bufferSize <= 0)
+			return false;
+
+		SDK::UStruct* structType = Hooks::ObjectProperties::GetPropertyStructType(static_cast<SDK::FProperty*>(property));
+		if (!structType)
+		{
+			outBuffer[0] = '\0';
+			return false;
+		}
+
+		std::string name = structType->GetName();
+		strncpy_s(outBuffer, static_cast<size_t>(bufferSize), name.c_str(), _TRUNCATE);
+		return true;
+	}
+
+	static IPluginObjectProperties g_objectProperties = {
+		ObjectPropertiesIsReady,
+		ObjectPropertiesFindPropertyByName,
+		ObjectPropertiesFindPropertyOnObject,
+		ObjectPropertiesGetPropertyKind,
+		ObjectPropertiesGetPropertySize,
+		ObjectPropertiesGetPropertyArrayDim,
+		ObjectPropertiesGetPropertyRawPtr,
+		ObjectPropertiesGetBoolProperty,
+		ObjectPropertiesSetBoolProperty,
+		ObjectPropertiesGetIntProperty,
+		ObjectPropertiesSetIntProperty,
+		ObjectPropertiesGetFloatProperty,
+		ObjectPropertiesSetFloatProperty,
+		ObjectPropertiesGetObjectProperty,
+		ObjectPropertiesSetObjectProperty,
+		ObjectPropertiesGetStringProperty,
+		ObjectPropertiesGetNameProperty,
+		ObjectPropertiesGetPropertyStructTypeName,
 	};
 
 	// --- Input sub-interface wrappers (v15, client only) ---
@@ -1305,6 +1478,7 @@ namespace ModLoaderLogger
 		&g_craftingEvents,   // v44 — appended at end to preserve layout for v42/v43 plugins
 		&g_objectWalker,     // v47 — appended at end to preserve layout for v44-46 plugins
 		&g_delegateHook,     // v47 — appended at end, do not relocate
+		&g_objectProperties, // v47 — appended at end, do not relocate
 	};
 	static bool g_networkChannelInitialized = false;
 

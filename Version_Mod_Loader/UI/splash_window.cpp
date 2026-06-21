@@ -7,6 +7,7 @@
 
 #if defined(MODLOADER_CLIENT_BUILD)
 
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 
@@ -479,7 +480,7 @@ void Splash::Linger(DWORD ms)
 		if (now >= deadline) break;
 		DWORD remaining = deadline - now;
 		// Wake on new messages or at 50ms intervals so we stay responsive.
-		MsgWaitForMultipleObjects(0, nullptr, FALSE, min(remaining, 50ul), QS_ALLINPUT);
+		MsgWaitForMultipleObjects(0, nullptr, FALSE, std::min(remaining, 50ul), QS_ALLINPUT);
 		MSG msg;
 		while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE))
 		{
@@ -547,7 +548,7 @@ bool Splash::WaitForAllHolds(DWORD timeoutMs)
 		DWORD now = GetTickCount();
 		if (now >= deadline) break;
 		DWORD remaining = deadline - now;
-		DWORD r = MsgWaitForMultipleObjects(1, &g_holdEvent, FALSE, min(remaining, 50ul), QS_ALLINPUT);
+		DWORD r = MsgWaitForMultipleObjects(1, &g_holdEvent, FALSE, std::min(remaining, 50ul), QS_ALLINPUT);
 		if (r == WAIT_OBJECT_0)
 			return true;
 		MSG msg;

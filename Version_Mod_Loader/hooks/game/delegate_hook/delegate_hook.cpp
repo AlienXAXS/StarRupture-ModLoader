@@ -197,6 +197,40 @@ namespace Hooks::DelegateHook
 			return hookOk;
 		}
 
+		// Built-in template UFunction used when the caller doesn't supply
+		// their own hostClassName/hostFuncName. Any existing native UFunction
+		// works equally well as a template (see file header -- only its
+		// FunctionFlags/layout matter, never its actual behavior), so there's
+		// no reason to make every caller hunt one down themselves.
+		// CrSaveSubsystem always exists once the game world is up (it's a
+		// GameInstanceSubsystem), and CloseSessionConfirmationWidget's native
+		// body is just a guarded ProcessEvent call, safe even if its real
+		// resolution path is ever hit by something else.
+		constexpr const char* kDefaultTemplateClassName = "CrSaveSubsystem";
+		constexpr const char* kDefaultTemplateFuncName = "CloseSessionConfirmationWidget";
+
+		// Resolves the template UFunction for a Hook() call. If the caller
+		// supplied their own hostClassName/hostFuncName, resolves that.
+		// Otherwise resolves (and caches) the built-in default -- native
+		// UFunction objects are static for the life of the process, so the
+		// cached pointer never goes stale and avoids re-walking GObjects on
+		// every call.
+		SDK::UFunction* ResolveTemplateFunction(const char* hostClassName, const char* hostFuncName)
+		{
+			if (hostClassName && hostFuncName)
+				return Hooks::GObjectWalk::ResolveUFunction(hostClassName, hostFuncName);
+
+			static std::atomic<SDK::UFunction*> s_cachedDefault{ nullptr };
+			SDK::UFunction* cached = s_cachedDefault.load();
+			if (cached)
+				return cached;
+
+			SDK::UFunction* resolved = Hooks::GObjectWalk::ResolveUFunction(kDefaultTemplateClassName, kDefaultTemplateFuncName);
+			if (resolved)
+				s_cachedDefault.store(resolved);
+			return resolved;
+		}
+
 		// Offset of SerialNumber within FUObjectItem; not exposed by this SDK
 		// dump (Basic.hpp collapses it into Pad_8). Verified via IDA Local
 		// Types against this game's binary -- see file header.
@@ -481,25 +515,29 @@ namespace Hooks::DelegateHook
 	HookHandle HookViaExistingUFunction(
 		void* delegatePtr,
 		SDK::UObject* hostObject,
-		const char* hostClassName,
-		const char* hostFuncName,
 		DelegateCallback callback,
-		void* userContext)
+		void* userContext,
+		const char* hostClassName,
+		const char* hostFuncName)
 	{
-		if (!delegatePtr || !hostObject || !hostClassName || !hostFuncName || !callback)
+		if (!delegatePtr || !hostObject || !callback)
 		{
 			ModLoaderLogger::LogError(L"[DelegateHook] HookViaExistingUFunction: invalid arguments");
 			return 0;
 		}
 
+		const bool usingDefaultTemplate = !hostClassName || !hostFuncName;
 		ModLoaderLogger::LogDebug(
-			L"[DelegateHook] HookViaExistingUFunction: delegatePtr=%p hostObject=%p template=%S::%S",
-			delegatePtr, hostObject, hostClassName, hostFuncName);
+			L"[DelegateHook] HookViaExistingUFunction: delegatePtr=%p hostObject=%p template=%S",
+			delegatePtr, hostObject, usingDefaultTemplate ? "<modloader default>" : hostClassName);
 
-		SDK::UFunction* templateFn = Hooks::GObjectWalk::ResolveUFunction(hostClassName, hostFuncName);
+		SDK::UFunction* templateFn = ResolveTemplateFunction(hostClassName, hostFuncName);
 		if (!templateFn)
 		{
-			ModLoaderLogger::LogError(L"[DelegateHook] Could not resolve template %S::%S", hostClassName, hostFuncName);
+			ModLoaderLogger::LogError(
+				L"[DelegateHook] Could not resolve template %S::%S",
+				usingDefaultTemplate ? kDefaultTemplateClassName : hostClassName,
+				usingDefaultTemplate ? kDefaultTemplateFuncName : hostFuncName);
 			return 0;
 		}
 
@@ -527,8 +565,8 @@ namespace Hooks::DelegateHook
 		clone->ExecFunction = reinterpret_cast<SDK::UFunction::FNativeFuncPtr>(&DispatchClonedExecFunction);
 
 		ModLoaderLogger::LogDebug(
-			L"[DelegateHook] Cloned %S::%S: template=%p clone=%p (sizeof(UFunction)=%zu), synthetic Number=0x%08X",
-			hostClassName, hostFuncName, templateFn, clone, sizeof(SDK::UFunction), syntheticNumber);
+			L"[DelegateHook] Cloned %S: template=%p clone=%p (sizeof(UFunction)=%zu), synthetic Number=0x%08X",
+			usingDefaultTemplate ? "<modloader default>" : hostClassName, templateFn, clone, sizeof(SDK::UFunction), syntheticNumber);
 
 		SDK::FWeakObjectPtr weakPtr{};
 		if (!BuildWeakObjectPtr(hostObject, weakPtr))
@@ -570,8 +608,8 @@ namespace Hooks::DelegateHook
 		}
 
 		ModLoaderLogger::LogInfo(
-			L"[DelegateHook] Hooked delegate at %p via synthetic clone of %S::%S on object %p (handle=%llu, Phase 3 synthetic-name path)",
-			delegatePtr, hostClassName, hostFuncName, hostObject, static_cast<unsigned long long>(handle));
+			L"[DelegateHook] Hooked delegate at %p via synthetic clone of %S on object %p (handle=%llu, Phase 3 synthetic-name path)",
+			delegatePtr, usingDefaultTemplate ? "<modloader default>" : hostClassName, hostObject, static_cast<unsigned long long>(handle));
 		return handle;
 	}
 
