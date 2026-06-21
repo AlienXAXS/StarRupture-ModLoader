@@ -32,6 +32,16 @@ namespace ScanPatterns
 	inline constexpr auto AActor_InternalGetNetMode =
 		"48 89 5C 24 ?? 57 48 83 EC ?? 48 8B D9 E8 ?? ?? ?? ?? 48 8B 9B";
 
+	// UClass::FindFunctionByName -- resolves a function by FName on a class
+	// (and its supers if IncludeSuper). This is the path every multicast
+	// delegate Broadcast() uses to turn an FScriptDelegate's FunctionName back
+	// into a callable UFunction*. Native C++ function -- not a UFUNCTION,
+	// must be found via AOB scan. Available on all build types.
+	// Signature: UFunction* __fastcall UClass::FindFunctionByName(UClass* this,
+	//               FName InName, EIncludeSuperFlag::Type IncludeSuper)
+	inline constexpr auto UClass_FindFunctionByName =
+		"48 89 54 24 ?? 55 53 57 41 54 41 55 41 57 48 8D 6C 24 ?? 48 81 EC ?? ?? ?? ?? 4C 8B 79";
+
 #if defined(MODLOADER_CLIENT_BUILD)
 	// AHUD::PostRender — called every frame on the game thread; hud->Canvas is valid inside.
 	// ACrHUD does not override this, so AHUD::PostRender is the hook target.

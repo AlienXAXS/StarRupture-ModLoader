@@ -41,6 +41,7 @@
 #endif
 #include "hooks/game/object_lookup/object_lookup.h"
 #include "hooks/game/gobject_walk/gobject_walk.h"
+#include "hooks/game/delegate_hook/delegate_hook.h"
 #include <unordered_map>
 #include <mutex>
 
@@ -855,6 +856,33 @@ namespace ModLoaderLogger
 		ObjectWalkerInvokeResolvedUFunction
 	};
 
+	// --- DelegateHook sub-interface wrappers (v47) ---
+
+	static DelegateHookHandle DelegateHookHook(void* delegatePtr, void* hostObject,
+		const char* hostClassName, const char* hostFuncName,
+		PluginDelegateCallback callback, void* userContext)
+	{
+		return static_cast<DelegateHookHandle>(Hooks::DelegateHook::HookViaExistingUFunction(
+			delegatePtr, static_cast<SDK::UObject*>(hostObject), hostClassName, hostFuncName,
+			reinterpret_cast<Hooks::DelegateHook::DelegateCallback>(callback), userContext));
+	}
+
+	static bool DelegateHookUnhook(DelegateHookHandle handle)
+	{
+		return Hooks::DelegateHook::Unhook(static_cast<Hooks::DelegateHook::HookHandle>(handle));
+	}
+
+	static bool DelegateHookIsHooked(DelegateHookHandle handle)
+	{
+		return Hooks::DelegateHook::IsHooked(static_cast<Hooks::DelegateHook::HookHandle>(handle));
+	}
+
+	static IPluginDelegateHook g_delegateHook = {
+		DelegateHookHook,
+		DelegateHookUnhook,
+		DelegateHookIsHooked
+	};
+
 	// --- Input sub-interface wrappers (v15, client only) ---
 
 #ifdef MODLOADER_CLIENT_BUILD
@@ -1276,6 +1304,7 @@ namespace ModLoaderLogger
 #endif
 		&g_craftingEvents,   // v44 — appended at end to preserve layout for v42/v43 plugins
 		&g_objectWalker,     // v47 — appended at end to preserve layout for v44-46 plugins
+		&g_delegateHook,     // v47 — appended at end, do not relocate
 	};
 	static bool g_networkChannelInitialized = false;
 

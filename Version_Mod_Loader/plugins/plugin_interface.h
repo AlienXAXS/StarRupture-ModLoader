@@ -146,6 +146,17 @@
 //      native Params layout, since this SDK dump exposes no params-size field
 //      to validate against. Appended at the end of IPluginHooks to preserve
 //      layout for existing plugins. MIN remains 46.
+//      --- Added IPluginDelegateHook (hooks->Delegate) -- lets a plugin
+//      splice a synthetic UFunction into an existing UE5 multicast delegate
+//      (e.g. SDK::UCrSaveSubsystem::OnAfterSave) and get a parameterless
+//      callback when it broadcasts, without the maintainer hand-writing a
+//      dedicated AOB-scanned hook module for it. Never touches a real
+//      UClass's FuncMap/AllFunctionsCache, so other code resolving the same
+//      function name by name is unaffected. Multiple concurrent hooks,
+//      including several on the same delegate, are supported via opaque
+//      DelegateHookHandle values. Appended at the end of IPluginHooks.
+//      v47 is unreleased, so this and IPluginObjectWalker land in the same
+//      version; MIN remains 46.
 
 #define PLUGIN_INTERFACE_VERSION_MIN 46
 #define PLUGIN_INTERFACE_VERSION_MAX 47
@@ -251,6 +262,14 @@ typedef void (*PluginGameThreadCallback)(void* context);
 // entitySerial      : FMassEntityHandle::SerialNumber for the crafter's Mass entity
 typedef void (*PluginCraftingFinishedCallback)(void* crafter, void* craftingComponent,
                                                 int32_t entityIndex, int32_t entitySerial);
+
+// v47 -- Hooks::DelegateHook. Splices a synthetic UFunction into an existing
+// UE5 TMulticastInlineDelegate<...> (any arity) without touching any real
+// UClass's FuncMap/AllFunctionsCache, so other code resolving the same
+// function name by name is never affected. Deliberately parameterless --
+// see IPluginDelegateHook below.
+typedef uint64_t DelegateHookHandle;
+typedef void (*PluginDelegateCallback)(void* userContext);
 
 typedef bool (*PluginBeforeActivateSpawnerCallback)(void* spawner, bool bDisableAggroLock);
 typedef void (*PluginAfterActivateSpawnerCallback)(void* spawner, bool bDisableAggroLock);
@@ -1207,6 +1226,50 @@ struct IPluginObjectWalker
 	bool (*InvokeResolvedUFunction)(void* object, void* resolvedFunction, void* paramsBuffer);
 };
 
+// v47 -- Hooks::DelegateHook (engine-side: hooks/game/delegate_hook/).
+// Lets a plugin react to an existing UE5 multicast delegate (e.g.
+// SDK::UCrSaveSubsystem::OnAfterSave) without the maintainer hand-writing a
+// dedicated AOB-scanned hooks/game/<event>/ module for it.
+//
+// Mechanism (see delegate_hook.h/.cpp for full detail): a brand-new,
+// privately-named UFunction is cloned from an existing native UFunction
+// (used purely as a safe field-layout template -- hostClassName/hostFuncName
+// can be ANY existing native UFunction in the game, completely unrelated to
+// delegatePtr's owning class) and spliced into the target delegate's
+// InvocationList. UClass::FindFunctionByName is hooked to resolve this
+// synthetic name privately; every other name -- i.e. everything else in the
+// game -- takes the real, unmodified path. No real UClass's FuncMap/
+// AllFunctionsCache is ever touched, so nothing else that resolves the same
+// real function name is affected.
+//
+// Deliberately parameterless: PluginDelegateCallback receives only
+// userContext, not the delegate's broadcast arguments. Multiple concurrent
+// hooks are supported, including several hooks on the very same delegatePtr
+// -- each Hook() call gets its own independent handle.
+struct IPluginDelegateHook
+{
+	// delegatePtr must point at a live TMulticastInlineDelegate<...> member
+	// (any arity -- InvocationList is always TArray<FScriptDelegate>).
+	// hostObject is the object the delegate will report as broadcasting on
+	// (becomes the FWeakObjectPtr in the spliced FScriptDelegate) -- usually
+	// the same object delegatePtr lives on. hostClassName/hostFuncName name
+	// any existing native UFunction anywhere in the game, used only as a
+	// field-layout template; it is never modified.
+	// Returns 0 on failure (template not resolved, FindFunctionByName hook
+	// unavailable, or InvocationList could not be grown); otherwise a handle
+	// for Unhook/IsHooked.
+	DelegateHookHandle (*Hook)(void* delegatePtr, void* hostObject,
+		const char* hostClassName, const char* hostFuncName,
+		PluginDelegateCallback callback, void* userContext);
+
+	// Removes the spliced FScriptDelegate entry and frees the synthetic
+	// clone. False if handle is not (or no longer) active.
+	bool (*Unhook)(DelegateHookHandle handle);
+
+	// True if handle currently has an active hook installed via this module.
+	bool (*IsHooked)(DelegateHookHandle handle);
+};
+
 struct IPluginHooks
 {
 	IPluginSpawnerHooks*   Spawner;        // v14
@@ -1228,6 +1291,7 @@ struct IPluginHooks
 	IPluginSplash*         Splash;           // v40 — client only; null on server/generic
 	IPluginCraftingEvents* Crafting;       // v44 -- appended at end to preserve layout for v42/v43 plugins
 	IPluginObjectWalker*   ObjectWalker;   // v47 -- appended at end, do not relocate
+	IPluginDelegateHook*   Delegate;       // v47 -- appended at end, do not relocate
 };
 
 // ---------------------------------------------------------------------------
