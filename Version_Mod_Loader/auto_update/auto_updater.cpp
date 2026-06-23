@@ -470,6 +470,26 @@ static std::vector<std::string> JsonExtractObjectArray(
 // Downloads url into <pluginsDir>\<filename>.tmp then atomically renames to
 // the final path.  Returns true on success; the original DLL is never removed
 // unless the new file is fully written and placed.
+//
+// Note on shape: a download-to-temp-then-replace-a-DLL routine matches the
+// generic "dropper" pattern that AV/EDR heuristics watch for, so it is
+// documented here rather than left to speak for itself:
+//   - Only reachable from RunAutoUpdate(), which only runs when a manifest
+//     URL is configured (CI-injected AUTOUPDATE_MANIFEST_URL on release
+//     builds, or an explicit opt-in via modloader.ini ManifestUrl) — see
+//     auto_updater.h. Dev/generic builds have no URL and never call this.
+//   - url always comes from a manifest the user/CI already chose to trust
+//     (the central release manifest, or a plugin's own sidecar-declared
+//     manifest_url) — this function does not discover or follow untrusted
+//     links on its own.
+//   - The downloaded bytes only ever land at <pluginsDir>\<filename>, i.e.
+//     they replace a plugin DLL the user already installed; this code never
+//     writes outside the Plugins directory and never executes anything
+//     directly — the replaced DLL is picked up by the normal LoadLibrary
+//     path on next plugin load.
+//   - There is no payload checksum/signature check beyond what HTTPS (via
+//     WinHttp) already guarantees for transport integrity; trust is anchored
+//     at the manifest URL, not at this function.
 static bool DownloadPlugin(const char* url,
                            const wchar_t* pluginsDir,
                            const wchar_t* filename,

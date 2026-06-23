@@ -543,7 +543,6 @@
     <ClInclude Include="memory_scanner\scan_cache.h" />
     <ClInclude Include="memory_scanner\scanner.h" />
     <ClInclude Include="memory_scanner\scanner_interface.h" />
-    <ClInclude Include="obfuscate.h" />
     <ClInclude Include="plugins\plugin_interface.h" />
     <ClInclude Include="plugins\known_gobjects.generated.h" />
     <ClInclude Include="plugins\plugin_manager.h" />
