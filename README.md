@@ -72,6 +72,13 @@ Use the [StarRupture-Plugin-SDK](https://github.com/AlienXAXS/StarRupture-Plugin
 
 ---
 
+## Tools Used
+
+- **[IDA Pro](https://hex-rays.com/)** by Hex-Rays — reverse engineering the game binary to find hook targets and AOB patterns
+- **[Claude Code](https://claude.com/claude-code)** — AI coding assistant used throughout development
+
+---
+
 ## Disclaimer
 
 This is a modding tool for educational purposes. Use at your own risk. The authors are not responsible for any damage caused by using this software. While every effort is made to ensure save file compatibility across updates, this cannot be guaranteed.
