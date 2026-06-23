@@ -7,7 +7,6 @@
 #include "../config/config_manager.h"
 #include "../plugins/plugin_manager.h"
 #include "../network_channel/network_channel.h"
-#include "../dwmapi_proxy.h"
 #include "../hooks/game/engine_shutdown/engine_shutdown.h"
 
 void ShutdownAll()
@@ -65,10 +64,11 @@ void ShutdownAll()
     PluginManager::ShutdownPluginManager();
     ModLoaderLogger::ShutdownConfigManager();
 
-    ModLoaderLogger::LogInfo(L"Shutting down dwmapi proxy...");
     ModLoaderLogger::LogInfo(L"Goodbye!");
     ModLoaderLogger::ShutdownLogger();
 
-    DwmapiProxy::Shutdown();
-    LogToFile::Shutdown();
+    // LogToFile::Shutdown() and DwmapiProxy::Shutdown() are owned by the proxy
+    // (StarRupture-ModLoader-Proxy\dllmain.cpp) -- this DLL never opened the real
+    // dwmapi.dll handle and closing the shared log file here would race with
+    // the proxy's own use of it after Core_Detach() returns.
 }

@@ -173,13 +173,18 @@ jobs:
           while ($parts.Count -lt 4) { $parts += '0' }
           $commas  = $parts[0..3] -join ','
           $dots    = $parts[0..3] -join '.'
-          $rc = Get-Content "Version_Mod_Loader\version.rc" -Raw
-          $rc = $rc -replace 'FILEVERSION\s+[\d,]+',    "FILEVERSION     $commas"
-          $rc = $rc -replace 'PRODUCTVERSION\s+[\d,]+', "PRODUCTVERSION  $commas"
-          $rc = $rc -replace '"FileVersion",\s+"[^"]*"',    "`"FileVersion`",      `"$dots`""
-          $rc = $rc -replace '"ProductVersion",\s+"[^"]*"', "`"ProductVersion`",   `"$dots`""
-          Set-Content "Version_Mod_Loader\version.rc" $rc -Encoding UTF8NoBOM
-          Write-Host "version.rc patched to $dots"
+
+          # Both DLLs (proxy + Core) ship their own version.rc and should carry
+          # the same release version.
+          foreach ($rcPath in @("StarRupture-ModLoader-Proxy\version.rc", "StarRupture-ModLoader-Core\version.rc")) {
+            $rc = Get-Content $rcPath -Raw
+            $rc = $rc -replace 'FILEVERSION\s+[\d,]+',    "FILEVERSION     $commas"
+            $rc = $rc -replace 'PRODUCTVERSION\s+[\d,]+', "PRODUCTVERSION  $commas"
+            $rc = $rc -replace '"FileVersion",\s+"[^"]*"',    "`"FileVersion`",      `"$dots`""
+            $rc = $rc -replace '"ProductVersion",\s+"[^"]*"', "`"ProductVersion`",   `"$dots`""
+            Set-Content $rcPath $rc -Encoding UTF8NoBOM
+            Write-Host "$rcPath patched to $dots"
+          }
 
       - name: Build Client Release
         run: |
@@ -227,7 +232,7 @@ jobs:
 
           # Read interface version constants from the header so they never drift
           # out of sync with what was actually compiled.
-          $header = Get-Content "$ws\Version_Mod_Loader\plugins\plugin_interface.h" -Raw
+          $header = Get-Content "$ws\StarRupture-ModLoader-Core\plugins\plugin_interface.h" -Raw
           $matchMin = [regex]::Match($header, '#define\s+PLUGIN_INTERFACE_VERSION_MIN\s+(\d+)')
           $matchMax = [regex]::Match($header, '#define\s+PLUGIN_INTERFACE_VERSION_MAX\s+(\d+)')
           if (-not $matchMin.Success) { throw "Could not find PLUGIN_INTERFACE_VERSION_MIN in plugin_interface.h" }
@@ -408,7 +413,7 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force "sdk\include" | Out-Null
-          Copy-Item "main\Version_Mod_Loader\plugins\plugin_interface.h" "sdk\include\plugin_interface.h" -Force
+          Copy-Item "main\StarRupture-ModLoader-Core\plugins\plugin_interface.h" "sdk\include\plugin_interface.h" -Force
           Write-Host "Sync complete."
 
       - name: Commit and push to SDK repo

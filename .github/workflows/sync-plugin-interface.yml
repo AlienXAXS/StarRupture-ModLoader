@@ -5,8 +5,8 @@ on:
     branches:
       - main
     paths:
-      - 'Version_Mod_Loader/plugins/plugin_interface.h'
-      - 'Version_Mod_Loader/plugins/known_gobjects.generated.h'
+      - 'StarRupture-ModLoader-Core/plugins/plugin_interface.h'
+      - 'StarRupture-ModLoader-Core/plugins/known_gobjects.generated.h'
 
 jobs:
   sync:
@@ -28,8 +28,8 @@ jobs:
       - name: Copy updated headers
         run: |
           mkdir -p sdk/include
-          cp Version_Mod_Loader/plugins/plugin_interface.h sdk/include/plugin_interface.h
-          cp Version_Mod_Loader/plugins/known_gobjects.generated.h sdk/include/known_gobjects.generated.h
+          cp StarRupture-ModLoader-Core/plugins/plugin_interface.h sdk/include/plugin_interface.h
+          cp StarRupture-ModLoader-Core/plugins/known_gobjects.generated.h sdk/include/known_gobjects.generated.h
 
       - name: Commit and push
         run: |

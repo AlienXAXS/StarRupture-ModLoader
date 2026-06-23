@@ -60,6 +60,10 @@ Use the [StarRupture-Plugin-SDK](https://github.com/AlienXAXS/StarRupture-Plugin
 
 ---
 
+## Author
+
+**AlienX** — [GitHub](https://github.com/AlienXAXS) · [AGNGaming](https://www.agngaming.com)
+
 ## Credits
 
 - **[Dumper-7](https://github.com/Encryqed/Dumper-7)** — Unreal Engine SDK generation

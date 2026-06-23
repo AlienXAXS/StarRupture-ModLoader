@@ -1,5 +1,5 @@
 #include "dwmapi_proxy.h"
-#include "logging/log.h"
+#include "proxy_log.h"
 
 // ---------------------------------------------------------------------------
 // Real dwmapi.dll handle + ordinal-indexed function table
@@ -16,24 +16,23 @@ static FARPROC g_ordinalFuncs[251] = {};
 
 bool DwmapiProxy::Initialize()
 {
-	LogToFile::Info("DwmapiProxy::Initialize() starting");
+	ProxyLog::Info("DwmapiProxy::Initialize() starting");
 
 	wchar_t systemDir[MAX_PATH]{};
 	GetSystemDirectoryW(systemDir, MAX_PATH);
-	LogToFile::Debug("System directory: %ls", systemDir);
 
 	wchar_t realPath[MAX_PATH]{};
 	swprintf_s(realPath, L"%s\\dwmapi.dll", systemDir);
-	LogToFile::Info("Loading real dwmapi.dll from: %ls", realPath);
+	ProxyLog::Info("Loading real dwmapi.dll from: %ls", realPath);
 
 	g_realDwmapiDll = LoadLibraryW(realPath);
 	if (!g_realDwmapiDll)
 	{
-		LogToFile::Error("LoadLibraryW failed for real dwmapi.dll (error %lu)", GetLastError());
+		ProxyLog::Error("LoadLibraryW failed for real dwmapi.dll (error %lu)", GetLastError());
 		return false;
 	}
 
-	LogToFile::Info("Real dwmapi.dll loaded at 0x%llX",
+	ProxyLog::Info("Real dwmapi.dll loaded at 0x%llX",
 		static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(g_realDwmapiDll)));
 
 	// Walk the PE export directory — works for any Windows version automatically
@@ -44,7 +43,7 @@ bool DwmapiProxy::Initialize()
 
 	if (expDirDE.VirtualAddress == 0)
 	{
-		LogToFile::Error("Real dwmapi.dll has no export directory — this is unexpected");
+		ProxyLog::Error("Real dwmapi.dll has no export directory — this is unexpected");
 		return false;
 	}
 
@@ -53,7 +52,7 @@ bool DwmapiProxy::Initialize()
 	DWORD ordBase  = expDir->Base;          // first valid ordinal (usually 1)
 	DWORD numFuncs = expDir->NumberOfFunctions;
 
-	LogToFile::Info("PE export table: base ordinal %lu, %lu function slots", ordBase, numFuncs);
+	ProxyLog::Info("PE export table: base ordinal %lu, %lu function slots", ordBase, numFuncs);
 
 	int resolved = 0, skipped = 0;
 	for (DWORD i = 0; i < numFuncs; ++i)
@@ -63,38 +62,26 @@ bool DwmapiProxy::Initialize()
 		DWORD ordinal = ordBase + i;
 		if (ordinal >= 251)
 		{
-			LogToFile::Warn("  Ordinal %lu is out of range (>= 251) — skipped", ordinal);
+			ProxyLog::Warn("  Ordinal %lu is out of range (>= 251) — skipped", ordinal);
 			continue;
 		}
 
 		g_ordinalFuncs[ordinal] = reinterpret_cast<FARPROC>(base + funcRVAs[i]);
-		LogToFile::Debug("  [ord %3lu] -> 0x%llX", ordinal,
-			static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(g_ordinalFuncs[ordinal])));
 		++resolved;
 	}
 
-	LogToFile::Info("Export resolution complete: %d resolved, %d null slots skipped", resolved, skipped);
+	ProxyLog::Info("Export resolution complete: %d resolved, %d null slots skipped", resolved, skipped);
 	return true;
 }
 
 void DwmapiProxy::Shutdown()
 {
-	LogToFile::Info("DwmapiProxy::Shutdown() starting");
-
 	if (g_realDwmapiDll)
 	{
-		LogToFile::Debug("Freeing real dwmapi.dll (handle 0x%llX)",
-			static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(g_realDwmapiDll)));
 		FreeLibrary(g_realDwmapiDll);
 		g_realDwmapiDll = nullptr;
-		LogToFile::Info("Real dwmapi.dll unloaded");
+		ProxyLog::Info("Real dwmapi.dll unloaded");
 	}
-	else
-	{
-		LogToFile::Debug("Real dwmapi.dll was already null — nothing to free");
-	}
-
-	LogToFile::Info("DwmapiProxy::Shutdown() complete");
 }
 
 // ---------------------------------------------------------------------------
