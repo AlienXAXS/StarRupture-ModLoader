@@ -1,0 +1,6 @@
+#include "resource.h"
+
+// Embedded icon font for the modloader's own window tab labels (Material
+// Icons Regular, Apache 2.0). Loaded via FindResource/LoadResource and
+// merged into the ImGui font atlas in imgui_backend.cpp -- see RebuildFontAtlas().
+IDR_ICON_FONT RCDATA "custom_fonts\\MaterialIcons-Regular.ttf"

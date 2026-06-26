@@ -306,6 +306,9 @@
     <ClInclude Include="UI\global_settings.h">
       <Filter>Source Files\UI</Filter>
     </ClInclude>
+    <ClInclude Include="UI\theme.h">
+      <Filter>Source Files\UI</Filter>
+    </ClInclude>
     <ClInclude Include="network_channel\network_channel.h">
       <Filter>Source Files\network_channel</Filter>
     </ClInclude>
@@ -501,6 +504,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="UI\global_settings.cpp">
+      <Filter>Source Files\UI</Filter>
+    </ClCompile>
+    <ClCompile Include="UI\theme.cpp">
       <Filter>Source Files\UI</Filter>
     </ClCompile>
     <ClCompile Include="hooks\game\game_instance_init\game_instance_init.cpp">

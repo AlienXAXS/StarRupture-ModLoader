@@ -16,6 +16,7 @@
 #include "../UI/plugin_panel_registry.h"
 #include "../UI/plugin_widget_registry.h"
 #include "../UI/splash_window.h"
+#include "../UI/theme.h"
 #include "../logging/log.h"
 
 static bool         s_imguiEnabled = true;
@@ -53,6 +54,17 @@ void InitClientUI()
         ImGuiRenderCallbacks cbs{};
         cbs.RenderFrame = [](IModLoaderImGui* api)
         {
+            // Applied here (not at startup) because the shared ImGui context
+            // is only created lazily by the host DLL on the first render --
+            // RenderFrame is guaranteed to fire after that.
+            static bool s_themeApplied = false;
+            if (!s_themeApplied)
+            {
+                UI::Theme::Apply();
+                UI::Theme::LoadColors(UI::GlobalSettings::GetIniPath());
+                s_themeApplied = true;
+            }
+
             UI::Overlay::Render();
             UI::Overlay::RenderHud();
             UI::ModLoaderWindow::Render(api);

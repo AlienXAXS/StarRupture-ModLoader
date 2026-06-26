@@ -8,6 +8,7 @@
 #include "plugins/plugin_manager.h"
 #include "config/config_manager.h"
 #include "global_settings.h"
+#include "theme.h"
 #include "logging/log.h"
 #include "hooks/input/keybind_registry.h"
 #include <cmath>
@@ -29,6 +30,7 @@ namespace UI::ModLoaderWindow
     // -----------------------------------------------------------------------
     static bool s_isOpen = false;
     static int  s_selectedPlugin = -1;  // index in Plugins tab
+    static int  s_activeTab = 0;        // index into the icon tab strip (Plugins/Config/Settings/About)
 
     // Config tab: per-key editable buffers.
     // We parse the INI once when the selection changes, then cache.
@@ -195,13 +197,16 @@ namespace UI::ModLoaderWindow
             ImGui::TableSetupColumn("Version", ImGuiTableColumnFlags_WidthFixed,  fs * 5.4f);
             ImGui::TableSetupColumn("Author",  ImGuiTableColumnFlags_WidthStretch);
             ImGui::TableSetupColumn("Status",  ImGuiTableColumnFlags_WidthFixed,  fs * 6.9f);
-            ImGui::TableSetupColumn("Actions", ImGuiTableColumnFlags_WidthFixed,  fs * 13.5f);
+            ImGui::TableSetupColumn("Actions", ImGuiTableColumnFlags_WidthFixed,  fs * 16.0f);
             ImGui::TableHeadersRow();
 
             for (int i = 0; i < count; ++i)
             {
                 const PluginManager::PluginStatus& s = statuses[i];
                 ImGui::TableNextRow();
+                if (s.isLoaded)
+                    ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg0,
+                        ImGui::GetColorU32(UI::Theme::AccentColorVec4(0.10f)));
 
                 ImGui::TableSetColumnIndex(0);
                 ImGui::TextUnformatted(s.name[0] ? s.name : "?");
@@ -237,9 +242,11 @@ namespace UI::ModLoaderWindow
                 }
                 else
                 {
+                    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(10.0f, 4.0f));
+
                     // Unload — active only when loaded
                     if (!s.isLoaded) ImGui::BeginDisabled();
-                    if (ImGui::SmallButton("Unload"))
+                    if (ImGui::Button("UNLOAD"))
                         PluginManager::UnloadPlugin(i);
                     if (!s.isLoaded) ImGui::EndDisabled();
 
@@ -247,15 +254,20 @@ namespace UI::ModLoaderWindow
 
                     // Load — active only when unloaded
                     if (s.isLoaded) ImGui::BeginDisabled();
-                    if (ImGui::SmallButton("Load"))
+                    if (ImGui::Button("LOAD"))
                         PluginManager::ReloadPlugin(i);
                     if (s.isLoaded) ImGui::EndDisabled();
 
                     ImGui::SameLine();
 
-                    // Reload — always active
-                    if (ImGui::SmallButton("Reload"))
+                    // Reload — always active; accented as the primary action.
+                    ImGui::PushStyleColor(ImGuiCol_Button, UI::Theme::AccentColorVec4(0.20f));
+                    ImGui::PushStyleColor(ImGuiCol_Text, UI::Theme::AccentColorVec4(1.0f));
+                    if (ImGui::Button("RELOAD"))
                         PluginManager::ReloadPlugin(i);
+                    ImGui::PopStyleColor(2);
+
+                    ImGui::PopStyleVar();
                 }
 
                 ImGui::PopID();
@@ -323,7 +335,7 @@ namespace UI::ModLoaderWindow
             bool bval = (strcmp(kv.value, "true") == 0 || strcmp(kv.value, "1") == 0);
             char lbl[128];
             snprintf(lbl, sizeof(lbl), "##chk%s", id);
-            if (ImGui::Checkbox(lbl, &bval))
+            if (UI::Theme::ToggleSwitch(lbl, &bval))
             {
                 strncpy_s(kv.value, bval ? "true" : "false", _TRUNCATE);
                 CommitConfigChange(pluginName, kv);
@@ -433,7 +445,7 @@ namespace UI::ModLoaderWindow
             }
             char chkId[160];
             snprintf(chkId, sizeof(chkId), "##blk_%s_%s", kv.section, kv.key);
-            if (ImGui::Checkbox(chkId, &bBlocking))
+            if (UI::Theme::ToggleSwitch(chkId, &bBlocking))
             {
                 wchar_t iniPath2[MAX_PATH];
                 if (GetPluginIniPath(pluginName, iniPath2, MAX_PATH))
@@ -706,15 +718,15 @@ namespace UI::ModLoaderWindow
         ImGui::Spacing();
 
         bool showFPS = UI::GlobalSettings::GetShowFPS();
-        if (ImGui::Checkbox("Show FPS", &showFPS))
+        if (UI::Theme::ToggleSwitch("Show FPS", &showFPS))
             UI::GlobalSettings::SetShowFPS(showFPS);
 
         bool showWorld = UI::GlobalSettings::GetShowWorldName();
-        if (ImGui::Checkbox("Show Current World Name", &showWorld))
+        if (UI::Theme::ToggleSwitch("Show Current World Name", &showWorld))
             UI::GlobalSettings::SetShowWorldName(showWorld);
 
         bool showPos = UI::GlobalSettings::GetShowPlayerPosition();
-        if (ImGui::Checkbox("Show Player Position", &showPos))
+        if (UI::Theme::ToggleSwitch("Show Player Position", &showPos))
             UI::GlobalSettings::SetShowPlayerPosition(showPos);
 
         ImGui::Spacing();
@@ -737,7 +749,45 @@ namespace UI::ModLoaderWindow
             ImGui::SetTooltip("Takes effect immediately. Persisted to modloader.ini.");
 
         ImGui::Spacing();
-        ImGui::SeparatorText("UI");
+        ImGui::TextDisabled("Settings are saved to modloader.ini immediately.");
+    }
+
+    // Long rectangular swatch -- click anywhere on the bar to open the
+    // color picker popup (hue wheel + saturation triangle). No inline
+    // RGB/hex sliders, unlike a plain ImGui::ColorEdit4.
+    static void ColorBar(const char* label, ImVec4* color, float width = -1.0f)
+    {
+        ImGui::PushID(label);
+
+        if (width < 0.0f)
+            width = ImGui::CalcItemWidth();
+        const float height = ImGui::GetFrameHeight();
+
+        if (ImGui::ColorButton("##swatch", *color,
+                ImGuiColorEditFlags_NoTooltip, ImVec2(width, height)))
+            ImGui::OpenPopup("##picker");
+
+        if (ImGui::BeginPopup("##picker"))
+        {
+            ImGui::ColorPicker4("##picker_widget", reinterpret_cast<float*>(color),
+                ImGuiColorEditFlags_PickerHueWheel | ImGuiColorEditFlags_NoSidePreview);
+            ImGui::EndPopup();
+        }
+
+        const char* hash = strstr(label, "##");
+        if (hash != label)
+        {
+            ImGui::SameLine();
+            ImGui::TextUnformatted(label, hash);
+        }
+
+        ImGui::PopID();
+    }
+
+    static void RenderThemeTab()
+    {
+        ImGui::Spacing();
+        ImGui::SeparatorText("Font");
         ImGui::Spacing();
 
         static const char*  s_sizeLabels[] = { "Small", "Normal", "Large", "Extra Large" };
@@ -815,7 +865,50 @@ namespace UI::ModLoaderWindow
                 "Takes effect immediately.");
 
         ImGui::Spacing();
-        ImGui::TextDisabled("Settings are saved to modloader.ini immediately.");
+        ImGui::SeparatorText("Accent Colors");
+        ImGui::TextDisabled("Drive the custom-drawn widgets (toggles, tab strip, panel borders).");
+        ImGui::Spacing();
+
+        ColorBar("Accent",        UI::Theme::AccentBasePtr());
+        ColorBar("Accent Hover",  UI::Theme::AccentHoverPtr());
+        ColorBar("Accent Active", UI::Theme::AccentActivePtr());
+
+        ImGui::Spacing();
+        ImGui::SeparatorText("All UI Colors");
+        ImGui::TextDisabled("Every ImGui style color used across the modloader and plugin panels.");
+        ImGui::Spacing();
+
+        ImGuiStyle& style = ImGui::GetStyle();
+        ImGui::BeginChild("##theme_colors", ImVec2(0, 360), true);
+        for (int i = 0; i < ImGuiCol_COUNT; ++i)
+        {
+            const char* name = ImGui::GetStyleColorName(i);
+            if (!name) continue;
+            char id[64];
+            snprintf(id, sizeof(id), "##col_%d", i);
+            ColorBar(id, &style.Colors[i], 220.0f);
+            ImGui::SameLine();
+            ImGui::TextUnformatted(name);
+        }
+        ImGui::EndChild();
+
+        ImGui::Spacing();
+        if (ImGui::Button("Save", ImVec2(120.0f, 0.0f)))
+        {
+            const wchar_t* iniPath = UI::GlobalSettings::GetIniPath();
+            if (iniPath && iniPath[0] != L'\0')
+                UI::Theme::SaveColors(iniPath);
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Reset to Defaults", ImVec2(160.0f, 0.0f)))
+        {
+            UI::Theme::ResetColors();
+            const wchar_t* iniPath = UI::GlobalSettings::GetIniPath();
+            if (iniPath && iniPath[0] != L'\0')
+                UI::Theme::SaveColors(iniPath);
+        }
+        ImGui::SameLine();
+        ImGui::TextDisabled("Colors apply immediately. Save/Reset write to modloader.ini.");
     }
 
     static void RenderAboutTab()
@@ -911,45 +1004,51 @@ namespace UI::ModLoaderWindow
             return;
 
         ImGuiIO& io = ImGui::GetIO();
-        ImGui::SetNextWindowSize(ImVec2(720, 480), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(ImVec2(860, 640), ImGuiCond_FirstUseEver);
         ImGui::SetNextWindowPos(
             ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f),
             ImGuiCond_FirstUseEver,
             ImVec2(0.5f, 0.5f));
 
-        ImGuiWindowFlags flags = ImGuiWindowFlags_None;
-        if (!ImGui::Begin("Mod Loader##main", &s_isOpen, flags))
-        {
-            ImGui::End();
+        if (!UI::Theme::BeginChamferedWindow("Mod Loader##main", "MOD LOADER", &s_isOpen,
+                                              "BUILD " MODLOADER_BUILD_TAG))
             return;
-        }
 
-        if (ImGui::BeginTabBar("##tabs"))
+        static const char* s_tabIcons[5] =
         {
-            if (ImGui::BeginTabItem("Plugins"))
-            {
-                RenderPluginsTab();
-                ImGui::EndTabItem();
-            }
-            if (ImGui::BeginTabItem("Config"))
-            {
-                RenderConfigTab(imgui);
-                ImGui::EndTabItem();
-            }
-            if (ImGui::BeginTabItem("Global Settings"))
-            {
-                RenderGlobalSettingsTab();
-                ImGui::EndTabItem();
-            }
-            if (ImGui::BeginTabItem("About"))
-            {
-                RenderAboutTab();
-                ImGui::EndTabItem();
-            }
-            ImGui::EndTabBar();
-        }
+            UI::Theme::Icons::Plugins,
+            UI::Theme::Icons::Config,
+            UI::Theme::Icons::Settings,
+            UI::Theme::Icons::Theme,
+            UI::Theme::Icons::About,
+        };
 
-        ImGui::End();
+        const float navSize = 64.0f;
+        ImVec2 navStart = ImGui::GetCursorScreenPos();
+        s_activeTab = UI::Theme::IconTabBar(s_tabIcons, 5, s_activeTab, navSize, /*vertical=*/true);
+
+        // Vertical divider between the icon column and the tab content,
+        // spanning the rest of the window's content area below the header.
+        float sepX = navStart.x + navSize + 8.0f;
+        ImGui::GetWindowDrawList()->AddLine(
+            ImVec2(sepX, navStart.y),
+            ImVec2(sepX, ImGui::GetWindowPos().y + ImGui::GetWindowSize().y - ImGui::GetStyle().WindowPadding.y),
+            ImGui::GetColorU32(ImGuiCol_Separator));
+
+        ImGui::SetCursorScreenPos(ImVec2(sepX + 16.0f, navStart.y));
+        ImGui::BeginGroup();
+        switch (s_activeTab)
+        {
+        case 0: RenderPluginsTab();        break;
+        case 1: RenderConfigTab(imgui);    break;
+        case 2: RenderGlobalSettingsTab(); break;
+        case 3: RenderThemeTab();          break;
+        case 4: RenderAboutTab();          break;
+        default: break;
+        }
+        ImGui::EndGroup();
+
+        UI::Theme::EndChamferedWindow();
     }
 }
 

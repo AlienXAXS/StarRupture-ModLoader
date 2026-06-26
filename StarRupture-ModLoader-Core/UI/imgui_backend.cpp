@@ -8,6 +8,7 @@
 #include "imgui.h"
 #include "imgui_impl_dx12.h"
 #include "imgui_impl_win32.h"
+#include "resource.h"
 
 #include <d3d12.h>
 #include <dxgi1_2.h>
@@ -621,6 +622,50 @@ static void RebuildFontAtlas(bool initialSetup)
 			mergeCfg.MergeMode = true;
 			mergeCfg.PixelSnapH = true;
 			io.Fonts->AddFontFromFileTTF(mergePathNarrow, kBasePx, &mergeCfg, s_cjkRanges);
+		}
+	}
+
+	// Merge icon glyphs on top of whichever base font was just loaded above
+	// (built-in or any of k_fonts) -- same MergeMode technique as the CJK
+	// merge, so the icon font works regardless of font family selection.
+	// The icon font (Material Icons Regular, Apache 2.0) is embedded as an
+	// RCDATA resource (see StarRupture-ImGui.rc / resource.h) rather than
+	// loaded from a loose file, so the DLL is self-contained.
+	{
+		HMODULE hSelf = nullptr;
+		GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+		                   GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+		                   reinterpret_cast<LPCWSTR>(&ImGuiHost_Initialize), &hSelf);
+
+		HRSRC hRes = FindResourceW(hSelf, MAKEINTRESOURCEW(IDR_ICON_FONT), RT_RCDATA);
+		HGLOBAL hData = hRes ? LoadResource(hSelf, hRes) : nullptr;
+		void* resPtr = hData ? LockResource(hData) : nullptr;
+		DWORD  resSize = hRes ? SizeofResource(hSelf, hRes) : 0;
+
+		if (resPtr && resSize > 0)
+		{
+			// Only the codepoints actually referenced by UI::Theme::Icons::*
+			// (theme.cpp) -- keeps the merged atlas region tiny instead of
+			// pulling in the whole Material Icons private-use-area block.
+			static const ImWchar s_iconRange[] =
+			{
+				0xE429, 0xE429, // tune        (Config)
+				0xE88E, 0xE88E, // info        (About)
+				0xE87B, 0xE87B, // extension   (Plugins)
+				0xE8B8, 0xE8B8, // settings    (Global Settings)
+				0
+			};
+
+			ImFontConfig iconCfg;
+			iconCfg.MergeMode = true;
+			iconCfg.PixelSnapH = true;
+			iconCfg.FontDataOwnedByAtlas = false; // resPtr is resource-section memory, not heap -- ImGui must not free() it
+			if (!io.Fonts->AddFontFromMemoryTTF(resPtr, static_cast<int>(resSize), kBasePx, &iconCfg, s_iconRange))
+				IMGUI_LOG_WARN("[ImGuiBackend] Failed to load embedded icon font resource");
+		}
+		else
+		{
+			IMGUI_LOG_WARN("[ImGuiBackend] Embedded icon font resource (IDR_ICON_FONT) not found");
 		}
 	}
 
