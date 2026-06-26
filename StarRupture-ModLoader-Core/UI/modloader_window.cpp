@@ -1010,8 +1010,12 @@ namespace UI::ModLoaderWindow
             ImGuiCond_FirstUseEver,
             ImVec2(0.5f, 0.5f));
 
+        // NoScrollbar on the outer window -- the title bar (drawn by
+        // BeginChamferedWindow) must stay fixed, so scrolling happens only
+        // inside the nav column and tab content children below, each
+        // independently, rather than the whole window scrolling as one unit.
         if (!UI::Theme::BeginChamferedWindow("Mod Loader##main", "MOD LOADER", &s_isOpen,
-                                              "BUILD " MODLOADER_BUILD_TAG))
+                                              "BUILD " MODLOADER_BUILD_TAG, ImGuiWindowFlags_NoScrollbar))
             return;
 
         static const char* s_tabIcons[5] =
@@ -1023,20 +1027,25 @@ namespace UI::ModLoaderWindow
             UI::Theme::Icons::About,
         };
 
-        const float navSize = 64.0f;
+        const float navSize  = 64.0f;
+        const float navWidth = navSize + 8.0f;
+        ImVec2 avail    = ImGui::GetContentRegionAvail();
         ImVec2 navStart = ImGui::GetCursorScreenPos();
+
+        ImGui::BeginChild("##nav_col", ImVec2(navWidth, avail.y), false);
         s_activeTab = UI::Theme::IconTabBar(s_tabIcons, 5, s_activeTab, navSize, /*vertical=*/true);
+        ImGui::EndChild();
 
         // Vertical divider between the icon column and the tab content,
-        // spanning the rest of the window's content area below the header.
-        float sepX = navStart.x + navSize + 8.0f;
+        // spanning the height shared by both child regions.
+        float sepX = navStart.x + navWidth;
         ImGui::GetWindowDrawList()->AddLine(
             ImVec2(sepX, navStart.y),
-            ImVec2(sepX, ImGui::GetWindowPos().y + ImGui::GetWindowSize().y - ImGui::GetStyle().WindowPadding.y),
+            ImVec2(sepX, navStart.y + avail.y),
             ImGui::GetColorU32(ImGuiCol_Separator));
 
         ImGui::SetCursorScreenPos(ImVec2(sepX + 16.0f, navStart.y));
-        ImGui::BeginGroup();
+        ImGui::BeginChild("##tab_content", ImVec2(0, avail.y), false);
         switch (s_activeTab)
         {
         case 0: RenderPluginsTab();        break;
@@ -1046,7 +1055,7 @@ namespace UI::ModLoaderWindow
         case 4: RenderAboutTab();          break;
         default: break;
         }
-        ImGui::EndGroup();
+        ImGui::EndChild();
 
         UI::Theme::EndChamferedWindow();
     }
