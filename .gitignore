@@ -42,6 +42,7 @@ Release/
 *.opensdf
 *.db
 *.opendb
+*.aps
 ipch/
 
 
