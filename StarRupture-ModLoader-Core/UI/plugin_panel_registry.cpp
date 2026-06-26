@@ -4,6 +4,7 @@
 #ifdef MODLOADER_CLIENT_BUILD
 
 #include "imgui/imgui.h"
+#include "theme.h"
 #include <mutex>
 #include <list>
 #include <vector>
@@ -218,11 +219,15 @@ namespace UI::PluginPanelRegistry
         {
             ImGui::SetNextWindowSize(ImVec2(480, 360), ImGuiCond_FirstUseEver);
             bool open = entry->isOpen;
-            if (ImGui::Begin(entry->desc->windowTitle, &open))
+            // Subtitle shows which plugin owns the panel -- nullptr (omitted)
+            // for panels registered without a recorded owner.
+            const char* subtitle = entry->pluginName[0] ? entry->pluginName : nullptr;
+            if (UI::Theme::BeginChamferedWindow(entry->desc->windowTitle, entry->desc->windowTitle,
+                                                 &open, subtitle))
             {
                 entry->desc->renderFn(imgui);
+                UI::Theme::EndChamferedWindow();
             }
-            ImGui::End();
             entry->isOpen = open;
             if (!open)
                 FirePanelClosed(static_cast<PanelHandle>(entry));
