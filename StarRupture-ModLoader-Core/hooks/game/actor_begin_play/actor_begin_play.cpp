@@ -1,7 +1,8 @@
 #include "pch.h"
 #include "actor_begin_play.h"
 #include "logging/logger.h"
-#include "../ufunction_resolve.h"
+#include "memory_scanner/scanner.h"
+#include "../scan_patterns.h"
 #include <vector>
 #include <algorithm>
 
@@ -49,11 +50,14 @@ namespace Hooks::ActorBeginPlay
 	{
 		ModLoaderLogger::LogInfo(L"[ActorBeginPlay] Installing hook...");
 
-		uintptr_t addr = Hooks::ResolveUFunctionNativeAddr("Actor", "ReceiveBeginPlay");
+		uintptr_t addr = Scanner::FindPatternInMainModule(
+			"AActor::BeginPlay",
+			ScanPatterns::AActor_BeginPlay);
 		if (!addr)
-			addr = Hooks::ResolveUFunctionNativeAddr("Actor", "BeginPlay");
-		if (!addr)
+		{
+			ModLoaderLogger::LogError(L"[ActorBeginPlay] Pattern scan failed");
 			return false;
+		}
 
 		bool hookOk = g_hook.Install(
 			addr,

@@ -107,6 +107,10 @@ namespace ScanPatterns
 	inline constexpr auto UCrExperienceManagerComponent_OnExperienceLoadComplete =
 		"48 89 4C 24 ?? 55 53 56 41 54 41 55 48 8D 6C 24 ?? 48 81 EC ?? ?? ?? ?? 83 B9";
 
+	// AActor::BeginPlay() -- engine-level native call, not resolvable by UFUNCTION name.
+	inline constexpr auto AActor_BeginPlay =
+		"48 89 5C 24 ?? 48 89 74 24 ?? 57 48 81 EC ?? ?? ?? ?? 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 84 24 ?? ?? ?? ?? 0F B6 41";
+
 	// UWorld::BeginPlay() -- engine-level native call, not a UFUNCTION.
 	inline constexpr auto UWorld_BeginPlay =
 		"48 83 EC ?? 48 89 5C 24 ?? 48 8B D9 E8 ?? ?? ?? ?? 84 C0 74 ?? 48 8B CB";
