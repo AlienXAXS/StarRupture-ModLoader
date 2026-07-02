@@ -329,18 +329,21 @@ namespace UI::ModLoaderWindow
         ImGui::SetNextItemWidth(-FLT_MIN); // fill the column
 
         bool widgetHovered = false;
+        const bool isBool = e && e->type == ConfigValueType::Boolean;
 
-        if (e && e->type == ConfigValueType::Boolean)
+        if (isBool)
         {
-            bool bval = (strcmp(kv.value, "true") == 0 || strcmp(kv.value, "1") == 0);
-            char lbl[128];
-            snprintf(lbl, sizeof(lbl), "##chk%s", id);
-            if (UI::Theme::ToggleSwitch(lbl, &bval))
+            // The toggle itself lives in Col 2 (next to reset); this column shows
+            // the description inline as a marquee so it is readable without a
+            // hover tooltip, scrolling only when it overflows the column.
+            if (e && e->description && e->description[0])
             {
-                strncpy_s(kv.value, bval ? "true" : "false", _TRUNCATE);
-                CommitConfigChange(pluginName, kv);
+                char descId[160];
+                snprintf(descId, sizeof(descId), "##desc%s", id);
+                ImGui::AlignTextToFramePadding();
+                UI::Theme::MarqueeLabel(descId, e->description,
+                                        ImGui::GetContentRegionAvail().x);
             }
-            widgetHovered = ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal);
         }
         else if (e && e->type == ConfigValueType::Integer)
         {
@@ -430,6 +433,21 @@ namespace UI::ModLoaderWindow
 
         // ---- Col 2: actions ----------------------------------------------
         ImGui::TableSetColumnIndex(2);
+
+        // Boolean toggle lives here (not in Col 1) so the description marquee
+        // can use the full widget column width.
+        if (isBool)
+        {
+            bool bval = (strcmp(kv.value, "true") == 0 || strcmp(kv.value, "1") == 0);
+            char lbl[128];
+            snprintf(lbl, sizeof(lbl), "##chk%s", id);
+            if (UI::Theme::ToggleSwitch(lbl, &bval))
+            {
+                strncpy_s(kv.value, bval ? "true" : "false", _TRUNCATE);
+                CommitConfigChange(pluginName, kv);
+            }
+            ImGui::SameLine();
+        }
 
         // Blocking checkbox (keybind rows only).
         if (e && e->type == ConfigValueType::Keybind)
