@@ -68,6 +68,7 @@ void InstallAllHooks()
     Hooks::MassSpawnerActivate::Install();
     Hooks::MassSpawnerDeactivate::Install();
     Hooks::MassDoSpawning::Install();
+	Hooks::ActorBeginPlay::Install();
 
     Splash::SetStatus(L"Installing TextLocalization hook...");
 
