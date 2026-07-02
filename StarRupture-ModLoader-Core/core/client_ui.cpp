@@ -3,6 +3,7 @@
 #include "client_ui.h"
 #include "startup_utils.h"
 #include "Engine_classes.hpp"
+#include "../hooks/game/text_input_focus/text_input_focus.h"
 #include "../hooks/game/world_begin_play/world_begin_play.h"
 #include "../hooks/game/engine_tick/engine_tick.h"
 #include "../hooks/input/input_processor.h"
@@ -26,6 +27,7 @@ static EModKey      s_openKey      = EModKey::F2;
 void InitClientUI()
 {
     const std::wstring iniPath = GetModLoaderDirPath(L"modloader.ini");
+    Hooks::TextInputFocus::LoadConfig(iniPath.c_str());
     int val = GetPrivateProfileIntW(L"UI", L"Enabled", -1, iniPath.c_str());
     if (val == -1)
     {

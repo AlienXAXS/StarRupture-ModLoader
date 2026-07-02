@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "keybind_registry.h"
+#include "hooks/game/text_input_focus/text_input_focus.h"
 #include "logging/logger.h"
 
 #include <windows.h>
@@ -575,6 +576,23 @@ namespace Hooks::Input
 	}
 
 	// -----------------------------------------------------------------------
+	// Registration precheck -- true if any registration (simple, named combo,
+	// or advanced combo) exists for the key.  Used to keep the game text-focus
+	// scan off the hot path for keys nothing is bound to.
+	// -----------------------------------------------------------------------
+	static bool HasAnyRegistrationForKey(EModKey key)
+	{
+		std::lock_guard<std::mutex> lock(s_mutex);
+		for (auto& e : s_callbacks)
+			if (e.key == key) return true;
+		for (auto& e : s_namedCombos)
+			if (e.key == key) return true;
+		for (auto& e : s_comboCallbacks)
+			if (e.key == key) return true;
+		return false;
+	}
+
+	// -----------------------------------------------------------------------
 	// Dispatch
 	// -----------------------------------------------------------------------
 	void Dispatch(EModKey key, EModKeyEvent event)
@@ -707,6 +725,18 @@ namespace Hooks::Input
 		if (vk == VK_LCONTROL || vk == VK_RCONTROL ||
 		    vk == VK_LSHIFT   || vk == VK_RSHIFT   ||
 		    vk == VK_LMENU    || vk == VK_RMENU)
+			return false;
+
+		// Do not fire keyboard keybinds while the player is typing into a
+		// game text field (chat, save name, etc.) -- e.g. a plugin bound to
+		// "P" must not open its panel when the player types "Printer".
+		// Returning false (not blocked) lets the keystroke flow on to the
+		// game so it reaches the text box.  Only Pressed is gated: letting
+		// Released through means a key held when focus changed does not get
+		// stuck down in a plugin's view.  Mouse buttons are unaffected.
+		if ((msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN) &&
+		    HasAnyRegistrationForKey(mk) &&
+		    Hooks::TextInputFocus::IsGameTextInputFocused())
 			return false;
 
 		EModKeyModifiers mods = SampleCurrentModifiers();

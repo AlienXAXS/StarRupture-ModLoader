@@ -73,6 +73,9 @@
     <Filter Include="Source Files\hooks\game\gobject_walk">
       <UniqueIdentifier>{2f4a7d9b-6c8e-4a1f-b3d2-9e5c7a8f0d1b}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Source Files\hooks\game\text_input_focus">
+      <UniqueIdentifier>{b8a4a9b2-5369-4f37-a5c1-ac05ed6c3333}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Source Files\hooks\game\object_properties">
       <UniqueIdentifier>{3a5b8e0c-7d9f-4b2a-9e6f-8c1d3a4b5c6d}</UniqueIdentifier>
     </Filter>
@@ -206,6 +209,9 @@
     </ClInclude>
     <ClInclude Include="hooks\game\gobject_walk\gobject_walk.h">
       <Filter>Source Files\hooks\game\gobject_walk</Filter>
+    </ClInclude>
+    <ClInclude Include="hooks\game\text_input_focus\text_input_focus.h">
+      <Filter>Source Files\hooks\game\text_input_focus</Filter>
     </ClInclude>
     <ClInclude Include="hooks\game\object_properties\object_properties.h">
       <Filter>Source Files\hooks\game\object_properties</Filter>
@@ -430,6 +436,9 @@
     </ClCompile>
     <ClCompile Include="hooks\game\gobject_walk\gobject_walk.cpp">
       <Filter>Source Files\hooks\game\gobject_walk</Filter>
+    </ClCompile>
+    <ClCompile Include="hooks\game\text_input_focus\text_input_focus.cpp">
+      <Filter>Source Files\hooks\game\text_input_focus</Filter>
     </ClCompile>
     <ClCompile Include="hooks\game\object_properties\object_properties.cpp">
       <Filter>Source Files\hooks\game\object_properties</Filter>

@@ -417,6 +417,7 @@
     <ClInclude Include="hooks\game\crafting_finished\crafting_finished.h" />
     <ClInclude Include="hooks\game\delegate_hook\delegate_hook.h" />
     <ClInclude Include="hooks\game\gobject_walk\gobject_walk.h" />
+    <ClInclude Include="hooks\game\text_input_focus\text_input_focus.h" />
     <ClInclude Include="hooks\game\object_properties\object_properties.h" />
     <ClInclude Include="hooks\game\engine_init\engine_init.h" />
     <ClInclude Include="hooks\game\game_instance_init\game_instance_init.h" />
@@ -510,6 +511,9 @@
     <ClCompile Include="hooks\game\crafting_finished\crafting_finished.cpp" />
     <ClCompile Include="hooks\game\delegate_hook\delegate_hook.cpp" />
     <ClCompile Include="hooks\game\gobject_walk\gobject_walk.cpp" />
+    <ClCompile Include="hooks\game\text_input_focus\text_input_focus.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)' != 'Client Debug' And '$(Configuration)' != 'Client Release' And '$(Configuration)' != 'Local SDK Client Debug' And '$(Configuration)' != 'Local SDK Client Release'">true</ExcludedFromBuild>
+    </ClCompile>
     <ClCompile Include="hooks\game\object_properties\object_properties.cpp" />
     <ClCompile Include="hooks\game\engine_init\engine_init.cpp" />
     <ClCompile Include="hooks\game\game_instance_init\game_instance_init.cpp" />
