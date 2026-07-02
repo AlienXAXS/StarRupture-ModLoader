@@ -58,6 +58,15 @@ namespace UI::Theme
     // returns true the frame the value changes.
     bool ToggleSwitch(const char* label, bool* v);
 
+    // Draws `text` clipped to `width` pixels on the current line. If it fits,
+    // it is drawn statically like TextUnformatted. If it overflows, it scrolls
+    // horizontally (pause at each end, then reverse) so the whole string can be
+    // read without a tooltip. `id` must be stable across frames -- it keys the
+    // per-label scroll state -- and is not rendered (pass e.g. "##desc_foo").
+    // Advances the cursor by one line height and reserves `width` horizontally,
+    // so it composes with SameLine()/tables like a normal text item.
+    void MarqueeLabel(const char* id, const char* text, float width);
+
     // Draws a single-diagonal-corner (chamfered) outline -- chamfer cut at
     // the top-left and bottom-right corners -- over the given rect, matching
     // the angular panel shape used throughout the StarRupture HUD. Call after
