@@ -625,9 +625,17 @@ namespace UI::ModLoaderWindow
             return;
         }
 
-        // Left panel: plugin list
-        const float LIST_WIDTH = 160.0f;
-        ImGui::BeginChild("##cfg_list", ImVec2(LIST_WIDTH, 0), true);
+        // Left panel: plugin list (user-resizable via the splitter below)
+        static float s_cfgListWidth = 200.0f;
+        const float totalWidth = ImGui::GetContentRegionAvail().x;
+        const float minListWidth = 100.0f;
+        const float minEditorWidth = 150.0f;
+        if (s_cfgListWidth > totalWidth - minEditorWidth)
+            s_cfgListWidth = totalWidth - minEditorWidth;
+        if (s_cfgListWidth < minListWidth)
+            s_cfgListWidth = minListWidth;
+
+        ImGui::BeginChild("##cfg_list", ImVec2(s_cfgListWidth, 0), true);
         for (int i = 0; i < count; ++i)
         {
             const char* name = infos[i]->name ? infos[i]->name : "?";
@@ -637,7 +645,18 @@ namespace UI::ModLoaderWindow
         }
         ImGui::EndChild();
 
-        ImGui::SameLine();
+        ImGui::SameLine(0.0f, 0.0f);
+
+        // Draggable splitter between the plugin list and the config editor.
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0.0f, 0.0f));
+        ImGui::Button("##cfg_splitter", ImVec2(6.0f, ImGui::GetContentRegionAvail().y));
+        if (ImGui::IsItemHovered() || ImGui::IsItemActive())
+            ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+        if (ImGui::IsItemActive())
+            s_cfgListWidth += ImGui::GetIO().MouseDelta.x;
+        ImGui::PopStyleVar();
+
+        ImGui::SameLine(0.0f, 0.0f);
 
         // Right panel: config editor
         ImGui::BeginChild("##cfg_editor", ImVec2(0, 0), false);
@@ -1044,6 +1063,14 @@ namespace UI::ModLoaderWindow
             UI::Theme::Icons::Theme,
             UI::Theme::Icons::About,
         };
+        static const char* s_tabLabels[5] =
+        {
+            "Plugins",
+            "Plugin Config",
+            "Settings",
+            "Theme",
+            "About",
+        };
 
         const float navSize  = 64.0f;
         const float navWidth = navSize + 8.0f;
@@ -1051,7 +1078,7 @@ namespace UI::ModLoaderWindow
         ImVec2 navStart = ImGui::GetCursorScreenPos();
 
         ImGui::BeginChild("##nav_col", ImVec2(navWidth, avail.y), false);
-        s_activeTab = UI::Theme::IconTabBar(s_tabIcons, 5, s_activeTab, navSize, /*vertical=*/true);
+        s_activeTab = UI::Theme::IconTabBar(s_tabIcons, 5, s_activeTab, navSize, /*vertical=*/true, s_tabLabels);
         ImGui::EndChild();
 
         // Vertical divider between the icon column and the tab content,

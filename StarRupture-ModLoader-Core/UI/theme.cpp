@@ -322,7 +322,8 @@ namespace UI::Theme
         ImGui::End();
     }
 
-    int IconTabBar(const char* const* icons, int count, int active, float size, bool vertical)
+    int IconTabBar(const char* const* icons, int count, int active, float size, bool vertical,
+                   const char* const* labels)
     {
         ImDrawList* draw = ImGui::GetWindowDrawList();
         int newActive = active;
@@ -338,6 +339,9 @@ namespace UI::Theme
             bool hovered = ImGui::IsItemHovered();
             if (ImGui::IsItemClicked())
                 newActive = i;
+
+            if (hovered && labels && labels[i])
+                ImGui::SetTooltip("%s", labels[i]);
 
             // Active/hover highlight: inset rounded-rect rather than a sharp
             // square filling the whole cell, plus a thin divider line below

@@ -137,8 +137,11 @@ namespace UI::Theme
     // vertical=true: boxes stacked top-to-bottom; cursor moves to the right
     //   of the column at the original starting Y, so the caller can place
     //   tab content directly beside it without a child window.
+    // labels: optional, parallel array of `count` display names shown as a
+    //   tooltip when hovering the corresponding icon (pass nullptr to skip).
     int IconTabBar(const char* const* icons, int count, int active,
-                    float size = 64.0f, bool vertical = false);
+                    float size = 64.0f, bool vertical = false,
+                    const char* const* labels = nullptr);
 
     // Icon glyph constants (Material Icons Regular, embedded resource --
     // see imgui_backend.cpp RebuildFontAtlas()).
