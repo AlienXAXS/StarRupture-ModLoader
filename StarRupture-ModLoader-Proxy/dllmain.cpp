@@ -7,7 +7,7 @@
 // stays small.
 #include "dwmapi_proxy.h"
 #include "proxy_log.h"
-#include "autoupdate.h"
+#include "updater_launch.h"
 #if defined(MODLOADER_CLIENT_BUILD)
 #include "autoupdate_log.h"
 #endif
@@ -104,11 +104,19 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
         ProxyLog::Info("Dwmapi proxy initialized successfully");
 
 #if defined(MODLOADER_CLIENT_BUILD)
-        // Self-update (client only).  Applying a staged update MUST happen
-        // before the Core DLL is loaded (its file would be locked afterwards)
-        // and uses file operations only, which are safe under loader lock.
-        AutoUpdateLog::Initialize();
-        ProxyAutoUpdate::ApplyPendingUpdate();
+        // Self-update (client only).  The update check runs in a separate
+        // process (network APIs are unsafe under the loader lock we hold
+        // here, but waiting on a child process is fine) and must finish
+        // BEFORE the Core DLL is loaded so an accepted update replaces the
+        // files on disk and THIS session already runs the new version.
+        {
+            wchar_t gameDir[MAX_PATH]{};
+            GetModuleFileNameW(nullptr, gameDir, MAX_PATH);
+            wchar_t* sl = wcsrchr(gameDir, L'\\');
+            if (sl) *sl = L'\0';
+            AutoUpdateLog::Initialize(gameDir, true /* rotate previous log */);
+        }
+        UpdaterLaunch::RunUpdaterAndWait();
 #endif
 
         if (!LoadAndAttachCore())
@@ -116,13 +124,6 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
             DwmapiProxy::Shutdown();
             return FALSE;
         }
-
-#if defined(MODLOADER_CLIENT_BUILD)
-        // Network check runs on its own thread once the loader lock is
-        // released; if the user accepts, the update is staged and applied
-        // at the start of the next boot (see autoupdate.h).
-        ProxyAutoUpdate::StartBackgroundCheck();
-#endif
     }
     break;
 

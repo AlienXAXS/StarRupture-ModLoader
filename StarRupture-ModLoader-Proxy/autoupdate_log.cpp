@@ -1,4 +1,5 @@
 // autoupdate_log.cpp -- see autoupdate_log.h for overview.
+// Shared source: compiled into both the dwmapi.dll proxy and the updater exe.
 
 #include "autoupdate_log.h"
 
@@ -17,15 +18,6 @@ namespace
     bool             g_lockInit = false;
 
     constexpr int kKeepLogs = 10; // AutoUpdate.log + 9 timestamped archives
-
-    // Builds "<game dir>\<suffix>" into outPath.
-    void BuildGamePath(wchar_t* outPath, DWORD maxLen, const wchar_t* suffix)
-    {
-        GetModuleFileNameW(nullptr, outPath, maxLen);
-        wchar_t* slash = wcsrchr(outPath, L'\\');
-        if (slash)
-            wcscpy_s(slash + 1, maxLen - static_cast<rsize_t>(slash + 1 - outPath), suffix);
-    }
 
     // Rotation scheme: AutoUpdate.log is always the log of the CURRENT run.
     // On startup the previous AutoUpdate.log is renamed to
@@ -120,7 +112,7 @@ namespace
 
 namespace AutoUpdateLog
 {
-    bool Initialize()
+    bool Initialize(const wchar_t* gameDir, bool rotate)
     {
         if (!g_lockInit)
         {
@@ -133,23 +125,28 @@ namespace AutoUpdateLog
 
         // Ensure ModLoader\ and ModLoader\Logs\ exist before opening the file.
         wchar_t modloaderDir[MAX_PATH]{};
-        BuildGamePath(modloaderDir, MAX_PATH, L"ModLoader");
+        swprintf_s(modloaderDir, L"%s\\ModLoader", gameDir);
         CreateDirectoryW(modloaderDir, nullptr);
 
         wchar_t logsDir[MAX_PATH]{};
-        BuildGamePath(logsDir, MAX_PATH, L"ModLoader\\Logs");
+        swprintf_s(logsDir, L"%s\\ModLoader\\Logs", gameDir);
         CreateDirectoryW(logsDir, nullptr);
 
-        RotateLogs(logsDir);
+        if (rotate)
+            RotateLogs(logsDir);
 
         wchar_t logPath[MAX_PATH]{};
         swprintf_s(logPath, L"%s\\AutoUpdate.log", logsDir);
 
-        g_logFile = CreateFileW(logPath, GENERIC_WRITE, FILE_SHARE_READ, nullptr,
-                                CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+        // Append mode with full sharing: the proxy and the updater exe both
+        // write to this file during the same boot, and FILE_APPEND_DATA
+        // writes are atomic per call.
+        g_logFile = CreateFileW(logPath, FILE_APPEND_DATA,
+                                FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr,
+                                OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
         if (g_logFile == INVALID_HANDLE_VALUE)
         {
-            OutputDebugStringA("[dwmapi-proxy] [WARN] AutoUpdateLog: could not open AutoUpdate.log\n");
+            OutputDebugStringA("[AutoUpdateLog] [WARN] could not open AutoUpdate.log\n");
             return false;
         }
         return true;

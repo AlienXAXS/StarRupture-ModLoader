@@ -5,7 +5,10 @@ MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "StarRupture-ModLoader-Proxy", "StarRupture-ModLoader-Proxy\StarRupture-ModLoader-Proxy.vcxproj", "{98EE5D6F-1FA3-4FAC-960F-6892D0139BF1}"
 	ProjectSection(ProjectDependencies) = postProject
 		{5A2C9E10-7B34-4F1A-9D6E-3C8F1A2B4C7D} = {5A2C9E10-7B34-4F1A-9D6E-3C8F1A2B4C7D}
+		{B7E4A2D1-3C55-4A6B-8F2E-9D0C1B3A5E77} = {B7E4A2D1-3C55-4A6B-8F2E-9D0C1B3A5E77}
 	EndProjectSection
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "StarRupture-ModLoader-Updater", "StarRupture-ModLoader-Updater\StarRupture-ModLoader-Updater.vcxproj", "{B7E4A2D1-3C55-4A6B-8F2E-9D0C1B3A5E77}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "StarRupture-ModLoader-Core", "StarRupture-ModLoader-Core\StarRupture-ModLoader-Core.vcxproj", "{5A2C9E10-7B34-4F1A-9D6E-3C8F1A2B4C7D}"
 	ProjectSection(ProjectDependencies) = postProject
@@ -82,6 +85,26 @@ Global
 		{44EBEBF6-6BFB-4829-8782-F673D3B32FE8}.Release|x64.ActiveCfg = Client Release|x64
 		{44EBEBF6-6BFB-4829-8782-F673D3B32FE8}.Server Debug|x64.ActiveCfg = Client Debug|x64
 		{44EBEBF6-6BFB-4829-8782-F673D3B32FE8}.Server Release|x64.ActiveCfg = Client Release|x64
+		{B7E4A2D1-3C55-4A6B-8F2E-9D0C1B3A5E77}.Client Debug|x64.ActiveCfg = Client Debug|x64
+		{B7E4A2D1-3C55-4A6B-8F2E-9D0C1B3A5E77}.Client Debug|x64.Build.0 = Client Debug|x64
+		{B7E4A2D1-3C55-4A6B-8F2E-9D0C1B3A5E77}.Client Release|x64.ActiveCfg = Client Release|x64
+		{B7E4A2D1-3C55-4A6B-8F2E-9D0C1B3A5E77}.Client Release|x64.Build.0 = Client Release|x64
+		{B7E4A2D1-3C55-4A6B-8F2E-9D0C1B3A5E77}.Debug|x64.ActiveCfg = Debug|x64
+		{B7E4A2D1-3C55-4A6B-8F2E-9D0C1B3A5E77}.Debug|x64.Build.0 = Debug|x64
+		{B7E4A2D1-3C55-4A6B-8F2E-9D0C1B3A5E77}.Local SDK Client Debug|x64.ActiveCfg = Local SDK Client Debug|x64
+		{B7E4A2D1-3C55-4A6B-8F2E-9D0C1B3A5E77}.Local SDK Client Debug|x64.Build.0 = Local SDK Client Debug|x64
+		{B7E4A2D1-3C55-4A6B-8F2E-9D0C1B3A5E77}.Local SDK Client Release|x64.ActiveCfg = Local SDK Client Release|x64
+		{B7E4A2D1-3C55-4A6B-8F2E-9D0C1B3A5E77}.Local SDK Client Release|x64.Build.0 = Local SDK Client Release|x64
+		{B7E4A2D1-3C55-4A6B-8F2E-9D0C1B3A5E77}.Local SDK Server Debug|x64.ActiveCfg = Local SDK Server Debug|x64
+		{B7E4A2D1-3C55-4A6B-8F2E-9D0C1B3A5E77}.Local SDK Server Debug|x64.Build.0 = Local SDK Server Debug|x64
+		{B7E4A2D1-3C55-4A6B-8F2E-9D0C1B3A5E77}.Local SDK Server Release|x64.ActiveCfg = Local SDK Server Release|x64
+		{B7E4A2D1-3C55-4A6B-8F2E-9D0C1B3A5E77}.Local SDK Server Release|x64.Build.0 = Local SDK Server Release|x64
+		{B7E4A2D1-3C55-4A6B-8F2E-9D0C1B3A5E77}.Release|x64.ActiveCfg = Release|x64
+		{B7E4A2D1-3C55-4A6B-8F2E-9D0C1B3A5E77}.Release|x64.Build.0 = Release|x64
+		{B7E4A2D1-3C55-4A6B-8F2E-9D0C1B3A5E77}.Server Debug|x64.ActiveCfg = Server Debug|x64
+		{B7E4A2D1-3C55-4A6B-8F2E-9D0C1B3A5E77}.Server Debug|x64.Build.0 = Server Debug|x64
+		{B7E4A2D1-3C55-4A6B-8F2E-9D0C1B3A5E77}.Server Release|x64.ActiveCfg = Server Release|x64
+		{B7E4A2D1-3C55-4A6B-8F2E-9D0C1B3A5E77}.Server Release|x64.Build.0 = Server Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
