@@ -8,6 +8,7 @@
 #ifdef MODLOADER_CLIENT_BUILD
 #include "UI/global_settings.h"
 #include "UI/splash_window.h"
+#include "UI/update_notice_window.h"
 #endif
 
 #define WIN32_LEAN_AND_MEAN
@@ -811,6 +812,11 @@ static void ProcessPluginSidecar(const PluginSidecar& sc,
     {
         LogToFile::Info("[AutoUpdate][Sidecar] '%s' — updated to %s", displayName, remoteVersion.c_str());
         WritePluginVersion(stateIniPath, sc.dllFilename.c_str(), remoteVersion.c_str());
+#ifdef MODLOADER_CLIENT_BUILD
+        UI::UpdateNoticeWindow::AddUpdatedPlugin(displayName,
+                                                 storedVersion.c_str(),
+                                                 remoteVersion.c_str());
+#endif
     }
     else
     {

@@ -9,6 +9,7 @@
 #include "config/config_manager.h"
 #include "global_settings.h"
 #include "theme.h"
+#include "update_notice_window.h"
 #include "logging/log.h"
 #include "hooks/input/keybind_registry.h"
 #include <cmath>
@@ -787,6 +788,20 @@ namespace UI::ModLoaderWindow
 
         ImGui::Spacing();
         ImGui::TextDisabled("Settings are saved to modloader.ini immediately.");
+
+#ifdef _DEBUG
+        ImGui::Spacing();
+        ImGui::SeparatorText("Debug");
+        ImGui::Spacing();
+
+        if (ImGui::Button("Test Plugin Update Notice"))
+            UI::UpdateNoticeWindow::PopulateTestData();
+        ImGui::SameLine();
+        ImGui::TextDisabled("(?)");
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Populates the plugin-updated popup with fake\n"
+                              "entries and opens it. Debug builds only.");
+#endif
     }
 
     // Long rectangular swatch -- click anywhere on the bar to open the

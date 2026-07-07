@@ -18,6 +18,7 @@
 #include "../UI/plugin_widget_registry.h"
 #include "../UI/splash_window.h"
 #include "../UI/theme.h"
+#include "../UI/update_notice_window.h"
 #include "../logging/log.h"
 
 static bool         s_imguiEnabled = true;
@@ -70,6 +71,7 @@ void InitClientUI()
             UI::Overlay::Render();
             UI::Overlay::RenderHud();
             UI::ModLoaderWindow::Render(api);
+            UI::UpdateNoticeWindow::Render();
             UI::PluginPanelRegistry::RenderPanelWindows(api);
             UI::PluginWidgetRegistry::RenderWidgets(api);
         };
@@ -121,6 +123,10 @@ void InitClientUI()
         const bool isMainMenu = worldName && strstr(worldName, "Map_MainMenu") != nullptr;
         UI::Overlay::SetVisible(isMainMenu);
         UI::GlobalSettings::SetWorldName(worldName ? worldName : "");
+
+        // One-shot popup listing plugins the auto-updater replaced this boot.
+        if (isMainMenu)
+            UI::UpdateNoticeWindow::ShowIfPending();
     };
     Hooks::WorldBeginPlay::RegisterAnyWorldCallback(s_onWorldReady);
 
