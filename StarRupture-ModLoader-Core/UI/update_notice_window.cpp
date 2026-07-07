@@ -70,8 +70,7 @@ namespace UI::UpdateNoticeWindow
                                              ImGuiWindowFlags_NoResize))
             return;
 
-        ImGui::TextUnformatted("The following plugins were updated automatically\n"
-                               "when the mod loader started:");
+        ImGui::TextUnformatted("The following plugins were updated automatically:");
         ImGui::Spacing();
         ImGui::Separator();
         ImGui::Spacing();
