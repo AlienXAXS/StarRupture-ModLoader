@@ -208,7 +208,14 @@ namespace LogToFile
 
 		// Log file name
 		GetPrivateProfileStringW(L"Logging", L"FileName", L"ModLoader.log", buffer, 256, iniPath);
-		g_logFileName = buffer;
+
+		// Older installs have an existing ini with the old lowercase default
+		// ("modloader.log") baked in -- normalize that back to the new casing
+		// rather than perpetuating it forever. Custom filenames are untouched.
+		if (_wcsicmp(buffer, L"modloader.log") == 0)
+			g_logFileName = L"ModLoader.log";
+		else
+			g_logFileName = buffer;
 	}
 
 	// -----------------------------------------------------------------------
@@ -219,7 +226,7 @@ namespace LogToFile
 	// kMaxTotalLogs (including the fresh one about to be created) are deleted,
 	// oldest first.
 	// -----------------------------------------------------------------------
-	inline void RotateOldLogs(const wchar_t* logsDir, const wchar_t* currentLogPath, const std::wstring& baseName)
+	inline void RotateOldLogs(const wchar_t* logsDir, const wchar_t* currentLogPath, const wchar_t* baseName)
 	{
 		constexpr size_t kMaxTotalLogs = 10;
 		constexpr size_t kMaxRotatedLogs = kMaxTotalLogs - 1; // leaves room for the fresh current log
@@ -237,18 +244,18 @@ namespace LogToFile
 				local.wYear, local.wMonth, local.wDay, local.wHour, local.wMinute, local.wSecond);
 
 			wchar_t rotatedPath[MAX_PATH]{};
-			swprintf_s(rotatedPath, L"%s\\%s-%s.log", logsDir, baseName.c_str(), stamp);
+			swprintf_s(rotatedPath, L"%s\\%s-%s.log", logsDir, baseName, stamp);
 
 			// Avoid clobbering an existing rotated file with the same timestamp.
 			for (int suffix = 1; GetFileAttributesW(rotatedPath) != INVALID_FILE_ATTRIBUTES && suffix < 100; ++suffix)
-				swprintf_s(rotatedPath, L"%s\\%s-%s_%d.log", logsDir, baseName.c_str(), stamp, suffix);
+				swprintf_s(rotatedPath, L"%s\\%s-%s_%d.log", logsDir, baseName, stamp, suffix);
 
 			MoveFileW(currentLogPath, rotatedPath);
 		}
 
 		// Enforce the retention limit on rotated logs.
 		wchar_t searchPattern[MAX_PATH]{};
-		swprintf_s(searchPattern, L"%s\\%s-*.log", logsDir, baseName.c_str());
+		swprintf_s(searchPattern, L"%s\\%s-*.log", logsDir, baseName);
 
 		struct RotatedFile { std::wstring name; FILETIME writeTime; };
 		std::vector<RotatedFile> files;
@@ -347,10 +354,10 @@ namespace LogToFile
 					wchar_t logPath[MAX_PATH]{};
 					swprintf_s(logPath, L"%s\\%s", logsDir, g_logFileName.c_str());
 
-					std::wstring baseName = g_logFileName;
-					size_t dotPos = baseName.find_last_of(L'.');
-					if (dotPos != std::wstring::npos)
-						baseName = baseName.substr(0, dotPos);
+					wchar_t baseName[MAX_PATH]{};
+					wcsncpy_s(baseName, g_logFileName.c_str(), MAX_PATH);
+					wchar_t* dot = wcsrchr(baseName, L'.');
+					if (dot) *dot = L'\0';
 
 					RotateOldLogs(logsDir, logPath, baseName);
 
