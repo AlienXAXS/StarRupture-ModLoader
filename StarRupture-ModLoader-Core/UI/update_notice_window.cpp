@@ -54,7 +54,11 @@ namespace UI::UpdateNoticeWindow
             return;
 
         ImGuiIO& io = ImGui::GetIO();
-        ImGui::SetNextWindowSize(ImVec2(460, 0), ImGuiCond_Appearing);
+        // Fixed width, auto-fit height (0 = auto on that axis). Width must not
+        // be content-driven: the centered Close button below offsets itself from
+        // the window width, so AlwaysAutoResize would feed back into itself and
+        // grow the window every frame.
+        ImGui::SetNextWindowSize(ImVec2(460, 0), ImGuiCond_Always);
         ImGui::SetNextWindowPos(
             ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f),
             ImGuiCond_Appearing,
@@ -63,7 +67,7 @@ namespace UI::UpdateNoticeWindow
         if (!UI::Theme::BeginChamferedWindow("Plugin Updates##update_notice",
                                              "PLUGINS UPDATED", &s_isOpen,
                                              nullptr,
-                                             ImGuiWindowFlags_AlwaysAutoResize))
+                                             ImGuiWindowFlags_NoResize))
             return;
 
         ImGui::TextUnformatted("The following plugins were updated automatically\n"
