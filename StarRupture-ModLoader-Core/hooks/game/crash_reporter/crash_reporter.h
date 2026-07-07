@@ -1,5 +1,7 @@
 #pragma once
 
+#ifdef MODLOADER_CLIENT_BUILD
+
 #include "../../hooks_common.h"
 #include <cstdint>
 
@@ -42,3 +44,5 @@ namespace Hooks::CrashReporter
 	// Cast to: int64_t(__fastcall*)(void* InContext, void* ExceptionInfo, int32_t ReportUI)
 	uintptr_t GetOriginalPtr();
 }
+
+#endif // MODLOADER_CLIENT_BUILD
