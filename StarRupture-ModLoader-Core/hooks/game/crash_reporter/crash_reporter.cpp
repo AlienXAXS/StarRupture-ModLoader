@@ -1,4 +1,5 @@
 #include "pch.h"
+#ifdef MODLOADER_CLIENT_BUILD
 #include "crash_reporter.h"
 #include "logging/logger.h"
 #include "memory_scanner/scanner.h"
@@ -201,3 +202,5 @@ namespace Hooks::CrashReporter
 		return reinterpret_cast<uintptr_t>(g_original);
 	}
 }
+
+#endif // MODLOADER_CLIENT_BUILD
