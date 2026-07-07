@@ -19,20 +19,56 @@ namespace
         if (slash)
             wcscpy_s(slash + 1, maxLen - static_cast<rsize_t>(slash + 1 - outPath), suffix);
     }
+
+    // Deletes *.autoupdate.bak in a single directory (non-recursive).
+    // These are backups of files that were in use during the previous
+    // update (old dwmapi.dll, old updater exe) and could not be deleted
+    // back then; by the next boot nothing maps them anymore.
+    void SweepBackups(const wchar_t* dir)
+    {
+        wchar_t pattern[MAX_PATH]{};
+        swprintf_s(pattern, L"%s\\*.autoupdate.bak", dir);
+
+        WIN32_FIND_DATAW fd{};
+        HANDLE hFind = FindFirstFileW(pattern, &fd);
+        if (hFind == INVALID_HANDLE_VALUE)
+            return;
+
+        do
+        {
+            if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+                continue;
+            wchar_t path[MAX_PATH]{};
+            swprintf_s(path, L"%s\\%s", dir, fd.cFileName);
+            if (DeleteFileW(path))
+                AutoUpdateLog::Info("Proxy: removed leftover update backup '%ls'", fd.cFileName);
+            else
+                AutoUpdateLog::Warn("Proxy: could not remove leftover backup '%ls' (error %lu)",
+                                    fd.cFileName, GetLastError());
+        } while (FindNextFileW(hFind, &fd));
+
+        FindClose(hFind);
+    }
 }
 
 namespace UpdaterLaunch
 {
     void RunUpdaterAndWait()
     {
-        // Clean up the updater's self-update backup from a previous boot
-        // (it cannot delete its own running exe's backup).
+        // Clean up backups of files that were in use during the previous
+        // update (old dwmapi.dll, old updater exe).  The release ZIP only
+        // places files in the game dir root and ModLoader\, so sweeping
+        // those two directories covers everything.
         {
-            wchar_t bakPath[MAX_PATH]{};
-            BuildGamePath(bakPath, MAX_PATH,
-                          L"ModLoader\\StarRupture-ModLoader-Updater.exe.autoupdate.bak");
-            if (DeleteFileW(bakPath))
-                AutoUpdateLog::Info("Proxy: removed leftover updater backup from previous update");
+            wchar_t dir[MAX_PATH]{};
+            BuildGamePath(dir, MAX_PATH, L"");
+            size_t len = wcslen(dir);
+            if (len > 0 && dir[len - 1] == L'\\')
+                dir[len - 1] = L'\0';
+            SweepBackups(dir);
+
+            BuildGamePath(dir, MAX_PATH, L"ModLoader");
+            SweepBackups(dir);
         }
 
         wchar_t exePath[MAX_PATH]{};

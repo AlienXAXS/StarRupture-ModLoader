@@ -20,24 +20,26 @@
 //   3. Up to date -> exit; the proxy loads Core immediately.
 //   4. Update available -> Yes/No message box.  On Yes: download the client
 //      release ZIP, validate it, extract it fully into memory, then install
-//      every file EXCEPT dwmapi.dll directly into the game directory using
-//      backup -> move -> delete-backups with full rollback on any failure.
-//      The Core DLL is not loaded yet, so nothing (except dwmapi.dll, which
-//      is skipped anyway) is file-locked.
+//      EVERY file it provides directly into the game directory using
+//      backup -> write -> delete-backups with full rollback on any failure.
+//      The Core DLL is not loaded yet, so it is not file-locked.  In-use
+//      binaries -- the game's loaded dwmapi.dll and this running exe --
+//      cannot be overwritten but CAN be renamed, so they are backed up via
+//      rename and the new file written in place: the old image keeps
+//      running this session and the new one is picked up on next launch.
 //   5. Exit; the proxy loads the new Core DLL in the same game session.
 //
 // Failsafes:
-//   - dwmapi.dll is never written (it is locked by the game anyway)
 //   - ZIP entries with absolute paths, drive letters or ".." are rejected
 //   - the ZIP must contain ModLoader\StarRupture-ModLoader-Core.dll or the
 //     whole update is rejected
 //   - the entire archive is downloaded and decompressed in memory before
 //     the first file on disk is touched -- a truncated download or corrupt
 //     archive can never produce a half-written install
-//   - install is backup -> move -> delete-backups with rollback on failure
-//   - this exe replaces itself via the rename trick (a running exe can be
-//     renamed); its leftover .autoupdate.bak is cleaned by the proxy on the
-//     next boot
+//   - install is backup -> write -> delete-backups with rollback on failure
+//   - backups of in-use binaries (dwmapi.dll, this exe) cannot be deleted
+//     while running; the proxy sweeps leftover *.autoupdate.bak files on
+//     the next boot
 //   - every step is appended to ModLoader\Logs\AutoUpdate.log (the proxy
 //     owns rotation; see autoupdate_log.h in the proxy project)
 //

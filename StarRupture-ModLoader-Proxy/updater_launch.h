@@ -12,16 +12,18 @@
 // RunUpdaterAndWait() is called from the proxy's DllMain BEFORE the Core
 // DLL is loaded, so an accepted update replaces the Core DLL (and friends)
 // on disk and the same game session then loads the fresh version -- no
-// second launch required.  dwmapi.dll itself is never touched.
+// second launch required.  dwmapi.dll and the updater exe are also
+// replaced (via rename, since they are in use); those two take effect on
+// the next launch.
 //
 // Failsafes:
 //   - updater exe missing -> logged, game boots normally
 //   - updater crash / abnormal exit -> logged, game boots normally with
 //     whatever is on disk (the updater's own rollback guarantees that is
 //     a complete install)
-//   - the updater exe's leftover self-update backup
-//     (StarRupture-ModLoader-Updater.exe.autoupdate.bak, undeletable while
-//     the exe was running) is cleaned up here on the next boot
+//   - leftover *.autoupdate.bak files (backups of binaries that were in
+//     use during the previous update and could not be deleted then) are
+//     swept from the game dir and ModLoader\ here on the next boot
 //
 // Client builds only; no-op on server / generic builds.
 // ---------------------------------------------------------------------------

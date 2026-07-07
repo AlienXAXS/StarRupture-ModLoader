@@ -444,16 +444,6 @@ namespace
         return Widen(n);
     }
 
-    // Case-insensitive check: is the final path component "dwmapi.dll"?
-    bool IsDwmapiDll(const std::wstring& relPath)
-    {
-        size_t pos = relPath.find_last_of(L'\\');
-        const wchar_t* name = (pos == std::wstring::npos)
-                                  ? relPath.c_str()
-                                  : relPath.c_str() + pos + 1;
-        return _wcsicmp(name, L"dwmapi.dll") == 0;
-    }
-
     bool WriteBufferToFile(const std::wstring& path, const void* data, size_t size)
     {
         if (!EnsureParentDirectories(path))
@@ -557,13 +547,6 @@ namespace
                 break;
             }
 
-            if (IsDwmapiDll(relPath))
-            {
-                AutoUpdateLog::Info("Install: skipping '%s' (dwmapi.dll is never replaced by auto-update)",
-                                    st.m_filename);
-                continue;
-            }
-
             if (_wcsicmp(relPath.c_str(), L"ModLoader\\StarRupture-ModLoader-Core.dll") == 0)
                 sawCoreDll = true;
 
@@ -617,8 +600,11 @@ namespace
 
         // ------------------------------------------------------------------
         // Phase 3: install with backup -> write -> delete-backups.
-        // A running exe (this updater updating itself) can still be renamed,
-        // so the backup step works even for locked-for-write files.
+        // In-use binaries (the game's loaded dwmapi.dll, this running exe)
+        // cannot be overwritten but CAN be renamed, so the backup step works
+        // for them too: the old image keeps running from the renamed file
+        // and the new file is picked up on the next launch.  Their backups
+        // cannot be deleted while in use; the proxy cleans those next boot.
         // ------------------------------------------------------------------
         std::vector<AppliedFile> applied;
         applied.reserve(files.size());
@@ -904,7 +890,9 @@ int RunUpdater(const wchar_t* gameDir)
 
         MessageBoxW(nullptr,
                     L"The mod loader has been updated successfully.\n\n"
-                    L"The game will now continue loading with the new version.",
+                    L"The game will now continue loading with the new version.\n"
+                    L"(The dwmapi.dll loader shim itself finishes updating on "
+                    L"the next game launch.)",
                     L"StarRupture Mod Loader -- Update Installed",
                     MB_OK | MB_ICONINFORMATION | MB_SETFOREGROUND | MB_TOPMOST);
         return UPDATER_EXIT_UPDATED;
