@@ -421,7 +421,10 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="autoupdate.h" />
+    <ClInclude Include="autoupdate_log.h" />
     <ClInclude Include="dwmapi_proxy.h" />
+    <ClInclude Include="miniz.h" />
     <ClInclude Include="proxy_log.h" />
   </ItemGroup>
   <ItemGroup>
@@ -430,6 +433,19 @@
     </ClCompile>
     <ClCompile Include="dwmapi_proxy.cpp">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="autoupdate.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="autoupdate_log.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <!-- miniz is only needed by the client-only self-updater; exclude it from
+         server / generic configurations to keep those DLLs small. -->
+    <ClCompile Include="miniz.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <WarningLevel>TurnOffAllWarnings</WarningLevel>
+      <ExcludedFromBuild Condition="'$(Configuration)'=='Debug' Or '$(Configuration)'=='Release' Or '$(Configuration)'=='Server Debug' Or '$(Configuration)'=='Server Release' Or '$(Configuration)'=='Local SDK Server Debug' Or '$(Configuration)'=='Local SDK Server Release'">true</ExcludedFromBuild>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

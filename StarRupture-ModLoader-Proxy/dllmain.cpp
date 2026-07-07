@@ -7,6 +7,10 @@
 // stays small.
 #include "dwmapi_proxy.h"
 #include "proxy_log.h"
+#include "autoupdate.h"
+#if defined(MODLOADER_CLIENT_BUILD)
+#include "autoupdate_log.h"
+#endif
 
 typedef BOOL(*Core_Attach_t)();
 typedef void(*Core_Detach_t)(BOOL processTerminating);
@@ -99,11 +103,26 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
         }
         ProxyLog::Info("Dwmapi proxy initialized successfully");
 
+#if defined(MODLOADER_CLIENT_BUILD)
+        // Self-update (client only).  Applying a staged update MUST happen
+        // before the Core DLL is loaded (its file would be locked afterwards)
+        // and uses file operations only, which are safe under loader lock.
+        AutoUpdateLog::Initialize();
+        ProxyAutoUpdate::ApplyPendingUpdate();
+#endif
+
         if (!LoadAndAttachCore())
         {
             DwmapiProxy::Shutdown();
             return FALSE;
         }
+
+#if defined(MODLOADER_CLIENT_BUILD)
+        // Network check runs on its own thread once the loader lock is
+        // released; if the user accepts, the update is staged and applied
+        // at the start of the next boot (see autoupdate.h).
+        ProxyAutoUpdate::StartBackgroundCheck();
+#endif
     }
     break;
 
@@ -122,6 +141,10 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
         }
 
         DwmapiProxy::Shutdown();
+
+#if defined(MODLOADER_CLIENT_BUILD)
+        AutoUpdateLog::Shutdown();
+#endif
     }
     break;
 
