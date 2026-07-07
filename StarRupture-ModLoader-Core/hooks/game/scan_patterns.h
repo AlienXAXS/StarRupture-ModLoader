@@ -60,6 +60,32 @@ namespace ScanPatterns
 	//               UGameViewportClient* this, const FInputKeyEventArgs* InEventArgs)
 	inline constexpr auto UGameViewportClient_InputKey =
 		"48 8B C4 55 53 57 41 55 48 8D 68 ?? 48 81 EC ?? ?? ?? ?? 48 8B 5A";
+
+	// anonymous_namespace_::ReportCrashUsingCrashReportClient(FWindowsPlatformCrashContext* InContext,
+	//   _EXCEPTION_POINTERS* ExceptionInfo, EErrorReportUI ReportUI)
+	// Spawns CrashReportClient.exe and uploads the crash report to the developers. Also called
+	// (from different call sites) for non-fatal ensure() failures and hangs -- see
+	// HandleCrashInternal_FatalReportCallSite below for how the crash_reporter hook tells those
+	// apart from a real fatal crash.
+	inline constexpr auto ReportCrashUsingCrashReportClient =
+		"48 89 5C 24 ?? 55 56 57 41 54 41 55 41 56 41 57 48 8D AC 24 ?? ?? ?? ?? 48 81 EC ?? ?? ?? ?? 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 85 ?? ?? ?? ?? 45 33 E4 48 89 55 ?? 66 44 39 25";
+
+	// The specific call site inside FCrashReportingThread::HandleCrashInternal that invokes
+	// ReportCrashUsingCrashReportClient for a real fatal engine crash:
+	//   cmp cs:GUseCrashReportClient, r13b
+	//   lea rcx, [rsp+...]
+	//   jz  short loc_...
+	//   mov rdx, [r14+28h]   ; ExceptionInfo
+	//   xor r8d, r8d         ; ReportUI
+	//   call ReportCrashUsingCrashReportClient
+	// ReportContinuableEventUsingCrashReportClient (ensure() failures) and ReportHang (hang
+	// detection) call the same function from different call sites elsewhere in the module, so
+	// matching this exact sequence -- rather than hooking ReportCrashUsingCrashReportClient
+	// unconditionally -- lets the hook only intervene on real fatal crashes.
+	// Match length is 26 bytes; the return address for this call site is (matchAddress + 26).
+	inline constexpr auto HandleCrashInternal_FatalReportCallSite =
+		"44 38 2D ?? ?? ?? ?? 48 8D 4C 24 30 74 0E 49 8B 56 28 45 33 C0 E8 ?? ?? ?? ??";
+	inline constexpr int HandleCrashInternal_FatalReportCallSite_Length = 26;
 #endif
 
 	// UObject::ProcessEvent -- called for every UFUNCTION dispatch in the game.

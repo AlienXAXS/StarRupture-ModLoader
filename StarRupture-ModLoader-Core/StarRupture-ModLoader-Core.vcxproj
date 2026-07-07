@@ -415,6 +415,7 @@
     <ClInclude Include="config\config_manager.h" />
     <ClInclude Include="hooks\game\actor_begin_play\actor_begin_play.h" />
     <ClInclude Include="hooks\game\crafting_finished\crafting_finished.h" />
+    <ClInclude Include="hooks\game\crash_reporter\crash_reporter.h" />
     <ClInclude Include="hooks\game\delegate_hook\delegate_hook.h" />
     <ClInclude Include="hooks\game\gobject_walk\gobject_walk.h" />
     <ClInclude Include="hooks\game\text_input_focus\text_input_focus.h" />
@@ -510,6 +511,7 @@
     <ClCompile Include="core\core_entry.cpp" />
     <ClCompile Include="hooks\game\actor_begin_play\actor_begin_play.cpp" />
     <ClCompile Include="hooks\game\crafting_finished\crafting_finished.cpp" />
+    <ClCompile Include="hooks\game\crash_reporter\crash_reporter.cpp" />
     <ClCompile Include="hooks\game\delegate_hook\delegate_hook.cpp" />
     <ClCompile Include="hooks\game\gobject_walk\gobject_walk.cpp" />
     <ClCompile Include="hooks\game\text_input_focus\text_input_focus.cpp">

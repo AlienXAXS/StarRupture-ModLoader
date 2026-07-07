@@ -801,6 +801,21 @@ namespace UI::ModLoaderWindow
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("Populates the plugin-updated popup with fake\n"
                               "entries and opens it. Debug builds only.");
+
+        if (ImGui::Button("Crash Game (YOLO)"))
+        {
+            // Deliberate null-pointer write -- raises a real SEH access violation
+            // so it flows through the engine's crash reporting thread exactly
+            // like an organic crash, exercising the CrashReporter hook.
+            volatile int* crashPtr = nullptr;
+            *crashPtr = 1;
+        }
+        ImGui::SameLine();
+        ImGui::TextDisabled("(?)");
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Immediately crashes the game with a null pointer write, to\n"
+                              "verify the CrashReporter hook shows its own dialog instead of\n"
+                              "spawning CrashReportClient.exe. Debug builds only.");
 #endif
     }
 

@@ -27,9 +27,22 @@
 #include "../hooks/http/http_server_hook.h"
 #endif
 
+#ifdef MODLOADER_CLIENT_BUILD
+#include "../hooks/game/crash_reporter/crash_reporter.h"
+#endif
+
 void InstallAllHooks()
 {
     ModLoaderLogger::LogMessage(L"Installing core game hooks...");
+
+#ifdef MODLOADER_CLIENT_BUILD
+    Splash::SetStatus(L"Installing CrashReporter hook...");
+
+    if (Hooks::CrashReporter::Install())
+        ModLoaderLogger::LogDebug(L"  CrashReporter hook installed");
+    else
+        ModLoaderLogger::LogWarn(L"  WARNING: CrashReporter hook failed -- crash reports will still be sent to the developers");
+#endif
 
     Splash::SetStatus(L"Installing EngineInit hook...");
     Splash::SetProgress(0.20f);
@@ -111,7 +124,6 @@ void InstallAllHooks()
         ModLoaderLogger::LogDebug(L"  GameInstanceInit hook installed");
     else
         ModLoaderLogger::LogWarn(L"  WARNING: GameInstanceInit hook failed -- plugins will not be initialized");
-
 }
 
 void RemoveAllHooks()
@@ -132,5 +144,8 @@ void RemoveAllHooks()
     Hooks::TextKey::Remove();
 #ifdef MODLOADER_SERVER_BUILD
     Hooks::HttpServer::Remove();
+#endif
+#ifdef MODLOADER_CLIENT_BUILD
+    Hooks::CrashReporter::Remove();
 #endif
 }
