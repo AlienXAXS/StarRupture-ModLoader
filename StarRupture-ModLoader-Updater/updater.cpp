@@ -890,9 +890,9 @@ int RunUpdater(const wchar_t* gameDir)
 
         MessageBoxW(nullptr,
                     L"The mod loader has been updated successfully.\n\n"
-                    L"The game will now continue loading with the new version.\n"
-                    L"(The dwmapi.dll loader shim itself finishes updating on "
-                    L"the next game launch.)",
+                    L"The game will now continue loading with the new version.\n\n"
+                    L"One small file finishes updating the next time you "
+                    L"launch the game -- no action needed.",
                     L"StarRupture Mod Loader -- Update Installed",
                     MB_OK | MB_ICONINFORMATION | MB_SETFOREGROUND | MB_TOPMOST);
         return UPDATER_EXIT_UPDATED;
