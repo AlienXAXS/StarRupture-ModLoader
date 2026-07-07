@@ -198,7 +198,7 @@ namespace UI::Theme
             ImVec2(min.x, max.y),
             ImVec2(min.x, min.y + chamfer),
         };
-        ImGui::GetWindowDrawList()->AddPolyline(pts, 6, color, ImDrawFlags_Closed, thickness);
+        ImGui::GetWindowDrawList()->AddPolyline(pts, 6, color, thickness, ImDrawFlags_Closed);
     }
 
     void DrawChamferedFill(const ImVec2& min, const ImVec2& max, ImU32 color, float chamfer)
@@ -445,7 +445,7 @@ namespace UI::Theme
             ImVec2(trackMin.x, trackMin.y + notch),
         };
         draw->AddConvexPolyFilled(trackPts, 5, trackColor);
-        draw->AddPolyline(trackPts, 5, AccentColor(), ImDrawFlags_Closed, 1.0f);
+        draw->AddPolyline(trackPts, 5, AccentColor(), 1.0f, ImDrawFlags_Closed);
 
         const float knobMargin = height * 0.16f;
         const float knobSize   = height - knobMargin * 2.0f;
