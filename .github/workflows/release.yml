@@ -272,6 +272,11 @@ jobs:
             if (Test-Path $modloaderSrc) {
               Copy-Item "$modloaderSrc\*.dll" $modloaderDst -ErrorAction SilentlyContinue
               Copy-Item "$modloaderSrc\*.pdb" $modloaderDst -ErrorAction SilentlyContinue
+              # Self-update helper exe (client only -- the proxy spawns it
+              # before loading Core to check for / install modloader updates)
+              if ($variant -eq "Client") {
+                Copy-Item "$modloaderSrc\StarRupture-ModLoader-Updater.exe" $modloaderDst -ErrorAction SilentlyContinue
+              }
             }
 
             $zipPath = "$ws\StarRupture-ModLoader-$variant-$tag.zip"

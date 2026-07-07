@@ -9,6 +9,8 @@
 #include <io.h>
 #include <fcntl.h>
 #include <string>
+#include <vector>
+#include <algorithm>
 #include "ue_log.h"
 
 // ---------------------------------------------------------------------------
@@ -43,7 +45,7 @@ namespace LogToFile
 	inline FILE* g_file = nullptr;
 	inline Level  g_minLevel = Level::Info; // Default to Info for production
 	inline bool   g_enableFile = true;       // Default to enabled
-	inline std::wstring g_logFileName = L"modloader.log"; // Default log file name
+	inline std::wstring g_logFileName = L"ModLoader.log"; // Default log file name
 
 	// Critical section with explicit initialization flag and init-once semantics
 	inline CRITICAL_SECTION g_logLock{};
@@ -139,8 +141,8 @@ namespace LogToFile
 					"Level=INFO\n\n"
 					"; Enable file logging\n"
 					"EnableFile=1\n\n"
-					"; Log file name (relative to game exe)\n"
-					"FileName=modloader.log\n\n"
+					"; Log file name (written to ModLoader\\Logs\\)\n"
+					"FileName=ModLoader.log\n\n"
 					"[UE4SS]\n"
 					"; Load UE4SS before plugins (set to 0 to disable)\n"
 					"Enabled=0\n\n"
@@ -205,8 +207,86 @@ namespace LogToFile
 		g_enableFile = GetPrivateProfileIntW(L"Logging", L"EnableFile", 1, iniPath) != 0;
 
 		// Log file name
-		GetPrivateProfileStringW(L"Logging", L"FileName", L"modloader.log", buffer, 256, iniPath);
-		g_logFileName = buffer;
+		GetPrivateProfileStringW(L"Logging", L"FileName", L"ModLoader.log", buffer, 256, iniPath);
+
+		// Older installs have an existing ini with the old lowercase default
+		// ("modloader.log") baked in -- normalize that back to the new casing
+		// rather than perpetuating it forever. Custom filenames are untouched.
+		if (_wcsicmp(buffer, L"modloader.log") == 0)
+			g_logFileName = L"ModLoader.log";
+		else
+			g_logFileName = buffer;
+	}
+
+	// -----------------------------------------------------------------------
+	// Rotate the previous run's log file before opening a new one.
+	//
+	// The active log ("<base>.log") is renamed using its last-write timestamp
+	// (e.g. "ModLoader-2026-07-07_16-20-52.log"), then old rotated logs beyond
+	// kMaxTotalLogs (including the fresh one about to be created) are deleted,
+	// oldest first.
+	// -----------------------------------------------------------------------
+	inline void RotateOldLogs(const wchar_t* logsDir, const wchar_t* currentLogPath, const wchar_t* baseName)
+	{
+		constexpr size_t kMaxTotalLogs = 10;
+		constexpr size_t kMaxRotatedLogs = kMaxTotalLogs - 1; // leaves room for the fresh current log
+
+		// Rename the previous run's log using its last write time.
+		WIN32_FILE_ATTRIBUTE_DATA fad{};
+		if (GetFileAttributesExW(currentLogPath, GetFileExInfoStandard, &fad))
+		{
+			SYSTEMTIME utc{}, local{};
+			FileTimeToSystemTime(&fad.ftLastWriteTime, &utc);
+			SystemTimeToTzSpecificLocalTime(nullptr, &utc, &local);
+
+			wchar_t stamp[32]{};
+			swprintf_s(stamp, L"%04d-%02d-%02d_%02d-%02d-%02d",
+				local.wYear, local.wMonth, local.wDay, local.wHour, local.wMinute, local.wSecond);
+
+			wchar_t rotatedPath[MAX_PATH]{};
+			swprintf_s(rotatedPath, L"%s\\%s-%s.log", logsDir, baseName, stamp);
+
+			// Avoid clobbering an existing rotated file with the same timestamp.
+			for (int suffix = 1; GetFileAttributesW(rotatedPath) != INVALID_FILE_ATTRIBUTES && suffix < 100; ++suffix)
+				swprintf_s(rotatedPath, L"%s\\%s-%s_%d.log", logsDir, baseName, stamp, suffix);
+
+			MoveFileW(currentLogPath, rotatedPath);
+		}
+
+		// Enforce the retention limit on rotated logs.
+		wchar_t searchPattern[MAX_PATH]{};
+		swprintf_s(searchPattern, L"%s\\%s-*.log", logsDir, baseName);
+
+		struct RotatedFile { std::wstring name; FILETIME writeTime; };
+		std::vector<RotatedFile> files;
+
+		WIN32_FIND_DATAW findData{};
+		HANDLE hFind = FindFirstFileW(searchPattern, &findData);
+		if (hFind != INVALID_HANDLE_VALUE)
+		{
+			do
+			{
+				if (!(findData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY))
+					files.push_back({ findData.cFileName, findData.ftLastWriteTime });
+			} while (FindNextFileW(hFind, &findData));
+			FindClose(hFind);
+		}
+
+		if (files.size() > kMaxRotatedLogs)
+		{
+			std::sort(files.begin(), files.end(), [](const RotatedFile& a, const RotatedFile& b)
+			{
+				return CompareFileTime(&a.writeTime, &b.writeTime) < 0; // oldest first
+			});
+
+			size_t toDelete = files.size() - kMaxRotatedLogs;
+			for (size_t i = 0; i < toDelete; ++i)
+			{
+				wchar_t fullPath[MAX_PATH]{};
+				swprintf_s(fullPath, L"%s\\%s", logsDir, files[i].name.c_str());
+				DeleteFileW(fullPath);
+			}
+		}
 	}
 
 	// -----------------------------------------------------------------------
@@ -245,7 +325,7 @@ namespace LogToFile
 			// Load configuration first
 			LoadConfig();
 
-			// Build the log path inside the ModLoader subfolder next to the game exe.
+			// Build the log path inside ModLoader\Logs next to the game exe.
 			if (g_enableFile)
 			{
 				wchar_t modulePath[MAX_PATH]{};
@@ -254,36 +334,58 @@ namespace LogToFile
 				wchar_t* lastSlash = wcsrchr(modulePath, L'\\');
 				if (lastSlash)
 				{
-					wcscpy_s(lastSlash + 1,
-						static_cast<rsize_t>(MAX_PATH - (lastSlash + 1 - modulePath)),
-						L"ModLoader\\");
-					wcsncat_s(modulePath, g_logFileName.c_str(), MAX_PATH);
-				}
+					*(lastSlash + 1) = L'\0'; // modulePath is now the exe directory, trailing backslash kept
 
-				// Open with FILE_SHARE_READ so other processes (tail, Get-Content, etc.)
-				   // can read the log while we're writing to it.
-				HANDLE hFile = CreateFileW(
-					modulePath,
-					GENERIC_WRITE,
-					FILE_SHARE_READ | FILE_SHARE_WRITE,
-					nullptr,
-					CREATE_ALWAYS,
-					FILE_ATTRIBUTE_NORMAL,
-					nullptr);
+					wchar_t modLoaderDir[MAX_PATH]{};
+					swprintf_s(modLoaderDir, L"%sModLoader", modulePath);
+					CreateDirectoryW(modLoaderDir, nullptr);
 
-				if (hFile != INVALID_HANDLE_VALUE)
-				{
-					// Convert Win32 HANDLE -> C runtime fd -> FILE*
-					int fd = _open_osfhandle(reinterpret_cast<intptr_t>(hFile), _O_WRONLY | _O_TEXT);
-					if (fd != -1)
+					// One-time migration: older versions wrote the log directly inside
+					// the ModLoader folder instead of the Logs subfolder — clean it up.
+					wchar_t legacyLogPath[MAX_PATH]{};
+					swprintf_s(legacyLogPath, L"%s\\ModLoader.log", modLoaderDir);
+					if (GetFileAttributesW(legacyLogPath) != INVALID_FILE_ATTRIBUTES)
+						DeleteFileW(legacyLogPath);
+
+					wchar_t logsDir[MAX_PATH]{};
+					swprintf_s(logsDir, L"%s\\Logs", modLoaderDir);
+					CreateDirectoryW(logsDir, nullptr);
+
+					wchar_t logPath[MAX_PATH]{};
+					swprintf_s(logPath, L"%s\\%s", logsDir, g_logFileName.c_str());
+
+					wchar_t baseName[MAX_PATH]{};
+					wcsncpy_s(baseName, g_logFileName.c_str(), MAX_PATH);
+					wchar_t* dot = wcsrchr(baseName, L'.');
+					if (dot) *dot = L'\0';
+
+					RotateOldLogs(logsDir, logPath, baseName);
+
+					// Open with FILE_SHARE_READ so other processes (tail, Get-Content, etc.)
+					// can read the log while we're writing to it.
+					HANDLE hFile = CreateFileW(
+						logPath,
+						GENERIC_WRITE,
+						FILE_SHARE_READ | FILE_SHARE_WRITE,
+						nullptr,
+						CREATE_ALWAYS,
+						FILE_ATTRIBUTE_NORMAL,
+						nullptr);
+
+					if (hFile != INVALID_HANDLE_VALUE)
 					{
-						g_file = _fdopen(fd, "w");
-						if (!g_file)
-							_close(fd); // closes the underlying HANDLE too
-					}
-					else
-					{
-						CloseHandle(hFile);
+						// Convert Win32 HANDLE -> C runtime fd -> FILE*
+						int fd = _open_osfhandle(reinterpret_cast<intptr_t>(hFile), _O_WRONLY | _O_TEXT);
+						if (fd != -1)
+						{
+							g_file = _fdopen(fd, "w");
+							if (!g_file)
+								_close(fd); // closes the underlying HANDLE too
+						}
+						else
+						{
+							CloseHandle(hFile);
+						}
 					}
 				}
 			}
