@@ -40,6 +40,13 @@
 //   Enabled=1        ; 0 disables the proxy self-update check too
 //   ManifestUrl=     ; overrides the compiled-in manifest URL
 //
+// Debug builds (_DEBUG): the pipeline is testable without CI defines -- a
+// hardcoded manifest URL (the real GitHub release feed) is used when no URL
+// is compiled in / configured, and the version comparison and declined-tag
+// suppression are bypassed so the latest release is always offered.  The
+// Yes/No prompt still appears, and download/staging/apply run exactly the
+// same code as release builds.
+//
 // State (ModLoader\update_state.ini):
 //   [AutoUpdate]
 //   BuildTag=v1.15.4        ; written after an update is applied

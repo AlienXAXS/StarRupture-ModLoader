@@ -25,6 +25,20 @@
 #  define PROXY_DEFAULT_MANIFEST_URL ""
 #endif
 
+// Debug builds: exercise the full update pipeline even though CI never
+// injects a manifest URL into local builds.  A hardcoded URL to the real
+// GitHub release feed is used as a last-resort default, and the version
+// comparison is bypassed so the latest release is always offered for
+// (re-)download -- the download / staging / next-boot apply path is then
+// identical to what release builds run.
+#ifdef _DEBUG
+#  define PROXY_DEBUG_FORCE_UPDATE 1
+#  define PROXY_DEBUG_MANIFEST_URL \
+       "https://github.com/AlienXAXS/StarRupture-ModLoader/releases/latest/download/manifest-client.json"
+#else
+#  define PROXY_DEBUG_FORCE_UPDATE 0
+#endif
+
 namespace
 {
     // =======================================================================
@@ -695,10 +709,19 @@ namespace
                 manifestUrl = PROXY_DEFAULT_MANIFEST_URL;
                 if (manifestUrl.empty())
                 {
+#if PROXY_DEBUG_FORCE_UPDATE
+                    manifestUrl = PROXY_DEBUG_MANIFEST_URL;
+                    AutoUpdateLog::Warn("DEBUG build: no compiled-in manifest URL -- using hardcoded debug URL: %s",
+                                        manifestUrl.c_str());
+#else
                     AutoUpdateLog::Info("No manifest URL configured (dev / generic build) -- update check skipped");
                     return 0;
+#endif
                 }
-                AutoUpdateLog::Info("Manifest URL (compiled-in): %s", manifestUrl.c_str());
+                else
+                {
+                    AutoUpdateLog::Info("Manifest URL (compiled-in): %s", manifestUrl.c_str());
+                }
             }
         }
 
@@ -742,9 +765,14 @@ namespace
 
         if (!localVer.valid)
         {
+#if PROXY_DEBUG_FORCE_UPDATE
+            AutoUpdateLog::Warn("DEBUG build: installed version unknown -- continuing anyway");
+            localDisplay = "unknown (debug)";
+#else
             AutoUpdateLog::Error("Installed version could not be determined by any method -- "
                                  "refusing to offer an update (failsafe)");
             return 0;
+#endif
         }
 
         // ------------------------------------------------------------------
@@ -773,6 +801,16 @@ namespace
             return 0;
         }
 
+#if PROXY_DEBUG_FORCE_UPDATE
+        // Debug builds always offer the latest release so the whole
+        // download -> stage -> next-boot apply pipeline can be tested,
+        // regardless of what is installed and of any earlier decline.
+        if (CompareVersions(remoteVer, localVer) <= 0)
+            AutoUpdateLog::Warn("DEBUG build: installed %s is not older than remote %s -- forcing update offer anyway",
+                                localDisplay.c_str(), remoteTag.c_str());
+        else
+            AutoUpdateLog::Info("Update available: %s -> %s", localDisplay.c_str(), remoteTag.c_str());
+#else
         if (CompareVersions(remoteVer, localVer) <= 0)
         {
             AutoUpdateLog::Info("Mod loader is up to date (installed %s, remote %s)",
@@ -791,6 +829,7 @@ namespace
             AutoUpdateLog::Info("User previously declined %s -- not asking again", remoteTag.c_str());
             return 0;
         }
+#endif
 
         // ------------------------------------------------------------------
         // Ask the user.
