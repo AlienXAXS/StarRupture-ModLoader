@@ -58,7 +58,7 @@ namespace UI::UpdateNoticeWindow
         // be content-driven: the centered Close button below offsets itself from
         // the window width, so AlwaysAutoResize would feed back into itself and
         // grow the window every frame.
-        ImGui::SetNextWindowSize(ImVec2(460, 0), ImGuiCond_Always);
+        ImGui::SetNextWindowSize(ImVec2(640, 0), ImGuiCond_Always);
         ImGui::SetNextWindowPos(
             ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f),
             ImGuiCond_Appearing,
