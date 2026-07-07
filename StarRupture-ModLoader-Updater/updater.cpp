@@ -32,7 +32,7 @@
 // (re-)download -- the download / install path is then identical to what
 // release builds run.
 #ifdef _DEBUG
-#  define UPDATER_DEBUG_FORCE_UPDATE 1
+#  define UPDATER_DEBUG_FORCE_UPDATE 0
 #  define UPDATER_DEBUG_MANIFEST_URL \
        "https://github.com/AlienXAXS/StarRupture-ModLoader/releases/latest/download/manifest-client.json"
 #else
