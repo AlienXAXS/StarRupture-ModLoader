@@ -6,6 +6,9 @@
 #include <windows.h>
 #include <cstdio>
 #include <cstdarg>
+#include <string>
+#include <vector>
+#include <algorithm>
 
 namespace
 {
@@ -13,7 +16,7 @@ namespace
     CRITICAL_SECTION g_lock;
     bool             g_lockInit = false;
 
-    constexpr int kKeepLogs = 10; // AutoUpdate.log + AutoUpdate-1..-9.log
+    constexpr int kKeepLogs = 10; // AutoUpdate.log + 9 timestamped archives
 
     // Builds "<game dir>\<suffix>" into outPath.
     void BuildGamePath(wchar_t* outPath, DWORD maxLen, const wchar_t* suffix)
@@ -24,26 +27,59 @@ namespace
             wcscpy_s(slash + 1, maxLen - static_cast<rsize_t>(slash + 1 - outPath), suffix);
     }
 
-    // Rotate AutoUpdate-8.log -> AutoUpdate-9.log ... AutoUpdate.log -> AutoUpdate-1.log,
-    // deleting the oldest so at most kKeepLogs files remain.
+    // Rotation scheme: AutoUpdate.log is always the log of the CURRENT run.
+    // On startup the previous AutoUpdate.log is renamed to
+    // AutoUpdate-YYYY-MM-DD_HH-mm-ss.log (timestamp = its last write time),
+    // then the oldest archived logs are deleted so that at most kKeepLogs
+    // files remain in total (current + kKeepLogs-1 archives).
     void RotateLogs(const wchar_t* logsDir)
     {
-        wchar_t oldest[MAX_PATH]{};
-        swprintf_s(oldest, L"%s\\AutoUpdate-%d.log", logsDir, kKeepLogs - 1);
-        DeleteFileW(oldest); // ok if it does not exist
+        wchar_t current[MAX_PATH]{};
+        swprintf_s(current, L"%s\\AutoUpdate.log", logsDir);
 
-        for (int i = kKeepLogs - 2; i >= 1; --i)
+        // Archive the previous run's log under its last-write timestamp.
+        WIN32_FILE_ATTRIBUTE_DATA fad{};
+        if (GetFileAttributesExW(current, GetFileExInfoStandard, &fad))
         {
-            wchar_t src[MAX_PATH]{}, dst[MAX_PATH]{};
-            swprintf_s(src, L"%s\\AutoUpdate-%d.log", logsDir, i);
-            swprintf_s(dst, L"%s\\AutoUpdate-%d.log", logsDir, i + 1);
-            MoveFileExW(src, dst, MOVEFILE_REPLACE_EXISTING); // ok if src missing
+            SYSTEMTIME utc{}, local{};
+            FileTimeToSystemTime(&fad.ftLastWriteTime, &utc);
+            SystemTimeToTzSpecificLocalTime(nullptr, &utc, &local);
+
+            wchar_t archived[MAX_PATH]{};
+            swprintf_s(archived, L"%s\\AutoUpdate-%04u-%02u-%02u_%02u-%02u-%02u.log",
+                       logsDir, local.wYear, local.wMonth, local.wDay,
+                       local.wHour, local.wMinute, local.wSecond);
+            MoveFileExW(current, archived, MOVEFILE_REPLACE_EXISTING);
         }
 
-        wchar_t current[MAX_PATH]{}, first[MAX_PATH]{};
-        swprintf_s(current, L"%s\\AutoUpdate.log", logsDir);
-        swprintf_s(first, L"%s\\AutoUpdate-1.log", logsDir);
-        MoveFileExW(current, first, MOVEFILE_REPLACE_EXISTING);
+        // Push/pop: collect all archived logs and delete the oldest until
+        // only kKeepLogs-1 archives remain.  The timestamped names sort
+        // chronologically, so a simple lexicographic sort is enough.
+        wchar_t pattern[MAX_PATH]{};
+        swprintf_s(pattern, L"%s\\AutoUpdate-*.log", logsDir);
+
+        std::vector<std::wstring> archives;
+        WIN32_FIND_DATAW fd{};
+        HANDLE hFind = FindFirstFileW(pattern, &fd);
+        if (hFind != INVALID_HANDLE_VALUE)
+        {
+            do
+            {
+                if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY))
+                    archives.push_back(fd.cFileName);
+            } while (FindNextFileW(hFind, &fd));
+            FindClose(hFind);
+        }
+
+        std::sort(archives.begin(), archives.end()); // oldest first
+
+        while (archives.size() > static_cast<size_t>(kKeepLogs - 1))
+        {
+            wchar_t victim[MAX_PATH]{};
+            swprintf_s(victim, L"%s\\%s", logsDir, archives.front().c_str());
+            DeleteFileW(victim);
+            archives.erase(archives.begin());
+        }
     }
 
     void WriteLine(const char* level, const char* fmt, va_list args)

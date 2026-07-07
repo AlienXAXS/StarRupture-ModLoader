@@ -4,10 +4,11 @@
 // AutoUpdateLog -- dedicated on-disk log for the proxy's self-update system.
 //
 // Writes to <game>\ModLoader\Logs\AutoUpdate.log (the Logs folder is created
-// if missing).  On every Initialize() the previous logs are rotated:
-//   AutoUpdate-9.log is deleted, AutoUpdate-8.log -> AutoUpdate-9.log, ...,
-//   AutoUpdate.log -> AutoUpdate-1.log
-// so the last 10 runs are always kept.
+// if missing).  AutoUpdate.log is always the current run; on every
+// Initialize() the previous one is archived to
+//   AutoUpdate-YYYY-MM-DD_HH-mm-ss.log
+// (timestamp = its last write time) and the oldest archives are deleted so
+// the last 10 runs are always kept.
 //
 // This logger is intentionally separate from Core's modloader.log (see
 // proxy_log.h for why the proxy must not share Core's LogToFile) and from
