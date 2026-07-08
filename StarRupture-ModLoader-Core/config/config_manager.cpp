@@ -4,6 +4,7 @@
 #include <fstream>
 #include <sstream>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace ModLoaderLogger
 {
@@ -247,6 +248,103 @@ namespace ModLoaderLogger
 		return wcscmp(wValue, uniqueDefault) != 0;
 	}
 
+	// Manually parses an INI file into a "Section\nKey" -> value map, tracking the current
+	// section as a simple state machine rather than relying on GetPrivateProfileStringW.
+	// This matters because the Win32 profile APIs only ever read keys out of the FIRST
+	// occurrence of a given "[Section]" header in the file; if a schema entry's section was
+	// ever reordered non-contiguously (see WriteFormattedConfig), earlier ModLoader builds
+	// could have written a duplicate "[Section]" header later in the file, stranding that
+	// key's value where GetPrivateProfileStringW can never see it. This parser instead walks
+	// every line once and lets the last occurrence of a given section+key win, so values in a
+	// duplicated section are still recovered when reformatting an existing config.
+	// Must be called with g_configLock held.
+	static std::unordered_map<std::string, std::string> ParseIniFileRaw(const wchar_t* configPath)
+	{
+		std::unordered_map<std::string, std::string> result;
+
+		FILE* f = nullptr;
+		if (_wfopen_s(&f, configPath, L"rb") != 0 || !f)
+			return result;
+
+		fseek(f, 0, SEEK_END);
+		long size = ftell(f);
+		fseek(f, 0, SEEK_SET);
+		if (size <= 0)
+		{
+			fclose(f);
+			return result;
+		}
+
+		std::string raw(size, '\0');
+		fread(&raw[0], 1, size, f);
+		fclose(f);
+
+		std::wstring wtext;
+		if (raw.size() >= 2 && static_cast<unsigned char>(raw[0]) == 0xFF && static_cast<unsigned char>(raw[1]) == 0xFE)
+		{
+			// UTF-16LE with BOM (legacy WritePrivateProfileStringW-created file)
+			const wchar_t* wdata = reinterpret_cast<const wchar_t*>(raw.data() + 2);
+			size_t wlen = (raw.size() - 2) / sizeof(wchar_t);
+			wtext.assign(wdata, wlen);
+		}
+		else
+		{
+			int needed = MultiByteToWideChar(CP_UTF8, 0, raw.c_str(), static_cast<int>(raw.size()), nullptr, 0);
+			if (needed > 0)
+			{
+				wtext.resize(needed);
+				MultiByteToWideChar(CP_UTF8, 0, raw.c_str(), static_cast<int>(raw.size()), &wtext[0], needed);
+			}
+		}
+
+		std::wstring currentSection;
+		size_t pos = 0;
+		while (pos < wtext.size())
+		{
+			size_t eol = wtext.find_first_of(L"\r\n", pos);
+			std::wstring line = (eol == std::wstring::npos) ? wtext.substr(pos) : wtext.substr(pos, eol - pos);
+			pos = (eol == std::wstring::npos) ? wtext.size() : eol + 1;
+
+			size_t start = line.find_first_not_of(L" \t");
+			if (start == std::wstring::npos)
+				continue;
+			line = line.substr(start);
+			if (line.empty() || line[0] == L';' || line[0] == L'#')
+				continue;
+
+			if (line[0] == L'[')
+			{
+				size_t close = line.find(L']');
+				if (close != std::wstring::npos)
+					currentSection = line.substr(1, close - 1);
+				continue;
+			}
+
+			size_t eq = line.find(L'=');
+			if (eq == std::wstring::npos || currentSection.empty())
+				continue;
+
+			std::wstring wkey = line.substr(0, eq);
+			std::wstring wvalue = line.substr(eq + 1);
+			while (!wkey.empty() && (wkey.back() == L' ' || wkey.back() == L'\t'))
+				wkey.pop_back();
+			while (!wvalue.empty() && wvalue.back() == L'\r')
+				wvalue.pop_back();
+
+			char narSec[256] = {}, narKey[256] = {}, narVal[1024] = {};
+			WideCharToMultiByte(CP_UTF8, 0, currentSection.c_str(), -1, narSec, sizeof(narSec), nullptr, nullptr);
+			WideCharToMultiByte(CP_UTF8, 0, wkey.c_str(), -1, narKey, sizeof(narKey), nullptr, nullptr);
+			WideCharToMultiByte(CP_UTF8, 0, wvalue.c_str(), -1, narVal, sizeof(narVal), nullptr, nullptr);
+
+			std::string cacheKey = narSec;
+			cacheKey += '\n';
+			cacheKey += narKey;
+			result[cacheKey] = narVal; // last occurrence wins across duplicate section headers
+		}
+
+		return result;
+	}
+
 	// Write a config file from the schema, with "; description" comment lines above each key.
 	// Uses _wfopen directly so the file is clean UTF-8/ASCII from the start,
 	// avoiding any encoding quirks from WritePrivateProfileStringW.
@@ -259,6 +357,7 @@ namespace ModLoaderLogger
 	{
 		std::string content;
 		const char* lastSection = nullptr;
+		std::unordered_set<std::string> writtenSections;
 
 		for (int i = 0; i < schema->entryCount; ++i)
 		{
@@ -266,11 +365,16 @@ namespace ModLoaderLogger
 
 			if (!lastSection || strcmp(lastSection, entry.section) != 0)
 			{
-				if (lastSection)
-					content += "\r\n"; // blank line between sections
-				content += "[";
-				content += entry.section;
-				content += "]\r\n";
+				// Guard against non-contiguous entries sharing a section name (e.g. schema
+				// reordering), which would otherwise emit a duplicate "[Section]" header.
+				if (writtenSections.insert(entry.section).second)
+				{
+					if (lastSection)
+						content += "\r\n"; // blank line between sections
+					content += "[";
+					content += entry.section;
+					content += "]\r\n";
+				}
 				lastSection = entry.section;
 			}
 
@@ -454,29 +558,24 @@ namespace ModLoaderLogger
 		// without losing any user-configured values.
 		LogDebug(L"[ConfigManager] Reformatting config for '%s' with comments, preserving values...", wPluginName);
 
-		std::unordered_map<std::string, std::string> currentValues;
-		wchar_t wSection[256], wKey[256], wValue[1024];
-		auto sentinel = L"__MISSING__";
+		// Parse the raw file once so values stranded in a duplicated "[Section]" header
+		// (see ParseIniFileRaw) are still recovered, instead of only reading whatever
+		// GetPrivateProfileStringW finds in the first occurrence of each section.
+		EnterCriticalSection(&g_configLock);
+		std::unordered_map<std::string, std::string> parsedValues = ParseIniFileRaw(configPath);
+		LeaveCriticalSection(&g_configLock);
 
+		std::unordered_map<std::string, std::string> currentValues;
 		for (int i = 0; i < schema->entryCount; ++i)
 		{
 			const ConfigEntry& entry = schema->entries[i];
-			MultiByteToWideChar(CP_UTF8, 0, entry.section, -1, wSection, 256);
-			MultiByteToWideChar(CP_UTF8, 0, entry.key, -1, wKey, 256);
+			std::string cacheKey = entry.section;
+			cacheKey += '\n';
+			cacheKey += entry.key;
 
-			EnterCriticalSection(&g_configLock);
-			GetPrivateProfileStringW(wSection, wKey, sentinel, wValue, 1024, configPath);
-			LeaveCriticalSection(&g_configLock);
-
-			if (wcscmp(wValue, sentinel) != 0)
-			{
-				char value[1024];
-				WideCharToMultiByte(CP_UTF8, 0, wValue, -1, value, sizeof(value), nullptr, nullptr);
-				std::string cacheKey = entry.section;
-				cacheKey += '\n';
-				cacheKey += entry.key;
-				currentValues[cacheKey] = value;
-			}
+			auto it = parsedValues.find(cacheKey);
+			if (it != parsedValues.end())
+				currentValues[cacheKey] = it->second;
 		}
 
 		// Collect modloader-injected keys (e.g. <KeybindKey>Blocking) that are not
