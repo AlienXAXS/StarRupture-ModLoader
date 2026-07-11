@@ -4,6 +4,7 @@
 #include "logging/logger.h"
 #include "memory_scanner/scanner.h"
 #include "../scan_patterns.h"
+#include "../../symbol_resolver.h"
 #include <DbgHelp.h>
 #pragma comment(lib, "DbgHelp.lib")
 
@@ -34,15 +35,12 @@ namespace Hooks::CrashReporter
 	{
 		HANDLE process = GetCurrentProcess();
 
-		// The engine may already have called SymInitialize for this process by the time a
-		// crash happens -- a second call just fails harmlessly, so ignore the return value.
-		static bool s_symOptionsSet = false;
-		if (!s_symOptionsSet)
-		{
-			s_symOptionsSet = true;
-			SymSetOptions(SYMOPT_UNDNAME | SYMOPT_DEFERRED_LOADS | SYMOPT_LOAD_LINES);
-			SymInitialize(process, nullptr, TRUE);
-		}
+		// Shared with engine_tick's stack sampler -- see symbol_resolver.h.
+		// DbgHelp is not thread-safe, so every call into it (SymInitialize,
+		// StackWalk64, SymFromAddrW, and the callbacks StackWalk64 invokes
+		// internally) must be serialized through the same process-wide lock.
+		Hooks::SymbolResolver::EnsureInitialized();
+		std::lock_guard<std::mutex> dbgHelpLock(Hooks::SymbolResolver::GetMutex());
 
 		CONTEXT ctx = *contextRecord; // StackWalk64 mutates this as it unwinds
 

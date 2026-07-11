@@ -138,6 +138,9 @@
     <ClInclude Include="hooks\hooks_common.h">
       <Filter>Source Files\hooks</Filter>
     </ClInclude>
+    <ClInclude Include="hooks\symbol_resolver.h">
+      <Filter>Source Files\hooks</Filter>
+    </ClInclude>
     <ClInclude Include="hooks\hooks_interface.h">
       <Filter>Source Files\hooks</Filter>
     </ClInclude>
@@ -160,6 +163,9 @@
       <Filter>Source Files\UI\modloader</Filter>
     </ClInclude>
     <ClInclude Include="UI\update_notice_window.h">
+      <Filter>Source Files\UI\modloader</Filter>
+    </ClInclude>
+    <ClInclude Include="UI\tick_profiler_window.h">
       <Filter>Source Files\UI\modloader</Filter>
     </ClInclude>
     <ClInclude Include="UI\plugin_panel_registry.h">
@@ -235,6 +241,15 @@
       <Filter>Source Files\hooks\game\engine_shutdown</Filter>
     </ClInclude>
     <ClInclude Include="hooks\game\engine_tick\engine_tick.h">
+      <Filter>Source Files\hooks\game\engine_tick</Filter>
+    </ClInclude>
+    <ClInclude Include="hooks\game\engine_tick\tick_profiler.h">
+      <Filter>Source Files\hooks\game\engine_tick</Filter>
+    </ClInclude>
+    <ClInclude Include="hooks\game\engine_tick\stack_sampler.h">
+      <Filter>Source Files\hooks\game\engine_tick</Filter>
+    </ClInclude>
+    <ClInclude Include="hooks\game\engine_tick\function_symbols.h">
       <Filter>Source Files\hooks\game\engine_tick</Filter>
     </ClInclude>
     <ClInclude Include="hooks\game\hud_post_render\hud_post_render.h">
@@ -383,6 +398,9 @@
     <ClCompile Include="hooks\hooks_common.cpp">
       <Filter>Source Files\hooks</Filter>
     </ClCompile>
+    <ClCompile Include="hooks\symbol_resolver.cpp">
+      <Filter>Source Files\hooks</Filter>
+    </ClCompile>
     <ClCompile Include="hooks\hooks_interface.cpp">
       <Filter>Source Files\hooks</Filter>
     </ClCompile>
@@ -408,6 +426,9 @@
       <Filter>Source Files\UI\modloader</Filter>
     </ClCompile>
     <ClCompile Include="UI\update_notice_window.cpp">
+      <Filter>Source Files\UI\modloader</Filter>
+    </ClCompile>
+    <ClCompile Include="UI\tick_profiler_window.cpp">
       <Filter>Source Files\UI\modloader</Filter>
     </ClCompile>
     <ClCompile Include="UI\plugin_panel_registry.cpp">
@@ -468,6 +489,15 @@
       <Filter>Source Files\hooks\game\engine_shutdown</Filter>
     </ClCompile>
     <ClCompile Include="hooks\game\engine_tick\engine_tick.cpp">
+      <Filter>Source Files\hooks\game\engine_tick</Filter>
+    </ClCompile>
+    <ClCompile Include="hooks\game\engine_tick\tick_profiler.cpp">
+      <Filter>Source Files\hooks\game\engine_tick</Filter>
+    </ClCompile>
+    <ClCompile Include="hooks\game\engine_tick\stack_sampler.cpp">
+      <Filter>Source Files\hooks\game\engine_tick</Filter>
+    </ClCompile>
+    <ClCompile Include="hooks\game\engine_tick\function_symbols.cpp">
       <Filter>Source Files\hooks\game\engine_tick</Filter>
     </ClCompile>
     <ClCompile Include="hooks\game\client_message\client_message.cpp">
