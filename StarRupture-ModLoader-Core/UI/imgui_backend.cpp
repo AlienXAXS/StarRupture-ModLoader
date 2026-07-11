@@ -219,16 +219,41 @@ namespace
 // ---------------------------------------------------------------------------
 static LRESULT CALLBACK HookedWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
+	// Dispatch plugin keybind callbacks unconditionally so that toggle-style
+	// keybinds (e.g. F2) can close the UI even while it is open.
+	// Only swallow blocking messages when the UI is not capturing input.
+	const bool capturing = (g_callbacks.ShouldCaptureInput ? g_callbacks.ShouldCaptureInput() : false);
+
+	// Only feed mouse messages into ImGui while it actually owns the cursor
+	// (i.e. the simulated mouse is shown). Otherwise ImGui's IO mouse state
+	// is left pointing at wherever the cursor was frozen when the UI closed,
+	// and an always-rendered widget/button under that stale position would
+	// still register hover/click from camera-look/fire input that is only
+	// meant for the game (e.g. WM_LBUTTONDOWN forwarded through to shoot).
+	bool isMouseMsg = false;
+	switch (msg)
+	{
+	case WM_MOUSEMOVE: case WM_NCMOUSEMOVE:
+	case WM_MOUSELEAVE: case WM_NCMOUSELEAVE:
+	case WM_LBUTTONDOWN: case WM_LBUTTONDBLCLK: case WM_LBUTTONUP:
+	case WM_RBUTTONDOWN: case WM_RBUTTONDBLCLK: case WM_RBUTTONUP:
+	case WM_MBUTTONDOWN: case WM_MBUTTONDBLCLK: case WM_MBUTTONUP:
+	case WM_XBUTTONDOWN: case WM_XBUTTONDBLCLK: case WM_XBUTTONUP:
+	case WM_MOUSEWHEEL: case WM_MOUSEHWHEEL:
+	case WM_SETCURSOR:
+		isMouseMsg = true;
+		break;
+	default:
+		break;
+	}
+
+	if (capturing || !isMouseMsg)
 	{
 		std::lock_guard<std::recursive_mutex> lock(g_imguiMutex);
 		if (ImGui_ImplWin32_WndProcHandler(hWnd, msg, wParam, lParam))
 			return true;
 	}
 
-	// Dispatch plugin keybind callbacks unconditionally so that toggle-style
-	// keybinds (e.g. F2) can close the UI even while it is open.
-	// Only swallow blocking messages when the UI is not capturing input.
-	const bool capturing = (g_callbacks.ShouldCaptureInput ? g_callbacks.ShouldCaptureInput() : false);
 	{
 		bool blocked = (g_callbacks.DispatchKey ? g_callbacks.DispatchKey(msg, wParam, lParam) : false);
 		if (!capturing && blocked)
