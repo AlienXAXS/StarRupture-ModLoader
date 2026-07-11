@@ -185,10 +185,25 @@
 //      metadata to look up by name. v47 is unreleased, so this lands in the
 //      same version as IPluginObjectWalker/IPluginDelegateHook above.
 //      Appended at the end of IPluginHooks. MIN remains 46.
+// v48: Added ImDrawList direct-drawing access to IModLoaderImGui (appended at
+//      the end of the struct, so existing v34+ plugins keep working unchanged).
+//      GetWindowDrawList/GetBackgroundDrawList/GetForegroundDrawList return an
+//      opaque PluginDrawList (== ImDrawList*) handle valid for the current
+//      frame only -- do not cache it across frames. Covers shape primitives
+//      (Line, Rect(Filled), RectFilledMultiColor, Quad(Filled),
+//      Triangle(Filled), Circle(Filled), Ngon(Filled), Ellipse(Filled),
+//      Text/TextSized, Polyline, ConvexPolyFilled, BezierCubic/Quadratic),
+//      images via existing PluginTextureHandle (Image, ImageQuad,
+//      ImageRounded), the stateful Path* builder API (PathClear/LineTo/ArcTo/
+//      ArcToFast/EllipticalArcTo/BezierCubicCurveTo/BezierQuadraticCurveTo/
+//      Rect/FillConvex/Stroke), and draw-list-local clip rect stack
+//      (PushClipRect/PushClipRectFullScreen/PopClipRect/GetClipRectMin/Max).
+//      Colors are packed 0xAABBGGRR ImU32 -- build them with the existing
+//      GetColorU32FromVec4/GetColorU32FromCol helpers. MIN remains 46.
 
 #define PLUGIN_INTERFACE_VERSION_MIN 46
-#define PLUGIN_INTERFACE_VERSION_MAX 47
-#define PLUGIN_INTERFACE_VERSION 47
+#define PLUGIN_INTERFACE_VERSION_MAX 48
+#define PLUGIN_INTERFACE_VERSION 48
 
 enum class PluginLogLevel { Trace = 0, Debug = 1, Info = 2, Warn = 3, Error = 4 };
 enum class ConfigValueType { String, Integer, Float, Boolean, Keybind };
@@ -480,6 +495,32 @@ struct IPluginInputEvents
 	void (*UnregisterKeybindCombo)(EModKey key, EModKeyModifiers mods, EModKeyEvent event, PluginKeybindComboCallback callback);
 };
 
+// Opaque handle for a texture registered through IPluginImGuiTextures (v37).
+// Forward-declared here (fully defined again, identically, near
+// IPluginImGuiTextures below) so IModLoaderImGui's draw-list Image* functions
+// can take one without reordering the whole header.
+typedef void* PluginTextureHandle;
+
+// Opaque handle for an ImDrawList*, returned by GetWindowDrawList /
+// GetBackgroundDrawList / GetForegroundDrawList (v48). Only valid for the
+// duration of the current frame's render callback -- do not cache across
+// frames.
+typedef void* PluginDrawList;
+
+// Flags for the rounding-corner parameters below. Mirrors ImDrawFlags.
+#define PluginDrawFlags_None                     0
+#define PluginDrawFlags_Closed                    (1 << 0)
+#define PluginDrawFlags_RoundCornersTopLeft        (1 << 4)
+#define PluginDrawFlags_RoundCornersTopRight        (1 << 5)
+#define PluginDrawFlags_RoundCornersBottomLeft      (1 << 6)
+#define PluginDrawFlags_RoundCornersBottomRight     (1 << 7)
+#define PluginDrawFlags_RoundCornersNone           (1 << 8)
+#define PluginDrawFlags_RoundCornersTop            (PluginDrawFlags_RoundCornersTopLeft | PluginDrawFlags_RoundCornersTopRight)
+#define PluginDrawFlags_RoundCornersBottom         (PluginDrawFlags_RoundCornersBottomLeft | PluginDrawFlags_RoundCornersBottomRight)
+#define PluginDrawFlags_RoundCornersLeft           (PluginDrawFlags_RoundCornersBottomLeft | PluginDrawFlags_RoundCornersTopLeft)
+#define PluginDrawFlags_RoundCornersRight          (PluginDrawFlags_RoundCornersBottomRight | PluginDrawFlags_RoundCornersTopRight)
+#define PluginDrawFlags_RoundCornersAll            (PluginDrawFlags_RoundCornersTopLeft | PluginDrawFlags_RoundCornersTopRight | PluginDrawFlags_RoundCornersBottomLeft | PluginDrawFlags_RoundCornersBottomRight)
+
 // ---------------------------------------------------------------------------
 // UI (v15–v16, client only; extended v24)
 // ---------------------------------------------------------------------------
@@ -763,6 +804,69 @@ struct IModLoaderImGui
 	const char*   (*GetClipboardText)();
 	void          (*SetClipboardText)(const char* text);
 	const char*   (*GetStyleColorName)(int idx);
+
+	// -------------------------------------------------------------------------
+	// v48: Direct drawing (ImDrawList)
+	// -------------------------------------------------------------------------
+	// Acquire a draw list. Only valid for the current frame's render callback --
+	// do not cache the returned handle across frames.
+	PluginDrawList (*GetWindowDrawList)();
+	PluginDrawList (*GetBackgroundDrawList)();
+	PluginDrawList (*GetForegroundDrawList)();
+
+	// Shape primitives. Colors are packed 0xAABBGGRR ImU32 (see
+	// GetColorU32FromVec4 / GetColorU32FromCol above).
+	void (*DL_AddLine)(PluginDrawList dl, float x1, float y1, float x2, float y2, unsigned int col, float thickness);
+	void (*DL_AddRect)(PluginDrawList dl, float min_x, float min_y, float max_x, float max_y, unsigned int col, float rounding, int flags, float thickness);
+	void (*DL_AddRectFilled)(PluginDrawList dl, float min_x, float min_y, float max_x, float max_y, unsigned int col, float rounding, int flags);
+	void (*DL_AddRectFilledMultiColor)(PluginDrawList dl, float min_x, float min_y, float max_x, float max_y, unsigned int col_upr_left, unsigned int col_upr_right, unsigned int col_bot_right, unsigned int col_bot_left);
+	void (*DL_AddQuad)(PluginDrawList dl, float x1, float y1, float x2, float y2, float x3, float y3, float x4, float y4, unsigned int col, float thickness);
+	void (*DL_AddQuadFilled)(PluginDrawList dl, float x1, float y1, float x2, float y2, float x3, float y3, float x4, float y4, unsigned int col);
+	void (*DL_AddTriangle)(PluginDrawList dl, float x1, float y1, float x2, float y2, float x3, float y3, unsigned int col, float thickness);
+	void (*DL_AddTriangleFilled)(PluginDrawList dl, float x1, float y1, float x2, float y2, float x3, float y3, unsigned int col);
+	void (*DL_AddCircle)(PluginDrawList dl, float center_x, float center_y, float radius, unsigned int col, int num_segments, float thickness);
+	void (*DL_AddCircleFilled)(PluginDrawList dl, float center_x, float center_y, float radius, unsigned int col, int num_segments);
+	void (*DL_AddNgon)(PluginDrawList dl, float center_x, float center_y, float radius, unsigned int col, int num_segments, float thickness);
+	void (*DL_AddNgonFilled)(PluginDrawList dl, float center_x, float center_y, float radius, unsigned int col, int num_segments);
+	void (*DL_AddEllipse)(PluginDrawList dl, float center_x, float center_y, float radius_x, float radius_y, unsigned int col, float rot, int num_segments, float thickness);
+	void (*DL_AddEllipseFilled)(PluginDrawList dl, float center_x, float center_y, float radius_x, float radius_y, unsigned int col, float rot, int num_segments);
+
+	// Text drawn directly onto the draw list (bypasses layout/cursor).
+	void (*DL_AddText)(PluginDrawList dl, float x, float y, unsigned int col, const char* text);
+	void (*DL_AddTextSized)(PluginDrawList dl, float font_size, float x, float y, unsigned int col, const char* text);
+
+	// points_xy is a flat array of (x,y) pairs, length == point_count * 2.
+	void (*DL_AddPolyline)(PluginDrawList dl, const float* points_xy, int point_count, unsigned int col, int flags, float thickness);
+	void (*DL_AddConvexPolyFilled)(PluginDrawList dl, const float* points_xy, int point_count, unsigned int col);
+	void (*DL_AddBezierCubic)(PluginDrawList dl, float x1, float y1, float x2, float y2, float x3, float y3, float x4, float y4, unsigned int col, float thickness, int num_segments);
+	void (*DL_AddBezierQuadratic)(PluginDrawList dl, float x1, float y1, float x2, float y2, float x3, float y3, unsigned int col, float thickness, int num_segments);
+
+	// Images -- tex must be a handle obtained from IPluginImGuiTextures (hooks->ImGuiTextures).
+	void (*DL_AddImage)(PluginDrawList dl, PluginTextureHandle tex, float min_x, float min_y, float max_x, float max_y, float uv_min_x, float uv_min_y, float uv_max_x, float uv_max_y, unsigned int col);
+	void (*DL_AddImageQuad)(PluginDrawList dl, PluginTextureHandle tex, float x1, float y1, float x2, float y2, float x3, float y3, float x4, float y4, float u1, float v1, float u2, float v2, float u3, float v3, float u4, float v4, unsigned int col);
+	void (*DL_AddImageRounded)(PluginDrawList dl, PluginTextureHandle tex, float min_x, float min_y, float max_x, float max_y, float uv_min_x, float uv_min_y, float uv_max_x, float uv_max_y, unsigned int col, float rounding, int flags);
+
+	// Stateful path builder: accumulate points with PathLineTo/PathArcTo/etc,
+	// then emit a primitive with PathStroke or PathFillConvex. PathClear resets
+	// the accumulated point list without emitting anything.
+	void (*DL_PathClear)(PluginDrawList dl);
+	void (*DL_PathLineTo)(PluginDrawList dl, float x, float y);
+	void (*DL_PathArcTo)(PluginDrawList dl, float center_x, float center_y, float radius, float a_min, float a_max, int num_segments);
+	void (*DL_PathArcToFast)(PluginDrawList dl, float center_x, float center_y, float radius, int a_min_of_12, int a_max_of_12);
+	void (*DL_PathEllipticalArcTo)(PluginDrawList dl, float center_x, float center_y, float radius_x, float radius_y, float rot, float a_min, float a_max, int num_segments);
+	void (*DL_PathBezierCubicCurveTo)(PluginDrawList dl, float x2, float y2, float x3, float y3, float x4, float y4, int num_segments);
+	void (*DL_PathBezierQuadraticCurveTo)(PluginDrawList dl, float x2, float y2, float x3, float y3, int num_segments);
+	void (*DL_PathRect)(PluginDrawList dl, float min_x, float min_y, float max_x, float max_y, float rounding, int flags);
+	void (*DL_PathFillConvex)(PluginDrawList dl, unsigned int col);
+	void (*DL_PathStroke)(PluginDrawList dl, unsigned int col, int flags, float thickness);
+
+	// Draw-list-local clip rect stack (separate from the window-level clip
+	// stack managed by PushClipRect/PopClipRect above).
+	void (*DL_PushClipRect)(PluginDrawList dl, float min_x, float min_y, float max_x, float max_y, bool intersect_current);
+	void (*DL_PushClipRectFullScreen)(PluginDrawList dl);
+	void (*DL_PopClipRect)(PluginDrawList dl);
+	void (*DL_GetClipRectMin)(PluginDrawList dl, float* out_x, float* out_y);
+	void (*DL_GetClipRectMax)(PluginDrawList dl, float* out_x, float* out_y);
 };
 
 typedef void (*PluginImGuiRenderCallback)(IModLoaderImGui* imgui);

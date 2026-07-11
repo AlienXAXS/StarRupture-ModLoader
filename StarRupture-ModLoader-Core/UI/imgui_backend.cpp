@@ -1540,6 +1540,90 @@ namespace ImGuiWrappers
 	static void SetClipboardText(const char* t) { ImGui::SetClipboardText(t); }
 	static const char* GetStyleColorName(int idx) { return ImGui::GetStyleColorName((ImGuiCol)idx); }
 
+	// -----------------------------------------------------------------------
+	// v48 -- direct drawing (ImDrawList)
+	// -----------------------------------------------------------------------
+	static PluginDrawList GetWindowDrawList() { return (PluginDrawList)ImGui::GetWindowDrawList(); }
+	static PluginDrawList GetBackgroundDrawList() { return (PluginDrawList)ImGui::GetBackgroundDrawList(); }
+	static PluginDrawList GetForegroundDrawList() { return (PluginDrawList)ImGui::GetForegroundDrawList(); }
+
+	static void DL_AddLine(PluginDrawList dl, float x1, float y1, float x2, float y2, unsigned int col, float thickness)
+	{ ((ImDrawList*)dl)->AddLine(ImVec2(x1, y1), ImVec2(x2, y2), col, thickness); }
+	static void DL_AddRect(PluginDrawList dl, float minx, float miny, float maxx, float maxy, unsigned int col, float rounding, int flags, float thickness)
+	{ ((ImDrawList*)dl)->AddRect(ImVec2(minx, miny), ImVec2(maxx, maxy), col, rounding, thickness, (ImDrawFlags)flags); }
+	static void DL_AddRectFilled(PluginDrawList dl, float minx, float miny, float maxx, float maxy, unsigned int col, float rounding, int flags)
+	{ ((ImDrawList*)dl)->AddRectFilled(ImVec2(minx, miny), ImVec2(maxx, maxy), col, rounding, (ImDrawFlags)flags); }
+	static void DL_AddRectFilledMultiColor(PluginDrawList dl, float minx, float miny, float maxx, float maxy, unsigned int cul, unsigned int cur, unsigned int cbr, unsigned int cbl)
+	{ ((ImDrawList*)dl)->AddRectFilledMultiColor(ImVec2(minx, miny), ImVec2(maxx, maxy), cul, cur, cbr, cbl); }
+	static void DL_AddQuad(PluginDrawList dl, float x1, float y1, float x2, float y2, float x3, float y3, float x4, float y4, unsigned int col, float thickness)
+	{ ((ImDrawList*)dl)->AddQuad(ImVec2(x1, y1), ImVec2(x2, y2), ImVec2(x3, y3), ImVec2(x4, y4), col, thickness); }
+	static void DL_AddQuadFilled(PluginDrawList dl, float x1, float y1, float x2, float y2, float x3, float y3, float x4, float y4, unsigned int col)
+	{ ((ImDrawList*)dl)->AddQuadFilled(ImVec2(x1, y1), ImVec2(x2, y2), ImVec2(x3, y3), ImVec2(x4, y4), col); }
+	static void DL_AddTriangle(PluginDrawList dl, float x1, float y1, float x2, float y2, float x3, float y3, unsigned int col, float thickness)
+	{ ((ImDrawList*)dl)->AddTriangle(ImVec2(x1, y1), ImVec2(x2, y2), ImVec2(x3, y3), col, thickness); }
+	static void DL_AddTriangleFilled(PluginDrawList dl, float x1, float y1, float x2, float y2, float x3, float y3, unsigned int col)
+	{ ((ImDrawList*)dl)->AddTriangleFilled(ImVec2(x1, y1), ImVec2(x2, y2), ImVec2(x3, y3), col); }
+	static void DL_AddCircle(PluginDrawList dl, float cx, float cy, float radius, unsigned int col, int num_segments, float thickness)
+	{ ((ImDrawList*)dl)->AddCircle(ImVec2(cx, cy), radius, col, num_segments, thickness); }
+	static void DL_AddCircleFilled(PluginDrawList dl, float cx, float cy, float radius, unsigned int col, int num_segments)
+	{ ((ImDrawList*)dl)->AddCircleFilled(ImVec2(cx, cy), radius, col, num_segments); }
+	static void DL_AddNgon(PluginDrawList dl, float cx, float cy, float radius, unsigned int col, int num_segments, float thickness)
+	{ ((ImDrawList*)dl)->AddNgon(ImVec2(cx, cy), radius, col, num_segments, thickness); }
+	static void DL_AddNgonFilled(PluginDrawList dl, float cx, float cy, float radius, unsigned int col, int num_segments)
+	{ ((ImDrawList*)dl)->AddNgonFilled(ImVec2(cx, cy), radius, col, num_segments); }
+	static void DL_AddEllipse(PluginDrawList dl, float cx, float cy, float rx, float ry, unsigned int col, float rot, int num_segments, float thickness)
+	{ ((ImDrawList*)dl)->AddEllipse(ImVec2(cx, cy), ImVec2(rx, ry), col, rot, num_segments, thickness); }
+	static void DL_AddEllipseFilled(PluginDrawList dl, float cx, float cy, float rx, float ry, unsigned int col, float rot, int num_segments)
+	{ ((ImDrawList*)dl)->AddEllipseFilled(ImVec2(cx, cy), ImVec2(rx, ry), col, rot, num_segments); }
+	static void DL_AddText(PluginDrawList dl, float x, float y, unsigned int col, const char* text)
+	{ ((ImDrawList*)dl)->AddText(ImVec2(x, y), col, text); }
+	static void DL_AddTextSized(PluginDrawList dl, float font_size, float x, float y, unsigned int col, const char* text)
+	{ ((ImDrawList*)dl)->AddText(ImGui::GetFont(), font_size, ImVec2(x, y), col, text); }
+
+	// points_xy is a flat (x,y,x,y,...) array; ImVec2 is POD {float x, float y},
+	// so it can be reinterpreted directly without a copy.
+	static void DL_AddPolyline(PluginDrawList dl, const float* xy, int count, unsigned int col, int flags, float thickness)
+	{
+		if (!xy || count <= 0) return;
+		((ImDrawList*)dl)->AddPolyline((const ImVec2*)xy, count, col, thickness, (ImDrawFlags)flags);
+	}
+	static void DL_AddConvexPolyFilled(PluginDrawList dl, const float* xy, int count, unsigned int col)
+	{
+		if (!xy || count <= 0) return;
+		((ImDrawList*)dl)->AddConvexPolyFilled((const ImVec2*)xy, count, col);
+	}
+	static void DL_AddBezierCubic(PluginDrawList dl, float x1, float y1, float x2, float y2, float x3, float y3, float x4, float y4, unsigned int col, float thickness, int num_segments)
+	{ ((ImDrawList*)dl)->AddBezierCubic(ImVec2(x1, y1), ImVec2(x2, y2), ImVec2(x3, y3), ImVec2(x4, y4), col, thickness, num_segments); }
+	static void DL_AddBezierQuadratic(PluginDrawList dl, float x1, float y1, float x2, float y2, float x3, float y3, unsigned int col, float thickness, int num_segments)
+	{ ((ImDrawList*)dl)->AddBezierQuadratic(ImVec2(x1, y1), ImVec2(x2, y2), ImVec2(x3, y3), col, thickness, num_segments); }
+
+	static void DL_PathClear(PluginDrawList dl) { ((ImDrawList*)dl)->PathClear(); }
+	static void DL_PathLineTo(PluginDrawList dl, float x, float y) { ((ImDrawList*)dl)->PathLineTo(ImVec2(x, y)); }
+	static void DL_PathArcTo(PluginDrawList dl, float cx, float cy, float radius, float amin, float amax, int num_segments)
+	{ ((ImDrawList*)dl)->PathArcTo(ImVec2(cx, cy), radius, amin, amax, num_segments); }
+	static void DL_PathArcToFast(PluginDrawList dl, float cx, float cy, float radius, int amin12, int amax12)
+	{ ((ImDrawList*)dl)->PathArcToFast(ImVec2(cx, cy), radius, amin12, amax12); }
+	static void DL_PathEllipticalArcTo(PluginDrawList dl, float cx, float cy, float rx, float ry, float rot, float amin, float amax, int num_segments)
+	{ ((ImDrawList*)dl)->PathEllipticalArcTo(ImVec2(cx, cy), ImVec2(rx, ry), rot, amin, amax, num_segments); }
+	static void DL_PathBezierCubicCurveTo(PluginDrawList dl, float x2, float y2, float x3, float y3, float x4, float y4, int num_segments)
+	{ ((ImDrawList*)dl)->PathBezierCubicCurveTo(ImVec2(x2, y2), ImVec2(x3, y3), ImVec2(x4, y4), num_segments); }
+	static void DL_PathBezierQuadraticCurveTo(PluginDrawList dl, float x2, float y2, float x3, float y3, int num_segments)
+	{ ((ImDrawList*)dl)->PathBezierQuadraticCurveTo(ImVec2(x2, y2), ImVec2(x3, y3), num_segments); }
+	static void DL_PathRect(PluginDrawList dl, float minx, float miny, float maxx, float maxy, float rounding, int flags)
+	{ ((ImDrawList*)dl)->PathRect(ImVec2(minx, miny), ImVec2(maxx, maxy), rounding, (ImDrawFlags)flags); }
+	static void DL_PathFillConvex(PluginDrawList dl, unsigned int col) { ((ImDrawList*)dl)->PathFillConvex(col); }
+	static void DL_PathStroke(PluginDrawList dl, unsigned int col, int flags, float thickness)
+	{ ((ImDrawList*)dl)->PathStroke(col, thickness, (ImDrawFlags)flags); }
+
+	static void DL_PushClipRect(PluginDrawList dl, float minx, float miny, float maxx, float maxy, bool intersect)
+	{ ((ImDrawList*)dl)->PushClipRect(ImVec2(minx, miny), ImVec2(maxx, maxy), intersect); }
+	static void DL_PushClipRectFullScreen(PluginDrawList dl) { ((ImDrawList*)dl)->PushClipRectFullScreen(); }
+	static void DL_PopClipRect(PluginDrawList dl) { ((ImDrawList*)dl)->PopClipRect(); }
+	static void DL_GetClipRectMin(PluginDrawList dl, float* ox, float* oy)
+	{ ImVec2 v = ((ImDrawList*)dl)->GetClipRectMin(); if (ox) *ox = v.x; if (oy) *oy = v.y; }
+	static void DL_GetClipRectMax(PluginDrawList dl, float* ox, float* oy)
+	{ ImVec2 v = ((ImDrawList*)dl)->GetClipRectMax(); if (ox) *ox = v.x; if (oy) *oy = v.y; }
+
 	// v35 child windows (original placement)
 	static bool BeginChild(const char* id, float sx, float sy, bool border)
 	{
@@ -2497,6 +2581,32 @@ static int TextureGetCapacity()
 	return MAX_PLUGIN_TEXTURES;
 }
 
+// ---------------------------------------------------------------------------
+// v48 -- ImDrawList Image* wrappers (need ValidateHandle, defined above)
+// ---------------------------------------------------------------------------
+static void DL_AddImage(PluginDrawList dl, PluginTextureHandle tex, float minx, float miny, float maxx, float maxy, float u0, float v0, float u1, float v1, unsigned int col)
+{
+	PluginTextureRecord* rec = ValidateHandle(tex);
+	if (!rec) return;
+	((ImDrawList*)dl)->AddImage((ImTextureID)rec->gpuHandle.ptr, ImVec2(minx, miny), ImVec2(maxx, maxy), ImVec2(u0, v0), ImVec2(u1, v1), col);
+}
+
+static void DL_AddImageQuad(PluginDrawList dl, PluginTextureHandle tex, float x1, float y1, float x2, float y2, float x3, float y3, float x4, float y4, float u1, float v1, float u2, float v2, float u3, float v3, float u4, float v4, unsigned int col)
+{
+	PluginTextureRecord* rec = ValidateHandle(tex);
+	if (!rec) return;
+	((ImDrawList*)dl)->AddImageQuad((ImTextureID)rec->gpuHandle.ptr,
+		ImVec2(x1, y1), ImVec2(x2, y2), ImVec2(x3, y3), ImVec2(x4, y4),
+		ImVec2(u1, v1), ImVec2(u2, v2), ImVec2(u3, v3), ImVec2(u4, v4), col);
+}
+
+static void DL_AddImageRounded(PluginDrawList dl, PluginTextureHandle tex, float minx, float miny, float maxx, float maxy, float u0, float v0, float u1, float v1, unsigned int col, float rounding, int flags)
+{
+	PluginTextureRecord* rec = ValidateHandle(tex);
+	if (!rec) return;
+	((ImDrawList*)dl)->AddImageRounded((ImTextureID)rec->gpuHandle.ptr, ImVec2(minx, miny), ImVec2(maxx, maxy), ImVec2(u0, v0), ImVec2(u1, v1), col, rounding, (ImDrawFlags)flags);
+}
+
 static void PopulateTextureAPI()
 {
 	g_textureAPI.LoadFromFile        = TextureLoadFromFile;
@@ -2729,6 +2839,49 @@ static void PopulateImGuiAPI()
 	g_imguiAPI.GetClipboardText = ImGuiWrappers::GetClipboardText;
 	g_imguiAPI.SetClipboardText = ImGuiWrappers::SetClipboardText;
 	g_imguiAPI.GetStyleColorName = ImGuiWrappers::GetStyleColorName;
+
+	// v48 -- direct drawing (ImDrawList)
+	g_imguiAPI.GetWindowDrawList = ImGuiWrappers::GetWindowDrawList;
+	g_imguiAPI.GetBackgroundDrawList = ImGuiWrappers::GetBackgroundDrawList;
+	g_imguiAPI.GetForegroundDrawList = ImGuiWrappers::GetForegroundDrawList;
+	g_imguiAPI.DL_AddLine = ImGuiWrappers::DL_AddLine;
+	g_imguiAPI.DL_AddRect = ImGuiWrappers::DL_AddRect;
+	g_imguiAPI.DL_AddRectFilled = ImGuiWrappers::DL_AddRectFilled;
+	g_imguiAPI.DL_AddRectFilledMultiColor = ImGuiWrappers::DL_AddRectFilledMultiColor;
+	g_imguiAPI.DL_AddQuad = ImGuiWrappers::DL_AddQuad;
+	g_imguiAPI.DL_AddQuadFilled = ImGuiWrappers::DL_AddQuadFilled;
+	g_imguiAPI.DL_AddTriangle = ImGuiWrappers::DL_AddTriangle;
+	g_imguiAPI.DL_AddTriangleFilled = ImGuiWrappers::DL_AddTriangleFilled;
+	g_imguiAPI.DL_AddCircle = ImGuiWrappers::DL_AddCircle;
+	g_imguiAPI.DL_AddCircleFilled = ImGuiWrappers::DL_AddCircleFilled;
+	g_imguiAPI.DL_AddNgon = ImGuiWrappers::DL_AddNgon;
+	g_imguiAPI.DL_AddNgonFilled = ImGuiWrappers::DL_AddNgonFilled;
+	g_imguiAPI.DL_AddEllipse = ImGuiWrappers::DL_AddEllipse;
+	g_imguiAPI.DL_AddEllipseFilled = ImGuiWrappers::DL_AddEllipseFilled;
+	g_imguiAPI.DL_AddText = ImGuiWrappers::DL_AddText;
+	g_imguiAPI.DL_AddTextSized = ImGuiWrappers::DL_AddTextSized;
+	g_imguiAPI.DL_AddPolyline = ImGuiWrappers::DL_AddPolyline;
+	g_imguiAPI.DL_AddConvexPolyFilled = ImGuiWrappers::DL_AddConvexPolyFilled;
+	g_imguiAPI.DL_AddBezierCubic = ImGuiWrappers::DL_AddBezierCubic;
+	g_imguiAPI.DL_AddBezierQuadratic = ImGuiWrappers::DL_AddBezierQuadratic;
+	g_imguiAPI.DL_AddImage = DL_AddImage;
+	g_imguiAPI.DL_AddImageQuad = DL_AddImageQuad;
+	g_imguiAPI.DL_AddImageRounded = DL_AddImageRounded;
+	g_imguiAPI.DL_PathClear = ImGuiWrappers::DL_PathClear;
+	g_imguiAPI.DL_PathLineTo = ImGuiWrappers::DL_PathLineTo;
+	g_imguiAPI.DL_PathArcTo = ImGuiWrappers::DL_PathArcTo;
+	g_imguiAPI.DL_PathArcToFast = ImGuiWrappers::DL_PathArcToFast;
+	g_imguiAPI.DL_PathEllipticalArcTo = ImGuiWrappers::DL_PathEllipticalArcTo;
+	g_imguiAPI.DL_PathBezierCubicCurveTo = ImGuiWrappers::DL_PathBezierCubicCurveTo;
+	g_imguiAPI.DL_PathBezierQuadraticCurveTo = ImGuiWrappers::DL_PathBezierQuadraticCurveTo;
+	g_imguiAPI.DL_PathRect = ImGuiWrappers::DL_PathRect;
+	g_imguiAPI.DL_PathFillConvex = ImGuiWrappers::DL_PathFillConvex;
+	g_imguiAPI.DL_PathStroke = ImGuiWrappers::DL_PathStroke;
+	g_imguiAPI.DL_PushClipRect = ImGuiWrappers::DL_PushClipRect;
+	g_imguiAPI.DL_PushClipRectFullScreen = ImGuiWrappers::DL_PushClipRectFullScreen;
+	g_imguiAPI.DL_PopClipRect = ImGuiWrappers::DL_PopClipRect;
+	g_imguiAPI.DL_GetClipRectMin = ImGuiWrappers::DL_GetClipRectMin;
+	g_imguiAPI.DL_GetClipRectMax = ImGuiWrappers::DL_GetClipRectMax;
 }
 
 // ---------------------------------------------------------------------------
