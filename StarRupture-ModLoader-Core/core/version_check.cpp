@@ -101,7 +101,7 @@ bool VerifyGameVersion()
         for (int countdown = 5; countdown > 0; --countdown)
         {
             wchar_t msg[64];
-            swprintf_s(msg, L"Invalid Game Version - Plugins will not be loaded (%d)", countdown);
+            swprintf_s(msg, L"Game Version Not Supported - Plugins will not be loaded (%d)", countdown);
             Splash::SetStatus(msg);
             Sleep(1000);
         }

@@ -12,6 +12,7 @@
 #include "update_notice_window.h"
 #include "logging/log.h"
 #include "hooks/input/keybind_registry.h"
+#include "tick_profiler_window.h"
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -785,6 +786,19 @@ namespace UI::ModLoaderWindow
         ImGui::TextDisabled("(?)");
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("Takes effect immediately. Persisted to modloader.ini.");
+
+        ImGui::Spacing();
+        ImGui::SeparatorText("Diagnostics");
+        ImGui::Spacing();
+
+        if (ImGui::Button("Open Tick Profiler"))
+            UI::TickProfilerWindow::Open();
+        ImGui::SameLine();
+        ImGui::TextDisabled("(?)");
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Live view of recent tick times and a breakdown of every recorded stutter\n"
+                               "(engine tick, dispatch drain, per-plugin callback cost, optional stack\n"
+                               "sampling). Stutter logging/sampling toggles live in that window now.");
 
         ImGui::Spacing();
         ImGui::TextDisabled("Settings are saved to modloader.ini immediately.");

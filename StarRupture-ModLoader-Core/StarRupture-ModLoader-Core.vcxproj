@@ -424,6 +424,9 @@
     <ClInclude Include="hooks\game\game_instance_init\game_instance_init.h" />
     <ClInclude Include="hooks\game\engine_shutdown\engine_shutdown.h" />
     <ClInclude Include="hooks\game\engine_tick\engine_tick.h" />
+    <ClInclude Include="hooks\game\engine_tick\tick_profiler.h" />
+    <ClInclude Include="hooks\game\engine_tick\stack_sampler.h" />
+    <ClInclude Include="hooks\game\engine_tick\function_symbols.h" />
     <ClInclude Include="hooks\game\hud_post_render\hud_post_render.h" />
     <ClInclude Include="hooks\game\session_info\session_info.h" />
     <ClInclude Include="hooks\game\object_lookup\object_lookup.h" />
@@ -440,6 +443,7 @@
     <ClInclude Include="hooks\game\world_begin_play\world_begin_play.h" />
     <ClInclude Include="hooks\game\world_end_play\world_end_play.h" />
     <ClInclude Include="hooks\hooks_common.h" />
+    <ClInclude Include="hooks\symbol_resolver.h" />
     <ClInclude Include="hooks\hooks_interface.h" />
     <ClInclude Include="hooks\http\http_server_hook.h" />
     <ClInclude Include="hooks\input\keybind_registry.h" />
@@ -454,6 +458,7 @@
     <ClInclude Include="UI\modloader_window.h" />
     <ClInclude Include="UI\overlay.h" />
     <ClInclude Include="UI\update_notice_window.h" />
+    <ClInclude Include="UI\tick_profiler_window.h" />
     <ClInclude Include="UI\plugin_panel_registry.h" />
     <ClInclude Include="UI\plugin_widget_registry.h" />
     <ClInclude Include="hooks\memory\engine_allocator.h" />
@@ -522,6 +527,9 @@
     <ClCompile Include="hooks\game\game_instance_init\game_instance_init.cpp" />
     <ClCompile Include="hooks\game\engine_shutdown\engine_shutdown.cpp" />
     <ClCompile Include="hooks\game\engine_tick\engine_tick.cpp" />
+    <ClCompile Include="hooks\game\engine_tick\tick_profiler.cpp" />
+    <ClCompile Include="hooks\game\engine_tick\stack_sampler.cpp" />
+    <ClCompile Include="hooks\game\engine_tick\function_symbols.cpp" />
     <ClCompile Include="hooks\game\client_message\client_message.cpp" />
     <ClCompile Include="hooks\game\server_chat_commit\server_chat_commit.cpp" />
     <ClCompile Include="hooks\http\http_server_hook.cpp" />
@@ -542,6 +550,7 @@
     <ClCompile Include="hooks\game\world_end_play\world_end_play.cpp" />
     <ClCompile Include="network_channel\network_channel.cpp" />
     <ClCompile Include="hooks\hooks_common.cpp" />
+    <ClCompile Include="hooks\symbol_resolver.cpp" />
     <ClCompile Include="hooks\hooks_interface.cpp" />
     <ClCompile Include="hooks\input\keybind_registry.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)' != 'Client Debug' And '$(Configuration)' != 'Client Release' And '$(Configuration)' != 'Local SDK Client Debug' And '$(Configuration)' != 'Local SDK Client Release'">true</ExcludedFromBuild>
@@ -568,6 +577,9 @@
       <ExcludedFromBuild Condition="'$(Configuration)' != 'Client Debug' And '$(Configuration)' != 'Client Release' And '$(Configuration)' != 'Local SDK Client Debug' And '$(Configuration)' != 'Local SDK Client Release'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="UI\update_notice_window.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)' != 'Client Debug' And '$(Configuration)' != 'Client Release' And '$(Configuration)' != 'Local SDK Client Debug' And '$(Configuration)' != 'Local SDK Client Release'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="UI\tick_profiler_window.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)' != 'Client Debug' And '$(Configuration)' != 'Client Release' And '$(Configuration)' != 'Local SDK Client Debug' And '$(Configuration)' != 'Local SDK Client Release'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="UI\plugin_panel_registry.cpp">
