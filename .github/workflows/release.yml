@@ -23,6 +23,10 @@ on:
         description: 'Sync Plugin SDK only — skip build and release, sync latest release to SDK repo'
         type: boolean
         default: false
+      auto_build_plugins:
+        description: 'Auto Build Plugins — trigger a rebuild of all plugin repos after this release'
+        type: boolean
+        default: false
 
 jobs:
   build:
@@ -453,3 +457,40 @@ jobs:
             --notes "Auto-synced from modloader $tag.`n`nDownload ``dwmapi-Client.dll`` or ``dwmapi-Server.dll`` to test your plugin locally (rename to ``dwmapi.dll`` before deploying)." `
             "..\dwmapi-Client.dll" `
             "..\dwmapi-Server.dll"
+
+  trigger-plugin-builds:
+    needs: build
+    if: |
+      always() &&
+      github.event.inputs.auto_build_plugins == 'true' &&
+      needs.build.result == 'success' &&
+      needs.build.outputs.is_preview != 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Trigger release workflow on plugin repos
+        env:
+          GH_TOKEN: ${{ secrets.SDK_REPO_PAT }}
+        run: |
+          plugins=(
+            BetterCheats
+            BetterDrone
+            BetterMap
+            BetterSaving
+            Codex
+            Compass
+            KeepTicking
+            ProductionViewer
+            ServerUtility
+            Timer
+            WAILA
+            WaveOptimiser
+          )
+
+          for name in "${plugins[@]}"; do
+            repo="AlienXAXS/StarRupture-Plugin-$name"
+            echo "Triggering release workflow on $repo"
+            gh workflow run release.yml --repo "$repo"
+          done
