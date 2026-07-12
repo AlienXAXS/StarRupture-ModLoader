@@ -1141,20 +1141,20 @@ namespace ModLoaderLogger
 		UI::PluginPanelRegistry::UnregisterPanel(handle);
 	}
 
-	static void HooksRegisterOnConfigChanged(PluginConfigChangedCallback callback)
+	static void HooksRegisterOnConfigChanged(const IPluginSelf* self, PluginConfigChangedCallback callback)
 	{
 		if (!callback)
 		{
 			LogWarn(L"[HooksInterface] RegisterOnConfigChanged: null callback");
 			return;
 		}
-		UI::PluginPanelRegistry::RegisterOnConfigChanged(callback);
+		UI::PluginPanelRegistry::RegisterOnConfigChanged(self, callback);
 	}
 
-	static void HooksUnregisterOnConfigChanged(PluginConfigChangedCallback callback)
+	static void HooksUnregisterOnConfigChanged(const IPluginSelf* self, PluginConfigChangedCallback callback)
 	{
 		if (!callback) return;
-		UI::PluginPanelRegistry::UnregisterOnConfigChanged(callback);
+		UI::PluginPanelRegistry::UnregisterOnConfigChanged(self, callback);
 	}
 
 	static void HooksSetPanelOpen(PanelHandle handle)

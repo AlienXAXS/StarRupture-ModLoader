@@ -133,7 +133,21 @@ namespace UI::ModLoaderWindow
         }
     }
 
-    // Write a changed value back to disk and fire config-change notifications.
+    // Fire config-change notifications for the in-memory value immediately.
+    // Call this at the point kv.value actually changes, for every config
+    // type -- not just while a slider is mid-drag -- so plugins see the
+    // live value right away instead of waiting for CommitConfigChange to
+    // flush it to disk. Deliberately does no disk I/O so it is cheap enough
+    // to call every frame a value changes (e.g. once per drag frame).
+    static void NotifyConfigChangedLive(const char* pluginName, const ConfigKV& kv)
+    {
+        UI::PluginPanelRegistry::FireConfigChanged(pluginName, kv.section, kv.key, kv.value);
+    }
+
+    // Write a changed value back to disk. Does NOT fire config-change
+    // notifications -- callers must call NotifyConfigChangedLive themselves
+    // at the point the value changes (this keeps notification timing
+    // decoupled from, and not gated on, the disk write).
     static void CommitConfigChange(const char* pluginName, ConfigKV& kv,
                                    const char* oldValue = nullptr,
                                    const ConfigEntry* entry = nullptr)
@@ -167,8 +181,6 @@ namespace UI::ModLoaderWindow
 
             Hooks::Input::UpdateKeybindByName(pluginName, oldValue, kv.value);
         }
-
-        UI::PluginPanelRegistry::FireConfigChanged(kv.section, kv.key, kv.value);
     }
 
     // -----------------------------------------------------------------------
@@ -354,7 +366,10 @@ namespace UI::ModLoaderWindow
             if (hasRange)
             {
                 if (ImGui::SliderInt(id, &ival, (int)e->rangeMin, (int)e->rangeMax))
+                {
                     snprintf(kv.value, sizeof(kv.value), "%d", ival);
+                    NotifyConfigChangedLive(pluginName, kv);
+                }
                 if (ImGui::IsItemDeactivated())
                     CommitConfigChange(pluginName, kv);
             }
@@ -363,11 +378,13 @@ namespace UI::ModLoaderWindow
                 if (ImGui::InputInt(id, &ival, 1, 10))
                 {
                     snprintf(kv.value, sizeof(kv.value), "%d", ival);
+                    NotifyConfigChangedLive(pluginName, kv);
                     CommitConfigChange(pluginName, kv);
                 }
                 if (ImGui::IsItemDeactivatedAfterEdit())
                 {
                     snprintf(kv.value, sizeof(kv.value), "%d", ival);
+                    NotifyConfigChangedLive(pluginName, kv);
                     CommitConfigChange(pluginName, kv);
                 }
             }
@@ -380,7 +397,10 @@ namespace UI::ModLoaderWindow
             if (hasRange)
             {
                 if (ImGui::SliderFloat(id, &fval, e->rangeMin, e->rangeMax, "%.6f"))
+                {
                     FormatFloat(kv.value, sizeof(kv.value), fval);
+                    NotifyConfigChangedLive(pluginName, kv);
+                }
                 if (ImGui::IsItemDeactivated())
                     CommitConfigChange(pluginName, kv);
             }
@@ -389,11 +409,13 @@ namespace UI::ModLoaderWindow
                 if (ImGui::InputFloat(id, &fval, 0.0f, 0.0f, "%.6f"))
                 {
                     FormatFloat(kv.value, sizeof(kv.value), fval);
+                    NotifyConfigChangedLive(pluginName, kv);
                     CommitConfigChange(pluginName, kv);
                 }
                 if (ImGui::IsItemDeactivatedAfterEdit())
                 {
                     FormatFloat(kv.value, sizeof(kv.value), fval);
+                    NotifyConfigChangedLive(pluginName, kv);
                     CommitConfigChange(pluginName, kv);
                 }
             }
@@ -424,9 +446,15 @@ namespace UI::ModLoaderWindow
             // String or unknown schema entry: plain text input.
             if (ImGui::InputText(id, kv.value, sizeof(kv.value),
                                  ImGuiInputTextFlags_EnterReturnsTrue))
+            {
+                NotifyConfigChangedLive(pluginName, kv);
                 CommitConfigChange(pluginName, kv);
+            }
             if (ImGui::IsItemDeactivatedAfterEdit())
+            {
+                NotifyConfigChangedLive(pluginName, kv);
                 CommitConfigChange(pluginName, kv);
+            }
             widgetHovered = ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal);
         }
 
@@ -446,6 +474,7 @@ namespace UI::ModLoaderWindow
             if (UI::Theme::ToggleSwitch(lbl, &bval))
             {
                 strncpy_s(kv.value, bval ? "true" : "false", _TRUNCATE);
+                NotifyConfigChangedLive(pluginName, kv);
                 CommitConfigChange(pluginName, kv);
             }
             ImGui::SameLine();
@@ -492,6 +521,7 @@ namespace UI::ModLoaderWindow
             if (ImGui::SmallButton(resetId))
             {
                 strncpy_s(kv.value, e->defaultValue, _TRUNCATE);
+                NotifyConfigChangedLive(pluginName, kv);
                 CommitConfigChange(pluginName, kv);
             }
             if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
@@ -597,6 +627,7 @@ namespace UI::ModLoaderWindow
                         // Find the schema entry so CommitConfigChange can trigger live-rebind.
                         const ConfigSchema* schema = ModLoaderLogger::GetPluginSchema(s_rebind.pluginName);
                         const ConfigEntry* schEntry = FindSchemaEntry(schema, kv.section, kv.key);
+                        NotifyConfigChangedLive(s_rebind.pluginName, kv);
                         CommitConfigChange(s_rebind.pluginName, kv, oldValue, schEntry);
                         break;
                     }

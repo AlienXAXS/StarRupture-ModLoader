@@ -46,6 +46,13 @@ namespace PluginManager
     // Returns total record count (may exceed maxCount).
     int GetAllPluginStatuses(PluginStatus* out, int maxCount);
 
+    // Returns the stable IPluginSelf* for the named plugin record, or nullptr if
+    // no plugin with that name has ever been loaded this session. The pointer is
+    // valid for the lifetime of the process: plugin records are only ever freed
+    // as a batch in UnloadAllPlugins (full shutdown), never removed individually,
+    // so it stays stable across UnloadPlugin/ReloadPlugin cycles too.
+    const IPluginSelf* GetSelfForPlugin(const char* pluginName);
+
     // Unload the plugin at index: calls PluginShutdown + FreeLibrary.
     // The record is kept so it can be reloaded later.
     // Returns false if index is out of range or the plugin is already unloaded.

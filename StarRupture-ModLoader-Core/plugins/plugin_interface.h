@@ -200,10 +200,19 @@
 //      (PushClipRect/PushClipRectFullScreen/PopClipRect/GetClipRectMin/Max).
 //      Colors are packed 0xAABBGGRR ImU32 -- build them with the existing
 //      GetColorU32FromVec4/GetColorU32FromCol helpers. MIN remains 46.
+// v49: IPluginUIEvents::RegisterOnConfigChanged/UnregisterOnConfigChanged now
+//      take a leading `const IPluginSelf* self` parameter, matching the
+//      self-first convention already used by IPluginLogger/IPluginConfig.
+//      self is the same pointer received in PluginInit -- pass it straight
+//      through, no plugin-name string needed. The modloader uses it to scope
+//      FireConfigChanged so a plugin's callback only fires for edits to its
+//      own config file, instead of broadcasting every plugin's config
+//      changes to every registered listener. Breaking signature change:
+//      MIN bumped to 49.
 
-#define PLUGIN_INTERFACE_VERSION_MIN 46
-#define PLUGIN_INTERFACE_VERSION_MAX 48
-#define PLUGIN_INTERFACE_VERSION 48
+#define PLUGIN_INTERFACE_VERSION_MIN 49
+#define PLUGIN_INTERFACE_VERSION_MAX 49
+#define PLUGIN_INTERFACE_VERSION 49
 
 enum class PluginLogLevel { Trace = 0, Debug = 1, Info = 2, Warn = 3, Error = 4 };
 enum class ConfigValueType { String, Integer, Float, Boolean, Keybind };
@@ -1026,8 +1035,10 @@ struct IPluginUIEvents
 {
 	PanelHandle  (*RegisterPanel)(const PluginPanelDesc* desc);
 	void         (*UnregisterPanel)(PanelHandle handle);
-	void         (*RegisterOnConfigChanged)(PluginConfigChangedCallback callback);
-	void         (*UnregisterOnConfigChanged)(PluginConfigChangedCallback callback);
+	// v49: self scopes the callback to this plugin's own config file -- pass
+	// the same IPluginSelf* received in PluginInit.
+	void         (*RegisterOnConfigChanged)(const IPluginSelf* self, PluginConfigChangedCallback callback);
+	void         (*UnregisterOnConfigChanged)(const IPluginSelf* self, PluginConfigChangedCallback callback);
 	void         (*SetPanelOpen)(PanelHandle handle);
 	void       (*SetPanelClose)(PanelHandle handle);
 	WidgetHandle (*RegisterWidget)(const PluginWidgetDesc* desc);      // v16

@@ -5,6 +5,7 @@
 
 #include "imgui/imgui.h"
 #include "theme.h"
+#include "plugins/plugin_manager.h"
 #include <mutex>
 #include <list>
 #include <vector>
@@ -21,9 +22,20 @@ namespace UI::PluginPanelRegistry
         char pluginName[64];   // set at registration time via SetCurrentRegistrationPlugin
     };
 
+    // Config-change callbacks are tagged with the registering plugin's stable
+    // IPluginSelf* identity (same pointer passed to PluginInit -- see
+    // PluginManager::LoadedPlugin::self) so FireConfigChanged can notify only
+    // the plugin whose config actually changed, via pointer comparison rather
+    // than a plugin-supplied name string.
+    struct ConfigCallbackEntry
+    {
+        PluginConfigChangedCallback callback;
+        const IPluginSelf* self;
+    };
+
     static std::mutex s_mutex;
     static std::list<PanelEntry> s_panels;   // list: insertion never invalidates existing pointers
-    static std::vector<PluginConfigChangedCallback> s_configCallbacks;
+    static std::vector<ConfigCallbackEntry> s_configCallbacks;
     static std::vector<PluginPanelClosedCallback> s_panelClosedCallbacks;
     static std::set<void*> s_captureTokens;
     static char s_currentPlugin[64];   // set by plugin_manager before each PluginInit call
@@ -84,26 +96,41 @@ namespace UI::PluginPanelRegistry
         // Handle not found — caller passed a stale or invalid handle; ignore silently.
     }
 
-    void RegisterOnConfigChanged(PluginConfigChangedCallback callback)
+    void RegisterOnConfigChanged(const IPluginSelf* self, PluginConfigChangedCallback callback)
     {
         if (!callback) return;
         std::lock_guard<std::mutex> lock(s_mutex);
-        s_configCallbacks.push_back(callback);
+        ConfigCallbackEntry entry = {};
+        entry.callback = callback;
+        entry.self     = self;
+        s_configCallbacks.push_back(entry);
     }
 
-    void UnregisterOnConfigChanged(PluginConfigChangedCallback callback)
+    void UnregisterOnConfigChanged(const IPluginSelf* self, PluginConfigChangedCallback callback)
     {
         if (!callback) return;
         std::lock_guard<std::mutex> lock(s_mutex);
         s_configCallbacks.erase(
-            std::remove(s_configCallbacks.begin(), s_configCallbacks.end(), callback),
+            std::remove_if(s_configCallbacks.begin(), s_configCallbacks.end(),
+                           [&](const ConfigCallbackEntry& e) { return e.callback == callback && e.self == self; }),
             s_configCallbacks.end());
     }
 
-    void FireConfigChanged(const char* section, const char* key, const char* newValue)
+    void FireConfigChanged(const char* pluginName, const char* section, const char* key, const char* newValue)
     {
-        std::lock_guard<std::mutex> lock(s_mutex);
-        for (auto cb : s_configCallbacks)
+        // Resolve the changed config's owning plugin to its stable self pointer
+        // once, then filter callbacks by pointer identity instead of a string
+        // compare -- also sidesteps any case-sensitivity mismatch entirely.
+        const IPluginSelf* changedSelf = pluginName ? PluginManager::GetSelfForPlugin(pluginName) : nullptr;
+
+        std::vector<PluginConfigChangedCallback> toCall;
+        {
+            std::lock_guard<std::mutex> lock(s_mutex);
+            for (auto& e : s_configCallbacks)
+                if (changedSelf && e.self == changedSelf)
+                    toCall.push_back(e.callback);
+        }
+        for (auto cb : toCall)
             cb(section, key, newValue);
     }
 
