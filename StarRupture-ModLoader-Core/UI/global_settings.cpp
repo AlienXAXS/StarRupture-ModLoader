@@ -76,7 +76,7 @@ namespace UI::GlobalSettings
         if (swscanf_s(buf, L"%f", &parsed) == 1)
         {
             if (parsed < 0.75f) parsed = 0.75f;
-            if (parsed > 1.50f) parsed = 1.50f;
+            if (parsed > 5.00f) parsed = 5.00f;
         }
         s_fontScale = parsed;
         // ImGui context is not yet created here; scale is applied in InitD3D12Resources().
@@ -121,7 +121,7 @@ namespace UI::GlobalSettings
     void SetFontScale(float scale)
     {
         if (scale < 0.75f) scale = 0.75f;
-        if (scale > 1.50f) scale = 1.50f;
+        if (scale > 5.00f) scale = 5.00f;
         s_fontScale = scale;
         Save(nullptr);
         ImGui::GetStyle().FontScaleMain = s_fontScale;

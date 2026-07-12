@@ -871,22 +871,33 @@ namespace UI::ModLoaderWindow
         ImGui::SeparatorText("Font");
         ImGui::Spacing();
 
-        static const char*  s_sizeLabels[] = { "Small", "Normal", "Large", "Extra Large" };
-        static const float  s_sizeScales[] = { 0.75f,   1.00f,   1.25f,   1.50f };
-        static const int    s_sizeCount    = 4;
+        // Slide over a discrete step index rather than the raw percent -- SliderInt always
+        // yields whole integers, so the grab is genuinely limited to these stops while
+        // dragging instead of only snapping once the mouse stops moving.
+        static const int s_minPercent  = 75;
+        static const int s_stepPercent = 25;
+        static const int s_maxPercent  = 500;
+        static const int s_stepCount   = (s_maxPercent - s_minPercent) / s_stepPercent;
 
-        float curScale = UI::GlobalSettings::GetFontScale();
-        int   curIdx   = 1;
-        for (int i = 0; i < s_sizeCount; ++i)
-            if (fabsf(s_sizeScales[i] - curScale) < 0.01f) { curIdx = i; break; }
+        int curIdx = static_cast<int>(roundf((UI::GlobalSettings::GetFontScale() * 100.0f - s_minPercent) / s_stepPercent));
+        if (curIdx < 0)           curIdx = 0;
+        if (curIdx > s_stepCount) curIdx = s_stepCount;
 
-        if (ImGui::Combo("Text Size", &curIdx, s_sizeLabels, s_sizeCount))
-            UI::GlobalSettings::SetFontScale(s_sizeScales[curIdx]);
+        char idxLabel[16];
+        snprintf(idxLabel, sizeof(idxLabel), "%d%%", s_minPercent + curIdx * s_stepPercent);
+
+        if (ImGui::SliderInt("Text Size", &curIdx, 0, s_stepCount, idxLabel))
+            UI::GlobalSettings::SetFontScale((s_minPercent + curIdx * s_stepPercent) / 100.0f);
 
         ImGui::SameLine();
         ImGui::TextDisabled("(?)");
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("Scales all ImGui window text. Takes effect immediately.");
+
+        if (s_minPercent + curIdx * s_stepPercent >= s_maxPercent)
+        {
+            ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.0f, 1.0f), "Castle56 Mode Enabled");
+        }
 
         ImGui::Spacing();
 
