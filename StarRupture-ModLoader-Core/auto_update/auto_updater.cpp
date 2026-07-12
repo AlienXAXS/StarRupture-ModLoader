@@ -917,18 +917,24 @@ static void RunCentralManifestUpdate(const AutoUpdateConfig& cfg)
 	LogToFile::Debug("[AutoUpdate] Stored build_tag:   %s", storedTag[0] ? storedTag : "<none>");
 	LogToFile::Debug("[AutoUpdate] Compiled build_tag: %s", compiledTag[0] ? compiledTag : "<none>");
 
-	const char* effectiveLocalTag = storedTag[0] ? storedTag : compiledTag;
+	// The tag compiled into this running Core DLL is ground truth -- it
+	// cannot lie about what's actually installed.  update_state.ini's
+	// BuildTag can go stale (e.g. a manual reinstall of the latest release
+	// doesn't necessarily touch it), so only fall back to it on dev/generic
+	// builds where no build tag is compiled in at all.
+	const char* effectiveLocalTag = compiledTag[0] ? compiledTag : storedTag;
 
 	if (effectiveLocalTag[0] != '\0' &&
 		strcmp(effectiveLocalTag, remoteBuildTag.c_str()) == 0)
 	{
 		LogToFile::Info("[AutoUpdate] Modloader is up to date (%s)", effectiveLocalTag);
 
-		// First boot after a fresh install from a ZIP — persist the tag so
-		// future boots skip the fetch entirely once no update is available.
-		if (storedTag[0] == '\0' && compiledTag[0] != '\0')
+		// Keep update_state.ini in sync with the real compiled tag so it
+		// never drives a stale comparison later (e.g. the standalone
+		// updater exe's file-version-resource-unavailable fallback path).
+		if (compiledTag[0] != '\0' && strcmp(storedTag, compiledTag) != 0)
 		{
-			LogToFile::Debug("[AutoUpdate] First run after fresh install — writing update_state.ini");
+			LogToFile::Debug("[AutoUpdate] update_state.ini out of sync with running build -- refreshing");
 			WriteStoredBuildTag(compiledTag);
 		}
 #ifdef MODLOADER_CLIENT_BUILD
@@ -947,9 +953,12 @@ static void RunCentralManifestUpdate(const AutoUpdateConfig& cfg)
 	Splash::SetSubProgress(1.0f);
 #endif
 
-	// Write the new tag so the notification is not shown again until the
-	// user actually updates (i.e. replaces dwmapi.dll with the new build).
-	WriteStoredBuildTag(remoteBuildTag.c_str());
+	// Note: update_state.ini's BuildTag is intentionally NOT written here.
+	// Core never installs the update itself (only the standalone updater
+	// exe does, after the user accepts), so writing the remote tag here
+	// would falsely record an update that may never actually be installed
+	// -- and that same key is the updater exe's own fallback source of
+	// truth when it can't read the Core DLL's file version resource.
 }
 
 void ModLoaderLogger::RunAutoUpdate()
