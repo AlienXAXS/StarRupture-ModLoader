@@ -37,6 +37,11 @@ namespace UI::UpdateNoticeWindow
     // when closed.
     void Render();
 
+    // True while the popup is open. Needed so ShouldCaptureInput() (client_ui.cpp)
+    // routes mouse input to ImGui for this window even when the main F2 menu and
+    // all plugin panels are closed -- otherwise its Close button is unclickable.
+    bool IsOpen();
+
 #ifdef _DEBUG
     // Fill the list with fake entries and open the window immediately.
     void PopulateTestData();

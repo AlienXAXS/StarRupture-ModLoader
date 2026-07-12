@@ -79,7 +79,13 @@ void InitClientUI()
         };
         cbs.ShouldCaptureInput = []() -> bool
         {
+            // Any standalone modloader window that can render independently of
+            // the main F2 menu (i.e. can still be open while IsOpen() is false)
+            // must be listed here, or its buttons become unclickable -- mouse
+            // messages are only forwarded to ImGui while this returns true.
             return UI::ModLoaderWindow::IsOpen()
+                || UI::UpdateNoticeWindow::IsOpen()
+                || UI::TickProfilerWindow::IsOpen()
                 || UI::PluginPanelRegistry::AnyPanelOpen()
                 || UI::PluginPanelRegistry::AnyInputCaptureRequested();
         };

@@ -105,6 +105,11 @@ namespace UI::UpdateNoticeWindow
         UI::Theme::EndChamferedWindow();
     }
 
+    bool IsOpen()
+    {
+        return s_isOpen;
+    }
+
 #ifdef _DEBUG
     void PopulateTestData()
     {
