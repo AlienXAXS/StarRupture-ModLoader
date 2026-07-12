@@ -63,3 +63,11 @@ IMGUI_HOST_API void                   ImGuiHost_SetRenderingReady();
 IMGUI_HOST_API IModLoaderImGui*       ImGuiHost_GetImGuiAPI();
 IMGUI_HOST_API IPluginImGuiTextures*  ImGuiHost_GetTextureAPI();
 IMGUI_HOST_API void                   ImGuiHost_RequestFontRebuild();
+
+// True when ImGui itself currently wants text input (i.e. an InputText-style
+// widget is focused and accepting keystrokes/caret blink), regardless of
+// which modloader/plugin window it lives in.  Used to suppress toggle-style
+// keybinds while the player is typing into an ImGui field -- e.g. a plugin
+// bound to "P" must not close its own panel when the player types "Port"
+// into a text box inside that panel.
+IMGUI_HOST_API bool                   ImGuiHost_IsTextInputActive();

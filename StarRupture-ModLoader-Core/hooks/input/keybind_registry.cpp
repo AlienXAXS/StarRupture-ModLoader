@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "keybind_registry.h"
 #include "hooks/game/text_input_focus/text_input_focus.h"
+#include "UI/imgui_backend.h"
 #include "logging/logger.h"
 
 #include <windows.h>
@@ -728,15 +729,19 @@ namespace Hooks::Input
 			return false;
 
 		// Do not fire keyboard keybinds while the player is typing into a
-		// game text field (chat, save name, etc.) -- e.g. a plugin bound to
-		// "P" must not open its panel when the player types "Printer".
+		// game text field (chat, save name, etc.) or an ImGui text field
+		// inside a modloader/plugin panel -- e.g. a plugin bound to "P"
+		// must not close its own panel when the player types "Port" into a
+		// text box inside that panel. Escape is exempt: it must still be
+		// able to close a window while a text field is focused.
 		// Returning false (not blocked) lets the keystroke flow on to the
-		// game so it reaches the text box.  Only Pressed is gated: letting
-		// Released through means a key held when focus changed does not get
-		// stuck down in a plugin's view.  Mouse buttons are unaffected.
+		// game/ImGui so it reaches the text box.  Only Pressed is gated:
+		// letting Released through means a key held when focus changed does
+		// not get stuck down in a plugin's view.  Mouse buttons are unaffected.
 		if ((msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN) &&
+		    mk != EModKey::Escape &&
 		    HasAnyRegistrationForKey(mk) &&
-		    Hooks::TextInputFocus::IsGameTextInputFocused())
+		    (Hooks::TextInputFocus::IsGameTextInputFocused() || UI::ImGuiBackend::IsTextInputActive()))
 			return false;
 
 		EModKeyModifiers mods = SampleCurrentModifiers();

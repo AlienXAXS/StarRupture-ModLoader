@@ -43,6 +43,10 @@ namespace UI::ImGuiBackend
     // Request a font atlas rebuild on the next rendered frame.
     // Safe to call from any thread.  No-op before D3D12 resources are initialised.
     void RequestFontRebuild();
+
+    // True when ImGui currently wants text input (an InputText-style widget
+    // is focused). Returns false if the host DLL isn't loaded/initialised.
+    bool IsTextInputActive();
 }
 
 #endif // MODLOADER_CLIENT_BUILD

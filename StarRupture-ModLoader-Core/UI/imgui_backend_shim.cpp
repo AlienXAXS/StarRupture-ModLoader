@@ -16,6 +16,7 @@ namespace
     IModLoaderImGui*       (*g_getAPIFn)()                            = nullptr;
     IPluginImGuiTextures*  (*g_getTexFn)()                            = nullptr;
     void                   (*g_fontRebuildFn)()                       = nullptr;
+    bool                   (*g_isTextInputActiveFn)()                 = nullptr;
 }
 
 namespace UI::ImGuiBackend
@@ -43,6 +44,7 @@ namespace UI::ImGuiBackend
         g_getAPIFn      = reinterpret_cast<decltype(g_getAPIFn)>     (GetProcAddress(g_hostDll, "ImGuiHost_GetImGuiAPI"));
         g_getTexFn      = reinterpret_cast<decltype(g_getTexFn)>     (GetProcAddress(g_hostDll, "ImGuiHost_GetTextureAPI"));
         g_fontRebuildFn = reinterpret_cast<decltype(g_fontRebuildFn)>(GetProcAddress(g_hostDll, "ImGuiHost_RequestFontRebuild"));
+        g_isTextInputActiveFn = reinterpret_cast<decltype(g_isTextInputActiveFn)>(GetProcAddress(g_hostDll, "ImGuiHost_IsTextInputActive"));
 
         if (!g_initFn)
         {
@@ -69,6 +71,7 @@ namespace UI::ImGuiBackend
         g_fontRebuildFn = nullptr;
         g_getAPIFn = nullptr;
         g_getTexFn = nullptr;
+        g_isTextInputActiveFn = nullptr;
     }
 
     void SetRenderingReady()
@@ -89,6 +92,11 @@ namespace UI::ImGuiBackend
     void RequestFontRebuild()
     {
         if (g_fontRebuildFn) g_fontRebuildFn();
+    }
+
+    bool IsTextInputActive()
+    {
+        return g_isTextInputActiveFn ? g_isTextInputActiveFn() : false;
     }
 }
 

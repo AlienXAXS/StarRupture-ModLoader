@@ -3113,6 +3113,14 @@ extern "C" __declspec(dllexport) IPluginImGuiTextures* ImGuiHost_GetTextureAPI()
 	return &g_textureAPI;
 }
 
+extern "C" __declspec(dllexport) bool ImGuiHost_IsTextInputActive()
+{
+	if (!g_initialized)
+		return false;
+	std::lock_guard<std::recursive_mutex> lock(g_imguiMutex);
+	return ImGui::GetIO().WantTextInput;
+}
+
 extern "C" __declspec(dllexport) void ImGuiHost_RequestFontRebuild()
 {
 	if (g_initialized)
