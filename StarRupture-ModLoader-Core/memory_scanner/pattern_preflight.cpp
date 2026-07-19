@@ -2,6 +2,7 @@
 #include "memory_scanner/scanner.h"
 #include "hooks/game/scan_patterns.h"
 #include "logging/logger.h"
+#include "UI/splash_window.h"
 
 #include <vector>
 #include <string>
@@ -18,8 +19,15 @@ namespace PatternPreflight
         std::vector<const char*> missingOptional;
         size_t found = 0;
 
+        size_t index = 0;
         for (const auto& entry : ScanPatterns::PreflightRegistry)
         {
+            ++index;
+            wchar_t status[256]{};
+            swprintf_s(status, L"Verifying scan patterns (%zu/%zu): %S", index, total, entry.name);
+            Splash::SetStatus(status);
+            Splash::SetProgress(static_cast<float>(index) / static_cast<float>(total));
+
             const uintptr_t addr = Scanner::FindPatternInMainModule(entry.name, entry.pattern);
             if (addr)
             {
