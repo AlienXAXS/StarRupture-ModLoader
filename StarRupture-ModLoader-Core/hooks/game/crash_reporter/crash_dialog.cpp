@@ -100,9 +100,6 @@ namespace Hooks::CrashDialog
         return result;
     }
 
-    // Opens the file in notepad; if the file is missing, opens its parent
-    // folder in explorer instead so the user still lands somewhere useful.
-    //
     // Deliberately uses CreateProcessW rather than ShellExecuteW or a worker
     // thread: in fatal-crash mode every other thread in the process is frozen
     // (see crash_reporter.cpp), and one of them may hold the loader lock or
@@ -110,8 +107,7 @@ namespace Hooks::CrashDialog
     // the loader lock) and ShellExecute's COM machinery can hang the same
     // way. CreateProcessW makes a single kernel call from this thread and
     // needs neither, so it works in both the frozen-crash and the startup
-    // preflight contexts. Losing the user's default .log editor association
-    // is an acceptable trade for a button that always works.
+    // preflight contexts.
     static void LaunchDetached(const std::wstring& commandLine)
     {
         // CreateProcessW needs a mutable command-line buffer
@@ -127,6 +123,8 @@ namespace Hooks::CrashDialog
         }
     }
 
+    // Opens an explorer window with the log file pre-selected; if the file
+    // doesn't exist yet, opens its parent folder instead.
     static void OpenLogFile(HWND /*owner*/, const std::wstring& path)
     {
         if (path.empty())
@@ -134,7 +132,7 @@ namespace Hooks::CrashDialog
 
         if (GetFileAttributesW(path.c_str()) != INVALID_FILE_ATTRIBUTES)
         {
-            LaunchDetached(L"notepad.exe \"" + path + L"\"");
+            LaunchDetached(L"explorer.exe /select,\"" + path + L"\"");
             return;
         }
 
