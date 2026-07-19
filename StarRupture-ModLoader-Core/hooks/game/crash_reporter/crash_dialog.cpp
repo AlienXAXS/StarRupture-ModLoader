@@ -239,7 +239,11 @@ namespace Hooks::CrashDialog
 
         DLGTEMPLATE dlg{};
         dlg.style = DS_SETFONT | DS_MODALFRAME | DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMENU;
-        dlg.cdit = patternMode ? 7 : 6;
+        // Both modes have 7 controls: header, label, details edit, and a
+        // four-button row (crash: Copy/ML log/SR log/Close, pattern:
+        // Copy/ML log/Start/Quit). An undercount here silently drops the
+        // trailing controls from the template.
+        dlg.cdit = 7;
         dlg.x = 0; dlg.y = 0;
         dlg.cx = kDlgW; dlg.cy = kDlgH;
         AppendData(buf, &dlg, sizeof(dlg));
