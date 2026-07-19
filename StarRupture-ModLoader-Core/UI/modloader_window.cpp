@@ -769,6 +769,34 @@ namespace UI::ModLoaderWindow
             UI::GlobalSettings::SetShowPlayerPosition(showPos);
 
         ImGui::Spacing();
+        ImGui::SeparatorText("Auto Update");
+        ImGui::Spacing();
+
+        // Read the INI once -- the toggle then owns the value and writes back
+        // on change. The updater itself re-reads the INI at next startup.
+        static bool s_autoUpdateEnabled = []
+        {
+            const wchar_t* iniPath = UI::GlobalSettings::GetIniPath();
+            if (!iniPath || iniPath[0] == L'\0')
+                return true;
+            return GetPrivateProfileIntW(L"AutoUpdate", L"Enabled", 1, iniPath) != 0;
+        }();
+
+        if (UI::Theme::ToggleSwitch("Enable Auto Updates", &s_autoUpdateEnabled))
+        {
+            const wchar_t* iniPath = UI::GlobalSettings::GetIniPath();
+            if (iniPath && iniPath[0] != L'\0')
+                WritePrivateProfileStringW(L"AutoUpdate", L"Enabled",
+                    s_autoUpdateEnabled ? L"1" : L"0", iniPath);
+        }
+        ImGui::SameLine();
+        ImGui::TextDisabled("(?)");
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Controls the modloader update check and plugin auto-updates.\n"
+                               "Update checks run at game startup, so this takes effect on the\n"
+                               "next launch. Persisted to modloader.ini.");
+
+        ImGui::Spacing();
         ImGui::SeparatorText("Logging");
         ImGui::Spacing();
 
