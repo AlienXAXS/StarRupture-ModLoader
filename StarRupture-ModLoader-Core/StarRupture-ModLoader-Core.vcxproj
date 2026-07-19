@@ -475,6 +475,7 @@
     <ClInclude Include="plugins\known_gobjects.generated.h" />
     <ClInclude Include="plugins\plugin_manager.h" />
     <ClInclude Include="UI\splash_window.h" />
+    <ClInclude Include="utils\pak_list.h" />
     <ClInclude Include="utils\thread_utils.h" />
     <ClInclude Include="utils\mem_utils.h" />
     <ClInclude Include="core\globals.h" />
@@ -537,6 +538,7 @@
     <ClCompile Include="hooks\game\server_chat_commit\server_chat_commit.cpp" />
     <ClCompile Include="hooks\http\http_server_hook.cpp" />
     <ClCompile Include="utils\game_thread_dispatch.cpp" />
+    <ClCompile Include="utils\pak_list.cpp" />
     <ClCompile Include="hooks\game\hud_post_render\hud_post_render.cpp" />
     <ClCompile Include="hooks\game\session_info\session_info.cpp" />
     <ClCompile Include="hooks\game\object_lookup\object_lookup.cpp" />

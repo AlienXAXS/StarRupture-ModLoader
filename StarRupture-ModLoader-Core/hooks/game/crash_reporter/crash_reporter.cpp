@@ -7,6 +7,7 @@
 #include "memory_scanner/scanner.h"
 #include "../scan_patterns.h"
 #include "../../symbol_resolver.h"
+#include "utils/pak_list.h"
 #include <DbgHelp.h>
 #include <tlhelp32.h>
 #pragma comment(lib, "DbgHelp.lib")
@@ -206,6 +207,17 @@ namespace Hooks::CrashReporter
 		else
 		{
 			EmitCrashLine(details, L"ExceptionInfo unavailable -- no fault details to log");
+		}
+
+		// Append the pak inventory captured at startup -- an out-of-date pak
+		// mod is the most common real cause of crashes blamed on the modloader.
+		{
+			const std::wstring& paks = PakList::GetSummary();
+			if (!paks.empty())
+			{
+				details += L"\r\n";
+				details += paks;
+			}
 		}
 
 		// Freeze the rest of the process so the engine's hang detector (which

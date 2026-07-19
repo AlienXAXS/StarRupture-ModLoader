@@ -291,6 +291,9 @@
     <ClInclude Include="hooks\game\world_end_play\world_end_play.h">
       <Filter>Source Files\hooks\game\world_end_play</Filter>
     </ClInclude>
+    <ClInclude Include="utils\pak_list.h">
+      <Filter>Source Files\utils</Filter>
+    </ClInclude>
     <ClInclude Include="utils\thread_utils.h">
       <Filter>Source Files\utils</Filter>
     </ClInclude>
@@ -517,6 +520,9 @@
     </ClCompile>
     <ClCompile Include="hooks\game\server_chat_commit\server_chat_commit.cpp">
       <Filter>Source Files\hooks\game\server_chat_commit</Filter>
+    </ClCompile>
+    <ClCompile Include="utils\pak_list.cpp">
+      <Filter>Source Files\utils</Filter>
     </ClCompile>
     <ClCompile Include="utils\game_thread_dispatch.cpp">
       <Filter>Source Files\utils</Filter>

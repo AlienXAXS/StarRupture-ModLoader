@@ -18,6 +18,7 @@
 #include <hooks/input/input_hook.h>
 #include "../memory_scanner/pattern_preflight.h"
 #include "../utils/thread_utils.h"
+#include "../utils/pak_list.h"
 
 DWORD WINAPI MainInitThreadProc(LPVOID)
 {
@@ -123,6 +124,11 @@ DWORD WINAPI MainInitThreadProc(LPVOID)
 
     WaitForEnginePhase();
     ModLoaderLogger::LogInfo(L"[init] Stage 2 complete -- engine ready");
+
+    // Inventory the game's pak files now that the engine is up -- logged to
+    // modloader.log and cached for the crash dialog, where user-installed pak
+    // mods are the most common real cause of "modloader" crashes.
+    PakList::CaptureAndLog();
 
     // ------------------------------------------------------------------
     // Stage 3: Plugin loading and initialisation
