@@ -24,7 +24,11 @@ DWORD WINAPI MainInitThreadProc(LPVOID)
     // ------------------------------------------------------------------
     // Stage 1: Hook installation
     // Install all detours before the engine gets far enough to miss them.
-    // The main thread runs freely here -- hook patching requires it.
+    // The game's main thread is suspended for the whole of Stage 1 -- the
+    // game must not keep booting while we scan patterns and patch code.
+    // suspend_main_thread() safely returns NULL when we *are* the main
+    // thread (APC init path), where the game is inherently not running
+    // while this function is.
     // ------------------------------------------------------------------
     {
         const auto typeResult = GameTypeChecker::Check();
@@ -33,6 +37,8 @@ DWORD WINAPI MainInitThreadProc(LPVOID)
         if (typeResult == GameTypeChecker::Result::ErrorAndExit)
             ExitProcess(1);
     }
+
+    HANDLE suspendedMainThread = suspend_main_thread();
 
     Splash::Show();
 
@@ -46,7 +52,10 @@ DWORD WINAPI MainInitThreadProc(LPVOID)
     // we must not install hooks (the engine init hook would block the main
     // thread waiting on g_pluginsReadyEvent which would never be signalled).
     if (!VerifyGameVersion())
+    {
+        resume_main_thread(suspendedMainThread);
         return 0;
+    }
 
     // Preflight every modloader scan pattern before installing anything.
     // If even one required pattern is missing (e.g. after a game update),
@@ -61,15 +70,10 @@ DWORD WINAPI MainInitThreadProc(LPVOID)
         Splash::Close();
 
 #ifdef MODLOADER_CLIENT_BUILD
-        // Pause the game while the dialog is up -- no hooks are installed at
-        // this point, so nothing else stops the game from booting behind the
-        // dialog. suspend_main_thread() safely returns NULL if we *are* the
-        // main thread (APC init path), where the modal dialog itself already
-        // blocks the game.
-        HANDLE suspendedMainThread = suspend_main_thread();
-
-        // Let the user decide: continue with a completely unmodified game, or
-        // quit and wait for a ModLoader update.
+        // The main thread is still suspended from the top of Stage 1, so the
+        // game stays frozen while the dialog is up. Let the user decide:
+        // continue with a completely unmodified game, or quit and wait for a
+        // ModLoader update.
         const auto choice = Hooks::CrashDialog::Show(
             Hooks::CrashDialog::Mode::PatternFailure, preflightDetails);
 
@@ -81,13 +85,18 @@ DWORD WINAPI MainInitThreadProc(LPVOID)
         }
         ModLoaderLogger::LogInfo(L"[init] User chose to start the game without the mod loader");
 #else
-        // Dedicated server: no UI to ask -- log and continue unmodified.
+        // Dedicated server: no UI to ask -- log, resume the game unmodified.
         ModLoaderLogger::LogError(L"[init] Starting the game unmodified");
+        resume_main_thread(suspendedMainThread);
 #endif
         return 0;
     }
 
     InstallHooksPhase();
+
+    // Hooks are in place -- from here the engine-init hook takes over pausing
+    // the main thread (it blocks on g_pluginsReadyEvent), so let it run again.
+    resume_main_thread(suspendedMainThread);
     LogToFile::Info("[init] Stage 1 complete -- hooks installed, main thread running");
 
     // ------------------------------------------------------------------
