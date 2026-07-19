@@ -13,6 +13,7 @@
 #include "../hooks/game/engine_tick/engine_tick.h"
 #ifdef MODLOADER_CLIENT_BUILD
 #include "../hooks/input/input_processor.h"
+#include "../hooks/game/crash_reporter/crash_dialog.h"
 #endif
 #include <hooks/input/input_hook.h>
 #include "../memory_scanner/pattern_preflight.h"
@@ -52,12 +53,27 @@ DWORD WINAPI MainInitThreadProc(LPVOID)
     // successful case doubles as a scan-cache warm-up, so the per-hook
     // scans below become cache hits.
     Splash::SetStatus(L"Verifying scan patterns...");
-    if (!PatternPreflight::VerifyAllPatterns())
+    std::wstring preflightDetails;
+    if (!PatternPreflight::VerifyAllPatterns(&preflightDetails))
     {
-        ModLoaderLogger::LogError(L"[init] Pattern preflight failed -- mod loader disabled, starting the game unmodified");
-        Splash::SetStatus(L"Scan pattern check failed -- mod loader disabled (see modloader.log)");
-        Splash::Linger(4000);
+        ModLoaderLogger::LogError(L"[init] Pattern preflight failed -- mod loader disabled");
         Splash::Close();
+
+#ifdef MODLOADER_CLIENT_BUILD
+        // Let the user decide: continue with a completely unmodified game, or
+        // quit and wait for a ModLoader update.
+        const auto choice = Hooks::CrashDialog::Show(
+            Hooks::CrashDialog::Mode::PatternFailure, preflightDetails);
+        if (choice == Hooks::CrashDialog::Result::QuitGame)
+        {
+            ModLoaderLogger::LogInfo(L"[init] User chose to quit the game after preflight failure");
+            ExitProcess(0);
+        }
+        ModLoaderLogger::LogInfo(L"[init] User chose to start the game without the mod loader");
+#else
+        // Dedicated server: no UI to ask -- log and continue unmodified.
+        ModLoaderLogger::LogError(L"[init] Starting the game unmodified");
+#endif
         return 0;
     }
 

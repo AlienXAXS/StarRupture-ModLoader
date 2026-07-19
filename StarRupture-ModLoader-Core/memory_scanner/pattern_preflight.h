@@ -11,8 +11,13 @@
 // A successful preflight also warms the scan cache, so the per-hook scans
 // that follow are near-free cache hits.
 
+#include <string>
+
 namespace PatternPreflight
 {
     // Returns true if every required modloader pattern was found.
-    bool VerifyAllPatterns();
+    // On failure, if outFailureDetails is non-null it receives a CRLF-separated
+    // human-readable summary of the missing patterns, suitable for display in
+    // the crash dialog.
+    bool VerifyAllPatterns(std::wstring* outFailureDetails = nullptr);
 }

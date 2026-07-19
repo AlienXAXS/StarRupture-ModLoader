@@ -158,7 +158,7 @@ namespace Hooks::CrashReporter
 			EmitCrashLine(details, L"ExceptionInfo unavailable -- no fault details to log");
 		}
 
-		CrashDialog::Show(details);
+		CrashDialog::Show(CrashDialog::Mode::FatalCrash, details);
 
 		return 0;
 	}

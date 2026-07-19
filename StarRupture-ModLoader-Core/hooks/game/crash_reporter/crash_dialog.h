@@ -23,11 +23,31 @@
 
 namespace Hooks::CrashDialog
 {
-    // Shows the modal crash dialog. Blocks until the user closes it.
-    // detailsText: exception summary + stack trace (CRLF line endings
-    // preferred -- edit controls do not render bare '\n' as line breaks).
-    // Falls back to a plain MessageBox if dialog creation fails.
-    void Show(const std::wstring& detailsText);
+    enum class Mode
+    {
+        // A real fatal engine crash intercepted by the crash reporter hook.
+        FatalCrash,
+        // Startup scan-pattern preflight failed: the modloader disabled itself
+        // before installing any hooks. Adds "Start Game Without ModLoader" /
+        // "Quit Game" buttons so the user chooses what happens next.
+        PatternFailure,
+    };
+
+    enum class Result
+    {
+        Closed,                 // FatalCrash mode: user dismissed the dialog
+        StartWithoutModLoader,  // PatternFailure mode: continue, unmodified game
+        QuitGame,               // PatternFailure mode: exit the process
+    };
+
+    // Shows the modal dialog. Blocks until the user closes it.
+    // detailsText: crash/preflight details (CRLF line endings preferred --
+    // edit controls do not render bare '\n' as line breaks).
+    // Falls back to a plain MessageBox if dialog creation fails. In
+    // PatternFailure mode, dismissing the dialog (or the fallback box) counts
+    // as StartWithoutModLoader -- the fail-safe path matching the old
+    // behavior of silently continuing unmodified.
+    Result Show(Mode mode, const std::wstring& detailsText);
 }
 
 #endif // MODLOADER_CLIENT_BUILD

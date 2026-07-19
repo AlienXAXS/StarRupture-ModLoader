@@ -4,10 +4,11 @@
 #include "logging/logger.h"
 
 #include <vector>
+#include <string>
 
 namespace PatternPreflight
 {
-    bool VerifyAllPatterns()
+    bool VerifyAllPatterns(std::wstring* outFailureDetails)
     {
         constexpr size_t total = sizeof(ScanPatterns::PreflightRegistry) / sizeof(ScanPatterns::PreflightRegistry[0]);
 
@@ -55,6 +56,22 @@ namespace PatternPreflight
             ModLoaderLogger::LogError(L"[Preflight] installed and no plugins will be loaded. The game will");
             ModLoaderLogger::LogError(L"[Preflight] start completely unmodified.");
             ModLoaderLogger::LogError(L"[Preflight] ==========================================================");
+
+            if (outFailureDetails)
+            {
+                wchar_t line[512]{};
+                swprintf_s(line, L"%zu of %zu required scan pattern(s) could not be found:\r\n\r\n",
+                    missingRequired.size(), total);
+                *outFailureDetails += line;
+                for (const char* name : missingRequired)
+                {
+                    swprintf_s(line, L"  - %S\r\n", name);
+                    *outFailureDetails += line;
+                }
+                *outFailureDetails +=
+                    L"\r\nThe game likely updated and the ModLoader's patterns need refreshing.\r\n"
+                    L"Full details (including the pattern bytes) are in ModLoader.log.\r\n";
+            }
             return false;
         }
 

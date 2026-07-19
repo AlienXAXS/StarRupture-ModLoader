@@ -16,8 +16,17 @@ namespace Hooks::CrashDialog
     constexpr int IDC_COPY_DETAILS      = 1002;
     constexpr int IDC_OPEN_MODLOADER_LOG = 1003;
     constexpr int IDC_OPEN_GAME_LOG     = 1004;
+    constexpr int IDC_START_WITHOUT_ML  = 1005;
+    constexpr int IDC_QUIT_GAME         = 1006;
 
-    static const wchar_t* kHeaderText =
+    struct DialogParams
+    {
+        Mode mode;
+        const std::wstring* details;
+        Result result;
+    };
+
+    static const wchar_t* kCrashHeaderText =
         L"StarRupture has crashed.\r\n"
         L"\r\n"
         L"IMPORTANT: the ModLoader intercepted this crash, but the ModLoader (or its plugins) "
@@ -30,6 +39,18 @@ namespace Hooks::CrashDialog
         L"If you want help, share the details below (and both log files) with the ModLoader "
         L"community instead. To report the crash to CreepyJar, first reproduce it without "
         L"the ModLoader installed.";
+
+    static const wchar_t* kPatternHeaderText =
+        L"The ModLoader could not start.\r\n"
+        L"\r\n"
+        L"One or more required memory scan patterns were not found in the game executable. "
+        L"This usually means the game updated and the ModLoader needs an update too.\r\n"
+        L"\r\n"
+        L"To keep your game safe, the ModLoader has disabled itself: no hooks were installed "
+        L"and no plugins will be loaded. You can start the game completely unmodified, or "
+        L"quit and wait for a ModLoader update.\r\n"
+        L"\r\n"
+        L"The missing patterns are listed below and in ModLoader.log.";
 
     // -----------------------------------------------------------------------
     // Log file locations
@@ -156,37 +177,45 @@ namespace Hooks::CrashDialog
         AppendWord(buf, 0);               // no creation data
     }
 
-    static std::vector<uint8_t> BuildDialogTemplate()
+    static std::vector<uint8_t> BuildDialogTemplate(Mode mode)
     {
         // Dialog layout in dialog units. 4 horizontal DLUs ~ avg char width,
         // 8 vertical DLUs ~ char height, so this is roughly 700x430 px at 96 DPI.
         constexpr int16_t kDlgW = 380;
         constexpr int16_t kDlgH = 262;
 
+        const bool patternMode = (mode == Mode::PatternFailure);
+
         std::vector<uint8_t> buf;
 
         DLGTEMPLATE dlg{};
         dlg.style = DS_SETFONT | DS_MODALFRAME | DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMENU;
-        dlg.cdit = 6;
+        dlg.cdit = patternMode ? 7 : 6;
         dlg.x = 0; dlg.y = 0;
         dlg.cx = kDlgW; dlg.cy = kDlgH;
         AppendData(buf, &dlg, sizeof(dlg));
         AppendWord(buf, 0);   // no menu
         AppendWord(buf, 0);   // default dialog class
-        AppendString(buf, L"StarRupture ModLoader - The game has crashed");
+        AppendString(buf, patternMode
+            ? L"StarRupture ModLoader - Failed to start"
+            : L"StarRupture ModLoader - The game has crashed");
         // DS_SETFONT: point size then face name
         AppendWord(buf, 9);
         AppendString(buf, L"Segoe UI");
 
         // Header explanation text
         AppendControl(buf, WS_CHILD | WS_VISIBLE | SS_LEFT, 0,
-            7, 7, kDlgW - 14, 88, 0xFFFF, kClassStatic, kHeaderText);
+            7, 7, kDlgW - 14, 88, 0xFFFF, kClassStatic,
+            patternMode ? kPatternHeaderText : kCrashHeaderText);
 
-        // "Crash details" label
+        // Details label
         AppendControl(buf, WS_CHILD | WS_VISIBLE | SS_LEFT, 0,
-            7, 99, kDlgW - 14, 9, 0xFFFF, kClassStatic, L"Crash details (select and copy, or use the buttons below):");
+            7, 99, kDlgW - 14, 9, 0xFFFF, kClassStatic,
+            patternMode
+                ? L"Missing scan patterns (select and copy, or use the buttons below):"
+                : L"Crash details (select and copy, or use the buttons below):");
 
-        // Read-only multiline edit with the stack trace
+        // Read-only multiline edit with the details
         AppendControl(buf,
             WS_CHILD | WS_VISIBLE | WS_BORDER | WS_VSCROLL | WS_HSCROLL |
             ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL | ES_AUTOHSCROLL,
@@ -199,10 +228,24 @@ namespace Hooks::CrashDialog
             7, kBtnY, 70, 14, IDC_COPY_DETAILS, kClassButton, L"Copy Details");
         AppendControl(buf, WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON, 0,
             81, kBtnY, 88, 14, IDC_OPEN_MODLOADER_LOG, kClassButton, L"Open ModLoader.log");
-        AppendControl(buf, WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON, 0,
-            173, kBtnY, 88, 14, IDC_OPEN_GAME_LOG, kClassButton, L"Open StarRupture.log");
-        AppendControl(buf, WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON, 0,
-            kDlgW - 61, kBtnY, 54, 14, IDCANCEL, kClassButton, L"Close");
+
+        if (patternMode)
+        {
+            // The game hasn't run yet, so there's no fresh StarRupture.log to
+            // show -- offer the start/quit choice instead.
+            AppendControl(buf, WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON, 0,
+                kDlgW - 179, kBtnY, 110, 14, IDC_START_WITHOUT_ML, kClassButton,
+                L"Start Game Without ModLoader");
+            AppendControl(buf, WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON, 0,
+                kDlgW - 61, kBtnY, 54, 14, IDC_QUIT_GAME, kClassButton, L"Quit Game");
+        }
+        else
+        {
+            AppendControl(buf, WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON, 0,
+                173, kBtnY, 88, 14, IDC_OPEN_GAME_LOG, kClassButton, L"Open StarRupture.log");
+            AppendControl(buf, WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON, 0,
+                kDlgW - 61, kBtnY, 54, 14, IDCANCEL, kClassButton, L"Close");
+        }
 
         return buf;
     }
@@ -217,10 +260,10 @@ namespace Hooks::CrashDialog
         {
         case WM_INITDIALOG:
         {
-            const auto* details = reinterpret_cast<const std::wstring*>(lParam);
+            auto* params = reinterpret_cast<DialogParams*>(lParam);
             SetWindowLongPtrW(hDlg, GWLP_USERDATA, lParam);
-            if (details)
-                SetDlgItemTextW(hDlg, IDC_DETAILS_EDIT, details->c_str());
+            if (params && params->details)
+                SetDlgItemTextW(hDlg, IDC_DETAILS_EDIT, params->details->c_str());
 
             // Monospace font for the details box so stack frames line up
             HFONT mono = CreateFontW(-12, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
@@ -236,21 +279,29 @@ namespace Hooks::CrashDialog
         }
 
         case WM_COMMAND:
+        {
+            auto* params = reinterpret_cast<DialogParams*>(GetWindowLongPtrW(hDlg, GWLP_USERDATA));
             switch (LOWORD(wParam))
             {
             case IDC_COPY_DETAILS:
-            {
-                const auto* details = reinterpret_cast<const std::wstring*>(
-                    GetWindowLongPtrW(hDlg, GWLP_USERDATA));
-                if (details)
-                    CopyToClipboard(hDlg, *details);
+                if (params && params->details)
+                    CopyToClipboard(hDlg, *params->details);
                 return TRUE;
-            }
             case IDC_OPEN_MODLOADER_LOG:
                 OpenLogFile(hDlg, GetModLoaderLogPath());
                 return TRUE;
             case IDC_OPEN_GAME_LOG:
                 OpenLogFile(hDlg, GetGameLogPath());
+                return TRUE;
+            case IDC_START_WITHOUT_ML:
+                if (params)
+                    params->result = Result::StartWithoutModLoader;
+                EndDialog(hDlg, 0);
+                return TRUE;
+            case IDC_QUIT_GAME:
+                if (params)
+                    params->result = Result::QuitGame;
+                EndDialog(hDlg, 0);
                 return TRUE;
             case IDCANCEL:
             case IDOK:
@@ -258,6 +309,7 @@ namespace Hooks::CrashDialog
                 return TRUE;
             }
             return FALSE;
+        }
 
         case WM_CLOSE:
             EndDialog(hDlg, 0);
@@ -266,21 +318,41 @@ namespace Hooks::CrashDialog
         return FALSE;
     }
 
-    void Show(const std::wstring& detailsText)
+    Result Show(Mode mode, const std::wstring& detailsText)
     {
-        const std::vector<uint8_t> tmpl = BuildDialogTemplate();
+        const std::vector<uint8_t> tmpl = BuildDialogTemplate(mode);
+
+        // Default result if the dialog is dismissed without an explicit choice:
+        // fail-safe is "keep going" in both modes (game continues unmodified in
+        // pattern mode; nothing left to decide in crash mode).
+        DialogParams params{ mode, &detailsText,
+            mode == Mode::PatternFailure ? Result::StartWithoutModLoader : Result::Closed };
 
         const INT_PTR result = DialogBoxIndirectParamW(
             GetModuleHandleW(nullptr),
             reinterpret_cast<const DLGTEMPLATE*>(tmpl.data()),
             nullptr,
             DialogProc,
-            reinterpret_cast<LPARAM>(&detailsText));
+            reinterpret_cast<LPARAM>(&params));
 
         if (result == -1)
         {
-            // Dialog creation failed (crashing process can be in a bad state);
-            // fall back to the old plain message box so the user still sees something.
+            // Dialog creation failed (process can be in a bad state); fall back
+            // to a plain message box so the user still sees something.
+            if (mode == Mode::PatternFailure)
+            {
+                const int choice = MessageBoxW(nullptr,
+                    L"The ModLoader could not start: required memory scan patterns were not "
+                    L"found in the game executable (the game likely updated and the ModLoader "
+                    L"needs an update too).\n\n"
+                    L"No hooks were installed and no plugins will be loaded. Details were "
+                    L"written to ModLoader\\Logs\\ModLoader.log.\n\n"
+                    L"Start the game without the ModLoader?",
+                    L"StarRupture ModLoader",
+                    MB_YESNO | MB_ICONERROR | MB_TASKMODAL);
+                return choice == IDNO ? Result::QuitGame : Result::StartWithoutModLoader;
+            }
+
             MessageBoxW(nullptr,
                 L"StarRupture has crashed.\n\n"
                 L"The ModLoader (or its plugins) may NOT be the cause -- the unmodified game "
@@ -290,7 +362,10 @@ namespace Hooks::CrashDialog
                 L"Details were written to ModLoader\\Logs\\ModLoader.log.",
                 L"StarRupture ModLoader",
                 MB_OK | MB_ICONERROR | MB_TASKMODAL);
+            return Result::Closed;
         }
+
+        return params.result;
     }
 }
 
