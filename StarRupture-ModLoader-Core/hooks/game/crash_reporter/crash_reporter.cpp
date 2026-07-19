@@ -8,6 +8,7 @@
 #include "../scan_patterns.h"
 #include "../../symbol_resolver.h"
 #include <DbgHelp.h>
+#include <tlhelp32.h>
 #pragma comment(lib, "DbgHelp.lib")
 
 namespace Hooks::CrashReporter
@@ -115,6 +116,55 @@ namespace Hooks::CrashReporter
 		}
 	}
 
+	// Suspends every thread in the process except the calling one. Called just
+	// before showing the crash dialog: the engine keeps plenty of threads
+	// alive after a fatal crash (hang detector / heartbeat watchdog, render,
+	// task workers), and the hang detector in particular will terminate the
+	// process after ~30s if the game thread stops ticking -- which would rip
+	// the crash dialog away with no user interaction.
+	//
+	// Everything the dialog needs (details string, log lines) must be built
+	// BEFORE calling this: a suspended thread may hold the heap lock, so
+	// allocations afterwards are best-effort. The process never resumes these
+	// threads -- the caller terminates the process when the dialog closes.
+	static void SuspendAllOtherThreads()
+	{
+		// Log BEFORE suspending: the logger takes a critical section, and once
+		// other threads are frozen one of them could be holding it forever.
+		ModLoaderLogger::LogError(L"[CrashReporter]   Suspending all other threads before showing the crash dialog");
+
+		HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+		if (snapshot == INVALID_HANDLE_VALUE)
+			return;
+
+		const DWORD currentPid = GetCurrentProcessId();
+		const DWORD currentTid = GetCurrentThreadId();
+
+		THREADENTRY32 entry{};
+		entry.dwSize = sizeof(entry);
+		int suspended = 0;
+
+		if (Thread32First(snapshot, &entry))
+		{
+			do
+			{
+				if (entry.th32OwnerProcessID != currentPid || entry.th32ThreadID == currentTid)
+					continue;
+
+				HANDLE thread = OpenThread(THREAD_SUSPEND_RESUME, FALSE, entry.th32ThreadID);
+				if (thread)
+				{
+					if (SuspendThread(thread) != static_cast<DWORD>(-1))
+						++suspended;
+					CloseHandle(thread);
+				}
+			} while (Thread32Next(snapshot, &entry));
+		}
+
+		CloseHandle(snapshot);
+		(void)suspended;
+	}
+
 	static int64_t __fastcall Detour(void* inContext, void* exceptionInfo, int32_t reportUI)
 	{
 		if (!g_fatalCrashReturnAddr || reinterpret_cast<uintptr_t>(_ReturnAddress()) != g_fatalCrashReturnAddr)
@@ -158,9 +208,23 @@ namespace Hooks::CrashReporter
 			EmitCrashLine(details, L"ExceptionInfo unavailable -- no fault details to log");
 		}
 
+		// Freeze the rest of the process so the engine's hang detector (which
+		// terminates the process ~30s after the game thread stops ticking)
+		// can't rip the dialog away. All logging and string building must be
+		// done by this point -- see SuspendAllOtherThreads.
+		SuspendAllOtherThreads();
+
 		CrashDialog::Show(CrashDialog::Mode::FatalCrash, details);
 
-		return 0;
+		// The game is unrecoverable and every other thread is suspended --
+		// returning into the engine's crash handling would deadlock. End the
+		// process ourselves with the original exception code.
+		DWORD exitCode = 0xDEAD;
+		if (exceptionPointers && exceptionPointers->ExceptionRecord)
+			exitCode = exceptionPointers->ExceptionRecord->ExceptionCode;
+		TerminateProcess(GetCurrentProcess(), exitCode);
+
+		return 0; // not reached
 	}
 
 	bool Install()
