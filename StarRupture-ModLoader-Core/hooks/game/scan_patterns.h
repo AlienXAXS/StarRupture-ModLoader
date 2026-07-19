@@ -249,4 +249,87 @@ namespace ScanPatterns
 	// Confirmed via IDA: FPerfCounters::ProcessStatsRequest calls this with body in RDX, FString in R8.
 	inline constexpr auto FHttpServerResponse_Create =
 		"48 89 5C 24 ?? 55 56 57 41 54 41 55 41 56 41 57 48 8D 6C 24 ?? 48 81 EC ?? ?? ?? ?? 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 45 ?? 48 8B F9 4D 8B E0";
+
+	// -----------------------------------------------------------------------
+	// Preflight registry
+	//
+	// Every pattern above that the modloader itself resolves on the current
+	// build target MUST have an entry here. The preflight verifier
+	// (memory_scanner/pattern_preflight.*) scans all of them at startup,
+	// before any hook is installed; if any *required* pattern is missing the
+	// modloader logs every failure and disables itself entirely (no hooks,
+	// no plugins) so the game never runs partially hooked.
+	//
+	// required = false marks reference-only patterns that no modloader code
+	// currently resolves -- they are still scanned and logged (as warnings)
+	// but do not disable the modloader when missing.
+	//
+	// When adding a new pattern, add it to this table with the same
+	// MODLOADER_CLIENT_BUILD / MODLOADER_SERVER_BUILD gating as its
+	// definition and its usage site.
+	// -----------------------------------------------------------------------
+	struct PreflightEntry
+	{
+		const char* name;
+		const char* pattern;
+		bool        required;
+	};
+
+	inline constexpr PreflightEntry PreflightRegistry[] =
+	{
+		{ "FText::AsLocalizable_Advanced",             FText_AsLocalizable_Advanced,             true },
+		{ "FTextKey::FTextKey",                        FTextKey_FTextKey,                        true },
+		{ "StaticLoadObject",                          StaticLoadObject,                         true },
+		{ "UClass::FindFunctionByName",                UClass_FindFunctionByName,                true },
+		{ "UObject::ProcessEvent",                     UObject_ProcessEvent,                     true },
+		{ "FEngineLoop::Init",                         FEngineLoop_Init,                         true },
+		{ "UGameEngine::Init",                         UGameEngine_Init,                         true },
+		{ "FEngineLoop::Exit",                         FEngineLoop_Exit,                         true },
+		{ "UEngine::PreExit",                          UEngine_PreExit,                          true },
+		{ "AGameModeBase::PostLogin",                  AGameModeBase_PostLogin,                  true },
+		{ "AGameModeBase::Logout",                     AGameModeBase_Logout,                     true },
+		{ "UCrMassSaveSubsystem::OnSaveLoaded",        UCrMassSaveSubsystem_OnSaveLoaded,        true },
+		{ "UCrExperienceManagerComponent::OnExperienceLoadComplete",
+		                                               UCrExperienceManagerComponent_OnExperienceLoadComplete, true },
+		{ "AActor::BeginPlay",                         AActor_BeginPlay,                         true },
+		{ "UWorld::BeginPlay",                         UWorld_BeginPlay,                         true },
+		{ "UWorld::EndPlay",                           UWorld_EndPlay,                           true },
+		{ "AAbstractMassEnemySpawner::ActivateSpawner",   AAbstractMassEnemySpawner_ActivateSpawner,   true },
+		{ "AAbstractMassEnemySpawner::DeactivateSpawner", AAbstractMassEnemySpawner_DeactivateSpawner, true },
+		{ "AMassSpawner::DoSpawning",                  AMassSpawner_DoSpawning,                  true },
+		{ "ACrCrafter::NativeOnItemCraftingComplete",  ACrCrafter_NativeOnItemCraftingComplete,  true },
+		{ "StaticFindObject (ByPath)",                 StaticFindObject_ByPath,                  true },
+		{ "StaticFindObject (ByName)",                 StaticFindObject_ByName,                  true },
+		{ "StaticFindObjectSafe (ByPath)",             StaticFindObjectSafe_ByPath,              true },
+		{ "StaticFindObjectSafe (ByName)",             StaticFindObjectSafe_ByName,              true },
+		{ "StaticFindObjectFast",                      StaticFindObjectFast,                     true },
+		{ "FindPackage",                               FindPackage,                              true },
+		{ "UPackage::FullyLoad",                       UPackage_FullyLoad,                       true },
+		{ "LoadPackage",                               LoadPackage,                              true },
+		{ "FAssetData::FastGetAsset",                  FAssetData_FastGetAsset,                  true },
+
+#if defined(MODLOADER_CLIENT_BUILD) || defined(MODLOADER_SERVER_BUILD)
+		{ "AActor::InternalGetNetMode",                AActor_InternalGetNetMode,                true },
+		{ "UGameEngine::Tick",                         UGameEngine_Tick,                         true },
+#endif
+
+#if defined(MODLOADER_CLIENT_BUILD)
+		{ "AHUD::PostRender",                          AHUD_PostRender,                          true },
+		{ "UCrMapManuSubsystem::GatherPlayersData",    UCrMapManuSubsystem_GatherPlayersData,    true },
+		{ "UGameViewportClient::InputKey",             UGameViewportClient_InputKey,             true },
+		{ "ReportCrashUsingCrashReportClient",         ReportCrashUsingCrashReportClient,        true },
+		{ "HandleCrashInternal_FatalReportCallSite",   HandleCrashInternal_FatalReportCallSite,  true },
+#endif
+
+#if defined(MODLOADER_SERVER_BUILD)
+		{ "FHttpConnection::ProcessRequest",           FHttpConnection_ProcessRequest,           true },
+		{ "FHttpServerResponse::Create",               FHttpServerResponse_Create,               true },
+#endif
+
+		// Reference-only patterns -- kept in the header but not currently
+		// resolved by any modloader code. Scanned and logged, never fatal.
+		{ "UGameInstance::Init",                       UGameInstance_Init,                       false },
+		{ "FMassEntityManager::GetArchetypeForEntity", FMassEntityManager_GetArchetypeForEntity, false },
+		{ "UMassSignalSubsystem::SignalEntity",        UMassSignalSubsystem_SignalEntity,        false },
+	};
 }

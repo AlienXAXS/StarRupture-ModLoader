@@ -15,6 +15,7 @@
 #include "../hooks/input/input_processor.h"
 #endif
 #include <hooks/input/input_hook.h>
+#include "../memory_scanner/pattern_preflight.h"
 
 DWORD WINAPI MainInitThreadProc(LPVOID)
 {
@@ -44,6 +45,21 @@ DWORD WINAPI MainInitThreadProc(LPVOID)
     // thread waiting on g_pluginsReadyEvent which would never be signalled).
     if (!VerifyGameVersion())
         return 0;
+
+    // Preflight every modloader scan pattern before installing anything.
+    // If even one required pattern is missing (e.g. after a game update),
+    // abort completely -- the game must never run partially hooked. The
+    // successful case doubles as a scan-cache warm-up, so the per-hook
+    // scans below become cache hits.
+    Splash::SetStatus(L"Verifying scan patterns...");
+    if (!PatternPreflight::VerifyAllPatterns())
+    {
+        ModLoaderLogger::LogError(L"[init] Pattern preflight failed -- mod loader disabled, starting the game unmodified");
+        Splash::SetStatus(L"Scan pattern check failed -- mod loader disabled (see modloader.log)");
+        Splash::Linger(4000);
+        Splash::Close();
+        return 0;
+    }
 
     InstallHooksPhase();
     LogToFile::Info("[init] Stage 1 complete -- hooks installed, main thread running");

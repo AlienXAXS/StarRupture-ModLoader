@@ -466,6 +466,7 @@
     <ClInclude Include="logging\logger.h" />
     <ClInclude Include="game_type_checker.h" />
     <ClInclude Include="logging\ue_log.h" />
+    <ClInclude Include="memory_scanner\pattern_preflight.h" />
     <ClInclude Include="memory_scanner\scan_cache.h" />
     <ClInclude Include="memory_scanner\scanner.h" />
     <ClInclude Include="memory_scanner\scanner_interface.h" />
@@ -590,6 +591,7 @@
     </ClCompile>
     <ClCompile Include="hooks\memory\engine_allocator.cpp" />
     <ClCompile Include="logging\logger.cpp" />
+    <ClCompile Include="memory_scanner\pattern_preflight.cpp" />
     <ClCompile Include="memory_scanner\scan_cache.cpp" />
     <ClCompile Include="memory_scanner\scanner.cpp" />
     <ClCompile Include="memory_scanner\scanner_interface.cpp" />

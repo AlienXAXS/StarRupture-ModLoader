@@ -177,6 +177,9 @@
     <ClInclude Include="UI\splash_window.h">
       <Filter>Source Files\UI</Filter>
     </ClInclude>
+    <ClInclude Include="memory_scanner\pattern_preflight.h">
+      <Filter>Source Files\memory_scanner</Filter>
+    </ClInclude>
     <ClInclude Include="memory_scanner\scan_cache.h">
       <Filter>Source Files\memory_scanner</Filter>
     </ClInclude>
@@ -439,6 +442,9 @@
     </ClCompile>
     <ClCompile Include="UI\splash_window.cpp">
       <Filter>Source Files\UI</Filter>
+    </ClCompile>
+    <ClCompile Include="memory_scanner\pattern_preflight.cpp">
+      <Filter>Source Files\memory_scanner</Filter>
     </ClCompile>
     <ClCompile Include="memory_scanner\scan_cache.cpp">
       <Filter>Source Files\memory_scanner</Filter>
