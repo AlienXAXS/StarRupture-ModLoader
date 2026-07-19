@@ -236,9 +236,14 @@ player's chosen position persists between sessions.
 ## Config-Change Notifications
 
 If you want to be notified whenever the user edits a value in your plugin's config via the
-ModLoader UI, register a `PluginConfigChangedCallback`:
+ModLoader UI, register a `PluginConfigChangedCallback`. Pass the `self` pointer your `PluginInit`
+received -- the modloader uses it to scope the callback to your plugin's own config file, so you
+are never notified about another plugin's config changes. `PluginShutdown` does not receive
+`self`, so cache it in a static during `PluginInit`:
 
 ```cpp
+static IPluginSelf* g_self = nullptr;
+
 static void OnConfigChanged(const char* section, const char* key, const char* newValue)
 {
     if (strcmp(section, "General") == 0 && strcmp(key, "Speed") == 0)
@@ -248,12 +253,13 @@ static void OnConfigChanged(const char* section, const char* key, const char* ne
 }
 
 // In PluginInit:
+g_self = self;
 if (hooks->UI)
-    hooks->UI->RegisterOnConfigChanged(OnConfigChanged);
+    hooks->UI->RegisterOnConfigChanged(self, OnConfigChanged);
 
 // In PluginShutdown:
 if (hooks->UI)
-    hooks->UI->UnregisterOnConfigChanged(OnConfigChanged);
+    hooks->UI->UnregisterOnConfigChanged(g_self, OnConfigChanged);
 ```
 
 `newValue` is the raw string that was written to the INI file (e.g. `"true"`, `"42"`, `"3.14"`).

@@ -11,6 +11,7 @@
 #include "hooks/hooks_interface.h"
 #include <vector>
 #include <string>
+#include <cstring>
 #include <dbghelp.h>
 
 #pragma comment(lib, "dbghelp.lib")
@@ -678,6 +679,24 @@ namespace PluginManager
 		}
 		LeaveCriticalSection(&g_pluginLock);
 		return total;
+	}
+
+	const IPluginSelf* GetSelfForPlugin(const char* pluginName)
+	{
+		if (!pluginName) return nullptr;
+
+		EnterCriticalSection(&g_pluginLock);
+		const IPluginSelf* result = nullptr;
+		for (auto& p : g_loadedPlugins)
+		{
+			if (_stricmp(p->cachedName.c_str(), pluginName) == 0)
+			{
+				result = &p->self;
+				break;
+			}
+		}
+		LeaveCriticalSection(&g_pluginLock);
+		return result;
 	}
 
 	bool UnloadPlugin(int index)

@@ -26,9 +26,12 @@ namespace UI::PluginPanelRegistry
     // Remove a panel using the handle returned by RegisterPanel.
     void UnregisterPanel(PanelHandle handle);
 
-    // Register/unregister a config-change notification callback.
-    void RegisterOnConfigChanged(PluginConfigChangedCallback callback);
-    void UnregisterOnConfigChanged(PluginConfigChangedCallback callback);
+    // Register/unregister a config-change notification callback. self is the
+    // registering plugin's IPluginSelf* (same pointer passed to PluginInit) --
+    // FireConfigChanged only invokes callbacks whose self matches the plugin
+    // whose config actually changed.
+    void RegisterOnConfigChanged(const IPluginSelf* self, PluginConfigChangedCallback callback);
+    void UnregisterOnConfigChanged(const IPluginSelf* self, PluginConfigChangedCallback callback);
 
     // Open or close a panel using the handle returned by RegisterPanel.
     void SetPanelOpen(PanelHandle handle);
@@ -54,7 +57,9 @@ namespace UI::PluginPanelRegistry
     bool AnyPanelOpen();
 
     // Called by modloader_window to fire config-change notifications.
-    void FireConfigChanged(const char* section, const char* key, const char* newValue);
+    // pluginName is the plugin that owns the changed config file -- only
+    // callbacks registered by that plugin are invoked.
+    void FireConfigChanged(const char* pluginName, const char* section, const char* key, const char* newValue);
 
     // Renders "Open" buttons for panels belonging to pluginName (null = all).
     // Call from inside an ImGui window; handles Begin/End for each panel window.
