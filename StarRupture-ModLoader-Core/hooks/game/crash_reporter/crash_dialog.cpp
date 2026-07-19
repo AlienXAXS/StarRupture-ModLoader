@@ -5,9 +5,7 @@
 #include <windows.h>
 #include <shellapi.h>
 #include <shlobj.h>
-#include <objbase.h>
 #pragma comment(lib, "Shell32.lib")
-#pragma comment(lib, "Ole32.lib")
 #include <vector>
 #include <cstdint>
 
@@ -102,39 +100,31 @@ namespace Hooks::CrashDialog
         return result;
     }
 
-    // Opens the file in the default editor; if the file is missing, opens its
-    // parent folder instead so the user still lands somewhere useful.
+    // Opens the file in notepad; if the file is missing, opens its parent
+    // folder in explorer instead so the user still lands somewhere useful.
     //
-    // Runs ShellExecuteW on its own short-lived thread: the dialog can be
-    // running very early in process startup (pattern preflight) on a thread
-    // without COM initialized, where a direct ShellExecuteW call can silently
-    // defer until the dialog's message loop exits -- the log only appeared
-    // after the user clicked through. A dedicated STA thread avoids both
-    // problems.
-    static DWORD WINAPI OpenLogFileThreadProc(LPVOID param)
+    // Deliberately uses CreateProcessW rather than ShellExecuteW or a worker
+    // thread: in fatal-crash mode every other thread in the process is frozen
+    // (see crash_reporter.cpp), and one of them may hold the loader lock or
+    // heap lock. A newly created thread can't start (DLL thread-attach needs
+    // the loader lock) and ShellExecute's COM machinery can hang the same
+    // way. CreateProcessW makes a single kernel call from this thread and
+    // needs neither, so it works in both the frozen-crash and the startup
+    // preflight contexts. Losing the user's default .log editor association
+    // is an acceptable trade for a button that always works.
+    static void LaunchDetached(const std::wstring& commandLine)
     {
-        std::wstring* path = static_cast<std::wstring*>(param);
-
-        const HRESULT comInit = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
-
-        if (GetFileAttributesW(path->c_str()) != INVALID_FILE_ATTRIBUTES)
+        // CreateProcessW needs a mutable command-line buffer
+        std::wstring cmd = commandLine;
+        STARTUPINFOW si{};
+        si.cb = sizeof(si);
+        PROCESS_INFORMATION pi{};
+        if (CreateProcessW(nullptr, cmd.data(), nullptr, nullptr, FALSE,
+                CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS, nullptr, nullptr, &si, &pi))
         {
-            ShellExecuteW(nullptr, L"open", path->c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+            CloseHandle(pi.hThread);
+            CloseHandle(pi.hProcess);
         }
-        else
-        {
-            std::wstring folder = *path;
-            size_t slash = folder.find_last_of(L'\\');
-            if (slash != std::wstring::npos)
-                folder.resize(slash);
-            ShellExecuteW(nullptr, L"open", folder.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
-        }
-
-        if (SUCCEEDED(comInit))
-            CoUninitialize();
-
-        delete path;
-        return 0;
     }
 
     static void OpenLogFile(HWND /*owner*/, const std::wstring& path)
@@ -142,12 +132,17 @@ namespace Hooks::CrashDialog
         if (path.empty())
             return;
 
-        auto* pathCopy = new std::wstring(path);
-        HANDLE thread = CreateThread(nullptr, 0, OpenLogFileThreadProc, pathCopy, 0, nullptr);
-        if (thread)
-            CloseHandle(thread);
-        else
-            delete pathCopy; // thread creation failed -- don't leak the copy
+        if (GetFileAttributesW(path.c_str()) != INVALID_FILE_ATTRIBUTES)
+        {
+            LaunchDetached(L"notepad.exe \"" + path + L"\"");
+            return;
+        }
+
+        std::wstring folder = path;
+        size_t slash = folder.find_last_of(L'\\');
+        if (slash != std::wstring::npos)
+            folder.resize(slash);
+        LaunchDetached(L"explorer.exe \"" + folder + L"\"");
     }
 
     static void CopyToClipboard(HWND owner, const std::wstring& text)
