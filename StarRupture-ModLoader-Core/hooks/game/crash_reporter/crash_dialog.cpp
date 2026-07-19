@@ -13,6 +13,25 @@
 
 namespace Hooks::CrashDialog
 {
+    // ---------------------------------------------------------------------
+    // Dark theme -- same palette as the splash window (UI/splash_window.cpp)
+    // ---------------------------------------------------------------------
+    constexpr COLORREF kBgColor      = RGB(24, 24, 28);
+    constexpr COLORREF kTextColor    = RGB(200, 200, 210);
+    constexpr COLORREF kTitleColor   = RGB(255, 255, 255);
+    constexpr COLORREF kPanelColor   = RGB(50, 50, 58);   // edit box + neutral buttons
+    constexpr COLORREF kPanelHot     = RGB(70, 70, 80);
+    constexpr COLORREF kAccentColor  = RGB(80, 160, 255); // primary button
+    constexpr COLORREF kAccentHot    = RGB(60, 130, 200);
+    constexpr COLORREF kDangerColor  = RGB(160, 40, 40);  // Quit Game
+    constexpr COLORREF kDangerHot    = RGB(200, 50, 50);
+    constexpr COLORREF kBorderColor  = RGB(55, 55, 65);
+
+    // Created on first Show(), kept for the process lifetime (the dialog is
+    // shown at most a couple of times, usually right before the process ends).
+    static HBRUSH g_bgBrush    = nullptr;
+    static HBRUSH g_panelBrush = nullptr;
+
     // Control IDs
     constexpr int IDC_DETAILS_EDIT      = 1001;
     constexpr int IDC_COPY_DETAILS      = 1002;
@@ -252,32 +271,109 @@ namespace Hooks::CrashDialog
             0,
             7, 110, kDlgW - 14, 126, IDC_DETAILS_EDIT, kClassEdit, L"");
 
-        // Bottom button row
+        // Bottom button row -- all owner-drawn so they follow the dark theme
+        constexpr uint32_t kBtnStyle = WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW;
         constexpr int16_t kBtnY = kDlgH - 21;
-        AppendControl(buf, WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON, 0,
+        AppendControl(buf, kBtnStyle, 0,
             7, kBtnY, 70, 14, IDC_COPY_DETAILS, kClassButton, L"Copy Details");
-        AppendControl(buf, WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON, 0,
+        AppendControl(buf, kBtnStyle, 0,
             81, kBtnY, 88, 14, IDC_OPEN_MODLOADER_LOG, kClassButton, L"Open ModLoader.log");
 
         if (patternMode)
         {
             // The game hasn't run yet, so there's no fresh StarRupture.log to
             // show -- offer the start/quit choice instead.
-            AppendControl(buf, WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON, 0,
+            AppendControl(buf, kBtnStyle, 0,
                 kDlgW - 179, kBtnY, 110, 14, IDC_START_WITHOUT_ML, kClassButton,
                 L"Start Game Without ModLoader");
-            AppendControl(buf, WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON, 0,
+            AppendControl(buf, kBtnStyle, 0,
                 kDlgW - 61, kBtnY, 54, 14, IDC_QUIT_GAME, kClassButton, L"Quit Game");
         }
         else
         {
-            AppendControl(buf, WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON, 0,
+            AppendControl(buf, kBtnStyle, 0,
                 173, kBtnY, 88, 14, IDC_OPEN_GAME_LOG, kClassButton, L"Open StarRupture.log");
-            AppendControl(buf, WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON, 0,
+            AppendControl(buf, kBtnStyle, 0,
                 kDlgW - 61, kBtnY, 54, 14, IDCANCEL, kClassButton, L"Close");
         }
 
         return buf;
+    }
+
+    // -----------------------------------------------------------------------
+    // Dark theming helpers
+    // -----------------------------------------------------------------------
+
+    static void EnsureThemeBrushes()
+    {
+        if (!g_bgBrush)
+            g_bgBrush = CreateSolidBrush(kBgColor);
+        if (!g_panelBrush)
+            g_panelBrush = CreateSolidBrush(kPanelColor);
+    }
+
+    // Ask DWM for a dark title bar. Resolved dynamically -- the modloader IS
+    // a dwmapi.dll proxy, so linking the import statically would be circular;
+    // GetModuleHandle finds the already-loaded (proxied) dwmapi and the call
+    // forwards through to the real one.
+    static void EnableDarkTitleBar(HWND hwnd)
+    {
+        HMODULE dwm = GetModuleHandleW(L"dwmapi.dll");
+        if (!dwm)
+            dwm = LoadLibraryW(L"dwmapi.dll");
+        if (!dwm)
+            return;
+
+        using DwmSetWindowAttribute_t = HRESULT(WINAPI*)(HWND, DWORD, LPCVOID, DWORD);
+        auto setAttr = reinterpret_cast<DwmSetWindowAttribute_t>(
+            GetProcAddress(dwm, "DwmSetWindowAttribute"));
+        if (!setAttr)
+            return;
+
+        constexpr DWORD kDwmwaUseImmersiveDarkMode = 20;
+        BOOL dark = TRUE;
+        setAttr(hwnd, kDwmwaUseImmersiveDarkMode, &dark, sizeof(dark));
+    }
+
+    static void DrawThemedButton(const DRAWITEMSTRUCT* dis)
+    {
+        const bool pressed = (dis->itemState & ODS_SELECTED) != 0;
+
+        COLORREF fill;
+        COLORREF text = kTitleColor;
+        switch (dis->CtlID)
+        {
+        case IDC_START_WITHOUT_ML:
+        case IDCANCEL:
+            fill = pressed ? kAccentHot : kAccentColor;
+            break;
+        case IDC_QUIT_GAME:
+            fill = pressed ? kDangerHot : kDangerColor;
+            break;
+        default:
+            fill = pressed ? kPanelHot : kPanelColor;
+            text = kTextColor;
+            break;
+        }
+
+        HBRUSH fillBrush = CreateSolidBrush(fill);
+        FillRect(dis->hDC, &dis->rcItem, fillBrush);
+        DeleteObject(fillBrush);
+
+        if (dis->itemState & ODS_FOCUS)
+        {
+            HBRUSH borderBrush = CreateSolidBrush(kBorderColor);
+            FrameRect(dis->hDC, &dis->rcItem, borderBrush);
+            DeleteObject(borderBrush);
+        }
+
+        wchar_t label[128]{};
+        GetWindowTextW(dis->hwndItem, label, 128);
+
+        SetBkMode(dis->hDC, TRANSPARENT);
+        SetTextColor(dis->hDC, text);
+        RECT rc = dis->rcItem;
+        DrawTextW(dis->hDC, label, -1, &rc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     }
 
     // -----------------------------------------------------------------------
@@ -303,9 +399,42 @@ namespace Hooks::CrashDialog
                 SendDlgItemMessageW(hDlg, IDC_DETAILS_EDIT, WM_SETFONT,
                     reinterpret_cast<WPARAM>(mono), TRUE);
 
+            EnableDarkTitleBar(hDlg);
+
             // Make sure the crashed game window doesn't keep us buried
             SetForegroundWindow(hDlg);
             return TRUE;
+        }
+
+        // Dark theme: dialog background, static text, and the details edit box.
+        // Note: a read-only edit control sends WM_CTLCOLORSTATIC, not
+        // WM_CTLCOLOREDIT, so both controls are handled here.
+        case WM_CTLCOLORDLG:
+            return reinterpret_cast<INT_PTR>(g_bgBrush);
+
+        case WM_CTLCOLORSTATIC:
+        {
+            HDC hdc = reinterpret_cast<HDC>(wParam);
+            if (GetDlgCtrlID(reinterpret_cast<HWND>(lParam)) == IDC_DETAILS_EDIT)
+            {
+                SetTextColor(hdc, kTextColor);
+                SetBkColor(hdc, kPanelColor);
+                return reinterpret_cast<INT_PTR>(g_panelBrush);
+            }
+            SetTextColor(hdc, kTextColor);
+            SetBkColor(hdc, kBgColor);
+            return reinterpret_cast<INT_PTR>(g_bgBrush);
+        }
+
+        case WM_DRAWITEM:
+        {
+            const auto* dis = reinterpret_cast<const DRAWITEMSTRUCT*>(lParam);
+            if (dis && dis->CtlType == ODT_BUTTON)
+            {
+                DrawThemedButton(dis);
+                return TRUE;
+            }
+            return FALSE;
         }
 
         case WM_COMMAND:
@@ -350,6 +479,8 @@ namespace Hooks::CrashDialog
 
     Result Show(Mode mode, const std::wstring& detailsText)
     {
+        EnsureThemeBrushes();
+
         const std::vector<uint8_t> tmpl = BuildDialogTemplate(mode);
 
         // Default result if the dialog is dismissed without an explicit choice:

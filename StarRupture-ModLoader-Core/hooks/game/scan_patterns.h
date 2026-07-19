@@ -126,7 +126,7 @@ namespace ScanPatterns
 	// UCrMassSaveSubsystem::OnSaveLoaded(UCrMassSaveSubsystem *this)
 	// Native C++ callback -- not a UFUNCTION, not in GObjects Children list.
 	inline constexpr auto UCrMassSaveSubsystem_OnSaveLoaded =
-		"4C 8B DC 55 57 49 8D AB ?? ?? ?? ?? 48 81 EC ?? ?? ?? ?? 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 85 ?? ?? ?? ?? 49 89 5B ?? B8";
+		"4C 8B DC 55 57 49 8D AB ?? ?? ?? ?? 48 81 EC ?? ?? ?? ?? 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 85 ?? ?? ?? ?? 49 89 5B ?? 48 8B F9 49 89 73 ?? 4D 89 63";
 
 	// UCrExperienceManagerComponent::OnExperienceLoadComplete(UCrExperienceManagerComponent *this)
 	// Native C++ callback -- not a UFUNCTION, not in GObjects Children list.
