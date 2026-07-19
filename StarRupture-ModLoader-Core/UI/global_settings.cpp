@@ -81,8 +81,19 @@ namespace UI::GlobalSettings
         s_fontScale = parsed;
         // ImGui context is not yet created here; scale is applied in InitD3D12Resources().
 
+        // Font family: if the user has ever picked one in the theme settings
+        // it's stored in the INI and always wins (including an explicit
+        // "Default"). Only when the key is completely absent do we prefer
+        // Arial -- it renders noticeably better than the ImGui built-in --
+        // falling back to the built-in if arial.ttf isn't on this system.
         wchar_t familyBuf[32] = {};
-        GetPrivateProfileStringW(L"UI", L"FontFamily", L"Default", familyBuf, 32, s_iniPath);
+        GetPrivateProfileStringW(L"UI", L"FontFamily", L"", familyBuf, 32, s_iniPath);
+        if (familyBuf[0] == L'\0')
+        {
+            const bool hasArial =
+                GetFileAttributesW(L"C:\\Windows\\Fonts\\arial.ttf") != INVALID_FILE_ATTRIBUTES;
+            wcscpy_s(familyBuf, hasArial ? L"Arial" : L"Default");
+        }
         // Convert narrow ASCII key -- all valid keys are plain ASCII
         char narrowBuf[32] = {};
         for (int i = 0; i < 31 && familyBuf[i]; ++i)

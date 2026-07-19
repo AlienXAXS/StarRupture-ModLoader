@@ -190,16 +190,20 @@ namespace UI::ModLoaderWindow
             ImGuiTableFlags_Borders |
             ImGuiTableFlags_RowBg |
             ImGuiTableFlags_ScrollY |
+            ImGuiTableFlags_Resizable |
             ImGuiTableFlags_SizingStretchProp;
 
         if (ImGui::BeginTable("##plugins", 5, tableFlags))
         {
-            float fs = ImGui::GetFontSize();
-            ImGui::TableSetupColumn("Name",    ImGuiTableColumnFlags_WidthStretch);
-            ImGui::TableSetupColumn("Version", ImGuiTableColumnFlags_WidthFixed,  fs * 5.4f);
-            ImGui::TableSetupColumn("Author",  ImGuiTableColumnFlags_WidthStretch);
-            ImGui::TableSetupColumn("Status",  ImGuiTableColumnFlags_WidthFixed,  fs * 6.9f);
-            ImGui::TableSetupColumn("Actions", ImGuiTableColumnFlags_WidthFixed,  fs * 16.0f);
+            // All columns are stretch-weighted (not fixed) so dragging a
+            // header divider adjusts the *ratio* between columns, and the
+            // ratios hold when the window is resized. ImGui persists the
+            // user's weights per-table in modloader_imgui.ini automatically.
+            ImGui::TableSetupColumn("Name",    ImGuiTableColumnFlags_WidthStretch, 2.2f);
+            ImGui::TableSetupColumn("Version", ImGuiTableColumnFlags_WidthStretch, 0.8f);
+            ImGui::TableSetupColumn("Author",  ImGuiTableColumnFlags_WidthStretch, 1.6f);
+            ImGui::TableSetupColumn("Status",  ImGuiTableColumnFlags_WidthStretch, 1.0f);
+            ImGui::TableSetupColumn("Actions", ImGuiTableColumnFlags_WidthStretch, 2.4f);
             ImGui::TableHeadersRow();
 
             for (int i = 0; i < count; ++i)
@@ -239,7 +243,7 @@ namespace UI::ModLoaderWindow
                 else if (s.isOutOfDate)
                 {
                     ImGui::TextDisabled(s.needsModLoaderUpdate
-                        ? "Please Update Mod Loader Version"
+                        ? "Update The Mod Loader"
                         : "Please Update The Plugin");
                 }
                 else
