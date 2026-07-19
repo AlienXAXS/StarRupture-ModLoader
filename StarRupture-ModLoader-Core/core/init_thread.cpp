@@ -17,6 +17,7 @@
 #endif
 #include <hooks/input/input_hook.h>
 #include "../memory_scanner/pattern_preflight.h"
+#include "../utils/thread_utils.h"
 
 DWORD WINAPI MainInitThreadProc(LPVOID)
 {
@@ -60,10 +61,19 @@ DWORD WINAPI MainInitThreadProc(LPVOID)
         Splash::Close();
 
 #ifdef MODLOADER_CLIENT_BUILD
+        // Pause the game while the dialog is up -- no hooks are installed at
+        // this point, so nothing else stops the game from booting behind the
+        // dialog. suspend_main_thread() safely returns NULL if we *are* the
+        // main thread (APC init path), where the modal dialog itself already
+        // blocks the game.
+        HANDLE suspendedMainThread = suspend_main_thread();
+
         // Let the user decide: continue with a completely unmodified game, or
         // quit and wait for a ModLoader update.
         const auto choice = Hooks::CrashDialog::Show(
             Hooks::CrashDialog::Mode::PatternFailure, preflightDetails);
+
+        resume_main_thread(suspendedMainThread);
         if (choice == Hooks::CrashDialog::Result::QuitGame)
         {
             ModLoaderLogger::LogInfo(L"[init] User chose to quit the game after preflight failure");
