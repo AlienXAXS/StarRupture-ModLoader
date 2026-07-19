@@ -23,8 +23,8 @@
 //          handles a real fatal crash, identified via the return address left
 //          on the stack by that call site (see Install()).
 //
-// On a real fatal crash the detour shows a local MessageBoxW telling the
-// player the game crashed and that reporting is disabled, then returns
+// On a real fatal crash the detour shows the crash dialog (crash_dialog.h)
+// with the exception details and a copyable stack trace, then returns
 // without ever spawning CrashReportClient.exe.
 // ---------------------------------------------------------------------------
 

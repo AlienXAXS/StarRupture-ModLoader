@@ -222,6 +222,9 @@
     <ClInclude Include="hooks\game\crafting_finished\crafting_finished.h">
       <Filter>Source Files\hooks\game\crafting_finished</Filter>
     </ClInclude>
+    <ClInclude Include="hooks\game\crash_reporter\crash_dialog.h">
+      <Filter>Source Files\hooks\game\crash_reporter</Filter>
+    </ClInclude>
     <ClInclude Include="hooks\game\crash_reporter\crash_reporter.h">
       <Filter>Source Files\hooks\game\crash_reporter</Filter>
     </ClInclude>
@@ -472,6 +475,9 @@
     </ClCompile>
     <ClCompile Include="hooks\game\crafting_finished\crafting_finished.cpp">
       <Filter>Source Files\hooks\game\crafting_finished</Filter>
+    </ClCompile>
+    <ClCompile Include="hooks\game\crash_reporter\crash_dialog.cpp">
+      <Filter>Source Files\hooks\game\crash_reporter</Filter>
     </ClCompile>
     <ClCompile Include="hooks\game\crash_reporter\crash_reporter.cpp">
       <Filter>Source Files\hooks\game\crash_reporter</Filter>

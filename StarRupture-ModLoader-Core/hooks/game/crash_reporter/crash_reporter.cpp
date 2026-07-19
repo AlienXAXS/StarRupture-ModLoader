@@ -1,7 +1,9 @@
 #include "pch.h"
 #ifdef MODLOADER_CLIENT_BUILD
 #include "crash_reporter.h"
+#include "crash_dialog.h"
 #include "logging/logger.h"
+#include <string>
 #include "memory_scanner/scanner.h"
 #include "../scan_patterns.h"
 #include "../../symbol_resolver.h"
@@ -23,6 +25,22 @@ namespace Hooks::CrashReporter
 	// ensure()/hang reports it can't positively identify as fatal).
 	static uintptr_t g_fatalCrashReturnAddr = 0;
 
+	// Formats one line into the crash-details buffer shown in the crash dialog
+	// (CRLF endings -- edit controls don't render bare '\n') and mirrors it to
+	// the modloader log.
+	static void EmitCrashLine(std::wstring& details, const wchar_t* format, ...)
+	{
+		wchar_t line[1024]{};
+		va_list args;
+		va_start(args, format);
+		_vsnwprintf_s(line, _TRUNCATE, format, args);
+		va_end(args);
+
+		ModLoaderLogger::LogError(L"[CrashReporter]   %s", line);
+		details += line;
+		details += L"\r\n";
+	}
+
 	// Walks the crashing thread's call stack from the captured CONTEXT and logs one line per
 	// frame: module name, symbol name (demangled Class::Func if PDBs are available, otherwise
 	// just the raw address), and both a symbol-relative and module-relative offset.
@@ -31,7 +49,7 @@ namespace Hooks::CrashReporter
 	// ExceptionInfo->ContextRecord) rather than a live thread handle -- on x64 the unwind is
 	// driven entirely by that CONTEXT plus the module's .pdata (SymFunctionTableAccess64), so
 	// GetCurrentThread() is passed as a formality only.
-	static void LogStackTrace(const CONTEXT* contextRecord)
+	static void LogStackTrace(const CONTEXT* contextRecord, std::wstring& details)
 	{
 		HANDLE process = GetCurrentProcess();
 
@@ -52,7 +70,7 @@ namespace Hooks::CrashReporter
 		frame.AddrStack.Offset = ctx.Rsp;
 		frame.AddrStack.Mode = AddrModeFlat;
 
-		ModLoaderLogger::LogError(L"[CrashReporter]   Stack trace:");
+		EmitCrashLine(details, L"Stack trace:");
 
 		constexpr int kMaxFrames = 64;
 		for (int i = 0; i < kMaxFrames; ++i)
@@ -86,12 +104,12 @@ namespace Hooks::CrashReporter
 			DWORD64 symDisplacement = 0;
 			if (SymFromAddrW(process, addr, &symDisplacement, symbol))
 			{
-				ModLoaderLogger::LogError(L"[CrashReporter]     #%02d 0x%016llX  %s!%s + 0x%llX  (module+0x%llX)",
+				EmitCrashLine(details, L"  #%02d 0x%016llX  %s!%s + 0x%llX  (module+0x%llX)",
 					i, addr, moduleName, symbol->Name, symDisplacement, modDisplacement);
 			}
 			else
 			{
-				ModLoaderLogger::LogError(L"[CrashReporter]     #%02d 0x%016llX  %s + 0x%llX",
+				EmitCrashLine(details, L"  #%02d 0x%016llX  %s + 0x%llX",
 					i, addr, moduleName, modDisplacement);
 			}
 		}
@@ -107,6 +125,10 @@ namespace Hooks::CrashReporter
 
 		ModLoaderLogger::LogError(L"[CrashReporter] *** FATAL ENGINE CRASH *** -- suppressing CrashReportClient upload");
 
+		// Every EmitCrashLine call below both logs to ModLoader.log and appends
+		// to this buffer, which becomes the copyable text in the crash dialog.
+		std::wstring details;
+
 		// ExceptionInfo is a plain Win32 _EXCEPTION_POINTERS* (not an engine-internal type),
 		// so we can log the fault details directly into ModLoader.log without needing the
 		// engine's own FWindowsPlatformCrashContext serialization.
@@ -120,28 +142,23 @@ namespace Hooks::CrashReporter
 			auto base = reinterpret_cast<ULONG64>(mainMod);
 			auto faultAddr = reinterpret_cast<ULONG64>(record->ExceptionAddress);
 
-			ModLoaderLogger::LogError(L"[CrashReporter]   Exception : 0x%08lX", record->ExceptionCode);
-			ModLoaderLogger::LogError(L"[CrashReporter]   Fault addr: 0x%016llX  (exe+0x%llX)", faultAddr, faultAddr - base);
-			ModLoaderLogger::LogError(L"[CrashReporter]   RIP=0x%016llX  (exe+0x%llX)", ctx->Rip, ctx->Rip - base);
-			ModLoaderLogger::LogError(L"[CrashReporter]   RSP=0x%016llX  RBP=0x%016llX", ctx->Rsp, ctx->Rbp);
-			ModLoaderLogger::LogError(L"[CrashReporter]   RCX=0x%016llX  RDX=0x%016llX", ctx->Rcx, ctx->Rdx);
-			ModLoaderLogger::LogError(L"[CrashReporter]   R8 =0x%016llX  R9 =0x%016llX", ctx->R8, ctx->R9);
-			ModLoaderLogger::LogError(L"[CrashReporter]   R10=0x%016llX  R11=0x%016llX", ctx->R10, ctx->R11);
+			EmitCrashLine(details, L"Exception : 0x%08lX", record->ExceptionCode);
+			EmitCrashLine(details, L"Fault addr: 0x%016llX  (exe+0x%llX)", faultAddr, faultAddr - base);
+			EmitCrashLine(details, L"RIP=0x%016llX  (exe+0x%llX)", ctx->Rip, ctx->Rip - base);
+			EmitCrashLine(details, L"RSP=0x%016llX  RBP=0x%016llX", ctx->Rsp, ctx->Rbp);
+			EmitCrashLine(details, L"RCX=0x%016llX  RDX=0x%016llX", ctx->Rcx, ctx->Rdx);
+			EmitCrashLine(details, L"R8 =0x%016llX  R9 =0x%016llX", ctx->R8, ctx->R9);
+			EmitCrashLine(details, L"R10=0x%016llX  R11=0x%016llX", ctx->R10, ctx->R11);
+			details += L"\r\n";
 
-			LogStackTrace(ctx);
+			LogStackTrace(ctx, details);
 		}
 		else
 		{
-			ModLoaderLogger::LogError(L"[CrashReporter]   ExceptionInfo unavailable -- no fault details to log");
+			EmitCrashLine(details, L"ExceptionInfo unavailable -- no fault details to log");
 		}
 
-		MessageBoxW(nullptr,
-			L"StarRupture has crashed.\n\n"
-			L"Automatic crash reporting to the developers is disabled because the ModLoader is installed.\n"
-			L"This crash report has not been sent anywhere.\n\n"
-			L"Details were written to ModLoader\\Logs\\ModLoader.log.",
-			L"StarRupture ModLoader",
-			MB_OK | MB_ICONERROR | MB_TASKMODAL);
+		CrashDialog::Show(details);
 
 		return 0;
 	}

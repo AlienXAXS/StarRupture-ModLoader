@@ -1,0 +1,297 @@
+#include "pch.h"
+#ifdef MODLOADER_CLIENT_BUILD
+#include "crash_dialog.h"
+
+#include <windows.h>
+#include <shellapi.h>
+#include <shlobj.h>
+#pragma comment(lib, "Shell32.lib")
+#include <vector>
+#include <cstdint>
+
+namespace Hooks::CrashDialog
+{
+    // Control IDs
+    constexpr int IDC_DETAILS_EDIT      = 1001;
+    constexpr int IDC_COPY_DETAILS      = 1002;
+    constexpr int IDC_OPEN_MODLOADER_LOG = 1003;
+    constexpr int IDC_OPEN_GAME_LOG     = 1004;
+
+    static const wchar_t* kHeaderText =
+        L"StarRupture has crashed.\r\n"
+        L"\r\n"
+        L"IMPORTANT: the ModLoader intercepted this crash, but the ModLoader (or its plugins) "
+        L"may NOT be the cause -- the unmodified game can and does crash on its own.\r\n"
+        L"\r\n"
+        L"Automatic crash reporting to the developers (CreepyJar) has been suppressed: "
+        L"CreepyJar do not look at logs or save files from modded clients, so sending this "
+        L"report would only add noise. Nothing has been sent anywhere.\r\n"
+        L"\r\n"
+        L"If you want help, share the details below (and both log files) with the ModLoader "
+        L"community instead. To report the crash to CreepyJar, first reproduce it without "
+        L"the ModLoader installed.";
+
+    // -----------------------------------------------------------------------
+    // Log file locations
+    // -----------------------------------------------------------------------
+
+    // <game exe dir>\ModLoader\Logs\ModLoader.log
+    static std::wstring GetModLoaderLogPath()
+    {
+        wchar_t path[MAX_PATH]{};
+        GetModuleFileNameW(nullptr, path, MAX_PATH);
+        wchar_t* slash = wcsrchr(path, L'\\');
+        if (!slash)
+            return L"";
+        *(slash + 1) = L'\0';
+        std::wstring result = path;
+        result += L"ModLoader\\Logs\\ModLoader.log";
+        return result;
+    }
+
+    // %LOCALAPPDATA%\StarRupture\Saved\Logs\StarRupture.log
+    static std::wstring GetGameLogPath()
+    {
+        wchar_t localAppData[MAX_PATH]{};
+        if (FAILED(SHGetFolderPathW(nullptr, CSIDL_LOCAL_APPDATA, nullptr, SHGFP_TYPE_CURRENT, localAppData)))
+            return L"";
+        std::wstring result = localAppData;
+        result += L"\\StarRupture\\Saved\\Logs\\StarRupture.log";
+        return result;
+    }
+
+    // Opens the file in the default editor; if the file is missing, opens its
+    // parent folder instead so the user still lands somewhere useful.
+    static void OpenLogFile(HWND owner, const std::wstring& path)
+    {
+        if (path.empty())
+            return;
+
+        if (GetFileAttributesW(path.c_str()) != INVALID_FILE_ATTRIBUTES)
+        {
+            ShellExecuteW(owner, L"open", path.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+            return;
+        }
+
+        std::wstring folder = path;
+        size_t slash = folder.find_last_of(L'\\');
+        if (slash != std::wstring::npos)
+            folder.resize(slash);
+        ShellExecuteW(owner, L"open", folder.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+    }
+
+    static void CopyToClipboard(HWND owner, const std::wstring& text)
+    {
+        if (!OpenClipboard(owner))
+            return;
+        EmptyClipboard();
+        const size_t bytes = (text.size() + 1) * sizeof(wchar_t);
+        HGLOBAL mem = GlobalAlloc(GMEM_MOVEABLE, bytes);
+        if (mem)
+        {
+            void* dest = GlobalLock(mem);
+            if (dest)
+            {
+                memcpy(dest, text.c_str(), bytes);
+                GlobalUnlock(mem);
+                if (!SetClipboardData(CF_UNICODETEXT, mem))
+                    GlobalFree(mem);
+            }
+            else
+            {
+                GlobalFree(mem);
+            }
+        }
+        CloseClipboard();
+    }
+
+    // -----------------------------------------------------------------------
+    // In-memory DLGTEMPLATE construction
+    //
+    // The classic DLGTEMPLATE stream: header, then per-control DLGITEMTEMPLATE
+    // entries, everything DWORD-aligned, strings inline as UTF-16.
+    // -----------------------------------------------------------------------
+
+    static void AlignDword(std::vector<uint8_t>& buf)
+    {
+        while (buf.size() % 4 != 0)
+            buf.push_back(0);
+    }
+
+    static void AppendData(std::vector<uint8_t>& buf, const void* data, size_t size)
+    {
+        const auto* bytes = static_cast<const uint8_t*>(data);
+        buf.insert(buf.end(), bytes, bytes + size);
+    }
+
+    static void AppendWord(std::vector<uint8_t>& buf, uint16_t value)
+    {
+        AppendData(buf, &value, sizeof(value));
+    }
+
+    static void AppendString(std::vector<uint8_t>& buf, const wchar_t* str)
+    {
+        AppendData(buf, str, (wcslen(str) + 1) * sizeof(wchar_t));
+    }
+
+    // Predefined system class ordinals for DLGITEMTEMPLATE
+    constexpr uint16_t kClassButton = 0x0080;
+    constexpr uint16_t kClassEdit   = 0x0081;
+    constexpr uint16_t kClassStatic = 0x0082;
+
+    static void AppendControl(std::vector<uint8_t>& buf, uint32_t style, uint32_t exStyle,
+                              int16_t x, int16_t y, int16_t cx, int16_t cy,
+                              uint16_t id, uint16_t classOrdinal, const wchar_t* text)
+    {
+        AlignDword(buf);
+        DLGITEMTEMPLATE item{};
+        item.style = style;
+        item.dwExtendedStyle = exStyle;
+        item.x = x; item.y = y; item.cx = cx; item.cy = cy;
+        item.id = id;
+        AppendData(buf, &item, sizeof(item));
+        AppendWord(buf, 0xFFFF);          // class: ordinal follows
+        AppendWord(buf, classOrdinal);
+        AppendString(buf, text);          // window text
+        AppendWord(buf, 0);               // no creation data
+    }
+
+    static std::vector<uint8_t> BuildDialogTemplate()
+    {
+        // Dialog layout in dialog units. 4 horizontal DLUs ~ avg char width,
+        // 8 vertical DLUs ~ char height, so this is roughly 700x430 px at 96 DPI.
+        constexpr int16_t kDlgW = 380;
+        constexpr int16_t kDlgH = 262;
+
+        std::vector<uint8_t> buf;
+
+        DLGTEMPLATE dlg{};
+        dlg.style = DS_SETFONT | DS_MODALFRAME | DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMENU;
+        dlg.cdit = 6;
+        dlg.x = 0; dlg.y = 0;
+        dlg.cx = kDlgW; dlg.cy = kDlgH;
+        AppendData(buf, &dlg, sizeof(dlg));
+        AppendWord(buf, 0);   // no menu
+        AppendWord(buf, 0);   // default dialog class
+        AppendString(buf, L"StarRupture ModLoader - The game has crashed");
+        // DS_SETFONT: point size then face name
+        AppendWord(buf, 9);
+        AppendString(buf, L"Segoe UI");
+
+        // Header explanation text
+        AppendControl(buf, WS_CHILD | WS_VISIBLE | SS_LEFT, 0,
+            7, 7, kDlgW - 14, 88, 0xFFFF, kClassStatic, kHeaderText);
+
+        // "Crash details" label
+        AppendControl(buf, WS_CHILD | WS_VISIBLE | SS_LEFT, 0,
+            7, 99, kDlgW - 14, 9, 0xFFFF, kClassStatic, L"Crash details (select and copy, or use the buttons below):");
+
+        // Read-only multiline edit with the stack trace
+        AppendControl(buf,
+            WS_CHILD | WS_VISIBLE | WS_BORDER | WS_VSCROLL | WS_HSCROLL |
+            ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL | ES_AUTOHSCROLL,
+            0,
+            7, 110, kDlgW - 14, 126, IDC_DETAILS_EDIT, kClassEdit, L"");
+
+        // Bottom button row
+        constexpr int16_t kBtnY = kDlgH - 21;
+        AppendControl(buf, WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON, 0,
+            7, kBtnY, 70, 14, IDC_COPY_DETAILS, kClassButton, L"Copy Details");
+        AppendControl(buf, WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON, 0,
+            81, kBtnY, 88, 14, IDC_OPEN_MODLOADER_LOG, kClassButton, L"Open ModLoader.log");
+        AppendControl(buf, WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON, 0,
+            173, kBtnY, 88, 14, IDC_OPEN_GAME_LOG, kClassButton, L"Open StarRupture.log");
+        AppendControl(buf, WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON, 0,
+            kDlgW - 61, kBtnY, 54, 14, IDCANCEL, kClassButton, L"Close");
+
+        return buf;
+    }
+
+    // -----------------------------------------------------------------------
+    // Dialog procedure
+    // -----------------------------------------------------------------------
+
+    static INT_PTR CALLBACK DialogProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM lParam)
+    {
+        switch (msg)
+        {
+        case WM_INITDIALOG:
+        {
+            const auto* details = reinterpret_cast<const std::wstring*>(lParam);
+            SetWindowLongPtrW(hDlg, GWLP_USERDATA, lParam);
+            if (details)
+                SetDlgItemTextW(hDlg, IDC_DETAILS_EDIT, details->c_str());
+
+            // Monospace font for the details box so stack frames line up
+            HFONT mono = CreateFontW(-12, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+                DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+                CLEARTYPE_QUALITY, FIXED_PITCH | FF_MODERN, L"Consolas");
+            if (mono)
+                SendDlgItemMessageW(hDlg, IDC_DETAILS_EDIT, WM_SETFONT,
+                    reinterpret_cast<WPARAM>(mono), TRUE);
+
+            // Make sure the crashed game window doesn't keep us buried
+            SetForegroundWindow(hDlg);
+            return TRUE;
+        }
+
+        case WM_COMMAND:
+            switch (LOWORD(wParam))
+            {
+            case IDC_COPY_DETAILS:
+            {
+                const auto* details = reinterpret_cast<const std::wstring*>(
+                    GetWindowLongPtrW(hDlg, GWLP_USERDATA));
+                if (details)
+                    CopyToClipboard(hDlg, *details);
+                return TRUE;
+            }
+            case IDC_OPEN_MODLOADER_LOG:
+                OpenLogFile(hDlg, GetModLoaderLogPath());
+                return TRUE;
+            case IDC_OPEN_GAME_LOG:
+                OpenLogFile(hDlg, GetGameLogPath());
+                return TRUE;
+            case IDCANCEL:
+            case IDOK:
+                EndDialog(hDlg, 0);
+                return TRUE;
+            }
+            return FALSE;
+
+        case WM_CLOSE:
+            EndDialog(hDlg, 0);
+            return TRUE;
+        }
+        return FALSE;
+    }
+
+    void Show(const std::wstring& detailsText)
+    {
+        const std::vector<uint8_t> tmpl = BuildDialogTemplate();
+
+        const INT_PTR result = DialogBoxIndirectParamW(
+            GetModuleHandleW(nullptr),
+            reinterpret_cast<const DLGTEMPLATE*>(tmpl.data()),
+            nullptr,
+            DialogProc,
+            reinterpret_cast<LPARAM>(&detailsText));
+
+        if (result == -1)
+        {
+            // Dialog creation failed (crashing process can be in a bad state);
+            // fall back to the old plain message box so the user still sees something.
+            MessageBoxW(nullptr,
+                L"StarRupture has crashed.\n\n"
+                L"The ModLoader (or its plugins) may NOT be the cause -- the unmodified game "
+                L"can crash on its own.\n\n"
+                L"Automatic crash reporting is disabled because the ModLoader is installed; "
+                L"CreepyJar do not look at logs or saves from modded clients.\n\n"
+                L"Details were written to ModLoader\\Logs\\ModLoader.log.",
+                L"StarRupture ModLoader",
+                MB_OK | MB_ICONERROR | MB_TASKMODAL);
+        }
+    }
+}
+
+#endif // MODLOADER_CLIENT_BUILD
