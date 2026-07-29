@@ -287,6 +287,35 @@ namespace Hooks::Input
 		return s_graveVk;
 	}
 
+	// Windows reports the modifier keys through their *generic* virtual codes:
+	// a WM_KEYDOWN for either Shift arrives as VK_SHIFT, never VK_LSHIFT. The
+	// key table only holds the sided codes, so a plugin binding "LeftShift" or
+	// "LeftControl" as a plain key never saw its callback fire -- the lookup
+	// simply missed. (Combo strings like "Shift+K" were unaffected: those go
+	// through the modifier mask, not through this path.)
+	//
+	// The sided code is recovered from the message's scancode and extended-key
+	// bit, which is exactly what MAPVK_VSC_TO_VK_EX exists for. Ctrl and Alt
+	// are simpler -- only the right-hand key sets the extended bit.
+	int ResolveSidedVK(WPARAM wParam, LPARAM lParam)
+	{
+		const UINT vk       = static_cast<UINT>(wParam);
+		const UINT scancode = (static_cast<UINT>(lParam) & 0x00FF0000u) >> 16;
+		const bool extended = (lParam & 0x01000000) != 0;
+
+		switch (vk)
+		{
+		case VK_SHIFT:
+		{
+			const UINT sided = MapVirtualKeyW(scancode, MAPVK_VSC_TO_VK_EX);
+			return sided != 0 ? static_cast<int>(sided) : VK_LSHIFT;
+		}
+		case VK_CONTROL: return extended ? VK_RCONTROL : VK_LCONTROL;
+		case VK_MENU:    return extended ? VK_RMENU    : VK_LMENU;
+		default:         return static_cast<int>(vk);
+		}
+	}
+
 	EModKey VKToModKey(int vk)
 	{
 		if (vk == GraveVK())
@@ -754,12 +783,12 @@ namespace Hooks::Input
 		case WM_KEYDOWN:
 		case WM_SYSKEYDOWN:
 			if (lParam & (1 << 30)) return false; // auto-repeat
-			mk    = VKToModKey(static_cast<int>(wParam));
+			mk    = VKToModKey(ResolveSidedVK(wParam, lParam));
 			event = EModKeyEvent::Pressed;
 			break;
 		case WM_KEYUP:
 		case WM_SYSKEYUP:
-			mk    = VKToModKey(static_cast<int>(wParam));
+			mk    = VKToModKey(ResolveSidedVK(wParam, lParam));
 			event = EModKeyEvent::Released;
 			break;
 		case WM_LBUTTONDOWN: mk = EModKey::LeftMouseButton;   event = EModKeyEvent::Pressed;  break;

@@ -265,9 +265,18 @@
 //      Appended at the end of IPluginUIEvents, so nothing existing shifts:
 //      MIN remains 49.
 
+// v52: Added IModLoaderImGui::GetMouseWheel / GetMouseWheelH. The v36 mouse
+//      query block covers buttons, position, dragging and hovering but never
+//      exposed the wheel, so a plugin drawing its own scrollable or zoomable
+//      surface (a timeline, a map, a graph) had no way to read it at all --
+//      ImGui consumes the WM_MOUSEWHEEL itself and the plugin never sees the
+//      message. Both return the per-frame delta straight off ImGuiIO, in the
+//      usual ImGui units (one notch = 1.0). Appended at the end of the
+//      function table, which is append-only: MIN remains 49.
+
 #define PLUGIN_INTERFACE_VERSION_MIN 49
-#define PLUGIN_INTERFACE_VERSION_MAX 51
-#define PLUGIN_INTERFACE_VERSION 51
+#define PLUGIN_INTERFACE_VERSION_MAX 52
+#define PLUGIN_INTERFACE_VERSION 52
 
 enum class PluginLogLevel { Trace = 0, Debug = 1, Info = 2, Warn = 3, Error = 4 };
 enum class ConfigValueType { String, Integer, Float, Boolean, Keybind };
@@ -931,6 +940,16 @@ struct IModLoaderImGui
 	void (*DL_PopClipRect)(PluginDrawList dl);
 	void (*DL_GetClipRectMin)(PluginDrawList dl, float* out_x, float* out_y);
 	void (*DL_GetClipRectMax)(PluginDrawList dl, float* out_x, float* out_y);
+
+	// -------------------------------------------------------------------------
+	// v52: Mouse wheel
+	// -------------------------------------------------------------------------
+	// Per-frame wheel delta in ImGui units (one notch = 1.0), read straight off
+	// ImGuiIO. ImGui consumes WM_MOUSEWHEEL itself, so this is the only way a
+	// plugin can see the wheel at all -- needed by anything that draws its own
+	// zoomable or scrollable surface with the draw-list API.
+	float (*GetMouseWheel)();
+	float (*GetMouseWheelH)();
 };
 
 typedef void (*PluginImGuiRenderCallback)(IModLoaderImGui* imgui);

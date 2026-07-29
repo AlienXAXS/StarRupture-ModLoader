@@ -1761,6 +1761,11 @@ namespace ImGuiWrappers
 	static void DL_GetClipRectMax(PluginDrawList dl, float* ox, float* oy)
 	{ ImVec2 v = ((ImDrawList*)dl)->GetClipRectMax(); if (ox) *ox = v.x; if (oy) *oy = v.y; }
 
+	// v52 -- wheel deltas for this frame. Not reachable through any of the
+	// existing mouse queries, which only cover buttons and position.
+	static float GetMouseWheel()  { return ImGui::GetIO().MouseWheel; }
+	static float GetMouseWheelH() { return ImGui::GetIO().MouseWheelH; }
+
 	// v35 child windows (original placement)
 	static bool BeginChild(const char* id, float sx, float sy, bool border)
 	{
@@ -3019,6 +3024,10 @@ static void PopulateImGuiAPI()
 	g_imguiAPI.DL_PopClipRect = ImGuiWrappers::DL_PopClipRect;
 	g_imguiAPI.DL_GetClipRectMin = ImGuiWrappers::DL_GetClipRectMin;
 	g_imguiAPI.DL_GetClipRectMax = ImGuiWrappers::DL_GetClipRectMax;
+
+	// v52
+	g_imguiAPI.GetMouseWheel = ImGuiWrappers::GetMouseWheel;
+	g_imguiAPI.GetMouseWheelH = ImGuiWrappers::GetMouseWheelH;
 }
 
 // ---------------------------------------------------------------------------
