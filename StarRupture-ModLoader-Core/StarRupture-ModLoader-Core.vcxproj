@@ -418,6 +418,7 @@
     <ClInclude Include="hooks\game\crash_reporter\crash_dialog.h" />
     <ClInclude Include="hooks\game\console_command\console_command.h" />
     <ClInclude Include="hooks\game\crash_reporter\crash_reporter.h" />
+    <ClInclude Include="hooks\game\log_verbosity\log_verbosity.h" />
     <ClInclude Include="hooks\game\delegate_hook\delegate_hook.h" />
     <ClInclude Include="hooks\game\gobject_walk\gobject_walk.h" />
     <ClInclude Include="hooks\game\text_input_focus\text_input_focus.h" />
@@ -524,6 +525,7 @@
     <ClCompile Include="hooks\game\crash_reporter\crash_dialog.cpp" />
     <ClCompile Include="hooks\game\console_command\console_command.cpp" />
     <ClCompile Include="hooks\game\crash_reporter\crash_reporter.cpp" />
+    <ClCompile Include="hooks\game\log_verbosity\log_verbosity.cpp" />
     <ClCompile Include="hooks\game\delegate_hook\delegate_hook.cpp" />
     <ClCompile Include="hooks\game\gobject_walk\gobject_walk.cpp" />
     <ClCompile Include="hooks\game\text_input_focus\text_input_focus.cpp">

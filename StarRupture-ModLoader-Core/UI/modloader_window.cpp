@@ -13,11 +13,13 @@
 #include "logging/log.h"
 #include "hooks/input/keybind_registry.h"
 #include "console_window.h"
+#include "hooks/game/log_verbosity/log_verbosity.h"
 #include "tick_profiler_window.h"
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <iterator>
 #include <vector>
 #include <string>
 
@@ -850,6 +852,57 @@ namespace UI::ModLoaderWindow
         ImGui::TextDisabled("(?)");
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("Takes effect immediately. Persisted to modloader.ini.");
+
+        // Game-side UE log verbosity. Separate from the modloader's own log level
+        // above -- this raises the game's UE_LOG categories so their output reaches
+        // StarRupture.log.
+        {
+            using GameLevel = Hooks::LogVerbosity::Level;
+
+            static const char*     s_gameLevelNames[] = {
+                "Default", "Error", "Warning", "Display", "Log", "Verbose", "VeryVerbose"
+            };
+            static const GameLevel s_gameLevels[] = {
+                GameLevel::Default, GameLevel::Error,   GameLevel::Warning, GameLevel::Display,
+                GameLevel::Log,     GameLevel::Verbose, GameLevel::VeryVerbose
+            };
+            constexpr int kGameLevelCount = static_cast<int>(std::size(s_gameLevels));
+
+            const GameLevel current = Hooks::LogVerbosity::GetLevel();
+            int curIdx = 0;
+            for (int i = 0; i < kGameLevelCount; ++i)
+                if (s_gameLevels[i] == current) { curIdx = i; break; }
+
+            const bool available = Hooks::LogVerbosity::IsInstalled();
+            if (!available)
+                ImGui::BeginDisabled();
+
+            if (ImGui::Combo("Game Log Verbosity", &curIdx, s_gameLevelNames, kGameLevelCount))
+                Hooks::LogVerbosity::SetLevel(s_gameLevels[curIdx]);
+
+            if (!available)
+                ImGui::EndDisabled();
+
+            ImGui::SameLine();
+            ImGui::TextDisabled("(?)");
+            if (ImGui::IsItemHovered())
+            {
+                if (available)
+                    ImGui::SetTooltip(
+                        "Verbosity of the GAME's own UE log categories, written to\n"
+                        "StarRupture.log (not the modloader log above).\n\n"
+                        "'Default' leaves the game's shipped settings alone. Any other value\n"
+                        "applies to every log category at once, replacing whatever per-category\n"
+                        "levels the game configured -- each category is still capped at the\n"
+                        "verbosity it was compiled with, so nothing can exceed that.\n\n"
+                        "Takes effect immediately and is re-applied early on the next launch.\n"
+                        "Persisted to modloader.ini.");
+                else
+                    ImGui::SetTooltip(
+                        "Unavailable: the engine log-suppression symbols could not be\n"
+                        "resolved on this game build. See modloader.log for details.");
+            }
+        }
 
         ImGui::Spacing();
         ImGui::SeparatorText("Developer");

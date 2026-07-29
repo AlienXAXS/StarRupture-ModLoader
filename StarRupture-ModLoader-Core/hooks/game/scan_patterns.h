@@ -97,6 +97,33 @@ namespace ScanPatterns
 	//               FString* outResult, const FString* Command, bool bWriteToLog)
 	inline constexpr auto APlayerController_ConsoleCommand =
 		"40 53 48 83 EC 20 48 8B 89 ?? ?? ?? ?? 48 8B DA 48 85 C9 74 ?? E8 ?? ?? ?? ?? 48 8B C3 48 83 C4 20 5B C3 48 8D 15";
+	// FLogSuppressionImplementation::ApplyGlobalChanges -- pushes the static "Global"
+	// FLogCategoryBase's verbosity out to every registered log category, clamping each to
+	// its own compile-time verbosity. This is the machinery behind the engine's
+	// "Log global <verbosity>" console command; calling it directly avoids having to build
+	// an FString or reach the console.
+	// Also the source of the Global verbosity byte: the function's first
+	//   44 0F B6 15 <rel32>   movzx r10d, byte ptr [rip+rel32]
+	// resolves to it (Verbosity is at offset 0 of FLogCategoryBase in this build).
+	// Signature: void __fastcall FLogSuppressionImplementation::ApplyGlobalChanges(void* this)
+	inline constexpr auto FLogSuppression_ApplyGlobalChanges =
+		"48 89 4C 24 ?? 55 53 56 57 41 54 41 55 41 56 41 57 48 8D 6C 24 ?? 48 81 EC F8 00 00 00 65 48 8B 04 25";
+
+	// FLogSuppressionInterface::Get -- returns the FLogSuppressionImplementation singleton,
+	// lazily constructing it. Usable directly as the `this` for ApplyGlobalChanges.
+	// The signature is unusually long because the TLS-guarded lazy-singleton prologue is
+	// shared verbatim by many other getters in the binary -- a shorter prefix is ambiguous
+	// and would resolve to the wrong function.
+	// Signature: void* __fastcall FLogSuppressionInterface::Get()
+	inline constexpr auto FLogSuppression_Get =
+		"48 83 EC 28 8B 0D ?? ?? ?? ?? 65 48 8B 04 25 ?? ?? ?? ?? BA B0 17 00 00 48 8B 04 C8 8B 04 02 39 05 ?? ?? ?? ?? 7F ?? 48 8B 05 ?? ?? ?? ?? 48 85 C0 75 ?? 4C 8D 0D ?? ?? ?? ?? 44 8D 40 ?? 48 8D 15 ?? ?? ?? ?? 48 8D 0D ?? ?? ?? ?? E8 ?? ?? ?? ?? 84 C0 74 ?? 90 CC 48 8B 05 ?? ?? ?? ?? 48 83 C4 28 C3";
+
+	// FLogSuppressionImplementation::ProcessConfigAndCommandLine -- applies [Core.Log] and
+	// -LogCmds during FEngineLoop::PreInit. Anything set before this runs is overwritten,
+	// so the verbosity override is (re)applied from a detour on return.
+	// Signature: void __fastcall FLogSuppressionImplementation::ProcessConfigAndCommandLine(void* this)
+	inline constexpr auto FLogSuppression_ProcessConfigAndCommandLine =
+		"48 89 5C 24 ?? 55 57 41 54 41 55 41 57 48 8D AC 24 ?? ?? ?? ?? 48 81 EC C0 01 00 00";
 #endif
 
 	// UObject::ProcessEvent -- called for every UFUNCTION dispatch in the game.
@@ -331,6 +358,9 @@ namespace ScanPatterns
 		{ "ReportCrashUsingCrashReportClient",         ReportCrashUsingCrashReportClient,        true },
 		{ "HandleCrashInternal_FatalReportCallSite",   HandleCrashInternal_FatalReportCallSite,  true },
 		{ "APlayerController::ConsoleCommand",         APlayerController_ConsoleCommand,         true },
+		{ "FLogSuppressionImplementation::ApplyGlobalChanges",           FLogSuppression_ApplyGlobalChanges,           true },
+		{ "FLogSuppressionInterface::Get",                               FLogSuppression_Get,                          true },
+		{ "FLogSuppressionImplementation::ProcessConfigAndCommandLine",  FLogSuppression_ProcessConfigAndCommandLine,  true },
 #endif
 
 #if defined(MODLOADER_SERVER_BUILD)

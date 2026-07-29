@@ -76,6 +76,9 @@
     <Filter Include="Source Files\hooks\game\crash_reporter">
       <UniqueIdentifier>{9c1d2e3f-4a5b-6c7d-8e9f-0a1b2c3d4e5f}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Source Files\hooks\game\log_verbosity">
+      <UniqueIdentifier>{3b7e91c4-5d2a-4f18-9c6b-7a0e4d15f832}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Source Files\hooks\game\gobject_walk">
       <UniqueIdentifier>{2f4a7d9b-6c8e-4a1f-b3d2-9e5c7a8f0d1b}</UniqueIdentifier>
     </Filter>
@@ -233,6 +236,9 @@
     </ClInclude>
     <ClInclude Include="hooks\game\crash_reporter\crash_reporter.h">
       <Filter>Source Files\hooks\game\crash_reporter</Filter>
+    </ClInclude>
+    <ClInclude Include="hooks\game\log_verbosity\log_verbosity.h">
+      <Filter>Source Files\hooks\game\log_verbosity</Filter>
     </ClInclude>
     <ClInclude Include="hooks\game\gobject_walk\gobject_walk.h">
       <Filter>Source Files\hooks\game\gobject_walk</Filter>
@@ -496,6 +502,9 @@
     </ClCompile>
     <ClCompile Include="hooks\game\crash_reporter\crash_reporter.cpp">
       <Filter>Source Files\hooks\game\crash_reporter</Filter>
+    </ClCompile>
+    <ClCompile Include="hooks\game\log_verbosity\log_verbosity.cpp">
+      <Filter>Source Files\hooks\game\log_verbosity</Filter>
     </ClCompile>
     <ClCompile Include="hooks\game\gobject_walk\gobject_walk.cpp">
       <Filter>Source Files\hooks\game\gobject_walk</Filter>

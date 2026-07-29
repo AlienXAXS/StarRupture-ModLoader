@@ -29,6 +29,7 @@
 
 #ifdef MODLOADER_CLIENT_BUILD
 #include "../hooks/game/crash_reporter/crash_reporter.h"
+#include "../hooks/game/log_verbosity/log_verbosity.h"
 #endif
 
 void InstallAllHooks()
@@ -36,6 +37,16 @@ void InstallAllHooks()
     ModLoaderLogger::LogMessage(L"Installing core game hooks...");
 
 #ifdef MODLOADER_CLIENT_BUILD
+    // First: this detours FLogSuppressionImplementation::ProcessConfigAndCommandLine,
+    // which runs during FEngineLoop::PreInit. Installing it before anything else gives
+    // the best chance of landing ahead of PreInit and having the override survive.
+    Splash::SetStatus(L"Installing LogVerbosity hook...");
+
+    if (Hooks::LogVerbosity::Install())
+        ModLoaderLogger::LogDebug(L"  LogVerbosity hook installed");
+    else
+        ModLoaderLogger::LogWarn(L"  WARNING: LogVerbosity hook failed -- game log verbosity control unavailable");
+
     Splash::SetStatus(L"Installing CrashReporter hook...");
 
     if (Hooks::CrashReporter::Install())
