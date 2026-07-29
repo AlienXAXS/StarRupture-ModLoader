@@ -6,6 +6,7 @@
 
 #include <windows.h>
 #include <mutex>
+#include <set>
 #include <map>
 #include <unordered_map>
 #include <string>
@@ -156,6 +157,10 @@ namespace Hooks::Input
 
 	static constexpr int TABLE_SIZE = static_cast<int>(sizeof(s_keyTable) / sizeof(s_keyTable[0]));
 
+	// Defined below -- resolves EModKey::Tilde's VK for the active layout.
+	static int GraveVK();
+	bool IsTypingExempt(EModKey key);
+
 	// -----------------------------------------------------------------------
 	// Callback storage
 	// -----------------------------------------------------------------------
@@ -224,14 +229,69 @@ namespace Hooks::Input
 	// -----------------------------------------------------------------------
 	int ModKeyToVK(EModKey key)
 	{
+		if (key == EModKey::Tilde)
+			return GraveVK();
+
 		uint32_t idx = static_cast<uint32_t>(key);
 		if (static_cast<int>(idx) >= TABLE_SIZE)
 			return 0;
 		return s_keyTable[idx].vk;
 	}
 
+	// -----------------------------------------------------------------------
+	// Layout-aware "Tilde"
+	//
+	// EModKey::Tilde means the physical key below Escape. Its virtual-key code
+	// is layout-dependent: VK_OEM_3 on US layouts, VK_OEM_8 on UK/IE ones
+	// (where VK_OEM_3 is the '/@ key instead). Binding the static table entry
+	// alone therefore silently does nothing on a UK keyboard.
+	//
+	// The scancode is stable across layouts -- 0x29 is always that physical
+	// key -- so resolve the VK from the scancode once and use it for Tilde in
+	// both directions.
+	// -----------------------------------------------------------------------
+	// -----------------------------------------------------------------------
+	// Typing exemptions
+	//
+	// Keys registered here still fire their keybind while a text field has
+	// focus, exactly like Escape. Intended for toggle keys that must dismiss
+	// the very window whose text box is focused -- the developer console's
+	// open key being the motivating case: with the console open and its
+	// prompt focused, Tilde has to close it rather than type a character.
+	//
+	// Callers add the key only while that window is open, so the key behaves
+	// normally (i.e. types) everywhere else.
+	// -----------------------------------------------------------------------
+	static std::set<EModKey> s_typingExempt;
+
+	void SetTypingExempt(EModKey key, bool exempt)
+	{
+		std::lock_guard<std::mutex> lock(s_mutex);
+		if (exempt) s_typingExempt.insert(key);
+		else        s_typingExempt.erase(key);
+	}
+
+	bool IsTypingExempt(EModKey key)
+	{
+		std::lock_guard<std::mutex> lock(s_mutex);
+		return s_typingExempt.find(key) != s_typingExempt.end();
+	}
+
+	static int GraveVK()
+	{
+		static const int s_graveVk = []
+		{
+			const UINT vk = MapVirtualKeyW(0x29 /* scancode below Esc */, MAPVK_VSC_TO_VK);
+			return vk ? static_cast<int>(vk) : VK_OEM_3;
+		}();
+		return s_graveVk;
+	}
+
 	EModKey VKToModKey(int vk)
 	{
+		if (vk == GraveVK())
+			return EModKey::Tilde;
+
 		for (int i = 0; i < TABLE_SIZE; ++i)
 		{
 			if (s_keyTable[i].vk == vk)
@@ -733,13 +793,15 @@ namespace Hooks::Input
 		// inside a modloader/plugin panel -- e.g. a plugin bound to "P"
 		// must not close its own panel when the player types "Port" into a
 		// text box inside that panel. Escape is exempt: it must still be
-		// able to close a window while a text field is focused.
+		// able to close a window while a text field is focused, as are
+		// any keys registered via SetTypingExempt.
 		// Returning false (not blocked) lets the keystroke flow on to the
 		// game/ImGui so it reaches the text box.  Only Pressed is gated:
 		// letting Released through means a key held when focus changed does
 		// not get stuck down in a plugin's view.  Mouse buttons are unaffected.
 		if ((msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN) &&
 		    mk != EModKey::Escape &&
+		    !IsTypingExempt(mk) &&
 		    HasAnyRegistrationForKey(mk) &&
 		    (Hooks::TextInputFocus::IsGameTextInputFocused() || UI::ImGuiBackend::IsTextInputActive()))
 			return false;

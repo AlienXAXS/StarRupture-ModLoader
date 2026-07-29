@@ -73,6 +73,16 @@ namespace Hooks::Input
 	// Returns false (non-blocking) by default when no entry exists.
 	bool ShouldBlock(EModKey key, EModKeyModifiers mods);
 
+	// --- Typing exemptions ---
+	// By default a keybind does not fire while a game or ImGui text field has
+	// focus, so typing "Port" into a box cannot trigger a plugin bound to "P".
+	// Escape is always exempt; register additional keys here when a toggle key
+	// must be able to dismiss the very window whose text box is focused (the
+	// developer console's open key). Add on open, remove on close, so the key
+	// still types normally everywhere else.
+	void SetTypingExempt(EModKey key, bool exempt);
+	bool IsTypingExempt(EModKey key);
+
 	// --- Dispatch ---
 	// Fires simple callbacks (mod-unaware).
 	void Dispatch(EModKey key, EModKeyEvent event);

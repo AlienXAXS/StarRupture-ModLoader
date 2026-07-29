@@ -12,6 +12,7 @@
 #include "update_notice_window.h"
 #include "logging/log.h"
 #include "hooks/input/keybind_registry.h"
+#include "console_window.h"
 #include "tick_profiler_window.h"
 #include <cmath>
 #include <cstdio>
@@ -849,6 +850,16 @@ namespace UI::ModLoaderWindow
         ImGui::TextDisabled("(?)");
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("Takes effect immediately. Persisted to modloader.ini.");
+
+        ImGui::Spacing();
+        ImGui::SeparatorText("Developer");
+        ImGui::Spacing();
+
+        ImGui::TextDisabled("Developer console: press %s to open.",
+                            UI::ConsoleWindow::GetOpenKeyName());
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Open"))
+            UI::ConsoleWindow::Open();
 
         ImGui::Spacing();
         ImGui::SeparatorText("Diagnostics");
