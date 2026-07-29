@@ -155,15 +155,27 @@ namespace Hooks::DebugDraw
     // DrawDebugString does -- AHUD::DrawDebugTextList is still live and renders
     // it. Independent of the line batchers; FlushPersistentLines does not clear
     // these, ClearAllStrings does.
-    // testBaseActor may be null (the text is then placed at an absolute location).
+    // testBaseActor may be null, in which case the WorldSettings actor is
+    // substituted as the anchor and the text is placed at an absolute world
+    // location -- exactly what the engine's own DrawDebugString does. The
+    // substitution is not cosmetic: AHUD::DrawDebugTextList skips and then
+    // deletes any list entry whose SrcActor is null, so passing one straight
+    // through means the text is silently dropped on the next HUD render.
     //
     // duration uses the HUD's rule, NOT the line batcher's: DrawDebugTextList
     // guards its countdown with "if (-1.0 != TimeRemaining)", so only exactly
     // -1.0f means "never expire". Anything else counts down, including 0, which
     // disappears on the next HUD render. (The line batcher, by contrast, leaves
     // anything <= 0 alone forever.)
+    //
+    // fontScale multiplies the text size directly -- DrawDebugTextList assigns
+    // it straight to FCanvasTextItem::Scale with no distance falloff and no
+    // clamping, so 2.0f is exactly twice the size at any range. 1.0f is the
+    // engine's small font at native size; anything <= 0 is treated as 1.0f so a
+    // zeroed style can't produce invisible text. The font itself is always
+    // UEngine::GetSmallFont() (AHUD's InFont parameter is left null).
     void DrawString(const DVec& location, const wchar_t* text, void* testBaseActor,
-                    const DColor& color, float duration);
+                    const DColor& color, float duration, float fontScale);
 
     void ClearAllStrings();
 

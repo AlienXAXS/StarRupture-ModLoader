@@ -774,19 +774,53 @@ namespace Hooks::DebugDraw
         return static_cast<uint8_t>((v < 0) ? 0 : ((v > 255) ? 255 : v));
     }
 
-    static bool AddDebugTextSEH(const wchar_t* text, void* srcActor, float duration,
-                                double lx, double ly, double lz,
-                                uint8_t r, uint8_t g, uint8_t b, uint8_t a)
+    // Distinct results so a silent failure is identifiable from modloader.log
+    // rather than needing a debugger.
+    enum class TextResult
+    {
+        Ok,
+        NoWorld,
+        NoPlayerController,
+        NoHUD,
+        NoBaseActor,
+        Faulted,
+    };
+
+    static TextResult AddDebugTextSEH(const wchar_t* text, void* srcActor, float duration,
+                                      double lx, double ly, double lz,
+                                      uint8_t r, uint8_t g, uint8_t b, uint8_t a,
+                                      float fontScale)
     {
         __try
         {
             SDK::UWorld* world = SDK::UWorld::GetWorld();
             if (!world)
-                return false;
+                return TextResult::NoWorld;
 
             SDK::APlayerController* pc = SDK::UGameplayStatics::GetPlayerController(world, 0);
-            if (!pc || !pc->MyHUD)
-                return false;
+            if (!pc)
+                return TextResult::NoPlayerController;
+            if (!pc->MyHUD)
+                return TextResult::NoHUD;
+
+            // SrcActor must never be null. AHUD::DrawDebugTextList checks it at
+            // the very top of its per-entry loop (offset 0 of FDebugTextInfo)
+            // and skips -- then removes -- any entry whose actor is gone, so a
+            // null one is silently discarded on the next HUD render and nothing
+            // is ever drawn.
+            //
+            // The engine has the same constraint and works around it the same
+            // way: DrawDebugHelpers' DrawDebugString substitutes
+            // InWorld->GetWorldSettings() when the caller gives no base actor,
+            // and sets bAbsoluteLocation so the offset is read as a world
+            // position rather than relative to that stand-in.
+            SDK::AActor* baseActor = static_cast<SDK::AActor*>(srcActor);
+            if (!baseActor)
+            {
+                baseActor = world->K2_GetWorldSettings();
+                if (!baseActor)
+                    return TextResult::NoBaseActor;
+            }
 
             // Non-owning FString over the caller's buffer. AHUD::AddDebugText
             // deep-copies into its FDebugTextInfo list, and ProcessEvent uses
@@ -801,36 +835,68 @@ namespace Hooks::DebugDraw
             color.A = a;
 
             pc->MyHUD->AddDebugText(debugText,
-                                    static_cast<SDK::AActor*>(srcActor),
+                                    baseActor,
                                     duration,
                                     location,
                                     location,
                                     color,
                                     /*bSkipOverwriteCheck*/ true,
+                                    // Absolute whenever the caller gave us no
+                                    // actor of their own -- the stand-in above
+                                    // is a placeholder, not a real anchor.
                                     /*bAbsoluteLocation*/   srcActor == nullptr,
                                     /*bKeepAttachedToActor*/false,
+                                    // Null font -> DrawDebugTextList falls back
+                                    // to UEngine::GetSmallFont().
                                     /*InFont*/              nullptr,
-                                    /*FontScale*/           1.0f,
+                                    /*FontScale*/           fontScale,
                                     /*bDrawShadow*/         false);
-            return true;
+            return TextResult::Ok;
         }
         __except (EXCEPTION_EXECUTE_HANDLER)
         {
-            return false;
+            return TextResult::Faulted;
         }
     }
 
     void DrawString(const DVec& location, const wchar_t* text, void* testBaseActor,
-                    const DColor& color, float duration)
+                    const DColor& color, float duration, float fontScale)
     {
         if (!text || !text[0])
             return;
 
-        if (!AddDebugTextSEH(text, testBaseActor, duration,
-                             location.x, location.y, location.z,
-                             LinearToSRGB(color.r), LinearToSRGB(color.g),
-                             LinearToSRGB(color.b), LinearToSRGB(color.a)))
-            ModLoaderLogger::LogWarn(L"[DebugDraw] DrawString: no HUD available (or the call faulted)");
+        // A zeroed style would otherwise render at scale 0, i.e. invisible.
+        if (fontScale <= 0.0f)
+            fontScale = 1.0f;
+
+        const TextResult result = AddDebugTextSEH(text, testBaseActor, duration,
+                                                  location.x, location.y, location.z,
+                                                  LinearToSRGB(color.r), LinearToSRGB(color.g),
+                                                  LinearToSRGB(color.b), LinearToSRGB(color.a),
+                                                  fontScale);
+
+        switch (result)
+        {
+        case TextResult::Ok:
+            break;
+        case TextResult::NoWorld:
+            ModLoaderLogger::LogWarn(L"[DebugDraw] DrawString: no UWorld");
+            break;
+        case TextResult::NoPlayerController:
+            ModLoaderLogger::LogWarn(L"[DebugDraw] DrawString: no local PlayerController");
+            break;
+        case TextResult::NoHUD:
+            ModLoaderLogger::LogWarn(
+                L"[DebugDraw] DrawString: PlayerController has no MyHUD -- debug text needs an AHUD");
+            break;
+        case TextResult::NoBaseActor:
+            ModLoaderLogger::LogWarn(
+                L"[DebugDraw] DrawString: no WorldSettings actor to anchor absolute text to");
+            break;
+        case TextResult::Faulted:
+            ModLoaderLogger::LogError(L"[DebugDraw] DrawString: exception in AHUD::AddDebugText");
+            break;
+        }
     }
 
     static void ClearAllStringsSEH()
@@ -1071,7 +1137,9 @@ namespace Hooks::DebugDraw
             // -1 exactly: AHUD::DrawDebugTextList guards its countdown with
             // "if (-1.0 != TimeRemaining)", so unlike the line batcher (which
             // treats anything <= 0 as permanent) a 0 here would expire at once.
-            DrawString(DVec{ at.x, at.y, at.z + 140.0 }, text, nullptr, labelColor, -1.0f);
+            // 1.5x scale because the small font is genuinely hard to spot at
+            // the ~7m this row is placed at.
+            DrawString(DVec{ at.x, at.y, at.z + 140.0 }, text, nullptr, labelColor, -1.0f, 1.5f);
         };
 
         // Line
