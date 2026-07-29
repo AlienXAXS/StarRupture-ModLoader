@@ -12,6 +12,7 @@
 #include "update_notice_window.h"
 #include "logging/log.h"
 #include "hooks/input/keybind_registry.h"
+#include "console_window.h"
 #include "hooks/game/log_verbosity/log_verbosity.h"
 #include "tick_profiler_window.h"
 #include <cmath>
@@ -902,6 +903,16 @@ namespace UI::ModLoaderWindow
                         "resolved on this game build. See modloader.log for details.");
             }
         }
+
+        ImGui::Spacing();
+        ImGui::SeparatorText("Developer");
+        ImGui::Spacing();
+
+        ImGui::TextDisabled("Developer console: press %s to open.",
+                            UI::ConsoleWindow::GetOpenKeyName());
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Open"))
+            UI::ConsoleWindow::Open();
 
         ImGui::Spacing();
         ImGui::SeparatorText("Diagnostics");

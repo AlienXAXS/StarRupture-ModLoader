@@ -217,6 +217,58 @@ namespace
 // ---------------------------------------------------------------------------
 // WndProc subclass -- forwards messages to ImGui, swallows input when UI open
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Cursor clip save/restore
+//
+// While any modloader UI surface is open we call ClipCursor(nullptr) so the
+// user can reach our windows freely. UE5 does not notice that its clip was
+// dropped -- it only re-establishes one when the viewport re-acquires mouse
+// capture, which happens on the next click *inside* the window. That left the
+// cursor able to wander off the game window after closing our UI, and a click
+// out there lands on the desktop, unfocusing or minimising the game.
+//
+// So we save whether the game had a real clip when our UI opened, and put an
+// equivalent one back when it closes. The rect is recomputed from the current
+// client area rather than replayed verbatim, in case the window moved or
+// resized while the UI was open.
+//
+// Windows drops the clip whenever the window loses activation, so the restore
+// is also re-asserted on WM_ACTIVATE/WM_SETFOCUS.
+// ---------------------------------------------------------------------------
+static bool g_hadGameClip = false;   // game had a real cursor clip before we cleared it
+static bool g_prevUiOpen  = false;   // previous frame's ShouldCaptureInput()
+
+// A clip covering the whole virtual desktop is Windows' way of saying
+// "unclipped", so treat that as no clip.
+static bool IsRealClip(const RECT& r)
+{
+    const int vx = GetSystemMetrics(SM_XVIRTUALSCREEN);
+    const int vy = GetSystemMetrics(SM_YVIRTUALSCREEN);
+    const int vw = GetSystemMetrics(SM_CXVIRTUALSCREEN);
+    const int vh = GetSystemMetrics(SM_CYVIRTUALSCREEN);
+    return !(r.left <= vx && r.top <= vy && r.right >= vx + vw && r.bottom >= vy + vh);
+}
+
+// Re-clip the cursor to the game's client area. No-ops unless the game had a
+// clip when our UI opened and its window is currently in the foreground --
+// never trap the cursor for a background/alt-tabbed game.
+static void RestoreGameCursorClip()
+{
+    if (!g_hadGameClip || !g_hwnd)             return;
+    if (GetForegroundWindow() != g_hwnd)       return;
+
+    RECT client{};
+    if (!GetClientRect(g_hwnd, &client))       return;
+
+    POINT tl{ client.left,  client.top };
+    POINT br{ client.right, client.bottom };
+    if (!ClientToScreen(g_hwnd, &tl))          return;
+    if (!ClientToScreen(g_hwnd, &br))          return;
+
+    const RECT screenRect{ tl.x, tl.y, br.x, br.y };
+    ClipCursor(&screenRect);
+}
+
 static LRESULT CALLBACK HookedWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
 	// Dispatch plugin keybind callbacks unconditionally so that toggle-style
@@ -277,6 +329,14 @@ static LRESULT CALLBACK HookedWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 		default:
 			break;
 		}
+	}
+
+	// Windows clears any cursor clip when the window is deactivated, so put
+	// ours back once the game is focused again and our UI is not open.
+	if (!capturing &&
+	    ((msg == WM_ACTIVATE && LOWORD(wParam) != WA_INACTIVE) || msg == WM_SETFOCUS))
+	{
+		RestoreGameCursorClip();
 	}
 
 	return CallWindowProcW(g_origWndProc, hWnd, msg, wParam, lParam);
@@ -1170,13 +1230,28 @@ static HRESULT STDMETHODCALLTYPE HookedPresent(IDXGISwapChain* swapChain, UINT s
 		{
 			frameIO.ConfigFlags &= ~ImGuiConfigFlags_NoMouseCursorChange;
 			frameIO.MouseDrawCursor = true;
+
+			// Only sample the game's clip on the closed -> open edge; by the
+			// second frame the clip is already ours to manage.
+			if (!g_prevUiOpen)
+			{
+				RECT existing{};
+				g_hadGameClip = GetClipCursor(&existing) && IsRealClip(existing);
+			}
 			ClipCursor(nullptr);
 		}
 		else
 		{
 			frameIO.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
 			frameIO.MouseDrawCursor = false;
+
+			// open -> closed edge: hand the cursor back to the game. ClipCursor
+			// pulls the cursor inside the rect if it had already escaped, so
+			// this also recovers a cursor sitting outside the window.
+			if (g_prevUiOpen)
+				RestoreGameCursorClip();
 		}
+		g_prevUiOpen = uiOpen;
 
 		// Rebuild font atlas if the user changed the font family.
 		// Must happen before NewFrame to avoid using a destroyed font texture.

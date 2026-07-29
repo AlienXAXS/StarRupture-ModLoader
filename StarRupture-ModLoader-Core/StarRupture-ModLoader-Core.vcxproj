@@ -416,6 +416,7 @@
     <ClInclude Include="hooks\game\actor_begin_play\actor_begin_play.h" />
     <ClInclude Include="hooks\game\crafting_finished\crafting_finished.h" />
     <ClInclude Include="hooks\game\crash_reporter\crash_dialog.h" />
+    <ClInclude Include="hooks\game\console_command\console_command.h" />
     <ClInclude Include="hooks\game\crash_reporter\crash_reporter.h" />
     <ClInclude Include="hooks\game\log_verbosity\log_verbosity.h" />
     <ClInclude Include="hooks\game\delegate_hook\delegate_hook.h" />
@@ -455,6 +456,7 @@
     <ClInclude Include="network_channel\network_channel.h" />
     <ClInclude Include="plugins\plugin_network_helpers.h" />
     <ClInclude Include="UI\imgui_backend.h" />
+    <ClInclude Include="UI\console_window.h" />
     <ClInclude Include="UI\global_settings.h" />
     <ClInclude Include="UI\theme.h" />
     <ClInclude Include="UI\modloader_window.h" />
@@ -521,6 +523,7 @@
     <ClCompile Include="hooks\game\actor_begin_play\actor_begin_play.cpp" />
     <ClCompile Include="hooks\game\crafting_finished\crafting_finished.cpp" />
     <ClCompile Include="hooks\game\crash_reporter\crash_dialog.cpp" />
+    <ClCompile Include="hooks\game\console_command\console_command.cpp" />
     <ClCompile Include="hooks\game\crash_reporter\crash_reporter.cpp" />
     <ClCompile Include="hooks\game\log_verbosity\log_verbosity.cpp" />
     <ClCompile Include="hooks\game\delegate_hook\delegate_hook.cpp" />
@@ -569,6 +572,9 @@
       <ExcludedFromBuild Condition="'$(Configuration)' != 'Client Debug' And '$(Configuration)' != 'Client Release' And '$(Configuration)' != 'Local SDK Client Debug' And '$(Configuration)' != 'Local SDK Client Release'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="UI\imgui_backend_shim.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)' != 'Client Debug' And '$(Configuration)' != 'Client Release' And '$(Configuration)' != 'Local SDK Client Debug' And '$(Configuration)' != 'Local SDK Client Release'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="UI\console_window.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)' != 'Client Debug' And '$(Configuration)' != 'Client Release' And '$(Configuration)' != 'Local SDK Client Debug' And '$(Configuration)' != 'Local SDK Client Release'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="UI\global_settings.cpp">

@@ -87,6 +87,16 @@ namespace ScanPatterns
 		"44 38 2D ?? ?? ?? ?? 48 8D 4C 24 30 74 0E 49 8B 56 28 45 33 C0 E8 ?? ?? ?? ??";
 	inline constexpr int HandleCrashInternal_FatalReportCallSite_Length = 26;
 
+	// APlayerController::ConsoleCommand -- runs a console command and returns the engine's
+	// output. Used by the ModLoader's own developer console; the game's built-in UConsole
+	// cannot be revived on this build because its input and render dispatch are compiled
+	// out (UGameViewportClient::InputKey has no ViewportConsole access, PostRender_Console
+	// has zero callers, and nothing reads UInputSettings::ConsoleKeys).
+	// Returns FString by value, so MSVC x64 puts a hidden return pointer in RDX:
+	// Signature: FString* __fastcall APlayerController::ConsoleCommand(APlayerController* this,
+	//               FString* outResult, const FString* Command, bool bWriteToLog)
+	inline constexpr auto APlayerController_ConsoleCommand =
+		"40 53 48 83 EC 20 48 8B 89 ?? ?? ?? ?? 48 8B DA 48 85 C9 74 ?? E8 ?? ?? ?? ?? 48 8B C3 48 83 C4 20 5B C3 48 8D 15";
 	// FLogSuppressionImplementation::ApplyGlobalChanges -- pushes the static "Global"
 	// FLogCategoryBase's verbosity out to every registered log category, clamping each to
 	// its own compile-time verbosity. This is the machinery behind the engine's
@@ -347,6 +357,7 @@ namespace ScanPatterns
 		{ "UGameViewportClient::InputKey",             UGameViewportClient_InputKey,             true },
 		{ "ReportCrashUsingCrashReportClient",         ReportCrashUsingCrashReportClient,        true },
 		{ "HandleCrashInternal_FatalReportCallSite",   HandleCrashInternal_FatalReportCallSite,  true },
+		{ "APlayerController::ConsoleCommand",         APlayerController_ConsoleCommand,         true },
 		{ "FLogSuppressionImplementation::ApplyGlobalChanges",           FLogSuppression_ApplyGlobalChanges,           true },
 		{ "FLogSuppressionInterface::Get",                               FLogSuppression_Get,                          true },
 		{ "FLogSuppressionImplementation::ProcessConfigAndCommandLine",  FLogSuppression_ProcessConfigAndCommandLine,  true },

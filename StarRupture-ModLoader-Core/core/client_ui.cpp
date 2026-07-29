@@ -12,6 +12,7 @@
 #include "../UI/global_settings.h"
 #include "../UI/imgui_backend.h"
 #include "../UI/imgui_host_interface.h"
+#include "../UI/console_window.h"
 #include "../UI/modloader_window.h"
 #include "../UI/overlay.h"
 #include "../UI/plugin_panel_registry.h"
@@ -55,6 +56,9 @@ void InitClientUI()
         Hooks::Input::RegisterKeybind(s_openKey, EModKeyEvent::Pressed,
             [](EModKey, EModKeyEvent) { UI::ModLoaderWindow::Toggle(); });
 
+        // Developer console -- opt-in, registers its own open key (default Tilde).
+        UI::ConsoleWindow::Load(iniPath.c_str());
+
         ImGuiRenderCallbacks cbs{};
         cbs.RenderFrame = [](IModLoaderImGui* api)
         {
@@ -74,6 +78,7 @@ void InitClientUI()
             UI::ModLoaderWindow::Render(api);
             UI::UpdateNoticeWindow::Render();
             UI::TickProfilerWindow::Render();
+            UI::ConsoleWindow::Render();
             UI::PluginPanelRegistry::RenderPanelWindows(api);
             UI::PluginWidgetRegistry::RenderWidgets(api);
         };
@@ -86,6 +91,7 @@ void InitClientUI()
             return UI::ModLoaderWindow::IsOpen()
                 || UI::UpdateNoticeWindow::IsOpen()
                 || UI::TickProfilerWindow::IsOpen()
+                || UI::ConsoleWindow::IsOpen()
                 || UI::PluginPanelRegistry::AnyPanelOpen()
                 || UI::PluginPanelRegistry::AnyInputCaptureRequested();
         };
