@@ -97,6 +97,29 @@ namespace ScanPatterns
 	//               FString* outResult, const FString* Command, bool bWriteToLog)
 	inline constexpr auto APlayerController_ConsoleCommand =
 		"40 53 48 83 EC 20 48 8B 89 ?? ?? ?? ?? 48 8B DA 48 85 C9 74 ?? E8 ?? ?? ?? ?? 48 8B C3 48 83 C4 20 5B C3 48 8D 15";
+	// ULineBatchComponent::DrawLines -- appends a batch of FBatchedLine into the
+	// component's BatchedLines array (offset 0x530) and marks the render state dirty.
+	// This is the only in-world line-drawing entry point that survived Shipping:
+	// ENABLE_DRAW_DEBUG is 0, so every UKismetSystemLibrary::DrawDebug* body compiled
+	// away to nothing and DrawDebugHelpers.cpp's free functions are absent entirely,
+	// but the batchers themselves are alive -- UWorld::UpdateWorldComponents NewObject's
+	// all four of UWorld::LineBatchers[4] and UGameViewportClient::Draw flushes the
+	// per-frame pair every frame.
+	// MSVC x64 passes the 16-byte TArrayView indirectly, so RDX is a pointer to it
+	// (the function reads the element count from [rdx+8]).
+	// Signature: void __fastcall ULineBatchComponent::DrawLines(ULineBatchComponent* this,
+	//               const TArrayView<FBatchedLine, int32>* InLines)
+	inline constexpr auto ULineBatchComponent_DrawLines =
+		"48 89 5C 24 08 48 89 6C 24 10 48 89 74 24 18 57 48 83 EC 30 48 63 5A 08 48 8B F2 48 8B F9 85 DB 79 ?? 4C 8D 0D ?? ?? ?? ?? 48 89 5C 24 20";
+
+	// ULineBatchComponent::Flush -- empties BatchedLines/Points/Meshes and marks the
+	// render state dirty. Used to clear the two persistent batchers, which is what the
+	// engine's own FLUSHPERSISTENTDEBUGLINES exec handler does (it flushes
+	// LineBatchers[1] and LineBatchers[3]).
+	// Signature: void __fastcall ULineBatchComponent::Flush(ULineBatchComponent* this)
+	inline constexpr auto ULineBatchComponent_Flush =
+		"40 53 48 83 EC 30 83 B9 ?? ?? ?? ?? 00 48 8B D9 7F ?? 83 B9 ?? ?? ?? ?? 00 7F ?? 83 B9 ?? ?? ?? ?? 00 0F 8E";
+
 	// FLogSuppressionImplementation::ApplyGlobalChanges -- pushes the static "Global"
 	// FLogCategoryBase's verbosity out to every registered log category, clamping each to
 	// its own compile-time verbosity. This is the machinery behind the engine's
@@ -298,9 +321,12 @@ namespace ScanPatterns
 	// modloader logs every failure and disables itself entirely (no hooks,
 	// no plugins) so the game never runs partially hooked.
 	//
-	// required = false marks reference-only patterns that no modloader code
-	// currently resolves -- they are still scanned and logged (as warnings)
-	// but do not disable the modloader when missing.
+	// required = false marks patterns whose absence is not fatal: either
+	// reference-only patterns that no modloader code currently resolves, or
+	// optional capabilities that degrade on their own (the debug-draw entry
+	// points below just make in-world drawing unavailable to plugins). Both
+	// are still scanned and logged as warnings, but neither disables the
+	// modloader when missing.
 	//
 	// When adding a new pattern, add it to this table with the same
 	// MODLOADER_CLIENT_BUILD / MODLOADER_SERVER_BUILD gating as its
@@ -361,6 +387,10 @@ namespace ScanPatterns
 		{ "FLogSuppressionImplementation::ApplyGlobalChanges",           FLogSuppression_ApplyGlobalChanges,           true },
 		{ "FLogSuppressionInterface::Get",                               FLogSuppression_Get,                          true },
 		{ "FLogSuppressionImplementation::ProcessConfigAndCommandLine",  FLogSuppression_ProcessConfigAndCommandLine,  true },
+		// Optional -- only in-world debug drawing (hooks->HUD->DebugDraw) is lost
+		// if these ever stop resolving, so they must not disable the modloader.
+		{ "ULineBatchComponent::DrawLines",            ULineBatchComponent_DrawLines,            false },
+		{ "ULineBatchComponent::Flush",                ULineBatchComponent_Flush,                false },
 #endif
 
 #if defined(MODLOADER_SERVER_BUILD)

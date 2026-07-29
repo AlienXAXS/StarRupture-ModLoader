@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "game_thread_dispatch.h"
 
+#include <atomic>
 #include <mutex>
 #include <queue>
 #include <variant>
@@ -9,6 +10,10 @@ namespace GameThreadDispatch
 {
     namespace
     {
+        // Learned from Drain(), which the engine-tick hook calls on the game
+        // thread every frame. 0 until the first tick.
+        std::atomic<DWORD> g_gameThreadId{ 0 };
+
         // A task is either a void packaged_task or a string packaged_task.
         // We store them in a single queue using std::variant to avoid two
         // separate queues and two mutex lock/unlock cycles per Drain call.
@@ -38,8 +43,16 @@ namespace GameThreadDispatch
         return fut;
     }
 
+    bool IsGameThread()
+    {
+        const DWORD id = g_gameThreadId.load(std::memory_order_relaxed);
+        return id != 0 && id == GetCurrentThreadId();
+    }
+
     void Drain()
     {
+        g_gameThreadId.store(GetCurrentThreadId(), std::memory_order_relaxed);
+
         // Swap under lock so tasks queued during Drain do not deadlock.
         std::queue<Task> local;
         {

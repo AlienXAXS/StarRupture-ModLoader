@@ -15,6 +15,10 @@
 #include "console_window.h"
 #include "hooks/game/log_verbosity/log_verbosity.h"
 #include "tick_profiler_window.h"
+#ifdef _DEBUG
+#include "hooks/game/debug_draw/debug_draw.h"
+#include "utils/game_thread_dispatch.h"
+#endif
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -957,6 +961,32 @@ namespace UI::ModLoaderWindow
             ImGui::SetTooltip("Immediately crashes the game with a null pointer write, to\n"
                               "verify the CrashReporter hook shows its own dialog instead of\n"
                               "spawning CrashReportClient.exe. Debug builds only.");
+
+        // Debug draw exercises hooks->HUD->DebugDraw. This runs on the render
+        // thread (ImGui is drawn from the Present hook), so both actions have
+        // to be handed to the game thread before they touch the line batchers.
+        if (ImGui::Button("Test Debug Draw"))
+            GameThreadDispatch::PostVoid([]() { Hooks::DebugDraw::DrawTestScene(); });
+        ImGui::SameLine();
+        ImGui::TextDisabled("(?)");
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Draws one of every in-world debug primitive in a labelled row\n"
+                              "roughly 7m in front of your character. Stays until you press\n"
+                              "Clear Debug Draw. Needs a loaded world with a pawn.\n"
+                              "Debug builds only.");
+
+        ImGui::SameLine();
+        if (ImGui::Button("Clear Debug Draw"))
+            GameThreadDispatch::PostVoid([]()
+            {
+                Hooks::DebugDraw::FlushPersistentLines();
+                Hooks::DebugDraw::ClearAllStrings();
+            });
+        ImGui::SameLine();
+        ImGui::TextDisabled("(?)");
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Clears both persistent line batchers and every world-anchored\n"
+                              "debug string, for every plugin -- not just the test scene.");
 #endif
     }
 

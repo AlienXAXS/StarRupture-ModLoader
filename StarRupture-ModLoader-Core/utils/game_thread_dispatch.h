@@ -33,4 +33,15 @@ namespace GameThreadDispatch
     // MUST be called from the game thread only.
     // Called automatically by engine_tick.cpp every frame.
     void Drain();
+
+    // True when the caller is already on the game thread, so engine state can
+    // be touched directly instead of being posted.
+    //
+    // The game thread is identified by whichever thread called Drain() last,
+    // which is the engine-tick hook. That means this returns false for every
+    // thread -- including the real game thread -- until the first tick has run.
+    // Treat a false result as "post it", never as "this is definitely a worker
+    // thread": posting is always safe, and one deferred frame during startup is
+    // not worth a special case.
+    bool IsGameThread();
 }
