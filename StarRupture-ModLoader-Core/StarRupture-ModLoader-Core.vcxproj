@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|x64">
@@ -417,6 +417,7 @@
     <ClInclude Include="hooks\game\crafting_finished\crafting_finished.h" />
     <ClInclude Include="hooks\game\crash_reporter\crash_dialog.h" />
     <ClInclude Include="hooks\game\crash_reporter\crash_reporter.h" />
+    <ClInclude Include="hooks\game\log_verbosity\log_verbosity.h" />
     <ClInclude Include="hooks\game\delegate_hook\delegate_hook.h" />
     <ClInclude Include="hooks\game\gobject_walk\gobject_walk.h" />
     <ClInclude Include="hooks\game\text_input_focus\text_input_focus.h" />
@@ -521,6 +522,7 @@
     <ClCompile Include="hooks\game\crafting_finished\crafting_finished.cpp" />
     <ClCompile Include="hooks\game\crash_reporter\crash_dialog.cpp" />
     <ClCompile Include="hooks\game\crash_reporter\crash_reporter.cpp" />
+    <ClCompile Include="hooks\game\log_verbosity\log_verbosity.cpp" />
     <ClCompile Include="hooks\game\delegate_hook\delegate_hook.cpp" />
     <ClCompile Include="hooks\game\gobject_walk\gobject_walk.cpp" />
     <ClCompile Include="hooks\game\text_input_focus\text_input_focus.cpp">
