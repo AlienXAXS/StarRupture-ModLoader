@@ -73,6 +73,9 @@
     <Filter Include="Source Files\hooks\game\console_command">
       <UniqueIdentifier>{6a41f28d-3c07-4b95-8e1a-2d904f6c7b13}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Source Files\hooks\game\debug_draw">
+      <UniqueIdentifier>{2f7b90c4-6e18-4a3d-b52f-8c04d1e73a96}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Source Files\hooks\game\crash_reporter">
       <UniqueIdentifier>{9c1d2e3f-4a5b-6c7d-8e9f-0a1b2c3d4e5f}</UniqueIdentifier>
     </Filter>
@@ -227,6 +230,9 @@
     </ClInclude>
     <ClInclude Include="hooks\game\crafting_finished\crafting_finished.h">
       <Filter>Source Files\hooks\game\crafting_finished</Filter>
+    </ClInclude>
+    <ClInclude Include="hooks\game\debug_draw\debug_draw.h">
+      <Filter>Source Files\hooks\game\debug_draw</Filter>
     </ClInclude>
     <ClInclude Include="hooks\game\console_command\console_command.h">
       <Filter>Source Files\hooks\game\console_command</Filter>
@@ -493,6 +499,9 @@
     </ClCompile>
     <ClCompile Include="hooks\game\crafting_finished\crafting_finished.cpp">
       <Filter>Source Files\hooks\game\crafting_finished</Filter>
+    </ClCompile>
+    <ClCompile Include="hooks\game\debug_draw\debug_draw.cpp">
+      <Filter>Source Files\hooks\game\debug_draw</Filter>
     </ClCompile>
     <ClCompile Include="hooks\game\console_command\console_command.cpp">
       <Filter>Source Files\hooks\game\console_command</Filter>

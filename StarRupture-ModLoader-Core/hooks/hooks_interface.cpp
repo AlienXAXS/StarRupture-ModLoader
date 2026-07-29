@@ -35,6 +35,7 @@
 #include "UI/splash_window.h"
 #include "hooks/game/hud_post_render/hud_post_render.h"
 #include "hooks/game/client_message/client_message.h"
+#include "hooks/game/debug_draw/debug_draw.h"
 #endif
 #if defined(MODLOADER_SERVER_BUILD) || defined(MODLOADER_CLIENT_BUILD)
 #include "hooks/game/session_info/session_info.h"
@@ -48,6 +49,8 @@
 #include <vector>
 #include <algorithm>
 #include <cstring>
+#include <string>
+#include <utility>
 
 namespace ModLoaderLogger
 {
@@ -1244,11 +1247,345 @@ namespace ModLoaderLogger
 		return Hooks::HUDPostRender::GetGatherPlayersDataAddress();
 	}
 
+	// --- Debug draw wrappers (v50, client only) ---
+	//
+	// The plugin-facing geometry structs and the core ones in debug_draw.h have
+	// the same shape but are deliberately kept as separate declarations, so
+	// these convert field by field rather than casting across. Every pointer
+	// argument is treated as optional -- a plugin passing null gets a zeroed
+	// value rather than a fault.
+
+	namespace DD = Hooks::DebugDraw;
+
+	static DD::DVec ToVec(const PluginDebugVector* v)
+	{
+		if (!v) return DD::DVec{ 0.0, 0.0, 0.0 };
+		return DD::DVec{ v->x, v->y, v->z };
+	}
+
+	static DD::DRot ToRot(const PluginDebugRotator* r)
+	{
+		if (!r) return DD::DRot{ 0.0, 0.0, 0.0 };
+		return DD::DRot{ r->pitch, r->yaw, r->roll };
+	}
+
+	static DD::DColor ToColor(const PluginDebugColor* c)
+	{
+		if (!c) return DD::DColor{ 1.0f, 1.0f, 1.0f, 1.0f };
+		return DD::DColor{ c->r, c->g, c->b, c->a };
+	}
+
+	static DD::DPlane ToPlane(const PluginDebugPlane* p)
+	{
+		if (!p) return DD::DPlane{ 0.0, 0.0, 1.0, 0.0 };
+		return DD::DPlane{ p->x, p->y, p->z, p->w };
+	}
+
+	static DD::DTransform ToTransform(const PluginDebugTransform* t)
+	{
+		DD::DTransform out{};
+		out.scale = DD::DVec{ 1.0, 1.0, 1.0 };
+		if (!t) return out;
+		out.location = ToVec(&t->location);
+		out.rotation = ToRot(&t->rotation);
+		out.scale    = ToVec(&t->scale);
+		return out;
+	}
+
+	static DD::DStyle ToStyle(const PluginDebugDrawStyle* s)
+	{
+		DD::DStyle out{};
+		out.color = DD::DColor{ 1.0f, 1.0f, 1.0f, 1.0f };
+		if (!s) return out;
+		out.color       = ToColor(&s->color);
+		out.duration    = s->duration;
+		out.thickness   = s->thickness;
+		out.bPersistent = s->bPersistent;
+		out.bForeground = s->bForeground;
+		return out;
+	}
+
+	// The line batchers are UObjects and must only be touched on the game
+	// thread -- but the most natural place for a plugin to want to draw
+	// something is inside its ImGui panel/widget callback, and those run on the
+	// render thread (the modloader draws from the Present hook). Rather than
+	// make that a documented footgun, every entry point below is safe from any
+	// thread: arguments are converted to owned values up front, then the draw
+	// either runs inline or is deferred one frame via GameThreadDispatch.
+	//
+	// Nothing plugin-owned is retained past the call -- including the
+	// float-history sample array, which is deep-copied. The one exception is
+	// actor pointers (DrawCamera's camera actor, DrawString's base actor);
+	// those are passed through as-is and must stay valid for the frame, which
+	// is the same expectation the engine has of them.
+	template <typename Fn>
+	static void OnGameThread(Fn&& fn)
+	{
+		if (GameThreadDispatch::IsGameThread())
+			fn();
+		else
+			GameThreadDispatch::PostVoid(std::forward<Fn>(fn));
+	}
+
+	static bool DebugDrawIsAvailable()
+	{
+		return DD::Resolve();
+	}
+
+	static void DebugDrawLine(const PluginDebugVector* start, const PluginDebugVector* end,
+	                          const PluginDebugDrawStyle* style)
+	{
+		const DD::DVec   a = ToVec(start);
+		const DD::DVec   b = ToVec(end);
+		const DD::DStyle s = ToStyle(style);
+		OnGameThread([a, b, s]() { DD::DrawLine(a, b, s); });
+	}
+
+	static void DebugDrawPoint(const PluginDebugVector* position, float size,
+	                           const PluginDebugDrawStyle* style)
+	{
+		const DD::DVec   p = ToVec(position);
+		const DD::DStyle s = ToStyle(style);
+		OnGameThread([p, size, s]() { DD::DrawPoint(p, size, s); });
+	}
+
+	static void DebugDrawCircle(const PluginDebugVector* center, float radius, int numSegments,
+	                            const PluginDebugVector* yAxis, const PluginDebugVector* zAxis,
+	                            bool bDrawAxis, const PluginDebugDrawStyle* style)
+	{
+		const DD::DVec   c = ToVec(center);
+		const DD::DVec   y = yAxis ? ToVec(yAxis) : DD::DVec{ 0.0, 1.0, 0.0 };
+		const DD::DVec   z = zAxis ? ToVec(zAxis) : DD::DVec{ 0.0, 0.0, 1.0 };
+		const DD::DStyle s = ToStyle(style);
+		OnGameThread([c, radius, numSegments, y, z, bDrawAxis, s]()
+		{
+			DD::DrawCircle(c, radius, numSegments, y, z, bDrawAxis, s);
+		});
+	}
+
+	static void DebugDrawSphere(const PluginDebugVector* center, float radius, int segments,
+	                            const PluginDebugDrawStyle* style)
+	{
+		const DD::DVec   c = ToVec(center);
+		const DD::DStyle s = ToStyle(style);
+		OnGameThread([c, radius, segments, s]() { DD::DrawSphere(c, radius, segments, s); });
+	}
+
+	static void DebugDrawBox(const PluginDebugVector* center, const PluginDebugVector* extent,
+	                         const PluginDebugRotator* rotation, const PluginDebugDrawStyle* style)
+	{
+		const DD::DVec   c = ToVec(center);
+		const DD::DVec   e = ToVec(extent);
+		const DD::DRot   r = ToRot(rotation);
+		const DD::DStyle s = ToStyle(style);
+		OnGameThread([c, e, r, s]() { DD::DrawBox(c, e, r, s); });
+	}
+
+	static void DebugDrawCapsule(const PluginDebugVector* center, float halfHeight, float radius,
+	                             const PluginDebugRotator* rotation, const PluginDebugDrawStyle* style)
+	{
+		const DD::DVec   c = ToVec(center);
+		const DD::DRot   r = ToRot(rotation);
+		const DD::DStyle s = ToStyle(style);
+		OnGameThread([c, halfHeight, radius, r, s]()
+		{
+			DD::DrawCapsule(c, halfHeight, radius, r, s);
+		});
+	}
+
+	static void DebugDrawCylinder(const PluginDebugVector* start, const PluginDebugVector* end,
+	                              float radius, int segments, const PluginDebugDrawStyle* style)
+	{
+		const DD::DVec   a = ToVec(start);
+		const DD::DVec   b = ToVec(end);
+		const DD::DStyle s = ToStyle(style);
+		OnGameThread([a, b, radius, segments, s]() { DD::DrawCylinder(a, b, radius, segments, s); });
+	}
+
+	static void DebugDrawConeInDegrees(const PluginDebugVector* origin, const PluginDebugVector* direction,
+	                                   float length, float angleWidthDeg, float angleHeightDeg,
+	                                   int numSides, const PluginDebugDrawStyle* style)
+	{
+		const DD::DVec   o   = ToVec(origin);
+		const DD::DVec   dir = direction ? ToVec(direction) : DD::DVec{ 1.0, 0.0, 0.0 };
+		const DD::DStyle s   = ToStyle(style);
+		OnGameThread([o, dir, length, angleWidthDeg, angleHeightDeg, numSides, s]()
+		{
+			DD::DrawConeInDegrees(o, dir, length, angleWidthDeg, angleHeightDeg, numSides, s);
+		});
+	}
+
+	static void DebugDrawArrow(const PluginDebugVector* start, const PluginDebugVector* end,
+	                           float arrowSize, const PluginDebugDrawStyle* style)
+	{
+		const DD::DVec   a = ToVec(start);
+		const DD::DVec   b = ToVec(end);
+		const DD::DStyle s = ToStyle(style);
+		OnGameThread([a, b, arrowSize, s]() { DD::DrawArrow(a, b, arrowSize, s); });
+	}
+
+	static void DebugDrawCoordinateSystem(const PluginDebugVector* location, const PluginDebugRotator* rotation,
+	                                      float scale, const PluginDebugDrawStyle* style)
+	{
+		const DD::DVec   l = ToVec(location);
+		const DD::DRot   r = ToRot(rotation);
+		const DD::DStyle s = ToStyle(style);
+		OnGameThread([l, r, scale, s]() { DD::DrawCoordinateSystem(l, r, scale, s); });
+	}
+
+	static void DebugDrawPlane(const PluginDebugPlane* plane, const PluginDebugVector* location,
+	                           float size, const PluginDebugDrawStyle* style)
+	{
+		const DD::DPlane p = ToPlane(plane);
+		const DD::DVec   l = ToVec(location);
+		const DD::DStyle s = ToStyle(style);
+		OnGameThread([p, l, size, s]() { DD::DrawPlane(p, l, size, s); });
+	}
+
+	static void DebugDrawFrustum(const PluginDebugTransform* frustumTransform,
+	                             const PluginDebugDrawStyle* style)
+	{
+		const DD::DTransform t = ToTransform(frustumTransform);
+		const DD::DStyle     s = ToStyle(style);
+		OnGameThread([t, s]() { DD::DrawFrustum(t, s); });
+	}
+
+	static void DebugDrawCamera(void* cameraActor, float scale, const PluginDebugDrawStyle* style)
+	{
+		const DD::DStyle s = ToStyle(style);
+		OnGameThread([cameraActor, scale, s]() { DD::DrawCamera(cameraActor, scale, s); });
+	}
+
+	static void DebugDrawCameraAt(const PluginDebugVector* location, const PluginDebugRotator* rotation,
+	                              float fovDegrees, float scale, const PluginDebugDrawStyle* style)
+	{
+		const DD::DVec   l = ToVec(location);
+		const DD::DRot   r = ToRot(rotation);
+		const DD::DStyle s = ToStyle(style);
+		OnGameThread([l, r, fovDegrees, scale, s]() { DD::DrawCameraAt(l, r, fovDegrees, scale, s); });
+	}
+
+	static void DebugDrawString(const PluginDebugVector* location, const char* text, void* testBaseActor,
+	                            const PluginDebugColor* color, float duration)
+	{
+		if (!text || !text[0])
+			return;
+
+		wchar_t wide[1024];
+		if (MultiByteToWideChar(CP_UTF8, 0, text, -1, wide, 1024) == 0)
+			return;
+
+		const DD::DVec   l = ToVec(location);
+		const DD::DColor c = ToColor(color);
+		std::wstring     owned(wide);
+
+		OnGameThread([l, c, owned = std::move(owned), testBaseActor, duration]()
+		{
+			DD::DrawString(l, owned.c_str(), testBaseActor, c, duration);
+		});
+	}
+
+	// Deep-copies the plugin's sample array: the draw can land a frame late and
+	// the caller is free to reuse or free its buffer the moment we return.
+	static void DebugDrawFloatHistoryDeferred(const PluginDebugFloatHistory* history,
+	                                          const DD::DTransform& transform,
+	                                          const DD::DVec& drawSize,
+	                                          const DD::DStyle& style,
+	                                          bool bUseTransform)
+	{
+		std::vector<float> samples;
+		float minValue = 0.0f;
+		float maxValue = 0.0f;
+		bool  bAuto    = false;
+
+		if (history)
+		{
+			if (history->samples && history->count > 0)
+				samples.assign(history->samples, history->samples + history->count);
+			minValue = history->minValue;
+			maxValue = history->maxValue;
+			bAuto    = history->bAutoAdjustMinMax;
+		}
+
+		OnGameThread([samples = std::move(samples), transform, drawSize, style,
+		              minValue, maxValue, bAuto, bUseTransform]()
+		{
+			DD::DFloatHistory h{};
+			h.samples           = samples.data();
+			h.count             = static_cast<int32_t>(samples.size());
+			h.minValue          = minValue;
+			h.maxValue          = maxValue;
+			h.bAutoAdjustMinMax = bAuto;
+
+			if (bUseTransform)
+				DD::DrawFloatHistoryTransform(h, transform, drawSize, style);
+			else
+				DD::DrawFloatHistoryLocation(h, transform.location, drawSize, style);
+		});
+	}
+
+	static void DebugDrawFloatHistoryTransform(const PluginDebugFloatHistory* history,
+	                                           const PluginDebugTransform* drawTransform,
+	                                           const PluginDebugVector* drawSize,
+	                                           const PluginDebugDrawStyle* style)
+	{
+		DebugDrawFloatHistoryDeferred(history, ToTransform(drawTransform), ToVec(drawSize),
+		                              ToStyle(style), /*bUseTransform*/ true);
+	}
+
+	static void DebugDrawFloatHistoryLocation(const PluginDebugFloatHistory* history,
+	                                          const PluginDebugVector* drawLocation,
+	                                          const PluginDebugVector* drawSize,
+	                                          const PluginDebugDrawStyle* style)
+	{
+		DD::DTransform t{};
+		t.location = ToVec(drawLocation);
+		t.scale    = DD::DVec{ 1.0, 1.0, 1.0 };
+
+		DebugDrawFloatHistoryDeferred(history, t, ToVec(drawSize),
+		                              ToStyle(style), /*bUseTransform*/ false);
+	}
+
+	static void DebugDrawFlushPersistentLines()
+	{
+		OnGameThread([]() { DD::FlushPersistentLines(); });
+	}
+
+	static void DebugDrawClearAllStrings()
+	{
+		OnGameThread([]() { DD::ClearAllStrings(); });
+	}
+
+	// Debug draw sub-interface struct (v50)
+	static IPluginDebugDraw g_debugDraw = {
+		DebugDrawIsAvailable,
+		DebugDrawLine,
+		DebugDrawPoint,
+		DebugDrawCircle,
+		DebugDrawSphere,
+		DebugDrawBox,
+		DebugDrawCapsule,
+		DebugDrawCylinder,
+		DebugDrawConeInDegrees,
+		DebugDrawArrow,
+		DebugDrawCoordinateSystem,
+		DebugDrawPlane,
+		DebugDrawFrustum,
+		DebugDrawCamera,
+		DebugDrawCameraAt,
+		DebugDrawString,
+		DebugDrawFloatHistoryTransform,
+		DebugDrawFloatHistoryLocation,
+		DebugDrawFlushPersistentLines,
+		DebugDrawClearAllStrings
+	};
+
 	// HUD sub-interface struct (v16)
 	static IPluginHUDEvents g_hudEvents = {
 		HooksRegisterOnPostRender,
 		HooksUnregisterOnPostRender,
-		HooksGetGatherPlayersDataAddress
+		HooksGetGatherPlayersDataAddress,
+		&g_debugDraw          // v50 -- appended, do not relocate
 	};
 
 	// --- Splash feedback wrappers (v40, client only) ---

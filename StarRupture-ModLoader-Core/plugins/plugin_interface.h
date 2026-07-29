@@ -210,9 +210,37 @@
 //      changes to every registered listener. Breaking signature change:
 //      MIN bumped to 49.
 
+// v50 - 29/07/2026: Added IPluginDebugDraw, reachable as hooks->HUD->DebugDraw
+//      (client only -- the whole HUD interface is null on server/generic).
+//      Reimplements all sixteen UKismetSystemLibrary::DrawDebug* nodes, which
+//      are dead on this shipping build: ENABLE_DRAW_DEBUG is 0, so every body
+//      compiled away to nothing and only the exec thunks survive, parsing
+//      their parameters off the FFrame and returning without drawing. The
+//      DrawDebugType pin on the trace nodes is inert for the same reason. What
+//      is still alive is the renderer -- UWorld::LineBatchers[4] (all four
+//      NewObject'd and registered by UWorld::UpdateWorldComponents) and
+//      ULineBatchComponent::DrawLines -- so this builds the same geometry and
+//      hands it to the engine's own batchers via a new AOB-scanned hook module
+//      (hooks/game/debug_draw/).
+//      Covers Line, Point, Circle, Sphere, Box, Capsule, Cylinder,
+//      ConeInDegrees, Arrow, CoordinateSystem, Plane, Frustum, Camera (both an
+//      ACameraActor* form and a location/rotation/FOV form), String,
+//      FloatHistoryTransform and FloatHistoryLocation, plus FlushPersistentLines
+//      and ClearAllStrings.
+//      Two primitives deviate from the engine because only DrawLines survived
+//      as an out-of-line function: DrawPoint (engine uses BatchedPoints) is a
+//      three-axis cross, and DrawPlane / the float-history graphs (engine uses
+//      BatchedMeshes) draw outlines instead of filled quads.
+//      Callable from any thread: the batchers are game-thread only, but the
+//      wrappers copy every argument and defer to GameThreadDispatch when the
+//      caller is elsewhere, so drawing from an ImGui panel callback (which
+//      runs on the render thread) just works.
+//      The new field is appended at the end of IPluginHUDEvents and all the
+//      geometry structs are new, so nothing existing shifts: MIN remains 49.
+
 #define PLUGIN_INTERFACE_VERSION_MIN 49
-#define PLUGIN_INTERFACE_VERSION_MAX 49
-#define PLUGIN_INTERFACE_VERSION 49
+#define PLUGIN_INTERFACE_VERSION_MAX 50
+#define PLUGIN_INTERFACE_VERSION 50
 
 enum class PluginLogLevel { Trace = 0, Debug = 1, Info = 2, Warn = 3, Error = 4 };
 enum class ConfigValueType { String, Integer, Float, Boolean, Keybind };
@@ -1061,11 +1089,177 @@ struct IPluginUIEvents
 	void  (*ReleaseInputCapture)(void* token);
 };
 
+// ---------------------------------------------------------------------------
+// In-world debug drawing (v50, client only) -- hooks->HUD->DebugDraw
+//
+// Reimplements the UKismetSystemLibrary::DrawDebug* set, which is entirely
+// dead on shipping builds: ENABLE_DRAW_DEBUG is 0, so all sixteen bodies
+// compiled away to nothing and only the exec thunks remain (they parse their
+// parameters off the stack and return). The DrawDebugType pin on the trace
+// nodes is inert for the same reason. What survives is the renderer --
+// UWorld::LineBatchers and ULineBatchComponent::DrawLines -- so these
+// functions build the same geometry and feed it to the engine's own batchers.
+//
+// THREADING: safe to call from any thread. The line batchers are UObjects and
+// can only be touched on the game thread, but you do not have to arrange that
+// -- the modloader converts your arguments to owned values up front and then
+// either draws inline (if you were already on the game thread) or defers by a
+// single frame. This matters because ImGui panel and widget callbacks run on
+// the render thread, and those are the most natural place to want to draw.
+//
+// Nothing you pass is retained past the call, including the float-history
+// sample array (it is deep-copied). The exception is actor pointers --
+// DrawCamera's camera actor and DrawString's base actor -- which must stay
+// valid for the frame.
+//
+// LIFETIME: style->duration <= 0 draws for a single frame. A positive duration
+// (or style->bPersistent) routes into the persistent batcher, which survives
+// the per-frame flush -- FlushPersistentLines clears it. This mirrors the
+// engine's own GetDebugLineBatcher/GetDebugLineLifeTime rules.
+//
+// The geometry structs below are compiled into the plugin by value, so they
+// are frozen: never reorder or extend them -- add a new struct instead.
+// ---------------------------------------------------------------------------
+
+struct PluginDebugVector  { double x, y, z; };
+struct PluginDebugRotator { double pitch, yaw, roll; };   // degrees, UE convention
+struct PluginDebugColor   { float  r, g, b, a; };         // linear, 0..1
+struct PluginDebugPlane   { double x, y, z, w; };         // normal xyz + distance w
+
+struct PluginDebugTransform
+{
+	PluginDebugVector  location;
+	PluginDebugRotator rotation;
+	PluginDebugVector  scale;
+};
+
+// Plugin-owned sample array. Read during the call and never retained.
+struct PluginDebugFloatHistory
+{
+	const float* samples;
+	int32_t      count;
+	float        minValue;
+	float        maxValue;
+	bool         bAutoAdjustMinMax;   // recompute min/max from the samples
+};
+
+struct PluginDebugDrawStyle
+{
+	PluginDebugColor color;
+	float            duration;      // <= 0: this frame only.  > 0: seconds.
+	float            thickness;     // 0 = thin (single pixel) lines
+	bool             bPersistent;   // never expires until FlushPersistentLines
+	bool             bForeground;   // draw on top of world geometry
+};
+
+struct IPluginDebugDraw
+{
+	// False if ULineBatchComponent::DrawLines could not be resolved on this
+	// build -- every Draw* below is then a silent no-op. Check once at init.
+	bool (*IsAvailable)();
+
+	void (*DrawLine)(const PluginDebugVector* start, const PluginDebugVector* end,
+	                 const PluginDebugDrawStyle* style);
+
+	// The engine draws this through BatchedPoints, which has no reachable entry
+	// point here, so it is a three-axis cross of half-length `size` instead.
+	void (*DrawPoint)(const PluginDebugVector* position, float size,
+	                  const PluginDebugDrawStyle* style);
+
+	// Circle lies in the plane spanned by yAxis/zAxis (pass {0,1,0} and {0,0,1}
+	// for a world XY circle). Both are normalised internally.
+	void (*DrawCircle)(const PluginDebugVector* center, float radius, int numSegments,
+	                   const PluginDebugVector* yAxis, const PluginDebugVector* zAxis,
+	                   bool bDrawAxis, const PluginDebugDrawStyle* style);
+
+	void (*DrawSphere)(const PluginDebugVector* center, float radius, int segments,
+	                   const PluginDebugDrawStyle* style);
+
+	void (*DrawBox)(const PluginDebugVector* center, const PluginDebugVector* extent,
+	                const PluginDebugRotator* rotation, const PluginDebugDrawStyle* style);
+
+	void (*DrawCapsule)(const PluginDebugVector* center, float halfHeight, float radius,
+	                    const PluginDebugRotator* rotation, const PluginDebugDrawStyle* style);
+
+	void (*DrawCylinder)(const PluginDebugVector* start, const PluginDebugVector* end,
+	                     float radius, int segments, const PluginDebugDrawStyle* style);
+
+	void (*DrawConeInDegrees)(const PluginDebugVector* origin, const PluginDebugVector* direction,
+	                          float length, float angleWidthDeg, float angleHeightDeg,
+	                          int numSides, const PluginDebugDrawStyle* style);
+
+	void (*DrawArrow)(const PluginDebugVector* start, const PluginDebugVector* end,
+	                  float arrowSize, const PluginDebugDrawStyle* style);
+
+	// Axes are drawn red/green/blue like the engine's version, so style->color
+	// is ignored here. Everything else in the style still applies.
+	void (*DrawCoordinateSystem)(const PluginDebugVector* location, const PluginDebugRotator* rotation,
+	                             float scale, const PluginDebugDrawStyle* style);
+
+	// The engine fills this quad via BatchedMeshes, which is unreachable, so it
+	// is drawn as four border edges plus both diagonals, with the same yellow
+	// normal arrow.
+	void (*DrawPlane)(const PluginDebugPlane* plane, const PluginDebugVector* location,
+	                  float size, const PluginDebugDrawStyle* style);
+
+	void (*DrawFrustum)(const PluginDebugTransform* frustumTransform,
+	                    const PluginDebugDrawStyle* style);
+
+	// cameraActor must be an SDK::ACameraActor*; location/rotation come off the
+	// actor and the FOV off its UCameraComponent. No-op if either is null.
+	void (*DrawCamera)(void* cameraActor, float scale, const PluginDebugDrawStyle* style);
+
+	// Same geometry with no actor lookup, for cameras you already have a
+	// transform for.
+	void (*DrawCameraAt)(const PluginDebugVector* location, const PluginDebugRotator* rotation,
+	                     float fovDegrees, float scale, const PluginDebugDrawStyle* style);
+
+	// Canvas-space text pinned to a world location, routed through
+	// AHUD::AddDebugText (which AHUD::DrawDebugTextList still renders). text is
+	// UTF-8. testBaseActor may be null, in which case the text is placed at an
+	// absolute world location. Independent of the line batchers:
+	// FlushPersistentLines does not clear these, ClearAllStrings does.
+	//
+	// WARNING: duration does NOT follow the same rule as the style duration
+	// used everywhere else here. The HUD only treats exactly -1.0f as "never
+	// expire"; every other value counts down, including 0, which vanishes on
+	// the next HUD render. (Line durations are the opposite -- anything <= 0
+	// lives forever in a persistent batcher.)
+	void (*DrawString)(const PluginDebugVector* location, const char* text, void* testBaseActor,
+	                   const PluginDebugColor* color, float duration);
+
+	// drawSize uses x as the graph width and y as its height (z is unused).
+	// The engine fills the graph body with a mesh; these draw the bounding
+	// frame plus the sample polyline.
+	void (*DrawFloatHistoryTransform)(const PluginDebugFloatHistory* history,
+	                                  const PluginDebugTransform* drawTransform,
+	                                  const PluginDebugVector* drawSize,
+	                                  const PluginDebugDrawStyle* style);
+
+	void (*DrawFloatHistoryLocation)(const PluginDebugFloatHistory* history,
+	                                 const PluginDebugVector* drawLocation,
+	                                 const PluginDebugVector* drawSize,
+	                                 const PluginDebugDrawStyle* style);
+
+	// Clears both persistent batchers, like the engine's
+	// FLUSHPERSISTENTDEBUGLINES console command. Affects every plugin's
+	// persistent lines, not just yours.
+	void (*FlushPersistentLines)();
+
+	// Clears every world-anchored debug string on the local HUD.
+	void (*ClearAllStrings)();
+};
+
 struct IPluginHUDEvents
 {
 	void      (*RegisterOnPostRender)(PluginHUDPostRenderCallback callback);
 	void  (*UnregisterOnPostRender)(PluginHUDPostRenderCallback callback);
 	uintptr_t (*GetGatherPlayersDataAddress)();
+
+	// v50 -- appended at the end, do not relocate. Never null on client builds
+	// (the whole HUD interface is null on server/generic); check
+	// DebugDraw->IsAvailable() for whether the underlying native resolved.
+	IPluginDebugDraw* DebugDraw;
 };
 
 // ---------------------------------------------------------------------------
