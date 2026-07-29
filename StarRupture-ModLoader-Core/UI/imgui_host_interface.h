@@ -25,6 +25,13 @@ struct ImGuiRenderCallbacks
     // Return true if the modloader UI is visible and should capture input.
     bool    (*ShouldCaptureInput)();
 
+    // Return true if a plugin has requested cooperative (passthrough) input.
+    // Only consulted when ShouldCaptureInput() is false: ImGui still receives
+    // every message and draws its cursor, but the game keeps receiving input
+    // too except for the classes ImGui actually wants (mouse while hovering an
+    // ImGui window, keyboard while a text field is focused).
+    bool    (*ShouldPassthroughInput)();
+
     // Process a WM_KEY*/WM_MOUSE* message; fire registered keybind callbacks.
     // Returns true if the message should be swallowed (blocking mode).
     bool    (*DispatchKey)(UINT msg, WPARAM wParam, LPARAM lParam);

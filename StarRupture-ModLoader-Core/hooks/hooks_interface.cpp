@@ -1213,7 +1213,17 @@ namespace ModLoaderLogger
 		UI::PluginPanelRegistry::ReleaseInputCapture(token);
 	}
 
-	// UI sub-interface struct (v16, extended v43)
+	static void* HooksAcquireInputPassthrough()
+	{
+		return UI::PluginPanelRegistry::AcquireInputPassthrough();
+	}
+
+	static void HooksReleaseInputPassthrough(void* token)
+	{
+		UI::PluginPanelRegistry::ReleaseInputPassthrough(token);
+	}
+
+	// UI sub-interface struct (v16, extended v43/v51)
 	static IPluginUIEvents g_uiEvents = {
 		HooksRegisterPanel,
 		HooksUnregisterPanel,
@@ -1227,7 +1237,9 @@ namespace ModLoaderLogger
 		HooksRegisterOnPanelWindowClosed,   // v43
 		HooksUnregisterOnPanelWindowClosed, // v43
 		HooksAcquireInputCapture,           // v43
-		HooksReleaseInputCapture            // v43
+		HooksReleaseInputCapture,           // v43
+		HooksAcquireInputPassthrough,       // v51
+		HooksReleaseInputPassthrough        // v51
 	};
 
 	// --- HUD sub-interface wrappers (v16, client only) ---
@@ -1466,7 +1478,7 @@ namespace ModLoaderLogger
 	}
 
 	static void DebugDrawString(const PluginDebugVector* location, const char* text, void* testBaseActor,
-	                            const PluginDebugColor* color, float duration)
+	                            const PluginDebugColor* color, float duration, float fontScale)
 	{
 		if (!text || !text[0])
 			return;
@@ -1479,9 +1491,9 @@ namespace ModLoaderLogger
 		const DD::DColor c = ToColor(color);
 		std::wstring     owned(wide);
 
-		OnGameThread([l, c, owned = std::move(owned), testBaseActor, duration]()
+		OnGameThread([l, c, owned = std::move(owned), testBaseActor, duration, fontScale]()
 		{
-			DD::DrawString(l, owned.c_str(), testBaseActor, c, duration);
+			DD::DrawString(l, owned.c_str(), testBaseActor, c, duration, fontScale);
 		});
 	}
 

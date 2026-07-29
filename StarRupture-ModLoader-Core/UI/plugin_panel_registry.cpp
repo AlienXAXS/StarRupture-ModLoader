@@ -38,6 +38,7 @@ namespace UI::PluginPanelRegistry
     static std::vector<ConfigCallbackEntry> s_configCallbacks;
     static std::vector<PluginPanelClosedCallback> s_panelClosedCallbacks;
     static std::set<void*> s_captureTokens;
+    static std::set<void*> s_passthroughTokens;
     static char s_currentPlugin[64];   // set by plugin_manager before each PluginInit call
 
     // Invokes all registered panel-closed callbacks for the given handle.
@@ -206,6 +207,31 @@ namespace UI::PluginPanelRegistry
     {
         std::lock_guard<std::mutex> lock(s_mutex);
         return !s_captureTokens.empty();
+    }
+
+    void* AcquireInputPassthrough()
+    {
+        void* token = new char;
+        std::lock_guard<std::mutex> lock(s_mutex);
+        s_passthroughTokens.insert(token);
+        return token;
+    }
+
+    void ReleaseInputPassthrough(void* token)
+    {
+        if (!token) return;
+        std::lock_guard<std::mutex> lock(s_mutex);
+        auto it = s_passthroughTokens.find(token);
+        if (it == s_passthroughTokens.end())
+            return; // unknown or already-released token -- ignore
+        s_passthroughTokens.erase(it);
+        delete static_cast<char*>(token);
+    }
+
+    bool AnyInputPassthroughRequested()
+    {
+        std::lock_guard<std::mutex> lock(s_mutex);
+        return !s_passthroughTokens.empty();
     }
 
     bool AnyPanelOpen()

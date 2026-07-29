@@ -95,6 +95,14 @@ void InitClientUI()
                 || UI::PluginPanelRegistry::AnyPanelOpen()
                 || UI::PluginPanelRegistry::AnyInputCaptureRequested();
         };
+        cbs.ShouldPassthroughInput = []() -> bool
+        {
+            // Cooperative mode -- only consulted while ShouldCaptureInput() is
+            // false. A plugin driving an always-on widget UI (e.g. a timeline
+            // editor) holds a passthrough token so its windows stay clickable
+            // without freezing the player out of the game underneath.
+            return UI::PluginPanelRegistry::AnyInputPassthroughRequested();
+        };
         cbs.DispatchKey = [](UINT msg, WPARAM wParam, LPARAM lParam) -> bool
         {
             return Hooks::Input::ProcessWindowMessage(msg, wParam, lParam);

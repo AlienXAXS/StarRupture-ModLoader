@@ -227,6 +227,11 @@
 //      ACameraActor* form and a location/rotation/FOV form), String,
 //      FloatHistoryTransform and FloatHistoryLocation, plus FlushPersistentLines
 //      and ClearAllStrings.
+//      DrawString takes a trailing fontScale (1.0f = the engine's small font at
+//      native size; the engine applies it with no distance falloff). Added
+//      while v50 was still unreleased, so the signature was amended in place
+//      rather than appending a second function -- no plugin has been built
+//      against the earlier shape.
 //      Two primitives deviate from the engine because only DrawLines survived
 //      as an out-of-line function: DrawPoint (engine uses BatchedPoints) is a
 //      three-axis cross, and DrawPlane / the float-history graphs (engine uses
@@ -238,9 +243,31 @@
 //      The new field is appended at the end of IPluginHUDEvents and all the
 //      geometry structs are new, so nothing existing shifts: MIN remains 49.
 
+// v51: Added IPluginUIEvents::AcquireInputPassthrough / ReleaseInputPassthrough
+//      -- a cooperative counterpart to the v43 AcquireInputCapture pair.
+//      AcquireInputCapture is all-or-nothing: while a token is held the game
+//      receives no mouse or keyboard input at all. That is right for a modal
+//      settings panel and wrong for an always-on widget UI the player is meant
+//      to keep playing underneath (a timeline editor, a build planner, an
+//      overlay with draggable handles) -- those currently freeze the player out
+//      until the window is closed. A passthrough token instead puts the
+//      modloader in cooperative mode: ImGui is fed every message and draws and
+//      owns the cursor exactly as before, but the game is only cut out of the
+//      input classes ImGui actually wants that frame -- mouse while the cursor
+//      is over an ImGui window or dragging a widget (io.WantCaptureMouse), and
+//      keyboard while a text field has focus (io.WantCaptureKeyboard /
+//      WantTextInput). Everything else, including the WM_INPUT raw-mouse deltas
+//      UE5 uses for camera look, reaches the game untouched.
+//      Exclusive capture always wins: while any modloader window, plugin panel
+//      or v43 capture token is active, passthrough tokens have no effect and
+//      behaviour is exactly what it was before. Tokens are refcounted across
+//      all plugins the same way, and must be released in PluginShutdown.
+//      Appended at the end of IPluginUIEvents, so nothing existing shifts:
+//      MIN remains 49.
+
 #define PLUGIN_INTERFACE_VERSION_MIN 49
-#define PLUGIN_INTERFACE_VERSION_MAX 50
-#define PLUGIN_INTERFACE_VERSION 50
+#define PLUGIN_INTERFACE_VERSION_MAX 51
+#define PLUGIN_INTERFACE_VERSION 51
 
 enum class PluginLogLevel { Trace = 0, Debug = 1, Info = 2, Warn = 3, Error = 4 };
 enum class ConfigValueType { String, Integer, Float, Boolean, Keybind };
@@ -1087,6 +1114,26 @@ struct IPluginUIEvents
 	// until the modloader restarts.
 	void* (*AcquireInputCapture)();
 	void  (*ReleaseInputCapture)(void* token);
+
+	// v51: Cooperative alternative to AcquireInputCapture. While a passthrough
+	// token is held, ImGui receives every message and draws/owns the cursor
+	// just as it does under an exclusive capture, but the game is only cut out
+	// of the input classes ImGui actually wants that frame: mouse while the
+	// cursor is over an ImGui window or dragging a widget, keyboard while a
+	// text field has focus. Everything else -- including the WM_INPUT raw
+	// mouse deltas UE5 uses for camera look -- still reaches the game, so the
+	// player can keep moving with your UI on screen.
+	//
+	// Use this for always-on widget UIs the player is meant to interact with
+	// the world underneath; use AcquireInputCapture for modal windows that
+	// should freeze the game.
+	//
+	// Exclusive capture wins: while any modloader window, plugin panel, or
+	// AcquireInputCapture token is active, passthrough tokens have no effect.
+	// Refcounted across all plugins; always release every acquired token,
+	// including during PluginShutdown.
+	void* (*AcquireInputPassthrough)();
+	void  (*ReleaseInputPassthrough)(void* token);
 };
 
 // ---------------------------------------------------------------------------
@@ -1225,8 +1272,14 @@ struct IPluginDebugDraw
 	// expire"; every other value counts down, including 0, which vanishes on
 	// the next HUD render. (Line durations are the opposite -- anything <= 0
 	// lives forever in a persistent batcher.)
+	//
+	// fontScale multiplies the text size directly -- the engine assigns it
+	// straight to the canvas text item's scale, with no distance falloff and no
+	// clamping, so 2.0f is exactly twice the size at any range. 1.0f is the
+	// default (the engine's small font at native size); anything <= 0 is
+	// treated as 1.0f so a zeroed struct can't produce invisible text.
 	void (*DrawString)(const PluginDebugVector* location, const char* text, void* testBaseActor,
-	                   const PluginDebugColor* color, float duration);
+	                   const PluginDebugColor* color, float duration, float fontScale);
 
 	// drawSize uses x as the graph width and y as its height (z is unused).
 	// The engine fills the graph body with a mesh; these draw the bounding

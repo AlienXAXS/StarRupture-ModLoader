@@ -274,7 +274,16 @@ static LRESULT CALLBACK HookedWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 	// Dispatch plugin keybind callbacks unconditionally so that toggle-style
 	// keybinds (e.g. F2) can close the UI even while it is open.
 	// Only swallow blocking messages when the UI is not capturing input.
-	const bool capturing = (g_callbacks.ShouldCaptureInput ? g_callbacks.ShouldCaptureInput() : false);
+	const bool exclusive = (g_callbacks.ShouldCaptureInput ? g_callbacks.ShouldCaptureInput() : false);
+
+	// Cooperative mode (v51): a plugin holds a passthrough token, so ImGui is
+	// fed everything and owns the cursor, but the game is only cut out of the
+	// input classes ImGui actually wants this frame. Exclusive capture always
+	// wins -- an open modloader/panel window still freezes the game as before.
+	const bool cooperative = !exclusive &&
+		(g_callbacks.ShouldPassthroughInput ? g_callbacks.ShouldPassthroughInput() : false);
+
+	const bool capturing = exclusive || cooperative;
 
 	// Only feed mouse messages into ImGui while it actually owns the cursor
 	// (i.e. the simulated mouse is shown). Otherwise ImGui's IO mouse state
@@ -314,18 +323,41 @@ static LRESULT CALLBACK HookedWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 
 	if (capturing)
 	{
+		// In cooperative mode the game keeps everything ImGui is not actively
+		// using, so consult ImGui's own per-frame arbitration flags. They are
+		// plain bools refreshed in NewFrame; read them under the same lock the
+		// render thread holds while writing them.
+		bool wantMouse    = true;
+		bool wantKeyboard = true;
+		if (cooperative)
+		{
+			std::lock_guard<std::recursive_mutex> lock(g_imguiMutex);
+			const ImGuiIO& io = ImGui::GetIO();
+			wantMouse    = io.WantCaptureMouse;
+			wantKeyboard = io.WantCaptureKeyboard || io.WantTextInput;
+		}
+
 		switch (msg)
 		{
 		case WM_KEYDOWN: case WM_KEYUP: case WM_SYSKEYDOWN: case WM_SYSKEYUP:
 		case WM_CHAR:
+			if (wantKeyboard) return 0;
+			break;
+
 		case WM_LBUTTONDOWN: case WM_LBUTTONUP: case WM_LBUTTONDBLCLK:
 		case WM_RBUTTONDOWN: case WM_RBUTTONUP: case WM_RBUTTONDBLCLK:
 		case WM_MBUTTONDOWN: case WM_MBUTTONUP: case WM_MBUTTONDBLCLK:
 		case WM_XBUTTONDOWN: case WM_XBUTTONUP: case WM_XBUTTONDBLCLK:
 		case WM_MOUSEMOVE:   case WM_MOUSEWHEEL: case WM_MOUSEHWHEEL:
 		case WM_INPUT:      // UE5 uses raw input for camera delta -- swallow it
-		case WM_SETCURSOR:  // prevent UE5 hiding the cursor while our window is open
+			if (wantMouse) return 0;
+			break;
+
+		// Always swallowed, in both modes: UE5 hides the cursor from here, and
+		// our own cursor has to stay visible for the UI to be usable at all.
+		case WM_SETCURSOR:
 			return 0;
+
 		default:
 			break;
 		}
@@ -1224,7 +1256,12 @@ static HRESULT STDMETHODCALLTYPE HookedPresent(IDXGISwapChain* swapChain, UINT s
 	{
 		std::lock_guard<std::recursive_mutex> imguiLock(g_imguiMutex);
 
-		bool uiOpen = (g_callbacks.ShouldCaptureInput ? g_callbacks.ShouldCaptureInput() : false);
+		// Cooperative passthrough counts as "UI open" for cursor purposes: the
+		// plugin's windows still have to be clickable, so ImGui draws and owns
+		// the cursor exactly as it does for an exclusive capture. What differs
+		// is only which messages HookedWndProc lets through to the game.
+		bool uiOpen = (g_callbacks.ShouldCaptureInput ? g_callbacks.ShouldCaptureInput() : false)
+			|| (g_callbacks.ShouldPassthroughInput ? g_callbacks.ShouldPassthroughInput() : false);
 		ImGuiIO& frameIO = ImGui::GetIO();
 		if (uiOpen)
 		{

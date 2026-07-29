@@ -51,6 +51,16 @@ namespace UI::PluginPanelRegistry
     // Returns true if any plugin currently holds an input-capture token.
     bool AnyInputCaptureRequested();
 
+    // Acquire/release a cooperative input-passthrough token. While at least
+    // one token is held (and nothing is asking for exclusive capture), ImGui
+    // is fed every message and owns the cursor, but the game keeps receiving
+    // input except where ImGui actually wants it.
+    void* AcquireInputPassthrough();
+    void  ReleaseInputPassthrough(void* token);
+
+    // Returns true if any plugin currently holds an input-passthrough token.
+    bool AnyInputPassthroughRequested();
+
     // Returns true if at least one plugin panel window is currently open.
     // Used by imgui_backend to decide whether to capture the mouse even when
     // the main modloader window is closed.
