@@ -34,54 +34,64 @@ jobs:
           GH_TOKEN: ${{ secrets.PLUGIN_BUILD_PAT }}
           SELECTION: ${{ inputs.plugins }}
         run: |
+          owner="AlienXAXS"
+
+          # "<selection name>:<repo name>" — most repos are StarRupture-Plugin-<name>,
+          # but not all of them, so the repo is spelled out rather than derived.
           known=(
-            BetterCheats
-            BetterDrone
-            BetterMap
-            BetterSaving
-            Codex
-            Compass
-            KeepTicking
-            ProductionViewer
-            ServerUtility
-            Timer
-            WAILA
-            WaveOptimiser
+            "BetterCheats:StarRupture-Plugin-BetterCheats"
+            "BetterDrone:StarRupture-Plugin-BetterDrone"
+            "BetterMap:StarRupture-Plugin-BetterMap"
+            "BetterSaving:StarRupture-Plugin-BetterSaving"
+            "Codex:StarRupture-Plugin-Codex"
+            "Compass:StarRupture-Plugin-Compass"
+            "KeepTicking:StarRupture-Plugin-KeepTicking"
+            "ProductionViewer:StarRupture-Plugin-ProductionViewer"
+            "ServerUtility:StarRupture-Plugin-ServerUtility"
+            "Timer:StarRuptureTimer"
+            "WAILA:StarRupture-Plugin-WAILA"
+            "WaveOptimiser:StarRupture-Plugin-WaveOptimiser"
           )
+
+          names=()
+          for entry in "${known[@]}"; do names+=("${entry%%:*}"); done
 
           # Resolve the selection against the known list. Names are matched
           # case-insensitively so a manual dispatch does not have to get the
           # camel casing exactly right.
           if [ -z "$SELECTION" ] || [ "${SELECTION,,}" = "all" ]; then
-            plugins=("${known[@]}")
+            selected=("${known[@]}")
           else
-            plugins=()
+            selected=()
             IFS=',' read -ra requested <<< "$SELECTION"
             for raw in "${requested[@]}"; do
               name="$(echo "$raw" | tr -d '[:space:]')"
               [ -z "$name" ] && continue
               match=""
-              for candidate in "${known[@]}"; do
-                if [ "${candidate,,}" = "${name,,}" ]; then match="$candidate"; fi
+              for entry in "${known[@]}"; do
+                candidate="${entry%%:*}"
+                if [ "${candidate,,}" = "${name,,}" ]; then match="$entry"; fi
               done
               if [ -z "$match" ]; then
-                echo "::error::Unknown plugin '$name'. Known plugins: ${known[*]}"
+                echo "::error::Unknown plugin '$name'. Known plugins: ${names[*]}"
                 exit 1
               fi
-              plugins+=("$match")
+              selected+=("$match")
             done
-            if [ ${#plugins[@]} -eq 0 ]; then
+            if [ ${#selected[@]} -eq 0 ]; then
               echo "::error::No plugins selected."
               exit 1
             fi
           fi
 
-          echo "Triggering ${#plugins[@]} plugin repo(s): ${plugins[*]}"
+          echo "Triggering ${#selected[@]} plugin repo(s):"
+          for entry in "${selected[@]}"; do echo "  ${entry%%:*} -> $owner/${entry#*:}"; done
 
           # Do not let one bad repo abort the rest of the list (step runs under bash -e)
           failed=()
-          for name in "${plugins[@]}"; do
-            repo="AlienXAXS/StarRupture-Plugin-$name"
+          for entry in "${selected[@]}"; do
+            name="${entry%%:*}"
+            repo="$owner/${entry#*:}"
             echo "Triggering release workflow on $repo"
             if ! gh workflow run release.yml --repo "$repo"; then
               echo "::warning::Failed to trigger release workflow on $repo"
@@ -94,4 +104,4 @@ jobs:
             exit 1
           fi
 
-          echo "Triggered ${#plugins[@]} plugin repo(s) successfully."
+          echo "Triggered ${#selected[@]} plugin repo(s) successfully."
