@@ -1,0 +1,97 @@
+name: Build Plugins
+
+# Triggers the release workflow on each plugin repo.
+# Called by release.yml (auto_build_plugins), or dispatched manually to rebuild
+# some or all plugins without cutting a modloader release.
+
+on:
+  workflow_dispatch:
+    inputs:
+      plugins:
+        description: 'Plugins to rebuild — "all", or comma-separated names (e.g. Codex,WAILA)'
+        type: string
+        default: 'all'
+  workflow_call:
+    inputs:
+      plugins:
+        description: 'Plugins to rebuild — "all", or comma-separated names'
+        type: string
+        default: 'all'
+    secrets:
+      PLUGIN_BUILD_PAT:
+        description: 'PAT with Actions: write on the plugin repos'
+        required: true
+
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Trigger release workflow on plugin repos
+        env:
+          GH_TOKEN: ${{ secrets.PLUGIN_BUILD_PAT }}
+          SELECTION: ${{ inputs.plugins }}
+        run: |
+          known=(
+            BetterCheats
+            BetterDrone
+            BetterMap
+            BetterSaving
+            Codex
+            Compass
+            KeepTicking
+            ProductionViewer
+            ServerUtility
+            Timer
+            WAILA
+            WaveOptimiser
+          )
+
+          # Resolve the selection against the known list. Names are matched
+          # case-insensitively so a manual dispatch does not have to get the
+          # camel casing exactly right.
+          if [ -z "$SELECTION" ] || [ "${SELECTION,,}" = "all" ]; then
+            plugins=("${known[@]}")
+          else
+            plugins=()
+            IFS=',' read -ra requested <<< "$SELECTION"
+            for raw in "${requested[@]}"; do
+              name="$(echo "$raw" | tr -d '[:space:]')"
+              [ -z "$name" ] && continue
+              match=""
+              for candidate in "${known[@]}"; do
+                if [ "${candidate,,}" = "${name,,}" ]; then match="$candidate"; fi
+              done
+              if [ -z "$match" ]; then
+                echo "::error::Unknown plugin '$name'. Known plugins: ${known[*]}"
+                exit 1
+              fi
+              plugins+=("$match")
+            done
+            if [ ${#plugins[@]} -eq 0 ]; then
+              echo "::error::No plugins selected."
+              exit 1
+            fi
+          fi
+
+          echo "Triggering ${#plugins[@]} plugin repo(s): ${plugins[*]}"
+
+          # Do not let one bad repo abort the rest of the list (step runs under bash -e)
+          failed=()
+          for name in "${plugins[@]}"; do
+            repo="AlienXAXS/StarRupture-Plugin-$name"
+            echo "Triggering release workflow on $repo"
+            if ! gh workflow run release.yml --repo "$repo"; then
+              echo "::warning::Failed to trigger release workflow on $repo"
+              failed+=("$name")
+            fi
+          done
+
+          if [ ${#failed[@]} -gt 0 ]; then
+            echo "::error::Failed to trigger ${#failed[@]} plugin repo(s): ${failed[*]}"
+            exit 1
+          fi
+
+          echo "Triggered ${#plugins[@]} plugin repo(s) successfully."
