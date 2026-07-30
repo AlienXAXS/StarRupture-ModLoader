@@ -472,7 +472,7 @@ jobs:
     steps:
       - name: Trigger release workflow on plugin repos
         env:
-          GH_TOKEN: ${{ secrets.SDK_REPO_PAT }}
+          GH_TOKEN: ${{ secrets.PLUGIN_BUILD_PAT }}
         run: |
           plugins=(
             BetterCheats
@@ -489,8 +489,18 @@ jobs:
             WaveOptimiser
           )
 
+          # Do not let one bad repo abort the rest of the list (step runs under bash -e)
+          failed=()
           for name in "${plugins[@]}"; do
             repo="AlienXAXS/StarRupture-Plugin-$name"
             echo "Triggering release workflow on $repo"
-            gh workflow run release.yml --repo "$repo"
+            if ! gh workflow run release.yml --repo "$repo"; then
+              echo "::warning::Failed to trigger release workflow on $repo"
+              failed+=("$name")
+            fi
           done
+
+          if [ ${#failed[@]} -gt 0 ]; then
+            echo "::error::Failed to trigger ${#failed[@]} plugin repo(s): ${failed[*]}"
+            exit 1
+          fi
