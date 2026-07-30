@@ -93,6 +93,24 @@ namespace Hooks::Input
 	// (simple or combo).  Used by the input processor to know which keys to poll.
 	std::vector<std::pair<EModKey, int>> GetActiveKeys();
 
+	// --- Diagnostics ---
+	// How many callbacks are registered, split by kind, plus how many combos are
+	// currently set to swallow their key from the game. For the debug HUD: a
+	// keybind count that keeps climbing across plugin reloads is a plugin
+	// re-registering without unregistering, and a blocking entry that outlives
+	// the plugin that set it is why a key stopped reaching the game.
+	void GetRegistrationCounts(int* outSimple, int* outNamedCombos,
+	                           int* outAdvancedCombos, int* outBlocking);
+
+	// The combos currently set to blocking, comma-separated, into a caller buffer.
+	//
+	// The count alone is not actionable: a blocking entry swallows its key before
+	// UE ever sees it, so "3 keys blocked" leaves the player guessing which three
+	// stopped working. Naming them turns "my character will not walk" into "W is
+	// blocked" in one glance, which is the difference between a readout and a
+	// diagnosis.
+	void GetBlockedCombos(char* out, int outSize);
+
 	// Process a WM_KEY*/WM_MOUSE* window message: translate it to an EModKey,
 	// fire all registered keybind callbacks (simple + combo), and return true if
 	// the message should be swallowed (blocking mode is set for this combo).

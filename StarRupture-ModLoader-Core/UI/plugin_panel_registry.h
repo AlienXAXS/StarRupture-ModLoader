@@ -61,6 +61,27 @@ namespace UI::PluginPanelRegistry
     // Returns true if any plugin currently holds an input-passthrough token.
     bool AnyInputPassthroughRequested();
 
+    // Diagnostic view of the outstanding input tokens, for the debug HUD.
+    //
+    // Booleans are enough to *drive* input arbitration but useless for debugging
+    // it: "something is holding input" gives a player no way to tell a plugin
+    // that is legitimately busy from one that leaked a token and will keep the
+    // game mute until the modloader restarts. The counts and the owning module
+    // names do, which is the entire reason this exists.
+    struct InputTokenSummary
+    {
+        int  captureCount;
+        int  passthroughCount;
+        char captureOwners[192];       // "CameraControls.dll x2, Other.dll"
+        char passthroughOwners[192];
+    };
+    void GetInputTokenSummary(InputTokenSummary* out);
+
+    // Registered and currently-open panel counts. Panels contribute to
+    // ShouldCaptureInput independently of any token, so a readout that showed
+    // only tokens could still leave "why is the game frozen?" unanswered.
+    void GetPanelCounts(int* outRegistered, int* outOpen);
+
     // Returns true if at least one plugin panel window is currently open.
     // Used by imgui_backend to decide whether to capture the mouse even when
     // the main modloader window is closed.

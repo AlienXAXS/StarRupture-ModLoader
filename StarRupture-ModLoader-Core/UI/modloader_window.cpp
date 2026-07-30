@@ -52,6 +52,11 @@ namespace UI::ModLoaderWindow
     static std::vector<ConfigKV> s_configEntries;
     static int  s_lastConfigPlugin = -1;  // plugin index for cached entries
 
+    // PluginManager generation the cached entries were read at, so a reload of the
+    // plugin already on screen invalidates them. Starts at a value the counter
+    // cannot be on the first frame, so the first render always loads.
+    static unsigned s_lastConfigGeneration = static_cast<unsigned>(-1);
+
     struct RebindState
     {
         bool active           = false;
@@ -713,10 +718,20 @@ namespace UI::ModLoaderWindow
         {
             const PluginInfo* info = infos[s_selectedPlugin];
 
-            // Reload cache when selection changes
-            if (s_lastConfigPlugin != s_selectedPlugin)
+            // Rebuild the cache when the selection changes OR when any plugin has
+            // been loaded/unloaded/reloaded since we last read the file.
+            //
+            // Selection alone was not enough: reloading the plugin you are already
+            // looking at changes no index, so the editor kept showing the .ini as
+            // parsed the first time it was opened. A setting added to the schema in
+            // the new build stayed invisible until you clicked to another plugin and
+            // back, which reads exactly like the loader ignoring the new build.
+            const unsigned generation = PluginManager::GetPluginGeneration();
+
+            if (s_lastConfigPlugin != s_selectedPlugin || s_lastConfigGeneration != generation)
             {
-                s_lastConfigPlugin = s_selectedPlugin;
+                s_lastConfigPlugin     = s_selectedPlugin;
+                s_lastConfigGeneration = generation;
                 LoadConfigEntries(info->name);
             }
 
@@ -809,6 +824,20 @@ namespace UI::ModLoaderWindow
         bool showPos = UI::GlobalSettings::GetShowPlayerPosition();
         if (UI::Theme::ToggleSwitch("Show Player Position", &showPos))
             UI::GlobalSettings::SetShowPlayerPosition(showPos);
+
+        bool showDebug = UI::GlobalSettings::GetShowDebugValues();
+        if (UI::Theme::ToggleSwitch("ModLoader Debug Values", &showDebug))
+            UI::GlobalSettings::SetShowDebugValues(showDebug);
+        if (ImGui::IsItemHovered())
+        {
+            ImGui::SetTooltip(
+                "Adds the loader's own bookkeeping to the HUD box: which plugins hold\n"
+                "input tokens, what input arbitration resolves to this frame, and what\n"
+                "ImGui thinks it owns.\n\n"
+                "Turn this on if the game stops responding to input while a plugin is\n"
+                "loaded. A token still held with no UI on screen is a leak, and this\n"
+                "names the plugin responsible.");
+        }
 
         ImGui::Spacing();
         ImGui::SeparatorText("Auto Update");

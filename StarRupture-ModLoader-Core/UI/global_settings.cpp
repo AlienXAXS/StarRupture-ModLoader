@@ -22,6 +22,7 @@ namespace UI::GlobalSettings
     static bool  s_showFPS            = false;
     static bool  s_showWorldName      = false;
     static bool  s_showPlayerPosition = false;
+    static bool  s_showDebugValues     = false;
     static float s_fontScale          = 1.0f;
     static char  s_fontFamily[32]     = "Default";
 
@@ -69,6 +70,7 @@ namespace UI::GlobalSettings
         s_showFPS            = ReadBool(L"HUD", L"ShowFPS",            false);
         s_showWorldName      = ReadBool(L"HUD", L"ShowWorldName",      false);
         s_showPlayerPosition = ReadBool(L"HUD", L"ShowPlayerPosition", false);
+        s_showDebugValues    = ReadBool(L"HUD", L"ShowDebugValues",    false);
 
         wchar_t buf[32] = {};
         GetPrivateProfileStringW(L"UI", L"FontScale", L"1.00", buf, 32, s_iniPath);
@@ -106,6 +108,7 @@ namespace UI::GlobalSettings
         WriteBool(L"HUD", L"ShowFPS",            s_showFPS);
         WriteBool(L"HUD", L"ShowWorldName",      s_showWorldName);
         WriteBool(L"HUD", L"ShowPlayerPosition", s_showPlayerPosition);
+        WriteBool(L"HUD", L"ShowDebugValues",    s_showDebugValues);
 
         wchar_t buf[32] = {};
         swprintf_s(buf, L"%.2f", s_fontScale);
@@ -141,6 +144,7 @@ namespace UI::GlobalSettings
     bool GetShowFPS()            { return s_showFPS; }
     bool GetShowWorldName()      { return s_showWorldName; }
     bool GetShowPlayerPosition() { return s_showPlayerPosition; }
+    bool GetShowDebugValues()    { return s_showDebugValues; }
 
     void SetShowFPS(bool v)
     {
@@ -157,6 +161,12 @@ namespace UI::GlobalSettings
     void SetShowPlayerPosition(bool v)
     {
         s_showPlayerPosition = v;
+        Save(nullptr);
+    }
+
+    void SetShowDebugValues(bool v)
+    {
+        s_showDebugValues = v;
         Save(nullptr);
     }
 

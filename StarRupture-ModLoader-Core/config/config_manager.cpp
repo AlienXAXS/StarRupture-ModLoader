@@ -731,4 +731,20 @@ namespace ModLoaderLogger
 		auto it = g_schemas.find(pluginName);
 		return (it != g_schemas.end()) ? it->second : nullptr;
 	}
+
+	void ForgetPluginSchema(const char* pluginName)
+	{
+		if (!pluginName) return;
+
+		auto it = g_schemas.find(pluginName);
+		if (it == g_schemas.end())
+			return;
+
+		g_schemas.erase(it);
+
+		wchar_t wName[256] = {};
+		MultiByteToWideChar(CP_UTF8, 0, pluginName, -1, wName, 256);
+		LogDebug(L"[ConfigManager] Dropped cached schema for '%s' (its module is going away)",
+		         wName);
+	}
 }

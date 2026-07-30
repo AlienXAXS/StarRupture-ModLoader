@@ -241,6 +241,17 @@ namespace PluginManager
 	static CRITICAL_SECTION g_pluginLock;
 	static bool g_managerInitialized = false;
 	static bool   g_startupComplete    = false;
+
+	// Bumped whenever a plugin is loaded, unloaded or reloaded.
+	//
+	// Exists so UI that caches anything derived from a plugin -- the config editor
+	// caches the parsed contents of its .ini -- can tell that its cache is stale
+	// without every such site having to be wired up to a notification. The config
+	// editor previously rebuilt only when the *selected plugin index* changed, so
+	// reloading the selected plugin left it showing the schema and values from the
+	// first time it was ever opened, and a newly added setting was invisible until
+	// you clicked onto another plugin and back.
+	static unsigned g_pluginGeneration = 0;
 	static HANDLE g_initCompleteEvent  = NULL;
 
 	// Update self pointers after loading or reloading a plugin, so they point to the cached strings.
@@ -715,9 +726,16 @@ namespace PluginManager
 		if (!CallShutdownSEH(p.shutdown))
 			LogPluginCrash(p.cachedName.c_str(), p.hModule, L"PluginShutdown (unload)");
 		p.isInitialized = false;
+
+		// Before FreeLibrary, not after: the schema the config manager cached lives
+		// inside this module, so the moment it is unmapped that pointer is a read
+		// into freed memory.
+		ModLoaderLogger::ForgetPluginSchema(p.cachedName.c_str());
+
 		FreeLibrary(p.hModule);
 		p.hModule = nullptr;
 		p.info    = nullptr;
+		++g_pluginGeneration;
 
 		LeaveCriticalSection(&g_pluginLock);
 		ModLoaderLogger::LogMessage(L"Plugin unloaded: %S", p.cachedName.c_str());
@@ -745,6 +763,10 @@ namespace PluginManager
 		}
 		if (p.hModule)
 		{
+			// Same reason as UnloadPlugin: the cached schema points into this
+			// module. InitPluginRecord below re-registers the new one.
+			ModLoaderLogger::ForgetPluginSchema(p.cachedName.c_str());
+
 			FreeLibrary(p.hModule);
 			p.hModule = nullptr;
 			p.info    = nullptr;
@@ -755,6 +777,7 @@ namespace PluginManager
 		p.isWrongTarget        = false;
 
 		bool ok = LoadPluginIntoRecord(p);
+		++g_pluginGeneration;
 
 		if (ok)
 		{
@@ -783,6 +806,11 @@ namespace PluginManager
 	bool IsStartupComplete()
 	{
 		return g_startupComplete;
+	}
+
+	unsigned GetPluginGeneration()
+	{
+		return g_pluginGeneration;
 	}
 
 	void MarkStartupComplete()

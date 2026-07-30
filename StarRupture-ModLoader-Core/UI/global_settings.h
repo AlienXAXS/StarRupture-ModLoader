@@ -40,6 +40,16 @@ namespace UI::GlobalSettings
     bool GetShowPlayerPosition();
     void SetShowPlayerPosition(bool v);
 
+    // Adds a block of modloader-internal state to the HUD info box: outstanding
+    // input tokens and who holds them, what the input arbitration currently
+    // resolves to, and what ImGui thinks it owns this frame.
+    //
+    // Separate from the other HUD toggles because it is for diagnosing the
+    // modloader rather than for looking at the game -- specifically the class of
+    // bug where a plugin holds input open and the player has no way to see it.
+    bool GetShowDebugValues();
+    void SetShowDebugValues(bool v);
+
     float GetFontScale();
     void  SetFontScale(float scale);
 

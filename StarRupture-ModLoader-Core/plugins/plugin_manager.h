@@ -63,6 +63,15 @@ namespace PluginManager
     // Returns false if index is out of range or the DLL fails to load/init.
     bool ReloadPlugin(int index);
 
+    // Increments every time a plugin is loaded, unloaded or reloaded.
+    //
+    // For UI that caches anything derived from a plugin: store the value alongside
+    // the cache and rebuild when it changes. Cheaper and harder to get wrong than
+    // a notification per cache, and it catches reloads of the thing already on
+    // screen -- which is the case that was broken, because nothing else about the
+    // selection changes when you reload the plugin you are already looking at.
+    unsigned GetPluginGeneration();
+
     // Returns true after the initial startup batch of InitAllLoadedPlugins completes.
     // Used by hooks to gate late-registration replay: only replay during startup, not
     // after runtime hot-reloads.

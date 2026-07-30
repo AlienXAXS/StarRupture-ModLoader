@@ -8,9 +8,12 @@
 #include "plugins/plugin_manager.h"
 #include <mutex>
 #include <list>
+#include <map>
+#include <string>
+#include <utility>
 #include <vector>
-#include <set>
 #include <algorithm>
+#include <cstdio>
 #include <cstring>
 
 namespace UI::PluginPanelRegistry
@@ -37,8 +40,11 @@ namespace UI::PluginPanelRegistry
     static std::list<PanelEntry> s_panels;   // list: insertion never invalidates existing pointers
     static std::vector<ConfigCallbackEntry> s_configCallbacks;
     static std::vector<PluginPanelClosedCallback> s_panelClosedCallbacks;
-    static std::set<void*> s_captureTokens;
-    static std::set<void*> s_passthroughTokens;
+    // Token -> the module that acquired it (see ResolveCallerModule). A map
+    // rather than a set purely so a leak can be attributed; the token identity
+    // and lifetime rules are unchanged.
+    static std::map<void*, std::string> s_captureTokens;
+    static std::map<void*, std::string> s_passthroughTokens;
     static char s_currentPlugin[64];   // set by plugin_manager before each PluginInit call
 
     // Invokes all registered panel-closed callbacks for the given handle.
@@ -184,11 +190,124 @@ namespace UI::PluginPanelRegistry
             s_panelClosedCallbacks.end());
     }
 
+    // -----------------------------------------------------------------------
+    // Input tokens
+    //
+    // A leaked token is the worst bug this file can have: while one is held the
+    // game is either cut out of input entirely or sharing it with ImGui, and
+    // nothing on screen says so. It is also the hardest to attribute, because by
+    // the time anyone notices, the plugin that took it may have been unloaded.
+    //
+    // So each token records which module asked for it. The plugin never tells us
+    // -- the acquire functions carry no plugin context and adding one would mean
+    // an interface break for every existing plugin -- so it is read off the call
+    // stack instead: walk outwards until a frame belongs to a module that is not
+    // this one, and that is the caller's DLL. Diagnostic only; a failure to
+    // resolve records "unknown" and changes nothing else.
+    // -----------------------------------------------------------------------
+
+    // The module this function lives in, i.e. the modloader core. Cached: it
+    // cannot change for the life of the process.
+    static HMODULE SelfModule()
+    {
+        static HMODULE s_self = []
+        {
+            HMODULE self = nullptr;
+            GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                                   GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                               reinterpret_cast<LPCSTR>(&SelfModule), &self);
+            return self;
+        }();
+        return s_self;
+    }
+
+    static std::string ResolveCallerModule()
+    {
+        // 16 frames is generous: the real caller is two or three out (plugin ->
+        // hooks_interface wrapper -> here), and anything deeper than this is not
+        // a stack we would be able to interpret anyway.
+        void* frames[16] = {};
+        const USHORT captured = RtlCaptureStackBackTrace(1, 16, frames, nullptr);
+        const HMODULE self = SelfModule();
+
+        for (USHORT i = 0; i < captured; ++i)
+        {
+            HMODULE owner = nullptr;
+            if (!GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                                       GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                                   static_cast<LPCSTR>(frames[i]), &owner))
+                continue;
+
+            if (!owner || owner == self)
+                continue;   // still inside the modloader -- keep walking out
+
+            char path[MAX_PATH] = {};
+            if (GetModuleFileNameA(owner, path, MAX_PATH) == 0)
+                continue;
+
+            const char* leaf = std::strrchr(path, '\\');
+            return leaf ? leaf + 1 : path;
+        }
+
+        return "unknown";
+    }
+
+    // Collapses the owner list into "CameraControls.dll x2, Other.dll" -- one
+    // entry per module, so a plugin that leaks a token every time it opens its
+    // editor reads as a growing count against a single name rather than as an
+    // unreadable wall of identical lines.
+    static void SummariseOwners(const std::map<void*, std::string>& tokens,
+                                char* out, int outSize)
+    {
+        if (outSize <= 0) return;
+        out[0] = '\0';
+
+        std::vector<std::pair<std::string, int>> counts;
+        for (const auto& entry : tokens)
+        {
+            auto it = std::find_if(counts.begin(), counts.end(),
+                                   [&](const std::pair<std::string, int>& c)
+                                   { return c.first == entry.second; });
+            if (it != counts.end())
+                ++it->second;
+            else
+                counts.emplace_back(entry.second, 1);
+        }
+
+        // snprintf, not _snprintf_s with _TRUNCATE: the latter returns -1 when it
+        // truncates, and adding that to the cursor walks it backwards and corrupts
+        // the buffer. snprintf returns the length it *wanted*, so overrun is
+        // detected by comparing against the space that was left.
+        int used = 0;
+        for (const auto& count : counts)
+        {
+            const int remaining = outSize - used;
+            if (remaining <= 1) break;
+
+            const int written = count.second > 1
+                ? snprintf(out + used, remaining, "%s%s x%d",
+                           used > 0 ? ", " : "", count.first.c_str(), count.second)
+                : snprintf(out + used, remaining, "%s%s",
+                           used > 0 ? ", " : "", count.first.c_str());
+
+            if (written < 0 || written >= remaining)
+                break;   // truncated; keep what fitted rather than lose the lot
+
+            used += written;
+        }
+    }
+
     void* AcquireInputCapture()
     {
         void* token = new char;
+
+        // Resolved before taking the lock: walking the stack touches the loader
+        // lock, and holding two locks in an order nobody else observes is how a
+        // deadlock gets built.
+        std::string owner = ResolveCallerModule();
+
         std::lock_guard<std::mutex> lock(s_mutex);
-        s_captureTokens.insert(token);
+        s_captureTokens.emplace(token, std::move(owner));
         return token;
     }
 
@@ -212,8 +331,10 @@ namespace UI::PluginPanelRegistry
     void* AcquireInputPassthrough()
     {
         void* token = new char;
+        std::string owner = ResolveCallerModule();
+
         std::lock_guard<std::mutex> lock(s_mutex);
-        s_passthroughTokens.insert(token);
+        s_passthroughTokens.emplace(token, std::move(owner));
         return token;
     }
 
@@ -232,6 +353,31 @@ namespace UI::PluginPanelRegistry
     {
         std::lock_guard<std::mutex> lock(s_mutex);
         return !s_passthroughTokens.empty();
+    }
+
+    void GetInputTokenSummary(InputTokenSummary* out)
+    {
+        if (!out) return;
+        *out = InputTokenSummary{};
+
+        std::lock_guard<std::mutex> lock(s_mutex);
+        out->captureCount     = static_cast<int>(s_captureTokens.size());
+        out->passthroughCount = static_cast<int>(s_passthroughTokens.size());
+        SummariseOwners(s_captureTokens,     out->captureOwners,     sizeof(out->captureOwners));
+        SummariseOwners(s_passthroughTokens, out->passthroughOwners, sizeof(out->passthroughOwners));
+    }
+
+    void GetPanelCounts(int* outRegistered, int* outOpen)
+    {
+        std::lock_guard<std::mutex> lock(s_mutex);
+        if (outRegistered) *outRegistered = static_cast<int>(s_panels.size());
+        if (outOpen)
+        {
+            int open = 0;
+            for (const auto& e : s_panels)
+                if (e.isOpen) ++open;
+            *outOpen = open;
+        }
     }
 
     bool AnyPanelOpen()

@@ -27,6 +27,29 @@ static bool         s_imguiEnabled = true;
 static SDK::UWorld* s_currentWorld = nullptr;
 static EModKey      s_openKey      = EModKey::F2;
 
+bool ShouldCaptureInputNow()
+{
+    // Any standalone modloader window that can render independently of the main
+    // F2 menu (i.e. can still be open while IsOpen() is false) must be listed
+    // here, or its buttons become unclickable -- mouse messages are only
+    // forwarded to ImGui while this returns true.
+    return UI::ModLoaderWindow::IsOpen()
+        || UI::UpdateNoticeWindow::IsOpen()
+        || UI::TickProfilerWindow::IsOpen()
+        || UI::ConsoleWindow::IsOpen()
+        || UI::PluginPanelRegistry::AnyPanelOpen()
+        || UI::PluginPanelRegistry::AnyInputCaptureRequested();
+}
+
+bool ShouldPassthroughInputNow()
+{
+    // Cooperative mode -- only consulted while ShouldCaptureInputNow() is false.
+    // A plugin driving an always-on widget UI (e.g. a timeline editor) holds a
+    // passthrough token so its windows stay clickable without freezing the
+    // player out of the game underneath.
+    return UI::PluginPanelRegistry::AnyInputPassthroughRequested();
+}
+
 void InitClientUI()
 {
     const std::wstring iniPath = GetModLoaderDirPath(L"modloader.ini");
@@ -82,27 +105,8 @@ void InitClientUI()
             UI::PluginPanelRegistry::RenderPanelWindows(api);
             UI::PluginWidgetRegistry::RenderWidgets(api);
         };
-        cbs.ShouldCaptureInput = []() -> bool
-        {
-            // Any standalone modloader window that can render independently of
-            // the main F2 menu (i.e. can still be open while IsOpen() is false)
-            // must be listed here, or its buttons become unclickable -- mouse
-            // messages are only forwarded to ImGui while this returns true.
-            return UI::ModLoaderWindow::IsOpen()
-                || UI::UpdateNoticeWindow::IsOpen()
-                || UI::TickProfilerWindow::IsOpen()
-                || UI::ConsoleWindow::IsOpen()
-                || UI::PluginPanelRegistry::AnyPanelOpen()
-                || UI::PluginPanelRegistry::AnyInputCaptureRequested();
-        };
-        cbs.ShouldPassthroughInput = []() -> bool
-        {
-            // Cooperative mode -- only consulted while ShouldCaptureInput() is
-            // false. A plugin driving an always-on widget UI (e.g. a timeline
-            // editor) holds a passthrough token so its windows stay clickable
-            // without freezing the player out of the game underneath.
-            return UI::PluginPanelRegistry::AnyInputPassthroughRequested();
-        };
+        cbs.ShouldCaptureInput     = []() -> bool { return ShouldCaptureInputNow(); };
+        cbs.ShouldPassthroughInput = []() -> bool { return ShouldPassthroughInputNow(); };
         cbs.DispatchKey = [](UINT msg, WPARAM wParam, LPARAM lParam) -> bool
         {
             return Hooks::Input::ProcessWindowMessage(msg, wParam, lParam);

@@ -172,7 +172,7 @@ namespace Hooks::Input
 	};
 
 	// Named-combo entries: registered via RegisterKeybindByName("Ctrl+F5", ...).
-	// Stores the original combo string so UpdateKeybindByName can find and
+	// Stores the current combo string so UpdateKeybindByName can find and
 	// update registrations in-place when the user rebinds in the config UI.
 	struct NamedComboEntry
 	{
@@ -180,7 +180,21 @@ namespace Hooks::Input
 		EModKeyModifiers mods;
 		EModKeyEvent     event;
 		PluginKeybindCallback callback;
-		char comboStr[64];  // original combo string, e.g. "Ctrl+F5" or "F5"
+		char comboStr[64];  // current combo string, e.g. "Ctrl+F5" or "F5"
+
+		// The combo the plugin originally registered with, never rewritten by a
+		// rebind. This exists because a live rebind silently breaks unregistration
+		// and the plugin has no way to know: it registered "W", the user rebound it
+		// to "G", UpdateKeybindByName patched key and comboStr in place, and the
+		// plugin still calls UnregisterKeybindByName("W", ...) on shutdown. That
+		// matched on the *current* key, found nothing, and left a live pointer into
+		// a DLL that was about to be unloaded -- pressing G then crashed the game
+		// inside PumpMessages.
+		//
+		// Keeping the original name means unregistration keeps working with the
+		// only name the plugin ever knew, for every plugin, without an interface
+		// change or any of them being aware this problem existed.
+		char originalComboStr[64];
 	};
 
 	// Advanced-combo entries: registered via RegisterKeybindCombo (enum + explicit mods).
@@ -520,6 +534,7 @@ namespace Hooks::Input
 		entry.event    = event;
 		entry.callback = callback;
 		strncpy_s(entry.comboStr, combo, _TRUNCATE);
+		strncpy_s(entry.originalComboStr, combo, _TRUNCATE);
 		s_namedCombos.push_back(entry);
 
 		ModLoaderLogger::LogDebug(L"[KeybindRegistry] Registered named bind: combo=%S event=%u (total=%zu)",
@@ -532,16 +547,46 @@ namespace Hooks::Input
 
 		EModKeyModifiers mods = EModKeyMod_None;
 		EModKey key = ParseComboString(combo, mods);
-		if (key == EModKey::Unknown) return;
 
+		// An unparseable combo is not a reason to give up any more: the caller may
+		// be passing the name it registered with, and matching on that string does
+		// not need the key to resolve.
 		std::lock_guard<std::mutex> lock(s_mutex);
+
+		const size_t before = s_namedCombos.size();
+
 		auto it = std::remove_if(s_namedCombos.begin(), s_namedCombos.end(),
 		                         [&](const NamedComboEntry& e)
 		                         {
-			                         return e.key == key && e.mods == mods &&
-			                                e.event == event && e.callback == callback;
+			                         if (e.event != event || e.callback != callback)
+				                         return false;
+
+			                         // Either the live binding matches what the caller
+			                         // asked for, or it is the same registration under
+			                         // the name it was created with and has since been
+			                         // rebound underneath the caller. Both are theirs.
+			                         const bool liveMatch = key != EModKey::Unknown &&
+			                                                e.key == key && e.mods == mods;
+			                         const bool originalMatch =
+			                             strcmp(e.originalComboStr, combo) == 0;
+
+			                         return liveMatch || originalMatch;
 		                         });
 		s_namedCombos.erase(it, s_namedCombos.end());
+
+		const size_t removed = before - s_namedCombos.size();
+		if (removed == 0)
+		{
+			// Worth a warning rather than silence: the caller believes it has just
+			// removed a callback it is about to invalidate, and if nothing was
+			// removed then something is about to hold a pointer into an unmapped
+			// DLL. The dispatch-time guard will catch it, but this says why.
+			ModLoaderLogger::LogWarn(
+				L"[KeybindRegistry] UnregisterKeybindByName('%S', event=%u) matched no "
+				L"registration for callback %p -- if that plugin is unloading, a stale "
+				L"registration may be left behind.",
+				combo, static_cast<unsigned>(event), reinterpret_cast<const void*>(callback));
+		}
 	}
 
 	void UpdateKeybindByName(const char* pluginName, const char* oldCombo, const char* newCombo)
@@ -685,16 +730,69 @@ namespace Hooks::Input
 	// -----------------------------------------------------------------------
 	// Dispatch
 	// -----------------------------------------------------------------------
+	// -----------------------------------------------------------------------
+	// Stale-callback guard
+	//
+	// Every registration here is a raw function pointer into a plugin DLL, and
+	// calling one after that DLL has been unloaded is an instant access violation
+	// inside PumpMessages -- the crash looks like a modloader bug and takes the
+	// whole game down. The `try/catch(...)` around the call sites does not help:
+	// under /EHsc an access violation is not a C++ exception, so it sails
+	// straight through.
+	//
+	// Plugins are supposed to unregister on shutdown and normally do. The failure
+	// mode that made this necessary is subtler: UpdateKeybindByName rebinds a
+	// registration *in place* when the user picks a new key in the config UI, and
+	// the plugin is never told. Its own unregister then looks for the old key,
+	// finds nothing, and the entry outlives the DLL. Press the new key, crash.
+	//
+	// So the registry stops trusting its own pointers. A callback address that no
+	// longer belongs to a loaded module cannot be valid, whatever any plugin did
+	// or failed to do, and this makes the entire crash class impossible rather
+	// than fixing one route into it.
+	//
+	// Checked only for entries about to be called -- one or two per keypress --
+	// rather than by sweeping the whole table. GetModuleHandleEx touches the
+	// loader lock, and doing that fifty times per keystroke from inside a window
+	// procedure is a contention risk with no benefit: an entry nobody presses
+	// cannot crash anything, and it gets validated the moment they do.
+	// -----------------------------------------------------------------------
+	static bool CallbackStillMapped(const void* callback)
+	{
+		if (!callback) return false;
+
+		HMODULE owner = nullptr;
+		if (!GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+		                           GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+		                       static_cast<LPCSTR>(callback), &owner))
+			return false;
+
+		return owner != nullptr;
+	}
+
 	void Dispatch(EModKey key, EModKeyEvent event)
 	{
 		// Snapshot callbacks under lock, then call without lock held
 		std::vector<PluginKeybindCallback> toCall;
 		{
 			std::lock_guard<std::mutex> lock(s_mutex);
-			for (auto& e : s_callbacks)
+			for (auto it = s_callbacks.begin(); it != s_callbacks.end(); )
 			{
-				if (e.key == key && e.event == event)
-					toCall.push_back(e.callback);
+				if (it->key != key || it->event != event) { ++it; continue; }
+
+				if (!CallbackStillMapped(reinterpret_cast<const void*>(it->callback)))
+				{
+					ModLoaderLogger::LogError(
+						L"[KeybindRegistry] Dropping a keybind callback at %p whose module is no "
+						L"longer loaded -- a plugin was unloaded without unregistering it. "
+						L"Calling it would have crashed the game.",
+						reinterpret_cast<const void*>(it->callback));
+					it = s_callbacks.erase(it);
+					continue;
+				}
+
+				toCall.push_back(it->callback);
+				++it;
 			}
 		}
 
@@ -720,19 +818,50 @@ namespace Hooks::Input
 		std::vector<PluginKeybindComboCallback> advToCall;
 		{
 			std::lock_guard<std::mutex> lock(s_mutex);
-			for (auto& e : s_namedCombos)
+
+			// Same stale-pointer guard as Dispatch, and this is the list that
+			// actually crashed: a rebind patches these entries in place, so a
+			// plugin's own unregister can miss them entirely.
+			for (auto it = s_namedCombos.begin(); it != s_namedCombos.end(); )
 			{
-				if (e.key != key || e.event != event) continue;
+				if (it->key != key || it->event != event) { ++it; continue; }
+
 				// Named entries with no mods fire regardless of current modifier state
 				// (same behaviour as the old plain RegisterKeybind path).
 				// Named entries with mods require an exact match.
-				if (e.mods == EModKeyMod_None || e.mods == mods)
-					namedToCall.push_back(e.callback);
+				if (!(it->mods == EModKeyMod_None || it->mods == mods)) { ++it; continue; }
+
+				if (!CallbackStillMapped(reinterpret_cast<const void*>(it->callback)))
+				{
+					ModLoaderLogger::LogError(
+						L"[KeybindRegistry] Dropping named keybind '%S' -> callback %p whose module "
+						L"is no longer loaded. A plugin was unloaded without unregistering it "
+						L"(a live rebind will do this). Calling it would have crashed the game.",
+						it->comboStr, reinterpret_cast<const void*>(it->callback));
+					it = s_namedCombos.erase(it);
+					continue;
+				}
+
+				namedToCall.push_back(it->callback);
+				++it;
 			}
-			for (auto& e : s_comboCallbacks)
+
+			for (auto it = s_comboCallbacks.begin(); it != s_comboCallbacks.end(); )
 			{
-				if (e.key == key && e.mods == mods && e.event == event)
-					advToCall.push_back(e.callback);
+				if (it->key != key || it->mods != mods || it->event != event) { ++it; continue; }
+
+				if (!CallbackStillMapped(reinterpret_cast<const void*>(it->callback)))
+				{
+					ModLoaderLogger::LogError(
+						L"[KeybindRegistry] Dropping a combo keybind callback at %p whose module is "
+						L"no longer loaded. Calling it would have crashed the game.",
+						reinterpret_cast<const void*>(it->callback));
+					it = s_comboCallbacks.erase(it);
+					continue;
+				}
+
+				advToCall.push_back(it->callback);
+				++it;
 			}
 		}
 
@@ -773,6 +902,53 @@ namespace Hooks::Input
 
 		return result;
 	}
+
+	void GetRegistrationCounts(int* outSimple, int* outNamedCombos,
+	                           int* outAdvancedCombos, int* outBlocking)
+	{
+		std::lock_guard<std::mutex> lock(s_mutex);
+
+		if (outSimple)         *outSimple         = static_cast<int>(s_callbacks.size());
+		if (outNamedCombos)    *outNamedCombos    = static_cast<int>(s_namedCombos.size());
+		if (outAdvancedCombos) *outAdvancedCombos = static_cast<int>(s_comboCallbacks.size());
+
+		if (outBlocking)
+		{
+			// Absent means non-blocking, and entries are left behind rather than
+			// erased when blocking is turned back off, so the count has to be of
+			// the entries that are actually true.
+			int blocking = 0;
+			for (const auto& entry : s_blockingMap)
+				if (entry.second) ++blocking;
+			*outBlocking = blocking;
+		}
+	}
+
+	void GetBlockedCombos(char* out, int outSize)
+	{
+		if (!out || outSize <= 0) return;
+		out[0] = '\0';
+
+		std::lock_guard<std::mutex> lock(s_mutex);
+
+		int used = 0;
+		for (const auto& entry : s_blockingMap)
+		{
+			if (!entry.second)
+				continue;   // present but turned back off
+
+			const int remaining = outSize - used;
+			if (remaining <= 1) break;
+
+			const int written = snprintf(out + used, remaining, "%s%s",
+			                             used > 0 ? "," : "", entry.first.c_str());
+			if (written < 0 || written >= remaining)
+				break;   // truncated; keep what fitted
+
+			used += written;
+		}
+	}
+
 	bool ProcessWindowMessage(UINT msg, WPARAM wParam, LPARAM lParam)
 	{
 		EModKey      mk    = EModKey::Unknown;
