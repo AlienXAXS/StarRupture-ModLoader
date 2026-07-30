@@ -7,6 +7,10 @@ callback. This keeps the ImGui version and DX12 backend entirely under the modlo
 The UI system is **client-only**. On server or generic builds `hooks->UI` and `hooks->Input` are
 both `nullptr`. Always null-check before use.
 
+Icons: the modloader bundles the full Material Icons font, and because ImGui 1.92 bakes glyphs on
+demand, **all 2188 of them are usable from a plugin with no setup at all** — see
+[MaterialIcons.md](MaterialIcons.md) for the contact sheets and the codepoint/escape table.
+
 ---
 
 ## Availability
