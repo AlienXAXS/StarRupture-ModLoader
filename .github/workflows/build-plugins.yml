@@ -43,6 +43,7 @@ jobs:
             "BetterDrone:StarRupture-Plugin-BetterDrone"
             "BetterMap:StarRupture-Plugin-BetterMap"
             "BetterSaving:StarRupture-Plugin-BetterSaving"
+            "CameraControls:StarRupture-Plugin-CameraControls"
             "Codex:StarRupture-Plugin-Codex"
             "Compass:StarRupture-Plugin-Compass"
             "KeepTicking:StarRupture-Plugin-KeepTicking"
