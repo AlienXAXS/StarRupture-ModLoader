@@ -14,13 +14,54 @@ DWORD WINAPI MainInitThreadProc(LPVOID);
 
 VOID CALLBACK MainInitApcProc(ULONG_PTR)
 {
+    LogToFile::Info("[init] Main-thread APC fired -- starting Stage 1 with the game held");
+
     g_mainInitThread = CreateThread(nullptr, 0, MainInitThreadProc, nullptr, 0, nullptr);
     if (!g_mainInitThread)
     {
         LogToFile::Error("FATAL: Failed to create main init thread from APC (%lu)", GetLastError());
+        g_mainThreadParked = false;
+        if (g_stage1DoneEvent) { CloseHandle(g_stage1DoneEvent); g_stage1DoneEvent = NULL; }
         if (g_pluginsLoadedEvent)
             SetEvent(g_pluginsLoadedEvent);
+        return;
     }
+
+    LogToFile::Info("[init] Init thread started (tid %lu)", GetThreadId(g_mainInitThread));
+
+    if (!g_mainThreadParked || !g_stage1DoneEvent)
+    {
+        LogToFile::Info("[init] No Stage 1 gate -- main thread continues booting alongside Stage 1");
+        return;
+    }
+
+    // Hold the game main thread here for the whole of Stage 1 rather than
+    // letting the init thread SuspendThread() it.
+    //
+    // This APC runs from NtTestAlert at the end of process init: the loader
+    // lock and the heap locks are all free at this exact point, so stopping
+    // here cannot deadlock anything Stage 1 does. SuspendThread() has no such
+    // guarantee -- it freezes the main thread at whatever instruction it has
+    // reached, and once the game's entry point starts running that is very
+    // often inside LdrLoadDll or RtlAllocateHeap. Stage 1 then creates the
+    // splash window (loader lock, first-time theme/IME DLL loads) and runs the
+    // pattern preflight (heap), blocks on the lock the frozen thread owns, and
+    // the game hangs with nothing further written to the log. It is a race, so
+    // it only ever bit some machines (v1.16.0).
+    constexpr DWORD kStage1TimeoutMs = 180'000;
+    LogToFile::Info("[init] Main thread parked at the Stage 1 gate (timeout %lu ms)", kStage1TimeoutMs);
+
+    const ULONGLONG gateStart = GetTickCount64();
+    const DWORD r = WaitForSingleObject(g_stage1DoneEvent, kStage1TimeoutMs);
+    const ULONGLONG gateMs = GetTickCount64() - gateStart;
+
+    if (r == WAIT_OBJECT_0)
+        LogToFile::Info("[init] Stage 1 gate released after %llu ms -- main thread resuming game boot", gateMs);
+    else
+        LogToFile::Error("[init] Stage 1 gate returned %lu after %llu ms -- releasing the main thread anyway", r, gateMs);
+
+    // The handle is deliberately left open and closed by ShutdownAll: on the
+    // timeout path the init thread is still alive and will SetEvent on it.
 }
 
 void OnEngineInitForUELog()

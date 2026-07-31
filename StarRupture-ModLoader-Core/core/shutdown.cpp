@@ -45,6 +45,14 @@ void ShutdownAll()
         g_mainInitThread = NULL;
     }
 
+    // Owned by the Stage 1 gate (MainInitApcProc / MainInitThreadProc); both
+    // are long finished by the time we get here.
+    if (g_stage1DoneEvent)
+    {
+        CloseHandle(g_stage1DoneEvent);
+        g_stage1DoneEvent = NULL;
+    }
+
     ModLoaderLogger::LogInfo(L"======================================");
     ModLoaderLogger::LogInfo(L"       Modloader shutting down!");
     ModLoaderLogger::LogInfo(L"======================================");

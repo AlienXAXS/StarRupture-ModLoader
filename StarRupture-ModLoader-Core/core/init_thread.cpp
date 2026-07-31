@@ -20,28 +20,74 @@
 #include "../utils/thread_utils.h"
 #include "../utils/pak_list.h"
 
+// Lets the game main thread run again at the end of Stage 1. Two ways it can
+// be stopped, decided in Core_Attach:
+//
+//  * APC path (the normal dwmapi proxy load): the main thread parks itself
+//    inside MainInitApcProc on g_stage1DoneEvent, at a point where it provably
+//    holds no loader or heap lock. Nothing was suspended, so we just signal.
+//  * Injected path (Core loaded on some other thread): the game is already
+//    running and the main thread has to be suspended from the outside.
+//
+// Never SuspendThread() the main thread on the APC path: it freezes wherever
+// the game's entry point has got to, which is routinely inside LdrLoadDll or
+// RtlAllocateHeap, and everything below (splash window creation, the pattern
+// preflight's allocations) then blocks forever on the lock it owns.
+static void ReleaseMainThread(HANDLE& suspendedMainThread)
+{
+    if (g_mainThreadParked)
+    {
+        if (g_stage1DoneEvent)
+            SetEvent(g_stage1DoneEvent);
+        return;
+    }
+
+    resume_main_thread(suspendedMainThread);
+    suspendedMainThread = NULL;
+}
+
 DWORD WINAPI MainInitThreadProc(LPVOID)
 {
     // ------------------------------------------------------------------
     // Stage 1: Hook installation
     // Install all detours before the engine gets far enough to miss them.
-    // The game's main thread is suspended for the whole of Stage 1 -- the
-    // game must not keep booting while we scan patterns and patch code.
-    // suspend_main_thread() safely returns NULL when we *are* the main
-    // thread (APC init path), where the game is inherently not running
-    // while this function is.
+    // The game's main thread is held for the whole of Stage 1 -- the game
+    // must not keep booting while we scan patterns and patch code. See
+    // ReleaseMainThread() above for how it is held.
     // ------------------------------------------------------------------
+    // On the APC path the main thread is already parked (nothing to suspend);
+    // declared up front so the wrong-build bail below can release it too.
+    HANDLE suspendedMainThread = NULL;
+
+    const ULONGLONG stage1Start = GetTickCount64();
+    LogToFile::Info("[init] ---- Stage 1: hook installation (init thread %lu) ----", GetCurrentThreadId());
+
     {
         const auto typeResult = GameTypeChecker::Check();
         if (typeResult == GameTypeChecker::Result::SilentBail)
+        {
+            LogToFile::Info("[init] Executable is not the expected target for this build -- bailing out silently");
+            ReleaseMainThread(suspendedMainThread);
             return 0;
+        }
         if (typeResult == GameTypeChecker::Result::ErrorAndExit)
             ExitProcess(1);
     }
+    LogToFile::Info("[init] Executable check passed");
 
-    HANDLE suspendedMainThread = suspend_main_thread();
+    if (g_mainThreadParked)
+    {
+        LogToFile::Info("[init] Main thread held: parked on the Stage 1 gate");
+    }
+    else
+    {
+        suspendedMainThread = suspend_main_thread();
+        LogToFile::Info("[init] Main thread held: suspended (handle %s)",
+            suspendedMainThread ? "acquired" : "NOT acquired -- game keeps booting during Stage 1");
+    }
 
     Splash::Show();
+    LogToFile::Info("[init] Splash window shown");
 
     // Bring the ModLoaderLogger online before installing hooks -- otherwise
     // every ModLoaderLogger::Log* call made during hook installation
@@ -54,7 +100,7 @@ DWORD WINAPI MainInitThreadProc(LPVOID)
     // thread waiting on g_pluginsReadyEvent which would never be signalled).
     if (!VerifyGameVersion())
     {
-        resume_main_thread(suspendedMainThread);
+        ReleaseMainThread(suspendedMainThread);
         return 0;
     }
 
@@ -64,21 +110,28 @@ DWORD WINAPI MainInitThreadProc(LPVOID)
     // successful case doubles as a scan-cache warm-up, so the per-hook
     // scans below become cache hits.
     Splash::SetStatus(L"Verifying scan patterns...");
+    LogToFile::Info("[init] Pattern preflight starting...");
+
+    const ULONGLONG preflightStart = GetTickCount64();
     std::wstring preflightDetails;
-    if (!PatternPreflight::VerifyAllPatterns(&preflightDetails))
+    const bool preflightOk = PatternPreflight::VerifyAllPatterns(&preflightDetails);
+    LogToFile::Info("[init] Pattern preflight %s in %llu ms",
+        preflightOk ? "passed" : "FAILED", GetTickCount64() - preflightStart);
+
+    if (!preflightOk)
     {
         ModLoaderLogger::LogError(L"[init] Pattern preflight failed -- mod loader disabled");
         Splash::Close();
 
 #ifdef MODLOADER_CLIENT_BUILD
-        // The main thread is still suspended from the top of Stage 1, so the
-        // game stays frozen while the dialog is up. Let the user decide:
-        // continue with a completely unmodified game, or quit and wait for a
-        // ModLoader update.
+        // The main thread is still held from the top of Stage 1, so the game
+        // stays frozen while the dialog is up. Let the user decide: continue
+        // with a completely unmodified game, or quit and wait for a ModLoader
+        // update.
         const auto choice = Hooks::CrashDialog::Show(
             Hooks::CrashDialog::Mode::PatternFailure, preflightDetails);
 
-        resume_main_thread(suspendedMainThread);
+        ReleaseMainThread(suspendedMainThread);
         if (choice == Hooks::CrashDialog::Result::QuitGame)
         {
             ModLoaderLogger::LogInfo(L"[init] User chose to quit the game after preflight failure");
@@ -88,42 +141,54 @@ DWORD WINAPI MainInitThreadProc(LPVOID)
 #else
         // Dedicated server: no UI to ask -- log, resume the game unmodified.
         ModLoaderLogger::LogError(L"[init] Starting the game unmodified");
-        resume_main_thread(suspendedMainThread);
+        ReleaseMainThread(suspendedMainThread);
 #endif
         return 0;
     }
 
+    LogToFile::Info("[init] Installing engine hooks...");
+    const ULONGLONG hooksStart = GetTickCount64();
     InstallHooksPhase();
+    LogToFile::Info("[init] Engine hooks installed in %llu ms", GetTickCount64() - hooksStart);
 
     // Hooks are in place -- from here the engine-init hook takes over pausing
     // the main thread (it blocks on g_pluginsReadyEvent), so let it run again.
-    resume_main_thread(suspendedMainThread);
-    LogToFile::Info("[init] Stage 1 complete -- hooks installed, main thread running");
+    ReleaseMainThread(suspendedMainThread);
+    LogToFile::Info("[init] Stage 1 complete in %llu ms -- hooks installed, main thread running",
+        GetTickCount64() - stage1Start);
 
     // ------------------------------------------------------------------
     // Stage 2: Subsystem init + wait for engine ready
     // Hooks are in place; now initialise subsystems and block until the
     // engine fires the ready signal through one of those hooks.
     // ------------------------------------------------------------------
+    const ULONGLONG stage2Start = GetTickCount64();
+    LogToFile::Info("[init] ---- Stage 2: subsystems + wait for engine ----");
+
     Splash::SetStatus(L"Starting mod loader...");
     Splash::SetProgress(0.0f);
 
     LogStartupEnvironment();
+
+    LogToFile::Info("[init] Initialising subsystems (config, plugin manager)...");
     InitSubsystems();
+    LogToFile::Info("[init] Subsystems initialised");
 
 #ifdef MODLOADER_CLIENT_BUILD
     ModLoaderLogger::LogInfo(L"Running client build of modloader");
     Hooks::Input::InstallInputProcessor();
     Hooks::InputHook::Install();
+    LogToFile::Info("[init] Input hooks installed");
 #else
     ModLoaderLogger::LogInfo(L"Running server build of modloader");
 #endif
 
     Hooks::WorldBeginPlay::Install();
     Hooks::EngineTick::Install();
+    LogToFile::Info("[init] WorldBeginPlay + EngineTick hooks installed");
 
     WaitForEnginePhase();
-    ModLoaderLogger::LogInfo(L"[init] Stage 2 complete -- engine ready");
+    LogToFile::Info("[init] Stage 2 complete in %llu ms -- engine ready", GetTickCount64() - stage2Start);
 
     // Inventory the game's pak files now that the engine is up -- logged to
     // modloader.log and cached for the crash dialog, where user-installed pak
@@ -136,11 +201,18 @@ DWORD WINAPI MainInitThreadProc(LPVOID)
     // before we load them. The main thread is held by the engine init hook
     // for the duration of this stage.
     // ------------------------------------------------------------------
+    const ULONGLONG stage3Start = GetTickCount64();
+    LogToFile::Info("[init] ---- Stage 3: auto-update + plugins ----");
+
 #ifdef MODLOADER_CLIENT_BUILD
     InitClientUI();
+    LogToFile::Info("[init] Client UI initialised");
 #endif
 
     Splash::SetStatus(L"Checking for plugin updates...");
+    LogToFile::Info("[init] Running plugin auto-update check...");
+    const ULONGLONG updateStart = GetTickCount64();
+
     g_autoUpdateThread = CreateThread(nullptr, 0, AutoUpdateThreadProc, nullptr, 0, nullptr);
     if (g_autoUpdateThread)
     {
@@ -154,11 +226,19 @@ DWORD WINAPI MainInitThreadProc(LPVOID)
         LogToFile::Warn("[ModLoader] Failed to create auto-update thread (%lu) -- running synchronously", GetLastError());
         ModLoaderLogger::RunAutoUpdate();
     }
+    LogToFile::Info("[init] Auto-update check finished in %llu ms", GetTickCount64() - updateStart);
 
+    LogToFile::Info("[init] Loading plugin DLLs...");
+    const ULONGLONG loadStart = GetTickCount64();
     LoadPluginsPhase();
-    InitPluginsPhase();
+    LogToFile::Info("[init] Plugin DLLs loaded in %llu ms", GetTickCount64() - loadStart);
 
-    ModLoaderLogger::LogInfo(L"[init] Stage 3 complete -- plugins initialised, releasing main thread");
+    LogToFile::Info("[init] Initialising plugins...");
+    const ULONGLONG pluginInitStart = GetTickCount64();
+    InitPluginsPhase();
+    LogToFile::Info("[init] Plugins initialised in %llu ms", GetTickCount64() - pluginInitStart);
+
+    LogToFile::Info("[init] Stage 3 complete in %llu ms -- releasing main thread", GetTickCount64() - stage3Start);
     if (g_pluginsReadyEvent)
         SetEvent(g_pluginsReadyEvent);
 
@@ -173,10 +253,15 @@ DWORD WINAPI MainInitThreadProc(LPVOID)
     // (e.g. to show progress for a PostToGameThread callback).
     // 30-second timeout guards against a plugin that forgets to release.
     if (Splash::HasHolds())
+    {
+        LogToFile::Info("[init] Waiting for plugin splash holds to be released (30 s timeout)...");
         Splash::SetStatus(L"Waiting For Plugins To Finish Loading...");
+    }
     Splash::WaitForAllHolds(30'000);
     Splash::Linger(400);
     Splash::Close();
 
+    LogToFile::Info("[init] Boot sequence finished in %llu ms -- init thread exiting",
+        GetTickCount64() - stage1Start);
     return 0;
 }

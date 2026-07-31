@@ -8,6 +8,18 @@
 #include "DbgHelp.h"
 #pragma comment(lib, "DbgHelp.lib")
 
+#ifndef MODLOADER_BUILD_TAG
+#define MODLOADER_BUILD_TAG "dev"
+#endif
+
+#if defined(MODLOADER_CLIENT_BUILD)
+#define MODLOADER_BUILD_KIND "client"
+#elif defined(MODLOADER_SERVER_BUILD)
+#define MODLOADER_BUILD_KIND "server"
+#else
+#define MODLOADER_BUILD_KIND "generic"
+#endif
+
 static bool g_coreAttached = false;
 
 static void MoveDirectoryContents(const wchar_t* srcDir, const wchar_t* dstDir)
@@ -129,7 +141,23 @@ BOOL Core_Attach()
     LogToFile::Info("  StarRupture Mod Loader Core loaded");
     LogToFile::Info("======================================================");
 
+    // Identity of this build and process, logged here rather than only in
+    // LogStartupEnvironment() (Stage 2) so a log that stops during Stage 1
+    // still says which modloader and which exe produced it.
+    {
+        wchar_t exePath[MAX_PATH]{};
+        GetModuleFileNameW(nullptr, exePath, MAX_PATH);
+        LogToFile::Info("[init] Build: %s (%s), PID %lu", MODLOADER_BUILD_TAG, MODLOADER_BUILD_KIND, GetCurrentProcessId());
+        LogToFile::Info("[init] Executable: %ls", exePath);
+    }
+
+    const DWORD attachThreadId = GetCurrentThreadId();
+    const DWORD mainThreadId   = get_main_thread_id();
+    LogToFile::Info("[init] Core_Attach on thread %lu (main thread is %lu)", attachThreadId, mainThreadId);
+
+    LogToFile::Info("[init] Migrating legacy config/plugin files...");
     MigrateOrDeleteLegacyFiles();
+    LogToFile::Info("[init] Legacy file migration done");
 
 #ifdef MODLOADER_CLIENT_BUILD
     {
@@ -140,7 +168,11 @@ BOOL Core_Attach()
             wcscpy_s(sl + 1, MAX_PATH - static_cast<rsize_t>(sl + 1 - imguiDllPath),
                 L"ModLoader\\StarRupture-ImGui.dll");
 
-        if (GetFileAttributesW(imguiDllPath) == INVALID_FILE_ATTRIBUTES)
+        if (GetFileAttributesW(imguiDllPath) != INVALID_FILE_ATTRIBUTES)
+        {
+            LogToFile::Info("[init] ImGui DLL present: %ls", imguiDllPath);
+        }
+        else
         {
             LogToFile::Error("FATAL: ModLoader\\StarRupture-ImGui.dll not found -- aborting");
             MessageBoxW(nullptr,
@@ -184,13 +216,27 @@ BOOL Core_Attach()
         return FALSE;
     }
 
-    if (GetCurrentThreadId() == get_main_thread_id())
+    LogToFile::Info("[init] Sync events created");
+
+    if (attachThreadId == mainThreadId)
     {
+        // Stage 1 must run with the game main thread stopped. The APC gives us
+        // a point where the main thread is provably holding no loader or heap
+        // lock, so it parks itself on this event instead of the init thread
+        // suspending it from the outside -- see MainInitApcProc.
+        g_stage1DoneEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+        if (!g_stage1DoneEvent)
+            LogToFile::Warn("Failed to create Stage 1 gate event (%lu) -- main thread will be suspended instead", GetLastError());
+        else
+            g_mainThreadParked = true;
+
         LogToFile::Info("Core_Attach on main thread -- deferring init via QueueUserAPC");
-        QueueUserAPC((PAPCFUNC)MainInitApcProc, GetCurrentThread(), 0);
+        if (!QueueUserAPC((PAPCFUNC)MainInitApcProc, GetCurrentThread(), 0))
+            LogToFile::Error("FATAL: QueueUserAPC failed (%lu) -- the mod loader will not start", GetLastError());
     }
     else
     {
+        LogToFile::Info("[init] Core_Attach off the main thread -- starting init thread directly");
         g_mainInitThread = CreateThread(nullptr, 0, MainInitThreadProc, nullptr, 0, nullptr);
         if (!g_mainInitThread)
         {
@@ -204,6 +250,7 @@ BOOL Core_Attach()
     }
 
     g_coreAttached = true;
+    LogToFile::Info("[init] Core_Attach complete -- returning to the proxy");
     return TRUE;
 }
 
