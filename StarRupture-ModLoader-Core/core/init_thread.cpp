@@ -98,9 +98,31 @@ DWORD WINAPI MainInitThreadProc(LPVOID)
     // Version check before hook installation -- if the game build is wrong
     // we must not install hooks (the engine init hook would block the main
     // thread waiting on g_pluginsReadyEvent which would never be signalled).
-    if (!VerifyGameVersion())
+    std::wstring versionDetails;
+    if (!VerifyGameVersion(&versionDetails))
     {
+        Splash::Close();
+
+#ifdef MODLOADER_CLIENT_BUILD
+        // Same deal as the preflight failure below: the main thread is still
+        // held, so the game stays frozen while the user decides. The splash has
+        // nowhere near enough room to explain why a version mismatch disables
+        // the loader by design, so use the full dialog.
+        const auto choice = Hooks::CrashDialog::Show(
+            Hooks::CrashDialog::Mode::VersionMismatch, versionDetails);
+
         ReleaseMainThread(suspendedMainThread);
+        if (choice == Hooks::CrashDialog::Result::QuitGame)
+        {
+            ModLoaderLogger::LogInfo(L"[init] User chose to quit the game after version mismatch");
+            ExitProcess(0);
+        }
+        ModLoaderLogger::LogInfo(L"[init] User chose to start the game without the mod loader");
+#else
+        // Dedicated server: no UI to ask -- log, resume the game unmodified.
+        ModLoaderLogger::LogError(L"[init] Starting the game unmodified");
+        ReleaseMainThread(suspendedMainThread);
+#endif
         return 0;
     }
 

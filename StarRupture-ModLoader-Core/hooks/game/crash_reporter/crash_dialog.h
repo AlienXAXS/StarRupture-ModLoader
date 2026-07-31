@@ -31,22 +31,26 @@ namespace Hooks::CrashDialog
         // before installing any hooks. Adds "Start Game Without ModLoader" /
         // "Quit Game" buttons so the user chooses what happens next.
         PatternFailure,
+        // The game build is not the one this ModLoader was built against, so
+        // it disabled itself before installing any hooks. Same two-button
+        // choice as PatternFailure.
+        VersionMismatch,
     };
 
     enum class Result
     {
         Closed,                 // FatalCrash mode: user dismissed the dialog
-        StartWithoutModLoader,  // PatternFailure mode: continue, unmodified game
-        QuitGame,               // PatternFailure mode: exit the process
+        StartWithoutModLoader,  // choice modes: continue, unmodified game
+        QuitGame,               // choice modes: exit the process
     };
 
     // Shows the modal dialog. Blocks until the user closes it.
-    // detailsText: crash/preflight details (CRLF line endings preferred --
-    // edit controls do not render bare '\n' as line breaks).
-    // Falls back to a plain MessageBox if dialog creation fails. In
-    // PatternFailure mode, dismissing the dialog (or the fallback box) counts
-    // as StartWithoutModLoader -- the fail-safe path matching the old
-    // behavior of silently continuing unmodified.
+    // detailsText: crash/preflight/version details (CRLF line endings preferred
+    // -- edit controls do not render bare '\n' as line breaks).
+    // Falls back to a plain MessageBox if dialog creation fails. In the
+    // PatternFailure and VersionMismatch modes, dismissing the dialog (or the
+    // fallback box) counts as StartWithoutModLoader -- the fail-safe path
+    // matching the old behavior of silently continuing unmodified.
     Result Show(Mode mode, const std::wstring& detailsText);
 }
 

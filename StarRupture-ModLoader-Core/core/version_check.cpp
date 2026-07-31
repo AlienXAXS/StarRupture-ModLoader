@@ -1,13 +1,16 @@
 #include "version_check.h"
 #include "globals.h"
 #include "../logging/log.h"
-#include "../UI/splash_window.h"
 
 #include <windows.h>
 #include <winver.h>
 #include <vector>
 
 #pragma comment(lib, "version.lib")
+
+#ifndef MODLOADER_BUILD_TAG
+#define MODLOADER_BUILD_TAG "dev"
+#endif
 
 static constexpr wchar_t kRequiredVersionSuffix[] = L"CL-121391";
 
@@ -80,7 +83,7 @@ std::wstring GetGameVersionString()
     return version;
 }
 
-bool VerifyGameVersion()
+bool VerifyGameVersion(std::wstring* outDetails)
 {
     std::wstring gameVersion;
 
@@ -96,17 +99,20 @@ bool VerifyGameVersion()
          kRequiredVersionSuffix, gameVersion.c_str());
         LogToFile::Error("[ModLoader] Hook installation aborted -- update to the correct game build.");
 
-#ifdef MODLOADER_CLIENT_BUILD
-        Splash::SetErrorMode(false);
-        for (int countdown = 5; countdown > 0; --countdown)
+        if (outDetails)
         {
-            wchar_t msg[64];
-            swprintf_s(msg, L"Game Version Not Supported - Plugins will not be loaded (%d)", countdown);
-            Splash::SetStatus(msg);
-            Sleep(1000);
+            // CRLF: the crash dialog's edit control does not render bare '\n'.
+            const wchar_t* detected = gameVersion.empty() ? L"<unknown>" : gameVersion.c_str();
+            wchar_t buildTag[128]{};
+            MultiByteToWideChar(CP_UTF8, 0, MODLOADER_BUILD_TAG, -1, buildTag, 128);
+
+            *outDetails =
+                std::wstring(L"Your game build:       ") + detected + L"\r\n"
+                L"ModLoader expects:     ...-" + kRequiredVersionSuffix + L"\r\n"
+                L"ModLoader version:     " + buildTag + L"\r\n"
+                L"\r\n"
+                L"No hooks were installed and no plugins were loaded.";
         }
-        Splash::Close();
-#endif
 
         return false;
     }

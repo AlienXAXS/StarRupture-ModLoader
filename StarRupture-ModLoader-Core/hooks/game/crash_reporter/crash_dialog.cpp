@@ -71,6 +71,21 @@ namespace Hooks::CrashDialog
         L"\r\n"
         L"The missing patterns are listed below and in ModLoader.log.";
 
+    static const wchar_t* kVersionHeaderText =
+        L"This ModLoader does not match your version of StarRupture.\r\n"
+        L"\r\n"
+        L"The ModLoader works by reaching directly into the game's code at very specific "
+        L"places. Those places move whenever the game is patched, so each ModLoader release "
+        L"is tied to one exact game build. Your game is not that build -- it has most likely "
+        L"updated, and a matching ModLoader update is not out yet.\r\n"
+        L"\r\n"
+        L"Rather than guess and risk corrupting your save or crashing you mid-game, the "
+        L"ModLoader has switched itself off: nothing has been hooked and no plugins will be "
+        L"loaded. This is deliberate, not a bug.\r\n"
+        L"\r\n"
+        L"You can play right now with a completely normal, unmodified game, or quit and come "
+        L"back once the ModLoader has been updated. Your saves are untouched either way.";
+
     // -----------------------------------------------------------------------
     // Log file locations
     // -----------------------------------------------------------------------
@@ -224,59 +239,75 @@ namespace Hooks::CrashDialog
         // Dialog layout in dialog units. 4 horizontal DLUs ~ avg char width,
         // 8 vertical DLUs ~ char height, so this is roughly 700x430 px at 96 DPI.
         constexpr int16_t kDlgW = 380;
-        constexpr int16_t kDlgH = 262;
 
         const bool patternMode = (mode == Mode::PatternFailure);
+        const bool versionMode = (mode == Mode::VersionMismatch);
+        // Both startup-failure modes end with the same start/quit choice.
+        const bool choiceMode  = patternMode || versionMode;
+
+        // The version explanation is longer than the other two and its details
+        // box only holds a couple of lines, so it trades edit height for header
+        // height. Everything below follows from those two numbers.
+        const int16_t headerH = versionMode ? 124 : 88;
+        const int16_t labelY  = static_cast<int16_t>(7 + headerH + 4);
+        const int16_t editY   = static_cast<int16_t>(labelY + 11);
+        const int16_t editH   = versionMode ? 44 : 126;
+        const int16_t kDlgH   = static_cast<int16_t>(editY + editH + 26);
 
         std::vector<uint8_t> buf;
 
         DLGTEMPLATE dlg{};
         dlg.style = DS_SETFONT | DS_MODALFRAME | DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMENU;
-        // Both modes have 7 controls: header, label, details edit, and a
-        // four-button row (crash: Copy/ML log/SR log/Close, pattern:
-        // Copy/ML log/Start/Quit). An undercount here silently drops the
-        // trailing controls from the template.
+        // Every mode has 7 controls: header, label, details edit, and a
+        // four-button row (crash: Copy/ML log/SR log/Close; pattern and
+        // version: Copy/ML log/Start/Quit). An undercount here silently drops
+        // the trailing controls from the template.
         dlg.cdit = 7;
         dlg.x = 0; dlg.y = 0;
         dlg.cx = kDlgW; dlg.cy = kDlgH;
         AppendData(buf, &dlg, sizeof(dlg));
         AppendWord(buf, 0);   // no menu
         AppendWord(buf, 0);   // default dialog class
-        AppendString(buf, patternMode
-            ? L"StarRupture ModLoader - Failed to start"
-            : L"StarRupture ModLoader - The game has crashed");
+        AppendString(buf, versionMode
+            ? L"StarRupture ModLoader - Unsupported game version"
+            : patternMode
+                ? L"StarRupture ModLoader - Failed to start"
+                : L"StarRupture ModLoader - The game has crashed");
         // DS_SETFONT: point size then face name
         AppendWord(buf, 9);
         AppendString(buf, L"Segoe UI");
 
         // Header explanation text
         AppendControl(buf, WS_CHILD | WS_VISIBLE | SS_LEFT, 0,
-            7, 7, kDlgW - 14, 88, 0xFFFF, kClassStatic,
-            patternMode ? kPatternHeaderText : kCrashHeaderText);
+            7, 7, kDlgW - 14, headerH, 0xFFFF, kClassStatic,
+            versionMode ? kVersionHeaderText
+                        : patternMode ? kPatternHeaderText : kCrashHeaderText);
 
         // Details label
         AppendControl(buf, WS_CHILD | WS_VISIBLE | SS_LEFT, 0,
-            7, 99, kDlgW - 14, 9, 0xFFFF, kClassStatic,
-            patternMode
-                ? L"Missing scan patterns (select and copy, or use the buttons below):"
-                : L"Crash details (select and copy, or use the buttons below):");
+            7, labelY, kDlgW - 14, 9, 0xFFFF, kClassStatic,
+            versionMode
+                ? L"Version details (select and copy, or use the buttons below):"
+                : patternMode
+                    ? L"Missing scan patterns (select and copy, or use the buttons below):"
+                    : L"Crash details (select and copy, or use the buttons below):");
 
         // Read-only multiline edit with the details
         AppendControl(buf,
             WS_CHILD | WS_VISIBLE | WS_BORDER | WS_VSCROLL | WS_HSCROLL |
             ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL | ES_AUTOHSCROLL,
             0,
-            7, 110, kDlgW - 14, 126, IDC_DETAILS_EDIT, kClassEdit, L"");
+            7, editY, kDlgW - 14, editH, IDC_DETAILS_EDIT, kClassEdit, L"");
 
         // Bottom button row -- all owner-drawn so they follow the dark theme
         constexpr uint32_t kBtnStyle = WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW;
-        constexpr int16_t kBtnY = kDlgH - 21;
+        const int16_t kBtnY = static_cast<int16_t>(kDlgH - 21);
         AppendControl(buf, kBtnStyle, 0,
             7, kBtnY, 70, 14, IDC_COPY_DETAILS, kClassButton, L"Copy Details");
         AppendControl(buf, kBtnStyle, 0,
             81, kBtnY, 88, 14, IDC_OPEN_MODLOADER_LOG, kClassButton, L"Open ModLoader.log");
 
-        if (patternMode)
+        if (choiceMode)
         {
             // The game hasn't run yet, so there's no fresh StarRupture.log to
             // show -- offer the start/quit choice instead.
@@ -480,11 +511,14 @@ namespace Hooks::CrashDialog
 
         const std::vector<uint8_t> tmpl = BuildDialogTemplate(mode);
 
+        const bool choiceMode =
+            (mode == Mode::PatternFailure || mode == Mode::VersionMismatch);
+
         // Default result if the dialog is dismissed without an explicit choice:
-        // fail-safe is "keep going" in both modes (game continues unmodified in
-        // pattern mode; nothing left to decide in crash mode).
+        // fail-safe is "keep going" in the startup-failure modes (game continues
+        // unmodified); nothing left to decide in crash mode.
         DialogParams params{ mode, &detailsText,
-            mode == Mode::PatternFailure ? Result::StartWithoutModLoader : Result::Closed };
+            choiceMode ? Result::StartWithoutModLoader : Result::Closed };
 
         const INT_PTR result = DialogBoxIndirectParamW(
             GetModuleHandleW(nullptr),
@@ -497,6 +531,22 @@ namespace Hooks::CrashDialog
         {
             // Dialog creation failed (process can be in a bad state); fall back
             // to a plain message box so the user still sees something.
+            if (mode == Mode::VersionMismatch)
+            {
+                const int choice = MessageBoxW(nullptr,
+                    L"This ModLoader does not match your version of StarRupture.\n\n"
+                    L"Each ModLoader release is tied to one exact game build, because the "
+                    L"places it reaches into move whenever the game is patched. Your game "
+                    L"has most likely updated ahead of the ModLoader.\n\n"
+                    L"Rather than guess and risk your save, the ModLoader has switched itself "
+                    L"off: nothing was hooked and no plugins will be loaded. Details were "
+                    L"written to ModLoader\\Logs\\ModLoader.log.\n\n"
+                    L"Start the game without the ModLoader?",
+                    L"StarRupture ModLoader",
+                    MB_YESNO | MB_ICONERROR | MB_TASKMODAL);
+                return choice == IDNO ? Result::QuitGame : Result::StartWithoutModLoader;
+            }
+
             if (mode == Mode::PatternFailure)
             {
                 const int choice = MessageBoxW(nullptr,
