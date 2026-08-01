@@ -291,6 +291,10 @@ static LRESULT CALLBACK HookedWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 	// and an always-rendered widget/button under that stale position would
 	// still register hover/click from camera-look/fire input that is only
 	// meant for the game (e.g. WM_LBUTTONDOWN forwarded through to shoot).
+	//
+	// The cursor is drawn for exclusive capture only (see the cursor block in
+	// HookedPresent), so cooperative passthrough deliberately does NOT qualify:
+	// a passthrough-only frame leaves the mouse entirely to the game.
 	bool isMouseMsg = false;
 	switch (msg)
 	{
@@ -308,7 +312,7 @@ static LRESULT CALLBACK HookedWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 		break;
 	}
 
-	if (capturing || !isMouseMsg)
+	if (exclusive || !isMouseMsg)
 	{
 		std::lock_guard<std::recursive_mutex> lock(g_imguiMutex);
 		if (ImGui_ImplWin32_WndProcHandler(hWnd, msg, wParam, lParam))
@@ -331,9 +335,13 @@ static LRESULT CALLBACK HookedWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 		bool wantKeyboard = true;
 		if (cooperative)
 		{
+			// ImGui is not fed the mouse at all in cooperative mode (it has no
+			// cursor to aim with), so the game keeps every mouse message. Only
+			// keyboard is arbitrated, for a plugin that has focused a text field
+			// while an exclusive surface was also open.
 			std::lock_guard<std::recursive_mutex> lock(g_imguiMutex);
 			const ImGuiIO& io = ImGui::GetIO();
-			wantMouse    = io.WantCaptureMouse;
+			wantMouse    = false;
 			wantKeyboard = io.WantCaptureKeyboard || io.WantTextInput;
 		}
 
@@ -1256,12 +1264,21 @@ static HRESULT STDMETHODCALLTYPE HookedPresent(IDXGISwapChain* swapChain, UINT s
 	{
 		std::lock_guard<std::recursive_mutex> imguiLock(g_imguiMutex);
 
-		// Cooperative passthrough counts as "UI open" for cursor purposes: the
-		// plugin's windows still have to be clickable, so ImGui draws and owns
-		// the cursor exactly as it does for an exclusive capture. What differs
-		// is only which messages HookedWndProc lets through to the game.
-		bool uiOpen = (g_callbacks.ShouldCaptureInput ? g_callbacks.ShouldCaptureInput() : false)
-			|| (g_callbacks.ShouldPassthroughInput ? g_callbacks.ShouldPassthroughInput() : false);
+		// Cursor ownership follows EXCLUSIVE capture only.
+		//
+		// Cooperative passthrough used to count here too, on the reasoning that a
+		// plugin's always-on windows have to stay clickable. But that put a
+		// simulated cursor on screen for as long as any passthrough token was
+		// held -- so a plugin doing nothing but drawing a HUD readout took the
+		// pointer away from the game and the player lost mouse look. When the
+		// only thing on screen is a passthrough window, the game keeps focus.
+		//
+		// This also keeps the invariant HookedWndProc relies on: ImGui is only
+		// fed mouse messages while it actually owns the cursor. UE5 hides and
+		// re-centres the OS cursor during gameplay, so an ImGui that was still
+		// tracking it would sit at a frozen position and any widget underneath
+		// would swallow clicks meant for the game.
+		bool uiOpen = (g_callbacks.ShouldCaptureInput ? g_callbacks.ShouldCaptureInput() : false);
 		ImGuiIO& frameIO = ImGui::GetIO();
 		if (uiOpen)
 		{

@@ -770,12 +770,48 @@ namespace Hooks::Input
 		return owner != nullptr;
 	}
 
-	void Dispatch(EModKey key, EModKeyEvent event)
+	// -----------------------------------------------------------------------
+	// HasExactModifierMatchLocked -- true when some registration asks for
+	// exactly the modifiers currently held.
+	//
+	// Modifier-agnostic binds (a simple RegisterKeybind, or a by-name bind with
+	// no modifier tokens) deliberately fire whatever is held, so a plugin bound
+	// to "W" keeps working while the player holds Shift to sprint. That
+	// leniency has to yield to a more specific bind though: with both "F7" and
+	// "Ctrl+F7" registered, pressing Ctrl+F7 used to fire BOTH, so the plugin
+	// that only asked for "F7" saw a keypress aimed at someone else's combo --
+	// two windows toggling on one keystroke.
+	//
+	// So an exact match shadows the agnostic ones. When nothing claims the held
+	// modifiers, behaviour is exactly as before.
+	//
+	// Caller must hold s_mutex.
+	// -----------------------------------------------------------------------
+	static bool HasExactModifierMatchLocked(EModKey key, EModKeyModifiers mods, EModKeyEvent event)
+	{
+		if (mods == EModKeyMod_None) return false;
+
+		for (const auto& e : s_namedCombos)
+			if (e.key == key && e.event == event && e.mods == mods) return true;
+		for (const auto& e : s_comboCallbacks)
+			if (e.key == key && e.event == event && e.mods == mods) return true;
+
+		return false;
+	}
+
+	void Dispatch(EModKey key, EModKeyModifiers mods, EModKeyEvent event)
 	{
 		// Snapshot callbacks under lock, then call without lock held
 		std::vector<PluginKeybindCallback> toCall;
 		{
 			std::lock_guard<std::mutex> lock(s_mutex);
+
+			// Simple registrations carry no modifiers of their own, so they are
+			// agnostic -- but they still stand down for a bind that claimed the
+			// exact modifiers being held.
+			if (HasExactModifierMatchLocked(key, mods, event))
+				return;
+
 			for (auto it = s_callbacks.begin(); it != s_callbacks.end(); )
 			{
 				if (it->key != key || it->event != event) { ++it; continue; }
@@ -819,6 +855,10 @@ namespace Hooks::Input
 		{
 			std::lock_guard<std::mutex> lock(s_mutex);
 
+			// A bind asking for exactly the held modifiers shadows the agnostic
+			// ones on the same key -- see HasExactModifierMatchLocked.
+			const bool shadowed = HasExactModifierMatchLocked(key, mods, event);
+
 			// Same stale-pointer guard as Dispatch, and this is the list that
 			// actually crashed: a rebind patches these entries in place, so a
 			// plugin's own unregister can miss them entirely.
@@ -826,10 +866,12 @@ namespace Hooks::Input
 			{
 				if (it->key != key || it->event != event) { ++it; continue; }
 
-				// Named entries with no mods fire regardless of current modifier state
-				// (same behaviour as the old plain RegisterKeybind path).
-				// Named entries with mods require an exact match.
-				if (!(it->mods == EModKeyMod_None || it->mods == mods)) { ++it; continue; }
+				// Named entries with mods require an exact match. Entries with no
+				// mods fire regardless of current modifier state -- unless a more
+				// specific bind has claimed those modifiers.
+				const bool exact   = (it->mods == mods);
+				const bool agnostic = (it->mods == EModKeyMod_None && !shadowed);
+				if (!exact && !agnostic) { ++it; continue; }
 
 				if (!CallbackStillMapped(reinterpret_cast<const void*>(it->callback)))
 				{
@@ -1012,7 +1054,7 @@ namespace Hooks::Input
 			return false;
 
 		EModKeyModifiers mods = SampleCurrentModifiers();
-		Dispatch(mk, event);
+		Dispatch(mk, mods, event);
 		DispatchCombo(mk, mods, event);
 		return ShouldBlock(mk, mods);
 	}

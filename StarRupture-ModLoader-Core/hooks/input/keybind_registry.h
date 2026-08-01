@@ -84,9 +84,13 @@ namespace Hooks::Input
 	bool IsTypingExempt(EModKey key);
 
 	// --- Dispatch ---
-	// Fires simple callbacks (mod-unaware).
-	void Dispatch(EModKey key, EModKeyEvent event);
+	// Fires simple callbacks. These carry no modifiers of their own and so fire
+	// whatever is held, but `mods` is still needed: a bind registered for exactly
+	// the modifiers currently down shadows them, so Ctrl+F7 does not also fire a
+	// plugin that only asked for F7.
+	void Dispatch(EModKey key, EModKeyModifiers mods, EModKeyEvent event);
 	// Fires named-combo and advanced-combo callbacks for the given key + current mods.
+	// Modifier-less named entries follow the same shadowing rule as Dispatch.
 	void DispatchCombo(EModKey key, EModKeyModifiers mods, EModKeyEvent event);
 
 	// Returns the set of (EModKey, VK) pairs that have at least one registered callback
