@@ -302,9 +302,14 @@ namespace ScanPatterns
 	// Native C++ signal handler -- not the BlueprintEvent. Plays crafting-complete sounds
 	// and then calls ACrCrafter::OnItemCraftingComplete(this) (the BlueprintEvent, which has
 	// no usable native ExecFunction). This is the real per-craft completion entry point.
+#if defined(MODLOADER_CLIENT_BUILD)
 	inline constexpr auto ACrCrafter_NativeOnItemCraftingComplete =
 		"40 56 48 81 EC ?? ?? ?? ?? 48 8B F1 E8 ?? ?? ?? ?? 83 F8";
-
+#elif defined(MODLOADER_SERVER_BUILD)
+	inline constexpr auto ACrCrafter_NativeOnItemCraftingComplete =
+		"40 53 56 41 57 48 81 EC ?? ?? ?? ?? 48 8B 99";
+#endif
+	     
 	// FHttpServerResponse::Create(__int64 *retStorage, const TArray<uint8>& body, const FString& contentType)
 	// Used to construct a 200 OK response for mod-owned HTTP routes.
 	// Confirmed via IDA: FPerfCounters::ProcessStatsRequest calls this with body in RDX, FString in R8.
