@@ -2703,11 +2703,15 @@ static void TextureGetSize(PluginTextureHandle handle, int* out_w, int* out_h)
 	if (out_h) *out_h = rec->height;
 }
 
+// No tracing in here or in TextureImageButton below: these run once per drawn
+// image per frame, so a trace line is thousands of file writes a second and
+// buries everything else in the log. The load-time tracing in
+// TextureLoadFromUTexture2D covers the part that actually needs diagnosing --
+// by the time a handle reaches here it has already been validated.
 static void TextureImage(PluginTextureHandle handle, float w, float h)
 {
 	PluginTextureRecord* rec = ValidateHandle(handle);
 	if (!rec) return;
-	IMGUI_LOG_TRACE("[ImGuiBackend] TextureImage '%s': handle=0x%p w=%.0f h=%.0f", rec->name, handle, w, h);
 	float iw = (w == 0.0f) ? (float)rec->width  : w;
 	float ih = (h == 0.0f) ? (float)rec->height : h;
 	ImGui::Image((ImTextureID)rec->gpuHandle.ptr, ImVec2(iw, ih));
@@ -2718,7 +2722,6 @@ static bool TextureImageButton(const char* str_id, PluginTextureHandle handle, f
 	if (!str_id) return false;
 	PluginTextureRecord* rec = ValidateHandle(handle);
 	if (!rec) return false;
-	IMGUI_LOG_TRACE("[ImGuiBackend] TextureImageButton '%s': str_id=%s handle=0x%p w=%.0f h=%.0f", rec->name, str_id, handle, w, h);
 	float iw = (w == 0.0f) ? (float)rec->width  : w;
 	float ih = (h == 0.0f) ? (float)rec->height : h;
 	return ImGui::ImageButton(str_id, (ImTextureID)rec->gpuHandle.ptr, ImVec2(iw, ih));
