@@ -369,6 +369,15 @@
     <ClInclude Include="console\console_commands.h">
       <Filter>Source Files\console</Filter>
     </ClInclude>
+    <ClInclude Include="console\console_input.h">
+      <Filter>Source Files\console</Filter>
+    </ClInclude>
+    <ClInclude Include="console\console_screen.h">
+      <Filter>Source Files\console</Filter>
+    </ClInclude>
+    <ClInclude Include="console\engine_output_hook.h">
+      <Filter>Source Files\console</Filter>
+    </ClInclude>
     <ClInclude Include="console\server_console.h">
       <Filter>Source Files\console</Filter>
     </ClInclude>
@@ -618,6 +627,15 @@
       <Filter>Source Files\UI</Filter>
     </ClCompile>
     <ClCompile Include="console\console_commands.cpp">
+      <Filter>Source Files\console</Filter>
+    </ClCompile>
+    <ClCompile Include="console\console_input.cpp">
+      <Filter>Source Files\console</Filter>
+    </ClCompile>
+    <ClCompile Include="console\console_screen.cpp">
+      <Filter>Source Files\console</Filter>
+    </ClCompile>
+    <ClCompile Include="console\engine_output_hook.cpp">
       <Filter>Source Files\console</Filter>
     </ClCompile>
     <ClCompile Include="console\server_console.cpp">

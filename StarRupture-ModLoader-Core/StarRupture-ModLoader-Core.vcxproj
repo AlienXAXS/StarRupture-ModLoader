@@ -476,6 +476,9 @@
     <ClInclude Include="memory_scanner\scanner.h" />
     <ClInclude Include="memory_scanner\scanner_interface.h" />
     <ClInclude Include="console\console_commands.h" />
+    <ClInclude Include="console\console_input.h" />
+    <ClInclude Include="console\console_screen.h" />
+    <ClInclude Include="console\engine_output_hook.h" />
     <ClInclude Include="console\server_console.h" />
     <ClInclude Include="plugins\plugin_interface.h" />
     <ClInclude Include="plugins\known_gobjects.generated.h" />
@@ -612,6 +615,9 @@
     <ClCompile Include="memory_scanner\scanner.cpp" />
     <ClCompile Include="memory_scanner\scanner_interface.cpp" />
     <ClCompile Include="console\console_commands.cpp" />
+    <ClCompile Include="console\console_input.cpp" />
+    <ClCompile Include="console\console_screen.cpp" />
+    <ClCompile Include="console\engine_output_hook.cpp" />
     <ClCompile Include="console\server_console.cpp" />
     <ClCompile Include="plugins\plugin_manager.cpp" />
     <ClCompile Include="UI\splash_window.cpp" />

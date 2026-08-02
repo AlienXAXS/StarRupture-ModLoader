@@ -1,12 +1,14 @@
 #include "server_console.h"
 #include "console_commands.h"
+#include "console_input.h"
+#include "console_screen.h"
+#include "engine_output_hook.h"
 
 #include <windows.h>
 
 #include <atomic>
 #include <cstring>
 #include <memory>
-#include <mutex>
 #include <string>
 
 #include "logging/logger.h"
@@ -20,97 +22,38 @@ namespace ServerConsole
 {
     // -----------------------------------------------------------------------
     // State
+    //
+    // Drawing lives in ConsoleScreen and editing in ConsoleInput; what is left
+    // here is the console's lifetime and the read-dispatch loop.
     // -----------------------------------------------------------------------
-    static HANDLE            s_out          = INVALID_HANDLE_VALUE;
-    static HANDLE            s_in           = INVALID_HANDLE_VALUE;
-    static HANDLE            s_thread       = NULL;
-    static HANDLE            s_commandDone  = NULL;   // set by the dispatch completion callback
+    static HANDLE            s_out         = INVALID_HANDLE_VALUE;
+    static HANDLE            s_in          = INVALID_HANDLE_VALUE;
+    static HANDLE            s_thread      = NULL;
+    static HANDLE            s_commandDone = NULL;   // set by the dispatch completion callback
     static std::atomic<bool> s_running{ false };
     static std::atomic<bool> s_stopping{ false };
-    static bool              s_ownsConsole  = false;  // we called AllocConsole (vs. attached to the engine's)
-    static WORD              s_defaultAttrs = 0x07;
+    static bool              s_ownsConsole = false;  // we called AllocConsole (vs. attached to the engine's)
 
-    // Guards writes to the console. The prompt is written by the reader thread
-    // while command output can arrive from the game thread, so they must not
-    // interleave mid-line.
-    static std::mutex s_writeMutex;
-
-    // How long to wait for a game-thread command before printing the prompt
-    // again. Generous: a reload runs PluginShutdown, FreeLibrary, LoadLibrary
-    // and PluginInit inside one tick, and the tick may be a while coming if the
+    // How long to wait for a game-thread command before prompting again.
+    // Generous: a reload runs PluginShutdown, FreeLibrary, LoadLibrary and
+    // PluginInit inside one tick, and the tick may be a while coming if the
     // server is still booting.
     static constexpr DWORD kCommandTimeoutMs = 30'000;
 
     // -----------------------------------------------------------------------
-    // Low-level console output
-    // -----------------------------------------------------------------------
-    static void WriteRaw(const char* text, WORD attrs)
-    {
-        if (!text)
-            return;
-
-        // The handle is both tested and used under the lock: Shutdown() closes
-        // it, and a handle value can be reused the moment it is closed. Writing
-        // console text into whatever file inherited the number would be a far
-        // worse outcome than dropping the line.
-        std::lock_guard<std::mutex> lk(s_writeMutex);
-        if (s_out == INVALID_HANDLE_VALUE)
-            return;
-
-        SetConsoleTextAttribute(s_out, attrs);
-        DWORD written = 0;
-        WriteConsoleA(s_out, text, static_cast<DWORD>(strlen(text)), &written, nullptr);
-        SetConsoleTextAttribute(s_out, s_defaultAttrs);
-    }
-
-    static void WriteLine(const char* text, WORD attrs)
-    {
-        std::string buf(text ? text : "");
-        buf += "\r\n";
-        WriteRaw(buf.c_str(), attrs);
-    }
-
-    static WORD AttrsFor(ModConsole::LineKind kind)
-    {
-        switch (kind)
-        {
-        case ModConsole::LineKind::Error:
-            return FOREGROUND_RED | FOREGROUND_INTENSITY;
-        case ModConsole::LineKind::Notice:
-            return FOREGROUND_BLUE | FOREGROUND_GREEN | FOREGROUND_INTENSITY;
-        default:
-            return s_defaultAttrs;
-        }
-    }
-
-    // -----------------------------------------------------------------------
-    // Sink -- prints straight to the console as lines arrive
+    // Sink -- command output goes to the screen, above the prompt
     // -----------------------------------------------------------------------
     class ConsoleSink : public ModConsole::Sink
     {
     public:
         void Write(ModConsole::LineKind kind, const char* text) override
         {
-            WriteLine(text, AttrsFor(kind));
+            ConsoleScreen::Print(kind, text ? text : "");
         }
 
         void Clear() override
         {
-            std::lock_guard<std::mutex> lk(s_writeMutex);
-            if (s_out == INVALID_HANDLE_VALUE)
-                return;
-
-            CONSOLE_SCREEN_BUFFER_INFO info{};
-            if (!GetConsoleScreenBufferInfo(s_out, &info))
-                return;
-
-            const DWORD  cells  = static_cast<DWORD>(info.dwSize.X) * static_cast<DWORD>(info.dwSize.Y);
-            const COORD  origin = { 0, 0 };
-            DWORD written = 0;
-
-            FillConsoleOutputCharacterA(s_out, ' ', cells, origin, &written);
-            FillConsoleOutputAttribute(s_out, s_defaultAttrs, cells, origin, &written);
-            SetConsoleCursorPosition(s_out, origin);
+            ConsoleScreen::ClearScreen();
         }
     };
 
@@ -148,17 +91,16 @@ namespace ServerConsole
 
     // -----------------------------------------------------------------------
     // Ctrl handling
-    //
-    // A console created here makes Ctrl+C terminate the game, which is a nasty
-    // surprise for a key combination people press out of habit. Swallow it, and
-    // let the genuinely terminal events (window closed, logoff, shutdown) fall
-    // through to the default handler.
     // -----------------------------------------------------------------------
     // Set by RequestGracefulProcessExit just before it raises the event, so the
     // handler below knows this particular Ctrl+C is ours and must be passed on
     // to the engine rather than swallowed.
     static std::atomic<bool> s_selfStopRequested{ false };
 
+    // Keyboard Ctrl+C never reaches here any more (ConsoleInput turns off
+    // PROCESSED_INPUT and treats it as "clear the line"), so this now sees only
+    // events raised by another process -- a batch file being interrupted, say --
+    // and the one `stop` raises itself.
     static BOOL WINAPI CtrlHandler(DWORD ctrlType)
     {
         if (ctrlType == CTRL_C_EVENT && s_selfStopRequested.exchange(false))
@@ -170,8 +112,8 @@ namespace ServerConsole
 
         if (ctrlType == CTRL_C_EVENT || ctrlType == CTRL_BREAK_EVENT)
         {
-            WriteLine("(Ctrl+C ignored -- type 'stop' to shut the server down cleanly)",
-                      FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_INTENSITY);
+            ConsoleScreen::Print(ModConsole::LineKind::Error,
+                                 "(Ctrl+C ignored -- type 'stop' to shut the server down cleanly)");
             return TRUE;
         }
         return FALSE;
@@ -182,50 +124,14 @@ namespace ServerConsole
     // -----------------------------------------------------------------------
     static void PrintBanner()
     {
-        WriteLine("", s_defaultAttrs);
-        WriteLine("  StarRupture Mod Loader console (" MODLOADER_BUILD_TAG ")",
-                  FOREGROUND_GREEN | FOREGROUND_INTENSITY);
-        WriteLine("  Type 'help' for commands, 'stop' to shut the server down cleanly.",
-                  FOREGROUND_BLUE | FOREGROUND_GREEN | FOREGROUND_INTENSITY);
-        WriteLine("  Closing this window kills the game -- 'stop' instead, or 'closeconsole' to",
-                  FOREGROUND_BLUE | FOREGROUND_GREEN | FOREGROUND_INTENSITY);
-        WriteLine("  drop the console and leave the server running.",
-                  FOREGROUND_BLUE | FOREGROUND_GREEN | FOREGROUND_INTENSITY);
-        WriteLine("", s_defaultAttrs);
-    }
-
-    // Reads one line. Returns false when the console has gone away, which is
-    // how the thread exits on Shutdown().
-    static bool ReadLine(std::string& outLine)
-    {
-        wchar_t buffer[1024]{};
-        DWORD   read = 0;
-
-        if (!ReadConsoleW(s_in, buffer, static_cast<DWORD>(_countof(buffer) - 1), &read, nullptr))
-            return false;
-        if (read == 0)
-            return false;
-
-        buffer[read] = L'\0';
-
-        // ReadConsole hands back the CRLF the user typed.
-        while (read > 0 && (buffer[read - 1] == L'\r' || buffer[read - 1] == L'\n'))
-            buffer[--read] = L'\0';
-
-        char narrow[1024]{};
-        WideCharToMultiByte(CP_ACP, 0, buffer, -1, narrow, sizeof(narrow), "?", nullptr);
-        narrow[sizeof(narrow) - 1] = '\0';
-
-        outLine = narrow;
-        return true;
-    }
-
-    static std::string Trim(const std::string& s)
-    {
-        const size_t first = s.find_first_not_of(" \t");
-        if (first == std::string::npos) return {};
-        const size_t last = s.find_last_not_of(" \t");
-        return s.substr(first, last - first + 1);
+        ConsoleScreen::Print(ModConsole::LineKind::Output, "");
+        ConsoleScreen::Print(ModConsole::LineKind::Notice,
+                             "  StarRupture Mod Loader console (" MODLOADER_BUILD_TAG ")");
+        ConsoleScreen::Print(ModConsole::LineKind::Notice,
+                             "  'help' for commands, Tab completes, Up/Down for history.");
+        ConsoleScreen::Print(ModConsole::LineKind::Notice,
+                             "  'stop' shuts the server down cleanly. Closing this window kills it.");
+        ConsoleScreen::Print(ModConsole::LineKind::Output, "");
     }
 
     static DWORD WINAPI ReaderThreadProc(LPVOID)
@@ -236,13 +142,15 @@ namespace ServerConsole
 
         while (!s_stopping.load())
         {
-            WriteRaw("> ", FOREGROUND_GREEN | FOREGROUND_INTENSITY);
-
-            std::string raw;
-            if (!ReadLine(raw))
+            std::string line;
+            if (ConsoleInput::ReadLine(line) != ConsoleInput::Result::Line)
                 break;
 
-            const std::string line = Trim(raw);
+            // Trim -- the editor keeps exactly what was typed.
+            const size_t first = line.find_first_not_of(" \t");
+            if (first == std::string::npos)
+                continue;
+            line = line.substr(first, line.find_last_not_of(" \t") - first + 1);
             if (line.empty())
                 continue;
 
@@ -253,15 +161,15 @@ namespace ServerConsole
             // word picks a side.
             if (_stricmp(line.c_str(), "exit") == 0 || _stricmp(line.c_str(), "quit") == 0)
             {
-                WriteLine("Ambiguous: 'stop' shuts the server down, 'closeconsole' just closes this window.",
-                          FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_INTENSITY);
+                ConsoleScreen::Print(ModConsole::LineKind::Error,
+                    "Ambiguous: 'stop' shuts the server down, 'closeconsole' just closes this window.");
                 continue;
             }
 
             if (_stricmp(line.c_str(), "closeconsole") == 0 || _stricmp(line.c_str(), "close") == 0)
             {
-                WriteLine("Closing console. The server keeps running -- it cannot be reopened.",
-                          s_defaultAttrs);
+                ConsoleScreen::Print(ModConsole::LineKind::Output,
+                    "Closing console. The server keeps running -- it cannot be reopened.");
                 Shutdown();
                 break;
             }
@@ -270,18 +178,18 @@ namespace ServerConsole
 
             if (!ModConsole::Dispatch(line, sink, []() { SetEvent(s_commandDone); }))
             {
-                WriteLine("Unknown command. Type 'help' for the list.",
-                          FOREGROUND_RED | FOREGROUND_INTENSITY);
+                ConsoleScreen::Print(ModConsole::LineKind::Error,
+                                     "Unknown command. Type 'help' for the list.");
                 continue;
             }
 
             // Dispatch returns as soon as a game-thread command is queued, so
-            // wait for it to actually run before prompting again -- otherwise
-            // the prompt lands in the middle of the command's own output.
+            // wait for it to actually run before reading again -- otherwise the
+            // next thing typed races the output of the last thing.
             if (WaitForSingleObject(s_commandDone, kCommandTimeoutMs) == WAIT_TIMEOUT)
             {
-                WriteLine("Command is still queued on the game thread -- is the server ticking?",
-                          FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_INTENSITY);
+                ConsoleScreen::Print(ModConsole::LineKind::Error,
+                    "Command is still queued on the game thread -- is the server ticking?");
             }
         }
 
@@ -363,13 +271,25 @@ namespace ServerConsole
             return;
         }
 
-        CONSOLE_SCREEN_BUFFER_INFO info{};
-        if (GetConsoleScreenBufferInfo(s_out, &info))
-            s_defaultAttrs = info.wAttributes;
+        if (!ConsoleScreen::Init(s_out))
+        {
+            ModLoaderLogger::LogError(L"[Console] Screen init failed -- console disabled");
+            Shutdown();
+            return;
+        }
 
-        // Line input mode gives us the console's own editing and F7 history for
-        // free, which is worth more than anything a raw-mode reader would add.
-        SetConsoleMode(s_in, ENABLE_LINE_INPUT | ENABLE_ECHO_INPUT | ENABLE_PROCESSED_INPUT);
+        if (!ConsoleInput::Begin(s_in))
+        {
+            ModLoaderLogger::LogError(L"[Console] Could not switch the console to raw input (%lu) -- console disabled",
+                                      GetLastError());
+            Shutdown();
+            return;
+        }
+
+        // Installed before the reader thread starts so the engine's very first
+        // log line after this point already goes through the renderer, rather
+        // than landing on top of a prompt that is about to be drawn.
+        EngineOutputHook::Install();
 
         if (s_ownsConsole)
             SetConsoleTitleW(L"StarRupture Mod Loader Console");
@@ -407,25 +327,26 @@ namespace ServerConsole
         s_stopping.store(true);
         s_running.store(false);
 
-        // The reader thread is blocked inside ReadConsoleW and there is no way
-        // to cancel that; closing the input handle and detaching the console
-        // makes the call fail, which is how it gets out. It is never joined --
-        // waiting on a thread parked in a console read is a hang, and by the
-        // time this runs the process is on its way down anyway.
+        // Screen first: that is what makes the output hook a bare pass-through,
+        // so engine logging keeps working normally through everything below.
+        ConsoleScreen::Shutdown();
+        EngineOutputHook::Remove();
+        ConsoleInput::End();
+
+        // The reader thread is blocked inside ReadConsoleInput and there is no
+        // way to cancel that; closing the input handle makes the call fail,
+        // which is how it gets out. It is never joined -- waiting on a thread
+        // parked in a console read is a hang, and by the time this runs the
+        // process is on its way down anyway.
         if (s_in != INVALID_HANDLE_VALUE)
         {
             CloseHandle(s_in);
             s_in = INVALID_HANDLE_VALUE;
         }
+        if (s_out != INVALID_HANDLE_VALUE)
         {
-            // Under the write lock so a game-thread command printing its result
-            // right now finishes first, and sees INVALID_HANDLE_VALUE after.
-            std::lock_guard<std::mutex> lk(s_writeMutex);
-            if (s_out != INVALID_HANDLE_VALUE)
-            {
-                CloseHandle(s_out);
-                s_out = INVALID_HANDLE_VALUE;
-            }
+            CloseHandle(s_out);
+            s_out = INVALID_HANDLE_VALUE;
         }
 
         SetConsoleCtrlHandler(&CtrlHandler, FALSE);
@@ -442,9 +363,8 @@ namespace ServerConsole
             s_thread = NULL;
         }
 
-        // Left open deliberately: a command still queued on the game thread will
-        // call SetEvent on it after this returns. Closing it here would make
-        // that a use-after-free of a kernel handle.
-        // s_commandDone is released only at process exit.
+        // s_commandDone is left open deliberately: a command still queued on the
+        // game thread will call SetEvent on it after this returns, and closing
+        // it here would make that a use-after-free of a kernel handle.
     }
 }
