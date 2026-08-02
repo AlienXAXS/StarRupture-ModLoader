@@ -15,6 +15,11 @@ namespace PluginManager
         bool isOutOfDate;
         bool needsModLoaderUpdate;
         bool isWrongTarget;
+
+        // Bare DLL file name (no directory), e.g. "ServerUtility.dll". Lets the
+        // console address a plugin by file when its PluginInfo name is unknown --
+        // an out-of-date or crashed-on-load record has no usable name.
+        char fileName[128];
     };
 
     // Initialize the plugin manager
@@ -62,6 +67,18 @@ namespace PluginManager
     // loads it again from the same file path.
     // Returns false if index is out of range or the DLL fails to load/init.
     bool ReloadPlugin(int index);
+
+    // Index of the plugin record matching nameOrFile, or -1 if there is none.
+    // Matches (case-insensitively) the PluginInfo name first, then the DLL file
+    // name with and without its ".dll" extension.
+    int FindPluginIndex(const char* nameOrFile);
+
+    // Rescan ModLoader\Plugins for DLLs that have no record yet, load them and
+    // run PluginInit on each. Returns the number of plugins that came up.
+    //
+    // For plugin DLLs dropped in while the game is running -- ReloadPlugin only
+    // ever reloads a path that was already there at startup.
+    int ScanForNewPlugins();
 
     // Increments every time a plugin is loaded, unloaded or reloaded.
     //

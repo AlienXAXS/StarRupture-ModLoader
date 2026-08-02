@@ -121,6 +121,9 @@
     <Filter Include="Source Files\utils">
       <UniqueIdentifier>{e3a7c1f2-9b4d-4e8a-b2c5-6f0d1e3a7b9c}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Source Files\console">
+      <UniqueIdentifier>{5c1d9e74-3b8a-4a26-9f51-8c0b2e6d47a3}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Source Files\hooks\game\spawning">
       <UniqueIdentifier>{9a63f03d-8ae0-43a7-b82d-46b696cc8370}</UniqueIdentifier>
     </Filter>
@@ -362,6 +365,21 @@
     </ClInclude>
     <ClInclude Include="UI\console_window.h">
       <Filter>Source Files\UI</Filter>
+    </ClInclude>
+    <ClInclude Include="console\console_commands.h">
+      <Filter>Source Files\console</Filter>
+    </ClInclude>
+    <ClInclude Include="console\console_input.h">
+      <Filter>Source Files\console</Filter>
+    </ClInclude>
+    <ClInclude Include="console\console_screen.h">
+      <Filter>Source Files\console</Filter>
+    </ClInclude>
+    <ClInclude Include="console\engine_output_hook.h">
+      <Filter>Source Files\console</Filter>
+    </ClInclude>
+    <ClInclude Include="console\server_console.h">
+      <Filter>Source Files\console</Filter>
     </ClInclude>
     <ClInclude Include="UI\global_settings.h">
       <Filter>Source Files\UI</Filter>
@@ -607,6 +625,21 @@
     </ClCompile>
     <ClCompile Include="UI\console_window.cpp">
       <Filter>Source Files\UI</Filter>
+    </ClCompile>
+    <ClCompile Include="console\console_commands.cpp">
+      <Filter>Source Files\console</Filter>
+    </ClCompile>
+    <ClCompile Include="console\console_input.cpp">
+      <Filter>Source Files\console</Filter>
+    </ClCompile>
+    <ClCompile Include="console\console_screen.cpp">
+      <Filter>Source Files\console</Filter>
+    </ClCompile>
+    <ClCompile Include="console\engine_output_hook.cpp">
+      <Filter>Source Files\console</Filter>
+    </ClCompile>
+    <ClCompile Include="console\server_console.cpp">
+      <Filter>Source Files\console</Filter>
     </ClCompile>
     <ClCompile Include="UI\global_settings.cpp">
       <Filter>Source Files\UI</Filter>

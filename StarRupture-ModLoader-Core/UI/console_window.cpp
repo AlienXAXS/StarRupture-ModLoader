@@ -6,10 +6,12 @@
 #include "imgui/imgui.h"
 #include "theme.h"
 #include "logging/logger.h"
+#include "console/console_commands.h"
 #include "hooks/game/console_command/console_command.h"
 #include "hooks/input/keybind_registry.h"
 #include "utils/game_thread_dispatch.h"
 #include <cstring>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -107,6 +109,30 @@ namespace UI::ConsoleWindow
         }
     }
 
+    // Bridges ModConsole output into the scrollback. Lines can arrive on the
+    // game thread (a plugin reload runs there), which AddLine already handles.
+    class ScrollbackSink : public ModConsole::Sink
+    {
+    public:
+        void Write(ModConsole::LineKind kind, const char* text) override
+        {
+            LineKind mapped = LineKind::Output;
+            switch (kind)
+            {
+            case ModConsole::LineKind::Error:  mapped = LineKind::Error;  break;
+            case ModConsole::LineKind::Notice: mapped = LineKind::Notice; break;
+            default: break;
+            }
+            AddLine(mapped, text ? text : "");
+        }
+
+        void Clear() override
+        {
+            std::lock_guard<std::mutex> lk(s_linesMutex);
+            s_lines.clear();
+        }
+    };
+
     static void Submit(const char* cmdRaw)
     {
         // Trim leading/trailing whitespace
@@ -124,13 +150,29 @@ namespace UI::ConsoleWindow
             s_history.push_back(cmd);
         s_historyPos = -1;
 
-        // Local commands handled without touching the engine.
-        if (_stricmp(cmd.c_str(), "clear") == 0 || _stricmp(cmd.c_str(), "cls") == 0)
+        // A leading '!' forces the rest straight to the engine. The mod loader's
+        // own commands are checked first and a few of the obvious names (help,
+        // version) are names the engine might want too, so there has to be a way
+        // to say which one you meant.
+        bool forceEngine = false;
+        if (cmd[0] == '!')
         {
-            std::lock_guard<std::mutex> lk(s_linesMutex);
-            s_lines.clear();
-            return;
+            forceEngine = true;
+            cmd = cmd.substr(1);
+            const size_t nb = cmd.find_first_not_of(" \t");
+            cmd = (nb == std::string::npos) ? std::string() : cmd.substr(nb);
+            if (cmd.empty())
+                return;
         }
+
+        // Mod loader commands (help, plugins, reload, clear, ...) first. Dispatch
+        // returns false when the first token is not one of ours, and only then
+        // does this become an engine command -- so nothing that worked before
+        // stops working. It never blocks: a plugin reload is queued on the game
+        // thread and writes into the scrollback whenever it gets there, which is
+        // the only option on the render thread.
+        if (!forceEngine && ModConsole::Dispatch(cmd, std::make_shared<ScrollbackSink>()))
+            return;
 
         // We are on the render thread here (ImGui draws from the Present hook),
         // but APlayerController::ConsoleCommand walks engine state and trips
@@ -253,6 +295,9 @@ namespace UI::ConsoleWindow
             Hooks::Input::ModKeyToVK(s_openKey));
 
         Hooks::ConsoleCommand::Resolve();
+
+        // Shared with the -console window; whichever comes up first registers.
+        ModConsole::RegisterBuiltins();
     }
 
     // -----------------------------------------------------------------------
@@ -292,7 +337,7 @@ namespace UI::ConsoleWindow
         // Header strip: title on the left, hint + close on the right.
         ImGui::TextDisabled("Developer Console");
         ImGui::SameLine();
-        ImGui::TextDisabled("   %s to close   |   Up/Down for history   |   'clear' to wipe",
+        ImGui::TextDisabled("   %s to close   |   Up/Down for history   |   'help' for mod loader commands   |   '!cmd' forces an engine command",
                             s_openKeyName);
         ImGui::SameLine(ImGui::GetContentRegionAvail().x - 50.0f);
         if (ImGui::SmallButton("Close"))
