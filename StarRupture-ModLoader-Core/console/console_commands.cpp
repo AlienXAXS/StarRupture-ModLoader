@@ -10,6 +10,8 @@
 #include <memory>
 #include <mutex>
 
+#include "console/server_console.h"
+#include "logging/log.h"
 #include "logging/logger.h"
 #include "plugins/plugin_interface.h"
 #include "plugins/plugin_manager.h"
@@ -413,6 +415,94 @@ namespace ModConsole
         out.Clear();
     }
 
+    // -----------------------------------------------------------------------
+    // loglevel
+    // -----------------------------------------------------------------------
+    static const char* LevelName(LogToFile::Level level)
+    {
+        switch (level)
+        {
+        case LogToFile::Level::Trace: return "TRACE";
+        case LogToFile::Level::Debug: return "DEBUG";
+        case LogToFile::Level::Info:  return "INFO";
+        case LogToFile::Level::Warn:  return "WARN";
+        case LogToFile::Level::Error: return "ERROR";
+        default:                      return "?";
+        }
+    }
+
+    // LogToFile::ParseLevel silently returns Debug for anything it does not
+    // recognise, which would make a typo look like it worked. Match here
+    // instead so an unknown name can be reported as one.
+    static bool ParseLevelStrict(const std::string& name, LogToFile::Level& outLevel)
+    {
+        if (_stricmp(name.c_str(), "trace") == 0) { outLevel = LogToFile::Level::Trace; return true; }
+        if (_stricmp(name.c_str(), "debug") == 0) { outLevel = LogToFile::Level::Debug; return true; }
+        if (_stricmp(name.c_str(), "info")  == 0) { outLevel = LogToFile::Level::Info;  return true; }
+        if (_stricmp(name.c_str(), "warn")  == 0) { outLevel = LogToFile::Level::Warn;  return true; }
+        if (_stricmp(name.c_str(), "error") == 0) { outLevel = LogToFile::Level::Error; return true; }
+        return false;
+    }
+
+    static void Cmd_LogLevel(const std::vector<std::string>& args, Sink& out)
+    {
+        if (args.size() < 2)
+        {
+            out.Out("Log level is %s.", LevelName(LogToFile::g_minLevel));
+            out.Notice("Set it with: loglevel <trace|debug|info|warn|error>");
+            return;
+        }
+
+        LogToFile::Level level = LogToFile::Level::Info;
+        if (!ParseLevelStrict(args[1], level))
+        {
+            out.Error("'%s' is not a log level. Use trace, debug, info, warn or error.", args[1].c_str());
+            return;
+        }
+
+        const char* previous = LevelName(LogToFile::g_minLevel);
+        LogToFile::SetLevel(level);
+
+        out.Out("Log level %s -> %s.", previous, LevelName(level));
+        out.Notice("Runtime only -- modloader.ini [Logging] Level still decides the next start.");
+
+        // Logged at Error so it lands in the file whatever the new level is:
+        // the line explaining why the log suddenly went quiet is worthless if
+        // the change itself filters it out.
+        LogToFile::Error("[Console] Log level changed %s -> %s", previous, LevelName(level));
+    }
+
+#ifndef MODLOADER_CLIENT_BUILD
+    // -----------------------------------------------------------------------
+    // stop
+    //
+    // Server/generic builds only. On a client the same key would quit the game
+    // out from under the player, and typing 'stop' into the in-game console
+    // expecting anything else is a mistake nobody should be able to make.
+    // -----------------------------------------------------------------------
+    static void Cmd_Stop(const std::vector<std::string>& args, Sink& out)
+    {
+        const bool force = args.size() >= 2 && _stricmp(args[1].c_str(), "force") == 0;
+
+        if (force)
+        {
+            out.Error("Forcing exit now. The current save may be incomplete.");
+            LogToFile::Error("[Console] 'stop force' -- terminating the process without engine shutdown");
+            ExitProcess(0);
+            return;   // not reached
+        }
+
+        if (!ServerConsole::RequestGracefulProcessExit())
+        {
+            out.Error("Could not request shutdown -- no console to raise the event on. See modloader.log.");
+            return;
+        }
+
+        out.Out("Shutdown requested. The engine finishes the current tick, runs its shutdown and exits.");
+        out.Notice("If it is still here in a minute, 'stop force' exits immediately (may lose the save).");
+    }
+#endif
+
     void RegisterBuiltins()
     {
         {
@@ -450,9 +540,22 @@ namespace ModConsole
                    "Show mod loader build and plugin interface versions",
                    &Cmd_Version, false });
 
+        Register({ "loglevel", "log",       "loglevel [level]",
+                   "Show or change the log level (trace/debug/info/warn/error)",
+                   &Cmd_LogLevel, false });
+
         Register({ "clear",   "cls",        "clear",
                    "Wipe the console scrollback",
                    &Cmd_Clear,   false });
+
+#ifndef MODLOADER_CLIENT_BUILD
+        // Not on the game thread on purpose: a wedged engine is exactly when
+        // you most want to stop the server, and a command queued behind a tick
+        // that never comes would never run.
+        Register({ "stop",    "shutdown",   "stop [force]",
+                   "Shut the server down cleanly ('force' exits immediately)",
+                   &Cmd_Stop,    false });
+#endif
     }
 
     // -----------------------------------------------------------------------

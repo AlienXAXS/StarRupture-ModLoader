@@ -154,11 +154,23 @@ namespace ServerConsole
     // let the genuinely terminal events (window closed, logoff, shutdown) fall
     // through to the default handler.
     // -----------------------------------------------------------------------
+    // Set by RequestGracefulProcessExit just before it raises the event, so the
+    // handler below knows this particular Ctrl+C is ours and must be passed on
+    // to the engine rather than swallowed.
+    static std::atomic<bool> s_selfStopRequested{ false };
+
     static BOOL WINAPI CtrlHandler(DWORD ctrlType)
     {
+        if (ctrlType == CTRL_C_EVENT && s_selfStopRequested.exchange(false))
+        {
+            // Ours: fall through to the engine's graceful termination handler,
+            // which is the entire point of raising the event.
+            return FALSE;
+        }
+
         if (ctrlType == CTRL_C_EVENT || ctrlType == CTRL_BREAK_EVENT)
         {
-            WriteLine("(Ctrl+C ignored -- close the game normally, or type 'exit' to close this console)",
+            WriteLine("(Ctrl+C ignored -- type 'stop' to shut the server down cleanly)",
                       FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_INTENSITY);
             return TRUE;
         }
@@ -173,9 +185,11 @@ namespace ServerConsole
         WriteLine("", s_defaultAttrs);
         WriteLine("  StarRupture Mod Loader console (" MODLOADER_BUILD_TAG ")",
                   FOREGROUND_GREEN | FOREGROUND_INTENSITY);
-        WriteLine("  Type 'help' for commands, 'exit' to close this window.",
+        WriteLine("  Type 'help' for commands, 'stop' to shut the server down cleanly.",
                   FOREGROUND_BLUE | FOREGROUND_GREEN | FOREGROUND_INTENSITY);
-        WriteLine("  Closing this window closes the game -- use 'exit' instead.",
+        WriteLine("  Closing this window kills the game -- 'stop' instead, or 'closeconsole' to",
+                  FOREGROUND_BLUE | FOREGROUND_GREEN | FOREGROUND_INTENSITY);
+        WriteLine("  drop the console and leave the server running.",
                   FOREGROUND_BLUE | FOREGROUND_GREEN | FOREGROUND_INTENSITY);
         WriteLine("", s_defaultAttrs);
     }
@@ -232,9 +246,22 @@ namespace ServerConsole
             if (line.empty())
                 continue;
 
-            if (_stricmp(line.c_str(), "exit") == 0 || _stricmp(line.c_str(), "close") == 0)
+            // 'exit' and 'quit' mean opposite things to different people -- one
+            // camp expects the server to stop, the other expects the window to
+            // go away. Both are destructive if guessed wrong (a dead server, or
+            // a live server with no console left to control it), so neither
+            // word picks a side.
+            if (_stricmp(line.c_str(), "exit") == 0 || _stricmp(line.c_str(), "quit") == 0)
             {
-                WriteLine("Closing console. The game keeps running.", s_defaultAttrs);
+                WriteLine("Ambiguous: 'stop' shuts the server down, 'closeconsole' just closes this window.",
+                          FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_INTENSITY);
+                continue;
+            }
+
+            if (_stricmp(line.c_str(), "closeconsole") == 0 || _stricmp(line.c_str(), "close") == 0)
+            {
+                WriteLine("Closing console. The server keeps running -- it cannot be reopened.",
+                          s_defaultAttrs);
                 Shutdown();
                 break;
             }
@@ -266,6 +293,30 @@ namespace ServerConsole
     // Public API
     // -----------------------------------------------------------------------
     bool IsRunning() { return s_running.load(); }
+
+    bool RequestGracefulProcessExit()
+    {
+        if (!GetConsoleWindow())
+        {
+            ModLoaderLogger::LogError(L"[Console] Cannot request shutdown: the process has no console");
+            return false;
+        }
+
+        ModLoaderLogger::LogInfo(L"[Console] Graceful shutdown requested -- raising Ctrl+C for the engine");
+
+        // Set before raising it: the handler runs on a thread the system
+        // creates for the event, and it can be in there before this returns.
+        s_selfStopRequested.store(true);
+
+        if (!GenerateConsoleCtrlEvent(CTRL_C_EVENT, 0))
+        {
+            s_selfStopRequested.store(false);
+            ModLoaderLogger::LogError(L"[Console] GenerateConsoleCtrlEvent failed (%lu)", GetLastError());
+            return false;
+        }
+
+        return true;
+    }
 
     void Start()
     {

@@ -40,4 +40,29 @@ namespace ServerConsole
 
     // True while the console window is up.
     bool IsRunning();
+
+    // Ask the engine to shut down cleanly, by raising a console Ctrl+C event
+    // that we deliberately let through to the engine's own handler.
+    //
+    // UE installs a graceful termination handler on the process console
+    // (FWindowsPlatformMisc::SetGracefulTerminationHandler) whose whole job is
+    // to flush the log and call RequestEngineExit -- the engine then finishes
+    // the current tick, runs its normal shutdown and exits. Ctrl+C is the
+    // canonical way to stop a UE dedicated server for exactly this reason, so
+    // `stop` raises one rather than inventing a second shutdown path.
+    //
+    // Returns false when there is no console to raise the event on, which is
+    // also the only case where nothing at all happens.
+    //
+    // If the engine's handler turns out not to be installed, the event falls
+    // through to the system default, which terminates the process -- the server
+    // still stops, just without the clean shutdown. There is no way to tell the
+    // two apart from here, so `stop` reports what it asked for, not what
+    // happened.
+    //
+    // Note the event goes to every process attached to this console. When the
+    // server was launched from a batch file, that shell sees the Ctrl+C too
+    // (the usual "Terminate batch job?" prompt) -- the same as pressing Ctrl+C
+    // in the window by hand.
+    bool RequestGracefulProcessExit();
 }
