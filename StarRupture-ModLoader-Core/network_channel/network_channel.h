@@ -2,18 +2,43 @@
 
 #include "../plugins/plugin_interface.h"
 
+#include <string>
+#include <vector>
+
 // ============================================================
-// NetworkChannel -- implements IPluginNetworkChannel (v18)
+// NetworkChannel -- implements IPluginNetworkChannel
 //
-// Server build:  sends Server->Client packets via APlayerController::ClientMessage
-//                ProcessEvent call (without FUNC_Native so UE replicates to the client).
-//                Receives Client->Server packets via the ServerChatCommit ProcessEvent hook.
+// One transport: the Unreal per-connection control channel. Payloads travel as
+// control bunches led by a reserved message type, handled by
+// hooks/game/control_channel/. There is no fallback -- the previous transport,
+// which smuggled envelopes through the ClientSaveStringToTxt and
+// ServerExecuteConsoleCommand RPCs, has been removed.
 //
-// Client build:  hooks UObject::ProcessEvent globally; filters calls targeting the
-//                ClientMessage UFunction; dispatches tagged payloads to registered
-//                plugin handlers.
-//                Sends Client->Server packets via ACrPlayerControllerBase::ServerChatCommit
-//                ProcessEvent call (without FUNC_Native so UE replicates to the server).
+// Two directions, and which are live is a *runtime* question on client builds,
+// because a listen host runs a client build while being the server for its own
+// session:
+//
+// Authority direction (compiled into server AND client builds):
+//                sends to clients, receives from clients. Every entry point
+//                checks HasNetAuthority() -- true on a dedicated server, and on
+//                a client build only when GetNetMode() reports ListenServer.
+//                On a pure client (and in Standalone) these log and do nothing.
+//
+// Client direction (client builds only):
+//                sends to the server, receives from the server.
+//
+// On a listen host both are live at once, and the host's own player controller
+// is never a send target: it has no UNetConnection, because a message to it
+// would not be a network send at all. "All clients" therefore means all remote
+// clients on both builds. Host-side code already holds the authoritative data
+// and can call its own handler directly.
+//
+// OPERATIONAL NOTE: because there is no fallback, a session requires every peer
+// to run a loader whose six control-channel patterns resolved. Sending to a peer
+// without a working wire does not degrade -- the engine closes that connection
+// on an unrecognised control message. If our own natives fail to resolve we go
+// silent instead, so a failed preflight disables plugin networking rather than
+// disconnecting anyone.
 //
 // Generic build: all send/receive operations are no-ops; Network pointer in IPluginHooks
 //                is nullptr.
@@ -26,25 +51,58 @@ namespace NetworkChannel
     IPluginNetworkChannel* GetInterface();
 
     // Called by hooks_interface.cpp during engine-init on server+client builds.
-    // Must be called after GObjects is live (i.e. after engine-init hook fires).
+    // Installs the control-channel detour. Must be called after GObjects is live
+    // (i.e. after the engine-init hook fires).
     void Initialize();
 
     // Called on DLL detach / engine shutdown.
     void Shutdown();
 
-#ifdef MODLOADER_CLIENT_BUILD
-    // Called by the client_message ProcessEvent hook with the raw wchar_t payload
-    // from the FString S parameter.  Parses the [MOD:...] envelope and dispatches
-    // to registered plugin handlers.
-    void DispatchClientMessage(const wchar_t* str, int numCharsWithNull);
-#endif
+    // -----------------------------------------------------------------------
+    // Client plugin manifests (authority side)
+    //
+    // A joining client volunteers the list of plugins it has loaded, with their
+    // versions. The authority records it per connection and uses it to decide
+    // who a plugin's packets are worth sending to: a packet from plugin P
+    // version V only goes to clients that reported P at exactly V.
+    //
+    // The client must volunteer this -- the authority cannot ask. A request
+    // would be a control bunch, and sending one to a peer that is not running
+    // the loader disconnects it. Which is also why a client with no manifest
+    // receives nothing: silence is the only safe default, and it happens to
+    // shield vanilla clients from being dropped by a broadcast.
+    // -----------------------------------------------------------------------
 
-#ifdef MODLOADER_SERVER_BUILD
-    // Called by the server_chat_commit ProcessEvent hook with the sender UObject* and the
-    // raw wchar_t payload from the FString Text parameter.
-    // Returns true if the message was a mod envelope and was consumed (caller should suppress
-    // the original call); returns false if the message is normal chat (caller must forward).
-    bool DispatchServerMessage(void* senderUObject, const wchar_t* str, int numCharsWithNull);
-#endif
+    struct RemotePlugin
+    {
+        std::string name;
+        std::string version;
+    };
+
+    struct ClientManifest
+    {
+        void*       connection = nullptr;  // UNetConnection*, identity only
+        std::string playerName;            // best effort; empty if not resolvable yet
+        bool        reported = false;      // false = never sent a manifest
+        std::vector<RemotePlugin> plugins;
+    };
+
+    // Every client connection the authority currently knows about. Empty on a
+    // pure client and on generic builds.
+    std::vector<ClientManifest> GetClientManifests();
+
+    // -----------------------------------------------------------------------
+    // Fragmentation self-test (client side)
+    //
+    // Sends `bytes` of position-dependent filler to the authority, which bounces
+    // it back verbatim. Exercises the full path in both directions: chunking on
+    // send, reassembly on the authority, chunking again for the reply, reassembly
+    // here -- then verifies every byte.
+    //
+    // Returns false immediately (with a reason in err) if the test cannot start.
+    // Success only means it was sent: the PASS or FAIL verdict is asynchronous and
+    // lands in modloader.log at INFO/ERROR when the reply arrives.
+    // -----------------------------------------------------------------------
+    bool StartFragmentationTest(size_t bytes, std::string& err);
 
 } // namespace NetworkChannel

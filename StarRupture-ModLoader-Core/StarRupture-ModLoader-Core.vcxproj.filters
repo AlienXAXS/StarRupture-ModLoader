@@ -46,12 +46,6 @@
     <Filter Include="Source Files\hooks\game\engine_tick">
       <UniqueIdentifier>{ad840a96-d535-42f9-9386-22100e859737}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Source Files\hooks\game\client_message">
-      <UniqueIdentifier>{e3f9a1b2-d047-4e78-9c34-2b3c4d5e6f70}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Source Files\hooks\game\server_chat_commit">
-      <UniqueIdentifier>{a7b3c5d9-e1f4-4a6b-8c0d-2e4f6a8b0c2d}</UniqueIdentifier>
-    </Filter>
     <Filter Include="Source Files\hooks\game\hud_post_render">
       <UniqueIdentifier>{b2e7f3a1-c891-4d56-8f23-1a2b3c4d5e6f}</UniqueIdentifier>
     </Filter>
@@ -63,6 +57,9 @@
     </Filter>
     <Filter Include="Source Files\network_channel">
       <UniqueIdentifier>{f4a0b2c3-e158-4f89-ad45-3c4d5e6f7a81}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\hooks\game\control_channel">
+      <UniqueIdentifier>{a5b0c4d2-fb34-4a89-b256-4d5e6f708192}</UniqueIdentifier>
     </Filter>
     <Filter Include="Source Files\hooks\game\actor_begin_play">
       <UniqueIdentifier>{75a11838-a61f-4b73-bad6-773b6425b24e}</UniqueIdentifier>
@@ -390,6 +387,12 @@
     <ClInclude Include="network_channel\network_channel.h">
       <Filter>Source Files\network_channel</Filter>
     </ClInclude>
+    <ClInclude Include="network_channel\packet_fragmentation.h">
+      <Filter>Source Files\network_channel</Filter>
+    </ClInclude>
+    <ClInclude Include="hooks\game\control_channel\control_channel.h">
+      <Filter>Source Files\hooks\game\control_channel</Filter>
+    </ClInclude>
     <ClInclude Include="plugins\plugin_network_helpers.h">
       <Filter>Source Files\plugins</Filter>
     </ClInclude>
@@ -563,12 +566,6 @@
     <ClCompile Include="hooks\game\engine_tick\function_symbols.cpp">
       <Filter>Source Files\hooks\game\engine_tick</Filter>
     </ClCompile>
-    <ClCompile Include="hooks\game\client_message\client_message.cpp">
-      <Filter>Source Files\hooks\game\client_message</Filter>
-    </ClCompile>
-    <ClCompile Include="hooks\game\server_chat_commit\server_chat_commit.cpp">
-      <Filter>Source Files\hooks\game\server_chat_commit</Filter>
-    </ClCompile>
     <ClCompile Include="utils\pak_list.cpp">
       <Filter>Source Files\utils</Filter>
     </ClCompile>
@@ -586,6 +583,12 @@
     </ClCompile>
     <ClCompile Include="network_channel\network_channel.cpp">
       <Filter>Source Files\network_channel</Filter>
+    </ClCompile>
+    <ClCompile Include="network_channel\packet_fragmentation.cpp">
+      <Filter>Source Files\network_channel</Filter>
+    </ClCompile>
+    <ClCompile Include="hooks\game\control_channel\control_channel.cpp">
+      <Filter>Source Files\hooks\game\control_channel</Filter>
     </ClCompile>
     <ClCompile Include="hooks\game\experience_load_complete\experience_load_complete.cpp">
       <Filter>Source Files\hooks\game\experience_load_complete</Filter>

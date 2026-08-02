@@ -170,7 +170,7 @@ void SendPacketToServer(IPluginHooks* hooks, const IPluginSelf* self, const T& p
 //   self  : the calling plugin's IPluginSelf* -- name must match the sender's
 //   cb    : callback invoked with senderPlayerController (void*) and
 //           a const T& on each matching packet.
-//           Called from the game thread (ServerChatCommit detour).
+//           Called from the game thread (control-channel detour).
 //
 // Returns the raw PluginNetworkServerMessageCallback pointer so it can be
 // passed to hooks->Network->UnregisterServerMessageHandler during PluginShutdown.

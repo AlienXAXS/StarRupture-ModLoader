@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "network_channel.h"
+#include "packet_fragmentation.h"
 #include "logging/logger.h"
 
 #if defined(MODLOADER_SERVER_BUILD) || defined(MODLOADER_CLIENT_BUILD)
@@ -9,13 +10,16 @@
 #include "Engine_classes.hpp"       // UWorld, UGameplayStatics, AActor
 #include "Chimera_classes.hpp"      // ACrPlayerControllerBase
 
-#ifdef MODLOADER_CLIENT_BUILD
-#include "hooks/game/client_message/client_message.h"
-#endif
-
-#ifdef MODLOADER_SERVER_BUILD
-#include "hooks/game/server_chat_commit/server_chat_commit.h"
-#endif
+// The authority side of the channel (send to clients, receive from clients) is
+// compiled into both builds: a listen host runs a client build but is the server
+// for its own session.  Authority is a runtime question, answered by SessionInfo.
+#include "hooks/game/session_info/session_info.h"
+#include "hooks/game/control_channel/control_channel.h"
+#include "hooks/game/player_left/player_left.h"
+#include "hooks/game/world_end_play/world_end_play.h"
+#include "hooks/game/world_begin_play/world_begin_play.h"
+#include "hooks/game/engine_tick/engine_tick.h"
+#include "plugins/plugin_manager.h"
 
 #include <mutex>
 #include <vector>
@@ -23,6 +27,10 @@
 #include <unordered_map>
 #include <algorithm>
 #include <cstdint>
+
+#ifndef MODLOADER_BUILD_TAG
+#define MODLOADER_BUILD_TAG "dev"
+#endif
 
 // ============================================================
 // Base64 helpers (no external dependency)
@@ -213,24 +221,6 @@ namespace
         return key;
     }
 
-    // SEH wrapper for ProcessEvent.
-    // Must contain NO C++ objects with destructors (MSVC C2712 restriction).
-    // The caller is responsible for adjusting UFunction flags before calling and
-    // restoring them afterwards.
-    static void CallProcessEventSEH(SDK::UObject* obj, SDK::UFunction* func, void* parms)
-    {
-        __try
-        {
-            obj->ProcessEvent(func, parms);
-        }
-        __except (EXCEPTION_EXECUTE_HANDLER)
-        {
-            ModLoaderLogger::LogError(
-                L"[NetworkChannel] SEH exception in ProcessEvent (code 0x%08lX)",
-                GetExceptionCode());
-        }
-    }
-
 } // anonymous namespace
 
 // ============================================================
@@ -239,97 +229,502 @@ namespace
 
 namespace
 {
-
-#ifdef MODLOADER_SERVER_BUILD
-
-    // Cached ClientSaveStringToTxt UFunction pointer.
-    // Resolved lazily on first send via UObject::FindObjectFast<UFunction>.
-    static SDK::UFunction* g_clientSaveTxtFunc = nullptr;
-
-    // Resolve the ClientSaveStringToTxt UFunction from GObjects if not already cached.
-    static void EnsureClientSaveTxtFunc()
+    // ------------------------------------------------------------
+    // Authority
+    //
+    // "Can I send to clients?" is a runtime question, not a build-time one.
+    // A dedicated server always can.  A client build can whenever it is hosting
+    // the session (listen server) -- it owns the same NetDriver a dedicated
+    // server does, and its player controllers have the same client connections.
+    //
+    // Standalone deliberately reports false: there are no remote clients, and
+    // the local-only broadcast that would result is not something a plugin
+    // written against the dedicated-server model expects.
+    // ------------------------------------------------------------
+    static bool HasNetAuthority()
     {
-        if (g_clientSaveTxtFunc) return;
-
-        g_clientSaveTxtFunc = SDK::UObject::FindObjectFast<SDK::UFunction>(
-            "ClientSaveStringToTxt", SDK::EClassCastFlags::Function);
-
-        if (g_clientSaveTxtFunc)
-            ModLoaderLogger::LogInfo(L"[NetworkChannel] ClientSaveStringToTxt UFunction resolved at %p",
-                                     static_cast<void*>(g_clientSaveTxtFunc));
-        else
-            ModLoaderLogger::LogWarn(L"[NetworkChannel] ClientSaveStringToTxt UFunction not found in GObjects yet");
+#ifdef MODLOADER_CLIENT_BUILD
+        // ListenServer or DedicatedServer; false for Client, Standalone, Unknown.
+        return Hooks::SessionInfo::IsServer();
+#else
+        return true;
+#endif
     }
 
-    // Params layout for ACrPlayerControllerBase::ClientSaveStringToTxt (0x20 bytes).
-    // Matches CrPlayerControllerBase_ClientSaveStringToTxt in Chimera_parameters.hpp.
-    // We use InString for the mod envelope and Path as a sentinel ("MOD_NET").
-    struct alignas(8) ClientSaveTxtParms
-    {
-        // FString InString (0x0000, 0x0010)
-        wchar_t* inStrData; // +0x00
-        int32_t  inStrNum;  // +0x08  (includes null terminator)
-        int32_t  inStrMax;  // +0x0C
-        // FString Path (0x0010, 0x0010)
-        wchar_t* pathData;  // +0x10
-        int32_t  pathNum;   // +0x18  (includes null terminator)
-        int32_t  pathMax;   // +0x1C
-    };
-    static_assert(sizeof(ClientSaveTxtParms) == 0x20, "ClientSaveTxtParms size mismatch");
+    static bool NC_IsServer() { return HasNetAuthority(); }
 
-    // Sentinel written into Path to tag mod traffic.  Must match client_message.cpp.
-    static const wchar_t* kPathSentinel = L"MOD_NET";
-    static const int      kPathSentinelLen = 8; // 7 chars + null terminator
+// ============================================================
+// Wire transport (control channel)
+//
+// The only transport. Payloads travel as one control bunch per message, carrying
+// the ASCII envelope built below.
+//
+// KNOWN CONSEQUENCE OF BEING WIRE-ONLY: there is no capability negotiation, and
+// there is no way to add one -- asking "do you speak this?" would itself have to
+// be a 0xC0 bunch. UControlChannel::ReceivedBunch dispatches a leading uint8
+// through a switch covering 0x00..0x21; 0xC0 falls through to the default, and
+// the engine's default is to close the connection
+// (ENetCloseResult::ControlChannelMessageUnknown). So sending to a peer without
+// a working wire does not degrade -- it DISCONNECTS them. That is the accepted
+// trade for deleting the legacy transport; it means every peer in a session must
+// run a loader whose six control-channel patterns resolved.
+//
+// The one protection kept is local: nothing is sent unless OUR side resolved
+// every native (IsAvailable()), so a loader that failed preflight goes quiet
+// rather than dropping the peers it talks to.
+// ============================================================
 
-    // Send the narrow-string envelope to one player controller via ProcessEvent.
-    // FUNC_Native is left as-is: for a FUNC_NetClient function on a dedicated server
-    // UE routes it to the client's NetConnection regardless of the Native flag.
-    static void SendEnvelopeToPlayer(void* playerController, const std::string& envelope)
+    // ---- Plugin manifest ----------------------------------------------------
+    //
+    // Reserved envelope name for loader-internal traffic. Consumed by the
+    // receive cores before any plugin lookup, so no plugin can see or spoof it.
+    // Safe to carry over the wire without negotiation: the wire is the only
+    // transport, so a peer that can receive this already speaks it by definition.
+    static constexpr const char* kMlPlugin   = "$ML";
+    static constexpr const char* kMlManifest = "manifest";
+    static constexpr const char* kMlAck      = "ack";
+    static constexpr const char* kMlEcho     = "echo";
+    static constexpr const char* kMlEchoBack = "echoreply";
+
+    // Deterministic, position-dependent filler for the echo test. Position-dependent
+    // matters: a constant byte would pass even if the reassembler wrote chunks to
+    // the wrong offsets, which is exactly the bug this test is meant to catch.
+    static uint8_t EchoByteAt(size_t i)
     {
-        EnsureClientSaveTxtFunc();
-        if (!g_clientSaveTxtFunc)
+        return static_cast<uint8_t>((i * 31u + 7u) & 0xFFu);
+    }
+
+    // Wire form: name US version RS, repeated. Unit/record separators rather
+    // than punctuation because plugin names and versions are author-controlled
+    // strings and nothing stops one containing a comma, colon or newline.
+    static constexpr char kUnitSep   = '\x1f';
+    static constexpr char kRecordSep = '\x1e';
+
+    static std::mutex g_manifestMutex;
+    // Keyed by UNetConnection*. An entry exists only once a client has reported.
+    static std::unordered_map<void*, std::vector<NetworkChannel::RemotePlugin>> g_manifests;
+
+    static std::string EncodeManifest()
+    {
+        const PluginInfo* infos[256] = {};
+        const int n = PluginManager::GetLoadedPluginInfos(infos, 256);
+
+        std::string out;
+        for (int i = 0; i < n; ++i)
         {
-            ModLoaderLogger::LogWarn(L"[NetworkChannel] SendEnvelope: ClientSaveStringToTxt UFunction not yet in GObjects");
-            return;
+            if (!infos[i] || !infos[i]->name) continue;
+            const char* name = infos[i]->name;
+            const char* ver  = infos[i]->version ? infos[i]->version : "";
+
+            // A name or version containing a separator would corrupt the frame.
+            // Drop the entry rather than emit something the peer will misparse:
+            // being absent from the manifest costs that plugin its traffic, which
+            // is a great deal better than shifting every entry after it.
+            if (strchr(name, kUnitSep) || strchr(name, kRecordSep) ||
+                strchr(ver, kUnitSep)  || strchr(ver, kRecordSep))
+            {
+                ModLoaderLogger::LogWarn(
+                    L"[NetworkChannel] Plugin '%S' has a separator character in its name or "
+                    L"version and was left out of the manifest", name);
+                continue;
+            }
+
+            out += name;
+            out += kUnitSep;
+            out += ver;
+            out += kRecordSep;
+        }
+        return out;
+    }
+
+    static std::vector<NetworkChannel::RemotePlugin> DecodeManifest(const uint8_t* data, size_t len)
+    {
+        std::vector<NetworkChannel::RemotePlugin> out;
+        const char* p   = reinterpret_cast<const char*>(data);
+        const char* end = p + len;
+
+        while (p < end)
+        {
+            const char* rec = static_cast<const char*>(memchr(p, kRecordSep, end - p));
+            if (!rec) break;
+
+            const char* us = static_cast<const char*>(memchr(p, kUnitSep, rec - p));
+            if (us)
+            {
+                NetworkChannel::RemotePlugin rp;
+                rp.name.assign(p, us);
+                rp.version.assign(us + 1, rec);
+                if (!rp.name.empty())
+                    out.push_back(std::move(rp));
+            }
+            p = rec + 1;
+        }
+        return out;
+    }
+
+    // Does this connection's reported manifest contain the plugin at that exact
+    // version? False when the client never reported -- see the header note.
+    static bool ClientHasPlugin(void* conn, const char* name, const char* version)
+    {
+        if (!conn || !name) return false;
+        const char* ver = version ? version : "";
+
+        std::lock_guard<std::mutex> lk(g_manifestMutex);
+        auto it = g_manifests.find(conn);
+        if (it == g_manifests.end()) return false;
+
+        for (const auto& rp : it->second)
+            if (rp.name == name && rp.version == ver)
+                return true;
+        return false;
+    }
+
+    // ---- Connection lookups -------------------------------------------------
+
+    // The UNetConnection owning a remote player's controller (authority side).
+    // Null for the listen host's own controller, which has no connection --
+    // which is also why such a controller is never a send target.
+    static void* ConnectionForPlayer(void* playerController)
+    {
+        if (!playerController) return nullptr;
+        __try
+        {
+            auto* pc = reinterpret_cast<SDK::APlayerController*>(playerController);
+            return pc->NetConnection;
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER)
+        {
+            return nullptr;
+        }
+    }
+
+    static void* PlayerForConnection(void* conn)
+    {
+        if (!conn) return nullptr;
+        __try
+        {
+            auto* nc = reinterpret_cast<SDK::UNetConnection*>(conn);
+            return nc->PlayerController;
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER)
+        {
+            return nullptr;
+        }
+    }
+
+#ifdef MODLOADER_CLIENT_BUILD
+    // The client's connection to the server. A dedicated server has none.
+    static void* ServerConnection()
+    {
+        __try
+        {
+            SDK::UWorld* world = SDK::UWorld::GetWorld();
+            if (!world || !world->NetDriver) return nullptr;
+            return world->NetDriver->ServerConnection;
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER)
+        {
+            return nullptr;
+        }
+    }
+#endif // MODLOADER_CLIENT_BUILD
+
+    // ---- Wire send ----------------------------------------------------------
+
+    // Bytes we are willing to put in one control bunch. Conservative on purpose:
+    // an over-budget bunch is caught by the ArIsError check in the send helper and
+    // dropped, so the cost of guessing low is a few extra frames while the cost of
+    // guessing high is a lost message.
+    static constexpr size_t kMaxBunchPayload = 1024;
+
+    // Ids only need to be unique among a sender's in-flight messages, so a plain
+    // counter is sufficient; wrapping after 4 billion messages is not a concern.
+    static uint32_t g_nextMessageId = 1;
+
+    // Inbound reassembly, scoped per connection so a peer that leaves takes its
+    // half-finished messages with it -- a reused connection pointer must never
+    // inherit a stale partial.
+    static std::mutex                 g_reasmMutex;
+    static Fragmentation::Reassembler g_reassembler;
+
+    // Is this control channel still safe to send on?
+    //
+    // Two independent checks, because the cached UControlChannel* can outlive the
+    // channel it names -- ControlChannel caches per connection and only drops an
+    // entry when something tells it to, so a peer that is mid-disconnect still has
+    // a cache hit right up until PlayerLeft fires.
+    //
+    //  1. The channel must still point back at the connection we looked it up by.
+    //     This is the check that does not rely on any bit-layout assumption: if the
+    //     UChannel was freed and its memory reused, Connection@0x28 almost
+    //     certainly no longer matches.
+    //  2. The Closing and Broken flags. Offsets come from IDA's type info for
+    //     UChannel (the SDK pads this region out, so it is not in the headers):
+    //     the 0x30 bitfield runs OpenAcked, Closing, Dormant, bIsReplicationPaused,
+    //     OpenTemporary, Broken, ... LSB-first, giving Closing = 0x02, Broken = 0x20.
+    static constexpr size_t  kOff_ChannelFlags = 0x30;
+    static constexpr uint8_t kChannelClosing   = 0x02;
+    static constexpr uint8_t kChannelBroken    = 0x20;
+
+    static bool IsChannelUsable(void* cc, void* conn)
+    {
+        __try
+        {
+            auto* p = reinterpret_cast<uint8_t*>(cc);
+            if (*reinterpret_cast<void**>(p + 0x28) != conn) return false;
+
+            const uint8_t flags = *(p + kOff_ChannelFlags);
+            if (flags & (kChannelClosing | kChannelBroken)) return false;
+
+            return true;
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER)
+        {
+            return false;
+        }
+    }
+
+    // Everything keyed by connection lives in three places; forgetting a peer has
+    // to clear all of them or the leftovers outlive it. Defined here, after all
+    // three stores exist.
+    static void ForgetConnectionState(void* conn)
+    {
+        if (!conn) return;
+
+        Hooks::ControlChannel::ForgetConnection(conn);
+        {
+            std::lock_guard<std::mutex> lk(g_reasmMutex);
+            g_reassembler.PurgeConnection(reinterpret_cast<uintptr_t>(conn));
+        }
+        {
+            std::lock_guard<std::mutex> lk(g_manifestMutex);
+            g_manifests.erase(conn);
+        }
+    }
+
+    // ---- Periodic housekeeping ----------------------------------------------
+
+    // Reassembly buffers are reclaimed by three mechanisms, and all three are
+    // needed:
+    //
+    //   1. PlayerLeft, when the departing controller still names its connection.
+    //   2. The send path, which forgets a peer the moment its channel reads as
+    //      closing, broken or recycled.
+    //   3. This sweep -- the only one that does not depend on being told.
+    //
+    // (3) exists because a client can vanish mid-transfer in ways (1) and (2)
+    // never observe: Logout can fire after the connection pointer is already
+    // gone, and nothing may ever try to send to that peer again. ExpireStale is
+    // otherwise only reached from Feed, so on an otherwise idle authority a
+    // half-received message from a departed client would sit there until the
+    // world tore down.
+    static constexpr uint64_t kSweepIntervalMs = 1000;
+    static uint64_t g_lastSweepMs = 0;
+
+    static void SweepStalePartials(uint64_t nowMs)
+    {
+        if (g_lastSweepMs && (nowMs - g_lastSweepMs) < kSweepIntervalMs) return;
+        g_lastSweepMs = nowMs;
+
+        size_t dropped = 0;
+        {
+            std::lock_guard<std::mutex> lk(g_reasmMutex);
+            if (g_reassembler.PartialCount() == 0) return;
+            dropped = g_reassembler.ExpireStale(nowMs);
         }
 
-        ModLoaderLogger::LogTrace(L"[NetworkChannel] SendEnvelope: PC=%p func=%p flags=0x%08X envelope=%zu bytes",
-                                  playerController, static_cast<void*>(g_clientSaveTxtFunc),
-                                  g_clientSaveTxtFunc->FunctionFlags, envelope.size());
-
-        // Convert narrow envelope to wide for FString InString
-        int wlen = MultiByteToWideChar(CP_UTF8, 0, envelope.c_str(), -1, nullptr, 0);
-        if (wlen <= 0) return;
-        std::wstring wideEnv(static_cast<size_t>(wlen), L'\0');
-        MultiByteToWideChar(CP_UTF8, 0, envelope.c_str(), -1, wideEnv.data(), wlen);
-
-        ClientSaveTxtParms parms{};
-        parms.inStrData = wideEnv.data();
-        parms.inStrNum  = wlen;                  // includes null terminator
-        parms.inStrMax  = wlen;
-        parms.pathData  = const_cast<wchar_t*>(kPathSentinel);
-        parms.pathNum   = kPathSentinelLen;
-        parms.pathMax   = kPathSentinelLen;
-
-        auto* obj = reinterpret_cast<SDK::UObject*>(playerController);
-        CallProcessEventSEH(obj, g_clientSaveTxtFunc, &parms);
-
-        ModLoaderLogger::LogTrace(L"[NetworkChannel] SendEnvelope: ProcessEvent returned");
+        if (dropped)
+            ModLoaderLogger::LogWarn(
+                L"[NetworkChannel] Swept %zu abandoned partial message(s) -- a sender "
+                L"disconnected or stopped mid-transfer", dropped);
     }
+
+
+    // One bunch, no chunking. Every send ultimately funnels through here.
+    static bool SendBunch(void* conn, const uint8_t* bytes, size_t len)
+    {
+        void* cc = Hooks::ControlChannel::GetControlChannel(conn);
+        if (!cc)
+        {
+            ModLoaderLogger::LogWarn(
+                L"[NetworkChannel] Wire send dropped: no control channel open for peer %p", conn);
+            return false;
+        }
+
+        if (!IsChannelUsable(cc, conn))
+        {
+            // Disconnecting, torn down, or a recycled allocation. Forget the peer
+            // now: continuing to hold its reassembly buffers and manifest would
+            // keep a departing client alive in our state until something else
+            // noticed, and the cached channel would be retried on every send.
+            ModLoaderLogger::LogDebug(
+                L"[NetworkChannel] Wire send dropped: control channel for peer %p is closing, "
+                L"broken or stale -- forgetting the peer", conn);
+            ForgetConnectionState(conn);
+            return false;
+        }
+
+        const bool ok = Hooks::ControlChannel::SendRaw(cc, bytes, len);
+
+        if (!ok)
+            ModLoaderLogger::LogWarn(
+                L"[NetworkChannel] Wire send failed for peer %p (%zu bytes)", conn, len);
+        else
+            ModLoaderLogger::LogTrace(
+                L"[NetworkChannel] Wire send ok: peer=%p %zu bytes", conn, len);
+
+        return ok;
+    }
+
+    // Put an envelope on the wire, chunking it if it will not fit in one bunch.
+    // There is no fallback -- a false return means the message was dropped, and
+    // the log line says why.
+    //
+    // label is carried in each chunk header purely for diagnostics: a partial
+    // message that never completes is otherwise an anonymous stuck buffer.
+    static bool SendWire(void* conn, const char* label, const std::string& env)
+    {
+        if (!conn)
+        {
+            ModLoaderLogger::LogWarn(
+                L"[NetworkChannel] Wire send dropped: no NetConnection for target");
+            return false;
+        }
+
+        if (!Hooks::ControlChannel::IsAvailable())
+        {
+            ModLoaderLogger::LogWarn(
+                L"[NetworkChannel] Wire send dropped: control channel unavailable "
+                L"(one or more patterns failed to resolve -- see preflight warnings)");
+            return false;
+        }
+
+        const auto* bytes = reinterpret_cast<const uint8_t*>(env.data());
+
+        if (env.size() <= kMaxBunchPayload)
+            return SendBunch(conn, bytes, env.size());
+
+        const std::string tag = label ? label : "";
+        if (Fragmentation::kFragHeaderBase + tag.size() >= kMaxBunchPayload)
+        {
+            ModLoaderLogger::LogError(
+                L"[NetworkChannel] Cannot fragment: label '%S' leaves no room for payload", tag.c_str());
+            return false;
+        }
+        const size_t budget = kMaxBunchPayload - Fragmentation::kFragHeaderBase - tag.size();
+
+        const uint32_t msgId = g_nextMessageId++;
+        auto frames = Fragmentation::BuildChunks(msgId, tag, bytes, env.size(), budget);
+
+        ModLoaderLogger::LogDebug(
+            L"[NetworkChannel] Fragmenting %zu bytes into %zu chunk(s) of <=%zu "
+            L"(message %u, label '%S') for peer %p",
+            env.size(), frames.size(), budget, msgId, tag.c_str(), conn);
+
+        // All-or-nothing: a partially sent message leaves the peer holding a
+        // buffer that can only ever expire, so report failure the moment a chunk
+        // does not go out rather than pretending the message was delivered.
+        for (size_t i = 0; i < frames.size(); ++i)
+        {
+            if (!SendBunch(conn, frames[i].data(), frames[i].size()))
+            {
+                ModLoaderLogger::LogError(
+                    L"[NetworkChannel] Fragment %zu/%zu of message %u failed -- "
+                    L"peer %p will never complete it",
+                    i + 1, frames.size(), msgId, conn);
+                return false;
+            }
+        }
+
+        ModLoaderLogger::LogTrace(
+            L"[NetworkChannel] Sent all %zu chunk(s) of message %u to peer %p",
+            frames.size(), msgId, conn);
+        return true;
+    }
+
+// ============================================================
+// Authority side -- compiled on both server and client builds.
+// Every entry point here is gated on HasNetAuthority() at runtime.
+// ============================================================
+
+    // Send one envelope to a player. Wire-only: the target's UNetConnection is
+    // resolved from its controller, which is also why the listen host's own
+    // controller can never be a target -- it has no connection.
+    static void SendEnvelopeToPlayer(void* playerController, const char* label,
+                                     const std::string& envelope)
+    {
+        SendWire(ConnectionForPlayer(playerController), label, envelope);
+    }
+
 
     // Server-side handler registry for Client->Server messages
     static std::mutex g_serverMutex;
     static std::unordered_map<std::string, std::vector<PluginNetworkServerMessageCallback>> g_serverHandlers;
 
-    // IPluginNetworkChannel function implementations -- server build
+    // IPluginNetworkChannel function implementations -- authority side
 
-    static bool NC_IsServer() { return true; }
     static bool IsExcluded(void* playerController);
+
+    // On a listen host, GetAllActorsOfClass also returns the host's OWN player
+    // controller, which has no UNetConnection -- there is no wire to itself. The
+    // send would fail anyway; this catches it early and says so precisely instead
+    // of logging a dropped-send warning on every broadcast.
+    //
+    // So "all clients" means all *remote* clients, on a listen host exactly as on a
+    // dedicated server.  Host-side code already holds the authoritative data in
+    // process and can call its own handler directly; it does not need the wire.
+    static bool IsLocalPlayerController(void* playerController)
+    {
+#ifdef MODLOADER_CLIENT_BUILD
+        if (!playerController) return false;
+
+        SDK::UWorld* world = SDK::UWorld::GetWorld();
+        if (!world) return false;
+
+        void* localPC = SDK::UGameplayStatics::GetPlayerController(world, 0);
+        return localPC && localPC == playerController;
+#else
+        (void)playerController;
+        return false; // a dedicated server has no local player controller
+#endif
+    }
 
     static void NC_SendPacketToClient(void* playerController, const IPluginSelf* self,
                                       const char* typeTag, const uint8_t* data, size_t size)
     {
         if (!playerController || !self || !self->name || !typeTag || !data || size == 0) return;
+
+        if (!HasNetAuthority())
+        {
+            ModLoaderLogger::LogWarn(
+                L"[NetworkChannel] SendPacketToClient ignored for plugin '%S': not the session authority "
+                L"(only a dedicated server or a listen host can send to clients)",
+                self->name);
+            return;
+        }
+
+        if (IsLocalPlayerController(playerController))
+        {
+            ModLoaderLogger::LogWarn(
+                L"[NetworkChannel] SendPacketToClient ignored for plugin '%S': target is the listen host's "
+                L"own controller, which has no connection to send over -- "
+                L"call the handler directly instead",
+                self->name);
+            return;
+        }
+
+        // Only send to a client that reported this exact plugin and version.
+        // A version mismatch is treated as absence on purpose: two builds of a
+        // plugin that disagree about their own packet layout is precisely the
+        // case this exists to stop.
+        if (!ClientHasPlugin(ConnectionForPlayer(playerController), self->name, self->version))
+        {
+            ModLoaderLogger::LogDebug(
+                L"[NetworkChannel] SendPacketToClient skipped: player=%p has not reported "
+                L"plugin '%S' version '%S'",
+                playerController, self->name, self->version ? self->version : "");
+            return;
+        }
 
         ModLoaderLogger::LogTrace(
             L"[NetworkChannel] SendPacketToClient: player=%p plugin='%S' tag='%S' payload=%zu bytes",
@@ -346,13 +741,22 @@ namespace
         }
 
         std::string env = BuildEnvelope(self->name, typeTag, data, size);
-        SendEnvelopeToPlayer(playerController, env);
+        SendEnvelopeToPlayer(playerController, self->name, env);
     }
 
     static void NC_SendPacketToAllClients(const IPluginSelf* self, const char* typeTag,
                                           const uint8_t* data, size_t size)
     {
         if (!self || !self->name || !typeTag || !data || size == 0) return;
+
+        if (!HasNetAuthority())
+        {
+            ModLoaderLogger::LogWarn(
+                L"[NetworkChannel] SendPacketToAllClients ignored for plugin '%S': not the session authority "
+                L"(only a dedicated server or a listen host can broadcast)",
+                self->name);
+            return;
+        }
 
         ModLoaderLogger::LogTrace(
             L"[NetworkChannel] SendPacketToAllClients: plugin='%S' tag='%S' payload=%zu bytes",
@@ -386,6 +790,7 @@ namespace
             L"[NetworkChannel] SendPacketToAllClients: found %d player controllers",
             actors.Num());
 
+        int32_t sent = 0;
         for (int32_t i = 0; i < actors.Num(); ++i)
         {
 	        if (IsExcluded(actors[i]))
@@ -395,9 +800,34 @@ namespace
 	                actors[i]);
 	            continue;
 	        }
-	        SendEnvelopeToPlayer(actors[i], env);
+	        if (IsLocalPlayerController(actors[i]))
+	        {
+	            ModLoaderLogger::LogTrace(
+	                L"[NetworkChannel] SendPacketToAllClients: skipping listen-host local controller %p",
+	                actors[i]);
+	            continue;
+	        }
+	        if (!ClientHasPlugin(ConnectionForPlayer(actors[i]), self->name, self->version))
+	        {
+	            ModLoaderLogger::LogTrace(
+	                L"[NetworkChannel] SendPacketToAllClients: skipping %p -- no matching '%S' %S",
+	                actors[i], self->name, self->version ? self->version : "");
+	            continue;
+	        }
+	        ++sent;
+	        SendEnvelopeToPlayer(actors[i], self->name, env);
         }
+
+        ModLoaderLogger::LogTrace(
+            L"[NetworkChannel] SendPacketToAllClients: delivered to %d of %d controllers for plugin '%S'",
+            sent, actors.Num(), self->name);
     }
+
+#ifndef MODLOADER_CLIENT_BUILD
+    // Server->Client receive and Client->Server send exist only on client builds.
+    // A dedicated server never receives a ClientMessage and never sends to itself.
+    // (A listen host uses the real client-build implementations further down --
+    // its loopback to itself goes through the same two RPCs, executed locally.)
 
     static void NC_RegisterMessageHandler(const IPluginSelf*, const char*, PluginNetworkMessageCallback)
     {
@@ -414,6 +844,7 @@ namespace
     {
         // No-op on server
     }
+#endif // !MODLOADER_CLIENT_BUILD
 
     static void NC_RegisterServerMessageHandler(const IPluginSelf* self, const char* typeTag,
                                                 PluginNetworkServerMessageCallback callback)
@@ -487,7 +918,9 @@ namespace
         return false;
     }
 
-#endif // MODLOADER_SERVER_BUILD
+// ============================================================
+// End of authority side
+// ============================================================
 
 #ifdef MODLOADER_CLIENT_BUILD
 
@@ -495,46 +928,6 @@ namespace
 
     // Handler registry for Server->Client messages: key = "pluginName\x01typeTag"
     static std::unordered_map<std::string, std::vector<PluginNetworkMessageCallback>> g_handlers;
-
-    // Cached ServerExecuteConsoleCommand UFunction pointer -- resolved lazily for client->server sends.
-    static SDK::UFunction* g_serverExecCmdFunc = nullptr;
-
-    static void EnsureServerExecCmdFunc()
-    {
-        if (g_serverExecCmdFunc) return;
-
-        g_serverExecCmdFunc = SDK::UObject::FindObjectFast<SDK::UFunction>(
-            "ServerExecuteConsoleCommand", SDK::EClassCastFlags::Function);
-
-        if (g_serverExecCmdFunc)
-            ModLoaderLogger::LogInfo(L"[NetworkChannel] ServerExecuteConsoleCommand UFunction resolved at %p",
-                                     static_cast<void*>(g_serverExecCmdFunc));
-        else
-            ModLoaderLogger::LogWarn(L"[NetworkChannel] ServerExecuteConsoleCommand UFunction not found in GObjects yet");
-    }
-
-    // Params layout for ACrPlayerControllerBase::ServerExecuteConsoleCommand (16 bytes).
-    // Matches CrPlayerControllerBase_ServerExecuteConsoleCommand in Chimera_parameters.hpp.
-    struct alignas(8) ServerExecCmdParms
-    {
-        // FString Command (0x0000, 0x0010): wchar_t* Data, int32 Num, int32 Max
-        wchar_t* strData;  // +0x00
-        int32_t  strNum;   // +0x08  (includes null terminator)
-        int32_t  strMax;   // +0x0C
-    };
-    static_assert(sizeof(ServerExecCmdParms) == 0x10, "ServerExecCmdParms size mismatch");
-
-    static bool NC_IsServer() { return false; }
-
-    static void NC_SendPacketToClient(void*, const IPluginSelf*, const char*, const uint8_t*, size_t)
-    {
-        // No-op on client -- client does not send to players
-    }
-
-    static void NC_SendPacketToAllClients(const IPluginSelf*, const char*, const uint8_t*, size_t)
-    {
-        // No-op on client
-    }
 
     static void NC_RegisterMessageHandler(const IPluginSelf* self, const char* typeTag,
                                           PluginNetworkMessageCallback callback)
@@ -552,9 +945,8 @@ namespace
         }
         ModLoaderLogger::LogTrace(L"[NetworkChannel] Handler registered for plugin='%S' tag='%S'",
                                   self->name, typeTag);
-        // Install the ProcessEvent hook lazily on first registration
-        if (!Hooks::ClientMessage::IsInstalled())
-            Hooks::ClientMessage::Install();
+        // No lazy hook install here any more: the receive path is the control
+        // channel detour, installed once by Initialize().
     }
 
     static void NC_UnregisterMessageHandler(const IPluginSelf* self, const char* typeTag,
@@ -573,13 +965,18 @@ namespace
         }
     }
 
-    // Client->Server send: encode envelope and call ServerExecuteConsoleCommand via ProcessEvent.
-    // FUNC_Native is left as-is: for a FUNC_NetServer function on the client UE routes it
-    // to the server's NetConnection regardless of the Native flag.
+    static void SendManifestToServer(bool force);
+
     static void NC_SendPacketToServer(const IPluginSelf* self, const char* typeTag,
                                       const uint8_t* data, size_t size)
     {
         if (!self || !self->name || !typeTag || !data || size == 0) return;
+
+        // Insurance against the world-begin-play report having failed (channel
+        // not open yet, say). A no-op once it has succeeded for this connection.
+        // Ordering holds: control bunches are reliable and in-order, so a manifest
+        // queued here still arrives ahead of the packet below it.
+        SendManifestToServer(/*force*/ false);
 
         ModLoaderLogger::LogTrace(
             L"[NetworkChannel] SendPacketToServer: plugin='%S' tag='%S' payload=%zu bytes",
@@ -594,70 +991,255 @@ namespace
                 size, self->name);
         }
 
-        EnsureServerExecCmdFunc();
-        if (!g_serverExecCmdFunc)
-        {
-            ModLoaderLogger::LogWarn(L"[NetworkChannel] SendPacketToServer: ServerExecuteConsoleCommand UFunction not yet in GObjects");
-            return;
-        }
-
-        SDK::UWorld* world = SDK::UWorld::GetWorld();
-        if (!world)
-        {
-            ModLoaderLogger::LogWarn(L"[NetworkChannel] SendPacketToServer: UWorld not available");
-            return;
-        }
-
-        void* localPC = SDK::UGameplayStatics::GetPlayerController(world, 0);
-        if (!localPC)
-        {
-            ModLoaderLogger::LogWarn(L"[NetworkChannel] SendPacketToServer: local PlayerController not found");
-            return;
-        }
-
-        std::string env = BuildEnvelope(self->name, typeTag, data, size);
-        ModLoaderLogger::LogTrace(
-            L"[NetworkChannel] SendPacketToServer: localPC=%p func=%p flags=0x%08X envelope=%zu chars",
-            localPC,
-            static_cast<void*>(g_serverExecCmdFunc),
-            g_serverExecCmdFunc ? g_serverExecCmdFunc->FunctionFlags : 0u,
-            env.size());
-
-        // Convert to wide for FString
-        int wlen = MultiByteToWideChar(CP_UTF8, 0, env.c_str(), -1, nullptr, 0);
-        if (wlen <= 0) return;
-        std::wstring wide(static_cast<size_t>(wlen), L'\0');
-        MultiByteToWideChar(CP_UTF8, 0, env.c_str(), -1, wide.data(), wlen);
-
-        ServerExecCmdParms parms{};
-        parms.strData = wide.data();
-        parms.strNum  = wlen; // includes null terminator
-        parms.strMax  = wlen;
-
-        auto* obj = reinterpret_cast<SDK::UObject*>(localPC);
-        CallProcessEventSEH(obj, g_serverExecCmdFunc, &parms);
-        ModLoaderLogger::LogTrace(
-            L"[NetworkChannel] SendPacketToServer: ProcessEvent returned for plugin='%S' tag='%S'",
-            self->name,
-            typeTag);
+        SendWire(ServerConnection(), self->name, BuildEnvelope(self->name, typeTag, data, size));
     }
 
-    // Client->Server receive handlers are server-only; these are no-ops on client
-    static void NC_RegisterServerMessageHandler(const IPluginSelf*, const char*,
-                                                PluginNetworkServerMessageCallback)
+    // Tell the authority which plugins we have.
+    //
+    // Keyed on BOTH the connection and the plugin generation, because the report
+    // describes a plugin set, not a session. Hot-reloading a plugin mid-session
+    // changes what we have without changing who we are connected to, and the
+    // failures from missing that are silent ones: a newly loaded plugin the
+    // server never learns about receives nothing forever, and a reloaded plugin
+    // whose version string moved gets its traffic gated off. GetPluginGeneration()
+    // increments on every load/unload/reload, which is exactly this question.
+    static void*    g_manifestSentTo  = nullptr;
+    static unsigned g_manifestSentGen = 0;
+
+    // An unacknowledged manifest is retried rather than assumed delivered. This
+    // is deliberately how the "when is the connection actually ready?" problem is
+    // handled: any trigger we pick is a guess about engine state, so instead of
+    // guessing well we send, wait for the authority to answer, and try again if
+    // it does not. WorldBeginPlay is then just the first attempt, not the only
+    // chance -- and a persistent failure shows up as a log line rather than a
+    // plugin that mysteriously never receives anything.
+    static bool     g_manifestAcked   = false;
+    static uint64_t g_lastAttemptMs   = 0;
+    static int      g_attempts        = 0;
+    static bool     g_gaveUpLogged    = false;
+
+    static constexpr uint64_t kRetryIntervalMs = 2000;
+    static constexpr int      kMaxAttempts     = 10;
+
+    static void SendManifestToServer(bool force)
     {
-        // No-op on client
+        // A listen host is its own authority; it has no server to report to, and
+        // its own plugin set is already the reference the gating compares against.
+        if (HasNetAuthority()) return;
+
+        void* conn = ServerConnection();
+        if (!conn) return;
+
+        const unsigned gen = PluginManager::GetPluginGeneration();
+
+        // A new connection, or a changed plugin set, invalidates any previous
+        // acknowledgement -- what the authority agreed to is no longer what we have.
+        if (conn != g_manifestSentTo || gen != g_manifestSentGen)
+        {
+            if (g_manifestSentTo)
+                ModLoaderLogger::LogDebug(
+                    L"[NetworkChannel] Manifest invalidated (conn %p->%p, generation %u->%u) -- resending",
+                    g_manifestSentTo, conn, g_manifestSentGen, gen);
+
+            g_manifestSentTo  = conn;
+            g_manifestSentGen = gen;
+            g_manifestAcked   = false;
+            g_attempts        = 0;
+            g_gaveUpLogged    = false;
+            g_lastAttemptMs   = 0;
+        }
+
+        if (g_manifestAcked && !force) return;
+
+        const uint64_t now = GetTickCount64();
+        if (!force)
+        {
+            if (g_attempts >= kMaxAttempts)
+            {
+                if (!g_gaveUpLogged)
+                {
+                    g_gaveUpLogged = true;
+                    ModLoaderLogger::LogError(
+                        L"[NetworkChannel] Gave up reporting our plugin manifest after %d attempts -- "
+                        L"the server never acknowledged. This client will receive NO plugin packets. "
+                        L"Most likely the server is not running the mod loader, or is running a build "
+                        L"without the control-channel transport.",
+                        kMaxAttempts);
+                }
+                return;
+            }
+            if (g_lastAttemptMs && (now - g_lastAttemptMs) < kRetryIntervalMs)
+                return;
+        }
+
+        std::string body = EncodeManifest();
+        const int count  = PluginManager::GetLoadedPluginCount();
+
+        ModLoaderLogger::LogDebug(
+            L"[NetworkChannel] Sending plugin manifest: %d plugin(s), %zu bytes, generation %u, attempt %d/%d",
+            count, body.size(), gen, g_attempts + 1, kMaxAttempts);
+
+        g_lastAttemptMs = now;
+        ++g_attempts;
+
+        if (SendWire(conn, kMlPlugin, BuildEnvelope(kMlPlugin, kMlManifest,
+                                         reinterpret_cast<const uint8_t*>(body.data()),
+                                         body.size())))
+        {
+            ModLoaderLogger::LogInfo(
+                L"[NetworkChannel] Reported %d plugin(s) to the server (generation %u, attempt %d) "
+                L"-- awaiting acknowledgement",
+                count, gen, g_attempts);
+        }
+        else
+        {
+            ModLoaderLogger::LogDebug(
+                L"[NetworkChannel] Manifest attempt %d could not be put on the wire; will retry in %llums",
+                g_attempts, kRetryIntervalMs);
+        }
     }
 
-    static void NC_UnregisterServerMessageHandler(const IPluginSelf*, const char*,
-                                                  PluginNetworkServerMessageCallback)
+    // Manifest refresh keyed on the plugin generation. The alternative --
+    // notifying from every load/unload/reload site -- is the arrangement
+    // CLAUDE.md warns about: it misses whichever site nobody remembered to
+    // update, and the symptom is a plugin that silently receives nothing.
+    static void RefreshManifestIfStale()
     {
-        // No-op on client
+        // Steady state is one bool and one integer compare. Everything past this
+        // point touches the world, the net driver and a native net-mode call --
+        // fine occasionally, not fine on every frame of a running game for the
+        // entire session. A connection change without a plugin change is caught
+        // by the world begin/end play handlers, which clear the acked flag.
+        if (g_manifestAcked && PluginManager::GetPluginGeneration() == g_manifestSentGen)
+            return;
+
+        SendManifestToServer(/*force*/ false);
     }
 
-    // Broadcast exclusion is server-only; no-ops on client
-    static void NC_ExcludeFromBroadcast(void*) {}
-    static void NC_UnexcludeFromBroadcast(void*) {}
+    // The authority answered our manifest. Payload is buildTag US interfaceVersion RS.
+    static void OnManifestAck(const uint8_t* data, size_t len)
+    {
+        std::string tag  = "(unknown)";
+        std::string iface = "?";
+
+        const char* p   = reinterpret_cast<const char*>(data);
+        const char* rec = static_cast<const char*>(memchr(p, kRecordSep, len));
+        if (rec)
+        {
+            const char* us = static_cast<const char*>(memchr(p, kUnitSep, rec - p));
+            if (us)
+            {
+                tag.assign(p, us);
+                iface.assign(us + 1, rec);
+            }
+        }
+
+        const bool first = !g_manifestAcked;
+        g_manifestAcked  = true;
+
+        if (first)
+            ModLoaderLogger::LogInfo(
+                L"[NetworkChannel] Server acknowledged our manifest after %d attempt(s) "
+                L"-- mod loader '%S', plugin interface v%S. Plugin packets will now flow.",
+                g_attempts, tag.c_str(), iface.c_str());
+        else
+            ModLoaderLogger::LogDebug(
+                L"[NetworkChannel] Duplicate manifest acknowledgement from server (build '%S')",
+                tag.c_str());
+    }
+
+    // ---- Echo self-test (client side) ---------------------------------------
+
+    static size_t   g_echoExpectedBytes = 0;
+    static uint64_t g_echoStartedMs     = 0;
+    static bool     g_echoInFlight      = false;
+
+    static bool StartEchoTest(size_t bytes, std::string& err)
+    {
+        if (HasNetAuthority())
+        {
+            err = "This is the authority -- there is no server to echo off. "
+                  "Run the test from a connected client.";
+            return false;
+        }
+        if (!Hooks::ControlChannel::IsAvailable())
+        {
+            err = "Control channel unavailable; see preflight warnings.";
+            return false;
+        }
+        void* conn = ServerConnection();
+        if (!conn)
+        {
+            err = "Not connected to a server.";
+            return false;
+        }
+        if (bytes == 0 || bytes > 4u * 1024u * 1024u)
+        {
+            err = "Size must be between 1 and 4194304 bytes.";
+            return false;
+        }
+
+        std::vector<uint8_t> payload(bytes);
+        for (size_t i = 0; i < bytes; ++i)
+            payload[i] = EchoByteAt(i);
+
+        g_echoExpectedBytes = bytes;
+        g_echoStartedMs     = GetTickCount64();
+        g_echoInFlight      = true;
+
+        ModLoaderLogger::LogInfo(
+            L"[NetworkChannel] Echo test: sending %zu bytes (bunch budget %zu, so this "
+            L"%S be fragmented)",
+            bytes, kMaxBunchPayload,
+            bytes > kMaxBunchPayload ? L"WILL" : L"will NOT");
+
+        if (!SendWire(conn, kMlPlugin,
+                      BuildEnvelope(kMlPlugin, kMlEcho, payload.data(), payload.size())))
+        {
+            g_echoInFlight = false;
+            err = "Send failed; see modloader.log.";
+            return false;
+        }
+        return true;
+    }
+
+    static void OnEchoReply(const uint8_t* data, size_t len)
+    {
+        if (!g_echoInFlight)
+        {
+            ModLoaderLogger::LogWarn(
+                L"[NetworkChannel] Echo test: unexpected reply (%zu bytes), no test running", len);
+            return;
+        }
+        g_echoInFlight = false;
+
+        const uint64_t elapsed = GetTickCount64() - g_echoStartedMs;
+
+        if (len != g_echoExpectedBytes)
+        {
+            ModLoaderLogger::LogError(
+                L"[NetworkChannel] ECHO TEST FAILED: sent %zu bytes, got %zu back (%llums)",
+                g_echoExpectedBytes, len, elapsed);
+            return;
+        }
+
+        for (size_t i = 0; i < len; ++i)
+        {
+            if (data[i] != EchoByteAt(i))
+            {
+                ModLoaderLogger::LogError(
+                    L"[NetworkChannel] ECHO TEST FAILED: %zu bytes returned but byte %zu is "
+                    L"0x%02X, expected 0x%02X. Length was right and content was not, which "
+                    L"points at chunk ordering or offsets rather than loss.",
+                    len, i, data[i], EchoByteAt(i));
+                return;
+            }
+        }
+
+        ModLoaderLogger::LogInfo(
+            L"[NetworkChannel] ECHO TEST PASSED: %zu bytes round-tripped byte-for-byte in %llums",
+            len, elapsed);
+    }
 
 #endif // MODLOADER_CLIENT_BUILD
 
@@ -679,56 +1261,45 @@ namespace
 } // anonymous namespace
 
 // ============================================================
-// DispatchClientMessage  (client build only)
-// Called from client_message.cpp ProcessEvent hook.
+// Client-side receive  (client build only)
+// Fed by the control-channel detour via OnWireReceive.
 // ============================================================
 
 #ifdef MODLOADER_CLIENT_BUILD
-void NetworkChannel::DispatchClientMessage(const wchar_t* str, int numCharsWithNull)
+
+static void DispatchClientNarrow(const char* narrowData, size_t nbytes)
 {
-    if (!str)
-    {
-        ModLoaderLogger::LogTrace(L"[NetworkChannel] DispatchClientMessage: null string");
-        return;
-    }
-    if (numCharsWithNull <= static_cast<int>(kEnvPrefixLen))
-    {
-        ModLoaderLogger::LogTrace(
-            L"[NetworkChannel] DispatchClientMessage: string too short (%d chars incl null)",
-            numCharsWithNull);
-        return;
-    }
-
-    // Convert wide string to narrow for envelope parsing
-    int nbytes = WideCharToMultiByte(CP_UTF8, 0, str, numCharsWithNull - 1, nullptr, 0, nullptr, nullptr);
-    if (nbytes <= 0)
-    {
-        ModLoaderLogger::LogWarn(
-            L"[NetworkChannel] DispatchClientMessage: WideCharToMultiByte failed for %d chars",
-            numCharsWithNull);
-        return;
-    }
-
-    std::string narrow(static_cast<size_t>(nbytes), '\0');
-    WideCharToMultiByte(CP_UTF8, 0, str, numCharsWithNull - 1, narrow.data(), nbytes, nullptr, nullptr);
-
-    ParsedEnvelope env = ParseEnvelope(narrow.c_str(), static_cast<size_t>(nbytes));
+    ParsedEnvelope env = ParseEnvelope(narrowData, nbytes);
     if (!env.valid)
     {
         ModLoaderLogger::LogTrace(
-            L"[NetworkChannel] DispatchClientMessage: invalid envelope reason='%S' input=%d bytes",
+            L"[NetworkChannel] ReceiveFromServer: invalid envelope reason='%S' input=%d bytes",
             env.failureReason ? env.failureReason : "unknown",
-            nbytes);
+            static_cast<int>(nbytes));
         return;
     }
 
     ModLoaderLogger::LogTrace(
-        L"[NetworkChannel] DispatchClientMessage: parsed plugin='%S' tag='%S' declared=%zu decoded=%zu base64=%zu",
+        L"[NetworkChannel] ReceiveFromServer: parsed plugin='%S' tag='%S' declared=%zu decoded=%zu base64=%zu",
         env.pluginName.c_str(),
         env.typeTag.c_str(),
         env.declaredSize,
         env.payload.size(),
         env.encodedPayloadChars);
+
+    // Loader-internal traffic, consumed before any plugin lookup so the reserved
+    // name can neither reach a plugin nor be impersonated by one.
+    if (env.pluginName == kMlPlugin)
+    {
+        if (env.typeTag == kMlAck)
+            OnManifestAck(env.payload.data(), env.payload.size());
+        else if (env.typeTag == kMlEchoBack)
+            OnEchoReply(env.payload.data(), env.payload.size());
+        else
+            ModLoaderLogger::LogWarn(
+                L"[NetworkChannel] Unknown control message '%S' from server", env.typeTag.c_str());
+        return;
+    }
 
     // Dispatch to registered handlers
     std::string key = MakeHandlerKey(env.pluginName.c_str(), env.typeTag.c_str());
@@ -740,7 +1311,7 @@ void NetworkChannel::DispatchClientMessage(const wchar_t* str, int numCharsWithN
         if (it == g_handlers.end())
         {
             ModLoaderLogger::LogTrace(
-                L"[NetworkChannel] DispatchClientMessage: no handler for plugin='%S' tag='%S'",
+                L"[NetworkChannel] ReceiveFromServer: no handler for plugin='%S' tag='%S'",
                 env.pluginName.c_str(),
                 env.typeTag.c_str());
             return;
@@ -749,7 +1320,7 @@ void NetworkChannel::DispatchClientMessage(const wchar_t* str, int numCharsWithN
     }
 
     ModLoaderLogger::LogTrace(
-        L"[NetworkChannel] DispatchClientMessage: dispatching to %zu handler(s) for plugin='%S' tag='%S'",
+        L"[NetworkChannel] ReceiveFromServer: dispatching to %zu handler(s) for plugin='%S' tag='%S'",
         callbacks.size(),
         env.pluginName.c_str(),
         env.typeTag.c_str());
@@ -779,61 +1350,105 @@ void NetworkChannel::DispatchClientMessage(const wchar_t* str, int numCharsWithN
 #endif // MODLOADER_CLIENT_BUILD
 
 // ============================================================
-// DispatchServerMessage  (server build only)
-// Called from server_chat_commit.cpp ProcessEvent hook.
-// Returns true if the message was a mod envelope (consumed); false for normal chat.
+// Authority-side receive  (both builds)
+// Fed by the control-channel detour via OnWireReceive, which routes here only
+// when this process is the authority (dedicated server, or a client build
+// hosting a listen server).
+// Returns true if the bytes were a valid mod envelope.
 // ============================================================
 
-#ifdef MODLOADER_SERVER_BUILD
-bool NetworkChannel::DispatchServerMessage(void* senderUObject, const wchar_t* str, int numCharsWithNull)
+// senderConn is the authoritative identity here. senderUObject (the sending
+// player's controller) is passed on to plugin handlers, but it can still be null
+// when a manifest arrives -- a client reports its plugins as soon as its channel
+// is up, which can precede the controller being assigned to the connection.
+static bool DispatchServerNarrow(void* senderConn, void* senderUObject,
+                                 const char* narrowData, size_t nbytes)
 {
-    if (!str)
-    {
-        ModLoaderLogger::LogTrace(L"[NetworkChannel] DispatchServerMessage: null string from sender=%p", senderUObject);
-        return false;
-    }
-    if (numCharsWithNull <= static_cast<int>(kEnvPrefixLen))
-    {
-        ModLoaderLogger::LogTrace(
-            L"[NetworkChannel] DispatchServerMessage: string too short (%d chars incl null) from sender=%p",
-            numCharsWithNull,
-            senderUObject);
-        return false;
-    }
-
-    // Convert wide string to narrow for envelope parsing
-    int nbytes = WideCharToMultiByte(CP_UTF8, 0, str, numCharsWithNull - 1, nullptr, 0, nullptr, nullptr);
-    if (nbytes <= 0)
-    {
-        ModLoaderLogger::LogWarn(
-            L"[NetworkChannel] DispatchServerMessage: WideCharToMultiByte failed for sender=%p chars=%d",
-            senderUObject,
-            numCharsWithNull);
-        return false;
-    }
-
-    std::string narrow(static_cast<size_t>(nbytes), '\0');
-    WideCharToMultiByte(CP_UTF8, 0, str, numCharsWithNull - 1, narrow.data(), nbytes, nullptr, nullptr);
-
-    ParsedEnvelope env = ParseEnvelope(narrow.c_str(), static_cast<size_t>(nbytes));
+    ParsedEnvelope env = ParseEnvelope(narrowData, nbytes);
     if (!env.valid)
     {
         ModLoaderLogger::LogWarn(
-            L"[NetworkChannel] DispatchServerMessage: invalid envelope from sender=%p reason='%S' input=%d bytes",
+            L"[NetworkChannel] ReceiveFromClient: invalid envelope from sender=%p reason='%S' input=%d bytes",
             senderUObject,
             env.failureReason ? env.failureReason : "unknown",
-            nbytes);
+            static_cast<int>(nbytes));
         return false;
     }
 
     ModLoaderLogger::LogTrace(
-        L"[NetworkChannel] DispatchServerMessage: parsed sender=%p plugin='%S' tag='%S' declared=%zu decoded=%zu base64=%zu",
+        L"[NetworkChannel] ReceiveFromClient: parsed sender=%p plugin='%S' tag='%S' declared=%zu decoded=%zu base64=%zu",
         senderUObject,
         env.pluginName.c_str(),
         env.typeTag.c_str(),
         env.declaredSize,
         env.payload.size(),
         env.encodedPayloadChars);
+
+    // Loader-internal traffic, consumed before any plugin lookup so the reserved
+    // name can neither reach a plugin nor be impersonated by one.
+    if (env.pluginName == kMlPlugin)
+    {
+        if (env.typeTag == kMlManifest && senderConn)
+        {
+            auto plugins = DecodeManifest(env.payload.data(), env.payload.size());
+            const size_t count = plugins.size();
+
+            for (const auto& rp : plugins)
+                ModLoaderLogger::LogDebug(
+                    L"[NetworkChannel]   client %p has '%S' version '%S'",
+                    senderConn, rp.name.c_str(), rp.version.c_str());
+
+            {
+                std::lock_guard<std::mutex> lk(g_manifestMutex);
+                g_manifests[senderConn] = std::move(plugins);
+            }
+
+            ModLoaderLogger::LogInfo(
+                L"[NetworkChannel] Client %p reported %zu plugin(s) -- acknowledging",
+                senderConn, count);
+
+            // Answer so the client knows it landed. Without this it cannot tell a
+            // delivered manifest from one that vanished, and would either retry
+            // forever or assume success wrongly.
+            std::string ack = MODLOADER_BUILD_TAG;
+            ack += kUnitSep;
+            ack += std::to_string(PLUGIN_INTERFACE_VERSION);
+            ack += kRecordSep;
+
+            if (!SendWire(senderConn, kMlPlugin, BuildEnvelope(kMlPlugin, kMlAck,
+                                                    reinterpret_cast<const uint8_t*>(ack.data()),
+                                                    ack.size())))
+            {
+                ModLoaderLogger::LogWarn(
+                    L"[NetworkChannel] Could not acknowledge client %p -- it will retry", senderConn);
+            }
+        }
+        else if (env.typeTag == kMlEcho && senderConn)
+        {
+            // Loopback for the fragmentation self-test. Bounced back verbatim so
+            // the client can verify every byte survived a round trip -- which
+            // exercises chunking on the way out, reassembly here, chunking again
+            // on the reply, and reassembly at the client.
+            ModLoaderLogger::LogInfo(
+                L"[NetworkChannel] Echo request from %p: %zu bytes -- bouncing back",
+                senderConn, env.payload.size());
+
+            if (!SendWire(senderConn, kMlPlugin,
+                          BuildEnvelope(kMlPlugin, kMlEchoBack,
+                                        env.payload.data(), env.payload.size())))
+            {
+                ModLoaderLogger::LogWarn(
+                    L"[NetworkChannel] Echo reply to %p failed", senderConn);
+            }
+        }
+        else
+        {
+            ModLoaderLogger::LogWarn(
+                L"[NetworkChannel] Unknown control message '%S' from conn=%p",
+                env.typeTag.c_str(), senderConn);
+        }
+        return true;
+    }
 
     // Dispatch to registered server-side handlers
     std::string key = MakeHandlerKey(env.pluginName.c_str(), env.typeTag.c_str());
@@ -845,7 +1460,7 @@ bool NetworkChannel::DispatchServerMessage(void* senderUObject, const wchar_t* s
         if (it == g_serverHandlers.end())
         {
             ModLoaderLogger::LogWarn(
-                L"[NetworkChannel] DispatchServerMessage: no server handler for plugin='%S' tag='%S' sender=%p",
+                L"[NetworkChannel] ReceiveFromClient: no server handler for plugin='%S' tag='%S' sender=%p",
                 env.pluginName.c_str(),
                 env.typeTag.c_str(),
                 senderUObject);
@@ -855,7 +1470,7 @@ bool NetworkChannel::DispatchServerMessage(void* senderUObject, const wchar_t* s
     }
 
     ModLoaderLogger::LogTrace(
-        L"[NetworkChannel] DispatchServerMessage: dispatching to %zu server handler(s) for plugin='%S' tag='%S'",
+        L"[NetworkChannel] ReceiveFromClient: dispatching to %zu server handler(s) for plugin='%S' tag='%S'",
         callbacks.size(),
         env.pluginName.c_str(),
         env.typeTag.c_str());
@@ -885,11 +1500,260 @@ bool NetworkChannel::DispatchServerMessage(void* senderUObject, const wchar_t* s
 
     return true; // mod envelope consumed -- caller should suppress original chat
 }
-#endif // MODLOADER_SERVER_BUILD
 
 // ============================================================
 // Public API
 // ============================================================
+
+// ============================================================
+// Wire receive
+// Called from the UControlChannel::ReceivedBunch detour, on the game thread,
+// with the reserved type byte already stripped.
+// ============================================================
+
+// ControlChannel caches UNetConnection* -> UControlChannel*, and UE recycles both
+// allocations. A stale entry surviving into a new connection at the same address
+// would aim a send at a freed channel, so both teardown paths must clear it:
+// a departing player on the authority, and a world tearing down (travel,
+// disconnect, session end) on either side.
+static void OnPlayerLeftForgetConn(void* exitingController)
+{
+    void* conn = ConnectionForPlayer(exitingController);
+    if (conn)
+    {
+        ModLoaderLogger::LogDebug(
+            L"[NetworkChannel] Player left -- forgetting peer %p (channel, manifest, "
+            L"any half-received message)", conn);
+        ForgetConnectionState(conn);
+        return;
+    }
+
+    // Logout fired but the controller no longer names a connection -- the net
+    // layer had already torn it down. There is nothing to key off here, so the
+    // periodic sweep below is what actually reclaims this peer's buffers.
+    ModLoaderLogger::LogDebug(
+        L"[NetworkChannel] Player left with no NetConnection on controller %p; "
+        L"leaving cleanup to the stale-partial sweep", exitingController);
+}
+
+static void OnWorldEndPlayForgetConns(SDK::UWorld* /*world*/, const char* /*worldName*/)
+{
+    Hooks::ControlChannel::ForgetAllConnections();
+    {
+        std::lock_guard<std::mutex> lk(g_reasmMutex);
+        g_reassembler.Clear();
+    }
+    {
+        std::lock_guard<std::mutex> lk(g_manifestMutex);
+        g_manifests.clear();
+    }
+#ifdef MODLOADER_CLIENT_BUILD
+    // Our own report is void too: the next world means a new connection, so the
+    // previous acknowledgement no longer says anything about the next one.
+    g_manifestSentTo  = nullptr;
+    g_manifestSentGen = 0;
+    g_manifestAcked   = false;
+    g_attempts        = 0;
+    g_gaveUpLogged    = false;
+    g_lastAttemptMs   = 0;
+#endif
+}
+
+#ifdef MODLOADER_CLIENT_BUILD
+// A client reports as soon as it has a world, which is the earliest point its
+// connection and control channel are both reliably up.
+static void OnWorldBeginPlayReport(SDK::UWorld* /*world*/, const char* /*worldName*/)
+{
+    SendManifestToServer(/*force*/ false);
+}
+#endif
+
+// Route one fully-formed envelope. Reached either directly (small message, one
+// bunch) or after reassembly.
+static void RouteEnvelope(void* netConnection, const char* narrow, size_t len)
+{
+    // Routing by authority rather than by direction, because a bunch does not
+    // say which way it travelled. While the net mode is still Unknown (no
+    // GameState yet, very early in a join) this resolves to the client path.
+    if (HasNetAuthority())
+    {
+        DispatchServerNarrow(netConnection, PlayerForConnection(netConnection), narrow, len);
+        return;
+    }
+
+#ifdef MODLOADER_CLIENT_BUILD
+    DispatchClientNarrow(narrow, len);
+#else
+    (void)netConnection; (void)narrow; (void)len;
+#endif
+}
+
+static void OnWireReceive(void* netConnection, const uint8_t* data, size_t len)
+{
+    if (!data || len == 0) return;
+
+    // A chunk frame and an envelope are trivially distinguishable -- 'MFRG' bytes
+    // versus the "[MOD:" prefix -- so no framing flag is needed to tell them apart.
+    if (!Fragmentation::IsFragmentFrame(data, len))
+    {
+        RouteEnvelope(netConnection, reinterpret_cast<const char*>(data), len);
+        return;
+    }
+
+    const uintptr_t connKey = reinterpret_cast<uintptr_t>(netConnection);
+    const uint64_t  nowMs   = GetTickCount64();
+
+    Fragmentation::Completed done;
+    Fragmentation::FeedResult result;
+    size_t expired = 0;
+
+    {
+        std::lock_guard<std::mutex> lk(g_reasmMutex);
+        result  = g_reassembler.Feed(connKey, data, len, nowMs, done);
+        // Cheap because there are normally no partials at all, and it means a
+        // sender that dies mid-message cannot leak a buffer until shutdown.
+        expired = g_reassembler.ExpireStale(nowMs);
+    }
+
+    if (expired)
+        ModLoaderLogger::LogWarn(
+            L"[NetworkChannel] Dropped %zu stale partial message(s) -- a sender "
+            L"stopped mid-transfer", expired);
+
+    switch (result)
+    {
+    case Fragmentation::FeedResult::NeedMore:
+        ModLoaderLogger::LogTrace(
+            L"[NetworkChannel] Fragment accepted from peer %p (%zu bytes), awaiting more",
+            netConnection, len);
+        return;
+
+    case Fragmentation::FeedResult::Completed:
+        ModLoaderLogger::LogDebug(
+            L"[NetworkChannel] Reassembled %zu bytes from peer %p (label '%S')",
+            done.payload.size(), netConnection, done.originalTag.c_str());
+        RouteEnvelope(netConnection,
+                      reinterpret_cast<const char*>(done.payload.data()),
+                      done.payload.size());
+        return;
+
+    case Fragmentation::FeedResult::Malformed:
+        ModLoaderLogger::LogWarn(
+            L"[NetworkChannel] Malformed fragment from peer %p (%zu bytes) -- dropped",
+            netConnection, len);
+        return;
+
+    case Fragmentation::FeedResult::LimitExceeded:
+        ModLoaderLogger::LogWarn(
+            L"[NetworkChannel] Fragment from peer %p exceeds configured size/chunk caps -- dropped",
+            netConnection);
+        return;
+
+    case Fragmentation::FeedResult::NotAFragment:
+    default:
+        // IsFragmentFrame said otherwise; treat as a plain envelope rather than
+        // silently dropping something that might be one.
+        RouteEnvelope(netConnection, reinterpret_cast<const char*>(data), len);
+        return;
+    }
+}
+
+// Per-frame housekeeping. Registered on both builds: the stale-partial sweep is
+// an authority-side concern, and the manifest refresh is a client-side one.
+static void OnEngineTick(float /*deltaSeconds*/)
+{
+    SweepStalePartials(GetTickCount64());
+
+#ifdef MODLOADER_CLIENT_BUILD
+    RefreshManifestIfStale();
+#endif
+}
+
+// Best-effort player name for a connection. Resolved at query time rather than
+// stored: a manifest can arrive before the controller (and therefore the name)
+// exists, so a value captured at receipt would often be empty forever.
+// The __try block must not construct or destroy a C++ object (MSVC C2712), so it
+// only fills a POD buffer -- every std::string lives outside it.
+static void CopyPlayerNameSEH(void* conn, wchar_t* buf, size_t bufChars)
+{
+    __try
+    {
+        auto* nc = reinterpret_cast<SDK::UNetConnection*>(conn);
+        if (!nc || !nc->PlayerController) return;
+
+        SDK::APlayerState* ps = nc->PlayerController->PlayerState;
+        if (!ps) return;
+
+        const wchar_t* src = ps->PlayerNamePrivate.CStr();
+        if (!src) return;
+
+        wcsncpy_s(buf, bufChars, src, _TRUNCATE);
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER)
+    {
+        buf[0] = L'\0';
+    }
+}
+
+static std::string PlayerNameForConnection(void* conn)
+{
+    wchar_t buf[128] = {};
+    CopyPlayerNameSEH(conn, buf, 128);
+    if (!buf[0]) return std::string();
+
+    char narrow[256] = {};
+    WideCharToMultiByte(CP_UTF8, 0, buf, -1, narrow, sizeof(narrow), nullptr, nullptr);
+    return std::string(narrow);
+}
+
+std::vector<NetworkChannel::ClientManifest> NetworkChannel::GetClientManifests()
+{
+    std::vector<ClientManifest> out;
+    if (!HasNetAuthority()) return out;
+
+    // Enumerate live controllers so a connected client that has NOT reported
+    // still shows up -- "who is missing a manifest" is the question this is most
+    // often asked to answer.
+    SDK::UWorld* world = SDK::UWorld::GetWorld();
+    if (!world) return out;
+
+    SDK::TArray<SDK::AActor*> actors;
+    SDK::UGameplayStatics::GetAllActorsOfClass(
+        world, SDK::ACrPlayerControllerBase::StaticClass(), &actors);
+
+    std::lock_guard<std::mutex> lk(g_manifestMutex);
+
+    for (int32_t i = 0; i < actors.Num(); ++i)
+    {
+        void* conn = ConnectionForPlayer(actors[i]);
+        if (!conn) continue;   // listen host's own controller
+
+        ClientManifest entry;
+        entry.connection = conn;
+        entry.playerName = PlayerNameForConnection(conn);
+
+        auto it = g_manifests.find(conn);
+        if (it != g_manifests.end())
+        {
+            entry.reported = true;
+            entry.plugins  = it->second;
+        }
+        out.push_back(std::move(entry));
+    }
+
+    return out;
+}
+
+bool NetworkChannel::StartFragmentationTest(size_t bytes, std::string& err)
+{
+#ifdef MODLOADER_CLIENT_BUILD
+    return StartEchoTest(bytes, err);
+#else
+    (void)bytes;
+    err = "Only a connected client can run the echo test.";
+    return false;
+#endif
+}
 
 IPluginNetworkChannel* NetworkChannel::GetInterface()
 {
@@ -898,44 +1762,66 @@ IPluginNetworkChannel* NetworkChannel::GetInterface()
 
 void NetworkChannel::Initialize()
 {
-#ifdef MODLOADER_SERVER_BUILD
-    ModLoaderLogger::LogDebug(L"[NetworkChannel] Initialize: installing ProcessEvent hook...");
-    if (!Hooks::ServerChatCommit::IsInstalled())
-        Hooks::ServerChatCommit::Install();
-    ModLoaderLogger::LogInfo(L"[NetworkChannel] Server network channel initialized");
-#endif
+    // The control channel is the whole transport now: this detour is both the
+    // only receive path and the prerequisite for every send.
+    Hooks::ControlChannel::SetReceiveCallback(&OnWireReceive);
+    if (!Hooks::ControlChannel::IsInstalled())
+        Hooks::ControlChannel::Install();
 
+    if (Hooks::ControlChannel::IsAvailable())
+        ModLoaderLogger::LogInfo(L"[NetworkChannel] Control-channel wire ready");
+    else
+        ModLoaderLogger::LogError(
+            L"[NetworkChannel] Control-channel wire UNAVAILABLE -- plugin networking is disabled "
+            L"this session. There is no fallback transport; check the preflight warnings for which "
+            L"of the six control-channel patterns failed to resolve.");
+
+    // These lazily install their own hooks on first registration.
+    Hooks::PlayerLeft::RegisterPluginCallback(&OnPlayerLeftForgetConn);
+    Hooks::WorldEndPlay::RegisterBeforeCallback(&OnWorldEndPlayForgetConns);
+    Hooks::EngineTick::RegisterPluginCallback(&OnEngineTick);
 #ifdef MODLOADER_CLIENT_BUILD
-    ModLoaderLogger::LogInfo(L"[NetworkChannel] Client network channel initialized");
-    // The ProcessEvent hook is installed lazily by client_message.cpp when the
-    // first handler is registered.  No action needed here.
+    Hooks::WorldBeginPlay::RegisterAnyWorldCallback(&OnWorldBeginPlayReport);
 #endif
 }
 
 void NetworkChannel::Shutdown()
 {
-#ifdef MODLOADER_SERVER_BUILD
-    Hooks::ServerChatCommit::Remove();
+    Hooks::PlayerLeft::UnregisterPluginCallback(&OnPlayerLeftForgetConn);
+    Hooks::WorldEndPlay::UnregisterBeforeCallback(&OnWorldEndPlayForgetConns);
+    Hooks::EngineTick::UnregisterPluginCallback(&OnEngineTick);
+#ifdef MODLOADER_CLIENT_BUILD
+    Hooks::WorldBeginPlay::UnregisterAnyWorldCallback(&OnWorldBeginPlayReport);
+#endif
+
+    Hooks::ControlChannel::Remove();
+
+    {
+        std::lock_guard<std::mutex> lk(g_reasmMutex);
+        g_reassembler.Clear();
+    }
+    {
+        std::lock_guard<std::mutex> lk(g_manifestMutex);
+        g_manifests.clear();
+    }
+
     {
         std::lock_guard<std::mutex> lk(g_serverMutex);
         g_serverHandlers.clear();
     }
-    g_clientSaveTxtFunc = nullptr;
     {
         std::lock_guard<std::mutex> lk(g_excludeMutex);
         g_excludedControllers.clear();
     }
-    ModLoaderLogger::LogInfo(L"[NetworkChannel] Server network channel shut down");
-#endif
 
 #ifdef MODLOADER_CLIENT_BUILD
-    Hooks::ClientMessage::Remove();
     {
         std::lock_guard<std::mutex> lk(g_mutex);
         g_handlers.clear();
     }
-    g_serverExecCmdFunc = nullptr;
     ModLoaderLogger::LogInfo(L"[NetworkChannel] Client network channel shut down");
+#else
+    ModLoaderLogger::LogInfo(L"[NetworkChannel] Server network channel shut down");
 #endif
 }
 
@@ -944,5 +1830,11 @@ void NetworkChannel::Shutdown()
 IPluginNetworkChannel* NetworkChannel::GetInterface() { return nullptr; }
 void NetworkChannel::Initialize() {}
 void NetworkChannel::Shutdown() {}
+std::vector<NetworkChannel::ClientManifest> NetworkChannel::GetClientManifests() { return {}; }
+bool NetworkChannel::StartFragmentationTest(size_t, std::string& err)
+{
+    err = "Plugin networking is not present in this build.";
+    return false;
+}
 
 #endif // MODLOADER_SERVER_BUILD || MODLOADER_CLIENT_BUILD

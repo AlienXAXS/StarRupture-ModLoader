@@ -34,7 +34,6 @@
 #include "UI/imgui_backend.h"
 #include "UI/splash_window.h"
 #include "hooks/game/hud_post_render/hud_post_render.h"
-#include "hooks/game/client_message/client_message.h"
 #include "hooks/game/debug_draw/debug_draw.h"
 #endif
 #if defined(MODLOADER_SERVER_BUILD) || defined(MODLOADER_CLIENT_BUILD)
@@ -1692,7 +1691,6 @@ namespace ModLoaderLogger
 	static uintptr_t NativeCraftingFinished() { return Hooks::CraftingFinished::GetOriginalPtr(); }
 #ifdef MODLOADER_CLIENT_BUILD
 	static uintptr_t NativeHUDPostRender()    { return Hooks::HUDPostRender::GetOriginalPtr(); }
-	static uintptr_t NativeClientMessageExec(){ return Hooks::ClientMessage::GetOriginalPtr(); }
 #endif
 
 	// Native pointers sub-interface struct (v21)
@@ -1714,11 +1712,12 @@ namespace ModLoaderLogger
 		NativeSpawnerDoSpawning,
 #ifdef MODLOADER_CLIENT_BUILD
 		NativeHUDPostRender,      // client only
-		NativeClientMessageExec,  // client only
 #else
 		nullptr,        // HUDPostRender — null on server/generic builds
-		nullptr,         // ClientMessageExec — null on server/generic builds
 #endif
+		// ClientMessageExec — always null since the ClientSaveStringToTxt transport
+		// was removed. Slot kept so the struct layout never shifts under old plugins.
+		nullptr,
 		NativeCraftingFinished,  // v44 -- appended at end to preserve layout for v42/v43 plugins
 	};
 

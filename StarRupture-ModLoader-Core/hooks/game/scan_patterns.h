@@ -337,6 +337,66 @@ namespace ScanPatterns
 	// MODLOADER_CLIENT_BUILD / MODLOADER_SERVER_BUILD gating as its
 	// definition and its usage site.
 	// -----------------------------------------------------------------------
+	// -----------------------------------------------------------------------
+	// Control-channel wire  (client + server)
+	//
+	// Native primitives for sending/receiving modloader payloads directly on the
+	// Unreal per-connection control channel, replacing the UFUNCTION-envelope
+	// transport. See network_channel/CONTROL_CHANNEL_WIRE.md for the reverse
+	// engineering and hooks/game/control_channel/ for the consumer.
+	//
+	// All six are required together: control_channel.cpp reports IsAvailable()
+	// false if any is missing and NetworkChannel falls back to the legacy
+	// transport, so none of them is fatal (required = false in the table below).
+	//
+	// These six are confirmed IDENTICAL in the client
+	// (StarRuptureGameSteam-Win64-Shipping) and server
+	// (StarRuptureServerEOS-Win64-Shipping) binaries, so there is deliberately no
+	// per-build variant. Stack-frame sizes are wildcarded (48 83 EC ??) because
+	// that is the byte most likely to shift between builds.
+	// -----------------------------------------------------------------------
+
+	// void __fastcall UControlChannel::ReceivedBunch(UControlChannel* this, FInBunch& Bunch)
+	// Hook target: the virtual that dispatches control messages by leading uint8.
+	inline constexpr auto UControlChannel_ReceivedBunch =
+		"40 55 56 57 41 54 41 56 41 57 48 8D AC 24 ?? ?? ?? ?? 48 81 EC ?? ?? ?? ?? 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 85 ?? ?? ?? ?? 33 F6";
+
+	// FPacketIdRange* __fastcall UControlChannel::SendBunch(UControlChannel* this,
+	//     FPacketIdRange* result, FOutBunch* Bunch, bool bMerge)
+	// NB: FPacketIdRange (8 bytes) is returned via a HIDDEN POINTER in RDX, so
+	// Bunch is the THIRD argument (R8), not the second. Confirmed both by IDA's
+	// argument analysis and by this signature's own bytes: 49 8B F0 (mov rsi, r8)
+	// takes the bunch from R8, 48 8B FA (mov rdi, rdx) takes the return slot.
+	inline constexpr auto UControlChannel_SendBunch =
+		"48 89 5C 24 ?? 48 89 74 24 ?? 57 48 83 EC ?? 8B 41 ?? 49 8B F0 48 8B FA 48 8B D9 85 C0";
+
+	// void __fastcall FControlChannelOutBunch::FControlChannelOutBunch(
+	//     FControlChannelOutBunch* this, UChannel* InChannel, bool bClose)
+	// Internally constructs the FOutBunch base and marks it reliable.
+	inline constexpr auto FControlChannelOutBunch_ctor =
+		"40 53 48 83 EC ?? 48 8B D9 E8 ?? ?? ?? ?? 80 8B ?? ?? ?? ?? ?? 48 8D 05 ?? ?? ?? ?? ?? ?? ?? 48 8B C3";
+
+	// void __fastcall FOutBunch::~FOutBunch(FOutBunch* this) -- frees buffer allocations.
+	// Matched directly at its entry point rather than through a call site.
+	// The prefix it shares with other destructors is not unique, so this pattern
+	// necessarily runs past the function's own 0x53 bytes, through the inter-function
+	// padding, and into the first bytes of the next function (48 89 5C 24). That tail
+	// is the fragile part: if this is the one that stops resolving after a game
+	// patch, shorten it from the right before suspecting anything else.
+	inline constexpr auto FOutBunch_dtor =
+		"40 53 48 83 EC ?? 48 8D 05 ?? ?? ?? ?? 48 8B D9 ?? ?? ?? 48 8B 89 ?? ?? ?? ?? 48 85 C9 74 ?? E8 ?? ?? ?? ?? 48 8B 8B ?? ?? ?? ?? 48 85 C9 74 ?? E8 ?? ?? ?? ?? 48 8B 8B ?? ?? ?? ?? 48 85 C9 74 ?? E8 ?? ?? ?? ?? 48 8B CB 48 83 C4 ?? 5B E9 ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? 48 89 5C 24";
+
+	// void __fastcall FBitWriter::Serialize(FBitWriter* this, void* src, int64 numBYTES)
+	inline constexpr auto FBitWriter_Serialize =
+		"48 89 5C 24 ?? 48 89 6C 24 ?? 48 89 74 24 ?? 57 48 83 EC ?? 48 8B D9 4A 8D 3C C5";
+
+	// void __fastcall FBitReader::SerializeBits(FBitReader* this, void* dest, int64 numBITS)
+	// Deliberately SerializeBits, not FBitReader::Serialize -- both exist with nearly
+	// identical mangled names and both take an int64, but they differ in UNIT.
+	// The wire code passes bits.
+	inline constexpr auto FBitReader_SerializeBits =
+		"48 89 5C 24 ?? 48 89 74 24 ?? 57 48 83 EC ?? F6 41 ?? ?? 49 8B F8 48 8B F2 48 8B D9 0F 85";
+
 	struct PreflightEntry
 	{
 		const char* name;
@@ -380,6 +440,14 @@ namespace ScanPatterns
 #if defined(MODLOADER_CLIENT_BUILD) || defined(MODLOADER_SERVER_BUILD)
 		{ "AActor::InternalGetNetMode",                AActor_InternalGetNetMode,                true },
 		{ "UGameEngine::Tick",                         UGameEngine_Tick,                         true },
+		// Control-channel wire -- optional as a group: if any fails to resolve the
+		// wire reports unavailable and the network channel uses the legacy transport.
+		{ "UControlChannel::ReceivedBunch",            UControlChannel_ReceivedBunch,            false },
+		{ "UControlChannel::SendBunch",                UControlChannel_SendBunch,                false },
+		{ "FControlChannelOutBunch::ctor",             FControlChannelOutBunch_ctor,             false },
+		{ "FOutBunch::~FOutBunch",                     FOutBunch_dtor,                           false },
+		{ "FBitWriter::Serialize",                     FBitWriter_Serialize,                     false },
+		{ "FBitReader::SerializeBits",                 FBitReader_SerializeBits,                 false },
 #endif
 
 #if defined(MODLOADER_CLIENT_BUILD)

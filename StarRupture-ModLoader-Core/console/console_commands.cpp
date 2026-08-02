@@ -13,6 +13,7 @@
 #include "console/server_console.h"
 #include "logging/log.h"
 #include "logging/logger.h"
+#include "network_channel/network_channel.h"
 #include "plugins/plugin_interface.h"
 #include "plugins/plugin_manager.h"
 #include "utils/game_thread_dispatch.h"
@@ -503,6 +504,101 @@ namespace ModConsole
     }
 #endif
 
+    // -----------------------------------------------------------------------
+    // clients -- who is connected, and what they reported having installed
+    // -----------------------------------------------------------------------
+    static void Cmd_Clients(const std::vector<std::string>& args, Sink& out)
+    {
+        auto clients = NetworkChannel::GetClientManifests();
+
+        if (clients.empty())
+        {
+            out.Out("No connected clients. (Only a dedicated server or listen host "
+                    "has any; a pure client always reports none.)");
+            return;
+        }
+
+        // "clients <n>" -- full plugin list for one client.
+        if (args.size() >= 2)
+        {
+            const int idx = atoi(args[1].c_str());
+            if (idx < 0 || idx >= static_cast<int>(clients.size()))
+            {
+                out.Error("No client %d. Use 'clients' to list them (0-%d).",
+                          idx, static_cast<int>(clients.size()) - 1);
+                return;
+            }
+
+            const auto& c = clients[static_cast<size_t>(idx)];
+            out.Notice("Client %d: %s", idx,
+                       c.playerName.empty() ? "(name not resolved yet)" : c.playerName.c_str());
+
+            if (!c.reported)
+            {
+                out.Out("  No manifest reported.");
+                out.Out("  This client receives NO plugin packets -- either it is not running");
+                out.Out("  the mod loader, or it has not finished joining yet.");
+                return;
+            }
+            if (c.plugins.empty())
+            {
+                out.Out("  Mod loader present, no plugins loaded.");
+                return;
+            }
+
+            for (const auto& p : c.plugins)
+                out.Out("  %-32s %s", p.name.c_str(), p.version.c_str());
+            return;
+        }
+
+        // Summary table.
+        out.Notice("%-4s %-28s %s", "#", "PLAYER", "PLUGINS");
+        for (size_t i = 0; i < clients.size(); ++i)
+        {
+            const auto& c = clients[i];
+            const char* name = c.playerName.empty() ? "(unresolved)" : c.playerName.c_str();
+
+            if (!c.reported)
+                out.Out("%-4zu %-28s %s", i, name, "no manifest - receives nothing");
+            else
+                out.Out("%-4zu %-28s %zu", i, name, c.plugins.size());
+        }
+        out.Out("");
+        out.Out("'clients <n>' lists one client's plugins and versions.");
+    }
+
+    // -----------------------------------------------------------------------
+    // nettest -- round-trip a payload off the server to prove fragmentation works
+    // -----------------------------------------------------------------------
+    static void Cmd_NetTest(const std::vector<std::string>& args, Sink& out)
+    {
+        // Default is comfortably over the per-bunch budget, so the default run
+        // actually exercises chunking rather than the single-bunch path.
+        size_t bytes = 64 * 1024;
+        if (args.size() >= 2)
+        {
+            const long long v = atoll(args[1].c_str());
+            if (v <= 0)
+            {
+                out.Error("Size must be a positive number of bytes.");
+                return;
+            }
+            bytes = static_cast<size_t>(v);
+        }
+
+        std::string err;
+        if (!NetworkChannel::StartFragmentationTest(bytes, err))
+        {
+            out.Error("Could not start: %s", err.c_str());
+            return;
+        }
+
+        out.Notice("Echo test started: %zu bytes sent to the server.", bytes);
+        out.Out("The server bounces it back and every byte is verified on return.");
+        out.Out("Result is asynchronous -- watch for ECHO TEST PASSED / FAILED here");
+        out.Out("and in modloader.log.");
+    }
+
     void RegisterBuiltins()
     {
         {
@@ -547,6 +643,16 @@ namespace ModConsole
         Register({ "clear",   "cls",        "clear",
                    "Wipe the console scrollback",
                    &Cmd_Clear,   false });
+
+        // Reads live actor/connection state, so it must run on the game thread.
+        Register({ "clients", "who",        "clients [n]",
+                   "List connected clients and the plugins they reported",
+                   &Cmd_Clients, true });
+
+        // Touches the net driver and sends on the control channel.
+        Register({ "nettest", nullptr,      "nettest [bytes]",
+                   "Round-trip a payload off the server to verify fragmentation",
+                   &Cmd_NetTest, true });
 
 #ifndef MODLOADER_CLIENT_BUILD
         // Not on the game thread on purpose: a wedged engine is exactly when

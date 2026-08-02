@@ -274,9 +274,89 @@
 //      usual ImGui units (one notch = 1.0). Appended at the end of the
 //      function table, which is append-only: MIN remains 49.
 
+// v53: IPluginNetworkChannel now works on a listen host (a client build that is
+//      hosting the session).  Previously SendPacketToClient, SendPacketToAllClients,
+//      RegisterServerMessageHandler and ExcludeFromBroadcast were compiled as
+//      unconditional no-ops on client builds, so a listen host could not talk to
+//      its own clients at all -- only a dedicated server build could.  Authority is
+//      a runtime property, not a build-time one, so all four are now real on client
+//      builds and gated per call on the net mode (ListenServer or DedicatedServer).
+//
+//      Behaviour change, no layout change: IsServer() now reports net authority
+//      rather than "was this the server build". It was hardcoded false on client
+//      builds; it returns true on a listen host and stays false on a pure client
+//      and in Standalone. This is the point of the change -- the natural guard
+//      `if (Network->IsServer()) Broadcast(...)` starts working on a listen host
+//      without touching plugin code. A plugin that used IsServer() to ask which
+//      DLL it was loaded into should use PluginInfo::pluginTarget instead, or
+//      hooks->NetMode->GetNetMode() for the full four-way answer.
+//
+//      On a listen host both send functions skip the host's own player controller:
+//      an RPC aimed at it executes in-process rather than going over the wire, so
+//      it would loop back into this same process's client handlers (and arrive
+//      twice). "All clients" means all remote clients on both builds. Host-side
+//      code already holds the authoritative data and can call its own handler
+//      directly. No struct changed: MIN remains 49.
+
+// v54: Plugin networking moved onto the Unreal control channel and the previous
+//      transport was DELETED, not deprecated. Envelopes used to ride two game
+//      RPCs -- ClientSaveStringToTxt (server->client) and ServerExecuteConsoleCommand
+//      (client->server); both hooks are gone. IPluginNetworkChannel is unchanged
+//      in shape and every function behaves the same from a plugin's point of view.
+//
+//      Two consequences plugins can observe:
+//
+//      - IPluginNativePointers::ClientMessageExec is now ALWAYS nullptr, on every
+//        build, because the hook it exposed no longer exists. The field is kept so
+//        the struct layout does not shift under already-built plugins. Nothing
+//        else in that struct moved.
+//
+//      - There is no fallback transport and no capability negotiation, and one
+//        cannot be added: asking a peer whether it speaks the wire would itself
+//        have to travel over the wire. Sending to a peer whose loader lacks a
+//        working control channel does not degrade -- the engine closes that
+//        connection on an unrecognised control message. Every peer in a session
+//        must therefore run a loader whose control-channel patterns resolved.
+//        If OUR natives fail to resolve we send nothing at all, so a failed
+//        preflight silences plugin networking rather than disconnecting peers;
+//        Network->IsServer() and the send functions stay callable and simply log.
+//
+//      No struct changed: MIN remains 49.
+
+// v55: Server->client sends are now gated on a client plugin manifest. A joining
+//      client reports every plugin it has loaded, with versions; the authority
+//      records that per connection and delivers a packet from plugin P version V
+//      only to clients that reported P at exactly V.
+//
+//      No signature changed -- SendPacketToClient and SendPacketToAllClients
+//      already took `const IPluginSelf* self`, which carries both name and
+//      version, so the loader could already attribute every packet to its sender.
+//
+//      What changed for plugin authors, and it is worth reading twice:
+//
+//      - SendPacketToAllClients no longer means "every client". It means every
+//        client that has your plugin at your exact version. A version bump on one
+//        side silently stops delivery between the two -- which is the point, since
+//        two builds disagreeing about their own packet layout is the failure this
+//        prevents, but it will look like the network dropped your packet.
+//        Skipped clients are logged at Debug/Trace naming the plugin and version.
+//
+//      - A client that has not (yet) reported receives nothing. A manifest is sent
+//        at world begin play and retried before the client's first outgoing
+//        packet, so there is a window early in a join where a broadcast reaches
+//        nobody. Send state on request, or after your own client-ready signal,
+//        rather than assuming a broadcast at join lands.
+//
+//      - This is also a safety improvement: a client not running the loader can
+//        never report, so it can never be sent a control bunch, so it can no
+//        longer be disconnected by one (see v54).
+//
+//      Operators can inspect all of this with the `clients` console command.
+//      No struct changed: MIN remains 49.
+
 #define PLUGIN_INTERFACE_VERSION_MIN 49
-#define PLUGIN_INTERFACE_VERSION_MAX 52
-#define PLUGIN_INTERFACE_VERSION 52
+#define PLUGIN_INTERFACE_VERSION_MAX 55
+#define PLUGIN_INTERFACE_VERSION 55
 
 enum class PluginLogLevel { Trace = 0, Debug = 1, Info = 2, Warn = 3, Error = 4 };
 enum class ConfigValueType { String, Integer, Float, Boolean, Keybind };
@@ -1339,7 +1419,20 @@ struct IPluginHUDEvents
 // ---------------------------------------------------------------------------
 struct IPluginNetworkChannel
 {
+	// True when this process holds net authority for the session, i.e. it is a
+	// dedicated server OR a listen host. False on a pure client and in Standalone.
+	// This is a runtime answer, not a build-time one -- a client build hosting a
+	// game returns true here (v53; it was hardcoded false before).
+	// For "which DLL am I in", use PluginInfo::pluginTarget.
 	bool (*IsServer)();
+
+	// Authority-only: no-ops (with a warning logged) when IsServer() is false.
+	// Both skip the listen host's own player controller, which has no connection.
+	//
+	// v55: both also skip any client that has not reported THIS plugin at THIS
+	// exact version in its manifest. "All clients" therefore means "all remote
+	// clients running the same build of me". See the v55 note at the top of this
+	// file before assuming a broadcast reached anyone.
 	void (*SendPacketToClient)(void* playerController, const IPluginSelf* self, const char* typeTag, const uint8_t* data, size_t size);
 	void (*SendPacketToAllClients)(const IPluginSelf* self, const char* typeTag, const uint8_t* data, size_t size);
 	void (*RegisterMessageHandler)(const IPluginSelf* self, const char* typeTag, PluginNetworkMessageCallback callback);
@@ -1372,7 +1465,10 @@ struct IPluginNativePointers
 	uintptr_t (*SpawnerDeactivate)();
 	uintptr_t (*SpawnerDoSpawning)();
 	uintptr_t (*HUDPostRender)();   // client only (nullptr on server/generic)
-	uintptr_t (*ClientMessageExec)();  // client only (nullptr on server/generic)
+	// v54: ALWAYS nullptr. The ClientSaveStringToTxt transport this exposed was
+	// removed when networking moved to the control channel. Slot retained so the
+	// struct layout does not shift for already-built plugins.
+	uintptr_t (*ClientMessageExec)();
 
 	// v44 -- trampoline address of ACrCrafter::NativeOnItemCraftingComplete.
 	// Cast to: void(__fastcall*)(void* thisPtr, uint64_t entityHandle, uint64_t signalName)
