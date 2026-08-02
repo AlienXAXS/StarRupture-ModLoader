@@ -74,11 +74,24 @@ namespace ConsoleScreen
     static WORD         s_defaultAttrs  = kGrey;
     static bool         s_promptVisible = false;
     static SHORT        s_promptRow     = 0;
-    static int          s_width         = 80;
+
+    // Two different widths, and using the wrong one is a bug either way.
+    // s_layoutWidth is the visible window, which is what decides how much of
+    // the input fits on screen. s_bufferWidth is the row length, which is what
+    // an erase has to cover -- a buffer wider than the window (a horizontal
+    // scrollbar) would otherwise leave the tail of the old prompt behind.
+    static int          s_layoutWidth   = 80;
+    static int          s_bufferWidth   = 80;
 
     static std::string  s_promptText    = "> ";
     static std::string  s_promptInput;
     static size_t       s_promptCaret   = 0;
+
+    // Cells the prompt occupied when it was last drawn. After a resize the
+    // console has reflowed the buffer and s_promptRow means nothing, but this
+    // still says how many rows the prompt now wraps into at the new width --
+    // which is what the erase needs.
+    static size_t       s_promptDrawnLen = 0;
 
     // Engine text arrives in whatever chunks the engine felt like writing;
     // everything up to the last newline is printed and the remainder waits here.
@@ -116,11 +129,24 @@ namespace ConsoleScreen
         RawWrite(L"\r\n", 2);
     }
 
-    static void RefreshMetrics()
+    static void UpdateMetrics(const CONSOLE_SCREEN_BUFFER_INFO& info)
     {
-        CONSOLE_SCREEN_BUFFER_INFO info{};
-        if (GetConsoleScreenBufferInfo(s_out, &info))
-            s_width = info.dwSize.X > 0 ? info.dwSize.X : 80;
+        s_bufferWidth = info.dwSize.X > 0 ? info.dwSize.X : 80;
+
+        const int windowWidth = info.srWindow.Right - info.srWindow.Left + 1;
+        s_layoutWidth = windowWidth > 0 ? windowWidth : s_bufferWidth;
+    }
+
+    // Blanks whole buffer rows, [row, row + count).
+    static void ClearRowsLocked(SHORT row, int count)
+    {
+        for (int i = 0; i < count; ++i)
+        {
+            const COORD start = { 0, static_cast<SHORT>(row + i) };
+            DWORD written = 0;
+            FillConsoleOutputCharacterW(s_out, L' ', static_cast<DWORD>(s_bufferWidth), start, &written);
+            FillConsoleOutputAttribute(s_out, s_defaultAttrs, static_cast<DWORD>(s_bufferWidth), start, &written);
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -131,11 +157,8 @@ namespace ConsoleScreen
         if (!s_promptVisible || s_out == INVALID_HANDLE_VALUE)
             return;
 
-        const COORD start = { 0, s_promptRow };
-        DWORD written = 0;
-        FillConsoleOutputCharacterW(s_out, L' ', static_cast<DWORD>(s_width), start, &written);
-        FillConsoleOutputAttribute(s_out, s_defaultAttrs, static_cast<DWORD>(s_width), start, &written);
-        SetConsoleCursorPosition(s_out, start);
+        ClearRowsLocked(s_promptRow, 1);
+        SetConsoleCursorPosition(s_out, COORD{ 0, s_promptRow });
         s_promptVisible = false;
     }
 
@@ -148,7 +171,7 @@ namespace ConsoleScreen
         if (!GetConsoleScreenBufferInfo(s_out, &info))
             return;
 
-        s_width     = info.dwSize.X > 0 ? info.dwSize.X : 80;
+        UpdateMetrics(info);
         s_promptRow = info.dwCursorPosition.Y;
 
         const int promptLen = static_cast<int>(s_promptText.size());
@@ -158,7 +181,7 @@ namespace ConsoleScreen
         // row high is a prompt whose erase can never miss part of itself --
         // and a wrapped line that scrolls the buffer moves the row out from
         // under s_promptRow.
-        const int space = s_width - promptLen - 1;
+        const int space = s_layoutWidth - promptLen - 1;
         if (space <= 0)
             return;
 
@@ -178,7 +201,8 @@ namespace ConsoleScreen
         };
         SetConsoleCursorPosition(s_out, caretPos);
 
-        s_promptVisible = true;
+        s_promptDrawnLen = s_promptText.size() + visible.size();
+        s_promptVisible  = true;
     }
 
     // -----------------------------------------------------------------------
@@ -282,8 +306,8 @@ namespace ConsoleScreen
         if (GetConsoleScreenBufferInfo(s_out, &info))
         {
             s_defaultAttrs = info.wAttributes;
-            s_width        = info.dwSize.X > 0 ? info.dwSize.X : 80;
             s_promptRow    = info.dwCursorPosition.Y;
+            UpdateMetrics(info);
         }
 
         s_promptVisible = false;
@@ -315,7 +339,7 @@ namespace ConsoleScreen
     int Width()
     {
         std::lock_guard<std::mutex> lk(s_mutex);
-        return s_width;
+        return s_layoutWidth;
     }
 
     void Print(ModConsole::LineKind kind, const char* text)
@@ -391,16 +415,7 @@ namespace ConsoleScreen
         // Erase in place rather than redrawing over the old text: the new input
         // can be shorter, and the tail of the old line would otherwise stay on
         // screen.
-        if (s_promptVisible)
-        {
-            const COORD start = { 0, s_promptRow };
-            DWORD written = 0;
-            FillConsoleOutputCharacterW(s_out, L' ', static_cast<DWORD>(s_width), start, &written);
-            FillConsoleOutputAttribute(s_out, s_defaultAttrs, static_cast<DWORD>(s_width), start, &written);
-            SetConsoleCursorPosition(s_out, start);
-            s_promptVisible = false;
-        }
-
+        ErasePromptLocked();
         DrawPromptLocked();
     }
 
@@ -410,8 +425,45 @@ namespace ConsoleScreen
         if (s_out == INVALID_HANDLE_VALUE)
             return;
 
-        RefreshMetrics();
-        ErasePromptLocked();
+        CONSOLE_SCREEN_BUFFER_INFO info{};
+        if (!GetConsoleScreenBufferInfo(s_out, &info))
+            return;
+
+        // This is the resize path, and the ordinary erase cannot be used here:
+        // the console reflows its buffer when the window changes width, so
+        // s_promptRow points at whatever row that content ended up on -- erasing
+        // it would blank a line of log output and leave the old prompt on screen.
+        //
+        // What is still true is that the cursor was inside the prompt, so the
+        // console moved it with the prompt: the prompt ends on the cursor's row.
+        // Re-wrap the length it was drawn at against the new width to find where
+        // it starts, and clear from there.
+        if (s_promptVisible)
+        {
+            UpdateMetrics(info);
+
+            int rows = 1;
+            if (s_bufferWidth > 0 && s_promptDrawnLen > 0)
+                rows = static_cast<int>((s_promptDrawnLen + s_bufferWidth - 1) / s_bufferWidth);
+            if (rows < 1)
+                rows = 1;
+
+            SHORT startRow = static_cast<SHORT>(info.dwCursorPosition.Y - (rows - 1));
+            if (startRow < 0)
+            {
+                rows += startRow;   // clipped at the top of the buffer
+                startRow = 0;
+            }
+
+            ClearRowsLocked(startRow, rows > 0 ? rows : 1);
+            SetConsoleCursorPosition(s_out, COORD{ 0, startRow });
+            s_promptVisible = false;
+        }
+        else
+        {
+            UpdateMetrics(info);
+        }
+
         DrawPromptLocked();
     }
 
