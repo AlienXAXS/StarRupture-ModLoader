@@ -7,6 +7,7 @@
 #include "../config/config_manager.h"
 #include "../plugins/plugin_manager.h"
 #include "../network_channel/network_channel.h"
+#include "../console/server_console.h"
 #include "../hooks/game/engine_shutdown/engine_shutdown.h"
 
 void ShutdownAll()
@@ -59,6 +60,10 @@ void ShutdownAll()
 
     ModLoaderLogger::LogInfo(L"Removing engine shutdown hook...");
     Hooks::EngineShutdown::Remove();
+
+    // Before the plugins go: a console command dispatched from here on would be
+    // operating on a plugin list that is being torn down underneath it.
+    ServerConsole::Shutdown();
 
     PluginManager::UnloadAllPlugins();
     NetworkChannel::Shutdown();

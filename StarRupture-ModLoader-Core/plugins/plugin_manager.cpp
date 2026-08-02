@@ -432,14 +432,11 @@ namespace PluginManager
 		ModLoaderLogger::LogMessage(L"Plugin manager shutdown");
 	}
 
-	void LoadAllPlugins()
+	// Enumerate every .dll in ModLoader\Plugins, creating the directory if it is
+	// missing. Shared by the startup scan and the console's runtime rescan.
+	// Returns false only if the directory does not exist and could not be created.
+	static bool CollectPluginDllPaths(std::vector<std::wstring>& outPaths)
 	{
-		if (!g_managerInitialized)
-		{
-			ModLoaderLogger::LogMessage(L"ERROR: Plugin manager not initialized");
-			return;
-		}
-
 		wchar_t exePath[MAX_PATH] = {};
 		GetModuleFileNameW(nullptr, exePath, MAX_PATH);
 		wchar_t* lastSlash = wcsrchr(exePath, L'\\');
@@ -447,8 +444,6 @@ namespace PluginManager
 
 		wchar_t modsPath[MAX_PATH] = {};
 		swprintf_s(modsPath, L"%s\\ModLoader\\Plugins", exePath);
-
-		ModLoaderLogger::LogMessage(L"Searching for plugins in: %s", modsPath);
 
 		DWORD attribs = GetFileAttributesW(modsPath);
 		if (attribs == INVALID_FILE_ATTRIBUTES || !(attribs & FILE_ATTRIBUTE_DIRECTORY))
@@ -460,15 +455,13 @@ namespace PluginManager
 			if (!CreateDirectoryW(modsPath, nullptr))
 			{
 				ModLoaderLogger::LogMessage(L"Failed to create Plugins directory (error: %lu)", GetLastError());
-				return;
+				return false;
 			}
 		}
 
-		// Pre-collect paths so we know the total count for progress reporting.
 		wchar_t searchPattern[MAX_PATH] = {};
 		swprintf_s(searchPattern, L"%s\\*.dll", modsPath);
 
-		std::vector<std::wstring> dllPaths;
 		WIN32_FIND_DATAW findData = {};
 		HANDLE hFind = FindFirstFileW(searchPattern, &findData);
 		if (hFind != INVALID_HANDLE_VALUE)
@@ -479,11 +472,36 @@ namespace PluginManager
 				{
 					wchar_t dllPath[MAX_PATH] = {};
 					swprintf_s(dllPath, L"%s\\%s", modsPath, findData.cFileName);
-					dllPaths.push_back(dllPath);
+					outPaths.push_back(dllPath);
 				}
 			} while (FindNextFileW(hFind, &findData));
 			FindClose(hFind);
 		}
+
+		return true;
+	}
+
+	// Bare file name of a plugin record's path, e.g. "ServerUtility.dll".
+	static const wchar_t* BaseFileName(const std::wstring& path)
+	{
+		const wchar_t* slash = wcsrchr(path.c_str(), L'\\');
+		return slash ? slash + 1 : path.c_str();
+	}
+
+	void LoadAllPlugins()
+	{
+		if (!g_managerInitialized)
+		{
+			ModLoaderLogger::LogMessage(L"ERROR: Plugin manager not initialized");
+			return;
+		}
+
+		ModLoaderLogger::LogMessage(L"Searching for plugins in ModLoader\\Plugins");
+
+		// Pre-collect paths so we know the total count for progress reporting.
+		std::vector<std::wstring> dllPaths;
+		if (!CollectPluginDllPaths(dllPaths))
+			return;
 
 		if (dllPaths.empty())
 		{
@@ -686,6 +704,15 @@ namespace PluginManager
 				out[i].isOutOfDate           = p.isOutOfDate;
 				out[i].needsModLoaderUpdate  = p.needsModLoaderUpdate;
 				out[i].isWrongTarget         = p.isWrongTarget;
+
+				// Plugin paths are ASCII in practice; anything else degrades to '?'
+				// rather than failing the whole snapshot. Cleared first so a
+				// conversion failure leaves an empty string, not a partial one.
+				out[i].fileName[0] = '\0';
+				const wchar_t* baseName = BaseFileName(p.fileName);
+				WideCharToMultiByte(CP_ACP, 0, baseName, -1,
+					out[i].fileName, static_cast<int>(sizeof(out[i].fileName)), "?", nullptr);
+				out[i].fileName[sizeof(out[i].fileName) - 1] = '\0';
 			}
 		}
 		LeaveCriticalSection(&g_pluginLock);
@@ -796,6 +823,112 @@ namespace PluginManager
 		}
 
 		return ok;
+	}
+
+	int FindPluginIndex(const char* nameOrFile)
+	{
+		if (!nameOrFile || !*nameOrFile) return -1;
+
+		// Widen once so the file-name comparisons can use _wcsicmp directly.
+		wchar_t query[MAX_PATH] = {};
+		MultiByteToWideChar(CP_ACP, 0, nameOrFile, -1, query, MAX_PATH);
+
+		wchar_t queryDll[MAX_PATH] = {};
+		swprintf_s(queryDll, L"%s.dll", query);
+
+		EnterCriticalSection(&g_pluginLock);
+
+		int found = -1;
+
+		// PluginInfo name first -- that is what `plugins` displays and what a
+		// user is most likely to type.
+		for (int i = 0; i < static_cast<int>(g_loadedPlugins.size()); ++i)
+		{
+			if (_stricmp(g_loadedPlugins[i]->cachedName.c_str(), nameOrFile) == 0)
+			{
+				found = i;
+				break;
+			}
+		}
+
+		// Then the DLL file name, with and without the extension. A record whose
+		// load failed has no cached name at all, so this is the only way to
+		// address it.
+		if (found < 0)
+		{
+			for (int i = 0; i < static_cast<int>(g_loadedPlugins.size()); ++i)
+			{
+				const wchar_t* baseName = BaseFileName(g_loadedPlugins[i]->fileName);
+				if (_wcsicmp(baseName, query) == 0 || _wcsicmp(baseName, queryDll) == 0)
+				{
+					found = i;
+					break;
+				}
+			}
+		}
+
+		LeaveCriticalSection(&g_pluginLock);
+		return found;
+	}
+
+	int ScanForNewPlugins()
+	{
+		if (!g_managerInitialized)
+		{
+			ModLoaderLogger::LogMessage(L"ERROR: Plugin manager not initialized");
+			return 0;
+		}
+
+		std::vector<std::wstring> dllPaths;
+		if (!CollectPluginDllPaths(dllPaths))
+			return 0;
+
+		// Held across the whole scan so nothing can append a record between the
+		// "is this new?" test and the init pass below. CRITICAL_SECTION is
+		// re-entrant on the owning thread, so LoadPlugin taking it again is fine.
+		EnterCriticalSection(&g_pluginLock);
+
+		const size_t firstNew = g_loadedPlugins.size();
+		int loadedCount = 0;
+
+		for (const std::wstring& path : dllPaths)
+		{
+			bool known = false;
+			for (const auto& existing : g_loadedPlugins)
+			{
+				if (_wcsicmp(existing->fileName.c_str(), path.c_str()) == 0)
+				{
+					known = true;
+					break;
+				}
+			}
+			if (known)
+				continue;
+
+			ModLoaderLogger::LogMessage(L"ScanForNewPlugins: new plugin DLL found: %s", path.c_str());
+			if (LoadPlugin(path))
+				loadedCount++;
+		}
+
+		// Init only the records this scan appended -- everything before firstNew
+		// was either already initialized or deliberately left unloaded by the user.
+		int initedCount = 0;
+		for (size_t i = firstNew; i < g_loadedPlugins.size(); ++i)
+		{
+			LoadedPlugin& rec = *g_loadedPlugins[i];
+			if (rec.isInitialized || !rec.init)
+				continue;
+			if (InitPluginRecord(rec))
+				initedCount++;
+		}
+
+		if (loadedCount > 0)
+			++g_pluginGeneration;
+
+		LeaveCriticalSection(&g_pluginLock);
+
+		ModLoaderLogger::LogMessage(L"ScanForNewPlugins: %d new DLL(s) loaded, %d initialized", loadedCount, initedCount);
+		return initedCount;
 	}
 
 	HANDLE GetPluginsInitializedEvent()

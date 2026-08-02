@@ -5,6 +5,7 @@
 #include "init_phases.h"
 #include "client_ui.h"
 #include "../game_type_checker.h"
+#include "../console/server_console.h"
 #include "../logging/log.h"
 #include "../logging/logger.h"
 #include "../auto_update/auto_updater.h"
@@ -195,6 +196,12 @@ DWORD WINAPI MainInitThreadProc(LPVOID)
     LogToFile::Info("[init] Initialising subsystems (config, plugin manager)...");
     InitSubsystems();
     LogToFile::Info("[init] Subsystems initialised");
+
+    // Started here rather than after the plugins so it is up while the engine is
+    // still booting -- on a dedicated server that is exactly the stretch where
+    // nothing else says anything. Commands that need the game thread simply
+    // queue until the first tick. No-op without -console.
+    ServerConsole::Start();
 
 #ifdef MODLOADER_CLIENT_BUILD
     ModLoaderLogger::LogInfo(L"Running client build of modloader");
