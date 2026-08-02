@@ -90,7 +90,7 @@ namespace Fragmentation
     {
         NeedMore,        // frame accepted, message not yet complete
         Completed,       // frame accepted and completed a message (out filled)
-        NotAFragment,    // frame is not a MFRG frame -- caller should handle as legacy
+        NotAFragment,    // not a MFRG frame -- caller should treat it as a whole message
         Malformed,       // frame header failed validation; dropped
         LimitExceeded,   // declared size / chunk count over the configured cap; dropped
     };

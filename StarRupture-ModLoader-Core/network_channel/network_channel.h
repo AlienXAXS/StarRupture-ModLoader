@@ -36,9 +36,13 @@
 // OPERATIONAL NOTE: because there is no fallback, a session requires every peer
 // to run a loader whose six control-channel patterns resolved. Sending to a peer
 // without a working wire does not degrade -- the engine closes that connection
-// on an unrecognised control message. If our own natives fail to resolve we go
-// silent instead, so a failed preflight disables plugin networking rather than
-// disconnecting anyone.
+// on an unrecognised control message.
+//
+// Those six patterns are therefore REQUIRED at preflight: if one goes missing
+// after a game update the whole mod loader disables itself and the game starts
+// unmodified, rather than booting a session in which networked plugins are
+// silently inert. The IsAvailable() checks on the send paths remain as a
+// last-resort guard, not as a supported degraded mode.
 //
 // Generic build: all send/receive operations are no-ops; Network pointer in IPluginHooks
 //                is nullptr.

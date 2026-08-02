@@ -345,9 +345,11 @@ namespace ScanPatterns
 	// transport. See network_channel/CONTROL_CHANNEL_WIRE.md for the reverse
 	// engineering and hooks/game/control_channel/ for the consumer.
 	//
-	// All six are required together: control_channel.cpp reports IsAvailable()
-	// false if any is missing and NetworkChannel falls back to the legacy
-	// transport, so none of them is fatal (required = false in the table below).
+	// All six are required together, and all six are fatal at preflight: this is
+	// the only transport plugin networking has. control_channel.cpp still reports
+	// IsAvailable() false if one is missing, but that is now a belt-and-braces
+	// runtime guard rather than a supported degraded mode -- preflight stops the
+	// loader before it gets that far.
 	//
 	// These six are confirmed IDENTICAL in the client
 	// (StarRuptureGameSteam-Win64-Shipping) and server
@@ -440,14 +442,18 @@ namespace ScanPatterns
 #if defined(MODLOADER_CLIENT_BUILD) || defined(MODLOADER_SERVER_BUILD)
 		{ "AActor::InternalGetNetMode",                AActor_InternalGetNetMode,                true },
 		{ "UGameEngine::Tick",                         UGameEngine_Tick,                         true },
-		// Control-channel wire -- optional as a group: if any fails to resolve the
-		// wire reports unavailable and the network channel uses the legacy transport.
-		{ "UControlChannel::ReceivedBunch",            UControlChannel_ReceivedBunch,            false },
-		{ "UControlChannel::SendBunch",                UControlChannel_SendBunch,                false },
-		{ "FControlChannelOutBunch::ctor",             FControlChannelOutBunch_ctor,             false },
-		{ "FOutBunch::~FOutBunch",                     FOutBunch_dtor,                           false },
-		{ "FBitWriter::Serialize",                     FBitWriter_Serialize,                     false },
-		{ "FBitReader::SerializeBits",                 FBitReader_SerializeBits,                 false },
+		// Control-channel wire -- all required. These carry every plugin packet
+		// and there is no second transport to fall back to, so losing one does
+		// not degrade plugin networking, it ends it. Failing preflight loudly is
+		// better than booting into a session where networked plugins are quietly
+		// inert; and if these moved, the game updated and every other pattern
+		// here is suspect too.
+		{ "UControlChannel::ReceivedBunch",            UControlChannel_ReceivedBunch,            true },
+		{ "UControlChannel::SendBunch",                UControlChannel_SendBunch,                true },
+		{ "FControlChannelOutBunch::ctor",             FControlChannelOutBunch_ctor,             true },
+		{ "FOutBunch::~FOutBunch",                     FOutBunch_dtor,                           true },
+		{ "FBitWriter::Serialize",                     FBitWriter_Serialize,                     true },
+		{ "FBitReader::SerializeBits",                 FBitReader_SerializeBits,                 true },
 #endif
 
 #if defined(MODLOADER_CLIENT_BUILD)

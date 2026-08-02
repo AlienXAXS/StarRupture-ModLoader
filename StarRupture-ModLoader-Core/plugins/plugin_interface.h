@@ -316,10 +316,12 @@
 //        have to travel over the wire. Sending to a peer whose loader lacks a
 //        working control channel does not degrade -- the engine closes that
 //        connection on an unrecognised control message. Every peer in a session
-//        must therefore run a loader whose control-channel patterns resolved.
-//        If OUR natives fail to resolve we send nothing at all, so a failed
-//        preflight silences plugin networking rather than disconnecting peers;
-//        Network->IsServer() and the send functions stay callable and simply log.
+//        must therefore run a loader whose control-channel patterns resolved --
+//        which is why those patterns are REQUIRED at preflight: a game update
+//        that moves one disables the entire mod loader rather than starting a
+//        session where networked plugins are silently inert. Plugins do not need
+//        to handle a "networking unavailable" state, because there is no build
+//        in which the loader runs without it.
 //
 //      No struct changed: MIN remains 49.
 

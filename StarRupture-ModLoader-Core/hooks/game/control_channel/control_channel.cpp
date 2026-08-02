@@ -255,8 +255,10 @@ namespace Hooks::ControlChannel
             g_controlChannelClass != nullptr);
 
         if (!AllSendNativesResolved())
-            ModLoaderLogger::LogWarn(
-                L"[ControlChannel] One or more send-side natives missing -- receive only, send falls back to legacy");
+            ModLoaderLogger::LogError(
+                L"[ControlChannel] One or more send-side natives missing -- receive only. "
+                L"There is no fallback transport, so plugin sends will be dropped. "
+                L"Preflight should have caught this; check the pattern warnings above.");
 
         return true;
     }

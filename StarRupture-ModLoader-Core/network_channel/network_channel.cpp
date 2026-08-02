@@ -269,9 +269,12 @@ namespace
 // trade for deleting the legacy transport; it means every peer in a session must
 // run a loader whose six control-channel patterns resolved.
 //
-// The one protection kept is local: nothing is sent unless OUR side resolved
-// every native (IsAvailable()), so a loader that failed preflight goes quiet
-// rather than dropping the peers it talks to.
+// The six natives this needs are REQUIRED patterns, so a game update that moves
+// one disables the whole loader at preflight rather than leaving a session where
+// networked plugins quietly do nothing. The IsAvailable() check on every send is
+// kept as a last-resort guard for the case where the scan passed but the hook
+// install did not -- it means we go quiet rather than dropping the peers we talk
+// to, but it is not a mode anything is expected to run in.
 // ============================================================
 
     // ---- Plugin manifest ----------------------------------------------------
@@ -1772,9 +1775,10 @@ void NetworkChannel::Initialize()
         ModLoaderLogger::LogInfo(L"[NetworkChannel] Control-channel wire ready");
     else
         ModLoaderLogger::LogError(
-            L"[NetworkChannel] Control-channel wire UNAVAILABLE -- plugin networking is disabled "
-            L"this session. There is no fallback transport; check the preflight warnings for which "
-            L"of the six control-channel patterns failed to resolve.");
+            L"[NetworkChannel] Control-channel wire UNAVAILABLE -- plugin networking is dead this "
+            L"session and there is no fallback transport. The six control-channel patterns are "
+            L"REQUIRED at preflight, so reaching this line means the scan succeeded but the hook "
+            L"install did not; see the [ControlChannel] errors above.");
 
     // These lazily install their own hooks on first registration.
     Hooks::PlayerLeft::RegisterPluginCallback(&OnPlayerLeftForgetConn);

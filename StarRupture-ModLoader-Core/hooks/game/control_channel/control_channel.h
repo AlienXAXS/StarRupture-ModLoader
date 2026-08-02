@@ -21,7 +21,10 @@
 //
 // This layer is byte-oriented and knows nothing about plugins or fragmentation --
 // network_channel.cpp drives it. If any required native fails to resolve,
-// IsAvailable() returns false and callers fall back to the legacy transport.
+// IsAvailable() returns false and nothing is sent -- there is no second
+// transport. In practice preflight rejects the missing pattern and the loader
+// disables itself before this point, so IsAvailable() being false is a
+// last-resort guard rather than a mode anything is expected to run in.
 // ---------------------------------------------------------------------------
 
 namespace Hooks::ControlChannel
