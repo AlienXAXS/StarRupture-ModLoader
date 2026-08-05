@@ -61,6 +61,9 @@
     <Filter Include="Source Files\hooks\game\control_channel">
       <UniqueIdentifier>{a5b0c4d2-fb34-4a89-b256-4d5e6f708192}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Source Files\hooks\game\modloader_hello">
+      <UniqueIdentifier>{c7d2e6f4-1b56-4c0a-9478-6f708192a3b4}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Source Files\hooks\game\actor_begin_play">
       <UniqueIdentifier>{75a11838-a61f-4b73-bad6-773b6425b24e}</UniqueIdentifier>
     </Filter>
@@ -390,6 +393,9 @@
     <ClInclude Include="network_channel\packet_fragmentation.h">
       <Filter>Source Files\network_channel</Filter>
     </ClInclude>
+    <ClInclude Include="hooks\game\modloader_hello\modloader_hello.h">
+      <Filter>Source Files\hooks\game\modloader_hello</Filter>
+    </ClInclude>
     <ClInclude Include="hooks\game\control_channel\control_channel.h">
       <Filter>Source Files\hooks\game\control_channel</Filter>
     </ClInclude>
@@ -586,6 +592,9 @@
     </ClCompile>
     <ClCompile Include="network_channel\packet_fragmentation.cpp">
       <Filter>Source Files\network_channel</Filter>
+    </ClCompile>
+    <ClCompile Include="hooks\game\modloader_hello\modloader_hello.cpp">
+      <Filter>Source Files\hooks\game\modloader_hello</Filter>
     </ClCompile>
     <ClCompile Include="hooks\game\control_channel\control_channel.cpp">
       <Filter>Source Files\hooks\game\control_channel</Filter>

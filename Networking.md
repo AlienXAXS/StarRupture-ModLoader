@@ -71,8 +71,9 @@ side. Your send call takes the whole payload and your handler receives the whole
 payload -- you never see a fragment. This works for both APIs above and for the raw
 `SendPacket*` calls.
 
-- Maximum reassembled size per logical message: `hooks->Network->GetMaxReassembledBytes()`
-  (default 8 MB). A send larger than the receiver's cap is dropped by the receiver.
+- Maximum reassembled size per logical message is capped by the receiver (8 MB);
+  a larger send is dropped there. There is no accessor for it -- an earlier draft of
+  this document named a `GetMaxReassembledBytes()` that was never added.
 - Delivery is all-or-nothing: the handler fires once, only after every chunk has
   arrived. Incomplete messages are dropped after a timeout, and all partials for a
   player are dropped when that player disconnects.
@@ -87,24 +88,58 @@ keep them reasonable.
 The tag `"$MODFRAG"` is reserved for fragment frames -- do not register a raw message
 handler under that tag. `plugin_packet.h` uses tags of the form `"PKT:<hexId>"`.
 
+## When can I send? (readiness -- interface v56)
+
+**A player-joined hook is too early.** A packet sent from one is dropped: the
+client has not yet told the server which plugins it has, and until it does the
+server will not route anything to it. This is the single most common way to lose a
+packet, and since v56 it warns once per plugin per client in `modloader.log`.
+
+Send join-time state from the ready callback instead:
+
+```cpp
+// server: fires once per client that has YOUR plugin at YOUR version
+hooks->Network->RegisterClientReadyCallback(self, [](void* playerController) {
+    Packet::SendToClient(hooks, self, playerController, WorldStateSnapshot{ ... });
+});
+
+// client: fires once the server has acknowledged us
+hooks->Network->RegisterServerReadyCallback(self, [](const char* serverBuildTag) {
+    Packet::SendToServer(hooks, self, HelloFromPlugin{ ... });
+});
+```
+
+Both have a polling equivalent -- `IsClientReady(pc, self)` and `IsServerReady()`
+-- and both callbacks fire immediately for anything already ready when you
+register, so a plugin loaded or reloaded mid-session does not miss the clients
+already in it. Unregister in `PluginShutdown`.
+
+The loader does **not** queue packets sent before a peer is ready and replay them
+later. It cannot judge whether a payload is still meaningful once the moment has
+passed -- a position update replayed three seconds late is worse than one that was
+dropped -- so that decision stays with you. Send from the callback, or send on
+request; do not send hopefully.
+
+Readiness is per plugin, not per client: it means *this client reported your
+plugin at your exact version*. A client running the loader but not your plugin, or
+a different build of it, never becomes ready to you.
+
 ## Transport backing (implementation note)
 
-There are two transports underneath, chosen automatically per peer -- none of this
-changes the plugin-facing API above:
+One transport: payloads ride directly on the Unreal per-connection control channel
+(`UControlChannel`), independent of any game UFUNCTION. The older transport that
+smuggled envelopes through replicated game RPCs was deleted in v54, not kept as a
+fallback. See `network_channel/CONTROL_CHANNEL_WIRE.md`.
 
-1. **Control-channel wire** (preferred): payloads ride directly on the Unreal
-   per-connection control channel (`UControlChannel`), independent of any game
-   UFUNCTION. See `network_channel/CONTROL_CHANNEL_WIRE.md`.
-2. **Legacy UFUNCTION envelope** (fallback): an FString round-tripped through a
-   replicated game function, base64 inside a `[MOD:...]` envelope.
+Nothing is sent to a peer before it has identified itself as running this loader,
+and that is not a preference -- an unrecognised control message makes the engine
+**close the connection**, so a speculative send to a vanilla peer disconnects it.
+The handshake that establishes this cannot itself use the control channel, so it
+does not: the server greets each joining client through an ordinary replicated
+engine RPC (`APlayerController::ClientMessage`, inert on a client with no loader),
+and only a client that has been greeted ever puts anything on the wire. A client
+that joins a server without the loader is never greeted, stays silent, and plays
+on normally with its networked plugins inactive.
 
-The wire is only used toward a peer once that peer has been confirmed to also run
-this modloader, via a capability handshake exchanged over the safe legacy
-transport (a modded client announces itself; the server replies). Until confirmed
--- and whenever the far end is vanilla or an older loader -- traffic uses the
-legacy transport, which is safe across versions. This gating is deliberate:
-sending a modloader control bunch to a peer that isn't intercepting it would make
-the engine drop the connection, so we never do it speculatively.
-
-Both ends must run this modloader for the wire to engage; otherwise everything
-still works over the legacy path.
+This is why readiness above is a real state a plugin has to respect rather than a
+formality: for a peer that never completes the handshake, it never arrives.

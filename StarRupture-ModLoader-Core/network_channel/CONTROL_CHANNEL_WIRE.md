@@ -76,6 +76,36 @@ engine/game control message, so a reserved type of **0xC0** is safe: the engine
 never legitimately produces it, and our detour consumes it before the switch. Gate
 real use behind a capability handshake so a vanilla peer is never sent one.
 
+**The handshake (2026-08-05).** The gate above was not implemented when the wire
+shipped, and the consequence was exactly the predicted one: a client joining a
+server without the loader sent its plugin manifest unprompted, and the server
+answered with
+
+```
+LogNet: UNetConnection::SendCloseReason:
+LogNet:  - Result=ControlChannelMessageUnknown, ErrorContext="ControlChannelMessageUnknown"
+```
+
+The handshake cannot use this channel -- that is the whole difficulty, and why the
+original commit concluded negotiation was impossible. It is impossible *in band*
+only. The authority now greets each joining client with
+`APlayerController::ClientMessage`, a replicated engine RPC that reaches a peer
+running no loader at all without harming it (`ClientTeamMessage_Implementation` at
+`0x144f8d1b0` ends at `ViewportConsole->OutputText`, and shipping never creates a
+`ViewportConsole` -- see the console-glue findings). Only a greeted client speaks
+on the wire. Implementation: `hooks/game/modloader_hello/`.
+
+An alternative worth recording, since it will look attractive again: **NMT_DebugText
+(type 17)** would let the greeting ride the control channel itself, needing no new
+hook at all. It was not taken because it depends on 17 being registered in this
+build -- `FNetControlMessageInfo::IsRegistered` is what decides between "skip
+harmlessly" and "close the connection" -- and that was not confirmed. The UE_LOG
+format strings for the DebugText path are absent from the binary's string table,
+which is not evidence either way (they are wide, and the mangling makes them
+unsearchable). If it is wrong, the failure mode is disconnecting vanilla clients:
+the same bug, mirrored. The RPC route has no equivalent risk, because a replicated
+UFUNCTION has no "unknown message" path.
+
 ## Send recipe (per target UControlChannel* cc)
 
 1. `char bunch[0x400] = {0};`

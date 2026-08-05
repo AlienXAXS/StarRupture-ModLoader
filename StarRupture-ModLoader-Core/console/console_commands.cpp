@@ -538,6 +538,12 @@ namespace ModConsole
                 out.Out("  No manifest reported.");
                 out.Out("  This client receives NO plugin packets -- either it is not running");
                 out.Out("  the mod loader, or it has not finished joining yet.");
+                if (c.greetingAttempts > 0)
+                    out.Out("  Greeted %d time(s) with no answer so far. A client running the "
+                            "loader answers on the first one.", c.greetingAttempts);
+                else
+                    out.Out("  Not currently being greeted: it either already answered once, or "
+                            "we have stopped asking.");
                 return;
             }
             if (c.plugins.empty())
@@ -558,7 +564,9 @@ namespace ModConsole
             const auto& c = clients[i];
             const char* name = c.playerName.empty() ? "(unresolved)" : c.playerName.c_str();
 
-            if (!c.reported)
+            if (!c.reported && c.greetingAttempts > 0)
+                out.Out("%-4zu %-28s greeting, no answer yet (%d)", i, name, c.greetingAttempts);
+            else if (!c.reported)
                 out.Out("%-4zu %-28s %s", i, name, "no manifest - receives nothing");
             else
                 out.Out("%-4zu %-28s %zu", i, name, c.plugins.size());

@@ -457,6 +457,7 @@
     <ClInclude Include="network_channel\network_channel.h" />
     <ClInclude Include="network_channel\packet_fragmentation.h" />
     <ClInclude Include="hooks\game\control_channel\control_channel.h" />
+    <ClInclude Include="hooks\game\modloader_hello\modloader_hello.h" />
     <ClInclude Include="plugins\plugin_network_helpers.h" />
     <ClInclude Include="plugins\plugin_packet.h" />
     <ClInclude Include="UI\imgui_backend.h" />
@@ -569,6 +570,7 @@
     <ClCompile Include="network_channel\network_channel.cpp" />
     <ClCompile Include="network_channel\packet_fragmentation.cpp" />
     <ClCompile Include="hooks\game\control_channel\control_channel.cpp" />
+    <ClCompile Include="hooks\game\modloader_hello\modloader_hello.cpp" />
     <ClCompile Include="hooks\hooks_common.cpp" />
     <ClCompile Include="hooks\symbol_resolver.cpp" />
     <ClCompile Include="hooks\hooks_interface.cpp" />

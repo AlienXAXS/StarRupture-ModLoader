@@ -356,9 +356,57 @@
 //      Operators can inspect all of this with the `clients` console command.
 //      No struct changed: MIN remains 49.
 
+// v56 (2026-08-05): Handshake before the wire, and a client-ready signal.
+//
+//      THE BUG THIS FIXES: a client sent its manifest the moment it had a world,
+//      unprompted. On a server not running the loader that control bunch is an
+//      unrecognised message type, and the engine's response to one is to close
+//      the connection (ControlChannelMessageUnknown). Joining a vanilla server
+//      with the loader installed therefore disconnected you.
+//
+//      v54 claimed capability negotiation was impossible. That was true only
+//      IN-BAND: a probe sent as a control bunch is the very thing that kills a
+//      vanilla peer. Out of band it works fine. The authority now greets each
+//      joining client through APlayerController::ClientMessage -- an ordinary
+//      replicated engine RPC, which a client without the loader hands to a
+//      viewport console that shipping builds never create, so it does nothing at
+//      all there. Nothing is put on the control channel in either direction until
+//      that greeting has been seen, so no peer can be disconnected by us again.
+//
+//      Plugins do not see the handshake. What they see is that a client is now
+//      "ready" at a defined moment, and that moment is LATER than player-join:
+//
+//      - IsClientReady(pc, self) is exactly the predicate SendPacketToClient
+//        gates on -- that client reported YOUR plugin at YOUR version. It is
+//        false during the join window even for a client that will be ready a
+//        moment later.
+//
+//      - RegisterClientReadyCallback fires once per client, per plugin, when that
+//        becomes true. Send join-time state from there, NOT from a player-joined
+//        hook: a packet sent at PostLogin is dropped, because the client has not
+//        reported yet. Registering late is safe -- the callback fires immediately
+//        for every client already ready, so a hot-reloaded plugin still learns
+//        about the clients already in the session.
+//
+//      - IsServerReady / RegisterServerReadyCallback are the client-side mirror:
+//        true once the authority has acknowledged our manifest, which is the
+//        point from which SendPacketToServer can actually arrive. The callback
+//        carries the authority's loader build tag.
+//
+//      The loader deliberately does NOT buffer and replay packets sent before a
+//      peer is ready. It cannot: payloads are opaque bytes, so it cannot tell a
+//      stale position update (worse than useless when replayed three seconds
+//      late) from state that is still valid. Sends to a peer that is not ready
+//      are dropped, and now warn once per plugin per connection instead of
+//      logging at Debug -- if you see that warning, move the send into the ready
+//      callback.
+//
+//      Fields are APPENDED to IPluginNetworkChannel, so no existing offset moved:
+//      MIN remains 49.
+
 #define PLUGIN_INTERFACE_VERSION_MIN 49
-#define PLUGIN_INTERFACE_VERSION_MAX 55
-#define PLUGIN_INTERFACE_VERSION 55
+#define PLUGIN_INTERFACE_VERSION_MAX 56
+#define PLUGIN_INTERFACE_VERSION 56
 
 enum class PluginLogLevel { Trace = 0, Debug = 1, Info = 2, Warn = 3, Error = 4 };
 enum class ConfigValueType { String, Integer, Float, Boolean, Keybind };
@@ -451,6 +499,18 @@ typedef void (*PluginWorldEndPlayCallback)(SDK::UWorld* world, const char* world
 typedef void (*PluginHUDPostRenderCallback)(void* hud);
 typedef void (*PluginNetworkMessageCallback)(const char* pluginName, const char* typeTag, const uint8_t* data, size_t size);
 typedef void (*PluginNetworkServerMessageCallback)(void* senderPlayerController, const char* pluginName, const char* typeTag, const uint8_t* data, size_t size);
+
+// v56 -- authority side. Fired once per client, per registered plugin, at the
+// moment that client becomes a valid target for THAT plugin: it has reported the
+// plugin at the registering plugin's exact version, and its player controller
+// exists. This is strictly later than a player-joined hook; a packet sent from
+// player-joined is dropped, one sent from here is not.
+typedef void (*PluginClientReadyCallback)(void* playerController);
+
+// v56 -- client side. Fired once per connection when the authority acknowledges
+// our manifest, which is the point from which SendPacketToServer can arrive.
+// serverBuildTag is the authority's loader build tag ("dev" on local builds).
+typedef void (*PluginServerReadyCallback)(const char* serverBuildTag);
 typedef void (*PluginGameThreadCallback)(void* context);
 
 // v44 -- fired whenever any crafting building finishes crafting an item.
@@ -1444,6 +1504,30 @@ struct IPluginNetworkChannel
 	void (*UnregisterServerMessageHandler)(const IPluginSelf* self, const char* typeTag, PluginNetworkServerMessageCallback callback); // v18
 	void (*ExcludeFromBroadcast)(void* playerController);    // v18
 	void (*UnexcludeFromBroadcast)(void* playerController);  // v18
+
+	// ---- Readiness (v56) -- see the v56 note at the top of this file ----------
+	//
+	// Authority side. IsClientReady is the exact predicate SendPacketToClient
+	// gates on: this client has reported YOUR plugin at YOUR version. False on a
+	// pure client, for the listen host's own controller, and during the join
+	// window -- a client is NOT ready when a player-joined hook fires.
+	bool (*IsClientReady)(void* playerController, const IPluginSelf* self);
+
+	// Fires once per client when IsClientReady(pc, self) becomes true. Registering
+	// after clients are already ready fires immediately for each of them, so a
+	// reloaded plugin does not miss the session it was loaded into. No-ops with a
+	// warning when this process is not the authority.
+	void (*RegisterClientReadyCallback)(const IPluginSelf* self, PluginClientReadyCallback callback);
+	void (*UnregisterClientReadyCallback)(const IPluginSelf* self, PluginClientReadyCallback callback);
+
+	// Client side. True once the authority has acknowledged our manifest. Always
+	// false on the authority itself (there is no server to be ready) -- a listen
+	// host's own code does not need the wire to reach itself.
+	bool (*IsServerReady)();
+
+	// Fires when IsServerReady() becomes true; fires immediately if it already is.
+	void (*RegisterServerReadyCallback)(const IPluginSelf* self, PluginServerReadyCallback callback);
+	void (*UnregisterServerReadyCallback)(const IPluginSelf* self, PluginServerReadyCallback callback);
 };
 
 // ---------------------------------------------------------------------------

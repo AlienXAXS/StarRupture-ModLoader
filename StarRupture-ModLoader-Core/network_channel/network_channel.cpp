@@ -15,7 +15,11 @@
 // for its own session.  Authority is a runtime question, answered by SessionInfo.
 #include "hooks/game/session_info/session_info.h"
 #include "hooks/game/control_channel/control_channel.h"
+#include "hooks/game/player_joined/player_joined.h"
 #include "hooks/game/player_left/player_left.h"
+#ifdef MODLOADER_CLIENT_BUILD
+#include "hooks/game/modloader_hello/modloader_hello.h"
+#endif
 #include "hooks/game/world_end_play/world_end_play.h"
 #include "hooks/game/world_begin_play/world_begin_play.h"
 #include "hooks/game/engine_tick/engine_tick.h"
@@ -25,8 +29,10 @@
 #include <vector>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <algorithm>
 #include <cstdint>
+#include <cstdio>
 
 #ifndef MODLOADER_BUILD_TAG
 #define MODLOADER_BUILD_TAG "dev"
@@ -227,6 +233,11 @@ namespace
 // Internal state
 // ============================================================
 
+// Defined near the bottom, next to the SEH read it wraps. Declared here because
+// the log lines an operator actually reads -- who reported, who never answered --
+// are worth a player name rather than only a pointer.
+static std::string PlayerNameForConnection(void* conn);
+
 namespace
 {
     // ------------------------------------------------------------
@@ -259,15 +270,28 @@ namespace
 // The only transport. Payloads travel as one control bunch per message, carrying
 // the ASCII envelope built below.
 //
-// KNOWN CONSEQUENCE OF BEING WIRE-ONLY: there is no capability negotiation, and
-// there is no way to add one -- asking "do you speak this?" would itself have to
-// be a 0xC0 bunch. UControlChannel::ReceivedBunch dispatches a leading uint8
-// through a switch covering 0x00..0x21; 0xC0 falls through to the default, and
-// the engine's default is to close the connection
-// (ENetCloseResult::ControlChannelMessageUnknown). So sending to a peer without
-// a working wire does not degrade -- it DISCONNECTS them. That is the accepted
-// trade for deleting the legacy transport; it means every peer in a session must
-// run a loader whose six control-channel patterns resolved.
+// WHY NOTHING IS SENT UNTIL THE PEER HAS IDENTIFIED ITSELF:
+// UControlChannel::ReceivedBunch dispatches a leading uint8 through a switch
+// covering 0x00..0x21; 0xC0 falls through to the default, and the engine's
+// default is to close the connection (ENetCloseResult::ControlChannelMessageUnknown).
+// Sending to a peer without a working wire does not degrade -- it DISCONNECTS
+// them. Which is why v54's claim that negotiation was impossible mattered, and
+// why it was too strong: negotiation is impossible IN BAND, because the probe
+// would be the thing that kills the peer. Out of band it is routine.
+//
+// The greeting is therefore an APlayerController::ClientMessage RPC (see
+// hooks/game/modloader_hello/), and the sequence is:
+//
+//   authority   PostLogin -> greet, retried until the client answers or we
+//               conclude it is not running the loader
+//   client      greeted -> report the manifest on the wire (the first bunch
+//               either side sends), never before
+//   authority   manifest received -> ack, and this client becomes a delivery
+//               target for the plugins it named
+//
+// A vanilla client is greeted, does nothing with it, and is never sent a bunch.
+// A loader client on a vanilla server is never greeted, so it never sends one.
+// Both were disconnections before this existed.
 //
 // The six natives this needs are REQUIRED patterns, so a game update that moves
 // one disables the whole loader at preflight rather than leaving a session where
@@ -365,6 +389,13 @@ namespace
         return out;
     }
 
+    static bool HasManifest(void* conn)
+    {
+        if (!conn) return false;
+        std::lock_guard<std::mutex> lk(g_manifestMutex);
+        return g_manifests.find(conn) != g_manifests.end();
+    }
+
     // Does this connection's reported manifest contain the plugin at that exact
     // version? False when the client never reported -- see the header note.
     static bool ClientHasPlugin(void* conn, const char* name, const char* version)
@@ -432,6 +463,183 @@ namespace
     }
 #endif // MODLOADER_CLIENT_BUILD
 
+    // ---- Greeting (authority side) ------------------------------------------
+    //
+    // The one message we are willing to send to a peer we know nothing about, so
+    // it has to be one that cannot hurt a peer running no loader at all. See the
+    // note in modloader_hello.h for why ClientMessage is inert on a shipping
+    // client, and network_channel.h for why it cannot be a control bunch.
+    //
+    // Retried rather than sent once, because PostLogin is early: the player
+    // controller exists and is owned by the connection, but its actor channel may
+    // not be open yet, and an RPC issued before it is opened goes nowhere. Rather
+    // than hunt for a later trigger that is "definitely" safe -- every candidate
+    // is a guess about engine state -- we send, watch for the manifest, and try
+    // again. The client answering is the only proof that matters.
+    //
+    // Giving up is a normal outcome, not an error: it is what a vanilla client
+    // looks like from here.
+
+    struct HelloState
+    {
+        void*    controller = nullptr;
+        int      attempts   = 0;
+        uint64_t lastMs     = 0;
+    };
+
+    static std::mutex                            g_helloMutex;
+    static std::unordered_map<void*, HelloState> g_helloByConn; // key: UNetConnection*
+
+    static constexpr uint64_t kHelloRetryMs     = 1000;
+    static constexpr int      kHelloMaxAttempts = 10;
+
+    // No C++ object here needs unwinding, so the SDK call can sit inside __try:
+    // ProcessEvent walks engine state that a departing client can invalidate
+    // between our null check and the call.
+    static bool SendHelloSEH(void* playerController, const wchar_t* text)
+    {
+        __try
+        {
+            auto* pc = reinterpret_cast<SDK::APlayerController*>(playerController);
+            SDK::FString message(text);
+            pc->ClientMessage(message, SDK::FName(0), 0.0f);
+            return true;
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER)
+        {
+            return false;
+        }
+    }
+
+    static bool GreetClient(void* playerController)
+    {
+        wchar_t greeting[160] = {};
+        _snwprintf_s(greeting, _TRUNCATE, L"%s%S",
+                     NetworkChannel::kHelloSentinel, MODLOADER_BUILD_TAG);
+        return SendHelloSEH(playerController, greeting);
+    }
+
+    // Queue a joining client for greeting. The listen host's own controller is
+    // skipped: it has no connection, and it is this process.
+    static bool IsLocalPlayerController(void* playerController);
+
+    static void BeginGreeting(void* playerController)
+    {
+        if (!HasNetAuthority() || !playerController) return;
+        if (IsLocalPlayerController(playerController)) return;
+
+        void* conn = ConnectionForPlayer(playerController);
+        if (!conn)
+        {
+            ModLoaderLogger::LogDebug(
+                L"[NetworkChannel] Player joined on controller %p with no NetConnection -- "
+                L"nothing to greet", playerController);
+            return;
+        }
+
+        {
+            std::lock_guard<std::mutex> lk(g_helloMutex);
+            HelloState& st = g_helloByConn[conn];
+            st.controller  = playerController;
+            st.attempts    = 1;
+            st.lastMs      = GetTickCount64();
+        }
+
+        const bool ok = GreetClient(playerController);
+        ModLoaderLogger::LogDebug(
+            L"[NetworkChannel] Greeted peer %p (attempt 1)%s", conn,
+            ok ? L"" : L" -- the RPC call itself failed");
+    }
+
+    // Drive outstanding greetings. Cheap when there are none, which is the
+    // steady state for a running session.
+    static void PumpGreetings(uint64_t nowMs)
+    {
+        // Emptiness first, authority second, and the order is not arbitrary:
+        // HasNetAuthority() is a native net-mode call on client builds, and this
+        // runs every frame for the whole session. A pure client leaves here
+        // having taken one uncontended lock.
+        {
+            std::lock_guard<std::mutex> lk(g_helloMutex);
+            if (g_helloByConn.empty()) return;
+        }
+
+        if (!HasNetAuthority()) return;
+
+        std::vector<std::pair<void*, void*>> toGreet; // conn, controller
+        std::vector<void*>                   answered;
+        std::vector<void*>                   gaveUp;
+
+        {
+            std::lock_guard<std::mutex> lk(g_helloMutex);
+            for (auto& kv : g_helloByConn)
+            {
+                void*       conn = kv.first;
+                HelloState& st   = kv.second;
+
+                // Whether this peer has answered is deliberately NOT checked
+                // here: that reads the manifest map, and nesting those two
+                // mutexes in an order nothing else observes is how a deadlock
+                // gets built. Collect candidates now, decide once the lock is out
+                // of the way.
+                if (nowMs - st.lastMs < kHelloRetryMs) continue;
+                if (st.attempts >= kHelloMaxAttempts) { gaveUp.push_back(conn); continue; }
+                toGreet.push_back({ conn, st.controller });
+            }
+        }
+
+        for (auto& c : toGreet)
+            if (HasManifest(c.first)) answered.push_back(c.first);
+
+        for (void* conn : gaveUp)
+        {
+            if (HasManifest(conn)) { answered.push_back(conn); continue; }
+
+            // One INFO line per client, stating an outcome. The greetings
+            // themselves are Debug/Trace: an operator wants to know what each
+            // player turned out to be, not to watch us ask.
+            std::string name = PlayerNameForConnection(conn);
+            ModLoaderLogger::LogInfo(
+                L"[NetworkChannel] Player '%S' is NOT running the mod loader (no answer to %d "
+                L"greetings). They will be sent no plugin data. This is the expected, safe outcome "
+                L"for a vanilla client -- not an error, and they stay connected.",
+                name.empty() ? "(unnamed)" : name.c_str(), kHelloMaxAttempts);
+        }
+
+        {
+            std::lock_guard<std::mutex> lk(g_helloMutex);
+            for (void* conn : gaveUp)   g_helloByConn.erase(conn);
+            for (void* conn : answered) g_helloByConn.erase(conn);
+        }
+
+        for (auto& c : toGreet)
+        {
+            if (std::find(answered.begin(), answered.end(), c.first) != answered.end()) continue;
+
+            int attempt = 0;
+            {
+                std::lock_guard<std::mutex> lk(g_helloMutex);
+                auto it = g_helloByConn.find(c.first);
+                if (it == g_helloByConn.end()) continue; // peer left mid-pump
+                it->second.attempts++;
+                it->second.lastMs = nowMs;
+                attempt = it->second.attempts;
+            }
+
+            GreetClient(c.second);
+            ModLoaderLogger::LogTrace(
+                L"[NetworkChannel] Re-greeted peer %p (attempt %d/%d)",
+                c.first, attempt, kHelloMaxAttempts);
+        }
+    }
+
+    static int GreetingAttemptsFor(void* conn)
+    {
+        std::lock_guard<std::mutex> lk(g_helloMutex);
+        auto it = g_helloByConn.find(conn);
+        return it == g_helloByConn.end() ? 0 : it->second.attempts;
+    }
+
     // ---- Wire send ----------------------------------------------------------
 
     // Bytes we are willing to put in one control bunch. Conservative on purpose:
@@ -487,9 +695,57 @@ namespace
         }
     }
 
-    // Everything keyed by connection lives in three places; forgetting a peer has
-    // to clear all of them or the leftovers outlive it. Defined here, after all
-    // three stores exist.
+    // ---- Readiness (authority side) -----------------------------------------
+    //
+    // "Ready" is not one state, it is one per plugin: a client is a valid target
+    // for plugin P version V exactly when it reported P at V, which is the same
+    // predicate the send path gates on. Exposing anything coarser would invite
+    // the mistake this is here to prevent -- a plugin seeing "client connected"
+    // and sending to a client that has no idea what it is.
+    //
+    // Announcement is driven from the tick rather than from manifest receipt,
+    // for one reason: a manifest can arrive before the connection has a player
+    // controller, and a ready callback carrying a null controller is useless to
+    // the plugin receiving it. The tick retries until the controller resolves.
+    //
+    // No replay buffer sits behind this, and there should never be one. The
+    // loader sees opaque bytes: it cannot tell a stale position update -- worse
+    // than useless when replayed three seconds late -- from state that is still
+    // valid. Deciding that is the plugin's job, and this callback is what lets it.
+
+    struct ClientReadyReg
+    {
+        std::string               plugin;
+        std::string               version;
+        PluginClientReadyCallback cb;
+    };
+
+    static std::mutex                  g_readyMutex;
+    static std::vector<ClientReadyReg> g_clientReadyRegs;
+    // Which callbacks have already been told about which connection.
+    static std::unordered_map<void*, std::vector<PluginClientReadyCallback>> g_announced;
+    static bool                        g_readyDirty = false;
+    // Warn-once keys ("plugin\x01<conn>") so a mistaken send does not spam.
+    static std::unordered_set<std::string> g_notReadyWarned;
+
+    static void MarkReadyDirty()
+    {
+        std::lock_guard<std::mutex> lk(g_readyMutex);
+        g_readyDirty = true;
+    }
+
+    // True if this (plugin, connection) pair should be warned about now.
+    static bool ShouldWarnNotReady(const char* plugin, void* conn)
+    {
+        char key[160];
+        _snprintf_s(key, sizeof(key), _TRUNCATE, "%s\x01%p", plugin ? plugin : "", conn);
+        std::lock_guard<std::mutex> lk(g_readyMutex);
+        return g_notReadyWarned.insert(key).second;
+    }
+
+    // Everything keyed by connection lives in five places; forgetting a peer has
+    // to clear all of them or the leftovers outlive it. Defined here, after every
+    // store exists.
     static void ForgetConnectionState(void* conn)
     {
         if (!conn) return;
@@ -502,6 +758,94 @@ namespace
         {
             std::lock_guard<std::mutex> lk(g_manifestMutex);
             g_manifests.erase(conn);
+        }
+        {
+            std::lock_guard<std::mutex> lk(g_helloMutex);
+            g_helloByConn.erase(conn);
+        }
+        {
+            std::lock_guard<std::mutex> lk(g_readyMutex);
+            g_announced.erase(conn);
+            // Cheap and rare, and re-warning about a peer that reconnects is
+            // wanted rather than avoided.
+            g_notReadyWarned.clear();
+        }
+    }
+
+    // Announce every (client, plugin) pair that has become ready and has not
+    // been announced yet. Runs from the tick; the dirty flag keeps the steady
+    // state to one lock and a bool.
+    static void PumpClientReady()
+    {
+        // Cheap check before the native one, as in PumpGreetings.
+        {
+            std::lock_guard<std::mutex> lk(g_readyMutex);
+            if (!g_readyDirty || g_clientReadyRegs.empty()) return;
+        }
+
+        if (!HasNetAuthority()) return;
+
+        // Snapshot the manifests, then the registrations, then decide. Callbacks
+        // are plugin code and are never invoked with a lock held.
+        std::unordered_map<void*, std::vector<NetworkChannel::RemotePlugin>> manifests;
+        {
+            std::lock_guard<std::mutex> lk(g_manifestMutex);
+            manifests = g_manifests;
+        }
+
+        struct Pending { PluginClientReadyCallback cb; void* conn; void* pc; std::string plugin; };
+        std::vector<Pending> pending;
+        bool stillWaiting = false;
+
+        {
+            std::lock_guard<std::mutex> lk(g_readyMutex);
+            for (const auto& mkv : manifests)
+            {
+                void* conn = mkv.first;
+                for (const auto& reg : g_clientReadyRegs)
+                {
+                    auto& told = g_announced[conn];
+                    if (std::find(told.begin(), told.end(), reg.cb) != told.end()) continue;
+
+                    bool match = false;
+                    for (const auto& rp : mkv.second)
+                        if (rp.name == reg.plugin && rp.version == reg.version) { match = true; break; }
+                    if (!match) continue;
+
+                    // The controller can lag the manifest. Leave the pair
+                    // unannounced and try again next tick rather than handing a
+                    // plugin a null it cannot send to.
+                    void* pc = PlayerForConnection(conn);
+                    if (!pc) { stillWaiting = true; continue; }
+
+                    told.push_back(reg.cb);
+                    pending.push_back({ reg.cb, conn, pc, reg.plugin });
+                }
+            }
+            g_readyDirty = stillWaiting;
+        }
+
+        for (const auto& p : pending)
+        {
+            ModLoaderLogger::LogDebug(
+                L"[NetworkChannel] Client %p is ready for plugin '%S' -- notifying",
+                p.conn, p.plugin.c_str());
+            try
+            {
+                p.cb(p.pc);
+            }
+            catch (const std::exception& ex)
+            {
+                ModLoaderLogger::LogError(
+                    L"[NetworkChannel] Exception in client-ready callback for plugin '%S': %S",
+                    p.plugin.c_str(), ex.what());
+            }
+            catch (...)
+            {
+                ModLoaderLogger::LogError(
+                    L"[NetworkChannel] Unknown exception in client-ready callback for plugin '%S'",
+                    p.plugin.c_str());
+            }
         }
     }
 
@@ -720,12 +1064,31 @@ namespace
         // A version mismatch is treated as absence on purpose: two builds of a
         // plugin that disagree about their own packet layout is precisely the
         // case this exists to stop.
-        if (!ClientHasPlugin(ConnectionForPlayer(playerController), self->name, self->version))
+        void* targetConn = ConnectionForPlayer(playerController);
+        if (!ClientHasPlugin(targetConn, self->name, self->version))
         {
-            ModLoaderLogger::LogDebug(
-                L"[NetworkChannel] SendPacketToClient skipped: player=%p has not reported "
-                L"plugin '%S' version '%S'",
-                playerController, self->name, self->version ? self->version : "");
+            // Warned, not logged at Debug, and warned once per plugin per peer:
+            // a targeted send names a specific recipient, so a dropped one is
+            // nearly always a plugin sending at player-join instead of waiting
+            // for its ready callback -- which is invisible at Debug and looks
+            // like the network losing packets. Broadcasts stay at Trace: they
+            // skip non-matching clients by design and would drown this out.
+            if (ShouldWarnNotReady(self->name, targetConn))
+            {
+                ModLoaderLogger::LogWarn(
+                    L"[NetworkChannel] SendPacketToClient DROPPED for plugin '%S': player=%p has not "
+                    L"reported '%S' version '%S' (greeting attempts so far: %d). If you are sending "
+                    L"from a player-joined hook, that is too early -- use "
+                    L"Network->RegisterClientReadyCallback. Further drops for this pair are silent.",
+                    self->name, playerController, self->name,
+                    self->version ? self->version : "", GreetingAttemptsFor(targetConn));
+            }
+            else
+            {
+                ModLoaderLogger::LogTrace(
+                    L"[NetworkChannel] SendPacketToClient skipped: player=%p not ready for '%S'",
+                    playerController, self->name);
+            }
             return;
         }
 
@@ -847,6 +1210,20 @@ namespace
     {
         // No-op on server
     }
+
+    // A dedicated server has no server to become ready to.
+    static bool NC_IsServerReady() { return false; }
+
+    static void NC_RegisterServerReadyCallback(const IPluginSelf* self, PluginServerReadyCallback)
+    {
+        if (self && self->name)
+            ModLoaderLogger::LogWarn(
+                L"[NetworkChannel] RegisterServerReadyCallback ignored for plugin '%S': a dedicated "
+                L"server is the authority and has no server to connect to",
+                self->name);
+    }
+
+    static void NC_UnregisterServerReadyCallback(const IPluginSelf*, PluginServerReadyCallback) {}
 #endif // !MODLOADER_CLIENT_BUILD
 
     static void NC_RegisterServerMessageHandler(const IPluginSelf* self, const char* typeTag,
@@ -921,6 +1298,66 @@ namespace
         return false;
     }
 
+    // ---- Readiness API (authority side) -------------------------------------
+
+    static bool NC_IsClientReady(void* playerController, const IPluginSelf* self)
+    {
+        if (!playerController || !self || !self->name) return false;
+        if (!HasNetAuthority()) return false;
+        if (IsLocalPlayerController(playerController)) return false;
+        return ClientHasPlugin(ConnectionForPlayer(playerController), self->name, self->version);
+    }
+
+    static void NC_RegisterClientReadyCallback(const IPluginSelf* self, PluginClientReadyCallback callback)
+    {
+        if (!self || !self->name || !callback) return;
+
+        if (!HasNetAuthority())
+        {
+            ModLoaderLogger::LogWarn(
+                L"[NetworkChannel] RegisterClientReadyCallback ignored for plugin '%S': this process "
+                L"is not the session authority, so it has no clients to become ready",
+                self->name);
+            return;
+        }
+
+        {
+            std::lock_guard<std::mutex> lk(g_readyMutex);
+            for (const auto& reg : g_clientReadyRegs)
+                if (reg.cb == callback && reg.plugin == self->name) return; // already registered
+
+            g_clientReadyRegs.push_back(
+                { self->name, self->version ? self->version : "", callback });
+
+            // Clients already connected and already ready are announced on the
+            // next tick. This is what makes registering from a reloaded plugin
+            // work: without it a reload mid-session would hear about nobody.
+            g_readyDirty = true;
+        }
+
+        ModLoaderLogger::LogDebug(
+            L"[NetworkChannel] Client-ready callback registered for plugin='%S' version='%S'",
+            self->name, self->version ? self->version : "");
+    }
+
+    static void NC_UnregisterClientReadyCallback(const IPluginSelf* self, PluginClientReadyCallback callback)
+    {
+        if (!self || !self->name || !callback) return;
+
+        std::lock_guard<std::mutex> lk(g_readyMutex);
+        g_clientReadyRegs.erase(
+            std::remove_if(g_clientReadyRegs.begin(), g_clientReadyRegs.end(),
+                           [&](const ClientReadyReg& r)
+                           { return r.cb == callback && r.plugin == self->name; }),
+            g_clientReadyRegs.end());
+
+        // Drop the "already told" records too, so re-registering later announces
+        // from scratch rather than silently skipping every current client.
+        for (auto& kv : g_announced)
+            kv.second.erase(std::remove(kv.second.begin(), kv.second.end(), callback),
+                            kv.second.end());
+    }
+
 // ============================================================
 // End of authority side
 // ============================================================
@@ -970,10 +1407,122 @@ namespace
 
     static void SendManifestToServer(bool force);
 
+    // ---- The gate -----------------------------------------------------------
+    //
+    // Nothing this client sends reaches the control channel until the authority
+    // has greeted us. This flag, not the greeting itself, is the fix for the
+    // disconnect: an ungreeted client that stays silent survives on a server
+    // running no loader at all, which is what joining one should look like.
+    //
+    // Cleared on world end play, because the next world is a different
+    // connection and says nothing about whether that peer speaks the wire.
+    static bool        g_serverSpeaksWire = false;
+    static std::string g_serverGreetTag;
+
+    // Not being greeted is silent by design -- but silence is exactly what a
+    // player reports as "the mod does nothing on that server", so it gets one
+    // INFO line saying so. Timed from world begin play rather than fired on any
+    // event, because the case being described is one where no event arrives.
+    //
+    // 20s: the authority greets at PostLogin and retries for ~10s, so anything
+    // past that is a settled answer rather than a slow join.
+    static constexpr uint64_t kNoGreetingNoticeMs = 20000;
+    static uint64_t g_worldStartedMs   = 0;
+    static bool     g_noGreetingLogged = false;
+
+    // Plugins that tried to send before we were greeted, so the warning fires
+    // once each rather than once per packet.
+    static std::unordered_set<std::string> g_earlySendWarned;
+
+    // ---- Server-ready callbacks (client side) -------------------------------
+    static std::mutex                              g_srvReadyMutex;
+    static std::vector<PluginServerReadyCallback>  g_serverReadyCbs;
+    static std::vector<PluginServerReadyCallback>  g_serverReadyFired;
+
+    static bool ServerReadyNow(); // defined below, next to the ack handler
+
+    static void FireServerReady(const std::vector<PluginServerReadyCallback>& cbs,
+                                const std::string& tag)
+    {
+        for (auto* cb : cbs)
+        {
+            if (!cb) continue;
+            try { cb(tag.c_str()); }
+            catch (const std::exception& ex)
+            {
+                ModLoaderLogger::LogError(
+                    L"[NetworkChannel] Exception in server-ready callback: %S", ex.what());
+            }
+            catch (...)
+            {
+                ModLoaderLogger::LogError(L"[NetworkChannel] Unknown exception in server-ready callback");
+            }
+        }
+    }
+
+    static void NC_RegisterServerReadyCallback(const IPluginSelf* self, PluginServerReadyCallback callback)
+    {
+        if (!self || !self->name || !callback) return;
+
+        std::vector<PluginServerReadyCallback> fireNow;
+        std::string tag;
+        {
+            std::lock_guard<std::mutex> lk(g_srvReadyMutex);
+            for (auto* cb : g_serverReadyCbs)
+                if (cb == callback) return; // already registered
+            g_serverReadyCbs.push_back(callback);
+
+            // Registering after the fact must not lose the event -- a plugin
+            // loaded or reloaded mid-session would otherwise wait forever for a
+            // readiness it had already missed.
+            if (ServerReadyNow())
+            {
+                g_serverReadyFired.push_back(callback);
+                fireNow.push_back(callback);
+                tag = g_serverGreetTag;
+            }
+        }
+
+        if (!fireNow.empty())
+        {
+            ModLoaderLogger::LogDebug(
+                L"[NetworkChannel] Server already ready -- firing callback immediately for plugin '%S'",
+                self->name);
+            FireServerReady(fireNow, tag);
+        }
+    }
+
+    static void NC_UnregisterServerReadyCallback(const IPluginSelf* self, PluginServerReadyCallback callback)
+    {
+        if (!self || !callback) return;
+        std::lock_guard<std::mutex> lk(g_srvReadyMutex);
+        g_serverReadyCbs.erase(std::remove(g_serverReadyCbs.begin(), g_serverReadyCbs.end(), callback),
+                               g_serverReadyCbs.end());
+        g_serverReadyFired.erase(std::remove(g_serverReadyFired.begin(), g_serverReadyFired.end(), callback),
+                                 g_serverReadyFired.end());
+    }
+
     static void NC_SendPacketToServer(const IPluginSelf* self, const char* typeTag,
                                       const uint8_t* data, size_t size)
     {
         if (!self || !self->name || !typeTag || !data || size == 0) return;
+
+        if (!g_serverSpeaksWire)
+        {
+            bool first = false;
+            {
+                std::lock_guard<std::mutex> lk(g_srvReadyMutex);
+                first = g_earlySendWarned.insert(self->name).second;
+            }
+            if (first)
+                ModLoaderLogger::LogWarn(
+                    L"[NetworkChannel] SendPacketToServer DROPPED for plugin '%S': the server has not "
+                    L"identified itself as running the mod loader. Either it is not, or we have not "
+                    L"been greeted yet -- use Network->RegisterServerReadyCallback rather than sending "
+                    L"on join. Further drops for this plugin are silent.",
+                    self->name);
+            return;
+        }
 
         // Insurance against the world-begin-play report having failed (channel
         // not open yet, say). A no-op once it has succeeded for this connection.
@@ -1030,6 +1579,11 @@ namespace
         // its own plugin set is already the reference the gating compares against.
         if (HasNetAuthority()) return;
 
+        // THE gate. Reporting our plugins is the first thing this client would
+        // ever put on the control channel, and doing that to a server running no
+        // loader is what closed the connection. No greeting, no wire.
+        if (!g_serverSpeaksWire) return;
+
         void* conn = ServerConnection();
         if (!conn) return;
 
@@ -1062,11 +1616,16 @@ namespace
                 if (!g_gaveUpLogged)
                 {
                     g_gaveUpLogged = true;
+                    // "The server probably has no mod loader" is no longer a
+                    // possible explanation: we only send this after the server
+                    // greeted us, so it has one. Something else is wrong, and
+                    // saying the old thing would send whoever reads this after
+                    // the wrong problem entirely.
                     ModLoaderLogger::LogError(
-                        L"[NetworkChannel] Gave up reporting our plugin manifest after %d attempts -- "
-                        L"the server never acknowledged. This client will receive NO plugin packets. "
-                        L"Most likely the server is not running the mod loader, or is running a build "
-                        L"without the control-channel transport.",
+                        L"[NetworkChannel] Gave up reporting our plugin manifest after %d attempts. "
+                        L"The server greeted us, so it IS running the mod loader -- but it never "
+                        L"acknowledged our reply. This client will receive NO plugin packets. Check "
+                        L"the server's log for the other end of this exchange.",
                         kMaxAttempts);
                 }
                 return;
@@ -1089,10 +1648,17 @@ namespace
                                          reinterpret_cast<const uint8_t*>(body.data()),
                                          body.size())))
         {
-            ModLoaderLogger::LogInfo(
-                L"[NetworkChannel] Reported %d plugin(s) to the server (generation %u, attempt %d) "
-                L"-- awaiting acknowledgement",
-                count, gen, g_attempts);
+            // Only the first attempt is INFO. A retry means the previous one was
+            // not acknowledged, which the give-up ERROR below reports properly --
+            // ten INFO lines saying the same thing would just bury it.
+            if (g_attempts == 1)
+                ModLoaderLogger::LogInfo(
+                    L"[NetworkChannel] Reported our %d plugin(s) to the server -- awaiting "
+                    L"acknowledgement", count);
+            else
+                ModLoaderLogger::LogDebug(
+                    L"[NetworkChannel] Re-reported %d plugin(s) (generation %u, attempt %d/%d)",
+                    count, gen, g_attempts, kMaxAttempts);
         }
         else
         {
@@ -1100,6 +1666,56 @@ namespace
                 L"[NetworkChannel] Manifest attempt %d could not be put on the wire; will retry in %llums",
                 g_attempts, kRetryIntervalMs);
         }
+    }
+
+    // The authority greeted us. Everything the client can do on the wire starts
+    // here, and until it happens this client is indistinguishable from one with
+    // no loader at all -- deliberately, because that is what makes it safe on a
+    // server that has none.
+    static void OnServerGreeting(const wchar_t* payload)
+    {
+        char narrow[128] = {};
+        if (payload && *payload)
+            WideCharToMultiByte(CP_UTF8, 0, payload, -1, narrow, sizeof(narrow), nullptr, nullptr);
+
+        if (g_serverSpeaksWire)
+        {
+            // The authority retries until we answer, so duplicates are normal
+            // rather than a fault -- our manifest and its greeting crossed.
+            ModLoaderLogger::LogTrace(
+                L"[NetworkChannel] Repeat greeting from the authority (build '%S')", narrow);
+            return;
+        }
+
+        g_serverSpeaksWire = true;
+        g_serverGreetTag   = narrow[0] ? narrow : "(unknown)";
+
+        ModLoaderLogger::LogInfo(
+            L"[NetworkChannel] The server IS running the mod loader (build '%S') -- reporting our "
+            L"plugins to it now. Nothing was sent before this point.", g_serverGreetTag.c_str());
+
+        SendManifestToServer(/*force*/ true);
+    }
+
+    // Say once, out loud, that this session has no plugin networking. Runs from
+    // the tick on the not-greeted path, so it must stay cheap: a comparison of
+    // two integers until the moment it fires, and one net-driver read after.
+    static void ReportNoGreetingOnce()
+    {
+        if (g_noGreetingLogged || g_worldStartedMs == 0) return;
+        if (GetTickCount64() - g_worldStartedMs < kNoGreetingNoticeMs) return;
+
+        g_noGreetingLogged = true; // one shot per world, whatever we conclude
+
+        // Single player and listen hosts have no server connection and are not
+        // waiting to be greeted by anyone. Nothing to report.
+        if (!ServerConnection()) return;
+
+        ModLoaderLogger::LogInfo(
+            L"[NetworkChannel] The server has not identified itself as running the mod loader, so "
+            L"plugin networking is INACTIVE for this session. Nothing has been or will be sent to "
+            L"it. This is normal when joining a server without the mod loader, and it is why you "
+            L"were not disconnected -- older mod loader builds were, at this point in the join.");
     }
 
     // Manifest refresh keyed on the plugin generation. The alternative --
@@ -1113,6 +1729,13 @@ namespace
         // fine occasionally, not fine on every frame of a running game for the
         // entire session. A connection change without a plugin change is caught
         // by the world begin/end play handlers, which clear the acked flag.
+        //
+        // The greeting check has to be part of that early-out, not left to the
+        // gate inside SendManifestToServer: an ungreeted client is the ordinary
+        // case on a server without the loader, and it lasts the whole session,
+        // so falling through to the net-mode call every frame is precisely the
+        // cost this early-out exists to avoid.
+        if (!g_serverSpeaksWire) { ReportNoGreetingOnce(); return; }
         if (g_manifestAcked && PluginManager::GetPluginGeneration() == g_manifestSentGen)
             return;
 
@@ -1149,7 +1772,30 @@ namespace
             ModLoaderLogger::LogDebug(
                 L"[NetworkChannel] Duplicate manifest acknowledgement from server (build '%S')",
                 tag.c_str());
+
+        // The ack, not the greeting, is what plugins are told about: it is the
+        // first moment the authority is known to have our plugin list, and
+        // therefore the first moment a packet from us can be routed anywhere.
+        std::vector<PluginServerReadyCallback> toFire;
+        std::string readyTag;
+        {
+            std::lock_guard<std::mutex> lk(g_srvReadyMutex);
+            readyTag = g_serverGreetTag.empty() ? tag : g_serverGreetTag;
+            for (auto* cb : g_serverReadyCbs)
+            {
+                if (std::find(g_serverReadyFired.begin(), g_serverReadyFired.end(), cb)
+                    != g_serverReadyFired.end())
+                    continue;
+                g_serverReadyFired.push_back(cb);
+                toFire.push_back(cb);
+            }
+        }
+        FireServerReady(toFire, readyTag);
     }
+
+    static bool ServerReadyNow() { return !HasNetAuthority() && g_manifestAcked; }
+
+    static bool NC_IsServerReady() { return ServerReadyNow(); }
 
     // ---- Echo self-test (client side) ---------------------------------------
 
@@ -1168,6 +1814,12 @@ namespace
         if (!Hooks::ControlChannel::IsAvailable())
         {
             err = "Control channel unavailable; see preflight warnings.";
+            return false;
+        }
+        if (!g_serverSpeaksWire)
+        {
+            err = "The server has not greeted us, so it is either not running the mod loader or has "
+                  "not got to us yet. Sending anyway would disconnect a vanilla server.";
             return false;
         }
         void* conn = ServerConnection();
@@ -1259,6 +1911,14 @@ namespace
         NC_UnregisterServerMessageHandler,
         NC_ExcludeFromBroadcast,
         NC_UnexcludeFromBroadcast,
+        // v56 -- appended, never inserted: existing plugins read every field
+        // above this line by offset.
+        NC_IsClientReady,
+        NC_RegisterClientReadyCallback,
+        NC_UnregisterClientReadyCallback,
+        NC_IsServerReady,
+        NC_RegisterServerReadyCallback,
+        NC_UnregisterServerReadyCallback,
     };
 
 } // anonymous namespace
@@ -1406,9 +2066,22 @@ static bool DispatchServerNarrow(void* senderConn, void* senderUObject,
                 g_manifests[senderConn] = std::move(plugins);
             }
 
+            // The other half of the pair above: one INFO line saying what this
+            // player turned out to be. Everything finer-grained -- which plugins,
+            // which versions -- is Debug, and `clients` shows it on demand.
+            std::string senderName = PlayerNameForConnection(senderConn);
             ModLoaderLogger::LogInfo(
-                L"[NetworkChannel] Client %p reported %zu plugin(s) -- acknowledging",
-                senderConn, count);
+                L"[NetworkChannel] Player '%S' is running the mod loader with %zu plugin(s) "
+                L"-- acknowledging, plugin data can now flow to them",
+                senderName.empty() ? "(unnamed)" : senderName.c_str(), count);
+
+            // It answered, so stop greeting it, and let the ready pump look at
+            // what it named.
+            {
+                std::lock_guard<std::mutex> lk(g_helloMutex);
+                g_helloByConn.erase(senderConn);
+            }
+            MarkReadyDirty();
 
             // Answer so the client knows it landed. Without this it cannot tell a
             // delivered manifest from one that vanished, and would either retry
@@ -1550,6 +2223,16 @@ static void OnWorldEndPlayForgetConns(SDK::UWorld* /*world*/, const char* /*worl
         std::lock_guard<std::mutex> lk(g_manifestMutex);
         g_manifests.clear();
     }
+    {
+        std::lock_guard<std::mutex> lk(g_helloMutex);
+        g_helloByConn.clear();
+    }
+    {
+        std::lock_guard<std::mutex> lk(g_readyMutex);
+        g_announced.clear();
+        g_notReadyWarned.clear();
+        g_readyDirty = !g_clientReadyRegs.empty(); // re-announce into the next world
+    }
 #ifdef MODLOADER_CLIENT_BUILD
     // Our own report is void too: the next world means a new connection, so the
     // previous acknowledgement no longer says anything about the next one.
@@ -1559,6 +2242,19 @@ static void OnWorldEndPlayForgetConns(SDK::UWorld* /*world*/, const char* /*worl
     g_attempts        = 0;
     g_gaveUpLogged    = false;
     g_lastAttemptMs   = 0;
+
+    // And the next server is a different question entirely. Staying "greeted"
+    // across worlds is precisely how a client that once played on a modded
+    // server would go on to disconnect itself from a vanilla one.
+    g_serverSpeaksWire = false;
+    g_serverGreetTag.clear();
+    g_worldStartedMs   = 0;
+    g_noGreetingLogged = false;
+    {
+        std::lock_guard<std::mutex> lk(g_srvReadyMutex);
+        g_serverReadyFired.clear();
+        g_earlySendWarned.clear();
+    }
 #endif
 }
 
@@ -1567,6 +2263,11 @@ static void OnWorldEndPlayForgetConns(SDK::UWorld* /*world*/, const char* /*worl
 // connection and control channel are both reliably up.
 static void OnWorldBeginPlayReport(SDK::UWorld* /*world*/, const char* /*worldName*/)
 {
+    // Starts the clock on the not-greeted notice. Set even when we have already
+    // been greeted; the notice checks that first and costs nothing then.
+    g_worldStartedMs   = GetTickCount64();
+    g_noGreetingLogged = false;
+
     SendManifestToServer(/*force*/ false);
 }
 #endif
@@ -1665,11 +2366,27 @@ static void OnWireReceive(void* netConnection, const uint8_t* data, size_t len)
 // an authority-side concern, and the manifest refresh is a client-side one.
 static void OnEngineTick(float /*deltaSeconds*/)
 {
-    SweepStalePartials(GetTickCount64());
+    const uint64_t now = GetTickCount64();
+
+    SweepStalePartials(now);
+
+    // Authority side, and both are no-ops with nothing outstanding: greetings
+    // waiting on an answer, and (client, plugin) pairs waiting to be announced.
+    PumpGreetings(now);
+    PumpClientReady();
 
 #ifdef MODLOADER_CLIENT_BUILD
     RefreshManifestIfStale();
 #endif
+}
+
+// The authority greets a client here rather than anywhere later: it is the first
+// point at which the controller exists and is owned by the connection. It is not
+// necessarily a point at which the RPC will arrive, which is what the retry in
+// PumpGreetings is for.
+static void OnPlayerJoinedGreet(void* playerController)
+{
+    BeginGreeting(playerController);
 }
 
 // Best-effort player name for a connection. Resolved at query time rather than
@@ -1724,6 +2441,16 @@ std::vector<NetworkChannel::ClientManifest> NetworkChannel::GetClientManifests()
     SDK::UGameplayStatics::GetAllActorsOfClass(
         world, SDK::ACrPlayerControllerBase::StaticClass(), &actors);
 
+    // Snapshot the greeting state BEFORE taking the manifest lock. Reading it
+    // inside the loop would hold manifest->hello, and PumpGreetings is careful
+    // never to hold those two together for exactly that reason.
+    std::unordered_map<void*, int> attempts;
+    {
+        std::lock_guard<std::mutex> lk(g_helloMutex);
+        for (const auto& kv : g_helloByConn)
+            attempts[kv.first] = kv.second.attempts;
+    }
+
     std::lock_guard<std::mutex> lk(g_manifestMutex);
 
     for (int32_t i = 0; i < actors.Num(); ++i)
@@ -1732,8 +2459,9 @@ std::vector<NetworkChannel::ClientManifest> NetworkChannel::GetClientManifests()
         if (!conn) continue;   // listen host's own controller
 
         ClientManifest entry;
-        entry.connection = conn;
-        entry.playerName = PlayerNameForConnection(conn);
+        entry.connection       = conn;
+        entry.playerName       = PlayerNameForConnection(conn);
+        entry.greetingAttempts = attempts.count(conn) ? attempts[conn] : 0;
 
         auto it = g_manifests.find(conn);
         if (it != g_manifests.end())
@@ -1780,8 +2508,21 @@ void NetworkChannel::Initialize()
             L"REQUIRED at preflight, so reaching this line means the scan succeeded but the hook "
             L"install did not; see the [ControlChannel] errors above.");
 
+#ifdef MODLOADER_CLIENT_BUILD
+    // The other half of the handshake. Installed even on a client that will go on
+    // to host: a listen host is still greeted by nobody, and the hook is inert
+    // when no greeting arrives.
+    Hooks::ModLoaderHello::SetCallback(&OnServerGreeting);
+    if (!Hooks::ModLoaderHello::Install())
+        ModLoaderLogger::LogError(
+            L"[NetworkChannel] Could not listen for the authority's greeting -- this client will "
+            L"never report its plugins, so networked plugins will do nothing. It will NOT be "
+            L"disconnected, which is the failure mode this is designed to have.");
+#endif
+
     // These lazily install their own hooks on first registration.
     Hooks::PlayerLeft::RegisterPluginCallback(&OnPlayerLeftForgetConn);
+    Hooks::PlayerJoined::RegisterPluginCallback(&OnPlayerJoinedGreet);
     Hooks::WorldEndPlay::RegisterBeforeCallback(&OnWorldEndPlayForgetConns);
     Hooks::EngineTick::RegisterPluginCallback(&OnEngineTick);
 #ifdef MODLOADER_CLIENT_BUILD
@@ -1792,10 +2533,12 @@ void NetworkChannel::Initialize()
 void NetworkChannel::Shutdown()
 {
     Hooks::PlayerLeft::UnregisterPluginCallback(&OnPlayerLeftForgetConn);
+    Hooks::PlayerJoined::UnregisterPluginCallback(&OnPlayerJoinedGreet);
     Hooks::WorldEndPlay::UnregisterBeforeCallback(&OnWorldEndPlayForgetConns);
     Hooks::EngineTick::UnregisterPluginCallback(&OnEngineTick);
 #ifdef MODLOADER_CLIENT_BUILD
     Hooks::WorldBeginPlay::UnregisterAnyWorldCallback(&OnWorldBeginPlayReport);
+    Hooks::ModLoaderHello::Remove();
 #endif
 
     Hooks::ControlChannel::Remove();
@@ -1807,6 +2550,17 @@ void NetworkChannel::Shutdown()
     {
         std::lock_guard<std::mutex> lk(g_manifestMutex);
         g_manifests.clear();
+    }
+    {
+        std::lock_guard<std::mutex> lk(g_helloMutex);
+        g_helloByConn.clear();
+    }
+    {
+        std::lock_guard<std::mutex> lk(g_readyMutex);
+        g_clientReadyRegs.clear();
+        g_announced.clear();
+        g_notReadyWarned.clear();
+        g_readyDirty = false;
     }
 
     {
@@ -1823,6 +2577,14 @@ void NetworkChannel::Shutdown()
         std::lock_guard<std::mutex> lk(g_mutex);
         g_handlers.clear();
     }
+    {
+        std::lock_guard<std::mutex> lk(g_srvReadyMutex);
+        g_serverReadyCbs.clear();
+        g_serverReadyFired.clear();
+        g_earlySendWarned.clear();
+    }
+    g_serverSpeaksWire = false;
+    g_serverGreetTag.clear();
     ModLoaderLogger::LogInfo(L"[NetworkChannel] Client network channel shut down");
 #else
     ModLoaderLogger::LogInfo(L"[NetworkChannel] Server network channel shut down");
