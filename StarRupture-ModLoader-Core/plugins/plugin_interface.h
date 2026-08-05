@@ -401,12 +401,10 @@
 //      logging at Debug -- if you see that warning, move the send into the ready
 //      callback.
 //
-//      Fields are APPENDED to IPluginNetworkChannel, so no existing offset moved:
-//      MIN remains 49.
 
-#define PLUGIN_INTERFACE_VERSION_MIN 49
-#define PLUGIN_INTERFACE_VERSION_MAX 56
-#define PLUGIN_INTERFACE_VERSION 56
+#define PLUGIN_INTERFACE_VERSION_MIN 60
+#define PLUGIN_INTERFACE_VERSION_MAX 60
+#define PLUGIN_INTERFACE_VERSION 60
 
 enum class PluginLogLevel { Trace = 0, Debug = 1, Info = 2, Warn = 3, Error = 4 };
 enum class ConfigValueType { String, Integer, Float, Boolean, Keybind };
