@@ -1713,9 +1713,7 @@ namespace
 
         ModLoaderLogger::LogInfo(
             L"[NetworkChannel] The server has not identified itself as running the mod loader, so "
-            L"plugin networking is INACTIVE for this session. Nothing has been or will be sent to "
-            L"it. This is normal when joining a server without the mod loader, and it is why you "
-            L"were not disconnected -- older mod loader builds were, at this point in the join.");
+            L"plugin networking is INACTIVE for this session.");
     }
 
     // Manifest refresh keyed on the plugin generation. The alternative --
@@ -2491,8 +2489,17 @@ IPluginNetworkChannel* NetworkChannel::GetInterface()
     return &g_networkIface;
 }
 
+// Two call sites reach Initialize -- the startup phase, and the lazy path in
+// GetPluginHooks() that predates it -- and the registrations below are not
+// idempotent (each Register* appends). The guard lives here rather than at
+// either call site so a third caller cannot reintroduce the problem.
+static bool g_networkInitialized = false;
+
 void NetworkChannel::Initialize()
 {
+    if (g_networkInitialized) return;
+    g_networkInitialized = true;
+
     // The control channel is the whole transport now: this detour is both the
     // only receive path and the prerequisite for every send.
     Hooks::ControlChannel::SetReceiveCallback(&OnWireReceive);
@@ -2532,6 +2539,8 @@ void NetworkChannel::Initialize()
 
 void NetworkChannel::Shutdown()
 {
+    g_networkInitialized = false;
+
     Hooks::PlayerLeft::UnregisterPluginCallback(&OnPlayerLeftForgetConn);
     Hooks::PlayerJoined::UnregisterPluginCallback(&OnPlayerJoinedGreet);
     Hooks::WorldEndPlay::UnregisterBeforeCallback(&OnWorldEndPlayForgetConns);

@@ -80,9 +80,15 @@ namespace NetworkChannel
     // Returns nullptr on generic (plain Debug/Release) builds.
     IPluginNetworkChannel* GetInterface();
 
-    // Called by hooks_interface.cpp during engine-init on server+client builds.
-    // Installs the control-channel detour. Must be called after GObjects is live
-    // (i.e. after the engine-init hook fires).
+    // Called from InitPluginsPhase, before any PluginInit, on every build.
+    // Installs the control-channel detour, the greeting hook and the join/leave
+    // callbacks. Must run after GObjects is live (it does -- that phase runs
+    // after engine init completes, with the main thread held).
+    //
+    // Not conditional on a plugin existing: the authority must greet joining
+    // clients whether or not it has plugins of its own, or those clients
+    // conclude it has no mod loader. Idempotent, so the older lazy call in
+    // GetPluginHooks() is now just a safety net.
     void Initialize();
 
     // Called on DLL detach / engine shutdown.
