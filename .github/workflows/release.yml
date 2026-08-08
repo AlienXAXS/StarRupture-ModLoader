@@ -101,11 +101,11 @@ jobs:
             Write-Host "Latest semver tag: $(Format-Semver $latestParsed)"
           }
 
-          # bump MINOR, reset PATCH
+          # bump PATCH, keep MAJOR/MINOR (raise those via the version file or input)
           $autoParsed = @{
             Major = $latestParsed.Major
-            Minor = $latestParsed.Minor + 1
-            Patch = 0
+            Minor = $latestParsed.Minor
+            Patch = $latestParsed.Patch + 1
           }
 
           $versionFile = Join-Path $env:GITHUB_WORKSPACE "version"
@@ -141,7 +141,7 @@ jobs:
             $chosen = $fileParsed
             Write-Host "version file is higher, using it."
           } else {
-            Write-Host "Auto-increment minor wins."
+            Write-Host "Auto-increment patch wins."
           }
 
           Write-Host "DEBUG latest = $(Format-Semver $latestParsed)"
