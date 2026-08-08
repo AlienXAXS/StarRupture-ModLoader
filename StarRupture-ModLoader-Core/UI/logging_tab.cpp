@@ -60,6 +60,25 @@ namespace UI::LoggingTab
         return "?";
     }
 
+    // Tooltip for a level column. Default's meaning depends on whether the
+    // command line set a wildcard, so it is built from live state rather than
+    // read out of the table -- a tooltip still claiming "follow the Mod Loader
+    // Log Level" while -PluginLogLevel=* is in force would be simply wrong.
+    static const char* ColumnTooltip(int column)
+    {
+        const int wildcard = PluginLogLevels::GetWildcard();
+        if (s_columns[column].value != PluginLogLevels::kInherit ||
+            wildcard == PluginLogLevels::kInherit)
+            return s_columns[column].tooltip;
+
+        static char s_buf[256];
+        snprintf(s_buf, sizeof(s_buf),
+                 "Follow the command line's -PluginLogLevel=*, currently %s.\n"
+                 "The Mod Loader Log Level does not apply while that is set.",
+                 LevelName(wildcard));
+        return s_buf;
+    }
+
     // Explanatory prose in the dimmed text color, wrapped to the full width of
     // the tab. Hard-broken lines were fine at the window's default size and
     // ragged at every other -- this reflows instead, and pushes what follows it
@@ -87,9 +106,23 @@ namespace UI::LoggingTab
     static void RenderPersistedLevels()
     {
         ImGui::SeparatorText("Mod Loader");
-        WrappedNote("Written to ModLoader\\Logs\\ModLoader.log and saved to modloader.ini. "
-                    "This level is also what \"Default\" means for the plugins below, so changing "
-                    "it moves every plugin still set to Default and leaves the rest alone.");
+
+        // What "Default" resolves to is a claim that stops being true the
+        // moment -PluginLogLevel=*: is on the command line, so it is written
+        // from the live state rather than hard-coded.
+        if (PluginLogLevels::GetWildcard() == PluginLogLevels::kInherit)
+        {
+            WrappedNote("Written to ModLoader\\Logs\\ModLoader.log and saved to modloader.ini. "
+                        "This level is also what \"Default\" means for the plugins below, so "
+                        "changing it moves every plugin still set to Default and leaves the "
+                        "rest alone.");
+        }
+        else
+        {
+            WrappedNote("Written to ModLoader\\Logs\\ModLoader.log and saved to modloader.ini. "
+                        "It does NOT currently decide the plugins below -- the command line set "
+                        "their default instead. See the Plugins section.");
+        }
         ImGui::Spacing();
 
         static const char*    s_levelNames[]    = { "Trace", "Debug", "Info", "Warn", "Error" };
@@ -185,14 +218,35 @@ namespace UI::LoggingTab
                     "drowning it -- or to silence a noisy one without turning everything down.");
         ImGui::Spacing();
 
-        WrappedNote("\"Default\" is the Mod Loader Log Level set above. A plugin left on Default "
-                    "follows that level wherever you move it; a plugin given a level of its own "
-                    "keeps it, and changing the Mod Loader level has no effect on it at all.");
+        const int wildcard = PluginLogLevels::GetWildcard();
+
+        if (wildcard == PluginLogLevels::kInherit)
+        {
+            WrappedNote("\"Default\" is the Mod Loader Log Level set above. A plugin left on "
+                        "Default follows that level wherever you move it; a plugin given a level "
+                        "of its own keeps it, and changing the Mod Loader level has no effect on "
+                        "it at all.");
+        }
+        else
+        {
+            char note[320];
+            snprintf(note, sizeof(note),
+                     "\"Default\" is currently %s, set on the command line with "
+                     "-PluginLogLevel=*:%s -- not the Mod Loader Log Level above. "
+                     "Reset All To Default below clears it for the rest of this session.",
+                     LevelName(wildcard), LevelName(wildcard));
+
+            ImGui::TextColored(UI::Theme::AccentColorVec4(1.0f), "Command line:");
+            ImGui::SameLine();
+            WrappedNote(note);
+        }
         ImGui::Spacing();
 
         ImGui::TextColored(UI::Theme::AccentColorVec4(1.0f), "Not saved.");
         ImGui::SameLine();
-        WrappedNote("Every plugin is back on Default next time the game starts.");
+        WrappedNote("Nothing on this screen is written to disk. Set a level here to change the "
+                    "running game; pass -PluginLogLevel=<plugin>:<level> on the command line to "
+                    "have it in place before the plugin loads and logs.");
         ImGui::Spacing();
 
         if (count == 0)
@@ -283,7 +337,7 @@ namespace UI::LoggingTab
                 }
                 if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
                     ImGui::SetTooltip("Set every plugin to %s.\n\n%s",
-                                      s_columns[c].header, s_columns[c].tooltip);
+                                      s_columns[c].header, ColumnTooltip(c));
             }
             ImGui::PopID();
 
@@ -334,7 +388,7 @@ namespace UI::LoggingTab
 
                     if (hasName && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
                         ImGui::SetTooltip("%s -- %s\n\n%s",
-                                          s.name, s_columns[c].header, s_columns[c].tooltip);
+                                          s.name, s_columns[c].header, ColumnTooltip(c));
                 }
 
                 ImGui::PopID();

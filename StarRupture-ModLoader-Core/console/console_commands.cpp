@@ -471,9 +471,22 @@ namespace ModConsole
 
         // '*' applies to every plugin record the manager knows about, which is
         // what "all plugins" has to mean here -- the registry itself holds only
-        // the plugins someone has already overridden.
+        // the plugins someone has already overridden. (The command line's '*'
+        // cannot work this way: no plugin has a name yet when it is parsed, so
+        // it sets the wildcard fallback instead.)
         if (target == "*" || _stricmp(target.c_str(), "all") == 0)
         {
+            // "everything back to normal" has to include a wildcard the command
+            // line set, or there is no way to undo -PluginLogLevel=* short of
+            // relaunching the game.
+            if (newValue == PluginLogLevels::kInherit)
+            {
+                PluginLogLevels::ClearAll();
+                out.Out("All plugins -> DEFAULT.");
+                LogToFile::Error("[Console] Plugin log level: all -> DEFAULT");
+                return;
+            }
+
             const int total = PluginManager::GetAllPluginStatuses(nullptr, 0);
             if (total <= 0)
             {
@@ -536,6 +549,11 @@ namespace ModConsole
         if (args.size() < 2)
         {
             out.Out("Log level is %s.", LevelName(LogToFile::g_minLevel));
+
+            const int wildcard = PluginLogLevels::GetWildcard();
+            if (wildcard != PluginLogLevels::kInherit)
+                out.Notice("Plugin default is %s (-PluginLogLevel=*), not the level above.",
+                           LevelName(static_cast<LogToFile::Level>(wildcard)));
 
             if (PluginLogLevels::AnyOverrides())
             {

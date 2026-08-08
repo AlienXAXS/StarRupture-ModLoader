@@ -126,6 +126,12 @@ namespace ModLoaderLogger
 		InitializeCriticalSection(&g_logLock);
 		g_logInitialized = true;
 		LogToFile::Info("[ModLoader] Logger initialized (using Log:: backend)");
+
+		// Seed per-plugin levels from -PluginLogLevel= before anything can load
+		// a plugin. This is the whole point of the switch: a plugin that floods
+		// during boot has already filled the log by the time the Logging tab
+		// exists, so the level has to be in place before its first line.
+		PluginLogLevels::ApplyCommandLine();
 	}
 
 	void ShutdownLogger()

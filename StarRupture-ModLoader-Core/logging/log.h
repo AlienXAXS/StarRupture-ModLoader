@@ -456,12 +456,20 @@ namespace LogToFile
 	// -----------------------------------------------------------------------
 
 	// bypassMinLevel skips the g_minLevel comparison because the caller has
-	// already applied a gate of its own. Only the per-plugin log path uses it
-	// (see logging/plugin_log_levels.h): a plugin turned up to TRACE has to be
-	// genuinely more verbose than the loader's own level, and stacking the two
-	// gates would cap it at whichever is stricter -- making the override do
-	// nothing in exactly the case it exists for. Nothing else should pass true;
-	// unfiltered output is not the loader's to hand out.
+	// already applied a gate of its own, or because the line describes a change
+	// to the gates themselves. Two callers, both in logging/plugin_log_levels.h
+	// territory:
+	//
+	//   - the per-plugin log path (logger.cpp). A plugin turned up to TRACE has
+	//     to be genuinely more verbose than the loader's own level, and stacking
+	//     the two gates would cap it at whichever is stricter -- making the
+	//     override do nothing in exactly the case it exists for.
+	//   - the one-shot lines reporting what -PluginLogLevel= applied at boot. A
+	//     line explaining why a plugin's output is missing is worthless if the
+	//     setting it describes filters the line out as well.
+	//
+	// Nothing else should pass true; unfiltered output is not the loader's to
+	// hand out.
 	inline void WriteEx(Level level, const char* levelStr, bool bypassMinLevel,
 	                     const char* fmt, va_list args)
 	{
