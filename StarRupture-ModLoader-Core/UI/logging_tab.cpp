@@ -180,7 +180,7 @@ namespace UI::LoggingTab
             return;
         }
 
-        // ---- Set-all row --------------------------------------------------
+        // ---- Set-all state -------------------------------------------------
         // Reflects the plugins rather than remembering the last click: if they
         // have drifted apart since (a per-plugin radio, a reload) no option is
         // lit, which is honest about there being no single answer.
@@ -208,33 +208,6 @@ namespace UI::LoggingTab
             }
         }
 
-        ImGui::AlignTextToFramePadding();
-        ImGui::TextUnformatted("All plugins");
-        ImGui::SameLine();
-        if (allValue == kMixed)
-            ImGui::TextDisabled("(mixed)");
-        else
-            ImGui::TextDisabled("(%s)", LevelName(allValue));
-
-        ImGui::SameLine(0.0f, 20.0f);
-        for (int c = 0; c < kColumnCount; ++c)
-        {
-            if (c > 0) ImGui::SameLine();
-
-            char id[64];
-            snprintf(id, sizeof(id), "%s##all_%d", s_columns[c].header, c);
-            if (ImGui::RadioButton(id, allValue == s_columns[c].value))
-            {
-                for (int i = 0; i < count; ++i)
-                    PluginLogLevels::SetOverride(statuses[i].name, s_columns[c].value);
-            }
-            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
-                ImGui::SetTooltip("Set every plugin to %s.\n\n%s",
-                                  s_columns[c].header, s_columns[c].tooltip);
-        }
-
-        ImGui::Spacing();
-
         // ---- Per-plugin grid ----------------------------------------------
         // No ScrollY: the tab's own content child already scrolls, and a table
         // with its own scroll region would eat the rest of the tab's height and
@@ -257,6 +230,41 @@ namespace UI::LoggingTab
                 ImGui::TableSetupColumn(s_columns[c].header, ImGuiTableColumnFlags_WidthFixed, w);
             }
             ImGui::TableHeadersRow();
+
+            // Set-all row, directly under the headers so each radio sits in the
+            // column it applies to -- the same reading as every row below it,
+            // which a separate strip above the table could not give.
+            ImGui::PushID("all");
+            ImGui::TableNextRow();
+            ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg0,
+                ImGui::GetColorU32(UI::Theme::AccentColorVec4(0.12f)));
+
+            ImGui::TableSetColumnIndex(0);
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextUnformatted("All plugins");
+            ImGui::SameLine();
+            if (allValue == kMixed)
+                ImGui::TextDisabled("(mixed)");
+            else
+                ImGui::TextDisabled("(%s)", LevelName(allValue));
+
+            for (int c = 0; c < kColumnCount; ++c)
+            {
+                ImGui::TableSetColumnIndex(1 + c);
+                CenterInCell();
+
+                char id[32];
+                snprintf(id, sizeof(id), "##all_%d", c);
+                if (ImGui::RadioButton(id, allValue == s_columns[c].value))
+                {
+                    for (int i = 0; i < count; ++i)
+                        PluginLogLevels::SetOverride(statuses[i].name, s_columns[c].value);
+                }
+                if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
+                    ImGui::SetTooltip("Set every plugin to %s.\n\n%s",
+                                      s_columns[c].header, s_columns[c].tooltip);
+            }
+            ImGui::PopID();
 
             for (int i = 0; i < count; ++i)
             {
