@@ -34,7 +34,8 @@ namespace UI::LoggingTab
     static const LevelColumn s_columns[] =
     {
         { "Default", PluginLogLevels::kInherit,
-          "Follow the ModLoader Log Level above.\nThis is where every plugin starts each launch." },
+          "Follow the Mod Loader Log Level set above, wherever that is moved to.\n"
+          "This is where every plugin starts each launch." },
         { "Trace",   static_cast<int>(LogToFile::Level::Trace),
           "Everything the plugin emits." },
         { "Debug",   static_cast<int>(LogToFile::Level::Debug),
@@ -59,6 +60,17 @@ namespace UI::LoggingTab
         return "?";
     }
 
+    // Explanatory prose in the dimmed text color, wrapped to the full width of
+    // the tab. Hard-broken lines were fine at the window's default size and
+    // ragged at every other -- this reflows instead, and pushes what follows it
+    // down when it needs a line more.
+    static void WrappedNote(const char* text)
+    {
+        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
+        ImGui::TextWrapped("%s", text);
+        ImGui::PopStyleColor();
+    }
+
     // Centers the next radio button in the current table cell. A left-aligned
     // grid of radios is readable only by counting columns.
     static void CenterInCell()
@@ -75,7 +87,9 @@ namespace UI::LoggingTab
     static void RenderPersistedLevels()
     {
         ImGui::SeparatorText("Mod Loader");
-        ImGui::TextDisabled("Written to ModLoader\\Logs\\ModLoader.log. Saved to modloader.ini.");
+        WrappedNote("Written to ModLoader\\Logs\\ModLoader.log and saved to modloader.ini. "
+                    "This level is also what \"Default\" means for the plugins below, so changing "
+                    "it moves every plugin still set to Default and leaves the rest alone.");
         ImGui::Spacing();
 
         static const char*    s_levelNames[]    = { "Trace", "Debug", "Info", "Warn", "Error" };
@@ -92,8 +106,10 @@ namespace UI::LoggingTab
         ImGui::SameLine();
         ImGui::TextDisabled("(?)");
         if (ImGui::IsItemHovered())
-            ImGui::SetTooltip("Minimum level for the mod loader's own output, and the starting\n"
-                              "level for every plugin that has no override below.\n\n"
+            ImGui::SetTooltip("Minimum level for the mod loader's own output, and the level\n"
+                              "\"Default\" resolves to for the plugins below.\n\n"
+                              "Moving this moves every plugin still set to Default. A plugin\n"
+                              "set to a level of its own is unaffected by it.\n\n"
                               "Takes effect immediately. Persisted to modloader.ini.");
 
         // Game-side UE log verbosity. Separate from the modloader's own log level
@@ -165,13 +181,18 @@ namespace UI::LoggingTab
         const int total = PluginManager::GetAllPluginStatuses(statuses, 64);
         const int count = total < 64 ? total : 64;
 
-        ImGui::TextDisabled("Give one plugin its own level to read its output without the rest of the");
-        ImGui::TextDisabled("log drowning it -- or to silence a noisy one without turning everything down.");
+        WrappedNote("Give one plugin its own level to read its output without the rest of the log "
+                    "drowning it -- or to silence a noisy one without turning everything down.");
+        ImGui::Spacing();
+
+        WrappedNote("\"Default\" is the Mod Loader Log Level set above. A plugin left on Default "
+                    "follows that level wherever you move it; a plugin given a level of its own "
+                    "keeps it, and changing the Mod Loader level has no effect on it at all.");
         ImGui::Spacing();
 
         ImGui::TextColored(UI::Theme::AccentColorVec4(1.0f), "Not saved.");
         ImGui::SameLine();
-        ImGui::TextDisabled("Every plugin is back on Default next time the game starts.");
+        WrappedNote("Every plugin is back on Default next time the game starts.");
         ImGui::Spacing();
 
         if (count == 0)
