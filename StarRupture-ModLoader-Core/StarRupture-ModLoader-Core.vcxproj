@@ -464,6 +464,7 @@
     <ClInclude Include="UI\console_window.h" />
     <ClInclude Include="UI\global_settings.h" />
     <ClInclude Include="UI\theme.h" />
+    <ClInclude Include="UI\logging_tab.h" />
     <ClInclude Include="UI\modloader_window.h" />
     <ClInclude Include="UI\overlay.h" />
     <ClInclude Include="UI\update_notice_window.h" />
@@ -473,6 +474,7 @@
     <ClInclude Include="hooks\memory\engine_allocator.h" />
     <ClInclude Include="logging\log.h" />
     <ClInclude Include="logging\logger.h" />
+    <ClInclude Include="logging\plugin_log_levels.h" />
     <ClInclude Include="game_type_checker.h" />
     <ClInclude Include="logging\ue_log.h" />
     <ClInclude Include="memory_scanner\pattern_preflight.h" />
@@ -598,6 +600,9 @@
     <ClCompile Include="UI\modloader_window.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)' != 'Client Debug' And '$(Configuration)' != 'Client Release' And '$(Configuration)' != 'Local SDK Client Debug' And '$(Configuration)' != 'Local SDK Client Release'">true</ExcludedFromBuild>
     </ClCompile>
+    <ClCompile Include="UI\logging_tab.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)' != 'Client Debug' And '$(Configuration)' != 'Client Release' And '$(Configuration)' != 'Local SDK Client Debug' And '$(Configuration)' != 'Local SDK Client Release'">true</ExcludedFromBuild>
+    </ClCompile>
     <ClCompile Include="UI\overlay.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)' != 'Client Debug' And '$(Configuration)' != 'Client Release' And '$(Configuration)' != 'Local SDK Client Debug' And '$(Configuration)' != 'Local SDK Client Release'">true</ExcludedFromBuild>
     </ClCompile>
@@ -615,6 +620,7 @@
     </ClCompile>
     <ClCompile Include="hooks\memory\engine_allocator.cpp" />
     <ClCompile Include="logging\logger.cpp" />
+    <ClCompile Include="logging\plugin_log_levels.cpp" />
     <ClCompile Include="memory_scanner\pattern_preflight.cpp" />
     <ClCompile Include="memory_scanner\scan_cache.cpp" />
     <ClCompile Include="memory_scanner\scanner.cpp" />

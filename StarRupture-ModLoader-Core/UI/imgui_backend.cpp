@@ -775,9 +775,11 @@ static void RebuildFontAtlas(bool initialSetup)
 			static const ImWchar s_iconRange[] =
 			{
 				0xE429, 0xE429, // tune        (Config)
+				0xE40A, 0xE40A, // palette     (Theme)
 				0xE88E, 0xE88E, // info        (About)
 				0xE87B, 0xE87B, // extension   (Plugins)
 				0xE8B8, 0xE8B8, // settings    (Global Settings)
+				0xE8D2, 0xE8D2, // subject     (Logging)
 				0
 			};
 

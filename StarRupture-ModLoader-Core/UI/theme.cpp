@@ -322,34 +322,63 @@ namespace UI::Theme
         ImGui::End();
     }
 
+    // Point size the tab label is drawn at. Deliberately below body text so a
+    // one-word caption fits a 64px cell at the default font scale without
+    // competing with the icon for attention.
+    static float IconTabLabelFontSize()
+    {
+        return ImGui::GetFontSize() * 0.80f;
+    }
+
+    static float IconTabCellHeight(float size, bool hasLabels)
+    {
+        if (!hasLabels)
+            return size;
+
+        // The icon keeps a fixed square area and the caption sits below it, so
+        // adding labels grows the cell rather than shrinking the glyph.
+        return size * 0.86f + IconTabLabelFontSize() + 6.0f;
+    }
+
     int IconTabBar(const char* const* icons, int count, int active, float size, bool vertical,
-                   const char* const* labels)
+                   const char* const* labels, const char* const* tooltips)
     {
         ImDrawList* draw = ImGui::GetWindowDrawList();
         int newActive = active;
         ImVec2 startPos = ImGui::GetCursorScreenPos();
 
+        const bool  hasLabels = (labels != nullptr);
+        const float labelSz   = IconTabLabelFontSize();
+        const float cellH     = IconTabCellHeight(size, hasLabels);
+        const float iconAreaH = hasLabels ? size * 0.86f : size;
+
         for (int i = 0; i < count; ++i)
         {
             ImGui::PushID(i);
             ImVec2 boxMin = ImGui::GetCursorScreenPos();
-            ImVec2 boxMax(boxMin.x + size, boxMin.y + size);
+            ImVec2 boxMax(boxMin.x + size, boxMin.y + cellH);
 
-            ImGui::InvisibleButton("##icontab", ImVec2(size, size));
+            ImGui::InvisibleButton("##icontab", ImVec2(size, cellH));
             bool hovered = ImGui::IsItemHovered();
             if (ImGui::IsItemClicked())
                 newActive = i;
 
-            if (hovered && labels && labels[i])
-                ImGui::SetTooltip("%s", labels[i]);
+            // Prefer the longer description when one was supplied -- the label
+            // under the icon is already on screen, so repeating it on hover
+            // says nothing the user cannot see.
+            const char* tip = (tooltips && tooltips[i]) ? tooltips[i]
+                            : (labels && labels[i])     ? labels[i]
+                            : nullptr;
+            if (hovered && tip)
+                ImGui::SetTooltip("%s", tip);
 
             // Active/hover highlight: inset rounded-rect rather than a sharp
             // square filling the whole cell, plus a thin divider line below
             // each cell (skipped after the last one).
             const float highlightInset = 6.0f;
             const float highlightRound = 8.0f;
-            ImVec2 hlMin(boxMin.x + highlightInset, boxMin.y + highlightInset);
-            ImVec2 hlMax(boxMax.x - highlightInset, boxMax.y - highlightInset);
+            ImVec2 hlMin(boxMin.x + highlightInset, boxMin.y + highlightInset * 0.5f);
+            ImVec2 hlMax(boxMax.x - highlightInset, boxMax.y - highlightInset * 0.5f);
 
             bool isActive = (i == active);
             if (isActive)
@@ -384,21 +413,40 @@ namespace UI::Theme
                 float gw = glyph->X1 - glyph->X0;
                 float gh = glyph->Y1 - glyph->Y0;
                 textPos = ImVec2(boxMin.x + (size - gw) * 0.5f - glyph->X0,
-                                  boxMin.y + (size - gh) * 0.5f - glyph->Y0);
+                                  boxMin.y + (iconAreaH - gh) * 0.5f - glyph->Y0);
             }
             else
             {
                 ImVec2 textSize = font->CalcTextSizeA(iconSz, FLT_MAX, 0.0f, icons[i]);
-                textPos = ImVec2(boxMin.x + (size - textSize.x) * 0.5f, boxMin.y + (size - textSize.y) * 0.5f);
+                textPos = ImVec2(boxMin.x + (size - textSize.x) * 0.5f,
+                                  boxMin.y + (iconAreaH - textSize.y) * 0.5f);
             }
 
             ImVec4 iconColV = isActive ? AccentColorVec4(1.0f) : ImGui::GetStyle().Colors[ImGuiCol_Text];
             iconColV.w = isActive ? 1.0f : 0.55f; // "slightly opaque" when inactive
             draw->AddText(font, iconSz, textPos, ImGui::GetColorU32(iconColV), icons[i]);
 
+            // Caption under the icon. Clipped to the cell rather than allowed
+            // to bleed into the neighbouring column -- a caption long enough
+            // (or a font scaled far enough) to overflow is truncated, and the
+            // hover tooltip is what carries the full text in that case.
+            if (hasLabels && labels[i])
+            {
+                ImVec2 lblSize = font->CalcTextSizeA(labelSz, FLT_MAX, 0.0f, labels[i]);
+                ImVec2 lblPos(boxMin.x + (size - lblSize.x) * 0.5f,
+                              boxMin.y + iconAreaH + 2.0f);
+
+                ImVec4 lblColV = isActive ? AccentColorVec4(1.0f) : ImGui::GetStyle().Colors[ImGuiCol_Text];
+                lblColV.w = isActive ? 1.0f : 0.55f;
+
+                draw->PushClipRect(ImVec2(boxMin.x, boxMin.y), ImVec2(boxMax.x, boxMax.y), true);
+                draw->AddText(font, labelSz, lblPos, ImGui::GetColorU32(lblColV), labels[i]);
+                draw->PopClipRect();
+            }
+
             ImGui::PopID();
             if (vertical)
-                ImGui::SetCursorScreenPos(ImVec2(startPos.x, boxMin.y + size));
+                ImGui::SetCursorScreenPos(ImVec2(startPos.x, boxMin.y + cellH));
             else
                 ImGui::SameLine();
         }
@@ -406,7 +454,7 @@ namespace UI::Theme
         if (vertical)
             ImGui::SetCursorScreenPos(ImVec2(startPos.x + size, startPos.y));
         else
-            ImGui::SetCursorScreenPos(ImVec2(startPos.x, startPos.y + size));
+            ImGui::SetCursorScreenPos(ImVec2(startPos.x, startPos.y + cellH));
 
         return newActive;
     }
@@ -540,6 +588,7 @@ namespace UI::Theme
         const char* Plugins  = "\xEE\xA1\xBB"; // extension  U+E87B
         const char* Config   = "\xEE\x90\xA9"; // tune       U+E429
         const char* Settings = "\xEE\xA2\xB8"; // settings   U+E8B8
+        const char* Logging  = "\xEE\xA3\x92"; // subject    U+E8D2
         const char* Theme    = "\xEE\x90\x8A"; // palette    U+E40A
         const char* About    = "\xEE\xA2\x8E"; // info       U+E88E
     }

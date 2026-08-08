@@ -127,21 +127,28 @@ namespace UI::Theme
     // BeginChamferedWindow() that returned true.
     void EndChamferedWindow();
 
-    // Square icon-only tab strip (no text) -- draws `count` size x size boxes
-    // starting at the current cursor, each showing icons[i] centered. The
-    // active box gets full opacity + an accent fill/border; inactive boxes
-    // are dimmed. Returns the new active index (== `active` if nothing was
-    // clicked this frame).
-    // vertical=false: boxes laid out left-to-right; cursor drops to the
+    // Icon tab strip -- draws `count` cells `size` wide starting at the
+    // current cursor, each showing icons[i] centered. The active cell gets
+    // full opacity + an accent fill/border; inactive cells are dimmed.
+    // Returns the new active index (== `active` if nothing was clicked this
+    // frame).
+    // vertical=false: cells laid out left-to-right; cursor drops to the
     //   next line below the row once done.
-    // vertical=true: boxes stacked top-to-bottom; cursor moves to the right
+    // vertical=true: cells stacked top-to-bottom; cursor moves to the right
     //   of the column at the original starting Y, so the caller can place
     //   tab content directly beside it without a child window.
-    // labels: optional, parallel array of `count` display names shown as a
-    //   tooltip when hovering the corresponding icon (pass nullptr to skip).
+    // labels: optional, parallel array of `count` display names. Drawn UNDER
+    //   the icon in a smaller font, centered and clipped to the cell width --
+    //   an icon on its own does not tell a first-time user what the tab is,
+    //   which is what this is for. Keep them to one short word; pass nullptr
+    //   for an icon-only strip.
+    // tooltips: optional, parallel array of `count` longer descriptions shown
+    //   on hover. Falls back to labels[i] when null, so passing labels alone
+    //   keeps the old hover behaviour.
     int IconTabBar(const char* const* icons, int count, int active,
                     float size = 64.0f, bool vertical = false,
-                    const char* const* labels = nullptr);
+                    const char* const* labels = nullptr,
+                    const char* const* tooltips = nullptr);
 
     // Icon glyph constants (Material Icons Regular, embedded resource --
     // see imgui_backend.cpp RebuildFontAtlas()).
@@ -150,6 +157,7 @@ namespace UI::Theme
         extern const char* Plugins;
         extern const char* Config;
         extern const char* Settings;
+        extern const char* Logging;
         extern const char* Theme;
         extern const char* About;
     }

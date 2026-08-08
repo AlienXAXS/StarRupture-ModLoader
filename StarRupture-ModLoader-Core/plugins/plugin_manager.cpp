@@ -488,6 +488,26 @@ namespace PluginManager
 		return slash ? slash + 1 : path.c_str();
 	}
 
+	// True when the auto-update sidecar for this DLL exists on disk:
+	// "...\Plugins\MyPlugin.dll" -> "...\Plugins\MyPlugin.json". Matches the
+	// pairing the updater's per-plugin pass uses (auto_update/auto_updater.cpp),
+	// which is the only thing that makes a plugin able to update itself.
+	//
+	// Only the file's presence is checked, not its contents: a sidecar with a
+	// missing or unreachable manifest_url is the updater's problem to report,
+	// and re-parsing every sidecar on every UI frame to say so would not be.
+	static bool HasUpdateSidecar(const std::wstring& dllPath)
+	{
+		const size_t dot = dllPath.find_last_of(L'.');
+		const size_t slash = dllPath.find_last_of(L'\\');
+		if (dot == std::wstring::npos || (slash != std::wstring::npos && dot < slash))
+			return false;
+
+		std::wstring sidecar = dllPath.substr(0, dot) + L".json";
+		const DWORD attrs = GetFileAttributesW(sidecar.c_str());
+		return attrs != INVALID_FILE_ATTRIBUTES && !(attrs & FILE_ATTRIBUTE_DIRECTORY);
+	}
+
 	void LoadAllPlugins()
 	{
 		if (!g_managerInitialized)
@@ -713,6 +733,8 @@ namespace PluginManager
 				WideCharToMultiByte(CP_ACP, 0, baseName, -1,
 					out[i].fileName, static_cast<int>(sizeof(out[i].fileName)), "?", nullptr);
 				out[i].fileName[sizeof(out[i].fileName) - 1] = '\0';
+
+				out[i].hasUpdateManifest = HasUpdateSidecar(p.fileName);
 			}
 		}
 		LeaveCriticalSection(&g_pluginLock);

@@ -171,6 +171,9 @@
     <ClInclude Include="UI\modloader_window.h">
       <Filter>Source Files\UI\modloader</Filter>
     </ClInclude>
+    <ClInclude Include="UI\logging_tab.h">
+      <Filter>Source Files\UI\modloader</Filter>
+    </ClInclude>
     <ClInclude Include="UI\overlay.h">
       <Filter>Source Files\UI\modloader</Filter>
     </ClInclude>
@@ -217,6 +220,9 @@
       <Filter>Source Files\logging</Filter>
     </ClInclude>
     <ClInclude Include="logging\ue_log.h">
+      <Filter>Source Files\logging</Filter>
+    </ClInclude>
+    <ClInclude Include="logging\plugin_log_levels.h">
       <Filter>Source Files\logging</Filter>
     </ClInclude>
     <ClInclude Include="config\config_manager.h">
@@ -479,6 +485,9 @@
     <ClCompile Include="UI\modloader_window.cpp">
       <Filter>Source Files\UI\modloader</Filter>
     </ClCompile>
+    <ClCompile Include="UI\logging_tab.cpp">
+      <Filter>Source Files\UI\modloader</Filter>
+    </ClCompile>
     <ClCompile Include="UI\overlay.cpp">
       <Filter>Source Files\UI\modloader</Filter>
     </ClCompile>
@@ -513,6 +522,9 @@
       <Filter>Source Files\plugins</Filter>
     </ClCompile>
     <ClCompile Include="logging\logger.cpp">
+      <Filter>Source Files\logging</Filter>
+    </ClCompile>
+    <ClCompile Include="logging\plugin_log_levels.cpp">
       <Filter>Source Files\logging</Filter>
     </ClCompile>
     <ClCompile Include="config\config_manager.cpp">
