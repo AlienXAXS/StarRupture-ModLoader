@@ -15,31 +15,147 @@ Like this project? Give it a star here on GitHub!
 
 ## Installation
 
-> **Full step-by-step instructions are in [How To Use](How%20To%20Use.md).**
+### 1. Download the right ZIP
 
-**Quick version:**
+Two builds are published on the [releases page](https://github.com/AlienXAXS/StarRupture-ModLoader/releases):
 
-1. Download the latest release ZIP for your use case:
-   - `StarRupture-ModLoader-Client-*.zip` — for playing the game
-   - `StarRupture-ModLoader-Server-*.zip` — for running a dedicated server
+| ZIP | Use for |
+|---|---|
+| `StarRupture-ModLoader-Client-*.zip` | Playing the game |
+| `StarRupture-ModLoader-Server-*.zip` | Running a dedicated server |
 
-2. Extract into your game's `Binaries\Win64\` folder (where the `.exe` lives).
+### 2. Extract into the game's binary folder
 
-3. Launch the game or server as normal.
+That's the folder containing `StarRuptureGameSteam-Win64-Shipping.exe`, for example:
 
-4. **Plugins are disabled by default.** After the first launch, edit the `.ini` files in `Plugins\config\` and set `Enabled=1` for each plugin you want.
+```
+StarRupture\Binaries\Win64\
+```
 
-**Linux users:** Set the environment variable `WINEDLLOVERRIDES=dwmapi=n,b` before launching.
+The ZIP is already laid out correctly, so extract it **directly into that folder** — no subfolders
+need creating by hand. Afterwards you should see:
+
+```
+StarRupture\Binaries\Win64\
+├── StarRuptureGameSteam-Win64-Shipping.exe
+├── dwmapi.dll                        ← the proxy the game loads
+└── ModLoader\
+    ├── StarRupture-ModLoader-Core.dll   ← the mod loader itself
+    ├── StarRupture-ImGui.dll            ← client builds only
+    ├── modloader.ini                    ← created on first launch
+    ├── Logs\                            ← created on first launch
+    └── Plugins\                         ← put plugin DLLs here
+```
+
+Everything the mod loader owns lives under `ModLoader\`; `dwmapi.dll` is the only file that sits
+next to the game executable.
+
+### 3. Launch as normal
+
+The mod loader initialises automatically via `dwmapi.dll`. No game files are modified.
+
+**Linux users:** the mod will not load unless the environment variable `WINEDLLOVERRIDES` is set to
+`dwmapi=n,b`.
 
 ---
 
-## Plugins
+## Installing Plugins
 
-| Plugin | Target | Description |
-|---|---|---|
-| [KeepTicking](https://github.com/AlienXAXS/StarRupture-Plugin-KeepTicking) | Server | Prevents a dedicated server from sleeping when no players are online |
-| [ServerUtility](https://github.com/AlienXAXS/StarRupture-Plugin-ServerUtility) | Server | Command-line server settings, Source RCON, Steam A2S Query, and remote vulnerability patch |
-| [Compass](https://github.com/AlienXAXS/StarRupture-Plugin-Compass) | Client | Adds a HUD compass bar showing nearby players, bases, markers, and points of interest |
+The mod loader ships with no plugins — download the ones you want and drop their `.dll` into
+`Binaries\Win64\ModLoader\Plugins\`. Client plugins only load on a client, server plugins only on
+a dedicated server; the mod loader window says so if you get one the wrong way round.
+
+**Plugins are disabled by default.** The first time the game runs with a plugin present, a config
+file is generated for it. To enable it:
+
+1. Run the game once, then close it.
+2. Open `Binaries\Win64\ModLoader\Plugins\config\`.
+3. Open the `.ini` named after the plugin.
+4. Set `Enabled=1` and save.
+5. Launch again — the plugin is now active.
+
+Repeat for each plugin you want to use. On a client you can do all of this from the mod loader
+window instead, without editing files.
+
+If a plugin ships a `.json` file alongside its `.dll`, it can update itself: the mod loader checks
+for a new version at startup and downloads it. The **Plugins** tab marks those with a green dot
+(amber means the plugin has no update manifest and has to be updated by hand). Auto-updating can be
+turned off in the **Settings** tab.
+
+---
+
+## The Mod Loader Window (client)
+
+Press **F2** in game to open it. Down the left is an icon for each screen:
+
+| Screen | What it's for |
+|---|---|
+| **Plugins** | Load, unload and reload installed plugins without restarting |
+| **Config** | Edit each plugin's own settings and keybinds |
+| **Settings** | HUD overlays (FPS, world name, position), auto-updates, diagnostics |
+| **Logging** | Log levels for the mod loader, the game, and each plugin — see below |
+| **Theme** | Font, text size and every UI colour |
+| **About** | Build tag and the plugins currently loaded |
+
+A developer console is on **`~`** (tilde). Both keys can be changed in
+`ModLoader\modloader.ini` — `[UI] OpenKey` and `[Console] OpenKey`.
+
+---
+
+## The Server Console (dedicated server)
+
+A dedicated server has no UI, so launch it with `-console` for a console window with the same
+commands. `help` lists them; `plugins`, `reload`, `load`, `unload` and `rescan` manage plugins
+without restarting the server, and `stop` shuts it down cleanly.
+
+---
+
+## Log Levels
+
+The mod loader writes to `Binaries\Win64\ModLoader\Logs\ModLoader.log`, keeping the last ten runs.
+Open the mod loader window and go to the **Logging** tab to change how much detail it records:
+
+- **Log Level** — the mod loader's own output. Saved, so it applies on every launch.
+- **Game Log Verbosity** — the game's own log categories, written to `StarRupture.log`. Also saved.
+- **Per plugin** — a grid with one row per plugin. Turn a single plugin up to read its output
+  without the rest of the log burying it, or down to silence a noisy one without quieting
+  everything else. `Default` means "follow the Log Level above".
+
+Per-plugin levels are **not saved** — every plugin is back on `Default` next launch.
+
+### Setting a plugin's level before the game starts
+
+A plugin that logs heavily while the game is still loading has already filled the log by the time
+you can open the Logging tab. Add a launch option to have the level in place before it loads.
+In Steam: right-click the game, *Properties* → *General* → *Launch Options*.
+
+```
+-PluginLogLevel=<plugin>:<level>
+```
+
+`<plugin>` is the name as it appears in `[Plugin:NAME]` in the log — the same name the Logging tab
+shows. `<level>` is `trace`, `debug`, `info`, `warn`, `error`, or `default`.
+
+Several at once, comma separated:
+
+```
+-PluginLogLevel=NoisyPlugin:error,OtherPlugin:trace
+```
+
+`*` sets the level for every plugin you have not named:
+
+```
+-PluginLogLevel=*:warn,PluginImDebugging:trace
+```
+
+Quote the whole option if a plugin name contains a space:
+
+```
+-PluginLogLevel="My Plugin:error"
+```
+
+The Logging tab shows when a launch option is in effect, and *Reset All To Default* clears it for
+the rest of the session.
 
 ---
 
@@ -53,10 +169,13 @@ Use the [StarRupture-Plugin-SDK](https://github.com/AlienXAXS/StarRupture-Plugin
 
 | Problem | Solution |
 |---|---|
-| Plugins not loading | Make sure DLLs are in the `Plugins\` folder and `Enabled=1` is set in each plugin's `.ini` file. |
-| RCON won't start | Both `-RconPort=` and `-RconPassword=` must be provided on the command line. |
-| Server sleeps when empty | Enable KeepTicking in `Plugins\config\KeepTicking.ini`. |
-| Logs / diagnostics | Check `modloader.log` for detailed output. Enable debug logging by setting `Level=DEBUG` in `modloader.ini`. |
+| Nothing loads at all | `dwmapi.dll` must sit next to the game `.exe` with the `ModLoader\` folder beside it — not in a subfolder of its own. On Linux, set `WINEDLLOVERRIDES=dwmapi=n,b`. |
+| Plugins not loading | Make sure the DLLs are in `ModLoader\Plugins\` and `Enabled=1` is set in each plugin's `.ini`. The **Plugins** tab shows why a plugin was rejected. |
+| "Cannot Load" next to a plugin | It was built for the other target — a server plugin on a client, or the reverse. |
+| "Needs Update" next to a plugin | The plugin and the mod loader were built against different plugin interface versions. The tab says which of the two to update. |
+| Logs / diagnostics | Check `ModLoader\Logs\ModLoader.log`. Raise the detail in the **Logging** tab, or set `Level=DEBUG` under `[Logging]` in `ModLoader\modloader.ini`. |
+| One plugin is flooding the log | See [Log Levels](#log-levels) — turn that plugin down on its own, or use `-PluginLogLevel=` if it happens during startup. |
+| Game stops responding to input | Turn on *ModLoader Debug Values* in the **Settings** tab — it names the plugin holding input open. |
 
 ---
 
