@@ -1,5 +1,6 @@
 #include "logger.h"
 #include "log.h"  // Use the existing comprehensive log system
+#include "plugin_log_levels.h"
 #include <cstdarg>
 #include <stdio.h>
 
@@ -8,81 +9,106 @@ namespace ModLoaderLogger
 	static CRITICAL_SECTION g_logLock;
 	static bool g_logInitialized = false;
 
-	// Universal logger implementation for plugins
+	// Map the plugin-facing level onto the file logger's.
+	static LogToFile::Level ToFileLevel(PluginLogLevel level)
+	{
+		switch (level)
+		{
+		case PluginLogLevel::Trace: return LogToFile::Level::Trace;
+		case PluginLogLevel::Debug: return LogToFile::Level::Debug;
+		case PluginLogLevel::Warn:  return LogToFile::Level::Warn;
+		case PluginLogLevel::Error: return LogToFile::Level::Error;
+		default:                    return LogToFile::Level::Info;
+		}
+	}
+
+	static const char* ToLevelString(PluginLogLevel level)
+	{
+		switch (level)
+		{
+		case PluginLogLevel::Trace: return "TRACE";
+		case PluginLogLevel::Debug: return "DEBUG";
+		case PluginLogLevel::Warn:  return "WARN";
+		case PluginLogLevel::Error: return "ERROR";
+		default:                    return "INFO";
+		}
+	}
+
+	// Universal logger implementation for plugins.
+	//
+	// This is the one place every plugin log line passes through, so it is where
+	// the per-plugin level (plugin_log_levels.h) is applied. The plugin's own
+	// gate replaces the global one rather than stacking with it -- hence
+	// WriteBypass rather than the ordinary LogToFile::Trace/Debug/... entry
+	// points, which would re-test g_minLevel and cap a plugin turned up above it.
 	static void PluginLog(PluginLogLevel level, const IPluginSelf* self, const char* message)
 	{
 		if (!g_logInitialized) return;
 		const char* name = (self && self->name) ? self->name : "?";
 
-		// Map plugin log level to Log:: system
-		switch (level)
-		{
-		case PluginLogLevel::Trace:
-			LogToFile::Trace("[Plugin:%s] %s", name, message);
-			break;
-		case PluginLogLevel::Debug:
-			LogToFile::Debug("[Plugin:%s] %s", name, message);
-			break;
-		case PluginLogLevel::Info:
-			LogToFile::Info("[Plugin:%s] %s", name, message);
-			break;
-		case PluginLogLevel::Warn:
-			LogToFile::Warn("[Plugin:%s] %s", name, message);
-			break;
-		case PluginLogLevel::Error:
-			LogToFile::Error("[Plugin:%s] %s", name, message);
-			break;
-		}
+		const LogToFile::Level fileLevel = ToFileLevel(level);
+		if (!PluginLogLevels::ShouldLog(name, fileLevel))
+			return;
+
+		LogToFile::WriteBypass(fileLevel, ToLevelString(level), "[Plugin:%s] %s", name, message);
+	}
+
+	// Shared body of the five level-specific plugin entry points. Tests the
+	// plugin's level BEFORE formatting: a plugin's Trace() calls are typically
+	// the ones sitting in a per-tick loop, and turning that plugin down is
+	// worth nothing if every suppressed line still costs a vsnprintf.
+	static void PluginLogFormatted(PluginLogLevel level, const IPluginSelf* self,
+	                                const char* format, va_list args)
+	{
+		if (!g_logInitialized) return;
+
+		const char* name = (self && self->name) ? self->name : "?";
+		if (!PluginLogLevels::ShouldLog(name, ToFileLevel(level)))
+			return;
+
+		char buffer[1024];
+		vsnprintf(buffer, sizeof(buffer), format, args);
+		PluginLog(level, self, buffer);
 	}
 
 	static void PluginLogTrace(const IPluginSelf* self, const char* format, ...)
 	{
-		char buffer[1024];
 		va_list args;
 		va_start(args, format);
-		vsnprintf(buffer, sizeof(buffer), format, args);
+		PluginLogFormatted(PluginLogLevel::Trace, self, format, args);
 		va_end(args);
-		PluginLog(PluginLogLevel::Trace, self, buffer);
 	}
 
 	static void PluginLogDebug(const IPluginSelf* self, const char* format, ...)
 	{
-		char buffer[1024];
 		va_list args;
 		va_start(args, format);
-		vsnprintf(buffer, sizeof(buffer), format, args);
+		PluginLogFormatted(PluginLogLevel::Debug, self, format, args);
 		va_end(args);
-		PluginLog(PluginLogLevel::Debug, self, buffer);
 	}
 
 	static void PluginLogInfo(const IPluginSelf* self, const char* format, ...)
 	{
-		char buffer[1024];
 		va_list args;
 		va_start(args, format);
-		vsnprintf(buffer, sizeof(buffer), format, args);
+		PluginLogFormatted(PluginLogLevel::Info, self, format, args);
 		va_end(args);
-		PluginLog(PluginLogLevel::Info, self, buffer);
 	}
 
 	static void PluginLogWarn(const IPluginSelf* self, const char* format, ...)
 	{
-		char buffer[1024];
 		va_list args;
 		va_start(args, format);
-		vsnprintf(buffer, sizeof(buffer), format, args);
+		PluginLogFormatted(PluginLogLevel::Warn, self, format, args);
 		va_end(args);
-		PluginLog(PluginLogLevel::Warn, self, buffer);
 	}
 
 	static void PluginLogError(const IPluginSelf* self, const char* format, ...)
 	{
-		char buffer[1024];
 		va_list args;
 		va_start(args, format);
-		vsnprintf(buffer, sizeof(buffer), format, args);
+		PluginLogFormatted(PluginLogLevel::Error, self, format, args);
 		va_end(args);
-		PluginLog(PluginLogLevel::Error, self, buffer);
 	}
 
 	// Global logger instance
@@ -100,6 +126,12 @@ namespace ModLoaderLogger
 		InitializeCriticalSection(&g_logLock);
 		g_logInitialized = true;
 		LogToFile::Info("[ModLoader] Logger initialized (using Log:: backend)");
+
+		// Seed per-plugin levels from -PluginLogLevel= before anything can load
+		// a plugin. This is the whole point of the switch: a plugin that floods
+		// during boot has already filled the log by the time the Logging tab
+		// exists, so the level has to be in place before its first line.
+		PluginLogLevels::ApplyCommandLine();
 	}
 
 	void ShutdownLogger()

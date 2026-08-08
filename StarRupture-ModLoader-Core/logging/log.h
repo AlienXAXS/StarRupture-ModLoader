@@ -455,9 +455,25 @@ namespace LogToFile
 	// Thread-safe: All operations are protected by critical section
 	// -----------------------------------------------------------------------
 
-	inline void Write(Level level, const char* levelStr, const char* fmt, va_list args)
+	// bypassMinLevel skips the g_minLevel comparison because the caller has
+	// already applied a gate of its own, or because the line describes a change
+	// to the gates themselves. Two callers, both in logging/plugin_log_levels.h
+	// territory:
+	//
+	//   - the per-plugin log path (logger.cpp). A plugin turned up to TRACE has
+	//     to be genuinely more verbose than the loader's own level, and stacking
+	//     the two gates would cap it at whichever is stricter -- making the
+	//     override do nothing in exactly the case it exists for.
+	//   - the one-shot lines reporting what -PluginLogLevel= applied at boot. A
+	//     line explaining why a plugin's output is missing is worthless if the
+	//     setting it describes filters the line out as well.
+	//
+	// Nothing else should pass true; unfiltered output is not the loader's to
+	// hand out.
+	inline void WriteEx(Level level, const char* levelStr, bool bypassMinLevel,
+	                     const char* fmt, va_list args)
 	{
-		if (level < g_minLevel)
+		if (!bypassMinLevel && level < g_minLevel)
 			return;
 
 		// Ensure logging is initialized (with init-once semantics)
@@ -561,6 +577,20 @@ namespace LogToFile
 			// Always release the lock, even if an exception occurs
 			LeaveCriticalSection(&g_logLock);
 		}
+	}
+
+	inline void Write(Level level, const char* levelStr, const char* fmt, va_list args)
+	{
+		WriteEx(level, levelStr, /*bypassMinLevel=*/false, fmt, args);
+	}
+
+	// Emit a line that has already passed a caller-owned level check.
+	// See WriteEx() for why this exists and who is allowed to call it.
+	inline void WriteBypass(Level level, const char* levelStr, const char* fmt, ...)
+	{
+		va_list args; va_start(args, fmt);
+		WriteEx(level, levelStr, /*bypassMinLevel=*/true, fmt, args);
+		va_end(args);
 	}
 
 	// -----------------------------------------------------------------------

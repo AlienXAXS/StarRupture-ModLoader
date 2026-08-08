@@ -20,6 +20,13 @@ namespace PluginManager
         // console address a plugin by file when its PluginInfo name is unknown --
         // an out-of-date or crashed-on-load record has no usable name.
         char fileName[128];
+
+        // True when an auto-update sidecar sits beside the DLL (MyPlugin.dll ->
+        // MyPlugin.json). That file is what makes a plugin self-updating: the
+        // updater's per-plugin pass only ever looks at plugins that have one --
+        // see auto_update/auto_updater.h. Checked on disk at snapshot time, not
+        // cached, so dropping a sidecar in shows up without a restart.
+        bool hasUpdateManifest;
     };
 
     // Initialize the plugin manager

@@ -13,6 +13,7 @@
 #include "console/server_console.h"
 #include "logging/log.h"
 #include "logging/logger.h"
+#include "logging/plugin_log_levels.h"
 #include "network_channel/network_channel.h"
 #include "plugins/plugin_interface.h"
 #include "plugins/plugin_manager.h"
@@ -445,12 +446,142 @@ namespace ModConsole
         return false;
     }
 
+    // Per-plugin form of loglevel: sets one plugin's own minimum, or "default"
+    // to put it back on the global level. Same registry the client's Logging
+    // tab drives -- a dedicated server has no UI, and this is the only way to
+    // reach it there.
+    static void Cmd_LogLevelForPlugin(const std::string& target, const std::string& levelArg, Sink& out)
+    {
+        int newValue = PluginLogLevels::kInherit;
+        if (_stricmp(levelArg.c_str(), "default") != 0 &&
+            _stricmp(levelArg.c_str(), "inherit") != 0)
+        {
+            LogToFile::Level parsed = LogToFile::Level::Info;
+            if (!ParseLevelStrict(levelArg, parsed))
+            {
+                out.Error("'%s' is not a log level. Use trace, debug, info, warn, error or default.",
+                          levelArg.c_str());
+                return;
+            }
+            newValue = static_cast<int>(parsed);
+        }
+
+        const char* newName = (newValue == PluginLogLevels::kInherit)
+                            ? "DEFAULT" : LevelName(static_cast<LogToFile::Level>(newValue));
+
+        // '*' applies to every plugin record the manager knows about, which is
+        // what "all plugins" has to mean here -- the registry itself holds only
+        // the plugins someone has already overridden. (The command line's '*'
+        // cannot work this way: no plugin has a name yet when it is parsed, so
+        // it sets the wildcard fallback instead.)
+        if (target == "*" || _stricmp(target.c_str(), "all") == 0)
+        {
+            // "everything back to normal" has to include a wildcard the command
+            // line set, or there is no way to undo -PluginLogLevel=* short of
+            // relaunching the game.
+            if (newValue == PluginLogLevels::kInherit)
+            {
+                PluginLogLevels::ClearAll();
+                out.Out("All plugins -> DEFAULT.");
+                LogToFile::Error("[Console] Plugin log level: all -> DEFAULT");
+                return;
+            }
+
+            const int total = PluginManager::GetAllPluginStatuses(nullptr, 0);
+            if (total <= 0)
+            {
+                out.Error("No plugins to configure.");
+                return;
+            }
+
+            std::vector<PluginManager::PluginStatus> statuses(total);
+            PluginManager::GetAllPluginStatuses(statuses.data(), total);
+
+            int applied = 0;
+            for (const auto& s : statuses)
+            {
+                if (!s.name[0]) continue;
+                PluginLogLevels::SetOverride(s.name, newValue);
+                ++applied;
+            }
+
+            out.Out("%d plugin(s) -> %s.", applied, newName);
+            out.Notice("Not saved -- every plugin is back on DEFAULT next start.");
+            LogToFile::Error("[Console] Plugin log level: all -> %s", newName);
+            return;
+        }
+
+        const int index = PluginManager::FindPluginIndex(target.c_str());
+        if (index < 0)
+        {
+            out.Error("No plugin matches '%s'. Try 'plugins' for the list.", target.c_str());
+            return;
+        }
+
+        // Resolve back to the PluginInfo name: the registry is keyed by it, and
+        // the user may well have typed the DLL file name instead.
+        const int total = PluginManager::GetAllPluginStatuses(nullptr, 0);
+        std::vector<PluginManager::PluginStatus> statuses(total > 0 ? total : 0);
+        if (total > 0)
+            PluginManager::GetAllPluginStatuses(statuses.data(), total);
+
+        if (index >= total || !statuses[index].name[0])
+        {
+            out.Error("'%s' has never loaded far enough to have a name, so it logs nothing.",
+                      target.c_str());
+            return;
+        }
+
+        const char* pluginName = statuses[index].name;
+        const int   previous   = PluginLogLevels::GetOverride(pluginName);
+        const char* prevName   = (previous == PluginLogLevels::kInherit)
+                               ? "DEFAULT" : LevelName(static_cast<LogToFile::Level>(previous));
+
+        PluginLogLevels::SetOverride(pluginName, newValue);
+
+        out.Out("%s log level %s -> %s.", pluginName, prevName, newName);
+        out.Notice("Not saved -- this plugin is back on DEFAULT next start.");
+        LogToFile::Error("[Console] Plugin log level: %s %s -> %s", pluginName, prevName, newName);
+    }
+
     static void Cmd_LogLevel(const std::vector<std::string>& args, Sink& out)
     {
         if (args.size() < 2)
         {
             out.Out("Log level is %s.", LevelName(LogToFile::g_minLevel));
+
+            const int wildcard = PluginLogLevels::GetWildcard();
+            if (wildcard != PluginLogLevels::kInherit)
+                out.Notice("Plugin default is %s (-PluginLogLevel=*), not the level above.",
+                           LevelName(static_cast<LogToFile::Level>(wildcard)));
+
+            if (PluginLogLevels::AnyOverrides())
+            {
+                const int total = PluginManager::GetAllPluginStatuses(nullptr, 0);
+                if (total > 0)
+                {
+                    std::vector<PluginManager::PluginStatus> statuses(total);
+                    PluginManager::GetAllPluginStatuses(statuses.data(), total);
+                    for (const auto& s : statuses)
+                    {
+                        if (!s.name[0]) continue;
+                        const int over = PluginLogLevels::GetOverride(s.name);
+                        if (over == PluginLogLevels::kInherit) continue;
+                        out.Out("  %-28s %s", s.name, LevelName(static_cast<LogToFile::Level>(over)));
+                    }
+                }
+            }
+
             out.Notice("Set it with: loglevel <trace|debug|info|warn|error>");
+            out.Notice("Per plugin:  loglevel <plugin|*> <level|default>   (runtime only)");
+            return;
+        }
+
+        // Two arguments always mean the per-plugin form -- no log level is also
+        // a plugin name, so there is nothing to disambiguate.
+        if (args.size() >= 3)
+        {
+            Cmd_LogLevelForPlugin(args[1], args[2], out);
             return;
         }
 
@@ -458,6 +589,7 @@ namespace ModConsole
         if (!ParseLevelStrict(args[1], level))
         {
             out.Error("'%s' is not a log level. Use trace, debug, info, warn or error.", args[1].c_str());
+            out.Notice("For one plugin: loglevel <plugin> <level|default>");
             return;
         }
 
@@ -644,8 +776,8 @@ namespace ModConsole
                    "Show mod loader build and plugin interface versions",
                    &Cmd_Version, false });
 
-        Register({ "loglevel", "log",       "loglevel [level]",
-                   "Show or change the log level (trace/debug/info/warn/error)",
+        Register({ "loglevel", "log",       "loglevel [level] | loglevel <plugin|*> <level|default>",
+                   "Show or change the log level, globally or for one plugin",
                    &Cmd_LogLevel, false });
 
         Register({ "clear",   "cls",        "clear",

@@ -10,10 +10,9 @@
 #include "global_settings.h"
 #include "theme.h"
 #include "update_notice_window.h"
-#include "logging/log.h"
 #include "hooks/input/keybind_registry.h"
 #include "console_window.h"
-#include "hooks/game/log_verbosity/log_verbosity.h"
+#include "logging_tab.h"
 #include "tick_profiler_window.h"
 #ifdef _DEBUG
 #include "hooks/game/debug_draw/debug_draw.h"
@@ -23,7 +22,6 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <iterator>
 #include <vector>
 #include <string>
 
@@ -39,7 +37,22 @@ namespace UI::ModLoaderWindow
     // -----------------------------------------------------------------------
     static bool s_isOpen = false;
     static int  s_selectedPlugin = -1;  // index in Plugins tab
-    static int  s_activeTab = 0;        // index into the icon tab strip (Plugins/Config/Settings/About)
+
+    // Indices into the icon tab strip. Named so a cross-tab jump (the Settings
+    // tab's "Open Logging" button) does not hard-code a number that silently
+    // points at the wrong tab the next time one is inserted.
+    enum : int
+    {
+        kTabPlugins = 0,
+        kTabConfig,
+        kTabSettings,
+        kTabLogging,
+        kTabTheme,
+        kTabAbout,
+        kTabCount,
+    };
+
+    static int  s_activeTab = kTabPlugins;
 
     // Config tab: per-key editable buffers.
     // We parse the INI once when the selection changes, then cache.
@@ -199,10 +212,43 @@ namespace UI::ModLoaderWindow
     // Tab renderers
     // -----------------------------------------------------------------------
 
+    // Small filled dot in front of a plugin's name saying whether it can update
+    // itself: green when an auto-update sidecar sits beside the DLL, amber when
+    // it does not. A dot rather than a word because it repeats on every row and
+    // a column of prose there would swamp the name it is annotating.
+    //
+    // Drawn over an InvisibleButton rather than as text so it needs no glyph
+    // from the icon font and still has a hover rect for the tooltip.
+    static void DrawAutoUpdateDot(bool hasManifest)
+    {
+        const float radius = ImGui::GetFontSize() * 0.26f;
+        const float box    = radius * 2.0f;
+
+        const ImVec2 origin = ImGui::GetCursorScreenPos();
+        ImGui::InvisibleButton("##autoupd", ImVec2(box, ImGui::GetTextLineHeight()));
+
+        const ImVec4 col = hasManifest ? ImVec4(0.30f, 0.85f, 0.40f, 1.0f)   // green
+                                       : ImVec4(1.00f, 0.65f, 0.10f, 1.0f);  // amber
+        ImGui::GetWindowDrawList()->AddCircleFilled(
+            ImVec2(origin.x + radius, origin.y + ImGui::GetTextLineHeight() * 0.5f),
+            radius, ImGui::GetColorU32(col));
+
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip(hasManifest
+                ? "This plugin can Auto Update itself"
+                : "This plugin cannot Auto Update itself -- it has no update\n"
+                  "manifest, so new versions have to be installed by hand.");
+
+        ImGui::SameLine(0.0f, ImGui::GetStyle().ItemInnerSpacing.x);
+    }
+
     static void RenderPluginsTab()
     {
+        // The return is the TOTAL record count, not how many were copied --
+        // clamp to the buffer before iterating.
         static PluginManager::PluginStatus statuses[64];
-        int count = PluginManager::GetAllPluginStatuses(statuses, 64);
+        const int total = PluginManager::GetAllPluginStatuses(statuses, 64);
+        const int count = total < 64 ? total : 64;
 
         if (count == 0)
         {
@@ -239,6 +285,9 @@ namespace UI::ModLoaderWindow
                         ImGui::GetColorU32(UI::Theme::AccentColorVec4(0.10f)));
 
                 ImGui::TableSetColumnIndex(0);
+                ImGui::PushID(i);
+                DrawAutoUpdateDot(s.hasUpdateManifest);
+                ImGui::PopID();
                 ImGui::TextUnformatted(s.name[0] ? s.name : "?");
 
                 ImGui::TableSetColumnIndex(1);
@@ -871,71 +920,9 @@ namespace UI::ModLoaderWindow
         ImGui::SeparatorText("Logging");
         ImGui::Spacing();
 
-        static const char*    s_levelNames[]   = { "Trace", "Debug", "Info", "Warn", "Error" };
-        static const wchar_t* s_levelNamesIni[] = { L"TRACE", L"DEBUG", L"INFO", L"WARN", L"ERROR" };
-        int currentLevel = static_cast<int>(LogToFile::g_minLevel);
-        if (ImGui::Combo("Log Level", &currentLevel, s_levelNames, 5))
-        {
-            LogToFile::g_minLevel = static_cast<LogToFile::Level>(currentLevel);
-            const wchar_t* iniPath = UI::GlobalSettings::GetIniPath();
-            if (iniPath && iniPath[0] != L'\0')
-                WritePrivateProfileStringW(L"Logging", L"Level", s_levelNamesIni[currentLevel], iniPath);
-        }
-        ImGui::SameLine();
-        ImGui::TextDisabled("(?)");
-        if (ImGui::IsItemHovered())
-            ImGui::SetTooltip("Takes effect immediately. Persisted to modloader.ini.");
-
-        // Game-side UE log verbosity. Separate from the modloader's own log level
-        // above -- this raises the game's UE_LOG categories so their output reaches
-        // StarRupture.log.
-        {
-            using GameLevel = Hooks::LogVerbosity::Level;
-
-            static const char*     s_gameLevelNames[] = {
-                "Default", "Error", "Warning", "Display", "Log", "Verbose", "VeryVerbose"
-            };
-            static const GameLevel s_gameLevels[] = {
-                GameLevel::Default, GameLevel::Error,   GameLevel::Warning, GameLevel::Display,
-                GameLevel::Log,     GameLevel::Verbose, GameLevel::VeryVerbose
-            };
-            constexpr int kGameLevelCount = static_cast<int>(std::size(s_gameLevels));
-
-            const GameLevel current = Hooks::LogVerbosity::GetLevel();
-            int curIdx = 0;
-            for (int i = 0; i < kGameLevelCount; ++i)
-                if (s_gameLevels[i] == current) { curIdx = i; break; }
-
-            const bool available = Hooks::LogVerbosity::IsInstalled();
-            if (!available)
-                ImGui::BeginDisabled();
-
-            if (ImGui::Combo("Game Log Verbosity", &curIdx, s_gameLevelNames, kGameLevelCount))
-                Hooks::LogVerbosity::SetLevel(s_gameLevels[curIdx]);
-
-            if (!available)
-                ImGui::EndDisabled();
-
-            ImGui::SameLine();
-            ImGui::TextDisabled("(?)");
-            if (ImGui::IsItemHovered())
-            {
-                if (available)
-                    ImGui::SetTooltip(
-                        "Verbosity of the GAME's own UE log categories, written to\n"
-                        "StarRupture.log (not the modloader log above).\n\n"
-                        "'Default' leaves the game's shipped settings alone. Any other value\n"
-                        "applies to every log category at once, replacing whatever per-category\n"
-                        "levels the game configured -- each category is still capped at the\n"
-                        "verbosity it was compiled with, so nothing can exceed that.\n\n"
-                        "Takes effect immediately and is re-applied early on the next launch.\n"
-                        "Persisted to modloader.ini.");
-                else
-                    ImGui::SetTooltip(
-                        "Unavailable: the engine log-suppression symbols could not be\n"
-                        "resolved on this game build. See modloader.log for details.");
-            }
-        }
+        ImGui::TextDisabled("Log levels moved to their own tab, which can also set a level per plugin.");
+        if (ImGui::Button("Open Logging"))
+            s_activeTab = kTabLogging;
 
         ImGui::Spacing();
         ImGui::SeparatorText("Developer");
@@ -1296,21 +1283,36 @@ namespace UI::ModLoaderWindow
                                               "BUILD " MODLOADER_BUILD_TAG, ImGuiWindowFlags_NoScrollbar))
             return;
 
-        static const char* s_tabIcons[5] =
+        static const char* s_tabIcons[kTabCount] =
         {
             UI::Theme::Icons::Plugins,
             UI::Theme::Icons::Config,
             UI::Theme::Icons::Settings,
+            UI::Theme::Icons::Logging,
             UI::Theme::Icons::Theme,
             UI::Theme::Icons::About,
         };
-        static const char* s_tabLabels[5] =
+
+        // Drawn under the icon -- one short word each so they fit the nav
+        // column at the default font scale. The sentence explaining what the
+        // tab actually does lives in the tooltip below.
+        static const char* s_tabLabels[kTabCount] =
         {
             "Plugins",
-            "Plugin Config",
+            "Config",
             "Settings",
+            "Logging",
             "Theme",
             "About",
+        };
+        static const char* s_tabTooltips[kTabCount] =
+        {
+            "Plugins -- load, unload and reload installed plugins",
+            "Plugin Config -- edit each plugin's own settings and keybinds",
+            "Settings -- HUD overlays, auto-update and diagnostics",
+            "Logging -- log levels for the loader, the game and each plugin",
+            "Theme -- font, text size and every UI color",
+            "About -- build tag and the plugins currently loaded",
         };
 
         const float navSize  = 64.0f;
@@ -1319,7 +1321,8 @@ namespace UI::ModLoaderWindow
         ImVec2 navStart = ImGui::GetCursorScreenPos();
 
         ImGui::BeginChild("##nav_col", ImVec2(navWidth, avail.y), false);
-        s_activeTab = UI::Theme::IconTabBar(s_tabIcons, 5, s_activeTab, navSize, /*vertical=*/true, s_tabLabels);
+        s_activeTab = UI::Theme::IconTabBar(s_tabIcons, kTabCount, s_activeTab, navSize,
+                                            /*vertical=*/true, s_tabLabels, s_tabTooltips);
         ImGui::EndChild();
 
         // Vertical divider between the icon column and the tab content,
@@ -1334,11 +1337,12 @@ namespace UI::ModLoaderWindow
         ImGui::BeginChild("##tab_content", ImVec2(0, avail.y), false);
         switch (s_activeTab)
         {
-        case 0: RenderPluginsTab();        break;
-        case 1: RenderConfigTab(imgui);    break;
-        case 2: RenderGlobalSettingsTab(); break;
-        case 3: RenderThemeTab();          break;
-        case 4: RenderAboutTab();          break;
+        case kTabPlugins:  RenderPluginsTab();        break;
+        case kTabConfig:   RenderConfigTab(imgui);    break;
+        case kTabSettings: RenderGlobalSettingsTab(); break;
+        case kTabLogging:  UI::LoggingTab::Render();  break;
+        case kTabTheme:    RenderThemeTab();          break;
+        case kTabAbout:    RenderAboutTab();          break;
         default: break;
         }
         ImGui::EndChild();
