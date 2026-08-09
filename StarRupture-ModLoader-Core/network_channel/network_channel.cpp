@@ -479,12 +479,51 @@ namespace
     //
     // Giving up is a normal outcome, not an error: it is what a vanilla client
     // looks like from here.
+    //
+    // A RETRY MUST NEVER RPC THE CONTROLLER THIS STATE WAS CREATED WITH.
+    // The cached pointer is the one thing here that can outlive what it names, and
+    // it took down a listen host in v1.19.x. The sequence:
+    //
+    //   00:18:19  PostLogin -> BeginGreeting, attempts = 1
+    //   ...       the host travels to ChimeraMain. The game thread is inside the
+    //             load for ~80 s, so OnEngineTick does not run and PumpGreetings
+    //             never gets to attempt 2 -- the entry sits there, frozen at
+    //             attempt 1, for the whole load. (LogNet said so plainly:
+    //             "Very long time between ticks. DeltaTime: 79.94".)
+    //   00:19:39  the client's connection dies waiting on that load
+    //   00:19:45  RemoveClientConnection, UChannel::CleanUp, then Logout -- and
+    //             Logout fires with PC->NetConnection already cleared, so
+    //             OnPlayerLeftForgetConn has no key and forgets nothing
+    //   00:19:46  the tick resumes, 86 s > kHelloRetryMs, attempt 2 goes out on a
+    //             controller the GC has already marked unreachable ->
+    //             "Assertion failed: !IsUnreachable() ... Function
+    //             '/Script/Engine.PlayerController:ClientMessage' called on Object
+    //             '...PersistentLevel.None' that was marked unreachable."
+    //
+    // Note what does NOT save this: SendHelloSEH's __except. The object was still
+    // mapped and readable -- the engine's own check inside ProcessEvent is what
+    // fired, and a UE fatal assert is not an SEH exception it could have caught.
+    // The only fix is to not make the call.
+    //
+    // So the retry path resolves its target from the connection every time, and
+    // only after confirming the net driver still lists that connection as live
+    // (LiveControllerForConnection below). A connection the engine still owns
+    // holds a hard reference to its player controller, which is precisely the
+    // property "not unreachable" means -- no GC-internal flag bits needed.
+    //
+    // kHelloMaxAgeMs backs that up with a wall-clock deadline, because the stall
+    // above is exactly the shape of failure an attempt counter cannot see: no
+    // attempts were spent, so nothing aged out, while 86 seconds of engine state
+    // change went past underneath.
 
     struct HelloState
     {
+        // Diagnostics and the PlayerLeft purge only. Never an RPC target after
+        // the frame it was captured on -- see the note above.
         void*    controller = nullptr;
         int      attempts   = 0;
         uint64_t lastMs     = 0;
+        uint64_t startedMs  = 0;
     };
 
     static std::mutex                            g_helloMutex;
@@ -492,10 +531,52 @@ namespace
 
     static constexpr uint64_t kHelloRetryMs     = 1000;
     static constexpr int      kHelloMaxAttempts = 10;
+    static constexpr uint64_t kHelloMaxAgeMs    = 30000;
+
+    static void ForgetConnectionState(void* conn); // defined once every store exists
+
+    // Is this still one of the net driver's live client connections?
+    //
+    // Pointer comparison only -- conn is never dereferenced here, which is the
+    // entire point: this is the check that decides whether dereferencing it is
+    // safe. UNetDriver::RemoveClientConnection drops the entry as the peer goes
+    // away (a full second before Logout, in the crash above), so falling out of
+    // this list is the earliest and most reliable signal that a peer is gone.
+    static bool IsLiveClientConnection(void* conn)
+    {
+        if (!conn) return false;
+        __try
+        {
+            SDK::UWorld* world = SDK::UWorld::GetWorld();
+            if (!world || !world->NetDriver) return false;
+
+            auto* conns = &world->NetDriver->ClientConnections;
+            for (int32_t i = 0; i < conns->Num(); ++i)
+                if (static_cast<void*>((*conns)[i]) == conn) return true;
+
+            return false;
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER)
+        {
+            return false;
+        }
+    }
+
+    // The controller it is safe to RPC for this peer right now, or null if there
+    // is none. Null covers two different situations and the caller has to tell
+    // them apart, which is why IsLiveClientConnection is also exposed: a live
+    // connection whose controller has not resolved yet is worth waiting for, a
+    // connection that has left the driver's list is not.
+    static void* LiveControllerForConnection(void* conn)
+    {
+        if (!IsLiveClientConnection(conn)) return nullptr;
+        return PlayerForConnection(conn);
+    }
 
     // No C++ object here needs unwinding, so the SDK call can sit inside __try:
     // ProcessEvent walks engine state that a departing client can invalidate
-    // between our null check and the call.
+    // between our null check and the call. This guards a torn-down object, NOT a
+    // garbage-collected one -- see the note above.
     static bool SendHelloSEH(void* playerController, const wchar_t* text)
     {
         __try
@@ -543,6 +624,7 @@ namespace
             st.controller  = playerController;
             st.attempts    = 1;
             st.lastMs      = GetTickCount64();
+            st.startedMs   = st.lastMs;
         }
 
         const bool ok = GreetClient(playerController);
@@ -566,9 +648,11 @@ namespace
 
         if (!HasNetAuthority()) return;
 
-        std::vector<std::pair<void*, void*>> toGreet; // conn, controller
-        std::vector<void*>                   answered;
-        std::vector<void*>                   gaveUp;
+        std::vector<void*> toGreet;
+        std::vector<void*> answered;
+        std::vector<void*> gaveUp;
+        // conn, attempts. Outlived kHelloMaxAgeMs without resolving.
+        std::vector<std::pair<void*, int>> expired;
 
         {
             std::lock_guard<std::mutex> lk(g_helloMutex);
@@ -583,17 +667,35 @@ namespace
                 // gets built. Collect candidates now, decide once the lock is out
                 // of the way.
                 if (nowMs - st.lastMs < kHelloRetryMs) continue;
+                if (nowMs - st.startedMs >= kHelloMaxAgeMs)
+                {
+                    expired.push_back({ conn, st.attempts });
+                    continue;
+                }
                 if (st.attempts >= kHelloMaxAttempts) { gaveUp.push_back(conn); continue; }
-                toGreet.push_back({ conn, st.controller });
+                toGreet.push_back(conn);
             }
         }
 
-        for (auto& c : toGreet)
-            if (HasManifest(c.first)) answered.push_back(c.first);
+        for (void* conn : toGreet)
+            if (HasManifest(conn)) answered.push_back(conn);
 
         for (void* conn : gaveUp)
         {
             if (HasManifest(conn)) { answered.push_back(conn); continue; }
+
+            // A peer that has left the driver's client list did not decline to
+            // answer, it disconnected -- and PlayerNameForConnection would be
+            // dereferencing a dead UNetConnection to name it. Say the true thing
+            // and touch nothing.
+            if (!IsLiveClientConnection(conn))
+            {
+                ModLoaderLogger::LogDebug(
+                    L"[NetworkChannel] Peer %p disconnected before answering %d greetings -- "
+                    L"no conclusion drawn about it, forgetting it", conn, kHelloMaxAttempts);
+                ForgetConnectionState(conn);
+                continue;
+            }
 
             // One INFO line per client, stating an outcome. The greetings
             // themselves are Debug/Trace: an operator wants to know what each
@@ -606,30 +708,69 @@ namespace
                 name.empty() ? "(unnamed)" : name.c_str(), kHelloMaxAttempts);
         }
 
+        for (auto& e : expired)
+            ModLoaderLogger::LogDebug(
+                L"[NetworkChannel] Gave up greeting peer %p after %llu ms without an answer "
+                L"(attempts spent: %d) -- the deadline, not the attempt count, so a long "
+                L"engine stall cannot leave this pending",
+                e.first, static_cast<unsigned long long>(kHelloMaxAgeMs), e.second);
+
         {
             std::lock_guard<std::mutex> lk(g_helloMutex);
             for (void* conn : gaveUp)   g_helloByConn.erase(conn);
             for (void* conn : answered) g_helloByConn.erase(conn);
+            for (auto&  e    : expired) g_helloByConn.erase(e.first);
         }
 
-        for (auto& c : toGreet)
+        for (void* conn : toGreet)
         {
-            if (std::find(answered.begin(), answered.end(), c.first) != answered.end()) continue;
+            if (std::find(answered.begin(), answered.end(), conn) != answered.end()) continue;
+
+            // Resolve the target now, from the connection, and only if the driver
+            // still owns that connection. Never from HelloState::controller --
+            // see the note above the struct for the crash that came of it.
+            void* controller = LiveControllerForConnection(conn);
+            if (!controller)
+            {
+                if (IsLiveClientConnection(conn))
+                {
+                    // Connected, but no player controller yet. Wait for it rather
+                    // than spending an attempt: this is a peer mid-spawn, not one
+                    // ignoring us. kHelloMaxAgeMs is what stops it waiting forever.
+                    std::lock_guard<std::mutex> lk(g_helloMutex);
+                    auto it = g_helloByConn.find(conn);
+                    if (it != g_helloByConn.end()) it->second.lastMs = nowMs;
+
+                    ModLoaderLogger::LogTrace(
+                        L"[NetworkChannel] Peer %p has no player controller yet -- greeting deferred",
+                        conn);
+                    continue;
+                }
+
+                // Gone from the driver's client list: the peer has disconnected
+                // and anything we still hold for it is stale. Nothing is sent.
+                ModLoaderLogger::LogDebug(
+                    L"[NetworkChannel] Peer %p is no longer a live client connection -- "
+                    L"dropping its pending greeting and forgetting it", conn);
+                ForgetConnectionState(conn);
+                continue;
+            }
 
             int attempt = 0;
             {
                 std::lock_guard<std::mutex> lk(g_helloMutex);
-                auto it = g_helloByConn.find(c.first);
+                auto it = g_helloByConn.find(conn);
                 if (it == g_helloByConn.end()) continue; // peer left mid-pump
                 it->second.attempts++;
-                it->second.lastMs = nowMs;
+                it->second.lastMs    = nowMs;
+                it->second.controller = controller;
                 attempt = it->second.attempts;
             }
 
-            GreetClient(c.second);
+            GreetClient(controller);
             ModLoaderLogger::LogTrace(
                 L"[NetworkChannel] Re-greeted peer %p (attempt %d/%d)",
-                c.first, attempt, kHelloMaxAttempts);
+                conn, attempt, kHelloMaxAttempts);
         }
     }
 
@@ -741,6 +882,26 @@ namespace
         _snprintf_s(key, sizeof(key), _TRUNCATE, "%s\x01%p", plugin ? plugin : "", conn);
         std::lock_guard<std::mutex> lk(g_readyMutex);
         return g_notReadyWarned.insert(key).second;
+    }
+
+    // Drop any pending greeting whose state names this controller.
+    //
+    // The connection-keyed path cannot reach these: Logout can fire with
+    // PC->NetConnection already cleared, leaving nothing to look the entry up by.
+    // The controller is the only handle left at that point, and it is not used as
+    // an RPC target here -- only compared, which is safe on a dead pointer.
+    static void ForgetHelloByController(void* playerController)
+    {
+        if (!playerController) return;
+
+        std::lock_guard<std::mutex> lk(g_helloMutex);
+        for (auto it = g_helloByConn.begin(); it != g_helloByConn.end(); )
+        {
+            if (it->second.controller == playerController)
+                it = g_helloByConn.erase(it);
+            else
+                ++it;
+        }
     }
 
     // Everything keyed by connection lives in five places; forgetting a peer has
@@ -2192,6 +2353,13 @@ static bool DispatchServerNarrow(void* senderConn, void* senderUObject,
 // disconnect, session end) on either side.
 static void OnPlayerLeftForgetConn(void* exitingController)
 {
+    // Unconditional, and it must stay that way: this is the only cleanup keyed by
+    // the controller, and the no-connection branch below is exactly when a pending
+    // greeting is left holding a controller the GC is about to take. Doing it
+    // first also means the connection-keyed erase below is a no-op rather than a
+    // second pass over the same entry.
+    ForgetHelloByController(exitingController);
+
     void* conn = ConnectionForPlayer(exitingController);
     if (conn)
     {
@@ -2203,11 +2371,13 @@ static void OnPlayerLeftForgetConn(void* exitingController)
     }
 
     // Logout fired but the controller no longer names a connection -- the net
-    // layer had already torn it down. There is nothing to key off here, so the
-    // periodic sweep below is what actually reclaims this peer's buffers.
+    // layer had already torn it down. The pending greeting is gone (above); there
+    // is nothing left to key the rest off, so the periodic sweep and the
+    // live-connection check in PumpGreetings are what reclaim this peer's buffers.
     ModLoaderLogger::LogDebug(
         L"[NetworkChannel] Player left with no NetConnection on controller %p; "
-        L"leaving cleanup to the stale-partial sweep", exitingController);
+        L"greeting dropped, leaving buffer cleanup to the stale-partial sweep",
+        exitingController);
 }
 
 static void OnWorldEndPlayForgetConns(SDK::UWorld* /*world*/, const char* /*worldName*/)
