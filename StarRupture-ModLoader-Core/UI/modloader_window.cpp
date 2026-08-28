@@ -14,6 +14,7 @@
 #include "console_window.h"
 #include "logging_tab.h"
 #include "tick_profiler_window.h"
+#include "network_channel/net_timeout.h"
 #ifdef _DEBUG
 #include "hooks/game/debug_draw/debug_draw.h"
 #include "utils/game_thread_dispatch.h"
@@ -887,6 +888,57 @@ namespace UI::ModLoaderWindow
                 "loaded. A token still held with no UI on screen is a leak, and this\n"
                 "names the plugin responsible.");
         }
+
+        ImGui::Spacing();
+        ImGui::SeparatorText("Networking");
+        ImGui::Spacing();
+
+        // -1 means "not read yet". The slider owns the value from then on; the
+        // commit below is what writes it back.
+        static int s_connTimeout = -1;
+        if (s_connTimeout < 0)
+            s_connTimeout = static_cast<int>(NetTimeout::GetConnectionTimeout());
+
+        // A literal with no format specifier is a legal ImGui slider format, and
+        // is how 0 reads as what it means rather than as "0 seconds" -- which
+        // would suggest an instant timeout, the opposite of what it does.
+        const char* timeoutFmt = (s_connTimeout == 0) ? "Engine default" : "%d s";
+
+        ImGui::SetNextItemWidth(240.0f);
+        ImGui::SliderInt("Connection Timeout", &s_connTimeout, 0, 900, timeoutFmt,
+                         ImGuiSliderFlags_AlwaysClamp);
+
+        // Committed on release, not per frame: SetConnectionTimeout persists to
+        // modloader.ini, and a drag would otherwise write the file every frame.
+        if (ImGui::IsItemDeactivatedAfterEdit())
+            NetTimeout::SetConnectionTimeout(static_cast<float>(s_connTimeout));
+
+        ImGui::SameLine();
+        ImGui::TextDisabled("(?)");
+        if (ImGui::IsItemHovered())
+        {
+            ImGui::SetTooltip(
+                "How long a peer may go silent before the connection is dropped.\n\n"
+                "Raise this if players are disconnected while the host loads a map:\n"
+                "the host's game thread does not tick during a load, so nothing is\n"
+                "sent -- not even keepalives -- and the client sees silence for the\n"
+                "whole load.\n\n"
+                "BOTH ends need the mod loader for this to help. Each side times the\n"
+                "other out against its own clock, so the side that gives up is the\n"
+                "side that needs the higher value.\n\n"
+                "The cost: a genuinely dead connection now holds its player slot for\n"
+                "this long instead of a minute.\n\n"
+                "0 leaves the engine's own default alone. Applies on the next tick;\n"
+                "persisted to modloader.ini.");
+        }
+
+        // What the live net driver actually holds -- not what is configured. If
+        // someone drops anyway, this is the number the engine timed them out on.
+        const float appliedTimeout = NetTimeout::GetAppliedConnectionTimeout();
+        if (appliedTimeout > 0.0f)
+            ImGui::TextDisabled("Active on the current net driver: %.0f s", appliedTimeout);
+        else
+            ImGui::TextDisabled("No net driver right now (not in a session).");
 
         ImGui::Spacing();
         ImGui::SeparatorText("Auto Update");

@@ -393,6 +393,9 @@
     <ClInclude Include="UI\theme.h">
       <Filter>Source Files\UI</Filter>
     </ClInclude>
+    <ClInclude Include="network_channel\net_timeout.h">
+      <Filter>Source Files\network_channel</Filter>
+    </ClInclude>
     <ClInclude Include="network_channel\network_channel.h">
       <Filter>Source Files\network_channel</Filter>
     </ClInclude>
@@ -598,6 +601,9 @@
     </ClCompile>
     <ClCompile Include="hooks\game\object_lookup\object_lookup.cpp">
       <Filter>Source Files\hooks\game\object_lookup</Filter>
+    </ClCompile>
+    <ClCompile Include="network_channel\net_timeout.cpp">
+      <Filter>Source Files\network_channel</Filter>
     </ClCompile>
     <ClCompile Include="network_channel\network_channel.cpp">
       <Filter>Source Files\network_channel</Filter>

@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "network_channel.h"
 #include "packet_fragmentation.h"
+#include "net_timeout.h"
 #include "logging/logger.h"
 
 #if defined(MODLOADER_SERVER_BUILD) || defined(MODLOADER_CLIENT_BUILD)
@@ -2536,6 +2537,10 @@ static void OnEngineTick(float /*deltaSeconds*/)
 {
     const uint64_t now = GetTickCount64();
 
+    // Re-asserted every frame rather than once at engine init: the net driver is
+    // recreated on travel and each new one starts at the engine default.
+    NetTimeout::Tick();
+
     SweepStalePartials(now);
 
     // Authority side, and both are no-ops with nothing outstanding: greetings
@@ -2670,6 +2675,11 @@ void NetworkChannel::Initialize()
     if (g_networkInitialized) return;
     g_networkInitialized = true;
 
+    // Before any hook registration: this only reads the ini, and having the
+    // configured values in the log above the networking lines is what makes a
+    // "why did that client drop" report answerable.
+    NetTimeout::Initialize();
+
     // The control channel is the whole transport now: this detour is both the
     // only receive path and the prerequisite for every send.
     Hooks::ControlChannel::SetReceiveCallback(&OnWireReceive);
@@ -2710,6 +2720,8 @@ void NetworkChannel::Initialize()
 void NetworkChannel::Shutdown()
 {
     g_networkInitialized = false;
+
+    NetTimeout::Shutdown();
 
     Hooks::PlayerLeft::UnregisterPluginCallback(&OnPlayerLeftForgetConn);
     Hooks::PlayerJoined::UnregisterPluginCallback(&OnPlayerJoinedGreet);

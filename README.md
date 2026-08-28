@@ -176,6 +176,41 @@ Use the [StarRupture-Plugin-SDK](https://github.com/AlienXAXS/StarRupture-Plugin
 | Logs / diagnostics | Check `ModLoader\Logs\ModLoader.log`. Raise the detail in the **Logging** tab, or set `Level=DEBUG` under `[Logging]` in `ModLoader\modloader.ini`. |
 | One plugin is flooding the log | See [Log Levels](#log-levels) — turn that plugin down on its own, or use `-PluginLogLevel=` if it happens during startup. |
 | Game stops responding to input | Turn on *ModLoader Debug Values* in the **Settings** tab — it names the plugin holding input open. |
+| Players dropped during a long map load | The mod loader raises the engine's net timeouts to 300s by default — see [Net timeouts](#net-timeouts). Both ends of the session need the mod loader for this to help. |
+
+---
+
+## Net timeouts
+
+A player can be dropped while the host loads a map. The host's game thread does not
+tick during the load, so nothing is sent — not even keepalives — and the client sees
+silence for the whole load. Against the engine's stock 60s connection timeout, a load
+longer than that disconnects everyone still joining.
+
+The mod loader raises both net timeouts to **300 seconds** by default. The connection
+timeout has a slider in the **Settings** tab under *Networking*, which also shows what
+the live net driver is actually using. Both are in `ModLoader\modloader.ini`:
+
+```ini
+[Network]
+ConnectionTimeout=300.0
+InitialConnectTimeout=300.0
+```
+
+Set a value to `0` to leave the engine's own default alone. Accepted range is 1–3600
+seconds; anything outside it is ignored with a warning in the log.
+
+Two things to know:
+
+- **Both ends need it.** Each side times the other out against its own clock, so the
+  side that gives up is the side that needs the higher value. A vanilla client cannot
+  be helped by a modded host, and vice versa.
+- **It is not free.** A genuinely dead connection — a crashed client, a pulled network
+  cable — now holds its player slot for the full timeout instead of a minute.
+
+This cannot be set from Steam launch options. The engine does read
+`?ConnectionTimeout=` out of the URL it connects with, but there is no way to get an
+option into that URL from outside the process in a shipping build.
 
 ---
 
