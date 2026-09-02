@@ -10,6 +10,7 @@
 #include "../hooks/input/input_hook.h"
 #include "../hooks/input/keybind_registry.h"
 #include "../UI/global_settings.h"
+#include "../UI/hook_failure_window.h"
 #include "../UI/imgui_backend.h"
 #include "../UI/imgui_host_interface.h"
 #include "../UI/console_window.h"
@@ -35,6 +36,7 @@ bool ShouldCaptureInputNow()
     // forwarded to ImGui while this returns true.
     return UI::ModLoaderWindow::IsOpen()
         || UI::UpdateNoticeWindow::IsOpen()
+        || UI::HookFailureWindow::IsOpen()
         || UI::TickProfilerWindow::IsOpen()
         || UI::ConsoleWindow::IsOpen()
         || UI::PluginPanelRegistry::AnyPanelOpen()
@@ -100,6 +102,7 @@ void InitClientUI()
             UI::Overlay::RenderHud();
             UI::ModLoaderWindow::Render(api);
             UI::UpdateNoticeWindow::Render();
+            UI::HookFailureWindow::Render();
             UI::TickProfilerWindow::Render();
             UI::ConsoleWindow::Render();
             UI::PluginPanelRegistry::RenderPanelWindows(api);
@@ -150,9 +153,14 @@ void InitClientUI()
         UI::Overlay::SetVisible(isMainMenu);
         UI::GlobalSettings::SetWorldName(worldName ? worldName : "");
 
-        // One-shot popup listing plugins the auto-updater replaced this boot.
+        // One-shot popups: what the auto-updater replaced this boot, and any
+        // plugin whose hooks did not resolve. The failure one opens second so it
+        // takes focus -- it is the one that needs acting on.
         if (isMainMenu)
+        {
             UI::UpdateNoticeWindow::ShowIfPending();
+            UI::HookFailureWindow::ShowIfPending();
+        }
     };
     Hooks::WorldBeginPlay::RegisterAnyWorldCallback(s_onWorldReady);
 

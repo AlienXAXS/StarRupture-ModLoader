@@ -402,9 +402,43 @@
 //      callback.
 //
 
-#define PLUGIN_INTERFACE_VERSION_MIN 61
-#define PLUGIN_INTERFACE_VERSION_MAX 61
-#define PLUGIN_INTERFACE_VERSION 61
+// v62 (2026-09-02): AOB scanning moved into its own load phase, and out of
+//      IPluginSelf. BREAKING -- MIN and MAX both move to 62.
+//
+//      THE PROBLEM: a plugin resolved its patterns from PluginInit, which runs
+//      long after the loader finished its own preflight and installed its own
+//      hooks. A plugin whose AOB stopped matching after a game update therefore
+//      loaded anyway, then either did nothing or wrote a detour over whatever
+//      now lived at the address it guessed. The loader had no idea, and neither
+//      did the user, until something behaved strangely mid-session.
+//
+//      WHAT CHANGED:
+//
+//      - IPluginSelf::scanner is GONE, and so is IPluginScanner. This is the
+//        breaking part: a plugin built against v61 reads self->hooks out of
+//        what is now a shorter struct. Every plugin must be rebuilt.
+//
+//      - New optional export OnPluginLoadHooks(IPluginSelf*, IPluginHookScanner*)
+//        (PLUGIN_LOAD_HOOKS_FUNC_NAME). It runs after GetPluginInfo and before
+//        PluginInit, and the IPluginHookScanner it is handed is the only way to
+//        pattern scan. That table refuses calls made outside the event, so
+//        stashing it does not buy a plugin its old behaviour back.
+//
+//      - Resolve* names each address. A required miss REFUSES THE PLUGIN: the
+//        loader skips PluginInit, frees the DLL, and adds the miss to a report
+//        shown in a popup at startup (client) and by the hookfailures console
+//        command (both), with a copy-to-clipboard button so a user can hand a
+//        plugin author something actionable. An optional miss is listed the
+//        same way but the plugin still loads.
+//
+//      - self->hooks is null for the duration of the event, on purpose. A
+//        plugin that fails a required pattern is unloaded, so anything it
+//        registered or detoured during the event would be left pointing into a
+//        freed module. Resolve in the event, install in PluginInit.
+
+#define PLUGIN_INTERFACE_VERSION_MIN 62
+#define PLUGIN_INTERFACE_VERSION_MAX 62
+#define PLUGIN_INTERFACE_VERSION 62
 
 enum class PluginLogLevel { Trace = 0, Debug = 1, Info = 2, Warn = 3, Error = 4 };
 enum class ConfigValueType { String, Integer, Float, Boolean, Keybind };
@@ -465,16 +499,71 @@ struct IPluginConfig
 
 struct PluginXRef { uintptr_t address; bool isRelative; };
 
-struct IPluginScanner
+// ---------------------------------------------------------------------------
+// IPluginHookScanner -- pattern scanning, and the ONLY place a plugin gets it.
+//
+// A pointer to this table is handed to the optional OnPluginLoadHooks export
+// (see PLUGIN_LOAD_HOOKS_FUNC_NAME at the bottom of this header) and is valid
+// only for the duration of that call. Every function takes the same self the
+// event was called with, and the loader rejects the call -- returning 0 and
+// logging an error -- if that plugin has no scan session open. Stashing the
+// table pointer and scanning later therefore does not work, by design: the
+// loader has to know that every AOB a plugin depends on resolved BEFORE it
+// decides whether to run PluginInit at all.
+//
+// Resolve* records the outcome under hookName, which is what the failure report
+// and the log show the user -- name it after the thing being hooked
+// ("UCrCraftingComponent::FinishCrafting"), not after the pattern.
+//
+//   Required -- a miss REFUSES THE PLUGIN: PluginInit is never called, the DLL
+//               is freed, and the miss is listed in the startup failure window.
+//   Optional -- a miss is recorded as a warning and listed in the same window,
+//               but the plugin still loads. Use it for a feature that can
+//               degrade, and null-check the address you got back.
+//
+// RESOLVE ONLY -- DO NOT INSTALL. OnPluginLoadHooks runs before the plugin is
+// committed to, and the loader frees the DLL when a required pattern misses. A
+// detour written into game code during this event would then be a jump into a
+// freed module. Store the addresses in your own statics here and install from
+// PluginInit, which only runs once every required pattern resolved. That is
+// also why self->hooks is null for the duration of the event.
+// ---------------------------------------------------------------------------
+struct IPluginHookScanner
 {
-	uintptr_t (*FindPatternInMainModule)(const char* pattern);
-	uintptr_t (*FindPatternInModule)(HMODULE module, const char* pattern);
-	int (*FindAllPatternsInMainModule)(const char* pattern, uintptr_t* outAddresses, int maxResults);
-	int (*FindAllPatternsInModule)(HMODULE module, const char* pattern, uintptr_t* outAddresses, int maxResults);
-	uintptr_t (*FindUniquePattern)(const char** patterns, int patternCount, int* outPatternIndex);
-	int (*FindXrefsToAddress)(uintptr_t targetAddress, uintptr_t start, size_t size, PluginXRef* outXRefs, int maxResults);
-	int (*FindXrefsToAddressInModule)(uintptr_t targetAddress, HMODULE module, PluginXRef* outXRefs, int maxResults);
-	int (*FindXrefsToAddressInMainModule)(uintptr_t targetAddress, PluginXRef* outXRefs, int maxResults);
+	// Main module (the game .exe). Returns 0 on a miss.
+	uintptr_t (*ResolveRequired)(const IPluginSelf* self, const char* hookName, const char* pattern);
+	uintptr_t (*ResolveOptional)(const IPluginSelf* self, const char* hookName, const char* pattern);
+
+	// Same, scoped to one loaded module.
+	uintptr_t (*ResolveRequiredInModule)(const IPluginSelf* self, const char* hookName, HMODULE module, const char* pattern);
+	uintptr_t (*ResolveOptionalInModule)(const IPluginSelf* self, const char* hookName, HMODULE module, const char* pattern);
+
+	// Several candidate patterns; succeeds only when exactly one of them matches
+	// exactly once. outPatternIndex (may be null) receives which one did.
+	uintptr_t (*ResolveRequiredUnique)(const IPluginSelf* self, const char* hookName, const char** patterns, int patternCount, int* outPatternIndex);
+	uintptr_t (*ResolveOptionalUnique)(const IPluginSelf* self, const char* hookName, const char** patterns, int patternCount, int* outPatternIndex);
+
+	// Raw scans, for resolving an address in steps (find a string reference,
+	// walk back to the function that uses it, and so on). These record nothing
+	// on their own: report the outcome yourself with ReportFailure /
+	// ReportWarning, or feed the result into a Resolve* call that does.
+	int (*FindAllPatternsInMainModule)(const IPluginSelf* self, const char* pattern, uintptr_t* outAddresses, int maxResults);
+	int (*FindAllPatternsInModule)(const IPluginSelf* self, HMODULE module, const char* pattern, uintptr_t* outAddresses, int maxResults);
+	int (*FindXrefsToAddress)(const IPluginSelf* self, uintptr_t targetAddress, uintptr_t start, size_t size, PluginXRef* outXRefs, int maxResults);
+	int (*FindXrefsToAddressInModule)(const IPluginSelf* self, uintptr_t targetAddress, HMODULE module, PluginXRef* outXRefs, int maxResults);
+	int (*FindXrefsToAddressInMainModule)(const IPluginSelf* self, uintptr_t targetAddress, PluginXRef* outXRefs, int maxResults);
+
+	// Record something the plugin worked out for itself -- a vtable slot that
+	// held an unexpected value, an offset that failed a sanity check, a
+	// multi-step resolve that ended nowhere. ReportFailure refuses the plugin
+	// exactly like a missed required pattern; ReportWarning only lists it.
+	void (*ReportFailure)(const IPluginSelf* self, const char* hookName, const char* detail);
+	void (*ReportWarning)(const IPluginSelf* self, const char* hookName, const char* detail);
+
+	// True once anything fatal has been recorded this session. Lets a plugin
+	// skip the rest of a resolve chain it already knows cannot work -- it does
+	// not change the outcome, which is decided when the event returns.
+	bool (*HasFailures)(const IPluginSelf* self);
 };
 
 typedef void* HookHandle;
@@ -2007,7 +2096,10 @@ struct IPluginSelf
 	const char*     version;
 	IPluginLogger*  logger;
 	IPluginConfig*  config;
-	IPluginScanner* scanner;
+
+	// Null for the duration of OnPluginLoadHooks -- that event resolves
+	// addresses, it does not install anything (see IPluginHookScanner).
+	// Populated before PluginInit and for the whole life of the plugin.
 	IPluginHooks*   hooks;
 };
 
@@ -2015,6 +2107,24 @@ typedef PluginInfo* (*GetPluginInfoFunc)();
 typedef bool        (*PluginInitFunc)(IPluginSelf* self);
 typedef void        (*PluginShutdownFunc)();
 
-#define PLUGIN_GET_INFO_FUNC_NAME  "GetPluginInfo"
-#define PLUGIN_INIT_FUNC_NAME      "PluginInit"
-#define PLUGIN_SHUTDOWN_FUNC_NAME  "PluginShutdown"
+// OPTIONAL fourth export. Called once per load, after GetPluginInfo and before
+// PluginInit, and the only context in which a plugin can pattern scan. Resolve
+// every AOB you depend on here; if any required one misses, the loader refuses
+// the plugin -- PluginInit is never called, the DLL is freed, and the miss is
+// listed in the failure window shown at startup.
+//
+// Plugins that do not scan simply do not export it.
+//
+//   extern "C" __declspec(dllexport)
+//   void OnPluginLoadHooks(IPluginSelf* self, IPluginHookScanner* scan)
+//   {
+//       g_finishCrafting = scan->ResolveRequired(self,
+//           "UCrCraftingComponent::FinishCrafting",
+//           "40 55 53 56 57 41 56 48 8D 6C 24 ??");
+//   }
+typedef void        (*PluginLoadHooksFunc)(IPluginSelf* self, IPluginHookScanner* scanner);
+
+#define PLUGIN_GET_INFO_FUNC_NAME   "GetPluginInfo"
+#define PLUGIN_INIT_FUNC_NAME       "PluginInit"
+#define PLUGIN_SHUTDOWN_FUNC_NAME   "PluginShutdown"
+#define PLUGIN_LOAD_HOOKS_FUNC_NAME "OnPluginLoadHooks"

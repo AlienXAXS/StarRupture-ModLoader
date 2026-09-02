@@ -73,13 +73,12 @@ Store it; you will need it to open, close, or toggle the panel from a keybind.
 static IPluginHooks* g_hooks  = nullptr;
 static PanelHandle   g_panel  = nullptr;   // returned by RegisterPanel
 
-bool PluginInit(IPluginLogger* logger, IPluginConfig* config,
-                IPluginScanner* scanner, IPluginHooks* hooks)
+bool PluginInit(IPluginSelf* self)
 {
-    g_hooks = hooks;
+    g_hooks = self->hooks;
 
-    if (hooks->UI)
-        g_panel = hooks->UI->RegisterPanel(&k_myPanel);
+    if (g_hooks->UI)
+        g_panel = g_hooks->UI->RegisterPanel(&k_myPanel);
     // g_panel is null if the UI backend is disabled or registration failed
 
     return true;
@@ -127,16 +126,15 @@ static void OnToggleKey(EModKey, EModKeyEvent)
         g_hooks->UI->SetPanelClose(g_panel);
 }
 
-bool PluginInit(IPluginLogger* logger, IPluginConfig* config,
-                IPluginScanner* scanner, IPluginHooks* hooks)
+bool PluginInit(IPluginSelf* self)
 {
-    g_hooks = hooks;
+    g_hooks = self->hooks;
 
-    if (hooks->UI)
-        g_panel = hooks->UI->RegisterPanel(&k_myPanel);
+    if (g_hooks->UI)
+        g_panel = g_hooks->UI->RegisterPanel(&k_myPanel);
 
-    if (hooks->Input)
-        hooks->Input->RegisterKeybind(EModKey::Insert, EModKeyEvent::Pressed, OnToggleKey);
+    if (g_hooks->Input)
+        g_hooks->Input->RegisterKeybind(EModKey::Insert, EModKeyEvent::Pressed, OnToggleKey);
 
     return true;
 }
@@ -189,13 +187,12 @@ static const PluginWidgetDesc k_myWidget = {
 static IPluginHooks* g_hooks  = nullptr;
 static WidgetHandle  g_widget = nullptr;
 
-bool PluginInit(IPluginLogger* logger, IPluginConfig* config,
-                IPluginScanner* scanner, IPluginHooks* hooks)
+bool PluginInit(IPluginSelf* self)
 {
-    g_hooks = hooks;
+    g_hooks = self->hooks;
 
-    if (hooks->UI)
-        g_widget = hooks->UI->RegisterWidget(&k_myWidget);
+    if (g_hooks->UI)
+        g_widget = g_hooks->UI->RegisterWidget(&k_myWidget);
 
     return true;
 }

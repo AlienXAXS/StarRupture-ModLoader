@@ -7,7 +7,8 @@
 #include "logging/logger.h"
 #include "logging/logger_interface.h"
 #include "config/config_manager.h"
-#include "memory_scanner/scanner_interface.h"
+#include "memory_scanner/hook_scanner_interface.h"
+#include "plugins/plugin_hook_report.h"
 #include "hooks/hooks_interface.h"
 #include <vector>
 #include <string>
@@ -170,6 +171,13 @@ namespace PluginManager
 		return r;
 	}
 
+	static bool CallLoadHooksSEH(PluginLoadHooksFunc fn, IPluginSelf* self, IPluginHookScanner* scanner)
+	{
+		g_lastPluginCrash = {};
+		__try { fn(self, scanner); return true; }
+		__except (PluginCrashFilter(GetExceptionInformation())) { return false; }
+	}
+
 	static PluginInfo* CallGetInfoSEH(GetPluginInfoFunc fn)
 	{
 		PluginInfo* result = nullptr;
@@ -220,6 +228,7 @@ namespace PluginManager
 		GetPluginInfoFunc getInfo;
 		PluginInitFunc init;
 		PluginShutdownFunc shutdown;
+		PluginLoadHooksFunc loadHooks;   // optional export, may be null
 		std::wstring fileName;
 		bool isInitialized;
 
@@ -231,6 +240,7 @@ namespace PluginManager
 		bool isOutOfDate;            // true when plugin interface version is too old
 		bool needsModLoaderUpdate;   // true when plugin interface version is too new
 		bool isWrongTarget;          // true when plugin was built for a different build target
+		bool hookScanFailed;         // true when OnPluginLoadHooks missed a required pattern
 
 		// Stable identity struct passed to PluginInit and retained by the plugin->
 		// name/version point into cachedName/cachedVersion so they outlive PluginInfo.
@@ -292,6 +302,11 @@ namespace PluginManager
 			GetProcAddress(hModule, PLUGIN_INIT_FUNC_NAME));
 		PluginShutdownFunc shutdown = reinterpret_cast<PluginShutdownFunc>(
 			GetProcAddress(hModule, PLUGIN_SHUTDOWN_FUNC_NAME));
+
+		// Optional fourth export -- plugins that resolve no AOB patterns do not
+		// have one, and its absence is not an error.
+		PluginLoadHooksFunc loadHooks = reinterpret_cast<PluginLoadHooksFunc>(
+			GetProcAddress(hModule, PLUGIN_LOAD_HOOKS_FUNC_NAME));
 
 		if (!getInfo || !init || !shutdown)
 		{
@@ -372,6 +387,7 @@ namespace PluginManager
 		rec.getInfo        = getInfo;
 		rec.init           = init;
 		rec.shutdown       = shutdown;
+		rec.loadHooks      = loadHooks;
 		rec.isInitialized  = false;  // deferred -- InitAllLoadedPlugins() calls PluginInit
 		rec.cachedName     = info->name    ? info->name    : "";
 		rec.cachedVersion  = info->version ? info->version : "";
@@ -389,6 +405,7 @@ namespace PluginManager
 		rec->isOutOfDate         = false;
 		rec->needsModLoaderUpdate = false;
 		rec->isWrongTarget        = false;
+		rec->hookScanFailed       = false;
 
 		if (!LoadPluginIntoRecord(*rec))
 		{
@@ -407,7 +424,6 @@ namespace PluginManager
 		rec->self.version = rec->cachedVersion.c_str();
 		rec->self.logger = nullptr;
 		rec->self.config = nullptr;
-		rec->self.scanner = nullptr;
 		rec->self.hooks = nullptr;
 
 		EnterCriticalSection(&g_pluginLock);
@@ -557,16 +573,101 @@ namespace PluginManager
 		ModLoaderLogger::LogMessage(L"Loaded %d plugin DLL(s) from Plugins (PluginInit deferred)", loadedCount);
 	}
 
+	// Runs the plugin's OnPluginLoadHooks event, if it has one, and reports
+	// whether the plugin may proceed to PluginInit.
+	//
+	// This is the whole point of moving AOB scanning into an event: a plugin
+	// declares the addresses it depends on in one place, before it has done
+	// anything, so a required pattern that no longer matches can be turned into
+	// "this plugin does not load" instead of a plugin that loads and then
+	// detours whatever now lives at the address it guessed.
+	//
+	// self->hooks stays null for the duration -- the event resolves, PluginInit
+	// installs. A plugin that registered a callback here would be left with a
+	// pointer into a freed module the moment a later required pattern missed.
+	//
+	// Caller must hold g_pluginLock.
+	static bool RunLoadHooksPhase(LoadedPlugin& plugin)
+	{
+		if (!plugin.loadHooks)
+			return true;
+
+		ModLoaderLogger::LogInfo(L"[HookScan] Resolving patterns for: %S v%S",
+			plugin.cachedName.c_str(), plugin.cachedVersion.c_str());
+
+#ifdef MODLOADER_CLIENT_BUILD
+		// Worth its own splash line: with a cold scan cache this phase is a full
+		// module scan per pattern, so it is where a slow startup actually goes --
+		// and "Initializing <plugin>" would be pointing at the wrong step.
+		{
+			wchar_t msg[128];
+			swprintf_s(msg, L"Resolving hooks for %S", plugin.cachedName.c_str());
+			Splash::SetSubStatus(msg);
+		}
+#endif
+
+		const wchar_t* baseName = BaseFileName(plugin.fileName);
+		char fileNameA[128]{};
+		WideCharToMultiByte(CP_ACP, 0, baseName, -1, fileNameA, static_cast<int>(sizeof(fileNameA)), "?", nullptr);
+		fileNameA[sizeof(fileNameA) - 1] = '\0';
+
+		PluginHookReport::BeginSession(&plugin.self, plugin.cachedName.c_str(), fileNameA);
+
+		const bool survived = CallLoadHooksSEH(plugin.loadHooks, &plugin.self,
+			ModLoaderLogger::GetPluginHookScanner());
+
+		if (!survived)
+		{
+			LogPluginCrash(plugin.cachedName.c_str(), plugin.hModule, L"OnPluginLoadHooks");
+			PluginHookReport::RecordSessionCrash(&plugin.self,
+				"crashed while resolving its patterns -- see modloader.log for the fault address and stack");
+		}
+
+		bool refused = false;
+		PluginHookReport::EndSession(&plugin.self, &refused);
+		return !refused;
+	}
+
 	// Calls PluginInit on a single record that has been loaded but not yet initialized.
 	// Caller must hold g_pluginLock. Returns true if the plugin is now initialized.
 	static bool InitPluginRecord(LoadedPlugin& plugin)
 	{
-		ModLoaderLogger::LogMessage(L"Calling PluginInit for: %S v%S", plugin.cachedName.c_str(), plugin.cachedVersion.c_str());
-
 		plugin.self.logger  = ModLoaderLogger::GetPluginLogger();
 		plugin.self.config  = ModLoaderLogger::GetPluginConfig();
-		plugin.self.scanner = ModLoaderLogger::GetPluginScanner();
-		plugin.self.hooks   = ModLoaderLogger::GetPluginHooks();
+		plugin.self.hooks   = nullptr;   // populated below, after the scan phase
+
+		if (!RunLoadHooksPhase(plugin))
+		{
+			// Refused. Free the DLL so nothing of it is left mapped -- it never
+			// got as far as registering anything, and leaving a half-committed
+			// plugin resident is how a stale detour outlives its module.
+			plugin.hookScanFailed = true;
+			if (plugin.hModule)
+			{
+				FreeLibrary(plugin.hModule);
+				plugin.hModule = nullptr;
+				plugin.info    = nullptr;
+			}
+
+			// Every one of these points into the module just unmapped. Clearing
+			// them is what stops a later init pass from calling a refused
+			// plugin's entry points -- LoadPluginIntoRecord repopulates them if
+			// the user reloads it. The cached name/version strings are ours and
+			// stay, so the plugin list can still say what was refused.
+			plugin.getInfo   = nullptr;
+			plugin.init      = nullptr;
+			plugin.shutdown  = nullptr;
+			plugin.loadHooks = nullptr;
+			ModLoaderLogger::LogError(
+				L"Plugin '%S' was NOT loaded: one or more required hooks could not be resolved.",
+				plugin.cachedName.c_str());
+			return false;
+		}
+
+		plugin.hookScanFailed = false;
+		plugin.self.hooks     = ModLoaderLogger::GetPluginHooks();
+
+		ModLoaderLogger::LogMessage(L"Calling PluginInit for: %S v%S", plugin.cachedName.c_str(), plugin.cachedVersion.c_str());
 
 #ifdef MODLOADER_CLIENT_BUILD
 		UI::PluginPanelRegistry::SetCurrentRegistrationPlugin(plugin.cachedName.c_str());
@@ -724,6 +825,7 @@ namespace PluginManager
 				out[i].isOutOfDate           = p.isOutOfDate;
 				out[i].needsModLoaderUpdate  = p.needsModLoaderUpdate;
 				out[i].isWrongTarget         = p.isWrongTarget;
+				out[i].hookScanFailed        = p.hookScanFailed;
 
 				// Plugin paths are ASCII in practice; anything else degrades to '?'
 				// rather than failing the whole snapshot. Cleared first so a
@@ -824,6 +926,7 @@ namespace PluginManager
 		p.isOutOfDate         = false;
 		p.needsModLoaderUpdate = false;
 		p.isWrongTarget        = false;
+		p.hookScanFailed       = false;
 
 		bool ok = LoadPluginIntoRecord(p);
 		++g_pluginGeneration;

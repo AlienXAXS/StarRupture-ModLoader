@@ -16,6 +16,13 @@ namespace PluginManager
         bool needsModLoaderUpdate;
         bool isWrongTarget;
 
+        // True when the plugin's OnPluginLoadHooks event reported a required
+        // pattern it could not resolve, so the loader refused it: PluginInit was
+        // never called and the DLL was freed. The failure detail itself lives in
+        // PluginHookReport (plugins/plugin_hook_report.h) -- this flag is only
+        // what the plugin list needs to explain the state it is showing.
+        bool hookScanFailed;
+
         // Bare DLL file name (no directory), e.g. "ServerUtility.dll". Lets the
         // console address a plugin by file when its PluginInfo name is unknown --
         // an out-of-date or crashed-on-load record has no usable name.

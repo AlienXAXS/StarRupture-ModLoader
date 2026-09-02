@@ -177,6 +177,9 @@
     <ClInclude Include="UI\overlay.h">
       <Filter>Source Files\UI\modloader</Filter>
     </ClInclude>
+    <ClInclude Include="UI\hook_failure_window.h">
+      <Filter>Source Files\UI\modloader</Filter>
+    </ClInclude>
     <ClInclude Include="UI\update_notice_window.h">
       <Filter>Source Files\UI\modloader</Filter>
     </ClInclude>
@@ -201,8 +204,11 @@
     <ClInclude Include="memory_scanner\scanner.h">
       <Filter>Source Files\memory_scanner</Filter>
     </ClInclude>
-    <ClInclude Include="memory_scanner\scanner_interface.h">
+    <ClInclude Include="memory_scanner\hook_scanner_interface.h">
       <Filter>Source Files\memory_scanner</Filter>
+    </ClInclude>
+    <ClInclude Include="plugins\plugin_hook_report.h">
+      <Filter>Source Files\plugins</Filter>
     </ClInclude>
     <ClInclude Include="plugins\plugin_manager.h">
       <Filter>Source Files\plugins</Filter>
@@ -494,6 +500,9 @@
     <ClCompile Include="UI\overlay.cpp">
       <Filter>Source Files\UI\modloader</Filter>
     </ClCompile>
+    <ClCompile Include="UI\hook_failure_window.cpp">
+      <Filter>Source Files\UI\modloader</Filter>
+    </ClCompile>
     <ClCompile Include="UI\update_notice_window.cpp">
       <Filter>Source Files\UI\modloader</Filter>
     </ClCompile>
@@ -518,8 +527,11 @@
     <ClCompile Include="memory_scanner\scanner.cpp">
       <Filter>Source Files\memory_scanner</Filter>
     </ClCompile>
-    <ClCompile Include="memory_scanner\scanner_interface.cpp">
+    <ClCompile Include="memory_scanner\hook_scanner_interface.cpp">
       <Filter>Source Files\memory_scanner</Filter>
+    </ClCompile>
+    <ClCompile Include="plugins\plugin_hook_report.cpp">
+      <Filter>Source Files\plugins</Filter>
     </ClCompile>
     <ClCompile Include="plugins\plugin_manager.cpp">
       <Filter>Source Files\plugins</Filter>

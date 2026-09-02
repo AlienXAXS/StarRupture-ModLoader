@@ -468,6 +468,7 @@
     <ClInclude Include="UI\logging_tab.h" />
     <ClInclude Include="UI\modloader_window.h" />
     <ClInclude Include="UI\overlay.h" />
+    <ClInclude Include="UI\hook_failure_window.h" />
     <ClInclude Include="UI\update_notice_window.h" />
     <ClInclude Include="UI\tick_profiler_window.h" />
     <ClInclude Include="UI\plugin_panel_registry.h" />
@@ -481,7 +482,7 @@
     <ClInclude Include="memory_scanner\pattern_preflight.h" />
     <ClInclude Include="memory_scanner\scan_cache.h" />
     <ClInclude Include="memory_scanner\scanner.h" />
-    <ClInclude Include="memory_scanner\scanner_interface.h" />
+    <ClInclude Include="memory_scanner\hook_scanner_interface.h" />
     <ClInclude Include="console\console_commands.h" />
     <ClInclude Include="console\console_input.h" />
     <ClInclude Include="console\console_screen.h" />
@@ -489,6 +490,7 @@
     <ClInclude Include="console\server_console.h" />
     <ClInclude Include="plugins\plugin_interface.h" />
     <ClInclude Include="plugins\known_gobjects.generated.h" />
+    <ClInclude Include="plugins\plugin_hook_report.h" />
     <ClInclude Include="plugins\plugin_manager.h" />
     <ClInclude Include="UI\splash_window.h" />
     <ClInclude Include="utils\pak_list.h" />
@@ -608,6 +610,9 @@
     <ClCompile Include="UI\overlay.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)' != 'Client Debug' And '$(Configuration)' != 'Client Release' And '$(Configuration)' != 'Local SDK Client Debug' And '$(Configuration)' != 'Local SDK Client Release'">true</ExcludedFromBuild>
     </ClCompile>
+    <ClCompile Include="UI\hook_failure_window.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)' != 'Client Debug' And '$(Configuration)' != 'Client Release' And '$(Configuration)' != 'Local SDK Client Debug' And '$(Configuration)' != 'Local SDK Client Release'">true</ExcludedFromBuild>
+    </ClCompile>
     <ClCompile Include="UI\update_notice_window.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)' != 'Client Debug' And '$(Configuration)' != 'Client Release' And '$(Configuration)' != 'Local SDK Client Debug' And '$(Configuration)' != 'Local SDK Client Release'">true</ExcludedFromBuild>
     </ClCompile>
@@ -626,12 +631,13 @@
     <ClCompile Include="memory_scanner\pattern_preflight.cpp" />
     <ClCompile Include="memory_scanner\scan_cache.cpp" />
     <ClCompile Include="memory_scanner\scanner.cpp" />
-    <ClCompile Include="memory_scanner\scanner_interface.cpp" />
+    <ClCompile Include="memory_scanner\hook_scanner_interface.cpp" />
     <ClCompile Include="console\console_commands.cpp" />
     <ClCompile Include="console\console_input.cpp" />
     <ClCompile Include="console\console_screen.cpp" />
     <ClCompile Include="console\engine_output_hook.cpp" />
     <ClCompile Include="console\server_console.cpp" />
+    <ClCompile Include="plugins\plugin_hook_report.cpp" />
     <ClCompile Include="plugins\plugin_manager.cpp" />
     <ClCompile Include="UI\splash_window.cpp" />
   </ItemGroup>

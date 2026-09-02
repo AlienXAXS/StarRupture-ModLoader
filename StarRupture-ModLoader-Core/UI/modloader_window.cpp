@@ -10,6 +10,7 @@
 #include "global_settings.h"
 #include "theme.h"
 #include "update_notice_window.h"
+#include "hook_failure_window.h"
 #include "hooks/input/keybind_registry.h"
 #include "console_window.h"
 #include "logging_tab.h"
@@ -300,6 +301,8 @@ namespace UI::ModLoaderWindow
                 ImGui::TableSetColumnIndex(3);
                 if (s.isWrongTarget)
                     ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "Cannot Load");
+                else if (s.hookScanFailed)
+                    ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "Hooks Failed");
                 else if (s.isOutOfDate)
                     ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.1f, 1.0f), "Needs Update");
                 else if (s.isLoaded)
@@ -313,6 +316,16 @@ namespace UI::ModLoaderWindow
                 if (s.isWrongTarget)
                 {
                     ImGui::TextDisabled("You're either trying to load a Server plugin on the Client, or vice versa");
+                }
+                else if (s.hookScanFailed)
+                {
+                    // The popup has already been dismissed by the time anyone
+                    // comes looking here, so this reopens it rather than trying
+                    // to restate a multi-line report inside a table cell.
+                    if (ImGui::Button("WHY?"))
+                        UI::HookFailureWindow::Show();
+                    ImGui::SameLine();
+                    ImGui::TextDisabled("A hook it needs could not be found in this game build");
                 }
                 else if (s.isOutOfDate)
                 {
@@ -1013,6 +1026,14 @@ namespace UI::ModLoaderWindow
         ImGui::TextDisabled("(?)");
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("Populates the plugin-updated popup with fake\n"
+                              "entries and opens it. Debug builds only.");
+
+        if (ImGui::Button("Test Hook Failure Notice"))
+            UI::HookFailureWindow::PopulateTestData();
+        ImGui::SameLine();
+        ImGui::TextDisabled("(?)");
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Populates the failed-hooks popup with fake\n"
                               "entries and opens it. Debug builds only.");
 
         if (ImGui::Button("Crash Game (YOLO)"))

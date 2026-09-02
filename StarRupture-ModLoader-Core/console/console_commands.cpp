@@ -15,6 +15,7 @@
 #include "logging/logger.h"
 #include "logging/plugin_log_levels.h"
 #include "network_channel/network_channel.h"
+#include "plugins/plugin_hook_report.h"
 #include "plugins/plugin_interface.h"
 #include "plugins/plugin_manager.h"
 #include "utils/game_thread_dispatch.h"
@@ -297,11 +298,12 @@ namespace ModConsole
             const PluginManager::PluginStatus& s = statuses[static_cast<size_t>(i)];
 
             const char* state = "Unloaded";
-            if (s.isWrongTarget)      state = "Wrong target";
-            else if (s.isOutOfDate)   state = s.needsModLoaderUpdate ? "Needs loader" : "Needs update";
-            else if (s.isLoaded)      state = "Loaded";
+            if (s.isWrongTarget)        state = "Wrong target";
+            else if (s.hookScanFailed)  state = "Hooks failed";
+            else if (s.isOutOfDate)     state = s.needsModLoaderUpdate ? "Needs loader" : "Needs update";
+            else if (s.isLoaded)        state = "Loaded";
 
-            out.Printf(s.isWrongTarget || s.isOutOfDate ? LineKind::Error : LineKind::Output,
+            out.Printf(s.isWrongTarget || s.isOutOfDate || s.hookScanFailed ? LineKind::Error : LineKind::Output,
                        "%-3d %-26s %-12s %-14s %s",
                        i,
                        s.name[0]     ? s.name    : "?",
@@ -400,6 +402,42 @@ namespace ModConsole
             out.Out("Loaded %d new plugin(s).", loaded);
         else
             out.Notice("No new plugin DLLs found.");
+    }
+
+    // The dedicated server's only view of the hook report -- there is no
+    // UI/hook_failure_window.cpp there, and "the plugin just isn't there" is
+    // otherwise indistinguishable from a plugin that was never installed.
+    static void Cmd_HookFailures(const std::vector<std::string>&, Sink& out)
+    {
+        const int reported = PluginHookReport::GetReportedPluginCount();
+        if (reported == 0)
+        {
+            out.Notice("Every plugin resolved all of its hooks.");
+            return;
+        }
+
+        out.Printf(LineKind::Error, "%d plugin(s) reported hook failures (%d not loaded):",
+                   reported, PluginHookReport::GetRefusedPluginCount());
+
+        const std::vector<PluginHookReport::PluginReport> reports = PluginHookReport::Snapshot();
+        for (const PluginHookReport::PluginReport& r : reports)
+        {
+            out.Printf(LineKind::Error, "  %s (%s) -- %s, %d pattern(s) resolved",
+                       r.plugin.c_str(),
+                       r.file.empty() ? "?" : r.file.c_str(),
+                       r.refused ? "NOT LOADED" : "loaded with warnings",
+                       r.resolved);
+
+            for (const PluginHookReport::Failure& fail : r.failures)
+            {
+                out.Printf(LineKind::Error, "      [%s] %s",
+                           fail.fatal ? "required" : "optional", fail.hookName.c_str());
+                out.Notice("          %s", fail.detail.c_str());
+            }
+        }
+
+        out.Notice("A required hook that no longer resolves usually means the game updated");
+        out.Notice("and the plugin needs a new build. Full detail is in modloader.log.");
     }
 
     static void Cmd_Version(const std::vector<std::string>&, Sink& out)
@@ -771,6 +809,10 @@ namespace ModConsole
         Register({ "rescan",  "scan",       "rescan",
                    "Load plugin DLLs added to the Plugins folder since startup",
                    &Cmd_Rescan,  true });
+
+        Register({ "hookfailures", "hooks",  "hookfailures",
+                   "List plugins whose hook patterns did not resolve",
+                   &Cmd_HookFailures, false });
 
         Register({ "version", "ver",        "version",
                    "Show mod loader build and plugin interface versions",

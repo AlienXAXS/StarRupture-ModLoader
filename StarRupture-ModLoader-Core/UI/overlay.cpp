@@ -11,6 +11,7 @@
 #include "modloader_window.h"
 #include "tick_profiler_window.h"
 #include "update_notice_window.h"
+#include "hook_failure_window.h"
 #include "../core/client_ui.h"
 #include "../hooks/input/keybind_registry.h"
 #include <cstdio>
@@ -143,11 +144,12 @@ namespace UI::Overlay
         // "Game input: BLOCKED" with zero tokens is explained here and nowhere
         // else. Same for the loader's own windows.
         ImGui::Text("Panels: %d open / %d registered", panelsOpen, panelsRegistered);
-        ImGui::Text("Loader windows: main=%d console=%d profiler=%d notice=%d",
+        ImGui::Text("Loader windows: main=%d console=%d profiler=%d notice=%d hookfail=%d",
                     UI::ModLoaderWindow::IsOpen()     ? 1 : 0,
                     UI::ConsoleWindow::IsOpen()       ? 1 : 0,
                     UI::TickProfilerWindow::IsOpen()  ? 1 : 0,
-                    UI::UpdateNoticeWindow::IsOpen()  ? 1 : 0);
+                    UI::UpdateNoticeWindow::IsOpen()  ? 1 : 0,
+                    UI::HookFailureWindow::IsOpen()   ? 1 : 0);
 
         // ImGui's own per-frame arbitration. In cooperative mode these are what
         // decide, message by message, whether the game sees an input at all --
