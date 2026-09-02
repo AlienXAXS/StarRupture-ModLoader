@@ -2,6 +2,21 @@
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
 
   <!-- ============================================================
+       LocalStarRuptureSDKRoot
+       Root of the out-of-tree SDK checkout used by the
+       "Local SDK ..." configurations: the StarRupture-Game-SDK
+       repo cloned alongside this one, so it resolves to
+       StarRupture-Game-SDK\ in the folder that holds this repo.
+       Override from the command line or an environment variable to
+       point at a checkout somewhere else:
+         msbuild /p:LocalStarRuptureSDKRoot="D:\path\to\SDK\"
+       Must end with a trailing backslash.
+       ============================================================ -->
+  <PropertyGroup Condition="'$(LocalStarRuptureSDKRoot)' == ''">
+    <LocalStarRuptureSDKRoot>$(SolutionDir)..\StarRupture-Game-SDK\</LocalStarRuptureSDKRoot>
+  </PropertyGroup>
+
+  <!-- ============================================================
        StarRuptureSDKSourceDir
        Points to the SDK subdirectory containing Basic.cpp,
        CoreUObject_functions.cpp and Engine_functions.cpp for the
@@ -17,10 +32,10 @@
     <StarRuptureSDKSourceDir>$(SolutionDir)StarRupture SDK\Server\SDK\</StarRuptureSDKSourceDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)' == 'Local SDK Client Debug' Or '$(Configuration)' == 'Local SDK Client Release'">
-    <StarRuptureSDKSourceDir>$(SolutionDir)Local StarRupture SDK\Client\SDK\</StarRuptureSDKSourceDir>
+    <StarRuptureSDKSourceDir>$(LocalStarRuptureSDKRoot)Client\SDK\</StarRuptureSDKSourceDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)' == 'Local SDK Server Debug' Or '$(Configuration)' == 'Local SDK Server Release'">
-    <StarRuptureSDKSourceDir>$(SolutionDir)Local StarRupture SDK\Server\SDK\</StarRuptureSDKSourceDir>
+    <StarRuptureSDKSourceDir>$(LocalStarRuptureSDKRoot)Server\SDK\</StarRuptureSDKSourceDir>
   </PropertyGroup>
 
   <!-- ============================================================
@@ -36,10 +51,10 @@
     <StarRuptureSDKConfigDir>$(SolutionDir)StarRupture SDK\Server\;$(SolutionDir)StarRupture SDK\Server\SDK\</StarRuptureSDKConfigDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)' == 'Local SDK Client Debug' Or '$(Configuration)' == 'Local SDK Client Release'">
-    <StarRuptureSDKConfigDir>$(SolutionDir)Local StarRupture SDK\Client\;$(SolutionDir)Local StarRupture SDK\Client\SDK\</StarRuptureSDKConfigDir>
+    <StarRuptureSDKConfigDir>$(LocalStarRuptureSDKRoot)Client\;$(LocalStarRuptureSDKRoot)Client\SDK\</StarRuptureSDKConfigDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)' == 'Local SDK Server Debug' Or '$(Configuration)' == 'Local SDK Server Release'">
-    <StarRuptureSDKConfigDir>$(SolutionDir)Local StarRupture SDK\Server\;$(SolutionDir)Local StarRupture SDK\Server\SDK\</StarRuptureSDKConfigDir>
+    <StarRuptureSDKConfigDir>$(LocalStarRuptureSDKRoot)Server\;$(LocalStarRuptureSDKRoot)Server\SDK\</StarRuptureSDKConfigDir>
   </PropertyGroup>
 
   <!-- ============================================================
@@ -98,5 +113,18 @@
       <PreprocessorDefinitions>AUTOUPDATE_MANIFEST_URL="$(AutoUpdateManifestUrl)";%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
   </ItemDefinitionGroup>
+
+  <!-- ============================================================
+       VerifyLocalStarRuptureSDK
+       The Local SDK configurations pull their sources from outside
+       the repo, so a missing checkout otherwise shows up as dozens
+       of "cannot open source file" errors that never name the
+       directory that is actually missing.
+       ============================================================ -->
+  <Target Name="VerifyLocalStarRuptureSDK" BeforeTargets="ClCompile"
+          Condition="$(Configuration.StartsWith(&apos;Local SDK&apos;))">
+    <Error Condition="!Exists(&apos;$(StarRuptureSDKSourceDir)Basic.cpp&apos;)"
+           Text="Configuration &apos;$(Configuration)&apos; expects a StarRupture-Game-SDK checkout at &apos;$(LocalStarRuptureSDKRoot)&apos; but found no SDK there. Clone StarRupture-Game-SDK alongside this repo, or build with /p:LocalStarRuptureSDKRoot=X:\your\SDK\ (trailing backslash required)." />
+  </Target>
 
 </Project>
