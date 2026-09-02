@@ -41,7 +41,6 @@ jobs:
           known=(
             "BetterCheats:StarRupture-Plugin-BetterCheats"
             "BetterDrone:StarRupture-Plugin-BetterDrone"
-            "BetterMap:StarRupture-Plugin-BetterMap"
             "BetterSaving:StarRupture-Plugin-BetterSaving"
             "Codex:StarRupture-Plugin-Codex"
             "Compass:StarRupture-Plugin-Compass"
