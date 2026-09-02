@@ -12,7 +12,7 @@
 #define MODLOADER_BUILD_TAG "dev"
 #endif
 
-static constexpr wchar_t kRequiredVersionSuffix[] = L"CL-121391";
+static constexpr wchar_t kRequiredVersionSuffix[] = L"CL-125218";
 
 
 // Reads the raw ProductVersion string from the game executable's version info.
