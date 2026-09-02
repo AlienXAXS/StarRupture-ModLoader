@@ -33,6 +33,7 @@ namespace PluginHookReport
         Session                   s_session{};      // self == nullptr when closed
         std::vector<PluginReport> s_reports;
         unsigned                  s_generation = 0;
+        unsigned                  s_commitSerial = 0;
 
         // Caller must hold s_mutex. Null when self is not the plugin whose
         // session is currently open -- including when no session is open at all,
@@ -102,10 +103,10 @@ namespace PluginHookReport
             return;
         }
 
-        for (const Failure& f : report.failures)
-        {
-            if (f.fatal) { report.refused = true; break; }
-        }
+        // One miss is enough. An optional resolve that came back empty still
+        // means the plugin is about to run against a game it was not built for,
+        // and the loader cannot tell which half of it that breaks.
+        report.refused = true;
 
         if (refusedOut) *refusedOut = report.refused;
 
@@ -114,19 +115,16 @@ namespace PluginHookReport
             report.plugin.c_str(), report.file.c_str(), report.resolved, report.failures.size());
         for (const Failure& f : report.failures)
         {
-            ModLoaderLogger::LogError(L"[HookScan]   [%S] %S", f.fatal ? "REQUIRED" : "optional", f.hookName.c_str());
+            ModLoaderLogger::LogError(L"[HookScan]   [%S] %S", f.required ? "required" : "optional", f.hookName.c_str());
             ModLoaderLogger::LogError(L"[HookScan]     %S", f.detail.c_str());
         }
-        if (report.refused)
-            ModLoaderLogger::LogError(L"[HookScan] '%S' will NOT be loaded -- PluginInit will not be called.",
-                report.plugin.c_str());
-        else
-            ModLoaderLogger::LogWarn(L"[HookScan] '%S' loads anyway; only optional patterns missed.",
-                report.plugin.c_str());
+        ModLoaderLogger::LogError(L"[HookScan] '%S' will NOT be loaded -- PluginInit will not be called.",
+            report.plugin.c_str());
         ModLoaderLogger::LogError(L"[HookScan] ==========================================================");
 
         s_reports.push_back(std::move(report));
         ++s_generation;
+        ++s_commitSerial;
     }
 
     void RecordSessionCrash(const IPluginSelf* self, const char* detail)
@@ -140,7 +138,7 @@ namespace PluginHookReport
         Failure f;
         f.hookName = "OnPluginLoadHooks";
         f.detail   = detail ? detail : "crashed while resolving patterns";
-        f.fatal    = true;
+        f.required = true;
         session->report.failures.push_back(std::move(f));
     }
 
@@ -157,7 +155,7 @@ namespace PluginHookReport
             session->report.resolved++;
     }
 
-    void RecordFailure(const IPluginSelf* self, const char* hookName, const char* detail, bool fatal)
+    void RecordFailure(const IPluginSelf* self, const char* hookName, const char* detail, bool required)
     {
         std::lock_guard<std::mutex> lock(s_mutex);
 
@@ -171,11 +169,11 @@ namespace PluginHookReport
         Failure f;
         f.hookName = (hookName && hookName[0]) ? hookName : "(unnamed)";
         f.detail   = detail ? detail : "";
-        f.fatal    = fatal;
+        f.required = required;
         session->report.failures.push_back(std::move(f));
     }
 
-    bool SessionHasFatal(const IPluginSelf* self)
+    bool SessionHasFailures(const IPluginSelf* self)
     {
         std::lock_guard<std::mutex> lock(s_mutex);
 
@@ -183,9 +181,7 @@ namespace PluginHookReport
         if (!session)
             return false;
 
-        for (const Failure& f : session->report.failures)
-            if (f.fatal) return true;
-        return false;
+        return !session->report.failures.empty();
     }
 
     unsigned GetGeneration()
@@ -194,12 +190,19 @@ namespace PluginHookReport
         return s_generation;
     }
 
+    unsigned GetCommitSerial()
+    {
+        std::lock_guard<std::mutex> lock(s_mutex);
+        return s_commitSerial;
+    }
+
 #ifdef _DEBUG
     void InjectTestReport(const PluginReport& report)
     {
         std::lock_guard<std::mutex> lock(s_mutex);
         s_reports.push_back(report);
         ++s_generation;
+        ++s_commitSerial;
     }
 #endif
 
@@ -262,14 +265,14 @@ namespace PluginHookReport
             text += " (";
             text += r.file.empty() ? "?" : r.file;
             text += ") -- ";
-            text += r.refused ? "NOT LOADED" : "loaded with warnings";
+            text += r.refused ? "NOT LOADED" : "loaded";
             text += "   [";
             text += std::to_string(r.resolved);
             text += " pattern(s) resolved]\r\n";
 
             for (const Failure& f : r.failures)
             {
-                text += f.fatal ? "    [required] " : "    [optional] ";
+                text += f.required ? "    [required] " : "    [optional] ";
                 text += f.hookName;
                 text += "\r\n        ";
                 text += f.detail;
@@ -278,8 +281,9 @@ namespace PluginHookReport
             text += "\r\n";
         }
 
-        text += "A required hook that no longer resolves usually means the game updated\r\n"
-                "and the plugin needs a new build. Send this to the plugin's author.\r\n";
+        text += "A hook that no longer resolves usually means the game updated and the\r\n"
+                "plugin needs a new build. Any unresolved hook, required or optional,\r\n"
+                "stops the plugin loading. Send this to the plugin's author.\r\n";
         return text;
     }
 }

@@ -23,9 +23,10 @@ namespace UI::HookFailureWindow
         unsigned s_cacheGeneration = 0;
         bool     s_cacheValid      = false;
 
-        bool  s_isOpen      = false;
-        bool  s_shown       = false;   // one-shot: only auto-open once per session
-        float s_copiedUntil = 0.0f;    // ImGui::GetTime() the "Copied" label expires
+        bool     s_isOpen      = false;
+        bool     s_armed       = false;  // main menu reached; auto-open is live
+        unsigned s_lastCommit  = 0;      // PluginHookReport commit serial we have shown
+        float    s_copiedUntil = 0.0f;   // ImGui::GetTime() the "Copied" label expires
 
         // Details are assembled with CRLF so the clipboard text pastes correctly
         // into Windows editors; ImGui has no use for the CR, so strip it here
@@ -50,26 +51,54 @@ namespace UI::HookFailureWindow
             s_cacheValid      = true;
         }
 
+        // Opens the window when a report has been added since the last one we
+        // showed. Keyed on the commit serial rather than the generation: a
+        // reload that now resolves cleanly still moves the generation (it drops
+        // the plugin's old entry) and must not pop a window saying nothing.
+        //
+        // Dismissing leaves the serial where it is, so the window stays shut
+        // until something new actually fails -- which is the whole difference
+        // between this and the one-shot flag it replaced.
+        void PollForNewReports()
+        {
+            if (!s_armed)
+                return;
+
+            const unsigned commit = PluginHookReport::GetCommitSerial();
+            if (commit == s_lastCommit)
+                return;
+
+            s_lastCommit = commit;
+            if (PluginHookReport::GetReportedPluginCount() == 0)
+                return;
+
+            Show();
+        }
+
         const ImVec4 kRed    = ImVec4(1.0f, 0.35f, 0.35f, 1.0f);
         const ImVec4 kOrange = ImVec4(1.0f, 0.65f, 0.20f, 1.0f);
     }
 
     void Show()
     {
-        s_isOpen = true;
-        s_shown  = true;
+        s_isOpen     = true;
         s_cacheValid = false;
     }
 
     void ShowIfPending()
     {
-        if (s_shown) return;
-        if (PluginHookReport::GetReportedPluginCount() == 0) return;
-        Show();
+        // Arms the auto-open, nothing more: this runs on the game thread from
+        // the world-begin-play callback, and the check itself belongs on the
+        // render thread with everything else that touches the open state. The
+        // first poll after this then opens the window for whatever failed
+        // during startup, which is what it used to do directly.
+        s_armed = true;
     }
 
     void Render()
     {
+        PollForNewReports();
+
         if (!s_isOpen)
             return;
 
@@ -99,9 +128,11 @@ namespace UI::HookFailureWindow
         if (refused > 0)
             ImGui::TextColored(kRed, "%d plugin(s) did not load.", refused);
         ImGui::TextWrapped(
-            "These plugins could not find the game code they hook into. That normally means "
-            "the game updated and the plugin needs a new build -- it is not something you can "
-            "fix from here. Copy the details below and send them to the plugin's author.");
+            "These plugins could not find the game code they hook into. A plugin that misses "
+            "even one of its hooks is not loaded at all, because there is no telling what it "
+            "would do with the half it found. That normally means the game updated and the "
+            "plugin needs a new build -- it is not something you can fix from here. Copy the "
+            "details below and send them to the plugin's author.");
 
         ImGui::Spacing();
         ImGui::Separator();
@@ -130,7 +161,7 @@ namespace UI::HookFailureWindow
             if (r.refused)
                 ImGui::TextColored(kRed, "NOT LOADED");
             else
-                ImGui::TextColored(kOrange, "loaded with warnings");
+                ImGui::TextColored(kOrange, "loaded");
 
             ImGui::TextDisabled("%s  --  %d pattern(s) resolved, %d failed",
                                 r.file.empty() ? "?" : r.file.c_str(),
@@ -140,7 +171,10 @@ namespace UI::HookFailureWindow
             ImGui::Indent();
             for (const PluginHookReport::Failure& f : r.failures)
             {
-                if (f.fatal)
+                // Both colours are a warning colour: the tag says how the
+                // plugin declared the resolve, not how much it mattered in the
+                // end -- either one is why the plugin is not loaded.
+                if (f.required)
                     ImGui::TextColored(kRed, "[required]");
                 else
                     ImGui::TextColored(kOrange, "[optional]");
@@ -212,7 +246,7 @@ namespace UI::HookFailureWindow
         PluginHookReport::PluginReport warnPlugin;
         warnPlugin.plugin   = "MapTweaks";
         warnPlugin.file     = "MapTweaks.dll";
-        warnPlugin.refused  = false;
+        warnPlugin.refused  = true;
         warnPlugin.resolved = 7;
         warnPlugin.failures.push_back({ "ACrMapActor::RefreshFogOfWar",
             "pattern not found: E8 ?? ?? ?? ?? 84 C0 74 ?? 48 8B CB", false });

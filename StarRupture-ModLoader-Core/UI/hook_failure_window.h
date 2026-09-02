@@ -13,9 +13,14 @@
 // the same report is available on a dedicated server through the `hookfailures`
 // console command.
 //
-// Flow mirrors UpdateNoticeWindow: client_ui's AnyWorldBeginPlay callback calls
-// ShowIfPending() when the main menu world loads, and it opens only if some
-// plugin actually reported something and it has not been shown yet this session.
+// It is not a startup-only popup. client_ui's AnyWorldBeginPlay callback calls
+// ShowIfPending() when the main menu world loads, which ARMS it; from then on it
+// opens itself whenever a new report is committed. That is what makes it work
+// for a plugin hot-loaded or reloaded from the console or the plugin list mid-
+// session: those run long after the main menu, and a plugin that silently failed
+// to hook is exactly the case where the user is about to wonder why nothing
+// happened. A reload that now resolves cleanly commits nothing, so it does not
+// re-open the window.
 //
 // The copy button is the point of the window. A missed AOB is fixed by the
 // plugin's author, not by the person looking at the popup, so what they need is
@@ -24,8 +29,9 @@
 
 namespace UI::HookFailureWindow
 {
-    // Open the window if any plugin reported a hook failure and it has not been
-    // shown yet this session. Called when the main menu world begins play.
+    // Arm the auto-open. Called when the main menu world begins play, from the
+    // game thread -- it only sets a flag; the check itself runs in Render() so
+    // that everything which touches the open state stays on the render thread.
     void ShowIfPending();
 
     // Open it unconditionally -- for the plugin list's "why?" affordance, which

@@ -9,10 +9,16 @@
 // every named resolve that missed, and answers the one question the loader asks
 // when the event returns -- may this plugin load at all?
 //
-// A required miss is fatal. The plugin manager skips PluginInit, frees the DLL
-// and leaves the record marked, so a plugin whose pattern stopped matching after
-// a game update does nothing at all rather than detouring whatever now lives at
-// the address it guessed.
+// Any miss is fatal -- required or optional, one is enough. The plugin manager
+// skips PluginInit, frees the DLL and leaves the record marked, so a plugin
+// whose pattern stopped matching after a game update does nothing at all rather
+// than detouring whatever now lives at the address it guessed.
+//
+// The required/optional flag survives only as a label on the failure line: it
+// says how the plugin declared that resolve, and no longer decides anything. A
+// plugin that asked for an address and did not get it is a plugin whose
+// behaviour nobody -- including its author -- can predict, and "it degrades
+// gracefully" is a claim only a build that resolved cleanly gets to make.
 //
 // What survives the session is the report: one entry per plugin that had any
 // problem, kept for the life of the process so the client can show it in a popup
@@ -38,7 +44,7 @@ namespace PluginHookReport
     {
         std::string hookName;  // name the plugin gave it
         std::string detail;    // the pattern that missed, or the plugin's own message
-        bool        fatal;     // true = required; false = optional/warning
+        bool        required;  // how the plugin declared it -- a label, not a verdict
     };
 
     // Everything one plugin reported during its last scan session.
@@ -46,7 +52,7 @@ namespace PluginHookReport
     {
         std::string          plugin;    // PluginInfo name, or the DLL file name if unknown
         std::string          file;      // bare DLL file name
-        bool                 refused;   // true = fatal failures, plugin was not loaded
+        bool                 refused;   // true = the plugin was not loaded (any failure)
         int                  resolved;  // patterns that DID resolve, for context
         std::vector<Failure> failures;
     };
@@ -60,7 +66,8 @@ namespace PluginHookReport
 
     // Close the session and commit its failures to the report list (nothing is
     // committed when the plugin resolved everything cleanly). refusedOut, when
-    // non-null, receives true if the plugin must not be loaded.
+    // non-null, receives true if the plugin must not be loaded -- which is any
+    // time it recorded a failure at all.
     void EndSession(const IPluginSelf* self, bool* refusedOut);
 
     // Record a crash inside OnPluginLoadHooks against the open session. Fatal.
@@ -73,8 +80,12 @@ namespace PluginHookReport
     bool HasSession(const IPluginSelf* self);
 
     void RecordResolved(const IPluginSelf* self);
-    void RecordFailure(const IPluginSelf* self, const char* hookName, const char* detail, bool fatal);
-    bool SessionHasFatal(const IPluginSelf* self);
+    void RecordFailure(const IPluginSelf* self, const char* hookName, const char* detail, bool required);
+
+    // True once anything has missed in this session. What IPluginHookScanner's
+    // HasFailures() answers, so a plugin can stop resolving the moment it knows
+    // it is not going to load.
+    bool SessionHasFailures(const IPluginSelf* self);
 
     // --- Report, for the UI and the console -----------------------------------
 
@@ -95,6 +106,14 @@ namespace PluginHookReport
     // anything derived from Snapshot() stores this next to the cache and
     // rebuilds when it moves, rather than copying every string each frame.
     unsigned GetGeneration();
+
+    // Bumped ONLY when a report is added. Separate from the generation because
+    // "there is something new to tell the user" and "my cache is stale" are
+    // different questions: a reload that now resolves cleanly moves the
+    // generation (it drops the old entry) and must not re-open the failure
+    // popup, while a plugin hot-loaded into a running game that misses a hook
+    // must.
+    unsigned GetCommitSerial();
 
 #ifdef _DEBUG
     // Add a fabricated report, for the F2 menu's test button. Debug builds only.

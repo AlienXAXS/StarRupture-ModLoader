@@ -41,6 +41,11 @@ namespace ModLoaderLogger
 		// Shared body of the four single-pattern resolves. module == nullptr
 		// means the main module, which is also the only form that gets the scan
 		// cache (it is keyed on the main module's base and the game version).
+		//
+		// `required` is recorded as a label only: a miss refuses the plugin
+		// either way (see plugin_hook_report.h). Optional still means something
+		// to the plugin -- it is the resolve whose null return it is expected to
+		// handle -- but it does not buy it a load.
 		uintptr_t Resolve(const IPluginSelf* self, const char* hookName, const char* pattern,
 			HMODULE module, bool required)
 		{
@@ -210,6 +215,9 @@ namespace ModLoaderLogger
 			PluginHookReport::RecordFailure(self, hookName, detail, true);
 		}
 
+		// Same verdict as ReportFailure -- the only difference is the label the
+		// report shows. A plugin that has decided something is wrong enough to
+		// tell the loader about does not get to also keep loading.
 		void HookReportWarning(const IPluginSelf* self, const char* hookName, const char* detail)
 		{
 			PluginHookReport::RecordFailure(self, hookName, detail, false);
@@ -217,7 +225,7 @@ namespace ModLoaderLogger
 
 		bool HookHasFailures(const IPluginSelf* self)
 		{
-			return PluginHookReport::SessionHasFatal(self);
+			return PluginHookReport::SessionHasFailures(self);
 		}
 
 		IPluginHookScanner g_hookScanner = {

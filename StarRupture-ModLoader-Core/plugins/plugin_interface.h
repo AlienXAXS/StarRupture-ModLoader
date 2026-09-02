@@ -424,17 +424,25 @@
 //        pattern scan. That table refuses calls made outside the event, so
 //        stashing it does not buy a plugin its old behaviour back.
 //
-//      - Resolve* names each address. A required miss REFUSES THE PLUGIN: the
-//        loader skips PluginInit, frees the DLL, and adds the miss to a report
-//        shown in a popup at startup (client) and by the hookfailures console
-//        command (both), with a copy-to-clipboard button so a user can hand a
-//        plugin author something actionable. An optional miss is listed the
-//        same way but the plugin still loads.
+//      - Resolve* names each address. ANY MISS REFUSES THE PLUGIN -- one is
+//        enough, and required vs optional does not change that. The loader
+//        skips PluginInit, frees the DLL, and adds the miss to a report shown
+//        in a popup (client) and by the hookfailures console command (both),
+//        with a copy-to-clipboard button so a user can hand a plugin author
+//        something actionable.
+//
+//        ResolveOptional / ReportWarning still exist and still mean something
+//        to the plugin -- optional is the resolve whose null return the plugin
+//        is expected to handle rather than assume -- but they are a LABEL on
+//        the report, not a lighter verdict. A plugin that asked the loader for
+//        an address and did not get it is a plugin running against a build it
+//        was not made for, and which half of it still works is not a question
+//        the loader (or the user staring at the game) can answer.
 //
 //      - self->hooks is null for the duration of the event, on purpose. A
-//        plugin that fails a required pattern is unloaded, so anything it
-//        registered or detoured during the event would be left pointing into a
-//        freed module. Resolve in the event, install in PluginInit.
+//        plugin that misses a pattern is unloaded, so anything it registered or
+//        detoured during the event would be left pointing into a freed module.
+//        Resolve in the event, install in PluginInit.
 
 #define PLUGIN_INTERFACE_VERSION_MIN 62
 #define PLUGIN_INTERFACE_VERSION_MAX 62
@@ -515,18 +523,27 @@ struct PluginXRef { uintptr_t address; bool isRelative; };
 // and the log show the user -- name it after the thing being hooked
 // ("UCrCraftingComponent::FinishCrafting"), not after the pattern.
 //
-//   Required -- a miss REFUSES THE PLUGIN: PluginInit is never called, the DLL
-//               is freed, and the miss is listed in the startup failure window.
-//   Optional -- a miss is recorded as a warning and listed in the same window,
-//               but the plugin still loads. Use it for a feature that can
-//               degrade, and null-check the address you got back.
+// A MISS REFUSES THE PLUGIN, required or optional, and one is enough:
+// PluginInit is never called, the DLL is freed, and every miss is listed in the
+// failure window. The two flavours differ only in the label the report shows:
+//
+//   Required -- this plugin cannot work without the address.
+//   Optional -- the plugin handles a null return rather than assuming one, so
+//               it will not fault on it. It still does not load: an address
+//               that stopped resolving means this build of the plugin does not
+//               match this build of the game, and neither the loader nor the
+//               user can tell which parts of it are still doing what they think.
+//
+// So resolve everything you intend to use, and mark optional only what your own
+// code genuinely null-checks -- it makes the report readable for whoever has to
+// fix it, and it keeps the plugin from faulting inside the event itself.
 //
 // RESOLVE ONLY -- DO NOT INSTALL. OnPluginLoadHooks runs before the plugin is
-// committed to, and the loader frees the DLL when a required pattern misses. A
-// detour written into game code during this event would then be a jump into a
-// freed module. Store the addresses in your own statics here and install from
-// PluginInit, which only runs once every required pattern resolved. That is
-// also why self->hooks is null for the duration of the event.
+// committed to, and the loader frees the DLL when any pattern misses. A detour
+// written into game code during this event would then be a jump into a freed
+// module. Store the addresses in your own statics here and install from
+// PluginInit, which only runs once every pattern resolved. That is also why
+// self->hooks is null for the duration of the event.
 // ---------------------------------------------------------------------------
 struct IPluginHookScanner
 {
@@ -555,14 +572,15 @@ struct IPluginHookScanner
 
 	// Record something the plugin worked out for itself -- a vtable slot that
 	// held an unexpected value, an offset that failed a sanity check, a
-	// multi-step resolve that ended nowhere. ReportFailure refuses the plugin
-	// exactly like a missed required pattern; ReportWarning only lists it.
+	// multi-step resolve that ended nowhere. Both refuse the plugin, exactly
+	// like a missed pattern; the only difference is whether the report line
+	// reads [required] or [optional].
 	void (*ReportFailure)(const IPluginSelf* self, const char* hookName, const char* detail);
 	void (*ReportWarning)(const IPluginSelf* self, const char* hookName, const char* detail);
 
-	// True once anything fatal has been recorded this session. Lets a plugin
-	// skip the rest of a resolve chain it already knows cannot work -- it does
-	// not change the outcome, which is decided when the event returns.
+	// True once anything at all has missed this session. Lets a plugin skip the
+	// rest of a resolve chain it already knows cannot work -- it does not change
+	// the outcome, which is decided when the event returns.
 	bool (*HasFailures)(const IPluginSelf* self);
 };
 
@@ -2109,9 +2127,9 @@ typedef void        (*PluginShutdownFunc)();
 
 // OPTIONAL fourth export. Called once per load, after GetPluginInfo and before
 // PluginInit, and the only context in which a plugin can pattern scan. Resolve
-// every AOB you depend on here; if any required one misses, the loader refuses
-// the plugin -- PluginInit is never called, the DLL is freed, and the miss is
-// listed in the failure window shown at startup.
+// every AOB you depend on here; if ANY of them misses -- required or optional --
+// the loader refuses the plugin: PluginInit is never called, the DLL is freed,
+// and the miss is listed in the failure window.
 //
 // Plugins that do not scan simply do not export it.
 //

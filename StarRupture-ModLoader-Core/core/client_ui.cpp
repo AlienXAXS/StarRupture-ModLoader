@@ -153,9 +153,11 @@ void InitClientUI()
         UI::Overlay::SetVisible(isMainMenu);
         UI::GlobalSettings::SetWorldName(worldName ? worldName : "");
 
-        // One-shot popups: what the auto-updater replaced this boot, and any
-        // plugin whose hooks did not resolve. The failure one opens second so it
-        // takes focus -- it is the one that needs acting on.
+        // What the auto-updater replaced this boot, and any plugin whose hooks
+        // did not resolve. The failure one opens second so it takes focus -- it
+        // is the one that needs acting on. The update notice is a genuine
+        // one-shot; the hook failure window is only ARMED here and opens again
+        // by itself whenever a later load or reload adds a report.
         if (isMainMenu)
         {
             UI::UpdateNoticeWindow::ShowIfPending();

@@ -240,7 +240,7 @@ namespace PluginManager
 		bool isOutOfDate;            // true when plugin interface version is too old
 		bool needsModLoaderUpdate;   // true when plugin interface version is too new
 		bool isWrongTarget;          // true when plugin was built for a different build target
-		bool hookScanFailed;         // true when OnPluginLoadHooks missed a required pattern
+		bool hookScanFailed;         // true when OnPluginLoadHooks missed anything at all
 
 		// Stable identity struct passed to PluginInit and retained by the plugin->
 		// name/version point into cachedName/cachedVersion so they outlive PluginInfo.
@@ -578,13 +578,14 @@ namespace PluginManager
 	//
 	// This is the whole point of moving AOB scanning into an event: a plugin
 	// declares the addresses it depends on in one place, before it has done
-	// anything, so a required pattern that no longer matches can be turned into
-	// "this plugin does not load" instead of a plugin that loads and then
-	// detours whatever now lives at the address it guessed.
+	// anything, so a pattern that no longer matches can be turned into "this
+	// plugin does not load" instead of a plugin that loads and then detours
+	// whatever now lives at the address it guessed. One miss is enough --
+	// optional resolves are a label on the report, not a second verdict.
 	//
 	// self->hooks stays null for the duration -- the event resolves, PluginInit
 	// installs. A plugin that registered a callback here would be left with a
-	// pointer into a freed module the moment a later required pattern missed.
+	// pointer into a freed module the moment a later pattern missed.
 	//
 	// Caller must hold g_pluginLock.
 	static bool RunLoadHooksPhase(LoadedPlugin& plugin)
@@ -659,7 +660,7 @@ namespace PluginManager
 			plugin.shutdown  = nullptr;
 			plugin.loadHooks = nullptr;
 			ModLoaderLogger::LogError(
-				L"Plugin '%S' was NOT loaded: one or more required hooks could not be resolved.",
+				L"Plugin '%S' was NOT loaded: one or more of its hooks could not be resolved.",
 				plugin.cachedName.c_str());
 			return false;
 		}

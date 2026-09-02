@@ -416,7 +416,7 @@ namespace ModConsole
             return;
         }
 
-        out.Printf(LineKind::Error, "%d plugin(s) reported hook failures (%d not loaded):",
+        out.Printf(LineKind::Error, "%d plugin(s) failed to resolve a hook (%d not loaded):",
                    reported, PluginHookReport::GetRefusedPluginCount());
 
         const std::vector<PluginHookReport::PluginReport> reports = PluginHookReport::Snapshot();
@@ -425,19 +425,20 @@ namespace ModConsole
             out.Printf(LineKind::Error, "  %s (%s) -- %s, %d pattern(s) resolved",
                        r.plugin.c_str(),
                        r.file.empty() ? "?" : r.file.c_str(),
-                       r.refused ? "NOT LOADED" : "loaded with warnings",
+                       r.refused ? "NOT LOADED" : "loaded",
                        r.resolved);
 
             for (const PluginHookReport::Failure& fail : r.failures)
             {
                 out.Printf(LineKind::Error, "      [%s] %s",
-                           fail.fatal ? "required" : "optional", fail.hookName.c_str());
+                           fail.required ? "required" : "optional", fail.hookName.c_str());
                 out.Notice("          %s", fail.detail.c_str());
             }
         }
 
-        out.Notice("A required hook that no longer resolves usually means the game updated");
-        out.Notice("and the plugin needs a new build. Full detail is in modloader.log.");
+        out.Notice("A hook that no longer resolves usually means the game updated and the");
+        out.Notice("plugin needs a new build. Any unresolved hook, required or optional,");
+        out.Notice("stops the plugin loading. Full detail is in modloader.log.");
     }
 
     static void Cmd_Version(const std::vector<std::string>&, Sink& out)
