@@ -3,6 +3,7 @@
 #include "version_check.h"
 #include "startup_utils.h"
 #include "init_phases.h"
+#include "hook_management.h"
 #include "client_ui.h"
 #include "../game_type_checker.h"
 #include "../console/server_console.h"
@@ -261,6 +262,16 @@ DWORD WINAPI MainInitThreadProc(LPVOID)
     const ULONGLONG loadStart = GetTickCount64();
     LoadPluginsPhase();
     LogToFile::Info("[init] Plugin DLLs loaded in %llu ms", GetTickCount64() - loadStart);
+
+    // Install every plugin-facing event hook that is not up yet. Each one
+    // otherwise installs itself lazily on the first RegisterPluginCallback,
+    // which makes a plugin subscribing from PluginInit the thread that patches
+    // live engine code -- and silently unsubscribed if that patch fails. See
+    // InstallPluginEventHooks() in hook_management.cpp for the full reasoning.
+    LogToFile::Info("[init] Installing remaining plugin event hooks...");
+    const ULONGLONG eventHooksStart = GetTickCount64();
+    InstallPluginEventHooks();
+    LogToFile::Info("[init] Plugin event hooks installed in %llu ms", GetTickCount64() - eventHooksStart);
 
     LogToFile::Info("[init] Initialising plugins...");
     const ULONGLONG pluginInitStart = GetTickCount64();
