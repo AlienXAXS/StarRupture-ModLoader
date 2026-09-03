@@ -51,8 +51,18 @@ namespace ScanPatterns
 
 	// UCrMapManuSubsystem::GatherPlayersData(UCrMapManuSubsystem* this)
 	// Native C++ function -- not a UFUNCTION, must be found via AOB scan.
+	//
+	// The prologue alone (up to the first call) is NOT unique: as of Update 2,
+	// UBiomesRuntimeSpawningSubsystem::Initialize compiles to the identical
+	// frame setup + call to UAnimationSharingManager::GetWorld, and sits at a
+	// LOWER address, so a first-match scan resolved to it instead. The extra
+	// bytes below cover what follows that call:
+	//   GatherPlayersData:  mov rsi, [rax+1B0h] / test rsi, rsi   (World->GameState)
+	//   Initialize:         mov rsi, rax        / test rax, rax
+	// The +1B0h displacement is wildcarded so a UWorld layout change does not
+	// break the scan.
 	inline constexpr auto UCrMapManuSubsystem_GatherPlayersData =
-		"40 55 53 56 48 8D AC 24 ?? ?? ?? ?? 48 81 EC ?? ?? ?? ?? 48 8B D9 E8";
+		"40 55 53 56 48 8D AC 24 ?? ?? ?? ?? 48 81 EC ?? ?? ?? ?? 48 8B D9 E8 ?? ?? ?? ?? 48 8B B0";
 
 	// UGameViewportClient::InputKey -- intercepts all keyboard/mouse input before UE5 processes it.
 	// Returning false (0) from our detour consumes the event (game will not react to it).
