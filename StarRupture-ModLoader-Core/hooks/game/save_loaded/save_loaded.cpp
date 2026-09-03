@@ -9,8 +9,28 @@
 
 namespace Hooks::SaveLoaded
 {
-	// UCrMassSaveSubsystem::OnSaveLoaded(UCrMassSaveSubsystem* this)
-	using OnSaveLoaded_t = void(__fastcall*)(void* thisPtr);
+	// Two different functions can end up behind this hook, with two different ABIs:
+	//
+	//   1. UCrMassSaveSubsystem::execOnSaveLoaded -- the UHT-generated exec thunk.
+	//      This is what UFunction::ExecFunction points at, so it is what
+	//      ResolveUFunctionNativeAddr returns, and OnSaveLoaded is reached this way
+	//      in practice (it is bound as a dynamic delegate, so the engine enters it
+	//      through ProcessEvent -> UFunction::Invoke). Its signature is the
+	//      FNativeFuncPtr shape: (UObject* Context, FFrame& Stack, void* Result).
+	//   2. UCrMassSaveSubsystem::OnSaveLoaded -- the real native member, found by
+	//      the pattern-scan fallback. RCX = this, nothing else.
+	//
+	// So the detour declares the three-argument exec shape and forwards all three
+	// registers. That is required for (1) and harmless for (2): the native member
+	// never reads RDX/R8, and the arguments are register-only so there is no stack
+	// to clean up either way.
+	//
+	// Dropping RDX/R8 is NOT harmless in the other direction, and shipped as a
+	// crash: every exec thunk starts with P_FINISH, which writes through
+	// FFrame& Stack. Forwarding only `this` left RDX holding whatever the logging
+	// calls just above had put there, and execOnSaveLoaded faulted writing to it
+	// (EXCEPTION_ACCESS_VIOLATION into this DLL's own image).
+	using OnSaveLoaded_t = void(__fastcall*)(void* context, void* stack, void* result);
 
 	static Hook g_hook;
 	static OnSaveLoaded_t g_original = nullptr;
@@ -19,14 +39,14 @@ namespace Hooks::SaveLoaded
 	// Callback for plugins to receive save-loaded events
 	static std::vector<PluginSaveLoadedCallback> g_pluginCallbacks;
 
-	static void __fastcall Detour(void* thisPtr)
+	static void __fastcall Detour(void* context, void* stack, void* result)
 	{
 		void* const callerAddr = _ReturnAddress();
 
 		long callNum = InterlockedIncrement(&g_callCount);
 
 		ModLoaderLogger::LogInfo(L"[SaveLoaded] UCrMassSaveSubsystem::OnSaveLoaded called (#%ld)", callNum);
-		ModLoaderLogger::LogDebug(L"[SaveLoaded]   this=%p, Thread=%lu", thisPtr, GetCurrentThreadId());
+		ModLoaderLogger::LogDebug(L"[SaveLoaded]   this=%p, Thread=%lu", context, GetCurrentThreadId());
 		ModLoaderLogger::LogTrace(L"[SaveLoaded]   Called from: %S",
 		                          Hooks::GetCallerModuleName(callerAddr).c_str());
 
@@ -34,7 +54,7 @@ namespace Hooks::SaveLoaded
 		if (g_original)
 		{
 			ModLoaderLogger::LogDebug(L"[SaveLoaded]   Calling original OnSaveLoaded...");
-			g_original(thisPtr);
+			g_original(context, stack, result);
 			ModLoaderLogger::LogDebug(L"[SaveLoaded]   Original returned");
 		}
 		else
@@ -126,7 +146,7 @@ namespace Hooks::SaveLoaded
 		// Lazily install the hook on first registration
 		if (!g_hook.installed)
 		{
-			ModLoaderLogger::LogInfo(L"[SaveLoaded] First callback registered � installing hook now...");
+			ModLoaderLogger::LogInfo(L"[SaveLoaded] First callback registered -- installing hook now...");
 			if (!Install())
 			{
 				ModLoaderLogger::LogError(L"[SaveLoaded] Failed to install hook for save-loaded callback!");
