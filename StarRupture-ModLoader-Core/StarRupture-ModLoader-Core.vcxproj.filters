@@ -381,6 +381,9 @@
     <ClInclude Include="console\console_commands.h">
       <Filter>Source Files\console</Filter>
     </ClInclude>
+    <ClInclude Include="console\plugin_console.h">
+      <Filter>Source Files\console</Filter>
+    </ClInclude>
     <ClInclude Include="console\console_input.h">
       <Filter>Source Files\console</Filter>
     </ClInclude>
@@ -669,6 +672,9 @@
       <Filter>Source Files\UI</Filter>
     </ClCompile>
     <ClCompile Include="console\console_commands.cpp">
+      <Filter>Source Files\console</Filter>
+    </ClCompile>
+    <ClCompile Include="console\plugin_console.cpp">
       <Filter>Source Files\console</Filter>
     </ClCompile>
     <ClCompile Include="console\console_input.cpp">

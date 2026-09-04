@@ -84,13 +84,31 @@ namespace ModConsole
     // -----------------------------------------------------------------------
     // Registry
     //
-    // unique_ptr entries rather than Command values: Find() hands out pointers
-    // that must stay valid, and a plain vector rehomes its elements when it
-    // grows.
+    // unique_ptr entries rather than Entry values: a plugin command's trampoline
+    // context is addressed by pointer for as long as the command exists, and a
+    // plain vector rehomes its elements when it grows.
+    //
+    // An Entry also carries the string storage for plugin-registered commands.
+    // A built-in's name/usage/help are literals in this DLL and live forever;
+    // a plugin's live in its module, which can be unloaded while the command is
+    // still being listed by `help` or completed by the input editor, so the
+    // registry keeps its own copies and points the Command at those.
     // -----------------------------------------------------------------------
-    static std::mutex                             s_registryMutex;
-    static std::vector<std::unique_ptr<Command>>  s_commands;
-    static bool                                   s_builtinsRegistered = false;
+    struct Entry
+    {
+        Command     cmd{};
+
+        // Only populated for plugin commands (owner non-empty).
+        std::string owner;
+        std::string name;
+        std::string aliases;
+        std::string usage;
+        std::string help;
+    };
+
+    static std::mutex                           s_registryMutex;
+    static std::vector<std::unique_ptr<Entry>>  s_commands;
+    static bool                                 s_builtinsRegistered = false;
 
     // True when needle matches name, or one of the space-separated aliases.
     static bool MatchesCommand(const Command& cmd, const char* needle)
@@ -115,37 +133,163 @@ namespace ModConsole
         return false;
     }
 
+    // Caller must hold s_registryMutex.
+    static Entry* FindEntryLocked(const char* needle)
+    {
+        for (const auto& e : s_commands)
+        {
+            if (MatchesCommand(e->cmd, needle))
+                return e.get();
+        }
+        return nullptr;
+    }
+
+    // Split a space-separated alias list into its tokens.
+    static std::vector<std::string> SplitAliases(const std::string& aliases)
+    {
+        std::vector<std::string> out;
+        size_t i = 0;
+        while (i < aliases.size())
+        {
+            while (i < aliases.size() && aliases[i] == ' ') ++i;
+            const size_t start = i;
+            while (i < aliases.size() && aliases[i] != ' ') ++i;
+            if (i > start) out.push_back(aliases.substr(start, i - start));
+        }
+        return out;
+    }
+
     void Register(const Command& cmd)
     {
         std::lock_guard<std::mutex> lk(s_registryMutex);
         for (const auto& existing : s_commands)
         {
-            if (_stricmp(existing->name, cmd.name) == 0)
+            if (_stricmp(existing->cmd.name, cmd.name) == 0)
                 return;   // already registered
         }
-        s_commands.push_back(std::make_unique<Command>(cmd));
+        auto e = std::make_unique<Entry>();
+        e->cmd = cmd;
+        s_commands.push_back(std::move(e));
     }
 
-    const Command* Find(const char* name)
+    bool RegisterPluginCommand(const char* owner, const Command& cmd)
     {
-        if (!name || !*name) return nullptr;
+        if (!owner || !*owner || !cmd.name || !*cmd.name || !cmd.ctxHandler)
+            return false;
+
+        auto e     = std::make_unique<Entry>();
+        e->owner   = owner;
+        e->name    = cmd.name;
+        e->aliases = cmd.aliases ? cmd.aliases : "";
+        e->usage   = cmd.usage   ? cmd.usage   : cmd.name;
+        e->help    = cmd.help    ? cmd.help    : "";
+
+        e->cmd.name       = e->name.c_str();
+        e->cmd.aliases    = e->aliases.empty() ? nullptr : e->aliases.c_str();
+        e->cmd.usage      = e->usage.c_str();
+        e->cmd.help       = e->help.c_str();
+        e->cmd.handler    = nullptr;
+        e->cmd.gameThread = cmd.gameThread;
+        e->cmd.owner      = e->owner.c_str();
+        e->cmd.ctxHandler = cmd.ctxHandler;
+        e->cmd.context    = cmd.context;
 
         std::lock_guard<std::mutex> lk(s_registryMutex);
-        for (const auto& cmd : s_commands)
+
+        // Reject a name or alias that already resolves to something else, in
+        // either direction: a plugin must not shadow `reload` (nor be shadowed
+        // by it) just because it registered first.
+        if (FindEntryLocked(e->cmd.name))
+            return false;
+
+        for (const std::string& alias : SplitAliases(e->aliases))
         {
-            if (MatchesCommand(*cmd, name))
-                return cmd.get();
+            if (FindEntryLocked(alias.c_str()))
+                return false;
         }
-        return nullptr;
+
+        s_commands.push_back(std::move(e));
+        return true;
     }
 
-    std::vector<const Command*> GetCommands()
+    bool UnregisterPluginCommand(const char* owner, const char* name)
+    {
+        if (!owner || !*owner || !name || !*name) return false;
+
+        std::lock_guard<std::mutex> lk(s_registryMutex);
+        for (auto it = s_commands.begin(); it != s_commands.end(); ++it)
+        {
+            if ((*it)->owner.empty() || _stricmp((*it)->owner.c_str(), owner) != 0)
+                continue;
+            if (_stricmp((*it)->name.c_str(), name) != 0)
+                continue;
+
+            s_commands.erase(it);
+            return true;
+        }
+        return false;
+    }
+
+    int ForgetPluginCommands(const char* owner)
+    {
+        if (!owner || !*owner) return 0;
+
+        int removed = 0;
+        std::lock_guard<std::mutex> lk(s_registryMutex);
+        for (auto it = s_commands.begin(); it != s_commands.end(); )
+        {
+            if (!(*it)->owner.empty() && _stricmp((*it)->owner.c_str(), owner) == 0)
+            {
+                it = s_commands.erase(it);
+                ++removed;
+            }
+            else
+            {
+                ++it;
+            }
+        }
+        return removed;
+    }
+
+    static CommandInfo DescribeLocked(const Entry& e)
+    {
+        CommandInfo info;
+        info.name       = e.cmd.name    ? e.cmd.name    : "";
+        info.aliases    = e.cmd.aliases ? e.cmd.aliases : "";
+        info.usage      = e.cmd.usage   ? e.cmd.usage   : info.name;
+        info.help       = e.cmd.help    ? e.cmd.help    : "";
+        info.owner      = e.owner;
+        info.gameThread = e.cmd.gameThread;
+        return info;
+    }
+
+    bool Exists(const char* name)
+    {
+        if (!name || !*name) return false;
+
+        std::lock_guard<std::mutex> lk(s_registryMutex);
+        return FindEntryLocked(name) != nullptr;
+    }
+
+    bool FindInfo(const char* name, CommandInfo& out)
+    {
+        if (!name || !*name) return false;
+
+        std::lock_guard<std::mutex> lk(s_registryMutex);
+        const Entry* e = FindEntryLocked(name);
+        if (!e) return false;
+
+        out = DescribeLocked(*e);
+        return true;
+    }
+
+    std::vector<CommandInfo> GetCommands()
     {
         std::lock_guard<std::mutex> lk(s_registryMutex);
-        std::vector<const Command*> out;
+        std::vector<CommandInfo> out;
         out.reserve(s_commands.size());
-        for (const auto& cmd : s_commands)
-            out.push_back(cmd.get());
+        for (const auto& e : s_commands)
+            out.push_back(DescribeLocked(*e));
         return out;
     }
 
@@ -256,26 +400,48 @@ namespace ModConsole
     // -----------------------------------------------------------------------
     static void Cmd_Help(const std::vector<std::string>& args, Sink& out)
     {
-        const std::vector<const Command*> commands = GetCommands();
+        const std::vector<CommandInfo> commands = GetCommands();
 
         if (args.size() >= 2)
         {
-            const Command* cmd = Find(args[1].c_str());
-            if (!cmd)
+            CommandInfo cmd;
+            if (!FindInfo(args[1].c_str(), cmd))
             {
                 out.Error("Unknown command '%s'.", args[1].c_str());
                 return;
             }
-            out.Out("%s", cmd->usage ? cmd->usage : cmd->name);
-            out.Notice("  %s", cmd->help ? cmd->help : "");
-            if (cmd->aliases && *cmd->aliases)
-                out.Notice("  aliases: %s", cmd->aliases);
+            out.Out("%s", cmd.usage.c_str());
+            out.Notice("  %s", cmd.help.c_str());
+            if (!cmd.aliases.empty())
+                out.Notice("  aliases: %s", cmd.aliases.c_str());
+            if (!cmd.owner.empty())
+                out.Notice("  from plugin: %s", cmd.owner.c_str());
             return;
         }
 
         out.Notice("Mod loader commands:");
-        for (const Command* cmd : commands)
-            out.Out("  %-28s %s", cmd->usage ? cmd->usage : cmd->name, cmd->help ? cmd->help : "");
+        for (const CommandInfo& cmd : commands)
+        {
+            if (!cmd.owner.empty())
+                continue;
+            out.Out("  %-28s %s", cmd.usage.c_str(), cmd.help.c_str());
+        }
+
+        // Plugin commands listed separately, and attributed: `help` is where a
+        // user works out why a command they typed is not the one they meant,
+        // and "which plugin is this from" is the first half of that answer.
+        bool anyPlugin = false;
+        for (const CommandInfo& cmd : commands)
+        {
+            if (cmd.owner.empty()) continue;
+            if (!anyPlugin)
+            {
+                out.Notice("Plugin commands:");
+                anyPlugin = true;
+            }
+            out.Out("  %-28s %s [%s]", cmd.usage.c_str(), cmd.help.c_str(), cmd.owner.c_str());
+        }
+
         out.Notice("Type 'help <command>' for detail.");
     }
 
@@ -848,29 +1014,152 @@ namespace ModConsole
     }
 
     // -----------------------------------------------------------------------
-    // Dispatch
+    // Live sinks
+    //
+    // A plugin handler receives its Sink as an opaque pointer through the
+    // plugin interface, and nothing stops it from keeping that pointer and
+    // writing through it a second later on a thread of its own -- by which
+    // time the front-end that owned the sink may have dropped it. Recording
+    // which sinks are inside a handler turns that into a rejected write.
+    //
+    // A vector rather than a set because a handler is free to dispatch another
+    // command onto the same sink, so the same pointer can legitimately be
+    // present more than once.
     // -----------------------------------------------------------------------
-    static void RunHandler(const Command* cmd,
+    static std::mutex               s_activeSinkMutex;
+    static std::vector<const Sink*> s_activeSinks;
+
+    bool IsSinkActive(const Sink* sink)
+    {
+        if (!sink) return false;
+
+        std::lock_guard<std::mutex> lk(s_activeSinkMutex);
+        for (const Sink* s : s_activeSinks)
+            if (s == sink) return true;
+        return false;
+    }
+
+    // -----------------------------------------------------------------------
+    // Dispatch
+    //
+    // What Dispatch queues is a copy of the command, never the registry
+    // pointer: a gameThread command runs a tick or more after it was typed,
+    // and an `unload MyPlugin` in between erases the entry. The handler
+    // address is re-validated before it is called for the same reason -- see
+    // RunHandler.
+    // -----------------------------------------------------------------------
+    struct ResolvedCommand
+    {
+        std::string    name;
+        std::string    owner;        // empty for built-ins
+        Handler        handler    = nullptr;
+        ContextHandler ctxHandler = nullptr;
+        void*          context    = nullptr;
+        bool           gameThread = false;
+    };
+
+    static bool ResolveCommand(const char* needle, ResolvedCommand& out)
+    {
+        std::lock_guard<std::mutex> lk(s_registryMutex);
+        Entry* e = FindEntryLocked(needle);
+        if (!e) return false;
+
+        out.name       = e->cmd.name;
+        out.owner      = e->owner;
+        out.handler    = e->cmd.handler;
+        out.ctxHandler = e->cmd.ctxHandler;
+        out.context    = e->cmd.context;
+        out.gameThread = e->cmd.gameThread;
+        return true;
+    }
+
+    // True when this plugin command is still registered, by the same owner,
+    // with the same handler and context. False once the plugin has been
+    // unloaded, or has re-registered the name with something else.
+    static bool PluginCommandStillValid(const ResolvedCommand& cmd)
+    {
+        std::lock_guard<std::mutex> lk(s_registryMutex);
+        for (const auto& e : s_commands)
+        {
+            if (e->owner.empty()) continue;
+            if (_stricmp(e->owner.c_str(), cmd.owner.c_str()) != 0) continue;
+            if (_stricmp(e->name.c_str(), cmd.name.c_str()) != 0) continue;
+            return e->cmd.ctxHandler == cmd.ctxHandler && e->cmd.context == cmd.context;
+        }
+        return false;
+    }
+
+    // A handler address that no longer belongs to a loaded module cannot be
+    // called, whatever the registry says -- the same check, for the same crash
+    // class, as the keybind registry's CallbackStillMapped.
+    static bool HandlerStillMapped(const void* fn)
+    {
+        if (!fn) return false;
+
+        HMODULE owner = nullptr;
+        if (!GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                                   GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                                static_cast<LPCSTR>(fn), &owner))
+            return false;
+
+        return owner != nullptr;
+    }
+
+    static void RunHandler(const ResolvedCommand& cmd,
                            const std::vector<std::string>& args,
                            const std::shared_ptr<Sink>& sink)
     {
+        if (cmd.ctxHandler)
+        {
+            if (!PluginCommandStillValid(cmd) ||
+                !HandlerStillMapped(reinterpret_cast<const void*>(cmd.ctxHandler)))
+            {
+                sink->Error("Command '%s' is no longer available -- plugin '%s' was unloaded.",
+                            cmd.name.c_str(), cmd.owner.c_str());
+                ModLoaderLogger::LogWarn(L"[Console] Dropped '%S': owning plugin '%S' is gone",
+                                            cmd.name.c_str(), cmd.owner.c_str());
+                return;
+            }
+        }
+        else if (!cmd.handler)
+        {
+            return;
+        }
+
+        {
+            std::lock_guard<std::mutex> lk(s_activeSinkMutex);
+            s_activeSinks.push_back(sink.get());
+        }
+
         // A plugin's PluginInit/PluginShutdown runs underneath these handlers,
         // so a throwing plugin must not take the game thread with it. This does
         // not catch access violations (/EHsc) -- PluginManager wraps those in
         // SEH itself.
         try
         {
-            cmd->handler(args, *sink);
+            if (cmd.ctxHandler)
+                cmd.ctxHandler(args, *sink, cmd.context);
+            else
+                cmd.handler(args, *sink);
         }
         catch (const std::exception& e)
         {
-            sink->Error("Command '%s' threw: %s", cmd->name, e.what());
-            ModLoaderLogger::LogError(L"[Console] Command '%S' threw an exception", cmd->name);
+            sink->Error("Command '%s' threw: %s", cmd.name.c_str(), e.what());
+            ModLoaderLogger::LogError(L"[Console] Command '%S' threw an exception", cmd.name.c_str());
         }
         catch (...)
         {
-            sink->Error("Command '%s' threw an unknown exception.", cmd->name);
-            ModLoaderLogger::LogError(L"[Console] Command '%S' threw an unknown exception", cmd->name);
+            sink->Error("Command '%s' threw an unknown exception.", cmd.name.c_str());
+            ModLoaderLogger::LogError(L"[Console] Command '%S' threw an unknown exception", cmd.name.c_str());
+        }
+
+        {
+            std::lock_guard<std::mutex> lk(s_activeSinkMutex);
+            for (auto it = s_activeSinks.end(); it != s_activeSinks.begin(); )
+            {
+                --it;
+                if (*it == sink.get()) { s_activeSinks.erase(it); break; }
+            }
         }
     }
 
@@ -885,13 +1174,13 @@ namespace ModConsole
         if (args.empty())
             return false;
 
-        const Command* cmd = Find(args[0].c_str());
-        if (!cmd)
+        ResolvedCommand cmd;
+        if (!ResolveCommand(args[0].c_str(), cmd))
             return false;
 
         ModLoaderLogger::LogInfo(L"[Console] Executing: %S", line.c_str());
 
-        if (cmd->gameThread && !GameThreadDispatch::IsGameThread())
+        if (cmd.gameThread && !GameThreadDispatch::IsGameThread())
         {
             // Queued, not run: the game thread picks this up on its next tick.
             // Everything the handler needs is captured by value, so it does not

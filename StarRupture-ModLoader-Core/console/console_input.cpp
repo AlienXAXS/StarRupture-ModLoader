@@ -133,8 +133,8 @@ namespace ConsoleInput
 
         if (completingFirst)
         {
-            for (const ModConsole::Command* cmd : ModConsole::GetCommands())
-                out.push_back(cmd->name);
+            for (const ModConsole::CommandInfo& cmd : ModConsole::GetCommands())
+                out.push_back(cmd.name);
             return out;
         }
 
@@ -153,8 +153,8 @@ namespace ConsoleInput
 
         if (_stricmp(verb.c_str(), "help") == 0)
         {
-            for (const ModConsole::Command* cmd : ModConsole::GetCommands())
-                out.push_back(cmd->name);
+            for (const ModConsole::CommandInfo& cmd : ModConsole::GetCommands())
+                out.push_back(cmd.name);
         }
         return out;
     }

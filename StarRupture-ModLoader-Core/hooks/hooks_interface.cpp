@@ -20,6 +20,7 @@
 #include "hooks/game/mass_spawner_activate/mass_spawner_activate.h"
 #include "hooks/game/mass_spawner_deactivate/mass_spawner_deactivate.h"
 #include "hooks/game/mass_do_spawning/mass_do_spawning.h"
+#include "console/plugin_console.h"
 #include "memory_scanner/scanner.h"
 #include "hooks/game/scan_patterns.h"
 #include "hooks/game/ufunction_resolve.h"
@@ -1827,11 +1828,18 @@ namespace ModLoaderLogger
 		&g_objectWalker,     // v47 — appended at end to preserve layout for v44-46 plugins
 		&g_delegateHook,     // v47 — appended at end, do not relocate
 		&g_objectProperties, // v47 — appended at end, do not relocate
+		nullptr,             // v63 -- Console; filled in below by GetPluginHooks()
 	};
 	static bool g_networkChannelInitialized = false;
 
 	IPluginHooks* GetPluginHooks()
 	{
+		// ModConsole command registration + output sinks. Available on every
+		// build: registering a command does not depend on either console
+		// front-end being open.
+		if (!g_pluginHooks.Console)
+			g_pluginHooks.Console = PluginConsole::GetInterface();
+
 		// Resolve the network channel pointer on first call.
 		// NetworkChannel::GetInterface() returns nullptr on generic builds.
 		if (!g_pluginHooks.Network)

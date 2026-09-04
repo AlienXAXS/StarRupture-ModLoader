@@ -444,9 +444,58 @@
 //        detoured during the event would be left pointing into a freed module.
 //        Resolve in the event, install in PluginInit.
 
+
+// v63 (2026-09-04): Added IPluginConsole (hooks->Console) -- ModConsole command
+//      registration and output sinks, on every build. Purely additive: the
+//      field is appended at the end of IPluginHooks and nothing existing
+//      shifts, so MIN remains 62.
+//
+//      ModConsole is the loader's own command registry -- one registry, two
+//      front-ends (the ImGui developer console on client builds, the -console
+//      window on any build). It was internal, so a plugin had no way to add a
+//      command to either, and no way to get text back out of one: every engine
+//      console function on a dedicated server returns void, and the only
+//      text-returning path (APlayerController::ConsoleCommand) is client-only.
+//
+//      RegisterCommand adds a named command, with aliases, usage/help text for
+//      `help`, an opaque userData, and a gameThread flag that makes the loader
+//      run the handler on the next engine tick instead of on whichever console
+//      thread typed it -- set it for anything touching engine state.
+//
+//      A handler is handed an opaque PluginConsoleSink and writes through
+//      Write/Printf/Clear. Output is line-oriented and typed (Output / Notice /
+//      Error) so the front-end can colour it, and the same command prints the
+//      same lines wherever it was typed.
+//
+//      Execute runs any command line -- yours, another plugin's, or a built-in
+//      -- and delivers its output to your own callback instead of to a console
+//      window, which is what makes a command's result available to something
+//      that is not a person looking at a screen (an RCON bridge, an HTTP
+//      route). It returns false if the first token is not a registered command.
+//
+//      Three rules, each of which is a crash the loader had to make impossible:
+//
+//      - A sink is valid ONLY inside the call it was handed to. Do not stash it
+//        and write from a thread later: the front-end owns it, and by then it
+//        may be gone. Writes through a stale sink are dropped with a log line.
+//
+//      - Unregister in PluginShutdown. Handler addresses point into your
+//        module; the loader drops every command a plugin owns before freeing
+//        it and re-validates a queued gameThread handler before calling it,
+//        but a command that outlives its DLL is not a state worth reaching.
+//
+//      - Output can arrive on the game thread. A gameThread command's handler,
+//        and the Execute callbacks for one, run on a later tick, from a
+//        different thread than the one that called Execute. Both must be
+//        thread-safe, and userData must outlive the call.
+//
+//      Names are case-insensitive and global. RegisterCommand returns false
+//      rather than shadowing a built-in or another plugin's command, so check
+//      it -- and prefix anything generic with your plugin's name.
+
 #define PLUGIN_INTERFACE_VERSION_MIN 62
-#define PLUGIN_INTERFACE_VERSION_MAX 62
-#define PLUGIN_INTERFACE_VERSION 62
+#define PLUGIN_INTERFACE_VERSION_MAX 63
+#define PLUGIN_INTERFACE_VERSION 63
 
 enum class PluginLogLevel { Trace = 0, Debug = 1, Info = 2, Warn = 3, Error = 4 };
 enum class ConfigValueType { String, Integer, Float, Boolean, Keybind };
@@ -2058,6 +2107,111 @@ struct IPluginObjectProperties
 	bool (*GetPropertyStructTypeName)(PluginPropertyHandle property, char* outBuffer, int bufferSize);
 };
 
+// ---------------------------------------------------------------------------
+// Console commands (v63) -- every build
+// ---------------------------------------------------------------------------
+// Registers into ModConsole, the mod loader's own command registry, which is
+// shared by both front-ends: the ImGui developer console on client builds and
+// the Win32 console window on any build launched with -console. A command
+// registered once is available in whichever of those the user has, and is
+// listed by `help` under the registering plugin's name.
+//
+// These are mod loader commands, not engine commands -- the client console
+// tries this registry first and falls through to the engine console for
+// anything it does not recognise, so engine commands are unaffected.
+// ---------------------------------------------------------------------------
+
+// Line kinds mirror ModConsole::LineKind; the front-end colours them.
+enum class PluginConsoleLineKind : int
+{
+    Output = 0,   // normal command output
+    Notice = 1,   // dimmed supporting text (headers, hints)
+    Error  = 2,   // something went wrong
+};
+
+// Opaque handle to the console output sink for one command invocation.
+//
+// Valid ONLY for the duration of the handler call it was passed to. The
+// front-end owns the sink; keeping the handle and writing through it later
+// (from a worker thread, say) is a use-after-free, and the loader answers it
+// by dropping the write and logging rather than by crashing -- but the write
+// is still lost. Print everything before returning.
+typedef void* PluginConsoleSink;
+
+// argv[0] is the command name exactly as the user typed it (which may be one
+// of its aliases); argv[1..argc-1] are the arguments, with "quoted runs"
+// already collapsed into single arguments. argv is valid for the call only.
+typedef void (*PluginConsoleHandler)(const char* const* argv, int argc,
+                                     PluginConsoleSink sink, void* userData);
+
+// Execute output. Called once per line, on whichever thread ran the command --
+// the game thread for a gameThread command, otherwise the calling thread.
+typedef void (*PluginConsoleOutputCallback)(PluginConsoleLineKind kind,
+                                            const char* text, void* userData);
+
+// Fires after the last line of an Execute, on the same thread that wrote it.
+typedef void (*PluginConsoleCompleteCallback)(void* userData);
+
+struct PluginConsoleCommandDesc
+{
+    const char* name;        // primary name, case-insensitive, no spaces
+    const char* aliases;     // space-separated alternates, may be null
+    const char* usage;       // e.g. "mystuff <player> [amount]", may be null
+    const char* help;        // one line, shown by `help`, may be null
+    PluginConsoleHandler handler;
+    void*       userData;    // passed back to handler; may be null
+
+    // Run the handler on the game thread (next engine tick) instead of on the
+    // console thread that typed the command. Required for anything touching
+    // engine state; the command is queued, so Execute/typing returns before
+    // the handler has run.
+    bool        gameThread;
+};
+
+struct IPluginConsole
+{
+    // Add a command. The loader copies every string in desc, so they need not
+    // outlive the call.
+    //
+    // False when a required field is missing, or when the name or one of its
+    // aliases is already taken -- names are global and case-insensitive across
+    // built-ins and every plugin. Check the return value and prefix generic
+    // names with your plugin's own.
+    bool (*RegisterCommand)(const IPluginSelf* self, const PluginConsoleCommandDesc* desc);
+
+    // Remove one of your commands by its registered primary name (not an
+    // alias). False if you do not own a command by that name.
+    bool (*UnregisterCommand)(const IPluginSelf* self, const char* name);
+
+    // Remove all of your commands; returns how many went. The loader does this
+    // for you before unloading your DLL, but call it in PluginShutdown anyway.
+    int (*UnregisterAllCommands)(const IPluginSelf* self);
+
+    // True if any command (built-in or plugin) answers to this name or alias.
+    bool (*HasCommand)(const char* name);
+
+    // Write one line to the sink your handler was given. Ignored (and logged)
+    // if the sink is no longer the one being served.
+    void (*Write)(PluginConsoleSink sink, PluginConsoleLineKind kind, const char* text);
+    void (*Printf)(PluginConsoleSink sink, PluginConsoleLineKind kind, const char* format, ...);
+
+    // Wipe the hosting console's scrollback, where it has one. No-op otherwise.
+    void (*Clear)(PluginConsoleSink sink);
+
+    // Run a command line and receive its output through your own callback
+    // instead of a console window -- the way to get a textual result out of a
+    // command from code.
+    //
+    // False, having run nothing, when the first token is not a registered
+    // command. True once the command has *started*: a gameThread command is
+    // still queued at that point, and both callbacks fire later, on the game
+    // thread. userData must stay alive until onComplete has fired.
+    bool (*Execute)(const IPluginSelf* self, const char* line,
+                    PluginConsoleOutputCallback onLine,
+                    PluginConsoleCompleteCallback onComplete,
+                    void* userData);
+};
+
 struct IPluginHooks
 {
 	IPluginSpawnerHooks*   Spawner;        // v14
@@ -2081,6 +2235,7 @@ struct IPluginHooks
 	IPluginObjectWalker*   ObjectWalker;   // v47 -- appended at end, do not relocate
 	IPluginDelegateHook*   Delegate;       // v47 -- appended at end, do not relocate
 	IPluginObjectProperties* ObjectProperties; // v47 -- appended at end, do not relocate
+	IPluginConsole*        Console;         // v63 -- appended at end, do not relocate
 };
 
 // ---------------------------------------------------------------------------

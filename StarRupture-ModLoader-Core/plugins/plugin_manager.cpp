@@ -10,6 +10,7 @@
 #include "memory_scanner/hook_scanner_interface.h"
 #include "plugins/plugin_hook_report.h"
 #include "hooks/hooks_interface.h"
+#include "console/plugin_console.h"
 #include <vector>
 #include <string>
 #include <cstring>
@@ -769,6 +770,10 @@ namespace PluginManager
 				plugin->isInitialized = false;
 			}
 
+			// Before FreeLibrary: a command it registered is a handler address
+			// inside the module about to be unmapped.
+			PluginConsole::ForgetPlugin(plugin->cachedName.c_str());
+
 			if (plugin->hModule)
 			{
 				FreeLibrary(plugin->hModule);
@@ -884,6 +889,11 @@ namespace PluginManager
 		// into freed memory.
 		ModLoaderLogger::ForgetPluginSchema(p.cachedName.c_str());
 
+		// Same reason: a console command this plugin registered is a handler
+		// address inside the module about to be unmapped, and both console
+		// front-ends would go on listing it and happily call it.
+		PluginConsole::ForgetPlugin(p.cachedName.c_str());
+
 		FreeLibrary(p.hModule);
 		p.hModule = nullptr;
 		p.info    = nullptr;
@@ -915,9 +925,11 @@ namespace PluginManager
 		}
 		if (p.hModule)
 		{
-			// Same reason as UnloadPlugin: the cached schema points into this
-			// module. InitPluginRecord below re-registers the new one.
+			// Same reason as UnloadPlugin: the cached schema and any registered
+			// console commands point into this module. InitPluginRecord below
+			// re-registers whatever the new build asks for.
 			ModLoaderLogger::ForgetPluginSchema(p.cachedName.c_str());
+			PluginConsole::ForgetPlugin(p.cachedName.c_str());
 
 			FreeLibrary(p.hModule);
 			p.hModule = nullptr;

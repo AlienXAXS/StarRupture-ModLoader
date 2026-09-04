@@ -484,6 +484,7 @@
     <ClInclude Include="memory_scanner\scanner.h" />
     <ClInclude Include="memory_scanner\hook_scanner_interface.h" />
     <ClInclude Include="console\console_commands.h" />
+    <ClInclude Include="console\plugin_console.h" />
     <ClInclude Include="console\console_input.h" />
     <ClInclude Include="console\console_screen.h" />
     <ClInclude Include="console\engine_output_hook.h" />
@@ -633,6 +634,7 @@
     <ClCompile Include="memory_scanner\scanner.cpp" />
     <ClCompile Include="memory_scanner\hook_scanner_interface.cpp" />
     <ClCompile Include="console\console_commands.cpp" />
+    <ClCompile Include="console\plugin_console.cpp" />
     <ClCompile Include="console\console_input.cpp" />
     <ClCompile Include="console\console_screen.cpp" />
     <ClCompile Include="console\engine_output_hook.cpp" />
