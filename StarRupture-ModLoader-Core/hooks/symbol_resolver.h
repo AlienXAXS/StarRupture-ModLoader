@@ -30,6 +30,26 @@ namespace Hooks::SymbolResolver
 	// instead of duplicating it.
 	void EnsureInitialized();
 
+	// Re-enumerates the process's loaded modules into DbgHelp. Idempotent,
+	// thread-safe, takes GetMutex() itself -- do not call it while already
+	// holding that lock.
+	//
+	// SymInitialize(fInvadeProcess=TRUE) snapshots the module list exactly
+	// ONCE, whenever EnsureInitialized() first runs. Everything loaded after
+	// that moment is invisible to DbgHelp: it has no symbols for it at all,
+	// not even the export-table fallback, so its frames come back as bare
+	// addresses with no module name attached. Which modules that covers
+	// depends on what happened to run first -- the stack sampler's first
+	// sample or a crash -- and it always covers a plugin hot-loaded from the
+	// console, which by definition arrives long afterwards.
+	//
+	// Plugin frames are the ones a crash report most needs to name, so any
+	// walk whose output a human has to read should refresh first. Deliberately
+	// NOT called from the stack sampler's per-sample path: this re-walks the
+	// loader's module list, which is the wrong cost to pay hundreds of times a
+	// second for a list that changes maybe five times in a session.
+	void RefreshModules();
+
 	// The single lock every DbgHelp call in the process must hold. Resolve()
 	// takes it internally; callers making their own DbgHelp calls (e.g.
 	// crash_reporter's StackWalk64 loop, which calls SymFunctionTableAccess64/

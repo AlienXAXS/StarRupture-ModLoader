@@ -30,6 +30,14 @@ namespace Hooks::SymbolResolver
 		g_initialized = true;
 	}
 
+	void RefreshModules()
+	{
+		EnsureInitialized();
+
+		std::lock_guard<std::mutex> lock(g_mutex);
+		SymRefreshModuleList(GetCurrentProcess());
+	}
+
 	std::string Resolve(uintptr_t address, uintptr_t* outDisplacement)
 	{
 		if (!address)

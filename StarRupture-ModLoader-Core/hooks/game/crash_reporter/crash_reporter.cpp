@@ -4,13 +4,27 @@
 #include "crash_dialog.h"
 #include "logging/logger.h"
 #include <string>
+#include <vector>
 #include "memory_scanner/scanner.h"
 #include "../scan_patterns.h"
 #include "../../symbol_resolver.h"
+#include "core/version_check.h"
 #include "utils/pak_list.h"
 #include <DbgHelp.h>
 #include <tlhelp32.h>
 #pragma comment(lib, "DbgHelp.lib")
+
+#ifndef MODLOADER_BUILD_TAG
+#define MODLOADER_BUILD_TAG "dev"
+#endif
+
+#if defined(MODLOADER_CLIENT_BUILD)
+#define MODLOADER_BUILD_KIND "client"
+#elif defined(MODLOADER_SERVER_BUILD)
+#define MODLOADER_BUILD_KIND "server"
+#else
+#define MODLOADER_BUILD_KIND "generic"
+#endif
 
 namespace Hooks::CrashReporter
 {
@@ -43,9 +57,150 @@ namespace Hooks::CrashReporter
 		details += L"\r\n";
 	}
 
+	// One entry per distinct module seen in the stack walk, in first-seen
+	// order. Filled during the walk, emitted after it by EmitModuleTable.
+	//
+	// This exists because an unsymbolized stack and a correctly symbolized one
+	// are indistinguishable in the report. With no PDB for a module, DbgHelp
+	// silently falls back to its export table, and every frame in a DLL that
+	// exports three symbols then resolves to the same nearby export with a
+	// huge displacement -- "StarRupture-ModLoader-Core.dll!Core_Detach +
+	// 0x26FFA" for what is really Hooks::SaveLoaded::Install. That is not a
+	// near miss, it is an unrelated function, and the old output gave the
+	// reader no way to tell.
+	struct StackModule
+	{
+		DWORD64      base         = 0;
+		DWORD64      size         = 0;
+		std::wstring name;                 // file name only
+		bool         hasPdb       = false; // SymType == SymPdb: names are real
+		bool         pdbUnmatched = false; // a PDB was found but is not this build's
+		bool         isOurs       = false; // ships with the mod loader (Core, ImGui, plugins)
+	};
+
+	// Directory the mod loader's own modules live in (the game's
+	// Binaries\Win64\ModLoader\ folder, which also contains Plugins\).
+	// Used only to decide whether a module missing its PDB is worth
+	// complaining about: for one of ours that is a deployment mistake the
+	// reader can fix, for ntdll.dll it is simply how Windows ships.
+	static const std::wstring& OwnModuleDir()
+	{
+		static const std::wstring dir = []() -> std::wstring
+		{
+			HMODULE self = nullptr;
+			if (!GetModuleHandleExW(
+					GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+					reinterpret_cast<LPCWSTR>(&OwnModuleDir), &self) || !self)
+				return {};
+
+			wchar_t path[MAX_PATH]{};
+			if (!GetModuleFileNameW(self, path, MAX_PATH))
+				return {};
+
+			wchar_t* slash = wcsrchr(path, L'\\');
+			if (!slash)
+				return {};
+
+			*(slash + 1) = L'\0'; // keep the trailing backslash so the prefix test can't
+			                      // match a sibling folder with a longer name
+			return std::wstring(path);
+		}();
+		return dir;
+	}
+
+	// Index into `modules` of the entry covering `addr`, appending a new one on
+	// first sight. Returns kNoModule when the address is in no module DbgHelp
+	// knows about. Caller must hold SymbolResolver::GetMutex().
+	//
+	// An index rather than a pointer on purpose: the vector grows as the walk
+	// finds new modules, and a pointer handed out before a push_back is a
+	// dangling read waiting for the one crash report nobody can reproduce.
+	static constexpr size_t kNoModule = static_cast<size_t>(-1);
+
+	static size_t FindOrAddModule(HANDLE process, DWORD64 addr, std::vector<StackModule>& modules)
+	{
+		for (size_t i = 0; i < modules.size(); ++i)
+		{
+			const StackModule& m = modules[i];
+			if (m.base && addr >= m.base && addr < m.base + m.size)
+				return i;
+		}
+
+		IMAGEHLP_MODULEW64 info{};
+		info.SizeOfStruct = sizeof(info);
+		if (!SymGetModuleInfoW64(process, addr, &info))
+			return kNoModule;
+
+		StackModule m;
+		m.base         = info.BaseOfImage;
+		m.size         = info.ImageSize;
+		m.hasPdb       = (info.SymType == SymPdb);
+		m.pdbUnmatched = (info.PdbUnmatched != FALSE);
+
+		wchar_t path[MAX_PATH]{};
+		if (GetModuleFileNameW(reinterpret_cast<HMODULE>(info.BaseOfImage), path, MAX_PATH))
+		{
+			const wchar_t* slash = wcsrchr(path, L'\\');
+			m.name = slash ? slash + 1 : path;
+
+			const std::wstring& ourDir = OwnModuleDir();
+			m.isOurs = !ourDir.empty() && _wcsnicmp(path, ourDir.c_str(), ourDir.size()) == 0;
+		}
+		else
+		{
+			m.name = info.ModuleName[0] ? info.ModuleName : L"<unknown>";
+		}
+
+		modules.push_back(std::move(m));
+		return modules.size() - 1;
+	}
+
+	// Emits the per-module symbol status for everything the walk touched, so a
+	// pasted report says on its face whether its function names can be trusted
+	// -- and carries the load addresses needed to symbolize it offline later
+	// against the matching PDB, which is the only option once the crash is in
+	// a bug report rather than on the machine that produced it.
+	static void EmitModuleTable(std::wstring& details, const std::vector<StackModule>& modules)
+	{
+		if (modules.empty())
+			return;
+
+		details += L"\r\n";
+		EmitCrashLine(details, L"Modules in stack:");
+
+		for (const StackModule& m : modules)
+		{
+			const wchar_t* symState = m.hasPdb       ? L"PDB"
+			                        : m.pdbUnmatched ? L"PDB MISMATCH"
+			                                         : L"exports only";
+
+			EmitCrashLine(details, L"  %-36s base=0x%016llX  size=0x%08llX  symbols=%s",
+				m.name.c_str(), m.base, m.size, symState);
+		}
+
+		for (const StackModule& m : modules)
+		{
+			if (!m.isOurs || m.hasPdb)
+				continue;
+
+			if (m.pdbUnmatched)
+				EmitCrashLine(details,
+					L"  ! %s: a PDB was found but does not match this build. Frame names in this "
+					L"module come from its export table and are almost certainly the wrong function.",
+					m.name.c_str());
+			else
+				EmitCrashLine(details,
+					L"  ! %s: no matching PDB. Frame names in this module come from its export "
+					L"table and are almost certainly the wrong function -- copy the .pdb next to "
+					L"the .dll and reproduce.",
+					m.name.c_str());
+		}
+	}
+
 	// Walks the crashing thread's call stack from the captured CONTEXT and logs one line per
-	// frame: module name, symbol name (demangled Class::Func if PDBs are available, otherwise
-	// just the raw address), and both a symbol-relative and module-relative offset.
+	// frame: module name, symbol name (demangled Class::Func with source file and line when a
+	// PDB is available, the nearest export marked [export] when it is not), and both a
+	// symbol-relative and module-relative offset.
 	//
 	// StackWalk64 is given a copy of the CONTEXT captured at the moment of the fault (from
 	// ExceptionInfo->ContextRecord) rather than a live thread handle -- on x64 the unwind is
@@ -60,6 +215,21 @@ namespace Hooks::CrashReporter
 		// StackWalk64, SymFromAddrW, and the callbacks StackWalk64 invokes
 		// internally) must be serialized through the same process-wide lock.
 		Hooks::SymbolResolver::EnsureInitialized();
+
+		// Before the lock: RefreshModules takes the same (non-recursive) mutex.
+		// Picks up every plugin DLL loaded after DbgHelp's one-shot module
+		// snapshot -- without it a frame inside a plugin has no module and no
+		// symbol at all, which is the single most useful frame in a crash
+		// caused by a plugin.
+		//
+		// It walks the loader's module list, so it touches the loader lock in a
+		// process that has just faulted. That exposure is not new: the
+		// EnsureInitialized above is a SymInitialize with fInvadeProcess=TRUE,
+		// which enumerates the same list, and StackWalk64 below maps PDBs off
+		// disk. We are also on the engine's crash-reporting thread rather than
+		// the faulting one, which is what makes any of this survivable.
+		Hooks::SymbolResolver::RefreshModules();
+
 		std::lock_guard<std::mutex> dbgHelpLock(Hooks::SymbolResolver::GetMutex());
 
 		CONTEXT ctx = *contextRecord; // StackWalk64 mutates this as it unwinds
@@ -74,6 +244,8 @@ namespace Hooks::CrashReporter
 
 		EmitCrashLine(details, L"Stack trace:");
 
+		std::vector<StackModule> modules;
+
 		constexpr int kMaxFrames = 64;
 		for (int i = 0; i < kMaxFrames; ++i)
 		{
@@ -85,36 +257,54 @@ namespace Hooks::CrashReporter
 			if (!addr)
 				break;
 
-			wchar_t moduleName[MAX_PATH] = L"<unknown>";
-			DWORD64 moduleBase = SymGetModuleBase64(process, addr);
-			if (moduleBase)
-			{
-				wchar_t path[MAX_PATH]{};
-				if (GetModuleFileNameW(reinterpret_cast<HMODULE>(moduleBase), path, MAX_PATH))
-				{
-					const wchar_t* slash = wcsrchr(path, L'\\');
-					wcscpy_s(moduleName, slash ? slash + 1 : path);
-				}
-			}
-			DWORD64 modDisplacement = moduleBase ? (addr - moduleBase) : 0;
-
 			uint8_t symBuffer[sizeof(SYMBOL_INFOW) + MAX_SYM_NAME * sizeof(wchar_t)]{};
 			auto* symbol = reinterpret_cast<SYMBOL_INFOW*>(symBuffer);
 			symbol->SizeOfStruct = sizeof(SYMBOL_INFOW);
 			symbol->MaxNameLen = MAX_SYM_NAME;
 
 			DWORD64 symDisplacement = 0;
-			if (SymFromAddrW(process, addr, &symDisplacement, symbol))
-			{
-				EmitCrashLine(details, L"  #%02d 0x%016llX  %s!%s + 0x%llX  (module+0x%llX)",
-					i, addr, moduleName, symbol->Name, symDisplacement, modDisplacement);
-			}
-			else
+			const bool haveSymbol = SymFromAddrW(process, addr, &symDisplacement, symbol) != FALSE;
+
+			// Queried only after SymFromAddrW: SYMOPT_DEFERRED_LOADS leaves
+			// SymType as SymDeferred until something actually asks for a
+			// symbol, so asking first would report every module as unsymbolized.
+			const size_t modIdx = FindOrAddModule(process, addr, modules);
+			const wchar_t* moduleName = (modIdx != kNoModule) ? modules[modIdx].name.c_str() : L"<unknown>";
+			const DWORD64 modDisplacement = (modIdx != kNoModule) ? (addr - modules[modIdx].base) : 0;
+
+			if (!haveSymbol)
 			{
 				EmitCrashLine(details, L"  #%02d 0x%016llX  %s + 0x%llX",
 					i, addr, moduleName, modDisplacement);
+				continue;
 			}
+
+			// Source file and line, when the PDB carries them. Basename only --
+			// the full build-machine path is noise in a pasted report.
+			std::wstring where;
+			DWORD lineDisplacement = 0;
+			IMAGEHLP_LINEW64 line{};
+			line.SizeOfStruct = sizeof(line);
+			if (SymGetLineFromAddrW64(process, addr, &lineDisplacement, &line) && line.FileName)
+			{
+				const wchar_t* slash = wcsrchr(line.FileName, L'\\');
+				where = L"  [";
+				where += (slash ? slash + 1 : line.FileName);
+				where += L":";
+				where += std::to_wstring(line.LineNumber);
+				where += L"]";
+			}
+
+			// The name came from the export table, not a PDB -- say so rather
+			// than letting a plausible-looking wrong name stand unqualified.
+			const bool exportOnly = (modIdx != kNoModule) && !modules[modIdx].hasPdb;
+
+			EmitCrashLine(details, L"  #%02d 0x%016llX  %s!%s + 0x%llX  (module+0x%llX)%s%s",
+				i, addr, moduleName, symbol->Name, symDisplacement, modDisplacement,
+				where.c_str(), exportOnly ? L"  [export]" : L"");
 		}
+
+		EmitModuleTable(details, modules);
 	}
 
 	// Suspends every thread in the process except the calling one. Called just
@@ -179,6 +369,23 @@ namespace Hooks::CrashReporter
 		// Every EmitCrashLine call below both logs to ModLoader.log and appends
 		// to this buffer, which becomes the copyable text in the crash dialog.
 		std::wstring details;
+
+		// Leads with which loader build produced this stack and which game
+		// build it was running against -- the two facts needed to pick the
+		// right PDB when the report has to be symbolized offline, and the two
+		// that decide whether a pattern was ever going to match in the first
+		// place. Same header as the plugin hook-failure report, for the same
+		// reason.
+		{
+			std::wstring gameVersion = GetGameVersionString();
+			if (gameVersion.empty())
+				gameVersion = L"unknown";
+
+			EmitCrashLine(details, L"Loader:       %S (%S build)",
+				MODLOADER_BUILD_TAG, MODLOADER_BUILD_KIND);
+			EmitCrashLine(details, L"Game version: %s", gameVersion.c_str());
+			details += L"\r\n";
+		}
 
 		// ExceptionInfo is a plain Win32 _EXCEPTION_POINTERS* (not an engine-internal type),
 		// so we can log the fault details directly into ModLoader.log without needing the
