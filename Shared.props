@@ -127,4 +127,45 @@
            Text="Configuration &apos;$(Configuration)&apos; expects a StarRupture-Game-SDK checkout at &apos;$(LocalStarRuptureSDKRoot)&apos; but found no SDK there. Clone StarRupture-Game-SDK alongside this repo, or build with /p:LocalStarRuptureSDKRoot=X:\your\SDK\ (trailing backslash required)." />
   </Target>
 
+  <!-- ============================================================
+       StarRuptureDeployDir
+       Optional. When set, copies the built dwmapi.dll, ModLoader\*
+       and (the point of this) every .pdb straight into the game's
+       Binaries\Win64\ folder after a successful build:
+         msbuild /p:StarRuptureDeployDir="F:\SteamLibrary\steamapps\common\StarRupture\StarRupture\Binaries\Win64\"
+       Must end with a trailing backslash. Unset (the default) does
+       nothing at all, so this is invisible to CI and to anyone who
+       prefers to copy by hand.
+
+       The .pdb is what makes this worth having. DbgHelp resolves
+       the crash reporter's stack frames from whatever PDB it can
+       find next to each loaded module, so a hand-copied deployment
+       of only the DLLs silently downgrades every mod loader frame
+       in a crash report to "nearest export plus a five-digit
+       offset", which names a different function entirely. Release
+       ZIPs ship the PDBs (see .github/workflows/release.yml)
+       precisely so end-user reports do not have this problem; this
+       makes local deployments match.
+
+       Runs once per build, from the proxy project only: it copies
+       the whole build\$(Configuration)\ tree, which already has
+       the exact dwmapi.dll + ModLoader\ shape the game expects,
+       and the proxy depends on Core so it is the last thing to
+       link. Building the Core project on its own does not trigger
+       it; build the proxy or the solution.
+       ============================================================ -->
+  <Target Name="DeployToStarRupture" AfterTargets="Build"
+          Condition="'$(StarRuptureDeployDir)' != '' And '$(ProjectName)' == 'StarRupture-ModLoader-Proxy'">
+    <Error Condition="!Exists(&apos;$(StarRuptureDeployDir)&apos;)"
+           Text="StarRuptureDeployDir is set to &apos;$(StarRuptureDeployDir)&apos; but no such directory exists. Point it at the game&apos;s Binaries\Win64\ folder, with a trailing backslash." />
+    <ItemGroup>
+      <_SrDeployFiles Include="$(SolutionDir)build\$(Configuration)\**\*.dll;$(SolutionDir)build\$(Configuration)\**\*.pdb;$(SolutionDir)build\$(Configuration)\**\*.exe" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_SrDeployFiles)"
+          DestinationFiles="@(_SrDeployFiles->&apos;$(StarRuptureDeployDir)%(RecursiveDir)%(Filename)%(Extension)&apos;)"
+          SkipUnchangedFiles="true" />
+    <Message Importance="high"
+             Text="Deployed @(_SrDeployFiles->Count()) file(s) to $(StarRuptureDeployDir)" />
+  </Target>
+
 </Project>
