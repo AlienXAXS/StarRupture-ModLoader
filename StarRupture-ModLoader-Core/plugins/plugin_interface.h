@@ -493,7 +493,7 @@
 //      rather than shadowing a built-in or another plugin's command, so check
 //      it -- and prefix anything generic with your plugin's name.
 
-#define PLUGIN_INTERFACE_VERSION_MIN 62
+#define PLUGIN_INTERFACE_VERSION_MIN 63
 #define PLUGIN_INTERFACE_VERSION_MAX 63
 #define PLUGIN_INTERFACE_VERSION 63
 
