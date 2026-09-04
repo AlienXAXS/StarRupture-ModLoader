@@ -48,6 +48,7 @@ jobs:
             "ServerUtility:StarRupture-Plugin-ServerUtility"
             "AxRuptureTimer:StarRupture-Plugin-RuptureTimer"
             "WAILA:StarRupture-Plugin-WAILA"
+            "WaveOptimiser:StarRupture-Plugin-WaveOptimiser"
           )
 
           names=()
