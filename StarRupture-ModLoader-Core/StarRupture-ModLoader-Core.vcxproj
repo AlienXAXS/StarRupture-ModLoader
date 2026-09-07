@@ -415,6 +415,8 @@
     <ClInclude Include="config\config_manager.h" />
     <ClInclude Include="hooks\game\actor_begin_play\actor_begin_play.h" />
     <ClInclude Include="hooks\game\crafting_finished\crafting_finished.h" />
+    <ClInclude Include="hooks\game\game_menu\game_menu.h" />
+    <ClInclude Include="hooks\game\game_menu\game_menu_registry.h" />
     <ClInclude Include="hooks\game\crash_reporter\crash_dialog.h" />
     <ClInclude Include="hooks\game\console_command\console_command.h" />
     <ClInclude Include="hooks\game\debug_draw\debug_draw.h" />
@@ -538,6 +540,12 @@
     <ClCompile Include="core\core_entry.cpp" />
     <ClCompile Include="hooks\game\actor_begin_play\actor_begin_play.cpp" />
     <ClCompile Include="hooks\game\crafting_finished\crafting_finished.cpp" />
+    <ClCompile Include="hooks\game\game_menu\game_menu.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)' != 'Client Debug' And '$(Configuration)' != 'Client Release' And '$(Configuration)' != 'Local SDK Client Debug' And '$(Configuration)' != 'Local SDK Client Release'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="hooks\game\game_menu\game_menu_registry.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)' != 'Client Debug' And '$(Configuration)' != 'Client Release' And '$(Configuration)' != 'Local SDK Client Debug' And '$(Configuration)' != 'Local SDK Client Release'">true</ExcludedFromBuild>
+    </ClCompile>
     <ClCompile Include="hooks\game\crash_reporter\crash_dialog.cpp" />
     <ClCompile Include="hooks\game\console_command\console_command.cpp" />
     <ClCompile Include="hooks\game\debug_draw\debug_draw.cpp" />

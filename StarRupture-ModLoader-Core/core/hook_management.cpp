@@ -31,6 +31,7 @@
 
 #ifdef MODLOADER_CLIENT_BUILD
 #include "../hooks/game/crash_reporter/crash_reporter.h"
+#include "../hooks/game/game_menu/game_menu.h"
 #include "../hooks/game/hud_post_render/hud_post_render.h"
 #include "../hooks/game/log_verbosity/log_verbosity.h"
 #endif
@@ -225,6 +226,13 @@ void InstallPluginEventHooks()
 #ifdef MODLOADER_CLIENT_BUILD
     InstallEventHook(L"HUDPostRender",
         &Hooks::HUDPostRender::IsInstalled,         &Hooks::HUDPostRender::Install);
+
+    // Menu entries go up here rather than in InstallAllHooks because the click
+    // side is resolved through its UFunction, which needs GObjects -- and this
+    // phase runs after the engine is up. It still lands before PluginInit, so a
+    // plugin can register a row the first time the main menu is built.
+    InstallEventHook(L"GameMenu",
+        &Hooks::GameMenu::IsInstalled,              &Hooks::GameMenu::Install);
 #endif
 }
 
@@ -253,5 +261,6 @@ void RemoveAllHooks()
 #ifdef MODLOADER_CLIENT_BUILD
     Hooks::CrashReporter::Remove();
     Hooks::HUDPostRender::Remove();
+    Hooks::GameMenu::Remove();
 #endif
 }

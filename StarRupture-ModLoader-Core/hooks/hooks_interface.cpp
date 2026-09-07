@@ -36,6 +36,7 @@
 #include "UI/splash_window.h"
 #include "hooks/game/hud_post_render/hud_post_render.h"
 #include "hooks/game/debug_draw/debug_draw.h"
+#include "hooks/game/game_menu/game_menu_registry.h"
 #endif
 #if defined(MODLOADER_SERVER_BUILD) || defined(MODLOADER_CLIENT_BUILD)
 #include "hooks/game/session_info/session_info.h"
@@ -1829,6 +1830,8 @@ namespace ModLoaderLogger
 		&g_delegateHook,     // v47 — appended at end, do not relocate
 		&g_objectProperties, // v47 — appended at end, do not relocate
 		nullptr,             // v63 -- Console; filled in below by GetPluginHooks()
+		nullptr,             // v64 -- GameMenu; filled in below by GetPluginHooks() on client
+		                     //        builds, and left null on server/generic ones
 	};
 	static bool g_networkChannelInitialized = false;
 
@@ -1839,6 +1842,13 @@ namespace ModLoaderLogger
 		// front-end being open.
 		if (!g_pluginHooks.Console)
 			g_pluginHooks.Console = PluginConsole::GetInterface();
+
+#ifdef MODLOADER_CLIENT_BUILD
+		// Rows in the game's own main menu / pause menu. Client only -- the
+		// menus this splices into do not exist on a dedicated server.
+		if (!g_pluginHooks.GameMenu)
+			g_pluginHooks.GameMenu = ::GameMenu::Registry::GetInterface();
+#endif
 
 		// Resolve the network channel pointer on first call.
 		// NetworkChannel::GetInterface() returns nullptr on generic builds.

@@ -322,6 +322,27 @@ namespace ScanPatterns
 		"40 53 56 41 57 48 81 EC ?? ?? ?? ?? 48 8B 99";
 #endif
 	     
+
+#if defined(MODLOADER_CLIENT_BUILD)
+	// UCrUW_MainMenuWidget::NativeConstruct / UCrUW_PauseMenu::NativeConstruct
+	//
+	// Both build their row of buttons by iterating LeftButtons and creating one
+	// UTabButton per entry, so a value spliced into that array before the loop
+	// runs becomes a real button with no widget construction on our side. See
+	// hooks/game/game_menu/game_menu.h for the full call shape.
+	//
+	// Virtual, and not UFUNCTIONs, so an AOB is the only way in. Both are
+	// non-fatal in the preflight registry: a missing one costs the mod loader
+	// row in that menu, and nothing else -- the overlay still opens on its key.
+	//
+	// Signature: void __fastcall <Menu>::NativeConstruct(<Menu>* this)
+	inline constexpr auto UCrUW_MainMenuWidget_NativeConstruct =
+		"40 55 53 56 57 41 54 41 55 41 56 41 57 48 8D 6C 24 ?? 48 81 EC 78 01 00 00 48 8B F1 E8";
+
+	inline constexpr auto UCrUW_PauseMenu_NativeConstruct =
+		"40 55 53 56 57 41 54 41 55 41 56 41 57 48 8D AC 24 ?? ?? ?? ?? 48 81 EC 58 02 00 00 48 8B F1 E8";
+#endif
+
 	// FHttpServerResponse::Create(__int64 *retStorage, const TArray<uint8>& body, const FString& contentType)
 	// Used to construct a 200 OK response for mod-owned HTTP routes.
 	// Confirmed via IDA: FPerfCounters::ProcessStatsRequest calls this with body in RDX, FString in R8.
@@ -482,6 +503,11 @@ namespace ScanPatterns
 		// if these ever stop resolving, so they must not disable the modloader.
 		{ "ULineBatchComponent::DrawLines",            ULineBatchComponent_DrawLines,            false },
 		{ "ULineBatchComponent::Flush",                ULineBatchComponent_Flush,                false },
+		// Optional for the same reason: losing these costs the mod loader row in
+		// the game's own menus, which is a convenience over the overlay's open
+		// key -- not a reason to refuse to boot.
+		{ "UCrUW_MainMenuWidget::NativeConstruct",     UCrUW_MainMenuWidget_NativeConstruct,     false },
+		{ "UCrUW_PauseMenu::NativeConstruct",          UCrUW_PauseMenu_NativeConstruct,          false },
 #endif
 
 #if defined(MODLOADER_SERVER_BUILD)

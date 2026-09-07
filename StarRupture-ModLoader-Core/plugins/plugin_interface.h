@@ -493,9 +493,36 @@
 //      rather than shadowing a built-in or another plugin's command, so check
 //      it -- and prefix anything generic with your plugin's name.
 
+// v64 (2026-09-07): Added IPluginGameMenu (hooks->GameMenu) -- rows in the
+//      game's own main menu and pause menu. Client only; nullptr on
+//      server/generic builds, so null-check it.
+//
+//      The loader registers one of these itself: MOD LOADER, between OPTIONS
+//      and CREDITS, opening the overlay. AddEntry puts yours next to it.
+//
+//      MIN stays at 63. IPluginGameMenu is a new pointer appended to the end
+//      of IPluginHooks, so nothing a v63 plugin reads by offset moved, and a
+//      v63 plugin that never looks at the new field is unaffected.
+//
+//      Three things worth knowing before you use it:
+//
+//      - onClick runs on the game thread, inside the menu widget's click
+//        handler. Do not block in it. Opening a window or setting a flag is
+//        the shape this is for.
+//
+//      - Remove your entries in PluginShutdown. The callback is an address in
+//        your module; the loader drops a plugin's entries before freeing it
+//        and re-checks that the address is still in a loaded module before
+//        calling it, but neither of those is a reason to leave one behind.
+//
+//      - IsAvailable() can be false. The injection rests on two AOB patterns,
+//        and a game update can move them. That is not fatal to the loader --
+//        it just means no rows appear -- so a plugin whose only UI entry point
+//        is a menu row should check, and offer a keybind as well.
+
 #define PLUGIN_INTERFACE_VERSION_MIN 63
-#define PLUGIN_INTERFACE_VERSION_MAX 63
-#define PLUGIN_INTERFACE_VERSION 63
+#define PLUGIN_INTERFACE_VERSION_MAX 64
+#define PLUGIN_INTERFACE_VERSION 64
 
 enum class PluginLogLevel { Trace = 0, Debug = 1, Info = 2, Warn = 3, Error = 4 };
 enum class ConfigValueType { String, Integer, Float, Boolean, Keybind };
@@ -2212,6 +2239,76 @@ struct IPluginConsole
                     void* userData);
 };
 
+// ---------------------------------------------------------------------------
+// Game menu entries (v64) -- client only
+//
+// A row in the game's own main menu or pause menu, alongside NEW GAME,
+// OPTIONS and the rest, rather than in a mod loader window. The loader builds
+// it out of the menu's own button class, so it looks and sounds like every
+// other row and takes part in gamepad navigation.
+// ---------------------------------------------------------------------------
+typedef void* GameMenuEntryHandle;
+
+// Invoked on the GAME THREAD when the row is clicked. Keep it short.
+typedef void (*PluginGameMenuCallback)(void* userData);
+
+// Which menus a row appears in. Combine with |.
+enum PluginGameMenuTarget : int
+{
+	PLUGIN_GAME_MENU_MAIN  = 1 << 0,   // the title screen menu
+	PLUGIN_GAME_MENU_PAUSE = 1 << 1,   // the in-game pause menu
+};
+
+// Where the row sits. Deliberately a small set of named positions rather than
+// a numeric index: the stock rows change between game versions, and an index
+// that meant "after Options" in one build means something else in the next.
+enum PluginGameMenuAnchor : int
+{
+	PLUGIN_GAME_MENU_ANCHOR_TOP           = 0,  // above the first stock row
+	PLUGIN_GAME_MENU_ANCHOR_AFTER_OPTIONS = 1,  // directly below OPTIONS
+	PLUGIN_GAME_MENU_ANCHOR_BOTTOM        = 2,  // below the last stock row
+};
+
+struct PluginGameMenuEntryDesc
+{
+	// Unique within your plugin, ASCII, and stable across reloads -- it is how
+	// you name the row again after a reload, and it appears in the log.
+	const char* id;
+
+	// The button text, ASCII. Rendered by the game's own button style, which
+	// upper-cases it; pass it upper-cased anyway so it reads the same if that
+	// ever changes.
+	const char* label;
+
+	int                    targets;    // bitmask of PluginGameMenuTarget
+	int                    anchor;     // PluginGameMenuAnchor
+	PluginGameMenuCallback onClick;
+	void*                  userData;   // passed straight back to onClick
+};
+
+struct IPluginGameMenu
+{
+	// Add a row. The loader copies every string in desc, so they need not
+	// outlive the call. Null when the descriptor is incomplete, when you have
+	// already used that id, or when all entry slots are taken.
+	//
+	// A row added while a menu is on screen appears the next time that menu is
+	// built, not immediately.
+	GameMenuEntryHandle (*AddEntry)(const IPluginSelf* self, const PluginGameMenuEntryDesc* desc);
+
+	// Remove one of your rows. False if the handle is not one of yours.
+	bool (*RemoveEntry)(const IPluginSelf* self, GameMenuEntryHandle handle);
+
+	// Remove all of your rows; returns how many went. The loader does this for
+	// you before unloading your DLL, but call it in PluginShutdown anyway.
+	int (*RemoveAllEntries)(const IPluginSelf* self);
+
+	// False when the menu hooks did not install -- entries can still be
+	// registered, they just will not appear. Worth checking if a menu row is
+	// the only way into your UI.
+	bool (*IsAvailable)();
+};
+
 struct IPluginHooks
 {
 	IPluginSpawnerHooks*   Spawner;        // v14
@@ -2236,6 +2333,7 @@ struct IPluginHooks
 	IPluginDelegateHook*   Delegate;       // v47 -- appended at end, do not relocate
 	IPluginObjectProperties* ObjectProperties; // v47 -- appended at end, do not relocate
 	IPluginConsole*        Console;         // v63 -- appended at end, do not relocate
+	IPluginGameMenu*       GameMenu;        // v64 -- client only, null on server/generic; appended at end, do not relocate
 };
 
 // ---------------------------------------------------------------------------

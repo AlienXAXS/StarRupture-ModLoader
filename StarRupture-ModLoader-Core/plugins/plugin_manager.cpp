@@ -11,6 +11,9 @@
 #include "plugins/plugin_hook_report.h"
 #include "hooks/hooks_interface.h"
 #include "console/plugin_console.h"
+#ifdef MODLOADER_CLIENT_BUILD
+#include "hooks/game/game_menu/game_menu_registry.h"
+#endif
 #include <vector>
 #include <string>
 #include <cstring>
@@ -770,9 +773,12 @@ namespace PluginManager
 				plugin->isInitialized = false;
 			}
 
-			// Before FreeLibrary: a command it registered is a handler address
-			// inside the module about to be unmapped.
+			// Before FreeLibrary: a console command or game-menu row it registered
+			// carries a handler address inside the module about to be unmapped.
 			PluginConsole::ForgetPlugin(plugin->cachedName.c_str());
+#ifdef MODLOADER_CLIENT_BUILD
+			GameMenu::Registry::ForgetPlugin(plugin->cachedName.c_str());
+#endif
 
 			if (plugin->hModule)
 			{
@@ -889,10 +895,14 @@ namespace PluginManager
 		// into freed memory.
 		ModLoaderLogger::ForgetPluginSchema(p.cachedName.c_str());
 
-		// Same reason: a console command this plugin registered is a handler
-		// address inside the module about to be unmapped, and both console
-		// front-ends would go on listing it and happily call it.
+		// Same reason: a console command or a game-menu row this plugin
+		// registered is a handler address inside the module about to be
+		// unmapped, and the console front-ends and the game's own menu would go
+		// on listing it and happily call it.
 		PluginConsole::ForgetPlugin(p.cachedName.c_str());
+#ifdef MODLOADER_CLIENT_BUILD
+		GameMenu::Registry::ForgetPlugin(p.cachedName.c_str());
+#endif
 
 		FreeLibrary(p.hModule);
 		p.hModule = nullptr;
@@ -925,11 +935,14 @@ namespace PluginManager
 		}
 		if (p.hModule)
 		{
-			// Same reason as UnloadPlugin: the cached schema and any registered
-			// console commands point into this module. InitPluginRecord below
-			// re-registers whatever the new build asks for.
+			// Same reason as UnloadPlugin: the cached schema, any registered
+			// console commands and any game-menu rows point into this module.
+			// InitPluginRecord below re-registers whatever the new build asks for.
 			ModLoaderLogger::ForgetPluginSchema(p.cachedName.c_str());
 			PluginConsole::ForgetPlugin(p.cachedName.c_str());
+#ifdef MODLOADER_CLIENT_BUILD
+			GameMenu::Registry::ForgetPlugin(p.cachedName.c_str());
+#endif
 
 			FreeLibrary(p.hModule);
 			p.hModule = nullptr;

@@ -6,6 +6,7 @@
 #include "../hooks/game/text_input_focus/text_input_focus.h"
 #include "../hooks/game/world_begin_play/world_begin_play.h"
 #include "../hooks/game/engine_tick/engine_tick.h"
+#include "../hooks/game/game_menu/game_menu_registry.h"
 #include "../hooks/input/input_processor.h"
 #include "../hooks/input/input_hook.h"
 #include "../hooks/input/keybind_registry.h"
@@ -80,6 +81,40 @@ void InitClientUI()
         UI::Overlay::SetOpenKeyName(openKeyBuf);
         Hooks::Input::RegisterKeybind(s_openKey, EModKeyEvent::Pressed,
             [](EModKey, EModKeyEvent) { UI::ModLoaderWindow::Toggle(); });
+
+        // A row in the game's own main menu and pause menu, sitting between
+        // OPTIONS and CREDITS. The open key above is the fast way in once you
+        // know it exists; this is how someone finds out that it does.
+        //
+        // Registered here, before the menus are ever built, and removable from
+        // modloader.ini for anyone who would rather the game's menus stayed
+        // untouched.
+        int gameMenuEntry = GetPrivateProfileIntW(L"UI", L"GameMenuEntry", -1, iniPath.c_str());
+        if (gameMenuEntry == -1)
+        {
+            // Written back so the key is visible in the ini rather than
+            // being something you have to already know about to turn off.
+            WritePrivateProfileStringW(L"UI", L"GameMenuEntry", L"1", iniPath.c_str());
+            gameMenuEntry = 1;
+        }
+        if (gameMenuEntry != 0)
+        {
+            PluginGameMenuEntryDesc desc{};
+            desc.id       = "modloader";
+            desc.label    = "MOD LOADER";
+            desc.targets  = PLUGIN_GAME_MENU_MAIN | PLUGIN_GAME_MENU_PAUSE;
+            desc.anchor   = PLUGIN_GAME_MENU_ANCHOR_AFTER_OPTIONS;
+            desc.onClick  = [](void*) { UI::ModLoaderWindow::Toggle(); };
+            desc.userData = nullptr;
+            GameMenu::Registry::AddLoaderEntry(&desc);
+        }
+        else
+        {
+            // Logged rather than left silent: "there is no MOD LOADER row" is a
+            // question the log should answer without anyone opening the ini.
+            LogToFile::Info(
+                "[GameMenu] The mod loader's own menu row is disabled ([UI] GameMenuEntry=0)");
+        }
 
         // Developer console -- opt-in, registers its own open key (default Tilde).
         UI::ConsoleWindow::Load(iniPath.c_str());
