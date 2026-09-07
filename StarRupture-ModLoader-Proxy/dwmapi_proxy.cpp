@@ -1,5 +1,6 @@
 #include "dwmapi_proxy.h"
 #include "proxy_log.h"
+#include <corecrt_wstdio.h>
 
 // ---------------------------------------------------------------------------
 // Real dwmapi.dll handle + ordinal-indexed function table
