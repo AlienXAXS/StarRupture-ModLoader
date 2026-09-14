@@ -519,10 +519,11 @@
 //        and a game update can move them. That is not fatal to the loader --
 //        it just means no rows appear -- so a plugin whose only UI entry point
 //        is a menu row should check, and offer a keybind as well.
+// v65 - Game update
 
-#define PLUGIN_INTERFACE_VERSION_MIN 63
-#define PLUGIN_INTERFACE_VERSION_MAX 64
-#define PLUGIN_INTERFACE_VERSION 64
+#define PLUGIN_INTERFACE_VERSION_MIN 65
+#define PLUGIN_INTERFACE_VERSION_MAX 65
+#define PLUGIN_INTERFACE_VERSION 65
 
 enum class PluginLogLevel { Trace = 0, Debug = 1, Info = 2, Warn = 3, Error = 4 };
 enum class ConfigValueType { String, Integer, Float, Boolean, Keybind };
