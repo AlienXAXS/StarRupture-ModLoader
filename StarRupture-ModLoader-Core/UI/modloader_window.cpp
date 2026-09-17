@@ -547,12 +547,18 @@ namespace UI::ModLoaderWindow
         // can use the full widget column width.
         if (isBool)
         {
-            bool bval = (strcmp(kv.value, "true") == 0 || strcmp(kv.value, "1") == 0);
+            // Accept the same spellings ConfigReadBool does, but always write back
+            // "1"/"0": that is what ConfigWriteBool and the schema default writer emit,
+            // and plugins that read booleans via ReadInt/ReadString and compare against
+            // "1" break when this toggle is the one path that writes "true"/"false".
+            bool bval = (_stricmp(kv.value, "true") == 0 ||
+                         _stricmp(kv.value, "yes") == 0 ||
+                         strcmp(kv.value, "1") == 0);
             char lbl[128];
             snprintf(lbl, sizeof(lbl), "##chk%s", id);
             if (UI::Theme::ToggleSwitch(lbl, &bval))
             {
-                strncpy_s(kv.value, bval ? "true" : "false", _TRUNCATE);
+                strncpy_s(kv.value, bval ? "1" : "0", _TRUNCATE);
                 NotifyConfigChangedLive(pluginName, kv);
                 CommitConfigChange(pluginName, kv);
             }
