@@ -419,6 +419,7 @@
     <ClInclude Include="hooks\game\game_menu\game_menu_registry.h" />
     <ClInclude Include="hooks\game\crash_reporter\crash_dialog.h" />
     <ClInclude Include="hooks\game\console_command\console_command.h" />
+    <ClInclude Include="hooks\game\engine_exec\engine_exec.h" />
     <ClInclude Include="hooks\game\debug_draw\debug_draw.h" />
     <ClInclude Include="hooks\game\crash_reporter\crash_reporter.h" />
     <ClInclude Include="hooks\game\log_verbosity\log_verbosity.h" />
@@ -548,6 +549,7 @@
     </ClCompile>
     <ClCompile Include="hooks\game\crash_reporter\crash_dialog.cpp" />
     <ClCompile Include="hooks\game\console_command\console_command.cpp" />
+    <ClCompile Include="hooks\game\engine_exec\engine_exec.cpp" />
     <ClCompile Include="hooks\game\debug_draw\debug_draw.cpp" />
     <ClCompile Include="hooks\game\crash_reporter\crash_reporter.cpp" />
     <ClCompile Include="hooks\game\log_verbosity\log_verbosity.cpp" />

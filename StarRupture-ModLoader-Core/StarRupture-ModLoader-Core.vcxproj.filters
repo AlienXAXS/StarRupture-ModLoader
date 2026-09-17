@@ -76,6 +76,9 @@
     <Filter Include="Source Files\hooks\game\console_command">
       <UniqueIdentifier>{6a41f28d-3c07-4b95-8e1a-2d904f6c7b13}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Source Files\hooks\game\engine_exec">
+      <UniqueIdentifier>{9c2e4b71-58d3-4f6a-a1b0-3e7d2c8f5a14}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Source Files\hooks\game\debug_draw">
       <UniqueIdentifier>{2f7b90c4-6e18-4a3d-b52f-8c04d1e73a96}</UniqueIdentifier>
     </Filter>
@@ -260,6 +263,9 @@
     </ClInclude>
     <ClInclude Include="hooks\game\console_command\console_command.h">
       <Filter>Source Files\hooks\game\console_command</Filter>
+    </ClInclude>
+    <ClInclude Include="hooks\game\engine_exec\engine_exec.h">
+      <Filter>Source Files\hooks\game\engine_exec</Filter>
     </ClInclude>
     <ClInclude Include="hooks\game\crash_reporter\crash_dialog.h">
       <Filter>Source Files\hooks\game\crash_reporter</Filter>
@@ -577,6 +583,9 @@
     </ClCompile>
     <ClCompile Include="hooks\game\console_command\console_command.cpp">
       <Filter>Source Files\hooks\game\console_command</Filter>
+    </ClCompile>
+    <ClCompile Include="hooks\game\engine_exec\engine_exec.cpp">
+      <Filter>Source Files\hooks\game\engine_exec</Filter>
     </ClCompile>
     <ClCompile Include="hooks\game\crash_reporter\crash_dialog.cpp">
       <Filter>Source Files\hooks\game\crash_reporter</Filter>

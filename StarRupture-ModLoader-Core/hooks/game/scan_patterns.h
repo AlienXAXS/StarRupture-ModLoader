@@ -245,6 +245,19 @@ namespace ScanPatterns
 		"4C 8B DC 48 81 EC ?? ?? ?? ?? 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 84 24 ?? ?? ?? ?? 49 89 5B ?? 49 89 6B ?? 49 89 73 ?? 49 89 7B ?? 4D 89 63 ?? 45 0F B6 E0";
 #endif
 
+	// UGameEngine::Exec(UWorld* InWorld, const TCHAR* Cmd, FOutputDevice& Ar)
+	// The engine-side entry point for a console command on a build with no local player.
+	// APlayerController::ConsoleCommand (the client route) needs a PlayerController, and a
+	// dedicated server has none, so the -console window calls this directly. 'this' is
+	// GEngine's FExec sub-object (GEngine + 0x28, the UObject header), not GEngine itself --
+	// it is FExec's virtual. It is the same function the player-controller route ends up in: UPlayer
+	// -> ULocalPlayer::Exec -> GEngine->Exec, whose StaticExec hands the line to
+	// IConsoleManager::ProcessUserConsoleInput (cvars and console commands) before the
+	// engine's own exec handlers. Unique in both binaries (server 0x1442093c0,
+	// client 0x7ff70b9964d0 as loaded).
+	inline constexpr auto UGameEngine_Exec =
+		"48 89 5C 24 ?? 4C 89 44 24 ?? 55 56 57 41 56 41 57 48 8D 6C 24 ?? 48 81 EC 90 00 00 00";
+
 	// AAbstractMassEnemySpawner::ActivateSpawner(AAbstractMassEnemySpawner* this, bool bDisableAggroLock)
 	// This is actually ?EnableSpawning@AMegaMachineMassEnemySpawner@@UEAAXXZ with a offset to find ActivateSpawner
 	inline constexpr auto AAbstractMassEnemySpawner_ActivateSpawner =
@@ -514,6 +527,9 @@ namespace ScanPatterns
 		{ "FHttpConnection::ProcessRequest",           FHttpConnection_ProcessRequest,           true },
 		{ "FHttpServerResponse::Create",               FHttpServerResponse_Create,               true },
 #endif
+
+		// Optional: losing it only costs engine-command fallthrough in the -console window.
+		{ "UGameEngine::Exec",                         UGameEngine_Exec,                         false },
 
 		// Reference-only patterns -- kept in the header but not currently
 		// resolved by any modloader code. Scanned and logged, never fatal.
