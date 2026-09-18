@@ -9,7 +9,7 @@ Like this project? Give it a star here on GitHub!
 
 ## Discord
 
-[Join our Discord server](https://discord.gg/QUzsGKe5Bz) to chat about the mod loader and plugins.
+[Join our Discord server](https://discord.gg/G5a4GYsvrz) to chat about the mod loader and plugins.
 
 ---
 
