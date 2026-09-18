@@ -34,6 +34,10 @@ std::wstring GetModLoaderDirPath(const wchar_t* filename)
     return GetModLoaderDir() + filename;
 }
 
+// Called from the top of Stage 1 while the game main thread is held. It must
+// stay before ReleaseMainThread(): the GlobalMemoryStatusEx call below races
+// the game's first allocation under Wine (see the call site in init_thread.cpp
+// and issue #126).
 void LogStartupEnvironment()
 {
     LogToFile::Info("Process ID: %lu", GetCurrentProcessId());
@@ -72,7 +76,20 @@ void LogStartupEnvironment()
 
     MEMORYSTATUSEX memStatus{};
     memStatus.dwLength = sizeof(memStatus);
-    if (GlobalMemoryStatusEx(&memStatus))
+    if (!GlobalMemoryStatusEx(&memStatus))
+    {
+        LogToFile::Warn("System RAM: GlobalMemoryStatusEx failed (%lu)", GetLastError());
+    }
+    else if (memStatus.ullTotalPhys == 0)
+    {
+        // Not a reading. Under Wine it means another thread was inside the
+        // process's very first GlobalMemoryStatusEx call at the same moment
+        // (the cache is stamped before it is filled) -- the race issue #126
+        // describes -- so name it rather than log "0 MB" as if it were fact.
+        LogToFile::Warn("System RAM: GlobalMemoryStatusEx returned 0 MB total -- "
+            "raced with a concurrent first call (Wine memory-status cache); value ignored");
+    }
+    else
     {
         LogToFile::Info("System RAM: %llu MB total, %llu MB available",
             memStatus.ullTotalPhys / (1024 * 1024),

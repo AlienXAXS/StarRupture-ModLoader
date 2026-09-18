@@ -88,6 +88,23 @@ DWORD WINAPI MainInitThreadProc(LPVOID)
             suspendedMainThread ? "acquired" : "NOT acquired -- game keeps booting during Stage 1");
     }
 
+    // Log the process environment now, while the main thread is held, and
+    // never after ReleaseMainThread(). This block calls GlobalMemoryStatusEx,
+    // and under Wine/Proton that call must not race the game's own first one:
+    // Wine's implementation keeps a one-second cache that it timestamps
+    // *before* filling, so a second thread arriving during the process's first
+    // call is handed an all-zero struct and TRUE. The game's first heap
+    // allocation (FMemory::GCreateMalloc, CRT static init, before WinMain)
+    // makes that call and sizes FMallocBinned2 from TotalPhysical; zero fails
+    // a checkf whose handler allocates, re-enters the one-time initialiser on
+    // the same thread and deadlocks with two threads and an empty log -- issue
+    // #126, a coin flip per launch in v1.21.0 where this ran in the same
+    // millisecond as the release below. Once any call has completed in the
+    // process a later race only returns stale-but-valid numbers, so making
+    // ours here, with the game frozen, closes the window. Native Windows has
+    // no such cache and never saw it.
+    LogStartupEnvironment();
+
     Splash::Show();
     LogToFile::Info("[init] Splash window shown");
 
@@ -191,8 +208,6 @@ DWORD WINAPI MainInitThreadProc(LPVOID)
 
     Splash::SetStatus(L"Starting mod loader...");
     Splash::SetProgress(0.0f);
-
-    LogStartupEnvironment();
 
     LogToFile::Info("[init] Initialising subsystems (config, plugin manager)...");
     InitSubsystems();

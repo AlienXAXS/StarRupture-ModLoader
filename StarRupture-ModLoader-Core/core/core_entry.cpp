@@ -142,8 +142,8 @@ BOOL Core_Attach()
     LogToFile::Info("======================================================");
 
     // Identity of this build and process, logged here rather than only in
-    // LogStartupEnvironment() (Stage 2) so a log that stops during Stage 1
-    // still says which modloader and which exe produced it.
+    // LogStartupEnvironment() (top of Stage 1) so a log that stops before the
+    // init thread runs still says which modloader and which exe produced it.
     {
         wchar_t exePath[MAX_PATH]{};
         GetModuleFileNameW(nullptr, exePath, MAX_PATH);
