@@ -39,6 +39,8 @@ namespace UI::ModLoaderWindow
     // State
     // -----------------------------------------------------------------------
     static bool s_isOpen = false;
+    static bool s_closeRequested = false; // Escape while focused; consumed at the top of Render()
+    static bool s_escapeWasDown  = false; // last frame's Escape level, for edge-detection below
     static int  s_selectedPlugin = -1;  // index in Plugins tab
 
     // Indices into the icon tab strip. Named so a cross-tab jump (the Settings
@@ -1378,6 +1380,14 @@ namespace UI::ModLoaderWindow
     void Toggle()
     {
         s_isOpen = !s_isOpen;
+
+        // Seed the edge-detector with whatever Escape is doing right now, so
+        // opening the window on a keypress that happens to leave Escape held
+        // (or opening it programmatically while the player is mid-press for
+        // some unrelated reason) doesn't read as a fresh Escape next frame
+        // and instantly close the window it just opened.
+        if (s_isOpen)
+            s_escapeWasDown = (GetAsyncKeyState(VK_ESCAPE) & 0x8000) != 0;
     }
 
     bool IsOpen()
@@ -1427,6 +1437,19 @@ namespace UI::ModLoaderWindow
         if (!s_isOpen)
             return;
 
+        // Deferred by a frame (see the Escape check below): closing here, not
+        // inside the same keypress that requested it, means input capture --
+        // already decided for this frame before Render runs -- can't flip out
+        // from under Escape's own WM_KEYUP. Checked before Begin so closing
+        // just means skipping Begin/End entirely, same as the window never
+        // having opened this frame.
+        if (s_closeRequested)
+        {
+            s_closeRequested = false;
+            Toggle(); // s_isOpen is true here (guarded above), so this closes it -- same path the open/close keybind uses
+            return;
+        }
+
         ImGuiIO& io = ImGui::GetIO();
         ImGui::SetNextWindowSize(ImVec2(860, 640), ImGuiCond_FirstUseEver);
         ImGui::SetNextWindowPos(
@@ -1441,6 +1464,15 @@ namespace UI::ModLoaderWindow
         if (!UI::Theme::BeginChamferedWindow("Mod Loader##main", "MOD LOADER", &s_isOpen,
                                               "BUILD " MODLOADER_BUILD_TAG, ImGuiWindowFlags_NoScrollbar))
             return;
+
+        // Snapshot before the tabs render below: RenderConfigTab -> Render-
+        // RebindModal can cancel an in-progress capture this same frame, which
+        // flips s_rebind.active to false partway through. Reading the live
+        // value in the Escape check further down would let the very press
+        // that just cancelled a capture also close the window -- this keeps
+        // that check looking at whether a capture was active when the frame
+        // started, not whether one is still active by the time it finishes.
+        const bool wasCapturingThisFrame = s_rebind.active;
 
         static const char* s_tabIcons[kTabCount] =
         {
@@ -1505,6 +1537,33 @@ namespace UI::ModLoaderWindow
         default: break;
         }
         ImGui::EndChild();
+
+        // Escape closes the window whenever it's open -- deliberately not
+        // gated on ImGui focus. With several loader/plugin windows open at
+        // once (e.g. two plugin panels together), the one that should close
+        // is often not the currently-focused one, and a focus gate here just
+        // means Escape does nothing. The only thing that still holds it back
+        // is the rebind picker: if it was capturing when this frame started
+        // (wasCapturingThisFrame above), Escape already meant "cancel the
+        // capture" there, and that same press must not also close the
+        // window. The close itself is deferred to next frame; see the top
+        // of Render().
+        //
+        // Also edge-triggered, not level-triggered: GetAsyncKeyState reports
+        // Escape held down for every frame of one physical press, not just
+        // the first. s_escapeWasDown is updated every frame the window
+        // renders, even while the picker is active, so the same press that
+        // just cancelled a capture reads as still-held (not a fresh press)
+        // on every later frame too, instead of closing the window the first
+        // moment s_rebind.active catches up to false.
+        const bool escapeDownNow = (GetAsyncKeyState(VK_ESCAPE) & 0x8000) != 0;
+        const bool escapePressed = escapeDownNow && !s_escapeWasDown;
+        s_escapeWasDown = escapeDownNow;
+
+        if (escapePressed && !wasCapturingThisFrame)
+        {
+            s_closeRequested = true;
+        }
 
         UI::Theme::EndChamferedWindow();
     }
