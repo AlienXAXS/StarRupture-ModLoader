@@ -21,6 +21,7 @@
 #include "hooks/game/mass_spawner_deactivate/mass_spawner_deactivate.h"
 #include "hooks/game/mass_do_spawning/mass_do_spawning.h"
 #include "console/plugin_console.h"
+#include "plugins/pak_registry.h"
 #include "memory_scanner/scanner.h"
 #include "hooks/game/scan_patterns.h"
 #include "hooks/game/ufunction_resolve.h"
@@ -1832,6 +1833,7 @@ namespace ModLoaderLogger
 		nullptr,             // v63 -- Console; filled in below by GetPluginHooks()
 		nullptr,             // v64 -- GameMenu; filled in below by GetPluginHooks() on client
 		                     //        builds, and left null on server/generic ones
+		nullptr,             // v67 -- Pak; filled in below by GetPluginHooks() on every build
 	};
 	static bool g_networkChannelInitialized = false;
 
@@ -1842,6 +1844,12 @@ namespace ModLoaderLogger
 		// front-end being open.
 		if (!g_pluginHooks.Console)
 			g_pluginHooks.Console = PluginConsole::GetInterface();
+
+		// Runtime pak mounting and asset loading. Every build: the registry
+		// exists regardless, and IsAvailable() reports whether the engine
+		// entry points resolved on this binary.
+		if (!g_pluginHooks.Pak)
+			g_pluginHooks.Pak = PakRegistry::GetInterface();
 
 #ifdef MODLOADER_CLIENT_BUILD
 		// Rows in the game's own main menu / pause menu. Client only -- the

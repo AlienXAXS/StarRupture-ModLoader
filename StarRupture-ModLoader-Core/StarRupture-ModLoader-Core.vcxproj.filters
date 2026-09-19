@@ -79,6 +79,9 @@
     <Filter Include="Source Files\hooks\game\engine_exec">
       <UniqueIdentifier>{9c2e4b71-58d3-4f6a-a1b0-3e7d2c8f5a14}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Source Files\hooks\game\pak_mount">
+      <UniqueIdentifier>{7d3f2a19-6b4c-4e85-9a1d-2c5e8f0b3a67}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Source Files\hooks\game\debug_draw">
       <UniqueIdentifier>{2f7b90c4-6e18-4a3d-b52f-8c04d1e73a96}</UniqueIdentifier>
     </Filter>
@@ -219,6 +222,9 @@
     <ClInclude Include="plugins\plugin_manager.h">
       <Filter>Source Files\plugins</Filter>
     </ClInclude>
+    <ClInclude Include="plugins\pak_registry.h">
+      <Filter>Source Files\plugins</Filter>
+    </ClInclude>
     <ClInclude Include="plugins\plugin_interface.h">
       <Filter>Source Files\plugins</Filter>
     </ClInclude>
@@ -266,6 +272,9 @@
     </ClInclude>
     <ClInclude Include="hooks\game\engine_exec\engine_exec.h">
       <Filter>Source Files\hooks\game\engine_exec</Filter>
+    </ClInclude>
+    <ClInclude Include="hooks\game\pak_mount\pak_mount.h">
+      <Filter>Source Files\hooks\game\pak_mount</Filter>
     </ClInclude>
     <ClInclude Include="hooks\game\crash_reporter\crash_dialog.h">
       <Filter>Source Files\hooks\game\crash_reporter</Filter>
@@ -554,6 +563,9 @@
     <ClCompile Include="plugins\plugin_manager.cpp">
       <Filter>Source Files\plugins</Filter>
     </ClCompile>
+    <ClCompile Include="plugins\pak_registry.cpp">
+      <Filter>Source Files\plugins</Filter>
+    </ClCompile>
     <ClCompile Include="logging\logger.cpp">
       <Filter>Source Files\logging</Filter>
     </ClCompile>
@@ -586,6 +598,9 @@
     </ClCompile>
     <ClCompile Include="hooks\game\engine_exec\engine_exec.cpp">
       <Filter>Source Files\hooks\game\engine_exec</Filter>
+    </ClCompile>
+    <ClCompile Include="hooks\game\pak_mount\pak_mount.cpp">
+      <Filter>Source Files\hooks\game\pak_mount</Filter>
     </ClCompile>
     <ClCompile Include="hooks\game\crash_reporter\crash_dialog.cpp">
       <Filter>Source Files\hooks\game\crash_reporter</Filter>

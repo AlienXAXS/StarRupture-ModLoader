@@ -11,6 +11,7 @@
 #include "plugins/plugin_hook_report.h"
 #include "hooks/hooks_interface.h"
 #include "console/plugin_console.h"
+#include "plugins/pak_registry.h"
 #ifdef MODLOADER_CLIENT_BUILD
 #include "hooks/game/game_menu/game_menu_registry.h"
 #endif
@@ -775,7 +776,9 @@ namespace PluginManager
 
 			// Before FreeLibrary: a console command or game-menu row it registered
 			// carries a handler address inside the module about to be unmapped.
+			// Pak mounts stay mounted (orphaned); only their callbacks go.
 			PluginConsole::ForgetPlugin(plugin->cachedName.c_str());
+			PakRegistry::ForgetPlugin(plugin->cachedName.c_str());
 #ifdef MODLOADER_CLIENT_BUILD
 			GameMenu::Registry::ForgetPlugin(plugin->cachedName.c_str());
 #endif
@@ -898,8 +901,10 @@ namespace PluginManager
 		// Same reason: a console command or a game-menu row this plugin
 		// registered is a handler address inside the module about to be
 		// unmapped, and the console front-ends and the game's own menu would go
-		// on listing it and happily call it.
+		// on listing it and happily call it. Pak mounts are NOT unmounted
+		// here -- see pak_registry.h -- but their callbacks into this module go.
 		PluginConsole::ForgetPlugin(p.cachedName.c_str());
+		PakRegistry::ForgetPlugin(p.cachedName.c_str());
 #ifdef MODLOADER_CLIENT_BUILD
 		GameMenu::Registry::ForgetPlugin(p.cachedName.c_str());
 #endif
@@ -940,6 +945,7 @@ namespace PluginManager
 			// InitPluginRecord below re-registers whatever the new build asks for.
 			ModLoaderLogger::ForgetPluginSchema(p.cachedName.c_str());
 			PluginConsole::ForgetPlugin(p.cachedName.c_str());
+			PakRegistry::ForgetPlugin(p.cachedName.c_str());
 #ifdef MODLOADER_CLIENT_BUILD
 			GameMenu::Registry::ForgetPlugin(p.cachedName.c_str());
 #endif

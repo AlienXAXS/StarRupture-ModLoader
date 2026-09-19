@@ -15,6 +15,8 @@
 #include "logging/logger.h"
 #include "logging/plugin_log_levels.h"
 #include "network_channel/network_channel.h"
+#include "plugins/pak_registry.h"
+#include "Engine_classes.hpp"   // SDK::UObject::GetFullName and the player pawn lookup for the pak command
 #include "plugins/plugin_hook_report.h"
 #include "plugins/plugin_interface.h"
 #include "plugins/plugin_manager.h"
@@ -607,6 +609,183 @@ namespace ModConsole
         out.Notice("stops the plugin loading. Full detail is in modloader.log.");
     }
 
+    // -----------------------------------------------------------------------
+    // pak -- runtime pak mounting from the console (v67)
+    //
+    // The operator's route to the same registry plugins use through
+    // hooks->Pak, with no self: mounts are owned by "console", and the
+    // console may unmount anything the loader mounted (never a startup pak).
+    // Runs on the game thread, which is where every registry operation ends
+    // up anyway, so nothing here waits on a dispatch.
+    // -----------------------------------------------------------------------
+    static void Cmd_Pak(const std::vector<std::string>& args, Sink& out)
+    {
+        IPluginPak* pak = PakRegistry::GetInterface();
+        const std::string sub = args.size() > 1 ? args[1] : "list";
+
+        auto listMounted = [&]()
+        {
+            const int total = pak->GetMountedInto(nullptr, nullptr, 0);
+            if (total <= 0)
+            {
+                out.Notice(pak->IsAvailable() ? "No pak files are mounted." : "Pak mounting is unavailable on this build (patterns unresolved).");
+                return;
+            }
+            std::vector<PluginPakInfo> infos(static_cast<size_t>(total));
+            pak->GetMountedInto(nullptr, infos.data(), total);
+
+            out.Notice("%-3s %-5s %-14s %-7s %s", "#", "Order", "Owner", "Files", "Pak");
+            for (int i = 0; i < total; ++i)
+            {
+                const PluginPakInfo& p = infos[static_cast<size_t>(i)];
+                std::string owner = p.owner[0] ? p.owner : "(engine)";
+                if (p.ownerUnloaded) owner += " [unloaded]";
+                out.Out("%-3d %-5d %-14s %-7d %s", i, p.order, owner.c_str(), p.numFiles, p.pakPath);
+                if (p.mountPoint[0])
+                    out.Out("      mount point: %s", p.mountPoint);
+            }
+        };
+
+        if (sub == "list" || sub == "ls")
+        {
+            listMounted();
+            return;
+        }
+
+        if (sub == "mount")
+        {
+            if (args.size() < 3)
+            {
+                out.Error("usage: pak mount <path> [order]   (path absolute, or relative to Binaries\\Win64)");
+                return;
+            }
+            PluginPakMountOptions opts{};
+            opts.order = PLUGIN_PAK_ORDER_DEFAULT;
+            if (args.size() >= 4)
+                opts.order = atoi(args[3].c_str());
+            PluginPakHandle handle = nullptr;
+            const PluginPakResult r = pak->MountFile(nullptr, args[2].c_str(), &opts, &handle);
+            if (r == PLUGIN_PAK_OK)
+                out.Notice("Mounted %s", args[2].c_str());
+            else if (r == PLUGIN_PAK_ALREADY_MOUNTED)
+                out.Notice("%s was already mounted", args[2].c_str());
+            else
+                out.Error("Mount failed: %s (see modloader.log)", pak->ResultToString(r));
+            return;
+        }
+
+        if (sub == "unmount")
+        {
+            if (args.size() < 3)
+            {
+                out.Error("usage: pak unmount <#|path>   (# from 'pak list')");
+                return;
+            }
+            const int total = pak->GetMountedInto(nullptr, nullptr, 0);
+            std::vector<PluginPakInfo> infos(static_cast<size_t>(total > 0 ? total : 0));
+            if (total > 0)
+                pak->GetMountedInto(nullptr, infos.data(), total);
+
+            PluginPakHandle handle = nullptr;
+            const std::string& target = args[2];
+            const bool numeric = !target.empty() && target.find_first_not_of("0123456789") == std::string::npos;
+            if (numeric)
+            {
+                const int idx = atoi(target.c_str());
+                if (idx >= 0 && idx < total)
+                    handle = infos[static_cast<size_t>(idx)].handle;
+            }
+            else
+            {
+                for (const PluginPakInfo& p : infos)
+                    if (_stricmp(p.pakPath, target.c_str()) == 0) { handle = p.handle; break; }
+            }
+            if (!handle)
+            {
+                out.Error("No loader-mounted pak matches '%s' -- 'pak list' shows what can be unmounted (engine startup paks cannot)", target.c_str());
+                return;
+            }
+            const PluginPakResult r = pak->Unmount(nullptr, handle);
+            if (r == PLUGIN_PAK_OK)
+                out.Notice("Unmounted. Anything already loaded from it is still alive -- see PakLoading.md before relying on that.");
+            else
+                out.Error("Unmount failed: %s", pak->ResultToString(r));
+            return;
+        }
+
+        if (sub == "load" || sub == "loadclass")
+        {
+            if (args.size() < 3)
+            {
+                out.Error("usage: pak %s </Game/Path/Asset.Asset>", sub.c_str());
+                return;
+            }
+            void* obj = sub == "load" ? pak->LoadObject(args[2].c_str()) : pak->LoadClass(args[2].c_str());
+            if (!obj)
+            {
+                out.Error("Nothing loaded for %s (wrong path, or the pak is not an IoStore container)", args[2].c_str());
+                return;
+            }
+            out.Notice("Loaded: %s", static_cast<SDK::UObject*>(obj)->GetFullName().c_str());
+            return;
+        }
+
+        if (sub == "spawn")
+        {
+            if (args.size() < 3)
+            {
+                out.Error("usage: pak spawn </Game/Path/BP_Thing.BP_Thing_C> [x y z]");
+                return;
+            }
+            void* cls = pak->LoadClass(args[2].c_str());
+            if (!cls)
+            {
+                out.Error("Class %s did not load", args[2].c_str());
+                return;
+            }
+            // Explicit coordinates win. Otherwise spawn three metres in front
+            // of the local player, facing the same way, so the result is on
+            // screen -- the world origin is nowhere anyone is standing. A
+            // dedicated server has no local pawn and falls back to the origin.
+            PluginDebugVector  loc{};
+            PluginDebugRotator rot{};
+            const bool hasLoc = args.size() >= 6;
+            const char* where = "the world origin";
+            if (hasLoc)
+            {
+                loc.x = atof(args[3].c_str());
+                loc.y = atof(args[4].c_str());
+                loc.z = atof(args[5].c_str());
+                where = "the given coordinates";
+            }
+            else if (SDK::UWorld* world = SDK::UWorld::GetWorld())
+            {
+                if (SDK::APawn* pawn = SDK::UGameplayStatics::GetPlayerPawn(world, 0))
+                {
+                    const SDK::FVector  p = pawn->K2_GetActorLocation();
+                    const SDK::FVector  f = pawn->GetActorForwardVector();
+                    const SDK::FRotator r = pawn->K2_GetActorRotation();
+                    loc.x = p.X + f.X * 300.0;
+                    loc.y = p.Y + f.Y * 300.0;
+                    loc.z = p.Z + 50.0;
+                    rot.yaw = r.Yaw;
+                    where = "in front of the player";
+                }
+            }
+            void* actor = pak->SpawnActor(cls, &loc, &rot);
+            if (!actor)
+            {
+                out.Error("Spawn failed (no world, or the class is not an Actor)");
+                return;
+            }
+            out.Notice("Spawned: %s", static_cast<SDK::UObject*>(actor)->GetFullName().c_str());
+            out.Out("  at %.0f %.0f %.0f (%s)", loc.x, loc.y, loc.z, where);
+            return;
+        }
+
+        out.Error("usage: pak [list] | pak mount <path> [order] | pak unmount <#|path> | pak load <path> | pak loadclass <path> | pak spawn <class> [x y z]");
+    }
+
     static void Cmd_Version(const std::vector<std::string>&, Sink& out)
     {
         out.Out("StarRupture Mod Loader %s (%s build)", MODLOADER_BUILD_TAG, MODLOADER_BUILD_KIND);
@@ -984,6 +1163,11 @@ namespace ModConsole
         Register({ "version", "ver",        "version",
                    "Show mod loader build and plugin interface versions",
                    &Cmd_Version, false });
+
+        // Mounting, loading and spawning all touch engine state.
+        Register({ "pak",     "paks",       "pak [list] | pak mount <path> [order] | pak unmount <#|path> | pak load <path> | pak spawn <class> [x y z]",
+                   "List, mount or unmount pak files at runtime; load or spawn assets from them",
+                   &Cmd_Pak,     true });
 
         Register({ "loglevel", "log",       "loglevel [level] | loglevel <plugin|*> <level|default>",
                    "Show or change the log level, globally or for one plugin",
