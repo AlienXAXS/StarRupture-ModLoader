@@ -682,9 +682,9 @@ namespace UI::ModLoaderWindow
         {
             const float resetW = fh;
             ImGui::SetCursorPos(ImVec2(colStartX + actionsW - resetW, colY));
-            char resetId[176];
-            snprintf(resetId, sizeof(resetId), "R##r_%s_%s", kv.section, kv.key);
-            if (ImGui::Button(resetId, ImVec2(resetW, fh)))
+            char resetId[160];
+            snprintf(resetId, sizeof(resetId), "##r_%s_%s", kv.section, kv.key);
+            if (UI::Theme::IconButton(UI::Theme::Icons::Reset, resetId, resetW))
             {
                 strncpy_s(kv.value, e->defaultValue, _TRUNCATE);
                 NotifyConfigChangedLive(pluginName, kv);

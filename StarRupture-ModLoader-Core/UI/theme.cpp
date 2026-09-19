@@ -532,6 +532,31 @@ namespace UI::Theme
         return changed;
     }
 
+    bool IconButton(const char* icon, const char* id, float size)
+    {
+        if (size <= 0.0f)
+            size = ImGui::GetFrameHeight();
+
+        const ImVec2 pos = ImGui::GetCursorScreenPos();
+
+        const bool pressed = ImGui::InvisibleButton(id, ImVec2(size, size));
+        const bool hovered = ImGui::IsItemHovered();
+        const bool active  = ImGui::IsItemActive();
+
+        // Theme-driven, not hardcoded -- same two colors any hyperlink-style
+        // text in this UI already uses, so a theme that changes TextLink
+        // (e.g. the cyan "hover/selected" accent) restyles this too.
+        const ImGuiStyle& style = ImGui::GetStyle();
+        const ImU32 col = ImGui::GetColorU32((active || hovered) ? style.Colors[ImGuiCol_TextLink]
+                                                                   : style.Colors[ImGuiCol_TextDisabled]);
+
+        ImDrawList* draw = ImGui::GetWindowDrawList();
+        const ImVec2 textSz = ImGui::CalcTextSize(icon);
+        draw->AddText(ImVec2(pos.x + (size - textSz.x) * 0.5f, pos.y + (size - textSz.y) * 0.5f), col, icon);
+
+        return pressed;
+    }
+
     namespace Icons
     {
         // UTF-8 encodings of Material Icons Regular codepoints (Apache 2.0),
@@ -543,6 +568,7 @@ namespace UI::Theme
         const char* Logging  = "\xEE\xA3\x92"; // subject    U+E8D2
         const char* Theme    = "\xEE\x90\x8A"; // palette    U+E40A
         const char* About    = "\xEE\xA2\x8E"; // info       U+E88E
+        const char* Reset    = "\xEE\x81\x82"; // replay     U+E042
     }
 }
 

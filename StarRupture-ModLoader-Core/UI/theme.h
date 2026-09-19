@@ -65,6 +65,14 @@ namespace UI::Theme
     // before drawing one, e.g. sizing a column to fit it.
     ImVec2 ToggleSwitchSize();
 
+    // A borderless clickable icon glyph -- no button frame/box, just the
+    // glyph itself over an InvisibleButton hit area. Colored by state
+    // (ImGuiCol_TextDisabled at rest, ImGuiCol_TextLink on hover or while
+    // held) rather than a hardcoded color, so any theme controls its look
+    // the same way it controls every other color. `size` <= 0 uses
+    // GetFrameHeight(). Returns true the frame it's clicked.
+    bool IconButton(const char* icon, const char* id, float size = 0.0f);
+
     // Draws a single-diagonal-corner (chamfered) outline -- chamfer cut at
     // the top-left and bottom-right corners -- over the given rect, matching
     // the angular panel shape used throughout the StarRupture HUD. Call after
@@ -158,6 +166,7 @@ namespace UI::Theme
         extern const char* Logging;
         extern const char* Theme;
         extern const char* About;
+        extern const char* Reset; // replay -- reset buttons (config rows, Logging tab)
     }
 }
 
