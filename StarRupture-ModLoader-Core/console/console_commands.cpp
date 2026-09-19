@@ -16,7 +16,7 @@
 #include "logging/plugin_log_levels.h"
 #include "network_channel/network_channel.h"
 #include "plugins/pak_registry.h"
-#include "CoreUObject_classes.hpp"   // SDK::UObject::GetFullName for the pak command's output
+#include "Engine_classes.hpp"   // SDK::UObject::GetFullName and the player pawn lookup for the pak command
 #include "plugins/plugin_hook_report.h"
 #include "plugins/plugin_interface.h"
 #include "plugins/plugin_manager.h"
@@ -743,21 +743,43 @@ namespace ModConsole
                 out.Error("Class %s did not load", args[2].c_str());
                 return;
             }
-            PluginDebugVector loc{};
+            // Explicit coordinates win. Otherwise spawn three metres in front
+            // of the local player, facing the same way, so the result is on
+            // screen -- the world origin is nowhere anyone is standing. A
+            // dedicated server has no local pawn and falls back to the origin.
+            PluginDebugVector  loc{};
+            PluginDebugRotator rot{};
             const bool hasLoc = args.size() >= 6;
+            const char* where = "the world origin";
             if (hasLoc)
             {
                 loc.x = atof(args[3].c_str());
                 loc.y = atof(args[4].c_str());
                 loc.z = atof(args[5].c_str());
+                where = "the given coordinates";
             }
-            void* actor = pak->SpawnActor(cls, hasLoc ? &loc : nullptr, nullptr);
+            else if (SDK::UWorld* world = SDK::UWorld::GetWorld())
+            {
+                if (SDK::APawn* pawn = SDK::UGameplayStatics::GetPlayerPawn(world, 0))
+                {
+                    const SDK::FVector  p = pawn->K2_GetActorLocation();
+                    const SDK::FVector  f = pawn->GetActorForwardVector();
+                    const SDK::FRotator r = pawn->K2_GetActorRotation();
+                    loc.x = p.X + f.X * 300.0;
+                    loc.y = p.Y + f.Y * 300.0;
+                    loc.z = p.Z + 50.0;
+                    rot.yaw = r.Yaw;
+                    where = "in front of the player";
+                }
+            }
+            void* actor = pak->SpawnActor(cls, &loc, &rot);
             if (!actor)
             {
                 out.Error("Spawn failed (no world, or the class is not an Actor)");
                 return;
             }
             out.Notice("Spawned: %s", static_cast<SDK::UObject*>(actor)->GetFullName().c_str());
+            out.Out("  at %.0f %.0f %.0f (%s)", loc.x, loc.y, loc.z, where);
             return;
         }
 

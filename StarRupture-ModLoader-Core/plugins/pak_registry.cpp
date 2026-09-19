@@ -390,6 +390,12 @@ namespace PakRegistry
             ModLoaderLogger::LogError(L"[Pak] Exception 0x%08lX spawning %S", code, cls->GetFullName().c_str());
             return nullptr;
         }
+        if (actor)
+            ModLoaderLogger::LogInfo(L"[Pak] Spawned %S at %.0f %.0f %.0f", actor->GetFullName().c_str(),
+                                     xf.Translation.X, xf.Translation.Y, xf.Translation.Z);
+        else
+            ModLoaderLogger::LogWarn(L"[Pak] Spawn of %S returned null (not an Actor class, or the world refused it)",
+                                     cls->GetFullName().c_str());
         return actor;
     }
 
