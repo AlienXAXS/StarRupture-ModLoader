@@ -16,9 +16,9 @@
 #include "logging_tab.h"
 #include "tick_profiler_window.h"
 #include "network_channel/net_timeout.h"
+#include "utils/game_thread_dispatch.h"
 #ifdef _DEBUG
 #include "hooks/game/debug_draw/debug_draw.h"
-#include "utils/game_thread_dispatch.h"
 #endif
 #include <cmath>
 #include <cstdio>
@@ -26,6 +26,7 @@
 #include <cstring>
 #include <vector>
 #include <string>
+#include <functional>
 
 // Build tag is set by CI; fall back to a local placeholder.
 #ifndef MODLOADER_BUILD_TAG
@@ -244,6 +245,35 @@ namespace UI::ModLoaderWindow
         ImGui::SameLine(0.0f, ImGui::GetStyle().ItemInnerSpacing.x);
     }
 
+    // Indexed the same way as RenderPluginsTab's own `statuses[64]` -- true
+    // while that row's Unload/Load/Reload is queued or running on the game
+    // thread (see PostPluginAction). The row's buttons disable and read
+    // "..." for the duration, so a second click can't queue a second
+    // Shutdown/Init pass for a plugin whose first one hasn't run yet.
+    static bool s_pluginActionPending[64] = {};
+
+    // UNLOAD/LOAD/RELOAD all end up calling PluginShutdown and/or
+    // PluginInit (PluginManager::UnloadPlugin/ReloadPlugin), same as the
+    // console's own unload/load/reload commands -- which are registered
+    // gameThread=true (console_commands.cpp) because a plugin's Shutdown
+    // routinely touches engine/UObject state that is only safe to touch
+    // from the game thread (see e.g. BetterCheats' player_lookup.h,
+    // "Game-thread only -- never from RenderImGui"). This window's Render()
+    // runs from inside the D3D Present hook, i.e. the render thread, so
+    // calling PluginManager directly from a button handler here has the
+    // same exposure the console path already avoids. Posting through
+    // GameThreadDispatch, exactly like Dispatch() does for a gameThread
+    // command, gives these buttons the same guarantee.
+    static void PostPluginAction(int index, std::function<void(int)> action)
+    {
+        s_pluginActionPending[index] = true;
+        GameThreadDispatch::PostVoid([index, action]()
+        {
+            action(index);
+            s_pluginActionPending[index] = false;
+        });
+    }
+
     static void RenderPluginsTab()
     {
         // The return is the TOTAL record count, not how many were copied --
@@ -337,28 +367,33 @@ namespace UI::ModLoaderWindow
                 {
                     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(10.0f, 4.0f));
 
-                    // Unload — active only when loaded
-                    if (!s.isLoaded) ImGui::BeginDisabled();
-                    if (ImGui::Button("UNLOAD"))
-                        PluginManager::UnloadPlugin(i);
-                    if (!s.isLoaded) ImGui::EndDisabled();
+                    const bool busy = s_pluginActionPending[i];
+
+                    // Unload — active only when loaded, and not mid-action
+                    if (!s.isLoaded || busy) ImGui::BeginDisabled();
+                    if (ImGui::Button(busy ? "..." : "UNLOAD"))
+                        PostPluginAction(i, [](int idx) { PluginManager::UnloadPlugin(idx); });
+                    if (!s.isLoaded || busy) ImGui::EndDisabled();
 
                     ImGui::SameLine();
 
-                    // Load — active only when unloaded
-                    if (s.isLoaded) ImGui::BeginDisabled();
-                    if (ImGui::Button("LOAD"))
-                        PluginManager::ReloadPlugin(i);
-                    if (s.isLoaded) ImGui::EndDisabled();
+                    // Load — active only when unloaded, and not mid-action
+                    if (s.isLoaded || busy) ImGui::BeginDisabled();
+                    if (ImGui::Button(busy ? "..." : "LOAD"))
+                        PostPluginAction(i, [](int idx) { PluginManager::ReloadPlugin(idx); });
+                    if (s.isLoaded || busy) ImGui::EndDisabled();
 
                     ImGui::SameLine();
 
-                    // Reload — always active; accented as the primary action.
+                    // Reload — always active when idle; accented as the
+                    // primary action.
+                    if (busy) ImGui::BeginDisabled();
                     ImGui::PushStyleColor(ImGuiCol_Button, UI::Theme::AccentColorVec4(0.20f));
                     ImGui::PushStyleColor(ImGuiCol_Text, UI::Theme::AccentColorVec4(1.0f));
-                    if (ImGui::Button("RELOAD"))
-                        PluginManager::ReloadPlugin(i);
+                    if (ImGui::Button(busy ? "..." : "RELOAD"))
+                        PostPluginAction(i, [](int idx) { PluginManager::ReloadPlugin(idx); });
                     ImGui::PopStyleColor(2);
+                    if (busy) ImGui::EndDisabled();
 
                     ImGui::PopStyleVar();
                 }
