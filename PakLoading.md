@@ -291,10 +291,17 @@ pak unmount <#|path>             unmount a loader-mounted pak (# from the list)
 pak load </Game/Path/Asset.Asset>
 pak loadclass </Game/Path/BP.BP_C>
 pak spawn </Game/Path/BP.BP_C> [x y z]
+pak spawnmesh </Game/Path/SM_Thing.SM_Thing> [x y z]
 ```
 
 `pak load` is the quickest way to find out whether a pak is an IoStore container: a bare pak
 mounts fine and then loads nothing.
+
+`pak spawn` and `pak spawnmesh` place the result three metres in front of the local player,
+facing the same way, unless coordinates are given; on a dedicated server, which has no local
+player, they use the world origin. `spawnmesh` takes a static or skeletal mesh asset rather than
+an actor class and spawns an engine `StaticMeshActor` / `SkeletalMeshActor` to carry it, which is
+the quickest way to eyeball a mesh from a freshly mounted pak without authoring a Blueprint for it.
 
 ---
 

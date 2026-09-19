@@ -618,6 +618,35 @@ namespace ModConsole
     // Runs on the game thread, which is where every registry operation ends
     // up anyway, so nothing here waits on a dispatch.
     // -----------------------------------------------------------------------
+    // The mesh assignment for `pak spawnmesh`, kept SEH-only (no C++ objects
+    // in scope, C2712) because both setters are ProcessEvent calls into the
+    // engine and a bad mesh can fault inside them.
+    static bool AssignMeshSEH(SDK::AActor* actor, SDK::UObject* mesh, bool skeletal, unsigned long* code)
+    {
+        __try
+        {
+            if (skeletal)
+            {
+                SDK::USkeletalMeshComponent* comp = static_cast<SDK::ASkeletalMeshActor*>(actor)->SkeletalMeshComponent;
+                if (!comp) return false;
+                comp->SetMobility(SDK::EComponentMobility::Movable);
+                comp->SetSkeletalMeshAsset(static_cast<SDK::USkeletalMesh*>(mesh));
+            }
+            else
+            {
+                SDK::UStaticMeshComponent* comp = static_cast<SDK::AStaticMeshActor*>(actor)->StaticMeshComponent;
+                if (!comp) return false;
+                comp->SetMobility(SDK::EComponentMobility::Movable);
+                comp->SetStaticMesh(static_cast<SDK::UStaticMesh*>(mesh));
+            }
+            return true;
+        }
+        __except (*code = GetExceptionCode(), EXCEPTION_EXECUTE_HANDLER)
+        {
+            return false;
+        }
+    }
+
     static void Cmd_Pak(const std::vector<std::string>& args, Sink& out)
     {
         IPluginPak* pak = PakRegistry::GetInterface();
@@ -730,6 +759,39 @@ namespace ModConsole
             return;
         }
 
+        // Where a spawn goes. Explicit coordinates (args[first..first+2]) win.
+        // Otherwise three metres in front of the local player, facing the same
+        // way, so the result is on screen -- the world origin is nowhere anyone
+        // is standing. A dedicated server has no local pawn and falls back to
+        // the origin.
+        auto pickSpot = [&](size_t first, PluginDebugVector& loc, PluginDebugRotator& rot) -> const char*
+        {
+            loc = {};
+            rot = {};
+            if (args.size() >= first + 3)
+            {
+                loc.x = atof(args[first].c_str());
+                loc.y = atof(args[first + 1].c_str());
+                loc.z = atof(args[first + 2].c_str());
+                return "the given coordinates";
+            }
+            if (SDK::UWorld* world = SDK::UWorld::GetWorld())
+            {
+                if (SDK::APawn* pawn = SDK::UGameplayStatics::GetPlayerPawn(world, 0))
+                {
+                    const SDK::FVector  p = pawn->K2_GetActorLocation();
+                    const SDK::FVector  f = pawn->GetActorForwardVector();
+                    const SDK::FRotator r = pawn->K2_GetActorRotation();
+                    loc.x = p.X + f.X * 300.0;
+                    loc.y = p.Y + f.Y * 300.0;
+                    loc.z = p.Z + 50.0;
+                    rot.yaw = r.Yaw;
+                    return "in front of the player";
+                }
+            }
+            return "the world origin";
+        };
+
         if (sub == "spawn")
         {
             if (args.size() < 3)
@@ -743,35 +805,9 @@ namespace ModConsole
                 out.Error("Class %s did not load", args[2].c_str());
                 return;
             }
-            // Explicit coordinates win. Otherwise spawn three metres in front
-            // of the local player, facing the same way, so the result is on
-            // screen -- the world origin is nowhere anyone is standing. A
-            // dedicated server has no local pawn and falls back to the origin.
-            PluginDebugVector  loc{};
-            PluginDebugRotator rot{};
-            const bool hasLoc = args.size() >= 6;
-            const char* where = "the world origin";
-            if (hasLoc)
-            {
-                loc.x = atof(args[3].c_str());
-                loc.y = atof(args[4].c_str());
-                loc.z = atof(args[5].c_str());
-                where = "the given coordinates";
-            }
-            else if (SDK::UWorld* world = SDK::UWorld::GetWorld())
-            {
-                if (SDK::APawn* pawn = SDK::UGameplayStatics::GetPlayerPawn(world, 0))
-                {
-                    const SDK::FVector  p = pawn->K2_GetActorLocation();
-                    const SDK::FVector  f = pawn->GetActorForwardVector();
-                    const SDK::FRotator r = pawn->K2_GetActorRotation();
-                    loc.x = p.X + f.X * 300.0;
-                    loc.y = p.Y + f.Y * 300.0;
-                    loc.z = p.Z + 50.0;
-                    rot.yaw = r.Yaw;
-                    where = "in front of the player";
-                }
-            }
+            PluginDebugVector  loc;
+            PluginDebugRotator rot;
+            const char* where = pickSpot(3, loc, rot);
             void* actor = pak->SpawnActor(cls, &loc, &rot);
             if (!actor)
             {
@@ -783,7 +819,57 @@ namespace ModConsole
             return;
         }
 
-        out.Error("usage: pak [list] | pak mount <path> [order] | pak unmount <#|path> | pak load <path> | pak loadclass <path> | pak spawn <class> [x y z]");
+        // A mesh asset is not an actor, so it needs one to carry it: the
+        // engine's own StaticMeshActor / SkeletalMeshActor, with the mesh
+        // assigned after the spawn. The component ships with Static mobility,
+        // and SetStaticMesh refuses to change a registered static component,
+        // so mobility goes to Movable first.
+        if (sub == "spawnmesh")
+        {
+            if (args.size() < 3)
+            {
+                out.Error("usage: pak spawnmesh </Game/Path/SM_Thing.SM_Thing> [x y z]   (static or skeletal mesh)");
+                return;
+            }
+            auto* mesh = static_cast<SDK::UObject*>(pak->LoadObject(args[2].c_str()));
+            if (!mesh)
+            {
+                out.Error("Mesh %s did not load", args[2].c_str());
+                return;
+            }
+            const bool isStatic   = mesh->IsA(SDK::UStaticMesh::StaticClass());
+            const bool isSkeletal = !isStatic && mesh->IsA(SDK::USkeletalMesh::StaticClass());
+            if (!isStatic && !isSkeletal)
+            {
+                out.Error("%s is a %s, not a StaticMesh or SkeletalMesh", args[2].c_str(),
+                          mesh->Class ? mesh->Class->GetName().c_str() : "?");
+                return;
+            }
+
+            PluginDebugVector  loc;
+            PluginDebugRotator rot;
+            const char* where = pickSpot(3, loc, rot);
+            void* cls = isStatic ? static_cast<void*>(SDK::AStaticMeshActor::StaticClass())
+                                 : static_cast<void*>(SDK::ASkeletalMeshActor::StaticClass());
+            auto* actor = static_cast<SDK::AActor*>(pak->SpawnActor(cls, &loc, &rot));
+            if (!actor)
+            {
+                out.Error("Could not spawn a carrier actor (no world?)");
+                return;
+            }
+
+            unsigned long code = 0;
+            if (!AssignMeshSEH(actor, mesh, isSkeletal, &code))
+            {
+                out.Error("Exception 0x%08lX assigning the mesh -- the carrier actor is left in the world", code);
+                return;
+            }
+            out.Notice("Spawned %s carrying %s", actor->GetFullName().c_str(), mesh->GetName().c_str());
+            out.Out("  at %.0f %.0f %.0f (%s)", loc.x, loc.y, loc.z, where);
+            return;
+        }
+
+        out.Error("usage: pak [list] | pak mount <path> [order] | pak unmount <#|path> | pak load <path> | pak loadclass <path> | pak spawn <class> [x y z] | pak spawnmesh <mesh> [x y z]");
     }
 
     static void Cmd_Version(const std::vector<std::string>&, Sink& out)
@@ -1165,8 +1251,8 @@ namespace ModConsole
                    &Cmd_Version, false });
 
         // Mounting, loading and spawning all touch engine state.
-        Register({ "pak",     "paks",       "pak [list] | pak mount <path> [order] | pak unmount <#|path> | pak load <path> | pak spawn <class> [x y z]",
-                   "List, mount or unmount pak files at runtime; load or spawn assets from them",
+        Register({ "pak",     "paks",       "pak [list] | pak mount <path> [order] | pak unmount <#|path> | pak load <path> | pak spawn <class> [x y z] | pak spawnmesh <mesh> [x y z]",
+                   "List, mount or unmount pak files at runtime; load, spawn or preview assets from them",
                    &Cmd_Pak,     true });
 
         Register({ "loglevel", "log",       "loglevel [level] | loglevel <plugin|*> <level|default>",
