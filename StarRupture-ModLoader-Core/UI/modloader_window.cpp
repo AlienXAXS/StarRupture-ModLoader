@@ -434,10 +434,26 @@ namespace UI::ModLoaderWindow
     }
 
     // Render one config row inside an already-open 3-column table:
-    //   Col 0 (Label)   -- setting name, description tooltip on hover
-    //   Col 1 (Widget)  -- the editable control, fills available width
-    //   Col 2 (Actions) -- blocking checkbox (keybind only) + reset button
-    static void RenderConfigEntry(ConfigKV& kv, const ConfigEntry* e, const char* pluginName)
+    //   Col 0 (Label)   -- setting name, wrapped to labelColWidth
+    //   Col 1 (Widget)  -- the editable control (empty for booleans -- their
+    //                      toggle lives in Col 2, see below)
+    //   Col 2 (Actions) -- blocking toggle (keybind only) + reset button,
+    //                      reset always anchored to the column's right edge
+    //                      so it lines up on every row regardless of what
+    //                      else Col 2 is showing
+    //   ...then, on a row with a description, a second line directly below
+    //   the label spanning Col 0 + Col 1 (up to where Col 2/actions starts)
+    //   as dimmed wrapped text -- Col 0 is NoClip (RenderConfigTab) so this
+    //   is allowed to draw past its own column's edge instead of being cut
+    //   off at it. Every entry type gets this treatment (no more hover-only
+    //   marquee).
+    //
+    // Col 0/1/2's *first* line is vertically centered against topRowH -- the
+    // taller of the label and a control's frame height -- so the widget,
+    // Block toggle and reset always sit level with the label, whether or
+    // not this row also has a description line underneath.
+    static void RenderConfigEntry(ConfigKV& kv, const ConfigEntry* e, const char* pluginName,
+                                   float labelColWidth, float actionsW)
     {
         ImGui::TableNextRow();
 
@@ -447,34 +463,43 @@ namespace UI::ModLoaderWindow
         bool showReset = e && e->defaultValue && e->defaultValue[0] &&
                          !(strcmp(kv.section, "General") == 0 && strcmp(kv.key, "Enabled") == 0);
 
-        // ---- Col 0: label ------------------------------------------------
+        const bool  isBool    = e && e->type == ConfigValueType::Boolean;
+        const bool  isKeybind = e && e->type == ConfigValueType::Keybind;
+        const bool  hasDesc   = e && e->description && e->description[0];
+        const float fh        = ImGui::GetFrameHeight();
+        const float spacingY  = ImGui::GetStyle().ItemSpacing.y;
+        const float rowTopY   = ImGui::GetCursorPosY();
+
+        // Measure where Col 2 starts before drawing anything -- the
+        // description line (below) wraps to that x, spanning Col 0 + Col 1
+        // without depending on Col 1's own stretch width. TableSetColumnIndex
+        // supports being visited out of order for exactly this.
+        ImGui::TableSetColumnIndex(2);
+        const float col2X = ImGui::GetCursorPosX();
         ImGui::TableSetColumnIndex(0);
-        ImGui::AlignTextToFramePadding();
+        const float descWrapWidth = col2X - ImGui::GetCursorPosX();
+
+        const float labelH  = ImGui::CalcTextSize(kv.key, nullptr, false, labelColWidth).y;
+        const float topRowH = labelH > fh ? labelH : fh;
+
+        // ---- Col 0: label ---------------------------------------------------
+        ImGui::TableSetColumnIndex(0);
+        ImGui::SetCursorPosY(rowTopY + (topRowH - labelH) * 0.5f);
+        ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + labelColWidth);
         ImGui::TextUnformatted(kv.key);
-        if (e && e->description && e->description[0] &&
-            ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
-            ImGui::SetTooltip("%s", e->description);
+        ImGui::PopTextWrapPos();
 
         // ---- Col 1: widget -----------------------------------------------
         ImGui::TableSetColumnIndex(1);
+        ImGui::SetCursorPosY(rowTopY + (topRowH - fh) * 0.5f);
         ImGui::SetNextItemWidth(-FLT_MIN); // fill the column
 
         bool widgetHovered = false;
-        const bool isBool = e && e->type == ConfigValueType::Boolean;
 
         if (isBool)
         {
-            // The toggle itself lives in Col 2 (next to reset); this column shows
-            // the description inline as a marquee so it is readable without a
-            // hover tooltip, scrolling only when it overflows the column.
-            if (e && e->description && e->description[0])
-            {
-                char descId[160];
-                snprintf(descId, sizeof(descId), "##desc%s", id);
-                ImGui::AlignTextToFramePadding();
-                UI::Theme::MarqueeLabel(descId, e->description,
-                                        ImGui::GetContentRegionAvail().x);
-            }
+            // Nothing here -- the toggle lives in Col 2 next to the reset
+            // button, and the description already moved under the label.
         }
         else if (e && e->type == ConfigValueType::Integer)
         {
@@ -538,7 +563,7 @@ namespace UI::ModLoaderWindow
             }
             widgetHovered = ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal);
         }
-        else if (e && e->type == ConfigValueType::Keybind)
+        else if (isKeybind)
         {
             // Current bind label + Rebind button, side by side, left-aligned.
             const char* bindLabel = (kv.value[0] != '\0') ? kv.value : "(none)";
@@ -576,14 +601,16 @@ namespace UI::ModLoaderWindow
             widgetHovered = ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal);
         }
 
-        if (e && e->description && e->description[0] && widgetHovered)
+        if (hasDesc && widgetHovered)
             ImGui::SetTooltip("%s", e->description);
 
-        // ---- Col 2: actions ----------------------------------------------
+        // ---- Col 2: actions ------------------------------------------------
         ImGui::TableSetColumnIndex(2);
+        const float colStartX = col2X;
+        const float colY      = rowTopY + (topRowH - fh) * 0.5f;
+        ImGui::SetCursorPosY(colY);
 
-        // Boolean toggle lives here (not in Col 1) so the description marquee
-        // can use the full widget column width.
+        // Boolean toggle lives here (not in Col 1) so Col 1 can stay empty.
         if (isBool)
         {
             // Accept the same spellings ConfigReadBool does, but always write back
@@ -601,11 +628,12 @@ namespace UI::ModLoaderWindow
                 NotifyConfigChangedLive(pluginName, kv);
                 CommitConfigChange(pluginName, kv);
             }
-            ImGui::SameLine();
         }
 
-        // Blocking checkbox (keybind rows only).
-        if (e && e->type == ConfigValueType::Keybind)
+        // Blocking toggle (keybind rows only) -- given a short visible label,
+        // not just a hover tooltip: unlabeled, it previously gave no visible
+        // hint at all that there was a second control here.
+        if (isKeybind)
         {
             wchar_t iniPath[MAX_PATH];
             bool bBlocking = false;
@@ -616,6 +644,9 @@ namespace UI::ModLoaderWindow
                 swprintf_s(wblkKey, L"%SBlocking", kv.key);
                 bBlocking = (GetPrivateProfileIntW(wsec, wblkKey, 0, iniPath) != 0);
             }
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextDisabled("Block");
+            ImGui::SameLine();
             char chkId[160];
             snprintf(chkId, sizeof(chkId), "##blk_%s_%s", kv.section, kv.key);
             if (UI::Theme::ToggleSwitch(chkId, &bBlocking))
@@ -634,15 +665,18 @@ namespace UI::ModLoaderWindow
                 ImGui::SetTooltip("Block: when ticked, this combo is consumed by the\n"
                                   "plugin -- the game will not also react to it.\n"
                                   "Enable if the key conflicts with a game action.");
-            ImGui::SameLine();
         }
 
-        // Reset button.
+        // Reset button -- always anchored to the same x (the column's right
+        // edge minus its own width), so it lines up on every row regardless
+        // of whether a toggle/label preceded it in this column.
         if (showReset)
         {
-            char resetId[160];
+            const float resetW = fh;
+            ImGui::SetCursorPos(ImVec2(colStartX + actionsW - resetW, colY));
+            char resetId[176];
             snprintf(resetId, sizeof(resetId), "R##r_%s_%s", kv.section, kv.key);
-            if (ImGui::SmallButton(resetId))
+            if (ImGui::Button(resetId, ImVec2(resetW, fh)))
             {
                 strncpy_s(kv.value, e->defaultValue, _TRUNCATE);
                 NotifyConfigChangedLive(pluginName, kv);
@@ -650,6 +684,21 @@ namespace UI::ModLoaderWindow
             }
             if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
                 ImGui::SetTooltip("Reset to default: %s", e->defaultValue);
+        }
+
+        // ---- Description: its own line under the label, spanning Col 0 +
+        // Col 1 (Col 0 is NoClip -- see RenderConfigTab) instead of being
+        // squeezed into the label column alone, so a short description
+        // stays on one line and only a genuinely long one wraps.
+        if (hasDesc)
+        {
+            ImGui::TableSetColumnIndex(0);
+            ImGui::SetCursorPosY(rowTopY + topRowH + spacingY);
+            ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + descWrapWidth);
+            ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
+            ImGui::TextUnformatted(e->description);
+            ImGui::PopStyleColor();
+            ImGui::PopTextWrapPos();
         }
     }
 
@@ -886,9 +935,17 @@ namespace UI::ModLoaderWindow
                 LoadConfigEntries(info->name);
             }
 
+            // One indent for every section on this page, "Plugin Tools"
+            // included, so its heading lines up with "Drone"/"Interaction"/etc.
+            // instead of sitting flush with the window edge while they sit
+            // inside a table's own padding.
+            const float kSectionIndent = 8.0f;
+
             // Plugin panels button row (shown before config entries)
+            ImGui::Indent(kSectionIndent);
             ImGui::SeparatorText("Plugin Tools");
             UI::PluginPanelRegistry::RenderPanelButtons(imgui, info->name);
+            ImGui::Unindent(kSectionIndent);
             ImGui::Spacing();
 
             if (s_configEntries.empty())
@@ -899,20 +956,50 @@ namespace UI::ModLoaderWindow
             {
                 const ConfigSchema* schema = ModLoaderLogger::GetPluginSchema(info->name);
 
-                ImGui::TextDisabled("Hover a setting for its description.  Changes are saved immediately.");
+                ImGui::TextDisabled("Changes are saved immediately.");
                 ImGui::Spacing();
 
-                // Actions column width: blocking checkbox + spacing + reset button.
-                // Sized to fit the widest possible content (keybind rows).
-                const float fh       = ImGui::GetFrameHeight();
-                const float spacing  = ImGui::GetStyle().ItemSpacing.x;
-                const float actionsW = fh + spacing + fh * 0.75f; // checkbox + R button
+                const float fh      = ImGui::GetFrameHeight();
+                const float spacing = ImGui::GetStyle().ItemSpacing.x;
+
+                // Actions column: sized to fit its widest possible content --
+                // a keybind row's "Block" label plus its toggle -- with the
+                // reset button always anchored to the column's right edge
+                // (RenderConfigEntry) so it lines up on every row regardless
+                // of whether a toggle/label came before it in this column.
+                const float toggleW     = UI::Theme::ToggleSwitchSize().x;
+                const float blockLabelW = ImGui::CalcTextSize("Block").x;
+                const float resetW      = fh;
+                const float actionsW    = blockLabelW + spacing + toggleW + spacing + resetW;
+
+                // Label column: fits the widest label on this plugin's page --
+                // uncapped by a fixed constant, so a label only wraps
+                // (RenderConfigEntry) when the window genuinely doesn't have
+                // room for it, capped instead by what's actually left over
+                // once the actions column and a usable minimum for the
+                // widget column are reserved.
+                const float kLabelColMin  = 130.0f;
+                const float kMinWidgetCol = 160.0f;
+                float labelColWidth = kLabelColMin;
+                for (const auto& kv : s_configEntries)
+                {
+                    const float w = ImGui::CalcTextSize(kv.key).x;
+                    if (w > labelColWidth) labelColWidth = w;
+                }
+                labelColWidth += ImGui::GetStyle().CellPadding.x; // breathing room before the wrap point
+
+                const float maxLabelColWidth = ImGui::GetContentRegionAvail().x - actionsW - kMinWidgetCol;
+                if (labelColWidth > maxLabelColWidth && maxLabelColWidth > kLabelColMin)
+                    labelColWidth = maxLabelColWidth;
+
+                // One cell padding for every section table on this page.
+                const ImVec2 kCellPadding(8.0f, 8.0f);
 
                 // One 3-column table per section so separators span full width
                 // and all rows within a section share the same column edges.
-                //   Col 0  Label   -- fixed 160px
+                //   Col 0  Label   -- fixed, sized above
                 //   Col 1  Widget  -- stretches to fill remaining space
-                //   Col 2  Actions -- fixed (blocking checkbox + reset)
+                //   Col 2  Actions -- fixed (blocking toggle + reset)
                 const ImGuiTableFlags tblFlags =
                     ImGuiTableFlags_BordersInnerH |
                     ImGuiTableFlags_PadOuterX;
@@ -920,35 +1007,61 @@ namespace UI::ModLoaderWindow
                 const char* curSection = nullptr;
                 bool        tableOpen  = false;
 
+                // Closes whatever section table is currently open, undoing
+                // the indent/padding pushed when it was opened below. Called
+                // both between sections and after the last one.
+                auto closeSectionTable = [&]()
+                {
+                    if (!tableOpen) return;
+                    ImGui::EndTable();
+                    ImGui::PopStyleVar(); // CellPadding, pushed when the table opened
+                    ImGui::Unindent(kSectionIndent);
+                    tableOpen = false;
+                };
+
                 for (auto& kv : s_configEntries)
                 {
                     if (!curSection || strcmp(curSection, kv.section) != 0)
                     {
-                        if (tableOpen) { ImGui::EndTable(); tableOpen = false; }
+                        closeSectionTable();
                         if (curSection) ImGui::Spacing();
 
+                        ImGui::Indent(kSectionIndent);
                         ImGui::SeparatorText(kv.section);
                         curSection = kv.section;
 
+                        ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, kCellPadding);
                         char tblId[128];
                         snprintf(tblId, sizeof(tblId), "##cfg_%s", kv.section);
                         if (ImGui::BeginTable(tblId, 3, tblFlags))
                         {
-                            ImGui::TableSetupColumn("##lbl",    ImGuiTableColumnFlags_WidthFixed,   160.0f);
+                            // NoClip: a description longer than the label column
+                            // (RenderConfigEntry) is deliberately allowed to draw
+                            // past this column's right edge, into Col 1's space,
+                            // instead of being clipped at it.
+                            ImGui::TableSetupColumn("##lbl",    ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoClip, labelColWidth);
                             ImGui::TableSetupColumn("##widget", ImGuiTableColumnFlags_WidthStretch);
                             ImGui::TableSetupColumn("##acts",   ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, actionsW);
                             tableOpen = true;
+                        }
+                        else
+                        {
+                            // Table fully clipped (e.g. scrolled out) -- undo
+                            // what was pushed above since closeSectionTable()
+                            // won't run for a table that never opened.
+                            ImGui::PopStyleVar();
+                            ImGui::Unindent(kSectionIndent);
                         }
                     }
 
                     if (tableOpen)
                     {
                         const ConfigEntry* entry = FindSchemaEntry(schema, kv.section, kv.key);
-                        RenderConfigEntry(kv, entry, info->name);
+                        RenderConfigEntry(kv, entry, info->name, labelColWidth, actionsW);
                     }
                 }
 
-                if (tableOpen) ImGui::EndTable();
+                closeSectionTable();
             }
         }
 

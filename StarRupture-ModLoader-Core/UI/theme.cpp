@@ -6,7 +6,6 @@
 #include <cstring>
 #include <cstdio>
 #include <cfloat>
-#include <unordered_map>
 
 // FindGlyph(), ImFont::FontSize, and ImTextCharFromUtf8() used by
 // IconTabBar() for glyph-bbox centering are internal-only APIs -- not
@@ -459,14 +458,28 @@ namespace UI::Theme
         return newActive;
     }
 
+    ImVec2 ToggleSwitchSize()
+    {
+        const float frameH = ImGui::GetFrameHeight();
+        return ImVec2(frameH * 0.72f * 1.8f, frameH);
+    }
+
     bool ToggleSwitch(const char* label, bool* v)
     {
-        const float height = ImGui::GetFrameHeight() * 0.72f;
-        const float width  = height * 1.8f;
-        const float notch   = height * 0.3f;
+        // The reserved layout size is the full frame height, same as a
+        // button/slider/input box, so a toggle sitting next to one of those
+        // in a row lines up with it without the caller having to compensate.
+        // The drawn track stays smaller than that (0.72x) for its own look;
+        // padY centers it within the reserved height.
+        const ImVec2 sz     = ToggleSwitchSize();
+        const float  frameH = sz.y;
+        const float  width  = sz.x;
+        const float  height = frameH * 0.72f;
+        const float  notch  = height * 0.3f;
+        const float  padY   = (frameH - height) * 0.5f;
 
         ImVec2 pos = ImGui::GetCursorScreenPos();
-        ImGui::InvisibleButton(label, ImVec2(width, height));
+        ImGui::InvisibleButton(label, ImVec2(width, frameH));
         bool changed = false;
         if (ImGui::IsItemClicked())
         {
@@ -475,8 +488,8 @@ namespace UI::Theme
         }
 
         ImDrawList* draw = ImGui::GetWindowDrawList();
-        ImVec2 trackMin = pos;
-        ImVec2 trackMax = ImVec2(pos.x + width, pos.y + height);
+        ImVec2 trackMin = ImVec2(pos.x, pos.y + padY);
+        ImVec2 trackMax = ImVec2(pos.x + width, pos.y + padY + height);
 
         ImU32 trackColor = *v
             ? ImGui::GetColorU32(ImVec4(kAccent.x, kAccent.y, kAccent.z, 0.35f))
@@ -512,72 +525,11 @@ namespace UI::Theme
         if (hash != label)
         {
             ImGui::SameLine();
+            ImGui::AlignTextToFramePadding(); // match the reserved frameH height above
             ImGui::TextUnformatted(label, hash);
         }
 
         return changed;
-    }
-
-    void MarqueeLabel(const char* id, const char* text, float width)
-    {
-        if (width <= 0.0f)
-            width = ImGui::GetContentRegionAvail().x;
-
-        const ImVec2 textSize = ImGui::CalcTextSize(text);
-        const float  lineH    = ImGui::GetTextLineHeight();
-        const ImVec2 pos      = ImGui::GetCursorScreenPos();
-
-        // Reserve the box so the cursor advances like a normal text item and
-        // tables/SameLine() lay out correctly regardless of scroll state.
-        ImGui::Dummy(ImVec2(width, lineH));
-
-        ImDrawList* draw = ImGui::GetWindowDrawList();
-        const ImU32 col  = ImGui::GetColorU32(ImGuiCol_Text);
-        const float overflow = textSize.x - width;
-
-        if (overflow <= 0.0f)
-        {
-            // Fits -- draw statically, no scroll state needed.
-            draw->AddText(pos, col, text);
-            return;
-        }
-
-        // Per-label scroll phase, keyed by a stable id. Phase runs 0..1 forward
-        // (scroll left), holds at each end, then reverses -- a ping-pong so both
-        // ends of the string are readable.
-        static std::unordered_map<ImGuiID, float> s_phase;
-        const ImGuiID key = ImGui::GetID(id);
-        float& phase = s_phase[key];
-
-        // Speed is in pixels/sec; convert to phase/sec over the overflow span so
-        // long and short overflows scroll at a consistent visual rate.
-        const float kPixelsPerSec = 30.0f;
-        const float kPauseSecs    = 1.2f;
-        const float span          = overflow;
-        const float dt            = ImGui::GetIO().DeltaTime;
-
-        // Encode pause into the phase range: [-pauseFrac, 0] left hold,
-        // [1, 1+pauseFrac] right hold, wrapping via a triangle wave over a
-        // period that includes both holds.
-        const float scrollSecs = span / kPixelsPerSec;
-        const float period     = 2.0f * (scrollSecs + kPauseSecs);
-        phase += dt;
-        if (phase >= period) phase -= period * (float)(int)(phase / period);
-
-        float t = phase;
-        float scroll; // 0 = fully left (start), 1 = fully right (end shown)
-        if (t < kPauseSecs)                              scroll = 0.0f;                       // hold start
-        else if (t < kPauseSecs + scrollSecs)            scroll = (t - kPauseSecs) / scrollSecs;
-        else if (t < 2.0f * kPauseSecs + scrollSecs)     scroll = 1.0f;                       // hold end
-        else                                             scroll = 1.0f - (t - (2.0f * kPauseSecs + scrollSecs)) / scrollSecs;
-
-        const float offset = scroll * overflow;
-
-        // Clip to the reserved box so the scrolled text does not bleed into
-        // neighbouring columns/widgets.
-        draw->PushClipRect(pos, ImVec2(pos.x + width, pos.y + lineH), true);
-        draw->AddText(ImVec2(pos.x - offset, pos.y), col, text);
-        draw->PopClipRect();
     }
 
     namespace Icons
