@@ -44,4 +44,12 @@ namespace GameThreadDispatch
     // thread": posting is always safe, and one deferred frame during startup is
     // not worth a special case.
     bool IsGameThread();
+
+    // True once Drain() has run at least once, i.e. once the game thread has
+    // an identity and IsGameThread() means something. Before that point the
+    // engine has not ticked: the main thread is still inside startup (parked
+    // or held by the loader's init hooks) and nothing else is touching engine
+    // state, so a caller that must run "on the game thread" can run inline
+    // rather than queue behind a tick that has not started.
+    bool HasTicked();
 }

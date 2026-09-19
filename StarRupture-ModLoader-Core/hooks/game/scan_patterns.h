@@ -356,6 +356,79 @@ namespace ScanPatterns
 		"40 55 53 56 57 41 54 41 55 41 56 41 57 48 8D AC 24 ?? ?? ?? ?? 48 81 EC 58 02 00 00 48 8B F1 E8";
 #endif
 
+	// -----------------------------------------------------------------------
+	// Runtime pak mounting  (client + server, see hooks/game/pak_mount/)
+	//
+	// Three patterns, all confirmed unique in both the client
+	// (StarRuptureGameSteam-Win64-Shipping) and server
+	// (StarRuptureServerEOS-Win64-Shipping) binaries, so there is no per-build
+	// variant. All three are OPTIONAL at preflight: losing one costs plugins
+	// the ability to mount paks at runtime (hooks->Pak->IsAvailable() goes
+	// false) and nothing else.
+	// -----------------------------------------------------------------------
+
+	// FPakFileModule::ShutdownModule -- not a function we ever call. It is the
+	// anchor for two things that have no pattern-friendly body of their own:
+	//
+	//   FPlatformFileManager::Get()  is  `lea rax, Singleton ; ret`  -- eight
+	//   bytes, and the same eight bytes as every other such getter.
+	//
+	//   FPlatformFileManager::FindPlatformFile(const TCHAR*) walks the platform
+	//   file chain by GetName() and is how the engine itself finds the
+	//   FPakPlatformFile instance ("PakFile") when it needs it.
+	//
+	// ShutdownModule calls both back to back:
+	//
+	//   +0x00  40 57                push rdi
+	//   +0x02  48 83 EC 20          sub rsp, 20h
+	//   +0x06  48 83 79 08 00       cmp qword ptr [rcx+8], 0
+	//   +0x0B  48 8B F9             mov rdi, rcx
+	//   +0x0E  74 ??                jz  short
+	//   +0x10  48 89 5C 24 30       mov [rsp+30h], rbx
+	//   +0x15  E8 rel32             call FPlatformFileManager::Get       <-- decoded
+	//   +0x1A  48 8B 4F 08          mov rcx, [rdi+8]
+	//   +0x1E  48 8B D8             mov rbx, rax
+	//   +0x21  48 8B 11             mov rdx, [rcx]
+	//   +0x24  FF 52 70             call [rdx+70h]  (IPlatformFile::GetName)
+	//   +0x27  48 8B D0             mov rdx, rax
+	//   +0x2A  48 8B CB             mov rcx, rbx
+	//   +0x2D  E8 rel32             call FPlatformFileManager::FindPlatformFile  <-- decoded
+	//
+	// The pattern runs through both call opcodes so a match proves the two
+	// offsets below are the right instructions.
+	inline constexpr auto FPakFileModule_ShutdownModule =
+		"40 57 48 83 EC 20 48 83 79 08 00 48 8B F9 74 ?? 48 89 5C 24 30 E8 ?? ?? ?? ?? 48 8B 4F 08 48 8B D8 48 8B 11 FF 52 70 48 8B D0 48 8B CB E8";
+	inline constexpr int FPakFileModule_ShutdownModule_GetCallOffset  = 0x15;
+	inline constexpr int FPakFileModule_ShutdownModule_FindCallOffset = 0x2D;
+
+	// IPakFile* __fastcall FPakPlatformFile::HandleMountPakDelegate(
+	//     FPakPlatformFile* this, const FString* PakFilePath, int PakOrder)
+	//
+	// What FCoreDelegates::MountPak is bound to. Builds an FPakMountArgs from
+	// the path and order (order -1 = derive from the path), calls
+	// FPakPlatformFile::Mount, and hands back the IPakFile* (or null). Mount
+	// itself also opens the sibling .utoc/.ucas IoStore container when one
+	// exists next to the pak and registers it with the package store, which is
+	// what makes cooked UE5 assets in the container loadable -- so this one
+	// call covers both legacy paks and IoStore triplets. Chosen over calling
+	// Mount directly because Mount takes a 32-byte args struct and hands back
+	// a refcounted FPakListEntry the caller must release; the delegate handler
+	// does all of that for us.
+	inline constexpr auto FPakPlatformFile_HandleMountPakDelegate =
+		"48 89 5C 24 ?? 48 89 6C 24 ?? 48 89 74 24 ?? 48 89 7C 24 ?? 41 56 48 83 EC 70 83 7A";
+
+	// bool __fastcall FPakPlatformFile::HandleUnmountPakDelegate(
+	//     FPakPlatformFile* this, const FString* PakFilePath)
+	//
+	// What FCoreDelegates::OnUnmountPak is bound to. Forwards to
+	// FPakPlatformFile::Unmount(const TCHAR*), which drops the pak from the
+	// pak list, unmounts its IoStore container from the dispatcher and the
+	// package store, and tells the precacher. Matching is a case-insensitive
+	// string compare against the filename the pak was mounted with, so the
+	// exact same spelling has to be passed back.
+	inline constexpr auto FPakPlatformFile_HandleUnmountPakDelegate =
+		"48 89 5C 24 ?? 48 89 74 24 ?? 57 48 83 EC 20 83 7A ?? ?? 48 8D 3D ?? ?? ?? ?? 48 8B DA 48 8B F1 74 ?? 48 8B 12";
+
 	// FHttpServerResponse::Create(__int64 *retStorage, const TArray<uint8>& body, const FString& contentType)
 	// Used to construct a 200 OK response for mod-owned HTTP routes.
 	// Confirmed via IDA: FPerfCounters::ProcessStatsRequest calls this with body in RDX, FString in R8.
@@ -530,6 +603,12 @@ namespace ScanPatterns
 
 		// Optional: losing it only costs engine-command fallthrough in the -console window.
 		{ "UGameEngine::Exec",                         UGameEngine_Exec,                         false },
+
+		// Optional: losing any of these only makes runtime pak mounting
+		// (hooks->Pak) unavailable to plugins. Nothing the loader itself needs.
+		{ "FPakFileModule::ShutdownModule",            FPakFileModule_ShutdownModule,            false },
+		{ "FPakPlatformFile::HandleMountPakDelegate",  FPakPlatformFile_HandleMountPakDelegate,  false },
+		{ "FPakPlatformFile::HandleUnmountPakDelegate", FPakPlatformFile_HandleUnmountPakDelegate, false },
 
 		// Reference-only patterns -- kept in the header but not currently
 		// resolved by any modloader code. Scanned and logged, never fatal.

@@ -49,6 +49,11 @@ namespace GameThreadDispatch
         return id != 0 && id == GetCurrentThreadId();
     }
 
+    bool HasTicked()
+    {
+        return g_gameThreadId.load(std::memory_order_relaxed) != 0;
+    }
+
     void Drain()
     {
         g_gameThreadId.store(GetCurrentThreadId(), std::memory_order_relaxed);

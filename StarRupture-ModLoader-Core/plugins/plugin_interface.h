@@ -522,9 +522,90 @@
 // v65 - Game update
 // v66 - Game Update
 
+// v67 (2026-09-19): Added IPluginPak (hooks->Pak) -- runtime pak mounting and
+//      asset loading, on every build. Purely additive: the pointer is appended
+//      at the end of IPluginHooks and nothing existing shifts, so MIN remains
+//      66. See PakLoading.md for the full guide.
+//
+//      WHAT IT DOES: mounts a .pak (and the .utoc/.ucas IoStore container that
+//      sits next to it, when there is one) into the running engine through the
+//      same entry point the engine's own chunk downloader uses --
+//      FPakPlatformFile::HandleMountPakDelegate, which is what
+//      FCoreDelegates::MountPak is bound to -- and unmounts it again through
+//      its partner. Three AOB patterns, identical in both binaries, and all
+//      optional at preflight: IsAvailable() is false when one is missing and
+//      every mount call then returns PLUGIN_PAK_UNAVAILABLE.
+//
+//      IoStore, not just paks: this game ships cooked content as IoStore
+//      containers, and the UE5 package loader only finds packages through the
+//      package store. A bare .pak with .uasset files inside mounts fine and
+//      is useless -- LoadObject will not find anything in it. Cook mods as
+//      IoStore (the .pak/.utoc/.ucas triplet, same base name) and keep the
+//      three files together; the engine opens the .utoc by changing the
+//      pak's extension. The pak's own file index still serves loose files
+//      (ini, txt, anything not a package), so a legacy pak is not rejected.
+//
+//      Three ways in, one registry:
+//        MountFile     -- a pak on disk (absolute, or relative to your plugin's
+//                         folder under Plugins\<name>\).
+//        MountMemory   -- a pak (and optional container) you already hold in
+//                         memory. The engine can only read paks through its
+//                         file layer, so the bytes are written to
+//                         ModLoader\PakCache\<plugin>\<name>.* first and
+//                         mounted from there; a content hash sidecar skips the
+//                         write when the cache already matches.
+//        MountResource -- the same, sourced from RCDATA resources in your own
+//                         DLL, so a plugin can ship as one file.
+//
+//      The registry is what stops a pak being mounted twice. Mounting a path
+//      the engine already has -- by you, by another plugin, by a plugin that
+//      has since been unloaded, or by the game at startup (~mods, LogicMods)
+//      -- returns PLUGIN_PAK_ALREADY_MOUNTED with the existing handle, which
+//      is a success, and adopts an orphaned mount as yours. Nothing is mounted
+//      a second time, because the engine would happily do that and serve
+//      whichever copy sorted first.
+//
+//      Unmount is real but not safe by construction. The engine drops the pak
+//      and its container, but cannot un-load objects already created from its
+//      packages: they stay alive with their bulk data (texture mips, audio,
+//      streamed mesh LODs) now unreachable, and the next streaming request
+//      into them is undefined behaviour. The loader cannot see which live
+//      objects came from which container, so it does not try to decide for
+//      you. Unmount when nothing you loaded from the pak is still referenced
+//      -- typically between sessions, never with actors from it in the world.
+//      Plugin unload does NOT unmount: the pak stays, its record is marked
+//      orphaned, and a later mount of the same path adopts it. The console's
+//      `pak unmount` is the operator's override.
+//
+//      Mounting runs on the game thread. From PluginInit (main thread parked)
+//      or a game-thread callback the call is direct; from any other thread
+//      it is queued to the next tick and waited on, and PLUGIN_PAK_TIMEOUT
+//      means the request is still queued, not that it failed.
+//
+//      Order: paks are searched highest order first. The engine derives an
+//      order from the path -- 3 for a pak under Content/Paks, 0 for anywhere
+//      else -- so a pak mounted from a plugin folder with the engine default
+//      would lose every file collision to the game's own paks.
+//      PLUGIN_PAK_ORDER_DEFAULT therefore means 100, above every stock pak,
+//      matching the engine's own "_P" patch-pak convention. Pass an explicit
+//      value to sit elsewhere.
+//
+//      Asset helpers: LoadObject / LoadClass wrap StaticLoadObject so a plugin
+//      does not have to build the call itself; SpawnActor spawns a class at a
+//      location through UGameplayStatics. All three are game-thread only and
+//      obey the same dispatch rule as mounting.
+//
+//      ModActor: PluginPakMountOptions::modActorClass names a Blueprint class
+//      (e.g. "/Game/Mods/MyMod/ModActor.ModActor_C") the loader spawns in
+//      every world that begins play while the pak is mounted -- the UE4SS
+//      BPModLoader convention, so a Blueprint mod authored for that loader
+//      works under this one unchanged. PreBeginPlay is called on the actor
+//      before its BeginPlay and PostBeginPlay after, when the class defines
+//      them. onModActorSpawned lets the plugin take the actor from there.
+
 #define PLUGIN_INTERFACE_VERSION_MIN 66
-#define PLUGIN_INTERFACE_VERSION_MAX 66
-#define PLUGIN_INTERFACE_VERSION 66
+#define PLUGIN_INTERFACE_VERSION_MAX 67
+#define PLUGIN_INTERFACE_VERSION 67
 
 enum class PluginLogLevel { Trace = 0, Debug = 1, Info = 2, Warn = 3, Error = 4 };
 enum class ConfigValueType { String, Integer, Float, Boolean, Keybind };
@@ -2311,6 +2392,142 @@ struct IPluginGameMenu
 	bool (*IsAvailable)();
 };
 
+// ---------------------------------------------------------------------------
+// Pak mounting and asset loading (v67) -- all builds
+//
+// Mount pak files (and their IoStore containers) into the running engine,
+// keep track of what is mounted so nothing is mounted twice, and load or
+// spawn what is inside. See the v67 changelog entry above and PakLoading.md
+// for the rules that matter -- IoStore vs bare paks, why unmount is your
+// risk, and the threading model.
+// ---------------------------------------------------------------------------
+typedef void* PluginPakHandle;
+
+enum PluginPakResult : int
+{
+	PLUGIN_PAK_OK                 = 0,    // mounted (or unmounted) by this call
+	PLUGIN_PAK_ALREADY_MOUNTED    = 1,    // success: the engine already had it; outHandle names the existing mount
+	PLUGIN_PAK_UNAVAILABLE        = -1,   // the engine entry points did not resolve on this build (IsAvailable() == false)
+	PLUGIN_PAK_INVALID_ARGUMENT   = -2,   // null/empty argument, or a memory image with a .utoc but no .ucas
+	PLUGIN_PAK_FILE_NOT_FOUND     = -3,   // the pak path does not exist
+	PLUGIN_PAK_ENGINE_REFUSED     = -4,   // FPakPlatformFile::Mount returned failure -- unreadable, bad magic, encrypted, bad container; the engine log (LogPakFile) says which
+	PLUGIN_PAK_CACHE_WRITE_FAILED = -5,   // MountMemory/MountResource could not write the ModLoader\PakCache folder
+	PLUGIN_PAK_RESOURCE_NOT_FOUND = -6,   // MountResource: a named resource is not in the module
+	PLUGIN_PAK_NOT_MOUNTED        = -7,   // Unmount: the handle is not a live mount
+	PLUGIN_PAK_NOT_OWNER          = -8,   // Unmount: the mount belongs to another plugin, or the engine mounted it at startup
+	PLUGIN_PAK_TIMEOUT            = -9,   // the game thread did not run the request within the wait; it is still queued
+	PLUGIN_PAK_FAULT              = -10,  // the engine call raised an exception (logged with the address)
+};
+
+// Search priority for a mount. Higher wins a file collision. The default
+// resolves to 100 -- above every stock pak, the engine's own "_P" patch
+// convention. See the v67 notes for why the engine's own default would not do.
+#define PLUGIN_PAK_ORDER_DEFAULT (-1)
+
+// Fired on the GAME THREAD after the loader spawns a pak's ModActor in a
+// world, once per world begin play. `actor` and `world` are AActor* / UWorld*.
+typedef void (*PluginPakModActorCallback)(PluginPakHandle pak, void* actor, void* world, void* userData);
+
+struct PluginPakMountOptions
+{
+	int order;                                   // PLUGIN_PAK_ORDER_DEFAULT or an explicit value
+
+	// Optional. Full object path of a Blueprint class inside the pak, e.g.
+	// "/Game/Mods/MyMod/ModActor.ModActor_C". Spawned by the loader in every
+	// world that begins play while the pak is mounted (and immediately, if a
+	// world is already in play when you mount). Null to opt out.
+	const char*               modActorClass;
+	PluginPakModActorCallback onModActorSpawned;   // optional, may be null
+	void*                     userData;            // passed back to onModActorSpawned
+};
+
+// A pak held in memory. `name` is the cache file base name (no extension);
+// utoc/ucas are optional and go together -- a .utoc without its .ucas is an
+// error. The buffers are only read during the call.
+struct PluginPakMemoryImage
+{
+	const char* name;
+	const void* pak;   size_t pakSize;
+	const void* utoc;  size_t utocSize;
+	const void* ucas;  size_t ucasSize;
+};
+
+struct PluginPakInfo
+{
+	PluginPakHandle handle;         // null for a pak the loader does not track (the game's own, ~mods, LogicMods)
+	char pakPath[512];              // absolute, forward slashes, UTF-8
+	char mountPoint[256];           // the pak's mount point, e.g. "../../../StarRupture/Content/"
+	char owner[64];                 // plugin name, "console", or "" when nobody in the loader mounted it
+	int  order;
+	int  pakchunkIndex;             // -1 when the name carries no pakchunkN
+	int  numFiles;                  // entries in the pak's own index only; IoStore packages are not counted
+	bool ownedByYou;                // owner == the self you passed
+	bool ownerUnloaded;             // mounted by a plugin that has since been unloaded (orphaned)
+};
+
+struct IPluginPak
+{
+	// False when the pak entry points did not resolve on this build. Every
+	// Mount* call then returns PLUGIN_PAK_UNAVAILABLE; the asset helpers
+	// still work, since they do not depend on those patterns.
+	bool (*IsAvailable)();
+
+	// Mount a pak file on disk. pakPath is UTF-8, absolute or relative to
+	// Plugins\<your plugin>\. options may be null for defaults. On
+	// PLUGIN_PAK_OK or PLUGIN_PAK_ALREADY_MOUNTED, *outHandle (if non-null)
+	// receives the mount's handle.
+	PluginPakResult (*MountFile)(const IPluginSelf* self, const char* pakPath,
+	                             const PluginPakMountOptions* options, PluginPakHandle* outHandle);
+
+	// Mount a pak you hold in memory. Written to the ModLoader\PakCache folder
+	// (per plugin, <name>.pak + .utoc/.ucas) and mounted from there; the write is skipped
+	// when the cached copy already has the same content. If that path is
+	// already mounted and the content differs, the mount is left alone and
+	// PLUGIN_PAK_ALREADY_MOUNTED is returned with a warning in the log --
+	// the engine holds the file open, and a restart picks the new bytes up.
+	PluginPakResult (*MountMemory)(const IPluginSelf* self, const PluginPakMemoryImage* image,
+	                               const PluginPakMountOptions* options, PluginPakHandle* outHandle);
+
+	// MountMemory sourced from RCDATA resources in `module` (your own DLL's
+	// HMODULE, typically saved in DllMain). Resource names are the string or
+	// decimal id the .rc used; utocResource/ucasResource may be null for a
+	// legacy pak. cacheName is the cache base name, or null to use
+	// pakResource.
+	PluginPakResult (*MountResource)(const IPluginSelf* self, void* module,
+	                                 const char* pakResource, const char* utocResource, const char* ucasResource,
+	                                 const char* cacheName, const PluginPakMountOptions* options,
+	                                 PluginPakHandle* outHandle);
+
+	// Unmount one of your mounts. Read the v67 notes before calling this
+	// with anything loaded from the pak still alive.
+	PluginPakResult (*Unmount)(const IPluginSelf* self, PluginPakHandle handle);
+
+	// True when the engine currently has this path mounted, whoever mounted it.
+	bool (*IsMounted)(const char* pakPath);
+
+	// Copy every pak the engine has mounted into out (up to maxOut), loader
+	// bookkeeping attached where there is any. Returns the total count, which
+	// may exceed maxOut; call again with a bigger buffer if it does. self may
+	// be null (ownedByYou is then always false).
+	int (*GetMountedInto)(const IPluginSelf* self, PluginPakInfo* out, int maxOut);
+
+	// StaticLoadObject by full object path, e.g. "/Game/Mods/MyMod/T_Icon.T_Icon".
+	// Returns the UObject* or null. Game thread only (dispatched and waited on
+	// from elsewhere, like mounting).
+	void* (*LoadObject)(const char* objectPath);
+
+	// Same, for a class: "/Game/Mods/MyMod/BP_Thing.BP_Thing_C". Returns UClass*.
+	void* (*LoadClass)(const char* classPath);
+
+	// Spawn actorClass (a UClass* from LoadClass) in the current world at
+	// location/rotation (either may be null for origin/identity). Returns the
+	// AActor* or null. Game thread only, same dispatch rule.
+	void* (*SpawnActor)(void* actorClass, const PluginDebugVector* location, const PluginDebugRotator* rotation);
+
+	// Human-readable name for a result code, for your own log lines.
+	const char* (*ResultToString)(PluginPakResult result);
+};
+
 struct IPluginHooks
 {
 	IPluginSpawnerHooks*   Spawner;        // v14
@@ -2336,6 +2553,7 @@ struct IPluginHooks
 	IPluginObjectProperties* ObjectProperties; // v47 -- appended at end, do not relocate
 	IPluginConsole*        Console;         // v63 -- appended at end, do not relocate
 	IPluginGameMenu*       GameMenu;        // v64 -- client only, null on server/generic; appended at end, do not relocate
+	IPluginPak*            Pak;             // v67 -- all builds; appended at end, do not relocate
 };
 
 // ---------------------------------------------------------------------------

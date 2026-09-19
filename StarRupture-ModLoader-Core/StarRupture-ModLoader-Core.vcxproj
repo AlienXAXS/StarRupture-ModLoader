@@ -420,6 +420,7 @@
     <ClInclude Include="hooks\game\crash_reporter\crash_dialog.h" />
     <ClInclude Include="hooks\game\console_command\console_command.h" />
     <ClInclude Include="hooks\game\engine_exec\engine_exec.h" />
+    <ClInclude Include="hooks\game\pak_mount\pak_mount.h" />
     <ClInclude Include="hooks\game\debug_draw\debug_draw.h" />
     <ClInclude Include="hooks\game\crash_reporter\crash_reporter.h" />
     <ClInclude Include="hooks\game\log_verbosity\log_verbosity.h" />
@@ -496,6 +497,7 @@
     <ClInclude Include="plugins\known_gobjects.generated.h" />
     <ClInclude Include="plugins\plugin_hook_report.h" />
     <ClInclude Include="plugins\plugin_manager.h" />
+    <ClInclude Include="plugins\pak_registry.h" />
     <ClInclude Include="UI\splash_window.h" />
     <ClInclude Include="utils\pak_list.h" />
     <ClInclude Include="utils\thread_utils.h" />
@@ -550,6 +552,7 @@
     <ClCompile Include="hooks\game\crash_reporter\crash_dialog.cpp" />
     <ClCompile Include="hooks\game\console_command\console_command.cpp" />
     <ClCompile Include="hooks\game\engine_exec\engine_exec.cpp" />
+    <ClCompile Include="hooks\game\pak_mount\pak_mount.cpp" />
     <ClCompile Include="hooks\game\debug_draw\debug_draw.cpp" />
     <ClCompile Include="hooks\game\crash_reporter\crash_reporter.cpp" />
     <ClCompile Include="hooks\game\log_verbosity\log_verbosity.cpp" />
@@ -651,6 +654,7 @@
     <ClCompile Include="console\server_console.cpp" />
     <ClCompile Include="plugins\plugin_hook_report.cpp" />
     <ClCompile Include="plugins\plugin_manager.cpp" />
+    <ClCompile Include="plugins\pak_registry.cpp" />
     <ClCompile Include="UI\splash_window.cpp" />
   </ItemGroup>
   <ItemGroup>
