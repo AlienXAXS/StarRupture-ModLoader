@@ -81,6 +81,7 @@ namespace UI::ModLoaderWindow
         char cfgKey[64]       = {};   // the INI key name (not keyboard key)
         char pluginName[64]   = {};
         bool waitingForRelease = false;
+        int  heldModifierVk    = 0;   // sided VK of a modifier held alone, 0 if none
     };
     static RebindState s_rebind;
 
@@ -552,6 +553,7 @@ namespace UI::ModLoaderWindow
                 s_rebind.waitingForRelease = true;
                 s_rebind.active            = true;
                 s_rebind.pendingOpen       = true; // OpenPopup deferred — called from outside the table
+                s_rebind.heldModifierVk    = 0;
             }
             widgetHovered = ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal);
         }
@@ -657,6 +659,34 @@ namespace UI::ModLoaderWindow
                vk == VK_LMENU    || vk == VK_RMENU;
     }
 
+    // Writes comboStr as the new bind for the entry being captured and closes
+    // the popup. Shared by the non-modifier scan and the bare-modifier path
+    // below, so "Ctrl+F5" and a plain "LeftShift" commit through the same code.
+    static void CommitRebindCombo(const char* comboStr)
+    {
+        for (auto& kv : s_configEntries)
+        {
+            if (strcmp(kv.section, s_rebind.section) == 0 &&
+                strcmp(kv.key, s_rebind.cfgKey) == 0)
+            {
+                char oldValue[256];
+                strncpy_s(oldValue, kv.value, _TRUNCATE);
+                strncpy_s(kv.value, comboStr, _TRUNCATE);
+
+                // Find the schema entry so CommitConfigChange can trigger live-rebind.
+                const ConfigSchema* schema = ModLoaderLogger::GetPluginSchema(s_rebind.pluginName);
+                const ConfigEntry* schEntry = FindSchemaEntry(schema, kv.section, kv.key);
+                NotifyConfigChangedLive(s_rebind.pluginName, kv);
+                CommitConfigChange(s_rebind.pluginName, kv, oldValue, schEntry);
+                break;
+            }
+        }
+
+        s_rebind.active        = false;
+        s_rebind.heldModifierVk = 0;
+        ImGui::CloseCurrentPopup();
+    }
+
     static void RenderRebindModal()
     {
         if (!s_rebind.active)
@@ -701,7 +731,8 @@ namespace UI::ModLoaderWindow
             // Phase 2: ESC cancels.
             if (GetAsyncKeyState(VK_ESCAPE) & 0x8000)
             {
-                s_rebind.active = false;
+                s_rebind.active        = false;
+                s_rebind.heldModifierVk = 0;
                 ImGui::CloseCurrentPopup();
                 ImGui::EndPopup();
                 return;
@@ -734,28 +765,41 @@ namespace UI::ModLoaderWindow
                 // Build the combo string and write it to the config entry.
                 char comboStr[64];
                 Hooks::Input::FormatComboString(mk, curMods, comboStr, sizeof(comboStr));
+                CommitRebindCombo(comboStr);
+                break;
+            }
 
-                for (auto& kv : s_configEntries)
+            // A modifier pressed and released with nothing else pressed in
+            // between is itself a valid bind (e.g. "LeftShift") -- the loop
+            // above already claims any non-modifier press, so reaching here
+            // with s_rebind still active means no combo fired this frame.
+            // Tracked by its sided VK (not curMods, which is unsided) so the
+            // captured name matches what ResolveSidedVK reports at dispatch
+            // time. Two modifiers held together with nothing else is not a
+            // combo this picker supports; the first one seen wins.
+            if (s_rebind.active)
+            {
+                int downModifierVk = 0;
+                for (int vk : {VK_LSHIFT, VK_RSHIFT, VK_LCONTROL, VK_RCONTROL, VK_LMENU, VK_RMENU})
                 {
-                    if (strcmp(kv.section, s_rebind.section) == 0 &&
-                        strcmp(kv.key, s_rebind.cfgKey) == 0)
-                    {
-                        char oldValue[256];
-                        strncpy_s(oldValue, kv.value, _TRUNCATE);
-                        strncpy_s(kv.value, comboStr, _TRUNCATE);
-
-                        // Find the schema entry so CommitConfigChange can trigger live-rebind.
-                        const ConfigSchema* schema = ModLoaderLogger::GetPluginSchema(s_rebind.pluginName);
-                        const ConfigEntry* schEntry = FindSchemaEntry(schema, kv.section, kv.key);
-                        NotifyConfigChangedLive(s_rebind.pluginName, kv);
-                        CommitConfigChange(s_rebind.pluginName, kv, oldValue, schEntry);
-                        break;
-                    }
+                    if (GetAsyncKeyState(vk) & 0x8000) { downModifierVk = vk; break; }
                 }
 
-                s_rebind.active = false;
-                ImGui::CloseCurrentPopup();
-                break;
+                if (downModifierVk)
+                {
+                    s_rebind.heldModifierVk = downModifierVk;
+                }
+                else if (s_rebind.heldModifierVk)
+                {
+                    EModKey mk = Hooks::Input::VKToModKey(s_rebind.heldModifierVk);
+                    s_rebind.heldModifierVk = 0;
+                    if (mk != EModKey::Unknown)
+                    {
+                        char comboStr[64];
+                        Hooks::Input::FormatComboString(mk, EModKeyMod_None, comboStr, sizeof(comboStr));
+                        CommitRebindCombo(comboStr);
+                    }
+                }
             }
 
             ImGui::EndPopup();
@@ -763,7 +807,8 @@ namespace UI::ModLoaderWindow
         else
         {
             // Popup was closed externally.
-            s_rebind.active = false;
+            s_rebind.active        = false;
+            s_rebind.heldModifierVk = 0;
         }
     }
 
