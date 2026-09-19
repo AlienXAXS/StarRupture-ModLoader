@@ -83,11 +83,19 @@ namespace Hooks::PakMount
         Fault          // the engine call raised an exception
     };
 
-    // Scan the three patterns and locate the FPakPlatformFile. Safe to call
-    // more than once; scans on the first call only.
+    // Scan the three patterns only. Safe at any point after the scanner is
+    // usable, including Stage 1 before the engine has run a line of its own
+    // code. Scans on the first call only.
+    bool ResolvePatterns();
+
+    // ResolvePatterns() plus the FPakPlatformFile lookup. The lookup needs
+    // the engine's platform file chain, which FEngineLoop::PreInit builds --
+    // before that this returns false without touching it, and is retried on
+    // every call until it succeeds. Never call this from Stage 1.
     bool Resolve();
 
-    // True once Resolve() found everything, including the platform file.
+    // Same as Resolve(): true once everything, including the platform file,
+    // is in hand.
     bool IsAvailable();
 
     // The FPakPlatformFile*, or null when unavailable.

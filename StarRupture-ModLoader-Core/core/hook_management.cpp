@@ -120,8 +120,12 @@ void InstallAllHooks()
 
     Splash::SetStatus(L"Resolving pak mount functions...");
 
-    // Optional: a miss only makes hooks->Pak->IsAvailable() false.
-    if (Hooks::PakMount::Resolve())
+    // Patterns only. The FPakPlatformFile itself cannot be looked up yet:
+    // FindPlatformFile check()s a chain FEngineLoop::PreInit has not built at
+    // this point, and a failed check is a crash, not an exception. The
+    // registry does the lookup on first use. Optional: a miss only makes
+    // hooks->Pak->IsAvailable() false.
+    if (Hooks::PakMount::ResolvePatterns())
         ModLoaderLogger::LogDebug(L"  PakMount functions resolved");
     else
         ModLoaderLogger::LogWarn(L"  WARNING: PakMount failed to resolve -- plugins cannot mount paks at runtime");

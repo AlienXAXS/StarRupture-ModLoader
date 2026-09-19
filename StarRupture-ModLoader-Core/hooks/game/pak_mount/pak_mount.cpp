@@ -71,6 +71,8 @@ namespace Hooks::PakMount
     static HandleUnmount_t    g_handleUnmount    = nullptr;
     static void*              g_pakPlatformFile  = nullptr;
     static bool               g_scanAttempted    = false;
+    static bool               g_patternsOk       = false;
+    static bool               g_waitLogged       = false;
 
     static uintptr_t g_mainBase = 0;
     static size_t    g_mainSize = 0;
@@ -113,13 +115,28 @@ namespace Hooks::PakMount
     }
 
     // SEH-only helpers: no C++ objects in scope (C2712).
-    static bool LocatePakPlatformFileSEH(void** out)
+    //
+    // FindPlatformFile check()s TopmostPlatformFile != nullptr before it
+    // walks the chain, and a failed check in a shipping build is not an
+    // exception SEH can swallow -- it goes through the engine's crash handler
+    // and the process is gone. TopmostPlatformFile is null until
+    // FEngineLoop::PreInit sets the chain up, which is long after the
+    // loader's Stage 1 runs, so the manager's first field (the topmost
+    // pointer) is read here first and a null means "not yet", never a call.
+    // This is what crashed the first build of this module on every launch.
+    static bool LocatePakPlatformFileSEH(void** out, bool* notReady)
     {
         __try
         {
+            *notReady = false;
             void* manager = g_getManager();
             if (!manager)
                 return false;
+            if (*static_cast<void**>(manager) == nullptr)   // FPlatformFileManager::TopmostPlatformFile
+            {
+                *notReady = true;
+                return false;
+            }
             *out = g_findPlatformFile(manager, L"PakFile");
             return true;
         }
@@ -129,10 +146,10 @@ namespace Hooks::PakMount
         }
     }
 
-    bool Resolve()
+    bool ResolvePatterns()
     {
-        if (g_pakPlatformFile) return true;
-        if (g_scanAttempted)   return false;
+        if (g_patternsOk)    return true;
+        if (g_scanAttempted) return false;
         g_scanAttempted = true;
 
         HMODULE mainModule = GetModuleHandleW(nullptr);
@@ -163,32 +180,61 @@ namespace Hooks::PakMount
 
         g_handleMount   = reinterpret_cast<HandleMount_t>(mount);
         g_handleUnmount = reinterpret_cast<HandleUnmount_t>(unmount);
-
-        void* pakFile = nullptr;
-        if (!LocatePakPlatformFileSEH(&pakFile) || !pakFile)
-        {
-            // No "PakFile" layer means the engine is reading loose files (an
-            // uncooked or -pak-less launch); nothing to mount into.
-            ModLoaderLogger::LogWarn(L"[PakMount] [FAIL] FPlatformFileManager has no PakFile layer -- runtime pak mounting unavailable");
-            g_handleMount = nullptr;
-            g_handleUnmount = nullptr;
-            return false;
-        }
-        g_pakPlatformFile = pakFile;
+        g_patternsOk    = true;
 
         ModLoaderLogger::LogInfo(
             L"[PakMount] [OK] FPlatformFileManager::Get at base+0x%llX, FindPlatformFile at base+0x%llX, "
-            L"HandleMountPakDelegate at base+0x%llX, HandleUnmountPakDelegate at base+0x%llX, FPakPlatformFile=0x%llX",
+            L"HandleMountPakDelegate at base+0x%llX, HandleUnmountPakDelegate at base+0x%llX "
+            L"(FPakPlatformFile is looked up on first use, once the engine has built its file chain)",
             static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(g_getManager) - g_mainBase),
             static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(g_findPlatformFile) - g_mainBase),
             static_cast<unsigned long long>(mount - g_mainBase),
-            static_cast<unsigned long long>(unmount - g_mainBase),
-            static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(g_pakPlatformFile)));
+            static_cast<unsigned long long>(unmount - g_mainBase));
         return true;
     }
 
-    bool  IsAvailable()        { return g_pakPlatformFile != nullptr; }
-    void* GetPakPlatformFile() { return g_pakPlatformFile; }
+    bool Resolve()
+    {
+        if (g_pakPlatformFile) return true;
+        if (!ResolvePatterns()) return false;
+
+        // Retried on every call until it succeeds: cheap (one call that
+        // returns a static's address, one pointer read) and the only way to
+        // be correct for a caller that arrives before FEngineLoop::PreInit.
+        void* pakFile  = nullptr;
+        bool  notReady = false;
+        if (!LocatePakPlatformFileSEH(&pakFile, &notReady))
+        {
+            if (notReady)
+            {
+                if (!g_waitLogged)
+                {
+                    g_waitLogged = true;
+                    ModLoaderLogger::LogDebug(L"[PakMount] Platform file chain not built yet -- FPakPlatformFile lookup deferred");
+                }
+                return false;
+            }
+            ModLoaderLogger::LogError(L"[PakMount] Exception while locating the PakFile platform layer");
+            return false;
+        }
+        if (!pakFile)
+        {
+            // No "PakFile" layer means the engine is reading loose files (an
+            // uncooked or -pak-less launch); nothing to mount into. Final:
+            // the chain does not change once built.
+            ModLoaderLogger::LogWarn(L"[PakMount] [FAIL] FPlatformFileManager has no PakFile layer -- runtime pak mounting unavailable");
+            g_patternsOk = false;
+            return false;
+        }
+
+        g_pakPlatformFile = pakFile;
+        ModLoaderLogger::LogInfo(L"[PakMount] [OK] FPakPlatformFile located at 0x%llX",
+                                 static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(g_pakPlatformFile)));
+        return true;
+    }
+
+    bool  IsAvailable()        { return Resolve(); }
+    void* GetPakPlatformFile() { Resolve(); return g_pakPlatformFile; }
 
     // -----------------------------------------------------------------------
     // Paths
