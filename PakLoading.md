@@ -292,7 +292,15 @@ pak load </Game/Path/Asset.Asset>
 pak loadclass </Game/Path/BP.BP_C>
 pak spawn </Game/Path/BP.BP_C> [x y z]
 pak spawnmesh </Game/Path/SM_Thing.SM_Thing> [x y z]
+pak widget </Game/Path/WBP_Thing.WBP_Thing_C> [zorder]    (client only)
+pak widget close
 ```
+
+`pak widget` creates a UMG widget class for the local player and adds it to the viewport, with
+the mouse cursor shown and game-and-UI input so it can be clicked; `pak widget close` removes it
+and restores game-only input. It exists to try debug and QA widgets the developers left in the
+content, such as `WBP_Debug_Enviro_QA_Tool`, or a widget from your own pak, without wiring anything
+up. Close the mod loader console before interacting with the widget.
 
 `pak load` is the quickest way to find out whether a pak is an IoStore container: a bare pak
 mounts fine and then loads nothing.
