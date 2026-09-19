@@ -128,8 +128,11 @@ void InitClientUI()
             static bool s_themeApplied = false;
             if (!s_themeApplied)
             {
-                UI::Theme::Apply();
-                UI::Theme::LoadColors(UI::GlobalSettings::GetIniPath());
+                // StartupLoadTheme always ends by applying some theme (the
+                // saved one, a migrated one, or "Default"), and every theme
+                // switch runs through ResetColors() -> Apply() first for a
+                // clean baseline, so there's no separate Apply() to call here.
+                UI::Theme::StartupLoadTheme(UI::GlobalSettings::GetIniPath());
                 s_themeApplied = true;
             }
 

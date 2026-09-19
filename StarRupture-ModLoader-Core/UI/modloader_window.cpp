@@ -1325,8 +1325,147 @@ namespace UI::ModLoaderWindow
         ImGui::PopID();
     }
 
+    // True if `name` is safe to use as a Themes\<name>.ini file name -- no
+    // path separators or other characters Windows rejects in a file name,
+    // and not empty. Deliberately permissive otherwise: this is a local,
+    // single-user text field, not untrusted input.
+    static bool IsValidThemeFileName(const char* name)
+    {
+        if (!name || !name[0]) return false;
+        if (strcmp(name, ".") == 0 || strcmp(name, "..") == 0) return false;
+        for (const char* p = name; *p; ++p)
+            if (strchr("\\/:*?\"<>|", *p)) return false;
+        return true;
+    }
+
     static void RenderThemeTab()
     {
+        ImGui::Spacing();
+        ImGui::SeparatorText("Theme");
+        ImGui::Spacing();
+
+        // Cached, not re-scanned every frame: GetAvailableThemes() hits the
+        // filesystem (FindFirstFileW over ModLoader\Themes\*.ini), and this
+        // tab is rendered every frame it's open. Rescanned only when the
+        // list can actually have changed -- first render, the combo popup
+        // opening, or right after Save As/Delete/Reload below -- never on a
+        // frame where nothing asked for it.
+        static char s_themeNames[34][64];
+        static int  s_themeCount = -1; // -1 = not scanned yet
+        auto rescanThemes = []() { s_themeCount = UI::Theme::GetAvailableThemes(s_themeNames, 34); };
+        if (s_themeCount < 0)
+            rescanThemes();
+
+        const char* curTheme = UI::GlobalSettings::GetTheme();
+        if (!curTheme || !curTheme[0]) curTheme = "Default";
+        const bool isBuiltin = UI::Theme::IsBuiltinTheme(curTheme);
+
+        if (ImGui::BeginCombo("Active Theme", curTheme))
+        {
+            if (ImGui::IsWindowAppearing())
+                rescanThemes(); // popup just opened this frame -- pick up any file added/removed since last time
+
+            for (int i = 0; i < s_themeCount; ++i)
+            {
+                bool selected = (strcmp(s_themeNames[i], curTheme) == 0);
+                if (ImGui::Selectable(s_themeNames[i], selected))
+                {
+                    // Applies immediately, no restart -- persist first so a
+                    // crash mid-switch doesn't leave the ini pointing at the
+                    // old theme while the screen already shows the new one.
+                    UI::GlobalSettings::SetTheme(s_themeNames[i]);
+                    UI::Theme::ApplyTheme(s_themeNames[i]);
+                }
+                if (selected)
+                    ImGui::SetItemDefaultFocus();
+            }
+            ImGui::EndCombo();
+        }
+
+        ImGui::BeginDisabled(isBuiltin);
+        if (ImGui::Button("Save", ImVec2(90.0f, 0.0f)))
+            UI::Theme::SaveUserTheme(curTheme);
+        ImGui::EndDisabled();
+        if (isBuiltin && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
+            ImGui::SetTooltip("\"%s\" is built in -- use Save As to make an editable copy.", curTheme);
+        ImGui::SameLine();
+
+        static char s_saveAsName[64] = {};
+        if (ImGui::Button("Save As...", ImVec2(90.0f, 0.0f)))
+        {
+            strncpy_s(s_saveAsName, isBuiltin ? "" : curTheme, _TRUNCATE);
+            ImGui::OpenPopup("Save Theme As");
+        }
+        ImGui::SameLine();
+
+        ImGui::BeginDisabled(isBuiltin);
+        if (ImGui::Button("Delete", ImVec2(90.0f, 0.0f)))
+            ImGui::OpenPopup("Delete Theme?");
+        ImGui::EndDisabled();
+        ImGui::SameLine();
+
+        if (ImGui::Button("Reload", ImVec2(90.0f, 0.0f)))
+        {
+            UI::Theme::ApplyTheme(curTheme);
+            rescanThemes();
+        }
+        ImGui::SameLine();
+        ImGui::TextDisabled("(?)");
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Switching themes applies immediately, no restart.\n"
+                              "Save/Save As/Delete write to ModLoader\\Themes\\<name>.ini --\n"
+                              "share a file with someone else to share the theme.\n"
+                              "\"Default\" and \"Star Rupture\" are built in and read-only.");
+
+        if (ImGui::BeginPopupModal("Save Theme As", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+        {
+            ImGui::TextUnformatted("Save the current colors as a new theme:");
+            ImGui::SetNextItemWidth(240.0f);
+            bool enter = ImGui::InputText("##save_as_name", s_saveAsName, sizeof(s_saveAsName),
+                                          ImGuiInputTextFlags_EnterReturnsTrue);
+
+            const bool nameTaken = UI::Theme::IsBuiltinTheme(s_saveAsName);
+            const bool validName = IsValidThemeFileName(s_saveAsName) && !nameTaken;
+            if (s_saveAsName[0] && !validName)
+                ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.45f, 1.0f),
+                                   nameTaken ? "That name is reserved for a built-in theme."
+                                             : "Name can't be empty or contain \\ / : * ? \" < > |");
+
+            ImGui::Spacing();
+            ImGui::BeginDisabled(!validName);
+            if ((ImGui::Button("Save", ImVec2(100.0f, 0.0f)) || (enter && validName)) && validName)
+            {
+                UI::Theme::SaveUserTheme(s_saveAsName);
+                UI::GlobalSettings::SetTheme(s_saveAsName);
+                UI::Theme::ApplyTheme(s_saveAsName);
+                rescanThemes(); // new file on disk -- pick it up for the combo
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::EndDisabled();
+            ImGui::SameLine();
+            if (ImGui::Button("Cancel", ImVec2(100.0f, 0.0f)))
+                ImGui::CloseCurrentPopup();
+            ImGui::EndPopup();
+        }
+
+        if (ImGui::BeginPopupModal("Delete Theme?", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+        {
+            ImGui::Text("Delete theme \"%s\"? This cannot be undone.", curTheme);
+            ImGui::Spacing();
+            if (ImGui::Button("Delete", ImVec2(100.0f, 0.0f)))
+            {
+                UI::Theme::DeleteUserTheme(curTheme);
+                UI::GlobalSettings::SetTheme("Default");
+                UI::Theme::ApplyTheme("Default");
+                rescanThemes(); // file removed from disk -- drop it from the combo
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Cancel", ImVec2(100.0f, 0.0f)))
+                ImGui::CloseCurrentPopup();
+            ImGui::EndPopup();
+        }
+
         ImGui::Spacing();
         ImGui::SeparatorText("Font");
         ImGui::Spacing();
@@ -1418,12 +1557,28 @@ namespace UI::ModLoaderWindow
 
         ImGui::Spacing();
         ImGui::SeparatorText("Accent Colors");
-        ImGui::TextDisabled("Drive the custom-drawn widgets (toggles, tab strip, panel borders).");
+        ImGui::TextDisabled("Values: toggle-on, sliders, checkmarks -- things you set, not select.");
         ImGui::Spacing();
 
         ColorBar("Accent",        UI::Theme::AccentBasePtr());
         ColorBar("Accent Hover",  UI::Theme::AccentHoverPtr());
         ColorBar("Accent Active", UI::Theme::AccentActivePtr());
+
+        ImGui::Spacing();
+        ImGui::SeparatorText("Highlight Colors");
+        ImGui::TextDisabled("Hover/selected: the active sidebar tab, and any other selected state.");
+        ImGui::Spacing();
+
+        ColorBar("Highlight",        UI::Theme::HighlightBasePtr());
+        ColorBar("Highlight Hover",  UI::Theme::HighlightHoverPtr());
+        ColorBar("Highlight Active", UI::Theme::HighlightActivePtr());
+
+        ImGui::Spacing();
+        ImGui::SeparatorText("Panel Border");
+        ImGui::TextDisabled("The window's own frame -- the chamfered border and title-bar square.");
+        ImGui::Spacing();
+
+        ColorBar("Panel Border", UI::Theme::PanelBorderPtr());
 
         ImGui::Spacing();
         ImGui::SeparatorText("All UI Colors");
@@ -1445,22 +1600,8 @@ namespace UI::ModLoaderWindow
         ImGui::EndChild();
 
         ImGui::Spacing();
-        if (ImGui::Button("Save", ImVec2(120.0f, 0.0f)))
-        {
-            const wchar_t* iniPath = UI::GlobalSettings::GetIniPath();
-            if (iniPath && iniPath[0] != L'\0')
-                UI::Theme::SaveColors(iniPath);
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Reset to Defaults", ImVec2(160.0f, 0.0f)))
-        {
-            UI::Theme::ResetColors();
-            const wchar_t* iniPath = UI::GlobalSettings::GetIniPath();
-            if (iniPath && iniPath[0] != L'\0')
-                UI::Theme::SaveColors(iniPath);
-        }
-        ImGui::SameLine();
-        ImGui::TextDisabled("Colors apply immediately. Save/Reset write to modloader.ini.");
+        ImGui::TextDisabled("Edits above apply immediately but are not saved to disk until "
+                            "you use Save/Save As under Theme, at the top of this tab.");
     }
 
     static void RenderAboutTab()

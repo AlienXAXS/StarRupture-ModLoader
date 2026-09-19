@@ -59,6 +59,15 @@ namespace UI::GlobalSettings
     const char* GetFontFamily();
     void        SetFontFamily(const char* key);
 
+    // Active theme name, stored in modloader.ini [UI] Theme=. Returns "" if
+    // the key has never been written (UI::Theme::StartupLoadTheme resolves
+    // that case at startup -- migrating a legacy palette or falling back to
+    // "Default" -- so callers after startup can treat "" as "Default").
+    // A pure setter: does not itself touch the live ImGuiStyle, pair with
+    // UI::Theme::ApplyTheme() to actually switch the running colors.
+    const char* GetTheme();
+    void        SetTheme(const char* name);
+
     // -----------------------------------------------------------------------
     // Live data (written from game thread, read from render thread)
     // -----------------------------------------------------------------------
