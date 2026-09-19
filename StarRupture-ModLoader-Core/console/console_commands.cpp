@@ -17,6 +17,9 @@
 #include "network_channel/network_channel.h"
 #include "plugins/pak_registry.h"
 #include "Engine_classes.hpp"   // SDK::UObject::GetFullName and the player pawn lookup for the pak command
+#ifdef MODLOADER_CLIENT_BUILD
+#include "UMG_classes.hpp"      // pak widget: UWidgetBlueprintLibrary::Create / UUserWidget::AddToViewport
+#endif
 #include "plugins/plugin_hook_report.h"
 #include "plugins/plugin_interface.h"
 #include "plugins/plugin_manager.h"
@@ -869,7 +872,77 @@ namespace ModConsole
             return;
         }
 
-        out.Error("usage: pak [list] | pak mount <path> [order] | pak unmount <#|path> | pak load <path> | pak loadclass <path> | pak spawn <class> [x y z] | pak spawnmesh <mesh> [x y z]");
+#ifdef MODLOADER_CLIENT_BUILD
+        // A UMG widget from any mounted pak, or the game's own: created for
+        // player 0 and added to the viewport. The game's HUD stays; this is a
+        // way to try a debug/QA widget the developers left in the content
+        // without wiring it to anything. `pak widget close` removes the last
+        // one and gives the game its input mode back.
+        if (sub == "widget")
+        {
+            static SDK::UUserWidget* s_widget = nullptr;   // the last one opened by this command
+
+            SDK::UWorld* world = SDK::UWorld::GetWorld();
+            SDK::APlayerController* pc = world ? SDK::UGameplayStatics::GetPlayerController(world, 0) : nullptr;
+            if (!world || !pc)
+            {
+                out.Error("No world or local player controller");
+                return;
+            }
+
+            if (args.size() >= 3 && args[2] == "close")
+            {
+                if (s_widget)
+                {
+                    s_widget->RemoveFromParent();
+                    s_widget = nullptr;
+                    SDK::UWidgetBlueprintLibrary::SetInputMode_GameOnly(pc, false);
+                    pc->bShowMouseCursor = false;
+                    out.Notice("Widget removed; input mode back to game only");
+                }
+                else
+                    out.Notice("No widget open from this command");
+                return;
+            }
+
+            if (args.size() < 3)
+            {
+                out.Error("usage: pak widget </Game/Path/WBP_Thing.WBP_Thing_C> [zorder] | pak widget close");
+                return;
+            }
+            auto* cls = static_cast<SDK::UClass*>(pak->LoadClass(args[2].c_str()));
+            if (!cls)
+            {
+                out.Error("Widget class %s did not load", args[2].c_str());
+                return;
+            }
+            const int zOrder = args.size() >= 4 ? atoi(args[3].c_str()) : 100;
+
+            SDK::UUserWidget* widget = SDK::UWidgetBlueprintLibrary::Create(world, SDK::TSubclassOf<SDK::UUserWidget>(cls), pc);
+            if (!widget)
+            {
+                out.Error("Create returned null -- is %s a UserWidget subclass?", args[2].c_str());
+                return;
+            }
+            widget->AddToViewport(zOrder);
+            s_widget = widget;
+
+            // Let it be clicked: mouse cursor on, and UI-and-game input so the
+            // game keeps running underneath. Undone by `pak widget close`.
+            SDK::UWidgetBlueprintLibrary::SetInputMode_GameAndUIEx(pc, widget, SDK::EMouseLockMode::DoNotLock, false, false);
+            pc->bShowMouseCursor = true;
+
+            out.Notice("Widget on screen: %s (z-order %d)", widget->GetFullName().c_str(), zOrder);
+            out.Out("  'pak widget close' removes it. Close the mod loader console to interact with it.");
+            return;
+        }
+#endif
+
+        out.Error("usage: pak [list] | pak mount <path> [order] | pak unmount <#|path> | pak load <path> | pak loadclass <path> | pak spawn <class> [x y z] | pak spawnmesh <mesh> [x y z]"
+#ifdef MODLOADER_CLIENT_BUILD
+                  " | pak widget <class> [zorder] | pak widget close"
+#endif
+                  );
     }
 
     static void Cmd_Version(const std::vector<std::string>&, Sink& out)
