@@ -106,7 +106,7 @@ namespace UI::Theme
     // [ThemeColors] file keys them. One table drives ApplyColorByName,
     // SaveColors and LoadColors instead of three separate hardcoded lists.
     struct SpecialColorEntry { const char* name; ImVec4* value; };
-    static const SpecialColorEntry s_specialColors[] =
+    static const SpecialColorEntry kSpecialColors[] =
     {
         {"AccentBase",      &kAccent},
         {"AccentHover",     &kAccentHover},
@@ -125,7 +125,7 @@ namespace UI::Theme
     // did for a key an older/newer build doesn't recognise.
     static void ApplyColorByName(const char* name, const ImVec4& c)
     {
-        for (const auto& e : s_specialColors)
+        for (const auto& e : kSpecialColors)
             if (strcmp(e.name, name) == 0) { *e.value = c; return; }
 
         ImGuiStyle& style = ImGui::GetStyle();
@@ -150,7 +150,7 @@ namespace UI::Theme
             WritePrivateProfileStringW(L"ThemeColors", ToWide(name).c_str(), valBuf, iniPath);
         }
 
-        for (const auto& e : s_specialColors)
+        for (const auto& e : kSpecialColors)
         {
             FormatColor(valBuf, ARRAYSIZE(valBuf), *e.value);
             WritePrivateProfileStringW(L"ThemeColors", ToWide(e.name).c_str(), valBuf, iniPath);
@@ -172,7 +172,7 @@ namespace UI::Theme
             if (ParseColor(valBuf, c)) ApplyColorByName(name, c);
         }
 
-        for (const auto& e : s_specialColors)
+        for (const auto& e : kSpecialColors)
         {
             GetPrivateProfileStringW(L"ThemeColors", ToWide(e.name).c_str(), L"", valBuf, ARRAYSIZE(valBuf), iniPath);
             ImVec4 c;
