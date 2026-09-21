@@ -201,9 +201,9 @@ namespace UI::Theme
     // BeginChamferedWindow() that returned true.
     void EndChamferedWindow();
 
-    // Icon tab strip -- draws `count` cells `size` wide starting at the
-    // current cursor, each showing icons[i] centered. The active cell gets
-    // full opacity + an accent fill/border; inactive cells are dimmed.
+    // Icon tab strip -- draws `count` cells at least `size` wide starting at
+    // the current cursor, each showing icons[i] centered. The active cell
+    // gets full opacity + an accent fill/border; inactive cells are dimmed.
     // Returns the new active index (== `active` if nothing was clicked this
     // frame).
     // vertical=false: cells laid out left-to-right; cursor drops to the
@@ -212,10 +212,15 @@ namespace UI::Theme
     //   of the column at the original starting Y, so the caller can place
     //   tab content directly beside it without a child window.
     // labels: optional, parallel array of `count` display names. Drawn UNDER
-    //   the icon in a smaller font, centered and clipped to the cell width --
-    //   an icon on its own does not tell a first-time user what the tab is,
-    //   which is what this is for. Keep them to one short word; pass nullptr
-    //   for an icon-only strip.
+    //   the icon in a smaller font, centered in the cell -- an icon on its
+    //   own does not tell a first-time user what the tab is, which is what
+    //   this is for. Keep them to one short word; pass nullptr for an
+    //   icon-only strip. Each cell widens past `size` (never narrower) to
+    //   fit its own label in full at the current font scale, so raising the
+    //   UI's text size doesn't clip a caption -- call IconTabBarWidth() with
+    //   the same labels/count/size first if the caller needs to size a
+    //   container around the strip before drawing it (e.g. a nav column's
+    //   own child window).
     // tooltips: optional, parallel array of `count` longer descriptions shown
     //   on hover. Falls back to labels[i] when null, so passing labels alone
     //   keeps the old hover behaviour.
@@ -223,6 +228,15 @@ namespace UI::Theme
                     float size = 64.0f, bool vertical = false,
                     const char* const* labels = nullptr,
                     const char* const* tooltips = nullptr);
+
+    // The width IconTabBar will actually use for each cell, given the same
+    // labels/count/size -- `size` itself if every label already fits (or
+    // labels is null), otherwise the widest label's own text width (at
+    // IconTabBar's own label font size, a fraction of the current UI text
+    // size) plus breathing room. Call this BEFORE IconTabBar when sizing a
+    // container around it, so the container doesn't end up narrower than
+    // what IconTabBar is about to draw.
+    float IconTabBarWidth(const char* const* labels, int count, float size = 64.0f);
 
     // Icon glyph constants (Material Icons Regular, embedded resource --
     // see imgui_backend.cpp RebuildFontAtlas()).

@@ -639,6 +639,37 @@ namespace UI::Theme
         return size * 0.86f + IconTabLabelFontSize() + 6.0f;
     }
 
+    // Shared by IconTabBar and the public IconTabBarWidth so they can never
+    // disagree about how wide a cell ends up. `size` was a fixed 64px used
+    // as both the cell width AND the label's own clip rect -- fine at the
+    // font scale it was measured at, but a caption clips the moment the UI
+    // text size (FontScaleMain, user-adjustable in Settings) makes the
+    // label's own CalcTextSizeA wider than that 64px, which every caption
+    // eventually does as the scale climbs, not just an unusually long one.
+    // Now the cell simply widens to fit -- never narrower than `size`
+    // (the icon's own square area is untouched), only ever wider.
+    static float IconTabCellWidth(const char* const* labels, int count, float size)
+    {
+        if (!labels)
+            return size;
+
+        ImFont*     font    = ImGui::GetFont();
+        const float labelSz = IconTabLabelFontSize();
+        float       cellW   = size;
+        for (int i = 0; i < count; ++i)
+            if (labels[i])
+            {
+                const float lw = font->CalcTextSizeA(labelSz, FLT_MAX, 0.0f, labels[i]).x;
+                if (lw > cellW) cellW = lw;
+            }
+        return cellW;
+    }
+
+    float IconTabBarWidth(const char* const* labels, int count, float size)
+    {
+        return IconTabCellWidth(labels, count, size);
+    }
+
     int IconTabBar(const char* const* icons, int count, int active, float size, bool vertical,
                    const char* const* labels, const char* const* tooltips)
     {
@@ -648,6 +679,7 @@ namespace UI::Theme
 
         const bool  hasLabels = (labels != nullptr);
         const float labelSz   = IconTabLabelFontSize();
+        const float cellW     = IconTabCellWidth(labels, count, size);
         const float cellH     = IconTabCellHeight(size, hasLabels);
         const float iconAreaH = hasLabels ? size * 0.86f : size;
 
@@ -655,9 +687,9 @@ namespace UI::Theme
         {
             ImGui::PushID(i);
             ImVec2 boxMin = ImGui::GetCursorScreenPos();
-            ImVec2 boxMax(boxMin.x + size, boxMin.y + cellH);
+            ImVec2 boxMax(boxMin.x + cellW, boxMin.y + cellH);
 
-            ImGui::InvisibleButton("##icontab", ImVec2(size, cellH));
+            ImGui::InvisibleButton("##icontab", ImVec2(cellW, cellH));
             bool hovered = ImGui::IsItemHovered();
             if (ImGui::IsItemClicked())
                 newActive = i;
@@ -711,13 +743,13 @@ namespace UI::Theme
             {
                 float gw = glyph->X1 - glyph->X0;
                 float gh = glyph->Y1 - glyph->Y0;
-                textPos = ImVec2(boxMin.x + (size - gw) * 0.5f - glyph->X0,
+                textPos = ImVec2(boxMin.x + (cellW - gw) * 0.5f - glyph->X0,
                                   boxMin.y + (iconAreaH - gh) * 0.5f - glyph->Y0);
             }
             else
             {
                 ImVec2 textSize = font->CalcTextSizeA(iconSz, FLT_MAX, 0.0f, icons[i]);
-                textPos = ImVec2(boxMin.x + (size - textSize.x) * 0.5f,
+                textPos = ImVec2(boxMin.x + (cellW - textSize.x) * 0.5f,
                                   boxMin.y + (iconAreaH - textSize.y) * 0.5f);
             }
 
@@ -726,13 +758,14 @@ namespace UI::Theme
             draw->AddText(font, iconSz, textPos, ImGui::GetColorU32(iconColV), icons[i]);
 
             // Caption under the icon. Clipped to the cell rather than allowed
-            // to bleed into the neighbouring column -- a caption long enough
-            // (or a font scaled far enough) to overflow is truncated, and the
-            // hover tooltip is what carries the full text in that case.
+            // to bleed into the neighbouring column -- cellW already fits
+            // this cell's own label in full (see IconTabCellWidth), so this
+            // only ever clips a descender/accent riding slightly outside its
+            // own glyph box, not the caption itself.
             if (hasLabels && labels[i])
             {
                 ImVec2 lblSize = font->CalcTextSizeA(labelSz, FLT_MAX, 0.0f, labels[i]);
-                ImVec2 lblPos(boxMin.x + (size - lblSize.x) * 0.5f,
+                ImVec2 lblPos(boxMin.x + (cellW - lblSize.x) * 0.5f,
                               boxMin.y + iconAreaH + 2.0f);
 
                 ImVec4 lblColV = isActive ? HighlightColorVec4(1.0f) : ImGui::GetStyle().Colors[ImGuiCol_Text];
@@ -751,7 +784,7 @@ namespace UI::Theme
         }
 
         if (vertical)
-            ImGui::SetCursorScreenPos(ImVec2(startPos.x + size, startPos.y));
+            ImGui::SetCursorScreenPos(ImVec2(startPos.x + cellW, startPos.y));
         else
             ImGui::SetCursorScreenPos(ImVec2(startPos.x, startPos.y + cellH));
 

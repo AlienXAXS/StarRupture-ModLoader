@@ -1975,7 +1975,12 @@ namespace UI::ModLoaderWindow
         };
 
         const float navSize  = 64.0f;
-        const float navWidth = navSize + 8.0f;
+        // IconTabBar widens a cell past navSize to fit its own label in
+        // full once the UI text size makes it wider than that -- ask it for
+        // the width it's about to use so this column isn't narrower than
+        // what it's about to draw (that just moves the clip from IconTabBar's
+        // own cell onto this BeginChild's edge instead of fixing it).
+        const float navWidth = UI::Theme::IconTabBarWidth(s_tabLabels, kTabCount, navSize) + 8.0f;
         ImVec2 avail    = ImGui::GetContentRegionAvail();
         ImVec2 navStart = ImGui::GetCursorScreenPos();
 
