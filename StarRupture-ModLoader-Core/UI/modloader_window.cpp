@@ -460,6 +460,23 @@ namespace UI::ModLoaderWindow
         }
     }
 
+    // How many decimals a Float entry's own slider/input display should
+    // show, decided from its range rather than a flat "%.2f" for every
+    // float regardless of what it holds: a wider range needs less
+    // precision to be usefully draggable (a 0..20000 speed doesn't gain
+    // anything from ".00"), a narrow one needs more (a 0..1 volume
+    // multiplier is meaningless rounded to a whole number). Unranged
+    // floats have no range to judge from, so they keep the original flat
+    // 2 decimals -- the one case this rule doesn't reach.
+    static int FloatDisplayDecimals(float rangeMin, float rangeMax)
+    {
+        if (rangeMax <= rangeMin) return 2; // unranged (InputFloat, not SliderFloat)
+        const float span = rangeMax - rangeMin;
+        if (span <= 2.0f)   return 2; // e.g. a 0..1 multiplier/volume
+        if (span <= 100.0f) return 1; // e.g. a 0..95 FOV
+        return 0;                     // e.g. a 0..20000 speed
+    }
+
     // Widest single space-delimited word in text, at the current font.
     // RenderConfigTab uses this to floor a section's label column so
     // TextWrapped never has to break a word mid-character to fit it;
@@ -644,7 +661,11 @@ namespace UI::ModLoaderWindow
             ImGui::SetNextItemWidth(controlW);
             if (hasRange)
             {
-                if (ImGui::SliderFloat(id, &fval, e->rangeMin, e->rangeMax, "%.2f"))
+                // Decimals from the range (FloatDisplayDecimals), not a
+                // flat "%.2f" for every float regardless of what it holds.
+                char sliderFmt[8];
+                snprintf(sliderFmt, sizeof(sliderFmt), "%%.%df", FloatDisplayDecimals(e->rangeMin, e->rangeMax));
+                if (ImGui::SliderFloat(id, &fval, e->rangeMin, e->rangeMax, sliderFmt))
                 {
                     FormatFloat(kv.value, sizeof(kv.value), fval);
                     NotifyConfigChangedLive(pluginName, kv);
