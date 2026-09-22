@@ -626,7 +626,6 @@ namespace UI::ModLoaderWindow
         {
             int ival = atoi(kv.value);
             bool hasRange = e->rangeMax > e->rangeMin;
-            ImGui::SetNextItemWidth(controlW);
             if (hasRange)
             {
                 // No ImGuiSliderFlags_NoInput passed (here or on the
@@ -634,6 +633,18 @@ namespace UI::ModLoaderWindow
                 // Ctrl+Click (or double-click, or Enter once focused) turn
                 // this slider into a text field for typing an exact value,
                 // no extra code needed for it.
+                //
+                // Step buttons -- SliderInt has no built-in equivalent of
+                // InputInt's own step/step_fast (drawn below), so these are
+                // manual, same "-"/"+" shape InputInt's own already use
+                // (button_size == frame height, ItemInnerSpacing gaps,
+                // held-button repeat via ImGuiItemFlags_ButtonRepeat).
+                // Slider width is carved out of controlW to leave room for
+                // them, the same way SetNextItemWidth already implicitly
+                // does for InputInt's own buttons.
+                const float stepBtnSize = ImGui::GetFrameHeight();
+                const float sliderW     = controlW - (stepBtnSize + innerSpacing) * 2.0f;
+                ImGui::SetNextItemWidth(sliderW > 1.0f ? sliderW : 1.0f);
                 if (ImGui::SliderInt(id, &ival, (int)e->rangeMin, (int)e->rangeMax))
                 {
                     snprintf(kv.value, sizeof(kv.value), "%d", ival);
@@ -641,9 +652,40 @@ namespace UI::ModLoaderWindow
                 }
                 if (ImGui::IsItemDeactivated())
                     CommitConfigChange(pluginName, kv);
+                widgetHovered = ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal);
+
+                // 1% of the range per click (min 1), Ctrl+Click for 10% --
+                // same fast-step modifier InputInt's own buttons use.
+                int intStepFast = (int)((e->rangeMax - e->rangeMin) * 0.1f);
+                if (intStepFast < 1) intStepFast = 1;
+                ImGui::PushItemFlag(ImGuiItemFlags_ButtonRepeat, true);
+                ImGui::SameLine(0.0f, innerSpacing);
+                char minusId[160];
+                snprintf(minusId, sizeof(minusId), "-##dec_%s_%s", kv.section, kv.key);
+                if (ImGui::Button(minusId, ImVec2(stepBtnSize, stepBtnSize)))
+                {
+                    ival -= ImGui::GetIO().KeyCtrl ? intStepFast : 1;
+                    if (ival < (int)e->rangeMin) ival = (int)e->rangeMin;
+                    snprintf(kv.value, sizeof(kv.value), "%d", ival);
+                    NotifyConfigChangedLive(pluginName, kv);
+                    CommitConfigChange(pluginName, kv);
+                }
+                ImGui::SameLine(0.0f, innerSpacing);
+                char plusId[160];
+                snprintf(plusId, sizeof(plusId), "+##inc_%s_%s", kv.section, kv.key);
+                if (ImGui::Button(plusId, ImVec2(stepBtnSize, stepBtnSize)))
+                {
+                    ival += ImGui::GetIO().KeyCtrl ? intStepFast : 1;
+                    if (ival > (int)e->rangeMax) ival = (int)e->rangeMax;
+                    snprintf(kv.value, sizeof(kv.value), "%d", ival);
+                    NotifyConfigChangedLive(pluginName, kv);
+                    CommitConfigChange(pluginName, kv);
+                }
+                ImGui::PopItemFlag();
             }
             else
             {
+                ImGui::SetNextItemWidth(controlW);
                 if (ImGui::InputInt(id, &ival, 1, 10))
                 {
                     snprintf(kv.value, sizeof(kv.value), "%d", ival);
@@ -656,20 +698,27 @@ namespace UI::ModLoaderWindow
                     NotifyConfigChangedLive(pluginName, kv);
                     CommitConfigChange(pluginName, kv);
                 }
+                widgetHovered = ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal);
             }
-            widgetHovered = ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal);
         }
         else if (e && e->type == ConfigValueType::Float)
         {
             float fval = strtof(kv.value, nullptr);
             bool hasRange = e->rangeMax > e->rangeMin;
-            ImGui::SetNextItemWidth(controlW);
             if (hasRange)
             {
                 // Decimals from the range (FloatDisplayDecimals), not a
                 // flat "%.2f" for every float regardless of what it holds.
                 char sliderFmt[8];
                 snprintf(sliderFmt, sizeof(sliderFmt), "%%.%df", FloatDisplayDecimals(e->rangeMin, e->rangeMax));
+
+                // Step buttons -- same reasoning as the Integer branch
+                // above (SliderFloat has no InputFloat-style step/step_fast
+                // of its own); step is 1% of the range per click, 10% with
+                // Ctrl+Click.
+                const float stepBtnSize = ImGui::GetFrameHeight();
+                const float sliderW     = controlW - (stepBtnSize + innerSpacing) * 2.0f;
+                ImGui::SetNextItemWidth(sliderW > 1.0f ? sliderW : 1.0f);
                 if (ImGui::SliderFloat(id, &fval, e->rangeMin, e->rangeMax, sliderFmt))
                 {
                     FormatFloat(kv.value, sizeof(kv.value), fval);
@@ -677,10 +726,46 @@ namespace UI::ModLoaderWindow
                 }
                 if (ImGui::IsItemDeactivated())
                     CommitConfigChange(pluginName, kv);
+                widgetHovered = ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal);
+
+                const float floatStep     = (e->rangeMax - e->rangeMin) * 0.01f;
+                const float floatStepFast = (e->rangeMax - e->rangeMin) * 0.1f;
+                ImGui::PushItemFlag(ImGuiItemFlags_ButtonRepeat, true);
+                ImGui::SameLine(0.0f, innerSpacing);
+                char minusId[160];
+                snprintf(minusId, sizeof(minusId), "-##dec_%s_%s", kv.section, kv.key);
+                if (ImGui::Button(minusId, ImVec2(stepBtnSize, stepBtnSize)))
+                {
+                    fval -= ImGui::GetIO().KeyCtrl ? floatStepFast : floatStep;
+                    if (fval < e->rangeMin) fval = e->rangeMin;
+                    FormatFloat(kv.value, sizeof(kv.value), fval);
+                    NotifyConfigChangedLive(pluginName, kv);
+                    CommitConfigChange(pluginName, kv);
+                }
+                ImGui::SameLine(0.0f, innerSpacing);
+                char plusId[160];
+                snprintf(plusId, sizeof(plusId), "+##inc_%s_%s", kv.section, kv.key);
+                if (ImGui::Button(plusId, ImVec2(stepBtnSize, stepBtnSize)))
+                {
+                    fval += ImGui::GetIO().KeyCtrl ? floatStepFast : floatStep;
+                    if (fval > e->rangeMax) fval = e->rangeMax;
+                    FormatFloat(kv.value, sizeof(kv.value), fval);
+                    NotifyConfigChangedLive(pluginName, kv);
+                    CommitConfigChange(pluginName, kv);
+                }
+                ImGui::PopItemFlag();
             }
             else
             {
-                if (ImGui::InputFloat(id, &fval, 0.0f, 0.0f, "%.2f"))
+                ImGui::SetNextItemWidth(controlW);
+                // step=0.1/step_fast=1.0 (was 0/0, which suppresses
+                // InputFloat's own built-in step buttons entirely) -- the
+                // same buttons InputInt already draws for an unranged int,
+                // now consistent for an unranged float too. No range here
+                // to size a step from (that's what "unranged" means), so
+                // this is a flat, generic default rather than
+                // FloatDisplayDecimals' own range-derived one.
+                if (ImGui::InputFloat(id, &fval, 0.1f, 1.0f, "%.2f"))
                 {
                     FormatFloat(kv.value, sizeof(kv.value), fval);
                     NotifyConfigChangedLive(pluginName, kv);
@@ -692,8 +777,8 @@ namespace UI::ModLoaderWindow
                     NotifyConfigChangedLive(pluginName, kv);
                     CommitConfigChange(pluginName, kv);
                 }
+                widgetHovered = ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal);
             }
-            widgetHovered = ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal);
         }
         else if (isKeybind)
         {
