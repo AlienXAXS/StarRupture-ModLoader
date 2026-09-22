@@ -629,6 +629,11 @@ namespace UI::ModLoaderWindow
             ImGui::SetNextItemWidth(controlW);
             if (hasRange)
             {
+                // No ImGuiSliderFlags_NoInput passed (here or on the
+                // SliderFloat below) -- ImGui's own default already lets
+                // Ctrl+Click (or double-click, or Enter once focused) turn
+                // this slider into a text field for typing an exact value,
+                // no extra code needed for it.
                 if (ImGui::SliderInt(id, &ival, (int)e->rangeMin, (int)e->rangeMax))
                 {
                     snprintf(kv.value, sizeof(kv.value), "%d", ival);
