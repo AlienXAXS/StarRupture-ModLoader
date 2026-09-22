@@ -524,7 +524,7 @@ namespace UI::ModLoaderWindow
     // downward; ImGui's table row-height (CellPadding-driven) handles that
     // on its own.
     static void RenderConfigEntry(ConfigKV& kv, const ConfigEntry* e, const char* pluginName,
-                                   float controlW)
+                                   float controlW, float keyColW)
     {
         ImGui::TableNextRow();
 
@@ -538,6 +538,7 @@ namespace UI::ModLoaderWindow
         const bool  isKeybind    = e && e->type == ConfigValueType::Keybind;
         const bool  hasDesc      = e && e->description && e->description[0];
         const float innerSpacing = ImGui::GetStyle().ItemInnerSpacing.x;
+        const float itemSpacing  = ImGui::GetStyle().ItemSpacing.x;
         const float toggleW      = UI::Theme::ToggleSwitchSize().x;
 
         // ---- Col 0: label -----------------------------------------------
@@ -670,15 +671,25 @@ namespace UI::ModLoaderWindow
         }
         else if (isKeybind)
         {
-            // Current bind label + Rebind button, left-aligned same as a
-            // slider/text input. The Block toggle -- part of this row's
-            // control, not a separate action -- is right-aligned instead,
-            // same as a lone boolean, so it butts up against the reset
-            // position rather than trailing right after Rebind.
-            const char* bindLabel = (kv.value[0] != '\0') ? kv.value : "(none)";
+            // Key name, Rebind, and Block each sit in their own fixed
+            // sub-column within Control now, sized once page-wide
+            // (RenderConfigTab's keyColW, and rebindBtnW recomputed here --
+            // deterministic from the "Rebind" string and the theme's own
+            // FramePadding alone, so it doesn't need threading through as
+            // a parameter) -- not left-aligned-then-right-aligned like
+            // before, which let a short key name ("E") pull Rebind/Block
+            // to a different x than a long one ("Sprint") did on another
+            // row. A row with a short bind label just leaves empty space
+            // in that sub-column rather than shifting Rebind after it.
+            const char* bindLabel  = (kv.value[0] != '\0') ? kv.value : "(none)";
+            const float rebindBtnW = ImGui::CalcTextSize("Rebind").x + ImGui::GetStyle().FramePadding.x * 2.0f;
+            const float rebindColX = ctrlColStartX + keyColW + itemSpacing;
+            const float blockColX  = rebindColX + rebindBtnW + itemSpacing;
+
             ImGui::AlignTextToFramePadding();
             ImGui::TextDisabled("%s", bindLabel);
-            ImGui::SameLine();
+            ImGui::SameLine(0.0f, 0.0f);
+            ImGui::SetCursorPosX(rebindColX);
             char rebindId[160];
             snprintf(rebindId, sizeof(rebindId), "Rebind##rb_%s_%s", kv.section, kv.key);
             if (ImGui::SmallButton(rebindId))
@@ -706,9 +717,8 @@ namespace UI::ModLoaderWindow
             }
             char chkId[160];
             snprintf(chkId, sizeof(chkId), "##blk_%s_%s", kv.section, kv.key);
-            const float blockLabelW = ImGui::CalcTextSize("Block").x;
             ImGui::SameLine(0.0f, 0.0f); // stay on the bind-label/Rebind line before jumping X
-            ImGui::SetCursorPosX(rightAlignX - innerSpacing - blockLabelW);
+            ImGui::SetCursorPosX(blockColX);
             ImGui::AlignTextToFramePadding();
             ImGui::TextDisabled("Block");
             ImGui::SameLine(0.0f, innerSpacing);
@@ -1149,6 +1159,15 @@ namespace UI::ModLoaderWindow
                 float labelColWidth   = 0.0f;
                 float pageMaxWordW    = 0.0f;
                 float keybindRowW     = 0.0f;
+                // Widest current bind label ("E", "F8", "Sprint", "(none)")
+                // across every keybind row on the page -- its own
+                // sub-column within Control, so Rebind/Block/reset all
+                // start at one x regardless of how short or long any one
+                // row's own key name is. See RenderConfigEntry's keybind
+                // branch for how this and rebindBtnW (recomputed there,
+                // deterministic from the "Rebind" string alone) combine
+                // into the three sub-column x's.
+                float keyColW         = 0.0f;
                 bool  hasRangedSlider = false;
                 for (const ConfigKV& kv : s_configEntries)
                 {
@@ -1163,8 +1182,10 @@ namespace UI::ModLoaderWindow
                     if (se->type == ConfigValueType::Keybind)
                     {
                         const char* bindLabel  = kv.value[0] ? kv.value : "(none)";
+                        const float bindLabelW = ImGui::CalcTextSize(bindLabel).x;
+                        if (bindLabelW > keyColW) keyColW = bindLabelW;
                         const float rebindBtnW = ImGui::CalcTextSize("Rebind").x + framePadX * 2.0f;
-                        const float w = ImGui::CalcTextSize(bindLabel).x + itemSpacing + rebindBtnW;
+                        const float w = bindLabelW + itemSpacing + rebindBtnW;
                         if (w > keybindRowW) keybindRowW = w;
                     }
                     else if ((se->type == ConfigValueType::Integer || se->type == ConfigValueType::Float) &&
@@ -1268,7 +1289,7 @@ namespace UI::ModLoaderWindow
                         for (size_t j = sectionStart; j < sectionEnd; ++j)
                         {
                             const ConfigEntry* entry = FindSchemaEntry(schema, s_configEntries[j].section, s_configEntries[j].key);
-                            RenderConfigEntry(s_configEntries[j], entry, info->name, controlW);
+                            RenderConfigEntry(s_configEntries[j], entry, info->name, controlW, keyColW);
                         }
                         ImGui::EndTable();
                     }
