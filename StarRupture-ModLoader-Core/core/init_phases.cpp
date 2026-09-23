@@ -39,11 +39,20 @@ void InstallHooksPhase()
 
 void PreloadPhase()
 {
-    // Installed AFTER the loader's own hooks on purpose. The loader's
-    // subsystems then never depend on anything a third-party DLL did, and a
-    // preload plugin that detours a function the loader also detours lands on
-    // top of ours, which chains correctly through the trampoline. The reverse
-    // order would make the loader's own boot the thing at risk.
+    // Installed AFTER the loader's own hooks on purpose, for two reasons.
+    //
+    // The loader's subsystems then never depend on anything a third-party DLL
+    // did -- the reverse order would put the loader's own boot at the mercy of
+    // whatever a plugin patched.
+    //
+    // And when a preload plugin detours a function the loader also detours,
+    // Hooks::Broker splices it onto the same chain rather than letting a second
+    // detour be written over the first. Links run in install order, so the
+    // loader's hook runs first and calls on to the plugin's. (Before the broker
+    // existed the second install read the first one's JMP stub as if it were
+    // the function prologue and copied its address literal into a trampoline as
+    // though it were code -- so "it chains" was never true, it just had not
+    // been tried.)
     Splash::SetStatus(L"Running preload plugins...");
     PreloadManager::RunPhase();
 }

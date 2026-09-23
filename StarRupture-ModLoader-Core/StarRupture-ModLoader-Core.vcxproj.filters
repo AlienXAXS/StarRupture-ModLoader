@@ -159,6 +159,9 @@
     <ClInclude Include="game_type_checker.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="hooks\hook_broker.h">
+      <Filter>Source Files\hooks</Filter>
+    </ClInclude>
     <ClInclude Include="hooks\hooks_common.h">
       <Filter>Source Files\hooks</Filter>
     </ClInclude>
@@ -511,6 +514,9 @@
     </ClCompile>
     <ClCompile Include="$(StarRuptureSDKSourceDir)Engine_functions.cpp">
       <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="hooks\hook_broker.cpp">
+      <Filter>Source Files\hooks</Filter>
     </ClCompile>
     <ClCompile Include="hooks\hooks_common.cpp">
       <Filter>Source Files\hooks</Filter>

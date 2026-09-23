@@ -451,6 +451,7 @@
     <ClInclude Include="hooks\game\world_begin_play\world_begin_play.h" />
     <ClInclude Include="hooks\game\world_end_play\world_end_play.h" />
     <ClInclude Include="hooks\hooks_common.h" />
+    <ClInclude Include="hooks\hook_broker.h" />
     <ClInclude Include="hooks\symbol_resolver.h" />
     <ClInclude Include="hooks\hooks_interface.h" />
     <ClInclude Include="hooks\http\http_server_hook.h" />
@@ -597,6 +598,7 @@
     <ClCompile Include="hooks\game\control_channel\control_channel.cpp" />
     <ClCompile Include="hooks\game\modloader_hello\modloader_hello.cpp" />
     <ClCompile Include="hooks\hooks_common.cpp" />
+    <ClCompile Include="hooks\hook_broker.cpp" />
     <ClCompile Include="hooks\symbol_resolver.cpp" />
     <ClCompile Include="hooks\hooks_interface.cpp" />
     <ClCompile Include="hooks\input\keybind_registry.cpp">

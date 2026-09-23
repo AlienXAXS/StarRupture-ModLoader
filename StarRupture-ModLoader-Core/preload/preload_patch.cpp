@@ -1,5 +1,6 @@
 #include "preload/preload_patch.h"
 #include "hooks/hooks_common.h"
+#include "hooks/hook_broker.h"
 #include "memory_scanner/image_info.h"
 #include "core/version_check.h"
 #include "logging/log.h"
@@ -147,6 +148,11 @@ namespace
 
 		std::lock_guard<std::mutex> lock(g_mutex);
 
+		// One name per owner, so RemoveHook has something unambiguous to match.
+		// Note what is NOT refused here: another plugin, or the loader itself,
+		// already hooking this same address. Hooks::Broker turns that into a
+		// chain -- both detours run, in install order -- instead of the silent
+		// corruption two detours on one address used to produce.
 		for (const OwnedHook& existing : g_hooks)
 		{
 			if (existing.owner == self && existing.name == name)
@@ -157,10 +163,12 @@ namespace
 			}
 		}
 
+		const int existingLinks = Hooks::Broker::GetLinkCount(target);
+
 		g_hooks.push_back(OwnedHook{ self, name, Hooks::Hook{} });
 		OwnedHook& entry = g_hooks.back();
 
-		if (!entry.hook.Install(target, detour, outOriginal))
+		if (!entry.hook.Install(target, detour, outOriginal, OwnerName(self), name))
 		{
 			g_hooks.pop_back();
 			LogToFile::Error("[Preload] %s: InstallHook('%s') FAILED at 0x%llX",
@@ -168,8 +176,16 @@ namespace
 			return false;
 		}
 
-		LogToFile::Info("[Preload] %s: hooked '%s' at 0x%llX",
-			OwnerName(self), name, static_cast<unsigned long long>(target));
+		if (existingLinks > 0)
+		{
+			LogToFile::Info("[Preload] %s: hooked '%s' at 0x%llX -- joining %d existing hook(s) on that address",
+				OwnerName(self), name, static_cast<unsigned long long>(target), existingLinks);
+		}
+		else
+		{
+			LogToFile::Info("[Preload] %s: hooked '%s' at 0x%llX",
+				OwnerName(self), name, static_cast<unsigned long long>(target));
+		}
 		return true;
 	}
 

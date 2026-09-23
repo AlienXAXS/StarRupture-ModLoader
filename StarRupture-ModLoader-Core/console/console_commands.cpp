@@ -24,6 +24,7 @@
 #include "plugins/plugin_interface.h"
 #include "plugins/plugin_manager.h"
 #include "preload/preload_manager.h"
+#include "hooks/hook_broker.h"
 #include "utils/game_thread_dispatch.h"
 
 #ifndef MODLOADER_BUILD_TAG
@@ -612,6 +613,62 @@ namespace ModConsole
         out.Notice("plugin needs a new build. Any unresolved hook stops the plugin loading --");
         out.Notice("required or optional, and a pattern that matches more than once counts as");
         out.Notice("unresolved too. Full detail is in modloader.log.");
+    }
+
+    // -----------------------------------------------------------------------
+    // hooks -- every detoured address and who is on it.
+    //
+    // An address can carry several hooks at once: the loader's own, plus any
+    // preload plugin that wanted the same function. They run in the order
+    // listed, each calling the next through its `original`. This is the only
+    // view of that, and it is the first thing to look at when a hook seems to
+    // be doing nothing -- a link in front of it may be declining to call on.
+    // -----------------------------------------------------------------------
+    static void Cmd_Hooks(const std::vector<std::string>&, Sink& out)
+    {
+        const std::vector<Hooks::Broker::ChainInfo> chains = Hooks::Broker::Snapshot();
+        if (chains.empty())
+        {
+            out.Notice("No hooks are installed.");
+            return;
+        }
+
+        int shared = 0;
+        for (const Hooks::Broker::ChainInfo& chain : chains)
+            if (chain.links.size() > 1)
+                ++shared;
+
+        out.Printf(LineKind::Output, "%zu hooked address(es), %d shared by more than one owner:",
+                   chains.size(), shared);
+
+        const uintptr_t base = reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
+
+        for (const Hooks::Broker::ChainInfo& chain : chains)
+        {
+            // Printed as an RVA when it lands in the game executable, because
+            // that is the form that pastes into a disassembler. ASLR makes the
+            // absolute address useless for anything but this session.
+            if (chain.target >= base)
+            {
+                out.Printf(LineKind::Output, "  exe+0x%llX  (%zu hook%s)",
+                           static_cast<unsigned long long>(chain.target - base),
+                           chain.links.size(), chain.links.size() == 1 ? "" : "s");
+            }
+            else
+            {
+                out.Printf(LineKind::Output, "  0x%llX  (%zu hook%s)",
+                           static_cast<unsigned long long>(chain.target),
+                           chain.links.size(), chain.links.size() == 1 ? "" : "s");
+            }
+
+            for (size_t i = 0; i < chain.links.size(); ++i)
+            {
+                out.Notice("      %zu. %-24s %s", i + 1,
+                           chain.links[i].owner.c_str(), chain.links[i].name.c_str());
+            }
+        }
+
+        out.Notice("Listed in call order: the first entry runs first and calls the next.");
     }
 
     // -----------------------------------------------------------------------
@@ -1375,6 +1432,10 @@ namespace ModConsole
         Register({ "hookfailures", "hooks",  "hookfailures",
                    "List plugins whose hook patterns did not resolve",
                    &Cmd_HookFailures, false });
+
+        Register({ "hooks",   "hooklist",  "hooks",
+                   "List every detoured address and the owners sharing it",
+                   &Cmd_Hooks, false });
 
         Register({ "preload", "preloads",  "preload",
                    "Show what happened to the DLLs in ModLoader\\Preload during startup",
