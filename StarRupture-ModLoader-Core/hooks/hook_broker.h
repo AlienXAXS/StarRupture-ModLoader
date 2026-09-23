@@ -130,4 +130,29 @@ namespace Hooks::Broker
 	// Every live chain, for the console. Values, not pointers: chains change
 	// under the lock and every caller is on another thread.
 	std::vector<ChainInfo> Snapshot();
+
+	// --- What the image looked like before we touched it ---------------------
+	//
+	// One entry per hooked address: where we patched, and the bytes that used to
+	// be there.
+	//
+	// This exists for the pattern scanner. A plugin's AOB comes from the binary
+	// as SHIPPED -- that is what the author's disassembler showed them -- but by
+	// the time the plugin scans, the loader has stamped a 14-byte JMP over the
+	// entry of ProcessEvent, BeginPlay, Tick and two dozen others, which are
+	// exactly the functions a mod wants. Without this the scanner answers a
+	// different question than the one the author asked, and it fails in both
+	// directions: a pattern anchored on a hooked entry stops matching, and a
+	// pattern containing FF 25 00 00 00 00 starts matching our own stubs.
+	//
+	// Snapshot semantics, taken under the lock. A hook installed while a scan is
+	// running is not reflected, which is fine -- the loader installs on one
+	// thread with the game held.
+	struct PatchedRange
+	{
+		uintptr_t            address = 0;
+		std::vector<uint8_t> originalBytes;
+	};
+
+	std::vector<PatchedRange> GetPatchedRanges();
 }

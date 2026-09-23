@@ -262,6 +262,28 @@ namespace Hooks::Broker
 		return chain ? static_cast<int>(chain->links.size()) : 0;
 	}
 
+	std::vector<PatchedRange> GetPatchedRanges()
+	{
+		std::lock_guard<std::mutex> lock(g_mutex);
+
+		std::vector<PatchedRange> out;
+		out.reserve(g_chains.size());
+
+		for (const Chain& chain : g_chains)
+		{
+			if (!chain.prologue.installed || chain.prologue.patchSize == 0)
+				continue;
+
+			PatchedRange range;
+			range.address = chain.target;
+			range.originalBytes.assign(chain.prologue.originalBytes,
+				chain.prologue.originalBytes + chain.prologue.patchSize);
+			out.push_back(std::move(range));
+		}
+
+		return out;
+	}
+
 	std::vector<ChainInfo> Snapshot()
 	{
 		std::lock_guard<std::mutex> lock(g_mutex);

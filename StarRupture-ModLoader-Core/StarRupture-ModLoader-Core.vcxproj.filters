@@ -219,6 +219,9 @@
     <ClInclude Include="memory_scanner\scanner.h">
       <Filter>Source Files\memory_scanner</Filter>
     </ClInclude>
+    <ClInclude Include="memory_scanner\patch_overlay.h">
+      <Filter>Source Files\memory_scanner</Filter>
+    </ClInclude>
     <ClInclude Include="memory_scanner\image_info.h">
       <Filter>Source Files\memory_scanner</Filter>
     </ClInclude>
@@ -576,6 +579,9 @@
       <Filter>Source Files\memory_scanner</Filter>
     </ClCompile>
     <ClCompile Include="memory_scanner\scanner.cpp">
+      <Filter>Source Files\memory_scanner</Filter>
+    </ClCompile>
+    <ClCompile Include="memory_scanner\patch_overlay.cpp">
       <Filter>Source Files\memory_scanner</Filter>
     </ClCompile>
     <ClCompile Include="memory_scanner\image_info.cpp">

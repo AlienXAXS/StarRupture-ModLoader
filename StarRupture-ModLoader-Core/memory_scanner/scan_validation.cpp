@@ -2,6 +2,7 @@
 #include "memory_scanner/scanner.h"
 #include "memory_scanner/scan_cache.h"
 #include "memory_scanner/image_info.h"
+#include "memory_scanner/patch_overlay.h"
 #include "hooks/symbol_resolver.h"
 #include "core/version_check.h"
 #include "logging/logger.h"
@@ -340,7 +341,8 @@ namespace ScanValidation
 		// Builds the match list for a failed resolve. Runs a second, full pass --
 		// affordable precisely because it only happens when the launch is already
 		// going to refuse something.
-		std::string EnumerateMatchDetail(HMODULE module, const std::string& pattern, size_t& outTotal)
+		std::string EnumerateMatchDetail(HMODULE module, const std::string& pattern,
+			const PatchOverlay::Snapshot& overlay, size_t& outTotal)
 		{
 			std::string out;
 			outTotal = 0;
@@ -351,7 +353,7 @@ namespace ScanValidation
 				return out;
 
 			std::vector<uintptr_t> matches;
-			outTotal = Scanner::CollectMatches(image.base, image.size, parsed,
+			outTotal = overlay.Collect(image.base, image.size, parsed,
 				kMaxReportedMatches, kMaxEnumeratedMatches, matches);
 
 			for (size_t i = 0; i < matches.size(); ++i)
@@ -427,6 +429,18 @@ namespace ScanValidation
 		const bool     isMainModule = (module == GetModuleHandleW(nullptr));
 		const std::wstring gameVersion = isMainModule ? GetGameVersionString() : std::wstring();
 
+		// Scan the image as it SHIPPED, not as we have left it. By the time a
+		// plugin resolves, the loader has stamped a 14-byte JMP over the entry of
+		// ProcessEvent, BeginPlay, Tick and two dozen more -- which is exactly the
+		// set a mod wants. Without this, a pattern anchored on one of those stops
+		// matching (or worse, matches somewhere else and passes the uniqueness
+		// check), and a pattern containing FF 25 00 00 00 00 starts matching our
+		// own stubs. See memory_scanner/patch_overlay.h.
+		//
+		// Free when nothing is hooked, which is the case for the loader's own
+		// preflight -- the expensive 60-pattern pass runs before any of them.
+		const PatchOverlay::Snapshot overlay;
+
 		uintptr_t rawMatch = 0;
 		size_t    count    = 0;
 		bool      fromCache = false;
@@ -438,7 +452,7 @@ namespace ScanValidation
 			{
 				const uintptr_t candidate = image.base + cached.offset;
 				if (cached.offset + parsed.size() <= image.size &&
-					Scanner::FindPattern(candidate, parsed.size(), parsed) == candidate)
+					overlay.MatchesAt(candidate, parsed))
 				{
 					rawMatch  = candidate;
 					count     = 1;
@@ -449,9 +463,23 @@ namespace ScanValidation
 
 		if (!fromCache)
 		{
-			// Stop at the second match: "exactly one or not" is the only question
-			// the verdict needs. The full list is built below, on the failure path.
-			count = Scanner::CountMatches(image.base, image.size, parsed, 2, &rawMatch);
+			if (overlay.Empty())
+			{
+				// Nothing is hooked, so the live image is the shipped image and
+				// the scanner's own early exit applies: stop at the second match,
+				// because "exactly one or not" is the only question the verdict
+				// needs.
+				count = Scanner::CountMatches(image.base, image.size, parsed, 2, &rawMatch);
+			}
+			else
+			{
+				// With patches in play a match has to be classified before it can
+				// be counted, so there is no early exit to take. The full list is
+				// bounded instead.
+				std::vector<uintptr_t> matches;
+				count = overlay.Collect(image.base, image.size, parsed, 1, kMaxEnumeratedMatches, matches);
+				rawMatch = matches.empty() ? 0 : matches[0];
+			}
 		}
 
 		if (count == 0)
@@ -468,7 +496,7 @@ namespace ScanValidation
 			// already failed, so the only thing left to do with this launch is
 			// tell whoever has to fix the pattern exactly where else it matched.
 			size_t total = 0;
-			const std::string matchList = EnumerateMatchDetail(module, request.pattern, total);
+			const std::string matchList = EnumerateMatchDetail(module, request.pattern, overlay, total);
 
 			result.outcome    = Outcome::MultipleMatches;
 			result.rawMatch   = rawMatch;
