@@ -44,7 +44,8 @@ StarRupture\Binaries\Win64\
     ├── StarRupture-ImGui.dll            ← client builds only
     ├── modloader.ini                    ← created on first launch
     ├── Logs\                            ← created on first launch
-    └── Plugins\                         ← put plugin DLLs here
+    ├── Plugins\                         ← put plugin DLLs here
+    └── Preload\                         ← put preload plugin DLLs here
 ```
 
 Everything the mod loader owns lives under `ModLoader\`; `dwmapi.dll` is the only file that sits
@@ -163,6 +164,24 @@ the rest of the session.
 
 Use the [StarRupture-Plugin-SDK](https://github.com/AlienXAXS/StarRupture-Plugin-SDK) — it has everything you need (headers, UE5 SDK, an example plugin, and a pre-built `dwmapi.dll`) without requiring a fork of this repo.
 
+### Preload plugins
+
+A **preload plugin** is a DLL in `ModLoader\Preload\` that runs *before the game executable's
+entry point*, so it can patch code the engine touches on its way up. There is no engine at that
+point — no `GMalloc`, no `UObject`, no config — so a preload plugin resolves
+patterns, patches bytes, installs detours, and returns. Its detours fire later, once the game is
+running.
+
+One failing can never stop the game launching: it is unloaded, reported, and the game boots
+without it. That is deliberately the opposite of the loader's own pattern preflight, and it is
+what makes an outdated preload plugin safe to leave installed across a game update.
+
+- SDK and starter project: [StarRupture-PreLoadPlugin-SDK](https://github.com/AlienXAXS/StarRupture-PreLoadPlugin-SDK)
+- Design and rules: [Preload.md](Preload.md)
+
+If you only need engine events, UI, config or networking, use an ordinary plugin — you get
+the whole API and you can hot-reload it while the game runs.
+
 ---
 
 ## Troubleshooting
@@ -171,6 +190,8 @@ Use the [StarRupture-Plugin-SDK](https://github.com/AlienXAXS/StarRupture-Plugin
 |---|---|
 | Nothing loads at all | `dwmapi.dll` must sit next to the game `.exe` with the `ModLoader\` folder beside it — not in a subfolder of its own. On Linux, set `WINEDLLOVERRIDES=dwmapi=n,b`. |
 | Plugins not loading | Make sure the DLLs are in `ModLoader\Plugins\` and `Enabled=1` is set in each plugin's `.ini`. The **Plugins** tab shows why a plugin was rejected. |
+| Preload plugin not running | Run `preload` in the console, or check the `[Preload]` lines in the log. A preload plugin that fails is skipped and the game starts without it. |
+| Game will not start after adding a preload plugin | Launch with `-NoPreload`, or set `Enabled=0` under `[Preload]` in `modloader.ini`. The loader also skips any preload plugin that did not finish loading last launch, and says which it was. |
 | "Cannot Load" next to a plugin | It was built for the other target — a server plugin on a client, or the reverse. |
 | "Needs Update" next to a plugin | The plugin and the mod loader were built against different plugin interface versions. The tab says which of the two to update. |
 | Logs / diagnostics | Check `ModLoader\Logs\ModLoader.log`. Raise the detail in the **Logging** tab, or set `Level=DEBUG` under `[Logging]` in `ModLoader\modloader.ini`. |
