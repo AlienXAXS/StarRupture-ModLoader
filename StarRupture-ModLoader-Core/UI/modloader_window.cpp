@@ -9,6 +9,7 @@
 #include "config/config_manager.h"
 #include "global_settings.h"
 #include "theme.h"
+#include "named_entry_utils.h"
 #include "update_notice_window.h"
 #include "hook_failure_window.h"
 #include "hooks/input/keybind_registry.h"
@@ -24,6 +25,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <algorithm>
 #include <vector>
 #include <string>
 #include <functional>
@@ -161,6 +163,31 @@ namespace UI::ModLoaderWindow
                 bool blocking = (GetPrivateProfileIntW(wsec, wblkKey, 0, iniPath) != 0);
                 Hooks::Input::SetComboBlocking(kv.value, blocking);
             }
+
+            // <KeybindKey>Blocking is the Block toggle's own on-disk state
+            // (RenderConfigEntry writes it straight to the ini, not through
+            // the schema -- see its blocking-toggle block below), so it has
+            // no ConfigEntry of its own. Left in s_configEntries, it would
+            // render as an unlabeled second row under the keybind row that
+            // already shows it as the "Block" toggle. Drop it once its
+            // paired keybind is confirmed to actually be one.
+            s_configEntries.erase(
+                std::remove_if(s_configEntries.begin(), s_configEntries.end(),
+                    [&](const ConfigKV& kv)
+                    {
+                        if (FindSchemaEntry(schema, kv.section, kv.key)) return false;
+                        constexpr size_t kSuffixLen = 8; // strlen("Blocking")
+                        const size_t keyLen = strlen(kv.key);
+                        if (keyLen <= kSuffixLen ||
+                            strcmp(kv.key + keyLen - kSuffixLen, "Blocking") != 0)
+                            return false;
+
+                        char baseKey[64];
+                        snprintf(baseKey, sizeof(baseKey), "%.*s", (int)(keyLen - kSuffixLen), kv.key);
+                        const ConfigEntry* base = FindSchemaEntry(schema, kv.section, baseKey);
+                        return base && base->type == ConfigValueType::Keybind;
+                    }),
+                s_configEntries.end());
         }
     }
 
@@ -433,27 +460,71 @@ namespace UI::ModLoaderWindow
         }
     }
 
+    // Widest single space-delimited word in text, at the current font.
+    // RenderConfigTab uses this to floor a section's label column so
+    // TextWrapped never has to break a word mid-character to fit it;
+    // RenderConfigEntry uses the same measurement to fall back to an
+    // unwrapped (clipped, not broken) line for a row whose own widest word
+    // still doesn't fit -- see both call sites for why.
+    static float WidestWordWidth(const char* text)
+    {
+        float maxW = 0.0f;
+        const char* wordStart = text;
+        for (const char* p = text; ; ++p)
+        {
+            if (*p == ' ' || *p == '\0')
+            {
+                if (p > wordStart)
+                {
+                    const float w = ImGui::CalcTextSize(wordStart, p).x;
+                    if (w > maxW) maxW = w;
+                }
+                wordStart = p + 1;
+                if (*p == '\0') break;
+            }
+        }
+        return maxW;
+    }
+
     // Render one config row inside an already-open 3-column table:
-    //   Col 0 (Label)   -- setting name, wrapped to labelColWidth
-    //   Col 1 (Widget)  -- the editable control (empty for booleans -- their
-    //                      toggle lives in Col 2, see below)
-    //   Col 2 (Actions) -- blocking toggle (keybind only) + reset button,
-    //                      reset always anchored to the column's right edge
-    //                      so it lines up on every row regardless of what
-    //                      else Col 2 is showing
-    //   ...then, on a row with a description, a second line directly below
-    //   the label spanning Col 0 + Col 1 (up to where Col 2/actions starts)
-    //   as dimmed wrapped text -- Col 0 is NoClip (RenderConfigTab) so this
-    //   is allowed to draw past its own column's edge instead of being cut
-    //   off at it. Every entry type gets this treatment (no more hover-only
-    //   marquee).
-    //
-    // Col 0/1/2's *first* line is vertically centered against topRowH -- the
-    // taller of the label and a control's frame height -- so the widget,
-    // Block toggle and reset always sit level with the label, whether or
-    // not this row also has a description line underneath.
+    //   Col 0 (Label)       -- setting name, wraps to this column's own
+    //                          Fixed width (sized in RenderConfigTab to the
+    //                          widest label on the page).
+    //   Col 1 (Description) -- wraps to this column's own Stretch width;
+    //                          empty for an entry with no description. A
+    //                          genuine table column now, not text spanning
+    //                          under the label -- ImGui's own wrapped-text
+    //                          functions (TextWrapped, wrap_pos_x == 0.0)
+    //                          already wrap to "the current column's own
+    //                          right edge" when called inside a table cell
+    //                          (TableBeginCell sets window->WorkRect to the
+    //                          column's bounds for every column, Fixed or
+    //                          Stretch), so this needs no custom wrap-width
+    //                          math or clip-rect override at all.
+    //   Col 2 (Control)     -- the editable control, and the reset button
+    //                          immediately beside it (not a separate
+    //                          right-hand column). Reset is anchored to a
+    //                          fixed offset from this column's own left
+    //                          edge (controlW + ItemInnerSpacing) on every
+    //                          row, so the reset icons form one straight
+    //                          line down the page regardless of row type.
+    //                          A slider/text-input/keybind's bind-label+
+    //                          Rebind fill controlW from the left, same as
+    //                          the reset position assumes; a boolean's
+    //                          toggle (and a keybind's Block toggle,
+    //                          narrower than controlW on their own) are
+    //                          instead right-aligned to butt up against
+    //                          that same reset position, one
+    //                          ItemInnerSpacing before it.
+    // No manual per-row centering math: label and description are aligned
+    // to the control's own frame height via AlignTextToFramePadding, and
+    // the control/reset pair are vertically level with each other by
+    // construction (both frame-height items on the same ImGui line). A
+    // label or description taller than one line just grows the row
+    // downward; ImGui's table row-height (CellPadding-driven) handles that
+    // on its own.
     static void RenderConfigEntry(ConfigKV& kv, const ConfigEntry* e, const char* pluginName,
-                                   float labelColWidth, float actionsW, float sliderMaxW)
+                                   float controlW)
     {
         ImGui::TableNextRow();
 
@@ -463,54 +534,83 @@ namespace UI::ModLoaderWindow
         bool showReset = e && e->defaultValue && e->defaultValue[0] &&
                          !(strcmp(kv.section, "General") == 0 && strcmp(kv.key, "Enabled") == 0);
 
-        const bool  isBool    = e && e->type == ConfigValueType::Boolean;
-        const bool  isKeybind = e && e->type == ConfigValueType::Keybind;
-        const bool  hasDesc   = e && e->description && e->description[0];
-        const float fh        = ImGui::GetFrameHeight();
-        const float spacingY  = ImGui::GetStyle().ItemSpacing.y;
-        const float rowTopY   = ImGui::GetCursorPosY();
+        const bool  isBool       = e && e->type == ConfigValueType::Boolean;
+        const bool  isKeybind    = e && e->type == ConfigValueType::Keybind;
+        const bool  hasDesc      = e && e->description && e->description[0];
+        const float innerSpacing = ImGui::GetStyle().ItemInnerSpacing.x;
+        const float toggleW      = UI::Theme::ToggleSwitchSize().x;
 
-        // Measure where Col 2 starts before drawing anything -- the
-        // description line (below) wraps to that x, spanning Col 0 + Col 1
-        // without depending on Col 1's own stretch width. TableSetColumnIndex
-        // supports being visited out of order for exactly this.
-        ImGui::TableSetColumnIndex(2);
-        const float col2X = ImGui::GetCursorPosX();
+        // ---- Col 0: label -----------------------------------------------
         ImGui::TableSetColumnIndex(0);
-        const float descWrapWidth = col2X - ImGui::GetCursorPosX();
+        ImGui::AlignTextToFramePadding();
+        // RenderConfigTab's word floor sizes this section's label column to
+        // fit every one of its labels' own widest word, so this ordinarily
+        // never has to break one -- the one exception is a single word
+        // genuinely wider than that floor was allowed to grow the column
+        // (capped so it doesn't eat the whole row): TextWrapped would still
+        // break it mid-character to fit, so fall back to a single
+        // unwrapped line instead, clipped by the column's own bounds
+        // (ImGui's table columns clip by default) rather than broken.
+        if (WidestWordWidth(kv.key) > ImGui::GetContentRegionAvail().x)
+            ImGui::TextUnformatted(kv.key);
+        else
+            ImGui::TextWrapped("%s", kv.key);
 
-        const float labelH  = ImGui::CalcTextSize(kv.key, nullptr, false, labelColWidth).y;
-        const float topRowH = labelH > fh ? labelH : fh;
-
-        // ---- Col 0: label ---------------------------------------------------
-        ImGui::TableSetColumnIndex(0);
-        ImGui::SetCursorPosY(rowTopY + (topRowH - labelH) * 0.5f);
-        ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + labelColWidth);
-        ImGui::TextUnformatted(kv.key);
-        ImGui::PopTextWrapPos();
-
-        // ---- Col 1: widget -----------------------------------------------
+        // ---- Col 1: description -------------------------------------------
         ImGui::TableSetColumnIndex(1);
-        ImGui::SetCursorPosY(rowTopY + (topRowH - fh) * 0.5f);
-        ImGui::SetNextItemWidth(-FLT_MIN); // fill the column
+        if (hasDesc)
+        {
+            ImGui::AlignTextToFramePadding();
+            ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
+            ImGui::TextWrapped("%s", e->description);
+            ImGui::PopStyleColor();
+        }
+
+        // ---- Col 2: control + reset ----------------------------------------
+        ImGui::TableSetColumnIndex(2);
+        const float ctrlColStartX = ImGui::GetCursorPosX();
+        const float resetX        = ctrlColStartX + controlW + innerSpacing; // fixed for every row type
+        const float rightAlignX   = resetX - innerSpacing - toggleW;          // a right-aligned toggle's own left edge
 
         bool widgetHovered = false;
 
         if (isBool)
         {
-            // Nothing here -- the toggle lives in Col 2 next to the reset
-            // button, and the description already moved under the label.
+            // Right-aligned, butting up against the reset position -- not
+            // left-aligned like a slider/text input, since a lone toggle
+            // is far narrower than controlW and left-aligning it would
+            // leave the reset icon trailing right after it instead of in
+            // its fixed column position (breaking the straight line every
+            // other row type's reset already sits on).
+            ImGui::SetCursorPosX(rightAlignX);
+
+            // Accept the same spellings ConfigReadBool does, but always
+            // write back "1"/"0": that is what ConfigWriteBool and the
+            // schema default writer emit, and plugins that read booleans
+            // via ReadInt/ReadString and compare against "1" break when
+            // this toggle is the one path that writes "true"/"false".
+            bool bval = (_stricmp(kv.value, "true") == 0 ||
+                         _stricmp(kv.value, "yes") == 0 ||
+                         strcmp(kv.value, "1") == 0);
+            char lbl[128];
+            snprintf(lbl, sizeof(lbl), "##chk%s", id);
+            if (UI::Theme::ToggleSwitch(lbl, &bval))
+            {
+                strncpy_s(kv.value, bval ? "1" : "0", _TRUNCATE);
+                NotifyConfigChangedLive(pluginName, kv);
+                CommitConfigChange(pluginName, kv);
+            }
+            // widgetHovered deliberately left false: the description has
+            // its own always-visible column now, not a hover-only tooltip,
+            // so a tooltip here would just repeat it.
         }
         else if (e && e->type == ConfigValueType::Integer)
         {
             int ival = atoi(kv.value);
             bool hasRange = e->rangeMax > e->rangeMin;
+            ImGui::SetNextItemWidth(controlW);
             if (hasRange)
             {
-                // Cap the slider's own width instead of letting it fill the
-                // column -- Col 2 still starts at the same x right after it.
-                const float avail = ImGui::GetContentRegionAvail().x;
-                ImGui::SetNextItemWidth(avail < sliderMaxW ? avail : sliderMaxW);
                 if (ImGui::SliderInt(id, &ival, (int)e->rangeMin, (int)e->rangeMax))
                 {
                     snprintf(kv.value, sizeof(kv.value), "%d", ival);
@@ -540,12 +640,9 @@ namespace UI::ModLoaderWindow
         {
             float fval = strtof(kv.value, nullptr);
             bool hasRange = e->rangeMax > e->rangeMin;
+            ImGui::SetNextItemWidth(controlW);
             if (hasRange)
             {
-                // Cap the slider's own width instead of letting it fill the
-                // column -- Col 2 still starts at the same x right after it.
-                const float avail = ImGui::GetContentRegionAvail().x;
-                ImGui::SetNextItemWidth(avail < sliderMaxW ? avail : sliderMaxW);
                 if (ImGui::SliderFloat(id, &fval, e->rangeMin, e->rangeMax, "%.2f"))
                 {
                     FormatFloat(kv.value, sizeof(kv.value), fval);
@@ -573,7 +670,11 @@ namespace UI::ModLoaderWindow
         }
         else if (isKeybind)
         {
-            // Current bind label + Rebind button, side by side, left-aligned.
+            // Current bind label + Rebind button, left-aligned same as a
+            // slider/text input. The Block toggle -- part of this row's
+            // control, not a separate action -- is right-aligned instead,
+            // same as a lone boolean, so it butts up against the reset
+            // position rather than trailing right after Rebind.
             const char* bindLabel = (kv.value[0] != '\0') ? kv.value : "(none)";
             ImGui::AlignTextToFramePadding();
             ImGui::TextDisabled("%s", bindLabel);
@@ -591,58 +692,9 @@ namespace UI::ModLoaderWindow
                 s_rebind.heldModifierVk    = 0;
             }
             widgetHovered = ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal);
-        }
-        else
-        {
-            // String or unknown schema entry: plain text input.
-            if (ImGui::InputText(id, kv.value, sizeof(kv.value),
-                                 ImGuiInputTextFlags_EnterReturnsTrue))
-            {
-                NotifyConfigChangedLive(pluginName, kv);
-                CommitConfigChange(pluginName, kv);
-            }
-            if (ImGui::IsItemDeactivatedAfterEdit())
-            {
-                NotifyConfigChangedLive(pluginName, kv);
-                CommitConfigChange(pluginName, kv);
-            }
-            widgetHovered = ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal);
-        }
 
-        if (hasDesc && widgetHovered)
-            ImGui::SetTooltip("%s", e->description);
-
-        // ---- Col 2: actions ------------------------------------------------
-        ImGui::TableSetColumnIndex(2);
-        const float colStartX = col2X;
-        const float colY      = rowTopY + (topRowH - fh) * 0.5f;
-        ImGui::SetCursorPosY(colY);
-
-        // Boolean toggle lives here (not in Col 1) so Col 1 can stay empty.
-        if (isBool)
-        {
-            // Accept the same spellings ConfigReadBool does, but always write back
-            // "1"/"0": that is what ConfigWriteBool and the schema default writer emit,
-            // and plugins that read booleans via ReadInt/ReadString and compare against
-            // "1" break when this toggle is the one path that writes "true"/"false".
-            bool bval = (_stricmp(kv.value, "true") == 0 ||
-                         _stricmp(kv.value, "yes") == 0 ||
-                         strcmp(kv.value, "1") == 0);
-            char lbl[128];
-            snprintf(lbl, sizeof(lbl), "##chk%s", id);
-            if (UI::Theme::ToggleSwitch(lbl, &bval))
-            {
-                strncpy_s(kv.value, bval ? "1" : "0", _TRUNCATE);
-                NotifyConfigChangedLive(pluginName, kv);
-                CommitConfigChange(pluginName, kv);
-            }
-        }
-
-        // Blocking toggle (keybind rows only) -- given a short visible label,
-        // not just a hover tooltip: unlabeled, it previously gave no visible
-        // hint at all that there was a second control here.
-        if (isKeybind)
-        {
+            // Blocking toggle -- given a short visible label rather than
+            // just a hover tooltip, so it isn't a second unlabeled control.
             wchar_t iniPath[MAX_PATH];
             bool bBlocking = false;
             if (GetPluginIniPath(pluginName, iniPath, MAX_PATH))
@@ -652,11 +704,14 @@ namespace UI::ModLoaderWindow
                 swprintf_s(wblkKey, L"%SBlocking", kv.key);
                 bBlocking = (GetPrivateProfileIntW(wsec, wblkKey, 0, iniPath) != 0);
             }
-            ImGui::AlignTextToFramePadding();
-            ImGui::TextDisabled("Block");
-            ImGui::SameLine();
             char chkId[160];
             snprintf(chkId, sizeof(chkId), "##blk_%s_%s", kv.section, kv.key);
+            const float blockLabelW = ImGui::CalcTextSize("Block").x;
+            ImGui::SameLine(0.0f, 0.0f); // stay on the bind-label/Rebind line before jumping X
+            ImGui::SetCursorPosX(rightAlignX - innerSpacing - blockLabelW);
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextDisabled("Block");
+            ImGui::SameLine(0.0f, innerSpacing);
             if (UI::Theme::ToggleSwitch(chkId, &bBlocking))
             {
                 wchar_t iniPath2[MAX_PATH];
@@ -674,17 +729,41 @@ namespace UI::ModLoaderWindow
                                   "plugin -- the game will not also react to it.\n"
                                   "Enable if the key conflicts with a game action.");
         }
+        else
+        {
+            // String or unknown schema entry: plain text input.
+            ImGui::SetNextItemWidth(controlW);
+            if (ImGui::InputText(id, kv.value, sizeof(kv.value),
+                                 ImGuiInputTextFlags_EnterReturnsTrue))
+            {
+                NotifyConfigChangedLive(pluginName, kv);
+                CommitConfigChange(pluginName, kv);
+            }
+            if (ImGui::IsItemDeactivatedAfterEdit())
+            {
+                NotifyConfigChangedLive(pluginName, kv);
+                CommitConfigChange(pluginName, kv);
+            }
+            widgetHovered = ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal);
+        }
 
-        // Reset button -- always anchored to the same x (the column's right
-        // edge minus its own width), so it lines up on every row regardless
-        // of whether a toggle/label preceded it in this column.
+        if (hasDesc && widgetHovered)
+            ImGui::SetTooltip("%s", e->description);
+
+        // Reset -- fixed column-relative position (resetX), not merely
+        // "immediately after whatever was drawn": that is what keeps every
+        // row's reset icon in a straight line regardless of row type, and
+        // is why a lone toggle/Block toggle above is right-aligned to meet
+        // it rather than left-aligned. Vertically centered with the
+        // control by construction, since both are frame-height items on
+        // the same ImGui line.
         if (showReset)
         {
-            const float resetW = fh;
-            ImGui::SetCursorPos(ImVec2(colStartX + actionsW - resetW, colY));
+            ImGui::SameLine(0.0f, 0.0f);
+            ImGui::SetCursorPosX(resetX);
             char resetId[160];
             snprintf(resetId, sizeof(resetId), "##r_%s_%s", kv.section, kv.key);
-            if (UI::Theme::IconButton(UI::Theme::Icons::Reset, resetId, resetW))
+            if (UI::Theme::IconButton(UI::Theme::Icons::Reset, resetId))
             {
                 strncpy_s(kv.value, e->defaultValue, _TRUNCATE);
                 NotifyConfigChangedLive(pluginName, kv);
@@ -692,21 +771,6 @@ namespace UI::ModLoaderWindow
             }
             if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
                 ImGui::SetTooltip("Reset to default: %s", e->defaultValue);
-        }
-
-        // ---- Description: its own line under the label, spanning Col 0 +
-        // Col 1 (Col 0 is NoClip -- see RenderConfigTab) instead of being
-        // squeezed into the label column alone, so a short description
-        // stays on one line and only a genuinely long one wraps.
-        if (hasDesc)
-        {
-            ImGui::TableSetColumnIndex(0);
-            ImGui::SetCursorPosY(rowTopY + topRowH + spacingY);
-            ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + descWrapWidth);
-            ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
-            ImGui::TextUnformatted(e->description);
-            ImGui::PopStyleColor();
-            ImGui::PopTextWrapPos();
         }
     }
 
@@ -949,9 +1013,17 @@ namespace UI::ModLoaderWindow
             // inside a table's own padding.
             const float kSectionIndent = 8.0f;
 
+            // Leading Spacing() before the first SeparatorText, matching
+            // every other tab's own top-of-content rhythm (RenderGlobalSettingsTab,
+            // RenderThemeTab) -- this child has its own BeginChild, so it
+            // doesn't inherit that gap from "##tab_content" the way a
+            // non-scrolling tab does.
+            ImGui::Spacing();
+
             // Plugin panels button row (shown before config entries)
             ImGui::Indent(kSectionIndent);
             ImGui::SeparatorText("Plugin Tools");
+            ImGui::Spacing();
             UI::PluginPanelRegistry::RenderPanelButtons(imgui, info->name);
             ImGui::Unindent(kSectionIndent);
             ImGui::Spacing();
@@ -967,114 +1039,245 @@ namespace UI::ModLoaderWindow
                 ImGui::TextDisabled("Changes are saved immediately.");
                 ImGui::Spacing();
 
-                const float fh      = ImGui::GetFrameHeight();
-                const float spacing = ImGui::GetStyle().ItemSpacing.x;
+                // Every width below is derived from theme.cpp's own style
+                // values (Apply(): FramePadding, ItemSpacing, CellPadding --
+                // see theme.h/theme.cpp) rather than a second, hand-invented
+                // set of constants, so a restyle in one place stays
+                // consistent here too.
+                const float itemSpacing  = ImGui::GetStyle().ItemSpacing.x;
+                const float innerSpacing = ImGui::GetStyle().ItemInnerSpacing.x;
+                const float framePadX    = ImGui::GetStyle().FramePadding.x;
+                const float fh           = ImGui::GetFrameHeight();
+                const float toggleW      = UI::Theme::ToggleSwitchSize().x;
+                const float blockLabelW  = ImGui::CalcTextSize("Block").x;
+                const float resetW       = fh;
 
-                // Actions column: sized to fit its widest possible content --
-                // a keybind row's "Block" label plus its toggle -- with the
-                // reset button always anchored to the column's right edge
-                // (RenderConfigEntry) so it lines up on every row regardless
-                // of whether a toggle/label came before it in this column.
-                const float toggleW     = UI::Theme::ToggleSwitchSize().x;
-                const float blockLabelW = ImGui::CalcTextSize("Block").x;
-                const float resetW      = fh;
-                const float actionsW    = blockLabelW + spacing + toggleW + spacing + resetW;
-
-                // Label column: fits the widest label on this plugin's page --
-                // uncapped by a fixed constant, so a label only wraps
-                // (RenderConfigEntry) when the window genuinely doesn't have
-                // room for it, capped instead by what's actually left over
-                // once the actions column and a usable minimum for the
-                // widget column are reserved.
-                const float kLabelColMin  = 130.0f;
-                const float kMinWidgetCol = 160.0f;
-                float labelColWidth = kLabelColMin;
-                for (const auto& kv : s_configEntries)
-                {
-                    const float w = ImGui::CalcTextSize(kv.key).x;
-                    if (w > labelColWidth) labelColWidth = w;
-                }
-                labelColWidth += ImGui::GetStyle().CellPadding.x; // breathing room before the wrap point
-
-                const float maxLabelColWidth = ImGui::GetContentRegionAvail().x - actionsW - kMinWidgetCol;
-                if (labelColWidth > maxLabelColWidth && maxLabelColWidth > kLabelColMin)
-                    labelColWidth = maxLabelColWidth;
-
-                // Sliders stop growing past this width instead of filling
-                // the whole column -- 240px at 1x font scale (360px read as
-                // ~540px at the owner's font scale -- still too wide).
+                // A ranged slider caps at sliderMaxW and floors at sliderMinW.
+                // Sliders don't shrink past sliderMinW either, so a narrow
+                // window squeezes the description column first and only
+                // reaches for the slider's own width once that's already as
+                // tight as it can usefully go.
                 const float sliderMaxW = 240.0f * ImGui::GetStyle().FontScaleMain;
+                const float sliderMinW = 120.0f * ImGui::GetStyle().FontScaleMain;
 
-                // One cell padding for every section table on this page.
-                const ImVec2 kCellPadding(8.0f, 8.0f);
+                const float kLabelColMin   = 130.0f; // floor for a very short label
+                const float kMinControlW   = 160.0f; // floor for a plain text/int/float input
+                const float kMinDescColW   = 150.0f; // below this, shrink the slider toward sliderMinW instead
+                // 20% of the page's own available width, not a fixed
+                // pixel budget -- scales with whatever room there actually
+                // is instead of being proportionally too generous on a
+                // narrow window (or needlessly tight on a wide one), which
+                // an absolute cap in px, even scaled by FontScaleMain,
+                // wouldn't do on its own. This is now purely the outlier
+                // *threshold* (see labelColWidth's own loop below), not the
+                // resulting column width, so its exact value matters less
+                // than it used to -- 30% (the prior pass) was still fine
+                // here, but 20% draws the "is this label huge" line closer
+                // to where a real label actually gets uncomfortable to read
+                // on one row.
+                const float kMaxLabelShare = 0.20f;  // past this, a label is an outlier: it wraps, and stops setting the column's width
 
-                // One 3-column table per section so separators span full width
-                // and all rows within a section share the same column edges.
-                //   Col 0  Label   -- fixed, sized above
-                //   Col 1  Widget  -- stretches to fill remaining space
-                //   Col 2  Actions -- fixed (blocking toggle + reset)
+                // One 3-column table per section -- but BOTH Label's and
+                // Control's own widths are computed ONCE, from every entry
+                // across the WHOLE page, not per section: sections used to
+                // size each independently, which meant "Enabled" (General)
+                // and "Max Speed" (Drone) didn't share a column edge (Label
+                // fixed first), and separately a section with a ranged
+                // slider ("Max Speed", Drone) sized Control wider than a
+                // section without one (General), so Description ended at a
+                // different x too even after Label matched. Every column
+                // edge -- Label's, Description's start AND end, Control's,
+                // the reset's -- now lines up top to bottom regardless of
+                // section.
+                //   Col 0  Label       -- content-bound: the page's widest
+                //                         label that ISN'T an outlier (past
+                //                         kMaxLabelShare of the page), own
+                //                         text width plus CellPadding.
+                //                         Never stretches and never gives up
+                //                         width to the other two columns. A
+                //                         single huge label -- a plugin
+                //                         author's long setting name, or the
+                //                         harness's own deliberate stress
+                //                         case -- wraps onto a second line
+                //                         in place instead of dragging this
+                //                         column, and every ordinary label
+                //                         on the page, out wider than any of
+                //                         them actually need.
+                //   Col 1  Description -- stretches to fill whatever Label
+                //                         and Control don't need; the first
+                //                         to shrink when space is tight.
+                //   Col 2  Control     -- fixed (widget + its own reset,
+                //                         spaced by ItemInnerSpacing -- the
+                //                         same gap RenderConfigEntry puts
+                //                         between a control and its reset,
+                //                         so the column and each row agree),
+                //                         sized to whichever entry anywhere
+                //                         on the page needs the most room
+                //                         (the slider cap, a keybind row's
+                //                         Rebind+Block, or the plain-input
+                //                         floor). A ranged slider is the
+                //                         only part of this that ever
+                //                         shrinks, and only after
+                //                         Description has already hit
+                //                         kMinDescColW -- see below.
+                //                         Precedence when space runs out:
+                //                         Label keeps its content width,
+                //                         Control keeps at least its own
+                //                         floor, Description absorbs the
+                //                         rest.
+                // CellPadding is theme.cpp's own (Apply()), not overridden
+                // here -- no reason for these tables to use different cell
+                // padding than every other table/frame in the UI.
                 const ImGuiTableFlags tblFlags =
                     ImGuiTableFlags_BordersInnerH |
                     ImGuiTableFlags_PadOuterX;
 
-                const char* curSection = nullptr;
-                bool        tableOpen  = false;
+                // pageAvail mirrors what each section's own
+                // GetContentRegionAvail().x reads after Indent(kSectionIndent)
+                // below -- same window, same constant indent, every section
+                // -- computed the same way (subtracting the indent directly)
+                // rather than indenting/unindenting here just to measure it.
+                const float pageAvail = ImGui::GetContentRegionAvail().x - kSectionIndent;
+                const float cellPadX  = ImGui::GetStyle().CellPadding.x;
+                float pageOutlierThreshold = pageAvail * kMaxLabelShare;
+                if (pageOutlierThreshold < kLabelColMin) pageOutlierThreshold = kLabelColMin;
 
-                // Closes whatever section table is currently open, undoing
-                // the indent/padding pushed when it was opened below. Called
-                // both between sections and after the last one.
-                auto closeSectionTable = [&]()
+                // One pass over every entry on the page, gathering what
+                // both Label and Control need -- same per-entry scan an
+                // earlier, per-section version of this ran once per
+                // section; now it runs once, page-wide.
+                float labelColWidth   = 0.0f;
+                float pageMaxWordW    = 0.0f;
+                float keybindRowW     = 0.0f;
+                bool  hasRangedSlider = false;
+                for (const ConfigKV& kv : s_configEntries)
                 {
-                    if (!tableOpen) return;
-                    ImGui::EndTable();
-                    ImGui::PopStyleVar(); // CellPadding, pushed when the table opened
-                    ImGui::Unindent(kSectionIndent);
-                    tableOpen = false;
-                };
+                    const float lw = ImGui::CalcTextSize(kv.key).x + cellPadX;
+                    if (lw <= pageOutlierThreshold && lw > labelColWidth)
+                        labelColWidth = lw;
+                    const float ww = WidestWordWidth(kv.key);
+                    if (ww > pageMaxWordW) pageMaxWordW = ww;
 
-                for (auto& kv : s_configEntries)
-                {
-                    if (!curSection || strcmp(curSection, kv.section) != 0)
+                    const ConfigEntry* se = FindSchemaEntry(schema, kv.section, kv.key);
+                    if (!se) continue;
+                    if (se->type == ConfigValueType::Keybind)
                     {
-                        closeSectionTable();
-                        if (curSection) ImGui::Spacing();
-
-                        ImGui::Indent(kSectionIndent);
-                        ImGui::SeparatorText(kv.section);
-                        curSection = kv.section;
-
-                        ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, kCellPadding);
-                        char tblId[128];
-                        snprintf(tblId, sizeof(tblId), "##cfg_%s", kv.section);
-                        if (ImGui::BeginTable(tblId, 3, tblFlags))
-                        {
-                            // NoClip: a description longer than the label column
-                            // (RenderConfigEntry) is deliberately allowed to draw
-                            // past this column's right edge, into Col 1's space,
-                            // instead of being clipped at it.
-                            ImGui::TableSetupColumn("##lbl",    ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoClip, labelColWidth);
-                            ImGui::TableSetupColumn("##widget", ImGuiTableColumnFlags_WidthStretch);
-                            ImGui::TableSetupColumn("##acts",   ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, actionsW);
-                            tableOpen = true;
-                        }
-                        else
-                        {
-                            // Table fully clipped (e.g. scrolled out) -- undo
-                            // what was pushed above since closeSectionTable()
-                            // won't run for a table that never opened.
-                            ImGui::PopStyleVar();
-                            ImGui::Unindent(kSectionIndent);
-                        }
+                        const char* bindLabel  = kv.value[0] ? kv.value : "(none)";
+                        const float rebindBtnW = ImGui::CalcTextSize("Rebind").x + framePadX * 2.0f;
+                        const float w = ImGui::CalcTextSize(bindLabel).x + itemSpacing + rebindBtnW;
+                        if (w > keybindRowW) keybindRowW = w;
                     }
-
-                    if (tableOpen)
+                    else if ((se->type == ConfigValueType::Integer || se->type == ConfigValueType::Float) &&
+                             se->rangeMax > se->rangeMin)
                     {
-                        const ConfigEntry* entry = FindSchemaEntry(schema, kv.section, kv.key);
-                        RenderConfigEntry(kv, entry, info->name, labelColWidth, actionsW, sliderMaxW);
+                        hasRangedSlider = true;
+                    }
+                }
+                if (labelColWidth <= 0.0f) labelColWidth = pageOutlierThreshold; // every label on the page was an outlier
+                if (labelColWidth < kLabelColMin) labelColWidth = kLabelColMin;
+                if (keybindRowW > 0.0f)
+                    keybindRowW += itemSpacing + blockLabelW + innerSpacing + toggleW;
+
+                // controlFloor: what Control needs regardless of the
+                // slider -- a keybind row's own full width (bind label +
+                // Rebind + Block + toggle) or a lone toggle, whichever is
+                // larger anywhere on the page, or the plain-input floor if
+                // neither applies. The slider (if the page has one) is
+                // layered on top of this, and is the only part allowed to
+                // shrink below its own max.
+                float controlFloor = kMinControlW;
+                if (toggleW     > controlFloor) controlFloor = toggleW;
+                if (keybindRowW > controlFloor) controlFloor = keybindRowW;
+
+                if (pageMaxWordW > 0.0f)
+                {
+                    // Same word floor as before -- still capped so a
+                    // pathological single word can't blow the column out
+                    // for every section, now against the page's real
+                    // controlFloor (known at this point, unlike before
+                    // Control also became page-wide) instead of the
+                    // kMinControlW stand-in that used. Only matters for a
+                    // word wider than any real label in this set gets
+                    // close to.
+                    float wordFloor = pageMaxWordW + cellPadX;
+                    const float minControlEver = (hasRangedSlider && sliderMinW > controlFloor) ? sliderMinW : controlFloor;
+                    const float maxLabelFloor = pageAvail - kMinDescColW - minControlEver - innerSpacing - resetW;
+                    if (wordFloor > maxLabelFloor)
+                        wordFloor = maxLabelFloor;
+                    if (wordFloor > labelColWidth)
+                        labelColWidth = wordFloor;
+                }
+
+                float controlW = hasRangedSlider ? sliderMaxW : controlFloor;
+                if (controlFloor > controlW) controlW = controlFloor;
+
+                // If Label + Control (at the slider's max) would leave
+                // Description under its own floor, shrink the slider's
+                // portion of Control toward sliderMinW first -- Control
+                // never gives up the non-slider floor computed above, so a
+                // keybind/toggle row anywhere on the page still has room
+                // regardless of how far the slider itself shrinks. Decided
+                // once here, page-wide, same as Label/Control themselves --
+                // deciding it per section again would let one section
+                // shrink its Control while another didn't, breaking the
+                // very alignment this change exists for.
+                if (hasRangedSlider)
+                {
+                    const float wouldBeDescW = pageAvail - labelColWidth - (controlW + innerSpacing + resetW);
+                    if (wouldBeDescW < kMinDescColW)
+                    {
+                        const float shrinkNeeded = kMinDescColW - wouldBeDescW;
+                        const float sliderFloor  = sliderMinW > controlFloor ? sliderMinW : controlFloor;
+                        const float shrinkable   = controlW - sliderFloor;
+                        if (shrinkable > 0.0f)
+                            controlW -= (shrinkNeeded < shrinkable ? shrinkNeeded : shrinkable);
                     }
                 }
 
-                closeSectionTable();
+                const float controlColWidth = controlW + innerSpacing + resetW;
+
+                bool firstSection = true;
+                size_t i = 0;
+                while (i < s_configEntries.size())
+                {
+                    const char* sectionName = s_configEntries[i].section;
+                    const size_t sectionStart = i;
+                    while (i < s_configEntries.size() && strcmp(s_configEntries[i].section, sectionName) == 0)
+                        ++i;
+                    const size_t sectionEnd = i;
+
+                    // Indented first, same as before -- purely for the
+                    // visual indent now, since neither Label nor Control is
+                    // computed per section anymore (both page-wide above).
+                    ImGui::Indent(kSectionIndent);
+
+                    if (!firstSection) ImGui::Spacing();
+                    firstSection = false;
+
+                    ImGui::SeparatorText(sectionName);
+                    ImGui::Spacing(); // gap below the rule -- the first row must not touch it
+
+                    char tblId[128];
+                    snprintf(tblId, sizeof(tblId), "##cfg_%s", sectionName);
+                    if (ImGui::BeginTable(tblId, 3, tblFlags))
+                    {
+                        ImGui::TableSetupColumn("##lbl",  ImGuiTableColumnFlags_WidthFixed, labelColWidth);
+                        ImGui::TableSetupColumn("##desc", ImGuiTableColumnFlags_WidthStretch);
+                        ImGui::TableSetupColumn("##ctrl", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, controlColWidth);
+
+                        for (size_t j = sectionStart; j < sectionEnd; ++j)
+                        {
+                            const ConfigEntry* entry = FindSchemaEntry(schema, s_configEntries[j].section, s_configEntries[j].key);
+                            RenderConfigEntry(s_configEntries[j], entry, info->name, controlW);
+                        }
+                        ImGui::EndTable();
+                    }
+                    // else: table fully clipped (e.g. scrolled out) -- rows skipped, nothing to undo beyond Unindent below.
+
+                    ImGui::Unindent(kSectionIndent);
+                }
+
+                ImGui::Spacing(); // gap before the bottom of the scroll region, matching the top
             }
         }
 
@@ -1328,14 +1531,12 @@ namespace UI::ModLoaderWindow
     // True if `name` is safe to use as a Themes\<name>.ini file name -- no
     // path separators or other characters Windows rejects in a file name,
     // and not empty. Deliberately permissive otherwise: this is a local,
-    // single-user text field, not untrusted input.
+    // single-user text field, not untrusted input. Thin wrapper around
+    // UI::NamedEntryUtils::IsValidEntryName, factored out for reuse by any
+    // other named-entry field this UI grows.
     static bool IsValidThemeFileName(const char* name)
     {
-        if (!name || !name[0]) return false;
-        if (strcmp(name, ".") == 0 || strcmp(name, "..") == 0) return false;
-        for (const char* p = name; *p; ++p)
-            if (strchr("\\/:*?\"<>|", *p)) return false;
-        return true;
+        return UI::NamedEntryUtils::IsValidEntryName(name);
     }
 
     static void RenderThemeTab()

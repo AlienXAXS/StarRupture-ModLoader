@@ -470,6 +470,7 @@
     <ClInclude Include="UI\console_window.h" />
     <ClInclude Include="UI\global_settings.h" />
     <ClInclude Include="UI\theme.h" />
+    <ClInclude Include="UI\named_entry_utils.h" />
     <ClInclude Include="UI\logging_tab.h" />
     <ClInclude Include="UI\modloader_window.h" />
     <ClInclude Include="UI\overlay.h" />
@@ -622,6 +623,9 @@
       <ExcludedFromBuild Condition="'$(Configuration)' != 'Client Debug' And '$(Configuration)' != 'Client Release' And '$(Configuration)' != 'Local SDK Client Debug' And '$(Configuration)' != 'Local SDK Client Release'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="UI\theme.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)' != 'Client Debug' And '$(Configuration)' != 'Client Release' And '$(Configuration)' != 'Local SDK Client Debug' And '$(Configuration)' != 'Local SDK Client Release'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="UI\named_entry_utils.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)' != 'Client Debug' And '$(Configuration)' != 'Client Release' And '$(Configuration)' != 'Local SDK Client Debug' And '$(Configuration)' != 'Local SDK Client Release'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="UI\modloader_window.cpp">
