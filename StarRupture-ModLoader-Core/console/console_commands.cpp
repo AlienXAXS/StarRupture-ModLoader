@@ -23,6 +23,7 @@
 #include "plugins/plugin_hook_report.h"
 #include "plugins/plugin_interface.h"
 #include "plugins/plugin_manager.h"
+#include "preload/preload_manager.h"
 #include "utils/game_thread_dispatch.h"
 
 #ifndef MODLOADER_BUILD_TAG
@@ -608,8 +609,64 @@ namespace ModConsole
         }
 
         out.Notice("A hook that no longer resolves usually means the game updated and the");
-        out.Notice("plugin needs a new build. Any unresolved hook, required or optional,");
-        out.Notice("stops the plugin loading. Full detail is in modloader.log.");
+        out.Notice("plugin needs a new build. Any unresolved hook stops the plugin loading --");
+        out.Notice("required or optional, and a pattern that matches more than once counts as");
+        out.Notice("unresolved too. Full detail is in modloader.log.");
+    }
+
+    // -----------------------------------------------------------------------
+    // preload -- what happened during Stage 1, long after Stage 1 is over.
+    //
+    // The preload phase runs before the engine exists, so nothing that could
+    // display its result is running yet. By the time anyone can ask, the
+    // answer is history -- which is why PreloadManager keeps its records for
+    // the session. On a dedicated server this command is the only way to see
+    // them without reading the log.
+    // -----------------------------------------------------------------------
+    static void Cmd_Preload(const std::vector<std::string>&, Sink& out)
+    {
+        if (!PreloadManager::DidRun())
+        {
+            const std::string reason = PreloadManager::GetSkipReason();
+            out.Printf(LineKind::Error, "The preload phase did not run: %s",
+                       reason.empty() ? "it has not been reached yet" : reason.c_str());
+            return;
+        }
+
+        const std::vector<PreloadManager::Record> records = PreloadManager::GetRecords();
+        if (records.empty())
+        {
+            out.Notice("No preload plugins found in ModLoader\\Preload.");
+            return;
+        }
+
+        int running = 0;
+        for (const PreloadManager::Record& r : records)
+            if (r.status == PreloadManager::Status::Running)
+                ++running;
+
+        out.Printf(LineKind::Output, "%zu preload plugin(s), %d running:", records.size(), running);
+
+        for (const PreloadManager::Record& r : records)
+        {
+            const bool ok = (r.status == PreloadManager::Status::Running);
+
+            out.Printf(ok ? LineKind::Output : LineKind::Error,
+                       "  %-24s %-10s %-28s %s",
+                       r.name.c_str(),
+                       r.version.empty() ? "-" : r.version.c_str(),
+                       PreloadManager::StatusName(r.status),
+                       r.fileName.c_str());
+
+            if (ok && r.hooksInstalled > 0)
+                out.Notice("      %d hook(s) installed", r.hooksInstalled);
+
+            if (!r.detail.empty())
+                out.Notice("      %s", r.detail.c_str());
+        }
+
+        out.Notice("A preload plugin that fails is unloaded and the game starts without it --");
+        out.Notice("it can never stop the game booting. Use `hookfailures` for pattern detail.");
     }
 
     // -----------------------------------------------------------------------
@@ -1318,6 +1375,10 @@ namespace ModConsole
         Register({ "hookfailures", "hooks",  "hookfailures",
                    "List plugins whose hook patterns did not resolve",
                    &Cmd_HookFailures, false });
+
+        Register({ "preload", "preloads",  "preload",
+                   "Show what happened to the DLLs in ModLoader\\Preload during startup",
+                   &Cmd_Preload, false });
 
         Register({ "version", "ver",        "version",
                    "Show mod loader build and plugin interface versions",

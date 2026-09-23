@@ -55,6 +55,14 @@ namespace PluginHookReport
         bool                 refused;   // true = the plugin was not loaded (any failure)
         int                  resolved;  // patterns that DID resolve, for context
         std::vector<Failure> failures;
+
+        // True for a Stage 1 preload plugin (see preload/preload_manager.h)
+        // rather than an ordinary Plugins-folder one. Both go through this
+        // report because the failure is the same failure and the user should
+        // see it in the same place -- but the consequence differs and the text
+        // has to say so: a refused preload plugin does not hold up the game,
+        // it just does not get its early window.
+        bool                 preload = false;
     };
 
     // --- Session, driven by the plugin manager ---------------------------------
@@ -62,7 +70,8 @@ namespace PluginHookReport
     // Open the scan session for one plugin. self is the identity every
     // IPluginHookScanner call must pass back. Any previous report for this
     // plugin is dropped now, so a reload replaces rather than accumulates.
-    void BeginSession(const IPluginSelf* self, const char* pluginName, const char* fileName);
+    void BeginSession(const IPluginSelf* self, const char* pluginName, const char* fileName,
+                      bool preload = false);
 
     // Close the session and commit its failures to the report list (nothing is
     // committed when the plugin resolved everything cleanly). refusedOut, when

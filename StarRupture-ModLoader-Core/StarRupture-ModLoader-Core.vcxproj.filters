@@ -121,6 +121,9 @@
     <Filter Include="Source Files\memory_scanner">
       <UniqueIdentifier>{7cd5beef-9915-4144-af61-34a4067819d9}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Source Files\preload">
+      <UniqueIdentifier>{2f8c41a7-6d0e-49b2-9c35-51e6a7d2b108}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Source Files\UI">
       <UniqueIdentifier>{83136a42-c010-41c4-b584-888d732c2a65}</UniqueIdentifier>
     </Filter>
@@ -212,6 +215,21 @@
     </ClInclude>
     <ClInclude Include="memory_scanner\scanner.h">
       <Filter>Source Files\memory_scanner</Filter>
+    </ClInclude>
+    <ClInclude Include="memory_scanner\image_info.h">
+      <Filter>Source Files\memory_scanner</Filter>
+    </ClInclude>
+    <ClInclude Include="memory_scanner\scan_validation.h">
+      <Filter>Source Files\memory_scanner</Filter>
+    </ClInclude>
+    <ClInclude Include="preload\preload_interface.h">
+      <Filter>Source Files\preload</Filter>
+    </ClInclude>
+    <ClInclude Include="preload\preload_manager.h">
+      <Filter>Source Files\preload</Filter>
+    </ClInclude>
+    <ClInclude Include="preload\preload_patch.h">
+      <Filter>Source Files\preload</Filter>
     </ClInclude>
     <ClInclude Include="memory_scanner\hook_scanner_interface.h">
       <Filter>Source Files\memory_scanner</Filter>
@@ -553,6 +571,18 @@
     </ClCompile>
     <ClCompile Include="memory_scanner\scanner.cpp">
       <Filter>Source Files\memory_scanner</Filter>
+    </ClCompile>
+    <ClCompile Include="memory_scanner\image_info.cpp">
+      <Filter>Source Files\memory_scanner</Filter>
+    </ClCompile>
+    <ClCompile Include="memory_scanner\scan_validation.cpp">
+      <Filter>Source Files\memory_scanner</Filter>
+    </ClCompile>
+    <ClCompile Include="preload\preload_manager.cpp">
+      <Filter>Source Files\preload</Filter>
+    </ClCompile>
+    <ClCompile Include="preload\preload_patch.cpp">
+      <Filter>Source Files\preload</Filter>
     </ClCompile>
     <ClCompile Include="memory_scanner\hook_scanner_interface.cpp">
       <Filter>Source Files\memory_scanner</Filter>

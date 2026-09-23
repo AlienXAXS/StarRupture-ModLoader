@@ -1,14 +1,123 @@
 #include "memory_scanner/scanner.h"
 #include "memory_scanner/scan_cache.h"
+#include "memory_scanner/image_info.h"
 #include "core/version_check.h"
 #include "logging/logger.h"
 #include <sstream>
 #include <algorithm>
+#include <cstring>
+
+// ---------------------------------------------------------------------------
+// Scan core.
+//
+// Two things about the inner loop are worth knowing before changing it.
+//
+// First, it anchors on the pattern's first concrete (non-wildcard) byte and
+// uses memchr to jump between candidates instead of testing every offset. The
+// naive byte-by-byte loop this replaced was tolerable only because a resolve
+// stopped at its first hit; now that every resolve has to prove a pattern is
+// unique (see scan_validation.h and the rules in plugin_interface.h) there is
+// no early exit to hide behind, and a full pass over a ~200 MB image happens
+// per pattern on a cold cache. memchr is what makes that affordable.
+//
+// Second, there is deliberately no progress logging inside the loop. The old
+// version tested a counter on every byte to emit a trace line every 10%, which
+// cost more than the comparison it was reporting on.
+// ---------------------------------------------------------------------------
+
+namespace
+{
+	// Index of the first non-wildcard byte, or SIZE_MAX when the pattern is all
+	// wildcards -- which matches at literally every offset and is always an
+	// authoring mistake, so callers refuse it rather than reporting millions of
+	// matches.
+	size_t FindAnchorIndex(const std::vector<Scanner::PatternByte>& pattern)
+	{
+		for (size_t i = 0; i < pattern.size(); ++i)
+			if (!pattern[i].wildcard)
+				return i;
+		return SIZE_MAX;
+	}
+
+	bool MatchesAt(const uint8_t* candidate, const Scanner::PatternByte* pattern, size_t count)
+	{
+		for (size_t j = 0; j < count; ++j)
+			if (!pattern[j].wildcard && candidate[j] != pattern[j].value)
+				return false;
+		return true;
+	}
+
+	// The one scan loop everything else goes through.
+	//
+	// Calls onMatch for each match in address order and stops early when it
+	// returns false. Returns the number of matches reported.
+	template <typename OnMatch>
+	size_t ScanRange(uintptr_t start, size_t size,
+		const std::vector<Scanner::PatternByte>& pattern, OnMatch onMatch)
+	{
+		const size_t patLen = pattern.size();
+		if (patLen == 0 || size < patLen)
+			return 0;
+
+		const size_t anchor = FindAnchorIndex(pattern);
+		if (anchor == SIZE_MAX)
+			return 0;
+
+		const auto*   data       = reinterpret_cast<const uint8_t*>(start);
+		const uint8_t anchorByte = pattern[anchor].value;
+
+		// Last offset at which a full pattern still fits, expressed as the
+		// position of the anchor byte.
+		const uint8_t* const lastAnchor = data + (size - patLen) + anchor;
+		const uint8_t*       cursor     = data + anchor;
+
+		size_t found = 0;
+		while (cursor <= lastAnchor)
+		{
+			const auto* hit = static_cast<const uint8_t*>(
+				memchr(cursor, anchorByte, static_cast<size_t>(lastAnchor - cursor) + 1));
+			if (!hit)
+				break;
+
+			const uint8_t* candidate = hit - anchor;
+			if (MatchesAt(candidate, pattern.data(), patLen))
+			{
+				++found;
+				if (!onMatch(start + static_cast<size_t>(candidate - data)))
+					return found;
+			}
+
+			cursor = hit + 1;
+		}
+
+		return found;
+	}
+
+	// Shared PE validation for the module-scoped entry points.
+	bool GetModuleRange(HMODULE module, const wchar_t* caller, uintptr_t& outStart, size_t& outSize)
+	{
+		if (!module)
+		{
+			ModLoaderLogger::LogError(L"[Scanner] %s: null module handle!", caller);
+			return false;
+		}
+
+		const Scanner::ImageInfo image = Scanner::GetImageInfo(module);
+		if (!image.valid)
+		{
+			ModLoaderLogger::LogError(L"[Scanner] %s: module at 0x%llX has invalid PE headers!",
+				caller, static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(module)));
+			return false;
+		}
+
+		outStart = image.base;
+		outSize  = image.size;
+		return true;
+	}
+}
 
 std::vector<Scanner::PatternByte> Scanner::ParsePattern(const std::string& pattern)
 {
-	ModLoaderLogger::LogDebug(L"[Scanner] ParsePattern: input = \"%S\"", pattern.c_str());
-
 	std::vector<PatternByte> result;
 	std::istringstream stream(pattern);
 	std::string token;
@@ -25,13 +134,26 @@ std::vector<Scanner::PatternByte> Scanner::ParsePattern(const std::string& patte
 		}
 		else
 		{
-			auto value = static_cast<uint8_t>(std::stoul(token, nullptr, 16));
-			result.push_back({ value, false });
-			++byteCount;
+			// A malformed token (anything std::stoul cannot read as hex) used to
+			// throw out of the scan and take the init thread with it. Treat it as
+			// an empty pattern instead: every caller already handles that as a
+			// miss, and the log line names the token that did it.
+			try
+			{
+				auto value = static_cast<uint8_t>(std::stoul(token, nullptr, 16));
+				result.push_back({ value, false });
+				++byteCount;
+			}
+			catch (...)
+			{
+				ModLoaderLogger::LogError(L"[Scanner] ParsePattern: token '%S' is not a hex byte or wildcard -- pattern rejected: %S",
+					token.c_str(), pattern.c_str());
+				return {};
+			}
 		}
 	}
 
-	ModLoaderLogger::LogDebug(L"[Scanner] ParsePattern: %zu total bytes (%d concrete, %d wildcards)",
+	ModLoaderLogger::LogTrace(L"[Scanner] ParsePattern: %zu total bytes (%d concrete, %d wildcards)",
 		result.size(), byteCount, wildcardCount);
 
 	return result;
@@ -39,137 +161,109 @@ std::vector<Scanner::PatternByte> Scanner::ParsePattern(const std::string& patte
 
 uintptr_t Scanner::FindPattern(uintptr_t start, size_t size, const std::vector<PatternByte>& pattern)
 {
-	ModLoaderLogger::LogTrace(L"[Scanner] FindPattern: scanning 0x%llX -> 0x%llX (%zu bytes, pattern len %zu)",
-		static_cast<unsigned long long>(start),
-		static_cast<unsigned long long>(start + size),
-		size, pattern.size());
-
 	if (pattern.empty())
 	{
-		ModLoaderLogger::LogWarn(L"[Scanner] FindPattern: empty pattern — returning 0");
+		ModLoaderLogger::LogWarn(L"[Scanner] FindPattern: empty pattern -- returning 0");
 		return 0;
 	}
 
 	if (size < pattern.size())
+		return 0;
+
+	uintptr_t result = 0;
+	ScanRange(start, size, pattern, [&result](uintptr_t addr)
 	{
-		ModLoaderLogger::LogWarn(L"[Scanner] FindPattern: scan region (%zu bytes) smaller than pattern (%zu bytes) — returning 0",
-			size, pattern.size());
+		result = addr;
+		return false; // first hit is enough
+	});
+
+	return result;
+}
+
+size_t Scanner::CountMatches(uintptr_t start, size_t size, const std::vector<PatternByte>& pattern,
+	size_t stopAfter, uintptr_t* outFirst)
+{
+	if (outFirst)
+		*outFirst = 0;
+
+	if (pattern.empty() || size < pattern.size())
+		return 0;
+
+	size_t    count = 0;
+	uintptr_t first = 0;
+
+	ScanRange(start, size, pattern, [&](uintptr_t addr)
+	{
+		if (count == 0)
+			first = addr;
+		++count;
+		return !(stopAfter != 0 && count >= stopAfter);
+	});
+
+	if (outFirst)
+		*outFirst = first;
+
+	return count;
+}
+
+size_t Scanner::CollectMatches(uintptr_t start, size_t size, const std::vector<PatternByte>& pattern,
+	size_t maxResults, size_t hardCap, std::vector<uintptr_t>& out)
+{
+	out.clear();
+
+	if (pattern.empty() || size < pattern.size())
+		return 0;
+
+	size_t total = 0;
+	ScanRange(start, size, pattern, [&](uintptr_t addr)
+	{
+		if (out.size() < maxResults)
+			out.push_back(addr);
+		++total;
+		return !(hardCap != 0 && total >= hardCap);
+	});
+
+	return total;
+}
+
+size_t Scanner::CountMatchesInModule(HMODULE module, const std::string& pattern,
+	size_t stopAfter, uintptr_t* outFirst)
+{
+	uintptr_t start = 0;
+	size_t    size  = 0;
+	if (!GetModuleRange(module, L"CountMatchesInModule", start, size))
+	{
+		if (outFirst) *outFirst = 0;
 		return 0;
 	}
 
-	const auto* data = reinterpret_cast<const uint8_t*>(start);
-	const size_t scanEnd = size - pattern.size();
-
-	// Progress logging for large scans
-	const size_t progressInterval = scanEnd / 10; // Log every ~10%
-	size_t nextProgress = progressInterval;
-	int percentLogged = 0;
-
-	for (size_t i = 0; i <= scanEnd; ++i)
-	{
-		// Progress reporting for large scans
-		if (progressInterval > 0 && i >= nextProgress)
-		{
-			percentLogged += 10;
-			ModLoaderLogger::LogTrace(L"[Scanner] FindPattern: scan progress %d%% (offset 0x%zX / 0x%zX)",
-				percentLogged, i, scanEnd);
-			nextProgress += progressInterval;
-		}
-
-		bool match = true;
-		for (size_t j = 0; j < pattern.size(); ++j)
-		{
-			if (!pattern[j].wildcard && data[i + j] != pattern[j].value)
-			{
-				match = false;
-				break;
-			}
-		}
-
-		if (match)
-		{
-			uintptr_t result = start + i;
-			ModLoaderLogger::LogTrace(L"[Scanner] FindPattern: match at offset 0x%zX (absolute 0x%llX)",
-				i, static_cast<unsigned long long>(result));
-			return result;
-		}
-	}
-
-	ModLoaderLogger::LogTrace(L"[Scanner] FindPattern: no match after scanning %zu bytes", scanEnd);
-	return 0;
+	return CountMatches(start, size, ParsePattern(pattern), stopAfter, outFirst);
 }
 
 uintptr_t Scanner::FindPatternInModule(HMODULE module, const std::string& pattern)
 {
-	ModLoaderLogger::LogDebug(L"[Scanner] FindPatternInModule: module handle = 0x%llX",
-		static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(module)));
-
-	if (!module)
-	{
-		ModLoaderLogger::LogError(L"[Scanner] FindPatternInModule: null module handle!");
+	uintptr_t start = 0;
+	size_t    size  = 0;
+	if (!GetModuleRange(module, L"FindPatternInModule", start, size))
 		return 0;
-	}
 
-	// Get module base and size from the PE headers
-	auto base = reinterpret_cast<uintptr_t>(module);
-	auto* dos = reinterpret_cast<IMAGE_DOS_HEADER*>(base);
-
-	ModLoaderLogger::LogTrace(L"[Scanner] PE: DOS header e_magic = 0x%04X (expect 0x5A4D)", dos->e_magic);
-	if (dos->e_magic != IMAGE_DOS_SIGNATURE)
-	{
-		ModLoaderLogger::LogError(L"[Scanner] FindPatternInModule: invalid DOS signature at 0x%llX!",
-			static_cast<unsigned long long>(base));
-		return 0;
-	}
-
-	auto* nt = reinterpret_cast<IMAGE_NT_HEADERS*>(base + dos->e_lfanew);
-	ModLoaderLogger::LogTrace(L"[Scanner] PE: NT headers at offset 0x%lX, signature = 0x%08lX (expect 0x00004550)",
-		dos->e_lfanew, nt->Signature);
-
-	if (nt->Signature != IMAGE_NT_SIGNATURE)
-	{
-		ModLoaderLogger::LogError(L"[Scanner] FindPatternInModule: invalid NT signature!");
-		return 0;
-	}
-
-	uintptr_t start = base;
-	size_t    size = nt->OptionalHeader.SizeOfImage;
-
-	ModLoaderLogger::LogDebug(L"[Scanner] Scanning module: base=0x%llX  size=0x%zX (%zu KB)  sections=%u",
-		static_cast<unsigned long long>(start), size, size / 1024,
-		static_cast<unsigned>(nt->FileHeader.NumberOfSections));
-	ModLoaderLogger::LogDebug(L"[Scanner]   Pattern: %S", pattern.c_str());
-
-	// Log section layout for debugging
-	auto* section = IMAGE_FIRST_SECTION(nt);
-	for (WORD i = 0; i < nt->FileHeader.NumberOfSections; ++i)
-	{
-		char secName[9]{};
-		memcpy(secName, section[i].Name, 8);
-		ModLoaderLogger::LogDebug(L"[Scanner]   Section [%u]: %-8S  VA=0x%08lX  Size=0x%08lX  Flags=0x%08lX",
-			i, secName,
-			static_cast<unsigned long>(section[i].VirtualAddress),
-			static_cast<unsigned long>(section[i].Misc.VirtualSize),
-			static_cast<unsigned long>(section[i].Characteristics));
-	}
-
-	auto parsed = ParsePattern(pattern);
+	const auto parsed = ParsePattern(pattern);
 
 	LARGE_INTEGER freqLi, startTime, endTime;
 	QueryPerformanceFrequency(&freqLi);
 	QueryPerformanceCounter(&startTime);
 
-	uintptr_t result = FindPattern(start, size, parsed);
+	const uintptr_t result = FindPattern(start, size, parsed);
 
 	QueryPerformanceCounter(&endTime);
-	double elapsedMs = static_cast<double>(endTime.QuadPart - startTime.QuadPart) * 1000.0
+	const double elapsedMs = static_cast<double>(endTime.QuadPart - startTime.QuadPart) * 1000.0
 		/ static_cast<double>(freqLi.QuadPart);
 
 	if (result)
 	{
 		ModLoaderLogger::LogDebug(L"[Scanner]   FOUND at 0x%llX (base+0x%llX) in %.2f ms",
 			static_cast<unsigned long long>(result),
-			static_cast<unsigned long long>(result - base),
+			static_cast<unsigned long long>(result - start),
 			elapsedMs);
 	}
 	else
@@ -183,49 +277,52 @@ uintptr_t Scanner::FindPatternInModule(HMODULE module, const std::string& patter
 uintptr_t Scanner::FindPatternInMainModule(const std::string& patternName, const std::string& pattern)
 {
 	HMODULE mainModule = GetModuleHandleW(nullptr);
-	ModLoaderLogger::LogDebug(L"[Scanner] FindPatternInMainModule: [%S] main module = 0x%llX", patternName.c_str(),
-		static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(mainModule)));
-
 	const auto base = reinterpret_cast<uintptr_t>(mainModule);
 	const std::wstring gameVersion = GetGameVersionString();
 
 	// Try the cached offset first -- if the bytes at base+offset still match the
 	// pattern, we can skip the full scan entirely. Re-validating against the live
 	// process means a stale/corrupt cache entry can never yield a wrong address.
-	uintptr_t cachedOffset = 0;
-	if (!gameVersion.empty() && mainModule && ScanCache::TryGetOffset(gameVersion, pattern, cachedOffset))
+	//
+	// The cached match COUNT is deliberately ignored here: this entry point
+	// answers "where is it", not "is it unique". The uniqueness verdict belongs
+	// to ScanValidation, which has its own cache path -- a caller that needs the
+	// verdict must not come through here.
+	ScanCache::Entry cached;
+	if (!gameVersion.empty() && mainModule && ScanCache::TryGet(gameVersion, pattern, cached))
 	{
-		auto* dos = reinterpret_cast<IMAGE_DOS_HEADER*>(base);
-		if (dos->e_magic == IMAGE_DOS_SIGNATURE)
+		const ImageInfo image = GetImageInfo(mainModule);
+		if (image.valid)
 		{
-			auto* nt = reinterpret_cast<IMAGE_NT_HEADERS*>(base + dos->e_lfanew);
-			if (nt->Signature == IMAGE_NT_SIGNATURE)
+			const auto parsed = ParsePattern(pattern);
+			if (!parsed.empty() && cached.offset + parsed.size() <= image.size)
 			{
-				const size_t imageSize = nt->OptionalHeader.SizeOfImage;
-				const auto parsed = ParsePattern(pattern);
-
-				if (!parsed.empty() && cachedOffset + parsed.size() <= imageSize)
+				const uintptr_t candidate = base + cached.offset;
+				if (FindPattern(candidate, parsed.size(), parsed) == candidate)
 				{
-					const uintptr_t candidate = base + cachedOffset;
-					if (FindPattern(candidate, parsed.size(), parsed) == candidate)
-					{
-						ModLoaderLogger::LogDebug(L"[Scanner]   [%S] cache HIT: 0x%llX (base+0x%llX), skipped full scan",
-							patternName.c_str(),
-							static_cast<unsigned long long>(candidate),
-							static_cast<unsigned long long>(cachedOffset));
-						return candidate;
-					}
+					ModLoaderLogger::LogDebug(L"[Scanner]   [%S] cache HIT: 0x%llX (base+0x%llX), skipped full scan",
+						patternName.c_str(),
+						static_cast<unsigned long long>(candidate),
+						static_cast<unsigned long long>(cached.offset));
+					return candidate;
 				}
-
-				ModLoaderLogger::LogDebug(L"[Scanner]   [%S] cache entry stale (offset 0x%llX no longer matches) -- falling back to full scan",
-					patternName.c_str(), static_cast<unsigned long long>(cachedOffset));
 			}
+
+			ModLoaderLogger::LogDebug(L"[Scanner]   [%S] cache entry stale (offset 0x%llX no longer matches) -- falling back to full scan",
+				patternName.c_str(), static_cast<unsigned long long>(cached.offset));
 		}
 	}
 
+	ModLoaderLogger::LogDebug(L"[Scanner] FindPatternInMainModule: [%S] scanning...", patternName.c_str());
+
 	const uintptr_t result = FindPatternInModule(mainModule, pattern);
 	if (result && !gameVersion.empty())
-		ScanCache::StoreOffset(gameVersion, pattern, result - base);
+	{
+		ScanCache::Entry entry;
+		entry.offset     = result - base;
+		entry.matchCount = 0; // unknown: this path never counted
+		ScanCache::Store(gameVersion, pattern, entry);
+	}
 
 	return result;
 }
@@ -234,11 +331,6 @@ std::vector<uintptr_t> Scanner::FindAllPatterns(uintptr_t start, size_t size, co
 {
 	std::vector<uintptr_t> results;
 
-	ModLoaderLogger::LogTrace(L"[Scanner] FindAllPatterns: scanning 0x%llX -> 0x%llX (%zu bytes, pattern len %zu)",
-		static_cast<unsigned long long>(start),
-		static_cast<unsigned long long>(start + size),
-		size, pattern.size());
-
 	if (pattern.empty())
 	{
 		ModLoaderLogger::LogWarn(L"[Scanner] FindAllPatterns: empty pattern");
@@ -246,36 +338,14 @@ std::vector<uintptr_t> Scanner::FindAllPatterns(uintptr_t start, size_t size, co
 	}
 
 	if (size < pattern.size())
-	{
-		ModLoaderLogger::LogWarn(L"[Scanner] FindAllPatterns: scan region smaller than pattern");
 		return results;
-	}
 
-	const auto* data = reinterpret_cast<const uint8_t*>(start);
-	const size_t scanEnd = size - pattern.size();
-
-	for (size_t i = 0; i <= scanEnd; ++i)
+	ScanRange(start, size, pattern, [&results](uintptr_t addr)
 	{
-		bool match = true;
-		for (size_t j = 0; j < pattern.size(); ++j)
-		{
-			if (!pattern[j].wildcard && data[i + j] != pattern[j].value)
-			{
-				match = false;
-				break;
-			}
-		}
+		results.push_back(addr);
+		return true;
+	});
 
-		if (match)
-		{
-			uintptr_t matchAddr = start + i;
-			results.push_back(matchAddr);
-			ModLoaderLogger::LogTrace(L"[Scanner] FindAllPatterns: match #%zu at offset 0x%zX (absolute 0x%llX)",
-				results.size(), i, static_cast<unsigned long long>(matchAddr));
-		}
-	}
-
-	ModLoaderLogger::LogDebug(L"[Scanner] FindAllPatterns: found %zu matches", results.size());
 	return results;
 }
 
@@ -283,40 +353,12 @@ std::vector<uintptr_t> Scanner::FindAllPatternsInModule(HMODULE module, const st
 {
 	std::vector<uintptr_t> results;
 
-	ModLoaderLogger::LogDebug(L"[Scanner] FindAllPatternsInModule: module handle = 0x%llX",
-		static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(module)));
-
-	if (!module)
-	{
-		ModLoaderLogger::LogError(L"[Scanner] FindAllPatternsInModule: null module handle!");
+	uintptr_t start = 0;
+	size_t    size  = 0;
+	if (!GetModuleRange(module, L"FindAllPatternsInModule", start, size))
 		return results;
-	}
 
-	// Get module base and size
-	auto base = reinterpret_cast<uintptr_t>(module);
-	auto* dos = reinterpret_cast<IMAGE_DOS_HEADER*>(base);
-
-	if (dos->e_magic != IMAGE_DOS_SIGNATURE)
-	{
-		ModLoaderLogger::LogError(L"[Scanner] FindAllPatternsInModule: invalid DOS signature!");
-		return results;
-	}
-
-	auto* nt = reinterpret_cast<IMAGE_NT_HEADERS*>(base + dos->e_lfanew);
-	if (nt->Signature != IMAGE_NT_SIGNATURE)
-	{
-		ModLoaderLogger::LogError(L"[Scanner] FindAllPatternsInModule: invalid NT signature!");
-		return results;
-	}
-
-	uintptr_t start = base;
-	size_t size = nt->OptionalHeader.SizeOfImage;
-
-	ModLoaderLogger::LogInfo(L"[Scanner] Scanning for ALL matches: base=0x%llX  size=0x%zX",
-		static_cast<unsigned long long>(start), size);
-	ModLoaderLogger::LogInfo(L"[Scanner] Pattern: %S", pattern.c_str());
-
-	auto parsed = ParsePattern(pattern);
+	const auto parsed = ParsePattern(pattern);
 
 	LARGE_INTEGER freqLi, startTime, endTime;
 	QueryPerformanceFrequency(&freqLi);
@@ -325,40 +367,29 @@ std::vector<uintptr_t> Scanner::FindAllPatternsInModule(HMODULE module, const st
 	results = FindAllPatterns(start, size, parsed);
 
 	QueryPerformanceCounter(&endTime);
-	double elapsedMs = static_cast<double>(endTime.QuadPart - startTime.QuadPart) * 1000.0
+	const double elapsedMs = static_cast<double>(endTime.QuadPart - startTime.QuadPart) * 1000.0
 		/ static_cast<double>(freqLi.QuadPart);
 
-	if (results.empty())
+	ModLoaderLogger::LogDebug(L"[Scanner] FindAllPatternsInModule: %zu match(es) in %.2f ms  pattern: %S",
+		results.size(), elapsedMs, pattern.c_str());
+
+	const size_t displayCount = (results.size() < 10) ? results.size() : 10;
+	for (size_t i = 0; i < displayCount; ++i)
 	{
-		ModLoaderLogger::LogWarn(L"[Scanner]   NO MATCHES found in %.2f ms", elapsedMs);
+		ModLoaderLogger::LogDebug(L"[Scanner]   [%zu] 0x%llX (base+0x%llX)",
+			i,
+			static_cast<unsigned long long>(results[i]),
+			static_cast<unsigned long long>(results[i] - start));
 	}
-	else
-	{
-		ModLoaderLogger::LogInfo(L"[Scanner]   Found %zu matches in %.2f ms:", results.size(), elapsedMs);
-		
-		// Log first 10 matches
-		size_t displayCount = (results.size() < 10) ? results.size() : 10;
-		for (size_t i = 0; i < displayCount; ++i)
-		{
-			ModLoaderLogger::LogInfo(L"[Scanner]   [%zu] 0x%llX (base+0x%llX)", 
-				i,
-				static_cast<unsigned long long>(results[i]),
-				static_cast<unsigned long long>(results[i] - base));
-		}
-		
-		if (results.size() > displayCount)
-		{
-			ModLoaderLogger::LogInfo(L"[Scanner]   ... and %zu more", results.size() - displayCount);
-		}
-	}
+	if (results.size() > displayCount)
+		ModLoaderLogger::LogDebug(L"[Scanner]   ... and %zu more", results.size() - displayCount);
 
 	return results;
 }
 
 std::vector<uintptr_t> Scanner::FindAllPatternsInMainModule(const std::string& pattern)
 {
-	HMODULE mainModule = GetModuleHandleW(nullptr);
-	return FindAllPatternsInModule(mainModule, pattern);
+	return FindAllPatternsInModule(GetModuleHandleW(nullptr), pattern);
 }
 
 uintptr_t Scanner::FindUniquePattern(const std::vector<std::string>& patterns, int* outPatternIndex)
@@ -370,49 +401,33 @@ uintptr_t Scanner::FindUniquePattern(const std::vector<std::string>& patterns, i
 	}
 
 	HMODULE mainModule = GetModuleHandleW(nullptr);
-	auto base = reinterpret_cast<uintptr_t>(mainModule);
+	const auto base = reinterpret_cast<uintptr_t>(mainModule);
 
-	ModLoaderLogger::LogInfo(L"[Scanner] FindUniquePattern: trying %zu pattern candidates...", patterns.size());
+	ModLoaderLogger::LogDebug(L"[Scanner] FindUniquePattern: trying %zu pattern candidates...", patterns.size());
 
 	for (size_t i = 0; i < patterns.size(); ++i)
 	{
-		const auto& pattern = patterns[i];
-		
-		ModLoaderLogger::LogDebug(L"[Scanner]   [%zu/%zu] Pattern: %.60S%s", 
-			i + 1, patterns.size(), 
-			pattern.c_str(),
-			pattern.length() > 60 ? "..." : "");
+		// Stop at the second match: the only question is "exactly one or not",
+		// and a candidate that has already matched twice is finished.
+		uintptr_t first = 0;
+		const size_t count = CountMatchesInModule(mainModule, patterns[i], 2, &first);
 
-		auto matches = FindAllPatternsInModule(mainModule, pattern);
+		if (count == 1)
+		{
+			ModLoaderLogger::LogDebug(L"[Scanner]   [%zu/%zu] UNIQUE match at 0x%llX (base+0x%llX)",
+				i + 1, patterns.size(),
+				static_cast<unsigned long long>(first),
+				static_cast<unsigned long long>(first - base));
 
-		if (matches.empty())
-		{
-			ModLoaderLogger::LogDebug(L"[Scanner]     [FAIL] No matches, trying next pattern...");
-			continue;
-		}
-		else if (matches.size() == 1)
-		{
-			ModLoaderLogger::LogDebug(L"[Scanner]     [OK] UNIQUE match found at 0x%llX (base+0x%llX)",
-				static_cast<unsigned long long>(matches[0]),
-				static_cast<unsigned long long>(matches[0] - base));
-			
 			if (outPatternIndex)
 				*outPatternIndex = static_cast<int>(i);
-			
-			return matches[0];
+
+			return first;
 		}
-		else
-		{
-			ModLoaderLogger::LogWarn(L"[Scanner]     [FAIL] Pattern matched %zu times (not unique)", matches.size());
-			
-			// Log first few matches for debugging
-			size_t displayCount = (matches.size() < 5) ? matches.size() : 5;
-			for (size_t j = 0; j < displayCount; ++j)
-			{
-				ModLoaderLogger::LogDebug(L"[Scanner]    Match %zu: 0x%llX", j + 1, 
-					static_cast<unsigned long long>(matches[j]));
-			}
-		}
+
+		ModLoaderLogger::LogDebug(L"[Scanner]   [%zu/%zu] %s -- trying next candidate",
+			i + 1, patterns.size(),
+			count == 0 ? L"no matches" : L"matched more than once (not unique)");
 	}
 
 	ModLoaderLogger::LogError(L"[Scanner] FindUniquePattern: no unique pattern found among %zu candidates", patterns.size());

@@ -77,8 +77,10 @@ namespace
 
 namespace ScanCache
 {
-    bool TryGetOffset(const std::wstring& gameVersion, const std::string& pattern, uintptr_t& outOffset)
+    bool TryGet(const std::wstring& gameVersion, const std::string& pattern, Entry& out)
     {
+        out = Entry{};
+
         if (gameVersion.empty() || pattern.empty())
             return false;
 
@@ -93,16 +95,29 @@ namespace ScanCache
         if (len == 0)
             return false;
 
+        // Value format is "0xOFFSET" or "0xOFFSET,COUNT". The bare form is what
+        // every entry written before match counting existed looks like, and it
+        // parses as count 0 = unknown, which forces a re-scan for anyone who
+        // needs the uniqueness verdict. Nothing has to migrate the file.
         wchar_t* end = nullptr;
         const unsigned long long parsed = wcstoull(value, &end, 16);
         if (end == value)
             return false;
 
-        outOffset = static_cast<uintptr_t>(parsed);
+        out.offset = static_cast<uintptr_t>(parsed);
+
+        if (end && *end == L',')
+        {
+            wchar_t* countEnd = nullptr;
+            const unsigned long long count = wcstoull(end + 1, &countEnd, 10);
+            if (countEnd != end + 1)
+                out.matchCount = static_cast<uint32_t>(count);
+        }
+
         return true;
     }
 
-    void StoreOffset(const std::wstring& gameVersion, const std::string& pattern, uintptr_t offset)
+    void Store(const std::wstring& gameVersion, const std::string& pattern, const Entry& entry)
     {
         if (gameVersion.empty() || pattern.empty())
             return;
@@ -112,12 +127,33 @@ namespace ScanCache
         const std::wstring cachePath = GetCacheFilePath();
         const std::wstring key       = HashPattern(pattern);
 
-        wchar_t value[32]{};
-        swprintf_s(value, L"0x%llX", static_cast<unsigned long long>(offset));
+        // Don't let a "where is it" write (matchCount 0) clobber a count an
+        // earlier strict resolve established for the same pattern. Losing the
+        // count is not wrong, just slow -- but it is slow on every launch, and
+        // the two entry points run in an order nobody controls.
+        Entry merged = entry;
+        if (merged.matchCount == 0)
+        {
+            Entry existing;
+            if (TryGet(gameVersion, pattern, existing) && existing.offset == merged.offset)
+                merged.matchCount = existing.matchCount;
+        }
+
+        wchar_t value[48]{};
+        if (merged.matchCount != 0)
+        {
+            swprintf_s(value, L"0x%llX,%lu",
+                static_cast<unsigned long long>(merged.offset),
+                static_cast<unsigned long>(merged.matchCount));
+        }
+        else
+        {
+            swprintf_s(value, L"0x%llX", static_cast<unsigned long long>(merged.offset));
+        }
 
         if (WritePrivateProfileStringW(gameVersion.c_str(), key.c_str(), value, cachePath.c_str()))
         {
-            ModLoaderLogger::LogDebug(L"[ScanCache] Stored offset for pattern hash [%ls] under version '%ls': %ls",
+            ModLoaderLogger::LogTrace(L"[ScanCache] Stored [%ls] under version '%ls': %ls",
                 key.c_str(), gameVersion.c_str(), value);
         }
         else

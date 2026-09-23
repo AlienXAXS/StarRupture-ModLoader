@@ -603,9 +603,38 @@
 //      before its BeginPlay and PostBeginPlay after, when the class defines
 //      them. onModActorSpawned lets the plugin take the actor from there.
 
+// v68: Typed and unique pattern scanning.
+//      Added PluginScanKind, PluginScanFlags, PluginScanRequest and
+//      IPluginHookScanner::Resolve (appended at the BOTTOM of the struct, so
+//      the offset of every existing member is unchanged and MIN stays at 66).
+//
+//      BEHAVIOUR CHANGE, and it applies to plugins built against older
+//      headers too, because it lives in the loader rather than the ABI:
+//
+//        * A pattern must now match EXACTLY ONCE in the image. Two matches
+//          refuses the plugin. Previously the first match won, silently, and
+//          was then memoized into scan_cache.ini -- so a pattern that stopped
+//          being unique after a game update resolved to whichever copy sat at
+//          the lower address, on every launch, with no symptom until something
+//          behaved strangely mid-session.
+//
+//        * Resolve() additionally checks that the address IS what the caller
+//          declared: a function entry, an address inside a function, code,
+//          data, or a vtable. A pattern that resolves into the middle of an
+//          unrelated function is refused, and the failure report says which
+//          function and by how many bytes.
+//
+//      The pre-existing ResolveRequired/ResolveOptional/ResolveRequiredUnique
+//      entry points still work and still compile unchanged. They scan with
+//      kind PLUGIN_SCAN_ANY -- uniqueness is enforced for them, the structural
+//      check is not -- and the failure report labels them unvalidated. Prefer
+//      Resolve() for anything new: PLUGIN_SCAN_UNSPECIFIED is deliberately 0 so
+//      a request that forgets to declare a kind is refused with a message
+//      saying so, rather than defaulting into the weakest check.
+//
 #define PLUGIN_INTERFACE_VERSION_MIN 66
-#define PLUGIN_INTERFACE_VERSION_MAX 67
-#define PLUGIN_INTERFACE_VERSION 67
+#define PLUGIN_INTERFACE_VERSION_MAX 68
+#define PLUGIN_INTERFACE_VERSION 68
 
 enum class PluginLogLevel { Trace = 0, Debug = 1, Info = 2, Warn = 3, Error = 4 };
 enum class ConfigValueType { String, Integer, Float, Boolean, Keybind };
@@ -667,6 +696,116 @@ struct IPluginConfig
 struct PluginXRef { uintptr_t address; bool isRelative; };
 
 // ---------------------------------------------------------------------------
+// What a pattern is supposed to resolve TO.
+//
+// Declaring this is what lets the loader tell "the pattern matched" apart from
+// "the pattern matched the right thing". A pattern that lands 0x37 bytes inside
+// an unrelated function still matches; without a kind, the loader hands that
+// address back and a detour gets written over it.
+//
+// PLUGIN_SCAN_UNSPECIFIED is 0 on purpose. A zero-initialised request is a
+// request that forgot to say what it wants, and that is refused with a message
+// rather than quietly defaulting to the weakest check. PLUGIN_SCAN_ANY sits at
+// the bottom of the list for the same reason: opting out of the structural
+// check should be a decision, not the thing you land on first.
+// ---------------------------------------------------------------------------
+enum PluginScanKind
+{
+    // Refused. Declare one of the kinds below.
+    PLUGIN_SCAN_UNSPECIFIED    = 0,
+
+    // The primary entry point of a compiled function, per the executable's
+    // exception directory -- and long enough (14 bytes) to hold a detour.
+    // A separated/cold chunk of a function fails this: it is a real code
+    // address that no caller ever enters.
+    PLUGIN_SCAN_FUNCTION_START = 1,
+
+    // Anywhere inside a function that has unwind info. For mid-function
+    // anchors: a specific call site, a compare you want to patch, a jump table.
+    PLUGIN_SCAN_IN_FUNCTION    = 2,
+
+    // Any executable section. Use for hand-written thunks and stubs that
+    // legitimately have no unwind info and so fail FUNCTION_START.
+    PLUGIN_SCAN_CODE           = 3,
+
+    // Initialised, non-executable data: string tables, static structs, the
+    // bytes behind a global.
+    PLUGIN_SCAN_DATA           = 4,
+
+    // Data, and the first `vtableSlots` pointers at that address each point at
+    // the start of a function. Catches the usual vtable-pattern mistake of
+    // landing one slot early or on an unrelated pointer array.
+    PLUGIN_SCAN_VTABLE         = 5,
+
+    // No structural check -- uniqueness only. The report labels these
+    // unvalidated so whoever reads a bug report can see the check was skipped.
+    PLUGIN_SCAN_ANY            = 6,
+};
+
+enum PluginScanFlags
+{
+    PLUGIN_SCAN_FLAG_NONE     = 0,
+
+    // Labels the failure line [optional] instead of [required]. It does NOT
+    // change the verdict: a miss refuses the plugin either way. Mark what your
+    // own code genuinely null-checks, so the report is readable by whoever has
+    // to fix it.
+    PLUGIN_SCAN_FLAG_OPTIONAL = 1 << 0,
+
+    // Honour followRel32At. Opt-in by flag rather than by a sentinel value
+    // because offset 0 is a perfectly ordinary place to decode a call from --
+    // so a request that simply never set the field must not be read as asking
+    // for one.
+    PLUGIN_SCAN_FLAG_FOLLOW_REL32 = 1 << 1,
+};
+
+// Passed by pointer to IPluginHookScanner::Resolve.
+//
+// structSize must be sizeof(PluginScanRequest) as your plugin sees it. The
+// loader reads only that far, so fields appended to the END of this struct in
+// a later interface version cost older plugins nothing. Use
+// PLUGIN_SCAN_REQUEST_INIT and you cannot get it wrong.
+struct PluginScanRequest
+{
+    uint32_t    structSize;
+
+    // Name the thing being resolved ("UCrCrafter::FinishCrafting"), not the
+    // pattern. This is what the log, the failure window and the clipboard text
+    // show under your plugin's name.
+    const char* hookName;
+
+    // IDA-style AOB: "48 89 5C 24 ?? 57 48 83 EC 20", ?? = any byte.
+    const char* pattern;
+
+    int         kind;           // PluginScanKind
+    uint32_t    flags;          // PluginScanFlags
+
+    // Added to the match address BEFORE the kind check. Negative is fine: when
+    // a report says your pattern landed 0x37 bytes inside a function, -0x37 is
+    // the fix.
+    int32_t     resultOffset;
+
+    // With PLUGIN_SCAN_FLAG_FOLLOW_REL32 set: treat the byte at (match + this)
+    // as an E8/E9 rel32 and resolve to its target instead of the match itself.
+    // Ignored without the flag. Saves hand-decoding a call to reach the
+    // function it points at -- and unlike doing it yourself, the target then
+    // gets the kind check too.
+    int32_t     followRel32At;
+
+    // null = the game executable. Anything else scans that module only, and
+    // gets no scan cache (the cache is keyed on the game's own version).
+    HMODULE     module;
+
+    // PLUGIN_SCAN_VTABLE only: how many leading slots must point at functions.
+    // 0 means 1.
+    uint32_t    vtableSlots;
+};
+
+#define PLUGIN_SCAN_REQUEST_INIT { (uint32_t)sizeof(PluginScanRequest), \
+                                   nullptr, nullptr, PLUGIN_SCAN_UNSPECIFIED, \
+                                   PLUGIN_SCAN_FLAG_NONE, 0, -1, nullptr, 0 }
+
+// ---------------------------------------------------------------------------
 // IPluginHookScanner -- pattern scanning, and the ONLY place a plugin gets it.
 //
 // A pointer to this table is handed to the optional OnPluginLoadHooks export
@@ -684,7 +823,18 @@ struct PluginXRef { uintptr_t address; bool isRelative; };
 //
 // A MISS REFUSES THE PLUGIN, required or optional, and one is enough:
 // PluginInit is never called, the DLL is freed, and every miss is listed in the
-// failure window. The two flavours differ only in the label the report shows:
+// failure window.
+//
+// SO DOES A SECOND MATCH (v68). A pattern that matches more than once has not
+// resolved to an address, it has resolved to a coin flip -- the old behaviour
+// took whichever copy sat lower in the image and then cached that offset, so
+// nothing ever looked wrong. The failure report lists every match with the
+// function each one landed in, which is what it takes to fix the pattern.
+//
+// AND SO DOES LANDING ON THE WRONG KIND OF THING, for calls made through
+// Resolve() with a PluginScanKind declared. See PluginScanRequest below.
+//
+// The two flavours differ only in the label the report shows:
 //
 //   Required -- this plugin cannot work without the address.
 //   Optional -- the plugin handles a null return rather than assuming one, so
@@ -741,6 +891,30 @@ struct IPluginHookScanner
 	// rest of a resolve chain it already knows cannot work -- it does not change
 	// the outcome, which is decided when the event returns.
 	bool (*HasFailures)(const IPluginSelf* self);
+
+	// --- v68 -----------------------------------------------------------------
+
+	// The typed resolve. Prefer this over the four Resolve* entry points above:
+	// they are equivalent to a request with kind PLUGIN_SCAN_ANY, which checks
+	// that the pattern is unique but not that it landed on the right kind of
+	// thing.
+	//
+	// Returns the resolved address, or 0 on any failure -- and a failure is
+	// recorded against the plugin either way, so there is nothing to report
+	// yourself.
+	//
+	//   PluginScanRequest req = PLUGIN_SCAN_REQUEST_INIT;
+	//   req.hookName = "UCrCrafter::FinishCrafting";
+	//   req.pattern  = "48 89 5C 24 ?? 57 48 83 EC ??";
+	//   req.kind     = PLUGIN_SCAN_FUNCTION_START;
+	//   g_finishCrafting = scanner->Resolve(self, &req);
+	//
+	// Two verdicts, independently reported, because "it did not resolve" is not
+	// actionable on its own:
+	//   * the PATTERN must match exactly once in the image;
+	//   * the FINAL address (after followRel32At and resultOffset) must be what
+	//     `kind` says it is.
+	uintptr_t (*Resolve)(const IPluginSelf* self, const PluginScanRequest* request);
 };
 
 typedef void* HookHandle;

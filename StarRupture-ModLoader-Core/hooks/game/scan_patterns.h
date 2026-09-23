@@ -518,11 +518,38 @@ namespace ScanPatterns
 	inline constexpr auto FBitReader_SerializeBits =
 		"48 89 5C 24 ?? 48 89 74 24 ?? 57 48 83 EC ?? F6 41 ?? ?? 49 8B F8 48 8B F2 48 8B D9 0F 85";
 
+	// What an entry's address is supposed to BE, checked against the image
+	// before the pattern is accepted. Values mirror ScanValidation::Kind
+	// (memory_scanner/scan_validation.h) so pattern_preflight.cpp can convert
+	// between them; they are separate enums only so this header stays free of
+	// includes.
+	//
+	// Every entry is also required to match EXACTLY ONCE. That is not a field
+	// because there is no entry for which a second match would be acceptable: a
+	// pattern that matches twice resolved to whichever copy happens to sit lower
+	// in the image, which is luck, not a result -- and the offset it produced got
+	// written into scan_cache.ini, so every later launch took it without scanning.
+	enum class PatternKind : int
+	{
+		FunctionStart = 1,  // primary entry of a function, long enough to detour
+		InFunction    = 2,  // an anchor somewhere inside a function
+		Code          = 3,  // any executable section (thunks and stubs with no unwind info)
+		Data          = 4,  // initialised, non-executable
+		VTable        = 5,
+		Any           = 6,  // no structural check -- uniqueness only
+	};
+
 	struct PreflightEntry
 	{
 		const char* name;
 		const char* pattern;
 		bool        required;
+
+		// Defaulted because almost every pattern here is a function entry that
+		// gets detoured or called through a trampoline. Set it explicitly only
+		// where that is not true -- an entry whose kind is wrong fails preflight
+		// exactly as loudly as one that does not resolve, which is the point.
+		PatternKind kind = PatternKind::FunctionStart;
 	};
 
 	inline constexpr PreflightEntry PreflightRegistry[] =
@@ -580,7 +607,10 @@ namespace ScanPatterns
 		{ "UCrMapManuSubsystem::GatherPlayersData",    UCrMapManuSubsystem_GatherPlayersData,    true },
 		{ "UGameViewportClient::InputKey",             UGameViewportClient_InputKey,             true },
 		{ "ReportCrashUsingCrashReportClient",         ReportCrashUsingCrashReportClient,        true },
-		{ "HandleCrashInternal_FatalReportCallSite",   HandleCrashInternal_FatalReportCallSite,  true },
+		// A call site inside FCrashReportingThread::HandleCrashInternal, not a
+		// function entry -- the hook patches this CALL, it does not detour a function.
+		{ "HandleCrashInternal_FatalReportCallSite",   HandleCrashInternal_FatalReportCallSite,  true,
+		                                               PatternKind::InFunction },
 		{ "APlayerController::ConsoleCommand",         APlayerController_ConsoleCommand,         true },
 		{ "FLogSuppressionImplementation::ApplyGlobalChanges",           FLogSuppression_ApplyGlobalChanges,           true },
 		{ "FLogSuppressionInterface::Get",                               FLogSuppression_Get,                          true },
