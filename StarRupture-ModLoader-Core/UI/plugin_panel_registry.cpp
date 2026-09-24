@@ -427,9 +427,24 @@ namespace UI::PluginPanelRegistry
                 entry->desc->renderFn(imgui);
                 UI::Theme::EndChamferedWindow();
             }
-            entry->isOpen = open;
+            // Only write back a close made by ImGui itself (the titlebar X).
+            // `open` was snapshotted before renderFn ran, so assigning it
+            // unconditionally undid any SetPanelClose the plugin issued from
+            // inside its own render callback (e.g. a "Close" button) or from
+            // another thread meanwhile: the panel stayed open even though the
+            // plugin had already been told, via FirePanelClosed, that it shut.
             if (!open)
-                FirePanelClosed(static_cast<PanelHandle>(entry));
+            {
+                bool wasOpen = false;
+                {
+                    std::lock_guard<std::mutex> lock(s_mutex);
+                    wasOpen = entry->isOpen;
+                    entry->isOpen = false;
+                }
+                // A SetPanelClose during render has already fired the callback.
+                if (wasOpen)
+                    FirePanelClosed(static_cast<PanelHandle>(entry));
+            }
         }
     }
 }
