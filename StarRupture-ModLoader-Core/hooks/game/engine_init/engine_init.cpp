@@ -2,6 +2,7 @@
 #include "engine_init.h"
 #include "logging/logger.h"
 #include "logging/log.h"
+#include "logging/game_log_filter.h"
 #include "memory_scanner/scanner.h"
 #include "hooks/memory/engine_allocator.h"
 #include "hooks/game/mass_spawner_activate/mass_spawner_activate.h"
@@ -142,6 +143,13 @@ namespace Hooks::EngineInit
 			ModLoaderLogger::LogWarn(L"[EngineInit] Engine allocator resolution failed - "
 				L"plugins will not be able to use EngineAlloc/EngineFree");
 		}
+
+#ifndef MODLOADER_CLIENT_BUILD
+		// Quieten the game log categories a dedicated server spams. Queued, not
+		// applied here: this can run from the UGameEngine::Init detour, where
+		// GEngine is not reliably assigned yet, and the route needs it.
+		GameLogFilter::Schedule();
+#endif
 
 		if (!g_pluginCallbacks.empty())
 		{

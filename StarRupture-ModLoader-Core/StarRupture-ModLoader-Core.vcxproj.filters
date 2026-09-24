@@ -267,6 +267,9 @@
     <ClInclude Include="logging\plugin_log_levels.h">
       <Filter>Source Files\logging</Filter>
     </ClInclude>
+    <ClInclude Include="logging\game_log_filter.h">
+      <Filter>Source Files\logging</Filter>
+    </ClInclude>
     <ClInclude Include="config\config_manager.h">
       <Filter>Source Files\config</Filter>
     </ClInclude>
@@ -612,6 +615,9 @@
       <Filter>Source Files\logging</Filter>
     </ClCompile>
     <ClCompile Include="logging\plugin_log_levels.cpp">
+      <Filter>Source Files\logging</Filter>
+    </ClCompile>
+    <ClCompile Include="logging\game_log_filter.cpp">
       <Filter>Source Files\logging</Filter>
     </ClCompile>
     <ClCompile Include="config\config_manager.cpp">

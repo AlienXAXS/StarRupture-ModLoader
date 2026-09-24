@@ -2,6 +2,7 @@
 #include "hook_management.h"
 #include "engine_sync.h"
 #include "../logging/logger.h"
+#include "../logging/game_log_filter.h"
 #include "../config/config_manager.h"
 #include "../auto_update/auto_updater.h"
 #include "../plugins/plugin_manager.h"
@@ -28,6 +29,12 @@ void InitSubsystems()
 
     ModLoaderLogger::InitializeConfigManager();
     PluginManager::InitializePluginManager();
+
+#ifndef MODLOADER_CLIENT_BUILD
+    // Seed [Logging] GameLogCategories now rather than from the apply path,
+    // which cannot run until the first engine tick (it needs GEngine).
+    GameLogFilter::EnsureConfigDefaults();
+#endif
 }
 
 void InstallHooksPhase()

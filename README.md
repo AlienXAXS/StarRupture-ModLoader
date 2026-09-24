@@ -196,6 +196,7 @@ the whole API and you can hot-reload it while the game runs.
 | "Needs Update" next to a plugin | The plugin and the mod loader were built against different plugin interface versions. The tab says which of the two to update. |
 | Logs / diagnostics | Check `ModLoader\Logs\ModLoader.log`. Raise the detail in the **Logging** tab, or set `Level=DEBUG` under `[Logging]` in `ModLoader\modloader.ini`. |
 | One plugin is flooding the log | See [Log Levels](#log-levels) — turn that plugin down on its own, or use `-PluginLogLevel=` if it happens during startup. |
+| The *game's* log is flooding on a dedicated server | Hundreds of `LogTemp` / `LogSkinnedMeshComp` warnings a second come from the game itself, not the mod loader. Server builds turn those two categories down to errors automatically; edit `GameLogCategories` under `[Logging]` in `ModLoader\modloader.ini` to change the list, or blank it to leave the game log alone. `-LogCmds=` has no effect on this build. |
 | Game stops responding to input | Turn on *ModLoader Debug Values* in the **Settings** tab — it names the plugin holding input open. |
 | Players dropped during a long map load | The mod loader raises the engine's net timeouts to 300s by default — see [Net timeouts](#net-timeouts). Both ends of the session need the mod loader for this to help. |
 
