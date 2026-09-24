@@ -9,6 +9,7 @@
 #include "../network_channel/network_channel.h"
 #include "../console/server_console.h"
 #include "../hooks/game/engine_shutdown/engine_shutdown.h"
+#include "../preload/preload_manager.h"
 
 void ShutdownAll()
 {
@@ -67,6 +68,11 @@ void ShutdownAll()
 
     PluginManager::UnloadAllPlugins();
     NetworkChannel::Shutdown();
+
+    // After the ordinary plugins, before the loader's own hooks come out:
+    // a preload plugin's detours sit on engine functions the plugins above may
+    // still have been calling into a moment ago.
+    PreloadManager::Shutdown();
 
     RemoveAllHooks();
 

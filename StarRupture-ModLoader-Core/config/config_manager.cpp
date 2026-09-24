@@ -392,6 +392,12 @@ namespace ModLoaderLogger
 
 			if (valueStr.empty())
 			{
+				// Numeric defaults are normalised through a small buffer;
+				// string (and keybind) defaults are copied whole. They used
+				// to go through the same 64-byte buffer, which silently cut
+				// an asset path such as
+				// "/Game/Chimera/Characters/VehicleAdv/Vehicle/SK_Vehicle.SK_Vehicle"
+				// to 63 characters the first time the .ini was written.
 				char valueBuf[64] = {};
 				switch (entry.type)
 				{
@@ -401,19 +407,21 @@ namespace ModLoaderLogger
 							_stricmp(entry.defaultValue, "1") == 0 ||
 							_stricmp(entry.defaultValue, "yes") == 0);
 						snprintf(valueBuf, sizeof(valueBuf), "%d", b ? 1 : 0);
+						valueStr = valueBuf;
 						break;
 					}
 				case ConfigValueType::Integer:
 					snprintf(valueBuf, sizeof(valueBuf), "%d", atoi(entry.defaultValue));
+					valueStr = valueBuf;
 					break;
 				case ConfigValueType::Float:
 					snprintf(valueBuf, sizeof(valueBuf), "%.6f", static_cast<float>(atof(entry.defaultValue)));
+					valueStr = valueBuf;
 					break;
 				default:
-					snprintf(valueBuf, sizeof(valueBuf), "%s", entry.defaultValue);
+					valueStr = entry.defaultValue ? entry.defaultValue : "";
 					break;
 				}
-				valueStr = valueBuf;
 			}
 
 			if (entry.description && entry.description[0])

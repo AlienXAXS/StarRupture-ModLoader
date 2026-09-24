@@ -1,4 +1,5 @@
-#include "hooks_common.h"
+#include "hooks/hooks_common.h"
+#include "hooks/hook_broker.h"
 #include <cstring>
 #include <malloc.h>
 #include <cstdio>
@@ -484,27 +485,61 @@ namespace Hooks
 
 	static constexpr size_t kJmpSize = 14; // 6 (jmp [rip+0]) + 8 (address)
 
-	bool Hook::Install(uintptr_t targetAddr, void* detourFunc, void** originalFunc)
+	// Install one link on `target`, creating the chain if this is the first.
+	// Everything about the prologue patch lives in InstallRaw below, which only
+	// the broker calls.
+	bool Hook::Install(uintptr_t targetAddr, void* detourFunc, void** originalFunc,
+		   const char* owner, const char* name)
 	{
-		ModLoaderLogger::LogDebug(L"[Hooks] Hook::Install: target=0x%llX  detour=0x%llX",
+		if (installed)
+		{
+			ModLoaderLogger::LogWarn(L"[Hooks] Hook::Install: this Hook is already installed at 0x%llX -- aborting",
+				static_cast<unsigned long long>(target));
+			return false;
+		}
+
+		const Broker::LinkId id = Broker::Attach(targetAddr, detourFunc, originalFunc, owner, name);
+		if (!id.Valid())
+			return false;
+
+		target    = targetAddr;
+		detour    = reinterpret_cast<uintptr_t>(detourFunc);
+		linkId    = id.value;
+		installed = true;
+		return true;
+	}
+
+	void Hook::Remove()
+	{
+		if (!installed)
+			return;
+
+		Broker::Detach(Broker::LinkId{ linkId });
+		linkId    = 0;
+		installed = false;
+	}
+
+	bool Hook::InstallRaw(uintptr_t targetAddr, void* jumpTo, void** outTrampoline)
+	{
+		ModLoaderLogger::LogDebug(L"[Hooks] Hook::InstallRaw: target=0x%llX  jumpTo=0x%llX",
 		                          static_cast<unsigned long long>(targetAddr),
-		                          static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(detourFunc)));
+		                          static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(jumpTo)));
 
 		if (installed)
 		{
-			ModLoaderLogger::LogWarn(L"[Hooks] Hook::Install: hook already installed at 0x%llX – aborting",
+			ModLoaderLogger::LogWarn(L"[Hooks] Hook::InstallRaw: hook already installed at 0x%llX – aborting",
 			                         static_cast<unsigned long long>(target));
 			return false;
 		}
 
 		target = targetAddr;
-		detour = reinterpret_cast<uintptr_t>(detourFunc);
+		detour = reinterpret_cast<uintptr_t>(jumpTo);
 
 		// Read enough bytes to analyze instructions
 		uint8_t codeBuffer[64]{};
 		if (!ReadMemory(target, codeBuffer, sizeof(codeBuffer)))
 		{
-			ModLoaderLogger::LogError(L"[Hooks] Hook::Install: failed to read code at 0x%llX for analysis",
+			ModLoaderLogger::LogError(L"[Hooks] Hook::InstallRaw: failed to read code at 0x%llX for analysis",
 			                          static_cast<unsigned long long>(target));
 			return false;
 		}
@@ -515,12 +550,12 @@ namespace Hooks
 		if (patchSize == 0 || patchSize > sizeof(originalBytes))
 		{
 			ModLoaderLogger::LogError(
-				L"[Hooks] ERROR: Hook::Install: failed to calculate stolen bytes (got %zu, max %zu)",
+				L"[Hooks] ERROR: Hook::InstallRaw: failed to calculate stolen bytes (got %zu, max %zu)",
 				patchSize, sizeof(originalBytes));
 			return false;
 		}
 
-		ModLoaderLogger::LogDebug(L"[Hooks] Hook::Install: JMP size=%zu bytes, dynamically calculated stolen bytes=%zu",
+		ModLoaderLogger::LogDebug(L"[Hooks] Hook::InstallRaw: JMP size=%zu bytes, dynamically calculated stolen bytes=%zu",
 		                          kJmpSize, patchSize);
 
 		// Save original bytes
@@ -542,7 +577,7 @@ namespace Hooks
 		static constexpr size_t kExpansionHeadroom = 64;
 		size_t trampolineSize = patchSize + kExpansionHeadroom + kJmpSize;
 		ModLoaderLogger::LogDebug(
-			L"[Hooks] Hook::Install: allocating trampoline (%zu bytes = %zu stolen + %zu expansion headroom + %zu JMP back)",
+			L"[Hooks] Hook::InstallRaw: allocating trampoline (%zu bytes = %zu stolen + %zu expansion headroom + %zu JMP back)",
 			trampolineSize, patchSize, kExpansionHeadroom, kJmpSize);
 
 		trampoline = nullptr;
@@ -558,7 +593,7 @@ namespace Hooks
 		minAddr = (minAddr / allocGranularity) * allocGranularity;
 		maxAddr = (maxAddr / allocGranularity) * allocGranularity;
 
-		ModLoaderLogger::LogDebug(L"[Hooks] Hook::Install: attempting to allocate trampoline near target");
+		ModLoaderLogger::LogDebug(L"[Hooks] Hook::InstallRaw: attempting to allocate trampoline near target");
 		ModLoaderLogger::LogDebug(L"[Hooks]   Target address:     0x%016llX", static_cast<unsigned long long>(target));
 		ModLoaderLogger::LogDebug(L"[Hooks]   Acceptable range:   0x%016llX - 0x%016llX",
 		                          static_cast<unsigned long long>(minAddr),
@@ -651,7 +686,7 @@ namespace Hooks
 		if (!trampoline)
 		{
 			ModLoaderLogger::LogError(
-				L"[Hooks] WARN: Hook::Install: could not allocate trampoline near target after 1000 attempts");
+				L"[Hooks] WARN: Hook::InstallRaw: could not allocate trampoline near target after 1000 attempts");
 			ModLoaderLogger::LogError(L"[Hooks] WARN:   Falling back to system-chosen address");
 			ModLoaderLogger::LogError(L"[Hooks] WARN:   RIP-relative instructions will NOT work correctly!");
 
@@ -661,7 +696,7 @@ namespace Hooks
 
 		if (!trampoline)
 		{
-			ModLoaderLogger::LogError(L"[Hooks] ERROR: Hook::Install: VirtualAlloc for trampoline failed (error %lu)",
+			ModLoaderLogger::LogError(L"[Hooks] ERROR: Hook::InstallRaw: VirtualAlloc for trampoline failed (error %lu)",
 			                          GetLastError());
 			return false;
 		}
@@ -669,7 +704,7 @@ namespace Hooks
 		uintptr_t trampolineAddr = reinterpret_cast<uintptr_t>(trampoline);
 		int64_t finalDistance = static_cast<int64_t>(trampolineAddr) - static_cast<int64_t>(target);
 
-		ModLoaderLogger::LogDebug(L"[Hooks] Hook::Install: trampoline final location:");
+		ModLoaderLogger::LogDebug(L"[Hooks] Hook::InstallRaw: trampoline final location:");
 		ModLoaderLogger::LogDebug(L"[Hooks]   Address:  0x%016llX", static_cast<unsigned long long>(trampolineAddr));
 		ModLoaderLogger::LogDebug(L"[Hooks]   Distance: %+lld bytes (%+.2f MB)",
 		                          finalDistance, finalDistance / (1024.0 * 1024.0));
@@ -680,7 +715,7 @@ namespace Hooks
 		// Walk the original stolen bytes, writing relocated instructions into the
 		// trampoline via a write cursor.  Short rel8 branches are expanded to rel32
 		// so they still reach their targets when the trampoline is far from the origin.
-		ModLoaderLogger::LogDebug(L"[Hooks] Hook::Install: relocating stolen bytes into trampoline...");
+		ModLoaderLogger::LogDebug(L"[Hooks] Hook::InstallRaw: relocating stolen bytes into trampoline...");
 
 		bool canRelocate = (finalDistance >= INT32_MIN && finalDistance <= INT32_MAX);
 		int relocatedCount = 0;
@@ -698,7 +733,7 @@ namespace Hooks
 			if (instrLen == 0 || instrLen > 15)
 			{
 				ModLoaderLogger::LogError(
-					L"[Hooks] Hook::Install: relocation scan hit invalid instruction at offset %zu", offset);
+					L"[Hooks] Hook::InstallRaw: relocation scan hit invalid instruction at offset %zu", offset);
 				// Copy remaining bytes verbatim and bail
 				size_t remaining = patchSize - offset;
 				memcpy(trampoline + writeCursor, instrStart, remaining);
@@ -1007,13 +1042,13 @@ namespace Hooks
 		if (relocatedCount > 0)
 		{
 			ModLoaderLogger::LogDebug(
-				L"[Hooks] Hook::Install: relocated/expanded %d instruction(s) (%zu bytes written to trampoline)",
+				L"[Hooks] Hook::InstallRaw: relocated/expanded %d instruction(s) (%zu bytes written to trampoline)",
 				relocatedCount, writeCursor);
 		}
 		else
 		{
 			ModLoaderLogger::LogDebug(
-				L"[Hooks] Hook::Install: no instructions needed relocation (%zu bytes written to trampoline)",
+				L"[Hooks] Hook::InstallRaw: no instructions needed relocation (%zu bytes written to trampoline)",
 				writeCursor);
 		}
 
@@ -1027,7 +1062,7 @@ namespace Hooks
 		trampoline[writeCursor + 5] = 0x00;
 		memcpy(&trampoline[writeCursor + 6], &returnAddr, sizeof(returnAddr));
 
-		ModLoaderLogger::LogDebug(L"[Hooks] Hook::Install: trampoline JMP back at offset +0x%zX to 0x%016llX",
+		ModLoaderLogger::LogDebug(L"[Hooks] Hook::InstallRaw: trampoline JMP back at offset +0x%zX to 0x%016llX",
 		                          writeCursor, static_cast<unsigned long long>(returnAddr));
 
 		// Log final trampoline bytes
@@ -1049,8 +1084,8 @@ namespace Hooks
 		VirtualProtect(trampoline, trampolineSize, PAGE_EXECUTE_READ, &oldProtect);
 
 		// Give the caller a pointer to the trampoline so they can call the original
-		*originalFunc = trampoline;
-		ModLoaderLogger::LogDebug(L"[Hooks] Hook::Install: original function pointer set to trampoline at 0x%p",
+		*outTrampoline = trampoline;
+		ModLoaderLogger::LogDebug(L"[Hooks] Hook::InstallRaw: original function pointer set to trampoline at 0x%p",
 		                          static_cast<void*>(trampoline));
 
 		// Build the JMP patch for the target
@@ -1064,11 +1099,11 @@ namespace Hooks
 		memcpy(&jmpPatch[6], &detour, sizeof(detour));
 
 		// Write the patch
-		ModLoaderLogger::LogDebug(L"[Hooks] Hook::Install: writing JMP patch at 0x%llX...",
+		ModLoaderLogger::LogDebug(L"[Hooks] Hook::InstallRaw: writing JMP patch at 0x%llX...",
 		                          static_cast<unsigned long long>(target));
 		if (!Patch(target, jmpPatch, kJmpSize))
 		{
-			ModLoaderLogger::LogMessage(L"[Hooks] ERROR: Hook::Install: failed to write JMP patch at 0x%llX",
+			ModLoaderLogger::LogMessage(L"[Hooks] ERROR: Hook::InstallRaw: failed to write JMP patch at 0x%llX",
 			                            static_cast<unsigned long long>(target));
 			VirtualFree(trampoline, 0, MEM_RELEASE);
 			trampoline = nullptr;
@@ -1077,7 +1112,7 @@ namespace Hooks
 
 		installed = true;
 
-		ModLoaderLogger::LogDebug(L"[Hooks] Hook::Install: SUCCESS");
+		ModLoaderLogger::LogDebug(L"[Hooks] Hook::InstallRaw: SUCCESS");
 		ModLoaderLogger::LogDebug(L"[Hooks]   Target:       0x%llX", static_cast<unsigned long long>(target));
 		ModLoaderLogger::LogDebug(L"[Hooks]   Detour:       0x%llX", static_cast<unsigned long long>(detour));
 		ModLoaderLogger::LogDebug(L"[Hooks]   Trampoline:   0x%p", static_cast<void*>(trampoline));
@@ -1086,31 +1121,29 @@ namespace Hooks
 		return true;
 	}
 
-	void Hook::Remove()
+	void Hook::RemoveRaw()
 	{
 		if (!installed)
 		{
-			ModLoaderLogger::LogDebug(L"[Hooks] Hook::Remove: nothing to remove (not installed)");
+			ModLoaderLogger::LogDebug(L"[Hooks] Hook::RemoveRaw: nothing to remove (not installed)");
 			return;
 		}
 
-		ModLoaderLogger::LogInfo(L"[Hooks] Hook::Remove: restoring 0x%llX (%zu bytes)",
+		ModLoaderLogger::LogInfo(L"[Hooks] Hook::RemoveRaw: restoring 0x%llX (%zu bytes)",
 		                         static_cast<unsigned long long>(target), patchSize);
 
-		// Restore original bytes
 		Patch(target, originalBytes, patchSize);
 
-		// Free trampoline
-		if (trampoline)
-		{
-			ModLoaderLogger::LogDebug(L"[Hooks] Hook::Remove: freeing trampoline at 0x%p",
-			                          static_cast<void*>(trampoline));
-			VirtualFree(trampoline, 0, MEM_RELEASE);
-			trampoline = nullptr;
-		}
+		// The trampoline is deliberately NOT freed. A thread can be executing
+		// inside it at this exact moment -- every logging thread in the process is
+		// a candidate when the target is something hot -- and there is no way to
+		// know when the last one has left. Freeing it narrowed that window;
+		// leaking a few hundred bytes closes it. See the note in
+		// console/engine_output_hook.cpp about how sharp that edge was.
+		trampoline = nullptr;
 
 		installed = false;
-		ModLoaderLogger::LogInfo(L"[Hooks] Hook::Remove: hook at 0x%llX removed successfully",
+		ModLoaderLogger::LogInfo(L"[Hooks] Hook::RemoveRaw: prologue at 0x%llX restored",
 		                         static_cast<unsigned long long>(target));
 	}
 

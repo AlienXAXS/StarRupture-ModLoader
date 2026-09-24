@@ -144,12 +144,35 @@ namespace ScanPatterns
 
 	// FLogSuppressionInterface::Get -- returns the FLogSuppressionImplementation singleton,
 	// lazily constructing it. Usable directly as the `this` for ApplyGlobalChanges.
-	// The signature is unusually long because the TLS-guarded lazy-singleton prologue is
-	// shared verbatim by many other getters in the binary -- a shorter prefix is ambiguous
-	// and would resolve to the wrong function.
+	//
+	// This function CANNOT be found by scanning for its own bytes, and no amount of
+	// signature is going to change that. It is the MSVC magic-static template --
+	//   check the TLS once-flag, load the pointer, or construct and register a
+	//   destructor -- emitted byte-for-byte identically for 13 different singletons
+	// in this binary. Every value that distinguishes them is a rip-relative operand,
+	// which a pattern has to wildcard. The old signature below matched 24 times and
+	// the loader took the first, at +0x12F1550: the WRONG function, whose return
+	// value was then used as the `this` for ApplyGlobalChanges. Extending it to the
+	// full 181-byte body only narrows 24 to 13.
+	//
+	// So it is resolved from its call site instead. There is exactly one, in
+	// FEngineLoop::PreInit, and it is the UE source line
+	//   FLogSuppressionInterface::Get().ProcessConfigAndCommandLine();
+	// which compiles to:
+	//   E8 rel32          call FLogSuppressionInterface::Get   <-- followed
+	//   48 8B C8          mov  rcx, rax
+	//   48 8B 10          mov  rdx, [rax]
+	//   FF 52 10          call [rdx+10h]    vtable slot 2, ProcessConfigAndCommandLine
+	//   48 83 3D .. 00    cmp  qword [rip+..], 0
+	//   74 ..             je
+	// That is unique, and the rel32 names the callee exactly rather than guessing
+	// from a body that a dozen functions share. followRel32At = 0 in the registry
+	// row below; anything resolving this pattern by hand must decode it the same
+	// way (see LogVerbosity::ResolveLogSuppressionGet).
+	//
 	// Signature: void* __fastcall FLogSuppressionInterface::Get()
-	inline constexpr auto FLogSuppression_Get =
-		"48 83 EC 28 8B 0D ?? ?? ?? ?? 65 48 8B 04 25 ?? ?? ?? ?? BA B0 17 00 00 48 8B 04 C8 8B 04 02 39 05 ?? ?? ?? ?? 7F ?? 48 8B 05 ?? ?? ?? ?? 48 85 C0 75 ?? 4C 8D 0D ?? ?? ?? ?? 44 8D 40 ?? 48 8D 15 ?? ?? ?? ?? 48 8D 0D ?? ?? ?? ?? E8 ?? ?? ?? ?? 84 C0 74 ?? 90 CC 48 8B 05 ?? ?? ?? ?? 48 83 C4 28 C3";
+	inline constexpr auto FLogSuppression_Get_CallSite =
+		"E8 ?? ?? ?? ?? 48 8B C8 48 8B 10 FF 52 10 48 83 3D ?? ?? ?? ?? 00 74";
 
 	// FLogSuppressionImplementation::ProcessConfigAndCommandLine -- applies [Core.Log] and
 	// -LogCmds during FEngineLoop::PreInit. Anything set before this runs is overwritten,
@@ -186,8 +209,13 @@ namespace ScanPatterns
 
 	// AGameModeBase::PostLogin(AGameModeBase *this, struct APlayerController *a2)
 	// Native C++ override -- not a UFUNCTION, not in GObjects Children list.
+	//
+	// The prologue alone matched twice: this function and a 0x1A-byte stub at
+	// +0x71542C0 with the same frame setup and argument shuffle. The trailing
+	// FF 90 (the first call through this's vtable) is what separates them -- the
+	// stub returns before it ever makes one.
 	inline constexpr auto AGameModeBase_PostLogin =
-		"40 56 41 56 48 83 EC ?? ?? ?? ?? 48 8B F2 4C 8B F1";
+		"40 56 41 56 48 83 EC ?? ?? ?? ?? 48 8B F2 4C 8B F1 FF 90";
 
 	// AGameModeBase::Logout(AGameModeBase *this, struct AController *a2)
 	// Native C++ override -- not a UFUNCTION, not in GObjects Children list.
@@ -518,11 +546,50 @@ namespace ScanPatterns
 	inline constexpr auto FBitReader_SerializeBits =
 		"48 89 5C 24 ?? 48 89 74 24 ?? 57 48 83 EC ?? F6 41 ?? ?? 49 8B F8 48 8B F2 48 8B D9 0F 85";
 
+	// What an entry's address is supposed to BE, checked against the image
+	// before the pattern is accepted. Values mirror ScanValidation::Kind
+	// (memory_scanner/scan_validation.h) so pattern_preflight.cpp can convert
+	// between them; they are separate enums only so this header stays free of
+	// includes.
+	//
+	// Every entry is also required to match EXACTLY ONCE. That is not a field
+	// because there is no entry for which a second match would be acceptable: a
+	// pattern that matches twice resolved to whichever copy happens to sit lower
+	// in the image, which is luck, not a result -- and the offset it produced got
+	// written into scan_cache.ini, so every later launch took it without scanning.
+	enum class PatternKind : int
+	{
+		FunctionStart = 1,  // primary entry of a function, long enough to detour
+		InFunction    = 2,  // an anchor somewhere inside a function
+		Code          = 3,  // any executable section (thunks and stubs with no unwind info)
+		Data          = 4,  // initialised, non-executable
+		VTable        = 5,
+		Any           = 6,  // no structural check -- uniqueness only
+	};
+
 	struct PreflightEntry
 	{
 		const char* name;
 		const char* pattern;
 		bool        required;
+
+		// Defaulted because almost every pattern here is a function entry that
+		// gets detoured or called through a trampoline. Set it explicitly only
+		// where that is not true -- an entry whose kind is wrong fails preflight
+		// exactly as loudly as one that does not resolve, which is the point.
+		PatternKind kind = PatternKind::FunctionStart;
+
+		// Byte offset within the match of an E8/E9 rel32 whose TARGET is the
+		// address we want; -1 (the default) means the match itself is it.
+		//
+		// This is the escape hatch for a function whose own bytes are not unique
+		// and never can be -- a compiler template instantiated dozens of times,
+		// where every distinguishing value is a wildcarded rip-relative operand.
+		// Such a function is still reachable by pattern, just not by its own: the
+		// call SITE is unique, and the rel32 there names the callee exactly.
+		//
+		// `kind` is checked against the followed address, not the match.
+		int32_t followRel32At = -1;
 	};
 
 	inline constexpr PreflightEntry PreflightRegistry[] =
@@ -535,7 +602,13 @@ namespace ScanPatterns
 		{ "FEngineLoop::Init",                         FEngineLoop_Init,                         true },
 		{ "UGameEngine::Init",                         UGameEngine_Init,                         true },
 		{ "FEngineLoop::Exit",                         FEngineLoop_Exit,                         true },
-		{ "UEngine::PreExit",                          UEngine_PreExit,                          true },
+		// An in-function pattern, not an entry point: it starts on a CALL roughly
+		// 0x5A bytes into the function, and EngineShutdown detours it where it
+		// matches. Declaring FunctionStart made preflight report it as a cold chunk,
+		// which was the check being right about the declaration and wrong about the
+		// address -- it is ordinary mid-function code in a 578-byte function.
+		{ "UEngine::PreExit",                          UEngine_PreExit,                          true,
+																	       PatternKind::InFunction },
 		{ "AGameModeBase::PostLogin",                  AGameModeBase_PostLogin,                  true },
 		{ "AGameModeBase::Logout",                     AGameModeBase_Logout,                     true },
 		{ "UCrMassSaveSubsystem::OnSaveLoaded",        UCrMassSaveSubsystem_OnSaveLoaded,        true },
@@ -580,10 +653,14 @@ namespace ScanPatterns
 		{ "UCrMapManuSubsystem::GatherPlayersData",    UCrMapManuSubsystem_GatherPlayersData,    true },
 		{ "UGameViewportClient::InputKey",             UGameViewportClient_InputKey,             true },
 		{ "ReportCrashUsingCrashReportClient",         ReportCrashUsingCrashReportClient,        true },
-		{ "HandleCrashInternal_FatalReportCallSite",   HandleCrashInternal_FatalReportCallSite,  true },
+		// A call site inside FCrashReportingThread::HandleCrashInternal, not a
+		// function entry -- the hook patches this CALL, it does not detour a function.
+		{ "HandleCrashInternal_FatalReportCallSite",   HandleCrashInternal_FatalReportCallSite,  true,
+		                                               PatternKind::InFunction },
 		{ "APlayerController::ConsoleCommand",         APlayerController_ConsoleCommand,         true },
 		{ "FLogSuppressionImplementation::ApplyGlobalChanges",           FLogSuppression_ApplyGlobalChanges,           true },
-		{ "FLogSuppressionInterface::Get",                               FLogSuppression_Get,                          true },
+		{ "FLogSuppressionInterface::Get",                               FLogSuppression_Get_CallSite,                 true,
+																	       PatternKind::FunctionStart, 0 },
 		{ "FLogSuppressionImplementation::ProcessConfigAndCommandLine",  FLogSuppression_ProcessConfigAndCommandLine,  true },
 		// Optional -- only in-world debug drawing (hooks->HUD->DebugDraw) is lost
 		// if these ever stop resolving, so they must not disable the modloader.

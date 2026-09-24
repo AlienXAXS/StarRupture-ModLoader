@@ -1,0 +1,46 @@
+name: Sync preload headers to PreLoad Plugin SDK
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'StarRupture-ModLoader-Core/preload/preload_interface.h'
+      - 'StarRupture-ModLoader-Core/plugins/plugin_interface.h'
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout main repo
+        uses: actions/checkout@v4
+
+      - name: Checkout PreLoad Plugin SDK repo
+        uses: actions/checkout@v4
+        with:
+          repository: AlienXAXS/StarRupture-PreLoadPlugin-SDK
+          token: ${{ secrets.SDK_REPO_PAT }}
+          path: sdk
+
+      # Both headers are copied verbatim. preload_interface.h includes
+      # "plugins/plugin_interface.h", so the SDK mirrors that one directory
+      # level rather than rewriting the include -- a rewritten header is a
+      # header that drifts.
+      - name: Copy updated headers
+        run: |
+          mkdir -p sdk/include/plugins
+          cp StarRupture-ModLoader-Core/preload/preload_interface.h sdk/include/preload_interface.h
+          cp StarRupture-ModLoader-Core/plugins/plugin_interface.h   sdk/include/plugins/plugin_interface.h
+
+      - name: Commit and push
+        run: |
+          cd sdk
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add include/preload_interface.h include/plugins/plugin_interface.h
+          git diff --cached --quiet && echo "No changes." && exit 0
+          git commit -m "Update preload headers from modloader $(cd .. && git rev-parse --short HEAD)"
+          git push

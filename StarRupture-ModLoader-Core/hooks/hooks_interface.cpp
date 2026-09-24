@@ -102,11 +102,22 @@ namespace ModLoaderLogger
 			return nullptr;
 		}
 
+		// Name the link after the module that asked for it, so the `hooks` console
+		// command can say which plugin is on an address rather than attributing
+		// every plugin detour to the loader. _ReturnAddress() has to be read HERE,
+		// in the frame the plugin called into -- and this interface carries no
+		// plugin context, so the caller's module is the only identity available
+		// without an ABI change that would break every existing plugin.
+		const std::string owner = Hooks::GetCallerModuleName(_ReturnAddress());
+
+		char name[64]{};
+		sprintf_s(name, "hook at 0x%llX", static_cast<unsigned long long>(targetAddress));
+
 		// Allocate a new hook object
 		auto hook = new Hooks::Hook();
 
 		// Try to install the hook
-		if (!hook->Install(targetAddress, detourFunction, originalFunction))
+		if (!hook->Install(targetAddress, detourFunction, originalFunction, owner.c_str(), name))
 		{
 			LogMessage(L"[HooksInterface] ERROR: Hook installation failed at 0x%llX",
 			           static_cast<unsigned long long>(targetAddress));

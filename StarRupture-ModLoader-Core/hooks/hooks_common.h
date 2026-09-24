@@ -30,18 +30,45 @@ namespace Hooks
 	{
 		uintptr_t target = 0; // Address we hooked
 		uintptr_t detour = 0; // Our replacement function
-		uint8_t* trampoline = nullptr; // Allocated trampoline (calls original)
-		uint8_t originalBytes[64]{}; // Saved original bytes (increased for safety)
-		size_t patchSize = 0; // How many bytes we overwrote (dynamically calculated)
+		uint8_t* trampoline = nullptr; // Raw path only -- the chain owns this otherwise
+		uint8_t originalBytes[64]{}; // Raw path only
+		size_t patchSize = 0; // Raw path only
+		uint64_t linkId = 0; // Hooks::Broker link, when installed through Install()
 		bool installed = false;
 
-		// Install a hook at `target`. Writes a 14-byte absolute JMP (x64).
-		// `originalFunc` receives a pointer to a trampoline that calls the
-		// original code - cast it to the right function pointer type.
-		bool Install(uintptr_t target, void* detour, void** originalFunc);
+		// Install a hook at `target`. `originalFunc` receives a pointer to call
+		// the original code -- cast it to the right function pointer type.
+		//
+		// Goes through Hooks::Broker (hooks/hook_broker.h), so several callers can
+		// hook ONE address and each gets an `originalFunc` that runs the next one.
+		// Two Hook objects on the same address used to corrupt each other: the
+		// second Install decoded the first one's JMP stub as if it were the
+		// function prologue and copied its 8-byte address literal into a
+		// trampoline as though it were code.
+		//
+		// The pointer handed back is a broker thunk rather than the trampoline
+		// itself, so the chain can be rewired underneath you when a link in front
+		// of yours is removed. Call it, do not inspect it.
+		//
+		// owner/name are recorded for diagnostics only (the `hooks` console
+		// command); both may be omitted by loader-internal callers.
+		bool Install(uintptr_t target, void* detour, void** originalFunc,
+			     const char* owner = nullptr, const char* name = nullptr);
 
-		// Remove the hook, restoring original bytes.
+		// Remove this hook's link. The original prologue is restored only when
+		// the LAST link on that address goes -- one caller unhooking does not
+		// unhook the others.
 		void Remove();
+
+		// --- Broker-internal ---------------------------------------------------
+		//
+		// The raw prologue patch, with no chain around it. Hooks::Broker owns one
+		// of these per hooked address and is the only thing that may call them;
+		// everything else uses Install/Remove above. Calling InstallRaw directly
+		// on an address that is already hooked is exactly the corruption the
+		// broker exists to prevent.
+		bool InstallRaw(uintptr_t target, void* jumpTo, void** outTrampoline);
+		void RemoveRaw();
 	};
 
 	// ---------------------------------------------------------------------------

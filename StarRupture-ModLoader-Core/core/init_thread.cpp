@@ -192,6 +192,14 @@ DWORD WINAPI MainInitThreadProc(LPVOID)
     InstallHooksPhase();
     LogToFile::Info("[init] Engine hooks installed in %llu ms", GetTickCount64() - hooksStart);
 
+    // The last thing that happens before the game is allowed to start, and the
+    // only point at which a plugin can patch a function the engine calls on its
+    // way up. Everything it can go wrong with is contained inside RunPhase():
+    // the game boots either way. See preload/preload_manager.h.
+    const ULONGLONG preloadStart = GetTickCount64();
+    PreloadPhase();
+    LogToFile::Info("[init] Preload phase finished in %llu ms", GetTickCount64() - preloadStart);
+
     // Hooks are in place -- from here the engine-init hook takes over pausing
     // the main thread (it blocks on g_pluginsReadyEvent), so let it run again.
     ReleaseMainThread(suspendedMainThread);

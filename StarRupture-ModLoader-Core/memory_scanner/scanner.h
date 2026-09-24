@@ -27,6 +27,27 @@ namespace Scanner
     // first match, or nullptr if not found.
     uintptr_t FindPattern(uintptr_t start, size_t size, const std::vector<PatternByte>& pattern);
 
+    // Count matches, stopping as soon as `stopAfter` have been found (0 = count
+    // them all). outFirst, when non-null, receives the first match or 0.
+    //
+    // This is what a uniqueness check should use rather than FindAllPatterns:
+    // deciding "exactly one or not" only needs to see the second match, and
+    // enumerating every match in a ~200 MB image to answer a yes/no question is
+    // work nobody asked for. The full enumeration is worth paying for only on
+    // the failure path, where the report needs to list them.
+    size_t CountMatches(uintptr_t start, size_t size, const std::vector<PatternByte>& pattern,
+                        size_t stopAfter, uintptr_t* outFirst);
+
+    size_t CountMatchesInModule(HMODULE module, const std::string& pattern,
+                                size_t stopAfter, uintptr_t* outFirst);
+
+    // Collects up to maxResults match addresses into out, but keeps counting
+    // past that (up to hardCap, so a degenerate pattern cannot spin) and returns
+    // the total. Lets a failure report say "showing 12 of 47" without holding
+    // 47 addresses it will never print.
+    size_t CollectMatches(uintptr_t start, size_t size, const std::vector<PatternByte>& pattern,
+                          size_t maxResults, size_t hardCap, std::vector<uintptr_t>& out);
+
     // Find ALL matches of a pattern in a memory range.
     // Returns a vector of addresses where the pattern was found.
     std::vector<uintptr_t> FindAllPatterns(uintptr_t start, size_t size, const std::vector<PatternByte>& pattern);

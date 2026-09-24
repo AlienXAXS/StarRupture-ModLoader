@@ -451,6 +451,7 @@
     <ClInclude Include="hooks\game\world_begin_play\world_begin_play.h" />
     <ClInclude Include="hooks\game\world_end_play\world_end_play.h" />
     <ClInclude Include="hooks\hooks_common.h" />
+    <ClInclude Include="hooks\hook_broker.h" />
     <ClInclude Include="hooks\symbol_resolver.h" />
     <ClInclude Include="hooks\hooks_interface.h" />
     <ClInclude Include="hooks\http\http_server_hook.h" />
@@ -487,6 +488,12 @@
     <ClInclude Include="memory_scanner\scan_cache.h" />
     <ClInclude Include="memory_scanner\scanner.h" />
     <ClInclude Include="memory_scanner\hook_scanner_interface.h" />
+    <ClInclude Include="memory_scanner\image_info.h" />
+    <ClInclude Include="memory_scanner\patch_overlay.h" />
+    <ClInclude Include="memory_scanner\scan_validation.h" />
+    <ClInclude Include="preload\preload_interface.h" />
+    <ClInclude Include="preload\preload_manager.h" />
+    <ClInclude Include="preload\preload_patch.h" />
     <ClInclude Include="console\console_commands.h" />
     <ClInclude Include="console\plugin_console.h" />
     <ClInclude Include="console\console_input.h" />
@@ -592,6 +599,7 @@
     <ClCompile Include="hooks\game\control_channel\control_channel.cpp" />
     <ClCompile Include="hooks\game\modloader_hello\modloader_hello.cpp" />
     <ClCompile Include="hooks\hooks_common.cpp" />
+    <ClCompile Include="hooks\hook_broker.cpp" />
     <ClCompile Include="hooks\symbol_resolver.cpp" />
     <ClCompile Include="hooks\hooks_interface.cpp" />
     <ClCompile Include="hooks\input\keybind_registry.cpp">
@@ -646,6 +654,11 @@
     <ClCompile Include="memory_scanner\scan_cache.cpp" />
     <ClCompile Include="memory_scanner\scanner.cpp" />
     <ClCompile Include="memory_scanner\hook_scanner_interface.cpp" />
+    <ClCompile Include="memory_scanner\image_info.cpp" />
+    <ClCompile Include="memory_scanner\patch_overlay.cpp" />
+    <ClCompile Include="memory_scanner\scan_validation.cpp" />
+    <ClCompile Include="preload\preload_manager.cpp" />
+    <ClCompile Include="preload\preload_patch.cpp" />
     <ClCompile Include="console\console_commands.cpp" />
     <ClCompile Include="console\plugin_console.cpp" />
     <ClCompile Include="console\console_input.cpp" />

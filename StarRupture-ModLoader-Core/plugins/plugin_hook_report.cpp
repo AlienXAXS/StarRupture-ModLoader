@@ -45,6 +45,29 @@ namespace PluginHookReport
             return &s_session;
         }
 
+        // Failure details grew multi-line in v68: a non-unique pattern reports
+        // every match with the function it landed in. Writing that as a single
+        // log call puts raw line breaks inside one line and ruins the log's
+        // format, so split it here -- the one place every failure line goes
+        // through.
+        void LogDetailLines(const std::string& detail)
+        {
+            size_t start = 0;
+            while (start <= detail.size())
+            {
+                const size_t end = detail.find("\r\n", start);
+                const std::string line = detail.substr(
+                    start, end == std::string::npos ? std::string::npos : end - start);
+
+                if (!line.empty())
+                    ModLoaderLogger::LogError(L"[HookScan]     %S", line.c_str());
+
+                if (end == std::string::npos)
+                    break;
+                start = end + 2;
+            }
+        }
+
         void RejectOutOfSession(const IPluginSelf* self, const char* what)
         {
             ModLoaderLogger::LogError(
@@ -55,7 +78,8 @@ namespace PluginHookReport
         }
     }
 
-    void BeginSession(const IPluginSelf* self, const char* pluginName, const char* fileName)
+    void BeginSession(const IPluginSelf* self, const char* pluginName, const char* fileName,
+                      bool preload)
     {
         if (!self) return;
 
@@ -68,12 +92,14 @@ namespace PluginHookReport
         s_session.report.file    = fileName ? fileName : "";
         s_session.report.refused = false;
         s_session.report.resolved = 0;
+        s_session.report.preload = preload;
 
         // Drop any report from a previous load of this plugin: a reload that now
         // resolves cleanly must not leave the old failures on screen.
         for (size_t i = 0; i < s_reports.size(); ++i)
         {
-            if (_stricmp(s_reports[i].plugin.c_str(), s_session.report.plugin.c_str()) == 0)
+            if (s_reports[i].preload == preload &&
+                _stricmp(s_reports[i].plugin.c_str(), s_session.report.plugin.c_str()) == 0)
             {
                 s_reports.erase(s_reports.begin() + static_cast<ptrdiff_t>(i));
                 ++s_generation;
@@ -111,15 +137,24 @@ namespace PluginHookReport
         if (refusedOut) *refusedOut = report.refused;
 
         ModLoaderLogger::LogError(L"[HookScan] ==========================================================");
-        ModLoaderLogger::LogError(L"[HookScan] Plugin '%S' (%S): %d resolved, %zu failed",
+        ModLoaderLogger::LogError(L"[HookScan] %S '%S' (%S): %d resolved, %zu failed",
+            report.preload ? "Preload plugin" : "Plugin",
             report.plugin.c_str(), report.file.c_str(), report.resolved, report.failures.size());
         for (const Failure& f : report.failures)
         {
             ModLoaderLogger::LogError(L"[HookScan]   [%S] %S", f.required ? "required" : "optional", f.hookName.c_str());
-            ModLoaderLogger::LogError(L"[HookScan]     %S", f.detail.c_str());
+            LogDetailLines(f.detail);
         }
-        ModLoaderLogger::LogError(L"[HookScan] '%S' will NOT be loaded -- PluginInit will not be called.",
-            report.plugin.c_str());
+        if (report.preload)
+        {
+            ModLoaderLogger::LogError(L"[HookScan] '%S' will NOT run -- it is unloaded and the game boots unaffected.",
+                report.plugin.c_str());
+        }
+        else
+        {
+            ModLoaderLogger::LogError(L"[HookScan] '%S' will NOT be loaded -- PluginInit will not be called.",
+                report.plugin.c_str());
+        }
         ModLoaderLogger::LogError(L"[HookScan] ==========================================================");
 
         s_reports.push_back(std::move(report));
@@ -261,6 +296,7 @@ namespace PluginHookReport
         // has a length this code gets to assume.
         for (const PluginReport& r : s_reports)
         {
+            text += r.preload ? "[preload] " : "";
             text += r.plugin;
             text += " (";
             text += r.file.empty() ? "?" : r.file;
@@ -282,8 +318,10 @@ namespace PluginHookReport
         }
 
         text += "A hook that no longer resolves usually means the game updated and the\r\n"
-                "plugin needs a new build. Any unresolved hook, required or optional,\r\n"
-                "stops the plugin loading. Send this to the plugin's author.\r\n";
+                "plugin needs a new build. Any unresolved hook stops the plugin loading --\r\n"
+                "required or optional, and a pattern that matches MORE than once counts as\r\n"
+                "unresolved too, because an address picked from several candidates is a\r\n"
+                "guess. Send this to the plugin's author.\r\n";
         return text;
     }
 }

@@ -8,6 +8,7 @@
 #include "../network_channel/network_channel.h"
 #include "../UI/splash_window.h"
 #include "../hooks/game/game_instance_init/game_instance_init.h"
+#include "../preload/preload_manager.h"
 
 DWORD WINAPI AutoUpdateThreadProc(LPVOID)
 {
@@ -34,6 +35,26 @@ void InstallHooksPhase()
     Splash::SetStatus(L"Installing core game hooks...");
     Splash::SetProgress(0.05f);
     InstallAllHooks();
+}
+
+void PreloadPhase()
+{
+    // Installed AFTER the loader's own hooks on purpose, for two reasons.
+    //
+    // The loader's subsystems then never depend on anything a third-party DLL
+    // did -- the reverse order would put the loader's own boot at the mercy of
+    // whatever a plugin patched.
+    //
+    // And when a preload plugin detours a function the loader also detours,
+    // Hooks::Broker splices it onto the same chain rather than letting a second
+    // detour be written over the first. Links run in install order, so the
+    // loader's hook runs first and calls on to the plugin's. (Before the broker
+    // existed the second install read the first one's JMP stub as if it were
+    // the function prologue and copied its address literal into a trampoline as
+    // though it were code -- so "it chains" was never true, it just had not
+    // been tried.)
+    Splash::SetStatus(L"Running preload plugins...");
+    PreloadManager::RunPhase();
 }
 
 void WaitForEnginePhase()

@@ -1,7 +1,9 @@
 #include "memory_scanner/hook_scanner_interface.h"
 #include "memory_scanner/scanner.h"
+#include "memory_scanner/scan_validation.h"
 #include "plugins/plugin_hook_report.h"
 
+#include <cstddef>
 #include <cstring>
 #include <string>
 #include <vector>
@@ -19,16 +21,6 @@ namespace ModLoaderLogger
 			return PluginHookReport::HasSession(self);
 		}
 
-		// "<what>: <pattern>", the detail line the report and clipboard text show
-		// under the hook name.
-		std::string MissDetail(const char* what, const char* pattern)
-		{
-			std::string s = what;
-			s += ": ";
-			s += pattern ? pattern : "(null)";
-			return s;
-		}
-
 		std::string ModuleName(HMODULE module)
 		{
 			char path[MAX_PATH]{};
@@ -38,15 +30,58 @@ namespace ModLoaderLogger
 			return slash ? slash + 1 : path;
 		}
 
-		// Shared body of the four single-pattern resolves. module == nullptr
-		// means the main module, which is also the only form that gets the scan
-		// cache (it is keyed on the main module's base and the game version).
+		// The one place a validated resolve is recorded. Everything the plugin
+		// can call funnels through here so that success, failure and the wording
+		// of the failure are decided once.
 		//
-		// `required` is recorded as a label only: a miss refuses the plugin
-		// either way (see plugin_hook_report.h). Optional still means something
-		// to the plugin -- it is the resolve whose null return it is expected to
-		// handle -- but it does not buy it a load.
-		uintptr_t Resolve(const IPluginSelf* self, const char* hookName, const char* pattern,
+		// `required` is a label on the report line, not a verdict: any failure
+		// refuses the plugin (see plugin_hook_report.h). What the label buys is
+		// a readable report -- it says which addresses the author expected to be
+		// able to lose.
+		uintptr_t RunAndRecord(const IPluginSelf* self, const ScanValidation::Request& request, bool required)
+		{
+			if (!InSession(self))
+				return 0;
+
+			const ScanValidation::Result result = ScanValidation::Resolve(request);
+
+			if (result.Succeeded())
+			{
+				PluginHookReport::RecordResolved(self);
+				return result.address;
+			}
+
+			// The kind is worth carrying into the report even when the kind is
+			// not what failed: "declared as function start" is the first thing
+			// that tells a reader whether the author opted out of the check.
+			std::string detail = result.detail;
+			if (request.kind == ScanValidation::Kind::Any)
+				detail += "\r\n            (declared PLUGIN_SCAN_ANY -- no structural check was requested)";
+			else
+			{
+				detail += "\r\n            (declared kind: ";
+				detail += ScanValidation::KindName(request.kind);
+				detail += ")";
+			}
+
+			if (request.module)
+			{
+				detail += "\r\n            (scanned module: " + ModuleName(request.module) + ")";
+			}
+
+			PluginHookReport::RecordFailure(self, request.name.c_str(), detail.c_str(), required);
+			return 0;
+		}
+
+		// Shared body of the four legacy single-pattern resolves.
+		//
+		// These predate scan kinds, so they scan with Kind::Any: uniqueness is
+		// enforced (it is a property of the pattern, not of what the caller
+		// declared) but the structural check is not, because a plugin built
+		// against an older header never got the chance to say what it wanted.
+		// The report labels them unvalidated so that is visible to whoever reads
+		// it.
+		uintptr_t ResolveLegacy(const IPluginSelf* self, const char* hookName, const char* pattern,
 			HMODULE module, bool required)
 		{
 			if (!InSession(self))
@@ -59,21 +94,13 @@ namespace ModLoaderLogger
 				return 0;
 			}
 
-			const uintptr_t addr = module
-				? Scanner::FindPatternInModule(module, std::string(pattern))
-				: Scanner::FindPatternInMainModule(std::string(hookName), std::string(pattern));
+			ScanValidation::Request request;
+			request.name    = hookName;
+			request.pattern = pattern;
+			request.kind    = ScanValidation::Kind::Any;
+			request.module  = module;
 
-			if (addr)
-			{
-				PluginHookReport::RecordResolved(self);
-				return addr;
-			}
-
-			std::string detail = module
-				? MissDetail(("pattern not found in " + ModuleName(module)).c_str(), pattern)
-				: MissDetail("pattern not found", pattern);
-			PluginHookReport::RecordFailure(self, hookName, detail.c_str(), required);
-			return 0;
+			return RunAndRecord(self, request, required);
 		}
 
 		uintptr_t ResolveUnique(const IPluginSelf* self, const char* hookName,
@@ -89,27 +116,38 @@ namespace ModLoaderLogger
 				return 0;
 			}
 
-			std::vector<std::string> patternVec;
-			patternVec.reserve(static_cast<size_t>(patternCount));
+			// Each candidate gets the full uniqueness treatment, and the first
+			// one that resolves cleanly wins. Nothing is recorded per candidate:
+			// a candidate list is explicitly "try these in order", so a candidate
+			// that missed is not a failure, only the list running out is.
+			std::string tried;
 			for (int i = 0; i < patternCount; ++i)
-				if (patterns[i]) patternVec.push_back(std::string(patterns[i]));
-
-			const uintptr_t addr = Scanner::FindUniquePattern(patternVec, outPatternIndex);
-			if (addr)
 			{
-				PluginHookReport::RecordResolved(self);
-				return addr;
+				if (!patterns[i] || !patterns[i][0])
+					continue;
+
+				ScanValidation::Request request;
+				request.name    = hookName;
+				request.pattern = patterns[i];
+				request.kind    = ScanValidation::Kind::Any;
+
+				const ScanValidation::Result result = ScanValidation::Resolve(request);
+				if (result.Succeeded())
+				{
+					if (outPatternIndex)
+						*outPatternIndex = i;
+					PluginHookReport::RecordResolved(self);
+					return result.address;
+				}
+
+				tried += "\r\n          ";
+				tried += patterns[i];
+				tried += "\r\n            -> ";
+				tried += result.detail;
 			}
 
-			// Which candidate failed is not knowable -- FindUniquePattern only
-			// says that none of them matched exactly once -- so list them all.
-			// That is also what an author needs to see to fix it.
-			std::string detail = "no unique match among " + std::to_string(patternVec.size()) + " candidate pattern(s):";
-			for (const std::string& p : patternVec)
-			{
-				detail += "\r\n          ";
-				detail += p;
-			}
+			std::string detail = "no candidate pattern resolved to exactly one address:";
+			detail += tried;
 			PluginHookReport::RecordFailure(self, hookName, detail.c_str(), required);
 			return 0;
 		}
@@ -118,22 +156,22 @@ namespace ModLoaderLogger
 
 		uintptr_t HookResolveRequired(const IPluginSelf* self, const char* hookName, const char* pattern)
 		{
-			return Resolve(self, hookName, pattern, nullptr, true);
+			return ResolveLegacy(self, hookName, pattern, nullptr, true);
 		}
 
 		uintptr_t HookResolveOptional(const IPluginSelf* self, const char* hookName, const char* pattern)
 		{
-			return Resolve(self, hookName, pattern, nullptr, false);
+			return ResolveLegacy(self, hookName, pattern, nullptr, false);
 		}
 
 		uintptr_t HookResolveRequiredInModule(const IPluginSelf* self, const char* hookName, HMODULE module, const char* pattern)
 		{
-			return Resolve(self, hookName, pattern, module, true);
+			return ResolveLegacy(self, hookName, pattern, module, true);
 		}
 
 		uintptr_t HookResolveOptionalInModule(const IPluginSelf* self, const char* hookName, HMODULE module, const char* pattern)
 		{
-			return Resolve(self, hookName, pattern, module, false);
+			return ResolveLegacy(self, hookName, pattern, module, false);
 		}
 
 		uintptr_t HookResolveRequiredUnique(const IPluginSelf* self, const char* hookName,
@@ -146,6 +184,78 @@ namespace ModLoaderLogger
 			const char** patterns, int patternCount, int* outPatternIndex)
 		{
 			return ResolveUnique(self, hookName, patterns, patternCount, outPatternIndex, false);
+		}
+
+		ScanValidation::Kind ToValidationKind(int pluginKind)
+		{
+			switch (pluginKind)
+			{
+			case PLUGIN_SCAN_FUNCTION_START: return ScanValidation::Kind::FunctionStart;
+			case PLUGIN_SCAN_IN_FUNCTION:    return ScanValidation::Kind::InFunction;
+			case PLUGIN_SCAN_CODE:           return ScanValidation::Kind::Code;
+			case PLUGIN_SCAN_DATA:           return ScanValidation::Kind::Data;
+			case PLUGIN_SCAN_VTABLE:         return ScanValidation::Kind::VTable;
+			case PLUGIN_SCAN_ANY:            return ScanValidation::Kind::Any;
+			case PLUGIN_SCAN_UNSPECIFIED:
+			default:                         return ScanValidation::Kind::Unspecified;
+			}
+		}
+
+		// v68. The request is read only as far as the plugin's own structSize,
+		// so a field appended to PluginScanRequest later costs a plugin built
+		// against this header nothing -- it simply keeps the default.
+		//
+		// A structSize of 0 is a request that was never initialised (the
+		// PLUGIN_SCAN_REQUEST_INIT macro sets it), and is refused rather than
+		// guessed at: every other field in it is equally untrustworthy.
+		uintptr_t HookResolve(const IPluginSelf* self, const PluginScanRequest* request)
+		{
+			if (!InSession(self))
+				return 0;
+
+			if (!request)
+			{
+				PluginHookReport::RecordFailure(self, "(unnamed)",
+					"Resolve called with a null request", true);
+				return 0;
+			}
+
+			constexpr size_t kMinSize = offsetof(PluginScanRequest, kind) + sizeof(int);
+
+			PluginScanRequest local{};
+			local.followRel32At = -1;
+
+			const size_t given = request->structSize;
+			if (given < kMinSize)
+			{
+				PluginHookReport::RecordFailure(self, "(unnamed)",
+					"Resolve called with an uninitialised PluginScanRequest (structSize too small). "
+					"Initialise it with PLUGIN_SCAN_REQUEST_INIT.", true);
+				return 0;
+			}
+
+			memcpy(&local, request, given < sizeof(PluginScanRequest) ? given : sizeof(PluginScanRequest));
+
+			const bool required = (local.flags & PLUGIN_SCAN_FLAG_OPTIONAL) == 0;
+
+			if (!local.hookName || !local.hookName[0] || !local.pattern || !local.pattern[0])
+			{
+				PluginHookReport::RecordFailure(self, local.hookName ? local.hookName : "(unnamed)",
+					"Resolve called with an empty hookName or pattern", required);
+				return 0;
+			}
+
+			ScanValidation::Request validation;
+			validation.name         = local.hookName;
+			validation.pattern      = local.pattern;
+			validation.kind         = ToValidationKind(local.kind);
+			validation.module       = local.module;
+			validation.resultOffset = local.resultOffset;
+			validation.vtableSlots  = local.vtableSlots;
+			validation.followRel32At =
+				(local.flags & PLUGIN_SCAN_FLAG_FOLLOW_REL32) ? local.followRel32At : -1;
+
+			return RunAndRecord(self, validation, required);
 		}
 
 		int CopyAddresses(const std::vector<uintptr_t>& results, uintptr_t* out, int maxResults)
@@ -242,7 +352,8 @@ namespace ModLoaderLogger
 			HookFindXrefsToAddressInMainModule,
 			HookReportFailure,
 			HookReportWarning,
-			HookHasFailures
+			HookHasFailures,
+			HookResolve
 		};
 	}
 

@@ -17,9 +17,14 @@
 #include "network_channel/network_channel.h"
 #include "plugins/pak_registry.h"
 #include "Engine_classes.hpp"   // SDK::UObject::GetFullName and the player pawn lookup for the pak command
+#ifdef MODLOADER_CLIENT_BUILD
+#include "UMG_classes.hpp"      // pak widget: UWidgetBlueprintLibrary::Create / UUserWidget::AddToViewport
+#endif
 #include "plugins/plugin_hook_report.h"
 #include "plugins/plugin_interface.h"
 #include "plugins/plugin_manager.h"
+#include "preload/preload_manager.h"
+#include "hooks/hook_broker.h"
 #include "utils/game_thread_dispatch.h"
 
 #ifndef MODLOADER_BUILD_TAG
@@ -605,8 +610,120 @@ namespace ModConsole
         }
 
         out.Notice("A hook that no longer resolves usually means the game updated and the");
-        out.Notice("plugin needs a new build. Any unresolved hook, required or optional,");
-        out.Notice("stops the plugin loading. Full detail is in modloader.log.");
+        out.Notice("plugin needs a new build. Any unresolved hook stops the plugin loading --");
+        out.Notice("required or optional, and a pattern that matches more than once counts as");
+        out.Notice("unresolved too. Full detail is in modloader.log.");
+    }
+
+    // -----------------------------------------------------------------------
+    // hooks -- every detoured address and who is on it.
+    //
+    // An address can carry several hooks at once: the loader's own, plus any
+    // preload plugin that wanted the same function. They run in the order
+    // listed, each calling the next through its `original`. This is the only
+    // view of that, and it is the first thing to look at when a hook seems to
+    // be doing nothing -- a link in front of it may be declining to call on.
+    // -----------------------------------------------------------------------
+    static void Cmd_Hooks(const std::vector<std::string>&, Sink& out)
+    {
+        const std::vector<Hooks::Broker::ChainInfo> chains = Hooks::Broker::Snapshot();
+        if (chains.empty())
+        {
+            out.Notice("No hooks are installed.");
+            return;
+        }
+
+        int shared = 0;
+        for (const Hooks::Broker::ChainInfo& chain : chains)
+            if (chain.links.size() > 1)
+                ++shared;
+
+        out.Printf(LineKind::Output, "%zu hooked address(es), %d shared by more than one owner:",
+                   chains.size(), shared);
+
+        const uintptr_t base = reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
+
+        for (const Hooks::Broker::ChainInfo& chain : chains)
+        {
+            // Printed as an RVA when it lands in the game executable, because
+            // that is the form that pastes into a disassembler. ASLR makes the
+            // absolute address useless for anything but this session.
+            if (chain.target >= base)
+            {
+                out.Printf(LineKind::Output, "  exe+0x%llX  (%zu hook%s)",
+                           static_cast<unsigned long long>(chain.target - base),
+                           chain.links.size(), chain.links.size() == 1 ? "" : "s");
+            }
+            else
+            {
+                out.Printf(LineKind::Output, "  0x%llX  (%zu hook%s)",
+                           static_cast<unsigned long long>(chain.target),
+                           chain.links.size(), chain.links.size() == 1 ? "" : "s");
+            }
+
+            for (size_t i = 0; i < chain.links.size(); ++i)
+            {
+                out.Notice("      %zu. %-24s %s", i + 1,
+                           chain.links[i].owner.c_str(), chain.links[i].name.c_str());
+            }
+        }
+
+        out.Notice("Listed in call order: the first entry runs first and calls the next.");
+    }
+
+    // -----------------------------------------------------------------------
+    // preload -- what happened during Stage 1, long after Stage 1 is over.
+    //
+    // The preload phase runs before the engine exists, so nothing that could
+    // display its result is running yet. By the time anyone can ask, the
+    // answer is history -- which is why PreloadManager keeps its records for
+    // the session. On a dedicated server this command is the only way to see
+    // them without reading the log.
+    // -----------------------------------------------------------------------
+    static void Cmd_Preload(const std::vector<std::string>&, Sink& out)
+    {
+        if (!PreloadManager::DidRun())
+        {
+            const std::string reason = PreloadManager::GetSkipReason();
+            out.Printf(LineKind::Error, "The preload phase did not run: %s",
+                       reason.empty() ? "it has not been reached yet" : reason.c_str());
+            return;
+        }
+
+        const std::vector<PreloadManager::Record> records = PreloadManager::GetRecords();
+        if (records.empty())
+        {
+            out.Notice("No preload plugins found in ModLoader\\Preload.");
+            return;
+        }
+
+        int running = 0;
+        for (const PreloadManager::Record& r : records)
+            if (r.status == PreloadManager::Status::Running)
+                ++running;
+
+        out.Printf(LineKind::Output, "%zu preload plugin(s), %d running:", records.size(), running);
+
+        for (const PreloadManager::Record& r : records)
+        {
+            const bool ok = (r.status == PreloadManager::Status::Running);
+
+            out.Printf(ok ? LineKind::Output : LineKind::Error,
+                       "  %-24s %-10s %-28s %s",
+                       r.name.c_str(),
+                       r.version.empty() ? "-" : r.version.c_str(),
+                       PreloadManager::StatusName(r.status),
+                       r.fileName.c_str());
+
+            if (ok && r.hooksInstalled > 0)
+                out.Notice("      %d hook(s) installed", r.hooksInstalled);
+
+            if (!r.detail.empty())
+                out.Notice("      %s", r.detail.c_str());
+        }
+
+        out.Notice("A preload plugin that fails is unloaded and the game starts without it --");
+        out.Notice("it can never stop the game booting. Use `hookfailures` for pattern detail.");
     }
 
     // -----------------------------------------------------------------------
@@ -618,6 +735,35 @@ namespace ModConsole
     // Runs on the game thread, which is where every registry operation ends
     // up anyway, so nothing here waits on a dispatch.
     // -----------------------------------------------------------------------
+    // The mesh assignment for `pak spawnmesh`, kept SEH-only (no C++ objects
+    // in scope, C2712) because both setters are ProcessEvent calls into the
+    // engine and a bad mesh can fault inside them.
+    static bool AssignMeshSEH(SDK::AActor* actor, SDK::UObject* mesh, bool skeletal, unsigned long* code)
+    {
+        __try
+        {
+            if (skeletal)
+            {
+                SDK::USkeletalMeshComponent* comp = static_cast<SDK::ASkeletalMeshActor*>(actor)->SkeletalMeshComponent;
+                if (!comp) return false;
+                comp->SetMobility(SDK::EComponentMobility::Movable);
+                comp->SetSkeletalMeshAsset(static_cast<SDK::USkeletalMesh*>(mesh));
+            }
+            else
+            {
+                SDK::UStaticMeshComponent* comp = static_cast<SDK::AStaticMeshActor*>(actor)->StaticMeshComponent;
+                if (!comp) return false;
+                comp->SetMobility(SDK::EComponentMobility::Movable);
+                comp->SetStaticMesh(static_cast<SDK::UStaticMesh*>(mesh));
+            }
+            return true;
+        }
+        __except (*code = GetExceptionCode(), EXCEPTION_EXECUTE_HANDLER)
+        {
+            return false;
+        }
+    }
+
     static void Cmd_Pak(const std::vector<std::string>& args, Sink& out)
     {
         IPluginPak* pak = PakRegistry::GetInterface();
@@ -730,6 +876,39 @@ namespace ModConsole
             return;
         }
 
+        // Where a spawn goes. Explicit coordinates (args[first..first+2]) win.
+        // Otherwise three metres in front of the local player, facing the same
+        // way, so the result is on screen -- the world origin is nowhere anyone
+        // is standing. A dedicated server has no local pawn and falls back to
+        // the origin.
+        auto pickSpot = [&](size_t first, PluginDebugVector& loc, PluginDebugRotator& rot) -> const char*
+        {
+            loc = {};
+            rot = {};
+            if (args.size() >= first + 3)
+            {
+                loc.x = atof(args[first].c_str());
+                loc.y = atof(args[first + 1].c_str());
+                loc.z = atof(args[first + 2].c_str());
+                return "the given coordinates";
+            }
+            if (SDK::UWorld* world = SDK::UWorld::GetWorld())
+            {
+                if (SDK::APawn* pawn = SDK::UGameplayStatics::GetPlayerPawn(world, 0))
+                {
+                    const SDK::FVector  p = pawn->K2_GetActorLocation();
+                    const SDK::FVector  f = pawn->GetActorForwardVector();
+                    const SDK::FRotator r = pawn->K2_GetActorRotation();
+                    loc.x = p.X + f.X * 300.0;
+                    loc.y = p.Y + f.Y * 300.0;
+                    loc.z = p.Z + 50.0;
+                    rot.yaw = r.Yaw;
+                    return "in front of the player";
+                }
+            }
+            return "the world origin";
+        };
+
         if (sub == "spawn")
         {
             if (args.size() < 3)
@@ -743,35 +922,9 @@ namespace ModConsole
                 out.Error("Class %s did not load", args[2].c_str());
                 return;
             }
-            // Explicit coordinates win. Otherwise spawn three metres in front
-            // of the local player, facing the same way, so the result is on
-            // screen -- the world origin is nowhere anyone is standing. A
-            // dedicated server has no local pawn and falls back to the origin.
-            PluginDebugVector  loc{};
-            PluginDebugRotator rot{};
-            const bool hasLoc = args.size() >= 6;
-            const char* where = "the world origin";
-            if (hasLoc)
-            {
-                loc.x = atof(args[3].c_str());
-                loc.y = atof(args[4].c_str());
-                loc.z = atof(args[5].c_str());
-                where = "the given coordinates";
-            }
-            else if (SDK::UWorld* world = SDK::UWorld::GetWorld())
-            {
-                if (SDK::APawn* pawn = SDK::UGameplayStatics::GetPlayerPawn(world, 0))
-                {
-                    const SDK::FVector  p = pawn->K2_GetActorLocation();
-                    const SDK::FVector  f = pawn->GetActorForwardVector();
-                    const SDK::FRotator r = pawn->K2_GetActorRotation();
-                    loc.x = p.X + f.X * 300.0;
-                    loc.y = p.Y + f.Y * 300.0;
-                    loc.z = p.Z + 50.0;
-                    rot.yaw = r.Yaw;
-                    where = "in front of the player";
-                }
-            }
+            PluginDebugVector  loc;
+            PluginDebugRotator rot;
+            const char* where = pickSpot(3, loc, rot);
             void* actor = pak->SpawnActor(cls, &loc, &rot);
             if (!actor)
             {
@@ -783,7 +936,127 @@ namespace ModConsole
             return;
         }
 
-        out.Error("usage: pak [list] | pak mount <path> [order] | pak unmount <#|path> | pak load <path> | pak loadclass <path> | pak spawn <class> [x y z]");
+        // A mesh asset is not an actor, so it needs one to carry it: the
+        // engine's own StaticMeshActor / SkeletalMeshActor, with the mesh
+        // assigned after the spawn. The component ships with Static mobility,
+        // and SetStaticMesh refuses to change a registered static component,
+        // so mobility goes to Movable first.
+        if (sub == "spawnmesh")
+        {
+            if (args.size() < 3)
+            {
+                out.Error("usage: pak spawnmesh </Game/Path/SM_Thing.SM_Thing> [x y z]   (static or skeletal mesh)");
+                return;
+            }
+            auto* mesh = static_cast<SDK::UObject*>(pak->LoadObject(args[2].c_str()));
+            if (!mesh)
+            {
+                out.Error("Mesh %s did not load", args[2].c_str());
+                return;
+            }
+            const bool isStatic   = mesh->IsA(SDK::UStaticMesh::StaticClass());
+            const bool isSkeletal = !isStatic && mesh->IsA(SDK::USkeletalMesh::StaticClass());
+            if (!isStatic && !isSkeletal)
+            {
+                out.Error("%s is a %s, not a StaticMesh or SkeletalMesh", args[2].c_str(),
+                          mesh->Class ? mesh->Class->GetName().c_str() : "?");
+                return;
+            }
+
+            PluginDebugVector  loc;
+            PluginDebugRotator rot;
+            const char* where = pickSpot(3, loc, rot);
+            void* cls = isStatic ? static_cast<void*>(SDK::AStaticMeshActor::StaticClass())
+                                 : static_cast<void*>(SDK::ASkeletalMeshActor::StaticClass());
+            auto* actor = static_cast<SDK::AActor*>(pak->SpawnActor(cls, &loc, &rot));
+            if (!actor)
+            {
+                out.Error("Could not spawn a carrier actor (no world?)");
+                return;
+            }
+
+            unsigned long code = 0;
+            if (!AssignMeshSEH(actor, mesh, isSkeletal, &code))
+            {
+                out.Error("Exception 0x%08lX assigning the mesh -- the carrier actor is left in the world", code);
+                return;
+            }
+            out.Notice("Spawned %s carrying %s", actor->GetFullName().c_str(), mesh->GetName().c_str());
+            out.Out("  at %.0f %.0f %.0f (%s)", loc.x, loc.y, loc.z, where);
+            return;
+        }
+
+#ifdef MODLOADER_CLIENT_BUILD
+        // A UMG widget from any mounted pak, or the game's own: created for
+        // player 0 and added to the viewport. The game's HUD stays; this is a
+        // way to try a debug/QA widget the developers left in the content
+        // without wiring it to anything. `pak widget close` removes the last
+        // one and gives the game its input mode back.
+        if (sub == "widget")
+        {
+            static SDK::UUserWidget* s_widget = nullptr;   // the last one opened by this command
+
+            SDK::UWorld* world = SDK::UWorld::GetWorld();
+            SDK::APlayerController* pc = world ? SDK::UGameplayStatics::GetPlayerController(world, 0) : nullptr;
+            if (!world || !pc)
+            {
+                out.Error("No world or local player controller");
+                return;
+            }
+
+            if (args.size() >= 3 && args[2] == "close")
+            {
+                if (s_widget)
+                {
+                    s_widget->RemoveFromParent();
+                    s_widget = nullptr;
+                    SDK::UWidgetBlueprintLibrary::SetInputMode_GameOnly(pc, false);
+                    pc->bShowMouseCursor = false;
+                    out.Notice("Widget removed; input mode back to game only");
+                }
+                else
+                    out.Notice("No widget open from this command");
+                return;
+            }
+
+            if (args.size() < 3)
+            {
+                out.Error("usage: pak widget </Game/Path/WBP_Thing.WBP_Thing_C> [zorder] | pak widget close");
+                return;
+            }
+            auto* cls = static_cast<SDK::UClass*>(pak->LoadClass(args[2].c_str()));
+            if (!cls)
+            {
+                out.Error("Widget class %s did not load", args[2].c_str());
+                return;
+            }
+            const int zOrder = args.size() >= 4 ? atoi(args[3].c_str()) : 100;
+
+            SDK::UUserWidget* widget = SDK::UWidgetBlueprintLibrary::Create(world, SDK::TSubclassOf<SDK::UUserWidget>(cls), pc);
+            if (!widget)
+            {
+                out.Error("Create returned null -- is %s a UserWidget subclass?", args[2].c_str());
+                return;
+            }
+            widget->AddToViewport(zOrder);
+            s_widget = widget;
+
+            // Let it be clicked: mouse cursor on, and UI-and-game input so the
+            // game keeps running underneath. Undone by `pak widget close`.
+            SDK::UWidgetBlueprintLibrary::SetInputMode_GameAndUIEx(pc, widget, SDK::EMouseLockMode::DoNotLock, false, false);
+            pc->bShowMouseCursor = true;
+
+            out.Notice("Widget on screen: %s (z-order %d)", widget->GetFullName().c_str(), zOrder);
+            out.Out("  'pak widget close' removes it. Close the mod loader console to interact with it.");
+            return;
+        }
+#endif
+
+        out.Error("usage: pak [list] | pak mount <path> [order] | pak unmount <#|path> | pak load <path> | pak loadclass <path> | pak spawn <class> [x y z] | pak spawnmesh <mesh> [x y z]"
+#ifdef MODLOADER_CLIENT_BUILD
+                  " | pak widget <class> [zorder] | pak widget close"
+#endif
+                  );
     }
 
     static void Cmd_Version(const std::vector<std::string>&, Sink& out)
@@ -1160,13 +1433,21 @@ namespace ModConsole
                    "List plugins whose hook patterns did not resolve",
                    &Cmd_HookFailures, false });
 
+        Register({ "hooks",   "hooklist",  "hooks",
+                   "List every detoured address and the owners sharing it",
+                   &Cmd_Hooks, false });
+
+        Register({ "preload", "preloads",  "preload",
+                   "Show what happened to the DLLs in ModLoader\\Preload during startup",
+                   &Cmd_Preload, false });
+
         Register({ "version", "ver",        "version",
                    "Show mod loader build and plugin interface versions",
                    &Cmd_Version, false });
 
         // Mounting, loading and spawning all touch engine state.
-        Register({ "pak",     "paks",       "pak [list] | pak mount <path> [order] | pak unmount <#|path> | pak load <path> | pak spawn <class> [x y z]",
-                   "List, mount or unmount pak files at runtime; load or spawn assets from them",
+        Register({ "pak",     "paks",       "pak [list] | pak mount <path> [order] | pak unmount <#|path> | pak load <path> | pak spawn <class> [x y z] | pak spawnmesh <mesh> [x y z]",
+                   "List, mount or unmount pak files at runtime; load, spawn or preview assets from them",
                    &Cmd_Pak,     true });
 
         Register({ "loglevel", "log",       "loglevel [level] | loglevel <plugin|*> <level|default>",

@@ -128,11 +128,27 @@ namespace UI::HookFailureWindow
         if (refused > 0)
             ImGui::TextColored(kRed, "%d plugin(s) did not load.", refused);
         ImGui::TextWrapped(
-            "These plugins could not find the game code they hook into. A plugin that misses "
-            "even one of its hooks is not loaded at all, because there is no telling what it "
-            "would do with the half it found. That normally means the game updated and the "
-            "plugin needs a new build -- it is not something you can fix from here. Copy the "
-            "details below and send them to the plugin's author.");
+            "These plugins could not find the game code they hook into, or found more than one "
+            "candidate for it. A plugin that misses even one of its hooks is not loaded at all, "
+            "because there is no telling what it would do with the half it found. That normally "
+            "means the game updated and the plugin needs a new build -- it is not something you "
+            "can fix from here. Copy the details below and send them to the plugin's author.");
+
+        // Preload plugins fail in exactly the same way and belong in the same
+        // list, but the consequence is different enough to be worth one line:
+        // the game already started, so nobody is waiting on a decision.
+        bool anyPreload = false;
+        for (const auto& r : s_cache)
+            anyPreload = anyPreload || r.preload;
+
+        if (anyPreload)
+        {
+            ImGui::Spacing();
+            ImGui::TextWrapped(
+                "Entries marked [preload] are DLLs from ModLoader\\Preload, which run before the "
+                "game starts. One failing never stops the game launching -- it simply did not "
+                "get its turn.");
+        }
 
         ImGui::Spacing();
         ImGui::Separator();
@@ -156,10 +172,15 @@ namespace UI::HookFailureWindow
                 ImGui::Spacing();
             }
 
+            if (r.preload)
+            {
+                ImGui::TextDisabled("[preload]");
+                ImGui::SameLine();
+            }
             ImGui::TextColored(UI::Theme::AccentColorVec4(1.0f), "%s", r.plugin.c_str());
             ImGui::SameLine();
             if (r.refused)
-                ImGui::TextColored(kRed, "NOT LOADED");
+                ImGui::TextColored(kRed, r.preload ? "DID NOT RUN" : "NOT LOADED");
             else
                 ImGui::TextColored(kOrange, "loaded");
 
