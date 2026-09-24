@@ -1,0 +1,84 @@
+name: Delete all releases and tags except the latest
+
+# Keeps the release GitHub marks as "Latest" (newest non-draft, non-prerelease)
+# and its tag. Every other release -- drafts and prereleases included -- is
+# deleted, followed by every other tag, whether or not it had a release.
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Only print what would be deleted"
+        required: true
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+
+permissions:
+  contents: write
+
+jobs:
+  prune:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Delete old releases and tags
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          latest=$(gh api "repos/$REPO/releases/latest" --jq '.tag_name' 2>/dev/null || true)
+          if [ -z "$latest" ]; then
+            echo "::error::No latest release found. Refusing to delete anything."
+            exit 1
+          fi
+          echo "Keeping latest release: $latest"
+          echo
+
+          # Releases are deleted by id rather than by tag: a draft may have no
+          # tag yet, and two drafts can share one.
+          gh api --paginate "repos/$REPO/releases" \
+            --jq '.[] | [.id, .tag_name, .draft, .prerelease] | @tsv' > releases.tsv
+
+          awk -F'\t' -v keep="$latest" '$2 != keep' releases.tsv > delete-releases.tsv
+
+          gh api --paginate "repos/$REPO/tags" --jq '.[].name' | sort -u > tags.txt
+          grep -vxF "$latest" tags.txt > delete-tags.txt || true
+
+          echo "Releases to delete ($(wc -l < delete-releases.tsv)):"
+          while IFS=$'\t' read -r id tag draft pre; do
+            flags=""
+            [ "$draft" = "true" ] && flags="$flags draft"
+            [ "$pre" = "true" ] && flags="$flags prerelease"
+            echo "  $tag${flags:+ [$flags ]}"
+          done < delete-releases.tsv
+          echo
+
+          echo "Tags to delete ($(wc -l < delete-tags.txt)):"
+          sed 's/^/  /' delete-tags.txt
+          echo
+
+          if [ "$DRY_RUN" = "true" ]; then
+            echo "Dry run enabled. Nothing deleted."
+            exit 0
+          fi
+
+          failed=0
+
+          while IFS=$'\t' read -r id tag draft pre; do
+            echo "Deleting release: $tag (id $id)"
+            gh api -X DELETE "repos/$REPO/releases/$id" || { echo "::warning::Failed to delete release $tag"; failed=1; }
+          done < delete-releases.tsv
+
+          while IFS= read -r tag; do
+            echo "Deleting tag: $tag"
+            gh api -X DELETE "repos/$REPO/git/refs/tags/$tag" || { echo "::warning::Failed to delete tag $tag"; failed=1; }
+          done < delete-tags.txt
+
+          exit $failed
