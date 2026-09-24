@@ -1,0 +1,37 @@
+{
+  "_comment": [
+    "Copy to build-plugins.config.json and edit the two target roots.",
+    "targets.<name>.root is the game's or server's ...\\Binaries\\Win64 folder;",
+    "the script appends ModLoader\\<destination> (destination defaults to Plugins).",
+    "Per plugin you may override: solution, configurations {client,server},",
+    "outputDir, destination (Plugins or Preload), copyPdb, msbuildProperties."
+  ],
+  "githubRoot": "C:\\Users\\you\\Documents\\GitHub",
+  "msbuild": "",
+  "copyPdb": true,
+  "msbuildProperties": {},
+  "targets": {
+    "client": {
+      "root": "D:\\SteamLibrary\\steamapps\\common\\StarRupture\\StarRupture\\Binaries\\Win64",
+      "configuration": "Client Release"
+    },
+    "server": {
+      "root": "D:\\starrupture\\server\\StarRupture\\Binaries\\Win64",
+      "configuration": "Server Release"
+    }
+  },
+  "plugins": [
+    {
+      "name": "WAILA",
+      "repo": "StarRupture-Plugin-WAILA",
+      "enabled": true,
+      "targets": [ "client" ]
+    },
+    {
+      "name": "ServerUtility",
+      "repo": "StarRupture-Plugin-ServerUtility",
+      "enabled": false,
+      "targets": [ "server" ]
+    }
+  ]
+}

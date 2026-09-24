@@ -60,3 +60,6 @@ BuildTool-Placement-Hooks.md
 # Change notes (local only)
 changes/
 CLAUDE.md
+
+# Local plugin build/deploy config (machine-specific paths)
+tools/build-plugins.config.json
