@@ -12,7 +12,9 @@
         <target root>\ModLoader\<destination>\
 
     where <target root> is the game's or server's Binaries\Win64 folder and
-    <destination> defaults to "Plugins".
+    <destination> defaults to "Plugins". Preload plugin repos set
+    "destination": "Preload" and build to build\<Configuration>\Preload\;
+    the source folder follows the destination unless outputDir overrides it.
 
     On first run, if no config file exists, the example is copied into place
     and discovery is offered.
@@ -456,8 +458,10 @@ foreach ($sel in $selected) {
             continue
         }
 
-        $outDir = Get-Prop $p 'outputDir' "build\$conf\Plugins"
+        # Output folder follows the destination, so a preload repo (built to
+        # build\<conf>\Preload\) only needs "destination": "Preload".
         $destName = Get-Prop $p 'destination' 'Plugins'
+        $outDir = Get-Prop $p 'outputDir' "build\$conf\$destName"
         $root = Get-Prop $targetCfg 'root'
         if (-not $root) { Write-Err "$($p.name): target $t has no `"root`" path"; continue }
 
