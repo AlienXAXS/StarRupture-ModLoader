@@ -1,4 +1,4 @@
-Microsoft Visual Studio Solution File, Format Version 12.00
+﻿Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
@@ -16,6 +16,13 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "StarRupture-ModLoader-Core"
 	EndProjectSection
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "StarRupture-ImGui", "StarRupture-ImGui\StarRupture-ImGui.vcxproj", "{44EBEBF6-6BFB-4829-8782-F673D3B32FE8}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Tests", "Tests", "{3C7F92A8-1E64-4B0D-A5F7-8D24B6E01C39}"
+	ProjectSection(SolutionItems) = preProject
+		Tests\README.md = Tests\README.md
+	EndProjectSection
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "PreloadTest", "Tests\PreloadTest\PreloadTest.vcxproj", "{9A1C4E73-05B8-4D2F-B6A9-7E3D28C4F150}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -105,9 +112,22 @@ Global
 		{B7E4A2D1-3C55-4A6B-8F2E-9D0C1B3A5E77}.Server Debug|x64.Build.0 = Server Debug|x64
 		{B7E4A2D1-3C55-4A6B-8F2E-9D0C1B3A5E77}.Server Release|x64.ActiveCfg = Server Release|x64
 		{B7E4A2D1-3C55-4A6B-8F2E-9D0C1B3A5E77}.Server Release|x64.Build.0 = Server Release|x64
+		{9A1C4E73-05B8-4D2F-B6A9-7E3D28C4F150}.Client Debug|x64.ActiveCfg = Client Debug|x64
+		{9A1C4E73-05B8-4D2F-B6A9-7E3D28C4F150}.Client Release|x64.ActiveCfg = Client Release|x64
+		{9A1C4E73-05B8-4D2F-B6A9-7E3D28C4F150}.Debug|x64.ActiveCfg = Client Debug|x64
+		{9A1C4E73-05B8-4D2F-B6A9-7E3D28C4F150}.Local SDK Client Debug|x64.ActiveCfg = Client Debug|x64
+		{9A1C4E73-05B8-4D2F-B6A9-7E3D28C4F150}.Local SDK Client Release|x64.ActiveCfg = Client Release|x64
+		{9A1C4E73-05B8-4D2F-B6A9-7E3D28C4F150}.Local SDK Server Debug|x64.ActiveCfg = Server Debug|x64
+		{9A1C4E73-05B8-4D2F-B6A9-7E3D28C4F150}.Local SDK Server Release|x64.ActiveCfg = Server Release|x64
+		{9A1C4E73-05B8-4D2F-B6A9-7E3D28C4F150}.Release|x64.ActiveCfg = Client Release|x64
+		{9A1C4E73-05B8-4D2F-B6A9-7E3D28C4F150}.Server Debug|x64.ActiveCfg = Server Debug|x64
+		{9A1C4E73-05B8-4D2F-B6A9-7E3D28C4F150}.Server Release|x64.ActiveCfg = Server Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{9A1C4E73-05B8-4D2F-B6A9-7E3D28C4F150} = {3C7F92A8-1E64-4B0D-A5F7-8D24B6E01C39}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {821D00E1-6E9E-43A6-9817-CEF50642F49B}
