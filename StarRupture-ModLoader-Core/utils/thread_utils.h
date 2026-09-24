@@ -10,11 +10,13 @@
 // Returns the thread ID of the oldest thread in the current process,
 // which is conventionally the process main thread.
 //
-// NOTE: The snapshot enumeration skips the very first entry returned by
-// Thread32First (it is only used to seed the iterator); all subsequent
-// entries are examined via Thread32Next.  This matches the UE4SS reference
-// implementation.  If the process has only one thread, this function returns
-// 0 (no Thread32Next entries exist to compare).
+// Every snapshot entry is examined, including the one Thread32First returns.
+// The snapshot lists the threads of every process on the system, and the
+// entry Thread32First returns can belong to this process: under Wine, when
+// the game is the first process a fresh wineserver starts, its main thread is
+// that very first entry. Skipping it (as the UE4SS reference loop does)
+// returned 0 there, Core_Attach concluded it had been injected into a running
+// game, and the preload phase was skipped on every cold start.
 // ---------------------------------------------------------------------------
 inline auto get_main_thread_id() -> DWORD
 {
@@ -31,7 +33,7 @@ inline auto get_main_thread_id() -> DWORD
     uint64_t earliestCreationTime = (std::numeric_limits<uint64_t>::max)();
     DWORD mainThreadId = 0;
 
-    for (Thread32First(snapshot, &th32); Thread32Next(snapshot, &th32);)
+    for (BOOL ok = Thread32First(snapshot, &th32); ok; ok = Thread32Next(snapshot, &th32))
     {
         if (th32.th32OwnerProcessID != currentPid)
         {
