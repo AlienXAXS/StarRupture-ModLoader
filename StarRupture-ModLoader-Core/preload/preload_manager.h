@@ -77,6 +77,13 @@ namespace PreloadManager
         int         hooksInstalled = 0;
     };
 
+    // Creates ModLoader\Preload if it is missing. Called from Core_Attach as
+    // well as from the phase itself, because the folder has to exist whether or
+    // not the phase ever runs: preflight failing, -NoPreload and the injected
+    // path all return before discovery, and someone looking for where preload
+    // plugins go should find an empty folder rather than nothing at all.
+    void EnsureFolderExists();
+
     // Runs the whole phase. Call from Stage 1 only, with the main thread held.
     // Never throws, never returns an error: the caller has nothing it could
     // usefully do differently.

@@ -4,6 +4,7 @@
 #include "engine_sync.h"
 #include "shutdown.h"
 #include "../logging/log.h"
+#include "../preload/preload_manager.h"
 #include "../utils/thread_utils.h"
 #include "DbgHelp.h"
 #pragma comment(lib, "DbgHelp.lib")
@@ -158,6 +159,12 @@ BOOL Core_Attach()
     LogToFile::Info("[init] Migrating legacy config/plugin files...");
     MigrateOrDeleteLegacyFiles();
     LogToFile::Info("[init] Legacy file migration done");
+
+    // Here rather than in the preload phase, because the phase is not reached at
+    // all when preflight fails, -NoPreload is set, or the loader was injected --
+    // and "there is no Preload folder" reads as a missing feature rather than as
+    // a phase that was skipped.
+    PreloadManager::EnsureFolderExists();
 
 #ifdef MODLOADER_CLIENT_BUILD
     {

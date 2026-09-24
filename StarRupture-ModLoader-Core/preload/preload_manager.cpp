@@ -242,11 +242,7 @@ namespace PreloadManager
 			std::vector<Candidate> out;
 
 			const std::wstring dir = PreloadDir();
-
-			// Created when missing so the folder is discoverable: someone
-			// looking for where preload plugins go should find an empty folder
-			// rather than have to read the docs to learn the name.
-			CreateDirectoryW(dir.c_str(), nullptr);
+			EnsureFolderExists();
 
 			const std::wstring pattern = dir + L"\\*.dll";
 
@@ -562,6 +558,14 @@ namespace PreloadManager
 		case Status::LoadFailed:
 		default:                        return "load failed";
 		}
+	}
+
+	void EnsureFolderExists()
+	{
+		// No-op when it is already there, and nothing here cares if it fails --
+		// a read-only game folder is the user's problem to notice, and failing to
+		// create an empty folder is not a reason to say anything at boot.
+		CreateDirectoryW(PreloadDir().c_str(), nullptr);
 	}
 
 	void RunPhase()
