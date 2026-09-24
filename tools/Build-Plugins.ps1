@@ -20,6 +20,12 @@
 .PARAMETER Only
     Build only these plugins. Matches plugin name or repo folder name,
     case-insensitive, wildcards allowed. e.g. -Only Waila,Better*
+    Passing this also skips the start menu.
+
+.PARAMETER NoMenu
+    Skip the start menu and build everything enabled. The menu only appears
+    when the run is interactive and nothing on the command line has already
+    said which plugins to build, so scripts and CI never see it.
 
 .PARAMETER Skip
     Exclude these plugins (same matching rules as -Only).
@@ -73,7 +79,11 @@
 
 .EXAMPLE
     .\Build-Plugins.ps1
-    Build and deploy every enabled plugin to both targets.
+    Start menu: build everything enabled, or pick one plugin.
+
+.EXAMPLE
+    .\Build-Plugins.ps1 -NoMenu
+    Build and deploy every enabled plugin to both targets, no prompt.
 
 .EXAMPLE
     .\Build-Plugins.ps1 -Only Waila,Codex -Target client
@@ -99,6 +109,7 @@ param(
     [switch]$NoDeploy,
     [switch]$All,
     [int]$Parallel = 1,
+    [switch]$NoMenu,
     [switch]$NoMultiProc,
     [switch]$ShowBuildOutput,
     [string]$ConfigPath
@@ -279,6 +290,115 @@ if ($Discover) {
     }
     Write-Host ''
     exit 0
+}
+
+# ----------------------------------------------------------------- menu -----
+
+# The menu answers one question -- which plugins -- so it only appears when
+# nothing on the command line has already answered it. -Only/-Skip have, -List
+# and -Discover are not builds, and a redirected stdin means nobody is there to
+# type. Everything else about the run (-Target, -Parallel, -Configuration) still
+# comes from the arguments, so the wrapper .cmd can pass those and still prompt.
+function Test-CanPrompt {
+    if ($NoMenu -or $List -or $Discover -or $Only -or $Skip) { return $false }
+    if (-not [Environment]::UserInteractive) { return $false }
+    try { if ([Console]::IsInputRedirected) { return $false } } catch { }
+    return $true
+}
+
+# Returns $true to carry on, $false to quit. Sets $script:Only / $script:All
+# when one plugin was picked.
+function Show-StartMenu {
+    $rows = @()
+    foreach ($p in $cfg.plugins) {
+        $rows += [pscustomobject]@{
+            Name    = Get-Prop $p 'name' (Get-PluginName $p.repo)
+            Targets = (@(Get-Prop $p 'targets' @('client')) -join ', ')
+            Enabled = [bool](Get-Prop $p 'enabled' $true)
+        }
+    }
+    $enabled = @($rows | Where-Object { $_.Enabled })
+
+    while ($true) {
+        Write-Host ''
+        Write-Host '=== StarRupture plugin build' -ForegroundColor Cyan
+        Write-Host ''
+        Write-Host ("  [1] Build and deploy everything enabled ({0} plugin{1})" -f `
+            $enabled.Count, $(if ($enabled.Count -eq 1) { '' } else { 's' }))
+        Write-Host '  [2] Pick one plugin'
+        Write-Host ''
+        Write-Host '  [Q] Quit'
+        Write-Host ''
+        $choice = (Read-Host '  Choice [1]').Trim()
+        if ($choice -eq '') { $choice = '1' }
+
+        switch ($choice) {
+            '1' { return $true }
+            '2' {
+                # Back from the picker falls out of the switch and the enclosing
+                # loop redraws this menu.
+                if (Show-PluginPicker $rows) { return $true }
+            }
+            'q' { Write-Host ''; return $false }
+            default { Write-Warn2 "Not an option: $choice" }
+        }
+    }
+}
+
+# Returns $true once a plugin was picked, $false for Back.
+function Show-PluginPicker($rows) {
+    while ($true) {
+        Write-Host ''
+        Write-Host '  Which plugin?' -ForegroundColor Cyan
+        Write-Host ''
+        for ($i = 0; $i -lt $rows.Count; $i++) {
+            $r = $rows[$i]
+            $line = "   {0,2}  {1,-20} {2}" -f ($i + 1), $r.Name, $r.Targets
+            if ($r.Enabled) { Write-Host $line }
+            else { Write-Host ($line + '   (disabled in config)') -ForegroundColor DarkGray }
+        }
+        Write-Host ''
+        Write-Host '    0  Back'
+        Write-Host ''
+        $pick = (Read-Host "  Plugin [1-$($rows.Count)] or a name").Trim()
+
+        if ($pick -eq '' -or $pick -eq '0') { return $false }
+
+        # A number picks from the list; anything else is handed to -Only as a
+        # name pattern, so "better*" works here as well as on the command line.
+        $n = 0
+        if ([int]::TryParse($pick, [ref]$n)) {
+            if ($n -lt 1 -or $n -gt $rows.Count) {
+                Write-Warn2 "Out of range: $pick"
+                continue
+            }
+            $row = $rows[$n - 1]
+            $script:Only = @($row.Name)
+            # Picking a disabled entry is a deliberate act, so honour it rather
+            # than selecting nothing and reporting that nothing matched.
+            if (-not $row.Enabled) {
+                $script:All = $true
+                Write-Step "$($row.Name) is disabled in the config; building it anyway for this run."
+            }
+            return $true
+        }
+
+        $script:Only = @($pick)
+        $script:All  = $true      # let a name match a disabled entry too
+        return $true
+    }
+}
+
+if (Test-CanPrompt) {
+    # A host that claims to be interactive but cannot actually read a line
+    # should build, not crash: the menu is a convenience, not the point of the
+    # script.
+    try {
+        if (-not (Show-StartMenu)) { exit 0 }
+    }
+    catch {
+        Write-Warn2 "Menu unavailable ($($_.Exception.Message)); building everything enabled."
+    }
 }
 
 # ------------------------------------------------------------- selection ----
