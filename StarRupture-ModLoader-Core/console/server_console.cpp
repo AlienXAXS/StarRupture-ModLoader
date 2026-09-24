@@ -11,9 +11,7 @@
 #include <memory>
 #include <string>
 
-#include "hooks/game/engine_exec/engine_exec.h"
 #include "logging/logger.h"
-#include "utils/game_thread_dispatch.h"
 
 #ifndef MODLOADER_BUILD_TAG
 #define MODLOADER_BUILD_TAG "dev"
@@ -135,84 +133,6 @@ namespace ServerConsole
         ConsoleScreen::Print(ModConsole::LineKind::Output, "");
     }
 
-    // -----------------------------------------------------------------------
-    // Engine fallthrough
-    //
-    // The client console forwards anything it does not recognise to
-    // APlayerController::ConsoleCommand. A dedicated server has no player
-    // controller, so this window goes through UGameEngine::Exec on GEngine
-    // instead (hooks/game/engine_exec). The call runs on the game thread and
-    // signals s_commandDone when it is finished, exactly like a queued mod
-    // loader command, so the read loop's wait works unchanged.
-    //
-    // UGameEngine::Exec is resolved lazily on first use (inside Execute), so
-    // this works whether or not the pattern preflight has run yet.
-    // -----------------------------------------------------------------------
-    static std::wstring Utf8ToWide(const std::string& s)
-    {
-        if (s.empty()) return {};
-        const int len = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, nullptr, 0);
-        if (len <= 0) return {};
-        std::wstring out(static_cast<size_t>(len), L'\0');
-        MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, out.data(), len);
-        if (!out.empty() && out.back() == L'\0') out.pop_back();
-        return out;
-    }
-
-    static std::string WideToUtf8(const std::wstring& w)
-    {
-        if (w.empty()) return {};
-        const int len = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), static_cast<int>(w.size()),
-                                            nullptr, 0, nullptr, nullptr);
-        if (len <= 0) return {};
-        std::string out(static_cast<size_t>(len), '\0');
-        WideCharToMultiByte(CP_UTF8, 0, w.c_str(), static_cast<int>(w.size()),
-                            out.data(), len, nullptr, nullptr);
-        return out;
-    }
-
-    static void ForwardToEngine(const std::string& line)
-    {
-        GameThreadDispatch::PostVoid([line]()
-        {
-            std::wstring output;
-            const auto result = Hooks::EngineExec::Execute(Utf8ToWide(line).c_str(), output);
-
-            // Engine output arrives as one blob with embedded newlines; print
-            // it line by line so the prompt-preserving drawer can lay it out.
-            std::string utf8 = WideToUtf8(output);
-            size_t start = 0;
-            while (start < utf8.size())
-            {
-                size_t end = utf8.find('\n', start);
-                if (end == std::string::npos) end = utf8.size();
-                std::string part = utf8.substr(start, end - start);
-                if (!part.empty() && part.back() == '\r') part.pop_back();
-                if (!part.empty())
-                    ConsoleScreen::Print(ModConsole::LineKind::Output, part.c_str());
-                start = end + 1;
-            }
-
-            switch (result)
-            {
-            case Hooks::EngineExec::Result::Handled:
-                break;
-            case Hooks::EngineExec::Result::Unhandled:
-                ConsoleScreen::Print(ModConsole::LineKind::Error,
-                    "Unknown command: neither a mod loader command nor an engine one. "
-                    "Type 'help' for the list.");
-                break;
-            case Hooks::EngineExec::Result::Unavailable:
-                ConsoleScreen::Print(ModConsole::LineKind::Error,
-                    "Command could not be handed to the engine (UGameEngine::Exec unresolved, "
-                    "no GEngine yet, or the call faulted). See modloader.log.");
-                break;
-            }
-
-            SetEvent(s_commandDone);
-        });
-    }
-
     static DWORD WINAPI ReaderThreadProc(LPVOID)
     {
         auto sink = std::make_shared<ConsoleSink>();
@@ -253,30 +173,14 @@ namespace ServerConsole
                 break;
             }
 
-            // A leading '!' forces the rest straight to the engine, same as the
-            // client console: a few of our names (help, version) are names the
-            // engine has too, so there has to be a way to say which one you meant.
-            bool forceEngine = false;
-            if (line[0] == '!')
-            {
-                forceEngine = true;
-                const size_t nb = line.find_first_not_of(" \t", 1);
-                line = (nb == std::string::npos) ? std::string() : line.substr(nb);
-                if (line.empty())
-                    continue;
-            }
-
             ResetEvent(s_commandDone);
 
-            if (forceEngine || !ModConsole::Dispatch(line, sink, []() { SetEvent(s_commandDone); }))
-            {
-                // Not one of ours: hand it to the engine. UEngine::Exec walks
-                // engine state, so it runs on the game thread like a queued
-                // mod loader command, and the wait below covers it the same way.
-                ForwardToEngine(line);
-            }
+            // Registry first, engine otherwise, '!' for engine-only -- the rule
+            // lives in ModConsole so this window, the client console and the
+            // plugin interface cannot drift apart.
+            ModConsole::DispatchOrEngine(line, sink, []() { SetEvent(s_commandDone); }, false);
 
-            // Dispatch returns as soon as a game-thread command is queued, so
+            // A game-thread command (and every engine one) is only queued, so
             // wait for it to actually run before reading again -- otherwise the
             // next thing typed races the output of the last thing.
             if (WaitForSingleObject(s_commandDone, kCommandTimeoutMs) == WAIT_TIMEOUT)

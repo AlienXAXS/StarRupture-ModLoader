@@ -25,6 +25,10 @@
 #include "plugins/plugin_manager.h"
 #include "preload/preload_manager.h"
 #include "hooks/hook_broker.h"
+#include "hooks/game/engine_exec/engine_exec.h"
+#ifdef MODLOADER_CLIENT_BUILD
+#include "hooks/game/console_command/console_command.h"
+#endif
 #include "utils/game_thread_dispatch.h"
 
 #ifndef MODLOADER_BUILD_TAG
@@ -1282,9 +1286,38 @@ namespace ModConsole
             return;   // not reached
         }
 
+        // A server started without -console or -log has no console to raise
+        // Ctrl+C on -- and that is the normal case when this arrives through
+        // the plugin interface (RCON, an HTTP route). Ask the engine's own
+        // `exit` command instead: UEngine::HandleExitCommand, the same
+        // graceful RequestExit path. Not the first choice, because it needs a
+        // tick, and a wedged engine is when 'stop' matters most.
+        if (!GetConsoleWindow())
+        {
+            auto viaEngine = []()
+            {
+                std::wstring output;
+                const Hooks::EngineExec::Result result = Hooks::EngineExec::Execute(L"exit", output);
+                if (result == Hooks::EngineExec::Result::Handled)
+                    LogToFile::Info("[Console] 'stop' -- no console, shutdown requested through the engine's exit command");
+                else
+                    LogToFile::Error("[Console] 'stop' -- no console, and the engine's exit command was not accepted (%d)",
+                                     static_cast<int>(result));
+            };
+
+            if (GameThreadDispatch::IsGameThread())
+                viaEngine();
+            else
+                GameThreadDispatch::PostVoid(viaEngine);
+
+            out.Out("Shutdown requested through the engine's exit command (no console attached).");
+            out.Notice("If it is still here in a minute, 'stop force' exits immediately (may lose the save).");
+            return;
+        }
+
         if (!ServerConsole::RequestGracefulProcessExit())
         {
-            out.Error("Could not request shutdown -- no console to raise the event on. See modloader.log.");
+            out.Error("Could not request shutdown -- raising Ctrl+C on the console failed. See modloader.log.");
             return;
         }
 
@@ -1628,6 +1661,34 @@ namespace ModConsole
         }
     }
 
+    // Runs a resolved registry command, on the game thread when it asks for
+    // it (or the caller insists), inline otherwise.
+    static void StartResolved(const ResolvedCommand& cmd,
+                              const std::vector<std::string>& args,
+                              const std::string& line,
+                              const std::shared_ptr<Sink>& sink,
+                              const std::function<void()>& onComplete,
+                              bool forceGameThread)
+    {
+        ModLoaderLogger::LogInfo(L"[Console] Executing: %S", line.c_str());
+
+        if ((cmd.gameThread || forceGameThread) && !GameThreadDispatch::IsGameThread())
+        {
+            // Queued, not run: the game thread picks this up on its next tick.
+            // Everything the handler needs is captured by value, so it does not
+            // matter how long that takes or whether the caller has moved on.
+            GameThreadDispatch::PostVoid([cmd, args, sink, onComplete]()
+            {
+                RunHandler(cmd, args, sink);
+                if (onComplete) onComplete();
+            });
+            return;
+        }
+
+        RunHandler(cmd, args, sink);
+        if (onComplete) onComplete();
+    }
+
     bool Dispatch(const std::string& line,
                   std::shared_ptr<Sink> sink,
                   std::function<void()> onComplete)
@@ -1643,23 +1704,142 @@ namespace ModConsole
         if (!ResolveCommand(args[0].c_str(), cmd))
             return false;
 
-        ModLoaderLogger::LogInfo(L"[Console] Executing: %S", line.c_str());
+        StartResolved(cmd, args, line, sink, onComplete, false);
+        return true;
+    }
 
-        if (cmd.gameThread && !GameThreadDispatch::IsGameThread())
+    // -----------------------------------------------------------------------
+    // Engine fallthrough
+    //
+    // Client builds try APlayerController::ConsoleCommand first: it is the
+    // route the engine uses for typed input, and it reaches the player-level
+    // layer (ProcessConsoleExec, the cheat manager) that GEngine->Exec skips.
+    // It needs a local player controller, so when there is none -- a dedicated
+    // server always, a client before the first world -- UGameEngine::Exec on
+    // GEngine takes it instead (hooks/game/engine_exec), which still reaches
+    // every cvar and FAutoConsoleCommand.
+    //
+    // Must be called on the game thread.
+    // -----------------------------------------------------------------------
+    static std::wstring Utf8ToWide(const std::string& s)
+    {
+        if (s.empty()) return {};
+        const int len = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, nullptr, 0);
+        if (len <= 0) return {};
+        std::wstring out(static_cast<size_t>(len), L'\0');
+        MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, out.data(), len);
+        if (!out.empty() && out.back() == L'\0') out.pop_back();
+        return out;
+    }
+
+    static std::string WideToUtf8(const std::wstring& w)
+    {
+        if (w.empty()) return {};
+        const int len = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), static_cast<int>(w.size()),
+                                            nullptr, 0, nullptr, nullptr);
+        if (len <= 0) return {};
+        std::string out(static_cast<size_t>(len), '\0');
+        WideCharToMultiByte(CP_UTF8, 0, w.c_str(), static_cast<int>(w.size()),
+                            out.data(), len, nullptr, nullptr);
+        return out;
+    }
+
+    // Engine output arrives as one blob with embedded newlines; hand it on a
+    // line at a time, which is what every Sink is built around.
+    static void WriteBlob(Sink& sink, const std::wstring& blob)
+    {
+        const std::string utf8 = WideToUtf8(blob);
+        size_t start = 0;
+        while (start < utf8.size())
         {
-            // Queued, not run: the game thread picks this up on its next tick.
-            // Everything the handler needs is captured by value, so it does not
-            // matter how long that takes or whether the caller has moved on.
-            GameThreadDispatch::PostVoid([cmd, args, sink, onComplete]()
-            {
-                RunHandler(cmd, args, sink);
-                if (onComplete) onComplete();
-            });
-            return true;
+            size_t end = utf8.find('\n', start);
+            if (end == std::string::npos) end = utf8.size();
+            std::string part = utf8.substr(start, end - start);
+            if (!part.empty() && part.back() == '\r') part.pop_back();
+            if (!part.empty())
+                sink.Write(LineKind::Output, part.c_str());
+            start = end + 1;
+        }
+    }
+
+    static void RunOnEngine(const std::string& line, Sink& sink)
+    {
+        const std::wstring wide = Utf8ToWide(line);
+        std::wstring output;
+
+#ifdef MODLOADER_CLIENT_BUILD
+        if (Hooks::ConsoleCommand::Execute(wide.c_str(), output))
+        {
+            WriteBlob(sink, output);
+            return;
+        }
+        output.clear();
+#endif
+
+        const Hooks::EngineExec::Result result = Hooks::EngineExec::Execute(wide.c_str(), output);
+        WriteBlob(sink, output);
+
+        switch (result)
+        {
+        case Hooks::EngineExec::Result::Handled:
+            break;
+        case Hooks::EngineExec::Result::Unhandled:
+            sink.Error("Unknown command: neither a mod loader command nor an engine one. "
+                       "Type 'help' for the list.");
+            break;
+        case Hooks::EngineExec::Result::Unavailable:
+            sink.Error("Command could not be handed to the engine (UGameEngine::Exec unresolved, "
+                       "no GEngine yet, or the call faulted). See modloader.log.");
+            break;
+        }
+    }
+
+    void DispatchOrEngine(const std::string& line,
+                          std::shared_ptr<Sink> sink,
+                          std::function<void()> onComplete,
+                          bool forceGameThread)
+    {
+        std::string text = line;
+        const size_t first = text.find_first_not_of(" \t");
+        text = (first == std::string::npos) ? std::string() : text.substr(first);
+
+        // '!' means "the engine's, not ours".
+        bool engineOnly = false;
+        if (!text.empty() && text[0] == '!')
+        {
+            engineOnly = true;
+            const size_t nb = text.find_first_not_of(" \t", 1);
+            text = (nb == std::string::npos) ? std::string() : text.substr(nb);
         }
 
-        RunHandler(cmd, args, sink);
-        if (onComplete) onComplete();
-        return true;
+        if (!sink || text.empty())
+        {
+            if (onComplete) onComplete();
+            return;
+        }
+
+        if (!engineOnly)
+        {
+            std::vector<std::string> args = Tokenize(text);
+            ResolvedCommand cmd;
+            if (!args.empty() && ResolveCommand(args[0].c_str(), cmd))
+            {
+                StartResolved(cmd, args, text, sink, onComplete, forceGameThread);
+                return;
+            }
+        }
+
+        // UEngine::Exec walks engine state, so the engine route is always on
+        // the game thread whatever the caller asked for.
+        auto run = [text, sink, onComplete]()
+        {
+            RunOnEngine(text, *sink);
+            if (onComplete) onComplete();
+        };
+
+        if (GameThreadDispatch::IsGameThread())
+            run();
+        else
+            GameThreadDispatch::PostVoid(std::move(run));
     }
 }

@@ -3,6 +3,7 @@
 `IPluginConsole` (`hooks->Console`) lets a plugin add commands to the mod loader's own console
 registry, and run command lines from code with the output delivered to a callback instead of a
 console window. It is available from interface version 63 onwards and is non-null on every build.
+`ExecuteWithEngine`, which also reaches engine commands, was added in v69.
 
 ---
 
@@ -13,6 +14,7 @@ console window. It is available from interface version 63 onwards and is non-nul
 - [Writing Output](#writing-output)
 - [The gameThread Flag](#the-gamethread-flag)
 - [Capturing Output From Code](#capturing-output-from-code)
+- [Engine Commands Too: ExecuteWithEngine (v69)](#engine-commands-too-executewithengine-v69)
 - [Lifetime Rules](#lifetime-rules)
 - [Reference](#reference)
 - [Full Example Plugin](#full-example-plugin)
@@ -30,8 +32,9 @@ The mod loader keeps one command registry with two front-ends:
 
 A command registered once is available in whichever of those the user has, is listed by `help`
 under your plugin's name, and completes with Tab in the `-console` window. These are mod loader
-commands, not engine commands: the client console tries this registry first and falls through to
-the engine console for anything it does not recognise, so engine commands are unaffected.
+commands, not engine commands: both consoles try this registry first and fall through to the
+engine for anything it does not recognise, so engine commands are unaffected. A leading `!` skips
+the registry, for the few names (`help`, `version`) both sides answer to.
 
 Command names are **case-insensitive and global** -- one namespace shared by the built-ins
 (`help`, `plugins`, `reload`, `version`, ...) and every plugin. `RegisterCommand` returns `false`
@@ -163,6 +166,40 @@ must be thread-safe and `userData` must stay alive until `onComplete` has fired.
 
 ---
 
+## Engine Commands Too: ExecuteWithEngine (v69)
+
+`Execute` only runs registered commands. `ExecuteWithEngine` takes a line exactly as a person would
+type it into the `-console` window -- registered commands first, the engine for anything else,
+`!` to go straight to the engine -- so a remote console can offer the lot through one call:
+
+```cpp
+static void OnRconLine(const std::string& line, RconClient* client)
+{
+    Capture* cap = new Capture{ client };
+    self->hooks->Console->ExecuteWithEngine(self, line.c_str(), OnLine, OnDone, cap);
+    // OnDone sends cap->text and deletes cap
+}
+```
+
+That reaches `help`, `plugins`, every plugin's commands, cvars (`CrRepGraph.Foo 1`), and engine exec
+commands (`log LogTemp Verbose`). Three differences from `Execute`:
+
+- **Everything runs on the game thread**, including registered commands with `gameThread = false`.
+  Neither callback ever fires on the calling thread, and both fire only once the engine ticks --
+  never block the game thread waiting for `onComplete`.
+- **An unknown command is an `Error` line, not a `false` return.** `false` means only a null or
+  empty argument. On `true`, `onComplete` fires exactly once.
+- **Engine output is whatever the command wrote to its `FOutputDevice`.** A command that only logs
+  through `GLog` produces no lines here, the same as in the `-console` window without `-log`.
+
+On a client, the engine route is `APlayerController::ConsoleCommand` when there is a local player
+controller, and `UGameEngine::Exec` otherwise; a dedicated server always uses the latter.
+
+Note that `exit` and `quit` are engine commands: sent through `ExecuteWithEngine` they shut the
+process down. The `-console` window intercepts those two words; this does not.
+
+---
+
 ## Lifetime Rules
 
 Three rules, each of which is a crash the loader had to make impossible:
@@ -216,6 +253,7 @@ void PluginShutdown()
 | `Printf(sink, kind, format, ...)` | -- |
 | `Clear(sink)` | -- |
 | `Execute(self, line, onLine, onComplete, userData)` | `false` if the first token is not a command |
+| `ExecuteWithEngine(self, line, onLine, onComplete, userData)` (v69) | `false` only for a null/empty argument |
 
 ---
 

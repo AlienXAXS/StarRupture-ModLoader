@@ -9,7 +9,6 @@
 #include "console/console_commands.h"
 #include "hooks/game/console_command/console_command.h"
 #include "hooks/input/keybind_registry.h"
-#include "utils/game_thread_dispatch.h"
 #include <cstring>
 #include <memory>
 #include <mutex>
@@ -64,51 +63,6 @@ namespace UI::ConsoleWindow
         s_scrollToBottom = true;
     }
 
-    static std::string WideToUtf8(const std::wstring& w)
-    {
-        if (w.empty()) return {};
-        const int len = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), static_cast<int>(w.size()),
-                                            nullptr, 0, nullptr, nullptr);
-        if (len <= 0) return {};
-        std::string out(static_cast<size_t>(len), '\0');
-        WideCharToMultiByte(CP_UTF8, 0, w.c_str(), static_cast<int>(w.size()),
-                            out.data(), len, nullptr, nullptr);
-        return out;
-    }
-
-    static std::wstring Utf8ToWide(const char* s)
-    {
-        if (!s || !*s) return {};
-        const int len = MultiByteToWideChar(CP_UTF8, 0, s, -1, nullptr, 0);
-        if (len <= 0) return {};
-        std::wstring out(static_cast<size_t>(len), L'\0');
-        MultiByteToWideChar(CP_UTF8, 0, s, -1, out.data(), len);
-        if (!out.empty() && out.back() == L'\0') out.pop_back();
-        return out;
-    }
-
-    // Engine output arrives as one blob; split so long results scroll sensibly.
-    static void AddOutputBlob(const std::wstring& blob)
-    {
-        const std::string utf8 = WideToUtf8(blob);
-        size_t start = 0;
-        while (start <= utf8.size())
-        {
-            size_t nl = utf8.find('\n', start);
-            if (nl == std::string::npos) nl = utf8.size();
-
-            std::string line = utf8.substr(start, nl - start);
-            if (!line.empty() && line.back() == '\r')
-                line.pop_back();
-
-            if (!line.empty())
-                AddLine(LineKind::Output, std::move(line));
-
-            if (nl == utf8.size()) break;
-            start = nl + 1;
-        }
-    }
-
     // Bridges ModConsole output into the scrollback. Lines can arrive on the
     // game thread (a plugin reload runs there), which AddLine already handles.
     class ScrollbackSink : public ModConsole::Sink
@@ -150,48 +104,13 @@ namespace UI::ConsoleWindow
             s_history.push_back(cmd);
         s_historyPos = -1;
 
-        // A leading '!' forces the rest straight to the engine. The mod loader's
-        // own commands are checked first and a few of the obvious names (help,
-        // version) are names the engine might want too, so there has to be a way
-        // to say which one you meant.
-        bool forceEngine = false;
-        if (cmd[0] == '!')
-        {
-            forceEngine = true;
-            cmd = cmd.substr(1);
-            const size_t nb = cmd.find_first_not_of(" \t");
-            cmd = (nb == std::string::npos) ? std::string() : cmd.substr(nb);
-            if (cmd.empty())
-                return;
-        }
-
-        // Mod loader commands (help, plugins, reload, clear, ...) first. Dispatch
-        // returns false when the first token is not one of ours, and only then
-        // does this become an engine command -- so nothing that worked before
-        // stops working. It never blocks: a plugin reload is queued on the game
-        // thread and writes into the scrollback whenever it gets there, which is
-        // the only option on the render thread.
-        if (!forceEngine && ModConsole::Dispatch(cmd, std::make_shared<ScrollbackSink>()))
-            return;
-
-        // We are on the render thread here (ImGui draws from the Present hook),
-        // but APlayerController::ConsoleCommand walks engine state and trips
-        // check(IsInGameThread()). Hand it to the game thread and let the
-        // result come back asynchronously.
-        GameThreadDispatch::PostVoid([cmd]()
-        {
-            std::wstring output;
-            if (!Hooks::ConsoleCommand::Execute(Utf8ToWide(cmd.c_str()).c_str(), output))
-            {
-                AddLine(LineKind::Error,
-                        "Command could not be executed (no player controller, or "
-                        "APlayerController::ConsoleCommand was not resolved). See modloader.log.");
-                return;
-            }
-
-            if (!output.empty())
-                AddOutputBlob(output);
-        });
+        // Registry first, engine otherwise, '!' for engine-only -- the one rule
+        // shared with the -console window and the plugin interface. It never
+        // blocks: a plugin reload is queued on the game thread, and so is every
+        // engine command (APlayerController::ConsoleCommand trips
+        // check(IsInGameThread()) from here, the render thread), and their
+        // output lands in the scrollback whenever it gets there.
+        ModConsole::DispatchOrEngine(cmd, std::make_shared<ScrollbackSink>(), {}, false);
     }
 
     // Up/Down history navigation for the input box.

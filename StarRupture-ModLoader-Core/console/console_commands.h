@@ -15,10 +15,9 @@
 // command added here is immediately available in both, and `help` lists the
 // same set wherever it is typed.
 //
-// These are mod loader commands, not engine commands. The client console tries
-// this registry first and falls through to APlayerController::ConsoleCommand
-// when the first token is not one of ours, so engine commands keep working
-// exactly as before.
+// These are mod loader commands, not engine commands. DispatchOrEngine tries
+// this registry first and falls through to the engine when the first token is
+// not one of ours, so engine commands keep working exactly as before.
 //
 // Threading: a command declaring gameThread == true is posted to the game
 // thread by Dispatch and runs during the next engine tick. Everything a plugin
@@ -157,6 +156,29 @@ namespace ModConsole
     bool Dispatch(const std::string& line,
                   std::shared_ptr<Sink> sink,
                   std::function<void()> onComplete = {});
+
+    // Run a command line the way a person typing it into a console would:
+    // this registry first, and the engine for anything that is not ours. A
+    // leading '!' skips the registry and goes straight to the engine, for the
+    // few names (help, version) both sides answer to.
+    //
+    // This is the ONE copy of that rule. Both front-ends and the plugin
+    // interface's ExecuteWithEngine call it, so what a line does cannot depend
+    // on where it was typed.
+    //
+    // Engine commands always run on the game thread. With forceGameThread,
+    // registry commands do too, whatever their own gameThread flag says --
+    // which is what a caller on an arbitrary thread (RCON, HTTP) wants: one
+    // rule for everything it sends, rather than some lines running inline on
+    // a socket thread and others a tick later.
+    //
+    // Never refuses: an unknown command is reported through the sink by the
+    // engine route. onComplete (optional) fires exactly once, after the last
+    // line, on whichever thread ran the command.
+    void DispatchOrEngine(const std::string& line,
+                          std::shared_ptr<Sink> sink,
+                          std::function<void()> onComplete,
+                          bool forceGameThread);
 
     // True while this sink is inside a handler Dispatch is running.
     //

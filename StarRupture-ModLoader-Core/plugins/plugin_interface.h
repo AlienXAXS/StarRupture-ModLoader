@@ -632,9 +632,29 @@
 //      a request that forgets to declare a kind is refused with a message
 //      saying so, rather than defaulting into the weakest check.
 //
+// v69 (2026-09-24): Added IPluginConsole::ExecuteWithEngine (appended at the
+//      BOTTOM of IPluginConsole, so nothing a v66-v68 plugin reads by offset
+//      moved and MIN stays at 66).
+//
+//      Execute only runs registered commands and returns false for anything
+//      else, so a plugin bridging a remote console (RCON, an HTTP route) had
+//      to either keep a command table of its own or give up on engine
+//      commands -- cvars, `log`, the CrRepGraph.* / Net.* families. The
+//      fallthrough to the engine existed, but only inside the two front-ends.
+//
+//      ExecuteWithEngine takes a line exactly as a person would type it into
+//      the -console window: mod loader and plugin commands first, the engine
+//      for anything else, a leading '!' for engine-only. Every command it runs
+//      -- registry or engine, whatever that command's own gameThread flag says
+//      -- runs on the game thread, so both callbacks always fire from there.
+//
+//      Execute is unchanged. A v63 plugin may rely on its false return meaning
+//      "not a registered command", and turning that into "ran it on the
+//      engine" would change what the plugin does without it being rebuilt.
+//
 #define PLUGIN_INTERFACE_VERSION_MIN 66
-#define PLUGIN_INTERFACE_VERSION_MAX 68
-#define PLUGIN_INTERFACE_VERSION 68
+#define PLUGIN_INTERFACE_VERSION_MAX 69
+#define PLUGIN_INTERFACE_VERSION 69
 
 enum class PluginLogLevel { Trace = 0, Debug = 1, Info = 2, Warn = 3, Error = 4 };
 enum class ConfigValueType { String, Integer, Float, Boolean, Keybind };
@@ -2494,6 +2514,28 @@ struct IPluginConsole
                     PluginConsoleOutputCallback onLine,
                     PluginConsoleCompleteCallback onComplete,
                     void* userData);
+
+    // --- v69 ---
+
+    // Run a command line the way the -console window does: registered
+    // commands first, the engine (cvars, exec commands) for anything else, and
+    // a leading '!' to skip straight to the engine. An unknown command is
+    // reported as an Error line through onLine, not by the return value.
+    //
+    // Everything runs on the game thread, including registered commands that
+    // did not ask for it -- so nothing ever runs inline on the caller's
+    // thread, and both callbacks always fire later, from the game thread.
+    // Engine output is whatever the command wrote to its FOutputDevice; a
+    // command that only logs through GLog returns no lines.
+    //
+    // False, having run nothing, only for a null or empty argument. On true,
+    // onComplete fires exactly once (unless your plugin is unloaded first) and
+    // userData must stay alive until it has. It cannot fire before the engine
+    // ticks, so never block the game thread waiting for it.
+    bool (*ExecuteWithEngine)(const IPluginSelf* self, const char* line,
+                              PluginConsoleOutputCallback onLine,
+                              PluginConsoleCompleteCallback onComplete,
+                              void* userData);
 };
 
 // ---------------------------------------------------------------------------

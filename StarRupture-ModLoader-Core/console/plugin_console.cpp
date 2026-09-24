@@ -316,6 +316,28 @@ namespace PluginConsole
         if (s) s->Clear();
     }
 
+    // Wraps a plugin's completion callback in the same unmapped-module check
+    // CallbackSink applies to its line callback.
+    static std::function<void()> MakeCompletion(const char* owner,
+                                                PluginConsoleCompleteCallback onComplete,
+                                                void* userData)
+    {
+        if (!onComplete)
+            return {};
+
+        std::string ownerName = owner;
+        return [onComplete, userData, ownerName]()
+        {
+            if (!StillMapped(reinterpret_cast<const void*>(onComplete)))
+            {
+                ModLoaderLogger::LogWarn(L"[PluginConsole] Dropping completion for '%S': callback is unmapped",
+                                         ownerName.c_str());
+                return;
+            }
+            onComplete(userData);
+        };
+    }
+
     static bool ConsoleExecute(const IPluginSelf* self, const char* line,
                                PluginConsoleOutputCallback onLine,
                                PluginConsoleCompleteCallback onComplete,
@@ -324,24 +346,23 @@ namespace PluginConsole
         if (!self || !self->name || !line || !*line) return false;
 
         auto sink = std::make_shared<CallbackSink>(self->name, onLine, userData);
+        return ModConsole::Dispatch(line, sink, MakeCompletion(self->name, onComplete, userData));
+    }
 
-        std::string owner = self->name;
-        std::function<void()> done;
-        if (onComplete)
-        {
-            done = [onComplete, userData, owner]()
-            {
-                if (!StillMapped(reinterpret_cast<const void*>(onComplete)))
-                {
-                    ModLoaderLogger::LogWarn(L"[PluginConsole] Dropping completion for '%S': callback is unmapped",
-                                             owner.c_str());
-                    return;
-                }
-                onComplete(userData);
-            };
-        }
+    static bool ConsoleExecuteWithEngine(const IPluginSelf* self, const char* line,
+                                         PluginConsoleOutputCallback onLine,
+                                         PluginConsoleCompleteCallback onComplete,
+                                         void* userData)
+    {
+        if (!self || !self->name || !line || !*line) return false;
 
-        return ModConsole::Dispatch(line, sink, done);
+        auto sink = std::make_shared<CallbackSink>(self->name, onLine, userData);
+
+        // forceGameThread: the caller is typically a socket thread, and one
+        // rule for every line beats some running inline there and some a
+        // tick later.
+        ModConsole::DispatchOrEngine(line, sink, MakeCompletion(self->name, onComplete, userData), true);
+        return true;
     }
 
     static IPluginConsole g_console = {
@@ -353,6 +374,7 @@ namespace PluginConsole
         ConsolePrintf,
         ConsoleClear,
         ConsoleExecute,
+        ConsoleExecuteWithEngine,
     };
 
     IPluginConsole* GetInterface()
