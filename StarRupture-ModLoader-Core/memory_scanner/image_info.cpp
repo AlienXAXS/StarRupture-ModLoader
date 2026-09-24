@@ -13,6 +13,22 @@ namespace
 	// the cap is there so a corrupt or hand-edited .pdata cannot spin forever.
 	constexpr int kMaxChainDepth = 8;
 
+	// MSVC routinely splits one function's unwind data across several ADJACENT
+	// RUNTIME_FUNCTIONs -- roughly one per prolog region -- and the first of them
+	// can be as short as the `sub rsp, N` that opens the function. UWorld::BeginPlay
+	// in this game is five entries of 4, 33, 47, 139 and 14 bytes, all contiguous
+	// and all chaining back to the first.
+	//
+	// Measuring only the entry RtlLookupFunctionEntry hands back therefore reports
+	// that 237-byte function as 4 bytes long. 1.8% of the functions in the shipped
+	// exe (7759 of them) are split this way, and every one of them would fail a
+	// "is there room for a 14-byte detour" test it should pass. So the end of a
+	// function is the end of the last contiguous chunk that resolves back to the
+	// same primary, not the end of one chunk.
+	//
+	// The cap bounds the forward walk; nothing observed needs more than a handful.
+	constexpr int kMaxContiguousChunks = 64;
+
 	struct UnwindInfoHeader
 	{
 		uint8_t versionAndFlags;
@@ -35,6 +51,31 @@ namespace
 			return nullptr;
 
 		return nt;
+	}
+
+	// Walks UNW_FLAG_CHAININFO from `entry` to the RUNTIME_FUNCTION of the function
+	// it belongs to. Returns `entry` itself when that is already the primary.
+	PRUNTIME_FUNCTION ResolvePrimary(uintptr_t imageBase, PRUNTIME_FUNCTION entry)
+	{
+		PRUNTIME_FUNCTION current = entry;
+
+		for (int depth = 0; depth < kMaxChainDepth; ++depth)
+		{
+			const auto* unwind = reinterpret_cast<const UnwindInfoHeader*>(
+				imageBase + current->UnwindInfoAddress);
+
+			const uint8_t flags = static_cast<uint8_t>(unwind->versionAndFlags >> 3);
+			if ((flags & kUnwFlagChainInfo) == 0)
+				break;
+
+			// The parent RUNTIME_FUNCTION follows the unwind code array, which is
+			// padded to an even count of 2-byte slots.
+			const size_t codeSlots = (unwind->countOfCodes + 1) & ~static_cast<size_t>(1);
+			current = reinterpret_cast<PRUNTIME_FUNCTION>(
+				reinterpret_cast<uintptr_t>(unwind) + sizeof(UnwindInfoHeader) + codeSlots * 2);
+		}
+
+		return current;
 	}
 }
 
@@ -115,37 +156,45 @@ namespace Scanner
 		if (!rf || !imageBase)
 			return out;
 
+		const auto base = static_cast<uintptr_t>(imageBase);
+
+		// RtlLookupFunctionEntry hands back the chunk that covers the address, not
+		// the function it belongs to, so without following the chain a cold chunk
+		// reads as a function of its own -- and its first byte would pass a
+		// "function start" check while being a place no caller ever enters.
+		PRUNTIME_FUNCTION primary = ResolvePrimary(base, rf);
+
 		out.valid = true;
-		out.start = static_cast<uintptr_t>(imageBase) + rf->BeginAddress;
-		out.end   = static_cast<uintptr_t>(imageBase) + rf->EndAddress;
+		out.start = base + primary->BeginAddress;
+		out.end   = base + primary->EndAddress;
 
-		// Walk the chain to the primary entry. RtlLookupFunctionEntry hands back
-		// the chunk that covers the address, not the function it belongs to, so
-		// without this a cold chunk reads as a function of its own -- and its
-		// first byte would pass a "function start" check while being a place no
-		// caller ever enters.
-		PRUNTIME_FUNCTION current = rf;
-		for (int depth = 0; depth < kMaxChainDepth; ++depth)
+		// Then extend over every following entry that begins exactly where the
+		// previous one ended AND resolves back to this same primary. Both halves
+		// matter: contiguity rules out a genuinely separated cold chunk parked
+		// elsewhere in .text, and the primary check rules out the next function
+		// along, which usually does begin exactly where this one ended.
+		for (int i = 0; i < kMaxContiguousChunks; ++i)
 		{
-			const auto* unwind = reinterpret_cast<const UnwindInfoHeader*>(
-				static_cast<uintptr_t>(imageBase) + current->UnwindInfoAddress);
+			DWORD64           nextBase  = 0;
+			PRUNTIME_FUNCTION next      = RtlLookupFunctionEntry(
+				static_cast<DWORD64>(out.end), &nextBase, nullptr);
 
-			const uint8_t flags = static_cast<uint8_t>(unwind->versionAndFlags >> 3);
-			if ((flags & kUnwFlagChainInfo) == 0)
+			if (!next || static_cast<uintptr_t>(nextBase) != base)
+				break;
+			if (base + next->BeginAddress != out.end)
+				break;
+			if (base + ResolvePrimary(base, next)->BeginAddress != out.start)
 				break;
 
-			out.chainedChunk = true;
-
-			// The parent RUNTIME_FUNCTION follows the unwind code array, which is
-			// padded to an even count of 2-byte slots.
-			const size_t codeSlots = (unwind->countOfCodes + 1) & ~static_cast<size_t>(1);
-			const uintptr_t parent = reinterpret_cast<uintptr_t>(unwind)
-			                       + sizeof(UnwindInfoHeader)
-			                       + codeSlots * 2;
-
-			current   = reinterpret_cast<PRUNTIME_FUNCTION>(parent);
-			out.start = static_cast<uintptr_t>(imageBase) + current->BeginAddress;
+			out.end = base + next->EndAddress;
 		}
+
+		// "Chained" is the question a caller actually cares about: is this address
+		// somewhere the function is entered and flows through, or is it marooned in
+		// a chunk the compiler moved away? The contiguous span answers it directly,
+		// and answering it this way stops an ordinary mid-function address inside a
+		// multi-entry function being reported as a cold chunk.
+		out.chainedChunk = (addr < out.start || addr >= out.end);
 
 		return out;
 	}

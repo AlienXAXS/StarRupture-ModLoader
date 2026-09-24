@@ -218,6 +218,25 @@ namespace Hooks::LogVerbosity
         return nullptr;
     }
 
+    // FLogSuppressionInterface::Get cannot be scanned for directly -- see the long
+    // note on FLogSuppression_Get_CallSite in scan_patterns.h. The pattern matches
+    // its one call site, whose first byte is the E8, so the callee is the rel32.
+    //
+    // This has to agree with PreflightEntry::followRel32At on that row: preflight
+    // verifies the address this decode produces, not the call site, and the two
+    // drifting apart is how a pattern passes verification and then gets used as
+    // something else.
+    static uintptr_t ResolveLogSuppressionGet(uintptr_t callSite)
+    {
+        const auto* p = reinterpret_cast<const unsigned char*>(callSite);
+        if (p[0] != 0xE8)
+            return 0;
+
+        int32_t rel = 0;
+        memcpy(&rel, p + 1, sizeof(rel));
+        return callSite + 5 + static_cast<uintptr_t>(static_cast<intptr_t>(rel));
+    }
+
     bool Install()
     {
         if (g_installed)
@@ -273,9 +292,11 @@ namespace Hooks::LogVerbosity
         // FLogSuppressionInterface::Get -- fallback source for the singleton if
         // we attached after ProcessConfigAndCommandLine had already run (the
         // QueueUserAPC path in core_entry.cpp can land that late).
-        const uintptr_t getAddr = Scanner::FindPatternInMainModule(
-            "FLogSuppressionInterface::Get",
-            ScanPatterns::FLogSuppression_Get);
+        const uintptr_t getCallSite = Scanner::FindPatternInMainModule(
+            "FLogSuppressionInterface::Get call site",
+            ScanPatterns::FLogSuppression_Get_CallSite);
+
+        const uintptr_t getAddr = getCallSite ? ResolveLogSuppressionGet(getCallSite) : 0;
 
         if (getAddr)
         {

@@ -62,14 +62,23 @@ namespace Scanner
 	{
 		bool      valid        = false; // false = no unwind entry covers addr
 		uintptr_t start        = 0;     // primary entry, chain info followed
-		uintptr_t end          = 0;     // exclusive, of the chunk addr is in
-		bool      chainedChunk = false; // addr is in a separated (cold) chunk
+		uintptr_t end          = 0;     // exclusive, end of the contiguous span
+		bool      chainedChunk = false; // addr sits outside [start, end)
 	};
 
-	// Resolves addr through the exception directory. When the chunk containing
-	// addr carries UNW_FLAG_CHAININFO, the chain is followed to the primary
-	// entry so `start` is the function's real entry point and chainedChunk says
-	// the address itself was in a separated chunk.
+	// Resolves addr through the exception directory to the function it belongs
+	// to: `start` is the primary entry with UNW_FLAG_CHAININFO followed, and
+	// `end` is the end of the last RUNTIME_FUNCTION contiguous with it that
+	// chains back to it.
+	//
+	// That span matters because MSVC splits one function's unwind data across
+	// several adjacent entries, the first of which is often just the prolog --
+	// four bytes is common. [start, end) is the whole function; one chunk is not.
+	//
+	// chainedChunk means addr fell OUTSIDE that span: it is in a chunk the
+	// compiler moved elsewhere, which no caller ever enters. An ordinary
+	// mid-function address is not chained, however many entries the function's
+	// unwind data happens to use.
 	//
 	// valid == false means no unwind entry covers the address at all -- leaf
 	// thunks and hand-written assembly stubs legitimately have none, so this is
@@ -82,7 +91,7 @@ namespace Scanner
 	// detouring it is not what anyone means by hooking a function.
 	bool IsFunctionStart(uintptr_t addr);
 
-	// Bytes from addr to the end of its chunk, or 0 when nothing covers it.
+	// Bytes from addr to the end of its function, or 0 when nothing covers it.
 	// Hooks::Hook writes a 14-byte absolute JMP, so a shorter function cannot
 	// be detoured without overwriting whatever follows it.
 	size_t GetFunctionLength(uintptr_t addr);

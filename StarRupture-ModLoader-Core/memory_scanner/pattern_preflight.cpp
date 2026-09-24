@@ -109,9 +109,10 @@ namespace PatternPreflight
             Splash::SetProgress(static_cast<float>(index) / static_cast<float>(total));
 
             ScanValidation::Request request;
-            request.name    = entry.name;
-            request.pattern = entry.pattern;
-            request.kind    = ToValidationKind(entry.kind);
+            request.name           = entry.name;
+            request.pattern        = entry.pattern;
+            request.kind           = ToValidationKind(entry.kind);
+            request.followRel32At  = entry.followRel32At;
 
             const ScanValidation::Result result = ScanValidation::Resolve(request);
 
