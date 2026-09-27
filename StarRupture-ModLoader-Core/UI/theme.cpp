@@ -884,8 +884,33 @@ namespace UI::Theme
                                                                    : style.Colors[ImGuiCol_TextDisabled]);
 
         ImDrawList* draw = ImGui::GetWindowDrawList();
-        const ImVec2 textSz = ImGui::CalcTextSize(icon);
-        draw->AddText(ImVec2(pos.x + (size - textSz.x) * 0.5f, pos.y + (size - textSz.y) * 0.5f), col, icon);
+
+        // Centered on the glyph's actual visual bounding box, not the
+        // generic line-height CalcTextSize returns -- same reasoning and
+        // technique as IconTabBar's own icon centering above: the merged
+        // Material Icons font's vertical metrics don't match the base UI
+        // font's, so centering on line height alone renders this noticeably
+        // off the button's true vertical center.
+        ImFont* font = ImGui::GetFont();
+        ImFontBaked* baked = font->GetFontBaked(ImGui::GetFontSize());
+        unsigned int codepoint = 0;
+        ImTextCharFromUtf8(&codepoint, icon, nullptr);
+        const ImFontGlyph* glyph = baked ? baked->FindGlyphNoFallback(static_cast<ImWchar>(codepoint)) : nullptr;
+
+        ImVec2 textPos;
+        if (glyph)
+        {
+            const float gw = glyph->X1 - glyph->X0;
+            const float gh = glyph->Y1 - glyph->Y0;
+            textPos = ImVec2(pos.x + (size - gw) * 0.5f - glyph->X0,
+                              pos.y + (size - gh) * 0.5f - glyph->Y0);
+        }
+        else
+        {
+            const ImVec2 textSz = ImGui::CalcTextSize(icon);
+            textPos = ImVec2(pos.x + (size - textSz.x) * 0.5f, pos.y + (size - textSz.y) * 0.5f);
+        }
+        draw->AddText(textPos, col, icon);
 
         return pressed;
     }
