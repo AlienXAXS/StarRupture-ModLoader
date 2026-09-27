@@ -27,7 +27,6 @@
 #include "../logging/log.h"
 
 static bool         s_imguiEnabled = true;
-static SDK::UWorld* s_currentWorld = nullptr;
 static EModKey      s_openKey      = EModKey::F2;
 
 bool ShouldCaptureInputNow()
@@ -184,10 +183,8 @@ void InitClientUI()
         UI::ImGuiBackend::Initialize(cbs);
     }
 
-    static auto s_onWorldReady = [](SDK::UWorld* world, const char* worldName)
+    static auto s_onWorldReady = [](SDK::UWorld* /*world*/, const char* worldName)
     {
-        s_currentWorld = world;
-
         const bool isMainMenu = worldName && strstr(worldName, "Map_MainMenu") != nullptr;
         UI::Overlay::SetVisible(isMainMenu);
         UI::GlobalSettings::SetWorldName(worldName ? worldName : "");
@@ -217,7 +214,16 @@ void InitClientUI()
         Hooks::FrameGenPause::Tick(
             UI::GlobalSettings::GetPauseFrameGenWhileOpen() && anyOverlayWindowOpen);
 
-        SDK::APlayerController* pc = SDK::UGameplayStatics::GetPlayerController(s_currentWorld, 0);
+        // Look up the current world fresh every tick -- a cached pointer can
+        // outlive the world it points to between EndPlay and the next
+        // world's BeginPlay.
+        SDK::UWorld* currentWorld = SDK::UWorld::GetWorld();
+        if (!currentWorld)
+        {
+            UI::GlobalSettings::SetPlayerPosition(0, 0, 0, false);
+            return;
+        }
+        SDK::APlayerController* pc = SDK::UGameplayStatics::GetPlayerController(currentWorld, 0);
         if (!pc)
         {
             UI::GlobalSettings::SetPlayerPosition(0, 0, 0, false);
