@@ -6,6 +6,7 @@
 #include "../hooks/game/text_input_focus/text_input_focus.h"
 #include "../hooks/game/world_begin_play/world_begin_play.h"
 #include "../hooks/game/engine_tick/engine_tick.h"
+#include "../hooks/game/framegen_pause/framegen_pause.h"
 #include "../hooks/game/game_menu/game_menu_registry.h"
 #include "../hooks/input/input_processor.h"
 #include "../hooks/input/input_hook.h"
@@ -206,6 +207,16 @@ void InitClientUI()
 
     static auto s_onTick = [](float /*deltaSeconds*/)
     {
+        // DLSS Frame Generation flicker workaround (see FrameGenPause) --
+        // checked every tick regardless of pawn/world state below, since an
+        // overlay window can be open at the main menu too.
+        const bool anyOverlayWindowOpen =
+            UI::ModLoaderWindow::IsOpen()
+            || UI::ConsoleWindow::IsOpen()
+            || UI::PluginPanelRegistry::AnyPanelOpen();
+        Hooks::FrameGenPause::Tick(
+            UI::GlobalSettings::GetPauseFrameGenWhileOpen() && anyOverlayWindowOpen);
+
         SDK::APlayerController* pc = SDK::UGameplayStatics::GetPlayerController(s_currentWorld, 0);
         if (!pc)
         {

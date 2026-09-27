@@ -1452,6 +1452,25 @@ namespace UI::ModLoaderWindow
         }
 
         ImGui::Spacing();
+        ImGui::SeparatorText("Rendering");
+        ImGui::Spacing();
+
+        bool pauseFrameGen = UI::GlobalSettings::GetPauseFrameGenWhileOpen();
+        if (UI::Theme::ToggleSwitch("Pause Frame Generation While Windows Are Open", &pauseFrameGen))
+            UI::GlobalSettings::SetPauseFrameGenWhileOpen(pauseFrameGen);
+        ImGui::SameLine();
+        ImGui::TextDisabled("(?)");
+        if (ImGui::IsItemHovered())
+        {
+            ImGui::SetTooltip(
+                "DLSS Frame Generation's interpolated frames never pass through this\n"
+                "overlay's draw hook, so with it on every other displayed frame has no\n"
+                "overlay on it -- seen as flicker whenever a window here is open.\n\n"
+                "Turns DLSS-G off for as long as the mod loader window, the console, or\n"
+                "any plugin panel is open, and restores it once they are all closed.");
+        }
+
+        ImGui::Spacing();
         ImGui::SeparatorText("Networking");
         ImGui::Spacing();
 

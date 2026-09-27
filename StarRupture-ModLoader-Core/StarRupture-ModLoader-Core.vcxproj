@@ -420,6 +420,7 @@
     <ClInclude Include="hooks\game\crash_reporter\crash_dialog.h" />
     <ClInclude Include="hooks\game\console_command\console_command.h" />
     <ClInclude Include="hooks\game\engine_exec\engine_exec.h" />
+    <ClInclude Include="hooks\game\framegen_pause\framegen_pause.h" />
     <ClInclude Include="hooks\game\pak_mount\pak_mount.h" />
     <ClInclude Include="hooks\game\debug_draw\debug_draw.h" />
     <ClInclude Include="hooks\game\crash_reporter\crash_reporter.h" />
@@ -561,6 +562,7 @@
     <ClCompile Include="hooks\game\crash_reporter\crash_dialog.cpp" />
     <ClCompile Include="hooks\game\console_command\console_command.cpp" />
     <ClCompile Include="hooks\game\engine_exec\engine_exec.cpp" />
+    <ClCompile Include="hooks\game\framegen_pause\framegen_pause.cpp" />
     <ClCompile Include="hooks\game\pak_mount\pak_mount.cpp" />
     <ClCompile Include="hooks\game\debug_draw\debug_draw.cpp" />
     <ClCompile Include="hooks\game\crash_reporter\crash_reporter.cpp" />
