@@ -15,16 +15,24 @@
 //
 // Toggles the r.Streamline.DLSSG.Enable console variable through
 // Hooks::EngineExec::Execute (game thread only -- UEngine::Exec walks engine
-// state). Call Tick() once per engine tick with the current "should pause"
-// state; it only touches the cvar on a change, never every frame.
+// state), with r.Streamline.DLSSG.RetainResourcesWhenOff turned on first so
+// switching off never frees buffers that frames in flight still read. Both
+// go back to what they were when DLSS-G is restored. Nothing changes while a
+// world is loading or travelling, or while ticks are long: the wanted state
+// is held and applied once a world has begun play and the engine has ticked
+// steadily for a second. Call Tick() once per engine tick with the current
+// "should pause" state; it only touches the cvars on a change.
 // ---------------------------------------------------------------------------
 
 namespace Hooks::FrameGenPause
 {
     // wantPaused: true while at least one overlay window is open and the
     // "Pause frame generation while windows are open" setting is on.
-    // No-op when wantPaused matches the state from the last call.
-    void Tick(bool wantPaused);
+    // deltaSeconds: this tick's length, used to hold changes through hitches.
+    void Tick(bool wantPaused, float deltaSeconds);
+
+    // Registers the world begin/end and engine shutdown callbacks. Call once.
+    void Initialize();
 }
 
 #endif // MODLOADER_CLIENT_BUILD

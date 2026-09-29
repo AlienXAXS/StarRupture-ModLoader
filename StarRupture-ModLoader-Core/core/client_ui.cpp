@@ -202,7 +202,9 @@ void InitClientUI()
     };
     Hooks::WorldBeginPlay::RegisterAnyWorldCallback(s_onWorldReady);
 
-    static auto s_onTick = [](float /*deltaSeconds*/)
+    Hooks::FrameGenPause::Initialize();
+
+    static auto s_onTick = [](float deltaSeconds)
     {
         // DLSS Frame Generation flicker workaround (see FrameGenPause) --
         // checked every tick regardless of pawn/world state below, since an
@@ -212,7 +214,8 @@ void InitClientUI()
             || UI::ConsoleWindow::IsOpen()
             || UI::PluginPanelRegistry::AnyPanelOpen();
         Hooks::FrameGenPause::Tick(
-            UI::GlobalSettings::GetPauseFrameGenWhileOpen() && anyOverlayWindowOpen);
+            UI::GlobalSettings::GetPauseFrameGenWhileOpen() && anyOverlayWindowOpen,
+            deltaSeconds);
 
         // Look up the current world fresh every tick -- a cached pointer can
         // outlive the world it points to between EndPlay and the next
