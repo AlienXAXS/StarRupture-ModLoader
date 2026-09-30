@@ -27,21 +27,42 @@ namespace UI::Theme
     ImU32 AccentColorHover();
     ImVec4 AccentColorVec4(float alpha = 1.0f);
 
-    // Mutable accent triplet -- drives custom-drawn widgets (ToggleSwitch,
-    // chamfered borders/fills, IconTabBar highlight, title-bar accent
-    // square) that read these directly each frame rather than going through
-    // ImGuiStyle.Colors. Pointers are returned so the Theme tab can bind
-    // them straight to ImGui::ColorEdit4 -- edits take effect immediately,
-    // no extra plumbing needed.
+    // Mutable accent triplet -- drives custom-drawn widgets that represent a
+    // *value* (ToggleSwitch's on state, SliderGrab, CheckMark) rather than a
+    // hover/selected state (see the Highlight triplet below for that).
+    // Pointers are returned so the Theme tab can bind them straight to
+    // ImGui::ColorEdit4 -- edits take effect immediately, no extra plumbing
+    // needed.
     ImVec4* AccentBasePtr();
     ImVec4* AccentHoverPtr();
     ImVec4* AccentActivePtr();
 
-    // Persist every ImGuiStyle.Colors[] entry plus the accent triplet to
-    // modloader.ini under [ThemeColors], keyed by ImGui::GetStyleColorName().
+    // Highlight triplet -- separate from the accent above, for
+    // hover/selected custom-drawn state instead of a value: the active
+    // sidebar tab's icon/label and its cell fill. Defaults to the matching
+    // accent value (see ApplyTheme), so a theme that never sets these looks
+    // exactly as it would have before they existed.
+    ImU32 HighlightColor();
+    ImU32 HighlightColorHover();
+    ImVec4 HighlightColorVec4(float alpha = 1.0f);
+
+    ImVec4* HighlightBasePtr();
+    ImVec4* HighlightHoverPtr();
+    ImVec4* HighlightActivePtr();
+
+    // Panel border -- the chamfered window border and the title bar's
+    // accent-square indicator: the window's own frame/structure, not a
+    // value or a hover/selected state. Also defaults to the accent (see
+    // ApplyTheme) when a theme doesn't set it.
+    ImU32   PanelBorderColor();
+    ImVec4* PanelBorderPtr();
+
+    // Persist every ImGuiStyle.Colors[] entry plus the accent/highlight
+    // triplets and the panel border to modloader.ini under [ThemeColors],
+    // keyed by ImGui::GetStyleColorName() for the former.
     void SaveColors(const wchar_t* iniPath);
 
-    // Overwrite ImGuiStyle.Colors[] and the accent triplet from
+    // Overwrite ImGuiStyle.Colors[] and the accent/highlight triplets from
     // modloader.ini, for any keys present under [ThemeColors]. Call once at
     // startup, after Apply() has seeded the defaults -- entries absent from
     // the ini are left at whatever Apply() set them to.
@@ -53,19 +74,72 @@ namespace UI::Theme
     // call SaveColors() afterward to persist the reset.
     void ResetColors();
 
+    // -----------------------------------------------------------------------
+    // Named themes
+    //
+    // "Default" (Apply()'s built-in cyan) and "Star Rupture" (a second
+    // built-in, embedded at compile time from the palette actually shipped
+    // in a live install's modloader.ini) always exist and are never written
+    // to disk. Anything else is a user theme file at
+    // ModLoader\Themes\<name>.ini, in the same [ThemeColors] format
+    // Save/LoadColors already read and write.
+    // -----------------------------------------------------------------------
+
+    bool IsBuiltinTheme(const char* name);
+
+    // Fills outNames (up to maxCount entries, each null-terminated within 64
+    // bytes) with every theme available right now: the two built-ins first,
+    // then one entry per ModLoader\Themes\*.ini file. Returns the count
+    // written.
+    int GetAvailableThemes(char outNames[][64], int maxCount);
+
+    // Applies `name` to the live ImGuiStyle immediately -- Apply()/
+    // ResetColors() first for a clean baseline, then the built-in Star
+    // Rupture table or the named user theme file on top of it, so a user
+    // theme only has to specify the keys it actually overrides. An unknown
+    // user theme name (e.g. its file was deleted) just leaves the baseline
+    // applied. Does not touch modloader.ini; pair with
+    // GlobalSettings::SetTheme() to persist the switch.
+    void ApplyTheme(const char* name);
+
+    // Reads modloader.ini [UI] Theme= (via GlobalSettings, already loaded by
+    // this point) and applies it. Migration: if that key is absent but
+    // iniPath still has a legacy [ThemeColors] block from before named
+    // themes existed, saves it as a new user theme called "Custom", points
+    // [UI] Theme= at it, and applies it -- so nobody's colors disappear.
+    // Call once at startup, in place of the old Apply()+LoadColors() pair,
+    // once the ImGui context exists.
+    void StartupLoadTheme(const wchar_t* iniPath);
+
+    // Writes the live ImGuiStyle + accent triplet to
+    // ModLoader\Themes\<name>.ini. Returns false and does nothing for a
+    // builtin name -- Default and Star Rupture ship in the binary.
+    bool SaveUserTheme(const char* name);
+
+    // Deletes ModLoader\Themes\<name>.ini. Returns false and does nothing
+    // for a builtin name. Does not change the active theme -- if `name` was
+    // active, the caller is responsible for switching away first.
+    bool DeleteUserTheme(const char* name);
+
     // Drop-in replacement for ImGui::Checkbox with a notched-corner sliding
     // toggle-switch look instead of a checkbox glyph. Same call contract:
     // returns true the frame the value changes.
     bool ToggleSwitch(const char* label, bool* v);
 
-    // Draws `text` clipped to `width` pixels on the current line. If it fits,
-    // it is drawn statically like TextUnformatted. If it overflows, it scrolls
-    // horizontally (pause at each end, then reverse) so the whole string can be
-    // read without a tooltip. `id` must be stable across frames -- it keys the
-    // per-label scroll state -- and is not rendered (pass e.g. "##desc_foo").
-    // Advances the cursor by one line height and reserves `width` horizontally,
-    // so it composes with SameLine()/tables like a normal text item.
-    void MarqueeLabel(const char* id, const char* text, float width);
+    // The layout footprint one ToggleSwitch reserves (x = width, y = the
+    // full frame height it's centered within -- see ToggleSwitch's own
+    // comment). Call this instead of re-deriving its internal size ratio
+    // at a distant call site that needs to lay out space for a toggle
+    // before drawing one, e.g. sizing a column to fit it.
+    ImVec2 ToggleSwitchSize();
+
+    // A borderless clickable icon glyph -- no button frame/box, just the
+    // glyph itself over an InvisibleButton hit area. Colored by state
+    // (ImGuiCol_TextDisabled at rest, ImGuiCol_TextLink on hover or while
+    // held) rather than a hardcoded color, so any theme controls its look
+    // the same way it controls every other color. `size` <= 0 uses
+    // GetFrameHeight(). Returns true the frame it's clicked.
+    bool IconButton(const char* icon, const char* id, float size = 0.0f);
 
     // Draws a single-diagonal-corner (chamfered) outline -- chamfer cut at
     // the top-left and bottom-right corners -- over the given rect, matching
@@ -127,9 +201,9 @@ namespace UI::Theme
     // BeginChamferedWindow() that returned true.
     void EndChamferedWindow();
 
-    // Icon tab strip -- draws `count` cells `size` wide starting at the
-    // current cursor, each showing icons[i] centered. The active cell gets
-    // full opacity + an accent fill/border; inactive cells are dimmed.
+    // Icon tab strip -- draws `count` cells at least `size` wide starting at
+    // the current cursor, each showing icons[i] centered. The active cell
+    // gets full opacity + an accent fill/border; inactive cells are dimmed.
     // Returns the new active index (== `active` if nothing was clicked this
     // frame).
     // vertical=false: cells laid out left-to-right; cursor drops to the
@@ -138,10 +212,15 @@ namespace UI::Theme
     //   of the column at the original starting Y, so the caller can place
     //   tab content directly beside it without a child window.
     // labels: optional, parallel array of `count` display names. Drawn UNDER
-    //   the icon in a smaller font, centered and clipped to the cell width --
-    //   an icon on its own does not tell a first-time user what the tab is,
-    //   which is what this is for. Keep them to one short word; pass nullptr
-    //   for an icon-only strip.
+    //   the icon in a smaller font, centered in the cell -- an icon on its
+    //   own does not tell a first-time user what the tab is, which is what
+    //   this is for. Keep them to one short word; pass nullptr for an
+    //   icon-only strip. Each cell widens past `size` (never narrower) to
+    //   fit its own label in full at the current font scale, so raising the
+    //   UI's text size doesn't clip a caption -- call IconTabBarWidth() with
+    //   the same labels/count/size first if the caller needs to size a
+    //   container around the strip before drawing it (e.g. a nav column's
+    //   own child window).
     // tooltips: optional, parallel array of `count` longer descriptions shown
     //   on hover. Falls back to labels[i] when null, so passing labels alone
     //   keeps the old hover behaviour.
@@ -149,6 +228,15 @@ namespace UI::Theme
                     float size = 64.0f, bool vertical = false,
                     const char* const* labels = nullptr,
                     const char* const* tooltips = nullptr);
+
+    // The width IconTabBar will actually use for each cell, given the same
+    // labels/count/size -- `size` itself if every label already fits (or
+    // labels is null), otherwise the widest label's own text width (at
+    // IconTabBar's own label font size, a fraction of the current UI text
+    // size) plus breathing room. Call this BEFORE IconTabBar when sizing a
+    // container around it, so the container doesn't end up narrower than
+    // what IconTabBar is about to draw.
+    float IconTabBarWidth(const char* const* labels, int count, float size = 64.0f);
 
     // Icon glyph constants (Material Icons Regular, embedded resource --
     // see imgui_backend.cpp RebuildFontAtlas()).
@@ -160,6 +248,7 @@ namespace UI::Theme
         extern const char* Logging;
         extern const char* Theme;
         extern const char* About;
+        extern const char* Reset; // replay -- reset buttons (config rows, Logging tab)
     }
 }
 

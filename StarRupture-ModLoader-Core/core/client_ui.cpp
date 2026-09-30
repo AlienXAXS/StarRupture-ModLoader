@@ -6,6 +6,7 @@
 #include "../hooks/game/text_input_focus/text_input_focus.h"
 #include "../hooks/game/world_begin_play/world_begin_play.h"
 #include "../hooks/game/engine_tick/engine_tick.h"
+#include "../hooks/game/framegen_pause/framegen_pause.h"
 #include "../hooks/game/game_menu/game_menu_registry.h"
 #include "../hooks/input/input_processor.h"
 #include "../hooks/input/input_hook.h"
@@ -26,7 +27,6 @@
 #include "../logging/log.h"
 
 static bool         s_imguiEnabled = true;
-static SDK::UWorld* s_currentWorld = nullptr;
 static EModKey      s_openKey      = EModKey::F2;
 
 bool ShouldCaptureInputNow()
@@ -128,8 +128,11 @@ void InitClientUI()
             static bool s_themeApplied = false;
             if (!s_themeApplied)
             {
-                UI::Theme::Apply();
-                UI::Theme::LoadColors(UI::GlobalSettings::GetIniPath());
+                // StartupLoadTheme always ends by applying some theme (the
+                // saved one, a migrated one, or "Default"), and every theme
+                // switch runs through ResetColors() -> Apply() first for a
+                // clean baseline, so there's no separate Apply() to call here.
+                UI::Theme::StartupLoadTheme(UI::GlobalSettings::GetIniPath());
                 s_themeApplied = true;
             }
 
@@ -180,10 +183,8 @@ void InitClientUI()
         UI::ImGuiBackend::Initialize(cbs);
     }
 
-    static auto s_onWorldReady = [](SDK::UWorld* world, const char* worldName)
+    static auto s_onWorldReady = [](SDK::UWorld* /*world*/, const char* worldName)
     {
-        s_currentWorld = world;
-
         const bool isMainMenu = worldName && strstr(worldName, "Map_MainMenu") != nullptr;
         UI::Overlay::SetVisible(isMainMenu);
         UI::GlobalSettings::SetWorldName(worldName ? worldName : "");
@@ -201,9 +202,31 @@ void InitClientUI()
     };
     Hooks::WorldBeginPlay::RegisterAnyWorldCallback(s_onWorldReady);
 
-    static auto s_onTick = [](float /*deltaSeconds*/)
+    Hooks::FrameGenPause::Initialize();
+
+    static auto s_onTick = [](float deltaSeconds)
     {
-        SDK::APlayerController* pc = SDK::UGameplayStatics::GetPlayerController(s_currentWorld, 0);
+        // DLSS Frame Generation flicker workaround (see FrameGenPause) --
+        // checked every tick regardless of pawn/world state below, since an
+        // overlay window can be open at the main menu too.
+        const bool anyOverlayWindowOpen =
+            UI::ModLoaderWindow::IsOpen()
+            || UI::ConsoleWindow::IsOpen()
+            || UI::PluginPanelRegistry::AnyPanelOpen();
+        Hooks::FrameGenPause::Tick(
+            UI::GlobalSettings::GetPauseFrameGenWhileOpen() && anyOverlayWindowOpen,
+            deltaSeconds);
+
+        // Look up the current world fresh every tick -- a cached pointer can
+        // outlive the world it points to between EndPlay and the next
+        // world's BeginPlay.
+        SDK::UWorld* currentWorld = SDK::UWorld::GetWorld();
+        if (!currentWorld)
+        {
+            UI::GlobalSettings::SetPlayerPosition(0, 0, 0, false);
+            return;
+        }
+        SDK::APlayerController* pc = SDK::UGameplayStatics::GetPlayerController(currentWorld, 0);
         if (!pc)
         {
             UI::GlobalSettings::SetPlayerPosition(0, 0, 0, false);

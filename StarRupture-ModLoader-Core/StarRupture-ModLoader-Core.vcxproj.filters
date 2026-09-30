@@ -79,6 +79,9 @@
     <Filter Include="Source Files\hooks\game\engine_exec">
       <UniqueIdentifier>{9c2e4b71-58d3-4f6a-a1b0-3e7d2c8f5a14}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Source Files\hooks\game\framegen_pause">
+      <UniqueIdentifier>{2f6a8d13-7c95-4e2b-b04d-8a1f3c6e9d52}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Source Files\hooks\game\pak_mount">
       <UniqueIdentifier>{7d3f2a19-6b4c-4e85-9a1d-2c5e8f0b3a67}</UniqueIdentifier>
     </Filter>
@@ -300,6 +303,9 @@
     <ClInclude Include="hooks\game\engine_exec\engine_exec.h">
       <Filter>Source Files\hooks\game\engine_exec</Filter>
     </ClInclude>
+    <ClInclude Include="hooks\game\framegen_pause\framegen_pause.h">
+      <Filter>Source Files\hooks\game\framegen_pause</Filter>
+    </ClInclude>
     <ClInclude Include="hooks\game\pak_mount\pak_mount.h">
       <Filter>Source Files\hooks\game\pak_mount</Filter>
     </ClInclude>
@@ -451,6 +457,9 @@
       <Filter>Source Files\UI</Filter>
     </ClInclude>
     <ClInclude Include="UI\theme.h">
+      <Filter>Source Files\UI</Filter>
+    </ClInclude>
+    <ClInclude Include="UI\named_entry_utils.h">
       <Filter>Source Files\UI</Filter>
     </ClInclude>
     <ClInclude Include="network_channel\net_timeout.h">
@@ -647,6 +656,9 @@
     <ClCompile Include="hooks\game\engine_exec\engine_exec.cpp">
       <Filter>Source Files\hooks\game\engine_exec</Filter>
     </ClCompile>
+    <ClCompile Include="hooks\game\framegen_pause\framegen_pause.cpp">
+      <Filter>Source Files\hooks\game\framegen_pause</Filter>
+    </ClCompile>
     <ClCompile Include="hooks\game\pak_mount\pak_mount.cpp">
       <Filter>Source Files\hooks\game\pak_mount</Filter>
     </ClCompile>
@@ -780,6 +792,9 @@
       <Filter>Source Files\UI</Filter>
     </ClCompile>
     <ClCompile Include="UI\theme.cpp">
+      <Filter>Source Files\UI</Filter>
+    </ClCompile>
+    <ClCompile Include="UI\named_entry_utils.cpp">
       <Filter>Source Files\UI</Filter>
     </ClCompile>
     <ClCompile Include="hooks\game\game_instance_init\game_instance_init.cpp">

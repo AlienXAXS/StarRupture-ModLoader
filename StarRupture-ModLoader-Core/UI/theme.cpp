@@ -6,7 +6,10 @@
 #include <cstring>
 #include <cstdio>
 #include <cfloat>
-#include <unordered_map>
+#include <string>
+
+#include "core/startup_utils.h"   // GetModLoaderDir() -- ModLoader\Themes\ lives under it
+#include "global_settings.h"      // GetTheme()/SetTheme() -- [UI] Theme= persistence
 
 // FindGlyph(), ImFont::FontSize, and ImTextCharFromUtf8() used by
 // IconTabBar() for glyph-bbox centering are internal-only APIs -- not
@@ -41,6 +44,38 @@ namespace UI::Theme
     ImVec4* AccentHoverPtr()  { return &kAccentHover; }
     ImVec4* AccentActivePtr() { return &kAccentActive; }
 
+    // -----------------------------------------------------------------------
+    // Highlight ramp + panel border -- separate from the accent triplet
+    // above. The accent alone used to drive both "this is a value/control"
+    // (toggle-on, sliders, checkmarks) and "this is selected/hovered"
+    // (the active sidebar tab, panel borders) at once, which meant a theme
+    // could not give those two different meanings different colors -- the
+    // game itself does (orange for values/dividers, cyan for hover/
+    // selected, white for panel borders; see the in-game pause menu).
+    // Default at the same value as the matching accent entry, so this
+    // built-in theme's look is unchanged by these existing at all.
+    // -----------------------------------------------------------------------
+    static const ImVec4 kDefaultHighlight       = kDefaultAccent;
+    static const ImVec4 kDefaultHighlightHover  = kDefaultAccentHover;
+    static const ImVec4 kDefaultHighlightActive = kDefaultAccentActive;
+    static const ImVec4 kDefaultPanelBorder     = kDefaultAccent;
+
+    static ImVec4 kHighlight       = kDefaultHighlight;
+    static ImVec4 kHighlightHover  = kDefaultHighlightHover;
+    static ImVec4 kHighlightActive = kDefaultHighlightActive;
+    static ImVec4 kPanelBorder     = kDefaultPanelBorder;
+
+    ImU32 HighlightColor()      { return ImGui::ColorConvertFloat4ToU32(kHighlight); }
+    ImU32 HighlightColorHover() { return ImGui::ColorConvertFloat4ToU32(kHighlightHover); }
+    ImVec4 HighlightColorVec4(float alpha) { return ImVec4(kHighlight.x, kHighlight.y, kHighlight.z, alpha); }
+
+    ImVec4* HighlightBasePtr()   { return &kHighlight; }
+    ImVec4* HighlightHoverPtr()  { return &kHighlightHover; }
+    ImVec4* HighlightActivePtr() { return &kHighlightActive; }
+
+    ImU32   PanelBorderColor() { return ImGui::ColorConvertFloat4ToU32(kPanelBorder); }
+    ImVec4* PanelBorderPtr()  { return &kPanelBorder; }
+
     static void FormatColor(wchar_t* buf, size_t sz, const ImVec4& c)
     {
         swprintf_s(buf, sz, L"%.6f,%.6f,%.6f,%.6f", c.x, c.y, c.z, c.w);
@@ -54,6 +89,53 @@ namespace UI::Theme
         return true;
     }
 
+    // "%S" in a wide swprintf treats its argument as a narrow string and
+    // widens it -- every ImGuiCol name, accent key and theme name here is
+    // plain ASCII, so a byte-for-byte widen is exact. Centralizes the one
+    // buffer/truncation point that four separate call sites used to each
+    // declare for themselves.
+    static std::wstring ToWide(const char* s)
+    {
+        wchar_t buf[64];
+        swprintf_s(buf, L"%S", s);
+        return buf;
+    }
+
+    // Every named color that lives outside ImGuiStyle.Colors[] -- the accent
+    // and highlight triplets plus the panel border -- keyed the same way a
+    // [ThemeColors] file keys them. One table drives ApplyColorByName,
+    // SaveColors and LoadColors instead of three separate hardcoded lists.
+    struct SpecialColorEntry { const char* name; ImVec4* value; };
+    static const SpecialColorEntry kSpecialColors[] =
+    {
+        {"AccentBase",      &kAccent},
+        {"AccentHover",     &kAccentHover},
+        {"AccentActive",    &kAccentActive},
+        {"Highlight",       &kHighlight},
+        {"HighlightHover",  &kHighlightHover},
+        {"HighlightActive", &kHighlightActive},
+        {"PanelBorder",     &kPanelBorder},
+    };
+
+    // Applies one named color to the live style -- one of the special colors
+    // above, or whichever ImGuiCol GetStyleColorName(i) matches `name`.
+    // Shared by LoadColors (file-based) and the compiled-in Star Rupture
+    // table below, so a theme file and a built-in theme go through identical
+    // logic. Unknown names are silently ignored, same as LoadColors always
+    // did for a key an older/newer build doesn't recognise.
+    static void ApplyColorByName(const char* name, const ImVec4& c)
+    {
+        for (const auto& e : kSpecialColors)
+            if (strcmp(e.name, name) == 0) { *e.value = c; return; }
+
+        ImGuiStyle& style = ImGui::GetStyle();
+        for (int i = 0; i < ImGuiCol_COUNT; ++i)
+        {
+            const char* colName = ImGui::GetStyleColorName(i);
+            if (colName && strcmp(colName, name) == 0) { style.Colors[i] = c; return; }
+        }
+    }
+
     void SaveColors(const wchar_t* iniPath)
     {
         if (!iniPath || !iniPath[0]) return;
@@ -64,44 +146,38 @@ namespace UI::Theme
         {
             const char* name = ImGui::GetStyleColorName(i);
             if (!name) continue;
-            wchar_t wname[64];
-            swprintf_s(wname, L"%S", name);
             FormatColor(valBuf, ARRAYSIZE(valBuf), style.Colors[i]);
-            WritePrivateProfileStringW(L"ThemeColors", wname, valBuf, iniPath);
+            WritePrivateProfileStringW(L"ThemeColors", ToWide(name).c_str(), valBuf, iniPath);
         }
 
-        FormatColor(valBuf, ARRAYSIZE(valBuf), kAccent);
-        WritePrivateProfileStringW(L"ThemeColors", L"AccentBase", valBuf, iniPath);
-        FormatColor(valBuf, ARRAYSIZE(valBuf), kAccentHover);
-        WritePrivateProfileStringW(L"ThemeColors", L"AccentHover", valBuf, iniPath);
-        FormatColor(valBuf, ARRAYSIZE(valBuf), kAccentActive);
-        WritePrivateProfileStringW(L"ThemeColors", L"AccentActive", valBuf, iniPath);
+        for (const auto& e : kSpecialColors)
+        {
+            FormatColor(valBuf, ARRAYSIZE(valBuf), *e.value);
+            WritePrivateProfileStringW(L"ThemeColors", ToWide(e.name).c_str(), valBuf, iniPath);
+        }
     }
 
     void LoadColors(const wchar_t* iniPath)
     {
         if (!iniPath || !iniPath[0]) return;
 
-        ImGuiStyle& style = ImGui::GetStyle();
         wchar_t valBuf[64];
         for (int i = 0; i < ImGuiCol_COUNT; ++i)
         {
             const char* name = ImGui::GetStyleColorName(i);
             if (!name) continue;
-            wchar_t wname[64];
-            swprintf_s(wname, L"%S", name);
-            GetPrivateProfileStringW(L"ThemeColors", wname, L"", valBuf, ARRAYSIZE(valBuf), iniPath);
+            GetPrivateProfileStringW(L"ThemeColors", ToWide(name).c_str(), L"", valBuf, ARRAYSIZE(valBuf), iniPath);
             if (!valBuf[0]) continue;
             ImVec4 c;
-            if (ParseColor(valBuf, c)) style.Colors[i] = c;
+            if (ParseColor(valBuf, c)) ApplyColorByName(name, c);
         }
 
-        GetPrivateProfileStringW(L"ThemeColors", L"AccentBase", L"", valBuf, ARRAYSIZE(valBuf), iniPath);
-        if (valBuf[0]) ParseColor(valBuf, kAccent);
-        GetPrivateProfileStringW(L"ThemeColors", L"AccentHover", L"", valBuf, ARRAYSIZE(valBuf), iniPath);
-        if (valBuf[0]) ParseColor(valBuf, kAccentHover);
-        GetPrivateProfileStringW(L"ThemeColors", L"AccentActive", L"", valBuf, ARRAYSIZE(valBuf), iniPath);
-        if (valBuf[0]) ParseColor(valBuf, kAccentActive);
+        for (const auto& e : kSpecialColors)
+        {
+            GetPrivateProfileStringW(L"ThemeColors", ToWide(e.name).c_str(), L"", valBuf, ARRAYSIZE(valBuf), iniPath);
+            ImVec4 c;
+            if (valBuf[0] && ParseColor(valBuf, c)) ApplyColorByName(e.name, c);
+        }
     }
 
     void ResetColors()
@@ -109,7 +185,228 @@ namespace UI::Theme
         kAccent       = kDefaultAccent;
         kAccentHover  = kDefaultAccentHover;
         kAccentActive = kDefaultAccentActive;
+        kHighlight       = kDefaultHighlight;
+        kHighlightHover  = kDefaultHighlightHover;
+        kHighlightActive = kDefaultHighlightActive;
+        kPanelBorder      = kDefaultPanelBorder;
         Apply(); // rebuilds every ImGuiStyle.Colors[] entry from the reset accent
+    }
+
+    // -----------------------------------------------------------------------
+    // Named themes
+    // -----------------------------------------------------------------------
+
+    // Started from the [ThemeColors] block actually shipped in a live
+    // install's modloader.ini (translucent black panels, thin light-gray
+    // rules, off-white text, orange accent), then split what was a single
+    // accent triplet into three roles the game itself keeps visually
+    // distinct: orange for values, cyan for hover/selected, white for panel
+    // borders -- see the in-game pause menu's selected item.
+    struct BuiltinColorEntry { const char* name; ImVec4 value; };
+    static const BuiltinColorEntry kStarRupturePalette[] =
+    {
+        // Values (and their equivalents in the un-named ImGuiCol_* entries
+        // below): orange, unchanged from the first Star Rupture palette.
+        {"AccentBase", ImVec4(0.969000f, 0.580000f, 0.114000f, 1.000000f)},
+        {"AccentHover", ImVec4(1.000000f, 0.682000f, 0.271000f, 1.000000f)},
+        {"AccentActive", ImVec4(0.851000f, 0.471000f, 0.059000f, 1.000000f)},
+        // Hover/selected: cyan, matching the in-game pause menu's selected
+        // item color -- distinct from the orange values above, which the
+        // single accent triplet used to force onto both meanings at once.
+        {"Highlight", ImVec4(0.400000f, 0.860000f, 0.900000f, 1.000000f)},
+        {"HighlightHover", ImVec4(0.550000f, 0.920000f, 0.950000f, 1.000000f)},
+        {"HighlightActive", ImVec4(0.300000f, 0.740000f, 0.800000f, 1.000000f)},
+        // Structure: white/near-white, matching the game's own panel borders.
+        {"PanelBorder", ImVec4(0.900000f, 0.900000f, 0.900000f, 0.900000f)},
+        {"Text", ImVec4(0.910000f, 0.910000f, 0.900000f, 1.000000f)},
+        {"TextDisabled", ImVec4(0.550000f, 0.560000f, 0.570000f, 1.000000f)},
+        {"WindowBg", ImVec4(0.086000f, 0.086000f, 0.090000f, 0.920000f)},
+        {"ChildBg", ImVec4(0.110000f, 0.112000f, 0.118000f, 0.850000f)},
+        {"PopupBg", ImVec4(0.078000f, 0.078000f, 0.082000f, 0.970000f)},
+        {"Border", ImVec4(0.860000f, 0.870000f, 0.880000f, 0.850000f)},
+        {"BorderShadow", ImVec4(0.000000f, 0.000000f, 0.000000f, 0.000000f)},
+        {"FrameBg", ImVec4(0.165000f, 0.169000f, 0.176000f, 1.000000f)},
+        {"FrameBgHovered", ImVec4(0.400000f, 0.860000f, 0.900000f, 0.120000f)},
+        {"FrameBgActive", ImVec4(0.400000f, 0.860000f, 0.900000f, 0.220000f)},
+        {"TitleBg", ImVec4(0.060000f, 0.060000f, 0.065000f, 1.000000f)},
+        {"TitleBgActive", ImVec4(0.060000f, 0.060000f, 0.065000f, 1.000000f)},
+        {"TitleBgCollapsed", ImVec4(0.060000f, 0.060000f, 0.065000f, 0.800000f)},
+        {"MenuBarBg", ImVec4(0.100000f, 0.100000f, 0.105000f, 1.000000f)},
+        {"ScrollbarBg", ImVec4(0.060000f, 0.060000f, 0.065000f, 0.600000f)},
+        {"ScrollbarGrab", ImVec4(0.350000f, 0.360000f, 0.370000f, 1.000000f)},
+        {"ScrollbarGrabHovered", ImVec4(0.400000f, 0.860000f, 0.900000f, 1.000000f)},
+        {"ScrollbarGrabActive", ImVec4(0.300000f, 0.740000f, 0.800000f, 1.000000f)},
+        {"CheckMark", ImVec4(0.969000f, 0.580000f, 0.114000f, 1.000000f)},
+        {"CheckboxSelectedBg", ImVec4(0.969000f, 0.580000f, 0.114000f, 0.250000f)},
+        {"SliderGrab", ImVec4(0.969000f, 0.580000f, 0.114000f, 1.000000f)},
+        {"SliderGrabActive", ImVec4(1.000000f, 0.682000f, 0.271000f, 1.000000f)},
+        {"Button", ImVec4(0.120000f, 0.120000f, 0.125000f, 1.000000f)},
+        {"ButtonHovered", ImVec4(0.400000f, 0.860000f, 0.900000f, 0.280000f)},
+        {"ButtonActive", ImVec4(0.400000f, 0.860000f, 0.900000f, 0.420000f)},
+        {"Header", ImVec4(0.400000f, 0.860000f, 0.900000f, 0.150000f)},
+        {"HeaderHovered", ImVec4(0.400000f, 0.860000f, 0.900000f, 0.250000f)},
+        {"HeaderActive", ImVec4(0.400000f, 0.860000f, 0.900000f, 0.380000f)},
+        {"Separator", ImVec4(0.620000f, 0.630000f, 0.650000f, 0.550000f)},
+        {"SeparatorHovered", ImVec4(0.400000f, 0.860000f, 0.900000f, 0.800000f)},
+        {"SeparatorActive", ImVec4(0.400000f, 0.860000f, 0.900000f, 1.000000f)},
+        {"ResizeGrip", ImVec4(0.620000f, 0.630000f, 0.650000f, 0.250000f)},
+        {"ResizeGripHovered", ImVec4(0.400000f, 0.860000f, 0.900000f, 0.600000f)},
+        {"ResizeGripActive", ImVec4(0.400000f, 0.860000f, 0.900000f, 0.900000f)},
+        {"InputTextCursor", ImVec4(0.969000f, 0.580000f, 0.114000f, 1.000000f)},
+        {"TabHovered", ImVec4(0.400000f, 0.860000f, 0.900000f, 0.350000f)},
+        {"Tab", ImVec4(0.100000f, 0.100000f, 0.105000f, 1.000000f)},
+        {"TabSelected", ImVec4(0.400000f, 0.860000f, 0.900000f, 0.220000f)},
+        {"TabSelectedOverline", ImVec4(0.400000f, 0.860000f, 0.900000f, 1.000000f)},
+        {"TabDimmed", ImVec4(0.080000f, 0.080000f, 0.085000f, 1.000000f)},
+        {"TabDimmedSelected", ImVec4(0.969000f, 0.580000f, 0.114000f, 0.150000f)},
+        {"TabDimmedSelectedOverline", ImVec4(0.969000f, 0.580000f, 0.114000f, 0.500000f)},
+        {"PlotLines", ImVec4(0.620000f, 0.630000f, 0.650000f, 1.000000f)},
+        {"PlotLinesHovered", ImVec4(0.969000f, 0.580000f, 0.114000f, 1.000000f)},
+        {"PlotHistogram", ImVec4(0.969000f, 0.580000f, 0.114000f, 1.000000f)},
+        {"PlotHistogramHovered", ImVec4(1.000000f, 0.682000f, 0.271000f, 1.000000f)},
+        {"TableHeaderBg", ImVec4(0.120000f, 0.120000f, 0.125000f, 1.000000f)},
+        {"TableBorderStrong", ImVec4(0.620000f, 0.630000f, 0.650000f, 0.550000f)},
+        {"TableBorderLight", ImVec4(0.300000f, 0.310000f, 0.320000f, 0.500000f)},
+        {"TableRowBg", ImVec4(0.000000f, 0.000000f, 0.000000f, 0.000000f)},
+        {"TableRowBgAlt", ImVec4(1.000000f, 1.000000f, 1.000000f, 0.025000f)},
+        {"TextLink", ImVec4(0.400000f, 0.860000f, 0.900000f, 1.000000f)},
+        {"TextSelectedBg", ImVec4(0.400000f, 0.860000f, 0.900000f, 0.300000f)},
+        {"TreeLines", ImVec4(0.620000f, 0.630000f, 0.650000f, 0.500000f)},
+        {"DragDropTarget", ImVec4(0.969000f, 0.580000f, 0.114000f, 1.000000f)},
+        {"DragDropTargetBg", ImVec4(0.969000f, 0.580000f, 0.114000f, 0.100000f)},
+        {"UnsavedMarker", ImVec4(0.910000f, 0.910000f, 0.900000f, 1.000000f)},
+        {"NavCursor", ImVec4(0.400000f, 0.860000f, 0.900000f, 1.000000f)},
+        {"NavWindowingHighlight", ImVec4(1.000000f, 1.000000f, 1.000000f, 0.700000f)},
+        {"NavWindowingDimBg", ImVec4(0.800000f, 0.800000f, 0.800000f, 0.200000f)},
+        {"ModalWindowDimBg", ImVec4(0.000000f, 0.000000f, 0.000000f, 0.600000f)},
+    };
+
+    bool IsBuiltinTheme(const char* name)
+    {
+        return name && (strcmp(name, "Default") == 0 || strcmp(name, "Star Rupture") == 0);
+    }
+
+    // ModLoader\Themes\, creating it on first use -- CreateDirectoryW is a
+    // no-op if it already exists, same as GetModLoaderDir() itself relies on.
+    static std::wstring GetThemesDir()
+    {
+        std::wstring dir = GetModLoaderDir() + L"Themes\\";
+        CreateDirectoryW(dir.c_str(), nullptr);
+        return dir;
+    }
+
+    static std::wstring GetUserThemePath(const char* name)
+    {
+        return GetThemesDir() + ToWide(name) + L".ini";
+    }
+
+    int GetAvailableThemes(char outNames[][64], int maxCount)
+    {
+        int n = 0;
+        if (n < maxCount) strncpy_s(outNames[n++], 64, "Default", _TRUNCATE);
+        if (n < maxCount) strncpy_s(outNames[n++], 64, "Star Rupture", _TRUNCATE);
+
+        const std::wstring pattern = GetThemesDir() + L"*.ini";
+        WIN32_FIND_DATAW fd;
+        HANDLE h = FindFirstFileW(pattern.c_str(), &fd);
+        if (h != INVALID_HANDLE_VALUE)
+        {
+            do
+            {
+                if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
+                if (n >= maxCount) break;
+
+                wchar_t base[64] = {};
+                wcsncpy_s(base, fd.cFileName, _TRUNCATE);
+                wchar_t* dot = wcsrchr(base, L'.');
+                if (dot) *dot = L'\0';
+                if (base[0] == L'\0') continue;
+
+                char narrow[64] = {};
+                snprintf(narrow, sizeof(narrow), "%ls", base);
+                strncpy_s(outNames[n++], 64, narrow, _TRUNCATE);
+            } while (FindNextFileW(h, &fd));
+            FindClose(h);
+        }
+        return n;
+    }
+
+    void ApplyTheme(const char* name)
+    {
+        if (!name || !name[0]) name = "Default";
+
+        // Baseline every switch through ResetColors() -- Default's colors --
+        // first, so a user theme that only overrides a handful of keys (or
+        // a builtin request that matches neither name below, e.g. a stale
+        // Theme= from a build with a different built-in list) still ends up
+        // fully and predictably colored rather than a mix of two themes.
+        ResetColors();
+
+        if (strcmp(name, "Default") == 0)
+            return;
+
+        // Sentinel so a theme that sets its own accent but not Highlight/
+        // PanelBorder still gets values that match *that* theme's accent --
+        // not left at Default's from the ResetColors() baseline above, which
+        // is only correct for Default itself. Alpha 0 is never a legitimate
+        // opaque UI color, so "still zero after the theme below applied"
+        // reliably means it didn't set one.
+        kHighlight = kHighlightHover = kHighlightActive = kPanelBorder = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
+
+        if (strcmp(name, "Star Rupture") == 0)
+        {
+            for (const auto& e : kStarRupturePalette)
+                ApplyColorByName(e.name, e.value);
+        }
+        else
+        {
+            LoadColors(GetUserThemePath(name).c_str());
+        }
+
+        if (kHighlight.w       == 0.0f) kHighlight       = kAccent;
+        if (kHighlightHover.w  == 0.0f) kHighlightHover  = kAccentHover;
+        if (kHighlightActive.w == 0.0f) kHighlightActive = kAccentActive;
+        if (kPanelBorder.w     == 0.0f) kPanelBorder      = kAccent;
+    }
+
+    void StartupLoadTheme(const wchar_t* iniPath)
+    {
+        const char* theme = UI::GlobalSettings::GetTheme();
+
+        if (theme && theme[0])
+        {
+            ApplyTheme(theme);
+            return;
+        }
+
+        // No [UI] Theme= key. If this install still has a legacy single
+        // [ThemeColors] block from before named themes existed, migrate it
+        // to a user theme called "Custom" instead of silently discarding it.
+        wchar_t probe[8] = {};
+        GetPrivateProfileStringW(L"ThemeColors", L"AccentBase", L"", probe, ARRAYSIZE(probe), iniPath);
+        if (probe[0])
+        {
+            ResetColors();
+            LoadColors(iniPath);              // apply the legacy block to the live style
+            SaveColors(GetUserThemePath("Custom").c_str()); // ...and copy it into a real theme file
+            UI::GlobalSettings::SetTheme("Custom");
+            return;
+        }
+
+        ApplyTheme("Default");
+    }
+
+    bool SaveUserTheme(const char* name)
+    {
+        if (!name || !name[0] || IsBuiltinTheme(name)) return false;
+        SaveColors(GetUserThemePath(name).c_str());
+        return true;
+    }
+
+    bool DeleteUserTheme(const char* name)
+    {
+        if (!name || !name[0] || IsBuiltinTheme(name)) return false;
+        return DeleteFileW(GetUserThemePath(name).c_str()) != 0;
     }
 
     void Apply()
@@ -247,10 +544,12 @@ namespace UI::Theme
         ImVec2 headerMax = ImVec2(winPos.x + width, cursor.y + headerHeight);
         DrawChamferedFillTopLeft(headerMin, headerMax, ImGui::GetColorU32(ImGuiCol_TitleBgActive));
 
-        // Accent square indicator -- mirrors the HUD's small status squares.
+        // Panel-border square indicator -- mirrors the HUD's small status
+        // squares, part of the window's own frame/structure rather than a
+        // value or a hover/selected state.
         const float sq = 10.0f;
         ImVec2 sqMin(headerMin.x + 20.0f, headerMin.y + (headerHeight - sq) * 0.5f);
-        draw->AddRectFilled(sqMin, ImVec2(sqMin.x + sq, sqMin.y + sq), AccentColor());
+        draw->AddRectFilled(sqMin, ImVec2(sqMin.x + sq, sqMin.y + sq), PanelBorderColor());
 
         ImFont* font     = ImGui::GetFont();
         float   titleSz  = ImGui::GetFontSize() * titleScale;
@@ -318,7 +617,7 @@ namespace UI::Theme
         DrawChamferedBorder(ImGui::GetWindowPos(),
             ImVec2(ImGui::GetWindowPos().x + ImGui::GetWindowSize().x,
                    ImGui::GetWindowPos().y + ImGui::GetWindowSize().y),
-            AccentColor());
+            PanelBorderColor());
         ImGui::End();
     }
 
@@ -340,6 +639,37 @@ namespace UI::Theme
         return size * 0.86f + IconTabLabelFontSize() + 6.0f;
     }
 
+    // Shared by IconTabBar and the public IconTabBarWidth so they can never
+    // disagree about how wide a cell ends up. `size` was a fixed 64px used
+    // as both the cell width AND the label's own clip rect -- fine at the
+    // font scale it was measured at, but a caption clips the moment the UI
+    // text size (FontScaleMain, user-adjustable in Settings) makes the
+    // label's own CalcTextSizeA wider than that 64px, which every caption
+    // eventually does as the scale climbs, not just an unusually long one.
+    // Now the cell simply widens to fit -- never narrower than `size`
+    // (the icon's own square area is untouched), only ever wider.
+    static float IconTabCellWidth(const char* const* labels, int count, float size)
+    {
+        if (!labels)
+            return size;
+
+        ImFont*     font    = ImGui::GetFont();
+        const float labelSz = IconTabLabelFontSize();
+        float       cellW   = size;
+        for (int i = 0; i < count; ++i)
+            if (labels[i])
+            {
+                const float lw = font->CalcTextSizeA(labelSz, FLT_MAX, 0.0f, labels[i]).x;
+                if (lw > cellW) cellW = lw;
+            }
+        return cellW;
+    }
+
+    float IconTabBarWidth(const char* const* labels, int count, float size)
+    {
+        return IconTabCellWidth(labels, count, size);
+    }
+
     int IconTabBar(const char* const* icons, int count, int active, float size, bool vertical,
                    const char* const* labels, const char* const* tooltips)
     {
@@ -349,6 +679,7 @@ namespace UI::Theme
 
         const bool  hasLabels = (labels != nullptr);
         const float labelSz   = IconTabLabelFontSize();
+        const float cellW     = IconTabCellWidth(labels, count, size);
         const float cellH     = IconTabCellHeight(size, hasLabels);
         const float iconAreaH = hasLabels ? size * 0.86f : size;
 
@@ -356,9 +687,9 @@ namespace UI::Theme
         {
             ImGui::PushID(i);
             ImVec2 boxMin = ImGui::GetCursorScreenPos();
-            ImVec2 boxMax(boxMin.x + size, boxMin.y + cellH);
+            ImVec2 boxMax(boxMin.x + cellW, boxMin.y + cellH);
 
-            ImGui::InvisibleButton("##icontab", ImVec2(size, cellH));
+            ImGui::InvisibleButton("##icontab", ImVec2(cellW, cellH));
             bool hovered = ImGui::IsItemHovered();
             if (ImGui::IsItemClicked())
                 newActive = i;
@@ -382,7 +713,7 @@ namespace UI::Theme
 
             bool isActive = (i == active);
             if (isActive)
-                draw->AddRectFilled(hlMin, hlMax, ImGui::GetColorU32(AccentColorVec4(0.22f)), highlightRound);
+                draw->AddRectFilled(hlMin, hlMax, ImGui::GetColorU32(HighlightColorVec4(0.22f)), highlightRound);
             else if (hovered)
                 draw->AddRectFilled(hlMin, hlMax, ImGui::GetColorU32(ImVec4(1.0f, 1.0f, 1.0f, 0.06f)), highlightRound);
 
@@ -412,31 +743,32 @@ namespace UI::Theme
             {
                 float gw = glyph->X1 - glyph->X0;
                 float gh = glyph->Y1 - glyph->Y0;
-                textPos = ImVec2(boxMin.x + (size - gw) * 0.5f - glyph->X0,
+                textPos = ImVec2(boxMin.x + (cellW - gw) * 0.5f - glyph->X0,
                                   boxMin.y + (iconAreaH - gh) * 0.5f - glyph->Y0);
             }
             else
             {
                 ImVec2 textSize = font->CalcTextSizeA(iconSz, FLT_MAX, 0.0f, icons[i]);
-                textPos = ImVec2(boxMin.x + (size - textSize.x) * 0.5f,
+                textPos = ImVec2(boxMin.x + (cellW - textSize.x) * 0.5f,
                                   boxMin.y + (iconAreaH - textSize.y) * 0.5f);
             }
 
-            ImVec4 iconColV = isActive ? AccentColorVec4(1.0f) : ImGui::GetStyle().Colors[ImGuiCol_Text];
+            ImVec4 iconColV = isActive ? HighlightColorVec4(1.0f) : ImGui::GetStyle().Colors[ImGuiCol_Text];
             iconColV.w = isActive ? 1.0f : 0.55f; // "slightly opaque" when inactive
             draw->AddText(font, iconSz, textPos, ImGui::GetColorU32(iconColV), icons[i]);
 
             // Caption under the icon. Clipped to the cell rather than allowed
-            // to bleed into the neighbouring column -- a caption long enough
-            // (or a font scaled far enough) to overflow is truncated, and the
-            // hover tooltip is what carries the full text in that case.
+            // to bleed into the neighbouring column -- cellW already fits
+            // this cell's own label in full (see IconTabCellWidth), so this
+            // only ever clips a descender/accent riding slightly outside its
+            // own glyph box, not the caption itself.
             if (hasLabels && labels[i])
             {
                 ImVec2 lblSize = font->CalcTextSizeA(labelSz, FLT_MAX, 0.0f, labels[i]);
-                ImVec2 lblPos(boxMin.x + (size - lblSize.x) * 0.5f,
+                ImVec2 lblPos(boxMin.x + (cellW - lblSize.x) * 0.5f,
                               boxMin.y + iconAreaH + 2.0f);
 
-                ImVec4 lblColV = isActive ? AccentColorVec4(1.0f) : ImGui::GetStyle().Colors[ImGuiCol_Text];
+                ImVec4 lblColV = isActive ? HighlightColorVec4(1.0f) : ImGui::GetStyle().Colors[ImGuiCol_Text];
                 lblColV.w = isActive ? 1.0f : 0.55f;
 
                 draw->PushClipRect(ImVec2(boxMin.x, boxMin.y), ImVec2(boxMax.x, boxMax.y), true);
@@ -452,21 +784,35 @@ namespace UI::Theme
         }
 
         if (vertical)
-            ImGui::SetCursorScreenPos(ImVec2(startPos.x + size, startPos.y));
+            ImGui::SetCursorScreenPos(ImVec2(startPos.x + cellW, startPos.y));
         else
             ImGui::SetCursorScreenPos(ImVec2(startPos.x, startPos.y + cellH));
 
         return newActive;
     }
 
+    ImVec2 ToggleSwitchSize()
+    {
+        const float frameH = ImGui::GetFrameHeight();
+        return ImVec2(frameH * 0.72f * 1.8f, frameH);
+    }
+
     bool ToggleSwitch(const char* label, bool* v)
     {
-        const float height = ImGui::GetFrameHeight() * 0.72f;
-        const float width  = height * 1.8f;
-        const float notch   = height * 0.3f;
+        // The reserved layout size is the full frame height, same as a
+        // button/slider/input box, so a toggle sitting next to one of those
+        // in a row lines up with it without the caller having to compensate.
+        // The drawn track stays smaller than that (0.72x) for its own look;
+        // padY centers it within the reserved height.
+        const ImVec2 sz     = ToggleSwitchSize();
+        const float  frameH = sz.y;
+        const float  width  = sz.x;
+        const float  height = frameH * 0.72f;
+        const float  notch  = height * 0.3f;
+        const float  padY   = (frameH - height) * 0.5f;
 
         ImVec2 pos = ImGui::GetCursorScreenPos();
-        ImGui::InvisibleButton(label, ImVec2(width, height));
+        ImGui::InvisibleButton(label, ImVec2(width, frameH));
         bool changed = false;
         if (ImGui::IsItemClicked())
         {
@@ -475,8 +821,8 @@ namespace UI::Theme
         }
 
         ImDrawList* draw = ImGui::GetWindowDrawList();
-        ImVec2 trackMin = pos;
-        ImVec2 trackMax = ImVec2(pos.x + width, pos.y + height);
+        ImVec2 trackMin = ImVec2(pos.x, pos.y + padY);
+        ImVec2 trackMax = ImVec2(pos.x + width, pos.y + padY + height);
 
         ImU32 trackColor = *v
             ? ImGui::GetColorU32(ImVec4(kAccent.x, kAccent.y, kAccent.z, 0.35f))
@@ -512,72 +858,61 @@ namespace UI::Theme
         if (hash != label)
         {
             ImGui::SameLine();
+            ImGui::AlignTextToFramePadding(); // match the reserved frameH height above
             ImGui::TextUnformatted(label, hash);
         }
 
         return changed;
     }
 
-    void MarqueeLabel(const char* id, const char* text, float width)
+    bool IconButton(const char* icon, const char* id, float size)
     {
-        if (width <= 0.0f)
-            width = ImGui::GetContentRegionAvail().x;
+        if (size <= 0.0f)
+            size = ImGui::GetFrameHeight();
 
-        const ImVec2 textSize = ImGui::CalcTextSize(text);
-        const float  lineH    = ImGui::GetTextLineHeight();
-        const ImVec2 pos      = ImGui::GetCursorScreenPos();
+        const ImVec2 pos = ImGui::GetCursorScreenPos();
 
-        // Reserve the box so the cursor advances like a normal text item and
-        // tables/SameLine() lay out correctly regardless of scroll state.
-        ImGui::Dummy(ImVec2(width, lineH));
+        const bool pressed = ImGui::InvisibleButton(id, ImVec2(size, size));
+        const bool hovered = ImGui::IsItemHovered();
+        const bool active  = ImGui::IsItemActive();
+
+        // Theme-driven, not hardcoded -- same two colors any hyperlink-style
+        // text in this UI already uses, so a theme that changes TextLink
+        // (e.g. the cyan "hover/selected" accent) restyles this too.
+        const ImGuiStyle& style = ImGui::GetStyle();
+        const ImU32 col = ImGui::GetColorU32((active || hovered) ? style.Colors[ImGuiCol_TextLink]
+                                                                   : style.Colors[ImGuiCol_TextDisabled]);
 
         ImDrawList* draw = ImGui::GetWindowDrawList();
-        const ImU32 col  = ImGui::GetColorU32(ImGuiCol_Text);
-        const float overflow = textSize.x - width;
 
-        if (overflow <= 0.0f)
+        // Centered on the glyph's actual visual bounding box, not the
+        // generic line-height CalcTextSize returns -- same reasoning and
+        // technique as IconTabBar's own icon centering above: the merged
+        // Material Icons font's vertical metrics don't match the base UI
+        // font's, so centering on line height alone renders this noticeably
+        // off the button's true vertical center.
+        ImFont* font = ImGui::GetFont();
+        ImFontBaked* baked = font->GetFontBaked(ImGui::GetFontSize());
+        unsigned int codepoint = 0;
+        ImTextCharFromUtf8(&codepoint, icon, nullptr);
+        const ImFontGlyph* glyph = baked ? baked->FindGlyphNoFallback(static_cast<ImWchar>(codepoint)) : nullptr;
+
+        ImVec2 textPos;
+        if (glyph)
         {
-            // Fits -- draw statically, no scroll state needed.
-            draw->AddText(pos, col, text);
-            return;
+            const float gw = glyph->X1 - glyph->X0;
+            const float gh = glyph->Y1 - glyph->Y0;
+            textPos = ImVec2(pos.x + (size - gw) * 0.5f - glyph->X0,
+                              pos.y + (size - gh) * 0.5f - glyph->Y0);
         }
+        else
+        {
+            const ImVec2 textSz = ImGui::CalcTextSize(icon);
+            textPos = ImVec2(pos.x + (size - textSz.x) * 0.5f, pos.y + (size - textSz.y) * 0.5f);
+        }
+        draw->AddText(textPos, col, icon);
 
-        // Per-label scroll phase, keyed by a stable id. Phase runs 0..1 forward
-        // (scroll left), holds at each end, then reverses -- a ping-pong so both
-        // ends of the string are readable.
-        static std::unordered_map<ImGuiID, float> s_phase;
-        const ImGuiID key = ImGui::GetID(id);
-        float& phase = s_phase[key];
-
-        // Speed is in pixels/sec; convert to phase/sec over the overflow span so
-        // long and short overflows scroll at a consistent visual rate.
-        const float kPixelsPerSec = 30.0f;
-        const float kPauseSecs    = 1.2f;
-        const float span          = overflow;
-        const float dt            = ImGui::GetIO().DeltaTime;
-
-        // Encode pause into the phase range: [-pauseFrac, 0] left hold,
-        // [1, 1+pauseFrac] right hold, wrapping via a triangle wave over a
-        // period that includes both holds.
-        const float scrollSecs = span / kPixelsPerSec;
-        const float period     = 2.0f * (scrollSecs + kPauseSecs);
-        phase += dt;
-        if (phase >= period) phase -= period * (float)(int)(phase / period);
-
-        float t = phase;
-        float scroll; // 0 = fully left (start), 1 = fully right (end shown)
-        if (t < kPauseSecs)                              scroll = 0.0f;                       // hold start
-        else if (t < kPauseSecs + scrollSecs)            scroll = (t - kPauseSecs) / scrollSecs;
-        else if (t < 2.0f * kPauseSecs + scrollSecs)     scroll = 1.0f;                       // hold end
-        else                                             scroll = 1.0f - (t - (2.0f * kPauseSecs + scrollSecs)) / scrollSecs;
-
-        const float offset = scroll * overflow;
-
-        // Clip to the reserved box so the scrolled text does not bleed into
-        // neighbouring columns/widgets.
-        draw->PushClipRect(pos, ImVec2(pos.x + width, pos.y + lineH), true);
-        draw->AddText(ImVec2(pos.x - offset, pos.y), col, text);
-        draw->PopClipRect();
+        return pressed;
     }
 
     namespace Icons
@@ -591,6 +926,7 @@ namespace UI::Theme
         const char* Logging  = "\xEE\xA3\x92"; // subject    U+E8D2
         const char* Theme    = "\xEE\x90\x8A"; // palette    U+E40A
         const char* About    = "\xEE\xA2\x8E"; // info       U+E88E
+        const char* Reset    = "\xEE\x81\x82"; // replay     U+E042
     }
 }
 

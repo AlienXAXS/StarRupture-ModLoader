@@ -417,13 +417,24 @@ namespace UI::PluginPanelRegistry
         for (PanelEntry* entry : toRender)
         {
             ImGui::SetNextWindowSize(ImVec2(480, 360), ImGuiCond_FirstUseEver);
-            bool open = entry->isOpen;
+
+            bool open;
+            {
+                std::lock_guard<std::mutex> lock(s_mutex);
+                open = entry->isOpen;
+            }
+
             // Subtitle shows which plugin owns the panel -- nullptr (omitted)
             // for panels registered without a recorded owner.
             const char* subtitle = entry->pluginName[0] ? entry->pluginName : nullptr;
             if (UI::Theme::BeginChamferedWindow(entry->desc->windowTitle, entry->desc->windowTitle,
                                                  &open, subtitle))
             {
+                // Not held across renderFn: a plugin's own render callback is
+                // free to call back into this registry (SetPanelClose on
+                // itself, RegisterPanel, etc.), and locking here would either
+                // deadlock that or block whatever else is waiting on s_mutex
+                // for the length of a plugin's render.
                 entry->desc->renderFn(imgui);
                 UI::Theme::EndChamferedWindow();
             }

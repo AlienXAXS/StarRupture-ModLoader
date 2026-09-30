@@ -405,6 +405,9 @@ namespace UI::LoggingTab
         const bool anyOverrides = PluginLogLevels::AnyOverrides();
 
         if (!anyOverrides) ImGui::BeginDisabled();
+        if (UI::Theme::IconButton(UI::Theme::Icons::Reset, "##reset_all_logging"))
+            PluginLogLevels::ClearAll();
+        ImGui::SameLine();
         if (ImGui::Button("Reset All To Default"))
             PluginLogLevels::ClearAll();
         if (!anyOverrides) ImGui::EndDisabled();

@@ -23,8 +23,10 @@ namespace UI::GlobalSettings
     static bool  s_showWorldName      = false;
     static bool  s_showPlayerPosition = false;
     static bool  s_showDebugValues     = false;
+    static bool  s_pauseFrameGenWhileOpen = true;
     static float s_fontScale          = 1.0f;
     static char  s_fontFamily[32]     = "Default";
+    static char  s_theme[64]          = {}; // "" until StartupLoadTheme resolves it
 
     // Live data -- written on game thread, read on render thread.
     static char   s_worldName[128]      = {};
@@ -50,6 +52,28 @@ namespace UI::GlobalSettings
         WritePrivateProfileStringW(section, key, v ? L"1" : L"0", s_iniPath);
     }
 
+    // Every persisted string setting here (font family key, theme name) is
+    // plain ASCII, so a byte-for-byte cast is exact in both directions --
+    // these just centralize that cast instead of every Load()/Save() site
+    // re-writing its own copy of the same bounded loop. `outCount` is the
+    // destination buffer's element count including room for the trailing
+    // nul; truncated, never overflowed, always nul-terminated.
+    static void NarrowToWideAscii(const char* in, wchar_t* out, int outCount)
+    {
+        int i = 0;
+        for (; i < outCount - 1 && in[i]; ++i)
+            out[i] = static_cast<wchar_t>(in[i]);
+        out[i] = L'\0';
+    }
+
+    static void WideToNarrowAscii(const wchar_t* in, char* out, int outCount)
+    {
+        int i = 0;
+        for (; i < outCount - 1 && in[i]; ++i)
+            out[i] = static_cast<char>(in[i]);
+        out[i] = '\0';
+    }
+
     // -----------------------------------------------------------------------
     // Public API
     // -----------------------------------------------------------------------
@@ -71,6 +95,7 @@ namespace UI::GlobalSettings
         s_showWorldName      = ReadBool(L"HUD", L"ShowWorldName",      false);
         s_showPlayerPosition = ReadBool(L"HUD", L"ShowPlayerPosition", false);
         s_showDebugValues    = ReadBool(L"HUD", L"ShowDebugValues",    false);
+        s_pauseFrameGenWhileOpen = ReadBool(L"Rendering", L"PauseFrameGenWhileOpen", true);
 
         wchar_t buf[32] = {};
         GetPrivateProfileStringW(L"UI", L"FontScale", L"1.00", buf, 32, s_iniPath);
@@ -98,9 +123,17 @@ namespace UI::GlobalSettings
         }
         // Convert narrow ASCII key -- all valid keys are plain ASCII
         char narrowBuf[32] = {};
-        for (int i = 0; i < 31 && familyBuf[i]; ++i)
-            narrowBuf[i] = static_cast<char>(familyBuf[i]);
+        WideToNarrowAscii(familyBuf, narrowBuf, ARRAYSIZE(narrowBuf));
         strncpy_s(s_fontFamily, narrowBuf, _TRUNCATE);
+
+        // Active theme name -- "" if never set. UI::Theme::StartupLoadTheme
+        // resolves that case (migrate a legacy palette, or default to
+        // "Default"); unlike FontFamily there is no fallback to pick here.
+        wchar_t themeBuf[64] = {};
+        GetPrivateProfileStringW(L"UI", L"Theme", L"", themeBuf, 64, s_iniPath);
+        char themeNarrow[64] = {};
+        WideToNarrowAscii(themeBuf, themeNarrow, ARRAYSIZE(themeNarrow));
+        strncpy_s(s_theme, themeNarrow, _TRUNCATE);
     }
 
     void Save(const wchar_t* /*iniPath*/)
@@ -109,15 +142,19 @@ namespace UI::GlobalSettings
         WriteBool(L"HUD", L"ShowWorldName",      s_showWorldName);
         WriteBool(L"HUD", L"ShowPlayerPosition", s_showPlayerPosition);
         WriteBool(L"HUD", L"ShowDebugValues",    s_showDebugValues);
+        WriteBool(L"Rendering", L"PauseFrameGenWhileOpen", s_pauseFrameGenWhileOpen);
 
         wchar_t buf[32] = {};
         swprintf_s(buf, L"%.2f", s_fontScale);
         WritePrivateProfileStringW(L"UI", L"FontScale", buf, s_iniPath);
 
         wchar_t familyBuf[32] = {};
-        for (int i = 0; i < 31 && s_fontFamily[i]; ++i)
-            familyBuf[i] = static_cast<wchar_t>(s_fontFamily[i]);
+        NarrowToWideAscii(s_fontFamily, familyBuf, ARRAYSIZE(familyBuf));
         WritePrivateProfileStringW(L"UI", L"FontFamily", familyBuf, s_iniPath);
+
+        wchar_t themeBuf[64] = {};
+        NarrowToWideAscii(s_theme, themeBuf, ARRAYSIZE(themeBuf));
+        WritePrivateProfileStringW(L"UI", L"Theme", themeBuf, s_iniPath);
     }
 
     const char* GetFontFamily() { return s_fontFamily; }
@@ -128,6 +165,14 @@ namespace UI::GlobalSettings
         strncpy_s(s_fontFamily, key, _TRUNCATE);
         Save(nullptr);
         UI::ImGuiBackend::RequestFontRebuild();
+    }
+
+    const char* GetTheme() { return s_theme; }
+
+    void SetTheme(const char* name)
+    {
+        strncpy_s(s_theme, name ? name : "", _TRUNCATE);
+        Save(nullptr);
     }
 
     float GetFontScale() { return s_fontScale; }
@@ -167,6 +212,14 @@ namespace UI::GlobalSettings
     void SetShowDebugValues(bool v)
     {
         s_showDebugValues = v;
+        Save(nullptr);
+    }
+
+    bool GetPauseFrameGenWhileOpen() { return s_pauseFrameGenWhileOpen; }
+
+    void SetPauseFrameGenWhileOpen(bool v)
+    {
+        s_pauseFrameGenWhileOpen = v;
         Save(nullptr);
     }
 

@@ -1030,10 +1030,9 @@ namespace Hooks::Input
 		if (mk == EModKey::Unknown) return false;
 
 		int vk = ModKeyToVK(mk);
-		if (vk == VK_LCONTROL || vk == VK_RCONTROL ||
-		    vk == VK_LSHIFT   || vk == VK_RSHIFT   ||
-		    vk == VK_LMENU    || vk == VK_RMENU)
-			return false;
+		const bool isModifierKey = (vk == VK_LCONTROL || vk == VK_RCONTROL ||
+		                             vk == VK_LSHIFT   || vk == VK_RSHIFT   ||
+		                             vk == VK_LMENU    || vk == VK_RMENU);
 
 		// Do not fire keyboard keybinds while the player is typing into a
 		// game text field (chat, save name, etc.) or an ImGui text field
@@ -1056,6 +1055,16 @@ namespace Hooks::Input
 		EModKeyModifiers mods = SampleCurrentModifiers();
 		Dispatch(mk, mods, event);
 		DispatchCombo(mk, mods, event);
+
+		// A bare modifier press/release still has to reach any registration bound
+		// to it as a plain key (Dispatch/DispatchCombo above match on `key`, so
+		// this can only ever wake a bind registered for e.g. "LeftShift" itself --
+		// a "Shift+K" combo is keyed on K and never sees these events). What a
+		// modifier must never do is get blocked from the game: Shift is sprint,
+		// and Ctrl/Alt drive their own core bindings, so ShouldBlock's answer --
+		// which only ever reflects a combo's own blocking flag -- is ignored here.
+		if (isModifierKey) return false;
+
 		return ShouldBlock(mk, mods);
 	}
 } // namespace Hooks::Input

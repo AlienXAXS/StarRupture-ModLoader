@@ -5,8 +5,10 @@
 // ---------------------------------------------------------------------------
 // GlobalSettings
 //
-// User-configurable HUD display toggles persisted in modloader.ini [HUD].
-// Settings are loaded once at startup and saved immediately on change.
+// User-configurable toggles persisted in modloader.ini, mostly HUD display
+// ones under [HUD] plus a handful of other loader-wide settings under their
+// own section (e.g. [Rendering]). Settings are loaded once at startup and
+// saved immediately on change.
 //
 // The world-name and player-position values are written from the game thread
 // (EngineTick callback) and read from the render thread (ImGui Present hook).
@@ -50,6 +52,14 @@ namespace UI::GlobalSettings
     bool GetShowDebugValues();
     void SetShowDebugValues(bool v);
 
+    // [Rendering] PauseFrameGenWhileOpen -- disables DLSS Frame Generation
+    // (r.Streamline.DLSSG.Enable) for as long as any overlay window is open,
+    // and restores it when the last one closes. Works around generated
+    // frames never getting the overlay drawn on them (see FrameGenPause).
+    // Default on.
+    bool GetPauseFrameGenWhileOpen();
+    void SetPauseFrameGenWhileOpen(bool v);
+
     float GetFontScale();
     void  SetFontScale(float scale);
 
@@ -58,6 +68,15 @@ namespace UI::GlobalSettings
     // (e.g. "Default", "Arial", "YaHei", "Meiryo", "Malgun", "ArialCJK").
     const char* GetFontFamily();
     void        SetFontFamily(const char* key);
+
+    // Active theme name, stored in modloader.ini [UI] Theme=. Returns "" if
+    // the key has never been written (UI::Theme::StartupLoadTheme resolves
+    // that case at startup -- migrating a legacy palette or falling back to
+    // "Default" -- so callers after startup can treat "" as "Default").
+    // A pure setter: does not itself touch the live ImGuiStyle, pair with
+    // UI::Theme::ApplyTheme() to actually switch the running colors.
+    const char* GetTheme();
+    void        SetTheme(const char* name);
 
     // -----------------------------------------------------------------------
     // Live data (written from game thread, read from render thread)
