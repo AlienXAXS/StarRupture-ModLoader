@@ -211,8 +211,11 @@ namespace Hooks::GameMenu
 			SDK::Params::TabButton_SetButtonText parms{};
 			parms.Text = text;
 
+			// Through uint32 so this compiles whether the SDK types the field as
+			// uint32 (older dumps) or EFunctionFlags (newer ones).
+			using FlagsT = decltype(s_fn->FunctionFlags);
 			const auto flags = s_fn->FunctionFlags;
-			s_fn->FunctionFlags |= 0x400;
+			s_fn->FunctionFlags = static_cast<FlagsT>(static_cast<uint32_t>(flags) | 0x400u);
 			button->ProcessEvent(s_fn, &parms);
 			s_fn->FunctionFlags = flags;
 		}

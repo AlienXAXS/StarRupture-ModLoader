@@ -27,7 +27,8 @@ namespace Hooks::EngineTick::FunctionSymbols
 				continue;
 
 			auto* fn = static_cast<SDK::UFunction*>(obj);
-			if (!(fn->FunctionFlags & static_cast<uint32_t>(SDK::EFunctionFlags::Native)))
+			// Through uint32: newer SDK dumps type FunctionFlags as EFunctionFlags, older ones as uint32.
+			if (!(static_cast<uint32_t>(fn->FunctionFlags) & static_cast<uint32_t>(SDK::EFunctionFlags::Native)))
 				continue; // BlueprintImplementable/script functions have no native entry point
 			if (!fn->ExecFunction)
 				continue;
