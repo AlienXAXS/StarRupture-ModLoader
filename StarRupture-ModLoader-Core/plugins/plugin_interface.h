@@ -677,7 +677,7 @@
 //      difference except that the crash is gone and a freed slot becomes
 //      reusable a frame or two later.
 //
-#define PLUGIN_INTERFACE_VERSION_MIN 66
+#define PLUGIN_INTERFACE_VERSION_MIN 70
 #define PLUGIN_INTERFACE_VERSION_MAX 70
 #define PLUGIN_INTERFACE_VERSION 70
 
