@@ -177,6 +177,9 @@
     <ClInclude Include="hooks\input\keybind_registry.h">
       <Filter>Source Files\hooks\input</Filter>
     </ClInclude>
+    <ClInclude Include="hooks\input\mouse_wheel_registry.h">
+      <Filter>Source Files\hooks\input</Filter>
+    </ClInclude>
     <ClInclude Include="hooks\input\input_processor.h">
       <Filter>Source Files\hooks\input</Filter>
     </ClInclude>
@@ -193,6 +196,9 @@
       <Filter>Source Files\UI\modloader</Filter>
     </ClInclude>
     <ClInclude Include="UI\overlay.h">
+      <Filter>Source Files\UI\modloader</Filter>
+    </ClInclude>
+    <ClInclude Include="UI\wheel_test.h">
       <Filter>Source Files\UI\modloader</Filter>
     </ClInclude>
     <ClInclude Include="UI\hook_failure_window.h">
@@ -545,6 +551,9 @@
     <ClCompile Include="hooks\input\keybind_registry.cpp">
       <Filter>Source Files\hooks\input</Filter>
     </ClCompile>
+    <ClCompile Include="hooks\input\mouse_wheel_registry.cpp">
+      <Filter>Source Files\hooks\input</Filter>
+    </ClCompile>
     <ClCompile Include="hooks\input\input_processor.cpp">
       <Filter>Source Files\hooks\input</Filter>
     </ClCompile>
@@ -564,6 +573,9 @@
       <Filter>Source Files\UI\modloader</Filter>
     </ClCompile>
     <ClCompile Include="UI\overlay.cpp">
+      <Filter>Source Files\UI\modloader</Filter>
+    </ClCompile>
+    <ClCompile Include="UI\wheel_test.cpp">
       <Filter>Source Files\UI\modloader</Filter>
     </ClCompile>
     <ClCompile Include="UI\hook_failure_window.cpp">

@@ -14,6 +14,7 @@
 #include "hook_failure_window.h"
 #include "../core/client_ui.h"
 #include "../hooks/input/keybind_registry.h"
+#include "../hooks/input/mouse_wheel_registry.h"
 #include <cstdio>
 #include <cstring>
 
@@ -167,6 +168,7 @@ namespace UI::Overlay
 
         ImGui::Text("Plugins loaded: %d", PluginManager::GetLoadedPluginCount());
         ImGui::Text("Keybinds: %d simple / %d named / %d combo", simple, named, advanced);
+        ImGui::Text("Wheel handlers: %d", Hooks::MouseWheel::GetRegistrationCount());
 
         // Blocking entries swallow their key before UE5 ever sees it, so one left
         // set by an unloaded plugin is a key that silently stopped working. Named

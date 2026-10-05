@@ -52,6 +52,11 @@ struct ImGuiRenderCallbacks
     // Uninstall the UGameViewportClient::InputKey detour.
     // Called at the start of Shutdown() before releasing D3D12 resources.
     void    (*RemoveInputHook)();
+
+    // Deliver a WM_MOUSEWHEEL / WM_MOUSEHWHEEL to plugin wheel handlers.
+    // uiCapturing is true under exclusive capture. Returns true if a handler
+    // consumed it and the game must not see it (never while uiCapturing).
+    bool    (*DispatchMouseWheel)(UINT msg, WPARAM wParam, LPARAM lParam, bool uiCapturing);
 };
 
 // ---------------------------------------------------------------------------

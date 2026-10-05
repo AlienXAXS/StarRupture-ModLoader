@@ -49,6 +49,7 @@ static ImGuiRenderCallbacks g_callbacks = {};
 // ---------------------------------------------------------------------------
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 static HRESULT STDMETHODCALLTYPE HookedPresent(IDXGISwapChain* swapChain, UINT syncInterval, UINT flags);
+static void ReclaimRetiredTextures();
 static void    STDMETHODCALLTYPE HookedECL(ID3D12CommandQueue* pQueue, UINT NumCmdLists, ID3D12CommandList* const* ppCmdLists);
 static HRESULT STDMETHODCALLTYPE HookedCreateSwapChainForHwnd(void* pFactory, IUnknown* pDevice, HWND hWnd,
 	const void* pDesc, const void* pFullscreenDesc, void* pRestrictToOutput, void* ppSwapChain);
@@ -95,7 +96,9 @@ namespace
 	ID3D12DescriptorHeap* g_rtvHeap = nullptr;
 	ID3D12Fence* g_fence = nullptr;
 	HANDLE                     g_fenceEvent = nullptr;
-	UINT64                     g_fenceValue = 0;
+	// Atomic because TextureFreeTexture reads it from the game thread to decide
+	// which signal a retiring texture must wait for (see ReclaimRetiredTextures).
+	std::atomic<UINT64>        g_fenceValue = 0;
 	FrameContext               g_frames[MAX_FRAMES];
 	UINT                       g_frameCount = 0;
 	UINT                       g_rtvDescSize = 0;
@@ -121,10 +124,22 @@ namespace
 		bool                         owned     = true;  // always true; Release() on free
 		char                         name[64]  = {};    // plugin-supplied label for logging/sharing
 		int                          refCount  = 0;     // number of outstanding Load*/FreeTexture pairs
+
+		// v70: set when the last FreeTexture drops the refcount to zero. The slot
+		// stays occupied (inUse) and the resource and SRV stay alive until the
+		// render thread sees g_fence complete retireFence -- see
+		// ReclaimRetiredTextures. Read through std::atomic_ref: the render thread
+		// tests it in ValidateHandle while the game thread sets it.
+		bool                         retiring    = false;
+		UINT64                       retireFence = 0;
 	};
 
 	PluginTextureRecord g_pluginTextures[MAX_PLUGIN_TEXTURES] = {};
 	std::mutex          g_textureMutex;
+
+	// Number of records with retiring == true. Lets the render thread skip the
+	// slot sweep entirely on the (usual) frames where nothing is waiting.
+	std::atomic<int>    g_retiringCount = 0;
 	UINT                g_srvDescSize = 0;
 
 	// Serialises all ImGui context access between the render thread (HookedPresent)
@@ -317,6 +332,18 @@ static LRESULT CALLBACK HookedWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 		std::lock_guard<std::recursive_mutex> lock(g_imguiMutex);
 		if (ImGui_ImplWin32_WndProcHandler(hWnd, msg, wParam, lParam))
 			return true;
+	}
+
+	// Plugin wheel handlers (v70). Ahead of the capture switch below on purpose:
+	// in cooperative mode that switch hands every mouse message to the game, so
+	// a consume has to be honoured here. Under exclusive capture ImGui already
+	// had the message above and the game gets none of the wheel anyway, so the
+	// registry reports handlers but never consumes.
+	if (msg == WM_MOUSEWHEEL || msg == WM_MOUSEHWHEEL)
+	{
+		if (g_callbacks.DispatchMouseWheel &&
+		    g_callbacks.DispatchMouseWheel(msg, wParam, lParam, exclusive))
+			return 0;
 	}
 
 	{
@@ -1088,6 +1115,7 @@ static void CleanupD3D12Resources()
 				g_pluginTextures[i].resource->Release();
 			g_pluginTextures[i] = {};
 		}
+		g_retiringCount = 0;   // retiring records are inUse, so the loop above released them too
 	}
 	if (g_wicFactory) { g_wicFactory->Release(); g_wicFactory = nullptr; }
 
@@ -1218,6 +1246,11 @@ static HRESULT STDMETHODCALLTYPE HookedPresent(IDXGISwapChain* swapChain, UINT s
 		g_fence->SetEventOnCompletion(fc.fenceValue, g_fenceEvent);
 		WaitForSingleObject(g_fenceEvent, 1000);
 	}
+
+	// Release plugin textures freed since the GPU last caught up. Before
+	// RenderFrame, so a slot freed here can be reused by a Load* without this
+	// frame ever having seen the old SRV.
+	ReclaimRetiredTextures();
 
 	// Acquire the back buffer just for this frame -- released before returning
 	// so that ResizeBuffers is never blocked by our reference.
@@ -2147,7 +2180,9 @@ static PluginTextureRecord* FindTextureByName(const char* name)
 	for (int i = 0; i < MAX_PLUGIN_TEXTURES; ++i)
 	{
 		PluginTextureRecord& rec = g_pluginTextures[i];
-		if (rec.inUse && _stricmp(rec.name, name) == 0)
+		// A retiring record is already gone as far as plugins are concerned;
+		// handing it out again would revive a texture the reclaim is about to free.
+		if (rec.inUse && !rec.retiring && _stricmp(rec.name, name) == 0)
 			return &rec;
 	}
 	return nullptr;
@@ -2160,7 +2195,67 @@ static PluginTextureRecord* ValidateHandle(PluginTextureHandle h)
 	auto* rec = static_cast<PluginTextureRecord*>(h);
 	if (rec < g_pluginTextures || rec >= g_pluginTextures + MAX_PLUGIN_TEXTURES) return nullptr;
 	if (!rec->inUse) return nullptr;
+	// A retired handle draws nothing. This is the half of the retirement scheme
+	// that runs on the render thread: once a frame sees retiring == true it can
+	// no longer record the descriptor, so only frames that validated BEFORE the
+	// flag was set can reference it, and retireFence covers exactly those.
+	if (std::atomic_ref<bool>(rec->retiring).load()) return nullptr;
 	return rec;
+}
+
+// ---------------------------------------------------------------------------
+// Deferred texture release (v70)
+//
+// FreeTexture used to Release() the resource and clear the record on the spot.
+// But the render thread holds no texture lock between a plugin's render
+// callback recording a descriptor (Image / DL_AddImage) and the GPU finishing
+// that frame, so a game-thread FreeTexture landing in that window destroyed a
+// resource a recorded command list still referenced, and a Load* reusing the
+// slot rewrote the SRV under it. The result was a GPU fault (ReportGPUCrash)
+// for plugins creating and destroying textures at runtime.
+//
+// Now the last FreeTexture only marks the record retiring and notes the fence
+// value it must outlive. Correctness rests on one ordering argument:
+//
+//   FreeTexture:  store retiring = true      ; then read g_fenceValue (= V)
+//   Render frame: ++g_fenceValue (font rebuild, if any) ; ValidateHandle reads
+//                 retiring ; ... ; ++g_fenceValue and Signal (frame's value)
+//
+// All seq_cst. A frame that recorded the descriptor saw retiring == false, so
+// its ValidateHandle came before our store, so every increment before that
+// ValidateHandle is visible to our read -- meaning that frame's own Signal is
+// at most V + 1. Any frame that validates after the store draws nothing. So
+// once the fence has completed V + 1, nothing on the GPU can reference it.
+//
+// Reclaim runs on the render thread, at the top of HookedPresent: the same
+// thread that runs ValidateHandle for drawing, so clearing the record cannot
+// race a draw. It uses try_lock because Load* holds g_textureMutex across a
+// blocking GPU upload, and stalling Present behind that is a hitch for no
+// gain -- a reclaim missed this frame happens next frame.
+// ---------------------------------------------------------------------------
+static void ReclaimRetiredTextures()
+{
+	if (g_retiringCount.load() == 0 || !g_fence) return;
+
+	std::unique_lock<std::mutex> lock(g_textureMutex, std::try_to_lock);
+	if (!lock.owns_lock()) return;
+
+	const UINT64 completed = g_fence->GetCompletedValue();
+	int reclaimed = 0;
+	for (int i = 0; i < MAX_PLUGIN_TEXTURES; ++i)
+	{
+		PluginTextureRecord& rec = g_pluginTextures[i];
+		if (!rec.inUse || !rec.retiring || rec.retireFence > completed)
+			continue;
+
+		IMGUI_LOG_DEBUG("[ImGuiBackend] Texture '%s' retired (fence %llu complete), slot %d released",
+			rec.name, static_cast<unsigned long long>(rec.retireFence), i);
+		if (rec.owned && rec.resource) rec.resource->Release();
+		rec = {};
+		++reclaimed;
+	}
+	if (reclaimed)
+		g_retiringCount.fetch_sub(reclaimed);
 }
 
 // ---------- IPluginImGuiTextures implementation ----------
@@ -2693,9 +2788,24 @@ static void TextureFreeTexture(PluginTextureHandle handle)
 		return;
 	}
 
-	// Only Release resources we uploaded ourselves; engine-owned resources (owned=false) are not ours to free.
-	if (rec->owned && rec->resource) { rec->resource->Release(); rec->resource = nullptr; }
-	*rec = {};
+	// No frame has ever been recorded, so nothing on the GPU can reference this
+	// texture -- and no Present will come along to reclaim it either.
+	if (!g_initialized)
+	{
+		// Only Release resources we uploaded ourselves; engine-owned resources (owned=false) are not ours to free.
+		if (rec->owned && rec->resource) { rec->resource->Release(); rec->resource = nullptr; }
+		*rec = {};
+		return;
+	}
+
+	// Otherwise retire it: the handle is dead from here on, but the resource and
+	// its SRV slot live until the GPU is past every frame that could have drawn
+	// it. The store must precede the fence read -- see ReclaimRetiredTextures.
+	std::atomic_ref<bool>(rec->retiring).store(true);
+	rec->retireFence = g_fenceValue.load() + 1;
+	g_retiringCount.fetch_add(1);
+	IMGUI_LOG_DEBUG("[ImGuiBackend] FreeTexture '%s': retiring until fence %llu",
+		rec->name, static_cast<unsigned long long>(rec->retireFence));
 }
 
 static void TextureGetSize(PluginTextureHandle handle, int* out_w, int* out_h)

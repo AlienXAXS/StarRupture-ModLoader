@@ -296,6 +296,43 @@ See the `EModKey` enum in `plugin_interface.h` for the full list of bindable key
 ModLoader window is open, keyboard and raw mouse input is swallowed so camera movement stops —
 keybind callbacks will still fire.
 
+### Mouse wheel (v70)
+
+Keybinds have no wheel keys, and `IModLoaderImGui::GetMouseWheel` only reads non-zero while a
+ModLoader window has the cursor. For the wheel during normal gameplay, register a wheel handler.
+Return `true` to consume the notch so the game never sees it:
+
+```cpp
+static bool OnWheel(const PluginMouseWheelEvent* ev, void* /*userData*/)
+{
+    // Ctrl+wheel zooms our map; everything else goes to the game.
+    if (!(ev->modifiers & PluginWheelMod_Ctrl) || ev->delta == 0.0f)
+        return false;
+
+    g_zoom += ev->delta * 0.1f;   // one notch = 1.0; rawDelta has the unscaled value
+    return true;
+}
+
+// In PluginInit:
+if (hooks->Input)
+    hooks->Input->RegisterMouseWheel(OnWheel, nullptr);
+
+// In PluginShutdown:
+if (hooks->Input)
+    hooks->Input->UnregisterMouseWheel(OnWheel, nullptr);
+```
+
+- Each event carries the signed raw delta and the same value in notches, for both axes. Only
+  one axis is non-zero per event, and touchpads send fractions of a notch. It also carries
+  sided modifier bits (`PluginWheelMod_LeftCtrl`, `..._RightAlt`, and so on, plus the un-sided
+  `PluginWheelMod_Ctrl` / `_Shift` / `_Alt` / `_Win` masks) and the cursor's screen position.
+- Handlers run on the game thread, in registration order. The first one to return `true`
+  stops the chain.
+- While a ModLoader window has exclusive input capture, `ev->uiCapturing` is `true` and the
+  return value is ignored, so ImGui keeps scrolling. The game is not receiving input then anyway.
+- Registrations are dropped automatically when the plugin is unloaded or reloaded, so a stale
+  handler cannot be called. Unregister in `PluginShutdown` anyway.
+
 ---
 
 ## IModLoaderImGui — Full API Reference
@@ -491,3 +528,9 @@ static void MyPanelRender(IModLoaderImGui* imgui)
 
 - **`hooks->UI` and `hooks->Input` are nullptr on server builds.** Always null-check both
   pointers before calling any method on them.
+
+- **`FreeTexture` is safe at any time (v70).** It retires the texture rather than destroying it:
+  the handle stops drawing immediately, and the GPU resource and its slot are released once
+  every frame that could have used them has finished. You can free from the game thread, from
+  a render callback, or during a world transition, with no frame-counting or delays. The slot
+  becomes reusable a frame or two later, so `GetFreeSlotCount` does not count it until then.

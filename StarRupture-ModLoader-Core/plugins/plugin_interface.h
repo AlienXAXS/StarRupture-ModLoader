@@ -652,9 +652,34 @@
 //      "not a registered command", and turning that into "ran it on the
 //      engine" would change what the plugin does without it being rebuilt.
 //
+// v70 (2026-10-05): Mouse wheel input, and FreeTexture made safe to call at
+//      any time. Both reported by a plugin author building a client plugin
+//      that zooms with the wheel and creates textures at runtime.
+//
+//      Added PluginWheelModifiers, PluginMouseWheelEvent,
+//      PluginMouseWheelCallback and IPluginInputEvents::RegisterMouseWheel /
+//      UnregisterMouseWheel (appended at the BOTTOM of IPluginInputEvents, so
+//      nothing a v66-v69 plugin reads by offset moved and MIN stays at 66).
+//      Before this, a plugin had no way to see the wheel during gameplay:
+//      GetMouseWheel reads ImGuiIO, which is only fed the mouse while a window
+//      has exclusive capture, and keybinds have no wheel keys and cannot
+//      consume. The one workaround was subclassing the game window.
+//
+//      BEHAVIOUR CHANGE, loader-side, so it applies to plugins built against
+//      older headers too: FreeTexture no longer destroys the texture
+//      immediately. It retires it -- the handle stops drawing at once, and the
+//      resource and descriptor slot are released only after the GPU has
+//      finished every frame that could have drawn them. Destroying on the spot
+//      raced the render thread: a game-thread FreeTexture between a render
+//      callback recording the descriptor and that frame's GPU work completing
+//      released a resource the command list still used (or let a Load* rewrite
+//      the SRV under it), and the GPU faulted. No plugin can tell the
+//      difference except that the crash is gone and a freed slot becomes
+//      reusable a frame or two later.
+//
 #define PLUGIN_INTERFACE_VERSION_MIN 66
-#define PLUGIN_INTERFACE_VERSION_MAX 69
-#define PLUGIN_INTERFACE_VERSION 69
+#define PLUGIN_INTERFACE_VERSION_MAX 70
+#define PLUGIN_INTERFACE_VERSION 70
 
 enum class PluginLogLevel { Trace = 0, Debug = 1, Info = 2, Warn = 3, Error = 4 };
 enum class ConfigValueType { String, Integer, Float, Boolean, Keybind };
@@ -1145,6 +1170,68 @@ typedef void (*PluginKeybindCallback)(EModKey key, EModKeyEvent event);
 // moment of the transition, and the event type (v28).
 typedef void (*PluginKeybindComboCallback)(EModKey key, EModKeyModifiers mods, EModKeyEvent event);
 
+// Mouse wheel (v70). Sided modifier bits, unlike EModKeyModifiers: a wheel
+// handler is exactly the code that wants to tell LeftCtrl from RightCtrl.
+// The un-sided masks are convenience ORs for "either side".
+enum PluginWheelModifiers : uint32_t
+{
+	PluginWheelMod_None       = 0,
+	PluginWheelMod_LeftCtrl   = 1 << 0,
+	PluginWheelMod_RightCtrl  = 1 << 1,
+	PluginWheelMod_LeftShift  = 1 << 2,
+	PluginWheelMod_RightShift = 1 << 3,
+	PluginWheelMod_LeftAlt    = 1 << 4,
+	PluginWheelMod_RightAlt   = 1 << 5,
+	PluginWheelMod_LeftWin    = 1 << 6,
+	PluginWheelMod_RightWin   = 1 << 7,
+
+	PluginWheelMod_Ctrl  = PluginWheelMod_LeftCtrl  | PluginWheelMod_RightCtrl,
+	PluginWheelMod_Shift = PluginWheelMod_LeftShift | PluginWheelMod_RightShift,
+	PluginWheelMod_Alt   = PluginWheelMod_LeftAlt   | PluginWheelMod_RightAlt,
+	PluginWheelMod_Win   = PluginWheelMod_LeftWin   | PluginWheelMod_RightWin,
+};
+
+// One wheel message. Exactly one of the two axes is non-zero per event:
+// Windows delivers vertical (WM_MOUSEWHEEL) and horizontal (WM_MOUSEHWHEEL)
+// as separate messages.
+struct PluginMouseWheelEvent
+{
+	// sizeof(PluginMouseWheelEvent) as the loader built it. Fields may be
+	// appended in later versions; check size before reading one newer than
+	// the header you built against.
+	uint32_t size;
+
+	// Signed raw delta straight from the message. A notched wheel gives
+	// multiples of 120 (WHEEL_DELTA); precision touchpads and free-spinning
+	// wheels give smaller values, so accumulate rather than assuming 120.
+	// Vertical: positive = wheel rotated forward, away from the user.
+	// Horizontal: positive = tilted / scrolled right.
+	int32_t  rawDelta;
+	int32_t  rawDeltaH;
+
+	// The same values divided by 120, so one notch = 1.0 -- the unit ImGui uses.
+	float    delta;
+	float    deltaH;
+
+	// PluginWheelMod_* bits held when the message was generated.
+	uint32_t modifiers;
+
+	// Cursor position in screen coordinates, from the message itself.
+	int32_t  screenX;
+	int32_t  screenY;
+
+	// True when a modloader/plugin window has exclusive input capture (the
+	// UI cursor is up). The game is not receiving the wheel in that state
+	// anyway, so the callback's return value is ignored and ImGui scrolls
+	// as normal; the event is delivered so a handler can track state.
+	bool     uiCapturing;
+};
+
+// Return true to consume the event: the game does not receive it, and
+// handlers registered after this one are not called. Return false to pass.
+// Called on the thread that pumps the game window's messages (the game thread).
+typedef bool (*PluginMouseWheelCallback)(const PluginMouseWheelEvent* event, void* userData);
+
 struct IPluginInputEvents
 {
 	// v15 — register by enum; fires on key transition regardless of modifier state.
@@ -1166,6 +1253,16 @@ struct IPluginInputEvents
 	// back; most plugins should use RegisterKeybindByName instead.
 	void (*RegisterKeybindCombo)(EModKey key, EModKeyModifiers mods, EModKeyEvent event, PluginKeybindComboCallback callback);
 	void (*UnregisterKeybindCombo)(EModKey key, EModKeyModifiers mods, EModKeyEvent event, PluginKeybindComboCallback callback);
+
+	// v70 -- mouse wheel, delivered during normal gameplay (not only while a
+	// modloader window has capture), with the option to consume it so the game
+	// never sees it. Handlers run in registration order; the first to return
+	// true stops the chain. (callback, userData) is the registration's
+	// identity: registering the same pair twice is ignored, and Unregister
+	// takes the same pair. A plugin's registrations are dropped automatically
+	// when it is unloaded or reloaded, but unregister in PluginShutdown anyway.
+	void (*RegisterMouseWheel)(PluginMouseWheelCallback callback, void* userData);
+	void (*UnregisterMouseWheel)(PluginMouseWheelCallback callback, void* userData);
 };
 
 // Opaque handle for a texture registered through IPluginImGuiTextures (v37).
@@ -1545,9 +1642,10 @@ struct IModLoaderImGui
 	// v52: Mouse wheel
 	// -------------------------------------------------------------------------
 	// Per-frame wheel delta in ImGui units (one notch = 1.0), read straight off
-	// ImGuiIO. ImGui consumes WM_MOUSEWHEEL itself, so this is the only way a
-	// plugin can see the wheel at all -- needed by anything that draws its own
-	// zoomable or scrollable surface with the draw-list API.
+	// ImGuiIO -- needed by anything that draws its own zoomable or scrollable
+	// surface with the draw-list API. ImGui is only fed the mouse while a
+	// window has exclusive input capture, so these read 0 during gameplay; use
+	// IPluginInputEvents::RegisterMouseWheel (v70) for the wheel at any time.
 	float (*GetMouseWheel)();
 	float (*GetMouseWheelH)();
 };
@@ -1577,11 +1675,18 @@ typedef void* PluginTextureHandle;
 //   PluginShutdown            ->  FreeTexture(handle)
 //
 // Image/ImageButton must be called from inside a plugin render callback while
-// an ImGui frame is in progress.  FreeTexture must not be called while the
-// texture may still be in flight on the GPU (i.e. not from the render callback
-// on the same frame you stop using it -- wait one frame or call from game thread).
+// an ImGui frame is in progress.
 //
-// Up to GetCapacity() textures may be live at once.
+// FreeTexture may be called from any thread at any time, including from a
+// render callback that drew the same texture this frame (v70). It retires the
+// texture: the handle is dead immediately (drawing it is a silent no-op), and
+// the loader keeps the GPU resource and its descriptor slot alive until every
+// frame that could have drawn it has finished on the GPU, then releases them.
+// Before v70 FreeTexture destroyed the resource on the spot, which could crash
+// the GPU if a frame already recorded with it had not been submitted yet.
+//
+// Up to GetCapacity() textures may be live at once. A retiring texture still
+// occupies its slot for a frame or two, so GetFreeSlotCount does not count it.
 // All Load* functions take a mandatory name parameter for log identification.
 // They throw std::out_of_range if no slots are available.
 // They return NULL (without throwing) only when D3D12 is not yet ready or
@@ -1630,11 +1735,13 @@ struct IPluginImGuiTextures
     // Throws std::out_of_range if all slots are in use.
     PluginTextureHandle (*LoadFromUTexture2D)(SDK::UTexture2D* texture, const char* name);
 
-    // Release the texture and free its slot. Safe to call with NULL.
-    // Do not call while the texture may still be rendered on the GPU.
+    // Release the texture. Safe to call with NULL, from any thread, and while
+    // the texture may still be in flight on the GPU (v70): the handle stops
+    // drawing immediately, and the resource and slot are released once the
+    // GPU has finished every frame that could reference them.
     // If the texture is shared (loaded by name more than once), this only
-    // decrements its refcount -- the slot is freed once every owner has
-    // called FreeTexture.
+    // decrements its refcount -- the texture is retired once every owner has
+    // called FreeTexture. Calling it again on a retired handle does nothing.
     void (*FreeTexture)(PluginTextureHandle handle);
 
     // Query the texture's natural dimensions. Either out pointer may be NULL.

@@ -16,6 +16,7 @@
 #include "console_window.h"
 #include "logging_tab.h"
 #include "tick_profiler_window.h"
+#include "wheel_test.h"
 #include "network_channel/net_timeout.h"
 #include "utils/game_thread_dispatch.h"
 #ifdef _DEBUG
@@ -1644,6 +1645,9 @@ namespace UI::ModLoaderWindow
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("Clears both persistent line batchers and every world-anchored\n"
                               "debug string, for every plugin -- not just the test scene.");
+
+        ImGui::Spacing();
+        UI::WheelTest::DrawControls();
 #endif
     }
 

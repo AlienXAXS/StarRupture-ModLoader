@@ -30,6 +30,7 @@
 #endif
 #ifdef MODLOADER_CLIENT_BUILD
 #include "hooks/input/keybind_registry.h"
+#include "hooks/input/mouse_wheel_registry.h"
 #include "hooks/input/input_processor.h"
 #include "UI/plugin_panel_registry.h"
 #include "UI/plugin_widget_registry.h"
@@ -1142,7 +1143,9 @@ namespace ModLoaderLogger
 		HooksRegisterKeybindByName,   // v29: now handles plain keys and combos transparently
 		HooksUnregisterKeybindByName,
 		HooksRegisterKeybindCombo,    // v28: advanced — enum + mods, callback receives mods
-		HooksUnregisterKeybindCombo   // v28
+		HooksUnregisterKeybindCombo,  // v28
+		Hooks::MouseWheel::Register,  // v70
+		Hooks::MouseWheel::Unregister // v70
 	};
 
 	// --- UI sub-interface wrappers (v15, client only) ---

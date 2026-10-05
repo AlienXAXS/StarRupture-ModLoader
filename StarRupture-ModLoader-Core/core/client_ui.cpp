@@ -11,6 +11,7 @@
 #include "../hooks/input/input_processor.h"
 #include "../hooks/input/input_hook.h"
 #include "../hooks/input/keybind_registry.h"
+#include "../hooks/input/mouse_wheel_registry.h"
 #include "../UI/global_settings.h"
 #include "../UI/hook_failure_window.h"
 #include "../UI/imgui_backend.h"
@@ -24,6 +25,7 @@
 #include "../UI/theme.h"
 #include "../UI/tick_profiler_window.h"
 #include "../UI/update_notice_window.h"
+#include "../UI/wheel_test.h"
 #include "../logging/log.h"
 
 static bool         s_imguiEnabled = true;
@@ -145,12 +147,19 @@ void InitClientUI()
             UI::ConsoleWindow::Render();
             UI::PluginPanelRegistry::RenderPanelWindows(api);
             UI::PluginWidgetRegistry::RenderWidgets(api);
+#ifdef _DEBUG
+            UI::WheelTest::RenderOverlay();
+#endif
         };
         cbs.ShouldCaptureInput     = []() -> bool { return ShouldCaptureInputNow(); };
         cbs.ShouldPassthroughInput = []() -> bool { return ShouldPassthroughInputNow(); };
         cbs.DispatchKey = [](UINT msg, WPARAM wParam, LPARAM lParam) -> bool
         {
             return Hooks::Input::ProcessWindowMessage(msg, wParam, lParam);
+        };
+        cbs.DispatchMouseWheel = [](UINT msg, WPARAM wParam, LPARAM lParam, bool uiCapturing) -> bool
+        {
+            return Hooks::MouseWheel::Dispatch(msg, wParam, lParam, uiCapturing);
         };
         cbs.GetFontFamily = []() -> const char*
         {
