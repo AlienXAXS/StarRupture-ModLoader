@@ -356,6 +356,84 @@ namespace Hooks::CrashReporter
 		(void)suspended;
 	}
 
+	// Id of the thread whose stack contains `addr`, or 0 if none does.
+	//
+	// The detour runs on the engine's crash-reporting thread, not the one that
+	// faulted, so a debugger stopped in it is looking at the wrong stack. The
+	// faulting thread is still parked inside its exception filter with the
+	// original frames intact below it, and the CONTEXT the kernel captured for
+	// the fault lives on that thread's stack -- so the stack whose TEB range
+	// covers ContextRecord is the thread worth switching to.
+	static DWORD FindThreadOwningStackAddress(const void* addr)
+	{
+		struct ThreadBasicInformation
+		{
+			LONG      ExitStatus;
+			PVOID     TebBaseAddress;
+			HANDLE    UniqueProcess;
+			HANDLE    UniqueThread;
+			ULONG_PTR AffinityMask;
+			LONG      Priority;
+			LONG      BasePriority;
+		};
+		using NtQueryInformationThread_t = LONG(NTAPI*)(HANDLE, int, PVOID, ULONG, PULONG);
+		constexpr int kThreadBasicInformation = 0;
+
+		const auto ntQuery = reinterpret_cast<NtQueryInformationThread_t>(
+			GetProcAddress(GetModuleHandleW(L"ntdll.dll"), "NtQueryInformationThread"));
+		if (!ntQuery || !addr)
+			return 0;
+
+		HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+		if (snapshot == INVALID_HANDLE_VALUE)
+			return 0;
+
+		const DWORD currentPid = GetCurrentProcessId();
+		DWORD owner = 0;
+
+		THREADENTRY32 entry{};
+		entry.dwSize = sizeof(entry);
+		if (Thread32First(snapshot, &entry))
+		{
+			do
+			{
+				if (entry.th32OwnerProcessID != currentPid)
+					continue;
+
+				HANDLE thread = OpenThread(THREAD_QUERY_INFORMATION, FALSE, entry.th32ThreadID);
+				if (!thread)
+					continue;
+
+				ThreadBasicInformation tbi{};
+				if (ntQuery(thread, kThreadBasicInformation, &tbi, sizeof(tbi), nullptr) >= 0 && tbi.TebBaseAddress)
+				{
+					const NT_TIB* tib = static_cast<const NT_TIB*>(tbi.TebBaseAddress);
+					if (addr >= tib->StackLimit && addr < tib->StackBase)
+						owner = entry.th32ThreadID;
+				}
+				CloseHandle(thread);
+			} while (!owner && Thread32Next(snapshot, &entry));
+		}
+
+		CloseHandle(snapshot);
+		return owner;
+	}
+
+	// Separate function because __try cannot share a frame with objects that
+	// need unwinding (the detour's std::wstring). The filter covers a debugger
+	// detaching between IsDebuggerPresent() and the int3: the breakpoint would
+	// otherwise be an unhandled exception raised from inside crash handling.
+	static void BreakIntoDebugger()
+	{
+		__try
+		{
+			__debugbreak();
+		}
+		__except (GetExceptionCode() == EXCEPTION_BREAKPOINT ? EXCEPTION_EXECUTE_HANDLER : EXCEPTION_CONTINUE_SEARCH)
+		{
+		}
+	}
+
 	static int64_t __fastcall Detour(void* inContext, void* exceptionInfo, int32_t reportUI)
 	{
 		if (!g_fatalCrashReturnAddr || reinterpret_cast<uintptr_t>(_ReturnAddress()) != g_fatalCrashReturnAddr)
@@ -431,7 +509,35 @@ namespace Hooks::CrashReporter
 		// terminates the process ~30s after the game thread stops ticking)
 		// can't rip the dialog away. All logging and string building must be
 		// done by this point -- see SuspendAllOtherThreads.
+		//
+		// With a debugger attached, break before the dialog so the crash can be
+		// inspected live instead of only through the copied text. Gated on
+		// IsDebuggerPresent() only, so player builds without one are untouched.
+		// The faulting thread is located and logged now, while the logger and
+		// toolhelp are still safe to use; the break itself comes after the
+		// suspend so the hang detector cannot kill the process while it sits at
+		// the breakpoint (suspended threads are still fully inspectable).
+		const bool debuggerAttached = IsDebuggerPresent() != FALSE;
+		if (debuggerAttached)
+		{
+			const void* contextRecord = exceptionPointers ? exceptionPointers->ContextRecord : nullptr;
+			const DWORD faultingTid = FindThreadOwningStackAddress(contextRecord);
+
+			ModLoaderLogger::LogError(L"[CrashReporter]   Debugger attached -- breaking before the crash dialog");
+			if (faultingTid)
+				ModLoaderLogger::LogError(L"[CrashReporter]   Faulting thread id: %lu (0x%lX) -- switch to it to see the crashing stack",
+					faultingTid, faultingTid);
+			else
+				ModLoaderLogger::LogError(L"[CrashReporter]   Faulting thread could not be identified");
+			if (exceptionPointers)
+				ModLoaderLogger::LogError(L"[CrashReporter]   WinDbg: .exr 0x%p ; .cxr 0x%p",
+					exceptionPointers->ExceptionRecord, exceptionPointers->ContextRecord);
+		}
+
 		SuspendAllOtherThreads();
+
+		if (debuggerAttached)
+			BreakIntoDebugger(); // continue (F5) to fall through to the crash dialog
 
 		CrashDialog::Show(CrashDialog::Mode::FatalCrash, details);
 

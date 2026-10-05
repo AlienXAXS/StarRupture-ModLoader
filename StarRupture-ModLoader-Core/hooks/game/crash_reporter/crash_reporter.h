@@ -26,6 +26,10 @@
 // On a real fatal crash the detour shows the crash dialog (crash_dialog.h)
 // with the exception details and a copyable stack trace, then returns
 // without ever spawning CrashReportClient.exe.
+//
+// With a debugger attached (IsDebuggerPresent), the detour breaks into it
+// first -- after logging the faulting thread id and the WinDbg .exr/.cxr
+// addresses -- and continuing from the break falls through to the dialog.
 // ---------------------------------------------------------------------------
 
 namespace Hooks::CrashReporter
