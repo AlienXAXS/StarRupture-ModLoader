@@ -1032,6 +1032,19 @@ namespace PluginManager
 		return found;
 	}
 
+	HMODULE GetPluginModule(const char* nameOrFile)
+	{
+		// g_pluginLock is a critical section, so re-entering it through
+		// FindPluginIndex is fine and keeps the index valid while we read it.
+		EnterCriticalSection(&g_pluginLock);
+		HMODULE mod = nullptr;
+		const int index = FindPluginIndex(nameOrFile);
+		if (index >= 0)
+			mod = g_loadedPlugins[index]->hModule;
+		LeaveCriticalSection(&g_pluginLock);
+		return mod;
+	}
+
 	int ScanForNewPlugins()
 	{
 		if (!g_managerInitialized)

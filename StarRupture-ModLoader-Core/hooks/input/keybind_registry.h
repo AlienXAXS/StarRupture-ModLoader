@@ -31,8 +31,9 @@ namespace Hooks::Input
 	void UnregisterKeybindByName(const char* combo, EModKeyEvent event, PluginKeybindCallback callback);
 
 	// Called by the config UI when a Keybind config entry changes value.
-	// Finds all by-name registrations for pluginName whose stored combo matches
-	// oldCombo and re-registers them with newCombo in-place.
+	// Finds the by-name registrations whose stored combo matches oldCombo AND
+	// whose callback lives in pluginName's DLL, and re-registers them with
+	// newCombo in-place. Other plugins on the same combo are left alone.
 	void UpdateKeybindByName(const char* pluginName, const char* oldCombo, const char* newCombo);
 
 	// --- Advanced combo registration (v28) ---
@@ -62,11 +63,13 @@ namespace Hooks::Input
 	const char* FormatComboString(EModKey key, EModKeyModifiers mods, char* outBuf, size_t outLen);
 
 	// --- Blocking ---
-	// Mark a canonical combo string (e.g. "Ctrl+C", "F5") as blocking or non-blocking.
-	// When blocking is true, the InputKey detour returns false for that combo,
-	// preventing UE5 from processing the key. Stored per-combo in a runtime map;
-	// persisted to the plugin INI by the config UI.
-	void SetComboBlocking(const char* comboStr, bool blocking);
+	// Add or remove `owner`'s request that a combo (e.g. "Ctrl+C", "F5") be
+	// blocked. A combo blocks while any owner still wants it: the InputKey
+	// detour then returns false for it, preventing UE5 from processing the key.
+	// `owner` identifies one keybind config entry (the config UI uses
+	// "<plugin>|<section>|<key>"), so two plugins sharing a key cannot clear each
+	// other's blocking. Persisted to the plugin INI by the config UI.
+	void SetComboBlocking(const char* owner, const char* comboStr, bool blocking);
 
 	// Returns true if the given (key, mods) combination is currently set to blocking.
 	// Uses FormatComboString to produce the canonical key and looks it up in the map.
@@ -82,6 +85,16 @@ namespace Hooks::Input
 	// still types normally everywhere else.
 	void SetTypingExempt(EModKey key, bool exempt);
 	bool IsTypingExempt(EModKey key);
+
+	// --- Keybind capture ---
+	// While the config UI's "press a key" modal is up, no keybind fires: the key
+	// being pressed is the answer to the modal, not a command. Call
+	// NoteKeybindCaptureFrame() every frame the modal is shown (capture lapses
+	// by itself ~500 ms after the last call) and EndKeybindCapture() when it
+	// commits or cancels; the latter keeps suppressing until the captured
+	// keypress has been released.
+	void NoteKeybindCaptureFrame();
+	void EndKeybindCapture();
 
 	// --- Dispatch ---
 	// Fires simple callbacks. These carry no modifiers of their own and so fire

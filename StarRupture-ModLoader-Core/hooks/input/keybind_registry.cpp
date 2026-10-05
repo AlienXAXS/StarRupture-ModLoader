@@ -3,9 +3,11 @@
 #include "hooks/game/text_input_focus/text_input_focus.h"
 #include "UI/imgui_backend.h"
 #include "logging/logger.h"
+#include "plugins/plugin_manager.h"
 
 #include <windows.h>
 #include <mutex>
+#include <atomic>
 #include <set>
 #include <map>
 #include <unordered_map>
@@ -210,9 +212,15 @@ namespace Hooks::Input
 	static std::vector<CallbackEntry>      s_callbacks;
 	static std::vector<NamedComboEntry>    s_namedCombos;
 	static std::vector<ComboCallbackEntry> s_comboCallbacks;
-	// Blocking map: canonical combo string (e.g. "Ctrl+C") -> blocking enabled.
-	// Protected by s_mutex. Default absent = non-blocking.
-	static std::unordered_map<std::string, bool> s_blockingMap;
+	// Blocking map: canonical combo string (e.g. "Ctrl+C") -> the owners that
+	// want it blocked. A combo blocks while at least one owner remains; an empty
+	// set is erased. Protected by s_mutex. Default absent = non-blocking.
+	//
+	// Per owner rather than one bool per combo because two plugins can share a
+	// key. With a bool, moving BetterDrone off F10 cleared F10's blocking
+	// outright, and BetterCheats -- still on F10, still ticked "Block" in its own
+	// ini -- started leaking F10 to the game until restart.
+	static std::unordered_map<std::string, std::set<std::string>> s_blockingMap;
 	static std::mutex s_mutex;
 	static bool s_initialized = false;
 
@@ -601,11 +609,35 @@ namespace Hooks::Input
 			return;
 		}
 
+		// Only rebind registrations whose callback lives in this plugin's DLL.
+		// Matching on the combo string alone rebound every plugin sharing that key:
+		// BetterDrone and BetterCheats both on F10, the user moves BetterDrone to
+		// F9, and BetterCheats silently followed it. The combo is a value two
+		// plugins can share; the callback's module is not.
+		//
+		// The image range is read here, before s_mutex, so the per-entry test is a
+		// plain address compare and nothing under the lock touches the loader.
+		HMODULE owner = PluginManager::GetPluginModule(pluginName);
+		if (!owner)
+		{
+			ModLoaderLogger::LogWarn(L"[KeybindRegistry] UpdateKeybindByName: no loaded plugin '%S' -- "
+			                         L"not rebinding %S -> %S", pluginName ? pluginName : "?", oldCombo, newCombo);
+			return;
+		}
+		const auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(owner);
+		const auto* nt  = reinterpret_cast<const IMAGE_NT_HEADERS*>(
+			reinterpret_cast<const BYTE*>(owner) + dos->e_lfanew);
+		const uintptr_t ownerBegin = reinterpret_cast<uintptr_t>(owner);
+		const uintptr_t ownerEnd   = ownerBegin + nt->OptionalHeader.SizeOfImage;
+
 		std::lock_guard<std::mutex> lock(s_mutex);
 		int updated = 0;
 		for (auto& e : s_namedCombos)
 		{
 			if (strcmp(e.comboStr, oldCombo) != 0) continue;
+
+			const uintptr_t cb = reinterpret_cast<uintptr_t>(e.callback);
+			if (cb < ownerBegin || cb >= ownerEnd) continue;
 
 			e.key  = newKey;
 			e.mods = newMods;
@@ -679,9 +711,9 @@ namespace Hooks::Input
 	// -----------------------------------------------------------------------
 	// Blocking map
 	// -----------------------------------------------------------------------
-	void SetComboBlocking(const char* comboStr, bool blocking)
+	void SetComboBlocking(const char* owner, const char* comboStr, bool blocking)
 	{
-		if (!comboStr || !*comboStr) return;
+		if (!owner || !*owner || !comboStr || !*comboStr) return;
 
 		// Normalise to a canonical string by round-tripping through Parse/Format.
 		EModKeyModifiers mods = EModKeyMod_None;
@@ -693,9 +725,16 @@ namespace Hooks::Input
 
 		std::lock_guard<std::mutex> lock(s_mutex);
 		if (blocking)
-			s_blockingMap[canonical] = true;
-		else
-			s_blockingMap.erase(canonical);
+		{
+			s_blockingMap[canonical].insert(owner);
+			return;
+		}
+
+		auto it = s_blockingMap.find(canonical);
+		if (it == s_blockingMap.end()) return;
+		it->second.erase(owner);
+		if (it->second.empty())
+			s_blockingMap.erase(it);
 	}
 
 	bool ShouldBlock(EModKey key, EModKeyModifiers mods)
@@ -707,7 +746,7 @@ namespace Hooks::Input
 
 		std::lock_guard<std::mutex> lock(s_mutex);
 		auto it = s_blockingMap.find(canonical);
-		return (it != s_blockingMap.end()) && it->second;
+		return (it != s_blockingMap.end()) && !it->second.empty();
 	}
 
 	// -----------------------------------------------------------------------
@@ -956,13 +995,8 @@ namespace Hooks::Input
 
 		if (outBlocking)
 		{
-			// Absent means non-blocking, and entries are left behind rather than
-			// erased when blocking is turned back off, so the count has to be of
-			// the entries that are actually true.
-			int blocking = 0;
-			for (const auto& entry : s_blockingMap)
-				if (entry.second) ++blocking;
-			*outBlocking = blocking;
+			// A combo with no owners left is erased, so every entry present blocks.
+			*outBlocking = static_cast<int>(s_blockingMap.size());
 		}
 	}
 
@@ -976,8 +1010,8 @@ namespace Hooks::Input
 		int used = 0;
 		for (const auto& entry : s_blockingMap)
 		{
-			if (!entry.second)
-				continue;   // present but turned back off
+			if (entry.second.empty())
+				continue;
 
 			const int remaining = outSize - used;
 			if (remaining <= 1) break;
@@ -989,6 +1023,72 @@ namespace Hooks::Input
 
 			used += written;
 		}
+	}
+
+	// -----------------------------------------------------------------------
+	// Keybind capture (the config UI's "press a key" modal)
+	//
+	// While the user is choosing a new key, every key they press is an answer
+	// to the modal and nothing else. Without this, pressing F9 to bind F9 also
+	// fired whatever was already on F9 -- the menu the user was about to rebind
+	// toggled open behind the modal, or some other plugin's did.
+	//
+	// The modal heartbeats NoteKeybindCaptureFrame() every frame it is up, and
+	// capture lapses on its own if the heartbeat stops, so a modal that vanishes
+	// without ending capture (the whole window closed mid-capture) cannot leave
+	// every keybind dead.
+	//
+	// Ending capture is not the end of the keypress: the modal commits on the
+	// key's DOWN edge, so its UP edge -- and the release of any modifier in the
+	// combo -- arrives afterwards and would fire a Released bind on the key just
+	// chosen. EndKeybindCapture therefore arms a drain that keeps suppressing
+	// until no keyboard key is held, bounded so it cannot outlive a stuck key.
+	// -----------------------------------------------------------------------
+	static std::atomic<ULONGLONG> s_captureHeartbeat{0};
+	static std::atomic<ULONGLONG> s_captureDrainUntil{0};
+	static constexpr ULONGLONG kCaptureHeartbeatMs = 500;
+	static constexpr ULONGLONG kCaptureDrainMaxMs  = 3000;
+
+	static bool AnyKeyboardKeyHeld()
+	{
+		for (int vk = 0x08; vk <= 0xFE; ++vk)   // below 0x08 are mouse buttons / VK_CANCEL
+		{
+			if (GetAsyncKeyState(vk) & 0x8000)
+				return true;
+		}
+		return false;
+	}
+
+	void NoteKeybindCaptureFrame()
+	{
+		s_captureHeartbeat.store(GetTickCount64());
+	}
+
+	void EndKeybindCapture()
+	{
+		s_captureHeartbeat.store(0);
+		s_captureDrainUntil.store(AnyKeyboardKeyHeld() ? GetTickCount64() + kCaptureDrainMaxMs : 0);
+	}
+
+	// True while keybinds must not fire because of a capture in progress or
+	// still draining. Clears the drain once the keyboard is idle.
+	static bool KeybindCaptureSuppressing()
+	{
+		const ULONGLONG now = GetTickCount64();
+
+		const ULONGLONG beat = s_captureHeartbeat.load();
+		if (beat != 0 && now - beat < kCaptureHeartbeatMs)
+			return true;
+
+		const ULONGLONG drainUntil = s_captureDrainUntil.load();
+		if (drainUntil == 0)
+			return false;
+
+		// Suppress this event either way: if nothing is held any more, it is
+		// the release that ended the captured keypress.
+		if (now >= drainUntil || !AnyKeyboardKeyHeld())
+			s_captureDrainUntil.store(0);
+		return true;
 	}
 
 	bool ProcessWindowMessage(UINT msg, WPARAM wParam, LPARAM lParam)
@@ -1028,6 +1128,12 @@ namespace Hooks::Input
 		}
 
 		if (mk == EModKey::Unknown) return false;
+
+		// The rebind modal reads keys with GetAsyncKeyState, not messages, so
+		// skipping dispatch here costs it nothing. Not swallowed either: ImGui
+		// still needs the key-up to keep its own key state straight.
+		if (KeybindCaptureSuppressing())
+			return false;
 
 		int vk = ModKeyToVK(mk);
 		const bool isModifierKey = (vk == VK_LCONTROL || vk == VK_RCONTROL ||

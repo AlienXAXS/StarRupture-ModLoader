@@ -87,6 +87,10 @@ namespace PluginManager
     // name with and without its ".dll" extension.
     int FindPluginIndex(const char* nameOrFile);
 
+    // Module handle of the loaded plugin matching nameOrFile (same matching as
+    // FindPluginIndex), or nullptr if there is no such plugin or it is unloaded.
+    HMODULE GetPluginModule(const char* nameOrFile);
+
     // Rescan ModLoader\Plugins for DLLs that have no record yet, load them and
     // run PluginInit on each. Returns the number of plugins that came up.
     //
