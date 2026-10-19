@@ -92,6 +92,8 @@ turned off in the **Settings** tab.
 - **Esc** closes it. <sup>[✦](#msantoro12)</sup>
 - **`~`** (tilde; rebindable: `OpenKey` under `[Console]` in `modloader.ini`) opens the [developer console](#developer-console).
 
+<img src="images/pause-menu.png" width="360" alt="The pause menu with the MOD LOADER, BETTER CHEATS and BETTER DRONE rows">
+
 The tabs down the left are **Plugins**, **Config**, **Settings**, **Logging**, **Theme** and **About**
 (the build tag and the plugins currently loaded). The menu row is set in
 [`modloader.ini`](#modloaderini). A splash window shows startup progress. In the main menu a
