@@ -264,16 +264,20 @@ static void Test_UnloadPathsPurgePanels()
         const size_t argStart = free + strlen("FreeLibrary(");
         const std::string module = body.substr(argStart, body.find(')', argStart) - argStart);
 
+        // The renders are waited out before the purges...
+        const size_t wait = body.find("= WaitOutPluginRenders(" + module + ",");
+        CHECK(wait != std::string::npos);
+
         for (const char* registry : { "PluginPanelRegistry", "PluginWidgetRegistry" })
         {
-            const size_t forget = body.find(std::string(registry) + "::ForgetModule(" + module + ")");
+            const size_t forget = body.find(std::string(registry) + "::ForgetModule(" + module + ")", wait);
             CHECK(forget != std::string::npos);
             CHECK(forget < free);
         }
 
-        // The overlay may still be in the module when the wait gives up; the
-        // path must then stop before FreeLibrary.
-        const size_t refuse = body.find("if (!WaitOutPluginRenders(" + module + ",");
+        // ...and when the wait gives up, the overlay may still be in the
+        // module, so the path must stop before FreeLibrary.
+        const size_t refuse = body.find("if (!idle)", wait);
         CHECK(refuse != std::string::npos);
         CHECK(refuse < free);
     }
