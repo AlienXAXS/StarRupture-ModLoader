@@ -27,6 +27,7 @@
 #include "UI/splash_window.h"
 #include "UI/modloader_window.h"
 #include "UI/plugin_panel_registry.h"
+#include "UI/plugin_widget_registry.h"
 #endif
 
 namespace PluginManager
@@ -759,6 +760,33 @@ namespace PluginManager
 		if (g_initCompleteEvent) SetEvent(g_initCompleteEvent);
 	}
 
+	// Called right after PluginShutdown, before any of the purges that follow
+	// it. The render thread may still be inside one of the plugin's panels or
+	// widgets, and code running there can register more of anything; waiting
+	// it out first means nothing gets added behind those purges. The panel and
+	// widget purges are repeated in their usual place for whatever the second
+	// wait let through.
+	//
+	// Returns false if the overlay is still in the plugin's code after the
+	// (bounded) wait. Its panels and widgets are gone by then, but the module
+	// must stay mapped: freeing it would crash the render thread on return.
+	static bool WaitOutPluginRenders(HMODULE module, const char* name, const wchar_t* action)
+	{
+#ifdef MODLOADER_CLIENT_BUILD
+		const bool panelsIdle  = UI::PluginPanelRegistry::ForgetModule(module);
+		const bool widgetsIdle = UI::PluginWidgetRegistry::ForgetModule(module);
+		if (panelsIdle && widgetsIdle)
+			return true;
+		ModLoaderLogger::LogError(L"%s of %S skipped: the overlay is still drawing its panel. "
+		                          L"It is shut down but stays loaded; reload it to try again.",
+		                          action, name);
+		return false;
+#else
+		(void)module; (void)name; (void)action;
+		return true;
+#endif
+	}
+
 	void UnloadAllPlugins()
 	{
 		ModLoaderLogger::LogMessage(L"Unloading all plugins...");
@@ -774,6 +802,8 @@ namespace PluginManager
 					LogPluginCrash(plugin->cachedName.c_str(), plugin->hModule, L"PluginShutdown (unload all)");
 				plugin->isInitialized = false;
 			}
+			if (!WaitOutPluginRenders(plugin->hModule, plugin->cachedName.c_str(), L"Unload"))
+				continue;   // left mapped, not freed under the overlay
 
 			// Before FreeLibrary: a console command or game-menu row it registered
 			// carries a handler address inside the module about to be unmapped.
@@ -781,6 +811,9 @@ namespace PluginManager
 			PluginConsole::ForgetPlugin(plugin->cachedName.c_str());
 			PakRegistry::ForgetPlugin(plugin->cachedName.c_str());
 #ifdef MODLOADER_CLIENT_BUILD
+			// Panels, widgets and panel-closed callbacks too: renderFn is in this module.
+			UI::PluginPanelRegistry::ForgetModule(plugin->hModule);
+			UI::PluginWidgetRegistry::ForgetModule(plugin->hModule);
 			GameMenu::Registry::ForgetPlugin(plugin->cachedName.c_str());
 			Hooks::MouseWheel::ForgetModule(plugin->hModule);
 			// An OnConfigChanged callback is an address in this module too.
@@ -896,6 +929,12 @@ namespace PluginManager
 		if (!CallShutdownSEH(p.shutdown))
 			LogPluginCrash(p.cachedName.c_str(), p.hModule, L"PluginShutdown (unload)");
 		p.isInitialized = false;
+		if (!WaitOutPluginRenders(p.hModule, p.cachedName.c_str(), L"Unload"))
+		{
+			++g_pluginGeneration;   // it is shut down now
+			LeaveCriticalSection(&g_pluginLock);
+			return false;
+		}
 
 		// Before FreeLibrary, not after: the schema the config manager cached lives
 		// inside this module, so the moment it is unmapped that pointer is a read
@@ -910,6 +949,10 @@ namespace PluginManager
 		PluginConsole::ForgetPlugin(p.cachedName.c_str());
 		PakRegistry::ForgetPlugin(p.cachedName.c_str());
 #ifdef MODLOADER_CLIENT_BUILD
+		// Same for a panel or widget it registered and did not unregister: the
+		// registries keep its descriptor and renderFn, both inside the module about to go.
+		UI::PluginPanelRegistry::ForgetModule(p.hModule);
+		UI::PluginWidgetRegistry::ForgetModule(p.hModule);
 		GameMenu::Registry::ForgetPlugin(p.cachedName.c_str());
 		Hooks::MouseWheel::ForgetModule(p.hModule);
 		// So is an OnConfigChanged callback. The slot (and with it &p.self) is
@@ -949,6 +992,13 @@ namespace PluginManager
 		}
 		if (p.hModule)
 		{
+			if (!WaitOutPluginRenders(p.hModule, p.cachedName.c_str(), L"Reload"))
+			{
+				++g_pluginGeneration;   // it is shut down now
+				LeaveCriticalSection(&g_pluginLock);
+				return false;
+			}
+
 			// Same reason as UnloadPlugin: the cached schema, any registered
 			// console commands and any game-menu rows point into this module.
 			// InitPluginRecord below re-registers whatever the new build asks for.
@@ -956,6 +1006,8 @@ namespace PluginManager
 			PluginConsole::ForgetPlugin(p.cachedName.c_str());
 			PakRegistry::ForgetPlugin(p.cachedName.c_str());
 #ifdef MODLOADER_CLIENT_BUILD
+			UI::PluginPanelRegistry::ForgetModule(p.hModule);
+			UI::PluginWidgetRegistry::ForgetModule(p.hModule);
 			GameMenu::Registry::ForgetPlugin(p.cachedName.c_str());
 			Hooks::MouseWheel::ForgetModule(p.hModule);
 			UI::PluginPanelRegistry::ForgetConfigCallbacks(&p.self);

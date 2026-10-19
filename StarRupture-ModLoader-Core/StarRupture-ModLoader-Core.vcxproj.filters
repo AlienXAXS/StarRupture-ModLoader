@@ -216,6 +216,9 @@
     <ClInclude Include="UI\plugin_widget_registry.h">
       <Filter>Source Files\UI\modloader</Filter>
     </ClInclude>
+    <ClInclude Include="UI\plugin_call_tracker.h">
+      <Filter>Source Files\UI\modloader</Filter>
+    </ClInclude>
     <ClInclude Include="UI\splash_window.h">
       <Filter>Source Files\UI</Filter>
     </ClInclude>
