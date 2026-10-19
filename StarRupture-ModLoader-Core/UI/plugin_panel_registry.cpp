@@ -123,6 +123,15 @@ namespace UI::PluginPanelRegistry
             s_configCallbacks.end());
     }
 
+    void ForgetConfigCallbacks(const IPluginSelf* self)
+    {
+        std::lock_guard<std::mutex> lock(s_mutex);
+        s_configCallbacks.erase(
+            std::remove_if(s_configCallbacks.begin(), s_configCallbacks.end(),
+                           [&](const ConfigCallbackEntry& e) { return e.self == self; }),
+            s_configCallbacks.end());
+    }
+
     void FireConfigChanged(const char* pluginName, const char* section, const char* key, const char* newValue)
     {
         // Resolve the changed config's owning plugin to its stable self pointer

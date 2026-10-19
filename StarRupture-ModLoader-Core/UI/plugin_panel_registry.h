@@ -33,6 +33,13 @@ namespace UI::PluginPanelRegistry
     void RegisterOnConfigChanged(const IPluginSelf* self, PluginConfigChangedCallback callback);
     void UnregisterOnConfigChanged(const IPluginSelf* self, PluginConfigChangedCallback callback);
 
+    // Drops every config-change callback the plugin still has registered. Call
+    // before the plugin's DLL is unloaded: a callback is an address inside that
+    // module, and the plugin's slot (so its self pointer) outlives the unload, so
+    // one the plugin failed to unregister would otherwise be called into unmapped
+    // memory the next time its config changes.
+    void ForgetConfigCallbacks(const IPluginSelf* self);
+
     // Open or close a panel using the handle returned by RegisterPanel.
     void SetPanelOpen(PanelHandle handle);
     void SetPanelClose(PanelHandle handle);

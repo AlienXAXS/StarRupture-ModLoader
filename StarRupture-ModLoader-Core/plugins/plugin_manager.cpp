@@ -783,6 +783,8 @@ namespace PluginManager
 #ifdef MODLOADER_CLIENT_BUILD
 			GameMenu::Registry::ForgetPlugin(plugin->cachedName.c_str());
 			Hooks::MouseWheel::ForgetModule(plugin->hModule);
+			// An OnConfigChanged callback is an address in this module too.
+			UI::PluginPanelRegistry::ForgetConfigCallbacks(&plugin->self);
 #endif
 
 			if (plugin->hModule)
@@ -910,6 +912,10 @@ namespace PluginManager
 #ifdef MODLOADER_CLIENT_BUILD
 		GameMenu::Registry::ForgetPlugin(p.cachedName.c_str());
 		Hooks::MouseWheel::ForgetModule(p.hModule);
+		// So is an OnConfigChanged callback. The slot (and with it &p.self) is
+		// kept across an unload, so a callback the plugin did not unregister
+		// itself would still match this plugin and be called into freed memory.
+		UI::PluginPanelRegistry::ForgetConfigCallbacks(&p.self);
 #endif
 
 		FreeLibrary(p.hModule);
@@ -952,6 +958,7 @@ namespace PluginManager
 #ifdef MODLOADER_CLIENT_BUILD
 			GameMenu::Registry::ForgetPlugin(p.cachedName.c_str());
 			Hooks::MouseWheel::ForgetModule(p.hModule);
+			UI::PluginPanelRegistry::ForgetConfigCallbacks(&p.self);
 #endif
 
 			FreeLibrary(p.hModule);
