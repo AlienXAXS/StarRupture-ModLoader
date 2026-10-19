@@ -108,3 +108,33 @@ detour actually fires. `hooks` in the console shows the same thing live:
 
 None of these stop the game booting: a preload plugin that fails is unloaded and the game starts
 without it.
+
+---
+
+## ConfigEditTests
+
+A console program, not a plugin: it runs on its own, with no game and no DLLs to copy anywhere.
+
+It compiles the loader's own `config/config_edit.cpp`, `config/config_manager.cpp` and
+`UI/plugin_panel_registry.cpp` and replaces only what those call out to (the keybind registry, the
+plugin list, the logger, the window theme -- see `test_doubles.cpp`). It covers:
+
+- `SetLive` changes the value and notifies without touching the file; `Commit` writes it; a second
+  `Commit` with nothing changed does not rewrite the file.
+- A handler that answers a change by calling `SetLive` again (a clamp) does not deadlock.
+- Committing a changed Keybind moves the registration and the Block state to the new combo.
+- A plugin's own `IPluginConfig::Write*` shows up in `ConfigEdit::Get` and the Config tab's copy, and
+  does not fire `OnConfigChanged`.
+- A handler that clamps a value by calling `IPluginConfig::Write*` has its clamped value persisted by `Commit`.
+- A hand-edited INI that spells a section or key in another case still applies its Block state on load.
+- Forgetting a plugin's `OnConfigChanged` callbacks drops its own and leaves the next plugin's alone, and each of `UnloadAllPlugins`, `UnloadPlugin` and `ReloadPlugin` calls that before `FreeLibrary`. The loader's plugin manager cannot be linked into a console program, so the second half is checked by reading `plugin_manager.cpp`; deleting any of the three calls fails the test.
+
+Build it from the command line (it creates `ModLoader\Plugins\config` beside the exe, under
+`build\tests`, and removes its own INI files when it finishes):
+
+```
+msbuild Tests\ConfigEditTests\ConfigEditTests.vcxproj /p:Configuration="Client Release" /p:Platform=x64
+build\tests\config_edit_tests.exe
+```
+
+It prints one line per test and exits 0 when every check passes.
