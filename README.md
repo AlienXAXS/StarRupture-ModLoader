@@ -163,9 +163,10 @@ there only. See [Console commands](#console-commands).
 
 ### Pop-up windows
 
-**Plugins Updated** appears once at the main menu after an automatic plugin update.
+**Plugins Updated** appears once at the main menu after an automatic plugin update. It lists what
+changed in each plugin when the plugin's release ships notes.
 
-<img src="images/popup-plugins-updated.png" width="325" alt="Plugins Updated pop-up listing old and new versions">
+<img src="images/popup-plugins-updated.png" width="325" alt="Plugins Updated pop-up listing old and new versions with each plugin's notes">
 
 **Plugin Hooks Failed** appears when a plugin did not load because a hook is missing, and again
 when a later load or reload adds one. **Copy Details** puts the report on the clipboard for a bug
