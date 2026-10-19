@@ -376,6 +376,57 @@ static std::string JsonExtractString(const std::string& json, const char* key)
 	return value;
 }
 
+// Extract a top-level string field and decode its JSON escapes. Used for the
+// manifest's "notes": JsonExtractString above drops the backslash, so it
+// cannot tell \n from the letter n. Handles \n \t \" \\ \/ and \uXXXX; \r is
+// dropped, and a \u escape outside printable ASCII becomes '?' so the text
+// always draws in the overlay font.
+static std::string JsonExtractDecodedString(const std::string& json, const char* key)
+{
+	std::string needle = std::string("\"") + key + "\"";
+	size_t kpos = json.find(needle);
+	if (kpos == std::string::npos)
+		return {};
+
+	size_t vstart = json.find('"', kpos + needle.size());
+	if (vstart == std::string::npos)
+		return {};
+	++vstart;
+
+	std::string value;
+	for (size_t i = vstart; i < json.size(); ++i)
+	{
+		if (json[i] == '"')
+			break;
+
+		if (json[i] != '\\' || i + 1 >= json.size())
+		{
+			value += json[i];
+			continue;
+		}
+
+		switch (json[++i])
+		{
+		case 'n': value += '\n'; break;
+		case 't': value += '\t'; break;
+		case 'r': break;
+		case 'u':
+		{
+			bool ok = i + 4 < json.size();
+			for (size_t k = 1; ok && k <= 4; ++k)
+				ok = isxdigit(static_cast<unsigned char>(json[i + k])) != 0;
+			const unsigned code = ok ? std::stoul(json.substr(i + 1, 4), nullptr, 16) : 0;
+			if (ok)
+				i += 4;
+			value += (ok && (code == '\n' || (code >= 0x20 && code < 0x7F))) ? static_cast<char>(code) : '?';
+			break;
+		}
+		default: value += json[i]; break;
+		}
+	}
+	return value;
+}
+
 // Extract the value of a top-level integer field: "key": 12
 static int JsonExtractInt(const std::string& json, const char* key, int fallback = 0)
 {
@@ -570,8 +621,12 @@ static bool DownloadPlugin(const char* url,
 //     "version":               "1.2.0",
 //     "interface_version_min": 19,
 //     "interface_version_max": 22,
-//     "download_url":          "https://example.com/releases/MyPlugin-1.2.0.dll"
+//     "download_url":          "https://example.com/releases/MyPlugin-1.2.0.dll",
+//     "notes":                 "Fixed a crash on load\nAdded a new option"
 //   }
+//
+// "notes" is optional: one change per line, lines separated by the \n escape.
+// When present it is listed under the plugin in the "Plugins Updated" pop-up.
 //
 // The last-downloaded version per plugin is stored in update_state.ini under
 // [PluginVersions], keyed by the DLL filename (e.g. "MyPlugin.dll=1.2.0").
@@ -744,6 +799,7 @@ static void ProcessPluginSidecar(const PluginSidecar& sc,
     std::string remoteVersion  = JsonExtractString(json, "version");
     std::string downloadUrl    = JsonExtractString(json, "download_url");
     std::string pluginName     = JsonExtractString(json, "plugin_name");
+    std::string notes          = JsonExtractDecodedString(json, "notes");
     int ifaceMin = JsonExtractInt(json, "interface_version_min", -1);
     int ifaceMax = JsonExtractInt(json, "interface_version_max", -1);
 
@@ -815,7 +871,8 @@ static void ProcessPluginSidecar(const PluginSidecar& sc,
 #ifdef MODLOADER_CLIENT_BUILD
         UI::UpdateNoticeWindow::AddUpdatedPlugin(displayName,
                                                  storedVersion.c_str(),
-                                                 remoteVersion.c_str());
+                                                 remoteVersion.c_str(),
+                                                 notes.c_str());
 #endif
     }
     else
