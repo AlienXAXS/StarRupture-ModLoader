@@ -138,3 +138,25 @@ build\tests\config_edit_tests.exe
 ```
 
 It prints one line per test and exits 0 when every check passes.
+
+## PanelUnloadTests
+
+A console program like ConfigEditTests. It compiles the loader's own `UI/plugin_panel_registry.cpp`
+and `UI/plugin_widget_registry.cpp` and replaces only what those call out to (see
+`test_doubles.cpp`). It covers:
+
+- `ForgetModule` drops one module's panels, widgets and panel-closed callbacks and leaves another
+  module's alone; a dropped handle is harmless, and the title can be registered again.
+- An unload that races the render thread waits out a panel render or panel-closed callback still
+  inside the module; a render that never returns makes `ForgetModule` give up and say so; a
+  `renderFn` may unregister its own panel; a panel forgotten mid-frame is not drawn.
+- Each of `UnloadAllPlugins`, `UnloadPlugin` and `ReloadPlugin` waits out the plugin's renders and
+  calls both registries' `ForgetModule` before `FreeLibrary`, and stops before `FreeLibrary` when the
+  wait gives up. As with ConfigEditTests, this is checked by reading `plugin_manager.cpp`.
+
+```
+msbuild Tests\PanelUnloadTests\PanelUnloadTests.vcxproj /p:Configuration="Client Release" /p:Platform=x64
+build	ests\panel_unload_tests.exe
+```
+
+It prints one line per test and exits 0 when every check passes.
