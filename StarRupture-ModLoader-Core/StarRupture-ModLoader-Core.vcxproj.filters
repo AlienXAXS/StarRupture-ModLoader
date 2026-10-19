@@ -282,6 +282,9 @@
     <ClInclude Include="config\config_manager.h">
       <Filter>Source Files\config</Filter>
     </ClInclude>
+    <ClInclude Include="config\config_edit.h">
+      <Filter>Source Files\config</Filter>
+    </ClInclude>
     <ClInclude Include="auto_update\auto_updater.h">
       <Filter>Source Files\auto_update</Filter>
     </ClInclude>
@@ -642,6 +645,9 @@
       <Filter>Source Files\logging</Filter>
     </ClCompile>
     <ClCompile Include="config\config_manager.cpp">
+      <Filter>Source Files\config</Filter>
+    </ClCompile>
+    <ClCompile Include="config\config_edit.cpp">
       <Filter>Source Files\config</Filter>
     </ClCompile>
     <ClCompile Include="auto_update\auto_updater.cpp">

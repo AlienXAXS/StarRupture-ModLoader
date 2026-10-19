@@ -413,6 +413,7 @@
   <ItemGroup>
     <ClInclude Include="auto_update\auto_updater.h" />
     <ClInclude Include="config\config_manager.h" />
+    <ClInclude Include="config\config_edit.h" />
     <ClInclude Include="hooks\game\actor_begin_play\actor_begin_play.h" />
     <ClInclude Include="hooks\game\crafting_finished\crafting_finished.h" />
     <ClInclude Include="hooks\game\game_menu\game_menu.h" />
@@ -541,6 +542,9 @@
     </ClCompile>
     <ClCompile Include="auto_update\auto_updater.cpp" />
     <ClCompile Include="config\config_manager.cpp" />
+    <ClCompile Include="config\config_edit.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)' != 'Client Debug' And '$(Configuration)' != 'Client Release' And '$(Configuration)' != 'Local SDK Client Debug' And '$(Configuration)' != 'Local SDK Client Release'">true</ExcludedFromBuild>
+    </ClCompile>
     <ClCompile Include="core\globals.cpp" />
     <ClCompile Include="core\startup_utils.cpp" />
     <ClCompile Include="core\version_check.cpp" />

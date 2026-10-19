@@ -87,7 +87,7 @@ namespace UI::PluginPanelRegistry
     // the main modloader window is closed.
     bool AnyPanelOpen();
 
-    // Called by modloader_window to fire config-change notifications.
+    // Called by ConfigEdit to fire config-change notifications.
     // pluginName is the plugin that owns the changed config file -- only
     // callbacks registered by that plugin are invoked.
     void FireConfigChanged(const char* pluginName, const char* section, const char* key, const char* newValue);

@@ -1,4 +1,5 @@
 #include "config_manager.h"
+#include "config_edit.h"
 #include "logging/logger.h"
 #include <string>
 #include <fstream>
@@ -156,6 +157,14 @@ namespace ModLoaderLogger
 		}
 
 		LeaveCriticalSection(&g_configLock);
+
+#ifdef MODLOADER_CLIENT_BUILD
+		// Keep the loader's own copy of this plugin's values in step, so the
+		// Config tab shows what was just written. Not an OnConfigChanged: the
+		// writer has already applied its own change.
+		if (result)
+			ConfigEdit::NoteWritten(self->name, section, key, value);
+#endif
 		return result != 0;
 	}
 

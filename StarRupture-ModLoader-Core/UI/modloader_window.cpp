@@ -7,6 +7,7 @@
 #include "plugin_panel_registry.h"
 #include "plugins/plugin_manager.h"
 #include "config/config_manager.h"
+#include "config/config_edit.h"
 #include "global_settings.h"
 #include "theme.h"
 #include "named_entry_utils.h"
@@ -62,14 +63,9 @@ namespace UI::ModLoaderWindow
 
     static int  s_activeTab = kTabPlugins;
 
-    // Config tab: per-key editable buffers.
-    // We parse the INI once when the selection changes, then cache.
-    struct ConfigKV
-    {
-        char section[64];
-        char key[64];
-        char value[256];
-    };
+    // Config tab: per-key editable buffers, copied from ConfigEdit when the
+    // selection changes or the plugin's values change, then cached.
+    using ConfigKV = ConfigEdit::Entry;
     static std::vector<ConfigKV> s_configEntries;
     static int  s_lastConfigPlugin = -1;  // plugin index for cached entries
 
@@ -77,6 +73,10 @@ namespace UI::ModLoaderWindow
     // plugin already on screen invalidates them. Starts at a value the counter
     // cannot be on the first frame, so the first render always loads.
     static unsigned s_lastConfigGeneration = static_cast<unsigned>(-1);
+
+    // ConfigEdit change counter the cached entries were copied at, so a value
+    // a plugin writes itself shows up here without the plugin being reloaded.
+    static unsigned s_lastConfigChange = 0;
 
     struct RebindState
     {
@@ -94,100 +94,25 @@ namespace UI::ModLoaderWindow
     // Helpers
     // -----------------------------------------------------------------------
 
-    // Forward declaration (defined after RenderPluginsTab).
-    static const ConfigEntry* FindSchemaEntry(const ConfigSchema* schema,
-                                              const char* section, const char* key);
-
-    // Build the absolute path to <pluginName>.ini under the config directory.
-    static bool GetPluginIniPath(const char* pluginName, wchar_t* outPath, size_t outLen)
+    // Copy the plugin's entries out of ConfigEdit into s_configEntries.
+    static void RefreshConfigEntries(const char* pluginName)
     {
-        const wchar_t* configDir = ModLoaderLogger::GetConfigDirectory();
-        if (!configDir || !pluginName) return false;
-        swprintf_s(outPath, outLen, L"%s\\%S.ini", configDir, pluginName);
-        return true;
-    }
+        s_lastConfigChange = ConfigEdit::Snapshot(pluginName, s_configEntries);
 
-    // Parse all sections + keys from the plugin's INI file into s_configEntries.
-    // Blocking owner for one keybind config entry. Per entry rather than per
-    // plugin, so two binds in the same plugin that share a combo cannot clear
-    // each other's blocking either.
-    static void SetEntryBlocking(const char* pluginName, const char* section, const char* key,
-                                 const char* combo, bool blocking)
-    {
-        char owner[256];
-        snprintf(owner, sizeof(owner), "%s|%s|%s", pluginName, section, key);
-        Hooks::Input::SetComboBlocking(owner, combo, blocking);
-    }
-
-    static void LoadConfigEntries(const char* pluginName)
-    {
-        s_configEntries.clear();
-
-        wchar_t iniPath[MAX_PATH];
-        if (!GetPluginIniPath(pluginName, iniPath, MAX_PATH))
-            return;
-
-        // Enumerate section names (double-NUL terminated list)
-        wchar_t sectionBuf[4096] = {};
-        GetPrivateProfileSectionNamesW(sectionBuf, ARRAYSIZE(sectionBuf), iniPath);
-
-        for (const wchar_t* sec = sectionBuf; *sec; sec += wcslen(sec) + 1)
-        {
-            // Read all key=value pairs in this section
-            wchar_t kvBuf[8192] = {};
-            GetPrivateProfileSectionW(sec, kvBuf, ARRAYSIZE(kvBuf), iniPath);
-
-            for (const wchar_t* kv = kvBuf; *kv; kv += wcslen(kv) + 1)
-            {
-                // Find '='
-                const wchar_t* eq = wcschr(kv, L'=');
-                if (!eq) continue;
-
-                ConfigKV entry = {};
-                // Section (narrow)
-                snprintf(entry.section, sizeof(entry.section), "%ls", sec);
-                // Key (narrow, up to '=')
-                int keyLen = static_cast<int>(eq - kv);
-                if (keyLen <= 0 || keyLen >= static_cast<int>(sizeof(entry.key))) continue;
-                snprintf(entry.key, sizeof(entry.key), "%.*ls", keyLen, kv);
-                // Value (narrow, after '=')
-                snprintf(entry.value, sizeof(entry.value), "%ls", eq + 1);
-
-                s_configEntries.push_back(entry);
-            }
-        }
-
-        // For each Keybind entry in the schema, read and apply the companion
-        // <key>Blocking flag so the runtime blocking state is always current
-        // when the config panel is opened.
         const ConfigSchema* schema = ModLoaderLogger::GetPluginSchema(pluginName);
         if (schema)
         {
-            for (auto& kv : s_configEntries)
-            {
-                const ConfigEntry* schEntry = FindSchemaEntry(schema, kv.section, kv.key);
-                if (!schEntry || schEntry->type != ConfigValueType::Keybind) continue;
-                if (!kv.value[0]) continue;
-
-                wchar_t wsec[64], wblkKey[128];
-                swprintf_s(wsec, L"%S", kv.section);
-                swprintf_s(wblkKey, L"%SBlocking", kv.key);
-                bool blocking = (GetPrivateProfileIntW(wsec, wblkKey, 0, iniPath) != 0);
-                SetEntryBlocking(pluginName, kv.section, kv.key, kv.value, blocking);
-            }
-
             // <KeybindKey>Blocking is the Block toggle's own on-disk state
-            // (RenderConfigEntry writes it straight to the ini, not through
-            // the schema -- see its blocking-toggle block below), so it has
-            // no ConfigEntry of its own. Left in s_configEntries, it would
-            // render as an unlabeled second row under the keybind row that
-            // already shows it as the "Block" toggle. Drop it once its
-            // paired keybind is confirmed to actually be one.
+            // (ConfigEdit::GetBlocking/SetBlocking), so it has no ConfigEntry
+            // of its own. Left in s_configEntries, it would render as an
+            // unlabeled second row under the keybind row that already shows
+            // it as the "Block" toggle. Drop it once its paired keybind is
+            // confirmed to actually be one.
             s_configEntries.erase(
                 std::remove_if(s_configEntries.begin(), s_configEntries.end(),
                     [&](const ConfigKV& kv)
                     {
-                        if (FindSchemaEntry(schema, kv.section, kv.key)) return false;
+                        if (ConfigEdit::FindSchemaEntry(schema, kv.section, kv.key)) return false;
                         constexpr size_t kSuffixLen = 8; // strlen("Blocking")
                         const size_t keyLen = strlen(kv.key);
                         if (keyLen <= kSuffixLen ||
@@ -196,7 +121,7 @@ namespace UI::ModLoaderWindow
 
                         char baseKey[64];
                         snprintf(baseKey, sizeof(baseKey), "%.*s", (int)(keyLen - kSuffixLen), kv.key);
-                        const ConfigEntry* base = FindSchemaEntry(schema, kv.section, baseKey);
+                        const ConfigEntry* base = ConfigEdit::FindSchemaEntry(schema, kv.section, baseKey);
                         return base && base->type == ConfigValueType::Keybind;
                     }),
                 s_configEntries.end());
@@ -211,47 +136,18 @@ namespace UI::ModLoaderWindow
     // to call every frame a value changes (e.g. once per drag frame).
     static void NotifyConfigChangedLive(const char* pluginName, const ConfigKV& kv)
     {
-        UI::PluginPanelRegistry::FireConfigChanged(pluginName, kv.section, kv.key, kv.value);
+        ConfigEdit::SetLive(pluginName, kv.section, kv.key, kv.value);
     }
 
-    // Write a changed value back to disk. Does NOT fire config-change
-    // notifications -- callers must call NotifyConfigChangedLive themselves
-    // at the point the value changes (this keeps notification timing
-    // decoupled from, and not gated on, the disk write).
-    static void CommitConfigChange(const char* pluginName, ConfigKV& kv,
-                                   const char* oldValue = nullptr,
-                                   const ConfigEntry* entry = nullptr)
+    // Write the value ConfigEdit holds for this key back to disk. kv.value is
+    // not consulted, so call NotifyConfigChangedLive first: it is what puts a
+    // changed value into the table. That also means a handler that clamps the
+    // value while being notified has its clamped value persisted. Does NOT
+    // fire config-change notifications -- notification timing stays decoupled
+    // from, and not gated on, the disk write.
+    static void CommitConfigChange(const char* pluginName, const ConfigKV& kv)
     {
-        wchar_t iniPath[MAX_PATH];
-        if (!GetPluginIniPath(pluginName, iniPath, MAX_PATH)) return;
-
-        wchar_t wsec[64], wkey[64], wval[256];
-        swprintf_s(wsec, L"%S", kv.section);
-        swprintf_s(wkey, L"%S", kv.key);
-        swprintf_s(wval, L"%S", kv.value);
-        WritePrivateProfileStringW(wsec, wkey, wval, iniPath);
-
-        // If this is a Keybind entry and the value actually changed, live-rebind
-        // any active keybind registrations for this plugin and transfer blocking state.
-        if (entry && entry->type == ConfigValueType::Keybind &&
-            oldValue && strcmp(oldValue, kv.value) != 0)
-        {
-            // Transfer blocking state from the old combo to the new one.
-            // Read from INI (the ground truth) rather than the runtime map so this
-            // works correctly even if the map entry was never explicitly set.
-            {
-                wchar_t blkSec[64], wblkKey[128];
-                swprintf_s(blkSec, L"%S", kv.section);
-                swprintf_s(wblkKey, L"%SBlocking", kv.key);
-                bool wasBlocking = (GetPrivateProfileIntW(blkSec, wblkKey, 0, iniPath) != 0);
-                // Withdraw only THIS entry's claim on the old combo -- another
-                // plugin still bound to it keeps its own blocking.
-                SetEntryBlocking(pluginName, kv.section, kv.key, oldValue, false);
-                SetEntryBlocking(pluginName, kv.section, kv.key, kv.value, wasBlocking);
-            }
-
-            Hooks::Input::UpdateKeybindByName(pluginName, oldValue, kv.value);
-        }
+        ConfigEdit::Commit(pluginName, kv.section, kv.key);
     }
 
     // -----------------------------------------------------------------------
@@ -445,20 +341,6 @@ namespace UI::ModLoaderWindow
             }
             ImGui::EndTable();
         }
-    }
-
-    // Returns the ConfigEntry for (section, key) from schema, or nullptr.
-    static const ConfigEntry* FindSchemaEntry(const ConfigSchema* schema,
-                                              const char* section, const char* key)
-    {
-        if (!schema) return nullptr;
-        for (int i = 0; i < schema->entryCount; ++i)
-        {
-            const ConfigEntry& e = schema->entries[i];
-            if (strcmp(e.section, section) == 0 && strcmp(e.key, key) == 0)
-                return &e;
-        }
-        return nullptr;
     }
 
     static void FormatFloat(char* buf, size_t sz, float v)
@@ -830,15 +712,7 @@ namespace UI::ModLoaderWindow
 
             // Blocking toggle -- given a short visible label rather than
             // just a hover tooltip, so it isn't a second unlabeled control.
-            wchar_t iniPath[MAX_PATH];
-            bool bBlocking = false;
-            if (GetPluginIniPath(pluginName, iniPath, MAX_PATH))
-            {
-                wchar_t wsec[64], wblkKey[128];
-                swprintf_s(wsec,    L"%S",        kv.section);
-                swprintf_s(wblkKey, L"%SBlocking", kv.key);
-                bBlocking = (GetPrivateProfileIntW(wsec, wblkKey, 0, iniPath) != 0);
-            }
+            bool bBlocking = ConfigEdit::GetBlocking(pluginName, kv.section, kv.key);
             char chkId[160];
             snprintf(chkId, sizeof(chkId), "##blk_%s_%s", kv.section, kv.key);
             ImGui::SameLine(0.0f, 0.0f); // stay on the bind-label/Rebind line before jumping X
@@ -847,17 +721,7 @@ namespace UI::ModLoaderWindow
             ImGui::TextDisabled("Block");
             ImGui::SameLine(0.0f, innerSpacing);
             if (UI::Theme::ToggleSwitch(chkId, &bBlocking))
-            {
-                wchar_t iniPath2[MAX_PATH];
-                if (GetPluginIniPath(pluginName, iniPath2, MAX_PATH))
-                {
-                    wchar_t wsec2[64], wblkKey2[128];
-                    swprintf_s(wsec2,    L"%S",        kv.section);
-                    swprintf_s(wblkKey2, L"%SBlocking", kv.key);
-                    WritePrivateProfileStringW(wsec2, wblkKey2, bBlocking ? L"1" : L"0", iniPath2);
-                }
-                SetEntryBlocking(pluginName, kv.section, kv.key, kv.value, bBlocking);
-            }
+                ConfigEdit::SetBlocking(pluginName, kv.section, kv.key, bBlocking);
             if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
                 ImGui::SetTooltip("Block: when ticked, this combo is consumed by the\n"
                                   "plugin -- the game will not also react to it.\n"
@@ -899,13 +763,11 @@ namespace UI::ModLoaderWindow
             snprintf(resetId, sizeof(resetId), "##r_%s_%s", kv.section, kv.key);
             if (UI::Theme::IconButton(UI::Theme::Icons::Reset, resetId))
             {
-                // Old value and entry passed so a keybind reset live-rebinds
-                // and moves its blocking, the same as picking the key by hand.
-                char oldValue[256];
-                strncpy_s(oldValue, kv.value, _TRUNCATE);
+                // Commit moves a keybind's registration and blocking, so a
+                // reset live-rebinds the same as picking the key by hand.
                 strncpy_s(kv.value, e->defaultValue, _TRUNCATE);
                 NotifyConfigChangedLive(pluginName, kv);
-                CommitConfigChange(pluginName, kv, oldValue, e);
+                CommitConfigChange(pluginName, kv);
             }
             if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
                 ImGui::SetTooltip("Reset to default: %s", e->defaultValue);
@@ -925,23 +787,8 @@ namespace UI::ModLoaderWindow
     // below, so "Ctrl+F5" and a plain "LeftShift" commit through the same code.
     static void CommitRebindCombo(const char* comboStr)
     {
-        for (auto& kv : s_configEntries)
-        {
-            if (strcmp(kv.section, s_rebind.section) == 0 &&
-                strcmp(kv.key, s_rebind.cfgKey) == 0)
-            {
-                char oldValue[256];
-                strncpy_s(oldValue, kv.value, _TRUNCATE);
-                strncpy_s(kv.value, comboStr, _TRUNCATE);
-
-                // Find the schema entry so CommitConfigChange can trigger live-rebind.
-                const ConfigSchema* schema = ModLoaderLogger::GetPluginSchema(s_rebind.pluginName);
-                const ConfigEntry* schEntry = FindSchemaEntry(schema, kv.section, kv.key);
-                NotifyConfigChangedLive(s_rebind.pluginName, kv);
-                CommitConfigChange(s_rebind.pluginName, kv, oldValue, schEntry);
-                break;
-            }
-        }
+        ConfigEdit::SetLive(s_rebind.pluginName, s_rebind.section, s_rebind.cfgKey, comboStr);
+        ConfigEdit::Commit(s_rebind.pluginName, s_rebind.section, s_rebind.cfgKey);
 
         s_rebind.active        = false;
         s_rebind.heldModifierVk = 0;
@@ -1149,7 +996,15 @@ namespace UI::ModLoaderWindow
             {
                 s_lastConfigPlugin     = s_selectedPlugin;
                 s_lastConfigGeneration = generation;
-                LoadConfigEntries(info->name);
+                ConfigEdit::Load(info->name);
+                RefreshConfigEntries(info->name);
+            }
+            // A value changed behind the page's back (the plugin wrote its own
+            // key). Not while a control is held: the cache holds what is being
+            // typed or dragged, and the table has not seen it yet.
+            else if (!ImGui::IsAnyItemActive() && ConfigEdit::ChangeCount(info->name) != s_lastConfigChange)
+            {
+                RefreshConfigEntries(info->name);
             }
 
             // One indent for every section on this page, "Plugin Tools"
@@ -1312,7 +1167,7 @@ namespace UI::ModLoaderWindow
                     const float ww = WidestWordWidth(kv.key);
                     if (ww > pageMaxWordW) pageMaxWordW = ww;
 
-                    const ConfigEntry* se = FindSchemaEntry(schema, kv.section, kv.key);
+                    const ConfigEntry* se = ConfigEdit::FindSchemaEntry(schema, kv.section, kv.key);
                     if (!se) continue;
                     if (se->type == ConfigValueType::Keybind)
                     {
@@ -1423,7 +1278,7 @@ namespace UI::ModLoaderWindow
 
                         for (size_t j = sectionStart; j < sectionEnd; ++j)
                         {
-                            const ConfigEntry* entry = FindSchemaEntry(schema, s_configEntries[j].section, s_configEntries[j].key);
+                            const ConfigEntry* entry = ConfigEdit::FindSchemaEntry(schema, s_configEntries[j].section, s_configEntries[j].key);
                             RenderConfigEntry(s_configEntries[j], entry, info->name, controlW, keyColW);
                         }
                         ImGui::EndTable();
@@ -2048,34 +1903,7 @@ namespace UI::ModLoaderWindow
     {
         if (!pluginName || !*pluginName) return;
 
-        wchar_t iniPath[MAX_PATH];
-        if (!GetPluginIniPath(pluginName, iniPath, MAX_PATH)) return;
-
-        const ConfigSchema* schema = ModLoaderLogger::GetPluginSchema(pluginName);
-        if (!schema) return;
-
-        for (int i = 0; i < schema->entryCount; ++i)
-        {
-            const ConfigEntry& e = schema->entries[i];
-            if (e.type != ConfigValueType::Keybind) continue;
-            if (!e.section || !e.key) continue;
-
-            // Read the current combo value from INI
-            wchar_t wsec[64], wkey[128], wblkKey[128];
-            swprintf_s(wsec, L"%S", e.section);
-            swprintf_s(wkey, L"%S", e.key);
-            swprintf_s(wblkKey, L"%SBlocking", e.key);
-
-            wchar_t comboW[256] = {};
-            GetPrivateProfileStringW(wsec, wkey, L"", comboW, ARRAYSIZE(comboW), iniPath);
-            if (!comboW[0]) continue;
-
-            char combo[256];
-            snprintf(combo, sizeof(combo), "%ls", comboW);
-
-            bool blocking = (GetPrivateProfileIntW(wsec, wblkKey, 0, iniPath) != 0);
-            SetEntryBlocking(pluginName, e.section, e.key, combo, blocking);
-        }
+        ConfigEdit::Load(pluginName);
     }
 
     void Render(IModLoaderImGui* imgui)
