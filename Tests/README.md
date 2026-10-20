@@ -156,7 +156,7 @@ and `UI/plugin_widget_registry.cpp` and replaces only what those call out to (se
 
 ```
 msbuild Tests\PanelUnloadTests\PanelUnloadTests.vcxproj /p:Configuration="Client Release" /p:Platform=x64
-build	ests\panel_unload_tests.exe
+build\tests\panel_unload_tests.exe
 ```
 
 It prints one line per test and exits 0 when every check passes.
