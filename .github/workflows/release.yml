@@ -248,8 +248,19 @@ jobs:
           # ---------------------------------------------------------------------------
           # 1. Modloader manifests  (central version check — no plugin list)
           # ---------------------------------------------------------------------------
+          # Player-facing notes: one change per line in UPDATE_NOTES.txt.
+          # The loader shows them in its update prompt.
+          $notesFile = "$ws\UPDATE_NOTES.txt"
+          $noteLines = @()
+          if (Test-Path $notesFile) {
+            $noteLines = @(Get-Content $notesFile | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+          }
+
           foreach ($variant in @("client", "server")) {
             $manifest = [ordered]@{ build_tag = $tag }
+            if ($noteLines.Count -gt 0) {
+              $manifest["notes"] = $noteLines -join "`n"
+            }
             $out = "$ws\manifest-$variant.json"
             $manifest | ConvertTo-Json -Depth 1 | Out-File $out -Encoding utf8NoBOM
             Write-Host "Generated modloader manifest: $out"
@@ -318,6 +329,11 @@ jobs:
           $assets | ForEach-Object { Write-Host "  $_" }
 
           $flags = @('--title', "StarRupture ModLoader $tag", '--generate-notes')
+          # Put UPDATE_NOTES.txt above the generated list when it exists.
+          $notesFile = "$ws\UPDATE_NOTES.txt"
+          if ((Test-Path $notesFile) -and (Get-Content $notesFile | Where-Object { $_.Trim() })) {
+            $flags += @('--notes-file', $notesFile)
+          }
           if ("${{ steps.tag.outputs.IS_PREVIEW }}" -eq 'true') {
             $flags += '--prerelease'
           }

@@ -216,6 +216,9 @@
     <ClInclude Include="UI\plugin_widget_registry.h">
       <Filter>Source Files\UI\modloader</Filter>
     </ClInclude>
+    <ClInclude Include="UI\plugin_call_tracker.h">
+      <Filter>Source Files\UI\modloader</Filter>
+    </ClInclude>
     <ClInclude Include="UI\splash_window.h">
       <Filter>Source Files\UI</Filter>
     </ClInclude>
@@ -280,6 +283,9 @@
       <Filter>Source Files\logging</Filter>
     </ClInclude>
     <ClInclude Include="config\config_manager.h">
+      <Filter>Source Files\config</Filter>
+    </ClInclude>
+    <ClInclude Include="config\config_edit.h">
       <Filter>Source Files\config</Filter>
     </ClInclude>
     <ClInclude Include="auto_update\auto_updater.h">
@@ -642,6 +648,9 @@
       <Filter>Source Files\logging</Filter>
     </ClCompile>
     <ClCompile Include="config\config_manager.cpp">
+      <Filter>Source Files\config</Filter>
+    </ClCompile>
+    <ClCompile Include="config\config_edit.cpp">
       <Filter>Source Files\config</Filter>
     </ClCompile>
     <ClCompile Include="auto_update\auto_updater.cpp">

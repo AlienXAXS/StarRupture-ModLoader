@@ -16,6 +16,7 @@ namespace UI::UpdateNoticeWindow
         std::string name;
         std::string oldVersion; // empty when no previous version was stored
         std::string newVersion;
+        std::vector<std::string> notes; // one entry per line; empty when the manifest had none
     };
 
     // s_mutex guards s_updates: AddUpdatedPlugin runs on the init thread
@@ -25,7 +26,8 @@ namespace UI::UpdateNoticeWindow
     static bool s_isOpen = false;
     static bool s_shown  = false;   // one-shot: only auto-open once per session
 
-    void AddUpdatedPlugin(const char* name, const char* oldVersion, const char* newVersion)
+    void AddUpdatedPlugin(const char* name, const char* oldVersion, const char* newVersion,
+                          const char* notes)
     {
         if (!name || !name[0]) return;
 
@@ -34,6 +36,20 @@ namespace UI::UpdateNoticeWindow
         u.name       = name;
         u.oldVersion = oldVersion ? oldVersion : "";
         u.newVersion = newVersion ? newVersion : "";
+
+        const std::string text = notes ? notes : "";
+        for (size_t pos = 0; pos < text.size();)
+        {
+            size_t end = text.find('\n', pos);
+            if (end == std::string::npos)
+                end = text.size();
+            std::string line = text.substr(pos, end - pos);
+            if (!line.empty() && line.back() == '\r')
+                line.pop_back();
+            if (!line.empty())
+                u.notes.push_back(std::move(line));
+            pos = end + 1;
+        }
         s_updates.push_back(std::move(u));
     }
 
@@ -59,6 +75,9 @@ namespace UI::UpdateNoticeWindow
         // the window width, so AlwaysAutoResize would feed back into itself and
         // grow the window every frame.
         ImGui::SetNextWindowSize(ImVec2(640, 0), ImGuiCond_Always);
+        // Notes can make the list taller than the screen; cap the auto-fit
+        // height and let the window scroll past it.
+        ImGui::SetNextWindowSizeConstraints(ImVec2(640, 0), ImVec2(640, io.DisplaySize.y * 0.8f));
         ImGui::SetNextWindowPos(
             ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f),
             ImGuiCond_Appearing,
@@ -87,6 +106,15 @@ namespace UI::UpdateNoticeWindow
                     ImGui::TextDisabled("%s -> %s", u.oldVersion.c_str(), u.newVersion.c_str());
                 else
                     ImGui::TextDisabled("installed %s", u.newVersion.c_str());
+
+                ImGui::Indent();
+                for (const std::string& line : u.notes)
+                {
+                    ImGui::Bullet();
+                    ImGui::SameLine();
+                    ImGui::TextWrapped("%s", line.c_str());
+                }
+                ImGui::Unindent();
             }
         }
 
@@ -116,9 +144,9 @@ namespace UI::UpdateNoticeWindow
         {
             std::lock_guard<std::mutex> lock(s_mutex);
             s_updates.clear();
-            s_updates.push_back({ "ServerUtility",   "1.4.2", "1.5.0" });
-            s_updates.push_back({ "MapTweaks",       "0.9.0", "1.0.0" });
-            s_updates.push_back({ "CraftingHelper",  "",      "2.1.3" });
+            s_updates.push_back({ "ServerUtility",   "1.4.2", "1.5.0", { "Fixed a crash when changing servers" } });
+            s_updates.push_back({ "MapTweaks",       "0.9.0", "1.0.0", {} });
+            s_updates.push_back({ "CraftingHelper",  "",      "2.1.3", {} });
         }
         s_isOpen = true;
         s_shown  = true;

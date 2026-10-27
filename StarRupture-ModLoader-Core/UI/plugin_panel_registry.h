@@ -23,7 +23,9 @@ namespace UI::PluginPanelRegistry
     // (internally PanelEntry*), or null on failure.
     PanelHandle RegisterPanel(const PluginPanelDesc* desc);
 
-    // Remove a panel using the handle returned by RegisterPanel.
+    // Remove a panel using the handle returned by RegisterPanel. If another
+    // thread is drawing the panel, waits (bounded) for that to finish, so desc
+    // may be freed once this returns.
     void UnregisterPanel(PanelHandle handle);
 
     // Register/unregister a config-change notification callback. self is the
@@ -32,6 +34,13 @@ namespace UI::PluginPanelRegistry
     // whose config actually changed.
     void RegisterOnConfigChanged(const IPluginSelf* self, PluginConfigChangedCallback callback);
     void UnregisterOnConfigChanged(const IPluginSelf* self, PluginConfigChangedCallback callback);
+
+    // Drops every config-change callback the plugin still has registered. Call
+    // before the plugin's DLL is unloaded: a callback is an address inside that
+    // module, and the plugin's slot (so its self pointer) outlives the unload, so
+    // one the plugin failed to unregister would otherwise be called into unmapped
+    // memory the next time its config changes.
+    void ForgetConfigCallbacks(const IPluginSelf* self);
 
     // Open or close a panel using the handle returned by RegisterPanel.
     void SetPanelOpen(PanelHandle handle);
@@ -42,6 +51,18 @@ namespace UI::PluginPanelRegistry
     // titlebar X button (RenderPanelWindows) or via SetPanelClose.
     void RegisterOnPanelWindowClosed(PluginPanelClosedCallback callback);
     void UnregisterOnPanelWindowClosed(PluginPanelClosedCallback callback);
+
+    // Drop every panel and panel-closed callback that lives in the given
+    // module. For the plugin manager to call just before it FreeLibrary()s a
+    // plugin: a panel holds pointers into the plugin's image (its descriptor,
+    // titles and renderFn) and is called every frame, so one the plugin did not
+    // unregister itself -- PluginShutdown crashed, or never got that far --
+    // would be read after the module is gone. An open panel is dropped without
+    // firing the panel-closed callbacks. Then waits (bounded) for any render or
+    // panel-closed callback of the module still running on another thread.
+    // Returns false if one still was when the wait gave up: the module must
+    // not be freed then.
+    bool ForgetModule(HMODULE module);
 
     // Acquire/release an input-capture request token. While at least one
     // token is held, AnyInputCaptureRequested() returns true.
@@ -87,7 +108,7 @@ namespace UI::PluginPanelRegistry
     // the main modloader window is closed.
     bool AnyPanelOpen();
 
-    // Called by modloader_window to fire config-change notifications.
+    // Called by ConfigEdit to fire config-change notifications.
     // pluginName is the plugin that owns the changed config file -- only
     // callbacks registered by that plugin are invoked.
     void FireConfigChanged(const char* pluginName, const char* section, const char* key, const char* newValue);

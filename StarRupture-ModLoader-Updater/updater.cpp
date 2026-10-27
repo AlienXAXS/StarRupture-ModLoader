@@ -261,6 +261,57 @@ namespace
         return value;
     }
 
+    // Same as JsonExtractString, but decodes the JSON escapes instead of
+    // dropping the backslash, so a "notes" value keeps its line breaks.
+    // Handles \n \t \" \\ \/ and \uXXXX; \r is dropped, and a \u escape
+    // outside printable ASCII becomes '?' so the text always shows in a
+    // message box.
+    std::string JsonExtractDecodedString(const std::string& json, const char* key)
+    {
+        std::string needle = std::string("\"") + key + "\"";
+        size_t kpos = json.find(needle);
+        if (kpos == std::string::npos)
+            return {};
+
+        size_t vstart = json.find('"', kpos + needle.size());
+        if (vstart == std::string::npos)
+            return {};
+        ++vstart;
+
+        std::string value;
+        for (size_t i = vstart; i < json.size(); ++i)
+        {
+            if (json[i] == '"')
+                break;
+
+            if (json[i] != '\\' || i + 1 >= json.size())
+            {
+                value += json[i];
+                continue;
+            }
+
+            switch (json[++i])
+            {
+            case 'n': value += '\n'; break;
+            case 't': value += '\t'; break;
+            case 'r': break;
+            case 'u':
+            {
+                bool ok = i + 4 < json.size();
+                for (size_t k = 1; ok && k <= 4; ++k)
+                    ok = isxdigit(static_cast<unsigned char>(json[i + k])) != 0;
+                const unsigned code = ok ? std::stoul(json.substr(i + 1, 4), nullptr, 16) : 0;
+                if (ok)
+                    i += 4;
+                value += (ok && (code == '\n' || (code >= 0x20 && code < 0x7F))) ? static_cast<char>(code) : '?';
+                break;
+            }
+            default: value += json[i]; break;
+            }
+        }
+        return value;
+    }
+
     // =======================================================================
     // WinHTTP GET (HTTPS, follows redirects -- needed for GitHub CDN)
     // =======================================================================
@@ -847,16 +898,22 @@ int RunUpdater(const wchar_t* gameDir)
     // ----------------------------------------------------------------------
     // Ask the user.
     // ----------------------------------------------------------------------
-    wchar_t prompt[512];
-    swprintf_s(prompt,
+    wchar_t versions[512];
+    swprintf_s(versions,
                L"A new version of the StarRupture Mod Loader is available.\n\n"
                L"Installed version:  %S\n"
-               L"Latest version:      %S\n\n"
-               L"Install it now?  The game will continue loading with the new "
-               L"version once the update completes.",
+               L"Latest version:      %S\n\n",
                localDisplay.c_str(), remoteTag.c_str());
 
-    int answer = MessageBoxW(nullptr, prompt,
+    // Optional "notes" from the manifest: one change per line.
+    std::wstring prompt = versions;
+    std::string notes = JsonExtractDecodedString(manifest, "notes");
+    if (!notes.empty())
+        prompt += L"What's new:\n" + Widen(notes) + L"\n\n";
+    prompt += L"Install it now?  The game will continue loading with the new "
+              L"version once the update completes.";
+
+    int answer = MessageBoxW(nullptr, prompt.c_str(),
                              L"StarRupture Mod Loader -- Update Available",
                              MB_YESNO | MB_ICONQUESTION | MB_SETFOREGROUND | MB_TOPMOST);
     if (answer != IDYES)
