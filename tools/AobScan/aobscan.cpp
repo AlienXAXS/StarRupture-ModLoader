@@ -12,6 +12,21 @@
 //
 // Exit code: 0 when every required pattern is OK, 1 when a required pattern is
 // not, 2 when the file could not be read or is not an x64 PE image.
+//
+// Where an offline scan differs from the in-game preflight:
+//   * The image is the file as shipped. Pages the game patches or unpacks at
+//     run time (anything written after load) are not seen; a packed or
+//     encrypted .text would scan as noise.
+//   * The version gate and the scan cache are bypassed: the mapped image is
+//     not the process's main module, so every pattern is scanned fresh.
+//   * -SkipPatternValidation is not modelled. In-game it tolerates found-but-
+//     structurally-wrong results; here WRONGKIND is reported and counts as a
+//     failure for a required pattern. NoMatch is fatal in both.
+//   * Hook patches are not applied (PatchOverlay is empty), which is also the
+//     state preflight runs in.
+//   * Page protections, IAT and TLS are not set up, and tail bytes past
+//     SizeOfImage are not present; SizeOfImage is what the loader scans.
+//   * Failure reports carry no symbol name (no DbgHelp).
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
