@@ -46,36 +46,6 @@ on:
         description: 'Codex branch'
         type: string
         default: 'main'
-      issue:
-        description: 'Issue number to post the result on (blank: no comment)'
-        type: string
-        default: ''
-  workflow_call:
-    inputs:
-      loader_branch:
-        type: string
-        default: 'main'
-      plugin_sdk_branch:
-        type: string
-        default: 'main'
-      game_sdk_branch:
-        type: string
-        default: 'main'
-      betterdrone_branch:
-        type: string
-        default: 'main'
-      bettercheats_branch:
-        type: string
-        default: 'main'
-      waila_branch:
-        type: string
-        default: 'main'
-      codex_branch:
-        type: string
-        default: 'main'
-      issue:
-        type: string
-        default: ''
   schedule:
     - cron: '23 3 * * *'
   pull_request:
@@ -310,14 +280,12 @@ jobs:
     permissions:
       contents: read
       actions: read    # list this run's jobs and artifacts
-      issues: write    # comment on the game-update issue
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
       RUN_ID: ${{ github.run_id }}
       SERVER_URL: ${{ github.server_url }}
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-      ISSUE: ${{ inputs.issue }}
       RESULTS: ${{ needs.interface.result }} ${{ needs.loader.result }} ${{ needs.plugin.result }}
       BRANCHES: >-
         loader=${{ inputs.loader_branch || 'main' }}
@@ -369,9 +337,3 @@ jobs:
           } > report.md
           cat report.md >> "$GITHUB_STEP_SUMMARY"
 
-          if [[ "$ISSUE" =~ ^[0-9]+$ ]]; then
-            # A read-only token (a PR from a fork) cannot comment; that is
-            # not a failure of the check.
-            gh issue comment "$ISSUE" --body-file report.md \
-              || echo "::warning::Could not comment on issue #$ISSUE (read-only token?); result is in the run summary."
-          fi
