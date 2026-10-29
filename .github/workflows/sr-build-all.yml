@@ -1,0 +1,377 @@
+name: SR build all
+
+# Compile check, one result per component: loader Client, loader Server,
+# BetterDrone, BetterCheats, WAILA, Codex, plus the Plugin SDK interface
+# version check. Build steps and MSBuild arguments are copied from the
+# loader's release.yml and the plugins' release.yml, minus everything that
+# tags, releases, uploads to Nexus or writes a manifest.
+#
+# Components are separate jobs (fail-fast is off) so one failure never hides
+# another. Each kind has its own job (interface-check, loader, plugin): a
+# later phase adds a step to that kind's job, or a sibling job that needs it,
+# without restructuring the rest.
+#
+# Does not call release.yml, build-plugins.yml or draft.yml, creates no tags
+# and no releases, and pushes nothing. Every repo is checked out read-only.
+# Output is short-retention artifacts of our own build products only.
+
+on:
+  workflow_dispatch:
+    inputs:
+      loader_branch:
+        description: 'ModLoader branch'
+        type: string
+        default: 'main'
+      plugin_sdk_branch:
+        description: 'Plugin SDK branch'
+        type: string
+        default: 'main'
+      game_sdk_branch:
+        description: 'Game SDK branch (plugins only; the loader builds against the SDK commit it pins)'
+        type: string
+        default: 'main'
+      betterdrone_branch:
+        description: 'BetterDrone branch'
+        type: string
+        default: 'main'
+      bettercheats_branch:
+        description: 'BetterCheats branch'
+        type: string
+        default: 'main'
+      waila_branch:
+        description: 'WAILA branch'
+        type: string
+        default: 'main'
+      codex_branch:
+        description: 'Codex branch'
+        type: string
+        default: 'main'
+      issue:
+        description: 'Issue number to post the result on (blank: no comment)'
+        type: string
+        default: ''
+  workflow_call:
+    inputs:
+      loader_branch:
+        type: string
+        default: 'main'
+      plugin_sdk_branch:
+        type: string
+        default: 'main'
+      game_sdk_branch:
+        type: string
+        default: 'main'
+      betterdrone_branch:
+        type: string
+        default: 'main'
+      bettercheats_branch:
+        type: string
+        default: 'main'
+      waila_branch:
+        type: string
+        default: 'main'
+      codex_branch:
+        type: string
+        default: 'main'
+      issue:
+        type: string
+        default: ''
+  schedule:
+    - cron: '23 3 * * *'
+  pull_request:
+    # Proves the builds before the workflow files are merged. It builds the
+    # default branches; the PR itself only changes these files.
+    paths:
+      - '.github/workflows/sr-*.yml'
+      - '.github/sr-pipeline/**'
+
+permissions: {}
+
+env:
+  # Repos come from the owner running this workflow; a repo variable
+  # SR_OWNER overrides that when the mods live under a different account.
+  OWNER: ${{ vars.SR_OWNER || github.repository_owner }}
+
+jobs:
+  # ---- Plugin SDK -------------------------------------------------------
+  interface:
+    name: interface-check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Check out the loader headers
+        uses: actions/checkout@v7.0.1
+        with:
+          repository: ${{ env.OWNER }}/StarRupture-ModLoader
+          ref: ${{ inputs.loader_branch || 'main' }}
+          path: loader
+          sparse-checkout: StarRupture-ModLoader-Core/plugins/plugin_interface.h
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
+      - name: Check out the Plugin SDK headers
+        uses: actions/checkout@v7.0.1
+        with:
+          repository: ${{ env.OWNER }}/StarRupture-Plugin-SDK
+          ref: ${{ inputs.plugin_sdk_branch || 'main' }}
+          path: plugin-sdk
+          sparse-checkout: include/plugin_interface.h
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
+      - name: Compare PLUGIN_INTERFACE_VERSION with what the loader accepts
+        run: |
+          # A plugin built against an interface version outside the loader's
+          # [MIN, MAX] is refused at load time. An unreadable header fails
+          # here instead of being skipped, because nobody reads a CI log line.
+          define() { sed -nE "s/^[[:space:]]*#define[[:space:]]+$2[[:space:]]+([0-9]+).*/\1/p" "$1" | head -n1; }
+          sdk="$(define plugin-sdk/include/plugin_interface.h PLUGIN_INTERFACE_VERSION)"
+          min="$(define loader/StarRupture-ModLoader-Core/plugins/plugin_interface.h PLUGIN_INTERFACE_VERSION_MIN)"
+          max="$(define loader/StarRupture-ModLoader-Core/plugins/plugin_interface.h PLUGIN_INTERFACE_VERSION_MAX)"
+          if [ -z "$sdk" ] || [ -z "$min" ] || [ -z "$max" ]; then
+            echo "::error::Could not read PLUGIN_INTERFACE_VERSION (SDK='$sdk') or MIN/MAX (loader='$min'/'$max')"
+            exit 1
+          fi
+          if [ "$sdk" -lt "$min" ] || [ "$sdk" -gt "$max" ]; then
+            echo "::error::INTERFACE VERSION MISMATCH: plugins build against $sdk but the loader accepts [$min, $max]; it will refuse them"
+            exit 1
+          fi
+          echo "Interface version OK: building against $sdk, loader accepts [$min, $max]."
+
+  # ---- Loader (Client, Server) -----------------------------------------
+  loader:
+    name: ${{ matrix.name }}
+    runs-on: windows-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: loader-client
+            config: Client Release
+            manifest: manifest-client.json
+          - name: loader-server
+            config: Server Release
+            manifest: manifest-server.json
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7.0.1
+        with:
+          repository: ${{ env.OWNER }}/StarRupture-ModLoader
+          ref: ${{ inputs.loader_branch || 'main' }}
+          # The Game SDK is the loader's own git submodule: the build uses the
+          # commit the loader pins, not the game_sdk_branch input.
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Add MSBuild to PATH
+        uses: microsoft/setup-msbuild@v3
+
+      - name: Build ${{ matrix.config }}
+        shell: pwsh
+        env:
+          BUILD_TAG: ci-${{ github.run_number }}
+          MANIFEST_URL: ${{ github.server_url }}/${{ github.repository }}/releases/latest/download/${{ matrix.manifest }}
+        run: |
+          # Same arguments as the loader's release.yml build steps (the
+          # build tag and manifest URL are compiled in, so the code behind
+          # them is compile-checked too), plus the parallelism switches.
+          msbuild "StarRupture-ModLoader.sln" `
+            /p:Configuration="${{ matrix.config }}" `
+            /p:Platform=x64 `
+            /p:PostBuildEventUseInBuild=false `
+            /p:ModLoaderBuildTag="$env:BUILD_TAG" `
+            /p:AutoUpdateManifestUrl="$env:MANIFEST_URL" `
+            /m `
+            /p:CL_MP=true `
+            /nodeReuse:false `
+            /v:minimal
+
+      - name: Pattern scan (placeholder)
+        run: echo "::notice::Pattern scan not available yet. The in-game preflight is the only check of the loader's AOB patterns today."
+
+      - name: Upload build
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: ${{ matrix.name }}
+          path: |
+            build/${{ matrix.config }}/dwmapi.dll
+            build/${{ matrix.config }}/ModLoader/*.dll
+          if-no-files-found: error
+          retention-days: 3
+
+  # ---- Plugins ----------------------------------------------------------
+  plugin:
+    name: ${{ matrix.name }}
+    runs-on: windows-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: betterdrone
+            repo: StarRupture-Plugin-BetterDrone
+            branch: ${{ inputs.betterdrone_branch || 'main' }}
+            sln: BetterDrone.sln
+            dll: BetterDrone.dll
+          - name: bettercheats
+            repo: StarRupture-Plugin-BetterCheats
+            branch: ${{ inputs.bettercheats_branch || 'main' }}
+            sln: StarRupture-Plugin-BetterCheats.sln
+            dll: BetterCheats.dll
+          - name: waila
+            repo: StarRupture-Plugin-WAILA
+            branch: ${{ inputs.waila_branch || 'main' }}
+            sln: StarRupture-Plugin-Waila.sln
+            dll: Waila.dll
+          - name: codex
+            repo: StarRupture-Plugin-Codex
+            branch: ${{ inputs.codex_branch || 'main' }}
+            sln: StarRupture-Plugin-Codex.sln
+            dll: Codex.dll
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7.0.1
+        with:
+          repository: ${{ env.OWNER }}/${{ matrix.repo }}
+          ref: ${{ matrix.branch }}
+          persist-credentials: false
+
+      - name: Checkout Plugin SDK
+        uses: actions/checkout@v7.0.1
+        with:
+          repository: ${{ env.OWNER }}/StarRupture-Plugin-SDK
+          ref: ${{ inputs.plugin_sdk_branch || 'main' }}
+          path: plugin-sdk
+          persist-credentials: false
+
+      - name: Checkout Game SDK
+        uses: actions/checkout@v7.0.1
+        with:
+          repository: ${{ env.OWNER }}/StarRupture-Game-SDK
+          ref: ${{ inputs.game_sdk_branch || 'main' }}
+          path: game-sdk
+          persist-credentials: false
+
+      - name: Add MSBuild to PATH
+        uses: microsoft/setup-msbuild@v3
+
+      - name: Read the plugin version
+        id: ver
+        shell: pwsh
+        run: |
+          # The plugin's own `version` file; 'dev' when it has none.
+          $file = Join-Path $env:GITHUB_WORKSPACE 'version'
+          $tag = 'dev'
+          if (Test-Path $file) {
+            $raw = (Get-Content $file -Raw).Trim()
+            if ($raw) { $tag = $raw }
+          }
+          "build_tag=$tag" >> $env:GITHUB_OUTPUT
+
+      - name: Build Client Release
+        shell: pwsh
+        env:
+          BUILD_TAG: ${{ steps.ver.outputs.build_tag }}
+        run: |
+          msbuild "${{ matrix.sln }}" `
+            /p:Configuration="Client Release" `
+            /p:Platform=x64 `
+            /p:PostBuildEventUseInBuild=false `
+            /p:ModLoaderBuildTag="$env:BUILD_TAG" `
+            /p:GameSDKRoot="${{ github.workspace }}\game-sdk" `
+            /p:PluginSDKInclude="${{ github.workspace }}\plugin-sdk\include" `
+            /m `
+            /p:CL_MP=true `
+            /nodeReuse:false `
+            /v:minimal
+
+      - name: Upload build
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: ${{ matrix.name }}
+          path: build/Client Release/Plugins/${{ matrix.dll }}
+          if-no-files-found: error
+          retention-days: 3
+
+  # ---- Result per component --------------------------------------------
+  report:
+    name: report
+    needs: [interface, loader, plugin]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read    # list this run's jobs and artifacts
+      issues: write    # comment on the game-update issue
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RUN_ID: ${{ github.run_id }}
+      SERVER_URL: ${{ github.server_url }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      ISSUE: ${{ inputs.issue }}
+      RESULTS: ${{ needs.interface.result }} ${{ needs.loader.result }} ${{ needs.plugin.result }}
+      BRANCHES: >-
+        loader=${{ inputs.loader_branch || 'main' }}
+        plugin-sdk=${{ inputs.plugin_sdk_branch || 'main' }}
+        game-sdk=${{ inputs.game_sdk_branch || 'main' }}
+        betterdrone=${{ inputs.betterdrone_branch || 'main' }}
+        bettercheats=${{ inputs.bettercheats_branch || 'main' }}
+        waila=${{ inputs.waila_branch || 'main' }}
+        codex=${{ inputs.codex_branch || 'main' }}
+    steps:
+      - name: Summarise and comment
+        run: |
+          overall=PASS
+          for r in $RESULTS; do [ "$r" = success ] || overall=FAIL; done
+
+          jobs="$(gh api --paginate "repos/$GH_REPO/actions/runs/$RUN_ID/jobs?per_page=100" --jq '.jobs[]' | jq -s '.')"
+          arts="$(gh api --paginate "repos/$GH_REPO/actions/runs/$RUN_ID/artifacts?per_page=100" --jq '.artifacts[]' | jq -s '.')"
+
+          # One row per component. A job is matched by the last segment of
+          # its name (called workflows prefix the caller's name); a component
+          # with no job (skipped or never started) shows as "not run".
+          rows="$(jq -nr --argjson jobs "$jobs" --argjson arts "$arts" \
+            --arg run "$RUN_URL" --arg srv "$SERVER_URL" --arg repo "$GH_REPO" --arg id "$RUN_ID" '
+            [["loader-client","Loader (Client)"],["loader-server","Loader (Server)"],
+             ["betterdrone","BetterDrone"],["bettercheats","BetterCheats"],
+             ["waila","WAILA"],["codex","Codex"],["interface-check","Plugin SDK (interface version)"]][]
+            | . as [$key, $label]
+            | ([$jobs[] | select((.name | sub("^.* / "; "")) == $key)] | first) as $j
+            | ([$arts[] | select(.name == $key)] | first) as $a
+            | "| \($label) | \($j.conclusion // $j.status // "not run") | "
+              + (if $j then "[job](\($j.html_url))" else "-" end) + " | "
+              + (if $a then "[artifact](\($srv)/\($repo)/actions/runs/\($id)/artifacts/\($a.id))" else "-" end) + " |"')"
+
+          {
+            echo "### Compile check: $overall"
+            echo
+            echo "Run: $RUN_URL"
+            echo
+            echo "| Component | Result | Job | Artifact |"
+            echo "|---|---|---|---|"
+            echo "$rows"
+            echo "| Game SDK | manual | - | - |"
+            echo
+            echo "Branches: $BRANCHES"
+            echo
+            echo "Each component stands alone: a failure in one does not hide the others. Plugins build against the Game SDK branch given above; the loader builds against the SDK commit it pins (its submodule). The Game SDK row is never automatic: it needs a fresh dump from a running game."
+            echo
+            echo "This only says whether the code compiles and the plugin interface version matches. It does not say whether the mods work in game: the loader's AOB patterns (scan not available yet) and every hard offset are only exercised in game."
+          } > report.md
+          cat report.md >> "$GITHUB_STEP_SUMMARY"
+
+          if [[ "$ISSUE" =~ ^[0-9]+$ ]]; then
+            # A read-only token (a PR from a fork) cannot comment; that is
+            # not a failure of the check.
+            gh issue comment "$ISSUE" --body-file report.md \
+              || echo "::warning::Could not comment on issue #$ISSUE (read-only token?); result is in the run summary."
+          fi

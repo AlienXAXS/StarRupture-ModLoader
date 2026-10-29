@@ -1,0 +1,117 @@
+name: SR Steam watch
+
+# Polls Steam build ids for StarRupture (1631270) and the dedicated server
+# (3809400). On a change: opens a `game-update` issue, records the new ids on
+# the `ci-state` branch and runs the compile check (sr-build-all.yml).
+#
+# Does not touch main, tags, releases or any branch other than `ci-state`.
+# Never calls or triggers release.yml, build-plugins.yml or draft.yml.
+
+on:
+  schedule:
+    - cron: '7,37 * * * *'
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Open the issue and run the build check even if no build id changed'
+        type: boolean
+        default: false
+
+concurrency:
+  group: sr-watch
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  poll:
+    name: poll
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write   # push the state branch (ci-state) only
+      issues: write     # create the game-update label and issue
+    outputs:
+      changed: ${{ steps.poll.outputs.changed }}
+      issue: ${{ steps.issue.outputs.number }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      STATE_BRANCH: ci-state
+    steps:
+      - name: Check out the poll script
+        uses: actions/checkout@v7.0.1
+        with:
+          sparse-checkout: .github/sr-pipeline
+          persist-credentials: false
+
+      - name: Check out the state branch
+        run: |
+          # State lives on its own branch so the default branch never gets a
+          # bot commit. The first run creates it as an orphan; a missing
+          # branch or file means "baseline, no alarm".
+          # The token-URL clone is deliberate: the checkout action above is
+          # sparse and credential-free, and this branch is the only thing the
+          # workflow writes, so the write credential is used only here.
+          url="https://x-access-token:${GH_TOKEN}@${GITHUB_SERVER_URL#https://}/${GH_REPO}.git"
+          rc=0
+          git ls-remote --exit-code --heads "$url" "$STATE_BRANCH" >/dev/null || rc=$?
+          case "$rc" in
+            0) git clone --quiet --depth 1 --branch "$STATE_BRANCH" "$url" state-wt ;;
+            2) git init --quiet -b "$STATE_BRANCH" state-wt
+               git -C state-wt remote add origin "$url" ;;
+            *) echo "::error::git ls-remote failed (exit $rc); not guessing whether $STATE_BRANCH exists"; exit 1 ;;
+          esac
+
+      - name: Poll Steam
+        id: poll
+        env:
+          FORCE: ${{ inputs.force }}
+        run: |
+          flags=()
+          if [ "$FORCE" = "true" ]; then flags+=(--force); fi
+          node .github/sr-pipeline/poll-steam.mjs \
+            --state state-wt/state/steam.json --out-dir "$RUNNER_TEMP/sr" "${flags[@]}"
+
+      - name: Open or reuse the game-update issue
+        id: issue
+        if: steps.poll.outputs.changed == 'true'
+        run: |
+          gh label create game-update --color D93F0B \
+            --description 'Steam reported a new StarRupture build' --force
+          title="$(cat "$RUNNER_TEMP/sr/issue-title.txt")"
+          # Same title means same build ids: reuse the open issue instead of
+          # opening a duplicate (a retried run, or a repeated forced run).
+          number="$(gh issue list --label game-update --state open --limit 100 \
+            --json number,title | jq -r --arg t "$title" '.[] | select(.title == $t) | .number' | head -n1)"
+          if [ -z "$number" ]; then
+            url="$(gh issue create --title "$title" --label game-update \
+              --body-file "$RUNNER_TEMP/sr/issue-body.md")"
+            number="${url##*/}"
+          fi
+          echo "number=$number" >> "$GITHUB_OUTPUT"
+
+      - name: Record the state
+        if: steps.poll.outputs.dirty == 'true'
+        working-directory: state-wt
+        run: |
+          # After the issue exists on purpose: a failed push here gives a
+          # duplicate-free retry (the issue is reused by title), whereas
+          # recording first and failing to open the issue would lose the alert.
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add state/steam.json
+          git commit -m "Record Steam build ids"
+          git push origin "HEAD:refs/heads/$STATE_BRANCH"
+
+  build:
+    name: build-all
+    needs: poll
+    if: needs.poll.outputs.changed == 'true'
+    permissions:
+      contents: read
+      issues: write
+      actions: read
+    uses: ./.github/workflows/sr-build-all.yml
+    with:
+      issue: ${{ needs.poll.outputs.issue }}
