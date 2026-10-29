@@ -1,0 +1,28 @@
+{
+  "schema": 1,
+  "checkedAt": "2026-10-29T20:51:38Z",
+  "apps": {
+    "1631270": {
+      "name": "StarRupture",
+      "branches": {
+        "public": {
+          "buildid": "25646882",
+          "timeupdated": 1791183280
+        },
+        "public_test_branch": {
+          "buildid": "26271156",
+          "timeupdated": 1793261368
+        }
+      }
+    },
+    "3809400": {
+      "name": "StarRupture Dedicated Server",
+      "branches": {
+        "public": {
+          "buildid": "25642172",
+          "timeupdated": 1791183334
+        }
+      }
+    }
+  }
+}
