@@ -9,9 +9,15 @@
 // only ever opened for reading.
 //
 //   sr-aobscan <game.exe> [--json] [--verbose]
+//   sr-aobscan <game.exe> --plugin <plugin.dll> [--json] [--verbose]
 //
 // Exit code: 0 when every required pattern is OK, 1 when a required pattern is
 // not, 2 when the file could not be read or is not an x64 PE image.
+//
+// --plugin checks one plugin's patterns instead of the loader's: it calls the
+// plugin's own OnPluginLoadHooks against the mapped image (plugin_scan.cpp).
+// Exit code 0 when the loader would let the plugin load, 1 when it would
+// refuse it, 2 when the DLL is not a loadable client plugin.
 //
 // Where an offline scan differs from the in-game preflight:
 //   * The image is the file as shipped. Pages the game patches or unpacks at
@@ -39,12 +45,15 @@
 #include "hooks/game/scan_patterns.h"
 #include "memory_scanner/image_info.h"
 #include "memory_scanner/scan_validation.h"
+#include "plugin_scan.h"
+
+using AobScan::kExitOk;
+using AobScan::kExitFailed;
+using AobScan::kExitBadInput;
+using AobScan::JsonEscape;
 
 namespace
 {
-	constexpr int kExitOk       = 0;
-	constexpr int kExitFailed   = 1;
-	constexpr int kExitBadInput = 2;
 
 #if defined(MODLOADER_SERVER_BUILD)
 	constexpr const char* kTarget = "server";
@@ -281,6 +290,25 @@ namespace
 		uint64_t                            rva    = 0;
 	};
 
+
+	void PrintDetail(const std::string& detail)
+	{
+		size_t start = 0;
+		while (start <= detail.size())
+		{
+			const size_t end = detail.find("\r\n", start);
+			const std::string line = detail.substr(start, end == std::string::npos ? std::string::npos : end - start);
+			if (!line.empty())
+				printf("    %s\n", line.c_str());
+			if (end == std::string::npos)
+				break;
+			start = end + 2;
+		}
+	}
+}
+
+namespace AobScan
+{
 	std::string JsonEscape(const std::string& s)
 	{
 		std::string out;
@@ -306,26 +334,12 @@ namespace
 		}
 		return out;
 	}
-
-	void PrintDetail(const std::string& detail)
-	{
-		size_t start = 0;
-		while (start <= detail.size())
-		{
-			const size_t end = detail.find("\r\n", start);
-			const std::string line = detail.substr(start, end == std::string::npos ? std::string::npos : end - start);
-			if (!line.empty())
-				printf("    %s\n", line.c_str());
-			if (end == std::string::npos)
-				break;
-			start = end + 2;
-		}
-	}
 }
 
 int wmain(int argc, wchar_t** argv)
 {
 	const wchar_t* path    = nullptr;
+	const wchar_t* plugin  = nullptr;
 	bool           json    = false;
 	bool           verbose = false;
 
@@ -333,6 +347,7 @@ int wmain(int argc, wchar_t** argv)
 	{
 		if (wcscmp(argv[i], L"--json") == 0)         json = true;
 		else if (wcscmp(argv[i], L"--verbose") == 0) verbose = true;
+		else if (wcscmp(argv[i], L"--plugin") == 0 && i + 1 < argc && !plugin) plugin = argv[++i];
 		else if (!path && argv[i][0] != L'-')        path = argv[i];
 		else
 		{
@@ -356,6 +371,9 @@ int wmain(int argc, wchar_t** argv)
 
 	const auto module = reinterpret_cast<HMODULE>(image.base);
 	const auto base   = reinterpret_cast<uintptr_t>(image.base);
+
+	if (plugin)
+		return AobScan::ScanPlugin(module, plugin, json, verbose);
 
 	std::vector<Row> rows;
 	for (const ScanPatterns::PreflightEntry& entry : ScanPatterns::PreflightRegistry)

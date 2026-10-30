@@ -96,12 +96,14 @@
   <ItemGroup Label="Tool">
     <ClCompile Include="aobscan.cpp" />
     <ClCompile Include="stubs.cpp" />
+    <ClCompile Include="plugin_scan.cpp" />
   </ItemGroup>
   <ItemGroup Label="Loader sources used as they are">
     <ClCompile Include="$(CoreDir)memory_scanner\scanner.cpp" />
     <ClCompile Include="$(CoreDir)memory_scanner\scan_validation.cpp" />
     <ClCompile Include="$(CoreDir)memory_scanner\image_info.cpp" />
     <ClCompile Include="$(CoreDir)memory_scanner\patch_overlay.cpp" />
+    <ClCompile Include="$(CoreDir)memory_scanner\hook_scanner_interface.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
