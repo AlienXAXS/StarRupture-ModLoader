@@ -16,8 +16,10 @@
 //
 // --plugin checks one plugin's patterns instead of the loader's: it calls the
 // plugin's own OnPluginLoadHooks against the mapped image (plugin_scan.cpp).
-// Exit code 0 when the loader would let the plugin load, 1 when it would
-// refuse it, 2 when the DLL is not a loadable client plugin.
+// Exit code 0 when the loader would let the plugin load (PASS, NONE, or
+// GAME-CALL: every pattern OK and the hook's calls into game code stopped),
+// 1 when it would refuse it or the hook crashed, 2 when the DLL is not a
+// loadable client plugin.
 //
 // Where an offline scan differs from the in-game preflight:
 //   * The image is the file as shipped. Pages the game patches or unpacks at
@@ -30,8 +32,10 @@
 //     failure for a required pattern. NoMatch is fatal in both.
 //   * Hook patches are not applied (PatchOverlay is empty), which is also the
 //     state preflight runs in.
-//   * Page protections, IAT and TLS are not set up, and tail bytes past
-//     SizeOfImage are not present; SizeOfImage is what the loader scans.
+//   * IAT and TLS are not set up, and tail bytes past SizeOfImage are not
+//     present; SizeOfImage is what the loader scans. Section page protections
+//     are set in --plugin mode only (plugins check them; the loader's own
+//     scan does not).
 //   * Failure reports carry no symbol name (no DbgHelp).
 #include <cstdint>
 #include <cstdio>
@@ -290,8 +294,9 @@ namespace
 		uint64_t                            rva    = 0;
 	};
 
-
-	void PrintDetail(const std::string& detail)
+	// Calls fn on each non-empty line of a ScanValidation detail.
+	template <typename Fn>
+	void ForEachDetailLine(const std::string& detail, Fn&& fn)
 	{
 		size_t start = 0;
 		while (start <= detail.size())
@@ -299,7 +304,7 @@ namespace
 			const size_t end = detail.find("\r\n", start);
 			const std::string line = detail.substr(start, end == std::string::npos ? std::string::npos : end - start);
 			if (!line.empty())
-				printf("    %s\n", line.c_str());
+				fn(line);
 			if (end == std::string::npos)
 				break;
 			start = end + 2;
@@ -309,6 +314,25 @@ namespace
 
 namespace AobScan
 {
+	void PrintDetail(FILE* out, const std::string& detail)
+	{
+		ForEachDetailLine(detail, [out](const std::string& line) { fprintf(out, "    %s\n", line.c_str()); });
+	}
+
+	std::string JsonDetail(const std::string& detail)
+	{
+		std::string out;
+		ForEachDetailLine(detail, [&out](const std::string& line) {
+			const size_t first = line.find_first_not_of(' ');
+			if (first == std::string::npos)
+				return;
+			if (!out.empty())
+				out += '\n';
+			out += line.substr(first);
+		});
+		return out;
+	}
+
 	std::string JsonEscape(const std::string& s)
 	{
 		std::string out;
@@ -351,13 +375,13 @@ int wmain(int argc, wchar_t** argv)
 		else if (!path && argv[i][0] != L'-')        path = argv[i];
 		else
 		{
-			fprintf(stderr, "usage: sr-aobscan <game.exe> [--json] [--verbose]\n");
+			fprintf(stderr, "usage: sr-aobscan <game.exe> [--plugin <plugin.dll>] [--json] [--verbose]\n");
 			return kExitBadInput;
 		}
 	}
 	if (!path)
 	{
-		fprintf(stderr, "usage: sr-aobscan <game.exe> [--json] [--verbose]\n");
+		fprintf(stderr, "usage: sr-aobscan <game.exe> [--plugin <plugin.dll>] [--json] [--verbose]\n");
 		return kExitBadInput;
 	}
 
@@ -433,7 +457,7 @@ int wmain(int argc, wchar_t** argv)
 			if (row.hasRva)
 				printf(", \"rva\": \"0x%llX\"", static_cast<unsigned long long>(row.rva));
 			if (!row.result.Succeeded())
-				printf(", \"detail\": \"%s\"", JsonEscape(row.result.detail).c_str());
+				printf(", \"detail\": \"%s\"", JsonEscape(AobScan::JsonDetail(row.result.detail)).c_str());
 			printf(" }%s\n", i + 1 < rows.size() ? "," : "");
 		}
 		printf("  ]\n}\n");
@@ -450,7 +474,7 @@ int wmain(int argc, wchar_t** argv)
 			printf("%-10s %-52s %-10s %-4s %7zu  %s\n", ResultName(row.result.outcome), row.entry->name,
 				ShortKind(row.entry->kind), row.entry->required ? "yes" : "no", row.result.matchCount, rva);
 			if (!row.result.Succeeded() && (verbose || row.entry->required))
-				PrintDetail(row.result.detail);
+				AobScan::PrintDetail(stdout, row.result.detail);
 		}
 		printf("%zu patterns: %zu OK, %zu MISSING, %zu AMBIGUOUS, %zu other; %zu required failing\n",
 			rows.size(), ok, missing, ambiguous, other, requiredFailing);
