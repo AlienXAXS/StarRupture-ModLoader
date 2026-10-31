@@ -60,6 +60,7 @@
 
 #include "core/version_check.h"
 #include "hooks/game/scan_patterns.h"
+#include "hooks/game/version_map.generated.h"
 #include "memory_scanner/image_info.h"
 #include "memory_scanner/scan_validation.h"
 #include "memory_scanner/version_map.h"
@@ -489,7 +490,29 @@ int wmain(int argc, wchar_t** argv)
 		rows.push_back(std::move(row));
 	}
 
-	size_t ok = 0, missing = 0, ambiguous = 0, other = 0, requiredFailing = 0;
+	// The loader's own members it resolves per build (SdkGlobals::ResolveFields),
+	// read from the exe's PDB as the loader reads them from reflection, each
+	// with the size and offset its kBuiltCL row gives. Their "[Map]" lines go
+	// to stderr. Any that does not resolve counts as a required failure.
+	size_t fields = 0, fieldsFailing = 0;
+#if defined(MODLOADER_CLIENT_BUILD)
+	AobScan::UseLayoutForFields(path);
+	for (const VersionMap::Index& index : VersionMap::kFields)
+	{
+		const VersionMap::FieldRow* built = nullptr;
+		for (uint16_t i = index.first; i < index.first + index.count; ++i)
+			if (VersionMap::kFieldRows[i].gameCL == VersionMap::kBuiltCL)
+				built = &VersionMap::kFieldRows[i];
+		VersionMap::FieldValue value;
+		std::string error;
+		++fields;
+		if (!built || !VersionMap::SelectField("ModLoader",
+				VersionMap::LoaderFieldRequest(index.key, built->size, built->offset), exe, value, error))
+			++fieldsFailing;
+	}
+#endif
+
+	size_t ok = 0, missing = 0, ambiguous = 0, other = 0, requiredFailing = fieldsFailing;
 	for (const Row& row : rows)
 	{
 		switch (row.result.outcome)
@@ -512,8 +535,8 @@ int wmain(int argc, wchar_t** argv)
 		if (session)
 			printf("  \"suggest\": %s,\n", session->EnvJson().c_str());
 		printf("  \"summary\": { \"total\": %zu, \"ok\": %zu, \"missing\": %zu, \"ambiguous\": %zu, "
-		       "\"other\": %zu, \"requiredFailing\": %zu },\n  \"patterns\": [\n",
-			rows.size(), ok, missing, ambiguous, other, requiredFailing);
+		       "\"other\": %zu, \"fields\": %zu, \"fieldsFailing\": %zu, \"requiredFailing\": %zu },\n  \"patterns\": [\n",
+			rows.size(), ok, missing, ambiguous, other, fields, fieldsFailing, requiredFailing);
 		for (size_t i = 0; i < rows.size(); ++i)
 		{
 			const Row& row = rows[i];
@@ -551,8 +574,9 @@ int wmain(int argc, wchar_t** argv)
 				AobScan::PrintDetail(stdout, row.result.detail);
 			AobScan::Suggest::PrintText(stdout, row.suggest);
 		}
-		printf("%zu patterns: %zu OK, %zu MISSING, %zu AMBIGUOUS, %zu other; %zu required failing\n",
-			rows.size(), ok, missing, ambiguous, other, requiredFailing);
+		printf("%zu patterns: %zu OK, %zu MISSING, %zu AMBIGUOUS, %zu other; %zu loader fields, %zu not resolved;"
+		       " %zu required failing\n",
+			rows.size(), ok, missing, ambiguous, other, fields, fieldsFailing, requiredFailing);
 	}
 
 	return requiredFailing == 0 ? kExitOk : kExitFailed;
