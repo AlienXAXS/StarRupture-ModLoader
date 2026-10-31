@@ -158,7 +158,7 @@ namespace
 		else
 			++i;
 
-		const size_t immz = opsize16 ? 2 : 4;  // the "z" operand size
+		const size_t immz = opsize16 && !rexW ? 2 : 4;  // the "z" operand size; REX.W wins over 66
 		bool   modrm = false;
 		size_t imm   = 0;
 		bool   rel   = false;
@@ -886,15 +886,30 @@ namespace AobScan::Suggest
 					}
 					else if (same.size() > 1)
 					{
+						auto gap = [&at](const Function& fn) {
+							return (std::max)(fn.size, at.size) - (std::min)(fn.size, at.size);
+						};
 						const Function* closest = nullptr;
+						bool tie = false;
 						for (const Function& fn : same)
-							if (!closest || (std::max)(fn.size, at.size) - (std::min)(fn.size, at.size)
-							              < (std::max)(closest->size, at.size) - (std::min)(closest->size, at.size))
+						{
+							if (!closest || gap(fn) < gap(*closest))
+							{
 								closest = &fn;
-						L.target = closest->address;
-						L.method = "reference";
-						L.confidence = "medium";
-						L.note = "the function is overloaded; took the overload closest in size";
+								tie = false;
+							}
+							else if (gap(fn) == gap(*closest))
+								tie = true;
+						}
+						if (tie)
+							L.note = "the function is overloaded and several overloads are as close in size";
+						else
+						{
+							L.target = closest->address;
+							L.method = "reference";
+							L.confidence = "medium";
+							L.note = "the function is overloaded; took the overload closest in size";
+						}
 					}
 					else
 						L.note = "the reference function's name is not in the scanned build";
@@ -929,8 +944,10 @@ namespace AobScan::Suggest
 				{
 					L.target = named[0].address;
 					L.method = "name";
-					L.confidence = "high";
+					L.confidence = "medium";
 					symbol = hook;
+					L.note = (L.note.empty() ? "" : L.note + "; ")
+						+ "located by the hook's label only, which may name a function other than the one hooked";
 				}
 				else if (named.size() > 1)
 					L.note = "the hook name is overloaded on the scanned build";
@@ -997,8 +1014,10 @@ namespace AobScan::Suggest
 			}
 
 			// Cross-check against the hook name: an author's label, but for most
-			// hooks it is the symbol.
-			if (targetSymbols)
+			// hooks it is the symbol. A function found by that label has nothing
+			// to check it against.
+			const bool byLabel = strcmp(L.method, "name") == 0 || strcmp(L.method, "renamed") == 0;
+			if (targetSymbols && !byLabel)
 			{
 				const std::vector<Function> byHook = s.target.symbols.Named(hook);
 				if (!byHook.empty())
@@ -1232,6 +1251,8 @@ namespace AobScan::Suggest
 			fprintf(out, "      %s: %s", builds, p.pattern.c_str());
 			if (p.followRel32At >= 0)
 				fprintf(out, "  (follow rel32 at +0x%X)", p.followRel32At);
+			else
+				fprintf(out, "  (direct)");
 			fprintf(out, "\n");
 		}
 		if (!r.proposals.empty() && r.proposals[0].uniqueOnReference != 1 && r.referenceKeepsCurrent)
@@ -1256,8 +1277,7 @@ namespace AobScan::Suggest
 		{
 			const Proposal& p = r.proposals[i];
 			out += (i ? ", " : "") + std::string("{ \"pattern\": \"") + AobScan::JsonEscape(p.pattern) + "\"";
-			if (p.followRel32At >= 0)
-				out += ", \"followRel32At\": " + std::to_string(p.followRel32At);
+			out += ", \"followRel32At\": " + std::to_string(p.followRel32At) + ", \"resultOffset\": 0";
 			out += std::string(", \"uniqueOnTarget\": ") + (p.uniqueOnTarget ? "true" : "false");
 			if (p.uniqueOnReference >= 0)
 				out += std::string(", \"uniqueOnReference\": ") + (p.uniqueOnReference ? "true" : "false");
