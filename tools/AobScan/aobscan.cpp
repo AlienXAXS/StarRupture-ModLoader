@@ -10,6 +10,7 @@
 //
 //   sr-aobscan <game.exe> [--json] [--verbose] [--suggest [--reference <current.exe>]]
 //   sr-aobscan <game.exe> --plugin <plugin.dll> [--json] [--verbose] [--suggest [--reference <current.exe>]]
+//   sr-aobscan <game.exe> --layout <keys.txt> [--json]
 //
 // Exit code: 0 when every required pattern is OK, 1 when a required pattern is
 // not, 2 when the file could not be read or is not an x64 PE image.
@@ -38,6 +39,10 @@
 //     scan does not).
 //   * Failure reports carry no symbol name (no DbgHelp).
 //
+// --layout reads the offset, size and bool mask of each listed class member
+// from the PDB next to the exe (layout.cpp). Exit code 0 when every key
+// resolved, 1 when one did not, 2 when there is no matching PDB or no key.
+//
 // --suggest proposes a replacement for every MISSING or AMBIGUOUS pattern
 // (suggest.cpp), using the PDB next to the exe when there is one, and
 // --reference, the build players run today, to find the function the current
@@ -56,6 +61,7 @@
 #include "hooks/game/scan_patterns.h"
 #include "memory_scanner/image_info.h"
 #include "memory_scanner/scan_validation.h"
+#include "layout.h"
 #include "plugin_scan.h"
 #include "suggest.h"
 
@@ -373,11 +379,13 @@ namespace AobScan
 int wmain(int argc, wchar_t** argv)
 {
 	static constexpr const char* kUsage =
-		"usage: sr-aobscan <game.exe> [--plugin <plugin.dll>] [--json] [--verbose] [--suggest [--reference <current.exe>]]\n";
+		"usage: sr-aobscan <game.exe> [--plugin <plugin.dll>] [--json] [--verbose] [--suggest [--reference <current.exe>]]\n"
+		"       sr-aobscan <game.exe> --layout <keys.txt> [--json]\n";
 
 	const wchar_t* path      = nullptr;
 	const wchar_t* plugin    = nullptr;
 	const wchar_t* reference = nullptr;
+	const wchar_t* layout    = nullptr;
 	bool           json      = false;
 	bool           verbose   = false;
 	bool           suggest   = false;
@@ -389,6 +397,7 @@ int wmain(int argc, wchar_t** argv)
 		else if (wcscmp(argv[i], L"--suggest") == 0) suggest = true;
 		else if (wcscmp(argv[i], L"--plugin") == 0 && i + 1 < argc && !plugin) plugin = argv[++i];
 		else if (wcscmp(argv[i], L"--reference") == 0 && i + 1 < argc && !reference) reference = argv[++i];
+		else if (wcscmp(argv[i], L"--layout") == 0 && i + 1 < argc && !layout) layout = argv[++i];
 		else if (!path && argv[i][0] != L'-')        path = argv[i];
 		else
 		{
@@ -396,11 +405,13 @@ int wmain(int argc, wchar_t** argv)
 			return kExitBadInput;
 		}
 	}
-	if (!path || (reference && !suggest))
+	if (!path || (reference && !suggest) || (layout && (plugin || suggest || verbose)))
 	{
 		fputs(kUsage, stderr);
 		return kExitBadInput;
 	}
+	if (layout)
+		return AobScan::ScanLayout(path, layout, json);
 
 	MappedImage image;
 	std::string error;

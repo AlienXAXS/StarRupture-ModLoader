@@ -39,15 +39,10 @@
 #include <cctype>
 #include <cstring>
 
-#include <DbgHelp.h>
-
 #include "memory_scanner/image_info.h"
 #include "memory_scanner/scanner.h"
+#include "pdb.h"
 #include "plugin_scan.h"
-
-#ifndef SYMOPT_DISABLE_SYMSRV_AUTODETECTION
-#define SYMOPT_DISABLE_SYMSRV_AUTODETECTION 0x02000000
-#endif
 
 namespace
 {
@@ -305,21 +300,11 @@ namespace
 				SymCleanup(process_);
 		}
 
-		// process is any unique value: with fInvadeProcess FALSE, DbgHelp only
-		// uses it as a session key. The PDB has to sit next to the exe and match
-		// it exactly; no symbol server is consulted.
+		// process is any unique value; see AobScan::LoadMatchedPdb.
 		bool Load(HANDLE process, const std::wstring& exePath, uintptr_t base, size_t size)
 		{
-			const size_t slash = exePath.find_last_of(L"\\/");
-			const std::wstring dir = slash == std::wstring::npos ? L"." : exePath.substr(0, slash);
-			if (!SymInitializeW(process, dir.c_str(), FALSE))
-				return false;
 			process_ = process;
-			if (!SymLoadModuleExW(process, nullptr, exePath.c_str(), nullptr, base, static_cast<DWORD>(size), nullptr, 0))
-				return false;
-			IMAGEHLP_MODULEW64 info{};
-			info.SizeOfStruct = sizeof(info);
-			if (!SymGetModuleInfoW64(process, base, &info) || info.SymType != SymPdb || info.PdbUnmatched)
+			if (!AobScan::LoadMatchedPdb(process, exePath, base, size))
 				return false;
 			base_   = base;
 			loaded_ = true;
@@ -777,8 +762,6 @@ namespace AobScan::Suggest
 			if (loaded)
 				return;
 			loaded = true;
-			SymSetOptions(SYMOPT_FAIL_CRITICAL_ERRORS | SYMOPT_NO_PROMPTS | SYMOPT_EXACT_SYMBOLS
-				| SYMOPT_DISABLE_SYMSRV_AUTODETECTION);
 			target.symbols.Load(reinterpret_cast<HANDLE>(static_cast<uintptr_t>(0x5352)), targetPath, target.base, target.size);
 
 			if (referencePath.empty())

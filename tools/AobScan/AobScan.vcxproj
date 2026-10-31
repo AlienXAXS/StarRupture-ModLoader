@@ -99,6 +99,7 @@
     <ClCompile Include="stubs.cpp" />
     <ClCompile Include="plugin_scan.cpp" />
     <ClCompile Include="suggest.cpp" />
+    <ClCompile Include="layout.cpp" />
   </ItemGroup>
   <ItemGroup Label="Loader sources used as they are">
     <ClCompile Include="$(CoreDir)memory_scanner\scanner.cpp" />
