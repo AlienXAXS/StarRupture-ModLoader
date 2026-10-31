@@ -1039,17 +1039,20 @@ namespace
 	// offsets must also take the Game-SDK globals (GetSdkGlobals) in
 	// PluginInit. Its PluginInit runs here with a hooks table that holds
 	// GetSdkGlobals and nothing else, so whatever it does after that call
-	// faults on a null table and is stopped; only the call counts.
+	// faults on a null table and is stopped; only the call counts, and only
+	// one made on the thread that runs PluginInit, as the loader counts it.
 
 	PluginSdkGlobals g_sdkGlobals{};
 	bool             g_sdkGlobalsGiven = false;
 	unsigned         g_sdkGlobalsCalls = 0;
+	DWORD            g_initThread = 0;
 
 	const PluginSdkGlobals* GetSdkGlobals()
 	{
 		if (!g_sdkGlobalsGiven)
 			return nullptr;
-		++g_sdkGlobalsCalls;
+		if (GetCurrentThreadId() == g_initThread)
+			++g_sdkGlobalsCalls;
 		return &g_sdkGlobals;
 	}
 
@@ -1143,6 +1146,7 @@ namespace
 		self->hooks  = &hooks;
 
 		g_sdkGlobalsCalls = 0;
+		g_initThread      = GetCurrentThreadId();
 		bool returned = false;
 		DWORD code = 0;
 		const bool ran = InitSEH(init, self, returned, code);
@@ -1272,8 +1276,9 @@ namespace AobScan
 			else if (!g_gameCalls)
 				SecondPass(loadHooks, &self, o);
 			// PluginInit only for a plugin past the first two points, after a
-			// hook that ran cleanly.
-			if (o.crash.empty() && !g_gameCalls && g_session.usedMap)
+			// hook that did not crash. Game calls stopped in the hook do not
+			// skip it: the loader asks every such plugin.
+			if (o.crash.empty() && g_session.usedMap)
 			{
 				std::string initNote;
 				askedSdkGlobals = TakesSdkGlobals(plugin, &self, initNote);
@@ -1325,8 +1330,9 @@ namespace AobScan
 				++before;
 				if (g_rows[i].result == "OK") ++beforeOk;
 			}
-			o.note    = std::to_string(beforeOk) + "/" + std::to_string(before)
+			const std::string calls = std::to_string(beforeOk) + "/" + std::to_string(before)
 				+ " resolved before first game call; later scans not exercised";
+			o.note = o.note.empty() ? calls : calls + "; " + o.note;
 		}
 		else
 		{
