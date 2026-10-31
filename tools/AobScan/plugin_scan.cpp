@@ -525,8 +525,13 @@ namespace
 				row.patterns.push_back({ local.candidates[i].pattern });
 #endif
 
-		const bool badRequest = !request || !local.hookName || !local.hookName[0] || !local.pattern
-			|| !local.pattern[0] || local.kind < PLUGIN_SCAN_FUNCTION_START || local.kind > PLUGIN_SCAN_ANY;
+		bool keyOnly = false;   // a map key with no pattern: the loader's to refuse, not a bad request
+#if PLUGIN_INTERFACE_VERSION >= 72
+		keyOnly = (local.flags & PLUGIN_SCAN_FLAG_MAP_KEY) != 0 && (!local.pattern || !local.pattern[0]);
+#endif
+		const bool badRequest = !request || !local.hookName || !local.hookName[0]
+			|| ((!local.pattern || !local.pattern[0]) && !keyOnly)
+			|| local.kind < PLUGIN_SCAN_FUNCTION_START || local.kind > PLUGIN_SCAN_ANY;
 
 		return Record(std::move(row), local.module, badRequest,
 			[&] { return Loader().Resolve(self, request); });
@@ -906,12 +911,30 @@ namespace
 			+ " rows the same" + (diff.empty() ? "" : "; " + diff);
 	}
 
+	// The game build the plugin says it was compiled against, as the loader
+	// reads it; empty with a header older than v72's PluginInfo tail.
+	std::string GameBuild(const PluginInfo& info)
+	{
+#ifdef PLUGIN_GAME_BUILT_CL
+		return VersionMap::DescribePluginGameBuild(VersionMap::ReadPluginGameBuild(info));
+#else
+		(void)info;
+		return {};
+#endif
+	}
+
 	void PrintTable(FILE* out, const std::string& file, const PluginInfo* info, const Outcome& o, const Summary& s)
 	{
 		fprintf(out, "sr-aobscan --plugin (%s build): %s", kTargetName, file.c_str());
 		if (info)
-			fprintf(out, " = %s %s (interface %d)", info->name ? info->name : "?", info->version ? info->version : "?",
+		{
+			fprintf(out, " = %s %s (interface %d", info->name ? info->name : "?", info->version ? info->version : "?",
 				info->interfaceVersion);
+			const std::string build = GameBuild(*info);
+			if (!build.empty())
+				fprintf(out, ", game build %s", build.c_str());
+			fprintf(out, ")");
+		}
 		fprintf(out, "\n%-10s %-60s %-10s %-4s %7s  %s\n", "RESULT", "NAME", "KIND", "REQ", "MATCHES", "RVA");
 		for (const Row& row : g_rows)
 		{
@@ -947,6 +970,8 @@ namespace
 			printf(", \"name\": \"%s\", \"version\": \"%s\", \"interfaceVersion\": %d",
 				JsonEscape(info->name ? info->name : "").c_str(), JsonEscape(info->version ? info->version : "").c_str(),
 				info->interfaceVersion);
+		if (info && !GameBuild(*info).empty())
+			printf(", \"gameBuild\": \"%s\"", JsonEscape(GameBuild(*info)).c_str());
 		printf(", \"hasLoadHooks\": %s },\n", hasLoadHooks ? "true" : "false");
 		printf("  \"verdict\": \"%s\",\n", o.verdict);
 		if (!o.note.empty())
