@@ -58,6 +58,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
 
+#include "core/version_check.h"
 #include "hooks/game/scan_patterns.h"
 #include "memory_scanner/image_info.h"
 #include "memory_scanner/scan_validation.h"
@@ -434,6 +435,11 @@ int wmain(int argc, wchar_t** argv)
 		return AobScan::ScanPlugin(module, plugin, json, verbose, session.get());
 
 	const VersionMap::Exe exe = VersionMap::ExeOf(module);
+	// The loader's own version gate, on this exe's ProductVersion.
+	const bool supported = VersionMap::IsSupported(GetGameVersionString());
+	std::string builds;
+	for (const uint32_t cl : VersionMap::SupportedBuilds())
+		builds += (builds.empty() ? "" : ", ") + std::to_string(cl);
 	std::vector<Row> rows;
 	for (const ScanPatterns::PreflightEntry& entry : ScanPatterns::PreflightRegistry)
 	{
@@ -494,8 +500,9 @@ int wmain(int argc, wchar_t** argv)
 	if (json)
 	{
 		printf("{\n  \"target\": \"%s\",\n  \"imageSize\": %zu,\n", kTarget, image.size);
-		printf("  \"exe\": { \"cl\": %u, \"imageStamp\": \"0x%08X\", \"imageSize\": \"0x%08X\" },\n",
-			exe.cl, exe.imageStamp, exe.imageSize);
+		printf("  \"exe\": { \"cl\": %u, \"imageStamp\": \"0x%08X\", \"imageSize\": \"0x%08X\", "
+		       "\"supported\": %s, \"supportedBuilds\": [%s] },\n",
+			exe.cl, exe.imageStamp, exe.imageSize, supported ? "true" : "false", builds.c_str());
 		if (session)
 			printf("  \"suggest\": %s,\n", session->EnvJson().c_str());
 		printf("  \"summary\": { \"total\": %zu, \"ok\": %zu, \"missing\": %zu, \"ambiguous\": %zu, "
@@ -525,6 +532,7 @@ int wmain(int argc, wchar_t** argv)
 	{
 		printf("sr-aobscan (%s build): %ls\n", kTarget, path);
 		printf("Game exe: CL-%u, PE stamp 0x%08X, image size 0x%08X\n", exe.cl, exe.imageStamp, exe.imageSize);
+		printf("Loader version gate: %s (it runs on CL %s)\n", supported ? "passes" : "REFUSES this build", builds.c_str());
 		printf("%-10s %-52s %-10s %-4s %7s  %s\n", "RESULT", "NAME", "KIND", "REQ", "MATCHES", "RVA");
 		for (const Row& row : rows)
 		{
