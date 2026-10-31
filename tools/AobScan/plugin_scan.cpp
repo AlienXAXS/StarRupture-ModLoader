@@ -543,6 +543,7 @@ namespace
 	size_t   g_imageSize  = 0;
 	int      g_gameCalls  = 0;
 	GameCall g_firstGameCall;
+	size_t   g_rowsAtFirstCall = 0;  // scans done when the first game call was stopped
 
 	size_t ImageSize(HMODULE module)
 	{
@@ -661,7 +662,10 @@ namespace
 			return EXCEPTION_EXECUTE_HANDLER;
 
 		if (g_gameCalls++ == 0)
-			g_firstGameCall = call;
+		{
+			g_firstGameCall   = call;
+			g_rowsAtFirstCall = g_rows.size();
+		}
 		c.Rax  = 0;
 		c.Xmm0 = {};
 		*e->ContextRecord = c;
@@ -1013,7 +1017,14 @@ namespace AobScan
 		else if (patternsOk)
 		{
 			o.verdict = "GAME-CALL";
-			o.note    = std::to_string(s.ok) + "/" + std::to_string(s.total)
+			size_t before = 0, beforeOk = 0;
+			for (size_t i = 0; i < g_rowsAtFirstCall && i < g_rows.size(); ++i)
+			{
+				if (!g_rows[i].recorded) continue;
+				++before;
+				if (g_rows[i].result == "OK") ++beforeOk;
+			}
+			o.note    = std::to_string(beforeOk) + "/" + std::to_string(before)
 				+ " resolved before first game call; later scans not exercised";
 		}
 		else
