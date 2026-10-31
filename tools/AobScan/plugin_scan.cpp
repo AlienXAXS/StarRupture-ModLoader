@@ -1018,8 +1018,8 @@ namespace
 	}
 }
 
-// The four PluginHookReport calls hook_scanner_interface.cpp makes, kept for
-// the one session this tool opens.
+// The PluginHookReport calls hook_scanner_interface.cpp makes, kept for the
+// one session this tool opens.
 namespace PluginHookReport
 {
 	bool HasSession(const IPluginSelf* self)
@@ -1053,6 +1053,12 @@ namespace PluginHookReport
 	bool SessionUsedMap(const IPluginSelf* self)
 	{
 		return HasSession(self) && g_session.usedMap;
+	}
+
+	// This tool loads one plugin, so no other shares its name.
+	bool SessionNameShared(const IPluginSelf*)
+	{
+		return false;
 	}
 }
 

@@ -545,10 +545,13 @@ int wmain(int argc, wchar_t** argv)
 				row.entry->required ? "true" : "false", ResultName(row.result.outcome), row.result.matchCount);
 			if (row.hasRva)
 				printf(", \"rva\": \"0x%llX\"", static_cast<unsigned long long>(row.rva));
-			// What a version-map row for this entry is made of.
-			printf(", \"pattern\": \"%s\", \"followRel32At\": %d, \"followRipDispAt\": %d, \"siteArithmetic\": %s",
+			// What a version-map row for this entry is made of, and the key and
+			// fingerprint (0 for a global key) the map keeps it under.
+			printf(", \"pattern\": \"%s\", \"followRel32At\": %d, \"followRipDispAt\": %d, \"siteArithmetic\": %u"
+			       ", \"key\": \"%s\", \"fp\": \"0x%08X\"",
 				JsonEscape(row.entry->pattern).c_str(), row.entry->followRel32At, row.entry->followRipDispAt,
-				row.entry->siteArithmetic ? "true" : "false");
+				row.entry->siteArithmetic, JsonEscape(VersionMap::LoaderEntryKey(*row.entry)).c_str(),
+				VersionMap::LoaderEntryFingerprint(*row.entry));
 			if (!row.result.Succeeded())
 				printf(", \"detail\": \"%s\"", JsonEscape(AobScan::JsonDetail(row.result.detail)).c_str());
 			if (row.suggest.attempted)
