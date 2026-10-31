@@ -17,7 +17,7 @@
 // --plugin checks one plugin's patterns instead of the loader's: it calls the
 // plugin's own OnPluginLoadHooks against the mapped image (plugin_scan.cpp).
 // Exit code 0 when the loader would let the plugin load (PASS, NONE, or
-// GAME-CALL: every pattern OK and the hook's calls into game code stopped),
+// GAME-CALL: partial coverage, every pattern OK before the first stopped call into game code),
 // 1 when it would refuse it or the hook crashed, 2 when the DLL is not a
 // loadable client plugin.
 //

@@ -31,8 +31,10 @@
 // for information and the plugin decides what a miss means.
 //
 //   PASS       no recorded failure
-//   GAME-CALL  no recorded failure, at least one pattern resolved, and the
-//              hook's calls into game code were stopped
+//   GAME-CALL  PARTIAL coverage, never a full pass: no recorded failure, at
+//              least one pattern resolved, and the hook's calls into game code
+//              were stopped. A plugin that bails out on the null a stopped call
+//              returns skips every later scan; those are not exercised
 //   FAIL       a recorded failure (MISSING, AMBIGUOUS, ...), game calls or not
 //   CRASH      a fault that is not a game call, or a game call with no
 //              pattern resolved
@@ -1011,8 +1013,8 @@ namespace AobScan
 		else if (patternsOk)
 		{
 			o.verdict = "GAME-CALL";
-			o.note    = "patterns OK " + std::to_string(s.ok) + "/" + std::to_string(s.total)
-				+ "; harness stopped at first game call";
+			o.note    = std::to_string(s.ok) + "/" + std::to_string(s.total)
+				+ " resolved before first game call; later scans not exercised";
 		}
 		else
 		{
