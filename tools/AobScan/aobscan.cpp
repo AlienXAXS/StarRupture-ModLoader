@@ -493,21 +493,24 @@ int wmain(int argc, wchar_t** argv)
 	// The loader's own members it resolves per build (SdkGlobals::ResolveFields),
 	// read from the exe's PDB as the loader reads them from reflection, each
 	// with the size and offset its kBuiltCL row gives. Their "[Map]" lines go
-	// to stderr. Any that does not resolve counts as a required failure.
+	// to stderr. Any that does not resolve counts as a required failure. The
+	// map's other field keys are other components' members.
 	size_t fields = 0, fieldsFailing = 0;
 #if defined(MODLOADER_CLIENT_BUILD)
 	AobScan::UseLayoutForFields(path);
-	for (const VersionMap::Index& index : VersionMap::kFields)
+	for (const char* key : VersionMap::kLoaderFieldKeys)
 	{
 		const VersionMap::FieldRow* built = nullptr;
-		for (uint16_t i = index.first; i < index.first + index.count; ++i)
-			if (VersionMap::kFieldRows[i].gameCL == VersionMap::kBuiltCL)
-				built = &VersionMap::kFieldRows[i];
+		for (const VersionMap::Index& index : VersionMap::kFields)
+			if (strcmp(index.key, key) == 0)
+				for (uint16_t i = index.first; i < index.first + index.count; ++i)
+					if (VersionMap::kFieldRows[i].gameCL == VersionMap::kBuiltCL)
+						built = &VersionMap::kFieldRows[i];
 		VersionMap::FieldValue value;
 		std::string error;
 		++fields;
 		if (!built || !VersionMap::SelectField("ModLoader",
-				VersionMap::LoaderFieldRequest(index.key, built->size, built->offset), exe, value, error))
+				VersionMap::LoaderFieldRequest(key, built->size, built->offset), exe, value, error))
 			++fieldsFailing;
 	}
 #endif
