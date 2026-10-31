@@ -16,10 +16,9 @@
 //     reflected name of a deprecated property drops; then, for a name ending in
 //     "_<n>", without that suffix and in the same case, which Dumper-7 adds to a
 //     member whose name collides with another identifier (Outer_0 for Outer).
-//     A plugin's field request (FieldFromPdb) takes only the exact name and the
-//     "_DEPRECATED" form, both case-sensitive: the loader's reflection reader
-//     compares the member name exactly, so the PDB must not accept a name the
-//     game refuses.
+//     A plugin's field request (FieldFromPdb) takes only the name and the
+//     "_DEPRECATED" form, ignoring case, as the loader's reflection reader
+//     does: the PDB must not accept a name the game refuses (an "_<n>" form).
 //   * A class: the exact name; then the template behind one of the engine's
 //     math aliases (FVector is UE::Math::TVector<double>, FVector3f is
 //     UE::Math::TVector<float>); then, for
@@ -219,7 +218,8 @@ namespace
 		{
 			const std::wstring deprecated = member + L"_DEPRECATED";
 			if (exact)
-				return Find(udt, [&](const std::wstring& n) { return n == member || n == deprecated; }, 0, 0, out);
+				return Find(udt, [&](const std::wstring& n) {
+					return _wcsicmp(n.c_str(), member.c_str()) == 0 || _wcsicmp(n.c_str(), deprecated.c_str()) == 0; }, 0, 0, out);
 			if (Find(udt, [&](const std::wstring& n) { return n == member; }, 0, 0, out)
 			    || Find(udt, [&](const std::wstring& n) { return _wcsicmp(n.c_str(), member.c_str()) == 0; }, 0, 0, out)
 			    || Find(udt, [&](const std::wstring& n) { return _wcsicmp(n.c_str(), deprecated.c_str()) == 0; }, 0, 0, out))

@@ -50,13 +50,12 @@
 //              or a row the second run answered differently
 //   CRASH      a fault that is not a game call, or a game call with no
 //              pattern resolved
-//   REFUSED    interface version outside [MIN, MAX]; the hook is not run.
-//              Or, on a build other than the loader's kBuiltCL, a plugin the
-//              loader does not admit there (VersionMap::OffBuildRefusal): from
-//              before interface 72, or one that asked the map for nothing. The
-//              hook still runs, so its rows say what would need repair. The
-//              loader's third condition, GetSdkGlobals in PluginInit, is
-//              checked in game only.
+//   REFUSED    interface version outside [MIN, MAX]; the hook is not run
+//   On a build other than the loader's kBuiltCL, the note says when the loader
+//   would not admit the plugin there (VersionMap::OffBuildRefusal): from before
+//   interface 72, or one that asked the map for nothing. The verdict stays the
+//   pattern verdict. The loader's third condition, GetSdkGlobals in
+//   PluginInit, is checked in game only.
 //   NONE       no OnPluginLoadHooks export
 #include "plugin_scan.h"
 #include "suggest.h"
@@ -1170,12 +1169,9 @@ namespace AobScan
 		const bool patternsOk = s.total > 0 && s.ok == s.total && !s.failing;
 		const std::string offBuild = refused ? std::string()
 			: VersionMap::OffBuildRefusal(VersionMap::RunningExe(), info->interfaceVersion, g_session.usedMap, true);
+		if (!offBuild.empty())
+			o.note = o.note.empty() ? offBuild : o.note + "; " + offBuild;
 		if (refused)               o.verdict = "REFUSED";
-		else if (!offBuild.empty())
-		{
-			o.verdict = "REFUSED";
-			o.note    = offBuild;
-		}
 		else if (!loadHooks)       o.verdict = "NONE";
 		else if (!o.crash.empty()) o.verdict = "CRASH";
 		else if (s.failing)        o.verdict = "FAIL";
