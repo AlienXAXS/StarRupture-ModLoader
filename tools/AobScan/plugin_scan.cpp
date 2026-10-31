@@ -54,8 +54,10 @@
 //   On a build other than the loader's kBuiltCL, the note says when the loader
 //   would not admit the plugin there (VersionMap::OffBuildRefusal): from before
 //   interface 72, or one that asked the map for nothing. The verdict stays the
-//   pattern verdict. The loader's third condition, GetSdkGlobals in
-//   PluginInit, is checked in game only.
+//   pattern verdict. For the loader's third condition, GetSdkGlobals in
+//   PluginInit, a plugin that used the map has its PluginInit run with that
+//   one function as its hooks table (see "PluginInit" below); the note says
+//   whether it took the globals.
 //   NONE       no OnPluginLoadHooks export
 #include "plugin_scan.h"
 #include "suggest.h"
@@ -65,6 +67,7 @@
 #include <cstring>
 #include <vector>
 
+#include "hooks/game/scan_patterns.h"
 #include "memory_scanner/hook_scanner_interface.h"
 #include "memory_scanner/scanner.h"
 #include "memory_scanner/version_map.h"
@@ -1028,6 +1031,132 @@ namespace PluginHookReport
 	}
 }
 
+namespace
+{
+	// ---- PluginInit, for the Game-SDK globals (interface 72) -----------------
+	//
+	// The loader's third off-build point: a plugin that asked the map for its
+	// offsets must also take the Game-SDK globals (GetSdkGlobals) in
+	// PluginInit. Its PluginInit runs here with a hooks table that holds
+	// GetSdkGlobals and nothing else, so whatever it does after that call
+	// faults on a null table and is stopped; only the call counts.
+
+	PluginSdkGlobals g_sdkGlobals{};
+	bool             g_sdkGlobalsGiven = false;
+	unsigned         g_sdkGlobalsCalls = 0;
+
+	const PluginSdkGlobals* GetSdkGlobals()
+	{
+		if (!g_sdkGlobalsGiven)
+			return nullptr;
+		++g_sdkGlobalsCalls;
+		return &g_sdkGlobals;
+	}
+
+	// The globals the loader would hand out on this exe: its registry rows for
+	// them, resolved through its version map as preflight resolves them (each
+	// one's "[Map]" line goes to stderr), and the same rule for withholding
+	// them. The game is not running, so GObjects is not verified against the
+	// live object array as the loader's layout check verifies it.
+	void ResolveSdkGlobals()
+	{
+		const VersionMap::Exe exe = VersionMap::ExeOf(g_image);
+		const struct { const char* name; const char* pattern; uintptr_t* out; } wanted[] = {
+			{ "GObjects",     ScanPatterns::GObjects_PreAllocate,  &g_sdkGlobals.gobjects },
+			{ "GNames",       ScanPatterns::GNames_NamePoolData,   &g_sdkGlobals.gnames },
+			{ "AppendString", ScanPatterns::FName_AppendString,    &g_sdkGlobals.appendString },
+			{ "GWorld",       ScanPatterns::GWorld_EngineLoopTick, &g_sdkGlobals.gworld },
+		};
+		g_sdkGlobals = PluginSdkGlobals{};
+		g_sdkGlobals.structSize = sizeof(PluginSdkGlobals);
+		std::string found;
+		for (const auto& global : wanted)
+		{
+			for (const ScanPatterns::PreflightEntry& entry : ScanPatterns::PreflightRegistry)
+			{
+				if (entry.pattern != global.pattern)
+					continue;
+				ScanValidation::Request request;
+				request.name            = entry.name;
+				request.pattern         = entry.pattern;
+				request.kind            = static_cast<ScanValidation::Kind>(static_cast<int>(entry.kind));
+				request.followRel32At   = entry.followRel32At;
+				request.followRipDispAt = entry.followRipDispAt;
+				request.module          = g_image;
+				const ScanValidation::Result result = VersionMap::ResolveLoaderEntry(entry, request, exe);
+				if (result.Succeeded())
+					*global.out = result.address;
+				break;
+			}
+			found += std::string(found.empty() ? "" : ", ") + global.name + " "
+				+ (*global.out ? Hex(*global.out - reinterpret_cast<uintptr_t>(g_image)) : std::string("not found"));
+		}
+		const std::string withheld = VersionMap::SdkGlobalsWithheld(exe, g_sdkGlobals.gobjects,
+			g_sdkGlobals.appendString, g_sdkGlobals.gworld);
+		g_sdkGlobalsGiven = withheld.empty();
+		fprintf(stderr, "[SdkGlobals] CL-%u: %s; %s\n", exe.cl, found.c_str(),
+			g_sdkGlobalsGiven ? "handed to the plugin" : ("not handed to the plugin: " + withheld).c_str());
+	}
+
+	bool InitSEH(PluginInitFunc fn, IPluginSelf* self, bool& returned, DWORD& code)
+	{
+		__try
+		{
+			returned = fn(self);
+			return true;
+		}
+		__except (code = GetExceptionCode(), EXCEPTION_EXECUTE_HANDLER)
+		{
+			return false;
+		}
+	}
+
+	void ShutdownSEH(PluginShutdownFunc fn)
+	{
+		__try
+		{
+			fn();
+		}
+		__except (EXCEPTION_EXECUTE_HANDLER)
+		{
+		}
+	}
+
+	// Runs PluginInit (and PluginShutdown after it) with GetSdkGlobals as the
+	// whole hooks table. True when the plugin took the globals; `note` says
+	// what happened.
+	bool TakesSdkGlobals(HMODULE plugin, IPluginSelf* self, std::string& note)
+	{
+		const auto init     = reinterpret_cast<PluginInitFunc>(GetProcAddress(plugin, PLUGIN_INIT_FUNC_NAME));
+		const auto shutdown = reinterpret_cast<PluginShutdownFunc>(GetProcAddress(plugin, PLUGIN_SHUTDOWN_FUNC_NAME));
+		if (!init)
+		{
+			note = "no " PLUGIN_INIT_FUNC_NAME " export, so it does not take the Game-SDK globals";
+			return false;
+		}
+		ResolveSdkGlobals();
+
+		static IPluginEngineEvents engine{};
+		engine.GetSdkGlobals = GetSdkGlobals;
+		static IPluginHooks hooks{};
+		hooks.Engine = &engine;
+		self->hooks  = &hooks;
+
+		g_sdkGlobalsCalls = 0;
+		bool returned = false;
+		DWORD code = 0;
+		const bool ran = InitSEH(init, self, returned, code);
+		if (ran && returned && shutdown)
+			ShutdownSEH(shutdown);
+		self->hooks = nullptr;
+
+		const bool took = g_sdkGlobalsCalls > 0;
+		note = std::string(PLUGIN_INIT_FUNC_NAME) + (took ? " took" : " did not take") + " the Game-SDK globals"
+			+ (ran ? std::string() : " (it stopped at exception " + Hex(code) + ", outside the one table it was given)");
+		return took;
+	}
+}
+
 namespace AobScan
 {
 	int ScanPlugin(HMODULE image, const wchar_t* dllPath, bool json, bool verbose, Suggest::Session* suggest)
@@ -1099,6 +1228,7 @@ namespace AobScan
 		}
 
 		Outcome o;
+		bool askedSdkGlobals = true;   // only asked of a plugin that used the map
 		const bool refused = info->interfaceVersion < PLUGIN_INTERFACE_VERSION_MIN
 			|| info->interfaceVersion > PLUGIN_INTERFACE_VERSION_MAX;
 		if (refused)
@@ -1141,6 +1271,14 @@ namespace AobScan
 					+ (g_gameCalls ? " after " + std::to_string(g_gameCalls) + " game call(s) were stopped" : "");
 			else if (!g_gameCalls)
 				SecondPass(loadHooks, &self, o);
+			// PluginInit only for a plugin past the first two points, after a
+			// hook that ran cleanly.
+			if (o.crash.empty() && !g_gameCalls && g_session.usedMap)
+			{
+				std::string initNote;
+				askedSdkGlobals = TakesSdkGlobals(plugin, &self, initNote);
+				o.note = o.note.empty() ? initNote : o.note + "; " + initNote;
+			}
 			g_session.self = nullptr;
 		}
 
@@ -1168,7 +1306,7 @@ namespace AobScan
 		// there is no evidence the hook ever reached its patterns.
 		const bool patternsOk = s.total > 0 && s.ok == s.total && !s.failing;
 		const std::string offBuild = refused ? std::string()
-			: VersionMap::OffBuildRefusal(VersionMap::RunningExe(), info->interfaceVersion, g_session.usedMap, true);
+			: VersionMap::OffBuildRefusal(VersionMap::RunningExe(), info->interfaceVersion, g_session.usedMap, askedSdkGlobals);
 		if (!offBuild.empty())
 			o.note = o.note.empty() ? offBuild : o.note + "; " + offBuild;
 		if (refused)               o.verdict = "REFUSED";
