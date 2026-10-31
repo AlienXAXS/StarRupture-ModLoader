@@ -38,11 +38,13 @@
 #include <cstdio>
 #include <fstream>
 #include <map>
+#include <memory>
 #include <string>
 #include <vector>
 
 #include "pdb.h"
 #include "plugin_scan.h"
+#include "memory_scanner/version_map.h"
 
 namespace
 {
@@ -480,5 +482,70 @@ namespace AobScan
 				keys.size(), ok, keys.size() - ok, ms(loadedAt - start), ms(doneAt - loadedAt));
 		}
 		return ok == keys.size() ? kExitOk : kExitFailed;
+	}
+}
+
+
+namespace
+{
+	std::wstring g_fieldExe;
+
+	// The PDB session --plugin's field requests read, opened on first use.
+	struct FieldSession
+	{
+		HANDLE session = reinterpret_cast<HANDLE>(static_cast<uintptr_t>(0x5355));
+		bool   loaded  = false;
+		std::unique_ptr<Types> types;
+		std::map<std::string, std::vector<DWORD>> classes;
+	};
+
+	FieldSession* OpenFieldSession()
+	{
+		static FieldSession* opened = [] {
+			auto* s = new FieldSession;
+			s->loaded = !g_fieldExe.empty() && AobScan::LoadMatchedPdb(s->session, g_fieldExe, kModuleBase, 0);
+			if (s->loaded)
+				s->types = std::make_unique<Types>(s->session, kModuleBase);
+			fprintf(stderr, "sr-aobscan: field requests read %s\n",
+				s->loaded ? "the exe's PDB" : "nothing: no matching PDB next to the exe");
+			return s;
+		}();
+		return opened;
+	}
+
+	VersionMap::LiveField FieldFromPdb(const std::string& className, const std::string& member)
+	{
+		VersionMap::LiveField live;
+		FieldSession* s = OpenFieldSession();
+		if (!s->loaded)
+		{
+			live.error = "no PDB to read the layout from";
+			return live;
+		}
+		// The PDB has no packages: /Script/<Module>.<Name> is looked up by Name.
+		std::string name = className;
+		if (name.rfind("/Script/", 0) == 0 && name.find('.') != std::string::npos)
+			name = name.substr(name.rfind('.') + 1);
+		const Key key{ member.empty() ? name : name + "::" + member, name, member };
+		const Answer a = Resolve(*s->types, key, s->classes);
+		if (strcmp(a.result, "OK") != 0)
+		{
+			live.error = std::string(a.result) + " in the PDB";
+			return live;
+		}
+		live.offset   = static_cast<int32_t>(a.offset);
+		live.size     = static_cast<uint32_t>(a.size);
+		live.isBool   = a.boolMask != 0;
+		live.boolMask = static_cast<uint8_t>(a.boolMask);
+		return live;
+	}
+}
+
+namespace AobScan
+{
+	void UseLayoutForFields(const wchar_t* exePath)
+	{
+		g_fieldExe = exePath ? exePath : L"";
+		VersionMap::SetLiveFieldSource(FieldFromPdb);
 	}
 }

@@ -432,7 +432,10 @@ int wmain(int argc, wchar_t** argv)
 		session = std::make_unique<AobScan::Suggest::Session>(module, path, reference);
 
 	if (plugin)
+	{
+		AobScan::UseLayoutForFields(path);
 		return AobScan::ScanPlugin(module, plugin, json, verbose, session.get());
+	}
 
 	const VersionMap::Exe exe = VersionMap::ExeOf(module);
 	// The loader's own version gate, on this exe's ProductVersion.
