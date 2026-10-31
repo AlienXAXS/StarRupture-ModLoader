@@ -24,6 +24,10 @@
 // self->hooks is null, as it is for the duration of the event in game. The
 // logger prints to stderr; the config hands back every default.
 //
+// A request can carry locators for other game builds (interface 72). Their
+// patterns are listed in the row after the request's own, and the loader's
+// "[Map]" line, which says which locator it took, goes to stderr.
+//
 // Verdict, as the loader decides it (plugins/plugin_hook_report.h): any
 // recorded failure refuses the plugin, required or optional, and so does a
 // crash inside the event or an interface version outside the loader's range.
@@ -305,6 +309,11 @@ namespace
 				if (!row.detail.empty()) row.detail += "\r\n";
 				row.detail += g_session.failures[i].detail;
 			}
+
+			// Locators for several builds that each match once but land on
+			// different addresses: the loader's selection says so itself.
+			if (row.detail.rfind("AMBIGUOUS", 0) == 0)
+				row.result = "AMBIGUOUS";
 		}
 		g_rows.push_back(std::move(row));
 		return address;
@@ -491,6 +500,12 @@ namespace
 		row.followRel32At = (local.flags & PLUGIN_SCAN_FLAG_FOLLOW_REL32) ? local.followRel32At : -1;
 		row.otherModule   = local.module != nullptr && local.module != g_image;
 		row.patterns.push_back({ local.pattern ? local.pattern : "" });
+#if PLUGIN_INTERFACE_VERSION >= 72
+		// Locators for other game builds, after the request's own pattern.
+		for (uint32_t i = 0; local.candidates && i < local.candidateCount && i < 64; ++i)
+			if (local.candidates[i].pattern && local.candidates[i].pattern[0])
+				row.patterns.push_back({ local.candidates[i].pattern });
+#endif
 
 		const bool badRequest = !request || !local.hookName || !local.hookName[0] || !local.pattern
 			|| !local.pattern[0] || local.kind < PLUGIN_SCAN_FUNCTION_START || local.kind > PLUGIN_SCAN_ANY;
@@ -498,6 +513,13 @@ namespace
 		return Record(std::move(row), local.module, badRequest,
 			[&] { return Loader().Resolve(self, request); });
 	}
+
+#if PLUGIN_INTERFACE_VERSION >= 72
+	bool ResolveField(const IPluginSelf* self, const PluginFieldRequest* request, PluginFieldResult* result)
+	{
+		return Loader().ResolveField(self, request, result);
+	}
+#endif
 
 	IPluginHookScanner g_scanner = {
 		ResolveRequired,
@@ -514,7 +536,10 @@ namespace
 		ReportFailure,
 		ReportWarning,
 		HasFailures,
-		Resolve
+		Resolve,
+#if PLUGIN_INTERFACE_VERSION >= 72
+		ResolveField,
+#endif
 	};
 
 	// ---- Calls into the game --------------------------------------------------

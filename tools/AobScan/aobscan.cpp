@@ -420,6 +420,7 @@ int wmain(int argc, wchar_t** argv)
 		fprintf(stderr, "sr-aobscan: %ls: %s\n", path, error.c_str());
 		return kExitBadInput;
 	}
+	AobScan::SetGameExe(path);
 
 	const auto module = reinterpret_cast<HMODULE>(image.base);
 	const auto base   = reinterpret_cast<uintptr_t>(image.base);

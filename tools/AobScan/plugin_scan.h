@@ -33,6 +33,10 @@ namespace AobScan
 	};
 	bool MapImage(const wchar_t* path, MappedImage& out, std::string& error);
 
+	// Makes the exe's ProductVersion the game version the loader code reads
+	// (GetGameVersionString). stubs.cpp.
+	void SetGameExe(const wchar_t* path);
+
 	namespace Suggest { class Session; }
 
 	// image is the game exe as MapImage laid it out. Returns kExitOk when the

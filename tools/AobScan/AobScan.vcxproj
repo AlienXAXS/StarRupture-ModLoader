@@ -107,6 +107,8 @@
     <ClCompile Include="$(CoreDir)memory_scanner\image_info.cpp" />
     <ClCompile Include="$(CoreDir)memory_scanner\patch_overlay.cpp" />
     <ClCompile Include="$(CoreDir)memory_scanner\hook_scanner_interface.cpp" />
+    <!-- Interface 72 and later: per-build locator selection. -->
+    <ClCompile Include="$(CoreDir)memory_scanner\version_map.cpp" Condition="Exists('$(CoreDir)memory_scanner\version_map.cpp')" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
