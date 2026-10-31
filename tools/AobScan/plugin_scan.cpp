@@ -50,7 +50,13 @@
 //              or a row the second run answered differently
 //   CRASH      a fault that is not a game call, or a game call with no
 //              pattern resolved
-//   REFUSED    interface version outside [MIN, MAX]; the hook is not run
+//   REFUSED    interface version outside [MIN, MAX]; the hook is not run.
+//              Or, on a build other than the loader's kBuiltCL, a plugin the
+//              loader does not admit there (VersionMap::OffBuildRefusal): from
+//              before interface 72, or one that asked the map for nothing. The
+//              hook still runs, so its rows say what would need repair. The
+//              loader's third condition, GetSdkGlobals in PluginInit, is
+//              checked in game only.
 //   NONE       no OnPluginLoadHooks export
 #include "plugin_scan.h"
 #include "suggest.h"
@@ -62,6 +68,7 @@
 
 #include "memory_scanner/hook_scanner_interface.h"
 #include "memory_scanner/scanner.h"
+#include "memory_scanner/version_map.h"
 #include "plugins/plugin_hook_report.h"
 
 namespace
@@ -227,6 +234,7 @@ namespace
 		const IPluginSelf*   self     = nullptr;
 		int                  resolved = 0;
 		std::vector<Failure> failures;
+		bool                 usedMap  = false;   // a request with candidates, or ResolveField
 	} g_session;
 
 	// ---- What the plugin asked for, one row per call --------------------------
@@ -1008,6 +1016,17 @@ namespace PluginHookReport
 	{
 		return HasSession(self) && !g_session.failures.empty();
 	}
+
+	void RecordMapUse(const IPluginSelf* self)
+	{
+		if (HasSession(self))
+			g_session.usedMap = true;
+	}
+
+	bool SessionUsedMap(const IPluginSelf* self)
+	{
+		return HasSession(self) && g_session.usedMap;
+	}
 }
 
 namespace AobScan
@@ -1149,7 +1168,14 @@ namespace AobScan
 		// CRASH, and only once something was checked: with no pattern resolved
 		// there is no evidence the hook ever reached its patterns.
 		const bool patternsOk = s.total > 0 && s.ok == s.total && !s.failing;
+		const std::string offBuild = refused ? std::string()
+			: VersionMap::OffBuildRefusal(VersionMap::RunningExe(), info->interfaceVersion, g_session.usedMap, true);
 		if (refused)               o.verdict = "REFUSED";
+		else if (!offBuild.empty())
+		{
+			o.verdict = "REFUSED";
+			o.note    = offBuild;
+		}
 		else if (!loadHooks)       o.verdict = "NONE";
 		else if (!o.crash.empty()) o.verdict = "CRASH";
 		else if (s.failing)        o.verdict = "FAIL";
