@@ -24,6 +24,13 @@
 // self->hooks is null, as it is for the duration of the event in game. The
 // logger prints to stderr; the config hands back every default.
 //
+// The hook then runs a second time, with the scan cache the first run filled,
+// as on the next launch of the same exe: there the loader re-checks only what
+// it picked before ("agreed on an earlier launch"). Every row the plugin asks
+// for again must come out as it did the first time. The report is the first
+// run's; the second only adds its line to the note, or turns a pass into FAIL.
+// It is skipped after a crash or a stopped game call.
+//
 // A request can carry locators for other game builds (interface 72). Their
 // patterns are listed in the row after the request's own, and the loader's
 // "[Map]" line, which says which locator it took, goes to stderr.
@@ -39,7 +46,8 @@
 //              least one pattern resolved, and the hook's calls into game code
 //              were stopped. A plugin that bails out on the null a stopped call
 //              returns skips every later scan; those are not exercised
-//   FAIL       a recorded failure (MISSING, AMBIGUOUS, ...), game calls or not
+//   FAIL       a recorded failure (MISSING, AMBIGUOUS, ...), game calls or not,
+//              or a row the second run answered differently
 //   CRASH      a fault that is not a game call, or a game call with no
 //              pattern resolved
 //   REFUSED    interface version outside [MIN, MAX]; the hook is not run
@@ -782,6 +790,8 @@ namespace
 		std::string crash;     // CRASH: what faulted
 		std::string note;      // GAME-CALL and REFUSED: the one-line reason
 		std::string gameCall;  // the first game call, when there was one
+		std::string second;    // what the second run, with the cache warm, found
+		bool        secondDiffers = false;
 	};
 
 	std::string DescribeGameCall(const std::string& file, const GameCall& call)
@@ -806,6 +816,84 @@ namespace
 		if (call.importDll)
 			text += std::string(call.importDll) + "!" + (call.importName ? call.importName : "(ordinal)") + ", not bound offline";
 		return text + "; exception " + Hex(call.code);
+	}
+
+	bool SameRequest(const Row& a, const Row& b)
+	{
+		if (a.call != b.call || a.name != b.name || a.patterns.size() != b.patterns.size())
+			return false;
+		for (size_t i = 0; i < a.patterns.size(); ++i)
+			if (a.patterns[i].pattern != b.patterns[i].pattern)
+				return false;
+		return true;
+	}
+
+	std::string Answer(const Row& row)
+	{
+		return row.result + (row.hasRva ? " at " + Hex(row.rva) : "");
+	}
+
+	// The hook again, with the scan cache the first run stored (see the top of
+	// this file). Leaves the first run's rows, session and game calls as they
+	// were.
+	void SecondPass(PluginLoadHooksFunc loadHooks, IPluginSelf* self, Outcome& o)
+	{
+		std::vector<Row> first = std::move(g_rows);
+		const Session  session         = g_session;
+		const int      gameCalls       = g_gameCalls;
+		const GameCall firstCall       = g_firstGameCall;
+		const size_t   rowsAtFirstCall = g_rowsAtFirstCall;
+		g_rows.clear();
+
+		AobScan::WarmScanCache();
+		fputs("Second run, with the scan cache the first one filled:\n", stderr);
+		DWORD code = 0;
+		const bool ran    = LoadHooksSEH(loadHooks, self, &g_scanner, code);
+		const bool called = g_gameCalls != gameCalls;
+
+		std::vector<Row> second = std::move(g_rows);
+		g_rows            = std::move(first);
+		g_session         = session;
+		g_gameCalls       = gameCalls;
+		g_firstGameCall   = firstCall;
+		g_rowsAtFirstCall = rowsAtFirstCall;
+
+		o.secondDiffers = true;
+		if (!ran)
+		{
+			o.second = "the second run (scan cache warm) crashed, exception " + Hex(code);
+			return;
+		}
+		if (called)
+		{
+			o.second = "the second run (scan cache warm) called into the game; the first did not";
+			return;
+		}
+
+		std::vector<bool> used(g_rows.size());
+		size_t same = 0;
+		std::string diff;
+		for (const Row& again : second)
+		{
+			const Row* before = nullptr;
+			for (size_t i = 0; i < g_rows.size() && !before; ++i)
+				if (!used[i] && SameRequest(g_rows[i], again))
+				{
+					used[i] = true;
+					before  = &g_rows[i];
+				}
+			if (before && before->result == again.result && before->hasRva == again.hasRva && before->rva == again.rva)
+			{
+				++same;
+				continue;
+			}
+			if (diff.empty())
+				diff = (again.name.empty() ? "(raw) " + (again.patterns.empty() ? std::string() : again.patterns[0].pattern) : again.name)
+					+ ": " + (before ? Answer(*before) : std::string("not asked in the first run")) + ", then " + Answer(again);
+		}
+		o.secondDiffers = !diff.empty();
+		o.second = "second run, scan cache warm: " + std::to_string(same) + "/" + std::to_string(second.size())
+			+ " rows the same" + (diff.empty() ? "" : "; " + diff);
 	}
 
 	void PrintTable(FILE* out, const std::string& file, const PluginInfo* info, const Outcome& o, const Summary& s)
@@ -1033,6 +1121,8 @@ namespace AobScan
 			if (!LoadHooksSEH(loadHooks, &self, &g_scanner, code))
 				o.crash = "exception " + Hex(code)
 					+ (g_gameCalls ? " after " + std::to_string(g_gameCalls) + " game call(s) were stopped" : "");
+			else if (!g_gameCalls)
+				SecondPass(loadHooks, &self, o);
 			g_session.self = nullptr;
 		}
 
@@ -1063,6 +1153,7 @@ namespace AobScan
 		else if (!loadHooks)       o.verdict = "NONE";
 		else if (!o.crash.empty()) o.verdict = "CRASH";
 		else if (s.failing)        o.verdict = "FAIL";
+		else if (o.secondDiffers)  o.verdict = "FAIL";
 		else if (!g_gameCalls)     o.verdict = "PASS";
 		else if (patternsOk)
 		{
@@ -1082,6 +1173,9 @@ namespace AobScan
 			o.verdict = "CRASH";
 			o.crash   = "called into the game before any pattern resolved";
 		}
+
+		if (!o.second.empty())
+			o.note = o.note.empty() ? o.second : o.note + "; " + o.second;
 
 		PrintTable(json ? stderr : stdout, file, info, o, s);
 		if (json)

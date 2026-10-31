@@ -6,18 +6,22 @@
 // is. Only what those call out to is replaced here, and each replacement is
 // the "nothing to report" answer:
 //   * no logger        -- the verdict comes back in ScanValidation::Result.
-//   * no scan cache    -- an offline scan always reads the image.
 //   * no hooks         -- the file on disk is the shipped image, so there is
 //                         nothing for PatchOverlay to put back.
 //   * no DbgHelp       -- failure reports lose the optional symbol name.
-// Two answers are real ones, for the per-build locator selection in
+// Three answers are real ones, for the per-build locator selection in
 // memory_scanner/version_map.cpp:
 //   * the game version -- the mapped exe's own ProductVersion.
 //   * "[Map]" lines    -- which locator picked an address goes to stderr with
 //                         the rest of the report; every other line is dropped.
+//   * the scan cache   -- in memory, for --plugin's second pass. The first pass
+//                         runs with nothing cached, as a first launch on a new
+//                         exe does, and stores what it verified; the second
+//                         reads that back, as the next launch would.
 #include <cstdarg>
 #include <cstdio>
 #include <cwchar>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -34,6 +38,9 @@
 namespace
 {
 	std::wstring g_gameVersion;
+
+	std::map<std::pair<std::wstring, std::string>, ScanCache::Entry> g_cache;
+	bool g_cacheWarm = false;
 
 	void PrintMapLine(const wchar_t* format, va_list args)
 	{
@@ -94,6 +101,11 @@ namespace AobScan
 		if (VerQueryValueW(info.data(), query, reinterpret_cast<LPVOID*>(&version), &length) && version && length)
 			g_gameVersion = version;
 	}
+
+	void WarmScanCache()
+	{
+		g_cacheWarm = true;
+	}
 }
 
 std::wstring GetGameVersionString()
@@ -103,12 +115,21 @@ std::wstring GetGameVersionString()
 
 namespace ScanCache
 {
-	bool TryGet(const std::wstring&, const std::string&, Entry&)
+	bool TryGet(const std::wstring& gameVersion, const std::string& pattern, Entry& out)
 	{
-		return false;
+		if (!g_cacheWarm)
+			return false;
+		const auto it = g_cache.find({ gameVersion, pattern });
+		if (it == g_cache.end())
+			return false;
+		out = it->second;
+		return true;
 	}
 
-	void Store(const std::wstring&, const std::string&, const Entry&) {}
+	void Store(const std::wstring& gameVersion, const std::string& pattern, const Entry& entry)
+	{
+		g_cache[{ gameVersion, pattern }] = entry;
+	}
 }
 
 namespace Hooks::Broker

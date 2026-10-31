@@ -37,6 +37,10 @@ namespace AobScan
 	// (GetGameVersionString). stubs.cpp.
 	void SetGameExe(const wchar_t* path);
 
+	// From here on the scan cache answers with what was stored before, as on
+	// the next launch of the same exe. stubs.cpp.
+	void WarmScanCache();
+
 	namespace Suggest { class Session; }
 
 	// image is the game exe as MapImage laid it out. Returns kExitOk when the
