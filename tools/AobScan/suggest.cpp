@@ -20,7 +20,10 @@
 // wildcard. The proposal is the shortest instruction-aligned prefix, at least
 // kMinPatternBytes long, that matches exactly once. When the reference
 // function is known, both builds' instructions are merged first (a byte that
-// differs becomes a wildcard) so one pattern serves both. When the function's
+// differs becomes a wildcard) so one pattern serves both. With one build to go
+// on, the 4-byte displacements and immediates (field offsets, frame sizes),
+// which an update moves without changing the code, are wildcards as well,
+// unless no pattern is unique without them. When the function's
 // own bytes are not unique, the pattern is a window around a call to it, with
 // followRel32At on the call, as the loader's FOLLOW_REL32 requests do.
 //
@@ -441,6 +444,7 @@ namespace
 	{
 		std::vector<uint8_t>   bytes;
 		std::vector<uint8_t>   wild;
+		std::vector<uint8_t>   loose;    // a non-rip disp32 or an imm32: it moves with the layout
 		std::vector<uint32_t>  ends;     // end offset of instruction i
 		std::vector<uintptr_t> targets;  // E8/E9 rel32 target of instruction i, else 0
 
@@ -468,11 +472,16 @@ namespace
 			{
 				s.bytes.push_back(p[k]);
 				s.wild.push_back(image.Relocated(at + k) ? 1 : 0);
+				s.loose.push_back(0);
 			}
 			if (insn.rip)
 				std::fill_n(s.wild.begin() + first + insn.dispAt, insn.dispSize, 1);
+			else if (insn.dispSize == 4)
+				std::fill_n(s.loose.begin() + first + insn.dispAt, insn.dispSize, 1);
 			if (insn.relative)
 				std::fill_n(s.wild.begin() + first + insn.immAt, insn.immSize, 1);
+			else if (insn.immSize == 4)
+				std::fill_n(s.loose.begin() + first + insn.immAt, insn.immSize, 1);
 			uintptr_t target = 0;
 			if (insn.near32)
 			{
@@ -484,6 +493,15 @@ namespace
 			s.ends.push_back(static_cast<uint32_t>(at - from));
 			s.targets.push_back(target);
 		}
+		return s;
+	}
+
+	// The stream with its loose bytes wildcarded too, for a pattern built from
+	// one build that has to survive the next.
+	Stream Loosened(Stream s)
+	{
+		for (size_t i = 0; i < s.loose.size(); ++i)
+			s.wild[i] |= s.loose[i];
 		return s;
 	}
 
@@ -1059,9 +1077,11 @@ namespace AobScan::Suggest
 			bool Direct(bool merged, Proposal& out) const
 			{
 				const Stream own = FunctionStream(image, fn);
-				const Window w = merged
-					? SmallestUnique(MergePrefix(own, FunctionStream(*other, otherFn)), 0, true, { &image, other })
-					: SmallestUnique(own, 0, true, { &image });
+				Window w;
+				if (merged)
+					w = SmallestUnique(MergePrefix(own, FunctionStream(*other, otherFn)), 0, true, { &image, other });
+				else if (!(w = SmallestUnique(Loosened(own), 0, true, { &image })).found)
+					w = SmallestUnique(own, 0, true, { &image });
 				if (!w.found)
 					return false;
 				out = Proposal{};
@@ -1118,7 +1138,7 @@ namespace AobScan::Suggest
 						both = MergeAround(own, k, theirs, kOther, anchor);
 						w = SmallestUnique(both, anchor, false, { &image, other });
 					}
-					else
+					else if (!(w = SmallestUnique(Loosened(own), k, false, { &image })).found)
 						w = SmallestUnique(own, k, false, { &image });
 					if (!w.found)
 						continue;
