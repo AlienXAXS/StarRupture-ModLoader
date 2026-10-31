@@ -78,6 +78,7 @@
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
+      <AdditionalDependencies>dbghelp.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
@@ -97,6 +98,7 @@
     <ClCompile Include="aobscan.cpp" />
     <ClCompile Include="stubs.cpp" />
     <ClCompile Include="plugin_scan.cpp" />
+    <ClCompile Include="suggest.cpp" />
   </ItemGroup>
   <ItemGroup Label="Loader sources used as they are">
     <ClCompile Include="$(CoreDir)memory_scanner\scanner.cpp" />

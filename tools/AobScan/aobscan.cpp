@@ -8,8 +8,8 @@
 // makes in-game. Nothing is launched and nothing is attached to; the exe is
 // only ever opened for reading.
 //
-//   sr-aobscan <game.exe> [--json] [--verbose]
-//   sr-aobscan <game.exe> --plugin <plugin.dll> [--json] [--verbose]
+//   sr-aobscan <game.exe> [--json] [--verbose] [--suggest [--reference <current.exe>]]
+//   sr-aobscan <game.exe> --plugin <plugin.dll> [--json] [--verbose] [--suggest [--reference <current.exe>]]
 //
 // Exit code: 0 when every required pattern is OK, 1 when a required pattern is
 // not, 2 when the file could not be read or is not an x64 PE image.
@@ -37,9 +37,16 @@
 //     are set in --plugin mode only (plugins check them; the loader's own
 //     scan does not).
 //   * Failure reports carry no symbol name (no DbgHelp).
+//
+// --suggest proposes a replacement for every MISSING or AMBIGUOUS pattern
+// (suggest.cpp), using the PDB next to the exe when there is one, and
+// --reference, the build players run today, to find the function the current
+// pattern lands on and to make the proposal serve both builds. Proposals are
+// reported beside the failure; they never change a verdict or the exit code.
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -50,11 +57,13 @@
 #include "memory_scanner/image_info.h"
 #include "memory_scanner/scan_validation.h"
 #include "plugin_scan.h"
+#include "suggest.h"
 
 using AobScan::kExitOk;
 using AobScan::kExitFailed;
 using AobScan::kExitBadInput;
 using AobScan::JsonEscape;
+using AobScan::MappedImage;
 
 namespace
 {
@@ -64,12 +73,6 @@ namespace
 #else
 	constexpr const char* kTarget = "client";
 #endif
-
-	struct MappedImage
-	{
-		uint8_t* base = nullptr;
-		size_t   size = 0;
-	};
 
 	struct ScopedHandle
 	{
@@ -148,7 +151,10 @@ namespace
 		nt->OptionalHeader.ImageBase = reinterpret_cast<uintptr_t>(image.base);
 		return true;
 	}
+}
 
+namespace AobScan
+{
 	// Lays the file out as the OS loader would. The file is only read, and
 	// opened shared with writers so a running game does not matter.
 	bool MapImage(const wchar_t* path, MappedImage& out, std::string& error)
@@ -258,7 +264,10 @@ namespace
 		out = image;
 		return true;
 	}
+}
 
+namespace
+{
 	const char* ShortKind(ScanPatterns::PatternKind kind)
 	{
 		switch (kind)
@@ -292,6 +301,7 @@ namespace
 		ScanValidation::Result              result;
 		bool                                hasRva = false;
 		uint64_t                            rva    = 0;
+		AobScan::Suggest::Result            suggest;
 	};
 
 	// Calls fn on each non-empty line of a ScanValidation detail.
@@ -362,26 +372,33 @@ namespace AobScan
 
 int wmain(int argc, wchar_t** argv)
 {
-	const wchar_t* path    = nullptr;
-	const wchar_t* plugin  = nullptr;
-	bool           json    = false;
-	bool           verbose = false;
+	static constexpr const char* kUsage =
+		"usage: sr-aobscan <game.exe> [--plugin <plugin.dll>] [--json] [--verbose] [--suggest [--reference <current.exe>]]\n";
+
+	const wchar_t* path      = nullptr;
+	const wchar_t* plugin    = nullptr;
+	const wchar_t* reference = nullptr;
+	bool           json      = false;
+	bool           verbose   = false;
+	bool           suggest   = false;
 
 	for (int i = 1; i < argc; ++i)
 	{
 		if (wcscmp(argv[i], L"--json") == 0)         json = true;
 		else if (wcscmp(argv[i], L"--verbose") == 0) verbose = true;
+		else if (wcscmp(argv[i], L"--suggest") == 0) suggest = true;
 		else if (wcscmp(argv[i], L"--plugin") == 0 && i + 1 < argc && !plugin) plugin = argv[++i];
+		else if (wcscmp(argv[i], L"--reference") == 0 && i + 1 < argc && !reference) reference = argv[++i];
 		else if (!path && argv[i][0] != L'-')        path = argv[i];
 		else
 		{
-			fprintf(stderr, "usage: sr-aobscan <game.exe> [--plugin <plugin.dll>] [--json] [--verbose]\n");
+			fputs(kUsage, stderr);
 			return kExitBadInput;
 		}
 	}
-	if (!path)
+	if (!path || (reference && !suggest))
 	{
-		fprintf(stderr, "usage: sr-aobscan <game.exe> [--plugin <plugin.dll>] [--json] [--verbose]\n");
+		fputs(kUsage, stderr);
 		return kExitBadInput;
 	}
 
@@ -396,8 +413,12 @@ int wmain(int argc, wchar_t** argv)
 	const auto module = reinterpret_cast<HMODULE>(image.base);
 	const auto base   = reinterpret_cast<uintptr_t>(image.base);
 
+	std::unique_ptr<AobScan::Suggest::Session> session;
+	if (suggest)
+		session = std::make_unique<AobScan::Suggest::Session>(module, path, reference);
+
 	if (plugin)
-		return AobScan::ScanPlugin(module, plugin, json, verbose);
+		return AobScan::ScanPlugin(module, plugin, json, verbose, session.get());
 
 	std::vector<Row> rows;
 	for (const ScanPatterns::PreflightEntry& entry : ScanPatterns::PreflightRegistry)
@@ -425,6 +446,18 @@ int wmain(int argc, wchar_t** argv)
 			row.hasRva = true;
 			row.rva    = row.result.rawMatch - base;
 		}
+
+		if (session && (row.result.outcome == ScanValidation::Outcome::NoMatch
+		                || row.result.outcome == ScanValidation::Outcome::MultipleMatches))
+		{
+			AobScan::Suggest::Request failed;
+			failed.name            = request.name;
+			failed.patterns        = { request.pattern };
+			failed.kind            = request.kind;
+			failed.followRel32At   = request.followRel32At;
+			failed.followRipDispAt = request.followRipDispAt;
+			row.suggest = session->Propose(failed);
+		}
 		rows.push_back(std::move(row));
 	}
 
@@ -445,6 +478,8 @@ int wmain(int argc, wchar_t** argv)
 	if (json)
 	{
 		printf("{\n  \"target\": \"%s\",\n  \"imageSize\": %zu,\n", kTarget, image.size);
+		if (session)
+			printf("  \"suggest\": %s,\n", session->EnvJson().c_str());
 		printf("  \"summary\": { \"total\": %zu, \"ok\": %zu, \"missing\": %zu, \"ambiguous\": %zu, "
 		       "\"other\": %zu, \"requiredFailing\": %zu },\n  \"patterns\": [\n",
 			rows.size(), ok, missing, ambiguous, other, requiredFailing);
@@ -458,6 +493,8 @@ int wmain(int argc, wchar_t** argv)
 				printf(", \"rva\": \"0x%llX\"", static_cast<unsigned long long>(row.rva));
 			if (!row.result.Succeeded())
 				printf(", \"detail\": \"%s\"", JsonEscape(AobScan::JsonDetail(row.result.detail)).c_str());
+			if (row.suggest.attempted)
+				printf(", \"suggest\": %s", AobScan::Suggest::Json(row.suggest).c_str());
 			printf(" }%s\n", i + 1 < rows.size() ? "," : "");
 		}
 		printf("  ]\n}\n");
@@ -475,6 +512,7 @@ int wmain(int argc, wchar_t** argv)
 				ShortKind(row.entry->kind), row.entry->required ? "yes" : "no", row.result.matchCount, rva);
 			if (!row.result.Succeeded() && (verbose || row.entry->required))
 				AobScan::PrintDetail(stdout, row.result.detail);
+			AobScan::Suggest::PrintText(stdout, row.suggest);
 		}
 		printf("%zu patterns: %zu OK, %zu MISSING, %zu AMBIGUOUS, %zu other; %zu required failing\n",
 			rows.size(), ok, missing, ambiguous, other, requiredFailing);

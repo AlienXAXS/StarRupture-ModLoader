@@ -41,6 +41,7 @@
 //   REFUSED    interface version outside [MIN, MAX]; the hook is not run
 //   NONE       no OnPluginLoadHooks export
 #include "plugin_scan.h"
+#include "suggest.h"
 
 #include <cstdarg>
 #include <cstdio>
@@ -239,9 +240,11 @@ namespace
 		bool                   hasRva = false;
 		uint64_t               rva    = 0;
 		std::string            detail;
+		AobScan::Suggest::Result suggest;  // MISSING / AMBIGUOUS, with --suggest
 	};
 
 	std::vector<Row> g_rows;
+	AobScan::Suggest::Session* g_suggest = nullptr;
 
 	const IPluginHookScanner& Loader()
 	{
@@ -797,6 +800,7 @@ namespace
 				!row.recorded ? "-" : row.required ? "yes" : "no", matches, rva.c_str());
 			if (row.recorded && row.result != "OK" && !row.detail.empty())
 				AobScan::PrintDetail(out, row.detail);
+			AobScan::Suggest::PrintText(out, row.suggest);
 		}
 		if (g_gameCalls)
 			fprintf(out, "Game calls stopped: %d. The first: %s\n", g_gameCalls, o.gameCall.c_str());
@@ -813,6 +817,8 @@ namespace
 	{
 		using AobScan::JsonEscape;
 		printf("{\n  \"target\": \"%s\",\n", kTargetName);
+		if (g_suggest)
+			printf("  \"suggest\": %s,\n", g_suggest->EnvJson().c_str());
 		printf("  \"plugin\": { \"file\": \"%s\"", JsonEscape(file).c_str());
 		if (info)
 			printf(", \"name\": \"%s\", \"version\": \"%s\", \"interfaceVersion\": %d",
@@ -856,6 +862,8 @@ namespace
 				printf(", \"rva\": \"%s\"", Hex(row.rva).c_str());
 			if (!row.detail.empty())
 				printf(", \"detail\": \"%s\"", JsonEscape(AobScan::JsonDetail(row.detail)).c_str());
+			if (row.suggest.attempted)
+				printf(", \"suggest\": %s", AobScan::Suggest::Json(row.suggest).c_str());
 			printf(" }%s\n", i + 1 < g_rows.size() ? "," : "");
 		}
 		printf("  ]\n}\n");
@@ -891,9 +899,10 @@ namespace PluginHookReport
 
 namespace AobScan
 {
-	int ScanPlugin(HMODULE image, const wchar_t* dllPath, bool json, bool verbose)
+	int ScanPlugin(HMODULE image, const wchar_t* dllPath, bool json, bool verbose, Suggest::Session* suggest)
 	{
 		g_image     = image;
+		g_suggest   = suggest;
 		g_imageSize = ImageSize(image);
 		g_verbose   = verbose;
 
@@ -1001,6 +1010,22 @@ namespace AobScan
 					+ (g_gameCalls ? " after " + std::to_string(g_gameCalls) + " game call(s) were stopped" : "");
 			g_session.self = nullptr;
 		}
+
+		// Proposals for what failed, once the plugin is done asking.
+		if (suggest)
+			for (Row& row : g_rows)
+			{
+				if (!row.recorded || row.otherModule || (row.result != "MISSING" && row.result != "AMBIGUOUS"))
+					continue;
+				Suggest::Request failed;
+				failed.name          = row.name;
+				failed.kind          = ScanValidation::ParseKind(row.kind.c_str());
+				failed.resultOffset  = row.resultOffset;
+				failed.followRel32At = row.followRel32At;
+				for (const Candidate& c : row.patterns)
+					failed.patterns.push_back(c.pattern);
+				row.suggest = suggest->Propose(failed);
+			}
 
 		const Summary s = Summarise();
 		if (g_gameCalls)

@@ -24,8 +24,21 @@ namespace AobScan
 	void        PrintDetail(FILE* out, const std::string& detail);
 	std::string JsonDetail(const std::string& detail);
 
+	// An exe laid out the way the Windows loader lays it out: sections at their
+	// RVAs, base relocations applied, .pdata registered. aobscan.cpp.
+	struct MappedImage
+	{
+		uint8_t* base = nullptr;
+		size_t   size = 0;
+	};
+	bool MapImage(const wchar_t* path, MappedImage& out, std::string& error);
+
+	namespace Suggest { class Session; }
+
 	// image is the game exe as MapImage laid it out. Returns kExitOk when the
 	// loader would let the plugin through to PluginInit, kExitFailed when it
 	// would refuse it, kExitBadInput when the DLL is not a loadable client plugin.
-	int ScanPlugin(HMODULE image, const wchar_t* dllPath, bool json, bool verbose);
+	// suggest, when given, proposes a replacement for each MISSING or
+	// AMBIGUOUS pattern; it does not change the verdict.
+	int ScanPlugin(HMODULE image, const wchar_t* dllPath, bool json, bool verbose, Suggest::Session* suggest);
 }
