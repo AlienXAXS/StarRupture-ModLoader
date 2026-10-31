@@ -61,6 +61,7 @@
 #include "hooks/game/scan_patterns.h"
 #include "memory_scanner/image_info.h"
 #include "memory_scanner/scan_validation.h"
+#include "memory_scanner/version_map.h"
 #include "layout.h"
 #include "plugin_scan.h"
 #include "suggest.h"
@@ -432,11 +433,14 @@ int wmain(int argc, wchar_t** argv)
 	if (plugin)
 		return AobScan::ScanPlugin(module, plugin, json, verbose, session.get());
 
+	const VersionMap::Exe exe = VersionMap::ExeOf(module);
 	std::vector<Row> rows;
 	for (const ScanPatterns::PreflightEntry& entry : ScanPatterns::PreflightRegistry)
 	{
 		// The same request PatternPreflight builds, aimed at the mapped image
-		// instead of the process's own main module.
+		// instead of the process's own main module, and resolved the same way:
+		// with the loader's version-map rows for it, whose "[Map]" line goes to
+		// stderr.
 		ScanValidation::Request request;
 		request.name          = entry.name;
 		request.pattern       = entry.pattern;
@@ -446,7 +450,7 @@ int wmain(int argc, wchar_t** argv)
 
 		Row row;
 		row.entry  = &entry;
-		row.result = ScanValidation::Resolve(request);
+		row.result = VersionMap::ResolveLoaderEntry(entry, request, exe);
 
 		if (row.result.Succeeded())
 		{
@@ -490,6 +494,8 @@ int wmain(int argc, wchar_t** argv)
 	if (json)
 	{
 		printf("{\n  \"target\": \"%s\",\n  \"imageSize\": %zu,\n", kTarget, image.size);
+		printf("  \"exe\": { \"cl\": %u, \"imageStamp\": \"0x%08X\", \"imageSize\": \"0x%08X\" },\n",
+			exe.cl, exe.imageStamp, exe.imageSize);
 		if (session)
 			printf("  \"suggest\": %s,\n", session->EnvJson().c_str());
 		printf("  \"summary\": { \"total\": %zu, \"ok\": %zu, \"missing\": %zu, \"ambiguous\": %zu, "
@@ -503,6 +509,10 @@ int wmain(int argc, wchar_t** argv)
 				row.entry->required ? "true" : "false", ResultName(row.result.outcome), row.result.matchCount);
 			if (row.hasRva)
 				printf(", \"rva\": \"0x%llX\"", static_cast<unsigned long long>(row.rva));
+			// What a version-map row for this entry is made of.
+			printf(", \"pattern\": \"%s\", \"followRel32At\": %d, \"followRipDispAt\": %d, \"siteArithmetic\": %s",
+				JsonEscape(row.entry->pattern).c_str(), row.entry->followRel32At, row.entry->followRipDispAt,
+				row.entry->siteArithmetic ? "true" : "false");
 			if (!row.result.Succeeded())
 				printf(", \"detail\": \"%s\"", JsonEscape(AobScan::JsonDetail(row.result.detail)).c_str());
 			if (row.suggest.attempted)
@@ -514,6 +524,7 @@ int wmain(int argc, wchar_t** argv)
 	else
 	{
 		printf("sr-aobscan (%s build): %ls\n", kTarget, path);
+		printf("Game exe: CL-%u, PE stamp 0x%08X, image size 0x%08X\n", exe.cl, exe.imageStamp, exe.imageSize);
 		printf("%-10s %-52s %-10s %-4s %7s  %s\n", "RESULT", "NAME", "KIND", "REQ", "MATCHES", "RVA");
 		for (const Row& row : rows)
 		{
