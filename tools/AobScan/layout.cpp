@@ -16,6 +16,10 @@
 //     reflected name of a deprecated property drops; then, for a name ending in
 //     "_<n>", without that suffix and in the same case, which Dumper-7 adds to a
 //     member whose name collides with another identifier (Outer_0 for Outer).
+//     A plugin's field request (FieldFromPdb) takes only the exact name and the
+//     "_DEPRECATED" form, both case-sensitive: the loader's reflection reader
+//     compares the member name exactly, so the PDB must not accept a name the
+//     game refuses.
 //   * A class: the exact name; then the template behind one of the engine's
 //     math aliases (FVector is UE::Math::TVector<double>, FVector3f is
 //     UE::Math::TVector<float>); then, for
@@ -211,9 +215,11 @@ namespace
 
 		// Finds member in the class or its bases, by the name rules above; offset is
 		// from the start of the class.
-		bool Member(DWORD udt, const std::wstring& member, Answer& out) const
+		bool Member(DWORD udt, const std::wstring& member, Answer& out, bool exact = false) const
 		{
 			const std::wstring deprecated = member + L"_DEPRECATED";
+			if (exact)
+				return Find(udt, [&](const std::wstring& n) { return n == member || n == deprecated; }, 0, 0, out);
 			if (Find(udt, [&](const std::wstring& n) { return n == member; }, 0, 0, out)
 			    || Find(udt, [&](const std::wstring& n) { return _wcsicmp(n.c_str(), member.c_str()) == 0; }, 0, 0, out)
 			    || Find(udt, [&](const std::wstring& n) { return _wcsicmp(n.c_str(), deprecated.c_str()) == 0; }, 0, 0, out))
@@ -373,7 +379,9 @@ namespace
 	}
 
 	// byName: FindClass's answers so far. A lookup by name walks the PDB's type records.
-	Answer Resolve(const Types& types, const Key& key, std::map<std::string, std::vector<DWORD>>& byName)
+	// exactMember: the member rule of a plugin's field request (above).
+	Answer Resolve(const Types& types, const Key& key, std::map<std::string, std::vector<DWORD>>& byName,
+		bool exactMember = false)
 	{
 		Answer answer;
 		if (key.className.empty() || (key.text.find("::") != std::string::npos && key.member.empty()))
@@ -398,7 +406,7 @@ namespace
 			answer.size   = types.Length(classes[0]);
 			return answer;
 		}
-		if (!types.Member(classes[0], Widen(key.member), answer))
+		if (!types.Member(classes[0], Widen(key.member), answer, exactMember))
 			answer.result = "NOMEMBER";
 		return answer;
 	}
@@ -527,7 +535,7 @@ namespace
 		if (name.rfind("/Script/", 0) == 0 && name.find('.') != std::string::npos)
 			name = name.substr(name.rfind('.') + 1);
 		const Key key{ member.empty() ? name : name + "::" + member, name, member };
-		const Answer a = Resolve(*s->types, key, s->classes);
+		const Answer a = Resolve(*s->types, key, s->classes, true);
 		if (strcmp(a.result, "OK") != 0)
 		{
 			live.error = std::string(a.result) + " in the PDB";
