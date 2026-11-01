@@ -35,9 +35,12 @@
 // patterns are listed in the row after the request's own, and the loader's
 // "[Map]" line, which says which locator it took, goes to stderr.
 //
-// Verdict, as the loader decides it (plugins/plugin_hook_report.h): any
-// recorded failure refuses the plugin, required or optional, and so does a
-// crash inside the event or an interface version outside the loader's range.
+// Verdict, as the loader decides it (plugins/plugin_hook_report.h, linked in as
+// it is): any recorded failure on a key no declared feature lists refuses the
+// plugin, required or optional, and so does a crash inside the event or an
+// interface version outside the loader's range. A miss on a key a feature
+// lists turns that feature off instead: the plugin loads, the verdict is not
+// lowered, and the report says "FEATURES OFF: n" with a line for each.
 // Raw scans (FindAllPatterns*) record nothing with the loader; they are listed
 // for information and the plugin decides what a miss means.
 //
@@ -67,6 +70,8 @@
 #include <cstdarg>
 #include <cstdio>
 #include <cstring>
+#include <map>
+#include <set>
 #include <vector>
 
 #include "hooks/game/scan_patterns.h"
@@ -224,21 +229,31 @@ namespace
 	bool  InitializeFromSchema(const IPluginSelf*, const ConfigSchema*) { return true; }
 	void  ValidateConfig(const IPluginSelf*, const ConfigSchema*) {}
 
-	// ---- The scan session (stands in for PluginHookReport) -------------------
+	// ---- The scan session -----------------------------------------------------
+	// The loader's own PluginHookReport (plugins/plugin_hook_report.cpp, compiled
+	// in as it is) keeps the session, as the plugin manager runs it: BeginSession
+	// before the hook, EndSession after, and the report it commits says whether
+	// the plugin is refused and which of its features are off.
 
-	struct Failure
-	{
-		std::string hookName;
-		std::string detail;
-		bool        required = true;
-	};
+	PluginHookReport::PluginReport g_report;   // the first run's
+	bool                           g_refused = false;
 
-	struct Session
+	void OpenSession(const IPluginSelf* self, const std::string& file)
 	{
-		const IPluginSelf*   self     = nullptr;
-		int                  resolved = 0;
-		std::vector<Failure> failures;
-	} g_session;
+		PluginHookReport::BeginSession(self, self->name, file.c_str());
+	}
+
+	// Closes the session and returns what the loader committed for it; empty
+	// when the plugin resolved everything cleanly.
+	PluginHookReport::PluginReport CloseSession(const IPluginSelf* self, bool& refused)
+	{
+		refused = false;
+		PluginHookReport::EndSession(self, &refused);
+		for (PluginHookReport::PluginReport& report : PluginHookReport::Snapshot())
+			if (report.plugin == self->name)
+				return std::move(report);
+		return PluginHookReport::PluginReport{};
+	}
 
 	// ---- What the plugin asked for, one row per call --------------------------
 
@@ -301,7 +316,6 @@ namespace
 	template <typename Fn>
 	uintptr_t Record(Row row, HMODULE module, bool badRequest, Fn&& resolve)
 	{
-		const size_t failuresBefore = g_session.failures.size();
 		const uintptr_t address = resolve();
 
 		if (address)
@@ -324,17 +338,6 @@ namespace
 			else if (total == 0)                     row.result = "MISSING";
 			else if (most > 1)                       row.result = "AMBIGUOUS";
 			else                                     row.result = "WRONGKIND";
-
-			for (size_t i = failuresBefore; i < g_session.failures.size(); ++i)
-			{
-				if (!row.detail.empty()) row.detail += "\r\n";
-				row.detail += g_session.failures[i].detail;
-			}
-
-			// Locators for several builds that each match once but land on
-			// different addresses: the loader's selection says so itself.
-			if (row.detail.rfind("AMBIGUOUS", 0) == 0)
-				row.result = "AMBIGUOUS";
 		}
 		g_rows.push_back(std::move(row));
 		return address;
@@ -565,6 +568,13 @@ namespace
 	}
 #endif
 
+#if PLUGIN_INTERFACE_VERSION >= 73
+	bool DeclareFeature(const IPluginSelf* self, const PluginFeatureDesc* desc)
+	{
+		return Loader().DeclareFeature(self, desc);
+	}
+#endif
+
 	IPluginHookScanner g_scanner = {
 		ResolveRequired,
 		ResolveOptional,
@@ -584,7 +594,13 @@ namespace
 #if PLUGIN_INTERFACE_VERSION >= 72
 		ResolveField,
 #endif
+#if PLUGIN_INTERFACE_VERSION >= 73
+		DeclareFeature,
+#endif
 	};
+#if PLUGIN_INTERFACE_VERSION >= 73
+	static_assert(offsetof(IPluginHookScanner, DeclareFeature) == 128, "v73 starts where v72 ended");
+#endif
 
 	// ---- Calls into the game --------------------------------------------------
 	// Game code cannot run here, so a plugin that calls a game function from its
@@ -800,7 +816,56 @@ namespace
 	struct Summary
 	{
 		size_t total = 0, ok = 0, missing = 0, ambiguous = 0, other = 0, reported = 0, failing = 0, raw = 0;
+		size_t off = 0;   // rows that missed on a key only a feature that is off uses
 	};
+
+	// The detail the loader recorded for each miss, which the report holds by
+	// name in the order the plugin asked, set on the rows that missed. A miss
+	// on a key a feature lists sits in that feature (every feature listing it
+	// holds the same one); any other is a core failure.
+	void AttachDetails(const PluginHookReport::PluginReport& report)
+	{
+		std::map<std::string, std::vector<std::string>> byName;
+		for (const auto& f : report.failures)
+			byName[f.hookName].push_back(f.detail);
+		std::map<std::string, std::string> owner;
+		for (const auto& feature : report.featuresOff)
+			for (const auto& miss : feature.misses)
+				if (owner.emplace(miss.key, feature.id).first->second == feature.id)
+					byName[miss.key].push_back(miss.detail);
+
+		std::map<std::string, size_t> next;
+		for (Row& row : g_rows)
+		{
+			if (!row.recorded || row.result == "OK")
+				continue;
+			const std::string name = row.name.empty() ? "(unnamed)" : row.name;
+			const auto at = byName.find(name);
+			size_t& used = next[name];
+			if (at == byName.end() || used >= at->second.size())
+				continue;
+			const std::string& detail = at->second[used++];
+			if (row.result == "REPORTED")
+				continue;
+			row.detail = detail;
+			// Locators for several builds that each match once but land on
+			// different addresses: the loader's selection says so itself.
+			if (row.detail.rfind("AMBIGUOUS", 0) == 0)
+				row.result = "AMBIGUOUS";
+		}
+	}
+
+	bool IsOff(const Row& row)
+	{
+		if (!row.recorded || row.result == "OK")
+			return false;
+		const std::string name = row.name.empty() ? "(unnamed)" : row.name;
+		for (const auto& feature : g_report.featuresOff)
+			for (const auto& miss : feature.misses)
+				if (miss.key == name)
+					return true;
+		return false;
+	}
 
 	Summary Summarise()
 	{
@@ -814,8 +879,9 @@ namespace
 			else if (row.result == "AMBIGUOUS") ++s.ambiguous;
 			else if (row.result == "REPORTED")  ++s.reported;
 			else                                ++s.other;
+			if (IsOff(row))                     ++s.off;
 		}
-		s.failing = g_session.failures.size();
+		s.failing = g_report.failures.size();
 		return s;
 	}
 
@@ -870,12 +936,11 @@ namespace
 	}
 
 	// The hook again, with the scan cache the first run stored (see the top of
-	// this file). Leaves the first run's rows, session and game calls as they
-	// were.
-	void SecondPass(PluginLoadHooksFunc loadHooks, IPluginSelf* self, Outcome& o)
+	// this file), in a session of its own. Leaves the first run's rows, report
+	// and game calls as they were.
+	void SecondPass(PluginLoadHooksFunc loadHooks, IPluginSelf* self, const std::string& file, Outcome& o)
 	{
 		std::vector<Row> first = std::move(g_rows);
-		const Session  session         = g_session;
 		const int      gameCalls       = g_gameCalls;
 		const GameCall firstCall       = g_firstGameCall;
 		const size_t   rowsAtFirstCall = g_rowsAtFirstCall;
@@ -884,12 +949,14 @@ namespace
 		AobScan::WarmScanCache();
 		fputs("Second run, with the scan cache the first one filled:\n", stderr);
 		DWORD code = 0;
+		OpenSession(self, file);
 		const bool ran    = LoadHooksSEH(loadHooks, self, &g_scanner, code);
+		bool secondRefused = false;
+		CloseSession(self, secondRefused);
 		const bool called = g_gameCalls != gameCalls;
 
 		std::vector<Row> second = std::move(g_rows);
 		g_rows            = std::move(first);
-		g_session         = session;
 		g_gameCalls       = gameCalls;
 		g_firstGameCall   = firstCall;
 		g_rowsAtFirstCall = rowsAtFirstCall;
@@ -944,6 +1011,52 @@ namespace
 #endif
 	}
 
+	// What the loader's report says about the plugin's features: a feature with a
+	// key that missed is off, the plugin still loads, and the miss is not a
+	// failure. The loader logs the same on its "[Map]" lines.
+	void PrintFeatures(FILE* out)
+	{
+		fprintf(out, "FEATURES OFF: %zu; refused: %s\n", g_report.featuresOff.size(), g_refused ? "yes" : "no");
+		for (const auto& feature : g_report.featuresOff)
+		{
+			fprintf(out, "  feature \"%s\" (%s) is off: %s\n", feature.title.c_str(), feature.id.c_str(), feature.reason.c_str());
+			for (const auto& miss : feature.misses)
+				fprintf(out, "    %s\n", miss.key.c_str());
+		}
+		// A refusing failure that has no row above: a field request or a check
+		// has no pattern to list.
+		for (const auto& f : g_report.failures)
+		{
+			bool listed = false;
+			for (const Row& row : g_rows)
+				listed = listed || (row.recorded && (row.name.empty() ? "(unnamed)" : row.name) == f.hookName);
+			if (!listed)
+				fprintf(out, "  refused by %s: %s\n", f.hookName.c_str(), f.detail.c_str());
+		}
+	}
+
+	void PrintFeaturesJson()
+	{
+		using AobScan::JsonEscape;
+		printf("  \"refused\": %s,\n  \"featuresOff\": [", g_refused ? "true" : "false");
+		for (size_t i = 0; i < g_report.featuresOff.size(); ++i)
+		{
+			const auto& feature = g_report.featuresOff[i];
+			printf("%s\n    { \"id\": \"%s\", \"title\": \"%s\", \"reason\": \"%s\", \"misses\": [",
+				i ? "," : "", JsonEscape(feature.id).c_str(), JsonEscape(feature.title).c_str(),
+				JsonEscape(feature.reason).c_str());
+			for (size_t m = 0; m < feature.misses.size(); ++m)
+				printf("%s{ \"key\": \"%s\", \"detail\": \"%s\" }", m ? ", " : "",
+					JsonEscape(feature.misses[m].key).c_str(),
+					JsonEscape(AobScan::JsonDetail(feature.misses[m].detail)).c_str());
+			printf("], \"configKeys\": [");
+			for (size_t c = 0; c < feature.configKeys.size(); ++c)
+				printf("%s\"%s\"", c ? ", " : "", JsonEscape(feature.configKeys[c]).c_str());
+			printf("] }");
+		}
+		printf("%s],\n", g_report.featuresOff.empty() ? "" : "\n  ");
+	}
+
 	void PrintTable(FILE* out, const std::string& file, const PluginInfo* info, const Outcome& o, const Summary& s)
 	{
 		fprintf(out, "sr-aobscan --plugin (%s build): %s", kTargetName, file.c_str());
@@ -969,6 +1082,7 @@ namespace
 				AobScan::PrintDetail(out, row.detail);
 			AobScan::Suggest::PrintText(out, row.suggest);
 		}
+		PrintFeatures(out);
 		if (g_gameCalls)
 			fprintf(out, "Game calls stopped: %d. The first: %s\n", g_gameCalls, o.gameCall.c_str());
 		if (!o.crash.empty())
@@ -996,6 +1110,7 @@ namespace
 			printf(", \"gameBuild\": \"%s\"", JsonEscape(GameBuild(*info)).c_str());
 		printf(", \"hasLoadHooks\": %s },\n", hasLoadHooks ? "true" : "false");
 		printf("  \"verdict\": \"%s\",\n", o.verdict);
+		PrintFeaturesJson();
 		if (!o.note.empty())
 			printf("  \"note\": \"%s\",\n", JsonEscape(o.note).c_str());
 		if (!o.crash.empty())
@@ -1048,39 +1163,6 @@ namespace
 			printf(" }%s\n", i + 1 < g_rows.size() ? "," : "");
 		}
 		printf("  ]\n}\n");
-	}
-}
-
-// The PluginHookReport calls hook_scanner_interface.cpp makes, kept for the
-// one session this tool opens.
-namespace PluginHookReport
-{
-	bool HasSession(const IPluginSelf* self)
-	{
-		return self && self == g_session.self;
-	}
-
-	void RecordResolved(const IPluginSelf* self)
-	{
-		if (HasSession(self))
-			++g_session.resolved;
-	}
-
-	void RecordFailure(const IPluginSelf* self, const char* hookName, const char* detail, bool required)
-	{
-		if (HasSession(self))
-			g_session.failures.push_back({ hookName ? hookName : "(unnamed)", detail ? detail : "", required });
-	}
-
-	bool SessionHasFailures(const IPluginSelf* self)
-	{
-		return HasSession(self) && !g_session.failures.empty();
-	}
-
-	// This tool loads one plugin, so no other shares its name.
-	bool SessionNameShared(const IPluginSelf*)
-	{
-		return false;
 	}
 }
 
@@ -1208,8 +1290,14 @@ namespace
 		self->hooks = nullptr;
 
 		const bool took = g_sdkGlobalsCalls > 0;
-		note = std::string(PLUGIN_INIT_FUNC_NAME) + (took ? " took" : " did not take") + " the Game-SDK globals"
-			+ (ran ? std::string() : " (it stopped at exception " + Hex(code) + ", outside the one table it was given)");
+		note = std::string(PLUGIN_INIT_FUNC_NAME) + (took ? " took" : " did not take") + " the Game-SDK globals";
+		// The probe hands PluginInit one function and nothing else, so a plugin
+		// that goes on to use any other part of its hooks table meets the null
+		// the probe left there. That is the probe's planned end for it, not a
+		// fault of the plugin's: only the globals call was being checked.
+		if (!ran)
+			note += std::string("; the probe ended ") + PLUGIN_INIT_FUNC_NAME + " there, as planned, when it reached for a hook the probe does not provide ("
+				+ Hex(code) + ")";
 		return took;
 	}
 }
@@ -1323,13 +1411,16 @@ namespace AobScan
 			self.config  = &config;
 			self.hooks   = nullptr;
 
-			g_session.self = &self;
 			code = 0;
-			if (!LoadHooksSEH(loadHooks, &self, &g_scanner, code))
+			OpenSession(&self, file);
+			const bool hookRan = LoadHooksSEH(loadHooks, &self, &g_scanner, code);
+			g_report = CloseSession(&self, g_refused);
+			AttachDetails(g_report);
+			if (!hookRan)
 				o.crash = "exception " + Hex(code)
 					+ (g_gameCalls ? " after " + std::to_string(g_gameCalls) + " game call(s) were stopped" : "");
 			else if (!g_gameCalls)
-				SecondPass(loadHooks, &self, o);
+				SecondPass(loadHooks, &self, file, o);
 			// PluginInit only for a plugin past the first two points, after a
 			// hook that did not crash. Game calls stopped in the hook do not
 			// skip it: the loader asks every such plugin.
@@ -1339,7 +1430,6 @@ namespace AobScan
 				askedSdkGlobals = TakesSdkGlobals(plugin, &self, initNote);
 				o.note = o.note.empty() ? initNote : o.note + "; " + initNote;
 			}
-			g_session.self = nullptr;
 		}
 
 		// Proposals for what failed, once the plugin is done asking.
@@ -1364,7 +1454,7 @@ namespace AobScan
 		// A stopped game call only keeps a pass from turning into a false
 		// CRASH, and only once something was checked: with no pattern resolved
 		// there is no evidence the hook ever reached its patterns.
-		const bool patternsOk = s.total > 0 && s.ok == s.total && !s.failing;
+		const bool patternsOk = s.ok > 0 && s.ok + s.off == s.total && !s.failing;
 		const std::string offBuild = refused ? std::string()
 			: VersionMap::OffBuildRefusal(VersionMap::RunningExe(), info->interfaceVersion, built, askedSdkGlobals);
 		if (!offBuild.empty())

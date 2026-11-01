@@ -109,6 +109,8 @@
     <ClCompile Include="$(CoreDir)memory_scanner\image_info.cpp" />
     <ClCompile Include="$(CoreDir)memory_scanner\patch_overlay.cpp" />
     <ClCompile Include="$(CoreDir)memory_scanner\hook_scanner_interface.cpp" />
+    <!-- The scan session and its report, as the plugin manager keeps them. -->
+    <ClCompile Include="$(CoreDir)plugins\plugin_hook_report.cpp" />
     <!-- Interface 72 and later: per-build locator selection. -->
     <ClCompile Include="$(CoreDir)memory_scanner\version_map.cpp" Condition="Exists('$(CoreDir)memory_scanner\version_map.cpp')" />
     <!-- The signed feed: the map option reads it the way the loader reads its cache. -->
