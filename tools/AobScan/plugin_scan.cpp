@@ -51,11 +51,12 @@
 //   CRASH      a fault that is not a game call, or a game call with no
 //              pattern resolved
 //   REFUSED    interface version outside [MIN, MAX]; the hook is not run
-//   On a build other than the loader's kBuiltCL, the note says when the loader
-//   would not admit the plugin there (VersionMap::OffBuildRefusal): from before
-//   interface 72, or one that asked the map for nothing. The verdict stays the
-//   pattern verdict. For the loader's third condition, GetSdkGlobals in
-//   PluginInit, a plugin that used the map has its PluginInit run with that
+//   On a build other than the one the plugin was built for (its PluginInfo
+//   tail), the note says when the loader would not admit the plugin there
+//   (VersionMap::OffBuildRefusal): from before interface 72, or one that does
+//   not declare PLUGIN_MAP_MIGRATED. The verdict stays the pattern verdict. For
+//   the loader's third condition, GetSdkGlobals in PluginInit, a plugin that
+//   declares PLUGIN_MAP_MIGRATED has its PluginInit run with that
 //   one function as its hooks table (see "PluginInit" below); the note says
 //   whether it took the globals.
 //   NONE       no OnPluginLoadHooks export
@@ -237,7 +238,6 @@ namespace
 		const IPluginSelf*   self     = nullptr;
 		int                  resolved = 0;
 		std::vector<Failure> failures;
-		bool                 usedMap  = false;   // a request with candidates, or ResolveField
 	} g_session;
 
 	// ---- What the plugin asked for, one row per call --------------------------
@@ -1077,17 +1077,6 @@ namespace PluginHookReport
 		return HasSession(self) && !g_session.failures.empty();
 	}
 
-	void RecordMapUse(const IPluginSelf* self)
-	{
-		if (HasSession(self))
-			g_session.usedMap = true;
-	}
-
-	bool SessionUsedMap(const IPluginSelf* self)
-	{
-		return HasSession(self) && g_session.usedMap;
-	}
-
 	// This tool loads one plugin, so no other shares its name.
 	bool SessionNameShared(const IPluginSelf*)
 	{
@@ -1297,7 +1286,8 @@ namespace AobScan
 		}
 
 		Outcome o;
-		bool askedSdkGlobals = true;   // only asked of a plugin that used the map
+		bool askedSdkGlobals = true;   // only asked of a plugin that declares PLUGIN_MAP_MIGRATED
+		const VersionMap::PluginGameBuild built = VersionMap::ReadPluginGameBuild(*info);
 		const bool refused = info->interfaceVersion < PLUGIN_INTERFACE_VERSION_MIN
 			|| info->interfaceVersion > PLUGIN_INTERFACE_VERSION_MAX;
 		if (refused)
@@ -1343,7 +1333,7 @@ namespace AobScan
 			// PluginInit only for a plugin past the first two points, after a
 			// hook that did not crash. Game calls stopped in the hook do not
 			// skip it: the loader asks every such plugin.
-			if (o.crash.empty() && g_session.usedMap)
+			if (o.crash.empty() && (built.mapFlags & PLUGIN_MAP_MIGRATED))
 			{
 				std::string initNote;
 				askedSdkGlobals = TakesSdkGlobals(plugin, &self, initNote);
@@ -1376,7 +1366,7 @@ namespace AobScan
 		// there is no evidence the hook ever reached its patterns.
 		const bool patternsOk = s.total > 0 && s.ok == s.total && !s.failing;
 		const std::string offBuild = refused ? std::string()
-			: VersionMap::OffBuildRefusal(VersionMap::RunningExe(), info->interfaceVersion, g_session.usedMap, askedSdkGlobals);
+			: VersionMap::OffBuildRefusal(VersionMap::RunningExe(), info->interfaceVersion, built, askedSdkGlobals);
 		if (!offBuild.empty())
 			o.note = o.note.empty() ? offBuild : o.note + "; " + offBuild;
 		if (refused)               o.verdict = "REFUSED";
