@@ -11,6 +11,7 @@
 //   sr-aobscan <game.exe> [--json] [--verbose] [--suggest [--reference <current.exe>]]
 //   sr-aobscan <game.exe> --plugin <plugin.dll> [--json] [--verbose] [--suggest [--reference <current.exe>]]
 //   sr-aobscan <game.exe> --layout <keys.txt> [--json]
+//   any of the first two with --map <version_map.generated.h | feed.txt>
 //
 // Exit code: 0 when every required pattern is OK, 1 when a required pattern is
 // not, 2 when the file could not be read or is not an x64 PE image.
@@ -69,6 +70,7 @@
 #include "memory_scanner/scan_validation.h"
 #include "memory_scanner/version_map.h"
 #include "layout.h"
+#include "map_file.h"
 #include "pdb.h"
 #include "plugin_scan.h"
 #include "suggest.h"
@@ -388,12 +390,14 @@ int wmain(int argc, wchar_t** argv)
 {
 	static constexpr const char* kUsage =
 		"usage: sr-aobscan <game.exe> [--plugin <plugin.dll>] [--json] [--verbose] [--suggest [--reference <current.exe>]]\n"
-		"       sr-aobscan <game.exe> --layout <keys.txt> [--json]\n";
+		"       sr-aobscan <game.exe> --layout <keys.txt> [--json]\n"
+		"       (--map <version_map.generated.h | feed.txt> resolves against that map, not the loader's)\n";
 
 	const wchar_t* path      = nullptr;
 	const wchar_t* plugin    = nullptr;
 	const wchar_t* reference = nullptr;
 	const wchar_t* layout    = nullptr;
+	const wchar_t* map       = nullptr;
 	bool           json      = false;
 	bool           verbose   = false;
 	bool           suggest   = false;
@@ -406,6 +410,7 @@ int wmain(int argc, wchar_t** argv)
 		else if (wcscmp(argv[i], L"--plugin") == 0 && i + 1 < argc && !plugin) plugin = argv[++i];
 		else if (wcscmp(argv[i], L"--reference") == 0 && i + 1 < argc && !reference) reference = argv[++i];
 		else if (wcscmp(argv[i], L"--layout") == 0 && i + 1 < argc && !layout) layout = argv[++i];
+		else if (wcscmp(argv[i], L"--map") == 0 && i + 1 < argc && !map) map = argv[++i];
 		else if (!path && argv[i][0] != L'-')        path = argv[i];
 		else
 		{
@@ -420,6 +425,19 @@ int wmain(int argc, wchar_t** argv)
 	}
 	if (layout)
 		return AobScan::ScanLayout(path, layout, json);
+
+	if (map)
+	{
+		// Every lookup below reads this map, not the one compiled in.
+		auto data = std::make_shared<VersionMap::MapData>();
+		std::string mapError;
+		if (!AobScan::ReadMapFile(map, *data, mapError))
+		{
+			fprintf(stderr, "sr-aobscan: --map %ls: %s\n", map, mapError.c_str());
+			return kExitBadInput;
+		}
+		VersionMap::SetActiveMap(std::move(data));
+	}
 
 	MappedImage image;
 	std::string error;
@@ -506,12 +524,10 @@ int wmain(int argc, wchar_t** argv)
 	AobScan::UseLayoutForFields(path);
 	for (const char* key : VersionMap::kLoaderFieldKeys)
 	{
-		const VersionMap::FieldRow* built = nullptr;
-		for (const VersionMap::Index& index : VersionMap::kFields)
-			if (strcmp(index.key, key) == 0)
-				for (uint16_t i = index.first; i < index.first + index.count; ++i)
-					if (VersionMap::kFieldRows[i].gameCL == VersionMap::kBuiltCL)
-						built = &VersionMap::kFieldRows[i];
+		const VersionMap::MapFieldRow* built = nullptr;
+		for (const VersionMap::MapFieldRow& row : VersionMap::ActiveMap().fields)
+			if (row.key == key && row.gameCL == VersionMap::kBuiltCL)
+				built = &row;
 		VersionMap::FieldValue value;
 		std::string error;
 		++fields;
