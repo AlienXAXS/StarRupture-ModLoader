@@ -48,6 +48,10 @@
 // --reference, the build players run today, to find the function the current
 // pattern lands on and to make the proposal serve both builds. Proposals are
 // reported beside the failure; they never change a verdict or the exit code.
+//
+// --json gives each OK row a symbolRva: where the PDB symbol that holds the
+// resolved address starts, read from the PDB next to the exe when there is one
+// (as an address only; no symbol name is ever printed).
 #include <cstdint>
 #include <cstdio>
 #include <cstring>

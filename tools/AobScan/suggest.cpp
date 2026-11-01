@@ -27,6 +27,12 @@
 // own bytes are not unique, the pattern is a window around a call to it, with
 // followRel32At on the call, as the loader's FOLLOW_REL32 requests do.
 //
+// A request that follows a [rip+disp32] (followRipDispAt) lands on a global or
+// a function the code names, not on the code itself. That symbol is found the
+// same ways, with the offset into it kept, and the proposal is a window around
+// an instruction that reaches it through [rip+disp32], with followRipDispAt on
+// that instruction.
+//
 // Every proposal is checked with ScanValidation::Resolve, the loader's own
 // resolve, on each build it claims to serve.
 //
@@ -54,6 +60,8 @@ namespace
 	constexpr size_t kMaxAfter        = 8;    // and after it
 	constexpr size_t kMaxCallSites    = 8;
 	constexpr ULONG  kSymTagFunction  = 5;    // cvconst.h SymTagFunction
+	constexpr ULONG  kSymTagData      = 7;
+	constexpr ULONG  kSymTagPublic    = 10;
 	constexpr ULONG  kMaxSymbolName   = 2000;
 
 	std::string Hex(uint64_t value)
@@ -282,7 +290,22 @@ namespace
 		return true;
 	}
 
+	// A MOV (8B / 89) or LEA (8D) through [rip+disp32] with nothing around it but
+	// an optional REX: the form followRipDispAt reads (ScanValidation::Resolve),
+	// whose disp32 ends the instruction.
+	bool IsRipLoad(const uint8_t* p, const Insn& insn)
+	{
+		const size_t rex = (p[0] & 0xF0) == 0x40 ? 1 : 0;
+		return insn.rip && insn.dispAt == rex + 2 && insn.length == rex + 6
+		    && (p[rex] == 0x8B || p[rex] == 0x89 || p[rex] == 0x8D);
+	}
+
 	// ---- Symbols --------------------------------------------------------------
+
+	bool SymbolTag(ULONG tag, bool data)
+	{
+		return data ? tag == kSymTagData || tag == kSymTagPublic : tag == kSymTagFunction;
+	}
 
 	struct Function
 	{
@@ -313,8 +336,9 @@ namespace
 
 		bool Loaded() const { return loaded_; }
 
-		// The function symbol that starts exactly at address.
-		bool At(uintptr_t address, Function& out) const
+		// The function symbol that starts exactly at address. With `inside`, the
+		// data symbol that holds it instead, and how far in it is.
+		bool At(uintptr_t address, Function& out, uint64_t* inside = nullptr) const
 		{
 			if (!loaded_)
 				return false;
@@ -323,18 +347,21 @@ namespace
 			info->SizeOfStruct = sizeof(SYMBOL_INFOW);
 			info->MaxNameLen   = kMaxSymbolName;
 			DWORD64 displacement = 0;
-			if (!SymFromAddrW(process_, address, &displacement, info) || displacement != 0 || info->Tag != kSymTagFunction)
+			if (!SymFromAddrW(process_, address, &displacement, info) || !SymbolTag(info->Tag, inside != nullptr)
+			    || (inside ? displacement >= (std::max)(info->Size, 1ul) : displacement != 0))
 				return false;
+			if (inside)
+				*inside = displacement;
 			out.address = static_cast<uintptr_t>(info->Address);
 			out.size    = info->Size;
 			out.name.assign(info->Name, wcsnlen(info->Name, kMaxSymbolName));
 			return true;
 		}
 
-		// Every function named exactly name (overloads included).
-		std::vector<Function> Named(const std::wstring& name) const
+		// Every function (or data symbol) named exactly name (overloads included).
+		std::vector<Function> Named(const std::wstring& name, bool data = false) const
 		{
-			return Enumerate(name, [&name](const std::wstring& n) { return n == name; });
+			return Enumerate(name, [&name](const std::wstring& n) { return n == name; }, data);
 		}
 
 		// Every function declared directly in scope ("Class::Method", not
@@ -345,26 +372,27 @@ namespace
 			return Enumerate(prefix + L"*", [&prefix](const std::wstring& n) {
 				return n.size() > prefix.size() && n.compare(0, prefix.size(), prefix) == 0
 				    && n.find(L"::", prefix.size()) == std::wstring::npos;
-			});
+			}, false);
 		}
 
 	private:
 		template <typename Keep>
-		std::vector<Function> Enumerate(const std::wstring& mask, Keep&& keep) const
+		std::vector<Function> Enumerate(const std::wstring& mask, Keep&& keep, bool data) const
 		{
 			struct Context
 			{
 				Keep*                  keep;
 				std::vector<Function>* out;
+				bool                   data;
 			};
 			std::vector<Function> out;
 			if (!loaded_)
 				return out;
-			Context ctx{ &keep, &out };
+			Context ctx{ &keep, &out, data };
 			SymEnumSymbolsW(process_, base_, mask.c_str(),
 				[](PSYMBOL_INFOW s, ULONG, PVOID user) -> BOOL {
 					auto* c = static_cast<Context*>(user);
-					if (s->Tag != kSymTagFunction)
+					if (!SymbolTag(s->Tag, c->data))
 						return TRUE;
 					std::wstring name(s->Name, wcsnlen(s->Name, s->MaxNameLen ? s->MaxNameLen : kMaxSymbolName));
 					if ((*c->keep)(name))
@@ -431,7 +459,7 @@ namespace
 		std::vector<uint8_t>   wild;
 		std::vector<uint8_t>   loose;    // a non-rip disp32 or an imm32: it moves with the layout
 		std::vector<uint32_t>  ends;     // end offset of instruction i
-		std::vector<uintptr_t> targets;  // E8/E9 rel32 target of instruction i, else 0
+		std::vector<uintptr_t> targets;  // E8/E9 rel32 target of instruction i, or the [rip+disp32] target of a MOV / LEA, else 0
 
 		size_t   Count() const { return ends.size(); }
 		uint32_t Begin(size_t i) const { return i ? ends[i - 1] : 0; }
@@ -468,7 +496,7 @@ namespace
 			else if (insn.immSize == 4)
 				std::fill_n(s.loose.begin() + first + insn.immAt, insn.immSize, 1);
 			uintptr_t target = 0;
-			if (insn.near32)
+			if (insn.near32 || IsRipLoad(p, insn))
 			{
 				int32_t rel32;
 				memcpy(&rel32, p + insn.length - 4, sizeof(rel32));
@@ -636,45 +664,83 @@ namespace
 
 	struct CallSite
 	{
-		uintptr_t    site    = 0;  // the E8 / E9
+		uintptr_t    site    = 0;  // the E8 / E9, or the MOV / LEA through [rip+disp32]
 		uintptr_t    from    = 0;  // decode range of the code around it
 		uintptr_t    to      = 0;
 		std::wstring caller;       // the calling function's symbol, when there is one
 		size_t       ordinal = 0;  // which call to the target within that caller
 	};
 
-	// Every E8 / E9 rel32 to `function`, where it decodes as an instruction of
-	// the function containing it.
-	std::vector<CallSite> CallSitesOf(const Image& image, uintptr_t function)
+	// Where a MOV / LEA through [rip+disp32] to `target` may begin: the bytes of
+	// one, in the image's executable sections. Whether it is an instruction is for
+	// the caller to decode.
+	std::vector<uintptr_t> RipLoadsTo(const Image& image, uintptr_t target)
 	{
-		std::vector<CallSite> sites;
-		for (const Scanner::XRef& xref : Scanner::FindXrefsToAddressInModule(function, image.module))
+		std::vector<uintptr_t> found;
+		const auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(image.base);
+		const auto* nt  = reinterpret_cast<const IMAGE_NT_HEADERS64*>(image.base + dos->e_lfanew);
+		const IMAGE_SECTION_HEADER* section = IMAGE_FIRST_SECTION(nt);
+		for (WORD i = 0; i < nt->FileHeader.NumberOfSections; ++i, ++section)
 		{
-			if (!xref.isRelative)
+			if (!(section->Characteristics & IMAGE_SCN_MEM_EXECUTE))
 				continue;
-			const Scanner::FunctionInfo fn = Scanner::DescribeFunction(xref.address);
+			const uintptr_t begin = image.base + section->VirtualAddress;
+			const uintptr_t end   = (std::min)(begin + section->Misc.VirtualSize, image.End());
+			for (uintptr_t modrm = begin + 2; modrm + 5 <= end; ++modrm)
+			{
+				const auto* p = reinterpret_cast<const uint8_t*>(modrm);
+				int32_t disp;
+				memcpy(&disp, p + 1, sizeof(disp));
+				if ((p[0] & 0xC7) != 0x05 || modrm + 5 + static_cast<intptr_t>(disp) != target
+				    || (p[-1] != 0x8B && p[-1] != 0x89 && p[-1] != 0x8D))
+					continue;
+				found.push_back(modrm - 1);
+				if ((p[-2] & 0xF0) == 0x40)
+					found.push_back(modrm - 2);
+			}
+		}
+		return found;
+	}
+
+	// Every E8 / E9 rel32 to `target`, or with rip every MOV / LEA through
+	// [rip+disp32] to it, where it decodes as an instruction of the function
+	// containing it.
+	std::vector<CallSite> SitesOf(const Image& image, uintptr_t target, bool rip)
+	{
+		std::vector<uintptr_t> addresses;
+		if (rip)
+			addresses = RipLoadsTo(image, target);
+		else
+			for (const Scanner::XRef& xref : Scanner::FindXrefsToAddressInModule(target, image.module))
+				if (xref.isRelative)
+					addresses.push_back(xref.address);
+
+		std::vector<CallSite> sites;
+		for (const uintptr_t address : addresses)
+		{
+			const Scanner::FunctionInfo fn = Scanner::DescribeFunction(address);
 			if (!fn.valid)
 				continue;
 			CallSite site;
-			site.site = xref.address;
+			site.site = address;
 			site.from = fn.start;
 			site.to   = fn.end;
 			if (fn.chainedChunk)
 			{
 				DWORD64 imageBase = 0;
-				const PRUNTIME_FUNCTION rf = RtlLookupFunctionEntry(xref.address, &imageBase, nullptr);
+				const PRUNTIME_FUNCTION rf = RtlLookupFunctionEntry(address, &imageBase, nullptr);
 				if (!rf)
 					continue;
 				site.from = static_cast<uintptr_t>(imageBase + rf->BeginAddress);
 				site.to   = static_cast<uintptr_t>(imageBase + rf->EndAddress);
 			}
-			if (site.to > xref.address + 5 + kMaxPatternBytes)
-				site.to = xref.address + 5 + kMaxPatternBytes;
+			if (site.to > address + 5 + kMaxPatternBytes)
+				site.to = address + 5 + kMaxPatternBytes;
 
 			const Stream s = DecodeRange(image, site.from, site.to);
 			bool boundary = false;
 			for (size_t i = 0; i < s.Count() && !boundary; ++i)
-				boundary = site.from + s.Begin(i) == xref.address && s.targets[i] == function;
+				boundary = site.from + s.Begin(i) == address && s.targets[i] == target;
 			if (!boundary)
 				continue;
 
@@ -810,7 +876,8 @@ namespace AobScan::Suggest
 		{
 			uintptr_t    target        = 0;
 			uintptr_t    reference     = 0;
-			uintptr_t    referenceSite = 0;  // follow requests: the call the current pattern follows
+			uintptr_t    symbolStart   = 0;  // where the symbol that located the target starts; 0 = none
+			uintptr_t    referenceSite = 0;  // follow requests: the call or load the current pattern follows
 			bool         referenceResolves = false;
 			const char*  method     = "none";
 			const char*  confidence = "";
@@ -836,9 +903,9 @@ namespace AobScan::Suggest
 			return fns.size() == 1 ? &fns[0] : nullptr;
 		}
 
-		uintptr_t Unique(const Symbols& symbols, const std::wstring& name)
+		uintptr_t Unique(const Symbols& symbols, const std::wstring& name, bool data)
 		{
-			const Function* fn = Only(symbols.Named(name));
+			const Function* fn = Only(symbols.Named(name, data));
 			return fn ? fn->address : 0;
 		}
 
@@ -849,6 +916,9 @@ namespace AobScan::Suggest
 			const bool refSymbols    = s.referenceMapped && s.reference.symbols.Loaded();
 			const std::wstring hook  = Widen(r.name);
 			std::wstring symbol;  // the function's name, when a PDB gave one
+			const bool rip = r.followRipDispAt >= 0;
+			bool data = rip && r.kind == ScanValidation::Kind::Data;  // the target is a global, not a function
+			uint64_t inside = 0;                                      // how far into its symbol a global sits
 
 			if (s.referenceMapped)
 			{
@@ -859,15 +929,17 @@ namespace AobScan::Suggest
 						continue;
 					L.referenceResolves = true;
 					L.reference = res.address;
-					if (r.followRel32At >= 0)
-						L.referenceSite = res.rawMatch + static_cast<uintptr_t>(r.followRel32At);
+					if (r.followRel32At >= 0 || rip)
+						L.referenceSite = res.rawMatch + static_cast<uintptr_t>((std::max)(r.followRel32At, r.followRipDispAt));
 					break;
 				}
 			}
 
 			if (L.referenceResolves)
 			{
-				if (!Scanner::IsFunctionStart(L.reference))
+				if (rip)
+					data = !Scanner::IsFunctionStart(L.reference);
+				if (!data && !Scanner::IsFunctionStart(L.reference))
 				{
 					L.reference = 0;
 					L.note = "the current pattern lands inside a function on the reference build; proposals cover function starts";
@@ -875,13 +947,13 @@ namespace AobScan::Suggest
 				}
 
 				Function at;
-				if (refSymbols && targetSymbols && s.reference.symbols.At(L.reference, at))
+				if (refSymbols && targetSymbols && s.reference.symbols.At(L.reference, at, data ? &inside : nullptr))
 				{
 					symbol = at.name;
-					const std::vector<Function> same = s.target.symbols.Named(symbol);
+					const std::vector<Function> same = s.target.symbols.Named(symbol, data);
 					if (same.size() == 1)
 					{
-						L.target = same[0].address;
+						L.target = same[0].address + inside;
 						L.method = "reference";
 						L.confidence = "high";
 					}
@@ -906,7 +978,7 @@ namespace AobScan::Suggest
 							L.note = "the function is overloaded and several overloads are as close in size";
 						else
 						{
-							L.target = closest->address;
+							L.target = closest->address + inside;
 							L.method = "reference";
 							L.confidence = "medium";
 							L.note = "the function is overloaded; took the overload closest in size";
@@ -915,6 +987,8 @@ namespace AobScan::Suggest
 					else
 						L.note = "the reference function's name is not in the scanned build";
 				}
+				else if (!targetSymbols && data)
+					L.note = "no PDB for the scanned build, and a global has no body to search for";
 				else if (!targetSymbols)
 				{
 					// No PDB to name it: look for the reference function's whole body.
@@ -940,7 +1014,8 @@ namespace AobScan::Suggest
 
 			if (!L.target && targetSymbols)
 			{
-				const std::vector<Function> named = s.target.symbols.Named(hook);
+				inside = 0;
+				const std::vector<Function> named = s.target.symbols.Named(hook, data);
 				if (named.size() == 1)
 				{
 					L.target = named[0].address;
@@ -954,7 +1029,7 @@ namespace AobScan::Suggest
 					L.note = "the hook name is overloaded on the scanned build";
 				else
 				{
-					const size_t sep = hook.rfind(L"::");
+					const size_t sep = data ? std::wstring::npos : hook.rfind(L"::");
 					if (sep != std::wstring::npos && sep > 0)
 					{
 						const std::vector<std::wstring> oldWords = Words(hook.substr(sep + 2));
@@ -999,18 +1074,20 @@ namespace AobScan::Suggest
 			if (!L.target)
 				return L;
 
-			if (!Scanner::IsFunctionStart(L.target))
+			if (!data && !Scanner::IsFunctionStart(L.target))
 			{
 				L.target = 0;
 				L.note = "the function found has no unwind entry starting there";
 				return L;
 			}
+			if (strcmp(L.method, "bytes") != 0)
+				L.symbolStart = L.target - inside;
 
 			// The reference function, when only a name found it.
 			if (!L.reference && refSymbols && !symbol.empty())
 			{
-				const uintptr_t ref = Unique(s.reference.symbols, symbol);
-				if (ref && Scanner::IsFunctionStart(ref))
+				const uintptr_t ref = Unique(s.reference.symbols, symbol, data);
+				if (ref && (data || Scanner::IsFunctionStart(ref)))
 					L.reference = ref;
 			}
 
@@ -1020,12 +1097,12 @@ namespace AobScan::Suggest
 			const bool byLabel = strcmp(L.method, "name") == 0 || strcmp(L.method, "renamed") == 0;
 			if (targetSymbols && !byLabel)
 			{
-				const std::vector<Function> byHook = s.target.symbols.Named(hook);
+				const std::vector<Function> byHook = s.target.symbols.Named(hook, data);
 				if (!byHook.empty())
 				{
 					bool same = false;
 					for (const Function& fn : byHook)
-						same = same || fn.address == L.target;
+						same = same || fn.address + inside == L.target;
 					L.hookNameMatches = same ? 1 : 0;
 					if (!same)
 					{
@@ -1072,14 +1149,15 @@ namespace AobScan::Suggest
 				return true;
 			}
 
-			// A window around a call to the function, followed.
-			bool Follow(bool merged, Proposal& out) const
+			// A window around a call to the function, followed; with rip, around
+			// a MOV / LEA through [rip+disp32] to it.
+			bool Follow(bool merged, bool rip, Proposal& out) const
 			{
-				std::vector<CallSite> sites = CallSitesOf(image, fn);
+				std::vector<CallSite> sites = SitesOf(image, fn, rip);
 				std::vector<CallSite> otherSites;
 				if (merged)
 				{
-					otherSites = CallSitesOf(*other, otherFn);
+					otherSites = SitesOf(*other, otherFn, rip);
 					// The call the current pattern follows goes first.
 					const auto followed = std::find_if(otherSites.begin(), otherSites.end(),
 						[this](const CallSite& c) { return c.site == otherSite; });
@@ -1128,19 +1206,22 @@ namespace AobScan::Suggest
 
 					const Stream& used = merged ? both : own;
 					out = Proposal{};
-					out.pattern       = w.pattern;
-					out.followRel32At = static_cast<int32_t>(used.Begin(anchor) - used.Begin(w.first));
+					out.pattern = w.pattern;
+					(rip ? out.followRipDispAt : out.followRel32At) = static_cast<int32_t>(used.Begin(anchor) - used.Begin(w.first));
 					return true;
 				}
 				return false;
 			}
 
 			// Prefers the shape of the current request: a call window for a
-			// follow request, a function start otherwise.
-			bool Build(bool merged, bool follow, Proposal& out) const
+			// follow request, a function start otherwise. A [rip+disp32] follow
+			// has no other shape.
+			bool Build(bool merged, bool follow, bool rip, Proposal& out) const
 			{
-				return follow ? (Follow(merged, out) || Direct(merged, out))
-				              : (Direct(merged, out) || Follow(merged, out));
+				if (rip)
+					return Follow(merged, true, out);
+				return follow ? (Follow(merged, false, out) || Direct(merged, out))
+				              : (Direct(merged, out) || Follow(merged, false, out));
 			}
 		};
 
@@ -1150,7 +1231,7 @@ namespace AobScan::Suggest
 			Request shaped = r;
 			shaped.resultOffset    = 0;
 			shaped.followRel32At   = p.followRel32At;
-			shaped.followRipDispAt = -1;
+			shaped.followRipDispAt = p.followRipDispAt;
 			const ScanValidation::Result t = ScanValidation::Resolve(AsRequest(shaped, p.pattern, s.target.module));
 			p.uniqueOnTarget = t.Succeeded() && t.address == L.target;
 			if (L.reference)
@@ -1166,14 +1247,12 @@ namespace AobScan::Suggest
 		Result result;
 		result.attempted = true;
 
-		if (r.kind != ScanValidation::Kind::FunctionStart && r.kind != ScanValidation::Kind::Any)
+		const bool rip = r.followRipDispAt >= 0;
+		if (r.kind != ScanValidation::Kind::FunctionStart && r.kind != ScanValidation::Kind::Any
+		    && !(r.kind == ScanValidation::Kind::Data && rip))
 		{
-			result.note = std::string("proposals cover function-start patterns; this one is ") + ScanValidation::KindName(r.kind);
-			return result;
-		}
-		if (r.followRipDispAt >= 0)
-		{
-			result.note = "proposals do not cover [rip+disp32] follows";
+			result.note = std::string("proposals cover function-start patterns and [rip+disp32] follows to data; this one is ")
+				+ ScanValidation::KindName(r.kind);
 			return result;
 		}
 		if (r.patterns.empty())
@@ -1195,6 +1274,11 @@ namespace AobScan::Suggest
 			return result;
 		result.hasRva = true;
 		result.rva    = L.target - s.target.base;
+		if (L.symbolStart)
+		{
+			result.hasSymbolRva = true;
+			result.symbolRva    = L.symbolStart - s.target.base;
+		}
 		if (L.reference)
 		{
 			result.hasReferenceRva = true;
@@ -1209,11 +1293,12 @@ namespace AobScan::Suggest
 
 		// One pattern for both builds; failing that, one for the scanned build.
 		Proposal p;
-		const bool found = (L.reference && target.Build(true, follow, p)) || target.Build(false, follow, p);
+		const bool found = (L.reference && target.Build(true, follow, rip, p)) || target.Build(false, follow, rip, p);
 		if (!found)
 		{
 			addNote("no pattern of " + std::to_string(kMinPatternBytes) + " to " + std::to_string(kMaxPatternBytes)
-				+ " bytes at the function or around a call to it is unique");
+				+ (rip ? " bytes around a [rip+disp32] load of it is unique"
+				       : " bytes at the function or around a call to it is unique"));
 			return result;
 		}
 		Verify(s, r, L, p);
@@ -1225,7 +1310,7 @@ namespace AobScan::Suggest
 		{
 			const Builder reference{ s.reference, L.reference };
 			Proposal q;
-			if (reference.Build(false, follow, q))
+			if (reference.Build(false, follow, rip, q))
 			{
 				Verify(s, r, L, q);
 				result.proposals.push_back(q);
@@ -1243,6 +1328,8 @@ namespace AobScan::Suggest
 		fprintf(out, "    suggest: located by %s%s%s", r.located, *r.confidence ? ", confidence " : "", r.confidence);
 		if (r.hasRva)
 			fprintf(out, ", RVA %s", Hex(r.rva).c_str());
+		if (r.hasSymbolRva)
+			fprintf(out, ", symbol at %s", Hex(r.symbolRva).c_str());
 		if (r.hasReferenceRva)
 			fprintf(out, " (reference RVA %s)", Hex(r.referenceRva).c_str());
 		fprintf(out, "\n");
@@ -1254,6 +1341,8 @@ namespace AobScan::Suggest
 			fprintf(out, "      %s: %s", builds, p.pattern.c_str());
 			if (p.followRel32At >= 0)
 				fprintf(out, "  (follow rel32 at +0x%X)", p.followRel32At);
+			else if (p.followRipDispAt >= 0)
+				fprintf(out, "  (follow rip disp32 at +0x%X)", p.followRipDispAt);
 			else
 				fprintf(out, "  (direct)");
 			fprintf(out, "\n");
@@ -1271,6 +1360,8 @@ namespace AobScan::Suggest
 			out += ", \"confidence\": \"" + std::string(r.confidence) + "\"";
 		if (r.hasRva)
 			out += ", \"rva\": \"" + Hex(r.rva) + "\"";
+		if (r.hasSymbolRva)
+			out += ", \"symbolRva\": \"" + Hex(r.symbolRva) + "\"";
 		if (r.hasReferenceRva)
 			out += ", \"referenceRva\": \"" + Hex(r.referenceRva) + "\"";
 		if (r.hookNameMatches >= 0)
@@ -1280,7 +1371,8 @@ namespace AobScan::Suggest
 		{
 			const Proposal& p = r.proposals[i];
 			out += (i ? ", " : "") + std::string("{ \"pattern\": \"") + AobScan::JsonEscape(p.pattern) + "\"";
-			out += ", \"followRel32At\": " + std::to_string(p.followRel32At) + ", \"resultOffset\": 0";
+			out += ", \"followRel32At\": " + std::to_string(p.followRel32At)
+				+ ", \"followRipDispAt\": " + std::to_string(p.followRipDispAt) + ", \"resultOffset\": 0";
 			out += std::string(", \"uniqueOnTarget\": ") + (p.uniqueOnTarget ? "true" : "false");
 			if (p.uniqueOnReference >= 0)
 				out += std::string(", \"uniqueOnReference\": ") + (p.uniqueOnReference ? "true" : "false");

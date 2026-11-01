@@ -29,6 +29,7 @@ namespace AobScan::Suggest
 	{
 		std::string pattern;
 		int32_t     followRel32At     = -1;  // >= 0: the E8/E9 to follow, as in the request
+		int32_t     followRipDispAt   = -1;  // >= 0: the MOV / LEA through [rip+disp32] to follow
 		bool        uniqueOnTarget    = false;
 		int         uniqueOnReference = -1;  // 1 yes, 0 no, -1 not known (no reference function)
 	};
@@ -39,7 +40,9 @@ namespace AobScan::Suggest
 		const char*           located    = "none";  // reference, name, renamed, bytes, none
 		const char*           confidence = "";      // high, medium, low
 		bool                  hasRva          = false;
-		uint64_t              rva             = 0;    // the function on the scanned build
+		uint64_t              rva             = 0;    // the function, or the global, on the scanned build
+		bool                  hasSymbolRva    = false;
+		uint64_t              symbolRva       = 0;    // where the PDB symbol that located it starts
 		bool                  hasReferenceRva = false;
 		uint64_t              referenceRva    = 0;    // the same function on the reference build
 		int                   hookNameMatches = -1;   // 1/0: the symbol there is the hook's name; -1 unknown
