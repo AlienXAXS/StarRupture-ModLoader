@@ -11,7 +11,7 @@
 //   sr-aobscan <game.exe> [--json] [--verbose] [--suggest [--reference <current.exe>]]
 //   sr-aobscan <game.exe> --plugin <plugin.dll> [--json] [--verbose] [--suggest [--reference <current.exe>]]
 //   sr-aobscan <game.exe> --layout <keys.txt> [--json]
-//   any of the first two with --map <version_map.generated.h | feed.txt>
+//   any of the first two with --map <version_map.generated.h | version-map-client.v1.txt>
 //
 // Exit code: 0 when every required pattern is OK, 1 when a required pattern is
 // not, 2 when the file could not be read or is not an x64 PE image.
@@ -68,6 +68,7 @@
 #include "hooks/game/version_map.generated.h"
 #include "memory_scanner/image_info.h"
 #include "memory_scanner/scan_validation.h"
+#include "memory_scanner/version_feed.h"
 #include "memory_scanner/version_map.h"
 #include "layout.h"
 #include "map_file.h"
@@ -391,7 +392,7 @@ int wmain(int argc, wchar_t** argv)
 	static constexpr const char* kUsage =
 		"usage: sr-aobscan <game.exe> [--plugin <plugin.dll>] [--json] [--verbose] [--suggest [--reference <current.exe>]]\n"
 		"       sr-aobscan <game.exe> --layout <keys.txt> [--json]\n"
-		"       (--map <version_map.generated.h | feed.txt> resolves against that map, not the loader's)\n";
+		"       (--map <version_map.generated.h | version-map-client.v1.txt>: that header as the map, or the signed feed merged with the loader's map)\n";
 
 	const wchar_t* path      = nullptr;
 	const wchar_t* plugin    = nullptr;
@@ -426,19 +427,6 @@ int wmain(int argc, wchar_t** argv)
 	if (layout)
 		return AobScan::ScanLayout(path, layout, json);
 
-	if (map)
-	{
-		// Every lookup below reads this map, not the one compiled in.
-		auto data = std::make_shared<VersionMap::MapData>();
-		std::string mapError;
-		if (!AobScan::ReadMapFile(map, *data, mapError))
-		{
-			fprintf(stderr, "sr-aobscan: --map %ls: %s\n", map, mapError.c_str());
-			return kExitBadInput;
-		}
-		VersionMap::SetActiveMap(std::move(data));
-	}
-
 	MappedImage image;
 	std::string error;
 	if (!MapImage(path, image, error))
@@ -449,6 +437,32 @@ int wmain(int argc, wchar_t** argv)
 	AobScan::SetGameExe(path);
 
 	const auto module = reinterpret_cast<HMODULE>(image.base);
+	if (map)
+	{
+		// Every lookup below reads this map, not the one compiled in. A header
+		// is the whole map; a signed feed is merged with the compiled one for
+		// this exe, as the loader does with its cache.
+		const size_t len = wcslen(map);
+		std::shared_ptr<const VersionMap::MapData> data;
+		if (len > 2 && wcscmp(map + len - 2, L".h") == 0)
+		{
+			auto header = std::make_shared<VersionMap::MapData>();
+			std::string mapError;
+			if (!AobScan::ReadMapFile(map, *header, mapError))
+			{
+				fprintf(stderr, "sr-aobscan: --map %ls: %s\n", map, mapError.c_str());
+				return kExitBadInput;
+			}
+			data = std::move(header);
+		}
+		else if (!(data = VersionFeed::BuildFromCache(map, VersionFeed::CompiledKeys(), VersionMap::ExeOf(module),
+			VersionFeed::LoaderCoverage())))
+		{
+			fprintf(stderr, "sr-aobscan: --map %ls: not a signed feed this loader accepts\n", map);
+			return kExitBadInput;
+		}
+		VersionMap::SetActiveMap(std::move(data));
+	}
 	const auto base   = reinterpret_cast<uintptr_t>(image.base);
 
 	std::unique_ptr<AobScan::Suggest::Session> session;

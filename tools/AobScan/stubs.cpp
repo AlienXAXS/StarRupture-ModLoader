@@ -12,8 +12,9 @@
 // Three answers are real ones, for the per-build locator selection in
 // memory_scanner/version_map.cpp:
 //   * the game version -- the mapped exe's own ProductVersion.
-//   * "[Map]" lines    -- which locator picked an address goes to stderr with
-//                         the rest of the report; every other line is dropped.
+//   * "[Map]" lines    -- which locator picked an address, and the
+//                         "[VersionFeed]" lines of a --map feed, go to stderr
+//                         with the rest of the report; every other line is dropped.
 //   * the scan cache   -- in memory, for --plugin's second pass. The first pass
 //                         runs with nothing cached, as a first launch on a new
 //                         exe does, and stores what it verified; the second
@@ -44,7 +45,7 @@ namespace
 
 	void PrintMapLine(const wchar_t* format, va_list args)
 	{
-		if (!format || wcsncmp(format, L"[Map]", 5) != 0)
+		if (!format || (wcsncmp(format, L"[Map]", 5) != 0 && wcsncmp(format, L"[VersionFeed]", 13) != 0))
 			return;
 		wchar_t line[2048]{};
 		_vsnwprintf_s(line, _TRUNCATE, format, args);

@@ -8,9 +8,8 @@
 
 namespace AobScan
 {
-	// A generated header (hooks/game/version_map.generated.h) when the path ends
-	// in ".h", otherwise a feed: the text of version-map-client.v1.txt, with or
-	// without its trailing `sig` line (the signature is not checked here).
-	// False with `error` set when the file cannot be read or parsed.
+	// A generated header (hooks/game/version_map.generated.h), read as the
+	// whole map. False with `error` set when it cannot be read or parsed. A
+	// signed feed is read by the loader's own VersionFeed::BuildFromCache.
 	bool ReadMapFile(const std::wstring& path, VersionMap::MapData& out, std::string& error);
 }

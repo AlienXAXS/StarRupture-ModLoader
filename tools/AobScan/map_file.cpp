@@ -1,4 +1,4 @@
-// sr-aobscan --map: reads a version map from a generated header or a feed.
+// sr-aobscan --map: reads a version map from a generated header.
 //
 // The header is read as the data it is: the kBuilds, kFunctionRows,
 // kFieldRows, kFunctions and kFields arrays, one brace-enclosed record per
@@ -159,14 +159,6 @@ namespace AobScan
 			error = "cannot read the file";
 			return false;
 		}
-		if (path.size() > 2 && path.compare(path.size() - 2, 2, L".h") == 0)
-			return ReadHeader(text, out, error);
-
-		// A feed, with its signature line when it has one: the signature covers
-		// everything before the "sig" line, and is not checked here.
-		const size_t sig = text.rfind("\nsig\t");
-		if (sig != std::string::npos)
-			text.resize(sig + 1);
-		return VersionMap::ParseFeed(text, out, error);
+		return ReadHeader(text, out, error);
 	}
 }

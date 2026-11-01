@@ -68,7 +68,7 @@
       <ConformanceMode>true</ConformanceMode>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <PreprocessorDefinitions>NDEBUG;_CONSOLE;NOMINMAX;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>NDEBUG;_CONSOLE;NOMINMAX;_CRT_SECURE_NO_WARNINGS;VMAP_TRUST_TEST_KEY;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <!-- The live loader headers, on purpose: a scanner built against a stale copy would check nothing. -->
       <AdditionalIncludeDirectories>$(CoreDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <!-- Static runtime: the tool runs on a CI runner with nothing installed. -->
@@ -110,6 +110,16 @@
     <ClCompile Include="$(CoreDir)memory_scanner\hook_scanner_interface.cpp" />
     <!-- Interface 72 and later: per-build locator selection. -->
     <ClCompile Include="$(CoreDir)memory_scanner\version_map.cpp" Condition="Exists('$(CoreDir)memory_scanner\version_map.cpp')" />
+    <!-- The signed feed: the map option reads it the way the loader reads its cache. -->
+    <ClCompile Include="$(CoreDir)memory_scanner\version_feed.cpp" Condition="Exists('$(CoreDir)memory_scanner\version_feed.cpp')" />
+    <ClCompile Include="$(CoreDir)third_party\monocypher\monocypher.c" Condition="Exists('$(CoreDir)memory_scanner\version_feed.cpp')">
+      <WarningLevel>TurnOffAllWarnings</WarningLevel>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="$(CoreDir)third_party\monocypher\monocypher-ed25519.c" Condition="Exists('$(CoreDir)memory_scanner\version_feed.cpp')">
+      <WarningLevel>TurnOffAllWarnings</WarningLevel>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
