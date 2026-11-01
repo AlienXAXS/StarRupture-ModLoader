@@ -42,11 +42,14 @@ namespace AobScan
 	void WarmScanCache();
 
 	namespace Suggest { class Session; }
+	class SymbolStarts;
 
 	// image is the game exe as MapImage laid it out. Returns kExitOk when the
 	// loader would let the plugin through to PluginInit, kExitFailed when it
 	// would refuse it, kExitBadInput when the DLL is not a loadable client plugin.
 	// suggest, when given, proposes a replacement for each MISSING or
-	// AMBIGUOUS pattern; it does not change the verdict.
-	int ScanPlugin(HMODULE image, const wchar_t* dllPath, bool json, bool verbose, Suggest::Session* suggest);
+	// AMBIGUOUS pattern; it does not change the verdict. symbols gives each OK
+	// row's symbolRva in the JSON.
+	int ScanPlugin(HMODULE image, const wchar_t* dllPath, bool json, bool verbose, Suggest::Session* suggest,
+		SymbolStarts& symbols);
 }

@@ -65,6 +65,7 @@
 #include "memory_scanner/scan_validation.h"
 #include "memory_scanner/version_map.h"
 #include "layout.h"
+#include "pdb.h"
 #include "plugin_scan.h"
 #include "suggest.h"
 
@@ -431,6 +432,7 @@ int wmain(int argc, wchar_t** argv)
 	std::unique_ptr<AobScan::Suggest::Session> session;
 	if (suggest)
 		session = std::make_unique<AobScan::Suggest::Session>(module, path, reference);
+	AobScan::SymbolStarts symbols(path, base, image.size);
 
 	if (plugin)
 	{
@@ -438,7 +440,7 @@ int wmain(int argc, wchar_t** argv)
 		// The loader reads fields from reflection on the client only.
 		AobScan::UseLayoutForFields(path);
 #endif
-		return AobScan::ScanPlugin(module, plugin, json, verbose, session.get());
+		return AobScan::ScanPlugin(module, plugin, json, verbose, session.get(), symbols);
 	}
 
 	const VersionMap::Exe exe = VersionMap::ExeOf(module);
@@ -548,6 +550,10 @@ int wmain(int argc, wchar_t** argv)
 				row.entry->required ? "true" : "false", ResultName(row.result.outcome), row.result.matchCount);
 			if (row.hasRva)
 				printf(", \"rva\": \"0x%llX\"", static_cast<unsigned long long>(row.rva));
+			// Where the PDB symbol holding that address starts, when there is one.
+			uint64_t symbolRva = 0;
+			if (row.result.Succeeded() && symbols.Of(row.rva, symbolRva))
+				printf(", \"symbolRva\": \"0x%llX\"", static_cast<unsigned long long>(symbolRva));
 			// What a version-map row for this entry is made of, and the key and
 			// fingerprint (0 for a global key) the map keeps it under.
 			printf(", \"pattern\": \"%s\", \"followRel32At\": %d, \"followRipDispAt\": %d, \"siteArithmetic\": %u"

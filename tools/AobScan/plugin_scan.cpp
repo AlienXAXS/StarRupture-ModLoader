@@ -59,6 +59,7 @@
 //   one function as its hooks table (see "PluginInit" below); the note says
 //   whether it took the globals.
 //   NONE       no OnPluginLoadHooks export
+#include "pdb.h"
 #include "plugin_scan.h"
 #include "suggest.h"
 
@@ -257,6 +258,8 @@ namespace
 		bool                   recorded = true; // false: a raw scan the loader does not judge
 		int32_t                resultOffset  = 0;
 		int32_t                followRel32At = -1;
+		std::string            key;             // the map key, for a PLUGIN_SCAN_FLAG_MAP_KEY request
+		uint32_t               fp = 0;          // its fingerprint: 0 for a global key and for a site with no pattern
 		bool                   otherModule   = false;
 		std::string            result;
 		bool                   hasRva = false;
@@ -528,6 +531,24 @@ namespace
 		bool keyOnly = false;   // a map key with no pattern: the loader's to refuse, not a bad request
 #if PLUGIN_INTERFACE_VERSION >= 72
 		keyOnly = (local.flags & PLUGIN_SCAN_FLAG_MAP_KEY) != 0 && (!local.pattern || !local.pattern[0]);
+		if (local.flags & PLUGIN_SCAN_FLAG_MAP_KEY)
+		{
+			// The key the loader's map keeps the request under
+			// (VersionMap::ResolveMapKey): the hook name for a global kind, the
+			// plugin's own site for any other, with the fingerprint of the request.
+			const ScanValidation::Kind kind = ScanValidation::ParseKind(row.kind.c_str());
+			if (kind == ScanValidation::Kind::FunctionStart || kind == ScanValidation::Kind::Data)
+			{
+				if (row.name.find('/') == std::string::npos)
+					row.key = row.name;
+			}
+			else if (kind != ScanValidation::Kind::Unspecified)
+			{
+				row.key = std::string(self && self->name ? self->name : "") + "/" + row.name;
+				row.fp  = VersionMap::Fingerprint(static_cast<int>(kind), local.pattern ? local.pattern : "",
+					local.resultOffset, row.followRel32At, -1, 0);
+			}
+		}
 #endif
 		const bool badRequest = !request || !local.hookName || !local.hookName[0]
 			|| ((!local.pattern || !local.pattern[0]) && !keyOnly)
@@ -959,7 +980,8 @@ namespace
 			fprintf(out, "%s: %s\n", o.verdict, o.note.c_str());
 	}
 
-	void PrintJson(const std::string& file, const PluginInfo* info, bool hasLoadHooks, const Outcome& o, const Summary& s)
+	void PrintJson(const std::string& file, const PluginInfo* info, bool hasLoadHooks, const Outcome& o, const Summary& s,
+		AobScan::SymbolStarts& symbols)
 	{
 		using AobScan::JsonEscape;
 		printf("{\n  \"target\": \"%s\",\n", kTargetName);
@@ -1002,12 +1024,23 @@ namespace
 			}
 			if (row.followRel32At >= 0)
 				printf(", \"followRel32At\": %d", row.followRel32At);
-			if (row.resultOffset != 0)
-				printf(", \"resultOffset\": %d", row.resultOffset);
+			printf(", \"resultOffset\": %d", row.resultOffset);
+			if (!row.key.empty())
+			{
+				// A request has no followRipDispAt: the fingerprint is made with -1.
+				printf(", \"key\": \"%s\"", JsonEscape(row.key).c_str());
+				if (row.fp || row.key.find('/') == std::string::npos)
+					printf(", \"fp\": \"0x%08X\"", row.fp);
+				printf(", \"siteArithmetic\": 0");
+			}
 			if (row.otherModule)
 				printf(", \"otherModule\": true");
 			if (row.hasRva)
 				printf(", \"rva\": \"%s\"", Hex(row.rva).c_str());
+			// Where the PDB symbol holding the resolved address starts, when there is one.
+			uint64_t symbolRva = 0;
+			if (row.result == "OK" && row.hasRva && symbols.Of(row.rva, symbolRva))
+				printf(", \"symbolRva\": \"%s\"", Hex(symbolRva).c_str());
 			if (!row.detail.empty())
 				printf(", \"detail\": \"%s\"", JsonEscape(AobScan::JsonDetail(row.detail)).c_str());
 			if (row.suggest.attempted)
@@ -1194,7 +1227,8 @@ namespace
 
 namespace AobScan
 {
-	int ScanPlugin(HMODULE image, const wchar_t* dllPath, bool json, bool verbose, Suggest::Session* suggest)
+	int ScanPlugin(HMODULE image, const wchar_t* dllPath, bool json, bool verbose, Suggest::Session* suggest,
+		SymbolStarts& symbols)
 	{
 		g_image     = image;
 		g_suggest   = suggest;
@@ -1376,7 +1410,7 @@ namespace AobScan
 
 		PrintTable(json ? stderr : stdout, file, info, o, s);
 		if (json)
-			PrintJson(file, info, loadHooks != nullptr, o, s);
+			PrintJson(file, info, loadHooks != nullptr, o, s, symbols);
 
 		const std::string verdict = o.verdict;
 		return (verdict == "PASS" || verdict == "GAME-CALL" || verdict == "NONE") ? kExitOk : kExitFailed;

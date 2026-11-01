@@ -1,5 +1,7 @@
 #pragma once
-// Opens the game exe's own PDB through DbgHelp, for --suggest and --layout.
+// Opens the game exe's own PDB through DbgHelp, for --suggest, --layout and
+// the symbolRva of --json.
+#include <cstdint>
 #include <string>
 
 #define WIN32_LEAN_AND_MEAN
@@ -30,4 +32,52 @@ namespace AobScan
 		info.SizeOfStruct = sizeof(info);
 		return SymGetModuleInfoW64(session, base, &info) && info.SymType == SymPdb && !info.PdbUnmatched;
 	}
+
+	// Where the PDB symbol that contains an address of the mapped game image
+	// starts, as an RVA. The PDB is opened on the first lookup, so a run that
+	// never asks costs nothing. The symbol's name is never read out.
+	class SymbolStarts
+	{
+	public:
+		SymbolStarts(const wchar_t* exePath, uintptr_t base, size_t size)
+			: path_(exePath), base_(base), size_(size) {}
+		~SymbolStarts()
+		{
+			if (tried_)
+				SymCleanup(session());
+		}
+		SymbolStarts(const SymbolStarts&) = delete;
+		SymbolStarts& operator=(const SymbolStarts&) = delete;
+
+		// False with no matching PDB, or when no symbol holds the address.
+		bool Of(uint64_t rva, uint64_t& start)
+		{
+			if (!tried_)
+			{
+				tried_ = true;
+				loaded_ = LoadMatchedPdb(session(), path_, base_, size_);
+			}
+			if (!loaded_)
+				return false;
+			SYMBOL_INFOW info{};
+			info.SizeOfStruct = sizeof(info);
+			info.MaxNameLen   = 1;
+			DWORD64 displacement = 0;
+			if (!SymFromAddrW(session(), base_ + rva, &displacement, &info) || info.Address < base_)
+				return false;
+			if (displacement != 0 && displacement >= info.Size)
+				return false;
+			start = info.Address - base_;
+			return true;
+		}
+
+	private:
+		static HANDLE session() { return reinterpret_cast<HANDLE>(static_cast<uintptr_t>(0x5354)); }
+
+		std::wstring path_;
+		uintptr_t    base_;
+		size_t       size_;
+		bool         tried_  = false;
+		bool         loaded_ = false;
+	};
 }
