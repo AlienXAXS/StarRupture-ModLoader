@@ -50,6 +50,10 @@
 // pattern lands on and to make the proposal serve both builds. Proposals are
 // reported beside the failure; they never change a verdict or the exit code.
 //
+// --json gives each registry row the locator that matched at its rva (pattern,
+// resultOffset, followRel32At, followRipDispAt) and says whose it is: "map" for
+// the version map's row for the exe's build, "request" for the registry's own.
+//
 // --json gives each OK row a symbolRva: where the PDB symbol that holds the
 // resolved address starts, read from the PDB next to the exe when there is one
 // (as an address only; no symbol name is ever printed).
@@ -72,6 +76,7 @@
 #include "memory_scanner/version_map.h"
 #include "layout.h"
 #include "map_file.h"
+#include "observed.h"
 #include "pdb.h"
 #include "plugin_scan.h"
 #include "suggest.h"
@@ -318,6 +323,7 @@ namespace
 		ScanValidation::Result              result;
 		bool                                hasRva = false;
 		uint64_t                            rva    = 0;
+		AobScan::ObservedLocator            observed;   // what matched at rva; the request's own when nothing resolved
 		AobScan::Suggest::Result            suggest;
 	};
 
@@ -505,13 +511,20 @@ int wmain(int argc, wchar_t** argv)
 
 		if (row.result.Succeeded())
 		{
-			row.hasRva = true;
-			row.rva    = row.result.address - base;
+			row.hasRva   = true;
+			row.rva      = row.result.address - base;
+			row.observed = AobScan::ObserveLoaderEntry(entry, request, exe, row.result.address);
 		}
 		else if (row.result.rawMatch)
 		{
 			row.hasRva = true;
 			row.rva    = row.result.rawMatch - base;
+		}
+		if (!row.result.Succeeded())
+		{
+			row.observed.pattern         = request.pattern;
+			row.observed.followRel32At   = request.followRel32At;
+			row.observed.followRipDispAt = request.followRipDispAt;
 		}
 
 		if (session && (row.result.outcome == ScanValidation::Outcome::NoMatch
@@ -589,10 +602,17 @@ int wmain(int argc, wchar_t** argv)
 			if (row.result.Succeeded() && symbols.Of(row.rva, symbolRva))
 				printf(", \"symbolRva\": \"0x%llX\"", static_cast<unsigned long long>(symbolRva));
 			// What a version-map row for this entry is made of, and the key and
-			// fingerprint (0 for a global key) the map keeps it under.
-			printf(", \"pattern\": \"%s\", \"followRel32At\": %d, \"followRipDispAt\": %d, \"siteArithmetic\": %u"
-			       ", \"key\": \"%s\", \"fp\": \"0x%08X\"",
-				JsonEscape(row.entry->pattern).c_str(), row.entry->followRel32At, row.entry->followRipDispAt,
+			// fingerprint (0 for a global key) the map keeps it under. The
+			// locator is the one that matched at rva, which is the map's own row
+			// when that decided the address ("locator": "map"), not the
+			// registry's request. An OK row with no pattern that lands on its
+			// address (an address-only map row) has none to give.
+			const AobScan::ObservedLocator& seen = row.observed;
+			if (!row.result.Succeeded() || seen.found)
+				printf(", \"pattern\": \"%s\"", JsonEscape(seen.pattern).c_str());
+			printf(", \"locator\": \"%s\", \"resultOffset\": %d, \"followRel32At\": %d, \"followRipDispAt\": %d"
+			       ", \"siteArithmetic\": %u, \"key\": \"%s\", \"fp\": \"0x%08X\"",
+				seen.fromMap ? "map" : "request", seen.resultOffset, seen.followRel32At, seen.followRipDispAt,
 				row.entry->siteArithmetic, JsonEscape(VersionMap::LoaderEntryKey(*row.entry)).c_str(),
 				VersionMap::LoaderEntryFingerprint(*row.entry));
 			if (!row.result.Succeeded())
