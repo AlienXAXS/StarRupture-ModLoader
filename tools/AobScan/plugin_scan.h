@@ -27,6 +27,18 @@ namespace AobScan
 		return matches == 1 ? nullptr : matches == 0 ? "OWN-MISSING" : "OWN-AMBIGUOUS";
 	}
 
+	// Whether a row is graded on its own pattern (the first): a recorded request
+	// that resolved and has one. A request with locators for other builds
+	// (Resolve) counts; a call that lists alternatives (the Unique calls) does
+	// not, since only one of them has to match. A request with no pattern (a map
+	// key alone) has no own pattern to grade.
+	inline bool OwnPatternGraded(const std::string& call, bool recorded, const std::string& result,
+		size_t patternCount, bool firstPatternEmpty)
+	{
+		return recorded && result == "OK" && patternCount > 0 && !firstPatternEmpty
+			&& (call == "Resolve" || patternCount == 1);
+	}
+
 	// A failure detail as ScanValidation writes it: lines separated by "\r\n",
 	// continuation lines indented. PrintDetail prints each line under its row;
 	// JsonDetail gives the lines without the indent, joined with "\n".

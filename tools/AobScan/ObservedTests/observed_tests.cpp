@@ -191,6 +191,17 @@ int main()
 	Check(AobScan::OwnPatternLabel(2) && !strcmp(AobScan::OwnPatternLabel(2), "OWN-AMBIGUOUS"), "an own pattern that matches twice is OWN-AMBIGUOUS");
 	Check(AobScan::OwnPatternLabel(64) && !strcmp(AobScan::OwnPatternLabel(64), "OWN-AMBIGUOUS"), "an own pattern that fills the count cap is OWN-AMBIGUOUS");
 
+	// Which rows are graded on it.
+	Check(AobScan::OwnPatternGraded("Resolve", true, "OK", 1, false), "a resolved Resolve request is graded");
+	Check(AobScan::OwnPatternGraded("Resolve", true, "OK", 3, false), "a Resolve request with locators for other builds is graded on its own pattern");
+	Check(AobScan::OwnPatternGraded("ResolveRequired", true, "OK", 1, false), "a resolved single-pattern legacy call is graded");
+	Check(!AobScan::OwnPatternGraded("ResolveRequiredUnique", true, "OK", 2, false), "a call that lists alternatives is not graded");
+	Check(AobScan::OwnPatternGraded("ResolveOptionalUnique", true, "OK", 1, false), "a Unique call with one pattern is graded");
+	Check(!AobScan::OwnPatternGraded("Resolve", true, "OK", 1, true), "a map key with no pattern is not graded");
+	Check(!AobScan::OwnPatternGraded("Resolve", true, "OK", 0, true), "a request with no patterns is not graded");
+	Check(!AobScan::OwnPatternGraded("Resolve", true, "AMBIGUOUS", 1, false), "a request that failed is left to its own result");
+	Check(!AobScan::OwnPatternGraded("FindAllPatternsInMainModule", false, "OK", 1, false), "a raw scan is not graded");
+
 	printf("%d checks, %d failed\n", g_checks, g_failed);
 	return g_failed ? 1 : 0;
 }

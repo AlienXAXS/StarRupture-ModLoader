@@ -889,8 +889,8 @@ namespace
 		std::vector<std::string> found;
 		for (Row& row : g_rows)
 		{
-			const bool single = row.call == "Resolve" || row.patterns.size() == 1;
-			if (!row.recorded || row.result != "OK" || !single || row.patterns.empty() || row.patterns[0].pattern.empty())
+			if (!AobScan::OwnPatternGraded(row.call, row.recorded, row.result, row.patterns.size(),
+				row.patterns.empty() || row.patterns[0].pattern.empty()))
 				continue;
 			row.own = AobScan::OwnPatternLabel(row.patterns[0].matches);
 			if (row.own)
