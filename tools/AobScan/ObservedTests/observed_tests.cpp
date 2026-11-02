@@ -5,11 +5,13 @@
 #include "test_doubles.h"
 
 #include "../observed.h"
+#include "../plugin_scan.h"
 #include "hooks/game/version_map.generated.h"
 #include "memory_scanner/image_info.h"
 
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <memory>
 
 using ScanValidation::Kind;
@@ -180,6 +182,15 @@ int main()
 	Check(r.Succeeded() && seen.found && seen.fromMap && seen.pattern == "B0 02", "a site: the map's row for the fingerprint");
 
 	VersionMap::SetActiveMap(nullptr);
+
+	// The plugin's own pattern (sr-aobscan --plugin, plugin_scan.cpp): a request
+	// that resolved passes only when its own pattern matches the exe once,
+	// whatever the map held for it.
+	Check(AobScan::OwnPatternLabel(1) == nullptr, "an own pattern that matches once is not graded");
+	Check(AobScan::OwnPatternLabel(0) && !strcmp(AobScan::OwnPatternLabel(0), "OWN-MISSING"), "an own pattern that matches nowhere is OWN-MISSING");
+	Check(AobScan::OwnPatternLabel(2) && !strcmp(AobScan::OwnPatternLabel(2), "OWN-AMBIGUOUS"), "an own pattern that matches twice is OWN-AMBIGUOUS");
+	Check(AobScan::OwnPatternLabel(64) && !strcmp(AobScan::OwnPatternLabel(64), "OWN-AMBIGUOUS"), "an own pattern that fills the count cap is OWN-AMBIGUOUS");
+
 	printf("%d checks, %d failed\n", g_checks, g_failed);
 	return g_failed ? 1 : 0;
 }

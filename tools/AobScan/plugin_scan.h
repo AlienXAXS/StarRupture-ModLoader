@@ -18,6 +18,15 @@ namespace AobScan
 
 	std::string JsonEscape(const std::string& s);
 
+	// What a plugin's own pattern earns by its match count on the game exe: a
+	// request that resolved must have a pattern that matches exactly once, or
+	// the version map is carrying a pattern the loader would refuse without it.
+	// nullptr when it matches once. plugin_scan.cpp, GradeOwnPatterns.
+	inline const char* OwnPatternLabel(size_t matches)
+	{
+		return matches == 1 ? nullptr : matches == 0 ? "OWN-MISSING" : "OWN-AMBIGUOUS";
+	}
+
 	// A failure detail as ScanValidation writes it: lines separated by "\r\n",
 	// continuation lines indented. PrintDetail prints each line under its row;
 	// JsonDetail gives the lines without the indent, joined with "\n".

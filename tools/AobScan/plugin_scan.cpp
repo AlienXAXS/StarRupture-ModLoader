@@ -44,13 +44,23 @@
 // Raw scans (FindAllPatterns*) record nothing with the loader; they are listed
 // for information and the plugin decides what a miss means.
 //
+// The plugin's own pattern. A request resolves on whatever the loader's version
+// map holds for the running build, and then the plugin's own pattern is never
+// scanned, so a pattern that matches two functions (or none) still passes
+// there while a loader without that map row refuses it. The report therefore
+// counts the own pattern on this exe for every request that resolved, whatever
+// carried it, and fails the plugin when it is not exactly one: OWN-MISSING for
+// none, OWN-AMBIGUOUS for several. The row's result stays OK.
+//
 //   PASS       no recorded failure
 //   GAME-CALL  PARTIAL coverage, never a full pass: no recorded failure, at
 //              least one pattern resolved, and the hook's calls into game code
 //              were stopped. A plugin that bails out on the null a stopped call
 //              returns skips every later scan; those are not exercised
 //   FAIL       a recorded failure (MISSING, AMBIGUOUS, ...), game calls or not,
-//              or a row the second run answered differently
+//              or a row the second run answered differently, or a request that
+//              resolved whose own pattern does not match this exe exactly once
+//              (OWN-MISSING, OWN-AMBIGUOUS: see "The plugin's own pattern")
 //   CRASH      a fault that is not a game call, or a game call with no
 //              pattern resolved
 //   REFUSED    interface version outside [MIN, MAX]; the hook is not run
@@ -280,6 +290,7 @@ namespace
 		bool                   hasRva = false;
 		uint64_t               rva    = 0;
 		std::string            detail;
+		const char*            own = nullptr;  // OWN-MISSING / OWN-AMBIGUOUS: see GradeOwnPatterns
 		AobScan::Suggest::Result suggest;  // MISSING / AMBIGUOUS, with --suggest
 	};
 
@@ -817,6 +828,7 @@ namespace
 	{
 		size_t total = 0, ok = 0, missing = 0, ambiguous = 0, other = 0, reported = 0, failing = 0, raw = 0;
 		size_t off = 0;   // rows that missed on a key only a feature that is off uses
+		size_t ownPattern = 0;   // resolved rows whose own pattern is not unique on this exe
 	};
 
 	// The detail the loader recorded for each miss, which the report holds by
@@ -867,6 +879,27 @@ namespace
 		return false;
 	}
 
+	// The plugin's own pattern on this exe, for every request that resolved. A
+	// request with its own pattern and a list of locators for other builds
+	// (Resolve) is graded on the own pattern, the first; a call that lists
+	// alternatives (the Unique calls) is not, because only one of them needs to
+	// match. Returns what to tell the author, one entry per row graded.
+	std::vector<std::string> GradeOwnPatterns()
+	{
+		std::vector<std::string> found;
+		for (Row& row : g_rows)
+		{
+			const bool single = row.call == "Resolve" || row.patterns.size() == 1;
+			if (!row.recorded || row.result != "OK" || !single || row.patterns.empty() || row.patterns[0].pattern.empty())
+				continue;
+			row.own = AobScan::OwnPatternLabel(row.patterns[0].matches);
+			if (row.own)
+				found.push_back(std::string(row.own) + " " + (row.name.empty() ? "(unnamed)" : row.name) + " ("
+					+ std::to_string(row.patterns[0].matches) + (row.patterns[0].matches >= kCountCap ? "+" : "") + " matches)");
+		}
+		return found;
+	}
+
 	Summary Summarise()
 	{
 		Summary s;
@@ -880,6 +913,7 @@ namespace
 			else if (row.result == "REPORTED")  ++s.reported;
 			else                                ++s.other;
 			if (IsOff(row))                     ++s.off;
+			if (row.own)                        ++s.ownPattern;
 		}
 		s.failing = g_report.failures.size();
 		return s;
@@ -1069,14 +1103,14 @@ namespace
 				fprintf(out, ", game build %s", build.c_str());
 			fprintf(out, ")");
 		}
-		fprintf(out, "\n%-10s %-60s %-10s %-4s %7s  %s\n", "RESULT", "NAME", "KIND", "REQ", "MATCHES", "RVA");
+		fprintf(out, "\n%-13s %-60s %-10s %-4s %7s  %s\n", "RESULT", "NAME", "KIND", "REQ", "MATCHES", "RVA");
 		for (const Row& row : g_rows)
 		{
 			const std::string rva = row.hasRva ? Hex(row.rva) : "-";
 			size_t matches = 0;
 			for (const Candidate& c : row.patterns) matches += c.matches;
 			const std::string name = row.name.empty() ? "(raw) " + (row.patterns.empty() ? "" : row.patterns[0].pattern) : row.name;
-			fprintf(out, "%-10s %-60.60s %-10s %-4s %7zu  %s\n", row.result.c_str(), name.c_str(), row.kind.c_str(),
+			fprintf(out, "%-13s %-60.60s %-10s %-4s %7zu  %s\n", row.own ? row.own : row.result.c_str(), name.c_str(), row.kind.c_str(),
 				!row.recorded ? "-" : row.required ? "yes" : "no", matches, rva.c_str());
 			if (row.recorded && row.result != "OK" && !row.detail.empty())
 				AobScan::PrintDetail(out, row.detail);
@@ -1090,6 +1124,9 @@ namespace
 		fprintf(out, "%s: %zu recorded patterns: %zu OK, %zu MISSING, %zu AMBIGUOUS, %zu other, %zu reported by the plugin; "
 			"%zu failures (any refuses the plugin); %zu raw scans\n",
 			o.verdict, s.total, s.ok, s.missing, s.ambiguous, s.other, s.reported, s.failing, s.raw);
+		if (s.ownPattern)
+			fprintf(out, "%s: %zu resolved requests whose own pattern does not match this exe exactly once (OWN-PATTERN, fails the plugin)\n",
+				o.verdict, s.ownPattern);
 		if (!o.note.empty())
 			fprintf(out, "%s: %s\n", o.verdict, o.note.c_str());
 	}
@@ -1118,8 +1155,8 @@ namespace
 		if (g_gameCalls)
 			printf("  \"gameCalls\": { \"stopped\": %d, \"first\": \"%s\" },\n", g_gameCalls, JsonEscape(o.gameCall).c_str());
 		printf("  \"summary\": { \"total\": %zu, \"ok\": %zu, \"missing\": %zu, \"ambiguous\": %zu, \"other\": %zu, "
-		       "\"reported\": %zu, \"failing\": %zu, \"raw\": %zu },\n  \"patterns\": [\n",
-			s.total, s.ok, s.missing, s.ambiguous, s.other, s.reported, s.failing, s.raw);
+		       "\"reported\": %zu, \"failing\": %zu, \"raw\": %zu, \"ownPattern\": %zu },\n  \"patterns\": [\n",
+			s.total, s.ok, s.missing, s.ambiguous, s.other, s.reported, s.failing, s.raw, s.ownPattern);
 		for (size_t i = 0; i < g_rows.size(); ++i)
 		{
 			const Row& row = g_rows[i];
@@ -1139,6 +1176,8 @@ namespace
 			}
 			if (row.followRel32At >= 0)
 				printf(", \"followRel32At\": %d", row.followRel32At);
+			if (row.own)
+				printf(", \"ownPattern\": \"%s\"", row.own);
 			printf(", \"resultOffset\": %d", row.resultOffset);
 			if (!row.key.empty())
 			{
@@ -1448,6 +1487,7 @@ namespace AobScan
 				row.suggest = suggest->Propose(failed);
 			}
 
+		const std::vector<std::string> ownFound = GradeOwnPatterns();
 		const Summary s = Summarise();
 		if (g_gameCalls)
 			o.gameCall = DescribeGameCall(file, g_firstGameCall);
@@ -1463,6 +1503,7 @@ namespace AobScan
 		else if (!loadHooks)       o.verdict = "NONE";
 		else if (!o.crash.empty()) o.verdict = "CRASH";
 		else if (s.failing)        o.verdict = "FAIL";
+		else if (s.ownPattern)     o.verdict = "FAIL";
 		else if (o.secondDiffers)  o.verdict = "FAIL";
 		else if (!g_gameCalls)     o.verdict = "PASS";
 		else if (patternsOk)
@@ -1485,6 +1526,14 @@ namespace AobScan
 			o.crash   = "called into the game before any pattern resolved";
 		}
 
+		if (!ownFound.empty())
+		{
+			std::string own = "own pattern not unique on this build, whatever the map holds:";
+			for (const std::string& f : ownFound)
+				own += " " + f + ";";
+			own.pop_back();
+			o.note = o.note.empty() ? own : o.note + "; " + own;
+		}
 		if (!o.second.empty())
 			o.note = o.note.empty() ? o.second : o.note + "; " + o.second;
 
