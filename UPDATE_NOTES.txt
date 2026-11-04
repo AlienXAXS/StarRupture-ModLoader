@@ -1,4 +1,4 @@
-- Now with 100% more Good Stuff: Good Stuff Software has teamed up with AlienX to keep the updates coming.
+- Now with 100% more Good Stuff: Good Stuff Software is taking over from AlienX to keep the updates coming.
 - Keeps working after a game update, for every game build it knows; a signed online file can add newer builds without a loader update
 - When a game update changes a layout the loader checks, only the features that read it are switched off, not every plugin, and the Plugins tab shows how many are off
 - A plugin that crashes is switched off and a toast names it; it restarts by itself about 3 seconds later, up to 3 times a session (Settings can turn this off)
@@ -8,4 +8,4 @@
 - Keys 1 to 5 open the Plugins, Config, Settings, Logging and Theme tabs; Tab, the arrow keys and Space or Enter work in the loader windows
 - LOAD NEW adds plugins you drop in while the game is running; click a plugin in the list to open its settings
 - The update check never offers a downgrade
-- For plugin authors, interface v74: RegisterOnUIStateChanged and GetUIState report the game's UI state; SetNextWindowSize and SetNextWindowSizeConstraints keep a popup from collapsing
+- For plugin authors (interface v74): the game's menu and cursor state, and window sizing added at Kian369's request
