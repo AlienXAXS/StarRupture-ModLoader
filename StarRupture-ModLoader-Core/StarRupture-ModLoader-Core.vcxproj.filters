@@ -79,8 +79,8 @@
     <Filter Include="Source Files\hooks\game\engine_exec">
       <UniqueIdentifier>{9c2e4b71-58d3-4f6a-a1b0-3e7d2c8f5a14}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Source Files\hooks\game\framegen_pause">
-      <UniqueIdentifier>{2f6a8d13-7c95-4e2b-b04d-8a1f3c6e9d52}</UniqueIdentifier>
+    <Filter Include="Source Files\hooks\game\slate_present">
+      <UniqueIdentifier>{7d3b1e52-94a6-4c08-b2f1-5e8a6c0d3f27}</UniqueIdentifier>
     </Filter>
     <Filter Include="Source Files\hooks\game\pak_mount">
       <UniqueIdentifier>{7d3f2a19-6b4c-4e85-9a1d-2c5e8f0b3a67}</UniqueIdentifier>
@@ -207,6 +207,12 @@
     <ClInclude Include="UI\update_notice_window.h">
       <Filter>Source Files\UI\modloader</Filter>
     </ClInclude>
+    <ClInclude Include="UI\toast.h">
+      <Filter>Source Files\UI\modloader</Filter>
+    </ClInclude>
+    <ClInclude Include="UI\plugin_scan_window.h">
+      <Filter>Source Files\UI\modloader</Filter>
+    </ClInclude>
     <ClInclude Include="UI\tick_profiler_window.h">
       <Filter>Source Files\UI\modloader</Filter>
     </ClInclude>
@@ -240,6 +246,9 @@
     <ClInclude Include="memory_scanner\scan_validation.h">
       <Filter>Source Files\memory_scanner</Filter>
     </ClInclude>
+    <ClInclude Include="memory_scanner\version_map.h">
+      <Filter>Source Files\memory_scanner</Filter>
+    </ClInclude>
     <ClInclude Include="preload\preload_interface.h">
       <Filter>Source Files\preload</Filter>
     </ClInclude>
@@ -252,10 +261,22 @@
     <ClInclude Include="memory_scanner\hook_scanner_interface.h">
       <Filter>Source Files\memory_scanner</Filter>
     </ClInclude>
+    <ClInclude Include="plugins\plugin_guard.h">
+      <Filter>Source Files\plugins</Filter>
+    </ClInclude>
     <ClInclude Include="plugins\plugin_hook_report.h">
       <Filter>Source Files\plugins</Filter>
     </ClInclude>
     <ClInclude Include="plugins\plugin_manager.h">
+      <Filter>Source Files\plugins</Filter>
+    </ClInclude>
+    <ClInclude Include="plugins\reload_policy.h">
+      <Filter>Source Files\plugins</Filter>
+    </ClInclude>
+    <ClInclude Include="plugins\crash_restart.h">
+      <Filter>Source Files\plugins</Filter>
+    </ClInclude>
+    <ClInclude Include="plugins\plugin_watchdog.h">
       <Filter>Source Files\plugins</Filter>
     </ClInclude>
     <ClInclude Include="plugins\pak_registry.h">
@@ -315,8 +336,8 @@
     <ClInclude Include="hooks\game\engine_exec\engine_exec.h">
       <Filter>Source Files\hooks\game\engine_exec</Filter>
     </ClInclude>
-    <ClInclude Include="hooks\game\framegen_pause\framegen_pause.h">
-      <Filter>Source Files\hooks\game\framegen_pause</Filter>
+    <ClInclude Include="hooks\game\slate_present\slate_present.h">
+      <Filter>Source Files\hooks\game\slate_present</Filter>
     </ClInclude>
     <ClInclude Include="hooks\game\pak_mount\pak_mount.h">
       <Filter>Source Files\hooks\game\pak_mount</Filter>
@@ -411,6 +432,18 @@
     <ClInclude Include="core\version_check.h">
       <Filter>Source Files\core</Filter>
     </ClInclude>
+    <ClInclude Include="core\sdk_globals.h">
+      <Filter>Source Files\core</Filter>
+    </ClInclude>
+    <ClInclude Include="core\layout_check.h">
+      <Filter>Source Files\core</Filter>
+    </ClInclude>
+    <ClInclude Include="core\compat_report.h">
+      <Filter>Source Files\core</Filter>
+    </ClInclude>
+    <ClInclude Include="core\layout_table.generated.h">
+      <Filter>Source Files\core</Filter>
+    </ClInclude>
     <ClInclude Include="core\engine_sync.h">
       <Filter>Source Files\core</Filter>
     </ClInclude>
@@ -418,6 +451,9 @@
       <Filter>Source Files\core</Filter>
     </ClInclude>
     <ClInclude Include="core\client_ui.h">
+      <Filter>Source Files\core</Filter>
+    </ClInclude>
+    <ClInclude Include="core\ui_state.h">
       <Filter>Source Files\core</Filter>
     </ClInclude>
     <ClInclude Include="core\shutdown.h">
@@ -442,6 +478,9 @@
       <Filter>Source Files\hooks\game\spawning</Filter>
     </ClInclude>
     <ClInclude Include="hooks\game\scan_patterns.h">
+      <Filter>Source Files\hooks\game</Filter>
+    </ClInclude>
+    <ClInclude Include="hooks\game\version_map.generated.h">
       <Filter>Source Files\hooks\game</Filter>
     </ClInclude>
     <ClInclude Include="UI\console_window.h">
@@ -512,6 +551,15 @@
     <ClCompile Include="core\version_check.cpp">
       <Filter>Source Files\core</Filter>
     </ClCompile>
+    <ClCompile Include="core\sdk_globals.cpp">
+      <Filter>Source Files\core</Filter>
+    </ClCompile>
+    <ClCompile Include="core\layout_check.cpp">
+      <Filter>Source Files\core</Filter>
+    </ClCompile>
+    <ClCompile Include="core\compat_report.cpp">
+      <Filter>Source Files\core</Filter>
+    </ClCompile>
     <ClCompile Include="core\engine_sync.cpp">
       <Filter>Source Files\core</Filter>
     </ClCompile>
@@ -519,6 +567,9 @@
       <Filter>Source Files\core</Filter>
     </ClCompile>
     <ClCompile Include="core\client_ui.cpp">
+      <Filter>Source Files\core</Filter>
+    </ClCompile>
+    <ClCompile Include="core\ui_state.cpp">
       <Filter>Source Files\core</Filter>
     </ClCompile>
     <ClCompile Include="core\shutdown.cpp">
@@ -590,6 +641,12 @@
     <ClCompile Include="UI\update_notice_window.cpp">
       <Filter>Source Files\UI\modloader</Filter>
     </ClCompile>
+    <ClCompile Include="UI\toast.cpp">
+      <Filter>Source Files\UI\modloader</Filter>
+    </ClCompile>
+    <ClCompile Include="UI\plugin_scan_window.cpp">
+      <Filter>Source Files\UI\modloader</Filter>
+    </ClCompile>
     <ClCompile Include="UI\tick_profiler_window.cpp">
       <Filter>Source Files\UI\modloader</Filter>
     </ClCompile>
@@ -620,6 +677,9 @@
     <ClCompile Include="memory_scanner\scan_validation.cpp">
       <Filter>Source Files\memory_scanner</Filter>
     </ClCompile>
+    <ClCompile Include="memory_scanner\version_map.cpp">
+      <Filter>Source Files\memory_scanner</Filter>
+    </ClCompile>
     <ClCompile Include="preload\preload_manager.cpp">
       <Filter>Source Files\preload</Filter>
     </ClCompile>
@@ -629,10 +689,16 @@
     <ClCompile Include="memory_scanner\hook_scanner_interface.cpp">
       <Filter>Source Files\memory_scanner</Filter>
     </ClCompile>
+    <ClCompile Include="plugins\plugin_guard.cpp">
+      <Filter>Source Files\plugins</Filter>
+    </ClCompile>
     <ClCompile Include="plugins\plugin_hook_report.cpp">
       <Filter>Source Files\plugins</Filter>
     </ClCompile>
     <ClCompile Include="plugins\plugin_manager.cpp">
+      <Filter>Source Files\plugins</Filter>
+    </ClCompile>
+    <ClCompile Include="plugins\plugin_watchdog.cpp">
       <Filter>Source Files\plugins</Filter>
     </ClCompile>
     <ClCompile Include="plugins\pak_registry.cpp">
@@ -677,8 +743,8 @@
     <ClCompile Include="hooks\game\engine_exec\engine_exec.cpp">
       <Filter>Source Files\hooks\game\engine_exec</Filter>
     </ClCompile>
-    <ClCompile Include="hooks\game\framegen_pause\framegen_pause.cpp">
-      <Filter>Source Files\hooks\game\framegen_pause</Filter>
+    <ClCompile Include="hooks\game\slate_present\slate_present.cpp">
+      <Filter>Source Files\hooks\game\slate_present</Filter>
     </ClCompile>
     <ClCompile Include="hooks\game\pak_mount\pak_mount.cpp">
       <Filter>Source Files\hooks\game\pak_mount</Filter>

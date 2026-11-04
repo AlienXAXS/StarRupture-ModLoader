@@ -28,6 +28,12 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ConfigEditTests", "Tests\Co
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "PanelUnloadTests", "Tests\PanelUnloadTests\PanelUnloadTests.vcxproj", "{8B1D4F27-6A59-4C03-9E7A-2F5C83D0B614}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "LayoutCheckTests", "Tests\LayoutCheckTests\LayoutCheckTests.vcxproj", "{58FE0C47-81C9-48EF-8869-EE85554ED143}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "KeyAndThreadTests", "Tests\KeyAndThreadTests\KeyAndThreadTests.vcxproj", "{3E6B9A52-7C1D-4F08-A2E4-5B9D0C7F1A36}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "VersionMapTests", "Tests\VersionMapTests\VersionMapTests.vcxproj", "{9B2D47E1-5C8A-4E63-B1F0-7A3C6D2E8F45}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Client Debug|x64 = Client Debug|x64
@@ -128,24 +134,54 @@ Global
 		{9A1C4E73-05B8-4D2F-B6A9-7E3D28C4F150}.Server Release|x64.ActiveCfg = Server Release|x64
 		{5C7E2B94-1D36-4F8A-A0B2-3E9D6C41F7A8}.Client Debug|x64.ActiveCfg = Client Debug|x64
 		{8B1D4F27-6A59-4C03-9E7A-2F5C83D0B614}.Client Debug|x64.ActiveCfg = Client Debug|x64
+		{58FE0C47-81C9-48EF-8869-EE85554ED143}.Client Debug|x64.ActiveCfg = Client Debug|x64
+		{3E6B9A52-7C1D-4F08-A2E4-5B9D0C7F1A36}.Client Debug|x64.ActiveCfg = Client Debug|x64
+		{9B2D47E1-5C8A-4E63-B1F0-7A3C6D2E8F45}.Client Debug|x64.ActiveCfg = Client Debug|x64
 		{5C7E2B94-1D36-4F8A-A0B2-3E9D6C41F7A8}.Client Release|x64.ActiveCfg = Client Release|x64
 		{8B1D4F27-6A59-4C03-9E7A-2F5C83D0B614}.Client Release|x64.ActiveCfg = Client Release|x64
+		{58FE0C47-81C9-48EF-8869-EE85554ED143}.Client Release|x64.ActiveCfg = Client Release|x64
+		{3E6B9A52-7C1D-4F08-A2E4-5B9D0C7F1A36}.Client Release|x64.ActiveCfg = Client Release|x64
+		{9B2D47E1-5C8A-4E63-B1F0-7A3C6D2E8F45}.Client Release|x64.ActiveCfg = Client Release|x64
 		{5C7E2B94-1D36-4F8A-A0B2-3E9D6C41F7A8}.Debug|x64.ActiveCfg = Client Debug|x64
 		{8B1D4F27-6A59-4C03-9E7A-2F5C83D0B614}.Debug|x64.ActiveCfg = Client Debug|x64
+		{58FE0C47-81C9-48EF-8869-EE85554ED143}.Debug|x64.ActiveCfg = Client Debug|x64
+		{3E6B9A52-7C1D-4F08-A2E4-5B9D0C7F1A36}.Debug|x64.ActiveCfg = Client Debug|x64
+		{9B2D47E1-5C8A-4E63-B1F0-7A3C6D2E8F45}.Debug|x64.ActiveCfg = Client Debug|x64
 		{5C7E2B94-1D36-4F8A-A0B2-3E9D6C41F7A8}.Local SDK Client Debug|x64.ActiveCfg = Client Debug|x64
 		{8B1D4F27-6A59-4C03-9E7A-2F5C83D0B614}.Local SDK Client Debug|x64.ActiveCfg = Client Debug|x64
+		{58FE0C47-81C9-48EF-8869-EE85554ED143}.Local SDK Client Debug|x64.ActiveCfg = Client Debug|x64
+		{3E6B9A52-7C1D-4F08-A2E4-5B9D0C7F1A36}.Local SDK Client Debug|x64.ActiveCfg = Client Debug|x64
+		{9B2D47E1-5C8A-4E63-B1F0-7A3C6D2E8F45}.Local SDK Client Debug|x64.ActiveCfg = Client Debug|x64
 		{5C7E2B94-1D36-4F8A-A0B2-3E9D6C41F7A8}.Local SDK Client Release|x64.ActiveCfg = Client Release|x64
 		{8B1D4F27-6A59-4C03-9E7A-2F5C83D0B614}.Local SDK Client Release|x64.ActiveCfg = Client Release|x64
+		{58FE0C47-81C9-48EF-8869-EE85554ED143}.Local SDK Client Release|x64.ActiveCfg = Client Release|x64
+		{3E6B9A52-7C1D-4F08-A2E4-5B9D0C7F1A36}.Local SDK Client Release|x64.ActiveCfg = Client Release|x64
+		{9B2D47E1-5C8A-4E63-B1F0-7A3C6D2E8F45}.Local SDK Client Release|x64.ActiveCfg = Client Release|x64
 		{5C7E2B94-1D36-4F8A-A0B2-3E9D6C41F7A8}.Local SDK Server Debug|x64.ActiveCfg = Client Debug|x64
 		{8B1D4F27-6A59-4C03-9E7A-2F5C83D0B614}.Local SDK Server Debug|x64.ActiveCfg = Client Debug|x64
+		{58FE0C47-81C9-48EF-8869-EE85554ED143}.Local SDK Server Debug|x64.ActiveCfg = Client Debug|x64
+		{3E6B9A52-7C1D-4F08-A2E4-5B9D0C7F1A36}.Local SDK Server Debug|x64.ActiveCfg = Client Debug|x64
+		{9B2D47E1-5C8A-4E63-B1F0-7A3C6D2E8F45}.Local SDK Server Debug|x64.ActiveCfg = Client Debug|x64
 		{5C7E2B94-1D36-4F8A-A0B2-3E9D6C41F7A8}.Local SDK Server Release|x64.ActiveCfg = Client Release|x64
 		{8B1D4F27-6A59-4C03-9E7A-2F5C83D0B614}.Local SDK Server Release|x64.ActiveCfg = Client Release|x64
+		{58FE0C47-81C9-48EF-8869-EE85554ED143}.Local SDK Server Release|x64.ActiveCfg = Client Release|x64
+		{3E6B9A52-7C1D-4F08-A2E4-5B9D0C7F1A36}.Local SDK Server Release|x64.ActiveCfg = Client Release|x64
+		{9B2D47E1-5C8A-4E63-B1F0-7A3C6D2E8F45}.Local SDK Server Release|x64.ActiveCfg = Client Release|x64
 		{5C7E2B94-1D36-4F8A-A0B2-3E9D6C41F7A8}.Release|x64.ActiveCfg = Client Release|x64
 		{8B1D4F27-6A59-4C03-9E7A-2F5C83D0B614}.Release|x64.ActiveCfg = Client Release|x64
+		{58FE0C47-81C9-48EF-8869-EE85554ED143}.Release|x64.ActiveCfg = Client Release|x64
+		{3E6B9A52-7C1D-4F08-A2E4-5B9D0C7F1A36}.Release|x64.ActiveCfg = Client Release|x64
+		{9B2D47E1-5C8A-4E63-B1F0-7A3C6D2E8F45}.Release|x64.ActiveCfg = Client Release|x64
 		{5C7E2B94-1D36-4F8A-A0B2-3E9D6C41F7A8}.Server Debug|x64.ActiveCfg = Client Debug|x64
 		{8B1D4F27-6A59-4C03-9E7A-2F5C83D0B614}.Server Debug|x64.ActiveCfg = Client Debug|x64
+		{58FE0C47-81C9-48EF-8869-EE85554ED143}.Server Debug|x64.ActiveCfg = Client Debug|x64
+		{3E6B9A52-7C1D-4F08-A2E4-5B9D0C7F1A36}.Server Debug|x64.ActiveCfg = Client Debug|x64
+		{9B2D47E1-5C8A-4E63-B1F0-7A3C6D2E8F45}.Server Debug|x64.ActiveCfg = Client Debug|x64
 		{5C7E2B94-1D36-4F8A-A0B2-3E9D6C41F7A8}.Server Release|x64.ActiveCfg = Client Release|x64
 		{8B1D4F27-6A59-4C03-9E7A-2F5C83D0B614}.Server Release|x64.ActiveCfg = Client Release|x64
+		{58FE0C47-81C9-48EF-8869-EE85554ED143}.Server Release|x64.ActiveCfg = Client Release|x64
+		{3E6B9A52-7C1D-4F08-A2E4-5B9D0C7F1A36}.Server Release|x64.ActiveCfg = Client Release|x64
+		{9B2D47E1-5C8A-4E63-B1F0-7A3C6D2E8F45}.Server Release|x64.ActiveCfg = Client Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -154,6 +190,9 @@ Global
 		{9A1C4E73-05B8-4D2F-B6A9-7E3D28C4F150} = {3C7F92A8-1E64-4B0D-A5F7-8D24B6E01C39}
 		{5C7E2B94-1D36-4F8A-A0B2-3E9D6C41F7A8} = {3C7F92A8-1E64-4B0D-A5F7-8D24B6E01C39}
 		{8B1D4F27-6A59-4C03-9E7A-2F5C83D0B614} = {3C7F92A8-1E64-4B0D-A5F7-8D24B6E01C39}
+		{58FE0C47-81C9-48EF-8869-EE85554ED143} = {3C7F92A8-1E64-4B0D-A5F7-8D24B6E01C39}
+		{3E6B9A52-7C1D-4F08-A2E4-5B9D0C7F1A36} = {3C7F92A8-1E64-4B0D-A5F7-8D24B6E01C39}
+		{9B2D47E1-5C8A-4E63-B1F0-7A3C6D2E8F45} = {3C7F92A8-1E64-4B0D-A5F7-8D24B6E01C39}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {821D00E1-6E9E-43A6-9817-CEF50642F49B}

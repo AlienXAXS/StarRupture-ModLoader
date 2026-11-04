@@ -412,6 +412,8 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="auto_update\auto_updater.h" />
+    <ClInclude Include="auto_update\feed_fetch.h" />
+    <ClInclude Include="auto_update\http_get.h" />
     <ClInclude Include="config\config_manager.h" />
     <ClInclude Include="config\config_edit.h" />
     <ClInclude Include="hooks\game\actor_begin_play\actor_begin_play.h" />
@@ -421,7 +423,7 @@
     <ClInclude Include="hooks\game\crash_reporter\crash_dialog.h" />
     <ClInclude Include="hooks\game\console_command\console_command.h" />
     <ClInclude Include="hooks\game\engine_exec\engine_exec.h" />
-    <ClInclude Include="hooks\game\framegen_pause\framegen_pause.h" />
+    <ClInclude Include="hooks\game\slate_present\slate_present.h" />
     <ClInclude Include="hooks\game\pak_mount\pak_mount.h" />
     <ClInclude Include="hooks\game\debug_draw\debug_draw.h" />
     <ClInclude Include="hooks\game\crash_reporter\crash_reporter.h" />
@@ -450,6 +452,7 @@
     <ClInclude Include="hooks\game\text_localization\text_localization.h" />
     <ClInclude Include="hooks\game\text_localization\text_key.h" />
     <ClInclude Include="hooks\game\scan_patterns.h" />
+    <ClInclude Include="hooks\game\version_map.generated.h" />
     <ClInclude Include="hooks\game\world_begin_play\world_begin_play.h" />
     <ClInclude Include="hooks\game\world_end_play\world_end_play.h" />
     <ClInclude Include="hooks\hooks_common.h" />
@@ -480,6 +483,8 @@
     <ClInclude Include="UI\wheel_test.h" />
     <ClInclude Include="UI\hook_failure_window.h" />
     <ClInclude Include="UI\update_notice_window.h" />
+    <ClInclude Include="UI\toast.h" />
+    <ClInclude Include="UI\plugin_scan_window.h" />
     <ClInclude Include="UI\tick_profiler_window.h" />
     <ClInclude Include="UI\plugin_panel_registry.h" />
     <ClInclude Include="UI\plugin_widget_registry.h" />
@@ -498,6 +503,10 @@
     <ClInclude Include="memory_scanner\image_info.h" />
     <ClInclude Include="memory_scanner\patch_overlay.h" />
     <ClInclude Include="memory_scanner\scan_validation.h" />
+    <ClInclude Include="memory_scanner\version_map.h" />
+    <ClInclude Include="memory_scanner\version_feed.h" />
+    <ClInclude Include="third_party\monocypher\monocypher.h" />
+    <ClInclude Include="third_party\monocypher\monocypher-ed25519.h" />
     <ClInclude Include="preload\preload_interface.h" />
     <ClInclude Include="preload\preload_manager.h" />
     <ClInclude Include="preload\preload_patch.h" />
@@ -509,8 +518,12 @@
     <ClInclude Include="console\server_console.h" />
     <ClInclude Include="plugins\plugin_interface.h" />
     <ClInclude Include="plugins\known_gobjects.generated.h" />
+    <ClInclude Include="plugins\plugin_guard.h" />
     <ClInclude Include="plugins\plugin_hook_report.h" />
     <ClInclude Include="plugins\plugin_manager.h" />
+    <ClInclude Include="plugins\reload_policy.h" />
+    <ClInclude Include="plugins\crash_restart.h" />
+    <ClInclude Include="plugins\plugin_watchdog.h" />
     <ClInclude Include="plugins\pak_registry.h" />
     <ClInclude Include="UI\splash_window.h" />
     <ClInclude Include="utils\pak_list.h" />
@@ -519,9 +532,14 @@
     <ClInclude Include="core\globals.h" />
     <ClInclude Include="core\startup_utils.h" />
     <ClInclude Include="core\version_check.h" />
+    <ClInclude Include="core\sdk_globals.h" />
+    <ClInclude Include="core\layout_check.h" />
+    <ClInclude Include="core\compat_report.h" />
+    <ClInclude Include="core\layout_table.generated.h" />
     <ClInclude Include="core\engine_sync.h" />
     <ClInclude Include="core\hook_management.h" />
     <ClInclude Include="core\client_ui.h" />
+    <ClInclude Include="core\ui_state.h" />
     <ClInclude Include="core\shutdown.h" />
     <ClInclude Include="core\init_phases.h" />
     <ClInclude Include="core\init_thread.h" />
@@ -542,16 +560,26 @@
       <ExcludedFromBuild Condition="'$(Configuration)' != 'Client Debug' And '$(Configuration)' != 'Client Release' And '$(Configuration)' != 'Local SDK Client Debug' And '$(Configuration)' != 'Local SDK Client Release'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="auto_update\auto_updater.cpp" />
+    <ClCompile Include="auto_update\feed_fetch.cpp" />
+    <ClCompile Include="auto_update\http_get.cpp" />
     <ClCompile Include="config\config_manager.cpp" />
-    <ClCompile Include="config\config_edit.cpp">
-      <ExcludedFromBuild Condition="'$(Configuration)' != 'Client Debug' And '$(Configuration)' != 'Client Release' And '$(Configuration)' != 'Local SDK Client Debug' And '$(Configuration)' != 'Local SDK Client Release'">true</ExcludedFromBuild>
-    </ClCompile>
+    <ClCompile Include="config\config_edit.cpp" />
     <ClCompile Include="core\globals.cpp" />
     <ClCompile Include="core\startup_utils.cpp" />
     <ClCompile Include="core\version_check.cpp" />
+    <ClCompile Include="core\sdk_globals.cpp" />
+    <ClCompile Include="core\layout_check.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)' != 'Client Debug' And '$(Configuration)' != 'Client Release' And '$(Configuration)' != 'Local SDK Client Debug' And '$(Configuration)' != 'Local SDK Client Release'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="core\compat_report.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)' != 'Client Debug' And '$(Configuration)' != 'Client Release' And '$(Configuration)' != 'Local SDK Client Debug' And '$(Configuration)' != 'Local SDK Client Release'">true</ExcludedFromBuild>
+    </ClCompile>
     <ClCompile Include="core\engine_sync.cpp" />
     <ClCompile Include="core\hook_management.cpp" />
     <ClCompile Include="core\client_ui.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)' != 'Client Debug' And '$(Configuration)' != 'Client Release' And '$(Configuration)' != 'Local SDK Client Debug' And '$(Configuration)' != 'Local SDK Client Release'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="core\ui_state.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)' != 'Client Debug' And '$(Configuration)' != 'Client Release' And '$(Configuration)' != 'Local SDK Client Debug' And '$(Configuration)' != 'Local SDK Client Release'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="core\shutdown.cpp" />
@@ -569,7 +597,7 @@
     <ClCompile Include="hooks\game\crash_reporter\crash_dialog.cpp" />
     <ClCompile Include="hooks\game\console_command\console_command.cpp" />
     <ClCompile Include="hooks\game\engine_exec\engine_exec.cpp" />
-    <ClCompile Include="hooks\game\framegen_pause\framegen_pause.cpp" />
+    <ClCompile Include="hooks\game\slate_present\slate_present.cpp" />
     <ClCompile Include="hooks\game\pak_mount\pak_mount.cpp" />
     <ClCompile Include="hooks\game\debug_draw\debug_draw.cpp" />
     <ClCompile Include="hooks\game\crash_reporter\crash_reporter.cpp" />
@@ -658,6 +686,12 @@
     <ClCompile Include="UI\update_notice_window.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)' != 'Client Debug' And '$(Configuration)' != 'Client Release' And '$(Configuration)' != 'Local SDK Client Debug' And '$(Configuration)' != 'Local SDK Client Release'">true</ExcludedFromBuild>
     </ClCompile>
+    <ClCompile Include="UI\toast.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)' != 'Client Debug' And '$(Configuration)' != 'Client Release' And '$(Configuration)' != 'Local SDK Client Debug' And '$(Configuration)' != 'Local SDK Client Release'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="UI\plugin_scan_window.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)' != 'Client Debug' And '$(Configuration)' != 'Client Release' And '$(Configuration)' != 'Local SDK Client Debug' And '$(Configuration)' != 'Local SDK Client Release'">true</ExcludedFromBuild>
+    </ClCompile>
     <ClCompile Include="UI\tick_profiler_window.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)' != 'Client Debug' And '$(Configuration)' != 'Client Release' And '$(Configuration)' != 'Local SDK Client Debug' And '$(Configuration)' != 'Local SDK Client Release'">true</ExcludedFromBuild>
     </ClCompile>
@@ -678,6 +712,16 @@
     <ClCompile Include="memory_scanner\image_info.cpp" />
     <ClCompile Include="memory_scanner\patch_overlay.cpp" />
     <ClCompile Include="memory_scanner\scan_validation.cpp" />
+    <ClCompile Include="memory_scanner\version_map.cpp" />
+    <ClCompile Include="memory_scanner\version_feed.cpp" />
+    <ClCompile Include="third_party\monocypher\monocypher.c">
+      <WarningLevel>TurnOffAllWarnings</WarningLevel>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="third_party\monocypher\monocypher-ed25519.c">
+      <WarningLevel>TurnOffAllWarnings</WarningLevel>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
     <ClCompile Include="preload\preload_manager.cpp" />
     <ClCompile Include="preload\preload_patch.cpp" />
     <ClCompile Include="console\console_commands.cpp" />
@@ -686,8 +730,10 @@
     <ClCompile Include="console\console_screen.cpp" />
     <ClCompile Include="console\engine_output_hook.cpp" />
     <ClCompile Include="console\server_console.cpp" />
+    <ClCompile Include="plugins\plugin_guard.cpp" />
     <ClCompile Include="plugins\plugin_hook_report.cpp" />
     <ClCompile Include="plugins\plugin_manager.cpp" />
+    <ClCompile Include="plugins\plugin_watchdog.cpp" />
     <ClCompile Include="plugins\pak_registry.cpp" />
     <ClCompile Include="UI\splash_window.cpp" />
   </ItemGroup>
