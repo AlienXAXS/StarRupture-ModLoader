@@ -3,6 +3,7 @@
 
 #include "auto_updater.h"
 #include "http_get.h"
+#include "version_compare.h"
 #include "feed_fetch.h"
 #include "core/startup_utils.h"
 #include "logging/log.h"
@@ -405,10 +406,13 @@ static bool DownloadPlugin(const char* url,
 // "notes" is optional: one change per line, lines separated by the \n escape.
 // When present it is listed under the plugin in the "Plugins Updated" pop-up.
 //
-// The last-downloaded version per plugin is stored in update_state.ini under
-// [PluginVersions], keyed by the DLL filename (e.g. "MyPlugin.dll=1.2.0").
-// If the remote version differs from the stored version the DLL is replaced
-// using the same atomic .tmp -> rename pattern as the central updater.
+// The installed version per plugin is stored in update_state.ini under
+// [PluginVersions], keyed by the DLL filename (e.g. "MyPlugin.dll=1.2.0"): the
+// version last downloaded, raised to the one the plugin reports when it loads
+// if that is newer (NoteInstalledPluginVersion), so a build installed by hand
+// is known. Only a remote version newer than the stored one replaces the DLL,
+// using the same atomic .tmp -> rename pattern as the central updater. With no
+// stored version yet, nothing is downloaded until the plugin has loaded once.
 // ===========================================================================
 
 struct PluginSidecar
@@ -555,8 +559,26 @@ static void WritePluginVersion(const wchar_t* iniPath,
     }
 }
 
+void NoteInstalledPluginVersion(const wchar_t* dllFileName, const char* version)
+{
+    const AutoUpdateVersion::ParsedVersion installed = AutoUpdateVersion::ParseVersion(version);
+    if (!dllFileName || !installed.valid)
+        return;
+
+    wchar_t stateIniPath[MAX_PATH]{};
+    GetUpdateStateIniPath(stateIniPath, MAX_PATH);
+    char key[256]{};
+    WideCharToMultiByte(CP_UTF8, 0, dllFileName, -1, key, sizeof(key), nullptr, nullptr);
+
+    const std::string stored = ReadPluginVersion(stateIniPath, key);
+    const AutoUpdateVersion::ParsedVersion was = AutoUpdateVersion::ParseVersion(stored.c_str());
+    if (was.valid && AutoUpdateVersion::CompareVersions(installed, was) <= 0)
+        return;
+    WritePluginVersion(stateIniPath, key, version);
+}
+
 // Fetch and process a single per-plugin manifest.
-// Downloads the plugin DLL if the remote version differs from stored.
+// Downloads the plugin DLL if the remote version is newer than stored.
 static void ProcessPluginSidecar(const PluginSidecar& sc,
                                   const wchar_t* pluginsDir,
                                   const wchar_t* stateIniPath,
@@ -619,9 +641,22 @@ static void ProcessPluginSidecar(const PluginSidecar& sc,
                      storedVersion.empty() ? "<none>" : storedVersion.c_str(),
                      remoteVersion.c_str());
 
-    if (!storedVersion.empty() && storedVersion == remoteVersion)
+    if (storedVersion.empty())
     {
-        LogToFile::Info("[AutoUpdate][Sidecar] '%s' — up to date (%s)", displayName, remoteVersion.c_str());
+        LogToFile::Info("[AutoUpdate][Sidecar] '%s' — installed version not known yet (remote %s); "
+                        "it is recorded when the plugin loads", displayName, remoteVersion.c_str());
+        return;
+    }
+
+    // By number, so an older release never replaces a newer build. A version
+    // that does not parse falls back to "differs".
+    const AutoUpdateVersion::ParsedVersion remote = AutoUpdateVersion::ParseVersion(remoteVersion.c_str());
+    const AutoUpdateVersion::ParsedVersion stored = AutoUpdateVersion::ParseVersion(storedVersion.c_str());
+    if (remote.valid && stored.valid ? AutoUpdateVersion::CompareVersions(remote, stored) <= 0
+                                     : storedVersion == remoteVersion)
+    {
+        LogToFile::Info("[AutoUpdate][Sidecar] '%s' — up to date (installed %s, remote %s)",
+                        displayName, storedVersion.c_str(), remoteVersion.c_str());
         return;
     }
 
@@ -758,10 +793,15 @@ static void RunCentralManifestUpdate(const AutoUpdateConfig& cfg)
 	// builds where no build tag is compiled in at all.
 	const char* effectiveLocalTag = compiledTag[0] ? compiledTag : storedTag;
 
-	if (effectiveLocalTag[0] != '\0' &&
-		strcmp(effectiveLocalTag, remoteBuildTag.c_str()) == 0)
+	// By number, as the updater exe decides: a build newer than the release
+	// (a pre-release or a local build) is up to date, not offered an older one.
+	const AutoUpdateVersion::ParsedVersion localVer  = AutoUpdateVersion::ParseVersion(effectiveLocalTag);
+	const AutoUpdateVersion::ParsedVersion remoteVer = AutoUpdateVersion::ParseVersion(remoteBuildTag.c_str());
+	if (localVer.valid && remoteVer.valid ? AutoUpdateVersion::CompareVersions(remoteVer, localVer) <= 0
+	                                      : strcmp(effectiveLocalTag, remoteBuildTag.c_str()) == 0)
 	{
-		LogToFile::Info("[AutoUpdate] Modloader is up to date (%s)", effectiveLocalTag);
+		LogToFile::Info("[AutoUpdate] Modloader is up to date (installed %s, remote %s)",
+		                effectiveLocalTag, remoteBuildTag.c_str());
 
 		// Keep update_state.ini in sync with the real compiled tag so it
 		// never drives a stale comparison later (e.g. the standalone

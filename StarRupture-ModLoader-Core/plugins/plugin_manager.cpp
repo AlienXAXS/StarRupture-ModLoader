@@ -11,6 +11,7 @@
 #include "memory_scanner/hook_scanner_interface.h"
 #include "plugins/plugin_hook_report.h"
 #include "plugins/plugin_guard.h"
+#include "auto_update/auto_updater.h"
 #include "plugins/plugin_watchdog.h"
 #include "utils/game_thread_dispatch.h"
 #include "plugins/reload_policy.h"
@@ -371,6 +372,9 @@ namespace PluginManager
 		std::string detail;                 // OffBuild: VersionMap::OffBuildRefusal's reason; Refused: the load setting's
 	};
 
+	static const wchar_t* BaseFileName(const std::wstring& path);
+	static bool HasUpdateSidecar(const std::wstring& dllPath);
+
 	// Inner load helper: performs LoadLibrary, GetProcAddress, GetPluginInfo,
 	// version check, and PluginInit on an existing LoadedPlugin record.
 	// rec.fileName must be set before calling. On success: hModule, info,
@@ -452,6 +456,11 @@ namespace PluginManager
 			if (why) why->kind = LoadFailure::Crashed;
 			return false;
 		}
+
+		// What is installed, for the plugin update pass, whether or not it
+		// loads: a build put in by hand is never replaced by an older release.
+		if (HasUpdateSidecar(rec.fileName))
+			NoteInstalledPluginVersion(BaseFileName(rec.fileName), info->version);
 
 		// Only a newer interface is refused here: the tables only grow, so an
 		// older plugin gets the slots it knows. Whether it may run on this game

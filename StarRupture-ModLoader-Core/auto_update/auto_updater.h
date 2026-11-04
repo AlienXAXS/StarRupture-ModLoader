@@ -69,6 +69,12 @@
 // Whether modloader.ini [AutoUpdate] Enabled is on (the default).
 bool AutoUpdateEnabled();
 
+// Records the version a plugin with an update sidecar reports when it loads,
+// if it is newer than the stored one, so the plugin pass never replaces a
+// build installed by hand with an older release. dllFileName is the bare file
+// name ("MyPlugin.dll").
+void NoteInstalledPluginVersion(const wchar_t* dllFileName, const char* version);
+
 namespace ModLoaderLogger
 {
 	// Fetch the remote manifest, compare build_tag against update_state.ini,

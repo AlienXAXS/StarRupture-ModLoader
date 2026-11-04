@@ -6,6 +6,7 @@
 
 #include "autoupdate_log.h"
 #include "miniz.h"
+#include "../StarRupture-ModLoader-Core/auto_update/version_compare.h"
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -141,58 +142,9 @@ namespace
     // Version parsing / comparison
     // =======================================================================
 
-    struct ParsedVersion
-    {
-        int  parts[4] = { 0, 0, 0, 0 };
-        bool valid = false;
-        bool hasSuffix = false; // e.g. "-preview" / "-beta.1"
-    };
-
-    // Accepts "v1.15.4", "1.15.2.0", "v1.16.0-beta.1", etc.
-    ParsedVersion ParseVersion(const char* s)
-    {
-        ParsedVersion v;
-        if (!s || !*s)
-            return v;
-
-        const char* p = s;
-        if (*p == 'v' || *p == 'V')
-            ++p;
-
-        int idx = 0;
-        while (idx < 4)
-        {
-            if (*p < '0' || *p > '9')
-                break;
-            long val = 0;
-            while (*p >= '0' && *p <= '9')
-            {
-                val = val * 10 + (*p - '0');
-                if (val > 1000000) val = 1000000;
-                ++p;
-            }
-            v.parts[idx++] = static_cast<int>(val);
-            if (*p == '.')
-                ++p;
-            else
-                break;
-        }
-
-        v.valid = (idx >= 2); // require at least major.minor
-        v.hasSuffix = (*p == '-' || *p == '+');
-        return v;
-    }
-
-    // Returns >0 if a is newer than b, 0 if equal, <0 if older (numeric only).
-    int CompareVersions(const ParsedVersion& a, const ParsedVersion& b)
-    {
-        for (int i = 0; i < 4; ++i)
-        {
-            if (a.parts[i] != b.parts[i])
-                return a.parts[i] < b.parts[i] ? -1 : 1;
-        }
-        return 0;
-    }
+    using AutoUpdateVersion::ParsedVersion;
+    using AutoUpdateVersion::ParseVersion;
+    using AutoUpdateVersion::CompareVersions;
 
     // Reads the FileVersion (A.B.C.D) from a DLL's version resource on disk.
     // The DLL is NOT loaded as a module.  Returns an invalid ParsedVersion

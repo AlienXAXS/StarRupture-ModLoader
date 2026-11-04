@@ -8,6 +8,7 @@
 
 #include "auto_update/feed_fetch.h"
 #include "auto_update/http_get.h"
+#include "auto_update/version_compare.h"
 #include "memory_scanner/version_feed.h"
 #include "memory_scanner/version_map.h"
 #include "third_party/monocypher/monocypher-ed25519.h"
@@ -356,6 +357,19 @@ int main()
 	const Signer sk = MakeSigner("k1", 1);
 	const std::vector<PublicKey> keys{ sk.pub };
 	const uint64_t kDay = FeedFetch::kDaySeconds;
+
+	// ---- Update checks: newer by number, never an older release ------------
+	{
+		using namespace AutoUpdateVersion;
+		const auto cmp = [](const char* a, const char* b) { return CompareVersions(ParseVersion(a), ParseVersion(b)); };
+		Check(cmp("v1.22.1", "v1.23.0-rc1") < 0, "version: a release older than the pre-release installed is older");
+		Check(cmp("v1.23.0", "v1.23.0-rc1") == 0, "version: a pre-release equals its release (not offered)");
+		Check(cmp("v0.10.0", "0.11.0-rc1") < 0, "version: an older plugin release is older than a newer local build");
+		Check(cmp("v0.11.0", "0.10.0-gss.32") > 0, "version: a newer release is newer than a local build");
+		Check(cmp("1.23.0.0", "v1.23.0") == 0, "version: a file version equals its tag");
+		Check(cmp("v1.10.0", "v1.9.9") > 0, "version: compared by number, not as text");
+		Check(!ParseVersion("dev").valid && !ParseVersion("").valid && !ParseVersion(nullptr).valid, "version: no number, not valid");
+	}
 
 	// ---- Stage 1's trigger: the running exe and the cache's age ------------
 	{
