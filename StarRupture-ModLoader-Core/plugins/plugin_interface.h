@@ -815,11 +815,12 @@
 //      can add bits without a new interface version; a plugin ignores bits it
 //      does not know.
 //
-//      Also in v74: a reflected PluginFieldRequest with size 0 takes whatever
-//      size the game reflects and returns it in PluginFieldResult::size. A
-//      loader before v74 refuses the request as a size mismatch, so a plugin
-//      that must also run there declares 73 and sends the size it was
-//      compiled with.
+//      Also in v74: PLUGIN_FIELD_ANY_SIZE, a flag on a reflected
+//      PluginFieldRequest (size 0) that takes whatever size the game reflects
+//      and returns it in PluginFieldResult::size. A loader before v74 refuses
+//      the request as a size mismatch, so a plugin that must also run there
+//      declares 73 and sends the size it was compiled with. A size of 0
+//      without the flag is a size mismatch, as before.
 //
 #define PLUGIN_INTERFACE_VERSION_MIN 70
 #define PLUGIN_INTERFACE_VERSION_MAX 74
@@ -1105,11 +1106,14 @@ static_assert(offsetof(PluginScanRequest, candidates)     == 56, "v72 starts whe
 //   reflected (no flag)     the offset comes from the running game's own
 //                           reflection data, found by class and member name,
 //                           so it is right on any build. The size must equal
-//                           the request's, unless the request's size is 0: then
-//                           any size is accepted and the member's size on this
-//                           build comes back in PluginFieldResult::size, for a
-//                           member whose type differs between builds (a float
-//                           on one, a double on the next).
+//                           the request's, unless PLUGIN_FIELD_ANY_SIZE is set
+//                           (with size 0): then any size is accepted and the
+//                           member's size on this build comes back in
+//                           PluginFieldResult::size, for a member whose type
+//                           differs between builds (a float on one, a double
+//                           on the next). The flag is for a reflected member
+//                           only: with NATIVE, CHECK, BITFIELD, a size row or
+//                           a non-zero size, the request is refused.
 //   PLUGIN_FIELD_NATIVE     a member reflection does not describe. The offset
 //                           comes from the row for the running changelist, or
 //                           builtOffset on builtCL. On any other build it
@@ -1141,6 +1145,7 @@ enum PluginFieldFlags
     PLUGIN_FIELD_NATIVE    = 1 << 0,
     PLUGIN_FIELD_CHECK     = 1 << 1,
     PLUGIN_FIELD_BITFIELD  = 1 << 2,
+    PLUGIN_FIELD_ANY_SIZE  = 1 << 3,   // v74: take the reflected size; size must be 0
 };
 
 // One build's value for a field. Passed in an array with no stride field, so
@@ -1171,7 +1176,7 @@ struct PluginFieldRequest
     const char* member;         // null = the size of className itself
 
     uint32_t    flags;          // PluginFieldFlags
-    uint32_t    size;           // sizeof the member as the plugin was compiled; 0 = take the reflected size (reflected members only)
+    uint32_t    size;           // sizeof the member as the plugin was compiled; 0 with PLUGIN_FIELD_ANY_SIZE = take the reflected size
     uint32_t    builtCL;        // the changelist the plugin's SDK was generated for
     int32_t     builtOffset;    // offsetof as compiled; -1 for a bitfield (its builtCL row holds it)
 

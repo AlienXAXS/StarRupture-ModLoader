@@ -1290,10 +1290,16 @@ namespace VersionMap
 			const bool check    = (request.flags & PLUGIN_FIELD_CHECK) != 0;
 			const bool bitfield = (request.flags & PLUGIN_FIELD_BITFIELD) != 0;
 			const bool sizeRow  = request.member.empty();
+			const bool anySize  = (request.flags & PLUGIN_FIELD_ANY_SIZE) != 0;
 
 			if (request.className.empty() || (sizeRow && (native || bitfield)))
 			{
 				error = "bad request: a field needs a class, and a size row is neither native nor a bitfield";
+				return false;
+			}
+			if (anySize && (sizeRow || native || check || bitfield || request.size != 0))
+			{
+				error = "bad request: PLUGIN_FIELD_ANY_SIZE is for a reflected member, with size 0";
 				return false;
 			}
 			for (size_t i = 0; i < request.candidates.size(); ++i)
@@ -1396,9 +1402,9 @@ namespace VersionMap
 					return false;
 				}
 				value = FieldValue{ sizeRow ? 0 : live.offset, live.size, bitfield ? live.boolMask : uint8_t(0) };
-				// A request for size 0 takes whatever size the game reflects and
-				// gets it back in the result.
-				if (!sizeRow && request.size != 0 && value.size != request.size)
+				// PLUGIN_FIELD_ANY_SIZE takes whatever size the game reflects and
+				// gets it back in the result; any other request must match.
+				if (!sizeRow && !anySize && value.size != request.size)
 				{
 					error = "the game's member is " + Hex(value.size) + " bytes, the code was compiled for " + Hex(request.size);
 					return false;

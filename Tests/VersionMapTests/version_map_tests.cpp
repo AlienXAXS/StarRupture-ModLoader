@@ -654,15 +654,21 @@ int main()
 			&& Logged(L"loader map, CL-128786 row, as reflected (0x44/0x4)"), "field: a key whose row records the rename");
 		Check(Field("ATest::Renamed", "ATest", "NewName", 0, 4, {}, v, e, VersionMap::Exe{ 127004, 0, 0 }) && v.offset == 0x40,
 			"field: a renamed key's row from before the rename reads the key's member");
-		// Size 0 takes the size the game reflects and returns it; a size that is asked for must still match.
-		Check(Field("ATest::Renamed", "ATest", "Renamed", 0, 0, {}, v, e) && v.offset == 0x44 && v.size == 4,
-			"field: size 0 takes a 4-byte reflected member and returns its size");
-		Check(Field("ATest::Reflected", "ATest", "Reflected", 0, 0, {}, v, e) && v.offset == 0x30 && v.size == 8,
-			"field: size 0 takes an 8-byte reflected member and returns its size");
+		// PLUGIN_FIELD_ANY_SIZE takes the size the game reflects and returns it; any other size must match, and 0 is a size.
+		Check(Field("ATest::Renamed", "ATest", "Renamed", PLUGIN_FIELD_ANY_SIZE, 0, {}, v, e) && v.offset == 0x44 && v.size == 4,
+			"field: the any-size flag takes a 4-byte reflected member and returns its size");
+		Check(Field("ATest::Reflected", "ATest", "Reflected", PLUGIN_FIELD_ANY_SIZE, 0, {}, v, e) && v.offset == 0x30 && v.size == 8,
+			"field: the any-size flag takes an 8-byte reflected member and returns its size");
+		Check(!Field("ATest::Reflected", "ATest", "Reflected", 0, 0, {}, v, e)
+			&& e == "the game's member is 0x8 bytes, the code was compiled for 0x0", "field: size 0 without the flag is refused");
 		Check(!Field("ATest::Reflected", "ATest", "Reflected", 0, 4, {}, v, e)
 			&& e == "the game's member is 0x8 bytes, the code was compiled for 0x4", "field: a non-zero size that does not match is still refused");
-		Check(!Field("ATest::Missing", "ATest", "Missing", 0, 0, {}, v, e) && e == "reflection: no member Missing",
-			"field: size 0 does not accept a member the game does not have");
+		Check(!Field("ATest::Reflected", "ATest", "Reflected", PLUGIN_FIELD_ANY_SIZE, 4, {}, v, e)
+			&& e.find("bad request: PLUGIN_FIELD_ANY_SIZE") == 0, "field: the any-size flag with a non-zero size is refused");
+		Check(!Field("ATest::Native", "ATest", "Native", PLUGIN_FIELD_NATIVE | PLUGIN_FIELD_ANY_SIZE, 0, {}, v, e)
+			&& e.find("bad request: PLUGIN_FIELD_ANY_SIZE") == 0, "field: a native member refuses the any-size flag");
+		Check(!Field("ATest::Missing", "ATest", "Missing", PLUGIN_FIELD_ANY_SIZE, 0, {}, v, e) && e == "reflection: no member Missing",
+			"field: the any-size flag does not accept a member the game does not have");
 		Check(Field("ATest::Renamed", "ATest", "NewName", 0, 4, { FieldRow(128786, 0x44, 4) }, v, e) && v.offset == 0x44,
 			"field: an own row under the new name agrees with the map's rename row");
 		Check(Field("ATest::Reflected", "ATest", "Reflected", 0, 8, {}, v, e) && v.offset == 0x30

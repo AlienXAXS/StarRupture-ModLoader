@@ -417,6 +417,12 @@ namespace ModLoaderLogger
 				PluginHookReport::RecordFailure(self, key, "bad field request", true, PluginHookReport::Cause::Request);
 				return false;
 			}
+			// The map's ModLoader/ keys are the loader's own, as for a scan.
+			if (self->name && strcmp(self->name, "ModLoader") == 0)
+			{
+				PluginHookReport::RecordFailure(self, key, "a plugin may not be named ModLoader", true, PluginHookReport::Cause::Request);
+				return false;
+			}
 
 			VersionMap::FieldRequest field;
 			field.key         = local.key;

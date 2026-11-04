@@ -481,8 +481,9 @@ Plugins that declare they take their game data from the map (`PLUGIN_MAP_MIGRATE
 run on any listed build. A plugin that does not declare it loads only on the build it was compiled
 against, and shows **Incompatible** on the others.
 
-On a client build with `[AutoUpdate] Enabled` on, the loader can also fetch a newer map as a signed
-file, so a new game build can be supported without a loader update. A server build never does.
+On a client build with `[AutoUpdate] Enabled` on, the loader can also read a newer map from a signed
+file, so a new game build can be supported without a loader update. None is published yet. A server
+build never reads one.
 How the map is chosen, how the feed is fetched, signed and cached, how CI publishes it and what
 each failure looks like is in [VersionMap.md](VersionMap.md).
 
@@ -565,7 +566,7 @@ these for you.
 | `[UE4SS]` | `Enabled` | `0` | Load UE4SS before plugins. `1` if you delete the key |
 | | `Path` | `ue4ss\ue4ss.dll` | Relative to the game executable |
 | `[Debug]` | `ExportKnownGObjects` | `0` | Writes `known_gobjects_dump.txt` |
-| | `DisablePluginVersionMap` | `0` | `1` gives plugins no rows from the loader's version map, so each uses its own patterns and rows, or its feature switches off. For testing a plugin's own locators; the loader keeps the map for itself. Logs a warning at every launch. See [VersionMap.md](VersionMap.md) |
+| | `DisablePluginVersionMap` | `0` | Client only. `1` gives plugins no rows from the loader's version map, so each uses its own patterns and rows, or its feature switches off. For testing a plugin's own locators; the loader keeps the map for itself. Logs a warning at every launch. See [VersionMap.md](VersionMap.md) |
 
 Other files, all under `ModLoader\`:
 
