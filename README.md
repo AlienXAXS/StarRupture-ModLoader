@@ -11,6 +11,8 @@ Like this project? Give it a star here on GitHub!
 
 [Join our Discord server](https://discord.gg/G5a4GYsvrz) to chat about the mod loader and plugins.
 
+Found a bug? [Report it on GitHub](https://github.com/AlienXAXS/StarRupture-ModLoader/issues) and attach your `ModLoader.log` (in `<game>\StarRupture\Binaries\Win64\ModLoader\Logs\`).
+
 ---
 
 ## Installation
