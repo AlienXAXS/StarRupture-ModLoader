@@ -458,7 +458,7 @@ the whole API and you can hot-reload it while the game runs.
 | Preload plugin not running | Run `preload` in the console, or check the `[Preload]` lines in the log. A preload plugin that fails is skipped and the game starts without it. |
 | Game will not start after adding a preload plugin | Launch with `-NoPreload`, or set `Enabled=0` under `[Preload]` in `modloader.ini`. The loader also skips any preload plugin that did not finish loading last launch, and says which it was. Delete `Preload\.state` to let it try again. |
 | A dialog offers "Start Game Without ModLoader" | The game build changed or a scan pattern no longer matches. The mod loader stays off until it is updated. **Copy Details** has the report. `-SkipPatternValidation` overrides an ambiguous or wrong-kind pattern, not a missing one. |
-| A dialog says the game has changed in a way that would break your plugins | At startup the mod loader checks that the game classes it and its plugins read are still laid out the way it was built for. A game update moved some of them. When what moved is read by only some loader features, only those features turn off; when it is read by every plugin, no plugins load this session: start the game without them, or quit until an update is out. The loader writes `ModLoader\compat-report-<CL>.json` (the game build, the executable's SHA-256 and what moved). It is what a loader update is made from, so attach it to your report. |
+| A dialog says the game has changed in a way that would break your plugins | At startup the mod loader checks that the game classes it and its plugins read are still laid out the way it was built for. A game update moved some of them. When what moved is read by only some loader features, only those features turn off; when it is read by every plugin, no plugins load this session: start the game without them, or quit until an update is out. The loader writes `ModLoader\compat-report-<CL>.json` (the game build, the executable's SHA-256 and what moved). It says whether only some features turned off or every plugin did, and is what a loader update is made from, so attach it to your report. |
 | A plugin says "Needs an update to run on CL-..." | The plugin was built for another game build and does not declare that it takes its game data from the version map, so it would read this game's data where its own build had it. It loads on the build it names. Ask its author for an update. See [Game updates](#game-updates) and [VersionMap.md](VersionMap.md). |
 | Logs / diagnostics | Check `ModLoader\Logs\ModLoader.log`. Raise the detail in the **Logging** tab, or set `Level=DEBUG` under `[Logging]` in `ModLoader\modloader.ini`. |
 | One plugin is flooding the log | See [Log Levels](#log-levels) — turn that plugin down on its own, or use `-PluginLogLevel=` if it happens during startup. |
@@ -487,7 +487,8 @@ How the map is chosen, how the feed is fetched, signed and cached, how CI publis
 each failure looks like is in [VersionMap.md](VersionMap.md).
 
 At startup the loader also checks that the game classes it reads are laid out as it was built for. If a
-game update changes a layout, only the features that read it are switched off, not every plugin.
+game update changes a layout, only the features that read it are switched off, not every plugin. A plugin
+that keeps the game's layouts compiled in, instead of taking them from the version map, is not loaded then.
 
 When the map's row decides where a plugin's function is, the loader still checks the plugin's own
 AOB pattern against the running exe, once, and logs a warning if it matches 0 or 2 or more places.
