@@ -104,6 +104,8 @@ reads no site keys. When two loaded plugins share a name, neither reads site key
 
 A key that is not in the map at all (a third-party plugin, or a hook newer than the feed) falls
 back to the plugin's own row and pattern, logged as `not in the loader's map; own pattern`.
+To test a plugin's own locators, `DisablePluginVersionMap=1` under `[Debug]` in `modloader.ini` makes
+every key and field behave that way for plugins; the loader's own lookups keep the map.
 
 Fields follow the same shape: the map's row for the running CL first (else the latest CL's),
 then the plugin's, then `builtOffset` on its `builtCL`. Two rows for one CL that disagree fail

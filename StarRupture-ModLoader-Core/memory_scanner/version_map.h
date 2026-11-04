@@ -111,6 +111,13 @@ namespace VersionMap
 	const MapData& ActiveMap();
 	void SetActiveMap(std::shared_ptr<const MapData> map);
 
+	// modloader.ini [Debug] DisablePluginVersionMap=1: the map serves no rows to
+	// plugins, so each falls back to its own patterns and rows (or its feature
+	// turns off). The loader's own lookups (owner "ModLoader") keep the map.
+	// Set once at startup, before the first lookup.
+	void SetPluginMapOff(bool off);
+	bool PluginMapOff();
+
 	// The feed format this loader reads (the `format` line of a feed).
 	constexpr int kFeedFormat = 1;
 

@@ -224,6 +224,15 @@ DWORD WINAPI MainInitThreadProc(LPVOID)
     ModLoaderLogger::InitializeLogger();
 
 #ifdef MODLOADER_CLIENT_BUILD
+    // modloader.ini [Debug] DisablePluginVersionMap=1 (default 0) takes the map away
+    // from plugins, so a plugin author can test the plugin's own patterns and rows.
+    // Read once; the loader's own lookups keep the map.
+    if (GetPrivateProfileIntW(L"Debug", L"DisablePluginVersionMap", 0, GetModLoaderDirPath(L"modloader.ini").c_str()))
+    {
+        VersionMap::SetPluginMapOff(true);
+        ModLoaderLogger::LogWarn(L"[Map] modloader.ini [Debug] DisablePluginVersionMap=1: plugins get no map rows and use their own patterns and rows");
+    }
+
     // The map every lookup reads is fixed here, once, before anything reads
     // it: the one compiled into the loader, plus the signed feed cached by an
     // earlier launch if it verifies. The server stays on its exact build.
