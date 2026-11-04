@@ -71,7 +71,8 @@ bool AutoUpdateEnabled();
 
 // Records the version a plugin with an update sidecar reports when it loads,
 // if it is newer than the stored one, so the plugin pass never replaces a
-// build installed by hand with an older release. dllFileName is the bare file
+// build installed by hand with an older release. The pass reads the installed
+// DLL itself first; this covers a DLL it could not read. dllFileName is the bare file
 // name ("MyPlugin.dll").
 void NoteInstalledPluginVersion(const wchar_t* dllFileName, const char* version);
 

@@ -414,6 +414,7 @@
     <ClInclude Include="auto_update\auto_updater.h" />
     <ClInclude Include="auto_update\feed_fetch.h" />
     <ClInclude Include="auto_update\http_get.h" />
+    <ClInclude Include="auto_update\plugin_dll_version.h" />
     <ClInclude Include="auto_update\version_compare.h" />
     <ClInclude Include="config\config_manager.h" />
     <ClInclude Include="config\config_edit.h" />

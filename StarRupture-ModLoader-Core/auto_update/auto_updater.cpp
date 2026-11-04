@@ -3,6 +3,7 @@
 
 #include "auto_updater.h"
 #include "http_get.h"
+#include "plugin_dll_version.h"
 #include "version_compare.h"
 #include "feed_fetch.h"
 #include "core/startup_utils.h"
@@ -408,11 +409,14 @@ static bool DownloadPlugin(const char* url,
 //
 // The installed version per plugin is stored in update_state.ini under
 // [PluginVersions], keyed by the DLL filename (e.g. "MyPlugin.dll=1.2.0"): the
-// version last downloaded, raised to the one the plugin reports when it loads
-// if that is newer (NoteInstalledPluginVersion), so a build installed by hand
-// is known. Only a remote version newer than the stored one replaces the DLL,
-// using the same atomic .tmp -> rename pattern as the central updater. With no
-// stored version yet, nothing is downloaded until the plugin has loaded once.
+// version last downloaded, raised to the one the installed DLL reports for
+// itself if that is newer, so a build installed by hand is known. The pass
+// reads the DLL before it compares (PluginDllVersion::Read), because it runs
+// before the plugins load; NoteInstalledPluginVersion does the same raise once
+// a plugin has loaded, for a DLL that could not be read. Only a remote version
+// newer than that replaces the DLL, using the same atomic .tmp -> rename
+// pattern as the central updater. With no version known at all, nothing is
+// downloaded until the plugin has loaded once.
 // ===========================================================================
 
 struct PluginSidecar
@@ -561,8 +565,7 @@ static void WritePluginVersion(const wchar_t* iniPath,
 
 void NoteInstalledPluginVersion(const wchar_t* dllFileName, const char* version)
 {
-    const AutoUpdateVersion::ParsedVersion installed = AutoUpdateVersion::ParseVersion(version);
-    if (!dllFileName || !installed.valid)
+    if (!dllFileName || !version)
         return;
 
     wchar_t stateIniPath[MAX_PATH]{};
@@ -571,10 +574,8 @@ void NoteInstalledPluginVersion(const wchar_t* dllFileName, const char* version)
     WideCharToMultiByte(CP_UTF8, 0, dllFileName, -1, key, sizeof(key), nullptr, nullptr);
 
     const std::string stored = ReadPluginVersion(stateIniPath, key);
-    const AutoUpdateVersion::ParsedVersion was = AutoUpdateVersion::ParseVersion(stored.c_str());
-    if (was.valid && AutoUpdateVersion::CompareVersions(installed, was) <= 0)
-        return;
-    WritePluginVersion(stateIniPath, key, version);
+    if (AutoUpdateVersion::InstalledReplacesStored(version, stored.c_str()))
+        WritePluginVersion(stateIniPath, key, version);
 }
 
 // Fetch and process a single per-plugin manifest.
@@ -634,36 +635,46 @@ static void ProcessPluginSidecar(const PluginSidecar& sc,
         }
     }
 
-    std::string storedVersion = ReadPluginVersion(stateIniPath, sc.dllFilename.c_str());
+    wchar_t wFilename[256]{};
+    MultiByteToWideChar(CP_UTF8, 0, sc.dllFilename.c_str(), -1, wFilename, 256);
 
-    LogToFile::Debug("[AutoUpdate][Sidecar] '%s' stored=%s remote=%s",
+    // The plugins have not loaded yet, so the DLL itself says what is
+    // installed. A build put in by hand can be newer than the version stored
+    // here, and no release older than it may replace it.
+    wchar_t dllPath[MAX_PATH]{};
+    swprintf_s(dllPath, L"%s\\%s", pluginsDir, wFilename);
+    const std::string onDisk = PluginDllVersion::Read(dllPath);
+    const std::string storedVersion = ReadPluginVersion(stateIniPath, sc.dllFilename.c_str());
+
+    LogToFile::Debug("[AutoUpdate][Sidecar] '%s' stored=%s installed=%s remote=%s",
                      displayName,
                      storedVersion.empty() ? "<none>" : storedVersion.c_str(),
+                     onDisk.empty() ? "<unreadable>" : onDisk.c_str(),
                      remoteVersion.c_str());
 
-    if (storedVersion.empty())
+    // By number, so an older release never replaces a newer build. A version
+    // that does not parse falls back to "differs".
+    const AutoUpdateVersion::PluginUpdateDecision decision =
+        AutoUpdateVersion::DecidePluginUpdate(storedVersion.c_str(), onDisk.c_str(), remoteVersion.c_str());
+    if (decision.installed != storedVersion)
+        WritePluginVersion(stateIniPath, sc.dllFilename.c_str(), decision.installed.c_str());
+
+    if (decision.installed.empty())
     {
         LogToFile::Info("[AutoUpdate][Sidecar] '%s' — installed version not known yet (remote %s); "
                         "it is recorded when the plugin loads", displayName, remoteVersion.c_str());
         return;
     }
 
-    // By number, so an older release never replaces a newer build. A version
-    // that does not parse falls back to "differs".
-    const AutoUpdateVersion::ParsedVersion remote = AutoUpdateVersion::ParseVersion(remoteVersion.c_str());
-    const AutoUpdateVersion::ParsedVersion stored = AutoUpdateVersion::ParseVersion(storedVersion.c_str());
-    if (remote.valid && stored.valid ? AutoUpdateVersion::CompareVersions(remote, stored) <= 0
-                                     : storedVersion == remoteVersion)
+    if (!decision.download)
     {
         LogToFile::Info("[AutoUpdate][Sidecar] '%s' — up to date (installed %s, remote %s)",
-                        displayName, storedVersion.c_str(), remoteVersion.c_str());
+                        displayName, decision.installed.c_str(), remoteVersion.c_str());
         return;
     }
 
     LogToFile::Info("[AutoUpdate][Sidecar] '%s' — update available: [%s] -> [%s]",
-                    displayName,
-                    storedVersion.empty() ? "<none>" : storedVersion.c_str(),
-                    remoteVersion.c_str());
+                    displayName, decision.installed.c_str(), remoteVersion.c_str());
 
 #ifdef MODLOADER_CLIENT_BUILD
     {
@@ -673,16 +684,13 @@ static void ProcessPluginSidecar(const PluginSidecar& sc,
     }
 #endif
 
-    wchar_t wFilename[256]{};
-    MultiByteToWideChar(CP_UTF8, 0, sc.dllFilename.c_str(), -1, wFilename, 256);
-
     if (DownloadPlugin(downloadUrl.c_str(), pluginsDir, wFilename, displayName))
     {
         LogToFile::Info("[AutoUpdate][Sidecar] '%s' — updated to %s", displayName, remoteVersion.c_str());
         WritePluginVersion(stateIniPath, sc.dllFilename.c_str(), remoteVersion.c_str());
 #ifdef MODLOADER_CLIENT_BUILD
         UI::UpdateNoticeWindow::AddUpdatedPlugin(displayName,
-                                                 storedVersion.c_str(),
+                                                 decision.installed.c_str(),
                                                  remoteVersion.c_str(),
                                                  notes.c_str());
 #endif

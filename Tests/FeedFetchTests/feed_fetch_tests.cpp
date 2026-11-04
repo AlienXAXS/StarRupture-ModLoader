@@ -8,6 +8,7 @@
 
 #include "auto_update/feed_fetch.h"
 #include "auto_update/http_get.h"
+#include "auto_update/plugin_dll_version.h"
 #include "auto_update/version_compare.h"
 #include "memory_scanner/version_feed.h"
 #include "memory_scanner/version_map.h"
@@ -27,6 +28,14 @@
 #include <ws2tcpip.h>
 
 #pragma comment(lib, "ws2_32.lib")
+
+// This program stands in for a plugin: it exports GetPluginInfo the way a
+// plugin DLL does, so PluginDllVersion::Read can be pointed at it.
+extern "C" __declspec(dllexport) PluginInfo* GetPluginInfo()
+{
+	static PluginInfo info = { "Test", "9.8.7-test", "test", "test", PLUGIN_INTERFACE_VERSION_MAX, 0 };
+	return &info;
+}
 
 using VersionFeed::PublicKey;
 using VersionFeed::SignedFeed;
@@ -369,6 +378,52 @@ int main()
 		Check(cmp("1.23.0.0", "v1.23.0") == 0, "version: a file version equals its tag");
 		Check(cmp("v1.10.0", "v1.9.9") > 0, "version: compared by number, not as text");
 		Check(!ParseVersion("dev").valid && !ParseVersion("").valid && !ParseVersion(nullptr).valid, "version: no number, not valid");
+	}
+
+	// ---- The plugin pass on the first launch after a hand install -----------
+	{
+		using namespace AutoUpdateVersion;
+
+		// The hole: update_state.ini still holds the last release the updater
+		// wrote down (v0.20.0), a newer release has come out (v0.22.0), and a
+		// build newer than both was put in by hand (0.23.0-rc1) before the
+		// plugin ever loaded. Judged on the stored version alone, the pass
+		// would download v0.22.0 over the hand-installed build.
+		Check(ReleaseIsNewer("v0.22.0", "v0.20.0"), "hole: the old rule offers v0.22.0 over the stored v0.20.0");
+		const PluginUpdateDecision hand = DecidePluginUpdate("v0.20.0", "0.23.0-rc1", "v0.22.0");
+		Check(!hand.download, "hand install: a release older than the installed build is not downloaded");
+		Check(hand.installed == "0.23.0-rc1", "hand install: the installed build becomes the stored version");
+
+		// Nothing stored yet: the DLL is the baseline, so only a newer release is taken.
+		Check(!DecidePluginUpdate("", "0.23.0-rc1", "v0.22.0").download, "no stored version: an older release is not downloaded");
+		Check(DecidePluginUpdate("", "0.21.0", "v0.22.0").download, "no stored version: a newer release is downloaded");
+		Check(DecidePluginUpdate("", "0.21.0", "v0.22.0").installed == "0.21.0", "no stored version: the DLL's version is recorded");
+
+		// A pre-release is never offered its own release.
+		Check(!DecidePluginUpdate("v0.20.0", "0.23.0-rc1", "v0.23.0").download, "a pre-release is not offered its own release");
+
+		// The ordinary update still happens, and a stored version newer than the
+		// DLL (a downgrade by hand) is kept as the bar.
+		Check(DecidePluginUpdate("v0.20.0", "0.20.0", "v0.22.0").download, "an installed release is updated to a newer one");
+		Check(!DecidePluginUpdate("v0.23.0", "0.20.0", "v0.22.0").download, "a stored version newer than the DLL stays the bar");
+
+		// The DLL cannot be read: the stored version decides, as before; with
+		// neither, nothing is downloaded.
+		Check(DecidePluginUpdate("v0.20.0", "", "v0.22.0").download, "unreadable DLL: the stored version decides");
+		const PluginUpdateDecision unknown = DecidePluginUpdate("", "", "v0.22.0");
+		Check(!unknown.download && unknown.installed.empty(), "no version known: nothing is downloaded");
+	}
+
+	// ---- Reading the version out of a DLL image ----------------------------
+	{
+		wchar_t self[MAX_PATH]{};
+		GetModuleFileNameW(nullptr, self, MAX_PATH);
+		Check(PluginDllVersion::Read(self) == "9.8.7-test", "the version a plugin image reports is read");
+		Check(PluginDllVersion::Read(L"C:\\no\\such\\plugin.dll").empty(), "a missing file reads as no version");
+		wchar_t kernel[MAX_PATH]{};
+		GetSystemDirectoryW(kernel, MAX_PATH);
+		wcscat_s(kernel, L"\\kernel32.dll");
+		Check(PluginDllVersion::Read(kernel).empty(), "a DLL that is not a plugin reads as no version");
 	}
 
 	// ---- Stage 1's trigger: the running exe and the cache's age ------------
