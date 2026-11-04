@@ -14,6 +14,7 @@
 #include "console/console_commands.h"
 #include "logging/logger.h"
 #include "plugins/plugin_interface.h"
+#include "plugins/plugin_guard.h"
 
 namespace PluginConsole
 {
@@ -24,15 +25,7 @@ namespace PluginConsole
     // -----------------------------------------------------------------------
     static bool StillMapped(const void* fn)
     {
-        if (!fn) return false;
-
-        HMODULE owner = nullptr;
-        if (!GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
-                                   GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-                                static_cast<LPCSTR>(fn), &owner))
-            return false;
-
-        return owner != nullptr;
+        return PluginGuard::ModuleOf(fn) != nullptr;
     }
 
     // -----------------------------------------------------------------------
@@ -150,10 +143,13 @@ namespace PluginConsole
         for (const std::string& a : args)
             argv.push_back(a.c_str());
 
-        handler(argv.empty() ? nullptr : argv.data(),
-                static_cast<int>(argv.size()),
-                static_cast<PluginConsoleSink>(&out),
-                ctx->userData);
+        if (!PluginGuard::Invoke(handler, "console command",
+                                 argv.empty() ? nullptr : argv.data(),
+                                 static_cast<int>(argv.size()),
+                                 static_cast<PluginConsoleSink>(&out),
+                                 ctx->userData))
+            out.Error("'%s' did not run: plugin '%s' crashed and is switched off. Reload it to use it again.",
+                      args.empty() ? ctx->name.c_str() : args[0].c_str(), ctx->owner.c_str());
     }
 
     // -----------------------------------------------------------------------
@@ -167,8 +163,13 @@ namespace PluginConsole
     class CallbackSink : public ModConsole::Sink
     {
     public:
-        CallbackSink(std::string owner, PluginConsoleOutputCallback onLine, void* userData)
-            : m_owner(std::move(owner)), m_onLine(onLine), m_userData(userData) {}
+        CallbackSink(std::string owner, PluginConsoleOutputCallback onLine,
+                     PluginConsoleCompleteCallback onComplete, void* userData)
+            : m_owner(std::move(owner)), m_onLine(onLine), m_userData(userData),
+              m_module(PluginGuard::ModuleOf(onLine ? reinterpret_cast<const void*>(onLine)
+                                                    : reinterpret_cast<const void*>(onComplete))) {}
+
+        HMODULE Owner() const override { return m_module; }
 
         void Write(ModConsole::LineKind kind, const char* text) override
         {
@@ -181,13 +182,15 @@ namespace PluginConsole
                 return;
             }
 
-            m_onLine(static_cast<PluginConsoleLineKind>(static_cast<int>(kind)), text, m_userData);
+            PluginGuard::Invoke(m_onLine, "console output callback",
+                                static_cast<PluginConsoleLineKind>(static_cast<int>(kind)), text, m_userData);
         }
 
     private:
         std::string                 m_owner;
         PluginConsoleOutputCallback m_onLine;
         void*                       m_userData;
+        HMODULE                     m_module;   // the calling plugin's
     };
 
     // -----------------------------------------------------------------------
@@ -334,7 +337,7 @@ namespace PluginConsole
                                          ownerName.c_str());
                 return;
             }
-            onComplete(userData);
+            PluginGuard::Invoke(onComplete, "console completion callback", userData);
         };
     }
 
@@ -345,7 +348,7 @@ namespace PluginConsole
     {
         if (!self || !self->name || !line || !*line) return false;
 
-        auto sink = std::make_shared<CallbackSink>(self->name, onLine, userData);
+        auto sink = std::make_shared<CallbackSink>(self->name, onLine, onComplete, userData);
         return ModConsole::Dispatch(line, sink, MakeCompletion(self->name, onComplete, userData));
     }
 
@@ -356,7 +359,7 @@ namespace PluginConsole
     {
         if (!self || !self->name || !line || !*line) return false;
 
-        auto sink = std::make_shared<CallbackSink>(self->name, onLine, userData);
+        auto sink = std::make_shared<CallbackSink>(self->name, onLine, onComplete, userData);
 
         // forceGameThread: the caller is typically a socket thread, and one
         // rule for every line beats some running inline there and some a

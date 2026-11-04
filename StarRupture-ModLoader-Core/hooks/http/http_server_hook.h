@@ -59,4 +59,7 @@ namespace Hooks::HttpServer
 	bool AddRawRoute(const char* pluginName, const char* urlPrefix, PluginHttpRouteCallback callback);
 	void RemoveRawRoute(const char* pluginName, const char* urlPrefix);
 
+	// Drops every raw route and request filter that lives in `module` (a plugin being unloaded).
+	void ForgetModule(HMODULE module);
+
 } // namespace Hooks::HttpServer

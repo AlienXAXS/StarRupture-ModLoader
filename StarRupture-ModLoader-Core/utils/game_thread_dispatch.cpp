@@ -2,9 +2,10 @@
 #include "game_thread_dispatch.h"
 
 #include <atomic>
+#include <deque>
 #include <mutex>
-#include <queue>
 #include <variant>
+#include <vector>
 
 namespace GameThreadDispatch
 {
@@ -19,17 +20,40 @@ namespace GameThreadDispatch
         // separate queues and two mutex lock/unlock cycles per Drain call.
         using VoidTask   = std::packaged_task<void()>;
         using StringTask = std::packaged_task<std::string()>;
-        using Task       = std::variant<VoidTask, StringTask>;
+        struct Task
+        {
+            std::variant<VoidTask, StringTask> run;
+            HMODULE                            owner = nullptr;   // see PostVoid
+        };
 
-        std::mutex       g_mutex;
-        std::queue<Task> g_queue;
+        // g_queue takes new posts. g_batches points at the batch each Drain in
+        // progress is working through (more than one only if a task ticks the
+        // engine), so ForgetModule can reach those too. All under g_mutex.
+        std::mutex                     g_mutex;
+        std::deque<Task>               g_queue;
+        std::vector<std::deque<Task>*> g_batches;
     } // anonymous namespace
 
-    void PostVoid(std::function<void()> fn)
+    void PostVoid(std::function<void()> fn, HMODULE owner)
     {
-        VoidTask task(std::move(fn));
+        Task task{ VoidTask(std::move(fn)), owner };
         std::lock_guard<std::mutex> lock(g_mutex);
-        g_queue.push(std::move(task));
+        g_queue.push_back(std::move(task));
+    }
+
+    void ForgetModule(HMODULE owner)
+    {
+        if (!owner) return;
+        std::deque<Task> dropped;   // destroyed after the lock is released
+        std::lock_guard<std::mutex> lock(g_mutex);
+        std::vector<std::deque<Task>*> lists = g_batches;
+        lists.push_back(&g_queue);
+        for (std::deque<Task>* list : lists)
+            for (auto it = list->begin(); it != list->end(); )
+            {
+                if (it->owner == owner) { dropped.push_back(std::move(*it)); it = list->erase(it); }
+                else ++it;
+            }
     }
 
     std::future<std::string> PostString(std::function<std::string()> fn)
@@ -38,7 +62,7 @@ namespace GameThreadDispatch
         std::future<std::string> fut = task.get_future();
         {
             std::lock_guard<std::mutex> lock(g_mutex);
-            g_queue.push(std::move(task));
+            g_queue.push_back(Task{ std::move(task), nullptr });
         }
         return fut;
     }
@@ -58,21 +82,34 @@ namespace GameThreadDispatch
     {
         g_gameThreadId.store(GetCurrentThreadId(), std::memory_order_relaxed);
 
-        // Swap under lock so tasks queued during Drain do not deadlock.
-        std::queue<Task> local;
+        // This frame's batch is what was queued when Drain began; tasks posted
+        // while it runs wait for the next tick. Each task is taken out under
+        // the lock and run without it, so a task can post, or ForgetModule
+        // what is left of the batch.
+        std::deque<Task> batch;
         {
             std::lock_guard<std::mutex> lock(g_mutex);
-            local.swap(g_queue);
+            batch.swap(g_queue);
+            g_batches.push_back(&batch);
         }
 
-        while (!local.empty())
+        for (;;)
         {
-            Task& t = local.front();
-            if (std::holds_alternative<VoidTask>(t))
-                std::get<VoidTask>(t)();
+            Task t;
+            {
+                std::lock_guard<std::mutex> lock(g_mutex);
+                if (batch.empty())
+                {
+                    g_batches.pop_back();
+                    break;
+                }
+                t = std::move(batch.front());
+                batch.pop_front();
+            }
+            if (std::holds_alternative<VoidTask>(t.run))
+                std::get<VoidTask>(t.run)();
             else
-                std::get<StringTask>(t)();
-            local.pop();
+                std::get<StringTask>(t.run)();
         }
     }
 } // namespace GameThreadDispatch

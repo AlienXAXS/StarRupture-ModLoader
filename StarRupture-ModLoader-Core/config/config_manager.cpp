@@ -1,6 +1,7 @@
 #include "config_manager.h"
 #include "config_edit.h"
 #include "logging/logger.h"
+#include <algorithm>
 #include <string>
 #include <fstream>
 #include <sstream>
@@ -433,10 +434,32 @@ namespace ModLoaderLogger
 				}
 			}
 
-			if (entry.description && entry.description[0])
+			// A Choice's description is "<text>|<choice>|<choice>": the text
+			// goes on the comment line, the choices on a line of their own.
+			std::string comment = entry.description ? entry.description : "";
+			std::string choices;
+			if (entry.type == ConfigValueType::Choice)
+			{
+				comment.resize((std::min)(comment.find('|'), comment.size()));
+				for (const std::string& choice : ConfigEdit::GetChoices(&entry))
+				{
+					if (!choices.empty())
+						choices += " | ";
+					choices += choice;
+				}
+			}
+
+			if (!comment.empty())
 			{
 				content += "; ";
-				content += entry.description;
+				content += comment;
+				content += "\r\n";
+			}
+
+			if (!choices.empty())
+			{
+				content += "; Choices: ";
+				content += choices;
 				content += "\r\n";
 			}
 
@@ -484,6 +507,8 @@ namespace ModLoaderLogger
 		switch (entry.type)
 		{
 		case ConfigValueType::String:
+		case ConfigValueType::Choice:
+		case ConfigValueType::Hidden:
 			ConfigWriteString(self, entry.section, entry.key, entry.defaultValue);
 			break;
 		case ConfigValueType::Integer:

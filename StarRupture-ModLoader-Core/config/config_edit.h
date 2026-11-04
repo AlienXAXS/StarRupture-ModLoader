@@ -1,10 +1,26 @@
 #pragma once
 
+#include "plugins/plugin_interface.h"
+#include <string>
+#include <vector>
+
+// Schema helpers the config writer uses too, so built for the server as well.
+namespace ConfigEdit
+{
+    // A Choice entry's choices: the '|'-separated parts of its description
+    // after the first, which is the description itself. Each is trimmed, and
+    // empty parts are skipped. Empty for an entry of any other type.
+    std::vector<std::string> GetChoices(const ConfigEntry* entry);
+
+    // Whether two stored values say the same thing: the same text, or two
+    // numbers of equal value, so "-1.000000" (what WriteFloat writes) equals
+    // a default of "-1".
+    bool SameValue(const char* a, const char* b);
+}
+
 #ifdef MODLOADER_CLIENT_BUILD
 
-#include "plugins/plugin_interface.h"
 #include <cstddef>
-#include <vector>
 
 // ---------------------------------------------------------------------------
 // ConfigEdit

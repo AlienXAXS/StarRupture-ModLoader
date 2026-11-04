@@ -4,6 +4,7 @@
 #include "UI/imgui_backend.h"
 #include "logging/logger.h"
 #include "plugins/plugin_manager.h"
+#include "plugins/plugin_guard.h"
 
 #include <windows.h>
 #include <mutex>
@@ -244,6 +245,20 @@ namespace Hooks::Input
 		s_blockingMap.clear();
 		s_initialized = false;
 		ModLoaderLogger::LogInfo(L"[KeybindRegistry] Shutdown - all keybinds cleared");
+	}
+
+	// Drops every keybind whose callback lives in `module`: a plugin being
+	// unloaded, including a bind a live rebind patched in place that the
+	// plugin's own unregister could not find. Before FreeLibrary.
+	void ForgetModule(HMODULE module)
+	{
+		std::lock_guard<std::mutex> lock(s_mutex);
+		const size_t dropped =
+			PluginGuard::ForgetModule(s_callbacks, module, [](const CallbackEntry& e) { return e.callback; }) +
+			PluginGuard::ForgetModule(s_namedCombos, module, [](const NamedComboEntry& e) { return e.callback; }) +
+			PluginGuard::ForgetModule(s_comboCallbacks, module, [](const ComboCallbackEntry& e) { return e.callback; });
+		if (dropped)
+			ModLoaderLogger::LogDebug(L"[KeybindRegistry] Dropped %zu keybind(s) of an unloading plugin", dropped);
 	}
 
 	// -----------------------------------------------------------------------
@@ -666,6 +681,88 @@ namespace Hooks::Input
 	}
 
 	// -----------------------------------------------------------------------
+	// Typing gate
+	//
+	// Keybinds must not fire while the player is typing into a game text
+	// field (chat, save name, etc.) or an ImGui text field inside a
+	// modloader/plugin panel -- e.g. a plugin bound to "P" must not close its
+	// own panel when the player types "Port" into a text box inside that
+	// panel. Escape is exempt: it must still be able to close a window while
+	// a text field is focused, as are any keys registered via SetTypingExempt.
+	// ProcessWindowMessage asks this on a key-down, on the game thread (the
+	// game's text-focus check walks GObjects), and keeps the answer per key
+	// for IsKeyHeld.
+	// -----------------------------------------------------------------------
+	static bool TypingWithholds(EModKey key)
+	{
+		return key != EModKey::Escape &&
+		       !IsTypingExempt(key) &&
+		       (Hooks::TextInputFocus::IsGameTextInputFocused() || UI::ImGuiBackend::IsTextInputActive());
+	}
+
+	// One bit per virtual key. s_polledKeys: keys IsKeyHeld has been asked
+	// about, which the gate then checks with no keybind on them.
+	// s_withheldKeys: keys whose last key-down the gate withheld, until their
+	// key-up.
+	static std::atomic<uint64_t> s_polledKeys[4]   = {};
+	static std::atomic<uint64_t> s_withheldKeys[4] = {};
+
+	static bool KeyBit(const std::atomic<uint64_t> (&bits)[4], int vk)
+	{
+		return vk > 0 && vk < 256 && ((bits[vk >> 6].load() >> (vk & 63)) & 1) != 0;
+	}
+
+	static void SetKeyBit(std::atomic<uint64_t> (&bits)[4], int vk, bool on)
+	{
+		if (vk <= 0 || vk >= 256) return;
+		const uint64_t bit = uint64_t{ 1 } << (vk & 63);
+		if (on) bits[vk >> 6].fetch_or(bit);
+		else    bits[vk >> 6].fetch_and(~bit);
+	}
+
+	// -----------------------------------------------------------------------
+	// IsKeyHeld (v72) -- polled state, for a plugin's tick
+	//
+	// The name goes through ParseComboString, as RegisterKeybindByName's does,
+	// and the modifiers follow DispatchCombo's rule for a named entry: a name
+	// with modifier tokens needs exactly those held ("Shift+K" is not held
+	// while Ctrl is down too), and a name without any is held whatever else
+	// is. A key whose key-down the typing gate withheld is not held either.
+	// Nothing is locked or allocated, so any thread may call it.
+	// -----------------------------------------------------------------------
+	bool IsKeyHeld(const char* keyName)
+	{
+		EModKeyModifiers wanted = EModKeyMod_None;
+		const EModKey key = ParseComboString(keyName, wanted);
+		int vk = ModKeyToVK(key);
+		if (key == EModKey::Unknown || vk == 0)
+			return false;
+
+		// The gate checks a key's key-downs from its first poll on.
+		if (!KeyBit(s_polledKeys, vk))
+			SetKeyBit(s_polledKeys, vk, true);
+
+		// GetAsyncKeyState reads the keyboard, not the game's input, so a key
+		// held in another window would read as held here without this.
+		const HWND game = UI::ImGuiBackend::GetGameWindow();
+		if (!game || GetForegroundWindow() != game)
+			return false;
+
+		// Pressed while the player was typing: no callback saw it either.
+		if (KeyBit(s_withheldKeys, vk))
+			return false;
+
+		// GetAsyncKeyState reads the physical mouse buttons, the callbacks the
+		// logical ones, so follow the player's swapped buttons.
+		if ((vk == VK_LBUTTON || vk == VK_RBUTTON) && GetSystemMetrics(SM_SWAPBUTTON))
+			vk = (vk == VK_LBUTTON) ? VK_RBUTTON : VK_LBUTTON;
+		if (!(GetAsyncKeyState(vk) & 0x8000))
+			return false;
+
+		return wanted == EModKeyMod_None || SampleCurrentModifiers() == wanted;
+	}
+
+	// -----------------------------------------------------------------------
 	// Combo registration (v28)
 	// -----------------------------------------------------------------------
 	void RegisterKeybindCombo(EModKey key, EModKeyModifiers mods, EModKeyEvent event, PluginKeybindComboCallback callback)
@@ -875,7 +972,7 @@ namespace Hooks::Input
 		{
 			if (cb)
 			{
-				try { cb(key, event); }
+				try { PluginGuard::Invoke(cb, "keybind callback", key, event); }
 				catch (...)
 				{
 				}
@@ -948,11 +1045,11 @@ namespace Hooks::Input
 
 		for (auto cb : namedToCall)
 		{
-			if (cb) try { cb(key, event); } catch (...) {}
+			if (cb) try { PluginGuard::Invoke(cb, "keybind callback", key, event); } catch (...) {}
 		}
 		for (auto cb : advToCall)
 		{
-			if (cb) try { cb(key, mods, event); } catch (...) {}
+			if (cb) try { PluginGuard::Invoke(cb, "keybind callback", key, mods, event); } catch (...) {}
 		}
 	}
 
@@ -1129,34 +1226,39 @@ namespace Hooks::Input
 
 		if (mk == EModKey::Unknown) return false;
 
+		const int vk = ModKeyToVK(mk);
+
+		// A key-up ends what the typing gate kept for the key-down, a key-up
+		// the capture check below swallows included.
+		if (msg == WM_KEYUP || msg == WM_SYSKEYUP)
+			SetKeyBit(s_withheldKeys, vk, false);
+
 		// The rebind modal reads keys with GetAsyncKeyState, not messages, so
 		// skipping dispatch here costs it nothing. Not swallowed either: ImGui
 		// still needs the key-up to keep its own key state straight.
 		if (KeybindCaptureSuppressing())
 			return false;
 
-		int vk = ModKeyToVK(mk);
 		const bool isModifierKey = (vk == VK_LCONTROL || vk == VK_RCONTROL ||
 		                             vk == VK_LSHIFT   || vk == VK_RSHIFT   ||
 		                             vk == VK_LMENU    || vk == VK_RMENU);
 
-		// Do not fire keyboard keybinds while the player is typing into a
-		// game text field (chat, save name, etc.) or an ImGui text field
-		// inside a modloader/plugin panel -- e.g. a plugin bound to "P"
-		// must not close its own panel when the player types "Port" into a
-		// text box inside that panel. Escape is exempt: it must still be
-		// able to close a window while a text field is focused, as are
-		// any keys registered via SetTypingExempt.
-		// Returning false (not blocked) lets the keystroke flow on to the
-		// game/ImGui so it reaches the text box.  Only Pressed is gated:
-		// letting Released through means a key held when focus changed does
-		// not get stuck down in a plugin's view.  Mouse buttons are unaffected.
-		if ((msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN) &&
-		    mk != EModKey::Escape &&
-		    !IsTypingExempt(mk) &&
-		    HasAnyRegistrationForKey(mk) &&
-		    (Hooks::TextInputFocus::IsGameTextInputFocused() || UI::ImGuiBackend::IsTextInputActive()))
-			return false;
+		// The typing gate (TypingWithholds). Returning false (not blocked)
+		// lets the keystroke flow on to the game/ImGui so it reaches the text
+		// box.  Only Pressed is gated: letting Released through means a key
+		// held when focus changed does not get stuck down in a plugin's view.
+		// Mouse buttons are unaffected.  The registration and poll checks keep
+		// the game text-focus scan off the hot path for keys nobody watches.
+		// A key that is only polled goes on from here, as a key nothing is
+		// bound to always has.
+		if (msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN)
+		{
+			const bool registered = HasAnyRegistrationForKey(mk);
+			const bool withheld   = (registered || KeyBit(s_polledKeys, vk)) && TypingWithholds(mk);
+			SetKeyBit(s_withheldKeys, vk, withheld);
+			if (registered && withheld)
+				return false;
+		}
 
 		EModKeyModifiers mods = SampleCurrentModifiers();
 		Dispatch(mk, mods, event);

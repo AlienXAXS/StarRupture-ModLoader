@@ -1,5 +1,6 @@
 #pragma once
 
+#include <windows.h>
 #include <functional>
 #include <future>
 #include <string>
@@ -23,7 +24,16 @@ namespace GameThreadDispatch
     // Post a void callable.  Returns immediately.  The callable is invoked on
     // the game thread during the next engine tick.
     // Thread-safe; may be called from any thread.
-    void PostVoid(std::function<void()> fn);
+    //
+    // `owner` is the plugin DLL the callable calls into, or null for the
+    // loader's own work. ForgetModule drops an owner's tasks before its DLL is
+    // freed.
+    void PostVoid(std::function<void()> fn, HMODULE owner = nullptr);
+
+    // Drops every task posted for `owner` that has not run yet, including the
+    // rest of the batch Drain is running right now (an unload that runs as a
+    // task drops whatever its plugin queued behind it). Any thread.
+    void ForgetModule(HMODULE owner);
 
     // Post a callable that returns std::string.  Returns a future the calling
     // thread can block on.  Thread-safe; may be called from any thread.

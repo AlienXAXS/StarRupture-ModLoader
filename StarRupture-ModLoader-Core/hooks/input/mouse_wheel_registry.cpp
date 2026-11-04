@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "mouse_wheel_registry.h"
 #include "logging/logger.h"
+#include "plugins/plugin_guard.h"
 
 #include <windows.h>
 #include <windowsx.h>
@@ -173,7 +174,7 @@ namespace Hooks::MouseWheel
 		for (const Entry& e : toCall)
 		{
 			bool consumed = false;
-			try { consumed = e.callback(&ev, e.userData); }
+			try { PluginGuard::InvokeInto(&consumed, e.callback, "mouse-wheel callback", &ev, e.userData); }
 			catch (...)
 			{
 				ModLoaderLogger::LogError(L"[MouseWheel] Wheel callback %p threw -- treated as not consumed",

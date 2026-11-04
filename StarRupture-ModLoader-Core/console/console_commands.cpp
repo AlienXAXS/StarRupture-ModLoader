@@ -1,4 +1,5 @@
 #include "console_commands.h"
+#include "core/sdk_globals.h"
 
 #include <windows.h>
 
@@ -23,6 +24,7 @@
 #include "plugins/plugin_hook_report.h"
 #include "plugins/plugin_interface.h"
 #include "plugins/plugin_manager.h"
+#include "plugins/reload_policy.h"
 #include "preload/preload_manager.h"
 #include "hooks/hook_broker.h"
 #include "hooks/game/engine_exec/engine_exec.h"
@@ -474,19 +476,38 @@ namespace ModConsole
         {
             const PluginManager::PluginStatus& s = statuses[static_cast<size_t>(i)];
 
+            // "Loaded (2 off)": it runs, with that many features turned off for
+            // this game build (see `hookfailures`).
+            char loadedState[24] = "Loaded";
+            const int featuresOff = s.isLoaded ? PluginHookReport::GetFeaturesOffCount(s.name) : 0;
+            if (featuresOff > 0)
+                sprintf_s(loadedState, "Loaded (%d off)", featuresOff);
+
             const char* state = "Unloaded";
             if (s.isWrongTarget)        state = "Wrong target";
             else if (s.hookScanFailed)  state = "Hooks failed";
             else if (s.isOutOfDate)     state = s.needsModLoaderUpdate ? "Needs loader" : "Needs update";
-            else if (s.isLoaded)        state = "Loaded";
+            else if (s.isCrashed)       state = "Crashed";
+            else if (s.isLoaded)        state = loadedState;
 
-            out.Printf(s.isWrongTarget || s.isOutOfDate || s.hookScanFailed ? LineKind::Error : LineKind::Output,
+            const bool crashed = s.isCrashed && !s.isWrongTarget && !s.hookScanFailed && !s.isOutOfDate;
+            out.Printf(s.isWrongTarget || s.isOutOfDate || s.hookScanFailed || crashed ? LineKind::Error : LineKind::Output,
                        "%-3d %-26s %-12s %-14s %s",
                        i,
                        s.name[0]     ? s.name    : "?",
                        s.version[0]  ? s.version : "?",
                        state,
                        s.fileName[0] ? s.fileName : "?");
+
+            // Switched off after a fault in one of its callbacks: what and where.
+            if (crashed)
+                out.Notice("      crashed: %s -- reload or unload it", s.crashReason);
+
+            // A running plugin the loader will not unload or reload right now,
+            // or an unloaded one it will not load, and why.
+            const char* block = s.isLoaded && s.unloadBlock[0] ? s.unloadBlock : s.reloadBlock;
+            if (block[0] && !s.isWrongTarget && !s.isOutOfDate && !s.hookScanFailed)
+                out.Notice("      %s", block);
         }
     }
 
@@ -505,8 +526,11 @@ namespace ModConsole
         for (int index : targets)
         {
             const std::string name = DisplayNameForIndex(index);
-            if (PluginManager::ReloadPlugin(index))
+            std::string refusal;
+            if (PluginManager::ReloadPlugin(index, &refusal))
                 out.Out("Reloaded %s.", name.c_str());
+            else if (!refusal.empty())
+                out.Error("Reload refused for %s: %s", name.c_str(), refusal.c_str());
             else
                 out.Error("Reload FAILED for %s -- see modloader.log.", name.c_str());
         }
@@ -527,8 +551,11 @@ namespace ModConsole
         for (int index : targets)
         {
             const std::string name = DisplayNameForIndex(index);
-            if (PluginManager::UnloadPlugin(index))
+            std::string refusal;
+            if (PluginManager::UnloadPlugin(index, &refusal))
                 out.Out("Unloaded %s.", name.c_str());
+            else if (!refusal.empty())
+                out.Error("Unload refused for %s: %s", name.c_str(), refusal.c_str());
             else
                 out.Notice("%s was not loaded.", name.c_str());
         }
@@ -565,8 +592,11 @@ namespace ModConsole
                 continue;
             }
 
-            if (PluginManager::ReloadPlugin(index))
+            std::string refusal;
+            if (PluginManager::ReloadPlugin(index, &refusal))
                 out.Out("Loaded %s.", name.c_str());
+            else if (!refusal.empty())
+                out.Error("Load refused for %s: %s", name.c_str(), refusal.c_str());
             else
                 out.Error("Load FAILED for %s -- see modloader.log.", name.c_str());
         }
@@ -574,11 +604,20 @@ namespace ModConsole
 
     static void Cmd_Rescan(const std::vector<std::string>&, Sink& out)
     {
-        const int loaded = PluginManager::ScanForNewPlugins();
-        if (loaded > 0)
-            out.Out("Loaded %d new plugin(s).", loaded);
-        else
+        std::vector<PluginManager::ScanResult> results;
+        const int loaded = PluginManager::ScanForNewPlugins(&results);
+        if (results.empty())
+        {
             out.Notice("No new plugin DLLs found.");
+            return;
+        }
+
+        out.Out("Loaded %d new plugin(s), %d new DLL(s) found:", loaded, static_cast<int>(results.size()));
+        for (const PluginManager::ScanResult& r : results)
+        {
+            out.Printf(r.status == PluginManager::ScanStatus::Live ? LineKind::Output : LineKind::Error,
+                       "%-26s %-14s %s (%s)", r.name.c_str(), PluginManager::ScanStatusLabel(r.status), r.action.c_str(), r.fileName.c_str());
+        }
     }
 
     // The dedicated server's only view of the hook report -- there is no
@@ -611,11 +650,19 @@ namespace ModConsole
                            fail.required ? "required" : "optional", fail.hookName.c_str());
                 out.Notice("          %s", fail.detail.c_str());
             }
+
+            for (const PluginHookReport::FeatureOff& feature : r.featuresOff)
+            {
+                out.Out("      [feature off] %s", feature.title.c_str());
+                for (const PluginHookReport::FeatureMiss& miss : feature.misses)
+                    out.Notice("          %s: %s", miss.key.c_str(), miss.detail.c_str());
+            }
         }
 
         out.Notice("A hook that no longer resolves usually means the game updated and the");
-        out.Notice("plugin needs a new build. Any unresolved hook stops the plugin loading --");
-        out.Notice("required or optional, and a pattern that matches more than once counts as");
+        out.Notice("plugin needs a new build. A hook the plugin cannot do without stops it");
+        out.Notice("loading; a hook only one feature needs turns that feature off and the");
+        out.Notice("rest of the plugin runs. A pattern that matches more than once counts as");
         out.Notice("unresolved too. Full detail is in modloader.log.");
     }
 
@@ -896,7 +943,7 @@ namespace ModConsole
                 loc.z = atof(args[first + 2].c_str());
                 return "the given coordinates";
             }
-            if (SDK::UWorld* world = SDK::UWorld::GetWorld())
+            if (SDK::UWorld* world = SdkGlobals::GetWorld())
             {
                 if (SDK::APawn* pawn = SDK::UGameplayStatics::GetPlayerPawn(world, 0))
                 {
@@ -1000,7 +1047,7 @@ namespace ModConsole
         {
             static SDK::UUserWidget* s_widget = nullptr;   // the last one opened by this command
 
-            SDK::UWorld* world = SDK::UWorld::GetWorld();
+            SDK::UWorld* world = SdkGlobals::GetWorld();
             SDK::APlayerController* pc = world ? SDK::UGameplayStatics::GetPlayerController(world, 0) : nullptr;
             if (!world || !pc)
             {
@@ -1681,7 +1728,7 @@ namespace ModConsole
             {
                 RunHandler(cmd, args, sink);
                 if (onComplete) onComplete();
-            });
+            }, sink->Owner());
             return;
         }
 
@@ -1840,6 +1887,6 @@ namespace ModConsole
         if (GameThreadDispatch::IsGameThread())
             run();
         else
-            GameThreadDispatch::PostVoid(std::move(run));
+            GameThreadDispatch::PostVoid(std::move(run), sink->Owner());
     }
 }

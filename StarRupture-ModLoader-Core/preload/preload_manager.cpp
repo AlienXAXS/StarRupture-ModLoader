@@ -5,6 +5,8 @@
 #include "core/globals.h"
 #include "core/startup_utils.h"
 #include "memory_scanner/hook_scanner_interface.h"
+#include "memory_scanner/version_map.h"
+#include "hooks/game/version_map.generated.h"
 #include "plugins/plugin_hook_report.h"
 #include "logging/log.h"
 #include "logging/logger.h"
@@ -443,7 +445,7 @@ namespace PreloadManager
 		// Returns true when the plugin is running. On any failure the module is
 		// freed, every hook it managed to install is taken back out, and the
 		// caller carries on with the next one.
-		bool Activate(Loaded& entry)
+		bool Activate(Loaded& entry, bool nameShared)
 		{
 			Record record;
 			record.fileName = entry.fileName;
@@ -462,7 +464,7 @@ namespace PreloadManager
 			if (entry.scan)
 			{
 				PluginHookReport::BeginSession(&entry.self, entry.name.c_str(),
-					entry.fileName.c_str(), /*preload*/ true);
+					entry.fileName.c_str(), /*preload*/ true, nameShared);
 
 				const bool survived = CallScanSEH(entry.scan, &entry.self,
 					ModLoaderLogger::GetPluginHookScanner());
@@ -600,6 +602,19 @@ namespace PreloadManager
 			return;
 		}
 
+		// A preload plugin has no PluginInfo tail and no way to take this build's
+		// layouts from the version map, so it is judged as built on
+		// VersionMap::kLegacyPluginCL (VersionMap::OffBuildRefusal) and runs
+		// only there.
+		const uint32_t runningCL = VersionMap::RunningExe().cl;
+		if (runningCL != VersionMap::kLegacyPluginCL)
+		{
+			g_skipReason = "game build CL-" + std::to_string(runningCL) + " is not CL-"
+				+ std::to_string(VersionMap::kLegacyPluginCL) + ", the build preload plugins are written for";
+			LogToFile::Info("[Preload] Phase skipped: %s", g_skipReason.c_str());
+			return;
+		}
+
 		const std::vector<Candidate> candidates = CollectCandidates();
 		if (candidates.empty())
 		{
@@ -632,11 +647,17 @@ namespace PreloadManager
 				return _stricmp(a->fileName.c_str(), b->fileName.c_str()) < 0;
 			});
 
-		// Pass 2: scan and install, in that order.
+		// Pass 2: scan and install, in that order. The version map keys a
+		// plugin's own sites by its name, so a name two preload plugins share
+		// reads none (VersionMap::ResolveMapKey).
 		int index = 0;
 		for (auto& entry : vetted)
 		{
 			++index;
+			const bool nameShared = std::any_of(vetted.begin(), vetted.end(), [&](const std::unique_ptr<Loaded>& other)
+				{ return other && other != entry && other->module && _stricmp(other->name.c_str(), entry->name.c_str()) == 0; })
+				|| std::any_of(g_running.begin(), g_running.end(), [&](const std::unique_ptr<Loaded>& other)
+				{ return _stricmp(other->name.c_str(), entry->name.c_str()) == 0; });
 #ifdef MODLOADER_CLIENT_BUILD
 			{
 				wchar_t message[192]{};
@@ -645,7 +666,7 @@ namespace PreloadManager
 				Splash::SetSubProgress(static_cast<float>(index) / static_cast<float>(vetted.size()));
 			}
 #endif
-			if (Activate(*entry))
+			if (Activate(*entry, nameShared))
 				g_running.push_back(std::move(entry));
 		}
 
@@ -701,10 +722,11 @@ namespace PreloadManager
 				CallShutdownSEH(entry->shutdown);
 		}
 
-		// Deliberately no FreeLibrary. The loader is shutting down, the process
-		// is on its way out, and unmapping a module that may still have a thread
-		// or a callback in flight buys nothing at this point. The hooks are
-		// gone, which is the part that would have crashed.
+		// Deliberately no FreeLibrary. The loader is shutting down (or, for the
+		// layout safe-off, the plugins are being switched off for the session),
+		// and unmapping a module that may still have a thread or a callback in
+		// flight buys nothing at this point. The hooks are gone, which is the
+		// part that would have crashed.
 		g_running.clear();
 	}
 
@@ -712,6 +734,24 @@ namespace PreloadManager
 	{
 		std::lock_guard<std::mutex> lock(g_mutex);
 		return g_records;
+	}
+
+	std::vector<std::string> FindNewDlls()
+	{
+		std::lock_guard<std::mutex> lock(g_mutex);
+
+		std::vector<std::string> out;
+		if (!g_didRun)
+			return out;
+
+		for (const Candidate& c : CollectCandidates())
+		{
+			const bool seen = std::any_of(g_records.begin(), g_records.end(),
+				[&](const Record& r) { return EqualsNoCase(r.fileName, c.fileName); });
+			if (!seen)
+				out.push_back(c.fileName);
+		}
+		return out;
 	}
 
 	bool DidRun()

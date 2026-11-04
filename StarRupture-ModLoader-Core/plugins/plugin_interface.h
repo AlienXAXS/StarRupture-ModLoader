@@ -1,6 +1,7 @@
 #pragma once
 
 #include <windows.h>
+#include <cstddef>
 #include <cstdint>
 
 // v19: Introduced IPluginSelf.  MIN bumped to 19.
@@ -677,12 +678,147 @@
 //      difference except that the crash is gone and a freed slot becomes
 //      reusable a frame or two later.
 //
+// v71 (2026-10-30): Read-only UI state, so a plugin can tell what is on
+//      screen without detecting it itself, and two new config entry types.
+//      Every addition is appended at the BOTTOM of its struct or enum, so
+//      nothing a v70 plugin reads by offset moved and MIN stays at 70.
+//
+//      Added IPluginGameMenu::IsPauseMenuOpen (the game's Escape menu is
+//      active) and IPluginUIEvents::IsOverlayOpen (a loader or plugin
+//      window has exclusive input capture). Both are safe from any thread.
+//
+//      Added IModLoaderImGui::IsKeyPressed, taking a Win32 virtual-key code.
+//      Keybinds are not dispatched while a text field has focus, so a plugin
+//      with a search box had no way to read Up/Down to move a highlight.
+//
+//      Added PluginWindowFlags_PauseMenuMouseInputs. While the pause menu is
+//      open and no window has exclusive capture, ImGui is fed the mouse (the
+//      game shows its own cursor there), but only a widget with this flag
+//      takes it: it can be hovered, clicked and dragged, and a click on it is
+//      kept from the menu. Every other widget window stays click-through, as
+//      before (child windows inside it are ImGui windows of their own).
+//      The keyboard stays with the game. Nothing changes under exclusive
+//      capture.
+//
+//      Added ConfigValueType::Choice (a dropdown on the config page) and
+//      ConfigValueType::Hidden (a value the plugin saves by itself, which the
+//      page offers to clear instead of drawing a field for). See ConfigEntry.
+//      ConfigEntry itself is unchanged: a Choice carries its choices in
+//      description, so the loader reads a v70 plugin's entry array exactly as
+//      before, and a v70 plugin cannot hand it either new value. A v71 loader
+//      built before these two were added draws both as plain text fields.
+//
+// v72 (2026-10-31): Per-build locators, field requests and the Game-SDK
+//      globals, so one plugin build can run on several game builds. Every
+//      addition is appended at the BOTTOM of its struct, so nothing a v70 or
+//      v71 plugin reads by offset moved and MIN stays at 70.
+//
+//      Added PluginScanCandidate and, appended to PluginScanRequest,
+//      candidates / candidateCount: the locators a plugin knows for one
+//      hookName on other game builds (PLUGIN_SCAN_REQUEST_INIT sets them to
+//      null, 0, which is the v70 behaviour). Added PluginFieldRequest,
+//      PluginFieldCandidate, PluginFieldResult and IPluginHookScanner::
+//      ResolveField, which gives a plugin the offset of a game-class member on
+//      the running build. Added PluginSdkGlobals and IPluginEngineEvents::
+//      GetSdkGlobals, the Game-SDK globals as the loader found them.
+//      PluginScanCandidate and PluginFieldCandidate are passed in arrays with
+//      no stride, so their size is frozen (static_assert below); a later
+//      version that needs more adds a new struct. PluginScanRequest,
+//      IPluginHookScanner and IPluginEngineEvents have every earlier member
+//      offset pinned by static_assert; the structs v71 appends to have their
+//      v70 end pinned.
+//
+//      This is a version of its own, not more of v71, because v71 loaders
+//      already exist without these: their hook scanner and engine event
+//      tables end before ResolveField and GetSdkGlobals, and neither table has
+//      a size field a plugin could check. A v71 loader refuses a v72 plugin
+//      and shows it as needing a newer mod loader, instead of letting it call
+//      past the end of a table.
+//
+//      Also in v72: PLUGIN_SCAN_FLAG_MAP_KEY (hookName names a key in the
+//      loader's own version map, a global one or this plugin's own site, and
+//      pattern and candidates become this plugin's fallback, or null); a tail
+//      on PluginInfo, gameBuiltCL and mapFlags, that says which game build the
+//      plugin's Game-SDK was generated from (filled by default from
+//      PLUGIN_GAME_BUILT_CL, so an unchanged six-member initializer still
+//      compiles and carries it); IPluginInputEvents::IsKeyHeld;
+//      IPluginEngineEvents::IsGameThread. The loader reads the PluginInfo tail
+//      only from a plugin that declares interface 72 or later, because a v70
+//      or v71 PluginInfo ends where the tail starts. A test DLL built against
+//      an earlier draft of v72 has no tail, so the loader reads past its
+//      PluginInfo: rebuild it.
+//
+// v73 (2026-11-01): Features. Added IPluginHookScanner::DeclareFeature and
+//      PluginFeatureDesc. A plugin names the keys a part of it needs; a miss
+//      on one of them turns that feature off instead of refusing the plugin.
+//      The loader refuses a plugin only when it cannot load at all: an
+//      interface newer than it supports, a build it was not written for, a
+//      missing core global, or a miss on a key no feature lists.
+//      DeclareFeature is appended at the BOTTOM of IPluginHookScanner, so
+//      nothing a v70-v72 plugin reads by offset moved and MIN stays at 70.
+//      It is a version of its own because v72 loaders already exist without
+//      it (their scanner table ends at ResolveField): a v72 loader refuses a
+//      v73 plugin as needing a newer mod loader.
+//
+//      The loader no longer refuses a plugin for an older interface; a v70
+//      to v72 plugin gets the slots it was built with. What an older plugin
+//      may not do is read this game build's data where its own build had it,
+//      so it is judged by the game build it was written for: v70 and v71 as
+//      CL-127004, and anything before v70 as a build before CL-127004, which
+//      no supported build is. Such a plugin is never called, which also keeps
+//      one from before the v62 break away from tables it cannot read. The
+//      plugin list says which build it needs (VersionMap.md, "Admission").
+//      MIN is the oldest interface whose plugins can run on a build this
+//      loader supports; the auto-updater skips plugin updates below it.
+//
+//      Also in v73: a plugin can say when it may be loaded and unloaded while
+//      the game runs. Two settings, one for load and one for unload (reload is
+//      both), each PluginReload::ANYTIME, MENU or RESTART, are packed into the
+//      spare bits of PluginInfo::mapFlags (PluginLoadSetting and
+//      PluginUnloadSetting build the value). No member moved: a plugin built
+//      before this has those bits 0, which reads as ANYTIME for both, so it
+//      behaves as it always did. A plugin can also mark itself busy at run
+//      time with IPluginEngineEvents::SetBusyReason, which makes the loader
+//      refuse an unload or reload until it clears the reason. The loader never
+//      calls into the plugin to ask. SetBusyReason is appended at the BOTTOM of
+//      IPluginEngineEvents. A refusal never touches the plugin and is never
+//      applied to game shutdown. See PluginDevelopment.md, "Load and unload
+//      settings".
+//
+// v74 (2026-11-03): Size the next ImGui window. Added
+//      IModLoaderImGui::SetNextWindowSize and SetNextWindowSizeConstraints
+//      (direct wrappers of the ImGui calls), so a plugin can size and bound a
+//      popup before BeginPopupModal. Without them a modal that has no
+//      AlwaysAutoResize flag opens as a strip a few pixels wide and ImGui
+//      saves that size. Also added the named constants
+//      PluginWindowFlags_AlwaysAutoResize and PluginCond_Always / _Once /
+//      _FirstUseEver / _Appearing, so a plugin needs no ImGui header and no raw
+//      numbers for them (PluginWindowFlags_NoSavedSettings already existed).
+//      The two calls are appended at the BOTTOM of IModLoaderImGui, so
+//      nothing a v70-v73 plugin reads by offset moved and MIN stays at 70. It
+//      is a version of its own because v73 loaders already exist without them
+//      and the table has no size field a plugin could check: a v73 loader
+//      refuses a v74 plugin and shows it as needing a newer mod loader,
+//      instead of letting it call past the end of the table. A plugin that
+//      must also run on a v73 loader declares 73 and does not call them.
+//
+//      Also in v74: the game's UI state, kept by the loader so a plugin does
+//      not detect it itself. Added PluginUIState (bits for in gameplay, the
+//      pause menu, the game cursor, any menu, the map, the inventory, the
+//      build menu and the station screens), PluginUIStateCallback and
+//      IPluginGameMenu::GetUIState, RegisterOnUIStateChanged and
+//      UnregisterOnUIStateChanged. Appended at the BOTTOM of IPluginGameMenu
+//      after IsPauseMenuOpen, so nothing a v70-v73 plugin reads by offset
+//      moved and MIN stays at 70. The state is 64 bits wide so a later loader
+//      can add bits without a new interface version; a plugin ignores bits it
+//      does not know.
+//
 #define PLUGIN_INTERFACE_VERSION_MIN 70
-#define PLUGIN_INTERFACE_VERSION_MAX 70
-#define PLUGIN_INTERFACE_VERSION 70
+#define PLUGIN_INTERFACE_VERSION_MAX 74
+#define PLUGIN_INTERFACE_VERSION 74
 
 enum class PluginLogLevel { Trace = 0, Debug = 1, Info = 2, Warn = 3, Error = 4 };
-enum class ConfigValueType { String, Integer, Float, Boolean, Keybind };
+enum class ConfigValueType { String, Integer, Float, Boolean, Keybind, Choice /* v71 */, Hidden /* v71 */ };
 
 // Network mode — mirrors the engine's ENetMode enum, letting plugins compare
 // against nicely-typed names instead of raw integers when querying GetNetMode().
@@ -699,6 +835,24 @@ enum class EPluginNetMode : uint8_t
     Unknown         = 255
 };
 
+// One setting in a plugin's config schema. The loader reads the entry array
+// with this exact layout, so it is frozen: never reorder or extend it.
+//
+// Choice (v71): one of a fixed set of strings, drawn on the config page as a
+//   dropdown. description holds the description, then each choice after a '|':
+//     "Planner the button opens|StarRupture Planner|starrupturecalc.com|Custom"
+//   Spaces around each '|' are ignored. The INI stores the choice as written.
+//   A stored value is matched ignoring case, and one that matches no choice is
+//   shown as defaultValue, so read it the same way. defaultValue should be one
+//   of the choices.
+//
+// Hidden (v71): a value the plugin saves by itself, such as where a window
+//   was dragged. The config page draws no field for it. Instead, a section
+//   holding Hidden entries ends with one Clear button that sets all of them
+//   back to defaultValue, firing OnConfigChanged for each one it changes. The
+//   INI stores the text as written; read and write it with whichever
+//   Read*/Write* suits the value. A number counts as its default when it has
+//   the same value, so WriteFloat's "-1.000000" matches a default of "-1".
 struct ConfigEntry
 {
 	const char* section;
@@ -792,7 +946,8 @@ enum PluginScanFlags
     PLUGIN_SCAN_FLAG_NONE     = 0,
 
     // Labels the failure line [optional] instead of [required]. It does NOT
-    // change the verdict: a miss refuses the plugin either way. Mark what your
+    // change the verdict: a miss refuses the plugin either way, unless a declared
+    // feature lists the key (DeclareFeature). Mark what your
     // own code genuinely null-checks, so the report is readable by whoever has
     // to fix it.
     PLUGIN_SCAN_FLAG_OPTIONAL = 1 << 0,
@@ -802,6 +957,65 @@ enum PluginScanFlags
     // so a request that simply never set the field must not be read as asking
     // for one.
     PLUGIN_SCAN_FLAG_FOLLOW_REL32 = 1 << 1,
+
+    // v72. hookName is a key in the loader's version map, and pattern and
+    // candidates are this plugin's own fallback, each of which may be null.
+    // Game exe only. The dedicated server's map holds no rows, so there a key
+    // runs on pattern and candidates alone; the refused names below still
+    // apply.
+    //
+    // For FUNCTION_START and DATA the key is global, the same for every
+    // plugin: "Class::Function" or a global's name, never with a '/'. For any
+    // other kind it is this plugin's own site, "<PluginInfo name>/<hookName>",
+    // kept under a fingerprint of the request: kind, pattern (as the loader
+    // parses it), resultOffset and followRel32At (-1 without
+    // PLUGIN_SCAN_FLAG_FOLLOW_REL32). A site names no symbol, so its rows are
+    // right only for the request they were verified with: a site key needs
+    // its own pattern, and a changed pattern or offset reads none of the old
+    // rows.
+    //
+    // The map's row for the running build is tried first, then the
+    // candidates' row for it, then an address every locator (pattern
+    // included) agrees on. When a candidate with an rva is for this very exe
+    // (changelist, stamp and size), the map's pick must land on that rva, or
+    // the request fails as AMBIGUOUS. Rows the map holds under the key for
+    // another kind, or for a site's other fingerprint, are not used. A key
+    // with no rows the request can use runs on pattern and candidates alone,
+    // and with neither is a recorded failure.
+    //
+    // Refused, as a recorded failure with nothing else tried: a key the map
+    // marks absent on the running build for this request (a global key for
+    // the plugins it lists, a site for its fingerprint); any key from a
+    // plugin named ModLoader, whose keys are the loader's own; a site key
+    // from either of two loaded plugins with the same name, whose sites the
+    // map cannot tell apart. One "[Map]" log line per request says which row
+    // answered it, or why not.
+    PLUGIN_SCAN_FLAG_MAP_KEY = 1 << 2,
+};
+
+// v72. One locator for a hookName, verified on one game build. A plugin hands
+// the loader every locator it knows through PluginScanRequest::candidates, and
+// the loader picks the one for the build that is running: the row for the
+// running changelist, else only an address every candidate agrees on.
+//
+// Passed in an array with no stride field, so this struct can never grow.
+struct PluginScanCandidate
+{
+    uint32_t    gameCL;         // the changelist this locator was verified on
+    uint32_t    imageStamp;     // that exe's PE TimeDateStamp; 0 = unknown
+    uint32_t    imageSize;      // that exe's SizeOfImage
+
+    // IDA-style AOB, as PluginScanRequest::pattern. null = an address-only row,
+    // used only when gameCL, imageStamp and imageSize all match the running exe.
+    const char* pattern;
+
+    uint32_t    flags;          // PLUGIN_SCAN_FLAG_FOLLOW_REL32 only
+    int32_t     resultOffset;   // as PluginScanRequest::resultOffset
+    int32_t     followRel32At;  // as PluginScanRequest::followRel32At
+
+    // The final address minus the image base, as found on that exe; 0 = none.
+    // On that exact exe the resolve must land here, or it fails.
+    uint32_t    rva;
 };
 
 // Passed by pointer to IPluginHookScanner::Resolve.
@@ -820,6 +1034,7 @@ struct PluginScanRequest
     const char* hookName;
 
     // IDA-style AOB: "48 89 5C 24 ?? 57 48 83 EC 20", ?? = any byte.
+    // null only with PLUGIN_SCAN_FLAG_MAP_KEY (v72).
     const char* pattern;
 
     int         kind;           // PluginScanKind
@@ -844,11 +1059,157 @@ struct PluginScanRequest
     // PLUGIN_SCAN_VTABLE only: how many leading slots must point at functions.
     // 0 means 1.
     uint32_t    vtableSlots;
+
+    // --- v72 ---
+    // Locators for this hookName on other game builds; null = none, which is
+    // the v70 behaviour. pattern, kind and the rest above stay the request:
+    // they are what the plugin was built against, and the kind check applies
+    // whichever locator is picked. Main module only.
+    const PluginScanCandidate* candidates;
+    uint32_t                   candidateCount;
 };
 
 #define PLUGIN_SCAN_REQUEST_INIT { (uint32_t)sizeof(PluginScanRequest), \
                                    nullptr, nullptr, PLUGIN_SCAN_UNSPECIFIED, \
-                                   PLUGIN_SCAN_FLAG_NONE, 0, -1, nullptr, 0 }
+                                   PLUGIN_SCAN_FLAG_NONE, 0, -1, nullptr, 0, \
+                                   nullptr, 0 }
+
+static_assert(sizeof(void*) == 8, "The plugin interface is x64 only");
+static_assert(sizeof(PluginScanCandidate) == 40, "PluginScanCandidate is frozen: arrays of it have no stride");
+static_assert(offsetof(PluginScanRequest, structSize)     ==  0, "v70 layout");
+static_assert(offsetof(PluginScanRequest, hookName)       ==  8, "v70 layout");
+static_assert(offsetof(PluginScanRequest, pattern)        == 16, "v70 layout");
+static_assert(offsetof(PluginScanRequest, kind)           == 24, "v70 layout");
+static_assert(offsetof(PluginScanRequest, flags)          == 28, "v70 layout");
+static_assert(offsetof(PluginScanRequest, resultOffset)   == 32, "v70 layout");
+static_assert(offsetof(PluginScanRequest, followRel32At)  == 36, "v70 layout");
+static_assert(offsetof(PluginScanRequest, module)         == 40, "v70 layout");
+static_assert(offsetof(PluginScanRequest, vtableSlots)    == 48, "v70 layout");
+static_assert(offsetof(PluginScanRequest, candidates)     == 56, "v72 starts where v71 ended");
+
+// ---------------------------------------------------------------------------
+// Game-class fields (v72) -- IPluginHookScanner::ResolveField
+//
+// A plugin that reads or writes a member of a game class names it here instead
+// of trusting the offset it was compiled with, so a game update that moves the
+// member does not turn the plugin's read into a read of something else.
+//
+//   reflected (no flag)     the offset comes from the running game's own
+//                           reflection data, found by class and member name,
+//                           so it is right on any build. The size must equal
+//                           the request's.
+//   PLUGIN_FIELD_NATIVE     a member reflection does not describe. The offset
+//                           comes from the row for the running changelist, or
+//                           builtOffset on builtCL. On any other build it
+//                           fails. The member must also lie inside its class
+//                           as the running game reflects the class, or it
+//                           fails.
+//   PLUGIN_FIELD_CHECK      something the plugin keeps using at its compiled
+//                           offset or size (a struct copied by value, an array
+//                           stride). Fails unless the running build matches it.
+//   PLUGIN_FIELD_BITFIELD   a bool bitfield: the result is its byte offset and
+//                           boolMask. Alone, both come from reflection; with
+//                           NATIVE, from the rows. builtOffset is -1, so the
+//                           builtCL row holds the compiled byte and mask, and
+//                           with CHECK the running build must equal that row.
+//
+// member null asks for the size of className itself (with CHECK: that it is
+// still `size`).
+//
+// The rows are the loader's own version map's first, under the request's key,
+// when that key names the same class and member (or a member the map records
+// as renamed), then the request's candidates for any changelist the map has
+// no row for. A candidate that disagrees with the map's row for its changelist
+// fails the request. The dedicated server reads no reflection: there only the
+// request's own candidates count, and a native member is not bounded.
+// ---------------------------------------------------------------------------
+enum PluginFieldFlags
+{
+    PLUGIN_FIELD_FLAG_NONE = 0,
+    PLUGIN_FIELD_NATIVE    = 1 << 0,
+    PLUGIN_FIELD_CHECK     = 1 << 1,
+    PLUGIN_FIELD_BITFIELD  = 1 << 2,
+};
+
+// One build's value for a field. Passed in an array with no stride field, so
+// this struct can never grow.
+struct PluginFieldCandidate
+{
+    uint32_t    gameCL;     // the changelist this row was verified on
+    int32_t     offset;     // byte offset of the member in its class
+    uint32_t    size;
+    uint8_t     boolMask;   // bitfields only; 0 otherwise
+    const char* member;     // the member's name on that build if it was renamed, else null
+};
+
+// Passed by pointer to IPluginHookScanner::ResolveField. structSize works as in
+// PluginScanRequest; use PLUGIN_FIELD_REQUEST_INIT.
+struct PluginFieldRequest
+{
+    uint32_t    structSize;
+
+    // What the log and the failure window show, as hookName does for a scan.
+    // By convention "Class::Member".
+    const char* key;
+
+    // The owning class or struct, by its short name ("ACrCharacterPlayerBase",
+    // "FCrPackageTransportConnectionData"), or "/Script/<Module>.<Name>" when
+    // the short name is not unique.
+    const char* className;
+    const char* member;         // null = the size of className itself
+
+    uint32_t    flags;          // PluginFieldFlags
+    uint32_t    size;           // sizeof the member as the plugin was compiled
+    uint32_t    builtCL;        // the changelist the plugin's SDK was generated for
+    int32_t     builtOffset;    // offsetof as compiled; -1 for a bitfield (its builtCL row holds it)
+
+    const PluginFieldCandidate* candidates;
+    uint32_t                    candidateCount;
+};
+
+#define PLUGIN_FIELD_REQUEST_INIT { (uint32_t)sizeof(PluginFieldRequest), \
+                                    nullptr, nullptr, nullptr, PLUGIN_FIELD_FLAG_NONE, \
+                                    0, 0, -1, nullptr, 0 }
+
+// What ResolveField answers. Written only on success.
+struct PluginFieldResult
+{
+    int32_t     offset;
+    uint32_t    size;
+    uint8_t     boolMask;       // bitfields only; 0 otherwise
+};
+
+static_assert(sizeof(PluginFieldCandidate) == 24, "PluginFieldCandidate is frozen: arrays of it have no stride");
+static_assert(sizeof(PluginFieldResult) == 12, "PluginFieldResult has no structSize, so it is frozen");
+
+// ---------------------------------------------------------------------------
+// Features (v73) -- IPluginHookScanner::DeclareFeature
+//
+// A feature is a part of a plugin that can be off while the rest runs. A plugin
+// declares its features, with the keys each one needs, before it resolves
+// anything. A key that does not resolve on the running build then turns off
+// the features that list it, and the plugin still loads. A key no feature
+// lists stays core: a miss on it refuses the plugin, as it always did.
+//
+// The keys are the names the plugin passes to the loader: the hookName of a
+// Resolve (for a map key, the key itself, not "<plugin>/<hookName>"), and the
+// key of a PluginFieldRequest ("Class::Member").
+// ---------------------------------------------------------------------------
+struct PluginFeatureDesc
+{
+    uint32_t           structSize;      // sizeof(PluginFeatureDesc); use PLUGIN_FEATURE_DESC_INIT
+    const char*        id;              // unique within the plugin, e.g. "mining-laser"
+    const char*        title;           // what a player reads: "Mining laser tuning"
+    const char* const* keys;            // the keys the feature needs; at least one
+    uint32_t           keyCount;
+    const char* const* configKeys;      // "Section.Key" config entries the feature drives, or "Section.*"; may be null
+    uint32_t           configKeyCount;
+    bool*              enabled;         // may be null. The loader sets *enabled = true when the feature is declared
+                                        // and false if a key misses, before OnPluginLoadHooks returns. It writes
+                                        // it nowhere else, so the plugin may read it for as long as it is loaded.
+};
+
+#define PLUGIN_FEATURE_DESC_INIT { (uint32_t)sizeof(PluginFeatureDesc),                                    nullptr, nullptr, nullptr, 0, nullptr, 0, nullptr }
 
 // ---------------------------------------------------------------------------
 // IPluginHookScanner -- pattern scanning, and the ONLY place a plugin gets it.
@@ -868,7 +1229,9 @@ struct PluginScanRequest
 //
 // A MISS REFUSES THE PLUGIN, required or optional, and one is enough:
 // PluginInit is never called, the DLL is freed, and every miss is listed in the
-// failure window.
+// failure window. The exception (v73) is a key that a declared feature lists
+// (DeclareFeature): its miss turns that feature off, the plugin still loads,
+// and the miss is listed in the same window.
 //
 // SO DOES A SECOND MATCH (v68). A pattern that matches more than once has not
 // resolved to an address, it has resolved to a coin flip -- the old behaviour
@@ -960,7 +1323,41 @@ struct IPluginHookScanner
 	//   * the FINAL address (after followRel32At and resultOffset) must be what
 	//     `kind` says it is.
 	uintptr_t (*Resolve)(const IPluginSelf* self, const PluginScanRequest* request);
+
+	// --- v72 ---
+
+	// The offset of one game-class member on the running build (see
+	// PluginFieldRequest). True and *result written on success; false on any
+	// failure, which is recorded against the plugin like a missed pattern.
+	bool (*ResolveField)(const IPluginSelf* self, const PluginFieldRequest* request, PluginFieldResult* result);
+
+	// --- v73 ---
+
+	// Declares a feature (see PluginFeatureDesc). Call it before the resolves
+	// for the keys it lists: a miss recorded before the declaration is a core
+	// miss. True when declared; false, and nothing declared, when the call is
+	// outside OnPluginLoadHooks, the description is malformed, or the id was
+	// declared already. A feature that is not declared leaves its keys core.
+	bool (*DeclareFeature)(const IPluginSelf* self, const PluginFeatureDesc* desc);
 };
+
+static_assert(offsetof(IPluginHookScanner, ResolveRequired)                ==   0, "v70 layout");
+static_assert(offsetof(IPluginHookScanner, ResolveOptional)                ==   8, "v70 layout");
+static_assert(offsetof(IPluginHookScanner, ResolveRequiredInModule)        ==  16, "v70 layout");
+static_assert(offsetof(IPluginHookScanner, ResolveOptionalInModule)        ==  24, "v70 layout");
+static_assert(offsetof(IPluginHookScanner, ResolveRequiredUnique)          ==  32, "v70 layout");
+static_assert(offsetof(IPluginHookScanner, ResolveOptionalUnique)          ==  40, "v70 layout");
+static_assert(offsetof(IPluginHookScanner, FindAllPatternsInMainModule)    ==  48, "v70 layout");
+static_assert(offsetof(IPluginHookScanner, FindAllPatternsInModule)        ==  56, "v70 layout");
+static_assert(offsetof(IPluginHookScanner, FindXrefsToAddress)             ==  64, "v70 layout");
+static_assert(offsetof(IPluginHookScanner, FindXrefsToAddressInModule)     ==  72, "v70 layout");
+static_assert(offsetof(IPluginHookScanner, FindXrefsToAddressInMainModule) ==  80, "v70 layout");
+static_assert(offsetof(IPluginHookScanner, ReportFailure)                  ==  88, "v70 layout");
+static_assert(offsetof(IPluginHookScanner, ReportWarning)                  ==  96, "v70 layout");
+static_assert(offsetof(IPluginHookScanner, HasFailures)                    == 104, "v70 layout");
+static_assert(offsetof(IPluginHookScanner, Resolve)                        == 112, "v70 layout");
+static_assert(offsetof(IPluginHookScanner, ResolveField)                   == 120, "v72 starts where v71 ended");
+static_assert(offsetof(IPluginHookScanner, DeclareFeature)                 == 128, "v73 starts where v72 ended");
 
 typedef void* HookHandle;
 namespace SDK { class UWorld; class UTexture2D; }
@@ -1039,6 +1436,27 @@ struct IPluginMemoryUtils
 	bool  (*IsAllocatorAvailable)();
 };
 
+// v72. The four globals the Game-SDK carries as fixed offsets (Offsets:: in
+// its Basic.hpp), which are right only for the build the SDK was generated
+// for. Absolute addresses; 0 = that one did not resolve. Each plugin compiles
+// its own copy of the SDK, so the loader handing its copy these values does
+// not reach the plugin's: a plugin that walks GObjects or reads FNames calls
+// its SDK's own InitManually with them.
+//
+//   gobjects      the engine's object array      (UObject::GObjects)
+//   gnames        the engine's name pool         (FName name storage)
+//   appendString  FName::AppendString            (FName::AppendString)
+//   gworld        the engine's GWorld variable   (not the SDK's Offsets::GWorld,
+//                                                 which is a different global)
+struct PluginSdkGlobals
+{
+    uint32_t    structSize;     // sizeof(PluginSdkGlobals) as the loader sees it
+    uintptr_t   gobjects;
+    uintptr_t   gnames;
+    uintptr_t   appendString;
+    uintptr_t   gworld;
+};
+
 struct IPluginEngineEvents
 {
 	void      (*RegisterOnInit)(PluginEngineInitCallback);
@@ -1072,7 +1490,53 @@ struct IPluginEngineEvents
 	uintptr_t (*GetPackageFullyLoadAddress)();
 	uintptr_t (*GetLoadPackageAddress)();
 	uintptr_t (*GetAssetDataFastGetAssetAddress)();
+
+	// --- v72 ---
+	// The Game-SDK globals as the loader found them on the running build (see
+	// PluginSdkGlobals). Null when the loader has none to give: a server build,
+	// or a loader that did not resolve them. Valid for the life of the process.
+	const PluginSdkGlobals* (*GetSdkGlobals)();
+
+	// True when the caller is on the game thread, where UObjects may be
+	// touched. False on every thread until the game's first tick, the game
+	// thread included, so a PluginInit at startup reads false; one run by a
+	// RELOAD runs on the game thread after that tick and reads true. Read
+	// false as "post it with PostToGameThread", never as "this is a worker
+	// thread".
+	bool (*IsGameThread)();
+
+	// --- v73 ---
+
+	// Marks the calling plugin busy: while reason is set, the loader refuses
+	// to unload or reload it, before anything is shut down, and shows
+	// "Unload blocked: <reason>" in the plugin list and on the console. Pass
+	// null or "" to clear it. The reason is short plain text (cut at 80
+	// characters). Safe to call from any thread, and the loader never calls
+	// back to ask: it only reads the reason. self is the IPluginSelf given to
+	// PluginInit. A plugin that unloads or reloads starts with no reason.
+	void (*SetBusyReason)(const IPluginSelf* self, const char* reason);
 };
+
+static_assert(offsetof(IPluginEngineEvents, RegisterOnInit)                       ==   0, "v70 layout");
+static_assert(offsetof(IPluginEngineEvents, UnregisterOnInit)                     ==   8, "v70 layout");
+static_assert(offsetof(IPluginEngineEvents, RegisterOnShutdown)                   ==  16, "v70 layout");
+static_assert(offsetof(IPluginEngineEvents, UnregisterOnShutdown)                 ==  24, "v70 layout");
+static_assert(offsetof(IPluginEngineEvents, RegisterOnTick)                       ==  32, "v70 layout");
+static_assert(offsetof(IPluginEngineEvents, UnregisterOnTick)                     ==  40, "v70 layout");
+static_assert(offsetof(IPluginEngineEvents, GetStaticLoadObjectAddress)           ==  48, "v70 layout");
+static_assert(offsetof(IPluginEngineEvents, PostToGameThread)                     ==  56, "v70 layout");
+static_assert(offsetof(IPluginEngineEvents, GetStaticFindObjectByPathAddress)     ==  64, "v70 layout");
+static_assert(offsetof(IPluginEngineEvents, GetStaticFindObjectByNameAddress)     ==  72, "v70 layout");
+static_assert(offsetof(IPluginEngineEvents, GetStaticFindObjectSafeByPathAddress) ==  80, "v70 layout");
+static_assert(offsetof(IPluginEngineEvents, GetStaticFindObjectSafeByNameAddress) ==  88, "v70 layout");
+static_assert(offsetof(IPluginEngineEvents, GetStaticFindObjectFastAddress)       ==  96, "v70 layout");
+static_assert(offsetof(IPluginEngineEvents, GetFindPackageAddress)                == 104, "v70 layout");
+static_assert(offsetof(IPluginEngineEvents, GetPackageFullyLoadAddress)           == 112, "v70 layout");
+static_assert(offsetof(IPluginEngineEvents, GetLoadPackageAddress)                == 120, "v70 layout");
+static_assert(offsetof(IPluginEngineEvents, GetAssetDataFastGetAssetAddress)      == 128, "v70 layout");
+static_assert(offsetof(IPluginEngineEvents, GetSdkGlobals)                        == 136, "v72 starts where v71 ended");
+static_assert(offsetof(IPluginEngineEvents, IsGameThread)                         == 144, "v72 layout");
+static_assert(offsetof(IPluginEngineEvents, SetBusyReason)                        == 152, "v73 starts where v72 ended");
 
 struct IPluginWorldEvents
 {
@@ -1263,7 +1727,31 @@ struct IPluginInputEvents
 	// when it is unloaded or reloaded, but unregister in PluginShutdown anyway.
 	void (*RegisterMouseWheel)(PluginMouseWheelCallback callback, void* userData);
 	void (*UnregisterMouseWheel)(PluginMouseWheelCallback callback, void* userData);
+
+	// --- v72 ---
+	// True while `keyName` is held: one key, optionally with Ctrl, Shift and
+	// Alt, read as RegisterKeybindByName reads it ("F5", "Shift+K"). Like it,
+	// a token the keybind table does not know is skipped and a later key
+	// replaces an earlier one, so "Ctlr+K" reads as K; false when no known
+	// key is left. Modifiers follow its callbacks' rule: a name with any needs
+	// exactly those held ("Shift+K" is false while Ctrl is down as well), a
+	// name without any ignores them. So do text fields: a key pressed while
+	// one has focus (chat, a save name, an overlay input box) reads as not
+	// held until it is released, and a key already held when the field took
+	// focus stays held. Escape, mouse buttons and the keys the loader's own
+	// windows exempt are never held back, and with [Input]
+	// SuppressKeybindsWhileTyping=0 nothing is. The loader sees such a press
+	// once a call has named the key, or a plugin has bound it; apart from
+	// that, other plugins' binds do not change the answer. Mouse buttons are
+	// the logical ones, as the callbacks see them. False while the game
+	// window does not have focus, and while there is no game window to
+	// check: before the overlay's first frame, or all session with the
+	// overlay off. Any thread; allocates nothing.
+	bool (*IsKeyHeld)(const char* keyName);
 };
+
+static_assert(offsetof(IPluginInputEvents, UnregisterMouseWheel) == 56, "v70 layout");
+static_assert(offsetof(IPluginInputEvents, IsKeyHeld)            == 64, "v72 starts where v71 ended");
 
 // Opaque handle for a texture registered through IPluginImGuiTextures (v37).
 // Forward-declared here (fully defined again, identically, near
@@ -1648,7 +2136,43 @@ struct IModLoaderImGui
 	// IPluginInputEvents::RegisterMouseWheel (v70) for the wheel at any time.
 	float (*GetMouseWheel)();
 	float (*GetMouseWheelH)();
+
+	// --- v71 ---
+	// ImGui::IsKeyPressed for a Win32 virtual-key code (VK_UP, VK_RETURN,
+	// 'A', ...); repeat also reports ImGui's key repeat while held. Use the
+	// sided modifier codes (VK_LSHIFT, VK_RCONTROL, ...). VK_SHIFT,
+	// VK_CONTROL, VK_MENU and the VK_OEM_* keys other than VK_OEM_COMMA and
+	// VK_OEM_PERIOD always report false; VK_RETURN is the main Enter key only.
+	// ImGui sees every key the game window receives, so this works where a
+	// keybind does not: while one of your text fields has focus. Call it from
+	// your render callback, gated on your window being focused, or it fires
+	// for keys meant for the game.
+	bool (*IsKeyPressed)(int vk, bool repeat);
+
+	// --- v74 ---
+	// Each of these applies to the next window opened after it (BeginPopupModal
+	// or a panel's own Begin) and to that window only; call them right before
+	// the call that opens it, from your render callback. ImGui centres a modal
+	// on the screen by itself, so there is no call to place it.
+	//
+	// ImGui::SetNextWindowSize. condition is a PluginCond_* value: _Always
+	// forces the size every frame, _FirstUseEver sizes it once and lets the
+	// player resize it, _Appearing sizes it each time it opens. 0 reads as
+	// _Always. It overrides PluginWindowFlags_AlwaysAutoResize on each axis it
+	// sets; pass 0 for an axis to keep that axis auto-fitted, e.g.
+	// SetNextWindowSize(540, 0, PluginCond_Always) is a fixed width with an
+	// auto height.
+	void (*SetNextWindowSize)(float width, float height, int condition);
+
+	// ImGui::SetNextWindowSizeConstraints, plain minimum and maximum (no
+	// callback). A minimum width keeps an auto-sized window from collapsing to
+	// a narrow strip. Pass FLT_MAX for a limit you do not want.
+	void (*SetNextWindowSizeConstraints)(float min_width, float min_height, float max_width, float max_height);
 };
+
+static_assert(offsetof(IModLoaderImGui, IsKeyPressed) == 2024, "v71 starts where v70 ended");
+static_assert(offsetof(IModLoaderImGui, SetNextWindowSize) == 2032, "v74 starts where v73 ended");
+static_assert(offsetof(IModLoaderImGui, SetNextWindowSizeConstraints) == 2040, "v74 appends in order");
 
 typedef void (*PluginImGuiRenderCallback)(IModLoaderImGui* imgui);
 
@@ -1768,9 +2292,21 @@ struct IPluginImGuiTextures
 #define PluginWindowFlags_NoResize          (1 << 1)
 #define PluginWindowFlags_NoMove            (1 << 2)
 #define PluginWindowFlags_NoScrollbar       (1 << 3)
+#define PluginWindowFlags_AlwaysAutoResize  (1 << 6)   // v74 name for the value a plugin always passed raw
 #define PluginWindowFlags_NoBackground      (1 << 7)
 #define PluginWindowFlags_NoSavedSettings   (1 << 8)
 #define PluginWindowFlags_NoMouseInputs     (1 << 9)
+// Condition values for SetNextWindowSize (v74), and for the
+// size_cond / pos_cond of PluginWindowHints. Values mirror ImGuiCond. Pass one
+// value, never a combination (ImGui treats it as a plain enum).
+#define PluginCond_Always         (1 << 0)
+#define PluginCond_Once           (1 << 1)
+#define PluginCond_FirstUseEver   (1 << 2)
+#define PluginCond_Appearing      (1 << 3)
+// v71, loader-only (ImGui never sees it): the widget takes the mouse while
+// the pause menu is open or a game screen shows the cursor, and no window has
+// exclusive capture. Without it the window is click-through; child windows are not.
+#define PluginWindowFlags_PauseMenuMouseInputs (1 << 30)
 
 // Optional size/position hints for RegisterWidget windows.
 // Set width/height to 0 for no size hint. Set pos_x/pos_y to -1 to skip positioning.
@@ -1785,7 +2321,7 @@ struct PluginWindowHints
 	float pivot_y;
 	int   size_cond;
 	int   pos_cond;
-	int   extra_window_flags;  // v31: OR'd into ImGuiWindowFlags; 0 = default
+	int   extra_window_flags;  // v31: OR'd into ImGuiWindowFlags (except PauseMenuMouseInputs); 0 = default
 };
 
 struct PluginPanelDesc
@@ -1860,7 +2396,16 @@ struct IPluginUIEvents
 	// including during PluginShutdown.
 	void* (*AcquireInputPassthrough)();
 	void  (*ReleaseInputPassthrough)(void* token);
+
+	// --- v71 ---
+	// True while a loader or plugin window has exclusive input capture: the
+	// mod loader window, a console or profiler window, any open plugin panel,
+	// or an AcquireInputCapture token. The cursor is ImGui's and the game is
+	// frozen. Safe from any thread.
+	bool (*IsOverlayOpen)();
 };
+
+static_assert(offsetof(IPluginUIEvents, IsOverlayOpen) == 120, "v71 starts where v70 ended");
 
 // ---------------------------------------------------------------------------
 // In-world debug drawing (v50, client only) -- hooks->HUD->DebugDraw
@@ -2692,6 +3237,51 @@ struct PluginGameMenuEntryDesc
 	void*                  userData;   // passed straight back to onClick
 };
 
+// v74. The game's UI state: bits of the uint64_t that GetUIState returns and
+// RegisterOnUIStateChanged reports. More than one is set at a time: the map
+// open in gameplay reads IN_GAMEPLAY | CURSOR_UP | ANY_MENU | MAP. A later
+// loader may add bits without a new interface version, so ignore bits you do
+// not know and never compare the whole state with a fixed value.
+enum PluginUIState : uint64_t
+{
+	// A gameplay world (ChimeraMain) has begun play and not ended. False at
+	// startup, on the splash and in the main menu.
+	PLUGIN_UI_IN_GAMEPLAY  = 1ull << 0,
+
+	// The game's pause menu (the Escape screen) is active, as IsPauseMenuOpen
+	// reports it.
+	PLUGIN_UI_PAUSE_MENU   = 1ull << 1,
+
+	// The game shows its own mouse cursor (the player controller's
+	// bShowMouseCursor): the menus, the pause menu and the machine screens.
+	PLUGIN_UI_CURSOR_UP    = 1ull << 2,
+
+	// A screen is active on the game's menu layer: the map, the inventory,
+	// the build menu, a machine or station screen, the pause menu and the
+	// rest. The bits below name some of them; a screen without a bit of its
+	// own shows as ANY_MENU alone.
+	PLUGIN_UI_ANY_MENU     = 1ull << 3,
+
+	// The active menu-layer screen is the map.
+	PLUGIN_UI_MAP          = 1ull << 4,
+
+	// The active menu-layer screen is the player's inventory.
+	PLUGIN_UI_INVENTORY    = 1ull << 5,
+
+	// The active menu-layer screen is the build menu.
+	PLUGIN_UI_BUILD_MENU   = 1ull << 6,
+
+	// The active menu-layer screen is a station's own: the corporate
+	// terminal, the development station or the equipment upgrade station.
+	// Other machines' screens show as ANY_MENU only.
+	PLUGIN_UI_STATION_MENU = 1ull << 7,
+};
+
+// Called on the GAME THREAD when a bit you registered for changes. oldState
+// and newState are the whole state (every bit, not only yours) before and
+// after the change.
+typedef void (*PluginUIStateCallback)(uint64_t oldState, uint64_t newState, void* userData);
+
 struct IPluginGameMenu
 {
 	// Add a row. The loader copies every string in desc, so they need not
@@ -2713,7 +3303,49 @@ struct IPluginGameMenu
 	// registered, they just will not appear. Worth checking if a menu row is
 	// the only way into your UI.
 	bool (*IsAvailable)();
+
+	// --- v71 ---
+	// True while the game's pause menu (the Escape screen) is active, as its
+	// CommonUI activation flag reports; false in the main menu and in play.
+	// On a screen the menu opens (options and so on) the game decides whether
+	// that flag stays set, so do not rely on either answer there. Sampled
+	// once per game tick, so it lags by up to a frame. Safe from any thread.
+	// Always false when the pause hook did not install.
+	bool (*IsPauseMenuOpen)();
+
+	// --- v74 ---
+	// The game's UI state as PluginUIState bits. Safe from any thread: one
+	// atomic read of the state as of the last game tick, so it lags by up to
+	// a frame.
+	//
+	// IN_GAMEPLAY, PAUSE_MENU and CURSOR_UP are kept all the time. The menu
+	// bits (ANY_MENU and the ones after it) are read from the game only while
+	// a plugin has a RegisterOnUIStateChanged callback for one of them, or has called
+	// GetUIState in the last two seconds; otherwise they are 0. So the first
+	// call after nobody has asked for a while starts that read, and its menu
+	// bits are 0 until the next game tick. A plugin that needs them from the
+	// first frame registers a callback instead.
+	uint64_t (*GetUIState)();
+
+	// Calls callback on the GAME THREAD whenever a bit in mask changes (pass
+	// ~0ull for every bit), with the whole state before and after the change.
+	// The first comparison is against 0: on the first game tick after you
+	// register, you are called if a bit in mask is already set. Register in
+	// PluginInit with the bits you care about; any thread. The same callback
+	// and userData pair registered twice is ignored. The loader drops your
+	// registrations when your plugin unloads or reloads, but call
+	// UnregisterOnUIStateChanged in PluginShutdown anyway.
+	void (*RegisterOnUIStateChanged)(uint64_t mask, PluginUIStateCallback callback, void* userData);
+
+	// Removes a registration, matched by callback and userData. Any thread,
+	// including from inside the callback.
+	void (*UnregisterOnUIStateChanged)(PluginUIStateCallback callback, void* userData);
 };
+
+static_assert(offsetof(IPluginGameMenu, IsPauseMenuOpen)            == 32, "v71 starts where v70 ended");
+static_assert(offsetof(IPluginGameMenu, GetUIState)                 == 40, "v74 starts where v71 ended");
+static_assert(offsetof(IPluginGameMenu, RegisterOnUIStateChanged)   == 48, "v74 layout");
+static_assert(offsetof(IPluginGameMenu, UnregisterOnUIStateChanged) == 56, "v74 layout");
 
 // ---------------------------------------------------------------------------
 // Pak mounting and asset loading (v67) -- all builds
@@ -2894,6 +3526,59 @@ enum PluginTarget : int
 // ---------------------------------------------------------------------------
 // Plugin metadata and identity
 // ---------------------------------------------------------------------------
+// v72. The game build (Perforce changelist, the CL-<n> of the exe's
+// ProductVersion) that the Game-SDK this plugin compiles was generated from.
+// The Plugin SDK's PluginGameBuild.props defines it, from the plugin's
+// PluginGameBuiltCL property (its project, its Shared.props, or
+// /p:PluginGameBuiltCL=<CL> on the build) or else the Game-SDK's
+// build_cl.txt; 0 = not known. PLUGIN_MAP_MIGRATED needs it set.
+#ifndef PLUGIN_GAME_BUILT_CL
+#define PLUGIN_GAME_BUILT_CL 0u
+#endif
+
+// v72. PluginInfo::mapFlags.
+enum PluginMapFlags : uint32_t
+{
+    // Everything this plugin reads from the game per build comes from the
+    // loader: its game functions through the version map, its game-class
+    // members through ResolveField or a checked size, and the Game-SDK
+    // globals through GetSdkGlobals. Only such a plugin may run on a game
+    // build other than gameBuiltCL.
+    PLUGIN_MAP_MIGRATED = 1u << 0,
+};
+
+// v73. When a plugin may be loaded, or unloaded, while the game runs. Stored
+// in PluginInfo::mapFlags (bits 8-9 for load, 10-11 for unload; bits 1-7 stay
+// free for more map flags), so the default of 0 is ANYTIME for both and a
+// plugin built before v73 reads as ANYTIME without any change.
+//
+//   ANYTIME  no restriction. The default.
+//   MENU     only while no game world is running (the main menu, the splash).
+//            The loader refuses it while a world is running, with
+//            "Return to the main menu to reload this plugin".
+//   RESTART  load: only when the loader loads plugins at startup. Unload: never
+//            at run time; the plugin is shut down only when the game exits.
+//            The loader says "This plugin requires a game restart".
+//
+// A reload is an unload followed by a load, so it needs both to allow it.
+// Game shutdown unloads every plugin whatever these say.
+enum class PluginReload : uint32_t
+{
+    ANYTIME = 0,
+    MENU    = 1,
+    RESTART = 2,
+};
+
+constexpr uint32_t PLUGIN_RELOAD_LOAD_SHIFT   = 8;
+constexpr uint32_t PLUGIN_RELOAD_UNLOAD_SHIFT = 10;
+constexpr uint32_t PLUGIN_RELOAD_MASK         = 3;
+
+// The mapFlags bits for a load or unload setting; OR them with the other flags:
+//   info.mapFlags = PLUGIN_MAP_MIGRATED | PluginLoadSetting(PluginReload::MENU)
+//                                       | PluginUnloadSetting(PluginReload::MENU);
+constexpr uint32_t PluginLoadSetting(PluginReload when)   { return static_cast<uint32_t>(when) << PLUGIN_RELOAD_LOAD_SHIFT; }
+constexpr uint32_t PluginUnloadSetting(PluginReload when) { return static_cast<uint32_t>(when) << PLUGIN_RELOAD_UNLOAD_SHIFT; }
+
 struct PluginInfo
 {
 	const char* name;
@@ -2902,7 +3587,18 @@ struct PluginInfo
 	const char* description;
 	int interfaceVersion;
 	int pluginTarget;  // PluginTarget value -- required
+
+	// --- v72 ---
+	// Read only when interfaceVersion is 72 or later. The defaults fill them
+	// for a plugin that keeps the six-member initializer above.
+	uint32_t gameBuiltCL = PLUGIN_GAME_BUILT_CL;   // see PLUGIN_GAME_BUILT_CL
+	uint32_t mapFlags    = 0;                      // PluginMapFlags; v73 also keeps the load and unload settings here (PluginReload)
 };
+
+static_assert(offsetof(PluginInfo, pluginTarget) == 36, "v70 layout");
+static_assert(offsetof(PluginInfo, gameBuiltCL)  == 40, "v72 starts where v71 ended");
+static_assert(offsetof(PluginInfo, mapFlags)     == 44, "v72 layout");
+static_assert(sizeof(PluginInfo)                 == 48, "v72 layout");
 
 struct IPluginSelf
 {
@@ -2925,7 +3621,8 @@ typedef void        (*PluginShutdownFunc)();
 // PluginInit, and the only context in which a plugin can pattern scan. Resolve
 // every AOB you depend on here; if ANY of them misses -- required or optional --
 // the loader refuses the plugin: PluginInit is never called, the DLL is freed,
-// and the miss is listed in the failure window.
+// and the miss is listed in the failure window. A key that a declared feature
+// lists (IPluginHookScanner::DeclareFeature) turns that feature off instead.
 //
 // Plugins that do not scan simply do not export it.
 //

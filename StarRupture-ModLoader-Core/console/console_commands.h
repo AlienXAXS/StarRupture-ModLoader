@@ -1,5 +1,6 @@
 #pragma once
 
+#include <windows.h>
 #include <functional>
 #include <memory>
 #include <string>
@@ -53,6 +54,10 @@ namespace ModConsole
         // Wipe the hosting console's scrollback. Default: ignore -- a console
         // with no scrollback to clear is a valid console.
         virtual void Clear() {}
+
+        // The plugin DLL this sink calls back into, or null. A game-thread
+        // command queued for it is dropped when that plugin is unloaded.
+        virtual HMODULE Owner() const { return nullptr; }
 
         // printf-style helpers, in terms of Write.
         void Printf(LineKind kind, const char* fmt, ...);

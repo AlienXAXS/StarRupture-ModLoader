@@ -72,6 +72,8 @@
 // user can already open with a key is not worth refusing to boot over.
 // ---------------------------------------------------------------------------
 
+namespace SDK { class APlayerController; }
+
 namespace Hooks::GameMenu
 {
 	// Resolve and install both menus' hooks.  Must be called after engine init
@@ -84,6 +86,30 @@ namespace Hooks::GameMenu
 
 	// True when at least one menu is hooked and entries will appear.
 	bool IsInstalled();
+
+	// Samples whether the pause menu (the Escape screen) is the active
+	// screen.  The pause hook remembers the widget it constructed; this
+	// checks GObjects still holds it and reads its CommonUI activation flag.
+	// Game thread only -- call it once per tick.
+	void Tick();
+
+	// What the last Tick saw.  Safe from any thread.  False when the pause
+	// hook is not installed.
+	bool IsPauseMenuOpen();
+
+	// Whether the local player controller has the mouse cursor up (any game
+	// screen that shows one: the pause menu, machine menus, the inventory).
+	// Set once per tick on the game thread by the caller that already looks up
+	// the controller; false when there is no world or controller.  Safe from
+	// any thread.
+	void SetGameCursorShown(bool shown);
+	bool IsGameCursorShown();
+
+	// The menu-layer bits of the plugins' UI state (PluginUIState: ANY_MENU,
+	// and MAP, INVENTORY, BUILD_MENU or STATION_MENU when the screen is one of
+	// those) for this controller's local player, read from the game's CommonUI
+	// menu layer. 0 when no screen is active there. Game thread only.
+	uint64_t ReadMenuLayer(SDK::APlayerController* pc);
 }
 
 #endif // MODLOADER_CLIENT_BUILD

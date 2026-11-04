@@ -1,8 +1,10 @@
 #include "pch.h"
+#include "core/sdk_globals.h"
 #include "pak_registry.h"
 
 #include "plugins/plugin_interface.h"
 #include "logging/logger.h"
+#include "plugins/plugin_guard.h"
 #include "hooks/game/pak_mount/pak_mount.h"
 #include "hooks/game/world_begin_play/world_begin_play.h"
 #include "hooks/game/scan_patterns.h"
@@ -465,7 +467,8 @@ namespace PakRegistry
                 }
                 try
                 {
-                    job.callback(SlotToHandle(static_cast<size_t>(job.slot)), actor, world, job.userData);
+                    PluginGuard::Invoke(job.callback, "pak ModActor callback",
+                                        SlotToHandle(static_cast<size_t>(job.slot)), actor, world, job.userData);
                 }
                 catch (...)
                 {
@@ -490,7 +493,7 @@ namespace PakRegistry
     // ModActor now rather than at the next map load.
     static void SpawnModActorIfWorldLive(int slot)
     {
-        SDK::UWorld* current = SDK::UWorld::GetWorld();
+        SDK::UWorld* current = SdkGlobals::GetWorld();
         SDK::UWorld* last = nullptr;
         {
             std::lock_guard<std::recursive_mutex> lk(s_mutex);
@@ -1116,7 +1119,7 @@ namespace PakRegistry
         auto job = std::make_shared<Job>(Job{ static_cast<SDK::UClass*>(actorClass), MakeTransform(location, rotation), nullptr });
         if (!RunOnGameThread([job]()
         {
-            SDK::UWorld* world = SDK::UWorld::GetWorld();
+            SDK::UWorld* world = SdkGlobals::GetWorld();
             if (!world)
             {
                 ModLoaderLogger::LogWarn(L"[Pak] SpawnActor: no world");

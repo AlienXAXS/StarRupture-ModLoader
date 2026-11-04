@@ -4,6 +4,8 @@
 #include "game_menu_registry.h"
 #include "game_menu.h"
 #include "logging/logger.h"
+#include "plugins/plugin_guard.h"
+#include "core/ui_state.h"
 
 #include <mutex>
 #include <string>
@@ -231,11 +233,20 @@ namespace GameMenu::Registry
 			return ::Hooks::GameMenu::IsInstalled();
 		}
 
+		bool IfaceIsPauseMenuOpen()
+		{
+			return ::Hooks::GameMenu::IsPauseMenuOpen();
+		}
+
 		IPluginGameMenu g_interface = {
 			IfaceAddEntry,
 			IfaceRemoveEntry,
 			IfaceRemoveAllEntries,
-			IfaceIsAvailable
+			IfaceIsAvailable,
+			IfaceIsPauseMenuOpen,  // v71
+			UIState::Get,          // v74
+			UIState::Register,
+			UIState::Unregister
 		};
 	}
 
@@ -358,7 +369,7 @@ namespace GameMenu::Registry
 
 		try
 		{
-			callback(userData);
+			PluginGuard::Invoke(callback, "game-menu callback", userData);
 		}
 		catch (const std::exception& e)
 		{

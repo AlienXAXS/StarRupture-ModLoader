@@ -96,6 +96,11 @@ namespace PreloadManager
     // Snapshot of every DLL the phase looked at, in the order it ran them.
     std::vector<Record> GetRecords();
 
+    // File names of DLLs in ModLoader\Preload that the phase did not look at,
+    // because they were added after it ran. They only take effect on the next
+    // launch. Empty when the phase did not run: nothing there would run either.
+    std::vector<std::string> FindNewDlls();
+
     // Short human-readable form of a status, for the console and the UI.
     const char* StatusName(Status status);
 
