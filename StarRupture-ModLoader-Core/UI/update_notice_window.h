@@ -2,6 +2,8 @@
 
 #ifdef MODLOADER_CLIENT_BUILD
 
+#include <vector>
+
 // ---------------------------------------------------------------------------
 // UpdateNoticeWindow
 //
@@ -45,6 +47,32 @@ namespace UI::UpdateNoticeWindow
     // routes mouse input to ImGui for this window even when the main F2 menu and
     // all plugin panels are closed -- otherwise its Close button is unclickable.
     bool IsOpen();
+
+    // Groups `items` whose non-empty notes are word for word the same, in order
+    // of first appearance, so the window lists such plugins on one line with the
+    // shared notes once. An item with no notes, or notes of its own, is a group
+    // of one. `notesOf` maps an item to its notes (any type with ==, empty()).
+    template <class T, class NotesOf>
+    std::vector<std::vector<const T*>> GroupByNotes(const std::vector<T>& items, NotesOf notesOf)
+    {
+        std::vector<std::vector<const T*>> groups;
+        for (const T& item : items)
+        {
+            std::vector<const T*>* group = nullptr;
+            if (!notesOf(item).empty())
+            {
+                for (auto& g : groups)
+                {
+                    if (notesOf(*g.front()) == notesOf(item)) { group = &g; break; }
+                }
+            }
+            if (group)
+                group->push_back(&item);
+            else
+                groups.push_back({ &item });
+        }
+        return groups;
+    }
 
 #ifdef _DEBUG
     // Fill the list with fake entries and open the window immediately.

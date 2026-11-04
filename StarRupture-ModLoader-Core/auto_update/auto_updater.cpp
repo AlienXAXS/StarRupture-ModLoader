@@ -2,6 +2,9 @@
 // Plugin auto-update system — see auto_updater.h for overview.
 
 #include "auto_updater.h"
+#include "http_get.h"
+#include "feed_fetch.h"
+#include "core/startup_utils.h"
 #include "logging/log.h"
 #include "plugins/plugin_interface.h"
 
@@ -18,9 +21,6 @@
 #include <vector>
 
 #pragma comment(lib, "winhttp.lib")
-
-// Forward declaration — defined in Section C
-static std::string FormatWinHttpError(DWORD err);
 
 // ===========================================================================
 // Section A — Configuration
@@ -112,229 +112,6 @@ static void WriteStoredBuildTag(const char* tag)
 		LogToFile::Warn("[AutoUpdate] Failed to write build tag to update_state.ini (%lu: %s)", err,
 		                FormatWinHttpError(err).c_str());
 	}
-}
-
-// ===========================================================================
-// Section C — WinHTTP GET
-// ===========================================================================
-
-// Converts a WinHTTP (or Win32) error code to a human-readable string.
-// Checks the WinHTTP message table first, then falls back to the system table.
-static std::string FormatWinHttpError(DWORD err)
-{
-	char buf[512]{};
-	HMODULE hWinHttp = GetModuleHandleW(L"winhttp.dll");
-
-	if (hWinHttp)
-	{
-		DWORD n = FormatMessageA(
-			FORMAT_MESSAGE_FROM_HMODULE | FORMAT_MESSAGE_IGNORE_INSERTS,
-			hWinHttp, err, 0, buf, sizeof(buf) - 1, nullptr);
-		if (n > 0)
-		{
-			// Strip trailing CR/LF/spaces inserted by FormatMessage
-			while (n > 0 && (buf[n - 1] == '\r' || buf[n - 1] == '\n' || buf[n - 1] == ' '))
-				buf[--n] = '\0';
-			return std::string(buf);
-		}
-	}
-
-	// Fall back to the system error message table
-	DWORD n = FormatMessageA(
-		FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
-		nullptr, err, 0, buf, sizeof(buf) - 1, nullptr);
-	if (n > 0)
-	{
-		while (n > 0 && (buf[n - 1] == '\r' || buf[n - 1] == '\n' || buf[n - 1] == ' '))
-			buf[--n] = '\0';
-		return std::string(buf);
-	}
-
-	return "unknown error " + std::to_string(err);
-}
-
-// Returns the full HTTP response body on success, or an empty string on any
-// error.  Handles HTTPS and follows redirects (required for GitHub CDN).
-// `label` is used only in log messages to identify what's being fetched.
-static std::string HttpGet(const char* url, const char* label = "resource")
-{
-	LogToFile::Debug("[AutoUpdate] HttpGet [%s]: %s", label, url);
-
-	// Convert URL to wide string
-	wchar_t wUrl[1024]{};
-	if (MultiByteToWideChar(CP_UTF8, 0, url, -1, wUrl, 1024) == 0)
-	{
-		DWORD err = GetLastError();
-		LogToFile::Debug("[AutoUpdate] HttpGet [%s]: URL encoding failed (%lu: %s)", label, err,
-		                 FormatWinHttpError(err).c_str());
-		return {};
-	}
-
-	// Crack the URL into host + path components
-	URL_COMPONENTS uc{};
-	uc.dwStructSize = sizeof(uc);
-	wchar_t host[256]{}, path[768]{};
-	uc.lpszHostName = host;
-	uc.dwHostNameLength = 256;
-	uc.lpszUrlPath = path;
-	uc.dwUrlPathLength = 768;
-	if (!WinHttpCrackUrl(wUrl, 0, 0, &uc))
-	{
-		DWORD err = GetLastError();
-		LogToFile::Debug("[AutoUpdate] HttpGet [%s]: WinHttpCrackUrl failed (%lu: %s)", label, err,
-		                 FormatWinHttpError(err).c_str());
-		return {};
-	}
-
-	LogToFile::Debug("[AutoUpdate] HttpGet [%s]: host=%ls path=%ls port=%d", label, host, path,
-	                 static_cast<int>(uc.nPort));
-
-	// WINHTTP_ACCESS_TYPE_NO_PROXY: connect directly without reading IE/user
-	// proxy registry settings.  Dedicated game servers run as SYSTEM which has
-	// no IE proxy hive, causing WinHttpSendRequest to fail with error 5023
-	// (ERROR_WINHTTP_CANNOT_CONNECT) when the default proxy mode is used.
-	HINTERNET hSession = WinHttpOpen(
-		L"StarRupture-ModLoader-AutoUpdate/1.0",
-		WINHTTP_ACCESS_TYPE_NO_PROXY,
-		nullptr, nullptr, 0);
-	if (!hSession)
-	{
-		DWORD err = GetLastError();
-		LogToFile::Debug("[AutoUpdate] HttpGet [%s]: WinHttpOpen failed (%lu: %s)", label, err,
-		                 FormatWinHttpError(err).c_str());
-		return {};
-	}
-
-	// Cap individual operation timeouts so we never block startup indefinitely.
-	// resolve=3s, connect=5s (~8s max for unreachable host), send=15s, receive=30s
-	WinHttpSetTimeouts(hSession, 3000, 5000, 15000, 30000);
-
-	INTERNET_PORT port = (uc.nPort != 0) ? uc.nPort : INTERNET_DEFAULT_HTTPS_PORT;
-	HINTERNET hConnect = WinHttpConnect(hSession, host, port, 0);
-	if (!hConnect)
-	{
-		DWORD err = GetLastError();
-		LogToFile::Debug("[AutoUpdate] HttpGet [%s]: WinHttpConnect failed (%lu: %s)", label, err,
-		                 FormatWinHttpError(err).c_str());
-		WinHttpCloseHandle(hSession);
-		return {};
-	}
-
-	DWORD reqFlags = WINHTTP_FLAG_SECURE;
-	HINTERNET hRequest = WinHttpOpenRequest(
-		hConnect, L"GET", path,
-		nullptr, nullptr, nullptr, reqFlags);
-	if (!hRequest)
-	{
-		DWORD err = GetLastError();
-		LogToFile::Debug("[AutoUpdate] HttpGet [%s]: WinHttpOpenRequest failed (%lu: %s)", label, err,
-		                 FormatWinHttpError(err).c_str());
-		WinHttpCloseHandle(hConnect);
-		WinHttpCloseHandle(hSession);
-		return {};
-	}
-
-	// Follow GitHub CDN redirects automatically
-	DWORD redirectPolicy = WINHTTP_OPTION_REDIRECT_POLICY_ALWAYS;
-	WinHttpSetOption(hRequest, WINHTTP_OPTION_REDIRECT_POLICY,
-	                 &redirectPolicy, sizeof(redirectPolicy));
-
-	LogToFile::Debug("[AutoUpdate] HttpGet [%s]: sending request...", label);
-
-	if (!WinHttpSendRequest(hRequest, nullptr, 0,
-	                        nullptr, 0, 0, 0))
-	{
-		DWORD err = GetLastError();
-		LogToFile::Debug("[AutoUpdate] HttpGet [%s]: WinHttpSendRequest failed (%lu: %s)", label, err,
-		                 FormatWinHttpError(err).c_str());
-		WinHttpCloseHandle(hRequest);
-		WinHttpCloseHandle(hConnect);
-		WinHttpCloseHandle(hSession);
-		return {};
-	}
-
-	if (!WinHttpReceiveResponse(hRequest, nullptr))
-	{
-		DWORD err = GetLastError();
-		LogToFile::Debug("[AutoUpdate] HttpGet [%s]: WinHttpReceiveResponse failed (%lu: %s)", label, err,
-		                 FormatWinHttpError(err).c_str());
-		WinHttpCloseHandle(hRequest);
-		WinHttpCloseHandle(hConnect);
-		WinHttpCloseHandle(hSession);
-		return {};
-	}
-
-	// Check HTTP status code
-	DWORD statusCode = 0;
-	DWORD statusSize = sizeof(statusCode);
-	WinHttpQueryHeaders(hRequest,
-	                    WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
-	                    nullptr,
-	                    &statusCode, &statusSize, nullptr);
-
-	LogToFile::Debug("[AutoUpdate] HttpGet [%s]: HTTP %lu", label, statusCode);
-
-	if (statusCode != 200)
-	{
-		// Promote to Warn so HTTP errors are always visible without debug logging.
-		// Common causes:
-		//   404 — release does not exist or is a private/draft release
-		//   403 — asset requires authentication (private repo)
-		//   5xx — GitHub CDN or release server error
-		LogToFile::Warn("[AutoUpdate] HttpGet [%s]: server returned HTTP %lu (URL: %s)", label, statusCode, url);
-		WinHttpCloseHandle(hRequest);
-		WinHttpCloseHandle(hConnect);
-		WinHttpCloseHandle(hSession);
-		return {};
-	}
-
-	// Read response body in chunks
-	std::string body;
-	body.reserve(65536);
-
-	bool readOk = true;
-	for (;;)
-	{
-		DWORD available = 0;
-		if (!WinHttpQueryDataAvailable(hRequest, &available))
-		{
-			DWORD err = GetLastError();
-			LogToFile::Warn(
-				"[AutoUpdate] HttpGet [%s]: WinHttpQueryDataAvailable failed (%lu: %s) -- %zu bytes received so far",
-				label, err, FormatWinHttpError(err).c_str(), body.size());
-			readOk = false;
-			break;
-		}
-		if (available == 0)
-			break; // normal end of response
-
-		std::string chunk(available, '\0');
-		DWORD bytesRead = 0;
-		if (!WinHttpReadData(hRequest, chunk.data(), available, &bytesRead))
-		{
-			DWORD err = GetLastError();
-			LogToFile::Warn(
-				"[AutoUpdate] HttpGet [%s]: WinHttpReadData failed mid-stream (%lu: %s) -- %zu bytes received so far",
-				label, err, FormatWinHttpError(err).c_str(), body.size());
-			readOk = false;
-			break;
-		}
-		chunk.resize(bytesRead);
-		body += chunk;
-	}
-
-	WinHttpCloseHandle(hRequest);
-	WinHttpCloseHandle(hConnect);
-	WinHttpCloseHandle(hSession);
-
-	if (!readOk)
-	{
-		LogToFile::Warn("[AutoUpdate] HttpGet [%s]: incomplete download -- discarding partial data to avoid corrupt file on disk", label);
-		return {};
-	}
-
-	LogToFile::Debug("[AutoUpdate] HttpGet [%s]: received %zu bytes", label, body.size());
-	return body;
 }
 
 // ===========================================================================
@@ -1018,6 +795,48 @@ static void RunCentralManifestUpdate(const AutoUpdateConfig& cfg)
 	// truth when it can't read the Core DLL's file version resource.
 }
 
+bool AutoUpdateEnabled()
+{
+	return ReadAutoUpdateConfig().enabled;
+}
+
+// The feed URL is a compiled define of its own and never read from modloader.ini.
+#ifndef VMAP_FEED_URL
+#  define VMAP_FEED_URL ""
+#endif
+
+namespace
+{
+	constexpr bool EndsWith(const char* s, const char* tail)
+	{
+		size_t n = 0, t = 0;
+		while (s[n]) ++n;
+		while (tail[t]) ++t;
+		for (size_t i = 0; i < t; ++i)
+			if (n < t || s[n - t + i] != tail[i])
+				return false;
+		return true;
+	}
+}
+
+// The asset name carries the feed format, so a later format gets a new name
+// and never strands a loader that reads this one.
+static_assert(VersionMap::kFeedFormat == 1 && (VMAP_FEED_URL[0] == 0 || EndsWith(VMAP_FEED_URL, "/version-map-client.v1.txt")),
+	"VMAP_FEED_URL must name version-map-client.v<kFeedFormat>.txt");
+
+FeedFetch::Config FeedFetch::LoaderConfig()
+{
+	Config cfg;
+#ifdef MODLOADER_CLIENT_BUILD
+	cfg.client = true;
+#endif
+	cfg.url = VMAP_FEED_URL;
+	cfg.keys = VersionFeed::CompiledKeys();
+	cfg.cachePath = GetModLoaderDirPath(L"version-map-client.v1.cache");
+	cfg.autoUpdate = AutoUpdateEnabled();
+	return cfg;
+}
+
 void ModLoaderLogger::RunAutoUpdate()
 {
 #ifdef MODLOADER_BUILD_TAG
@@ -1068,4 +887,9 @@ void ModLoaderLogger::RunAutoUpdate()
 	Splash::SetSubProgress(0.0f);
 #endif
 	RunPerPluginUpdates(pluginsDir);
+
+	// The signed version-map feed, for the next launch. The server never asks.
+#ifdef MODLOADER_CLIENT_BUILD
+	FeedFetch::Stage3(FeedFetch::LoaderConfig());
+#endif
 }

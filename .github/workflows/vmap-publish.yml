@@ -1,0 +1,116 @@
+name: Publish the version-map feed
+
+# Pull model: this workflow holds no signing key. It downloads the signed feed
+# from the feed repo's `vmap-feed` release, checks it with the public keys in
+# version_feed.cpp, and puts it on this repository's Latest release.
+#
+# A feed that fails the check fails the run and is not uploaded. A feed whose
+# seq does not rise above the one on Latest is valid and is not uploaded.
+#
+# release.yml attaches the file to a new release itself, with the same check
+# (.github/vmap/verify-feed.mjs), because a release made with GITHUB_TOKEN
+# starts no `release: published` workflow.
+#
+# The seq to beat is that of the newest release that carries a feed, read only
+# after that file verifies. With no feed on any release, only a manual run with
+# first_publish set uploads one, so an older signed feed cannot be the first.
+#
+# Slot k1 holds a TEST key and slot k2 the release key. The scheduled run
+# refuses a TEST-key feed; only a manual run with allow_test_key set
+# accepts one, for tests on a fork.
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+    inputs:
+      feed_repo:
+        description: 'Repository that holds the signed feed'
+        type: string
+        default: 'msantoro12/starrupture-ci'
+      feed_release:
+        description: 'Release tag in that repository'
+        type: string
+        default: 'vmap-feed'
+      allow_test_key:
+        description: 'Accept a feed signed with a TEST key (fork tests only)'
+        type: boolean
+        default: false
+      first_publish:
+        description: 'No release carries a feed yet; publish the first one'
+        type: boolean
+        default: false
+
+concurrency:
+  group: vmap-publish
+  cancel-in-progress: false
+
+permissions:
+  contents: write  # uploads the asset to the Latest release
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      FEED_REPO: ${{ inputs.feed_repo || 'msantoro12/starrupture-ci' }}
+      FEED_RELEASE: ${{ inputs.feed_release || 'vmap-feed' }}
+      FEED_ASSET: version-map-client.v1.txt
+      ALLOW_TEST_KEY: ${{ inputs.allow_test_key && 'true' || 'false' }}
+      FIRST_PUBLISH: ${{ inputs.first_publish && 'true' || 'false' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Find the Latest release and its seq
+        id: latest
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/cur" "$RUNNER_TEMP/new"
+          if ! tag=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName 2>/dev/null); then
+            echo "No Latest release; nothing to attach the feed to."
+            echo "tag=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          last=
+          for t in $(gh release list --repo "$GITHUB_REPOSITORY" --limit 50 --json tagName --jq '.[].tagName'); do
+            gh release download "$t" --repo "$GITHUB_REPOSITORY" --pattern "$FEED_ASSET" --dir "$RUNNER_TEMP/cur" --clobber 2>/dev/null || continue
+            args=(--source StarRupture-ModLoader-Core/memory_scanner/version_feed.cpp)
+            [ "$ALLOW_TEST_KEY" = "true" ] || args+=(--refuse-test-key)
+            last=$(node .github/vmap/verify-feed.mjs "$RUNNER_TEMP/cur/$FEED_ASSET" "${args[@]}") || { echo "::error::The feed on release $t does not verify."; exit 1; }
+            echo "The newest feed is on release $t, seq $last."
+            break
+          done
+          if [ -z "$last" ]; then
+            [ "$FIRST_PUBLISH" = "true" ] || { echo "::error::No release carries a feed. Run this workflow with first_publish set to publish the first one."; exit 1; }
+            last=0
+          fi
+          echo "Latest is $tag, the seq to beat is $last."
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "last=$last" >> "$GITHUB_OUTPUT"
+
+      - name: Download the signed feed
+        if: steps.latest.outputs.tag != ''
+        run: gh release download "$FEED_RELEASE" --repo "$FEED_REPO" --pattern "$FEED_ASSET" --dir "$RUNNER_TEMP/new" --clobber
+
+      - name: Verify it
+        id: verify
+        if: steps.latest.outputs.tag != ''
+        run: |
+          set +e
+          args=(--source StarRupture-ModLoader-Core/memory_scanner/version_feed.cpp --last-seq "${{ steps.latest.outputs.last }}")
+          [ "$ALLOW_TEST_KEY" = "true" ] || args+=(--refuse-test-key)
+          node .github/vmap/verify-feed.mjs "$RUNNER_TEMP/new/$FEED_ASSET" "${args[@]}"
+          code=$?
+          if [ "$code" = 4 ]; then
+            echo "The feed on $FEED_REPO is not newer than the one on Latest. Nothing to upload."
+            echo "upload=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          [ "$code" = 0 ] || exit "$code"
+          echo "upload=true" >> "$GITHUB_OUTPUT"
+
+      - name: Upload it to Latest
+        if: steps.verify.outputs.upload == 'true'
+        run: gh release upload "${{ steps.latest.outputs.tag }}" "$RUNNER_TEMP/new/$FEED_ASSET" --repo "$GITHUB_REPOSITORY" --clobber

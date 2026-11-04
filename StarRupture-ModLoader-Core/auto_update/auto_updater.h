@@ -66,6 +66,9 @@
 #  define AUTOUPDATE_DEFAULT_MANIFEST_URL ""
 #endif
 
+// Whether modloader.ini [AutoUpdate] Enabled is on (the default).
+bool AutoUpdateEnabled();
+
 namespace ModLoaderLogger
 {
 	// Fetch the remote manifest, compare build_tag against update_state.ini,

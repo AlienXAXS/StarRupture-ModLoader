@@ -96,16 +96,34 @@ namespace UI::UpdateNoticeWindow
 
         {
             std::lock_guard<std::mutex> lock(s_mutex);
-            for (const UpdatedPlugin& u : s_updates)
+            // Plugins whose notes are word for word the same (a shared "works
+            // after a game update" line, say) share one entry that names them
+            // all, so the same bullet is not repeated per plugin. Versions are
+            // left out for a group; the Plugins tab shows them.
+            const auto groups = GroupByNotes(s_updates, [](const UpdatedPlugin& u) -> const std::vector<std::string>& { return u.notes; });
+            for (const auto& g : groups)
             {
+                const UpdatedPlugin& u = *g.front();
                 ImGui::Bullet();
                 ImGui::SameLine();
-                ImGui::TextColored(UI::Theme::AccentColorVec4(1.0f), "%s", u.name.c_str());
-                ImGui::SameLine();
-                if (!u.oldVersion.empty())
-                    ImGui::TextDisabled("%s -> %s", u.oldVersion.c_str(), u.newVersion.c_str());
+                if (g.size() == 1)
+                {
+                    ImGui::TextColored(UI::Theme::AccentColorVec4(1.0f), "%s", u.name.c_str());
+                    ImGui::SameLine();
+                    if (!u.oldVersion.empty())
+                        ImGui::TextDisabled("%s -> %s", u.oldVersion.c_str(), u.newVersion.c_str());
+                    else
+                        ImGui::TextDisabled("installed %s", u.newVersion.c_str());
+                }
                 else
-                    ImGui::TextDisabled("installed %s", u.newVersion.c_str());
+                {
+                    std::string names;
+                    for (const UpdatedPlugin* p : g)
+                        names += (names.empty() ? "" : ", ") + p->name;
+                    ImGui::PushStyleColor(ImGuiCol_Text, UI::Theme::AccentColorVec4(1.0f));
+                    ImGui::TextWrapped("%s", names.c_str());
+                    ImGui::PopStyleColor();
+                }
 
                 ImGui::Indent();
                 for (const std::string& line : u.notes)
