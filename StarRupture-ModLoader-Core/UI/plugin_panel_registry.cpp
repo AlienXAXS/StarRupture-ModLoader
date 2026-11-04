@@ -540,9 +540,17 @@ namespace UI::PluginPanelRegistry
 
     // The size a panel's window has when it is not collapsed: its last drawn
     // size, or the one ImGui loaded from its settings for a window not drawn yet.
+    // A window still drawn as a collapsed strip (its plugin was reloaded while
+    // collapsed) has the strip's size, so its settings size is used instead.
+    static bool IsCollapsedStrip(const ImGuiWindow* window)
+    {
+        return window && (window->Flags & ImGuiWindowFlags_AlwaysAutoResize) != 0;
+    }
+
     static ImVec2 ExpandedWindowSize(const char* title)
     {
-        if (const ImGuiWindow* window = ImGui::FindWindowByName(title))
+        const ImGuiWindow* window = ImGui::FindWindowByName(title);
+        if (window && !IsCollapsedStrip(window))
             return window->SizeFull;
         if (const ImGuiWindowSettings* settings = ImGui::FindWindowSettingsByID(ImHashStr(title)))
             return ImVec2(settings->Size.x, settings->Size.y);
@@ -614,6 +622,8 @@ namespace UI::PluginPanelRegistry
                 }
                 else if (panel.drawnCollapsed && expanded.x > 0.0f)
                     ImGui::SetNextWindowSize(expanded, ImGuiCond_Always);
+                else if (IsCollapsedStrip(ImGui::FindWindowByName(panel.desc->windowTitle)))
+                    ImGui::SetNextWindowSize(ExpandedWindowSize(panel.desc->windowTitle), ImGuiCond_Always);
                 else
                     ImGui::SetNextWindowSize(ImVec2(480, 360), ImGuiCond_FirstUseEver);
 

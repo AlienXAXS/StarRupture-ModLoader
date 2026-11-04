@@ -166,9 +166,9 @@ restores the size the window had. `IsPanelCollapsed(handle)` says which it is. B
 null or stale handle and are safe from any thread; the window changes on the next frame.
 
 The loader keeps the state for the session and does not save it. A plugin that wants it kept saves
-a bool in its own config and calls `SetPanelCollapsed` after `RegisterPanel`. The window's position
-and expanded size are still saved by ImGui as for any panel, and a restart never comes back as a
-strip.
+a bool in its own config and calls `SetPanelCollapsed` after `RegisterPanel`. The window's expanded
+size and position are still saved by ImGui as for any panel (a position moved while the panel is
+collapsed is saved once it is expanded), and a restart never comes back as a strip.
 
 ```cpp
 static PanelHandle g_panel = nullptr;

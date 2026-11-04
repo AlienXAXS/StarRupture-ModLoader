@@ -2353,7 +2353,7 @@ struct PluginPanelDesc
 	// --- v75 ---
 	// Optional. Called every frame the panel is open, with the cursor on the
 	// title line right after the title text, inside the title bar the loader
-	// draws. Draw small buttons there with imgui->SameLine() between them
+	// draws. Draw small buttons there with imgui->SameLine(0, -1) between them
 	// (SmallButton, Button, a glyph with SetItemTooltip). Ids are scoped to the
 	// title bar, so a label may repeat one in renderFn. Runs also while the
 	// panel is collapsed. Read only when the plugin declares interface 75 or
