@@ -3257,24 +3257,30 @@ enum PluginUIState : uint64_t
 	// bShowMouseCursor): the menus, the pause menu and the machine screens.
 	PLUGIN_UI_CURSOR_UP    = 1ull << 2,
 
-	// A screen is active on the game's menu layer: the map, the inventory,
-	// the build menu, a machine or station screen, the pause menu and the
-	// rest. The bits below name some of them; a screen without a bit of its
-	// own shows as ANY_MENU alone.
+	// A screen is on the game's menu layer: the map, the inventory, the build
+	// menu, a machine or station screen, the pause menu and the rest. The
+	// bits below name some of them; a screen without a bit of its own shows
+	// as ANY_MENU alone.
+	//
+	// The menu bits (this one and the four below) are set from the moment a
+	// screen is pushed until it is fully gone, close animation included: a
+	// screen that is closing still counts. They do not mean the screen is
+	// the active one, so a plugin that acts on a screen's widget checks that
+	// it is still active before it does.
 	PLUGIN_UI_ANY_MENU     = 1ull << 3,
 
-	// The active menu-layer screen is the map.
+	// The map is on the menu layer.
 	PLUGIN_UI_MAP          = 1ull << 4,
 
-	// The active menu-layer screen is the player's inventory.
+	// The player's inventory is on the menu layer.
 	PLUGIN_UI_INVENTORY    = 1ull << 5,
 
-	// The active menu-layer screen is the build menu.
+	// The build menu is on the menu layer.
 	PLUGIN_UI_BUILD_MENU   = 1ull << 6,
 
-	// The active menu-layer screen is a station's own: the corporate
-	// terminal, the development station or the equipment upgrade station.
-	// Other machines' screens show as ANY_MENU only.
+	// A station's own screen is on the menu layer: the corporate terminal,
+	// the development station or the equipment upgrade station. Other
+	// machines' screens show as ANY_MENU only.
 	PLUGIN_UI_STATION_MENU = 1ull << 7,
 };
 

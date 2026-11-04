@@ -60,6 +60,26 @@ namespace UIState
 		}
 	}
 
+	uint64_t MenuBits(size_t widgetCount, const MenuKind* kinds, size_t kindCount)
+	{
+		if (widgetCount == 0)
+			return 0;
+
+		uint64_t bits = PLUGIN_UI_ANY_MENU;
+		for (size_t i = 0; i < kindCount; ++i)
+		{
+			switch (kinds[i])
+			{
+			case MenuKind::Map:         bits |= PLUGIN_UI_MAP;          break;
+			case MenuKind::Inventory:   bits |= PLUGIN_UI_INVENTORY;    break;
+			case MenuKind::BuildMenu:   bits |= PLUGIN_UI_BUILD_MENU;   break;
+			case MenuKind::StationMenu: bits |= PLUGIN_UI_STATION_MENU; break;
+			case MenuKind::Other:       break;
+			}
+		}
+		return bits;
+	}
+
 	uint64_t Get()
 	{
 		// The menu bits are read only while a registration wants them, so

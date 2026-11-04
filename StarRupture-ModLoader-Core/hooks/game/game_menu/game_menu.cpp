@@ -3,6 +3,7 @@
 #ifdef MODLOADER_CLIENT_BUILD
 #include "game_menu.h"
 #include "game_menu_registry.h"
+#include "core/ui_state.h"
 #include "logging/logger.h"
 #include "memory_scanner/scanner.h"
 #include "hooks/memory/engine_allocator.h"
@@ -870,24 +871,37 @@ namespace Hooks::GameMenu
 		if (!pc)
 			return 0;
 		SDK::UCommonActivatableWidgetContainerBase* layer = FindMenuLayer(pc);
-		// DisplayedWidget is what the stack's GetActiveWidget returns; one
-		// that is closing is no longer active.
-		SDK::UCommonActivatableWidget* top = layer ? layer->DisplayedWidget : nullptr;
-		if (!top || !top->bIsActive)
+		if (!layer)
 			return 0;
 
-		uint64_t bits = PLUGIN_UI_ANY_MENU;
-		if (top->IsA(SDK::UCrUW_MapMenu::StaticClass()))
-			bits |= PLUGIN_UI_MAP;
-		else if (top->IsA(SDK::UCrUW_InventoryScreen::StaticClass()))
-			bits |= PLUGIN_UI_INVENTORY;
-		else if (top->IsA(SDK::UCrUW_BuildingMenu::StaticClass()))
-			bits |= PLUGIN_UI_BUILD_MENU;
-		else if (top->IsA(SDK::UCrUW_ResearchTerminalPanel::StaticClass())
-		      || top->IsA(SDK::UCrUW_UpgradeStationPanel::StaticClass())
-		      || top->IsA(SDK::UCrUW_ArmoryPanel::StaticClass()))
-			bits |= PLUGIN_UI_STATION_MENU;
-		return bits;
+		// Every widget on the stack's list counts, closing ones too: a widget
+		// stays on WidgetList until its close transition has ended, long after
+		// it stopped being the active one (bIsActive). So the bits stay set
+		// from the moment a screen is pushed until it is fully gone.
+		constexpr int32_t kMaxKinds = 16;
+		UIState::MenuKind kinds[kMaxKinds];
+		const int32_t     count = layer->WidgetList.Num();
+		const int32_t     kept  = count < kMaxKinds ? count : kMaxKinds;
+		for (int32_t i = 0; i < kept; ++i)
+		{
+			SDK::UCommonActivatableWidget* w = layer->WidgetList[i];
+			if (!w)
+				kinds[i] = UIState::MenuKind::Other;
+			else if (w->IsA(SDK::UCrUW_MapMenu::StaticClass()))
+				kinds[i] = UIState::MenuKind::Map;
+			else if (w->IsA(SDK::UCrUW_InventoryScreen::StaticClass()))
+				kinds[i] = UIState::MenuKind::Inventory;
+			else if (w->IsA(SDK::UCrUW_BuildingMenu::StaticClass()))
+				kinds[i] = UIState::MenuKind::BuildMenu;
+			else if (w->IsA(SDK::UCrUW_ResearchTerminalPanel::StaticClass())
+			      || w->IsA(SDK::UCrUW_UpgradeStationPanel::StaticClass())
+			      || w->IsA(SDK::UCrUW_ArmoryPanel::StaticClass()))
+				kinds[i] = UIState::MenuKind::StationMenu;
+			else
+				kinds[i] = UIState::MenuKind::Other;
+		}
+
+		return UIState::MenuBits(static_cast<size_t>(count), kinds, static_cast<size_t>(kept));
 	}
 
 	bool IsGameCursorShown()

@@ -699,6 +699,59 @@ static void UIStateMenuReadDemand()
     ResetUI();
 }
 
+static void UIStateMenuBits()
+{
+    using UIState::MenuBits;
+    using UIState::MenuKind;
+    const uint64_t any = PLUGIN_UI_ANY_MENU;
+
+    // Nothing on the layer: no bit.
+    CHECK(MenuBits(0, nullptr, 0) == 0);
+
+    // A screen on the layer sets ANY_MENU and its own bit. The widget list
+    // keeps a closing screen until its transition has ended, so the same
+    // list gives the same bits for the whole close animation.
+    const MenuKind map[] = { MenuKind::Map };
+    CHECK(MenuBits(1, map, 1) == (any | PLUGIN_UI_MAP));
+    const MenuKind inventory[] = { MenuKind::Inventory };
+    CHECK(MenuBits(1, inventory, 1) == (any | PLUGIN_UI_INVENTORY));
+    const MenuKind build[] = { MenuKind::BuildMenu };
+    CHECK(MenuBits(1, build, 1) == (any | PLUGIN_UI_BUILD_MENU));
+    const MenuKind station[] = { MenuKind::StationMenu };
+    CHECK(MenuBits(1, station, 1) == (any | PLUGIN_UI_STATION_MENU));
+
+    // A screen without a bit of its own is ANY_MENU alone.
+    const MenuKind other[] = { MenuKind::Other };
+    CHECK(MenuBits(1, other, 1) == any);
+
+    // A map closing under a pause menu: both stay on the layer, so the map
+    // bit stays set until the map is gone.
+    const MenuKind both[] = { MenuKind::Map, MenuKind::Other };
+    CHECK(MenuBits(2, both, 2) == (any | PLUGIN_UI_MAP));
+    const MenuKind gone[] = { MenuKind::Other };
+    CHECK(MenuBits(1, gone, 1) == any);
+
+    // A list longer than the kinds given is still not empty.
+    CHECK(MenuBits(20, other, 1) == any);
+
+    // Every bit it can set is one the menu read is gated on.
+    CHECK((MenuBits(2, both, 2) & ~UIState::kMenuBits) == 0);
+
+    // The state a callback sees: the map opens, closes under a pause menu,
+    // and is gone. Only the changes of a bit in the mask are reported.
+    ResetUI();
+    UIState::Register(PLUGIN_UI_MAP, &OnUI, Tag(1));
+    UIState::Publish(PLUGIN_UI_IN_GAMEPLAY);
+    CHECK(g_uiCalls.empty());
+    UIState::Publish(PLUGIN_UI_IN_GAMEPLAY | MenuBits(1, map, 1));
+    CHECK(g_uiCalls.size() == 1);
+    UIState::Publish(PLUGIN_UI_IN_GAMEPLAY | MenuBits(2, both, 2));
+    CHECK(g_uiCalls.size() == 1);
+    UIState::Publish(PLUGIN_UI_IN_GAMEPLAY | MenuBits(1, gone, 1));
+    CHECK(g_uiCalls.size() == 2);
+    ResetUI();
+}
+
 static void OnUIThrows(uint64_t, uint64_t, void*)
 {
     throw 1;
@@ -750,6 +803,7 @@ int main()
     RunTest("UIState: unregister inside a callback", UIStateUnregisterInsideCallback);
     RunTest("UIState: an unloading plugin's callbacks go", UIStateForgetModule);
     RunTest("UIState: menu read runs only on demand", UIStateMenuReadDemand);
+    RunTest("UIState: menu bits stay set while a screen closes", UIStateMenuBits);
     RunTest("UIState: a throwing callback does not stop the rest", UIStateThrowingCallback);
 
     printf("\n%d checks, %d failed\n", g_checks, g_failed);

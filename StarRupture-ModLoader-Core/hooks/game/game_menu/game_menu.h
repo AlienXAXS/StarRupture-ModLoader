@@ -108,7 +108,8 @@ namespace Hooks::GameMenu
 	// The menu-layer bits of the plugins' UI state (PluginUIState: ANY_MENU,
 	// and MAP, INVENTORY, BUILD_MENU or STATION_MENU when the screen is one of
 	// those) for this controller's local player, read from the game's CommonUI
-	// menu layer. 0 when no screen is active there. Game thread only.
+	// menu layer. 0 when nothing is on it; a screen that is closing still
+	// counts, until its close transition has ended. Game thread only.
 	uint64_t ReadMenuLayer(SDK::APlayerController* pc);
 }
 

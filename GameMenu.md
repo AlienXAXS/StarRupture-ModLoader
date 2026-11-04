@@ -187,7 +187,7 @@ struct IPluginGameMenu {
 
 The game's UI state (v74) is a set of `PluginUIState` bits: `PLUGIN_UI_IN_GAMEPLAY` (a ChimeraMain
 world is running), `PLUGIN_UI_PAUSE_MENU`, `PLUGIN_UI_CURSOR_UP` (the game shows its mouse cursor),
-and the menu bits: `PLUGIN_UI_ANY_MENU` (a screen is active on the game's menu layer), and for some
+and the menu bits: `PLUGIN_UI_ANY_MENU` (a screen is on the game's menu layer), and for some
 of those screens `PLUGIN_UI_MAP`, `PLUGIN_UI_INVENTORY`, `PLUGIN_UI_BUILD_MENU` or
 `PLUGIN_UI_STATION_MENU` (the corporate terminal, the development station and the equipment upgrade
 station). Several are set at once. The state is 64 bits wide and a later loader may add bits without
@@ -213,6 +213,8 @@ static void OnUIState(uint64_t oldState, uint64_t newState, void*)
 // PluginShutdown: self->hooks->GameMenu->UnregisterOnUIStateChanged(&OnUIState, nullptr);
 ```
 
+The menu bits are set from the moment a screen is pushed until it is fully gone, close animation
+included, so a screen that is closing still counts; they do not mean the screen is the active one.
 The map and build-menu classes follow BetterDrone's menu-layer read; the inventory and station
 classes follow the class list in Kian369's MiniMap.
 
