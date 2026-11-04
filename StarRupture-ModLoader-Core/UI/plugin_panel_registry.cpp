@@ -538,8 +538,10 @@ namespace UI::PluginPanelRegistry
                 ImGui::SetNextWindowSize(ImVec2(480, 360), ImGuiCond_FirstUseEver);
 
                 // Subtitle shows which plugin owns the panel -- nullptr (omitted)
-                // for panels registered without a recorded owner.
-                const char* subtitle = panel.pluginName[0] ? panel.pluginName : nullptr;
+                // for panels registered without a recorded owner, and when it would
+                // only repeat the window title.
+                const char* subtitle = panel.pluginName[0] && _stricmp(panel.pluginName, panel.desc->windowTitle) != 0
+                                           ? panel.pluginName : nullptr;
                 if (UI::Theme::BeginChamferedWindow(panel.desc->windowTitle, panel.desc->windowTitle,
                                                      &open, subtitle))
                 {
