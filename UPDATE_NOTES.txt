@@ -1,18 +1,11 @@
+- Now with 100% more Good Stuff: Good Stuff Software has teamed up with AlienX to keep the updates coming.
 - Keeps working after a game update, for every game build it knows; a signed online file can add newer builds without a loader update
-- If an update breaks part of a plugin, only that part turns off, and the Plugins tab shows how many features are off
-- When a game update changes a layout the loader checks, only the features that read it are switched off, not every plugin (a plugin that predates the version map is not loaded then)
+- When a game update changes a layout the loader checks, only the features that read it are switched off, not every plugin, and the Plugins tab shows how many are off
 - A plugin that crashes is switched off and a toast names it; it restarts by itself about 3 seconds later, up to 3 times a session (Settings can turn this off)
-- LOAD NEW adds plugins you drop in while the game is running
-- Click a plugin in the list to open its settings
-- Settings with a fixed set of choices are dropdowns, and the Config tab can clear the state a plugin saves
-- Keys 1 to 5 open the Plugins, Config, Settings, Logging and Theme tabs; Tab, the arrow keys and Space or Enter work in the loader windows, and in plugin windows except over the game's own menus (Settings can turn this off)
-- Overlay windows no longer flicker with frame generation, which stays on while a window is open; the Pause Frame Generation setting is removed
-- Plugin windows can be clicked and dragged over the Escape menu and over any game screen that shows the mouse cursor
-- Plugin windows no longer block the game's own menus while the cursor is up: clicks, mouse moves and the wheel outside them reach the game, and typing in a plugin text field stays out of the game
-- Plugins Updated puts plugins with the same notes on one line and shows the notes once
-- The log warns when a plugin's own pattern matches 0 or 2 or more places on the running game
-- A hang inside a plugin's tick or draw callback names that plugin in the log
-- Plugins can say when they may be loaded and unloaded, and reload, unload and load say why they were refused
-- For plugin authors, interface v74: RegisterOnUIStateChanged reports the game's UI state (gameplay, pause menu, cursor, map, inventory, build menu, station screens); GetUIState reads gameplay, pause menu and cursor
-- For plugin authors, interface v74: SetNextWindowSize and SetNextWindowSizeConstraints, with the PluginCond_* conditions and PluginWindowFlags_AlwaysAutoResize, keep a popup from collapsing into a narrow strip
-- For plugin authors, interface v73: DeclareFeature turns off one feature instead of the plugin, and version-map keys look up game functions and members
+- Plugin windows can be clicked and dragged over the Escape menu and any game screen that shows the mouse cursor
+- Plugin windows no longer block the game's own menus while the cursor is up: clicks, mouse moves and the wheel outside them reach the game
+- Overlay windows no longer flicker with frame generation, which stays on while a window is open
+- Keys 1 to 5 open the Plugins, Config, Settings, Logging and Theme tabs; Tab, the arrow keys and Space or Enter work in the loader windows
+- LOAD NEW adds plugins you drop in while the game is running; click a plugin in the list to open its settings
+- The update check never offers a downgrade
+- For plugin authors, interface v74: RegisterOnUIStateChanged and GetUIState report the game's UI state; SetNextWindowSize and SetNextWindowSizeConstraints keep a popup from collapsing
