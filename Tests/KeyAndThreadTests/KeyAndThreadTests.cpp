@@ -593,7 +593,8 @@ static void UIStateMaskAndOncePerChange()
     CHECK(g_uiCalls.size() == 1);
     CHECK(g_uiCalls[0].oldState == (PLUGIN_UI_IN_GAMEPLAY | PLUGIN_UI_CURSOR_UP));
     CHECK(g_uiCalls[0].newState == mapOpen);
-    CHECK(UIState::Get() == mapOpen);
+    // A query reports only the bits kept all the time.
+    CHECK(UIState::Get() == (PLUGIN_UI_IN_GAMEPLAY | PLUGIN_UI_CURSOR_UP));
 
     // It closes: called once more.
     UIState::Publish(PLUGIN_UI_IN_GAMEPLAY);
@@ -679,25 +680,22 @@ static void UIStateForgetModule()
 static void UIStateMenuReadDemand()
 {
     ResetUI();
-    // Well after any earlier query in this run.
-    const uint64_t t = GetTickCount64() + 1000000000ull;
-    CHECK(!UIState::MenuReadWantedAt(t));
+    CHECK(!UIState::MenuReadWanted());
 
-    // A query keeps the read running for kQueryKeepAliveMs.
-    UIState::GetAt(t);
-    CHECK(UIState::MenuReadWantedAt(t));
-    CHECK(UIState::MenuReadWantedAt(t + UIState::kQueryKeepAliveMs - 1));
-    CHECK(!UIState::MenuReadWantedAt(t + UIState::kQueryKeepAliveMs));
+    // A query does not start it, and never sees a menu bit.
+    UIState::Publish(PLUGIN_UI_IN_GAMEPLAY | PLUGIN_UI_ANY_MENU | PLUGIN_UI_MAP);
+    CHECK(UIState::Get() == PLUGIN_UI_IN_GAMEPLAY);
+    CHECK(!UIState::MenuReadWanted());
 
     // A registration keeps it running for as long as it lasts.
     UIState::Register(PLUGIN_UI_MAP, &OnUI, Tag(1));
-    CHECK(UIState::MenuReadWantedAt(t + 60000));
+    CHECK(UIState::MenuReadWanted());
     UIState::Unregister(&OnUI, Tag(1));
-    CHECK(!UIState::MenuReadWantedAt(t + 60000));
+    CHECK(!UIState::MenuReadWanted());
 
     // One for the cheap bits only does not start it.
     UIState::Register(PLUGIN_UI_CURSOR_UP | PLUGIN_UI_PAUSE_MENU, &OnUI, Tag(2));
-    CHECK(!UIState::MenuReadWantedAt(t + 60000));
+    CHECK(!UIState::MenuReadWanted());
     ResetUI();
 }
 

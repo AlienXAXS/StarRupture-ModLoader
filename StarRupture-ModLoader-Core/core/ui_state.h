@@ -14,7 +14,8 @@
 // poll and the cursor poll -- plus the menu-layer read
 // (Hooks::GameMenu::ReadMenuLayer), and hands them to Publish. The menu-layer
 // read is the only part that costs anything, so it runs only while
-// MenuReadWanted says a plugin is listening or asked recently.
+// MenuReadWanted says a registration asks for a menu bit. GetUIState never
+// reports the menu bits.
 //
 // Callbacks are raw pointers into plugin DLLs: ForgetModule drops a plugin's
 // registrations before FreeLibrary, and PluginGuard skips a callback whose
@@ -28,10 +29,7 @@ namespace UIState
 	inline constexpr uint64_t kMenuBits = PLUGIN_UI_ANY_MENU | PLUGIN_UI_MAP | PLUGIN_UI_INVENTORY
 		| PLUGIN_UI_BUILD_MENU | PLUGIN_UI_STATION_MENU;
 
-	// How long a GetUIState call keeps the menu-layer read running.
-	inline constexpr uint64_t kQueryKeepAliveMs = 2000;
-
-	// IPluginGameMenu::GetUIState. Any thread.
+	// IPluginGameMenu::GetUIState: the state without kMenuBits. Any thread.
 	uint64_t Get();
 
 	// IPluginGameMenu::RegisterOnUIStateChanged / UnregisterOnUIStateChanged.
@@ -39,8 +37,8 @@ namespace UIState
 	void Register(uint64_t mask, PluginUIStateCallback callback, void* userData);
 	void Unregister(PluginUIStateCallback callback, void* userData);
 
-	// True while a registration's mask has a menu bit, or Get was called in
-	// the last kQueryKeepAliveMs. Game thread, once per tick.
+	// True while a registration's mask has a menu bit. Game thread, once per
+	// tick.
 	bool MenuReadWanted();
 
 	// Stores the tick's state and calls every callback whose bits changed.
@@ -50,9 +48,4 @@ namespace UIState
 	// Drop every registration whose callback lives in this module. Called by
 	// the plugin manager before FreeLibrary (ForgetRegistrations).
 	void ForgetModule(HMODULE module);
-
-	// Get and MenuReadWanted against a given GetTickCount64 value, for the
-	// unit tests.
-	uint64_t GetAt(uint64_t nowMs);
-	bool MenuReadWantedAt(uint64_t nowMs);
 }

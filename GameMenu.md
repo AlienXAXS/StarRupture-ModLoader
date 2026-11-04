@@ -185,22 +185,23 @@ struct IPluginGameMenu {
 };
 ```
 
-`GetUIState()` (v74) returns the game's UI state as `PluginUIState` bits: `PLUGIN_UI_IN_GAMEPLAY`
-(a ChimeraMain world is running), `PLUGIN_UI_PAUSE_MENU`, `PLUGIN_UI_CURSOR_UP` (the game shows its
-mouse cursor), `PLUGIN_UI_ANY_MENU` (a screen is active on the game's menu layer), and for some of
-those screens `PLUGIN_UI_MAP`, `PLUGIN_UI_INVENTORY`, `PLUGIN_UI_BUILD_MENU` or
+The game's UI state (v74) is a set of `PluginUIState` bits: `PLUGIN_UI_IN_GAMEPLAY` (a ChimeraMain
+world is running), `PLUGIN_UI_PAUSE_MENU`, `PLUGIN_UI_CURSOR_UP` (the game shows its mouse cursor),
+and the menu bits: `PLUGIN_UI_ANY_MENU` (a screen is active on the game's menu layer), and for some
+of those screens `PLUGIN_UI_MAP`, `PLUGIN_UI_INVENTORY`, `PLUGIN_UI_BUILD_MENU` or
 `PLUGIN_UI_STATION_MENU` (the corporate terminal, the development station and the equipment upgrade
-station). Several are set at once. It is one atomic read, safe from any thread, as of the last game
-tick. The state is 64 bits wide and a later loader may add bits without a new interface version, so
-test only the bits you know.
+station). Several are set at once. The state is 64 bits wide and a later loader may add bits without
+a new interface version, so test only the bits you know.
+
+`GetUIState()` reports `PLUGIN_UI_IN_GAMEPLAY`, `PLUGIN_UI_PAUSE_MENU` and `PLUGIN_UI_CURSOR_UP`,
+never a menu bit. It is one atomic read, safe from any thread, as of the last game tick.
 
 `RegisterOnUIStateChanged(mask, callback, userData)` calls `callback(oldState, newState, userData)`
 on the game thread once per change of a bit in `mask` (`~0ull` for all), starting from 0: if a bit
 in `mask` is already set, the first tick after you register reports it. Register in `PluginInit`;
 the loader drops your registrations when your plugin unloads or reloads, but unregister in
 `PluginShutdown` anyway. The menu bits cost a read of the game's menu layer, so the loader reads
-them only while a registration's mask has one, or `GetUIState` was called in the last two seconds;
-otherwise they are 0.
+them only while a registration's mask has one: for the menu bits, register a callback.
 
 ```cpp
 static void OnUIState(uint64_t oldState, uint64_t newState, void*)

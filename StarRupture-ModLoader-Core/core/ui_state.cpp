@@ -39,7 +39,6 @@ namespace UIState
 		std::atomic<uint64_t> s_state{ 0 };
 		std::atomic<size_t>   s_count{ 0 };
 		std::atomic<uint64_t> s_wantedMenuBits{ 0 };  // menu bits any registration asks for
-		std::atomic<uint64_t> s_lastQueryMs{ 0 };   // 0: never asked
 
 		// After any change to s_entries, under s_mutex.
 		void Recount()
@@ -61,29 +60,16 @@ namespace UIState
 		}
 	}
 
-	uint64_t GetAt(uint64_t nowMs)
-	{
-		s_lastQueryMs.store(nowMs ? nowMs : 1, std::memory_order_relaxed);
-		return s_state.load(std::memory_order_acquire);
-	}
-
 	uint64_t Get()
 	{
-		return GetAt(GetTickCount64());
-	}
-
-	bool MenuReadWantedAt(uint64_t nowMs)
-	{
-		if (s_wantedMenuBits.load(std::memory_order_relaxed) != 0)
-			return true;
-		// A query from another thread can be stamped later than nowMs.
-		const uint64_t last = s_lastQueryMs.load(std::memory_order_relaxed);
-		return last != 0 && (nowMs < last || nowMs - last < kQueryKeepAliveMs);
+		// The menu bits are read only while a registration wants them, so
+		// here they could be stale or not read yet: a query never sees them.
+		return s_state.load(std::memory_order_acquire) & ~kMenuBits;
 	}
 
 	bool MenuReadWanted()
 	{
-		return MenuReadWantedAt(GetTickCount64());
+		return s_wantedMenuBits.load(std::memory_order_relaxed) != 0;
 	}
 
 	void Register(uint64_t mask, PluginUIStateCallback callback, void* userData)

@@ -421,8 +421,8 @@ mod loader update. One that must also run on a v73 loader declares 73 and does n
 
 The loader keeps the game's UI state for plugins (interface v74): whether a gameplay world is
 running, the pause menu, the game's mouse cursor, any menu, and the map, inventory, build menu and
-station screens. `GameMenu->GetUIState()` reads it from any thread; `RegisterOnUIStateChanged`
-calls you on the game thread when a bit you asked for changes. Ignore bits you do not know: later
+station screens. `RegisterOnUIStateChanged` calls you on the game thread when a bit you asked for
+changes; `GameMenu->GetUIState()` reads the gameplay, pause-menu and cursor bits from any thread. Ignore bits you do not know: later
 loaders may add some. See [GameMenu.md](GameMenu.md). The menu classes follow BetterDrone's
 menu-layer read and the class list in Kian369's MiniMap.
 <sup>[✦](#msantoro12)</sup>

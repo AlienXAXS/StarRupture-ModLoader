@@ -155,7 +155,7 @@ The ZIP is already laid out correctly, so extract it directly into that folder. 
 [*]Plugin authors: a window can opt in to being clicked and dragged over the Escape menu and over any game screen that shows the mouse cursor ✦
 [*]Plugin authors: plugin interface v73 adds DeclareFeature, so one missing game function or member turns off only that feature, and version-map keys look up game functions and members ✦
 [*]Plugin authors: plugin interface v74 adds SetNextWindowSize and SetNextWindowSizeConstraints (with named PluginCond_* and PluginWindowFlags_AlwaysAutoResize constants), so a popup no longer collapses into a narrow strip ✦
-[*]Plugin authors: plugin interface v74 also gives plugins the game's UI state (in gameplay, pause menu, cursor up, any menu, map, inventory, build menu, station screens) as a query or a change callback, so mods no longer detect it themselves; the menu classes follow BetterDrone's menu-layer read and Kian369's MiniMap class list ✦
+[*]Plugin authors: plugin interface v74 also gives plugins the game's UI state (in gameplay, pause menu, cursor up, any menu, map, inventory, build menu, station screens) as a change callback (in gameplay, pause menu and cursor up also as a query), so mods no longer detect it themselves; the menu classes follow BetterDrone's menu-layer read and Kian369's MiniMap class list ✦
 [/list]
 
 [b][size=4]Game updates[/size][/b]

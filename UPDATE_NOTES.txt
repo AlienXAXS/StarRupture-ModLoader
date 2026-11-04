@@ -11,6 +11,6 @@
 - The log warns when a plugin's own pattern matches 0 or 2 or more places on the running game
 - A hang inside a plugin's tick or draw callback names that plugin in the log
 - Plugins can say when they may be loaded and unloaded, and reload, unload and load say why they were refused
-- For plugin authors, interface v74: GetUIState and RegisterOnUIStateChanged give the game's UI state (gameplay, pause menu, cursor, map, inventory, build menu, station screens)
+- For plugin authors, interface v74: RegisterOnUIStateChanged reports the game's UI state (gameplay, pause menu, cursor, map, inventory, build menu, station screens); GetUIState reads gameplay, pause menu and cursor
 - For plugin authors, interface v74: SetNextWindowSize and SetNextWindowSizeConstraints, with the PluginCond_* conditions and PluginWindowFlags_AlwaysAutoResize, keep a popup from collapsing into a narrow strip
 - For plugin authors, interface v73: DeclareFeature turns off one feature instead of the plugin, and version-map keys look up game functions and members

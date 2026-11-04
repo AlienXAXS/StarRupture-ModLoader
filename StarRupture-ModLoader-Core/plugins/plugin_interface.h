@@ -3237,11 +3237,12 @@ struct PluginGameMenuEntryDesc
 	void*                  userData;   // passed straight back to onClick
 };
 
-// v74. The game's UI state: bits of the uint64_t that GetUIState returns and
-// RegisterOnUIStateChanged reports. More than one is set at a time: the map
-// open in gameplay reads IN_GAMEPLAY | CURSOR_UP | ANY_MENU | MAP. A later
-// loader may add bits without a new interface version, so ignore bits you do
-// not know and never compare the whole state with a fixed value.
+// v74. The game's UI state: bits of the uint64_t that RegisterOnUIStateChanged
+// reports (GetUIState returns the first three only). More than one is set at
+// a time: the map open in gameplay reads IN_GAMEPLAY | CURSOR_UP | ANY_MENU |
+// MAP. A later loader may add bits without a new interface version, so
+// ignore bits you do not know and never compare the whole state with a
+// fixed value.
 enum PluginUIState : uint64_t
 {
 	// A gameplay world (ChimeraMain) has begun play and not ended. False at
@@ -3314,17 +3315,14 @@ struct IPluginGameMenu
 	bool (*IsPauseMenuOpen)();
 
 	// --- v74 ---
-	// The game's UI state as PluginUIState bits. Safe from any thread: one
-	// atomic read of the state as of the last game tick, so it lags by up to
-	// a frame.
+	// The game's UI state as PluginUIState bits: IN_GAMEPLAY, PAUSE_MENU and
+	// CURSOR_UP. Safe from any thread: one atomic read of the state as of the
+	// last game tick, so it lags by up to a frame.
 	//
-	// IN_GAMEPLAY, PAUSE_MENU and CURSOR_UP are kept all the time. The menu
-	// bits (ANY_MENU and the ones after it) are read from the game only while
-	// a plugin has a RegisterOnUIStateChanged callback for one of them, or has called
-	// GetUIState in the last two seconds; otherwise they are 0. So the first
-	// call after nobody has asked for a while starts that read, and its menu
-	// bits are 0 until the next game tick. A plugin that needs them from the
-	// first frame registers a callback instead.
+	// The menu bits (ANY_MENU and the ones after it) are never set here. The
+	// loader reads them from the game only while a plugin has a
+	// RegisterOnUIStateChanged callback for one of them; for the menu bits,
+	// register a callback.
 	uint64_t (*GetUIState)();
 
 	// Calls callback on the GAME THREAD whenever a bit in mask changes (pass
