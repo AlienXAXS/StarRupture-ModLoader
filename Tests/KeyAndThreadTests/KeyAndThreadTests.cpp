@@ -829,6 +829,66 @@ static void SharedKeyboard()
     CHECK(!SharedKeyboardGoesToImGui(true, false, false));
 }
 
+// A release for a press the game saw reaches it even if capture started in
+// between; a release for a press it never saw stays kept.
+static void ReleasePassthrough()
+{
+    using InputArbitration::PressesSeenByGame;
+    using InputArbitration::ShouldKeepFromGame;
+    // ShouldKeepFromGame(arbitrationKeeps, releaseOfSeenPress)
+    CHECK(!ShouldKeepFromGame(false, false));
+    CHECK(!ShouldKeepFromGame(false, true));
+    CHECK(ShouldKeepFromGame(true, false));
+    CHECK(!ShouldKeepFromGame(true, true));
+
+    constexpr uint32_t kEscape = 0x1B;
+    constexpr uint32_t kTab    = 0x09;
+    PressesSeenByGame seen;
+
+    // Shared mode: Escape goes down and reaches the game. The tick then flips to
+    // exclusive, and the key-up is still handed over.
+    seen.Pressed(kEscape);
+    CHECK(!ShouldKeepFromGame(true, seen.TakeRelease(kEscape)));
+
+    // Exclusive from the start: the press never reached the game, so its
+    // key-up stays kept.
+    CHECK(ShouldKeepFromGame(true, seen.TakeRelease(kTab)));
+
+    // A release is handed over once; a second one is kept again.
+    CHECK(ShouldKeepFromGame(true, seen.TakeRelease(kEscape)));
+
+    // Auto-repeat records the press once.
+    seen.Pressed(kEscape);
+    seen.Pressed(kEscape);
+    CHECK(seen.TakeRelease(kEscape));
+    CHECK(!seen.TakeRelease(kEscape));
+
+    // Keys are tracked independently.
+    seen.Pressed(kEscape);
+    seen.Pressed(kTab);
+    CHECK(seen.TakeRelease(kTab));
+    CHECK(seen.TakeRelease(kEscape));
+}
+
+// A focused text field keeps the keys it owns from the game, as before: only
+// a release of a press the game saw is exempt, and typing never reaches it.
+static void ReleasePassthroughTextField()
+{
+    using InputArbitration::PressesSeenByGame;
+    using InputArbitration::SharedKeyboardGoesToImGui;
+    using InputArbitration::ShouldKeepFromGame;
+    PressesSeenByGame seen;
+
+    // Typing: the text field has focus, the press is kept, so is the release.
+    const bool typing = SharedKeyboardGoesToImGui(false, true, true);
+    CHECK(ShouldKeepFromGame(typing, seen.TakeRelease('A')));
+
+    // A key held down before the field took focus gets its release, so the
+    // game does not keep it held.
+    seen.Pressed('W');
+    CHECK(!ShouldKeepFromGame(typing, seen.TakeRelease('W')));
+}
+
 int main()
 {
     RunTest("IsGameThread: false on every thread before the first tick", GameThreadBeforeFirstTick);
@@ -854,6 +914,8 @@ int main()
     RunTest("IsKeyHeld: any thread", AnyThread);
     RunTest("InputArbitration: plugin windows are exclusive only off the cursor screens", ExclusiveCapture);
     RunTest("InputArbitration: a text field owns the keyboard in the shared modes", SharedKeyboard);
+    RunTest("InputArbitration: a release reaches the game for a press it saw", ReleasePassthrough);
+    RunTest("InputArbitration: a text field's keys stay kept, a held key still gets its release", ReleasePassthroughTextField);
     RunTest("ForgetModule: an unloading plugin's keybinds go", ForgetModuleDropsItsKeybinds);
     RunTest("ForgetModule: an unloading plugin's game-thread tasks go", ForgetModuleDropsItsGameThreadTasks);
     RunTest("UIState: mask filter, once per change", UIStateMaskAndOncePerChange);
