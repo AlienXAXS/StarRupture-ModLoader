@@ -1,4 +1,4 @@
-- Now with 100% more Good Stuff: Good Stuff Software is taking over from AlienX to keep the updates coming.
+- Now with 100% more Good Stuff: Mike From GSS is taking over from AlienX to keep the updates coming.
 - Keeps working after a game update, for every game build it knows; a signed online file can add newer builds without a loader update
 - When a game update changes a layout the loader checks, only the features that read it are switched off, not every plugin, and the Plugins tab shows how many are off
 - A plugin that crashes is switched off and a toast names it; it restarts by itself about 3 seconds later, up to 3 times a session (Settings can turn this off)
