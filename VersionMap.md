@@ -175,9 +175,10 @@ starrupture-ci's `ci/VERSION-MAP.md`.
 
 **Asset.** `version-map-client.v1.txt`, on the loader's Latest release. The name carries the
 format version, so a later format never strands a loader that reads this one. Latest is where it
-sits because `prune_releases.yml` deletes the others: `release.yml` attaches the current signed
-file to each new release, and between releases `vmap-publish.yml` replaces it. There is no
-server feed: only the client fetches.
+sits because `prune_releases.yml` deletes the others. `vmap-publish.yml` puts the current signed
+file on Latest: on a new release at its next run (every 15 minutes), and between releases whenever
+the `seq` rises. The first release that carries one needs a manual run with `first_publish` set.
+There is no server feed: only the client fetches.
 
 **Fetch.** The URL is the compiled define `VMAP_FEED_URL` (`/p:VmapFeedUrl=` in `Shared.props`),
 never read from `modloader.ini`. An empty define, or no compiled public key, means no fetch. The
@@ -273,8 +274,8 @@ new Steam build
    release. The release key has to be held somewhere only the publishing job on `main` can read
    before that happens. `vmap-publish.yml` in this repository pulls the asset every 15 minutes,
    checks it against the keys in `version_feed.cpp`, and uploads it to Latest only if it verifies
-   and its `seq` is higher than the one already there. This repository holds none of the signing
-   secrets.
+   and its `seq` is higher than the newest one on a release (or, on a Latest that has none yet, no
+   lower). This repository holds none of the signing secrets.
 
 **Publishing is off by default.** The `publish` input of `sr-client-check.yml` defaults to false,
 and `state/autopilot.json` decides what may run unattended: its `enabled` switch, the `paths` it

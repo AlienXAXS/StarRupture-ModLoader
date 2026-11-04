@@ -5,11 +5,14 @@ name: Publish the version-map feed
 # version_feed.cpp, and puts it on this repository's Latest release.
 #
 # A feed that fails the check fails the run and is not uploaded. A feed whose
-# seq does not rise above the one on Latest is valid and is not uploaded.
+# seq does not rise above the newest one on a release is valid and is not
+# uploaded, unless Latest carries no feed (see below).
 #
-# release.yml attaches the file to a new release itself, with the same check
-# (.github/vmap/verify-feed.mjs), because a release made with GITHUB_TOKEN
-# starts no `release: published` workflow.
+# release.yml does not attach the file, and a release made with GITHUB_TOKEN
+# starts no `release: published` workflow, so a new release gets the feed from
+# the next scheduled run. Latest with no feed of its own takes the current
+# feed even when its seq equals the one on an older release; it is never given
+# an older one.
 #
 # The seq to beat is that of the newest release that carries a feed, read only
 # after that file verifies. With no feed on any release, only a manual run with
@@ -80,6 +83,9 @@ jobs:
             [ "$ALLOW_TEST_KEY" = "true" ] || args+=(--refuse-test-key)
             last=$(node .github/vmap/verify-feed.mjs "$RUNNER_TEMP/cur/$FEED_ASSET" "${args[@]}") || { echo "::error::The feed on release $t does not verify."; exit 1; }
             echo "The newest feed is on release $t, seq $last."
+            # Latest has none yet (a release since the last upload): the same
+            # seq goes on it too, so Latest always carries the current feed.
+            [ "$t" = "$tag" ] || last=$((last - 1))
             break
           done
           if [ -z "$last" ]; then
