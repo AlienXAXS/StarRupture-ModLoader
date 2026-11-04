@@ -12,17 +12,21 @@
 #include "UI/plugin_panel_registry.h"
 #include "UI/plugin_widget_registry.h"
 #include "UI/plugin_call_tracker.h"
+#include "plugins/plugin_guard.h"
 #include "imgui/imgui.h"
+#include "imgui/imgui_internal.h"   // GImGui, to see what a crashed render left behind
 #include "test_doubles.h"
 
 #include <windows.h>
 #include <atomic>
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <iterator>
 #include <string>
 #include <thread>
+#include <vector>
 
 static int g_checks = 0;
 static int g_failed = 0;
@@ -221,9 +225,12 @@ static std::string StripLineComments(const std::string& src)
 
 // Text of the function whose definition starts with signature, up to its
 // closing brace (a tab-indented "}" line; the functions sit in a namespace).
+// A forward declaration (the signature then ';') is not the definition.
 static std::string FunctionBody(const std::string& src, const char* signature)
 {
-    const size_t start = src.find(signature);
+    size_t start = src.find(signature);
+    while (start != std::string::npos && src.compare(start + strlen(signature), 1, ";") == 0)
+        start = src.find(signature, start + 1);
     if (start == std::string::npos) return "";
     const size_t end = src.find("\n\t}", start);
     return end == std::string::npos ? "" : src.substr(start, end - start);
@@ -247,8 +254,8 @@ static void Test_UnloadPathsPurgePanels()
     const char* const kPaths[] =
     {
         "void UnloadAllPlugins()",
-        "bool UnloadPlugin(int index)",
-        "bool ReloadPlugin(int index)",
+        "static bool ShutDownAndFree(LoadedPlugin& p, const wchar_t* action)",
+        "bool ReloadPlugin(int index, std::string* refusal)",
     };
     for (const char* signature : kPaths)
     {
@@ -268,12 +275,10 @@ static void Test_UnloadPathsPurgePanels()
         const size_t wait = body.find("= WaitOutPluginRenders(" + module + ",");
         CHECK(wait != std::string::npos);
 
-        for (const char* registry : { "PluginPanelRegistry", "PluginWidgetRegistry" })
-        {
-            const size_t forget = body.find(std::string(registry) + "::ForgetModule(" + module + ")", wait);
-            CHECK(forget != std::string::npos);
-            CHECK(forget < free);
-        }
+        // ...then everything the plugin registered goes, before the free.
+        const size_t forget = body.find("ForgetRegistrations(", wait);
+        CHECK(forget != std::string::npos);
+        CHECK(forget < free);
 
         // ...and when the wait gives up, the overlay may still be in the
         // module, so the path must stop before FreeLibrary.
@@ -282,11 +287,90 @@ static void Test_UnloadPathsPurgePanels()
         CHECK(refuse < free);
     }
 
+    // UNLOAD frees through ShutDownAndFree, checked above.
+    CHECK(FunctionBody(src, "bool UnloadPlugin(int index, std::string* refusal)").find("ShutDownAndFree(") != std::string::npos);
+
+    // A refused UNLOAD or RELOAD is decided before anything of the plugin is
+    // touched: the refusal check comes ahead of the shutdown and the free.
+    for (const char* signature : { "bool UnloadPlugin(int index, std::string* refusal)", "bool ReloadPlugin(int index, std::string* refusal)" })
+    {
+        const std::string body = FunctionBody(src, signature);
+        const size_t refuse = body.find("ReloadPolicy::");
+        CHECK(refuse != std::string::npos);
+        for (const char* teardown : { "ShutDownAndFree(", "CallShutdownSEH(", "WaitOutPluginRenders(", "FreeLibrary(" })
+        {
+            const size_t at = body.find(teardown);
+            if (at != std::string::npos)
+                CHECK(refuse < at);
+        }
+    }
+
+    // ForgetRegistrations purges both registries for the module being freed.
+    const std::string forget = FunctionBody(src, "static void ForgetRegistrations(LoadedPlugin& p)");
+    CHECK(forget.find("UI::PluginPanelRegistry::ForgetModule(p.hModule)") != std::string::npos);
+    CHECK(forget.find("UI::PluginWidgetRegistry::ForgetModule(p.hModule)") != std::string::npos);
+    CHECK(forget.find("ModLoaderLogger::ForgetPluginCallbacks(p.hModule)") != std::string::npos);
+
     // ...and that wait must come from both registries, with its answer used.
     const std::string wait = FunctionBody(src, "static bool WaitOutPluginRenders(");
     CHECK(wait.find("= UI::PluginPanelRegistry::ForgetModule(module)") != std::string::npos);
     CHECK(wait.find("= UI::PluginWidgetRegistry::ForgetModule(module)") != std::string::npos);
     CHECK(wait.find("return false;") != std::string::npos);
+}
+
+static std::string ReadSource(const std::filesystem::path& file)
+{
+    std::ifstream in(file, std::ios::binary);
+    return StripLineComments(std::string(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()));
+}
+
+// Every ForgetModule(HMODULE) and ForgetPlugin(const char*) a loader header
+// declares is called from ForgetRegistrations or ForgetPluginCallbacks: a
+// registry added later without being wired in would keep a freed plugin's
+// callbacks. A list with no purge at all is not caught here; those are
+// tested on the real list (the game-thread queue in KeyAndThreadTests).
+static void Test_EveryForgetModuleIsCalledOnUnload()
+{
+    wchar_t exe[MAX_PATH];
+    GetModuleFileNameW(nullptr, exe, MAX_PATH);
+    std::filesystem::path core = exe;
+    core = core.parent_path().parent_path().parent_path() / L"StarRupture-ModLoader-Core";
+
+    const std::string calls =
+        FunctionBody(ReadSource(core / L"plugins" / L"plugin_manager.cpp"), "static void ForgetRegistrations(LoadedPlugin& p)") +
+        FunctionBody(ReadSource(core / L"hooks" / L"hooks_interface.cpp"), "void ForgetPluginCallbacks(HMODULE module)");
+    CHECK(!calls.empty());
+
+    int declared = 0;
+    for (const auto& entry : std::filesystem::recursive_directory_iterator(core))
+    {
+        if (entry.path().extension() != L".h" || entry.path().filename() == L"plugin_guard.h")
+            continue;
+        const std::string header = ReadSource(entry.path());
+        for (const std::string purge : { "ForgetModule(HMODULE", "ForgetPlugin(const char*" })
+        {
+            const size_t decl = header.find(purge);
+            if (decl == std::string::npos)
+                continue;
+            const std::string call = purge.substr(0, purge.find('(') + 1);   // "ForgetModule("
+
+            // The innermost namespace the declaration sits in: "namespace Hooks::EngineTick" -> "EngineTick".
+            const size_t ns = header.rfind("namespace ", decl);
+            CHECK(ns != std::string::npos);
+            if (ns == std::string::npos) continue;
+            const size_t nameStart = ns + strlen("namespace ");
+            std::string name = header.substr(nameStart, header.find_first_of(" \r\n{", nameStart) - nameStart);
+            if (const size_t colon = name.rfind("::"); colon != std::string::npos)
+                name.erase(0, colon + 2);
+
+            ++declared;
+            const bool called = calls.find(name + "::" + call) != std::string::npos;
+            if (!called)
+                printf("    not called on unload: %s::%s) (%ls)\n", name.c_str(), call.c_str(), entry.path().filename().c_str());
+            CHECK(called);
+        }
+    }
+    CHECK(declared >= 20);
 }
 
 // ---------------------------------------------------------------------------
@@ -488,6 +572,259 @@ static void Test_ForgottenPanelIsNotDrawnLater()
     CHECK(PanelCount() == 0);
 }
 
+// ---------------------------------------------------------------------------
+// PluginGuard: a fault in a plugin callback switches off that plugin only.
+// This executable is plugin "A" again; kernel32 is plugin "B".
+// ---------------------------------------------------------------------------
+
+static int g_guardReports = 0;
+static PluginGuard::Report g_lastReport = {};
+static void CountReport(const PluginGuard::Report& r) { ++g_guardReports; g_lastReport = r; }
+
+static int g_okCallsA = 0;
+static void FaultA(int) { *static_cast<volatile int*>(nullptr) = 1; }
+static void OkA(int v) { g_okCallsA += v; }
+
+static HMODULE ThisModule() { return GetModuleHandleW(nullptr); }
+static HMODULE Kernel32()   { return GetModuleHandleW(L"kernel32.dll"); }
+
+static void Test_GuardFaultSwitchesOffOnlyThatPlugin()
+{
+    PluginGuard::SetReporter(CountReport);
+    g_guardReports = 0;
+    g_okCallsA     = 0;
+    PluginGuard::Track(ThisModule(), "A");
+    PluginGuard::Track(Kernel32(), "B");
+
+    CHECK(PluginGuard::Invoke(OkA, "tick callback", 1));
+    CHECK(g_okCallsA == 1);
+
+    // The fault is contained: Invoke returns false and the test goes on.
+    CHECK(!PluginGuard::Invoke(FaultA, "tick callback", 0));
+    CHECK(g_guardReports == 1);
+    CHECK(g_lastReport.module == ThisModule());
+    CHECK(g_lastReport.code == EXCEPTION_ACCESS_VIOLATION);
+    CHECK(strcmp(g_lastReport.pluginName, "A") == 0);
+
+    PluginGuard::Fault fault;
+    CHECK(PluginGuard::GetFault(ThisModule(), &fault));
+    CHECK(fault.code == EXCEPTION_ACCESS_VIOLATION);
+    CHECK(fault.callback && strcmp(fault.callback, "tick callback") == 0);
+
+    // Every other callback of A is skipped from now on, and not reported again.
+    CHECK(PluginGuard::IsOff(reinterpret_cast<const void*>(OkA)));
+    CHECK(!PluginGuard::Invoke(OkA, "tick callback", 1));
+    CHECK(g_okCallsA == 1);
+    CHECK(!PluginGuard::Invoke(FaultA, "tick callback", 0));
+    CHECK(g_guardReports == 1);
+
+    // B runs on.
+    CHECK(!PluginGuard::IsOff(reinterpret_cast<const void*>(GetCurrentThreadId)));
+    CHECK(!PluginGuard::GetFault(Kernel32(), nullptr));
+    DWORD tid = 0;
+    CHECK(PluginGuard::InvokeInto(&tid, GetCurrentThreadId, "tick callback"));
+    CHECK(tid == GetCurrentThreadId());
+
+    // Unloading (or reloading) A forgets the fault: it starts out running.
+    PluginGuard::Untrack(ThisModule());
+    CHECK(!PluginGuard::IsOff(reinterpret_cast<const void*>(OkA)));
+    CHECK(!PluginGuard::GetFault(ThisModule(), nullptr));
+    PluginGuard::Track(ThisModule(), "A");
+    CHECK(PluginGuard::Invoke(OkA, "tick callback", 1));
+    CHECK(g_okCallsA == 2);
+
+    PluginGuard::Untrack(ThisModule());
+    PluginGuard::Untrack(Kernel32());
+}
+
+// A fault in a callback that is in no plugin (the loader's own) is not caught.
+static bool FaultOutsideAnyPluginPropagates()
+{
+    __try { PluginGuard::Invoke(FaultA, "tick callback", 0); return false; }
+    __except (EXCEPTION_EXECUTE_HANDLER) { return true; }
+}
+
+static void Test_GuardLeavesLoaderFaultsAlone()
+{
+    g_guardReports = 0;
+    CHECK(FaultOutsideAnyPluginPropagates());
+    CHECK(g_guardReports == 0);
+    CHECK(!PluginGuard::GetFault(ThisModule(), nullptr));
+}
+
+// A fault raised outside the plugin, in code its callback called (here
+// ntdll's strlen, standing in for the engine or the loader), is not contained:
+// the frames between it and the guard may hold locks. It reaches the caller's
+// handler, and the plugin is not switched off.
+static size_t (__cdecl* g_ntdllStrlen)(const char*) = nullptr;
+static void FaultBelowA(int) { volatile size_t n = g_ntdllStrlen(nullptr); (void)n; }
+
+static bool FaultBelowPluginPropagates()
+{
+    __try { PluginGuard::Invoke(FaultBelowA, "tick callback", 0); return false; }
+    __except (EXCEPTION_EXECUTE_HANDLER) { return true; }
+}
+
+static void Test_GuardPassesOnFaultsOutsideThePlugin()
+{
+    g_ntdllStrlen = reinterpret_cast<size_t (__cdecl*)(const char*)>(
+        GetProcAddress(GetModuleHandleW(L"ntdll.dll"), "strlen"));
+    CHECK(g_ntdllStrlen != nullptr);
+    if (!g_ntdllStrlen) return;
+
+    PluginGuard::SetReporter(CountReport);
+    g_guardReports = 0;
+    TestDoubles::loggedErrors = 0;
+    PluginGuard::Track(ThisModule(), "A");
+
+    CHECK(FaultBelowPluginPropagates());
+    CHECK(g_guardReports == 0);
+    CHECK(!PluginGuard::GetFault(ThisModule(), nullptr));
+    CHECK(TestDoubles::loggedErrors == 1);          // one line naming A and the callback
+    CHECK(PluginGuard::Invoke(OkA, "tick callback", 0));
+
+    PluginGuard::Untrack(ThisModule());
+}
+
+// C++ exceptions are not the guard's: they reach the caller's catch, and the
+// plugin keeps running.
+static void ThrowA(int) { throw 42; }
+
+static void Test_GuardLetsCppExceptionsThrough()
+{
+    g_guardReports = 0;
+    PluginGuard::Track(ThisModule(), "A");
+
+    int caught = 0;
+    try { PluginGuard::Invoke(ThrowA, "tick callback", 0); }
+    catch (int v) { caught = v; }
+    CHECK(caught == 42);
+    CHECK(g_guardReports == 0);
+    CHECK(!PluginGuard::GetFault(ThisModule(), nullptr));
+    CHECK(PluginGuard::Invoke(OkA, "tick callback", 0));
+
+    PluginGuard::Untrack(ThisModule());
+}
+
+// Two threads fault in the same plugin at once: both are contained, and the
+// plugin is switched off and reported once.
+static void Test_GuardTwoThreadsFaultAtOnce()
+{
+    g_guardReports = 0;
+    PluginGuard::Track(ThisModule(), "A");
+
+    std::atomic<int> ready{ 0 };
+    bool ran[2] = { true, true };
+    auto fault = [&](int i) {
+        ++ready;
+        while (ready.load() < 2) {}
+        ran[i] = PluginGuard::Invoke(FaultA, "tick callback", 0);
+    };
+    std::thread t0(fault, 0), t1(fault, 1);
+    t0.join();
+    t1.join();
+
+    CHECK(!ran[0] && !ran[1]);
+    CHECK(g_guardReports == 1);
+    CHECK(PluginGuard::GetFault(ThisModule(), nullptr));
+
+    PluginGuard::Untrack(ThisModule());
+}
+
+// A call into memory that is no longer code (the callback of a DLL that is
+// gone) is contained; a call into a live thunk that faults is not stale, and
+// is no plugin's, so it goes on as before.
+static bool CallThunkPropagates(void (*thunk)(int))
+{
+    __try { PluginGuard::Invoke(thunk, "tick callback", 0); return false; }
+    __except (EXCEPTION_EXECUTE_HANDLER) { return true; }
+}
+
+static void Test_GuardStaleCallbacks()
+{
+    g_guardReports = 0;
+    SYSTEM_INFO si;
+    GetSystemInfo(&si);
+
+    void* data = VirtualAlloc(nullptr, si.dwPageSize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+    CHECK(data != nullptr);
+    auto notCode = reinterpret_cast<void (*)(int)>(data);
+    CHECK(!PluginGuard::Invoke(notCode, "tick callback", 0));   // not executable
+    VirtualFree(data, 0, MEM_RELEASE);
+    CHECK(!PluginGuard::Invoke(notCode, "tick callback", 0));   // not mapped at all
+    CHECK(g_guardReports == 0);                                  // nothing to switch off
+
+    // mov dword ptr [0], 1 ; ret
+    static const unsigned char kFaultingThunk[] = { 0xC7, 0x04, 0x25, 0, 0, 0, 0, 1, 0, 0, 0, 0xC3 };
+    void* code = VirtualAlloc(nullptr, si.dwPageSize, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    CHECK(code != nullptr);
+    memcpy(code, kFaultingThunk, sizeof(kFaultingThunk));
+    FlushInstructionCache(GetCurrentProcess(), code, sizeof(kFaultingThunk));
+    CHECK(CallThunkPropagates(reinterpret_cast<void (*)(int)>(code)));
+    VirtualFree(code, 0, MEM_RELEASE);
+    CHECK(g_guardReports == 0);
+}
+
+// A panel render that crashes halfway leaves ImGui as it was before the
+// render, and the panel is not drawn again while its plugin is off.
+static int g_crashRenders = 0;
+static void CrashingRender(IModLoaderImGui*)
+{
+    ++g_crashRenders;
+    ImGui::PushStyleVar(ImGuiStyleVar_Alpha, 0.5f);
+    ImGui::PushID("half-done");
+    *static_cast<volatile int*>(nullptr) = 1;
+}
+static const PluginPanelDesc kCrashingPanel = { "Crash", "Crashing panel", CrashingRender };
+
+static void Test_GuardRestoresImGuiAfterRenderFault()
+{
+    g_guardReports = 0;
+    g_crashRenders = 0;
+    PluginGuard::Track(ThisModule(), "A");
+    ImGui::GetIO().ConfigErrorRecoveryEnableAssert = false;
+
+    PanelHandle h = Registry::RegisterPanel(&kCrashingPanel);
+    CHECK(h != nullptr);
+    Registry::SetPanelOpen(h);
+
+    ImGuiContext& g = *GImGui;
+    const int styleVars = g.StyleVarStack.Size;
+    const int ids       = g.CurrentWindow ? g.CurrentWindow->IDStack.Size : 0;
+
+    DrawPanels();
+    CHECK(g_crashRenders == 1);
+    CHECK(g_guardReports == 1);
+    CHECK(g.StyleVarStack.Size == styleVars);
+    CHECK((g.CurrentWindow ? g.CurrentWindow->IDStack.Size : 0) == ids);
+
+    DrawPanels();
+    CHECK(g_crashRenders == 1);    // switched off: skipped
+
+    Registry::ForgetModule(ThisModule());
+    PluginGuard::Untrack(ThisModule());
+}
+
+// The helper every registry's ForgetModule uses: nothing of the freed module
+// is left, everything else is.
+struct GuardReg { int id; void (*cb)(int); };
+
+static void Test_GuardForgetModuleDropsOnlyThatModule()
+{
+    std::vector<void (*)(int)> bare = { OkA, reinterpret_cast<void (*)(int)>(GetCurrentThreadId), FaultA };
+    CHECK(PluginGuard::ForgetModule(bare, ThisModule()) == 2);
+    CHECK(bare.size() == 1 && PluginGuard::ModuleOf(reinterpret_cast<const void*>(bare[0])) == Kernel32());
+
+    std::vector<GuardReg> regs = { { 1, OkA }, { 2, reinterpret_cast<void (*)(int)>(GetLastError) }, { 3, FaultA } };
+    CHECK(PluginGuard::ForgetModule(regs, ThisModule(), [](const GuardReg& r) { return r.cb; }) == 2);
+    CHECK(regs.size() == 1 && regs[0].id == 2);
+    for (const GuardReg& r : regs)
+        CHECK(PluginGuard::ModuleOf(reinterpret_cast<const void*>(r.cb)) != ThisModule());
+
+    CHECK(PluginGuard::ForgetModule(regs, nullptr, [](const GuardReg& r) { return r.cb; }) == 0);
+    CHECK(regs.size() == 1);
+}
+
 int main()
 {
     RunTest("PanelsPurgedByModule",              Test_PanelsPurgedByModule);
@@ -496,10 +833,16 @@ int main()
     RunTest("ForgetOfUnrelatedModuleIsHarmless", Test_ForgetOfUnrelatedModuleIsHarmless);
     RunTest("WidgetsPurgedByModule",             Test_WidgetsPurgedByModule);
     RunTest("UnloadPathsPurgePanels",            Test_UnloadPathsPurgePanels);
+    RunTest("EveryForgetModuleIsCalledOnUnload", Test_EveryForgetModuleIsCalledOnUnload);
 
     // RenderPanelWindows sizes each window through Dear ImGui, which needs a
     // context; nothing is drawn.
     ImGui::CreateContext();
+    // ...and a frame: a render is bracketed by ImGui's error-recovery state,
+    // which reads the current window.
+    ImGui::GetIO().DisplaySize  = ImVec2(1280.0f, 720.0f);
+    ImGui::GetIO().BackendFlags |= ImGuiBackendFlags_RendererHasTextures;
+    ImGui::NewFrame();
     TestDoubles::drawWindows = true;
     g_inRender         = CreateEventW(nullptr, TRUE, FALSE, nullptr);
     g_letRenderFinish  = CreateEventW(nullptr, TRUE, FALSE, nullptr);
@@ -511,6 +854,15 @@ int main()
     RunTest("WaitIsBounded",                     Test_WaitIsBounded);
     RunTest("RenderMayUnregisterItself",         Test_RenderMayUnregisterItself);
     RunTest("ForgottenPanelIsNotDrawnLater",     Test_ForgottenPanelIsNotDrawnLater);
+
+    RunTest("GuardFaultSwitchesOffOnlyThatPlugin",  Test_GuardFaultSwitchesOffOnlyThatPlugin);
+    RunTest("GuardLeavesLoaderFaultsAlone",         Test_GuardLeavesLoaderFaultsAlone);
+    RunTest("GuardForgetModuleDropsOnlyThatModule", Test_GuardForgetModuleDropsOnlyThatModule);
+    RunTest("GuardPassesOnFaultsOutsideThePlugin",  Test_GuardPassesOnFaultsOutsideThePlugin);
+    RunTest("GuardLetsCppExceptionsThrough",        Test_GuardLetsCppExceptionsThrough);
+    RunTest("GuardTwoThreadsFaultAtOnce",           Test_GuardTwoThreadsFaultAtOnce);
+    RunTest("GuardStaleCallbacks",                  Test_GuardStaleCallbacks);
+    RunTest("GuardRestoresImGuiAfterRenderFault",   Test_GuardRestoresImGuiAfterRenderFault);
 
     CloseHandle(g_letRenderFinish);
     CloseHandle(g_inRender);

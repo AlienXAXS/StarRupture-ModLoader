@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  VersionMapTests : a console test for the loader's map keys (interface v72):
+  VersionMap::ResolveMapKey, the loader's own rows (ResolveLoaderEntry) and
+  the map fingerprint.
+
+  A manual test project, like the others under Tests: not part of the solution's
+  build and not run by CI. Build the project file directly:
+
+    msbuild Tests\VersionMapTests\VersionMapTests.vcxproj /p:Configuration="Client Release" /p:Platform=x64
+
+  It compiles the loader's own version_map.cpp, scanner.cpp and image_info.cpp
+  against a fixture map (fixture\hooks\game\version_map.generated.h, made with
+  starrupture-ci's ci/version-map.mjs), with the pattern scan, the scan cache and
+  the log as test doubles (test_doubles.cpp). It also checks the loader's real
+  map against its registry. Output goes to build\tests\version_map_tests.exe.
+-->
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Client Debug|x64">
+      <Configuration>Client Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Client Release|x64">
+      <Configuration>Client Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>17.0</VCProjectVersion>
+    <Keyword>Win32Proj</Keyword>
+    <ProjectGuid>{9B2D47E1-5C8A-4E63-B1F0-7A3C6D2E8F45}</ProjectGuid>
+    <RootNamespace>VersionMapTests</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+    <!-- Set by Visual Studio and by building the .sln; empty when this project file is built on its own. -->
+    <SolutionDir Condition="'$(SolutionDir)' == ''">$(MSBuildThisFileDirectory)..\..\</SolutionDir>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Client Debug|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Client Release|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup>
+    <CoreDir>$(SolutionDir)StarRupture-ModLoader-Core\</CoreDir>
+    <OutDir>$(SolutionDir)build\tests\</OutDir>
+    <IntDir>$(SolutionDir)obj\Tests\$(ProjectName)\$(Platform)\$(Configuration)\</IntDir>
+    <TargetName>version_map_tests</TargetName>
+  </PropertyGroup>
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <ConformanceMode>true</ConformanceMode>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <!-- MODLOADER_CLIENT_BUILD gates the map lookups under test. 4005: framework.h redefines the two macros below. -->
+      <PreprocessorDefinitions>MODLOADER_CLIENT_BUILD;_CONSOLE;NOMINMAX;WIN32_LEAN_AND_MEAN;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <DisableSpecificWarnings>4005;%(DisableSpecificWarnings)</DisableSpecificWarnings>
+      <!-- The fixture map first, so version_map.cpp reads it; every other header is the live loader's. -->
+      <AdditionalIncludeDirectories>$(ProjectDir)fixture;$(ProjectDir);$(CoreDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)'=='Client Debug'">
+    <ClCompile>
+      <PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
+    </ClCompile>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)'=='Client Release'">
+    <ClCompile>
+      <PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+    </ClCompile>
+    <Link>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemGroup Label="Test">
+    <ClInclude Include="fixture\hooks\game\version_map.generated.h" />
+    <ClInclude Include="test_doubles.h" />
+    <ClCompile Include="version_map_tests.cpp" />
+    <ClCompile Include="test_doubles.cpp" />
+  </ItemGroup>
+  <ItemGroup Label="Loader sources under test">
+    <ClCompile Include="$(CoreDir)memory_scanner\version_map.cpp" />
+    <ClCompile Include="$(CoreDir)memory_scanner\scanner.cpp" />
+    <ClCompile Include="$(CoreDir)memory_scanner\image_info.cpp" />
+    <ClCompile Include="$(CoreDir)memory_scanner\hook_scanner_interface.cpp" />
+    <ClCompile Include="$(CoreDir)plugins\plugin_hook_report.cpp" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>

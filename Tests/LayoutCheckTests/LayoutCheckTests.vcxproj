@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  LayoutCheckTests : a console test for the startup layout check. See Tests/README.md.
+
+  Like PreloadTest, this project is in the solution but is deliberately NOT
+  built by "Build Solution" or by CI. Right-click it and pick Build, or build
+  the project file directly:
+
+    msbuild Tests\LayoutCheckTests\LayoutCheckTests.vcxproj /p:Configuration="Client Release" /p:Platform=x64
+
+  It compiles the loader's own core\layout_check.cpp and core\compat_report.cpp
+  without MODLOADER_CLIENT_BUILD, which leaves the comparison and the report's
+  JSON and drops the parts that touch the game, so no SDK and no logger are
+  linked. Output goes to
+  build\tests\layout_check_tests.exe.
+-->
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Client Debug|x64">
+      <Configuration>Client Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Client Release|x64">
+      <Configuration>Client Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>17.0</VCProjectVersion>
+    <Keyword>Win32Proj</Keyword>
+    <ProjectGuid>{58FE0C47-81C9-48EF-8869-EE85554ED143}</ProjectGuid>
+    <RootNamespace>LayoutCheckTests</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+    <!-- Set by Visual Studio and by building the .sln; empty when this project file is built on its own. -->
+    <SolutionDir Condition="'$(SolutionDir)' == ''">$(MSBuildThisFileDirectory)..\..\</SolutionDir>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Client Debug|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Client Release|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup>
+    <CoreDir>$(SolutionDir)StarRupture-ModLoader-Core\</CoreDir>
+    <OutDir>$(SolutionDir)build\tests\</OutDir>
+    <IntDir>$(SolutionDir)obj\Tests\$(ProjectName)\$(Platform)\$(Configuration)\</IntDir>
+    <TargetName>layout_check_tests</TargetName>
+  </PropertyGroup>
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <ConformanceMode>true</ConformanceMode>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <!-- No MODLOADER_CLIENT_BUILD on purpose: see the comment at the top. -->
+      <PreprocessorDefinitions>_CONSOLE;NOMINMAX;WIN32_LEAN_AND_MEAN;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <!-- The live loader header, on purpose: a test built against a stale copy would pass while testing nothing. -->
+      <AdditionalIncludeDirectories>$(ProjectDir);$(CoreDir)core;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)'=='Client Debug'">
+    <ClCompile>
+      <PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
+    </ClCompile>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)'=='Client Release'">
+    <ClCompile>
+      <PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+    </ClCompile>
+    <Link>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemGroup Label="Test">
+    <ClCompile Include="LayoutCheckTests.cpp" />
+    <ClInclude Include="fixtures\layout_table_126119.h" />
+    <ClInclude Include="fixtures\layout_table_127004.h" />
+  </ItemGroup>
+  <ItemGroup Label="Loader sources under test">
+    <ClCompile Include="$(CoreDir)core\layout_check.cpp" />
+    <ClInclude Include="$(CoreDir)core\layout_check.h" />
+    <ClCompile Include="$(CoreDir)core\compat_report.cpp" />
+    <ClInclude Include="$(CoreDir)core\compat_report.h" />
+    <ClInclude Include="$(CoreDir)core\layout_table.generated.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="..\README.md" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>

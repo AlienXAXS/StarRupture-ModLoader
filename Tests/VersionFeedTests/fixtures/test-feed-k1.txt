@@ -1,0 +1,7 @@
+format	1
+seq	1761900000
+build	128786	0x22222222	0x02000000	public_test_branch 2
+build	130001	0x55555555	0x05000000	node-signed fixture
+function	Test::MapOnly	0x00000000	130001	0x55555555	0x05000000	1	AA 55	0	-1	-1	0x00005500
+field	ATest::Native	130001	0x50	0x4	0x00	-
+sig	k1	e8MKH04JDjm/8X53vFrEagkL+6xyYQlLULN9aTzOjqmzKcBLnYn4PNpG/m+WweVaIcNgyRSkwQTCkEMH92ibDA==

@@ -1,0 +1,123 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<!--
+  FeedFetchTests : a console test for the feed fetch (interface v72):
+  Stage 1's trigger, the stages, and HttpGet's deadline, byte limit and
+  timeouts, against a server on 127.0.0.1 that the test starts.
+
+  A manual test project, like the others under Tests: not part of the solution's
+  build and not run by CI. Build the project file directly:
+
+    msbuild Tests\FeedFetchTests\FeedFetchTests.vcxproj /p:Configuration="Client Release" /p:Platform=x64
+
+  It compiles the loader's own feed_fetch.cpp, http_get.cpp, version_feed.cpp and version_map.cpp against the
+  fixture map of VersionMapTests, with the scan, the scan cache and the log as
+  the test doubles VersionMapTests uses. Output goes to build\tests\feed_fetch_tests.exe.
+-->
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Client Debug|x64">
+      <Configuration>Client Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Client Release|x64">
+      <Configuration>Client Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>17.0</VCProjectVersion>
+    <Keyword>Win32Proj</Keyword>
+    <ProjectGuid>{8B14D2F6-9A3C-4E57-B0D1-6F2A7C93E518}</ProjectGuid>
+    <RootNamespace>FeedFetchTests</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+    <!-- Set by Visual Studio and by building the .sln; empty when this project file is built on its own. -->
+    <SolutionDir Condition="'$(SolutionDir)' == ''">$(MSBuildThisFileDirectory)..\..\</SolutionDir>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Client Debug|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Client Release|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup>
+    <CoreDir>$(SolutionDir)StarRupture-ModLoader-Core\</CoreDir>
+    <OutDir>$(SolutionDir)build\tests\</OutDir>
+    <IntDir>$(SolutionDir)obj\Tests\$(ProjectName)\$(Platform)\$(Configuration)\</IntDir>
+    <TargetName>feed_fetch_tests</TargetName>
+  </PropertyGroup>
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <ConformanceMode>true</ConformanceMode>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <!-- MODLOADER_CLIENT_BUILD gates the map lookups under test. 4005: framework.h redefines the two macros below. -->
+      <PreprocessorDefinitions>MODLOADER_CLIENT_BUILD;_CONSOLE;NOMINMAX;WIN32_LEAN_AND_MEAN;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <DisableSpecificWarnings>4005;%(DisableSpecificWarnings)</DisableSpecificWarnings>
+      <!-- The fixture map first, so version_map.cpp reads it; every other header is the live loader's. -->
+      <AdditionalIncludeDirectories>$(ProjectDir)..\VersionMapTests\fixture;$(ProjectDir)..\VersionMapTests;$(CoreDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)'=='Client Debug'">
+    <ClCompile>
+      <PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
+    </ClCompile>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)'=='Client Release'">
+    <ClCompile>
+      <PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+    </ClCompile>
+    <Link>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemGroup Label="Test">
+    <ClInclude Include="..\VersionMapTests\fixture\hooks\game\version_map.generated.h" />
+    <ClInclude Include="..\VersionMapTests\test_doubles.h" />
+    <ClCompile Include="feed_fetch_tests.cpp" />
+    <ClCompile Include="..\VersionMapTests\test_doubles.cpp" />
+  </ItemGroup>
+  <ItemGroup Label="Loader sources under test">
+    <ClCompile Include="$(CoreDir)auto_update\feed_fetch.cpp" />
+    <ClCompile Include="$(CoreDir)auto_update\http_get.cpp" />
+    <ClCompile Include="$(CoreDir)memory_scanner\version_map.cpp" />
+    <ClCompile Include="$(CoreDir)memory_scanner\version_feed.cpp" />
+    <ClCompile Include="$(CoreDir)third_party\monocypher\monocypher.c">
+      <WarningLevel>TurnOffAllWarnings</WarningLevel>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="$(CoreDir)third_party\monocypher\monocypher-ed25519.c">
+      <WarningLevel>TurnOffAllWarnings</WarningLevel>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="$(CoreDir)memory_scanner\scanner.cpp" />
+    <ClCompile Include="$(CoreDir)memory_scanner\image_info.cpp" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>

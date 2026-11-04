@@ -22,11 +22,16 @@ namespace PluginManager
 }
 
 // The registries report a render that outlived the unload wait through this.
+// The watchdog warns through LogWarn, which no test reaches.
 namespace ModLoaderLogger
 {
     void LogError(const wchar_t*, ...)
     {
         ++TestDoubles::loggedErrors;
+    }
+
+    void LogWarn(const wchar_t*, ...)
+    {
     }
 }
 
@@ -34,11 +39,18 @@ namespace ModLoaderLogger
 // renders, but the panel's renderFn is called when drawWindows is set.
 namespace UI::Theme
 {
-    bool BeginChamferedWindow(const char* title, const char*, bool*, const char*, ImGuiWindowFlags, bool)
+    bool BeginChamferedWindow(const char* title, const char*, bool*, const char*, ImGuiWindowFlags, bool, void (*)())
     {
         TestDoubles::drawnTitles.push_back(title);
         return TestDoubles::drawWindows;
     }
 
     void EndChamferedWindow() {}
+}
+
+// plugin_widget_registry.cpp asks this whether widgets share the pause
+// menu's mouse; no test opens the pause menu.
+bool ShouldShareGameMouseNow()
+{
+    return false;
 }

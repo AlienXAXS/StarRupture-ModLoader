@@ -71,7 +71,7 @@ namespace PluginManager
 // renders.
 namespace UI::Theme
 {
-    bool BeginChamferedWindow(const char*, const char*, bool*, const char*, ImGuiWindowFlags, bool)
+    bool BeginChamferedWindow(const char*, const char*, bool*, const char*, ImGuiWindowFlags, bool, void (*)())
     {
         return false;
     }

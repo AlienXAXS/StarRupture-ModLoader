@@ -101,6 +101,8 @@
   <ItemGroup Label="Loader sources under test">
     <ClCompile Include="$(CoreDir)UI\plugin_panel_registry.cpp" />
     <ClCompile Include="$(CoreDir)UI\plugin_widget_registry.cpp" />
+    <ClCompile Include="$(CoreDir)plugins\plugin_guard.cpp" />
+    <ClCompile Include="$(CoreDir)plugins\plugin_watchdog.cpp" />
   </ItemGroup>
   <!-- plugin_panel_registry.cpp draws through Dear ImGui; the vendored copy is linked, nothing is rendered. -->
   <ItemGroup Label="Vendored Dear ImGui">
