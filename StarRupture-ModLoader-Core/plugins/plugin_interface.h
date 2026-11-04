@@ -815,9 +815,27 @@
 //      can add bits without a new interface version; a plugin ignores bits it
 //      does not know.
 //
+// v75 (2026-11-04): Panel title-bar buttons and collapse. PluginPanelDesc gained
+//      titleBarFn, an optional callback the loader runs inside the title bar it
+//      draws for the panel, right after the title text, so a plugin can add its
+//      own small buttons there with the usual SameLine layout (a collapse
+//      button, say). The panel registry's IPluginUIEvents gained
+//      IsPanelCollapsed and SetPanelCollapsed: a collapsed panel shrinks to
+//      its title bar, keeps its width and does not call renderFn, and
+//      expanding it again restores the size it had. The loader does not save
+//      the collapsed state; a plugin that wants it kept saves it in its own
+//      config and calls SetPanelCollapsed after RegisterPanel.
+//      titleBarFn is appended at the END of PluginPanelDesc, and the two calls
+//      at the BOTTOM of IPluginUIEvents, so nothing a v70-v74 plugin reads by
+//      offset moved and MIN stays at 70. The loader reads titleBarFn only from
+//      a plugin that declares interface 75 or later: a smaller descriptor from
+//      an older plugin ends before the field, and is never read past its end.
+//      A v75 plugin is refused by a v74 loader, which has neither the field
+//      nor the calls.
+//
 #define PLUGIN_INTERFACE_VERSION_MIN 70
-#define PLUGIN_INTERFACE_VERSION_MAX 74
-#define PLUGIN_INTERFACE_VERSION 74
+#define PLUGIN_INTERFACE_VERSION_MAX 75
+#define PLUGIN_INTERFACE_VERSION 75
 
 enum class PluginLogLevel { Trace = 0, Debug = 1, Info = 2, Warn = 3, Error = 4 };
 enum class ConfigValueType { String, Integer, Float, Boolean, Keybind, Choice /* v71 */, Hidden /* v71 */ };
@@ -2331,7 +2349,20 @@ struct PluginPanelDesc
 	const char* buttonLabel;
 	const char* windowTitle;
 	PluginImGuiRenderCallback renderFn;
+
+	// --- v75 ---
+	// Optional. Called every frame the panel is open, with the cursor on the
+	// title line right after the title text, inside the title bar the loader
+	// draws. Draw small buttons there with imgui->SameLine() between them
+	// (SmallButton, Button, a glyph with SetItemTooltip). Ids are scoped to the
+	// title bar, so a label may repeat one in renderFn. Runs also while the
+	// panel is collapsed. Read only when the plugin declares interface 75 or
+	// later; a plugin built before leaves it out and the loader never looks.
+	PluginImGuiRenderCallback titleBarFn;
 };
+
+static_assert(offsetof(PluginPanelDesc, renderFn)   == 16, "v15 layout");
+static_assert(offsetof(PluginPanelDesc, titleBarFn) == 24, "v75 starts where v15 ended");
 
 typedef void* PanelHandle;
 typedef void* WidgetHandle;
@@ -2414,9 +2445,24 @@ struct IPluginUIEvents
 	// panel or token does not count: it shares the mouse with the game instead,
 	// so this stays false for it there. Safe from any thread.
 	bool (*IsOverlayOpen)();
+
+	// --- v75 ---
+	// True while the panel is collapsed to its title bar. False for a null or
+	// stale handle. Safe from any thread.
+	bool (*IsPanelCollapsed)(PanelHandle handle);
+	// Collapse the panel to its title bar (true) or expand it again (false).
+	// A collapsed panel keeps its width, shows only the title bar (with the
+	// buttons titleBarFn draws and the close button) and does not call
+	// renderFn. Expanding restores the size it had before. Works while the
+	// panel is closed too: it then opens in that state. The state is kept for
+	// the session but not saved by the loader. Ignored for a null or stale
+	// handle. Safe from any thread; the window changes on the next frame.
+	void (*SetPanelCollapsed)(PanelHandle handle, bool collapsed);
 };
 
-static_assert(offsetof(IPluginUIEvents, IsOverlayOpen) == 120, "v71 starts where v70 ended");
+static_assert(offsetof(IPluginUIEvents, IsOverlayOpen)      == 120, "v71 starts where v70 ended");
+static_assert(offsetof(IPluginUIEvents, IsPanelCollapsed)   == 128, "v75 starts where v71 ended");
+static_assert(offsetof(IPluginUIEvents, SetPanelCollapsed)  == 136, "v75 layout");
 
 // ---------------------------------------------------------------------------
 // In-world debug drawing (v50, client only) -- hooks->HUD->DebugDraw

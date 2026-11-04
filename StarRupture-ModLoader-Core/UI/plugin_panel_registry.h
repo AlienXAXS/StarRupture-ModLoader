@@ -46,6 +46,13 @@ namespace UI::PluginPanelRegistry
     void SetPanelOpen(PanelHandle handle);
     void SetPanelClose(PanelHandle handle);
 
+    // Collapse a panel to its title bar, or expand it again, and ask which it
+    // is. A collapsed panel keeps its width, draws no renderFn and still draws
+    // the plugin's title-bar buttons. Kept for the session, not saved. A null
+    // or stale handle is ignored (and reads as not collapsed).
+    bool IsPanelCollapsed(PanelHandle handle);
+    void SetPanelCollapsed(PanelHandle handle, bool collapsed);
+
     // Register/unregister a panel-closed notification callback. Fired with
     // the handle of the panel that was closed, whether via the ImGui
     // titlebar X button (RenderPanelWindows) or via SetPanelClose.

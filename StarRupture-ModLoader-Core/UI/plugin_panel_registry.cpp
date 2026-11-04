@@ -26,7 +26,11 @@ namespace UI::PluginPanelRegistry
     struct PanelEntry
     {
         const PluginPanelDesc* desc;
+        PluginImGuiRenderCallback titleBarFn;   // desc->titleBarFn, copied only for a plugin that declares v75+
         bool isOpen;
+        bool collapsed;         // what the plugin asked for (SetPanelCollapsed)
+        bool drawnCollapsed;    // what the last frame drew, to tell when it changes
+        ImVec2 expandedSize;    // the size to expand back to; 0 until the panel has been collapsed
         char pluginName[64];   // set at registration time via SetCurrentRegistrationPlugin
         HMODULE owner;         // module the panel's renderFn lives in, for ForgetModule
         unsigned serial;       // tells a re-used node from the entry a snapshot was taken of
@@ -48,6 +52,10 @@ namespace UI::PluginPanelRegistry
         PluginPanelClosedCallback callback;
         HMODULE owner;         // module the callback lives in, for ForgetModule
     };
+
+    // The first interface whose PluginPanelDesc has titleBarFn. A descriptor from
+    // a plugin that declares less is smaller than that and is never read that far.
+    static constexpr int kTitleBarInterface = 75;
 
     static std::mutex s_mutex;
     static std::list<PanelEntry> s_panels;   // list: insertion never invalidates existing pointers
@@ -104,14 +112,23 @@ namespace UI::PluginPanelRegistry
         if (!owner)
             return nullptr;
 
+        // Fields past renderFn are the plugin's only if its interface has them.
+        // The callback has to live in the same module, or an unload could not
+        // purge it along with the panel.
+        PluginImGuiRenderCallback titleBarFn = nullptr;
+        if (PluginManager::GetInterfaceVersionForModule(owner) >= kTitleBarInterface && desc->titleBarFn &&
+            PluginGuard::ModuleOf(reinterpret_cast<const void*>(desc->titleBarFn)) == owner)
+            titleBarFn = desc->titleBarFn;
+
         std::lock_guard<std::mutex> lock(s_mutex);
         // Prevent duplicate titles
         for (auto& e : s_panels)
             if (_stricmp(e.desc->windowTitle, desc->windowTitle) == 0)
                 return nullptr;
         PanelEntry entry = {};
-        entry.desc   = desc;
-        entry.isOpen = false;
+        entry.desc       = desc;
+        entry.titleBarFn = titleBarFn;
+        entry.isOpen     = false;
         entry.owner  = owner;
         entry.serial = ++s_lastSerial;
         strncpy_s(entry.pluginName, s_currentPlugin, _TRUNCATE);
@@ -224,6 +241,20 @@ namespace UI::PluginPanelRegistry
         }
         if (wasOpen)
             FirePanelClosed(handle);
+    }
+
+    bool IsPanelCollapsed(PanelHandle handle)
+    {
+        std::lock_guard<std::mutex> lock(s_mutex);
+        const PanelEntry* e = FindEntry(handle);
+        return e && e->collapsed;
+    }
+
+    void SetPanelCollapsed(PanelHandle handle, bool collapsed)
+    {
+        std::lock_guard<std::mutex> lock(s_mutex);
+        if (PanelEntry* e = FindEntry(handle))
+            e->collapsed = collapsed;
     }
 
     void RegisterOnPanelWindowClosed(PluginPanelClosedCallback callback)
@@ -490,6 +521,34 @@ namespace UI::PluginPanelRegistry
         }
     }
 
+    // DrawTitleBar's besideTitle hook takes no arguments, so what the plugin's
+    // title-bar callback needs waits here while one panel's window is drawn.
+    // Only the render thread draws panels, one at a time.
+    static IModLoaderImGui*          s_titleBarImgui = nullptr;
+    static PluginImGuiRenderCallback s_titleBarFn    = nullptr;
+
+    static void DrawPluginTitleBar()
+    {
+        // Own id scope: a button here may share its label with one in renderFn.
+        ImGui::PushID("plugin_title_bar");
+        ImGuiErrorRecoveryState before;
+        ImGui::ErrorRecoveryStoreState(&before);
+        if (!PluginGuard::Invoke(s_titleBarFn, "panel title bar", s_titleBarImgui))
+            ImGui::ErrorRecoveryTryToRecoverState(&before);
+        ImGui::PopID();
+    }
+
+    // The size a panel's window has when it is not collapsed: its last drawn
+    // size, or the one ImGui loaded from its settings for a window not drawn yet.
+    static ImVec2 ExpandedWindowSize(const char* title)
+    {
+        if (const ImGuiWindow* window = ImGui::FindWindowByName(title))
+            return window->SizeFull;
+        if (const ImGuiWindowSettings* settings = ImGui::FindWindowSettingsByID(ImHashStr(title)))
+            return ImVec2(settings->Size.x, settings->Size.y);
+        return ImVec2(480, 360);
+    }
+
     void RenderPanelWindows(IModLoaderImGui* imgui)
     {
         // Snapshot which panels to draw, not pointers to use: an entry can be
@@ -525,6 +584,8 @@ namespace UI::PluginPanelRegistry
                 continue;   // its plugin crashed and is switched off
 
             bool open = true;
+            const bool nowCollapsed = panel.collapsed;
+            ImVec2 expanded = panel.expandedSize;
             {
                 // Not held across renderFn: a plugin's own render callback is
                 // free to call back into this registry (SetPanelClose on
@@ -535,26 +596,65 @@ namespace UI::PluginPanelRegistry
                 PluginCallTracker::Scope call(s_calls, lock, ref.entry, panel.owner);
                 PluginWatchdog::Scope watch(reinterpret_cast<const void*>(panel.desc->renderFn), "panel render");
 
-                ImGui::SetNextWindowSize(ImVec2(480, 360), ImGuiCond_FirstUseEver);
+                // A collapsed panel is its title bar and nothing else: the window
+                // fits what is drawn (AlwaysAutoResize) at the width it had.
+                // NoSavedSettings keeps the settings file at the expanded size
+                // and position, so a restart does not come back as a strip. A
+                // window ImGui has not seen yet still loads them.
+                ImGuiWindowFlags windowFlags = 0;
+                if (nowCollapsed)
+                {
+                    if (!panel.drawnCollapsed || expanded.x <= 0.0f)
+                        expanded = ExpandedWindowSize(panel.desc->windowTitle);
+                    ImGui::SetNextWindowSizeConstraints(ImVec2(expanded.x, 0.0f), ImVec2(expanded.x, FLT_MAX));
+                    windowFlags = ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoScrollbar |
+                                  ImGuiWindowFlags_NoScrollWithMouse;
+                    if (ImGui::FindWindowByName(panel.desc->windowTitle))
+                        windowFlags |= ImGuiWindowFlags_NoSavedSettings;
+                }
+                else if (panel.drawnCollapsed && expanded.x > 0.0f)
+                    ImGui::SetNextWindowSize(expanded, ImGuiCond_Always);
+                else
+                    ImGui::SetNextWindowSize(ImVec2(480, 360), ImGuiCond_FirstUseEver);
 
                 // Subtitle shows which plugin owns the panel -- nullptr (omitted)
                 // for panels registered without a recorded owner, and when it would
                 // only repeat the window title.
                 const char* subtitle = panel.pluginName[0] && _stricmp(panel.pluginName, panel.desc->windowTitle) != 0
                                            ? panel.pluginName : nullptr;
-                if (UI::Theme::BeginChamferedWindow(panel.desc->windowTitle, panel.desc->windowTitle,
-                                                     &open, subtitle))
+                s_titleBarImgui = imgui;
+                s_titleBarFn    = panel.titleBarFn;
+                const bool drawn = UI::Theme::BeginChamferedWindow(panel.desc->windowTitle, panel.desc->windowTitle,
+                                                                    &open, subtitle, windowFlags, true,
+                                                                    panel.titleBarFn ? DrawPluginTitleBar : nullptr);
+                s_titleBarFn = nullptr;
+                if (drawn)
                 {
-                    // A render that crashes leaves whatever it had begun or
-                    // pushed open; put ImGui back as it was before it ran.
-                    ImGuiErrorRecoveryState before;
-                    ImGui::ErrorRecoveryStoreState(&before);
-                    if (!PluginGuard::Invoke(panel.desc->renderFn, "panel render", imgui))
-                        ImGui::ErrorRecoveryTryToRecoverState(&before);
+                    if (nowCollapsed)
+                    {
+                        // The title bar moved the cursor past itself without an item,
+                        // which ImGui reports as an error when nothing follows it.
+                        ImGui::Dummy(ImVec2(0.0f, 0.0f));
+                    }
+                    else
+                    {
+                        // A render that crashes leaves whatever it had begun or
+                        // pushed open; put ImGui back as it was before it ran.
+                        ImGuiErrorRecoveryState before;
+                        ImGui::ErrorRecoveryStoreState(&before);
+                        if (!PluginGuard::Invoke(panel.desc->renderFn, "panel render", imgui))
+                            ImGui::ErrorRecoveryTryToRecoverState(&before);
+                    }
                     UI::Theme::EndChamferedWindow();
                 }
             }
             // s_mutex is held again here.
+
+            if (PanelEntry* e = find(ref))
+            {
+                e->drawnCollapsed = nowCollapsed;
+                e->expandedSize   = expanded;
+            }
 
             // Only write back a close made by ImGui itself (the titlebar X).
             // `open` was snapshotted before renderFn ran, so assigning it

@@ -9,6 +9,9 @@ namespace TestDoubles
 {
     bool                     drawWindows = false;
     std::vector<std::string> drawnTitles;
+    std::vector<int>         drawnFlags;
+    std::vector<bool>        drawnWithTitleBar;
+    int                      declaredInterface = 75;
     std::atomic<int>         loggedErrors{ 0 };
 }
 
@@ -18,6 +21,12 @@ namespace PluginManager
     const IPluginSelf* GetSelfForPlugin(const char*)
     {
         return nullptr;
+    }
+
+    // RegisterPanel asks which interface the owning plugin declared.
+    int GetInterfaceVersionForModule(HMODULE)
+    {
+        return TestDoubles::declaredInterface;
     }
 }
 
@@ -39,9 +48,14 @@ namespace ModLoaderLogger
 // renders, but the panel's renderFn is called when drawWindows is set.
 namespace UI::Theme
 {
-    bool BeginChamferedWindow(const char* title, const char*, bool*, const char*, ImGuiWindowFlags, bool, void (*)())
+    bool BeginChamferedWindow(const char* title, const char*, bool*, const char*, ImGuiWindowFlags flags, bool,
+                              void (*besideTitle)())
     {
         TestDoubles::drawnTitles.push_back(title);
+        TestDoubles::drawnFlags.push_back(flags);
+        TestDoubles::drawnWithTitleBar.push_back(besideTitle != nullptr);
+        if (TestDoubles::drawWindows && besideTitle)
+            besideTitle();
         return TestDoubles::drawWindows;
     }
 
