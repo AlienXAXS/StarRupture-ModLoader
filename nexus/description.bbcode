@@ -1,0 +1,250 @@
+[b][size=5]StarRupture ModLoader[/size][/b]
+
+[b][size=4]Get your Free StarRupture Server with this Mod Loader already installed over at [url=http://www.alienxservers.co.uk]https://www.alienxservers.co.uk[/url][/size][/b]
+
+[b]Open the Mod Loader window:[/b] press [b]Esc[/b] and pick [b]MOD LOADER[/b] below OPTIONS (the main menu has the row too), or press [b]F2[/b] (rebindable in modloader.ini). [b]Esc[/b] closes it. ✦
+
+[img]https://raw.githubusercontent.com/{{REPO}}/{{TAG}}/images/pause-menu.png[/img]
+
+[line]
+
+[b]The ModLoader Is Being Detected Via Machine Learning As A Trojan:[/b]
+From [url=https://www.microsoft.com/en-us/wdsi/threats/malware-encyclopedia-description?name=Trojan%3AScript%2FWacatac.B!ml&threatid=2147735503]Microsoft[/url]:
+Trojan:Script/Wacatac.B!ml is classified as a broad heuristic label. It captures a range of malicious activities from modular malware families that employ advanced scripting and evasion techniques. This detection is not a single virus, but a behavioral signature often triggered by unauthorized registry changes, in-memory code execution, and the misuse of trusted system processes.
+
+It is a false positive, you can view the source code yourself or build the mod loader yourself if you do not trust the zip file here.
+
+The mod loader relies on many of the same techniques used by game hacks, debuggers, overlays, and other software that interacts with running processes. These behaviors are necessary for the mod loader to function, but they can also trigger heuristic or behavioral detections from antivirus software.
+
+[line]
+
+[b][size=4]Support & Questions[/size][/b]
+Join the official Mod Loader discord, [url=https://discord.gg/G5a4GYsvrz]AlienX's Place[/url] for support.
+
+[line]
+
+StarRupture ModLoader is a lightweight plugin-based mod loader for [i]StarRupture[/i].
+It loads automatically using DLL proxy injection, meaning [b]no original game files are modified[/b].
+
+The loader enables runtime fixes, server utilities, and gameplay improvements through optional plugins. On a client it adds an in-game window to manage them; on a dedicated server it adds a console.
+A more detailed readme can be found on the [url=https://github.com/AlienXAXS/StarRupture-ModLoader/blob/main/README.md]github page[/url].
+
+[line]
+
+[b][size=6]The Mod Loader Window (client)[/size][/b]
+
+Open it from the MOD LOADER menu row or with F2, as above. The [b]~[/b] key (rebindable) opens the developer console. [b]Esc[/b] closes it, and [b]1[/b] to [b]5[/b] open Plugins, Config, Settings, Logging and Theme while the window has the focus (not while a text box, a slider drag or a keybind capture is taking keys). [b]Tab[/b] and the arrow keys move between buttons and fields, in plugin windows too, and [b]Space[/b] or [b]Enter[/b] uses the one picked; the Settings tab can turn that off. ✦
+
+Tabs down the left: [b]Plugins[/b], [b]Config[/b], [b]Settings[/b], [b]Logging[/b], [b]Theme[/b] and [b]About[/b] (the build tag and the plugins currently loaded). A splash window shows startup progress. In the main menu a bottom-left banner shows the build tag, plugin count and open key, plus a red note when an update is available.
+
+[b][size=4]Plugins[/size][/b]
+
+[img]https://raw.githubusercontent.com/{{REPO}}/{{TAG}}/images/plugins-tab.png[/img]
+
+[list]
+[*][b]LOAD NEW[/b], beside the window title, picks up plugin DLLs added to the Plugins folder since the game started, and a popup lists each one with what to do next. [b]Loaded late[/b] registered for a world start that had already fired: load a save to catch it up. [b]Needs restart[/b] is a new DLL in the Preload folder. [b]Retry[/b] is a DLL still being copied or locked. The [b]rescan[/b] console command prints the same lines. ✦
+
+[img]https://raw.githubusercontent.com/{{REPO}}/{{TAG}}/images/popup-load-new.png[/img]
+
+[*]Click a loaded plugin's row to open its page on the Config tab. The buttons on the row work as before. ✦
+[*][b]Loaded (2 off)[/b] is a plugin running with two features turned off because a game update moved something they need. Hover the name or the count to see which; the plugin's settings for them grey out with the reason, and a [b]Plugin Features Off[/b] window lists them. ✦
+[*]A plugin can say when it may be loaded and unloaded: any time, only at the main menu, or only at game start. A refused reload or unload says why on its row and on the console. ✦
+[*][b]Crashed[/b] is a plugin that faulted in its own code. The mod loader switched it off and the game kept running; hover the row for the fault and where it happened. [b]RELOAD[/b] loads it fresh. A fault in game code a plugin called still crashes the game, and the log names the plugin. ✦
+[*]When a plugin crashes, a toast in the bottom right corner names the plugin and what it was doing. About 3 seconds later the mod loader restarts it by itself, as RELOAD would, if its load and unload settings allow it; a plugin that needs a game restart stays off and the toast says so. Each plugin restarts at most 3 times a session. [b]Settings[/b] has [b]Restart crashed plugins automatically[/b] to turn it off. ✦
+[*][b]Plugins Updated[/b] lists plugins with identical update notes on one line and shows the notes once. ✦
+[*][b]Cannot Load[/b] is a server plugin on a client, or the reverse.
+[*][b]Needs Update[/b] names the side that is behind: the plugin or the mod loader.
+[*][b]Incompatible[/b] on a game build other than the one a plugin was built for says the plugin needs an update. It still loads on its own build.
+[*][b]WHY?[/b] on a Hooks Failed row reopens the report.
+[*]Unload removes the panels, widgets and callbacks the plugin registered. If the overlay is still drawing the plugin's panel after about a second, the unload is skipped: the plugin is shut down and shows [b]Unloaded[/b], but its DLL stays mapped. [b]LOAD[/b] or [b]RELOAD[/b] retries.
+[/list]
+
+[b][size=4]Config[/size][/b]
+
+[img]https://raw.githubusercontent.com/{{REPO}}/{{TAG}}/images/config-tab.png[/img]
+
+[list]
+[*][b]Ctrl+Click[/b] a slider to type an exact value.
+[*][b]-[/b] and [b]+[/b] beside a slider step it by 1 (decimal: 1% of range). [b]Ctrl[/b] steps 10%. They repeat while held. ✦
+[*]A number field applies as you type; a text field on [b]Enter[/b] or when you click away.
+[*][b]Rebind[/b] waits for the next key; hold Ctrl, Shift or Alt for a combo, [b]Esc[/b] cancels. No keybind fires meanwhile. Press and release a modifier alone to bind just that modifier. ✦ [b]Block[/b] stops the game also reacting to the combo.
+[*]A setting with a fixed set of choices is a dropdown. ✦
+[*][b]Saved state[/b] stands for values a plugin keeps by itself, such as where its windows were dragged. [b]Clear[/b] puts them back to their defaults. ✦
+[*]The reset arrow restores the default. A plugin's Enabled setting has none, nor does a setting without a default.
+[*]The plugin hears each change as you make it. The .ini is written when you let go of a slider or confirm a value. A value a plugin writes to its own .ini shows at once, and Reload picks up settings the new build added.
+[/list]
+
+[b][size=4]Settings[/size][/b]
+
+[img]https://raw.githubusercontent.com/{{REPO}}/{{TAG}}/images/settings-tab.png[/img]
+
+[list]
+[*]The HUD toggles share one draggable box that remembers where you put it. [b]ModLoader Debug Values[/b] adds input details to it.
+[*][b]Keyboard navigation[/b] (on by default) lets Tab, the arrow keys and Space or Enter drive the loader and plugin windows while they are open. ✦
+[*][b]Connection Timeout[/b] — see Net timeouts below.
+[*][b]Enable Auto Updates[/b] takes effect next launch. A mod loader update asks Yes or No first; a No is remembered for that version.
+[*][b]Open Tick Profiler[/b] — [b]Log Tick Stutters[/b] and [b]Stack Sample Stutters[/b] reset on restart. Stack sampling needs stutter logging on and is the heavier of the two.
+[/list]
+
+[b][size=4]Theme[/size][/b]
+
+[img]https://raw.githubusercontent.com/{{REPO}}/{{TAG}}/images/theme-tab.png[/img]
+
+[list]
+[*][b]Save[/b], [b]Save As...[/b], [b]Delete[/b] and [b]Reload[/b] manage ModLoader\Themes\<name>.ini; share the file to share the theme. [b]Default[/b] and [b]Star Rupture[/b] are built in and read-only: Save As... makes an editable copy. ✦
+[*]Colour edits apply at once; Save keeps them and Reload discards them.
+[*][b]Font Family[/b] only lists fonts found on your PC. Microsoft YaHei, Meiryo, Malgun Gothic and Arial + CJK add Chinese, Japanese or Korean text.
+[/list]
+
+[b][size=4]Logging[/size][/b]
+
+[img]https://raw.githubusercontent.com/{{REPO}}/{{TAG}}/images/logging-tab.png[/img]
+
+[list]
+[*][b]Log Level[/b] — the mod loader's own output. [b]Game Log Verbosity[/b] — the game's own log categories, written to StarRupture.log. Both are saved.
+[*][b]Per plugin[/b] — one row per plugin and an All plugins row. Turn one plugin up to read it without the rest of the log burying it, or down to silence a noisy one. Default follows the Log Level. These are [b]not saved[/b]: every plugin is back on Default next launch.
+[*]A plugin that logs heavily while the game loads has filled the log before you can open the tab. Add a Steam launch option to set its level first: [i]-PluginLogLevel=<plugin>:<level>[/i]. Levels are trace, debug, info, warn, error or default. Separate several with commas, [i]*[/i] sets every plugin you did not name, and quote the whole option if a name has a space.
+[/list]
+
+[b][size=4]Pop-ups[/size][/b]
+
+[b]Plugins Updated[/b] appears once at the main menu after an automatic plugin update.
+
+[img]https://raw.githubusercontent.com/{{REPO}}/{{TAG}}/images/popup-plugins-updated.png[/img]
+
+[b]Plugin Hooks Failed[/b] appears when a plugin did not load because a hook is missing, and again when a later load or reload adds one. [b]Copy Details[/b] puts the report on the clipboard for a bug report. WHY? reopens it.
+
+[img]https://raw.githubusercontent.com/{{REPO}}/{{TAG}}/images/popup-hooks-failed.png[/img]
+
+[b][size=4]Developer console and server console[/size][/b]
+
+The [b]~[/b] key opens the developer console over the top of the screen; it takes game input while open. Up and Down walk your history. A line the mod loader does not know goes to the game's own console; prefix [b]![/b] to send it there only.
+
+A dedicated server has no UI. Launch it with [b]-console[/b] for a console window with the same commands. Tab completes, Ctrl+C or Ctrl+U clears the line. [b]stop[/b] shuts the server down; [b]close[/b] closes the window and leaves the server running (the X ends the server).
+
+[b]Commands[/b] — [i]<target>[/i] is a plugin name, its index from [b]plugins[/b], or [b]all[/b]. Plugins can add their own; [b]help[/b] lists everything.
+[list]
+[*][b]help [command][/b], [b]plugins[/b] (every plugin, version and state), [b]version[/b], [b]clear[/b]
+[*][b]reload[/b], [b]unload[/b], [b]load[/b] [i]<target>[/i], [b]rescan[/b] (load plugin DLLs added since startup)
+[*][b]hookfailures[/b] (plugins whose hook patterns did not resolve), [b]hooklist[/b] (every detoured address and who shares it), [b]preload[/b] (what happened to the DLLs in Preload at startup)
+[*][b]loglevel [level][/b], or [b]loglevel <plugin or *> <level or default>[/b] — runtime only
+[*][b]pak[/b] — mount and unmount paks, and load, spawn or preview assets from them
+[*][b]clients [n][/b] (connected clients and the plugins they reported), [b]nettest [bytes][/b] (round-trip a payload to test fragmentation), [b]stop [force][/b] (server only)
+[/list]
+
+[line]
+
+[b][size=6]Installation[/size][/b]
+
+[list=1]
+[*]Download the appropriate release (Client or Server).
+[*]Extract the files into your game's Binaries Win64 folder.
+[/list]
+Place the files in the following directory:
+[code]StarRupture/Binaries/Win64/[/code]
+
+The ZIP is already laid out correctly, so extract it directly into that folder. Afterwards [i]dwmapi.dll[/i] sits next to the game executable, and everything else the mod loader owns is under [i]ModLoader\[/i]: the core DLL, [i]modloader.ini[/i] and [i]Logs\[/i] (created on first launch), [i]Plugins\[/i] and [i]Preload\[/i]. The client build adds the ImGui DLL and an updater.
+
+[b][size=4]Notes[/size][/b]
+[list]
+[*]Works for both solo gamers and dedicated servers
+[*]Original game files are not modified
+[*]Logs and diagnostics are written to [i]ModLoader\Logs\ModLoader.log[/i], keeping the last ten runs
+[*]Plugins and the mod loader find the world being played even while another plugin has a preview world of its own open ✦
+[*]The loader and plugin windows are drawn into the frames that frame generation makes, so they do not flicker, and frame generation stays on while one is open ✦
+[*]Plugin authors: a window can opt in to being clicked and dragged over the Escape menu and over any game screen that shows the mouse cursor ✦
+[*]Plugin authors: plugin interface v73 adds DeclareFeature, so one missing game function or member turns off only that feature, and version-map keys look up game functions and members ✦
+[*]Plugin authors: plugin interface v74 adds SetNextWindowSize and SetNextWindowSizeConstraints (with named PluginCond_* and PluginWindowFlags_AlwaysAutoResize constants), so a popup no longer collapses into a narrow strip ✦
+[*]Plugin authors: plugin interface v74 also gives plugins the game's UI state (in gameplay, pause menu, cursor up, any menu, map, inventory, build menu, station screens) as a query or a change callback, so mods no longer detect it themselves; the menu classes follow BetterDrone's menu-layer read and Kian369's MiniMap class list ✦
+[/list]
+
+[b][size=4]Game updates[/size][/b]
+
+The mod loader carries a version map: for each game build it lists, where the functions and game data it and its plugins read are. A listed build runs with no mod loader update. Plugins that take their game data from the map run on any listed build; one that does not loads only on the build it was made for.
+
+On a client with Auto Updates on, the mod loader can also fetch a newer map as a signed file from its GitHub releases. It checks the signature before reading anything else in the file, and keeps the last good copy in [i]ModLoader\version-map-client.v1.cache[/i]. The map is read once at startup. A dedicated server never fetches it.
+
+Even when the map decides where a plugin's function is, the mod loader checks the plugin's own pattern against the running game once and writes a warning to ModLoader.log if it matches nowhere or in two or more places. The plugin still loads; the warning lets its author find a pattern that only works because the map covers for it. ✦ The loader's pattern scan cache is now kept per game exe (version, build timestamp and size), so a rebuilt exe with the same version string rescans instead of trusting an old result. ✦
+
+[b][size=4]Installing Plugins[/size][/b]
+The mod loader ships with no plugins. Download the ones you want and drop their .dll into [i]ModLoader\Plugins\[/i]. Client plugins only load on a client, server plugins only on a dedicated server; the window says so if you get one the wrong way round. If a plugin has an Enabled setting, it can be turned on in the Config tab, or in its .ini under [i]Plugins\config\[/i].
+
+If a plugin ships a .json file alongside its .dll, it can update itself: the mod loader checks for a new version at startup and downloads it. The Plugins tab marks those with a green dot (amber means the plugin has no update manifest and has to be updated by hand). Auto-updating can be turned off in the Settings tab.
+
+[b][size=4]Linux Users[/size][/b]
+If the modloader isnt working, you may have to set the following envrionment variable via the startup parameters in Steam:
+[code]WINEDLLOVERRIDES="dwmapi=n,b" %command%[/code]
+
+[line]
+
+[b][size=6]Configuration[/size][/b]
+
+Config file: [i]ModLoader\modloader.ini[/i], created on first launch. The Settings, Logging and Theme tabs write most of it for you.
+
+[list]
+[*][b]Logging[/b] — Level (INFO by default; TRACE, DEBUG, INFO, WARN or ERROR), EnableFile, FileName, GameVerbosity, GameLogCategories (servers only; empty leaves the game log alone)
+[*][b]UI[/b] — Enabled (0 turns the overlay off), OpenKey (F2), GameMenuEntry (0 removes the MOD LOADER menu row), FontScale (0.75 to 5.00), FontFamily, Theme
+[*][b]Console[/b] — OpenKey (Tilde)
+[*][b]Input[/b] — SuppressKeybindsWhileTyping (1): keybinds ignore keys typed into a game text box
+[*][b]Network[/b] — ConnectionTimeout, InitialConnectTimeout (300 seconds each; 1 to 3600, 0 keeps the engine default)
+[*][b]AutoUpdate[/b] — Enabled (1), ManifestUrl (empty uses the built-in manifest)
+[*][b]Preload[/b] — Enabled (1), Disabled (comma-separated DLL names to skip)
+[*][b]UE4SS[/b] — Enabled (0), Path
+[/list]
+
+[b][size=4]Command-line switches[/size][/b]
+[list]
+[*][b]-console[/b] — open the console window (also [b]-mlconsole[/b], [b]-modloaderconsole[/b]). Works on a client too, without stop
+[*][b]-PluginLogLevel=<plugin>:<level>[/b] — set plugin log levels before they load
+[*][b]-NoPreload[/b] — skip the preload phase
+[*][b]-SkipPatternValidation[/b] — start even if a scan pattern is ambiguous or the wrong kind
+[/list]
+
+[b][size=4]Net timeouts[/size][/b]
+A player can be dropped while the host loads a map: the host's game thread does not tick during the load, so the client sees silence, and the engine's stock 60 second timeout disconnects everyone still joining. The mod loader raises both net timeouts to [b]300 seconds[/b]; the Settings tab has a slider and shows what the live net driver is using. [b]Both ends need it[/b], and a genuinely dead connection now holds its player slot for the full timeout.
+
+[b][size=4]Preload plugins[/size][/b]
+A preload plugin is a DLL in [i]ModLoader\Preload\[/i] that runs before the game executable's entry point, to patch code the engine touches on its way up. One that fails is unloaded, reported, and the game boots without it. If you only need engine events, UI, config or networking, use an ordinary plugin instead: it can be hot-reloaded while the game runs. Plugin authors: see the [url=https://github.com/AlienXAXS/StarRupture-Plugin-SDK]Plugin SDK[/url] and the [url=https://github.com/AlienXAXS/StarRupture-PreLoadPlugin-SDK]PreLoad Plugin SDK[/url].
+
+[line]
+
+[b][size=6]Troubleshooting[/size][/b]
+
+[list]
+[*][b]Nothing loads at all[/b] — dwmapi.dll must sit next to the game .exe with the ModLoader folder beside it, not in a subfolder of its own. No Logs\Proxy.log at all means the game never loaded dwmapi.dll
+[*][b]Plugins not loading[/b] — the DLLs must be in ModLoader\Plugins\ with Enabled set in the plugin's .ini where it has one. The Plugins tab shows why a plugin was rejected
+[*][b]Game will not start after adding a preload plugin[/b] — launch with -NoPreload, or set Enabled=0 in the Preload section of modloader.ini. The loader also skips a preload plugin that did not finish loading last launch, and says which. Delete Preload\.state to let it try again
+[*][b]A plugin says "Needs an update to run on CL-..."[/b] — the plugin was built for another game build and does not take its game data from the mod loader's version map, so it would read this game's data where its own build had it. Ask its author for an update
+[*][b]ModLoader.log says a plugin's "own pattern matches N times"[/b] — the plugin loads, because the version map decides where its function is. But the pattern it carries as a backup is not unique on this game build (or, for 0 times, no longer found), and a mod loader with no row to use for it (a stock mod loader, a dedicated server, or a build the map's rows do not resolve on) would refuse the plugin. Tell its author to make the pattern unique or update it ✦
+[*][b]A dialog says the game has changed in a way that would break your plugins[/b] — a game update moved some game classes the mod loader and its plugins read, so no plugins load this session. Start the game without them or wait for an update. The loader writes [i]ModLoader\compat-report-<CL>.json[/i] (the game build and what moved); attach it to your report
+[*][b]A dialog offers "Start Game Without ModLoader"[/b] — the game build changed or a scan pattern no longer matches. The mod loader stays off until it is updated. Copy Details has the report
+[*][b]Logs and diagnostics[/b] — check ModLoader\Logs\ModLoader.log; raise the detail in the Logging tab
+[*][b]The game's log is flooding on a dedicated server[/b] — the game itself writes hundreds of LogTemp and LogSkinnedMeshComp warnings a second. Server builds turn those two categories down to errors; change them with GameLogCategories in modloader.ini
+[*][b]Game stops responding to input[/b] — turn on ModLoader Debug Values in the Settings tab; it names the plugin holding input open
+[*][b]Game freezes ("Not Responding")[/b] — look near the end of ModLoader\Logs\ModLoader.log for a [PluginWatchdog] line. A plugin's tick or overlay draw callback still running after 5 seconds is named there. Disable that plugin and report it to its author
+[*][b]The game crashes[/b] — the mod loader's own dialog has Copy Details and buttons for ModLoader.log and StarRupture.log. Include them in a bug report
+[*][b]Players dropped during a long map load[/b] — see Net timeouts. Both ends need the mod loader
+[/list]
+
+[line]
+
+[b][size=4]Credits[/size][/b]
+[list]
+[*]Dumper-7 – Unreal Engine SDK generation
+[*]MinHook – Function hooking library
+[*]nlohmann/json – JSON parsing
+[/list]
+
+Original mod by [url=https://github.com/AlienXAXS]@AlienXAXS[/url] ([url=https://www.agngaming.com]AGNGaming[/url])
+
+✦ [url=https://github.com/msantoro12]@msantoro12[/url] (maintainer), creator of [url=https://starrupture.goodstuff.software]StarRupture Planner[/url]
+
+Contributors:
+[url=https://github.com/Mralexandresys]@Mralexandresys[/url]
+[url=https://github.com/Wilhelm-af]@Wilhelm-af[/url]
+
+[line]
+
+[b][size=4]Disclaimer[/size][/b]
+
+This is a modding tool for StarRupture. Use at your own risk. While every effort is made to maintain compatibility with game updates and save files, future compatibility cannot be guaranteed.
