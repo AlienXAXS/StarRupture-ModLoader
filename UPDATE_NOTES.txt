@@ -5,7 +5,7 @@
 - LOAD NEW adds plugins you drop in while the game is running
 - Click a plugin in the list to open its settings
 - Settings with a fixed set of choices are dropdowns, and the Config tab can clear the state a plugin saves
-- Keys 1 to 5 open the Plugins, Config, Settings, Logging and Theme tabs; Tab, the arrow keys and Space or Enter work in the loader and plugin windows (Settings can turn this off)
+- Keys 1 to 5 open the Plugins, Config, Settings, Logging and Theme tabs; Tab, the arrow keys and Space or Enter work in the loader windows, and in plugin windows except over the game's own menus (Settings can turn this off)
 - Overlay windows no longer flicker with frame generation, which stays on while a window is open; the Pause Frame Generation setting is removed
 - Plugin windows can be clicked and dragged over the Escape menu and over any game screen that shows the mouse cursor
 - Plugin windows no longer block the game's own menus while the cursor is up: clicks, mouse moves and the wheel outside them reach the game, and typing in a plugin text field stays out of the game

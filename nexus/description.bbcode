@@ -35,7 +35,7 @@ A more detailed readme can be found on the [url=https://github.com/AlienXAXS/Sta
 
 [b][size=6]The Mod Loader Window (client)[/size][/b]
 
-Open it from the MOD LOADER menu row or with F2, as above. The [b]~[/b] key (rebindable) opens the developer console. [b]Esc[/b] closes it, and [b]1[/b] to [b]5[/b] open Plugins, Config, Settings, Logging and Theme while the window has the focus (not while a text box, a slider drag or a keybind capture is taking keys). [b]Tab[/b] and the arrow keys move between buttons and fields, in plugin windows too, and [b]Space[/b] or [b]Enter[/b] uses the one picked; the Settings tab can turn that off. ✦
+Open it from the MOD LOADER menu row or with F2, as above. The [b]~[/b] key (rebindable) opens the developer console. [b]Esc[/b] closes it, and [b]1[/b] to [b]5[/b] open Plugins, Config, Settings, Logging and Theme while the window has the focus (not while a text box, a slider drag or a keybind capture is taking keys). [b]Tab[/b] and the arrow keys move between buttons and fields, in plugin windows too (not over the game's own menus, where the keyboard stays with the game), and [b]Space[/b] or [b]Enter[/b] uses the one picked; the Settings tab can turn that off. ✦
 
 Tabs down the left: [b]Plugins[/b], [b]Config[/b], [b]Settings[/b], [b]Logging[/b], [b]Theme[/b] and [b]About[/b] (the build tag and the plugins currently loaded). A splash window shows startup progress. In the main menu a bottom-left banner shows the build tag, plugin count and open key, plus a red note when an update is available.
 
@@ -82,7 +82,7 @@ Tabs down the left: [b]Plugins[/b], [b]Config[/b], [b]Settings[/b], [b]Logging[/
 
 [list]
 [*]The HUD toggles share one draggable box that remembers where you put it. [b]ModLoader Debug Values[/b] adds input details to it.
-[*][b]Keyboard navigation[/b] (on by default) lets Tab, the arrow keys and Space or Enter drive the loader and plugin windows while they are open. ✦
+[*][b]Keyboard navigation[/b] (on by default) lets Tab, the arrow keys and Space or Enter drive the loader and plugin windows while they are open. Plugin windows over the Escape menu and other game screens with the cursor up do not get it, because the keyboard stays with the game there. ✦
 [*][b]Connection Timeout[/b] — see Net timeouts below.
 [*][b]Enable Auto Updates[/b] takes effect next launch. A mod loader update asks Yes or No first; a No is remembered for that version.
 [*][b]Open Tick Profiler[/b] — [b]Log Tick Stutters[/b] and [b]Stack Sample Stutters[/b] reset on restart. Stack sampling needs stutter logging on and is the heavier of the two.
@@ -155,6 +155,7 @@ The ZIP is already laid out correctly, so extract it directly into that folder. 
 [*]Plugins and the mod loader find the world being played even while another plugin has a preview world of its own open ✦
 [*]The loader and plugin windows are drawn into the frames that frame generation makes, so they do not flicker, and frame generation stays on while one is open ✦
 [*]Plugin authors: a window can opt in to being clicked and dragged over the Escape menu and over any game screen that shows the mouse cursor ✦
+[*]Plugin windows no longer block the game's own menus while the cursor is up: the Escape menu and other screens with the cursor stay clickable around an open plugin window, and typing in a plugin text field stays out of the game ✦
 [*]Plugin authors: plugin interface v73 adds DeclareFeature, so one missing game function or member turns off only that feature, and version-map keys look up game functions and members ✦
 [*]Plugin authors: plugin interface v74 adds SetNextWindowSize and SetNextWindowSizeConstraints (with named PluginCond_* and PluginWindowFlags_AlwaysAutoResize constants), so a popup no longer collapses into a narrow strip ✦
 [*]Plugin authors: plugin interface v74 also gives plugins the game's UI state (in gameplay, pause menu, cursor up, any menu, map, inventory, build menu, station screens) as a change callback (in gameplay, pause menu and cursor up also as a query), so mods no longer detect it themselves; the menu classes follow BetterDrone's menu-layer read and Kian369's MiniMap class list ✦
