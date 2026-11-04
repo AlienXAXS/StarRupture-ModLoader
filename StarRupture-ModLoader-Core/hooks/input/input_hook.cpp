@@ -126,9 +126,13 @@ namespace Hooks::InputHook
         if (capturing)
             return 0;
 
-        // Only act on Pressed edges -- that is all we need for blocking.
+        // Only act on Pressed edges -- that is all we need for blocking. Repeat
+        // and double-click events that go through still mean the key is down.
         if (ueEvent != EInputEvent::Pressed)
+        {
+            s_pressesSeen.Pressed(fnameIdx);
             return g_original ? g_original(This, InEventArgs) : 0;
+        }
 
         EModKey mk = LookupFNameCache(fnameIdx);
         if (mk == EModKey::Unknown)

@@ -400,7 +400,7 @@ static LRESULT CALLBACK HookedWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 
 	{
 		bool blocked = (g_callbacks.DispatchKey ? g_callbacks.DispatchKey(msg, wParam, lParam) : false);
-		if (!capturing && blocked)
+		if (!capturing && blocked && !releaseOfSeenPress)
 			return 0;
 	}
 
