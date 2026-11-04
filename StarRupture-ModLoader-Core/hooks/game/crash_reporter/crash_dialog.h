@@ -35,6 +35,10 @@ namespace Hooks::CrashDialog
         // it disabled itself before installing any hooks. Same two-button
         // choice as PatternFailure.
         VersionMismatch,
+        // The startup layout check found game classes that no longer match
+        // the SDK, so no plugin was loaded; the hooks stay in with nothing
+        // behind them. Same two-button choice as PatternFailure.
+        LayoutMismatch,
     };
 
     enum class Result
@@ -48,9 +52,9 @@ namespace Hooks::CrashDialog
     // detailsText: crash/preflight/version details (CRLF line endings preferred
     // -- edit controls do not render bare '\n' as line breaks).
     // Falls back to a plain MessageBox if dialog creation fails. In the
-    // PatternFailure and VersionMismatch modes, dismissing the dialog (or the
-    // fallback box) counts as StartWithoutModLoader -- the fail-safe path
-    // matching the old behavior of silently continuing unmodified.
+    // PatternFailure, VersionMismatch and LayoutMismatch modes, dismissing the
+    // dialog (or the fallback box) counts as StartWithoutModLoader -- the
+    // fail-safe path matching the old behavior of silently continuing unmodified.
     Result Show(Mode mode, const std::wstring& detailsText);
 }
 

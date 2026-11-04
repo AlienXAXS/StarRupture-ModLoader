@@ -86,6 +86,20 @@ namespace Hooks::CrashDialog
         L"You can play right now with a completely normal, unmodified game, or quit and come "
         L"back once the ModLoader has been updated. Your saves are untouched either way.";
 
+    static const wchar_t* kLayoutHeaderText =
+        L"The game has changed in a way that would break your plugins.\r\n"
+        L"\r\n"
+        L"At startup the ModLoader checks that the game data its plugins read is still laid "
+        L"out the way they were built for. Some of it has moved -- the game has most likely "
+        L"updated, and plugins built for the old layout would read and write the wrong "
+        L"memory.\r\n"
+        L"\r\n"
+        L"Rather than risk corrupting your save or crashing you mid-game, the ModLoader has "
+        L"switched its plugins off: none will be loaded. This is deliberate, not a bug.\r\n"
+        L"\r\n"
+        L"You can play right now without plugins, or quit and come back once the ModLoader "
+        L"has been updated. Your saves are untouched either way.";
+
     // -----------------------------------------------------------------------
     // Log file locations
     // -----------------------------------------------------------------------
@@ -242,16 +256,18 @@ namespace Hooks::CrashDialog
 
         const bool patternMode = (mode == Mode::PatternFailure);
         const bool versionMode = (mode == Mode::VersionMismatch);
-        // Both startup-failure modes end with the same start/quit choice.
-        const bool choiceMode  = patternMode || versionMode;
+        const bool layoutMode  = (mode == Mode::LayoutMismatch);
+        // Every startup-failure mode ends with the same start/quit choice.
+        const bool choiceMode  = patternMode || versionMode || layoutMode;
 
-        // The version explanation is longer than the other two and its details
-        // box only holds a couple of lines, so it trades edit height for header
-        // height. Everything below follows from those two numbers.
-        const int16_t headerH = versionMode ? 124 : 88;
+        // The version and layout explanations are longer than the other two,
+        // so they trade edit height for header height. Everything below
+        // follows from those two numbers.
+        const bool longHeader = versionMode || layoutMode;
+        const int16_t headerH = longHeader ? 124 : 88;
         const int16_t labelY  = static_cast<int16_t>(7 + headerH + 4);
         const int16_t editY   = static_cast<int16_t>(labelY + 11);
-        const int16_t editH   = versionMode ? 44 : 126;
+        const int16_t editH   = longHeader ? 44 : 126;
         const int16_t kDlgH   = static_cast<int16_t>(editY + editH + 26);
 
         std::vector<uint8_t> buf;
@@ -259,8 +275,8 @@ namespace Hooks::CrashDialog
         DLGTEMPLATE dlg{};
         dlg.style = DS_SETFONT | DS_MODALFRAME | DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMENU;
         // Every mode has 7 controls: header, label, details edit, and a
-        // four-button row (crash: Copy/ML log/SR log/Close; pattern and
-        // version: Copy/ML log/Start/Quit). An undercount here silently drops
+        // four-button row (crash: Copy/ML log/SR log/Close; pattern,
+        // version and layout: Copy/ML log/Start/Quit). An undercount here silently drops
         // the trailing controls from the template.
         dlg.cdit = 7;
         dlg.x = 0; dlg.y = 0;
@@ -268,7 +284,9 @@ namespace Hooks::CrashDialog
         AppendData(buf, &dlg, sizeof(dlg));
         AppendWord(buf, 0);   // no menu
         AppendWord(buf, 0);   // default dialog class
-        AppendString(buf, versionMode
+        AppendString(buf, layoutMode
+            ? L"StarRupture ModLoader - Game layout changed"
+            : versionMode
             ? L"StarRupture ModLoader - Unsupported game version"
             : patternMode
                 ? L"StarRupture ModLoader - Failed to start"
@@ -280,13 +298,16 @@ namespace Hooks::CrashDialog
         // Header explanation text
         AppendControl(buf, WS_CHILD | WS_VISIBLE | SS_LEFT, 0,
             7, 7, kDlgW - 14, headerH, 0xFFFF, kClassStatic,
-            versionMode ? kVersionHeaderText
+            layoutMode  ? kLayoutHeaderText
+                        : versionMode ? kVersionHeaderText
                         : patternMode ? kPatternHeaderText : kCrashHeaderText);
 
         // Details label
         AppendControl(buf, WS_CHILD | WS_VISIBLE | SS_LEFT, 0,
             7, labelY, kDlgW - 14, 9, 0xFFFF, kClassStatic,
-            versionMode
+            layoutMode
+                ? L"What changed (select and copy, or use the buttons below):"
+                : versionMode
                 ? L"Version details (select and copy, or use the buttons below):"
                 : patternMode
                     ? L"Missing scan patterns (select and copy, or use the buttons below):"
@@ -309,11 +330,13 @@ namespace Hooks::CrashDialog
 
         if (choiceMode)
         {
-            // The game hasn't run yet, so there's no fresh StarRupture.log to
-            // show -- offer the start/quit choice instead.
+            // There's no fresh StarRupture.log to show (the game hasn't run, or
+            // in layout mode has only just initialised) -- offer the start/quit
+            // choice instead. Layout mode keeps the loader and switches only
+            // the plugins off.
             AppendControl(buf, kBtnStyle, 0,
                 kDlgW - 179, kBtnY, 110, 14, IDC_START_WITHOUT_ML, kClassButton,
-                L"Start Game Without ModLoader");
+                layoutMode ? L"Start Game Without Plugins" : L"Start Game Without ModLoader");
             AppendControl(buf, kBtnStyle, 0,
                 kDlgW - 61, kBtnY, 54, 14, IDC_QUIT_GAME, kClassButton, L"Quit Game");
         }
@@ -512,7 +535,7 @@ namespace Hooks::CrashDialog
         const std::vector<uint8_t> tmpl = BuildDialogTemplate(mode);
 
         const bool choiceMode =
-            (mode == Mode::PatternFailure || mode == Mode::VersionMismatch);
+            (mode == Mode::PatternFailure || mode == Mode::VersionMismatch || mode == Mode::LayoutMismatch);
 
         // Default result if the dialog is dismissed without an explicit choice:
         // fail-safe is "keep going" in the startup-failure modes (game continues
@@ -542,6 +565,20 @@ namespace Hooks::CrashDialog
                     L"off: nothing was hooked and no plugins will be loaded. Details were "
                     L"written to ModLoader\\Logs\\ModLoader.log.\n\n"
                     L"Start the game without the ModLoader?",
+                    L"StarRupture ModLoader",
+                    MB_YESNO | MB_ICONERROR | MB_TASKMODAL);
+                return choice == IDNO ? Result::QuitGame : Result::StartWithoutModLoader;
+            }
+
+            if (mode == Mode::LayoutMismatch)
+            {
+                const int choice = MessageBoxW(nullptr,
+                    L"The game has changed in a way that would break your plugins: some of the "
+                    L"game data they read has moved (the game has most likely updated).\n\n"
+                    L"Rather than risk your save, the ModLoader has switched its plugins off: none "
+                    L"will be loaded. Details were written to ModLoader\\Logs\\ModLoader.log, and a "
+                    L"compatibility report to the ModLoader folder.\n\n"
+                    L"Start the game without plugins?",
                     L"StarRupture ModLoader",
                     MB_YESNO | MB_ICONERROR | MB_TASKMODAL);
                 return choice == IDNO ? Result::QuitGame : Result::StartWithoutModLoader;
