@@ -38,6 +38,10 @@ namespace UI::HookFailureWindow
     // has to work after the one-shot popup has been dismissed.
     void Show();
 
+    // Open it scrolled to one plugin's entry -- for the "why?" beside a plugin
+    // that loaded with features turned off. A name with no entry just opens it.
+    void ShowFor(const char* plugin);
+
     // Render this frame. Call inside an active ImGui frame; renders nothing
     // when closed.
     void Render();

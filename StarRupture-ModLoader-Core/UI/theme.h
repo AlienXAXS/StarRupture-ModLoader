@@ -175,7 +175,12 @@ namespace UI::Theme
     // should clear its "is open" flag).
     // showCloseButton: pass false to omit the (x) close button -- e.g. for
     // plugin widget windows, which have no concept of being user-closed.
-    bool DrawTitleBar(const char* title, const char* subtitle, bool showCloseButton = true);
+    // besideTitle: optional; called once with the cursor on the title line,
+    // right after the title text, so it can draw widgets that sit next to the
+    // title with a plain SameLine() layout (the title counts as the previous
+    // item). The cursor is moved below the header again afterwards.
+    bool DrawTitleBar(const char* title, const char* subtitle, bool showCloseButton = true,
+                      void (*besideTitle)() = nullptr);
 
     // Begins a window styled like the modloader's own window: transparent
     // native chrome, a chamfered background fill, and a custom title bar
@@ -193,9 +198,10 @@ namespace UI::Theme
     //   extraFlags      -- OR'd into the window flags (NoTitleBar is always
     //                       set regardless of what's passed here)
     //   showCloseButton -- forwarded to DrawTitleBar()
+    //   besideTitle     -- forwarded to DrawTitleBar()
     bool BeginChamferedWindow(const char* windowId, const char* displayTitle, bool* open,
                                const char* subtitle = nullptr, ImGuiWindowFlags extraFlags = 0,
-                               bool showCloseButton = true);
+                               bool showCloseButton = true, void (*besideTitle)() = nullptr);
 
     // Draws the chamfered border and calls ImGui::End(). Call only after a
     // BeginChamferedWindow() that returned true.

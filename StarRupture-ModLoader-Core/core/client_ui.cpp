@@ -1,17 +1,21 @@
 #ifdef MODLOADER_CLIENT_BUILD
 
 #include "client_ui.h"
+#include "ui_state.h"
+#include "core/sdk_globals.h"
 #include "startup_utils.h"
 #include "Engine_classes.hpp"
 #include "../hooks/game/text_input_focus/text_input_focus.h"
 #include "../hooks/game/world_begin_play/world_begin_play.h"
 #include "../hooks/game/engine_tick/engine_tick.h"
-#include "../hooks/game/framegen_pause/framegen_pause.h"
+#include "../hooks/game/slate_present/slate_present.h"
+#include "../hooks/game/game_menu/game_menu.h"
 #include "../hooks/game/game_menu/game_menu_registry.h"
 #include "../hooks/input/input_processor.h"
 #include "../hooks/input/input_hook.h"
 #include "../hooks/input/keybind_registry.h"
 #include "../hooks/input/mouse_wheel_registry.h"
+#include "../plugins/reload_policy.h"
 #include "../UI/global_settings.h"
 #include "../UI/hook_failure_window.h"
 #include "../UI/imgui_backend.h"
@@ -20,10 +24,12 @@
 #include "../UI/modloader_window.h"
 #include "../UI/overlay.h"
 #include "../UI/plugin_panel_registry.h"
+#include "../UI/plugin_scan_window.h"
 #include "../UI/plugin_widget_registry.h"
 #include "../UI/splash_window.h"
 #include "../UI/theme.h"
 #include "../UI/tick_profiler_window.h"
+#include "../UI/toast.h"
 #include "../UI/update_notice_window.h"
 #include "../UI/wheel_test.h"
 #include "../logging/log.h"
@@ -39,6 +45,7 @@ bool ShouldCaptureInputNow()
     // forwarded to ImGui while this returns true.
     return UI::ModLoaderWindow::IsOpen()
         || UI::UpdateNoticeWindow::IsOpen()
+        || UI::PluginScanWindow::IsOpen()
         || UI::HookFailureWindow::IsOpen()
         || UI::TickProfilerWindow::IsOpen()
         || UI::ConsoleWindow::IsOpen()
@@ -53,6 +60,17 @@ bool ShouldPassthroughInputNow()
     // passthrough token so its windows stay clickable without freezing the
     // player out of the game underneath.
     return UI::PluginPanelRegistry::AnyInputPassthroughRequested();
+}
+
+bool ShouldShareGameMouseNow()
+{
+    // The pause menu and the game's other cursor screens (machine menus, the
+    // recipe station, the inventory) show the game's own cursor, and the ImGui
+    // host feeds ImGui the mouse there unless exclusive capture owns it. Only
+    // windows that opted in take it; everything else is drawn click-through,
+    // so the screen under it keeps its clicks.
+    return !ShouldCaptureInputNow() &&
+        (Hooks::GameMenu::IsPauseMenuOpen() || Hooks::GameMenu::IsGameCursorShown());
 }
 
 void InitClientUI()
@@ -138,15 +156,28 @@ void InitClientUI()
                 s_themeApplied = true;
             }
 
+            // Keyboard navigation (Tab, arrows, Space/Enter) only while an
+            // overlay window owns the keyboard. Left on at other times, a
+            // focused plugin window would make ImGui claim every key
+            // (io.WantCaptureKeyboard follows NavActive) and cooperative mode
+            // would then cut WASD out of the game. Read at the next NewFrame.
+            ImGuiIO& io = ImGui::GetIO();
+            if (UI::GlobalSettings::GetKeyboardNavigation() && ShouldCaptureInputNow())
+                io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+            else
+                io.ConfigFlags &= ~ImGuiConfigFlags_NavEnableKeyboard;
+
             UI::Overlay::Render();
             UI::Overlay::RenderHud();
             UI::ModLoaderWindow::Render(api);
             UI::UpdateNoticeWindow::Render();
+            UI::PluginScanWindow::Render();
             UI::HookFailureWindow::Render();
             UI::TickProfilerWindow::Render();
             UI::ConsoleWindow::Render();
             UI::PluginPanelRegistry::RenderPanelWindows(api);
             UI::PluginWidgetRegistry::RenderWidgets(api);
+            UI::Toast::Render();
 #ifdef _DEBUG
             UI::WheelTest::RenderOverlay();
 #endif
@@ -161,6 +192,7 @@ void InitClientUI()
         {
             return Hooks::MouseWheel::Dispatch(msg, wParam, lParam, uiCapturing);
         };
+        cbs.IsGameMouseShared = []() -> bool { return ShouldShareGameMouseNow(); };
         cbs.GetFontFamily = []() -> const char*
         {
             return UI::GlobalSettings::GetFontFamily();
@@ -190,11 +222,12 @@ void InitClientUI()
         };
 
         UI::ImGuiBackend::Initialize(cbs);
+        Hooks::SlatePresent::Install();
     }
 
     static auto s_onWorldReady = [](SDK::UWorld* /*world*/, const char* worldName)
     {
-        const bool isMainMenu = worldName && strstr(worldName, "Map_MainMenu") != nullptr;
+        const bool isMainMenu = ReloadPolicy::IsMainMenuWorldName(worldName);
         UI::Overlay::SetVisible(isMainMenu);
         UI::GlobalSettings::SetWorldName(worldName ? worldName : "");
 
@@ -211,31 +244,29 @@ void InitClientUI()
     };
     Hooks::WorldBeginPlay::RegisterAnyWorldCallback(s_onWorldReady);
 
-    Hooks::FrameGenPause::Initialize();
-
-    static auto s_onTick = [](float deltaSeconds)
+    static auto s_onTick = [](float)
     {
-        // DLSS Frame Generation flicker workaround (see FrameGenPause) --
-        // checked every tick regardless of pawn/world state below, since an
-        // overlay window can be open at the main menu too.
-        const bool anyOverlayWindowOpen =
-            UI::ModLoaderWindow::IsOpen()
-            || UI::ConsoleWindow::IsOpen()
-            || UI::PluginPanelRegistry::AnyPanelOpen();
-        Hooks::FrameGenPause::Tick(
-            UI::GlobalSettings::GetPauseFrameGenWhileOpen() && anyOverlayWindowOpen,
-            deltaSeconds);
+        Hooks::GameMenu::Tick();
 
         // Look up the current world fresh every tick -- a cached pointer can
         // outlive the world it points to between EndPlay and the next
         // world's BeginPlay.
-        SDK::UWorld* currentWorld = SDK::UWorld::GetWorld();
-        if (!currentWorld)
-        {
-            UI::GlobalSettings::SetPlayerPosition(0, 0, 0, false);
-            return;
-        }
-        SDK::APlayerController* pc = SDK::UGameplayStatics::GetPlayerController(currentWorld, 0);
+        SDK::UWorld* currentWorld = SdkGlobals::GetWorld();
+        SDK::APlayerController* pc = currentWorld
+            ? SDK::UGameplayStatics::GetPlayerController(currentWorld, 0) : nullptr;
+        // Whether a game screen has the mouse cursor up, for the ImGui host's
+        // mouse sharing (ShouldShareGameMouseNow).
+        Hooks::GameMenu::SetGameCursorShown(pc && pc->bShowMouseCursor);
+
+        // The plugins' UI state (IPluginGameMenu::GetUIState) as of this tick.
+        // The menu layer is read only while a plugin wants it.
+        uint64_t uiState = 0;
+        if (ReloadPolicy::GameplayWorldRunning())  uiState |= PLUGIN_UI_IN_GAMEPLAY;
+        if (Hooks::GameMenu::IsPauseMenuOpen())    uiState |= PLUGIN_UI_PAUSE_MENU;
+        if (Hooks::GameMenu::IsGameCursorShown())  uiState |= PLUGIN_UI_CURSOR_UP;
+        if (pc && UIState::MenuReadWanted())       uiState |= Hooks::GameMenu::ReadMenuLayer(pc);
+        UIState::Publish(uiState);
+
         if (!pc)
         {
             UI::GlobalSettings::SetPlayerPosition(0, 0, 0, false);
@@ -256,7 +287,10 @@ void InitClientUI()
 void ShutdownClientUI()
 {
     if (s_imguiEnabled)
+    {
+        Hooks::SlatePresent::Remove();
         UI::ImGuiBackend::Shutdown();
+    }
     Hooks::Input::RemoveInputProcessor();
 }
 

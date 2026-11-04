@@ -4,9 +4,12 @@
 #ifdef MODLOADER_CLIENT_BUILD
 
 #include "imgui/imgui.h"
+#include "imgui/imgui_internal.h"   // ImGuiErrorRecoveryState
 #include "theme.h"
 #include "plugin_call_tracker.h"
 #include "plugins/plugin_manager.h"
+#include "plugins/plugin_watchdog.h"
+#include "plugins/plugin_guard.h"
 #include "logging/logger.h"
 #include <mutex>
 #include <list>
@@ -60,18 +63,6 @@ namespace UI::PluginPanelRegistry
     // Calls into plugin code made outside s_mutex; see plugin_call_tracker.h.
     static PluginCallTracker s_calls;
 
-    // The module an address lives in, or null if it is in none.
-    static HMODULE ModuleOf(const void* address)
-    {
-        HMODULE owner = nullptr;
-        if (!address ||
-            !GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
-                                GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-                                static_cast<LPCSTR>(address), &owner))
-            return nullptr;
-        return owner;
-    }
-
     // Invokes all registered panel-closed callbacks for the given handle.
     // Must NOT be called while holding s_mutex.
     static void FirePanelClosed(PanelHandle handle)
@@ -89,7 +80,8 @@ namespace UI::PluginPanelRegistry
                 continue;
 
             PluginCallTracker::Scope call(s_calls, lock, reinterpret_cast<const void*>(cb.callback), cb.owner);
-            cb.callback(handle);
+            PluginWatchdog::Scope watch(reinterpret_cast<const void*>(cb.callback), "panel-closed callback");
+            PluginGuard::Invoke(cb.callback, "panel-closed callback", handle);
         }
     }
 
@@ -108,7 +100,7 @@ namespace UI::PluginPanelRegistry
 
         // Resolved before taking the lock, like the callback below. A renderFn
         // in no module could never be purged by ForgetModule, so refuse it.
-        const HMODULE owner = ModuleOf(reinterpret_cast<const void*>(desc->renderFn));
+        const HMODULE owner = PluginGuard::ModuleOf(reinterpret_cast<const void*>(desc->renderFn));
         if (!owner)
             return nullptr;
 
@@ -198,7 +190,7 @@ namespace UI::PluginPanelRegistry
                     toCall.push_back(e.callback);
         }
         for (auto cb : toCall)
-            cb(section, key, newValue);
+            PluginGuard::Invoke(cb, "config-changed callback", section, key, newValue);
     }
 
     // Returns the PanelEntry* if the handle is a known registered panel, otherwise null.
@@ -237,7 +229,7 @@ namespace UI::PluginPanelRegistry
     void RegisterOnPanelWindowClosed(PluginPanelClosedCallback callback)
     {
         if (!callback) return;
-        const HMODULE owner = ModuleOf(reinterpret_cast<const void*>(callback));
+        const HMODULE owner = PluginGuard::ModuleOf(reinterpret_cast<const void*>(callback));
         if (!owner) return;
         std::lock_guard<std::mutex> lock(s_mutex);
         s_panelClosedCallbacks.push_back({ callback, owner });
@@ -529,6 +521,8 @@ namespace UI::PluginPanelRegistry
             if (!live || !live->isOpen)
                 continue;
             const PanelEntry panel = *live;
+            if (PluginGuard::IsOff(reinterpret_cast<const void*>(panel.desc->renderFn)))
+                continue;   // its plugin crashed and is switched off
 
             bool open = true;
             {
@@ -539,6 +533,7 @@ namespace UI::PluginPanelRegistry
                 // for the length of a plugin's render. The call is tracked
                 // instead, so an unload waits for it before the module goes.
                 PluginCallTracker::Scope call(s_calls, lock, ref.entry, panel.owner);
+                PluginWatchdog::Scope watch(reinterpret_cast<const void*>(panel.desc->renderFn), "panel render");
 
                 ImGui::SetNextWindowSize(ImVec2(480, 360), ImGuiCond_FirstUseEver);
 
@@ -548,7 +543,12 @@ namespace UI::PluginPanelRegistry
                 if (UI::Theme::BeginChamferedWindow(panel.desc->windowTitle, panel.desc->windowTitle,
                                                      &open, subtitle))
                 {
-                    panel.desc->renderFn(imgui);
+                    // A render that crashes leaves whatever it had begun or
+                    // pushed open; put ImGui back as it was before it ran.
+                    ImGuiErrorRecoveryState before;
+                    ImGui::ErrorRecoveryStoreState(&before);
+                    if (!PluginGuard::Invoke(panel.desc->renderFn, "panel render", imgui))
+                        ImGui::ErrorRecoveryTryToRecoverState(&before);
                     UI::Theme::EndChamferedWindow();
                 }
             }

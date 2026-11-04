@@ -4,6 +4,8 @@
 #include <windows.h>
 #include "../plugins/plugin_interface.h"
 
+struct ID3D12Fence;
+
 // ---------------------------------------------------------------------------
 // ImGui host DLL interface
 //
@@ -57,6 +59,24 @@ struct ImGuiRenderCallbacks
     // uiCapturing is true under exclusive capture. Returns true if a handler
     // consumed it and the game must not see it (never while uiCapturing).
     bool    (*DispatchMouseWheel)(UINT msg, WPARAM wParam, LPARAM lParam, bool uiCapturing);
+
+    // True while the game shows its own cursor (the pause menu, or any game
+    // screen with the mouse cursor up) and nothing has exclusive capture. ImGui
+    // is fed the mouse then and keeps only the messages it wants; the keyboard
+    // stays with the game.
+    bool    (*IsGameMouseShared)();
+};
+
+// The two fences that order one overlay draw, recorded at Slate's present
+// step, with UE's queue: UE's queue signals readyFence/readyValue once
+// Slate's draw is done (the host's queue waits for it), and waits for
+// doneFence/doneValue, which the host's queue signals after the overlay.
+struct ImGuiUiOverlaySync
+{
+    ID3D12Fence* readyFence;
+    UINT64       readyValue;
+    ID3D12Fence* doneFence;
+    UINT64       doneValue;
 };
 
 // ---------------------------------------------------------------------------
@@ -83,3 +103,20 @@ IMGUI_HOST_API void                   ImGuiHost_RequestFontRebuild();
 // bound to "P" must not close its own panel when the player types "Port"
 // into a text box inside that panel.
 IMGUI_HOST_API bool                   ImGuiHost_IsTextInputActive();
+
+// The game window the overlay draws on, or null before the first Present.
+// Any thread.
+IMGUI_HOST_API HWND                   ImGuiHost_GetGameWindow();
+
+// Slate's present step (hooks/game/slate_present). Render thread: builds the
+// ImGui frame and records it for rhiBackBuffer (an FRHITexture*) on the
+// host's own command list. Returns the slot to submit, or -1 when nothing was
+// recorded (not initialised, not the game's back buffer, a Present-time draw
+// in progress). Every slot returned must be submitted.
+IMGUI_HOST_API int                    ImGuiHost_RecordUiOverlay(void* rhiBackBuffer);
+
+// RHI thread, in command order: submits a recorded slot on the host's queue
+// behind the ready fence. True fills *sync; the caller must then signal the
+// ready fence and wait on the done fence on UE's queue. False: nothing was
+// queued and there is nothing to signal or wait on.
+IMGUI_HOST_API bool                   ImGuiHost_SubmitUiOverlay(int slot, ImGuiUiOverlaySync* sync);

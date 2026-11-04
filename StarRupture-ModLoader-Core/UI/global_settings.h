@@ -7,7 +7,7 @@
 //
 // User-configurable toggles persisted in modloader.ini, mostly HUD display
 // ones under [HUD] plus a handful of other loader-wide settings under their
-// own section (e.g. [Rendering]). Settings are loaded once at startup and
+// own section (e.g. [UI]). Settings are loaded once at startup and
 // saved immediately on change.
 //
 // The world-name and player-position values are written from the game thread
@@ -52,13 +52,17 @@ namespace UI::GlobalSettings
     bool GetShowDebugValues();
     void SetShowDebugValues(bool v);
 
-    // [Rendering] PauseFrameGenWhileOpen -- disables DLSS Frame Generation
-    // (r.Streamline.DLSSG.Enable) for as long as any overlay window is open,
-    // and restores it when the last one closes. Works around generated
-    // frames never getting the overlay drawn on them (see FrameGenPause).
-    // Default on.
-    bool GetPauseFrameGenWhileOpen();
-    void SetPauseFrameGenWhileOpen(bool v);
+    // [UI] KeyboardNavigation -- Dear ImGui's keyboard navigation (Tab, the
+    // arrow keys, Space/Enter to activate) while an overlay window is open.
+    // Default on. client_ui.cpp applies it to the shared ImGui context.
+    bool GetKeyboardNavigation();
+    void SetKeyboardNavigation(bool v);
+
+    // [Plugins] RestartCrashed -- after the crash guard switches a plugin off,
+    // reload it a few seconds later, if its load and unload settings allow it
+    // (plugins/crash_restart.h). Default on. Read on the game thread.
+    bool GetRestartCrashedPlugins();
+    void SetRestartCrashedPlugins(bool v);
 
     float GetFontScale();
     void  SetFontScale(float scale);

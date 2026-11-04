@@ -525,7 +525,7 @@ namespace UI::Theme
         ImGui::GetWindowDrawList()->AddConvexPolyFilled(pts, 5, color);
     }
 
-    bool DrawTitleBar(const char* title, const char* subtitle, bool showCloseButton)
+    bool DrawTitleBar(const char* title, const char* subtitle, bool showCloseButton, void (*besideTitle)())
     {
         // Much larger header with generous padding around the title, and a
         // bigger faux-bold rendering of the title text (drawn at 1.4x font
@@ -558,6 +558,16 @@ namespace UI::Theme
         draw->AddText(font, titleSz, titlePos, titleCol, title);
         draw->AddText(font, titleSz, ImVec2(titlePos.x + 1.0f, titlePos.y), titleCol, title);
 
+        // The title is drawn straight onto the draw list, so it is not an item
+        // SameLine() could follow. A Dummy the size of the text stands in for it.
+        if (besideTitle)
+        {
+            ImGui::SetCursorScreenPos(titlePos);
+            ImGui::Dummy(ImVec2(ImGui::CalcTextSize(title).x * titleScale, titleSz));
+            ImGui::SameLine();
+            besideTitle();
+        }
+
         if (subtitle && subtitle[0])
         {
             ImVec2 subSize = ImGui::CalcTextSize(subtitle);
@@ -581,7 +591,8 @@ namespace UI::Theme
     }
 
     bool BeginChamferedWindow(const char* windowId, const char* displayTitle, bool* open,
-                               const char* subtitle, ImGuiWindowFlags extraFlags, bool showCloseButton)
+                               const char* subtitle, ImGuiWindowFlags extraFlags, bool showCloseButton,
+                               void (*besideTitle)())
     {
         // Native WindowBg/border are square rects -- suppressed so the
         // chamfered corner drawn below is genuinely transparent rather than
@@ -606,7 +617,7 @@ namespace UI::Theme
                    ImGui::GetWindowPos().y + ImGui::GetWindowSize().y),
             windowBgColor);
 
-        if (!DrawTitleBar(displayTitle, subtitle, showCloseButton) && open)
+        if (!DrawTitleBar(displayTitle, subtitle, showCloseButton, besideTitle) && open)
             *open = false;
 
         return true;
@@ -839,7 +850,9 @@ namespace UI::Theme
             ImVec2(trackMin.x, trackMin.y + notch),
         };
         draw->AddConvexPolyFilled(trackPts, 5, trackColor);
-        draw->AddPolyline(trackPts, 5, AccentColor(), 1.0f, ImDrawFlags_Closed);
+        // GetColorU32 applies the style alpha, so a toggle inside BeginDisabled
+        // dims like every other control instead of staying at full accent.
+        draw->AddPolyline(trackPts, 5, ImGui::GetColorU32(AccentColor()), 1.0f, ImDrawFlags_Closed);
 
         const float knobMargin = height * 0.16f;
         const float knobSize   = height - knobMargin * 2.0f;
@@ -848,7 +861,7 @@ namespace UI::Theme
             : trackMin.x + knobMargin;
         ImVec2 knobMin(knobX, trackMin.y + knobMargin);
         ImVec2 knobMax(knobX + knobSize, trackMax.y - knobMargin);
-        draw->AddRectFilled(knobMin, knobMax, *v ? AccentColor() : ImGui::GetColorU32(ImGuiCol_TextDisabled));
+        draw->AddRectFilled(knobMin, knobMax, *v ? ImGui::GetColorU32(AccentColor()) : ImGui::GetColorU32(ImGuiCol_TextDisabled));
 
         // ImGui convention: "##" marks the start of an ID-only suffix that is
         // never rendered (mirrors ImGui::FindRenderedTextEnd used internally

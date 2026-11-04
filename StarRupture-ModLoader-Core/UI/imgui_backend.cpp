@@ -48,6 +48,8 @@ static ImGuiRenderCallbacks g_callbacks = {};
 // Forward declarations
 // ---------------------------------------------------------------------------
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
+// Defined in imgui_impl_win32.cpp but not declared in its header.
+ImGuiKey ImGui_ImplWin32_KeyEventToImGuiKey(WPARAM wParam, LPARAM lParam);
 static HRESULT STDMETHODCALLTYPE HookedPresent(IDXGISwapChain* swapChain, UINT syncInterval, UINT flags);
 static void ReclaimRetiredTextures();
 static void    STDMETHODCALLTYPE HookedECL(ID3D12CommandQueue* pQueue, UINT NumCmdLists, ID3D12CommandList* const* ppCmdLists);
@@ -104,7 +106,9 @@ namespace
 	UINT                       g_rtvDescSize = 0;
 	DXGI_FORMAT                g_rtvFormat = DXGI_FORMAT_UNKNOWN;
 
-	HWND    g_hwnd = nullptr;
+	// Atomic because ImGuiHost_GetGameWindow hands it to any thread (the keybind
+	// registry's IsKeyHeld); set once, on the render thread, at first Present.
+	std::atomic<HWND> g_hwnd{ nullptr };
 	WNDPROC g_origWndProc = nullptr;
 
 	IModLoaderImGui g_imguiAPI = {};
@@ -212,6 +216,13 @@ namespace
 	// Used by LoadFromUTexture2D to detect (and warn about) render-thread calls.
 	std::atomic<DWORD> g_presentOwnerThread{ 0 };
 
+	// The thread that is recording an overlay draw right now: UiPass::Record at
+	// Slate's present step, or HookedPresent's fallback draw. Only one of them
+	// draws a given frame. Unlike g_presentOwnerThread it is not held across the
+	// real Present, so a Present blocked in vsync does not cost the next frame
+	// its overlay.
+	std::atomic<DWORD> g_drawOwnerThread{ 0 };
+
 	// IDXGIFactory2::CreateSwapChainForHwnd vtable patch (slot 15).
 	// Typed as void* for parameters we don't inspect -- avoids dxgi1_2.h type
 	// availability issues at namespace scope; ABI is identical (all pointer-sized).
@@ -252,6 +263,7 @@ namespace
 // ---------------------------------------------------------------------------
 static bool g_hadGameClip = false;   // game had a real cursor clip before we cleared it
 static bool g_prevUiOpen  = false;   // previous frame's ShouldCaptureInput()
+static bool g_prevMenuCursor = false; // previous frame's pause-menu mouse sharing
 
 // A clip covering the whole virtual desktop is Windows' way of saying
 // "unclipped", so treat that as no clip.
@@ -300,8 +312,19 @@ static LRESULT CALLBACK HookedWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 
 	const bool capturing = exclusive || cooperative;
 
+	// The pause menu and the game's other cursor screens (machine menus, the
+	// inventory) show the game's own cursor, so ImGui can be fed the mouse
+	// without owning it: windows over the screen that opted in (see
+	// ShouldShareGameMouseNow; the rest are drawn click-through) can be
+	// hovered, clicked and dragged, and only the clicks that land on them are
+	// kept from the screen. The keyboard stays with the game, so Escape still
+	// closes the menu. Exclusive capture overrides it.
+	const bool menuCursor = !exclusive &&
+		(g_callbacks.IsGameMouseShared ? g_callbacks.IsGameMouseShared() : false);
+
 	// Only feed mouse messages into ImGui while it actually owns the cursor
-	// (i.e. the simulated mouse is shown). Otherwise ImGui's IO mouse state
+	// (i.e. the simulated mouse is shown) or the pause menu shows the game's.
+	// Otherwise ImGui's IO mouse state
 	// is left pointing at wherever the cursor was frozen when the UI closed,
 	// and an always-rendered widget/button under that stale position would
 	// still register hover/click from camera-look/fire input that is only
@@ -327,7 +350,7 @@ static LRESULT CALLBACK HookedWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 		break;
 	}
 
-	if (exclusive || !isMouseMsg)
+	if (exclusive || menuCursor || !isMouseMsg)
 	{
 		std::lock_guard<std::recursive_mutex> lock(g_imguiMutex);
 		if (ImGui_ImplWin32_WndProcHandler(hWnd, msg, wParam, lParam))
@@ -352,24 +375,24 @@ static LRESULT CALLBACK HookedWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 			return 0;
 	}
 
-	if (capturing)
+	if (capturing || menuCursor)
 	{
-		// In cooperative mode the game keeps everything ImGui is not actively
-		// using, so consult ImGui's own per-frame arbitration flags. They are
-		// plain bools refreshed in NewFrame; read them under the same lock the
-		// render thread holds while writing them.
+		// Outside exclusive capture the game keeps everything ImGui is not
+		// actively using, so consult ImGui's own per-frame arbitration flags.
+		// They are plain bools refreshed in NewFrame; read them under the same
+		// lock the render thread holds while writing them.
 		bool wantMouse    = true;
 		bool wantKeyboard = true;
-		if (cooperative)
+		if (!exclusive)
 		{
-			// ImGui is not fed the mouse at all in cooperative mode (it has no
-			// cursor to aim with), so the game keeps every mouse message. Only
-			// keyboard is arbitrated, for a plugin that has focused a text field
-			// while an exclusive surface was also open.
+			// Cooperative mode does not feed ImGui the mouse (it has no cursor
+			// to aim with), so the game keeps every mouse message there and
+			// only keyboard is arbitrated, for a plugin that has focused a
+			// text field. Over the pause menu it is the other way round.
 			std::lock_guard<std::recursive_mutex> lock(g_imguiMutex);
 			const ImGuiIO& io = ImGui::GetIO();
-			wantMouse    = false;
-			wantKeyboard = io.WantCaptureKeyboard || io.WantTextInput;
+			wantMouse    = menuCursor && io.WantCaptureMouse;
+			wantKeyboard = cooperative && (io.WantCaptureKeyboard || io.WantTextInput);
 		}
 
 		switch (msg)
@@ -383,15 +406,23 @@ static LRESULT CALLBACK HookedWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 		case WM_RBUTTONDOWN: case WM_RBUTTONUP: case WM_RBUTTONDBLCLK:
 		case WM_MBUTTONDOWN: case WM_MBUTTONUP: case WM_MBUTTONDBLCLK:
 		case WM_XBUTTONDOWN: case WM_XBUTTONUP: case WM_XBUTTONDBLCLK:
-		case WM_MOUSEMOVE:   case WM_MOUSEWHEEL: case WM_MOUSEHWHEEL:
-		case WM_INPUT:      // UE5 uses raw input for camera delta -- swallow it
+		case WM_MOUSEWHEEL:  case WM_MOUSEHWHEEL:
 			if (wantMouse) return 0;
 			break;
 
-		// Always swallowed, in both modes: UE5 hides the cursor from here, and
+		// Over the pause menu the game draws the cursor, so it keeps
+		// tracking movement even while ImGui has the clicks.
+		case WM_MOUSEMOVE:
+		case WM_INPUT:      // UE5 uses raw input for camera delta -- swallow it
+			if (wantMouse && !menuCursor) return 0;
+			break;
+
+		// Swallowed whenever we capture: UE5 hides the cursor from here, and
 		// our own cursor has to stay visible for the UI to be usable at all.
+		// Over the pause menu the cursor is the game's, so it is left alone.
 		case WM_SETCURSOR:
-			return 0;
+			if (capturing) return 0;
+			break;
 
 		default:
 			break;
@@ -680,6 +711,8 @@ static bool CreateDeviceD3D(HWND hWnd)
 	return ok;
 }
 
+namespace UiPass { static void WaitForDraws(); }
+
 // ---------------------------------------------------------------------------
 // RebuildFontAtlas
 // Loads the font selected in GlobalSettings::GetFontFamily(), rebuilds the
@@ -704,6 +737,8 @@ static void RebuildFontAtlas(bool initialSetup)
 			g_fence->SetEventOnCompletion(signalVal, g_fenceEvent);
 			WaitForSingleObject(g_fenceEvent, 1000);
 		}
+		// Overlay draws submitted at Slate's present step run on their own queue.
+		UiPass::WaitForDraws();
 		ImGui_ImplDX12_InvalidateDeviceObjects();
 	}
 
@@ -1015,8 +1050,8 @@ static bool InitD3D12Resources(IDXGISwapChain* swapChain)
 	IMGUI_CHECKVERSION();
 	ImGui::CreateContext();
 	ImGuiIO& io = ImGui::GetIO();
-	io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard
-		| ImGuiConfigFlags_NoMouseCursorChange; // don't touch OS cursor by default
+	// Keyboard navigation is switched per frame by the RenderFrame callback.
+	io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange; // don't touch OS cursor by default
 	// Build an absolute path so the file lands in the ModLoader folder
 	// regardless of the game process working directory.
 	static char s_iniPath[MAX_PATH] = {};
@@ -1054,7 +1089,7 @@ static bool InitD3D12Resources(IDXGISwapChain* swapChain)
 	ImGui_ImplDX12_InitInfo dx12info = {};
 	dx12info.Device = g_device;
 	dx12info.CommandQueue = g_cmdQueue;
-	dx12info.NumFramesInFlight = static_cast<int>(g_frameCount);
+	dx12info.NumFramesInFlight = MAX_FRAMES;  // UiPass keeps up to this many draws in flight
 	dx12info.RTVFormat = g_rtvFormat;
 	dx12info.SrvDescriptorHeap = g_srvHeap;
 	dx12info.SrvDescriptorAllocFn = SrvAllocFn;
@@ -1071,7 +1106,7 @@ static bool InitD3D12Resources(IDXGISwapChain* swapChain)
 
 	IMGUI_LOG_INFO("[ImGuiBackend] D3D12 resources initialized (buffers=%u hwnd=0x%llX)",
 		g_frameCount,
-		static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(g_hwnd)));
+		static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(g_hwnd.load())));
 
 	g_initialized = true;
 	return true;
@@ -1172,227 +1207,332 @@ static void STDMETHODCALLTYPE HookedECL(ID3D12CommandQueue* pQueue,
 }
 
 // ---------------------------------------------------------------------------
-// IDXGISwapChain::Present hook
+// BuildImGuiFrame -- one ImGui frame: cursor ownership, font rebuild, every
+// RenderFrame callback, ImGui::Render. Caller holds g_imguiMutex.
+//
+// Cursor management: hand control to ImGui whenever any modloader UI
+// surface is visible (main window OR any open plugin panel).
+// NoMouseCursorChange prevents ImGui's Win32 backend from calling
+// SetCursor() every frame -- without it, it fights UE5's cursor management
+// and causes visible flickering whenever our window is closed.
 // ---------------------------------------------------------------------------
-static HRESULT STDMETHODCALLTYPE HookedPresent(IDXGISwapChain* swapChain, UINT syncInterval, UINT flags)
+static void BuildImGuiFrame()
 {
-	if (g_shutdown)
-		return g_originalPresent(swapChain, syncInterval, flags);
-
-	// Reentrancy guard: prevents both recursive calls (Streamline calls the real
-	// Present from within its own Present wrapper) and simultaneous calls from
-	// multiple threads (some middleware and overlay SDKs call Present off the
-	// render thread).  An atomic owner-thread check handles both cases.
-	// Also used by LoadFromUTexture2D to warn if called from the render thread.
-	DWORD tid = GetCurrentThreadId();
-	DWORD expected = 0;
-	if (!g_presentOwnerThread.compare_exchange_strong(expected, tid))
-		return g_originalPresent(swapChain, syncInterval, flags);
-
-	// Wait for WorldBeginPlay before touching D3D12.
-	// Streamline and the UE5 viewport finish their setup only after the first world loads.
-	if (!g_initialized)
+	// Cursor ownership follows EXCLUSIVE capture only.
+	//
+	// Cooperative passthrough used to count here too, on the reasoning that a
+	// plugin's always-on windows have to stay clickable. But that put a
+	// simulated cursor on screen for as long as any passthrough token was
+	// held -- so a plugin doing nothing but drawing a HUD readout took the
+	// pointer away from the game and the player lost mouse look. When the
+	// only thing on screen is a passthrough window, the game keeps focus.
+	//
+	// This also keeps the invariant HookedWndProc relies on: ImGui is only
+	// fed mouse messages while it actually owns the cursor. UE5 hides and
+	// re-centres the OS cursor during gameplay, so an ImGui that was still
+	// tracking it would sit at a frozen position and any widget underneath
+	// would swallow clicks meant for the game.
+	bool uiOpen = (g_callbacks.ShouldCaptureInput ? g_callbacks.ShouldCaptureInput() : false);
+	ImGuiIO& frameIO = ImGui::GetIO();
+	if (uiOpen)
 	{
-		if (!g_renderingReady)
+		frameIO.ConfigFlags &= ~ImGuiConfigFlags_NoMouseCursorChange;
+		frameIO.MouseDrawCursor = true;
+
+		// Only sample the game's clip on the closed -> open edge; by the
+		// second frame the clip is already ours to manage.
+		if (!g_prevUiOpen)
 		{
-			g_presentOwnerThread.store(0, std::memory_order_release);
-			return g_originalPresent(swapChain, syncInterval, flags);
+			RECT existing{};
+			g_hadGameClip = GetClipCursor(&existing) && IsRealClip(existing);
 		}
-
-		if (!InitD3D12Resources(swapChain))
-		{
-			if (g_device)
-			{
-				IMGUI_LOG_ERROR("[ImGuiBackend] Resource init failed -- ImGui disabled");
-				g_shutdown = true;
-			}
-			// else: size filter rejected this swap chain, try again next frame.
-		}
-		g_presentOwnerThread.store(0, std::memory_order_release);
-		return g_originalPresent(swapChain, syncInterval, flags);
+		ClipCursor(nullptr);
 	}
-
-	// Only render on the swap chain we initialised on.
-	if (swapChain != g_swapChain)
+	else
 	{
-		g_presentOwnerThread.store(0, std::memory_order_release);
-		return g_originalPresent(swapChain, syncInterval, flags);
+		frameIO.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
+		frameIO.MouseDrawCursor = false;
+
+		// open -> closed edge: hand the cursor back to the game. ClipCursor
+		// pulls the cursor inside the rect if it had already escaped, so
+		// this also recovers a cursor sitting outside the window.
+		if (g_prevUiOpen)
+			RestoreGameCursorClip();
 	}
+	g_prevUiOpen = uiOpen;
 
-	// g_presentOwnerThread is now set to tid -- release it on every exit path below.
-
-	static std::atomic<UINT64> s_renderFrame{ 0 };
-	UINT64 frameIdx = s_renderFrame.fetch_add(1);
-
-	if (frameIdx == 0)
-		IMGUI_LOG_INFO("[ImGuiBackend] First render: device=0x%p submit-queue=0x%p ecl-current=0x%p buffers=%u fmt=%u",
-			static_cast<void*>(g_device), static_cast<void*>(g_cmdQueue),
-			static_cast<void*>(g_capturedQueue),
-			g_frameCount, static_cast<unsigned>(g_rtvFormat));
-
-	// Current back buffer index.
-	IDXGISwapChain3* sc3 = nullptr;
-	UINT bufferIdx = 0;
-	if (SUCCEEDED(swapChain->QueryInterface(IID_PPV_ARGS(&sc3))))
+	// Pause menu closed without exclusive capture taking over: ImGui stops
+	// being fed the mouse, so park it off-screen and release any held
+	// button, or a widget under the last position stays hovered or keeps
+	// dragging (the menu can close mid-drag on Escape). The Win32 backend
+	// still polls the OS cursor on its own while it is not tracking the
+	// mouse, as it does after F2 closes, so the parked position may not
+	// last; the button release is what ends the drag.
+	const bool menuCursor = !uiOpen &&
+		(g_callbacks.IsGameMouseShared ? g_callbacks.IsGameMouseShared() : false);
+	if (g_prevMenuCursor && !menuCursor && !uiOpen)
 	{
-		bufferIdx = sc3->GetCurrentBackBufferIndex() % g_frameCount;
-		sc3->Release();
+		frameIO.AddMousePosEvent(-FLT_MAX, -FLT_MAX);
+		for (int button = 0; button < ImGuiMouseButton_COUNT; ++button)
+			frameIO.AddMouseButtonEvent(button, false);
 	}
-	FrameContext& fc = g_frames[bufferIdx];
+	g_prevMenuCursor = menuCursor;
 
-	// Wait for the GPU to finish any previous work on this allocator.
-	if (g_fence->GetCompletedValue() < fc.fenceValue)
+	// Rebuild font atlas if the user changed the font family.
+	// Must happen before NewFrame to avoid using a destroyed font texture.
+	if (g_pendingFontRebuild.exchange(false))
+		RebuildFontAtlas(/*initialSetup=*/false);
+
+	ImGui_ImplDX12_NewFrame();
+	ImGui_ImplWin32_NewFrame();
+	ImGui::NewFrame();
+
+	if (g_callbacks.RenderFrame)
+		g_callbacks.RenderFrame(&g_imguiAPI);
+
+	ImGui::Render();
+}
+
+// ---------------------------------------------------------------------------
+// Drawing at Slate's present step (hooks/game/slate_present in the main DLL)
+//
+// Frame generation takes the game's UI from the back buffer at Slate's
+// present step, after every widget is drawn: UE's Streamline plugin copies
+// it into DLSS-G's UI buffer at OnBackBufferReadyToPresent, and FSR 3 frame
+// interpolation has Slate draw the UI again over each interpolated frame.
+// ImGui drawn at Present comes after both, so it is on real frames only.
+//
+// So the overlay is drawn there instead. It is recorded here, on the render
+// thread, on our own command list, and submitted from an RHI command on our
+// own queue, between a fence UE's queue signals after Slate's draw and one
+// UE's queue waits on before anything reads the back buffer. Nothing is
+// recorded on UE's command lists, so UE's state cache never sees state it
+// did not set. While these draws come, HookedPresent draws nothing; once they
+// stop (the hook did not resolve, or no window is drawn into the game's back
+// buffer), it draws as before.
+// ---------------------------------------------------------------------------
+namespace UiPass
+{
+	// One per ImGui frame in flight (ImGui_ImplDX12 NumFramesInFlight), so the
+	// vertex buffers a slot's draw reads are not rewritten under the GPU.
+	constexpr UINT kSlots = MAX_FRAMES;
+	// HookedPresent draws again once this long has passed without a draw here.
+	constexpr ULONGLONG kActiveMs = 250;
+	constexpr DWORD kSlotWaitMs = 100;
+
+	struct Slot
 	{
-		g_fence->SetEventOnCompletion(fc.fenceValue, g_fenceEvent);
-		WaitForSingleObject(g_fenceEvent, 1000);
-	}
-
-	// Release plugin textures freed since the GPU last caught up. Before
-	// RenderFrame, so a slot freed here can be reused by a Load* without this
-	// frame ever having seen the old SRV.
-	ReclaimRetiredTextures();
-
-	// Acquire the back buffer just for this frame -- released before returning
-	// so that ResizeBuffers is never blocked by our reference.
-	ID3D12Resource* backBuffer = nullptr;
-	if (FAILED(swapChain->GetBuffer(bufferIdx, IID_PPV_ARGS(&backBuffer))))
-	{
-		IMGUI_LOG_ERROR("[ImGuiBackend] Frame %llu  GetBuffer(%u) failed", frameIdx, bufferIdx);
-		g_presentOwnerThread.store(0, std::memory_order_release);
-		return g_originalPresent(swapChain, syncInterval, flags);
-	}
-
-	// RTV for this buffer slot.
-	D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle = {
-		g_rtvHeap->GetCPUDescriptorHandleForHeapStart().ptr + bufferIdx * g_rtvDescSize
+		ID3D12CommandAllocator*    allocator = nullptr;
+		ID3D12GraphicsCommandList* list = nullptr;
+		UINT64                     fenceValue = 0;      // g_fence value this slot's draw signals
+		std::atomic<bool>          pending{ false };    // recorded, not yet submitted
 	};
+
+	static std::mutex            g_submitMutex;         // the queue and slots vs. the RHI thread
+	static ID3D12CommandQueue*   g_queue = nullptr;
+	static ID3D12Fence*          g_readyFence = nullptr;
+	static ID3D12Fence*          g_doneFence = nullptr; // g_fence, with a reference of our own
+	static UINT64                g_readyValue = 0;      // RHI thread only
+	static ID3D12DescriptorHeap* g_uiRtvHeap = nullptr; // one RTV, for the back buffer Slate drew into
+	static HANDLE                g_slotEvent = nullptr;
+	static Slot                  g_slots[kSlots];
+	static UINT                  g_next = 0;            // render thread only
+	static bool                  g_failed = false;
+
+	// The swap chain's buffer size, from HookedPresent: a window whose back
+	// buffer is another size is not the game's and gets nothing.
+	static std::atomic<UINT64>    g_width{ 0 };
+	static std::atomic<UINT>      g_height{ 0 };
+	static std::atomic<ULONGLONG> g_lastDrawMs{ 0 };
+	static std::atomic<UINT64>    g_lastDoneValue{ 0 };
+
+	// Before anything those draws read is destroyed (font texture, SRV heap):
+	// they run on g_queue, which the g_cmdQueue waits above do not cover.
+	static void WaitForDraws()
 	{
-		D3D12_RENDER_TARGET_VIEW_DESC rtvDesc = {};
-		rtvDesc.Format = g_rtvFormat;
-		rtvDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D;
-		g_device->CreateRenderTargetView(backBuffer, &rtvDesc, rtvHandle);
+		const UINT64 last = g_lastDoneValue.load();
+		if (!g_doneFence || g_doneFence->GetCompletedValue() >= last)
+			return;
+		HANDLE ev = CreateEventW(nullptr, FALSE, FALSE, nullptr);
+		if (!ev)
+			return;
+		if (SUCCEEDED(g_doneFence->SetEventOnCompletion(last, ev)))
+			WaitForSingleObject(ev, 1000);
+		CloseHandle(ev);
 	}
 
-	// Record ImGui commands.
-	fc.commandAllocator->Reset();
-	g_cmdList->Reset(fc.commandAllocator, nullptr);
-
-	// Barrier: COMMON -> RENDER_TARGET.
-	// Use COMMON (== PRESENT, value 0) as StateBefore: swap chain back buffers
-	// decay to COMMON after each ExecuteCommandLists boundary.  The queue we
-	// submit on may not have explicitly transitioned this buffer before, so the
-	// runtime tracks it as COMMON.  Using PRESENT as StateBefore on such a queue
-	// causes a validation mismatch that crashes the GPU driver.
-	D3D12_RESOURCE_BARRIER barrier = {};
-	barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-	barrier.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
-	barrier.Transition.pResource = backBuffer;
-	barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-	barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_COMMON;
-	barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
-	g_cmdList->ResourceBarrier(1, &barrier);
-
-	// Cursor management: hand control to ImGui whenever any modloader UI
-	// surface is visible (main window OR any open plugin panel).
-	// NoMouseCursorChange prevents ImGui's Win32 backend from calling
-	// SetCursor() every frame -- without it, it fights UE5's cursor management
-	// and causes visible flickering whenever our window is closed.
+	// After the GPU flush at shutdown. The two fences are never released: a
+	// payload UE has not submitted yet can still name them.
+	static void ReleaseResources()
 	{
-		std::lock_guard<std::recursive_mutex> imguiLock(g_imguiMutex);
-
-		// Cursor ownership follows EXCLUSIVE capture only.
-		//
-		// Cooperative passthrough used to count here too, on the reasoning that a
-		// plugin's always-on windows have to stay clickable. But that put a
-		// simulated cursor on screen for as long as any passthrough token was
-		// held -- so a plugin doing nothing but drawing a HUD readout took the
-		// pointer away from the game and the player lost mouse look. When the
-		// only thing on screen is a passthrough window, the game keeps focus.
-		//
-		// This also keeps the invariant HookedWndProc relies on: ImGui is only
-		// fed mouse messages while it actually owns the cursor. UE5 hides and
-		// re-centres the OS cursor during gameplay, so an ImGui that was still
-		// tracking it would sit at a frozen position and any widget underneath
-		// would swallow clicks meant for the game.
-		bool uiOpen = (g_callbacks.ShouldCaptureInput ? g_callbacks.ShouldCaptureInput() : false);
-		ImGuiIO& frameIO = ImGui::GetIO();
-		if (uiOpen)
+		std::lock_guard<std::mutex> lock(g_submitMutex);
+		if (g_doneFence && g_doneFence->GetCompletedValue() < g_lastDoneValue.load())
 		{
-			frameIO.ConfigFlags &= ~ImGuiConfigFlags_NoMouseCursorChange;
-			frameIO.MouseDrawCursor = true;
-
-			// Only sample the game's clip on the closed -> open edge; by the
-			// second frame the clip is already ours to manage.
-			if (!g_prevUiOpen)
-			{
-				RECT existing{};
-				g_hadGameClip = GetClipCursor(&existing) && IsRealClip(existing);
-			}
-			ClipCursor(nullptr);
+			g_queue = nullptr;  // still running: left to process exit
+			return;
 		}
+		for (Slot& slot : g_slots)
+		{
+			if (slot.list) { slot.list->Release(); slot.list = nullptr; }
+			if (slot.allocator) { slot.allocator->Release(); slot.allocator = nullptr; }
+			slot.pending = false;
+		}
+		if (g_uiRtvHeap) { g_uiRtvHeap->Release(); g_uiRtvHeap = nullptr; }
+		if (g_queue) { g_queue->Release(); g_queue = nullptr; }
+		if (g_slotEvent) { CloseHandle(g_slotEvent); g_slotEvent = nullptr; }
+	}
+
+	static bool CreateResources()
+	{
+		std::lock_guard<std::mutex> lock(g_submitMutex);
+		D3D12_COMMAND_QUEUE_DESC queueDesc = {};
+		queueDesc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
+		D3D12_DESCRIPTOR_HEAP_DESC heapDesc = {};
+		heapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
+		heapDesc.NumDescriptors = 1;
+		bool ok = SUCCEEDED(g_device->CreateCommandQueue(&queueDesc, IID_PPV_ARGS(&g_queue))) &&
+			SUCCEEDED(g_device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&g_readyFence))) &&
+			SUCCEEDED(g_device->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(&g_uiRtvHeap)));
+		for (UINT i = 0; ok && i < kSlots; ++i)
+		{
+			Slot& slot = g_slots[i];
+			ok = SUCCEEDED(g_device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&slot.allocator))) &&
+				SUCCEEDED(g_device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, slot.allocator, nullptr, IID_PPV_ARGS(&slot.list))) &&
+				SUCCEEDED(slot.list->Close());
+		}
+		if (ok)
+		{
+			g_slotEvent = CreateEventW(nullptr, FALSE, FALSE, nullptr);
+			ok = g_slotEvent != nullptr;
+		}
+		if (ok)
+		{
+			g_doneFence = g_fence;
+			g_doneFence->AddRef();
+		}
+		return ok;
+	}
+
+	// HookedPresent, every frame on our swap chain.
+	static void NoteSwapChainSize(UINT64 width, UINT height)
+	{
+		g_width = width;
+		g_height = height;
+	}
+
+	// HookedPresent: true while the overlay is drawn at Slate's present step,
+	// so it must not draw its own.
+	static bool Active()
+	{
+		return GetTickCount64() - g_lastDrawMs.load() < kActiveMs ||
+			(g_doneFence && g_doneFence->GetCompletedValue() < g_lastDoneValue.load());
+	}
+
+	// Render thread, at Slate's present step.
+	static int Record(ID3D12Resource* backBuffer)
+	{
+		if (!g_initialized || g_shutdown || g_failed || !backBuffer)
+			return -1;
+
+		const D3D12_RESOURCE_DESC desc = backBuffer->GetDesc();
+		if (desc.Dimension != D3D12_RESOURCE_DIMENSION_TEXTURE2D || desc.Width != g_width.load() ||
+			desc.Height != g_height.load() || desc.SampleDesc.Count != 1 || NormalizeForImGui(desc.Format) != g_rtvFormat)
+			return -1;
+
+		if (!g_queue && !CreateResources())
+		{
+			IMGUI_LOG_WARN("[ImGuiBackend] Overlay at Slate's present step unavailable (D3D12 resources); drawing at Present");
+			ReleaseResources();
+			g_failed = true;
+			return -1;
+		}
+
+		// A Present drawing its own overlay right now keeps this frame.
+		DWORD expected = 0;
+		if (!g_drawOwnerThread.compare_exchange_strong(expected, GetCurrentThreadId()))
+			return -1;
+
+		const int index = static_cast<int>(g_next % kSlots);
+		Slot& slot = g_slots[index];
+		bool free = !slot.pending.load(std::memory_order_acquire);
+		if (free && g_fence->GetCompletedValue() < slot.fenceValue)
+		{
+			g_fence->SetEventOnCompletion(slot.fenceValue, g_slotEvent);
+			free = WaitForSingleObject(g_slotEvent, kSlotWaitMs) == WAIT_OBJECT_0;
+		}
+		if (!free)
+		{
+			g_drawOwnerThread.store(0, std::memory_order_release);
+			return -1;
+		}
+
+		{
+			std::lock_guard<std::recursive_mutex> imguiLock(g_imguiMutex);
+			// Before RenderFrame, as in HookedPresent.
+			ReclaimRetiredTextures();
+			BuildImGuiFrame();
+
+			slot.allocator->Reset();
+			slot.list->Reset(slot.allocator, nullptr);
+
+			D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle = g_uiRtvHeap->GetCPUDescriptorHandleForHeapStart();
+			D3D12_RENDER_TARGET_VIEW_DESC rtvDesc = {};
+			rtvDesc.Format = g_rtvFormat;
+			rtvDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D;
+			g_device->CreateRenderTargetView(backBuffer, &rtvDesc, rtvHandle);
+
+			// UE has put the back buffer in RENDER_TARGET for this list.
+			slot.list->OMSetRenderTargets(1, &rtvHandle, FALSE, nullptr);
+			slot.list->SetDescriptorHeaps(1, &g_srvHeap);
+			ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), slot.list);
+			slot.list->Close();
+			slot.fenceValue = ++g_fenceValue;
+		}
+		slot.pending.store(true, std::memory_order_release);
+		g_lastDoneValue = slot.fenceValue;
+		g_lastDrawMs = GetTickCount64();
+		++g_next;
+		g_drawOwnerThread.store(0, std::memory_order_release);
+		return index;
+	}
+
+	// RHI thread, in command order, so slots arrive in the order recorded and
+	// g_fence values rise.
+	static bool Submit(int index, ImGuiUiOverlaySync* sync)
+	{
+		std::lock_guard<std::mutex> lock(g_submitMutex);
+		if (!g_queue || !sync || index < 0 || index >= static_cast<int>(kSlots))
+			return false;
+		Slot& slot = g_slots[index];
+		if (!slot.pending.load(std::memory_order_acquire))
+			return false;
+
+		const UINT64 readyValue = ++g_readyValue;
+		g_queue->Wait(g_readyFence, readyValue);
+		// The unhooked ECL: HookedECL would take our queue for the game's.
+		ID3D12CommandList* lists[] = { slot.list };
+		if (g_originalECL)
+			g_originalECL(g_queue, 1, lists);
 		else
-		{
-			frameIO.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
-			frameIO.MouseDrawCursor = false;
+			g_queue->ExecuteCommandLists(1, lists);
+		g_queue->Signal(g_doneFence, slot.fenceValue);
+		slot.pending.store(false, std::memory_order_release);
 
-			// open -> closed edge: hand the cursor back to the game. ClipCursor
-			// pulls the cursor inside the rect if it had already escaped, so
-			// this also recovers a cursor sitting outside the window.
-			if (g_prevUiOpen)
-				RestoreGameCursorClip();
-		}
-		g_prevUiOpen = uiOpen;
-
-		// Rebuild font atlas if the user changed the font family.
-		// Must happen before NewFrame to avoid using a destroyed font texture.
-		if (g_pendingFontRebuild.exchange(false))
-			RebuildFontAtlas(/*initialSetup=*/false);
-
-		ImGui_ImplDX12_NewFrame();
-		ImGui_ImplWin32_NewFrame();
-		ImGui::NewFrame();
-
-		if (g_callbacks.RenderFrame)
-			g_callbacks.RenderFrame(&g_imguiAPI);
-
-		ImGui::Render();
-
-		g_cmdList->OMSetRenderTargets(1, &rtvHandle, FALSE, nullptr);
-		g_cmdList->SetDescriptorHeaps(1, &g_srvHeap);
-		ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), g_cmdList);
+		sync->readyFence = g_readyFence;
+		sync->readyValue = readyValue;
+		sync->doneFence = g_doneFence;
+		sync->doneValue = slot.fenceValue;
+		return true;
 	}
+}
 
-	// Barrier: RENDER_TARGET -> COMMON.
-	barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
-	barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_COMMON;
-	g_cmdList->ResourceBarrier(1, &barrier);
-	g_cmdList->Close();
 
-	// Submit on g_cmdQueue -- the queue locked in at InitD3D12Resources time.
-	// Do NOT use the live g_capturedQueue here: it is updated on every ECL call
-	// from any thread and can change mid-session (e.g. loading -> main menu
-	// transition exposes a new Streamline-internal queue).  Submitting a fence
-	// signal from a queue on a different device causes DXGI_ERROR_DEVICE_REMOVED.
-	// g_cmdQueue was verified against the swap chain back buffer's device at init
-	// and will not change for the lifetime of this swap chain.
-	ID3D12CommandQueue* submitQueue = g_cmdQueue;
-	ID3D12CommandList* cmdLists[] = { g_cmdList };
-	submitQueue->ExecuteCommandLists(1, cmdLists);
-
-	// Signal fence then CPU-wait: ensures our GPU work is complete before DXGI
-	// presents.  DXGI only implicitly waits on the swap chain's creation queue;
-	// without this wait our RENDER_TARGET->COMMON barrier may still be in flight.
-	UINT64 signalVal = ++g_fenceValue;
-	submitQueue->Signal(g_fence, signalVal);
-	fc.fenceValue = signalVal;
-	if (g_fence->GetCompletedValue() < signalVal)
-	{
-		g_fence->SetEventOnCompletion(signalVal, g_fenceEvent);
-		WaitForSingleObject(g_fenceEvent, 500);
-	}
-
-	backBuffer->Release();
-
+// ---------------------------------------------------------------------------
+// The real Present for a frame HookedPresent owns, and what its result means
+// for the overlay. Releases g_presentOwnerThread.
+// ---------------------------------------------------------------------------
+static HRESULT PresentAndCheck(IDXGISwapChain* swapChain, UINT syncInterval, UINT flags, UINT64 frameIdx)
+{
 	HRESULT hr = g_originalPresent(swapChain, syncInterval, flags);
 
 	// Tracks whether we're currently in a run of transient Present failures
@@ -1455,6 +1595,187 @@ static HRESULT STDMETHODCALLTYPE HookedPresent(IDXGISwapChain* swapChain, UINT s
 
 	g_presentOwnerThread.store(0, std::memory_order_release);
 	return hr;
+}
+
+// ---------------------------------------------------------------------------
+// IDXGISwapChain::Present hook
+// ---------------------------------------------------------------------------
+static HRESULT STDMETHODCALLTYPE HookedPresent(IDXGISwapChain* swapChain, UINT syncInterval, UINT flags)
+{
+	if (g_shutdown)
+		return g_originalPresent(swapChain, syncInterval, flags);
+
+	// Reentrancy guard: prevents both recursive calls (Streamline calls the real
+	// Present from within its own Present wrapper) and simultaneous calls from
+	// multiple threads (some middleware and overlay SDKs call Present off the
+	// render thread).  An atomic owner-thread check handles both cases.
+	// Also used by LoadFromUTexture2D to warn if called from the render thread.
+	DWORD tid = GetCurrentThreadId();
+	DWORD expected = 0;
+	if (!g_presentOwnerThread.compare_exchange_strong(expected, tid))
+		return g_originalPresent(swapChain, syncInterval, flags);
+
+	// Wait for WorldBeginPlay before touching D3D12.
+	// Streamline and the UE5 viewport finish their setup only after the first world loads.
+	if (!g_initialized)
+	{
+		if (!g_renderingReady)
+		{
+			g_presentOwnerThread.store(0, std::memory_order_release);
+			return g_originalPresent(swapChain, syncInterval, flags);
+		}
+
+		if (!InitD3D12Resources(swapChain))
+		{
+			if (g_device)
+			{
+				IMGUI_LOG_ERROR("[ImGuiBackend] Resource init failed -- ImGui disabled");
+				g_shutdown = true;
+			}
+			// else: size filter rejected this swap chain, try again next frame.
+		}
+		g_presentOwnerThread.store(0, std::memory_order_release);
+		return g_originalPresent(swapChain, syncInterval, flags);
+	}
+
+	// Only render on the swap chain we initialised on.
+	if (swapChain != g_swapChain)
+	{
+		g_presentOwnerThread.store(0, std::memory_order_release);
+		return g_originalPresent(swapChain, syncInterval, flags);
+	}
+
+	// g_presentOwnerThread is now set to tid -- release it on every exit path below.
+
+	static std::atomic<UINT64> s_renderFrame{ 0 };
+	UINT64 frameIdx = s_renderFrame.fetch_add(1);
+
+	if (frameIdx == 0)
+		IMGUI_LOG_INFO("[ImGuiBackend] First render: device=0x%p submit-queue=0x%p ecl-current=0x%p buffers=%u fmt=%u",
+			static_cast<void*>(g_device), static_cast<void*>(g_cmdQueue),
+			static_cast<void*>(g_capturedQueue),
+			g_frameCount, static_cast<unsigned>(g_rtvFormat));
+
+	// The overlay is already in this frame, drawn at Slate's present step.
+	{
+		DXGI_SWAP_CHAIN_DESC scDesc = {};
+		if (SUCCEEDED(swapChain->GetDesc(&scDesc)))
+			UiPass::NoteSwapChainSize(scDesc.BufferDesc.Width, scDesc.BufferDesc.Height);
+	}
+	if (UiPass::Active())
+		return PresentAndCheck(swapChain, syncInterval, flags, frameIdx);
+
+	// Released before the real Present on every path below. If the Slate-step
+	// draw is recording this frame right now, it keeps the frame.
+	DWORD drawExpected = 0;
+	if (!g_drawOwnerThread.compare_exchange_strong(drawExpected, tid))
+		return PresentAndCheck(swapChain, syncInterval, flags, frameIdx);
+
+	// Current back buffer index.
+	IDXGISwapChain3* sc3 = nullptr;
+	UINT bufferIdx = 0;
+	if (SUCCEEDED(swapChain->QueryInterface(IID_PPV_ARGS(&sc3))))
+	{
+		bufferIdx = sc3->GetCurrentBackBufferIndex() % g_frameCount;
+		sc3->Release();
+	}
+	FrameContext& fc = g_frames[bufferIdx];
+
+	// Wait for the GPU to finish any previous work on this allocator.
+	if (g_fence->GetCompletedValue() < fc.fenceValue)
+	{
+		g_fence->SetEventOnCompletion(fc.fenceValue, g_fenceEvent);
+		WaitForSingleObject(g_fenceEvent, 1000);
+	}
+
+	// Release plugin textures freed since the GPU last caught up. Before
+	// RenderFrame, so a slot freed here can be reused by a Load* without this
+	// frame ever having seen the old SRV.
+	ReclaimRetiredTextures();
+
+	// Acquire the back buffer just for this frame -- released before returning
+	// so that ResizeBuffers is never blocked by our reference.
+	ID3D12Resource* backBuffer = nullptr;
+	if (FAILED(swapChain->GetBuffer(bufferIdx, IID_PPV_ARGS(&backBuffer))))
+	{
+		IMGUI_LOG_ERROR("[ImGuiBackend] Frame %llu  GetBuffer(%u) failed", frameIdx, bufferIdx);
+		g_drawOwnerThread.store(0, std::memory_order_release);
+		g_presentOwnerThread.store(0, std::memory_order_release);
+		return g_originalPresent(swapChain, syncInterval, flags);
+	}
+
+	// RTV for this buffer slot.
+	D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle = {
+		g_rtvHeap->GetCPUDescriptorHandleForHeapStart().ptr + bufferIdx * g_rtvDescSize
+	};
+	{
+		D3D12_RENDER_TARGET_VIEW_DESC rtvDesc = {};
+		rtvDesc.Format = g_rtvFormat;
+		rtvDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D;
+		g_device->CreateRenderTargetView(backBuffer, &rtvDesc, rtvHandle);
+	}
+
+	// Record ImGui commands.
+	fc.commandAllocator->Reset();
+	g_cmdList->Reset(fc.commandAllocator, nullptr);
+
+	// Barrier: COMMON -> RENDER_TARGET.
+	// Use COMMON (== PRESENT, value 0) as StateBefore: swap chain back buffers
+	// decay to COMMON after each ExecuteCommandLists boundary.  The queue we
+	// submit on may not have explicitly transitioned this buffer before, so the
+	// runtime tracks it as COMMON.  Using PRESENT as StateBefore on such a queue
+	// causes a validation mismatch that crashes the GPU driver.
+	D3D12_RESOURCE_BARRIER barrier = {};
+	barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+	barrier.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
+	barrier.Transition.pResource = backBuffer;
+	barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+	barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_COMMON;
+	barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
+	g_cmdList->ResourceBarrier(1, &barrier);
+
+	{
+		std::lock_guard<std::recursive_mutex> imguiLock(g_imguiMutex);
+		BuildImGuiFrame();
+
+		g_cmdList->OMSetRenderTargets(1, &rtvHandle, FALSE, nullptr);
+		g_cmdList->SetDescriptorHeaps(1, &g_srvHeap);
+		ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), g_cmdList);
+	}
+
+	// Barrier: RENDER_TARGET -> COMMON.
+	barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
+	barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_COMMON;
+	g_cmdList->ResourceBarrier(1, &barrier);
+	g_cmdList->Close();
+
+	// Submit on g_cmdQueue -- the queue locked in at InitD3D12Resources time.
+	// Do NOT use the live g_capturedQueue here: it is updated on every ECL call
+	// from any thread and can change mid-session (e.g. loading -> main menu
+	// transition exposes a new Streamline-internal queue).  Submitting a fence
+	// signal from a queue on a different device causes DXGI_ERROR_DEVICE_REMOVED.
+	// g_cmdQueue was verified against the swap chain back buffer's device at init
+	// and will not change for the lifetime of this swap chain.
+	ID3D12CommandQueue* submitQueue = g_cmdQueue;
+	ID3D12CommandList* cmdLists[] = { g_cmdList };
+	submitQueue->ExecuteCommandLists(1, cmdLists);
+
+	// Signal fence then CPU-wait: ensures our GPU work is complete before DXGI
+	// presents.  DXGI only implicitly waits on the swap chain's creation queue;
+	// without this wait our RENDER_TARGET->COMMON barrier may still be in flight.
+	UINT64 signalVal = ++g_fenceValue;
+	submitQueue->Signal(g_fence, signalVal);
+	fc.fenceValue = signalVal;
+	if (g_fence->GetCompletedValue() < signalVal)
+	{
+		g_fence->SetEventOnCompletion(signalVal, g_fenceEvent);
+		WaitForSingleObject(g_fenceEvent, 500);
+	}
+
+	backBuffer->Release();
+
+	g_drawOwnerThread.store(0, std::memory_order_release);
+	return PresentAndCheck(swapChain, syncInterval, flags, frameIdx);
 }
 
 // ---------------------------------------------------------------------------
@@ -1818,6 +2139,17 @@ namespace ImGuiWrappers
 	// existing mouse queries, which only cover buttons and position.
 	static float GetMouseWheel()  { return ImGui::GetIO().MouseWheel; }
 	static float GetMouseWheelH() { return ImGui::GetIO().MouseWheelH; }
+	static bool IsKeyPressed(int vk, bool repeat)
+	{
+		const ImGuiKey key = ImGui_ImplWin32_KeyEventToImGuiKey(static_cast<WPARAM>(vk), 0);
+		return key != ImGuiKey_None && ImGui::IsKeyPressed(key, repeat);
+	}
+
+	// v74 -- size the next window.
+	static void SetNextWindowSize(float w, float h, int cond)
+	{ ImGui::SetNextWindowSize(ImVec2(w, h), (ImGuiCond)cond); }
+	static void SetNextWindowSizeConstraints(float min_w, float min_h, float max_w, float max_h)
+	{ ImGui::SetNextWindowSizeConstraints(ImVec2(min_w, min_h), ImVec2(max_w, max_h)); }
 
 	// v35 child windows (original placement)
 	static bool BeginChild(const char* id, float sx, float sy, bool border)
@@ -2523,8 +2855,9 @@ static PluginTextureHandle TextureLoadFromUTexture2D(SDK::UTexture2D* uTexture2D
 	// This causes a 44ms+ GPU stall that crashes Streamline/DLSS.
 	// Load textures from OnExperienceLoadComplete or another game-thread callback instead.
 	{
-		DWORD presentTid = g_presentOwnerThread.load(std::memory_order_acquire);
-		if (presentTid != 0 && presentTid == GetCurrentThreadId())
+		const DWORD tid = GetCurrentThreadId();
+		if (g_presentOwnerThread.load(std::memory_order_acquire) == tid ||
+			g_drawOwnerThread.load(std::memory_order_acquire) == tid)
 			IMGUI_LOG_WARN("[ImGuiBackend] LoadFromUTexture2D '%s': called from the render thread -- "
 				"this will stall the GPU pipeline and may crash with DLSS. "
 				"Call from OnExperienceLoadComplete or another game-thread callback instead.",
@@ -3161,6 +3494,11 @@ static void PopulateImGuiAPI()
 	// v52
 	g_imguiAPI.GetMouseWheel = ImGuiWrappers::GetMouseWheel;
 	g_imguiAPI.GetMouseWheelH = ImGuiWrappers::GetMouseWheelH;
+	g_imguiAPI.IsKeyPressed = ImGuiWrappers::IsKeyPressed;
+
+	// v74
+	g_imguiAPI.SetNextWindowSize = ImGuiWrappers::SetNextWindowSize;
+	g_imguiAPI.SetNextWindowSizeConstraints = ImGuiWrappers::SetNextWindowSizeConstraints;
 }
 
 // ---------------------------------------------------------------------------
@@ -3346,6 +3684,8 @@ extern "C" __declspec(dllexport) void ImGuiHost_Shutdown()
 				g_fence->SetEventOnCompletion(g_fenceValue, g_fenceEvent);
 				WaitForSingleObject(g_fenceEvent, 500);
 			}
+			UiPass::WaitForDraws();
+			UiPass::ReleaseResources();
 			CleanupD3D12Resources();
 			g_initialized = false;
 		}
@@ -3367,6 +3707,11 @@ extern "C" __declspec(dllexport) IPluginImGuiTextures* ImGuiHost_GetTextureAPI()
 	return &g_textureAPI;
 }
 
+extern "C" __declspec(dllexport) HWND ImGuiHost_GetGameWindow()
+{
+	return g_hwnd.load();
+}
+
 extern "C" __declspec(dllexport) bool ImGuiHost_IsTextInputActive()
 {
 	if (!g_initialized)
@@ -3379,4 +3724,22 @@ extern "C" __declspec(dllexport) void ImGuiHost_RequestFontRebuild()
 {
 	if (g_initialized)
 		g_pendingFontRebuild.store(true, std::memory_order_release);
+}
+
+// Slate's present step: see UiPass and hooks/game/slate_present.
+extern "C" __declspec(dllexport) int ImGuiHost_RecordUiOverlay(void* rhiBackBuffer)
+{
+	if (!rhiBackBuffer || !g_initialized || g_shutdown)
+		return -1;
+	// FRHITexture::GetNativeResource: the window's back buffer, UE's own texture.
+	using GetNativeResourceFn = void* (*)(void*);
+	void** vtable = *static_cast<void***>(rhiBackBuffer);
+	auto* resource = static_cast<ID3D12Resource*>(
+		reinterpret_cast<GetNativeResourceFn>(vtable[kFRHITexture_GetNativeResource_Slot])(rhiBackBuffer));
+	return UiPass::Record(resource);
+}
+
+extern "C" __declspec(dllexport) bool ImGuiHost_SubmitUiOverlay(int slot, ImGuiUiOverlaySync* sync)
+{
+	return UiPass::Submit(slot, sync);
 }

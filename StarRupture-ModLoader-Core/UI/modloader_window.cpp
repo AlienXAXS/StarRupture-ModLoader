@@ -6,12 +6,14 @@
 #include "imgui/imgui.h"
 #include "plugin_panel_registry.h"
 #include "plugins/plugin_manager.h"
+#include "plugins/plugin_hook_report.h"
 #include "config/config_manager.h"
 #include "config/config_edit.h"
 #include "global_settings.h"
 #include "theme.h"
 #include "named_entry_utils.h"
 #include "update_notice_window.h"
+#include "plugin_scan_window.h"
 #include "hook_failure_window.h"
 #include "hooks/input/keybind_registry.h"
 #include "console_window.h"
@@ -28,9 +30,11 @@
 #include <cstdlib>
 #include <cstring>
 #include <algorithm>
+#include <map>
 #include <vector>
 #include <string>
 #include <functional>
+#include <atomic>
 
 // Build tag is set by CI; fall back to a local placeholder.
 #ifndef MODLOADER_BUILD_TAG
@@ -213,6 +217,205 @@ namespace UI::ModLoaderWindow
         });
     }
 
+    // LOAD NEW: queue state and outcome of the last PluginManager::ScanForNewPlugins
+    // pass. The scan runs on the game thread (PluginInit may touch engine state),
+    // so the counts cross back to this render-thread window through atomics. The
+    // per-plugin lines go to PluginScanWindow, which opens when any of them needs
+    // the user. s_scanPending is cleared last, after the result is published.
+    static std::atomic<bool> s_scanPending{false};
+    static std::atomic<bool> s_scanDone{false};
+    static std::atomic<int>  s_scanLoaded{0};
+    static std::atomic<int>  s_scanAttention{0};
+
+    static void PostScanForNewPlugins()
+    {
+        s_scanDone = false;
+        s_scanPending = true;
+        GameThreadDispatch::PostVoid([]()
+        {
+            std::vector<PluginManager::ScanResult> results;
+            const int loaded = PluginManager::ScanForNewPlugins(&results);
+            s_scanLoaded = loaded;
+            s_scanAttention = static_cast<int>(std::count_if(results.begin(), results.end(),
+                [](const PluginManager::ScanResult& r) { return r.status != PluginManager::ScanStatus::Live; }));
+            s_scanDone = true;
+            UI::PluginScanWindow::Show(std::move(results));
+            s_scanPending = false;
+        });
+    }
+
+    // The button that picks up plugin DLLs dropped into the Plugins folder after
+    // startup, and the short result line beside it (a few seconds, then gone).
+    // Drawn on the title line, next to the title; see TitleBarExtras().
+    static void RenderLoadNewPlugins()
+    {
+        static double s_resultShownAt = 0.0;   // render thread only
+
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(10.0f, 4.0f));
+
+        const bool busy = s_scanPending;
+        if (busy) ImGui::BeginDisabled();
+        if (ImGui::Button(busy ? "..." : "LOAD NEW"))
+            PostScanForNewPlugins();
+        if (busy) ImGui::EndDisabled();
+
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+            ImGui::SetTooltip("Load plugins added to the Plugins folder since the game started.\n"
+                              "Preload plugins still need a restart.");
+
+        if (s_scanDone)
+        {
+            if (s_resultShownAt == 0.0)
+                s_resultShownAt = ImGui::GetTime();
+
+            if (ImGui::GetTime() - s_resultShownAt < 6.0)
+            {
+                const int loaded = s_scanLoaded;
+                const int attention = s_scanAttention;
+                char msg[96];
+                if (loaded > 0)
+                    snprintf(msg, sizeof(msg), "Loaded %d new plugin%s", loaded, loaded == 1 ? "" : "s");
+                else
+                    snprintf(msg, sizeof(msg), "No new plugins");
+                if (attention > 0)
+                {
+                    const size_t len = strlen(msg);
+                    snprintf(msg + len, sizeof(msg) - len, ", %d need%s attention", attention, attention == 1 ? "s" : "");
+                }
+
+                ImGui::SameLine();
+                ImGui::AlignTextToFramePadding();
+                ImGui::TextDisabled("%s", msg);
+            }
+            else
+            {
+                s_scanDone = false;
+                s_resultShownAt = 0.0;
+            }
+        }
+        else
+        {
+            s_resultShownAt = 0.0;
+        }
+
+        ImGui::PopStyleVar();
+    }
+
+    // The report as the plugin list and the config page read it, copied again
+    // only when PluginHookReport's generation moves (the same cache
+    // hook_failure_window.cpp keeps): Snapshot() copies every string, and a
+    // config page asks about every row of every frame.
+    static const std::vector<PluginHookReport::PluginReport>& CachedReports()
+    {
+        static std::vector<PluginHookReport::PluginReport> s_reports;
+        static unsigned s_generation = 0;
+        static bool     s_valid      = false;
+
+        const unsigned generation = PluginHookReport::GetGeneration();
+        if (!s_valid || generation != s_generation)
+        {
+            s_reports    = PluginHookReport::Snapshot();
+            s_generation = generation;
+            s_valid      = true;
+        }
+        return s_reports;
+    }
+
+    // ConfigOffReason for one config entry, kept per entry for as long as the
+    // report has not changed.
+    static const std::string& CachedConfigOffReason(const char* plugin, const char* section, const char* key)
+    {
+        static std::map<std::string, std::string> s_reasons;
+        static unsigned s_generation = 0;
+        static bool     s_valid      = false;
+
+        const unsigned generation = PluginHookReport::GetGeneration();
+        if (!s_valid || generation != s_generation)
+        {
+            s_reasons.clear();
+            s_generation = generation;
+            s_valid      = true;
+        }
+
+        std::string id = plugin;
+        id += '\n';
+        id += section;
+        id += '\n';
+        id += key;
+        auto it = s_reasons.find(id);
+        if (it == s_reasons.end())
+            it = s_reasons.emplace(std::move(id), PluginHookReport::ConfigOffReason(plugin, section, key)).first;
+        return it->second;
+    }
+
+    // The hover text for a plugin row that has features turned off: which ones,
+    // and that the rest of the plugin runs. Built only while the row is hovered.
+    // clickable: the item under the pointer opens the failure window when clicked.
+    static void FeaturesOffTooltip(const char* plugin, bool clickable)
+    {
+        ImGui::BeginTooltip();
+        ImGui::TextUnformatted("Turned off for this game build:");
+        for (const PluginHookReport::PluginReport& r : CachedReports())
+        {
+            if (r.preload || _stricmp(r.plugin.c_str(), plugin) != 0)
+                continue;
+            for (const PluginHookReport::FeatureOff& f : r.featuresOff)
+                ImGui::BulletText("%s", f.title.c_str());
+        }
+        ImGui::TextDisabled(clickable ? "The rest of the plugin runs. Click for details."
+                                      : "The rest of the plugin runs.");
+        ImGui::EndTooltip();
+    }
+
+    // Passed to BeginChamferedWindow: what sits next to the title. LOAD NEW
+    // belongs to the Plugins page, so it shows only there. s_activeTab is last
+    // frame's, which a tab click changes later in the same frame.
+    static void TitleBarExtras()
+    {
+        if (s_activeTab == kTabPlugins)
+            RenderLoadNewPlugins();
+    }
+
+    // 1-5 open the sidebar sections in order (About has no number). Only while
+    // this window has the focus and nothing is taking keys: a text field, a
+    // slider being dragged, the keybind capture. Called inside the window.
+    static void HandleTabHotkeys()
+    {
+        static_assert(kTabTheme == 4, "the number keys 1-5 map to the first five tabs");
+
+        // The keybind capture reads its key with GetAsyncKeyState and ends in the
+        // frame the key goes down, while ImGui gets the same press from the
+        // WM_KEYDOWN a frame or so later. Left alone, rebinding to 1-5 would open
+        // a page. Hold the hotkeys off until the capture is over, its key is up
+        // and a few frames have passed.
+        static int s_holdFrames = 0;
+        if (s_rebind.active)
+            s_holdFrames = 3;
+        else if (s_holdFrames > 0)
+        {
+            bool numberKeyDown = false;
+            for (int tab = kTabPlugins; tab <= kTabTheme; ++tab)
+                numberKeyDown |= (GetAsyncKeyState('1' + tab) & 0x8000) != 0 ||
+                                 (GetAsyncKeyState(VK_NUMPAD1 + tab) & 0x8000) != 0;
+            if (!numberKeyDown)
+                --s_holdFrames;
+        }
+
+        const ImGuiIO& io = ImGui::GetIO();
+        if (s_holdFrames > 0 ||
+            !ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) ||
+            io.WantTextInput || ImGui::IsAnyItemActive() ||
+            io.KeyCtrl || io.KeyAlt || io.KeyShift || io.KeySuper)
+            return;
+
+        for (int tab = kTabPlugins; tab <= kTabTheme; ++tab)
+        {
+            if (ImGui::IsKeyPressed(static_cast<ImGuiKey>(ImGuiKey_1 + tab), false) ||
+                ImGui::IsKeyPressed(static_cast<ImGuiKey>(ImGuiKey_Keypad1 + tab), false))
+                s_activeTab = tab;
+        }
+    }
+
     static void RenderPluginsTab()
     {
         // The return is the TOTAL record count, not how many were copied --
@@ -233,6 +436,17 @@ namespace UI::ModLoaderWindow
             ImGuiTableFlags_ScrollY |
             ImGuiTableFlags_Resizable |
             ImGuiTableFlags_SizingStretchProp;
+
+        // Padding of the action buttons. The row-click selectable is as tall as
+        // those buttons, so it covers the whole row without making it taller.
+        const ImVec2 actionPadding(10.0f, 4.0f);
+        const float  rowHeight = ImGui::GetTextLineHeight() + actionPadding.y * 2.0f;
+
+        // The Config tab lists only the plugins that finished initialising, by
+        // position in this list. A row opens that page only when its plugin is in it.
+        static const PluginInfo* configInfos[64];
+        const int configTotal = PluginManager::GetLoadedPluginInfos(configInfos, 64);
+        const int configCount = configTotal < 64 ? configTotal : 64;
 
         if (ImGui::BeginTable("##plugins", 5, tableFlags))
         {
@@ -257,9 +471,31 @@ namespace UI::ModLoaderWindow
 
                 ImGui::TableSetColumnIndex(0);
                 ImGui::PushID(i);
+
+                // Clicking anywhere on the row opens the plugin's page on the Config
+                // tab. Submitted first with AllowOverlap so the dot and the action
+                // buttons, which come after it, still take their own clicks.
+                for (int c = 0; c < configCount; ++c)
+                {
+                    if (strcmp(configInfos[c]->name ? configInfos[c]->name : "", s.name) != 0)
+                        continue;
+                    if (ImGui::Selectable("##open_config", false,
+                            ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap,
+                            ImVec2(0.0f, rowHeight)))
+                    {
+                        s_selectedPlugin = c;
+                        s_activeTab = kTabConfig;
+                    }
+                    ImGui::SameLine(0.0f, 0.0f);
+                    break;
+                }
+
                 DrawAutoUpdateDot(s.hasUpdateManifest);
                 ImGui::PopID();
                 ImGui::TextUnformatted(s.name[0] ? s.name : "?");
+                const int featuresOff = s.isLoaded ? PluginHookReport::GetFeaturesOffCount(s.name) : 0;
+                if (featuresOff > 0 && ImGui::IsItemHovered())
+                    FeaturesOffTooltip(s.name, false);
 
                 ImGui::TableSetColumnIndex(1);
                 ImGui::TextUnformatted(s.version[0] ? s.version : "?");
@@ -274,8 +510,30 @@ namespace UI::ModLoaderWindow
                     ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "Hooks Failed");
                 else if (s.isOutOfDate)
                     ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.1f, 1.0f), "Needs Update");
+                else if (s.isCrashed)
+                {
+                    ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "Crashed");
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip("Crashed: %s\nThe loader calls none of its callbacks until it is reloaded or unloaded.",
+                                          s.crashReason);
+                }
                 else if (s.isLoaded)
+                {
                     ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "Loaded");
+                    if (featuresOff > 0)
+                    {
+                        ImGui::SameLine();
+                        ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.1f, 1.0f), "(%d off)", featuresOff);
+                        // The Actions column already has no room for a fourth
+                        // button, so the label itself reopens the failure
+                        // window at this plugin, as WHY? does for one that
+                        // did not load.
+                        if (ImGui::IsItemHovered())
+                            FeaturesOffTooltip(s.name, true);
+                        if (ImGui::IsItemClicked())
+                            UI::HookFailureWindow::ShowFor(s.name);
+                    }
+                }
                 else
                     ImGui::TextDisabled("Unloaded");
 
@@ -289,10 +547,11 @@ namespace UI::ModLoaderWindow
                 else if (s.hookScanFailed)
                 {
                     // The popup has already been dismissed by the time anyone
-                    // comes looking here, so this reopens it rather than trying
-                    // to restate a multi-line report inside a table cell.
+                    // comes looking here, so this reopens it, at this plugin,
+                    // rather than trying to restate a multi-line report inside
+                    // a table cell.
                     if (ImGui::Button("WHY?"))
-                        UI::HookFailureWindow::Show();
+                        UI::HookFailureWindow::ShowFor(s.name);
                     ImGui::SameLine();
                     ImGui::TextDisabled("A hook it needs could not be found in this game build");
                 }
@@ -302,9 +561,16 @@ namespace UI::ModLoaderWindow
                         ? "Update The Mod Loader"
                         : "Please Update The Plugin");
                 }
+                else if (s.isLoaded ? s.unloadBlock[0] != '\0' : s.reloadBlock[0] != '\0')
+                {
+                    // The plugin, or the state of the game, does not allow it
+                    // right now (plugins/reload_policy.h). Say why, in place of
+                    // the buttons that would be refused.
+                    ImGui::TextDisabled("%s", s.isLoaded ? s.unloadBlock : s.reloadBlock);
+                }
                 else
                 {
-                    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(10.0f, 4.0f));
+                    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, actionPadding);
 
                     const bool busy = s_pluginActionPending[i];
 
@@ -325,14 +591,24 @@ namespace UI::ModLoaderWindow
                     ImGui::SameLine();
 
                     // Reload — always active when idle; accented as the
-                    // primary action.
-                    if (busy) ImGui::BeginDisabled();
-                    ImGui::PushStyleColor(ImGuiCol_Button, UI::Theme::AccentColorVec4(0.20f));
-                    ImGui::PushStyleColor(ImGuiCol_Text, UI::Theme::AccentColorVec4(1.0f));
-                    if (ImGui::Button(busy ? "..." : "RELOAD"))
-                        PostPluginAction(i, [](int idx) { PluginManager::ReloadPlugin(idx); });
-                    ImGui::PopStyleColor(2);
-                    if (busy) ImGui::EndDisabled();
+                    // primary action. A loaded plugin that may be unloaded but
+                    // not loaded again right now (its load setting) says why
+                    // instead.
+                    if (s.reloadBlock[0])
+                    {
+                        ImGui::AlignTextToFramePadding();
+                        ImGui::TextDisabled("%s", s.reloadBlock);
+                    }
+                    else
+                    {
+                        if (busy) ImGui::BeginDisabled();
+                        ImGui::PushStyleColor(ImGuiCol_Button, UI::Theme::AccentColorVec4(0.20f));
+                        ImGui::PushStyleColor(ImGuiCol_Text, UI::Theme::AccentColorVec4(1.0f));
+                        if (ImGui::Button(busy ? "..." : "RELOAD"))
+                            PostPluginAction(i, [](int idx) { PluginManager::ReloadPlugin(idx); });
+                        ImGui::PopStyleColor(2);
+                        if (busy) ImGui::EndDisabled();
+                    }
 
                     ImGui::PopStyleVar();
                 }
@@ -446,9 +722,22 @@ namespace UI::ModLoaderWindow
         bool showReset = e && e->defaultValue && e->defaultValue[0] &&
                          !(strcmp(kv.section, "General") == 0 && strcmp(kv.key, "Enabled") == 0);
 
+        // A feature the plugin declared is off on this game build: its entries
+        // stay on the page, but the controls cannot be changed and hovering
+        // them says why. The stored value is not touched.
+        const std::string& offReason = CachedConfigOffReason(pluginName, kv.section, kv.key);
+        const bool        off       = !offReason.empty();
+
         const bool  isBool       = e && e->type == ConfigValueType::Boolean;
         const bool  isKeybind    = e && e->type == ConfigValueType::Keybind;
-        const bool  hasDesc      = e && e->description && e->description[0];
+        // A Choice's description is followed by its choices, each after a
+        // '|'; only the part before the first one is shown. A Choice with no
+        // choices falls through to the plain text input below.
+        const std::vector<std::string> choices = ConfigEdit::GetChoices(e);
+        const int   descLen      = (e && e->description)
+            ? static_cast<int>(e->type == ConfigValueType::Choice ? strcspn(e->description, "|") : strlen(e->description))
+            : 0;
+        const bool  hasDesc      = descLen > 0;
         const float innerSpacing = ImGui::GetStyle().ItemInnerSpacing.x;
         const float itemSpacing  = ImGui::GetStyle().ItemSpacing.x;
         const float toggleW      = UI::Theme::ToggleSwitchSize().x;
@@ -475,12 +764,17 @@ namespace UI::ModLoaderWindow
         {
             ImGui::AlignTextToFramePadding();
             ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
-            ImGui::TextWrapped("%s", e->description);
+            ImGui::TextWrapped("%.*s", descLen, e->description);
             ImGui::PopStyleColor();
         }
 
         // ---- Col 2: control + reset ----------------------------------------
         ImGui::TableSetColumnIndex(2);
+        if (off)
+        {
+            ImGui::BeginGroup();
+            ImGui::BeginDisabled();
+        }
         const float ctrlColStartX = ImGui::GetCursorPosX();
         const float resetX        = ctrlColStartX + controlW + innerSpacing; // fixed for every row type
         const float rightAlignX   = resetX - innerSpacing - toggleW;          // a right-aligned toggle's own left edge
@@ -727,6 +1021,41 @@ namespace UI::ModLoaderWindow
                                   "plugin -- the game will not also react to it.\n"
                                   "Enable if the key conflicts with a game action.");
         }
+        else if (!choices.empty())
+        {
+            // The stored value is matched ignoring case. One that is none of
+            // the choices shows as the default, which is also what the plugin
+            // falls back to; nothing is written until a choice is picked.
+            int current = -1;
+            for (int i = 0; current < 0 && i < static_cast<int>(choices.size()); ++i)
+                if (_stricmp(choices[i].c_str(), kv.value) == 0)
+                    current = i;
+            for (int i = 0; current < 0 && e->defaultValue && i < static_cast<int>(choices.size()); ++i)
+                if (_stricmp(choices[i].c_str(), e->defaultValue) == 0)
+                    current = i;
+
+            ImGui::SetNextItemWidth(controlW);
+            if (ImGui::BeginCombo(id, current >= 0 ? choices[current].c_str() : kv.value))
+            {
+                for (int i = 0; i < static_cast<int>(choices.size()); ++i)
+                {
+                    const bool selected = (i == current);
+                    if (ImGui::Selectable(choices[i].c_str(), selected))
+                    {
+                        strncpy_s(kv.value, choices[i].c_str(), _TRUNCATE);
+                        NotifyConfigChangedLive(pluginName, kv);
+                        CommitConfigChange(pluginName, kv);
+                    }
+                    if (selected)
+                        ImGui::SetItemDefaultFocus();
+                }
+                ImGui::EndCombo();
+            }
+            else
+            {
+                widgetHovered = ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal);
+            }
+        }
         else
         {
             // String or unknown schema entry: plain text input.
@@ -746,7 +1075,7 @@ namespace UI::ModLoaderWindow
         }
 
         if (hasDesc && widgetHovered)
-            ImGui::SetTooltip("%s", e->description);
+            ImGui::SetTooltip("%.*s", descLen, e->description);
 
         // Reset -- fixed column-relative position (resetX), not merely
         // "immediately after whatever was drawn": that is what keeps every
@@ -771,6 +1100,86 @@ namespace UI::ModLoaderWindow
             }
             if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
                 ImGui::SetTooltip("Reset to default: %s", e->defaultValue);
+        }
+
+        if (off)
+        {
+            ImGui::EndDisabled();
+            ImGui::EndGroup();
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal | ImGuiHoveredFlags_AllowWhenDisabled))
+                ImGui::SetTooltip("%s\nYour setting is kept and applies again when it is back.", offReason.c_str());
+        }
+    }
+
+    // Label of the row a section's Hidden entries share, in place of a row each.
+    static constexpr const char* kSavedStateLabel = "Saved state";
+
+    // The row a section's Hidden entries (v71) get instead of one each: they
+    // are values the plugin saves by itself, so the row offers a single Clear
+    // that puts every one back to its default, and names them in its tooltip.
+    // Draws nothing for a section without any. Same columns as
+    // RenderConfigEntry.
+    static void RenderSavedStateRow(size_t sectionStart, size_t sectionEnd, const ConfigSchema* schema,
+                                    const char* pluginName)
+    {
+        bool any     = false;
+        bool changed = false;
+        for (size_t j = sectionStart; j < sectionEnd; ++j)
+        {
+            const ConfigKV&    kv = s_configEntries[j];
+            const ConfigEntry* e  = ConfigEdit::FindSchemaEntry(schema, kv.section, kv.key);
+            if (!e || e->type != ConfigValueType::Hidden) continue;
+
+            any = true;
+            if (!ConfigEdit::SameValue(kv.value, e->defaultValue))
+                changed = true;
+        }
+        if (!any)
+            return;
+
+        ImGui::TableNextRow();
+
+        ImGui::TableSetColumnIndex(0);
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextWrapped("%s", kSavedStateLabel);
+
+        ImGui::TableSetColumnIndex(1);
+        ImGui::AlignTextToFramePadding();
+        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
+        ImGui::TextWrapped("Values the plugin saves by itself, such as where its windows were dragged.");
+        ImGui::PopStyleColor();
+
+        ImGui::TableSetColumnIndex(2);
+        ImGui::BeginDisabled(!changed);
+        char clearId[160];
+        snprintf(clearId, sizeof(clearId), "Clear##clr_%s", s_configEntries[sectionStart].section);
+        if (ImGui::Button(clearId))
+        {
+            for (size_t j = sectionStart; j < sectionEnd; ++j)
+            {
+                ConfigKV&          kv = s_configEntries[j];
+                const ConfigEntry* e  = ConfigEdit::FindSchemaEntry(schema, kv.section, kv.key);
+                if (!e || e->type != ConfigValueType::Hidden) continue;
+                if (ConfigEdit::SameValue(kv.value, e->defaultValue)) continue;
+
+                strncpy_s(kv.value, e->defaultValue ? e->defaultValue : "", _TRUNCATE);
+                NotifyConfigChangedLive(pluginName, kv);
+                CommitConfigChange(pluginName, kv);
+            }
+        }
+        ImGui::EndDisabled();
+
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal | ImGuiHoveredFlags_AllowWhenDisabled))
+        {
+            std::string keys;
+            for (size_t j = sectionStart; j < sectionEnd; ++j)
+            {
+                const ConfigEntry* e = ConfigEdit::FindSchemaEntry(schema, s_configEntries[j].section, s_configEntries[j].key);
+                if (!e || e->type != ConfigValueType::Hidden) continue;
+                if (!keys.empty()) keys += ", ";
+                keys += s_configEntries[j].key;
+            }
+            ImGui::SetTooltip("Puts these back to their defaults: %s", keys.c_str());
         }
     }
 
@@ -1158,16 +1567,25 @@ namespace UI::ModLoaderWindow
                 // deterministic from the "Rebind" string alone) combine
                 // into the three sub-column x's.
                 float keyColW         = 0.0f;
+                // Widest Choice dropdown on the page, sized by ImGui's own
+                // rule for a combo that fits its preview
+                // (ImGuiComboFlags_WidthFitPreview): the arrow, the text and
+                // FramePadding either side, taken for the longest choice.
+                float choiceW         = 0.0f;
                 bool  hasRangedSlider = false;
                 for (const ConfigKV& kv : s_configEntries)
                 {
-                    const float lw = ImGui::CalcTextSize(kv.key).x + cellPadX;
+                    const ConfigEntry* se = ConfigEdit::FindSchemaEntry(schema, kv.section, kv.key);
+
+                    // A Hidden entry has no row of its own; its section's
+                    // Saved state row carries that label instead.
+                    const char* label = (se && se->type == ConfigValueType::Hidden) ? kSavedStateLabel : kv.key;
+                    const float lw = ImGui::CalcTextSize(label).x + cellPadX;
                     if (lw <= pageOutlierThreshold && lw > labelColWidth)
                         labelColWidth = lw;
-                    const float ww = WidestWordWidth(kv.key);
+                    const float ww = WidestWordWidth(label);
                     if (ww > pageMaxWordW) pageMaxWordW = ww;
 
-                    const ConfigEntry* se = ConfigEdit::FindSchemaEntry(schema, kv.section, kv.key);
                     if (!se) continue;
                     if (se->type == ConfigValueType::Keybind)
                     {
@@ -1183,6 +1601,14 @@ namespace UI::ModLoaderWindow
                     {
                         hasRangedSlider = true;
                     }
+                    else if (se->type == ConfigValueType::Choice)
+                    {
+                        for (const std::string& choice : ConfigEdit::GetChoices(se))
+                        {
+                            const float w = fh + ImGui::CalcTextSize(choice.c_str()).x + framePadX * 2.0f;
+                            if (w > choiceW) choiceW = w;
+                        }
+                    }
                 }
                 if (labelColWidth <= 0.0f) labelColWidth = pageOutlierThreshold; // every label on the page was an outlier
                 if (labelColWidth < kLabelColMin) labelColWidth = kLabelColMin;
@@ -1191,14 +1617,15 @@ namespace UI::ModLoaderWindow
 
                 // controlFloor: what Control needs regardless of the
                 // slider -- a keybind row's own full width (bind label +
-                // Rebind + Block + toggle) or a lone toggle, whichever is
-                // larger anywhere on the page, or the plain-input floor if
-                // neither applies. The slider (if the page has one) is
+                // Rebind + Block + toggle), a lone toggle or the widest
+                // dropdown, whichever is larger anywhere on the page, or the
+                // plain-input floor if none applies. The slider (if the page has one) is
                 // layered on top of this, and is the only part allowed to
                 // shrink below its own max.
                 float controlFloor = kMinControlW;
                 if (toggleW     > controlFloor) controlFloor = toggleW;
                 if (keybindRowW > controlFloor) controlFloor = keybindRowW;
+                if (choiceW     > controlFloor) controlFloor = choiceW;
 
                 if (pageMaxWordW > 0.0f)
                 {
@@ -1279,8 +1706,11 @@ namespace UI::ModLoaderWindow
                         for (size_t j = sectionStart; j < sectionEnd; ++j)
                         {
                             const ConfigEntry* entry = ConfigEdit::FindSchemaEntry(schema, s_configEntries[j].section, s_configEntries[j].key);
+                            if (entry && entry->type == ConfigValueType::Hidden)
+                                continue; // drawn together by RenderSavedStateRow below
                             RenderConfigEntry(s_configEntries[j], entry, info->name, controlW, keyColW);
                         }
+                        RenderSavedStateRow(sectionStart, sectionEnd, schema, info->name);
                         ImGui::EndTable();
                     }
                     // else: table fully clipped (e.g. scrolled out) -- rows skipped, nothing to undo beyond Unindent below.
@@ -1331,22 +1761,39 @@ namespace UI::ModLoaderWindow
         }
 
         ImGui::Spacing();
-        ImGui::SeparatorText("Rendering");
+        ImGui::SeparatorText("Keyboard");
         ImGui::Spacing();
 
-        bool pauseFrameGen = UI::GlobalSettings::GetPauseFrameGenWhileOpen();
-        if (UI::Theme::ToggleSwitch("Pause Frame Generation While Windows Are Open", &pauseFrameGen))
-            UI::GlobalSettings::SetPauseFrameGenWhileOpen(pauseFrameGen);
+        bool keyboardNav = UI::GlobalSettings::GetKeyboardNavigation();
+        if (UI::Theme::ToggleSwitch("Keyboard navigation", &keyboardNav))
+            UI::GlobalSettings::SetKeyboardNavigation(keyboardNav);
         ImGui::SameLine();
         ImGui::TextDisabled("(?)");
         if (ImGui::IsItemHovered())
         {
             ImGui::SetTooltip(
-                "DLSS Frame Generation's interpolated frames never pass through this\n"
-                "overlay's draw hook, so with it on every other displayed frame has no\n"
-                "overlay on it -- seen as flicker whenever a window here is open.\n\n"
-                "Turns DLSS-G off for as long as the mod loader window, the console, or\n"
-                "any plugin panel is open, and restores it once they are all closed.");
+                "Move around the loader and plugin windows without the mouse: Tab and\n"
+                "Shift+Tab or the arrow keys pick a widget, and Space or Enter uses it.\n"
+                "Only while a window is open.");
+        }
+
+        ImGui::Spacing();
+        ImGui::SeparatorText("Plugins");
+        ImGui::Spacing();
+
+        bool restartCrashed = UI::GlobalSettings::GetRestartCrashedPlugins();
+        if (UI::Theme::ToggleSwitch("Restart crashed plugins automatically", &restartCrashed))
+            UI::GlobalSettings::SetRestartCrashedPlugins(restartCrashed);
+        ImGui::SameLine();
+        ImGui::TextDisabled("(?)");
+        if (ImGui::IsItemHovered())
+        {
+            ImGui::SetTooltip(
+                "When a plugin crashes, the loader switches it off so the game keeps\n"
+                "running. With this on, it reloads the plugin a few seconds later, up to\n"
+                "3 times a session, if the plugin allows a reload right now. Plugins that\n"
+                "only reload at the main menu wait for it; plugins that need a game\n"
+                "restart stay off until then.");
         }
 
         ImGui::Spacing();
@@ -1936,8 +2383,11 @@ namespace UI::ModLoaderWindow
         // inside the nav column and tab content children below, each
         // independently, rather than the whole window scrolling as one unit.
         if (!UI::Theme::BeginChamferedWindow("Mod Loader##main", "MOD LOADER", &s_isOpen,
-                                              "BUILD " MODLOADER_BUILD_TAG, ImGuiWindowFlags_NoScrollbar))
+                                              "BUILD " MODLOADER_BUILD_TAG, ImGuiWindowFlags_NoScrollbar,
+                                              true, TitleBarExtras))
             return;
+
+        HandleTabHotkeys();
 
         // Snapshot before the tabs render below: RenderConfigTab -> Render-
         // RebindModal can cancel an in-progress capture this same frame, which
@@ -1972,11 +2422,11 @@ namespace UI::ModLoaderWindow
         };
         static const char* s_tabTooltips[kTabCount] =
         {
-            "Plugins -- load, unload and reload installed plugins",
-            "Plugin Config -- edit each plugin's own settings and keybinds",
-            "Settings -- HUD overlays, auto-update and diagnostics",
-            "Logging -- log levels for the loader, the game and each plugin",
-            "Theme -- font, text size and every UI color",
+            "Plugins (1) -- load, unload and reload installed plugins",
+            "Plugin Config (2) -- edit each plugin's own settings and keybinds",
+            "Settings (3) -- HUD overlays, auto-update and diagnostics",
+            "Logging (4) -- log levels for the loader, the game and each plugin",
+            "Theme (5) -- font, text size and every UI color",
             "About -- build tag and the plugins currently loaded",
         };
 

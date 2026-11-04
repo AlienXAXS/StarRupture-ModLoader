@@ -6,6 +6,8 @@
 #include "imgui_host_interface.h"
 #include "../logging/log.h"
 
+#include <atomic>
+
 namespace
 {
     HMODULE g_hostDll = nullptr;
@@ -17,6 +19,11 @@ namespace
     IPluginImGuiTextures*  (*g_getTexFn)()                            = nullptr;
     void                   (*g_fontRebuildFn)()                       = nullptr;
     bool                   (*g_isTextInputActiveFn)()                 = nullptr;
+    // Atomic, unlike the rest: GetGameWindow is called from any thread.
+    std::atomic<HWND (*)()> g_getGameWindowFn{ nullptr };
+    // Atomic too: the render and RHI threads call these.
+    std::atomic<int  (*)(void*)>                    g_recordUiOverlayFn{ nullptr };
+    std::atomic<bool (*)(int, ImGuiUiOverlaySync*)> g_submitUiOverlayFn{ nullptr };
 }
 
 namespace UI::ImGuiBackend
@@ -45,6 +52,9 @@ namespace UI::ImGuiBackend
         g_getTexFn      = reinterpret_cast<decltype(g_getTexFn)>     (GetProcAddress(g_hostDll, "ImGuiHost_GetTextureAPI"));
         g_fontRebuildFn = reinterpret_cast<decltype(g_fontRebuildFn)>(GetProcAddress(g_hostDll, "ImGuiHost_RequestFontRebuild"));
         g_isTextInputActiveFn = reinterpret_cast<decltype(g_isTextInputActiveFn)>(GetProcAddress(g_hostDll, "ImGuiHost_IsTextInputActive"));
+        g_getGameWindowFn.store(reinterpret_cast<HWND (*)()>(GetProcAddress(g_hostDll, "ImGuiHost_GetGameWindow")));
+        g_recordUiOverlayFn.store(reinterpret_cast<int (*)(void*)>(GetProcAddress(g_hostDll, "ImGuiHost_RecordUiOverlay")));
+        g_submitUiOverlayFn.store(reinterpret_cast<bool (*)(int, ImGuiUiOverlaySync*)>(GetProcAddress(g_hostDll, "ImGuiHost_SubmitUiOverlay")));
 
         if (!g_initFn)
         {
@@ -59,7 +69,10 @@ namespace UI::ImGuiBackend
 
     void Shutdown()
     {
+        g_getGameWindowFn.store(nullptr);
+        g_recordUiOverlayFn.store(nullptr);
         if (g_shutdownFn) g_shutdownFn();
+        g_submitUiOverlayFn.store(nullptr);
         if (g_hostDll)
         {
             FreeLibrary(g_hostDll);
@@ -97,6 +110,24 @@ namespace UI::ImGuiBackend
     bool IsTextInputActive()
     {
         return g_isTextInputActiveFn ? g_isTextInputActiveFn() : false;
+    }
+
+    HWND GetGameWindow()
+    {
+        const auto fn = g_getGameWindowFn.load();
+        return fn ? fn() : nullptr;
+    }
+
+    int RecordUiOverlay(void* rhiBackBuffer)
+    {
+        const auto fn = g_recordUiOverlayFn.load();
+        return fn ? fn(rhiBackBuffer) : -1;
+    }
+
+    bool SubmitUiOverlay(int slot, ImGuiUiOverlaySync* sync)
+    {
+        const auto fn = g_submitUiOverlayFn.load();
+        return fn ? fn(slot, sync) : false;
     }
 }
 

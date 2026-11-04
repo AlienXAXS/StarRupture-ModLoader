@@ -4,8 +4,12 @@
 #ifdef MODLOADER_CLIENT_BUILD
 
 #include "imgui/imgui.h"
+#include "imgui/imgui_internal.h"   // ImGuiErrorRecoveryState
 #include "plugin_call_tracker.h"
 #include "logging/logger.h"
+#include "plugins/plugin_watchdog.h"
+#include "plugins/plugin_guard.h"
+#include "../core/client_ui.h"
 #include <mutex>
 #include <list>
 #include <vector>
@@ -33,10 +37,8 @@ namespace UI::PluginWidgetRegistry
             return nullptr;
 
         // A renderFn in no module could never be purged by ForgetModule.
-        HMODULE owner = nullptr;
-        if (!GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
-                                GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-                                reinterpret_cast<LPCSTR>(desc->renderFn), &owner) || !owner)
+        const HMODULE owner = PluginGuard::ModuleOf(reinterpret_cast<const void*>(desc->renderFn));
+        if (!owner)
             return nullptr;
 
         std::lock_guard<std::mutex> lock(s_mutex);
@@ -141,6 +143,11 @@ namespace UI::PluginWidgetRegistry
             ImGuiWindowFlags_NoFocusOnAppearing |
             ImGuiWindowFlags_NoNav;
 
+        // Over the pause menu and the game's other cursor screens ImGui has
+        // the game's cursor, so a widget that did not ask for it is
+        // click-through there and the screen under it keeps its clicks.
+        const bool menuMouse = ShouldShareGameMouseNow();
+
         for (const WidgetRef& ref : toRender)
         {
             std::unique_lock<std::mutex> lock(s_mutex);
@@ -148,12 +155,16 @@ namespace UI::PluginWidgetRegistry
             if (!live || live->serial != ref.serial || !live->isVisible)
                 continue;
             const WidgetEntry entry = *live;
+            if (PluginGuard::IsOff(reinterpret_cast<const void*>(entry.desc->renderFn)))
+                continue;   // its plugin crashed and is switched off
 
             // Called without the lock, so the widget can call back into this
             // registry; tracked so an unload waits for it. Relocks on scope exit.
             PluginCallTracker::Scope call(s_calls, lock, ref.entry, entry.owner);
+            PluginWatchdog::Scope watch(reinterpret_cast<const void*>(entry.desc->renderFn), "widget render");
 
             ImGuiWindowFlags flags = kWidgetFlagsBase;
+            bool menuInputs = false;
             const PluginWindowHints* hints = entry.desc->windowHints;
             if (hints)
             {
@@ -161,16 +172,23 @@ namespace UI::PluginWidgetRegistry
                     ImGui::SetNextWindowSize(ImVec2(hints->width, hints->height), (ImGuiCond)hints->size_cond);
                 if (hints->pos_x >= 0.0f && hints->pos_y >= 0.0f)
                     ImGui::SetNextWindowPos(ImVec2(hints->pos_x, hints->pos_y), (ImGuiCond)hints->pos_cond, ImVec2(hints->pivot_x, hints->pivot_y));
-                flags |= (ImGuiWindowFlags)hints->extra_window_flags;
+                menuInputs = (hints->extra_window_flags & PluginWindowFlags_PauseMenuMouseInputs) != 0;
+                flags |= (ImGuiWindowFlags)(hints->extra_window_flags & ~PluginWindowFlags_PauseMenuMouseInputs);
             }
             else
             {
                 flags |= ImGuiWindowFlags_AlwaysAutoResize;
             }
+            if (menuMouse && !menuInputs)
+                flags |= ImGuiWindowFlags_NoMouseInputs;
 
             if (ImGui::Begin(entry.desc->name, nullptr, flags))
             {
-                entry.desc->renderFn(imgui);
+                // Same recovery as a panel's: a crashed render leaves ImGui as it was.
+                ImGuiErrorRecoveryState before;
+                ImGui::ErrorRecoveryStoreState(&before);
+                if (!PluginGuard::Invoke(entry.desc->renderFn, "widget render", imgui))
+                    ImGui::ErrorRecoveryTryToRecoverState(&before);
             }
             ImGui::End();
         }
