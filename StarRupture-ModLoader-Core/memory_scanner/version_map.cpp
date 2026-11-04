@@ -1367,7 +1367,9 @@ namespace VersionMap
 					return false;
 				}
 				value = FieldValue{ sizeRow ? 0 : live.offset, live.size, bitfield ? live.boolMask : uint8_t(0) };
-				if (!sizeRow && value.size != request.size)
+				// A request for size 0 takes whatever size the game reflects and
+				// gets it back in the result.
+				if (!sizeRow && request.size != 0 && value.size != request.size)
 				{
 					error = "the game's member is " + Hex(value.size) + " bytes, the code was compiled for " + Hex(request.size);
 					return false;
