@@ -108,11 +108,14 @@ namespace Hooks::GameMenu
 
 	bool ReadMenuHover(SDK::APlayerController* pc)
 	{
+		// Without a menu layer to read, or with nothing on it while a cursor
+		// screen is up (the screen is on some other layer), the loader cannot
+		// tell where the menu's widgets are: true, so a widget stays click-through.
 		if (!pc)
-			return false;
+			return true;
 		SDK::UCommonActivatableWidgetContainerBase* layer = FindMenuLayer(pc);
-		if (!layer)
-			return false;
+		if (!layer || layer->WidgetList.Num() == 0)
+			return true;
 
 		// A widget is hovered only while the cursor is over a hit-testable
 		// part of it, so a hidden or hit-test-invisible screen reads false.

@@ -113,8 +113,9 @@ namespace Hooks::GameMenu
 	uint64_t ReadMenuLayer(SDK::APlayerController* pc);
 
 	// Whether the cursor is over a visible, hit-testable widget of that same
-	// menu layer (UWidget::IsHovered on each screen on it). False when the layer
-	// is empty or not found. Game thread only; no pointer outlives the call.
+	// menu layer (UWidget::IsHovered on each screen on it). True when the layer
+	// is empty or not found, since the loader then cannot tell where the menu's
+	// widgets are. Game thread only; no pointer outlives the call.
 	bool ReadMenuHover(SDK::APlayerController* pc);
 
 	// The last published answer of ReadMenuHover, for the window thread that
