@@ -1,4 +1,5 @@
 #include "memory_scanner/scan_cache.h"
+#include "memory_scanner/image_info.h"
 #include "core/startup_utils.h"
 #include "logging/logger.h"
 
@@ -30,12 +31,20 @@ namespace
         return buf;
     }
 
-    // The cache file is keyed by game version section. If the game has updated
-    // since the file was written, every entry in it is for a stale build and
-    // would just churn through "stale, rescan, overwrite" on every lookup --
-    // so wipe the whole file and start fresh for the current version instead
-    // of letting old-version sections accumulate forever.
-    void DiscardCacheIfVersionChanged(const std::wstring& gameVersion)
+    // The section for the running exe: the ProductVersion the caller read,
+    // with the main module's PE timestamp and image size.
+    std::wstring SectionFor(const std::wstring& gameVersion)
+    {
+        const Scanner::ImageInfo image = Scanner::GetImageInfo(GetModuleHandleW(nullptr));
+        return ScanCache::SectionName(gameVersion, image.stamp, static_cast<uint32_t>(image.size));
+    }
+
+    // The cache file is keyed by exe section. If the game has updated since the
+    // file was written, every entry in it is for a stale build and would just
+    // churn through "stale, rescan, overwrite" on every lookup -- so wipe the
+    // whole file and start fresh for the current exe instead of letting
+    // old-build sections accumulate forever.
+    void DiscardCacheIfVersionChanged(const std::wstring& section)
     {
         static bool s_checked = false;
         if (s_checked)
@@ -51,10 +60,10 @@ namespace
 
         bool hasSections      = false;
         bool hasCurrentVersion = false;
-        for (const wchar_t* section = sectionNames; *section; section += wcslen(section) + 1)
+        for (const wchar_t* name = sectionNames; *name; name += wcslen(name) + 1)
         {
             hasSections = true;
-            if (gameVersion == section)
+            if (section == name)
             {
                 hasCurrentVersion = true;
                 break;
@@ -63,8 +72,8 @@ namespace
 
         if (hasSections && !hasCurrentVersion)
         {
-            ModLoaderLogger::LogInfo(L"[ScanCache] Game version changed (cache has no section for '%ls') -- discarding stale scan cache",
-                gameVersion.c_str());
+            ModLoaderLogger::LogInfo(L"[ScanCache] No section for '%ls' (another game build, or a cache an older loader wrote) -- discarding the scan cache",
+                section.c_str());
 
             if (!DeleteFileW(cachePath.c_str()))
             {
@@ -84,13 +93,14 @@ namespace ScanCache
         if (gameVersion.empty() || pattern.empty())
             return false;
 
-        DiscardCacheIfVersionChanged(gameVersion);
+        const std::wstring section = SectionFor(gameVersion);
+        DiscardCacheIfVersionChanged(section);
 
         const std::wstring cachePath = GetCacheFilePath();
         const std::wstring key       = HashPattern(pattern);
 
         wchar_t value[64]{};
-        const DWORD len = GetPrivateProfileStringW(gameVersion.c_str(), key.c_str(), L"",
+        const DWORD len = GetPrivateProfileStringW(section.c_str(), key.c_str(), L"",
                                                     value, static_cast<DWORD>(std::size(value)), cachePath.c_str());
         if (len == 0)
             return false;
@@ -122,7 +132,8 @@ namespace ScanCache
         if (gameVersion.empty() || pattern.empty())
             return;
 
-        DiscardCacheIfVersionChanged(gameVersion);
+        const std::wstring section = SectionFor(gameVersion);
+        DiscardCacheIfVersionChanged(section);
 
         const std::wstring cachePath = GetCacheFilePath();
         const std::wstring key       = HashPattern(pattern);
@@ -151,10 +162,10 @@ namespace ScanCache
             swprintf_s(value, L"0x%llX", static_cast<unsigned long long>(merged.offset));
         }
 
-        if (WritePrivateProfileStringW(gameVersion.c_str(), key.c_str(), value, cachePath.c_str()))
+        if (WritePrivateProfileStringW(section.c_str(), key.c_str(), value, cachePath.c_str()))
         {
-            ModLoaderLogger::LogTrace(L"[ScanCache] Stored [%ls] under version '%ls': %ls",
-                key.c_str(), gameVersion.c_str(), value);
+            ModLoaderLogger::LogTrace(L"[ScanCache] Stored [%ls] under build '%ls': %ls",
+                key.c_str(), section.c_str(), value);
         }
         else
         {

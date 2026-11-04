@@ -546,6 +546,91 @@ namespace ScanPatterns
 	inline constexpr auto FBitReader_SerializeBits =
 		"48 89 5C 24 ?? 48 89 74 24 ?? 57 48 83 EC ?? F6 41 ?? ?? 49 8B F8 48 8B F2 48 8B D9 0F 85";
 
+#if defined(MODLOADER_CLIENT_BUILD)
+	// -----------------------------------------------------------------------
+	// Game-SDK globals  (client, see core/sdk_globals.h)
+	//
+	// The SDK ships these as fixed offsets (Offsets:: in Basic.hpp) that are
+	// right for exactly one game build. These patterns find the same things
+	// through the code that uses them, so the address follows that code across
+	// a patch. Three of the four are data: each pattern sits on an instruction
+	// that references the global rip-relatively, and followRipDispAt on the
+	// registry row decodes it.
+	//
+	// All optional at preflight. A miss leaves the SDK on its Offsets::
+	// values, which is all it ever used before these existed.
+	// -----------------------------------------------------------------------
+
+	// GObjects -- GUObjectArray.ObjObjects, the FChunkedFixedUObjectArray the
+	// SDK's TUObjectArrayWrapper reads. UObjectBaseInit pre-allocates the chunk
+	// table and stores it into ObjObjects.Objects, which is at offset 0, so the
+	// store's operand IS ObjObjects:
+	//   49 C1 E0 03        shl  r8, 3                (MaxChunks * sizeof(void*))
+	//   48 8B C8           mov  rcx, rax
+	//   48 89 05 rel32     mov  [ObjObjects.Objects], rax   <-- followRipDispAt = 7
+	//   E8 rel32           call                      (zero the new table)
+	inline constexpr auto GObjects_PreAllocate =
+		"49 C1 E0 03 48 8B C8 48 89 05 ?? ?? ?? ?? E8";
+
+	// GNames -- NamePoolData, the engine's FNamePool. The SDK itself never reads
+	// it (FName goes through AppendString below). Anchored in
+	// FNameEntryId::FromValidEName on the inlined GetNamePool(), which
+	// constructs the pool on first use:
+	//   48 8D 0D rel32     lea  rcx, [NamePoolData]          <-- followRipDispAt = 0
+	//   8B FA              mov  edi, edx
+	//   75 ..              jne  (already constructed)
+	//   E8 rel32           call FNamePool::FNamePool
+	//   48 8B C8           mov  rcx, rax
+	//   C6 05 rel32 01     mov  byte [bNamePoolInitialized], 1
+	// FName::AppendString loads the same address, so this is the pool the
+	// SDK's names come out of.
+	inline constexpr auto GNames_NamePoolData =
+		"48 8D 0D ?? ?? ?? ?? 8B FA 75 ?? E8 ?? ?? ?? ?? 48 8B C8 C6 05 ?? ?? ?? ?? 01";
+
+	// FName::AppendString -- the FString overload, which the SDK calls for every
+	// FName it turns into a string. Two more overloads (the FStringBuilderBase
+	// ones) sit right before it with the same prologue; the register moves after
+	// the bNamePoolInitialized check are what tell them apart:
+	//   48 8B F2 / 8B 19 / 48 8B F9   this one
+	//   48 8B FA / 8B 19 / 48 8B F1   the builder overloads
+	// Signature: void __fastcall FName::AppendString(const FName* this, FString& Out)
+	inline constexpr auto FName_AppendString =
+		"48 89 5C 24 ?? 48 89 74 24 ?? 57 48 83 EC 20 80 3D ?? ?? ?? ?? 00 48 8B F2 8B 19 48 8B F9 74";
+
+	// GWorld -- the engine's UWorld* global, as FEngineLoop::Tick loads it. The
+	// same shape the public GWorld signatures for UE4/UE5 games use:
+	//   48 8B 1D rel32     mov  rbx, [GWorld]                <-- followRipDispAt = 0
+	//   48 85 DB           test rbx, rbx
+	//   74 ..              je
+	//   41 B0 01           mov  r8b, 1
+	inline constexpr auto GWorld_EngineLoopTick =
+		"48 8B 1D ?? ?? ?? ?? 48 85 DB 74 ?? 41 B0 01";
+
+	// FSlateRHIRenderer::PresentWindow_RenderThread(FRHICommandListImmediate&,
+	//   const FSlateDrawWindowPassInputs&, const FSlateDrawWindowPassOutputs&)
+	// Where Slate hands a window's finished back buffer to
+	// OnBackBufferReadyToPresent and then presents it. The tail reads
+	// Outputs.OutputTextureRHI (+0x10), the offset hooks/game/slate_present uses.
+	inline constexpr auto FSlateRHIRenderer_PresentWindow_RenderThread =
+		"40 55 53 56 57 41 54 41 55 41 56 41 57 48 8D AC 24 ?? ?? ?? ?? 48 81 EC ?? ?? ?? ?? "
+		"48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 85 ?? ?? ?? ?? 48 8D 99 ?? ?? ?? ?? 4C 89 4C 24 ?? 49 8B 49 10";
+
+	// FRHIComputeCommandList::Transition(TArrayView<const FRHITransitionInfo>, ERHITransitionCreateFlags)
+	inline constexpr auto FRHIComputeCommandList_Transition =
+		"40 53 56 57 41 54 41 56 41 57 48 83 EC 78 0F 10 02 48 8B DA 48 8B F9 48 8D 54 24 ?? "
+		"0F 29 44 24 ?? E8 ?? ?? ?? ?? 48 8B 43 08 0F 10 03 44 0F B6 67";
+
+	// FD3D12DynamicRHI::RHISignalManualFence / RHIWaitManualFence(FRHICommandList&, ID3D12Fence*, uint64).
+	// The two bodies are the same but for the checkf line number (0x2FE, 0x307)
+	// that ends each pattern.
+	inline constexpr auto FD3D12DynamicRHI_RHISignalManualFence =
+		"48 89 5C 24 08 48 89 74 24 10 57 48 83 EC 20 8B 0D ?? ?? ?? ?? B8 01 00 00 00 D3 E0 "
+		"49 8B D9 49 8B F8 48 8B F2 83 F8 02 74 ?? 4C 8D 0D ?? ?? ?? ?? 41 B8 FE 02 00 00";
+	inline constexpr auto FD3D12DynamicRHI_RHIWaitManualFence =
+		"48 89 5C 24 08 48 89 74 24 10 57 48 83 EC 20 8B 0D ?? ?? ?? ?? B8 01 00 00 00 D3 E0 "
+		"49 8B D9 49 8B F8 48 8B F2 83 F8 02 74 ?? 4C 8D 0D ?? ?? ?? ?? 41 B8 07 03 00 00";
+#endif
+
 	// What an entry's address is supposed to BE, checked against the image
 	// before the pattern is accepted. Values mirror ScanValidation::Kind
 	// (memory_scanner/scan_validation.h) so pattern_preflight.cpp can convert
@@ -590,6 +675,23 @@ namespace ScanPatterns
 		//
 		// `kind` is checked against the followed address, not the match.
 		int32_t followRel32At = -1;
+
+		// Byte offset within the match of a MOV or LEA whose [rip+disp32] operand
+		// is the address we want; -1 (the default) means unused. This is how a
+		// pattern finds a GLOBAL: data has no bytes of its own worth matching, so
+		// the pattern matches code that loads, stores or takes the address of it,
+		// and the displacement names it exactly. Set at most one of this and
+		// followRel32At. `kind` is checked against the decoded address.
+		int32_t followRipDispAt = -1;
+
+		// The hook site adds a fixed offset to where this pattern matched (a
+		// call's length, a jump inside the match). That arithmetic is true for
+		// this pattern's shape only, so a version-map row for it is used only
+		// when it carries this same pattern, never a new one. 0 = none; else
+		// the revision of that arithmetic, from 1, raised with each change to
+		// it: it is part of the site's fingerprint in the map (see
+		// VersionMap::Fingerprint).
+		uint32_t siteArithmetic = 0;
 	};
 
 	inline constexpr PreflightEntry PreflightRegistry[] =
@@ -617,7 +719,8 @@ namespace ScanPatterns
 		{ "AActor::BeginPlay",                         AActor_BeginPlay,                         true },
 		{ "UWorld::BeginPlay",                         UWorld_BeginPlay,                         true },
 		{ "UWorld::EndPlay",                           UWorld_EndPlay,                           true },
-		{ "AAbstractMassEnemySpawner::ActivateSpawner",   AAbstractMassEnemySpawner_ActivateSpawner,   true },
+		{ "AAbstractMassEnemySpawner::ActivateSpawner",   AAbstractMassEnemySpawner_ActivateSpawner,   true,
+		                                                  PatternKind::FunctionStart, -1, -1, 1 },
 		{ "AAbstractMassEnemySpawner::DeactivateSpawner", AAbstractMassEnemySpawner_DeactivateSpawner, true },
 		{ "AMassSpawner::DoSpawning",                  AMassSpawner_DoSpawning,                  true },
 		{ "ACrCrafter::NativeOnItemCraftingComplete",  ACrCrafter_NativeOnItemCraftingComplete,  true },
@@ -656,11 +759,11 @@ namespace ScanPatterns
 		// A call site inside FCrashReportingThread::HandleCrashInternal, not a
 		// function entry -- the hook patches this CALL, it does not detour a function.
 		{ "HandleCrashInternal_FatalReportCallSite",   HandleCrashInternal_FatalReportCallSite,  true,
-		                                               PatternKind::InFunction },
+		                                               PatternKind::InFunction, -1, -1, 1 },
 		{ "APlayerController::ConsoleCommand",         APlayerController_ConsoleCommand,         true },
 		{ "FLogSuppressionImplementation::ApplyGlobalChanges",           FLogSuppression_ApplyGlobalChanges,           true },
 		{ "FLogSuppressionInterface::Get",                               FLogSuppression_Get_CallSite,                 true,
-																	       PatternKind::FunctionStart, 0 },
+																	       PatternKind::FunctionStart, 0, -1, 1 },
 		{ "FLogSuppressionImplementation::ProcessConfigAndCommandLine",  FLogSuppression_ProcessConfigAndCommandLine,  true },
 		// Optional -- only in-world debug drawing (hooks->HUD->DebugDraw) is lost
 		// if these ever stop resolving, so they must not disable the modloader.
@@ -671,6 +774,24 @@ namespace ScanPatterns
 		// key -- not a reason to refuse to boot.
 		{ "UCrUW_MainMenuWidget::NativeConstruct",     UCrUW_MainMenuWidget_NativeConstruct,     false },
 		{ "UCrUW_PauseMenu::NativeConstruct",          UCrUW_PauseMenu_NativeConstruct,          false },
+		// Optional: the Game-SDK globals (core/sdk_globals.h). A miss leaves the
+		// SDK on its built-in Offsets:: values, which is what it used before.
+		// GObjects is ObjObjects, 0x10 into GUObjectArray: an address inside a
+		// global, not the start of one, so it is a site of kind Any (unique,
+		// no section check), not a Data global.
+		{ "GObjects (GUObjectArray.ObjObjects)",       GObjects_PreAllocate,                     false,
+		                                               PatternKind::Any, -1, 7 },
+		{ "GNames (NamePoolData)",                     GNames_NamePoolData,                      false,
+		                                               PatternKind::Data, -1, 0 },
+		{ "FName::AppendString",                       FName_AppendString,                       false },
+		{ "GWorld",                                    GWorld_EngineLoopTick,                    false,
+		                                               PatternKind::Data, -1, 0 },
+		// Optional: without these the overlay is drawn at Present only, so
+		// frame generation shows it on real frames only.
+		{ "FSlateRHIRenderer::PresentWindow_RenderThread", FSlateRHIRenderer_PresentWindow_RenderThread, false },
+		{ "FRHIComputeCommandList::Transition",        FRHIComputeCommandList_Transition,        false },
+		{ "FD3D12DynamicRHI::RHISignalManualFence",    FD3D12DynamicRHI_RHISignalManualFence,    false },
+		{ "FD3D12DynamicRHI::RHIWaitManualFence",      FD3D12DynamicRHI_RHIWaitManualFence,      false },
 #endif
 
 #if defined(MODLOADER_SERVER_BUILD)
@@ -683,7 +804,8 @@ namespace ScanPatterns
 
 		// Optional: losing any of these only makes runtime pak mounting
 		// (hooks->Pak) unavailable to plugins. Nothing the loader itself needs.
-		{ "FPakFileModule::ShutdownModule",            FPakFileModule_ShutdownModule,            false },
+		{ "FPakFileModule::ShutdownModule",            FPakFileModule_ShutdownModule,            false,
+		                                               PatternKind::FunctionStart, -1, -1, 1 },
 		{ "FPakPlatformFile::HandleMountPakDelegate",  FPakPlatformFile_HandleMountPakDelegate,  false },
 		{ "FPakPlatformFile::HandleUnmountPakDelegate", FPakPlatformFile_HandleUnmountPakDelegate, false },
 

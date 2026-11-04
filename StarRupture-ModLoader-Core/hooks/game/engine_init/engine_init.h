@@ -68,4 +68,7 @@ namespace Hooks::EngineInit
 	// Returns the trampoline address of the original UGameEngine::Init, or 0 if not installed.
 	// Cast to: bool(__fastcall*)(void* thisPtr, void* InEngineLoop)
 	uintptr_t GetOriginalPtrGameEngineInit();
+
+	// Drops every callback that lives in `module` (a plugin being unloaded).
+	void ForgetModule(HMODULE module);
 }

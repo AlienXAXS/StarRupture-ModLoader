@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "player_joined.h"
 #include "logging/logger.h"
+#include "plugins/plugin_guard.h"
 #include "memory_scanner/scanner.h"
 #include "../ufunction_resolve.h"
 #include "../scan_patterns.h"
@@ -58,7 +59,7 @@ namespace Hooks::PlayerJoined
 
 				try
 				{
-					g_pluginCallbacks[i](newPlayer);
+					PluginGuard::Invoke(g_pluginCallbacks[i], "player-joined callback", newPlayer);
 				}
 				catch (const std::exception& e)
 				{
@@ -152,5 +153,14 @@ namespace Hooks::PlayerJoined
 	uintptr_t GetOriginalPtr()
 	{
 		return reinterpret_cast<uintptr_t>(g_original);
+	}
+
+	// Drops every callback that lives in `module`: a plugin being unloaded,
+	// whatever it did not unregister itself. Game thread, before FreeLibrary.
+	void ForgetModule(HMODULE module)
+	{
+		const size_t dropped = PluginGuard::ForgetModule(g_pluginCallbacks, module);
+		if (dropped)
+			ModLoaderLogger::LogDebug(L"[PlayerJoined] Dropped %zu callback(s) of an unloading plugin", dropped);
 	}
 }

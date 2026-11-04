@@ -3,10 +3,14 @@
 #include "tick_profiler.h"
 #include "stack_sampler.h"
 #include "logging/logger.h"
+#include "plugins/plugin_guard.h"
+#include "plugins/plugin_manager.h"
+#include "plugins/reload_policy.h"
 #include "memory_scanner/scanner.h"
 #include "../scan_patterns.h"
 #include "../world_begin_play/world_begin_play.h"
 #include "utils/game_thread_dispatch.h"
+#include "plugins/plugin_watchdog.h"
 #include <vector>
 #include <algorithm>
 #include <cstring>
@@ -46,7 +50,7 @@ namespace Hooks::EngineTick
 
 	static void OnAnyWorldBeginPlay(SDK::UWorld* /*world*/, const char* worldName)
 	{
-		const bool nowInChimeraMain = worldName && strstr(worldName, "ChimeraMain") != nullptr;
+		const bool nowInChimeraMain = ReloadPolicy::IsGameplayWorldName(worldName);
 
 		// Only reset when (re-)entering ChimeraMain from some other state, so we
 		// don't wipe the running average on every menu/loading-screen world change
@@ -106,6 +110,10 @@ namespace Hooks::EngineTick
 		// Drain any tasks posted to the game thread from background threads
 		GameThreadDispatch::Drain();
 
+		// Reload plugins the crash guard switched off, at the same point in the
+		// frame a RELOAD from the Plugins tab runs.
+		PluginManager::PumpCrashRestarts();
+
 		if (profileThisTick)
 			QueryPerformanceCounter(&dispatchEnd);
 
@@ -125,7 +133,8 @@ namespace Hooks::EngineTick
 
 				try
 				{
-					g_pluginCallbacks[i](deltaSeconds);
+					PluginWatchdog::Scope watch(reinterpret_cast<const void*>(g_pluginCallbacks[i]), "tick callback");
+					PluginGuard::Invoke(g_pluginCallbacks[i], "tick callback", deltaSeconds);
 				}
 				catch (...)
 				{
@@ -333,5 +342,14 @@ namespace Hooks::EngineTick
 	uintptr_t GetOriginalPtr()
 	{
 		return reinterpret_cast<uintptr_t>(g_original);
+	}
+
+	// Drops every callback that lives in `module`: a plugin being unloaded,
+	// whatever it did not unregister itself. Game thread, before FreeLibrary.
+	void ForgetModule(HMODULE module)
+	{
+		const size_t dropped = PluginGuard::ForgetModule(g_pluginCallbacks, module);
+		if (dropped)
+			ModLoaderLogger::LogDebug(L"[EngineTick] Dropped %zu callback(s) of an unloading plugin", dropped);
 	}
 }

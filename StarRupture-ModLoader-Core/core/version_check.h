@@ -1,11 +1,12 @@
 #pragma once
 #include <string>
 
-// Returns true if the running game executable is the build this ModLoader was
-// compiled against. On mismatch it logs the details and, if outDetails is
-// non-null, fills it with a human-readable expected/detected summary (CRLF line
-// endings) for the crash dialog's details box. It shows no UI itself -- the
-// caller decides what to do while the game main thread is still held.
+// Returns true if the running game executable is a build this ModLoader runs
+// on (VersionMap::SupportedBuilds). On mismatch it logs the details and, if
+// outDetails is non-null, fills it with a human-readable expected/detected
+// summary (CRLF line endings) for the crash dialog's details box. It shows no
+// UI itself -- the caller decides what to do while the game main thread is
+// still held.
 bool VerifyGameVersion(std::wstring* outDetails = nullptr);
 
 // Returns the raw ProductVersion string read from the game executable

@@ -94,6 +94,10 @@ namespace NetworkChannel
     // Called on DLL detach / engine shutdown.
     void Shutdown();
 
+    // Drops every handler and ready callback that lives in `module`: a plugin
+    // being unloaded, whatever it did not unregister itself. Before FreeLibrary.
+    void ForgetModule(HMODULE module);
+
     // -----------------------------------------------------------------------
     // Client plugin manifests (authority side)
     //

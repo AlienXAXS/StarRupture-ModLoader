@@ -1,24 +1,26 @@
 #include "pch.h"
 #include "world_begin_play.h"
 #include "logging/logger.h"
+#include "plugins/plugin_guard.h"
 #include "memory_scanner/scanner.h"
-#include "../ufunction_resolve.h"
 #include "../scan_patterns.h"
 #include "../SDK.hpp"
 #include "Engine_classes.hpp"
 #include "CoreUObject_classes.hpp"
 #include "plugins/plugin_manager.h"
+#include "plugins/reload_policy.h"
 #include "hooks/game/engine_init/engine_init.h"
 #include <vector>
 #include <algorithm>
 
 namespace Hooks::WorldBeginPlay
 {
-	// UCrSessionWorldLoaderSubsystem::OnWorldBeginPlay()
-	// x64 __fastcall member function: RCX = this (subsystem) only.
-	// There is NO UWorld* parameter -- the subsystem fetches the world internally.
-	// The world is retrieved via SDK::UWorld::GetWorld() after the original runs.
-	using OnWorldBeginPlay_t = void(__fastcall*)(void* subsystemThis);
+	// UWorld::BeginPlay()
+	// x64 __fastcall member function: RCX = this, the world beginning play.
+	// That world is the one reported, not a global getter's: another world
+	// alive at the time (a plugin's preview or capture world) must not be
+	// taken for it.
+	using OnWorldBeginPlay_t = void(__fastcall*)(SDK::UWorld* world);
 
 	static Hook g_hook;
 	static OnWorldBeginPlay_t g_original = nullptr;
@@ -37,23 +39,23 @@ namespace Hooks::WorldBeginPlay
 	static SDK::UWorld*    g_lastAnyWorld     = nullptr;
 	static std::string     g_lastAnyWorldName;
 
-	static void __fastcall Detour(void* subsystemThis)
+	static void __fastcall Detour(SDK::UWorld* world)
 	{
 		// Capture return address before any other calls alter the stack frame.
 		void* const callerAddr = _ReturnAddress();
 
 		long callNum = InterlockedIncrement(&g_callCount);
 
-		ModLoaderLogger::LogDebug(L"[WorldBeginPlay] World begin play detected (#%ld) subsystem=%p Thread=%lu",
-		                          callNum, subsystemThis, GetCurrentThreadId());
+		ModLoaderLogger::LogDebug(L"[WorldBeginPlay] World begin play detected (#%ld) world=%p Thread=%lu",
+		                          callNum, world, GetCurrentThreadId());
 		ModLoaderLogger::LogTrace(L"[WorldBeginPlay]   Called from: %S",
 		                          Hooks::GetCallerModuleName(callerAddr).c_str());
 
 		// Call original first so the world is fully initialised before we read from it.
-		ModLoaderLogger::LogDebug(L"[WorldBeginPlay]   Calling original OnWorldBeginPlay...");
+		ModLoaderLogger::LogDebug(L"[WorldBeginPlay]   Calling original UWorld::BeginPlay...");
 		if (g_original)
 		{
-			g_original(subsystemThis);
+			g_original(world);
 			ModLoaderLogger::LogDebug(L"[WorldBeginPlay]   Original returned");
 		}
 		else
@@ -61,8 +63,8 @@ namespace Hooks::WorldBeginPlay
 			ModLoaderLogger::LogError(L"[WorldBeginPlay] Original function pointer is null!");
 		}
 
-		// Fetch the world via the engine's own getter now that the original has run.
-		auto* inWorld = static_cast<SDK::UWorld*>(SDK::UWorld::GetWorld());
+		// The world this BeginPlay was for, read now that the original has run.
+		SDK::UWorld* const inWorld = world;
 		std::string worldName;
 		if (inWorld)
 		{
@@ -72,8 +74,11 @@ namespace Hooks::WorldBeginPlay
 		}
 		else
 		{
-			ModLoaderLogger::LogWarn(L"[WorldBeginPlay]   GetWorld() returned null after original ran");
+			ModLoaderLogger::LogWarn(L"[WorldBeginPlay]   BeginPlay was called with no world");
 		}
+
+		// Whether a gameplay world is running, for the plugins' load and unload settings.
+		ReloadPolicy::NoteWorldBegan(worldName.c_str());
 
 		// Record any-world fired state for late-registration replay.
 		g_anyWorldHasFired = true;
@@ -103,7 +108,7 @@ namespace Hooks::WorldBeginPlay
 				{
 					ModLoaderLogger::LogTrace(L"[WorldBeginPlay] Calling any-world callback #%zu (%S) for world '%S'",
 					                          i + 1, Hooks::GetCallerModuleName((void*)g_anyWorldCallbacks[i]).c_str(), worldName.c_str());
-					g_anyWorldCallbacks[i](inWorld, worldName.c_str());
+					PluginGuard::Invoke(g_anyWorldCallbacks[i], "any-world begin-play callback", inWorld, worldName.c_str());
 					ModLoaderLogger::LogTrace(L"[WorldBeginPlay] Finished any-world callback #%zu", i + 1);
 				}
 				catch (const std::exception& e)
@@ -118,7 +123,7 @@ namespace Hooks::WorldBeginPlay
 		}
 
 		// Check if this is the ChimeraMain world
-		bool isChimeraWorld = worldName.find("ChimeraMain") != std::string::npos;
+		bool isChimeraWorld = ReloadPolicy::IsGameplayWorldName(worldName.c_str());
 
 		if (!isChimeraWorld)
 		{
@@ -148,7 +153,7 @@ namespace Hooks::WorldBeginPlay
 
 				try
 				{
-					g_pluginCallbacks[i](inWorld);
+					PluginGuard::Invoke(g_pluginCallbacks[i], "world begin-play callback", inWorld);
 				}
 				catch (const std::exception& e)
 				{
@@ -170,14 +175,11 @@ namespace Hooks::WorldBeginPlay
 	{
 		ModLoaderLogger::LogInfo(L"[WorldBeginPlay] Installing hook...");
 
-		uintptr_t addr = Hooks::ResolveUFunctionNativeAddr("World", "BeginPlay");
-		if (!addr)
-		{
-			ModLoaderLogger::LogDebug(L"[WorldBeginPlay] Not a UFUNCTION -- falling back to pattern scan");
-			addr = Scanner::FindPatternInMainModule(
-				"UWorld::BeginPlay",
-				ScanPatterns::UWorld_BeginPlay);
-		}
+		// UWorld::BeginPlay is not a UFUNCTION, so there is no UFunction to
+		// resolve, and the hook must be in place before the first world starts.
+		uintptr_t addr = Scanner::FindPatternInMainModule(
+			"UWorld::BeginPlay",
+			ScanPatterns::UWorld_BeginPlay);
 		if (!addr)
 			return false;
 
@@ -247,8 +249,12 @@ namespace Hooks::WorldBeginPlay
 		if (g_chimeraHasFired && g_lastChimeraWorld && !PluginManager::IsStartupComplete())
 		{
 			ModLoaderLogger::LogDebug(L"[WorldBeginPlay] Late-registration replay: firing ChimeraMain callback immediately");
-			try { callback(g_lastChimeraWorld); }
+			try { PluginGuard::Invoke(callback, "world begin-play callback", g_lastChimeraWorld); }
 			catch (...) { ModLoaderLogger::LogError(L"[WorldBeginPlay] Exception in late-registration ChimeraMain callback"); }
+		}
+		else if (g_chimeraHasFired && PluginManager::IsStartupComplete())
+		{
+			PluginManager::NoteMissedEvent(PluginManager::MissedChimeraMain);
 		}
 	}
 
@@ -291,8 +297,12 @@ namespace Hooks::WorldBeginPlay
 		{
 			ModLoaderLogger::LogDebug(L"[WorldBeginPlay] Late-registration replay: firing any-world callback immediately for '%S'",
 			                          g_lastAnyWorldName.c_str());
-			try { callback(g_lastAnyWorld, g_lastAnyWorldName.c_str()); }
+			try { PluginGuard::Invoke(callback, "any-world begin-play callback", g_lastAnyWorld, g_lastAnyWorldName.c_str()); }
 			catch (...) { ModLoaderLogger::LogError(L"[WorldBeginPlay] Exception in late-registration any-world callback"); }
+		}
+		else if (g_anyWorldHasFired && PluginManager::IsStartupComplete())
+		{
+			PluginManager::NoteMissedEvent(PluginManager::MissedAnyWorld);
 		}
 	}
 
@@ -310,5 +320,15 @@ namespace Hooks::WorldBeginPlay
 	uintptr_t GetOriginalPtr()
 	{
 		return reinterpret_cast<uintptr_t>(g_original);
+	}
+
+	// Drops every callback that lives in `module`: a plugin being unloaded,
+	// whatever it did not unregister itself. Game thread, before FreeLibrary.
+	void ForgetModule(HMODULE module)
+	{
+		const size_t dropped = PluginGuard::ForgetModule(g_pluginCallbacks, module)
+		                      + PluginGuard::ForgetModule(g_anyWorldCallbacks, module);
+		if (dropped)
+			ModLoaderLogger::LogDebug(L"[WorldBeginPlay] Dropped %zu callback(s) of an unloading plugin", dropped);
 	}
 }

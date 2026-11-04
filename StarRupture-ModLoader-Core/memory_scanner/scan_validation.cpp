@@ -157,13 +157,19 @@ namespace ScanValidation
 
 	namespace
 	{
-		// Applies resultOffset / followRel32At. Returns false with a reason when
+		// Applies resultOffset / followRel32At / followRipDispAt. Returns false with a reason when
 		// the transform cannot be done inside the image.
 		bool ApplyTransforms(const Request& req, HMODULE module, uintptr_t rawMatch,
 			uintptr_t& outAddress, std::string& outError)
 		{
 			const Scanner::ImageInfo image = Scanner::GetImageInfo(module);
 			uintptr_t addr = rawMatch;
+
+			if (req.followRel32At >= 0 && req.followRipDispAt >= 0)
+			{
+				outError = "followRel32At and followRipDispAt are both set; a request follows one or the other";
+				return false;
+			}
 
 			if (req.followRel32At >= 0)
 			{
@@ -191,6 +197,45 @@ namespace ScanValidation
 				if (!image.valid || addr < image.base || addr >= image.base + image.size)
 				{
 					outError = "the rel32 at +" + std::to_string(req.followRel32At)
+					         + " resolves to " + Hex(addr) + ", which is outside the image";
+					return false;
+				}
+			}
+			else if (req.followRipDispAt >= 0)
+			{
+				// A load, store or LEA through [rip+disp32]: an optional REX byte,
+				// then 8B / 89 / 8D, then a ModRM with mod=00 rm=101. None of the
+				// three carries an immediate, so the disp32 ends the instruction and
+				// the address is relative to the byte after it. Anything else is
+				// refused rather than guessed at -- an immediate after the disp32
+				// moves "the next instruction" and would skew the result silently.
+				const uintptr_t site = rawMatch + static_cast<uintptr_t>(req.followRipDispAt);
+				if (!image.valid || site + 7 > image.base + image.size)
+				{
+					outError = "followRipDispAt " + std::to_string(req.followRipDispAt)
+					         + " points outside the image";
+					return false;
+				}
+
+				const auto*   bytes  = reinterpret_cast<const uint8_t*>(site);
+				const size_t  rex    = (bytes[0] & 0xF0) == 0x40 ? 1 : 0;
+				const uint8_t opcode = bytes[rex];
+				const uint8_t modrm  = bytes[rex + 1];
+				if ((opcode != 0x8B && opcode != 0x89 && opcode != 0x8D) || (modrm & 0xC7) != 0x05)
+				{
+					outError = "followRipDispAt " + std::to_string(req.followRipDispAt)
+					         + " expected a MOV (8B/89) or LEA (8D) with a [rip+disp32] operand, found "
+					         + Hex(opcode) + " " + Hex(modrm);
+					return false;
+				}
+
+				int32_t disp32 = 0;
+				memcpy(&disp32, bytes + rex + 2, sizeof(disp32));
+				addr = site + rex + 6 + static_cast<uintptr_t>(static_cast<intptr_t>(disp32));
+
+				if (addr < image.base || addr >= image.base + image.size)
+				{
+					outError = "the [rip+disp32] at +" + std::to_string(req.followRipDispAt)
 					         + " resolves to " + Hex(addr) + ", which is outside the image";
 					return false;
 				}
@@ -339,8 +384,9 @@ namespace ScanValidation
 		}
 
 		// Builds the match list for a failed resolve. Runs a second, full pass --
-		// affordable precisely because it only happens when the launch is already
-		// going to refuse something.
+		// affordable because it only happens when the launch is already going to
+		// refuse something, or once per exe for a plugin's own pattern that a
+		// version map row covers (VersionMap keeps that count).
 		std::string EnumerateMatchDetail(HMODULE module, const std::string& pattern,
 			const PatchOverlay::Snapshot& overlay, size_t& outTotal)
 		{
@@ -423,7 +469,7 @@ namespace ScanValidation
 		// --- Find it, and find out whether it is alone ------------------------
 		//
 		// Cache fast path applies only to the main module: scan_cache.ini is
-		// keyed on the game version and stores offsets from the main module
+		// keyed on the game exe and stores offsets from the main module
 		// base. A cached count of exactly 1 is the only count that can be
 		// trusted here -- see scan_cache.h.
 		const bool     isMainModule = (module == GetModuleHandleW(nullptr));
@@ -554,6 +600,45 @@ namespace ScanValidation
 			KindName(request.kind),
 			fromCache ? "cached" : "scanned");
 
+		return result;
+	}
+
+	Result CheckAddress(const Request& request, uintptr_t address)
+	{
+		Result result;
+
+		if (request.kind == Kind::Unspecified)
+		{
+			result.outcome = Outcome::BadRequest;
+			result.detail  = "no scan kind declared for this address";
+			return result;
+		}
+
+		HMODULE module = ResolveModule(request.module);
+		const Scanner::ImageInfo image = Scanner::GetImageInfo(module);
+		if (!image.valid || address < image.base || address >= image.base + image.size)
+		{
+			result.outcome = Outcome::WrongKind;
+			result.detail  = "address " + Hex(address) + " is outside " + ModuleBaseName(module);
+			return result;
+		}
+
+		result.rawMatch   = address;
+		result.matchCount = 1;
+
+		std::string why;
+		if (!CheckKind(request, module, address, why))
+		{
+			result.outcome = Outcome::WrongKind;
+			result.address = address;
+			result.detail  = std::string("declared as '") + KindName(request.kind) + "', but it is not."
+			               + NL + "            Address: " + DescribeAddress(module, address)
+			               + NL + "            Reason: " + why;
+			return result;
+		}
+
+		result.outcome = Outcome::Ok;
+		result.address = address;
 		return result;
 	}
 }

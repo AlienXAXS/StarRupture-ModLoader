@@ -42,4 +42,7 @@ namespace Hooks::PlayerJoined
 	// Returns the trampoline address of the original AGameModeBase::PostLogin, or 0 if not yet installed.
 	// Cast to: void(__fastcall*)(void* thisPtr, void* newPlayer)
 	uintptr_t GetOriginalPtr();
+
+	// Drops every callback that lives in `module` (a plugin being unloaded).
+	void ForgetModule(HMODULE module);
 }

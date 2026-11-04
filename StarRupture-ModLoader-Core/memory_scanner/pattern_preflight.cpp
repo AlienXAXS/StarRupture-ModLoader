@@ -1,5 +1,6 @@
 #include "memory_scanner/pattern_preflight.h"
 #include "memory_scanner/scan_validation.h"
+#include "memory_scanner/version_map.h"
 #include "hooks/game/scan_patterns.h"
 #include "logging/logger.h"
 #include "UI/splash_window.h"
@@ -81,11 +82,42 @@ namespace
 
 namespace PatternPreflight
 {
+    namespace
+    {
+        ScanValidation::Request MakeRequest(const ScanPatterns::PreflightEntry& entry)
+        {
+            ScanValidation::Request request;
+            request.name            = entry.name;
+            request.pattern         = entry.pattern;
+            request.kind            = ToValidationKind(entry.kind);
+            request.followRel32At   = entry.followRel32At;
+            request.followRipDispAt = entry.followRipDispAt;
+            return request;
+        }
+    }
+
+    ScanValidation::Result Resolve(const ScanPatterns::PreflightEntry& entry)
+    {
+        return VersionMap::ResolveLoaderEntry(entry, MakeRequest(entry), VersionMap::RunningExe());
+    }
+
+    namespace
+    {
+        // Written by VerifyAllPatterns on the init thread, read after it.
+        std::vector<Miss> g_misses;
+    }
+
+    const std::vector<Miss>& Misses()
+    {
+        return g_misses;
+    }
+
     bool VerifyAllPatterns(std::wstring* outFailureDetails)
     {
         constexpr size_t total = sizeof(ScanPatterns::PreflightRegistry) / sizeof(ScanPatterns::PreflightRegistry[0]);
 
         const bool skipValidation = SkipValidationRequested();
+        g_misses.clear();
 
         ModLoaderLogger::LogInfo(L"[Preflight] Verifying %zu modloader scan patterns...", total);
         if (skipValidation)
@@ -108,16 +140,11 @@ namespace PatternPreflight
             Splash::SetStatus(status);
             Splash::SetProgress(static_cast<float>(index) / static_cast<float>(total));
 
-            ScanValidation::Request request;
-            request.name           = entry.name;
-            request.pattern        = entry.pattern;
-            request.kind           = ToValidationKind(entry.kind);
-            request.followRel32At  = entry.followRel32At;
-
-            const ScanValidation::Result result = ScanValidation::Resolve(request);
+            const ScanValidation::Result result = Resolve(entry);
 
             if (result.Succeeded())
             {
+                VersionMap::RememberPick(entry, result.address);
                 ++found;
                 continue;
             }
@@ -130,6 +157,7 @@ namespace PatternPreflight
             const bool isFatal   = entry.required && !tolerated;
 
             Failure failure{ entry.name, result.detail, structural };
+            g_misses.push_back(Miss{ entry.name, entry.pattern, entry.required, structural });
 
             if (isFatal)
             {

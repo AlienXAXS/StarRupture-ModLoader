@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "player_left.h"
 #include "logging/logger.h"
+#include "plugins/plugin_guard.h"
 #include "memory_scanner/scanner.h"
 #include "../ufunction_resolve.h"
 #include "../scan_patterns.h"
@@ -46,7 +47,7 @@ namespace Hooks::PlayerLeft
 
 				try
 				{
-					g_pluginCallbacks[i](exiting);
+					PluginGuard::Invoke(g_pluginCallbacks[i], "player-left callback", exiting);
 				}
 				catch (const std::exception& e)
 				{
@@ -152,5 +153,14 @@ namespace Hooks::PlayerLeft
 	uintptr_t GetOriginalPtr()
 	{
 		return reinterpret_cast<uintptr_t>(g_original);
+	}
+
+	// Drops every callback that lives in `module`: a plugin being unloaded,
+	// whatever it did not unregister itself. Game thread, before FreeLibrary.
+	void ForgetModule(HMODULE module)
+	{
+		const size_t dropped = PluginGuard::ForgetModule(g_pluginCallbacks, module);
+		if (dropped)
+			ModLoaderLogger::LogDebug(L"[PlayerLeft] Dropped %zu callback(s) of an unloading plugin", dropped);
 	}
 }

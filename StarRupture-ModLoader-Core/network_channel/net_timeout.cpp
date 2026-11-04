@@ -1,4 +1,5 @@
 #include "pch.h"
+#include "core/sdk_globals.h"
 #include "net_timeout.h"
 #include "logging/logger.h"
 
@@ -109,10 +110,8 @@ namespace NetTimeout
     {
         __try
         {
-            SDK::UWorld* world = SDK::UWorld::GetWorld();
-            if (!world || !world->NetDriver) return nullptr;
-
-            SDK::UNetDriver* driver = world->NetDriver;
+            SDK::UNetDriver* driver = SdkGlobals::WorldNetDriver(SdkGlobals::GetWorld());
+            if (!driver) return nullptr;
 
             if (connTimeout != 0.0f && driver->ConnectionTimeout != connTimeout)
                 driver->ConnectionTimeout = connTimeout;

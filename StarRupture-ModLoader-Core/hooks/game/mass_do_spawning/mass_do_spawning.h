@@ -26,4 +26,7 @@ namespace Hooks::MassDoSpawning
 	// or 0 if not yet installed.
 	// Cast to: void(__fastcall*)(void* thisPtr)
 	uintptr_t GetOriginalPtr();
+
+	// Drops every callback that lives in `module` (a plugin being unloaded).
+	void ForgetModule(HMODULE module);
 }

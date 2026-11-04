@@ -51,4 +51,7 @@ namespace Hooks::CraftingFinished
 	// Returns the trampoline address of the original ACrCrafter::NativeOnItemCraftingComplete, or 0 if not yet installed.
 	// Cast to: void(__fastcall*)(void* thisPtr, uint64_t entityHandle, uint64_t signalName)
 	uintptr_t GetOriginalPtr();
+
+	// Drops every callback that lives in `module` (a plugin being unloaded).
+	void ForgetModule(HMODULE module);
 }

@@ -1,6 +1,7 @@
 #include "memory_scanner/scanner.h"
 #include "memory_scanner/scan_cache.h"
 #include "memory_scanner/image_info.h"
+#include "memory_scanner/version_map.h"
 #include "core/version_check.h"
 #include "logging/logger.h"
 #include <sstream>
@@ -276,6 +277,15 @@ uintptr_t Scanner::FindPatternInModule(HMODULE module, const std::string& patter
 
 uintptr_t Scanner::FindPatternInMainModule(const std::string& patternName, const std::string& pattern)
 {
+	// A registry pattern answers with what preflight picked for it, which on a
+	// build where the pattern moved is the version map's locator.
+	if (const uintptr_t picked = VersionMap::PickFor(pattern))
+	{
+		ModLoaderLogger::LogDebug(L"[Scanner]   [%S] preflight picked 0x%llX", patternName.c_str(),
+			static_cast<unsigned long long>(picked));
+		return picked;
+	}
+
 	HMODULE mainModule = GetModuleHandleW(nullptr);
 	const auto base = reinterpret_cast<uintptr_t>(mainModule);
 	const std::wstring gameVersion = GetGameVersionString();

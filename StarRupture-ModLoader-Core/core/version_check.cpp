@@ -1,6 +1,7 @@
 #include "version_check.h"
 #include "globals.h"
 #include "../logging/log.h"
+#include "memory_scanner/version_map.h"
 
 #include <windows.h>
 #include <winver.h>
@@ -11,8 +12,6 @@
 #ifndef MODLOADER_BUILD_TAG
 #define MODLOADER_BUILD_TAG "dev"
 #endif
-
-static constexpr wchar_t kRequiredVersionSuffix[] = L"CL-127004";
 
 // Reads the raw ProductVersion string from the game executable's version info.
 // Returns false (with a placeholder string) if it could not be read.
@@ -68,10 +67,16 @@ static bool CheckGameVersion(std::wstring& outActualVersion)
     if (!ReadProductVersion(outActualVersion))
         return false;
 
-    const size_t reqLen    = wcslen(kRequiredVersionSuffix);
-    const size_t actualLen = outActualVersion.size();
-    return actualLen >= reqLen
-        && outActualVersion.compare(actualLen - reqLen, reqLen, kRequiredVersionSuffix) == 0;
+    return VersionMap::IsSupported(outActualVersion);
+}
+
+// "...-CL-127004 or ...-CL-128786": the builds the gate lets through.
+static std::wstring SupportedBuildsText()
+{
+    std::wstring text;
+    for (const uint32_t cl : VersionMap::SupportedBuilds())
+        text += (text.empty() ? L"...-CL-" : L" or ...-CL-") + std::to_wstring(cl);
+    return text;
 }
 
 std::wstring GetGameVersionString()
@@ -94,8 +99,8 @@ bool VerifyGameVersion(std::wstring* outDetails)
 
     if (!versionOk)
     {
-        LogToFile::Error("[ModLoader] VERSION MISMATCH: expected suffix '%ls', got '%ls'",
-         kRequiredVersionSuffix, gameVersion.c_str());
+        LogToFile::Error("[ModLoader] VERSION MISMATCH: expected '%ls', got '%ls'",
+         SupportedBuildsText().c_str(), gameVersion.c_str());
         LogToFile::Error("[ModLoader] Hook installation aborted -- update to the correct game build.");
 
         if (outDetails)
@@ -107,7 +112,7 @@ bool VerifyGameVersion(std::wstring* outDetails)
 
             *outDetails =
                 std::wstring(L"Your game build:       ") + detected + L"\r\n"
-                L"ModLoader expects:     ...-" + kRequiredVersionSuffix + L"\r\n"
+                L"ModLoader expects:     " + SupportedBuildsText() + L"\r\n"
                 L"ModLoader version:     " + buildTag + L"\r\n"
                 L"\r\n"
                 L"No hooks were installed and no plugins were loaded.";

@@ -13,14 +13,67 @@
 #include "../UI/splash_window.h"
 #include "../hooks/game/world_begin_play/world_begin_play.h"
 #include "../hooks/game/engine_tick/engine_tick.h"
+#include "../plugins/plugin_watchdog.h"
 #ifdef MODLOADER_CLIENT_BUILD
 #include "../hooks/input/input_processor.h"
 #include "../hooks/game/crash_reporter/crash_dialog.h"
 #endif
 #include <hooks/input/input_hook.h>
 #include "../memory_scanner/pattern_preflight.h"
+#include "sdk_globals.h"
+#include "layout_check.h"
+#include "../memory_scanner/version_map.h"
+#include "../memory_scanner/version_feed.h"
+#include "../auto_update/feed_fetch.h"
+#include "../hooks/game/version_map.generated.h"
+#include "compat_report.h"
+#include "../plugins/plugin_manager.h"
+#include "../preload/preload_manager.h"
+#include "../hooks/game/engine_init/engine_init.h"
 #include "../utils/thread_utils.h"
 #include "../utils/pak_list.h"
+
+#ifdef MODLOADER_CLIENT_BUILD
+// Safe-off after a layout mismatch: the SDK reads the wrong bytes on this game
+// build, so no plugin code may run. Called on the init thread with the game
+// thread parked in the engine-init hook. That park ends on its own after a
+// timeout, so plugin loads are refused and the preload plugins shut down
+// before the dialog waits on the player. The loader's hooks stay in; the
+// world they read comes from SdkGlobals::GetWorld, which with no per-build
+// fields resolved (they are not, after a safe-off) reads GWorld: on a build
+// other than the SDK's own the resolved one, not Offsets::GWorld.
+static void EnterLayoutSafeOff(const LayoutCheck::Result& layout)
+{
+    PluginManager::RefusePluginLoads();
+    PreloadManager::Shutdown();
+    ModLoaderLogger::LogError(L"[init] Layout mismatch -- plugins are switched off for this session");
+
+    const std::wstring reportName = CompatReport::Write(layout);
+    Splash::Close();
+
+    // CRLF: the crash dialog's edit control does not render bare '\n'.
+    std::wstring details = L"Your game build:  " + GetGameVersionString() + L"\r\n";
+    if (!reportName.empty())
+        details += L"Report:           ModLoader\\" + reportName + L"\r\n";
+    details += L"\r\n";
+    for (const std::string& line : layout.lines)
+        details += std::wstring(line.begin(), line.end()) + L"\r\n";
+
+    const auto choice = Hooks::CrashDialog::Show(Hooks::CrashDialog::Mode::LayoutMismatch, details);
+    if (choice == Hooks::CrashDialog::Result::QuitGame)
+    {
+        ModLoaderLogger::LogInfo(L"[init] User chose to quit the game after the layout mismatch");
+        ExitProcess(0);
+    }
+    ModLoaderLogger::LogInfo(L"[init] User chose to start the game without plugins");
+
+    // Let the game thread go, and tell shutdown there is nothing to wait for.
+    if (g_pluginsReadyEvent)
+        SetEvent(g_pluginsReadyEvent);
+    if (g_pluginsLoadedEvent)
+        SetEvent(g_pluginsLoadedEvent);
+}
+#endif
 
 // Lets the game main thread run again at the end of Stage 1. Two ways it can
 // be stopped, decided in Core_Attach:
@@ -114,6 +167,18 @@ DWORD WINAPI MainInitThreadProc(LPVOID)
     // g_logInitialized is still false.
     ModLoaderLogger::InitializeLogger();
 
+#ifdef MODLOADER_CLIENT_BUILD
+    // The map every lookup reads is fixed here, once, before anything reads
+    // it: the one compiled into the loader, plus the signed feed cached by an
+    // earlier launch if it verifies. The server stays on its exact build.
+    // A new exe the map has never seen is fetched for first, here, with the
+    // main thread parked.
+    const FeedFetch::Config feedConfig = FeedFetch::LoaderConfig();
+    const bool feedAsked = FeedFetch::Stage1(feedConfig, g_mainThreadParked, [](uint32_t cl)
+        { Splash::SetStatus((L"Downloading game data for CL-" + std::to_wstring(cl)).c_str()); });
+    VersionFeed::ActivateCached(feedConfig.cachePath);
+#endif
+
     // Version check before hook installation -- if the game build is wrong
     // we must not install hooks (the engine init hook would block the main
     // thread waiting on g_pluginsReadyEvent which would never be signalled).
@@ -131,6 +196,9 @@ DWORD WINAPI MainInitThreadProc(LPVOID)
             Hooks::CrashDialog::Mode::VersionMismatch, versionDetails);
 
         ReleaseMainThread(suspendedMainThread);
+        // The game is booting now, so WinHTTP is safe. Ask for a feed for the
+        // next launch before Quit's exit; Stage 3 never runs after a refusal.
+        FeedFetch::AfterRefusal(feedConfig, feedAsked);
         if (choice == Hooks::CrashDialog::Result::QuitGame)
         {
             ModLoaderLogger::LogInfo(L"[init] User chose to quit the game after version mismatch");
@@ -173,6 +241,7 @@ DWORD WINAPI MainInitThreadProc(LPVOID)
             Hooks::CrashDialog::Mode::PatternFailure, preflightDetails);
 
         ReleaseMainThread(suspendedMainThread);
+        FeedFetch::AfterRefusal(feedConfig, feedAsked);
         if (choice == Hooks::CrashDialog::Result::QuitGame)
         {
             ModLoaderLogger::LogInfo(L"[init] User chose to quit the game after preflight failure");
@@ -186,6 +255,8 @@ DWORD WINAPI MainInitThreadProc(LPVOID)
 #endif
         return 0;
     }
+
+    SdkGlobals::ResolveAndApply();
 
     LogToFile::Info("[init] Installing engine hooks...");
     const ULONGLONG hooksStart = GetTickCount64();
@@ -238,6 +309,7 @@ DWORD WINAPI MainInitThreadProc(LPVOID)
 
     Hooks::WorldBeginPlay::Install();
     Hooks::EngineTick::Install();
+    PluginWatchdog::Start();
     LogToFile::Info("[init] WorldBeginPlay + EngineTick hooks installed");
 
     WaitForEnginePhase();
@@ -247,6 +319,67 @@ DWORD WINAPI MainInitThreadProc(LPVOID)
     // modloader.log and cached for the crash dialog, where user-installed pak
     // mods are the most common real cause of "modloader" crashes.
     PakList::CaptureAndLog();
+
+#ifdef MODLOADER_CLIENT_BUILD
+    // Compare the SDK's class layouts with the game's reflection data. Only
+    // once engine init has been seen (FEngineLoop::Init returned, or one of
+    // its fallbacks fired): every native class is registered by then, and the
+    // game thread is parked in the engine-init hook until the plugins are up,
+    // so it is not changing the reflection data. A failed hook install or a
+    // timed-out wait leaves the game thread running, so the check is skipped.
+    // A mismatch switches plugins off and ends the boot here.
+    //
+    // On a build other than the SDK's own, plugins run only on what was
+    // checked: a check that could not run, or an SDK still on its built-in
+    // Offsets:: for GObjects or FName::AppendString, switches them off too.
+    {
+        LayoutCheck::Result layout;
+        bool ran = false;
+        if (Hooks::EngineInit::IsEngineInitialized())
+        {
+            ran = LayoutCheck::Run(layout);
+            if (ran && LayoutCheck::RequiresSafeOff(layout))
+            {
+                EnterLayoutSafeOff(layout);
+                return 0;
+            }
+        }
+        else
+        {
+            ModLoaderLogger::LogWarn(L"[LayoutCheck] Skipped: engine init was not observed, so the game thread is not parked");
+        }
+
+        if (VersionMap::RunningExe().cl != VersionMap::kBuiltCL)
+        {
+            LayoutCheck::Result unchecked;
+            if (!ran)
+                unchecked.lines.push_back("The layout check did not run, and this is not the build the SDK was made for");
+            if (!SdkGlobals::SdkOnResolvedGlobals())
+                unchecked.lines.push_back("GObjects or FName::AppendString was not found on this build");
+            if (!unchecked.lines.empty())
+            {
+                EnterLayoutSafeOff(unchecked);
+                return 0;
+            }
+        }
+    }
+
+    // Field requests read the game's reflection data from here on, and the
+    // loader's own fields are resolved from it. On a build other than the
+    // SDK's own, one that does not resolve switches plugins off.
+    VersionMap::SetLiveFieldSource(LayoutCheck::LiveFieldOf);
+    {
+        LayoutCheck::Result unresolved;
+        unresolved.lines = SdkGlobals::ResolveFields();
+        if (!unresolved.lines.empty())
+        {
+            EnterLayoutSafeOff(unresolved);
+            return 0;
+        }
+    }
+#else
+    SdkGlobals::ResolveFields();
+#endif
 
     // ------------------------------------------------------------------
     // Stage 3: Plugin loading and initialisation

@@ -1,6 +1,8 @@
 #include "pch.h"
 #include "crafting_finished.h"
+#include "core/sdk_globals.h"
 #include "logging/logger.h"
+#include "plugins/plugin_guard.h"
 #include "memory_scanner/scanner.h"
 #include "../scan_patterns.h"
 #include "Chimera_classes.hpp"
@@ -28,12 +30,7 @@ namespace Hooks::CraftingFinished
 			g_original(thisPtr, entityHandle, signalName);
 		}
 
-		void* craftingComponent = nullptr;
-		if (thisPtr)
-		{
-			auto* crafter = reinterpret_cast<SDK::ACrCrafter*>(thisPtr);
-			craftingComponent = crafter->CraftComponent;
-		}
+		void* craftingComponent = SdkGlobals::CrafterCraftComponent(reinterpret_cast<SDK::ACrCrafter*>(thisPtr));
 
 		// FMassEntityHandle { int32 Index; int32 SerialNumber; } packed into the low/high 32 bits
 		int32_t entityIndex = static_cast<int32_t>(entityHandle & 0xFFFFFFFFu);
@@ -47,7 +44,8 @@ namespace Hooks::CraftingFinished
 
 			try
 			{
-				g_pluginCallbacks[i](thisPtr, craftingComponent, entityIndex, entitySerial);
+				PluginGuard::Invoke(g_pluginCallbacks[i], "crafting-finished callback",
+				                    thisPtr, craftingComponent, entityIndex, entitySerial);
 			}
 			catch (const std::exception& e)
 			{
@@ -135,5 +133,14 @@ namespace Hooks::CraftingFinished
 	uintptr_t GetOriginalPtr()
 	{
 		return reinterpret_cast<uintptr_t>(g_original);
+	}
+
+	// Drops every callback that lives in `module`: a plugin being unloaded,
+	// whatever it did not unregister itself. Game thread, before FreeLibrary.
+	void ForgetModule(HMODULE module)
+	{
+		const size_t dropped = PluginGuard::ForgetModule(g_pluginCallbacks, module);
+		if (dropped)
+			ModLoaderLogger::LogDebug(L"[CraftingFinished] Dropped %zu callback(s) of an unloading plugin", dropped);
 	}
 }

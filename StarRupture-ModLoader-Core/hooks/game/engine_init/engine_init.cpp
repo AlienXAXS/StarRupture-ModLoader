@@ -1,6 +1,7 @@
 ﻿#include "pch.h"
 #include "engine_init.h"
 #include "logging/logger.h"
+#include "plugins/plugin_guard.h"
 #include "logging/log.h"
 #include "logging/game_log_filter.h"
 #include "memory_scanner/scanner.h"
@@ -165,7 +166,7 @@ namespace Hooks::EngineInit
 
 				try
 				{
-					g_pluginCallbacks[i]();
+					PluginGuard::Invoke(g_pluginCallbacks[i], "engine-init callback");
 				}
 				catch (const std::exception& e)
 				{
@@ -466,7 +467,7 @@ namespace Hooks::EngineInit
 			ModLoaderLogger::LogDebug(L"[EngineInit] Engine already initialized - invoking callback immediately");
 			try
 			{
-				callback();
+				PluginGuard::Invoke(callback, "engine-init callback");
 			}
 			catch (const std::exception& e)
 			{
@@ -508,5 +509,14 @@ namespace Hooks::EngineInit
 	uintptr_t GetOriginalPtrGameEngineInit()
 	{
 		return reinterpret_cast<uintptr_t>(g_gameEngineOriginal);
+	}
+
+	// Drops every callback that lives in `module`: a plugin being unloaded,
+	// whatever it did not unregister itself. Game thread, before FreeLibrary.
+	void ForgetModule(HMODULE module)
+	{
+		const size_t dropped = PluginGuard::ForgetModule(g_pluginCallbacks, module);
+		if (dropped)
+			ModLoaderLogger::LogDebug(L"[EngineInit] Dropped %zu callback(s) of an unloading plugin", dropped);
 	}
 }

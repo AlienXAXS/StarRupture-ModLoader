@@ -1,6 +1,8 @@
 #include "pch.h"
 #include "engine_shutdown.h"
 #include "logging/logger.h"
+#include "plugins/plugin_guard.h"
+#include "plugins/crash_restart.h"
 #include "memory_scanner/scanner.h"
 #include "hooks/memory/engine_allocator.h"
 #include <vector>
@@ -40,6 +42,9 @@ namespace Hooks::EngineShutdown
 
 		g_shutdownFired = true;
 
+		// A plugin switched off now stays off: no crash restart during the exit.
+		CrashRestart::Global().Stop();
+
 		ModLoaderLogger::LogInfo(L"[EngineShutdown] *** ENGINE SHUTTING DOWN *** (via %s) - notifying plugins",
 		                         hookSource);
 
@@ -51,7 +56,7 @@ namespace Hooks::EngineShutdown
 			ModLoaderLogger::LogTrace(L"[EngineShutdown]   Calling plugin callback #%zu", i + 1);
 			try
 			{
-				g_pluginCallbacks[i]();
+				PluginGuard::Invoke(g_pluginCallbacks[i], "engine-shutdown callback");
 			}
 			catch (const std::exception& e)
 			{
@@ -235,5 +240,14 @@ namespace Hooks::EngineShutdown
 	uintptr_t GetOriginalPtrEnginePreExit()
 	{
 		return reinterpret_cast<uintptr_t>(g_enginePreExitOriginal);
+	}
+
+	// Drops every callback that lives in `module`: a plugin being unloaded,
+	// whatever it did not unregister itself. Game thread, before FreeLibrary.
+	void ForgetModule(HMODULE module)
+	{
+		const size_t dropped = PluginGuard::ForgetModule(g_pluginCallbacks, module);
+		if (dropped)
+			ModLoaderLogger::LogDebug(L"[EngineShutdown] Dropped %zu callback(s) of an unloading plugin", dropped);
 	}
 }

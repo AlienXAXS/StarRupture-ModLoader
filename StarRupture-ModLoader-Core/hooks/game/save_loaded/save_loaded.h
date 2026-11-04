@@ -44,4 +44,7 @@ namespace Hooks::SaveLoaded
 	// -- the FNativeFuncPtr shape. Calling it with only `this` faults inside the
 	// exec thunk's P_FINISH, which writes through the FFrame& in RDX.
 	uintptr_t GetOriginalPtr();
+
+	// Drops every callback that lives in `module` (a plugin being unloaded).
+	void ForgetModule(HMODULE module);
 }

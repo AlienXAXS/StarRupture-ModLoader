@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "mass_spawner_activate.h"
 #include "logging/logger.h"
+#include "plugins/plugin_guard.h"
 #include "memory_scanner/scanner.h"
 #include "../scan_patterns.h"
 #include "utils/mem_utils.h"
@@ -34,7 +35,8 @@ namespace Hooks::MassSpawnerActivate
 					continue;
 				try
 				{
-					if (g_beforeCallbacks[i](thisPtr, bDisableAggroLock))
+					if (bool cancel = false; PluginGuard::InvokeInto(&cancel, g_beforeCallbacks[i], "spawner-activate callback",
+				                                                  thisPtr, bDisableAggroLock) && cancel)
 					{
 						ModLoaderLogger::LogInfo(L"[MassSpawnerActivate] Before callback #%zu cancelled activation",
 						                         i + 1);
@@ -76,7 +78,7 @@ namespace Hooks::MassSpawnerActivate
 					continue;
 				try
 				{
-					g_afterCallbacks[i](thisPtr, bDisableAggroLock);
+					PluginGuard::Invoke(g_afterCallbacks[i], "spawner-activate callback", thisPtr, bDisableAggroLock);
 				}
 				catch (const std::exception& e)
 				{
@@ -216,5 +218,15 @@ namespace Hooks::MassSpawnerActivate
 	uintptr_t GetOriginalPtr()
 	{
 		return reinterpret_cast<uintptr_t>(g_original);
+	}
+
+	// Drops every callback that lives in `module`: a plugin being unloaded,
+	// whatever it did not unregister itself. Game thread, before FreeLibrary.
+	void ForgetModule(HMODULE module)
+	{
+		const size_t dropped = PluginGuard::ForgetModule(g_beforeCallbacks, module)
+		                      + PluginGuard::ForgetModule(g_afterCallbacks, module);
+		if (dropped)
+			ModLoaderLogger::LogDebug(L"[MassSpawnerActivate] Dropped %zu callback(s) of an unloading plugin", dropped);
 	}
 }

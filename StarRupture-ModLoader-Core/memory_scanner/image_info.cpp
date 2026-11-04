@@ -93,6 +93,7 @@ namespace Scanner
 		info.valid = true;
 		info.base  = base;
 		info.size  = nt->OptionalHeader.SizeOfImage;
+		info.stamp = nt->FileHeader.TimeDateStamp;
 		return info;
 	}
 

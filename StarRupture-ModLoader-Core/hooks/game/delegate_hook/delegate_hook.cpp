@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "delegate_hook.h"
 #include "logging/logger.h"
+#include "plugins/plugin_guard.h"
 #include "hooks/hooks_common.h"
 #include "hooks/memory/engine_allocator.h"
 #include "hooks/game/gobject_walk/gobject_walk.h"
@@ -475,11 +476,13 @@ namespace Hooks::DelegateHook
 
 			DelegateCallback cb = nullptr;
 			void* userContext = nullptr;
+			bool live = false;
 			{
 				std::lock_guard<std::mutex> lock(g_hooksMutex);
 				auto it = g_hooks.find(handle);
 				if (it != g_hooks.end())
 				{
+					live = true;
 					cb = it->second.callback;
 					userContext = it->second.userContext;
 				}
@@ -487,6 +490,8 @@ namespace Hooks::DelegateHook
 
 			if (!cb)
 			{
+				if (live)
+					return;   // its plugin was unloaded (ForgetModule): stays spliced, calls nothing
 				ModLoaderLogger::LogWarn(
 					L"[DelegateHook] DispatchClonedExecFunction: context=%p handle=%llu matched no live hook (stale tls_pendingHandle or already unhooked?)",
 					context, static_cast<unsigned long long>(handle));
@@ -499,7 +504,7 @@ namespace Hooks::DelegateHook
 
 			try
 			{
-				cb(userContext);
+				PluginGuard::Invoke(cb, "delegate callback", userContext);
 			}
 			catch (const std::exception& e)
 			{
@@ -649,5 +654,27 @@ namespace Hooks::DelegateHook
 	{
 		std::lock_guard<std::mutex> lock(g_hooksMutex);
 		return g_hooks.find(handle) != g_hooks.end();
+	}
+
+	// A plugin being unloaded that did not Unhook: its callback is cleared but
+	// the splice stays, so nothing here touches engine state (this also runs at
+	// process exit). The delegate goes on firing the clone, which calls nothing.
+	void ForgetModule(HMODULE module)
+	{
+		if (!module) return;
+		size_t dropped = 0;
+		std::lock_guard<std::mutex> lock(g_hooksMutex);
+		for (auto& kv : g_hooks)
+		{
+			ActiveHook& h = kv.second;
+			if (h.callback && PluginGuard::ModuleOf(reinterpret_cast<const void*>(h.callback)) == module)
+			{
+				h.callback    = nullptr;
+				h.userContext = nullptr;
+				++dropped;
+			}
+		}
+		if (dropped)
+			ModLoaderLogger::LogDebug(L"[DelegateHook] Dropped %zu callback(s) of an unloading plugin", dropped);
 	}
 }

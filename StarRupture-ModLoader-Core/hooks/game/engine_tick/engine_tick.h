@@ -53,4 +53,7 @@ namespace Hooks::EngineTick
 	// Returns the trampoline address of the original UGameEngine::Tick, or 0 if not yet installed.
 	// Cast to: void(__fastcall*)(void* thisPtr, float deltaSeconds, bool bIdleMode)
 	uintptr_t GetOriginalPtr();
+
+	// Drops every callback that lives in `module` (a plugin being unloaded).
+	void ForgetModule(HMODULE module);
 }

@@ -1,4 +1,5 @@
 #include "pch.h"
+#include "core/sdk_globals.h"
 #include "console_command.h"
 
 #ifdef MODLOADER_CLIENT_BUILD
@@ -90,7 +91,7 @@ namespace Hooks::ConsoleCommand
         if (!Resolve())
             return false;
 
-        SDK::UWorld* world = SDK::UWorld::GetWorld();
+        SDK::UWorld* world = SdkGlobals::GetWorld();
         if (!world)
         {
             ModLoaderLogger::LogWarn(L"[ConsoleCommand] No UWorld -- cannot execute");

@@ -6,6 +6,7 @@
 #include "../logging/logger.h"
 #include "../config/config_manager.h"
 #include "../plugins/plugin_manager.h"
+#include "../plugins/plugin_watchdog.h"
 #include "../network_channel/network_channel.h"
 #include "../console/server_console.h"
 #include "../hooks/game/engine_shutdown/engine_shutdown.h"
@@ -79,6 +80,8 @@ void ShutdownAll()
 #ifdef MODLOADER_CLIENT_BUILD
     ShutdownClientUI();
 #endif
+
+    PluginWatchdog::Stop();
 
     PluginManager::ShutdownPluginManager();
     ModLoaderLogger::ShutdownConfigManager();

@@ -134,4 +134,7 @@ namespace Hooks::DelegateHook
 
 	// True if handle currently has an active hook installed via this module.
 	bool IsHooked(HookHandle handle);
+
+	// Clears every hook callback that lives in `module` (a plugin being unloaded).
+	void ForgetModule(HMODULE module);
 }

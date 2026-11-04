@@ -1,6 +1,7 @@
 #include "hooks_interface.h"
 #include "hooks_common.h"
 #include "logging/logger.h"
+#include "plugins/plugin_guard.h"
 #include "network_channel/network_channel.h"
 #include "hooks/memory/engine_allocator.h"
 #include "utils/game_thread_dispatch.h"
@@ -22,9 +23,11 @@
 #include "hooks/game/mass_do_spawning/mass_do_spawning.h"
 #include "console/plugin_console.h"
 #include "plugins/pak_registry.h"
+#include "plugins/reload_policy.h"
 #include "memory_scanner/scanner.h"
 #include "hooks/game/scan_patterns.h"
 #include "hooks/game/ufunction_resolve.h"
+#include "core/sdk_globals.h"
 #ifdef MODLOADER_SERVER_BUILD
 #include "hooks/http/http_server_hook.h"
 #endif
@@ -39,6 +42,7 @@
 #include "hooks/game/hud_post_render/hud_post_render.h"
 #include "hooks/game/debug_draw/debug_draw.h"
 #include "hooks/game/game_menu/game_menu_registry.h"
+#include "core/client_ui.h"
 #endif
 #if defined(MODLOADER_SERVER_BUILD) || defined(MODLOADER_CLIENT_BUILD)
 #include "hooks/game/session_info/session_info.h"
@@ -397,6 +401,24 @@ namespace ModLoaderLogger
 	static uintptr_t HooksGetLoadPackageAddress()                { return Hooks::ObjectLookup::GetLoadPackageAddress(); }
 	static uintptr_t HooksGetAssetDataFastGetAssetAddress()      { return Hooks::ObjectLookup::GetFAssetData_FastGetAssetAddress(); }
 
+	// v72. Only a call that gets the globals is counted: off the SDK's own
+	// build, a plugin that has not taken them reads its own offsets and is not
+	// admitted.
+	static thread_local unsigned t_sdkGlobalsCalls = 0;
+	static const PluginSdkGlobals* HooksGetSdkGlobals()
+	{
+		const PluginSdkGlobals* globals = SdkGlobals::ForPlugins();
+		if (globals)
+			++t_sdkGlobalsCalls;
+		return globals;
+	}
+	unsigned SdkGlobalsCallsOnThisThread()                        { return t_sdkGlobalsCalls; }
+
+	static bool HooksIsGameThread()                               { return GameThreadDispatch::IsGameThread(); }
+
+	// v73. Any thread: ReloadPolicy keeps the reasons under a lock of their own.
+	static void HooksSetBusyReason(const IPluginSelf* self, const char* reason) { ReloadPolicy::SetBusyReason(self, reason); }
+
 	// --- Text utilities ---
 
 	static uintptr_t TextAsLocalizableAdvanced()
@@ -434,7 +456,10 @@ namespace ModLoaderLogger
 	static void HooksPostToGameThread(PluginGameThreadCallback fn, void* context)
 	{
 		if (!fn) return;
-		GameThreadDispatch::PostVoid([fn, context]() { fn(context); });
+		// Tagged with the plugin's module, so an unload or reload drops the
+		// task before it can run with a context the old instance owned.
+		GameThreadDispatch::PostVoid([fn, context]() { PluginGuard::Invoke(fn, "game-thread task", context); },
+		                             PluginGuard::ModuleOf(reinterpret_cast<const void*>(fn)));
 	}
 
 	static void HooksRegisterActorBeginPlayCallback(void (*callback)(void*))
@@ -752,7 +777,10 @@ namespace ModLoaderLogger
 		HooksGetFindPackageAddress,                // v36
 		HooksGetPackageFullyLoadAddress,           // v36
 		HooksGetLoadPackageAddress,                // v36
-		HooksGetAssetDataFastGetAssetAddress       // v36
+		HooksGetAssetDataFastGetAssetAddress,      // v36
+		HooksGetSdkGlobals,                        // v72
+		HooksIsGameThread,                         // v72
+		HooksSetBusyReason                         // v73
 	};
 
 	static IPluginWorldEvents g_worldEvents = {
@@ -1145,7 +1173,8 @@ namespace ModLoaderLogger
 		HooksRegisterKeybindCombo,    // v28: advanced — enum + mods, callback receives mods
 		HooksUnregisterKeybindCombo,  // v28
 		Hooks::MouseWheel::Register,  // v70
-		Hooks::MouseWheel::Unregister // v70
+		Hooks::MouseWheel::Unregister, // v70
+		Hooks::Input::IsKeyHeld        // v72
 	};
 
 	// --- UI sub-interface wrappers (v15, client only) ---
@@ -1239,7 +1268,12 @@ namespace ModLoaderLogger
 		UI::PluginPanelRegistry::ReleaseInputPassthrough(token);
 	}
 
-	// UI sub-interface struct (v16, extended v43/v51)
+	static bool HooksIsOverlayOpen()
+	{
+		return ShouldCaptureInputNow();
+	}
+
+	// UI sub-interface struct (v16, extended v43/v51/v71)
 	static IPluginUIEvents g_uiEvents = {
 		HooksRegisterPanel,
 		HooksUnregisterPanel,
@@ -1255,7 +1289,8 @@ namespace ModLoaderLogger
 		HooksAcquireInputCapture,           // v43
 		HooksReleaseInputCapture,           // v43
 		HooksAcquireInputPassthrough,       // v51
-		HooksReleaseInputPassthrough        // v51
+		HooksReleaseInputPassthrough,       // v51
+		HooksIsOverlayOpen                  // v71
 	};
 
 	// --- HUD sub-interface wrappers (v16, client only) ---
@@ -1889,5 +1924,33 @@ namespace ModLoaderLogger
 			g_pluginHooks.ImGuiTextures = UI::ImGuiBackend::GetTextureAPI();
 #endif
 		return &g_pluginHooks;
+	}
+
+	void ForgetPluginCallbacks(HMODULE module)
+	{
+		if (!module) return;
+		Hooks::WorldBeginPlay::ForgetModule(module);
+		Hooks::WorldEndPlay::ForgetModule(module);
+		Hooks::EngineInit::ForgetModule(module);
+		Hooks::EngineShutdown::ForgetModule(module);
+		Hooks::SaveLoaded::ForgetModule(module);
+		Hooks::ExperienceLoadComplete::ForgetModule(module);
+		Hooks::EngineTick::ForgetModule(module);
+		Hooks::ActorBeginPlay::ForgetModule(module);
+		Hooks::CraftingFinished::ForgetModule(module);
+		Hooks::PlayerJoined::ForgetModule(module);
+		Hooks::PlayerLeft::ForgetModule(module);
+		Hooks::MassSpawnerActivate::ForgetModule(module);
+		Hooks::MassSpawnerDeactivate::ForgetModule(module);
+		Hooks::MassDoSpawning::ForgetModule(module);
+		Hooks::DelegateHook::ForgetModule(module);
+		NetworkChannel::ForgetModule(module);
+#ifdef MODLOADER_SERVER_BUILD
+		Hooks::HttpServer::ForgetModule(module);
+#endif
+#ifdef MODLOADER_CLIENT_BUILD
+		Hooks::HUDPostRender::ForgetModule(module);
+		Hooks::Input::ForgetModule(module);
+#endif
 	}
 }

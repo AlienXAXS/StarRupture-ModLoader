@@ -47,4 +47,7 @@ namespace Hooks::WorldEndPlay
 	// Returns the trampoline address of the original UWorld::EndPlay, or 0 if not yet installed.
 	// Cast to: void(__fastcall*)(void* worldThis)
 	uintptr_t GetOriginalPtr();
+
+	// Drops every callback that lives in `module` (a plugin being unloaded).
+	void ForgetModule(HMODULE module);
 }

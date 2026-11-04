@@ -1,4 +1,5 @@
 #include "pch.h"
+#include "core/sdk_globals.h"
 #include "debug_draw.h"
 
 #ifdef MODLOADER_CLIENT_BUILD
@@ -80,10 +81,7 @@ namespace Hooks::DebugDraw
     {
         __try
         {
-            SDK::UWorld* world = SDK::UWorld::GetWorld();
-            if (!world)
-                return nullptr;
-            return world->LineBatchers[index];
+            return SdkGlobals::WorldLineBatcher(SdkGlobals::GetWorld(), index);
         }
         __except (EXCEPTION_EXECUTE_HANDLER)
         {
@@ -793,7 +791,7 @@ namespace Hooks::DebugDraw
     {
         __try
         {
-            SDK::UWorld* world = SDK::UWorld::GetWorld();
+            SDK::UWorld* world = SdkGlobals::GetWorld();
             if (!world)
                 return TextResult::NoWorld;
 
@@ -903,7 +901,7 @@ namespace Hooks::DebugDraw
     {
         __try
         {
-            SDK::UWorld* world = SDK::UWorld::GetWorld();
+            SDK::UWorld* world = SdkGlobals::GetWorld();
             if (!world)
                 return;
 
@@ -1070,7 +1068,7 @@ namespace Hooks::DebugDraw
     {
         __try
         {
-            SDK::UWorld* world = SDK::UWorld::GetWorld();
+            SDK::UWorld* world = SdkGlobals::GetWorld();
             if (!world)
                 return false;
 

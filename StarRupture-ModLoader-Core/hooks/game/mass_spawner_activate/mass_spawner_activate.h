@@ -26,4 +26,7 @@ namespace Hooks::MassSpawnerActivate
 	// or 0 if not yet installed.
 	// Cast to: void(__fastcall*)(void* thisPtr, bool bDisableAggroLock)
 	uintptr_t GetOriginalPtr();
+
+	// Drops every callback that lives in `module` (a plugin being unloaded).
+	void ForgetModule(HMODULE module);
 }

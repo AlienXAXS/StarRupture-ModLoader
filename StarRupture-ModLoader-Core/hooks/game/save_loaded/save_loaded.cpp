@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "save_loaded.h"
 #include "logging/logger.h"
+#include "plugins/plugin_guard.h"
 #include "memory_scanner/scanner.h"
 #include "../ufunction_resolve.h"
 #include "../scan_patterns.h"
@@ -77,7 +78,7 @@ namespace Hooks::SaveLoaded
 
 				try
 				{
-					g_pluginCallbacks[i]();
+					PluginGuard::Invoke(g_pluginCallbacks[i], "save-loaded callback");
 				}
 				catch (const std::exception& e)
 				{
@@ -172,5 +173,14 @@ namespace Hooks::SaveLoaded
 	uintptr_t GetOriginalPtr()
 	{
 		return reinterpret_cast<uintptr_t>(g_original);
+	}
+
+	// Drops every callback that lives in `module`: a plugin being unloaded,
+	// whatever it did not unregister itself. Game thread, before FreeLibrary.
+	void ForgetModule(HMODULE module)
+	{
+		const size_t dropped = PluginGuard::ForgetModule(g_pluginCallbacks, module);
+		if (dropped)
+			ModLoaderLogger::LogDebug(L"[SaveLoaded] Dropped %zu callback(s) of an unloading plugin", dropped);
 	}
 }

@@ -31,6 +31,7 @@ namespace Scanner
 		bool      valid = false;
 		uintptr_t base  = 0;
 		size_t    size  = 0;   // SizeOfImage
+		uint32_t  stamp = 0;   // FileHeader.TimeDateStamp
 	};
 
 	// Validates the DOS/NT headers before reporting anything. An invalid image

@@ -40,4 +40,7 @@ namespace Hooks::EngineShutdown
 	// Returns the trampoline address of the original UEngine::PreExit, or 0 if not installed.
 	// Cast to: void(__fastcall*)(void* thisPtr)
 	uintptr_t GetOriginalPtrEnginePreExit();
+
+	// Drops every callback that lives in `module` (a plugin being unloaded).
+	void ForgetModule(HMODULE module);
 }

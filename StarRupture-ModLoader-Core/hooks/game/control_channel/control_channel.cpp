@@ -21,11 +21,12 @@ namespace Hooks::ControlChannel
     static constexpr size_t kOff_BitNum       = 0xA0;  // int64: bits written / total
     static constexpr size_t kOff_ReaderPos    = 0xA8;  // int64: reader bit cursor
     static constexpr uint8_t kErrorBit        = 0x02;
-    // UChannel:
-    static constexpr size_t kOff_ChannelConnection = 0x28; // UNetConnection*
+    // UChannel and UNetConnection are reflected, so these come from the SDK
+    // and the startup layout check covers them:
+    static constexpr size_t kOff_ChannelConnection = offsetof(SDK::UChannel, Connection);         // UNetConnection*
     // UNetConnection::OpenChannels TArray<UChannel*>:
-    static constexpr size_t kOff_OpenChannelsData = 0x70;  // UChannel**
-    static constexpr size_t kOff_OpenChannelsNum  = 0x78;  // int32
+    static constexpr size_t kOff_OpenChannelsData = offsetof(SDK::UNetConnection, OpenChannels);  // UChannel**
+    static constexpr size_t kOff_OpenChannelsNum  = kOff_OpenChannelsData + sizeof(void*);       // int32, after Data
     // UObject::ClassPrivate:
     static constexpr size_t kOff_UObjectClass     = 0x10;  // UClass*
 

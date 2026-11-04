@@ -1,4 +1,5 @@
 #include "pch.h"
+#include "core/sdk_globals.h"
 #include "engine_exec.h"
 
 #include "logging/logger.h"
@@ -184,7 +185,7 @@ namespace Hooks::EngineExec
 
         // The world may legitimately be null before a map is up; most console
         // objects do not need one and the engine tolerates it.
-        SDK::UWorld* world = SDK::UWorld::GetWorld();
+        SDK::UWorld* world = SdkGlobals::GetWorld();
 
         const auto base = reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
         ModLoaderLogger::LogTrace(L"[EngineExec] GEngine=0x%llX (%s), world=0x%llX (%s), "

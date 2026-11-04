@@ -1,6 +1,8 @@
 #include "memory_scanner/hook_scanner_interface.h"
 #include "memory_scanner/scanner.h"
 #include "memory_scanner/scan_validation.h"
+#include "memory_scanner/version_map.h"
+#include "logging/logger.h"
 #include "plugins/plugin_hook_report.h"
 
 #include <cstddef>
@@ -38,16 +40,12 @@ namespace ModLoaderLogger
 		// refuses the plugin (see plugin_hook_report.h). What the label buys is
 		// a readable report -- it says which addresses the author expected to be
 		// able to lose.
-		uintptr_t RunAndRecord(const IPluginSelf* self, const ScanValidation::Request& request, bool required)
+		uintptr_t RecordResult(const IPluginSelf* self, const ScanValidation::Request& request,
+			const ScanValidation::Result& result, bool required)
 		{
-			if (!InSession(self))
-				return 0;
-
-			const ScanValidation::Result result = ScanValidation::Resolve(request);
-
 			if (result.Succeeded())
 			{
-				PluginHookReport::RecordResolved(self);
+				PluginHookReport::RecordResolved(self, request.name.c_str());
 				return result.address;
 			}
 
@@ -73,6 +71,13 @@ namespace ModLoaderLogger
 			return 0;
 		}
 
+		uintptr_t RunAndRecord(const IPluginSelf* self, const ScanValidation::Request& request, bool required)
+		{
+			if (!InSession(self))
+				return 0;
+			return RecordResult(self, request, ScanValidation::Resolve(request), required);
+		}
+
 		// Shared body of the four legacy single-pattern resolves.
 		//
 		// These predate scan kinds, so they scan with Kind::Any: uniqueness is
@@ -90,7 +95,8 @@ namespace ModLoaderLogger
 			if (!hookName || !hookName[0] || !pattern || !pattern[0])
 			{
 				PluginHookReport::RecordFailure(self, hookName ? hookName : "(unnamed)",
-					"ResolveRequired/ResolveOptional called with an empty name or pattern", required);
+					"ResolveRequired/ResolveOptional called with an empty name or pattern", required,
+					PluginHookReport::Cause::Request);
 				return 0;
 			}
 
@@ -112,7 +118,8 @@ namespace ModLoaderLogger
 			if (!hookName || !hookName[0] || !patterns || patternCount <= 0)
 			{
 				PluginHookReport::RecordFailure(self, hookName ? hookName : "(unnamed)",
-					"ResolveUnique called with an empty name or no patterns", required);
+					"ResolveUnique called with an empty name or no patterns", required,
+					PluginHookReport::Cause::Request);
 				return 0;
 			}
 
@@ -136,7 +143,7 @@ namespace ModLoaderLogger
 				{
 					if (outPatternIndex)
 						*outPatternIndex = i;
-					PluginHookReport::RecordResolved(self);
+					PluginHookReport::RecordResolved(self, hookName);
 					return result.address;
 				}
 
@@ -201,6 +208,9 @@ namespace ModLoaderLogger
 			}
 		}
 
+		// A map carries a few builds per key; anything near this is not a map.
+		constexpr uint32_t kMaxCandidates = 64;
+
 		// v68. The request is read only as far as the plugin's own structSize,
 		// so a field appended to PluginScanRequest later costs a plugin built
 		// against this header nothing -- it simply keeps the default.
@@ -216,7 +226,7 @@ namespace ModLoaderLogger
 			if (!request)
 			{
 				PluginHookReport::RecordFailure(self, "(unnamed)",
-					"Resolve called with a null request", true);
+					"Resolve called with a null request", true, PluginHookReport::Cause::Request);
 				return 0;
 			}
 
@@ -230,7 +240,7 @@ namespace ModLoaderLogger
 			{
 				PluginHookReport::RecordFailure(self, "(unnamed)",
 					"Resolve called with an uninitialised PluginScanRequest (structSize too small). "
-					"Initialise it with PLUGIN_SCAN_REQUEST_INIT.", true);
+					"Initialise it with PLUGIN_SCAN_REQUEST_INIT.", true, PluginHookReport::Cause::Request);
 				return 0;
 			}
 
@@ -238,16 +248,22 @@ namespace ModLoaderLogger
 
 			const bool required = (local.flags & PLUGIN_SCAN_FLAG_OPTIONAL) == 0;
 
-			if (!local.hookName || !local.hookName[0] || !local.pattern || !local.pattern[0])
+			// v72. With PLUGIN_SCAN_FLAG_MAP_KEY, hookName is a key in the loader's
+			// version map, and pattern and candidates are the plugin's own, each
+			// optional (VersionMap::ResolveMapKey).
+			const bool mapKey     = (local.flags & PLUGIN_SCAN_FLAG_MAP_KEY) != 0;
+			const bool hasPattern = local.pattern && local.pattern[0];
+			if (!local.hookName || !local.hookName[0] || (!hasPattern && !mapKey))
 			{
 				PluginHookReport::RecordFailure(self, local.hookName ? local.hookName : "(unnamed)",
-					"Resolve called with an empty hookName or pattern", required);
+					"Resolve called with an empty hookName or pattern", required,
+					PluginHookReport::Cause::Request);
 				return 0;
 			}
 
 			ScanValidation::Request validation;
 			validation.name         = local.hookName;
-			validation.pattern      = local.pattern;
+			validation.pattern      = hasPattern ? local.pattern : "";
 			validation.kind         = ToValidationKind(local.kind);
 			validation.module       = local.module;
 			validation.resultOffset = local.resultOffset;
@@ -255,7 +271,51 @@ namespace ModLoaderLogger
 			validation.followRel32At =
 				(local.flags & PLUGIN_SCAN_FLAG_FOLLOW_REL32) ? local.followRel32At : -1;
 
-			return RunAndRecord(self, validation, required);
+			const uint32_t rowCount = local.candidates ? local.candidateCount : 0;
+			if (!mapKey && rowCount == 0)
+				return RunAndRecord(self, validation, required);
+
+			// v72: locators for other game builds. The loader picks the one for
+			// this build (memory_scanner/version_map.h); kind and the rest of the
+			// request stay what the plugin was built with.
+			if (local.module && local.module != GetModuleHandleW(nullptr))
+			{
+				PluginHookReport::RecordFailure(self, local.hookName, mapKey
+					? "Resolve called with a map key for a module other than the game exe; the map is for the game exe only"
+					: "Resolve called with candidates for a module other than the game exe; "
+					  "locators are for the game exe only", required, PluginHookReport::Cause::Request);
+				return 0;
+			}
+			if (rowCount > kMaxCandidates)
+			{
+				PluginHookReport::RecordFailure(self, local.hookName,
+					("Resolve called with " + std::to_string(local.candidateCount) + " candidates; at most "
+					 + std::to_string(kMaxCandidates) + " are read").c_str(), required,
+					PluginHookReport::Cause::Request);
+				return 0;
+			}
+
+			std::vector<VersionMap::Candidate> candidates;
+			candidates.reserve(rowCount);
+			for (uint32_t i = 0; i < rowCount; ++i)
+			{
+				const PluginScanCandidate& c = local.candidates[i];
+				VersionMap::Candidate v;
+				v.gameCL        = c.gameCL;
+				v.imageStamp    = c.imageStamp;
+				v.imageSize     = c.imageSize;
+				v.pattern       = c.pattern ? c.pattern : "";
+				v.resultOffset  = c.resultOffset;
+				v.followRel32At = (c.flags & PLUGIN_SCAN_FLAG_FOLLOW_REL32) ? c.followRel32At : -1;
+				v.rva           = c.rva;
+				candidates.push_back(std::move(v));
+			}
+
+			const ScanValidation::Result result = mapKey
+				? VersionMap::ResolveMapKey(self->name, validation, candidates, VersionMap::RunningExe(),
+					PluginHookReport::SessionNameShared(self))
+				: VersionMap::Select(self->name, validation, candidates, VersionMap::RunningExe());
+			return RecordResult(self, validation, result, required);
 		}
 
 		int CopyAddresses(const std::vector<uintptr_t>& results, uintptr_t* out, int maxResults)
@@ -322,7 +382,7 @@ namespace ModLoaderLogger
 
 		void HookReportFailure(const IPluginSelf* self, const char* hookName, const char* detail)
 		{
-			PluginHookReport::RecordFailure(self, hookName, detail, true);
+			PluginHookReport::RecordFailure(self, hookName, detail, true, PluginHookReport::Cause::Plugin);
 		}
 
 		// Same verdict as ReportFailure -- the only difference is the label the
@@ -330,12 +390,106 @@ namespace ModLoaderLogger
 		// tell the loader about does not get to also keep loading.
 		void HookReportWarning(const IPluginSelf* self, const char* hookName, const char* detail)
 		{
-			PluginHookReport::RecordFailure(self, hookName, detail, false);
+			PluginHookReport::RecordFailure(self, hookName, detail, false, PluginHookReport::Cause::Plugin);
 		}
 
 		bool HookHasFailures(const IPluginSelf* self)
 		{
 			return PluginHookReport::SessionHasFailures(self);
+		}
+
+		// v72. Reads the request no further than the plugin's structSize, as
+		// Resolve does, and records any failure like a missed pattern.
+		bool HookResolveField(const IPluginSelf* self, const PluginFieldRequest* request, PluginFieldResult* result)
+		{
+			if (!InSession(self))
+				return false;
+
+			PluginFieldRequest local = PLUGIN_FIELD_REQUEST_INIT;
+			if (request && request->structSize >= offsetof(PluginFieldRequest, className))
+				memcpy(&local, request, request->structSize < sizeof(local) ? request->structSize : sizeof(local));
+			const char* key = local.key && local.key[0] ? local.key : "(unnamed)";
+
+			if (!request || !result || request->structSize < sizeof(PluginFieldRequest) || !local.key || !local.key[0]
+				|| !local.className || !local.className[0] || (local.candidateCount && !local.candidates)
+				|| local.candidateCount > kMaxCandidates)
+			{
+				PluginHookReport::RecordFailure(self, key, "bad field request", true, PluginHookReport::Cause::Request);
+				return false;
+			}
+
+			VersionMap::FieldRequest field;
+			field.key         = local.key;
+			field.className   = local.className;
+			field.member      = local.member ? local.member : "";
+			field.flags       = local.flags;
+			field.size        = local.size;
+			field.builtCL     = local.builtCL;
+			field.builtOffset = local.builtOffset;
+			for (uint32_t i = 0; i < local.candidateCount; ++i)
+			{
+				const PluginFieldCandidate& c = local.candidates[i];
+				field.candidates.push_back(VersionMap::FieldCandidate{ c.gameCL, c.offset, c.size, c.boolMask,
+					c.member ? c.member : "" });
+			}
+
+			VersionMap::FieldValue value;
+			std::string error;
+			if (!VersionMap::SelectField(self->name, field, VersionMap::RunningExe(), value, error))
+			{
+				PluginHookReport::RecordFailure(self, key, error.c_str(), true);
+				return false;
+			}
+			PluginHookReport::RecordFieldResolved(self, key);
+			result->offset   = value.offset;
+			result->size     = value.size;
+			result->boolMask = value.boolMask;
+			return true;
+		}
+
+		// v72. Read as far as the plugin's own structSize, as the requests are.
+		// A malformed description declares nothing, so the keys it listed stay
+		// core and a miss on one still refuses the plugin.
+		bool HookDeclareFeature(const IPluginSelf* self, const PluginFeatureDesc* desc)
+		{
+			if (!InSession(self))
+				return false;
+
+			constexpr size_t kMinSize = offsetof(PluginFeatureDesc, configKeys);
+			if (!desc || desc->structSize < kMinSize)
+				return false;
+
+			PluginFeatureDesc local = PLUGIN_FEATURE_DESC_INIT;
+			memcpy(&local, desc, desc->structSize < sizeof(local) ? desc->structSize : sizeof(local));
+
+			// A map holds a few dozen keys per feature; anything near this is not a feature.
+			constexpr uint32_t kMaxKeys = 256;
+			if (!local.id || !local.id[0] || !local.title || !local.title[0]
+				|| !local.keys || local.keyCount == 0 || local.keyCount > kMaxKeys
+				|| (local.configKeyCount && !local.configKeys) || local.configKeyCount > kMaxKeys)
+			{
+				ModLoaderLogger::LogWarn(L"[Map] %S: DeclareFeature(%S) refused: bad description",
+					self->name ? self->name : "?", local.id ? local.id : "(no id)");
+				return false;
+			}
+
+			std::vector<std::string> keys;
+			for (uint32_t i = 0; i < local.keyCount; ++i)
+			{
+				if (!local.keys[i] || !local.keys[i][0])
+				{
+					ModLoaderLogger::LogWarn(L"[Map] %S: DeclareFeature(%S) refused: an empty key",
+						self->name ? self->name : "?", local.id);
+					return false;
+				}
+				keys.push_back(local.keys[i]);
+			}
+			std::vector<std::string> configKeys;
+			for (uint32_t i = 0; i < local.configKeyCount; ++i)
+				if (local.configKeys[i] && local.configKeys[i][0])
+					configKeys.push_back(local.configKeys[i]);
+
+			return PluginHookReport::DeclareFeature(self, local.id, local.title, keys, configKeys, local.enabled);
 		}
 
 		IPluginHookScanner g_hookScanner = {
@@ -353,7 +507,9 @@ namespace ModLoaderLogger
 			HookReportFailure,
 			HookReportWarning,
 			HookHasFailures,
-			HookResolve
+			HookResolve,
+			HookResolveField,
+			HookDeclareFeature
 		};
 	}
 

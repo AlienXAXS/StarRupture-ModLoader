@@ -11,7 +11,7 @@ namespace SDK
 }
 
 // ---------------------------------------------------------------------------
-// UCrSessionWorldLoaderSubsystem::OnWorldBeginPlay Hook
+// UWorld::BeginPlay Hook
 // ---------------------------------------------------------------------------
 
 namespace Hooks::WorldBeginPlay
@@ -50,4 +50,7 @@ namespace Hooks::WorldBeginPlay
 	// Returns the trampoline address of the original UCrSessionWorldLoaderSubsystem::OnWorldBeginPlay, or 0 if not yet installed.
 	// Cast to: void(__fastcall*)(void* subsystemThis)
 	uintptr_t GetOriginalPtr();
+
+	// Drops every callback that lives in `module` (a plugin being unloaded).
+	void ForgetModule(HMODULE module);
 }

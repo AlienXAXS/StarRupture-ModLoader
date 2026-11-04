@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "mass_do_spawning.h"
 #include "logging/logger.h"
+#include "plugins/plugin_guard.h"
 #include "memory_scanner/scanner.h"
 #include "../scan_patterns.h"
 #include <vector>
@@ -31,7 +32,7 @@ namespace Hooks::MassDoSpawning
 					continue;
 				try
 				{
-					if (g_beforeCallbacks[i](thisPtr))
+					if (bool cancel = false; PluginGuard::InvokeInto(&cancel, g_beforeCallbacks[i], "spawning callback", thisPtr) && cancel)
 					{
 						ModLoaderLogger::LogInfo(L"[MassDoSpawning] Before callback #%zu cancelled spawn batch", i + 1);
 						cancelled = true;
@@ -71,7 +72,7 @@ namespace Hooks::MassDoSpawning
 					continue;
 				try
 				{
-					g_afterCallbacks[i](thisPtr);
+					PluginGuard::Invoke(g_afterCallbacks[i], "spawning callback", thisPtr);
 				}
 				catch (const std::exception& e)
 				{
@@ -185,5 +186,15 @@ namespace Hooks::MassDoSpawning
 	uintptr_t GetOriginalPtr()
 	{
 		return reinterpret_cast<uintptr_t>(g_original);
+	}
+
+	// Drops every callback that lives in `module`: a plugin being unloaded,
+	// whatever it did not unregister itself. Game thread, before FreeLibrary.
+	void ForgetModule(HMODULE module)
+	{
+		const size_t dropped = PluginGuard::ForgetModule(g_beforeCallbacks, module)
+		                      + PluginGuard::ForgetModule(g_afterCallbacks, module);
+		if (dropped)
+			ModLoaderLogger::LogDebug(L"[MassDoSpawning] Dropped %zu callback(s) of an unloading plugin", dropped);
 	}
 }
