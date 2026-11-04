@@ -677,6 +677,19 @@ static void UIStateForgetModule()
     ResetUI();
 }
 
+// The layout check found a class the menu-layer read uses changed.
+static void UIStateMenuReadDisabled()
+{
+    ResetUI();
+    UIState::Register(PLUGIN_UI_MAP, &OnUI, Tag(1));
+    CHECK(UIState::MenuReadWanted());
+    UIState::DisableMenuRead();
+    CHECK(!UIState::MenuReadWanted());
+    UIState::Register(PLUGIN_UI_INVENTORY, &OnUI, Tag(2));
+    CHECK(!UIState::MenuReadWanted());
+    ResetUI();
+}
+
 static void UIStateMenuReadDemand()
 {
     ResetUI();
@@ -805,6 +818,8 @@ int main()
     RunTest("UIState: menu read runs only on demand", UIStateMenuReadDemand);
     RunTest("UIState: menu bits stay set while a screen closes", UIStateMenuBits);
     RunTest("UIState: a throwing callback does not stop the rest", UIStateThrowingCallback);
+    // Last: DisableMenuRead lasts for the process.
+    RunTest("UIState: DisableMenuRead stops the menu read", UIStateMenuReadDisabled);
 
     printf("\n%d checks, %d failed\n", g_checks, g_failed);
     return g_failed == 0 ? 0 : 1;

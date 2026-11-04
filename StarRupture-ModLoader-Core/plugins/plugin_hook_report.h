@@ -196,8 +196,8 @@ namespace PluginHookReport
     // must.
     unsigned GetCommitSerial();
 
-#ifdef _DEBUG
-    // Add a fabricated report, for the F2 menu's test button. Debug builds only.
-    void InjectTestReport(const PluginReport& report);
-#endif
+    // Add a report that no scan session produced: the loader's own features
+    // the layout check switched off (plugin "ModLoader"), and the F2 menu's
+    // test button in debug builds. Opens the failure window like any other.
+    void AddReport(const PluginReport& report);
 }

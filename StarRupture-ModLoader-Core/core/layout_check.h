@@ -20,8 +20,13 @@ namespace VersionMap { struct LiveField; }
 // (SdkGlobals::ResolveFields) are not compared here: the version map checks
 // those (VersionMap::SelectField).
 //
-// On a mismatch the init thread switches plugins off (RequiresSafeOff) and
-// writes the compatibility report (compat_report.h).
+// Each class in the table is tagged with what reads its layout (its
+// consumers). On a mismatch Decide says what has to stop: a loader feature
+// when only that feature reads the class; all plugins (safe-off) when the
+// loader itself or every plugin reads it, or when nothing says who does.
+// Plugins that keep the game's layouts compiled in are refused whenever any
+// class changed (VersionMap::LayoutRefusal). The init thread acts on the
+// verdict and writes the compatibility report (compat_report.h).
 namespace LayoutCheck
 {
     // Called once from the init thread after FEngineLoop::Init has returned,
@@ -71,7 +76,14 @@ namespace LayoutCheck
         uint32_t              alignOf;  // 0: unknown; never compared for Kind::FunctionParams
         Kind                  kind;
         std::vector<TableRow> rows;
+        std::vector<std::string> consumers;  // what reads the layout (kConsumer*); empty = not known
     };
+
+    // Consumer ids (tools\Update-LayoutTable.ps1 tags the table with them).
+    inline constexpr const char* kConsumerCore      = "core";        // the loader's own code
+    inline constexpr const char* kConsumerPluginSdk = "plugin-sdk";  // compiled into every plugin
+    inline constexpr const char* kConsumerUiMenus   = "ui-menus";    // the menu-layer read only
+    inline constexpr const char* kConsumerKeys      = "keys";        // named only as a version-map or pattern key
 
     // Reads a generated table: ReadTable(SrLayoutTable::kNames,
     // SrLayoutTable::kClasses, SrLayoutTable::kRows).
@@ -90,6 +102,22 @@ namespace LayoutCheck
             for (uint32_t i = c.firstRow; i < c.firstRow + c.rowCount && i < RowCount; ++i)
                 out.rows.push_back(TableRow{ name(rows[i].name), rows[i].offset, rows[i].size, rows[i].boolMask });
         }
+        return table;
+    }
+
+    // A generated table with its consumer tags: ReadTable(..., SrLayoutTable::kConsumers,
+    // SrLayoutTable::kClassConsumers). A bit with no id gives "?", which no
+    // rule knows, so that class counts as not attributed.
+    template <class ClassT, size_t ClassCount, class RowT, size_t RowCount, size_t NameCount, size_t ConsumerCount>
+    std::vector<TableClass> ReadTable(const char* const (&names)[NameCount],
+        const ClassT (&classes)[ClassCount], const RowT (&rows)[RowCount],
+        const char* const (&consumers)[ConsumerCount], const uint32_t (&classConsumers)[ClassCount])
+    {
+        std::vector<TableClass> table = ReadTable(names, classes, rows);
+        for (size_t i = 0; i < ClassCount; ++i)
+            for (uint32_t bit = 0; bit < 32; ++bit)
+                if ((classConsumers[i] >> bit) & 1u)
+                    table[i].consumers.push_back(bit < ConsumerCount && consumers[bit] ? consumers[bit] : "?");
         return table;
     }
 
@@ -123,6 +151,15 @@ namespace LayoutCheck
         int32_t     game;       // the game's value
     };
 
+    // What a set of changes switches off.
+    struct Verdict
+    {
+        bool                     safeOff = false;  // every plugin off (see Decide)
+        std::vector<std::string> featuresOff;      // loader features to switch off (kConsumerUiMenus)
+        std::vector<std::string> changed;          // SDK names of the changed classes
+        std::vector<std::string> changedPaths;     // their table paths, in the same order
+    };
+
     struct Result
     {
         int classes    = 0;  // in the table
@@ -134,14 +171,24 @@ namespace LayoutCheck
         std::vector<std::string> changedClasses;  // SDK names of the mismatched and missing classes
         std::vector<std::string> lines;           // one per difference, ready to log
         std::vector<Change>      changes;         // the same differences, one each
+        Verdict                  verdict;         // Run: Decide's answer for these changes
     };
 
-    // A class the game no longer has, or one whose layout moved, means the SDK
-    // reads the wrong bytes there: plugins must not run.
-    inline bool RequiresSafeOff(const Result& result)
+    // A class the game no longer has, or one whose layout moved: the SDK reads
+    // the wrong bytes there.
+    inline bool FoundChanges(const Result& result)
     {
         return result.mismatched > 0 || result.missing > 0;
     }
+
+    // What the changes in `result` switch off, by the consumers `table` tags
+    // each changed class with:
+    //   ui-menus  that loader feature;
+    //   keys      nothing in the loader (plugins: VersionMap::LayoutRefusal);
+    //   core, plugin-sdk, an id not listed here, no id at all, or a class not
+    //   in the table: safe-off.
+    // A difference that names no changed class is safe-off too.
+    Verdict Decide(const std::vector<TableClass>& table, const Result& result);
 
     // Compares every table class with what `find` returns for it (nullptr:
     // not in the game). A size or alignment of 0 is not compared: in a

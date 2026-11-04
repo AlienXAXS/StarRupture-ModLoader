@@ -737,6 +737,9 @@
     <ClCompile Include="hooks\game\game_menu\game_menu.cpp">
       <Filter>Source Files\hooks\game\game_menu</Filter>
     </ClCompile>
+    <ClCompile Include="hooks\game\game_menu\menu_layer.cpp">
+      <Filter>Source Files\hooks\game\game_menu</Filter>
+    </ClCompile>
     <ClCompile Include="hooks\game\game_menu\game_menu_registry.cpp">
       <Filter>Source Files\hooks\game\game_menu</Filter>
     </ClCompile>

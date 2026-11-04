@@ -28,7 +28,9 @@
 #include "../hooks/game/version_map.generated.h"
 #include "compat_report.h"
 #include "../plugins/plugin_manager.h"
+#include "../plugins/plugin_hook_report.h"
 #include "../preload/preload_manager.h"
+#include "ui_state.h"
 #include "../hooks/game/engine_init/engine_init.h"
 #include "../utils/thread_utils.h"
 #include "../utils/pak_list.h"
@@ -72,6 +74,57 @@ static void EnterLayoutSafeOff(const LayoutCheck::Result& layout)
         SetEvent(g_pluginsReadyEvent);
     if (g_pluginsLoadedEvent)
         SetEvent(g_pluginsLoadedEvent);
+}
+
+// A layout mismatch that only some readers depend on (LayoutCheck::Decide):
+// the loader features that read a changed class switch off, and so does every
+// plugin that keeps the game's layouts compiled in. Preload plugins all do
+// (they have no way to take this build's layouts), and they are already
+// running, so they shut down here. Plugins that take every layout from the
+// version map still load; a request of theirs for a changed class's compiled
+// offset is refused (VersionMap::SelectField), which turns off only the
+// feature that asked for it.
+static void SwitchOffChangedLayoutUsers(const LayoutCheck::Result& layout)
+{
+    const LayoutCheck::Verdict& verdict = layout.verdict;
+    PreloadManager::Shutdown();
+    CompatReport::Write(layout);
+
+    std::vector<std::string> classNames;
+    for (size_t i = 0; i < verdict.changed.size(); ++i)
+    {
+        classNames.push_back(verdict.changed[i]);
+        const std::string& path = verdict.changedPaths[i];
+        const size_t dot = path.find('.');
+        if (dot != std::string::npos)
+            classNames.push_back("/Script/" + path.substr(0, dot) + "." + verdict.changed[i]);
+    }
+    VersionMap::SetLayoutChanges(classNames);
+
+    std::string changed;
+    for (const std::string& name : verdict.changed)
+        changed += (changed.empty() ? "" : ", ") + name;
+
+    const bool menusOff = std::find(verdict.featuresOff.begin(), verdict.featuresOff.end(),
+        LayoutCheck::kConsumerUiMenus) != verdict.featuresOff.end();
+    if (menusOff)
+    {
+        UIState::DisableMenuRead();
+
+        PluginHookReport::PluginReport report;
+        report.plugin   = "ModLoader";
+        report.file     = "StarRupture-ModLoader-Core.dll";
+        report.refused  = false;
+        report.resolved = 0;
+        report.featuresOff.push_back({ "ui-menus", "Menu state for plugins",
+            "This game build changed the layout of " + changed + ". Plugins that react to the map, inventory,"
+            " build menu or a station menu opening will not see it open.", {}, {} });
+        PluginHookReport::AddReport(report);
+    }
+
+    ModLoaderLogger::LogWarn(L"[init] Layout changed on this build (%S): %S; plugins that keep the game's layouts"
+        L" compiled in are not loaded", changed.c_str(),
+        menusOff ? "the menu state for plugins is switched off" : "no loader feature reads them");
 }
 #endif
 
@@ -327,7 +380,9 @@ DWORD WINAPI MainInitThreadProc(LPVOID)
     // game thread is parked in the engine-init hook until the plugins are up,
     // so it is not changing the reflection data. A failed hook install or a
     // timed-out wait leaves the game thread running, so the check is skipped.
-    // A mismatch switches plugins off and ends the boot here.
+    // A mismatch the loader or every plugin depends on, or one nothing says
+    // who reads, switches plugins off and ends the boot here; any other turns
+    // off only what reads the changed classes (SwitchOffChangedLayoutUsers).
     //
     // On a build other than the SDK's own, plugins run only on what was
     // checked: a check that could not run, or an SDK still on its built-in
@@ -338,10 +393,14 @@ DWORD WINAPI MainInitThreadProc(LPVOID)
         if (Hooks::EngineInit::IsEngineInitialized())
         {
             ran = LayoutCheck::Run(layout);
-            if (ran && LayoutCheck::RequiresSafeOff(layout))
+            if (ran && LayoutCheck::FoundChanges(layout))
             {
-                EnterLayoutSafeOff(layout);
-                return 0;
+                if (layout.verdict.safeOff)
+                {
+                    EnterLayoutSafeOff(layout);
+                    return 0;
+                }
+                SwitchOffChangedLayoutUsers(layout);
             }
         }
         else

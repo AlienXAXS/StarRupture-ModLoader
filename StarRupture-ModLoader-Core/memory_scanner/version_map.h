@@ -186,6 +186,19 @@ namespace VersionMap
 	// log and the plugin list.
 	std::string OffBuildRefusal(const Exe& running, int interfaceVersion, const PluginGameBuild& built, bool askedSdkGlobals);
 
+	// The classes the startup layout check found changed on this game build
+	// (core/layout_check.h), when it did not switch plugins off: each by its
+	// SDK name (ACrX) and as /Script/<Module>.<SDK name>. Set once, on the
+	// init thread, before any plugin loads.
+	void SetLayoutChanges(std::vector<std::string> classNames);
+
+	// Whether a plugin may run although classes changed: only one that takes
+	// every game layout from this build (interface 72 or later,
+	// PLUGIN_MAP_MIGRATED, and a declared game build) may. Any other keeps
+	// the layouts compiled in and would read the changed classes' old ones.
+	// Empty = admitted (also when nothing changed); else the reason.
+	std::string LayoutRefusal(int interfaceVersion, const PluginGameBuild& built);
+
 	// Whether the Game-SDK globals found on `running` may be handed to plugins
 	// (IPluginEngineEvents::GetSdkGlobals), as absolute addresses, 0 = not
 	// found. A plugin needs GObjects and FName::AppendString to set up its

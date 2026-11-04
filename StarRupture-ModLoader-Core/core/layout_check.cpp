@@ -1,5 +1,6 @@
 #include "layout_check.h"
 
+#include <algorithm>
 #include <cstdarg>
 #include <cstdio>
 #include <utility>
@@ -141,6 +142,41 @@ namespace LayoutCheck
         }
 
         return result;
+    }
+
+    Verdict Decide(const std::vector<TableClass>& table, const Result& result)
+    {
+        Verdict verdict;
+        if (!result.lines.empty() && result.changedClasses.empty())
+            verdict.safeOff = true;
+
+        for (const std::string& name : result.changedClasses)
+        {
+            const auto sdk = std::find_if(table.begin(), table.end(),
+                [&name](const TableClass& c) { return name == c.name; });
+            verdict.changed.push_back(name);
+            verdict.changedPaths.push_back(sdk == table.end() ? std::string() : std::string(sdk->path));
+            if (sdk == table.end() || sdk->consumers.empty())
+            {
+                verdict.safeOff = true;
+                continue;
+            }
+            for (const std::string& id : sdk->consumers)
+            {
+                if (id == kConsumerKeys)
+                    continue;
+                if (id == kConsumerUiMenus)
+                {
+                    if (std::find(verdict.featuresOff.begin(), verdict.featuresOff.end(), id) == verdict.featuresOff.end())
+                        verdict.featuresOff.push_back(id);
+                    continue;
+                }
+                // kConsumerCore, kConsumerPluginSdk, and any id this loader
+                // does not know.
+                verdict.safeOff = true;
+            }
+        }
+        return verdict;
     }
 }
 
@@ -338,7 +374,8 @@ namespace LayoutCheck
             return false;
         }
 
-        const std::vector<TableClass> table = ReadTable(SrLayoutTable::kNames, SrLayoutTable::kClasses, SrLayoutTable::kRows);
+        const std::vector<TableClass> table = ReadTable(SrLayoutTable::kNames, SrLayoutTable::kClasses, SrLayoutTable::kRows,
+            SrLayoutTable::kConsumers, SrLayoutTable::kClassConsumers);
 
         Search search;
         for (const TableClass& sdk : table)
@@ -392,6 +429,7 @@ namespace LayoutCheck
             result.perBuild,
             search.walkMs, search.objects, search.types, totalMs);
 
+        result.verdict = Decide(table, result);
         out = std::move(result);
         return true;
     }

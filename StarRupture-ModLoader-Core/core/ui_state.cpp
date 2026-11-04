@@ -38,6 +38,7 @@ namespace UIState
 		// Read without the lock on every tick and every query.
 		std::atomic<uint64_t> s_state{ 0 };
 		std::atomic<size_t>   s_count{ 0 };
+		std::atomic<bool>     s_menuReadDisabled{ false };  // DisableMenuRead
 		std::atomic<uint64_t> s_wantedMenuBits{ 0 };  // menu bits any registration asks for
 
 		// After any change to s_entries, under s_mutex.
@@ -89,7 +90,13 @@ namespace UIState
 
 	bool MenuReadWanted()
 	{
-		return s_wantedMenuBits.load(std::memory_order_relaxed) != 0;
+		return !s_menuReadDisabled.load(std::memory_order_acquire)
+			&& s_wantedMenuBits.load(std::memory_order_relaxed) != 0;
+	}
+
+	void DisableMenuRead()
+	{
+		s_menuReadDisabled.store(true, std::memory_order_release);
 	}
 
 	void Register(uint64_t mask, PluginUIStateCallback callback, void* userData)

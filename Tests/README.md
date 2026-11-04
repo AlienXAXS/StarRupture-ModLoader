@@ -176,7 +176,7 @@ the other the running game. It covers:
 - The 127004 SDK on a 127004 game: every class checked, 0 mismatched, nothing logged.
 - The 126119 SDK on a 127004 game: `ACrCharacterPlayerBase` is the one changed class, with its size
   (0x15E0 to 0x15F0) and `ADSMoveSpeed` (0x13A8 to 0x13B8) among the lines; its bases are unchanged.
-- The same mismatch forced through to safe-off: `RequiresSafeOff` is true (and false for the matching
+- The same mismatch forced through: `FoundChanges` is true (and false for the matching
   build), and the compatibility report's JSON carries the ProductVersion, the exe hash, a missed
   pattern with its quotes escaped, each global's RVA, and the class size and `ADSMoveSpeed` offset,
   old and new. The CL in the report's file name comes from the ProductVersion.

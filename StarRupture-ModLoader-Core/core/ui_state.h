@@ -48,9 +48,14 @@ namespace UIState
 	void Register(uint64_t mask, PluginUIStateCallback callback, void* userData);
 	void Unregister(PluginUIStateCallback callback, void* userData);
 
-	// True while a registration's mask has a menu bit. Game thread, once per
-	// tick.
+	// True while a registration's mask has a menu bit, unless DisableMenuRead
+	// was called. Game thread, once per tick.
 	bool MenuReadWanted();
+
+	// Stops the menu-layer read for the rest of the process: the layout check
+	// found a class it reads changed on this game build. The menu bits then
+	// stay 0. Any thread.
+	void DisableMenuRead();
 
 	// Stores the tick's state and calls every callback whose bits changed.
 	// Game thread, once per tick.

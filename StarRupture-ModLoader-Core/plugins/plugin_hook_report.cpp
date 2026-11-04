@@ -375,15 +375,13 @@ namespace PluginHookReport
         return s_commitSerial;
     }
 
-#ifdef _DEBUG
-    void InjectTestReport(const PluginReport& report)
+    void AddReport(const PluginReport& report)
     {
         std::lock_guard<std::mutex> lock(s_mutex);
         s_reports.push_back(report);
         ++s_generation;
         ++s_commitSerial;
     }
-#endif
 
     std::vector<PluginReport> Snapshot()
     {

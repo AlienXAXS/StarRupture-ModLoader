@@ -369,7 +369,7 @@ namespace PluginManager
 		DWORD       win32Error       = 0;   // CouldNotLoad: GetLastError() of LoadLibrary
 		int         interfaceVersion = 0;   // OutOfDate: the newer interface the plugin was built for
 		std::string name;                   // whatever name the DLL reported, if it got that far
-		std::string detail;                 // OffBuild: VersionMap::OffBuildRefusal's reason; Refused: the load setting's
+		std::string detail;                 // OffBuild: VersionMap::OffBuildRefusal's or LayoutRefusal's reason; Refused: the load setting's
 	};
 
 	static const wchar_t* BaseFileName(const std::wstring& path);
@@ -490,8 +490,12 @@ namespace PluginManager
 		if (info->interfaceVersion >= 72 && !rec.gameBuild.declared)
 			ModLoaderLogger::LogWarn(L"Plugin '%S' declares no game build; judging it as built on CL-%u.",
 				info->name ? info->name : "(unknown)", rec.gameBuild.gameCL);
-		if (const std::string refusal = VersionMap::OffBuildRefusal(VersionMap::RunningExe(),
-				info->interfaceVersion, rec.gameBuild, true); !refusal.empty())
+		// The same holds on its own build when the layout check found classes
+		// changed: only a plugin that takes every layout from the map runs.
+		std::string refusal = VersionMap::OffBuildRefusal(VersionMap::RunningExe(), info->interfaceVersion, rec.gameBuild, true);
+		if (refusal.empty())
+			refusal = VersionMap::LayoutRefusal(info->interfaceVersion, rec.gameBuild);
+		if (!refusal.empty())
 		{
 			ModLoaderLogger::LogWarn(L"Plugin '%S' is not loaded: %S", info->name ? info->name : "(unknown)", refusal.c_str());
 			rec.cachedName           = info->name    ? info->name    : "";

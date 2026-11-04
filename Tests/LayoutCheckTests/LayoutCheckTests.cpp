@@ -71,6 +71,21 @@ namespace
         return LayoutCheck::ReadTable(SrLayoutTable127004::kNames, SrLayoutTable127004::kClasses, SrLayoutTable127004::kRows);
     };
 
+    // The loader's own table, with what reads each class.
+    const auto kLoaderTable = []
+    {
+        return LayoutCheck::ReadTable(SrLayoutTable::kNames, SrLayoutTable::kClasses, SrLayoutTable::kRows,
+            SrLayoutTable::kConsumers, SrLayoutTable::kClassConsumers);
+    };
+
+    const LayoutCheck::TableClass* ClassNamed(const std::vector<LayoutCheck::TableClass>& table, const char* name)
+    {
+        for (const LayoutCheck::TableClass& c : table)
+            if (std::string(c.name) == name)
+                return &c;
+        return nullptr;
+    }
+
     void SameBuildMatches()
     {
         std::printf("127004 SDK on a 127004 game\n");
@@ -81,7 +96,7 @@ namespace
         Check(result.checked == result.classes, "every class is checked");
         Check(result.mismatched == 0 && result.missing == 0 && result.deferred == 0, "0 mismatched, 0 missing, 0 deferred");
         Check(result.lines.empty(), "nothing to log");
-        Check(!LayoutCheck::RequiresSafeOff(result), "plugins stay on");
+        Check(!LayoutCheck::FoundChanges(result), "plugins stay on");
     }
 
     void ContentUpdateMovesThePlayer()
@@ -112,7 +127,8 @@ namespace
     {
         std::printf("Safe-off and the compatibility report (126119 SDK on a 127004 game)\n");
         const LayoutCheck::Result result = CompareWith(kTable126119(), AsGame(kTable127004()));
-        Check(LayoutCheck::RequiresSafeOff(result), "plugins are switched off");
+        Check(LayoutCheck::FoundChanges(result), "the change is found");
+        Check(LayoutCheck::Decide(kTable126119(), result).safeOff, "the fixture has no consumer tags: plugins are switched off");
         Check(result.changes.size() == result.lines.size(), "one report entry per log line");
 
         const CompatReport::Inputs inputs{ "1.0.0.0-CL-127004", "StarRupture-Win64-Shipping.exe", std::string(64, 'a'), 126119,
@@ -168,7 +184,7 @@ namespace
         const std::vector<LayoutCheck::TableClass> element = { { "UWorld", "Engine.World", 0x100, 8, Kind::Class, { { "LineBatchers", 0xF0, 0x8, 0 } } } };
 
         const LayoutCheck::Result wholeResult = CompareWith(whole, game);
-        Check(wholeResult.lines.empty() && !LayoutCheck::RequiresSafeOff(wholeResult), "the whole member matches the game");
+        Check(wholeResult.lines.empty() && !LayoutCheck::FoundChanges(wholeResult), "the whole member matches the game");
         Check(Contains(CompareWith(element, game), "UWorld::LineBatchers: size SDK 0x8, game 0x20"),
             "one element's size is the old false positive");
     }
@@ -223,7 +239,7 @@ namespace
         std::printf("Dumper-7 renamed members\n");
         using LayoutCheck::Kind;
 
-        const auto table = LayoutCheck::ReadTable(SrLayoutTable::kNames, SrLayoutTable::kClasses, SrLayoutTable::kRows);
+        const auto table = kLoaderTable();
         std::vector<LayoutCheck::TableClass> sdk;
         for (const LayoutCheck::TableClass& c : table)
         {
@@ -244,15 +260,17 @@ namespace
         };
 
         const LayoutCheck::Result same = CompareWith(sdk, game(0x8, 8));
-        Check(same.lines.empty() && !LayoutCheck::RequiresSafeOff(same), "Class_0 matches the game's Class: plugins stay on");
+        Check(same.lines.empty() && !LayoutCheck::FoundChanges(same), "Class_0 matches the game's Class: plugins stay on");
 
         const LayoutCheck::Result moved = CompareWith(sdk, game(0x10, 8));
         Check(Contains(moved, "SubsystemBlueprintLibrary_GetGameInstanceSubsystem::Class_0: not found in the game")
-            && LayoutCheck::RequiresSafeOff(moved), "Class at another offset is no match: plugins are switched off");
+            && LayoutCheck::FoundChanges(moved) && LayoutCheck::Decide(sdk, moved).safeOff,
+            "Class at another offset is no match: plugins are switched off (they compile the parameter block in)");
 
         const LayoutCheck::Result resized = CompareWith(sdk, game(0x8, 4));
         Check(Contains(resized, "SubsystemBlueprintLibrary_GetGameInstanceSubsystem::Class_0: not found in the game")
-            && LayoutCheck::RequiresSafeOff(resized), "Class of another size is no match: plugins are switched off");
+            && LayoutCheck::FoundChanges(resized) && LayoutCheck::Decide(sdk, resized).safeOff,
+            "Class of another size is no match: plugins are switched off");
 
         // Only a _<digits> suffix is stripped, and never from a row of unknown size.
         const std::vector<LayoutCheck::TableClass> other = {
@@ -327,10 +345,112 @@ namespace
         Check(Contains(narrow, "UMoved::Read: offset SDK 0x30, game 0x38"), "a member the loader reads that moved switches plugins off");
         Check(narrow.perBuild == 1 && !Contains(narrow, "UPerBuild::Resolved: offset SDK 0x30, game 0x48"),
             "a member resolved per build is left to the version map");
-        Check(narrow.mismatched == 3 && narrow.lines.size() == 3 && LayoutCheck::RequiresSafeOff(narrow), "nothing else");
+        Check(narrow.mismatched == 3 && narrow.lines.size() == 3 && LayoutCheck::FoundChanges(narrow), "nothing else");
 
         const LayoutCheck::Result whole = LayoutCheck::Compare(sdk, find);
         Check(Contains(whole, "UPerBuild::Resolved: offset SDK 0x30, game 0x48"), "without a per-build rule every row is compared");
+    }
+}
+
+namespace
+{
+    // What a change switches off, by what reads the changed class.
+    void ConsumersDecideWhatStops()
+    {
+        std::printf("Consumers: what a change switches off\n");
+        using LayoutCheck::Kind;
+
+        // The loader's table carries the tags, and they say what they should.
+        const auto table = kLoaderTable();
+        const auto tags = [&table](const char* name)
+        {
+            const LayoutCheck::TableClass* c = ClassNamed(table, name);
+            return c ? c->consumers : std::vector<std::string>{ "(not in the table)" };
+        };
+        const auto has = [](const std::vector<std::string>& ids, const char* id)
+        {
+            return std::find(ids.begin(), ids.end(), id) != ids.end();
+        };
+        Check(tags("UCrUW_MapMenu") == std::vector<std::string>{ "ui-menus" }, "UCrUW_MapMenu: only the menu-layer read");
+        Check(tags("ACrCharacterPlayerBase") == std::vector<std::string>{ "keys" }, "ACrCharacterPlayerBase: only a version-map key");
+        Check(has(tags("UWorld"), "core"), "UWorld: the loader's own code");
+        Check(has(tags("SubsystemBlueprintLibrary_GetGameInstanceSubsystem"), "plugin-sdk"), "a parameter block: compiled into plugins");
+        Check(has(tags("UCommonActivatableWidgetContainerBase"), "ui-menus"), "WidgetList's class: the menu-layer read");
+        bool allTagged = true;
+        for (const LayoutCheck::TableClass& c : table)
+            allTagged = allTagged && !c.consumers.empty();
+        Check(allTagged, "every class in the loader's table has a consumer");
+
+        // The real table on a game where a menu screen class is gone: only
+        // the menu-layer read stops.
+        {
+            auto game = AsGame(table);
+            game.erase(ClassNamed(table, "UCrUW_MapMenu")->path);
+            const LayoutCheck::Result result = CompareWith(table, game);
+            const LayoutCheck::Verdict verdict = LayoutCheck::Decide(table, result);
+            Check(LayoutCheck::FoundChanges(result) && !verdict.safeOff
+                && verdict.featuresOff == std::vector<std::string>{ "ui-menus" }
+                && verdict.changed == std::vector<std::string>{ "UCrUW_MapMenu" },
+                "a class only the menu-layer read uses: that feature off, plugins stay on");
+        }
+        // ...and where the player class lost its members: nothing in the
+        // loader stops; plugins that keep it compiled in are refused
+        // (VersionMapTests).
+        {
+            auto game = AsGame(table);
+            game[ClassNamed(table, "ACrCharacterPlayerBase")->path].properties.clear();
+            const LayoutCheck::Result result = CompareWith(table, game);
+            const LayoutCheck::Verdict verdict = LayoutCheck::Decide(table, result);
+            Check(LayoutCheck::FoundChanges(result) && !verdict.safeOff && verdict.featuresOff.empty()
+                && verdict.changed == std::vector<std::string>{ "ACrCharacterPlayerBase" }
+                && verdict.changedPaths == std::vector<std::string>{ "Chimera.CrCharacterPlayerBase" },
+                "a class plugins read through the map: listed as changed, no loader feature off, no safe-off");
+        }
+
+        // Synthetic tags, one changed class each.
+        const auto decide = [](std::vector<std::string> consumers)
+        {
+            const std::vector<LayoutCheck::TableClass> sdk = {
+                { "FThing", "Mod.Thing", 0x10, 8, Kind::ScriptStruct, { { "A", 0x0, 8, 0 } }, std::move(consumers) },
+            };
+            const std::map<std::string, LayoutCheck::LiveStruct> game = { { "Mod.Thing", { 0x10, 8, { { "A", 0x8, 8, false, 0 } } } } };
+            return LayoutCheck::Decide(sdk, CompareWith(sdk, game));
+        };
+        const LayoutCheck::Verdict menus = decide({ "ui-menus" });
+        Check(!menus.safeOff && menus.featuresOff == std::vector<std::string>{ "ui-menus" }, "ui-menus: that feature off");
+        const LayoutCheck::Verdict keys = decide({ "keys" });
+        Check(!keys.safeOff && keys.featuresOff.empty() && keys.changed == std::vector<std::string>{ "FThing" },
+            "keys: nothing in the loader, listed as changed");
+        Check(decide({}).safeOff, "no consumer: safe-off");
+        Check(decide({ "core" }).safeOff, "core: safe-off");
+        Check(decide({ "plugin-sdk" }).safeOff, "plugin-sdk: safe-off");
+        Check(decide({ "future-feature" }).safeOff && decide({ "?" }).safeOff, "an id this loader does not know: safe-off");
+        Check(decide({ "core", "ui-menus" }).safeOff && decide({ "keys", "plugin-sdk" }).safeOff,
+            "a tag that needs safe-off wins over the others");
+
+        // A changed class the table does not list, and a difference with no class.
+        LayoutCheck::Result stray;
+        stray.mismatched = 1;
+        stray.changedClasses = { "AStray" };
+        stray.lines = { "AStray: size SDK 0x10, game 0x18" };
+        Check(LayoutCheck::Decide({}, stray).safeOff, "a changed class not in the table: safe-off");
+        LayoutCheck::Result unnamed;
+        unnamed.lines = { "something differs" };
+        Check(LayoutCheck::Decide({}, unnamed).safeOff, "a difference that names no class: safe-off");
+        const LayoutCheck::Verdict none = LayoutCheck::Decide(table, CompareWith(table, AsGame(table)));
+        Check(!none.safeOff && none.featuresOff.empty() && none.changed.empty(), "no change: nothing off");
+
+        // A bit with no id in kConsumers reads as "?".
+        struct Cls { uint32_t name, sizeOf, alignOf, firstRow, rowCount, kind, path; };
+        struct Row { uint32_t name, offset, size, boolMask; };
+        const char* const names[2] = { "FThing", "Mod.Thing" };
+        const Cls classes[1] = { { 0, 0x10, 8, 0, 0, 2, 1 } };
+        const Row rows[1] = { { 0, 0, 0, 0 } };
+        const char* const consumerIds[1] = { "ui-menus" };
+        const uint32_t classConsumers[1] = { 0x3 };
+        const auto read = LayoutCheck::ReadTable(names, classes, rows, consumerIds, classConsumers);
+        Check(read.size() == 1 && read[0].consumers == std::vector<std::string>{ "ui-menus", "?" },
+            "a bit past kConsumers reads as an unknown id");
     }
 }
 
@@ -343,6 +463,7 @@ int main()
     EachDifferenceIsReported();
     DumperRenamedMember();
     UsedMembersOnly();
+    ConsumersDecideWhatStops();
 
     if (g_failures)
         std::printf("\n%d check(s) FAILED\n", g_failures);

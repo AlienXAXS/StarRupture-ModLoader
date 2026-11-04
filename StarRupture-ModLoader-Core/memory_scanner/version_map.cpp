@@ -431,6 +431,52 @@ namespace VersionMap
 			+ (built.gameCL != 0 ? " It loads on " + was + "." : std::string());
 	}
 
+	namespace
+	{
+		std::mutex               g_layoutChangesLock;
+		std::vector<std::string> g_layoutChanges;   // SetLayoutChanges
+
+		bool LayoutChanged(const std::string& className)
+		{
+			std::lock_guard<std::mutex> lock(g_layoutChangesLock);
+			return std::find(g_layoutChanges.begin(), g_layoutChanges.end(), className) != g_layoutChanges.end();
+		}
+	}
+
+	void SetLayoutChanges(std::vector<std::string> classNames)
+	{
+		std::lock_guard<std::mutex> lock(g_layoutChangesLock);
+		g_layoutChanges = std::move(classNames);
+	}
+
+	std::string LayoutRefusal(int interfaceVersion, const PluginGameBuild& built)
+	{
+		constexpr int kFirstMapInterface = 72;
+		const bool migrated = (built.mapFlags & PLUGIN_MAP_MIGRATED) != 0;
+		// The SDK names (not the /Script/ forms); the first two by name, so
+		// the reason fits the plugin list's line.
+		std::vector<std::string> names;
+		{
+			std::lock_guard<std::mutex> lock(g_layoutChangesLock);
+			for (const std::string& name : g_layoutChanges)
+				if (name.find('/') == std::string::npos)
+					names.push_back(name);
+		}
+		if (names.empty() || (interfaceVersion >= kFirstMapInterface && migrated && built.declared))
+			return {};
+		std::string changed = names[0];
+		if (names.size() == 2)
+			changed += " and " + names[1];
+		else if (names.size() > 2)
+			changed += ", " + names[1] + " and " + std::to_string(names.size() - 2) + " more";
+		const std::string why = interfaceVersion < kFirstMapInterface
+			? "it was built for plugin interface v" + std::to_string(interfaceVersion) + ", before the version map"
+			: !migrated ? std::string("it does not declare PLUGIN_MAP_MIGRATED")
+			: std::string("its PluginInfo names no game build");
+		return "Needs an update: this game build changed the layout of " + changed + ", and " + why
+			+ ", so it would read their old layouts.";
+	}
+
 	PluginGameBuild ReadPluginGameBuild(const PluginInfo& info)
 	{
 		PluginGameBuild build;
@@ -1237,6 +1283,14 @@ namespace VersionMap
 				{
 					value = ValueOf(*row);
 					how   = RowLabel(*row);
+				}
+				else if (onBuilt && haveBuilt && LayoutChanged(request.className))
+				{
+					// The compiled offset is the SDK's, and the layout check
+					// found this class laid out otherwise on this build.
+					error = "no row for " + ClText(running.cl) + ", and the layout check found " + request.className
+						+ " changed on this build, so its built offset is not used";
+					return false;
 				}
 				else if (onBuilt && haveBuilt)
 				{

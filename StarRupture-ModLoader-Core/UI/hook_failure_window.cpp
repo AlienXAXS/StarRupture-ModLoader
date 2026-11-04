@@ -332,8 +332,8 @@ namespace UI::HookFailureWindow
         warnPlugin.failures.push_back({ "ACrMapActor::RefreshFogOfWar",
             "pattern not found: E8 ?? ?? ?? ?? 84 C0 74 ?? 48 8B CB", false });
 
-        PluginHookReport::InjectTestReport(refusedPlugin);
-        PluginHookReport::InjectTestReport(warnPlugin);
+        PluginHookReport::AddReport(refusedPlugin);
+        PluginHookReport::AddReport(warnPlugin);
         Show();
     }
 #endif
