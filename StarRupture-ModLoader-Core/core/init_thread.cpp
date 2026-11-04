@@ -363,11 +363,14 @@ DWORD WINAPI MainInitThreadProc(LPVOID)
             }
         }
     }
+#endif
 
-    // Field requests read the game's reflection data from here on, and the
-    // loader's own fields are resolved from it. On a build other than the
-    // SDK's own, one that does not resolve switches plugins off.
+    // Field requests read the game's reflection data from here on, on the
+    // dedicated server as on the client.
     VersionMap::SetLiveFieldSource(LayoutCheck::LiveFieldOf);
+#ifdef MODLOADER_CLIENT_BUILD
+    // The loader's own fields are resolved from it. On a build other than the
+    // SDK's own, one that does not resolve switches plugins off.
     {
         LayoutCheck::Result unresolved;
         unresolved.lines = SdkGlobals::ResolveFields();

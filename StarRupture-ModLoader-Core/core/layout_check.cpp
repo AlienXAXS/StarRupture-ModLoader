@@ -122,9 +122,10 @@ namespace LayoutCheck
     }
 }
 
-#if defined(MODLOADER_CLIENT_BUILD)
+// The reflection reader below is in both game builds. Run, which compares
+// against the client SDK's layout table, is in the client build only.
+#if defined(MODLOADER_CLIENT_BUILD) || defined(MODLOADER_SERVER_BUILD)
 
-#include "layout_table.generated.h"
 #include "sdk_globals.h"
 #include "../hooks/game/engine_init/engine_init.h"
 #include "../hooks/game/object_properties/object_properties.h"
@@ -139,9 +140,6 @@ namespace LayoutCheck
 #include <cstring>
 #include <mutex>
 #include <unordered_map>
-
-static_assert(SrLayoutTable::kFormatVersion == 1, "layout_check.cpp reads layout table format 1");
-static_assert(SrLayoutTable::kDetail == 1, "an embedded layout table needs member sizes and bool masks (generate it with --sdk)");
 
 namespace LayoutCheck
 {
@@ -275,7 +273,22 @@ namespace LayoutCheck
                     search.live.emplace(path, Snapshot(type));
             }
         }
+    }
+}
 
+#endif
+
+#if defined(MODLOADER_CLIENT_BUILD)
+
+#include "layout_table.generated.h"
+
+static_assert(SrLayoutTable::kFormatVersion == 1, "layout_check.cpp reads layout table format 1");
+static_assert(SrLayoutTable::kDetail == 1, "an embedded layout table needs member sizes and bool masks (generate it with --sdk)");
+
+namespace LayoutCheck
+{
+    namespace
+    {
         // Collect under SEH: reflection data that is not what the SDK says it
         // is ends the check with a log line instead of taking the game down.
         bool CollectGuarded(Search* search, TypeIndex* index, DWORD* exceptionCode)
@@ -361,6 +374,10 @@ namespace LayoutCheck
         return true;
     }
 }
+
+#endif
+
+#if defined(MODLOADER_CLIENT_BUILD) || defined(MODLOADER_SERVER_BUILD)
 
 namespace LayoutCheck
 {

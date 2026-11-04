@@ -568,9 +568,7 @@
     <ClCompile Include="core\startup_utils.cpp" />
     <ClCompile Include="core\version_check.cpp" />
     <ClCompile Include="core\sdk_globals.cpp" />
-    <ClCompile Include="core\layout_check.cpp">
-      <ExcludedFromBuild Condition="'$(Configuration)' != 'Client Debug' And '$(Configuration)' != 'Client Release' And '$(Configuration)' != 'Local SDK Client Debug' And '$(Configuration)' != 'Local SDK Client Release'">true</ExcludedFromBuild>
-    </ClCompile>
+    <ClCompile Include="core\layout_check.cpp" />
     <ClCompile Include="core\compat_report.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)' != 'Client Debug' And '$(Configuration)' != 'Client Release' And '$(Configuration)' != 'Local SDK Client Debug' And '$(Configuration)' != 'Local SDK Client Release'">true</ExcludedFromBuild>
     </ClCompile>

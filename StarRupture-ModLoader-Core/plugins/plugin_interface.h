@@ -1120,7 +1120,7 @@ static_assert(offsetof(PluginScanRequest, candidates)     == 56, "v72 starts whe
 // when that key names the same class and member (or a member the map records
 // as renamed), then the request's candidates for any changelist the map has
 // no row for. A candidate that disagrees with the map's row for its changelist
-// fails the request. The dedicated server reads no reflection: there only the
+// fails the request. The dedicated server has no version map: there only the
 // request's own candidates count, and a native member is not bounded.
 // ---------------------------------------------------------------------------
 enum PluginFieldFlags

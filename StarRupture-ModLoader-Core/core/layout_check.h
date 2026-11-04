@@ -26,9 +26,9 @@ namespace LayoutCheck
 {
     // Called once from the init thread after FEngineLoop::Init has returned,
     // while the game thread is still parked in the engine-init hook and before
-    // any plugin loads. Client builds only: layout_check.cpp is not compiled
-    // into the server build, and without MODLOADER_CLIENT_BUILD (the offline
-    // test) only the comparison below is.
+    // any plugin loads. Client builds only: the table is the client SDK's.
+    // Without MODLOADER_CLIENT_BUILD or MODLOADER_SERVER_BUILD (the offline
+    // test) only the comparison below is compiled.
     //
     // False, and logged, when the check could not run (GObjects invalid, an
     // exception while reading reflection data); out is then left as it was.
@@ -40,7 +40,7 @@ namespace LayoutCheck
     // (VersionMap::SetLiveFieldSource). The member is looked up in the struct
     // and then in its supers. className is the short name, or
     // /Script/<Module>.<Name>; a short name more than one module has is an
-    // error. Client builds only, and only once engine init has been seen.
+    // error. Client and server builds, once engine init has been seen.
     VersionMap::LiveField LiveFieldOf(const std::string& className, const std::string& member);
 
     // ---- The comparison, kept apart from the game so it can be tested ------
