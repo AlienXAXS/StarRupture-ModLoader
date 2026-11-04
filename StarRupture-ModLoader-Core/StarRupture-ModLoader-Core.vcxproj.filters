@@ -462,6 +462,9 @@
     <ClInclude Include="core\ui_state.h">
       <Filter>Source Files\core</Filter>
     </ClInclude>
+    <ClInclude Include="core\input_arbitration.h">
+      <Filter>Source Files\core</Filter>
+    </ClInclude>
     <ClInclude Include="core\shutdown.h">
       <Filter>Source Files\core</Filter>
     </ClInclude>

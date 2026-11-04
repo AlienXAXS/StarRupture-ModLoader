@@ -1,4 +1,5 @@
 // IsKeyHeld and IsGameThread test: the two v72 queries a plugin's tick polls.
+// Also covers the input-ownership decisions in core/input_arbitration.h.
 //
 // A console program: no game, no overlay. keybind_registry.cpp and
 // game_thread_dispatch.cpp are the loader's own source files; the keyboard,
@@ -10,6 +11,7 @@
 #include "utils/game_thread_dispatch.h"
 #include "test_doubles.h"
 #include "core/ui_state.h"
+#include "core/input_arbitration.h"
 
 #include <windows.h>
 #include <atomic>
@@ -785,6 +787,48 @@ static void UIStateThrowingCallback()
     ResetUI();
 }
 
+// Who owns the input: a plugin's panel or capture token is exclusive only
+// outside the cursor screens; the loader's own windows always are.
+static void ExclusiveCapture()
+{
+    using InputArbitration::IsExclusive;
+    // IsExclusive(loaderWindowOpen, pluginCaptures, cursorScreenUp)
+    CHECK(!IsExclusive(false, false, false));
+    CHECK(!IsExclusive(false, false, true));
+
+    // Gameplay, no cursor: a panel or token captures as before.
+    CHECK(IsExclusive(false, true, false));
+
+    // The Escape menu or another cursor screen: the game's menu stays usable.
+    CHECK(!IsExclusive(false, true, true));
+
+    // F2 window, console and the rest stay exclusive on every screen.
+    CHECK(IsExclusive(true, false, false));
+    CHECK(IsExclusive(true, false, true));
+    CHECK(IsExclusive(true, true, true));
+}
+
+// Keyboard in the shared modes: a text field owns the keys, and otherwise only a
+// passthrough token's navigation claim does.
+static void SharedKeyboard()
+{
+    using InputArbitration::SharedKeyboardGoesToImGui;
+    // SharedKeyboardGoesToImGui(cooperative, wantCaptureKeyboard, wantTextInput)
+
+    // Typing in a plugin's search box never reaches the game.
+    CHECK(SharedKeyboardGoesToImGui(false, false, true));
+    CHECK(SharedKeyboardGoesToImGui(false, true, true));
+    CHECK(SharedKeyboardGoesToImGui(true, false, true));
+
+    // No text field: the game keeps Escape, E and the rest.
+    CHECK(!SharedKeyboardGoesToImGui(false, false, false));
+    CHECK(!SharedKeyboardGoesToImGui(false, true, false));
+
+    // Cooperative mode also keeps the keys ImGui claims for navigation.
+    CHECK(SharedKeyboardGoesToImGui(true, true, false));
+    CHECK(!SharedKeyboardGoesToImGui(true, false, false));
+}
+
 int main()
 {
     RunTest("IsGameThread: false on every thread before the first tick", GameThreadBeforeFirstTick);
@@ -808,6 +852,8 @@ int main()
     RunTest("IsKeyHeld: a key nobody watches skips the scan", UnwatchedKeySkipsTheScan);
     RunTest("IsKeyHeld: allocates nothing", AllocatesNothing);
     RunTest("IsKeyHeld: any thread", AnyThread);
+    RunTest("InputArbitration: plugin windows are exclusive only off the cursor screens", ExclusiveCapture);
+    RunTest("InputArbitration: a text field owns the keyboard in the shared modes", SharedKeyboard);
     RunTest("ForgetModule: an unloading plugin's keybinds go", ForgetModuleDropsItsKeybinds);
     RunTest("ForgetModule: an unloading plugin's game-thread tasks go", ForgetModuleDropsItsGameThreadTasks);
     RunTest("UIState: mask filter, once per change", UIStateMaskAndOncePerChange);

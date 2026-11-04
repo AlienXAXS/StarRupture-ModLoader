@@ -542,6 +542,7 @@
     <ClInclude Include="core\hook_management.h" />
     <ClInclude Include="core\client_ui.h" />
     <ClInclude Include="core\ui_state.h" />
+    <ClInclude Include="core\input_arbitration.h" />
     <ClInclude Include="core\shutdown.h" />
     <ClInclude Include="core\init_phases.h" />
     <ClInclude Include="core\init_thread.h" />

@@ -9,6 +9,7 @@
 #include "imgui_impl_dx12.h"
 #include "imgui_impl_win32.h"
 #include "resource.h"
+#include "../core/input_arbitration.h"
 
 #include <d3d12.h>
 #include <dxgi1_2.h>
@@ -388,11 +389,13 @@ static LRESULT CALLBACK HookedWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 			// Cooperative mode does not feed ImGui the mouse (it has no cursor
 			// to aim with), so the game keeps every mouse message there and
 			// only keyboard is arbitrated, for a plugin that has focused a
-			// text field. Over the pause menu it is the other way round.
+			// text field. Over the pause menu it is the other way round,
+			// except that a focused text field takes the keys there too.
 			std::lock_guard<std::recursive_mutex> lock(g_imguiMutex);
 			const ImGuiIO& io = ImGui::GetIO();
 			wantMouse    = menuCursor && io.WantCaptureMouse;
-			wantKeyboard = cooperative && (io.WantCaptureKeyboard || io.WantTextInput);
+			wantKeyboard = InputArbitration::SharedKeyboardGoesToImGui(
+				cooperative, io.WantCaptureKeyboard, io.WantTextInput);
 		}
 
 		switch (msg)

@@ -10,6 +10,7 @@
 #include "memory_scanner/scanner.h"
 #include "logging/logger.h"
 #include "UI/plugin_panel_registry.h"
+#include "core/client_ui.h"
 
 #include <windows.h>
 #include <unordered_map>
@@ -99,8 +100,11 @@ namespace Hooks::InputHook
         // While any plugin holds an input-capture token, the game must not
         // see input at all (any event type -- Pressed/Released/Repeat -- so
         // we don't leave the game with a stuck "key down" state from a
-        // swallowed Pressed event).
-        if (UI::PluginPanelRegistry::AnyInputCaptureRequested())
+        // swallowed Pressed event). Not on a cursor screen: there the token
+        // shares the mouse and keyboard (ShouldCaptureInputNow), and the
+        // window procedure already keeps keys from the game while a text
+        // field has focus.
+        if (UI::PluginPanelRegistry::AnyInputCaptureRequested() && ShouldCaptureInputNow())
             return 0;
 
         if (!InEventArgs)

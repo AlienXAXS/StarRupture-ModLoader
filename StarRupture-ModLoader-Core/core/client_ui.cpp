@@ -2,6 +2,7 @@
 
 #include "client_ui.h"
 #include "ui_state.h"
+#include "input_arbitration.h"
 #include "core/sdk_globals.h"
 #include "startup_utils.h"
 #include "Engine_classes.hpp"
@@ -37,20 +38,33 @@
 static bool         s_imguiEnabled = true;
 static EModKey      s_openKey      = EModKey::F2;
 
+// The PAUSE_MENU and CURSOR_UP UI-state bits, read from the atomics the tick
+// publishes them through (UIState::Publish is composed from the same two).
+static bool CursorScreenUp()
+{
+    return Hooks::GameMenu::IsPauseMenuOpen() || Hooks::GameMenu::IsGameCursorShown();
+}
+
 bool ShouldCaptureInputNow()
 {
     // Any standalone modloader window that can render independently of the main
     // F2 menu (i.e. can still be open while IsOpen() is false) must be listed
     // here, or its buttons become unclickable -- mouse messages are only
     // forwarded to ImGui while this returns true.
-    return UI::ModLoaderWindow::IsOpen()
+    const bool loaderWindowOpen = UI::ModLoaderWindow::IsOpen()
         || UI::UpdateNoticeWindow::IsOpen()
         || UI::PluginScanWindow::IsOpen()
         || UI::HookFailureWindow::IsOpen()
         || UI::TickProfilerWindow::IsOpen()
-        || UI::ConsoleWindow::IsOpen()
-        || UI::PluginPanelRegistry::AnyPanelOpen()
+        || UI::ConsoleWindow::IsOpen();
+
+    // A plugin's panel or input-capture token captures exclusively in gameplay,
+    // but not on a cursor screen: there the game's own menu stays usable around
+    // the plugin's windows (see ShouldShareGameMouseNow).
+    const bool pluginCaptures = UI::PluginPanelRegistry::AnyPanelOpen()
         || UI::PluginPanelRegistry::AnyInputCaptureRequested();
+
+    return InputArbitration::IsExclusive(loaderWindowOpen, pluginCaptures, CursorScreenUp());
 }
 
 bool ShouldPassthroughInputNow()
@@ -68,9 +82,9 @@ bool ShouldShareGameMouseNow()
     // recipe station, the inventory) show the game's own cursor, and the ImGui
     // host feeds ImGui the mouse there unless exclusive capture owns it. Only
     // windows that opted in take it; everything else is drawn click-through,
-    // so the screen under it keeps its clicks.
-    return !ShouldCaptureInputNow() &&
-        (Hooks::GameMenu::IsPauseMenuOpen() || Hooks::GameMenu::IsGameCursorShown());
+    // so the screen under it keeps its clicks. A plugin panel is not one of
+    // the exclusive owners here, so the clicks it does not cover go to the game.
+    return !ShouldCaptureInputNow() && CursorScreenUp();
 }
 
 void InitClientUI()
