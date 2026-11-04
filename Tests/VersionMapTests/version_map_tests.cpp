@@ -966,6 +966,26 @@ int main()
 	}
 
 	Check(Real::VersionMap::kFormatVersion == 2, "the real map is format 2");
+
+	// The real map's field rows: a member's row for each build, and the older build's row untouched.
+	{
+		const auto fieldRow = [](const char* key, uint32_t cl) -> const Real::VersionMap::FieldRow*
+		{
+			for (const Real::VersionMap::Index& index : Real::VersionMap::kFields)
+				if (strcmp(index.key, key) == 0)
+					for (uint16_t i = index.first; i < index.first + index.count; ++i)
+						if (Real::VersionMap::kFieldRows[i].gameCL == cl)
+							return &Real::VersionMap::kFieldRows[i];
+			return nullptr;
+		};
+		const Real::VersionMap::FieldRow* oldRow = fieldRow("UCrGameInstance::ServerSessionName", 127004);
+		const Real::VersionMap::FieldRow* newRow = fieldRow("UCrGameInstance::ServerSessionName", 128786);
+		Check(oldRow && oldRow->offset == 0x290 && oldRow->size == 0x10, "real field rows: ServerSessionName keeps its CL-127004 row");
+		Check(newRow && newRow->offset == 0x2A0 && newRow->size == 0x10, "real field rows: ServerSessionName has its CL-128786 row");
+		oldRow = fieldRow("UCrEnviroWaveTimerSubsystem::TimerActor", 127004);
+		newRow = fieldRow("UCrEnviroWaveTimerSubsystem::TimerActor", 128786);
+		Check(oldRow && oldRow->offset == 0x90 && newRow && newRow->offset == 0x98, "real field rows: TimerActor 0x90 on CL-127004, 0x98 on CL-128786");
+	}
 	Check(unmatched == 0, "every real map key is a registry row's or a plugin's global or scoped key");
 	Check(pluginKeys == 105, "the real map holds the 105 plugin function keys; FRHIComputeCommandList::Transition is a loader registry key now");
 	Check(wrong == 0, "every real map row has its registry row's kind and fp");
