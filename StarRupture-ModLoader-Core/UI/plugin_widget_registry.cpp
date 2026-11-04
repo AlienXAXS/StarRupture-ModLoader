@@ -10,6 +10,7 @@
 #include "plugins/plugin_watchdog.h"
 #include "plugins/plugin_guard.h"
 #include "../core/client_ui.h"
+#include "../core/input_arbitration.h"
 #include <mutex>
 #include <list>
 #include <vector>
@@ -121,6 +122,18 @@ namespace UI::PluginWidgetRegistry
             e->isVisible = visible;
     }
 
+    bool AnyWantsMenuHover()
+    {
+        std::lock_guard<std::mutex> lock(s_mutex);
+        for (const WidgetEntry& e : s_widgets)
+        {
+            const PluginWindowHints* hints = e.desc->windowHints;
+            if (e.isVisible && hints && (hints->extra_window_flags & PluginWindowFlags_MenuMouseWhereUncovered))
+                return true;
+        }
+        return false;
+    }
+
     void RenderWidgets(IModLoaderImGui* imgui)
     {
         // Snapshot which widgets to draw. The copy alone is not enough: the
@@ -147,6 +160,7 @@ namespace UI::PluginWidgetRegistry
         // the game's cursor, so a widget that did not ask for it is
         // click-through there and the screen under it keeps its clicks.
         const bool menuMouse = ShouldShareGameMouseNow();
+        const bool menuUnderCursor = IsMenuWidgetUnderCursorNow();
 
         for (const WidgetRef& ref : toRender)
         {
@@ -165,6 +179,7 @@ namespace UI::PluginWidgetRegistry
 
             ImGuiWindowFlags flags = kWidgetFlagsBase;
             bool menuInputs = false;
+            bool menuInputsWhereUncovered = false;
             const PluginWindowHints* hints = entry.desc->windowHints;
             if (hints)
             {
@@ -173,13 +188,15 @@ namespace UI::PluginWidgetRegistry
                 if (hints->pos_x >= 0.0f && hints->pos_y >= 0.0f)
                     ImGui::SetNextWindowPos(ImVec2(hints->pos_x, hints->pos_y), (ImGuiCond)hints->pos_cond, ImVec2(hints->pivot_x, hints->pivot_y));
                 menuInputs = (hints->extra_window_flags & PluginWindowFlags_PauseMenuMouseInputs) != 0;
-                flags |= (ImGuiWindowFlags)(hints->extra_window_flags & ~PluginWindowFlags_PauseMenuMouseInputs);
+                menuInputsWhereUncovered = (hints->extra_window_flags & PluginWindowFlags_MenuMouseWhereUncovered) != 0;
+                flags |= (ImGuiWindowFlags)(hints->extra_window_flags
+                    & ~(PluginWindowFlags_PauseMenuMouseInputs | PluginWindowFlags_MenuMouseWhereUncovered));
             }
             else
             {
                 flags |= ImGuiWindowFlags_AlwaysAutoResize;
             }
-            if (menuMouse && !menuInputs)
+            if (InputArbitration::WidgetIsClickThrough(menuMouse, menuInputs, menuInputsWhereUncovered, menuUnderCursor))
                 flags |= ImGuiWindowFlags_NoMouseInputs;
 
             if (ImGui::Begin(entry.desc->name, nullptr, flags))

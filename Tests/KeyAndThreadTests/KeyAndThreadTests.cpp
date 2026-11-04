@@ -808,6 +808,38 @@ static void ExclusiveCapture()
     CHECK(IsExclusive(true, true, true));
 }
 
+// Which widgets are click-through while a cursor screen shares the mouse: a
+// widget that takes the mouse only where uncovered follows the menu's hover.
+static void WidgetClickThrough()
+{
+    using InputArbitration::WidgetIsClickThrough;
+    // WidgetIsClickThrough(mouseShared, takesMouseAlways, takesMouseWhereUncovered, menuWidgetUnderCursor)
+
+    // A plain widget is click-through over a cursor screen, hover or not.
+    CHECK(WidgetIsClickThrough(true, false, false, false));
+    CHECK(WidgetIsClickThrough(true, false, false, true));
+
+    // The always-on opt-in takes the mouse everywhere.
+    CHECK(!WidgetIsClickThrough(true, true, false, false));
+    CHECK(!WidgetIsClickThrough(true, true, false, true));
+
+    // The where-uncovered opt-in takes it only where no menu widget is hovered.
+    CHECK(!WidgetIsClickThrough(true, false, true, false));
+    CHECK(WidgetIsClickThrough(true, false, true, true));
+
+    // With both opt-ins the always-on one wins.
+    CHECK(!WidgetIsClickThrough(true, true, true, false));
+    CHECK(!WidgetIsClickThrough(true, true, true, true));
+
+    // Mouse not shared (exclusive capture, or no cursor screen): never
+    // click-through here, whatever the flags and the hover.
+    for (int bits = 0; bits < 8; ++bits)
+    {
+        const bool always = (bits & 1) != 0, uncovered = (bits & 2) != 0, hovered = (bits & 4) != 0;
+        CHECK(!WidgetIsClickThrough(false, always, uncovered, hovered));
+    }
+}
+
 // Keyboard in the shared modes: a text field owns the keys, and otherwise only a
 // passthrough token's navigation claim does.
 static void SharedKeyboard()
@@ -913,6 +945,7 @@ int main()
     RunTest("IsKeyHeld: allocates nothing", AllocatesNothing);
     RunTest("IsKeyHeld: any thread", AnyThread);
     RunTest("InputArbitration: plugin windows are exclusive only off the cursor screens", ExclusiveCapture);
+    RunTest("InputArbitration: widgets take the mouse over cursor screens by opt-in and menu hover", WidgetClickThrough);
     RunTest("InputArbitration: a text field owns the keyboard in the shared modes", SharedKeyboard);
     RunTest("InputArbitration: a release reaches the game for a press it saw", ReleasePassthrough);
     RunTest("InputArbitration: a text field's keys stay kept, a held key still gets its release", ReleasePassthroughTextField);

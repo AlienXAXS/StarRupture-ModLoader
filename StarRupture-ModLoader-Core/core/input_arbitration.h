@@ -31,6 +31,21 @@ namespace InputArbitration
         return loaderWindowOpen || (pluginCaptures && !cursorScreenUp);
     }
 
+    // Whether a widget window is drawn click-through (ImGuiWindowFlags_NoMouseInputs)
+    // while the game's cursor screens share the mouse. A widget with
+    // PluginWindowFlags_PauseMenuMouseInputs always takes it. One with
+    // PluginWindowFlags_MenuMouseWhereUncovered takes it only where no widget of
+    // the game's menu is under the cursor, and is click-through where one is.
+    // Any other widget is click-through. Nothing is click-through when the mouse
+    // is not shared (exclusive capture, or no cursor screen up).
+    inline bool WidgetIsClickThrough(bool mouseShared, bool takesMouseAlways,
+                                     bool takesMouseWhereUncovered, bool menuWidgetUnderCursor)
+    {
+        if (!mouseShared || takesMouseAlways)
+            return false;
+        return !takesMouseWhereUncovered || menuWidgetUnderCursor;
+    }
+
     // Whether a keyboard message is kept from the game, outside exclusive capture.
     // A focused text field owns the keyboard in either mode, so typing in a
     // plugin's search box never reaches the game's menu. Cooperative mode (a

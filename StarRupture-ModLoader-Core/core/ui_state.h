@@ -52,6 +52,9 @@ namespace UIState
 	// was called. Game thread, once per tick.
 	bool MenuReadWanted();
 
+	// Whether DisableMenuRead was called. Any thread.
+	bool MenuReadDisabled();
+
 	// Stops the menu-layer read for the rest of the process: the layout check
 	// found a class it reads changed on this game build. The menu bits then
 	// stay 0. Any thread.

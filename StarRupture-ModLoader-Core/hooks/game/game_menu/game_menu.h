@@ -111,6 +111,17 @@ namespace Hooks::GameMenu
 	// menu layer. 0 when nothing is on it; a screen that is closing still
 	// counts, until its close transition has ended. Game thread only.
 	uint64_t ReadMenuLayer(SDK::APlayerController* pc);
+
+	// Whether the cursor is over a visible, hit-testable widget of that same
+	// menu layer (UWidget::IsHovered on each screen on it). False when the layer
+	// is empty or not found. Game thread only; no pointer outlives the call.
+	bool ReadMenuHover(SDK::APlayerController* pc);
+
+	// The last published answer of ReadMenuHover, for the window thread that
+	// decides which widgets take the mouse. Set once per game tick, so it can
+	// be a frame old. Safe from any thread.
+	void SetMenuWidgetHovered(bool hovered);
+	bool IsMenuWidgetHovered();
 }
 
 #endif // MODLOADER_CLIENT_BUILD

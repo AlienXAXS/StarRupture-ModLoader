@@ -227,7 +227,8 @@ callback. It is always false when the pause hook did not install.
 Over the pause menu, and over any other game screen that shows the mouse cursor (machine menus,
 the recipe station, the inventory), widgets are click-through unless they opt in with
 `PluginWindowFlags_PauseMenuMouseInputs`; an opted-in widget can be hovered, clicked and dragged
-there, and the keyboard stays with the game. With the F2 window open nothing changes. See
+there, and the keyboard stays with the game. `PluginWindowFlags_MenuMouseWhereUncovered` (v75) takes
+the mouse only where no widget of the game's menu is under the cursor. With the F2 window open nothing changes. See
 [ImGui_Dev.md](ImGui_Dev.md#6-over-the-pause-menu-v71).
 
 ---

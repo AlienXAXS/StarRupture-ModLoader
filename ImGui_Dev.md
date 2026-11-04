@@ -258,6 +258,17 @@ static const PluginWidgetDesc k_myWidget = {
 
 A widget without hints is auto-sized; one with hints is not unless it asks, hence `PluginWindowFlags_AlwaysAutoResize` (v74; before that, `1 << 6`).
 
+`PluginWindowFlags_PauseMenuMouseInputs` takes the mouse everywhere the widget is drawn, including over
+the menu's own buttons. A widget that should stay usable without covering them can opt in with
+`PluginWindowFlags_MenuMouseWhereUncovered` (v75) instead: it takes the mouse wherever no widget of the
+game's menu is under the cursor, and is click-through where one is, so the menu's buttons and panels
+keep their clicks. The loader asks the game once per tick whether one of the menu's widgets is hovered, so the
+answer can be a frame old: a click just after the cursor moves onto a menu button can still land on your
+widget. A menu screen whose root is hit-testable across the whole screen counts as under the cursor
+everywhere, and the widget is click-through everywhere over it, as it is without any flag. If both
+flags are set, `PauseMenuMouseInputs` wins. A loader older than v75 does not know the flag (it stays
+click-through there), so a plugin that must work on one sets `PauseMenuMouseInputs` or accepts that.
+
 The same holds over every other game screen that has the mouse cursor up: the loader reads
 `bShowMouseCursor` on the local player controller once per game tick. A click on an opted-in
 widget is kept from the menu; a click anywhere else reaches the menu. While
@@ -266,7 +277,7 @@ stays with the game, so Escape still closes the menu, except that a focused text
 keys. The flag applies to the widget's own window:
 a child window inside a widget that did not opt in (`BeginChild`, a scrolling table) is an ImGui
 window of its own and still takes the mouse. While a ModLoader window has the cursor (F2, the
-console), the flag changes nothing: widgets take the mouse as they always have. An open plugin
+console), the flags change nothing: widgets take the mouse as they always have. An open plugin
 panel or an `AcquireInputCapture` token does not take the cursor over these screens: the mouse stays
 shared, so only the plugin's own windows take it and the rest of the screen keeps its clicks.
 Mouse queries (`GetMousePos`, `IsMouseDown`, `IsMouseClicked`) report the menu cursor in every
