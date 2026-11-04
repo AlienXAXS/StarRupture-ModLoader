@@ -815,6 +815,12 @@
 //      can add bits without a new interface version; a plugin ignores bits it
 //      does not know.
 //
+//      Also in v74: a reflected PluginFieldRequest with size 0 takes whatever
+//      size the game reflects and returns it in PluginFieldResult::size. A
+//      loader before v74 refuses the request as a size mismatch, so a plugin
+//      that must also run there declares 73 and sends the size it was
+//      compiled with.
+//
 #define PLUGIN_INTERFACE_VERSION_MIN 70
 #define PLUGIN_INTERFACE_VERSION_MAX 74
 #define PLUGIN_INTERFACE_VERSION 74
