@@ -53,8 +53,11 @@ namespace Hooks::GameMenu
 				if (!info.RootLayout || info.LocalPlayer != pc->Player)
 					continue;
 
-				// Not const: the SDK's const TMap indexer does not compile.
-				auto& layers = info.RootLayout->Layers;
+				// The class is named so the layout table lists it and the
+				// check covers Layers. Not const: the SDK's const TMap indexer
+				// does not compile.
+				SDK::UPrimaryGameLayout* root = info.RootLayout;
+				auto& layers = root->Layers;
 				for (int32_t l = 0; l < layers.NumAllocated(); ++l)
 				{
 					if (!layers.IsValidIndex(l))

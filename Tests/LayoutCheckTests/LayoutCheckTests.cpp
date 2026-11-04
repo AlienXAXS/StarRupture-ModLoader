@@ -135,13 +135,31 @@ namespace
             { { "Some_Pattern", "48 8B \"05\"", false, true } },
             { { "GObjects", true, 0x1000, 0x1000, false }, { "GWorld", false, 0, 0x2000, false },
               { "GNames", true, 0x3000, 0x4000, true } },
-            &result };
+            &result, CompatReport::Outcome::SafeOff };
         const std::string json = CompatReport::Build(inputs);
         const auto has = [&json](const char* text) { return json.find(text) != std::string::npos; };
 
         Check(has("\"productVersion\": \"1.0.0.0-CL-127004\""), "the game's ProductVersion");
         Check(has("\"exe\": { \"name\": \"StarRupture-Win64-Shipping.exe\", \"sha256\": \"aaaaaaaa"), "the exe's name and SHA-256");
         Check(has("\"sdkCL\": 126119"), "the SDK's CL");
+        Check(has("\"outcome\": \"safe-off\""), "a safe-off says so");
+
+        // A later safe-off writes the report again: the lines and changes of the
+        // earlier partial switch-off, which the init thread carries over, stay.
+        LayoutCheck::Result later = result;
+        later.lines.push_back("GObjects or FName::AppendString was not found on this build");
+        CompatReport::Inputs partial = inputs;
+        partial.layout  = &later;
+        partial.outcome = CompatReport::Outcome::Partial;
+        const std::string partialJson = CompatReport::Build(partial);
+        Check(partialJson.find("\"outcome\": \"partial\"") != std::string::npos
+            && partialJson.find("\"outcome\": \"safe-off\"") == std::string::npos, "a partial switch-off says so");
+        partial.outcome = CompatReport::Outcome::SafeOff;
+        const std::string afterJson = CompatReport::Build(partial);
+        Check(afterJson.find("\"outcome\": \"safe-off\"") != std::string::npos
+            && afterJson.find("{ \"class\": \"ACrCharacterPlayerBase\", \"member\": \"ADSMoveSpeed\"") != std::string::npos
+            && afterJson.find("\"mismatched\": 1") != std::string::npos,
+            "a safe-off after a partial switch-off keeps the layout changes");
         Check(has("{ \"name\": \"Some_Pattern\", \"module\": \"StarRupture-Win64-Shipping.exe\", \"pattern\": \"48 8B \\\"05\\\"\", \"required\": false, \"found\": true }"),
             "a missed pattern, quotes escaped");
         Check(has("{ \"name\": \"GObjects\", \"resolved\": true, \"rva\": 4096, \"sdkOffset\": 4096, \"rejected\": false }")
@@ -376,6 +394,7 @@ namespace
         Check(has(tags("UWorld"), "core"), "UWorld: the loader's own code");
         Check(has(tags("SubsystemBlueprintLibrary_GetGameInstanceSubsystem"), "plugin-sdk"), "a parameter block: compiled into plugins");
         Check(has(tags("UCommonActivatableWidgetContainerBase"), "ui-menus"), "WidgetList's class: the menu-layer read");
+        Check(has(tags("UPrimaryGameLayout"), "ui-menus"), "Layers' class: the menu-layer read");
         bool allTagged = true;
         for (const LayoutCheck::TableClass& c : table)
             allTagged = allTagged && !c.consumers.empty();
@@ -392,6 +411,20 @@ namespace
                 && verdict.featuresOff == std::vector<std::string>{ "ui-menus" }
                 && verdict.changed == std::vector<std::string>{ "UCrUW_MapMenu" },
                 "a class only the menu-layer read uses: that feature off, plugins stay on");
+        }
+        // The menu read takes the layer map from UPrimaryGameLayout: a move
+        // of Layers there is found, and the read is off (here with every
+        // plugin, because plugins compile that class in too).
+        {
+            auto game = AsGame(table);
+            for (LayoutCheck::LiveProperty& property : game[ClassNamed(table, "UPrimaryGameLayout")->path].properties)
+                if (property.name == "Layers")
+                    property.offset += 8;
+            const LayoutCheck::Result result = CompareWith(table, game);
+            const LayoutCheck::Verdict verdict = LayoutCheck::Decide(table, result);
+            Check(LayoutCheck::FoundChanges(result) && verdict.changed == std::vector<std::string>{ "UPrimaryGameLayout" }
+                && has(verdict.featuresOff, "ui-menus") && verdict.safeOff,
+                "UPrimaryGameLayout::Layers moved: found, the menu read is off");
         }
         // ...and where the player class lost its members: nothing in the
         // loader stops; plugins that keep it compiled in are refused

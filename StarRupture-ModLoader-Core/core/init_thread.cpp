@@ -50,7 +50,7 @@ static void EnterLayoutSafeOff(const LayoutCheck::Result& layout)
     PreloadManager::Shutdown();
     ModLoaderLogger::LogError(L"[init] Layout mismatch -- plugins are switched off for this session");
 
-    const std::wstring reportName = CompatReport::Write(layout);
+    const std::wstring reportName = CompatReport::Write(layout, CompatReport::Outcome::SafeOff);
     Splash::Close();
 
     // CRLF: the crash dialog's edit control does not render bare '\n'.
@@ -88,18 +88,21 @@ static void SwitchOffChangedLayoutUsers(const LayoutCheck::Result& layout)
 {
     const LayoutCheck::Verdict& verdict = layout.verdict;
     PreloadManager::Shutdown();
-    CompatReport::Write(layout);
+    CompatReport::Write(layout, CompatReport::Outcome::Partial);
 
-    std::vector<std::string> classNames;
+    std::vector<std::string> classNames, paths;
     for (size_t i = 0; i < verdict.changed.size(); ++i)
     {
         classNames.push_back(verdict.changed[i]);
         const std::string& path = verdict.changedPaths[i];
         const size_t dot = path.find('.');
         if (dot != std::string::npos)
+        {
             classNames.push_back("/Script/" + path.substr(0, dot) + "." + verdict.changed[i]);
+            paths.push_back(path);
+        }
     }
-    VersionMap::SetLayoutChanges(classNames);
+    VersionMap::SetLayoutChanges(classNames, paths);
 
     std::string changed;
     for (const std::string& name : verdict.changed)
@@ -112,13 +115,13 @@ static void SwitchOffChangedLayoutUsers(const LayoutCheck::Result& layout)
         UIState::DisableMenuRead();
 
         PluginHookReport::PluginReport report;
-        report.plugin   = "ModLoader";
+        report.plugin   = PluginHookReport::kLoaderReport;
         report.file     = "StarRupture-ModLoader-Core.dll";
         report.refused  = false;
         report.resolved = 0;
         report.featuresOff.push_back({ "ui-menus", "Menu state for plugins",
-            "This game build changed the layout of " + changed + ". Plugins that react to the map, inventory,"
-            " build menu or a station menu opening will not see it open.", {}, {} });
+            "this game build changed the layout of " + changed + ", so plugins that react to the map, inventory,"
+            " build menu or a station menu opening will not see it open", {}, {} });
         PluginHookReport::AddReport(report);
     }
 
@@ -387,8 +390,10 @@ DWORD WINAPI MainInitThreadProc(LPVOID)
     // On a build other than the SDK's own, plugins run only on what was
     // checked: a check that could not run, or an SDK still on its built-in
     // Offsets:: for GObjects or FName::AppendString, switches them off too.
+    // What the check found stays in every report below, also when a later step
+    // switches the plugins off after only some features went off.
+    LayoutCheck::Result layout;
     {
-        LayoutCheck::Result layout;
         bool ran = false;
         if (Hooks::EngineInit::IsEngineInitialized())
         {
@@ -410,12 +415,12 @@ DWORD WINAPI MainInitThreadProc(LPVOID)
 
         if (VersionMap::RunningExe().cl != VersionMap::kBuiltCL)
         {
-            LayoutCheck::Result unchecked;
+            LayoutCheck::Result unchecked = layout;
             if (!ran)
                 unchecked.lines.push_back("The layout check did not run, and this is not the build the SDK was made for");
             if (!SdkGlobals::SdkOnResolvedGlobals())
                 unchecked.lines.push_back("GObjects or FName::AppendString was not found on this build");
-            if (!unchecked.lines.empty())
+            if (unchecked.lines.size() > layout.lines.size())
             {
                 EnterLayoutSafeOff(unchecked);
                 return 0;
@@ -431,10 +436,11 @@ DWORD WINAPI MainInitThreadProc(LPVOID)
     // The loader's own fields are resolved from it. On a build other than the
     // SDK's own, one that does not resolve switches plugins off.
     {
-        LayoutCheck::Result unresolved;
-        unresolved.lines = SdkGlobals::ResolveFields();
-        if (!unresolved.lines.empty())
+        const std::vector<std::string> failures = SdkGlobals::ResolveFields();
+        if (!failures.empty())
         {
+            LayoutCheck::Result unresolved = layout;
+            unresolved.lines.insert(unresolved.lines.end(), failures.begin(), failures.end());
             EnterLayoutSafeOff(unresolved);
             return 0;
         }

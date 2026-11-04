@@ -8,7 +8,7 @@ namespace CompatReport
     namespace
     {
         // Bumped on any change to the report's fields.
-        constexpr int kReportFormat = 2;
+        constexpr int kReportFormat = 3;
 
         void AppendString(std::string& out, const std::string& text)
         {
@@ -84,6 +84,7 @@ namespace CompatReport
         AppendString(out, inputs.exeSha256);
         out += " },\n";
         out += "  \"sdkCL\": " + std::to_string(inputs.sdkCL) + ",\n";
+        out += std::string("  \"outcome\": \"") + (inputs.outcome == Outcome::Partial ? "partial" : "safe-off") + "\",\n";
         out += "  \"layout\": { \"classes\": " + std::to_string(layout.classes)
             + ", \"checked\": " + std::to_string(layout.checked)
             + ", \"mismatched\": " + std::to_string(layout.mismatched)
@@ -206,14 +207,14 @@ namespace CompatReport
         }
     }
 
-    std::wstring Write(const LayoutCheck::Result& layout)
+    std::wstring Write(const LayoutCheck::Result& layout, Outcome outcome)
     {
         wchar_t exePath[MAX_PATH]{};
         GetModuleFileNameW(nullptr, exePath, MAX_PATH);
         const wchar_t* lastSlash = wcsrchr(exePath, L'\\');
 
         Inputs inputs{ WideToUtf8(GetGameVersionString()), WideToUtf8(lastSlash ? lastSlash + 1 : exePath),
-            Sha256OfFile(exePath), SrLayoutTable::kBuiltCL, {}, {}, &layout };
+            Sha256OfFile(exePath), SrLayoutTable::kBuiltCL, {}, {}, &layout, outcome };
         for (const PatternPreflight::Miss& miss : PatternPreflight::Misses())
             inputs.patternMisses.push_back(PatternMiss{ miss.name, miss.pattern, miss.required, miss.structural });
         for (const SdkGlobals::Resolution& global : SdkGlobals::Resolutions())

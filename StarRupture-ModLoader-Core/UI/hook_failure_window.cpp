@@ -123,13 +123,19 @@ namespace UI::HookFailureWindow
             ImVec2(0.5f, 0.5f));
 
         int  refused        = 0;
-        int  featuresOff    = 0;
+        int  featuresOff    = 0;  // in plugins
         int  featurePlugins = 0;
+        int  loaderFeatures = 0;  // the loader's own, switched off by the layout check
         bool anyFailures    = false;
         for (const auto& r : s_cache)
         {
             if (r.refused) ++refused;
             if (!r.failures.empty()) anyFailures = true;
+            if (r.plugin == PluginHookReport::kLoaderReport)
+            {
+                loaderFeatures += static_cast<int>(r.featuresOff.size());
+                continue;
+            }
             if (!r.featuresOff.empty()) ++featurePlugins;
             featuresOff += static_cast<int>(r.featuresOff.size());
         }
@@ -144,14 +150,18 @@ namespace UI::HookFailureWindow
 
         // What a player needs first, in a line each: which feature is off in
         // which plugin. The report below is for the plugin's author.
-        if (featuresOff > 0)
+        if (featuresOff > 0 || loaderFeatures > 0)
         {
-            ImGui::TextColored(kOrange, "%d feature(s) are off in %d plugin(s).", featuresOff, featurePlugins);
+            if (featuresOff > 0)
+                ImGui::TextColored(kOrange, "%d feature(s) are off in %d plugin(s).", featuresOff, featurePlugins);
+            if (loaderFeatures > 0)
+                ImGui::TextColored(kOrange, "%d feature(s) are off in the mod loader.", loaderFeatures);
             for (const auto& r : s_cache)
                 for (const PluginHookReport::FeatureOff& f : r.featuresOff)
                     ImGui::TextWrapped("%s: %s is off -- %s.",
                                        r.plugin.c_str(), f.title.c_str(), f.reason.c_str());
-            ImGui::TextDisabled("The rest of each plugin runs. Details are listed below.");
+            ImGui::TextDisabled(featuresOff > 0 ? "The rest of each plugin runs. Details are listed below."
+                                                : "Details are listed below.");
 
             if (anyFailures)
             {

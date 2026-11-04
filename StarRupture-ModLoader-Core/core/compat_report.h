@@ -6,10 +6,13 @@
 #include <string>
 #include <vector>
 
-// The compatibility report: ModLoader\compat-report-<CL>.json, written once
-// when the startup layout check switches plugins off. It says which game build
-// this is, which scan patterns missed, where the engine globals resolved and
-// which SDK class members moved, so a loader update can be made from it.
+// The compatibility report: ModLoader\compat-report-<CL>.json, written when
+// the startup layout check switches something off, and again, with the same
+// layout findings, if a later startup step switches every plugin off. It says
+// which game build this is, whether only some loader features and plugins went
+// off or every plugin did, which scan patterns missed, where the engine globals
+// resolved and which SDK class members moved, so a loader update can be made
+// from it.
 // Nothing else goes in: no paths, no user or machine names, no plugin list.
 namespace CompatReport
 {
@@ -30,6 +33,13 @@ namespace CompatReport
         bool        rejected;   // resolved, but the loader used sdkOffset instead
     };
 
+    // What the boot switched off.
+    enum class Outcome
+    {
+        Partial,  // only what reads the changed classes (SwitchOffChangedLayoutUsers)
+        SafeOff,  // every plugin (EnterLayoutSafeOff)
+    };
+
     struct Inputs
     {
         std::string                productVersion;  // the game exe's ProductVersion
@@ -39,6 +49,7 @@ namespace CompatReport
         std::vector<PatternMiss>   patternMisses;
         std::vector<GlobalRva>     globals;
         const LayoutCheck::Result* layout;
+        Outcome                    outcome;
     };
 
     // The report's JSON text. Kept apart from the game so it can be tested.
@@ -49,7 +60,8 @@ namespace CompatReport
     std::string ClOf(const std::string& productVersion);
 
     // Client builds: gathers the inputs, writes the report and returns its
-    // file name (empty if it could not be written). Called once, from the
-    // init thread, when the layout check switches plugins off.
-    std::wstring Write(const LayoutCheck::Result& layout);
+    // file name (empty if it could not be written). Called from the init
+    // thread. A later call replaces the file, so it carries everything the
+    // earlier one did.
+    std::wstring Write(const LayoutCheck::Result& layout, Outcome outcome);
 }
