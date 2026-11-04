@@ -697,8 +697,10 @@
 //      takes it: it can be hovered, clicked and dragged, and a click on it is
 //      kept from the menu. Every other widget window stays click-through, as
 //      before (child windows inside it are ImGui windows of their own).
-//      The keyboard stays with the game. Nothing changes under exclusive
-//      capture.
+//      The keyboard stays with the game, except that a focused text field
+//      keeps its keys. Nothing changes under exclusive capture. A plugin
+//      panel or AcquireInputCapture token is not exclusive over those
+//      screens: see AcquireInputCapture.
 //
 //      Added ConfigValueType::Choice (a dropdown on the config page) and
 //      ConfigValueType::Hidden (a value the plugin saves by itself, which the
@@ -2371,6 +2373,11 @@ struct IPluginUIEvents
 	// for plugins driving their UI via RegisterWidget (which does not
 	// trigger capture on its own). Returns an opaque token; input stays
 	// suppressed as long as at least one token (from any plugin) is held.
+	// Over the Escape menu and the game's other cursor screens the token does
+	// not suppress anything: the mouse is shared instead, so clicks, moves and
+	// the wheel outside the plugin's windows reach the game's menu, and a
+	// widget takes the mouse only with PluginWindowFlags_PauseMenuMouseInputs.
+	// A focused text field still keeps its keys from the game.
 	// Always call ReleaseInputCapture for every acquired token, including
 	// during PluginShutdown -- a leaked token permanently suppresses input
 	// until the modloader restarts.
@@ -2392,6 +2399,8 @@ struct IPluginUIEvents
 	//
 	// Exclusive capture wins: while any modloader window, plugin panel, or
 	// AcquireInputCapture token is active, passthrough tokens have no effect.
+	// (Over the Escape menu and other cursor screens a plugin panel or
+	// AcquireInputCapture token is not exclusive; see AcquireInputCapture.)
 	// Refcounted across all plugins; always release every acquired token,
 	// including during PluginShutdown.
 	void* (*AcquireInputPassthrough)();
@@ -2401,7 +2410,9 @@ struct IPluginUIEvents
 	// True while a loader or plugin window has exclusive input capture: the
 	// mod loader window, a console or profiler window, any open plugin panel,
 	// or an AcquireInputCapture token. The cursor is ImGui's and the game is
-	// frozen. Safe from any thread.
+	// frozen. Over the Escape menu and the game's other cursor screens a plugin
+	// panel or token does not count: it shares the mouse with the game instead,
+	// so this stays false for it there. Safe from any thread.
 	bool (*IsOverlayOpen)();
 };
 

@@ -63,7 +63,7 @@ struct ImGuiRenderCallbacks
     // True while the game shows its own cursor (the pause menu, or any game
     // screen with the mouse cursor up) and nothing has exclusive capture. ImGui
     // is fed the mouse then and keeps only the messages it wants; the keyboard
-    // stays with the game.
+    // stays with the game unless an ImGui text field has focus.
     bool    (*IsGameMouseShared)();
 };
 

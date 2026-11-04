@@ -262,10 +262,13 @@ The same holds over every other game screen that has the mouse cursor up: the lo
 `bShowMouseCursor` on the local player controller once per game tick. A click on an opted-in
 widget is kept from the menu; a click anywhere else reaches the menu. While
 one of its popups is open, ImGui keeps the first click outside it to close the popup. The keyboard
-stays with the game, so Escape still closes the menu. The flag applies to the widget's own window:
+stays with the game, so Escape still closes the menu, except that a focused text field keeps its
+keys. The flag applies to the widget's own window:
 a child window inside a widget that did not opt in (`BeginChild`, a scrolling table) is an ImGui
-window of its own and still takes the mouse. While a ModLoader window has the cursor (F2, a
-plugin panel, the console), the flag changes nothing: widgets take the mouse as they always have.
+window of its own and still takes the mouse. While a ModLoader window has the cursor (F2, the
+console), the flag changes nothing: widgets take the mouse as they always have. An open plugin
+panel or an `AcquireInputCapture` token does not take the cursor over these screens: the mouse stays
+shared, so only the plugin's own windows take it and the rest of the screen keeps its clicks.
 Mouse queries (`GetMousePos`, `IsMouseDown`, `IsMouseClicked`) report the menu cursor in every
 widget, opted in or not; only hovering and clicking the window itself is gated.
 

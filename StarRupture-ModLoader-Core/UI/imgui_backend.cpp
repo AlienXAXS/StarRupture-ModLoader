@@ -319,7 +319,8 @@ static LRESULT CALLBACK HookedWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 	// ShouldShareGameMouseNow; the rest are drawn click-through) can be
 	// hovered, clicked and dragged, and only the clicks that land on them are
 	// kept from the screen. The keyboard stays with the game, so Escape still
-	// closes the menu. Exclusive capture overrides it.
+	// closes the menu, unless an ImGui text field has focus. Exclusive capture
+	// overrides it.
 	const bool menuCursor = !exclusive &&
 		(g_callbacks.IsGameMouseShared ? g_callbacks.IsGameMouseShared() : false);
 
