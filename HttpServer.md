@@ -73,6 +73,8 @@ prefix comparison, but the original casing is preserved in `req->url`.
 1. **Raw-request filters** -- run first, for every request regardless of URL. A filter
    returning `HttpRequestAction::Deny` immediately sends a `403 Forbidden` and stops all
    further processing. Use filters for authentication, rate-limiting, or blanket blocking.
+   A filter that crashes switches its plugin off, and from then on it counts as `Deny` for
+   every request until the plugin is reloaded: a filter that cannot run never waves requests in.
 
 2. **Raw-response routes** -- prefix-matched against the URL. The first match wins; the
    matched plugin callback is called and its response is sent. No other handler runs.

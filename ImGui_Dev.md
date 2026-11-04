@@ -232,6 +232,46 @@ if (hooks->Input)
 The widget window position and size are saved to `modloader_imgui.ini` automatically, so the
 player's chosen position persists between sessions.
 
+### 6. Over the pause menu and other cursor screens (v71)
+
+While the game's pause menu is open, or any other game screen is showing the mouse cursor (the
+main menu, machine menus, the recipe station, the inventory), and no ModLoader window has the
+cursor, the game shows its own cursor. Widgets are click-through there by default, so the menu buttons under them keep
+working. To let players hover, click and drag a widget over the menu, opt in with
+`PluginWindowFlags_PauseMenuMouseInputs` in its window hints:
+
+```cpp
+static const PluginWindowHints k_myHints = {
+    0.0f, 0.0f,     // width, height: no size hint
+    -1.0f, -1.0f,   // pos_x, pos_y: no placement
+    0.0f, 0.0f,     // pivot
+    0, 0,           // size_cond, pos_cond
+    PluginWindowFlags_PauseMenuMouseInputs | PluginWindowFlags_AlwaysAutoResize
+};
+
+static const PluginWidgetDesc k_myWidget = {
+    "My Plugin HUD",
+    MyWidgetRender,
+    &k_myHints
+};
+```
+
+A widget without hints is auto-sized; one with hints is not unless it asks, hence `PluginWindowFlags_AlwaysAutoResize` (v74; before that, `1 << 6`).
+
+The same holds over every other game screen that has the mouse cursor up: the loader reads
+`bShowMouseCursor` on the local player controller once per game tick. A click on an opted-in
+widget is kept from the menu; a click anywhere else reaches the menu. While
+one of its popups is open, ImGui keeps the first click outside it to close the popup. The keyboard
+stays with the game, so Escape still closes the menu. The flag applies to the widget's own window:
+a child window inside a widget that did not opt in (`BeginChild`, a scrolling table) is an ImGui
+window of its own and still takes the mouse. While a ModLoader window has the cursor (F2, a
+plugin panel, the console), the flag changes nothing: widgets take the mouse as they always have.
+Mouse queries (`GetMousePos`, `IsMouseDown`, `IsMouseClicked`) report the menu cursor in every
+widget, opted in or not; only hovering and clicking the window itself is gated.
+
+To ask directly, `hooks->GameMenu->IsPauseMenuOpen()` reports the pause menu and
+`hooks->UI->IsOverlayOpen()` reports a ModLoader window with exclusive capture.
+
 ---
 
 ## Config-Change Notifications
@@ -264,6 +304,44 @@ if (hooks->UI)
 ```
 
 `newValue` is the raw string that was written to the INI file (e.g. `"true"`, `"42"`, `"3.14"`).
+
+The callback runs on the render thread, before the INI is written, so take the value from
+`newValue` rather than reading it back.
+
+### Choices and saved state (v71)
+
+Two config entry types change how the Config tab draws an entry:
+
+```cpp
+static const ConfigEntry CONFIG_ENTRIES[] = {
+    // A dropdown. The description comes first, then each choice after a '|'.
+    { "Map", "Style", ConfigValueType::Choice, "Dark", "Map colours|Dark|Light|Satellite" },
+
+    // No field on the page. Your plugin writes it when the player drags the window.
+    { "Map", "WindowX", ConfigValueType::Hidden, "-1", "Window position; -1 centres it" },
+    { "Map", "WindowY", ConfigValueType::Hidden, "-1", "Window position; -1 centres it" },
+};
+```
+
+- **Choice.** The INI stores the choice as written, and `newValue` is that text. The page matches
+  the stored value ignoring case, and shows a value that is none of the choices as the default, so
+  treat one the same way when you read it. The INI comment lists the choices for anyone editing
+  the file by hand.
+- **Hidden.** Values your plugin saves by itself, such as where a window was dragged. The page
+  draws no field for them. Each section holding any ends with a **Saved state** row (its tooltip
+  names them), and its **Clear** button sets each one back to its default, calling your
+  config-change callback for every value it changes. The button is greyed out while they all hold
+  their defaults. The value is plain text in the INI, so read and write it with whichever
+  `Read*`/`Write*` suits it: a number counts as its default when it has the same value, so
+  `WriteFloat`'s `-1.000000` matches a default of `"-1"`.
+
+Listen for the Hidden keys if your plugin keeps their values in memory, so a Clear takes effect
+straight away: put the window back, forget the remembered position.
+
+Both are v71, and a v70 loader refuses a v71 plugin. A v71 loader built before these two types
+were added draws a Choice as a text field, with the choices left in its description, and a Hidden
+entry as a text field. The values still read and write as text, so nothing breaks; the page only
+looks unfinished.
 
 ---
 
@@ -332,6 +410,62 @@ if (hooks->Input)
   return value is ignored, so ImGui keeps scrolling. The game is not receiving input then anyway.
 - Registrations are dropped automatically when the plugin is unloaded or reloaded, so a stale
   handler cannot be called. Unregister in `PluginShutdown` anyway.
+
+### Keys inside your own window (v71)
+
+Keybinds are not dispatched while a text field has focus, so they cannot move a highlight in a
+search list. `IModLoaderImGui::IsKeyPressed(vk, repeat)` reads ImGui's key state for a Win32
+virtual-key code and works while you type. Call it from your render callback, only while your
+window is focused, or it also fires for keys meant for the game:
+
+```cpp
+if (imgui->IsWindowFocused(0))
+{
+    if (imgui->IsKeyPressed(VK_DOWN, true)) ++g_highlight;
+    if (imgui->IsKeyPressed(VK_UP, true))   --g_highlight;
+}
+```
+
+Use the sided modifier codes (`VK_LSHIFT`, `VK_RCONTROL`, ...). `VK_SHIFT`, `VK_CONTROL`,
+`VK_MENU` and the `VK_OEM_*` keys other than `VK_OEM_COMMA` and `VK_OEM_PERIOD` always report
+false, and `VK_RETURN` is the main Enter key only.
+
+### Sizing a popup (v74)
+
+A modal opened with `BeginPopupModal` and no size of its own shrinks to fit its first frame, which
+can be a strip a few pixels wide, and ImGui then saves that size. Two calls size the window that
+opens next; call them right before `BeginPopupModal` (or a panel's own `Begin`), from your render
+callback. There is no call to place it: ImGui centres a modal on the screen itself.
+
+| Call | Description |
+|------|-------------|
+| `SetNextWindowSize(w, h, cond)` | Set the next window's size |
+| `SetNextWindowSizeConstraints(min_w, min_h, max_w, max_h)` | Clamp it between a minimum and a maximum (no callback); `FLT_MAX` for no limit. A minimum width keeps an auto-sized window from collapsing |
+
+`cond` is one of `PluginCond_Always`, `PluginCond_Once`, `PluginCond_FirstUseEver` or
+`PluginCond_Appearing`. The recommended popup is as wide as its text needs but never narrower than a
+minimum, and its size is not saved to the ini (`PluginWindowFlags_NoSavedSettings`), so a bad size
+cannot stick; ImGui centres it:
+
+```cpp
+// Open it once, from a button: imgui->OpenPopup("Confirm##myplugin");
+imgui->SetNextWindowSizeConstraints(360.0f, 0.0f, FLT_MAX, FLT_MAX);   // minimum width; needs <cfloat>
+if (imgui->BeginPopupModal("Confirm##myplugin", nullptr,
+        PluginWindowFlags_AlwaysAutoResize | PluginWindowFlags_NoSavedSettings))
+{
+    imgui->TextWrapped("A long message that wraps inside the minimum width.");
+    if (imgui->Button("OK")) imgui->CloseCurrentPopup();
+    imgui->EndPopup();
+}
+```
+
+To give a window a fixed size instead, leave out `PluginWindowFlags_AlwaysAutoResize` and call
+`SetNextWindowSize(w, h, PluginCond_Always)`. To fix only the width and keep the height auto-fitted, pass
+0 for the height: `SetNextWindowSize(540.0f, 0.0f, PluginCond_Always)` overrides
+`PluginWindowFlags_AlwaysAutoResize` on the axis it sets only. These calls need interface v74. A loader older than
+that refuses a plugin that declares v74 and shows it as needing a newer mod loader, so a plugin
+that has to run on a v73 loader declares 73 and leaves them out (see
+`PLUGIN_INTERFACE_VERSION` in `plugin_interface.h`).
 
 ---
 
@@ -462,6 +596,9 @@ imgui->ColorEdit4("Color", col4);   // RGBA
 | `SetTooltip(text)` | Show a tooltip when the previous widget is hovered |
 | `IsItemHovered()` | True if the mouse is over the previous widget |
 | `SetNextItemWidth(w)` | Override width of the next widget; pass `-1` to fill remaining space |
+| `IsKeyPressed(vk, repeat)` | (v71) True on the frame a Win32 virtual key goes down; `repeat` adds the held-key repeats |
+| `SetNextWindowSize(w, h, cond)` | (v74) Size the next window; see [Sizing a popup](#sizing-a-popup-v74) |
+| `SetNextWindowSizeConstraints(min_w, min_h, max_w, max_h)` | (v74) Minimum and maximum size of the next window |
 
 ---
 
@@ -509,7 +646,10 @@ static void MyPanelRender(IModLoaderImGui* imgui)
 
 - **Callbacks are called on the render thread** (inside `IDXGISwapChain::Present`). Do not call
   SDK functions, allocate engine memory, or take locks that the game thread might be holding.
-  Use `hooks->Engine->RegisterOnTick` for game-thread work and share state via a lock or atomic.
+  Use `hooks->Engine->RegisterOnTick` for game-thread work and share state via an atomic, or a
+  lock the game thread only holds briefly. Never hold that lock across slow game-thread work (a
+  texture upload, a scene capture): the frame waits on it, and if that work waits on the frame the
+  game hangs. If the lock can be busy for longer, `try_lock` it and skip that frame.
 
 - **Static state is fine.** Panel and widget render callbacks run every frame (widgets always;
   panels while open). `static` local variables inside them persist across frames, which is the

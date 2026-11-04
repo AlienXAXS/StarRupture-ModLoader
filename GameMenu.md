@@ -178,8 +178,54 @@ struct IPluginGameMenu {
     bool                (*RemoveEntry)(const IPluginSelf* self, GameMenuEntryHandle handle);
     int                 (*RemoveAllEntries)(const IPluginSelf* self);
     bool                (*IsAvailable)();
+    bool                (*IsPauseMenuOpen)();   // v71
+    uint64_t            (*GetUIState)();        // v74
+    void                (*RegisterOnUIStateChanged)(uint64_t mask, PluginUIStateCallback callback, void* userData);
+    void                (*UnregisterOnUIStateChanged)(PluginUIStateCallback callback, void* userData);
 };
 ```
+
+`GetUIState()` (v74) returns the game's UI state as `PluginUIState` bits: `PLUGIN_UI_IN_GAMEPLAY`
+(a ChimeraMain world is running), `PLUGIN_UI_PAUSE_MENU`, `PLUGIN_UI_CURSOR_UP` (the game shows its
+mouse cursor), `PLUGIN_UI_ANY_MENU` (a screen is active on the game's menu layer), and for some of
+those screens `PLUGIN_UI_MAP`, `PLUGIN_UI_INVENTORY`, `PLUGIN_UI_BUILD_MENU` or
+`PLUGIN_UI_STATION_MENU` (the corporate terminal, the development station and the equipment upgrade
+station). Several are set at once. It is one atomic read, safe from any thread, as of the last game
+tick. The state is 64 bits wide and a later loader may add bits without a new interface version, so
+test only the bits you know.
+
+`RegisterOnUIStateChanged(mask, callback, userData)` calls `callback(oldState, newState, userData)`
+on the game thread once per change of a bit in `mask` (`~0ull` for all), starting from 0: if a bit
+in `mask` is already set, the first tick after you register reports it. Register in `PluginInit`;
+the loader drops your registrations when your plugin unloads or reloads, but unregister in
+`PluginShutdown` anyway. The menu bits cost a read of the game's menu layer, so the loader reads
+them only while a registration's mask has one, or `GetUIState` was called in the last two seconds;
+otherwise they are 0.
+
+```cpp
+static void OnUIState(uint64_t oldState, uint64_t newState, void*)
+{
+    if ((newState & PLUGIN_UI_MAP) && !(oldState & PLUGIN_UI_MAP))
+        { /* the map just opened */ }
+}
+// PluginInit:     self->hooks->GameMenu->RegisterOnUIStateChanged(PLUGIN_UI_MAP, &OnUIState, nullptr);
+// PluginShutdown: self->hooks->GameMenu->UnregisterOnUIStateChanged(&OnUIState, nullptr);
+```
+
+The map and build-menu classes follow BetterDrone's menu-layer read; the inventory and station
+classes follow the class list in Kian369's MiniMap.
+
+`IsPauseMenuOpen()` (v71) is true while the pause menu is active, as its CommonUI activation flag
+reports, and false in the main menu and in play. On a screen the menu opens (options and so on)
+the game decides whether that flag stays set, so do not rely on either answer there. The loader
+samples it once per game tick, so it is safe to call from any thread, including a render
+callback. It is always false when the pause hook did not install.
+
+Over the pause menu, and over any other game screen that shows the mouse cursor (machine menus,
+the recipe station, the inventory), widgets are click-through unless they opt in with
+`PluginWindowFlags_PauseMenuMouseInputs`; an opted-in widget can be hovered, clicked and dragged
+there, and the keyboard stays with the game. With the F2 window open nothing changes. See
+[ImGui_Dev.md](ImGui_Dev.md#6-over-the-pause-menu-v71).
 
 ---
 
