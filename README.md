@@ -565,6 +565,7 @@ these for you.
 | `[UE4SS]` | `Enabled` | `0` | Load UE4SS before plugins. `1` if you delete the key |
 | | `Path` | `ue4ss\ue4ss.dll` | Relative to the game executable |
 | `[Debug]` | `ExportKnownGObjects` | `0` | Writes `known_gobjects_dump.txt` |
+| | `DisablePluginVersionMap` | `0` | `1` gives plugins no rows from the loader's version map, so each uses its own patterns and rows, or its feature switches off. For testing a plugin's own locators; the loader keeps the map for itself. Logs a warning at every launch. See [VersionMap.md](VersionMap.md) |
 
 Other files, all under `ModLoader\`:
 

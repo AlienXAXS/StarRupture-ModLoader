@@ -9,6 +9,7 @@
 #include "plugins/plugin_interface.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cstdio>
 #include <cstring>
 #include <memory>
@@ -222,6 +223,21 @@ namespace VersionMap
 	void SetActiveMap(std::shared_ptr<const MapData> map)
 	{
 		g_activeMap = std::move(map);
+	}
+
+	namespace
+	{
+		std::atomic<bool> g_pluginMapOff{ false };
+	}
+
+	void SetPluginMapOff(bool off)
+	{
+		g_pluginMapOff = off;
+	}
+
+	bool PluginMapOff()
+	{
+		return g_pluginMapOff;
 	}
 
 	namespace
@@ -1065,7 +1081,13 @@ namespace VersionMap
 		else if (!IsGlobalKind(kind) || key.find('/') != std::string::npos)
 			key.clear();   // no global key has a '/', and an unknown kind reads none
 
-		const Lookup found = LookUp(key, kind, fp, who, running.cl);
+		// Switched off in modloader.ini: no row of the map applies to a plugin, so it
+		// takes the same road as a key the map has no row for.
+		Lookup found;
+		if (PluginMapOff())
+			found.setAside = "the plugin map is switched off in modloader.ini";
+		else
+			found = LookUp(key, kind, fp, who, running.cl);
 		if (!found.refusal.empty())
 		{
 			LogPick(who, request.name, found.refusal + " (refused)");
@@ -1173,6 +1195,13 @@ namespace VersionMap
 		{
 			rows = request.candidates;
 #if defined(MODLOADER_CLIENT_BUILD)
+			// Switched off in modloader.ini: a plugin reads its own rows only. The loader's
+			// own fields (owner ModLoader) keep the map.
+			if (PluginMapOff() && !(owner && strcmp(owner, "ModLoader") == 0))
+			{
+				LogPick(owner, request.key, "the plugin map is switched off in modloader.ini; own rows");
+				return true;
+			}
 			const MapData& data = ActiveMap();
 			if (std::none_of(data.fields.begin(), data.fields.end(),
 					[&](const MapFieldRow& f) { return f.key == request.key; }))

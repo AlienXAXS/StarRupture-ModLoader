@@ -1064,6 +1064,79 @@ int main()
 			"grouping: nothing in, nothing out");
 	}
 
+	// modloader.ini [Debug] DisablePluginVersionMap: plugins read no map rows, the loader keeps them.
+	{
+		Check(!VersionMap::PluginMapOff(), "plugin map switch: off by default");
+
+		ScanPatterns::PreflightEntry loaderSite{};
+		loaderSite.name           = "Test::Site";
+		loaderSite.pattern        = "B0 01";
+		loaderSite.kind           = ScanPatterns::PatternKind::InFunction;
+		loaderSite.siteArithmetic = 1;
+		const auto loaderOwned = [&] {
+			TestDoubles::g_log.clear();
+			return VersionMap::ResolveLoaderEntry(loaderSite, Ask("Test::Site", Kind::InFunction, "B0 01"), kRunning);
+		};
+		const auto fieldAs = [](const char* owner, VersionMap::FieldValue& out, std::string& error,
+			const std::vector<VersionMap::FieldCandidate>& own = {}) {
+			VersionMap::FieldRequest request;
+			request.key         = "ATest::Native";
+			request.className   = "ATest";
+			request.member      = "Native";
+			request.flags       = PLUGIN_FIELD_NATIVE;
+			request.size        = 4;
+			request.builtCL     = 127004;
+			request.builtOffset = 0;
+			request.candidates  = own;
+			TestDoubles::g_log.clear();
+			error.clear();
+			return VersionMap::SelectField(owner, request, kRunning, out, error);
+		};
+		VersionMap::SetLiveFieldSource(FakeLive);
+		VersionMap::FieldValue v;
+		std::string e;
+
+		// Switch off: nothing changes.
+		Result q = Key("VmapProbe", Ask("Test::MapOnly", Kind::FunctionStart));
+		Check(At(q, 0x1000) && Logged(L"loader map, CL-128786 row"), "plugin map switch off: a plugin reads the map's row");
+		Check(fieldAs("Test", v, e) && v.offset == 0x28, "plugin map switch off: a plugin reads the map's field row");
+		Check(At(loaderOwned(), 0x7000), "plugin map switch off: the loader's site resolves");
+
+		VersionMap::SetPluginMapOff(true);
+		Check(VersionMap::PluginMapOff(), "plugin map switch: on after SetPluginMapOff(true)");
+
+		// Switch on: a key the map holds misses; the plugin's own pattern, row or nothing decides.
+		q = Key("VmapProbe", Ask("Test::MapOnly", Kind::FunctionStart));
+		Check(q.outcome == Outcome::NoMatch && Logged(L"the plugin map is switched off in modloader.ini; no pattern or rows of its own (refused)")
+			&& !Logged(L"loader map"), "plugin map switch on: a map key with nothing of its own is NoMatch");
+		q = Key("VmapProbe", Ask("Test::MapOnly", Kind::FunctionStart, "B1 00"));
+		Check(At(q, 0x8000) && Logged(L"switched off in modloader.ini; own pattern") && !Logged(L"loader map"),
+			"plugin map switch on: the plugin's own pattern decides, not the map's row");
+		q = Key("VmapProbe", Ask("Test::MapOnly", Kind::FunctionStart), { AddressRow(0x7000) });
+		Check(At(q, 0x7000) && Logged(L"switched off in modloader.ini; own rows") && !Logged(L"loader map"),
+			"plugin map switch on: the plugin's own row decides, not the map's row");
+		q = Key("VmapProbe", Ask("Test::Nope", Kind::FunctionStart, "B1 00"));
+		Check(At(q, 0x8000), "plugin map switch on: a key the map never held still takes its own pattern");
+		q = Key("ModLoader", Ask("Test::MapOnly", Kind::FunctionStart));
+		Check(q.outcome == Outcome::BadRequest, "plugin map switch on: a plugin named ModLoader is still refused");
+
+		// Fields: a plugin's request reads its own rows only.
+		Check(!fieldAs("Test", v, e) && !Logged(L"loader map") && Logged(L"switched off in modloader.ini; own rows"),
+			"plugin map switch on: a native field with no row of its own is refused");
+		Check(fieldAs("Test", v, e, { FieldRow(128786, 0x30, 4) }) && v.offset == 0x30,
+			"plugin map switch on: a native field takes the plugin's own row");
+
+		// The loader's own lookups keep the map.
+		Check(fieldAs("ModLoader", v, e) && v.offset == 0x28 && Logged(L"loader map, CL-128786 row"),
+			"plugin map switch on: the loader's field reads the map");
+		Check(At(loaderOwned(), 0x7000) && Logged(L"loader map, CL-127004 row"), "plugin map switch on: the loader's site reads the map");
+		Check(VersionMap::SupportedBuilds() == std::vector<uint32_t>{ 127004, 128786 }, "plugin map switch on: the loader still knows its builds");
+
+		VersionMap::SetPluginMapOff(false);
+		Check(At(Key("VmapProbe", Ask("Test::MapOnly", Kind::FunctionStart)), 0x1000), "plugin map switch off again: the map's row is back");
+		VersionMap::SetLiveFieldSource(nullptr);
+	}
+
 	printf("%d checks, %d failed\n", g_checks, g_failed);
 	return g_failed ? 1 : 0;
 }
