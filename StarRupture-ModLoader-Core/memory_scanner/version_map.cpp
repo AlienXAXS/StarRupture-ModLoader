@@ -435,18 +435,30 @@ namespace VersionMap
 	{
 		std::mutex               g_layoutChangesLock;
 		std::vector<std::string> g_layoutChanges;   // SetLayoutChanges
+		std::vector<std::string> g_layoutChangedPaths;
 
 		bool LayoutChanged(const std::string& className)
 		{
 			std::lock_guard<std::mutex> lock(g_layoutChangesLock);
 			return std::find(g_layoutChanges.begin(), g_layoutChanges.end(), className) != g_layoutChanges.end();
 		}
+
+		// Whether the class or one of its supers (LiveField::paths) changed.
+		bool LayoutChangedWithSupers(const std::vector<std::string>& paths)
+		{
+			std::lock_guard<std::mutex> lock(g_layoutChangesLock);
+			return std::any_of(paths.begin(), paths.end(), [](const std::string& path)
+			{
+				return std::find(g_layoutChangedPaths.begin(), g_layoutChangedPaths.end(), path) != g_layoutChangedPaths.end();
+			});
+		}
 	}
 
-	void SetLayoutChanges(std::vector<std::string> classNames)
+	void SetLayoutChanges(std::vector<std::string> classNames, std::vector<std::string> paths)
 	{
 		std::lock_guard<std::mutex> lock(g_layoutChangesLock);
 		g_layoutChanges = std::move(classNames);
+		g_layoutChangedPaths = std::move(paths);
 	}
 
 	std::string LayoutRefusal(int interfaceVersion, const PluginGameBuild& built)
@@ -1235,6 +1247,13 @@ namespace VersionMap
 
 	namespace
 	{
+		// A class's supers are not named in the request: the game's reflection
+		// says which they are.
+		bool SupersChanged(const std::string& className)
+		{
+			return g_liveFields && LayoutChangedWithSupers(g_liveFields(className, std::string()).paths);
+		}
+
 		bool PickField(const char* owner, const FieldRequest& request, const Exe& running,
 			FieldValue& out, std::string& error)
 		{
@@ -1284,12 +1303,13 @@ namespace VersionMap
 					value = ValueOf(*row);
 					how   = RowLabel(*row);
 				}
-				else if (onBuilt && haveBuilt && LayoutChanged(request.className))
+				else if (onBuilt && haveBuilt && (LayoutChanged(request.className) || SupersChanged(request.className)))
 				{
 					// The compiled offset is the SDK's, and the layout check
-					// found this class laid out otherwise on this build.
+					// found this class, or one it derives from, laid out
+					// otherwise on this build.
 					error = "no row for " + ClText(running.cl) + ", and the layout check found " + request.className
-						+ " changed on this build, so its built offset is not used";
+						+ " or a class it derives from changed on this build, so its built offset is not used";
 					return false;
 				}
 				else if (onBuilt && haveBuilt)

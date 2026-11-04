@@ -188,9 +188,11 @@ namespace VersionMap
 
 	// The classes the startup layout check found changed on this game build
 	// (core/layout_check.h), when it did not switch plugins off: each by its
-	// SDK name (ACrX) and as /Script/<Module>.<SDK name>. Set once, on the
+	// SDK name (ACrX) and as /Script/<Module>.<SDK name>, and each by its
+	// Module.Name path (LiveField::paths), which lets a class whose base
+	// changed be told from one whose own layout did not. Set once, on the
 	// init thread, before any plugin loads.
-	void SetLayoutChanges(std::vector<std::string> classNames);
+	void SetLayoutChanges(std::vector<std::string> classNames, std::vector<std::string> paths = {});
 
 	// Whether a plugin may run although classes changed: only one that takes
 	// every game layout from this build (interface 72 or later,
@@ -334,6 +336,7 @@ namespace VersionMap
 		uint32_t    size     = 0;
 		bool        isBool   = false;
 		uint8_t     boolMask = 0;     // FBoolProperty::FieldMask when isBool
+		std::vector<std::string> paths;  // Module.Name of the class and each of its supers, set whenever it was found
 	};
 	using LiveFieldSource = LiveField (*)(const std::string& className, const std::string& member);
 

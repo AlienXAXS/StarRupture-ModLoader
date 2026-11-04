@@ -197,7 +197,9 @@ namespace PluginHookReport
     unsigned GetCommitSerial();
 
     // Add a report that no scan session produced: the loader's own features
-    // the layout check switched off (plugin "ModLoader"), and the F2 menu's
+    // the layout check switched off (plugin kLoaderReport), and the F2 menu's
     // test button in debug builds. Opens the failure window like any other.
+    // The loader's report is the one whose plugin is kLoaderReport.
+    inline constexpr const char* kLoaderReport = "ModLoader";
     void AddReport(const PluginReport& report);
 }

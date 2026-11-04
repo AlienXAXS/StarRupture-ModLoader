@@ -557,7 +557,21 @@ namespace LayoutCheck
                 answer = FindType(g_types, className, type);
             }
             if (type)
+            {
+                // The class and each of its supers, as the layout check names
+                // them, so a request can tell that a base class changed.
+                std::unordered_map<const SDK::UObject*, std::string> modules;
+                for (const SDK::UStruct* current = type; current; current = current->SuperStruct)
+                {
+                    const SDK::UObject* package = current->Outer;
+                    if (!package || package->Outer)
+                        continue;
+                    const std::string& module = ModuleOf(package, modules);
+                    if (!module.empty())
+                        answer.paths.push_back(module + "." + current->Name.GetRawString());
+                }
                 ReadMember(type, member, answer);
+            }
         }
 
         bool LookupGuarded(const std::string* className, const std::string* member,

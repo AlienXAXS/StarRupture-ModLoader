@@ -89,12 +89,15 @@ namespace
 
 	bool At(const Result& r, uintptr_t rva) { return r.Succeeded() && r.address == Base() + rva; }
 
-	// Reflection as the field tests see it: ATest is 0x50 bytes, AOther 0x10.
+	// Reflection as the field tests see it: ATest is 0x50 bytes, AOther 0x10,
+	// and AChild derives from ATest.
 	VersionMap::LiveField FakeLive(const std::string& className, const std::string& member)
 	{
 		VersionMap::LiveField f;
-		if (className == "AOther" && member.empty())
-			f.size = 0x10;
+		if (className == "AChild" && member.empty())
+			f.size = 0x58, f.paths = { "Mod.Child", "Mod.Test" };
+		else if (className == "AOther" && member.empty())
+			f.size = 0x10, f.paths = { "Mod.Other" };
 		else if (className != "ATest")
 			f.error = "no class " + className;
 		else if (member.empty())
@@ -622,10 +625,19 @@ int main()
 			"field: a native member's built offset on its own build");
 		VersionMap::SetLayoutChanges({ "ATest", "/Script/Mod.ATest" });
 		Check(!Field("ATest::Plain", "ATest", "Plain", PLUGIN_FIELD_NATIVE, 4, {}, v, e, built)
-			&& e.find("the layout check found ATest changed") != std::string::npos,
+			&& e.find("the layout check found ATest or a class it derives from changed") != std::string::npos,
 			"field: a changed class's built offset is refused (only the feature asking for it goes off)");
 		Check(Field("AOther::Plain", "AOther", "Plain", PLUGIN_FIELD_NATIVE, 4, {}, v, e, built) && v.offset == 0,
 			"field: another class's request is unaffected");
+		Check(Field("AChild::Plain", "AChild", "Plain", PLUGIN_FIELD_NATIVE, 4, {}, v, e, built) && v.offset == 0,
+			"field: a derived class is not refused while only its name is listed, no path");
+		VersionMap::SetLayoutChanges({ "ATest", "/Script/Mod.ATest" }, { "Mod.Test" });
+		Check(!Field("AChild::Plain", "AChild", "Plain", PLUGIN_FIELD_NATIVE, 4, {}, v, e, built)
+			&& e.find("AChild or a class it derives from changed") != std::string::npos,
+			"field: a base class's change refuses a derived class's built offset");
+		Check(Field("AOther::Plain", "AOther", "Plain", PLUGIN_FIELD_NATIVE, 4, {}, v, e, built) && v.offset == 0,
+			"field: a class with another base is still unaffected");
+		VersionMap::SetLayoutChanges({ "ATest", "/Script/Mod.ATest" });
 		Check(Field("ATest::Reflected", "ATest", "Reflected", 0, 8, {}, v, e, built) && v.offset == 0x30,
 			"field: a reflected member of a changed class is read from the game");
 		VersionMap::SetLayoutChanges({});
