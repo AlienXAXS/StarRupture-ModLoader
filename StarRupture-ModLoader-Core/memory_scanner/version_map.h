@@ -313,7 +313,7 @@ namespace VersionMap
 		std::string className;        // short name, or /Script/<Module>.<Name>
 		std::string member;           // empty = the size of className itself
 		uint32_t    flags       = 0;  // PluginFieldFlags
-		uint32_t    size        = 0;
+		uint32_t    size        = 0;  // 0 = a reflected member of any size
 		uint32_t    builtCL     = 0;
 		int32_t     builtOffset = -1;
 		std::vector<FieldCandidate> candidates;
