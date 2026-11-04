@@ -216,6 +216,55 @@ namespace
         Check(result.lines.size() == 7, "nothing else: a size of 0 and a function's alignment are not compared");
     }
 
+    // Dumper-7 renames the parameter Class to Class_0; the game reflects it as
+    // Class. CL 127004, client: this one row switched every plugin off.
+    void DumperRenamedMember()
+    {
+        std::printf("Dumper-7 renamed members\n");
+        using LayoutCheck::Kind;
+
+        const auto table = LayoutCheck::ReadTable(SrLayoutTable::kNames, SrLayoutTable::kClasses, SrLayoutTable::kRows);
+        std::vector<LayoutCheck::TableClass> sdk;
+        for (const LayoutCheck::TableClass& c : table)
+        {
+            if (std::string(c.name) == "SubsystemBlueprintLibrary_GetGameInstanceSubsystem")
+                sdk.push_back(c);
+        }
+        Check(sdk.size() == 1 && sdk[0].rows.size() == 3 && std::string(sdk[0].rows[1].name) == "Class_0",
+            "the loader's table has GetGameInstanceSubsystem's parameter as Class_0");
+        if (sdk.size() != 1)
+            return;
+
+        // What the game reflected for Engine.SubsystemBlueprintLibrary.GetGameInstanceSubsystem.
+        const auto game = [](int32_t classOffset, int32_t classSize)
+        {
+            return std::map<std::string, LayoutCheck::LiveStruct>{ { "Engine.SubsystemBlueprintLibrary.GetGameInstanceSubsystem",
+                { 0x18, 1, { { "ContextObject", 0x0, 8, false, 0 }, { "Class", classOffset, classSize, false, 0 },
+                             { "ReturnValue", 0x10, 8, false, 0 } } } } };
+        };
+
+        const LayoutCheck::Result same = CompareWith(sdk, game(0x8, 8));
+        Check(same.lines.empty() && !LayoutCheck::RequiresSafeOff(same), "Class_0 matches the game's Class: plugins stay on");
+
+        const LayoutCheck::Result moved = CompareWith(sdk, game(0x10, 8));
+        Check(Contains(moved, "SubsystemBlueprintLibrary_GetGameInstanceSubsystem::Class_0: not found in the game")
+            && LayoutCheck::RequiresSafeOff(moved), "Class at another offset is no match: plugins are switched off");
+
+        const LayoutCheck::Result resized = CompareWith(sdk, game(0x8, 4));
+        Check(Contains(resized, "SubsystemBlueprintLibrary_GetGameInstanceSubsystem::Class_0: not found in the game")
+            && LayoutCheck::RequiresSafeOff(resized), "Class of another size is no match: plugins are switched off");
+
+        // Only a _<digits> suffix is stripped, and never from a row of unknown size.
+        const std::vector<LayoutCheck::TableClass> other = {
+            { "FThing", "Mod.Thing", 0x10, 8, Kind::ScriptStruct, { { "Value_A", 0x0, 4, 0 }, { "Count_1", 0x4, 0, 0 } } },
+        };
+        const std::map<std::string, LayoutCheck::LiveStruct> thing = { { "Mod.Thing",
+            { 0x10, 8, { { "Value", 0x0, 4, false, 0 }, { "Count", 0x4, 4, false, 0 } } } } };
+        const LayoutCheck::Result result = CompareWith(other, thing);
+        Check(Contains(result, "FThing::Value_A: not found in the game") && Contains(result, "FThing::Count_1: not found in the game")
+            && result.lines.size() == 2, "Value_A and an unsized Count_1 stay missing");
+    }
+
     void UsedMembersOnly()
     {
         std::printf("Granularity 1: the members the loader reads\n");
@@ -292,6 +341,7 @@ int main()
     MismatchSwitchesPluginsOffAndReports();
     StaticArrayIsTheWholeMember();
     EachDifferenceIsReported();
+    DumperRenamedMember();
     UsedMembersOnly();
 
     if (g_failures)

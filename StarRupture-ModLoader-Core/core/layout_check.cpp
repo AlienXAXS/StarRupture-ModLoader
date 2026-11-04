@@ -28,6 +28,26 @@ namespace LayoutCheck
             return nullptr;
         }
 
+        // Dumper-7 appends _<n> to a member whose name collides with a C++
+        // keyword or a name it reserves (a parameter called Class becomes
+        // Class_0), so the table can hold a name the game does not reflect.
+        // The member under the name without the suffix stands in for it only
+        // where it holds the same bytes: same offset, same known size.
+        const LiveProperty* FindRenamedProperty(const LiveStruct& live, const TableRow& row)
+        {
+            const std::string name = row.name;
+            const size_t underscore = name.rfind('_');
+            if (row.size == 0 || underscore == std::string::npos || underscore == 0 || underscore + 1 == name.size()
+                || name.find_first_not_of("0123456789", underscore + 1) != std::string::npos)
+                return nullptr;
+
+            const LiveProperty* property = FindProperty(live, name.substr(0, underscore).c_str());
+            if (!property || property->offset != static_cast<int32_t>(row.offset)
+                || property->size != static_cast<int32_t>(row.size))
+                return nullptr;
+            return property;
+        }
+
         void Record(Result& result, const char* className, const char* member, const char* field,
             uint32_t sdk, int32_t game, std::string line)
         {
@@ -86,6 +106,8 @@ namespace LayoutCheck
                     continue;
                 }
                 const LiveProperty* property = FindProperty(*live, row.name);
+                if (!property)
+                    property = FindRenamedProperty(*live, row);
                 if (!property)
                 {
                     Record(result, sdk.name, row.name, kChangeMissing, 0, 0,

@@ -149,6 +149,8 @@ namespace LayoutCheck
     // and a UClass the loader reaches only through pointers has size 0 (one
     // it allocates or copies, such as UFunction, keeps its size). Rows for
     // which perBuild is true are skipped and counted in Result::perBuild.
+    // A row Dumper-7 renamed with a _<n> suffix (Class_0) matches the game's
+    // member without it only at the same offset and size.
     using PerBuild = std::function<bool(const TableClass&, const TableRow&)>;
     Result Compare(const std::vector<TableClass>& table,
         const std::function<const LiveStruct*(const TableClass&)>& find,
