@@ -7,5 +7,5 @@
 - Overlay windows no longer flicker with frame generation, which stays on while a window is open
 - Keys 1 to 5 open the Plugins, Config, Settings, Logging and Theme tabs; Tab, the arrow keys and Space or Enter work in the loader windows
 - LOAD NEW adds plugins you drop in while the game is running; click a plugin in the list to open its settings
-- The update check never offers a downgrade
+- The plugin updater reads each installed plugin's version first, so it never replaces one with an older release
 - For plugin authors (interface v74): the game's menu and cursor state, and window sizing added at Kian369's request
