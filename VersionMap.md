@@ -317,7 +317,10 @@ The row formats, from the generated header:
     { 127004, 0x100, 0x10, 0x00, nullptr },
 
 A function row is: CL, image stamp, image size, kind, `fp`, absent, pattern, `resultOffset`,
-`followRel32At`, `followRipDispAt`, `rva`. A field row is: CL, offset, size, bool mask. And the
+`followRel32At`, `followRipDispAt`, `rva`. A build whose exe you have no PDB for gets a pattern row:
+the same row with `rva` 0, so the loader finds the function by scanning the pattern (it must match
+the running exe exactly once, as the kind the request asks for), with no address to check it against.
+A field row is: CL, offset, size, bool mask. And the
 `native-keys.txt` line for a member:
 
     MiniMap UTexture::SRGB optional
