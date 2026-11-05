@@ -1100,6 +1100,9 @@ static bool InitD3D12Resources(IDXGISwapChain* swapChain)
 	IMGUI_CHECKVERSION();
 	ImGui::CreateContext();
 	ImGuiIO& io = ImGui::GetIO();
+	// A plugin callback that leaves a push unpopped is recovered by ImGui; its assert would
+	// raise a "Missing PopID" dialog in a Debug build, so recover and log without it.
+	io.ConfigErrorRecoveryEnableAssert = false;
 	// Keyboard navigation is switched per frame by the RenderFrame callback.
 	io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange; // don't touch OS cursor by default
 	// Build an absolute path so the file lands in the ModLoader folder
