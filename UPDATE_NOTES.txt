@@ -1,5 +1,5 @@
 - Now with 100% more Good Stuff: Mike From Good Stuff Software is taking over from AlienX to keep the updates coming, with help from Kian369.
-- Keeps working after a game update for every game build it knows, including the current Steam test branch
+- Adapts to new game versions: keeps working after a game update for every game build it knows
 - When a game update changes a layout the loader checks, only the features that read it are switched off, not every plugin, and the Plugins tab shows how many are off
 - The loader also checks that the game still runs its functions the way plugins call them, and switches plugins off with the usual message if it does not
 - A plugin that crashes is switched off and a toast names it; it restarts by itself about 3 seconds later, up to 3 times a session (Settings can turn this off)
@@ -17,6 +17,6 @@
 - Icons in every loader and plugin window now sit on the line of the text beside them
 - Plugin windows can have their own buttons in the title bar and collapse to it
 - A plugin window over the Escape menu can leave the menu's buttons clickable under it and still be clickable itself everywhere else
-- Build Windows Anywhere, Build Benches Anywhere and the MiniMap find their game functions on the current Steam test branch
+- Build Windows Anywhere, Build Benches Anywhere and the MiniMap find their game functions on every game build the loader knows
 - The log no longer warns about three game functions (OnExperienceLoadComplete, PostLogin, Logout) that the loader hooks another way
 - For plugin authors (interface v75): PluginPanelDesc::titleBarFn draws buttons in a panel's title bar, IsPanelCollapsed and SetPanelCollapsed collapse a panel to it, and PluginWindowFlags_MenuMouseWhereUncovered takes the mouse over a game menu only where no menu widget is under the cursor
