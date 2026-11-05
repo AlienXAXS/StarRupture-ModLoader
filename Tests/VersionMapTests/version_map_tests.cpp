@@ -1003,8 +1003,8 @@ int main()
 		Check(oldRow && oldRow->offset == 0x90 && newRow && newRow->offset == 0x98, "real field rows: TimerActor 0x90 on CL-127004, 0x98 on CL-128786");
 	}
 	// The real map's function rows for Build Windows Anywhere and Build Benches Anywhere: one function-start row per
-	// build, the CL-127004 rows untouched by the CL-128786 ones. A CL-127004 row is a pattern row (no RVA): the plugin's
-	// own pattern that was proven on that build, resolved by scan. A CL-128786 row carries the RVA measured from its PDB.
+	// build, the CL-127004 rows untouched by the CL-128786 ones. Each row is the plugin's own pattern that was proven on
+	// its build, with the RVA measured from that build's PDB, so a pattern that drifts on the exe it was verified on is refused.
 	// The MiniMap's keys have a row for each build where the same pattern holds, the older build's row untouched, and
 	// two near-identical natives told apart by their own rows.
 	{
@@ -1022,16 +1022,16 @@ int main()
 			return row && !row->absent && row->kind == static_cast<int>(Kind::FunctionStart) && row->fp == 0 && row->rva == rva
 			    && row->pattern && *row->pattern && row->resultOffset == 0;
 		};
-		struct AnywhereKey { const char* key; uint32_t rva128786; };
+		struct AnywhereKey { const char* key; uint32_t rva127004, rva128786; };
 		const AnywhereKey anywhereKeys[] = {
-			{ "ACrAPHelperActorCustom::CheckMainMeshCollision", 0x0755C5F0 },
-			{ "ACrAPHelper::GetBoxCollisionResult",             0x07521070 },
-			{ "UCrSocketSnapPlacementMethod::GetSnappedSocket", 0x074DAE00 },
-			{ "UCrBuildingStabilitySubsystem::IsSocketFree",    0x074E6100 },
+			{ "ACrAPHelperActorCustom::CheckMainMeshCollision", 0x074DEE60, 0x0755C5F0 },
+			{ "ACrAPHelper::GetBoxCollisionResult",             0x074EB530, 0x07521070 },
+			{ "UCrSocketSnapPlacementMethod::GetSnappedSocket", 0x074C0920, 0x074DAE00 },
+			{ "UCrBuildingStabilitySubsystem::IsSocketFree",    0x074651D0, 0x074E6100 },
 		};
 		for (const AnywhereKey& k : anywhereKeys)
-			Check(isStartRow(functionRow(k.key, 127004), 0) && isStartRow(functionRow(k.key, 128786), k.rva128786),
-				(std::string("real function rows: ") + k.key + " has a pattern row on CL-127004 and a measured row on CL-128786").c_str());
+			Check(isStartRow(functionRow(k.key, 127004), k.rva127004) && isStartRow(functionRow(k.key, 128786), k.rva128786),
+				(std::string("real function rows: ") + k.key + " has a measured row on each build").c_str());
 
 		const Real::VersionMap::FunctionRow* oldRow = functionRow("SplinePayload::GetSplineActorData", 127004);
 		const Real::VersionMap::FunctionRow* newRow = functionRow("SplinePayload::GetSplineActorData", 128786);
@@ -1046,6 +1046,19 @@ int main()
 		newRow = functionRow("UCrBuildingStabilitySubsystem::OnDestroyBuildingEntity", 128786);
 		Check(oldRow && newRow && oldRow->rva == 0x074E7BF0 && newRow->rva == 0x074E7C30 && strcmp(oldRow->pattern, newRow->pattern) != 0,
 			"real function rows: building add and remove are two functions with two patterns on CL-128786");
+		oldRow = functionRow("UCrBuildingStabilitySubsystem::OnCreateBuildingEntity", 127004);
+		newRow = functionRow("UCrBuildingStabilitySubsystem::OnDestroyBuildingEntity", 127004);
+		Check(oldRow && newRow && oldRow->rva == 0x07469170 && newRow->rva == 0x074691B0 && strcmp(oldRow->pattern, newRow->pattern) != 0,
+			"real function rows: building add and remove are two functions with two patterns on CL-127004 too");
+		const char* const textureKeys[] = { "UTexture2D::CreateTransient", "FBulkData::Lock", "FBulkData::Unlock", "UTexture::GetResource", "MiniMap/UTexture::UpdateResource" };
+		bool textureBoth = true;
+		for (const char* key : textureKeys)
+		{
+			oldRow = functionRow(key, 127004);
+			newRow = functionRow(key, 128786);
+			textureBoth = textureBoth && oldRow && newRow && oldRow->fp == newRow->fp && strcmp(oldRow->pattern, newRow->pattern) == 0;
+		}
+		Check(textureBoth, "real function rows: the texture natives and the UpdateResource site have rows for both builds with one pattern");
 	}
 	Check(unmatched == 0, "every real map key is a registry row's or a plugin's global or scoped key");
 	Check(pluginKeys == 116, "the real map holds the 116 plugin function keys; FRHIComputeCommandList::Transition is a loader registry key now");
