@@ -1215,6 +1215,16 @@ namespace ModLoaderLogger
 		UI::PluginPanelRegistry::SetPanelClose(handle);
 	}
 
+	static bool HooksIsPanelCollapsed(PanelHandle handle)
+	{
+		return UI::PluginPanelRegistry::IsPanelCollapsed(handle);
+	}
+
+	static void HooksSetPanelCollapsed(PanelHandle handle, bool collapsed)
+	{
+		UI::PluginPanelRegistry::SetPanelCollapsed(handle, collapsed);
+	}
+
 	static WidgetHandle HooksRegisterWidget(const PluginWidgetDesc* desc)
 	{
 		return UI::PluginWidgetRegistry::RegisterWidget(desc);
@@ -1273,7 +1283,7 @@ namespace ModLoaderLogger
 		return ShouldCaptureInputNow();
 	}
 
-	// UI sub-interface struct (v16, extended v43/v51/v71)
+	// UI sub-interface struct (v16, extended v43/v51/v71/v75)
 	static IPluginUIEvents g_uiEvents = {
 		HooksRegisterPanel,
 		HooksUnregisterPanel,
@@ -1290,7 +1300,9 @@ namespace ModLoaderLogger
 		HooksReleaseInputCapture,           // v43
 		HooksAcquireInputPassthrough,       // v51
 		HooksReleaseInputPassthrough,       // v51
-		HooksIsOverlayOpen                  // v71
+		HooksIsOverlayOpen,                 // v71
+		HooksIsPanelCollapsed,              // v75
+		HooksSetPanelCollapsed              // v75
 	};
 
 	// --- HUD sub-interface wrappers (v16, client only) ---

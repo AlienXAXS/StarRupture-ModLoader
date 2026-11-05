@@ -313,6 +313,7 @@ namespace PluginManager
 		PluginInfo* info;
 		VersionMap::PluginGameBuild gameBuild;   // the PluginInfo tail, copied at load: info dies with the DLL
 		ReloadPolicy::Settings reload;           // its load and unload settings, copied the same way
+		int interfaceVersion;                    // the interface it declares, copied the same way
 		GetPluginInfoFunc getInfo;
 		PluginInitFunc init;
 		PluginShutdownFunc shutdown;
@@ -535,6 +536,7 @@ namespace PluginManager
 			return false;
 		}
 
+		rec.interfaceVersion = info->interfaceVersion;
 		rec.reload = ReloadPolicy::Read(info->interfaceVersion, rec.gameBuild.mapFlags);
 		if (const std::string refusal = ReloadPolicy::LoadRefusal(rec.reload.load, startup, ReloadPolicy::GameplayWorldRunning());
 			!refusal.empty())
@@ -1182,6 +1184,24 @@ namespace PluginManager
 			if (_stricmp(p->cachedName.c_str(), pluginName) == 0)
 			{
 				result = &p->self;
+				break;
+			}
+		}
+		LeaveCriticalSection(&g_pluginLock);
+		return result;
+	}
+
+	int GetInterfaceVersionForModule(HMODULE module)
+	{
+		if (!module) return 0;
+
+		EnterCriticalSection(&g_pluginLock);
+		int result = 0;
+		for (auto& p : g_loadedPlugins)
+		{
+			if (p->hModule == module)
+			{
+				result = p->interfaceVersion;
 				break;
 			}
 		}

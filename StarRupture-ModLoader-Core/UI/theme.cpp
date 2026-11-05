@@ -525,6 +525,29 @@ namespace UI::Theme
         ImGui::GetWindowDrawList()->AddConvexPolyFilled(pts, 5, color);
     }
 
+    // Where to AddText a one-glyph icon so its visual bounding box (not its
+    // advance box or the line height, which the merged Material Icons font
+    // skews) is centred in a boxW x boxH box at boxMin.
+    static ImVec2 CenteredGlyphPos(ImFont* font, float fontSize, const char* icon,
+                                   ImVec2 boxMin, float boxW, float boxH)
+    {
+        // ImFontBaked (not ImFont) owns FindGlyph() in this ImGui version --
+        // glyphs are baked per-size, so X0/Y0/X1/Y1 are already in pixels.
+        ImFontBaked* baked = font->GetFontBaked(fontSize);
+        unsigned int codepoint = 0;
+        ImTextCharFromUtf8(&codepoint, icon, nullptr);
+        const ImFontGlyph* glyph = baked ? baked->FindGlyphNoFallback(static_cast<ImWchar>(codepoint)) : nullptr;
+        if (glyph)
+        {
+            const float gw = glyph->X1 - glyph->X0;
+            const float gh = glyph->Y1 - glyph->Y0;
+            return ImVec2(boxMin.x + (boxW - gw) * 0.5f - glyph->X0,
+                          boxMin.y + (boxH - gh) * 0.5f - glyph->Y0);
+        }
+        const ImVec2 textSize = font->CalcTextSizeA(fontSize, FLT_MAX, 0.0f, icon);
+        return ImVec2(boxMin.x + (boxW - textSize.x) * 0.5f, boxMin.y + (boxH - textSize.y) * 0.5f);
+    }
+
     bool DrawTitleBar(const char* title, const char* subtitle, bool showCloseButton, void (*besideTitle)())
     {
         // Much larger header with generous padding around the title, and a
@@ -581,8 +604,16 @@ namespace UI::Theme
             ImGui::SetCursorScreenPos(ImVec2(headerMax.x - 14.0f - ImGui::GetFrameHeight(),
                                               headerMin.y + (headerHeight - ImGui::GetFrameHeight()) * 0.5f));
             ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
-            if (ImGui::Button("x##titlebar_close", ImVec2(ImGui::GetFrameHeight(), ImGui::GetFrameHeight())))
+            const float btn = ImGui::GetFrameHeight();
+            if (ImGui::Button("##titlebar_close", ImVec2(btn, btn)))
                 stayOpen = false;
+
+            // Material Icons "close" at the title's size, centred in the
+            // button; the button box itself stays a FrameHeight square.
+            const char* closeIcon = "\xEE\x97\x8D";
+            draw->AddText(font, titleSz,
+                          CenteredGlyphPos(font, titleSz, closeIcon, ImGui::GetItemRectMin(), btn, btn),
+                          ImGui::GetColorU32(ImGuiCol_Text), closeIcon);
             ImGui::PopStyleColor();
         }
 
@@ -741,28 +772,7 @@ namespace UI::Theme
             ImFont* font   = ImGui::GetFont();
             float   iconSz = size * 0.45f;
 
-            // ImFontBaked (not ImFont) owns FindGlyph() in this ImGui
-            // version -- glyphs are baked per-size, so X0/Y0/X1/Y1 here are
-            // already in pixels at iconSz with no extra scale needed.
-            ImFontBaked* baked = font->GetFontBaked(iconSz);
-            unsigned int codepoint = 0;
-            ImTextCharFromUtf8(&codepoint, icons[i], nullptr);
-            const ImFontGlyph* glyph = baked ? baked->FindGlyphNoFallback(static_cast<ImWchar>(codepoint)) : nullptr;
-
-            ImVec2 textPos;
-            if (glyph)
-            {
-                float gw = glyph->X1 - glyph->X0;
-                float gh = glyph->Y1 - glyph->Y0;
-                textPos = ImVec2(boxMin.x + (cellW - gw) * 0.5f - glyph->X0,
-                                  boxMin.y + (iconAreaH - gh) * 0.5f - glyph->Y0);
-            }
-            else
-            {
-                ImVec2 textSize = font->CalcTextSizeA(iconSz, FLT_MAX, 0.0f, icons[i]);
-                textPos = ImVec2(boxMin.x + (cellW - textSize.x) * 0.5f,
-                                  boxMin.y + (iconAreaH - textSize.y) * 0.5f);
-            }
+            ImVec2 textPos = CenteredGlyphPos(font, iconSz, icons[i], boxMin, cellW, iconAreaH);
 
             ImVec4 iconColV = isActive ? HighlightColorVec4(1.0f) : ImGui::GetStyle().Colors[ImGuiCol_Text];
             iconColV.w = isActive ? 1.0f : 0.55f; // "slightly opaque" when inactive
@@ -905,24 +915,7 @@ namespace UI::Theme
         // font's, so centering on line height alone renders this noticeably
         // off the button's true vertical center.
         ImFont* font = ImGui::GetFont();
-        ImFontBaked* baked = font->GetFontBaked(ImGui::GetFontSize());
-        unsigned int codepoint = 0;
-        ImTextCharFromUtf8(&codepoint, icon, nullptr);
-        const ImFontGlyph* glyph = baked ? baked->FindGlyphNoFallback(static_cast<ImWchar>(codepoint)) : nullptr;
-
-        ImVec2 textPos;
-        if (glyph)
-        {
-            const float gw = glyph->X1 - glyph->X0;
-            const float gh = glyph->Y1 - glyph->Y0;
-            textPos = ImVec2(pos.x + (size - gw) * 0.5f - glyph->X0,
-                              pos.y + (size - gh) * 0.5f - glyph->Y0);
-        }
-        else
-        {
-            const ImVec2 textSz = ImGui::CalcTextSize(icon);
-            textPos = ImVec2(pos.x + (size - textSz.x) * 0.5f, pos.y + (size - textSz.y) * 0.5f);
-        }
+        const ImVec2 textPos = CenteredGlyphPos(font, ImGui::GetFontSize(), icon, pos, size, size);
         draw->AddText(textPos, col, icon);
 
         return pressed;

@@ -805,6 +805,227 @@ static void Test_GuardRestoresImGuiAfterRenderFault()
     PluginGuard::Untrack(ThisModule());
 }
 
+// ---------------------------------------------------------------------------
+// v75: title-bar callback and collapse
+// ---------------------------------------------------------------------------
+
+static int              g_renderCalls   = 0;
+static int              g_titleBarCalls = 0;
+static IModLoaderImGui* g_titleBarArg   = nullptr;
+static PanelHandle      g_titleBarPanel = nullptr;
+static bool             g_collapseFromTitleBar = false;
+static int              g_imguiMarker   = 0;
+
+static IModLoaderImGui* FakeImgui() { return reinterpret_cast<IModLoaderImGui*>(&g_imguiMarker); }
+
+static void RenderCounted(IModLoaderImGui*) { ++g_renderCalls; }
+static void TitleBarCounted(IModLoaderImGui* imgui)
+{
+    ++g_titleBarCalls;
+    g_titleBarArg = imgui;
+    if (g_collapseFromTitleBar)   // what a plugin's collapse button does
+    {
+        g_collapseFromTitleBar = false;
+        Registry::SetPanelCollapsed(g_titleBarPanel, !Registry::IsPanelCollapsed(g_titleBarPanel));
+    }
+}
+
+static const PluginPanelDesc kTitleBarPanel = { "T", "Title bar panel", RenderCounted, TitleBarCounted };
+
+static void DrawTitleBarPanels()
+{
+    TestDoubles::drawnTitles.clear();
+    TestDoubles::drawnFlags.clear();
+    TestDoubles::drawnWithTitleBar.clear();
+    g_renderCalls   = 0;
+    g_titleBarCalls = 0;
+    Registry::RenderPanelWindows(FakeImgui());
+}
+
+static void ForgetAllPanels()
+{
+    Registry::ForgetModule(ThisModule());
+    Registry::ForgetModule(Kernel32());
+}
+
+// A plugin that declares v75 gets its title-bar callback run inside the window,
+// with the imgui table it gave the panel.
+static void Test_TitleBarCallbackRuns()
+{
+    TestDoubles::declaredInterface = 75;
+    PanelHandle h = Registry::RegisterPanel(&kTitleBarPanel);
+    CHECK(h != nullptr);
+    Registry::SetPanelOpen(h);
+
+    DrawTitleBarPanels();
+    CHECK(TestDoubles::drawnWithTitleBar.size() == 1 && TestDoubles::drawnWithTitleBar[0]);
+    CHECK(g_titleBarCalls == 1);
+    CHECK(g_titleBarArg == FakeImgui());
+    CHECK(g_renderCalls == 1);
+
+    // A panel with no callback draws the same title bar as before.
+    ForgetAllPanels();
+    PanelHandle plain = Registry::RegisterPanel(&kPanelA);
+    Registry::SetPanelOpen(plain);
+    DrawTitleBarPanels();
+    CHECK(TestDoubles::drawnWithTitleBar.size() == 1 && !TestDoubles::drawnWithTitleBar[0]);
+    ForgetAllPanels();
+}
+
+// A descriptor from a plugin built before v75 is three pointers long. It is
+// placed so the next byte is on a page that cannot be read: reading titleBarFn
+// would fault, so a clean pass shows the loader stops at the end of the struct.
+struct PanelDescBeforeV75
+{
+    const char* buttonLabel;
+    const char* windowTitle;
+    PluginImGuiRenderCallback renderFn;
+};
+static_assert(sizeof(PanelDescBeforeV75) == offsetof(PluginPanelDesc, titleBarFn), "the v70-v74 descriptor");
+
+static void Test_OldSizedDescriptorIsNeverReadPastItsEnd()
+{
+    SYSTEM_INFO info;
+    GetSystemInfo(&info);
+    char* base = static_cast<char*>(VirtualAlloc(nullptr, info.dwPageSize * 2, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE));
+    CHECK(base != nullptr);
+    DWORD previous = 0;
+    VirtualProtect(base + info.dwPageSize, info.dwPageSize, PAGE_NOACCESS, &previous);
+    PanelDescBeforeV75* old = reinterpret_cast<PanelDescBeforeV75*>(base + info.dwPageSize - sizeof(PanelDescBeforeV75));
+    *old = { "Old", "Old panel", RenderCounted };
+
+    TestDoubles::declaredInterface = 74;
+    PanelHandle h = Registry::RegisterPanel(reinterpret_cast<const PluginPanelDesc*>(old));
+    CHECK(h != nullptr);
+    Registry::SetPanelOpen(h);
+    DrawTitleBarPanels();
+    CHECK(TestDoubles::drawnTitles.size() == 1);
+    CHECK(TestDoubles::drawnWithTitleBar.size() == 1 && !TestDoubles::drawnWithTitleBar[0]);
+    CHECK(g_renderCalls == 1);
+    CHECK(g_titleBarCalls == 0);
+
+    // The new calls work on it too: it is only the descriptor that is short.
+    Registry::SetPanelCollapsed(h, true);
+    CHECK(Registry::IsPanelCollapsed(h));
+    DrawTitleBarPanels();
+    CHECK(g_renderCalls == 0);
+
+    ForgetAllPanels();
+    VirtualFree(base, 0, MEM_RELEASE);
+    TestDoubles::declaredInterface = 75;
+}
+
+// A full-size descriptor from a plugin that declares v74 or less has nothing
+// in the new field that the loader may use, whatever the bytes are.
+static void Test_TitleBarCallbackIgnoredBelowV75()
+{
+    TestDoubles::declaredInterface = 74;
+    PanelHandle h = Registry::RegisterPanel(&kTitleBarPanel);
+    Registry::SetPanelOpen(h);
+    DrawTitleBarPanels();
+    CHECK(TestDoubles::drawnWithTitleBar.size() == 1 && !TestDoubles::drawnWithTitleBar[0]);
+    CHECK(g_titleBarCalls == 0);
+    ForgetAllPanels();
+    TestDoubles::declaredInterface = 75;
+
+    // No plugin owns the module at all (reads as 0): same.
+    TestDoubles::declaredInterface = 0;
+    h = Registry::RegisterPanel(&kTitleBarPanel);
+    Registry::SetPanelOpen(h);
+    DrawTitleBarPanels();
+    CHECK(TestDoubles::drawnWithTitleBar.size() == 1 && !TestDoubles::drawnWithTitleBar[0]);
+    ForgetAllPanels();
+    TestDoubles::declaredInterface = 75;
+}
+
+// A callback in another module than the panel's render could outlive an unload
+// of the panel's module, so it is not kept.
+static void Test_TitleBarCallbackInAnotherModuleIsDropped()
+{
+    const PluginPanelDesc foreign = { "F", "Foreign title bar", RenderCounted, RenderB() };
+    PanelHandle h = Registry::RegisterPanel(&foreign);
+    CHECK(h != nullptr);
+    Registry::SetPanelOpen(h);
+    DrawTitleBarPanels();
+    CHECK(TestDoubles::drawnWithTitleBar.size() == 1 && !TestDoubles::drawnWithTitleBar[0]);
+    ForgetAllPanels();
+}
+
+static void Test_CollapseStateAndRender()
+{
+    PanelHandle h = Registry::RegisterPanel(&kTitleBarPanel);
+    Registry::SetPanelOpen(h);
+
+    CHECK(!Registry::IsPanelCollapsed(h));
+    DrawTitleBarPanels();
+    CHECK(g_renderCalls == 1);
+    CHECK((TestDoubles::drawnFlags[0] & ImGuiWindowFlags_AlwaysAutoResize) == 0);
+
+    // Collapsed: the title bar is drawn, the content is not.
+    Registry::SetPanelCollapsed(h, true);
+    CHECK(Registry::IsPanelCollapsed(h));
+    DrawTitleBarPanels();
+    CHECK(g_renderCalls == 0);
+    CHECK(g_titleBarCalls == 1);
+    CHECK((TestDoubles::drawnFlags[0] & ImGuiWindowFlags_AlwaysAutoResize) != 0);
+    DrawTitleBarPanels();
+    CHECK(g_renderCalls == 0 && g_titleBarCalls == 1);
+
+    // Expanded again: the content is back and the window is no longer auto-sized.
+    Registry::SetPanelCollapsed(h, false);
+    CHECK(!Registry::IsPanelCollapsed(h));
+    DrawTitleBarPanels();
+    CHECK(g_renderCalls == 1);
+    CHECK((TestDoubles::drawnFlags[0] & ImGuiWindowFlags_AlwaysAutoResize) == 0);
+
+    // The state is kept while the panel is closed, and applies when it opens.
+    Registry::SetPanelClose(h);
+    Registry::SetPanelCollapsed(h, true);
+    Registry::SetPanelOpen(h);
+    DrawTitleBarPanels();
+    CHECK(g_renderCalls == 0 && g_titleBarCalls == 1);
+
+    ForgetAllPanels();
+}
+
+// The collapse button is drawn by the plugin, from inside the title bar: the
+// call into the registry from there must not deadlock, and takes effect on the
+// next frame.
+static void Test_CollapseFromTheTitleBarCallback()
+{
+    g_titleBarPanel = Registry::RegisterPanel(&kTitleBarPanel);
+    Registry::SetPanelOpen(g_titleBarPanel);
+
+    g_collapseFromTitleBar = true;
+    DrawTitleBarPanels();
+    CHECK(Registry::IsPanelCollapsed(g_titleBarPanel));
+    DrawTitleBarPanels();
+    CHECK(g_renderCalls == 0);
+
+    g_collapseFromTitleBar = true;
+    DrawTitleBarPanels();
+    CHECK(!Registry::IsPanelCollapsed(g_titleBarPanel));
+    DrawTitleBarPanels();
+    CHECK(g_renderCalls == 1);
+
+    ForgetAllPanels();
+    g_titleBarPanel = nullptr;
+}
+
+static void Test_CollapseOfStaleOrNullHandle()
+{
+    PanelHandle h = Registry::RegisterPanel(&kTitleBarPanel);
+    Registry::SetPanelCollapsed(h, true);
+    ForgetAllPanels();   // the handle is stale now
+
+    CHECK(!Registry::IsPanelCollapsed(h));
+    Registry::SetPanelCollapsed(h, true);
+    CHECK(!Registry::IsPanelCollapsed(h));
+    CHECK(!Registry::IsPanelCollapsed(nullptr));
+    Registry::SetPanelCollapsed(nullptr, true);
+    CHECK(PanelCount() == 0);
+}
+
 // The helper every registry's ForgetModule uses: nothing of the freed module
 // is left, everything else is.
 struct GuardReg { int id; void (*cb)(int); };
@@ -863,6 +1084,14 @@ int main()
     RunTest("GuardTwoThreadsFaultAtOnce",           Test_GuardTwoThreadsFaultAtOnce);
     RunTest("GuardStaleCallbacks",                  Test_GuardStaleCallbacks);
     RunTest("GuardRestoresImGuiAfterRenderFault",   Test_GuardRestoresImGuiAfterRenderFault);
+
+    RunTest("TitleBarCallbackRuns",                 Test_TitleBarCallbackRuns);
+    RunTest("OldSizedDescriptorIsNeverReadPastItsEnd", Test_OldSizedDescriptorIsNeverReadPastItsEnd);
+    RunTest("TitleBarCallbackIgnoredBelowV75",      Test_TitleBarCallbackIgnoredBelowV75);
+    RunTest("TitleBarCallbackInAnotherModuleIsDropped", Test_TitleBarCallbackInAnotherModuleIsDropped);
+    RunTest("CollapseStateAndRender",               Test_CollapseStateAndRender);
+    RunTest("CollapseFromTheTitleBarCallback",      Test_CollapseFromTheTitleBarCallback);
+    RunTest("CollapseOfStaleOrNullHandle",          Test_CollapseOfStaleOrNullHandle);
 
     CloseHandle(g_letRenderFinish);
     CloseHandle(g_inRender);

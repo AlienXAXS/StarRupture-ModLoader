@@ -65,6 +65,12 @@ namespace PluginManager
                 return s;
         return nullptr;
     }
+
+    // RegisterPanel asks which interface the owning plugin declared; no test registers one.
+    int GetInterfaceVersionForModule(HMODULE)
+    {
+        return 0;
+    }
 }
 
 // plugin_panel_registry.cpp draws panel windows through these; nothing here

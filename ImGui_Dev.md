@@ -61,6 +61,8 @@ static const PluginPanelDesc k_myPanel = {
     "My Plugin",          // button label shown in the ModLoader Config tab
     "My Plugin##panel",   // ImGui window title — must be globally unique
     MyPanelRender         // render callback
+    // v75: an optional fifth member, a callback that draws buttons in the title bar
+    // (see "Title-bar buttons and collapsing a panel (v75)" below)
 };
 ```
 
@@ -143,6 +145,54 @@ bool PluginInit(IPluginSelf* self)
 `SetPanelOpen` / `SetPanelClose` are silently ignored if the handle is null (e.g. UI backend
 disabled). The panel does **not** need to be visible in the ModLoader Config tab first —
 `SetPanelOpen` is equivalent to the user clicking the button there.
+
+---
+
+## Title-bar buttons and collapsing a panel (v75)
+
+The loader draws a panel's title bar: the title, the owner's name and the close button. Two things
+let a plugin add to it.
+
+**Buttons.** `PluginPanelDesc::titleBarFn` is an optional callback, a `PluginImGuiRenderCallback`
+like `renderFn`. The loader runs it every frame the panel is open, inside the title bar, with the
+cursor on the title line right after the title text. Draw small buttons there with the usual layout:
+`SameLine` between them, no positions to work out. Its ids are scoped to the title bar, so a label
+may repeat one in `renderFn`.
+
+**Collapsing.** `hooks->UI->SetPanelCollapsed(handle, true)` shrinks the panel to its title bar and
+`false` brings it back. A collapsed panel keeps its width, does not call `renderFn`, and still draws
+`titleBarFn` and the close button, so the plugin's own button can expand it again. Expanding
+restores the size the window had. `IsPanelCollapsed(handle)` says which it is. Both are ignored for a
+null or stale handle and are safe from any thread; the window changes on the next frame.
+
+The loader keeps the state for the session and does not save it. A plugin that wants it kept saves
+a bool in its own config and calls `SetPanelCollapsed` after `RegisterPanel`. The window's expanded
+size and position are still saved by ImGui as for any panel (a position moved while the panel is
+collapsed is saved once it is expanded), and a restart never comes back as a strip.
+
+```cpp
+static PanelHandle g_panel = nullptr;
+
+static void MyTitleBar(IModLoaderImGui* imgui)
+{
+    const bool collapsed = g_hooks->UI->IsPanelCollapsed(g_panel);
+    // Material Icons expand_less / expand_more; see MaterialIcons.md
+    if (imgui->Button(collapsed ? "\xEE\x97\x8F" : "\xEE\x97\x8E"))
+        g_hooks->UI->SetPanelCollapsed(g_panel, !collapsed);
+    imgui->SetItemTooltip(collapsed ? "Expand" : "Collapse");
+}
+
+static const PluginPanelDesc k_myPanel = {
+    "My Plugin", "My Plugin##panel", MyPanelRender,
+    MyTitleBar                  // v75: optional, may be nullptr
+};
+```
+
+These need interface v75. The loader reads `titleBarFn` only from a plugin that declares 75 or
+later, so a plugin built for an older interface keeps working without a rebuild: its descriptor
+ends at `renderFn`. A loader older than v75 refuses a plugin that declares it and shows it as
+needing a newer mod loader, so a plugin that has to run on one declares 74 or less and leaves
+these out (see `PLUGIN_INTERFACE_VERSION` in `plugin_interface.h`).
 
 ---
 
