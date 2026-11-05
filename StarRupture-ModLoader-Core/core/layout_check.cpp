@@ -581,6 +581,11 @@ namespace LayoutCheck
             const std::string name = sdkName.substr(1);
             const SDK::EClassCastFlags kind = sdkName[0] == 'F' ? SDK::EClassCastFlags::ScriptStruct : SDK::EClassCastFlags::Class;
 
+            // A name no class or struct carries, in any module, is a plain C++
+            // type. A name that exists under another module or kind is a
+            // request that missed, which must fail rather than read as one.
+            const bool nameKnown = index.byName.find(name) != index.byName.end();
+
             std::vector<const SDK::UStruct*> found;
             if (byPath)
             {
@@ -603,8 +608,9 @@ namespace LayoutCheck
                     + " native types; name it by /Script/<Module>." + sdkName;
             else if (found.empty())
             {
-                answer.error = "no native " + std::string(sdkName[0] == 'F' ? "struct " : "class ") + className;
-                answer.unreflected = true;
+                answer.error = "no native " + std::string(sdkName[0] == 'F' ? "struct " : "class ") + className
+                    + (nameKnown ? " (the name exists under another module or kind)" : std::string());
+                answer.unreflected = !nameKnown;
             }
             else
                 type = found.front();

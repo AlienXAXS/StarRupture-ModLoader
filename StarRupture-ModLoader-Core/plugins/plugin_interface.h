@@ -1155,13 +1155,16 @@ static_assert(offsetof(PluginScanRequest, candidates)     == 56, "v72 starts whe
 //   PLUGIN_FIELD_NATIVE     a member reflection does not describe. The offset
 //                           comes from the row for the running changelist, or
 //                           builtOffset on builtCL. On any other build it
-//                           fails. The member must also lie inside its class
-//                           as the running game reflects the class, or it
-//                           fails. For a class reflection does not know at all
-//                           (a plain C++ type such as FMassEntityManager) there
-//                           is no size to bound by: the row for the running
-//                           changelist stands alone, builtOffset is not used,
-//                           and a build with no row fails.
+//                           fails. In the client build the member must also
+//                           lie inside its class as the running game reflects
+//                           the class, or it fails. For a class reflection
+//                           does not know at all (a plain C++ type such as
+//                           FMassEntityManager) there is no size to bound by:
+//                           the row for the running changelist stands alone,
+//                           builtOffset is not used, and a build with no row
+//                           fails. The server build does not bound a native
+//                           member by its class, so it keeps builtOffset on
+//                           builtCL.
 //   PLUGIN_FIELD_CHECK      something the plugin keeps using at its compiled
 //                           offset or size (a struct copied by value, an array
 //                           stride). Fails unless the running build matches it.
