@@ -53,7 +53,9 @@ namespace Hooks
         {
             // Walk the same SuperStruct chain GetFunction uses and dump every
             // function name found so the caller can see what is actually available.
-            ModLoaderLogger::LogWarn(
+            // Debug, not Warn: OnExperienceLoadComplete, PostLogin and Logout are not UFUNCTIONs
+            // and their hooks fall back to a pattern or a map row.
+            ModLoaderLogger::LogDebug(
                 L"[Hooks] Resolve UFunction: '%S::%S' not found, attempting alternative hook.", className, funcName);
 
             for (const SDK::UStruct* Clss = cls; Clss; Clss = Clss->SuperStruct)
