@@ -11,3 +11,4 @@
 - For plugin authors (interface v74): the game's menu and cursor state, and window sizing added at Kian369's request
 - For plugin authors (interface v74): PLUGIN_FIELD_ANY_SIZE asks for a reflected game member at whatever size the running build reports, for a member whose type differs between builds
 - modloader.ini [Debug] DisablePluginVersionMap=1 gives plugins no version map rows, to test their own patterns, at Kian369's request
+- For plugin authors: modloader.ini [Developer] RemoteReload=1 lets a script reload a plugin by writing its name to ModLoader\remote_reload.txt, the same reload as the RELOAD button, with the result in ModLoader.log

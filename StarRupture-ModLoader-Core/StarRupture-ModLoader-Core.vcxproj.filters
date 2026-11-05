@@ -276,6 +276,9 @@
     <ClInclude Include="plugins\crash_restart.h">
       <Filter>Source Files\plugins</Filter>
     </ClInclude>
+    <ClInclude Include="plugins\remote_reload.h">
+      <Filter>Source Files\plugins</Filter>
+    </ClInclude>
     <ClInclude Include="plugins\plugin_watchdog.h">
       <Filter>Source Files\plugins</Filter>
     </ClInclude>

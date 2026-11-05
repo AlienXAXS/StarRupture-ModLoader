@@ -429,6 +429,25 @@ loaders may add some. See [GameMenu.md](GameMenu.md). The menu classes follow Be
 menu-layer read and the class list in Kian369's MiniMap.
 <sup>[✦](#msantoro12)</sup>
 
+### Reloading a plugin from a script
+
+To try a new build without pressing **RELOAD**, turn on `[Developer] RemoteReload=1` in `modloader.ini`
+(off by default; the loader logs a warning at launch when it is on) and write a plugin's name, or its
+DLL file name, to `ModLoader\remote_reload.txt`: one per line, up to 16, blank lines and lines starting
+with `#` ignored. Within about a second the loader takes the file and reloads each plugin on the game
+thread, the same reload the **RELOAD** button runs, so your `PluginShutdown` and `PluginInit` run as
+usual and the plugin's load and unload settings still apply. Each name gets one line in `ModLoader.log`:
+
+```
+[RemoteReload] MyPlugin reloaded OK v1.2.0
+[RemoteReload] MyPlugin reload failed: <why>
+```
+
+Copy the new DLL into `ModLoader\Plugins\` first, then create the request: write it under another
+name and rename it to `remote_reload.txt`, so the loader never reads half a file. A name the loader has
+no record of is a failure line; a plugin dropped in after startup needs **LOAD NEW** first.
+<sup>[✦](#msantoro12)</sup>
+
 ### Preload plugins
 
 A **preload plugin** is a DLL in `ModLoader\Preload\` that runs *before the game executable's
@@ -565,6 +584,7 @@ these for you.
 | | `Disabled` | empty | Comma-separated DLL names to skip |
 | `[UE4SS]` | `Enabled` | `0` | Load UE4SS before plugins. `1` if you delete the key |
 | | `Path` | `ue4ss\ue4ss.dll` | Relative to the game executable |
+| `[Developer]` | `RemoteReload` | `0` | `1` reloads the plugins named in `ModLoader\remote_reload.txt` without pressing **RELOAD**. For plugin authors; logs a warning at every launch. See [Reloading a plugin from a script](#reloading-a-plugin-from-a-script) |
 | `[Debug]` | `ExportKnownGObjects` | `0` | Writes `known_gobjects_dump.txt` |
 | | `DisablePluginVersionMap` | `0` | Client only. `1` gives plugins no rows from the loader's version map, so each uses its own patterns and rows, or its feature switches off. For testing a plugin's own locators; the loader keeps the map for itself. Logs a warning at every launch. See [VersionMap.md](VersionMap.md) |
 

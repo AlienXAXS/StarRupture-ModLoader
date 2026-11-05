@@ -525,6 +525,7 @@
     <ClInclude Include="plugins\plugin_manager.h" />
     <ClInclude Include="plugins\reload_policy.h" />
     <ClInclude Include="plugins\crash_restart.h" />
+    <ClInclude Include="plugins\remote_reload.h" />
     <ClInclude Include="plugins\plugin_watchdog.h" />
     <ClInclude Include="plugins\pak_registry.h" />
     <ClInclude Include="UI\splash_window.h" />
