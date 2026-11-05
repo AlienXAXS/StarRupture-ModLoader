@@ -1005,6 +1005,8 @@ int main()
 	// The real map's function rows for Build Windows Anywhere and Build Benches Anywhere: one function-start row per
 	// build, the CL-127004 rows untouched by the CL-128786 ones. A CL-127004 row is a pattern row (no RVA): the plugin's
 	// own pattern that was proven on that build, resolved by scan. A CL-128786 row carries the RVA measured from its PDB.
+	// The MiniMap's keys have a row for each build where the same pattern holds, the older build's row untouched, and
+	// two near-identical natives told apart by their own rows.
 	{
 		const auto functionRow = [](const char* key, uint32_t cl) -> const Real::VersionMap::FunctionRow*
 		{
@@ -1030,9 +1032,23 @@ int main()
 		for (const AnywhereKey& k : anywhereKeys)
 			Check(isStartRow(functionRow(k.key, 127004), 0) && isStartRow(functionRow(k.key, 128786), k.rva128786),
 				(std::string("real function rows: ") + k.key + " has a pattern row on CL-127004 and a measured row on CL-128786").c_str());
+
+		const Real::VersionMap::FunctionRow* oldRow = functionRow("SplinePayload::GetSplineActorData", 127004);
+		const Real::VersionMap::FunctionRow* newRow = functionRow("SplinePayload::GetSplineActorData", 128786);
+		Check(oldRow && oldRow->rva == 0x0668DEA0 && newRow && newRow->rva == 0x066953E0, "real function rows: GetSplineActorData on both builds");
+		oldRow = functionRow("FRenderCommandFence::BeginFence", 127004);
+		newRow = functionRow("FRenderCommandFence::BeginFence", 128786);
+		Check(oldRow && newRow && newRow->rva == 0x03B01050 && strcmp(oldRow->pattern, newRow->pattern) != 0, "real function rows: BeginFence has a pattern of its own for CL-128786");
+		oldRow = functionRow("MiniMap/FRenderCommandFence::FRenderCommandFence", 127004);
+		newRow = functionRow("MiniMap/FRenderCommandFence::FRenderCommandFence", 128786);
+		Check(oldRow && newRow && oldRow->fp == newRow->fp && oldRow->fp != 0, "real function rows: a site key's rows for both builds carry the one fingerprint");
+		oldRow = functionRow("UCrBuildingStabilitySubsystem::OnCreateBuildingEntity", 128786);
+		newRow = functionRow("UCrBuildingStabilitySubsystem::OnDestroyBuildingEntity", 128786);
+		Check(oldRow && newRow && oldRow->rva == 0x074E7BF0 && newRow->rva == 0x074E7C30 && strcmp(oldRow->pattern, newRow->pattern) != 0,
+			"real function rows: building add and remove are two functions with two patterns on CL-128786");
 	}
 	Check(unmatched == 0, "every real map key is a registry row's or a plugin's global or scoped key");
-	Check(pluginKeys == 109, "the real map holds the 109 plugin function keys; FRHIComputeCommandList::Transition is a loader registry key now");
+	Check(pluginKeys == 116, "the real map holds the 116 plugin function keys; FRHIComputeCommandList::Transition is a loader registry key now");
 	Check(wrong == 0, "every real map row has its registry row's kind and fp");
 
 	// Restarting a plugin the crash guard switched off: the plan for each setting, the limiter, the timing.
