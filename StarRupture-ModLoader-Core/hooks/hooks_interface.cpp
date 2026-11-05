@@ -437,6 +437,8 @@ namespace ModLoaderLogger
 		{
 			g_convTextToStringScanned = true;
 			g_convTextToStringAddr = Hooks::ResolveUFunctionNativeAddr("KismetTextLibrary", "Conv_TextToString");
+			if (!g_convTextToStringAddr)
+				LogWarn(L"[HooksInterface] KismetTextLibrary::Conv_TextToString not found; IPluginTextUtils::Conv_TextToString returns 0");
 		}
 		return g_convTextToStringAddr;
 	}
