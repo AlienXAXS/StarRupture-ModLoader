@@ -673,7 +673,7 @@ inline constexpr std::array<FunctionRow, 434> kFunctionRows = {{
 	{ 128786, 0xCF8579A6, 0x0F47D000, 1, 0x00000000, false, "4C 8B DC 55 56 57 41 55 41 57 48 81 EC 80 01 00 00 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 84 24 60 01 00 00 4D 89 63 D0 45 0F B6 E0 4D 89 73 C8 4D 8B F9 44 0F B6 EA 48 8B E9", 0, -1, -1, 0x053B07E0, nullptr },
 }};
 
-inline constexpr std::array<FieldRow, 65> kFieldRows = {{
+inline constexpr std::array<FieldRow, 71> kFieldRows = {{
 	// AAuPlayerCameraManager::AdditionalFOVOffset
 	{ 127004, 0x299C, 0x4, 0x00, nullptr },
 	{ 128786, 0x299C, 0x4, 0x00, nullptr },
@@ -710,12 +710,21 @@ inline constexpr std::array<FieldRow, 65> kFieldRows = {{
 	// FCrGridEntityHandle::EntityHandle
 	{ 127004, 0x0, 0x8, 0x00, nullptr },
 	{ 128786, 0x0, 0x8, 0x00, nullptr },
+	// FGameplayEffectSpec::SetByCallerNameMagnitudes
+	{ 127004, 0x1D8, 0x50, 0x00, nullptr },
+	{ 128786, 0x1D8, 0x50, 0x00, nullptr },
+	// FGameplayEffectSpec::SetByCallerTagMagnitudes
+	{ 127004, 0x228, 0x50, 0x00, nullptr },
+	{ 128786, 0x228, 0x50, 0x00, nullptr },
 	// FMassEnemyHealthFragment::HP
 	{ 127004, 0x0, 0x4, 0x00, nullptr },
 	{ 128786, 0x0, 0x4, 0x00, nullptr },
 	// FMassEnemyStateFragment::State
 	{ 127004, 0x1, 0x1, 0x00, nullptr },
 	{ 128786, 0x1, 0x1, 0x00, nullptr },
+	// FMassEntityManager::ConstSharedFragmentsContainer
+	{ 127004, 0x120, 0xB0, 0x00, nullptr },
+	{ 128786, 0x120, 0xB0, 0x00, nullptr },
 	// FTransform::Translation
 	{ 127004, 0x20, 0x18, 0x00, nullptr },
 	{ 128786, 0x20, 0x18, 0x00, nullptr },
@@ -994,7 +1003,7 @@ inline constexpr std::array<Index, 217> kFunctions = {{
 	{ "UWorld::UpdateWorldComponents", 432, 2 },
 }};
 
-inline constexpr std::array<Index, 33> kFields = {{
+inline constexpr std::array<Index, 36> kFields = {{
 	{ "AAuPlayerCameraManager::AdditionalFOVOffset", 0, 2 },
 	{ "AAuPlayerCameraManager::FOV", 2, 2 },
 	{ "ACrCrafter::CraftComponent", 4, 2 },
@@ -1007,26 +1016,29 @@ inline constexpr std::array<Index, 33> kFields = {{
 	{ "APlayerController::bPlayerIsWaiting", 18, 2 },
 	{ "FCrGridEntityHandle::Data", 20, 2 },
 	{ "FCrGridEntityHandle::EntityHandle", 22, 2 },
-	{ "FMassEnemyHealthFragment::HP", 24, 2 },
-	{ "FMassEnemyStateFragment::State", 26, 2 },
-	{ "FTransform::Translation", 28, 2 },
-	{ "UCrEnviroWaveTimerSubsystem::NextWaveTimer", 30, 2 },
-	{ "UCrEnviroWaveTimerSubsystem::TimerActor", 32, 2 },
-	{ "UCrEnviroWaveTimerSubsystem::WaitingDuration", 34, 1 },
-	{ "UCrEnviroWaveTimerSubsystem::bPause", 35, 2 },
-	{ "UCrEnviroWaveTimerSubsystem::bStopWaves", 37, 2 },
-	{ "UCrEnviroWaveTimerSubsystem::bWaitingForNextWave", 39, 2 },
-	{ "UCrGameInstance::ServerSessionName", 41, 2 },
-	{ "UCrPlayerMapMenuDataComponent::FOWData", 43, 2 },
-	{ "UCrUW_InventoryContainer::InventoryComponent", 45, 2 },
-	{ "ULocalPlayer::Origin", 47, 2 },
-	{ "ULocalPlayer::Size", 49, 2 },
-	{ "UMassActorSubsystem::ActorManager", 51, 2 },
-	{ "UMassEntitySubsystem::EntityManager", 53, 2 },
-	{ "USceneComponent::ComponentToWorld", 55, 2 },
-	{ "UTexture::SRGB", 57, 2 },
-	{ "UWorld::GameState", 59, 2 },
-	{ "UWorld::LineBatchers", 61, 2 },
-	{ "UWorld::NetDriver", 63, 2 },
+	{ "FGameplayEffectSpec::SetByCallerNameMagnitudes", 24, 2 },
+	{ "FGameplayEffectSpec::SetByCallerTagMagnitudes", 26, 2 },
+	{ "FMassEnemyHealthFragment::HP", 28, 2 },
+	{ "FMassEnemyStateFragment::State", 30, 2 },
+	{ "FMassEntityManager::ConstSharedFragmentsContainer", 32, 2 },
+	{ "FTransform::Translation", 34, 2 },
+	{ "UCrEnviroWaveTimerSubsystem::NextWaveTimer", 36, 2 },
+	{ "UCrEnviroWaveTimerSubsystem::TimerActor", 38, 2 },
+	{ "UCrEnviroWaveTimerSubsystem::WaitingDuration", 40, 1 },
+	{ "UCrEnviroWaveTimerSubsystem::bPause", 41, 2 },
+	{ "UCrEnviroWaveTimerSubsystem::bStopWaves", 43, 2 },
+	{ "UCrEnviroWaveTimerSubsystem::bWaitingForNextWave", 45, 2 },
+	{ "UCrGameInstance::ServerSessionName", 47, 2 },
+	{ "UCrPlayerMapMenuDataComponent::FOWData", 49, 2 },
+	{ "UCrUW_InventoryContainer::InventoryComponent", 51, 2 },
+	{ "ULocalPlayer::Origin", 53, 2 },
+	{ "ULocalPlayer::Size", 55, 2 },
+	{ "UMassActorSubsystem::ActorManager", 57, 2 },
+	{ "UMassEntitySubsystem::EntityManager", 59, 2 },
+	{ "USceneComponent::ComponentToWorld", 61, 2 },
+	{ "UTexture::SRGB", 63, 2 },
+	{ "UWorld::GameState", 65, 2 },
+	{ "UWorld::LineBatchers", 67, 2 },
+	{ "UWorld::NetDriver", 69, 2 },
 }};
 }
