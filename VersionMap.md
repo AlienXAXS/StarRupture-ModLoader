@@ -51,6 +51,28 @@ The map lives in `hooks/game/version_map.generated.h`, written by CI
 its `ci/VERSION-MAP.md`). Every loader build carries the map as it stood when it was built, and
 works offline on every build in it. The signed feed (below) adds to that.
 
+**Not map data.** Some values a plugin needs are not in the map on purpose.
+
+- *Struct sizes.* A size request is a field request with the member null (`SR_SIZE_CHECK`, or the
+  same request with size 0 for the live size). Every game struct a plugin sizes is a reflected
+  `USTRUCT`, so the loader answers from the running game's own reflection data (`UStruct::Size`),
+  on the client and on the dedicated server, and each game build gives its own size. A row could
+  only repeat what reflection says, so there is no size row. A class-keyed row (a key with no `::`)
+  is read as a cross-check, like the row of a reflected member: where it disagrees with the game,
+  the game wins and the difference is logged. A size request is never native: `PLUGIN_FIELD_NATIVE`
+  on it is a bad request. A plugin asks with `PLUGIN_FIELD_CHECK` when its compiled code depends on
+  the size (a struct copied by value, a `ProcessEvent` parameter block, a buffer a native function
+  fills, a `TMap` value), and with size 0 and no flag when it only steps through an array, so it
+  takes the size the game has. A new line type in the feed would also make every 1.23.x loader drop
+  the whole signed feed, which is another reason not to add a size row.
+- *Game enums.* The numbers in a game `UEnum` can move on a game update, and no symbol or pattern
+  holds them, so CI could not generate a row. The value belongs to the game's reflection data, read
+  by the enum's and the entry's name.
+- *Unreal Engine constants.* `EObjectFlags` bits (`RF_*`), `FUNC_Native`, `INDEX_NONE` and the
+  engine ABI the plugins compile in (the `TArray` header, shared-pointer reference controllers) are
+  fixed by the engine version, not by a game build. A change of engine version regenerates the whole
+  Game-SDK, so the map has nothing to add.
+
 ## Selection
 
 A plugin asks for a function with `PLUGIN_SCAN_FLAG_MAP_KEY` and for a field with a field

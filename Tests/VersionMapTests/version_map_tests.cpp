@@ -711,6 +711,90 @@ int main()
 			"field: no reflection reader, no native member");
 	}
 
+	// Struct sizes (member empty) are never map data: they come live from the game's reflection, and a plugin that
+	// needs the compiled size to hold asks for PLUGIN_FIELD_CHECK. See "Not map data" in VersionMap.md.
+	{
+		VersionMap::SetLiveFieldSource(FakeLive);
+		VersionMap::FieldValue v;
+		std::string e;
+
+		// Size 0 and no CHECK: the live size comes back, whatever the code was compiled for.
+		Check(Field("AOther", "AOther", "", 0, 0, {}, v, e) && v.size == 0x10 && v.offset == 0 && v.boolMask == 0
+			&& Logged(L"AOther: reflected (no row for CL-128786) (0x10)"), "size: size 0 takes the game's live size");
+		Check(Field("AOther", "AOther", "", 0, 0x10, {}, v, e) && v.size == 0x10, "size: the compiled size matches the game's: the live size");
+		Check(Field("AOther", "AOther", "", 0, 0x20, {}, v, e) && v.size == 0x10 && !Logged(L"as compiled"),
+			"size: without CHECK a different compiled size is not compared: the live size is returned");
+
+		// CHECK compares the compiled size with the game's and refuses a difference.
+		Check(Field("AOther", "AOther", "", PLUGIN_FIELD_CHECK, 0x10, {}, v, e) && v.size == 0x10
+			&& Logged(L"AOther: reflected (no row for CL-128786), as compiled (0x10)"), "size: CHECK passes when the game's size is the compiled one");
+		Check(!Field("AOther", "AOther", "", PLUGIN_FIELD_CHECK, 0x18, {}, v, e)
+			&& e == "the code relies on 0x18, this build has 0x10"
+			&& Logged(L"AOther: refused: the code relies on 0x18, this build has 0x10"), "size: CHECK refuses a game size that is not the compiled one");
+
+		// Only a reflected struct has a size: a native or bitfield flag on a size request is a bad request, an unknown class an error.
+		Check(!Field("AOther", "AOther", "", PLUGIN_FIELD_NATIVE, 0x10, {}, v, e)
+			&& e == "bad request: a field needs a class, and a size row is neither native nor a bitfield", "size: NATIVE on a size request is a bad request");
+		Check(!Field("AOther", "AOther", "", PLUGIN_FIELD_BITFIELD, 0, {}, v, e) && e.find("bad request:") == 0,
+			"size: BITFIELD on a size request is a bad request");
+		Check(!Field("AOther", "AOther", "", PLUGIN_FIELD_ANY_SIZE, 0, {}, v, e) && e.find("bad request: PLUGIN_FIELD_ANY_SIZE") == 0,
+			"size: ANY_SIZE is for a member, not a size request");
+		Check(!Field("ANone", "ANone", "", 0, 0, {}, v, e) && e == "reflection: no class ANone", "size: a class the game does not have is an error");
+		Check(!Field("AOther", "AOther", "", PLUGIN_FIELD_NATIVE | PLUGIN_FIELD_CHECK, 0x10, { FieldRow(128786, 0, 0x10) }, v, e)
+			&& e.find("bad request:") == 0, "size: an own row does not turn a size request native");
+
+		// An own row is only a cross-check too: the game's size is the answer.
+		Check(Field("AOther", "AOther", "", 0, 0, { FieldRow(128786, 0, 0x30) }, v, e) && v.size == 0x10
+			&& Logged(L"AOther: the CL-128786 row says 0x0/0x30, the game says 0x0/0x10; the game wins"), "size: an own row the game disagrees with: the game's size wins");
+
+		// A class-keyed map row (no "::" in the key) is a cross-check as well: where it disagrees the game wins and the
+		// difference is logged; where it agrees the pick says so.
+		VersionMap::MapData classRows = VersionMap::BaselineMap();
+		classRows.fields.push_back({ "AChild", 128786, 0, 0x50, 0, "" });
+		classRows.fields.push_back({ "AOther", 128786, 0, 0x10, 0, "" });
+		VersionMap::SetActiveMap(std::make_shared<const VersionMap::MapData>(classRows));
+		Check(Field("AChild", "AChild", "", 0, 0, {}, v, e) && v.size == 0x58
+			&& Logged(L"AChild: the loader map, CL-128786 row says 0x0/0x50, the game says 0x0/0x58; the game wins")
+			&& Logged(L"overruled by reflection"), "size: a class-keyed map row the game disagrees with: the game wins, logged");
+		Check(Field("AOther", "AOther", "", 0, 0, {}, v, e) && v.size == 0x10 && !Logged(L"the game wins")
+			&& Logged(L"loader map, CL-128786 row, as reflected (0x10)"), "size: a class-keyed map row the game agrees with");
+		Check(!Field("AChild", "AChild", "", PLUGIN_FIELD_CHECK, 0x50, {}, v, e) && e == "the code relies on 0x50, this build has 0x58",
+			"size: CHECK compares with the game, not with the class-keyed row");
+		// ... and it is never served without the game: no reflection reader, no size.
+		VersionMap::SetLiveFieldSource(nullptr);
+		Check(!Field("AOther", "AOther", "", 0, 0, {}, v, e) && e == "no reflection data to read a reflected field from",
+			"size: a class-keyed row does not stand in for reflection");
+		VersionMap::SetActiveMap(nullptr);
+		VersionMap::SetLiveFieldSource(FakeLive);
+
+		// The same request through the plugin ABI: member null, the live size in the result.
+		IPluginHookScanner* scan = ModLoaderLogger::GetPluginHookScanner();
+		const auto ask = [&](const IPluginSelf* self, const char* className, uint32_t flags, uint32_t size, PluginFieldResult& result)
+		{
+			PluginFieldRequest request = PLUGIN_FIELD_REQUEST_INIT;
+			request.key       = className;
+			request.className = className;
+			request.member    = nullptr;
+			request.flags     = flags;
+			request.size      = size;
+			request.builtCL   = 127004;
+			result = PluginFieldResult{};
+			return scan->ResolveField(self, &request, &result);
+		};
+		IPluginSelf sizes{ "SizePlug", "1", nullptr, nullptr, nullptr };
+		bool refusedFlag = false;
+		PluginHookReport::BeginSession(&sizes, "SizePlug", "SizePlug.dll");
+		PluginFieldResult r{};
+		Check(ask(&sizes, "AOther", PLUGIN_FIELD_FLAG_NONE, 0, r) && r.size == 0x10 && r.offset == 0 && r.boolMask == 0,
+			"size: ResolveField with member null and size 0 returns the live size");
+		Check(ask(&sizes, "AChild", PLUGIN_FIELD_CHECK, 0x58, r) && r.size == 0x58, "size: ResolveField with CHECK and the game's size");
+		Check(!PluginHookReport::SessionHasFailures(&sizes), "size: those requests are not failures");
+		Check(!ask(&sizes, "AChild", PLUGIN_FIELD_CHECK, 0x50, r) && r.size == 0 && PluginHookReport::SessionHasFailures(&sizes),
+			"size: ResolveField with CHECK and a size the game does not have fails and writes nothing");
+		PluginHookReport::EndSession(&sizes, &refusedFlag);
+		VersionMap::SetLiveFieldSource(nullptr);
+	}
+
 	// Admission by the plugin's built CL (R3). A PluginInfo as a plugin fills it.
 	{
 		const auto info = [](int version, uint32_t builtCL, uint32_t flags)
