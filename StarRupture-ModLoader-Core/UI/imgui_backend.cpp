@@ -801,9 +801,9 @@ static void RebuildFontAtlas(bool initialSetup)
 
 	if (entry->primaryPath == nullptr)
 	{
-		// Built-in: let ImGui add its default font automatically.
-		// (Fonts->Clear() above means it will be re-added by NewFrame if empty.)
-		io.Fonts->AddFontDefault();
+		// Built-in: the bitmap font, whatever the text size. AddFontDefault() picks the vector font
+		// once the scaled size reaches 15 px, and the icon offset below is derived for ProggyClean.
+		io.Fonts->AddFontDefaultBitmap();
 		iconGlyphOffsetY = 4.5f; // ProggyClean 13px: ascent 10, descent -4
 	}
 	else
@@ -826,7 +826,7 @@ static void RebuildFontAtlas(bool initialSetup)
 		{
 			IMGUI_LOG_WARN("[ImGuiBackend] Failed to load font '%s' -- falling back to built-in", narrowPath);
 			io.Fonts->Clear();
-			io.Fonts->AddFontDefault();
+			io.Fonts->AddFontDefaultBitmap();
 			iconGlyphOffsetY = 4.5f;
 		}
 		else if (entry->mergePath != nullptr)
