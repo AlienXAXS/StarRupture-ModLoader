@@ -1061,7 +1061,7 @@ int main()
 		Check(textureBoth, "real function rows: the texture natives and the UpdateResource site have rows for both builds with one pattern");
 	}
 	Check(unmatched == 0, "every real map key is a registry row's or a plugin's global or scoped key");
-	Check(pluginKeys == 116, "the real map holds the 116 plugin function keys; FRHIComputeCommandList::Transition is a loader registry key now");
+	Check(pluginKeys == 117, "the real map holds the 117 plugin function keys; FRHIComputeCommandList::Transition is a loader registry key now");
 	Check(wrong == 0, "every real map row has its registry row's kind and fp");
 
 	// Restarting a plugin the crash guard switched off: the plan for each setting, the limiter, the timing.
