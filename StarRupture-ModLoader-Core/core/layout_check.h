@@ -203,14 +203,21 @@ namespace LayoutCheck
     // Every plugin's Game-SDK calls UObject::ProcessEvent through slot
     // Offsets::ProcessEventIdx of the object's vtable (the index is compiled
     // in), and the loader hooks the function the version map resolves. Both
-    // must be the same function. `vtable` is the UObject class default object's
-    // vtable, `index` the SDK's slot, `resolved` the map-resolved address and
+    // must be the same function. `slot` is what the UObject class default
+    // object's vtable holds at `index` (ReadVtableSlot), `index` the SDK's
+    // slot, `resolved` the map-resolved address and
     // `imageBase` the main module's base (the lines show offsets in the
     // image). A slot that holds another address adds a difference to `result`
     // (Decide switches all plugins off, whatever else changed) and returns
     // false.
-    bool CheckProcessEventSlot(Result& result, const uintptr_t* vtable, int32_t index,
+    bool CheckProcessEventSlot(Result& result, uintptr_t slot, int32_t index,
         uintptr_t resolved, uintptr_t imageBase);
+
+    // Reads entry `index` of `vtable` under SEH. A vtable that is short or
+    // not a vtable (the case the slot check exists for) faults on the read:
+    // that returns false with the exception code and `slot` untouched, and the
+    // caller treats it as "cannot verify", not as a mismatch.
+    bool ReadVtableSlot(const uintptr_t* vtable, int32_t index, uintptr_t& slot, uint32_t& exceptionCode);
 
     // Compares every table class with what `find` returns for it (nullptr:
     // not in the game). A size or alignment of 0 is not compared: in a

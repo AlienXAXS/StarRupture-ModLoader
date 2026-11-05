@@ -5,6 +5,8 @@
 #include <cstdio>
 #include <utility>
 
+#include <excpt.h>
+
 namespace LayoutCheck
 {
     namespace
@@ -144,10 +146,23 @@ namespace LayoutCheck
         return result;
     }
 
-    bool CheckProcessEventSlot(Result& result, const uintptr_t* vtable, int32_t index,
+    bool ReadVtableSlot(const uintptr_t* vtable, int32_t index, uintptr_t& slot, uint32_t& exceptionCode)
+    {
+        __try
+        {
+            slot = vtable[index];
+            return true;
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER)
+        {
+            exceptionCode = static_cast<uint32_t>(GetExceptionCode());
+            return false;
+        }
+    }
+
+    bool CheckProcessEventSlot(Result& result, uintptr_t slot, int32_t index,
         uintptr_t resolved, uintptr_t imageBase)
     {
-        const uintptr_t slot = vtable[index];
         if (slot == resolved)
             return true;
 
@@ -423,9 +438,18 @@ namespace LayoutCheck
                 return;
             }
 
-            const auto imageBase = reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
             constexpr int32_t index = SDK::Offsets::ProcessEventIdx;
-            if (CheckProcessEventSlot(result, vtable, index, resolved, imageBase))
+            uintptr_t slot = 0;
+            uint32_t slotException = 0;
+            if (!ReadVtableSlot(vtable, index, slot, slotException))
+            {
+                ModLoaderLogger::LogWarn(L"[LayoutCheck] UObject::ProcessEvent slot not checked: reading vtable slot 0x%X faulted (exception 0x%08X)",
+                    static_cast<unsigned>(index), slotException);
+                return;
+            }
+
+            const auto imageBase = reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
+            if (CheckProcessEventSlot(result, slot, index, resolved, imageBase))
                 ModLoaderLogger::LogInfo(L"[LayoutCheck] UObject::ProcessEvent: vtable slot 0x%X holds the function the map resolved (base+0x%llX)",
                     static_cast<unsigned>(index), static_cast<unsigned long long>(resolved - imageBase));
         }
