@@ -12,6 +12,7 @@
 #include "plugins/reload_policy.h"
 #include "memory_scanner/scan_cache.h"
 #include "plugins/crash_restart.h"
+#include "plugins/remote_reload.h"
 #include "UI/update_notice_window.h"
 
 #include <array>
@@ -1170,6 +1171,62 @@ int main()
 		VersionMap::SetPluginMapOff(false);
 		Check(At(Key("VmapProbe", Ask("Test::MapOnly", Kind::FunctionStart)), 0x1000), "plugin map switch off again: the map's row is back");
 		VersionMap::SetLiveFieldSource(nullptr);
+	}
+
+	// Developer remote reload: off unless the ini key is on, the request file's names, the poll rate, the log lines.
+	{
+		const auto writeIni = [](const std::wstring& path, const char* text)
+		{
+			FILE* f = nullptr;
+			_wfopen_s(&f, path.c_str(), L"wb");
+			if (f) { fputs(text, f); fclose(f); }
+		};
+		wchar_t tmp[MAX_PATH]{};
+		GetTempPathW(MAX_PATH, tmp);
+		const std::wstring ini = std::wstring(tmp) + L"remote_reload_test.ini";
+
+		DeleteFileW(ini.c_str());
+		Check(!RemoteReload::IsEnabled(ini), "remote reload: off when there is no modloader.ini");
+		writeIni(ini, "[Developer]\r\nSomethingElse=1\r\n");
+		Check(!RemoteReload::IsEnabled(ini), "remote reload: off when the key is missing");
+		writeIni(ini, "[Developer]\r\nRemoteReload=0\r\n");
+		Check(!RemoteReload::IsEnabled(ini), "remote reload: off when the key is 0");
+		writeIni(ini, "[Debug]\r\nRemoteReload=1\r\n");
+		Check(!RemoteReload::IsEnabled(ini), "remote reload: the key in another section does not turn it on");
+		writeIni(ini, "[Developer]\r\nRemoteReload=1\r\n");
+		Check(RemoteReload::IsEnabled(ini), "remote reload: on when [Developer] RemoteReload=1");
+		DeleteFileW(ini.c_str());
+
+		RemoteReload::Request r = RemoteReload::Parse("BetterCheats\n");
+		Check(r.names == std::vector<std::string>{ "BetterCheats" } && r.refused == 0, "remote reload: one name");
+		r = RemoteReload::Parse("\xEF\xBB\xBF  WAILA \t\r\n\r\n# a comment\r\n   \r\nCodex.dll\r\nBetterDrone");
+		Check(r.names == std::vector<std::string>{ "WAILA", "Codex.dll", "BetterDrone" },
+			"remote reload: BOM, CR, blank and comment lines and the spaces around a name are dropped; a file name is kept as typed");
+		r = RemoteReload::Parse("Codex\ncodex\nCODEX\nWAILA\n");
+		Check(r.names == std::vector<std::string>{ "Codex", "WAILA" }, "remote reload: a name given twice in any case is asked once");
+		r = RemoteReload::Parse("");
+		Check(r.names.empty() && r.refused == 0, "remote reload: an empty file asks for nothing");
+		r = RemoteReload::Parse("\n# nothing here\n \n");
+		Check(r.names.empty(), "remote reload: a file of comments asks for nothing");
+		std::string many;
+		for (size_t i = 0; i < RemoteReload::kMaxNames + 3; ++i)
+			many += "Plugin" + std::to_string(i) + "\n";
+		r = RemoteReload::Parse(many);
+		Check(r.names.size() == RemoteReload::kMaxNames && r.refused == 3 && r.names.front() == "Plugin0",
+			"remote reload: past the limit the rest are counted and refused");
+		Check(RemoteReload::SameName("BetterCheats", "bettercheats") && !RemoteReload::SameName("Codex", "Codex2"),
+			"remote reload: names match without regard to case");
+
+		RemoteReload::Throttle t;
+		Check(t.Due(5000), "remote reload: the first look is due at once");
+		Check(!t.Due(5000) && !t.Due(5000 + RemoteReload::kPollMs - 1), "remote reload: no second look within the poll time");
+		Check(t.Due(5000 + RemoteReload::kPollMs) && !t.Due(5000 + RemoteReload::kPollMs + 1), "remote reload: due again after the poll time");
+		RemoteReload::Throttle fresh;
+		Check(fresh.Due(0), "remote reload: due at tick count 0");
+
+		Check(RemoteReload::Reloaded("BetterCheats", "1.4.2") == "[RemoteReload] BetterCheats reloaded OK v1.4.2", "remote reload: the success line");
+		Check(RemoteReload::Failed("Codex", "refused") == "[RemoteReload] Codex reload failed: refused", "remote reload: the failure line");
+		Check(RemoteReload::NoSuchPlugin("Nope").find("[RemoteReload] Nope reload failed: no plugin") == 0, "remote reload: an unknown name is a failure line");
 	}
 
 	printf("%d checks, %d failed\n", g_checks, g_failed);

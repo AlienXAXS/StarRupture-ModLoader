@@ -113,6 +113,7 @@ namespace Hooks::EngineTick
 		// Reload plugins the crash guard switched off, at the same point in the
 		// frame a RELOAD from the Plugins tab runs.
 		PluginManager::PumpCrashRestarts();
+		PluginManager::PumpRemoteReload();
 
 		if (profileThisTick)
 			QueryPerformanceCounter(&dispatchEnd);

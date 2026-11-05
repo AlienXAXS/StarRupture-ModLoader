@@ -117,6 +117,13 @@ namespace PluginManager
     // nothing once the game has started to exit.
     void PumpCrashRestarts();
 
+    // Game thread, every tick, right after PumpCrashRestarts. Developer feature,
+    // off unless modloader.ini [Developer] RemoteReload=1: about once a second
+    // it looks for the request file (plugins/remote_reload.h) and reloads each
+    // plugin named in it, then logs "[RemoteReload] <Plugin> reloaded OK v<ver>"
+    // or "... reload failed: <reason>". When off it is one flag test.
+    void PumpRemoteReload();
+
     // Index of the plugin record matching nameOrFile, or -1 if there is none.
     // Matches (case-insensitively) the PluginInfo name first, then the DLL file
     // name with and without its ".dll" extension.
