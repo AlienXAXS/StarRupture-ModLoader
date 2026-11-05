@@ -525,6 +525,22 @@ namespace
         const LayoutCheck::Verdict verdict = LayoutCheck::Decide(kLoaderTable(), moved);
         Check(verdict.safeOff && verdict.featuresOff.empty(), "safe-off: every plugin off");
 
+        // A class changed elsewhere (here one only the menu layer reads) does
+        // not hide the slot: the verdict is still safe-off.
+        {
+            auto table = kLoaderTable();
+            const std::string menu = ClassNamed(table, "UCrUW_MapMenu")->path;
+            auto game = AsGame(table);
+            game.erase(menu);
+            LayoutCheck::Result both = CompareWith(table, game);
+            Check(!LayoutCheck::Decide(table, both).safeOff, "the menu class alone: plugins stay on");
+            LayoutCheck::CheckProcessEventSlot(both, vtable, index, resolved, base);
+            Check(both.slotMismatched == 1 && !both.changedClasses.empty(), "a changed class and a slot mismatch together");
+            const LayoutCheck::Verdict together = LayoutCheck::Decide(table, both);
+            Check(together.safeOff && together.featuresOff == std::vector<std::string>{ "ui-menus" },
+                "the slot mismatch forces safe-off; the class still switches its feature off");
+        }
+
         // It is the slot that is read, not the whole table.
         vtable[index] = resolved;
         vtable[index + 1] = base;

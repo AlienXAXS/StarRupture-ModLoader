@@ -163,6 +163,10 @@ namespace LayoutCheck
     Verdict Decide(const std::vector<TableClass>& table, const Result& result)
     {
         Verdict verdict;
+        // A slot mismatch names no class, so a changed class elsewhere must
+        // not hide it: every plugin calls ProcessEvent through that slot.
+        if (result.slotMismatched > 0)
+            verdict.safeOff = true;
         if (!result.lines.empty() && result.changedClasses.empty())
             verdict.safeOff = true;
 

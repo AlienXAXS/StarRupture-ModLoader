@@ -207,7 +207,8 @@ namespace LayoutCheck
     // vtable, `index` the SDK's slot, `resolved` the map-resolved address and
     // `imageBase` the main module's base (the lines show offsets in the
     // image). A slot that holds another address adds a difference to `result`
-    // (no class changed, so Decide switches all plugins off) and returns false.
+    // (Decide switches all plugins off, whatever else changed) and returns
+    // false.
     bool CheckProcessEventSlot(Result& result, const uintptr_t* vtable, int32_t index,
         uintptr_t resolved, uintptr_t imageBase);
 
