@@ -1027,6 +1027,19 @@ int main()
 		newRow = functionRow("UCrBuildingStabilitySubsystem::OnDestroyBuildingEntity", 128786);
 		Check(oldRow && newRow && oldRow->rva == 0x074E7BF0 && newRow->rva == 0x074E7C30 && strcmp(oldRow->pattern, newRow->pattern) != 0,
 			"real function rows: building add and remove are two functions with two patterns on CL-128786");
+		oldRow = functionRow("UCrBuildingStabilitySubsystem::OnCreateBuildingEntity", 127004);
+		newRow = functionRow("UCrBuildingStabilitySubsystem::OnDestroyBuildingEntity", 127004);
+		Check(oldRow && newRow && oldRow->rva == 0x07469170 && newRow->rva == 0x074691B0 && strcmp(oldRow->pattern, newRow->pattern) != 0,
+			"real function rows: building add and remove are two functions with two patterns on CL-127004 too");
+		const char* const textureKeys[] = { "UTexture2D::CreateTransient", "FBulkData::Lock", "FBulkData::Unlock", "UTexture::GetResource", "MiniMap/UTexture::UpdateResource" };
+		bool textureBoth = true;
+		for (const char* key : textureKeys)
+		{
+			oldRow = functionRow(key, 127004);
+			newRow = functionRow(key, 128786);
+			textureBoth = textureBoth && oldRow && newRow && oldRow->fp == newRow->fp && strcmp(oldRow->pattern, newRow->pattern) == 0;
+		}
+		Check(textureBoth, "real function rows: the texture natives and the UpdateResource site have rows for both builds with one pattern");
 	}
 	Check(unmatched == 0, "every real map key is a registry row's or a plugin's global or scoped key");
 	Check(pluginKeys == 112, "the real map holds the 112 plugin function keys; FRHIComputeCommandList::Transition is a loader registry key now");
