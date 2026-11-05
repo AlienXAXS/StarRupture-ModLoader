@@ -1001,8 +1001,9 @@ int main()
 		newRow = fieldRow("UCrEnviroWaveTimerSubsystem::TimerActor", 128786);
 		Check(oldRow && oldRow->offset == 0x90 && newRow && newRow->offset == 0x98, "real field rows: TimerActor 0x90 on CL-127004, 0x98 on CL-128786");
 	}
-	// The real map's function rows for Build Windows Anywhere and Build Benches Anywhere: one function row per build,
-	// the CL-127004 rows untouched by the CL-128786 ones.
+	// The real map's function rows for Build Windows Anywhere and Build Benches Anywhere: one function-start row per
+	// build, the CL-127004 rows untouched by the CL-128786 ones. A CL-127004 row is a pattern row (no RVA): the plugin's
+	// own pattern that was proven on that build, resolved by scan. A CL-128786 row carries the RVA measured from its PDB.
 	{
 		const auto functionRow = [](const char* key, uint32_t cl) -> const Real::VersionMap::FunctionRow*
 		{
@@ -1015,17 +1016,22 @@ int main()
 		};
 		const auto isStartRow = [](const Real::VersionMap::FunctionRow* row, uint32_t rva)
 		{
-			return row && !row->absent && row->kind == static_cast<int>(Kind::FunctionStart) && row->fp == 0 && row->rva == rva;
+			return row && !row->absent && row->kind == static_cast<int>(Kind::FunctionStart) && row->fp == 0 && row->rva == rva
+			    && row->pattern && *row->pattern && row->resultOffset == 0;
 		};
-		const char* const mainMesh = "ACrAPHelperActorCustom::CheckMainMeshCollision";
-		const char* const socketFree = "UCrBuildingStabilitySubsystem::IsSocketFree";
-		Check(isStartRow(functionRow(mainMesh, 127004), 0x074DEE60) && isStartRow(functionRow(mainMesh, 128786), 0x0755C5F0),
-			"real function rows: CheckMainMeshCollision has a function-start row for each build");
-		Check(isStartRow(functionRow(socketFree, 127004), 0x074651D0) && isStartRow(functionRow(socketFree, 128786), 0x074E6100),
-			"real function rows: IsSocketFree has a function-start row for each build");
+		struct AnywhereKey { const char* key; uint32_t rva128786; };
+		const AnywhereKey anywhereKeys[] = {
+			{ "ACrAPHelperActorCustom::CheckMainMeshCollision", 0x0755C5F0 },
+			{ "ACrAPHelper::GetBoxCollisionResult",             0x07521070 },
+			{ "UCrSocketSnapPlacementMethod::GetSnappedSocket", 0x074DAE00 },
+			{ "UCrBuildingStabilitySubsystem::IsSocketFree",    0x074E6100 },
+		};
+		for (const AnywhereKey& k : anywhereKeys)
+			Check(isStartRow(functionRow(k.key, 127004), 0) && isStartRow(functionRow(k.key, 128786), k.rva128786),
+				(std::string("real function rows: ") + k.key + " has a pattern row on CL-127004 and a measured row on CL-128786").c_str());
 	}
 	Check(unmatched == 0, "every real map key is a registry row's or a plugin's global or scoped key");
-	Check(pluginKeys == 107, "the real map holds the 107 plugin function keys; FRHIComputeCommandList::Transition is a loader registry key now");
+	Check(pluginKeys == 109, "the real map holds the 109 plugin function keys; FRHIComputeCommandList::Transition is a loader registry key now");
 	Check(wrong == 0, "every real map row has its registry row's kind and fp");
 
 	// Restarting a plugin the crash guard switched off: the plan for each setting, the limiter, the timing.
