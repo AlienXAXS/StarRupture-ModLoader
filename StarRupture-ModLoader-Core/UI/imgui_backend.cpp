@@ -765,11 +765,16 @@ static void RebuildFontAtlas(bool initialSetup)
 	// Base font size loaded into the atlas.  FontScaleMain scales on top of this.
 	const float kBasePx = 15.0f;
 
+	// Vertical offset for the merged icon glyphs, in px at the base font's size
+	// (see the icon merge below for the derivation).
+	float iconGlyphOffsetY = 0.0f;
+
 	if (entry->primaryPath == nullptr)
 	{
 		// Built-in: let ImGui add its default font automatically.
 		// (Fonts->Clear() above means it will be re-added by NewFrame if empty.)
 		io.Fonts->AddFontDefault();
+		iconGlyphOffsetY = 4.5f; // ProggyClean 13px: ascent 10, descent -4
 	}
 	else
 	{
@@ -785,12 +790,14 @@ static void RebuildFontAtlas(bool initialSetup)
 		char narrowPath[MAX_PATH] = {};
 		WideCharToMultiByte(CP_UTF8, 0, entry->primaryPath, -1, narrowPath, MAX_PATH, nullptr, nullptr);
 
+		iconGlyphOffsetY = 2.5f; // Arial, YaHei, Malgun at 15px: ascent 13, descent -3
 		ImFont* baseFont = io.Fonts->AddFontFromFileTTF(narrowPath, kBasePx, nullptr, s_latinCyrillic);
 		if (!baseFont)
 		{
 			IMGUI_LOG_WARN("[ImGuiBackend] Failed to load font '%s' -- falling back to built-in", narrowPath);
 			io.Fonts->Clear();
 			io.Fonts->AddFontDefault();
+			iconGlyphOffsetY = 4.5f;
 		}
 		else if (entry->mergePath != nullptr)
 		{
@@ -822,6 +829,14 @@ static void RebuildFontAtlas(bool initialSetup)
 	// The icon font (Material Icons Regular, Apache 2.0) is embedded as an
 	// RCDATA resource (see StarRupture-ImGui.rc / resource.h) rather than
 	// loaded from a loose file, so the DLL is self-contained.
+	//
+	// The icon glyphs share the base font's baseline, and each fills its em box
+	// (ink centred half an em, S = kBasePx, above the baseline), so unshifted
+	// they ride high on the text line. GlyphOffset.y lowers them so the ink
+	// centre meets the centre of the base font's ascent/descent box, which sits
+	// (A + D) / 2 above the baseline (A = ascent, D = descent, negative):
+	//     offset = S / 2 - (A + D) / 2
+	// ProggyClean (A 10, D -4): 4.5. The TrueType families (A 13, D -3): 2.5.
 	{
 		HMODULE hSelf = nullptr;
 		GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
@@ -853,6 +868,7 @@ static void RebuildFontAtlas(bool initialSetup)
 			ImFontConfig iconCfg;
 			iconCfg.MergeMode = true;
 			iconCfg.PixelSnapH = true;
+			iconCfg.GlyphOffset.y = iconGlyphOffsetY;
 			iconCfg.FontDataOwnedByAtlas = false; // resPtr is resource-section memory, not heap -- ImGui must not free() it
 			if (!io.Fonts->AddFontFromMemoryTTF(resPtr, static_cast<int>(resSize), kBasePx, &iconCfg, s_iconRange))
 				IMGUI_LOG_WARN("[ImGuiBackend] Failed to load embedded icon font resource");
