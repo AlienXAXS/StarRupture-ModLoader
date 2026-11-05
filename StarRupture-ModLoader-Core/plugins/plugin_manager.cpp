@@ -1500,15 +1500,16 @@ namespace PluginManager
 
 	// ---- Developer remote reload (plugins/remote_reload.h)
 
-	// The version string of the record at index, cached at load so it survives FreeLibrary.
-	static std::string RecordVersion(int index)
+	// The name and version of the record at index, cached at load so they survive FreeLibrary.
+	static void RecordNameAndVersion(int index, std::string& name, std::string& version)
 	{
-		std::string version;
 		EnterCriticalSection(&g_pluginLock);
 		if (index >= 0 && index < static_cast<int>(g_loadedPlugins.size()))
+		{
+			name    = g_loadedPlugins[index]->cachedName;
 			version = g_loadedPlugins[index]->cachedVersion;
+		}
 		LeaveCriticalSection(&g_pluginLock);
-		return version;
 	}
 
 	static void RemoteReloadOne(const std::string& asked)
@@ -1523,7 +1524,9 @@ namespace PluginManager
 		std::string why;
 		if (ReloadPlugin(index, &why) && IsRecordInitialized(index))
 		{
-			ModLoaderLogger::LogMessage(L"%S", RemoteReload::Reloaded(asked, RecordVersion(index)).c_str());
+			std::string name, version;
+			RecordNameAndVersion(index, name, version);
+			ModLoaderLogger::LogMessage(L"%S", RemoteReload::Reloaded(name.empty() ? asked : name, version).c_str());
 		}
 		else
 		{
@@ -1556,6 +1559,10 @@ namespace PluginManager
 				got = 0;
 			text.resize(got);
 			CloseHandle(file);
+		}
+		else
+		{
+			ModLoaderLogger::LogWarn(L"[RemoteReload] Could not open the request file, so it was dropped (error %lu)", GetLastError());
 		}
 		if (!DeleteFileW(claimed.c_str()))
 			ModLoaderLogger::LogWarn(L"[RemoteReload] Could not remove the handled request file (error %lu)", GetLastError());
