@@ -297,6 +297,29 @@ static void RestoreGameCursorClip()
     ClipCursor(&screenRect);
 }
 
+// The key or mouse button a message presses or releases, as a virtual-key code
+// (mouse buttons use VK_LBUTTON and friends), or 0 for any other message.
+static UINT KeyOrButtonVk(UINT msg, WPARAM wParam, bool& isUp)
+{
+	isUp = msg == WM_KEYUP || msg == WM_SYSKEYUP || msg == WM_LBUTTONUP ||
+	       msg == WM_RBUTTONUP || msg == WM_MBUTTONUP || msg == WM_XBUTTONUP;
+	switch (msg)
+	{
+	case WM_KEYDOWN: case WM_KEYUP: case WM_SYSKEYDOWN: case WM_SYSKEYUP:
+		return static_cast<UINT>(wParam & 0xFF);
+	case WM_LBUTTONDOWN: case WM_LBUTTONDBLCLK: case WM_LBUTTONUP: return VK_LBUTTON;
+	case WM_RBUTTONDOWN: case WM_RBUTTONDBLCLK: case WM_RBUTTONUP: return VK_RBUTTON;
+	case WM_MBUTTONDOWN: case WM_MBUTTONDBLCLK: case WM_MBUTTONUP: return VK_MBUTTON;
+	case WM_XBUTTONDOWN: case WM_XBUTTONDBLCLK: case WM_XBUTTONUP:
+		return GET_XBUTTON_WPARAM(wParam) == XBUTTON1 ? VK_XBUTTON1 : VK_XBUTTON2;
+	default:
+		return 0;
+	}
+}
+
+// Keys and buttons whose press was handed to the game.
+static InputArbitration::PressesSeenByGame g_pressesSeen;
+
 static LRESULT CALLBACK HookedWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
 	// Dispatch plugin keybind callbacks unconditionally so that toggle-style
@@ -323,6 +346,10 @@ static LRESULT CALLBACK HookedWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 	// overrides it.
 	const bool menuCursor = !exclusive &&
 		(g_callbacks.IsGameMouseShared ? g_callbacks.IsGameMouseShared() : false);
+
+	bool isUp = false;
+	const UINT keyOrButton = KeyOrButtonVk(msg, wParam, isUp);
+	const bool releaseOfSeenPress = keyOrButton && isUp && g_pressesSeen.TakeRelease(keyOrButton);
 
 	// Only feed mouse messages into ImGui while it actually owns the cursor
 	// (i.e. the simulated mouse is shown) or the pause menu shows the game's.
@@ -373,7 +400,7 @@ static LRESULT CALLBACK HookedWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 
 	{
 		bool blocked = (g_callbacks.DispatchKey ? g_callbacks.DispatchKey(msg, wParam, lParam) : false);
-		if (!capturing && blocked)
+		if (!capturing && blocked && !releaseOfSeenPress)
 			return 0;
 	}
 
@@ -403,7 +430,7 @@ static LRESULT CALLBACK HookedWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 		{
 		case WM_KEYDOWN: case WM_KEYUP: case WM_SYSKEYDOWN: case WM_SYSKEYUP:
 		case WM_CHAR:
-			if (wantKeyboard) return 0;
+			if (InputArbitration::ShouldKeepFromGame(wantKeyboard, releaseOfSeenPress)) return 0;
 			break;
 
 		case WM_LBUTTONDOWN: case WM_LBUTTONUP: case WM_LBUTTONDBLCLK:
@@ -411,7 +438,7 @@ static LRESULT CALLBACK HookedWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 		case WM_MBUTTONDOWN: case WM_MBUTTONUP: case WM_MBUTTONDBLCLK:
 		case WM_XBUTTONDOWN: case WM_XBUTTONUP: case WM_XBUTTONDBLCLK:
 		case WM_MOUSEWHEEL:  case WM_MOUSEHWHEEL:
-			if (wantMouse) return 0;
+			if (InputArbitration::ShouldKeepFromGame(wantMouse, releaseOfSeenPress)) return 0;
 			break;
 
 		// Over the pause menu the game draws the cursor, so it keeps
@@ -440,6 +467,9 @@ static LRESULT CALLBACK HookedWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 	{
 		RestoreGameCursorClip();
 	}
+
+	if (keyOrButton && !isUp)
+		g_pressesSeen.Pressed(keyOrButton);
 
 	return CallWindowProcW(g_origWndProc, hWnd, msg, wParam, lParam);
 }

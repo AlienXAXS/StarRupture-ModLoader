@@ -37,6 +37,10 @@ namespace UI::PluginWidgetRegistry
     // Show or hide a widget window.  Widgets are visible by default after registration.
     void SetWidgetVisible(WidgetHandle handle, bool visible);
 
+    // True if a visible widget has PluginWindowFlags_MenuMouseWhereUncovered,
+    // i.e. wants to know whether a game menu widget is under the cursor. Any thread.
+    bool AnyWantsMenuHover();
+
     // Renders all visible widget windows.  Call once per frame at the top level
     // (outside any other ImGui window).
     void RenderWidgets(IModLoaderImGui* imgui);

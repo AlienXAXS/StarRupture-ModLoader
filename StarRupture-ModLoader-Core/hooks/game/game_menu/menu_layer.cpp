@@ -108,6 +108,33 @@ namespace Hooks::GameMenu
 
 		return UIState::MenuBits(static_cast<size_t>(count), kinds, static_cast<size_t>(kept));
 	}
+
+	bool ReadMenuHover(SDK::APlayerController* pc)
+	{
+		// Without a menu layer to read, or with nothing on it while a cursor
+		// screen is up (the screen is on some other layer), the loader cannot
+		// tell where the menu's widgets are: true, so a widget stays click-through.
+		if (!pc)
+			return true;
+		SDK::UCommonActivatableWidgetContainerBase* layer = FindMenuLayer(pc);
+		if (!layer || layer->WidgetList.Num() == 0)
+			return true;
+
+		// A widget is hovered only while the cursor is over a hit-testable
+		// part of it, so a hidden or hit-test-invisible screen reads false.
+		// Slate hovers the whole path down to the widget under the cursor, so
+		// a screen's root counts as soon as one of its buttons or panels does.
+		constexpr int32_t kMaxWidgets = 16;
+		const int32_t     count       = layer->WidgetList.Num();
+		const int32_t     read        = count < kMaxWidgets ? count : kMaxWidgets;
+		for (int32_t i = 0; i < read; ++i)
+		{
+			SDK::UCommonActivatableWidget* w = layer->WidgetList[i];
+			if (w && w->IsHovered())
+				return true;
+		}
+		return false;
+	}
 }
 
 #endif // MODLOADER_CLIENT_BUILD

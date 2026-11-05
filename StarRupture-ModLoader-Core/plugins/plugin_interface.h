@@ -840,6 +840,22 @@
 //      A v75 plugin is refused by a v74 loader, which has neither the field
 //      nor the calls.
 //
+//      Also in v75: a widget that takes the mouse over a game menu only where no menu
+//      widget is under the cursor. Added PluginWindowFlags_MenuMouseWhereUncovered
+//      (1 << 29), loader-only like PauseMenuMouseInputs. Over the Escape menu and
+//      the game's other cursor screens a widget was either click-through
+//      (the default) or took the mouse everywhere it is drawn
+//      (PauseMenuMouseInputs). With the new flag it takes the mouse where no
+//      widget of the game's menu is hovered, and is click-through where one is, so
+//      the menu's buttons stay clickable under it and the rest of the widget
+//      stays usable. The loader asks the game whether a menu widget is hovered
+//      once per tick, so the answer can be one frame old. If a menu's root is
+//      hit-testable across the whole screen, the widget stays click-through
+//      everywhere there. PauseMenuMouseInputs wins when both are set.
+//      Flags only: no struct or table changed and MIN stays at 70. A loader
+//      older than v75 passes the bit to ImGui, which ignores it, so the widget
+//      stays click-through there.
+//
 #define PLUGIN_INTERFACE_VERSION_MIN 70
 #define PLUGIN_INTERFACE_VERSION_MAX 75
 #define PLUGIN_INTERFACE_VERSION 75
@@ -2342,6 +2358,18 @@ struct IPluginImGuiTextures
 // the pause menu is open or a game screen shows the cursor, and no window has
 // exclusive capture. Without it the window is click-through; child windows are not.
 #define PluginWindowFlags_PauseMenuMouseInputs (1 << 30)
+// v75, loader-only (ImGui never sees it): over the pause menu and the game's
+// other cursor screens, with no window holding exclusive capture, the widget
+// takes the mouse wherever no widget of the game's menu is under the cursor
+// and is click-through where one is, so the menu's buttons keep their clicks.
+// Without it (and without PauseMenuMouseInputs) the widget is click-through
+// there; with PauseMenuMouseInputs it takes the mouse everywhere, and that wins.
+// The loader reads the menu's hover once per tick, so a click right after the
+// cursor moves onto a menu button can still land on the widget. Where it cannot
+// tell (a screen that is not on the game's menu layer) the widget is click-through.
+// Child windows inside the widget are ImGui windows of their own and always
+// take the mouse.
+#define PluginWindowFlags_MenuMouseWhereUncovered (1 << 29)
 
 // Optional size/position hints for RegisterWidget windows.
 // Set width/height to 0 for no size hint. Set pos_x/pos_y to -1 to skip positioning.
@@ -2356,7 +2384,7 @@ struct PluginWindowHints
 	float pivot_y;
 	int   size_cond;
 	int   pos_cond;
-	int   extra_window_flags;  // v31: OR'd into ImGuiWindowFlags (except PauseMenuMouseInputs); 0 = default
+	int   extra_window_flags;  // v31: OR'd into ImGuiWindowFlags (except PauseMenuMouseInputs and MenuMouseWhereUncovered); 0 = default
 };
 
 struct PluginPanelDesc
@@ -2422,7 +2450,9 @@ struct IPluginUIEvents
 	// Over the Escape menu and the game's other cursor screens the token does
 	// not suppress anything: the mouse is shared instead, so clicks, moves and
 	// the wheel outside the plugin's windows reach the game's menu, and a
-	// widget takes the mouse only with PluginWindowFlags_PauseMenuMouseInputs.
+	// widget takes the mouse only with PluginWindowFlags_PauseMenuMouseInputs
+	// (everywhere) or PluginWindowFlags_MenuMouseWhereUncovered (v75, where no
+	// menu widget is under the cursor).
 	// A focused text field still keeps its keys from the game.
 	// Always call ReleaseInputCapture for every acquired token, including
 	// during PluginShutdown -- a leaked token permanently suppresses input

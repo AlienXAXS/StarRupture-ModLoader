@@ -316,11 +316,26 @@ stays with the game, so Escape still closes the menu, except that a focused text
 keys. The flag applies to the widget's own window:
 a child window inside a widget that did not opt in (`BeginChild`, a scrolling table) is an ImGui
 window of its own and still takes the mouse. While a ModLoader window has the cursor (F2, the
-console), the flag changes nothing: widgets take the mouse as they always have. An open plugin
+console), the flags change nothing: widgets take the mouse as they always have. An open plugin
 panel or an `AcquireInputCapture` token does not take the cursor over these screens: the mouse stays
 shared, so only the plugin's own windows take it and the rest of the screen keeps its clicks.
 Mouse queries (`GetMousePos`, `IsMouseDown`, `IsMouseClicked`) report the menu cursor in every
 widget, opted in or not; only hovering and clicking the window itself is gated.
+
+`PluginWindowFlags_PauseMenuMouseInputs` takes the mouse everywhere the widget is drawn, including over
+the menu's own buttons. A widget that should stay usable without covering them can opt in with
+`PluginWindowFlags_MenuMouseWhereUncovered` (v75) instead: it takes the mouse wherever no widget of the
+game's menu is under the cursor, and is click-through where one is, so the menu's buttons and panels
+keep their clicks. The loader asks the game once per tick whether a widget on its menu layer (where the
+map, the inventory, the build menu, the machine windows and the Escape menu open) is hovered, so the
+answer can be a frame old: a click just after the cursor moves onto a menu button can still land on
+your widget. A screen whose root is hit-testable across the whole screen counts as under the cursor
+everywhere, and the widget is click-through everywhere over it, as it is without any flag. Where the
+loader cannot tell (a cursor screen that is not on the menu layer, or the menu read switched off on a
+game build it does not match) the widget is click-through too. If both flags are set,
+`PauseMenuMouseInputs` wins. A loader older than v75 does not know the flag, so the widget stays
+click-through there. Child windows inside the widget (`BeginChild`, a scrolling table) are ImGui
+windows of their own and always take the mouse, covered or not.
 
 To ask directly, `hooks->GameMenu->IsPauseMenuOpen()` reports the pause menu and
 `hooks->UI->IsOverlayOpen()` reports a ModLoader window with exclusive capture.

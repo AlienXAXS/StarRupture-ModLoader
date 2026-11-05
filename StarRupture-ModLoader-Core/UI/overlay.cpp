@@ -131,12 +131,14 @@ namespace UI::Overlay
         // exclusive capture is a state that surprises people.
         const bool exclusive   = ShouldCaptureInputNow();
         const bool cooperative = !exclusive && ShouldPassthroughInputNow();
+        const bool sharedCursor = !exclusive && ShouldShareGameMouseNow();
 
-        ImGui::TextColored(exclusive ? kBad : (cooperative ? kWarn : kOk),
+        ImGui::TextColored(exclusive ? kBad : (cooperative || sharedCursor ? kWarn : kOk),
                            "Game input: %s",
-                           exclusive   ? "BLOCKED (exclusive capture)"
-                         : cooperative ? "shared (cooperative passthrough)"
-                                       : "normal");
+                           exclusive    ? "BLOCKED (exclusive capture)"
+                         : cooperative  ? "shared (cooperative passthrough)"
+                         : sharedCursor ? "shared with the game's cursor"
+                                        : "normal");
 
         int panelsRegistered = 0, panelsOpen = 0;
         UI::PluginPanelRegistry::GetPanelCounts(&panelsRegistered, &panelsOpen);

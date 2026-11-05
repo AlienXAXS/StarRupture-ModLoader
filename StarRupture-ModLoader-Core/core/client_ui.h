@@ -18,4 +18,10 @@ bool ShouldPassthroughInputNow();
 // screen has put the mouse cursor up) and nothing has exclusive capture: ImGui
 // gets the mouse, and only windows that opted in may take it.
 bool ShouldShareGameMouseNow();
+
+// Whether a widget of the game's menu was under the cursor as of the last game
+// tick. Only a widget with PluginWindowFlags_MenuMouseWhereUncovered asks. True
+// when the loader cannot tell, so the widget is then click-through, as it is by
+// default.
+bool IsMenuWidgetUnderCursorNow();
 #endif
