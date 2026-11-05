@@ -1,6 +1,7 @@
 - Now with 100% more Good Stuff: Mike From Good Stuff Software is taking over from AlienX to keep the updates coming, with help from Kian369.
 - Keeps working after a game update for every game build it knows, including the current Steam test branch
 - When a game update changes a layout the loader checks, only the features that read it are switched off, not every plugin, and the Plugins tab shows how many are off
+- The loader also checks that the game still runs its functions the way plugins call them, and switches plugins off with the usual message if it does not
 - A plugin that crashes is switched off and a toast names it; it restarts by itself about 3 seconds later, up to 3 times a session (Settings can turn this off)
 - Plugin windows can be clicked and dragged over the Escape menu and any game screen that shows the mouse cursor
 - Plugin windows no longer block the game's own menus while the cursor is up: clicks, mouse moves and the wheel outside them reach the game

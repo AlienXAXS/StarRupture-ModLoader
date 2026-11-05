@@ -509,6 +509,8 @@ each failure looks like is in [VersionMap.md](VersionMap.md).
 At startup the loader also checks that the game classes it reads are laid out as it was built for. If a
 game update changes a layout, only the features that read it are switched off, not every plugin. A plugin
 that keeps the game's layouts compiled in, instead of taking them from the version map, is not loaded then.
+It also checks that the game still calls ProcessEvent, which every plugin uses to run game functions, at the
+place the plugins expect; if it does not, plugins are switched off the same way.
 
 When the map's row decides where a plugin's function is, the loader still checks the plugin's own
 AOB pattern against the running exe, once, and logs a warning if it matches 0 or 2 or more places.

@@ -144,6 +144,22 @@ namespace LayoutCheck
         return result;
     }
 
+    bool CheckProcessEventSlot(Result& result, const uintptr_t* vtable, int32_t index,
+        uintptr_t resolved, uintptr_t imageBase)
+    {
+        const uintptr_t slot = vtable[index];
+        if (slot == resolved)
+            return true;
+
+        ++result.slotMismatched;
+        const uint32_t expectedRva = static_cast<uint32_t>(resolved - imageBase);
+        const int32_t  slotRva     = static_cast<int32_t>(slot - imageBase);
+        Record(result, "UObject", "ProcessEvent", kChangeVtableSlot, expectedRva, slotRva,
+            Format("UObject::ProcessEvent: vtable slot 0x%X holds base+0x%X, the function is at base+0x%X",
+                static_cast<unsigned>(index), static_cast<uint32_t>(slotRva), expectedRva));
+        return false;
+    }
+
     Verdict Decide(const std::vector<TableClass>& table, const Result& result)
     {
         Verdict verdict;
@@ -186,6 +202,7 @@ namespace LayoutCheck
 
 #include "sdk_globals.h"
 #include "../hooks/game/engine_init/engine_init.h"
+#include "../hooks/game/game_instance_init/game_instance_init.h"
 #include "../hooks/game/object_properties/object_properties.h"
 #include "../logging/logger.h"
 #include "../memory_scanner/version_map.h"
@@ -362,6 +379,52 @@ namespace LayoutCheck
                 return false;
             }
         }
+
+        // The vtable of the UObject class default object, or null. Under SEH
+        // for the same reason as Collect.
+        const uintptr_t* ObjectVtable(DWORD* exceptionCode)
+        {
+            __try
+            {
+                const SDK::UObject* cdo = SDK::UObject::GetDefaultObj();
+                return cdo ? *reinterpret_cast<const uintptr_t* const*>(cdo) : nullptr;
+            }
+            __except (EXCEPTION_EXECUTE_HANDLER)
+            {
+                *exceptionCode = GetExceptionCode();
+                return nullptr;
+            }
+        }
+
+        // Every plugin's SDK calls ProcessEvent through a compiled vtable
+        // index, so a game whose UObject has other virtuals ahead of it would
+        // send each call to another function. Run is on the init thread with
+        // the game thread parked (see Run), and the object read is the class
+        // default object, which lives as long as the class does; the vtable
+        // pointer is read once and nothing is kept.
+        void CheckProcessEventIndex(Result& result)
+        {
+            const uintptr_t resolved = Hooks::GameInstanceInit::ProcessEventAddress();
+            if (!resolved)
+            {
+                ModLoaderLogger::LogWarn(L"[LayoutCheck] UObject::ProcessEvent slot not checked: the loader has no address for the function");
+                return;
+            }
+            DWORD exceptionCode = 0;
+            const uintptr_t* vtable = ObjectVtable(&exceptionCode);
+            if (!vtable)
+            {
+                ModLoaderLogger::LogWarn(L"[LayoutCheck] UObject::ProcessEvent slot not checked: no UObject default object (exception 0x%08lX)",
+                    exceptionCode);
+                return;
+            }
+
+            const auto imageBase = reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
+            constexpr int32_t index = SDK::Offsets::ProcessEventIdx;
+            if (CheckProcessEventSlot(result, vtable, index, resolved, imageBase))
+                ModLoaderLogger::LogInfo(L"[LayoutCheck] UObject::ProcessEvent: vtable slot 0x%X holds the function the map resolved (base+0x%llX)",
+                    static_cast<unsigned>(index), static_cast<unsigned long long>(resolved - imageBase));
+        }
     }
 
     bool Run(Result& out)
@@ -416,12 +479,14 @@ namespace LayoutCheck
             return SdkGlobals::IsPerBuildField(sdk.name, row.name);
         });
 
+        CheckProcessEventIndex(result);
+
         for (const std::string& line : result.lines)
             ModLoaderLogger::LogWarn(L"[LayoutCheck] %S", line.c_str());
 
         const double totalMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
         void (*const log)(const wchar_t*, ...) =
-            result.mismatched == 0 && result.missing == 0 ? ModLoaderLogger::LogInfo : ModLoaderLogger::LogWarn;
+            FoundChanges(result) ? ModLoaderLogger::LogWarn : ModLoaderLogger::LogInfo;
         log(
             L"[LayoutCheck] SDK CL %u against the game: %d classes, %d checked, %d mismatched, %d missing, %d deferred,"
             L" %d rows resolved per build -- GObjects pass %.1f ms (%d objects, %d types), %.1f ms in all",

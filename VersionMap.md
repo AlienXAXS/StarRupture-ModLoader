@@ -71,7 +71,10 @@ works offline on every build in it. The signed feed (below) adds to that.
 - *Unreal Engine constants.* `EObjectFlags` bits (`RF_*`), `FUNC_Native`, `INDEX_NONE` and the
   engine ABI the plugins compile in (the `TArray` header, shared-pointer reference controllers) are
   fixed by the engine version, not by a game build. A change of engine version regenerates the whole
-  Game-SDK, so the map has nothing to add.
+  Game-SDK, so the map has nothing to add. The one the map can help check is the slot of
+  `UObject::ProcessEvent` in the object's virtual table, which every plugin's SDK compiles in: at
+  startup the layout check compares that slot with the address the map resolved for the function,
+  and a difference switches all plugins off like a changed layout.
 
 ## Selection
 
@@ -376,6 +379,7 @@ What a player sees, and what the log says (`ModLoader\Logs\ModLoader.log`).
 | A plugin built for another build does not declare `PLUGIN_MAP_MIGRATED` | **Incompatible**: "Needs an update to run on CL-...". It loads on its own build. |
 | A plugin's own pattern matches 0 or 2 or more places, but a row resolves the key | The plugin loads on the row. `ModLoader.log` has one `[Map]` warning naming the plugin, the key and the count. Where no row resolves the key it would be refused, so the author should make the pattern unique (or update it, for 0). |
 | Two keys for one request disagree (AMBIGUOUS) | The request fails, with the locators listed: a declared feature turns off, any other key refuses the plugin. |
+| The game's `UObject` virtual table no longer holds `ProcessEvent` where the SDK calls it | Every plugin is switched off for the session, with the same dialog as a layout change. The log line is `[LayoutCheck] UObject::ProcessEvent: vtable slot 0x4C holds base+0x..., the function is at base+0x...`; when it is fine, the log says the slot holds the function the map resolved. |
 | A game class a plugin reads moved | That plugin's own field request, or its `SR_SIZE_CHECK`, fails and the plugin alone is affected (a declared feature off, else refused), with the reason in the failure window. The loader's layout check covers the classes the loader and the Plugin SDK read, and what a change switches off depends on who reads the class: see the README. After any change, a plugin that keeps the game's layouts compiled in is not loaded; one that declares `PLUGIN_MAP_MIGRATED` (taken on its word) still loads, and a request of its for the compiled offset of a changed class, or of a class derived from one, is refused, which turns off only the feature that asked. |
 
 A fetched map is read once at startup and never changes mid-session, so a RELOAD sees the same

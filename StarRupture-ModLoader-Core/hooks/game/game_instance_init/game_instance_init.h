@@ -24,6 +24,11 @@ namespace Hooks::GameInstanceInit
 	bool Install();
 	void Remove();
 
+	// Where UObject::ProcessEvent is, as Install resolved it (the version
+	// map's answer on a build the pattern moved on); 0 before Install or when
+	// it failed.
+	uintptr_t ProcessEventAddress();
+
 	// Returns true if the one-shot init latch has already fired.
 	// Used by dllmain to detect the race where plugins loaded after the latch.
 	bool HasFired();

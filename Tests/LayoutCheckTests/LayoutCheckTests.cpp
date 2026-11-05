@@ -14,7 +14,9 @@
 #include "fixtures/layout_table_127004.h"
 
 #include <algorithm>
+#include <cstdint>
 #include <cstdio>
+#include <iterator>
 #include <map>
 #include <string>
 
@@ -485,6 +487,51 @@ namespace
         Check(read.size() == 1 && read[0].consumers == std::vector<std::string>{ "ui-menus", "?" },
             "a bit past kConsumers reads as an unknown id");
     }
+
+    // The UObject vtable stands in as an array: slot `index` holds the address
+    // a game build puts ProcessEvent at, the others hold other functions.
+    void ProcessEventSlotDecidesSafeOff()
+    {
+        std::printf("UObject::ProcessEvent vtable slot\n");
+        constexpr int32_t index = 0x4C;
+        constexpr uintptr_t base = 0x140000000;
+        constexpr uintptr_t resolved = base + 0x177FB20;
+        uintptr_t vtable[0x60] = {};
+        for (size_t i = 0; i < std::size(vtable); ++i)
+            vtable[i] = base + 0x100000 + i * 0x10;
+
+        vtable[index] = resolved;
+        LayoutCheck::Result match;
+        Check(LayoutCheck::CheckProcessEventSlot(match, vtable, index, resolved, base), "the slot holds the map's function: it passes");
+        Check(match.lines.empty() && match.changes.empty() && match.slotMismatched == 0 && !LayoutCheck::FoundChanges(match),
+            "nothing to log, plugins stay on");
+        Check(!LayoutCheck::Decide(kLoaderTable(), match).safeOff, "no safe-off verdict");
+
+        // A UObject with a virtual added ahead of ProcessEvent: the function
+        // moved one slot down, and the compiled index reads another function.
+        vtable[index] = base + 0x100000 + index * 0x10;
+        vtable[index + 1] = resolved;
+        LayoutCheck::Result moved;
+        Check(!LayoutCheck::CheckProcessEventSlot(moved, vtable, index, resolved, base), "the slot holds another function: it fails");
+        Check(moved.slotMismatched == 1 && LayoutCheck::FoundChanges(moved), "the difference is found");
+        Check(moved.lines == std::vector<std::string>{ "UObject::ProcessEvent: vtable slot 0x4C holds base+0x1004C0, the function is at base+0x177FB20" },
+            "one line, with both offsets in the image");
+        Check(moved.changes.size() == 1 && moved.changes[0].className == "UObject" && moved.changes[0].member == "ProcessEvent"
+                && moved.changes[0].field == LayoutCheck::kChangeVtableSlot && moved.changes[0].sdk == 0x177FB20
+                && moved.changes[0].game == 0x1004C0,
+            "the report entry names the slot and both offsets");
+        Check(moved.changedClasses.empty() && moved.mismatched == 0 && moved.missing == 0,
+            "no class is counted as changed");
+        const LayoutCheck::Verdict verdict = LayoutCheck::Decide(kLoaderTable(), moved);
+        Check(verdict.safeOff && verdict.featuresOff.empty(), "safe-off: every plugin off");
+
+        // It is the slot that is read, not the whole table.
+        vtable[index] = resolved;
+        vtable[index + 1] = base;
+        LayoutCheck::Result neighbour;
+        Check(LayoutCheck::CheckProcessEventSlot(neighbour, vtable, index, resolved, base) && neighbour.lines.empty(),
+            "a different function in the next slot does not matter");
+    }
 }
 
 int main()
@@ -497,6 +544,7 @@ int main()
     DumperRenamedMember();
     UsedMembersOnly();
     ConsumersDecideWhatStops();
+    ProcessEventSlotDecidesSafeOff();
 
     if (g_failures)
         std::printf("\n%d check(s) FAILED\n", g_failures);
