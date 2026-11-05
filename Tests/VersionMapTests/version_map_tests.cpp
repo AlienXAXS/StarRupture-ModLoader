@@ -1001,8 +1001,31 @@ int main()
 		newRow = fieldRow("UCrEnviroWaveTimerSubsystem::TimerActor", 128786);
 		Check(oldRow && oldRow->offset == 0x90 && newRow && newRow->offset == 0x98, "real field rows: TimerActor 0x90 on CL-127004, 0x98 on CL-128786");
 	}
+	// The real map's function rows for Build Windows Anywhere and Build Benches Anywhere: one function row per build,
+	// the CL-127004 rows untouched by the CL-128786 ones.
+	{
+		const auto functionRow = [](const char* key, uint32_t cl) -> const Real::VersionMap::FunctionRow*
+		{
+			for (const Real::VersionMap::Index& index : Real::VersionMap::kFunctions)
+				if (strcmp(index.key, key) == 0)
+					for (uint16_t i = index.first; i < index.first + index.count; ++i)
+						if (Real::VersionMap::kFunctionRows[i].gameCL == cl)
+							return &Real::VersionMap::kFunctionRows[i];
+			return nullptr;
+		};
+		const auto isStartRow = [](const Real::VersionMap::FunctionRow* row, uint32_t rva)
+		{
+			return row && !row->absent && row->kind == static_cast<int>(Kind::FunctionStart) && row->fp == 0 && row->rva == rva;
+		};
+		const char* const mainMesh = "ACrAPHelperActorCustom::CheckMainMeshCollision";
+		const char* const socketFree = "UCrBuildingStabilitySubsystem::IsSocketFree";
+		Check(isStartRow(functionRow(mainMesh, 127004), 0x074DEE60) && isStartRow(functionRow(mainMesh, 128786), 0x0755C5F0),
+			"real function rows: CheckMainMeshCollision has a function-start row for each build");
+		Check(isStartRow(functionRow(socketFree, 127004), 0x074651D0) && isStartRow(functionRow(socketFree, 128786), 0x074E6100),
+			"real function rows: IsSocketFree has a function-start row for each build");
+	}
 	Check(unmatched == 0, "every real map key is a registry row's or a plugin's global or scoped key");
-	Check(pluginKeys == 105, "the real map holds the 105 plugin function keys; FRHIComputeCommandList::Transition is a loader registry key now");
+	Check(pluginKeys == 107, "the real map holds the 107 plugin function keys; FRHIComputeCommandList::Transition is a loader registry key now");
 	Check(wrong == 0, "every real map row has its registry row's kind and fp");
 
 	// Restarting a plugin the crash guard switched off: the plan for each setting, the limiter, the timing.
