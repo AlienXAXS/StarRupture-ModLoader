@@ -417,11 +417,13 @@ static void AnyThread()
     std::thread readers[4];
     for (auto& t : readers)
         t = std::thread([&] {
-            while (!stop.load())
+            // At least one pass, so a reader scheduled after the focus thread
+            // has finished still answers once.
+            do
             {
                 if (IsKeyHeld("Shift+K")) ++held; else ++notHeld;
                 if (IsKeyHeld("Ctrl+K")) ++wrong;      // Ctrl is never held
-            }
+            } while (!stop.load());
         });
     focus.join();
     for (auto& t : readers)
