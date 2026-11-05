@@ -16,7 +16,7 @@ struct FieldRow { uint32_t gameCL; int32_t offset; uint32_t size; uint8_t boolMa
 
 inline constexpr std::array<Build, 2> kBuilds = {{
 	{ 127004, 0xE8972298, 0x0F35C000, "public 25646882" },
-	{ 128786, 0xCF8579A6, 0x0F47D000, "public_test_branch 26271156" },
+	{ 128786, 0xCF8579A6, 0x0F47D000, "steam_build 26271156" },
 }};
 
 inline constexpr std::array<FunctionRow, 434> kFunctionRows = {{
