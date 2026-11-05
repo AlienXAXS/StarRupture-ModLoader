@@ -1297,9 +1297,9 @@ namespace VersionMap
 				error = "bad request: a field needs a class, and a size row is neither native nor a bitfield";
 				return false;
 			}
-			if (anySize && (sizeRow || check || bitfield || request.size != 0))
+			if (anySize && (sizeRow || native || check || bitfield || request.size != 0))
 			{
-				error = "bad request: PLUGIN_FIELD_ANY_SIZE is for a member, with size 0, and not for a size row, CHECK or BITFIELD";
+				error = "bad request: PLUGIN_FIELD_ANY_SIZE is for a reflected member, with size 0";
 				return false;
 			}
 			for (size_t i = 0; i < request.candidates.size(); ++i)
@@ -1338,7 +1338,7 @@ namespace VersionMap
 					value = ValueOf(*row);
 					how   = RowLabel(*row);
 				}
-				else if (onBuilt && haveBuilt && !anySize && (LayoutChanged(request.className) || SupersChanged(request.className)))
+				else if (onBuilt && haveBuilt && (LayoutChanged(request.className) || SupersChanged(request.className)))
 				{
 					// The compiled offset is the SDK's, and the layout check
 					// found this class, or one it derives from, laid out
@@ -1347,7 +1347,7 @@ namespace VersionMap
 						+ " or a class it derives from changed on this build, so its built offset is not used";
 					return false;
 				}
-				else if (onBuilt && haveBuilt && !anySize)
+				else if (onBuilt && haveBuilt)
 				{
 					value = built;
 					how   = "built offset";
@@ -1363,7 +1363,7 @@ namespace VersionMap
 						error += "; the " + RowLabel(*carried) + " cannot be checked on this build, so it is not used";
 					return false;
 				}
-				if (!anySize && value.size != request.size)
+				if (value.size != request.size)
 				{
 					error = how + " gives size " + Hex(value.size) + ", the code was compiled for " + Hex(request.size);
 					return false;

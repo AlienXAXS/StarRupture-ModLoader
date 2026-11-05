@@ -671,15 +671,8 @@ int main()
 			&& e == "the game's member is 0x8 bytes, the code was compiled for 0x4", "field: a non-zero size that does not match is still refused");
 		Check(!Field("ATest::Reflected", "ATest", "Reflected", PLUGIN_FIELD_ANY_SIZE, 4, {}, v, e)
 			&& e.find("bad request: PLUGIN_FIELD_ANY_SIZE") == 0, "field: the any-size flag with a non-zero size is refused");
-		Check(!Field("ATest::Native", "ATest", "Native", PLUGIN_FIELD_NATIVE | PLUGIN_FIELD_ANY_SIZE | PLUGIN_FIELD_CHECK, 0, {}, v, e)
-			&& e.find("bad request: PLUGIN_FIELD_ANY_SIZE") == 0, "field: a native member's any-size flag refuses CHECK");
-		// A reflected class keeps its bound with the any-size flag too: the row's size counts.
-		Check(Field("ATest::Native", "ATest", "Native", PLUGIN_FIELD_NATIVE | PLUGIN_FIELD_ANY_SIZE, 0, {}, v, e)
-			&& v.offset == 0x28 && v.size == 4, "field: a native member of a reflected class takes the row's size with the any-size flag");
-		Check(!Field("ATest::Past", "ATest", "Past", PLUGIN_FIELD_NATIVE | PLUGIN_FIELD_ANY_SIZE, 0, { FieldRow(128786, 0x4C, 8) }, v, e)
-			&& e.find("past the end of ATest") != std::string::npos, "field: any-size on a reflected class is still bounded");
-		Check(!Field("ATest::Plain", "ATest", "Plain", PLUGIN_FIELD_NATIVE | PLUGIN_FIELD_ANY_SIZE, 0, {}, v, e, VersionMap::Exe{ 127004, 0, 0 })
-			&& e.find("no row for CL-127004") == 0, "field: any-size takes no built offset, which has no size");
+		Check(!Field("ATest::Native", "ATest", "Native", PLUGIN_FIELD_NATIVE | PLUGIN_FIELD_ANY_SIZE, 0, {}, v, e)
+			&& e.find("bad request: PLUGIN_FIELD_ANY_SIZE") == 0, "field: a native member refuses the any-size flag");
 		Check(!Field("ATest::Missing", "ATest", "Missing", PLUGIN_FIELD_ANY_SIZE, 0, {}, v, e) && e == "reflection: no member Missing",
 			"field: the any-size flag does not accept a member the game does not have");
 		Check(Field("ATest::Renamed", "ATest", "NewName", 0, 4, { FieldRow(128786, 0x44, 4) }, v, e) && v.offset == 0x44,
@@ -729,10 +722,6 @@ int main()
 			"field: an unreflected type's member with no row is refused, even on the build it was compiled for");
 		Check(!Field("FPlain::Block", "FPlain", "Block", PLUGIN_FIELD_NATIVE, 0xB0, {}, v, e, later)
 			&& e.find("no row for CL-130000") == 0, "field: an unreflected type's member on a build with no row is refused");
-		Check(Field("FPlain::Flex", "FPlain", "Flex", PLUGIN_FIELD_NATIVE | PLUGIN_FIELD_ANY_SIZE, 0, {}, v, e) && v.offset == 0x8 && v.size == 0x10,
-			"field: any-size on an unreflected type resolves the offset whatever the row's size");
-		Check(Field("FPlain::Block", "FPlain", "Block", PLUGIN_FIELD_NATIVE | PLUGIN_FIELD_ANY_SIZE, 0, {}, v, e) && v.offset == 0x120 && v.size == 0xB0,
-			"field: any-size on an unreflected type returns the row's size");
 		Check(!Field("AUnready::X", "AUnready", "X", PLUGIN_FIELD_NATIVE, 4, { FieldRow(128786, 0, 4) }, v, e)
 			&& e == "reflection, for the size of AUnready: the game's reflection data is not ready",
 			"field: reflection that is not ready is not an unreflected type");

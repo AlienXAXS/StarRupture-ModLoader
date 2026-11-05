@@ -146,10 +146,8 @@ class's live size. See the SDK guide for the `[Map]` log lines.
 When reflection reports that no class or struct of that name exists, the member is served from
 the running CL's row alone, with no class bound, and the log line says so (`unreflected type, no
 class bound`). A row for the running CL is required: the built offset is not used for such a type,
-and a request on a build without a row is refused. `PLUGIN_FIELD_ANY_SIZE` may be combined with
-`PLUGIN_FIELD_NATIVE` and then takes the row's size, for a member whose size the code does not
-fix. If reflection is not ready, or finds the name ambiguous, the request
-fails as before.
+and a request on a build without a row is refused. If reflection is not ready, or finds the name
+ambiguous, the request fails as before.
 
 ## Features
 
