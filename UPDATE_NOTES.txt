@@ -11,6 +11,7 @@
 - The plugin updater reads each installed plugin's version first, so it never replaces one with an older release
 - For plugin authors (interface v74): the game's menu and cursor state, and window sizing added at Kian369's request
 - For plugin authors (interface v74): PLUGIN_FIELD_ANY_SIZE asks for a reflected game member at whatever size the running build reports, for a member whose type differs between builds
+- For plugin authors: a native member of a plain C++ engine type that reflection does not know (FMassEntityManager, FStructSharedMemory) now resolves from the version map's row for the running build, and PLUGIN_FIELD_ANY_SIZE can be combined with PLUGIN_FIELD_NATIVE
 - modloader.ini [Debug] DisablePluginVersionMap=1 gives plugins no version map rows, to test their own patterns, at Kian369's request
 - For plugin authors: modloader.ini [Developer] RemoteReload=1 lets a script reload a plugin by writing its name to ModLoader\remote_reload.txt, the same reload as the RELOAD button, with the result in ModLoader.log
 - Icons in every loader and plugin window now sit on the line of the text beside them

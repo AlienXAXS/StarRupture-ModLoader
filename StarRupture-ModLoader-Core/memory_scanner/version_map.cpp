@@ -1297,9 +1297,9 @@ namespace VersionMap
 				error = "bad request: a field needs a class, and a size row is neither native nor a bitfield";
 				return false;
 			}
-			if (anySize && (sizeRow || native || check || bitfield || request.size != 0))
+			if (anySize && (sizeRow || check || bitfield || request.size != 0))
 			{
-				error = "bad request: PLUGIN_FIELD_ANY_SIZE is for a reflected member, with size 0";
+				error = "bad request: PLUGIN_FIELD_ANY_SIZE is for a member, with size 0, and not for a size row, CHECK or BITFIELD";
 				return false;
 			}
 			for (size_t i = 0; i < request.candidates.size(); ++i)
@@ -1338,7 +1338,7 @@ namespace VersionMap
 					value = ValueOf(*row);
 					how   = RowLabel(*row);
 				}
-				else if (onBuilt && haveBuilt && (LayoutChanged(request.className) || SupersChanged(request.className)))
+				else if (onBuilt && haveBuilt && !anySize && (LayoutChanged(request.className) || SupersChanged(request.className)))
 				{
 					// The compiled offset is the SDK's, and the layout check
 					// found this class, or one it derives from, laid out
@@ -1347,7 +1347,7 @@ namespace VersionMap
 						+ " or a class it derives from changed on this build, so its built offset is not used";
 					return false;
 				}
-				else if (onBuilt && haveBuilt)
+				else if (onBuilt && haveBuilt && !anySize)
 				{
 					value = built;
 					how   = "built offset";
@@ -1363,7 +1363,7 @@ namespace VersionMap
 						error += "; the " + RowLabel(*carried) + " cannot be checked on this build, so it is not used";
 					return false;
 				}
-				if (value.size != request.size)
+				if (!anySize && value.size != request.size)
 				{
 					error = how + " gives size " + Hex(value.size) + ", the code was compiled for " + Hex(request.size);
 					return false;
@@ -1446,12 +1446,25 @@ namespace VersionMap
 					return false;
 				}
 				const LiveField cls = g_liveFields(request.className, std::string());
-				if (!cls.error.empty())
+				if (cls.unreflected)
+				{
+					// A plain C++ type (FMassEntityManager) has no reflected
+					// size to bound the member by, so only a row, which CI
+					// measured from this build's PDB, can stand for it.
+					if (!row)
+					{
+						error = request.className + " is not reflected, so its member needs a row for " + ClText(running.cl)
+							+ " and has no other source";
+						return false;
+					}
+					how += ", unreflected type, no class bound";
+				}
+				else if (!cls.error.empty())
 				{
 					error = "reflection, for the size of " + request.className + ": " + cls.error;
 					return false;
 				}
-				if (static_cast<uint64_t>(value.offset) + value.size > cls.size)
+				else if (static_cast<uint64_t>(value.offset) + value.size > cls.size)
 				{
 					error = how + " gives " + FieldText(value, bitfield) + ", past the end of " + request.className
 						+ " (" + Hex(cls.size) + " bytes on this build)";

@@ -41,7 +41,7 @@ inline constexpr std::array<FunctionRow, 12> kFunctionRows = {{
 	{ 128786, 0x22222222, 0x02000000, 2, 0xC9BB46AA, false, "AD 09", 0, -1, -1, 0x00004100, nullptr },
 }};
 
-inline constexpr std::array<FieldRow, 6> kFieldRows = {{
+inline constexpr std::array<FieldRow, 9> kFieldRows = {{
 	// ATest::Native
 	{ 127004, 0x20, 0x4, 0x00, nullptr },
 	{ 128786, 0x28, 0x4, 0x00, nullptr },
@@ -52,6 +52,11 @@ inline constexpr std::array<FieldRow, 6> kFieldRows = {{
 	// ATest::Renamed
 	{ 127004, 0x40, 0x4, 0x00, nullptr },
 	{ 128786, 0x44, 0x4, 0x00, "NewName" },
+	// FPlain::Block
+	{ 127004, 0x120, 0xB0, 0x00, nullptr },
+	{ 128786, 0x120, 0xB0, 0x00, nullptr },
+	// FPlain::Flex
+	{ 128786, 0x8, 0x10, 0x00, nullptr },
 }};
 
 inline constexpr std::array<Index, 7> kFunctions = {{
@@ -64,10 +69,12 @@ inline constexpr std::array<Index, 7> kFunctions = {{
 	{ "VmapProbe/Site", 10, 2 },
 }};
 
-inline constexpr std::array<Index, 4> kFields = {{
+inline constexpr std::array<Index, 6> kFields = {{
 	{ "ATest::Native", 0, 2 },
 	{ "ATest::Old", 2, 1 },
 	{ "ATest::Reflected", 3, 1 },
 	{ "ATest::Renamed", 4, 2 },
+	{ "FPlain::Block", 6, 2 },
+	{ "FPlain::Flex", 8, 1 },
 }};
 }

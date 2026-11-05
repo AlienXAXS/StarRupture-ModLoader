@@ -574,7 +574,10 @@ namespace LayoutCheck
                 answer.error = className + " is the name of " + std::to_string(found.size())
                     + " native types; name it by /Script/<Module>." + sdkName;
             else if (found.empty())
+            {
                 answer.error = "no native " + std::string(sdkName[0] == 'F' ? "struct " : "class ") + className;
+                answer.unreflected = true;
+            }
             else
                 type = found.front();
             return answer;

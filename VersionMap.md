@@ -141,6 +141,16 @@ on the build it was compiled for; a row carried forward from an older CL cannot 
 this build, so the field is unresolved. A native offset plus its size must lie inside the
 class's live size. See the SDK guide for the `[Map]` log lines.
 
+**Unreflected native types.** A plain C++ engine type that is neither a `UCLASS` nor a `USTRUCT`
+(`FMassEntityManager`, `FStructSharedMemory`) has no reflected size to bound a native member by.
+When reflection reports that no class or struct of that name exists, the member is served from
+the running CL's row alone, with no class bound, and the log line says so (`unreflected type, no
+class bound`). A row for the running CL is required: the built offset is not used for such a type,
+and a request on a build without a row is refused. `PLUGIN_FIELD_ANY_SIZE` may be combined with
+`PLUGIN_FIELD_NATIVE` and then takes the row's size, for a member whose size the code does not
+fix. If reflection is not ready, or finds the name ambiguous, the request
+fails as before.
+
 ## Features
 
 A plugin can group the keys one part of it needs into a feature, with a plain-English title and
