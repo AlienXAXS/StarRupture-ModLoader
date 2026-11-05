@@ -12,3 +12,9 @@
 - For plugin authors (interface v74): PLUGIN_FIELD_ANY_SIZE asks for a reflected game member at whatever size the running build reports, for a member whose type differs between builds
 - modloader.ini [Debug] DisablePluginVersionMap=1 gives plugins no version map rows, to test their own patterns, at Kian369's request
 - For plugin authors: modloader.ini [Developer] RemoteReload=1 lets a script reload a plugin by writing its name to ModLoader\remote_reload.txt, the same reload as the RELOAD button, with the result in ModLoader.log
+- Icons in every loader and plugin window now sit on the line of the text beside them
+- Plugin windows can have their own buttons in the title bar and collapse to it
+- A plugin window over the Escape menu can leave the menu's buttons clickable under it and still be clickable itself everywhere else
+- Build Windows Anywhere, Build Benches Anywhere and the MiniMap find their game functions on the current Steam test branch
+- The log no longer warns about three game functions (OnExperienceLoadComplete, PostLogin, Logout) that the loader hooks another way
+- For plugin authors (interface v75): PluginPanelDesc::titleBarFn draws buttons in a panel's title bar, IsPanelCollapsed and SetPanelCollapsed collapse a panel to it, and PluginWindowFlags_MenuMouseWhereUncovered takes the mouse over a game menu only where no menu widget is under the cursor

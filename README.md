@@ -378,7 +378,7 @@ functions and members up by key in the loader's version map ([VersionMap.md](Ver
 | [Console.md](Console.md) | Console commands, running command lines from code (v63; `ExecuteWithEngine` v69). All builds |
 | [GameMenu.md](GameMenu.md) | Rows in the main and pause menus (v64), whether the pause menu is open (v71), the game's UI state and its change callback (v74). Client |
 | [HttpServer.md](HttpServer.md) | HTTP from the game server's listener (v22). Server |
-| [ImGui_Dev.md](ImGui_Dev.md) | Panels, always-on widgets, config-change notifications, keybinds, mouse wheel (v70), widgets that opt in to the mouse over the pause menu and other cursor screens and keys while typing (v71), sizing a popup (v74), title-bar buttons and collapsing a panel (v75) and the full ImGui function table. Client |
+| [ImGui_Dev.md](ImGui_Dev.md) | Panels, always-on widgets, config-change notifications, keybinds, mouse wheel (v70), widgets that opt in to the mouse over the pause menu and other cursor screens and keys while typing (v71), sizing a popup (v74), title-bar buttons and collapsing a panel, and widgets that take the mouse over a game menu only where no menu widget is under the cursor (v75), and the full ImGui function table. Client |
 | [MaterialIcons.md](MaterialIcons.md) | The 2188 bundled icons |
 | [Networking.md](Networking.md) | Messages between server and clients, `hooks->Network`. Client and server |
 | [PakLoading.md](PakLoading.md) | Mounting `.pak` files, spawning their assets (v67). All builds |
