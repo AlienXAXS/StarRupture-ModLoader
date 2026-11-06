@@ -840,9 +840,9 @@
 //      A v75 plugin is refused by a v74 loader, which has neither the field
 //      nor the calls.
 //      A plugin built against these headers declares 75 by default
-//      (PLUGIN_INTERFACE_VERSION), so loader 1.23.0, which accepts up to 74,
-//      refuses it even if it uses nothing from v75. A plugin that uses
-//      nothing new should declare 74 until loader 1.23.1 is out.
+//      (PLUGIN_INTERFACE_VERSION). Loader 1.23.0 accepts 70 through 75, so a
+//      plugin that uses nothing from v75 may still declare 74. A loader before
+//      1.23.0 refuses a plugin newer than its maximum.
 //
 //      Also in v75: a widget that takes the mouse over a game menu only where no menu
 //      widget is under the cursor. Added PluginWindowFlags_MenuMouseWhereUncovered
