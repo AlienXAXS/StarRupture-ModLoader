@@ -159,6 +159,14 @@ The ZIP is already laid out correctly, so extract it directly into that folder. 
 [*]Plugin authors: plugin interface v73 adds DeclareFeature, so one missing game function or member turns off only that feature, and version-map keys look up game functions and members ✦
 [*]Plugin authors: plugin interface v74 adds SetNextWindowSize and SetNextWindowSizeConstraints (with named PluginCond_* and PluginWindowFlags_AlwaysAutoResize constants), so a popup no longer collapses into a narrow strip ✦
 [*]Plugin authors: plugin interface v74 also gives plugins the game's UI state (in gameplay, pause menu, cursor up, any menu, map, inventory, build menu, station screens) as a change callback (in gameplay, pause menu and cursor up also as a query), so mods no longer detect it themselves; the menu classes follow BetterDrone's menu-layer read and Kian369's MiniMap class list ✦
+[*]Plugin authors: plugin interface v74 adds the PLUGIN_FIELD_ANY_SIZE flag for a reflected game member request (size 0), which takes the size the running build reports and returns it, for a member whose type differs between builds (a float on one, a double on the next); a size of 0 without the flag is still refused ✦
+[*]Plugin authors: [b]DisablePluginVersionMap=1[/b] under [b][Debug][/b] in modloader.ini gives plugins no version map rows, so you can test a plugin's own patterns and rows; the loader keeps the map for itself and logs a warning every launch, added at Kian369's request ✦
+[*]Plugin authors: [b]RemoteReload=1[/b] under [b][Developer][/b] in modloader.ini lets a script reload a plugin by writing its name to [b]ModLoader\remote_reload.txt[/b], the same reload as the RELOAD button, with the result in ModLoader.log; off by default and logs a warning every launch ✦
+[*]Icons in every loader and plugin window now sit on the line of the text beside them ✦
+[*]Plugin windows can have their own buttons in the title bar and collapse to it ✦
+[*]A plugin window over the Escape menu can leave the menu's buttons clickable under it and still be clickable itself everywhere else ✦
+[*]Build Windows Anywhere, Build Benches Anywhere and the MiniMap find their game functions on every game build the loader knows ✦
+[*]Plugin authors: plugin interface v75 adds [b]titleBarFn[/b] on a panel (your own buttons in its title bar), [b]IsPanelCollapsed[/b] and [b]SetPanelCollapsed[/b] (collapse a panel to its title bar), and the [b]PluginWindowFlags_MenuMouseWhereUncovered[/b] widget flag, which takes the mouse over a game menu only where no menu widget is under the cursor ✦
 [/list]
 
 [b][size=4]Game updates[/size][/b]
