@@ -2,6 +2,7 @@
 
 #ifdef MODLOADER_CLIENT_BUILD
 
+#include <functional>
 #include <vector>
 
 // ---------------------------------------------------------------------------
@@ -34,6 +35,11 @@ namespace UI::UpdateNoticeWindow
     // Thread-safe; called from the init thread.
     void AddUpdatedPlugin(const char* name, const char* oldVersion, const char* newVersion,
                           const char* notes);
+
+    // Run `fn` once, on the game thread, when the window actually opens. The
+    // loader uses it to record that its release notes were shown. Replaces any
+    // earlier callback; never called when the window does not open.
+    void SetOnShown(std::function<void()> fn);
 
     // Open the window if any updates were recorded and it has not been shown
     // yet this session. Called when the main menu world begins play.

@@ -116,6 +116,109 @@ static void WriteStoredBuildTag(const char* tag)
 	}
 }
 
+// The release the loader last listed its notes for (the manifest's build_tag).
+static void ReadLoaderNotesShown(char* outTag, int maxLen)
+{
+	wchar_t iniPath[MAX_PATH]{};
+	GetUpdateStateIniPath(iniPath, MAX_PATH);
+
+	wchar_t wTag[256]{};
+	GetPrivateProfileStringW(L"AutoUpdate", L"LoaderNotesShown", L"", wTag, 256, iniPath);
+
+	WideCharToMultiByte(CP_UTF8, 0, wTag, -1, outTag, maxLen, nullptr, nullptr);
+}
+
+// The version the player had before the notes still waiting to be shown, kept
+// from the launch that listed them until the window opens (see
+// ListLoaderNotesOnce). Empty value: listed, previous version unknown.
+static void ReadLoaderNotesPrevious(char* outTag, int maxLen)
+{
+	wchar_t iniPath[MAX_PATH]{};
+	GetUpdateStateIniPath(iniPath, MAX_PATH);
+
+	wchar_t wTag[256]{};
+	GetPrivateProfileStringW(L"AutoUpdate", L"LoaderNotesPrevious", L"", wTag, 256, iniPath);
+
+	WideCharToMultiByte(CP_UTF8, 0, wTag, -1, outTag, maxLen, nullptr, nullptr);
+}
+
+// value == nullptr removes the key.
+static bool WriteLoaderNotesKey(const wchar_t* key, const char* value)
+{
+	wchar_t iniPath[MAX_PATH]{};
+	GetUpdateStateIniPath(iniPath, MAX_PATH);
+
+	wchar_t wValue[256]{};
+	if (value)
+		MultiByteToWideChar(CP_UTF8, 0, value, -1, wValue, 256);
+
+	if (WritePrivateProfileStringW(L"AutoUpdate", key, value ? wValue : nullptr, iniPath))
+		return true;
+
+	DWORD err = GetLastError();
+	LogToFile::Warn("[AutoUpdate] Failed to write %ls to update_state.ini (%lu: %s)", key, err,
+	                FormatWinHttpError(err).c_str());
+	return false;
+}
+
+// The updater's log of the current boot and of the previous one
+// (ModLoader\Logs\AutoUpdate.log and the newest AutoUpdate-<time>.log beside
+// it). They say which version an update came from; see ResolvePreviousVersion.
+// The tail is enough: the lines wanted are written on every boot, and a log
+// is a few KB.
+static std::string ReadLogTail(const std::wstring& path)
+{
+	HANDLE h = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr,
+	                       OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+	if (h == INVALID_HANDLE_VALUE)
+		return {};
+
+	constexpr DWORD kMaxBytes = 256 * 1024;
+	LARGE_INTEGER size{};
+	std::string text;
+	if (GetFileSizeEx(h, &size))
+	{
+		LARGE_INTEGER from{};
+		from.QuadPart = size.QuadPart > kMaxBytes ? size.QuadPart - kMaxBytes : 0;
+		if (SetFilePointerEx(h, from, nullptr, FILE_BEGIN))
+		{
+			text.resize(kMaxBytes);
+			DWORD got = 0;
+			if (!ReadFile(h, text.data(), kMaxBytes, &got, nullptr))
+				got = 0;
+			text.resize(got);
+		}
+	}
+	CloseHandle(h);
+	return text;
+}
+
+static void ReadUpdaterLogs(std::string& currentLog, std::string& previousLog)
+{
+	wchar_t statePath[MAX_PATH]{};
+	GetUpdateStateIniPath(statePath, MAX_PATH);
+	std::wstring logsDir = statePath;
+	logsDir.resize(logsDir.find_last_of(L'\\'));
+	logsDir += L"\\Logs";
+
+	currentLog = ReadLogTail(logsDir + L"\\AutoUpdate.log");
+
+	// The archives are named by time, so the last name is the newest.
+	std::wstring newest;
+	WIN32_FIND_DATAW fd{};
+	HANDLE find = FindFirstFileW((logsDir + L"\\AutoUpdate-*.log").c_str(), &fd);
+	if (find != INVALID_HANDLE_VALUE)
+	{
+		do
+		{
+			if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) && newest < fd.cFileName)
+				newest = fd.cFileName;
+		} while (FindNextFileW(find, &fd));
+		FindClose(find);
+	}
+	previousLog = newest.empty() ? std::string() : ReadLogTail(logsDir + L"\\" + newest);
+}
+
 // ===========================================================================
 // Section D — Minimal JSON helpers
 // No external library — only handles the flat manifest schema.
@@ -600,6 +703,7 @@ static void ProcessPluginSidecar(const PluginSidecar& sc,
     std::string downloadUrl    = JsonExtractString(json, "download_url");
     std::string pluginName     = JsonExtractString(json, "plugin_name");
     std::string notes          = JsonExtractDecodedString(json, "notes");
+    std::string releaseNotes   = JsonExtractDecodedString(json, "release_notes");
     int ifaceMin = JsonExtractInt(json, "interface_version_min", -1);
     int ifaceMax = JsonExtractInt(json, "interface_version_max", -1);
 
@@ -692,7 +796,9 @@ static void ProcessPluginSidecar(const PluginSidecar& sc,
         UI::UpdateNoticeWindow::AddUpdatedPlugin(displayName,
                                                  decision.installed.c_str(),
                                                  remoteVersion.c_str(),
-                                                 notes.c_str());
+                                                 AutoUpdateVersion::NotesForUpdate(
+                                                     releaseNotes.c_str(), notes.c_str(),
+                                                     decision.installed.c_str(), remoteVersion.c_str()).c_str());
 #endif
     }
     else
@@ -738,6 +844,58 @@ static void RunPerPluginUpdates(const wchar_t* pluginsDir)
 // ===========================================================================
 // Section F — Orchestrator
 // ===========================================================================
+
+#ifdef MODLOADER_CLIENT_BUILD
+// List the loader in the "Plugins Updated" window, once, with the notes of the
+// release it now is. The manifest the update check already fetched names the
+// latest release; when that is the running version and its notes have not been
+// shown yet, they go in the window. Two keys in update_state.ini carry this
+// across launches: LoaderNotesPrevious, written here with the resolved previous
+// version, and LoaderNotesShown, written when the window actually opens (which
+// also removes LoaderNotesPrevious). A launch that quits or crashes before the
+// main menu therefore leaves the notes, and the history, for the next one.
+// Nothing is written when the fetch failed or the manifest names another
+// version, so a later launch tries again.
+static void ListLoaderNotesOnce(const char* running, const std::string& remoteTag, const std::string& manifest)
+{
+	char pending[256]{};
+	ReadLoaderNotesPrevious(pending, sizeof(pending));
+	char recorded[256]{};
+	ReadLoaderNotesShown(recorded, sizeof(recorded));
+
+	// The updater that installed this loader was the previous version's, and
+	// wrote nothing for it to find but its log; see ResolvePreviousVersion.
+	std::string currentLog, previousLog;
+	if (!AutoUpdateVersion::ParseVersion(pending).valid && !AutoUpdateVersion::ParseVersion(recorded).valid)
+		ReadUpdaterLogs(currentLog, previousLog);
+	const std::string previous = AutoUpdateVersion::ResolvePreviousVersion(
+		pending, recorded, currentLog.c_str(), previousLog.c_str(), running);
+
+	const std::string releaseNotes = JsonExtractDecodedString(manifest, "release_notes");
+	const std::string notes        = JsonExtractDecodedString(manifest, "notes");
+	const AutoUpdateVersion::LoaderNotesDecision d = AutoUpdateVersion::DecideLoaderNotes(
+		running, remoteTag.c_str(), previous.c_str(), releaseNotes.c_str(), notes.c_str());
+	if (!d.show)
+		return;
+
+	// Keep the previous version until the window opens. If the ini cannot be
+	// written the notes would come back on every launch, so they are not
+	// listed at all.
+	if (!WriteLoaderNotesKey(L"LoaderNotesPrevious", previous.c_str()))
+		return;
+
+	LogToFile::Info("[AutoUpdate] Listing the release notes of %s (previous version %s) in the Plugins Updated window",
+	                remoteTag.c_str(), previous.empty() ? "unknown" : previous.c_str());
+	UI::UpdateNoticeWindow::AddUpdatedPlugin("Mod Loader", previous.c_str(), remoteTag.c_str(), d.text.c_str());
+	UI::UpdateNoticeWindow::SetOnShown([tag = remoteTag]()
+	{
+		// Shown first: a crash between the two writes leaves a stale
+		// LoaderNotesPrevious, which ResolvePreviousVersion ignores.
+		if (WriteLoaderNotesKey(L"LoaderNotesShown", tag.c_str()))
+			WriteLoaderNotesKey(L"LoaderNotesPrevious", nullptr);
+	});
+}
+#endif
 
 // Central manifest update pass — checks whether a new modloader release exists
 // and notifies the user if so.  Plugin updates are handled independently via
@@ -786,6 +944,10 @@ static void RunCentralManifestUpdate(const AutoUpdateConfig& cfg)
 	const char* compiledTag = MODLOADER_BUILD_TAG;
 #else
 	const char* compiledTag = "";
+#endif
+
+#ifdef MODLOADER_CLIENT_BUILD
+	ListLoaderNotesOnce(compiledTag, remoteBuildTag, manifest);
 #endif
 
 	// Read stored tag (written by a previous run) and choose the effective local version.

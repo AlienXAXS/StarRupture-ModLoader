@@ -43,6 +43,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: true
+          fetch-depth: 0  # build-versioned-notes.ps1 reads UPDATE_NOTES.txt from earlier tags
 
       - name: Add MSBuild to PATH
         uses: microsoft/setup-msbuild@v2
@@ -250,12 +251,75 @@ jobs:
           # ---------------------------------------------------------------------------
           # 1. Modloader manifests  (central version check — no plugin list)
           # ---------------------------------------------------------------------------
-          # Player-facing notes: one change per line in UPDATE_NOTES.txt.
-          # The loader shows them in its update prompt.
+          # Player-facing notes: one change per line in UPDATE_NOTES.txt, this
+          # release's lines only (the release body and the changelog use just
+          # these). The loader lists the full text in its "Plugins Updated"
+          # window after the update, from the manifest's "release_notes" field.
           $notesFile = "$ws\UPDATE_NOTES.txt"
           $noteLines = @()
           if (Test-Path $notesFile) {
             $noteLines = @(Get-Content $notesFile | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+          }
+
+          # A player can jump over releases, so "release_notes" holds one section per
+          # release, newest first, each under a "## <tag>" header: this release's
+          # UPDATE_NOTES.txt on top, then the UPDATE_NOTES.txt of earlier release
+          # tags (taken from the tags, nothing to keep by hand). The loader lists
+          # only the sections newer than the version the player had. The script
+          # skips tags with no notes file and says which; it bounds the history
+          # to 10 releases and 64 KB.
+          $history = & "$ws\.github\scripts\build-versioned-notes.ps1" -Repo $ws -Version $tag
+          if ($history.Truncated -gt 0) {
+            Write-Host "::notice title=Release notes bounded::$($history.Truncated) older release(s) left out of release_notes (limit 10 releases, 64 KB)."
+          }
+          # A checkout without the tags would give a history of one release and
+          # no sign of it: stop before anything is published.
+          if ($history.Included.Count -lt 2) {
+            throw "Release notes history has $($history.Included.Count) release(s) ($($history.Included -join ', ')); the checkout is missing the release tags."
+          }
+          $releaseNotes = $history.Text
+
+          # The Windows "Update Available" box on older and current loaders prints
+          # the manifest's "notes" field in full, so that field carries a short
+          # text of its own: UPDATE_NOTES_SHORT.txt, one change per line. It is
+          # never filled from UPDATE_NOTES.txt. A release stops here, before
+          # anything is published, when it is missing, empty or too long, or when
+          # it or UPDATE_NOTES.txt is word for word the previous release tag's
+          # copy (text nobody rewrote for this release). A preview run only warns
+          # and leaves "notes" out.
+          $isPreview = "${{ steps.tag.outputs.IS_PREVIEW }}" -eq 'true'
+          $maxShortLines = 6
+          $maxShortChars = 600
+          $shortFile  = "$ws\UPDATE_NOTES_SHORT.txt"
+          $shortLines = @()
+          if (Test-Path $shortFile) {
+            $shortLines = @(Get-Content $shortFile | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+          }
+          $shortText = $shortLines -join "`n"
+          if ($shortLines.Count -eq 0) {
+            if (-not $isPreview) { throw "UPDATE_NOTES_SHORT.txt is missing or empty." }
+            Write-Host "::warning title=Update box notes missing::UPDATE_NOTES_SHORT.txt is missing or empty, so the manifest has no short 'notes' and the Windows update box will list no changes."
+            $shortText = ""
+          } elseif ($shortLines.Count -gt $maxShortLines -or $shortText.Length -gt $maxShortChars) {
+            if (-not $isPreview) { throw "UPDATE_NOTES_SHORT.txt has $($shortLines.Count) lines and $($shortText.Length) characters (limit $maxShortLines and $maxShortChars)." }
+            Write-Host "::warning title=Update box notes too long::UPDATE_NOTES_SHORT.txt has $($shortLines.Count) lines and $($shortText.Length) characters (limit $maxShortLines and $maxShortChars), so the manifest has no short 'notes' and the Windows update box will list no changes."
+            $shortText = ""
+          }
+
+          if (-not $isPreview) {
+            $curKey = [version](($tag -replace '^[vV]', '') -replace '-.*$', '')
+            $prevTag = @(git -C $ws tag | Where-Object { $_ -match '^v?\d+\.\d+\.\d+$' } |
+                         Where-Object { [version]($_ -replace '^[vV]', '') -lt $curKey } |
+                         Sort-Object -Descending -Property { [version]($_ -replace '^[vV]', '') } |
+                         Select-Object -First 1)
+            foreach ($name in @('UPDATE_NOTES.txt', 'UPDATE_NOTES_SHORT.txt')) {
+              # A previous tag without the file is not a match.
+              if ($prevTag.Count -eq 0 -or -not (Test-Path "$ws\$name") -or -not (git -C $ws ls-tree --name-only $prevTag[0] -- $name)) { continue }
+              $trim = { param($lines) @($lines | ForEach-Object { $_.Trim([char]0xFEFF, ' ', "`t", "`r") } | Where-Object { $_ }) -join "`n" }
+              if ((& $trim (Get-Content "$ws\$name" -Encoding UTF8)) -ceq (& $trim (git -C $ws show "$($prevTag[0]):$name"))) {
+                throw "$name is the same as at $($prevTag[0]); write the text for $tag before releasing."
+              }
+            }
           }
 
           # The same lines are the Nexus changelog entry for this version.
@@ -265,8 +329,11 @@ jobs:
 
           foreach ($variant in @("client", "server")) {
             $manifest = [ordered]@{ build_tag = $tag }
-            if ($noteLines.Count -gt 0) {
-              $manifest["notes"] = $noteLines -join "`n"
+            if ($shortText) {
+              $manifest["notes"] = $shortText
+            }
+            if ($releaseNotes) {
+              $manifest["release_notes"] = $releaseNotes
             }
             $out = "$ws\manifest-$variant.json"
             $manifest | ConvertTo-Json -Depth 1 | Out-File $out -Encoding utf8NoBOM

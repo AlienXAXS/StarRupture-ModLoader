@@ -1,22 +1,2 @@
-- Now with 100% more Good Stuff: Mike From Good Stuff Software is taking over from AlienX to keep the updates coming, with help from Kian369.
-- Adapts to new game versions: keeps working after a game update for every game build it knows
-- When a game update changes a layout the loader checks, only the features that read it are switched off, not every plugin, and the Plugins tab shows how many are off
-- The loader also checks that the game still runs its functions the way plugins call them, and switches plugins off with the usual message if it does not
-- A plugin that crashes is switched off and a toast names it; it restarts by itself about 3 seconds later, up to 3 times a session (Settings can turn this off)
-- Plugin windows can be clicked and dragged over the Escape menu and any game screen that shows the mouse cursor
-- Plugin windows no longer block the game's own menus while the cursor is up: clicks, mouse moves and the wheel outside them reach the game
-- Overlay windows no longer flicker with frame generation, which stays on while a window is open
-- Keys 1 to 5 open the Plugins, Config, Settings, Logging and Theme tabs; Tab, the arrow keys and Space or Enter work in the loader windows
-- LOAD NEW adds plugins you drop in while the game is running; click a plugin in the list to open its settings
-- The plugin updater reads each installed plugin's version first, so it never replaces one with an older release
-- For plugin authors (interface v74): the game's menu and cursor state, and window sizing added at Kian369's request
-- For plugin authors (interface v74): PLUGIN_FIELD_ANY_SIZE asks for a reflected game member at whatever size the running build reports, for a member whose type differs between builds
-- For plugin authors: a native member of a plain C++ engine type that reflection does not know (FMassEntityManager, FStructSharedMemory) now resolves from the version map's row for the running build
-- modloader.ini [Debug] DisablePluginVersionMap=1 gives plugins no version map rows, to test their own patterns, at Kian369's request
-- For plugin authors: modloader.ini [Developer] RemoteReload=1 lets a script reload a plugin by writing its name to ModLoader\remote_reload.txt, the same reload as the RELOAD button, with the result in ModLoader.log
-- Icons in every loader and plugin window now sit on the line of the text beside them
-- Plugin windows can have their own buttons in the title bar and collapse to it
-- A plugin window over the Escape menu can leave the menu's buttons clickable under it and still be clickable itself everywhere else
-- Build Windows Anywhere, Build Benches Anywhere and the MiniMap find their game functions on every game build the loader knows
-- The log no longer warns about three game functions (OnExperienceLoadComplete, PostLogin, Logout) that the loader hooks another way
-- For plugin authors (interface v75): PluginPanelDesc::titleBarFn draws buttons in a panel's title bar, IsPanelCollapsed and SetPanelCollapsed collapse a panel to it, and PluginWindowFlags_MenuMouseWhereUncovered takes the mouse over a game menu only where no menu widget is under the cursor
+- The Plugins Updated window is wider on large screens, so its notes no longer wrap into a thin column at 4K, and its title and Close button stay in view when the list is long
+- After the mod loader updates itself, the Plugins Updated window lists the loader's release notes once, including the notes of releases you skipped

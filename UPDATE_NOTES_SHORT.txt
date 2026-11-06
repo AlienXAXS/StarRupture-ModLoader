@@ -1,0 +1,6 @@
+- Now with 100% more Good Stuff: Mike From Good Stuff Software is taking over from AlienX to keep the updates coming, with help from Kian369.
+- Adapts to new game versions: keeps working after a game update for every game build it knows
+- When a game update changes something, only the features it affects switch off, not every plugin
+- A plugin that crashes is switched off and restarts by itself
+- Plugin windows work over the Escape menu and no longer block the game's menus
+- Full release notes are on GitHub and Nexus

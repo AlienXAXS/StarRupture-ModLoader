@@ -53,7 +53,7 @@ Tabs down the left: [b]Plugins[/b], [b]Config[/b], [b]Settings[/b], [b]Logging[/
 [*]A plugin can say when it may be loaded and unloaded: any time, only at the main menu, or only at game start. A refused reload or unload says why on its row and on the console. ✦
 [*][b]Crashed[/b] is a plugin that faulted in its own code. The mod loader switched it off and the game kept running; hover the row for the fault and where it happened. [b]RELOAD[/b] loads it fresh. A fault in game code a plugin called still crashes the game, and the log names the plugin. ✦
 [*]When a plugin crashes, a toast in the bottom right corner names the plugin and what it was doing. About 3 seconds later the mod loader restarts it by itself, as RELOAD would, if its load and unload settings allow it; a plugin that needs a game restart stays off and the toast says so. Each plugin restarts at most 3 times a session. [b]Settings[/b] has [b]Restart crashed plugins automatically[/b] to turn it off. ✦
-[*][b]Plugins Updated[/b] lists plugins with identical update notes on one line and shows the notes once. ✦
+[*][b]Plugins Updated[/b] lists plugins with identical update notes on one line and shows the notes once, is wide enough for the screen at 4K, and keeps its title and Close button in view. After the mod loader updates, it lists the loader's release notes once, grouped by version and including the notes of releases you skipped. ✦
 [*][b]Cannot Load[/b] is a server plugin on a client, or the reverse.
 [*][b]Needs Update[/b] names the side that is behind: the plugin or the mod loader.
 [*][b]Incompatible[/b] on a game build other than the one a plugin was built for says the plugin needs an update. It still loads on its own build.
@@ -110,7 +110,7 @@ Tabs down the left: [b]Plugins[/b], [b]Config[/b], [b]Settings[/b], [b]Logging[/
 
 [b][size=4]Pop-ups[/size][/b]
 
-[b]Plugins Updated[/b] appears once at the main menu after an automatic plugin update.
+[b]Plugins Updated[/b] appears once at the main menu after an automatic plugin update, and after the mod loader updates itself.
 
 [img]https://raw.githubusercontent.com/{{REPO}}/{{TAG}}/images/popup-plugins-updated.png[/img]
 

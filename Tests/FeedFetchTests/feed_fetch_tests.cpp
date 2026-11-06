@@ -414,6 +414,205 @@ int main()
 		Check(!unknown.download && unknown.installed.empty(), "no version known: nothing is downloaded");
 	}
 
+	// ---- Release notes per version --------------------------------------------
+	{
+		using namespace AutoUpdateVersion;
+
+		const char* hist =
+			"## v1.23.1\n- c1\n- c2\n\n"
+			"## v1.23.0\n- b1\n- b2\n\n"
+			"## v1.22.1\n- a1";
+
+		// Selection: the sections newer than the previous version.
+		VersionedNotes v = SelectVersionedNotes(hist, "1.22.1", "v1.23.1");
+		Check(v.versioned && v.text == "## v1.23.1\n- c1\n- c2\n## v1.23.0\n- b1\n- b2", "notes: from 1.22.1 two versions, grouped");
+		v = SelectVersionedNotes(hist, "1.23.0", "v1.23.1");
+		Check(v.text == "- c1\n- c2", "notes: from 1.23.0 one version, no header");
+		v = SelectVersionedNotes(hist, "1.21.0", "v1.23.1");
+		Check(v.text.find("## v1.22.1\n- a1") != std::string::npos && v.text.find("## v1.23.1") == 0, "notes: from older, three versions in file order");
+		Check(SelectVersionedNotes(hist, "1.23.1", "v1.23.1").text.empty(), "notes: previous equal to current selects nothing");
+		Check(SelectVersionedNotes(hist, "1.24.0", "v1.23.1").text.empty(), "notes: previous newer than all selects nothing");
+		Check(SelectVersionedNotes(hist, "1.23.1-rc1", "v1.23.1").text.empty(), "notes: an rc previous counts by number");
+		Check(SelectVersionedNotes(hist, "1.22.1-rc2", "v1.23.1").text.find("## v1.23.0") != std::string::npos, "notes: an rc previous of an older number still lists newer");
+
+		// Unknown previous: the current version only.
+		Check(SelectVersionedNotes(hist, "", "v1.23.1").text == "- c1\n- c2", "notes: unknown previous lists the current version only");
+		Check(SelectVersionedNotes(hist, nullptr, "1.23.0").text == "- b1\n- b2", "notes: unknown previous, current in the middle");
+		Check(SelectVersionedNotes(hist, "garbage", "v1.23.1").text == "- c1\n- c2", "notes: unparseable previous is unknown");
+		Check(SelectVersionedNotes(hist, "", "1.20.0").text.empty(), "notes: unknown previous and no section for the current");
+
+		// Sections newer than the current version are not listed.
+		Check(SelectVersionedNotes(hist, "1.22.1", "1.23.0").text == "- b1\n- b2", "notes: nothing above the current version");
+
+		// Headers: odd, missing, CRLF, empty sections, text before the first header.
+		Check(!SelectVersionedNotes("- a\n- b", "", "1.0.0").versioned, "notes: no headers is not versioned");
+		Check(!SelectVersionedNotes("", "", "1.0.0").versioned && !SelectVersionedNotes(nullptr, "", "1.0.0").versioned, "notes: empty or null is not versioned");
+		Check(!SelectVersionedNotes("## notes\n- a\n##v1.2.3\n- b\n#  v1.2.3", "", "1.2.3").versioned, "notes: headers that are not '## <version>' do not count");
+		v = SelectVersionedNotes("## v1.2.0\n- a\n## 2.0 is great\n- b\n## v1.2.0 and more\n- c", "1.1.0", "1.2.0");
+		Check(v.versioned && v.text == "- a\n## 2.0 is great\n- b\n## v1.2.0 and more\n- c", "notes: a line with more than the version token stays a note");
+		v = SelectVersionedNotes("## v1.2.0\n- a\n## notes for people\n- b", "1.1.0", "1.2.0");
+		Check(v.versioned && v.text == "- a\n## notes for people\n- b", "notes: a bad header line stays a note line");
+		v = SelectVersionedNotes("## v1.2.0\r\n- a\r\n\r\n## v1.1.0\r\n- b\r\n", "1.0.0", "1.2.0");
+		Check(v.text == "## v1.2.0\n- a\n## v1.1.0\n- b", "notes: CRLF lines");
+		v = SelectVersionedNotes("## v1.3.0\n\n## v1.2.0\n- a", "1.1.0", "1.3.0");
+		Check(v.text == "- a", "notes: an empty section is dropped");
+		v = SelectVersionedNotes("stray line\n## v1.2.0\n- a", "", "1.2.0");
+		Check(v.text == "- a", "notes: text before the first header is ignored");
+		v = SelectVersionedNotes("  ## v1.2.0  \n- a", "", "1.2.0");
+		Check(v.versioned && v.text == "- a", "notes: header whitespace is trimmed");
+		v = SelectVersionedNotes("## v1.2.0-rc1\n- a", "", "1.2.0");
+		Check(v.text == "- a", "notes: an rc header matches by number");
+		v = SelectVersionedNotes("## v1.0.0\n- old\n## v1.1.0\n- new", "0.9.0", "1.1.0");
+		Check(v.text == "## v1.0.0\n- old\n## v1.1.0\n- new", "notes: file order is kept");
+		Check(SelectVersionedNotes(hist, "", "").text == "- c1\n- c2", "notes: unknown previous and current gives the first section");
+
+		// A row for the window: versioned text, else notes.
+		Check(NotesForUpdate(hist, "- short", "1.23.0", "1.23.1") == "- c1\n- c2", "row: the versioned text wins");
+		Check(NotesForUpdate("", "- short", "1.23.0", "1.23.1") == "- short", "row: no release_notes falls back to notes");
+		Check(NotesForUpdate(nullptr, "- short", "1.23.0", "1.23.1") == "- short", "row: a null release_notes falls back to notes");
+		Check(NotesForUpdate("- plain\n- list", "- short", "1.23.0", "1.23.1") == "- short", "row: release_notes without headers falls back to notes");
+		Check(NotesForUpdate(hist, "- short", "1.23.1", "1.23.1") == "- short", "row: previous equal to every entry falls back to notes");
+		Check(NotesForUpdate(hist, "- short", "2.0.0", "2.0.1") == "- short", "row: previous newer than every entry falls back to notes");
+		Check(NotesForUpdate(hist, "- short", "", "1.23.1") == "- c1\n- c2", "row: unknown previous lists the current version");
+		Check(NotesForUpdate("", "", "1.0.0", "1.1.0").empty() && NotesForUpdate(nullptr, nullptr, "", "").empty(), "row: nothing at all is empty");
+		Check(NotesForUpdate(hist, nullptr, "1.23.1", "1.23.1").empty(), "row: no notes and nothing selected is empty");
+
+		// The previous version from the updater's logs.
+		const char* updLog =
+			"[2026-11-06 10:00:00.000] [INFO ] Installed version (Core DLL file version): 1.22.1\r\n"
+			"[2026-11-06 10:00:01.000] [INFO ] Remote build_tag: v1.23.1\r\n"
+			"[2026-11-06 10:00:01.100] [INFO ] Update available: 1.22.1 -> v1.23.1\r\n"
+			"[2026-11-06 10:00:09.000] [INFO ] Install: update v1.23.1 installed successfully (14 files)\r\n";
+		Check(PreviousFromUpdateLine(updLog, "1.23.1") == "1.22.1", "prev: update line, from 1.22.1");
+		Check(PreviousFromUpdateLine(updLog, "1.23.1-rc1") == "1.22.1", "prev: update line, an rc matches by number");
+		Check(PreviousFromUpdateLine(updLog, "1.23.2").empty(), "prev: an update line to another version is not used");
+		Check(PreviousFromUpdateLine("Update available: 1.23.0 -> v1.23.1\n", "1.23.1") == "1.23.0", "prev: update line without a prefix, from 1.23.0");
+		Check(PreviousFromUpdateLine("Update available: 1.24.0 -> v1.23.1\n", "1.23.1").empty(), "prev: an update line that goes backwards is not used");
+		Check(PreviousFromUpdateLine("Update available: x -> y\nUpdate available:\nUpdate available: 1.2 ->", "1.2.0").empty(), "prev: odd update lines are ignored");
+		Check(PreviousFromUpdateLine(nullptr, "1.23.1").empty() && PreviousFromUpdateLine("", "1.23.1").empty(), "prev: no log, no previous");
+		Check(PreviousFromUpdateLine("Update available: 1.21.0 -> v1.23.1\nUpdate available: 1.22.1 -> v1.23.1\n", "1.23.1") == "1.22.1", "prev: the last matching update line wins");
+
+		const char* instLog =
+			"[x] [INFO ] Installed version (Core DLL file version): 1.22.1\r\n"
+			"[x] [INFO ] Installed version (update_state.ini): v1.23.0\r\n";
+		Check(PreviousFromInstalledLine(instLog) == "v1.23.0", "prev: installed line, the last one");
+		Check(PreviousFromInstalledLine("Installed version (Core DLL file version): 1.22.1") == "1.22.1", "prev: installed line without a line end");
+		Check(PreviousFromInstalledLine("Installed version could not be determined").empty(), "prev: the failure line is not a version");
+		Check(PreviousFromInstalledLine("Installed version (x): nope").empty() && PreviousFromInstalledLine(nullptr).empty(), "prev: odd installed lines are ignored");
+
+		// ResolvePreviousVersion: pending, then recorded, then this boot's update line, then last boot's installed line.
+		Check(ResolvePreviousVersion("", "v1.23.1", updLog, instLog, "1.23.1-rc1") == "v1.23.1", "resolve: a record wins");
+		Check(ResolvePreviousVersion("", "", updLog, instLog, "1.23.1") == "1.22.1", "resolve: this boot's update line wins over the old log");
+		Check(ResolvePreviousVersion("", "garbage", updLog, "", "1.23.1") == "1.22.1", "resolve: an unparseable record is none");
+		Check(ResolvePreviousVersion("", "", "", instLog, "1.23.1") == "v1.23.0", "resolve: a manual update falls back to last boot's version");
+		Check(ResolvePreviousVersion("", "", "", "Installed version (Core DLL file version): 1.23.1\n", "1.23.1").empty(), "resolve: last boot already ran this version, unknown");
+		Check(ResolvePreviousVersion("", "", "", "Installed version (Core DLL file version): 1.24.0\n", "1.23.1").empty(), "resolve: last boot newer, unknown");
+		Check(ResolvePreviousVersion("", "", "", "", "1.23.1").empty() && ResolvePreviousVersion(nullptr, nullptr, nullptr, nullptr, "1.23.1").empty(), "resolve: fresh install, unknown");
+		Check(ResolvePreviousVersion("1.22.1", "", updLog, instLog, "1.23.1") == "1.22.1" && ResolvePreviousVersion("1.21.0", "", updLog, instLog, "1.23.1") == "1.21.0", "resolve: a pending previous wins over the logs");
+		Check(ResolvePreviousVersion("1.22.1", "v1.23.0", "", "", "1.23.1") == "1.22.1", "resolve: a pending previous wins over an older record");
+		Check(ResolvePreviousVersion("1.23.1", "", updLog, instLog, "1.23.1") == "1.22.1" && ResolvePreviousVersion("garbage", "", "", instLog, "1.23.1") == "v1.23.0", "resolve: a pending value that is not older is ignored");
+		Check(ResolvePreviousVersion("1.22.1", "v1.23.1", "", "", "1.23.1") == "v1.23.1", "resolve: a record of the running version beats a stale pending one");
+
+		// DecideLoaderNotes: gate and text.
+		const char* brief = "- short";
+		LoaderNotesDecision d = DecideLoaderNotes("1.23.1", "v1.23.1", "1.22.1", hist, brief);
+		Check(d.show && d.text == "## v1.23.1\n- c1\n- c2\n## v1.23.0\n- b1\n- b2", "loader: from 1.22.1 lists 1.23.1 and 1.23.0");
+		d = DecideLoaderNotes("1.23.1", "v1.23.1", "v1.23.0", hist, brief);
+		Check(d.show && d.text == "- c1\n- c2", "loader: from 1.23.0 lists 1.23.1 only");
+		d = DecideLoaderNotes("1.23.1", "v1.23.1", "", hist, brief);
+		Check(d.show && d.text == "- c1\n- c2", "loader: unknown previous lists the running version only");
+		Check(DecideLoaderNotes("1.23.1", "v1.23.1", nullptr, hist, brief).show, "loader: a null previous is unknown");
+		Check(DecideLoaderNotes("1.23.1", "v1.23.1", "garbage", hist, brief).show, "loader: an unparseable previous is unknown");
+		Check(!DecideLoaderNotes("1.23.1", "v1.23.1", "v1.23.1", hist, brief).show, "loader: previous equal to running shows nothing");
+		Check(!DecideLoaderNotes("1.23.1", "v1.23.1", "1.23.1-rc1", hist, brief).show, "loader: an rc previous of this number shows nothing");
+		Check(!DecideLoaderNotes("1.23.1", "v1.23.1", "v1.24.0", hist, brief).show, "loader: previous newer than running shows nothing");
+		Check(!DecideLoaderNotes("1.23.1", "v1.23.2", "1.23.0", hist, brief).show, "loader: a newer manifest shows nothing");
+		Check(!DecideLoaderNotes("1.23.1", "v1.23.0", "1.22.1", hist, brief).show, "loader: an older manifest shows nothing");
+		Check(!DecideLoaderNotes("1.23.1", "", "", hist, brief).show && !DecideLoaderNotes("1.23.1", nullptr, "", hist, brief).show, "loader: a failed fetch shows nothing");
+		Check(!DecideLoaderNotes("", "v1.23.1", "", hist, brief).show, "loader: a dev build shows nothing");
+		d = DecideLoaderNotes("1.23.1", "v1.23.1", "1.22.1", "", brief);
+		Check(d.show && d.text == brief, "loader: no release_notes falls back to notes");
+		d = DecideLoaderNotes("1.23.1", "v1.23.1", "1.22.1", " \n\r\t", brief);
+		Check(d.show && d.text == brief, "loader: blank release_notes falls back to notes");
+		Check(!DecideLoaderNotes("1.23.1", "v1.23.1", "", "", "").show && !DecideLoaderNotes("1.23.1", "v1.23.1", "", nullptr, nullptr).show, "loader: no text at all shows nothing");
+		Check(DecideLoaderNotes("1.23.1-rc1", "v1.23.1", "1.22.1", hist, brief).show, "loader: an rc label matches the release");
+		Check(DecideLoaderNotes("1.23.1-rc2", "v1.23.1", "1.23.0", hist, brief).show, "loader: another label on the release number matches");
+		Check(!DecideLoaderNotes("1.23.0-rc1", "v1.23.1", "", hist, brief).show, "loader: an rc of the older release is not offered the newer notes");
+
+		// Launches in sequence, as the loader runs them: at list time the previous version is
+		// resolved and kept in LoaderNotesPrevious; LoaderNotesShown is written (and the
+		// pending value cleared) only when the window opens, which needs the main menu.
+		struct Ini { std::string shown, pending; };
+		auto launch = [&](Ini& ini, const char* running, const char* tag, const char* releaseNotes,
+		                  const char* curLog, const char* prevLog, bool reachesMenu) -> std::string
+		{
+			const std::string prev = ResolvePreviousVersion(ini.pending.c_str(), ini.shown.c_str(), curLog, prevLog, running);
+			const LoaderNotesDecision dec = DecideLoaderNotes(running, tag, prev.c_str(), releaseNotes, brief);
+			if (!dec.show)
+				return {};
+			ini.pending = prev;
+			if (reachesMenu)
+			{
+				ini.shown = tag;
+				ini.pending.clear();
+			}
+			return dec.text;
+		};
+		const std::string twoSections = "## v1.23.1\n- c1\n- c2\n## v1.23.0\n- b1\n- b2";
+		const char* nextLogs = "Installed version (Core DLL file version): 1.23.1\n";
+
+		// Quit before the main menu, then relaunch: the notes and the history are still there.
+		{
+			Ini ini;
+			Check(launch(ini, "1.23.1", "v1.23.1", hist, updLog, "", false) == twoSections && ini.shown.empty() && ini.pending == "1.22.1",
+				"lifecycle: a quit before the menu records nothing as shown and keeps the previous version");
+			Check(launch(ini, "1.23.1", "v1.23.1", hist, "", nextLogs, true) == twoSections && ini.shown == "v1.23.1" && ini.pending.empty(),
+				"lifecycle: the relaunch lists the same notes and records them when the window opens");
+			Check(launch(ini, "1.23.1", "v1.23.1", hist, "", nextLogs, true).empty(), "lifecycle: shown, then relaunch shows nothing");
+		}
+		// Two quits before the menu.
+		{
+			Ini ini;
+			launch(ini, "1.23.1", "v1.23.1", hist, updLog, "", false);
+			Check(launch(ini, "1.23.1", "v1.23.1", hist, "", nextLogs, false) == twoSections && ini.pending == "1.22.1",
+				"lifecycle: a second quit keeps the history");
+			Check(launch(ini, "1.23.1", "v1.23.1", hist, "", nextLogs, true) == twoSections, "lifecycle: the third launch still lists it");
+		}
+		// A manual update (no update line, only last boot's installed line), then a quit.
+		{
+			Ini ini;
+			const char* oldInst = "Installed version (Core DLL file version): 1.22.1\n";
+			launch(ini, "1.23.1", "v1.23.1", hist, "", oldInst, false);
+			Check(launch(ini, "1.23.1", "v1.23.1", hist, "", nextLogs, true) == twoSections, "lifecycle: a manual update keeps its history after a quit");
+		}
+		// An unknown previous version stays unknown and lists the running release only.
+		{
+			Ini ini;
+			launch(ini, "1.23.1", "v1.23.1", hist, "", "", false);
+			Check(ini.pending.empty() && launch(ini, "1.23.1", "v1.23.1", hist, "", "", true) == "- c1\n- c2", "lifecycle: an unknown previous version lists the running release only");
+		}
+		// A newer release arrives while one is still unshown: both are listed.
+		{
+			const char* histNext =
+				"## v1.24.0\n- d1\n\n"
+				"## v1.23.1\n- c1\n- c2\n\n"
+				"## v1.23.0\n- b1\n- b2";
+			Ini ini;
+			launch(ini, "1.23.1", "v1.23.1", hist, updLog, "", false);
+			Check(launch(ini, "1.24.0", "v1.24.0", histNext, "Update available: 1.23.1 -> v1.24.0\n", "", true) ==
+				"## v1.24.0\n- d1\n## v1.23.1\n- c1\n- c2\n## v1.23.0\n- b1\n- b2", "lifecycle: a newer release lists the unshown one too");
+			Check(ini.shown == "v1.24.0" && ini.pending.empty(), "lifecycle: and records the newer one");
+			// The same release arriving after the first was shown lists only itself.
+			Ini shown; shown.shown = "v1.23.1";
+			Check(launch(shown, "1.24.0", "v1.24.0", histNext, "", "", true) == "- d1", "lifecycle: after a shown release only the newer one is listed");
+		}
+		// A crash between the two writes at open leaves a stale pending value: nothing shows again.
+		{
+			Ini ini; ini.shown = "v1.23.1"; ini.pending = "1.22.1";
+			Check(launch(ini, "1.23.1", "v1.23.1", hist, "", nextLogs, true).empty(), "lifecycle: a stale pending value after a shown record shows nothing");
+		}
+	}
+
 	// ---- Reading the version out of a DLL image ----------------------------
 	{
 		wchar_t self[MAX_PATH]{};

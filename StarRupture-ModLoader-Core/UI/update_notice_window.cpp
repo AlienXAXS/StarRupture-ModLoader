@@ -5,6 +5,8 @@
 
 #include "imgui/imgui.h"
 #include "theme.h"
+#include <algorithm>
+#include <functional>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -23,8 +25,10 @@ namespace UI::UpdateNoticeWindow
     // while Render/ShowIfPending run on the render / game threads.
     static std::mutex                 s_mutex;
     static std::vector<UpdatedPlugin> s_updates;
+    static std::function<void()>      s_onShown;
     static bool s_isOpen = false;
     static bool s_shown  = false;   // one-shot: only auto-open once per session
+    static int  s_centerFrames = 0; // frames left to keep the window centered while it sizes itself
 
     void AddUpdatedPlugin(const char* name, const char* oldVersion, const char* newVersion,
                           const char* notes)
@@ -46,6 +50,10 @@ namespace UI::UpdateNoticeWindow
             std::string line = text.substr(pos, end - pos);
             if (!line.empty() && line.back() == '\r')
                 line.pop_back();
+            // Release lines carry their own "- "; the window draws the bullet.
+            // A "## <version>" line is a group header and is kept whole.
+            if (line.compare(0, 3, "## ") != 0 && line.compare(0, 2, "- ") == 0)
+                line.erase(0, 2);
             if (!line.empty())
                 u.notes.push_back(std::move(line));
             pos = end + 1;
@@ -53,15 +61,29 @@ namespace UI::UpdateNoticeWindow
         s_updates.push_back(std::move(u));
     }
 
+    void SetOnShown(std::function<void()> fn)
+    {
+        std::lock_guard<std::mutex> lock(s_mutex);
+        s_onShown = std::move(fn);
+    }
+
     void ShowIfPending()
     {
         if (s_shown) return;
 
-        std::lock_guard<std::mutex> lock(s_mutex);
-        if (s_updates.empty()) return;
+        std::function<void()> onShown;
+        {
+            std::lock_guard<std::mutex> lock(s_mutex);
+            if (s_updates.empty()) return;
 
-        s_isOpen = true;
-        s_shown  = true;
+            s_isOpen = true;
+            s_shown  = true;
+            s_centerFrames = 3;
+            onShown = std::move(s_onShown);
+            s_onShown = nullptr;
+        }
+        if (onShown)
+            onShown();
     }
 
     void Render()
@@ -70,23 +92,31 @@ namespace UI::UpdateNoticeWindow
             return;
 
         ImGuiIO& io = ImGui::GetIO();
-        // Fixed width, auto-fit height (0 = auto on that axis). Width must not
-        // be content-driven: the centered Close button below offsets itself from
-        // the window width, so AlwaysAutoResize would feed back into itself and
-        // grow the window every frame.
-        ImGui::SetNextWindowSize(ImVec2(640, 0), ImGuiCond_Always);
-        // Notes can make the list taller than the screen; cap the auto-fit
-        // height and let the window scroll past it.
-        ImGui::SetNextWindowSizeConstraints(ImVec2(640, 0), ImVec2(640, io.DisplaySize.y * 0.8f));
-        ImGui::SetNextWindowPos(
-            ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f),
-            ImGuiCond_Appearing,
-            ImVec2(0.5f, 0.5f));
+        // Width follows the screen (35% of it, never under 640) so the notes
+        // stay readable at 4K, where a fixed 640 is a thin column. It is still
+        // fixed for the frame, not content-driven: the centered Close button
+        // below offsets itself from the window width, so AlwaysAutoResize would
+        // feed back into itself and grow the window every frame. Height is
+        // auto-fit (0 = auto on that axis).
+        const float width = std::max(640.0f, io.DisplaySize.x * 0.35f);
+        ImGui::SetNextWindowSize(ImVec2(width, 0), ImGuiCond_Always);
+        // The list child sizes itself to its notes over the first frames, so
+        // centering once on appearing would centre the window at its first
+        // (empty) height. Re-centre for those frames, then leave it movable.
+        if (s_centerFrames > 0)
+        {
+            --s_centerFrames;
+            ImGui::SetNextWindowPos(
+                ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f),
+                ImGuiCond_Always,
+                ImVec2(0.5f, 0.5f));
+        }
 
         if (!UI::Theme::BeginChamferedWindow("Plugin Updates##update_notice",
                                              "PLUGINS UPDATED", &s_isOpen,
                                              nullptr,
-                                             ImGuiWindowFlags_NoResize))
+                                             ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoScrollbar |
+                                             ImGuiWindowFlags_NoScrollWithMouse))
             return;
 
         ImGui::TextUnformatted("The following plugins were updated automatically:");
@@ -94,6 +124,15 @@ namespace UI::UpdateNoticeWindow
         ImGui::Separator();
         ImGui::Spacing();
 
+        // Notes can make the list taller than the screen. Only the list scrolls,
+        // in a child that fits its content up to what is left of 80% of the
+        // screen height once the title, the intro above and the Close button
+        // below are taken out, so those stay in view at any list length.
+        const ImGuiStyle& style = ImGui::GetStyle();
+        const float footerHeight = style.ItemSpacing.y * 3.0f + ImGui::GetFrameHeight() + style.WindowPadding.y;
+        const float maxListHeight = io.DisplaySize.y * 0.8f - ImGui::GetCursorPosY() - footerHeight;
+        ImGui::SetNextWindowSizeConstraints(ImVec2(0.0f, 0.0f), ImVec2(FLT_MAX, maxListHeight));
+        ImGui::BeginChild("##update_notice_list", ImVec2(0.0f, 0.0f), ImGuiChildFlags_AutoResizeY);
         {
             std::lock_guard<std::mutex> lock(s_mutex);
             // Plugins whose notes are word for word the same (a shared "works
@@ -128,6 +167,12 @@ namespace UI::UpdateNoticeWindow
                 ImGui::Indent();
                 for (const std::string& line : u.notes)
                 {
+                    // "## v1.23.0": the version the lines below it belong to.
+                    if (line.compare(0, 3, "## ") == 0)
+                    {
+                        ImGui::TextDisabled("%s", line.c_str() + 3);
+                        continue;
+                    }
                     ImGui::Bullet();
                     ImGui::SameLine();
                     ImGui::TextWrapped("%s", line.c_str());
@@ -135,6 +180,7 @@ namespace UI::UpdateNoticeWindow
                 ImGui::Unindent();
             }
         }
+        ImGui::EndChild();
 
         ImGui::Spacing();
         ImGui::Separator();
@@ -168,6 +214,7 @@ namespace UI::UpdateNoticeWindow
         }
         s_isOpen = true;
         s_shown  = true;
+        s_centerFrames = 3;
     }
 #endif
 }
