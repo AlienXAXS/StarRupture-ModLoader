@@ -87,6 +87,11 @@ bool ShouldShareGameMouseNow()
     return !ShouldCaptureInputNow() && CursorScreenUp();
 }
 
+bool IsMenuWidgetUnderCursorNow()
+{
+    return Hooks::GameMenu::IsMenuWidgetHovered();
+}
+
 void InitClientUI()
 {
     const std::wstring iniPath = GetModLoaderDirPath(L"modloader.ini");
@@ -280,6 +285,15 @@ void InitClientUI()
         if (Hooks::GameMenu::IsGameCursorShown())  uiState |= PLUGIN_UI_CURSOR_UP;
         if (pc && UIState::MenuReadWanted())       uiState |= Hooks::GameMenu::ReadMenuLayer(pc);
         UIState::Publish(uiState);
+
+        // Whether a game menu widget is under the cursor, for the widgets that
+        // take the mouse only where none is. Read only while one is on screen;
+        // true (click-through) when nobody asked or the layout check switched
+        // the menu-layer read off.
+        bool menuHovered = true;
+        if (pc && CursorScreenUp() && !UIState::MenuReadDisabled() && UI::PluginWidgetRegistry::AnyWantsMenuHover())
+            menuHovered = Hooks::GameMenu::ReadMenuHover(pc);
+        Hooks::GameMenu::SetMenuWidgetHovered(menuHovered);
 
         if (!pc)
         {

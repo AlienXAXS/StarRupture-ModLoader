@@ -51,6 +51,31 @@ The map lives in `hooks/game/version_map.generated.h`, written by CI
 its `ci/VERSION-MAP.md`). Every loader build carries the map as it stood when it was built, and
 works offline on every build in it. The signed feed (below) adds to that.
 
+**Not map data.** Some values a plugin needs are not in the map on purpose.
+
+- *Struct sizes.* A size request is a field request with the member null (`SR_SIZE_CHECK`, or the
+  same request with size 0 for the live size). Every game struct a plugin sizes is a reflected
+  `USTRUCT`, so the loader answers from the running game's own reflection data (`UStruct::Size`),
+  on the client and on the dedicated server, and each game build gives its own size. A row could
+  only repeat what reflection says, so there is no size row. A class-keyed row (a key with no `::`)
+  is read as a cross-check, like the row of a reflected member: where it disagrees with the game,
+  the game wins and the difference is logged. A size request is never native: `PLUGIN_FIELD_NATIVE`
+  on it is a bad request. A plugin asks with `PLUGIN_FIELD_CHECK` when its compiled code depends on
+  the size (a struct copied by value, a `ProcessEvent` parameter block, a buffer a native function
+  fills, a `TMap` value), and with size 0 and no flag when it only steps through an array, so it
+  takes the size the game has. A new line type in the feed would also make every 1.23.x loader drop
+  the whole signed feed, which is another reason not to add a size row.
+- *Game enums.* The numbers in a game `UEnum` can move on a game update, and no symbol or pattern
+  holds them, so CI could not generate a row. The value belongs to the game's reflection data, read
+  by the enum's and the entry's name.
+- *Unreal Engine constants.* `EObjectFlags` bits (`RF_*`), `FUNC_Native`, `INDEX_NONE` and the
+  engine ABI the plugins compile in (the `TArray` header, shared-pointer reference controllers) are
+  fixed by the engine version, not by a game build. A change of engine version regenerates the whole
+  Game-SDK, so the map has nothing to add. The one the map can help check is the slot of
+  `UObject::ProcessEvent` in the object's virtual table, which every plugin's SDK compiles in: at
+  startup the layout check compares that slot with the address the map resolved for the function,
+  and a difference switches all plugins off like a changed layout.
+
 ## Selection
 
 A plugin asks for a function with `PLUGIN_SCAN_FLAG_MAP_KEY` and for a field with a field
@@ -115,6 +140,14 @@ offset (reflection does not describe it) comes from the running CL's row or the 
 on the build it was compiled for; a row carried forward from an older CL cannot be checked on
 this build, so the field is unresolved. A native offset plus its size must lie inside the
 class's live size. See the SDK guide for the `[Map]` log lines.
+
+**Unreflected native types.** A plain C++ engine type that is neither a `UCLASS` nor a `USTRUCT`
+(`FMassEntityManager`, `FStructSharedMemory`) has no reflected size to bound a native member by.
+When reflection reports that no class or struct of that name exists, the member is served from
+the running CL's row alone, with no class bound, and the log line says so (`unreflected type, no
+class bound`). A row for the running CL is required: the built offset is not used for such a type,
+and a request on a build without a row is refused. If reflection is not ready, or finds the name
+ambiguous, the request fails as before.
 
 ## Features
 
@@ -317,7 +350,10 @@ The row formats, from the generated header:
     { 127004, 0x100, 0x10, 0x00, nullptr },
 
 A function row is: CL, image stamp, image size, kind, `fp`, absent, pattern, `resultOffset`,
-`followRel32At`, `followRipDispAt`, `rva`. A field row is: CL, offset, size, bool mask. And the
+`followRel32At`, `followRipDispAt`, `rva`. A build whose exe you have no PDB for gets a pattern row:
+the same row with `rva` 0, so the loader finds the function by scanning the pattern (it must match
+the running exe exactly once, as the kind the request asks for), with no address to check it against.
+A field row is: CL, offset, size, bool mask. And the
 `native-keys.txt` line for a member:
 
     MiniMap UTexture::SRGB optional
@@ -351,6 +387,7 @@ What a player sees, and what the log says (`ModLoader\Logs\ModLoader.log`).
 | A plugin built for another build does not declare `PLUGIN_MAP_MIGRATED` | **Incompatible**: "Needs an update to run on CL-...". It loads on its own build. |
 | A plugin's own pattern matches 0 or 2 or more places, but a row resolves the key | The plugin loads on the row. `ModLoader.log` has one `[Map]` warning naming the plugin, the key and the count. Where no row resolves the key it would be refused, so the author should make the pattern unique (or update it, for 0). |
 | Two keys for one request disagree (AMBIGUOUS) | The request fails, with the locators listed: a declared feature turns off, any other key refuses the plugin. |
+| The game's `UObject` virtual table no longer holds `ProcessEvent` where the SDK calls it | Every plugin is switched off for the session, with the same dialog as a layout change. The log line is `[LayoutCheck] UObject::ProcessEvent: vtable slot 0x4C holds base+0x..., the function is at base+0x...`; when it is fine, the log says the slot holds the function the map resolved. |
 | A game class a plugin reads moved | That plugin's own field request, or its `SR_SIZE_CHECK`, fails and the plugin alone is affected (a declared feature off, else refused), with the reason in the failure window. The loader's layout check covers the classes the loader and the Plugin SDK read, and what a change switches off depends on who reads the class: see the README. After any change, a plugin that keeps the game's layouts compiled in is not loaded; one that declares `PLUGIN_MAP_MIGRATED` (taken on its word) still loads, and a request of its for the compiled offset of a changed class, or of a class derived from one, is refused, which turns off only the feature that asked. |
 
 A fetched map is read once at startup and never changes mid-session, so a RELOAD sees the same

@@ -94,6 +94,11 @@ namespace UIState
 			&& s_wantedMenuBits.load(std::memory_order_relaxed) != 0;
 	}
 
+	bool MenuReadDisabled()
+	{
+		return s_menuReadDisabled.load(std::memory_order_acquire);
+	}
+
 	void DisableMenuRead()
 	{
 		s_menuReadDisabled.store(true, std::memory_order_release);

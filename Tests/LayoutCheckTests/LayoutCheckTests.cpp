@@ -13,8 +13,12 @@
 #include "fixtures/layout_table_126119.h"
 #include "fixtures/layout_table_127004.h"
 
+#include <windows.h>
+
 #include <algorithm>
+#include <cstdint>
 #include <cstdio>
+#include <iterator>
 #include <map>
 #include <string>
 
@@ -485,6 +489,89 @@ namespace
         Check(read.size() == 1 && read[0].consumers == std::vector<std::string>{ "ui-menus", "?" },
             "a bit past kConsumers reads as an unknown id");
     }
+
+    // The UObject vtable stands in as an array: slot `index` holds the address
+    // a game build puts ProcessEvent at, the others hold other functions.
+    void ProcessEventSlotDecidesSafeOff()
+    {
+        std::printf("UObject::ProcessEvent vtable slot\n");
+        constexpr int32_t index = 0x4C;
+        constexpr uintptr_t base = 0x140000000;
+        constexpr uintptr_t resolved = base + 0x177FB20;
+        uintptr_t vtable[0x60] = {};
+        for (size_t i = 0; i < std::size(vtable); ++i)
+            vtable[i] = base + 0x100000 + i * 0x10;
+
+        vtable[index] = resolved;
+        LayoutCheck::Result match;
+        Check(LayoutCheck::CheckProcessEventSlot(match, vtable[index], index, resolved, base), "the slot holds the map's function: it passes");
+        Check(match.lines.empty() && match.changes.empty() && match.slotMismatched == 0 && !LayoutCheck::FoundChanges(match),
+            "nothing to log, plugins stay on");
+        Check(!LayoutCheck::Decide(kLoaderTable(), match).safeOff, "no safe-off verdict");
+
+        // A UObject with a virtual added ahead of ProcessEvent: the function
+        // moved one slot down, and the compiled index reads another function.
+        vtable[index] = base + 0x100000 + index * 0x10;
+        vtable[index + 1] = resolved;
+        LayoutCheck::Result moved;
+        Check(!LayoutCheck::CheckProcessEventSlot(moved, vtable[index], index, resolved, base), "the slot holds another function: it fails");
+        Check(moved.slotMismatched == 1 && LayoutCheck::FoundChanges(moved), "the difference is found");
+        Check(moved.lines == std::vector<std::string>{ "UObject::ProcessEvent: vtable slot 0x4C holds base+0x1004C0, the function is at base+0x177FB20" },
+            "one line, with both offsets in the image");
+        Check(moved.changes.size() == 1 && moved.changes[0].className == "UObject" && moved.changes[0].member == "ProcessEvent"
+                && moved.changes[0].field == LayoutCheck::kChangeVtableSlot && moved.changes[0].sdk == 0x177FB20
+                && moved.changes[0].game == 0x1004C0,
+            "the report entry names the slot and both offsets");
+        Check(moved.changedClasses.empty() && moved.mismatched == 0 && moved.missing == 0,
+            "no class is counted as changed");
+        const LayoutCheck::Verdict verdict = LayoutCheck::Decide(kLoaderTable(), moved);
+        Check(verdict.safeOff && verdict.featuresOff.empty(), "safe-off: every plugin off");
+
+        // A class changed elsewhere (here one only the menu layer reads) does
+        // not hide the slot: the verdict is still safe-off.
+        {
+            auto table = kLoaderTable();
+            const std::string menu = ClassNamed(table, "UCrUW_MapMenu")->path;
+            auto game = AsGame(table);
+            game.erase(menu);
+            LayoutCheck::Result both = CompareWith(table, game);
+            Check(!LayoutCheck::Decide(table, both).safeOff, "the menu class alone: plugins stay on");
+            LayoutCheck::CheckProcessEventSlot(both, vtable[index], index, resolved, base);
+            Check(both.slotMismatched == 1 && !both.changedClasses.empty(), "a changed class and a slot mismatch together");
+            const LayoutCheck::Verdict together = LayoutCheck::Decide(table, both);
+            Check(together.safeOff && together.featuresOff == std::vector<std::string>{ "ui-menus" },
+                "the slot mismatch forces safe-off; the class still switches its feature off");
+        }
+
+        // It is the slot that is read, not the whole table.
+        vtable[index] = resolved;
+        vtable[index + 1] = base;
+        LayoutCheck::Result neighbour;
+        Check(LayoutCheck::CheckProcessEventSlot(neighbour, vtable[index], index, resolved, base) && neighbour.lines.empty(),
+            "a different function in the next slot does not matter");
+
+        // A vtable the slot read faults on (here a page nothing may touch)
+        // is "cannot verify": no slot, no difference, and no crash.
+        {
+            uintptr_t read = 0x1234;
+            uint32_t code = 0;
+            Check(LayoutCheck::ReadVtableSlot(vtable, index, read, code) && read == resolved && code == 0,
+                "a readable vtable: the slot comes back");
+
+            void* page = VirtualAlloc(nullptr, 0x1000, MEM_RESERVE | MEM_COMMIT, PAGE_NOACCESS);
+            Check(page != nullptr, "a page to fault on");
+            if (page)
+            {
+                read = 0x1234;
+                Check(!LayoutCheck::ReadVtableSlot(static_cast<const uintptr_t*>(page), index, read, code)
+                        && code == EXCEPTION_ACCESS_VIOLATION && read == 0x1234,
+                    "an unreadable vtable: the read fails with the exception code, the slot is left alone");
+                VirtualFree(page, 0, MEM_RELEASE);
+            }
+            Check(!LayoutCheck::ReadVtableSlot(nullptr, index, read, code) && code == EXCEPTION_ACCESS_VIOLATION,
+                "a null vtable: the read fails the same way");
+        }
+    }
 }
 
 int main()
@@ -497,6 +584,7 @@ int main()
     DumperRenamedMember();
     UsedMembersOnly();
     ConsumersDecideWhatStops();
+    ProcessEventSlotDecidesSafeOff();
 
     if (g_failures)
         std::printf("\n%d check(s) FAILED\n", g_failures);

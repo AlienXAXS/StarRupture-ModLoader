@@ -90,6 +90,13 @@ namespace PluginManager
     // so it stays stable across UnloadPlugin/ReloadPlugin cycles too.
     const IPluginSelf* GetSelfForPlugin(const char* pluginName);
 
+    // The plugin interface version the plugin loaded from `module` declared in
+    // its PluginInfo, or 0 when no loaded plugin owns that module. Lets a
+    // registry decide whether a descriptor the plugin passed has the fields a
+    // later interface appended: a plugin built before them hands over a smaller
+    // struct that must not be read past its end.
+    int GetInterfaceVersionForModule(HMODULE module);
+
     // Unload the plugin at index: calls PluginShutdown + FreeLibrary.
     // The record is kept so it can be reloaded later.
     // Returns false if index is out of range or the plugin is already unloaded.
@@ -116,6 +123,13 @@ namespace PluginManager
     // plugin per session. One atomic load when nothing has crashed. Does
     // nothing once the game has started to exit.
     void PumpCrashRestarts();
+
+    // Game thread, every tick, right after PumpCrashRestarts. Developer feature,
+    // off unless modloader.ini [Developer] RemoteReload=1: about once a second
+    // it looks for the request file (plugins/remote_reload.h) and reloads each
+    // plugin named in it, then logs "[RemoteReload] <Plugin> reloaded OK v<ver>"
+    // or "... reload failed: <reason>". When off it is one flag test.
+    void PumpRemoteReload();
 
     // Index of the plugin record matching nameOrFile, or -1 if there is none.
     // Matches (case-insensitively) the PluginInfo name first, then the DLL file

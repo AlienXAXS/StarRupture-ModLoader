@@ -378,7 +378,7 @@ functions and members up by key in the loader's version map ([VersionMap.md](Ver
 | [Console.md](Console.md) | Console commands, running command lines from code (v63; `ExecuteWithEngine` v69). All builds |
 | [GameMenu.md](GameMenu.md) | Rows in the main and pause menus (v64), whether the pause menu is open (v71), the game's UI state and its change callback (v74). Client |
 | [HttpServer.md](HttpServer.md) | HTTP from the game server's listener (v22). Server |
-| [ImGui_Dev.md](ImGui_Dev.md) | Panels, always-on widgets, config-change notifications, keybinds, mouse wheel (v70), widgets that opt in to the mouse over the pause menu and other cursor screens and keys while typing (v71), sizing a popup (v74) and the full ImGui function table. Client |
+| [ImGui_Dev.md](ImGui_Dev.md) | Panels, always-on widgets, config-change notifications, keybinds, mouse wheel (v70), widgets that opt in to the mouse over the pause menu and other cursor screens and keys while typing (v71), sizing a popup (v74), title-bar buttons and collapsing a panel, and widgets that take the mouse over a game menu only where no menu widget is under the cursor (v75), and the full ImGui function table. Client |
 | [MaterialIcons.md](MaterialIcons.md) | The 2188 bundled icons |
 | [Networking.md](Networking.md) | Messages between server and clients, `hooks->Network`. Client and server |
 | [PakLoading.md](PakLoading.md) | Mounting `.pak` files, spawning their assets (v67). All builds |
@@ -427,6 +427,25 @@ station screens. `RegisterOnUIStateChanged` calls you on the game thread when a 
 changes; `GameMenu->GetUIState()` reads the gameplay, pause-menu and cursor bits from any thread. Ignore bits you do not know: later
 loaders may add some. See [GameMenu.md](GameMenu.md). The menu classes follow BetterDrone's
 menu-layer read and the class list in Kian369's MiniMap.
+<sup>[✦](#msantoro12)</sup>
+
+### Reloading a plugin from a script
+
+To try a new build without pressing **RELOAD**, turn on `[Developer] RemoteReload=1` in `modloader.ini`
+(off by default; the loader logs a warning at launch when it is on) and write a plugin's name, or its
+DLL file name, to `ModLoader\remote_reload.txt`: one per line, up to 16, blank lines and lines starting
+with `#` ignored. Within about a second the loader takes the file and reloads each plugin on the game
+thread, the same reload the **RELOAD** button runs, so your `PluginShutdown` and `PluginInit` run as
+usual and the plugin's load and unload settings still apply. Each name gets one line in `ModLoader.log`:
+
+```
+[RemoteReload] MyPlugin reloaded OK v1.2.0
+[RemoteReload] MyPlugin reload failed: <why>
+```
+
+Copy the new DLL into `ModLoader\Plugins\` first, then create the request: write it under another
+name and rename it to `remote_reload.txt`, so the loader never reads half a file. A name the loader has
+no record of is a failure line; a plugin dropped in after startup needs **LOAD NEW** first.
 <sup>[✦](#msantoro12)</sup>
 
 ### Preload plugins
@@ -490,6 +509,8 @@ each failure looks like is in [VersionMap.md](VersionMap.md).
 At startup the loader also checks that the game classes it reads are laid out as it was built for. If a
 game update changes a layout, only the features that read it are switched off, not every plugin. A plugin
 that keeps the game's layouts compiled in, instead of taking them from the version map, is not loaded then.
+It also checks that the game still calls ProcessEvent, which every plugin uses to run game functions, at the
+place the plugins expect; if it does not, plugins are switched off the same way.
 
 When the map's row decides where a plugin's function is, the loader still checks the plugin's own
 AOB pattern against the running exe, once, and logs a warning if it matches 0 or 2 or more places.
@@ -565,6 +586,7 @@ these for you.
 | | `Disabled` | empty | Comma-separated DLL names to skip |
 | `[UE4SS]` | `Enabled` | `0` | Load UE4SS before plugins. `1` if you delete the key |
 | | `Path` | `ue4ss\ue4ss.dll` | Relative to the game executable |
+| `[Developer]` | `RemoteReload` | `0` | `1` reloads the plugins named in `ModLoader\remote_reload.txt` without pressing **RELOAD**. For plugin authors; logs a warning at every launch. See [Reloading a plugin from a script](#reloading-a-plugin-from-a-script) |
 | `[Debug]` | `ExportKnownGObjects` | `0` | Writes `known_gobjects_dump.txt` |
 | | `DisablePluginVersionMap` | `0` | Client only. `1` gives plugins no rows from the loader's version map, so each uses its own patterns and rows, or its feature switches off. For testing a plugin's own locators; the loader keeps the map for itself. Logs a warning at every launch. See [VersionMap.md](VersionMap.md) |
 

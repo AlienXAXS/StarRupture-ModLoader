@@ -417,11 +417,13 @@ static void AnyThread()
     std::thread readers[4];
     for (auto& t : readers)
         t = std::thread([&] {
-            while (!stop.load())
+            // At least one pass, so a reader scheduled after the focus thread
+            // has finished still answers once.
+            do
             {
                 if (IsKeyHeld("Shift+K")) ++held; else ++notHeld;
                 if (IsKeyHeld("Ctrl+K")) ++wrong;      // Ctrl is never held
-            }
+            } while (!stop.load());
         });
     focus.join();
     for (auto& t : readers)
@@ -808,6 +810,38 @@ static void ExclusiveCapture()
     CHECK(IsExclusive(true, true, true));
 }
 
+// Which widgets are click-through while a cursor screen shares the mouse: a
+// widget that takes the mouse only where uncovered follows the menu's hover.
+static void WidgetClickThrough()
+{
+    using InputArbitration::WidgetIsClickThrough;
+    // WidgetIsClickThrough(mouseShared, takesMouseAlways, takesMouseWhereUncovered, menuWidgetUnderCursor)
+
+    // A plain widget is click-through over a cursor screen, hover or not.
+    CHECK(WidgetIsClickThrough(true, false, false, false));
+    CHECK(WidgetIsClickThrough(true, false, false, true));
+
+    // The always-on opt-in takes the mouse everywhere.
+    CHECK(!WidgetIsClickThrough(true, true, false, false));
+    CHECK(!WidgetIsClickThrough(true, true, false, true));
+
+    // The where-uncovered opt-in takes it only where no menu widget is hovered.
+    CHECK(!WidgetIsClickThrough(true, false, true, false));
+    CHECK(WidgetIsClickThrough(true, false, true, true));
+
+    // With both opt-ins the always-on one wins.
+    CHECK(!WidgetIsClickThrough(true, true, true, false));
+    CHECK(!WidgetIsClickThrough(true, true, true, true));
+
+    // Mouse not shared (exclusive capture, or no cursor screen): never
+    // click-through here, whatever the flags and the hover.
+    for (int bits = 0; bits < 8; ++bits)
+    {
+        const bool always = (bits & 1) != 0, uncovered = (bits & 2) != 0, hovered = (bits & 4) != 0;
+        CHECK(!WidgetIsClickThrough(false, always, uncovered, hovered));
+    }
+}
+
 // Keyboard in the shared modes: a text field owns the keys, and otherwise only a
 // passthrough token's navigation claim does.
 static void SharedKeyboard()
@@ -827,6 +861,66 @@ static void SharedKeyboard()
     // Cooperative mode also keeps the keys ImGui claims for navigation.
     CHECK(SharedKeyboardGoesToImGui(true, true, false));
     CHECK(!SharedKeyboardGoesToImGui(true, false, false));
+}
+
+// A release for a press the game saw reaches it even if capture started in
+// between; a release for a press it never saw stays kept.
+static void ReleasePassthrough()
+{
+    using InputArbitration::PressesSeenByGame;
+    using InputArbitration::ShouldKeepFromGame;
+    // ShouldKeepFromGame(arbitrationKeeps, releaseOfSeenPress)
+    CHECK(!ShouldKeepFromGame(false, false));
+    CHECK(!ShouldKeepFromGame(false, true));
+    CHECK(ShouldKeepFromGame(true, false));
+    CHECK(!ShouldKeepFromGame(true, true));
+
+    constexpr uint32_t kEscape = 0x1B;
+    constexpr uint32_t kTab    = 0x09;
+    PressesSeenByGame seen;
+
+    // Shared mode: Escape goes down and reaches the game. The tick then flips to
+    // exclusive, and the key-up is still handed over.
+    seen.Pressed(kEscape);
+    CHECK(!ShouldKeepFromGame(true, seen.TakeRelease(kEscape)));
+
+    // Exclusive from the start: the press never reached the game, so its
+    // key-up stays kept.
+    CHECK(ShouldKeepFromGame(true, seen.TakeRelease(kTab)));
+
+    // A release is handed over once; a second one is kept again.
+    CHECK(ShouldKeepFromGame(true, seen.TakeRelease(kEscape)));
+
+    // Auto-repeat records the press once.
+    seen.Pressed(kEscape);
+    seen.Pressed(kEscape);
+    CHECK(seen.TakeRelease(kEscape));
+    CHECK(!seen.TakeRelease(kEscape));
+
+    // Keys are tracked independently.
+    seen.Pressed(kEscape);
+    seen.Pressed(kTab);
+    CHECK(seen.TakeRelease(kTab));
+    CHECK(seen.TakeRelease(kEscape));
+}
+
+// A focused text field keeps the keys it owns from the game, as before: only
+// a release of a press the game saw is exempt, and typing never reaches it.
+static void ReleasePassthroughTextField()
+{
+    using InputArbitration::PressesSeenByGame;
+    using InputArbitration::SharedKeyboardGoesToImGui;
+    using InputArbitration::ShouldKeepFromGame;
+    PressesSeenByGame seen;
+
+    // Typing: the text field has focus, the press is kept, so is the release.
+    const bool typing = SharedKeyboardGoesToImGui(false, true, true);
+    CHECK(ShouldKeepFromGame(typing, seen.TakeRelease('A')));
+
+    // A key held down before the field took focus gets its release, so the
+    // game does not keep it held.
+    seen.Pressed('W');
+    CHECK(!ShouldKeepFromGame(typing, seen.TakeRelease('W')));
 }
 
 int main()
@@ -853,7 +947,10 @@ int main()
     RunTest("IsKeyHeld: allocates nothing", AllocatesNothing);
     RunTest("IsKeyHeld: any thread", AnyThread);
     RunTest("InputArbitration: plugin windows are exclusive only off the cursor screens", ExclusiveCapture);
+    RunTest("InputArbitration: widgets take the mouse over cursor screens by opt-in and menu hover", WidgetClickThrough);
     RunTest("InputArbitration: a text field owns the keyboard in the shared modes", SharedKeyboard);
+    RunTest("InputArbitration: a release reaches the game for a press it saw", ReleasePassthrough);
+    RunTest("InputArbitration: a text field's keys stay kept, a held key still gets its release", ReleasePassthroughTextField);
     RunTest("ForgetModule: an unloading plugin's keybinds go", ForgetModuleDropsItsKeybinds);
     RunTest("ForgetModule: an unloading plugin's game-thread tasks go", ForgetModuleDropsItsGameThreadTasks);
     RunTest("UIState: mask filter, once per change", UIStateMaskAndOncePerChange);

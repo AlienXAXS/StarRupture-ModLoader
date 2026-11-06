@@ -11,6 +11,7 @@
 #include "logging/logger.h"
 #include "UI/plugin_panel_registry.h"
 #include "core/client_ui.h"
+#include "core/input_arbitration.h"
 
 #include <windows.h>
 #include <unordered_map>
@@ -61,6 +62,9 @@ namespace Hooks::InputHook
     static std::unordered_map<uint32_t, EModKey> s_fnameCache;
     static std::mutex                            s_fnameMutex;
 
+    // Keys (FName indices) whose Pressed event was handed to the game.
+    static InputArbitration::PressesSeenByGame   s_pressesSeen;
+
     static EModKey LookupFNameCache(uint32_t fnameIdx)
     {
         std::lock_guard<std::mutex> lock(s_fnameMutex);
@@ -103,22 +107,32 @@ namespace Hooks::InputHook
         // swallowed Pressed event). Not on a cursor screen: there the token
         // shares the mouse and keyboard (ShouldCaptureInputNow), and the
         // window procedure already keeps keys from the game while a text
-        // field has focus.
-        if (UI::PluginPanelRegistry::AnyInputCaptureRequested() && ShouldCaptureInputNow())
-            return 0;
+        // field has focus. A release for a press the game saw still goes
+        // through: capture can start in between.
+        const bool capturing = UI::PluginPanelRegistry::AnyInputCaptureRequested() && ShouldCaptureInputNow();
 
         if (!InEventArgs)
-            return g_original ? g_original(This, InEventArgs) : 0;
+            return capturing ? 0 : (g_original ? g_original(This, InEventArgs) : 0);
 
         const uint8_t* args = static_cast<const uint8_t*>(InEventArgs);
 
         EInputEvent ueEvent = *reinterpret_cast<const EInputEvent*>(args + ARGS_EVENT_OFFSET);
+        uint32_t fnameIdx = *reinterpret_cast<const uint32_t*>(args + ARGS_FNAME_IDX_OFFSET);
 
-        // Only act on Pressed edges -- that is all we need for blocking.
-        if (ueEvent != EInputEvent::Pressed)
+        if (ueEvent == EInputEvent::Released &&
+            !InputArbitration::ShouldKeepFromGame(capturing, s_pressesSeen.TakeRelease(fnameIdx)))
             return g_original ? g_original(This, InEventArgs) : 0;
 
-        uint32_t fnameIdx = *reinterpret_cast<const uint32_t*>(args + ARGS_FNAME_IDX_OFFSET);
+        if (capturing)
+            return 0;
+
+        // Only act on Pressed edges -- that is all we need for blocking. Repeat
+        // and double-click events that go through still mean the key is down.
+        if (ueEvent != EInputEvent::Pressed)
+        {
+            s_pressesSeen.Pressed(fnameIdx);
+            return g_original ? g_original(This, InEventArgs) : 0;
+        }
 
         EModKey mk = LookupFNameCache(fnameIdx);
         if (mk == EModKey::Unknown)
@@ -128,14 +142,11 @@ namespace Hooks::InputHook
                 CacheFName(fnameIdx, mk);
         }
 
-        if (mk == EModKey::Unknown)
-            return g_original ? g_original(This, InEventArgs) : 0;
-
-        EModKeyModifiers mods = Hooks::Input::SampleCurrentModifiers();
-
-        if (Hooks::Input::ShouldBlock(mk, mods))
+        if (mk != EModKey::Unknown &&
+            Hooks::Input::ShouldBlock(mk, Hooks::Input::SampleCurrentModifiers()))
             return 0; // consumed -- UE5 never processes this key
 
+        s_pressesSeen.Pressed(fnameIdx);
         return g_original ? g_original(This, InEventArgs) : 0;
     }
 

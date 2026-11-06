@@ -1446,12 +1446,25 @@ namespace VersionMap
 					return false;
 				}
 				const LiveField cls = g_liveFields(request.className, std::string());
-				if (!cls.error.empty())
+				if (cls.unreflected)
+				{
+					// A plain C++ type (FMassEntityManager) has no reflected
+					// size to bound the member by, so only a row, which CI
+					// measured from this build's PDB, can stand for it.
+					if (!row)
+					{
+						error = request.className + " is not reflected, so its member needs a row for " + ClText(running.cl)
+							+ " and has no other source";
+						return false;
+					}
+					how += ", unreflected type, no class bound";
+				}
+				else if (!cls.error.empty())
 				{
 					error = "reflection, for the size of " + request.className + ": " + cls.error;
 					return false;
 				}
-				if (static_cast<uint64_t>(value.offset) + value.size > cls.size)
+				else if (static_cast<uint64_t>(value.offset) + value.size > cls.size)
 				{
 					error = how + " gives " + FieldText(value, bitfield) + ", past the end of " + request.className
 						+ " (" + Hex(cls.size) + " bytes on this build)";

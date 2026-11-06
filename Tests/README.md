@@ -183,6 +183,9 @@ the other the running game. It covers:
 - Static arrays: the loader's own `core/layout_table.generated.h` holds `UWorld::LineBatchers[4]` as
   0x20 bytes, the whole member, which matches a game reflecting `ElementSize` 8 times `ArrayDim` 4;
   the size of one element, as Dumper-7 comments it, is the old false positive.
+- The `UObject::ProcessEvent` check: a stub virtual table whose slot holds the function the map resolved
+  passes; one that holds another function adds one line to the result, is a found change with no class
+  named, and gives a safe-off verdict; a different function in the next slot does not matter.
 - One synthetic case for each kind of difference: a missing class, alignment, a missing member, a
   member size, a bit-field mask, a bool that stopped or started being one; a Blueprint class and a
   class of unknown kind are deferred, and a member size of 0 is not compared.

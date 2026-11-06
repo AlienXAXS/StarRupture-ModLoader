@@ -12,6 +12,7 @@
 #include "plugins/reload_policy.h"
 #include "memory_scanner/scan_cache.h"
 #include "plugins/crash_restart.h"
+#include "plugins/remote_reload.h"
 #include "UI/update_notice_window.h"
 
 #include <array>
@@ -98,8 +99,13 @@ namespace
 			f.size = 0x58, f.paths = { "Mod.Child", "Mod.Test" };
 		else if (className == "AOther" && member.empty())
 			f.size = 0x10, f.paths = { "Mod.Other" };
+		else if (className == "AUnready")
+			f.error = "the game's reflection data is not ready";
 		else if (className != "ATest")
+		{
 			f.error = "no class " + className;
+			f.unreflected = true;
+		}
 		else if (member.empty())
 			f.size = 0x50;
 		else if (member == "Reflected")
@@ -703,11 +709,109 @@ int main()
 			&& e == "CL-128786 row gives 0x4C/0x8, past the end of ATest (0x50 bytes on this build)", "field: native past the class's end");
 		Check(Field("ATest::Past", "ATest", "Past", PLUGIN_FIELD_NATIVE, 8, { FieldRow(128786, 0x48, 8) }, v, e) && v.offset == 0x48,
 			"field: native ending at the class's end");
-		Check(!Field("ANone::X", "ANone", "X", PLUGIN_FIELD_NATIVE, 4, { FieldRow(128786, 0, 4) }, v, e)
-			&& e == "reflection, for the size of ANone: no class ANone", "field: native in a class reflection does not know");
+		// A class reflection does not know (a plain C++ type) is bounded by nothing: its map row stands, and it needs one.
+		Check(Field("FPlain::Block", "FPlain", "Block", PLUGIN_FIELD_NATIVE, 0xB0, {}, v, e) && v.offset == 0x120 && v.size == 0xB0
+			&& Logged(L"FPlain::Block: loader map, CL-128786 row, unreflected type, no class bound (0x120/0xB0)"),
+			"field: an unreflected type's member resolves from the map row, with no class bound");
+		Check(Field("FPlain::Block", "FPlain", "Block", PLUGIN_FIELD_NATIVE, 0xB0, {}, v, e, VersionMap::Exe{ 127004, 0, 0 })
+			&& v.offset == 0x120, "field: an unreflected type's member resolves on the other build's row");
+		Check(!Field("FPlain::Block", "FPlain", "Block", PLUGIN_FIELD_NATIVE, 0x20, {}, v, e)
+			&& e == "loader map, CL-128786 row gives size 0xB0, the code was compiled for 0x20", "field: an unreflected type's member still needs the size it was compiled for");
+		Check(!Field("FPlain::Nothing", "FPlain", "Nothing", PLUGIN_FIELD_NATIVE, 4, {}, v, e, VersionMap::Exe{ 127004, 0, 0 })
+			&& e == "FPlain is not reflected, so its member needs a row for CL-127004 and has no other source",
+			"field: an unreflected type's member with no row is refused, even on the build it was compiled for");
+		Check(!Field("FPlain::Block", "FPlain", "Block", PLUGIN_FIELD_NATIVE, 0xB0, {}, v, e, later)
+			&& e.find("no row for CL-130000") == 0, "field: an unreflected type's member on a build with no row is refused");
+		Check(!Field("AUnready::X", "AUnready", "X", PLUGIN_FIELD_NATIVE, 4, { FieldRow(128786, 0, 4) }, v, e)
+			&& e == "reflection, for the size of AUnready: the game's reflection data is not ready",
+			"field: reflection that is not ready is not an unreflected type");
 		VersionMap::SetLiveFieldSource(nullptr);
 		Check(!Field("ATest::Native", "ATest", "Native", PLUGIN_FIELD_NATIVE, 4, {}, v, e) && e.find("cannot be bounded") != std::string::npos,
 			"field: no reflection reader, no native member");
+	}
+
+	// Struct sizes (member empty) are never map data: they come live from the game's reflection, and a plugin that
+	// needs the compiled size to hold asks for PLUGIN_FIELD_CHECK. See "Not map data" in VersionMap.md.
+	{
+		VersionMap::SetLiveFieldSource(FakeLive);
+		VersionMap::FieldValue v;
+		std::string e;
+
+		// Size 0 and no CHECK: the live size comes back, whatever the code was compiled for.
+		Check(Field("AOther", "AOther", "", 0, 0, {}, v, e) && v.size == 0x10 && v.offset == 0 && v.boolMask == 0
+			&& Logged(L"AOther: reflected (no row for CL-128786) (0x10)"), "size: size 0 takes the game's live size");
+		Check(Field("AOther", "AOther", "", 0, 0x10, {}, v, e) && v.size == 0x10, "size: the compiled size matches the game's: the live size");
+		Check(Field("AOther", "AOther", "", 0, 0x20, {}, v, e) && v.size == 0x10 && !Logged(L"as compiled"),
+			"size: without CHECK a different compiled size is not compared: the live size is returned");
+
+		// CHECK compares the compiled size with the game's and refuses a difference.
+		Check(Field("AOther", "AOther", "", PLUGIN_FIELD_CHECK, 0x10, {}, v, e) && v.size == 0x10
+			&& Logged(L"AOther: reflected (no row for CL-128786), as compiled (0x10)"), "size: CHECK passes when the game's size is the compiled one");
+		Check(!Field("AOther", "AOther", "", PLUGIN_FIELD_CHECK, 0x18, {}, v, e)
+			&& e == "the code relies on 0x18, this build has 0x10"
+			&& Logged(L"AOther: refused: the code relies on 0x18, this build has 0x10"), "size: CHECK refuses a game size that is not the compiled one");
+
+		// Only a reflected struct has a size: a native or bitfield flag on a size request is a bad request, an unknown class an error.
+		Check(!Field("AOther", "AOther", "", PLUGIN_FIELD_NATIVE, 0x10, {}, v, e)
+			&& e == "bad request: a field needs a class, and a size row is neither native nor a bitfield", "size: NATIVE on a size request is a bad request");
+		Check(!Field("AOther", "AOther", "", PLUGIN_FIELD_BITFIELD, 0, {}, v, e) && e.find("bad request:") == 0,
+			"size: BITFIELD on a size request is a bad request");
+		Check(!Field("AOther", "AOther", "", PLUGIN_FIELD_ANY_SIZE, 0, {}, v, e) && e.find("bad request: PLUGIN_FIELD_ANY_SIZE") == 0,
+			"size: ANY_SIZE is for a member, not a size request");
+		Check(!Field("ANone", "ANone", "", 0, 0, {}, v, e) && e == "reflection: no class ANone", "size: a class the game does not have is an error");
+		Check(!Field("AOther", "AOther", "", PLUGIN_FIELD_NATIVE | PLUGIN_FIELD_CHECK, 0x10, { FieldRow(128786, 0, 0x10) }, v, e)
+			&& e.find("bad request:") == 0, "size: an own row does not turn a size request native");
+
+		// An own row is only a cross-check too: the game's size is the answer.
+		Check(Field("AOther", "AOther", "", 0, 0, { FieldRow(128786, 0, 0x30) }, v, e) && v.size == 0x10
+			&& Logged(L"AOther: the CL-128786 row says 0x0/0x30, the game says 0x0/0x10; the game wins"), "size: an own row the game disagrees with: the game's size wins");
+
+		// A class-keyed map row (no "::" in the key) is a cross-check as well: where it disagrees the game wins and the
+		// difference is logged; where it agrees the pick says so.
+		VersionMap::MapData classRows = VersionMap::BaselineMap();
+		classRows.fields.push_back({ "AChild", 128786, 0, 0x50, 0, "" });
+		classRows.fields.push_back({ "AOther", 128786, 0, 0x10, 0, "" });
+		VersionMap::SetActiveMap(std::make_shared<const VersionMap::MapData>(classRows));
+		Check(Field("AChild", "AChild", "", 0, 0, {}, v, e) && v.size == 0x58
+			&& Logged(L"AChild: the loader map, CL-128786 row says 0x0/0x50, the game says 0x0/0x58; the game wins")
+			&& Logged(L"overruled by reflection"), "size: a class-keyed map row the game disagrees with: the game wins, logged");
+		Check(Field("AOther", "AOther", "", 0, 0, {}, v, e) && v.size == 0x10 && !Logged(L"the game wins")
+			&& Logged(L"loader map, CL-128786 row, as reflected (0x10)"), "size: a class-keyed map row the game agrees with");
+		Check(!Field("AChild", "AChild", "", PLUGIN_FIELD_CHECK, 0x50, {}, v, e) && e == "the code relies on 0x50, this build has 0x58",
+			"size: CHECK compares with the game, not with the class-keyed row");
+		// ... and it is never served without the game: no reflection reader, no size.
+		VersionMap::SetLiveFieldSource(nullptr);
+		Check(!Field("AOther", "AOther", "", 0, 0, {}, v, e) && e == "no reflection data to read a reflected field from",
+			"size: a class-keyed row does not stand in for reflection");
+		VersionMap::SetActiveMap(nullptr);
+		VersionMap::SetLiveFieldSource(FakeLive);
+
+		// The same request through the plugin ABI: member null, the live size in the result.
+		IPluginHookScanner* scan = ModLoaderLogger::GetPluginHookScanner();
+		const auto ask = [&](const IPluginSelf* self, const char* className, uint32_t flags, uint32_t size, PluginFieldResult& result)
+		{
+			PluginFieldRequest request = PLUGIN_FIELD_REQUEST_INIT;
+			request.key       = className;
+			request.className = className;
+			request.member    = nullptr;
+			request.flags     = flags;
+			request.size      = size;
+			request.builtCL   = 127004;
+			result = PluginFieldResult{};
+			return scan->ResolveField(self, &request, &result);
+		};
+		IPluginSelf sizes{ "SizePlug", "1", nullptr, nullptr, nullptr };
+		bool refusedFlag = false;
+		PluginHookReport::BeginSession(&sizes, "SizePlug", "SizePlug.dll");
+		PluginFieldResult r{};
+		Check(ask(&sizes, "AOther", PLUGIN_FIELD_FLAG_NONE, 0, r) && r.size == 0x10 && r.offset == 0 && r.boolMask == 0,
+			"size: ResolveField with member null and size 0 returns the live size");
+		Check(ask(&sizes, "AChild", PLUGIN_FIELD_CHECK, 0x58, r) && r.size == 0x58, "size: ResolveField with CHECK and the game's size");
+		Check(!PluginHookReport::SessionHasFailures(&sizes), "size: those requests are not failures");
+		Check(!ask(&sizes, "AChild", PLUGIN_FIELD_CHECK, 0x50, r) && r.size == 0 && PluginHookReport::SessionHasFailures(&sizes),
+			"size: ResolveField with CHECK and a size the game does not have fails and writes nothing");
+		PluginHookReport::EndSession(&sizes, &refusedFlag);
+		VersionMap::SetLiveFieldSource(nullptr);
 	}
 
 	// Admission by the plugin's built CL (R3). A PluginInfo as a plugin fills it.
@@ -1001,8 +1105,66 @@ int main()
 		newRow = fieldRow("UCrEnviroWaveTimerSubsystem::TimerActor", 128786);
 		Check(oldRow && oldRow->offset == 0x90 && newRow && newRow->offset == 0x98, "real field rows: TimerActor 0x90 on CL-127004, 0x98 on CL-128786");
 	}
+	// The real map's function rows for Build Windows Anywhere and Build Benches Anywhere: one function-start row per
+	// build, the CL-127004 rows untouched by the CL-128786 ones. Each row is the plugin's own pattern that was proven on
+	// its build, with the RVA measured from that build's PDB, so a pattern that drifts on the exe it was verified on is refused.
+	// The MiniMap's keys have a row for each build where the same pattern holds, the older build's row untouched, and
+	// two near-identical natives told apart by their own rows.
+	{
+		const auto functionRow = [](const char* key, uint32_t cl) -> const Real::VersionMap::FunctionRow*
+		{
+			for (const Real::VersionMap::Index& index : Real::VersionMap::kFunctions)
+				if (strcmp(index.key, key) == 0)
+					for (uint16_t i = index.first; i < index.first + index.count; ++i)
+						if (Real::VersionMap::kFunctionRows[i].gameCL == cl)
+							return &Real::VersionMap::kFunctionRows[i];
+			return nullptr;
+		};
+		const auto isStartRow = [](const Real::VersionMap::FunctionRow* row, uint32_t rva)
+		{
+			return row && !row->absent && row->kind == static_cast<int>(Kind::FunctionStart) && row->fp == 0 && row->rva == rva
+			    && row->pattern && *row->pattern && row->resultOffset == 0;
+		};
+		struct AnywhereKey { const char* key; uint32_t rva127004, rva128786; };
+		const AnywhereKey anywhereKeys[] = {
+			{ "ACrAPHelperActorCustom::CheckMainMeshCollision", 0x074DEE60, 0x0755C5F0 },
+			{ "ACrAPHelper::GetBoxCollisionResult",             0x074EB530, 0x07521070 },
+			{ "UCrSocketSnapPlacementMethod::GetSnappedSocket", 0x074C0920, 0x074DAE00 },
+			{ "UCrBuildingStabilitySubsystem::IsSocketFree",    0x074651D0, 0x074E6100 },
+		};
+		for (const AnywhereKey& k : anywhereKeys)
+			Check(isStartRow(functionRow(k.key, 127004), k.rva127004) && isStartRow(functionRow(k.key, 128786), k.rva128786),
+				(std::string("real function rows: ") + k.key + " has a measured row on each build").c_str());
+
+		const Real::VersionMap::FunctionRow* oldRow = functionRow("SplinePayload::GetSplineActorData", 127004);
+		const Real::VersionMap::FunctionRow* newRow = functionRow("SplinePayload::GetSplineActorData", 128786);
+		Check(oldRow && oldRow->rva == 0x0668DEA0 && newRow && newRow->rva == 0x066953E0, "real function rows: GetSplineActorData on both builds");
+		oldRow = functionRow("FRenderCommandFence::BeginFence", 127004);
+		newRow = functionRow("FRenderCommandFence::BeginFence", 128786);
+		Check(oldRow && newRow && newRow->rva == 0x03B01050 && strcmp(oldRow->pattern, newRow->pattern) != 0, "real function rows: BeginFence has a pattern of its own for CL-128786");
+		oldRow = functionRow("MiniMap/FRenderCommandFence::FRenderCommandFence", 127004);
+		newRow = functionRow("MiniMap/FRenderCommandFence::FRenderCommandFence", 128786);
+		Check(oldRow && newRow && oldRow->fp == newRow->fp && oldRow->fp != 0, "real function rows: a site key's rows for both builds carry the one fingerprint");
+		oldRow = functionRow("UCrBuildingStabilitySubsystem::OnCreateBuildingEntity", 128786);
+		newRow = functionRow("UCrBuildingStabilitySubsystem::OnDestroyBuildingEntity", 128786);
+		Check(oldRow && newRow && oldRow->rva == 0x074E7BF0 && newRow->rva == 0x074E7C30 && strcmp(oldRow->pattern, newRow->pattern) != 0,
+			"real function rows: building add and remove are two functions with two patterns on CL-128786");
+		oldRow = functionRow("UCrBuildingStabilitySubsystem::OnCreateBuildingEntity", 127004);
+		newRow = functionRow("UCrBuildingStabilitySubsystem::OnDestroyBuildingEntity", 127004);
+		Check(oldRow && newRow && oldRow->rva == 0x07469170 && newRow->rva == 0x074691B0 && strcmp(oldRow->pattern, newRow->pattern) != 0,
+			"real function rows: building add and remove are two functions with two patterns on CL-127004 too");
+		const char* const textureKeys[] = { "UTexture2D::CreateTransient", "FBulkData::Lock", "FBulkData::Unlock", "UTexture::GetResource", "MiniMap/UTexture::UpdateResource" };
+		bool textureBoth = true;
+		for (const char* key : textureKeys)
+		{
+			oldRow = functionRow(key, 127004);
+			newRow = functionRow(key, 128786);
+			textureBoth = textureBoth && oldRow && newRow && oldRow->fp == newRow->fp && strcmp(oldRow->pattern, newRow->pattern) == 0;
+		}
+		Check(textureBoth, "real function rows: the texture natives and the UpdateResource site have rows for both builds with one pattern");
+	}
 	Check(unmatched == 0, "every real map key is a registry row's or a plugin's global or scoped key");
-	Check(pluginKeys == 105, "the real map holds the 105 plugin function keys; FRHIComputeCommandList::Transition is a loader registry key now");
+	Check(pluginKeys == 155, "the real map holds the 155 plugin function keys; FRHIComputeCommandList::Transition is a loader registry key now");
 	Check(wrong == 0, "every real map row has its registry row's kind and fp");
 
 	// Restarting a plugin the crash guard switched off: the plan for each setting, the limiter, the timing.
@@ -1170,6 +1332,62 @@ int main()
 		VersionMap::SetPluginMapOff(false);
 		Check(At(Key("VmapProbe", Ask("Test::MapOnly", Kind::FunctionStart)), 0x1000), "plugin map switch off again: the map's row is back");
 		VersionMap::SetLiveFieldSource(nullptr);
+	}
+
+	// Developer remote reload: off unless the ini key is on, the request file's names, the poll rate, the log lines.
+	{
+		const auto writeIni = [](const std::wstring& path, const char* text)
+		{
+			FILE* f = nullptr;
+			_wfopen_s(&f, path.c_str(), L"wb");
+			if (f) { fputs(text, f); fclose(f); }
+		};
+		wchar_t tmp[MAX_PATH]{};
+		GetTempPathW(MAX_PATH, tmp);
+		const std::wstring ini = std::wstring(tmp) + L"remote_reload_test.ini";
+
+		DeleteFileW(ini.c_str());
+		Check(!RemoteReload::IsEnabled(ini), "remote reload: off when there is no modloader.ini");
+		writeIni(ini, "[Developer]\r\nSomethingElse=1\r\n");
+		Check(!RemoteReload::IsEnabled(ini), "remote reload: off when the key is missing");
+		writeIni(ini, "[Developer]\r\nRemoteReload=0\r\n");
+		Check(!RemoteReload::IsEnabled(ini), "remote reload: off when the key is 0");
+		writeIni(ini, "[Debug]\r\nRemoteReload=1\r\n");
+		Check(!RemoteReload::IsEnabled(ini), "remote reload: the key in another section does not turn it on");
+		writeIni(ini, "[Developer]\r\nRemoteReload=1\r\n");
+		Check(RemoteReload::IsEnabled(ini), "remote reload: on when [Developer] RemoteReload=1");
+		DeleteFileW(ini.c_str());
+
+		RemoteReload::Request r = RemoteReload::Parse("BetterCheats\n");
+		Check(r.names == std::vector<std::string>{ "BetterCheats" } && r.refused == 0, "remote reload: one name");
+		r = RemoteReload::Parse("\xEF\xBB\xBF  WAILA \t\r\n\r\n# a comment\r\n   \r\nCodex.dll\r\nBetterDrone");
+		Check(r.names == std::vector<std::string>{ "WAILA", "Codex.dll", "BetterDrone" },
+			"remote reload: BOM, CR, blank and comment lines and the spaces around a name are dropped; a file name is kept as typed");
+		r = RemoteReload::Parse("Codex\ncodex\nCODEX\nWAILA\n");
+		Check(r.names == std::vector<std::string>{ "Codex", "WAILA" }, "remote reload: a name given twice in any case is asked once");
+		r = RemoteReload::Parse("");
+		Check(r.names.empty() && r.refused == 0, "remote reload: an empty file asks for nothing");
+		r = RemoteReload::Parse("\n# nothing here\n \n");
+		Check(r.names.empty(), "remote reload: a file of comments asks for nothing");
+		std::string many;
+		for (size_t i = 0; i < RemoteReload::kMaxNames + 3; ++i)
+			many += "Plugin" + std::to_string(i) + "\n";
+		r = RemoteReload::Parse(many);
+		Check(r.names.size() == RemoteReload::kMaxNames && r.refused == 3 && r.names.front() == "Plugin0",
+			"remote reload: past the limit the rest are counted and refused");
+		Check(RemoteReload::SameName("BetterCheats", "bettercheats") && !RemoteReload::SameName("Codex", "Codex2"),
+			"remote reload: names match without regard to case");
+
+		RemoteReload::Throttle t;
+		Check(t.Due(5000), "remote reload: the first look is due at once");
+		Check(!t.Due(5000) && !t.Due(5000 + RemoteReload::kPollMs - 1), "remote reload: no second look within the poll time");
+		Check(t.Due(5000 + RemoteReload::kPollMs) && !t.Due(5000 + RemoteReload::kPollMs + 1), "remote reload: due again after the poll time");
+		RemoteReload::Throttle fresh;
+		Check(fresh.Due(0), "remote reload: due at tick count 0");
+
+		Check(RemoteReload::Reloaded("BetterCheats", "1.4.2") == "[RemoteReload] BetterCheats reloaded OK v1.4.2", "remote reload: the success line");
+		Check(RemoteReload::Failed("Codex", "refused") == "[RemoteReload] Codex reload failed: refused", "remote reload: the failure line");
+		Check(RemoteReload::NoSuchPlugin("Nope").find("[RemoteReload] Nope reload failed: no plugin") == 0, "remote reload: an unknown name is a failure line");
 	}
 
 	printf("%d checks, %d failed\n", g_checks, g_failed);

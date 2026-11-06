@@ -16,6 +16,8 @@
 #include "utils/game_thread_dispatch.h"
 #include "plugins/reload_policy.h"
 #include "plugins/crash_restart.h"
+#include "plugins/remote_reload.h"
+#include "core/startup_utils.h"
 #include "hooks/hooks_interface.h"
 #include "memory_scanner/version_map.h"
 #include "console/plugin_console.h"
@@ -313,6 +315,7 @@ namespace PluginManager
 		PluginInfo* info;
 		VersionMap::PluginGameBuild gameBuild;   // the PluginInfo tail, copied at load: info dies with the DLL
 		ReloadPolicy::Settings reload;           // its load and unload settings, copied the same way
+		int interfaceVersion;                    // the interface it declares, copied the same way
 		GetPluginInfoFunc getInfo;
 		PluginInitFunc init;
 		PluginShutdownFunc shutdown;
@@ -535,6 +538,7 @@ namespace PluginManager
 			return false;
 		}
 
+		rec.interfaceVersion = info->interfaceVersion;
 		rec.reload = ReloadPolicy::Read(info->interfaceVersion, rec.gameBuild.mapFlags);
 		if (const std::string refusal = ReloadPolicy::LoadRefusal(rec.reload.load, startup, ReloadPolicy::GameplayWorldRunning());
 			!refusal.empty())
@@ -1189,6 +1193,24 @@ namespace PluginManager
 		return result;
 	}
 
+	int GetInterfaceVersionForModule(HMODULE module)
+	{
+		if (!module) return 0;
+
+		EnterCriticalSection(&g_pluginLock);
+		int result = 0;
+		for (auto& p : g_loadedPlugins)
+		{
+			if (p->hModule == module)
+			{
+				result = p->interfaceVersion;
+				break;
+			}
+		}
+		LeaveCriticalSection(&g_pluginLock);
+		return result;
+	}
+
 	// PluginShutdown, then everything the plugin registered that lives in its
 	// module, then FreeLibrary. Caller holds g_pluginLock. False when one of
 	// its renders is still running: it is shut down, but stays mapped.
@@ -1474,6 +1496,107 @@ namespace PluginManager
 				break;
 			}
 		}
+	}
+
+	// ---- Developer remote reload (plugins/remote_reload.h)
+
+	// The name and version of the record at index, cached at load so they survive FreeLibrary.
+	static void RecordNameAndVersion(int index, std::string& name, std::string& version)
+	{
+		EnterCriticalSection(&g_pluginLock);
+		if (index >= 0 && index < static_cast<int>(g_loadedPlugins.size()))
+		{
+			name    = g_loadedPlugins[index]->cachedName;
+			version = g_loadedPlugins[index]->cachedVersion;
+		}
+		LeaveCriticalSection(&g_pluginLock);
+	}
+
+	static void RemoteReloadOne(const std::string& asked)
+	{
+		const int index = FindPluginIndex(asked.c_str());
+		if (index < 0)
+		{
+			ModLoaderLogger::LogWarn(L"%S", RemoteReload::NoSuchPlugin(asked).c_str());
+			return;
+		}
+
+		std::string why;
+		if (ReloadPlugin(index, &why) && IsRecordInitialized(index))
+		{
+			std::string name, version;
+			RecordNameAndVersion(index, name, version);
+			ModLoaderLogger::LogMessage(L"%S", RemoteReload::Reloaded(name.empty() ? asked : name, version).c_str());
+		}
+		else
+		{
+			ModLoaderLogger::LogWarn(L"%S", RemoteReload::Failed(asked,
+				why.empty() ? "it did not load or initialize again (see above)" : why).c_str());
+		}
+	}
+
+	// Reads and removes the request file. Renaming it away first is what claims
+	// it: if the writer still has it open the rename fails and the next poll
+	// tries again, and once the rename worked nothing can make a second poll
+	// read the same request, whatever happens to the claimed copy.
+	static bool TakeRemoteReloadRequest(const std::wstring& dir, std::string& text)
+	{
+		const std::wstring request = dir + RemoteReload::kRequestFile;
+		const std::wstring claimed = dir + RemoteReload::kClaimedFile;
+
+		if (GetFileAttributesW(request.c_str()) == INVALID_FILE_ATTRIBUTES)
+			return false;
+		if (!MoveFileExW(request.c_str(), claimed.c_str(), MOVEFILE_REPLACE_EXISTING))
+			return false;
+
+		HANDLE file = CreateFileW(claimed.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_DELETE, nullptr,
+			OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+		if (file != INVALID_HANDLE_VALUE)
+		{
+			text.assign(RemoteReload::kMaxBytes, '\0');
+			DWORD got = 0;
+			if (!ReadFile(file, text.data(), static_cast<DWORD>(text.size()), &got, nullptr))
+				got = 0;
+			text.resize(got);
+			CloseHandle(file);
+		}
+		else
+		{
+			ModLoaderLogger::LogWarn(L"[RemoteReload] Could not open the request file, so it was dropped (error %lu)", GetLastError());
+		}
+		if (!DeleteFileW(claimed.c_str()))
+			ModLoaderLogger::LogWarn(L"[RemoteReload] Could not remove the handled request file (error %lu)", GetLastError());
+		return file != INVALID_HANDLE_VALUE;
+	}
+
+	void PumpRemoteReload()
+	{
+		// The ini is read once. Off is one flag test per tick.
+		static const bool enabled = []()
+		{
+			const bool on = RemoteReload::IsEnabled(GetModLoaderDirPath(L"modloader.ini"));
+			if (on)
+				ModLoaderLogger::LogWarn(L"[RemoteReload] modloader.ini [Developer] RemoteReload=1: a file named %s in the ModLoader folder reloads plugins",
+					RemoteReload::kRequestFile);
+			return on;
+		}();
+		if (!enabled || !g_managerInitialized || CrashRestart::Global().Stopped())
+			return;
+
+		static RemoteReload::Throttle throttle;
+		if (!throttle.Due(GetTickCount64()))
+			return;
+
+		static const std::wstring dir = GetModLoaderDirPath(L"");
+		std::string text;
+		if (!TakeRemoteReloadRequest(dir, text))
+			return;
+
+		const RemoteReload::Request req = RemoteReload::Parse(text);
+		for (const std::string& name : req.names)
+			RemoteReloadOne(name);
+		if (req.refused)
+			ModLoaderLogger::LogWarn(L"%S", RemoteReload::TooMany(req.refused).c_str());
 	}
 
 	int FindPluginIndex(const char* nameOrFile)

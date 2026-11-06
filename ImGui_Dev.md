@@ -61,6 +61,8 @@ static const PluginPanelDesc k_myPanel = {
     "My Plugin",          // button label shown in the ModLoader Config tab
     "My Plugin##panel",   // ImGui window title — must be globally unique
     MyPanelRender         // render callback
+    // v75: an optional fifth member, a callback that draws buttons in the title bar
+    // (see "Title-bar buttons and collapsing a panel (v75)" below)
 };
 ```
 
@@ -143,6 +145,54 @@ bool PluginInit(IPluginSelf* self)
 `SetPanelOpen` / `SetPanelClose` are silently ignored if the handle is null (e.g. UI backend
 disabled). The panel does **not** need to be visible in the ModLoader Config tab first —
 `SetPanelOpen` is equivalent to the user clicking the button there.
+
+---
+
+## Title-bar buttons and collapsing a panel (v75)
+
+The loader draws a panel's title bar: the title, the owner's name and the close button. Two things
+let a plugin add to it.
+
+**Buttons.** `PluginPanelDesc::titleBarFn` is an optional callback, a `PluginImGuiRenderCallback`
+like `renderFn`. The loader runs it every frame the panel is open, inside the title bar, with the
+cursor on the title line right after the title text. Draw small buttons there with the usual layout:
+`SameLine` between them, no positions to work out. Its ids are scoped to the title bar, so a label
+may repeat one in `renderFn`.
+
+**Collapsing.** `hooks->UI->SetPanelCollapsed(handle, true)` shrinks the panel to its title bar and
+`false` brings it back. A collapsed panel keeps its width, does not call `renderFn`, and still draws
+`titleBarFn` and the close button, so the plugin's own button can expand it again. Expanding
+restores the size the window had. `IsPanelCollapsed(handle)` says which it is. Both are ignored for a
+null or stale handle and are safe from any thread; the window changes on the next frame.
+
+The loader keeps the state for the session and does not save it. A plugin that wants it kept saves
+a bool in its own config and calls `SetPanelCollapsed` after `RegisterPanel`. The window's expanded
+size and position are still saved by ImGui as for any panel (a position moved while the panel is
+collapsed is saved once it is expanded), and a restart never comes back as a strip.
+
+```cpp
+static PanelHandle g_panel = nullptr;
+
+static void MyTitleBar(IModLoaderImGui* imgui)
+{
+    const bool collapsed = g_hooks->UI->IsPanelCollapsed(g_panel);
+    // Material Icons expand_less / expand_more; see MaterialIcons.md
+    if (imgui->Button(collapsed ? "\xEE\x97\x8F" : "\xEE\x97\x8E"))
+        g_hooks->UI->SetPanelCollapsed(g_panel, !collapsed);
+    imgui->SetItemTooltip(collapsed ? "Expand" : "Collapse");
+}
+
+static const PluginPanelDesc k_myPanel = {
+    "My Plugin", "My Plugin##panel", MyPanelRender,
+    MyTitleBar                  // v75: optional, may be nullptr
+};
+```
+
+These need interface v75. The loader reads `titleBarFn` only from a plugin that declares 75 or
+later, so a plugin built for an older interface keeps working without a rebuild: its descriptor
+ends at `renderFn`. A loader older than v75 refuses a plugin that declares it and shows it as
+needing a newer mod loader, so a plugin that has to run on one declares 74 or less and leaves
+these out (see `PLUGIN_INTERFACE_VERSION` in `plugin_interface.h`).
 
 ---
 
@@ -266,11 +316,26 @@ stays with the game, so Escape still closes the menu, except that a focused text
 keys. The flag applies to the widget's own window:
 a child window inside a widget that did not opt in (`BeginChild`, a scrolling table) is an ImGui
 window of its own and still takes the mouse. While a ModLoader window has the cursor (F2, the
-console), the flag changes nothing: widgets take the mouse as they always have. An open plugin
+console), the flags change nothing: widgets take the mouse as they always have. An open plugin
 panel or an `AcquireInputCapture` token does not take the cursor over these screens: the mouse stays
 shared, so only the plugin's own windows take it and the rest of the screen keeps its clicks.
 Mouse queries (`GetMousePos`, `IsMouseDown`, `IsMouseClicked`) report the menu cursor in every
 widget, opted in or not; only hovering and clicking the window itself is gated.
+
+`PluginWindowFlags_PauseMenuMouseInputs` takes the mouse everywhere the widget is drawn, including over
+the menu's own buttons. A widget that should stay usable without covering them can opt in with
+`PluginWindowFlags_MenuMouseWhereUncovered` (v75) instead: it takes the mouse wherever no widget of the
+game's menu is under the cursor, and is click-through where one is, so the menu's buttons and panels
+keep their clicks. The loader asks the game once per tick whether a widget on its menu layer (where the
+map, the inventory, the build menu, the machine windows and the Escape menu open) is hovered, so the
+answer can be a frame old: a click just after the cursor moves onto a menu button can still land on
+your widget. A screen whose root is hit-testable across the whole screen counts as under the cursor
+everywhere, and the widget is click-through everywhere over it, as it is without any flag. Where the
+loader cannot tell (a cursor screen that is not on the menu layer, or the menu read switched off on a
+game build it does not match) the widget is click-through too. If both flags are set,
+`PauseMenuMouseInputs` wins. A loader older than v75 does not know the flag, so the widget stays
+click-through there. Child windows inside the widget (`BeginChild`, a scrolling table) are ImGui
+windows of their own and always take the mouse, covered or not.
 
 To ask directly, `hooks->GameMenu->IsPauseMenuOpen()` reports the pause menu and
 `hooks->UI->IsOverlayOpen()` reports a ModLoader window with exclusive capture.

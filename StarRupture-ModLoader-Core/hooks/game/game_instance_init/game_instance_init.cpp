@@ -14,6 +14,7 @@ namespace Hooks::GameInstanceInit
 	static Hook             g_hook;
 	static ProcessEvent_t   g_original  = nullptr;
 	static volatile LONG    g_initFired = 0;
+	static uintptr_t        g_target    = 0;
 
 	static std::vector<ProcessEventCallback> g_callbacks;
 
@@ -53,6 +54,8 @@ namespace Hooks::GameInstanceInit
 			static_cast<unsigned long long>(addr),
 			static_cast<unsigned long long>(addr - base));
 
+		g_target = addr;
+
 		bool ok = g_hook.Install(
 			addr,
 			reinterpret_cast<void*>(&Detour),
@@ -76,8 +79,14 @@ namespace Hooks::GameInstanceInit
 		ModLoaderLogger::LogInfo(L"[GameInstanceInit] Removing hook...");
 		g_hook.Remove();
 		g_original  = nullptr;
+		g_target    = 0;
 		g_initFired = 0;
 		g_callbacks.clear();
+	}
+
+	uintptr_t ProcessEventAddress()
+	{
+		return g_target;
 	}
 
 	void RegisterProcessEventCallback(ProcessEventCallback cb)

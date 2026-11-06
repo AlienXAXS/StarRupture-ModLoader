@@ -297,6 +297,29 @@ static void RestoreGameCursorClip()
     ClipCursor(&screenRect);
 }
 
+// The key or mouse button a message presses or releases, as a virtual-key code
+// (mouse buttons use VK_LBUTTON and friends), or 0 for any other message.
+static UINT KeyOrButtonVk(UINT msg, WPARAM wParam, bool& isUp)
+{
+	isUp = msg == WM_KEYUP || msg == WM_SYSKEYUP || msg == WM_LBUTTONUP ||
+	       msg == WM_RBUTTONUP || msg == WM_MBUTTONUP || msg == WM_XBUTTONUP;
+	switch (msg)
+	{
+	case WM_KEYDOWN: case WM_KEYUP: case WM_SYSKEYDOWN: case WM_SYSKEYUP:
+		return static_cast<UINT>(wParam & 0xFF);
+	case WM_LBUTTONDOWN: case WM_LBUTTONDBLCLK: case WM_LBUTTONUP: return VK_LBUTTON;
+	case WM_RBUTTONDOWN: case WM_RBUTTONDBLCLK: case WM_RBUTTONUP: return VK_RBUTTON;
+	case WM_MBUTTONDOWN: case WM_MBUTTONDBLCLK: case WM_MBUTTONUP: return VK_MBUTTON;
+	case WM_XBUTTONDOWN: case WM_XBUTTONDBLCLK: case WM_XBUTTONUP:
+		return GET_XBUTTON_WPARAM(wParam) == XBUTTON1 ? VK_XBUTTON1 : VK_XBUTTON2;
+	default:
+		return 0;
+	}
+}
+
+// Keys and buttons whose press was handed to the game.
+static InputArbitration::PressesSeenByGame g_pressesSeen;
+
 static LRESULT CALLBACK HookedWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
 	// Dispatch plugin keybind callbacks unconditionally so that toggle-style
@@ -323,6 +346,10 @@ static LRESULT CALLBACK HookedWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 	// overrides it.
 	const bool menuCursor = !exclusive &&
 		(g_callbacks.IsGameMouseShared ? g_callbacks.IsGameMouseShared() : false);
+
+	bool isUp = false;
+	const UINT keyOrButton = KeyOrButtonVk(msg, wParam, isUp);
+	const bool releaseOfSeenPress = keyOrButton && isUp && g_pressesSeen.TakeRelease(keyOrButton);
 
 	// Only feed mouse messages into ImGui while it actually owns the cursor
 	// (i.e. the simulated mouse is shown) or the pause menu shows the game's.
@@ -373,7 +400,7 @@ static LRESULT CALLBACK HookedWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 
 	{
 		bool blocked = (g_callbacks.DispatchKey ? g_callbacks.DispatchKey(msg, wParam, lParam) : false);
-		if (!capturing && blocked)
+		if (!capturing && blocked && !releaseOfSeenPress)
 			return 0;
 	}
 
@@ -403,7 +430,7 @@ static LRESULT CALLBACK HookedWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 		{
 		case WM_KEYDOWN: case WM_KEYUP: case WM_SYSKEYDOWN: case WM_SYSKEYUP:
 		case WM_CHAR:
-			if (wantKeyboard) return 0;
+			if (InputArbitration::ShouldKeepFromGame(wantKeyboard, releaseOfSeenPress)) return 0;
 			break;
 
 		case WM_LBUTTONDOWN: case WM_LBUTTONUP: case WM_LBUTTONDBLCLK:
@@ -411,7 +438,7 @@ static LRESULT CALLBACK HookedWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 		case WM_MBUTTONDOWN: case WM_MBUTTONUP: case WM_MBUTTONDBLCLK:
 		case WM_XBUTTONDOWN: case WM_XBUTTONUP: case WM_XBUTTONDBLCLK:
 		case WM_MOUSEWHEEL:  case WM_MOUSEHWHEEL:
-			if (wantMouse) return 0;
+			if (InputArbitration::ShouldKeepFromGame(wantMouse, releaseOfSeenPress)) return 0;
 			break;
 
 		// Over the pause menu the game draws the cursor, so it keeps
@@ -440,6 +467,9 @@ static LRESULT CALLBACK HookedWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 	{
 		RestoreGameCursorClip();
 	}
+
+	if (keyOrButton && !isUp)
+		g_pressesSeen.Pressed(keyOrButton);
 
 	return CallWindowProcW(g_origWndProc, hWnd, msg, wParam, lParam);
 }
@@ -765,11 +795,16 @@ static void RebuildFontAtlas(bool initialSetup)
 	// Base font size loaded into the atlas.  FontScaleMain scales on top of this.
 	const float kBasePx = 15.0f;
 
+	// Vertical offset for the merged icon glyphs, in px at the base font's size
+	// (see the icon merge below for the derivation).
+	float iconGlyphOffsetY = 0.0f;
+
 	if (entry->primaryPath == nullptr)
 	{
-		// Built-in: let ImGui add its default font automatically.
-		// (Fonts->Clear() above means it will be re-added by NewFrame if empty.)
-		io.Fonts->AddFontDefault();
+		// Built-in: the bitmap font, whatever the text size. AddFontDefault() picks the vector font
+		// once the scaled size reaches 15 px, and the icon offset below is derived for ProggyClean.
+		io.Fonts->AddFontDefaultBitmap();
+		iconGlyphOffsetY = 4.5f; // ProggyClean 13px: ascent 10, descent -4
 	}
 	else
 	{
@@ -785,12 +820,14 @@ static void RebuildFontAtlas(bool initialSetup)
 		char narrowPath[MAX_PATH] = {};
 		WideCharToMultiByte(CP_UTF8, 0, entry->primaryPath, -1, narrowPath, MAX_PATH, nullptr, nullptr);
 
+		iconGlyphOffsetY = 2.5f; // Arial, YaHei, Malgun at 15px: ascent 13, descent -3
 		ImFont* baseFont = io.Fonts->AddFontFromFileTTF(narrowPath, kBasePx, nullptr, s_latinCyrillic);
 		if (!baseFont)
 		{
 			IMGUI_LOG_WARN("[ImGuiBackend] Failed to load font '%s' -- falling back to built-in", narrowPath);
 			io.Fonts->Clear();
-			io.Fonts->AddFontDefault();
+			io.Fonts->AddFontDefaultBitmap();
+			iconGlyphOffsetY = 4.5f;
 		}
 		else if (entry->mergePath != nullptr)
 		{
@@ -822,6 +859,14 @@ static void RebuildFontAtlas(bool initialSetup)
 	// The icon font (Material Icons Regular, Apache 2.0) is embedded as an
 	// RCDATA resource (see StarRupture-ImGui.rc / resource.h) rather than
 	// loaded from a loose file, so the DLL is self-contained.
+	//
+	// The icon glyphs share the base font's baseline, and each fills its em box
+	// (ink centred half an em, S = kBasePx, above the baseline), so unshifted
+	// they ride high on the text line. GlyphOffset.y lowers them so the ink
+	// centre meets the centre of the base font's ascent/descent box, which sits
+	// (A + D) / 2 above the baseline (A = ascent, D = descent, negative):
+	//     offset = S / 2 - (A + D) / 2
+	// ProggyClean (A 10, D -4): 4.5. The TrueType families (A 13, D -3): 2.5.
 	{
 		HMODULE hSelf = nullptr;
 		GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
@@ -853,6 +898,7 @@ static void RebuildFontAtlas(bool initialSetup)
 			ImFontConfig iconCfg;
 			iconCfg.MergeMode = true;
 			iconCfg.PixelSnapH = true;
+			iconCfg.GlyphOffset.y = iconGlyphOffsetY;
 			iconCfg.FontDataOwnedByAtlas = false; // resPtr is resource-section memory, not heap -- ImGui must not free() it
 			if (!io.Fonts->AddFontFromMemoryTTF(resPtr, static_cast<int>(resSize), kBasePx, &iconCfg, s_iconRange))
 				IMGUI_LOG_WARN("[ImGuiBackend] Failed to load embedded icon font resource");
@@ -1054,6 +1100,9 @@ static bool InitD3D12Resources(IDXGISwapChain* swapChain)
 	IMGUI_CHECKVERSION();
 	ImGui::CreateContext();
 	ImGuiIO& io = ImGui::GetIO();
+	// A plugin callback that leaves a push unpopped is recovered by ImGui; its assert would
+	// raise a "Missing PopID" dialog in a Debug build, so recover and log without it.
+	io.ConfigErrorRecoveryEnableAssert = false;
 	// Keyboard navigation is switched per frame by the RenderFrame callback.
 	io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange; // don't touch OS cursor by default
 	// Build an absolute path so the file lands in the ModLoader folder

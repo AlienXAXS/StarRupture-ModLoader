@@ -336,9 +336,12 @@ namespace VersionMap
 	// What the running game reflects for one member (member empty: for the
 	// class itself, whose size is its PropertiesSize). error is set when it
 	// has no answer: no such class, more than one, or no such member.
+	// unreflected is set when the game has no reflected class or struct of that
+	// name (a plain C++ type), as against any other failure.
 	struct LiveField
 	{
 		std::string error;
+		bool        unreflected = false;
 		int32_t     offset   = 0;
 		uint32_t    size     = 0;
 		bool        isBool   = false;
