@@ -2245,7 +2245,7 @@ static IWICImagingFactory* GetWICFactory()
 
 // The queue, allocator, list, fence and event behind texture uploads and copies.
 // Its own queue, so it never conflicts with the main render queue. Made on first
-// use and kept, because making them per texture costs far more than the copy.
+// use and kept, because making them per texture is wasted work.
 //
 // Every function here needs g_textureMutex held, which is also what serialises
 // Load* calls from different threads. A copy waits for the GPU before it returns,

@@ -24,7 +24,7 @@ on:
         type: boolean
         default: false
       auto_build_plugins:
-        description: 'Auto Build Plugins — trigger a rebuild of all plugin repos after this release'
+        description: 'Auto Build Plugins — rebuild all plugin repos after this release, each against the SDK tag its release.yml pins (not the one this run creates)'
         type: boolean
         default: false
 

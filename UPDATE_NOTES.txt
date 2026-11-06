@@ -1,2 +1,1 @@
-- Plugins that load many icons, such as Codex, hold the start-up splash for less time
 - A fresh install opens a window titled Mod Loader Installed instead of Plugins Updated
