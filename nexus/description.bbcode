@@ -1,6 +1,7 @@
 [b][size=5]StarRupture ModLoader[/size][/b]
 
-[b]Found a bug? Report it on GitHub: [url=https://github.com/AlienXAXS/StarRupture-ModLoader/issues]https://github.com/AlienXAXS/StarRupture-ModLoader/issues[/url][/b] and attach your [b]ModLoader.log[/b] (in [b]Binaries\Win64\ModLoader\Logs\[/b]).
+StarRupture ModLoader is a lightweight plugin-based mod loader for [i]StarRupture[/i].
+It loads automatically using DLL proxy injection, meaning [b]no original game files are modified[/b].
 
 [b][size=4]Get your Free StarRupture Server with this Mod Loader already installed over at [url=http://www.alienxservers.co.uk]https://www.alienxservers.co.uk[/url][/size][/b]
 
@@ -21,12 +22,11 @@ The mod loader relies on many of the same techniques used by game hacks, debugge
 [line]
 
 [b][size=4]Support & Questions[/size][/b]
+[b]Found a bug?[/b] Report it on [url=https://github.com/AlienXAXS/StarRupture-ModLoader/issues]GitHub[/url] and attach your [b]ModLoader.log[/b] (in [b]Binaries\Win64\ModLoader\Logs\[/b]).
+
 Join the official Mod Loader discord, [url=https://discord.gg/G5a4GYsvrz]AlienX's Place[/url] for support.
 
 [line]
-
-StarRupture ModLoader is a lightweight plugin-based mod loader for [i]StarRupture[/i].
-It loads automatically using DLL proxy injection, meaning [b]no original game files are modified[/b].
 
 The loader enables runtime fixes, server utilities, and gameplay improvements through optional plugins. On a client it adds an in-game window to manage them; on a dedicated server it adds a console.
 A more detailed readme can be found on the [url=https://github.com/AlienXAXS/StarRupture-ModLoader/blob/main/README.md]github page[/url].
@@ -53,7 +53,7 @@ Tabs down the left: [b]Plugins[/b], [b]Config[/b], [b]Settings[/b], [b]Logging[/
 [*]A plugin can say when it may be loaded and unloaded: any time, only at the main menu, or only at game start. A refused reload or unload says why on its row and on the console. ✦
 [*][b]Crashed[/b] is a plugin that faulted in its own code. The mod loader switched it off and the game kept running; hover the row for the fault and where it happened. [b]RELOAD[/b] loads it fresh. A fault in game code a plugin called still crashes the game, and the log names the plugin. ✦
 [*]When a plugin crashes, a toast in the bottom right corner names the plugin and what it was doing. About 3 seconds later the mod loader restarts it by itself, as RELOAD would, if its load and unload settings allow it; a plugin that needs a game restart stays off and the toast says so. Each plugin restarts at most 3 times a session. [b]Settings[/b] has [b]Restart crashed plugins automatically[/b] to turn it off. ✦
-[*][b]Plugins Updated[/b] lists plugins with identical update notes on one line and shows the notes once, is wide enough for the screen at 4K, and keeps its title and Close button in view. After the mod loader updates, it lists the loader's release notes once, grouped by version and including the notes of releases you skipped. ✦
+[*][b]Plugins Updated[/b] lists plugins with identical update notes on one line and shows the notes once. ✦
 [*][b]Cannot Load[/b] is a server plugin on a client, or the reverse.
 [*][b]Needs Update[/b] names the side that is behind: the plugin or the mod loader.
 [*][b]Incompatible[/b] on a game build other than the one a plugin was built for says the plugin needs an update. It still loads on its own build.
@@ -110,7 +110,7 @@ Tabs down the left: [b]Plugins[/b], [b]Config[/b], [b]Settings[/b], [b]Logging[/
 
 [b][size=4]Pop-ups[/size][/b]
 
-[b]Plugins Updated[/b] appears once at the main menu after an automatic plugin update, and after the mod loader updates itself.
+[b]Plugins Updated[/b] appears once at the main menu after an automatic plugin update.
 
 [img]https://raw.githubusercontent.com/{{REPO}}/{{TAG}}/images/popup-plugins-updated.png[/img]
 
@@ -236,6 +236,8 @@ A preload plugin is a DLL in [i]ModLoader\Preload\[/i] that runs before the game
 [*][b]The game crashes[/b] — the mod loader's own dialog has Copy Details and buttons for ModLoader.log and StarRupture.log. Include them in a bug report
 [*][b]Players dropped during a long map load[/b] — see Net timeouts. Both ends need the mod loader
 [/list]
+
+[b]Links:[/b] [url=https://github.com/AlienXAXS/StarRupture-ModLoader]GitHub[/url] for [url=https://github.com/AlienXAXS/StarRupture-ModLoader/issues]issues[/url] | [url=https://discord.gg/G5a4GYsvrz]Discord[/url] for discussion
 
 [line]
 
