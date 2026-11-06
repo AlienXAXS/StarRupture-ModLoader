@@ -3,6 +3,7 @@
 #ifdef MODLOADER_CLIENT_BUILD
 
 #include <functional>
+#include <string>
 #include <vector>
 
 // ---------------------------------------------------------------------------
@@ -53,6 +54,17 @@ namespace UI::UpdateNoticeWindow
     // routes mouse input to ImGui for this window even when the main F2 menu and
     // all plugin panels are closed -- otherwise its Close button is unclickable.
     bool IsOpen();
+
+    // The name the auto-updater lists the loader itself under.
+    inline constexpr const char* kLoaderRowName = "Mod Loader";
+
+    // A fresh install: the loader is the only row and no previous version is
+    // known. The window then says the loader was installed, not that plugins
+    // were updated.
+    inline bool IsFreshLoaderInstall(size_t rowCount, const std::string& firstName, const std::string& firstOldVersion)
+    {
+        return rowCount == 1 && firstName == kLoaderRowName && firstOldVersion.empty();
+    }
 
     // Groups `items` whose non-empty notes are word for word the same, in order
     // of first appearance, so the window lists such plugins on one line with the
