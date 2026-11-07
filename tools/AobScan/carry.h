@@ -3,8 +3,11 @@
 // resolved the way the loader does at run time.
 //
 // With no row for the running build the loader decides a key with the row of
-// the latest build the map has a pattern for, rescanned on the running exe
-// (VersionMap::Select over the loader's own lookup, mirrored in observed.cpp).
+// the latest other build the map has a pattern for, rescanned on the running exe
+// (VersionMap::Select over the loader's own lookup, mirrored in observed.cpp;
+// the loader's own registry rows through ResolveLoaderEntry). The plugin's own
+// pattern and rows are not known here, and at run time they join the
+// agreement step, so a plugin's hook can still fail where the carry matches.
 // A row for the new build made from the answer lets the loader read it
 // directly instead. This asks the same question of every key the map holds, so
 // a gate can tell the keys that carry from the ones that need a new pattern.

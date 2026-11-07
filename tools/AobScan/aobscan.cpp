@@ -363,8 +363,8 @@ int wmain(int argc, wchar_t** argv)
 		else if (wcscmp(argv[i], L"--verbose") == 0) verbose = true;
 		else if (wcscmp(argv[i], L"--suggest") == 0) suggest = true;
 		else if (wcscmp(argv[i], L"--carry") == 0)   carry = true;
-		else if (wcscmp(argv[i], L"--cl") == 0 && i + 1 < argc && !carryCL)   carryCL = wcstoul(argv[++i], nullptr, 10);
-		else if (wcscmp(argv[i], L"--ignore-cl") == 0 && i + 1 < argc && !ignoreCL) ignoreCL = wcstoul(argv[++i], nullptr, 10);
+		else if (wcscmp(argv[i], L"--cl") == 0 && i + 1 < argc && !carryCL && (carryCL = wcstoul(argv[i + 1], nullptr, 10)) != 0) ++i;
+		else if (wcscmp(argv[i], L"--ignore-cl") == 0 && i + 1 < argc && !ignoreCL && (ignoreCL = wcstoul(argv[i + 1], nullptr, 10)) != 0) ++i;
 		else if (wcscmp(argv[i], L"--plugin") == 0 && i + 1 < argc && !plugin) plugin = argv[++i];
 		else if (wcscmp(argv[i], L"--reference") == 0 && i + 1 < argc && !reference) reference = argv[++i];
 		else if (wcscmp(argv[i], L"--layout") == 0 && i + 1 < argc && !layout) layout = argv[++i];

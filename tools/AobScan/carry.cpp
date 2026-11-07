@@ -3,6 +3,7 @@
 #include "observed.h"
 #include "plugin_scan.h"
 
+#include "hooks/game/scan_patterns.h"
 #include "memory_scanner/image_info.h"
 #include "memory_scanner/scan_validation.h"
 
@@ -85,8 +86,23 @@ namespace AobScan
 			candidate.followRipDispAt = tried.followRipDispAt;
 			candidate.fromMap         = true;
 
-			const ScanValidation::Result decided =
-				VersionMap::Select(owner.empty() ? "AobScan" : owner.c_str(), request, { candidate }, exe);
+			// The loader's own registry rows are decided by ResolveLoaderEntry, which
+			// puts the code's pattern in the place of the built build's row.
+			const ScanPatterns::PreflightEntry* entry = nullptr;
+			for (const ScanPatterns::PreflightEntry& e : ScanPatterns::PreflightRegistry)
+				if (VersionMap::LoaderEntryKey(e) == row.key && VersionMap::LoaderEntryFingerprint(e) == row.fp)
+					entry = &e;
+			ScanValidation::Result decided;
+			if (entry)
+			{
+				ScanValidation::Request own = request;
+				own.pattern         = entry->pattern;
+				own.followRel32At   = entry->followRel32At;
+				own.followRipDispAt = entry->followRipDispAt;
+				decided = VersionMap::ResolveLoaderEntry(*entry, own, exe);
+			}
+			else
+				decided = VersionMap::Select(owner.empty() ? "AobScan" : owner.c_str(), request, { candidate }, exe);
 			if (decided.Succeeded())
 			{
 				row.result  = CarryResult::Match;
