@@ -190,6 +190,9 @@ New game builds reach the feed through the CI in
 [starrupture-ci](https://github.com/msantoro12/starrupture-ci); its `ci/VERSION-MAP.md` has the
 feed format.
 
+Maintaining the feed itself (the key slots, signature checking, the feed URL and publishing) is in
+[MAINTAINERS.md](MAINTAINERS.md).
+
 ## Getting a value added to the shared map
 
 A plugin can carry its own row for a key (the SDK's `plugin_version_map.h`), and the loader uses the
