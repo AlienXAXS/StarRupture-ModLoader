@@ -442,9 +442,8 @@ Still unregister panels, widgets and callbacks in `PluginShutdown`, though the l
 on the game thread from **RELOAD** and also at process exit.
 
 The current world, for the loader and for `PluginSdkRuntime::GetWorld()` in the SDK, is the world
-in the game's viewport, not the engine's `GWorld` global. A plugin that builds a world of its own
-(a preview or capture world) can leave `GWorld` pointing at that world, and plugins reading it then
-wait for a world that never comes. The world-start events pass the world that began play.
+in the game's viewport, not the engine's `GWorld` global, which a plugin's own preview world can
+leave pointing elsewhere. The world-start events pass the world that began play.
 <sup>[✦](#msantoro12)</sup>
 
 A popup a plugin opens with `BeginPopupModal` no longer has to collapse into a narrow strip (interface
@@ -566,8 +565,7 @@ place the plugins expect; if it does not, plugins are switched off the same way.
 
 When the map's row decides where a plugin's function is, the loader still checks the plugin's own
 AOB pattern against the running exe, once, and logs a warning if it matches 0 or 2 or more places.
-The plugin still loads. The warning is there so a pattern that only works because the map covers
-for it is caught on a development setup, not by the first player on a loader without the map's row.
+The plugin still loads.
 <sup>[✦](#msantoro12)</sup>
 
 ## Net timeouts
