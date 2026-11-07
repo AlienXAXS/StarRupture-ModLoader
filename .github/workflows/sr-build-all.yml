@@ -161,6 +161,10 @@ jobs:
             /nodeReuse:false `
             /v:minimal
 
+      - name: Refuse a build that trusts the test feed key
+        shell: pwsh
+        run: ./.github/scripts/assert-no-test-key.ps1 -Path build
+
       - name: Pattern scan (placeholder)
         run: echo "::notice::Pattern scan not available yet. The in-game preflight is the only check of the loader's AOB patterns today."
 
