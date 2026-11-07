@@ -1553,8 +1553,15 @@ namespace UiPass
 		}
 		if (desc.Width != g_width.load() || desc.Height != g_height.load())
 		{
-			LogReject("size differs from the swap chain", desc);
-			return -1;
+			// A resize since the last Present: read the current size before rejecting.
+			DXGI_SWAP_CHAIN_DESC scDesc = {};
+			if (g_swapChain && SUCCEEDED(g_swapChain->GetDesc(&scDesc)))
+				NoteSwapChainSize(scDesc.BufferDesc.Width, scDesc.BufferDesc.Height);
+			if (desc.Width != g_width.load() || desc.Height != g_height.load())
+			{
+				LogReject("size differs from the swap chain", desc);
+				return -1;
+			}
 		}
 
 		if (!g_queue && !CreateResources())
