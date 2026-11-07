@@ -695,12 +695,12 @@ int main()
 			&& Logged(L"the plugin's own says 0x20/0x8; the game's reflection decides"), "field: own row against the map's row, reflected");
 		// The latest build's row stands in when the running one has none: it is checked against the game, and the game wins.
 		const VersionMap::Exe later{ 130000, 0x33333333, 0x03000000 };
-		Check(Field("ATest::Reflected", "ATest", "Reflected", 0, 8, {}, v, e, later) && v.offset == 0x30
-			&& Logged(L"reflected (no row for CL-130000; the loader map, CL-128786 row does not)"),
-			"field: no row for this build: the latest row is checked and the game wins");
 		// Another build's row is expected to differ, so it is a debug line and never a warning.
-		Check(LoggedDebug(L"the loader map, CL-128786 row differs (another build); it says 0x38/0x8, the game says 0x30/0x8; the game wins")
-			&& !Logged(L"the game wins"), "field: another build's row the game disagrees with: logged at debug, not as a warning");
+		Check(Field("ATest::Reflected", "ATest", "Reflected", 0, 8, {}, v, e, later) && v.offset == 0x30
+			&& Logged(L"reflected (no row for CL-130000; the loader map, CL-128786 row does not)")
+			&& LoggedDebug(L"the loader map, CL-128786 row differs (another build); it says 0x38/0x8, the game says 0x30/0x8; the game wins")
+			&& !Logged(L"the game wins"),
+			"field: no row for this build: the latest row is checked, the game wins, and it is logged at debug, not as a warning");
 		Check(Field("ATest::Renamed", "ATest", "Renamed", 0, 4, {}, v, e, later) && v.offset == 0x44
 			&& Logged(L"reflected (no row for CL-130000; the loader map, CL-128786 row agrees)"),
 			"field: no row for this build: the latest row's new name is asked for first");

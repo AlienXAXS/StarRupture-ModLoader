@@ -289,7 +289,8 @@ namespace VersionMap
 	// reflection data. A row (the running changelist's, else the latest one's,
 	// which can also give the member's new name) only cross-checks it: where
 	// the row and the game disagree the game wins and the disagreement is
-	// logged. A native member (one reflection does not describe) is the
+	// logged (a warning for the running changelist's own row, a debug line for
+	// another changelist's). A native member (one reflection does not describe) is the
 	// running changelist's row, or the compiled offset on the build it was
 	// compiled for, and nothing else: a row carried forward from an older
 	// changelist cannot be checked on this build, so it is not used. It must
