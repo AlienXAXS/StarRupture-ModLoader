@@ -742,16 +742,32 @@ int main()
 			"field: no reflection reader, no native member");
 	}
 
-	// Struct sizes (member empty) are never map data: they come live from the game's reflection, and a plugin that
-	// needs the compiled size to hold asks for PLUGIN_FIELD_CHECK. See "Not map data" in VersionMap.md.
+	// Struct sizes (member empty): a reflected struct's size comes live from the game's reflection, with its class-keyed
+	// row only a cross-check; a struct the game does not reflect is served from the running build's own row, else
+	// refused. A plugin that needs the compiled size to hold asks for PLUGIN_FIELD_CHECK. See "Struct sizes" in VersionMap.md.
 	{
 		VersionMap::SetLiveFieldSource(FakeLive);
 		VersionMap::FieldValue v;
 		std::string e;
+		// How the plugin's size request for key came out, for the compatibility report.
+		const auto finding = [](const char* key)
+		{
+			for (const VersionMap::SizeFinding& f : VersionMap::SizeFindings())
+				if (f.plugin == "Test" && f.key == key)
+					return f;
+			VersionMap::SizeFinding none;
+			none.key = "(no finding)";
+			return none;
+		};
 
 		// Size 0 and no CHECK: the live size comes back, whatever the code was compiled for.
 		Check(Field("AOther", "AOther", "", 0, 0, {}, v, e) && v.size == 0x10 && v.offset == 0 && v.boolMask == 0
 			&& Logged(L"AOther: reflected (no row for CL-128786) (0x10)"), "size: size 0 takes the game's live size");
+		{
+			const VersionMap::SizeFinding f = finding("AOther");
+			Check(f.result == VersionMap::SizeResult::ReflectedOnly && f.rowCL == 0 && f.rowSize == 0 && f.reflected && f.reflectedSize == 0x10,
+				"size report: a reflected size with no row at all is reflected-only");
+		}
 		Check(Field("AOther", "AOther", "", 0, 0x10, {}, v, e) && v.size == 0x10, "size: the compiled size matches the game's: the live size");
 		Check(Field("AOther", "AOther", "", 0, 0x20, {}, v, e) && v.size == 0x10 && !Logged(L"as compiled"),
 			"size: without CHECK a different compiled size is not compared: the live size is returned");
@@ -763,16 +779,21 @@ int main()
 			&& e == "the code relies on 0x18, this build has 0x10"
 			&& Logged(L"AOther: refused: the code relies on 0x18, this build has 0x10"), "size: CHECK refuses a game size that is not the compiled one");
 
-		// Only a reflected struct has a size: a native or bitfield flag on a size request is a bad request, an unknown class an error.
-		Check(!Field("AOther", "AOther", "", PLUGIN_FIELD_NATIVE, 0x10, {}, v, e)
-			&& e == "bad request: a field needs a class, and a size row is neither native nor a bitfield", "size: NATIVE on a size request is a bad request");
-		Check(!Field("AOther", "AOther", "", PLUGIN_FIELD_BITFIELD, 0, {}, v, e) && e.find("bad request:") == 0,
-			"size: BITFIELD on a size request is a bad request");
+		// NATIVE on a size request changes nothing: a reflected struct is still answered by the game. A bitfield flag is a
+		// bad request, an unknown class an error.
+		Check(Field("AOther", "AOther", "", PLUGIN_FIELD_NATIVE, 0x10, {}, v, e) && v.size == 0x10
+			&& Logged(L"AOther: reflected (no row for CL-128786) (0x10)"), "size: NATIVE on a reflected size request is still answered by reflection");
+		Check(!Field("AOther", "AOther", "", PLUGIN_FIELD_BITFIELD, 0, {}, v, e)
+			&& e == "bad request: a field needs a class, and a size row is not a bitfield", "size: BITFIELD on a size request is a bad request");
 		Check(!Field("AOther", "AOther", "", PLUGIN_FIELD_ANY_SIZE, 0, {}, v, e) && e.find("bad request: PLUGIN_FIELD_ANY_SIZE") == 0,
 			"size: ANY_SIZE is for a member, not a size request");
-		Check(!Field("ANone", "ANone", "", 0, 0, {}, v, e) && e == "reflection: no class ANone", "size: a class the game does not have is an error");
-		Check(!Field("AOther", "AOther", "", PLUGIN_FIELD_NATIVE | PLUGIN_FIELD_CHECK, 0x10, { FieldRow(128786, 0, 0x10) }, v, e)
-			&& e.find("bad request:") == 0, "size: an own row does not turn a size request native");
+		Check(!Field("ANone", "ANone", "", 0, 0, {}, v, e) && e == "ANone is not reflected, so its size needs a row for CL-128786 and has no other source",
+			"size: a class the game does not have, and no row for it, is an error");
+		Check(!Field("AUnready", "AUnready", "", 0, 0, {}, v, e) && e == "reflection: the game's reflection data is not ready",
+			"size: reflection that is not ready is not an unreflected struct");
+		Check(Field("AOther", "AOther", "", PLUGIN_FIELD_NATIVE | PLUGIN_FIELD_CHECK, 0x10, { FieldRow(128786, 0, 0x10) }, v, e)
+			&& v.size == 0x10 && Logged(L"AOther: CL-128786 row, as reflected, as compiled (0x10)"),
+			"size: an own row on a reflected size is a cross-check, whatever the flags");
 
 		// An own row is only a cross-check too: the game's size is the answer.
 		Check(Field("AOther", "AOther", "", 0, 0, { FieldRow(128786, 0, 0x30) }, v, e) && v.size == 0x10
@@ -783,12 +804,80 @@ int main()
 		VersionMap::MapData classRows = VersionMap::BaselineMap();
 		classRows.fields.push_back({ "AChild", 128786, 0, 0x50, 0, "" });
 		classRows.fields.push_back({ "AOther", 128786, 0, 0x10, 0, "" });
+		// Structs the game does not reflect: one with a row for the running build, one with only another build's, one with none.
+		classRows.fields.push_back({ "FPlain", 128786, 0, 0x28, 0, "" });
+		classRows.fields.push_back({ "FOld", 127004, 0, 0x30, 0, "" });
+		classRows.fields.push_back({ "FZero", 128786, 0, 0, 0, "" });
 		VersionMap::SetActiveMap(std::make_shared<const VersionMap::MapData>(classRows));
 		Check(Field("AChild", "AChild", "", 0, 0, {}, v, e) && v.size == 0x58
 			&& Logged(L"AChild: the loader map, CL-128786 row says 0x0/0x50, the game says 0x0/0x58; the game wins")
-			&& Logged(L"overruled by reflection"), "size: a class-keyed map row the game disagrees with: the game wins, logged");
+			&& Logged(L"overruled by reflection") && !LoggedDebug(L"another build"), "size: a class-keyed map row the game disagrees with: the game wins, logged");
+		{
+			const VersionMap::SizeFinding f = finding("AChild");
+			Check(f.result == VersionMap::SizeResult::Mismatch && f.rowCL == 128786 && f.rowSize == 0x50 && f.reflected && f.reflectedSize == 0x58,
+				"size report: an own-build row that differs from the game is a mismatch");
+		}
 		Check(Field("AOther", "AOther", "", 0, 0, {}, v, e) && v.size == 0x10 && !Logged(L"the game wins")
 			&& Logged(L"loader map, CL-128786 row, as reflected (0x10)"), "size: a class-keyed map row the game agrees with");
+		{
+			const VersionMap::SizeFinding f = finding("AOther");
+			Check(f.result == VersionMap::SizeResult::Match && f.rowCL == 128786 && f.rowSize == 0x10 && f.reflected && f.reflectedSize == 0x10,
+				"size report: an own-build row that matches the game is a match");
+		}
+		// Another build's row that differs is expected to (a game update): the game wins, and it is only a debug line.
+		const VersionMap::Exe laterBuild{ 130000, 0x33333333, 0x03000000 };
+		Check(Field("AChild", "AChild", "", 0, 0, {}, v, e, laterBuild) && v.size == 0x58
+			&& LoggedDebug(L"AChild: the loader map, CL-128786 row differs (another build); it says 0x0/0x50, the game says 0x0/0x58; the game wins")
+			&& !Logged(L"the game wins"), "size: another build's row the game disagrees with: the game wins, at debug");
+		{
+			const VersionMap::SizeFinding f = finding("AChild");
+			Check(f.result == VersionMap::SizeResult::Mismatch && f.rowCL == 128786 && f.rowSize == 0x50 && f.reflectedSize == 0x58,
+				"size report: another build's row that differs is a mismatch too");
+		}
+
+		// A struct the game does not reflect has no live size: the running build's own row stands for it.
+		Check(Field("FPlain", "FPlain", "", 0, 0, {}, v, e) && v.size == 0x28 && v.offset == 0 && v.boolMask == 0
+			&& Logged(L"FPlain: loader map, CL-128786 row, unreflected type (0x28)"), "size: an unreflected struct is served from the running build's row");
+		{
+			const VersionMap::SizeFinding f = finding("FPlain");
+			Check(f.result == VersionMap::SizeResult::RowOnly && f.rowCL == 128786 && f.rowSize == 0x28 && !f.reflected && f.reflectedSize == 0,
+				"size report: an unreflected size served from its row is row-only");
+		}
+		Check(Field("FPlain", "FPlain", "", PLUGIN_FIELD_NATIVE, 0x28, {}, v, e) && v.size == 0x28,
+			"size: NATIVE on an unreflected size request is served the same way");
+		Check(Field("FPlain", "FPlain", "", PLUGIN_FIELD_CHECK, 0x28, {}, v, e) && v.size == 0x28 && Logged(L"unreflected type, as compiled (0x28)"),
+			"size: CHECK passes when the row has the size the code was compiled for");
+		Check(!Field("FPlain", "FPlain", "", PLUGIN_FIELD_CHECK, 0x30, {}, v, e) && e == "the code relies on 0x30, this build has 0x28",
+			"size: CHECK refuses an unreflected struct whose row has another size");
+		Check(Field("FOwn", "FOwn", "", 0, 0, { FieldRow(128786, 0, 0x18) }, v, e) && v.size == 0x18,
+			"size: the plugin's own row for the running build serves an unreflected struct too");
+		Check(!Field("FZero", "FZero", "", 0, 0, {}, v, e) && e == "loader map, CL-128786 row gives size 0", "size: a row of size 0 is not a size");
+		// Another build's row is never used: nothing on this build can confirm the size is still that.
+		Check(!Field("FOld", "FOld", "", 0, 0, {}, v, e)
+			&& e == "FOld is not reflected, so its size needs a row for CL-128786 and has no other source; the loader map, CL-127004 row cannot be checked on this build, so it is not used"
+			&& Logged(L"FOld: refused: FOld is not reflected"), "size: an unreflected struct with only another build's row is refused");
+		{
+			const VersionMap::SizeFinding f = finding("FOld");
+			Check(f.result == VersionMap::SizeResult::NoRow && f.rowCL == 127004 && f.rowSize == 0x30 && !f.reflected,
+				"size report: an unreflected size with only another build's row is no-row, naming that row");
+		}
+		Check(Field("FOld", "FOld", "", 0, 0, {}, v, e, VersionMap::Exe{ 127004, 0, 0 }) && v.size == 0x30,
+			"size: ... but on the build that row belongs to it is the running build's own row");
+		Check(!Field("FNone", "FNone", "", 0, 0, {}, v, e)
+			&& e == "FNone is not reflected, so its size needs a row for CL-128786 and has no other source",
+			"size: an unreflected struct with no row is refused");
+		{
+			const VersionMap::SizeFinding f = finding("FNone");
+			Check(f.result == VersionMap::SizeResult::NoRow && f.rowCL == 0 && f.rowSize == 0 && !f.reflected,
+				"size report: an unreflected size with no row at all is no-row");
+		}
+		Check(!Field("FNone", "FNone", "", PLUGIN_FIELD_CHECK, 0x10, {}, v, e, laterBuild) && e.find("needs a row for CL-130000") != std::string::npos,
+			"size: an unreflected struct on a build with no row is refused, CHECK or not");
+		Check(std::string(VersionMap::SizeResultText(VersionMap::SizeResult::Match)) == "match"
+			&& std::string(VersionMap::SizeResultText(VersionMap::SizeResult::Mismatch)) == "mismatch"
+			&& std::string(VersionMap::SizeResultText(VersionMap::SizeResult::RowOnly)) == "row-only"
+			&& std::string(VersionMap::SizeResultText(VersionMap::SizeResult::NoRow)) == "no-row"
+			&& std::string(VersionMap::SizeResultText(VersionMap::SizeResult::ReflectedOnly)) == "reflected-only", "size report: the result texts");
 		Check(!Field("AChild", "AChild", "", PLUGIN_FIELD_CHECK, 0x50, {}, v, e) && e == "the code relies on 0x50, this build has 0x58",
 			"size: CHECK compares with the game, not with the class-keyed row");
 		// ... and it is never served without the game: no reflection reader, no size.

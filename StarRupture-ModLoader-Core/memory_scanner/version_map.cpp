@@ -1182,6 +1182,32 @@ namespace VersionMap
 			return FieldValue{ row.offset, row.size, row.boolMask };
 		}
 
+		std::mutex               g_sizeFindingsLock;
+		std::vector<SizeFinding> g_sizeFindings;
+
+		// Keeps how a size request came out for the compatibility report. row is
+		// the one it was set against; live the game's answer when it reflects the type.
+		void RecordSize(const char* owner, const std::string& key, SizeResult result,
+			const FieldCandidate* row, const LiveField* live)
+		{
+			SizeFinding finding;
+			finding.plugin        = owner ? owner : "?";
+			finding.key           = key;
+			finding.result        = result;
+			finding.rowCL         = row ? row->gameCL : 0;
+			finding.rowSize       = row ? row->size : 0;
+			finding.reflected     = live != nullptr;
+			finding.reflectedSize = live ? live->size : 0;
+
+			std::lock_guard<std::mutex> lock(g_sizeFindingsLock);
+			const auto same = std::find_if(g_sizeFindings.begin(), g_sizeFindings.end(),
+				[&](const SizeFinding& f) { return f.plugin == finding.plugin && f.key == finding.key; });
+			if (same != g_sizeFindings.end())
+				*same = std::move(finding);
+			else
+				g_sizeFindings.push_back(std::move(finding));
+		}
+
 		// "loader map, CL-128786 row" or "CL-127004 row" (the component's own).
 		std::string RowLabel(const FieldCandidate& row)
 		{
@@ -1274,6 +1300,25 @@ namespace VersionMap
 		g_liveFields = source;
 	}
 
+	std::vector<SizeFinding> SizeFindings()
+	{
+		std::lock_guard<std::mutex> lock(g_sizeFindingsLock);
+		return g_sizeFindings;
+	}
+
+	const char* SizeResultText(SizeResult result)
+	{
+		switch (result)
+		{
+		case SizeResult::Match:         return "match";
+		case SizeResult::Mismatch:      return "mismatch";
+		case SizeResult::RowOnly:       return "row-only";
+		case SizeResult::NoRow:         return "no-row";
+		case SizeResult::ReflectedOnly: return "reflected-only";
+		}
+		return "";
+	}
+
 	namespace
 	{
 		// A class's supers are not named in the request: the game's reflection
@@ -1286,15 +1331,18 @@ namespace VersionMap
 		bool PickField(const char* owner, const FieldRequest& request, const Exe& running,
 			FieldValue& out, std::string& error)
 		{
-			const bool native   = (request.flags & PLUGIN_FIELD_NATIVE) != 0;
+			const bool sizeRow  = request.member.empty();
+			// A size request is served from reflection when the game reflects the
+			// type, and from the running build's row when it does not, whether or
+			// not the plugin set the flag, so NATIVE changes nothing for it.
+			const bool native   = (request.flags & PLUGIN_FIELD_NATIVE) != 0 && !sizeRow;
 			const bool check    = (request.flags & PLUGIN_FIELD_CHECK) != 0;
 			const bool bitfield = (request.flags & PLUGIN_FIELD_BITFIELD) != 0;
-			const bool sizeRow  = request.member.empty();
 			const bool anySize  = (request.flags & PLUGIN_FIELD_ANY_SIZE) != 0;
 
-			if (request.className.empty() || (sizeRow && (native || bitfield)))
+			if (request.className.empty() || (sizeRow && bitfield))
 			{
-				error = "bad request: a field needs a class, and a size row is neither native nor a bitfield";
+				error = "bad request: a field needs a class, and a size row is not a bitfield";
 				return false;
 			}
 			if (anySize && (sizeRow || native || check || bitfield || request.size != 0))
@@ -1329,9 +1377,39 @@ namespace VersionMap
 				}
 			}
 
+			// The game's size for a size request, and whether it reflects the type
+			// at all. A plain C++ struct has no reflected size.
+			LiveField sizeLive;
+			if (sizeRow && g_liveFields)
+				sizeLive = g_liveFields(request.className, std::string());
+
 			FieldValue value;
 			std::string how;
-			if (native)
+			if (sizeRow && sizeLive.unreflected)
+			{
+				// Only a row measured from this build's PDB can stand for the size.
+				// A row of another build says what the size was then, and nothing
+				// on this build can confirm it still is, so it is not used.
+				if (!row)
+				{
+					const FieldCandidate* carried = LatestRow(rows);
+					RecordSize(owner, request.key, SizeResult::NoRow, carried, nullptr);
+					error = request.className + " is not reflected, so its size needs a row for " + ClText(running.cl)
+						+ " and has no other source";
+					if (carried)
+						error += "; the " + RowLabel(*carried) + " cannot be checked on this build, so it is not used";
+					return false;
+				}
+				if (row->size == 0)
+				{
+					error = RowLabel(*row) + " gives size 0";
+					return false;
+				}
+				RecordSize(owner, request.key, SizeResult::RowOnly, row, nullptr);
+				value = FieldValue{ 0, row->size, 0 };
+				how   = RowLabel(*row) + ", unreflected type";
+			}
+			else if (native)
 			{
 				if (row)
 				{
@@ -1379,7 +1457,7 @@ namespace VersionMap
 				// The row to check the game against: this build's, else the newest.
 				const FieldCandidate* checked = row ? row : LatestRow(rows);
 				std::string member = checked && !checked->member.empty() ? checked->member : request.member;
-				LiveField live = g_liveFields(request.className, member);
+				LiveField live = sizeRow ? sizeLive : g_liveFields(request.className, member);
 				if (!live.error.empty() && member != request.member)
 				{
 					// The row's new name is not in this build: ask for it by its own.
@@ -1417,6 +1495,8 @@ namespace VersionMap
 				if (checked)
 				{
 					const bool agrees = SameField(ValueOf(*checked), value, bitfield) || (sizeRow && checked->size == value.size);
+					if (sizeRow)
+						RecordSize(owner, request.key, agrees ? SizeResult::Match : SizeResult::Mismatch, checked, &live);
 					if (!agrees && row)
 						ModLoaderLogger::LogWarn(L"[Map] %S: %S: the %S says %S, the game says %S; the game wins",
 							owner ? owner : "?", request.key.c_str(), RowLabel(*checked).c_str(),
@@ -1431,6 +1511,8 @@ namespace VersionMap
 				}
 				else
 				{
+					if (sizeRow)
+						RecordSize(owner, request.key, SizeResult::ReflectedOnly, nullptr, &live);
 					how = "reflected (no row for " + ClText(running.cl) + ")";
 				}
 			}

@@ -394,6 +394,16 @@ int main()
 		Check(Row(onOld, "Test::MapOnly", 127004)->imageStamp == 0x11111111 && rep.clashes >= 1, "on the baseline's own exe the baseline's rows stay");
 	}
 
+	// A struct size is an ordinary field row whose key is the class alone (offset 0, the size, mask 0).
+	{
+		SignedFeed f;
+		std::string e;
+		Check(Read(Sign(sk1, Region(5, std::string(kBuilds) + "field\tFCrEnviroWaveSettings\t128786\t0x0\t0x2C\t0x00\t-\n")), keys, f, e)
+			&& f.map.fields.size() == 1 && f.map.fields[0].key == "FCrEnviroWaveSettings" && f.map.fields[0].gameCL == 128786
+			&& f.map.fields[0].offset == 0 && f.map.fields[0].size == 0x2C && f.map.fields[0].boolMask == 0,
+			"a class-keyed size row (no ::) parses as a field row");
+	}
+
 	// ---- per-CL coverage ---------------------------------------------------
 	{
 		Coverage cov;
