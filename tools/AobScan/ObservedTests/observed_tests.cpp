@@ -174,12 +174,60 @@ int main()
 		Check(!s.found && s.pattern.empty(), "no pattern lands on the address: none is reported");
 	}
 
+	// A build the map has no row for is decided by the latest other build's row,
+	// after the registry's request.
+	{
+		const VersionMap::Exe next{ 128786 + 1000, 0x33333333, 0x03000000 };
+		constexpr const char* kOlder = "48 89 5C 24 08 57 48 83 EC 20";
+
+		UseMap({ Row(widget, VersionMap::kBuiltCL, kRegistry), Row(widget, 128786, kMapRow) });
+		TestDoubles::g_rvas = { { kMapRow, 0x98B4480 } };
+		seen = Observe(widget, next, r);
+		Check(r.Succeeded() && r.address == Base() + 0x98B4480, "the loader resolves a new build through the latest row");
+		Check(seen.found && seen.fromMap && seen.pattern == kMapRow,
+			"a new build: the latest other build's row that decided the address");
+
+		TestDoubles::g_rvas = { { kRegistry, 0x98B4480 }, { kMapRow, 0x98B4480 } };
+		seen = Observe(widget, next, r);
+		Check(r.Succeeded() && seen.found && !seen.fromMap && seen.pattern == kRegistry,
+			"a new build where both agree: the registry's pattern, tried first");
+
+		// Only the latest other build's row is used, not an older one.
+		UseMap({ Row(widget, 128000, kOlder), Row(widget, 128786, kMapRow) });
+		TestDoubles::g_rvas = { { kOlder, 0x5000 } };
+		seen = Observe(widget, next, r);
+		Check(!r.Succeeded(), "the loader does not use an older build's row");
+		Check(!At(widget, next, 0x5000).found, "an older build's row is not observed");
+
+		// Absent on a build newer than the latest row: that row is not used.
+		MapFunctionRow gone = Row(widget, 128900, "");
+		gone.absent = true;
+		gone.owners = "ModLoader";
+		UseMap({ Row(widget, 128786, kMapRow), gone });
+		TestDoubles::g_rvas = { { kMapRow, 0x6000 } };
+		seen = Observe(widget, next, r);
+		Check(!r.Succeeded(), "the loader does not use a row older than an absent one");
+		Check(!At(widget, next, 0x6000).found, "a row older than an absent one is not observed");
+	}
+
 	// A site (kind InFunction) is kept under its fingerprint.
 	const ScanPatterns::PreflightEntry site = Entry("Test::Site", "B0 01", PatternKind::InFunction);
 	UseMap({ Row(site, 128786, "B0 02") });
 	TestDoubles::g_rvas = { { "B0 01", 0x7000 }, { "B0 02", 0x7000 } };
 	seen = Observe(site, kNew, r);
 	Check(r.Succeeded() && seen.found && seen.fromMap && seen.pattern == "B0 02", "a site: the map's row for the fingerprint");
+
+	// A site with arithmetic uses no row with another pattern.
+	{
+		ScanPatterns::PreflightEntry patched = site;
+		patched.siteArithmetic = 1;
+		const VersionMap::Exe next{ 128786 + 1000, 0x33333333, 0x03000000 };
+		UseMap({ Row(patched, 128786, "B0 02") });
+		TestDoubles::g_rvas = { { "B0 02", 0x7000 } };
+		seen = Observe(patched, next, r);
+		Check(!r.Succeeded(), "the loader does not use another pattern for a site with arithmetic");
+		Check(!At(patched, next, 0x7000).found, "another pattern for a site with arithmetic is not observed");
+	}
 
 	VersionMap::SetActiveMap(nullptr);
 

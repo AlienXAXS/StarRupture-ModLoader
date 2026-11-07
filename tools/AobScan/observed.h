@@ -20,7 +20,7 @@ namespace AobScan
 	struct ObservedLocator
 	{
 		bool        found = false;   // false: no pattern is known to land on the address (an address-only map row)
-		bool        fromMap = false; // the map's row for the exe, not the registry's request
+		bool        fromMap = false; // a row of the map, not the registry's request
 		std::string pattern;
 		int32_t     resultOffset    = 0;
 		int32_t     followRel32At   = -1;
@@ -28,10 +28,12 @@ namespace AobScan
 	};
 
 	// `address` is the final address ResolveLoaderEntry gave for `request`. The
-	// map's row for this exe's build is tried first, as the loader tries it, then
-	// the request; the first whose pattern resolves to `address` is the one
-	// observed. On the build the code was written for the registry's pattern
-	// stands in for the row's, as in the loader.
+	// locators are tried in the loader's order: the map's row for this exe's
+	// build, then the request, then the map's row for the latest other build
+	// (a build the map has no row for is decided by that one); the first whose
+	// pattern resolves to `address` is the one observed. On the build the code
+	// was written for the registry's pattern stands in for the row's, as in the
+	// loader. ObservedTests pins this order to ResolveLoaderEntry's.
 	ObservedLocator ObserveLoaderEntry(const ScanPatterns::PreflightEntry& entry,
 		const ScanValidation::Request& request, const VersionMap::Exe& exe, uintptr_t address);
 }
