@@ -1402,8 +1402,12 @@ namespace UiPass
 	// One per ImGui frame in flight (ImGui_ImplDX12 NumFramesInFlight), so the
 	// vertex buffers a slot's draw reads are not rewritten under the GPU.
 	constexpr UINT kSlots = MAX_FRAMES;
-	// HookedPresent draws again once this long has passed without a draw here.
+	// HookedPresent draws again once this long has passed without a draw here
+	// while Slate's step has never drawn, so a failed hook still falls back fast.
 	constexpr ULONGLONG kActiveMs = 250;
+	// Once Slate's step has drawn, the Present path waits this long: a focus
+	// change can pause the step for a moment, and handing over and back blinks.
+	constexpr ULONGLONG kHandoffMs = 2000;
 	constexpr DWORD kSlotWaitMs = 100;
 	// At most one rejected-frame line per this long.
 	constexpr ULONGLONG kRejectLogMs = 2000;
@@ -1512,8 +1516,12 @@ namespace UiPass
 	// so it must not draw its own.
 	static bool Active()
 	{
-		return GetTickCount64() - g_lastDrawMs.load() < kActiveMs ||
-			(g_doneFence && g_doneFence->GetCompletedValue() < g_lastDoneValue.load());
+		const ULONGLONG last = g_lastDrawMs.load();
+		if (GetTickCount64() - last < (last ? kHandoffMs : kActiveMs) ||
+			(g_doneFence && g_doneFence->GetCompletedValue() < g_lastDoneValue.load()))
+			return true;
+		// Nothing to draw to while minimised.
+		return last && IsIconic(g_hwnd.load());
 	}
 
 	// Milliseconds since the last Slate-step draw, or -1 if it never drew.
