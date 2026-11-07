@@ -89,6 +89,11 @@ jobs:
             break
           done
           if [ -z "$last" ]; then
+            if [ "$FIRST_PUBLISH" != "true" ] && [ "$GITHUB_EVENT_NAME" = "schedule" ]; then
+              echo "::notice::No feed has been published yet. Run this workflow once with first_publish set."
+              echo "tag=" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
             [ "$FIRST_PUBLISH" = "true" ] || { echo "::error::No release carries a feed. Run this workflow with first_publish set to publish the first one."; exit 1; }
             last=0
           fi
