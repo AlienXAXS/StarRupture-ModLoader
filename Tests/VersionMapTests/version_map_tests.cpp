@@ -109,6 +109,20 @@ namespace
 			f.size = 0x10, f.paths = { "Mod.Other" };
 		else if (className == "AUnready")
 			f.error = "the game's reflection data is not ready";
+		else if (className == "Widget_Resize")
+		{
+			// A function's parameter struct: an in-parameter, a parameter a
+			// game update put in front of the return, then the return, with
+			// the ParmsSize the game reports.
+			if (member.empty())
+				f.size = 0x20;
+			else if (member == "InSize")
+				f.offset = 0, f.size = 4;
+			else if (member == "ReturnValue")
+				f.offset = 0x18, f.size = 8;
+			else
+				f.error = "no parameter " + member + " in Mod.Widget.Resize";
+		}
 		else if (className != "ATest")
 		{
 			f.error = "no class " + className;
@@ -680,6 +694,13 @@ int main()
 			&& e == "the game's member is 0x8 bytes, the code was compiled for 0x4", "field: a non-zero size that does not match is still refused");
 		Check(!Field("ATest::Reflected", "ATest", "Reflected", PLUGIN_FIELD_ANY_SIZE, 4, {}, v, e)
 			&& e.find("bad request: PLUGIN_FIELD_ANY_SIZE") == 0, "field: the any-size flag with a non-zero size is refused");
+		// A parameter of a UFunction (class <Class>_<Function>) is a reflected member: its live offset and size, any compiled size.
+		Check(Field("Widget_Resize::ReturnValue", "Widget_Resize", "ReturnValue", PLUGIN_FIELD_ANY_SIZE, 0, {}, v, e)
+			&& v.offset == 0x18 && v.size == 8, "field: a function parameter resolves to its live offset and size");
+		Check(Field("Widget_Resize", "Widget_Resize", "", 0, 0x10, {}, v, e) && v.size == 0x20 && v.offset == 0,
+			"field: a function's parameter block size is its live ParmsSize, not the compiled one");
+		Check(!Field("Widget_Resize::Nope", "Widget_Resize", "Nope", PLUGIN_FIELD_ANY_SIZE, 0, {}, v, e)
+			&& e == "reflection: no parameter Nope in Mod.Widget.Resize", "field: an unknown parameter is refused with the reflection's reason");
 		Check(Field("FPlain::Block", "FPlain", "Block", PLUGIN_FIELD_NATIVE | PLUGIN_FIELD_ANY_SIZE, 0, {}, v, e)
 			&& v.offset == 0x120 && v.size == 0xB0, "field: a native member with the any-size flag is served from the build's own row, with the row's size");
 		Check(!Field("FPlain::Block", "FPlain", "Block", PLUGIN_FIELD_NATIVE | PLUGIN_FIELD_ANY_SIZE, 0, {}, v, e, VersionMap::Exe{ 130000, 0, 0 })

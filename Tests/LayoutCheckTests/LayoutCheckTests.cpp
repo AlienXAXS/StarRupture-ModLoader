@@ -598,6 +598,159 @@ namespace
                 "a null vtable: the read fails the same way");
         }
     }
+
+    // ---- Function parameter structs: the live offsets and ParmsSize ----
+
+    // A function as the game would reflect it, from the table's parameter
+    // struct: every parameter at or after `shiftFrom` moves by `shiftBy`, as if
+    // an update had put a parameter of that size in front of it. A name Dumper-7
+    // suffixed (Class_0) is reflected without the suffix.
+    LayoutCheck::LiveFunction GameFunction(const std::vector<LayoutCheck::TableClass>& table, const char* path,
+        int32_t shiftFrom = INT32_MAX, int32_t shiftBy = 0)
+    {
+        LayoutCheck::LiveFunction function;
+        for (const LayoutCheck::TableClass& c : table)
+        {
+            if (c.kind != LayoutCheck::Kind::FunctionParams || std::string(c.path) != path)
+                continue;
+            function.path = c.path;
+            for (const LayoutCheck::TableRow& row : c.rows)
+            {
+                std::string name = row.name;
+                if (name == "Class_0")
+                    name = "Class";
+                const int32_t offset = static_cast<int32_t>(row.offset);
+                function.params.push_back(LayoutCheck::LiveProperty{ name, offset >= shiftFrom ? offset + shiftBy : offset,
+                    static_cast<int32_t>(row.size), false, 0 });
+            }
+        }
+        return function;
+    }
+
+    const LayoutCheck::TableClass* TableFunction(const std::vector<LayoutCheck::TableClass>& table, const char* path)
+    {
+        for (const LayoutCheck::TableClass& c : table)
+            if (c.kind == LayoutCheck::Kind::FunctionParams && std::string(c.path) == path)
+                return &c;
+        return nullptr;
+    }
+
+    void FunctionParamsFollowTheGame()
+    {
+        std::printf("function parameter structs\n");
+        const auto table = LayoutCheck::ReadTable(SrLayoutTable::kNames, SrLayoutTable::kClasses, SrLayoutTable::kRows);
+        const char* const kPlayer = "Engine.GameplayStatics.GetPlayerController";
+        const char* const kPlayerName = "GameplayStatics_GetPlayerController";
+
+        // The same build as the SDK: every parameter of every function the
+        // table lists is where the table has it, and ParmsSize is the end of
+        // the last parameter (the table's sizeof rounded up to the struct's
+        // alignment).
+        bool allSame = true;
+        bool sizesAgree = true;
+        int functions = 0;
+        for (const LayoutCheck::TableClass& c : table)
+        {
+            if (c.kind != LayoutCheck::Kind::FunctionParams)
+                continue;
+            ++functions;
+            const std::vector<LayoutCheck::LiveFunction> game{ GameFunction(table, c.path) };
+            for (const LayoutCheck::TableRow& row : c.rows)
+            {
+                const LayoutCheck::ParamMember member = LayoutCheck::ResolveParamMember(c.name, game, row.name);
+                allSame = allSame && member.error.empty() && member.offset == static_cast<int32_t>(row.offset)
+                    && member.size == row.size;
+            }
+            const LayoutCheck::ParamMember size = LayoutCheck::ResolveParamMember(c.name, game, "");
+            sizesAgree = sizesAgree && size.error.empty() && size.size <= c.sizeOf && c.sizeOf - size.size < 16;
+        }
+        Check(functions >= 8, "the table lists function parameter structs to read");
+        Check(allSame, "a parameter resolves to its live offset and size, for every function in the table");
+        Check(sizesAgree, "the block size is the end of the last parameter, within the struct's padding");
+
+        {
+            const std::vector<LayoutCheck::LiveFunction> game{ GameFunction(table, kPlayer) };
+            Check(LayoutCheck::ResolveParamMember(kPlayerName, game, "ReturnValue").offset == 16,
+                "GetPlayerController: ReturnValue at 0x10");
+            Check(LayoutCheck::ResolveParamMember(kPlayerName, game, "").size == 0x18,
+                "GetPlayerController: ParmsSize 0x18");
+            Check(LayoutCheck::ResolveParamMember(kPlayerName, game, "returnvalue").offset == 16,
+                "a name differing only in case still resolves");
+            // Not rounded up: the last parameter is a one-byte bool at 8.
+            const std::vector<LayoutCheck::LiveFunction> only{ GameFunction(table, "UMG.WidgetBlueprintLibrary.SetInputMode_GameOnly") };
+            Check(LayoutCheck::ResolveParamMember("WidgetBlueprintLibrary_SetInputMode_GameOnly", only, "").size == 9,
+                "ParmsSize is the end of the last parameter, not rounded up to the struct's alignment");
+        }
+
+        // An update puts an 8-byte parameter before PlayerIndex: PlayerIndex
+        // and ReturnValue move and ParmsSize grows. The compiled offsets are
+        // the table's.
+        {
+            const LayoutCheck::TableClass* compiled = TableFunction(table, kPlayer);
+            const std::vector<LayoutCheck::LiveFunction> game{ GameFunction(table, kPlayer, 8, 8) };
+            const LayoutCheck::ParamMember playerIndex = LayoutCheck::ResolveParamMember(kPlayerName, game, "PlayerIndex");
+            const LayoutCheck::ParamMember ret = LayoutCheck::ResolveParamMember(kPlayerName, game, "ReturnValue");
+            const LayoutCheck::ParamMember size = LayoutCheck::ResolveParamMember(kPlayerName, game, "");
+            Check(compiled && compiled->rows.size() == 3 && compiled->rows[2].offset == 16, "the compiled ReturnValue is at 0x10");
+            Check(ret.error.empty() && ret.offset == 24 && ret.size == 8, "a shifted ReturnValue is found at its live offset");
+            Check(playerIndex.offset == 16 && playerIndex.size == 4, "so is a shifted in-parameter");
+            Check(size.size == 0x20, "and the block size follows the added parameter");
+            const LayoutCheck::ParamMember world = LayoutCheck::ResolveParamMember(kPlayerName, game, "WorldContextObject");
+            Check(world.offset == 0, "a parameter before the insertion stays put");
+        }
+
+        // The Dumper-7 suffix on a reserved name.
+        {
+            const char* const name = "SubsystemBlueprintLibrary_GetGameInstanceSubsystem";
+            const std::vector<LayoutCheck::LiveFunction> game{ GameFunction(table, "Engine.SubsystemBlueprintLibrary.GetGameInstanceSubsystem") };
+            const LayoutCheck::ParamMember cls = LayoutCheck::ResolveParamMember(name, game, "Class_0");
+            Check(cls.error.empty() && cls.offset == 8 && cls.size == 8, "Class_0 is found as the game's Class");
+            Check(LayoutCheck::ResolveParamMember(name, game, "Class").offset == 8, "and by the game's own name");
+        }
+
+        // Refusals.
+        {
+            const std::vector<LayoutCheck::LiveFunction> game{ GameFunction(table, kPlayer) };
+            LayoutCheck::ParamMember r = LayoutCheck::ResolveParamMember(kPlayerName, game, "NoSuchParam");
+            Check(!r.error.empty() && r.error.find("NoSuchParam") != std::string::npos && r.error.find(kPlayer) != std::string::npos,
+                "an unknown parameter is refused, naming it and the function");
+            r = LayoutCheck::ResolveParamMember("GameplayStatics_GetNothing", {}, "ReturnValue");
+            Check(!r.error.empty() && r.error.find("GameplayStatics_GetNothing") != std::string::npos,
+                "a name no function carries is refused");
+            r = LayoutCheck::ResolveParamMember("GameplayStatics_GetNothing", {}, "");
+            Check(!r.error.empty(), "so is its block size");
+
+            // The same class name in two modules carries the same parameter struct name.
+            std::vector<LayoutCheck::LiveFunction> two{ GameFunction(table, kPlayer), GameFunction(table, kPlayer) };
+            two[1].path = "Other.GameplayStatics.GetPlayerController";
+            r = LayoutCheck::ResolveParamMember(kPlayerName, two, "ReturnValue");
+            Check(!r.error.empty() && r.error.find(kPlayer) != std::string::npos
+                    && r.error.find("Other.GameplayStatics.GetPlayerController") != std::string::npos
+                    && r.error.find("/Script/") != std::string::npos,
+                "a name two functions carry is refused, naming both and how to pick one");
+            r = LayoutCheck::ResolveParamMember(kPlayerName, two, "");
+            Check(!r.error.empty(), "so is its block size");
+        }
+
+        // How a name is read as <Class>_<Function>.
+        {
+            const auto plain = LayoutCheck::SplitParamStruct("CrEnviroWaveSubsystem_GetCurrentStageSettings");
+            Check(plain.size() == 1 && plain[0].owner == "CrEnviroWaveSubsystem" && plain[0].function == "GetCurrentStageSettings"
+                    && plain[0].module.empty(),
+                "a name splits at its underscore");
+            const auto two = LayoutCheck::SplitParamStruct("WidgetBlueprintLibrary_SetInputMode_GameAndUIEx");
+            Check(two.size() == 2 && two[0].owner == "WidgetBlueprintLibrary" && two[0].function == "SetInputMode_GameAndUIEx"
+                    && two[1].owner == "WidgetBlueprintLibrary_SetInputMode" && two[1].function == "GameAndUIEx",
+                "an underscore in the function splits two ways, for the game to decide");
+            const auto scripted = LayoutCheck::SplitParamStruct("/Script/UMG.WidgetBlueprintLibrary_Create");
+            Check(scripted.size() == 1 && scripted[0].module == "UMG" && scripted[0].owner == "WidgetBlueprintLibrary"
+                    && scripted[0].function == "Create",
+                "/Script/<Module>. names the module");
+            Check(LayoutCheck::SplitParamStruct("ACrCharacterPlayerBase").empty() && LayoutCheck::SplitParamStruct("_X").empty()
+                    && LayoutCheck::SplitParamStruct("X_").empty() && LayoutCheck::SplitParamStruct("/Script/UMG").empty(),
+                "a class name, or an empty half, does not split");
+        }
+    }
 }
 
 int main()
@@ -611,6 +764,7 @@ int main()
     UsedMembersOnly();
     ConsumersDecideWhatStops();
     ProcessEventSlotDecidesSafeOff();
+    FunctionParamsFollowTheGame();
 
     if (g_failures)
         std::printf("\n%d check(s) FAILED\n", g_failures);

@@ -49,6 +49,13 @@ namespace LayoutCheck
     // and then in its supers. className is the short name, or
     // /Script/<Module>.<Name>; a short name more than one module has is an
     // error. Client and server builds, once engine init has been seen.
+    //
+    // className may also be a Dumper-7 parameter struct, <Class>_<Function>
+    // (CrEnviroWaveSubsystem_GetCurrentStageSettings, no prefix letter) or
+    // /Script/<Module>.<Class>_<Function>. The member is then one of the
+    // UFunction's parameters (ReturnValue for the return) at its offset in the
+    // parameter block, and the size (member empty) is the function's
+    // ParmsSize. See ResolveParamMember.
     VersionMap::LiveField LiveFieldOf(const std::string& className, const std::string& member);
 
     // ---- The comparison, kept apart from the game so it can be tested ------
@@ -231,4 +238,48 @@ namespace LayoutCheck
     Result Compare(const std::vector<TableClass>& table,
         const std::function<const LiveStruct*(const TableClass&)>& find,
         const PerBuild& perBuild = {});
+
+    // ---- Function parameter blocks, kept apart from the game so they can be tested ----
+
+    // One way to read a parameter struct name as <Class>_<Function>. Both
+    // halves may hold underscores (SetInputMode_GameAndUIEx), so every
+    // underscore is a candidate split.
+    struct ParamSplit
+    {
+        std::string module;     // from /Script/<Module>.; empty = any module
+        std::string owner;      // the class, as the game names it (CrEnviroWaveSubsystem)
+        std::string function;
+    };
+    std::vector<ParamSplit> SplitParamStruct(const std::string& name);
+
+    // A UFunction as the game reflects it: its parameters and return value (the
+    // properties flagged as parameters, not the locals of a Blueprint function).
+    struct LiveFunction
+    {
+        std::string               path;    // Module.Class.Function
+        std::vector<LiveProperty> params;
+    };
+
+    // The function's ParmsSize: the end of its last parameter, as the engine
+    // computes it when it links the function (not rounded up to an alignment).
+    uint32_t ParmsSizeOf(const LiveFunction& function);
+
+    struct ParamMember
+    {
+        std::string error;      // set when there is no answer
+        std::string path;       // Module.Class.Function of the function that answered
+        int32_t     offset = 0;
+        uint32_t    size = 0;
+        bool        isBool = false;
+        uint32_t    boolMask = 0;
+    };
+
+    // The answer for a request against a parameter struct, given every
+    // function its name can mean (the game side collects them through
+    // SplitParamStruct). member empty: the block size, ParmsSizeOf. Refused
+    // when no function or more than one carries the name, and when the function
+    // has no such parameter. A member under Dumper-7's _<n> suffix for a name it
+    // reserves (Class_0) is found under the name without it.
+    ParamMember ResolveParamMember(const std::string& name, const std::vector<LiveFunction>& functions,
+        const std::string& member);
 }

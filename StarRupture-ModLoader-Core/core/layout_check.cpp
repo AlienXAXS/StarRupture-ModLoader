@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstdarg>
 #include <cstdio>
+#include <cstring>
 #include <utility>
 
 #include <excpt.h>
@@ -144,6 +145,91 @@ namespace LayoutCheck
         }
 
         return result;
+    }
+
+    std::vector<ParamSplit> SplitParamStruct(const std::string& name)
+    {
+        constexpr char kScript[] = "/Script/";
+        std::string module;
+        std::string base = name;
+        if (name.rfind(kScript, 0) == 0)
+        {
+            const size_t dot = name.find('.');
+            if (dot == std::string::npos)
+                return {};
+            module = name.substr(sizeof(kScript) - 1, dot - (sizeof(kScript) - 1));
+            base   = name.substr(dot + 1);
+        }
+
+        std::vector<ParamSplit> splits;
+        for (size_t at = base.find('_'); at != std::string::npos; at = base.find('_', at + 1))
+        {
+            if (at > 0 && at + 1 < base.size())
+                splits.push_back(ParamSplit{ module, base.substr(0, at), base.substr(at + 1) });
+        }
+        return splits;
+    }
+
+    uint32_t ParmsSizeOf(const LiveFunction& function)
+    {
+        int32_t end = 0;
+        for (const LiveProperty& param : function.params)
+            end = std::max(end, param.offset + param.size);
+        return static_cast<uint32_t>(end);
+    }
+
+    ParamMember ResolveParamMember(const std::string& name, const std::vector<LiveFunction>& functions,
+        const std::string& member)
+    {
+        ParamMember answer;
+        if (functions.empty())
+        {
+            answer.error = name + " is not the parameter struct of any function";
+            return answer;
+        }
+        if (functions.size() > 1)
+        {
+            answer.error = name + " is the parameter struct of " + std::to_string(functions.size()) + " functions (";
+            for (size_t i = 0; i < functions.size(); ++i)
+                answer.error += (i ? ", " : "") + functions[i].path;
+            answer.error += "); name it by /Script/<Module>." + name;
+            return answer;
+        }
+
+        const LiveFunction& function = functions.front();
+        answer.path = function.path;
+        if (member.empty())
+        {
+            answer.size = ParmsSizeOf(function);
+            return answer;
+        }
+
+        const auto find = [&](const std::string& wanted) -> const LiveProperty*
+        {
+            for (const LiveProperty& param : function.params)
+                if (param.name == wanted)
+                    return &param;
+            // FName compares ignore case.
+            for (const LiveProperty& param : function.params)
+                if (_stricmp(param.name.c_str(), wanted.c_str()) == 0)
+                    return &param;
+            return nullptr;
+        };
+        const LiveProperty* param = find(member);
+        const size_t underscore = member.rfind('_');
+        if (!param && underscore != std::string::npos && underscore > 0 && underscore + 1 < member.size()
+            && member.find_first_not_of("0123456789", underscore + 1) == std::string::npos)
+            param = find(member.substr(0, underscore));
+        if (!param)
+        {
+            answer.error = "no parameter " + member + " in " + function.path;
+            return answer;
+        }
+        answer.offset   = param->offset;
+        answer.size     = static_cast<uint32_t>(param->size);
+        answer.isBool   = param->isBool;
+        answer.boolMask = param->fieldMask;
+        return answer;
     }
 
     bool ReadVtableSlot(const uintptr_t* vtable, int32_t index, uintptr_t& slot, uint32_t& exceptionCode)
@@ -644,19 +730,97 @@ namespace LayoutCheck
             answer.boolMask = live.fieldMask;
         }
 
+        // CPF_Parm: the property is a parameter or the return value.
+        constexpr uint64_t kParmFlag = 0x80;
+
+        // Every UFunction the name <Class>_<Function> can mean, over every
+        // split of it at an underscore and every native class of that name.
+        // `ownerSeen` is set when some split names a native class at all, which
+        // tells a function that is not there from a name that is not a
+        // parameter struct.
+        std::vector<LiveFunction> FindParamFunctions(const TypeIndex& index, const std::string& name, bool& ownerSeen)
+        {
+            std::vector<LiveFunction> found;
+            ownerSeen = false;
+            std::unordered_map<const SDK::UObject*, std::string> modules;
+            for (const ParamSplit& split : SplitParamStruct(name))
+            {
+                const auto owners = index.byName.find(split.owner);
+                if (owners == index.byName.end())
+                    continue;
+                for (int32_t i : owners->second)
+                {
+                    const SDK::UStruct* owner = TypeAt(i, split.owner);
+                    if (!owner || !owner->HasTypeFlag(SDK::EClassCastFlags::Class) || !owner->Outer)
+                        continue;
+                    const std::string& module = ModuleOf(owner->Outer, modules);
+                    if (module.empty() || (!split.module.empty() && split.module != module))
+                        continue;
+                    ownerSeen = true;
+                    for (const SDK::UField* child = owner->Children; child; child = child->Next)
+                    {
+                        if (!child->HasTypeFlag(SDK::EClassCastFlags::Function)
+                            || child->Name.GetRawString() != split.function)
+                            continue;
+                        LiveFunction function{ module + "." + split.owner + "." + split.function, {} };
+                        for (const SDK::FField* field = static_cast<const SDK::UStruct*>(child)->ChildProperties;
+                             field; field = field->Next)
+                        {
+                            const SDK::FProperty* property = static_cast<const SDK::FProperty*>(field);
+                            if (property->PropertyFlags & kParmFlag)
+                                function.params.push_back(Describe(property));
+                        }
+                        found.push_back(std::move(function));
+                    }
+                }
+            }
+            return found;
+        }
+
+        // The answer for a request that names a function's parameter struct;
+        // false when the name is not one (no class of that name has the
+        // function or any split of it names a class), so the request is not
+        // about a function.
+        bool LookupParams(const std::string& className, const std::string& member, VersionMap::LiveField& answer)
+        {
+            bool ownerSeen = false;
+            const std::vector<LiveFunction> functions = FindParamFunctions(g_types, className, ownerSeen);
+            if (functions.empty() && !ownerSeen)
+                return false;
+            const ParamMember param = ResolveParamMember(className, functions, member);
+            answer = VersionMap::LiveField{};
+            answer.error    = param.error;
+            answer.offset   = param.offset;
+            answer.size     = param.size;
+            answer.isBool   = param.isBool;
+            answer.boolMask = static_cast<uint8_t>(param.boolMask);
+            // The path the layout check names the function's parameter struct by.
+            if (!param.path.empty())
+                answer.paths.push_back(param.path);
+            return true;
+        }
+
         void Lookup(const std::string& className, const std::string& member, VersionMap::LiveField& answer)
         {
             if (g_types.objects < 0)
                 BuildTypeIndex(g_types);
             const SDK::UStruct* type = nullptr;
-            answer = FindType(g_types, className, type);
+            const auto resolve = [&]()
+            {
+                answer = FindType(g_types, className, type);
+                // A class or struct wins; a name that is neither may be a
+                // function's parameter struct.
+                if (!type && !LookupParams(className, member, answer) && className.find('_') != std::string::npos)
+                    answer.error += " (nor does any native class have a function with that parameter struct)";
+            };
+            resolve();
             // Types registered since the index was built, or a slot reused:
             // build it again, once.
             if (!type && answer.error.rfind("no native", 0) == 0
                 && SDK::UObject::GObjects.GetTypedPtr()->Num() != g_types.objects)
             {
                 BuildTypeIndex(g_types);
-                answer = FindType(g_types, className, type);
+                resolve();
             }
             if (type)
             {

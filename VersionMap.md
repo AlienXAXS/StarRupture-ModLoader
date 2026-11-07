@@ -159,6 +159,24 @@ plugin requests, on every build. It is an ordinary field line, so the feed forma
   `mismatch`, `row-only`, `no-row`, `reflected-only`). It is written on a boot where a plugin asked
   for a size, whether or not the layout check found a change.
 
+**Function parameters.** A UFunction is a reflected struct whose members are its parameters, so a
+plugin can read where the running game puts them instead of trusting the compiled Dumper-7 parameter
+struct. The class of the request is that struct's name, `<Class>_<Function>` with the game's class
+name and no prefix letter (`CrEnviroWaveSubsystem_GetCurrentStageSettings`), or
+`/Script/<Module>.<Class>_<Function>`. The Game-SDK's `SR_PARAM(Class, Function, Param)` is a
+member request (`PLUGIN_FIELD_ANY_SIZE`, `Param` is `ReturnValue` for the return) and
+`SR_PARAMS_SIZE(Class, Function)` is the size request. Both are reflected requests, answered live:
+the member gives the parameter's offset in the parameter block and its size, and the size request
+gives the function's `ParmsSize`, the end of its last parameter as the engine computes it (not
+rounded up to an alignment). Locals of a Blueprint function are not parameters and are not
+counted. Rows play no part: there is nothing to cross-check against, and no row is needed. A
+name that is a class or struct is answered as one first. The name is split at every underscore
+into class and function (functions have underscores too), and every native class of that name
+that has that function answers; a name that matches no function, or more than one (the same class
+name in two modules), is refused with the reason, and `/Script/<Module>.` picks one. A parameter
+Dumper-7 renamed with a `_<n>` suffix (`Class_0`) is found under the name without it. Reads are
+on the game thread, like the rest of the reflection data.
+
 **Unreflected native types.** A plain C++ engine type that is neither a `UCLASS` nor a `USTRUCT`
 (`FMassEntityManager`, `FStructSharedMemory`) has no reflected size to bound a native member by.
 When reflection reports that no class or struct of that name exists, the member is served from
