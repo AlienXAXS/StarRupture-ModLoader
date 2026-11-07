@@ -510,6 +510,10 @@ DWORD WINAPI MainInitThreadProc(LPVOID)
     const ULONGLONG pluginInitStart = GetTickCount64();
     InitPluginsPhase();
     LogToFile::Info("[init] Plugins initialised in %llu ms", GetTickCount64() - pluginInitStart);
+#ifdef MODLOADER_CLIENT_BUILD
+    // The sizes the plugins asked for are known now.
+    CompatReport::Refresh(layout);
+#endif
 
     LogToFile::Info("[init] Stage 3 complete in %llu ms -- releasing main thread", GetTickCount64() - stage3Start);
     if (g_pluginsReadyEvent)

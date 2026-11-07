@@ -8,7 +8,7 @@ namespace CompatReport
     namespace
     {
         // Bumped on any change to the report's fields.
-        constexpr int kReportFormat = 3;
+        constexpr int kReportFormat = 4;
 
         void AppendString(std::string& out, const std::string& text)
         {
@@ -39,6 +39,12 @@ namespace CompatReport
             return value ? "true" : "false";
         }
 
+        // A number, or null when there is none.
+        std::string NumberOrNull(bool present, uint32_t value)
+        {
+            return present ? std::to_string(value) : "null";
+        }
+
         // "key": [ one item per line ],
         template <class T, class AppendItem>
         void AppendArray(std::string& out, const char* key, const std::vector<T>& items, AppendItem appendItem, bool last)
@@ -55,6 +61,11 @@ namespace CompatReport
             out += items.empty() ? "]" : "\n  ]";
             out += last ? "\n" : ",\n";
         }
+    }
+
+    bool RefreshWrites(bool alreadyWritten, size_t sizeRequests)
+    {
+        return alreadyWritten || sizeRequests > 0;
     }
 
     std::string ClOf(const std::string& productVersion)
@@ -84,7 +95,9 @@ namespace CompatReport
         AppendString(out, inputs.exeSha256);
         out += " },\n";
         out += "  \"sdkCL\": " + std::to_string(inputs.sdkCL) + ",\n";
-        out += std::string("  \"outcome\": \"") + (inputs.outcome == Outcome::Partial ? "partial" : "safe-off") + "\",\n";
+        const char* outcome = inputs.outcome == Outcome::Partial ? "partial"
+            : inputs.outcome == Outcome::SafeOff ? "safe-off" : "unchanged";
+        out += std::string("  \"outcome\": \"") + outcome + "\",\n";
         out += "  \"layout\": { \"classes\": " + std::to_string(layout.classes)
             + ", \"checked\": " + std::to_string(layout.checked)
             + ", \"mismatched\": " + std::to_string(layout.mismatched)
@@ -112,6 +125,19 @@ namespace CompatReport
                 + ", \"rejected\": " + Bool(global.rejected);
         }, false);
 
+        AppendArray(out, "sizes", inputs.sizes, [](std::string& o, const SizeKey& size)
+        {
+            o += "\"plugin\": ";
+            AppendString(o, size.plugin);
+            o += ", \"key\": ";
+            AppendString(o, size.key);
+            o += ", \"rowCL\": " + NumberOrNull(size.rowCL != 0, size.rowCL)
+                + ", \"rowSize\": " + NumberOrNull(size.rowCL != 0, size.rowSize)
+                + ", \"reflectedSize\": " + NumberOrNull(size.reflected, size.reflectedSize)
+                + ", \"result\": ";
+            AppendString(o, size.result);
+        }, false);
+
         AppendArray(out, "changes", layout.changes, [](std::string& o, const LayoutCheck::Change& change)
         {
             o += "\"class\": ";
@@ -137,6 +163,7 @@ namespace CompatReport
 #include "version_check.h"
 #include "../logging/logger.h"
 #include "../memory_scanner/pattern_preflight.h"
+#include "../memory_scanner/version_map.h"
 
 #include <windows.h>
 #include <bcrypt.h>
@@ -207,6 +234,14 @@ namespace CompatReport
         }
     }
 
+    namespace
+    {
+        // What Write last wrote, so Refresh can write it again.
+        bool                g_written = false;
+        LayoutCheck::Result g_layout;
+        Outcome             g_outcome = Outcome::Partial;
+    }
+
     std::wstring Write(const LayoutCheck::Result& layout, Outcome outcome)
     {
         wchar_t exePath[MAX_PATH]{};
@@ -214,11 +249,15 @@ namespace CompatReport
         const wchar_t* lastSlash = wcsrchr(exePath, L'\\');
 
         Inputs inputs{ WideToUtf8(GetGameVersionString()), WideToUtf8(lastSlash ? lastSlash + 1 : exePath),
-            Sha256OfFile(exePath), SrLayoutTable::kBuiltCL, {}, {}, &layout, outcome };
+            Sha256OfFile(exePath), SrLayoutTable::kBuiltCL, {}, {}, &layout, outcome, {} };
         for (const PatternPreflight::Miss& miss : PatternPreflight::Misses())
             inputs.patternMisses.push_back(PatternMiss{ miss.name, miss.pattern, miss.required, miss.structural });
         for (const SdkGlobals::Resolution& global : SdkGlobals::Resolutions())
             inputs.globals.push_back(GlobalRva{ global.name, global.resolved, global.rva, global.sdkOffset, global.rejected });
+
+        for (const VersionMap::SizeFinding& size : VersionMap::SizeFindings())
+            inputs.sizes.push_back(SizeKey{ size.plugin, size.key, size.rowCL, size.rowSize, size.reflected,
+                size.reflectedSize, VersionMap::SizeResultText(size.result) });
 
         const std::string cl = ClOf(inputs.productVersion);
         const std::wstring fileName = L"compat-report-" + std::wstring(cl.begin(), cl.end()) + L".json";
@@ -233,7 +272,20 @@ namespace CompatReport
         }
 
         ModLoaderLogger::LogInfo(L"[LayoutCheck] Compatibility report written to ModLoader\\%s", fileName.c_str());
+        g_written = true;
+        g_layout  = layout;
+        g_outcome = outcome;
         return fileName;
+    }
+
+    void Refresh(const LayoutCheck::Result& layout)
+    {
+        if (!RefreshWrites(g_written, VersionMap::SizeFindings().size()))
+            return;
+        if (g_written)
+            Write(g_layout, g_outcome);
+        else
+            Write(layout, Outcome::Unchanged);
     }
 }
 
