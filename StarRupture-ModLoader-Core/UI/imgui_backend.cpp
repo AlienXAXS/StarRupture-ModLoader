@@ -335,9 +335,16 @@ static void LogWindowStateMessage(UINT msg, WPARAM wParam, LPARAM lParam)
 			static_cast<unsigned>(lParam));
 		break;
 	case WM_SIZE:
+	{
+		// A drag-resize sends one per mouse move: log only a change.
+		static std::atomic<UINT64> s_lastSize{ ~0ull };
+		const UINT64 key = (static_cast<UINT64>(wParam) << 32) | static_cast<UINT32>(lParam);
+		if (s_lastSize.exchange(key) == key)
+			break;
 		IMGUI_LOG_INFO("[ImGuiBackend] WM_SIZE type=%u size=%ux%u", static_cast<unsigned>(wParam),
 			static_cast<unsigned>(LOWORD(lParam)), static_cast<unsigned>(HIWORD(lParam)));
 		break;
+	}
 	case WM_SHOWWINDOW:
 		IMGUI_LOG_INFO("[ImGuiBackend] WM_SHOWWINDOW shown=%u reason=%u", static_cast<unsigned>(wParam),
 			static_cast<unsigned>(lParam));
@@ -1524,6 +1531,14 @@ namespace UiPass
 		return last && IsIconic(g_hwnd.load());
 	}
 
+	// True while Slate's step is the one drawing (as opposed to Active() held
+	// only by a pending fence or a minimised window).
+	static bool Drawing()
+	{
+		const ULONGLONG last = g_lastDrawMs.load();
+		return last && GetTickCount64() - last < kHandoffMs;
+	}
+
 	// Milliseconds since the last Slate-step draw, or -1 if it never drew.
 	static LONGLONG MsSinceDraw()
 	{
@@ -1774,16 +1789,15 @@ static HRESULT PresentAndCheck(IDXGISwapChain* swapChain, UINT syncInterval, UIN
 	return hr;
 }
 
-// One line each time drawing moves between Slate's present step and the
-// Present fallback.
-static void NoteDrawPath(bool slate)
+// One line each time drawing moves between Slate's present step, the Present
+// fallback and nothing (minimised, or waiting on the last Slate draw).
+static void NoteDrawPath(const char* path)
 {
-	static std::atomic<int> s_path{ -1 };
-	if (s_path.exchange(slate ? 1 : 0) == (slate ? 1 : 0))
+	static std::atomic<const char*> s_path{ nullptr };
+	if (s_path.exchange(path) == path)
 		return;
 	const LONGLONG sinceSlate = UiPass::MsSinceDraw();
-	IMGUI_LOG_INFO("[ImGuiBackend] Overlay draw path: %s (ms since last Slate draw: %lld)",
-		slate ? "Slate step" : "Present fallback", sinceSlate);
+	IMGUI_LOG_INFO("[ImGuiBackend] Overlay draw path: %s (ms since last Slate draw: %lld)", path, sinceSlate);
 }
 
 // ---------------------------------------------------------------------------
@@ -1853,8 +1867,9 @@ static HRESULT STDMETHODCALLTYPE HookedPresent(IDXGISwapChain* swapChain, UINT s
 	}
 	if (UiPass::Active())
 	{
-		NoteDrawPath(true);
-		return PresentAndCheck(swapChain, syncInterval, flags, frameIdx, "slate");
+		const char* path = UiPass::Drawing() ? "slate" : "none";
+		NoteDrawPath(path);
+		return PresentAndCheck(swapChain, syncInterval, flags, frameIdx, path);
 	}
 
 	// Released before the real Present on every path below. If the Slate-step
@@ -1863,7 +1878,7 @@ static HRESULT STDMETHODCALLTYPE HookedPresent(IDXGISwapChain* swapChain, UINT s
 	if (!g_drawOwnerThread.compare_exchange_strong(drawExpected, tid))
 		return PresentAndCheck(swapChain, syncInterval, flags, frameIdx, "slate-recording");
 
-	NoteDrawPath(false);
+	NoteDrawPath("fallback");
 
 	// Current back buffer index.
 	IDXGISwapChain3* sc3 = nullptr;
