@@ -31,6 +31,14 @@
 // run's; the second only adds its line to the note, or turns a pass into FAIL.
 // It is skipped after a crash or a stopped game call.
 //
+// --json gives a map-key request that resolved the locator that matches at its
+// rva (pattern, resultOffset, followRel32At, followRipDispAt): the plugin's own
+// pattern when that lands there, otherwise the version map's row that does
+// (observed.h). When no pattern lands there exactly once the pattern is left
+// out, so map mode refuses the write instead of making a row from a pattern
+// the loader would refuse on that exe. "matches" is always the count of the
+// plugin's own pattern.
+//
 // A request can carry locators for other game builds (interface 72). Their
 // patterns are listed in the row after the request's own, and the loader's
 // "[Map]" line, which says which locator it took, goes to stderr.
@@ -88,6 +96,7 @@
 #include "memory_scanner/hook_scanner_interface.h"
 #include "memory_scanner/scanner.h"
 #include "memory_scanner/version_map.h"
+#include "observed.h"
 #include "plugins/plugin_hook_report.h"
 
 namespace
@@ -291,6 +300,8 @@ namespace
 		uint64_t               rva    = 0;
 		std::string            detail;
 		const char*            own = nullptr;  // OWN-MISSING / OWN-AMBIGUOUS: see GradeOwnPatterns
+		bool                   observes = false;   // a map-key request that resolved: `seen` is what a map row is made of
+		AobScan::ObservedLocator seen;             // the locator that matches at the resolved address
 		AobScan::Suggest::Result suggest;  // MISSING / AMBIGUOUS, with --suggest
 	};
 
@@ -568,8 +579,28 @@ namespace
 			|| ((!local.pattern || !local.pattern[0]) && !keyOnly)
 			|| local.kind < PLUGIN_SCAN_FUNCTION_START || local.kind > PLUGIN_SCAN_ANY;
 
-		return Record(std::move(row), local.module, badRequest,
+		const bool wantsRow = !row.key.empty() && row.patterns.size() == 1;
+		const uintptr_t address = Record(std::move(row), local.module, badRequest,
 			[&] { return Loader().Resolve(self, request); });
+
+		// A map row is made from the locator that matches at the address, not
+		// from the plugin's own pattern, which the loader may not have used.
+		if (address && wantsRow)
+		{
+			Row& done = g_rows.back();
+			ScanValidation::Request asked;
+			asked.name          = done.name;
+			asked.pattern       = done.patterns[0].pattern;
+			asked.kind          = ScanValidation::ParseKind(done.kind.c_str());
+			asked.module        = local.module;
+			asked.resultOffset  = local.resultOffset;
+			asked.vtableSlots   = local.vtableSlots;
+			asked.followRel32At = done.followRel32At;
+			done.observes = true;
+			done.seen     = AobScan::ObservePluginRequest(self && self->name ? self->name : "", done.key, done.fp, asked,
+				VersionMap::ExeOf(g_image), address);
+		}
+		return address;
 	}
 
 #if PLUGIN_INTERFACE_VERSION >= 72
@@ -1164,8 +1195,16 @@ namespace
 			       "\"result\": \"%s\"",
 				row.call.c_str(), JsonEscape(row.name).c_str(), row.kind.c_str(), row.required ? "true" : "false",
 				row.recorded ? "true" : "false", row.result.c_str());
+			// A map-key request that resolved reports the locator that matches at
+			// its address (the map's row when that decided it) and none when no
+			// single pattern does, so a row is never made from a pattern the loader
+			// would refuse on this exe. "matches" counts the plugin's own pattern.
 			if (row.patterns.size() == 1)
-				printf(", \"pattern\": \"%s\", \"matches\": %zu", JsonEscape(row.patterns[0].pattern).c_str(), row.patterns[0].matches);
+			{
+				if (!row.observes || row.seen.found)
+					printf(", \"pattern\": \"%s\"", JsonEscape(row.observes ? row.seen.pattern : row.patterns[0].pattern).c_str());
+				printf(", \"matches\": %zu", row.patterns[0].matches);
+			}
 			else if (!row.patterns.empty())
 			{
 				printf(", \"candidates\": [");
@@ -1174,11 +1213,16 @@ namespace
 						JsonEscape(row.patterns[c].pattern).c_str(), row.patterns[c].matches);
 				printf("]");
 			}
-			if (row.followRel32At >= 0)
-				printf(", \"followRel32At\": %d", row.followRel32At);
+			const bool fromRow = row.observes && row.seen.found;
+			const int  followRel32At   = fromRow ? row.seen.followRel32At : row.followRel32At;
+			const int  followRipDispAt = fromRow ? row.seen.followRipDispAt : -1;
+			if (followRel32At >= 0)
+				printf(", \"followRel32At\": %d", followRel32At);
+			if (followRipDispAt >= 0)
+				printf(", \"followRipDispAt\": %d", followRipDispAt);
 			if (row.own)
 				printf(", \"ownPattern\": \"%s\"", row.own);
-			printf(", \"resultOffset\": %d", row.resultOffset);
+			printf(", \"resultOffset\": %d", fromRow ? row.seen.resultOffset : row.resultOffset);
 			if (!row.key.empty())
 			{
 				// A request has no followRipDispAt: the fingerprint is made with -1.

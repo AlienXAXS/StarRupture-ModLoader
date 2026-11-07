@@ -15,15 +15,15 @@ namespace AobScan
 			return r.Succeeded() && r.address == address;
 		}
 
-		// Whether a global absent row's owner list ("A,B") names the loader.
-		bool ListsLoader(const std::string& owners)
+		// Whether a global absent row's owner list ("A,B") names `owner`.
+		bool ListsOwner(const std::string& owners, const std::string& owner)
 		{
 			size_t start = 0;
 			while (start < owners.size())
 			{
 				const size_t comma = owners.find(',', start);
 				const size_t end   = comma == std::string::npos ? owners.size() : comma;
-				if (owners.compare(start, end - start, "ModLoader") == 0)
+				if (owners.compare(start, end - start, owner) == 0)
 					return true;
 				start = end + 1;
 			}
@@ -40,21 +40,16 @@ namespace AobScan
 			int32_t     followRipDispAt = -1;
 		};
 
-		// The map's rows the loader decides a registry row with, in the map's
-		// order (VersionMap::LoaderRows over LookUp, which the loader keeps
-		// private): the rows of its key, kind and fingerprint for the running
-		// build and for the latest other build that has a pattern, none when
-		// the key is absent on a build newer than that one or absent on the
-		// running build. On the build the code was written for the registry's
-		// pattern stands in for the row's, and a site with arithmetic keeps
-		// only a row with its own pattern. Empty also when the loader refuses,
-		// which then reports no address to observe.
-		std::vector<Locator> LoaderRows(const ScanPatterns::PreflightEntry& entry, uint32_t runningCL)
+		// The map's rows the loader decides a request with, in the map's order
+		// (VersionMap::LookUp, which the loader keeps private): the rows of its
+		// key, kind and fingerprint for the running build and for the latest
+		// other build that has a pattern, none when the key is absent on a
+		// build newer than that one or absent on the running build. A global
+		// key's absent row binds the owners it lists, a site's its fingerprint.
+		// Empty also when the loader refuses, which then reports no address to
+		// observe.
+		std::vector<Locator> MapRows(const std::string& key, int kind, uint32_t fp, const std::string& owner, uint32_t runningCL)
 		{
-			const std::string key  = VersionMap::LoaderEntryKey(entry);
-			const uint32_t    fp   = VersionMap::LoaderEntryFingerprint(entry);
-			const int         kind = static_cast<int>(entry.kind);
-
 			struct Row { uint32_t gameCL; const VersionMap::MapFunctionRow* row; };
 			std::vector<Row> rows;
 			uint32_t absentCL = 0;
@@ -64,10 +59,9 @@ namespace AobScan
 					continue;
 				if (f.absent)
 				{
-					const bool binds = fp != 0 || ListsLoader(f.owners);
 					if (f.gameCL == runningCL)
 						return {};   // refused, or set aside for other owners: no row is used
-					if (binds)
+					if (fp != 0 || ListsOwner(f.owners, owner))
 						absentCL = std::max(absentCL, f.gameCL);
 					continue;
 				}
@@ -87,23 +81,37 @@ namespace AobScan
 				if (r.gameCL != runningCL && r.gameCL != latestCL)
 					continue;
 				Locator l;
-				l.gameCL = r.gameCL;
-				if (r.gameCL == VersionMap::kBuiltCL)
+				l.gameCL          = r.gameCL;
+				l.fromMap         = true;
+				l.pattern         = r.row->pattern;
+				l.resultOffset    = r.row->resultOffset;
+				l.followRel32At   = r.row->followRel32At;
+				l.followRipDispAt = r.row->followRipDispAt;
+				out.push_back(std::move(l));
+			}
+			return out;
+		}
+
+		// The map's rows for one registry row (VersionMap::LoaderRows). On the
+		// build the code was written for the registry's pattern stands in for
+		// the row's, and a site with arithmetic keeps only a row with its own
+		// pattern.
+		std::vector<Locator> LoaderRows(const ScanPatterns::PreflightEntry& entry, uint32_t runningCL)
+		{
+			std::vector<Locator> out;
+			for (Locator& l : MapRows(VersionMap::LoaderEntryKey(entry), static_cast<int>(entry.kind),
+				VersionMap::LoaderEntryFingerprint(entry), "ModLoader", runningCL))
+			{
+				if (l.gameCL == VersionMap::kBuiltCL)
 				{
+					l.fromMap         = false;
 					l.pattern         = entry.pattern;
+					l.resultOffset    = 0;
 					l.followRel32At   = entry.followRel32At;
 					l.followRipDispAt = entry.followRipDispAt;
 				}
-				else
-				{
-					if (entry.siteArithmetic && r.row->pattern != entry.pattern)
-						continue;
-					l.fromMap         = true;
-					l.pattern         = r.row->pattern;
-					l.resultOffset    = r.row->resultOffset;
-					l.followRel32At   = r.row->followRel32At;
-					l.followRipDispAt = r.row->followRipDispAt;
-				}
+				else if (entry.siteArithmetic && l.pattern != entry.pattern)
+					continue;
 				out.push_back(std::move(l));
 			}
 			return out;
@@ -128,32 +136,42 @@ namespace AobScan
 			seen.followRipDispAt = l.followRipDispAt;
 			return true;
 		}
+
+		// VersionMap::Select: the row for the running build decides first; then
+		// every locator that resolves agrees, the request's own pattern first and
+		// the rows after it in the map's order, and the first of them won.
+		ObservedLocator Pick(const std::vector<Locator>& rows, const ScanValidation::Request& request,
+			const VersionMap::Exe& exe, uintptr_t address)
+		{
+			ObservedLocator seen;
+			for (const Locator& l : rows)
+				if (exe.cl && l.gameCL == exe.cl && Take(l, request, address, seen))
+					return seen;
+
+			Locator own;
+			own.pattern         = request.pattern;
+			own.resultOffset    = request.resultOffset;
+			own.followRel32At   = request.followRel32At;
+			own.followRipDispAt = request.followRipDispAt;
+			if (Take(own, request, address, seen))
+				return seen;
+
+			for (const Locator& l : rows)
+				if (l.gameCL != exe.cl && Take(l, request, address, seen))
+					return seen;
+			return seen;
+		}
 	}
 
 	ObservedLocator ObserveLoaderEntry(const ScanPatterns::PreflightEntry& entry,
 		const ScanValidation::Request& request, const VersionMap::Exe& exe, uintptr_t address)
 	{
-		ObservedLocator seen;
-		const std::vector<Locator> rows = LoaderRows(entry, exe.cl);
+		return Pick(LoaderRows(entry, exe.cl), request, exe, address);
+	}
 
-		// VersionMap::Select: the row for the running build decides first; then
-		// every locator that resolves agrees, the request's own pattern first and
-		// the rows after it in the map's order, and the first of them won.
-		for (const Locator& l : rows)
-			if (exe.cl && l.gameCL == exe.cl && Take(l, request, address, seen))
-				return seen;
-
-		Locator own;
-		own.pattern         = request.pattern;
-		own.resultOffset    = request.resultOffset;
-		own.followRel32At   = request.followRel32At;
-		own.followRipDispAt = request.followRipDispAt;
-		if (Take(own, request, address, seen))
-			return seen;
-
-		for (const Locator& l : rows)
-			if (l.gameCL != exe.cl && Take(l, request, address, seen))
-				return seen;
-		return seen;
+	ObservedLocator ObservePluginRequest(const char* owner, const std::string& key, uint32_t fp,
+		const ScanValidation::Request& request, const VersionMap::Exe& exe, uintptr_t address)
+	{
+		return Pick(MapRows(key, static_cast<int>(request.kind), fp, owner ? owner : "", exe.cl), request, exe, address);
 	}
 }
