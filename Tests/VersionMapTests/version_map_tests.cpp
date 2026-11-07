@@ -305,7 +305,7 @@ int main()
 		"loader site: a new pattern is not used, the built row stands in");
 
 	// The real map against the registry: every key is a registry row's, with its kind and fingerprint.
-	int unmatched = 0, wrong = 0, pluginKeys = 0;
+	int unmatched = 0, wrong = 0;
 	for (const Real::VersionMap::Index& index : Real::VersionMap::kFunctions)
 	{
 		const ScanPatterns::PreflightEntry* entry = nullptr;
@@ -329,7 +329,6 @@ int main()
 					break;
 				}
 			}
-			++pluginKeys;
 			continue;
 		}
 		for (uint16_t i = index.first; i < index.first + index.count; ++i)
@@ -1164,7 +1163,37 @@ int main()
 		Check(textureBoth, "real function rows: the texture natives and the UpdateResource site have rows for both builds with one pattern");
 	}
 	Check(unmatched == 0, "every real map key is a registry row's or a plugin's global or scoped key");
-	Check(pluginKeys == 155, "the real map holds the 155 plugin function keys; FRHIComputeCommandList::Transition is a loader registry key now");
+	// The key index against the rows: the ranges tile kFunctionRows in order with none empty, each
+	// key appears once, and a key holds one row per game build. A generated map grows by whole keys
+	// and rows, so no count is fixed here; a shifted first or count, or a repeated key, still fails.
+	int badRange = 0, repeatedKey = 0, repeatedBuild = 0;
+	size_t nextRow = 0;
+	for (size_t k = 0; k < Real::VersionMap::kFunctions.size(); ++k)
+	{
+		const Real::VersionMap::Index& index = Real::VersionMap::kFunctions[k];
+		if (index.count == 0 || index.first != nextRow)
+		{
+			++badRange;
+			printf("  index range does not follow the previous one: %s\n", index.key);
+		}
+		nextRow = static_cast<size_t>(index.first) + index.count;
+		for (size_t j = 0; j < k; ++j)
+			if (strcmp(Real::VersionMap::kFunctions[j].key, index.key) == 0)
+			{
+				++repeatedKey;
+				printf("  key indexed twice: %s\n", index.key);
+			}
+		for (size_t a = index.first; a < nextRow && nextRow <= Real::VersionMap::kFunctionRows.size(); ++a)
+			for (size_t b = index.first; b < a; ++b)
+				if (Real::VersionMap::kFunctionRows[a].gameCL == Real::VersionMap::kFunctionRows[b].gameCL)
+				{
+					++repeatedBuild;
+					printf("  two rows for one build: %s\n", index.key);
+				}
+	}
+	Check(badRange == 0 && nextRow == Real::VersionMap::kFunctionRows.size(), "the real map's key index tiles its function rows exactly");
+	Check(repeatedKey == 0, "every real map function key is indexed once");
+	Check(repeatedBuild == 0, "every real map function key has at most one row per game build");
 	Check(wrong == 0, "every real map row has its registry row's kind and fp");
 
 	// Restarting a plugin the crash guard switched off: the plan for each setting, the limiter, the timing.
