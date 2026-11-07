@@ -1149,9 +1149,11 @@ static_assert(offsetof(PluginScanRequest, candidates)     == 56, "v72 starts whe
 //                           member's size on this build comes back in
 //                           PluginFieldResult::size, for a member whose type
 //                           differs between builds (a float on one, a double
-//                           on the next). The flag is for a reflected member
-//                           only: with NATIVE, CHECK, BITFIELD, a size row or
-//                           a non-zero size, the request is refused.
+//                           on the next). With NATIVE the running build's
+//                           own row serves the offset and its size comes
+//                           back; no row for the running build is refused.
+//                           With CHECK, BITFIELD, a size row or a non-zero
+//                           size, the request is refused.
 //   PLUGIN_FIELD_NATIVE     a member reflection does not describe. The offset
 //                           comes from the row for the running changelist, or
 //                           builtOffset on builtCL. On any other build it
@@ -1194,7 +1196,7 @@ enum PluginFieldFlags
     PLUGIN_FIELD_NATIVE    = 1 << 0,
     PLUGIN_FIELD_CHECK     = 1 << 1,
     PLUGIN_FIELD_BITFIELD  = 1 << 2,
-    PLUGIN_FIELD_ANY_SIZE  = 1 << 3,   // v74: take the reflected size; size must be 0
+    PLUGIN_FIELD_ANY_SIZE  = 1 << 3,   // v74: take the reflected size (with NATIVE, the running build's row size, row required); size must be 0
 };
 
 // One build's value for a field. Passed in an array with no stride field, so

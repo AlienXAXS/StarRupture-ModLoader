@@ -128,7 +128,10 @@ when the row is the running build's own (a map bug), and a debug line when the r
 build's, which is expected to differ (the latest row stands in for a build with none). A native
 offset (reflection does not describe it) comes from the running CL's row or the compiled offset
 on the build it was compiled for; a row carried forward from an older CL cannot be checked on
-this build, so the field is unresolved. A native offset plus its size must lie inside the
+this build, so the field is unresolved. `PLUGIN_FIELD_ANY_SIZE` (size 0) works for a native member
+too: the running build's own row serves the offset and its size comes back, so a plugin that only
+takes the member's address need not know the size; with no row for the running build it is refused.
+A native offset plus its size must lie inside the
 class's live size. See the SDK guide for the `[Map]` log lines.
 
 **Struct sizes.** A size request is a field request with the member null (`SR_SIZE_CHECK`, or the
