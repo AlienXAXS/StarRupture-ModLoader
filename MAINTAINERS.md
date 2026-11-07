@@ -118,3 +118,4 @@ uploads it to this repository's Latest release.
 - The scheduled run refuses a feed signed with the TEST key; only a manual run with `allow_test_key`
   set accepts one, for tests on a fork.
 - Latest is where the asset sits because `prune_releases.yml` deletes every other release and tag.
+- Release builds carry version-map rows only for game builds that have been on the public Steam branch; the release workflow checks this against the CI repo's list of public builds.
