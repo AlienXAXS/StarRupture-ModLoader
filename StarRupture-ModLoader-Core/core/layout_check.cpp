@@ -170,6 +170,15 @@ namespace LayoutCheck
         return splits;
     }
 
+    LiveFunction FunctionOf(const std::string& path, const std::vector<FunctionProperty>& children)
+    {
+        LiveFunction function{ path, {} };
+        for (const FunctionProperty& child : children)
+            if (child.flags & kPropertyParm)
+                function.params.push_back(child.property);
+        return function;
+    }
+
     uint32_t ParmsSizeOf(const LiveFunction& function)
     {
         int32_t end = 0;
@@ -230,6 +239,76 @@ namespace LayoutCheck
         answer.isBool   = param->isBool;
         answer.boolMask = param->fieldMask;
         return answer;
+    }
+
+    std::vector<ParamSplit> BlueprintSplits(const std::string& name)
+    {
+        std::vector<ParamSplit> splits;
+        for (ParamSplit& split : SplitParamStruct(name))
+        {
+            const std::string& owner = split.owner;
+            if (split.module.empty() && owner.size() > 2 && owner.compare(owner.size() - 2, 2, "_C") == 0)
+                splits.push_back(std::move(split));
+        }
+        return splits;
+    }
+
+    namespace
+    {
+        // Two copies of one Blueprint class (the old one not collected yet when
+        // the new one loads) carry the same parameters; they are one function.
+        bool SameParams(const LiveFunction& a, const LiveFunction& b)
+        {
+            if (a.params.size() != b.params.size())
+                return false;
+            for (size_t i = 0; i < a.params.size(); ++i)
+            {
+                const LiveProperty& x = a.params[i];
+                const LiveProperty& y = b.params[i];
+                if (x.name != y.name || x.offset != y.offset || x.size != y.size
+                    || x.isBool != y.isBool || x.fieldMask != y.fieldMask)
+                    return false;
+            }
+            return true;
+        }
+    }
+
+    ParamMember BlueprintParams::Resolve(const std::string& name, const std::string& member, Clock::time_point now,
+        bool canLook, const BlueprintFinder& find, bool& pending)
+    {
+        pending = false;
+        Entry& entry = m_entries[name];
+        if (!entry.seen)
+        {
+            const bool due = !entry.looked || now >= entry.nextLook;
+            if (canLook && due && find)
+            {
+                entry.looked   = true;
+                entry.nextLook = now + m_retry;
+                BlueprintFind found = find(BlueprintSplits(name));
+                if (found.classLoaded)
+                {
+                    entry.seen = true;
+                    for (LiveFunction& function : found.functions)
+                    {
+                        const bool known = std::any_of(entry.functions.begin(), entry.functions.end(),
+                            [&](const LiveFunction& have) { return SameParams(have, function); });
+                        if (!known)
+                            entry.functions.push_back(std::move(function));
+                    }
+                }
+            }
+            if (!entry.seen)
+            {
+                ParamMember answer;
+                answer.error = "no loaded Blueprint class has the function " + name + " yet ("
+                    + (canLook ? "the class is loaded with the screen that uses it"
+                               : "the game's objects are read on the game thread only") + ")";
+                pending = true;
+                return answer;
+            }
+        }
+        return ResolveParamMember(name, entry.functions, member);
     }
 
     bool ReadVtableSlot(const uintptr_t* vtable, int32_t index, uintptr_t& slot, uint32_t& exceptionCode)
@@ -311,6 +390,7 @@ namespace LayoutCheck
 #include "../hooks/game/object_properties/object_properties.h"
 #include "../logging/logger.h"
 #include "../memory_scanner/version_map.h"
+#include "../utils/game_thread_dispatch.h"
 #include "CoreUObject_classes.hpp"
 
 #include <windows.h>
@@ -730,8 +810,18 @@ namespace LayoutCheck
             answer.boolMask = live.fieldMask;
         }
 
-        // CPF_Parm: the property is a parameter or the return value.
-        constexpr uint64_t kParmFlag = 0x80;
+        // The parameters and return value of a UFunction (CPF_Parm properties;
+        // the locals of a Blueprint function are children too and are left out).
+        void ReadParams(const SDK::UStruct* function, LiveFunction& out)
+        {
+            std::vector<FunctionProperty> children;
+            for (const SDK::FField* field = function->ChildProperties; field; field = field->Next)
+            {
+                const SDK::FProperty* property = static_cast<const SDK::FProperty*>(field);
+                children.push_back(FunctionProperty{ Describe(property), property->PropertyFlags });
+            }
+            out = FunctionOf(out.path, children);
+        }
 
         // Every UFunction the name <Class>_<Function> can mean, over every
         // split of it at an underscore and every native class of that name.
@@ -763,18 +853,75 @@ namespace LayoutCheck
                             || child->Name.GetRawString() != split.function)
                             continue;
                         LiveFunction function{ module + "." + split.owner + "." + split.function, {} };
-                        for (const SDK::FField* field = static_cast<const SDK::UStruct*>(child)->ChildProperties;
-                             field; field = field->Next)
-                        {
-                            const SDK::FProperty* property = static_cast<const SDK::FProperty*>(field);
-                            if (property->PropertyFlags & kParmFlag)
-                                function.params.push_back(Describe(property));
-                        }
+                        ReadParams(static_cast<const SDK::UStruct*>(child), function);
                         found.push_back(std::move(function));
                     }
                 }
             }
             return found;
+        }
+
+        // The Blueprint generated classes the splits name, one pass over
+        // GObjects, and their functions of that name. A Blueprint class sits in
+        // a /Game/ package (not /Script/) and is loaded with the screen that
+        // uses it, so most of the time there is none. Game thread only (the
+        // caller checks). Everything returned is copied out; no object is kept.
+        BlueprintFind FindBlueprintFunctions(const std::vector<ParamSplit>& splits)
+        {
+            BlueprintFind found;
+            std::unordered_map<const SDK::UObject*, std::string> modules;
+            SDK::TUObjectArray* objects = SDK::UObject::GObjects.GetTypedPtr();
+            const int32_t count = objects->Num();
+            for (int32_t i = 0; i < count; ++i)
+            {
+                SDK::UObject* object = objects->GetByIndex(i);
+                if (!object || !object->Class || !object->HasTypeFlag(SDK::EClassCastFlags::Class))
+                    continue;
+                const SDK::UObject* package = object->Outer;
+                if (!package || package->Outer || !ModuleOf(package, modules).empty())
+                    continue;
+                const std::string name = object->Name.GetRawString();
+                for (const ParamSplit& split : splits)
+                {
+                    if (name != split.owner)
+                        continue;
+                    found.classLoaded = true;
+                    const SDK::UStruct* owner = static_cast<const SDK::UStruct*>(object);
+                    for (const SDK::UField* child = owner->Children; child; child = child->Next)
+                    {
+                        if (!child->HasTypeFlag(SDK::EClassCastFlags::Function)
+                            || child->Name.GetRawString() != split.function)
+                            continue;
+                        LiveFunction function{ package->Name.GetRawString() + "." + split.owner + "." + split.function, {} };
+                        ReadParams(static_cast<const SDK::UStruct*>(child), function);
+                        found.functions.push_back(std::move(function));
+                    }
+                }
+            }
+            return found;
+        }
+
+        // A Blueprint function's parameter struct (WBP_InventorySlot_C_SetSlotSize).
+        // The class is rarely loaded when asked; BlueprintParams keeps what it
+        // saw and bounds the retries. False when the name cannot be one.
+        bool LookupBlueprintParams(const std::string& className, const std::string& member, VersionMap::LiveField& answer)
+        {
+            if (BlueprintSplits(className).empty())
+                return false;
+            static BlueprintParams s_blueprint(std::chrono::seconds(2));
+            bool pending = false;
+            const ParamMember param = s_blueprint.Resolve(className, member, std::chrono::steady_clock::now(),
+                GameThreadDispatch::IsGameThread(), FindBlueprintFunctions, pending);
+            answer = VersionMap::LiveField{};
+            answer.error    = param.error;
+            answer.pending  = pending;
+            answer.offset   = param.offset;
+            answer.size     = param.size;
+            answer.isBool   = param.isBool;
+            answer.boolMask = static_cast<uint8_t>(param.boolMask);
+            if (!param.path.empty())
+                answer.paths.push_back(param.path);
+            return true;
         }
 
         // The answer for a request that names a function's parameter struct;
@@ -786,7 +933,7 @@ namespace LayoutCheck
             bool ownerSeen = false;
             const std::vector<LiveFunction> functions = FindParamFunctions(g_types, className, ownerSeen);
             if (functions.empty() && !ownerSeen)
-                return false;
+                return LookupBlueprintParams(className, member, answer);
             const ParamMember param = ResolveParamMember(className, functions, member);
             answer = VersionMap::LiveField{};
             answer.error    = param.error;

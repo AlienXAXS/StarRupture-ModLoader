@@ -860,6 +860,15 @@
 //      older than v75 passes the bit to ImGui, which ignores it, so the widget
 //      stays click-through there.
 //
+//      Also in v75: PLUGIN_FIELD_LATE, a flag on a reflected PluginFieldRequest
+//      for a member of a Blueprint class's function, whose class is not loaded
+//      when plugins load. The request is pending instead of refused, and the
+//      plugin repeats it from the game thread after OnPluginLoadHooks (the one
+//      scanner call allowed there) until it resolves. Flag only: no struct or
+//      table changed, MIN stays at 70, and the version stays 75. A loader
+//      without the flag refuses the Blueprint class (it knows native ones
+//      only), which turns off the feature that lists the key.
+//
 #define PLUGIN_INTERFACE_VERSION_MIN 70
 #define PLUGIN_INTERFACE_VERSION_MAX 75
 #define PLUGIN_INTERFACE_VERSION 75
@@ -1154,6 +1163,34 @@ static_assert(offsetof(PluginScanRequest, candidates)     == 56, "v72 starts whe
 //                           back; no row for the running build is refused.
 //                           With CHECK, BITFIELD, a size row or a non-zero
 //                           size, the request is refused.
+//   PLUGIN_FIELD_LATE       the class may not be loaded yet: a Blueprint generated
+//                           class (WBP_InventorySlot_C), which the game loads
+//                           with the screen that uses it and frees again. A
+//                           request for a member of one of its functions
+//                           (<Class>_<Function>, see SR_PARAM) that finds the
+//                           class not loaded is not a failure: it returns false
+//                           and is pending. A feature that lists the key is
+//                           switched off for now (its `enabled` is set false,
+//                           its config entries are greyed with a "waiting"
+//                           reason) and the plugin still loads; a key no feature
+//                           lists cannot wait and refuses the plugin as any miss
+//                           does. The plugin repeats the same request from the
+//                           game thread, any time after OnPluginLoadHooks has
+//                           returned (the one scanner call that is allowed
+//                           there), until it succeeds; the numbers then hold for
+//                           the rest of the process, even when the class is
+//                           freed. While it is pending the loader walks the
+//                           game's objects at most once every two seconds per
+//                           key; once resolved it never walks. A request made off
+//                           the game thread stays pending. The plugin sets its
+//                           own `enabled` flag once all the feature's keys
+//                           resolved; the loader writes it only while the
+//                           session is open. A class that is loaded and has no
+//                           such function or parameter is refused once, as for
+//                           any request. With NATIVE, CHECK or BITFIELD the
+//                           request is refused. A loader without this flag
+//                           ignores it and refuses a Blueprint class (it only
+//                           knows native ones), so the feature stays off there.
 //   PLUGIN_FIELD_NATIVE     a member reflection does not describe. The offset
 //                           comes from the row for the running changelist, or
 //                           builtOffset on builtCL. On any other build it
@@ -1197,6 +1234,7 @@ enum PluginFieldFlags
     PLUGIN_FIELD_CHECK     = 1 << 1,
     PLUGIN_FIELD_BITFIELD  = 1 << 2,
     PLUGIN_FIELD_ANY_SIZE  = 1 << 3,   // v74: take the reflected size (with NATIVE, the running build's row size, row required); size must be 0
+    PLUGIN_FIELD_LATE      = 1 << 4,   // v75: the class may not be loaded yet (a Blueprint class); pending until it is, retry from the game thread
 };
 
 // One build's value for a field. Passed in an array with no stride field, so

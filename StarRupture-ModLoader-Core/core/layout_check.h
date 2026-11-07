@@ -1,8 +1,10 @@
 #pragma once
 
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -55,7 +57,10 @@ namespace LayoutCheck
     // /Script/<Module>.<Class>_<Function>. The member is then one of the
     // UFunction's parameters (ReturnValue for the return) at its offset in the
     // parameter block, and the size (member empty) is the function's
-    // ParmsSize. See ResolveParamMember.
+    // ParmsSize. See ResolveParamMember. A Blueprint class (the name ends in
+    // _C) may not be loaded: the answer is then pending (LiveField::pending)
+    // until it is, looked up on the game thread at most every two seconds, and
+    // final for the process once seen. See BlueprintParams.
     VersionMap::LiveField LiveFieldOf(const std::string& className, const std::string& member);
 
     // ---- The comparison, kept apart from the game so it can be tested ------
@@ -260,6 +265,22 @@ namespace LayoutCheck
         std::vector<LiveProperty> params;
     };
 
+    // CPF_Parm: the property is a parameter or the return value, as against a
+    // local of a Blueprint function, which is a child property too.
+    inline constexpr uint64_t kPropertyParm = 0x80;
+
+    // One child property of a UFunction with its property flags.
+    struct FunctionProperty
+    {
+        LiveProperty property;
+        uint64_t     flags;
+    };
+
+    // The function with only its parameters and return value out of every
+    // child property (the locals of a Blueprint function are left out, so they
+    // neither count as parameters nor stretch the block size).
+    LiveFunction FunctionOf(const std::string& path, const std::vector<FunctionProperty>& children);
+
     // The function's ParmsSize: the end of its last parameter, as the engine
     // computes it when it links the function (not rounded up to an alignment).
     uint32_t ParmsSizeOf(const LiveFunction& function);
@@ -282,4 +303,60 @@ namespace LayoutCheck
     // reserves (Class_0) is found under the name without it.
     ParamMember ResolveParamMember(const std::string& name, const std::vector<LiveFunction>& functions,
         const std::string& member);
+
+    // ---- Blueprint functions ----------------------------------------------
+    //
+    // A function of a Blueprint generated class (WBP_InventorySlot_C) is
+    // named like a native one, <Class>_<Function>, and its parameters are
+    // found the same way (its CPF_Parm properties; the locals of the Blueprint
+    // function are left out). The class lives in a /Game/ package, is not
+    // loaded when plugins load, and is freed and loaded again with the screen
+    // that uses it. So the answer is kept: the first time a loaded class is
+    // seen, the function's parameters are copied into BlueprintParams, and
+    // from then on the numbers are served from the copy for the life of the
+    // process, whether or not the class is loaded. Nothing in it points into
+    // the game. Until a class is seen the answer is "pending", and looking for
+    // it costs one walk of the game's objects at most once per retry interval.
+
+    // The ways to read a name as <Class>_<Function> whose class is a Blueprint
+    // generated class (its name ends in _C). Empty for a /Script/ name.
+    std::vector<ParamSplit> BlueprintSplits(const std::string& name);
+
+    // What looking in the game for those splits found.
+    struct BlueprintFind
+    {
+        bool                      classLoaded = false;  // a loaded class bears the name of one of the splits
+        std::vector<LiveFunction> functions;            // the functions of that name in it, with their parameters
+    };
+    using BlueprintFinder = std::function<BlueprintFind(const std::vector<ParamSplit>& splits)>;
+
+    class BlueprintParams
+    {
+    public:
+        using Clock = std::chrono::steady_clock;
+
+        explicit BlueprintParams(Clock::duration retry) : m_retry(retry) {}
+
+        // The answer for `name` and `member` (empty: the block size). pending
+        // is set, and error says what is waited for, when no loaded class has
+        // been seen for the name yet. `find` is called only when no class has
+        // been seen, `canLook` is true (the game's objects are read on the game
+        // thread only) and the retry interval since the last look at this name
+        // has passed. Once a class has been seen the answer, including a
+        // refusal (no such function, no such parameter, more than one function),
+        // is final and find is never called for the name again.
+        ParamMember Resolve(const std::string& name, const std::string& member, Clock::time_point now,
+            bool canLook, const BlueprintFinder& find, bool& pending);
+
+    private:
+        struct Entry
+        {
+            bool                      seen = false;      // a loaded class has been looked at
+            bool                      looked = false;    // find has been called
+            Clock::time_point         nextLook{};
+            std::vector<LiveFunction> functions;
+        };
+        Clock::duration              m_retry;
+        std::map<std::string, Entry> m_entries;
+    };
 }

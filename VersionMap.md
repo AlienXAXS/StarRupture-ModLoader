@@ -177,6 +177,25 @@ name in two modules), is refused with the reason, and `/Script/<Module>.` picks 
 Dumper-7 renamed with a `_<n>` suffix (`Class_0`) is found under the name without it. Reads are
 on the game thread, like the rest of the reflection data.
 
+The owner may be a Blueprint generated class (the name ends in `_C`, `WBP_InventorySlot_C_SetSlotSize`),
+which lives in a `/Game/` package, not in `/Script/`. Such a class is loaded by the game with the
+screen that uses it and freed again, so it is normally not loaded when plugins load. The
+Game-SDK's `SR_PARAM` and `SR_PARAMS_SIZE` carry `PLUGIN_FIELD_LATE` for it: a request whose class
+is not loaded is not a failure but **pending**. The loader logs `pending` once (Info, no warning),
+the compat report lists the key under "Waiting for a game class to load", and the feature that
+lists the key is off and greyed in its config with a waiting reason; the plugin still loads, and no
+failure popup opens. A key no declared feature lists cannot wait and refuses the plugin like any
+miss. The plugin repeats the request from the game thread after `OnPluginLoadHooks` (the one
+scanner call allowed there, `PluginMap::ResolveLateFields`) until it resolves. The loader walks
+the game's objects at most once every two seconds per key while pending, only on the game thread,
+and never again once resolved: it copies the parameter names, offsets and sizes out of the class it
+sees and keeps no object pointer, so the numbers hold for the process even after the class is
+freed and reloaded. Only `CPF_Parm` properties count, so the locals of a Blueprint function neither
+appear as parameters nor stretch the block size. A class that is loaded and has no such function or
+parameter, or two that differ, is refused once with the usual reason. Native keys are unchanged.
+Flag only: the interface stays v75; an older loader ignores the flag and refuses a Blueprint class,
+so the feature stays off there.
+
 **Unreflected native types.** A plain C++ engine type that is neither a `UCLASS` nor a `USTRUCT`
 (`FMassEntityManager`, `FStructSharedMemory`) has no reflected size to bound a native member by.
 When reflection reports that no class or struct of that name exists, the member is served from

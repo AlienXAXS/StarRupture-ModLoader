@@ -753,8 +753,179 @@ namespace
     }
 }
 
+namespace
+{
+    // ---- Blueprint functions: pending until the class is loaded, then kept ----
+
+    // WBP_InventorySlot_C::SetSlotSize as the game reflects it: InSize in, a
+    // local the Blueprint function declares after it (not a parameter).
+    std::vector<LayoutCheck::FunctionProperty> SlotSizeChildren(int32_t inSizeSize)
+    {
+        using namespace LayoutCheck;
+        return {
+            FunctionProperty{ LiveProperty{ "InSize", 0, inSizeSize, false, 0 }, kPropertyParm | 0x1 },
+            FunctionProperty{ LiveProperty{ "CallFunc_Add_ReturnValue", 0x10, 8, false, 0 }, 0x0 },
+            FunctionProperty{ LiveProperty{ "Temp_bool_Variable", 0x18, 1, false, 0 }, 0x0 },
+        };
+    }
+
+    void BlueprintFunctionsPendThenResolve()
+    {
+        using namespace LayoutCheck;
+        using Clock = BlueprintParams::Clock;
+        std::printf("blueprint function parameters\n");
+
+        const std::string name = "WBP_InventorySlot_C_SetSlotSize";
+        const Clock::time_point t0{};
+        const auto sec = [](int n) { return std::chrono::seconds(n); };
+
+        {
+            const auto splits = BlueprintSplits(name);
+            Check(splits.size() == 1 && splits[0].owner == "WBP_InventorySlot_C" && splits[0].function == "SetSlotSize",
+                "a Blueprint class (_C) is one split of the name");
+            Check(BlueprintSplits("CrEnviroWaveSubsystem_GetCurrentStageSettings").empty()
+                    && BlueprintSplits("/Script/UMG.WBP_X_C_Run").empty() && BlueprintSplits("WBP_Slot_SetSize").empty(),
+                "a native name, a /Script/ name and a name with no _C class are not Blueprint names");
+        }
+
+        // The locals of the Blueprint function are not parameters: they do not
+        // count and they do not stretch the block.
+        {
+            const LiveFunction fn = FunctionOf("Game.WBP_InventorySlot_C.SetSlotSize", SlotSizeChildren(8));
+            Check(fn.params.size() == 1 && fn.params[0].name == "InSize" && ParmsSizeOf(fn) == 8,
+                "locals are left out: one parameter, a block of 8 bytes");
+        }
+
+        int calls = 0;
+        bool loaded = false;
+        int32_t inSizeSize = 8;
+        const BlueprintFinder find = [&](const std::vector<ParamSplit>&)
+        {
+            ++calls;
+            BlueprintFind found;
+            found.classLoaded = loaded;
+            if (loaded)
+                found.functions.push_back(FunctionOf("Game.WBP_InventorySlot_C.SetSlotSize", SlotSizeChildren(inSizeSize)));
+            return found;
+        };
+
+        BlueprintParams cache(sec(2));
+        bool pending = false;
+
+        // Not loaded: pending, not an error that stops anything, and not a "no native" answer.
+        ParamMember r = cache.Resolve(name, "", t0, true, find, pending);
+        Check(pending && !r.error.empty() && r.error.rfind("no native", 0) != 0 && calls == 1,
+            "not loaded: pending, with one look");
+        r = cache.Resolve(name, "InSize", t0 + sec(1), true, find, pending);
+        Check(pending && calls == 1, "retried inside the interval: pending, and no look at the game");
+        for (int i = 0; i < 100; ++i)
+            cache.Resolve(name, "InSize", t0 + std::chrono::milliseconds(1000 + i), true, find, pending);
+        Check(calls == 1, "a hundred more retries inside the interval look at nothing");
+        r = cache.Resolve(name, "InSize", t0 + sec(2), true, find, pending);
+        Check(pending && calls == 2, "after the interval it looks again");
+        r = cache.Resolve(name, "InSize", t0 + sec(60), false, find, pending);
+        Check(pending && calls == 2 && r.error.find("game thread") != std::string::npos,
+            "off the game thread it does not look, and says so");
+        r = cache.Resolve(name, "InSize", t0 + sec(61), true, find, pending);
+        Check(pending && calls == 3, "an off-thread request did not use up the interval");
+
+        // The class loads: the numbers, once.
+        loaded = true;
+        r = cache.Resolve(name, "", t0 + sec(70), true, find, pending);
+        Check(!pending && r.error.empty() && r.size == 8 && calls == 4, "loaded: the block size is the parameter's end, locals left out");
+        r = cache.Resolve(name, "InSize", t0 + sec(70), true, find, pending);
+        Check(!pending && r.error.empty() && r.offset == 0 && r.size == 8 && calls == 4,
+            "loaded: the parameter, answered from what was seen");
+
+        // The class is freed again (main menu), and the game reloads it with other numbers: the process keeps the first.
+        loaded = false;
+        inSizeSize = 16;
+        r = cache.Resolve(name, "", t0 + sec(200), true, find, pending);
+        Check(!pending && r.size == 8 && calls == 4, "unloaded again: the same numbers, and no look at the game");
+        r = cache.Resolve(name, "InSize", t0 + sec(200), false, find, pending);
+        Check(!pending && r.size == 8 && calls == 4, "unloaded and off the game thread: still the same numbers");
+
+        // A pending name does not hold up another.
+        r = cache.Resolve("WBP_Other_C_Run", "", t0 + sec(70), true, find, pending);
+        Check(pending && calls == 5, "another name is looked up on its own");
+
+        // The class is loaded and the request is wrong: a final answer, found once.
+        {
+            int looks = 0;
+            const BlueprintFinder wrong = [&](const std::vector<ParamSplit>&)
+            {
+                ++looks;
+                BlueprintFind found;
+                found.classLoaded = true;
+                found.functions.push_back(FunctionOf("Game.WBP_Wrong_C.Run", SlotSizeChildren(8)));
+                return found;
+            };
+            r = cache.Resolve("WBP_Wrong_C_Run", "Size", t0, true, wrong, pending);
+            Check(!pending && r.error.find("no parameter Size") != std::string::npos && looks == 1,
+                "a parameter the loaded function does not have is refused, not pending");
+            r = cache.Resolve("WBP_Wrong_C_Run", "Size", t0 + sec(100), true, wrong, pending);
+            Check(!pending && !r.error.empty() && looks == 1, "and the refusal is final: no new look");
+
+            const BlueprintFinder noFunction = [&](const std::vector<ParamSplit>&)
+            {
+                ++looks;
+                BlueprintFind found;
+                found.classLoaded = true;
+                return found;
+            };
+            r = cache.Resolve("WBP_Wrong_C_Walk", "", t0, true, noFunction, pending);
+            Check(!pending && r.error.find("not the parameter struct of any function") != std::string::npos,
+                "a loaded class without the function is refused, not pending");
+
+            // Two copies of the class (the old one not collected yet) with the same parameters are one function.
+            const BlueprintFinder twice = [&](const std::vector<ParamSplit>&)
+            {
+                BlueprintFind found;
+                found.classLoaded = true;
+                found.functions.push_back(FunctionOf("Game.WBP_Twice_C.Run", SlotSizeChildren(8)));
+                found.functions.push_back(FunctionOf("Game.WBP_Twice_C.Run", SlotSizeChildren(8)));
+                return found;
+            };
+            r = cache.Resolve("WBP_Twice_C_Run", "InSize", t0, true, twice, pending);
+            Check(!pending && r.error.empty() && r.size == 8, "two copies of one class are one function");
+
+            // Two classes of the name with other parameters are ambiguous.
+            const BlueprintFinder differ = [&](const std::vector<ParamSplit>&)
+            {
+                BlueprintFind found;
+                found.classLoaded = true;
+                found.functions.push_back(FunctionOf("Game.WBP_Differ_C.Run", SlotSizeChildren(8)));
+                found.functions.push_back(FunctionOf("Game.WBP_Differ_C.Run", SlotSizeChildren(16)));
+                return found;
+            };
+            r = cache.Resolve("WBP_Differ_C_Run", "", t0, true, differ, pending);
+            Check(!pending && r.error.find("2 functions") != std::string::npos, "two functions that differ are ambiguous");
+        }
+
+        // The result owns its numbers: nothing of the finder's answer is needed afterwards.
+        {
+            BlueprintParams fresh(sec(2));
+            std::vector<LiveFunction> source;
+            const BlueprintFinder once = [&](const std::vector<ParamSplit>&)
+            {
+                BlueprintFind found;
+                found.classLoaded = true;
+                found.functions = source;
+                return found;
+            };
+            source.push_back(FunctionOf("Game.WBP_Own_C.Run", SlotSizeChildren(8)));
+            fresh.Resolve("WBP_Own_C_Run", "", t0, true, once, pending);
+            source.clear();
+            source.shrink_to_fit();
+            r = fresh.Resolve("WBP_Own_C_Run", "InSize", t0 + sec(5), true, nullptr, pending);
+            Check(!pending && r.size == 8, "the answer outlives the data it was copied from, and needs no finder once seen");
+        }
+    }
+}
+
 int main()
 {
+    BlueprintFunctionsPendThenResolve();
     SameBuildMatches();
     ContentUpdateMovesThePlayer();
     MismatchSwitchesPluginsOffAndReports();

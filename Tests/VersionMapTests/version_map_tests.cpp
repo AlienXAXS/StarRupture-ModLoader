@@ -98,6 +98,9 @@ namespace
 
 	bool At(const Result& r, uintptr_t rva) { return r.Succeeded() && r.address == Base() + rva; }
 
+	// Whether the Blueprint class WBP_Slot_C is loaded, for FakeLive.
+	bool g_bpLoaded = false;
+
 	// Reflection as the field tests see it: ATest is 0x50 bytes, AOther 0x10,
 	// and AChild derives from ATest.
 	VersionMap::LiveField FakeLive(const std::string& className, const std::string& member)
@@ -122,6 +125,21 @@ namespace
 				f.offset = 0x18, f.size = 8;
 			else
 				f.error = "no parameter " + member + " in Mod.Widget.Resize";
+		}
+		else if (className == "WBP_Slot_C_SetSize")
+		{
+			// A Blueprint function's parameter struct: pending until the class is loaded.
+			if (!g_bpLoaded)
+			{
+				f.pending = true;
+				f.error   = "no loaded Blueprint class has the function WBP_Slot_C_SetSize yet (the class is loaded with the screen that uses it)";
+			}
+			else if (member.empty())
+				f.size = 8;
+			else if (member == "InSize")
+				f.offset = 0, f.size = 8;
+			else
+				f.error = "no parameter " + member + " in Game.WBP_Slot_C.SetSize";
 		}
 		else if (className != "ATest")
 		{
@@ -634,6 +652,179 @@ int main()
 		PluginHookReport::EndSession(&self, &refusedFlag);
 		Check(find("FeatPlug") == nullptr && again && PluginHookReport::ConfigOffReason("FeatPlug", "Laser", "Scale").empty(),
 			"feature: a clean reload switches the entries back on");
+		VersionMap::SetLiveFieldSource(nullptr);
+	}
+
+	// Blueprint functions: a PLUGIN_FIELD_LATE request is pending while the class is not loaded, and resolves when
+	// the plugin repeats it after the class is. Pending is not a failure; any other request is refused as before.
+	{
+		VersionMap::SetLiveFieldSource(FakeLive);
+		IPluginHookScanner* scan = ModLoaderLogger::GetPluginHookScanner();
+		const char* sizeKey   = "WBP_Slot_C_SetSize";
+		const char* memberKey = "WBP_Slot_C_SetSize::InSize";
+		const auto ask = [&](const IPluginSelf* self, const char* key, const char* member, uint32_t flags, PluginFieldResult& result)
+		{
+			PluginFieldRequest request = PLUGIN_FIELD_REQUEST_INIT;
+			request.key       = key;
+			request.className = "WBP_Slot_C_SetSize";
+			request.member    = member;
+			request.flags     = flags;
+			request.size      = member ? 0 : 8;
+			request.builtCL   = 127004;
+			return scan->ResolveField(self, &request, &result);
+		};
+		const uint32_t late = PLUGIN_FIELD_LATE, lateAny = PLUGIN_FIELD_LATE | PLUGIN_FIELD_ANY_SIZE;
+		const auto declare = [&](const IPluginSelf* self, const char* id, std::vector<const char*> keys, bool* enabled)
+		{
+			static const char* cfg[] = { "Slot.*" };
+			PluginFeatureDesc desc = PLUGIN_FEATURE_DESC_INIT;
+			desc.id             = id;
+			desc.title          = "Slot sizing";
+			desc.keys           = keys.data();
+			desc.keyCount       = static_cast<uint32_t>(keys.size());
+			desc.configKeys     = cfg;
+			desc.configKeyCount = 1;
+			desc.enabled        = enabled;
+			return scan->DeclareFeature(self, &desc);
+		};
+		const auto pendingOf = [](const char* plugin)
+		{
+			size_t n = 0;
+			for (const PluginHookReport::PendingKey& p : PluginHookReport::Pending())
+				if (p.plugin == plugin)
+					++n;
+			return n;
+		};
+		const auto reportOf = [](const char* plugin) -> bool
+		{
+			for (const PluginHookReport::PluginReport& r : PluginHookReport::Snapshot())
+				if (r.plugin == plugin)
+					return true;
+			return false;
+		};
+		const auto sizeFinding = [](const char* plugin, const char* key)
+		{
+			for (const VersionMap::SizeFinding& f : VersionMap::SizeFindings())
+				if (f.plugin == plugin && f.key == key)
+					return f;
+			VersionMap::SizeFinding none;
+			none.key = "(no finding)";
+			return none;
+		};
+
+		g_bpLoaded = false;
+		PluginFieldResult result{};
+		bool slot = true, refused = true;
+		IPluginSelf bp{ "BpPlug", "1", nullptr, nullptr, nullptr };
+
+		// At load: pending, the feature is off, the plugin loads, nothing is a failure.
+		const unsigned serial = PluginHookReport::GetCommitSerial();
+		TestDoubles::g_log.clear();
+		PluginHookReport::BeginSession(&bp, "BpPlug", "BpPlug.dll");
+		Check(declare(&bp, "slot", { sizeKey, memberKey }, &slot) && slot, "blueprint: feature declared");
+		Check(!ask(&bp, sizeKey, nullptr, late, result) && !ask(&bp, memberKey, "InSize", lateAny, result),
+			"blueprint: both requests are false while the class is not loaded");
+		Check(!PluginHookReport::SessionHasFailures(&bp) && !slot, "blueprint: pending is no failure, and the feature's flag is off");
+		PluginHookReport::EndSession(&bp, &refused);
+		Check(!refused && !reportOf("BpPlug") && PluginHookReport::GetCommitSerial() == serial
+			&& PluginHookReport::GetFeaturesOffCount("BpPlug") == 0, "blueprint: the plugin loads, and no failure report is added");
+		Check(pendingOf("BpPlug") == 2, "blueprint: both keys are kept as pending");
+		Check(Logged(L"[Map] BpPlug: WBP_Slot_C_SetSize: pending:") && Logged(L"feature \"Slot sizing\" is waiting for a game class")
+			&& !Logged(L"refused"), "blueprint: the log says pending, once, and never refused");
+		Check(PluginHookReport::ConfigOffReason("BpPlug", "Slot", "Scale") == "Slot sizing is waiting for the game to load something it needs",
+			"blueprint: the config entries show the waiting reason");
+		Check(PluginHookReport::BuildReportText().find("[pending] WBP_Slot_C_SetSize") != std::string::npos,
+			"blueprint: the report text lists it apart from the failures");
+		Check(sizeFinding("BpPlug", sizeKey).result == VersionMap::SizeResult::Pending
+			&& std::string(VersionMap::SizeResultText(VersionMap::SizeResult::Pending)) == "pending",
+			"blueprint: the compatibility report's size finding is pending");
+
+		// The plugin repeats the request on the game thread: still pending, and no line again.
+		TestDoubles::g_log.clear();
+		Check(!ask(&bp, sizeKey, nullptr, late, result) && !ask(&bp, memberKey, "InSize", lateAny, result) && pendingOf("BpPlug") == 2
+			&& TestDoubles::g_log.empty(), "blueprint: a repeated pending request changes nothing and logs nothing");
+
+		// Without the flag the scanner is closed outside the session, and in it the miss is an ordinary one.
+		Check(!ask(&bp, sizeKey, nullptr, 0, result), "blueprint: no flag, no session: rejected");
+		IPluginSelf plain{ "PlainPlug", "1", nullptr, nullptr, nullptr };
+		bool plainSlot = true;
+		TestDoubles::g_log.clear();
+		PluginHookReport::BeginSession(&plain, "PlainPlug", "PlainPlug.dll");
+		declare(&plain, "slot", { sizeKey }, &plainSlot);
+		Check(!ask(&plain, sizeKey, nullptr, 0, result), "blueprint: a request without the flag is refused while the class is not loaded");
+		PluginHookReport::EndSession(&plain, &refused);
+		Check(!refused && !plainSlot && reportOf("PlainPlug") && pendingOf("PlainPlug") == 0 && Logged(L"PlainPlug: WBP_Slot_C_SetSize: refused:"),
+			"blueprint: it is a feature-off failure, not pending");
+
+		// A key no feature lists cannot wait.
+		IPluginSelf core{ "CoreBp", "1", nullptr, nullptr, nullptr };
+		PluginHookReport::BeginSession(&core, "CoreBp", "CoreBp.dll");
+		Check(!ask(&core, sizeKey, nullptr, late, result) && PluginHookReport::SessionHasFailures(&core),
+			"blueprint: a pending key no feature lists refuses the plugin");
+		PluginHookReport::EndSession(&core, &refused);
+		Check(refused && pendingOf("CoreBp") == 0, "blueprint: and keeps nothing pending");
+
+		// LATE is for a reflected request.
+		VersionMap::FieldValue v;
+		std::string e;
+		Check(!Field(memberKey, "WBP_Slot_C_SetSize", "InSize", PLUGIN_FIELD_LATE | PLUGIN_FIELD_CHECK, 8, {}, v, e)
+			&& e.find("bad request: PLUGIN_FIELD_LATE") == 0, "blueprint: LATE with CHECK is a bad request");
+
+		// The class is loaded and the plugin repeats: resolved, once; the pending entries go.
+		g_bpLoaded = true;
+		TestDoubles::g_log.clear();
+		Check(ask(&bp, sizeKey, nullptr, late, result) && result.size == 8, "blueprint: the block size resolves once the class is loaded");
+		Check(ask(&bp, memberKey, "InSize", lateAny, result) && result.offset == 0 && result.size == 8, "blueprint: and the parameter");
+		Check(pendingOf("BpPlug") == 0 && PluginHookReport::ConfigOffReason("BpPlug", "Slot", "Scale").empty(),
+			"blueprint: nothing pending, the config entries are free");
+		Check(sizeFinding("BpPlug", sizeKey).result == VersionMap::SizeResult::ReflectedOnly && sizeFinding("BpPlug", sizeKey).reflectedSize == 8,
+			"blueprint: the size finding is replaced by the reflected one");
+		TestDoubles::g_log.clear();
+		Check(ask(&bp, sizeKey, nullptr, late, result) && !Logged(L"WBP_Slot_C_SetSize"), "blueprint: resolving again logs nothing");
+
+		// A loaded class with a wrong parameter: refused for good, once, and not pending.
+		IPluginSelf wrong{ "BpWrong", "1", nullptr, nullptr, nullptr };
+		bool wrongSlot = true;
+		TestDoubles::g_log.clear();
+		PluginHookReport::BeginSession(&wrong, "BpWrong", "BpWrong.dll");
+		declare(&wrong, "slot", { "WBP_Slot_C_SetSize::Nope" }, &wrongSlot);
+		Check(!ask(&wrong, "WBP_Slot_C_SetSize::Nope", "Nope", lateAny, result) && !wrongSlot, "blueprint: an unknown parameter is refused");
+		PluginHookReport::EndSession(&wrong, &refused);
+		Check(!refused && reportOf("BpWrong") && pendingOf("BpWrong") == 0 && Logged(L"BpWrong: WBP_Slot_C_SetSize::Nope: refused: reflection: no parameter Nope"),
+			"blueprint: a feature-off failure naming the parameter, not pending");
+		TestDoubles::g_log.clear();
+		Check(!ask(&wrong, "WBP_Slot_C_SetSize::Nope", "Nope", lateAny, result) && !Logged(L"refused"),
+			"blueprint: repeating a refused request does not log it again");
+
+		// Pending first, then the class loads and the parameter is wrong: the entry becomes a refusal.
+		g_bpLoaded = false;
+		IPluginSelf later{ "BpLater", "1", nullptr, nullptr, nullptr };
+		bool laterSlot = true;
+		PluginHookReport::BeginSession(&later, "BpLater", "BpLater.dll");
+		declare(&later, "slot", { "WBP_Slot_C_SetSize::Nope" }, &laterSlot);
+		ask(&later, "WBP_Slot_C_SetSize::Nope", "Nope", lateAny, result);
+		PluginHookReport::EndSession(&later, &refused);
+		Check(pendingOf("BpLater") == 1, "blueprint: pending before the class loads");
+		g_bpLoaded = true;
+		TestDoubles::g_log.clear();
+		Check(!ask(&later, "WBP_Slot_C_SetSize::Nope", "Nope", lateAny, result), "blueprint: it fails once the class is loaded");
+		const std::vector<PluginHookReport::PendingKey> now = PluginHookReport::Pending();
+		bool marked = false;
+		for (const PluginHookReport::PendingKey& p : now)
+			if (p.plugin == "BpLater" && p.refused && p.detail.find("no parameter Nope") != std::string::npos)
+				marked = true;
+		Check(marked && PluginHookReport::ConfigOffReason("BpLater", "Slot", "X").find("is off: ") != std::string::npos
+			&& Logged(L"BpLater: WBP_Slot_C_SetSize::Nope: refused:"), "blueprint: the pending entry becomes a refusal with its reason");
+		TestDoubles::g_log.clear();
+		ask(&later, "WBP_Slot_C_SetSize::Nope", "Nope", lateAny, result);
+		Check(!Logged(L"refused"), "blueprint: and that is logged once");
+
+		// A reload of the plugin drops what it was waiting for.
+		PluginHookReport::BeginSession(&later, "BpLater", "BpLater.dll");
+		Check(pendingOf("BpLater") == 0, "blueprint: a reload starts without the old pending keys");
+		PluginHookReport::EndSession(&later, &refused);
+
+		g_bpLoaded = false;
 		VersionMap::SetLiveFieldSource(nullptr);
 	}
 

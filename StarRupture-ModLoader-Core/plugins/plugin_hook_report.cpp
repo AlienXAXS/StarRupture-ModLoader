@@ -43,6 +43,7 @@ namespace PluginHookReport
             bool                  nameShared = false;
             std::vector<Declared> declared;
             std::set<std::string> asked;      // every key a request named, resolved or not
+            std::vector<PendingKey> pending;  // committed by EndSession unless the plugin is refused
         };
 
         // What a feature that is off says, by why it went off. The log line, the
@@ -60,6 +61,7 @@ namespace PluginHookReport
         std::mutex                s_mutex;
         Session                   s_session{};      // self == nullptr when closed
         std::vector<PluginReport> s_reports;
+        std::vector<PendingKey>   s_pending;        // keys waiting for a class, of loaded plugins
         unsigned                  s_generation = 0;
         unsigned                  s_commitSerial = 0;
 
@@ -139,6 +141,13 @@ namespace PluginHookReport
         s_session.report.preload = preload;
         s_session.nameShared     = nameShared;
 
+        // The same for the keys it was waiting for.
+        const size_t pendingBefore = s_pending.size();
+        s_pending.erase(std::remove_if(s_pending.begin(), s_pending.end(),
+            [&](const PendingKey& p) { return SameName(p.plugin, s_session.report.plugin); }), s_pending.end());
+        if (s_pending.size() != pendingBefore)
+            ++s_generation;
+
         // Drop any report from a previous load of this plugin: a reload that now
         // resolves cleanly must not leave the old failures on screen.
         for (size_t i = 0; i < s_reports.size(); ++i)
@@ -170,7 +179,29 @@ namespace PluginHookReport
                         session->report.plugin.c_str(), d.title.c_str(), key.c_str());
 
         PluginReport report = std::move(session->report);
+        std::vector<PendingKey> pending = std::move(session->pending);
         s_session = Session{};
+
+        // Keys waiting for a class are kept unless the plugin is refused. They
+        // are not failures: the log says so at Info, and no popup opens.
+        if (report.failures.empty() && !pending.empty())
+        {
+            for (size_t i = 0; i < pending.size(); ++i)
+            {
+                const PendingKey& first = pending[i];
+                if (std::any_of(pending.begin(), pending.begin() + static_cast<ptrdiff_t>(i),
+                        [&](const PendingKey& p) { return p.featureId == first.featureId; }))
+                    continue;
+                std::string keys;
+                for (const PendingKey& p : pending)
+                    if (p.featureId == first.featureId)
+                        keys += (keys.empty() ? "" : ", ") + p.key;
+                ModLoaderLogger::LogInfo(L"[Map] %S: feature \"%S\" is waiting for a game class that is not loaded yet: %S",
+                    report.plugin.c_str(), first.featureTitle.c_str(), keys.c_str());
+            }
+            s_pending.insert(s_pending.end(), pending.begin(), pending.end());
+            ++s_generation;
+        }
 
         if (report.failures.empty() && report.featuresOff.empty())
         {
@@ -315,6 +346,82 @@ namespace PluginHookReport
         session->report.failures.push_back(std::move(f));
     }
 
+    void RecordPending(const IPluginSelf* self, const char* key, const char* detail)
+    {
+        std::unique_lock<std::mutex> lock(s_mutex);
+
+        Session* session = FindSession(self);
+        if (!session)
+        {
+            RejectOutOfSession(self, "ResolveField");
+            return;
+        }
+
+        const std::string name = (key && key[0]) ? key : "(unnamed)";
+        session->asked.insert(name);
+
+        bool covered = false;
+        for (Declared& d : session->declared)
+        {
+            if (std::find(d.keys.begin(), d.keys.end(), name) == d.keys.end())
+                continue;
+            covered = true;
+            if (d.enabled)
+                *d.enabled = false;
+            PendingKey p;
+            p.plugin       = session->report.plugin;
+            p.key          = name;
+            p.detail       = detail ? detail : "";
+            p.featureId    = d.id;
+            p.featureTitle = d.title;
+            p.configKeys   = d.configKeys;
+            session->pending.push_back(std::move(p));
+        }
+        if (covered)
+            return;
+
+        // Nothing is switched off by a key no feature lists, so there is
+        // nothing that could wait: it is a miss like any other.
+        lock.unlock();
+        RecordFailure(self, name.c_str(),
+            (std::string(detail ? detail : "") + " (no feature lists this key, so it cannot wait for the class)").c_str(), true);
+    }
+
+    void LateResolved(const IPluginSelf* self, const char* key)
+    {
+        if (!self || !self->name || !key)
+            return;
+        std::lock_guard<std::mutex> lock(s_mutex);
+        const size_t before = s_pending.size();
+        s_pending.erase(std::remove_if(s_pending.begin(), s_pending.end(),
+            [&](const PendingKey& p) { return SameName(p.plugin, self->name) && p.key == key; }), s_pending.end());
+        if (s_pending.size() != before)
+            ++s_generation;
+    }
+
+    void LateRefused(const IPluginSelf* self, const char* key, const char* detail)
+    {
+        if (!self || !self->name || !key)
+            return;
+        std::lock_guard<std::mutex> lock(s_mutex);
+        bool changed = false;
+        for (PendingKey& p : s_pending)
+            if (SameName(p.plugin, self->name) && p.key == key && (!p.refused || p.detail != (detail ? detail : "")))
+            {
+                p.refused = true;
+                p.detail  = detail ? detail : "";
+                changed   = true;
+            }
+        if (changed)
+            ++s_generation;
+    }
+
+    std::vector<PendingKey> Pending()
+    {
+        std::lock_guard<std::mutex> lock(s_mutex);
+        return s_pending;
+    }
+
     bool DeclareFeature(const IPluginSelf* self, const char* id, const char* title,
                         const std::vector<std::string>& keys, const std::vector<std::string>& configKeys,
                         bool* enabled)
@@ -426,6 +533,15 @@ namespace PluginHookReport
                     if (ConfigKeyMatches(configKey, section, key))
                         return f.title + " is off: " + f.reason;
         }
+        for (const PendingKey& p : s_pending)
+        {
+            if (!plugin || !SameName(p.plugin, plugin))
+                continue;
+            for (const std::string& configKey : p.configKeys)
+                if (ConfigKeyMatches(configKey, section, key))
+                    return p.featureTitle + (p.refused ? " is off: " + p.detail
+                        : std::string(" is waiting for the game to load something it needs"));
+        }
         return std::string();
     }
 
@@ -452,11 +568,26 @@ namespace PluginHookReport
         std::string text = header;
 
         std::lock_guard<std::mutex> lock(s_mutex);
+
+        // Keys waiting for a game class that is not loaded yet are not failures.
+        std::string waiting;
+        for (const PendingKey& p : s_pending)
+        {
+            waiting += p.plugin + ": " + (p.refused ? "[refused] " : "[pending] ") + p.key + " (feature "
+                + p.featureTitle + ")\r\n        " + p.detail + "\r\n";
+        }
+        if (!waiting.empty())
+            waiting = "Waiting for a game class to load (not failures; the feature turns on when it does):\r\n"
+                + waiting + "\r\n";
+
         if (s_reports.empty())
         {
             text += "No plugin reported a failed hook.\r\n";
+            if (!waiting.empty())
+                text += "\r\n" + waiting;
             return text;
         }
+        text += waiting;
 
         // Built by appending rather than formatting into a fixed buffer: a
         // detail line is a plugin's AOB pattern or its own message, and neither
