@@ -1,2 +1,3 @@
 - The Plugins Updated window is wider on large screens, so its notes no longer wrap into a thin column at 4K, and its title and Close button stay in view when the list is long
 - After the mod loader updates itself, the Plugins Updated window lists the loader's release notes once, including the notes of releases you skipped
+- Mod windows no longer blink when the game gains or loses focus, and the log now records focus changes
