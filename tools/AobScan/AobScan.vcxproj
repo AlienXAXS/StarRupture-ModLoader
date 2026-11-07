@@ -102,6 +102,8 @@
     <ClCompile Include="layout.cpp" />
     <ClCompile Include="map_file.cpp" />
     <ClCompile Include="observed.cpp" Condition="Exists('$(CoreDir)memory_scanner\version_map.cpp')" />
+    <ClCompile Include="carry.cpp" Condition="Exists('$(CoreDir)memory_scanner\version_map.cpp')" />
+    <ClCompile Include="report_text.cpp" />
   </ItemGroup>
   <ItemGroup Label="Loader sources used as they are">
     <ClCompile Include="$(CoreDir)memory_scanner\scanner.cpp" />

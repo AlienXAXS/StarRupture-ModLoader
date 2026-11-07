@@ -4,6 +4,7 @@
 // the RVA the table gives it, or not at all.
 #include "test_doubles.h"
 
+#include "../carry.h"
 #include "../observed.h"
 #include "../plugin_scan.h"
 #include "hooks/game/version_map.generated.h"
@@ -13,6 +14,7 @@
 #include <cstdio>
 #include <cstring>
 #include <memory>
+#include <string>
 
 using ScanValidation::Kind;
 using ScanValidation::Request;
@@ -140,6 +142,21 @@ namespace
 			return {};
 		const MapFunctionRow row = PluginRow(r, 0, "");
 		return AobScan::ObservePluginRequest(kPlugin, row.key, row.fp, r, exe, resolved.address);
+	}
+
+	// The carry report (sr-aobscan --carry): the row the map would need for a
+	// build it has none for, against the loader's own resolve of the same key.
+	const AobScan::CarryRow* FindCarry(const AobScan::Carry& carry, const std::string& key)
+	{
+		for (const AobScan::CarryRow& row : carry.rows)
+			if (row.key == key)
+				return &row;
+		return nullptr;
+	}
+
+	bool Has(const std::string& text, const char* part)
+	{
+		return text.find(part) != std::string::npos;
 	}
 }
 
@@ -421,6 +438,132 @@ int main()
 		UseMap({ PluginRow(other, 128786, kLatest) });
 		got = AobScan::ObservePluginRequest(kPlugin, "Codex/Spot", PluginRow(spot, 0, "").fp, spot, next, Base() + 0x5000);
 		Check(!got.found, "a plugin site's row under another fingerprint is not observed");
+	}
+
+	// sr-aobscan --carry: a key with no row for the exe's build, resolved as the
+	// loader does at run time, which reads only the latest earlier build's row.
+	{
+		const VersionMap::Exe next{ 129402, 0x44444444, 0x04000000 };
+		const HMODULE module = GetModuleHandleW(nullptr);
+		constexpr const char* kOld    = "48 89 5C 24 08 57 48 83 EC 20";
+		constexpr const char* kNewest = "48 89 5C 24 10 57 48 83 EC 20";
+		const Request hook = AskPlugin("UFoo::Bar", "", Kind::FunctionStart);
+		const Request twice = AskPlugin("UFoo::Twice", "", Kind::FunctionStart);
+		const Request nowhere = AskPlugin("UFoo::Other", "", Kind::FunctionStart);
+		const Request gone = AskPlugin("UFoo::Gone", "", Kind::FunctionStart);
+
+		// The newest earlier row lands: its pattern, its address, the loader's answer.
+		UseMap({ PluginRow(hook, 127004, kOld), PluginRow(hook, 128786, kNewest) });
+		TestDoubles::g_rvas = { { kOld, 0x1000 }, { kNewest, 0x4000 } };
+		TestDoubles::g_counts = {};
+		AobScan::Carry carry = AobScan::ScanCarry(module, next);
+		const AobScan::CarryRow* got = FindCarry(carry, "UFoo::Bar");
+		Check(carry.cl == 129402 && carry.keys == 1 && carry.withRow == 0 && carry.rows.size() == 1, "carry: one key, none rowed");
+		Check(got && got->result == AobScan::CarryResult::Match && got->fromCL == 128786 && got->matches == 1
+			&& got->hasRva && got->rva == 0x4000 && got->pattern == kNewest && got->reason.empty(),
+			"carry: the newest earlier row's pattern, unique");
+		Result loader = VersionMap::ResolveMapKey("Codex", hook, {}, next, false);
+		Check(loader.Succeeded() && got && loader.address == Base() + got->rva, "carry: the same address as the loader's run-time resolve");
+
+		// The newest row's pattern misses and an older one would land: the loader
+		// reads no older row, so neither does the report.
+		TestDoubles::g_rvas = { { kOld, 0x1000 } };
+		carry = AobScan::ScanCarry(module, next);
+		got = FindCarry(carry, "UFoo::Bar");
+		Check(got && got->result == AobScan::CarryResult::None && got->fromCL == 128786 && !got->hasRva && got->matches == 0
+			&& !got->reason.empty(), "carry: the newest row misses: none, an older row is not tried");
+		Check(!VersionMap::ResolveMapKey("Codex", hook, {}, next, false).Succeeded(), "carry: the loader does not use the older row either");
+
+		// The newest earlier row has no pattern (an address for its own exe), so
+		// the latest row that has one is the older: the loader's choice.
+		MapFunctionRow addressOnly = PluginRow(hook, 128786, "");
+		addressOnly.imageStamp = 0xCF8579A6;
+		addressOnly.imageSize  = 0x0F47D000;
+		addressOnly.rva        = 0x7000;
+		UseMap({ PluginRow(hook, 127004, kOld), addressOnly });
+		TestDoubles::g_rvas = { { kOld, 0x1000 } };
+		carry = AobScan::ScanCarry(module, next);
+		got = FindCarry(carry, "UFoo::Bar");
+		loader = VersionMap::ResolveMapKey("Codex", hook, {}, next, false);
+		Check(got && got->result == AobScan::CarryResult::Match && got->fromCL == 127004 && got->rva == 0x1000,
+			"carry: a newest row with no pattern: the older row that has one");
+		Check(loader.Succeeded() && got && loader.address == Base() + got->rva, "carry: the loader picks that older row too");
+
+		// Matches nowhere, found in many places, and a newer absent row that binds an owner.
+		MapFunctionRow absentNewer = PluginRow(gone, 128900, "");
+		absentNewer.absent = true;
+		absentNewer.owners = "Codex";
+		UseMap({ PluginRow(twice, 128786, kNewest), PluginRow(nowhere, 128786, kOld),
+			PluginRow(gone, 128786, kNewest), absentNewer });
+		TestDoubles::g_rvas = { { kNewest, 0x4000 } };
+		TestDoubles::g_counts = { { kNewest, 3 } };
+		carry = AobScan::ScanCarry(module, next);
+		const AobScan::CarryRow* many = FindCarry(carry, "UFoo::Twice");
+		const AobScan::CarryRow* none = FindCarry(carry, "UFoo::Other");
+		got = FindCarry(carry, "UFoo::Gone");
+		Check(many && many->result == AobScan::CarryResult::Ambiguous && many->matches == 3 && !many->hasRva && many->fromCL == 128786
+			&& !many->reason.empty(), "carry: a pattern found in many places: ambiguous, with the count");
+		Check(none && none->result == AobScan::CarryResult::None && none->matches == 0 && none->fromCL == 128786 && !none->reason.empty(),
+			"carry: a pattern found nowhere: none");
+		Check(got && got->owners == "Codex", "carry: a newer absent row's owners are reported, for the loader withdraws the row for them");
+
+		// A key with no pattern row to carry.
+		const Request only = AskPlugin("UFoo::Only", "", Kind::FunctionStart);
+		MapFunctionRow onlyAbsent = PluginRow(only, 128786, "");
+		onlyAbsent.absent = true;
+		UseMap({ onlyAbsent });
+		carry = AobScan::ScanCarry(module, next);
+		got = FindCarry(carry, "UFoo::Only");
+		Check(got && got->result == AobScan::CarryResult::None && got->fromCL == 0 && Has(got->reason, "no locator to carry"),
+			"carry: a key with no pattern row to carry: none, no row tried");
+
+		// A key that already has a row for the build is skipped, an absent row
+		// for it too, and both are counted.
+		MapFunctionRow rowed = PluginRow(hook, 129402, kNewest);
+		MapFunctionRow absentHere = PluginRow(gone, 129402, "");
+		absentHere.absent = true;
+		UseMap({ PluginRow(hook, 128786, kNewest), rowed, PluginRow(gone, 128786, kNewest), absentHere,
+			PluginRow(twice, 128786, kNewest) });
+		TestDoubles::g_counts = {};
+		TestDoubles::g_rvas = { { kNewest, 0x4000 } };
+		carry = AobScan::ScanCarry(module, next);
+		Check(carry.keys == 3 && carry.withRow == 2 && carry.absentRow == 1 && carry.rows.size() == 1
+			&& carry.rows[0].key == "UFoo::Twice", "carry: a key with a row for the build is skipped, and counted");
+
+		// The plugin's own site: kept under its fingerprint.
+		const Request spot = AskPlugin("Spot", "B0 01", Kind::InFunction);
+		UseMap({ PluginRow(spot, 128786, kNewest) });
+		TestDoubles::g_rvas = { { kNewest, 0x5000 } };
+		carry = AobScan::ScanCarry(module, next);
+		got = FindCarry(carry, "Codex/Spot");
+		Check(got && got->result == AobScan::CarryResult::Match && got->fp == PluginRow(spot, 0, "").fp && got->fp != 0
+			&& got->kind == static_cast<int>(Kind::InFunction) && got->rva == 0x5000, "carry: a site keeps its kind and fingerprint");
+
+		// A row's offset and follow come with its pattern.
+		MapFunctionRow shifted = PluginRow(hook, 128786, kNewest);
+		shifted.resultOffset  = 0x10;
+		shifted.followRel32At = 3;
+		UseMap({ shifted });
+		TestDoubles::g_rvas = { { kNewest, 0x4000 } };
+		carry = AobScan::ScanCarry(module, next);
+		got = FindCarry(carry, "UFoo::Bar");
+		Check(got && got->result == AobScan::CarryResult::Match && got->rva == 0x4010 && got->resultOffset == 0x10 && got->followRel32At == 3,
+			"carry: the row's offset and follow apply and are reported");
+
+		// The JSON the pipeline reads.
+		UseMap({ PluginRow(hook, 128786, kNewest), PluginRow(nowhere, 128786, kOld), PluginRow(twice, 128786, kNewest) });
+		TestDoubles::g_rvas = { { kNewest, 0x4000 } };
+		TestDoubles::g_counts = {};
+		carry = AobScan::ScanCarry(module, next);
+		const std::string json = AobScan::CarryJson(carry);
+		Check(Has(json, "\"kind\": \"carry\"") && Has(json, "\"cl\": 129402") && Has(json, "\"rows\": ["), "carry JSON: kind, cl and rows");
+		Check(Has(json, "\"summary\": { \"keys\": 3, \"withRow\": 0, \"absentRow\": 0, \"carried\": 3, \"match\": 2, \"none\": 1, \"ambiguous\": 0 }"),
+			"carry JSON: the summary");
+		Check(Has(json, "{ \"key\": \"UFoo::Bar\", \"fromCL\": 128786, \"matches\": 1, \"rva\": \"0x00004000\", \"result\": \"match\", \"kind\": 1, \"fp\": \"0x00000000\", "
+			"\"pattern\": \"48 89 5C 24 10 57 48 83 EC 20\", \"resultOffset\": 0, \"followRel32At\": -1, \"followRipDispAt\": -1 }"),
+			"carry JSON: a matched key, with no reason");
+		Check(Has(json, "{ \"key\": \"UFoo::Other\", \"fromCL\": 128786, \"matches\": 0, \"rva\": null, \"result\": \"none\", \"reason\": \""),
+			"carry JSON: a key that does not match: rva null, a reason");
 	}
 
 	VersionMap::SetActiveMap(nullptr);

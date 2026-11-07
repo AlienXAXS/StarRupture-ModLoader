@@ -76,6 +76,8 @@
   </ItemGroup>
   <ItemGroup Label="Tool source under test">
     <ClCompile Include="..\observed.cpp" />
+    <ClCompile Include="..\carry.cpp" />
+    <ClCompile Include="..\report_text.cpp" />
   </ItemGroup>
   <ItemGroup Label="Loader sources under test">
     <ClCompile Include="$(CoreDir)memory_scanner\version_map.cpp" />

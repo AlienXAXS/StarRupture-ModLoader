@@ -30,15 +30,7 @@ namespace AobScan
 			return false;
 		}
 
-		struct Locator
-		{
-			uint32_t    gameCL = 0;
-			bool        fromMap = false;   // the row's own pattern, not the registry's standing in for it
-			std::string pattern;
-			int32_t     resultOffset    = 0;
-			int32_t     followRel32At   = -1;
-			int32_t     followRipDispAt = -1;
-		};
+		using Locator = MapLocator;
 
 		// The map's rows the loader decides a request with, in the map's order
 		// (VersionMap::LookUp, which the loader keeps private): the rows of its
@@ -48,7 +40,8 @@ namespace AobScan
 		// key's absent row binds the owners it lists, a site's its fingerprint.
 		// Empty also when the loader refuses, which then reports no address to
 		// observe.
-		std::vector<Locator> MapRows(const std::string& key, int kind, uint32_t fp, const std::string& owner, uint32_t runningCL)
+		std::vector<Locator> MapRows(const std::string& key, int kind, uint32_t fp, const std::string& owner, uint32_t runningCL,
+			std::string* why = nullptr)
 		{
 			struct Row { uint32_t gameCL; const VersionMap::MapFunctionRow* row; };
 			std::vector<Row> rows;
@@ -73,7 +66,11 @@ namespace AobScan
 				if (r.gameCL != runningCL && !r.row->pattern.empty() && r.gameCL > latestCL)
 					latestCL = r.gameCL;
 			if (absentCL > latestCL)
+			{
+				if (why && latestCL)
+					*why = "absent on CL-" + std::to_string(absentCL) + ", newer than its latest row";
 				latestCL = 0;
+			}
 
 			std::vector<Locator> out;
 			for (const Row& r : rows)
@@ -89,6 +86,8 @@ namespace AobScan
 				l.followRipDispAt = r.row->followRipDispAt;
 				out.push_back(std::move(l));
 			}
+			if (why && out.empty() && why->empty())
+				*why = "no row of the map carries a pattern";
 			return out;
 		}
 
@@ -161,6 +160,12 @@ namespace AobScan
 					return seen;
 			return seen;
 		}
+	}
+
+	std::vector<MapLocator> MapLocators(const std::string& key, int kind, uint32_t fp, const std::string& owner,
+		uint32_t runningCL, std::string* why)
+	{
+		return MapRows(key, kind, fp, owner, runningCL, why);
 	}
 
 	ObservedLocator ObserveLoaderEntry(const ScanPatterns::PreflightEntry& entry,

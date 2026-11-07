@@ -14,6 +14,7 @@
 #include "memory_scanner/version_map.h"
 
 #include <string>
+#include <vector>
 
 namespace AobScan
 {
@@ -26,6 +27,26 @@ namespace AobScan
 		int32_t     followRel32At   = -1;
 		int32_t     followRipDispAt = -1;
 	};
+
+	// One row of the loader's map as the loader decides a request with it.
+	struct MapLocator
+	{
+		uint32_t    gameCL = 0;
+		bool        fromMap = false;   // the row's own pattern, not the registry's standing in for it
+		std::string pattern;
+		int32_t     resultOffset    = 0;
+		int32_t     followRel32At   = -1;
+		int32_t     followRipDispAt = -1;
+	};
+
+	// The map's rows the loader reads for a request of `key`, `kind` and `fp`
+	// from `owner` on the build `runningCL` (VersionMap::LookUp, which the
+	// loader keeps private): the running build's row and the latest other
+	// build's that has a pattern, none when the key is absent on a build newer
+	// than that one or on the running build. When none is left, `why` (if
+	// given) says why, as far as the map shows it.
+	std::vector<MapLocator> MapLocators(const std::string& key, int kind, uint32_t fp, const std::string& owner,
+		uint32_t runningCL, std::string* why = nullptr);
 
 	// `address` is the final address ResolveLoaderEntry gave for `request`. The
 	// locators are tried in the loader's order: the map's row for this exe's

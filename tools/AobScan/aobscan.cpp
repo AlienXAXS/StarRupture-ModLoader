@@ -11,6 +11,7 @@
 //   sr-aobscan <game.exe> [--json] [--verbose] [--suggest [--reference <current.exe>]]
 //   sr-aobscan <game.exe> --plugin <plugin.dll> [--json] [--verbose] [--suggest [--reference <current.exe>]]
 //   sr-aobscan <game.exe> --layout <keys.txt> [--json]
+//   sr-aobscan <game.exe> --carry --map <version_map.generated.h | version-map-client.v1.txt> [--cl <n>] [--ignore-cl <n>]
 //   any of the first two with --map <version_map.generated.h | version-map-client.v1.txt>
 //
 // Exit code: 0 when every required pattern is OK, 1 when a required pattern is
@@ -44,6 +45,13 @@
 // from the PDB next to the exe (layout.cpp). Exit code 0 when every key
 // resolved, 1 when one did not, 2 when there is no matching PDB or no key.
 //
+// --carry lists, as JSON, every function key of the --map that has no row for the
+// exe's build, resolved the way the loader does at run time (carry.cpp): the
+// pattern of the latest earlier build's row, rescanned on this exe. --cl names
+// the build and must be the exe's own. --ignore-cl drops every row of that
+// build from the map first, to check the answer against rows that exist.
+// Exit code 0 when the report was made, 2 when it could not be.
+//
 // --suggest proposes a replacement for every MISSING or AMBIGUOUS pattern
 // (suggest.cpp), using the PDB next to the exe when there is one, and
 // --reference, the build players run today, to find the function the current
@@ -74,6 +82,7 @@
 #include "memory_scanner/scan_validation.h"
 #include "memory_scanner/version_feed.h"
 #include "memory_scanner/version_map.h"
+#include "carry.h"
 #include "layout.h"
 #include "map_file.h"
 #include "observed.h"
@@ -326,71 +335,6 @@ namespace
 		AobScan::ObservedLocator            observed;   // what matched at rva; the request's own when nothing resolved
 		AobScan::Suggest::Result            suggest;
 	};
-
-	// Calls fn on each non-empty line of a ScanValidation detail.
-	template <typename Fn>
-	void ForEachDetailLine(const std::string& detail, Fn&& fn)
-	{
-		size_t start = 0;
-		while (start <= detail.size())
-		{
-			const size_t end = detail.find("\r\n", start);
-			const std::string line = detail.substr(start, end == std::string::npos ? std::string::npos : end - start);
-			if (!line.empty())
-				fn(line);
-			if (end == std::string::npos)
-				break;
-			start = end + 2;
-		}
-	}
-}
-
-namespace AobScan
-{
-	void PrintDetail(FILE* out, const std::string& detail)
-	{
-		ForEachDetailLine(detail, [out](const std::string& line) { fprintf(out, "    %s\n", line.c_str()); });
-	}
-
-	std::string JsonDetail(const std::string& detail)
-	{
-		std::string out;
-		ForEachDetailLine(detail, [&out](const std::string& line) {
-			const size_t first = line.find_first_not_of(' ');
-			if (first == std::string::npos)
-				return;
-			if (!out.empty())
-				out += '\n';
-			out += line.substr(first);
-		});
-		return out;
-	}
-
-	std::string JsonEscape(const std::string& s)
-	{
-		std::string out;
-		for (const unsigned char c : s)
-		{
-			switch (c)
-			{
-			case '"':  out += "\\\""; break;
-			case '\\': out += "\\\\"; break;
-			case '\n': out += "\\n";  break;
-			case '\r': out += "\\r";  break;
-			case '\t': out += "\\t";  break;
-			default:
-				if (c < 0x20)
-				{
-					char buf[8];
-					sprintf_s(buf, "\\u%04x", c);
-					out += buf;
-				}
-				else
-					out += static_cast<char>(c);
-			}
-		}
-		return out;
-	}
 }
 
 int wmain(int argc, wchar_t** argv)
@@ -398,6 +342,7 @@ int wmain(int argc, wchar_t** argv)
 	static constexpr const char* kUsage =
 		"usage: sr-aobscan <game.exe> [--plugin <plugin.dll>] [--json] [--verbose] [--suggest [--reference <current.exe>]]\n"
 		"       sr-aobscan <game.exe> --layout <keys.txt> [--json]\n"
+		"       sr-aobscan <game.exe> --carry --map <version_map.generated.h | version-map-client.v1.txt> [--cl <n>] [--ignore-cl <n>]\n"
 		"       (--map <version_map.generated.h | version-map-client.v1.txt>: that header as the map, or the signed feed merged with the loader's map)\n";
 
 	const wchar_t* path      = nullptr;
@@ -405,6 +350,9 @@ int wmain(int argc, wchar_t** argv)
 	const wchar_t* reference = nullptr;
 	const wchar_t* layout    = nullptr;
 	const wchar_t* map       = nullptr;
+	bool           carry     = false;
+	uint32_t       carryCL   = 0;
+	uint32_t       ignoreCL  = 0;
 	bool           json      = false;
 	bool           verbose   = false;
 	bool           suggest   = false;
@@ -414,6 +362,9 @@ int wmain(int argc, wchar_t** argv)
 		if (wcscmp(argv[i], L"--json") == 0)         json = true;
 		else if (wcscmp(argv[i], L"--verbose") == 0) verbose = true;
 		else if (wcscmp(argv[i], L"--suggest") == 0) suggest = true;
+		else if (wcscmp(argv[i], L"--carry") == 0)   carry = true;
+		else if (wcscmp(argv[i], L"--cl") == 0 && i + 1 < argc && !carryCL)   carryCL = wcstoul(argv[++i], nullptr, 10);
+		else if (wcscmp(argv[i], L"--ignore-cl") == 0 && i + 1 < argc && !ignoreCL) ignoreCL = wcstoul(argv[++i], nullptr, 10);
 		else if (wcscmp(argv[i], L"--plugin") == 0 && i + 1 < argc && !plugin) plugin = argv[++i];
 		else if (wcscmp(argv[i], L"--reference") == 0 && i + 1 < argc && !reference) reference = argv[++i];
 		else if (wcscmp(argv[i], L"--layout") == 0 && i + 1 < argc && !layout) layout = argv[++i];
@@ -425,7 +376,8 @@ int wmain(int argc, wchar_t** argv)
 			return kExitBadInput;
 		}
 	}
-	if (!path || (reference && !suggest) || (layout && (plugin || suggest || verbose)))
+	if (!path || (reference && !suggest) || (layout && (plugin || suggest || verbose))
+	    || (carry && (!map || plugin || layout || suggest || verbose)) || (!carry && (carryCL || ignoreCL)))
 	{
 		fputs(kUsage, stderr);
 		return kExitBadInput;
@@ -467,9 +419,30 @@ int wmain(int argc, wchar_t** argv)
 			fprintf(stderr, "sr-aobscan: --map %ls: not a signed feed this loader accepts\n", map);
 			return kExitBadInput;
 		}
+		if (ignoreCL)
+		{
+			auto kept = std::make_shared<VersionMap::MapData>(*data);
+			std::erase_if(kept->functions, [&](const VersionMap::MapFunctionRow& f) { return f.gameCL == ignoreCL; });
+			data = std::move(kept);
+		}
 		VersionMap::SetActiveMap(std::move(data));
 	}
 	const auto base   = reinterpret_cast<uintptr_t>(image.base);
+
+	if (carry)
+	{
+		const VersionMap::Exe target = VersionMap::ExeOf(module);
+		if (!target.cl || (carryCL && carryCL != target.cl))
+		{
+			if (target.cl)
+				fprintf(stderr, "sr-aobscan: %ls: the exe is CL-%u, not CL-%u\n", path, target.cl, carryCL);
+			else
+				fprintf(stderr, "sr-aobscan: %ls: the exe's ProductVersion names no build\n", path);
+			return kExitBadInput;
+		}
+		fputs(AobScan::CarryJson(AobScan::ScanCarry(module, target)).c_str(), stdout);
+		return kExitOk;
+	}
 
 	std::unique_ptr<AobScan::Suggest::Session> session;
 	if (suggest)
