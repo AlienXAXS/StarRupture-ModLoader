@@ -1562,8 +1562,9 @@ namespace UiPass
 		if (desc.Width != g_width.load() || desc.Height != g_height.load())
 		{
 			// A resize since the last Present: read the current size before rejecting.
+			IDXGISwapChain* const sc = g_swapChain;
 			DXGI_SWAP_CHAIN_DESC scDesc = {};
-			if (g_swapChain && SUCCEEDED(g_swapChain->GetDesc(&scDesc)))
+			if (sc && SUCCEEDED(sc->GetDesc(&scDesc)))
 				NoteSwapChainSize(scDesc.BufferDesc.Width, scDesc.BufferDesc.Height);
 			if (desc.Width != g_width.load() || desc.Height != g_height.load())
 			{
