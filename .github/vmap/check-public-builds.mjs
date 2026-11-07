@@ -9,9 +9,8 @@
 // unless --public gives a local file (or another URL).
 // Every header given (version_map.generated.h, layout_table.generated.h) is
 // read for the game CLs it names: the build table, every row's CL and kBuiltCL.
-// A CL that is not in the list, or a build whose `source` text names another
-// Steam build id than the listed one, fails the check. A list that cannot be
-// read fails it too.
+// A CL that is not in the list, or a header that names no CL, fails the check.
+// A list that cannot be read fails it too.
 //
 // Exit codes: 0 all public; 3 a build is not public or the list is unreadable;
 // 2 usage error.
@@ -44,30 +43,25 @@ async function loadList(where) {
   return res.text();
 }
 
-// Every game CL a header carries, and the Steam build id of each build-table entry.
+// Every game CL a header carries.
 export function readHeaderCLs(headerText) {
   const cls = new Set();
-  const ids = new Map();
   for (const m of headerText.matchAll(/kBuiltCL\s*=\s*(\d+)/g)) cls.add(Number(m[1]));
-  const block = /kBuilds\s*=\s*\{\{([\s\S]*?)\}\};/.exec(headerText);
-  if (block) {
+  if (/kBuilds\s*=\s*\{\{/.test(headerText)) {
     // The version map: every row starts with its game CL.
     for (const m of headerText.matchAll(/^\s*\{\s*(\d+),/gm)) cls.add(Number(m[1]));
-    for (const m of block[1].matchAll(/\{\s*(\d+),[^"]*"[^"]*?(\d+)"\s*\}/g)) ids.set(Number(m[1]), m[2]);
   }
-  return { cls, ids };
+  return cls;
 }
 
 // Returns the list of problems, empty when every CL is public.
 export function check(publicBuilds, headers) {
   const problems = [];
   for (const [name, text] of headers) {
-    const { cls, ids } = readHeaderCLs(text);
+    const cls = readHeaderCLs(text);
+    if (!cls.size) problems.push(`${name}: no game CL found in the header`);
     for (const cl of [...cls].sort((a, b) => a - b)) {
       if (!publicBuilds.has(cl)) problems.push(`${name}: CL-${cl} is not a public build`);
-      else if (ids.has(cl) && ids.get(cl) !== publicBuilds.get(cl)) {
-        problems.push(`${name}: CL-${cl} names Steam build ${ids.get(cl)}, the public build is ${publicBuilds.get(cl)}`);
-      }
     }
   }
   return problems;

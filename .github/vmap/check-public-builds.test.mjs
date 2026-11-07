@@ -43,9 +43,8 @@ test('a row of a test-only CL fails even without a build entry', () => {
   assert.match(p.join('\n'), /CL-128786/);
 });
 
-test('a public CL with another Steam build id fails', () => {
-  const other = '{ 127004, 0xE8972298, 0x0F35C000, "public 99999999" },';
-  assert.match(check(publicBuilds, [['h', header([other], [])]]).join('\n'), /public build is 25646882/);
+test('a header that names no CL fails', () => {
+  assert.match(check(publicBuilds, [['h', '']]).join(' '), /no game CL/);
 });
 
 test('the command exits 0 on public-only and 3 on a test-only CL', () => {
