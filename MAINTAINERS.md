@@ -2,9 +2,11 @@
 
 What a loader maintainer needs to know about the signed feed that refreshes the
 [version map](VersionMap.md) between loader releases. The map's contents and how plugins use it are
-in `VersionMap.md`. How a new game build becomes a signed feed is covered in the CI repository's
-docs ([starrupture-ci](https://github.com/msantoro12/starrupture-ci), `ci/VERSION-MAP.md` for the
-row layout); this page covers only the loader side.
+in `VersionMap.md`. This page covers only the loader side. For the CI side, see
+[the workflow chain](https://github.com/msantoro12/starrupture-ci/blob/main/ci/MAP-MODE.md#the-workflow-chain)
+(from sr-watch through vmap-publish) and
+[publishing and the watchdog](https://github.com/msantoro12/starrupture-ci/blob/main/ci/MAP-MODE.md#publishing-and-the-watchdog)
+(vmap-publish, first_publish, why the feed sits on Latest).
 
 ## Format
 
