@@ -214,6 +214,10 @@ jobs:
             /m `
             /v:minimal
 
+      - name: Refuse a build that trusts the test feed key
+        shell: pwsh
+        run: ./.github/scripts/assert-no-test-key.ps1 -Path build
+
       - name: Stage dwmapi.dll artifacts for SDK sync
         shell: pwsh
         run: |

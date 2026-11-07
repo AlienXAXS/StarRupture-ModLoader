@@ -30,9 +30,10 @@ namespace VersionFeed
 		// new key to the free slot, and a later one drops the old.
 		//
 		// k1 is a TEST key, generated locally for the unit tests and test
-		// feeds. Only a build that defines VMAP_TRUST_TEST_KEY (the tests and
-		// sr-aobscan) trusts it; any other build skips the slot. k2 is the release
-		// key: every build trusts it, with no define.
+		// feeds. Only a build that defines VMAP_TRUST_TEST_KEY (the tests,
+		// sr-aobscan and a CI build with /p:VmapTrustTestKey=true) trusts it;
+		// any other build skips the slot. k2 is the release key: every build
+		// trusts it, with no define.
 		constexpr const char* kK1Hex = "e1650a7bb99a2941c9c034f22f2a22fb16f482b67e7f2edc31489c43975020cf";
 		constexpr bool        kK1TestOnly = true;
 		constexpr const char* kK2Hex = "5457aba109e92926917d74e15932e4ff689f28f83510ec1a9679e7b8e7c81a85";
@@ -479,6 +480,12 @@ namespace VersionFeed
 		static std::atomic<bool> s_done{ false };
 		if (s_done.exchange(true))
 			return false;
+#ifdef VMAP_TRUST_TEST_KEY
+		// The release workflows scan their DLLs for this marker and refuse to
+		// publish one that holds it (.github/scripts/assert-no-test-key.ps1).
+		static const char kTestKeyMarker[] = "VMAP-TEST-KEY-TRUSTED";
+		ModLoaderLogger::LogWarn(L"[VersionFeed] This build trusts the test feed key (%hs); it is for CI test rigs only", kTestKeyMarker);
+#endif
 		const auto map = BuildFromCache(path, CompiledKeys(), VersionMap::RunningExe(), LoaderCoverage());
 		if (!map)
 			return false;

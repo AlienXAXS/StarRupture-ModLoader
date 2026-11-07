@@ -127,6 +127,28 @@
   </ItemDefinitionGroup>
 
   <!-- ============================================================
+       VMAP_TRUST_TEST_KEY
+       Opt-in, for CI test builds only: /p:VmapTrustTestKey=true makes
+       the loader also trust the TEST version-map key (slot k1), so a
+       test rig can run it against a staged, test-signed feed. Off by
+       default. Such a build logs the marker VMAP-TEST-KEY-TRUSTED at
+       startup, and the release workflows refuse to publish any DLL
+       that contains it (.github/scripts/assert-no-test-key.ps1).
+       It must not fetch anything, so it cannot be combined with a feed
+       or manifest URL (the target below fails the build).
+       ============================================================ -->
+  <ItemDefinitionGroup Condition="'$(VmapTrustTestKey)' == 'true'">
+    <ClCompile>
+      <PreprocessorDefinitions>VMAP_TRUST_TEST_KEY;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+  </ItemDefinitionGroup>
+
+  <Target Name="RefuseTestKeyWithFeedUrl" BeforeTargets="ClCompile"
+          Condition="'$(VmapTrustTestKey)' == 'true' And ('$(VmapFeedUrl)' != '' Or '$(AutoUpdateManifestUrl)' != '')">
+    <Error Text="VmapTrustTestKey=true trusts the TEST feed key, which a release build must never do. It cannot be combined with VmapFeedUrl or AutoUpdateManifestUrl. Drop the URL, or drop VmapTrustTestKey." />
+  </Target>
+
+  <!-- ============================================================
        VerifyLocalStarRuptureSDK
        The Local SDK configurations pull their sources from outside
        the repo, so a missing checkout otherwise shows up as dozens

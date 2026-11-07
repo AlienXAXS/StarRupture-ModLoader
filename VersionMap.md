@@ -247,12 +247,19 @@ loader release that adds the new key and a later one that drops the old.
 
 | Slot | Key | Trusted by |
 |---|---|---|
-| `k1` | TEST key | only a build that defines `VMAP_TRUST_TEST_KEY` (the unit tests and `sr-aobscan`) |
+| `k1` | TEST key | only a build that defines `VMAP_TRUST_TEST_KEY` (the unit tests, `sr-aobscan` and a build with `/p:VmapTrustTestKey=true`) |
 | `k2` | release key | every build |
 
 A release build therefore trusts only `k2`. A feed signed with `k1` is rejected by it. The
 private halves are CI secrets (`VMAP_SIGN_KEY_TEST`, `VMAP_SIGN_KEY`); a leaked key is answered by
 a loader release that drops its slot.
+
+**Test-key build.** `/p:VmapTrustTestKey=true` (`Shared.props`) defines `VMAP_TRUST_TEST_KEY` in
+the loader, so a CI test rig can run it against a staged, test-signed feed: copy the feed to
+`ModLoader\version-map-client.v1.cache` before launch and pass no `VmapFeedUrl`. Such a build logs
+the marker `VMAP-TEST-KEY-TRUSTED` at startup. It is off by default, the build fails if it is
+combined with `VmapFeedUrl` or `AutoUpdateManifestUrl`, and `release.yml` and `draft.yml` fail
+before publishing when a built DLL contains the marker (`.github/scripts/assert-no-test-key.ps1`).
 
 **Merge.** The loader merges the built-in map and the feed into one row per key and CL (per `fp`
 for a site key), once at startup, and the result stays unchanged for the process. For each group
