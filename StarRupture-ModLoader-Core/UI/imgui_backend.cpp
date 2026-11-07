@@ -320,6 +320,37 @@ static UINT KeyOrButtonVk(UINT msg, WPARAM wParam, bool& isUp)
 // Keys and buttons whose press was handed to the game.
 static InputArbitration::PressesSeenByGame g_pressesSeen;
 
+// Focus and window-state messages are rare, so each one gets a line. They show
+// what the window did around a flash or a failed Present.
+static void LogWindowStateMessage(UINT msg, WPARAM wParam, LPARAM lParam)
+{
+	switch (msg)
+	{
+	case WM_ACTIVATE:
+		IMGUI_LOG_INFO("[ImGuiBackend] WM_ACTIVATE state=%u minimised=%u", static_cast<unsigned>(LOWORD(wParam)),
+			static_cast<unsigned>(HIWORD(wParam)));
+		break;
+	case WM_ACTIVATEAPP:
+		IMGUI_LOG_INFO("[ImGuiBackend] WM_ACTIVATEAPP active=%u thread=%u", static_cast<unsigned>(wParam),
+			static_cast<unsigned>(lParam));
+		break;
+	case WM_SIZE:
+		IMGUI_LOG_INFO("[ImGuiBackend] WM_SIZE type=%u size=%ux%u", static_cast<unsigned>(wParam),
+			static_cast<unsigned>(LOWORD(lParam)), static_cast<unsigned>(HIWORD(lParam)));
+		break;
+	case WM_SHOWWINDOW:
+		IMGUI_LOG_INFO("[ImGuiBackend] WM_SHOWWINDOW shown=%u reason=%u", static_cast<unsigned>(wParam),
+			static_cast<unsigned>(lParam));
+		break;
+	case WM_DISPLAYCHANGE:
+		IMGUI_LOG_INFO("[ImGuiBackend] WM_DISPLAYCHANGE bpp=%u size=%ux%u", static_cast<unsigned>(wParam),
+			static_cast<unsigned>(LOWORD(lParam)), static_cast<unsigned>(HIWORD(lParam)));
+		break;
+	default:
+		break;
+	}
+}
+
 static LRESULT CALLBACK HookedWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
 	// Dispatch plugin keybind callbacks unconditionally so that toggle-style
@@ -459,6 +490,8 @@ static LRESULT CALLBACK HookedWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 			break;
 		}
 	}
+
+	LogWindowStateMessage(msg, wParam, lParam);
 
 	// Windows clears any cursor clip when the window is deactivated, so put
 	// ours back once the game is focused again and our UI is not open.
@@ -1372,6 +1405,8 @@ namespace UiPass
 	// HookedPresent draws again once this long has passed without a draw here.
 	constexpr ULONGLONG kActiveMs = 250;
 	constexpr DWORD kSlotWaitMs = 100;
+	// At most one rejected-frame line per this long.
+	constexpr ULONGLONG kRejectLogMs = 2000;
 
 	struct Slot
 	{
@@ -1481,6 +1516,28 @@ namespace UiPass
 			(g_doneFence && g_doneFence->GetCompletedValue() < g_lastDoneValue.load());
 	}
 
+	// Milliseconds since the last Slate-step draw, or -1 if it never drew.
+	static LONGLONG MsSinceDraw()
+	{
+		const ULONGLONG last = g_lastDrawMs.load();
+		return last ? static_cast<LONGLONG>(GetTickCount64() - last) : -1;
+	}
+
+	// A frame Record turned away. Rate limited: it can repeat every frame.
+	static void LogReject(const char* reason, const D3D12_RESOURCE_DESC& desc)
+	{
+		static std::atomic<ULONGLONG> s_lastLogMs{ 0 };
+		const ULONGLONG now = GetTickCount64();
+		ULONGLONG last = s_lastLogMs.load();
+		if (now - last < kRejectLogMs || !s_lastLogMs.compare_exchange_strong(last, now))
+			return;
+		IMGUI_LOG_INFO("[ImGuiBackend] Slate frame rejected: %s (slate %llux%u fmt=%u samples=%u, swap chain %llux%u fmt=%u)",
+			reason, static_cast<unsigned long long>(desc.Width), static_cast<unsigned>(desc.Height),
+			static_cast<unsigned>(desc.Format), static_cast<unsigned>(desc.SampleDesc.Count),
+			static_cast<unsigned long long>(g_width.load()), static_cast<unsigned>(g_height.load()),
+			static_cast<unsigned>(g_rtvFormat));
+	}
+
 	// Render thread, at Slate's present step.
 	static int Record(ID3D12Resource* backBuffer)
 	{
@@ -1488,9 +1545,17 @@ namespace UiPass
 			return -1;
 
 		const D3D12_RESOURCE_DESC desc = backBuffer->GetDesc();
-		if (desc.Dimension != D3D12_RESOURCE_DIMENSION_TEXTURE2D || desc.Width != g_width.load() ||
-			desc.Height != g_height.load() || desc.SampleDesc.Count != 1 || NormalizeForImGui(desc.Format) != g_rtvFormat)
+		if (desc.Dimension != D3D12_RESOURCE_DIMENSION_TEXTURE2D || desc.SampleDesc.Count != 1 ||
+			NormalizeForImGui(desc.Format) != g_rtvFormat)
+		{
+			LogReject("not a matching 2D back buffer (dimension, samples or format)", desc);
 			return -1;
+		}
+		if (desc.Width != g_width.load() || desc.Height != g_height.load())
+		{
+			LogReject("size differs from the swap chain", desc);
+			return -1;
+		}
 
 		if (!g_queue && !CreateResources())
 		{
@@ -1503,7 +1568,10 @@ namespace UiPass
 		// A Present drawing its own overlay right now keeps this frame.
 		DWORD expected = 0;
 		if (!g_drawOwnerThread.compare_exchange_strong(expected, GetCurrentThreadId()))
+		{
+			LogReject("Present path is drawing this frame", desc);
 			return -1;
+		}
 
 		const int index = static_cast<int>(g_next % kSlots);
 		Slot& slot = g_slots[index];
@@ -1516,6 +1584,7 @@ namespace UiPass
 		if (!free)
 		{
 			g_drawOwnerThread.store(0, std::memory_order_release);
+			LogReject("previous draw in this slot still running", desc);
 			return -1;
 		}
 
@@ -1584,11 +1653,51 @@ namespace UiPass
 // The real Present for a frame HookedPresent owns, and what its result means
 // for the overlay. Releases g_presentOwnerThread.
 // ---------------------------------------------------------------------------
-static HRESULT PresentAndCheck(IDXGISwapChain* swapChain, UINT syncInterval, UINT flags, UINT64 frameIdx)
+// What the Present failure line records about the window and the swap chain,
+// so a failure can be tied to a focus or window-state change. Runs once per
+// run of failures, never per frame.
+static void LogPresentFailure(IDXGISwapChain* swapChain, HRESULT hr, UINT syncInterval, UINT flags, UINT64 frameIdx,
+	const char* drawPath)
+{
+	const HWND hwnd = g_hwnd.load();
+	RECT client = {};
+	if (hwnd)
+		GetClientRect(hwnd, &client);
+
+	UINT width = 0, height = 0, buffers = 0, scFlags = 0;
+	IDXGISwapChain1* sc1 = nullptr;
+	if (SUCCEEDED(swapChain->QueryInterface(IID_PPV_ARGS(&sc1))))
+	{
+		DXGI_SWAP_CHAIN_DESC1 d1 = {};
+		if (SUCCEEDED(sc1->GetDesc1(&d1)))
+		{
+			width = d1.Width;
+			height = d1.Height;
+			buffers = d1.BufferCount;
+			scFlags = d1.Flags;
+		}
+		sc1->Release();
+	}
+
+	BOOL fullscreen = FALSE;
+	const HRESULT fsHr = swapChain->GetFullscreenState(&fullscreen, nullptr);
+
+	const LONGLONG sinceSlate = UiPass::MsSinceDraw();
+	IMGUI_LOG_WARN("[ImGuiBackend] g_originalPresent error (not device loss): 0x%08X (frame %llu) syncInterval=%u flags=0x%X thread=%u "
+		"path=%s lastSlateDrawMs=%lld iconic=%d visible=%d foreground=%d client=%ldx%ld "
+		"swapchain=%ux%u buffers=%u flags=0x%X fullscreen=%d(0x%08X)",
+		static_cast<unsigned>(hr), frameIdx, syncInterval, flags, static_cast<unsigned>(GetCurrentThreadId()),
+		drawPath, sinceSlate, hwnd && IsIconic(hwnd), hwnd && IsWindowVisible(hwnd),
+		hwnd && GetForegroundWindow() == hwnd, client.right - client.left, client.bottom - client.top,
+		width, height, buffers, scFlags, fullscreen ? 1 : 0, static_cast<unsigned>(fsHr));
+}
+
+static HRESULT PresentAndCheck(IDXGISwapChain* swapChain, UINT syncInterval, UINT flags, UINT64 frameIdx,
+	const char* drawPath)
 {
 	HRESULT hr = g_originalPresent(swapChain, syncInterval, flags);
 
-	// Tracks whether we're currently in a run of transient Present failures
+	// Tracks whether we're currently in a run of Present failures
 	// (e.g. DXGI_ERROR_INVALID_CALL while the game is minimised/alt-tabbed out
 	// of fullscreen exclusive).  Lets us log once on entry and once on
 	// recovery instead of every frame for as long as the game is minimised.
@@ -1596,12 +1705,11 @@ static HRESULT PresentAndCheck(IDXGISwapChain* swapChain, UINT syncInterval, UIN
 
 	if (FAILED(hr) && hr != DXGI_ERROR_DEVICE_REMOVED && hr != DXGI_ERROR_DEVICE_RESET && hr != DXGI_ERROR_DEVICE_HUNG)
 	{
-		// Transient failure -- the device is fine, the game keeps running.
+		// Not a device loss -- the game keeps running.
 		// Skip ImGui rendering this frame and retry on the next one.
 		bool expected = false;
 		if (s_transientPresentFailure.compare_exchange_strong(expected, true))
-			IMGUI_LOG_WARN("[ImGuiBackend] g_originalPresent transient failure: 0x%08X (frame %llu)",
-				static_cast<unsigned>(hr), frameIdx);
+			LogPresentFailure(swapChain, hr, syncInterval, flags, frameIdx, drawPath);
 
 		g_presentOwnerThread.store(0, std::memory_order_release);
 		return hr;
@@ -1648,6 +1756,18 @@ static HRESULT PresentAndCheck(IDXGISwapChain* swapChain, UINT syncInterval, UIN
 
 	g_presentOwnerThread.store(0, std::memory_order_release);
 	return hr;
+}
+
+// One line each time drawing moves between Slate's present step and the
+// Present fallback.
+static void NoteDrawPath(bool slate)
+{
+	static std::atomic<int> s_path{ -1 };
+	if (s_path.exchange(slate ? 1 : 0) == (slate ? 1 : 0))
+		return;
+	const LONGLONG sinceSlate = UiPass::MsSinceDraw();
+	IMGUI_LOG_INFO("[ImGuiBackend] Overlay draw path: %s (ms since last Slate draw: %lld)",
+		slate ? "Slate step" : "Present fallback", sinceSlate);
 }
 
 // ---------------------------------------------------------------------------
@@ -1716,13 +1836,18 @@ static HRESULT STDMETHODCALLTYPE HookedPresent(IDXGISwapChain* swapChain, UINT s
 			UiPass::NoteSwapChainSize(scDesc.BufferDesc.Width, scDesc.BufferDesc.Height);
 	}
 	if (UiPass::Active())
-		return PresentAndCheck(swapChain, syncInterval, flags, frameIdx);
+	{
+		NoteDrawPath(true);
+		return PresentAndCheck(swapChain, syncInterval, flags, frameIdx, "slate");
+	}
 
 	// Released before the real Present on every path below. If the Slate-step
 	// draw is recording this frame right now, it keeps the frame.
 	DWORD drawExpected = 0;
 	if (!g_drawOwnerThread.compare_exchange_strong(drawExpected, tid))
-		return PresentAndCheck(swapChain, syncInterval, flags, frameIdx);
+		return PresentAndCheck(swapChain, syncInterval, flags, frameIdx, "slate-recording");
+
+	NoteDrawPath(false);
 
 	// Current back buffer index.
 	IDXGISwapChain3* sc3 = nullptr;
@@ -1828,7 +1953,7 @@ static HRESULT STDMETHODCALLTYPE HookedPresent(IDXGISwapChain* swapChain, UINT s
 	backBuffer->Release();
 
 	g_drawOwnerThread.store(0, std::memory_order_release);
-	return PresentAndCheck(swapChain, syncInterval, flags, frameIdx);
+	return PresentAndCheck(swapChain, syncInterval, flags, frameIdx, "fallback");
 }
 
 // ---------------------------------------------------------------------------
