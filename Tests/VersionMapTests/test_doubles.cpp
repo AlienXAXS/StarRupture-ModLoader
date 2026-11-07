@@ -18,15 +18,16 @@ namespace TestDoubles
 	std::map<std::string, size_t>    g_counts;
 	std::map<std::string, int>       g_resolveCalls;
 	std::vector<std::wstring>        g_log;
+	std::vector<std::wstring>        g_debugLog;
 }
 
 namespace
 {
-	void Capture(const wchar_t* format, va_list args)
+	void Capture(std::vector<std::wstring>& into, const wchar_t* format, va_list args)
 	{
 		wchar_t line[2048]{};
 		vswprintf_s(line, format, args);
-		TestDoubles::g_log.emplace_back(line);
+		into.emplace_back(line);
 	}
 }
 
@@ -36,7 +37,7 @@ namespace ModLoaderLogger
 	{
 		va_list args;
 		va_start(args, format);
-		Capture(format, args);
+		Capture(TestDoubles::g_log, format, args);
 		va_end(args);
 	}
 
@@ -44,7 +45,7 @@ namespace ModLoaderLogger
 	{
 		va_list args;
 		va_start(args, format);
-		Capture(format, args);
+		Capture(TestDoubles::g_log, format, args);
 		va_end(args);
 	}
 
@@ -52,13 +53,19 @@ namespace ModLoaderLogger
 	{
 		va_list args;
 		va_start(args, format);
-		Capture(format, args);
+		Capture(TestDoubles::g_log, format, args);
 		va_end(args);
 	}
 
-	// scanner.cpp's progress lines: not what the tests read.
+	// scanner.cpp's trace lines: not what the tests read.
 	void LogTrace(const wchar_t*, ...) {}
-	void LogDebug(const wchar_t*, ...) {}
+	void LogDebug(const wchar_t* format, ...)
+	{
+		va_list args;
+		va_start(args, format);
+		Capture(TestDoubles::g_debugLog, format, args);
+		va_end(args);
+	}
 }
 
 namespace ScanValidation
