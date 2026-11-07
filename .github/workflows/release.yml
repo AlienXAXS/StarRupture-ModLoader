@@ -45,6 +45,13 @@ jobs:
           submodules: true
           fetch-depth: 0  # build-versioned-notes.ps1 reads UPDATE_NOTES.txt from earlier tags
 
+      - name: Check the version map carries public builds only
+        shell: bash
+        run: |
+          node .github/vmap/check-public-builds.mjs \
+            StarRupture-ModLoader-Core/hooks/game/version_map.generated.h \
+            StarRupture-ModLoader-Core/core/layout_table.generated.h
+
       - name: Add MSBuild to PATH
         uses: microsoft/setup-msbuild@v2
 
