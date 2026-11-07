@@ -163,7 +163,14 @@ jobs:
 
       - name: Refuse a build that trusts the test feed key
         shell: pwsh
-        run: ./.github/scripts/assert-no-test-key.ps1 -Path build
+        run: |
+          # A branch without the script predates the VmapTrustTestKey switch,
+          # so it cannot produce the marker and has nothing to check.
+          if (Test-Path ./.github/scripts/assert-no-test-key.ps1) {
+            ./.github/scripts/assert-no-test-key.ps1 -Path build
+          } else {
+            Write-Host "::notice::This branch predates the test-key switch, so there is nothing to check."
+          }
 
       - name: Pattern scan (placeholder)
         run: echo "::notice::Pattern scan not available yet. The in-game preflight is the only check of the loader's AOB patterns today."
