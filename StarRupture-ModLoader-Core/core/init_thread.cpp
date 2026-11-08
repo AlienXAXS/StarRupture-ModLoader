@@ -253,14 +253,16 @@ DWORD WINAPI MainInitThreadProc(LPVOID)
         Splash::Close();
 
 #ifdef MODLOADER_CLIENT_BUILD
-        // Same deal as the preflight failure below: the main thread is still
-        // held, so the game stays frozen while the user decides. The splash has
-        // nowhere near enough room to explain why a version mismatch disables
-        // the loader by design, so use the full dialog.
+        // Nothing was hooked, so nothing needs the game held: let the main
+        // thread go before the dialog waits on the player. Held, it sat at the
+        // Stage 1 gate until the player clicked or the gate's 180 s timeout
+        // ran out. The splash has nowhere near enough room to explain why a
+        // version mismatch disables the loader by design, so use the full
+        // dialog.
+        ReleaseMainThread(suspendedMainThread);
         const auto choice = Hooks::CrashDialog::Show(
             Hooks::CrashDialog::Mode::VersionMismatch, versionDetails);
 
-        ReleaseMainThread(suspendedMainThread);
         // The game is booting now, so WinHTTP is safe. Ask for a feed for the
         // next launch before Quit's exit; Stage 3 never runs after a refusal.
         FeedFetch::AfterRefusal(feedConfig, feedAsked);
@@ -298,14 +300,13 @@ DWORD WINAPI MainInitThreadProc(LPVOID)
         Splash::Close();
 
 #ifdef MODLOADER_CLIENT_BUILD
-        // The main thread is still held from the top of Stage 1, so the game
-        // stays frozen while the dialog is up. Let the user decide: continue
-        // with a completely unmodified game, or quit and wait for a ModLoader
-        // update.
+        // As for the version mismatch above: nothing was hooked, so the main
+        // thread goes before the dialog. Let the user decide: continue with a
+        // completely unmodified game, or quit and wait for a ModLoader update.
+        ReleaseMainThread(suspendedMainThread);
         const auto choice = Hooks::CrashDialog::Show(
             Hooks::CrashDialog::Mode::PatternFailure, preflightDetails);
 
-        ReleaseMainThread(suspendedMainThread);
         FeedFetch::AfterRefusal(feedConfig, feedAsked);
         if (choice == Hooks::CrashDialog::Result::QuitGame)
         {
