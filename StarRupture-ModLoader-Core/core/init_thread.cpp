@@ -164,7 +164,8 @@ DWORD WINAPI MainInitThreadProc(LPVOID)
     // Install all detours before the engine gets far enough to miss them.
     // The game's main thread is held for the whole of Stage 1 -- the game
     // must not keep booting while we scan patterns and patch code. See
-    // ReleaseMainThread() above for how it is held.
+    // ReleaseMainThread() above for how it is held. A version or pattern
+    // failure lets it go early: nothing gets patched after those.
     // ------------------------------------------------------------------
     // On the APC path the main thread is already parked (nothing to suspend);
     // declared up front so the wrong-build bail below can release it too.
