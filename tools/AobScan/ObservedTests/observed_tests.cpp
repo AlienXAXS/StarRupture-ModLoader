@@ -4,6 +4,7 @@
 // the RVA the table gives it, or not at all.
 #include "test_doubles.h"
 
+#include "../bitfield.h"
 #include "../carry.h"
 #include "../observed.h"
 #include "../plugin_scan.h"
@@ -586,6 +587,21 @@ int main()
 	Check(!AobScan::OwnPatternGraded("Resolve", true, "OK", 0, true), "a request with no patterns is not graded");
 	Check(!AobScan::OwnPatternGraded("Resolve", true, "AMBIGUOUS", 1, false), "a request that failed is left to its own result");
 	Check(!AobScan::OwnPatternGraded("FindAllPatternsInMainModule", false, "OK", 1, false), "a raw scan is not graded");
+
+	// A bitfield member: the byte and mask --layout reports for it, or BITFIELD.
+	{
+		const AobScan::BitfieldPlace two = AobScan::PlaceBitfield(0x5d, 3, 2);
+		Check(two.inOneByte && two.offset == 0x5d && two.mask == 0x18, "a 2-bit field at bit 3 of byte 0x5d is byte 0x5d, mask 0x18");
+		const AobScan::BitfieldPlace one = AobScan::PlaceBitfield(0x5d, 3, 1);
+		Check(one.inOneByte && one.offset == 0x5d && one.mask == 0x08, "a one-bit bool keeps its byte and single-bit mask");
+		const AobScan::BitfieldPlace later = AobScan::PlaceBitfield(0x40, 13, 1);
+		Check(later.inOneByte && later.offset == 0x41 && later.mask == 0x20, "a bit past the first byte of its storage unit moves the byte offset");
+		const AobScan::BitfieldPlace full = AobScan::PlaceBitfield(0x40, 8, 8);
+		Check(full.inOneByte && full.offset == 0x41 && full.mask == 0xFF, "a field that fills a byte is that byte, mask 0xFF");
+		Check(!AobScan::PlaceBitfield(0x5d, 7, 2).inOneByte, "a field that crosses a byte boundary is BITFIELD");
+		Check(!AobScan::PlaceBitfield(0x5d, 0, 9).inOneByte, "a field wider than 8 bits is BITFIELD");
+		Check(!AobScan::PlaceBitfield(0x5d, 0, 32).inOneByte, "a 32-bit field is BITFIELD");
+	}
 
 	printf("%d checks, %d failed\n", g_checks, g_failed);
 	return g_failed ? 1 : 0;

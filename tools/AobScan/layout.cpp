@@ -6,8 +6,9 @@
 // is looked up in the class first and then in its base classes, with the base
 // offsets added, so an inherited member resolves through the derived class.
 // A bitfield bool is reported the way FBoolProperty describes it: the byte that
-// holds the bit, size 1, and the bit's mask within that byte. A plain C++ bool
-// has mask 0xFF, as its FBoolProperty does.
+// holds the bit, size 1, and the bit's mask within that byte. So is a bitfield of
+// several bits that stays inside one byte; the mask then covers all its bits. A
+// plain C++ bool has mask 0xFF, as its FBoolProperty does.
 //
 // Where reflection names a thing differently from C++, the C++ name is tried
 // too, in this order:
@@ -29,7 +30,8 @@
 // Results: OK; NOTYPE (no class of that name with a body); AMBIGUOUS (more than
 // one class of that name, laid out differently); NOMEMBER (the class and its
 // bases have no data member of that name); BITFIELD (the member is a bitfield
-// wider than one bit, which FBoolProperty cannot describe); BADKEY.
+// wider than 8 bits or crossing a byte boundary, which FBoolProperty cannot
+// describe); BADKEY.
 //
 // Output is the keys as given and numbers only. Type and member names are read
 // from the PDB to find the keys and are never printed: the PDB is not ours to
@@ -45,6 +47,7 @@
 #include <string>
 #include <vector>
 
+#include "bitfield.h"
 #include "pdb.h"
 #include "plugin_scan.h"
 #include "memory_scanner/version_map.h"
@@ -265,15 +268,16 @@ namespace
 				DWORD bit = 0;
 				if (Get(child, TI_GET_BITPOSITION, &bit))
 				{
-					// FBoolProperty describes a one-bit field only.
-					if (Length(child) != 1)
+					// FBoolProperty describes the bits of one byte only.
+					const AobScan::BitfieldPlace place = AobScan::PlaceBitfield(baseOffset + offset, bit, Length(child));
+					if (!place.inOneByte)
 					{
 						out.result = "BITFIELD";
 						return true;
 					}
-					out.offset   = baseOffset + offset + bit / 8;
+					out.offset   = place.offset;
 					out.size     = 1;
-					out.boolMask = 1u << (bit % 8);
+					out.boolMask = place.mask;
 				}
 				else
 				{
