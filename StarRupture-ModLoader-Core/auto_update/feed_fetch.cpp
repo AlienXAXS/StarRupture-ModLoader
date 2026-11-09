@@ -45,8 +45,8 @@ namespace
 
 	// Marks the cache as checked now, so "over a day old" counts from the
 	// last request and not from the last change. With no cache file it makes
-	// an empty one, which reads as no feed, so a request that got none still
-	// waits a day.
+	// an empty one, which reads as no feed: Stage 1 then waits a day on a known
+	// exe, and Stage 3 asks again at the next launch.
 	void TouchCache(const std::wstring& path)
 	{
 		HANDLE h = CreateFileW(path.c_str(), FILE_WRITE_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_ALWAYS,
@@ -177,8 +177,14 @@ namespace FeedFetch
 			ModLoaderLogger::LogInfo(L"[VersionFeed] No feed request (stage 3): %hs", reason);
 			return;
 		}
-		if (CacheAgeSeconds(cfg.cachePath) <= kDaySeconds)
+		// The day's wait holds only while the cache is a verified feed. An empty
+		// one (the mark a request that got no feed leaves), a truncated, oversize
+		// or unreadable one is asked for again at once.
+		VersionFeed::SignedFeed cache;
+		const bool usable = VersionFeed::ReadCache(cfg.cachePath, cfg.keys, cache);
+		const uint64_t age = CacheAgeSeconds(cfg.cachePath);
+		if (usable && age <= kDaySeconds)
 			return;
-		Refresh(cfg, "stage 3");
+		Refresh(cfg, usable || age == UINT64_MAX ? "stage 3" : "stage 3, the cache is empty or unusable");
 	}
 }

@@ -227,7 +227,9 @@ loader fetches only on the client, with `[AutoUpdate] Enabled` on, and only:
 - from the auto-update thread, at most once a day, for the next launch.
 
 An exe the map has never seen asks at every launch until a cached feed covers it; the once-a-day
-limit applies to the `absent` case and to the auto-update thread.
+limit applies to the `absent` case and to the auto-update thread. The auto-update thread waits
+only while the cache holds a verified feed: an empty, cut-short, oversize or unreadable cache is
+asked for again at the next launch.
 
 **Request.** One HTTPS GET. A URL that is not `https` is refused, redirects from HTTPS to HTTP are
 disallowed, each operation has a 2 s timeout, the whole request has an 8 s deadline, and the body
@@ -377,7 +379,7 @@ What a player sees, and what the log says (`ModLoader\Logs\ModLoader.log`).
 | The running build is in the map | Starts with no network request. This is the normal case. |
 | New build, no feed published yet, or no network | The gate refuses the build. The player gets the "Start Game Without ModLoader" dialog and can play unmodded or quit. The loader tries again for the next launch. |
 | New build, feed published | The splash shows "Downloading game data for CL-n" for a moment, then the game starts modded. |
-| A fetch fails (404, timeout, over 1 MiB, not https) | As if there were no feed: a known build runs, an unknown one is refused. An unknown build asks again at the next launch; the other triggers wait a day. |
+| A fetch fails (404, timeout, over 1 MiB, not https) | As if there were no feed: a known build runs, an unknown one is refused. An unknown build asks again at the next launch, and so does the auto-update thread while no verified feed is cached; the other triggers wait a day. |
 | The feed's signature is bad, the key unknown or the file malformed | The file is discarded whole, and the cache is untouched. Same as no feed. |
 | The feed is older than the cache (`seq` not higher) | Ignored. The cache stays. |
 | A release build is handed a `k1` (TEST) feed | Rejected as a bad key. |

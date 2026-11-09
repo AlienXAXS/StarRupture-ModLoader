@@ -710,7 +710,7 @@ int main()
 		DeleteFileW(none.c_str());
 		Check(FeedFetch::Refresh(ConfigFor(srv, "/missing", keys, none), "test") == FeedFetch::Result::Failed && Exists(none)
 			&& Slurp(none).empty() && FeedFetch::CacheAgeSeconds(none) < 60,
-			"a 404 with no cache leaves an empty cache, so the next request waits a day");
+			"a 404 with no cache leaves an empty cache, stamped now");
 		DeleteFileW(none.c_str());
 	}
 
@@ -796,6 +796,43 @@ int main()
 		AgeFile(cache, kDay + 3600);
 		FeedFetch::Stage3(cfg);
 		Check(srv.hits == 1 && FeedFetch::CacheAgeSeconds(cache) < 60, "Stage 3 asks once a cache is over a day old, and the check restarts the clock");
+
+		// A cache that is not a verified feed does not hold the day's wait,
+		// however fresh. Each case starts from a file stamped now.
+		const std::wstring bad = TempPath(L"stage3.cache");
+		const auto writeFresh = [&](const std::string& body)
+		{
+			HANDLE h = CreateFileW(bad.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+			DWORD n = 0;
+			if (!body.empty())
+				WriteFile(h, body.data(), static_cast<DWORD>(body.size()), &n, nullptr);
+			CloseHandle(h);
+		};
+		const FeedFetch::Config badCfg = ConfigFor(srv, "/ok", keys, bad);
+
+		writeFresh("");
+		srv.hits = 0;
+		FeedFetch::Stage3(badCfg);
+		Check(srv.hits == 1 && Slurp(bad) == srv.feed, "Stage 3 asks at once on an empty cache under a day old, and stores the feed");
+
+		writeFresh(srv.feed.substr(0, srv.feed.size() / 2));
+		srv.hits = 0;
+		FeedFetch::Stage3(badCfg);
+		Check(srv.hits == 1 && Slurp(bad) == srv.feed, "Stage 3 asks at once on a truncated cache under a day old");
+
+		writeFresh(srv.feed);
+		HANDLE locked = CreateFileW(bad.c_str(), GENERIC_READ, 0, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+		Check(locked != INVALID_HANDLE_VALUE && FeedFetch::CacheAgeSeconds(bad) < 60, "the locked cache still reports its fresh age");
+		srv.hits = 0;
+		FeedFetch::Stage3(badCfg);
+		CloseHandle(locked);
+		Check(srv.hits == 1, "Stage 3 asks at once on a cache under a day old that cannot be opened for reading");
+
+		writeFresh(srv.feed);
+		srv.hits = 0;
+		FeedFetch::Stage3(badCfg);
+		Check(srv.hits == 0, "Stage 3 still asks nothing of a valid cache under a day old");
+		DeleteFileW(bad.c_str());
 
 		srv.hits = 0;
 		FeedFetch::AfterRefusal(cfg, true);
