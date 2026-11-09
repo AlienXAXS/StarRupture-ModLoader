@@ -269,6 +269,7 @@ int main()
 		Check(Rejected(Sign(sk1, Region(100, body + "field\tATest::X\t128786\t0x30\t0x4\t0x00\n")), keys), "a known row with too few columns rejects the file");
 		Check(Rejected(Sign(sk1, Region(100, body + "field\tATest::X\t128786\t0xzz\t0x4\t0x00\t-\n")), keys), "a known row with bad hex rejects the file");
 		Check(Rejected(Sign(sk1, Region(100, body + "\n")), keys), "an empty line rejects the file");
+		Check(Rejected(Sign(sk1, Region(100, body + "sig\tk1\tAAAA\n")), keys), "a sig line that is not last rejects the file");
 		// A valid signature does not make a bad feed good, and a bad one stays out of the parser.
 		Check(Rejected(Sign(sk1, Region(100, std::string(kBuilds) + Fn("Test::MapOnly", 0, 999999, 0x22222222, 0x02000000, 1, "AA 01", 0x1000))), keys),
 			"a row with no build line is rejected");

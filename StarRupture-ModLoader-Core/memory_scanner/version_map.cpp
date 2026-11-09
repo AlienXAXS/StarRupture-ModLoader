@@ -389,7 +389,8 @@ namespace VersionMap
 				m.fields.push_back({ f[1], static_cast<uint32_t>(cl), static_cast<int32_t>(offset), fsize,
 					static_cast<uint8_t>(mask), f[6] == "-" ? "" : f[6] });
 			}
-			else if (type.empty() || type == "build" || type == "function" || type == "absent" || type == "field")
+			else if (type.empty() || type == "build" || type == "function" || type == "absent" || type == "field"
+				|| type == "format" || type == "seq" || type == "sig")
 				return fail(lineNo, "not a feed line");
 			else
 			{

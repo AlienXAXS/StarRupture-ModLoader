@@ -1052,6 +1052,9 @@ int main()
 		bad(head + "field\tATest::Reflected\t128786\t0xzz\t0x8\t0x0\t-\n", "feed: a field line with bad hex");
 		bad(head + "field\tATest::Reflected\t128786\t0x30\t0x8\t0x100\t-\n", "feed: a field line with a mask out of range");
 		bad(head + "field\textra\n", "feed: a known kind is not skipped for its columns");
+		bad(head + "format\t1\n", "feed: a second format line is not skipped");
+		bad(head + "seq\t1\n", "feed: a seq line in the body is not skipped");
+		bad(head + "sig\tk1\tAAAA\n", "feed: a sig line in the body is not skipped");
 
 		// A kind this loader does not know is skipped, with one summary line; extra columns on a known kind are ignored.
 		{
