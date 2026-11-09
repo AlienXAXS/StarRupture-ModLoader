@@ -135,7 +135,9 @@ every key and field behave that way for plugins; the loader's own lookups keep t
 Fields follow the same shape: the map's row for the running CL first (else the latest CL's),
 then the plugin's, then `builtOffset` on its `builtCL`. Two rows for one CL that disagree fail
 the request. A reflected field is read live from reflection, and a row is only a cross-check:
-where a row and the game disagree the game wins, and the disagreement is logged. A native
+where a row and the game disagree the game wins, and the disagreement is logged. It is a warning
+when the row is the running build's own (a map bug), and a debug line when the row is another
+build's, which is expected to differ (the latest row stands in for a build with none). A native
 offset (reflection does not describe it) comes from the running CL's row or the compiled offset
 on the build it was compiled for; a row carried forward from an older CL cannot be checked on
 this build, so the field is unresolved. A native offset plus its size must lie inside the

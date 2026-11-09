@@ -63,6 +63,14 @@ namespace
 		return false;
 	}
 
+	bool LoggedDebug(const wchar_t* text)
+	{
+		for (const std::wstring& line : TestDoubles::g_debugLog)
+			if (line.find(text) != std::wstring::npos)
+				return true;
+		return false;
+	}
+
 	Request Ask(const char* name, Kind kind, const char* pattern = "")
 	{
 		Request r;
@@ -124,6 +132,7 @@ namespace
 		const VersionMap::Exe& running = kRunning)
 	{
 		TestDoubles::g_log.clear();
+		TestDoubles::g_debugLog.clear();
 		error.clear();
 		VersionMap::FieldRequest request;
 		request.key         = key;
@@ -678,16 +687,19 @@ int main()
 			"field: an own row under the new name agrees with the map's rename row");
 		Check(Field("ATest::Reflected", "ATest", "Reflected", 0, 8, {}, v, e) && v.offset == 0x30
 			&& Logged(L"the loader map, CL-128786 row says 0x38/0x8, the game says 0x30/0x8; the game wins")
-			&& Logged(L"overruled by reflection"), "field: a map row reflection disagrees with: the game wins, logged");
+			&& Logged(L"overruled by reflection") && !LoggedDebug(L"another build"),
+			"field: this build's own map row reflection disagrees with: the game wins, a warning");
 		// A reflected field's own row against the map's: the game decides too, a native member's neither.
 		Check(Field("ATest::Reflected", "ATest", "Reflected", 0, 8, { FieldRow(128786, 0x20, 8) }, v, e) && v.offset == 0x30
 			&& Logged(L"the plugin's own says 0x20/0x8; the game's reflection decides"), "field: own row against the map's row, reflected");
 		// The latest build's row stands in when the running one has none: it is checked against the game, and the game wins.
 		const VersionMap::Exe later{ 130000, 0x33333333, 0x03000000 };
+		// Another build's row is expected to differ, so it is a debug line and never a warning.
 		Check(Field("ATest::Reflected", "ATest", "Reflected", 0, 8, {}, v, e, later) && v.offset == 0x30
-			&& Logged(L"the loader map, CL-128786 row says 0x38/0x8, the game says 0x30/0x8; the game wins")
-			&& Logged(L"reflected (no row for CL-130000; the loader map, CL-128786 row does not)"),
-			"field: no row for this build: the latest row is checked and the game wins");
+			&& Logged(L"reflected (no row for CL-130000; the loader map, CL-128786 row does not)")
+			&& LoggedDebug(L"the loader map, CL-128786 row differs (another build); it says 0x38/0x8, the game says 0x30/0x8; the game wins")
+			&& !Logged(L"the game wins"),
+			"field: no row for this build: the latest row is checked, the game wins, and it is logged at debug, not as a warning");
 		Check(Field("ATest::Renamed", "ATest", "Renamed", 0, 4, {}, v, e, later) && v.offset == 0x44
 			&& Logged(L"reflected (no row for CL-130000; the loader map, CL-128786 row agrees)"),
 			"field: no row for this build: the latest row's new name is asked for first");

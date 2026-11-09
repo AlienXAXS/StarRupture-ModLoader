@@ -16,4 +16,6 @@ namespace TestDoubles
 	extern std::map<std::string, int> g_resolveCalls;
 	// Every LogInfo and LogWarn line, formatted.
 	extern std::vector<std::wstring> g_log;
+	// Every LogDebug line, formatted.
+	extern std::vector<std::wstring> g_debugLog;
 }

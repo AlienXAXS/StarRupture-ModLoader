@@ -1410,12 +1410,19 @@ namespace VersionMap
 					return false;
 				}
 				// The game is the source. A row is a cross-check, and where it
-				// disagrees the game wins and the disagreement is logged.
+				// disagrees the game wins and the disagreement is logged. This
+				// build's own row disagreeing is a map bug, so it warns; a row of
+				// another build (the newest, standing in for a build with none)
+				// is expected to differ, so it is a debug line.
 				if (checked)
 				{
 					const bool agrees = SameField(ValueOf(*checked), value, bitfield) || (sizeRow && checked->size == value.size);
-					if (!agrees)
+					if (!agrees && row)
 						ModLoaderLogger::LogWarn(L"[Map] %S: %S: the %S says %S, the game says %S; the game wins",
+							owner ? owner : "?", request.key.c_str(), RowLabel(*checked).c_str(),
+							FieldText(ValueOf(*checked), bitfield).c_str(), FieldText(value, bitfield).c_str());
+					else if (!agrees)
+						ModLoaderLogger::LogDebug(L"[Map] %S: %S: the %S differs (another build); it says %S, the game says %S; the game wins",
 							owner ? owner : "?", request.key.c_str(), RowLabel(*checked).c_str(),
 							FieldText(ValueOf(*checked), bitfield).c_str(), FieldText(value, bitfield).c_str());
 					how = row ? RowLabel(*row) + (agrees ? ", as reflected" : ", overruled by reflection")
