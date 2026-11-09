@@ -293,8 +293,9 @@ file and then renamed over. It is verified again on every launch and only ever r
 with a higher `seq`, so an old signed file cannot be replayed over a newer one.
 
 **Signature.** The file is verified before anything in it is read. It is rejected whole if it is
-over 1 MiB, has a malformed line, has a `sig` line that is not last, names a key the loader does
-not hold, or has a bad signature. Verification uses vendored Monocypher (Ed25519 with SHA-512),
+over 1 MiB, has a malformed row of a kind it knows, has a `sig` line that is not last, names a key
+the loader does not hold, or has a bad signature. Rows of a kind the loader does not know are
+skipped, and so are columns past the ones a known kind has, so a newer feed can add both. Verification uses vendored Monocypher (Ed25519 with SHA-512),
 which has no handles and behaves the same on Windows and Wine.
 
 **Keys.** Two public-key slots are compiled in (`version_feed.cpp`), so a key can be rotated by a

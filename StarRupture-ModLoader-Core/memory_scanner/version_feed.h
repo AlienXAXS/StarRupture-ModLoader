@@ -24,7 +24,8 @@
 // every byte before the `sig` line, `seq` line included. Verify first, then
 // parse: nothing in a file is read until its signature has passed. A file over
 // 1 MiB, with a `sig` line that is not the last, with an unknown key ID or
-// with any malformed line is rejected whole.
+// with any malformed line is rejected whole (a line of a kind the loader
+// does not know is not malformed: it is skipped).
 //
 // What a loader does with a verified feed:
 //   1. Merge it with the map compiled into the loader (Merge), one row per key

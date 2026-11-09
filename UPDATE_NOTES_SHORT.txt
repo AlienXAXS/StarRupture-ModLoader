@@ -2,4 +2,5 @@
 - Mod windows no longer blink after Alt-Tab
 - When the game has updated ahead of the mod loader, the game no longer freezes while its message is up
 - Quieter log when adapting to new game versions
+- The loader skips version-map rows it does not recognise instead of refusing the whole map
 - Full release notes are on GitHub and Nexus

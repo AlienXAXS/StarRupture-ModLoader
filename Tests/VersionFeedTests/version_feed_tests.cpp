@@ -266,10 +266,52 @@ int main()
 		Check(Rejected(Sign(sk1, "format\t1\nseq\t1\r\n" + body), keys), "CRLF is rejected");
 		Check(Rejected(Sign(sk1, Region(100, body + Fn("Owner/Site", 0, 128786, 0x22222222, 0x02000000, 2, "AF 01", 0x1))), keys),
 			"a scoped feed row with no fp rejects the file");
-		Check(Rejected(Sign(sk1, Region(100, body + "garbage\n")), keys), "a malformed line rejects the file");
+		Check(Rejected(Sign(sk1, Region(100, body + "field\tATest::X\t128786\t0x30\t0x4\t0x00\n")), keys), "a known row with too few columns rejects the file");
+		Check(Rejected(Sign(sk1, Region(100, body + "field\tATest::X\t128786\t0xzz\t0x4\t0x00\t-\n")), keys), "a known row with bad hex rejects the file");
+		Check(Rejected(Sign(sk1, Region(100, body + "\n")), keys), "an empty line rejects the file");
+		Check(Rejected(Sign(sk1, Region(100, body + "sig\tk1\tAAAA\n")), keys), "a sig line that is not last rejects the file");
 		// A valid signature does not make a bad feed good, and a bad one stays out of the parser.
 		Check(Rejected(Sign(sk1, Region(100, std::string(kBuilds) + Fn("Test::MapOnly", 0, 999999, 0x22222222, 0x02000000, 1, "AA 01", 0x1000))), keys),
 			"a row with no build line is rejected");
+	}
+	{
+		// A newer feed's rows of a kind this loader does not know are skipped, and the rest of the feed applies.
+		const std::string newer = std::string(kBuilds) + "param\tATest\t1\n"
+			+ Fn("Test::MapOnly", 0, 128786, 0x22222222, 0x02000000, 1, "AA 01", 0x1000) + "flag\t1\n" + "param\tATest\t2\n";
+		SignedFeed f;
+		std::string e;
+		TestDoubles::g_log.clear();
+		Check(Read(Sign(sk1, Region(100, newer)), keys, f, e) && f.map.builds.size() == 2 && f.map.functions.size() == 1
+			&& f.map.functions[0].pattern == "AA 01", "a signed feed with rows of unknown kinds is admitted and the rest applies");
+		size_t summaries = 0;
+		for (const std::wstring& line : TestDoubles::g_log)
+			summaries += line.find(L"skipped") != std::wstring::npos;
+		Check(summaries == 1 && Logged(L"skipped 3 rows of unknown kinds: param, flag"), "one summary line counts the skipped rows");
+
+		// Extra trailing columns on a known kind are ignored.
+		std::string fn = Fn("Test::MapOnly", 0, 128786, 0x22222222, 0x02000000, 1, "AA 01", 0x1000);
+		fn.insert(fn.size() - 1, "\tnote\tmore");
+		std::string fld = FieldLine("ATest::Native", 128786, 0x30);
+		fld.insert(fld.size() - 1, "\tnote");
+		Check(Read(Sign(sk1, Region(100, std::string(kBuilds) + fn + fld)), keys, f, e) && f.map.functions.size() == 1
+			&& f.map.functions[0].rva == 0x1000 && f.map.fields.size() == 1 && f.map.fields[0].offset == 0x30,
+			"extra trailing columns on known rows are ignored and the rows applied");
+
+		// The signature still covers the unknown rows: changing one is a bad signature.
+		std::string tampered = Sign(sk1, Region(100, newer));
+		tampered[tampered.find("flag") + 1] ^= 1;
+		Check(Rejected(tampered, keys), "a tampered unknown row fails the signature");
+
+		// The cache reads a newer feed too.
+		const std::wstring path = TempPath(L"newer.cache");
+		DeleteFileW(path.c_str());
+		Check(VersionFeed::StoreCache(path, Sign(sk1, Region(12, newer)), keys, e), "a feed with unknown kinds is cached");
+		const Coverage none;
+		uint64_t seq = 0;
+		TestDoubles::g_log.clear();
+		auto m = VersionFeed::BuildFromCache(path, keys, kRunning, none, &seq);
+		Check(m && seq == 12 && Logged(L"Feed seq 12") && !Logged(L"not usable"), "a cached feed with unknown kinds is read on launch");
+		DeleteFileW(path.c_str());
 	}
 	{
 		// The Node-signed fixture: the two Ed25519 implementations agree, and the compiled slot k1 is the TEST key.

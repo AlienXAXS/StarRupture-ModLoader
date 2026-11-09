@@ -124,10 +124,13 @@ namespace VersionMap
 	// Reads the text of a feed (version-map-client.v1.txt without its `sig`
 	// line) into `out`: tab-separated lines, LF, a final LF, in the order
 	// `format`, `build`, `function`/`absent`, `field`, as ci/VERSION-MAP.md
-	// lists. Strict: a line off the format, a number out of range, a row whose
-	// build line is missing or says another stamp or size, or a scoped row
-	// (any kind but FunctionStart and Data) with no fp rejects the whole text,
-	// with `error` naming the line. `out` is left empty on failure.
+	// lists. Strict: a known line with too few columns, a number out of range,
+	// a row whose build line is missing or says another stamp or size, or a
+	// scoped row (any kind but FunctionStart and Data) with no fp rejects the
+	// whole text, with `error` naming the line. `out` is left empty on failure.
+	// Lenient where a newer feed may grow: a line of a kind this loader does not
+	// know is skipped (one log line counts them), and columns past the ones a
+	// known kind has are ignored.
 	bool ParseFeed(const std::string& text, MapData& out, std::string& error);
 
 	// A game exe: the CL from the end of its ProductVersion, the stamp and
