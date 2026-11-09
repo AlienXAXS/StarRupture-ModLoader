@@ -139,7 +139,11 @@ namespace
             { { "Some_Pattern", "48 8B \"05\"", false, true } },
             { { "GObjects", true, 0x1000, 0x1000, false }, { "GWorld", false, 0, 0x2000, false },
               { "GNames", true, 0x3000, 0x4000, true } },
-            &result, CompatReport::Outcome::SafeOff };
+            &result, CompatReport::Outcome::SafeOff,
+            { { "Plug", "FReflected", 127004, 44, true, 44, "match" },
+              { "Plug", "FPlain", 127004, 24, false, 0, "row-only" },
+              { "Plug", "FNoRow", 0, 0, false, 0, "no-row" },
+              { "Plug", "FOnlyGame", 0, 0, true, 8, "reflected-only" } } };
         const std::string json = CompatReport::Build(inputs);
         const auto has = [&json](const char* text) { return json.find(text) != std::string::npos; };
 
@@ -170,6 +174,28 @@ namespace
             && has("{ \"name\": \"GWorld\", \"resolved\": false, \"rva\": 0, \"sdkOffset\": 8192, \"rejected\": false }"), "each global's RVA, resolved or not");
         Check(has("{ \"name\": \"GNames\", \"resolved\": true, \"rva\": 12288, \"sdkOffset\": 16384, \"rejected\": true }"),
             "a rejected hit keeps its RVA and is flagged");
+        Check(has("{ \"plugin\": \"Plug\", \"key\": \"FReflected\", \"rowCL\": 127004, \"rowSize\": 44, \"reflectedSize\": 44, \"result\": \"match\" }")
+            && has("{ \"plugin\": \"Plug\", \"key\": \"FPlain\", \"rowCL\": 127004, \"rowSize\": 24, \"reflectedSize\": null, \"result\": \"row-only\" }")
+            && has("{ \"plugin\": \"Plug\", \"key\": \"FNoRow\", \"rowCL\": null, \"rowSize\": null, \"reflectedSize\": null, \"result\": \"no-row\" }")
+            && has("{ \"plugin\": \"Plug\", \"key\": \"FOnlyGame\", \"rowCL\": null, \"rowSize\": null, \"reflectedSize\": 8, \"result\": \"reflected-only\" }"),
+            "each size request: its row and the reflected size, null where there is none");
+        Check(has("\"format\": 4") && has("\"sizes\": ["), "the report is format 4 and carries the sizes");
+
+        // A boot with no layout change still writes the report when a plugin asked for a size.
+        const LayoutCheck::Result quiet = CompareWith(kTable126119(), AsGame(kTable126119()));
+        Check(!LayoutCheck::FoundChanges(quiet), "the fixture compared with itself finds no change");
+        CompatReport::Inputs unchanged = inputs;
+        unchanged.layout  = &quiet;
+        unchanged.outcome = CompatReport::Outcome::Unchanged;
+        const std::string unchangedJson = CompatReport::Build(unchanged);
+        Check(unchangedJson.find("\"outcome\": \"unchanged\"") != std::string::npos
+            && unchangedJson.find("\"mismatched\": 0") != std::string::npos
+            && unchangedJson.find("{ \"plugin\": \"Plug\", \"key\": \"FPlain\"") != std::string::npos
+            && unchangedJson.find("\"changes\": []") != std::string::npos,
+            "an unchanged boot's report says so and still carries the sizes");
+        Check(CompatReport::RefreshWrites(false, 1), "no layout change and one size request: the report is written");
+        Check(!CompatReport::RefreshWrites(false, 0), "no layout change and no size request: no report");
+        Check(CompatReport::RefreshWrites(true, 0), "a report already written this session is written again");
         Check(has("{ \"class\": \"ACrCharacterPlayerBase\", \"member\": \"\", \"field\": \"size\", \"sdk\": 5600, \"game\": 5616 }"),
             "the class size, old and new");
         Check(has("{ \"class\": \"ACrCharacterPlayerBase\", \"member\": \"ADSMoveSpeed\", \"field\": \"offset\", \"sdk\": 5032, \"game\": 5048 }"),

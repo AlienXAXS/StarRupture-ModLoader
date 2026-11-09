@@ -6,3 +6,4 @@
 - When the game has updated ahead of the mod loader, the game keeps loading while the mod loader's message is up, instead of waiting up to 3 minutes for your answer
 - A fresh install opens a window titled Mod Loader Installed instead of Plugins Updated
 - The log no longer warns about every field on a build that has no map row of its own and is checked against another build's row; those differences are now Debug lines, and the game's value is still the one used
+- Plugins can now ask for the size of a game struct the game does not describe itself; the loader serves it from the version map's row for your game build, and turns the feature off on a build with no row. Structs the game does describe still use the game's own size, and a map row that disagrees is only logged. The compatibility report also lists every size a plugin asked for, and is now written on any launch where one did

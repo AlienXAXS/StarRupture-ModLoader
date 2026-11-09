@@ -53,18 +53,6 @@ works offline on every build in it. The signed feed (below) adds to that.
 
 **Not map data.** Some values a plugin needs are not in the map on purpose.
 
-- *Struct sizes.* A size request is a field request with the member null (`SR_SIZE_CHECK`, or the
-  same request with size 0 for the live size). Every game struct a plugin sizes is a reflected
-  `USTRUCT`, so the loader answers from the running game's own reflection data (`UStruct::Size`),
-  on the client and on the dedicated server, and each game build gives its own size. A row could
-  only repeat what reflection says, so there is no size row. A class-keyed row (a key with no `::`)
-  is read as a cross-check, like the row of a reflected member: where it disagrees with the game,
-  the game wins and the difference is logged. A size request is never native: `PLUGIN_FIELD_NATIVE`
-  on it is a bad request. A plugin asks with `PLUGIN_FIELD_CHECK` when its compiled code depends on
-  the size (a struct copied by value, a `ProcessEvent` parameter block, a buffer a native function
-  fills, a `TMap` value), and with size 0 and no flag when it only steps through an array, so it
-  takes the size the game has. A new line type in the feed would also make every 1.23.x loader drop
-  the whole signed feed, which is another reason not to add a size row.
 - *Game enums.* The numbers in a game `UEnum` can move on a game update, and no symbol or pattern
   holds them, so CI could not generate a row. The value belongs to the game's reflection data, read
   by the enum's and the entry's name.
@@ -142,6 +130,31 @@ offset (reflection does not describe it) comes from the running CL's row or the 
 on the build it was compiled for; a row carried forward from an older CL cannot be checked on
 this build, so the field is unresolved. A native offset plus its size must lie inside the
 class's live size. See the SDK guide for the `[Map]` log lines.
+
+**Struct sizes.** A size request is a field request with the member null (`SR_SIZE_CHECK`, or the
+same request with size 0 for the live size). Its row is a class-keyed field row: the key is the
+class name alone (no `::`), offset 0, the struct's size, mask 0. CI writes one per size key a
+plugin requests, on every build. It is an ordinary field line, so the feed format is unchanged.
+
+- A reflected struct (a `USTRUCT` or `UCLASS` the game describes) is answered from the running
+  game's own reflection data (`UStruct::Size`), on the client and on the dedicated server, so each
+  game build gives its own size. The row is only a cross-check: where it disagrees with the game,
+  the game wins and the difference is logged, as a warning when the row is the running build's own
+  (a map bug) and as a debug line when it is another build's (the latest row stands in for a build
+  with none).
+- A struct the game does not reflect (a plain C++ type) has no live size. It is served from the
+  running build's own row. With no row for the running build the request is refused; a row of
+  another build is never used, since nothing on this build can confirm the size is still that.
+  `PLUGIN_FIELD_NATIVE` on a size request changes nothing: the choice follows what the game
+  reflects.
+- A plugin asks with `PLUGIN_FIELD_CHECK` when its compiled code depends on the size (a struct
+  copied by value, a `ProcessEvent` parameter block, a buffer a native function fills, a `TMap`
+  value), and with size 0 and no flag when it only steps through an array, so it takes the size the
+  game has.
+- The compatibility report (`ModLoader\compat-report-<CL>.json`) lists every size a plugin
+  requested under `sizes`, with the row's size next to the reflected one and a result (`match`,
+  `mismatch`, `row-only`, `no-row`, `reflected-only`). It is written on a boot where a plugin asked
+  for a size, whether or not the layout check found a change.
 
 **Unreflected native types.** A plain C++ engine type that is neither a `UCLASS` nor a `USTRUCT`
 (`FMassEntityManager`, `FStructSharedMemory`) has no reflected size to bound a native member by.

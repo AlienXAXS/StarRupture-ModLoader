@@ -361,6 +361,37 @@ namespace VersionMap
 	bool SelectField(const char* owner, const FieldRequest& request, const Exe& running,
 		FieldValue& out, std::string& error);
 
+	// How one size request (member empty) came out, for the compatibility report:
+	// the row it was set against, the size the game reflects, and which of the
+	// two it was served from. A repeat of the same plugin and key replaces the
+	// earlier entry. Requests that fail before the type is known (a bad request,
+	// reflection not ready, an ambiguous name) leave no entry.
+	enum class SizeResult
+	{
+		Match,          // reflected, and the row has the same size
+		Mismatch,       // reflected, and the row has another (the game's size is the one used)
+		RowOnly,        // not reflected, served from the running build's row
+		NoRow,          // not reflected, and no row for the running build: refused
+		ReflectedOnly,  // reflected, with no row to set it against
+	};
+
+	struct SizeFinding
+	{
+		std::string plugin;
+		std::string key;
+		SizeResult  result        = SizeResult::ReflectedOnly;
+		uint32_t    rowCL         = 0;      // 0 = no row. The running build's, else the newest other build's
+		uint32_t    rowSize       = 0;
+		bool        reflected     = false;
+		uint32_t    reflectedSize = 0;
+	};
+
+	std::vector<SizeFinding> SizeFindings();
+
+	// The result as the report writes it: "match", "mismatch", "row-only",
+	// "no-row" or "reflected-only".
+	const char* SizeResultText(SizeResult result);
+
 	// The members the loader itself reads per build (SdkGlobals::ResolveFields),
 	// each a key of kFields. The map holds other components' members too.
 	inline constexpr const char* kLoaderFieldKeys[] = {
