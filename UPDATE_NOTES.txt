@@ -1,6 +1,6 @@
 - Loading a texture for a plugin is much faster: the loader now keeps one copy queue and fence and reuses them instead of building and tearing them down for every texture (in game, a 256x256 upload went from about 29 ms to about 0.7 ms, and copying a game icon from about 29 ms to about 0.3 ms)
 - The first plugin texture to load no longer causes a short freeze: the loader now sets up its texture copy queue once the game's graphics are ready, instead of on that first load
-- Mod windows no longer blink when the game gains or loses focus (for example after Alt-Tab), and the log now records focus changes
+- Mod windows blink far less when the game gains or loses focus (for example after Alt-Tab), and the log now records focus changes
 - When the game has updated ahead of the mod loader, the game keeps loading while the mod loader's message is up, instead of freezing for up to 3 minutes waiting for your answer, and the message stays on top of the game window
 - A fresh install opens a window titled Mod Loader Installed instead of Plugins Updated
 - Adapting to a new game version is quieter: the log no longer warns about every field on a build that has no row of its own in the version object map (v map) and is checked against another build's row. Those differences are now Debug lines, and the game's value is still the one used. The v map maps each game version's objects (functions, fields, sizes) for easy access

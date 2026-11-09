@@ -1,5 +1,5 @@
 - Plugin textures and icons load much faster, and the first one no longer freezes the game
-- Mod windows no longer blink after Alt-Tab
+- Mod windows blink far less after Alt-Tab
 - A new box warns you when the game has updated ahead of the mod loader, without freezing the game
 - Quieter warnings when adapting to new game versions
 - Version object map fixes: unknown rows are skipped, and an empty or broken saved copy is downloaded again at the next launch

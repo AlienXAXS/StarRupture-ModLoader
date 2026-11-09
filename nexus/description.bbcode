@@ -37,7 +37,7 @@ A more detailed readme can be found on the [url=https://github.com/AlienXAXS/Sta
 
 [list]
 [*]Plugin textures and icons load much faster: a 256x256 upload went from about 29 ms to about 0.7 ms, and copying a game icon from about 29 ms to about 0.3 ms. The short freeze when the first texture loads is gone too
-[*]Mod windows no longer blink when the game gains or loses focus, for example after Alt-Tab
+[*]Mod windows blink far less when the game gains or loses focus, for example after Alt-Tab
 [*]When the game has updated ahead of the mod loader, the game keeps loading while the mod loader's message is up, instead of freezing for up to 3 minutes. The message stays on top of the game window
 [*]A fresh install opens a window titled [b]Mod Loader Installed[/b] instead of [b]Plugins Updated[/b]
 [*]Quieter log when adapting to new game versions: differences against another build's row in the version object map (v map) are Debug lines, not warnings. The v map maps each game version's objects (functions, fields, sizes) for easy access
@@ -169,7 +169,7 @@ The ZIP is already laid out correctly, so extract it directly into that folder. 
 [*]Logs and diagnostics are written to [i]ModLoader\Logs\ModLoader.log[/i], keeping the last ten runs
 [*]Plugins and the mod loader find the world being played even while another plugin has a preview world of its own open ✦
 [*]The loader and plugin windows are drawn into the frames that frame generation makes, so they do not flicker, and frame generation stays on while one is open ✦
-[*]Mod windows no longer blink when the game gains or loses focus, and ModLoader.log now records focus and window changes and why an overlay frame was skipped ✦
+[*]Mod windows blink far less when the game gains or loses focus, and ModLoader.log now records focus and window changes and why an overlay frame was skipped ✦
 [*]Plugin authors: a window can opt in to being clicked and dragged over the Escape menu and over any game screen that shows the mouse cursor ✦
 [*]Plugin windows no longer block the game's own menus while the cursor is up: the Escape menu and other screens with the cursor stay clickable around an open plugin window, and typing in a plugin text field stays out of the game ✦
 [*]Plugin authors: plugin interface v73 adds DeclareFeature, so one missing game function or member turns off only that feature, and version map keys look up game functions and members ✦
