@@ -1,2 +1,3 @@
 - The Plugins Updated window is wider on large screens, so its notes no longer wrap into a thin column at 4K, and its title and Close button stay in view when the list is long
 - After the mod loader updates itself, the Plugins Updated window lists the loader's release notes once, including the notes of releases you skipped
+- Loading a texture for a plugin is much faster: the loader now keeps one copy queue and fence and reuses them instead of building and tearing them down for every texture (on a desktop bench, a 256x256 LoadFromRGBA went from about 29 ms to about 0.65 ms)
