@@ -1044,7 +1044,38 @@ int main()
 		bad(head + "field\tATest::Reflected\t128786\t0x30\t0x8\t0x0\t-\nfunction\tTest::MapOnly\t0x0\t128786\t0x22222222\t0x2000000\t1\tB0 01\t0\t-1\t-1\t0x7000\n",
 			"feed: a function line after a field line");
 		bad(head + "build\t128786\t0x22222222\t0x2000000\tx\n", "feed: two build lines for one CL");
-		bad(head + "nonsense\n", "feed: a line of no type");
+		bad(head + "\n", "feed: a line of no type");
+		bad(head + "function\tTest::MapOnly\t0x0\t128786\t0x22222222\t0x2000000\t1\tB0 01\t0\t-1\t-1\n", "feed: a function line with too few columns");
+		bad(head + "absent\tTest::Gone\t0x0\t128786\t0x22222222\t0x2000000\t1\n", "feed: an absent line with too few columns");
+		bad(head + "field\tATest::Reflected\t128786\t0x30\t0x8\t0x0\n", "feed: a field line with too few columns");
+		bad("format\t1\nbuild\t128786\t0x22222222\t0x2000000\n", "feed: a build line with too few columns");
+		bad(head + "field\tATest::Reflected\t128786\t0xzz\t0x8\t0x0\t-\n", "feed: a field line with bad hex");
+		bad(head + "field\tATest::Reflected\t128786\t0x30\t0x8\t0x100\t-\n", "feed: a field line with a mask out of range");
+		bad(head + "field\textra\n", "feed: a known kind is not skipped for its columns");
+
+		// A kind this loader does not know is skipped, with one summary line; extra columns on a known kind are ignored.
+		{
+			const std::string fn = "function\tTest::MapOnly\t0x0\t128786\t0x22222222\t0x2000000\t1\tB0 01\t0\t-1\t-1\t0x7000";
+			const std::string fld = "field\tATest::Reflected\t128786\t0x30\t0x8\t0x0\t-";
+			const std::string wide = "format\t1\nparam\tATest\t1\n" + std::string("build\t128786\t0x22222222\t0x2000000\tpublic_test_branch 2\textra\n")
+				+ "flag\t1\n" + fn + "\tx\ty\n" + "param\tATest\t2\n" + "absent\tTest::Gone\t0x0\t128786\t0x22222222\t0x2000000\t1\t-\tx\n"
+				+ fld + "\textra\nflag\t2\n";
+			VersionMap::MapData w;
+			std::string e;
+			TestDoubles::g_log.clear();
+			size_t summaries = 0;
+			Check(VersionMap::ParseFeed(wide, w, e) && w.builds.size() == 1 && w.functions.size() == 2 && w.fields.size() == 1
+				&& w.functions[0].pattern == "B0 01" && w.functions[0].rva == 0x7000 && w.functions[1].absent && w.fields[0].offset == 0x30,
+				"feed: unknown kinds are skipped and the rest applies, extra columns are ignored");
+			for (const std::wstring& line : TestDoubles::g_log)
+				summaries += line.find(L"skipped") != std::wstring::npos;
+			Check(summaries == 1 && Logged(L"[Map] Feed: skipped 4 rows of unknown kinds: param, flag"), "feed: one summary line counts the skipped rows and lists each kind once");
+			TestDoubles::g_log.clear();
+			Check(VersionMap::ParseFeed(good, w, e) && !Logged(L"skipped"), "feed: a feed with no unknown kind logs no summary");
+			TestDoubles::g_log.clear();
+			Check(!VersionMap::ParseFeed("format\t1\nparam\t1\n" + head.substr(9) + "field\tx\n", w, e) && !Logged(L"skipped"),
+				"feed: a rejected feed logs no summary");
+		}
 
 		// A map read from the feed replaces the baseline for every lookup, and SetActiveMap(nullptr) restores it.
 		Check(!VersionMap::ActiveMap().functions.empty() && VersionMap::ActiveMap().builds.size() == 2, "active map: the baseline to start");

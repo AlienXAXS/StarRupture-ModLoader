@@ -296,6 +296,8 @@ namespace VersionMap
 		const int64_t lastKind  = static_cast<int>(ScanValidation::Kind::Any);
 		int    phase = 0;   // 0 build, 1 function and absent, 2 field
 		size_t lineNo = 0;
+		size_t skipped = 0;                    // rows of a kind this loader does not read
+		std::vector<std::string> skippedKinds; // each such kind once, in the order first seen
 		std::set<std::tuple<std::string, uint32_t, uint32_t>> seenFunction;
 		std::set<std::pair<std::string, uint32_t>> seenField;
 		for (size_t pos = 0; pos < text.size();)
@@ -322,7 +324,7 @@ namespace VersionMap
 			int64_t cl = 0, kind = 0, ro = 0, r32 = 0, rip = 0;
 			uint32_t stamp = 0, size = 0, fp = 0, rva = 0, offset = 0, fsize = 0, mask = 0;
 			const std::string& type = f[0];
-			if (type == "build" && f.size() == 5)
+			if (type == "build" && f.size() >= 5)
 			{
 				if (phase > 0)
 					return fail(lineNo, "a build line after a function, absent or field line");
@@ -333,7 +335,7 @@ namespace VersionMap
 						return fail(lineNo, "two build lines for CL-" + std::to_string(cl));
 				m.builds.push_back({ static_cast<uint32_t>(cl), stamp, size, f[4] });
 			}
-			else if ((type == "function" && f.size() == 12) || (type == "absent" && f.size() == 8))
+			else if ((type == "function" && f.size() >= 12) || (type == "absent" && f.size() >= 8))
 			{
 				if (phase > 1)
 					return fail(lineNo, "a function or absent line after a field line");
@@ -374,7 +376,7 @@ namespace VersionMap
 				}
 				m.functions.push_back(std::move(row));
 			}
-			else if (type == "field" && f.size() == 7)
+			else if (type == "field" && f.size() >= 7)
 			{
 				phase = 2;
 				if (f[1].empty() || !FeedDec(f[2], 1, 0x7FFFFFFF, cl) || !FeedHex(f[3], offset) || offset > 0x7FFFFFFF
@@ -387,8 +389,22 @@ namespace VersionMap
 				m.fields.push_back({ f[1], static_cast<uint32_t>(cl), static_cast<int32_t>(offset), fsize,
 					static_cast<uint8_t>(mask), f[6] == "-" ? "" : f[6] });
 			}
-			else
+			else if (type.empty() || type == "build" || type == "function" || type == "absent" || type == "field")
 				return fail(lineNo, "not a feed line");
+			else
+			{
+				// A kind a newer feed adds: skip the row, so an older loader still reads the rest.
+				++skipped;
+				if (std::find(skippedKinds.begin(), skippedKinds.end(), type) == skippedKinds.end())
+					skippedKinds.push_back(type);
+			}
+		}
+		if (skipped)
+		{
+			std::string kinds;
+			for (const std::string& k : skippedKinds)
+				kinds += (kinds.empty() ? "" : ", ") + k;
+			ModLoaderLogger::LogInfo(L"[Map] Feed: skipped %zu rows of unknown kinds: %S", skipped, kinds.c_str());
 		}
 		out = std::move(m);
 		return true;
