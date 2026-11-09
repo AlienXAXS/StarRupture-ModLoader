@@ -3,3 +3,4 @@
 - Loading a texture for a plugin is much faster: the loader now keeps one copy queue and fence and reuses them instead of building and tearing them down for every texture (in game, a 256x256 upload went from about 29 ms to about 0.7 ms, and copying a game icon from about 29 ms to about 0.3 ms)
 - The first plugin texture to load no longer causes a short freeze: the loader now sets up its texture copy queue once the game's graphics are ready, instead of on that first load
 - Mod windows no longer blink when the game gains or loses focus, and the log now records focus changes
+- When the game has updated ahead of the mod loader, the game keeps loading while the mod loader's message is up, instead of waiting up to 3 minutes for your answer

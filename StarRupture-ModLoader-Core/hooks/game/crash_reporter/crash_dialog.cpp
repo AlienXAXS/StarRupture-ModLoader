@@ -274,6 +274,10 @@ namespace Hooks::CrashDialog
 
         DLGTEMPLATE dlg{};
         dlg.style = DS_SETFONT | DS_MODALFRAME | DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMENU;
+        // The pattern and version dialogs come up with the game already
+        // booting, so keep them above the game window once it appears.
+        if (patternMode || versionMode)
+            dlg.dwExtendedStyle = WS_EX_TOPMOST;
         // Every mode has 7 controls: header, label, details edit, and a
         // four-button row (crash: Copy/ML log/SR log/Close; pattern,
         // version and layout: Copy/ML log/Start/Quit). An undercount here silently drops
@@ -566,7 +570,7 @@ namespace Hooks::CrashDialog
                     L"written to ModLoader\\Logs\\ModLoader.log.\n\n"
                     L"Start the game without the ModLoader?",
                     L"StarRupture ModLoader",
-                    MB_YESNO | MB_ICONERROR | MB_TASKMODAL);
+                    MB_YESNO | MB_ICONERROR | MB_TASKMODAL | MB_TOPMOST);
                 return choice == IDNO ? Result::QuitGame : Result::StartWithoutModLoader;
             }
 
@@ -594,7 +598,7 @@ namespace Hooks::CrashDialog
                     L"written to ModLoader\\Logs\\ModLoader.log.\n\n"
                     L"Start the game without the ModLoader?",
                     L"StarRupture ModLoader",
-                    MB_YESNO | MB_ICONERROR | MB_TASKMODAL);
+                    MB_YESNO | MB_ICONERROR | MB_TASKMODAL | MB_TOPMOST);
                 return choice == IDNO ? Result::QuitGame : Result::StartWithoutModLoader;
             }
 
