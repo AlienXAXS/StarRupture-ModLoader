@@ -53,6 +53,7 @@ extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg
 ImGuiKey ImGui_ImplWin32_KeyEventToImGuiKey(WPARAM wParam, LPARAM lParam);
 static HRESULT STDMETHODCALLTYPE HookedPresent(IDXGISwapChain* swapChain, UINT syncInterval, UINT flags);
 static void ReclaimRetiredTextures();
+static void ReleaseGpuCopyContext();
 static void    STDMETHODCALLTYPE HookedECL(ID3D12CommandQueue* pQueue, UINT NumCmdLists, ID3D12CommandList* const* ppCmdLists);
 static HRESULT STDMETHODCALLTYPE HookedCreateSwapChainForHwnd(void* pFactory, IUnknown* pDevice, HWND hWnd,
 	const void* pDesc, const void* pFullscreenDesc, void* pRestrictToOutput, void* ppSwapChain);
@@ -1204,6 +1205,7 @@ static void CleanupD3D12Resources()
 			g_pluginTextures[i] = {};
 		}
 		g_retiringCount = 0;   // retiring records are inUse, so the loop above released them too
+		ReleaseGpuCopyContext();
 	}
 	if (g_wicFactory) { g_wicFactory->Release(); g_wicFactory = nullptr; }
 
@@ -2241,10 +2243,104 @@ static IWICImagingFactory* GetWICFactory()
 	return g_wicFactory;
 }
 
+// The queue, allocator, list, fence and event behind texture uploads and copies.
+// Its own queue, so it never conflicts with the main render queue. Made on first
+// use and kept, because making them per texture costs far more than the copy.
+//
+// Every function here needs g_textureMutex held, which is also what serialises
+// Load* calls from different threads. A copy waits for the GPU before it returns,
+// so between copies nothing is in flight and nothing here keeps or points at an
+// engine texture.
+namespace
+{
+	struct GpuCopyContext
+	{
+		ID3D12CommandQueue*        queue     = nullptr;
+		ID3D12CommandAllocator*    allocator = nullptr;
+		ID3D12GraphicsCommandList* list      = nullptr;
+		ID3D12Fence*               fence     = nullptr;
+		HANDLE                     event     = nullptr;
+		UINT64                     value     = 0;
+	};
+	GpuCopyContext g_gpuCopy;
+}
+
+// Called by CleanupD3D12Resources before the device goes, and after a failed copy
+// so a broken context is never reused: the next copy makes a new one.
+static void ReleaseGpuCopyContext()
+{
+	if (g_gpuCopy.event)     CloseHandle(g_gpuCopy.event);
+	if (g_gpuCopy.fence)     g_gpuCopy.fence->Release();
+	if (g_gpuCopy.list)      g_gpuCopy.list->Release();
+	if (g_gpuCopy.allocator) g_gpuCopy.allocator->Release();
+	if (g_gpuCopy.queue)     g_gpuCopy.queue->Release();
+	g_gpuCopy = {};
+}
+
+// Returns an open list to record one copy into, or nullptr on failure.
+static ID3D12GraphicsCommandList* BeginGpuCopy()
+{
+	// A Load* that was waiting on g_textureMutex through the release in
+	// CleanupD3D12Resources must not make a new context on a device going away.
+	if (g_shutdown)
+		return nullptr;
+
+	if (!g_gpuCopy.queue)
+	{
+		D3D12_COMMAND_QUEUE_DESC queueDesc = {};
+		queueDesc.Type     = D3D12_COMMAND_LIST_TYPE_DIRECT;
+		queueDesc.NodeMask = 1;
+
+		bool ok =
+			SUCCEEDED(g_device->CreateCommandQueue(&queueDesc, IID_PPV_ARGS(&g_gpuCopy.queue))) &&
+			SUCCEEDED(g_device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&g_gpuCopy.allocator))) &&
+			SUCCEEDED(g_device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, g_gpuCopy.allocator, nullptr, IID_PPV_ARGS(&g_gpuCopy.list))) &&
+			SUCCEEDED(g_device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&g_gpuCopy.fence)));
+		if (ok)
+		{
+			g_gpuCopy.event = CreateEvent(nullptr, FALSE, FALSE, nullptr);
+			ok = g_gpuCopy.event != nullptr;
+		}
+		if (!ok)
+		{
+			ReleaseGpuCopyContext();
+			return nullptr;
+		}
+		return g_gpuCopy.list;   // a new list starts open
+	}
+
+	if (FAILED(g_gpuCopy.allocator->Reset()) ||
+		FAILED(g_gpuCopy.list->Reset(g_gpuCopy.allocator, nullptr)))
+	{
+		ReleaseGpuCopyContext();
+		return nullptr;
+	}
+	return g_gpuCopy.list;
+}
+
+// Submits the list from BeginGpuCopy and blocks until the GPU is done. A lost device
+// completes every fence, so the wait still ends; false means the copy cannot be trusted.
+static bool FinishGpuCopy()
+{
+	ID3D12CommandList* const lists[] = { g_gpuCopy.list };
+	bool ok = SUCCEEDED(g_gpuCopy.list->Close());
+	if (ok)
+	{
+		g_gpuCopy.queue->ExecuteCommandLists(1, lists);
+		const UINT64 value = ++g_gpuCopy.value;
+		ok = SUCCEEDED(g_gpuCopy.queue->Signal(g_gpuCopy.fence, value)) &&
+			SUCCEEDED(g_gpuCopy.fence->SetEventOnCompletion(value, g_gpuCopy.event)) &&
+			WaitForSingleObject(g_gpuCopy.event, INFINITE) == WAIT_OBJECT_0 &&
+			SUCCEEDED(g_device->GetDeviceRemovedReason());
+	}
+	if (!ok)
+		ReleaseGpuCopyContext();
+	return ok;
+}
+
 // Upload RGBA pixels to a new shader-visible D3D12 texture.
 // Writes an SRV into srvCpuHandle. Returns the texture resource on success.
-// Creates a private temporary command queue so it never conflicts with the
-// main render queue, and blocks until the GPU copy is complete before returning.
+// Blocks until the GPU copy is complete before returning.
 static ID3D12Resource* UploadRGBAToGPU(
 	const uint8_t* rgba, int width, int height,
 	D3D12_CPU_DESCRIPTOR_HANDLE srvCpuHandle)
@@ -2312,32 +2408,9 @@ static ID3D12Resource* UploadRGBAToGPU(
 		       rgba + (size_t)y * width * 4, (size_t)width * 4);
 	uploadBuffer->Unmap(0, &mapRange);
 
-	// Private command queue for the upload
-	D3D12_COMMAND_QUEUE_DESC queueDesc = {};
-	queueDesc.Type     = D3D12_COMMAND_LIST_TYPE_DIRECT;
-	queueDesc.NodeMask = 1;
-
-	ID3D12CommandQueue*         tmpQueue = nullptr;
-	ID3D12CommandAllocator*     tmpAlloc = nullptr;
-	ID3D12GraphicsCommandList*  tmpList  = nullptr;
-	ID3D12Fence*                tmpFence = nullptr;
-	HANDLE                      tmpEvent = nullptr;
-
-	bool ok =
-		SUCCEEDED(g_device->CreateCommandQueue(&queueDesc, IID_PPV_ARGS(&tmpQueue))) &&
-		SUCCEEDED(g_device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&tmpAlloc))) &&
-		SUCCEEDED(g_device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, tmpAlloc, nullptr, IID_PPV_ARGS(&tmpList))) &&
-		SUCCEEDED(g_device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&tmpFence)));
-
-	if (ok) tmpEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
-
-	if (!ok || !tmpEvent)
+	ID3D12GraphicsCommandList* list = BeginGpuCopy();
+	if (!list)
 	{
-		if (tmpEvent) CloseHandle(tmpEvent);
-		if (tmpFence) tmpFence->Release();
-		if (tmpList)  tmpList->Release();
-		if (tmpAlloc) tmpAlloc->Release();
-		if (tmpQueue) tmpQueue->Release();
 		uploadBuffer->Release();
 		texResource->Release();
 		return nullptr;
@@ -2365,22 +2438,16 @@ static ID3D12Resource* UploadRGBAToGPU(
 	barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_DEST;
 	barrier.Transition.StateAfter  = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
 
-	tmpList->CopyTextureRegion(&dst, 0, 0, 0, &src, nullptr);
-	tmpList->ResourceBarrier(1, &barrier);
-	tmpList->Close();
+	list->CopyTextureRegion(&dst, 0, 0, 0, &src, nullptr);
+	list->ResourceBarrier(1, &barrier);
 
-	tmpQueue->ExecuteCommandLists(1, (ID3D12CommandList* const*)&tmpList);
-	tmpQueue->Signal(tmpFence, 1);
-	tmpFence->SetEventOnCompletion(1, tmpEvent);
-	WaitForSingleObject(tmpEvent, INFINITE);
-
-	// Tear down temporary infrastructure and upload buffer
-	CloseHandle(tmpEvent);
-	tmpFence->Release();
-	tmpList->Release();
-	tmpAlloc->Release();
-	tmpQueue->Release();
+	const bool copied = FinishGpuCopy();
 	uploadBuffer->Release();
+	if (!copied)
+	{
+		texResource->Release();
+		return nullptr;
+	}
 
 	// Create the shader resource view
 	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
@@ -2394,14 +2461,14 @@ static ID3D12Resource* UploadRGBAToGPU(
 }
 
 // Copy an engine-owned D3D12 texture into a new owned DEFAULT-heap resource.
-// Barriers the engine resource to COPY_SOURCE on a private queue (if needed),
+// Barriers the engine resource to COPY_SOURCE on the copy queue (if needed),
 // performs CopyResource, restores the engine resource state, then transitions
 // the new resource to PIXEL_SHADER_RESOURCE.  Writes an SRV into srvCpuHandle.
 // Blocks until the GPU copy is complete.  Returns the new owned resource, or
 // nullptr on failure.
 //
-// NOTE: the barrier transition of srcResource to COPY_SOURCE is issued on a
-// private queue with no cross-queue fence against the engine's render queue.
+// NOTE: the barrier transition of srcResource to COPY_SOURCE is issued on the
+// copy queue with no cross-queue fence against the engine's render queue.
 // This is safe only when srcState is COMMON (implicit promotion, no barrier
 // emitted) or when the engine has finished all GPU work on that resource for
 // the current frame -- i.e. call this after a GPU-idle fence if in doubt.
@@ -2425,31 +2492,9 @@ static ID3D12Resource* CopyEngineTextureToOwned(
 		&dstDesc, D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&dstResource))))
 		return nullptr;
 
-	D3D12_COMMAND_QUEUE_DESC queueDesc = {};
-	queueDesc.Type     = D3D12_COMMAND_LIST_TYPE_DIRECT;
-	queueDesc.NodeMask = 1;
-
-	ID3D12CommandQueue*        tmpQueue = nullptr;
-	ID3D12CommandAllocator*    tmpAlloc = nullptr;
-	ID3D12GraphicsCommandList* tmpList  = nullptr;
-	ID3D12Fence*               tmpFence = nullptr;
-	HANDLE                     tmpEvent = nullptr;
-
-	bool ok =
-		SUCCEEDED(g_device->CreateCommandQueue(&queueDesc, IID_PPV_ARGS(&tmpQueue))) &&
-		SUCCEEDED(g_device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&tmpAlloc))) &&
-		SUCCEEDED(g_device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, tmpAlloc, nullptr, IID_PPV_ARGS(&tmpList))) &&
-		SUCCEEDED(g_device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&tmpFence)));
-
-	if (ok) tmpEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
-
-	if (!ok || !tmpEvent)
+	ID3D12GraphicsCommandList* list = BeginGpuCopy();
+	if (!list)
 	{
-		if (tmpEvent) CloseHandle(tmpEvent);
-		if (tmpFence) tmpFence->Release();
-		if (tmpList)  tmpList->Release();
-		if (tmpAlloc) tmpAlloc->Release();
-		if (tmpQueue) tmpQueue->Release();
 		dstResource->Release();
 		return nullptr;
 	}
@@ -2467,10 +2512,10 @@ static ID3D12Resource* CopyEngineTextureToOwned(
 		b.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
 		b.Transition.StateBefore = srcState;
 		b.Transition.StateAfter  = D3D12_RESOURCE_STATE_COPY_SOURCE;
-		tmpList->ResourceBarrier(1, &b);
+		list->ResourceBarrier(1, &b);
 	}
 
-	tmpList->CopyResource(dstResource, srcResource);
+	list->CopyResource(dstResource, srcResource);
 
 	{
 		D3D12_RESOURCE_BARRIER post[2] = {};
@@ -2493,20 +2538,14 @@ static ID3D12Resource* CopyEngineTextureToOwned(
 		post[count].Transition.StateAfter  = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
 		++count;
 
-		tmpList->ResourceBarrier(count, post);
+		list->ResourceBarrier(count, post);
 	}
 
-	tmpList->Close();
-	tmpQueue->ExecuteCommandLists(1, (ID3D12CommandList* const*)&tmpList);
-	tmpQueue->Signal(tmpFence, 1);
-	tmpFence->SetEventOnCompletion(1, tmpEvent);
-	WaitForSingleObject(tmpEvent, INFINITE);
-
-	CloseHandle(tmpEvent);
-	tmpFence->Release();
-	tmpList->Release();
-	tmpAlloc->Release();
-	tmpQueue->Release();
+	if (!FinishGpuCopy())
+	{
+		dstResource->Release();
+		return nullptr;
+	}
 
 	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
 	srvDesc.Shader4ComponentMapping        = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
