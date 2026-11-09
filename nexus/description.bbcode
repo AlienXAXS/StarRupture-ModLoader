@@ -1,7 +1,6 @@
 [b][size=5]StarRupture ModLoader[/size][/b]
 
-StarRupture ModLoader is a lightweight plugin-based mod loader for [i]StarRupture[/i].
-It loads automatically using DLL proxy injection, meaning [b]no original game files are modified[/b].
+[b]Found a bug? Report it on GitHub: [url=https://github.com/AlienXAXS/StarRupture-ModLoader/issues]https://github.com/AlienXAXS/StarRupture-ModLoader/issues[/url][/b] and attach your [b]ModLoader.log[/b] (in [b]Binaries\Win64\ModLoader\Logs\[/b]).
 
 [b][size=4]Get your Free StarRupture Server with this Mod Loader already installed over at [url=http://www.alienxservers.co.uk]https://www.alienxservers.co.uk[/url][/size][/b]
 
@@ -22,14 +21,30 @@ The mod loader relies on many of the same techniques used by game hacks, debugge
 [line]
 
 [b][size=4]Support & Questions[/size][/b]
-[b]Found a bug?[/b] Report it on [url=https://github.com/AlienXAXS/StarRupture-ModLoader/issues]GitHub[/url] and attach your [b]ModLoader.log[/b] (in [b]Binaries\Win64\ModLoader\Logs\[/b]).
-
 Join the official Mod Loader discord, [url=https://discord.gg/G5a4GYsvrz]AlienX's Place[/url] for support.
 
 [line]
 
+StarRupture ModLoader is a lightweight plugin-based mod loader for [i]StarRupture[/i].
+It loads automatically using DLL proxy injection, meaning [b]no original game files are modified[/b].
+
 The loader enables runtime fixes, server utilities, and gameplay improvements through optional plugins. On a client it adds an in-game window to manage them; on a dedicated server it adds a console.
 A more detailed readme can be found on the [url=https://github.com/AlienXAXS/StarRupture-ModLoader/blob/main/README.md]github page[/url].
+
+[line]
+
+[b][size=6]What's new[/size][/b]
+
+[list]
+[*]Plugin textures and icons load much faster: a 256x256 upload went from about 29 ms to about 0.7 ms, and copying a game icon from about 29 ms to about 0.3 ms. The short freeze when the first texture loads is gone too
+[*]Mod windows no longer blink when the game gains or loses focus, for example after Alt-Tab
+[*]When the game has updated ahead of the mod loader, the game keeps loading while the mod loader's message is up, instead of freezing for up to 3 minutes. The message stays on top of the game window
+[*]A fresh install opens a window titled [b]Mod Loader Installed[/b] instead of [b]Plugins Updated[/b]
+[*]Quieter log when adapting to new game versions: differences against another build's row in the version object map (v map) are Debug lines, not warnings. The v map maps each game version's objects (functions, fields, sizes) for easy access
+[*]The loader skips version map rows it does not recognise instead of refusing the whole version map, so later versions of it can add new kinds of rows
+[*]When the loader has no usable copy of the version map file, for example after a download failed, it downloads it again at the next launch instead of waiting a day
+[*]For plugin authors: plugins can ask for the size of a game struct the game does not describe, a native member needs no size with PLUGIN_FIELD_ANY_SIZE, and plugins can ask where the game puts a function's parameters (also for Blueprint classes that load later, with the new PLUGIN_FIELD_LATE flag). The plugin interface version is unchanged
+[/list]
 
 [line]
 
@@ -53,7 +68,7 @@ Tabs down the left: [b]Plugins[/b], [b]Config[/b], [b]Settings[/b], [b]Logging[/
 [*]A plugin can say when it may be loaded and unloaded: any time, only at the main menu, or only at game start. A refused reload or unload says why on its row and on the console. ✦
 [*][b]Crashed[/b] is a plugin that faulted in its own code. The mod loader switched it off and the game kept running; hover the row for the fault and where it happened. [b]RELOAD[/b] loads it fresh. A fault in game code a plugin called still crashes the game, and the log names the plugin. ✦
 [*]When a plugin crashes, a toast in the bottom right corner names the plugin and what it was doing. About 3 seconds later the mod loader restarts it by itself, as RELOAD would, if its load and unload settings allow it; a plugin that needs a game restart stays off and the toast says so. Each plugin restarts at most 3 times a session. [b]Settings[/b] has [b]Restart crashed plugins automatically[/b] to turn it off. ✦
-[*][b]Plugins Updated[/b] lists plugins with identical update notes on one line and shows the notes once. ✦
+[*][b]Plugins Updated[/b] lists plugins with identical update notes on one line and shows the notes once, is wide enough for the screen at 4K, and keeps its title and Close button in view. After the mod loader updates, it lists the loader's release notes once, grouped by version and including the notes of releases you skipped. After a fresh install the same window is titled [b]Mod Loader Installed[/b]. ✦
 [*][b]Cannot Load[/b] is a server plugin on a client, or the reverse.
 [*][b]Needs Update[/b] names the side that is behind: the plugin or the mod loader.
 [*][b]Incompatible[/b] on a game build other than the one a plugin was built for says the plugin needs an update. It still loads on its own build.
@@ -110,7 +125,7 @@ Tabs down the left: [b]Plugins[/b], [b]Config[/b], [b]Settings[/b], [b]Logging[/
 
 [b][size=4]Pop-ups[/size][/b]
 
-[b]Plugins Updated[/b] appears once at the main menu after an automatic plugin update.
+[b]Plugins Updated[/b] appears once at the main menu after an automatic plugin update, and after the mod loader updates itself. After a fresh install the same window is titled [b]Mod Loader Installed[/b].
 
 [img]https://raw.githubusercontent.com/{{REPO}}/{{TAG}}/images/popup-plugins-updated.png[/img]
 
@@ -154,28 +169,32 @@ The ZIP is already laid out correctly, so extract it directly into that folder. 
 [*]Logs and diagnostics are written to [i]ModLoader\Logs\ModLoader.log[/i], keeping the last ten runs
 [*]Plugins and the mod loader find the world being played even while another plugin has a preview world of its own open ✦
 [*]The loader and plugin windows are drawn into the frames that frame generation makes, so they do not flicker, and frame generation stays on while one is open ✦
+[*]Mod windows no longer blink when the game gains or loses focus, and ModLoader.log now records focus and window changes and why an overlay frame was skipped ✦
 [*]Plugin authors: a window can opt in to being clicked and dragged over the Escape menu and over any game screen that shows the mouse cursor ✦
 [*]Plugin windows no longer block the game's own menus while the cursor is up: the Escape menu and other screens with the cursor stay clickable around an open plugin window, and typing in a plugin text field stays out of the game ✦
-[*]Plugin authors: plugin interface v73 adds DeclareFeature, so one missing game function or member turns off only that feature, and version-map keys look up game functions and members ✦
+[*]Plugin authors: plugin interface v73 adds DeclareFeature, so one missing game function or member turns off only that feature, and version map keys look up game functions and members ✦
 [*]Plugin authors: plugin interface v74 adds SetNextWindowSize and SetNextWindowSizeConstraints (with named PluginCond_* and PluginWindowFlags_AlwaysAutoResize constants), so a popup no longer collapses into a narrow strip ✦
 [*]Plugin authors: plugin interface v74 also gives plugins the game's UI state (in gameplay, pause menu, cursor up, any menu, map, inventory, build menu, station screens) as a change callback (in gameplay, pause menu and cursor up also as a query), so mods no longer detect it themselves; the menu classes follow BetterDrone's menu-layer read and Kian369's MiniMap class list ✦
 [*]Plugin authors: plugin interface v74 adds the PLUGIN_FIELD_ANY_SIZE flag for a reflected game member request (size 0), which takes the size the running build reports and returns it, for a member whose type differs between builds (a float on one, a double on the next); a size of 0 without the flag is still refused ✦
-[*]Plugin authors: [b]DisablePluginVersionMap=1[/b] under [b][Debug][/b] in modloader.ini gives plugins no version map rows, so you can test a plugin's own patterns and rows; the loader keeps the map for itself and logs a warning every launch, added at Kian369's request ✦
+[*]Plugin authors: [b]DisablePluginVersionMap=1[/b] under [b][Debug][/b] in modloader.ini gives plugins no version map rows, so you can test a plugin's own patterns and rows; the loader keeps the version map for itself and logs a warning every launch, added at Kian369's request ✦
 [*]Plugin authors: [b]RemoteReload=1[/b] under [b][Developer][/b] in modloader.ini lets a script reload a plugin by writing its name to [b]ModLoader\remote_reload.txt[/b], the same reload as the RELOAD button, with the result in ModLoader.log; off by default and logs a warning every launch ✦
 [*]Icons in every loader and plugin window now sit on the line of the text beside them ✦
 [*]Plugin windows can have their own buttons in the title bar and collapse to it ✦
 [*]A plugin window over the Escape menu can leave the menu's buttons clickable under it and still be clickable itself everywhere else ✦
 [*]Build Windows Anywhere, Build Benches Anywhere and the MiniMap find their game functions on every game build the loader knows ✦
+[*]ModLoader.log no longer warns about every field on a game build that has no version map row of its own and is checked against another build's row ✦
+[*]Plugins can ask for the size of a game struct the game does not describe itself; it is read from the version map's row for your game build, and the plugin's feature turns off on a build with no row. The compatibility report lists the struct sizes plugins asked for and is written on any launch where one did ✦
+[*]Plugins can ask where the running game puts a game function's parameters and how big its parameter block is, including functions of the game's Blueprint classes (UI widgets, say), so a plugin that calls a game function keeps working when an update adds or moves a parameter. If the Blueprint class is not loaded yet the plugin's feature waits, with a note in ModLoader.log and the compatibility report instead of a warning, and starts once the game loads it ✦
 [*]Plugin authors: plugin interface v75 adds [b]titleBarFn[/b] on a panel (your own buttons in its title bar), [b]IsPanelCollapsed[/b] and [b]SetPanelCollapsed[/b] (collapse a panel to its title bar), and the [b]PluginWindowFlags_MenuMouseWhereUncovered[/b] widget flag, which takes the mouse over a game menu only where no menu widget is under the cursor ✦
 [/list]
 
 [b][size=4]Game updates[/size][/b]
 
-The mod loader carries a version map: for each game build it lists, where the functions and game data it and its plugins read are. A listed build runs with no mod loader update. Plugins that take their game data from the map run on any listed build; one that does not loads only on the build it was made for.
+The mod loader carries a version map: for each game build it lists where the functions and game data it and its plugins read are. A listed build runs with no mod loader update. Plugins that take their game data from the version map run on any listed build; one that does not loads only on the build it was made for.
 
-On a client with Auto Updates on, the mod loader can also fetch a newer map as a signed file from its GitHub releases. It checks the signature before reading anything else in the file, and keeps the last good copy in [i]ModLoader\version-map-client.v1.cache[/i]. The map is read once at startup. A dedicated server never fetches it.
+On a client with Auto Updates on, the mod loader can read a newer version map from a signed file on its GitHub releases (version-map-client.v1.txt, attached to each release, starting with v1.23.2). It checks the signature before reading anything else in the file, and keeps the last good copy in [i]ModLoader\version-map-client.v1.cache[/i]. The version map is read once at startup. A dedicated server never reads it.
 
-Even when the map decides where a plugin's function is, the mod loader checks the plugin's own pattern against the running game once and writes a warning to ModLoader.log if it matches nowhere or in two or more places. The plugin still loads; the warning lets its author find a pattern that only works because the map covers for it. ✦ The loader's pattern scan cache is now kept per game exe (version, build timestamp and size), so a rebuilt exe with the same version string rescans instead of trusting an old result. ✦
+Even when the version map decides where a plugin's function is, the mod loader checks the plugin's own pattern against the running game once and writes a warning to ModLoader.log if it matches nowhere or in two or more places. The plugin still loads; the warning lets its author find a pattern that only works because the version map covers for it. ✦ The loader's pattern scan cache is now kept per game exe (version, build timestamp and size), so a rebuilt exe with the same version string rescans instead of trusting an old result. ✦
 
 [b][size=4]Installing Plugins[/size][/b]
 The mod loader ships with no plugins. Download the ones you want and drop their .dll into [i]ModLoader\Plugins\[/i]. Client plugins only load on a client, server plugins only on a dedicated server; the window says so if you get one the wrong way round. If a plugin has an Enabled setting, it can be turned on in the Config tab, or in its .ini under [i]Plugins\config\[/i].
@@ -226,7 +245,7 @@ A preload plugin is a DLL in [i]ModLoader\Preload\[/i] that runs before the game
 [*][b]Plugins not loading[/b] — the DLLs must be in ModLoader\Plugins\ with Enabled set in the plugin's .ini where it has one. The Plugins tab shows why a plugin was rejected
 [*][b]Game will not start after adding a preload plugin[/b] — launch with -NoPreload, or set Enabled=0 in the Preload section of modloader.ini. The loader also skips a preload plugin that did not finish loading last launch, and says which. Delete Preload\.state to let it try again
 [*][b]A plugin says "Needs an update to run on CL-..."[/b] — the plugin was built for another game build and does not take its game data from the mod loader's version map, so it would read this game's data where its own build had it. Ask its author for an update
-[*][b]ModLoader.log says a plugin's "own pattern matches N times"[/b] — the plugin loads, because the version map decides where its function is. But the pattern it carries as a backup is not unique on this game build (or, for 0 times, no longer found), and a mod loader with no row to use for it (a stock mod loader, a dedicated server, or a build the map's rows do not resolve on) would refuse the plugin. Tell its author to make the pattern unique or update it ✦
+[*][b]ModLoader.log says a plugin's "own pattern matches N times"[/b] — the plugin loads, because the version map decides where its function is. But the pattern it carries as a backup is not unique on this game build (or, for 0 times, no longer found), and a mod loader with no row to use for it (a stock mod loader, a dedicated server, or a build the version map's rows do not resolve on) would refuse the plugin. Tell its author to make the pattern unique or update it ✦
 [*][b]A dialog says the game has changed in a way that would break your plugins[/b] — a game update moved some game classes the mod loader and its plugins read, so no plugins load this session. Start the game without them or wait for an update. The loader writes [i]ModLoader\compat-report-<CL>.json[/i] (the game build and what moved); attach it to your report
 [*][b]A dialog offers "Start Game Without ModLoader"[/b] — the game build changed or a scan pattern no longer matches. The mod loader stays off until it is updated. Copy Details has the report
 [*][b]Logs and diagnostics[/b] — check ModLoader\Logs\ModLoader.log; raise the detail in the Logging tab
@@ -236,8 +255,6 @@ A preload plugin is a DLL in [i]ModLoader\Preload\[/i] that runs before the game
 [*][b]The game crashes[/b] — the mod loader's own dialog has Copy Details and buttons for ModLoader.log and StarRupture.log. Include them in a bug report
 [*][b]Players dropped during a long map load[/b] — see Net timeouts. Both ends need the mod loader
 [/list]
-
-[b]Links:[/b] [url=https://github.com/AlienXAXS/StarRupture-ModLoader]GitHub[/url] for [url=https://github.com/AlienXAXS/StarRupture-ModLoader/issues]issues[/url] | [url=https://discord.gg/G5a4GYsvrz]Discord[/url] for discussion
 
 [line]
 
