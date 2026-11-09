@@ -886,7 +886,7 @@ static void ListLoaderNotesOnce(const char* running, const std::string& remoteTa
 
 	LogToFile::Info("[AutoUpdate] Listing the release notes of %s (previous version %s) in the Plugins Updated window",
 	                remoteTag.c_str(), previous.empty() ? "unknown" : previous.c_str());
-	UI::UpdateNoticeWindow::AddUpdatedPlugin("Mod Loader", previous.c_str(), remoteTag.c_str(), d.text.c_str());
+	UI::UpdateNoticeWindow::AddUpdatedPlugin(UI::UpdateNoticeWindow::kLoaderRowName, previous.c_str(), remoteTag.c_str(), d.text.c_str());
 	UI::UpdateNoticeWindow::SetOnShown([tag = remoteTag]()
 	{
 		// Shown first: a crash between the two writes leaves a stale

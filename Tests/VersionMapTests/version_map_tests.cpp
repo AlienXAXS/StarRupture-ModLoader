@@ -1296,6 +1296,16 @@ int main()
 			"grouping: nothing in, nothing out");
 	}
 
+	// The same window after a fresh install: only the loader, no previous version.
+	{
+		using UI::UpdateNoticeWindow::IsFreshLoaderInstall;
+		using UI::UpdateNoticeWindow::kLoaderRowName;
+		Check(IsFreshLoaderInstall(1, kLoaderRowName, ""), "fresh install: the loader alone with no previous version");
+		Check(!IsFreshLoaderInstall(1, kLoaderRowName, "v1.23.1"), "fresh install: a known previous version is an update");
+		Check(!IsFreshLoaderInstall(2, kLoaderRowName, ""), "fresh install: a second row keeps the plugins title");
+		Check(!IsFreshLoaderInstall(1, "NewPlugin", ""), "fresh install: a plugin's first install keeps the plugins title");
+	}
+
 	// modloader.ini [Debug] DisablePluginVersionMap: plugins read no map rows, the loader keeps them.
 	{
 		Check(!VersionMap::PluginMapOff(), "plugin map switch: off by default");

@@ -256,7 +256,9 @@ changed in each plugin when the plugin's release ships notes, and the mod loader
 notes the first time a new loader version runs. The window is wide enough for the screen, so the
 notes stay readable at 4K, and its title and Close button stay in view when the list is long.
 Plugins whose notes are word for word the same share one line (the names joined, in the accent
-colour) with the notes shown once, and that line leaves out the versions.
+colour) with the notes shown once, and that line leaves out the versions. After a fresh install, when
+the loader is the only row and no earlier version is known, the window is titled **Mod Loader
+Installed** instead.
 <sup>[✦](#msantoro12)</sup>
 
 The window lists every version newer than the one the player had, grouped by version: a player

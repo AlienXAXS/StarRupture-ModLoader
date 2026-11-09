@@ -4,3 +4,4 @@
 - The first plugin texture to load no longer causes a short freeze: the loader now sets up its texture copy queue once the game's graphics are ready, instead of on that first load
 - Mod windows no longer blink when the game gains or loses focus, and the log now records focus changes
 - When the game has updated ahead of the mod loader, the game keeps loading while the mod loader's message is up, instead of waiting up to 3 minutes for your answer
+- A fresh install opens a window titled Mod Loader Installed instead of Plugins Updated

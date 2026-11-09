@@ -112,14 +112,22 @@ namespace UI::UpdateNoticeWindow
                 ImVec2(0.5f, 0.5f));
         }
 
+        bool freshInstall = false;
+        {
+            std::lock_guard<std::mutex> lock(s_mutex);
+            freshInstall = !s_updates.empty() &&
+                           IsFreshLoaderInstall(s_updates.size(), s_updates.front().name, s_updates.front().oldVersion);
+        }
+
         if (!UI::Theme::BeginChamferedWindow("Plugin Updates##update_notice",
-                                             "PLUGINS UPDATED", &s_isOpen,
+                                             freshInstall ? "MOD LOADER INSTALLED" : "PLUGINS UPDATED", &s_isOpen,
                                              nullptr,
                                              ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoScrollbar |
                                              ImGuiWindowFlags_NoScrollWithMouse))
             return;
 
-        ImGui::TextUnformatted("The following plugins were updated automatically:");
+        ImGui::TextUnformatted(freshInstall ? "The mod loader has been installed:"
+                                            : "The following plugins were updated automatically:");
         ImGui::Spacing();
         ImGui::Separator();
         ImGui::Spacing();
