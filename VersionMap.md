@@ -6,13 +6,14 @@ authors the request side is in the
 [SDK guide](https://github.com/AlienXAXS/StarRupture-Plugin-SDK/blob/main/PluginDevelopment.md);
 for players the short version is the README's [Game updates](README.md#game-updates).
 
-A game update moves functions and fields. The version map is the one place that says where they
-are on each build, so a new build means new rows in the map and nothing else: no loader release
-and no plugin release, as long as the plugins take their game data from the map.
+A game update moves functions and fields. The version object map (v map) is the one place that says where they
+are on each build. It maps each game version's objects (functions, fields, sizes) for easy access.
+So a new build means new rows in the version map and nothing else: no loader release
+and no plugin release, as long as the plugins take their game data from the version map.
 
-## What the map holds
+## What the version map holds
 
-The map has one row per key and game build (a build is its CL, plus the exe's PE time stamp and
+The version map has one row per key and game build (a build is its CL, plus the exe's PE time stamp and
 image size). There are four kinds of row.
 
 | Row | Key | Holds |
@@ -31,7 +32,7 @@ site key (kinds `IN_FUNCTION`, `CODE`, `VTABLE`, `ANY`) names no symbol. It is
 loader's own. Only that owner reads it.
 
 **Kind.** A row is used only for a request of the same kind. Otherwise it is skipped with a log
-line, so the map can never weaken a kind check.
+line, so the version map can never weaken a kind check.
 
 **fp.** A site's address is right only for the request it was verified with, and old plugin
 builds stay in the field after a newer one re-anchors a site under the same name. So a site row
@@ -46,12 +47,12 @@ a global key it lists the owners whose requests CI tested; for a site key it car
 tested. It binds only those requests: they fail with no fallback, because their locators were
 found unsafe on that build. A verified row replaces an `absent` row; nothing else does.
 
-The map lives in `hooks/game/version_map.generated.h`, written by CI
+The version map lives in `hooks/game/version_map.generated.h`, written by CI
 (`ci/version-map.mjs` in [starrupture-ci](https://github.com/msantoro12/starrupture-ci), format in
-its `ci/VERSION-MAP.md`). Every loader build carries the map as it stood when it was built, and
+its `ci/VERSION-MAP.md`). Every loader build carries the version map as it stood when it was built, and
 works offline on every build in it. The signed feed (below) adds to that.
 
-**Not map data.** Some values a plugin needs are not in the map on purpose.
+**Not version map data.** Some values a plugin needs are not in the version map on purpose.
 
 - *Game enums.* The numbers in a game `UEnum` can move on a game update, and no symbol or pattern
   holds them, so CI could not generate a row. The value belongs to the game's reflection data, read
@@ -59,9 +60,9 @@ works offline on every build in it. The signed feed (below) adds to that.
 - *Unreal Engine constants.* `EObjectFlags` bits (`RF_*`), `FUNC_Native`, `INDEX_NONE` and the
   engine ABI the plugins compile in (the `TArray` header, shared-pointer reference controllers) are
   fixed by the engine version, not by a game build. A change of engine version regenerates the whole
-  Game-SDK, so the map has nothing to add. The one the map can help check is the slot of
+  Game-SDK, so the version map has nothing to add. The one the version map can help check is the slot of
   `UObject::ProcessEvent` in the object's virtual table, which every plugin's SDK compiles in: at
-  startup the layout check compares that slot with the address the map resolved for the function,
+  startup the layout check compares that slot with the address the version map resolved for the function,
   and a difference switches all plugins off like a changed layout.
 
 ## Selection
@@ -99,7 +100,7 @@ resolves, the pattern is not needed to load, so the loader checks it on the side
 per session, through `scan_cache.ini`, with the same rule as any scan. If it matches 0 or 2 or more
 places the loader logs one warning, `[Map] <plugin>: <key>: its own pattern matches <n> times on this
 exe ...`, and still uses the row. Without that check a pattern that is ambiguous would pass here and
-be refused wherever no row resolves the key (a loader with no map, a dedicated server, a build none
+be refused wherever no row resolves the key (a loader with no version map, a dedicated server, a build none
 of the rows resolve on), since the pattern is then the only locator. A pattern that matches 0 times
 gets its own wording: it is stale for this build, and the row is carrying it. The count of a pattern
 that is not unique is kept in `scan_cache.ini` under the exe, so a later launch repeats the warning
@@ -115,16 +116,16 @@ picks neither, fails the request, and the log lists each locator and where it la
 reads no site keys. When two loaded plugins share a name, neither reads site keys, because
 `<owner>/` cannot tell them apart. Each of these fails the request with a log line saying why.
 
-A key that is not in the map at all (a third-party plugin, or a hook newer than the feed) falls
+A key that is not in the version map at all (a third-party plugin, or a hook newer than the feed) falls
 back to the plugin's own row and pattern, logged as `not in the loader's map; own pattern`.
 To test a plugin's own locators, `DisablePluginVersionMap=1` under `[Debug]` in `modloader.ini` makes
-every key and field behave that way for plugins; the loader's own lookups keep the map.
+every key and field behave that way for plugins; the loader's own lookups keep the version map.
 
-Fields follow the same shape: the map's row for the running CL first (else the latest CL's),
+Fields follow the same shape: the version map's row for the running CL first (else the latest CL's),
 then the plugin's, then `builtOffset` on its `builtCL`. Two rows for one CL that disagree fail
 the request. A reflected field is read live from reflection, and a row is only a cross-check:
 where a row and the game disagree the game wins, and the disagreement is logged. It is a warning
-when the row is the running build's own (a map bug), and a debug line when the row is another
+when the row is the running build's own (a version map bug), and a debug line when the row is another
 build's, which is expected to differ (the latest row stands in for a build with none). A native
 offset (reflection does not describe it) comes from the running CL's row or the compiled offset
 on the build it was compiled for; a row carried forward from an older CL cannot be checked on
@@ -143,7 +144,7 @@ plugin requests, on every build. It is an ordinary field line, so the feed forma
   game's own reflection data (`UStruct::Size`), on the client and on the dedicated server, so each
   game build gives its own size. The row is only a cross-check: where it disagrees with the game,
   the game wins and the difference is logged, as a warning when the row is the running build's own
-  (a map bug) and as a debug line when it is another build's (the latest row stands in for a build
+  (a version map bug) and as a debug line when it is another build's (the latest row stands in for a build
   with none).
 - A struct the game does not reflect (a plain C++ type) has no live size. It is served from the
   running build's own row. With no row for the running build the request is refused; a row of
@@ -238,7 +239,7 @@ in a tail from interface v72: `gameBuiltCL` (the build its Game-SDK came from,
   the plugin none, with a log line saying which). Otherwise the Plugins tab shows it as **Incompatible**, with "Needs an update to
   run on CL-...", and it still loads on its own build.
 - A v70 or v71 plugin has no tail and counts as built for `kLegacyPluginCL` (127004), the build
-  the last loader without a map required. So does a v72 or later plugin whose `gameBuiltCL` is 0,
+  the last loader without a version map required. So does a v72 or later plugin whose `gameBuiltCL` is 0,
   with the warning "declares no game build". A tail that sets `PLUGIN_MAP_MIGRATED` and names no
   build is refused on every build.
 - An older interface is never refused for its age: the tables only grow, so a plugin gets the
@@ -254,7 +255,7 @@ promise; starrupture-ci checks it for the plugins it tracks.
 
 ## The feed
 
-Between loader releases the map can be refreshed from a signed file, so a new game build is
+Between loader releases the version map can be refreshed from a signed file, so a new game build is
 supported without a new loader.
 
 **Format.** A tab-separated text file, one row per line, in the order `format`, `seq`, `build`,
@@ -274,7 +275,7 @@ There is no server feed: only the client fetches.
 never read from `modloader.ini`. An empty define, or no compiled public key, means no fetch. The
 loader fetches only on the client, with `[AutoUpdate] Enabled` on, and only:
 
-- at startup, when the running exe is in neither the built-in map nor the cache, or has an
+- at startup, when the running exe is in neither the built-in version map nor the cache, or has an
   `absent` row and the cache is over a day old. The splash shows "Downloading game data for
   CL-n". This happens with the game's main thread parked, where WinHTTP is safe;
 - after the version check or the pattern preflight refuses the game build, for the next launch,
@@ -282,7 +283,7 @@ loader fetches only on the client, with `[AutoUpdate] Enabled` on, and only:
 - from the auto-update thread, for the next launch: at most once a day while the cache holds a
   verified feed, otherwise at every launch.
 
-An exe the map has never seen asks at every launch until a cached feed covers it; the once-a-day
+An exe the version map has never seen asks at every launch until a cached feed covers it; the once-a-day
 limit applies to the `absent` case and to the auto-update thread. An empty, cut-short, oversize or
 unreadable cache does not count as a verified feed.
 
@@ -312,7 +313,7 @@ A release build therefore trusts only `k2`. A feed signed with `k1` is rejected 
 private halves are CI secrets (`VMAP_SIGN_KEY_TEST`, `VMAP_SIGN_KEY`); a leaked key is answered by
 a loader release that drops its slot.
 
-**Merge.** The loader merges the built-in map and the feed into one row per key and CL (per `fp`
+**Merge.** The loader merges the built-in version map and the feed into one row per key and CL (per `fp`
 for a site key), once at startup, and the result stays unchanged for the process. For each group
 it takes the built-in row for the running exe if there is one, otherwise the feed's, otherwise
 the built-in. The feed can add builds and keys and fill a shipped `absent` row; it can never
@@ -328,7 +329,7 @@ which is why the file is signed.
 ## How a build reaches players (CI)
 
 [starrupture-ci](https://github.com/msantoro12/starrupture-ci) watches Steam and does the work.
-"Path M" is the update that is only rows in the map. The tools are described in its
+"Path M" is the update that is only rows in the version map. The tools are described in its
 `ci/MAP-MODE.md`.
 
 ```
@@ -377,16 +378,16 @@ allows (`M`) and `max_releases_per_day`. With `enabled: false`, `decide.mjs` ret
 the owner turns it on. `vmap-watchdog.yml` opens an issue when Latest's feed lags the last signed
 `seq` by more than two hours.
 
-## Getting a value added to the shared map
+## Getting a value added to the shared version map
 
-A plugin does not have to wait for the shared map. It can carry its own row for a key (the SDK's
+A plugin does not have to wait for the shared version map. It can carry its own row for a key (the SDK's
 `plugin_version_map.h` builds them into the plugin), and the loader uses the shared row first
 and the plugin's own row second (see [Selection](#selection)). A plugin written for interface v73
 or later can also declare features, so a value that does not resolve turns one feature off instead
 of refusing the plugin. Older plugins are accepted too, as [Admission](#admission) says.
 
 A plugin's own rows are only as current as its last release. To have the pipeline keep a value
-current on every game build, send a PR that adds it to the shared map and to the CI key list:
+current on every game build, send a PR that adds it to the shared version map and to the CI key list:
 
 1. **A function or global.** Add the plugin's rows for the build you tested to
    `hooks/game/version_map.generated.h` (`kFunctionRows`), with the `rva` you verified. The key is
@@ -420,7 +421,7 @@ That is `<plugin> <Class::Member>`, then optionally an offset, size and mask in 
 PDB's size is not the plugin's, then `optional`. The header of `ci/native-keys.txt` has the full
 format.
 
-Before you send it, check that the plugin meets what the map relies on. `PluginGameBuild.props`
+Before you send it, check that the plugin meets what the version map relies on. `PluginGameBuild.props`
 (in the SDK) defines the plugin's `PLUGIN_GAME_BUILT_CL`, `PLUGIN_MAP_MIGRATED` is the promise
 that it reads no game data from compiled-in offsets, and the SDK's rule-3 check
 (`tools/rule3-check.mjs`) is the scan that backs that promise. Run `Tests\VersionMapTests` and
@@ -432,21 +433,21 @@ What a player sees, and what the log says (`ModLoader\Logs\ModLoader.log`).
 
 | Case | Result |
 |---|---|
-| The running build is in the map | Starts with no network request. This is the normal case. |
+| The running build is in the version map | Starts with no network request. This is the normal case. |
 | New build, no feed published yet, or no network | The gate refuses the build. The player gets the "Start Game Without ModLoader" dialog and can play unmodded or quit. The loader tries again for the next launch. |
 | New build, feed published | The splash shows "Downloading game data for CL-n" for a moment, then the game starts modded. |
 | A fetch fails (404, timeout, over 1 MiB, not https) | As if there were no feed: a known build runs, an unknown one is refused. An unknown build asks again at the next launch, and so does the auto-update thread while no verified feed is cached; the other triggers wait a day. |
 | The feed's signature is bad, the key unknown or the file malformed | The file is discarded whole, and the cache is untouched. Same as no feed. |
 | The feed is older than the cache (`seq` not higher) | Ignored. The cache stays. |
 | A release build is handed a `k1` (TEST) feed | Rejected as a bad key. |
-| `[AutoUpdate] Enabled` off, or a server build | No fetch. The built-in map is used. A server stays exact on the build it was written for. |
+| `[AutoUpdate] Enabled` off, or a server build | No fetch. The built-in version map is used. A server stays exact on the build it was written for. |
 | The feed has the build, but a row is `absent` for something a plugin needs | That plugin's request fails. If it belongs to a declared feature, that feature is off; otherwise the plugin is refused, with the reason in the failure window. Other plugins and the game run. |
 | The feed has the build but misses a required loader entry | That CL is dropped from the feed, and the build is refused as above. |
 | A plugin built for another build does not declare `PLUGIN_MAP_MIGRATED` | **Incompatible**: "Needs an update to run on CL-...". It loads on its own build. |
 | A plugin's own pattern matches 0 or 2 or more places, but a row resolves the key | The plugin loads on the row. `ModLoader.log` has one `[Map]` warning naming the plugin, the key and the count. Where no row resolves the key it would be refused, so the author should make the pattern unique (or update it, for 0). |
 | Two keys for one request disagree (AMBIGUOUS) | The request fails, with the locators listed: a declared feature turns off, any other key refuses the plugin. |
-| The game's `UObject` virtual table no longer holds `ProcessEvent` where the SDK calls it | Every plugin is switched off for the session, with the same dialog as a layout change. The log line is `[LayoutCheck] UObject::ProcessEvent: vtable slot 0x4C holds base+0x..., the function is at base+0x...`; when it is fine, the log says the slot holds the function the map resolved. |
+| The game's `UObject` virtual table no longer holds `ProcessEvent` where the SDK calls it | Every plugin is switched off for the session, with the same dialog as a layout change. The log line is `[LayoutCheck] UObject::ProcessEvent: vtable slot 0x4C holds base+0x..., the function is at base+0x...`; when it is fine, the log says the slot holds the function the version map resolved. |
 | A game class a plugin reads moved | That plugin's own field request, or its `SR_SIZE_CHECK`, fails and the plugin alone is affected (a declared feature off, else refused), with the reason in the failure window. The loader's layout check covers the classes the loader and the Plugin SDK read, and what a change switches off depends on who reads the class: see the README. After any change, a plugin that keeps the game's layouts compiled in is not loaded; one that declares `PLUGIN_MAP_MIGRATED` (taken on its word) still loads, and a request of its for the compiled offset of a changed class, or of a class derived from one, is refused, which turns off only the feature that asked. |
 
-A fetched map is read once at startup and never changes mid-session, so a RELOAD sees the same
+A fetched version map is read once at startup and never changes mid-session, so a RELOAD sees the same
 rows the loader's own hooks were installed from.

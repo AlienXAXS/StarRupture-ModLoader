@@ -424,7 +424,8 @@ A plugin declares its settings as a config schema (string, integer, float, boole
 choice from a list, with an optional range), plus any state it saves by itself; the
 [Config tab](#config-tab) draws it. It can also name each feature it needs (interface v73), so one
 missing game function or member turns off that feature and not the whole plugin, and look game
-functions and members up by key in the loader's version map ([VersionMap.md](VersionMap.md)).
+functions and members up by key in the loader's version object map (v map), which maps each game version's objects (functions, fields,
+sizes) for easy access ([VersionMap.md](VersionMap.md)).
 <sup>[✦](#msantoro12)</sup>
 
 | Guide | Covers |
@@ -538,7 +539,7 @@ the whole API and you can hot-reload it while the game runs.
 | The *game's* log is flooding on a dedicated server | Hundreds of `LogTemp` / `LogSkinnedMeshComp` warnings a second come from the game itself, not the mod loader. Server builds turn those two categories down to errors automatically; edit `GameLogCategories` under `[Logging]` in `ModLoader\modloader.ini` to change the list, or blank it to leave the game log alone. `-LogCmds=` has no effect on this build. |
 | Game stops responding to input | Turn on *ModLoader Debug Values* in the **Settings** tab — it names the plugin holding input open. |
 | Game freezes ("Not Responding") | Look near the end of `ModLoader\Logs\ModLoader.log` for a `[PluginWatchdog]` line. A plugin's tick or overlay draw callback (a panel or widget) still running after 5 seconds is named there, e.g. `SomePlugin.dll widget render has been running for 5016 ms`. Disable that plugin and report it to its author. |
-| `ModLoader.log` has `its own pattern matches N times on this exe` for a plugin | The plugin loads, because the version map's row decides where its function is. But its own AOB pattern is not unique on this game build (N is 2 or more) or no longer found (N is 0), and a loader that has no row to use (a stock loader with no map, a dedicated server, or a build where none of the map's rows resolve) refuses a plugin whose pattern matches 0 or 2 or more places. Tell the plugin's author to make the pattern unique, or update it. |
+| `ModLoader.log` has `its own pattern matches N times on this exe` for a plugin | The plugin loads, because the version map's row decides where its function is. But its own AOB pattern is not unique on this game build (N is 2 or more) or no longer found (N is 0), and a loader that has no row to use (a stock loader with no version map, a dedicated server, or a build where none of the version map's rows resolve) refuses a plugin whose pattern matches 0 or 2 or more places. Tell the plugin's author to make the pattern unique, or update it. |
 | A plugin shows **Crashed** | It faulted in one of its callbacks and was switched off; the game kept running. `ModLoader.log` has the fault and a stack. Press **RELOAD** to run it again, and report the log lines to its author. |
 | The game crashes | The mod loader's own dialog has **Copy Details** and buttons for `ModLoader.log` and `StarRupture.log`. Include them in a bug report. |
 | Players dropped during a long map load | See [Net timeouts](#net-timeouts). Both ends need the mod loader. |
@@ -548,16 +549,16 @@ the whole API and you can hot-reload it while the game runs.
 ## Game updates
 
 The mod loader carries a version map: for each game build it lists, where the functions and
-game-class members it and its plugins read are. A build in the map runs with no loader update.
-Plugins that declare they take their game data from the map (`PLUGIN_MAP_MIGRATED` in their
+game-class members it and its plugins read are. A build in the version map runs with no loader update.
+Plugins that declare they take their game data from the version map (`PLUGIN_MAP_MIGRATED` in their
 `PluginInfo`, see the [SDK guide](https://github.com/AlienXAXS/StarRupture-Plugin-SDK/blob/main/PluginDevelopment.md))
 run on any listed build. A plugin that does not declare it loads only on the build it was compiled
 against, and shows **Incompatible** on the others.
 
-On a client build with `[AutoUpdate] Enabled` on, the loader can also read a newer map from a signed
+On a client build with `[AutoUpdate] Enabled` on, the loader can also read a newer version map from a signed
 file, so a new game build can be supported without a loader update. None is published yet. A server
 build never reads one.
-How the map is chosen, how the feed is fetched, signed and cached, how CI publishes it and what
+How the version map is chosen, how the feed is fetched, signed and cached, how CI publishes it and what
 each failure looks like is in [VersionMap.md](VersionMap.md).
 
 At startup the loader also checks that the game classes it reads are laid out as it was built for. If a
@@ -566,10 +567,10 @@ that keeps the game's layouts compiled in, instead of taking them from the versi
 It also checks that the game still calls ProcessEvent, which every plugin uses to run game functions, at the
 place the plugins expect; if it does not, plugins are switched off the same way.
 
-When the map's row decides where a plugin's function is, the loader still checks the plugin's own
+When the version map's row decides where a plugin's function is, the loader still checks the plugin's own
 AOB pattern against the running exe, once, and logs a warning if it matches 0 or 2 or more places.
-The plugin still loads. The warning is there so a pattern that only works because the map covers
-for it is caught on a development setup, not by the first player on a loader without the map's row.
+The plugin still loads. The warning is there so a pattern that only works because the version map covers
+for it is caught on a development setup, not by the first player on a loader without the version map's row.
 <sup>[✦](#msantoro12)</sup>
 
 ## Net timeouts
@@ -642,7 +643,7 @@ these for you.
 | | `Path` | `ue4ss\ue4ss.dll` | Relative to the game executable |
 | `[Developer]` | `RemoteReload` | `0` | `1` reloads the plugins named in `ModLoader\remote_reload.txt` without pressing **RELOAD**. For plugin authors; logs a warning at every launch. See [Reloading a plugin from a script](#reloading-a-plugin-from-a-script) |
 | `[Debug]` | `ExportKnownGObjects` | `0` | Writes `known_gobjects_dump.txt` |
-| | `DisablePluginVersionMap` | `0` | Client only. `1` gives plugins no rows from the loader's version map, so each uses its own patterns and rows, or its feature switches off. For testing a plugin's own locators; the loader keeps the map for itself. Logs a warning at every launch. See [VersionMap.md](VersionMap.md) |
+| | `DisablePluginVersionMap` | `0` | Client only. `1` gives plugins no rows from the loader's version map, so each uses its own patterns and rows, or its feature switches off. For testing a plugin's own locators; the loader keeps the version map for itself. Logs a warning at every launch. See [VersionMap.md](VersionMap.md) |
 
 Other files, all under `ModLoader\`:
 
