@@ -400,27 +400,38 @@ namespace ModLoaderLogger
 
 		// v72. Reads the request no further than the plugin's structSize, as
 		// Resolve does, and records any failure like a missed pattern.
+		//
+		// PLUGIN_FIELD_LATE: the one request that is also answered after
+		// OnPluginLoadHooks has returned (outside a session). It is for a
+		// Blueprint class that is not loaded when plugins load. In the session
+		// a pending answer switches off the feature that lists the key; later
+		// the plugin repeats the request until it resolves. A request outside a
+		// session records nothing but its end: resolved, or refused for good.
 		bool HookResolveField(const IPluginSelf* self, const PluginFieldRequest* request, PluginFieldResult* result)
 		{
-			if (!InSession(self))
-				return false;
+			const bool inSession = InSession(self);
 
 			PluginFieldRequest local = PLUGIN_FIELD_REQUEST_INIT;
 			if (request && request->structSize >= offsetof(PluginFieldRequest, className))
 				memcpy(&local, request, request->structSize < sizeof(local) ? request->structSize : sizeof(local));
+			const bool late = (local.flags & PLUGIN_FIELD_LATE) != 0;
+			if (!inSession && !(late && self && self->name))
+				return false;
 			const char* key = local.key && local.key[0] ? local.key : "(unnamed)";
 
 			if (!request || !result || request->structSize < sizeof(PluginFieldRequest) || !local.key || !local.key[0]
 				|| !local.className || !local.className[0] || (local.candidateCount && !local.candidates)
 				|| local.candidateCount > kMaxCandidates)
 			{
-				PluginHookReport::RecordFailure(self, key, "bad field request", true, PluginHookReport::Cause::Request);
+				if (inSession)
+					PluginHookReport::RecordFailure(self, key, "bad field request", true, PluginHookReport::Cause::Request);
 				return false;
 			}
 			// The map's ModLoader/ keys are the loader's own, as for a scan.
 			if (self->name && strcmp(self->name, "ModLoader") == 0)
 			{
-				PluginHookReport::RecordFailure(self, key, "a plugin may not be named ModLoader", true, PluginHookReport::Cause::Request);
+				if (inSession)
+					PluginHookReport::RecordFailure(self, key, "a plugin may not be named ModLoader", true, PluginHookReport::Cause::Request);
 				return false;
 			}
 
@@ -441,12 +452,24 @@ namespace ModLoaderLogger
 
 			VersionMap::FieldValue value;
 			std::string error;
-			if (!VersionMap::SelectField(self->name, field, VersionMap::RunningExe(), value, error))
+			bool pending = false;
+			if (!VersionMap::SelectField(self->name, field, VersionMap::RunningExe(), value, error, &pending))
 			{
-				PluginHookReport::RecordFailure(self, key, error.c_str(), true);
+				if (!inSession)
+				{
+					if (!pending)
+						PluginHookReport::LateRefused(self, key, error.c_str());
+				}
+				else if (pending)
+					PluginHookReport::RecordPending(self, key, error.c_str());
+				else
+					PluginHookReport::RecordFailure(self, key, error.c_str(), true);
 				return false;
 			}
-			PluginHookReport::RecordFieldResolved(self, key);
+			if (inSession)
+				PluginHookReport::RecordFieldResolved(self, key);
+			else
+				PluginHookReport::LateResolved(self, key);
 			result->offset   = value.offset;
 			result->size     = value.size;
 			result->boolMask = value.boolMask;

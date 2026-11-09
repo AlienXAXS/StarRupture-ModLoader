@@ -598,10 +598,334 @@ namespace
                 "a null vtable: the read fails the same way");
         }
     }
+
+    // ---- Function parameter structs: the live offsets and ParmsSize ----
+
+    // A function as the game would reflect it, from the table's parameter
+    // struct: every parameter at or after `shiftFrom` moves by `shiftBy`, as if
+    // an update had put a parameter of that size in front of it. A name Dumper-7
+    // suffixed (Class_0) is reflected without the suffix.
+    LayoutCheck::LiveFunction GameFunction(const std::vector<LayoutCheck::TableClass>& table, const char* path,
+        int32_t shiftFrom = INT32_MAX, int32_t shiftBy = 0)
+    {
+        LayoutCheck::LiveFunction function;
+        for (const LayoutCheck::TableClass& c : table)
+        {
+            if (c.kind != LayoutCheck::Kind::FunctionParams || std::string(c.path) != path)
+                continue;
+            function.path = c.path;
+            for (const LayoutCheck::TableRow& row : c.rows)
+            {
+                std::string name = row.name;
+                if (name == "Class_0")
+                    name = "Class";
+                const int32_t offset = static_cast<int32_t>(row.offset);
+                function.params.push_back(LayoutCheck::LiveProperty{ name, offset >= shiftFrom ? offset + shiftBy : offset,
+                    static_cast<int32_t>(row.size), false, 0 });
+            }
+        }
+        return function;
+    }
+
+    const LayoutCheck::TableClass* TableFunction(const std::vector<LayoutCheck::TableClass>& table, const char* path)
+    {
+        for (const LayoutCheck::TableClass& c : table)
+            if (c.kind == LayoutCheck::Kind::FunctionParams && std::string(c.path) == path)
+                return &c;
+        return nullptr;
+    }
+
+    void FunctionParamsFollowTheGame()
+    {
+        std::printf("function parameter structs\n");
+        const auto table = LayoutCheck::ReadTable(SrLayoutTable::kNames, SrLayoutTable::kClasses, SrLayoutTable::kRows);
+        const char* const kPlayer = "Engine.GameplayStatics.GetPlayerController";
+        const char* const kPlayerName = "GameplayStatics_GetPlayerController";
+
+        // The same build as the SDK: every parameter of every function the
+        // table lists is where the table has it, and ParmsSize is the end of
+        // the last parameter (the table's sizeof rounded up to the struct's
+        // alignment).
+        bool allSame = true;
+        bool sizesAgree = true;
+        int functions = 0;
+        for (const LayoutCheck::TableClass& c : table)
+        {
+            if (c.kind != LayoutCheck::Kind::FunctionParams)
+                continue;
+            ++functions;
+            const std::vector<LayoutCheck::LiveFunction> game{ GameFunction(table, c.path) };
+            for (const LayoutCheck::TableRow& row : c.rows)
+            {
+                const LayoutCheck::ParamMember member = LayoutCheck::ResolveParamMember(c.name, game, row.name);
+                allSame = allSame && member.error.empty() && member.offset == static_cast<int32_t>(row.offset)
+                    && member.size == row.size;
+            }
+            const LayoutCheck::ParamMember size = LayoutCheck::ResolveParamMember(c.name, game, "");
+            sizesAgree = sizesAgree && size.error.empty() && size.size <= c.sizeOf && c.sizeOf - size.size < 16;
+        }
+        Check(functions >= 8, "the table lists function parameter structs to read");
+        Check(allSame, "a parameter resolves to its live offset and size, for every function in the table");
+        Check(sizesAgree, "the block size is the end of the last parameter, within the struct's padding");
+
+        {
+            const std::vector<LayoutCheck::LiveFunction> game{ GameFunction(table, kPlayer) };
+            Check(LayoutCheck::ResolveParamMember(kPlayerName, game, "ReturnValue").offset == 16,
+                "GetPlayerController: ReturnValue at 0x10");
+            Check(LayoutCheck::ResolveParamMember(kPlayerName, game, "").size == 0x18,
+                "GetPlayerController: ParmsSize 0x18");
+            Check(LayoutCheck::ResolveParamMember(kPlayerName, game, "returnvalue").offset == 16,
+                "a name differing only in case still resolves");
+            // Not rounded up: the last parameter is a one-byte bool at 8.
+            const std::vector<LayoutCheck::LiveFunction> only{ GameFunction(table, "UMG.WidgetBlueprintLibrary.SetInputMode_GameOnly") };
+            Check(LayoutCheck::ResolveParamMember("WidgetBlueprintLibrary_SetInputMode_GameOnly", only, "").size == 9,
+                "ParmsSize is the end of the last parameter, not rounded up to the struct's alignment");
+        }
+
+        // An update puts an 8-byte parameter before PlayerIndex: PlayerIndex
+        // and ReturnValue move and ParmsSize grows. The compiled offsets are
+        // the table's.
+        {
+            const LayoutCheck::TableClass* compiled = TableFunction(table, kPlayer);
+            const std::vector<LayoutCheck::LiveFunction> game{ GameFunction(table, kPlayer, 8, 8) };
+            const LayoutCheck::ParamMember playerIndex = LayoutCheck::ResolveParamMember(kPlayerName, game, "PlayerIndex");
+            const LayoutCheck::ParamMember ret = LayoutCheck::ResolveParamMember(kPlayerName, game, "ReturnValue");
+            const LayoutCheck::ParamMember size = LayoutCheck::ResolveParamMember(kPlayerName, game, "");
+            Check(compiled && compiled->rows.size() == 3 && compiled->rows[2].offset == 16, "the compiled ReturnValue is at 0x10");
+            Check(ret.error.empty() && ret.offset == 24 && ret.size == 8, "a shifted ReturnValue is found at its live offset");
+            Check(playerIndex.offset == 16 && playerIndex.size == 4, "so is a shifted in-parameter");
+            Check(size.size == 0x20, "and the block size follows the added parameter");
+            const LayoutCheck::ParamMember world = LayoutCheck::ResolveParamMember(kPlayerName, game, "WorldContextObject");
+            Check(world.offset == 0, "a parameter before the insertion stays put");
+        }
+
+        // The Dumper-7 suffix on a reserved name.
+        {
+            const char* const name = "SubsystemBlueprintLibrary_GetGameInstanceSubsystem";
+            const std::vector<LayoutCheck::LiveFunction> game{ GameFunction(table, "Engine.SubsystemBlueprintLibrary.GetGameInstanceSubsystem") };
+            const LayoutCheck::ParamMember cls = LayoutCheck::ResolveParamMember(name, game, "Class_0");
+            Check(cls.error.empty() && cls.offset == 8 && cls.size == 8, "Class_0 is found as the game's Class");
+            Check(LayoutCheck::ResolveParamMember(name, game, "Class").offset == 8, "and by the game's own name");
+        }
+
+        // Refusals.
+        {
+            const std::vector<LayoutCheck::LiveFunction> game{ GameFunction(table, kPlayer) };
+            LayoutCheck::ParamMember r = LayoutCheck::ResolveParamMember(kPlayerName, game, "NoSuchParam");
+            Check(!r.error.empty() && r.error.find("NoSuchParam") != std::string::npos && r.error.find(kPlayer) != std::string::npos,
+                "an unknown parameter is refused, naming it and the function");
+            r = LayoutCheck::ResolveParamMember("GameplayStatics_GetNothing", {}, "ReturnValue");
+            Check(!r.error.empty() && r.error.find("GameplayStatics_GetNothing") != std::string::npos,
+                "a name no function carries is refused");
+            r = LayoutCheck::ResolveParamMember("GameplayStatics_GetNothing", {}, "");
+            Check(!r.error.empty(), "so is its block size");
+
+            // The same class name in two modules carries the same parameter struct name.
+            std::vector<LayoutCheck::LiveFunction> two{ GameFunction(table, kPlayer), GameFunction(table, kPlayer) };
+            two[1].path = "Other.GameplayStatics.GetPlayerController";
+            r = LayoutCheck::ResolveParamMember(kPlayerName, two, "ReturnValue");
+            Check(!r.error.empty() && r.error.find(kPlayer) != std::string::npos
+                    && r.error.find("Other.GameplayStatics.GetPlayerController") != std::string::npos
+                    && r.error.find("/Script/") != std::string::npos,
+                "a name two functions carry is refused, naming both and how to pick one");
+            r = LayoutCheck::ResolveParamMember(kPlayerName, two, "");
+            Check(!r.error.empty(), "so is its block size");
+        }
+
+        // How a name is read as <Class>_<Function>.
+        {
+            const auto plain = LayoutCheck::SplitParamStruct("CrEnviroWaveSubsystem_GetCurrentStageSettings");
+            Check(plain.size() == 1 && plain[0].owner == "CrEnviroWaveSubsystem" && plain[0].function == "GetCurrentStageSettings"
+                    && plain[0].module.empty(),
+                "a name splits at its underscore");
+            const auto two = LayoutCheck::SplitParamStruct("WidgetBlueprintLibrary_SetInputMode_GameAndUIEx");
+            Check(two.size() == 2 && two[0].owner == "WidgetBlueprintLibrary" && two[0].function == "SetInputMode_GameAndUIEx"
+                    && two[1].owner == "WidgetBlueprintLibrary_SetInputMode" && two[1].function == "GameAndUIEx",
+                "an underscore in the function splits two ways, for the game to decide");
+            const auto scripted = LayoutCheck::SplitParamStruct("/Script/UMG.WidgetBlueprintLibrary_Create");
+            Check(scripted.size() == 1 && scripted[0].module == "UMG" && scripted[0].owner == "WidgetBlueprintLibrary"
+                    && scripted[0].function == "Create",
+                "/Script/<Module>. names the module");
+            Check(LayoutCheck::SplitParamStruct("ACrCharacterPlayerBase").empty() && LayoutCheck::SplitParamStruct("_X").empty()
+                    && LayoutCheck::SplitParamStruct("X_").empty() && LayoutCheck::SplitParamStruct("/Script/UMG").empty(),
+                "a class name, or an empty half, does not split");
+        }
+    }
+}
+
+namespace
+{
+    // ---- Blueprint functions: pending until the class is loaded, then kept ----
+
+    // WBP_InventorySlot_C::SetSlotSize as the game reflects it: InSize in, a
+    // local the Blueprint function declares after it (not a parameter).
+    std::vector<LayoutCheck::FunctionProperty> SlotSizeChildren(int32_t inSizeSize)
+    {
+        using namespace LayoutCheck;
+        return {
+            FunctionProperty{ LiveProperty{ "InSize", 0, inSizeSize, false, 0 }, kPropertyParm | 0x1 },
+            FunctionProperty{ LiveProperty{ "CallFunc_Add_ReturnValue", 0x10, 8, false, 0 }, 0x0 },
+            FunctionProperty{ LiveProperty{ "Temp_bool_Variable", 0x18, 1, false, 0 }, 0x0 },
+        };
+    }
+
+    void BlueprintFunctionsPendThenResolve()
+    {
+        using namespace LayoutCheck;
+        using Clock = BlueprintParams::Clock;
+        std::printf("blueprint function parameters\n");
+
+        const std::string name = "WBP_InventorySlot_C_SetSlotSize";
+        const Clock::time_point t0{};
+        const auto sec = [](int n) { return std::chrono::seconds(n); };
+
+        {
+            const auto splits = BlueprintSplits(name);
+            Check(splits.size() == 1 && splits[0].owner == "WBP_InventorySlot_C" && splits[0].function == "SetSlotSize",
+                "a Blueprint class (_C) is one split of the name");
+            Check(BlueprintSplits("CrEnviroWaveSubsystem_GetCurrentStageSettings").empty()
+                    && BlueprintSplits("/Script/UMG.WBP_X_C_Run").empty() && BlueprintSplits("WBP_Slot_SetSize").empty(),
+                "a native name, a /Script/ name and a name with no _C class are not Blueprint names");
+        }
+
+        // The locals of the Blueprint function are not parameters: they do not
+        // count and they do not stretch the block.
+        {
+            const LiveFunction fn = FunctionOf("Game.WBP_InventorySlot_C.SetSlotSize", SlotSizeChildren(8));
+            Check(fn.params.size() == 1 && fn.params[0].name == "InSize" && ParmsSizeOf(fn) == 8,
+                "locals are left out: one parameter, a block of 8 bytes");
+        }
+
+        int calls = 0;
+        bool loaded = false;
+        int32_t inSizeSize = 8;
+        const BlueprintFinder find = [&](const std::vector<ParamSplit>&)
+        {
+            ++calls;
+            BlueprintFind found;
+            found.classLoaded = loaded;
+            if (loaded)
+                found.functions.push_back(FunctionOf("Game.WBP_InventorySlot_C.SetSlotSize", SlotSizeChildren(inSizeSize)));
+            return found;
+        };
+
+        BlueprintParams cache(sec(2));
+        bool pending = false;
+
+        // Not loaded: pending, not an error that stops anything, and not a "no native" answer.
+        ParamMember r = cache.Resolve(name, "", t0, true, find, pending);
+        Check(pending && !r.error.empty() && r.error.rfind("no native", 0) != 0 && calls == 1,
+            "not loaded: pending, with one look");
+        r = cache.Resolve(name, "InSize", t0 + sec(1), true, find, pending);
+        Check(pending && calls == 1, "retried inside the interval: pending, and no look at the game");
+        for (int i = 0; i < 100; ++i)
+            cache.Resolve(name, "InSize", t0 + std::chrono::milliseconds(1000 + i), true, find, pending);
+        Check(calls == 1, "a hundred more retries inside the interval look at nothing");
+        r = cache.Resolve(name, "InSize", t0 + sec(2), true, find, pending);
+        Check(pending && calls == 2, "after the interval it looks again");
+        r = cache.Resolve(name, "InSize", t0 + sec(60), false, find, pending);
+        Check(pending && calls == 2 && r.error.find("game thread") != std::string::npos,
+            "off the game thread it does not look, and says so");
+        r = cache.Resolve(name, "InSize", t0 + sec(61), true, find, pending);
+        Check(pending && calls == 3, "an off-thread request did not use up the interval");
+
+        // The class loads: the numbers, once.
+        loaded = true;
+        r = cache.Resolve(name, "", t0 + sec(70), true, find, pending);
+        Check(!pending && r.error.empty() && r.size == 8 && calls == 4, "loaded: the block size is the parameter's end, locals left out");
+        r = cache.Resolve(name, "InSize", t0 + sec(70), true, find, pending);
+        Check(!pending && r.error.empty() && r.offset == 0 && r.size == 8 && calls == 4,
+            "loaded: the parameter, answered from what was seen");
+
+        // The class is freed again (main menu), and the game reloads it with other numbers: the process keeps the first.
+        loaded = false;
+        inSizeSize = 16;
+        r = cache.Resolve(name, "", t0 + sec(200), true, find, pending);
+        Check(!pending && r.size == 8 && calls == 4, "unloaded again: the same numbers, and no look at the game");
+        r = cache.Resolve(name, "InSize", t0 + sec(200), false, find, pending);
+        Check(!pending && r.size == 8 && calls == 4, "unloaded and off the game thread: still the same numbers");
+
+        // A pending name does not hold up another.
+        r = cache.Resolve("WBP_Other_C_Run", "", t0 + sec(70), true, find, pending);
+        Check(pending && calls == 5, "another name is looked up on its own");
+
+        // The class is loaded and the request is wrong: a final answer, found once.
+        {
+            int looks = 0;
+            const BlueprintFinder wrong = [&](const std::vector<ParamSplit>&)
+            {
+                ++looks;
+                BlueprintFind found;
+                found.classLoaded = true;
+                found.functions.push_back(FunctionOf("Game.WBP_Wrong_C.Run", SlotSizeChildren(8)));
+                return found;
+            };
+            r = cache.Resolve("WBP_Wrong_C_Run", "Size", t0, true, wrong, pending);
+            Check(!pending && r.error.find("no parameter Size") != std::string::npos && looks == 1,
+                "a parameter the loaded function does not have is refused, not pending");
+            r = cache.Resolve("WBP_Wrong_C_Run", "Size", t0 + sec(100), true, wrong, pending);
+            Check(!pending && !r.error.empty() && looks == 1, "and the refusal is final: no new look");
+
+            const BlueprintFinder noFunction = [&](const std::vector<ParamSplit>&)
+            {
+                ++looks;
+                BlueprintFind found;
+                found.classLoaded = true;
+                return found;
+            };
+            r = cache.Resolve("WBP_Wrong_C_Walk", "", t0, true, noFunction, pending);
+            Check(!pending && r.error.find("not the parameter struct of any function") != std::string::npos,
+                "a loaded class without the function is refused, not pending");
+
+            // Two copies of the class (the old one not collected yet) with the same parameters are one function.
+            const BlueprintFinder twice = [&](const std::vector<ParamSplit>&)
+            {
+                BlueprintFind found;
+                found.classLoaded = true;
+                found.functions.push_back(FunctionOf("Game.WBP_Twice_C.Run", SlotSizeChildren(8)));
+                found.functions.push_back(FunctionOf("Game.WBP_Twice_C.Run", SlotSizeChildren(8)));
+                return found;
+            };
+            r = cache.Resolve("WBP_Twice_C_Run", "InSize", t0, true, twice, pending);
+            Check(!pending && r.error.empty() && r.size == 8, "two copies of one class are one function");
+
+            // Two classes of the name with other parameters are ambiguous.
+            const BlueprintFinder differ = [&](const std::vector<ParamSplit>&)
+            {
+                BlueprintFind found;
+                found.classLoaded = true;
+                found.functions.push_back(FunctionOf("Game.WBP_Differ_C.Run", SlotSizeChildren(8)));
+                found.functions.push_back(FunctionOf("Game.WBP_Differ_C.Run", SlotSizeChildren(16)));
+                return found;
+            };
+            r = cache.Resolve("WBP_Differ_C_Run", "", t0, true, differ, pending);
+            Check(!pending && r.error.find("2 functions") != std::string::npos, "two functions that differ are ambiguous");
+        }
+
+        // The result owns its numbers: nothing of the finder's answer is needed afterwards.
+        {
+            BlueprintParams fresh(sec(2));
+            std::vector<LiveFunction> source;
+            const BlueprintFinder once = [&](const std::vector<ParamSplit>&)
+            {
+                BlueprintFind found;
+                found.classLoaded = true;
+                found.functions = source;
+                return found;
+            };
+            source.push_back(FunctionOf("Game.WBP_Own_C.Run", SlotSizeChildren(8)));
+            fresh.Resolve("WBP_Own_C_Run", "", t0, true, once, pending);
+            source.clear();
+            source.shrink_to_fit();
+            r = fresh.Resolve("WBP_Own_C_Run", "InSize", t0 + sec(5), true, nullptr, pending);
+            Check(!pending && r.size == 8, "the answer outlives the data it was copied from, and needs no finder once seen");
+        }
+    }
 }
 
 int main()
 {
+    BlueprintFunctionsPendThenResolve();
     SameBuildMatches();
     ContentUpdateMovesThePlayer();
     MismatchSwitchesPluginsOffAndReports();
@@ -611,6 +935,7 @@ int main()
     UsedMembersOnly();
     ConsumersDecideWhatStops();
     ProcessEventSlotDecidesSafeOff();
+    FunctionParamsFollowTheGame();
 
     if (g_failures)
         std::printf("\n%d check(s) FAILED\n", g_failures);

@@ -49,7 +49,7 @@ namespace CompatReport
         uint32_t    rowSize;
         bool        reflected;
         uint32_t    reflectedSize;
-        std::string result;     // match, mismatch, row-only, no-row or reflected-only
+        std::string result;     // match, mismatch, row-only, no-row, reflected-only or pending
     };
 
     // What the boot switched off.

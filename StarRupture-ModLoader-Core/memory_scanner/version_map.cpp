@@ -12,6 +12,7 @@
 #include <atomic>
 #include <cstdio>
 #include <cstring>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <set>
@@ -1315,6 +1316,7 @@ namespace VersionMap
 		case SizeResult::RowOnly:       return "row-only";
 		case SizeResult::NoRow:         return "no-row";
 		case SizeResult::ReflectedOnly: return "reflected-only";
+		case SizeResult::Pending:       return "pending";
 		}
 		return "";
 	}
@@ -1328,9 +1330,28 @@ namespace VersionMap
 			return g_liveFields && LayoutChangedWithSupers(g_liveFields(className, std::string()).paths);
 		}
 
-		bool PickField(const char* owner, const FieldRequest& request, const Exe& running,
-			FieldValue& out, std::string& error)
+		// What was last logged for a PLUGIN_FIELD_LATE request, by plugin and
+		// key: the plugin repeats such a request until it resolves, and each
+		// state is worth one line.
+		enum LateState { kLatePending = 1, kLateRefused = 2, kLateResolved = 3 };
+		std::mutex                   g_lateLock;
+		std::map<std::string, int>   g_lateLogged;
+
+		// True when `state` is not what was last logged for this request.
+		bool LateStateChanged(const char* owner, const std::string& key, LateState state)
 		{
+			std::lock_guard<std::mutex> lock(g_lateLock);
+			int& last = g_lateLogged[std::string(owner ? owner : "?") + "\n" + key];
+			if (last == state)
+				return false;
+			last = state;
+			return true;
+		}
+
+		bool PickField(const char* owner, const FieldRequest& request, const Exe& running,
+			FieldValue& out, std::string& error, bool& pending)
+		{
+			pending = false;
 			const bool sizeRow  = request.member.empty();
 			// A size request is served from reflection when the game reflects the
 			// type, and from the running build's row when it does not, whether or
@@ -1339,10 +1360,16 @@ namespace VersionMap
 			const bool check    = (request.flags & PLUGIN_FIELD_CHECK) != 0;
 			const bool bitfield = (request.flags & PLUGIN_FIELD_BITFIELD) != 0;
 			const bool anySize  = (request.flags & PLUGIN_FIELD_ANY_SIZE) != 0;
+			const bool late     = (request.flags & PLUGIN_FIELD_LATE) != 0;
 
 			if (request.className.empty() || (sizeRow && bitfield))
 			{
 				error = "bad request: a field needs a class, and a size row is not a bitfield";
+				return false;
+			}
+			if (late && (check || bitfield || (request.flags & PLUGIN_FIELD_NATIVE) != 0))
+			{
+				error = "bad request: PLUGIN_FIELD_LATE is for a reflected request, not NATIVE, CHECK or BITFIELD";
 				return false;
 			}
 			if (anySize && (sizeRow || check || bitfield || request.size != 0))
@@ -1460,6 +1487,16 @@ namespace VersionMap
 				const FieldCandidate* checked = row ? row : LatestRow(rows);
 				std::string member = checked && !checked->member.empty() ? checked->member : request.member;
 				LiveField live = sizeRow ? sizeLive : g_liveFields(request.className, member);
+				if (live.pending)
+				{
+					// Not an answer yet. A LATE request waits for it; any other
+					// is refused with the same text.
+					error   = "reflection: " + live.error;
+					pending = late;
+					if (late && sizeRow)
+						RecordSize(owner, request.key, SizeResult::Pending, nullptr, nullptr);
+					return false;
+				}
 				if (!live.error.empty() && member != request.member)
 				{
 					// The row's new name is not in this build: ask for it by its own.
@@ -1578,18 +1615,30 @@ namespace VersionMap
 				how += ", as compiled";
 			}
 
-			LogPick(owner, request.key, how + " (" + (sizeRow ? Hex(value.size) : FieldText(value, bitfield)) + ")");
+			if (!late || LateStateChanged(owner, request.key, kLateResolved))
+				LogPick(owner, request.key, how + " (" + (sizeRow ? Hex(value.size) : FieldText(value, bitfield)) + ")");
 			out = value;
 			return true;
 		}
 	}
 
 	bool SelectField(const char* owner, const FieldRequest& request, const Exe& running,
-		FieldValue& out, std::string& error)
+		FieldValue& out, std::string& error, bool* pendingOut)
 	{
-		if (PickField(owner, request, running, out, error))
+		bool pending = false;
+		const bool picked = PickField(owner, request, running, out, error, pending);
+		if (pendingOut)
+			*pendingOut = pending;
+		if (picked)
 			return true;
-		ModLoaderLogger::LogWarn(L"[Map] %S: %S: refused: %S", owner ? owner : "?", request.key.c_str(), error.c_str());
+		const bool late = (request.flags & PLUGIN_FIELD_LATE) != 0;
+		if (pending)
+		{
+			if (LateStateChanged(owner, request.key, kLatePending))
+				ModLoaderLogger::LogInfo(L"[Map] %S: %S: pending: %S", owner ? owner : "?", request.key.c_str(), error.c_str());
+		}
+		else if (!late || LateStateChanged(owner, request.key, kLateRefused))
+			ModLoaderLogger::LogWarn(L"[Map] %S: %S: refused: %S", owner ? owner : "?", request.key.c_str(), error.c_str());
 		return false;
 	}
 

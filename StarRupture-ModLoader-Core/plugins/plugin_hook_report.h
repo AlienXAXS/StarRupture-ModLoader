@@ -69,6 +69,21 @@ namespace PluginHookReport
         std::vector<std::string> configKeys;  // "Section.Key" or "Section.*" entries it drives
     };
 
+    // A key of a declared feature that waits for a game class that is not
+    // loaded yet (PLUGIN_FIELD_LATE, a Blueprint class). The feature is off
+    // until the plugin's repeated request resolves; this is not a failure and
+    // is not in PluginReport, so it never opens the failure window.
+    struct PendingKey
+    {
+        std::string              plugin;
+        std::string              key;
+        std::string              detail;        // what is waited for, or why the request was refused for good
+        std::string              featureId;
+        std::string              featureTitle;
+        std::vector<std::string> configKeys;    // "Section.Key" or "Section.*" the feature drives
+        bool                     refused = false;  // the repeated request was refused: the feature stays off
+    };
+
     // Everything one plugin reported during its last scan session.
     struct PluginReport
     {
@@ -134,6 +149,22 @@ namespace PluginHookReport
     // otherwise it is a core failure.
     void RecordFailure(const IPluginSelf* self, const char* hookName, const char* detail, bool required,
                        Cause cause = Cause::Game);
+
+    // A PLUGIN_FIELD_LATE request whose class is not loaded yet. Each feature
+    // that lists the key goes off for now (*enabled = false, its config entries
+    // greyed) and is kept as a PendingKey; the plugin is not refused. A key no
+    // feature lists cannot wait: that is a core failure, as RecordFailure.
+    void RecordPending(const IPluginSelf* self, const char* key, const char* detail);
+
+    // The repeated request, outside a session. Resolved: the pending entries
+    // for the key are dropped (the plugin sets its own enabled flag). Refused:
+    // the entries stay, marked, with the reason. Both leave a key that was
+    // never pending alone.
+    void LateResolved(const IPluginSelf* self, const char* key);
+    void LateRefused(const IPluginSelf* self, const char* key, const char* detail);
+
+    // Copy of the pending keys of every plugin.
+    std::vector<PendingKey> Pending();
 
     // v72. Declare a feature for the open session. keys are the names later
     // passed to RecordFailure; configKeys are "Section.Key" or "Section.*".
