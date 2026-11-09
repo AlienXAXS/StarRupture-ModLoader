@@ -54,6 +54,7 @@ ImGuiKey ImGui_ImplWin32_KeyEventToImGuiKey(WPARAM wParam, LPARAM lParam);
 static HRESULT STDMETHODCALLTYPE HookedPresent(IDXGISwapChain* swapChain, UINT syncInterval, UINT flags);
 static void ReclaimRetiredTextures();
 static void ReleaseGpuCopyContext();
+static void PrecreateGpuCopyContext();
 static void    STDMETHODCALLTYPE HookedECL(ID3D12CommandQueue* pQueue, UINT NumCmdLists, ID3D12CommandList* const* ppCmdLists);
 static HRESULT STDMETHODCALLTYPE HookedCreateSwapChainForHwnd(void* pFactory, IUnknown* pDevice, HWND hWnd,
 	const void* pDesc, const void* pFullscreenDesc, void* pRestrictToOutput, void* ppSwapChain);
@@ -1162,6 +1163,10 @@ static bool InitD3D12Resources(IDXGISwapChain* swapChain)
 		g_frameCount,
 		static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(g_hwnd.load())));
 
+	// The device is known and nothing below can fail, so the copy context is made now
+	// instead of as a hitch in the first texture upload.
+	PrecreateGpuCopyContext();
+
 	g_initialized = true;
 	return true;
 }
@@ -2244,8 +2249,9 @@ static IWICImagingFactory* GetWICFactory()
 }
 
 // The queue, allocator, list, fence and event behind texture uploads and copies.
-// Its own queue, so it never conflicts with the main render queue. Made on first
-// use and kept, because making them per texture costs far more than the copy.
+// Its own queue, so it never conflicts with the main render queue. Made when the
+// device is captured (or on the first copy if that failed) and kept, because making
+// them per texture costs far more than the copy.
 //
 // Every function here needs g_textureMutex held, which is also what serialises
 // Load* calls from different threads. A copy waits for the GPU before it returns,
@@ -2277,6 +2283,41 @@ static void ReleaseGpuCopyContext()
 	g_gpuCopy = {};
 }
 
+// Makes the context on g_device. The list is left closed, ready for BeginGpuCopy.
+static bool CreateGpuCopyContext()
+{
+	D3D12_COMMAND_QUEUE_DESC queueDesc = {};
+	queueDesc.Type     = D3D12_COMMAND_LIST_TYPE_DIRECT;
+	queueDesc.NodeMask = 1;
+
+	bool ok =
+		SUCCEEDED(g_device->CreateCommandQueue(&queueDesc, IID_PPV_ARGS(&g_gpuCopy.queue))) &&
+		SUCCEEDED(g_device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&g_gpuCopy.allocator))) &&
+		SUCCEEDED(g_device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, g_gpuCopy.allocator, nullptr, IID_PPV_ARGS(&g_gpuCopy.list))) &&
+		SUCCEEDED(g_gpuCopy.list->Close()) &&
+		SUCCEEDED(g_device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&g_gpuCopy.fence)));
+	if (ok)
+	{
+		g_gpuCopy.event = CreateEvent(nullptr, FALSE, FALSE, nullptr);
+		ok = g_gpuCopy.event != nullptr;
+	}
+	if (!ok)
+		ReleaseGpuCopyContext();
+	return ok;
+}
+
+// Called by InitD3D12Resources once the device is captured. A failure is not fatal:
+// BeginGpuCopy makes the context on the first copy instead.
+static void PrecreateGpuCopyContext()
+{
+	std::lock_guard<std::mutex> lock(g_textureMutex);
+	// A Load* may have made it already, between the device capture and this call.
+	if (g_gpuCopy.queue)
+		return;
+	if (!CreateGpuCopyContext())
+		IMGUI_LOG_WARN("[ImGuiBackend] Could not create the texture copy context -- it will be made on the first texture upload");
+}
+
 // Returns an open list to record one copy into, or nullptr on failure.
 static ID3D12GraphicsCommandList* BeginGpuCopy()
 {
@@ -2285,29 +2326,8 @@ static ID3D12GraphicsCommandList* BeginGpuCopy()
 	if (g_shutdown)
 		return nullptr;
 
-	if (!g_gpuCopy.queue)
-	{
-		D3D12_COMMAND_QUEUE_DESC queueDesc = {};
-		queueDesc.Type     = D3D12_COMMAND_LIST_TYPE_DIRECT;
-		queueDesc.NodeMask = 1;
-
-		bool ok =
-			SUCCEEDED(g_device->CreateCommandQueue(&queueDesc, IID_PPV_ARGS(&g_gpuCopy.queue))) &&
-			SUCCEEDED(g_device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&g_gpuCopy.allocator))) &&
-			SUCCEEDED(g_device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, g_gpuCopy.allocator, nullptr, IID_PPV_ARGS(&g_gpuCopy.list))) &&
-			SUCCEEDED(g_device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&g_gpuCopy.fence)));
-		if (ok)
-		{
-			g_gpuCopy.event = CreateEvent(nullptr, FALSE, FALSE, nullptr);
-			ok = g_gpuCopy.event != nullptr;
-		}
-		if (!ok)
-		{
-			ReleaseGpuCopyContext();
-			return nullptr;
-		}
-		return g_gpuCopy.list;   // a new list starts open
-	}
+	if (!g_gpuCopy.queue && !CreateGpuCopyContext())
+		return nullptr;
 
 	if (FAILED(g_gpuCopy.allocator->Reset()) ||
 		FAILED(g_gpuCopy.list->Reset(g_gpuCopy.allocator, nullptr)))
