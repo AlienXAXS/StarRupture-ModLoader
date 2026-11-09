@@ -5,6 +5,7 @@
 - A fresh install opens a window titled Mod Loader Installed instead of Plugins Updated
 - Adapting to a new game version is quieter: the log no longer warns about every field on a build that has no map row of its own and is checked against another build's row. Those differences are now Debug lines, and the game's value is still the one used
 - The loader now skips version-map rows it doesn't recognise instead of refusing the whole map, so future map updates can add new kinds of rows
+- When the loader has no usable copy of the version-map feed (for example after a download failed), it downloads it again at the next launch instead of waiting a day
 - Plugins can now ask for the size of a game struct the game does not describe itself. The loader serves it from the version map's row for your game build, and turns the feature off on a build with no row. Structs the game does describe still use the game's own size. The compatibility report lists every size a plugin asked for
 - For plugin authors: PLUGIN_FIELD_ANY_SIZE now also works for a native member. The loader serves the offset and size from the map's row for your game build, so a plugin that only takes the member's address no longer has to know its size
 - For plugin authors: plugins can now ask where the game puts a game function's parameters and how big its parameter block is, so a plugin calling a game function keeps working when a game update adds or moves a parameter

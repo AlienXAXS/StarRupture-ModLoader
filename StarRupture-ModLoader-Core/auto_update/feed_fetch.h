@@ -20,7 +20,8 @@
 //                 cache is over a day old; on the parked-main-thread path only.
 //   AfterRefusal  a gate refusal that did not fetch this launch: fetch for the
 //                 next one, before Quit's exit.
-//   Stage3        on the auto-update thread, at most once a day.
+//   Stage3        on the auto-update thread, at most once a day while the
+//                 cache holds a verified feed; at once when it does not.
 //
 // Nothing is fetched on the server build, with `[AutoUpdate] Enabled` off, with
 // no VMAP_FEED_URL compiled in or with no public key.
@@ -80,6 +81,8 @@ namespace FeedFetch
 	// After a gate refusal; does nothing when Stage 1 already asked.
 	void AfterRefusal(const Config& cfg, bool stage1Asked);
 
-	// On the auto-update thread, at most once a day.
+	// On the auto-update thread, at most once a day while the cache holds a
+	// verified feed; an empty, truncated, oversize or unreadable cache is asked
+	// for again at once.
 	void Stage3(const Config& cfg);
 }

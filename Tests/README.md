@@ -310,7 +310,9 @@ against a server on 127.0.0.1 that the test starts. The test switch `allowPlainH
   the loader's own `fp` and under another.
 - No request (`WhyNot`): the server build, `[AutoUpdate] Enabled` off, no URL, no key. The server's hit
   count stays 0 through Refresh, Stage 1, Stage 3 and the refusal path.
-- The stages: Stage 3 asks only of a cache over a day old, and the check restarts the clock; a refusal
+- The stages: Stage 3 asks nothing of a verified cache under a day old, asks once it is over a day old,
+  and the check restarts the clock; an empty, a truncated or a locked cache under a day old is asked
+  for at once, with the reason in the log line, and the fetched feed replaces it; a refusal
   after Stage 1 asked does not ask again; Stage 1 asks only with the main thread parked.
 - The answers: a verified feed is stored verbatim; the same `seq` is unchanged; a 404, a server that never
   answers, a body that never arrives, a body over 1 MiB and a bad signature each fail and leave the cache
