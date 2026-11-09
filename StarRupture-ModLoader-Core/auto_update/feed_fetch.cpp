@@ -46,7 +46,7 @@ namespace
 	// Marks the cache as checked now, so "over a day old" counts from the
 	// last request and not from the last change. With no cache file it makes
 	// an empty one, which reads as no feed: Stage 1 then waits a day on a known
-	// exe, and Stage 3 asks again at the next launch.
+	// exe, and Stage 3 asks again the next time it runs.
 	void TouchCache(const std::wstring& path)
 	{
 		HANDLE h = CreateFileW(path.c_str(), FILE_WRITE_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_ALWAYS,

@@ -224,12 +224,12 @@ loader fetches only on the client, with `[AutoUpdate] Enabled` on, and only:
   CL-n". This happens with the game's main thread parked, where WinHTTP is safe;
 - after the version check or the pattern preflight refuses the game build, for the next launch,
   before the process exits (not when the startup request just made one);
-- from the auto-update thread, at most once a day, for the next launch.
+- from the auto-update thread, for the next launch: at most once a day while the cache holds a
+  verified feed, otherwise at every launch.
 
 An exe the map has never seen asks at every launch until a cached feed covers it; the once-a-day
-limit applies to the `absent` case and to the auto-update thread. The auto-update thread waits
-only while the cache holds a verified feed: an empty, cut-short, oversize or unreadable cache is
-asked for again at the next launch.
+limit applies to the `absent` case and to the auto-update thread. An empty, cut-short, oversize or
+unreadable cache does not count as a verified feed.
 
 **Request.** One HTTPS GET. A URL that is not `https` is refused, redirects from HTTPS to HTTP are
 disallowed, each operation has a 2 s timeout, the whole request has an 8 s deadline, and the body

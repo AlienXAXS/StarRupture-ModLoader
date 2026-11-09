@@ -794,8 +794,18 @@ int main()
 		FeedFetch::Stage3(cfg);
 		Check(srv.hits == 0, "Stage 3 asks nothing of a cache under a day old");
 		AgeFile(cache, kDay + 3600);
+		const auto logged = [](const wchar_t* text)
+		{
+			for (const std::wstring& line : TestDoubles::g_log)
+				if (line.find(text) != std::wstring::npos)
+					return true;
+			return false;
+		};
+		const wchar_t* unusableLine = L"[VersionFeed] Fetching the feed (stage 3, the cache is empty or unusable)";
+		TestDoubles::g_log.clear();
 		FeedFetch::Stage3(cfg);
 		Check(srv.hits == 1 && FeedFetch::CacheAgeSeconds(cache) < 60, "Stage 3 asks once a cache is over a day old, and the check restarts the clock");
+		Check(logged(L"[VersionFeed] Fetching the feed (stage 3)") && !logged(unusableLine), "...and gives the plain stage 3 reason");
 
 		// A cache that is not a verified feed does not hold the day's wait,
 		// however fresh. Each case starts from a file stamped now.
@@ -812,8 +822,10 @@ int main()
 
 		writeFresh("");
 		srv.hits = 0;
+		TestDoubles::g_log.clear();
 		FeedFetch::Stage3(badCfg);
 		Check(srv.hits == 1 && Slurp(bad) == srv.feed, "Stage 3 asks at once on an empty cache under a day old, and stores the feed");
+		Check(logged(unusableLine), "...and says the cache is empty or unusable");
 
 		writeFresh(srv.feed.substr(0, srv.feed.size() / 2));
 		srv.hits = 0;
