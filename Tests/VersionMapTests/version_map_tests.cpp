@@ -679,8 +679,14 @@ int main()
 			&& e == "the game's member is 0x8 bytes, the code was compiled for 0x4", "field: a non-zero size that does not match is still refused");
 		Check(!Field("ATest::Reflected", "ATest", "Reflected", PLUGIN_FIELD_ANY_SIZE, 4, {}, v, e)
 			&& e.find("bad request: PLUGIN_FIELD_ANY_SIZE") == 0, "field: the any-size flag with a non-zero size is refused");
-		Check(!Field("ATest::Native", "ATest", "Native", PLUGIN_FIELD_NATIVE | PLUGIN_FIELD_ANY_SIZE, 0, {}, v, e)
-			&& e.find("bad request: PLUGIN_FIELD_ANY_SIZE") == 0, "field: a native member refuses the any-size flag");
+		Check(Field("FPlain::Block", "FPlain", "Block", PLUGIN_FIELD_NATIVE | PLUGIN_FIELD_ANY_SIZE, 0, {}, v, e)
+			&& v.offset == 0x120 && v.size == 0xB0, "field: a native member with the any-size flag is served from the build's own row, with the row's size");
+		Check(!Field("FPlain::Block", "FPlain", "Block", PLUGIN_FIELD_NATIVE | PLUGIN_FIELD_ANY_SIZE, 0, {}, v, e, VersionMap::Exe{ 130000, 0, 0 })
+			&& e.find("no row for CL-130000") == 0, "field: a native any-size request is refused on a build with only another build's row");
+		Check(!Field("FPlain::Block", "FPlain", "Block", PLUGIN_FIELD_NATIVE, 0x20, {}, v, e)
+			&& e.find("gives size 0xB0, the code was compiled for 0x20") != std::string::npos, "field: a native member of an exact size is still refused on a mismatch");
+		Check(!Field("ATest::Plain", "ATest", "Plain", PLUGIN_FIELD_NATIVE | PLUGIN_FIELD_ANY_SIZE, 0, {}, v, e, built)
+			&& e.find("no row for CL-127004") == 0, "field: a native any-size request has no built offset to fall back on");
 		Check(!Field("ATest::Missing", "ATest", "Missing", PLUGIN_FIELD_ANY_SIZE, 0, {}, v, e) && e == "reflection: no member Missing",
 			"field: the any-size flag does not accept a member the game does not have");
 		Check(Field("ATest::Renamed", "ATest", "NewName", 0, 4, { FieldRow(128786, 0x44, 4) }, v, e) && v.offset == 0x44,
