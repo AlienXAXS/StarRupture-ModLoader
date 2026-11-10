@@ -109,13 +109,15 @@ IMGUI_HOST_API bool                   ImGuiHost_IsTextInputActive();
 IMGUI_HOST_API HWND                   ImGuiHost_GetGameWindow();
 
 // Slate's present step (hooks/game/slate_present). Render thread: builds the
-// ImGui frame and records it for rhiBackBuffer (an FRHITexture*) on the
-// host's own command list. Returns the slot to submit, or -1 when nothing was
-// recorded (not initialised, not the game's back buffer, a Present-time draw
-// in progress). Every slot returned must be submitted.
+// ImGui frame for rhiBackBuffer (an FRHITexture*) and keeps a copy of it.
+// Returns the slot to submit, or -1 when nothing was recorded (not
+// initialised, not the game's back buffer, a Present-time draw in progress).
+// Every slot returned must be submitted, and rhiBackBuffer must stay valid
+// until it is.
 IMGUI_HOST_API int                    ImGuiHost_RecordUiOverlay(void* rhiBackBuffer);
 
-// RHI thread, in command order: submits a recorded slot on the host's queue
+// RHI thread, in command order: draws a recorded slot into the buffer
+// rhiBackBuffer names at this point and submits it on the host's queue
 // behind the ready fence. True fills *sync; the caller must then signal the
 // ready fence and wait on the done fence on UE's queue. False: nothing was
 // queued and there is nothing to signal or wait on.

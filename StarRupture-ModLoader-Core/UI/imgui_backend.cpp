@@ -219,7 +219,7 @@ namespace
 	// Used by LoadFromUTexture2D to detect (and warn about) render-thread calls.
 	std::atomic<DWORD> g_presentOwnerThread{ 0 };
 
-	// The thread that is recording an overlay draw right now: UiPass::Record at
+	// The thread that is building an overlay frame right now: UiPass::Record at
 	// Slate's present step, or HookedPresent's fallback draw. Only one of them
 	// draws a given frame. Unlike g_presentOwnerThread it is not held across the
 	// real Present, so a Present blocked in vsync does not cost the next frame
@@ -787,7 +787,13 @@ static bool CreateDeviceD3D(HWND hWnd)
 	return ok;
 }
 
-namespace UiPass { static void WaitForDraws(); }
+namespace UiPass
+{
+	// The RHI thread records overlay draws with the backend's device objects
+	// and buffers (Submit); this keeps it off them while they change.
+	static std::mutex g_submitMutex;
+	static void WaitForDraws();
+}
 
 // ---------------------------------------------------------------------------
 // RebuildFontAtlas
@@ -803,6 +809,7 @@ namespace UiPass { static void WaitForDraws(); }
 // ---------------------------------------------------------------------------
 static void RebuildFontAtlas(bool initialSetup)
 {
+	std::unique_lock<std::mutex> drawLock(UiPass::g_submitMutex, std::defer_lock);
 	if (!initialSetup)
 	{
 		// Wait for the GPU to finish all pending work before destroying resources.
@@ -815,6 +822,8 @@ static void RebuildFontAtlas(bool initialSetup)
 		}
 		// Overlay draws submitted at Slate's present step run on their own queue.
 		UiPass::WaitForDraws();
+		// Held until the device objects exist again.
+		drawLock.lock();
 		ImGui_ImplDX12_InvalidateDeviceObjects();
 	}
 
@@ -1402,15 +1411,24 @@ static void BuildImGuiFrame()
 // interpolation has Slate draw the UI again over each interpolated frame.
 // ImGui drawn at Present comes after both, so it is on real frames only.
 //
-// So the overlay is drawn there instead. It is recorded here, on the render
-// thread, on our own command list, and submitted from an RHI command on our
-// own queue, between a fence UE's queue signals after Slate's draw and one
-// UE's queue waits on before anything reads the back buffer. Nothing is
-// recorded on UE's command lists, so UE's state cache never sees state it
-// did not set. While these draws come, HookedPresent draws nothing; once they
-// stop (the hook did not resolve, or no window is drawn into the game's back
-// buffer), it draws as before.
+// So the overlay is drawn there instead. The ImGui frame is built here, on
+// the render thread, and copied out of ImGui. An RHI command records it on
+// our own command list and submits it on our own queue, between a fence UE's
+// queue signals after Slate's draw and one UE's queue waits on before
+// anything reads the back buffer. The draw is recorded there and not on the
+// render thread because only by then does Slate's texture name the swap
+// chain buffer this frame is presented from (during a blocking load or after
+// a focus change it often names the other one earlier), and a recorded list
+// keeps the buffer it was given. Nothing is recorded on UE's command lists,
+// so UE's state cache never sees state it did not set. While these draws
+// come, HookedPresent draws nothing; once they stop (the hook did not
+// resolve, or no window is drawn into the game's back buffer), it draws as
+// before.
 // ---------------------------------------------------------------------------
+
+// FRHITexture::GetNativeResource: the D3D12 resource UE's texture names now.
+static ID3D12Resource* GetNativeBackBuffer(void* rhiBackBuffer);
+
 namespace UiPass
 {
 	// One per ImGui frame in flight (ImGui_ImplDX12 NumFramesInFlight), so the
@@ -1432,9 +1450,14 @@ namespace UiPass
 		ID3D12GraphicsCommandList* list = nullptr;
 		UINT64                     fenceValue = 0;      // g_fence value this slot's draw signals
 		std::atomic<bool>          pending{ false };    // recorded, not yet submitted
+		// Set by Record, read by Submit once pending is seen.
+		void*                      rhiBackBuffer = nullptr; // the FRHITexture* Slate drew into
+		UINT64                     width = 0;           // its size when Record checked it
+		UINT                       height = 0;
+		ImDrawData                 drawData;            // the frame, copied out of ImGui
+		ImVector<ImDrawList*>      drawLists;           // owned; reused frame to frame
 	};
 
-	static std::mutex            g_submitMutex;         // the queue and slots vs. the RHI thread
 	static ID3D12CommandQueue*   g_queue = nullptr;
 	static ID3D12Fence*          g_readyFence = nullptr;
 	static ID3D12Fence*          g_doneFence = nullptr; // g_fence, with a reference of our own
@@ -1482,6 +1505,10 @@ namespace UiPass
 			if (slot.list) { slot.list->Release(); slot.list = nullptr; }
 			if (slot.allocator) { slot.allocator->Release(); slot.allocator = nullptr; }
 			slot.pending = false;
+			slot.drawData.Clear();
+			for (ImDrawList* drawList : slot.drawLists)
+				IM_DELETE(drawList);
+			slot.drawLists.clear();
 		}
 		if (g_uiRtvHeap) { g_uiRtvHeap->Release(); g_uiRtvHeap = nullptr; }
 		if (g_queue) { g_queue->Release(); g_queue = nullptr; }
@@ -1553,7 +1580,7 @@ namespace UiPass
 		return last ? static_cast<LONGLONG>(GetTickCount64() - last) : -1;
 	}
 
-	// A frame Record turned away. Rate limited: it can repeat every frame.
+	// A frame Record or Submit turned away. Rate limited: it can repeat every frame.
 	static void LogReject(const char* reason, const D3D12_RESOURCE_DESC& desc)
 	{
 		static std::atomic<ULONGLONG> s_lastLogMs{ 0 };
@@ -1568,15 +1595,66 @@ namespace UiPass
 			static_cast<unsigned>(g_rtvFormat));
 	}
 
-	// Render thread, at Slate's present step.
-	static int Record(ID3D12Resource* backBuffer)
+	// The overlay can draw into it: 2D, one sample, the swap chain's format.
+	static bool IsDrawableBackBuffer(const D3D12_RESOURCE_DESC& desc)
 	{
-		if (!g_initialized || g_shutdown || g_failed || !backBuffer)
+		return desc.Dimension == D3D12_RESOURCE_DIMENSION_TEXTURE2D && desc.SampleDesc.Count == 1 &&
+			NormalizeForImGui(desc.Format) == g_rtvFormat;
+	}
+
+	template <typename T>
+	static void CopyVector(ImVector<T>& to, const ImVector<T>& from)
+	{
+		to.resize(from.Size);
+		if (from.Size)
+			memcpy(to.Data, from.Data, static_cast<size_t>(from.size_in_bytes()));
+	}
+
+	// Render thread, under g_imguiMutex: the slot's copy of the frame ImGui just
+	// built, which the next frame rebuilds. Textures are uploaded first, so every
+	// texture id copied is final, and Submit reads nothing of ImGui's own.
+	static void CopyDrawData(const ImDrawData& from, Slot& slot)
+	{
+		if (from.Textures)
+			for (ImTextureData* tex : *from.Textures)
+				if (tex->Status != ImTextureStatus_OK)
+					ImGui_ImplDX12_UpdateTexture(tex);
+
+		ImDrawData& to = slot.drawData;
+		to.Clear();
+		to.Valid = from.Valid;
+		to.TotalIdxCount = from.TotalIdxCount;
+		to.TotalVtxCount = from.TotalVtxCount;
+		to.DisplayPos = from.DisplayPos;
+		to.DisplaySize = from.DisplaySize;
+		to.FramebufferScale = from.FramebufferScale;
+		for (int i = 0; i < from.CmdLists.Size; ++i)
+		{
+			if (i == slot.drawLists.Size)
+				slot.drawLists.push_back(IM_NEW(ImDrawList)(nullptr));
+			const ImDrawList* source = from.CmdLists[i];
+			ImDrawList* copy = slot.drawLists[i];
+			CopyVector(copy->CmdBuffer, source->CmdBuffer);
+			CopyVector(copy->IdxBuffer, source->IdxBuffer);
+			CopyVector(copy->VtxBuffer, source->VtxBuffer);
+			for (ImDrawCmd& cmd : copy->CmdBuffer)
+				cmd.TexRef = ImTextureRef(cmd.GetTexID());
+			to.CmdLists.push_back(copy);
+		}
+		to.CmdListsCount = to.CmdLists.Size;
+	}
+
+	// Render thread, at Slate's present step.
+	static int Record(void* rhiBackBuffer)
+	{
+		if (!g_initialized || g_shutdown || g_failed)
+			return -1;
+		ID3D12Resource* const backBuffer = GetNativeBackBuffer(rhiBackBuffer);
+		if (!backBuffer)
 			return -1;
 
 		const D3D12_RESOURCE_DESC desc = backBuffer->GetDesc();
-		if (desc.Dimension != D3D12_RESOURCE_DIMENSION_TEXTURE2D || desc.SampleDesc.Count != 1 ||
-			NormalizeForImGui(desc.Format) != g_rtvFormat)
+		if (!IsDrawableBackBuffer(desc))
 		{
 			LogReject("not a matching 2D back buffer (dimension, samples or format)", desc);
 			return -1;
@@ -1631,23 +1709,12 @@ namespace UiPass
 			// Before RenderFrame, as in HookedPresent.
 			ReclaimRetiredTextures();
 			BuildImGuiFrame();
-
-			slot.allocator->Reset();
-			slot.list->Reset(slot.allocator, nullptr);
-
-			D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle = g_uiRtvHeap->GetCPUDescriptorHandleForHeapStart();
-			D3D12_RENDER_TARGET_VIEW_DESC rtvDesc = {};
-			rtvDesc.Format = g_rtvFormat;
-			rtvDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D;
-			g_device->CreateRenderTargetView(backBuffer, &rtvDesc, rtvHandle);
-
-			// UE has put the back buffer in RENDER_TARGET for this list.
-			slot.list->OMSetRenderTargets(1, &rtvHandle, FALSE, nullptr);
-			slot.list->SetDescriptorHeaps(1, &g_srvHeap);
-			ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), slot.list);
-			slot.list->Close();
+			CopyDrawData(*ImGui::GetDrawData(), slot);
 			slot.fenceValue = ++g_fenceValue;
 		}
+		slot.rhiBackBuffer = rhiBackBuffer;
+		slot.width = desc.Width;
+		slot.height = desc.Height;
 		slot.pending.store(true, std::memory_order_release);
 		g_lastDoneValue = slot.fenceValue;
 		g_lastDrawMs = GetTickCount64();
@@ -1657,7 +1724,8 @@ namespace UiPass
 	}
 
 	// RHI thread, in command order, so slots arrive in the order recorded and
-	// g_fence values rise.
+	// g_fence values rise. The draw is recorded here, into the buffer Slate's
+	// texture names at this point of the frame.
 	static bool Submit(int index, ImGuiUiOverlaySync* sync)
 	{
 		std::lock_guard<std::mutex> lock(g_submitMutex);
@@ -1666,6 +1734,33 @@ namespace UiPass
 		Slot& slot = g_slots[index];
 		if (!slot.pending.load(std::memory_order_acquire))
 			return false;
+
+		ID3D12Resource* const backBuffer = g_shutdown ? nullptr : GetNativeBackBuffer(slot.rhiBackBuffer);
+		const D3D12_RESOURCE_DESC desc = backBuffer ? backBuffer->GetDesc() : D3D12_RESOURCE_DESC{};
+		if (!backBuffer || !IsDrawableBackBuffer(desc) || desc.Width != slot.width || desc.Height != slot.height)
+		{
+			if (!g_shutdown)
+				LogReject("the buffer at submit is not the one checked at record", desc);
+			// Nothing drawn; the slot's fence value is still reached, so nothing waits on it.
+			g_queue->Signal(g_doneFence, slot.fenceValue);
+			slot.pending.store(false, std::memory_order_release);
+			return false;
+		}
+
+		slot.allocator->Reset();
+		slot.list->Reset(slot.allocator, nullptr);
+
+		D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle = g_uiRtvHeap->GetCPUDescriptorHandleForHeapStart();
+		D3D12_RENDER_TARGET_VIEW_DESC rtvDesc = {};
+		rtvDesc.Format = g_rtvFormat;
+		rtvDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D;
+		g_device->CreateRenderTargetView(backBuffer, &rtvDesc, rtvHandle);
+
+		// UE has put the back buffer in RENDER_TARGET for this list.
+		slot.list->OMSetRenderTargets(1, &rtvHandle, FALSE, nullptr);
+		slot.list->SetDescriptorHeaps(1, &g_srvHeap);
+		ImGui_ImplDX12_RenderDrawData(&slot.drawData, slot.list);
+		slot.list->Close();
 
 		const UINT64 readyValue = ++g_readyValue;
 		g_queue->Wait(g_readyFence, readyValue);
@@ -1954,6 +2049,8 @@ static HRESULT STDMETHODCALLTYPE HookedPresent(IDXGISwapChain* swapChain, UINT s
 		std::lock_guard<std::recursive_mutex> imguiLock(g_imguiMutex);
 		BuildImGuiFrame();
 
+		// The backend's buffers are UiPass::Submit's too.
+		std::lock_guard<std::mutex> drawLock(UiPass::g_submitMutex);
 		g_cmdList->OMSetRenderTargets(1, &rtvHandle, FALSE, nullptr);
 		g_cmdList->SetDescriptorHeaps(1, &g_srvHeap);
 		ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), g_cmdList);
@@ -3994,17 +4091,20 @@ extern "C" __declspec(dllexport) void ImGuiHost_RequestFontRebuild()
 		g_pendingFontRebuild.store(true, std::memory_order_release);
 }
 
+static ID3D12Resource* GetNativeBackBuffer(void* rhiBackBuffer)
+{
+	using GetNativeResourceFn = void* (*)(void*);
+	void** vtable = *static_cast<void***>(rhiBackBuffer);
+	return static_cast<ID3D12Resource*>(
+		reinterpret_cast<GetNativeResourceFn>(vtable[kFRHITexture_GetNativeResource_Slot])(rhiBackBuffer));
+}
+
 // Slate's present step: see UiPass and hooks/game/slate_present.
 extern "C" __declspec(dllexport) int ImGuiHost_RecordUiOverlay(void* rhiBackBuffer)
 {
 	if (!rhiBackBuffer || !g_initialized || g_shutdown)
 		return -1;
-	// FRHITexture::GetNativeResource: the window's back buffer, UE's own texture.
-	using GetNativeResourceFn = void* (*)(void*);
-	void** vtable = *static_cast<void***>(rhiBackBuffer);
-	auto* resource = static_cast<ID3D12Resource*>(
-		reinterpret_cast<GetNativeResourceFn>(vtable[kFRHITexture_GetNativeResource_Slot])(rhiBackBuffer));
-	return UiPass::Record(resource);
+	return UiPass::Record(rhiBackBuffer);
 }
 
 extern "C" __declspec(dllexport) bool ImGuiHost_SubmitUiOverlay(int slot, ImGuiUiOverlaySync* sync)
