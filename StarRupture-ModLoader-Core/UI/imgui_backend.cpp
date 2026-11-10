@@ -1612,7 +1612,7 @@ namespace UiPass
 
 	// Render thread, under g_imguiMutex: the slot's copy of the frame ImGui just
 	// built, which the next frame rebuilds. Textures are uploaded first, so every
-	// texture id copied is final, and Submit reads nothing of ImGui's own.
+	// texture id copied is final, and Submit reads no frame state the next frame rebuilds.
 	static void CopyDrawData(const ImDrawData& from, Slot& slot)
 	{
 		if (from.Textures)
@@ -1740,7 +1740,7 @@ namespace UiPass
 		if (!backBuffer || !IsDrawableBackBuffer(desc) || desc.Width != slot.width || desc.Height != slot.height)
 		{
 			if (!g_shutdown)
-				LogReject("the buffer at submit is not the one checked at record", desc);
+				LogReject("no drawable buffer at submit, or its size changed since record", desc);
 			// Nothing drawn; the slot's fence value is still reached, so nothing waits on it.
 			g_queue->Signal(g_doneFence, slot.fenceValue);
 			slot.pending.store(false, std::memory_order_release);
