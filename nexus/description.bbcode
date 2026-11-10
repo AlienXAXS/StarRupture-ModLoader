@@ -36,14 +36,9 @@ A more detailed readme can be found on the [url=https://github.com/AlienXAXS/Sta
 [b][size=6]What's new[/size][/b]
 
 [list]
-[*]Plugin textures and icons load much faster: a 256x256 upload went from about 29 ms to about 0.7 ms, and copying a game icon from about 29 ms to about 0.3 ms. The short freeze when the first texture loads is gone too
-[*]Mod windows blink far less when the game gains or loses focus, for example after Alt-Tab
-[*]When the game has updated ahead of the mod loader, the game keeps loading while the mod loader's message is up, instead of freezing for up to 3 minutes. The message stays on top of the game window
-[*]A fresh install opens a window titled [b]Mod Loader Installed[/b] instead of [b]Plugins Updated[/b]
-[*]Quieter log when adapting to new game versions: differences against another build's row in the version object map (v map) are Debug lines, not warnings. The v map maps each game version's objects (functions, fields, sizes) for easy access
-[*]The loader skips version map rows it does not recognise instead of refusing the whole version map, so later versions of it can add new kinds of rows
-[*]When the loader has no usable copy of the version map file, for example after a download failed, it downloads it again at the next launch instead of waiting a day
-[*]For plugin authors: plugins can ask for the size of a game struct the game does not describe, a native member needs no size with PLUGIN_FIELD_ANY_SIZE, and plugins can ask where the game puts a function's parameters (also for Blueprint classes that load later, with the new PLUGIN_FIELD_LATE flag). The plugin interface version is unchanged
+[*]Mod windows no longer flicker while a save loads, and blink less after Alt-Tab
+[*]After a graphics crash (the game losing its graphics device), the mod windows come back by themselves: they stay off for one launch as a precaution, and ModLoader.log says so. Before, they stayed off until you edited modloader.ini. If your mod windows are still off from an earlier version, set [b]Enabled=1[/b] under [b][UI][/b] in [i]ModLoader\modloader.ini[/i]
+[*]ModLoader.log now records why the graphics device was lost and which step of a game icon copy failed, to help find the cause of a problem
 [/list]
 
 [line]
@@ -213,7 +208,7 @@ Config file: [i]ModLoader\modloader.ini[/i], created on first launch. The Settin
 
 [list]
 [*][b]Logging[/b] — Level (INFO by default; TRACE, DEBUG, INFO, WARN or ERROR), EnableFile, FileName, GameVerbosity, GameLogCategories (servers only; empty leaves the game log alone)
-[*][b]UI[/b] — Enabled (0 turns the overlay off), OpenKey (F2), GameMenuEntry (0 removes the MOD LOADER menu row), FontScale (0.75 to 5.00), FontFamily, Theme
+[*][b]UI[/b] — Enabled (0 turns the overlay off), OffAfterDeviceLoss (the loader sets it after a graphics device loss: the overlay stays off for the next launch only, then the key is removed), OpenKey (F2), GameMenuEntry (0 removes the MOD LOADER menu row), FontScale (0.75 to 5.00), FontFamily, Theme
 [*][b]Console[/b] — OpenKey (Tilde)
 [*][b]Input[/b] — SuppressKeybindsWhileTyping (1): keybinds ignore keys typed into a game text box
 [*][b]Network[/b] — ConnectionTimeout, InitialConnectTimeout (300 seconds each; 1 to 3600, 0 keeps the engine default)

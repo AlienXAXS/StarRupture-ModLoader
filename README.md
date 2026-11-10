@@ -624,6 +624,7 @@ these for you.
 | | `GameVerbosity` | `Default` | Set by the Logging tab |
 | | `GameLogCategories` | `LogTemp Error,LogSkinnedMeshComp Error` | Servers only. `<category> <verbosity>` pairs, comma separated. Empty leaves the game log alone |
 | `[UI]` | `Enabled` | `1` | `0` turns the overlay off |
+| | `OffAfterDeviceLoss` | none | The loader sets it to `1` after the GPU device is lost: the overlay stays off for the next launch only, and the loader removes the key then. Don't set it yourself. Older loader versions set `Enabled=0` instead, which stays off until you set `Enabled=1` |
 | | `OpenKey` | `F2` | |
 | | `GameMenuEntry` | `1` | `0` removes the **MOD LOADER** menu row |
 | | `FontScale` | `1.00` | 0.75 to 5.00. Set by **Text Size** |

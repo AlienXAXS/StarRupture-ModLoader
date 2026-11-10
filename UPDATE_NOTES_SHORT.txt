@@ -1,6 +1,4 @@
-- Plugin textures and icons load much faster, and the first one no longer freezes the game
-- Mod windows blink far less after Alt-Tab
-- A new box warns you when the game has updated ahead of the mod loader, without freezing the game
-- Quieter warnings when adapting to new game versions
-- Version object map fixes: unknown rows are skipped, and an empty or broken saved copy is downloaded again at the next launch
+- Mod windows no longer flicker while a save loads, and blink less after Alt-Tab
+- After a graphics crash the mod windows come back by themselves after one launch
+- The log says more about graphics crashes and icon copy failures
 - Full release notes are on GitHub and Nexus
