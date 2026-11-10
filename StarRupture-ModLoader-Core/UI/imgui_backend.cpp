@@ -2565,6 +2565,13 @@ static bool GpuCopyStep(const char* step, HRESULT hr)
 	return SUCCEEDED(hr);
 }
 
+// GetLastError as an HRESULT, never S_OK, for a failed Win32 call.
+static HRESULT LastErrorResult()
+{
+	const DWORD error = GetLastError();
+	return error ? HRESULT_FROM_WIN32(error) : E_FAIL;
+}
+
 // Called by CleanupD3D12Resources before the device goes, and after a failed copy
 // so a broken context is never reused: the next copy makes a new one.
 static void ReleaseGpuCopyContext()
@@ -2588,12 +2595,12 @@ static bool CreateGpuCopyContext()
 		GpuCopyStep("CreateCommandQueue", g_device->CreateCommandQueue(&queueDesc, IID_PPV_ARGS(&g_gpuCopy.queue))) &&
 		GpuCopyStep("CreateCommandAllocator", g_device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&g_gpuCopy.allocator))) &&
 		GpuCopyStep("CreateCommandList", g_device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, g_gpuCopy.allocator, nullptr, IID_PPV_ARGS(&g_gpuCopy.list))) &&
-		GpuCopyStep("Close", g_gpuCopy.list->Close()) &&
+		GpuCopyStep("CommandList::Close (new list)", g_gpuCopy.list->Close()) &&
 		GpuCopyStep("CreateFence", g_device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&g_gpuCopy.fence)));
 	if (ok)
 	{
 		g_gpuCopy.event = CreateEvent(nullptr, FALSE, FALSE, nullptr);
-		ok = GpuCopyStep("CreateEvent", g_gpuCopy.event ? S_OK : HRESULT_FROM_WIN32(GetLastError()));
+		ok = GpuCopyStep("CreateEvent", g_gpuCopy.event ? S_OK : LastErrorResult());
 	}
 	if (!ok)
 		ReleaseGpuCopyContext();
@@ -2640,7 +2647,7 @@ static ID3D12GraphicsCommandList* BeginGpuCopy()
 static bool FinishGpuCopy()
 {
 	ID3D12CommandList* const lists[] = { g_gpuCopy.list };
-	bool ok = GpuCopyStep("Close", g_gpuCopy.list->Close());
+	bool ok = GpuCopyStep("CommandList::Close", g_gpuCopy.list->Close());
 	if (ok)
 	{
 		g_gpuCopy.queue->ExecuteCommandLists(1, lists);
@@ -2648,7 +2655,7 @@ static bool FinishGpuCopy()
 		ok = GpuCopyStep("Signal", g_gpuCopy.queue->Signal(g_gpuCopy.fence, value)) &&
 			GpuCopyStep("SetEventOnCompletion", g_gpuCopy.fence->SetEventOnCompletion(value, g_gpuCopy.event)) &&
 			GpuCopyStep("WaitForSingleObject", WaitForSingleObject(g_gpuCopy.event, INFINITE) == WAIT_OBJECT_0
-				? S_OK : HRESULT_FROM_WIN32(GetLastError())) &&
+				? S_OK : LastErrorResult()) &&
 			GpuCopyStep("GetDeviceRemovedReason", g_device->GetDeviceRemovedReason());
 	}
 	if (!ok)
@@ -3300,12 +3307,14 @@ static PluginTextureHandle TextureLoadFromUTexture2D(SDK::UTexture2D* uTexture2D
 	}
 
 	// Once the device is lost every copy fails; stop trying for the rest of the session.
-	if (g_shutdown || FAILED(g_device->GetDeviceRemovedReason()))
+	const HRESULT removedReason = g_shutdown ? S_OK : g_device->GetDeviceRemovedReason();
+	if (g_shutdown || FAILED(removedReason))
 	{
 		static std::atomic<bool> s_stopLogged{ false };
 		if (!s_stopLogged.exchange(true))
-			IMGUI_LOG_WARN("[ImGuiBackend] LoadFromUTexture2D: the GPU device was lost or the overlay is shut down -- "
-				"no more texture copies this session");
+			IMGUI_LOG_WARN("[ImGuiBackend] LoadFromUTexture2D: the GPU device was lost (removed reason 0x%08X, %s) "
+				"or the overlay is shut down -- no more texture copies this session",
+				static_cast<unsigned>(removedReason), DeviceRemovedReasonName(removedReason));
 		return nullptr;
 	}
 
