@@ -104,8 +104,9 @@ void InitClientUI()
     }
     // Written by the ImGui host when the GPU device was lost: the next launch
     // runs without the overlay, in case the overlay caused it, and only that one.
-    const bool offAfterDeviceLoss = GetPrivateProfileIntW(L"UI", L"OffAfterDeviceLoss", 0, iniPath.c_str()) != 0;
-    if (offAfterDeviceLoss)
+    // Honoured only once it is cleared, so it can never outlast that launch.
+    const bool offAfterDeviceLoss =
+        GetPrivateProfileIntW(L"UI", L"OffAfterDeviceLoss", 0, iniPath.c_str()) != 0 &&
         WritePrivateProfileStringW(L"UI", L"OffAfterDeviceLoss", nullptr, iniPath.c_str());
     s_imguiEnabled = (val != 0) && !offAfterDeviceLoss;
     if (val == 0)
