@@ -1864,8 +1864,10 @@ static HRESULT PresentAndCheck(IDXGISwapChain* swapChain, UINT syncInterval, UIN
 		{
 			g_shutdown = true;
 
-			// Proactively write [UI] Enabled=0 to modloader.ini so the overlay
-			// is disabled automatically on next launch -- no manual editing needed.
+			// Proactively write [UI] OffAfterDeviceLoss=1 to modloader.ini so the
+			// overlay is disabled automatically on next launch -- no manual editing
+			// needed. That launch clears it (client_ui), so the one after has the
+			// overlay again, and a player's own Enabled=0 keeps its meaning.
 			wchar_t iniPath[MAX_PATH]{};
 			GetModuleFileNameW(nullptr, iniPath, MAX_PATH);
 			wchar_t* lastSlash = wcsrchr(iniPath, L'\\');
@@ -1873,10 +1875,10 @@ static HRESULT PresentAndCheck(IDXGISwapChain* swapChain, UINT syncInterval, UIN
 				wcscpy_s(lastSlash + 1,
 					static_cast<rsize_t>(MAX_PATH - (lastSlash + 1 - iniPath)),
 					L"ModLoader\\modloader.ini");
-			WritePrivateProfileStringW(L"UI", L"Enabled", L"0", iniPath);
+			WritePrivateProfileStringW(L"UI", L"OffAfterDeviceLoss", L"1", iniPath);
 
 			IMGUI_LOG_ERROR("[ImGuiBackend] ImGui disabled. "
-				"[UI] Enabled=0 written to modloader.ini -- overlay off on next launch.");
+				"[UI] OffAfterDeviceLoss=1 written to modloader.ini -- overlay off on the next launch only.");
 
 			if (g_callbacks.OnDeviceLost)
 				g_callbacks.OnDeviceLost(L"ImGui error: GPU device lost. Overlay disabled for next launch.");

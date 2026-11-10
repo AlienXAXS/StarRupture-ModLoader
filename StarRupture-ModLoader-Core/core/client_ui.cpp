@@ -102,7 +102,18 @@ void InitClientUI()
         WritePrivateProfileStringW(L"UI", L"Enabled", L"1", iniPath.c_str());
         val = 1;
     }
-    s_imguiEnabled = (val != 0);
+    // Written by the ImGui host when the GPU device was lost: the next launch
+    // runs without the overlay, in case the overlay caused it, and only that one.
+    const bool offAfterDeviceLoss = GetPrivateProfileIntW(L"UI", L"OffAfterDeviceLoss", 0, iniPath.c_str()) != 0;
+    if (offAfterDeviceLoss)
+        WritePrivateProfileStringW(L"UI", L"OffAfterDeviceLoss", nullptr, iniPath.c_str());
+    s_imguiEnabled = (val != 0) && !offAfterDeviceLoss;
+    if (val == 0)
+        LogToFile::Warn("[UI] The overlay is off: Enabled=0 under [UI] in modloader.ini (older loader versions also set it "
+            "after a GPU device loss). Set Enabled=1 to turn it back on.");
+    else if (offAfterDeviceLoss)
+        LogToFile::Warn("[UI] The overlay is off for this launch because the GPU device was lost last time. "
+            "It comes back on the next launch.");
 
     if (s_imguiEnabled)
     {
