@@ -1825,6 +1825,21 @@ static void LogPresentFailure(IDXGISwapChain* swapChain, HRESULT hr, UINT syncIn
 		width, height, buffers, scFlags, fullscreen ? 1 : 0, static_cast<unsigned>(fsHr));
 }
 
+// The name of an ID3D12Device::GetDeviceRemovedReason result.
+static const char* DeviceRemovedReasonName(HRESULT reason)
+{
+	switch (reason)
+	{
+	case S_OK:                             return "S_OK";
+	case DXGI_ERROR_DEVICE_HUNG:           return "DXGI_ERROR_DEVICE_HUNG";
+	case DXGI_ERROR_DEVICE_REMOVED:        return "DXGI_ERROR_DEVICE_REMOVED";
+	case DXGI_ERROR_DEVICE_RESET:          return "DXGI_ERROR_DEVICE_RESET";
+	case DXGI_ERROR_DRIVER_INTERNAL_ERROR: return "DXGI_ERROR_DRIVER_INTERNAL_ERROR";
+	case DXGI_ERROR_INVALID_CALL:          return "DXGI_ERROR_INVALID_CALL";
+	default:                               return "unknown";
+	}
+}
+
 static HRESULT PresentAndCheck(IDXGISwapChain* swapChain, UINT syncInterval, UINT flags, UINT64 frameIdx,
 	const char* drawPath)
 {
@@ -1863,6 +1878,13 @@ static HRESULT PresentAndCheck(IDXGISwapChain* swapChain, UINT syncInterval, UIN
 		if (s_deviceLostNotified.compare_exchange_strong(expected, true))
 		{
 			g_shutdown = true;
+
+			if (g_device)
+			{
+				const HRESULT reason = g_device->GetDeviceRemovedReason();
+				IMGUI_LOG_ERROR("[ImGuiBackend] Device removed reason: 0x%08X (%s)",
+					static_cast<unsigned>(reason), DeviceRemovedReasonName(reason));
+			}
 
 			// Proactively write [UI] OffAfterDeviceLoss=1 to modloader.ini so the
 			// overlay is disabled automatically on next launch -- no manual editing
@@ -2524,6 +2546,23 @@ namespace
 		UINT64                     value     = 0;
 	};
 	GpuCopyContext g_gpuCopy;
+
+	// The call the last failed copy stopped at and its result, for the caller's
+	// error line. Outside the context, which a failure releases.
+	struct GpuCopyFailure
+	{
+		const char* step = nullptr;
+		HRESULT     hr   = S_OK;
+	};
+	GpuCopyFailure g_gpuCopyFailure;
+}
+
+// True when hr succeeded; otherwise records step and hr in g_gpuCopyFailure.
+static bool GpuCopyStep(const char* step, HRESULT hr)
+{
+	if (FAILED(hr))
+		g_gpuCopyFailure = { step, hr };
+	return SUCCEEDED(hr);
 }
 
 // Called by CleanupD3D12Resources before the device goes, and after a failed copy
@@ -2546,15 +2585,15 @@ static bool CreateGpuCopyContext()
 	queueDesc.NodeMask = 1;
 
 	bool ok =
-		SUCCEEDED(g_device->CreateCommandQueue(&queueDesc, IID_PPV_ARGS(&g_gpuCopy.queue))) &&
-		SUCCEEDED(g_device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&g_gpuCopy.allocator))) &&
-		SUCCEEDED(g_device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, g_gpuCopy.allocator, nullptr, IID_PPV_ARGS(&g_gpuCopy.list))) &&
-		SUCCEEDED(g_gpuCopy.list->Close()) &&
-		SUCCEEDED(g_device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&g_gpuCopy.fence)));
+		GpuCopyStep("CreateCommandQueue", g_device->CreateCommandQueue(&queueDesc, IID_PPV_ARGS(&g_gpuCopy.queue))) &&
+		GpuCopyStep("CreateCommandAllocator", g_device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&g_gpuCopy.allocator))) &&
+		GpuCopyStep("CreateCommandList", g_device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, g_gpuCopy.allocator, nullptr, IID_PPV_ARGS(&g_gpuCopy.list))) &&
+		GpuCopyStep("Close", g_gpuCopy.list->Close()) &&
+		GpuCopyStep("CreateFence", g_device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&g_gpuCopy.fence)));
 	if (ok)
 	{
 		g_gpuCopy.event = CreateEvent(nullptr, FALSE, FALSE, nullptr);
-		ok = g_gpuCopy.event != nullptr;
+		ok = GpuCopyStep("CreateEvent", g_gpuCopy.event ? S_OK : HRESULT_FROM_WIN32(GetLastError()));
 	}
 	if (!ok)
 		ReleaseGpuCopyContext();
@@ -2579,13 +2618,16 @@ static ID3D12GraphicsCommandList* BeginGpuCopy()
 	// A Load* that was waiting on g_textureMutex through the release in
 	// CleanupD3D12Resources must not make a new context on a device going away.
 	if (g_shutdown)
+	{
+		g_gpuCopyFailure = { "shutdown", S_OK };
 		return nullptr;
+	}
 
 	if (!g_gpuCopy.queue && !CreateGpuCopyContext())
 		return nullptr;
 
-	if (FAILED(g_gpuCopy.allocator->Reset()) ||
-		FAILED(g_gpuCopy.list->Reset(g_gpuCopy.allocator, nullptr)))
+	if (!GpuCopyStep("CommandAllocator::Reset", g_gpuCopy.allocator->Reset()) ||
+		!GpuCopyStep("CommandList::Reset", g_gpuCopy.list->Reset(g_gpuCopy.allocator, nullptr)))
 	{
 		ReleaseGpuCopyContext();
 		return nullptr;
@@ -2598,15 +2640,16 @@ static ID3D12GraphicsCommandList* BeginGpuCopy()
 static bool FinishGpuCopy()
 {
 	ID3D12CommandList* const lists[] = { g_gpuCopy.list };
-	bool ok = SUCCEEDED(g_gpuCopy.list->Close());
+	bool ok = GpuCopyStep("Close", g_gpuCopy.list->Close());
 	if (ok)
 	{
 		g_gpuCopy.queue->ExecuteCommandLists(1, lists);
 		const UINT64 value = ++g_gpuCopy.value;
-		ok = SUCCEEDED(g_gpuCopy.queue->Signal(g_gpuCopy.fence, value)) &&
-			SUCCEEDED(g_gpuCopy.fence->SetEventOnCompletion(value, g_gpuCopy.event)) &&
-			WaitForSingleObject(g_gpuCopy.event, INFINITE) == WAIT_OBJECT_0 &&
-			SUCCEEDED(g_device->GetDeviceRemovedReason());
+		ok = GpuCopyStep("Signal", g_gpuCopy.queue->Signal(g_gpuCopy.fence, value)) &&
+			GpuCopyStep("SetEventOnCompletion", g_gpuCopy.fence->SetEventOnCompletion(value, g_gpuCopy.event)) &&
+			GpuCopyStep("WaitForSingleObject", WaitForSingleObject(g_gpuCopy.event, INFINITE) == WAIT_OBJECT_0
+				? S_OK : HRESULT_FROM_WIN32(GetLastError())) &&
+			GpuCopyStep("GetDeviceRemovedReason", g_device->GetDeviceRemovedReason());
 	}
 	if (!ok)
 		ReleaseGpuCopyContext();
@@ -2754,6 +2797,7 @@ static ID3D12Resource* CopyEngineTextureToOwned(
 	DXGI_FORMAT                 srvFormat,
 	D3D12_CPU_DESCRIPTOR_HANDLE srvCpuHandle)
 {
+	g_gpuCopyFailure = {};
 	if (!g_device || !srcResource) return nullptr;
 
 	D3D12_HEAP_PROPERTIES heapProps = {};
@@ -2763,7 +2807,7 @@ static ID3D12Resource* CopyEngineTextureToOwned(
 	dstDesc.Flags = D3D12_RESOURCE_FLAG_NONE;  // we only need to sample it
 
 	ID3D12Resource* dstResource = nullptr;
-	if (FAILED(g_device->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE,
+	if (!GpuCopyStep("CreateCommittedResource", g_device->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE,
 		&dstDesc, D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&dstResource))))
 		return nullptr;
 
@@ -3255,6 +3299,16 @@ static PluginTextureHandle TextureLoadFromUTexture2D(SDK::UTexture2D* uTexture2D
 		}
 	}
 
+	// Once the device is lost every copy fails; stop trying for the rest of the session.
+	if (g_shutdown || FAILED(g_device->GetDeviceRemovedReason()))
+	{
+		static std::atomic<bool> s_stopLogged{ false };
+		if (!s_stopLogged.exchange(true))
+			IMGUI_LOG_WARN("[ImGuiBackend] LoadFromUTexture2D: the GPU device was lost or the overlay is shut down -- "
+				"no more texture copies this session");
+		return nullptr;
+	}
+
 	// Step 1: UTexture::PrivateResource at offset 0x120
 	uint8_t* textureBase = reinterpret_cast<uint8_t*>(uTexture2D);
 	IMGUI_LOG_TRACE("[ImGuiBackend] LoadFromUTexture2D: reading PrivateResource at 0x%p+0x%zX",
@@ -3385,7 +3439,9 @@ static PluginTextureHandle TextureLoadFromUTexture2D(SDK::UTexture2D* uTexture2D
 
 	if (!ownedResource)
 	{
-		IMGUI_LOG_ERROR("[ImGuiBackend] LoadFromUTexture2D '%s': CopyEngineTextureToOwned failed", name ? name : "?");
+		IMGUI_LOG_ERROR("[ImGuiBackend] LoadFromUTexture2D '%s': CopyEngineTextureToOwned failed at %s: 0x%08X",
+			name ? name : "?", g_gpuCopyFailure.step ? g_gpuCopyFailure.step : "?",
+			static_cast<unsigned>(g_gpuCopyFailure.hr));
 		return nullptr;
 	}
 
