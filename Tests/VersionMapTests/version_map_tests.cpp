@@ -749,6 +749,7 @@ int main()
 		declare(&self, "hud", "Heads-up display", { "ATest::Missing" }, { "Hud.Show" }, &hud);
 		declare(&self, "kept", "Kept", { "ATest::Kept" }, {}, &kept);
 		PluginHookReport::RecordAbsent(&self, "ATest::Gone", "not in this game version (CL-128786)");
+		PluginHookReport::RecordAbsent(&self, "ATest::Gone", "not in this game version (CL-128786)");   // asked twice: listed once
 		PluginHookReport::RecordAbsent(&self, "ATest::AlsoGone", "not in this game version (CL-128786)");
 		PluginHookReport::RecordFailure(&self, "ATest::Missing", "reflection: no member Missing", true);
 		PluginHookReport::RecordFieldResolved(&self, "ATest::Kept");
@@ -1640,6 +1641,10 @@ int main()
 		Check(absentOn("UCrHotbarLocalPlayerSubsystem::CurrentHotbarIndex", 127004) && absentOn("UCrHotbarLocalPlayerSubsystem::Hotbars", 127004)
 			&& !absentOn("UCrHotbarLocalPlayerSubsystem::CurrentHotbarIndex", 129402) && !absentOn("UCrHotbarLocalPlayerSubsystem::Hotbars", 129402),
 			"real field rows: the hotbar members are absent on CL-127004 only");
+		Check(absentOn("FHotbarInternalSlotData::SlotType", 127004) && absentOn("FHotbarArray::SlotsArray", 127004)
+			&& !absentOn("FHotbarInternalSlotData::SlotType", 129402) && !absentOn("FHotbarArray::SlotsArray", 129402)
+			&& !fieldRow("FHotbarInternalSlotData::SlotType", 129402) && !fieldRow("FHotbarArray::SlotsArray", 129402),
+			"real field rows: the slot members are absent on CL-127004, and reflected (no row) on CL-129402");
 		// The members of the engine texture chain the icon copy reads, one row per live build, measured the same
 		// on CL-127004 and CL-129402 and absent from CL-128786.
 				for (const ChainRow& m : kChain)
