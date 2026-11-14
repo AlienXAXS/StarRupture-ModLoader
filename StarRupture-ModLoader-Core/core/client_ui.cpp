@@ -312,9 +312,10 @@ void InitClientUI()
             menuBits = Hooks::GameMenu::ReadMenuLayer(pc, &buildMenuActive);
 
         // Whether a game screen has the mouse cursor up, for the ImGui host's
-        // mouse sharing (ShouldShareGameMouseNow). The build menu is one whether
-        // or not the game raises bShowMouseCursor there; its close animation does
-        // not count (buildMenuActive).
+        // mouse sharing (ShouldShareGameMouseNow). The build menu on the
+        // game-menu layer counts only with the flag up, which the menu read
+        // already requires; the flag-free case is a build menu on the Menu layer.
+        // Its close animation does not count (buildMenuActive).
         const bool cursorFlag = pc && pc->bShowMouseCursor;
         const bool cursorUp   = cursorFlag || buildMenuActive;
         Hooks::GameMenu::SetGameCursorShown(cursorUp);

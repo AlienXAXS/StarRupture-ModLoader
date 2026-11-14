@@ -3461,8 +3461,8 @@ enum PluginUIState : uint64_t
 
 	// The game shows its own mouse cursor (the player controller's
 	// bShowMouseCursor): the menus, the pause menu and the machine screens. The
-	// build menu counts too while it is the active screen (once any plugin has
-	// registered for a menu bit), whether or not the game raises the flag there.
+	// build menu counts too while it is open (once any plugin has registered
+	// for a menu bit). It is not open while a building is being placed.
 	PLUGIN_UI_CURSOR_UP    = 1ull << 2,
 
 	// A screen is on the game's menu layer: the map, the inventory, the build
@@ -3483,7 +3483,7 @@ enum PluginUIState : uint64_t
 	// The player's inventory is on the menu layer.
 	PLUGIN_UI_INVENTORY    = 1ull << 5,
 
-	// The build menu is on the menu layer.
+	// The build menu is open: on the game-menu layer, active, with the cursor up.
 	PLUGIN_UI_BUILD_MENU   = 1ull << 6,
 
 	// A station's own screen is on the menu layer: the corporate terminal,

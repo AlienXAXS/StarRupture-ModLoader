@@ -29,6 +29,9 @@ namespace Hooks::GameMenu
 		// mode, and stays on it for seconds while a building is being placed.
 		constexpr const char* kGameMenuLayerTag = "UI.Layer.GameMenu";
 
+		// The most widgets read from one layer's list.
+		constexpr int32_t kMaxWidgets = 16;
+
 		// A tag's FName comparison index once a layer has matched it by
 		// string, so later ticks compare an int. 0 until then.
 		int32_t g_menuLayerTagIndex     = 0;
@@ -87,13 +90,13 @@ namespace Hooks::GameMenu
 		// game-menu layer, active, and the game's cursor flag is up. While a
 		// building is being placed the widget stays on the layer with the flag
 		// off, and the menu is not open then.
-		bool BuildMenuOpenOnGameLayer(SDK::APlayerController* pc)
+		// Returns the widget, valid for the current tick only, or null.
+		SDK::UCommonActivatableWidget* FindOpenBuildMenu(SDK::APlayerController* pc)
 		{
 			SDK::UCommonActivatableWidgetContainerBase* layer = FindLayer(pc, kGameMenuLayerTag, g_gameMenuLayerTagIndex);
 			if (!layer)
-				return false;
+				return nullptr;
 
-			constexpr int32_t kMaxWidgets = 16;
 			const int32_t     count       = layer->WidgetList.Num();
 			const int32_t     read        = count < kMaxWidgets ? count : kMaxWidgets;
 			for (int32_t i = 0; i < read; ++i)
@@ -101,9 +104,9 @@ namespace Hooks::GameMenu
 				SDK::UCommonActivatableWidget* w = layer->WidgetList[i];
 				if (w && w->IsA(SDK::UCrUW_BuildingMenu::StaticClass())
 				      && UIState::BuildMenuOpen(w->bIsActive, pc->bShowMouseCursor))
-					return true;
+					return w;
 			}
-			return false;
+			return nullptr;
 		}
 	}
 
@@ -118,10 +121,9 @@ namespace Hooks::GameMenu
 		// stays on WidgetList until its close transition has ended, long after
 		// it stopped being the active one (bIsActive). So the bits stay set
 		// from the moment a screen is pushed until it is fully gone.
-		constexpr int32_t kMaxKinds = 16;
-		UIState::MenuKind kinds[kMaxKinds + 1];  // one spare for the build menu below
+		UIState::MenuKind kinds[kMaxWidgets + 1];  // one spare for the build menu below
 		int32_t           count = layer ? layer->WidgetList.Num() : 0;
-		const int32_t     read  = count < kMaxKinds ? count : kMaxKinds;
+		const int32_t     read  = count < kMaxWidgets ? count : kMaxWidgets;
 		int32_t           kept  = read;
 		for (int32_t i = 0; i < read; ++i)
 		{
@@ -147,7 +149,7 @@ namespace Hooks::GameMenu
 		}
 
 		// The build menu is on the game-menu layer: one more screen.
-		if (BuildMenuOpenOnGameLayer(pc))
+		if (FindOpenBuildMenu(pc))
 		{
 			*buildMenuActive = true;
 			kinds[kept++]    = UIState::MenuKind::BuildMenu;
@@ -165,16 +167,20 @@ namespace Hooks::GameMenu
 		if (!pc)
 			return true;
 		SDK::UCommonActivatableWidgetContainerBase* layer = FindMenuLayer(pc);
-		if (!layer || layer->WidgetList.Num() == 0)
+
+		// An open build menu is on the game-menu layer, so it is read here too.
+		SDK::UCommonActivatableWidget* buildMenu = FindOpenBuildMenu(pc);
+		if (buildMenu && buildMenu->IsHovered())
 			return true;
+		if (!layer || layer->WidgetList.Num() == 0)
+			return !buildMenu;
 
 		// A widget is hovered only while the cursor is over a hit-testable
 		// part of it, so a hidden or hit-test-invisible screen reads false.
 		// Slate hovers the whole path down to the widget under the cursor, so
 		// a screen's root counts as soon as one of its buttons or panels does.
-		constexpr int32_t kMaxWidgets = 16;
-		const int32_t     count       = layer->WidgetList.Num();
-		const int32_t     read        = count < kMaxWidgets ? count : kMaxWidgets;
+		const int32_t count = layer->WidgetList.Num();
+		const int32_t read  = count < kMaxWidgets ? count : kMaxWidgets;
 		for (int32_t i = 0; i < read; ++i)
 		{
 			SDK::UCommonActivatableWidget* w = layer->WidgetList[i];
