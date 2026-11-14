@@ -40,6 +40,12 @@ namespace UIState
 	// ANY_MENU while the list is not empty, and the bit of each kind on it.
 	uint64_t MenuBits(size_t widgetCount, const MenuKind* kinds, size_t kindCount);
 
+	// Whether a build menu widget found on the game-menu layer is open for
+	// input: it is active and the game's cursor flag is up. While a building is
+	// being placed the widget stays on that layer with the flag off, and the
+	// menu is not open then.
+	bool BuildMenuOpen(bool widgetActive, bool gameCursorFlag);
+
 	// IPluginGameMenu::GetUIState: the state without kMenuBits. Any thread.
 	uint64_t Get();
 
