@@ -44,6 +44,7 @@ namespace PluginHookReport
             std::vector<Declared> declared;
             std::set<std::string> asked;      // every key a request named, resolved or not
             std::vector<PendingKey> pending;  // committed by EndSession unless the plugin is refused
+            std::vector<AbsentKey>  absent;   // likewise
         };
 
         // What a feature that is off says, by why it went off. The log line, the
@@ -62,6 +63,7 @@ namespace PluginHookReport
         Session                   s_session{};      // self == nullptr when closed
         std::vector<PluginReport> s_reports;
         std::vector<PendingKey>   s_pending;        // keys waiting for a class, of loaded plugins
+        std::vector<AbsentKey>    s_absent;         // keys the running build does not have, of loaded plugins
         unsigned                  s_generation = 0;
         unsigned                  s_commitSerial = 0;
 
@@ -101,6 +103,25 @@ namespace PluginHookReport
         bool SameName(const std::string& a, const std::string& b)
         {
             return _stricmp(a.c_str(), b.c_str()) == 0;
+        }
+
+        // Calls log(first, keys) once per feature in `entries`: `first` is its
+        // first entry and `keys` the names of all its entries, "a, b".
+        template <typename Entry, typename Log>
+        void ForEachFeature(const std::vector<Entry>& entries, Log log)
+        {
+            for (size_t i = 0; i < entries.size(); ++i)
+            {
+                const Entry& first = entries[i];
+                if (std::any_of(entries.begin(), entries.begin() + static_cast<ptrdiff_t>(i),
+                        [&](const Entry& e) { return e.featureId == first.featureId; }))
+                    continue;
+                std::string keys;
+                for (const Entry& e : entries)
+                    if (e.featureId == first.featureId)
+                        keys += (keys.empty() ? "" : ", ") + e.key;
+                log(first, keys);
+            }
         }
 
         // Whether `configKey` ("Section.Key", or "Section.*" for a whole
@@ -147,6 +168,11 @@ namespace PluginHookReport
             [&](const PendingKey& p) { return SameName(p.plugin, s_session.report.plugin); }), s_pending.end());
         if (s_pending.size() != pendingBefore)
             ++s_generation;
+        const size_t absentBefore = s_absent.size();
+        s_absent.erase(std::remove_if(s_absent.begin(), s_absent.end(),
+            [&](const AbsentKey& a) { return SameName(a.plugin, s_session.report.plugin); }), s_absent.end());
+        if (s_absent.size() != absentBefore)
+            ++s_generation;
 
         // Drop any report from a previous load of this plugin: a reload that now
         // resolves cleanly must not leave the old failures on screen.
@@ -180,26 +206,31 @@ namespace PluginHookReport
 
         PluginReport report = std::move(session->report);
         std::vector<PendingKey> pending = std::move(session->pending);
+        std::vector<AbsentKey>  absent  = std::move(session->absent);
         s_session = Session{};
 
         // Keys waiting for a class are kept unless the plugin is refused. They
         // are not failures: the log says so at Info, and no popup opens.
         if (report.failures.empty() && !pending.empty())
         {
-            for (size_t i = 0; i < pending.size(); ++i)
+            ForEachFeature(pending, [&](const PendingKey& first, const std::string& keys)
             {
-                const PendingKey& first = pending[i];
-                if (std::any_of(pending.begin(), pending.begin() + static_cast<ptrdiff_t>(i),
-                        [&](const PendingKey& p) { return p.featureId == first.featureId; }))
-                    continue;
-                std::string keys;
-                for (const PendingKey& p : pending)
-                    if (p.featureId == first.featureId)
-                        keys += (keys.empty() ? "" : ", ") + p.key;
                 ModLoaderLogger::LogInfo(L"[Map] %S: feature \"%S\" is waiting for a game class that is not loaded yet: %S",
                     report.plugin.c_str(), first.featureTitle.c_str(), keys.c_str());
-            }
+            });
             s_pending.insert(s_pending.end(), pending.begin(), pending.end());
+            ++s_generation;
+        }
+
+        // Keys the running build does not have are kept the same way: information, not a failure.
+        if (report.failures.empty() && !absent.empty())
+        {
+            ForEachFeature(absent, [&](const AbsentKey& first, const std::string& keys)
+            {
+                ModLoaderLogger::LogInfo(L"[Map] %S: feature \"%S\" is not in this game version: %S",
+                    report.plugin.c_str(), first.featureTitle.c_str(), keys.c_str());
+            });
+            s_absent.insert(s_absent.end(), absent.begin(), absent.end());
             ++s_generation;
         }
 
@@ -422,6 +453,46 @@ namespace PluginHookReport
         return s_pending;
     }
 
+    void RecordAbsent(const IPluginSelf* self, const char* key, const char* detail)
+    {
+        std::unique_lock<std::mutex> lock(s_mutex);
+
+        Session* session = FindSession(self);
+        if (!session)
+        {
+            RejectOutOfSession(self, "ResolveField");
+            return;
+        }
+
+        const std::string name = (key && key[0]) ? key : "(unnamed)";
+        session->asked.insert(name);
+
+        bool covered = false;
+        for (Declared& d : session->declared)
+        {
+            if (std::find(d.keys.begin(), d.keys.end(), name) == d.keys.end())
+                continue;
+            covered = true;
+            if (d.enabled)
+                *d.enabled = false;
+            AbsentKey a;
+            a.plugin       = session->report.plugin;
+            a.key          = name;
+            a.featureId    = d.id;
+            a.featureTitle = d.title;
+            a.configKeys   = d.configKeys;
+            session->absent.push_back(std::move(a));
+        }
+        if (covered)
+            return;
+
+        // No feature lists the key, so nothing can go off in its place: the
+        // plugin cannot do without it, as for any other miss.
+        lock.unlock();
+        RecordFailure(self, name.c_str(),
+            (std::string(detail ? detail : "") + " (no feature lists this key, so the plugin cannot do without it)").c_str(), true);
+    }
+
     bool DeclareFeature(const IPluginSelf* self, const char* id, const char* title,
                         const std::vector<std::string>& keys, const std::vector<std::string>& configKeys,
                         bool* enabled)
@@ -542,6 +613,14 @@ namespace PluginHookReport
                     return p.featureTitle + (p.refused ? " is off: " + p.detail
                         : std::string(" is waiting for the game to load something it needs"));
         }
+        for (const AbsentKey& a : s_absent)
+        {
+            if (!plugin || !SameName(a.plugin, plugin))
+                continue;
+            for (const std::string& configKey : a.configKeys)
+                if (ConfigKeyMatches(configKey, section, key))
+                    return a.featureTitle + " is not in this game version";
+        }
         return std::string();
     }
 
@@ -580,14 +659,23 @@ namespace PluginHookReport
             waiting = "Waiting for a game class to load (not failures; the feature turns on when it does):\r\n"
                 + waiting + "\r\n";
 
+        // Keys the running build does not have: the feature does not apply to
+        // this game version, and there is nothing to fix.
+        std::string notInVersion;
+        for (const AbsentKey& a : s_absent)
+            notInVersion += a.plugin + ": " + a.featureTitle + " (" + a.key + ")\r\n";
+        if (!notInVersion.empty())
+            notInVersion = "Not in this game version (not failures; the feature does not apply to this build):\r\n"
+                + notInVersion + "\r\n";
+
         if (s_reports.empty())
         {
             text += "No plugin reported a failed hook.\r\n";
-            if (!waiting.empty())
-                text += "\r\n" + waiting;
+            if (!waiting.empty() || !notInVersion.empty())
+                text += "\r\n" + waiting + notInVersion;
             return text;
         }
-        text += waiting;
+        text += waiting + notInVersion;
 
         // Built by appending rather than formatting into a fixed buffer: a
         // detail line is a plugin's AOB pattern or its own message, and neither
