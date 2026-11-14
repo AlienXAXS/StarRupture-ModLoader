@@ -1580,6 +1580,10 @@ int main()
 		newRow = functionRow("ACrPlayerControllerBase::NativeOnInputCloseInGameMenu", 129402);
 		Check(oldRow && newRow && oldRow->rva == 0x07606ED0 && newRow->rva == 0x07652E60 && strcmp(oldRow->pattern, newRow->pattern) == 0 && !functionRow("ACrPlayerControllerBase::NativeOnInputCloseInGameMenu", 128786),
 			"real function rows: CloseInGameMenu has one pattern and a row on CL-127004 and CL-129402");
+		oldRow = functionRow("UCrBuildingComponent::CanRestoreInitialState", 127004);
+		newRow = functionRow("UCrBuildingComponent::CanRestoreInitialState", 129402);
+		Check(isStartRow(oldRow, 0x07447230) && isStartRow(newRow, 0x0747BF40) && strcmp(oldRow->pattern, newRow->pattern) == 0 && !functionRow("UCrBuildingComponent::CanRestoreInitialState", 128786),
+			"real function rows: CanRestoreInitialState has one pattern and a row on CL-127004 and CL-129402");
 		oldRow = functionRow("UCrBuildingStabilitySubsystem::OnCreateBuildingEntity", 128786);
 		newRow = functionRow("UCrBuildingStabilitySubsystem::OnDestroyBuildingEntity", 128786);
 		Check(oldRow && newRow && oldRow->rva == 0x074E7BF0 && newRow->rva == 0x074E7C30 && strcmp(oldRow->pattern, newRow->pattern) != 0,
