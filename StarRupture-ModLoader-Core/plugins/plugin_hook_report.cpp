@@ -475,6 +475,9 @@ namespace PluginHookReport
             covered = true;
             if (d.enabled)
                 *d.enabled = false;
+            if (std::any_of(session->absent.begin(), session->absent.end(),
+                    [&](const AbsentKey& x) { return x.featureId == d.id && x.key == name; }))
+                continue;
             AbsentKey a;
             a.plugin       = session->report.plugin;
             a.key          = name;
