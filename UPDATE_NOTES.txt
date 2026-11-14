@@ -12,3 +12,4 @@
 - After a graphics crash (the game losing its graphics device), the mod windows now come back by themselves: they stay off for one launch as a precaution, and the log says so. Before, they stayed off until you edited modloader.ini. If your mod windows are still off from an earlier version, set Enabled=1 under [UI] in ModLoader\modloader.ini
 - The log now records why the graphics device was lost and which step of a game icon copy failed, to help find the cause of a problem
 - A mod feature the game version you are playing does not have yet now shows as "not in this game version" in the hook failures list, instead of as a problem to report
+- A mod feature that needs the hotbar, which the game version CL-127004 does not have, no longer logs a warning at startup there. It stays off, and a stale version map still warns

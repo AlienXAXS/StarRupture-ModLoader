@@ -52,6 +52,7 @@ later build. A request for it on that build is answered "not in this game versio
 else is tried, not even a row the plugin brings. That answer is not a failure: see
 [Features](#features). The list is compiled into the loader (`kAbsentFields`); the version map
 file cannot carry it.
+On CL-127004 the hotbar members `UCrHotbarLocalPlayerSubsystem::CurrentHotbarIndex` and `::Hotbars` are listed this way, so the feature that needs them is off there without a warning. A member whose row is just missing, because the map is stale, still warns.
 
 The version map lives in `hooks/game/version_map.generated.h`, written by CI
 (`ci/version-map.mjs` in [starrupture-ci](https://github.com/msantoro12/starrupture-ci), format in

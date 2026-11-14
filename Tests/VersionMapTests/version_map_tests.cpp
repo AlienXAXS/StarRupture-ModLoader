@@ -788,6 +788,20 @@ int main()
 			&& onlyText.find("OnlyAbsent (") == std::string::npos,
 			"absent report: an absent-only plugin has no failure report and opens no popup");
 
+		// One feature with an absent key and a real miss: the feature is off and warns, naming only the real miss.
+		IPluginSelf mixed{ "MixedAbsent", "1", nullptr, nullptr, nullptr };
+		bool mixedHotbar = true;
+		TestDoubles::g_log.clear();
+		PluginHookReport::BeginSession(&mixed, "MixedAbsent", "MixedAbsent.dll");
+		declare(&mixed, "hotbar", "Hotbar", { "ATest::Gone", "ATest::Missing" }, { "Hotbar.*" }, &mixedHotbar);
+		PluginHookReport::RecordAbsent(&mixed, "ATest::Gone", "not in this game version (CL-128786)");
+		PluginHookReport::RecordFailure(&mixed, "ATest::Missing", "reflection: no member Missing", true);
+		PluginHookReport::EndSession(&mixed, &refused);
+		Check(!refused && !mixedHotbar
+			&& Logged(L"[Map] MixedAbsent: feature \"Hotbar\" is off: ATest::Missing (this game build changed something it needs)")
+			&& !Logged(L"is off: ATest::Gone"),
+			"absent report: a feature with a real miss still warns, naming only the real miss");
+
 		// A reload drops what the plugin had absent; the feature that no longer is gets no line.
 		PluginHookReport::BeginSession(&only, "OnlyAbsent", "OnlyAbsent.dll");
 		PluginHookReport::EndSession(&only, &refused);
@@ -1615,6 +1629,17 @@ int main()
 		Check(pages && pages->offset == 0x38 && pages->size == 0x10 && pages->boolMask == 0, "real field rows: Hotbars is a 16-byte array at 0x38 on CL-129402");
 		Check(!fieldRow("UCrHotbarLocalPlayerSubsystem::CurrentHotbarIndex", 127004) && !fieldRow("UCrHotbarLocalPlayerSubsystem::Hotbars", 127004),
 			"real field rows: the hotbar subsystem has no CL-127004 row");
+		// ...and the map says so: both members are absent on CL-127004, so nothing warns there, and not on CL-129402.
+		const auto absentOn = [](const char* key, uint32_t cl)
+		{
+			for (const Real::VersionMap::AbsentField& a : Real::VersionMap::kAbsentFields)
+				if (strcmp(a.key, key) == 0 && a.gameCL == cl)
+					return true;
+			return false;
+		};
+		Check(absentOn("UCrHotbarLocalPlayerSubsystem::CurrentHotbarIndex", 127004) && absentOn("UCrHotbarLocalPlayerSubsystem::Hotbars", 127004)
+			&& !absentOn("UCrHotbarLocalPlayerSubsystem::CurrentHotbarIndex", 129402) && !absentOn("UCrHotbarLocalPlayerSubsystem::Hotbars", 129402),
+			"real field rows: the hotbar members are absent on CL-127004 only");
 		// The members of the engine texture chain the icon copy reads, one row per live build, measured the same
 		// on CL-127004 and CL-129402 and absent from CL-128786.
 				for (const ChainRow& m : kChain)
