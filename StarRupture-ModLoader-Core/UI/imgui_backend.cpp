@@ -3538,7 +3538,6 @@ static bool IsValidUserPtr(const void* p)
 //   slot 7 (+0x38)  GetTextureBaseRHI
 //   slot 8 (+0x40)  GetWriteMaskProperties
 static constexpr int       kFRHITexture_GetNativeResource_Slot          = 5;
-static constexpr int       kFRHITexture_GetNativeShaderResourceView_Slot = 6;
 
 // Where the engine keeps the chain from a UTexture to its D3D12 resource, from the version map rows
 // for the running game build. Never compiled in: the offsets can move with a game update. The
