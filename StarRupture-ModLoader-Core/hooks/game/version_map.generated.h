@@ -907,9 +907,16 @@ inline constexpr std::array<FunctionRow, 660> kFunctionRows = {{
 	{ 129402, 0x6499F129, 0x0F482000, 1, 0x00000000, false, "4C 8B DC 55 56 57 41 55 41 57 48 81 EC 80 01 00 00 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 84 24 60 01 00 00 4D 89 63 D0 45 0F B6 E0 4D 89 73 C8 4D 8B F9 44 0F B6 EA 48 8B E9", 0, -1, -1, 0x053B05B0, nullptr },
 }};
 
-inline constexpr std::array<FieldRow, 292> kFieldRows = {{
+inline constexpr std::array<FieldRow, 429> kFieldRows = {{
 	// AActor
+	{ 127004, 0x0, 0x2A8, 0x00, nullptr },
 	{ 129402, 0x0, 0x2A8, 0x00, nullptr },
+	// AActor::ActorHasBegunPlay
+	{ 127004, 0x5D, 0x1, 0x18, nullptr },
+	// AActor::bActorInitialized
+	{ 127004, 0x5C, 0x1, 0x02, nullptr },
+	// AActor::bHasFinishedSpawning
+	{ 127004, 0x5C, 0x1, 0x01, nullptr },
 	// AAuPlayerCameraManager::AdditionalFOVOffset
 	{ 127004, 0x299C, 0x4, 0x00, nullptr },
 	{ 128786, 0x299C, 0x4, 0x00, nullptr },
@@ -1000,40 +1007,61 @@ inline constexpr std::array<FieldRow, 292> kFieldRows = {{
 	{ 127004, 0x4D0, 0x1, 0x10, nullptr },
 	{ 128786, 0x4D0, 0x1, 0x10, nullptr },
 	// FAnchors
+	{ 127004, 0x0, 0x20, 0x00, nullptr },
 	{ 129402, 0x0, 0x20, 0x00, nullptr },
 	// FAssetData
+	{ 127004, 0x0, 0x68, 0x00, nullptr },
 	{ 129402, 0x0, 0x68, 0x00, nullptr },
 	// FAuAPMassSpawnedEntityType
+	{ 127004, 0x0, 0x38, 0x00, nullptr },
 	{ 129402, 0x0, 0x38, 0x00, nullptr },
 	// FAuAPPayloadData
+	{ 127004, 0x0, 0x68, 0x00, nullptr },
 	{ 129402, 0x0, 0x68, 0x00, nullptr },
 	// FAuAPSplineActorPayloadData
+	{ 127004, 0x0, 0xE8, 0x00, nullptr },
 	{ 129402, 0x0, 0xE8, 0x00, nullptr },
 	// FAuAPSplinePointData
+	{ 127004, 0x0, 0x40, 0x00, nullptr },
 	{ 129402, 0x0, 0x40, 0x00, nullptr },
 	// FAuAddedItem
+	{ 127004, 0x0, 0x14, 0x00, nullptr },
 	{ 129402, 0x0, 0x14, 0x00, nullptr },
 	// FAuSimpleItem
+	{ 127004, 0x0, 0x30, 0x00, nullptr },
 	{ 129402, 0x0, 0x30, 0x00, nullptr },
 	// FBatchedLine
+	{ 127004, 0x0, 0x50, 0x00, nullptr },
 	{ 129402, 0x0, 0x50, 0x00, nullptr },
 	// FBuildingMarkerDataFastArrayItem
+	{ 127004, 0x0, 0x40, 0x00, nullptr },
 	{ 129402, 0x0, 0x40, 0x00, nullptr },
 	// FCanvasUVTri
+	{ 127004, 0x0, 0x90, 0x00, nullptr },
 	{ 129402, 0x0, 0x90, 0x00, nullptr },
 	// FColor
+	{ 127004, 0x0, 0x4, 0x00, nullptr },
 	{ 129402, 0x0, 0x4, 0x00, nullptr },
+	// FCrAbandonBaseData
+	{ 127004, 0x0, 0x78, 0x00, nullptr },
+	// FCrAbandonBaseDataCollectedStatus
+	{ 127004, 0x0, 0x14, 0x00, nullptr },
 	// FCrContextualInputBinding
+	{ 127004, 0x0, 0x10, 0x00, nullptr },
 	{ 129402, 0x0, 0x10, 0x00, nullptr },
 	// FCrCraftingFragment::CraftingMultiplier
 	{ 129402, 0x8C, 0x4, 0x00, nullptr },
 	// FCrCraftingParameters
+	{ 127004, 0x0, 0x20, 0x00, nullptr },
 	{ 129402, 0x0, 0x20, 0x00, nullptr },
 	// FCrElectricityParameters
+	{ 127004, 0x0, 0x10, 0x00, nullptr },
 	{ 129402, 0x0, 0x10, 0x00, nullptr },
 	// FCrEnviroWaveSettings
+	{ 127004, 0x0, 0x2C, 0x00, nullptr },
 	{ 129402, 0x0, 0x2C, 0x00, nullptr },
 	// FCrGridEntityHandle
+	{ 127004, 0x0, 0x18, 0x00, nullptr },
 	{ 129402, 0x0, 0x18, 0x00, nullptr },
 	// FCrGridEntityHandle::Data
 	{ 127004, 0x8, 0x10, 0x00, nullptr },
@@ -1044,32 +1072,49 @@ inline constexpr std::array<FieldRow, 292> kFieldRows = {{
 	{ 128786, 0x0, 0x8, 0x00, nullptr },
 	{ 129402, 0x0, 0x8, 0x00, nullptr },
 	// FCrInfiniteOreData
+	{ 127004, 0x0, 0x18, 0x00, nullptr },
 	{ 129402, 0x0, 0x18, 0x00, nullptr },
 	// FCrInventoryFragment
+	{ 127004, 0x0, 0x250, 0x00, nullptr },
 	{ 129402, 0x0, 0x250, 0x00, nullptr },
 	// FCrInventorySlot
+	{ 127004, 0x0, 0x24, 0x00, nullptr },
 	{ 129402, 0x0, 0x24, 0x00, nullptr },
 	// FCrMassActorReplicationHelper
+	{ 127004, 0x0, 0x18, 0x00, nullptr },
 	{ 129402, 0x0, 0x18, 0x00, nullptr },
 	// FCrMassActorReplicationHelper::Actor
+	{ 127004, 0xC, 0x8, 0x00, nullptr },
 	{ 129402, 0xC, 0x8, 0x00, nullptr },
 	// FCrMassEntityReplicationHelper
+	{ 127004, 0x0, 0x18, 0x00, nullptr },
 	{ 129402, 0x0, 0x18, 0x00, nullptr },
 	// FCrMassFoundableParameters
+	{ 127004, 0x0, 0xC, 0x00, nullptr },
 	{ 129402, 0x0, 0xC, 0x00, nullptr },
 	// FCrMassSavableFragment
+	{ 127004, 0x0, 0x1, 0x00, nullptr },
 	{ 129402, 0x0, 0x1, 0x00, nullptr },
 	// FCrMassTemperatureFragment::LastUpdateTime
+	{ 127004, 0x78, 0x4, 0x00, nullptr },
 	{ 129402, 0x78, 0x4, 0x00, nullptr },
 	// FCrNativeInputAction
+	{ 127004, 0x0, 0x18, 0x00, nullptr },
 	{ 129402, 0x0, 0x18, 0x00, nullptr },
 	// FCrPackageTransportConnectionData::StartSendServerTime
 	{ 129402, 0x68, 0x8, 0x00, nullptr },
 	// FCrPlayerPersonalMarkerData
+	{ 127004, 0x0, 0x28, 0x00, nullptr },
 	{ 129402, 0x0, 0x28, 0x00, nullptr },
 	// FCrSkillData
+	{ 127004, 0x0, 0xC, 0x00, nullptr },
 	{ 129402, 0x0, 0xC, 0x00, nullptr },
+	// FCrStorageItem
+	{ 127004, 0x0, 0x68, 0x00, nullptr },
+	// FCrTerrainSegmentData
+	{ 127004, 0x0, 0x170, 0x00, nullptr },
 	// FCrWeakSpotRuntimeData
+	{ 127004, 0x0, 0x38, 0x00, nullptr },
 	{ 129402, 0x0, 0x38, 0x00, nullptr },
 	// FD3D12Heap::Heap
 	{ 127004, 0x20, 0x8, 0x00, nullptr },
@@ -1090,16 +1135,22 @@ inline constexpr std::array<FieldRow, 292> kFieldRows = {{
 	{ 127004, 0xA8, 0x78, 0x00, nullptr },
 	{ 129402, 0xA8, 0x78, 0x00, nullptr },
 	// FDataTableRowHandle
+	{ 127004, 0x0, 0x10, 0x00, nullptr },
 	{ 129402, 0x0, 0x10, 0x00, nullptr },
 	// FEngineShowFlagsSetting
+	{ 127004, 0x0, 0x18, 0x00, nullptr },
 	{ 129402, 0x0, 0x18, 0x00, nullptr },
 	// FEnhancedActionKeyMapping
+	{ 127004, 0x0, 0x50, 0x00, nullptr },
 	{ 129402, 0x0, 0x50, 0x00, nullptr },
 	// FEntityMarkerUIRepresentation
+	{ 127004, 0x0, 0x8, 0x00, nullptr },
 	{ 129402, 0x0, 0x8, 0x00, nullptr },
 	// FFindFloorResult
+	{ 127004, 0x0, 0x110, 0x00, nullptr },
 	{ 129402, 0x0, 0x110, 0x00, nullptr },
 	// FFoundableMarkerDataFastArrayItem
+	{ 127004, 0x0, 0x28, 0x00, nullptr },
 	{ 129402, 0x0, 0x28, 0x00, nullptr },
 	// FGameplayEffectSpec::SetByCallerNameMagnitudes
 	{ 127004, 0x1D8, 0x50, 0x00, nullptr },
@@ -1110,102 +1161,169 @@ inline constexpr std::array<FieldRow, 292> kFieldRows = {{
 	{ 128786, 0x228, 0x50, 0x00, nullptr },
 	{ 129402, 0x228, 0x50, 0x00, nullptr },
 	// FGameplayTag
+	{ 127004, 0x0, 0x8, 0x00, nullptr },
 	{ 129402, 0x0, 0x8, 0x00, nullptr },
 	// FGameplayTagContainer
+	{ 127004, 0x0, 0x20, 0x00, nullptr },
 	{ 129402, 0x0, 0x20, 0x00, nullptr },
 	// FGeometry
+	{ 127004, 0x0, 0x38, 0x00, nullptr },
 	{ 129402, 0x0, 0x38, 0x00, nullptr },
 	// FGuid
+	{ 127004, 0x0, 0x10, 0x00, nullptr },
 	{ 129402, 0x0, 0x10, 0x00, nullptr },
 	// FHitResult
+	{ 127004, 0x0, 0x100, 0x00, nullptr },
 	{ 129402, 0x0, 0x100, 0x00, nullptr },
 	// FInputActionValue
+	{ 127004, 0x0, 0x20, 0x00, nullptr },
 	{ 129402, 0x0, 0x20, 0x00, nullptr },
 	// FInputMappingContextAndPriority
+	{ 127004, 0x0, 0x30, 0x00, nullptr },
 	{ 129402, 0x0, 0x30, 0x00, nullptr },
 	// FLinearColor
+	{ 127004, 0x0, 0x10, 0x00, nullptr },
 	{ 129402, 0x0, 0x10, 0x00, nullptr },
 	// FMargin
+	{ 127004, 0x0, 0x10, 0x00, nullptr },
 	{ 129402, 0x0, 0x10, 0x00, nullptr },
 	// FMassConstSharedFragment
+	{ 127004, 0x0, 0x1, 0x00, nullptr },
 	{ 129402, 0x0, 0x1, 0x00, nullptr },
 	// FMassEnemyHealthFragment
+	{ 127004, 0x0, 0x68, 0x00, nullptr },
 	{ 129402, 0x0, 0x68, 0x00, nullptr },
 	// FMassEnemyHealthFragment::HP
 	{ 127004, 0x0, 0x4, 0x00, nullptr },
 	{ 128786, 0x0, 0x4, 0x00, nullptr },
 	{ 129402, 0x0, 0x4, 0x00, nullptr },
 	// FMassEnemyStateFragment
+	{ 127004, 0x0, 0x10, 0x00, nullptr },
 	{ 129402, 0x0, 0x10, 0x00, nullptr },
 	// FMassEnemyStateFragment::State
 	{ 127004, 0x1, 0x1, 0x00, nullptr },
 	{ 128786, 0x1, 0x1, 0x00, nullptr },
 	{ 129402, 0x1, 0x1, 0x00, nullptr },
 	// FMassEnemyTag
+	{ 127004, 0x0, 0x1, 0x00, nullptr },
 	{ 129402, 0x0, 0x1, 0x00, nullptr },
 	// FMassEntityHandle
+	{ 127004, 0x0, 0x8, 0x00, nullptr },
 	{ 129402, 0x0, 0x8, 0x00, nullptr },
 	// FMassEntityManager::ConstSharedFragmentsContainer
 	{ 127004, 0x120, 0xB0, 0x00, nullptr },
 	{ 128786, 0x120, 0xB0, 0x00, nullptr },
 	{ 129402, 0x120, 0xB0, 0x00, nullptr },
 	// FMassEntityQuery
+	{ 127004, 0x0, 0x350, 0x00, nullptr },
 	{ 129402, 0x0, 0x350, 0x00, nullptr },
 	// FMassFragment
+	{ 127004, 0x0, 0x1, 0x00, nullptr },
 	{ 129402, 0x0, 0x1, 0x00, nullptr },
 	// FMassFragmentRequirements
+	{ 127004, 0x0, 0x278, 0x00, nullptr },
 	{ 129402, 0x0, 0x278, 0x00, nullptr },
 	// FMassNeutralAITag
+	{ 127004, 0x0, 0x1, 0x00, nullptr },
 	{ 129402, 0x0, 0x1, 0x00, nullptr },
 	// FMassTag
+	{ 127004, 0x0, 0x1, 0x00, nullptr },
 	{ 129402, 0x0, 0x1, 0x00, nullptr },
 	// FNestedItemRecipeCollectionArray
+	{ 127004, 0x0, 0x10, 0x00, nullptr },
 	{ 129402, 0x0, 0x10, 0x00, nullptr },
 	// FPlayerMarkerDataFastArrayItem
+	{ 127004, 0x0, 0x40, 0x00, nullptr },
 	{ 129402, 0x0, 0x40, 0x00, nullptr },
 	// FRootViewportLayoutInfo
+	{ 127004, 0x0, 0x18, 0x00, nullptr },
 	{ 129402, 0x0, 0x18, 0x00, nullptr },
 	// FRotator
+	{ 127004, 0x0, 0x18, 0x00, nullptr },
 	{ 129402, 0x0, 0x18, 0x00, nullptr },
 	// FSlateChildSize
+	{ 127004, 0x0, 0x8, 0x00, nullptr },
 	{ 129402, 0x0, 0x8, 0x00, nullptr },
 	// FSlateFontInfo
+	{ 127004, 0x0, 0x60, 0x00, nullptr },
 	{ 129402, 0x0, 0x60, 0x00, nullptr },
+	// FStreamingLevelsToConsider::LevelsToProcess
+	{ 127004, 0x10, 0x10, 0x00, nullptr },
+	// FStreamingLevelsToConsider::StreamingLevelsBeingConsidered
+	{ 127004, 0x20, 0x4, 0x00, nullptr },
 	// FStreamingSourceShape
+	{ 127004, 0x0, 0x48, 0x00, nullptr },
 	{ 129402, 0x0, 0x48, 0x00, nullptr },
+	// FSubsystemCollectionBase::Outer
+	{ 127004, 0xB0, 0x8, 0x00, nullptr },
+	// FSubsystemCollectionBase::SubsystemArrayMap
+	{ 127004, 0x58, 0x50, 0x00, nullptr },
+	// FSubsystemCollectionBase::SubsystemMap
+	{ 127004, 0x8, 0x50, 0x00, nullptr },
+	// FSubsystemCollectionBase::bIterating
+	{ 127004, 0xB9, 0x1, 0xFF, nullptr },
+	// FSubsystemCollectionBase::bPopulating
+	{ 127004, 0xB8, 0x1, 0xFF, nullptr },
 	// FTexture::TextureRHI
 	{ 127004, 0x10, 0x8, 0x00, nullptr },
 	{ 129402, 0x10, 0x8, 0x00, nullptr },
 	// FTransform
+	{ 127004, 0x0, 0x60, 0x00, nullptr },
 	{ 129402, 0x0, 0x60, 0x00, nullptr },
 	// FTransform::Translation
 	{ 127004, 0x20, 0x18, 0x00, nullptr },
 	{ 128786, 0x20, 0x18, 0x00, nullptr },
 	{ 129402, 0x20, 0x18, 0x00, nullptr },
 	// FTransformFragment
+	{ 127004, 0x0, 0x60, 0x00, nullptr },
 	{ 129402, 0x0, 0x60, 0x00, nullptr },
 	// FUObjectItem::Flags
+	{ 127004, 0x8, 0x4, 0x00, nullptr },
 	{ 129402, 0x8, 0x4, 0x00, nullptr },
 	// FVector
+	{ 127004, 0x0, 0x18, 0x00, nullptr },
 	{ 129402, 0x0, 0x18, 0x00, nullptr },
 	// FVector2D
+	{ 127004, 0x0, 0x10, 0x00, nullptr },
 	{ 129402, 0x0, 0x10, 0x00, nullptr },
 	// FVector3f
+	{ 127004, 0x0, 0xC, 0x00, nullptr },
 	{ 129402, 0x0, 0xC, 0x00, nullptr },
+	// FWorldContext::ThisCurrentWorld
+	{ 127004, 0x2C0, 0x8, 0x00, nullptr },
 	// GameplayStatics_BeginDeferredActorSpawnFromClass
+	{ 127004, 0x0, 0x90, 0x00, nullptr },
 	{ 129402, 0x0, 0x90, 0x00, nullptr },
 	// GameplayStatics_FinishSpawningActor
+	{ 127004, 0x0, 0x80, 0x00, nullptr },
 	{ 129402, 0x0, 0x80, 0x00, nullptr },
 	// GameplayStatics_GetAllActorsOfClass
+	{ 127004, 0x0, 0x20, 0x00, nullptr },
 	{ 129402, 0x0, 0x20, 0x00, nullptr },
 	// GameplayStatics_GetPlayerController
+	{ 127004, 0x0, 0x18, 0x00, nullptr },
 	{ 129402, 0x0, 0x18, 0x00, nullptr },
 	// GameplayStatics_GetPlayerPawn
+	{ 127004, 0x0, 0x18, 0x00, nullptr },
 	{ 129402, 0x0, 0x18, 0x00, nullptr },
 	// SubsystemBlueprintLibrary_GetGameInstanceSubsystem
+	{ 127004, 0x0, 0x18, 0x00, nullptr },
 	{ 129402, 0x0, 0x18, 0x00, nullptr },
 	// TabButton_SetButtonText
+	{ 127004, 0x0, 0x10, 0x00, nullptr },
 	{ 129402, 0x0, 0x10, 0x00, nullptr },
+	// UActorComponent::OwnerPrivate
+	{ 127004, 0xA0, 0x8, 0x00, nullptr },
+	// UActorComponent::WorldPrivate
+	{ 127004, 0xA8, 0x8, 0x00, nullptr },
+	// UActorComponent::bHasBeenInitialized
+	{ 127004, 0x97, 0x1, 0x08, nullptr },
+	// UActorComponent::bHasBegunPlay
+	{ 127004, 0x97, 0x1, 0x20, nullptr },
+	// UActorComponent::bRegistered
+	{ 127004, 0x94, 0x1, 0x01, nullptr },
+	// UActorComponent::bRenderStateCreated
+	{ 127004, 0x94, 0x1, 0x02, nullptr },
 	// UAuActorPlacementData::BuildingID
 	{ 129402, 0x180, 0x4, 0x00, nullptr },
 	// UAuActorPlacementData::EntityType
@@ -1217,10 +1335,13 @@ inline constexpr std::array<FieldRow, 292> kFieldRows = {{
 	// UAuWeaponItemDataBase::RequiredItem
 	{ 129402, 0xDD0, 0x8, 0x00, nullptr },
 	// UBlueprintGeneratedClass
+	{ 127004, 0x0, 0x360, 0x00, nullptr },
 	{ 129402, 0x0, 0x360, 0x00, nullptr },
 	// UCanvas
+	{ 127004, 0x0, 0x390, 0x00, nullptr },
 	{ 129402, 0x0, 0x390, 0x00, nullptr },
 	// UClass
+	{ 127004, 0x0, 0x200, 0x00, nullptr },
 	{ 129402, 0x0, 0x200, 0x00, nullptr },
 	// UCrBuildingCustomNameSubsystem
 	{ 129402, 0x0, 0x1A8, 0x00, nullptr },
@@ -1258,8 +1379,12 @@ inline constexpr std::array<FieldRow, 292> kFieldRows = {{
 	{ 129402, 0x1098, 0x4, 0x00, nullptr },
 	// UCrElectricityGraphSubsystem
 	{ 129402, 0x0, 0x358, 0x00, nullptr },
+	// UCrElectricityGraphSubsystem::EntityManager
+	{ 127004, 0x290, 0x10, 0x00, nullptr },
 	// UCrEntityGridSubsystem
 	{ 129402, 0x0, 0x150, 0x00, nullptr },
+	// UCrEntityGridSubsystem::EntityManager
+	{ 127004, 0xF0, 0x10, 0x00, nullptr },
 	// UCrEnviroWaveTimerSubsystem::NextWaveTimer
 	{ 127004, 0x7C, 0x4, 0x00, nullptr },
 	{ 128786, 0x88, 0x4, 0x00, nullptr },
@@ -1316,6 +1441,8 @@ inline constexpr std::array<FieldRow, 292> kFieldRows = {{
 	{ 129402, 0x440, 0x8, 0x00, nullptr },
 	// UCrUW_InventorySlot::TooltipAnchor
 	{ 129402, 0x3E8, 0x8, 0x00, nullptr },
+	// UCrUW_MapMenuMapArea::MapAreaMatrix
+	{ 127004, 0x500, 0x40, 0x00, nullptr },
 	// UCrWeaponComponent::LastEquippedUnarmed
 	{ 129402, 0x1178, 0x1, 0xFF, nullptr },
 	// UCrWeaponComponent::LastEquippedWeaponData
@@ -1329,15 +1456,26 @@ inline constexpr std::array<FieldRow, 292> kFieldRows = {{
 	// UCrWeaponItemDataBase::WeakpointDamageMultiplier
 	{ 129402, 0x12B0, 0x4, 0x00, nullptr },
 	// UDirectionalLightComponent
+	{ 127004, 0x0, 0x480, 0x00, nullptr },
 	{ 129402, 0x0, 0x480, 0x00, nullptr },
 	// UEngine
+	{ 127004, 0x0, 0x12C0, 0x00, nullptr },
 	{ 129402, 0x0, 0x12C0, 0x00, nullptr },
+	// UEngine::WorldList
+	{ 127004, 0x11C8, 0x10, 0x00, nullptr },
 	// UFunction
+	{ 127004, 0x0, 0xE0, 0x00, nullptr },
 	{ 129402, 0x0, 0xE0, 0x00, nullptr },
 	// UGameInstance
 	{ 129402, 0x0, 0x1F0, 0x00, nullptr },
 	// ULevel
 	{ 129402, 0x0, 0x3F0, 0x00, nullptr },
+	// ULevel::Actors
+	{ 127004, 0xA0, 0x10, 0x00, nullptr },
+	// ULightComponent::SceneProxy
+	{ 127004, 0x340, 0x8, 0x00, nullptr },
+	// ULightComponent::bAddedToSceneVisible
+	{ 127004, 0x3A0, 0x1, 0x01, nullptr },
 	// ULocalPlayer::Origin
 	{ 127004, 0x80, 0x10, 0x00, nullptr },
 	{ 128786, 0x80, 0x10, 0x00, nullptr },
@@ -1359,16 +1497,22 @@ inline constexpr std::array<FieldRow, 292> kFieldRows = {{
 	// UMassReplicationSubsystem
 	{ 129402, 0x0, 0x1F8, 0x00, nullptr },
 	// UMassSignalSubsystem::CachedWorld
+	{ 127004, 0xB0, 0x8, 0x00, nullptr },
 	{ 129402, 0xB0, 0x8, 0x00, nullptr },
 	// UMaterialInstanceDynamic
+	{ 127004, 0x0, 0x348, 0x00, nullptr },
 	{ 129402, 0x0, 0x348, 0x00, nullptr },
 	// UObject::InternalIndex
+	{ 127004, 0xC, 0x4, 0x00, nullptr },
 	{ 129402, 0xC, 0x4, 0x00, nullptr },
 	// UObject::ObjectFlags
+	{ 127004, 0x8, 0x4, 0x00, nullptr },
 	{ 129402, 0x8, 0x4, 0x00, nullptr },
 	// UObject::OuterPrivate
+	{ 127004, 0x20, 0x8, 0x00, nullptr },
 	{ 129402, 0x20, 0x8, 0x00, nullptr },
 	// USceneCaptureComponent2D
+	{ 127004, 0x0, 0xBF0, 0x00, nullptr },
 	{ 129402, 0x0, 0xBF0, 0x00, nullptr },
 	// USceneComponent
 	{ 129402, 0x0, 0x250, 0x00, nullptr },
@@ -1377,11 +1521,18 @@ inline constexpr std::array<FieldRow, 292> kFieldRows = {{
 	{ 128786, 0x1F0, 0x60, 0x00, nullptr },
 	{ 129402, 0x1F0, 0x60, 0x00, nullptr },
 	// UScriptStruct
+	{ 127004, 0x0, 0xC0, 0x00, nullptr },
 	{ 129402, 0x0, 0xC0, 0x00, nullptr },
 	// UStreamableRenderAsset::NeverStream
+	{ 127004, 0xC0, 0x1, 0x01, nullptr },
 	{ 129402, 0xC0, 0x1, 0x01, nullptr },
+	// UStruct::SuperStruct
+	{ 127004, 0x40, 0x8, 0x00, nullptr },
 	// USubsystem
+	{ 127004, 0x0, 0x30, 0x00, nullptr },
 	{ 129402, 0x0, 0x30, 0x00, nullptr },
+	// USubsystem::InternalOwningSubsystem
+	{ 127004, 0x28, 0x8, 0x00, nullptr },
 	// UTexture::PrivateResource
 	{ 127004, 0x120, 0x8, 0x00, nullptr },
 	{ 129402, 0x120, 0x8, 0x00, nullptr },
@@ -1390,12 +1541,19 @@ inline constexpr std::array<FieldRow, 292> kFieldRows = {{
 	{ 128786, 0x106, 0x1, 0x01, nullptr },
 	{ 129402, 0x106, 0x1, 0x01, nullptr },
 	// UTexture::bAsyncResourceReleaseHasBeenStarted
+	{ 127004, 0x10C, 0x1, 0x04, nullptr },
 	{ 129402, 0x10C, 0x1, 0x04, nullptr },
 	// UTextureRenderTarget2D
+	{ 127004, 0x0, 0x170, 0x00, nullptr },
 	{ 129402, 0x0, 0x170, 0x00, nullptr },
+	// UTextureRenderTarget::bNeedsTwoCopies
+	{ 127004, 0x144, 0x1, 0x01, nullptr },
 	// UTickableWorldSubsystem
 	{ 129402, 0x0, 0x40, 0x00, nullptr },
+	// UTickableWorldSubsystem::bInitialized
+	{ 127004, 0x38, 0x1, 0xFF, nullptr },
 	// UWorld
+	{ 127004, 0x0, 0xAB0, 0x00, nullptr },
 	{ 129402, 0x0, 0xAB0, 0x00, nullptr },
 	// UWorld::GameState
 	{ 127004, 0x1B0, 0x8, 0x00, nullptr },
@@ -1409,11 +1567,30 @@ inline constexpr std::array<FieldRow, 292> kFieldRows = {{
 	{ 127004, 0x38, 0x8, 0x00, nullptr },
 	{ 128786, 0x38, 0x8, 0x00, nullptr },
 	{ 129402, 0x38, 0x8, 0x00, nullptr },
+	// UWorld::Scene
+	{ 127004, 0x258, 0x8, 0x00, nullptr },
+	// UWorld::SubsystemCollection
+	{ 127004, 0x9F0, 0xC0, 0x00, nullptr },
+	// UWorld::WorldType
+	{ 127004, 0x18A, 0x1, 0x00, nullptr },
+	// UWorld::bActorsInitialized
+	{ 127004, 0x18C, 0x1, 0x80, nullptr },
+	// UWorld::bBegunPlay
+	{ 127004, 0x18D, 0x1, 0x01, nullptr },
+	// UWorld::bHasEverBeenInitialized
+	{ 127004, 0x18F, 0x1, 0x02, nullptr },
+	// UWorld::bIsTearingDown
+	{ 127004, 0x18D, 0x1, 0x20, nullptr },
+	// UWorld::bIsWorldInitialized
+	{ 127004, 0x18B, 0x1, 0x40, nullptr },
 	// WidgetBlueprintLibrary_Create
+	{ 127004, 0x0, 0x20, 0x00, nullptr },
 	{ 129402, 0x0, 0x20, 0x00, nullptr },
 	// WidgetBlueprintLibrary_SetInputMode_GameAndUIEx
+	{ 127004, 0x0, 0x18, 0x00, nullptr },
 	{ 129402, 0x0, 0x18, 0x00, nullptr },
 	// WidgetBlueprintLibrary_SetInputMode_GameOnly
+	{ 127004, 0x0, 0x10, 0x00, nullptr },
 	{ 129402, 0x0, 0x10, 0x00, nullptr },
 }};
 
@@ -1643,222 +1820,262 @@ inline constexpr std::array<Index, 223> kFunctions = {{
 	{ "UWorld::UpdateWorldComponents", 657, 3 },
 }};
 
-inline constexpr std::array<Index, 215> kFields = {{
-	{ "AActor", 0, 1 },
-	{ "AAuPlayerCameraManager::AdditionalFOVOffset", 1, 3 },
-	{ "AAuPlayerCameraManager::FOV", 4, 3 },
-	{ "ACrAPHelper::BuildingData", 7, 1 },
-	{ "ACrAbandonBaseInfoReplicator", 8, 1 },
-	{ "ACrAudiologBase", 9, 1 },
-	{ "ACrBaseCore::IsInfected", 10, 1 },
-	{ "ACrBaseCore::UpgradeLevel", 11, 1 },
-	{ "ACrBaseCore::bIsAttacked", 12, 1 },
-	{ "ACrBuildingSplineActorBase::Spline", 13, 1 },
-	{ "ACrCharacterPlayerBase::ADSMoveSpeed", 14, 1 },
-	{ "ACrCharacterPlayerBase::AccelerationAndDeceleration", 15, 1 },
-	{ "ACrCharacterPlayerBase::CrouchedMoveSpeed", 16, 1 },
-	{ "ACrCharacterPlayerBase::DoubleJumpEnergyUsage", 17, 1 },
-	{ "ACrCharacterPlayerBase::DurationOfAccelerationToSprint", 18, 1 },
-	{ "ACrCharacterPlayerBase::EnergyLoweringMultiplierDuringSprint", 19, 1 },
-	{ "ACrCharacterPlayerBase::MaxWalkSpeed", 20, 1 },
-	{ "ACrCharacterPlayerBase::NormalEnergyRestorationRate", 21, 1 },
-	{ "ACrCharacterPlayerBase::NormalMoveSpeed", 22, 1 },
-	{ "ACrCharacterPlayerBase::SprintMoveSpeed", 23, 1 },
-	{ "ACrCrafter::CraftComponent", 24, 3 },
-	{ "ACrCrafter::CraftingSettings", 27, 1 },
-	{ "ACrDatapadBase", 28, 1 },
-	{ "ACrGameStateBase", 29, 1 },
-	{ "ACrGameStateBase::PlayerPersonalMarkers", 30, 1 },
-	{ "ACrModularRampWalkway::SplineMesh", 31, 1 },
-	{ "ACrModularRampWalkway::Splines", 32, 1 },
-	{ "ACrPackageTransportReplicator::SendingTime", 33, 3 },
-	{ "ACrPlayerControllerBase::PlayerControlState", 36, 3 },
-	{ "ACrPlayerControllerBase::bMapMenuOpen", 39, 3 },
-	{ "ACrPointOfInterestMarkerActor", 42, 1 },
-	{ "ACrTechnologyKeeper::bUnlockAllBuildings", 43, 3 },
-	{ "ACrWorldSettings", 46, 1 },
-	{ "APlayerController::bCinematicMode", 47, 3 },
-	{ "APlayerController::bHidePawnInCinematicMode", 50, 3 },
-	{ "APlayerController::bPlayerIsWaiting", 53, 2 },
-	{ "FAnchors", 55, 1 },
-	{ "FAssetData", 56, 1 },
-	{ "FAuAPMassSpawnedEntityType", 57, 1 },
-	{ "FAuAPPayloadData", 58, 1 },
-	{ "FAuAPSplineActorPayloadData", 59, 1 },
-	{ "FAuAPSplinePointData", 60, 1 },
-	{ "FAuAddedItem", 61, 1 },
-	{ "FAuSimpleItem", 62, 1 },
-	{ "FBatchedLine", 63, 1 },
-	{ "FBuildingMarkerDataFastArrayItem", 64, 1 },
-	{ "FCanvasUVTri", 65, 1 },
-	{ "FColor", 66, 1 },
-	{ "FCrContextualInputBinding", 67, 1 },
-	{ "FCrCraftingFragment::CraftingMultiplier", 68, 1 },
-	{ "FCrCraftingParameters", 69, 1 },
-	{ "FCrElectricityParameters", 70, 1 },
-	{ "FCrEnviroWaveSettings", 71, 1 },
-	{ "FCrGridEntityHandle", 72, 1 },
-	{ "FCrGridEntityHandle::Data", 73, 3 },
-	{ "FCrGridEntityHandle::EntityHandle", 76, 3 },
-	{ "FCrInfiniteOreData", 79, 1 },
-	{ "FCrInventoryFragment", 80, 1 },
-	{ "FCrInventorySlot", 81, 1 },
-	{ "FCrMassActorReplicationHelper", 82, 1 },
-	{ "FCrMassActorReplicationHelper::Actor", 83, 1 },
-	{ "FCrMassEntityReplicationHelper", 84, 1 },
-	{ "FCrMassFoundableParameters", 85, 1 },
-	{ "FCrMassSavableFragment", 86, 1 },
-	{ "FCrMassTemperatureFragment::LastUpdateTime", 87, 1 },
-	{ "FCrNativeInputAction", 88, 1 },
-	{ "FCrPackageTransportConnectionData::StartSendServerTime", 89, 1 },
-	{ "FCrPlayerPersonalMarkerData", 90, 1 },
-	{ "FCrSkillData", 91, 1 },
-	{ "FCrWeakSpotRuntimeData", 92, 1 },
-	{ "FD3D12Heap::Heap", 93, 2 },
-	{ "FD3D12Resource::DefaultResourceState", 95, 2 },
-	{ "FD3D12Resource::Heap", 97, 2 },
-	{ "FD3D12Resource::Resource", 99, 2 },
-	{ "FD3D12ResourceLocation::UnderlyingResource", 101, 2 },
-	{ "FD3D12Texture::ResourceLocation", 103, 2 },
-	{ "FDataTableRowHandle", 105, 1 },
-	{ "FEngineShowFlagsSetting", 106, 1 },
-	{ "FEnhancedActionKeyMapping", 107, 1 },
-	{ "FEntityMarkerUIRepresentation", 108, 1 },
-	{ "FFindFloorResult", 109, 1 },
-	{ "FFoundableMarkerDataFastArrayItem", 110, 1 },
-	{ "FGameplayEffectSpec::SetByCallerNameMagnitudes", 111, 3 },
-	{ "FGameplayEffectSpec::SetByCallerTagMagnitudes", 114, 3 },
-	{ "FGameplayTag", 117, 1 },
-	{ "FGameplayTagContainer", 118, 1 },
-	{ "FGeometry", 119, 1 },
-	{ "FGuid", 120, 1 },
-	{ "FHitResult", 121, 1 },
-	{ "FInputActionValue", 122, 1 },
-	{ "FInputMappingContextAndPriority", 123, 1 },
-	{ "FLinearColor", 124, 1 },
-	{ "FMargin", 125, 1 },
-	{ "FMassConstSharedFragment", 126, 1 },
-	{ "FMassEnemyHealthFragment", 127, 1 },
-	{ "FMassEnemyHealthFragment::HP", 128, 3 },
-	{ "FMassEnemyStateFragment", 131, 1 },
-	{ "FMassEnemyStateFragment::State", 132, 3 },
-	{ "FMassEnemyTag", 135, 1 },
-	{ "FMassEntityHandle", 136, 1 },
-	{ "FMassEntityManager::ConstSharedFragmentsContainer", 137, 3 },
-	{ "FMassEntityQuery", 140, 1 },
-	{ "FMassFragment", 141, 1 },
-	{ "FMassFragmentRequirements", 142, 1 },
-	{ "FMassNeutralAITag", 143, 1 },
-	{ "FMassTag", 144, 1 },
-	{ "FNestedItemRecipeCollectionArray", 145, 1 },
-	{ "FPlayerMarkerDataFastArrayItem", 146, 1 },
-	{ "FRootViewportLayoutInfo", 147, 1 },
-	{ "FRotator", 148, 1 },
-	{ "FSlateChildSize", 149, 1 },
-	{ "FSlateFontInfo", 150, 1 },
-	{ "FStreamingSourceShape", 151, 1 },
-	{ "FTexture::TextureRHI", 152, 2 },
-	{ "FTransform", 154, 1 },
-	{ "FTransform::Translation", 155, 3 },
-	{ "FTransformFragment", 158, 1 },
-	{ "FUObjectItem::Flags", 159, 1 },
-	{ "FVector", 160, 1 },
-	{ "FVector2D", 161, 1 },
-	{ "FVector3f", 162, 1 },
-	{ "GameplayStatics_BeginDeferredActorSpawnFromClass", 163, 1 },
-	{ "GameplayStatics_FinishSpawningActor", 164, 1 },
-	{ "GameplayStatics_GetAllActorsOfClass", 165, 1 },
-	{ "GameplayStatics_GetPlayerController", 166, 1 },
-	{ "GameplayStatics_GetPlayerPawn", 167, 1 },
-	{ "SubsystemBlueprintLibrary_GetGameInstanceSubsystem", 168, 1 },
-	{ "TabButton_SetButtonText", 169, 1 },
-	{ "UAuActorPlacementData::BuildingID", 170, 1 },
-	{ "UAuActorPlacementData::EntityType", 171, 1 },
-	{ "UAuActorPlacementData::Socket", 172, 1 },
-	{ "UAuWeaponComponent::EquippedWeapon", 173, 1 },
-	{ "UAuWeaponItemDataBase::RequiredItem", 174, 1 },
-	{ "UBlueprintGeneratedClass", 175, 1 },
-	{ "UCanvas", 176, 1 },
-	{ "UClass", 177, 1 },
-	{ "UCrBuildingCustomNameSubsystem", 178, 1 },
-	{ "UCrBuildingData::BuildingDescription", 179, 1 },
-	{ "UCrBuildingData::BuildingName", 180, 1 },
-	{ "UCrBuildingData::Icon", 181, 1 },
-	{ "UCrBuildingData::Tags", 182, 1 },
-	{ "UCrBuildingData::Type", 183, 1 },
-	{ "UCrCharacterMovementComponent::CoyoteTime", 184, 1 },
-	{ "UCrCharacterMovementComponent::DashCooldownSeconds", 185, 1 },
-	{ "UCrCharacterMovementComponent::DashDuration", 186, 1 },
-	{ "UCrCharacterMovementComponent::DashEnergyCostBase", 187, 1 },
-	{ "UCrCharacterMovementComponent::DefaultZiplineAcceleration", 188, 1 },
-	{ "UCrCharacterMovementComponent::DefaultZiplineSpeed", 189, 1 },
-	{ "UCrCharacterMovementComponent::JumpEnergyCost", 190, 1 },
-	{ "UCrCharacterMovementComponent::MaxAirDashesToExecute", 191, 1 },
-	{ "UCrCharacterMovementComponent::MaxDashDistance", 192, 1 },
-	{ "UCrCharacterMovementComponent::SlideFrictionFactor", 193, 1 },
-	{ "UCrCharacterMovementComponent::SlideGravityForce", 194, 1 },
-	{ "UCrElectricityGraphSubsystem", 195, 1 },
-	{ "UCrEntityGridSubsystem", 196, 1 },
-	{ "UCrEnviroWaveTimerSubsystem::NextWaveTimer", 197, 3 },
-	{ "UCrEnviroWaveTimerSubsystem::TimerActor", 200, 3 },
-	{ "UCrEnviroWaveTimerSubsystem::WaitingDuration", 203, 1 },
-	{ "UCrEnviroWaveTimerSubsystem::bPause", 204, 3 },
-	{ "UCrEnviroWaveTimerSubsystem::bStopWaves", 207, 3 },
-	{ "UCrEnviroWaveTimerSubsystem::bWaitingForNextWave", 210, 3 },
-	{ "UCrEnviroWaveVisualsWorldSubsystem", 213, 1 },
-	{ "UCrEnviroWaveVisualsWorldSubsystem::Settings", 214, 1 },
-	{ "UCrGameInstance::ServerSessionName", 215, 3 },
-	{ "UCrGrenadeWeaponItemDataBase::GrenadeThrowCostOfGrenadeCharge", 218, 1 },
-	{ "UCrHotbarLocalPlayerSubsystem::CurrentHotbarIndex", 219, 1 },
-	{ "UCrHotbarLocalPlayerSubsystem::Hotbars", 220, 1 },
-	{ "UCrInventoryComponent::GridColumns", 221, 1 },
-	{ "UCrInventoryComponent::GridRows", 222, 1 },
-	{ "UCrInventoryComponent::Slots", 223, 1 },
-	{ "UCrPlayerMapMenuDataComponent::FOWData", 224, 3 },
-	{ "UCrUW_InventoryContainer::InventoryComponent", 227, 3 },
-	{ "UCrUW_InventorySlot::ItemIcon", 230, 1 },
-	{ "UCrUW_InventorySlot::ItemName", 231, 1 },
-	{ "UCrUW_InventorySlot::TooltipAnchor", 232, 1 },
-	{ "UCrWeaponComponent::LastEquippedUnarmed", 233, 1 },
-	{ "UCrWeaponComponent::LastEquippedWeaponData", 234, 1 },
-	{ "UCrWeaponItemDataBase::MiningTypeDamage", 235, 1 },
-	{ "UCrWeaponItemDataBase::PossibleEnemiesHitPerTrace", 236, 1 },
-	{ "UCrWeaponItemDataBase::ShotAggro", 237, 1 },
-	{ "UCrWeaponItemDataBase::WeakpointDamageMultiplier", 238, 1 },
-	{ "UDirectionalLightComponent", 239, 1 },
-	{ "UEngine", 240, 1 },
-	{ "UFunction", 241, 1 },
-	{ "UGameInstance", 242, 1 },
-	{ "ULevel", 243, 1 },
-	{ "ULocalPlayer::Origin", 244, 3 },
-	{ "ULocalPlayer::Size", 247, 3 },
-	{ "UMassActorSubsystem::ActorManager", 250, 3 },
-	{ "UMassEntitySubsystem", 253, 1 },
-	{ "UMassEntitySubsystem::EntityManager", 254, 3 },
-	{ "UMassReplicationSubsystem", 257, 1 },
-	{ "UMassSignalSubsystem::CachedWorld", 258, 1 },
-	{ "UMaterialInstanceDynamic", 259, 1 },
-	{ "UObject::InternalIndex", 260, 1 },
-	{ "UObject::ObjectFlags", 261, 1 },
-	{ "UObject::OuterPrivate", 262, 1 },
-	{ "USceneCaptureComponent2D", 263, 1 },
-	{ "USceneComponent", 264, 1 },
-	{ "USceneComponent::ComponentToWorld", 265, 3 },
-	{ "UScriptStruct", 268, 1 },
-	{ "UStreamableRenderAsset::NeverStream", 269, 1 },
-	{ "USubsystem", 270, 1 },
-	{ "UTexture::PrivateResource", 271, 2 },
-	{ "UTexture::SRGB", 273, 3 },
-	{ "UTexture::bAsyncResourceReleaseHasBeenStarted", 276, 1 },
-	{ "UTextureRenderTarget2D", 277, 1 },
-	{ "UTickableWorldSubsystem", 278, 1 },
-	{ "UWorld", 279, 1 },
-	{ "UWorld::GameState", 280, 3 },
-	{ "UWorld::LineBatchers", 283, 3 },
-	{ "UWorld::NetDriver", 286, 3 },
-	{ "WidgetBlueprintLibrary_Create", 289, 1 },
-	{ "WidgetBlueprintLibrary_SetInputMode_GameAndUIEx", 290, 1 },
-	{ "WidgetBlueprintLibrary_SetInputMode_GameOnly", 291, 1 },
+inline constexpr std::array<Index, 255> kFields = {{
+	{ "AActor", 0, 2 },
+	{ "AActor::ActorHasBegunPlay", 2, 1 },
+	{ "AActor::bActorInitialized", 3, 1 },
+	{ "AActor::bHasFinishedSpawning", 4, 1 },
+	{ "AAuPlayerCameraManager::AdditionalFOVOffset", 5, 3 },
+	{ "AAuPlayerCameraManager::FOV", 8, 3 },
+	{ "ACrAPHelper::BuildingData", 11, 1 },
+	{ "ACrAbandonBaseInfoReplicator", 12, 1 },
+	{ "ACrAudiologBase", 13, 1 },
+	{ "ACrBaseCore::IsInfected", 14, 1 },
+	{ "ACrBaseCore::UpgradeLevel", 15, 1 },
+	{ "ACrBaseCore::bIsAttacked", 16, 1 },
+	{ "ACrBuildingSplineActorBase::Spline", 17, 1 },
+	{ "ACrCharacterPlayerBase::ADSMoveSpeed", 18, 1 },
+	{ "ACrCharacterPlayerBase::AccelerationAndDeceleration", 19, 1 },
+	{ "ACrCharacterPlayerBase::CrouchedMoveSpeed", 20, 1 },
+	{ "ACrCharacterPlayerBase::DoubleJumpEnergyUsage", 21, 1 },
+	{ "ACrCharacterPlayerBase::DurationOfAccelerationToSprint", 22, 1 },
+	{ "ACrCharacterPlayerBase::EnergyLoweringMultiplierDuringSprint", 23, 1 },
+	{ "ACrCharacterPlayerBase::MaxWalkSpeed", 24, 1 },
+	{ "ACrCharacterPlayerBase::NormalEnergyRestorationRate", 25, 1 },
+	{ "ACrCharacterPlayerBase::NormalMoveSpeed", 26, 1 },
+	{ "ACrCharacterPlayerBase::SprintMoveSpeed", 27, 1 },
+	{ "ACrCrafter::CraftComponent", 28, 3 },
+	{ "ACrCrafter::CraftingSettings", 31, 1 },
+	{ "ACrDatapadBase", 32, 1 },
+	{ "ACrGameStateBase", 33, 1 },
+	{ "ACrGameStateBase::PlayerPersonalMarkers", 34, 1 },
+	{ "ACrModularRampWalkway::SplineMesh", 35, 1 },
+	{ "ACrModularRampWalkway::Splines", 36, 1 },
+	{ "ACrPackageTransportReplicator::SendingTime", 37, 3 },
+	{ "ACrPlayerControllerBase::PlayerControlState", 40, 3 },
+	{ "ACrPlayerControllerBase::bMapMenuOpen", 43, 3 },
+	{ "ACrPointOfInterestMarkerActor", 46, 1 },
+	{ "ACrTechnologyKeeper::bUnlockAllBuildings", 47, 3 },
+	{ "ACrWorldSettings", 50, 1 },
+	{ "APlayerController::bCinematicMode", 51, 3 },
+	{ "APlayerController::bHidePawnInCinematicMode", 54, 3 },
+	{ "APlayerController::bPlayerIsWaiting", 57, 2 },
+	{ "FAnchors", 59, 2 },
+	{ "FAssetData", 61, 2 },
+	{ "FAuAPMassSpawnedEntityType", 63, 2 },
+	{ "FAuAPPayloadData", 65, 2 },
+	{ "FAuAPSplineActorPayloadData", 67, 2 },
+	{ "FAuAPSplinePointData", 69, 2 },
+	{ "FAuAddedItem", 71, 2 },
+	{ "FAuSimpleItem", 73, 2 },
+	{ "FBatchedLine", 75, 2 },
+	{ "FBuildingMarkerDataFastArrayItem", 77, 2 },
+	{ "FCanvasUVTri", 79, 2 },
+	{ "FColor", 81, 2 },
+	{ "FCrAbandonBaseData", 83, 1 },
+	{ "FCrAbandonBaseDataCollectedStatus", 84, 1 },
+	{ "FCrContextualInputBinding", 85, 2 },
+	{ "FCrCraftingFragment::CraftingMultiplier", 87, 1 },
+	{ "FCrCraftingParameters", 88, 2 },
+	{ "FCrElectricityParameters", 90, 2 },
+	{ "FCrEnviroWaveSettings", 92, 2 },
+	{ "FCrGridEntityHandle", 94, 2 },
+	{ "FCrGridEntityHandle::Data", 96, 3 },
+	{ "FCrGridEntityHandle::EntityHandle", 99, 3 },
+	{ "FCrInfiniteOreData", 102, 2 },
+	{ "FCrInventoryFragment", 104, 2 },
+	{ "FCrInventorySlot", 106, 2 },
+	{ "FCrMassActorReplicationHelper", 108, 2 },
+	{ "FCrMassActorReplicationHelper::Actor", 110, 2 },
+	{ "FCrMassEntityReplicationHelper", 112, 2 },
+	{ "FCrMassFoundableParameters", 114, 2 },
+	{ "FCrMassSavableFragment", 116, 2 },
+	{ "FCrMassTemperatureFragment::LastUpdateTime", 118, 2 },
+	{ "FCrNativeInputAction", 120, 2 },
+	{ "FCrPackageTransportConnectionData::StartSendServerTime", 122, 1 },
+	{ "FCrPlayerPersonalMarkerData", 123, 2 },
+	{ "FCrSkillData", 125, 2 },
+	{ "FCrStorageItem", 127, 1 },
+	{ "FCrTerrainSegmentData", 128, 1 },
+	{ "FCrWeakSpotRuntimeData", 129, 2 },
+	{ "FD3D12Heap::Heap", 131, 2 },
+	{ "FD3D12Resource::DefaultResourceState", 133, 2 },
+	{ "FD3D12Resource::Heap", 135, 2 },
+	{ "FD3D12Resource::Resource", 137, 2 },
+	{ "FD3D12ResourceLocation::UnderlyingResource", 139, 2 },
+	{ "FD3D12Texture::ResourceLocation", 141, 2 },
+	{ "FDataTableRowHandle", 143, 2 },
+	{ "FEngineShowFlagsSetting", 145, 2 },
+	{ "FEnhancedActionKeyMapping", 147, 2 },
+	{ "FEntityMarkerUIRepresentation", 149, 2 },
+	{ "FFindFloorResult", 151, 2 },
+	{ "FFoundableMarkerDataFastArrayItem", 153, 2 },
+	{ "FGameplayEffectSpec::SetByCallerNameMagnitudes", 155, 3 },
+	{ "FGameplayEffectSpec::SetByCallerTagMagnitudes", 158, 3 },
+	{ "FGameplayTag", 161, 2 },
+	{ "FGameplayTagContainer", 163, 2 },
+	{ "FGeometry", 165, 2 },
+	{ "FGuid", 167, 2 },
+	{ "FHitResult", 169, 2 },
+	{ "FInputActionValue", 171, 2 },
+	{ "FInputMappingContextAndPriority", 173, 2 },
+	{ "FLinearColor", 175, 2 },
+	{ "FMargin", 177, 2 },
+	{ "FMassConstSharedFragment", 179, 2 },
+	{ "FMassEnemyHealthFragment", 181, 2 },
+	{ "FMassEnemyHealthFragment::HP", 183, 3 },
+	{ "FMassEnemyStateFragment", 186, 2 },
+	{ "FMassEnemyStateFragment::State", 188, 3 },
+	{ "FMassEnemyTag", 191, 2 },
+	{ "FMassEntityHandle", 193, 2 },
+	{ "FMassEntityManager::ConstSharedFragmentsContainer", 195, 3 },
+	{ "FMassEntityQuery", 198, 2 },
+	{ "FMassFragment", 200, 2 },
+	{ "FMassFragmentRequirements", 202, 2 },
+	{ "FMassNeutralAITag", 204, 2 },
+	{ "FMassTag", 206, 2 },
+	{ "FNestedItemRecipeCollectionArray", 208, 2 },
+	{ "FPlayerMarkerDataFastArrayItem", 210, 2 },
+	{ "FRootViewportLayoutInfo", 212, 2 },
+	{ "FRotator", 214, 2 },
+	{ "FSlateChildSize", 216, 2 },
+	{ "FSlateFontInfo", 218, 2 },
+	{ "FStreamingLevelsToConsider::LevelsToProcess", 220, 1 },
+	{ "FStreamingLevelsToConsider::StreamingLevelsBeingConsidered", 221, 1 },
+	{ "FStreamingSourceShape", 222, 2 },
+	{ "FSubsystemCollectionBase::Outer", 224, 1 },
+	{ "FSubsystemCollectionBase::SubsystemArrayMap", 225, 1 },
+	{ "FSubsystemCollectionBase::SubsystemMap", 226, 1 },
+	{ "FSubsystemCollectionBase::bIterating", 227, 1 },
+	{ "FSubsystemCollectionBase::bPopulating", 228, 1 },
+	{ "FTexture::TextureRHI", 229, 2 },
+	{ "FTransform", 231, 2 },
+	{ "FTransform::Translation", 233, 3 },
+	{ "FTransformFragment", 236, 2 },
+	{ "FUObjectItem::Flags", 238, 2 },
+	{ "FVector", 240, 2 },
+	{ "FVector2D", 242, 2 },
+	{ "FVector3f", 244, 2 },
+	{ "FWorldContext::ThisCurrentWorld", 246, 1 },
+	{ "GameplayStatics_BeginDeferredActorSpawnFromClass", 247, 2 },
+	{ "GameplayStatics_FinishSpawningActor", 249, 2 },
+	{ "GameplayStatics_GetAllActorsOfClass", 251, 2 },
+	{ "GameplayStatics_GetPlayerController", 253, 2 },
+	{ "GameplayStatics_GetPlayerPawn", 255, 2 },
+	{ "SubsystemBlueprintLibrary_GetGameInstanceSubsystem", 257, 2 },
+	{ "TabButton_SetButtonText", 259, 2 },
+	{ "UActorComponent::OwnerPrivate", 261, 1 },
+	{ "UActorComponent::WorldPrivate", 262, 1 },
+	{ "UActorComponent::bHasBeenInitialized", 263, 1 },
+	{ "UActorComponent::bHasBegunPlay", 264, 1 },
+	{ "UActorComponent::bRegistered", 265, 1 },
+	{ "UActorComponent::bRenderStateCreated", 266, 1 },
+	{ "UAuActorPlacementData::BuildingID", 267, 1 },
+	{ "UAuActorPlacementData::EntityType", 268, 1 },
+	{ "UAuActorPlacementData::Socket", 269, 1 },
+	{ "UAuWeaponComponent::EquippedWeapon", 270, 1 },
+	{ "UAuWeaponItemDataBase::RequiredItem", 271, 1 },
+	{ "UBlueprintGeneratedClass", 272, 2 },
+	{ "UCanvas", 274, 2 },
+	{ "UClass", 276, 2 },
+	{ "UCrBuildingCustomNameSubsystem", 278, 1 },
+	{ "UCrBuildingData::BuildingDescription", 279, 1 },
+	{ "UCrBuildingData::BuildingName", 280, 1 },
+	{ "UCrBuildingData::Icon", 281, 1 },
+	{ "UCrBuildingData::Tags", 282, 1 },
+	{ "UCrBuildingData::Type", 283, 1 },
+	{ "UCrCharacterMovementComponent::CoyoteTime", 284, 1 },
+	{ "UCrCharacterMovementComponent::DashCooldownSeconds", 285, 1 },
+	{ "UCrCharacterMovementComponent::DashDuration", 286, 1 },
+	{ "UCrCharacterMovementComponent::DashEnergyCostBase", 287, 1 },
+	{ "UCrCharacterMovementComponent::DefaultZiplineAcceleration", 288, 1 },
+	{ "UCrCharacterMovementComponent::DefaultZiplineSpeed", 289, 1 },
+	{ "UCrCharacterMovementComponent::JumpEnergyCost", 290, 1 },
+	{ "UCrCharacterMovementComponent::MaxAirDashesToExecute", 291, 1 },
+	{ "UCrCharacterMovementComponent::MaxDashDistance", 292, 1 },
+	{ "UCrCharacterMovementComponent::SlideFrictionFactor", 293, 1 },
+	{ "UCrCharacterMovementComponent::SlideGravityForce", 294, 1 },
+	{ "UCrElectricityGraphSubsystem", 295, 1 },
+	{ "UCrElectricityGraphSubsystem::EntityManager", 296, 1 },
+	{ "UCrEntityGridSubsystem", 297, 1 },
+	{ "UCrEntityGridSubsystem::EntityManager", 298, 1 },
+	{ "UCrEnviroWaveTimerSubsystem::NextWaveTimer", 299, 3 },
+	{ "UCrEnviroWaveTimerSubsystem::TimerActor", 302, 3 },
+	{ "UCrEnviroWaveTimerSubsystem::WaitingDuration", 305, 1 },
+	{ "UCrEnviroWaveTimerSubsystem::bPause", 306, 3 },
+	{ "UCrEnviroWaveTimerSubsystem::bStopWaves", 309, 3 },
+	{ "UCrEnviroWaveTimerSubsystem::bWaitingForNextWave", 312, 3 },
+	{ "UCrEnviroWaveVisualsWorldSubsystem", 315, 1 },
+	{ "UCrEnviroWaveVisualsWorldSubsystem::Settings", 316, 1 },
+	{ "UCrGameInstance::ServerSessionName", 317, 3 },
+	{ "UCrGrenadeWeaponItemDataBase::GrenadeThrowCostOfGrenadeCharge", 320, 1 },
+	{ "UCrHotbarLocalPlayerSubsystem::CurrentHotbarIndex", 321, 1 },
+	{ "UCrHotbarLocalPlayerSubsystem::Hotbars", 322, 1 },
+	{ "UCrInventoryComponent::GridColumns", 323, 1 },
+	{ "UCrInventoryComponent::GridRows", 324, 1 },
+	{ "UCrInventoryComponent::Slots", 325, 1 },
+	{ "UCrPlayerMapMenuDataComponent::FOWData", 326, 3 },
+	{ "UCrUW_InventoryContainer::InventoryComponent", 329, 3 },
+	{ "UCrUW_InventorySlot::ItemIcon", 332, 1 },
+	{ "UCrUW_InventorySlot::ItemName", 333, 1 },
+	{ "UCrUW_InventorySlot::TooltipAnchor", 334, 1 },
+	{ "UCrUW_MapMenuMapArea::MapAreaMatrix", 335, 1 },
+	{ "UCrWeaponComponent::LastEquippedUnarmed", 336, 1 },
+	{ "UCrWeaponComponent::LastEquippedWeaponData", 337, 1 },
+	{ "UCrWeaponItemDataBase::MiningTypeDamage", 338, 1 },
+	{ "UCrWeaponItemDataBase::PossibleEnemiesHitPerTrace", 339, 1 },
+	{ "UCrWeaponItemDataBase::ShotAggro", 340, 1 },
+	{ "UCrWeaponItemDataBase::WeakpointDamageMultiplier", 341, 1 },
+	{ "UDirectionalLightComponent", 342, 2 },
+	{ "UEngine", 344, 2 },
+	{ "UEngine::WorldList", 346, 1 },
+	{ "UFunction", 347, 2 },
+	{ "UGameInstance", 349, 1 },
+	{ "ULevel", 350, 1 },
+	{ "ULevel::Actors", 351, 1 },
+	{ "ULightComponent::SceneProxy", 352, 1 },
+	{ "ULightComponent::bAddedToSceneVisible", 353, 1 },
+	{ "ULocalPlayer::Origin", 354, 3 },
+	{ "ULocalPlayer::Size", 357, 3 },
+	{ "UMassActorSubsystem::ActorManager", 360, 3 },
+	{ "UMassEntitySubsystem", 363, 1 },
+	{ "UMassEntitySubsystem::EntityManager", 364, 3 },
+	{ "UMassReplicationSubsystem", 367, 1 },
+	{ "UMassSignalSubsystem::CachedWorld", 368, 2 },
+	{ "UMaterialInstanceDynamic", 370, 2 },
+	{ "UObject::InternalIndex", 372, 2 },
+	{ "UObject::ObjectFlags", 374, 2 },
+	{ "UObject::OuterPrivate", 376, 2 },
+	{ "USceneCaptureComponent2D", 378, 2 },
+	{ "USceneComponent", 380, 1 },
+	{ "USceneComponent::ComponentToWorld", 381, 3 },
+	{ "UScriptStruct", 384, 2 },
+	{ "UStreamableRenderAsset::NeverStream", 386, 2 },
+	{ "UStruct::SuperStruct", 388, 1 },
+	{ "USubsystem", 389, 2 },
+	{ "USubsystem::InternalOwningSubsystem", 391, 1 },
+	{ "UTexture::PrivateResource", 392, 2 },
+	{ "UTexture::SRGB", 394, 3 },
+	{ "UTexture::bAsyncResourceReleaseHasBeenStarted", 397, 2 },
+	{ "UTextureRenderTarget2D", 399, 2 },
+	{ "UTextureRenderTarget::bNeedsTwoCopies", 401, 1 },
+	{ "UTickableWorldSubsystem", 402, 1 },
+	{ "UTickableWorldSubsystem::bInitialized", 403, 1 },
+	{ "UWorld", 404, 2 },
+	{ "UWorld::GameState", 406, 3 },
+	{ "UWorld::LineBatchers", 409, 3 },
+	{ "UWorld::NetDriver", 412, 3 },
+	{ "UWorld::Scene", 415, 1 },
+	{ "UWorld::SubsystemCollection", 416, 1 },
+	{ "UWorld::WorldType", 417, 1 },
+	{ "UWorld::bActorsInitialized", 418, 1 },
+	{ "UWorld::bBegunPlay", 419, 1 },
+	{ "UWorld::bHasEverBeenInitialized", 420, 1 },
+	{ "UWorld::bIsTearingDown", 421, 1 },
+	{ "UWorld::bIsWorldInitialized", 422, 1 },
+	{ "WidgetBlueprintLibrary_Create", 423, 2 },
+	{ "WidgetBlueprintLibrary_SetInputMode_GameAndUIEx", 425, 2 },
+	{ "WidgetBlueprintLibrary_SetInputMode_GameOnly", 427, 2 },
 }};
 
 inline constexpr std::array<AbsentField, 5> kAbsentFields = {{
