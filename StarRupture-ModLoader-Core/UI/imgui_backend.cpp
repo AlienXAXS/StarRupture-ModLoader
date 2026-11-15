@@ -3510,25 +3510,9 @@ static PluginTextureHandle TextureLoadFromRGBA(const unsigned char* rgba, int wi
 // a slot per frame; load once, keep the handle, free when done.
 // ---------------------------------------------------------------------------
 //
-// UE5 internal layout assumptions (verified against Dumper-7 SDK output):
+// The engine's chain from a UTexture to its D3D12 resource is read through the version map rows
+// (see LookUpEngineTextureChain); a build without them copies no engine texture.
 //
-//  UTexture::PrivateResource   -- UTexture + 0x120
-//    Confirmed: Dumper-7 shows Pad_120[0x20] in UTexture covering exactly
-//    PrivateResource(8) + PrivateResourceRenderThread(8) +
-//    PrivateAsyncResourceReleaseHandleId(16) = 32 bytes (UE5 source match).
-//
-//  FTexture::TextureRHI raw pointer -- FTextureResource + 0x10
-//    IDA: FTexture : FRenderResource (sizeof=0x48), FRenderResource = 0x10 bytes
-//    (vtable=8 + state/flags=8). TextureRHI (TRefCountPtr<FRHITexture>) is the
-//    first FTexture member at offset 0x10. FTextureResource : FTexture, single
-//    inheritance, so the offset is the same in FTextureResource objects.
-//
-//  FRHITexture::GetNativeResource() -- vtable slot 5
-//    Confirmed via IDA (FD3D12Texture_vtbl): slots 0-4 are dtor,
-//    SetTrackedAccessFromContext, GetDesc, GetTextureReference,
-//    GetDefaultBindlessHandle.  GetNativeResource is at slot 5.
-//
-// If any of these offsets change after a game update, adjust the constants below.
 // ---------------------------------------------------------------------------
 // Returns true if p looks like a valid user-mode pointer on x64 Windows:
 //   - non-null
@@ -3543,73 +3527,6 @@ static bool IsValidUserPtr(const void* p)
 	       (v & 7u) == 0;
 }
 
-// Attempt to identify an FRHITexture subclass from its vtable pointer.
-// Tries MSVC RTTI first (vtable[-1] -> RTTICompleteObjectLocator -> type name).
-// Falls back to logging the owning module name and vtable RVA so the caller can
-// look it up manually in IDA/Ghidra.  All reads are SEH-guarded.
-static void LogRHITextureClass(void** vtable)
-{
-	if (!vtable) return;
-
-	// --- RTTI attempt ---
-	// MSVC x64: vtable[-1] = RTTICompleteObjectLocator*
-	//   +0  DWORD signature  (1 = x64)
-	//   +4  DWORD offset
-	//   +8  DWORD cdOffset
-	//   +12 DWORD pTypeDescriptor  (RVA from module base)
-	//   +16 DWORD pClassDescriptor (RVA)
-	//   +20 DWORD pSelf            (RVA of the COL itself -> module base = col - pSelf)
-	// RTTITypeDescriptor layout: void* pVFTable, void* spare, char name[] (decorated)
-	const char* rttiName = nullptr;
-	__try
-	{
-		auto* colDwords = reinterpret_cast<const DWORD*>(vtable[-1]);
-		if (colDwords && colDwords[0] == 1)
-		{
-			DWORD selfRVA    = colDwords[5];
-			DWORD typeRVA    = colDwords[3];
-			uintptr_t modBase = reinterpret_cast<uintptr_t>(colDwords) - selfRVA;
-			const char* td   = reinterpret_cast<const char*>(modBase + typeRVA);
-			// Skip pVFTable (8) + spare (8) to reach the name string
-			rttiName = td + 16;
-		}
-	}
-	__except (EXCEPTION_EXECUTE_HANDLER) {}
-
-	if (rttiName)
-	{
-		IMGUI_LOG_WARN("[ImGuiBackend] Unknown FRHITexture subclass (RTTI): %s  vtable=0x%p",
-			rttiName, (void*)vtable);
-		return;
-	}
-
-	// --- Fallback: module + RVA ---
-	HMODULE hMod = nullptr;
-	char modName[MAX_PATH] = "<unknown>";
-	if (GetModuleHandleExA(
-		GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-		reinterpret_cast<LPCSTR>(vtable), &hMod))
-	{
-		GetModuleFileNameA(hMod, modName, sizeof(modName));
-		if (char* slash = strrchr(modName, '\\')) memmove(modName, slash + 1, strlen(slash));
-	}
-	uintptr_t rva = reinterpret_cast<uintptr_t>(vtable)
-	              - reinterpret_cast<uintptr_t>(hMod);
-	IMGUI_LOG_WARN("[ImGuiBackend] Unknown FRHITexture subclass (no RTTI): vtable=0x%p  %s+0x%llX",
-		(void*)vtable, modName, (unsigned long long)rva);
-}
-
-static constexpr ptrdiff_t kUTexture_PrivateResource          = 0x120;
-static constexpr ptrdiff_t kFTextureResource_TextureRHI_Ptr   = 0x10;
-
-// FD3D12Texture struct walk to FD3D12Resource::DefaultResourceState:
-//   FRHITexture* == FD3D12Texture* (primary base at offset 0)
-//   FD3D12BaseShaderResource subobject at FD3D12Texture +0x60 (sizeof FRHITexture)
-//   FD3D12ResourceLocation ResourceLocation at FD3D12BaseShaderResource +0x48  => +0xA8 total
-//   FD3D12Resource* UnderlyingResource at FD3D12ResourceLocation +0x10          => +0xB8 total (pointer)
-//   D3D12_RESOURCE_STATES DefaultResourceState at FD3D12Resource +0x9C
-static constexpr ptrdiff_t kFD3D12Texture_UnderlyingResource_Ptr = 0xB8;
-static constexpr ptrdiff_t kFD3D12Resource_DefaultResourceState  = 0x9C;
 // FD3D12Texture vtable layout (confirmed via IDA, StarRuptureGameSteam-Win64-Shipping):
 //   slot 0 (+0x00)  ~FD3D12Texture
 //   slot 1 (+0x08)  SetTrackedAccessFromContext
@@ -3623,20 +3540,19 @@ static constexpr ptrdiff_t kFD3D12Resource_DefaultResourceState  = 0x9C;
 static constexpr int       kFRHITexture_GetNativeResource_Slot          = 5;
 static constexpr int       kFRHITexture_GetNativeShaderResourceView_Slot = 6;
 
-// Where the engine keeps the chain from a UTexture to its D3D12 resource. The constants above are the
-// values for the game build this loader was made for. A game build whose version map has every row below
-// is read through the rows instead, and there the ID3D12Resource comes from FD3D12Resource::Resource:
-// the vtable call (slot 5) has no row, so nothing shows it is the same call on a build the rows cover.
-// The image library reads through the rows only.
+// Where the engine keeps the chain from a UTexture to its D3D12 resource, from the version map rows
+// for the running game build. Never compiled in: the offsets can move with a game update. The
+// ID3D12Resource comes from FD3D12Resource::Resource. A build without every row copies no engine
+// texture, for the plugin LoadTexture path and the image library alike.
 namespace
 {
 	struct EngineTextureChain
 	{
-		ptrdiff_t privateResource    = kUTexture_PrivateResource;
-		ptrdiff_t textureRHI         = kFTextureResource_TextureRHI_Ptr;
-		ptrdiff_t underlyingResource = kFD3D12Texture_UnderlyingResource_Ptr;
-		ptrdiff_t defaultState       = kFD3D12Resource_DefaultResourceState;
-		ptrdiff_t nativeResource     = 0;      // FD3D12Resource::Resource, set with the rows
+		ptrdiff_t privateResource    = 0;
+		ptrdiff_t textureRHI         = 0;
+		ptrdiff_t underlyingResource = 0;
+		ptrdiff_t defaultState       = 0;
+		ptrdiff_t nativeResource     = 0;      // FD3D12Resource::Resource
 		bool      fromRows           = false;
 	};
 	EngineTextureChain g_chain;
@@ -3644,7 +3560,7 @@ namespace
 }
 
 // Once per session, before the first read of an engine texture. All six rows or none: a build with only
-// some of them keeps the compiled values.
+// some of them reads no engine texture.
 static void LookUpEngineTextureChain()
 {
 	if (!g_callbacks.NativeFieldOffset)
@@ -3653,7 +3569,7 @@ static void LookUpEngineTextureChain()
 	const int privateResource = g_callbacks.NativeFieldOffset("UTexture::PrivateResource", 8, why, sizeof(why));
 	if (privateResource < 0)
 	{
-		IMGUI_LOG_INFO("[ImGuiBackend] Engine texture reads: compiled offsets (%s)", why);
+		IMGUI_LOG_INFO("[ImGuiBackend] Engine texture reads: off, no version map rows (%s)", why);
 		return;
 	}
 	const int textureRHI     = g_callbacks.NativeFieldOffset("FTexture::TextureRHI", 8, why, sizeof(why));
@@ -3663,7 +3579,7 @@ static void LookUpEngineTextureChain()
 	const int nativeResource = g_callbacks.NativeFieldOffset("FD3D12Resource::Resource", 8, why, sizeof(why));
 	if (textureRHI < 0 || location < 0 || underlying < 0 || defaultState < 0 || nativeResource < 0)
 	{
-		IMGUI_LOG_WARN("[ImGuiBackend] Engine texture reads: compiled offsets -- not every row is there (%s)", why);
+		IMGUI_LOG_WARN("[ImGuiBackend] Engine texture reads: off, not every version map row is there (%s)", why);
 		return;
 	}
 	g_chain.privateResource    = privateResource;
@@ -3707,73 +3623,6 @@ static DXGI_FORMAT ResolveTypelessForSRV(DXGI_FORMAT fmt)
 	case DXGI_FORMAT_BC6H_TYPELESS:         return DXGI_FORMAT_BC6H_UF16;
 	case DXGI_FORMAT_BC7_TYPELESS:          return DXGI_FORMAT_BC7_UNORM;
 	default:                                return fmt;
-	}
-}
-
-// Isolated SEH helper: no C++ objects with destructors, so __try is legal here.
-// Reads the vtable from rhiTexture, checks it is in the game's image, calls vtable[5]
-// (GetNativeResource), and calls ID3D12Resource::GetDesc().  rhiTexture may be static
-// exe/DLL data that passes IsValidUserPtr but is not a real heap FRHITexture; calling
-// through its vtable into Streamline with a bad 'this' would corrupt Streamline before
-// the AV fires.
-// Returns true and fills out-params on success; logs and returns false on any exception.
-static bool GetNativeResourceSEH(
-	void*                rhiTexture,
-	void***              outVtable,
-	ID3D12Resource**     outResource,
-	D3D12_RESOURCE_DESC* outDesc)
-{
-	__try
-	{
-		void** vtable = *reinterpret_cast<void***>(rhiTexture);
-		IMGUI_LOG_TRACE("[ImGuiBackend] LoadFromUTexture2D: vtable=0x%p vtable[%d]=0x%p",
-			(void*)vtable, kFRHITexture_GetNativeResource_Slot,
-			vtable ? vtable[kFRHITexture_GetNativeResource_Slot] : nullptr);
-
-		if (!IsValidUserPtr(vtable))
-		{
-			IMGUI_LOG_TRACE("[ImGuiBackend] LoadFromUTexture2D: vtable invalid (0x%p) -- corrupt FRHITexture?",
-				(void*)vtable);
-			return false;
-		}
-
-		// The class check: the game's own RHI textures have their vtable in the game's image. Anything
-		// else (a proxy's, static data) is not called through.
-		HMODULE vtableModule = nullptr;
-		if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-				reinterpret_cast<LPCWSTR>(vtable), &vtableModule) ||
-			vtableModule != GetModuleHandleW(nullptr))
-		{
-			LogRHITextureClass(vtable);
-			return false;
-		}
-		*outVtable = vtable;
-
-		using GetNativeResourceFn = void*(__fastcall*)(void*);
-		auto getNativeResource = reinterpret_cast<GetNativeResourceFn>(vtable[kFRHITexture_GetNativeResource_Slot]);
-		IMGUI_LOG_TRACE("[ImGuiBackend] LoadFromUTexture2D: calling GetNativeResource fn=0x%p this=0x%p",
-			(void*)(uintptr_t)getNativeResource, rhiTexture);
-
-		ID3D12Resource* res = static_cast<ID3D12Resource*>(getNativeResource(rhiTexture));
-		IMGUI_LOG_TRACE("[ImGuiBackend] LoadFromUTexture2D: ID3D12Resource*=0x%p", (void*)res);
-
-		if (!IsValidUserPtr(res))
-		{
-			LogRHITextureClass(vtable);
-			return false;
-		}
-		*outResource = res;
-
-		IMGUI_LOG_TRACE("[ImGuiBackend] LoadFromUTexture2D: calling GetDesc() on 0x%p", (void*)res);
-		*outDesc = res->GetDesc();
-		return true;
-	}
-	__except (EXCEPTION_EXECUTE_HANDLER)
-	{
-		IMGUI_LOG_WARN("[ImGuiBackend] LoadFromUTexture2D: SEH exception in vtable walk / GetNativeResource / GetDesc"
-			" -- rhiTexture=0x%p is likely static data, not a heap FRHITexture; skipping",
-			rhiTexture);
-		return false;
 	}
 }
 
@@ -3913,8 +3762,8 @@ namespace
 {
 	struct EngineSource
 	{
-		// From the rows, a reference of ours is on it from the check until this goes out of scope,
-		// so it cannot go away before the copy takes its own. From the compiled path, none is taken.
+		// A reference of ours is on it from the check until this goes out of scope,
+		// so it cannot go away before the copy takes its own.
 		ID3D12Resource*       resource   = nullptr;
 		bool                  owned      = false;
 		void*                 underlying = nullptr;  // the engine's FD3D12Resource
@@ -3974,7 +3823,7 @@ static int ReadEngineChainSEH(const void* texture, const EngineTextureChain& cha
 		*outRhi        = rhi;
 		*outUnderlying = underlying;
 		*outState      = *reinterpret_cast<D3D12_RESOURCE_STATES*>(static_cast<uint8_t*>(underlying) + chain.defaultState);
-		*outNative     = chain.fromRows ? *reinterpret_cast<void**>(static_cast<uint8_t*>(underlying) + chain.nativeResource) : nullptr;
+		*outNative     = *reinterpret_cast<void**>(static_cast<uint8_t*>(underlying) + chain.nativeResource);
 		return 0;
 	}
 	__except (AccessViolationOnly(GetExceptionCode()))
@@ -4060,12 +3909,19 @@ static int ResourceFromRowsSEH(void* native, ID3D12Resource** outResource, D3D12
 }
 
 // Walks UTexture -> FTexture -> FD3D12Texture -> FD3D12Resource -> ID3D12Resource, through the
-// version map rows when the build has them, else through the compiled offsets, and checks the
-// result is a texture a copy may read. NotYet: retry later (not streamed in, not allocated, or
+// version map rows, and checks the result is a texture a copy may read. NotYet: retry later (not streamed in, not allocated, or
 // not in a readable state). Refused: not copied, whatever the retry.
 static Walk WalkEngineTexture(const void* texture, const char* caller, const char* name, EngineSource* out)
 {
 	std::call_once(g_chainOnce, LookUpEngineTextureChain);
+	if (!g_chain.fromRows)
+	{
+		static std::atomic<bool> s_noRowsLogged{ false };
+		if (!s_noRowsLogged.exchange(true))
+			IMGUI_LOG_WARN("[ImGuiBackend] %s '%s': the version map has no rows for the engine texture chain -- "
+				"engine textures are not copied (logged once)", caller, name ? name : "?");
+		return Walk::Unavailable;
+	}
 
 	void* rhi    = nullptr;
 	void* native = nullptr;
@@ -4082,36 +3938,27 @@ static Walk WalkEngineTexture(const void* texture, const char* caller, const cha
 		return Walk::Refused;
 	}
 
-	if (g_chain.fromRows)
+	std::call_once(g_resourceModuleOnce, LookUpResourceModule);
+	const int found = ResourceFromRowsSEH(native, &out->resource, &out->desc);
+	out->owned = out->resource != nullptr;
+	switch (found)
 	{
-		std::call_once(g_resourceModuleOnce, LookUpResourceModule);
-		const int found = ResourceFromRowsSEH(native, &out->resource, &out->desc);
-		out->owned = out->resource != nullptr;
-		switch (found)
-		{
-		case 0:
-			break;
-		case 1:
-			return Walk::NotYet;
-		case 3:
-		{
-			static std::atomic<bool> s_wrongLogged{ false };
-			if (!s_wrongLogged.exchange(true))
-				IMGUI_LOG_WARN("[ImGuiBackend] %s '%s': FD3D12Resource::Resource does not lead to a resource made by "
-					"this device's D3D12 -- engine textures are not copied (logged once)", caller, name ? name : "?");
-			return Walk::Unavailable;
-		}
-		default:
-			IMGUI_LOG_WARN("[ImGuiBackend] %s '%s': FD3D12Resource::Resource is not a D3D12 resource -- not copied",
-				caller, name ? name : "?");
-			return Walk::Refused;
-		}
+	case 0:
+		break;
+	case 1:
+		return Walk::NotYet;
+	case 3:
+	{
+		static std::atomic<bool> s_wrongLogged{ false };
+		if (!s_wrongLogged.exchange(true))
+			IMGUI_LOG_WARN("[ImGuiBackend] %s '%s': FD3D12Resource::Resource does not lead to a resource made by "
+				"this device's D3D12 -- engine textures are not copied (logged once)", caller, name ? name : "?");
+		return Walk::Unavailable;
 	}
-	else
-	{
-		void** vtable = nullptr;
-		if (!GetNativeResourceSEH(rhi, &vtable, &out->resource, &out->desc))
-			return Walk::Refused;
+	default:
+		IMGUI_LOG_WARN("[ImGuiBackend] %s '%s': FD3D12Resource::Resource is not a D3D12 resource -- not copied",
+			caller, name ? name : "?");
+		return Walk::Refused;
 	}
 
 	IMGUI_LOG_TRACE("[ImGuiBackend] %s '%s': desc %llux%u format=%u mips=%u dim=%u flags=0x%X state=0x%X",
@@ -4539,8 +4386,7 @@ static int TryCopyTextureLevelBody(void* uTexture2D, const char* name, unsigned 
 		return ImGuiHostCopy_Unavailable;
 	WarnIfRenderThread(kCaller, name);
 
-	// The library reads through the version map rows only: on a build without them it keeps
-	// its placeholder, since the compiled offsets are only known to hold for the old read.
+	// Without the rows the walk reads nothing: the library keeps its placeholder.
 	std::call_once(g_chainOnce, LookUpEngineTextureChain);
 	if (!g_chain.fromRows)
 		return ImGuiHostCopy_Unavailable;
