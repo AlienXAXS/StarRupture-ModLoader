@@ -168,7 +168,7 @@ namespace
 
 	bool Field(const char* key, const char* className, const char* member, uint32_t flags, uint32_t size,
 		const std::vector<VersionMap::FieldCandidate>& own, VersionMap::FieldValue& out, std::string& error,
-		const VersionMap::Exe& running = kRunning)
+		const VersionMap::Exe& running = kRunning, bool* absent = nullptr)
 	{
 		TestDoubles::g_log.clear();
 		TestDoubles::g_debugLog.clear();
@@ -182,7 +182,7 @@ namespace
 		request.builtCL     = 127004;
 		request.builtOffset = 0;
 		request.candidates  = own;
-		return VersionMap::SelectField("Test", request, running, out, error);
+		return VersionMap::SelectField("Test", request, running, out, error, nullptr, absent);
 	}
 
 	VersionMap::FieldCandidate FieldRow(uint32_t cl, int32_t offset, uint32_t size)
@@ -672,6 +672,153 @@ int main()
 		Check(find("FeatPlug") == nullptr && again && PluginHookReport::ConfigOffReason("FeatPlug", "Laser", "Scale").empty(),
 			"feature: a clean reload switches the entries back on");
 		VersionMap::SetLiveFieldSource(nullptr);
+	}
+
+	// A key the map lists as absent on the running build (kAbsentFields): the game build does not have the member. The
+	// lookup tells it from a missing one, and the report shows it as information, not as a feature that failed.
+	{
+		VersionMap::SetLiveFieldSource(FakeLive);
+		VersionMap::FieldValue v;
+		std::string e;
+		bool absent = false;
+
+		Check(!Field("ATest::Gone", "ATest", "Gone", 0, 8, {}, v, e, kRunning, &absent) && absent
+			&& e == "not in this game version (CL-128786)"
+			&& Logged(L"[Map] Test: ATest::Gone: not in this game version (CL-128786)") && !Logged(L"refused"),
+			"absent field: refused as not in this game version, at info");
+		Check(!Field("ATest::Gone", "ATest", "Gone", 0, 8, { FieldRow(128786, 0x30, 8) }, v, e, kRunning, &absent) && absent,
+			"absent field: the plugin's own row does not bring it back");
+		Check(!Field("ATest::Gone", "ATest", "Gone", 0, 8, {}, v, e, kRunning) && e == "not in this game version (CL-128786)",
+			"absent field: a caller that does not ask for the flag still gets the refusal");
+
+		// Another build does not list it: an ordinary miss.
+		Check(!Field("ATest::Gone", "ATest", "Gone", 0, 8, {}, v, e, VersionMap::Exe{ 127004, 0x11111111, 0x01000000 }, &absent) && !absent
+			&& e == "reflection: no member Gone" && Logged(L"ATest::Gone: refused: reflection: no member Gone"),
+			"absent field: another build, where it is not listed, keeps the miss wording");
+		// A key the map does not list at all is a miss.
+		Check(!Field("ATest::Missing", "ATest", "Missing", 0, 8, {}, v, e, kRunning, &absent) && !absent
+			&& e == "reflection: no member Missing" && Logged(L"ATest::Missing: refused: reflection: no member Missing"),
+			"absent field: a key the map does not list keeps the miss wording");
+		// A key that is there resolves.
+		Check(Field("ATest::Reflected", "ATest", "Reflected", 0, 8, {}, v, e, kRunning, &absent) && !absent && v.offset == 0x30,
+			"absent field: a key that is there resolves");
+
+		// The plugin map switched off serves no rows to plugins, and no absent list either; the loader's own lookups keep it.
+		VersionMap::SetPluginMapOff(true);
+		Check(!Field("ATest::Gone", "ATest", "Gone", 0, 8, {}, v, e, kRunning, &absent) && !absent && e == "reflection: no member Gone",
+			"absent field: not applied while the plugin map is off");
+		VersionMap::SetPluginMapOff(false);
+
+		// The list is the active map's: a map without it asks the game.
+		VersionMap::MapData noList = VersionMap::BaselineMap();
+		noList.absentFields.clear();
+		VersionMap::SetActiveMap(std::make_shared<const VersionMap::MapData>(noList));
+		Check(!Field("ATest::Gone", "ATest", "Gone", 0, 8, {}, v, e, kRunning, &absent) && !absent && e == "reflection: no member Gone",
+			"absent field: read from the active map");
+		VersionMap::SetActiveMap(nullptr);
+
+		// The report. One plugin with an absent feature, a missing one and a fine one; the plugin loads.
+		IPluginHookScanner* scan = ModLoaderLogger::GetPluginHookScanner();
+		const auto declare = [&](const IPluginSelf* self, const char* id, const char* title,
+			std::vector<const char*> keys, std::vector<const char*> configKeys, bool* enabled)
+		{
+			PluginFeatureDesc desc = PLUGIN_FEATURE_DESC_INIT;
+			desc.id             = id;
+			desc.title          = title;
+			desc.keys           = keys.data();
+			desc.keyCount       = static_cast<uint32_t>(keys.size());
+			desc.configKeys     = configKeys.data();
+			desc.configKeyCount = static_cast<uint32_t>(configKeys.size());
+			desc.enabled        = enabled;
+			return scan->DeclareFeature(self, &desc);
+		};
+		const auto reportOf = [](const char* plugin) -> bool
+		{
+			for (const PluginHookReport::PluginReport& r : PluginHookReport::Snapshot())
+				if (r.plugin == plugin)
+					return true;
+			return false;
+		};
+
+		IPluginSelf self{ "AbsentPlug", "1", nullptr, nullptr, nullptr };
+		bool hotbar = true, hud = true, kept = false, refused = true;
+		const unsigned serial = PluginHookReport::GetCommitSerial();
+		TestDoubles::g_log.clear();
+		PluginHookReport::BeginSession(&self, "AbsentPlug", "AbsentPlug.dll");
+		declare(&self, "hotbar", "Hotbar", { "ATest::Gone", "ATest::AlsoGone" }, { "Hotbar.*" }, &hotbar);
+		declare(&self, "hud", "Heads-up display", { "ATest::Missing" }, { "Hud.Show" }, &hud);
+		declare(&self, "kept", "Kept", { "ATest::Kept" }, {}, &kept);
+		PluginHookReport::RecordAbsent(&self, "ATest::Gone", "not in this game version (CL-128786)");
+		PluginHookReport::RecordAbsent(&self, "ATest::Gone", "not in this game version (CL-128786)");   // asked twice: listed once
+		PluginHookReport::RecordAbsent(&self, "ATest::AlsoGone", "not in this game version (CL-128786)");
+		PluginHookReport::RecordFailure(&self, "ATest::Missing", "reflection: no member Missing", true);
+		PluginHookReport::RecordFieldResolved(&self, "ATest::Kept");
+		Check(!PluginHookReport::SessionHasFailures(&self) && !hotbar && !hud && kept, "absent report: the flags of the features that are off are false");
+		PluginHookReport::EndSession(&self, &refused);
+		Check(!refused, "absent report: the plugin loads");
+		Check(reportOf("AbsentPlug") && PluginHookReport::GetCommitSerial() == serial + 1 && PluginHookReport::GetFeaturesOffCount("AbsentPlug") == 1,
+			"absent report: only the missing key is a failure entry, and counted as a feature off");
+		Check(PluginHookReport::ConfigOffReason("AbsentPlug", "Hotbar", "Scale") == "Hotbar is not in this game version"
+			&& PluginHookReport::ConfigOffReason("absentplug", "Hotbar", "Anything") == "Hotbar is not in this game version"
+			&& PluginHookReport::ConfigOffReason("AbsentPlug", "Hud", "Show") == "Heads-up display is off: this game build changed something it needs"
+			&& PluginHookReport::ConfigOffReason("Other", "Hotbar", "Scale").empty(),
+			"absent report: the config entries say not in this game version, apart from a feature that failed");
+		const std::string text = PluginHookReport::BuildReportText();
+		Check(text.find("Not in this game version (not failures; the feature does not apply to this build):\r\n"
+				"AbsentPlug: Hotbar (ATest::Gone)\r\nAbsentPlug: Hotbar (ATest::AlsoGone)\r\n") != std::string::npos
+			&& text.find("[feature off] Hotbar") == std::string::npos
+			&& text.find("[feature off] Heads-up display (hud): this game build changed something it needs") != std::string::npos
+			&& text.find("AbsentPlug (AbsentPlug.dll) -- loaded, 1 feature(s) off") != std::string::npos,
+			"absent report: the text lists it apart from the failures, with no feature-off line of its own");
+		Check(Logged(L"[Map] AbsentPlug: feature \"Hotbar\" is not in this game version: ATest::Gone, ATest::AlsoGone")
+			&& Logged(L"[Map] AbsentPlug: feature \"Heads-up display\" is off: ATest::Missing (this game build changed something it needs)"),
+			"absent report: one info line per feature, the failed one as before");
+
+		// A plugin whose only miss is absent leaves no report and opens no popup; its text has no failure wording of its own.
+		IPluginSelf only{ "OnlyAbsent", "1", nullptr, nullptr, nullptr };
+		bool soloHotbar = true;
+		const unsigned before = PluginHookReport::GetCommitSerial();
+		PluginHookReport::BeginSession(&only, "OnlyAbsent", "OnlyAbsent.dll");
+		declare(&only, "hotbar", "Hotbar", { "ATest::Gone" }, { "Hotbar.*" }, &soloHotbar);
+		PluginHookReport::RecordAbsent(&only, "ATest::Gone", "not in this game version (CL-128786)");
+		PluginHookReport::EndSession(&only, &refused);
+		const std::string onlyText = PluginHookReport::BuildReportText();
+		Check(!refused && !soloHotbar && !reportOf("OnlyAbsent") && PluginHookReport::GetCommitSerial() == before
+			&& PluginHookReport::GetFeaturesOffCount("OnlyAbsent") == 0
+			&& onlyText.find("OnlyAbsent: Hotbar (ATest::Gone)") != std::string::npos
+			&& onlyText.find("OnlyAbsent (") == std::string::npos,
+			"absent report: an absent-only plugin has no failure report and opens no popup");
+
+		// One feature with an absent key and a real miss: the feature is off and warns, naming only the real miss.
+		IPluginSelf mixed{ "MixedAbsent", "1", nullptr, nullptr, nullptr };
+		bool mixedHotbar = true;
+		TestDoubles::g_log.clear();
+		PluginHookReport::BeginSession(&mixed, "MixedAbsent", "MixedAbsent.dll");
+		declare(&mixed, "hotbar", "Hotbar", { "ATest::Gone", "ATest::Missing" }, { "Hotbar.*" }, &mixedHotbar);
+		PluginHookReport::RecordAbsent(&mixed, "ATest::Gone", "not in this game version (CL-128786)");
+		PluginHookReport::RecordFailure(&mixed, "ATest::Missing", "reflection: no member Missing", true);
+		PluginHookReport::EndSession(&mixed, &refused);
+		Check(!refused && !mixedHotbar
+			&& Logged(L"[Map] MixedAbsent: feature \"Hotbar\" is off: ATest::Missing (this game build changed something it needs)")
+			&& !Logged(L"is off: ATest::Gone"),
+			"absent report: a feature with a real miss still warns, naming only the real miss");
+
+		// A reload drops what the plugin had absent; the feature that no longer is gets no line.
+		PluginHookReport::BeginSession(&only, "OnlyAbsent", "OnlyAbsent.dll");
+		PluginHookReport::EndSession(&only, &refused);
+		Check(PluginHookReport::ConfigOffReason("OnlyAbsent", "Hotbar", "Scale").empty()
+			&& PluginHookReport::BuildReportText().find("OnlyAbsent: Hotbar") == std::string::npos,
+			"absent report: a reload replaces the plugin's absent keys");
+
+		// A key no feature lists cannot go off in its place: the plugin is refused, as for any miss.
+		IPluginSelf core{ "CoreAbsent", "1", nullptr, nullptr, nullptr };
+		PluginHookReport::BeginSession(&core, "CoreAbsent", "CoreAbsent.dll");
+		PluginHookReport::RecordAbsent(&core, "ATest::Gone", "not in this game version (CL-128786)");
+		Check(PluginHookReport::SessionHasFailures(&core), "absent report: a key no feature lists is a failure");
+		PluginHookReport::EndSession(&core, &refused);
+		Check(refused && reportOf("CoreAbsent")
+			&& PluginHookReport::BuildReportText().find("not in this game version (CL-128786) (no feature lists this key, so the plugin cannot do without it)") != std::string::npos,
+			"absent report: a plugin that cannot do without the key is refused, with the reason");
 	}
 
 	// Blueprint functions: a PLUGIN_FIELD_LATE request is pending while the class is not loaded, and resolves when
@@ -1483,6 +1630,21 @@ int main()
 		Check(pages && pages->offset == 0x38 && pages->size == 0x10 && pages->boolMask == 0, "real field rows: Hotbars is a 16-byte array at 0x38 on CL-129402");
 		Check(!fieldRow("UCrHotbarLocalPlayerSubsystem::CurrentHotbarIndex", 127004) && !fieldRow("UCrHotbarLocalPlayerSubsystem::Hotbars", 127004),
 			"real field rows: the hotbar subsystem has no CL-127004 row");
+		// ...and the map says so: both members are absent on CL-127004, so nothing warns there, and not on CL-129402.
+		const auto absentOn = [](const char* key, uint32_t cl)
+		{
+			for (const Real::VersionMap::AbsentField& a : Real::VersionMap::kAbsentFields)
+				if (strcmp(a.key, key) == 0 && a.gameCL == cl)
+					return true;
+			return false;
+		};
+		Check(absentOn("UCrHotbarLocalPlayerSubsystem::CurrentHotbarIndex", 127004) && absentOn("UCrHotbarLocalPlayerSubsystem::Hotbars", 127004)
+			&& !absentOn("UCrHotbarLocalPlayerSubsystem::CurrentHotbarIndex", 129402) && !absentOn("UCrHotbarLocalPlayerSubsystem::Hotbars", 129402),
+			"real field rows: the hotbar members are absent on CL-127004 only");
+		Check(absentOn("FHotbarInternalSlotData::SlotType", 127004) && absentOn("FHotbarArray::SlotsArray", 127004)
+			&& !absentOn("FHotbarInternalSlotData::SlotType", 129402) && !absentOn("FHotbarArray::SlotsArray", 129402)
+			&& !fieldRow("FHotbarInternalSlotData::SlotType", 129402) && !fieldRow("FHotbarArray::SlotsArray", 129402),
+			"real field rows: the slot members are absent on CL-127004, and reflected (no row) on CL-129402");
 		// The members of the engine texture chain the icon copy reads, one row per live build, measured the same
 		// on CL-127004 and CL-129402 and absent from CL-128786.
 				for (const ChainRow& m : kChain)
@@ -1580,6 +1742,14 @@ int main()
 		newRow = functionRow("ACrPlayerControllerBase::NativeOnInputCloseInGameMenu", 129402);
 		Check(oldRow && newRow && oldRow->rva == 0x07606ED0 && newRow->rva == 0x07652E60 && strcmp(oldRow->pattern, newRow->pattern) == 0 && !functionRow("ACrPlayerControllerBase::NativeOnInputCloseInGameMenu", 128786),
 			"real function rows: CloseInGameMenu has one pattern and a row on CL-127004 and CL-129402");
+		oldRow = functionRow("UCrBuildingComponent::CanRestoreInitialState", 127004);
+		newRow = functionRow("UCrBuildingComponent::CanRestoreInitialState", 129402);
+		Check(isStartRow(oldRow, 0x07447230) && isStartRow(newRow, 0x0747BF40) && strcmp(oldRow->pattern, newRow->pattern) == 0 && !functionRow("UCrBuildingComponent::CanRestoreInitialState", 128786),
+			"real function rows: CanRestoreInitialState has one pattern and a row on CL-127004 and CL-129402");
+		oldRow = functionRow("ACrCharacterPlayerBase::DeactivateBuildingDrone", 127004);
+		newRow = functionRow("ACrCharacterPlayerBase::DeactivateBuildingDrone", 129402);
+		Check(isStartRow(oldRow, 0x07568CF0) && isStartRow(newRow, 0x075B3CA0) && strcmp(oldRow->pattern, newRow->pattern) == 0 && !functionRow("ACrCharacterPlayerBase::DeactivateBuildingDrone", 128786),
+			"real function rows: DeactivateBuildingDrone has one pattern and a row on CL-127004 and CL-129402");
 		oldRow = functionRow("UCrBuildingStabilitySubsystem::OnCreateBuildingEntity", 128786);
 		newRow = functionRow("UCrBuildingStabilitySubsystem::OnDestroyBuildingEntity", 128786);
 		Check(oldRow && newRow && oldRow->rva == 0x074E7BF0 && newRow->rva == 0x074E7C30 && strcmp(oldRow->pattern, newRow->pattern) != 0,

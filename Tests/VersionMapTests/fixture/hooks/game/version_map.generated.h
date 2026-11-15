@@ -13,6 +13,7 @@ struct Build { uint32_t gameCL, imageStamp, imageSize; const char* source; };
 struct Index { const char* key; uint16_t first, count; };
 struct FunctionRow { uint32_t gameCL, imageStamp, imageSize; int32_t kind; uint32_t fp; bool absent; const char* pattern; int32_t resultOffset, followRel32At, followRipDispAt; uint32_t rva; const char* owners; };
 struct FieldRow { uint32_t gameCL; int32_t offset; uint32_t size; uint8_t boolMask; const char* member; };
+struct AbsentField { const char* key; uint32_t gameCL; };
 
 inline constexpr std::array<Build, 2> kBuilds = {{
 	{ 127004, 0x11111111, 0x01000000, "public 1" },
@@ -73,5 +74,10 @@ inline constexpr std::array<Index, 5> kFields = {{
 	{ "ATest::Reflected", 3, 1 },
 	{ "ATest::Renamed", 4, 2 },
 	{ "FPlain::Block", 6, 2 },
+}};
+
+inline constexpr std::array<AbsentField, 2> kAbsentFields = {{
+	{ "ATest::AlsoGone", 128786 },
+	{ "ATest::Gone", 128786 },
 }};
 }

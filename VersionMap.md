@@ -23,7 +23,7 @@ image size). There are four kinds of row.
 | data | a global's name | A function row of kind `DATA` |
 | field | `Class::Member` | `offset`, `size`, a bool mask, and the member's new name when it was renamed |
 | absent | any function key | No locator: CI could not place the key on that build |
-| absent (field) | `Class::Member` | CI only: a member CI could not find on that build. It is the `kAbsentFields` array in the generated header; the loader never reads it, and a feed has no such line |
+| absent (field) | `Class::Member` | A member the game build does not have. It is the `kAbsentFields` array in the generated header, which the loader reads; the version map file has no such line |
 
 **Key.** A key names a function, a global or a member in Dumper-7 naming. A global key (kinds
 `FUNCTION_START` and `DATA`) names one game symbol, the same for every plugin, and has no `/`. A
@@ -46,6 +46,16 @@ rejects the whole file. Global and field rows carry none.
 a global key it lists the owners whose requests CI tested; for a site key it carries the `fp` it
 tested. It binds only those requests: they fail with no fallback, because their locators were
 found unsafe on that build. A verified row replaces an `absent` row; nothing else does.
+
+An absent field is a member the game build does not have, for example a class that arrives in a
+later build. A request for it on that build is answered "not in this game version" and nothing
+else is tried, not even a row the plugin brings. That answer is not a failure: see
+[Features](#features). The list is compiled into the loader (`kAbsentFields`); the version map
+file cannot carry it.
+On CL-127004 the hotbar members `UCrHotbarLocalPlayerSubsystem::CurrentHotbarIndex` and `::Hotbars`,
+and the hotbar slot members `FHotbarInternalSlotData::SlotType` and `FHotbarArray::SlotsArray`, are listed
+this way, so the feature that needs them is off there without a warning. A member whose row is just
+missing, because the map is stale, still warns.
 
 The version map lives in `hooks/game/version_map.generated.h`, written by CI
 (`ci/version-map.mjs` in [starrupture-ci](https://github.com/msantoro12/starrupture-ci), format in
@@ -248,6 +258,13 @@ What the loader does with it:
   that feature off. The plugin still loads, `refused` stays false, and `GetCommitSerial()` still
   bumps so the failure window opens.
 - A key that fails and belongs to no feature refuses the plugin, as before.
+- A field key the version map lists as absent on the running build is not a failure. The feature
+  goes off and the plugin loads, but it is not in the failure window, `GetCommitSerial()` does
+  not bump, and the log line is
+  `[Map] <plugin>: feature "<title>" is not in this game version: <keys>`. The hook failures
+  report lists it under "Not in this game version", and the config page says
+  `<title> is not in this game version`. With no feature listing the key, the plugin is refused
+  as for any other key.
 - The failure window lists the feature by its title; the log has one line,
   `[Map] <plugin>: feature "<title>" is off: <keys> (<reason>)`.
 - Its config entries are reported as off (`PluginHookReport::ConfigOffReason`) so the config page

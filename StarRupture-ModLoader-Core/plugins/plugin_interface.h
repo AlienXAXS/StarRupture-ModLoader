@@ -1329,6 +1329,9 @@ static_assert(sizeof(PluginFieldResult) == 12, "PluginFieldResult has no structS
 // anything. A key that does not resolve on the running build then turns off
 // the features that list it, and the plugin still loads. A key no feature
 // lists stays core: a miss on it refuses the plugin, as it always did.
+// A field key the loader's map lists as absent on the running build (the
+// class or member arrives with a later build) turns the feature off the same
+// way, and the report says "not in this game version" instead of a failure.
 //
 // The keys are the names the plugin passes to the loader: the hookName of a
 // Resolve (for a map key, the key itself, not "<plugin>/<hookName>"), and the

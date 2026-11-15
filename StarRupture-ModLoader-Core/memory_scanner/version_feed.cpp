@@ -346,6 +346,9 @@ namespace VersionFeed
 				++report.fromFeed;
 			out.fields.push_back(*pick);
 		}
+
+		// Absent fields are not in a feed: the loader's compiled list stands.
+		out.absentFields = baseline.absentFields;
 		return out;
 	}
 

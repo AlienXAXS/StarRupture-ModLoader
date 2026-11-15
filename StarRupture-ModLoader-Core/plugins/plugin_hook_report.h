@@ -84,6 +84,20 @@ namespace PluginHookReport
         bool                     refused = false;  // the repeated request was refused: the feature stays off
     };
 
+    // A key of a declared feature that the running game build does not have
+    // (VersionMap::SelectField's absent answer): the class or member arrives
+    // with a later build. The feature is off, but nothing changed and nothing
+    // is missing, so this is information, not a failure: it is not in
+    // PluginReport and never opens the failure window.
+    struct AbsentKey
+    {
+        std::string              plugin;
+        std::string              key;
+        std::string              featureId;
+        std::string              featureTitle;
+        std::vector<std::string> configKeys;    // "Section.Key" or "Section.*" the feature drives
+    };
+
     // Everything one plugin reported during its last scan session.
     struct PluginReport
     {
@@ -165,6 +179,12 @@ namespace PluginHookReport
 
     // Copy of the pending keys of every plugin.
     std::vector<PendingKey> Pending();
+
+    // A request for a key the running build does not have. Each feature that
+    // lists the key goes off (*enabled = false, its config entries greyed) and
+    // is kept as an AbsentKey; the plugin is not refused. A key no feature
+    // lists cannot go off: that is a core failure, as RecordFailure.
+    void RecordAbsent(const IPluginSelf* self, const char* key, const char* detail);
 
     // v72. Declare a feature for the open session. keys are the names later
     // passed to RecordFailure; configKeys are "Section.Key" or "Section.*".

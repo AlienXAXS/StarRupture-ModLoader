@@ -452,8 +452,8 @@ namespace ModLoaderLogger
 
 			VersionMap::FieldValue value;
 			std::string error;
-			bool pending = false;
-			if (!VersionMap::SelectField(self->name, field, VersionMap::RunningExe(), value, error, &pending))
+			bool pending = false, absent = false;
+			if (!VersionMap::SelectField(self->name, field, VersionMap::RunningExe(), value, error, &pending, &absent))
 			{
 				if (!inSession)
 				{
@@ -462,6 +462,8 @@ namespace ModLoaderLogger
 				}
 				else if (pending)
 					PluginHookReport::RecordPending(self, key, error.c_str());
+				else if (absent)
+					PluginHookReport::RecordAbsent(self, key, error.c_str());
 				else
 					PluginHookReport::RecordFailure(self, key, error.c_str(), true);
 				return false;
