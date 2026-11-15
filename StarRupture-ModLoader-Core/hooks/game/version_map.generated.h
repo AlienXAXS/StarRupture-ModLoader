@@ -673,7 +673,7 @@ inline constexpr std::array<FunctionRow, 434> kFunctionRows = {{
 	{ 128786, 0xCF8579A6, 0x0F47D000, 1, 0x00000000, false, "4C 8B DC 55 56 57 41 55 41 57 48 81 EC 80 01 00 00 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 84 24 60 01 00 00 4D 89 63 D0 45 0F B6 E0 4D 89 73 C8 4D 8B F9 44 0F B6 EA 48 8B E9", 0, -1, -1, 0x053B07E0, nullptr },
 }};
 
-inline constexpr std::array<FieldRow, 71> kFieldRows = {{
+inline constexpr std::array<FieldRow, 73> kFieldRows = {{
 	// AAuPlayerCameraManager::AdditionalFOVOffset
 	{ 127004, 0x299C, 0x4, 0x00, nullptr },
 	{ 128786, 0x299C, 0x4, 0x00, nullptr },
@@ -710,6 +710,10 @@ inline constexpr std::array<FieldRow, 71> kFieldRows = {{
 	// FCrGridEntityHandle::EntityHandle
 	{ 127004, 0x0, 0x8, 0x00, nullptr },
 	{ 128786, 0x0, 0x8, 0x00, nullptr },
+	// FD3D12Heap::Heap
+	{ 127004, 0x20, 0x8, 0x00, nullptr },
+	// FD3D12Resource::Heap
+	{ 127004, 0x30, 0x8, 0x00, nullptr },
 	// FGameplayEffectSpec::SetByCallerNameMagnitudes
 	{ 127004, 0x1D8, 0x50, 0x00, nullptr },
 	{ 128786, 0x1D8, 0x50, 0x00, nullptr },
@@ -1003,7 +1007,7 @@ inline constexpr std::array<Index, 217> kFunctions = {{
 	{ "UWorld::UpdateWorldComponents", 432, 2 },
 }};
 
-inline constexpr std::array<Index, 36> kFields = {{
+inline constexpr std::array<Index, 38> kFields = {{
 	{ "AAuPlayerCameraManager::AdditionalFOVOffset", 0, 2 },
 	{ "AAuPlayerCameraManager::FOV", 2, 2 },
 	{ "ACrCrafter::CraftComponent", 4, 2 },
@@ -1016,29 +1020,31 @@ inline constexpr std::array<Index, 36> kFields = {{
 	{ "APlayerController::bPlayerIsWaiting", 18, 2 },
 	{ "FCrGridEntityHandle::Data", 20, 2 },
 	{ "FCrGridEntityHandle::EntityHandle", 22, 2 },
-	{ "FGameplayEffectSpec::SetByCallerNameMagnitudes", 24, 2 },
-	{ "FGameplayEffectSpec::SetByCallerTagMagnitudes", 26, 2 },
-	{ "FMassEnemyHealthFragment::HP", 28, 2 },
-	{ "FMassEnemyStateFragment::State", 30, 2 },
-	{ "FMassEntityManager::ConstSharedFragmentsContainer", 32, 2 },
-	{ "FTransform::Translation", 34, 2 },
-	{ "UCrEnviroWaveTimerSubsystem::NextWaveTimer", 36, 2 },
-	{ "UCrEnviroWaveTimerSubsystem::TimerActor", 38, 2 },
-	{ "UCrEnviroWaveTimerSubsystem::WaitingDuration", 40, 1 },
-	{ "UCrEnviroWaveTimerSubsystem::bPause", 41, 2 },
-	{ "UCrEnviroWaveTimerSubsystem::bStopWaves", 43, 2 },
-	{ "UCrEnviroWaveTimerSubsystem::bWaitingForNextWave", 45, 2 },
-	{ "UCrGameInstance::ServerSessionName", 47, 2 },
-	{ "UCrPlayerMapMenuDataComponent::FOWData", 49, 2 },
-	{ "UCrUW_InventoryContainer::InventoryComponent", 51, 2 },
-	{ "ULocalPlayer::Origin", 53, 2 },
-	{ "ULocalPlayer::Size", 55, 2 },
-	{ "UMassActorSubsystem::ActorManager", 57, 2 },
-	{ "UMassEntitySubsystem::EntityManager", 59, 2 },
-	{ "USceneComponent::ComponentToWorld", 61, 2 },
-	{ "UTexture::SRGB", 63, 2 },
-	{ "UWorld::GameState", 65, 2 },
-	{ "UWorld::LineBatchers", 67, 2 },
-	{ "UWorld::NetDriver", 69, 2 },
+	{ "FD3D12Heap::Heap", 24, 1 },
+	{ "FD3D12Resource::Heap", 25, 1 },
+	{ "FGameplayEffectSpec::SetByCallerNameMagnitudes", 26, 2 },
+	{ "FGameplayEffectSpec::SetByCallerTagMagnitudes", 28, 2 },
+	{ "FMassEnemyHealthFragment::HP", 30, 2 },
+	{ "FMassEnemyStateFragment::State", 32, 2 },
+	{ "FMassEntityManager::ConstSharedFragmentsContainer", 34, 2 },
+	{ "FTransform::Translation", 36, 2 },
+	{ "UCrEnviroWaveTimerSubsystem::NextWaveTimer", 38, 2 },
+	{ "UCrEnviroWaveTimerSubsystem::TimerActor", 40, 2 },
+	{ "UCrEnviroWaveTimerSubsystem::WaitingDuration", 42, 1 },
+	{ "UCrEnviroWaveTimerSubsystem::bPause", 43, 2 },
+	{ "UCrEnviroWaveTimerSubsystem::bStopWaves", 45, 2 },
+	{ "UCrEnviroWaveTimerSubsystem::bWaitingForNextWave", 47, 2 },
+	{ "UCrGameInstance::ServerSessionName", 49, 2 },
+	{ "UCrPlayerMapMenuDataComponent::FOWData", 51, 2 },
+	{ "UCrUW_InventoryContainer::InventoryComponent", 53, 2 },
+	{ "ULocalPlayer::Origin", 55, 2 },
+	{ "ULocalPlayer::Size", 57, 2 },
+	{ "UMassActorSubsystem::ActorManager", 59, 2 },
+	{ "UMassEntitySubsystem::EntityManager", 61, 2 },
+	{ "USceneComponent::ComponentToWorld", 63, 2 },
+	{ "UTexture::SRGB", 65, 2 },
+	{ "UWorld::GameState", 67, 2 },
+	{ "UWorld::LineBatchers", 69, 2 },
+	{ "UWorld::NetDriver", 71, 2 },
 }};
 }

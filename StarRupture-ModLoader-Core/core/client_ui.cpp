@@ -34,6 +34,7 @@
 #include "../UI/update_notice_window.h"
 #include "../UI/wheel_test.h"
 #include "../logging/log.h"
+#include "../memory_scanner/version_map.h"
 
 static bool         s_imguiEnabled = true;
 static EModKey      s_openKey      = EModKey::F2;
@@ -250,6 +251,25 @@ void InitClientUI()
         cbs.RemoveInputHook = []()
         {
             Hooks::InputHook::Remove();
+        };
+        cbs.GameTickCount = []() -> unsigned long long
+        {
+            return Hooks::EngineTick::TickCount();
+        };
+        cbs.NativeFieldOffset = [](const char* key, unsigned size, char* why, size_t whySize) -> int
+        {
+            // A native member of an engine class reflection does not describe:
+            // served from the running build's row only, never a compiled value.
+            VersionMap::FieldRequest request = VersionMap::LoaderFieldRequest(key, size, -1);
+            request.flags   = PLUGIN_FIELD_NATIVE;
+            request.builtCL = 0;
+            VersionMap::FieldValue value;
+            std::string error;
+            if (VersionMap::SelectField("ModLoader", request, VersionMap::RunningExe(), value, error))
+                return value.offset;
+            if (why && whySize)
+                strncpy_s(why, whySize, error.c_str(), _TRUNCATE);
+            return -1;
         };
 
         UI::ImGuiBackend::Initialize(cbs);

@@ -2294,7 +2294,8 @@ typedef void* PluginTextureHandle;
 //
 // THREADING RULES
 // ---------------
-// Load* functions perform a blocking GPU copy and MUST be called from a game-
+// Load* functions copy to the GPU (LoadFromRGBA and LoadFromMemory block until
+// it is done; LoadFromUTexture2D queues it) and MUST be called from a game-
 // thread callback (OnExperienceLoadComplete, OnWorldBeginPlay, PluginInit, etc.)
 // -- NOT from inside an ImGui render callback.  Calling them from the render
 // thread blocks the GPU pipeline and will cause crashes with Streamline/DLSS.
@@ -2356,12 +2357,27 @@ struct IPluginImGuiTextures
     PluginTextureHandle (*LoadFromRGBA)(const unsigned char* rgba, int width, int height, const char* name);
 
     // Copy a UTexture2D into a modloader-owned GPU resource and return a handle.
-    // Blocks the calling thread until the GPU copy completes (~1-50ms).
+    // The copy is queued on the GPU and the call returns without waiting for it;
+    // the handle draws nothing (Image keeps its space) until the copy is done,
+    // usually a frame or two later. Past 8 copies in one engine tick, or with 8
+    // still on the GPU, a call first waits for the oldest one (up to 1 s); if
+    // that wait runs out, it and every later call over those limits return NULL
+    // until a copy finishes. A source whose memory is paging in is waited for
+    // up to 250 ms; past that the call returns NULL, and so does every call
+    // that would make a new copy until that source's memory is resident. If it
+    // is still not resident after 10 s, no more engine textures are copied this
+    // session. A name already loaded still returns its handle.
     // Call from a game-thread callback (OnExperienceLoadComplete etc.), NOT from
     // a render callback -- doing so will stall the render thread and crash with DLSS.
     // The copy is yours to keep; the engine may GC the source freely after this call.
     // Call FreeTexture when done -- handles persist until explicitly freed.
-    // Returns NULL if D3D12 is not ready or the texture has no GPU resource yet.
+    // Returns NULL if D3D12 is not ready, the texture has no GPU resource yet or
+    // is one the GPU writes, video memory is short or still paging in, the GPU
+    // is behind on earlier copies, or the copy failed. NULL means not copied
+    // (nothing to free): ask again on a later tick, and the call may succeed,
+    // unless engine-texture copies have stopped for the session (the device was
+    // lost, a source was not resident after 10 s, or the GPU could not report a
+    // copy's end), which the log reports once.
     // Throws std::out_of_range if all slots are in use.
     PluginTextureHandle (*LoadFromUTexture2D)(SDK::UTexture2D* texture, const char* name);
 

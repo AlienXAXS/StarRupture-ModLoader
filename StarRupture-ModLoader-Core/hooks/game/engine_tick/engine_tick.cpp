@@ -11,6 +11,7 @@
 #include "../world_begin_play/world_begin_play.h"
 #include "utils/game_thread_dispatch.h"
 #include "plugins/plugin_watchdog.h"
+#include <atomic>
 #include <vector>
 #include <algorithm>
 #include <cstring>
@@ -38,6 +39,8 @@ namespace Hooks::EngineTick
 	// ---------------------------------------------------------------------
 	static LARGE_INTEGER g_qpcFrequency{};
 	static uint64_t g_tickIndex = 0;
+	// Every tick, profiled or not, for TickCount().
+	static std::atomic<uint64_t> g_tickCount{ 0 };
 	static double g_avgTickMs = 0.0;
 	static bool g_inChimeraMain = false;
 	static bool g_stutterLoggingEnabled = false;
@@ -68,6 +71,8 @@ namespace Hooks::EngineTick
 
 	static void __fastcall Detour(void* thisPtr, float deltaSeconds, bool bIdleMode)
 	{
+		g_tickCount.fetch_add(1, std::memory_order_relaxed);
+
 		// Snapshot once -- g_stutterLoggingEnabled can be flipped from the UI/render
 		// thread at any moment. Reading it separately at tick-start and tick-end could
 		// observe different values within the same tick, skipping the start capture
@@ -284,6 +289,11 @@ namespace Hooks::EngineTick
 	bool IsInstalled()
 	{
 		return g_hook.installed;
+	}
+
+	uint64_t TickCount()
+	{
+		return g_tickCount.load(std::memory_order_relaxed);
 	}
 
 	void RegisterPluginCallback(PluginEngineTickCallback callback)

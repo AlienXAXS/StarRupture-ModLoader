@@ -30,6 +30,9 @@ namespace Hooks::EngineTick
 	// Returns true if the hook is currently installed
 	bool IsInstalled();
 
+	// Engine ticks run since the hook went in. Any thread.
+	uint64_t TickCount();
+
 	// Register a plugin callback to be notified every game-thread tick
 	void RegisterPluginCallback(PluginEngineTickCallback callback);
 

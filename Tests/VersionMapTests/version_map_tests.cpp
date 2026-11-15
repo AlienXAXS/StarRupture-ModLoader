@@ -1456,6 +1456,45 @@ int main()
 		oldRow = fieldRow("UCrEnviroWaveTimerSubsystem::TimerActor", 127004);
 		newRow = fieldRow("UCrEnviroWaveTimerSubsystem::TimerActor", 128786);
 		Check(oldRow && oldRow->offset == 0x90 && newRow && newRow->offset == 0x98, "real field rows: TimerActor 0x90 on CL-127004, 0x98 on CL-128786");
+		// The engine heap behind a placed D3D12 resource: FD3D12Resource::Heap and the ID3D12Heap pointer in FD3D12Heap.
+		// One pointer each, measured on CL-127004.
+		for (const uint32_t cl : { 127004u })
+		{
+			const Real::VersionMap::FieldRow* resourceHeap = fieldRow("FD3D12Resource::Heap", cl);
+			const Real::VersionMap::FieldRow* heapHeap = fieldRow("FD3D12Heap::Heap", cl);
+			Check(resourceHeap && resourceHeap->offset == 0x30 && resourceHeap->size == 0x8 && resourceHeap->boolMask == 0, "real field rows: FD3D12Resource::Heap is a pointer at 0x30");
+			Check(heapHeap && heapHeap->offset == 0x20 && heapHeap->size == 0x8 && heapHeap->boolMask == 0, "real field rows: FD3D12Heap::Heap is a pointer at 0x20");
+		}
+	}
+	// The overlay's lookup of those two rows (client_ui.cpp, NativeFieldOffset): a native member of a type
+	// reflection does not know, with no compiled offset, so only a row for the running build serves it.
+	// Served on CL-127004; refused on any other build, which sends icon copies to reduced protection.
+	{
+		VersionMap::SetLiveFieldSource(FakeLive);
+		const auto overlayLookup = [](const char* key, uint32_t cl, VersionMap::FieldValue& v, std::string& e)
+		{
+			VersionMap::FieldRequest request = VersionMap::LoaderFieldRequest(key, sizeof(void*), -1);
+			request.flags   = PLUGIN_FIELD_NATIVE;
+			request.builtCL = 0;
+			for (const Real::VersionMap::Index& index : Real::VersionMap::kFields)
+				if (strcmp(index.key, key) == 0)
+					for (uint16_t i = index.first; i < index.first + index.count; ++i)
+						request.candidates.push_back(FieldRow(Real::VersionMap::kFieldRows[i].gameCL,
+							Real::VersionMap::kFieldRows[i].offset, Real::VersionMap::kFieldRows[i].size));
+			e.clear();
+			return VersionMap::SelectField("ModLoader", request, VersionMap::Exe{ cl, 0, 0 }, v, e);
+		};
+		VersionMap::FieldValue v;
+		std::string e;
+		Check(overlayLookup("FD3D12Resource::Heap", 127004, v, e) && v.offset == 0x30,
+			"overlay heap rows: FD3D12Resource::Heap served at 0x30 on CL-127004");
+		Check(overlayLookup("FD3D12Heap::Heap", 127004, v, e) && v.offset == 0x20,
+			"overlay heap rows: FD3D12Heap::Heap served at 0x20 on CL-127004");
+		for (const uint32_t cl : { 128786u, 129402u })
+			for (const char* key : { "FD3D12Resource::Heap", "FD3D12Heap::Heap" })
+				Check(!overlayLookup(key, cl, v, e) && e.find("no row for CL-" + std::to_string(cl) + ", and a native member has no other source") == 0,
+					(std::string("overlay heap rows: ") + key + " refused on CL-" + std::to_string(cl) + ", no compiled fallback").c_str());
+		VersionMap::SetLiveFieldSource(nullptr);
 	}
 	// The real map's function rows for Build Windows Anywhere and Build Benches Anywhere: one function-start row per
 	// build, the CL-127004 rows untouched by the CL-128786 ones. Each row is the plugin's own pattern that was proven on

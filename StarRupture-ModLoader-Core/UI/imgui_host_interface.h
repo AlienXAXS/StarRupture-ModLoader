@@ -65,6 +65,16 @@ struct ImGuiRenderCallbacks
     // is fed the mouse then and keeps only the messages it wants; the keyboard
     // stays with the game unless an ImGui text field has focus.
     bool    (*IsGameMouseShared)();
+
+    // Engine ticks so far (UGameEngine::Tick), for per-tick limits; 0 until the
+    // first tick, and for good if the tick hook could not be installed. Any thread.
+    unsigned long long (*GameTickCount)();
+
+    // The offset of a native engine member from the version map's row for the
+    // running game build, or -1 when there is none, with the reason in why.
+    // key is "Class::Member", size its size in bytes. Logs a [Map] line when
+    // there is no row, so call it once per key per session.
+    int     (*NativeFieldOffset)(const char* key, unsigned size, char* why, size_t whySize);
 };
 
 // The two fences that order one overlay draw, recorded at Slate's present

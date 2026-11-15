@@ -337,3 +337,27 @@ build\tests\feed_fetch_tests.exe
 ```
 
 It takes about 25 seconds, most of it the three cases that wait out a timeout.
+
+## IconCopyTests
+
+The bookkeeping behind `IPluginImGuiTextures::LoadFromUTexture2D` (`UI/icon_copy.h`), with the COM
+`Release` and the device's `Evict` as a counting fake, so no GPU is needed. It checks:
+
+- At most 8 copies start in one engine tick without waiting and at most 8 are on the GPU at once; past
+  either limit a copy waits for the oldest one in flight instead of being refused. A new tick has a new
+  budget, and a finished copy frees its entry for the next.
+- A copy's references (the source, its heap, the new texture) are each released once its fence has
+  passed, and the resident pageable (the heap, or a committed source) is evicted once. A lost device
+  (every fence at `UINT64_MAX`) releases them all.
+- Every early return, a throw (all texture slots in use) and a partial hold give back what was taken;
+  a hold handed to the ring is released only by the ring; an abandoned one is never released.
+- The protection choice: full with the version map rows (the heap or the resource is made resident),
+  reduced with no rows or a heap pointer that does not check out (the copy still runs, and the source
+  itself is still made resident).
+
+```
+msbuild Tests\IconCopyTests\IconCopyTests.vcxproj /p:Configuration="Client Release" /p:Platform=x64
+build\tests\icon_copy_tests.exe
+```
+
+It prints one line per test and exits 0 when every check passes.
