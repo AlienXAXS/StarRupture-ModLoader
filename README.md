@@ -449,8 +449,7 @@ the rest of the session.
 ---
 
 ## Developing Your Own Plugins
- Clone it with `git clone --recursive` into the same parent folder as your plugin repo; no path settings are needed.
-Use the [StarRupture-Plugin-SDK](https://github.com/AlienXAXS/StarRupture-Plugin-SDK) — it has everything you need (headers, UE5 SDK, an example plugin, and a pre-built `dwmapi.dll`) without requiring a fork of this repo.
+Use the [StarRupture-Plugin-SDK](https://github.com/AlienXAXS/StarRupture-Plugin-SDK) — it has everything you need (headers, UE5 SDK, an example plugin, and a pre-built `dwmapi.dll`) without requiring a fork of this repo. Clone the SDK with `git clone --recursive` (the `StarRupture SDK` submodule holds the game headers) into the same parent folder as your plugin repo: plugin projects look for `../StarRupture-Plugin-SDK/include` unless you set `PluginSDKInclude`.
 
 A plugin declares its settings as a config schema (string, integer, float, boolean, keybind or a
 choice from a list, with an optional range), plus any state it saves by itself; the
