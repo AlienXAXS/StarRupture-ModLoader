@@ -112,7 +112,11 @@ namespace Hooks::GameMenu
 	// menu layer. 0 when nothing is on it; a screen that is closing still
 	// counts, until its close transition has ended. Game thread only.
 	//
-	// buildMenuActive is set to whether the build menu is on the layer AND still
+	// The build menu is read from the game-menu layer too (UI.Layer.GameMenu),
+	// where the game keeps it: it counts there only while its widget is active
+	// and the controller's cursor flag is up, not while a building is placed.
+	//
+	// buildMenuActive is set to whether the build menu is on its layer AND still
 	// the active screen (not closing): the tick treats it as a cursor screen
 	// of its own, whatever the controller's bShowMouseCursor says.
 	uint64_t ReadMenuLayer(SDK::APlayerController* pc, bool* buildMenuActive);

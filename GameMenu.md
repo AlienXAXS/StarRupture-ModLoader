@@ -187,7 +187,7 @@ struct IPluginGameMenu {
 
 The game's UI state (v74) is a set of `PluginUIState` bits: `PLUGIN_UI_IN_GAMEPLAY` (a ChimeraMain
 world is running), `PLUGIN_UI_PAUSE_MENU`, `PLUGIN_UI_CURSOR_UP` (the game shows its mouse cursor,
-and the build menu counts while it is the active screen, once any plugin has registered for a
+and the build menu counts while it is open, not while a building is being placed, once any plugin has registered for a
 menu bit), and the menu bits: `PLUGIN_UI_ANY_MENU` (a screen is on the game's menu layer), and for some
 of those screens `PLUGIN_UI_MAP`, `PLUGIN_UI_INVENTORY`, `PLUGIN_UI_BUILD_MENU` or
 `PLUGIN_UI_STATION_MENU` (the corporate terminal, the development station and the equipment upgrade

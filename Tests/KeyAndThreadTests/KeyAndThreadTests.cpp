@@ -716,6 +716,17 @@ static void UIStateMenuReadDemand()
     ResetUI();
 }
 
+static void UIStateBuildMenuOpen()
+{
+    // Open: active widget, the game's cursor flag up.
+    CHECK(UIState::BuildMenuOpen(true, true));
+    // Placing a building: the widget stays active, the flag is off.
+    CHECK(!UIState::BuildMenuOpen(true, false));
+    // Closing: no longer active.
+    CHECK(!UIState::BuildMenuOpen(false, true));
+    CHECK(!UIState::BuildMenuOpen(false, false));
+}
+
 static void UIStateMenuBits()
 {
     using UIState::MenuBits;
@@ -1116,6 +1127,7 @@ int main()
     RunTest("UIState: an unloading plugin's callbacks go", UIStateForgetModule);
     RunTest("UIState: menu read runs only on demand", UIStateMenuReadDemand);
     RunTest("UIState: menu bits stay set while a screen closes", UIStateMenuBits);
+    RunTest("UIState: build menu open needs the cursor flag", UIStateBuildMenuOpen);
     RunTest("UIState: a throwing callback does not stop the rest", UIStateThrowingCallback);
     // Last: DisableMenuRead lasts for the process.
     RunTest("UIState: DisableMenuRead stops the menu read", UIStateMenuReadDisabled);

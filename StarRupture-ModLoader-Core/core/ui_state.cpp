@@ -81,6 +81,11 @@ namespace UIState
 		return bits;
 	}
 
+	bool BuildMenuOpen(bool widgetActive, bool gameCursorFlag)
+	{
+		return widgetActive && gameCursorFlag;
+	}
+
 	uint64_t Get()
 	{
 		// The menu bits are read only while a registration wants them, so
