@@ -351,6 +351,8 @@ int main()
 		Check(r && r->pattern == "AA 01" && r->rva == 0x1000, "a clashing row on the running exe leaves the baseline in force");
 		Check(rep.clashes == 1 && rep.discarded == 2 + 2, "the clash and the repeats are counted as discarded");
 		Check(merged.functions.size() == baseline.functions.size() && merged.fields.size() == baseline.fields.size(), "an identical feed adds no rows");
+		Check(!baseline.absentFields.empty() && merged.absentFields.size() == baseline.absentFields.size(),
+			"the loader's compiled absent fields survive a merge, as a feed has none");
 	}
 	{
 		// A feed locator over a baseline `absent` row on the same exe is used.

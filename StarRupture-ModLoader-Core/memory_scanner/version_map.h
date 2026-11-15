@@ -94,11 +94,19 @@ namespace VersionMap
 		uint8_t     boolMask = 0;
 		std::string member;   // the member's name on this build, when it was renamed
 	};
+	// A member the game build does not have (kAbsentFields in the generated
+	// header). The feed has no such line, so these come from the header alone.
+	struct MapAbsentField
+	{
+		std::string key;      // "Class::Member"
+		uint32_t    gameCL = 0;
+	};
 	struct MapData
 	{
-		std::vector<MapBuild>       builds;      // by CL
-		std::vector<MapFunctionRow> functions;   // by key, fp, CL
-		std::vector<MapFieldRow>    fields;      // by key, CL
+		std::vector<MapBuild>       builds;        // by CL
+		std::vector<MapFunctionRow> functions;     // by key, fp, CL
+		std::vector<MapFieldRow>    fields;        // by key, CL
+		std::vector<MapAbsentField> absentFields;  // by key, CL
 	};
 
 	// The map compiled into this loader.
@@ -368,13 +376,19 @@ namespace VersionMap
 	// Applies the rules above to one request, logs its [Map] line, and on
 	// success writes out. On failure, error says which rule failed.
 	//
+	// A key the map lists as absent on the running build (MapAbsentField) is
+	// not a failure of the plugin or of the map: the game build does not have
+	// the member. It is refused with nothing else tried, *absent (when given)
+	// is set, and the line logged is Info, not a refusal. The rows of a plugin
+	// the map is switched off for (modloader.ini) are not held to it.
+	//
 	// A PLUGIN_FIELD_LATE request may come back pending: false, error says
 	// what it waits for, *pending (when given) is set, and the line logged is
 	// Info, not a refusal. The same pending or refused answer for the same
 	// plugin and key is logged once, so a plugin repeating the request does not
 	// repeat the line.
 	bool SelectField(const char* owner, const FieldRequest& request, const Exe& running,
-		FieldValue& out, std::string& error, bool* pending = nullptr);
+		FieldValue& out, std::string& error, bool* pending = nullptr, bool* absent = nullptr);
 
 	// How one size request (member empty) came out, for the compatibility report:
 	// the row it was set against, the size the game reflects, and which of the

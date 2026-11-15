@@ -9,6 +9,7 @@
 #include "plugins/plugin_interface.h"
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cstdio>
 #include <cstring>
@@ -18,6 +19,16 @@
 #include <set>
 #include <tuple>
 #include <unordered_map>
+
+// The generated header declares kAbsentFields only when a build has an absent
+// field. Without it this empty list stands in: inside namespace VersionMap the
+// header's own name is found first.
+namespace NoAbsentFields
+{
+	struct AbsentField { const char* key; uint32_t gameCL; };
+	inline constexpr std::array<AbsentField, 0> kAbsentFields = {};
+}
+using namespace NoAbsentFields;
 
 namespace VersionMap
 {
@@ -206,6 +217,8 @@ namespace VersionMap
 					const FieldRow& f = kFieldRows[n];
 					m.fields.push_back({ i.key, f.gameCL, f.offset, f.size, f.boolMask, f.member ? f.member : "" });
 				}
+			for (const auto& a : kAbsentFields)
+				m.absentFields.push_back({ a.key, a.gameCL });
 			return m;
 		}();
 		return baseline;
@@ -1200,6 +1213,23 @@ namespace VersionMap
 			return FieldValue{ row.offset, row.size, row.boolMask };
 		}
 
+		// Whether the loader's map lists `key` as absent on build `cl`: the game
+		// does not have the member. The map's rows are not served to a plugin
+		// when it is switched off in modloader.ini, and neither is this.
+		bool AbsentOnBuild(const char* owner, const std::string& key, uint32_t cl)
+		{
+#if defined(MODLOADER_CLIENT_BUILD)
+			if (cl == 0 || (PluginMapOff() && !(owner && strcmp(owner, "ModLoader") == 0)))
+				return false;
+			const MapData& data = ActiveMap();
+			return std::any_of(data.absentFields.begin(), data.absentFields.end(),
+				[&](const MapAbsentField& a) { return a.gameCL == cl && a.key == key; });
+#else
+			(void)owner; (void)key; (void)cl;
+			return false;
+#endif
+		}
+
 		std::mutex               g_sizeFindingsLock;
 		std::vector<SizeFinding> g_sizeFindings;
 
@@ -1366,9 +1396,10 @@ namespace VersionMap
 		}
 
 		bool PickField(const char* owner, const FieldRequest& request, const Exe& running,
-			FieldValue& out, std::string& error, bool& pending)
+			FieldValue& out, std::string& error, bool& pending, bool& absent)
 		{
 			pending = false;
+			absent  = false;
 			const bool sizeRow  = request.member.empty();
 			// A size request is served from reflection when the game reflects the
 			// type, and from the running build's row when it does not, whether or
@@ -1401,6 +1432,14 @@ namespace VersionMap
 						error = "bad request: two rows for " + ClText(request.candidates[i].gameCL);
 						return false;
 					}
+
+			// The game build does not have the member: nothing to look up.
+			if (AbsentOnBuild(owner, request.key, running.cl))
+			{
+				error  = "not in this game version (" + ClText(running.cl) + ")";
+				absent = true;
+				return false;
+			}
 
 			std::vector<FieldCandidate> rows;
 			if (!RowsFor(owner, request, rows, error))
@@ -1640,12 +1679,14 @@ namespace VersionMap
 	}
 
 	bool SelectField(const char* owner, const FieldRequest& request, const Exe& running,
-		FieldValue& out, std::string& error, bool* pendingOut)
+		FieldValue& out, std::string& error, bool* pendingOut, bool* absentOut)
 	{
-		bool pending = false;
-		const bool picked = PickField(owner, request, running, out, error, pending);
+		bool pending = false, absent = false;
+		const bool picked = PickField(owner, request, running, out, error, pending, absent);
 		if (pendingOut)
 			*pendingOut = pending;
+		if (absentOut)
+			*absentOut = absent;
 		if (picked)
 			return true;
 		const bool late = (request.flags & PLUGIN_FIELD_LATE) != 0;
@@ -1653,6 +1694,11 @@ namespace VersionMap
 		{
 			if (LateStateChanged(owner, request.key, kLatePending))
 				ModLoaderLogger::LogInfo(L"[Map] %S: %S: pending: %S", owner ? owner : "?", request.key.c_str(), error.c_str());
+		}
+		else if (absent)
+		{
+			if (!late || LateStateChanged(owner, request.key, kLateRefused))
+				LogPick(owner, request.key, error);
 		}
 		else if (!late || LateStateChanged(owner, request.key, kLateRefused))
 			ModLoaderLogger::LogWarn(L"[Map] %S: %S: refused: %S", owner ? owner : "?", request.key.c_str(), error.c_str());
