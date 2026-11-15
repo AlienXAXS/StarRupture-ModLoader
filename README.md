@@ -253,7 +253,7 @@ splash have none. How a plugin declares these is in the SDK's `PluginDevelopment
 
 Mods that show item or building pictures (an item list, a tooltip, a build menu) get them from one
 place in the loader instead of each copying game textures itself. A mod reaches it through
-`IPluginImages` (plugin interface v77); mods that do not use it keep copying as before.
+`IPluginImages` (plugin interface v77, loader 1.24.0 or newer); mods that do not use it keep copying as before.
 
 - A picture is read from the game only when a mod is about to show it. Opening a window does not
   read the pictures behind it.
@@ -513,7 +513,8 @@ running, the pause menu, the game's mouse cursor, any menu, and the map, invento
 station screens. `RegisterOnUIStateChanged` calls you on the game thread when a bit you asked for
 changes; `GameMenu->GetUIState()` reads the gameplay, pause-menu and cursor bits from any thread. Ignore bits you do not know: later
 loaders may add some. See [GameMenu.md](GameMenu.md). The menu classes follow BetterDrone's
-menu-layer read and the class list in Kian369's MiniMap.
+menu-layer read and the class list in Kian369's MiniMap. The build menu is also looked for on the
+game's menu layer, so its bit is set whenever the menu is open.
 <sup>[✦](#msantoro12)</sup>
 
 ### Reloading a plugin from a script

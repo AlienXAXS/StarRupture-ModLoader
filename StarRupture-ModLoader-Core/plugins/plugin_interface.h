@@ -863,12 +863,13 @@
 //      when plugins load. The request is pending instead of refused, and the
 //      plugin repeats it from the game thread after OnPluginLoadHooks (the one
 //      scanner call allowed there) until it resolves. Flag only: no struct or
-//      table changed, MIN stays at 70, and the version stays 75. A loader
+//      table changed, MIN stays at 70, and the version went to 75 with it. A loader
 //      without the flag refuses the Blueprint class (it knows native ones
 //      only), which turns off the feature that lists the key.
 //
+// v76 was never released: no released loader has a maximum above 75.
 //
-// v77: Image library (hooks->Images, client only, null on server and generic
+// v77 (2026-11-13): Image library (hooks->Images, client only, null on server and generic
 //      builds). One place in the loader that loads game images -- item icons
 //      first -- when a plugin is about to draw them, shrinks each to one
 //      stored size and keeps the copy for the session. IPluginImages is
@@ -3708,7 +3709,7 @@ struct IPluginPak
 //
 // THREADING RULES
 // ---------------
-// Item, Path, Get, State, UseSets and Canonical can be called from any thread,
+// Item, Path, Get, GetSized, State, UseSets and Canonical can be called from any thread,
 // including an ImGui render callback, and never wait for the game. Item and Path
 // take an internal lock for a moment: ask once and keep the id. FromTexture reads a
 // game object, so it is game thread only.

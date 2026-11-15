@@ -4,4 +4,5 @@
 - New image library: mods that use it load item and building pictures only when shown, through one shared read, and keep them under a memory cap
 - Pictures are saved to disk after the first run and load from there on later launches
 - New settings: Preload images from the game (off by default) and a Clear image cache button
+- The build menu is found reliably, and the version object map has the new Better Drone rows
 - Full release notes are on GitHub and Nexus
