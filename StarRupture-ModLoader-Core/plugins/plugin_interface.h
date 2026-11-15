@@ -2410,11 +2410,13 @@ struct IPluginImGuiTextures
     // Call FreeTexture when done -- handles persist until explicitly freed.
     // Returns NULL if D3D12 is not ready, the texture has no GPU resource yet or
     // is one the GPU writes, video memory is short or still paging in, the GPU
-    // is behind on earlier copies, or the copy failed. NULL means not copied
+    // is behind on earlier copies, the version map has no rows for the texture
+    // chain on this build, or the copy failed. NULL means not copied
     // (nothing to free): ask again on a later tick, and the call may succeed,
     // unless engine-texture copies have stopped for the session (the device was
     // lost, a source was not resident after 10 s, or the GPU could not report a
-    // copy's end), which the log reports once.
+    // copy's end), which the log reports once. A build with no texture chain rows
+    // does not change for the session, so do not keep retrying there.
     // Throws std::out_of_range if all slots are in use.
     PluginTextureHandle (*LoadFromUTexture2D)(SDK::UTexture2D* texture, const char* name);
 

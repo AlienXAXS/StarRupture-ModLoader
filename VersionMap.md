@@ -243,9 +243,8 @@ the memory is resident while a texture is copied. Rows exist for the game builds
 A build without the whole chain gets no image from the image library; mods show a placeholder. A build
 without the two heap rows makes the resource resident instead of its heap while the copy runs.
 
-**The older icon copy.** The loader's older icon copy (`LoadFromUTexture2D`) keeps working on a build
-with no rows: it reads the six chain rows when the build has all of them, and its compiled offsets
-otherwise. The image library never uses the compiled offsets.
+**The older icon copy.** The loader's older icon copy (`LoadFromUTexture2D`) reads the same six chain
+rows. On a build that does not have all six, it returns null, the same as the image library does.
 
 ## Features
 
