@@ -60,7 +60,7 @@
 // redesign -- the delegate-splice mechanism (growing InvocationList,
 // building a FWeakObjectPtr with a lazily-allocated serial number) was never
 // the problem, only the name-resolution side was:
-//   - FUObjectItem::SerialNumber is at offset 0x10 (kSerialNumberOffset).
+//   - FUObjectItem::SerialNumber is at offset 0x10 (GObjectWalk's kSerialNumberOffset).
 //   - TMulticastScriptDelegate::InvocationList is at offset 0x8 within the
 //     delegate struct (kInvocationListOffset).
 //   - FWeakObjectPtr field order is {ObjectIndex, ObjectSerialNumber}, matching
@@ -79,7 +79,7 @@
 //     until something lazily allocates one (the engine does this the first
 //     time anything takes a weak pointer to that object, via
 //     FUObjectArray::AllocateSerialNumber). We replicate that lazy-allocate-
-//     and-write-back step in AllocateOrReadSerialNumber() below.
+//     and-write-back step in GObjectWalk::AllocateOrReadSerialNumber().
 //
 // Risk notes:
 //   - UClass::FindFunctionByName is hot (called for most delegate broadcasts
@@ -232,11 +232,6 @@ namespace Hooks::DelegateHook
 			return resolved;
 		}
 
-		// Offset of SerialNumber within FUObjectItem; not exposed by this SDK
-		// dump (Basic.hpp collapses it into Pad_8). Verified via IDA Local
-		// Types against this game's binary -- see file header.
-		constexpr size_t kSerialNumberOffset = 0x10;
-
 		// Offset of InvocationList within the delegate struct (Basic.hpp:
 		// Pad_0[0x8] then InvocationList). Computed by hand instead of
 		// offsetof() because TArray's constructors make the type non-POD,
@@ -263,79 +258,17 @@ namespace Hooks::DelegateHook
 			return -1;
 		}
 
-		// Mirrors TUObjectArray::GetByIndex's chunk math (Basic.hpp) but
-		// returns the FUObjectItem* instead of ->Object, so we can reach the
-		// raw SerialNumber bytes that aren't named in this SDK's struct.
-		SDK::FUObjectItem* GetUObjectItem(int32_t index)
-		{
-			auto* arr = SDK::UObject::GObjects.GetTypedPtr();
-			if (!arr)
-			{
-				ModLoaderLogger::LogError(L"[DelegateHook] GetUObjectItem: GObjects.GetTypedPtr() returned null");
-				return nullptr;
-			}
-			if (index < 0 || index >= arr->NumElements)
-			{
-				ModLoaderLogger::LogError(L"[DelegateHook] GetUObjectItem: index %d out of range (NumElements=%d)", index, arr->NumElements);
-				return nullptr;
-			}
-
-			const int32_t chunkIndex = index / SDK::TUObjectArray::ElementsPerChunk;
-			const int32_t inChunkIdx = index % SDK::TUObjectArray::ElementsPerChunk;
-			if (chunkIndex >= arr->NumChunks)
-			{
-				ModLoaderLogger::LogError(L"[DelegateHook] GetUObjectItem: chunkIndex %d >= NumChunks %d", chunkIndex, arr->NumChunks);
-				return nullptr;
-			}
-
-			SDK::FUObjectItem* chunkPtr = arr->GetDecrytedObjPtr()[chunkIndex];
-			if (!chunkPtr)
-			{
-				ModLoaderLogger::LogError(L"[DelegateHook] GetUObjectItem: null chunk pointer at chunkIndex %d", chunkIndex);
-				return nullptr;
-			}
-
-			return &chunkPtr[inChunkIdx];
-		}
-
-		// Real UE FWeakObjectPtr::Get() treats ObjectSerialNumber == 0 as "this
-		// weak pointer was never assigned" and returns null WITHOUT checking the
-		// array -- confirmed live: the engine's own Broadcast() never reached our
-		// spliced FScriptDelegate because the host object's FUObjectItem had
-		// never had a serial number lazily allocated (nothing had taken a weak
-		// ptr to it before). The real engine's FUObjectArray::AllocateSerialNumber
-		// allocates a fresh nonzero serial ON FIRST USE and writes it back into
-		// the live FUObjectItem -- we replicate that here with our own counter.
-		// Uniqueness only needs to hold per-slot (the engine matches by
-		// {ObjectIndex, ObjectSerialNumber} together), so a separate counter
-		// pool from the engine's own is fine as long as we never hand out the
-		// same value twice for the same slot.
-		int32_t AllocateOrReadSerialNumber(SDK::FUObjectItem* item)
-		{
-			static std::atomic<int32_t> s_nextSerial{ 0x10000000 }; // pool well clear of the engine's own small serials
-
-			auto* serialSlot = reinterpret_cast<volatile LONG*>(reinterpret_cast<uint8_t*>(item) + kSerialNumberOffset);
-
-			LONG current = *serialSlot;
-			if (current != 0)
-				return current;
-
-			LONG candidate = s_nextSerial.fetch_add(1);
-			LONG prev = InterlockedCompareExchange(serialSlot, candidate, 0);
-			return (prev == 0) ? candidate : prev;
-		}
-
 		bool BuildWeakObjectPtr(SDK::UObject* obj, SDK::FWeakObjectPtr& out)
 		{
 			const int32_t index = FindObjectIndex(obj);
 			if (index < 0)
 				return false;
 
-			SDK::FUObjectItem* item = GetUObjectItem(index);
+			SDK::FUObjectItem* item = Hooks::GObjectWalk::GetUObjectItem(index);
 			if (!item)
 				return false;
 
-			const int32_t serial = AllocateOrReadSerialNumber(item);
+			const int32_t serial = Hooks::GObjectWalk::AllocateOrReadSerialNumber(item);
 
 			out.ObjectIndex = index;
 			out.ObjectSerialNumber = serial;

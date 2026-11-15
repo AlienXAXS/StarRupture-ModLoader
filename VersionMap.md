@@ -205,6 +205,38 @@ class bound`). A row for the running CL is required: the built offset is not use
 and a request on a build without a row is refused. If reflection is not ready, or finds the name
 ambiguous, the request fails as before.
 
+The game names its types without the prefix letter, so a plain type can share its name with a class:
+`FTexture`, the render resource behind every texture, beside the class `UTexture`. An `F` name that
+only a class carries is a plain type. An `F` name that a struct carries in another module, or a `U`
+or `A` name that a struct or a class in another module carries, is a request that missed, and fails.
+
+## Native members the image library reads
+
+The image library reads a game texture through eight native members. Each is a field row for the
+running CL, keyed `Class::Member`, and the loader asks for it by name; none is compiled in.
+
+| Key | Used for |
+|---|---|
+| `UTexture::PrivateResource` | The texture's render resource |
+| `FTexture::TextureRHI` | The RHI texture behind it |
+| `FD3D12Texture::ResourceLocation` | Where the D3D12 texture keeps its resource |
+| `FD3D12ResourceLocation::UnderlyingResource` | The `FD3D12Resource` itself |
+| `FD3D12Resource::DefaultResourceState` | The state the engine leaves the resource in |
+| `FD3D12Resource::Resource` | The `ID3D12Resource` to copy from |
+| `FD3D12Resource::Heap` | The resource's heap, null for a committed resource |
+| `FD3D12Heap::Heap` | The `ID3D12Heap` |
+
+The first six are the chain from a texture to its resource. The last two are the heap pair that checks
+the memory is resident while a texture is copied. Rows exist for the game builds the loader lists in
+`hooks/game/version_map.generated.h`.
+
+A build without the whole chain gets no image from the image library; mods show a placeholder. A build
+without the two heap rows makes the resource resident instead of its heap while the copy runs.
+
+**The older icon copy.** The loader's older icon copy (`LoadFromUTexture2D`) keeps working on a build
+with no rows: it reads the six chain rows when the build has all of them, and its compiled offsets
+otherwise. The image library never uses the compiled offsets.
+
 ## Features
 
 A plugin can group the keys one part of it needs into a feature, with a plain-English title and

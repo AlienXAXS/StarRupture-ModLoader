@@ -12,10 +12,16 @@
 #include "UI/plugin_panel_registry.h"
 #include "core/client_ui.h"
 #include "core/input_arbitration.h"
+#include "core/sdk_globals.h"
+#include "memory_scanner/version_map.h"
+#include "hooks/game/version_map.generated.h"
+
+#include "Basic.hpp"
 
 #include <windows.h>
 #include <unordered_map>
 #include <mutex>
+#include <string>
 
 namespace Hooks::InputHook
 {
@@ -35,12 +41,13 @@ namespace Hooks::InputHook
     //   +0x00  FViewport*    Viewport
     //   +0x08  int32         ControllerId
     //   +0x0C  uint8[4]      padding
-    //   +0x10  FKey          Key  <- FName ComparisonIndex (uint32) at +0x10
+    //   +0x10  FKey          Key  <- FName at +0x10: ComparisonIndex, Number (uint32 each)
     //   +0x28  EInputEvent   Event  (0=Pressed, 1=Released, 2=Repeat)
     //   +0x2C  float         AmountDepressed
     //   +0x30  bool          bGamepad
     // -----------------------------------------------------------------------
     static constexpr int ARGS_FNAME_IDX_OFFSET = 0x10;  // uint32
+    static constexpr int ARGS_FNAME_NUM_OFFSET = 0x14;  // uint32
     static constexpr int ARGS_EVENT_OFFSET      = 0x28;  // int32 / enum
 
     enum class EInputEvent : int32_t
@@ -51,44 +58,51 @@ namespace Hooks::InputHook
     };
 
     // -----------------------------------------------------------------------
-    // FName -> EModKey lazy cache
+    // FName -> EModKey
     // Dispatch already happened in HookedWndProc (covers all game states).
     // This hook only needs to resolve the key in order to check ShouldBlock
     // and return false (0) to consume the input from the UE5 input stack.
     //
-    // On Pressed events we scan GetAsyncKeyState to identify the VK and cache
-    // the FName ComparisonIndex.  On Released events we use the warm cache.
+    // The key comes from the event's own FName: its text ("LeftControl", "F5")
+    // is looked up in the keybind registry's key names. A name with no mod-key
+    // equivalent (MouseScrollUp, MouseScrollDown, gamepad buttons and axes)
+    // resolves to EModKey::Unknown and is never blocked. An FName's text never
+    // changes, so each result is cached for the session.
     // -----------------------------------------------------------------------
-    static std::unordered_map<uint32_t, EModKey> s_fnameCache;
+    static std::unordered_map<uint64_t, EModKey> s_fnameCache;
     static std::mutex                            s_fnameMutex;
 
     // Keys (FName indices) whose Pressed event was handed to the game.
     static InputArbitration::PressesSeenByGame   s_pressesSeen;
 
-    static EModKey LookupFNameCache(uint32_t fnameIdx)
+    // FName::ToString calls the game's FName::AppendString: the SDK's own
+    // address on the build it was made for, the resolved one elsewhere.
+    static bool FNameTextAvailable()
     {
-        std::lock_guard<std::mutex> lock(s_fnameMutex);
-        auto it = s_fnameCache.find(fnameIdx);
-        if (it != s_fnameCache.end())
-            return it->second;
-        return EModKey::Unknown;
+        return VersionMap::RunningExe().cl == VersionMap::kBuiltCL || SdkGlobals::SdkOnResolvedGlobals();
     }
 
-    static void CacheFName(uint32_t fnameIdx, EModKey mk)
+    static EModKey KeyForFName(uint32_t fnameIdx, uint32_t fnameNumber)
     {
-        std::lock_guard<std::mutex> lock(s_fnameMutex);
-        s_fnameCache[fnameIdx] = mk;
-    }
-
-    static EModKey ScanVKTableForDownKey()
-    {
-        auto activeKeys = Hooks::Input::GetActiveKeys();
-        for (auto& kv : activeKeys)
+        const uint64_t id = (static_cast<uint64_t>(fnameNumber) << 32) | fnameIdx;
         {
-            if (GetAsyncKeyState(kv.second) & 0x8000)
-                return kv.first;
+            std::lock_guard<std::mutex> lock(s_fnameMutex);
+            auto it = s_fnameCache.find(id);
+            if (it != s_fnameCache.end())
+                return it->second;
         }
-        return EModKey::Unknown;
+
+        if (!FNameTextAvailable())
+            return EModKey::Unknown;
+
+        const std::string name = SDK::FName(static_cast<int32_t>(fnameIdx), fnameNumber).ToString();
+        const EModKey mk = Hooks::Input::NameToModKey(name.c_str());
+        ModLoaderLogger::LogDebug(L"[InputHook] Key FName %u/%u is '%S' (%S)", fnameIdx, fnameNumber,
+                                  name.c_str(), mk == EModKey::Unknown ? "no mod key" : Hooks::Input::ModKeyToName(mk));
+
+        std::lock_guard<std::mutex> lock(s_fnameMutex);
+        s_fnameCache[id] = mk;
+        return mk;
     }
 
     // -----------------------------------------------------------------------
@@ -118,6 +132,7 @@ namespace Hooks::InputHook
 
         EInputEvent ueEvent = *reinterpret_cast<const EInputEvent*>(args + ARGS_EVENT_OFFSET);
         uint32_t fnameIdx = *reinterpret_cast<const uint32_t*>(args + ARGS_FNAME_IDX_OFFSET);
+        uint32_t fnameNum = *reinterpret_cast<const uint32_t*>(args + ARGS_FNAME_NUM_OFFSET);
 
         if (ueEvent == EInputEvent::Released &&
             !InputArbitration::ShouldKeepFromGame(capturing, s_pressesSeen.TakeRelease(fnameIdx)))
@@ -134,14 +149,7 @@ namespace Hooks::InputHook
             return g_original ? g_original(This, InEventArgs) : 0;
         }
 
-        EModKey mk = LookupFNameCache(fnameIdx);
-        if (mk == EModKey::Unknown)
-        {
-            mk = ScanVKTableForDownKey();
-            if (mk != EModKey::Unknown)
-                CacheFName(fnameIdx, mk);
-        }
-
+        const EModKey mk = KeyForFName(fnameIdx, fnameNum);
         if (mk != EModKey::Unknown &&
             Hooks::Input::ShouldBlock(mk, Hooks::Input::SampleCurrentModifiers()))
             return 0; // consumed -- UE5 never processes this key

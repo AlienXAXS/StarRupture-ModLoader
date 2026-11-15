@@ -309,7 +309,8 @@ static const PluginWidgetDesc k_myWidget = {
 A widget without hints is auto-sized; one with hints is not unless it asks, hence `PluginWindowFlags_AlwaysAutoResize` (v74; before that, `1 << 6`).
 
 The same holds over every other game screen that has the mouse cursor up: the loader reads
-`bShowMouseCursor` on the local player controller once per game tick. A click on an opted-in
+`bShowMouseCursor` on the local player controller once per game tick, and treats the build menu as one
+while it is the active screen (once any plugin has registered for a menu bit). A click on an opted-in
 widget is kept from the menu; a click anywhere else reaches the menu. While
 one of its popups is open, ImGui keeps the first click outside it to close the popup. The keyboard
 stays with the game, so Escape still closes the menu, except that a focused text field keeps its

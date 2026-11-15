@@ -5,6 +5,9 @@
 #include "plugins/crash_restart.h"
 #include "memory_scanner/scanner.h"
 #include "hooks/memory/engine_allocator.h"
+#ifdef MODLOADER_CLIENT_BUILD
+#include "UI/image_pump.h"
+#endif
 #include <vector>
 #include <algorithm>
 #include "../scan_patterns.h"
@@ -69,6 +72,11 @@ namespace Hooks::EngineShutdown
 		}
 
 		ModLoaderLogger::LogDebug(L"[EngineShutdown] All plugin callbacks completed");
+
+#ifdef MODLOADER_CLIENT_BUILD
+		// The image library frees its copies while the texture API is still up.
+		ImagePump::Shutdown();
+#endif
 
 		// Shut down the engine allocator after all plugins have cleaned up.
 		// This must come after plugin callbacks since they may need to free

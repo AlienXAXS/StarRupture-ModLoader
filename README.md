@@ -226,6 +226,12 @@ splash have none. How a plugin declares these is in the SDK's `PluginDevelopment
 - **Restart crashed plugins automatically** (on by default) reloads a [crashed](#plugins-tab) plugin
   a few seconds after its crash toast. Turn it off to restart them yourself with **RELOAD**.
   <sup>[✦](#msantoro12)</sup>
+- **Preload images from the game** (off by default) lets the loader read the item and building images
+  that mods list, in the background, before they are drawn. See [Image library](#image-library).
+  <sup>[✦](#msantoro12)</sup>
+- **Clear image cache** (a button under **Preload images from the game**) deletes the images the
+  loader saved to disk, for every game build. Pictures already loaded stay for this session, and the
+  next launch saves them again. <sup>[✦](#msantoro12)</sup>
 - **Connection Timeout**: see [Net timeouts](#net-timeouts).
 - **Enable Auto Updates** takes effect next launch. A mod loader update asks Yes or No first; a No
   is remembered for that version.
@@ -242,6 +248,32 @@ splash have none. How a plugin declares these is in the SDK's `PluginDevelopment
 - Colour edits apply at once; **Save** keeps them and **Reload** discards them.
 - **Font Family** only lists fonts found on your PC. Microsoft YaHei, Meiryo, Malgun Gothic and
   Arial + CJK add Chinese, Japanese or Korean text.
+
+### Image library <sup>[✦](#msantoro12)</sup>
+
+Mods that show item or building pictures (an item list, a tooltip, a build menu) get them from one
+place in the loader instead of each copying game textures itself. A mod reaches it through
+`IPluginImages` (plugin interface v77); mods that do not use it keep copying as before.
+
+- A picture is read from the game only when a mod is about to show it. Opening a window does not
+  read the pictures behind it.
+- Each picture is stored at 256 px at most; a smaller one keeps its own size. The stored copies are
+  capped at 256 MB, or a small share of your video memory if that is less. When the cap is reached the
+  pictures shown longest ago go first.
+- Mods that use the image library read game pictures through one shared read that checks the game's
+  texture before it is copied.
+- A picture is saved to disk after the first time it is read, in `ModLoader\image-cache\`. On later
+  launches it loads from there instead of from the game. The folder belongs to one game build and one
+  set of mod paks, so a game update, or a mod pak that changed or moved in the load order, starts a new
+  folder. At each launch the loader keeps the folder in use and the newest earlier one, removes the
+  others, and trims what is left to 256 MB, the pictures used longest ago first. Pictures of textures the game makes while it runs are not saved.
+  If a mod mounts a pak after the game has started, saved pictures are not used for the rest of that
+  launch.
+- **Preload images from the game** in the [Settings tab](#settings-tab) is off by default. On, the
+  loader reads the pictures that mods list from the game one at a time, and pauses while a picture on
+  screen is waiting or video memory is short. The **Clear image cache** button is under it.
+- On a game build whose version object map (v map) has no rows for the texture layout, pictures show as
+  placeholders. See [VersionMap.md](VersionMap.md#native-members-the-image-library-reads).
 
 ### Developer console
 
@@ -632,6 +664,7 @@ these for you.
 | | `Theme` | empty | Empty is `Default`, unless the file has an old `[ThemeColors]` block: that is saved as the `Custom` theme. Set by **Active Theme** |
 | | `KeyboardNavigation` | `1` | `0` turns off Tab, arrow-key and Space or Enter navigation. Set by **Keyboard navigation** |
 | `[Plugins]` | `RestartCrashed` | `1` | `0` stops crashed plugins restarting on their own. Set by **Restart crashed plugins automatically** |
+| `[Images]` | `Preload` | `0` | `1` reads the picture sets that mods list in the background. Set by **Preload images from the game** |
 | `[Input]` | `SuppressKeybindsWhileTyping` | `1` | Keybinds ignore keys typed into a game text box |
 | `[Console]` | `OpenKey` | `Tilde` | |
 | `[HUD]` | `ShowFPS`, `ShowWorldName`, `ShowPlayerPosition`, `ShowDebugValues` | `0` | The Settings toggles |
@@ -656,6 +689,7 @@ Other files, all under `ModLoader\`:
 | `Logs\Proxy.log`, `Logs\AutoUpdate.log` | The `dwmapi.dll` proxy and the startup updater. Ten runs kept, as for `ModLoader.log` |
 | `update_state.ini` | Versions the auto-updater has installed. Not for editing |
 | `scan_cache.ini` | Pattern scan results for the current game exe, kept per ProductVersion, PE timestamp and image size. A file from an older loader is discarded and rebuilt on the first launch |
+| `image-cache\<folder>\` | Pictures saved by the [image library](#image-library) (`*.img`, with `names.lst` and `sets.lst`, the item names and preload sets they belong to), one folder per game build and pak set. **Clear image cache** empties it |
 | `Preload\.state` | Marks a preload plugin that did not finish loading |
 
 ---

@@ -64,6 +64,12 @@ namespace UI::GlobalSettings
     bool GetRestartCrashedPlugins();
     void SetRestartCrashedPlugins(bool v);
 
+    // [Images] Preload -- read the images that plugins list as sets (items,
+    // buildings) from the game in the background, so they are ready before they
+    // are drawn. Default off. Read on the game thread; takes effect at once.
+    bool GetPreloadImages();
+    void SetPreloadImages(bool v);
+
     float GetFontScale();
     void  SetFontScale(float scale);
 

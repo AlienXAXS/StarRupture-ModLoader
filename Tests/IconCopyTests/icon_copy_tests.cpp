@@ -332,6 +332,65 @@ static void ChooseReducedOnInvalidHeap()
     CHECK(p.reduced != nullptr && std::strstr(p.reduced, "heap") != nullptr);
 }
 
+// Two stand-in modules, as address ranges: a vtable in one is "in" that module.
+static char g_moduleA[16];
+static char g_moduleB[16];
+static int  g_calls = 0;
+
+struct FakeModules
+{
+    static const void* ModuleOf(const void* address)
+    {
+        if (address >= g_moduleA && address < g_moduleA + sizeof(g_moduleA)) return g_moduleA;
+        if (address >= g_moduleB && address < g_moduleB + sizeof(g_moduleB)) return g_moduleB;
+        return nullptr;
+    }
+};
+
+// What the loader does with a pointer from a row: the call is made only when the check passes.
+struct FakeObject { const void* vtable; };
+
+static void CallIfOfModule(const FakeObject* object, const void* module)
+{
+    if (IconCopy::VtableIsFrom<FakeModules>(object, module))
+        ++g_calls;
+}
+
+static void VtableCheckRefusesAnotherModule()
+{
+    g_calls = 0;
+    const FakeObject inA = { &g_moduleA[0] };
+    const FakeObject inB = { &g_moduleB[4] };
+    CHECK(IconCopy::VtableIsFrom<FakeModules>(&inA, g_moduleA));
+    CHECK(IconCopy::VtableIsFrom<FakeModules>(&inB, g_moduleB));
+    CHECK(!IconCopy::VtableIsFrom<FakeModules>(&inA, g_moduleB));
+    CHECK(!IconCopy::VtableIsFrom<FakeModules>(&inB, g_moduleA));
+
+    // An object whose vtable is in another module is not called.
+    CallIfOfModule(&inA, g_moduleB);
+    CHECK(g_calls == 0);
+    CallIfOfModule(&inB, g_moduleB);
+    CHECK(g_calls == 1);
+}
+
+static void VtableCheckRefusesWhatItCannotPlace()
+{
+    g_calls = 0;
+    char elsewhere[4] = {};
+    const FakeObject unknown = { elsewhere };
+    const FakeObject nullVtable = { nullptr };
+    CHECK(!IconCopy::VtableIsFrom<FakeModules>(&unknown, g_moduleA));
+    CHECK(!IconCopy::VtableIsFrom<FakeModules>(&nullVtable, g_moduleA));
+    CHECK(!IconCopy::VtableIsFrom<FakeModules>(nullptr, g_moduleA));
+
+    // With no module to compare against, nothing passes.
+    const FakeObject inA = { &g_moduleA[0] };
+    CHECK(!IconCopy::VtableIsFrom<FakeModules>(&inA, nullptr));
+    CallIfOfModule(&unknown, nullptr);
+    CallIfOfModule(&inA, nullptr);
+    CHECK(g_calls == 0);
+}
+
 static void RingOldestFence()
 {
     FakeOps::Reset();
@@ -422,11 +481,11 @@ static void ParkedReleasesOnlyOnceTheRequestFinished()
     CHECK(Released(Object(0)) == 0);
     CHECK(parked.Count() == 1);
 
-    CHECK(!parked.Reclaim(6, 1100, 10000));
+    CHECK(!parked.Reclaim(6, 1100, 10000, 0));
     CHECK(Evicted(Object(1)) == 0);
     CHECK(!parked.AllDone(6));
 
-    CHECK(!parked.Reclaim(7, 1200, 10000));
+    CHECK(!parked.Reclaim(7, 1200, 10000, 0));
     CHECK(Evicted(Object(1)) == 1);
     CHECK(Released(Object(0)) == 1);
     CHECK(Released(Object(1)) == 1);
@@ -438,7 +497,7 @@ static void ParkedReleasesOnlyOnceTheRequestFinished()
     PendingHold<FakeOps> hold;
     hold.Get() = FullHold(10, false);
     CHECK(parked.Park(8, hold, 1300));
-    parked.Reclaim(UINT64_MAX, 1300, 10000);
+    parked.Reclaim(UINT64_MAX, 1300, 10000, 0);
     CHECK(Evicted(Object(10)) == 1);
     CHECK(parked.Empty());
 }
@@ -470,7 +529,7 @@ static void ParkedExpiresWithoutProgress()
 {
     FakeOps::Reset();
     IconCopy::Parked<FakeOps> parked;
-    CHECK(!parked.Reclaim(0, 50000, 10000));  // empty never expires
+    CHECK(!parked.Reclaim(0, 50000, 10000, 0));  // empty never expires
 
     PendingHold<FakeOps> a;
     a.Get() = FullHold(0, false);
@@ -479,14 +538,14 @@ static void ParkedExpiresWithoutProgress()
     b.Get() = FullHold(4, false);
     CHECK(parked.Park(2, b, 105000));  // the clock stays at the oldest
 
-    CHECK(!parked.Reclaim(0, 109999, 10000));
-    CHECK(parked.Reclaim(0, 110000, 10000));
+    CHECK(!parked.Reclaim(0, 109999, 10000, 0));
+    CHECK(parked.Reclaim(0, 110000, 10000, 0));
 
     // The first finishes: the clock restarts for the second.
-    CHECK(!parked.Reclaim(1, 111000, 10000));
+    CHECK(!parked.Reclaim(1, 111000, 10000, 0));
     CHECK(parked.Count() == 1);
-    CHECK(!parked.Reclaim(1, 120999, 10000));
-    CHECK(parked.Reclaim(1, 121000, 10000));
+    CHECK(!parked.Reclaim(1, 120999, 10000, 0));
+    CHECK(parked.Reclaim(1, 121000, 10000, 0));
 
     parked.AbandonAll();
     CHECK(parked.Empty());
@@ -500,14 +559,198 @@ static void ParkedClockStartsAtThePark()
 {
     FakeOps::Reset();
     IconCopy::Parked<FakeOps> parked;
-    CHECK(!parked.Reclaim(0, 1000, 10000));
+    CHECK(!parked.Reclaim(0, 1000, 10000, 0));
     PendingHold<FakeOps> hold;
     hold.Get() = FullHold(0, false);
     CHECK(parked.Park(1, hold, 500000));
-    CHECK(!parked.Reclaim(0, 500001, 10000));
+    CHECK(!parked.Reclaim(0, 500001, 10000, 0));
     parked.ReleaseAll();
     CHECK(Evicted(Object(0)) == 1);
     CHECK(parked.Empty());
+}
+
+// The destination is released at the park: a parked hold keeps no new texture.
+static void ParkedKeepsNoDestination()
+{
+    FakeOps::Reset();
+    IconCopy::Parked<FakeOps> parked;
+    PendingHold<FakeOps> hold;
+    hold.Get() = FullHold(0, false);
+    CHECK(parked.Park(1, hold, 0));
+    CHECK(Released(Object(2)) == 1);  // dest
+    CHECK(Released(Object(0)) == 0);  // source stays
+    CHECK(Evicted(Object(0)) == 0);
+    parked.ReleaseAll();
+    CHECK(Released(Object(2)) == 1);  // not twice
+    CHECK(Released(Object(0)) == 1);
+    CHECK(Evicted(Object(0)) == 1);
+}
+
+// Lookup says whether a source has a hold and whether its request finished; Pending
+// counts the requests not finished.
+static void ParkedLookupAndPending()
+{
+    FakeOps::Reset();
+    IconCopy::Parked<FakeOps> parked;
+    using Find = IconCopy::Parked<FakeOps>::Find;
+    CHECK(parked.Lookup(Object(0), 0) == Find::None);
+    CHECK(parked.Pending(0) == 0);
+
+    PendingHold<FakeOps> a;
+    a.Get() = FullHold(0, false);
+    CHECK(parked.Park(5, a, 0));
+    PendingHold<FakeOps> b;
+    b.Get() = FullHold(4, false);
+    CHECK(parked.Park(6, b, 0));
+
+    CHECK(parked.Lookup(Object(0), 4) == Find::Pending);
+    CHECK(parked.Lookup(Object(4), 4) == Find::Pending);
+    CHECK(parked.Lookup(Object(8), 4) == Find::None);
+    CHECK(parked.Pending(4) == 2);
+    CHECK(parked.Lookup(Object(0), 5) == Find::Finished);
+    CHECK(parked.Lookup(Object(4), 5) == Find::Pending);
+    CHECK(parked.Pending(5) == 1);
+    CHECK(parked.Pending(6) == 0);
+    parked.AbandonAll();
+}
+
+// A finished hold stays for the grace; the retry of the same source takes it, with its count
+// still on and nothing released, and a hold nobody takes is released once the grace passed.
+static void ParkedGraceAndTake()
+{
+    FakeOps::Reset();
+    IconCopy::Parked<FakeOps> parked;
+    using Find = IconCopy::Parked<FakeOps>::Find;
+    PendingHold<FakeOps> hold;
+    hold.Get() = FullHold(0, true);
+    CHECK(parked.Park(3, hold, 1000));
+    PendingHold<FakeOps> other;
+    other.Get() = FullHold(10, false);
+    CHECK(parked.Park(4, other, 1000));
+
+    // Seen finished at 2000: kept for the grace.
+    CHECK(!parked.Reclaim(4, 2000, 10000, IconCopy::kParkGraceMs));
+    CHECK(parked.Count() == 2);
+    CHECK(Evicted(Object(1)) == 0);
+    CHECK(!parked.Reclaim(4, 2000 + IconCopy::kParkGraceMs - 1, 10000, IconCopy::kParkGraceMs));
+    CHECK(parked.Count() == 2);
+
+    // The retry takes the first.
+    PendingHold<FakeOps> retry;
+    CHECK(!parked.TakeFinished(Object(8), 4, retry));  // not parked
+    CHECK(parked.TakeFinished(Object(0), 4, retry));
+    CHECK(retry.Get().source == Object(0));
+    CHECK(retry.Get().heap == Object(1));
+    CHECK(retry.Get().resident == Object(1));
+    CHECK(retry.Get().dest == nullptr);
+    CHECK(parked.Count() == 1);
+    CHECK(parked.Lookup(Object(0), 4) == Find::None);
+    CHECK(Evicted(Object(1)) == 0);
+    CHECK(Released(Object(0)) == 0);
+
+    // The other is released once the grace has passed.
+    CHECK(!parked.Reclaim(4, 2000 + IconCopy::kParkGraceMs, 10000, IconCopy::kParkGraceMs));
+    CHECK(parked.Empty());
+    CHECK(Evicted(Object(10)) == 1);
+    CHECK(Released(Object(10)) == 1);
+}
+
+// A request not finished cannot be taken, and a finished one waiting out its grace does
+// not count toward the stall limit.
+static void ParkedTakeNeedsFinishedRequest()
+{
+    FakeOps::Reset();
+    IconCopy::Parked<FakeOps> parked;
+    PendingHold<FakeOps> hold;
+    hold.Get() = FullHold(0, false);
+    CHECK(parked.Park(5, hold, 0));
+    PendingHold<FakeOps> retry;
+    CHECK(!parked.TakeFinished(Object(0), 4, retry));
+    CHECK(retry.Get().source == nullptr);
+    CHECK(parked.Count() == 1);
+
+    // Finished, in its grace: no stall however long the clock runs.
+    CHECK(!parked.Reclaim(5, 100, 10000, IconCopy::kParkGraceMs));
+    CHECK(!parked.Reclaim(5, 100 + IconCopy::kParkGraceMs - 1, 10000, IconCopy::kParkGraceMs));
+    CHECK(parked.Count() == 1);
+    CHECK(parked.TakeFinished(Object(0), 5, retry));
+    CHECK(retry.Get().source == Object(0));
+}
+
+// With a finished hold waiting and a new request parked, the stall clock counts from the new
+// request.
+static void ParkedStallClockIgnoresFinished()
+{
+    FakeOps::Reset();
+    IconCopy::Parked<FakeOps> parked;
+    PendingHold<FakeOps> a;
+    a.Get() = FullHold(0, false);
+    CHECK(parked.Park(1, a, 1000));
+    CHECK(!parked.Reclaim(1, 1500, 10000, IconCopy::kParkGraceMs));  // a finished, in its grace
+
+    PendingHold<FakeOps> b;
+    b.Get() = FullHold(4, false);
+    CHECK(parked.Park(2, b, 50000));  // the clock starts here, not at the first park
+    CHECK(!parked.Reclaim(1, 59999, 10000, IconCopy::kParkGraceMs));
+    CHECK(parked.Reclaim(1, 60000, 10000, IconCopy::kParkGraceMs));
+    parked.AbandonAll();
+}
+
+static void BackoffSkipsTheWaitAfterATimeout()
+{
+    IconCopy::ResidentBackoff backoff;
+    CHECK(!backoff.Active(0));
+    CHECK(!backoff.Active(123456));
+    backoff.NoteTimeout(1000);
+    CHECK(backoff.Active(1000));
+    CHECK(backoff.Active(1000 + IconCopy::kResidentBackoffMs - 1));
+    CHECK(!backoff.Active(1000 + IconCopy::kResidentBackoffMs));
+    backoff.NoteTimeout(9000);  // a later timeout restarts it
+    CHECK(backoff.Active(9000 + IconCopy::kResidentBackoffMs - 1));
+    CHECK(!backoff.Active(9000 + IconCopy::kResidentBackoffMs));
+}
+
+// The smallest level whose larger side is at least the minimum.
+static void PickLevelTakesTheSmallestEnough()
+{
+    // 1024x1024 with 11 levels, minimum 256: level 2 (256x256).
+    IconCopy::LevelPick pick = IconCopy::PickCopyLevel(1024, 1024, 11, 256, 1);
+    CHECK(pick.level == 2 && pick.width == 256 && pick.height == 256);
+    // Not square: the larger side decides.
+    pick = IconCopy::PickCopyLevel(1024, 512, 11, 256, 1);
+    CHECK(pick.level == 2 && pick.width == 256 && pick.height == 128);
+    // Exactly the minimum is enough, below it is not.
+    pick = IconCopy::PickCopyLevel(512, 512, 10, 256, 1);
+    CHECK(pick.level == 1 && pick.width == 256);
+    // Smaller than the minimum to begin with: level 0, at its own size.
+    pick = IconCopy::PickCopyLevel(200, 100, 8, 256, 1);
+    CHECK(pick.level == 0 && pick.width == 200 && pick.height == 100);
+    // Minimum 0 goes down to the last level.
+    pick = IconCopy::PickCopyLevel(64, 64, 7, 0, 1);
+    CHECK(pick.level == 6 && pick.width == 1 && pick.height == 1);
+}
+
+// Only the levels the source has, and only whole blocks for a block-compressed format.
+static void PickLevelRespectsTheLevelsAndBlocks()
+{
+    // Only level 0 resident.
+    IconCopy::LevelPick pick = IconCopy::PickCopyLevel(1024, 1024, 1, 256, 1);
+    CHECK(pick.level == 0 && pick.width == 1024);
+    // Three levels of a 2048 source: level 2 (512) is the smallest there is.
+    pick = IconCopy::PickCopyLevel(2048, 2048, 3, 256, 1);
+    CHECK(pick.level == 2 && pick.width == 512);
+    // 1020 -> 510 -> 255: levels 1 and 2 are not multiples of 4, so level 0.
+    pick = IconCopy::PickCopyLevel(1020, 1020, 3, 200, 4);
+    CHECK(pick.level == 0 && pick.width == 1020);
+    // 1024 -> 512 -> 256 -> 128: minimum 100 gives 128.
+    pick = IconCopy::PickCopyLevel(1024, 1024, 11, 100, 4);
+    CHECK(pick.level == 3 && pick.width == 128);
+    // 1056 -> 528 -> 264 -> 132 -> 66 (not a multiple of 4, skipped) -> 33: minimum 30 gives 132.
+    pick = IconCopy::PickCopyLevel(1056, 1056, 12, 30, 4);
+    CHECK(pick.level == 3 && pick.width == 132);
+    // No levels given: still level 0.
+    pick = IconCopy::PickCopyLevel(256, 256, 0, 0, 1);
+    CHECK(pick.level == 0);
 }
 
 int main()
@@ -530,6 +773,8 @@ int main()
     RunTest("Choose: full protection with the rows", ChooseFullWithRows);
     RunTest("Choose: reduced without the rows, the copy still runs", ChooseReducedWithoutRows);
     RunTest("Choose: reduced when the heap does not check out", ChooseReducedOnInvalidHeap);
+    RunTest("VtableIsFrom: an object of another module is not called", VtableCheckRefusesAnotherModule);
+    RunTest("VtableIsFrom: an unplaceable vtable or no module refuses", VtableCheckRefusesWhatItCannotPlace);
     RunTest("Ring: the oldest fence in flight", RingOldestFence);
     RunTest("WaitBeforeStart: within both limits a copy starts at once", StartsAtOnceWithinBothLimits);
     RunTest("WaitBeforeStart: past the tick budget, wait for the oldest copy", OverTheTickBudgetWaitsForTheOldest);
@@ -538,6 +783,14 @@ int main()
     RunTest("Parked: refuses when full, the hold stays with the caller", ParkedRefusesWhenFull);
     RunTest("Parked: expires when none finishes for the limit", ParkedExpiresWithoutProgress);
     RunTest("Parked: the clock starts at the park", ParkedClockStartsAtThePark);
+    RunTest("Parked: keeps no destination texture", ParkedKeepsNoDestination);
+    RunTest("Parked: lookup finds a source and says whether its request finished", ParkedLookupAndPending);
+    RunTest("Parked: a finished hold waits out the grace and the retry takes it", ParkedGraceAndTake);
+    RunTest("Parked: only a finished request can be taken", ParkedTakeNeedsFinishedRequest);
+    RunTest("Parked: the stall clock ignores finished holds", ParkedStallClockIgnoresFinished);
+    RunTest("ResidentBackoff: no wait for a while after a timeout", BackoffSkipsTheWaitAfterATimeout);
+    RunTest("PickCopyLevel: the smallest level that is big enough", PickLevelTakesTheSmallestEnough);
+    RunTest("PickCopyLevel: only the levels there are, whole blocks only", PickLevelRespectsTheLevelsAndBlocks);
 
     printf("\n%d checks, %d failed\n", g_checks, g_failed);
     return g_failed == 0 ? 0 : 1;

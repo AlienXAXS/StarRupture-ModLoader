@@ -244,6 +244,22 @@ namespace LayoutCheck
         const std::function<const LiveStruct*(const TableClass&)>& find,
         const PerBuild& perBuild = {});
 
+    // ---- Field requests, kept apart from the game so they can be tested ----
+
+    // Whether a type reflection did not find is a plain C++ type, which no
+    // reflection describes. `letter` is the request's Dumper-7 prefix (F, U or
+    // A); structSeen and classSeen say whether a script struct or a class of
+    // the name without it exists in any module. A name nothing carries is
+    // plain. So is an F name only a class carries: the engine pairs a class
+    // with a plain type of the same name (UTexture and its render resource
+    // FTexture). An F name a struct carries elsewhere, or a U or A name that
+    // anything carries, is a request that missed (a wrong /Script path, a
+    // struct asked for as a class).
+    inline bool IsPlainType(char letter, bool structSeen, bool classSeen)
+    {
+        return letter == 'F' ? !structSeen : !structSeen && !classSeen;
+    }
+
     // ---- Function parameter blocks, kept apart from the game so they can be tested ----
 
     // One way to read a parameter struct name as <Class>_<Function>. Both

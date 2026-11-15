@@ -79,6 +79,11 @@ namespace Hooks::Input
 	// other's blocking. Persisted to the plugin INI by the config UI.
 	void SetComboBlocking(const char* owner, const char* comboStr, bool blocking);
 
+	// Drops every blocking request whose owner belongs to `pluginName` (owners
+	// read "<plugin>|<section>|<key>"). For a plugin being unloaded; loading it
+	// again applies its blocking from its INI.
+	void ForgetPluginBlocking(const char* pluginName);
+
 	// Returns true if the given (key, mods) combination is currently set to blocking.
 	// Uses FormatComboString to produce the canonical key and looks it up in the map.
 	// Returns false (non-blocking) by default when no entry exists.
@@ -113,10 +118,6 @@ namespace Hooks::Input
 	// Fires named-combo and advanced-combo callbacks for the given key + current mods.
 	// Modifier-less named entries follow the same shadowing rule as Dispatch.
 	void DispatchCombo(EModKey key, EModKeyModifiers mods, EModKeyEvent event);
-
-	// Returns the set of (EModKey, VK) pairs that have at least one registered callback
-	// (simple or combo).  Used by the input processor to know which keys to poll.
-	std::vector<std::pair<EModKey, int>> GetActiveKeys();
 
 	// --- Diagnostics ---
 	// How many callbacks are registered, split by kind, plus how many combos are

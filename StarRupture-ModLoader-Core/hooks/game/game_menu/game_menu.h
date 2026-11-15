@@ -98,7 +98,8 @@ namespace Hooks::GameMenu
 	bool IsPauseMenuOpen();
 
 	// Whether the local player controller has the mouse cursor up (any game
-	// screen that shows one: the pause menu, machine menus, the inventory).
+	// screen that shows one: the pause menu, machine menus, the inventory), or
+	// the build menu is the active screen.
 	// Set once per tick on the game thread by the caller that already looks up
 	// the controller; false when there is no world or controller.  Safe from
 	// any thread.
@@ -110,7 +111,11 @@ namespace Hooks::GameMenu
 	// those) for this controller's local player, read from the game's CommonUI
 	// menu layer. 0 when nothing is on it; a screen that is closing still
 	// counts, until its close transition has ended. Game thread only.
-	uint64_t ReadMenuLayer(SDK::APlayerController* pc);
+	//
+	// buildMenuActive is set to whether the build menu is on the layer AND still
+	// the active screen (not closing): the tick treats it as a cursor screen
+	// of its own, whatever the controller's bShowMouseCursor says.
+	uint64_t ReadMenuLayer(SDK::APlayerController* pc, bool* buildMenuActive);
 
 	// Whether the cursor is over a visible, hit-testable widget of that same
 	// menu layer (UWidget::IsHovered on each screen on it). True when the layer

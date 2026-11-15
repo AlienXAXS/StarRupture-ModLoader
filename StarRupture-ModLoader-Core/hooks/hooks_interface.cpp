@@ -39,6 +39,8 @@
 #include "UI/plugin_widget_registry.h"
 #include "UI/imgui_backend.h"
 #include "UI/splash_window.h"
+#include "UI/image_library.h"
+#include "UI/image_lookup_host.h"
 #include "hooks/game/hud_post_render/hud_post_render.h"
 #include "hooks/game/debug_draw/debug_draw.h"
 #include "hooks/game/game_menu/game_menu_registry.h"
@@ -1897,6 +1899,8 @@ namespace ModLoaderLogger
 		nullptr,             // v64 -- GameMenu; filled in below by GetPluginHooks() on client
 		                     //        builds, and left null on server/generic ones
 		nullptr,             // v67 -- Pak; filled in below by GetPluginHooks() on every build
+		nullptr,             // v77 -- Images; filled in below by GetPluginHooks() on client builds,
+		                     //        and left null on server/generic ones
 	};
 	static bool g_networkChannelInitialized = false;
 
@@ -1919,6 +1923,13 @@ namespace ModLoaderLogger
 		// menus this splices into do not exist on a dedicated server.
 		if (!g_pluginHooks.GameMenu)
 			g_pluginHooks.GameMenu = ::GameMenu::Registry::GetInterface();
+
+		// The image library. Client only: the images are the game's UI textures.
+		if (!g_pluginHooks.Images)
+		{
+			ImageLibrary::SetFromTexture(ImageLookup::FromTexture);
+			g_pluginHooks.Images = ImageLibrary::GetInterface();
+		}
 #endif
 
 		// Resolve the network channel pointer on first call.

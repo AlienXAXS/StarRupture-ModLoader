@@ -839,9 +839,7 @@
 //      an older plugin ends before the field, and is never read past its end.
 //      A v75 plugin is refused by a v74 loader, which has neither the field
 //      nor the calls.
-//      A plugin built against these headers declares 75 by default
-//      (PLUGIN_INTERFACE_VERSION). Loader 1.23.0 accepts 70 through 75, so a
-//      plugin that uses nothing from v75 may still declare 74. A loader before
+//      A plugin that uses nothing from v75 may declare 74. A loader before
 //      1.23.0 refuses a plugin newer than its maximum.
 //
 //      Also in v75: a widget that takes the mouse over a game menu only where no menu
@@ -869,9 +867,44 @@
 //      without the flag refuses the Blueprint class (it knows native ones
 //      only), which turns off the feature that lists the key.
 //
+//
+// v77: Image library (hooks->Images, client only, null on server and generic
+//      builds). One place in the loader that loads game images -- item icons
+//      first -- when a plugin is about to draw them, shrinks each to one
+//      stored size and keeps the copy for the session. IPluginImages is
+//      appended at the END of IPluginHooks, so nothing a v70-v75 plugin reads
+//      by offset moved and MIN stays at 70.
+//      An image is named by a PluginImageId, which stays the same for the
+//      whole session: asking for the same item name or object path again,
+//      after a RELOAD say, gives the same id, and the copy is still there.
+//      There is nothing to release. The loader serves the images that were
+//      drawn most recently first, drops a request nobody has drawn lately,
+//      and past its memory cap evicts the image drawn least recently; Get
+//      asks for an evicted image again.
+//      Item, Path, Get, GetSized, State and Canonical are callable from any thread, render
+//      callbacks included, and never wait for the game. Get, State and Canonical take
+//      no lock; GetSized takes none except for a moment when a size is first asked
+//      for steadily. Item and Path take an internal lock for a moment, so ask once and
+//      keep the id. Item, Path and FromTexture only hand out the id; the image is
+//      read when Get is called for it (or by preload, for a set in use).
+//      FromTexture gives the same id as Path of the texture's object path,
+//      and Canonical maps any id to the one id of its image: the id of the
+//      texture path for an item that has been resolved, the id itself before
+//      that, so a plugin can compare images by id.
+//      GetSized is Get for an image drawn at a known pixel size: once the size has
+//      been drawn steadily it returns a copy made for exactly that size, to be
+//      drawn 1:1; until then it returns what Get returns.
+//      UseSets records which sets of images the plugin draws from, for
+//      background preload.
+//      A plugin built for v77 is refused by a loader whose maximum is lower. A
+//      plugin built against these headers declares 77 by default
+//      (PLUGIN_INTERFACE_VERSION); a plugin that uses nothing from v77 may
+//      declare an older number, down to 70. LoadFromUTexture2D and the rest of
+//      IPluginImGuiTextures are unchanged.
+//
 #define PLUGIN_INTERFACE_VERSION_MIN 70
-#define PLUGIN_INTERFACE_VERSION_MAX 75
-#define PLUGIN_INTERFACE_VERSION 75
+#define PLUGIN_INTERFACE_VERSION_MAX 77
+#define PLUGIN_INTERFACE_VERSION 77
 
 enum class PluginLogLevel { Trace = 0, Debug = 1, Info = 2, Warn = 3, Error = 4 };
 enum class ConfigValueType { String, Integer, Float, Boolean, Keybind, Choice /* v71 */, Hidden /* v71 */ };
@@ -3427,7 +3460,9 @@ enum PluginUIState : uint64_t
 	PLUGIN_UI_PAUSE_MENU   = 1ull << 1,
 
 	// The game shows its own mouse cursor (the player controller's
-	// bShowMouseCursor): the menus, the pause menu and the machine screens.
+	// bShowMouseCursor): the menus, the pause menu and the machine screens. The
+	// build menu counts too while it is the active screen (once any plugin has
+	// registered for a menu bit), whether or not the game raises the flag there.
 	PLUGIN_UI_CURSOR_UP    = 1ull << 2,
 
 	// A screen is on the game's menu layer: the map, the inventory, the build
@@ -3660,6 +3695,96 @@ struct IPluginPak
 	const char* (*ResultToString)(PluginPakResult result);
 };
 
+// ---------------------------------------------------------------------------
+// Image library (v77) -- client only
+//
+// Retrieved via hooks->Images (nullptr on server/generic). An id names one game
+// image for the whole session. The loader reads the image the first time it is
+// wanted, keeps a small copy, and gives the copy up only when its memory cap is
+// reached (the image drawn least recently first). There is no Release.
+//
+// THREADING RULES
+// ---------------
+// Item, Path, Get, State, UseSets and Canonical can be called from any thread,
+// including an ImGui render callback, and never wait for the game. Item and Path
+// take an internal lock for a moment: ask once and keep the id. FromTexture reads a
+// game object, so it is game thread only.
+// ---------------------------------------------------------------------------
+
+// An id names one game image for the whole session. 0 is never valid.
+typedef uint32_t PluginImageId;
+
+enum PluginImageState : int32_t
+{
+	PLUGIN_IMAGE_NONE     = 0, // id 0, unknown, not asked for yet (Get asks), failed, over the cap, no version map rows on this build, or the library is off
+	PLUGIN_IMAGE_WAITING  = 1, // asked for, being read
+	PLUGIN_IMAGE_READY    = 2, // Get returns a texture
+	PLUGIN_IMAGE_NO_IMAGE = 3, // the item or building resolved and has no image
+};
+
+enum PluginImageSet : uint32_t
+{
+	PLUGIN_IMAGE_SET_ITEMS     = 1u << 0,
+	PLUGIN_IMAGE_SET_BUILDINGS = 1u << 1,
+};
+
+struct IPluginImages
+{
+	// Any thread. Never waits for the game. The same name or path always gives the same id,
+	// so ask once and keep it. These only hand out the id; Get is what asks for the image.
+	// An item with no unique name (the Ammo item and the building blueprints, for example) is
+	// asked for by the name of its data asset: the asset name, the class name or the default
+	// object's name ("I_X", "I_X_C" or "Default__I_X_C"), in any case. A unique name wins over
+	// an asset name. A name the game never set names no item: "" returns 0 (State is NONE), and
+	// "None" (any case) returns an id that ends as PLUGIN_IMAGE_NO_IMAGE once Get has asked for it.
+	PluginImageId (*Item)(const IPluginSelf* self, const char* uniqueItemName);
+	PluginImageId (*Path)(const IPluginSelf* self, const char* textureObjectPath); // "/Game/.../T_X.T_X"
+
+	// Game thread only (returns 0 and logs once elsewhere). Keeps no pointer.
+	// The same id as Path gives for the texture's object path.
+	PluginImageId (*FromTexture)(const IPluginSelf* self, SDK::UTexture2D* texture);
+
+	// Any thread, render callbacks included. Null until READY. Valid for this frame only:
+	// pass it straight to Image or DL_AddImage and never keep it.
+	// Marks the image as seen, and asks for it again if it was evicted.
+	PluginTextureHandle (*Get)(PluginImageId id);
+	int (*State)(PluginImageId id); // a PluginImageState
+
+	// The sets this plugin draws from, for background preload (PluginImageSet
+	// bits). 0 clears. Dropped when the plugin unloads.
+	void (*UseSets)(const IPluginSelf* self, uint32_t sets);
+
+	// Any thread, no lock. The one id for the image that id names: for an id from
+	// Item, the id of its texture path once the item has been resolved, and the
+	// id unchanged before that. A path id, PLUGIN_IMAGE_NONE (0) and an unknown
+	// id come back unchanged. Two ids name the same image when their Canonical
+	// values are equal.
+	PluginImageId (*Canonical)(PluginImageId id);
+
+	// Any thread, render callbacks included. Get for an image drawn at pixelSize screen pixels on
+	// its longer side (a whole number). Once pixelSize has been asked for steadily (about half a
+	// second of frames at the same size; a size that keeps changing never qualifies) the loader makes a
+	// copy of the stored picture resampled to exactly that size and keeps it. From then on this
+	// returns that copy, and sets *outWidth and *outHeight (either may be null) to its size in
+	// pixels: draw it at that size, 1:1, with the same uv range 0..1. Until the copy is ready, for
+	// a pixelSize of 0 or less, and for a pixelSize of 256 or more, it returns what Get returns and
+	// sets *outWidth and *outHeight to 0: draw it scaled into your box as before. Same lifetime
+	// rules as Get: valid for this frame only. Copies are dropped when not drawn for a while and
+	// when the image is evicted, and then the answer is the stored picture again.
+	PluginTextureHandle (*GetSized)(PluginImageId id, int pixelSize, int* outWidth, int* outHeight);
+};
+
+static_assert(sizeof(PluginImageId) == 4, "v77 layout");
+static_assert(offsetof(IPluginImages, Item)        ==  0, "v77 layout");
+static_assert(offsetof(IPluginImages, Path)        ==  8, "v77 layout");
+static_assert(offsetof(IPluginImages, FromTexture) == 16, "v77 layout");
+static_assert(offsetof(IPluginImages, Get)         == 24, "v77 layout");
+static_assert(offsetof(IPluginImages, State)       == 32, "v77 layout");
+static_assert(offsetof(IPluginImages, UseSets)     == 40, "v77 layout");
+static_assert(offsetof(IPluginImages, Canonical)   == 48, "v77 layout");
+static_assert(offsetof(IPluginImages, GetSized)    == 56, "v77 layout");
+static_assert(sizeof(IPluginImages)                == 64, "v77 layout");
+
 struct IPluginHooks
 {
 	IPluginSpawnerHooks*   Spawner;        // v14
@@ -3686,7 +3811,11 @@ struct IPluginHooks
 	IPluginConsole*        Console;         // v63 -- appended at end, do not relocate
 	IPluginGameMenu*       GameMenu;        // v64 -- client only, null on server/generic; appended at end, do not relocate
 	IPluginPak*            Pak;             // v67 -- all builds; appended at end, do not relocate
+	IPluginImages*         Images;          // v77 -- client only, null on server/generic; appended at end, do not relocate
 };
+
+static_assert(offsetof(IPluginHooks, Pak)    == 184, "v67 layout");
+static_assert(offsetof(IPluginHooks, Images) == 192, "v77 starts where v67 ended");
 
 // ---------------------------------------------------------------------------
 // Plugin build target

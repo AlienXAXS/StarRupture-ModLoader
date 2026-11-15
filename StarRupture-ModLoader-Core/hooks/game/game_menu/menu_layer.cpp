@@ -71,8 +71,9 @@ namespace Hooks::GameMenu
 		}
 	}
 
-	uint64_t ReadMenuLayer(SDK::APlayerController* pc)
+	uint64_t ReadMenuLayer(SDK::APlayerController* pc, bool* buildMenuActive)
 	{
+		*buildMenuActive = false;
 		if (!pc)
 			return 0;
 		SDK::UCommonActivatableWidgetContainerBase* layer = FindMenuLayer(pc);
@@ -97,7 +98,11 @@ namespace Hooks::GameMenu
 			else if (w->IsA(SDK::UCrUW_InventoryScreen::StaticClass()))
 				kinds[i] = UIState::MenuKind::Inventory;
 			else if (w->IsA(SDK::UCrUW_BuildingMenu::StaticClass()))
+			{
 				kinds[i] = UIState::MenuKind::BuildMenu;
+				if (w->bIsActive)
+					*buildMenuActive = true;
+			}
 			else if (w->IsA(SDK::UCrUW_ResearchTerminalPanel::StaticClass())
 			      || w->IsA(SDK::UCrUW_UpgradeStationPanel::StaticClass())
 			      || w->IsA(SDK::UCrUW_ArmoryPanel::StaticClass()))

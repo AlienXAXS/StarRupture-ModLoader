@@ -56,6 +56,38 @@ namespace UI::ImGuiBackend
     // ImGuiHost_RecordUiOverlay / ImGuiHost_SubmitUiOverlay.
     int  RecordUiOverlay(void* rhiBackBuffer);
     bool SubmitUiOverlay(int slot, ImGuiUiOverlaySync* sync);
+
+    // The image library's read; see ImGuiHost_TryCopyTextureLevel for the arguments and the
+    // ImGuiHostCopyResult it returns. ImGuiHostCopy_Unavailable when the host DLL is not loaded.
+    int  TryCopyTextureLevel(void* uTexture2D, const char* name, unsigned minSize, ImGuiHostCopyOut* out);
+
+    // The image library's shrink; see ImGuiHost_ShrinkTexture for the arguments and the
+    // ImGuiHostShrinkResult it returns. ImGuiHostShrink_Failed when the host DLL is not loaded.
+    int  ShrinkTexture(PluginTextureHandle source, unsigned maxSize, ImGuiHostShrinkOut* out);
+
+    // Starts the shrink pass set-up on a thread of its own; see ImGuiHost_PrepareShrink.
+    void PrepareShrink(unsigned maxSize);
+
+    // The upload of a saved file; see ImGuiHost_UploadTexture. Not for the game or render thread.
+    // ImGuiHostUpload_Failed when the host DLL is not loaded.
+    int  UploadTexture(unsigned width, unsigned height, unsigned levels, const unsigned char* pixels,
+                       unsigned long long bytes, ImGuiHostUploadOut* out);
+
+    // The pixels of a shrink's stored copy; see ImGuiHost_TakeReadback. -1 when the host DLL is not loaded.
+    int  TakeReadback(unsigned ticket, unsigned char* dest, unsigned long long bytes);
+
+    // True while the overlay's GPU side is up; false before the first frame, after a lost device
+    // and after shutdown. Any thread.
+    bool GpuReady();
+
+    // Where a copy TryCopyTextureLevel made stands: 1 finished, 0 on the GPU, -1 gone. Game thread.
+    int  CopyState(PluginTextureHandle texture);
+
+    // The adapter's local video memory budget in bytes, 0 when unknown. Game thread.
+    unsigned long long LocalVideoBudget();
+
+    // The adapter's local video memory in use and its budget, in bytes. False when unknown. Game thread.
+    bool LocalVideoMemory(unsigned long long* usage, unsigned long long* budget);
 }
 
 #endif // MODLOADER_CLIENT_BUILD

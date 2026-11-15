@@ -11,6 +11,9 @@
 #include "../world_begin_play/world_begin_play.h"
 #include "utils/game_thread_dispatch.h"
 #include "plugins/plugin_watchdog.h"
+#ifdef MODLOADER_CLIENT_BUILD
+#include "UI/image_pump.h"
+#endif
 #include <atomic>
 #include <vector>
 #include <algorithm>
@@ -161,6 +164,36 @@ namespace Hooks::EngineTick
 			}
 		}
 
+		// The image library's pump runs after the plugin callbacks, so a request a
+		// plugin made this tick is served in it, and its time is its own entry in
+		// the profiler rather than part of a plugin's.
+#ifdef MODLOADER_CLIENT_BUILD
+		double imagePumpMs = 0.0;
+		{
+			LARGE_INTEGER pumpStart{}, pumpEnd{};
+			if (profileThisTick)
+				QueryPerformanceCounter(&pumpStart);
+			try
+			{
+				ImagePump::Tick();
+			}
+			catch (...)
+			{
+				static bool s_logged = false;
+				if (!s_logged)
+				{
+					s_logged = true;
+					ModLoaderLogger::LogError(L"[EngineTick::Detour] Exception caught in the image pump");
+				}
+			}
+			if (profileThisTick)
+			{
+				QueryPerformanceCounter(&pumpEnd);
+				imagePumpMs = (pumpEnd.QuadPart - pumpStart.QuadPart) * 1000.0 / static_cast<double>(g_qpcFrequency.QuadPart);
+			}
+		}
+#endif
+
 		if (profileThisTick)
 		{
 			LARGE_INTEGER tickEnd{};
@@ -219,6 +252,9 @@ namespace Hooks::EngineTick
 						Hooks::GetCallerModuleName(reinterpret_cast<void*>(g_pluginCallbacks[i])),
 						s_callbackMs[i] });
 				}
+#ifdef MODLOADER_CLIENT_BUILD
+				callbackTimings.push_back({ "Image library", imagePumpMs });
+#endif
 
 				if (sampleThisTick)
 				{

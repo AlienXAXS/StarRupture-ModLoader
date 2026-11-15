@@ -25,6 +25,7 @@
 #include "preload/preload_manager.h"
 #ifdef MODLOADER_CLIENT_BUILD
 #include "hooks/game/game_menu/game_menu_registry.h"
+#include "hooks/input/keybind_registry.h"
 #include "hooks/input/mouse_wheel_registry.h"
 #include "core/ui_state.h"
 #endif
@@ -47,6 +48,7 @@
 #include "UI/modloader_window.h"
 #include "UI/plugin_panel_registry.h"
 #include "UI/plugin_widget_registry.h"
+#include "UI/image_library.h"
 #include "UI/global_settings.h"
 #include "UI/toast.h"
 #endif
@@ -1053,10 +1055,17 @@ namespace PluginManager
 		GameMenu::Registry::ForgetPlugin(p.cachedName.c_str());
 		Hooks::MouseWheel::ForgetModule(p.hModule);
 		UIState::ForgetModule(p.hModule);
+		// The keys it asked the game not to see: a plugin that is gone must not
+		// go on swallowing them. Loading it again applies its INI's Block flags.
+		Hooks::Input::ForgetPluginBlocking(p.cachedName.c_str());
 		// So is an OnConfigChanged callback. The slot (and with it &p.self) is
 		// kept across an unload, so a callback the plugin did not unregister
 		// itself would still match this plugin and be called into freed memory.
 		UI::PluginPanelRegistry::ForgetConfigCallbacks(&p.self);
+
+		// The image sets it said it draws from. Its images stay: they belong to
+		// the session, not to the plugin.
+		ImageLibrary::ForgetPlugin(&p.self);
 #endif
 	}
 

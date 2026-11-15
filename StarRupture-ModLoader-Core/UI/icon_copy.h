@@ -17,6 +17,14 @@ namespace IconCopy
 	constexpr int kMaxInFlight = 8;
 	constexpr int kMaxPerTick  = 8;
 
+	// A parked hold whose residency request has finished is kept this long for the retry of the
+	// same source, so the retry copies at once. A count given back too soon lets the engine page
+	// the source out again, and the retry then pays the page-in again.
+	constexpr uint64_t kParkGraceMs = 5000;
+
+	// After a residency wait runs out, later requests are not waited for this long.
+	constexpr uint64_t kResidentBackoffMs = 5000;
+
 	class TickBudget
 	{
 	public:
@@ -38,6 +46,26 @@ namespace IconCopy
 	private:
 		uint64_t m_tick = UINT64_MAX;
 		int      m_used = 0;
+	};
+
+	// Set when a wait for a residency request ran out: for a while after, a request that has not
+	// finished is parked without being waited for, so a card that is paging heavily costs one
+	// wait, not one per source.
+	class ResidentBackoff
+	{
+	public:
+		void NoteTimeout(uint64_t nowMs)
+		{
+			m_until = nowMs + kResidentBackoffMs;
+		}
+
+		bool Active(uint64_t nowMs) const
+		{
+			return nowMs < m_until;
+		}
+
+	private:
+		uint64_t m_until = 0;
 	};
 
 	// What keeps the source's memory resident while the copy runs.
@@ -79,6 +107,19 @@ namespace IconCopy
 	// The references one copy holds until its fence passes. resident is the
 	// pageable with a residency count of ours on it (the heap or the source),
 	// not a separate reference.
+	// The class check for an object found through a version map row: its vtable must be in
+	// expectedModule, the module that implements the interface for objects made on our own
+	// device. Ops::ModuleOf(address) gives the module an address is in, or null. Nothing is
+	// called on the object. An unknown expected module refuses everything.
+	template <class Ops>
+	inline bool VtableIsFrom(const void* object, const void* expectedModule)
+	{
+		if (!object || !expectedModule)
+			return false;
+		const void* const vtable = *static_cast<const void* const*>(object);
+		return vtable && Ops::ModuleOf(vtable) == expectedModule;
+	}
+
 	struct Hold
 	{
 		void* source   = nullptr;
@@ -205,50 +246,188 @@ namespace IconCopy
 		uint64_t m_lastFence = 0;
 	};
 
-	// The holds of copies not made because the source's residency request had not
-	// finished in time. A residency count is given back (Evict) only after its
-	// request has finished, so each hold waits here until the residency fence
-	// passes its request's value. Requests finish in order.
+	// The holds of sources whose residency request had not finished in time (or, in try
+	// mode, had not when asked). A residency count is given back (Evict) only after its
+	// request has finished, so each hold waits here until the residency fence passes its
+	// request's value. Requests finish in order.
+	//
+	// A hold whose request has finished stays for a grace period, keyed by its source: the
+	// retry of the same source takes it (TakeFinished) and copies at once, with no second
+	// request and no wait. A hold keeps no destination texture; the retry makes its own.
 	template <class Ops, int N = kMaxInFlight>
 	class Parked
 	{
 	public:
-		bool Empty() const { return m_ring.InFlight() == 0; }
-		int  Count() const { return m_ring.InFlight(); }
+		enum class Find
+		{
+			None,      // nothing parked for the source
+			Pending,   // its request has not finished
+			Finished,  // its request has finished: TakeFinished gives the hold
+		};
 
-		// Takes the hold, to be released once the fence reaches residentValue.
-		// False, with the hold left as it was, when all N entries are taken.
+		bool Empty() const { return Count() == 0; }
+
+		int Count() const
+		{
+			int n = 0;
+			for (const Entry& e : m_entries)
+				n += e.busy ? 1 : 0;
+			return n;
+		}
+
+		// How many requests have not finished at residentDone.
+		int Pending(uint64_t residentDone) const
+		{
+			int n = 0;
+			for (const Entry& e : m_entries)
+				n += (e.busy && e.value > residentDone) ? 1 : 0;
+			return n;
+		}
+
+		// Takes the hold, to be released once the fence reaches residentValue and the grace
+		// has passed. Its destination, if any, is released now. False, with the hold left as
+		// it was, when all N entries are taken.
 		bool Park(uint64_t residentValue, PendingHold<Ops>& hold, uint64_t nowMs)
 		{
-			const int slot = m_ring.FreeSlot();
-			if (slot < 0)
+			Entry* free = nullptr;
+			bool anyPending = false;
+			for (Entry& e : m_entries)
+			{
+				if (!e.busy)
+					free = free ? free : &e;
+				else if (!e.finished)
+					anyPending = true;
+			}
+			if (!free)
 				return false;
-			if (Empty())
+			if (!anyPending)
 				m_sinceMs = nowMs;
-			m_ring.Start(slot, residentValue, hold.Take());
+			Hold taken = hold.Take();
+			if (taken.dest)
+			{
+				Ops::Release(taken.dest);
+				taken.dest = nullptr;
+			}
+			*free = Entry{ true, false, residentValue, 0, taken };
+			if (residentValue > m_lastValue)
+				m_lastValue = residentValue;
 			return true;
 		}
 
-		// Releases the holds whose request has finished. True when some are still
-		// waiting and none has finished for limitMs, counted from when the oldest
-		// was parked or from the last one that finished.
-		bool Reclaim(uint64_t residentDone, uint64_t nowMs, uint64_t limitMs)
+		Find Lookup(const void* source, uint64_t residentDone) const
 		{
-			if (m_ring.Reclaim(residentDone) > 0)
-				m_sinceMs = nowMs;
-			return !Empty() && nowMs - m_sinceMs >= limitMs;
+			for (const Entry& e : m_entries)
+				if (e.busy && e.hold.source == source)
+					return e.value > residentDone ? Find::Pending : Find::Finished;
+			return Find::None;
+		}
+
+		// Moves the finished hold for source into hold (which must be empty). False when
+		// there is none, or its request has not finished.
+		bool TakeFinished(const void* source, uint64_t residentDone, PendingHold<Ops>& hold)
+		{
+			for (Entry& e : m_entries)
+			{
+				if (!e.busy || e.hold.source != source)
+					continue;
+				if (e.value > residentDone)
+					return false;
+				hold.Get() = e.hold;
+				e = {};
+				return true;
+			}
+			return false;
+		}
+
+		// Releases the finished holds whose grace has passed. True when some requests are
+		// still pending and none has finished for limitMs, counted from when the oldest
+		// pending was parked or from the last one that finished.
+		bool Reclaim(uint64_t residentDone, uint64_t nowMs, uint64_t limitMs, uint64_t graceMs)
+		{
+			bool anyPending = false;
+			for (Entry& e : m_entries)
+			{
+				if (!e.busy)
+					continue;
+				if (e.value > residentDone)
+				{
+					anyPending = true;
+					continue;
+				}
+				if (!e.finished)
+				{
+					e.finished = true;
+					e.doneMs   = nowMs;
+					m_sinceMs  = nowMs;
+				}
+				if (nowMs - e.doneMs >= graceMs)
+				{
+					Release<Ops>(e.hold);
+					e = {};
+				}
+			}
+			return anyPending && nowMs - m_sinceMs >= limitMs;
 		}
 
 		// True when every request ever parked has finished.
-		bool AllDone(uint64_t residentDone) const { return residentDone >= m_ring.LastFence(); }
+		bool AllDone(uint64_t residentDone) const { return residentDone >= m_lastValue; }
 
-		void ReleaseAll() { m_ring.ReleaseAll(); }
-		void AbandonAll() { m_ring.AbandonAll(); }
+		void ReleaseAll()
+		{
+			for (Entry& e : m_entries)
+			{
+				if (e.busy)
+					Release<Ops>(e.hold);
+				e = {};
+			}
+		}
+
+		void AbandonAll()
+		{
+			for (Entry& e : m_entries)
+				e = {};
+		}
 
 	private:
-		Ring<Ops, N> m_ring;
-		uint64_t     m_sinceMs = 0;
+		struct Entry
+		{
+			bool     busy     = false;
+			bool     finished = false;  // seen finished by Reclaim, at doneMs
+			uint64_t value    = 0;
+			uint64_t doneMs   = 0;
+			Hold     hold;
+		};
+		Entry    m_entries[N];
+		uint64_t m_lastValue = 0;
+		uint64_t m_sinceMs   = 0;
 	};
+
+	// The level a library copy reads: the smallest whose larger side is at least minSize, or
+	// level 0 when there is none (an image smaller than that is read at its own size, never
+	// scaled up). blockAlign is 4 for a block-compressed format, else 1: a level whose sides
+	// are not a multiple of it cannot be made as a texture of its own, so it is skipped.
+	struct LevelPick
+	{
+		uint32_t level;
+		uint32_t width;
+		uint32_t height;
+	};
+
+	inline LevelPick PickCopyLevel(uint32_t width, uint32_t height, uint32_t mipLevels, uint32_t minSize, uint32_t blockAlign)
+	{
+		LevelPick pick{ 0, width, height };
+		for (uint32_t k = 1; k < mipLevels && k < 32; ++k)
+		{
+			const uint32_t w = (width >> k) > 1 ? (width >> k) : 1;
+			const uint32_t h = (height >> k) > 1 ? (height >> k) : 1;
+			if ((w > h ? w : h) < minSize)
+				break;
+			if (w % blockAlign != 0 || h % blockAlign != 0)
+				continue;
+			pick = { k, w, h };
+		}
+		return pick;
+	}
 
 	// The fence value a new copy waits for before it starts, or 0 to start now.
 	// Within this tick's budget (haveTick false: no budget) and with an entry free

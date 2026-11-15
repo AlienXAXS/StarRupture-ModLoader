@@ -923,8 +923,32 @@ namespace
     }
 }
 
+namespace
+{
+    // ---- A type reflection did not find: a plain C++ type, or a request that missed ----
+
+    void PlainTypesAreToldFromMisses()
+    {
+        std::printf("Plain C++ types and requests that missed\n");
+        // FD3D12Resource: nothing in the game carries D3D12Resource.
+        Check(LayoutCheck::IsPlainType('F', false, false), "an F name nothing carries is a plain type");
+        // FTexture: the game has the class Texture (UTexture) and no struct of that name.
+        Check(LayoutCheck::IsPlainType('F', false, true), "an F name only a class carries is a plain type (FTexture beside UTexture)");
+        Check(!LayoutCheck::IsPlainType('F', true, false), "an F name a struct carries elsewhere is a request that missed");
+        Check(!LayoutCheck::IsPlainType('F', true, true), "so is one a struct and a class carry");
+        // A class not in this build (a subsystem a game update added) is not reflected here.
+        Check(LayoutCheck::IsPlainType('U', false, false) && LayoutCheck::IsPlainType('A', false, false),
+            "a U or A name nothing carries is not reflected on this build");
+        Check(!LayoutCheck::IsPlainType('U', true, false) && !LayoutCheck::IsPlainType('A', true, false),
+            "a U or A name only a struct carries is a struct asked for as a class");
+        Check(!LayoutCheck::IsPlainType('U', false, true) && !LayoutCheck::IsPlainType('A', false, true),
+            "a U or A name a class carries elsewhere is a wrong /Script path");
+    }
+}
+
 int main()
 {
+    PlainTypesAreToldFromMisses();
     BlueprintFunctionsPendThenResolve();
     SameBuildMatches();
     ContentUpdateMovesThePlayer();

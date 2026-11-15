@@ -10,6 +10,7 @@
 #include "config/config_manager.h"
 #include "config/config_edit.h"
 #include "global_settings.h"
+#include "image_disk.h"
 #include "theme.h"
 #include "named_entry_utils.h"
 #include "update_notice_window.h"
@@ -1794,6 +1795,35 @@ namespace UI::ModLoaderWindow
                 "3 times a session, if the plugin allows a reload right now. Plugins that\n"
                 "only reload at the main menu wait for it; plugins that need a game\n"
                 "restart stay off until then.");
+        }
+
+        ImGui::Spacing();
+        ImGui::SeparatorText("Images");
+        ImGui::Spacing();
+
+        bool preloadImages = UI::GlobalSettings::GetPreloadImages();
+        if (UI::Theme::ToggleSwitch("Preload images from the game", &preloadImages))
+            UI::GlobalSettings::SetPreloadImages(preloadImages);
+        ImGui::SameLine();
+        ImGui::TextDisabled("(?)");
+        if (ImGui::IsItemHovered())
+        {
+            ImGui::SetTooltip(
+                "Plugins that show item or building images can ask the loader to have\n"
+                "them ready before they are drawn. With this on, the loader reads those\n"
+                "images from the game in the background, one at a time, and pauses\n"
+                "whenever an image on screen is waiting or memory is short. Off, each\n"
+                "image is read when it is first drawn. Takes effect at once.");
+        }
+
+        if (ImGui::Button("Clear image cache"))
+            ImageDisk::ClearCache();
+        if (ImGui::IsItemHovered())
+        {
+            ImGui::SetTooltip(
+                "Deletes the images the loader saved on disk. Images already loaded\n"
+                "stay for this session, and the next launch saves them again. Use it\n"
+                "if the cache is taking too much space or an image looks wrong.");
         }
 
         ImGui::Spacing();

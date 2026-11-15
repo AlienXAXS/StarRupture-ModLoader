@@ -54,6 +54,15 @@ namespace Hooks::GObjectWalk
 	// True once GObjects looks populated (mirrors Hooks::EngineInit::IsEngineInitialized()).
 	bool IsReady();
 
+	// The FUObjectItem of a GObjects slot, or null (logged) when the slot is
+	// out of range.
+	SDK::FUObjectItem* GetUObjectItem(int32_t index);
+
+	// The item's serial number, which tells two objects that used the same slot
+	// apart. The engine allocates it on first use; an item that has none yet
+	// gets one here.
+	int32_t AllocateOrReadSerialNumber(SDK::FUObjectItem* item);
+
 	// Fills outArray (capacity entries max) with every GObjects entry matching
 	// mode, skipping null Object/Class and BeginDestroyed/FinishDestroyed.
 	// Returns the TOTAL match count, which may exceed capacity -- compare

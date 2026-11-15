@@ -177,6 +177,9 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="$(SolutionDir)StarRupture-ModLoader-Core\UI\imgui_backend.cpp" />
+    <ClCompile Include="$(SolutionDir)StarRupture-ModLoader-Core\UI\image_shrink_gpu.cpp" />
+    <ClCompile Include="$(SolutionDir)StarRupture-ModLoader-Core\UI\image_readback_gpu.cpp" />
+    <ClCompile Include="$(SolutionDir)StarRupture-ModLoader-Core\UI\image_upload_gpu.cpp" />
     <ClCompile Include="$(ProjectDir)imgui\imgui.cpp" />
     <ClCompile Include="$(ProjectDir)imgui\imgui_draw.cpp" />
     <ClCompile Include="$(ProjectDir)imgui\imgui_tables.cpp" />
@@ -186,6 +189,10 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="$(ProjectDir)resource.h" />
+    <ClInclude Include="$(SolutionDir)StarRupture-ModLoader-Core\UI\image_shrink.h" />
+    <ClInclude Include="$(SolutionDir)StarRupture-ModLoader-Core\UI\image_shrink_gpu.h" />
+    <ClInclude Include="$(SolutionDir)StarRupture-ModLoader-Core\UI\image_readback_gpu.h" />
+    <ClInclude Include="$(SolutionDir)StarRupture-ModLoader-Core\UI\image_upload_gpu.h" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="$(ProjectDir)StarRupture-ImGui.rc" />

@@ -189,6 +189,9 @@ the other the running game. It covers:
 - One synthetic case for each kind of difference: a missing class, alignment, a missing member, a
   member size, a bit-field mask, a bool that stopped or started being one; a Blueprint class and a
   class of unknown kind are deferred, and a member size of 0 is not compared.
+- A type reflection did not find: an `F` name nothing or only a class carries (`FTexture` beside
+  `UTexture`) is a plain C++ type; an `F` name a struct carries, or a `U` or `A` name anything
+  carries, is a request that missed.
 
 ```
 msbuild Tests\LayoutCheckTests\LayoutCheckTests.vcxproj /p:Configuration="Client Release" /p:Platform=x64
@@ -225,6 +228,8 @@ registry's `ProcessWindowMessage`, as the overlay's window procedure hands them 
   key and mouse buttons are true while typing. A key with a keybind gives the callback's answer on
   its first poll, and the callback still skips the press. A key with no keybind and no poll skips
   the game's text-focus scan.
+- The InputKey hook's key lookup (`NameToModKey` and `ShouldBlock`, which the hook calls with the event's own key name): a key's name finds that key whatever else is held, names with no mod key (mouse wheel, gamepad buttons and axes) are never blocked, a plain wheel notch survives a blocked LeftControl, holding one blocked key does not block another key, and a combo blocks only under its own modifiers.
+- `ForgetPluginBlocking`: an unloading plugin's blocking goes, another plugin's blocking of the same key stays, and a plugin whose name starts the same is left alone.
 
 ```
 msbuild Tests\KeyAndThreadTests\KeyAndThreadTests.vcxproj /p:Configuration="Client Release" /p:Platform=x64
@@ -271,7 +276,11 @@ The pattern scan, the scan cache, the game version and the log are test doubles
 - The loader's own site entry: `ModLoader/<name>`, its fingerprint, and a row with a pattern other
   than the site's own is not used.
 - The loader's real map (`hooks/game/version_map.generated.h`) against its registry: format 2, every
-  key a registry entry's, every row with that entry's kind and fingerprint.
+  key a registry entry's, every row with that entry's kind and fingerprint. It also checks the real
+  rows the image library reads (the six texture chain rows and the two heap rows, on the game builds
+  that have them), the hotbar rows and the close-menu key. The loader's lookup of those rows is served
+  on both builds with reflection answering as the game does: `UTexture` is a class and bounds its
+  member, and `FTexture`, whose name the class carries too, is a plain type with no class bound.
 
 ```
 msbuild Tests\VersionMapTests\VersionMapTests.vcxproj /p:Configuration="Client Release" /p:Platform=x64
@@ -354,6 +363,9 @@ The bookkeeping behind `IPluginImGuiTextures::LoadFromUTexture2D` (`UI/icon_copy
 - The protection choice: full with the version map rows (the heap or the resource is made resident),
   reduced with no rows or a heap pointer that does not check out (the copy still runs, and the source
   itself is still made resident).
+- The device check on the engine's texture (`VtableIsFrom`): a resource whose virtual table is not in the
+  module of a D3D12 resource the loader made itself is refused before anything is called on it, and so
+  are a null table and an unplaceable one.
 
 ```
 msbuild Tests\IconCopyTests\IconCopyTests.vcxproj /p:Configuration="Client Release" /p:Platform=x64
@@ -361,3 +373,191 @@ build\tests\icon_copy_tests.exe
 ```
 
 It prints one line per test and exits 0 when every check passes.
+
+
+## ImageLibraryTests
+
+The image library table (`UI/image_library.cpp`): ids, states and the caps, with no GPU and no engine.
+It checks:
+
+- Names are normalised, ids are stable and never zero, and the table stops handing out ids when it is
+  full. A request keeps the name it was asked with.
+- The states follow the read (NONE, WAITING, READY, NO_IMAGE); asking for the state does not mark an
+  image as seen.
+- The order requests are served in: images seen lately first, then set members; requests nobody drew
+  are dropped.
+- The byte cap and the count cap evict the least recently seen image, equal stamps evict the lower id
+  first, a copy over the cap is refused, and an evicted image is asked for again when it is drawn. An image
+  seen within the last half second is never evicted.
+- `RoomFor` counts the free slots under both caps plus the kept images not seen lately, and `HasQueued`
+  tells whether any image is waiting to be read.
+- Handing out an id (`Item`, `Path`) asks for nothing: only drawing it does.
+- Aliased ids are one image, `Canonical` gives the one id for them, `ReleaseAll` hands back every kept
+  copy, and the plugin interface reaches the same table.
+- Readers on another thread see a consistent state while the table changes.
+
+```
+msbuild Tests\ImageLibraryTests\ImageLibraryTests.vcxproj /p:Configuration="Client Release" /p:Platform=x64
+build\tests\image_library_tests.exe
+```
+
+It prints one line per test and exits 0 when every check passes.
+
+## ImagePumpTests
+
+The image pump (`UI/image_pump.cpp`), which reads, shrinks and publishes the images the library was
+asked for, against a fake host and a fake item list, so no GPU and no engine are needed. It checks:
+
+- Nothing happens before the GPU is up; the caps follow the video budget.
+- A started read is published when its copy is done; the shrink makes the stored size and counts the
+  levels; the temporary copy is let go once the shrink starts; a shrink with no room is tried again, and
+  one that fails ends as NONE.
+- Not yet and busy are requeued (a not-yet image is given up on after 10 seconds), a path not in memory is
+  loaded then read, and the per-tick limits on reads, requests looked at and package loads (one in all, items
+  and sets included) hold.
+- A preload image whose file fails goes back to preload, not into the queue for drawn images.
+- A caught engine fault, or a copy the backend says is unavailable, turns the game's reads off once with one log
+  line and no call back into the engine; the images that have a file are still served and the rest end as NONE.
+- Newcomers are admitted only as far as there is room: images drawn lately are never cycled out for them, and
+  while there is no room nothing is read and no file is loaded for the ones waiting.
+- Items are held until the item list knows them, then follow the icon's path. An item with no icon, a
+  placeholder icon or a placeholder path ends as NO_IMAGE; an item the game does not have ends as NONE.
+- Registering an image reads nothing; only drawing it does. The item and building sets are listed only
+  while a mod uses them and the setting is on, then preloaded one image at a time. A drawn image jumps
+  the queue, and preload pauses for the setting, a waiting image, game-held memory, video memory and the
+  caps.
+- Evicted copies are freed on the next tick, a lost GPU drops everything without freeing, and shutdown
+  frees what the library keeps.
+- Nothing is logged per tick.
+- The disk cache, against a fake source: a file hit never calls the host's load or read, a file that is
+  rejected or cannot be uploaded falls back to the game and is saved again, nothing is served while the
+  folder is being listed, saved names tie an item to its texture without building the item index, a saved
+  set list fills the set without loading a package, and files are not held back by the game's own limit.
+
+```
+msbuild Tests\ImagePumpTests\ImagePumpTests.vcxproj /p:Configuration="Client Release" /p:Platform=x64
+build\tests\image_pump_tests.exe
+```
+
+It prints one line per test and exits 0 when every check passes.
+
+## ImageLookupTests
+
+The rules behind the image lookups (`UI/image_lookup.cpp`), against a fake engine, so no game is needed.
+It checks:
+
+- Which textures are placeholders (the engine's white stand-ins), in every form a path comes in, and
+  that a texture with the word only in its name is not.
+- The item index: it is built in steps within a time budget, finds an item by its unique name or by the
+  name of its data asset (also as the class name or the default object's name; a unique name wins, and an
+  asset name answers only once every item is read), never
+  finds an unset name ("None"), counts the items with no unique name, and reports when it is done or could
+  not be built.
+- `FromTexture`: it works on the game thread only, answers from a bounded memory of textures it has seen,
+  and checks a texture's slot before it trusts it.
+
+```
+msbuild Tests\ImageLookupTests\ImageLookupTests.vcxproj /p:Configuration="Client Release" /p:Platform=x64
+build\tests\image_lookup_tests.exe
+```
+
+It prints one line per test and exits 0 when every check passes.
+
+## ImageDiskTests
+
+The files the image library saves (`UI/image_cache_file`, `image_cache_writer`, `image_disk`), with no GPU
+and no game. It checks:
+
+- An image file and a set list read back as they were written, for every shape the shrink makes.
+- A file with a bad magic, another revision, a truncated or lengthened body, a changed byte, or a header
+  that disagrees with itself (too many levels, a size out of range) is refused.
+- The folder name changes when the game build, the pak set, the format revision or the stored size changes,
+  and the pak set hash does not depend on the order the paks are listed in. The hash covers each pak's path,
+  mount point, read order and file count, and the size and last-write time of the pak, its `.utoc` and its
+  `.ucas`.
+- The session's pak set: a set that cannot be listed, or a pak file that cannot be read, switches the disk
+  part off with one log line and never gives a partial key; a changed set switches it off for the rest of the
+  session, and a job queued under the old key is not filed. The set is looked at once in each tick that files
+  an image, and the game thread reads no file stamp.
+- The writer, on a real temporary folder: the folders are made, no temporary file is left, a file of the
+  same size is left alone, a folder that cannot be written (write protected, full, closed to new files)
+  switches the disk part off with one log line, a file another program holds open is retried and then
+  skipped without switching it off, the queue is bounded, a job with no folder is dropped, a queued clear
+  survives a switch-off, and nothing is written after stop.
+- The saver, on a fake readback: a finished copy becomes a file, a copy with no readback or a lost one makes
+  none, a full queue drops the image, and the set list and the name list are written when they change and
+  again after a clear. Textures the game makes while it runs (`/Engine/Transient`, `/Memory/`) are not saved
+  and are left out of both lists.
+- The name list reads back as it was written, and a bad one is refused.
+- The reader (`UI/image_cache_reader`), on a real temporary folder and a fake uploader: it lists the folder and
+  its two lists; a good file becomes a texture of the file's own bytes; a corrupt file, a file of another
+  image or one of the wrong size is rejected, deleted and counted; an upload that fails keeps the file; a
+  file gone after the listing fails; an off session reads nothing; and stop keeps what was finished. A file
+  served from disk gets a new last-write time (so the size cap counts it as used), and one that could not be
+  served does not. A file another program holds open is not deleted, a run-time object's file is not served
+  and is deleted, and a session with no folder lists nothing.
+
+```
+msbuild Tests\ImageDiskTests\ImageDiskTests.vcxproj /p:Configuration="Client Release" /p:Platform=x64
+build\tests\image_disk_tests.exe
+```
+
+It prints one line per test and exits 0 when every check passes.
+
+## ImageCacheCareTests
+
+The housekeeping of the image cache folder (`UI/image_cache_care`), on a real temporary folder, with no GPU
+and no game. It checks:
+
+- The current folder and the newest other one are kept and the rest of the root goes, with its set list; a
+  current folder that is not made yet keeps one other.
+- The 256 MB cap deletes the least recently used `*.img` files, the older folder before the current one, and
+  never the set list. A file that is written again or used again counts as new.
+- Temp files of game instances that are gone are removed; one of a running instance, one with another name and
+  one that is held open are left alone.
+- Clear empties the root and keeps the root; a file another instance holds open is skipped without an error.
+- The tidy and clear jobs run on the writer's worker, not on the calling thread.
+- Tidy with no current folder (the session's disk part is off) deletes nothing, and the clear job is still
+  taken, and empties the root, after the writer has switched itself off.
+
+```
+msbuild Tests\ImageCacheCareTests\ImageCacheCareTests.vcxproj /p:Configuration="Client Release" /p:Platform=x64
+build\tests\image_cache_care_tests.exe
+```
+
+It prints one line per test and exits 0 when every check passes.
+
+## ImageShrinkTests
+
+The size, level and byte rules of the shrink (`UI/image_shrink.h`), with no GPU. It checks that a larger
+image is scaled to the stored size with its proportions kept, a smaller one keeps its own size, a side never
+shrinks to nothing, the level chain runs down to one pixel, and the bytes count every level.
+
+```
+msbuild Tests\ImageShrinkTests\ImageShrinkTests.vcxproj /p:Configuration="Client Release" /p:Platform=x64
+build\tests\image_shrink_tests.exe
+```
+
+## ImageShrinkHarness
+
+The shrink pass itself (`UI/image_shrink_gpu.cpp`) on a desktop D3D12 device, with no game, window or swap
+chain. Each case builds an image like the game's (BC3, BGRA or RGBA16F, with or without smaller levels),
+copies the level the loader would copy, shrinks it, reads the result back and checks the size, the number
+of levels and the colour on every level, and times the pass on the GPU.
+
+It also records the readback of the stored copy (`UI/image_readback_gpu.cpp`) in the same command list and
+checks that the bytes of every level equal the pixels the shrink produced, and that the readback ring gives
+no ticket when full and gives a slot back when it is fetched or cancelled, including after a failed signal.
+An sRGB source is shrunk through a raw (non-sRGB) view of its bytes, so a mid grey is stored as it was, not
+brightened.
+
+Last, it uploads pixels laid out as a saved file holds them (`UI/image_upload_gpu.cpp`), reads the texture
+back and checks that every level equals the bytes that went in.
+
+The run ends with the debug layer's error count. It needs the Windows Graphics Tools feature; without it
+the harness says the debug layer is not available and exits 1 even though its checks passed.
+
+```
+msbuild Tests\ImageShrinkHarness\ImageShrinkHarness.vcxproj /p:Configuration="Client Release" /p:Platform=x64
+build\tests\image_shrink_harness.exe
+```
