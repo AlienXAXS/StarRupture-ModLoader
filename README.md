@@ -253,7 +253,7 @@ splash have none. How a plugin declares these is in the SDK's `PluginDevelopment
 
 Mods that show item or building pictures (an item list, a tooltip, a build menu) get them from one
 place in the loader instead of each copying game textures itself. A mod reaches it through
-`IPluginImages` (plugin interface v77, loader 1.24.0 or newer); mods that do not use it keep copying as before.
+`IPluginImages` (plugin interface v77, ModLoader 1.24.0 or newer); mods that do not use it keep copying as before.
 
 - A picture is read from the game only when a mod is about to show it. Opening a window does not
   read the pictures behind it.

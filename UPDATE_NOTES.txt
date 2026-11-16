@@ -9,9 +9,6 @@
 - New Clear image cache button in the Settings tab, under Preload images from the game, that deletes the saved pictures. Pictures already loaded stay for that session and the next launch saves them again
 - Eight texture members the picture read needs are now rows of the version object map, for both game builds, and the loader's older icon copy reads them when the build has all of them. On a game build with no such rows, pictures from the image library show as placeholders, and the plugin texture copy (LoadFromUTexture2D) returns null
 - A native member of a plain engine type that shares its name with a game class (FTexture beside UTexture) is now served from its version map row instead of being refused
-- Mod windows no longer flicker while a save loads, and blink less after Alt-Tab
-- After a graphics crash (the game losing its graphics device), the mod windows now come back by themselves: they stay off for one launch as a precaution, and the log says so. Before, they stayed off until you edited modloader.ini. If your mod windows are still off from an earlier version, set Enabled=1 under [UI] in ModLoader\modloader.ini
-- The log now records why the graphics device was lost and which step of a game icon copy failed, to help find the cause of a problem
 - A mod feature the game version you are playing does not have yet now shows as "not in this game version" in the hook failures list, instead of as a problem to report
 - A mod feature that needs the hotbar, which the game version CL-127004 does not have, no longer logs a warning at startup there. It stays off, and a stale version map still warns
 - Better Drone's building drone, restore-state and hotbar functions are now rows of the version object map for both game builds, so a game update can be covered without a new loader
