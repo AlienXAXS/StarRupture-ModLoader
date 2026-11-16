@@ -20,6 +20,7 @@
 #include <dxgi1_4.h>
 #include <dxgi1_6.h>
 #include <atomic>
+#include <climits>
 #include <cstring>
 #include <intrin.h>
 #include <cstdarg>
@@ -5055,6 +5056,74 @@ static void DL_AddImageQuad(PluginDrawList dl, PluginTextureHandle tex, float x1
 		ImVec2(u1, v1), ImVec2(u2, v2), ImVec2(u3, v3), ImVec2(u4, v4), col);
 }
 
+static_assert(sizeof(ImDrawIdx) == sizeof(PluginDrawIndex), "PluginDrawIndex must match ImDrawIdx");
+static_assert(sizeof(PluginDrawVertex) == sizeof(ImDrawVert), "PluginDrawVertex must match ImDrawVert");
+static_assert(offsetof(PluginDrawVertex, pos_x) == offsetof(ImDrawVert, pos), "vertex position layout mismatch");
+static_assert(offsetof(PluginDrawVertex, pos_y) == offsetof(ImDrawVert, pos) + sizeof(float), "vertex position layout mismatch");
+static_assert(offsetof(PluginDrawVertex, uv_x) == offsetof(ImDrawVert, uv), "vertex UV layout mismatch");
+static_assert(offsetof(PluginDrawVertex, uv_y) == offsetof(ImDrawVert, uv) + sizeof(float), "vertex UV layout mismatch");
+static_assert(offsetof(PluginDrawVertex, col) == offsetof(ImDrawVert, col), "vertex color layout mismatch");
+
+// ---------------------------------------------------------------------------
+// v78 -- Bulk textured indexed-triangle drawing
+// ---------------------------------------------------------------------------
+static PluginDrawResult DL_AddTexturedTriangles(PluginDrawList dl, PluginTextureHandle tex,
+	const PluginDrawVertex* vertices, uint32_t vertex_count,
+	const PluginDrawIndex* indices, uint32_t index_count)
+{
+	if (!dl)
+		return PluginDrawResult_InvalidDrawList;
+	if (!vertices || !indices || vertex_count == 0 || index_count == 0 || index_count % 3 != 0)
+		return PluginDrawResult_InvalidArgument;
+	if (vertex_count > 65535 || index_count > INT_MAX)
+		return PluginDrawResult_NativeLimitExceeded;
+
+	PluginTextureRecord* rec = ValidateHandle(tex);
+	if (!rec || !CopyDone(rec))
+		return PluginDrawResult_InvalidTexture;
+
+	ImDrawList* draw_list = static_cast<ImDrawList*>(dl);
+	if (draw_list->CmdBuffer.Size <= 0)
+		return PluginDrawResult_InvalidDrawList;
+
+	const ImTextureRef texture_ref((ImTextureID)rec->gpuHandle.ptr);
+	const bool push_texture = texture_ref.GetTexID() != draw_list->_CmdHeader.TexRef.GetTexID();
+	const int vertex_total = draw_list->VtxBuffer.Size;
+	const int index_total = draw_list->IdxBuffer.Size;
+	// Reject native buffer growth limits before texture or draw-command state changes.
+	if (vertex_count > static_cast<uint32_t>(draw_list->VtxBuffer.max_size() - vertex_total) ||
+		index_count > static_cast<uint32_t>(draw_list->IdxBuffer.max_size() - index_total))
+		return PluginDrawResult_NativeLimitExceeded;
+
+	const uint32_t current_vertex_base = draw_list->_VtxCurrentIdx;
+	const bool allow_vertex_offset = (draw_list->Flags & ImDrawListFlags_AllowVtxOffset) != 0;
+	// PrimReserve may roll the local base when vertex offsets are enabled.
+	const bool reserve_rolls_vertex_base = allow_vertex_offset &&
+		current_vertex_base + vertex_count >= (1u << 16);
+	const uint32_t reserved_vertex_base = reserve_rolls_vertex_base ? 0 : current_vertex_base;
+	if (reserved_vertex_base + vertex_count >= (1u << 16))
+		return PluginDrawResult_NativeLimitExceeded;
+
+	// Push only when the texture differs, then restore the prior state after recording.
+	if (push_texture)
+		draw_list->PushTexture(texture_ref);
+
+	draw_list->PrimReserve(static_cast<int>(index_count), static_cast<int>(vertex_count));
+	// PrimReserve may reset _VtxCurrentIdx, so read the index base after reserving.
+	const uint32_t index_base = draw_list->_VtxCurrentIdx;
+	std::memcpy(draw_list->_VtxWritePtr, vertices, static_cast<size_t>(vertex_count) * sizeof(PluginDrawVertex));
+	for (uint32_t i = 0; i < index_count; ++i)
+		draw_list->_IdxWritePtr[i] = static_cast<ImDrawIdx>(index_base + indices[i]);
+
+	draw_list->_VtxWritePtr += vertex_count;
+	draw_list->_IdxWritePtr += index_count;
+	draw_list->_VtxCurrentIdx += vertex_count;
+
+	if (push_texture)
+		draw_list->PopTexture();
+	return PluginDrawResult_Ok;
+}
+
 static void DL_AddImageRounded(PluginDrawList dl, PluginTextureHandle tex, float minx, float miny, float maxx, float maxy, float u0, float v0, float u1, float v1, unsigned int col, float rounding, int flags)
 {
 	PluginTextureRecord* rec = ValidateHandle(tex);
@@ -5322,6 +5391,7 @@ static void PopulateImGuiAPI()
 	g_imguiAPI.DL_AddImage = DL_AddImage;
 	g_imguiAPI.DL_AddImageQuad = DL_AddImageQuad;
 	g_imguiAPI.DL_AddImageRounded = DL_AddImageRounded;
+	g_imguiAPI.DL_AddTexturedTriangles = DL_AddTexturedTriangles;
 	g_imguiAPI.DL_PathClear = ImGuiWrappers::DL_PathClear;
 	g_imguiAPI.DL_PathLineTo = ImGuiWrappers::DL_PathLineTo;
 	g_imguiAPI.DL_PathArcTo = ImGuiWrappers::DL_PathArcTo;
