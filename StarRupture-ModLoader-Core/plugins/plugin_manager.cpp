@@ -59,7 +59,8 @@ namespace PluginManager
 	// Must be plain POD functions with no C++ objects (C2712).
 	struct PluginCrashCtx { DWORD code; uintptr_t addr; CONTEXT context; };
 	// One shared slot, not locked: the calls that fill it (init, shutdown, the
-	// load hooks) run one at a time on the game thread or during startup.
+	// load hooks) run one at a time on the game thread or during startup, except
+	// after UnloadAllPlugins stops waiting for a PluginShutdown.
 	static PluginCrashCtx g_lastPluginCrash;
 
 	// Set once by RefusePluginLoads on the init thread; read wherever a load starts.
@@ -964,7 +965,7 @@ namespace PluginManager
 		// Pre-count deferred plugins so we can show accurate (i/total) progress.
 		int totalDeferred = 0;
 		for (const auto& plugin : g_loadedPlugins)
-			if (!plugin->isInitialized && plugin->init) totalDeferred++;
+			if (!plugin->isInitialized && !plugin->isUnloading && plugin->init) totalDeferred++;
 
 		int initCount = 0;
 		int failCount = 0;
@@ -972,7 +973,7 @@ namespace PluginManager
 
 		for (auto& plugin : g_loadedPlugins)
 		{
-			if (plugin->isInitialized || !plugin->init)
+			if (plugin->isInitialized || plugin->isUnloading || !plugin->init)
 				continue;
 
 			current++;
@@ -1242,7 +1243,9 @@ namespace PluginManager
 		{
 			if (_stricmp(p->cachedName.c_str(), pluginName) == 0)
 			{
-				result = &p->self;
+				// Nothing to notify while its PluginShutdown runs.
+				if (!p->isUnloading)
+					result = &p->self;
 				break;
 			}
 		}
@@ -1318,13 +1321,15 @@ namespace PluginManager
 	// false, so GetLoadedPluginCount and GetLoadedPluginInfos no longer list the
 	// plugin, a second UnloadPlugin or ReloadPlugin for it is refused, and
 	// UnloadAllPlugins waits for it. No other path writes the record or calls
-	// into the plugin until the lock is taken again (InitAllLoadedPlugins would
-	// match it, but only runs at startup, before any plugin can be unloaded), so
-	// FreeShutDownPlugin, run right after, still has the record to itself.
+	// into the plugin until the lock is taken again, so FreeShutDownPlugin, run
+	// right after, still has the record to itself. The generation moves here, as
+	// the plugin leaves the list, so the Config tab does not keep showing the
+	// page of whichever plugin now sits at its index.
 	static void ShutDownWithoutLock(LoadedPlugin& p, const wchar_t* context)
 	{
 		p.isInitialized = false;
 		p.isUnloading   = true;
+		++g_pluginGeneration;   // it drops out of the plugin list here
 		LeaveCriticalSection(&g_pluginLock);
 
 		if (!CallShutdown(p.shutdown))
@@ -1760,7 +1765,7 @@ namespace PluginManager
 		EnterCriticalSection(&g_pluginLock);
 		HMODULE mod = nullptr;
 		const int index = FindPluginIndex(nameOrFile);
-		if (index >= 0)
+		if (index >= 0 && !g_loadedPlugins[index]->isUnloading)
 			mod = g_loadedPlugins[index]->hModule;
 		LeaveCriticalSection(&g_pluginLock);
 		return mod;
