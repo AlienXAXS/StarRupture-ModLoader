@@ -897,15 +897,34 @@
 //      drawn 1:1; until then it returns what Get returns.
 //      UseSets records which sets of images the plugin draws from, for
 //      background preload.
-//      A plugin built for v77 is refused by a loader whose maximum is lower. A
-//      plugin built against these headers declares 77 by default
-//      (PLUGIN_INTERFACE_VERSION); a plugin that uses nothing from v77 may
-//      declare an older number, down to 70. LoadFromUTexture2D and the rest of
-//      IPluginImGuiTextures are unchanged.
+//      A plugin using v77 image-library functionality must declare 77 or later;
+//      a plugin declaring 77 is refused by a loader whose maximum is lower.
+//      Plugins that do not use v77 functionality may declare an older interface,
+//      subject to their actual API requirements.
+//      LoadFromUTexture2D and the rest of IPluginImGuiTextures are unchanged.
+//
+// v78 (2026-11-18): Adds DL_AddTexturedTriangles and the PluginDrawVertex,
+//      PluginDrawIndex and PluginDrawResult types for synchronous bulk textured
+//      indexed-triangle submission. First supported by ModLoader 1.25.0. The
+//      function is appended to IModLoaderImGui, preserving the existing table
+//      prefix, and MIN stays at 70. A plugin declaring 78 is refused by a loader
+//      whose maximum is 77, such as ModLoader 1.24.0. A plugin that does not use
+//      v78 functionality may deliberately declare 77 or 75, subject to its
+//      actual API requirements. Declaring 77 while calling the new function can
+//      read past a 1.24.0 loader's function table; every plugin calling
+//      DL_AddTexturedTriangles must declare 78. Current headers default to 78.
+//      The batch uses fixed 16-bit indices into at most 65,535 vertices, and
+//      each draw list's vertex and index buffers together may total no more than
+//      16 MiB, including data already in the buffers and the incoming batch.
+//      Textures must be live handles from IPluginImages::Get or
+//      IPluginImGuiTextures. Call only from a render callback, never Tick.
+//      InvalidArgument is returned when index_count is not a multiple of three
+//      or any index is outside vertex_count.
+// --- v78 ---
 //
 #define PLUGIN_INTERFACE_VERSION_MIN 70
-#define PLUGIN_INTERFACE_VERSION_MAX 77
-#define PLUGIN_INTERFACE_VERSION 77
+#define PLUGIN_INTERFACE_VERSION_MAX 78
+#define PLUGIN_INTERFACE_VERSION 78
 
 enum class PluginLogLevel { Trace = 0, Debug = 1, Info = 2, Warn = 3, Error = 4 };
 enum class ConfigValueType { String, Integer, Float, Boolean, Keybind, Choice /* v71 */, Hidden /* v71 */ };
@@ -1908,6 +1927,39 @@ typedef void* PluginTextureHandle;
 // frames.
 typedef void* PluginDrawList;
 
+// Native-compatible ImDrawVert data for bulk textured triangle submissions.
+// Coordinates are screen-space position followed by texture UV; color uses
+// ImGui's packed 0xAABBGGRR ImU32 convention. The loader consumes this data
+// synchronously and does not retain the caller's buffer.
+struct PluginDrawVertex
+{
+	float pos_x;
+	float pos_y;
+	float uv_x;
+	float uv_y;
+	uint32_t col;
+};
+static_assert(sizeof(PluginDrawVertex) == 20, "PluginDrawVertex ABI layout");
+static_assert(offsetof(PluginDrawVertex, uv_x) == 8, "PluginDrawVertex UV offset");
+static_assert(offsetof(PluginDrawVertex, col) == 16, "PluginDrawVertex color offset");
+
+// Batch-local index type used by the current 16-bit ImDrawIdx configuration.
+typedef uint16_t PluginDrawIndex;
+static_assert(sizeof(PluginDrawIndex) == 2, "PluginDrawIndex ABI width");
+
+// Result of a detectable bulk textured-triangle submission outcome. ImGui
+// assertions and allocation failures are outside this recoverable contract.
+enum PluginDrawResult : int
+{
+	PluginDrawResult_Ok                  =  0,
+	// Null data, empty batch, index_count not a multiple of three, or an index
+	// outside vertex_count.
+	PluginDrawResult_InvalidArgument     = -1,
+	PluginDrawResult_InvalidDrawList     = -2, // null handle or draw list without its required command state
+	PluginDrawResult_InvalidTexture      = -3, // invalid, retired, or not-yet-ready texture handle
+	PluginDrawResult_NativeLimitExceeded = -4, // native count, buffer-size, or 16-bit vertex range would overflow
+};
+
 // Flags for the rounding-corner parameters below. Mirrors ImDrawFlags.
 #define PluginDrawFlags_None                     0
 #define PluginDrawFlags_Closed                    (1 << 0)
@@ -2311,11 +2363,34 @@ struct IModLoaderImGui
 	// callback). A minimum width keeps an auto-sized window from collapsing to
 	// a narrow strip. Pass FLT_MAX for a limit you do not want.
 	void (*SetNextWindowSizeConstraints)(float min_width, float min_height, float max_width, float max_height);
+
+	// Submit one textured indexed triangle batch to a draw list obtained from a
+	// draw-list getter during the current render callback. Indices are
+	// zero-based into vertices. Counts are element counts and index_count must be
+	// a nonzero multiple of three; malformed triangle lists or out-of-range
+	// indices return PluginDrawResult_InvalidArgument. Counts must fit ImGui's
+	// signed native count and buffer-size limits. The draw list's vertex and
+	// index buffers together may use at most 16 MiB, including existing data and
+	// this batch. On the current 16-bit ImDrawIdx build, a batch may contain at
+	// most 65,535 vertices; callers split larger work.
+	// The texture must be a live, ready handle from IPluginImages::Get or
+	// IPluginImGuiTextures. Call only from a render callback, never Tick. Both
+	// arrays must be contiguous, independent of draw-list storage, and remain
+	// readable for this synchronous call only. Success means geometry was
+	// recorded; rejection leaves the draw list unchanged.
+	// A non-null draw-list handle's provenance and lifetime cannot be validated
+	// by the loader, so callers must use a current-frame getter result. This
+	// appended slot is an interface-78 extension; a plugin may use it
+	// only with a loader that implements this expanded table.
+	PluginDrawResult (*DL_AddTexturedTriangles)(PluginDrawList dl, PluginTextureHandle tex,
+		const PluginDrawVertex* vertices, uint32_t vertex_count,
+		const PluginDrawIndex* indices, uint32_t index_count);
 };
 
 static_assert(offsetof(IModLoaderImGui, IsKeyPressed) == 2024, "v71 starts where v70 ended");
 static_assert(offsetof(IModLoaderImGui, SetNextWindowSize) == 2032, "v74 starts where v73 ended");
 static_assert(offsetof(IModLoaderImGui, SetNextWindowSizeConstraints) == 2040, "v74 appends in order");
+static_assert(offsetof(IModLoaderImGui, DL_AddTexturedTriangles) == 2048, "v78 bulk triangle API appends after v74");
 
 typedef void (*PluginImGuiRenderCallback)(IModLoaderImGui* imgui);
 

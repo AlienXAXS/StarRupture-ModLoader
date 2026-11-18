@@ -452,6 +452,12 @@ the rest of the session.
 
 Use the [StarRupture-Plugin-SDK](https://github.com/AlienXAXS/StarRupture-Plugin-SDK) — it has everything you need (headers, UE5 SDK, an example plugin, and a pre-built `dwmapi.dll`) without requiring a fork of this repo. Clone the SDK with `git clone --recursive` (the `StarRupture SDK` submodule holds the game headers) into the same parent folder as your plugin repo: plugin projects look for `../StarRupture-Plugin-SDK/include` unless you set `PluginSDKInclude`.
 
+Plugins can also submit many textured triangles in one call with
+`IModLoaderImGui::DL_AddTexturedTriangles` (interface v78, ModLoader 1.25.0 or newer). This function
+must be called from a render callback. See the SDK's
+[PluginDevelopment.md](https://github.com/AlienXAXS/StarRupture-Plugin-SDK/blob/main/PluginDevelopment.md)
+for plugin interface requirements and development guidance.
+
 A plugin declares its settings as a config schema (string, integer, float, boolean, keybind or a
 choice from a list, with an optional range), plus any state it saves by itself; the
 [Config tab](#config-tab) draws it. It can also name each feature it needs (interface v73), so one

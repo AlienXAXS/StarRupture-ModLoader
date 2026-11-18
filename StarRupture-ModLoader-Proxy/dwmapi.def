@@ -1,6 +1,6 @@
 LIBRARY dwmapi
 EXPORTS
-    ; Named exports (ordinals 1-99) — alias to the matching vp_ordN stub
+    ; Named exports (ordinals 1-99) - alias to the matching vp_ordN stub
     DwmpDxGetWindowSharedSurface=vp_ord1 @1
     DwmpDxUpdateWindowSharedSurface=vp_ord2 @2
     DwmEnableComposition=vp_ord3 @3
