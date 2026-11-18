@@ -13,7 +13,7 @@ namespace PluginManager
         char name[64];
         char version[32];
         char author[64];
-        bool isLoaded;
+        bool isLoaded;   // initialized, or inside its PluginShutdown for an unload or reload
         bool isOutOfDate;
         bool needsModLoaderUpdate;
         bool isWrongTarget;
@@ -102,8 +102,12 @@ namespace PluginManager
     // Returns false if index is out of range or the plugin is already unloaded.
     //
     // Also returns false, before anything is shut down, when the plugin's
-    // settings or busy reason refuse it right now; *refusal (if given) then holds
-    // the reason, and it is empty for every other failure.
+    // settings or busy reason refuse it right now, or when it is already inside
+    // its PluginShutdown for another unload or reload; *refusal (if given) then
+    // holds the reason, and it is empty for every other failure.
+    //
+    // PluginShutdown runs without the plugin manager's lock, so the plugin list
+    // can be read, and the render thread can draw it, while a plugin shuts down.
     bool UnloadPlugin(int index, std::string* refusal = nullptr);
 
     // Reload the plugin at index: unloads it (if currently loaded) then
@@ -113,7 +117,8 @@ namespace PluginManager
     // A reload of a loaded plugin needs both its unload and its load setting to
     // allow it, and is refused before anything is shut down if either does not;
     // loading an unloaded one needs its load setting. *refusal is filled as for
-    // UnloadPlugin.
+    // UnloadPlugin, and PluginShutdown runs without the plugin manager's lock as
+    // it does there.
     bool ReloadPlugin(int index, std::string* refusal = nullptr);
 
     // Game thread, every tick (engine_tick.cpp, right after GameThreadDispatch::Drain).

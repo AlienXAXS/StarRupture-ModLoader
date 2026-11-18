@@ -254,7 +254,7 @@ static void Test_UnloadPathsPurgePanels()
     const char* const kPaths[] =
     {
         "void UnloadAllPlugins()",
-        "static bool ShutDownAndFree(LoadedPlugin& p, const wchar_t* action)",
+        "static bool FreeShutDownPlugin(LoadedPlugin& p, const wchar_t* action)",
         "bool ReloadPlugin(int index, std::string* refusal)",
     };
     for (const char* signature : kPaths)
@@ -287,8 +287,20 @@ static void Test_UnloadPathsPurgePanels()
         CHECK(refuse < free);
     }
 
-    // UNLOAD frees through ShutDownAndFree, checked above.
-    CHECK(FunctionBody(src, "bool UnloadPlugin(int index, std::string* refusal)").find("ShutDownAndFree(") != std::string::npos);
+    // UNLOAD shuts the plugin down without the lock, then frees through
+    // FreeShutDownPlugin, checked above; it has no free of its own.
+    const std::string unload = FunctionBody(src, "bool UnloadPlugin(int index, std::string* refusal)");
+    const size_t shutDown = unload.find("ShutDownWithoutLock(");
+    const size_t freeIt   = unload.find("FreeShutDownPlugin(");
+    CHECK(shutDown != std::string::npos);
+    CHECK(freeIt != std::string::npos);
+    CHECK(shutDown < freeIt);
+    CHECK(unload.find("FreeLibrary(") == std::string::npos);
+
+    // ShutDownAndFree (the refusal paths of a load) frees through it as well.
+    const std::string shutDownAndFree = FunctionBody(src, "static bool ShutDownAndFree(LoadedPlugin& p, const wchar_t* action)");
+    CHECK(shutDownAndFree.find("FreeShutDownPlugin(") != std::string::npos);
+    CHECK(shutDownAndFree.find("FreeLibrary(") == std::string::npos);
 
     // A refused UNLOAD or RELOAD is decided before anything of the plugin is
     // touched: the refusal check comes ahead of the shutdown and the free.
@@ -297,7 +309,7 @@ static void Test_UnloadPathsPurgePanels()
         const std::string body = FunctionBody(src, signature);
         const size_t refuse = body.find("ReloadPolicy::");
         CHECK(refuse != std::string::npos);
-        for (const char* teardown : { "ShutDownAndFree(", "CallShutdownSEH(", "WaitOutPluginRenders(", "FreeLibrary(" })
+        for (const char* teardown : { "ShutDownWithoutLock(", "FreeShutDownPlugin(", "CallShutdown(", "WaitOutPluginRenders(", "FreeLibrary(" })
         {
             const size_t at = body.find(teardown);
             if (at != std::string::npos)
