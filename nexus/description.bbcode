@@ -36,9 +36,25 @@ A more detailed readme can be found on the [url=https://github.com/AlienXAXS/Sta
 [b][size=6]What's new[/size][/b]
 
 [list]
+[*]New image library: mods that use it get item and building pictures from one place in the loader. See Image library below
+[*]The mouse wheel no longer stops working after it was first used while a blocked mod key was held
+[*]Keys a mod blocks are released when the mod is unloaded or reloaded, instead of staying blocked
+[*]Mod overlay buttons can now be clicked while the build menu is open
+[*]The build menu is now found on the game's menu layer, so a mod that waits for it to close sees it in every case
+[*]A mod feature made for the upcoming game update now shows as "not in this game version" in the hook failures list on the current game version, instead of as a problem to report
+[*]Better Drone's building drone, restore-state and hotbar functions are now rows of the version object map for both game builds (the hotbar is for the upcoming game update and does nothing on the current game version)
 [*]Mod windows no longer flicker while a save loads, and blink less after Alt-Tab
 [*]After a graphics crash (the game losing its graphics device), the mod windows come back by themselves: they stay off for one launch as a precaution, and ModLoader.log says so. Before, they stayed off until you edited modloader.ini. If your mod windows are still off from an earlier version, set [b]Enabled=1[/b] under [b][UI][/b] in [i]ModLoader\modloader.ini[/i]
 [*]ModLoader.log now records why the graphics device was lost and which step of a game icon copy failed, to help find the cause of a problem
+[*]For plugin authors: plugins can read game pictures through the image library (plugin interface v77, ModLoader 1.24.0 or newer)
+[*]Plugin textures and icons load much faster: a 256x256 upload went from about 29 ms to about 0.7 ms, and copying a game icon from about 29 ms to about 0.3 ms. The short freeze when the first texture loads is gone too
+[*]Mod windows blink far less when the game gains or loses focus, for example after Alt-Tab
+[*]When the game has updated ahead of the mod loader, the game keeps loading while the mod loader's message is up, instead of freezing for up to 3 minutes. The message stays on top of the game window
+[*]A fresh install opens a window titled [b]Mod Loader Installed[/b] instead of [b]Plugins Updated[/b]
+[*]Quieter log when adapting to new game versions: differences against another build's row in the version object map (v map) are Debug lines, not warnings. The v map maps each game version's objects (functions, fields, sizes) for easy access
+[*]The loader skips version map rows it does not recognise instead of refusing the whole version map, so later versions of it can add new kinds of rows
+[*]When the loader has no usable copy of the version map file, for example after a download failed, it downloads it again at the next launch instead of waiting a day
+[*]For plugin authors: plugins can ask for the size of a game struct the game does not describe, a native member needs no size with PLUGIN_FIELD_ANY_SIZE, and plugins can ask where the game puts a function's parameters (also for Blueprint classes that load later, with the new PLUGIN_FIELD_LATE flag). The plugin interface version is unchanged
 [/list]
 
 [line]
@@ -93,6 +109,8 @@ Tabs down the left: [b]Plugins[/b], [b]Config[/b], [b]Settings[/b], [b]Logging[/
 [list]
 [*]The HUD toggles share one draggable box that remembers where you put it. [b]ModLoader Debug Values[/b] adds input details to it.
 [*][b]Keyboard navigation[/b] (on by default) lets Tab, the arrow keys and Space or Enter drive the loader and plugin windows while they are open. Plugin windows over the Escape menu and other game screens with the cursor up do not get it, because the keyboard stays with the game there. ✦
+[*][b]Preload images from the game[/b] (off by default) lets the loader read the item and building images that mods list, in the background, before they are drawn. See Image library below. ✦
+[*][b]Clear image cache[/b] (a button under Preload images from the game) deletes the images the loader saved to disk, for every game build. Pictures already loaded stay for this session, and the next launch saves them again. ✦
 [*][b]Connection Timeout[/b] — see Net timeouts below.
 [*][b]Enable Auto Updates[/b] takes effect next launch. A mod loader update asks Yes or No first; a No is remembered for that version.
 [*][b]Open Tick Profiler[/b] — [b]Log Tick Stutters[/b] and [b]Stack Sample Stutters[/b] reset on restart. Stack sampling needs stutter logging on and is the heavier of the two.
@@ -127,6 +145,19 @@ Tabs down the left: [b]Plugins[/b], [b]Config[/b], [b]Settings[/b], [b]Logging[/
 [b]Plugin Hooks Failed[/b] appears when a plugin did not load because a hook is missing, and again when a later load or reload adds one. [b]Copy Details[/b] puts the report on the clipboard for a bug report. WHY? reopens it.
 
 [img]https://raw.githubusercontent.com/{{REPO}}/{{TAG}}/images/popup-hooks-failed.png[/img]
+
+[b][size=4]Image library[/size][/b] ✦
+
+Mods that show item or building pictures can get them from one place in the loader instead of each copying game textures itself. Mods reach it through IPluginImages (plugin interface v77, ModLoader 1.24.0 or newer).
+[list]
+[*]A picture is read from the game only when a mod is about to show it.
+[*]Preload images from the game, in the Settings tab, is off by default. On, the loader reads the item and building pictures that mods list from the game, one at a time, and pauses while a picture on screen is waiting or video memory is short.
+[*]Each picture is stored at 256 px at most. The stored copies are capped at 256 MB, or a small share of your video memory if that is less, and the pictures shown longest ago go first.
+[*]Mod icons drawn through the image library are sharper: once a mod keeps drawing an icon at the same size, the loader makes a copy for exactly that size and the mod draws it without resizing. This needs a mod built for it.
+[*]Mods that use the image library read game pictures through one shared read that checks the game's texture before it is copied. Mods that still copy textures themselves keep working as before.
+[*]Pictures are saved to disk after the first time they are read, and load from there on later launches. A game update, or a mod pak that changed or moved in the load order, starts a new folder. At each launch the loader keeps the folder in use and the newest earlier one, removes the others, and trims the saved pictures to 256 MB, the ones used longest ago first. Pictures of textures the game makes while it runs are not saved. If a mod mounts a pak after the game has started, saved pictures are not used for the rest of that launch.
+[*]On a game build whose version object map has no rows for the texture layout, pictures show as placeholders.
+[/list]
 
 [b][size=4]Developer console and server console[/size][/b]
 
@@ -209,6 +240,7 @@ Config file: [i]ModLoader\modloader.ini[/i], created on first launch. The Settin
 [list]
 [*][b]Logging[/b] — Level (INFO by default; TRACE, DEBUG, INFO, WARN or ERROR), EnableFile, FileName, GameVerbosity, GameLogCategories (servers only; empty leaves the game log alone)
 [*][b]UI[/b] — Enabled (0 turns the overlay off), OffAfterDeviceLoss (the loader sets it after a graphics device loss: the overlay stays off for the next launch only, then the key is removed), OpenKey (F2), GameMenuEntry (0 removes the MOD LOADER menu row), FontScale (0.75 to 5.00), FontFamily, Theme
+[*][b]Images[/b] — Preload (0; 1 reads the picture sets that mods list in the background)
 [*][b]Console[/b] — OpenKey (Tilde)
 [*][b]Input[/b] — SuppressKeybindsWhileTyping (1): keybinds ignore keys typed into a game text box
 [*][b]Network[/b] — ConnectionTimeout, InitialConnectTimeout (300 seconds each; 1 to 3600, 0 keeps the engine default)
