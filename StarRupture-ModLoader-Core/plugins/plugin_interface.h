@@ -897,14 +897,30 @@
 //      drawn 1:1; until then it returns what Get returns.
 //      UseSets records which sets of images the plugin draws from, for
 //      background preload.
-//      A plugin built for v77 is refused by a loader whose maximum is lower. A
-//      plugin using only v77 features may declare 77 or an older number, down
-//      to 70. Current headers default to 78. LoadFromUTexture2D and the rest of
-//      IPluginImGuiTextures are unchanged.
+//      A plugin using v77 image-library functionality must declare 77 or later;
+//      a plugin declaring 77 is refused by a loader whose maximum is lower.
+//      Plugins that do not use v77 functionality may declare an older interface,
+//      subject to their actual API requirements.
+//      LoadFromUTexture2D and the rest of IPluginImGuiTextures are unchanged.
 //
-// v78: Appends DL_AddTexturedTriangles to IModLoaderImGui for synchronous bulk
-//      textured indexed-triangle submission. The slot follows the existing
-//      function-table prefix; plugins using it must declare 78. MIN stays 70.
+// v78 (2026-11-18): Adds DL_AddTexturedTriangles and the PluginDrawVertex,
+//      PluginDrawIndex and PluginDrawResult types for synchronous bulk textured
+//      indexed-triangle submission. First supported by ModLoader 1.25.0. The
+//      function is appended to IModLoaderImGui, preserving the existing table
+//      prefix, and MIN stays at 70. A plugin declaring 78 is refused by a loader
+//      whose maximum is 77, such as ModLoader 1.24.0. A plugin that does not use
+//      v78 functionality may deliberately declare 77 or 75, subject to its
+//      actual API requirements. Declaring 77 while calling the new function can
+//      read past a 1.24.0 loader's function table; every plugin calling
+//      DL_AddTexturedTriangles must declare 78. Current headers default to 78.
+//      The batch uses fixed 16-bit indices into at most 65,535 vertices, and
+//      each draw list's vertex and index buffers together may total no more than
+//      16 MiB, including data already in the buffers and the incoming batch.
+//      Textures must be live handles from IPluginImages::Get or
+//      IPluginImGuiTextures. Call only from a render callback, never Tick.
+//      InvalidArgument is returned when index_count is not a multiple of three
+//      or any index is outside vertex_count.
+// --- v78 ---
 //
 #define PLUGIN_INTERFACE_VERSION_MIN 70
 #define PLUGIN_INTERFACE_VERSION_MAX 78
@@ -1936,7 +1952,9 @@ static_assert(sizeof(PluginDrawIndex) == 2, "PluginDrawIndex ABI width");
 enum PluginDrawResult : int
 {
 	PluginDrawResult_Ok                  =  0,
-	PluginDrawResult_InvalidArgument     = -1, // null data, empty batch, or malformed triangle list
+	// Null data, empty batch, index_count not a multiple of three, or an index
+	// outside vertex_count.
+	PluginDrawResult_InvalidArgument     = -1,
 	PluginDrawResult_InvalidDrawList     = -2, // null handle or draw list without its required command state
 	PluginDrawResult_InvalidTexture      = -3, // invalid, retired, or not-yet-ready texture handle
 	PluginDrawResult_NativeLimitExceeded = -4, // native count, buffer-size, or 16-bit vertex range would overflow
@@ -2348,12 +2366,15 @@ struct IModLoaderImGui
 
 	// Submit one textured indexed triangle batch to a draw list obtained from a
 	// draw-list getter during the current render callback. Indices are
-	// zero-based into vertices; the caller must ensure every index is less than
-	// vertex_count. Counts are element counts and index_count must be a nonzero
-	// multiple of three. Counts must fit ImGui's signed native count and buffer-size limits.
-	// On the current 16-bit ImDrawIdx build, a batch may contain at most 65,535
-	// vertices; callers split larger work.
-	// The texture must be a live, ready handle from IPluginImGuiTextures. Both
+	// zero-based into vertices. Counts are element counts and index_count must be
+	// a nonzero multiple of three; malformed triangle lists or out-of-range
+	// indices return PluginDrawResult_InvalidArgument. Counts must fit ImGui's
+	// signed native count and buffer-size limits. The draw list's vertex and
+	// index buffers together may use at most 16 MiB, including existing data and
+	// this batch. On the current 16-bit ImDrawIdx build, a batch may contain at
+	// most 65,535 vertices; callers split larger work.
+	// The texture must be a live, ready handle from IPluginImages::Get or
+	// IPluginImGuiTextures. Call only from a render callback, never Tick. Both
 	// arrays must be contiguous, independent of draw-list storage, and remain
 	// readable for this synchronous call only. Success means geometry was
 	// recorded; rejection leaves the draw list unchanged.

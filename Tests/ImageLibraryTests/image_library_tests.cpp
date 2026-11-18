@@ -1632,9 +1632,9 @@ static void ASizeThatChangesAmongSteadySizesIsNeverMade()
 
 static void TheInterfaceNumberCoversTheSizedEntry()
 {
-    // The table grew from 56 to 64 bytes: a loader with the short table must refuse a plugin built for it.
-    CHECK(PLUGIN_INTERFACE_VERSION == 77);
-    CHECK(PLUGIN_INTERFACE_VERSION_MAX == 77);
+    // GetSized grew the v77 image table from 56 to 64 bytes; the current interface also includes v78.
+    CHECK(PLUGIN_INTERFACE_VERSION == 78);
+    CHECK(PLUGIN_INTERFACE_VERSION_MAX == 78);
     CHECK(PLUGIN_INTERFACE_VERSION_MIN == 70);
     CHECK(sizeof(IPluginImages) == 64);
 }

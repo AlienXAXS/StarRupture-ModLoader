@@ -255,6 +255,12 @@ Mods that show item or building pictures (an item list, a tooltip, a build menu)
 place in the loader instead of each copying game textures itself. A mod reaches it through
 `IPluginImages` (plugin interface v77, ModLoader 1.24.0 or newer); mods that do not use it keep copying as before.
 
+Plugins can also submit many textured triangles in one call with
+`IModLoaderImGui::DL_AddTexturedTriangles` (interface v78, ModLoader 1.25.0 or newer). This function
+must be called from a render callback. See the SDK's
+[PluginDevelopment.md](https://github.com/AlienXAXS/StarRupture-Plugin-SDK/blob/main/PluginDevelopment.md)
+for plugin interface requirements and development guidance.
+
 - A picture is read from the game only when a mod is about to show it. Opening a window does not
   read the pictures behind it.
 - Each picture is stored at 256 px at most; a smaller one keeps its own size. The stored copies are

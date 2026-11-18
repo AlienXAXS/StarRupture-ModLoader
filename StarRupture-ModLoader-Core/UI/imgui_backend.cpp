@@ -5077,6 +5077,11 @@ static PluginDrawResult DL_AddTexturedTriangles(PluginDrawList dl, PluginTexture
 		return PluginDrawResult_InvalidArgument;
 	if (vertex_count > 65535 || index_count > INT_MAX)
 		return PluginDrawResult_NativeLimitExceeded;
+	for (uint32_t i = 0; i < index_count; ++i)
+	{
+		if (indices[i] >= vertex_count)
+			return PluginDrawResult_InvalidArgument;
+	}
 
 	PluginTextureRecord* rec = ValidateHandle(tex);
 	if (!rec || !CopyDone(rec))
@@ -5085,6 +5090,26 @@ static PluginDrawResult DL_AddTexturedTriangles(PluginDrawList dl, PluginTexture
 	ImDrawList* draw_list = static_cast<ImDrawList*>(dl);
 	if (draw_list->CmdBuffer.Size <= 0)
 		return PluginDrawResult_InvalidDrawList;
+	constexpr size_t max_draw_list_bytes = 16u * 1024u * 1024u;
+	const size_t current_vertex_count = static_cast<size_t>(draw_list->VtxBuffer.Size);
+	const size_t current_index_count = static_cast<size_t>(draw_list->IdxBuffer.Size);
+	const size_t incoming_vertex_count = static_cast<size_t>(vertex_count);
+	const size_t incoming_index_count = static_cast<size_t>(index_count);
+	const size_t max_vertex_count = max_draw_list_bytes / sizeof(PluginDrawVertex);
+	const size_t max_index_count = max_draw_list_bytes / sizeof(PluginDrawIndex);
+	if (current_vertex_count > max_vertex_count ||
+		incoming_vertex_count > max_vertex_count - current_vertex_count ||
+		current_index_count > max_index_count ||
+		incoming_index_count > max_index_count - current_index_count)
+		return PluginDrawResult_NativeLimitExceeded;
+	const size_t total_vertex_bytes =
+		(current_vertex_count + incoming_vertex_count) * sizeof(PluginDrawVertex);
+	const size_t total_index_bytes =
+		(current_index_count + incoming_index_count) * sizeof(PluginDrawIndex);
+	if (total_vertex_bytes > max_draw_list_bytes ||
+		total_index_bytes > max_draw_list_bytes - total_vertex_bytes)
+		return PluginDrawResult_NativeLimitExceeded;
+	const size_t vertex_bytes = incoming_vertex_count * sizeof(PluginDrawVertex);
 
 	const ImTextureRef texture_ref((ImTextureID)rec->gpuHandle.ptr);
 	const bool push_texture = texture_ref.GetTexID() != draw_list->_CmdHeader.TexRef.GetTexID();
@@ -5111,7 +5136,7 @@ static PluginDrawResult DL_AddTexturedTriangles(PluginDrawList dl, PluginTexture
 	draw_list->PrimReserve(static_cast<int>(index_count), static_cast<int>(vertex_count));
 	// PrimReserve may reset _VtxCurrentIdx, so read the index base after reserving.
 	const uint32_t index_base = draw_list->_VtxCurrentIdx;
-	std::memcpy(draw_list->_VtxWritePtr, vertices, static_cast<size_t>(vertex_count) * sizeof(PluginDrawVertex));
+	std::memcpy(draw_list->_VtxWritePtr, vertices, vertex_bytes);
 	for (uint32_t i = 0; i < index_count; ++i)
 		draw_list->_IdxWritePtr[i] = static_cast<ImDrawIdx>(index_base + indices[i]);
 
