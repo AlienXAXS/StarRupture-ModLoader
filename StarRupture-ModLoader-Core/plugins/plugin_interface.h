@@ -1259,7 +1259,11 @@ static_assert(offsetof(PluginScanRequest, candidates)     == 56, "v72 starts whe
 //                           builtCL.
 //   PLUGIN_FIELD_CHECK      something the plugin keeps using at its compiled
 //                           offset or size (a struct copied by value, an array
-//                           stride). Fails unless the running build matches it.
+//                           its compiled code indexes). Fails unless the
+//                           running build matches it. Not for reading a member
+//                           (use no flag) or for only stepping through an
+//                           array by the live size (a size row with no flag,
+//                           SR_SIZE).
 //   PLUGIN_FIELD_BITFIELD   a bool bitfield: the result is its byte offset and
 //                           boolMask. Alone, both come from reflection; with
 //                           NATIVE, from the rows. builtOffset is -1, so the
@@ -3930,9 +3934,10 @@ enum PluginMapFlags : uint32_t
 {
     // Everything this plugin reads from the game per build comes from the
     // loader: its game functions through the version map, its game-class
-    // members through ResolveField or a checked size, and the Game-SDK
-    // globals through GetSdkGlobals. Only such a plugin may run on a game
-    // build other than gameBuiltCL.
+    // members through ResolveField, its struct sizes through a size row (live
+    // for an array it steps through, checked for a struct it copies), and the
+    // Game-SDK globals through GetSdkGlobals. Only such a plugin may run on a
+    // game build other than gameBuiltCL.
     PLUGIN_MAP_MIGRATED = 1u << 0,
 };
 
