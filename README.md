@@ -160,6 +160,9 @@ is available.
   not supported** and **Unload blocked: ...** take the place of the buttons the loader would refuse.
   They come from the plugin's own [load and unload settings](#load-and-unload-settings).
   <sup>[✦](#msantoro12)</sup>
+- **This plugin is being unloaded right now** shows on a row while the plugin is inside its own
+  shutdown. The loader does not hold its windows up meanwhile, so a plugin that waits for the game's
+  graphics at shutdown can finish. <sup>[✦](#msantoro12)</sup>
 - Unload removes the panels, widgets and callbacks the plugin registered, even ones it left
   behind.
 - If the overlay is still drawing its panel after about a second, the unload is skipped and the log

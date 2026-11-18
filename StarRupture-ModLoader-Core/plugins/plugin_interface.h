@@ -2612,6 +2612,8 @@ typedef void (*PluginPanelClosedCallback)(PanelHandle handle);
 struct IPluginUIEvents
 {
 	PanelHandle  (*RegisterPanel)(const PluginPanelDesc* desc);
+	// Panels and widgets keep drawing until PluginShutdown returns: unregister
+	// them first in PluginShutdown, before freeing what renderFn reads.
 	void         (*UnregisterPanel)(PanelHandle handle);
 	// v49: self scopes the callback to this plugin's own config file -- pass
 	// the same IPluginSelf* received in PluginInit.
@@ -4002,6 +4004,9 @@ struct IPluginSelf
 
 typedef PluginInfo* (*GetPluginInfoFunc)();
 typedef bool        (*PluginInitFunc)(IPluginSelf* self);
+// The render thread keeps drawing your panels and widgets until PluginShutdown
+// returns. Unregister them first (UnregisterPanel, UnregisterWidget), before
+// you free anything their render functions read.
 typedef void        (*PluginShutdownFunc)();
 
 // OPTIONAL fourth export. Called once per load, after GetPluginInfo and before
