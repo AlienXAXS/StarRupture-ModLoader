@@ -160,6 +160,9 @@ is available.
   not supported** and **Unload blocked: ...** take the place of the buttons the loader would refuse.
   They come from the plugin's own [load and unload settings](#load-and-unload-settings).
   <sup>[✦](#msantoro12)</sup>
+- **This plugin is being unloaded right now** shows on a row while the plugin is inside its own
+  shutdown. The loader does not hold its windows up meanwhile, so a plugin that waits for the game's
+  graphics at shutdown can finish. <sup>[✦](#msantoro12)</sup>
 - Unload removes the panels, widgets and callbacks the plugin registered, even ones it left
   behind.
 - If the overlay is still drawing its panel after about a second, the unload is skipped and the log
@@ -451,6 +454,12 @@ the rest of the session.
 ## Developing Your Own Plugins
 
 Use the [StarRupture-Plugin-SDK](https://github.com/AlienXAXS/StarRupture-Plugin-SDK) — it has everything you need (headers, UE5 SDK, an example plugin, and a pre-built `dwmapi.dll`) without requiring a fork of this repo. Clone the SDK with `git clone --recursive` (the `StarRupture SDK` submodule holds the game headers) into the same parent folder as your plugin repo: plugin projects look for `../StarRupture-Plugin-SDK/include` unless you set `PluginSDKInclude`.
+
+Plugins can also submit many textured triangles in one call with
+`IModLoaderImGui::DL_AddTexturedTriangles` (interface v78, ModLoader 1.25.0 or newer). This function
+must be called from a render callback. See the SDK's
+[PluginDevelopment.md](https://github.com/AlienXAXS/StarRupture-Plugin-SDK/blob/main/PluginDevelopment.md)
+for plugin interface requirements and development guidance.
 
 A plugin declares its settings as a config schema (string, integer, float, boolean, keybind or a
 choice from a list, with an optional range), plus any state it saves by itself; the

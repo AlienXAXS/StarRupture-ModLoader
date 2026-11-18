@@ -2,5 +2,5 @@
 - Mod overlay buttons work while the build menu is open, and the build menu is found reliably
 - New image library: mods load item and building pictures only when shown, under a memory cap, saved to disk for later launches
 - New settings: Preload images from the game and Clear image cache
-- The version object map has new rows for texture sizes and Better Drone
-- Needs ModLoader 1.24.0 or newer for mods that use the image library
+- The version object map has new rows for texture sizes, Better Drone and PersistentIdFix
+- Needs ModLoader 1.24.0 or newer for mods that use the image library, 1.25.0 or newer for bulk textured triangles (interface v78)

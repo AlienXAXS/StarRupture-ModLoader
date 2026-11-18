@@ -127,7 +127,7 @@ plugin list, the logger, the window theme -- see `test_doubles.cpp`). It covers:
   does not fire `OnConfigChanged`.
 - A handler that clamps a value by calling `IPluginConfig::Write*` has its clamped value persisted by `Commit`.
 - A hand-edited INI that spells a section or key in another case still applies its Block state on load.
-- Forgetting a plugin's `OnConfigChanged` callbacks drops its own and leaves the next plugin's alone, and each of `UnloadAllPlugins`, `ShutDownAndFree` (which `UnloadPlugin` frees through) and `ReloadPlugin` calls `ForgetRegistrations` before `FreeLibrary`, which in turn calls that. The loader's plugin manager cannot be linked into a console program, so the second half is checked by reading `plugin_manager.cpp`; deleting any of those calls fails the test.
+- Forgetting a plugin's `OnConfigChanged` callbacks drops its own and leaves the next plugin's alone, and each of `UnloadAllPlugins`, `FreeShutDownPlugin` (which `UnloadPlugin` and `ShutDownAndFree` free through) and `ReloadPlugin` calls `ForgetRegistrations` before `FreeLibrary`, which in turn calls that. The loader's plugin manager cannot be linked into a console program, so the second half is checked by reading `plugin_manager.cpp`; deleting any of those calls fails the test.
 
 Build it from the command line (it creates `ModLoader\Plugins\config` beside the exe, under
 `build\tests`, and removes its own INI files when it finishes):

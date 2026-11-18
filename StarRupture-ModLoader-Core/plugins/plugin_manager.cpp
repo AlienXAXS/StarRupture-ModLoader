@@ -58,6 +58,9 @@ namespace PluginManager
 	// SEH helpers for catching crashes inside plugin-supplied functions.
 	// Must be plain POD functions with no C++ objects (C2712).
 	struct PluginCrashCtx { DWORD code; uintptr_t addr; CONTEXT context; };
+	// One shared slot, not locked: the calls that fill it (init, shutdown, the
+	// load hooks) run one at a time on the game thread or during startup, except
+	// after UnloadAllPlugins stops waiting for a PluginShutdown.
 	static PluginCrashCtx g_lastPluginCrash;
 
 	// Set once by RefusePluginLoads on the init thread; read wherever a load starts.
@@ -325,6 +328,13 @@ namespace PluginManager
 		std::wstring fileName;
 		bool isInitialized;
 
+		// True from the moment an unload or reload takes the plugin out of
+		// service until PluginShutdown has returned and g_pluginLock is held again.
+		// PluginShutdown runs in that window without the lock (see
+		// ShutDownWithoutLock), so every other user of the record has to see
+		// this. Only read or written with g_pluginLock held.
+		bool isUnloading = false;
+
 		// Cached display strings — valid even after FreeLibrary.
 		std::string cachedName;
 		std::string cachedVersion;
@@ -356,6 +366,10 @@ namespace PluginManager
 	// you clicked onto another plugin and back.
 	static unsigned g_pluginGeneration = 0;
 	static HANDLE g_initCompleteEvent  = NULL;
+
+	// What the plugin list and the console say, in place of the buttons and as
+	// the refusal, while a plugin is inside its PluginShutdown (isUnloading).
+	static constexpr const char* kUnloadingNow = "This plugin is being unloaded right now";
 
 	// Update self pointers after loading or reloading a plugin, so they point to the cached strings.
 	static void RefreshSelfPointers(LoadedPlugin& rec)
@@ -951,7 +965,7 @@ namespace PluginManager
 		// Pre-count deferred plugins so we can show accurate (i/total) progress.
 		int totalDeferred = 0;
 		for (const auto& plugin : g_loadedPlugins)
-			if (!plugin->isInitialized && plugin->init) totalDeferred++;
+			if (!plugin->isInitialized && !plugin->isUnloading && plugin->init) totalDeferred++;
 
 		int initCount = 0;
 		int failCount = 0;
@@ -959,7 +973,7 @@ namespace PluginManager
 
 		for (auto& plugin : g_loadedPlugins)
 		{
-			if (plugin->isInitialized || !plugin->init)
+			if (plugin->isInitialized || plugin->isUnloading || !plugin->init)
 				continue;
 
 			current++;
@@ -1069,6 +1083,17 @@ namespace PluginManager
 #endif
 	}
 
+	// Caller holds g_pluginLock. True while some plugin is inside its
+	// PluginShutdown on another thread (UnloadPlugin, ReloadPlugin): that thread
+	// is still using the record, so the record must not be freed.
+	static bool AnyPluginUnloading()
+	{
+		for (const auto& plugin : g_loadedPlugins)
+			if (plugin->isUnloading)
+				return true;
+		return false;
+	}
+
 	void UnloadAllPlugins()
 	{
 		ModLoaderLogger::LogMessage(L"Unloading all plugins...");
@@ -1078,8 +1103,26 @@ namespace PluginManager
 
 		EnterCriticalSection(&g_pluginLock);
 
+		// An unload that is already inside a PluginShutdown finishes first. The
+		// wait is bounded so a PluginShutdown that never returns cannot hold up
+		// the exit as well; its record is then left alone below.
+		const ULONGLONG unloadDeadline = GetTickCount64() + 5000;
+		while (AnyPluginUnloading() && GetTickCount64() < unloadDeadline)
+		{
+			LeaveCriticalSection(&g_pluginLock);
+			Sleep(1);
+			EnterCriticalSection(&g_pluginLock);
+		}
+		for (const auto& plugin : g_loadedPlugins)
+			if (plugin->isUnloading)
+				ModLoaderLogger::LogError(L"%S is still inside its PluginShutdown after 5 s; continuing the shutdown without it",
+					plugin->cachedName.c_str());
+
 		for (auto& plugin : g_loadedPlugins)
 		{
+			if (plugin->isUnloading)
+				continue;
+
 			if (plugin->isInitialized)
 			{
 				ModLoaderLogger::LogMessage(L"Shutting down plugin: %S", plugin->cachedName.c_str());
@@ -1104,7 +1147,8 @@ namespace PluginManager
 			}
 		}
 
-		g_loadedPlugins.clear();
+		if (!AnyPluginUnloading())
+			g_loadedPlugins.clear();
 
 		LeaveCriticalSection(&g_pluginLock);
 
@@ -1149,7 +1193,7 @@ namespace PluginManager
 				strncpy_s(out[i].name,    p.cachedName.c_str(),    _TRUNCATE);
 				strncpy_s(out[i].version, p.cachedVersion.c_str(), _TRUNCATE);
 				strncpy_s(out[i].author,  p.cachedAuthor.c_str(),  _TRUNCATE);
-				out[i].isLoaded              = p.isInitialized;
+				out[i].isLoaded              = p.isInitialized || p.isUnloading;
 				out[i].isOutOfDate           = p.isOutOfDate;
 				out[i].needsModLoaderUpdate  = p.needsModLoaderUpdate;
 				out[i].isWrongTarget         = p.isWrongTarget;
@@ -1168,8 +1212,13 @@ namespace PluginManager
 
 				const bool world = ReloadPolicy::GameplayWorldRunning();
 				const std::string busy = BusyReasonOf(p);
-				const std::string unloadWhy = p.isInitialized ? ReloadPolicy::UnloadRefusal(p.reload.unload, busy, world) : std::string();
-				const std::string reloadWhy = ReloadPolicy::ReloadRefusal(p.reload, busy, p.isInitialized, world);
+				// A plugin in the middle of its PluginShutdown has no buttons:
+				// the row says what is happening instead. Both blocks say it, as
+				// reloadBlock also covers RELOAD of a loaded plugin.
+				const std::string unloadWhy = p.isUnloading ? std::string(kUnloadingNow)
+					: p.isInitialized ? ReloadPolicy::UnloadRefusal(p.reload.unload, busy, world) : std::string();
+				const std::string reloadWhy = p.isUnloading ? std::string(kUnloadingNow)
+					: ReloadPolicy::ReloadRefusal(p.reload, busy, p.isInitialized, world);
 				strncpy_s(out[i].unloadBlock, unloadWhy.c_str(), _TRUNCATE);
 				strncpy_s(out[i].reloadBlock, reloadWhy.c_str(), _TRUNCATE);
 
@@ -1194,7 +1243,9 @@ namespace PluginManager
 		{
 			if (_stricmp(p->cachedName.c_str(), pluginName) == 0)
 			{
-				result = &p->self;
+				// Nothing to notify while its PluginShutdown runs.
+				if (!p->isUnloading)
+					result = &p->self;
 				break;
 			}
 		}
@@ -1220,15 +1271,11 @@ namespace PluginManager
 		return result;
 	}
 
-	// PluginShutdown, then everything the plugin registered that lives in its
-	// module, then FreeLibrary. Caller holds g_pluginLock. False when one of
+	// Everything after PluginShutdown: what the plugin registered that lives in
+	// its module, then FreeLibrary. Caller holds g_pluginLock. False when one of
 	// its renders is still running: it is shut down, but stays mapped.
-	static bool ShutDownAndFree(LoadedPlugin& p, const wchar_t* action)
+	static bool FreeShutDownPlugin(LoadedPlugin& p, const wchar_t* action)
 	{
-		if (!CallShutdown(p.shutdown))
-			LogPluginCrash(p.cachedName.c_str(), p.hModule, L"PluginShutdown (unload)");
-		p.isInitialized = false;
-		ReloadPolicy::SetBusyReason(&p.self, nullptr);
 		const bool idle = WaitOutPluginRenders(p.hModule, p.cachedName.c_str(), action);
 
 		// Before FreeLibrary, not after: the moment the module is unmapped, every
@@ -1249,10 +1296,63 @@ namespace PluginManager
 		return true;
 	}
 
+	// PluginShutdown, then FreeShutDownPlugin. Caller holds g_pluginLock the
+	// whole time: for a plugin that was only just initialized, inside
+	// InitPluginRecord.
+	static bool ShutDownAndFree(LoadedPlugin& p, const wchar_t* action)
+	{
+		if (!CallShutdown(p.shutdown))
+			LogPluginCrash(p.cachedName.c_str(), p.hModule, L"PluginShutdown (unload)");
+		p.isInitialized = false;
+		ReloadPolicy::SetBusyReason(&p.self, nullptr);
+		return FreeShutDownPlugin(p, action);
+	}
+
+	// PluginShutdown of a running plugin, called with g_pluginLock released.
+	// Caller holds g_pluginLock once, and holds it again on return.
+	//
+	// A plugin's PluginShutdown may wait for work that only the render thread
+	// can do (a GPU readback and its fence, say), and the render thread takes
+	// g_pluginLock every frame it draws the plugin list or the overlay. Run
+	// under the lock, the two wait for each other until the plugin gives up.
+	//
+	// While the lock is released the record stays in g_loadedPlugins with
+	// isUnloading set, and nothing in it changes: isInitialized is already
+	// false, so GetLoadedPluginCount and GetLoadedPluginInfos no longer list the
+	// plugin, a second UnloadPlugin or ReloadPlugin for it is refused, and
+	// UnloadAllPlugins waits for it. No other path writes the record or calls
+	// into the plugin until the lock is taken again, so FreeShutDownPlugin, run
+	// right after, still has the record to itself. The generation moves here, as
+	// the plugin leaves the list, so the Config tab does not keep showing the
+	// page of whichever plugin now sits at its index.
+	static void ShutDownWithoutLock(LoadedPlugin& p, const wchar_t* context)
+	{
+		p.isInitialized = false;
+		p.isUnloading   = true;
+		++g_pluginGeneration;   // it drops out of the plugin list here
+		LeaveCriticalSection(&g_pluginLock);
+
+		if (!CallShutdown(p.shutdown))
+			LogPluginCrash(p.cachedName.c_str(), p.hModule, context);
+
+		EnterCriticalSection(&g_pluginLock);
+		p.isUnloading = false;
+		ReloadPolicy::SetBusyReason(&p.self, nullptr);
+	}
+
 	bool UnloadPlugin(int index, std::string* refusal)
 	{
 		if (refusal) refusal->clear();
 		EnterCriticalSection(&g_pluginLock);
+
+		if (index >= 0 && index < static_cast<int>(g_loadedPlugins.size()) &&
+			g_loadedPlugins[index]->isUnloading)
+		{
+			ModLoaderLogger::LogWarn(L"Unload of %S refused: %S", g_loadedPlugins[index]->cachedName.c_str(), kUnloadingNow);
+			LeaveCriticalSection(&g_pluginLock);
+			if (refusal) *refusal = kUnloadingNow;
+			return false;
+		}
 
 		if (index < 0 || index >= static_cast<int>(g_loadedPlugins.size()) ||
 			!g_loadedPlugins[index]->isInitialized)
@@ -1275,7 +1375,8 @@ namespace PluginManager
 		}
 
 		ModLoaderLogger::LogMessage(L"Unloading plugin: %S", p.cachedName.c_str());
-		const bool freed = ShutDownAndFree(p, L"Unload");
+		ShutDownWithoutLock(p, L"PluginShutdown (unload)");
+		const bool freed = FreeShutDownPlugin(p, L"Unload");
 		LeaveCriticalSection(&g_pluginLock);
 		if (freed)
 			ModLoaderLogger::LogMessage(L"Plugin unloaded: %S", p.cachedName.c_str());
@@ -1295,6 +1396,14 @@ namespace PluginManager
 
 		LoadedPlugin& p = *g_loadedPlugins[index];
 
+		if (p.isUnloading)
+		{
+			ModLoaderLogger::LogWarn(L"Reload of %S refused: %S", p.cachedName.c_str(), kUnloadingNow);
+			LeaveCriticalSection(&g_pluginLock);
+			if (refusal) *refusal = kUnloadingNow;
+			return false;
+		}
+
 		// The unload half and the load half are both asked before the first of
 		// them starts: a refused reload must not leave a plugin shut down.
 		if (std::string why = ReloadPolicy::ReloadRefusal(p.reload, BusyReasonOf(p), p.isInitialized,
@@ -1309,12 +1418,7 @@ namespace PluginManager
 		ModLoaderLogger::LogMessage(L"Reloading plugin: %S", p.cachedName.c_str());
 
 		if (p.isInitialized)
-		{
-			if (!CallShutdown(p.shutdown))
-				LogPluginCrash(p.cachedName.c_str(), p.hModule, L"PluginShutdown (reload)");
-			p.isInitialized = false;
-			ReloadPolicy::SetBusyReason(&p.self, nullptr);
-		}
+			ShutDownWithoutLock(p, L"PluginShutdown (reload)");
 		if (p.hModule)
 		{
 			const bool idle = WaitOutPluginRenders(p.hModule, p.cachedName.c_str(), L"Reload");
@@ -1661,7 +1765,7 @@ namespace PluginManager
 		EnterCriticalSection(&g_pluginLock);
 		HMODULE mod = nullptr;
 		const int index = FindPluginIndex(nameOrFile);
-		if (index >= 0)
+		if (index >= 0 && !g_loadedPlugins[index]->isUnloading)
 			mod = g_loadedPlugins[index]->hModule;
 		LeaveCriticalSection(&g_pluginLock);
 		return mod;
