@@ -5075,18 +5075,8 @@ static PluginDrawResult DL_AddTexturedTriangles(PluginDrawList dl, PluginTexture
 		return PluginDrawResult_InvalidDrawList;
 	if (!vertices || !indices || vertex_count == 0 || index_count == 0 || index_count % 3 != 0)
 		return PluginDrawResult_InvalidArgument;
-	if (vertex_count > 65535 || index_count > INT_MAX)
+	if (vertex_count > 65535)
 		return PluginDrawResult_NativeLimitExceeded;
-	for (uint32_t i = 0; i < index_count; ++i)
-	{
-		if (indices[i] >= vertex_count)
-			return PluginDrawResult_InvalidArgument;
-	}
-
-	PluginTextureRecord* rec = ValidateHandle(tex);
-	if (!rec || !CopyDone(rec))
-		return PluginDrawResult_InvalidTexture;
-
 	ImDrawList* draw_list = static_cast<ImDrawList*>(dl);
 	if (draw_list->CmdBuffer.Size <= 0)
 		return PluginDrawResult_InvalidDrawList;
@@ -5111,14 +5101,18 @@ static PluginDrawResult DL_AddTexturedTriangles(PluginDrawList dl, PluginTexture
 		return PluginDrawResult_NativeLimitExceeded;
 	const size_t vertex_bytes = incoming_vertex_count * sizeof(PluginDrawVertex);
 
+	for (uint32_t i = 0; i < index_count; ++i)
+	{
+		if (indices[i] >= vertex_count)
+			return PluginDrawResult_InvalidArgument;
+	}
+
+	PluginTextureRecord* rec = ValidateHandle(tex);
+	if (!rec || !CopyDone(rec))
+		return PluginDrawResult_InvalidTexture;
+
 	const ImTextureRef texture_ref((ImTextureID)rec->gpuHandle.ptr);
 	const bool push_texture = texture_ref.GetTexID() != draw_list->_CmdHeader.TexRef.GetTexID();
-	const int vertex_total = draw_list->VtxBuffer.Size;
-	const int index_total = draw_list->IdxBuffer.Size;
-	// Reject native buffer growth limits before texture or draw-command state changes.
-	if (vertex_count > static_cast<uint32_t>(draw_list->VtxBuffer.max_size() - vertex_total) ||
-		index_count > static_cast<uint32_t>(draw_list->IdxBuffer.max_size() - index_total))
-		return PluginDrawResult_NativeLimitExceeded;
 
 	const uint32_t current_vertex_base = draw_list->_VtxCurrentIdx;
 	const bool allow_vertex_offset = (draw_list->Flags & ImDrawListFlags_AllowVtxOffset) != 0;
