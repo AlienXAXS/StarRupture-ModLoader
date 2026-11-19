@@ -29,11 +29,11 @@ on:
         default: false
 
 jobs:
-  build:
+  prepare:
     if: ${{ github.event.inputs.sync_only != 'true' }}
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     permissions:
-      contents: write  # Required to create releases and upload assets
+      contents: read
     outputs:
       tag:        ${{ steps.tag.outputs.TAG }}
       is_preview: ${{ steps.tag.outputs.IS_PREVIEW }}
@@ -41,12 +41,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          submodules: true
-          fetch-depth: 0  # build-versioned-notes.ps1 reads UPDATE_NOTES.txt from earlier tags
-
-      - name: Add MSBuild to PATH
-        uses: microsoft/setup-msbuild@v2
 
       - name: Generate release tag
         id: tag
@@ -170,10 +164,29 @@ jobs:
           echo "TAG=$tag"          >> $env:GITHUB_OUTPUT
           echo "IS_PREVIEW=$($isPreview.ToString().ToLower())" >> $env:GITHUB_OUTPUT
 
+  # Client and Server build side by side. The release job below waits for both.
+  build:
+    needs: prepare
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    strategy:
+      matrix:
+        variant: [Client, Server]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Add MSBuild to PATH
+        uses: microsoft/setup-msbuild@v2
+
       - name: Patch version.rc with release tag
         shell: pwsh
         run: |
-          $tag = "${{ steps.tag.outputs.TAG }}" -replace '^v','' -replace '[-+].*$',''
+          $tag = "${{ needs.prepare.outputs.tag }}" -replace '^v','' -replace '[-+].*$',''
           $parts = $tag -split '\.'
           while ($parts.Count -lt 4) { $parts += '0' }
           $commas  = $parts[0..3] -join ','
@@ -192,27 +205,63 @@ jobs:
           }
 
       - name: Build Client Release
+        if: ${{ matrix.variant == 'Client' }}
         run: |
           msbuild "StarRupture-ModLoader.sln" `
             /p:Configuration="Client Release" `
             /p:Platform=x64 `
             /p:PostBuildEventUseInBuild=false `
-            /p:ModLoaderBuildTag="${{ steps.tag.outputs.TAG }}" `
+            /p:ModLoaderBuildTag="${{ needs.prepare.outputs.tag }}" `
             /p:AutoUpdateManifestUrl="https://github.com/${{ github.repository }}/releases/latest/download/manifest-client.json" `
             /p:VmapFeedUrl="https://github.com/${{ github.repository }}/releases/latest/download/version-map-client.v1.txt" `
             /m `
             /v:minimal
 
       - name: Build Server Release
+        if: ${{ matrix.variant == 'Server' }}
         run: |
           msbuild "StarRupture-ModLoader.sln" `
             /p:Configuration="Server Release" `
             /p:Platform=x64 `
             /p:PostBuildEventUseInBuild=false `
-            /p:ModLoaderBuildTag="${{ steps.tag.outputs.TAG }}" `
+            /p:ModLoaderBuildTag="${{ needs.prepare.outputs.tag }}" `
             /p:AutoUpdateManifestUrl="https://github.com/${{ github.repository }}/releases/latest/download/manifest-server.json" `
             /m `
             /v:minimal
+
+      - name: Upload ${{ matrix.variant }} build
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-${{ matrix.variant }}
+          path: build/${{ matrix.variant }} Release
+          retention-days: 1
+
+  release:
+    needs: [prepare, build]
+    runs-on: windows-latest
+    permissions:
+      contents: write  # Required to create releases and upload assets
+    outputs:
+      tag:        ${{ needs.prepare.outputs.tag }}
+      is_preview: ${{ needs.prepare.outputs.is_preview }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # build-versioned-notes.ps1 reads UPDATE_NOTES.txt from earlier tags
+
+      - name: Download Client build
+        uses: actions/download-artifact@v4
+        with:
+          name: build-Client
+          path: build/Client Release
+
+      - name: Download Server build
+        uses: actions/download-artifact@v4
+        with:
+          name: build-Server
+          path: build/Server Release
 
       - name: Stage dwmapi.dll artifacts for SDK sync
         shell: pwsh
@@ -233,7 +282,7 @@ jobs:
         id: assets
         shell: pwsh
         run: |
-          $tag = "${{ steps.tag.outputs.TAG }}"
+          $tag = "${{ needs.prepare.outputs.tag }}"
           $repo = "${{ github.repository }}"
           $ws   = $env:GITHUB_WORKSPACE
 
@@ -287,7 +336,7 @@ jobs:
           # it or UPDATE_NOTES.txt is word for word the previous release tag's
           # copy (text nobody rewrote for this release). A preview run only warns
           # and leaves "notes" out.
-          $isPreview = "${{ steps.tag.outputs.IS_PREVIEW }}" -eq 'true'
+          $isPreview = "${{ needs.prepare.outputs.is_preview }}" -eq 'true'
           $check = & "$ws\.github\scripts\check-update-notes-short.ps1" -Path "$ws\UPDATE_NOTES_SHORT.txt"
           $shortText = $check.Text
           if ($check.Problem) {
@@ -369,7 +418,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          $tag = "${{ steps.tag.outputs.TAG }}"
+          $tag = "${{ needs.prepare.outputs.tag }}"
           $ws  = $env:GITHUB_WORKSPACE
 
           $assets = [System.Collections.Generic.List[string]]::new()
@@ -399,47 +448,56 @@ jobs:
           if ((Test-Path $notesFile) -and (Get-Content $notesFile | Where-Object { $_.Trim() })) {
             $flags += @('--notes-file', $notesFile)
           }
-          if ("${{ steps.tag.outputs.IS_PREVIEW }}" -eq 'true') {
+          if ("${{ needs.prepare.outputs.is_preview }}" -eq 'true') {
             $flags += '--prerelease'
           }
           gh release create $tag @assets @flags
 
       - name: Upload Client build to Nexus Mods
-        if: ${{ steps.tag.outputs.IS_PREVIEW != 'true' }}
+        if: ${{ needs.prepare.outputs.is_preview != 'true' }}
         uses: msantoro12/starrupture-release-actions/nexus-publish@nexus-publish-v1
         with:
           api_key: ${{ secrets.NEXUS_APIKEY }}
           # Global (v3 API) id of the mod page: GET /v3/games/starrupture/mods/89 -> data.id
           mod_id: '37074157699161'
           file_id: ${{ secrets.NEXUS_SR_ML_CLIENT_GROUP_ID }}
-          filename: ${{ github.workspace }}\StarRupture-ModLoader-Client-${{ steps.tag.outputs.TAG }}.zip
-          display_name: "StarRupture ModLoader Client ${{ steps.tag.outputs.TAG }}"
-          file_description: "Changelog: https://github.com/${{ github.repository }}/releases/tag/${{ steps.tag.outputs.TAG }}"
-          version: ${{ steps.tag.outputs.TAG }}
+          filename: ${{ github.workspace }}\StarRupture-ModLoader-Client-${{ needs.prepare.outputs.tag }}.zip
+          display_name: "StarRupture ModLoader Client ${{ needs.prepare.outputs.tag }}"
+          file_description: "Changelog: https://github.com/${{ github.repository }}/releases/tag/${{ needs.prepare.outputs.tag }}"
+          version: ${{ needs.prepare.outputs.tag }}
           changelog: ${{ steps.assets.outputs.changelog }}
           description_file: nexus/description.bbcode
-          tag: ${{ steps.tag.outputs.TAG }}
+          tag: ${{ needs.prepare.outputs.tag }}
 
       - name: Upload Server build to Nexus Mods
-        if: ${{ steps.tag.outputs.IS_PREVIEW != 'true' }}
+        if: ${{ needs.prepare.outputs.is_preview != 'true' }}
         uses: msantoro12/starrupture-release-actions/nexus-publish@nexus-publish-v1
         with:
           api_key: ${{ secrets.NEXUS_APIKEY }}
           mod_id: '37074157699161'
           file_id: ${{ secrets.NEXUS_SR_ML_SERVER_GROUP_ID }}
-          filename: ${{ github.workspace }}\StarRupture-ModLoader-Server-${{ steps.tag.outputs.TAG }}.zip
-          display_name: "StarRupture ModLoader Server ${{ steps.tag.outputs.TAG }}"
-          file_description: "Changelog: https://github.com/${{ github.repository }}/releases/tag/${{ steps.tag.outputs.TAG }}"
-          version: ${{ steps.tag.outputs.TAG }}
+          filename: ${{ github.workspace }}\StarRupture-ModLoader-Server-${{ needs.prepare.outputs.tag }}.zip
+          display_name: "StarRupture ModLoader Server ${{ needs.prepare.outputs.tag }}"
+          file_description: "Changelog: https://github.com/${{ github.repository }}/releases/tag/${{ needs.prepare.outputs.tag }}"
+          version: ${{ needs.prepare.outputs.tag }}
           update_page: false
 
+  # The signed version map feed goes on the new release in the same run, so a
+  # Latest release is never without it. vmap-publish.yml holds the checks.
+  publish-feed:
+    needs: release
+    if: needs.release.outputs.is_preview != 'true'
+    permissions:
+      contents: write  # vmap-publish.yml uploads the asset to the new release
+    uses: ./.github/workflows/vmap-publish.yml
+
   sync-plugin-sdk:
-    needs: build
+    needs: release
     if: |
       always() &&
       (github.event.inputs.sync_plugin_sdk == 'true' || github.event.inputs.sync_only == 'true') &&
-      (needs.build.result == 'success' || needs.build.result == 'skipped') &&
-      needs.build.outputs.is_preview != 'true'
+      (needs.release.result == 'success' || needs.release.result == 'skipped') &&
+      needs.release.outputs.is_preview != 'true'
     runs-on: windows-latest
     permissions:
       contents: read
@@ -450,7 +508,7 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          BUILD_TAG: ${{ needs.build.outputs.tag }}
+          BUILD_TAG: ${{ needs.release.outputs.tag }}
         run: |
           if ($env:BUILD_TAG -and $env:BUILD_TAG -ne '') {
             # Fresh build — tag came from the build job
@@ -543,12 +601,12 @@ jobs:
             "..\dwmapi-Server.dll"
 
   trigger-plugin-builds:
-    needs: build
+    needs: release
     if: |
       always() &&
       github.event.inputs.auto_build_plugins == 'true' &&
-      needs.build.result == 'success' &&
-      needs.build.outputs.is_preview != 'true'
+      needs.release.result == 'success' &&
+      needs.release.outputs.is_preview != 'true'
     uses: ./.github/workflows/build-plugins.yml
     with:
       plugins: all

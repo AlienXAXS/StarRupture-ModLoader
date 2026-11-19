@@ -338,8 +338,8 @@ starrupture-ci's `ci/VERSION-MAP.md`.
 **Asset.** `version-map-client.v1.txt`, on the loader's Latest release. The name carries the
 format version, so a later format never strands a loader that reads this one. Latest is where it
 sits because `prune_releases.yml` deletes the others. `vmap-publish.yml` puts the current signed
-file on Latest: on a new release at its next run (every 15 minutes), and between releases whenever
-the `seq` rises. The first release that carries one needs a manual run with `first_publish` set.
+file on Latest: on a new release as the last job of `release.yml`, and between releases at its
+scheduled run (every 15 minutes) whenever the `seq` rises. The first release that carries one needs a manual run with `first_publish` set.
 There is no server feed: only the client fetches.
 
 **Fetch.** The URL is the compiled define `VMAP_FEED_URL` (`/p:VmapFeedUrl=` in `Shared.props`),

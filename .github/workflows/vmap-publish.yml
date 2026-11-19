@@ -8,11 +8,13 @@ name: Publish the version-map feed
 # seq does not rise above the newest one on a release is valid and is not
 # uploaded, unless Latest carries no feed (see below).
 #
-# release.yml does not attach the file, and a release made with GITHUB_TOKEN
-# starts no `release: published` workflow, so a new release gets the feed from
-# the next scheduled run. Latest with no feed of its own takes the current
-# feed even when its seq equals the one on an older release; it is never given
-# an older one.
+# release.yml calls this workflow as its last job, so a new release gets the
+# feed in the same run (a release made with GITHUB_TOKEN starts no
+# `release: published` workflow, which is why it is a call and not a trigger).
+# The scheduled run stays as the backstop and as the way a feed that rises
+# between releases reaches Latest. Latest with no feed of its own takes the
+# current feed even when its seq equals the one on an older release; it is
+# never given an older one.
 #
 # The seq to beat is that of the newest release that carries a feed, read only
 # after that file verifies. With no feed on any release, only a manual run with
@@ -23,6 +25,7 @@ name: Publish the version-map feed
 # accepts one, for tests on a fork.
 
 on:
+  workflow_call:
   schedule:
     - cron: '*/15 * * * *'
   workflow_dispatch:
