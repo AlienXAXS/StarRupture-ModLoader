@@ -244,6 +244,7 @@ jobs:
     outputs:
       tag:        ${{ needs.prepare.outputs.tag }}
       is_preview: ${{ needs.prepare.outputs.is_preview }}
+      changelog:  ${{ steps.assets.outputs.changelog }}
 
     steps:
       - name: Checkout repository
@@ -413,6 +414,16 @@ jobs:
             Write-Host "Created modloader ZIP: $zipPath"
           }
 
+      - name: Upload Nexus ZIPs
+        if: ${{ needs.prepare.outputs.is_preview != 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: modloader-zips
+          path: |
+            StarRupture-ModLoader-Client-${{ needs.prepare.outputs.tag }}.zip
+            StarRupture-ModLoader-Server-${{ needs.prepare.outputs.tag }}.zip
+          retention-days: 3
+
       - name: Create GitHub Release
         shell: pwsh
         env:
@@ -453,8 +464,26 @@ jobs:
           }
           gh release create $tag @assets @flags
 
+  # Nexus gets the same ZIPs after the release exists. It is a job of its own so a
+  # Nexus failure (API error, key, rate limit) cannot hold back publish-feed or
+  # the jobs after it: the release is already Latest by then.
+  nexus:
+    needs: [prepare, release]
+    if: needs.prepare.outputs.is_preview != 'true'
+    runs-on: windows-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download release ZIPs
+        uses: actions/download-artifact@v4
+        with:
+          name: modloader-zips
+
       - name: Upload Client build to Nexus Mods
-        if: ${{ needs.prepare.outputs.is_preview != 'true' }}
         uses: msantoro12/starrupture-release-actions/nexus-publish@nexus-publish-v1
         with:
           api_key: ${{ secrets.NEXUS_APIKEY }}
@@ -465,12 +494,11 @@ jobs:
           display_name: "StarRupture ModLoader Client ${{ needs.prepare.outputs.tag }}"
           file_description: "Changelog: https://github.com/${{ github.repository }}/releases/tag/${{ needs.prepare.outputs.tag }}"
           version: ${{ needs.prepare.outputs.tag }}
-          changelog: ${{ steps.assets.outputs.changelog }}
+          changelog: ${{ needs.release.outputs.changelog }}
           description_file: nexus/description.bbcode
           tag: ${{ needs.prepare.outputs.tag }}
 
       - name: Upload Server build to Nexus Mods
-        if: ${{ needs.prepare.outputs.is_preview != 'true' }}
         uses: msantoro12/starrupture-release-actions/nexus-publish@nexus-publish-v1
         with:
           api_key: ${{ secrets.NEXUS_APIKEY }}
