@@ -477,6 +477,9 @@
     <ClInclude Include="core\version_check.h">
       <Filter>Source Files\core</Filter>
     </ClInclude>
+    <ClInclude Include="core\unknown_build.h">
+      <Filter>Source Files\core</Filter>
+    </ClInclude>
     <ClInclude Include="core\sdk_globals.h">
       <Filter>Source Files\core</Filter>
     </ClInclude>
@@ -597,6 +600,9 @@
       <Filter>Source Files\core</Filter>
     </ClCompile>
     <ClCompile Include="core\version_check.cpp">
+      <Filter>Source Files\core</Filter>
+    </ClCompile>
+    <ClCompile Include="core\unknown_build.cpp">
       <Filter>Source Files\core</Filter>
     </ClCompile>
     <ClCompile Include="core\sdk_globals.cpp">
