@@ -3,6 +3,7 @@
 #include "plugins/plugin_interface.h"
 #include "logging/logger.h"
 #include "core/version_check.h"
+#include "core/unknown_build.h"
 
 #include <windows.h>
 #include <algorithm>
@@ -644,10 +645,15 @@ namespace PluginHookReport
         sprintf_s(header,
             "StarRupture ModLoader -- plugin hook failures\r\n"
             "Loader:       %s (%s build)\r\n"
-            "Game version: %s\r\n\r\n",
+            "Game version: %s\r\n",
             MODLOADER_BUILD_TAG, MODLOADER_BUILD_KIND, gameVersion);
 
         std::string text = header;
+#ifdef MODLOADER_CLIENT_BUILD
+        if (UnknownBuild::Active())
+            text += "Unknown build: " + UnknownBuild::ReportLine(UnknownBuild::RunningCL(), UnknownBuild::NewestCL()) + "\r\n";
+#endif
+        text += "\r\n";
 
         std::lock_guard<std::mutex> lock(s_mutex);
 
