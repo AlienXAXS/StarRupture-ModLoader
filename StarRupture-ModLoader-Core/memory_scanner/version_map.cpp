@@ -508,10 +508,14 @@ namespace VersionMap
 		g_layoutChangedPaths = std::move(paths);
 	}
 
-	std::string LayoutRefusal(int interfaceVersion, const PluginGameBuild& built)
+	std::string LayoutRefusal(const Exe& running, int interfaceVersion, const PluginGameBuild& built)
 	{
 		constexpr int kFirstMapInterface = 72;
 		const bool migrated = (built.mapFlags & PLUGIN_MAP_MIGRATED) != 0;
+		// The changed classes come from the loader's own SDK. A plugin that names
+		// the build it runs on was compiled against that build's layouts.
+		if (interfaceVersion >= kFirstMapInterface && built.declared && built.gameCL != 0 && running.cl == built.gameCL)
+			return {};
 		// The SDK names (not the /Script/ forms); the first two by name, so
 		// the reason fits the plugin list's line.
 		std::vector<std::string> names;

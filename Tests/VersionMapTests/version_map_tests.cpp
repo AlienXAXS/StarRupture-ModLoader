@@ -1386,11 +1386,13 @@ int main()
 		Check(refusal(128786, 72, 128786, 0, false).empty(), "admission: built CL 128786 loads on 128786");
 		Check(refusal(127004, 72, 128786, kM, true).empty(), "admission: built CL 128786 MIGRATED loads on 127004");
 
-		// Classes the layout check found changed: only a plugin that takes every layout from the map runs.
-		const auto layoutRefusal = [&](int version, uint32_t builtCL, uint32_t flags)
+		// Classes the layout check found changed: only a plugin that takes every layout from the map runs,
+		// or one that declares the build that is running (its layouts are that build's).
+		const auto layoutRefusalOn = [&](uint32_t runningCL, int version, uint32_t builtCL, uint32_t flags)
 		{
-			return VersionMap::LayoutRefusal(version, VersionMap::ReadPluginGameBuild(info(version, builtCL, flags)));
+			return VersionMap::LayoutRefusal(VersionMap::Exe{ runningCL, 0, 0 }, version, VersionMap::ReadPluginGameBuild(info(version, builtCL, flags)));
 		};
+		const auto layoutRefusal = [&](int version, uint32_t builtCL, uint32_t flags) { return layoutRefusalOn(128786, version, builtCL, flags); };
 		Check(layoutRefusal(71, 0, 0).empty() && layoutRefusal(72, 127004, 0).empty(), "layout: nothing changed, nothing refused");
 		VersionMap::SetLayoutChanges({ "ACrX", "/Script/Chimera.ACrX", "FCrY", "/Script/Chimera.FCrY", "UCrZ", "/Script/Chimera.UCrZ" });
 		const std::string notMigrated = layoutRefusal(72, 127004, 0);
@@ -1400,8 +1402,21 @@ int main()
 		Check(layoutRefusal(71, 0, 0).find("before the version map") != std::string::npos, "layout: a v71 plugin is refused");
 		Check(layoutRefusal(72, 0, kM).find("names no game build") != std::string::npos, "layout: MIGRATED with no build is refused");
 		Check(layoutRefusal(72, 127004, kM).empty(), "layout: a MIGRATED plugin with a build is admitted");
+		// A plugin that declares the running build, without the flag: its compiled layouts are that build's.
+		Check(layoutRefusalOn(130045, 72, 130045, 0).empty() && layoutRefusalOn(130045, 78, 130045, 0).empty(),
+			"layout: a plugin declaring the running build is admitted without the flag");
+		Check(layoutRefusalOn(130045, 72, 130045, kM).empty(), "layout: declaring the running build and MIGRATED is admitted");
+		Check(layoutRefusalOn(130045, 72, 128786, 0).find("PLUGIN_MAP_MIGRATED") != std::string::npos,
+			"layout: a plugin declaring another build than the running one is still refused");
+		Check(layoutRefusalOn(130045, 72, 128786, kM).empty(), "layout: another declared build with MIGRATED is admitted, as before");
+		// Undeclared counts as built on 127004, but declares nothing, so running 127004 does not admit it.
+		Check(layoutRefusalOn(127004, 72, 0, 0).find("PLUGIN_MAP_MIGRATED") != std::string::npos
+			&& layoutRefusalOn(127004, 71, 0, 0).find("before the version map") != std::string::npos,
+			"layout: an undeclared plugin is still refused, even where its judged build is the running one");
+		Check(layoutRefusalOn(130045, 72, 0, kM).find("names no game build") != std::string::npos, "layout: MIGRATED with no build is still refused");
 		VersionMap::SetLayoutChanges({});
 		Check(layoutRefusal(72, 127004, 0).empty(), "layout: cleared, admitted again");
+		Check(layoutRefusalOn(130045, 72, 130045, 0).empty() && layoutRefusalOn(130045, 72, 128786, 0).empty(), "layout: nothing changed, nothing refused, declared or not");
 
 		// A zero tail: judged as built on 127004, so refused on 128786; with the flag, refused everywhere.
 		Check(refusal(127004, 72, 0, 0, false).empty(), "admission: zero tail loads on 127004");

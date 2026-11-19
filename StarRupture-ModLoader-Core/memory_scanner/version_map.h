@@ -215,12 +215,16 @@ namespace VersionMap
 	// init thread, before any plugin loads.
 	void SetLayoutChanges(std::vector<std::string> classNames, std::vector<std::string> paths = {});
 
-	// Whether a plugin may run although classes changed: only one that takes
-	// every game layout from this build (interface 72 or later,
-	// PLUGIN_MAP_MIGRATED, and a declared game build) may. Any other keeps
-	// the layouts compiled in and would read the changed classes' old ones.
+	// Whether a plugin may run although classes changed. Those classes are
+	// the loader's own (its SDK against the game), so a plugin that declares
+	// the build it was compiled for (interface 72 or later, gameBuiltCL set),
+	// on that same build as `running`, is admitted: its layouts are that
+	// build's. Otherwise only one that takes every game layout from the version
+	// map (interface 72 or later, PLUGIN_MAP_MIGRATED, and a declared game
+	// build) may. Any other keeps the layouts compiled in and would read the
+	// changed classes' old ones.
 	// Empty = admitted (also when nothing changed); else the reason.
-	std::string LayoutRefusal(int interfaceVersion, const PluginGameBuild& built);
+	std::string LayoutRefusal(const Exe& running, int interfaceVersion, const PluginGameBuild& built);
 
 	// Whether the Game-SDK globals found on `running` may be handed to plugins
 	// (IPluginEngineEvents::GetSdkGlobals), as absolute addresses, 0 = not
