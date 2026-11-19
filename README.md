@@ -574,7 +574,7 @@ the whole API and you can hot-reload it while the game runs.
 | Preload plugin not running | Run `preload` in the console, or check the `[Preload]` lines in the log. A preload plugin that fails is skipped and the game starts without it. |
 | Game will not start after adding a preload plugin | Launch with `-NoPreload`, or set `Enabled=0` under `[Preload]` in `modloader.ini`. The loader also skips any preload plugin that did not finish loading last launch, and says which it was. Delete `Preload\.state` to let it try again. |
 | A dialog offers "Start Game Without ModLoader" | The game build changed or a scan pattern no longer matches. The mod loader stays off until it is updated. **Copy Details** has the report. `-SkipPatternValidation` overrides an ambiguous or wrong-kind pattern, not a missing one. For a game build the version object map does not list, this dialog appears only when `[UnknownBuild] Enabled=0` is set, when the game's version has no CL number, or when the mod loader cannot write `modloader.ini`; otherwise see the next two rows. |
-| **UNKNOWN GAME BUILD** at the main menu | The game updated to a build the version object map does not list yet. The mod loader is running on checked values from the newest build it lists, and the window says what, if anything, was switched off. Nothing to do: it uses the version map's rows for your build by itself at a later start. See [Game updates](#game-updates). |
+| **UNKNOWN GAME BUILD** at the main menu | The game updated to a build the version object map does not list yet. The mod loader is running on checked values from the newest build it lists, and the window says what, if anything, was switched off. Nothing to do: once the version map has rows for your build, the check at every start finds them and uses them. See [Game updates](#game-updates). |
 | A dialog says the last session on an unknown game build did not end cleanly | The game crashed, stopped responding or was closed without quitting the last time it ran on this build with the mod loader on checked values, so mods are off for this start. To try again, add `Retry=1` under `[UnknownBuild]` in `ModLoader\modloader.ini` and start the game. |
 | A dialog says the game has changed in a way that would break your plugins | At startup the mod loader checks that the game classes it and its plugins read are still laid out the way it was built for. A game update moved some of them. When what moved is read by only some loader features, only those features turn off; when it is read by every plugin, no plugins load this session: start the game without them, or quit until an update is out. The loader writes `ModLoader\compat-report-<CL>.json` (the game build, the executable's SHA-256, what moved and the struct sizes plugins asked for). It says whether only some features turned off or every plugin did, and is what a loader update is made from, so attach it to your report. |
 | A plugin says "Needs an update to run on CL-..." | The plugin was built for another game build and does not declare that it takes its game data from the version map, so it would read this game's data where its own build had it. It loads on the build it names. Ask its author for an update. See [Game updates](#game-updates) and [VersionMap.md](VersionMap.md). |
@@ -602,7 +602,7 @@ against, and shows **Incompatible** on the others.
 On a client build with `[AutoUpdate] Enabled` on, the loader checks at every start whether a newer version
 map is out, as a signed file, and uses it on that start, so a new game build can be supported without a
 loader update. If the check fails, the copy it kept last time is used. A server build never reads one.
-How the version map is chosen, how the feed is fetched, signed and cached, how CI publishes it and what
+How the version map is chosen, how a newer version map is fetched, signed and cached, how CI publishes it and what
 each failure looks like is in [VersionMap.md](VersionMap.md).
 
 On a client, a game build the version object map has no rows for yet does not switch the loader off. It
@@ -611,7 +611,7 @@ using it: a function must be found exactly once and be the kind of place it is e
 must sit in the right part of the game's code or data, and a class member and its size are taken from the
 game itself. A member or size that nothing in the game can confirm waits for that build's rows. A plugin or
 feature that needs something that did not check out is switched off, and a window at the main menu says
-so. At a later start, once the version map has rows for the build, they are used instead; with
+so. Once the version map has rows for the build, the check at the start finds them and they are used instead, on that start; with
 `[AutoUpdate] Enabled=0` that takes a loader update. The loader marks the session in `[UnknownBuild]`
 `Session` and clears it on a clean exit. If a session ends any other way (a crash, a hang or a forced
 close), the next start on that build runs without mods until `Retry=1` is added under `[UnknownBuild]`.
@@ -694,7 +694,7 @@ these for you.
 | `[Console]` | `OpenKey` | `Tilde` | |
 | `[HUD]` | `ShowFPS`, `ShowWorldName`, `ShowPlayerPosition`, `ShowDebugValues` | `0` | The Settings toggles |
 | `[Network]` | `ConnectionTimeout`, `InitialConnectTimeout` | `300.0` | Seconds, 1 to 3600; anything else logs a warning and uses 300. `0` keeps the engine default. See [Net timeouts](#net-timeouts) |
-| `[AutoUpdate]` | `Enabled` | `1` | |
+| `[AutoUpdate]` | `Enabled` | `1` | Client only. `0` stops the update checks, including the check for a newer version object map at every start |
 | | `ManifestUrl` | empty | Empty uses the built-in manifest |
 | `[Preload]` | `Enabled` | `1` | |
 | | `Disabled` | empty | Comma-separated DLL names to skip |
