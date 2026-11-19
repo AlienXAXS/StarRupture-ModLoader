@@ -220,6 +220,29 @@ The game names its types without the prefix letter, so a plain type can share it
 only a class carries is a plain type. An `F` name that a struct carries in another module, or a `U`
 or `A` name that a struct or a class in another module carries, is a request that missed, and fails.
 
+## Unknown builds
+
+A client on a game build the version map has no rows for does not stop. The gate lets it through
+and every key is checked on this exe, so a plugin gets a value only when the game confirms it:
+
+1. A function key: the newest build's row is rescanned here, as in [Selection](#selection). It
+   counts only if its pattern resolves uniquely and as the kind asked, and your own pattern must
+   agree with it. The address recorded for another build is never used.
+2. A reflected member, its size, a struct size and a function's parameter size come from the game.
+   A row of another build is only a cross-check.
+3. A native member, a struct size the game does not describe, and an `SR_SIZE_CHECK` on a native
+   member have nothing to check against, so they wait for the build's rows: the request fails.
+4. A request that fails turns off the declared feature that lists its key, or refuses the plugin
+   if none does. Admission is unchanged.
+
+So put the keys you can do without into a declared feature. Example: a plugin's "Icons" feature
+lists a native member key. On an unknown build the member's request fails, "Icons" is off, and the
+rest of the plugin runs.
+
+The loader writes `[UnknownBuild] Session` in `modloader.ini` before it hooks anything and clears
+it on a clean exit. A session that ends any other way keeps mods off at the next start on that
+build until `Retry=1` is set. `Enabled=0` keeps the old refusal. The server always refuses.
+
 ## Native members the image library reads
 
 The image library reads a game texture through eight native members. Each is a field row for the
@@ -367,7 +390,7 @@ it takes the built-in row for the running exe if there is one, otherwise the fee
 the built-in. The feed can add builds and keys and fill a shipped `absent` row; it can never
 change a locator the loader shipped with for the running exe. A CL known only from the feed is
 supported only if the union holds a locator for every required loader entry and loader field on
-it; otherwise it is dropped and the build stays refused.
+it; otherwise it is dropped and the build stays unknown.
 
 **What a bad feed can do.** It cannot run code. Every row still has to pass its kind check, the
 uniqueness rule, equality with its `rva` on its own exe, and for a native field the class-size
@@ -482,15 +505,16 @@ What a player sees, and what the log says (`ModLoader\Logs\ModLoader.log`).
 | Case | Result |
 |---|---|
 | The running build is in the version map | Starts with no network request. This is the normal case. |
-| New build, no feed published yet, or no network | The gate refuses the build. The player gets the "Start Game Without ModLoader" dialog and can play unmodded or quit. The loader tries again for the next launch. |
+| New build, no feed published yet, or no network | The client runs on checked values from the newest build the version map lists (see [Unknown builds](#unknown-builds)), and the overlay says so. With `[UnknownBuild] Enabled=0`, the gate refuses the build: the player gets the "Start Game Without ModLoader" dialog and can play unmodded or quit. A server always refuses. The loader tries again for the next launch. |
+| A session on an unknown build did not end cleanly (crash, hang, forced close) | The next start on that build hooks nothing, and a dialog says how to try again: `Retry=1` under `[UnknownBuild]` in `modloader.ini`. A game patch or another loader build tries again by itself. |
 | New build, feed published | The splash shows "Downloading game data for CL-n" for a moment, then the game starts modded. |
-| A fetch fails (404, timeout, over 1 MiB, not https) | As if there were no feed: a known build runs, an unknown one is refused. An unknown build asks again at the next launch, and so does the auto-update thread while no verified feed is cached; the other triggers wait a day. |
+| A fetch fails (404, timeout, over 1 MiB, not https) | As if there were no feed: a known build runs, an unknown one runs on checked values. An unknown build asks again at the next launch, and so does the auto-update thread while no verified feed is cached; the other triggers wait a day. |
 | The feed's signature is bad, the key unknown or the file malformed | The file is discarded whole, and the cache is untouched. Same as no feed. |
 | The feed is older than the cache (`seq` not higher) | Ignored. The cache stays. |
 | A release build is handed a `k1` (TEST) feed | Rejected as a bad key. |
 | `[AutoUpdate] Enabled` off, or a server build | No fetch. The built-in version map is used. A server stays exact on the build it was written for. |
 | The feed has the build, but a row is `absent` for something a plugin needs | That plugin's request fails. If it belongs to a declared feature, that feature is off; otherwise the plugin is refused, with the reason in the failure window. Other plugins and the game run. |
-| The feed has the build but misses a required loader entry | That CL is dropped from the feed, and the build is refused as above. |
+| The feed has the build but misses a required loader entry | That CL is dropped from the feed, and the build is unknown as above. |
 | A plugin built for another build does not declare `PLUGIN_MAP_MIGRATED` | **Incompatible**: "Needs an update to run on CL-...". It loads on its own build. |
 | A plugin's own pattern matches 0 or 2 or more places, but a row resolves the key | The plugin loads on the row. `ModLoader.log` has one `[Map]` warning naming the plugin, the key and the count. Where no row resolves the key it would be refused, so the author should make the pattern unique (or update it, for 0). |
 | Two keys for one request disagree (AMBIGUOUS) | The request fails, with the locators listed: a declared feature turns off, any other key refuses the plugin. |
