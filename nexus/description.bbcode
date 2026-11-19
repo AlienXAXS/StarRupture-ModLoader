@@ -41,8 +41,9 @@ A more detailed readme can be found on the [url=https://github.com/AlienXAXS/Sta
 [*]Keys a mod blocks are released when the mod is unloaded or reloaded, instead of staying blocked
 [*]Mod overlay buttons can now be clicked while the build menu is open
 [*]The build menu is now found on the game's menu layer, so a mod that waits for it to close sees it in every case
-[*]A mod feature made for the upcoming game update now shows as "not in this game version" in the hook failures list on the current game version, instead of as a problem to report
-[*]Better Drone's building drone, restore-state and hotbar functions are now rows of the version object map for both game builds (the hotbar is for the upcoming game update and does nothing on the current game version)
+[*]A mod feature made for the newer game update now shows as "not in this game version" in the hook failures list on the current game version, instead of as a problem to report
+[*]Better Drone's building drone, restore-state and hotbar functions are now rows of the version object map for both game builds (the hotbar is for the newer game update and does nothing on the current game version)
+[*]The save and persistent ID functions the PersistentIdFix mod looks up are now rows of the version object map for both game builds, so the mod finds all of them on either one
 [*]Mod windows no longer flicker while a save loads, and blink less after Alt-Tab
 [*]After a graphics crash (the game losing its graphics device), the mod windows come back by themselves: they stay off for one launch as a precaution, and ModLoader.log says so. Before, they stayed off until you edited modloader.ini. If your mod windows are still off from an earlier version, set [b]Enabled=1[/b] under [b][UI][/b] in [i]ModLoader\modloader.ini[/i]
 [*]ModLoader.log now records why the graphics device was lost and which step of a game icon copy failed, to help find the cause of a problem
@@ -53,8 +54,11 @@ A more detailed readme can be found on the [url=https://github.com/AlienXAXS/Sta
 [*]A fresh install opens a window titled [b]Mod Loader Installed[/b] instead of [b]Plugins Updated[/b]
 [*]Quieter log when adapting to new game versions: differences against another build's row in the version object map (v map) are Debug lines, not warnings. The v map maps each game version's objects (functions, fields, sizes) for easy access
 [*]The loader skips version map rows it does not recognise instead of refusing the whole version map, so later versions of it can add new kinds of rows
-[*]When the loader has no usable copy of the version map file, for example after a download failed, it downloads it again at the next launch instead of waiting a day
+[*]At every start the loader checks whether a newer version object map is out and, if so, uses it on that start, so a game update can be covered at once. The check is one small request that answers "nothing newer" in a few bytes, and if it fails (offline, a timeout, a bad file) the copy kept last time is used and the game starts as usual. The old once-a-day wait is gone
 [*]For plugin authors: plugins can ask for the size of a game struct the game does not describe, a native member needs no size with PLUGIN_FIELD_ANY_SIZE, and plugins can ask where the game puts a function's parameters (also for Blueprint classes that load later, with the new PLUGIN_FIELD_LATE flag). The plugin interface version is unchanged
+[*]For plugin authors: plugin interface v78 adds a call that draws many textured triangles at once, so a plugin with a large set of icons, a GPU-drawn map for example, needs one draw call instead of one per icon (ModLoader 1.25.0 or newer). Added by Kian369
+[*]A mod that has to wait for the game's graphics while it shuts down can now be unloaded or reloaded: the loader no longer holds its own windows up while it waits, and the mod's row in the plugin list says it is being unloaded
+[*]When the game updates to a build the version object map does not list yet, the mod loader no longer switches itself off. It runs with the newest known build's values, checks each one against your game before using it, and switches off only the mod features that do not check out. A window at the main menu says so. If a session on such a build crashes or is force-closed, the next start runs without mods and says how to try again. See Game updates below
 [/list]
 
 [line]
@@ -218,7 +222,11 @@ The ZIP is already laid out correctly, so extract it directly into that folder. 
 
 The mod loader carries a version map: for each game build it lists where the functions and game data it and its plugins read are. A listed build runs with no mod loader update. Plugins that take their game data from the version map run on any listed build; one that does not loads only on the build it was made for.
 
-On a client with Auto Updates on, the mod loader can read a newer version map from a signed file on its GitHub releases (version-map-client.v1.txt, attached to each release, starting with v1.23.2). It checks the signature before reading anything else in the file, and keeps the last good copy in [i]ModLoader\version-map-client.v1.cache[/i]. The version map is read once at startup. A dedicated server never reads it.
+On a client with Auto Updates on, the mod loader can read a newer version map from a signed file on its GitHub releases (version-map-client.v1.txt, attached to each release, starting with v1.23.2). It checks the signature before reading anything else in the file, and keeps the last good copy in [i]ModLoader\version-map-client.v1.cache[/i]. It looks for a newer one at every start and uses it on that start; with no network the kept copy is used. The version map is read once at startup, after that check. A dedicated server never reads it.
+
+On a client, a game build the version map has no rows for yet does not switch the mod loader off. It runs on the values of the newest build the version map lists and checks each one against your game before using it: a function must be found exactly once and be the kind of place it is expected to be, an address must sit in the right part of the game's code or data, and a class member and its size are taken from the game itself. Something nothing in the game can confirm waits for that build's rows. A mod or feature that needs something that did not check out is switched off, and the window at the main menu says which. Once the version map has rows for your build, the check at the start finds them and they are used instead, on that start; with Auto Updates off that takes a mod loader update.
+
+The mod loader marks the session in [b][UnknownBuild][/b] [i]Session[/i] in modloader.ini and clears it when the game quits normally. If a session ends any other way (a crash, a hang or a forced close), the next start on that build runs without mods, and a dialog says to add [b]Retry=1[/b] under [b][UnknownBuild][/b] to try again. [b]Enabled=0[/b] there keeps the old behaviour: the mod loader stays off on such a build. A dedicated server still stops on a build it does not list.
 
 Even when the version map decides where a plugin's function is, the mod loader checks the plugin's own pattern against the running game once and writes a warning to ModLoader.log if it matches nowhere or in two or more places. The plugin still loads; the warning lets its author find a pattern that only works because the version map covers for it. ✦ The loader's pattern scan cache is now kept per game exe (version, build timestamp and size), so a rebuilt exe with the same version string rescans instead of trusting an old result. ✦
 
@@ -244,7 +252,8 @@ Config file: [i]ModLoader\modloader.ini[/i], created on first launch. The Settin
 [*][b]Console[/b] — OpenKey (Tilde)
 [*][b]Input[/b] — SuppressKeybindsWhileTyping (1): keybinds ignore keys typed into a game text box
 [*][b]Network[/b] — ConnectionTimeout, InitialConnectTimeout (300 seconds each; 1 to 3600, 0 keeps the engine default)
-[*][b]AutoUpdate[/b] — Enabled (1), ManifestUrl (empty uses the built-in manifest)
+[*][b]AutoUpdate[/b] — Enabled (1; 0 also stops the check for a newer version object map at every start), ManifestUrl (empty uses the built-in manifest)
+[*][b]UnknownBuild[/b] — Enabled (1; 0 keeps the mod loader off on a game build the version object map does not list), Retry (1 tries mods again after a session on such a build did not end cleanly; the loader removes it at that start), Session (written by the loader while a session runs; don't edit it)
 [*][b]Preload[/b] — Enabled (1), Disabled (comma-separated DLL names to skip)
 [*][b]UE4SS[/b] — Enabled (0), Path
 [/list]
@@ -274,7 +283,9 @@ A preload plugin is a DLL in [i]ModLoader\Preload\[/i] that runs before the game
 [*][b]A plugin says "Needs an update to run on CL-..."[/b] — the plugin was built for another game build and does not take its game data from the mod loader's version map, so it would read this game's data where its own build had it. Ask its author for an update
 [*][b]ModLoader.log says a plugin's "own pattern matches N times"[/b] — the plugin loads, because the version map decides where its function is. But the pattern it carries as a backup is not unique on this game build (or, for 0 times, no longer found), and a mod loader with no row to use for it (a stock mod loader, a dedicated server, or a build the version map's rows do not resolve on) would refuse the plugin. Tell its author to make the pattern unique or update it ✦
 [*][b]A dialog says the game has changed in a way that would break your plugins[/b] — a game update moved some game classes the mod loader and its plugins read, so no plugins load this session. Start the game without them or wait for an update. The loader writes [i]ModLoader\compat-report-<CL>.json[/i] (the game build and what moved); attach it to your report
-[*][b]A dialog offers "Start Game Without ModLoader"[/b] — the game build changed or a scan pattern no longer matches. The mod loader stays off until it is updated. Copy Details has the report
+[*][b]A dialog offers "Start Game Without ModLoader"[/b] — the game build changed or a scan pattern no longer matches. The mod loader stays off until it is updated. Copy Details has the report. For a game build the version object map does not list, this dialog appears only when [b]Enabled=0[/b] is set under [b][UnknownBuild][/b], when the game's version has no CL number, or when the mod loader cannot write modloader.ini
+[*][b]UNKNOWN GAME BUILD at the main menu[/b] — the game updated to a build the version object map does not list yet. The mod loader is running on checked values from the newest build it lists, and the window says what, if anything, was switched off. Nothing to do: once the version map has rows for your build, the check at every start finds them and uses them
+[*][b]A dialog says the last session on an unknown game build did not end cleanly[/b] — the game crashed, stopped responding or was closed without quitting the last time it ran on this build with the mod loader on checked values, so mods are off for this start. To try again, add [b]Retry=1[/b] under [b][UnknownBuild][/b] in ModLoader\modloader.ini and start the game
 [*][b]Logs and diagnostics[/b] — check ModLoader\Logs\ModLoader.log; raise the detail in the Logging tab
 [*][b]The game's log is flooding on a dedicated server[/b] — the game itself writes hundreds of LogTemp and LogSkinnedMeshComp warnings a second. Server builds turn those two categories down to errors; change them with GameLogCategories in modloader.ini
 [*][b]Game stops responding to input[/b] — turn on ModLoader Debug Values in the Settings tab; it names the plugin holding input open
