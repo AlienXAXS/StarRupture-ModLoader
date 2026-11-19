@@ -28,12 +28,21 @@ struct HttpGetOptions
 	// Lets an http:// URL through, for tests that run a local server. Off
 	// everywhere else: every request is HTTPS.
 	bool allowPlainHttp = false;
+
+	// A conditional request. With ifNoneMatch set, the request carries it as an
+	// If-None-Match header, and a 304 answer is not an error: the body is empty
+	// and *notModified is set. With etag set, a 200 answer's ETag header is
+	// copied into it ("" when it has none, or one that is not plain text).
+	std::string  ifNoneMatch;
+	std::string* etag        = nullptr;
+	bool*        notModified = nullptr;
 };
 
 // A WinHTTP (or Win32) error code as text.
 std::string FormatWinHttpError(unsigned long err);
 
 // The response body on success, or an empty string on any error (a non-200
-// status, a timeout or deadline, a body over the cap). `label` names what is
+// status except a 304 to a conditional request, a timeout or deadline, a body
+// over the cap). `label` names what is
 // being fetched in the log.
 std::string HttpGet(const char* url, const char* label = "resource", const HttpGetOptions& options = {});

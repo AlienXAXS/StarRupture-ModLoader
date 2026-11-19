@@ -132,6 +132,12 @@ std::string HttpGet(const char* url, const char* label, const HttpGetOptions& op
 	WinHttpSetOption(request.h, WINHTTP_OPTION_REDIRECT_POLICY,
 	                 &redirectPolicy, sizeof(redirectPolicy));
 
+	if (!options.ifNoneMatch.empty())
+	{
+		const std::wstring header = L"If-None-Match: " + std::wstring(options.ifNoneMatch.begin(), options.ifNoneMatch.end());
+		WinHttpAddRequestHeaders(request.h, header.c_str(), static_cast<DWORD>(-1L), WINHTTP_ADDREQ_FLAG_ADD | WINHTTP_ADDREQ_FLAG_REPLACE);
+	}
+
 	LogToFile::Debug("[AutoUpdate] HttpGet [%s]: sending request...", label);
 
 	if (!WinHttpSendRequest(request.h, nullptr, 0, nullptr, 0, 0, 0))
@@ -155,6 +161,12 @@ std::string HttpGet(const char* url, const char* label, const HttpGetOptions& op
 
 	LogToFile::Debug("[AutoUpdate] HttpGet [%s]: HTTP %lu", label, statusCode);
 
+	if (statusCode == 304 && !options.ifNoneMatch.empty() && options.notModified)
+	{
+		*options.notModified = true;
+		return {};
+	}
+
 	if (statusCode != 200)
 	{
 		// Promote to Warn so HTTP errors are always visible without debug logging.
@@ -164,6 +176,28 @@ std::string HttpGet(const char* url, const char* label, const HttpGetOptions& op
 		//   5xx -- GitHub CDN or release server error
 		LogToFile::Warn("[AutoUpdate] HttpGet [%s]: server returned HTTP %lu (URL: %s)", label, statusCode, url);
 		return {};
+	}
+
+	if (options.etag)
+	{
+		wchar_t value[160]{};
+		DWORD size = sizeof(value);
+		options.etag->clear();
+		if (WinHttpQueryHeaders(request.h, WINHTTP_QUERY_CUSTOM, L"ETag", value, &size, WINHTTP_NO_HEADER_INDEX))
+		{
+			// Only printable ASCII, since it goes back out in a request header.
+			std::string text;
+			for (const wchar_t* p = value; *p && text.size() < 128; ++p)
+			{
+				if (*p < 0x20 || *p > 0x7E)
+				{
+					text.clear();
+					break;
+				}
+				text += static_cast<char>(*p);
+			}
+			*options.etag = text;
+		}
 	}
 
 	// Read response body in chunks

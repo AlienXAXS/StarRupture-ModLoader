@@ -321,27 +321,35 @@ There is no server feed: only the client fetches.
 
 **Fetch.** The URL is the compiled define `VMAP_FEED_URL` (`/p:VmapFeedUrl=` in `Shared.props`),
 never read from `modloader.ini`. An empty define, or no compiled public key, means no fetch. The
-loader fetches only on the client, with `[AutoUpdate] Enabled` on, and only:
+loader fetches only on the client, with `[AutoUpdate] Enabled` on. The one rule: at every start it
+asks whether a newer feed than the cached one is out, and if so applies it on that start.
 
-- at startup, when the running exe is in neither the built-in version map nor the cache, or has an
-  `absent` row and the cache is over a day old. The splash shows "Downloading game data for
-  CL-n". This happens with the game's main thread parked, where WinHTTP is safe;
-- after the version check or the pattern preflight refuses the game build, for the next launch,
-  before the process exits (not when the startup request just made one);
-- from the auto-update thread, for the next launch: at most once a day while the cache holds a
-  verified feed, otherwise at every launch.
+- The question is asked at startup, with the game's main thread parked (where WinHTTP is safe), before
+  the version check, so a newer feed is read by that very start. When the running exe is in neither the
+  built-in version map nor the cache, the splash shows "Downloading game data for CL-n" while it waits;
+- after the version check or the pattern preflight refuses the game build, it is asked once more for the
+  next launch, before the process exits, if the startup request did not already ask;
+- the auto-update thread asks for the next launch only if nothing asked at startup this launch.
 
-An exe the version map has never seen asks at every launch until a cached feed covers it; the once-a-day
-limit applies to the `absent` case and to the auto-update thread. An empty, cut-short, oversize or
-unreadable cache does not count as a verified feed.
+When a newer feed was fetched, `ModLoader.log` has one line: "Newer rows for the version object map were
+fetched and apply on this start". Otherwise it says the cache is current, or that the feed could not be
+fetched and the cache is as it was.
 
-**Request.** One HTTPS GET. A URL that is not `https` is refused, redirects from HTTPS to HTTP are
+**Request.** One HTTPS GET, conditional. The loader keeps the `ETag` of the answer the cache came from
+next to the cache (`version-map-client.v1.cache.etag`, `<seq> <etag>`) and sends it as `If-None-Match`,
+so a feed that has not changed comes back as a 304 with no body. The ETag is sent only when its `seq`
+is the cache's; with none on file, or a server that sends none, the whole feed (about 330 KB) is asked
+for and compared by `seq`. The feed is a release asset on `github.com`, not the GitHub REST API, so
+there is no rate limit to share. A URL that is not `https` is refused, redirects from HTTPS to HTTP are
 disallowed, each operation has a 2 s timeout, the whole request has an 8 s deadline, and the body
-is capped at 1 MiB while it is read (`feed_fetch.h`, `http_get.cpp`).
+is capped at 1 MiB while it is read (`feed_fetch.h`, `http_get.cpp`). Startup waits for it only that long:
+a host that does not answer costs about 4 s, an unroutable one about 6 s, and then the game starts on
+the cache.
 
 **Cache.** The signed file itself, `ModLoader\version-map-client.v1.cache`, written to a temp
 file and then renamed over. It is verified again on every launch and only ever replaced by a file
-with a higher `seq`, so an old signed file cannot be replayed over a newer one.
+with a higher `seq`, so an old signed file cannot be replayed over a newer one. No network, a 404, a
+timeout or a bad signature leave it as it was, and it keeps working.
 
 **Signature.** The file is verified before anything in it is read. It is rejected whole if it is
 over 1 MiB, has a malformed row of a kind it knows, has a `sig` line that is not last, names a key
@@ -481,10 +489,10 @@ What a player sees, and what the log says (`ModLoader\Logs\ModLoader.log`).
 
 | Case | Result |
 |---|---|
-| The running build is in the version map | Starts with no network request. This is the normal case. |
+| The running build is in the version map | Starts, after the one small check for a newer feed that every start makes (a 304 when there is none). With no network the check fails quietly and the built-in version map and the cache are used. This is the normal case. |
 | New build, no feed published yet, or no network | The gate refuses the build. The player gets the "Start Game Without ModLoader" dialog and can play unmodded or quit. The loader tries again for the next launch. |
 | New build, feed published | The splash shows "Downloading game data for CL-n" for a moment, then the game starts modded. |
-| A fetch fails (404, timeout, over 1 MiB, not https) | As if there were no feed: a known build runs, an unknown one is refused. An unknown build asks again at the next launch, and so does the auto-update thread while no verified feed is cached; the other triggers wait a day. |
+| A fetch fails (404, timeout, over 1 MiB, not https) | As if there were no feed: a known build runs, an unknown one is refused. The loader asks again at the next launch, as it does at every launch. |
 | The feed's signature is bad, the key unknown or the file malformed | The file is discarded whole, and the cache is untouched. Same as no feed. |
 | The feed is older than the cache (`seq` not higher) | Ignored. The cache stays. |
 | A release build is handed a `k1` (TEST) feed | Rejected as a bad key. |

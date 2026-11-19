@@ -11,20 +11,22 @@
 // feed_fetch.h -- when the loader asks for the signed version-map feed, and the
 // one request it makes (see version_feed.h for the file).
 //
-// The fetch only ever fills the cache file for the next launch, except at
-// Stage 1, which fetches before the cache is read for this one. The map in
-// memory is built once, at Stage 1, and never changes after it.
+// The loader asks at every start whether a newer feed than the cached one is
+// out. The request is conditional: it carries the ETag the last answer had, so
+// when nothing changed the answer is a 304 with no body. A newer feed is
+// verified, stored, and read by the same start (Stage 1); the map in memory is
+// built once, right after, and never changes after it.
 //
-//   Stage 1       the running exe is in neither the loader's map nor the cache,
-//                 or has an `absent` row that can bind this launch and the
-//                 cache is over a day old; on the parked-main-thread path only.
+//   Stage 1       every start, on the parked-main-thread path only: the check,
+//                 then the cache is read for this launch.
 //   AfterRefusal  a gate refusal that did not fetch this launch: fetch for the
 //                 next one, before Quit's exit.
-//   Stage3        on the auto-update thread, at most once a day while the
-//                 cache holds a verified feed; at once when it does not.
+//   Stage3        on the auto-update thread, only when Stage 1 could not ask
+//                 (the injected path): fetch for the next launch.
 //
 // Nothing is fetched on the server build, with `[AutoUpdate] Enabled` off, with
-// no VMAP_FEED_URL compiled in or with no public key.
+// no VMAP_FEED_URL compiled in or with no public key. A request that fails
+// (offline, a 404, a timeout, a bad signature) leaves the cache as it was.
 // ---------------------------------------------------------------------------
 
 namespace FeedFetch
@@ -32,9 +34,6 @@ namespace FeedFetch
 	// Per-operation timeout, wall-clock deadline for the request.
 	constexpr unsigned kOperationMs = 2000;
 	constexpr unsigned kDeadlineMs  = 8000;
-
-	// How long a cache counts as fresh.
-	constexpr uint64_t kDaySeconds = 24 * 60 * 60;
 
 	struct Config
 	{
@@ -53,36 +52,31 @@ namespace FeedFetch
 	// Why the loader makes no request under `cfg`, or null when it may.
 	const char* WhyNot(const Config& cfg);
 
-	// Seconds since the cache file was last written (a refresh that finds
-	// nothing newer counts), or UINT64_MAX with no cache file.
-	uint64_t CacheAgeSeconds(const std::wstring& path);
-
-	// Stage 1's trigger. `cache` is the verified feed in the cache, if any.
-	bool Stage1Wanted(const VersionMap::MapData& baseline, const VersionFeed::SignedFeed* cache,
-		const VersionMap::Exe& running, const VersionFeed::Coverage& cov, uint64_t cacheAgeSeconds);
-
 	enum class Result
 	{
 		NotAllowed,   // no request was made
 		Failed,       // no usable answer (a 404, a timeout, a bad signature, a file over the cap)
-		Unchanged,    // verified, but not newer than the cache
-		Stored,       // verified and now the cache
+		Unchanged,    // nothing newer: a 304, or a verified feed whose seq is not above the cache's
+		Stored,       // verified, newer, and now the cache
 	};
 
-	// One GET of cfg.url, verified, then stored if newer. `why` is for the log.
+	// One conditional GET of cfg.url, verified, then stored if its seq is above
+	// the cache's. The ETag of the answer is kept next to the cache, with the
+	// seq it belongs to, and sent back only while the cache still holds that
+	// seq. `why` is for the log.
 	Result Refresh(const Config& cfg, const char* why);
 
-	// Stage 1: fetch if wanted. `mainParked`: the main thread is parked on the
-	// APC path, the only place the request is safe. Returns whether a request
-	// was made, so a refusal that follows does not make a second.
-	// `announce`, if given, is called with the running CL just before the request.
+	// Stage 1: the check. `mainParked`: the main thread is parked on the APC
+	// path, the only place the request is safe. Returns whether a request was
+	// made, so a refusal that follows does not make a second.
+	// `announce`, if given, is called with the running CL just before the
+	// request when neither the loader's map nor the cache holds that exe.
 	bool Stage1(const Config& cfg, bool mainParked, void (*announce)(uint32_t cl) = nullptr);
 
 	// After a gate refusal; does nothing when Stage 1 already asked.
 	void AfterRefusal(const Config& cfg, bool stage1Asked);
 
-	// On the auto-update thread, at most once a day while the cache holds a
-	// verified feed; an empty, truncated, oversize or unreadable cache is asked
-	// for again at once.
+	// On the auto-update thread: the check for the next launch, when no request
+	// went out yet this launch.
 	void Stage3(const Config& cfg);
 }

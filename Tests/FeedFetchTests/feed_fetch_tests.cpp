@@ -132,27 +132,11 @@ namespace
 		return s;
 	}
 
-	// Sets the cache file's last-write time to `secondsAgo` before now.
-	void AgeFile(const std::wstring& p, uint64_t secondsAgo)
-	{
-		HANDLE h = CreateFileW(p.c_str(), FILE_WRITE_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
-		if (h == INVALID_HANDLE_VALUE)
-			return;
-		FILETIME now;
-		GetSystemTimeAsFileTime(&now);
-		ULARGE_INTEGER t;
-		t.LowPart = now.dwLowDateTime;
-		t.HighPart = now.dwHighDateTime;
-		t.QuadPart -= secondsAgo * 10000000ull;
-		FILETIME old{ t.LowPart, t.HighPart };
-		SetFileTime(h, nullptr, nullptr, &old);
-		CloseHandle(h);
-	}
-
 	// ---- the local server ---------------------------------------------------
 	//
 	// Routes:
-	//   /ok        200 with the current feed
+	//   /ok        200 with the current feed (and its ETag, when one is set); 304 when
+	//              the request's If-None-Match is that ETag
 	//   /redirect  302 to /ok
 	//   /missing   404
 	//   /hang      reads the request and says nothing
@@ -163,7 +147,10 @@ namespace
 	{
 	public:
 		std::atomic<int> hits{ 0 };
+		std::atomic<int> served304{ 0 };
 		std::string feed;
+		std::string etag;                // set between requests, never during one
+		std::string lastIfNoneMatch;     // of the latest request; read after its answer arrived
 
 		bool Start()
 		{
@@ -254,15 +241,34 @@ namespace
 				}
 				req.append(buf, static_cast<size_t>(n));
 			}
-			++hits;
 			const size_t a = req.find(' ') + 1;
 			const std::string path = req.substr(a, req.find(' ', a) - a);
+			std::string lower = req;
+			for (char& ch : lower)
+				ch = static_cast<char>(tolower(static_cast<unsigned char>(ch)));
+			const std::string headerName = "if-none-match: ";
+			std::string inm;
+			const size_t at = lower.find(headerName);
+			if (at != std::string::npos)
+				inm = req.substr(at + headerName.size(), req.find("\r\n", at) - at - headerName.size());
+			lastIfNoneMatch = inm;
+			++hits;
 
 			if (path == "/ok")
 			{
-				const std::string h = Head(200, "OK", feed.size());
-				SendAll(c, h.data(), h.size());
-				SendAll(c, feed.data(), feed.size());
+				if (!etag.empty() && inm == etag)
+				{
+					++served304;
+					const std::string h = Head(304, "Not Modified", 0);
+					SendAll(c, h.data(), h.size());
+				}
+				else
+				{
+					const std::string extra = etag.empty() ? std::string() : "ETag: " + etag + "\r\n";
+					const std::string h = Head(200, "OK", feed.size(), extra.c_str());
+					SendAll(c, h.data(), h.size());
+					SendAll(c, feed.data(), feed.size());
+				}
 			}
 			else if (path == "/redirect")
 			{
@@ -319,53 +325,21 @@ namespace
 		return cfg;
 	}
 
-	// ---- Stage 1's trigger ---------------------------------------------------
-
-	const Exe kKnown{ 127004, 0x11111111, 0x01000000 };
-
-	MapData Baseline(bool withAbsent, const char* absentKey = "Test::A", uint32_t absentFp = 0)
+	bool Logged(const wchar_t* text)
 	{
-		MapData m;
-		m.builds.push_back({ kKnown.cl, kKnown.imageStamp, kKnown.imageSize, "public 1" });
-		if (withAbsent)
-		{
-			VersionMap::MapFunctionRow row;
-			row.key = absentKey;
-			row.gameCL = kKnown.cl;
-			row.imageStamp = kKnown.imageStamp;
-			row.imageSize = kKnown.imageSize;
-			row.kind = 1;
-			row.fp = absentFp;
-			row.absent = true;
-			m.functions.push_back(row);
-		}
-		return m;
+		for (const std::wstring& line : TestDoubles::g_log)
+			if (line.find(text) != std::wstring::npos)
+				return true;
+		return false;
 	}
 
-	SignedFeed CacheWithLocator(const char* key, uint32_t fp)
-	{
-		SignedFeed f;
-		f.seq = 5;
-		f.map = Baseline(false);
-		VersionMap::MapFunctionRow row;
-		row.key = key;
-		row.gameCL = kKnown.cl;
-		row.imageStamp = kKnown.imageStamp;
-		row.imageSize = kKnown.imageSize;
-		row.kind = 1;
-		row.fp = fp;
-		row.pattern = "AA 01";
-		row.rva = 0x1000;
-		f.map.functions.push_back(row);
-		return f;
-	}
+	std::wstring EtagFile(const std::wstring& cache) { return cache + L".etag"; }
 }
 
 int main()
 {
 	const Signer sk = MakeSigner("k1", 1);
 	const std::vector<PublicKey> keys{ sk.pub };
-	const uint64_t kDay = FeedFetch::kDaySeconds;
 
 	// ---- Update checks: newer by number, never an older release ------------
 	{
@@ -625,33 +599,6 @@ int main()
 		Check(PluginDllVersion::Read(kernel).empty(), "a DLL that is not a plugin reads as no version");
 	}
 
-	// ---- Stage 1's trigger: the running exe and the cache's age ------------
-	{
-		const VersionFeed::Coverage none;
-		const SignedFeed filled = CacheWithLocator("Test::A", 0);
-		const Exe unknown{ 999999, 0x33333333, 0x03000000 };
-		const uint64_t never = UINT64_MAX;
-
-		Check(FeedFetch::Stage1Wanted(Baseline(false), nullptr, unknown, none, 0), "Stage1Wanted: an exe in neither the map nor the cache");
-		SignedFeed holdsUnknown;
-		holdsUnknown.map.builds.push_back({ unknown.cl, unknown.imageStamp, unknown.imageSize, "x" });
-		Check(!FeedFetch::Stage1Wanted(Baseline(false), &holdsUnknown, unknown, none, 0), "Stage1Wanted: an exe only the cache holds");
-		Check(!FeedFetch::Stage1Wanted(Baseline(false), nullptr, kKnown, none, never), "Stage1Wanted: a known exe with no absent row never asks");
-		Check(FeedFetch::Stage1Wanted(Baseline(true), nullptr, kKnown, none, never), "Stage1Wanted: an absent row and no cache");
-		Check(FeedFetch::Stage1Wanted(Baseline(true), nullptr, kKnown, none, kDay + 1), "Stage1Wanted: an absent row and a cache over a day old");
-		Check(!FeedFetch::Stage1Wanted(Baseline(true), nullptr, kKnown, none, kDay - 1), "Stage1Wanted: an absent row and a cache under a day old");
-		Check(!FeedFetch::Stage1Wanted(Baseline(true), &filled, kKnown, none, never), "Stage1Wanted: the cache fills the absent row");
-		const SignedFeed otherKey = CacheWithLocator("Test::B", 0);
-		Check(FeedFetch::Stage1Wanted(Baseline(true), &otherKey, kKnown, none, never), "Stage1Wanted: the cache fills a different key");
-
-		VersionFeed::Coverage cov;
-		cov.functions.push_back({ "ModLoader/Hook", 0x1234 });
-		Check(FeedFetch::Stage1Wanted(Baseline(true, "ModLoader/Hook", 0x1234), nullptr, kKnown, cov, never),
-			"Stage1Wanted: a ModLoader/ absent row under this loader's own fp");
-		Check(!FeedFetch::Stage1Wanted(Baseline(true, "ModLoader/Hook", 0x9999), nullptr, kKnown, cov, never),
-			"Stage1Wanted: a ModLoader/ absent row under another fp cannot bind");
-	}
-
 	// ---- WhyNot -------------------------------------------------------------
 	{
 		FeedFetch::Config cfg;
@@ -680,16 +627,38 @@ int main()
 		return 1;
 	}
 	srv.feed = SignedFile(sk, 100);
+	srv.etag = "\"v100\"";
 	const std::wstring cache = TempPath(L"a.cache");
 	DeleteFileW(cache.c_str());
+	DeleteFileW(EtagFile(cache).c_str());
+
+	// ---- Stage 3 asks only when no request went out yet this launch --------
+	// (first, because the first request of the process is what Stage 3 looks for)
+	{
+		const std::wstring late = TempPath(L"stage3.cache");
+		DeleteFileW(late.c_str());
+		DeleteFileW(EtagFile(late).c_str());
+		const FeedFetch::Config s3 = ConfigFor(srv, "/ok", keys, late);
+		srv.hits = 0;
+		FeedFetch::Stage3(s3);
+		Check(srv.hits == 1 && Slurp(late) == srv.feed, "Stage 3 asks once when nothing asked yet this launch, and stores the feed");
+		FeedFetch::Stage3(s3);
+		Check(srv.hits == 1, "...and asks nothing once a request went out this launch");
+		DeleteFileW(late.c_str());
+		DeleteFileW(EtagFile(late).c_str());
+	}
 
 	// ---- the happy path ----------------------------------------------------
 	{
 		srv.hits = 0;
 		Check(FeedFetch::Refresh(ConfigFor(srv, "/ok", keys, cache), "test") == FeedFetch::Result::Stored && srv.hits == 1
 			&& Slurp(cache) == srv.feed, "a verified feed is stored in the cache, verbatim");
-		Check(FeedFetch::Refresh(ConfigFor(srv, "/ok", keys, cache), "test") == FeedFetch::Result::Unchanged,
-			"the same seq again is unchanged");
+		Check(srv.lastIfNoneMatch.empty() && Slurp(EtagFile(cache)) == "100 \"v100\"",
+			"with no cache nothing conditional is sent, and the answer's ETag is kept beside the cache with its seq");
+		srv.served304 = 0;
+		Check(FeedFetch::Refresh(ConfigFor(srv, "/ok", keys, cache), "test") == FeedFetch::Result::Unchanged
+			&& srv.lastIfNoneMatch == "\"v100\"" && srv.served304 == 1,
+			"the same seq again goes out with that ETag, comes back 304 and is unchanged");
 		Check(FeedFetch::Refresh(ConfigFor(srv, "/redirect", keys, cache), "test") == FeedFetch::Result::Unchanged,
 			"an HTTP-to-HTTP redirect is followed");
 		Check(HttpGet(srv.Url("/redirect").c_str(), "test", [] { HttpGetOptions o; o.allowPlainHttp = true; return o; }()) == srv.feed,
@@ -700,18 +669,30 @@ int main()
 		Check(HttpGet(srv.Url("/ok").c_str(), "test", strict).empty() && srv.hits == 0, "an http:// URL is refused without the test switch, with no request");
 	}
 
+	// ---- a newer feed ------------------------------------------------------
+	{
+		srv.feed = SignedFile(sk, 150);
+		srv.etag = "\"v150\"";
+		srv.served304 = 0;
+		TestDoubles::g_log.clear();
+		Check(FeedFetch::Refresh(ConfigFor(srv, "/ok", keys, cache), "test") == FeedFetch::Result::Stored && srv.served304 == 0
+			&& srv.lastIfNoneMatch == "\"v100\"" && Slurp(cache) == srv.feed,
+			"a feed newer than the cache is fetched in full and stored, though the request carried the old ETag");
+		Check(Slurp(EtagFile(cache)) == "150 \"v150\"", "...and its ETag replaces the old one");
+		Check(Logged(L"[VersionFeed] Feed seq 150 stored"), "...and is logged");
+	}
+
 	// ---- 404 ---------------------------------------------------------------
 	{
 		const std::string before = Slurp(cache);
+		const std::string sideBefore = Slurp(EtagFile(cache));
 		srv.hits = 0;
 		Check(FeedFetch::Refresh(ConfigFor(srv, "/missing", keys, cache), "test") == FeedFetch::Result::Failed && srv.hits == 1
-			&& Slurp(cache) == before, "a 404 fails and leaves the cache as it was");
+			&& Slurp(cache) == before && Slurp(EtagFile(cache)) == sideBefore, "a 404 fails and leaves the cache and its ETag as they were");
 		const std::wstring none = TempPath(L"none.cache");
 		DeleteFileW(none.c_str());
-		Check(FeedFetch::Refresh(ConfigFor(srv, "/missing", keys, none), "test") == FeedFetch::Result::Failed && Exists(none)
-			&& Slurp(none).empty() && FeedFetch::CacheAgeSeconds(none) < 60,
-			"a 404 with no cache leaves an empty cache, stamped now");
-		DeleteFileW(none.c_str());
+		Check(FeedFetch::Refresh(ConfigFor(srv, "/missing", keys, none), "test") == FeedFetch::Result::Failed && !Exists(none),
+			"a 404 with no cache creates none");
 	}
 
 	// ---- stall ---------------------------------------------------------------
@@ -756,10 +737,13 @@ int main()
 	// ---- a bad signature -----------------------------------------------------
 	{
 		const std::string before = Slurp(cache);
-		srv.feed[40] ^= 1;
-		Check(FeedFetch::Refresh(ConfigFor(srv, "/ok", keys, cache), "test") == FeedFetch::Result::Failed && Slurp(cache) == before,
-			"a fetched file that fails its signature is not stored");
+		srv.etag.clear();
 		srv.feed = SignedFile(sk, 200);
+		srv.feed[40] ^= 1;
+		Check(FeedFetch::Refresh(ConfigFor(srv, "/ok", keys, cache), "test") == FeedFetch::Result::Failed && Slurp(cache) == before
+			&& Slurp(EtagFile(cache)) == "150 \"v150\"", "a fetched file that fails its signature is not stored, and its ETag is not kept");
+		srv.feed = SignedFile(sk, 200);
+		srv.etag = "\"v200\"";
 		Check(FeedFetch::Refresh(ConfigFor(srv, "/ok", keys, cache), "test") == FeedFetch::Result::Stored && Slurp(cache) == srv.feed,
 			"a higher seq replaces the cache");
 	}
@@ -785,66 +769,70 @@ int main()
 		Check(srv.hits == 0, "none of those reached the server");
 	}
 
-	// ---- the stages ----------------------------------------------------------
+	// ---- the ETag is sent only when it belongs to the cache ---------------------
 	{
-		const FeedFetch::Config cfg = ConfigFor(srv, "/ok", keys, cache);
-
-		srv.hits = 0;
-		AgeFile(cache, 3600);
-		FeedFetch::Stage3(cfg);
-		Check(srv.hits == 0, "Stage 3 asks nothing of a cache under a day old");
-		AgeFile(cache, kDay + 3600);
-		const auto logged = [](const wchar_t* text)
+		const std::wstring side = EtagFile(cache);
+		const auto writeSide = [&](const std::string& text)
 		{
-			for (const std::wstring& line : TestDoubles::g_log)
-				if (line.find(text) != std::wstring::npos)
-					return true;
-			return false;
-		};
-		const wchar_t* unusableLine = L"[VersionFeed] Fetching the feed (stage 3, the cache is empty or unusable)";
-		TestDoubles::g_log.clear();
-		FeedFetch::Stage3(cfg);
-		Check(srv.hits == 1 && FeedFetch::CacheAgeSeconds(cache) < 60, "Stage 3 asks once a cache is over a day old, and the check restarts the clock");
-		Check(logged(L"[VersionFeed] Fetching the feed (stage 3)") && !logged(unusableLine), "...and gives the plain stage 3 reason");
-
-		// A cache that is not a verified feed does not hold the day's wait,
-		// however fresh. Each case starts from a file stamped now.
-		const std::wstring bad = TempPath(L"stage3.cache");
-		const auto writeFresh = [&](const std::string& body)
-		{
-			HANDLE h = CreateFileW(bad.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+			HANDLE h = CreateFileW(side.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
 			DWORD n = 0;
-			if (!body.empty())
-				WriteFile(h, body.data(), static_cast<DWORD>(body.size()), &n, nullptr);
+			WriteFile(h, text.data(), static_cast<DWORD>(text.size()), &n, nullptr);
 			CloseHandle(h);
 		};
-		const FeedFetch::Config badCfg = ConfigFor(srv, "/ok", keys, bad);
+		const FeedFetch::Config cfg = ConfigFor(srv, "/ok", keys, cache);
 
-		writeFresh("");
+		// The cache is seq 200 and the server still has seq 200: whatever the sidecar says, nothing changes.
+		writeSide("100 \"v200\"");
+		srv.served304 = 0;
+		Check(FeedFetch::Refresh(cfg, "test") == FeedFetch::Result::Unchanged && srv.lastIfNoneMatch.empty() && srv.served304 == 0,
+			"an ETag kept for another seq than the cache's is not sent: the whole feed comes back, no newer");
+		Check(Slurp(side) == "200 \"v200\"", "...and the ETag is kept again, for the cache's seq");
+
+		writeSide("200 a\x01");
+		Check(FeedFetch::Refresh(cfg, "test") == FeedFetch::Result::Unchanged && srv.lastIfNoneMatch.empty(),
+			"an ETag with a control character is not sent");
+		DeleteFileW(side.c_str());
+		Check(FeedFetch::Refresh(cfg, "test") == FeedFetch::Result::Unchanged && srv.lastIfNoneMatch.empty() && Slurp(side) == "200 \"v200\"",
+			"with no ETag on file the whole feed is asked for, and its ETag is kept");
+		Check(FeedFetch::Refresh(cfg, "test") == FeedFetch::Result::Unchanged && srv.lastIfNoneMatch == "\"v200\"" && srv.served304 == 1,
+			"...so that the next start gets its 304");
+
+		// A server that sends no ETag: the whole feed each start, nothing kept, the cache works as before.
+		srv.etag.clear();
+		DeleteFileW(side.c_str());
+		Check(FeedFetch::Refresh(cfg, "test") == FeedFetch::Result::Unchanged && !Exists(side), "a server with no ETag leaves none on file");
+		srv.etag = "\"v200\"";
+		FeedFetch::Refresh(cfg, "test");   // keeps the ETag again for what follows
+	}
+
+	// ---- the stages ----------------------------------------------------------
+	{
+		const FeedFetch::Config cfg = ConfigFor(srv, "/ok", keys, cache);   // the cache holds seq 200 and its ETag
+
+		// Stage 1 asks at every start, with the cache of any age; a feed no newer than the cache is a 304.
 		srv.hits = 0;
+		srv.served304 = 0;
 		TestDoubles::g_log.clear();
-		FeedFetch::Stage3(badCfg);
-		Check(srv.hits == 1 && Slurp(bad) == srv.feed, "Stage 3 asks at once on an empty cache under a day old, and stores the feed");
-		Check(logged(unusableLine), "...and says the cache is empty or unusable");
+		Check(FeedFetch::Stage1(cfg, true) && srv.hits == 1 && srv.served304 == 1 && Slurp(cache) == srv.feed,
+			"Stage 1 asks, gets a 304 for a feed no newer than the cache, and changes nothing");
+		Check(!Logged(L"Newer rows"), "...and says nothing of new rows");
+		FeedFetch::Stage1(cfg, true);
+		Check(srv.hits == 2, "...and asks again at the next start, however soon");
 
-		writeFresh(srv.feed.substr(0, srv.feed.size() / 2));
-		srv.hits = 0;
-		FeedFetch::Stage3(badCfg);
-		Check(srv.hits == 1 && Slurp(bad) == srv.feed, "Stage 3 asks at once on a truncated cache under a day old");
+		srv.feed = SignedFile(sk, 300);
+		srv.etag = "\"v300\"";
+		TestDoubles::g_log.clear();
+		Check(FeedFetch::Stage1(cfg, true) && Slurp(cache) == srv.feed && Slurp(EtagFile(cache)) == "300 \"v300\"",
+			"Stage 1 stores a newer feed, so this very start applies it");
+		Check(Logged(L"[VersionFeed] Newer rows for the version object map were fetched and apply on this start"),
+			"...and logs one plain line for it");
 
-		writeFresh(srv.feed);
-		HANDLE locked = CreateFileW(bad.c_str(), GENERIC_READ, 0, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
-		Check(locked != INVALID_HANDLE_VALUE && FeedFetch::CacheAgeSeconds(bad) < 60, "the locked cache still reports its fresh age");
-		srv.hits = 0;
-		FeedFetch::Stage3(badCfg);
-		CloseHandle(locked);
-		Check(srv.hits == 1, "Stage 3 asks at once on a cache under a day old that cannot be opened for reading");
-
-		writeFresh(srv.feed);
-		srv.hits = 0;
-		FeedFetch::Stage3(badCfg);
-		Check(srv.hits == 0, "Stage 3 still asks nothing of a valid cache under a day old");
-		DeleteFileW(bad.c_str());
+		// Offline, 404, a bad signature: the game starts and the cache is as it was.
+		const std::string before = Slurp(cache);
+		const std::string sideBefore = Slurp(EtagFile(cache));
+		TestDoubles::g_log.clear();
+		Check(FeedFetch::Stage1(ConfigFor(srv, "/missing", keys, cache), true) && Slurp(cache) == before && Slurp(EtagFile(cache)) == sideBefore
+			&& !Logged(L"Newer rows"), "Stage 1 on a 404 starts normally and leaves the cache and its ETag as they were");
 
 		srv.hits = 0;
 		FeedFetch::AfterRefusal(cfg, true);
@@ -852,9 +840,10 @@ int main()
 		FeedFetch::AfterRefusal(cfg, false);
 		Check(srv.hits == 1, "a refusal that did not fetch asks once");
 
-		// The test exe is in neither the fixture map nor this cache, so Stage 1 wants a feed.
+		// The test exe is in neither the fixture map nor this cache, so the splash is told.
 		const std::wstring none = TempPath(L"stage1.cache");
 		DeleteFileW(none.c_str());
+		DeleteFileW(EtagFile(none).c_str());
 		const FeedFetch::Config s1 = ConfigFor(srv, "/ok", keys, none);
 		srv.hits = 0;
 		Check(!FeedFetch::Stage1(s1, false) && srv.hits == 0, "Stage 1 with the main thread not parked makes no request");
@@ -862,6 +851,7 @@ int main()
 		Check(FeedFetch::Stage1(s1, true, [](uint32_t cl) { announced = cl + 1; }) && srv.hits == 1 && announced != 0 && !Slurp(none).empty(),
 			"Stage 1 on an unknown exe, main parked: announces, asks once, stores");
 		DeleteFileW(none.c_str());
+		DeleteFileW(EtagFile(none).c_str());
 	}
 
 	// ---- an unroutable host ----------------------------------------------------

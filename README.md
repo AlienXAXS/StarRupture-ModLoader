@@ -597,9 +597,9 @@ Plugins that declare they take their game data from the version map (`PLUGIN_MAP
 run on any listed build. A plugin that does not declare it loads only on the build it was compiled
 against, and shows **Incompatible** on the others.
 
-On a client build with `[AutoUpdate] Enabled` on, the loader can also read a newer version map from a signed
-file, so a new game build can be supported without a loader update. None is published yet. A server
-build never reads one.
+On a client build with `[AutoUpdate] Enabled` on, the loader checks at every start whether a newer version
+map is out, as a signed file, and uses it on that start, so a new game build can be supported without a
+loader update. If the check fails, the copy it kept last time is used. A server build never reads one.
 How the version map is chosen, how the feed is fetched, signed and cached, how CI publishes it and what
 each failure looks like is in [VersionMap.md](VersionMap.md).
 
