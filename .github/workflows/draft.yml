@@ -187,19 +187,11 @@ jobs:
           # never filled from UPDATE_NOTES.txt. If it is missing, empty or too
           # long, "notes" is left out (the box then shows no change list) and the
           # run says so.
-          $maxShortLines = 6
-          $maxShortChars = 600
-          $shortFile  = "$ws\UPDATE_NOTES_SHORT.txt"
-          $shortLines = @()
-          if (Test-Path $shortFile) {
-            $shortLines = @(Get-Content $shortFile | ForEach-Object { $_.Trim() } | Where-Object { $_ })
-          }
-          $shortText = $shortLines -join "`n"
-          if ($shortLines.Count -eq 0) {
-            Write-Host "::warning title=Update box notes missing::UPDATE_NOTES_SHORT.txt is missing or empty, so the manifest has no short 'notes' and the Windows update box will list no changes."
-            $shortText = ""
-          } elseif ($shortLines.Count -gt $maxShortLines -or $shortText.Length -gt $maxShortChars) {
-            Write-Host "::warning title=Update box notes too long::UPDATE_NOTES_SHORT.txt has $($shortLines.Count) lines and $($shortText.Length) characters (limit $maxShortLines and $maxShortChars), so the manifest has no short 'notes' and the Windows update box will list no changes."
+          $shortCheck = & "$ws\.github\scripts\check-update-notes-short.ps1" -Path "$ws\UPDATE_NOTES_SHORT.txt"
+          $shortText = $shortCheck.Text
+          if ($shortCheck.Problem) {
+            $title = if ($shortCheck.Kind -eq 'Empty') { 'Update box notes missing' } else { 'Update box notes too long' }
+            Write-Host "::warning title=$title::$($shortCheck.Problem), so the manifest has no short 'notes' and the Windows update box will list no changes."
             $shortText = ""
           }
 

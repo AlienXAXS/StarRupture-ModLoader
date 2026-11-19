@@ -8,10 +8,10 @@
   most 6 lines and 600 characters (trimmed, empty lines left out, lines joined
   by a newline).
 
-  release.yml and the pull request check both call this script, so the limits
-  live here and nowhere else. The script only reports; the caller decides what
-  a problem means (release.yml stops a release run, and only warns on a
-  preview).
+  release.yml, draft.yml and the pull request check all call this script, so
+  the limits live here and nowhere else. The script only reports; the caller
+  decides what a problem means (release.yml stops a release run, and only
+  warns on a preview; draft.yml only warns).
 
 .OUTPUT
   An object with: Text (the lines joined by a newline, "" when none), Lines,
