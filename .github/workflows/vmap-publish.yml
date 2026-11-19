@@ -67,7 +67,7 @@ jobs:
       FIRST_PUBLISH: ${{ inputs.first_publish && 'true' || 'false' }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Find the Latest release and its seq
         id: latest

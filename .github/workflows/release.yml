@@ -40,7 +40,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Generate release tag
         id: tag
@@ -176,12 +176,12 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           submodules: true
 
       - name: Add MSBuild to PATH
-        uses: microsoft/setup-msbuild@v2
+        uses: microsoft/setup-msbuild@v3
 
       - name: Patch version.rc with release tag
         shell: pwsh
@@ -230,7 +230,7 @@ jobs:
             /v:minimal
 
       - name: Upload ${{ matrix.variant }} build
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: build-${{ matrix.variant }}
           path: build/${{ matrix.variant }} Release
@@ -248,18 +248,18 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0  # build-versioned-notes.ps1 reads UPDATE_NOTES.txt from earlier tags
 
       - name: Download Client build
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: build-Client
           path: build/Client Release
 
       - name: Download Server build
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: build-Server
           path: build/Server Release
@@ -271,7 +271,7 @@ jobs:
           Copy-Item "build\Server Release\dwmapi.dll" "dwmapi-Server.dll"
 
       - name: Upload dwmapi.dll artifacts for SDK sync
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: modloader-dlls
           path: |
@@ -416,7 +416,7 @@ jobs:
 
       - name: Upload Nexus ZIPs
         if: ${{ needs.prepare.outputs.is_preview != 'true' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: modloader-zips
           path: |
@@ -476,10 +476,10 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Download release ZIPs
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: modloader-zips
 
@@ -555,12 +555,12 @@ jobs:
           }
 
       - name: Checkout main repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           path: main
 
       - name: Checkout plugin SDK repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: AlienXAXS/StarRupture-Plugin-SDK
           token: ${{ secrets.SDK_REPO_PAT }}
@@ -568,7 +568,7 @@ jobs:
 
       - name: Download pre-built dwmapi.dll artifacts (from build job)
         if: ${{ steps.resolve.outputs.FROM_ARTIFACT == 'true' }}
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: modloader-dlls
           path: modloader-dlls
