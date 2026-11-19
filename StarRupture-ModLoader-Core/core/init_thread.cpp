@@ -238,9 +238,9 @@ DWORD WINAPI MainInitThreadProc(LPVOID)
 
     // The map every lookup reads is fixed here, once, before anything reads
     // it: the one compiled into the loader, plus the signed feed cached by an
-    // earlier launch if it verifies. The server stays on its exact build.
-    // A new exe the map has never seen is fetched for first, here, with the
-    // main thread parked.
+    // earlier launch (or fetched just now, below) if it verifies. The server stays on its exact build.
+    // Whether a newer feed is out is asked here at every start, with the main
+    // thread parked, so a newer one is read by this very start.
     const FeedFetch::Config feedConfig = FeedFetch::LoaderConfig();
     const bool feedAsked = FeedFetch::Stage1(feedConfig, g_mainThreadParked, [](uint32_t cl)
         { Splash::SetStatus((L"Downloading game data for CL-" + std::to_wstring(cl)).c_str()); });

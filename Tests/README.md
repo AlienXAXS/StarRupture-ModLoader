@@ -323,15 +323,15 @@ The feed fetch (`auto_update/feed_fetch.cpp`) and the `HttpGet` under it (`auto_
 against a server on 127.0.0.1 that the test starts. The test switch `allowPlainHttp` lets it use
 `http://`; every real request is HTTPS. It checks:
 
-- Stage 1's trigger (`Stage1Wanted`): an exe in neither map, an exe only the cache holds, an `absent`
-  row with a cache under and over a day old, an `absent` row the cache fills, a `ModLoader/` row under
-  the loader's own `fp` and under another.
 - No request (`WhyNot`): the server build, `[AutoUpdate] Enabled` off, no URL, no key. The server's hit
   count stays 0 through Refresh, Stage 1, Stage 3 and the refusal path.
-- The stages: Stage 3 asks nothing of a verified cache under a day old, asks once it is over a day old,
-  and the check restarts the clock; an empty, a truncated or a locked cache under a day old is asked
-  for at once, with the reason in the log line, and the fetched feed replaces it; a refusal
+- The stages: Stage 1 asks at every start and, with a cache whose ETag it holds, gets a 304 and changes nothing;
+  a newer feed is stored and logged as one plain line; a 404 leaves the cache and its ETag as they were;
+  Stage 3 asks once when nothing asked yet this launch and nothing after a request went out; a refusal
   after Stage 1 asked does not ask again; Stage 1 asks only with the main thread parked.
+- The ETag: the one the server answers with is kept beside the cache with its `seq`; the next request
+  sends it (`If-None-Match`) and a 304 is unchanged; an ETag kept for another `seq`, one with a control
+  character, none on file, and a server that sends none each fall back to asking for the whole feed.
 - The answers: a verified feed is stored verbatim; the same `seq` is unchanged; a 404, a server that never
   answers, a body that never arrives, a body over 1 MiB and a bad signature each fail and leave the cache
   as it was; a body that trickles in is cut off at the wall-clock deadline; `maxBytes` stops a longer

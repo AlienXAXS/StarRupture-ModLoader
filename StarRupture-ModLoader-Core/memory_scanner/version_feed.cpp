@@ -456,7 +456,7 @@ namespace VersionFeed
 			return nullptr;
 		}
 		if (file.empty())
-			return nullptr;   // the mark a request that got no feed leaves
+			return nullptr;   // an empty file, as an older loader left after a request that got no feed
 		SignedFeed feed;
 		std::string error;
 		if (!ReadSigned(file, keys, feed, error))
