@@ -1,2 +1,1 @@
-- A game build the version object map does not list yet now runs on checked values from the newest known build, not with the ModLoader off
-- A newer version map is now looked for at every start and used at once
+- A plugin that names the game build it was made for now loads on that build even when the mod loader's start check found changed game classes, instead of showing as incompatible

@@ -620,7 +620,9 @@ stops on a build it does not list.
 
 At startup the loader also checks that the game classes it reads are laid out as it was built for. If a
 game update changes a layout, only the features that read it are switched off, not every plugin. A plugin
-that keeps the game's layouts compiled in, instead of taking them from the version map, is not loaded then.
+that keeps the game's layouts compiled in, instead of taking them from the version map, is not loaded then,
+unless it declares the game build it was compiled for and that build is the one running. The changed classes
+are the ones the loader's own copy of the layouts gets wrong, and that plugin's copy is the running build's.
 It also checks that the game still calls ProcessEvent, which every plugin uses to run game functions, at the
 place the plugins expect; if it does not, plugins are switched off the same way.
 
