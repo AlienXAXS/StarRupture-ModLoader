@@ -112,16 +112,16 @@ namespace FeedFetch
 		options.notModified = &notModified;
 
 		g_requestedThisLaunch = true;
-		ModLoaderLogger::LogInfo(L"[VersionFeed] Checking for a newer feed (%hs)", why);
+		ModLoaderLogger::LogInfo(L"[VersionFeed] Checking for a newer version object map (%hs)", why);
 		const std::string file = HttpGet(cfg.url.c_str(), "version map feed", options);
 		if (notModified)
 		{
-			ModLoaderLogger::LogInfo(L"[VersionFeed] No newer feed: seq %llu is current", static_cast<unsigned long long>(cache.seq));
+			ModLoaderLogger::LogInfo(L"[VersionFeed] No newer version object map: seq %llu is current", static_cast<unsigned long long>(cache.seq));
 			return Result::Unchanged;
 		}
 		if (file.empty())
 		{
-			ModLoaderLogger::LogWarn(L"[VersionFeed] The feed could not be fetched; the cache is as it was");
+			ModLoaderLogger::LogInfo(L"[VersionFeed] The version object map could not be fetched; the cache is as it was");
 			return Result::Failed;
 		}
 
@@ -129,12 +129,12 @@ namespace FeedFetch
 		std::string error;
 		if (!VersionFeed::ReadSigned(file, cfg.keys, feed, error))
 		{
-			ModLoaderLogger::LogWarn(L"[VersionFeed] The fetched feed is refused (%hs); the cache is as it was", error.c_str());
+			ModLoaderLogger::LogWarn(L"[VersionFeed] The fetched version object map is refused (%hs); the cache is as it was", error.c_str());
 			return Result::Failed;
 		}
 		if (!VersionFeed::StoreCache(cfg.cachePath, file, cfg.keys, error))
 		{
-			ModLoaderLogger::LogInfo(L"[VersionFeed] The fetched feed is not stored (%hs)", error.c_str());
+			ModLoaderLogger::LogInfo(L"[VersionFeed] The fetched version object map is not stored (%hs)", error.c_str());
 			// The cache's own feed again: remember its ETag, so the next start can ask for a 304.
 			if (haveCache && feed.seq == cache.seq && !etag.empty())
 				WriteEtag(cfg.cachePath, feed.seq, etag);
@@ -142,7 +142,7 @@ namespace FeedFetch
 		}
 		if (!etag.empty())
 			WriteEtag(cfg.cachePath, feed.seq, etag);
-		ModLoaderLogger::LogInfo(L"[VersionFeed] Feed seq %llu stored", static_cast<unsigned long long>(feed.seq));
+		ModLoaderLogger::LogInfo(L"[VersionFeed] Version object map seq %llu stored", static_cast<unsigned long long>(feed.seq));
 		return Result::Stored;
 	}
 
@@ -170,7 +170,7 @@ namespace FeedFetch
 		}
 
 		if (Refresh(cfg, "stage 1") == Result::Stored)
-			ModLoaderLogger::LogInfo(L"[VersionFeed] Newer rows for the version object map were fetched and apply on this start");
+			ModLoaderLogger::LogInfo(L"[VersionFeed] Newer rows for the version object map were fetched and are read on this start");
 		return true;
 	}
 

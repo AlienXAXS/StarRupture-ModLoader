@@ -187,9 +187,9 @@ std::string HttpGet(const char* url, const char* label, const HttpGetOptions& op
 		{
 			// Only printable ASCII, since it goes back out in a request header.
 			std::string text;
-			for (const wchar_t* p = value; *p && text.size() < 128; ++p)
+			for (const wchar_t* p = value; *p; ++p)
 			{
-				if (*p < 0x20 || *p > 0x7E)
+				if (*p < 0x20 || *p > 0x7E || text.size() >= 128)
 				{
 					text.clear();
 					break;

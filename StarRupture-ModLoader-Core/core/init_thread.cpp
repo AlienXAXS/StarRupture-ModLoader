@@ -236,7 +236,7 @@ DWORD WINAPI MainInitThreadProc(LPVOID)
 
     // The map every lookup reads is fixed here, once, before anything reads
     // it: the one compiled into the loader, plus the signed feed cached by an
-    // earlier launch if it verifies. The server stays on its exact build.
+    // earlier launch (or fetched just now, below) if it verifies. The server stays on its exact build.
     // Whether a newer feed is out is asked here at every start, with the main
     // thread parked, so a newer one is read by this very start.
     const FeedFetch::Config feedConfig = FeedFetch::LoaderConfig();

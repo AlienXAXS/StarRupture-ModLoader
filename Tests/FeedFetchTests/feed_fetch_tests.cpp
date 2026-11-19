@@ -659,8 +659,10 @@ int main()
 		Check(FeedFetch::Refresh(ConfigFor(srv, "/ok", keys, cache), "test") == FeedFetch::Result::Unchanged
 			&& srv.lastIfNoneMatch == "\"v100\"" && srv.served304 == 1,
 			"the same seq again goes out with that ETag, comes back 304 and is unchanged");
-		Check(FeedFetch::Refresh(ConfigFor(srv, "/redirect", keys, cache), "test") == FeedFetch::Result::Unchanged,
-			"an HTTP-to-HTTP redirect is followed");
+		srv.served304 = 0;
+		Check(FeedFetch::Refresh(ConfigFor(srv, "/redirect", keys, cache), "test") == FeedFetch::Result::Unchanged
+			&& srv.lastIfNoneMatch == "\"v100\"" && srv.served304 == 1,
+			"an HTTP-to-HTTP redirect is followed, and the If-None-Match goes through it to the 304");
 		Check(HttpGet(srv.Url("/redirect").c_str(), "test", [] { HttpGetOptions o; o.allowPlainHttp = true; return o; }()) == srv.feed,
 			"HttpGet returns the body after a redirect");
 		HttpGetOptions strict;
@@ -679,7 +681,7 @@ int main()
 			&& srv.lastIfNoneMatch == "\"v100\"" && Slurp(cache) == srv.feed,
 			"a feed newer than the cache is fetched in full and stored, though the request carried the old ETag");
 		Check(Slurp(EtagFile(cache)) == "150 \"v150\"", "...and its ETag replaces the old one");
-		Check(Logged(L"[VersionFeed] Feed seq 150 stored"), "...and is logged");
+		Check(Logged(L"[VersionFeed] Version object map seq 150 stored"), "...and is logged");
 	}
 
 	// ---- 404 ---------------------------------------------------------------
@@ -763,7 +765,6 @@ int main()
 		Check(FeedFetch::Refresh(off, "test") == FeedFetch::Result::NotAllowed, "[AutoUpdate] Enabled off makes no request");
 		Check(FeedFetch::Refresh(noUrl, "test") == FeedFetch::Result::NotAllowed, "no URL makes no request");
 		Check(FeedFetch::Refresh(noKeys, "test") == FeedFetch::Result::NotAllowed, "no key makes no request");
-		FeedFetch::Stage3(off);
 		FeedFetch::AfterRefusal(server, false);
 		Check(!FeedFetch::Stage1(off, true), "Stage 1 with updates off makes no request");
 		Check(srv.hits == 0, "none of those reached the server");
@@ -824,7 +825,7 @@ int main()
 		TestDoubles::g_log.clear();
 		Check(FeedFetch::Stage1(cfg, true) && Slurp(cache) == srv.feed && Slurp(EtagFile(cache)) == "300 \"v300\"",
 			"Stage 1 stores a newer feed, so this very start applies it");
-		Check(Logged(L"[VersionFeed] Newer rows for the version object map were fetched and apply on this start"),
+		Check(Logged(L"[VersionFeed] Newer rows for the version object map were fetched and are read on this start"),
 			"...and logs one plain line for it");
 
 		// Offline, 404, a bad signature: the game starts and the cache is as it was.

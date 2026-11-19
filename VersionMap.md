@@ -331,9 +331,9 @@ asks whether a newer feed than the cached one is out, and if so applies it on th
   next launch, before the process exits, if the startup request did not already ask;
 - the auto-update thread asks for the next launch only if nothing asked at startup this launch.
 
-When a newer feed was fetched, `ModLoader.log` has one line: "Newer rows for the version object map were
-fetched and apply on this start". Otherwise it says the cache is current, or that the feed could not be
-fetched and the cache is as it was.
+`ModLoader.log` says what the check found: a newer version object map was stored (and then "Newer rows for
+the version object map were fetched and are read on this start"), none is newer, or it could not be
+fetched, was refused, or was not stored, in which case the cache is as it was.
 
 **Request.** One HTTPS GET, conditional. The loader keeps the `ETag` of the answer the cache came from
 next to the cache (`version-map-client.v1.cache.etag`, `<seq> <etag>`) and sends it as `If-None-Match`,
@@ -342,9 +342,10 @@ is the cache's; with none on file, or a server that sends none, the whole feed (
 for and compared by `seq`. The feed is a release asset on `github.com`, not the GitHub REST API, so
 there is no rate limit to share. A URL that is not `https` is refused, redirects from HTTPS to HTTP are
 disallowed, each operation has a 2 s timeout, the whole request has an 8 s deadline, and the body
-is capped at 1 MiB while it is read (`feed_fetch.h`, `http_get.cpp`). Startup waits for it only that long:
-a host that does not answer costs about 4 s, an unroutable one about 6 s, and then the game starts on
-the cache.
+is capped at 1 MiB while it is read (`feed_fetch.h`, `http_get.cpp`). These cut the request off: on a
+network that drops the connection, a host that does not answer costs about 4 s and an unroutable one
+about 6 s (measured), and then the game starts on the cache. The deadline is checked between steps,
+not inside a redirect, so a network that is slow at every step can take a little longer.
 
 **Cache.** The signed file itself, `ModLoader\version-map-client.v1.cache`, written to a temp
 file and then renamed over. It is verified again on every launch and only ever replaced by a file
