@@ -162,8 +162,11 @@ namespace VersionMap
 	// The game builds this loader runs on, the gate VerifyGameVersion applies.
 	// The client runs on every build its map has rows for (kBuilds; CI adds a
 	// build only once every one of the loader's patterns resolves on it), the
-	// server only on the build it was written for (kBuiltCL). Any other build
-	// is refused.
+	// server only on the build it was written for (kBuiltCL). The server
+	// refuses any other build. On any other build that has a CL, the client's
+	// VerifyGameVersion runs on the newest known build's values, each checked
+	// against the running game, unless [UnknownBuild] says otherwise
+	// (core/unknown_build.h).
 	std::vector<uint32_t> SupportedBuilds();
 
 	// True when the ProductVersion ends in the CL of one of SupportedBuilds().

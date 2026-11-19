@@ -547,6 +547,7 @@
     <ClInclude Include="core\globals.h" />
     <ClInclude Include="core\startup_utils.h" />
     <ClInclude Include="core\version_check.h" />
+    <ClInclude Include="core\unknown_build.h" />
     <ClInclude Include="core\sdk_globals.h" />
     <ClInclude Include="core\layout_check.h" />
     <ClInclude Include="core\compat_report.h" />
@@ -583,6 +584,7 @@
     <ClCompile Include="core\globals.cpp" />
     <ClCompile Include="core\startup_utils.cpp" />
     <ClCompile Include="core\version_check.cpp" />
+    <ClCompile Include="core\unknown_build.cpp" />
     <ClCompile Include="core\sdk_globals.cpp" />
     <ClCompile Include="core\layout_check.cpp" />
     <ClCompile Include="core\compat_report.cpp">

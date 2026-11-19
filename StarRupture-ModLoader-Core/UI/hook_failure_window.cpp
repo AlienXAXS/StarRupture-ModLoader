@@ -6,6 +6,7 @@
 #include "imgui/imgui.h"
 #include "theme.h"
 #include "plugins/plugin_hook_report.h"
+#include "core/unknown_build.h"
 
 #include <string>
 #include <vector>
@@ -26,6 +27,7 @@ namespace UI::HookFailureWindow
         bool        s_isOpen      = false;
         std::string s_scrollTo;          // plugin whose entry the next frame scrolls to; empty when none
         bool     s_armed       = false;  // main menu reached; auto-open is live
+        bool     s_unknownBuildShown = false;   // the unknown-build notice has opened the window once
         unsigned s_lastCommit  = 0;      // PluginHookReport commit serial we have shown
         float    s_copiedUntil = 0.0f;   // ImGui::GetTime() the "Copied" label expires
 
@@ -64,6 +66,14 @@ namespace UI::HookFailureWindow
         {
             if (!s_armed)
                 return;
+
+            // A session on a game build the version map does not list says so once,
+            // whether or not anything failed to resolve.
+            if (!s_unknownBuildShown && UnknownBuild::Active())
+            {
+                s_unknownBuildShown = true;
+                Show();
+            }
 
             const unsigned commit = PluginHookReport::GetCommitSerial();
             if (commit == s_lastCommit)
@@ -141,12 +151,29 @@ namespace UI::HookFailureWindow
         }
 
         // Nothing failed to load when only features are off, so the title
-        // should not say hooks failed.
-        if (!UI::Theme::BeginChamferedWindow("Plugin Hooks##hook_failures",
-                                             anyFailures ? "PLUGIN HOOKS FAILED" : "PLUGIN FEATURES OFF",
+        // should not say hooks failed. With nothing off either, the window is
+        // only the unknown-build notice.
+        const bool unknownBuild = UnknownBuild::Active();
+        const char* title = anyFailures ? "PLUGIN HOOKS FAILED"
+            : (unknownBuild && featuresOff == 0 && loaderFeatures == 0) ? "UNKNOWN GAME BUILD"
+            : "PLUGIN FEATURES OFF";
+        if (!UI::Theme::BeginChamferedWindow("Plugin Hooks##hook_failures", title,
                                              &s_isOpen, nullptr,
                                              ImGuiWindowFlags_NoResize))
             return;
+
+        if (unknownBuild)
+        {
+            static const std::string notice = UnknownBuild::NoticeText(UnknownBuild::NewestCL());
+            ImGui::TextColored(kOrange, "Unknown game build (CL-%u)", UnknownBuild::RunningCL());
+            ImGui::TextWrapped("%s", notice.c_str());
+            if (!s_cache.empty())
+            {
+                ImGui::Spacing();
+                ImGui::Separator();
+                ImGui::Spacing();
+            }
+        }
 
         // What a player needs first, in a line each: which feature is off in
         // which plugin. The report below is for the plugin's author.
@@ -198,90 +225,95 @@ namespace UI::HookFailureWindow
                 "get its turn.");
         }
 
-        ImGui::Spacing();
-        ImGui::Separator();
-        ImGui::Spacing();
-
-        // Height-capped scroll region: a report is usually two or three lines,
-        // but a plugin resolving twenty patterns against a changed build can
-        // produce a list taller than the screen.
-        const float maxListHeight = io.DisplaySize.y * 0.5f;
-        ImGui::BeginChild("##hook_failure_list", ImVec2(0.0f, maxListHeight), false,
-                          ImGuiWindowFlags_HorizontalScrollbar);
-
-        for (size_t i = 0; i < s_cache.size(); ++i)
+        // The unknown-build notice stands alone when nothing was reported.
+        if (!s_cache.empty() || !unknownBuild)
         {
-            const PluginHookReport::PluginReport& r = s_cache[i];
-
-            if (i > 0)
-            {
-                ImGui::Spacing();
-                ImGui::Separator();
-                ImGui::Spacing();
-            }
-
-            if (!s_scrollTo.empty() && _stricmp(r.plugin.c_str(), s_scrollTo.c_str()) == 0)
-            {
-                ImGui::SetScrollHereY(0.0f);
-                s_scrollTo.clear();
-            }
-
-            if (r.preload)
-            {
-                ImGui::TextDisabled("[preload]");
-                ImGui::SameLine();
-            }
-            ImGui::TextColored(UI::Theme::AccentColorVec4(1.0f), "%s", r.plugin.c_str());
-            ImGui::SameLine();
-            if (r.refused)
-                ImGui::TextColored(kRed, r.preload ? "DID NOT RUN" : "NOT LOADED");
-            else
-                ImGui::TextColored(kOrange, "loaded");
-
-            ImGui::TextDisabled("%s  --  %d pattern(s) resolved, %d failed",
-                                r.file.empty() ? "?" : r.file.c_str(),
-                                r.resolved, static_cast<int>(r.failures.size()));
-
             ImGui::Spacing();
-            ImGui::Indent();
-            for (const PluginHookReport::Failure& f : r.failures)
+            ImGui::Separator();
+            ImGui::Spacing();
+
+            // Height-capped scroll region: a report is usually two or three lines,
+            // but a plugin resolving twenty patterns against a changed build can
+            // produce a list taller than the screen.
+            const float maxListHeight = io.DisplaySize.y * 0.5f;
+            ImGui::BeginChild("##hook_failure_list", ImVec2(0.0f, maxListHeight), false,
+                              ImGuiWindowFlags_HorizontalScrollbar);
+
+            for (size_t i = 0; i < s_cache.size(); ++i)
             {
-                // Both colours are a warning colour: the tag says how the
-                // plugin declared the resolve, not how much it mattered in the
-                // end -- either one is why the plugin is not loaded.
-                if (f.required)
-                    ImGui::TextColored(kRed, "[required]");
-                else
-                    ImGui::TextColored(kOrange, "[optional]");
-                ImGui::SameLine();
-                ImGui::TextUnformatted(f.hookName.c_str());
+                const PluginHookReport::PluginReport& r = s_cache[i];
 
-                ImGui::Indent();
-                // Not wrapped: an AOB pattern broken mid-byte is harder to read
-                // than one that runs off the side of a scrollable region.
-                ImGui::TextDisabled("%s", ForDisplay(f.detail).c_str());
-                ImGui::Unindent();
-            }
-
-            for (const PluginHookReport::FeatureOff& f : r.featuresOff)
-            {
-                ImGui::TextColored(kOrange, "[feature off]");
-                ImGui::SameLine();
-                ImGui::TextUnformatted(f.title.c_str());
-
-                ImGui::Indent();
-                for (const PluginHookReport::FeatureMiss& m : f.misses)
+                if (i > 0)
                 {
-                    ImGui::TextUnformatted(m.key.c_str());
-                    ImGui::TextDisabled("%s", ForDisplay(m.detail).c_str());
+                    ImGui::Spacing();
+                    ImGui::Separator();
+                    ImGui::Spacing();
+                }
+
+                if (!s_scrollTo.empty() && _stricmp(r.plugin.c_str(), s_scrollTo.c_str()) == 0)
+                {
+                    ImGui::SetScrollHereY(0.0f);
+                    s_scrollTo.clear();
+                }
+
+                if (r.preload)
+                {
+                    ImGui::TextDisabled("[preload]");
+                    ImGui::SameLine();
+                }
+                ImGui::TextColored(UI::Theme::AccentColorVec4(1.0f), "%s", r.plugin.c_str());
+                ImGui::SameLine();
+                if (r.refused)
+                    ImGui::TextColored(kRed, r.preload ? "DID NOT RUN" : "NOT LOADED");
+                else
+                    ImGui::TextColored(kOrange, "loaded");
+
+                ImGui::TextDisabled("%s  --  %d pattern(s) resolved, %d failed",
+                                    r.file.empty() ? "?" : r.file.c_str(),
+                                    r.resolved, static_cast<int>(r.failures.size()));
+
+                ImGui::Spacing();
+                ImGui::Indent();
+                for (const PluginHookReport::Failure& f : r.failures)
+                {
+                    // Both colours are a warning colour: the tag says how the
+                    // plugin declared the resolve, not how much it mattered in the
+                    // end -- either one is why the plugin is not loaded.
+                    if (f.required)
+                        ImGui::TextColored(kRed, "[required]");
+                    else
+                        ImGui::TextColored(kOrange, "[optional]");
+                    ImGui::SameLine();
+                    ImGui::TextUnformatted(f.hookName.c_str());
+
+                    ImGui::Indent();
+                    // Not wrapped: an AOB pattern broken mid-byte is harder to read
+                    // than one that runs off the side of a scrollable region.
+                    ImGui::TextDisabled("%s", ForDisplay(f.detail).c_str());
+                    ImGui::Unindent();
+                }
+
+                for (const PluginHookReport::FeatureOff& f : r.featuresOff)
+                {
+                    ImGui::TextColored(kOrange, "[feature off]");
+                    ImGui::SameLine();
+                    ImGui::TextUnformatted(f.title.c_str());
+
+                    ImGui::Indent();
+                    for (const PluginHookReport::FeatureMiss& m : f.misses)
+                    {
+                        ImGui::TextUnformatted(m.key.c_str());
+                        ImGui::TextDisabled("%s", ForDisplay(m.detail).c_str());
+                    }
+                    ImGui::Unindent();
                 }
                 ImGui::Unindent();
             }
-            ImGui::Unindent();
+
+            ImGui::EndChild();
         }
 
         s_scrollTo.clear();   // a name with no entry must not wait for the next one
-        ImGui::EndChild();
 
         ImGui::Spacing();
         ImGui::Separator();
