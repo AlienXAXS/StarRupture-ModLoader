@@ -7,6 +7,7 @@
 #include "plugin_panel_registry.h"
 #include "plugins/plugin_manager.h"
 #include "plugins/plugin_hook_report.h"
+#include "core/unknown_build.h"
 #include "config/config_manager.h"
 #include "config/config_edit.h"
 #include "global_settings.h"
@@ -2323,6 +2324,9 @@ namespace UI::ModLoaderWindow
         ImGui::TextUnformatted("  Thanks for using my ModLoader!");
         ImGui::Spacing();
         ImGui::TextDisabled("Build: " MODLOADER_BUILD_TAG);
+        if (UnknownBuild::Active())
+            ImGui::TextDisabled("Unknown build: CL-%u, on checked values from CL-%u",
+                                UnknownBuild::RunningCL(), UnknownBuild::NewestCL());
 
         char imguiVer[64];
         snprintf(imguiVer, sizeof(imguiVer), "Dear ImGui %s", ImGui::GetVersion());

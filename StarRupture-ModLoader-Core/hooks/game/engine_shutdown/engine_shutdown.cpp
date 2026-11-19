@@ -7,6 +7,7 @@
 #include "hooks/memory/engine_allocator.h"
 #ifdef MODLOADER_CLIENT_BUILD
 #include "UI/image_pump.h"
+#include "core/unknown_build.h"
 #endif
 #include <vector>
 #include <algorithm>
@@ -82,6 +83,12 @@ namespace Hooks::EngineShutdown
 		// This must come after plugin callbacks since they may need to free
 		// engine-allocated memory during their shutdown.
 		EngineAllocator::Shutdown();
+
+#ifdef MODLOADER_CLIENT_BUILD
+		// A normal quit: the session on an unknown game build ended cleanly.
+		if (UnknownBuild::EndSession())
+			ModLoaderLogger::LogInfo(L"[EngineShutdown] Unknown-build session ended cleanly; marker cleared");
+#endif
 	}
 
 	// Hook 1: FEngineLoop::Exit detour

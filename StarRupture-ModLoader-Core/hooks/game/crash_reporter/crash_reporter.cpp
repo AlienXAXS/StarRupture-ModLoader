@@ -9,6 +9,7 @@
 #include "../scan_patterns.h"
 #include "../../symbol_resolver.h"
 #include "core/version_check.h"
+#include "core/unknown_build.h"
 #include "utils/pak_list.h"
 #include <DbgHelp.h>
 #include <tlhelp32.h>
@@ -462,6 +463,9 @@ namespace Hooks::CrashReporter
 			EmitCrashLine(details, L"Loader:       %S (%S build)",
 				MODLOADER_BUILD_TAG, MODLOADER_BUILD_KIND);
 			EmitCrashLine(details, L"Game version: %s", gameVersion.c_str());
+			if (UnknownBuild::Active())
+				EmitCrashLine(details, L"Unknown build: %S",
+					UnknownBuild::ReportLine(UnknownBuild::RunningCL(), UnknownBuild::NewestCL()).c_str());
 			details += L"\r\n";
 		}
 

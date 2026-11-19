@@ -1,4 +1,2 @@
-- A mod that waits for the game's graphics while it shuts down can now be unloaded or reloaded without freezing the mod windows
-- New plugin call to draw many textured triangles at once (plugin interface v78), added by Kian369
-- The version object map has new rows for PersistentIdFix and MiniMap
-- Needs ModLoader 1.25.0 or newer for mods that use the bulk textured triangles
+- A game build the version object map does not list yet now runs on checked values from the newest known build, not with the ModLoader off
+- A newer version map is now looked for at every start and used at once

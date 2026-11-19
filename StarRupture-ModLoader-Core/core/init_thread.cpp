@@ -17,6 +17,7 @@
 #ifdef MODLOADER_CLIENT_BUILD
 #include "../hooks/input/input_processor.h"
 #include "../hooks/game/crash_reporter/crash_dialog.h"
+#include "unknown_build.h"
 #endif
 #include <hooks/input/input_hook.h>
 #include "../memory_scanner/pattern_preflight.h"
@@ -65,6 +66,7 @@ static void EnterLayoutSafeOff(const LayoutCheck::Result& layout)
     if (choice == Hooks::CrashDialog::Result::QuitGame)
     {
         ModLoaderLogger::LogInfo(L"[init] User chose to quit the game after the layout mismatch");
+        UnknownBuild::EndSession();
         ExitProcess(0);
     }
     ModLoaderLogger::LogInfo(L"[init] User chose to start the game without plugins");
@@ -236,9 +238,9 @@ DWORD WINAPI MainInitThreadProc(LPVOID)
 
     // The map every lookup reads is fixed here, once, before anything reads
     // it: the one compiled into the loader, plus the signed feed cached by an
-    // earlier launch if it verifies. The server stays on its exact build.
-    // A new exe the map has never seen is fetched for first, here, with the
-    // main thread parked.
+    // earlier launch (or fetched just now, below) if it verifies. The server stays on its exact build.
+    // Whether a newer feed is out is asked here at every start, with the main
+    // thread parked, so a newer one is read by this very start.
     const FeedFetch::Config feedConfig = FeedFetch::LoaderConfig();
     const bool feedAsked = FeedFetch::Stage1(feedConfig, g_mainThreadParked, [](uint32_t cl)
         { Splash::SetStatus((L"Downloading game data for CL-" + std::to_wstring(cl)).c_str()); });
@@ -249,7 +251,8 @@ DWORD WINAPI MainInitThreadProc(LPVOID)
     // we must not install hooks (the engine init hook would block the main
     // thread waiting on g_pluginsReadyEvent which would never be signalled).
     std::wstring versionDetails;
-    if (!VerifyGameVersion(&versionDetails))
+    const GameVersionVerdict verdict = VerifyGameVersion(&versionDetails);
+    if (verdict == GameVersionVerdict::Refused || verdict == GameVersionVerdict::Guarded)
     {
         Splash::Close();
 
@@ -262,7 +265,9 @@ DWORD WINAPI MainInitThreadProc(LPVOID)
         // dialog.
         ReleaseMainThread(suspendedMainThread);
         const auto choice = Hooks::CrashDialog::Show(
-            Hooks::CrashDialog::Mode::VersionMismatch, versionDetails);
+            verdict == GameVersionVerdict::Guarded ? Hooks::CrashDialog::Mode::UnknownBuildGuard
+                                                   : Hooks::CrashDialog::Mode::VersionMismatch,
+            versionDetails);
 
         // The game is booting now, so WinHTTP is safe. Ask for a feed for the
         // next launch before Quit's exit; Stage 3 never runs after a refusal.
@@ -304,6 +309,12 @@ DWORD WINAPI MainInitThreadProc(LPVOID)
         // As for the version mismatch above: nothing was hooked, so the main
         // thread goes before the dialog. Let the user decide: continue with a
         // completely unmodified game, or quit and wait for a ModLoader update.
+        if (verdict == GameVersionVerdict::UnknownFallback)
+        {
+            // Nothing was hooked, so a later crash of the plain game is not ours.
+            UnknownBuild::EndSession();
+            preflightDetails = UnknownBuild::PreflightNote(UnknownBuild::RunningCL(), UnknownBuild::NewestCL()) + preflightDetails;
+        }
         ReleaseMainThread(suspendedMainThread);
         const auto choice = Hooks::CrashDialog::Show(
             Hooks::CrashDialog::Mode::PatternFailure, preflightDetails);

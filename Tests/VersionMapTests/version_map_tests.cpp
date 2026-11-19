@@ -8,6 +8,7 @@
 #include "memory_scanner/image_info.h"
 #include "memory_scanner/version_map.h"
 #include "core/layout_check.h"
+#include "core/unknown_build.h"
 #include "plugins/plugin_hook_report.h"
 #include "plugins/plugin_interface.h"
 #include "plugins/reload_policy.h"
@@ -364,6 +365,41 @@ int main()
 	r = VersionMap::ResolveLoaderEntry(site, Ask("Test::Site", Kind::InFunction, "B0 01"), kRunning);
 	Check(At(r, 0x7000) && Logged(L"is not this site's own pattern") && Logged(L"own pattern, loader map, CL-127004 row agree"),
 		"loader site: a new pattern is not used, the built row stands in");
+
+	// A build the map has no rows for (the unknown-build fallback): the newest row's pattern is rescanned on
+	// this exe and checked, and the RVA recorded for another build is never used.
+	{
+		const VersionMap::Exe unknown{ 130045, 0x33333333, 0x03000000 };
+		const auto askUnknown = [&](const char* owner, const Request& request)
+		{
+			TestDoubles::g_log.clear();
+			return VersionMap::ResolveMapKey(owner, request, {}, unknown, false);
+		};
+
+		r = askUnknown("VmapProbe", Ask("Test::MapOnly", Kind::FunctionStart));
+		Check(At(r, 0x1000) && Logged(L"no row for CL-130045") && Logged(L"CL-128786 row") && !Logged(L"CL-127004"),
+			"unknown build: the newest build's row, rescanned on this exe; older rows are not read");
+
+		const uintptr_t newestRva = TestDoubles::g_rvas["AA 01"];
+		TestDoubles::g_rvas.erase("AA 01");
+		r = askUnknown("VmapProbe", Ask("Test::MapOnly", Kind::FunctionStart));
+		Check(!r.Succeeded() && r.address == 0, "unknown build: the newest row's pattern is not in this exe, so no address (the recorded RVA is not used)");
+		TestDoubles::g_rvas["AA 01"] = newestRva;
+
+		TestDoubles::g_counts["AA 01"] = 2;
+		r = askUnknown("VmapProbe", Ask("Test::MapOnly", Kind::FunctionStart));
+		Check(!r.Succeeded() && r.address == 0, "unknown build: the newest row's pattern matches twice here, so no address");
+		TestDoubles::g_counts.erase("AA 01");
+
+		r = askUnknown("VmapProbe", Ask("Test::MapOnly", Kind::FunctionStart, "AB 01"));
+		Check(r.outcome == Outcome::MultipleMatches && r.address == 0 && r.detail.find("AMBIGUOUS") == 0,
+			"unknown build: an own pattern that lands elsewhere than the newest row's is AMBIGUOUS");
+
+		TestDoubles::g_log.clear();
+		r = VersionMap::ResolveLoaderEntry(site, Ask("Test::Site", Kind::InFunction, "B0 01"), unknown);
+		Check(At(r, 0x7000) && Logged(L"the CL-128786 row is not this site's own pattern") && !Logged(L"CL-127004"),
+			"unknown build: a loader site looks at the newest build's row only, and scans its own pattern when that row's differs");
+	}
 
 	// The real map against the registry: every key is a registry row's, with its kind and fingerprint.
 	int unmatched = 0, wrong = 0;
@@ -2039,6 +2075,140 @@ int main()
 		Check(RemoteReload::Reloaded("BetterCheats", "1.4.2") == "[RemoteReload] BetterCheats reloaded OK v1.4.2", "remote reload: the success line");
 		Check(RemoteReload::Failed("Codex", "refused") == "[RemoteReload] Codex reload failed: refused", "remote reload: the failure line");
 		Check(RemoteReload::NoSuchPlugin("Nope").find("[RemoteReload] Nope reload failed: no plugin") == 0, "remote reload: an unknown name is a failure line");
+	}
+
+	// Unknown builds: the decision, the session id, the crash guard in modloader.ini and the text the player
+	// reads. Last in main(): Arm sets process-wide state, and every check above runs with Active() false.
+	{
+		using UnknownBuild::Decision;
+
+		const auto decide = [](uint32_t cl, bool enabled, bool retry, const wchar_t* last, const wchar_t* now)
+		{
+			UnknownBuild::Inputs in;
+			in.runningCL = cl; in.enabled = enabled; in.retry = retry; in.lastSession = last; in.thisSession = now;
+			return UnknownBuild::Decide(in);
+		};
+		Check(decide(0, false, false, L"s", L"s") == Decision::NoCL, "unknown build: no CL in the version is NoCL, even when switched off");
+		Check(decide(130045, false, false, L"", L"s") == Decision::SwitchedOff, "unknown build: Enabled=0 is SwitchedOff");
+		Check(decide(130045, false, true, L"s", L"s") == Decision::SwitchedOff, "unknown build: Enabled=0 wins over a guarded session");
+		Check(decide(130045, true, false, L"s", L"s") == Decision::Guarded, "unknown build: the same session left open is Guarded");
+		Check(decide(130045, true, true, L"s", L"s") == Decision::Fallback, "unknown build: Retry=1 turns Guarded into Fallback");
+		Check(decide(130045, true, false, L"", L"s") == Decision::Fallback, "unknown build: no marker is Fallback");
+		Check(decide(130045, true, false, L"t", L"s") == Decision::Fallback, "unknown build: another session's marker is Fallback");
+
+		const std::wstring id = UnknownBuild::SessionId(130045, 0x1A2B3C4D, 0x0F4A3000, "1.25.1");
+		Check(id == L"130045:1A2B3C4D:F4A3000:1.25.1", "unknown build: the session id");
+		Check(id != UnknownBuild::SessionId(130045, 0x1A2B3C4E, 0x0F4A3000, "1.25.1"), "unknown build: a new image stamp is a new session id");
+		Check(id != UnknownBuild::SessionId(130045, 0x1A2B3C4D, 0x0F4A3001, "1.25.1"), "unknown build: a new image size is a new session id");
+		Check(id != UnknownBuild::SessionId(130045, 0x1A2B3C4D, 0x0F4A3000, "1.25.2"), "unknown build: a new loader build is a new session id");
+		Check(id != UnknownBuild::SessionId(130046, 0x1A2B3C4D, 0x0F4A3000, "1.25.1"), "unknown build: a new CL is a new session id");
+
+		Check(UnknownBuild::NewestKnown({ 127004, 129402, 128786 }) == 129402, "unknown build: the newest known build is the highest CL");
+		Check(UnknownBuild::NewestKnown({}) == 0, "unknown build: no known build gives 0");
+
+		// The ini round trip, on a file of its own.
+		wchar_t tmp[MAX_PATH]{};
+		GetTempPathW(MAX_PATH, tmp);
+		const std::wstring ini = std::wstring(tmp) + L"unknown_build_test_" + std::to_wstring(GetCurrentProcessId()) + L".ini";
+		const auto exists = [&] { return GetFileAttributesW(ini.c_str()) != INVALID_FILE_ATTRIBUTES; };
+		const auto writeIni = [&](const char* text)
+		{
+			FILE* f = nullptr;
+			_wfopen_s(&f, ini.c_str(), L"wb");
+			if (f) { fputs(text, f); fclose(f); }
+		};
+		const auto session = [&]
+		{
+			wchar_t buf[128]{};
+			GetPrivateProfileStringW(L"UnknownBuild", L"Session", L"<none>", buf, 128, ini.c_str());
+			return std::wstring(buf);
+		};
+		const auto retryKey = [&]
+		{
+			return GetPrivateProfileIntW(L"UnknownBuild", L"Retry", -1, ini.c_str());
+		};
+		const auto decideFromIni = [&](uint32_t cl)
+		{
+			return UnknownBuild::Decide(UnknownBuild::ReadInputs(ini, cl, id));
+		};
+
+		DeleteFileW(ini.c_str());
+		Check(!UnknownBuild::Active() && !UnknownBuild::EndSession(), "unknown build: nothing to end before a session starts");
+		Check(!exists(), "unknown build: ending with no session writes no file");
+
+		UnknownBuild::Inputs fresh = UnknownBuild::ReadInputs(ini, 130045, id);
+		Check(fresh.enabled && !fresh.retry && fresh.lastSession.empty() && fresh.runningCL == 130045 && fresh.thisSession == id,
+			"unknown build: a missing modloader.ini reads as enabled, no retry, no marker");
+		Check(UnknownBuild::Decide(fresh) == Decision::Fallback, "unknown build: a missing modloader.ini is Fallback");
+
+		const std::wstring unwritable = std::wstring(tmp) + L"unknown_build_no_such_dir_" + std::to_wstring(GetCurrentProcessId()) + L"\\modloader.ini";
+		Check(!UnknownBuild::Arm(unwritable, id, 130045, 129402) && !UnknownBuild::Active() && !UnknownBuild::EndSession(),
+			"unknown build: an ini that cannot be written arms nothing");
+
+		writeIni("[UnknownBuild]\r\nRetry=1\r\nEnabled=1\r\n");
+		Check(retryKey() == 1 && decideFromIni(130045) == Decision::Fallback, "unknown build: Retry=1 on a clean ini is Fallback");
+		Check(UnknownBuild::Arm(ini, id, 130045, 129402), "unknown build: arming writes the marker");
+		Check(session() == id, "unknown build: the marker is the session id");
+		Check(retryKey() == -1, "unknown build: arming removes Retry");
+		Check(GetPrivateProfileIntW(L"UnknownBuild", L"Enabled", -1, ini.c_str()) == 1, "unknown build: arming leaves the other keys");
+		Check(UnknownBuild::Active() && UnknownBuild::RunningCL() == 130045 && UnknownBuild::NewestCL() == 129402,
+			"unknown build: arming sets the state the UI reads");
+
+		Check(decideFromIni(130045) == Decision::Guarded, "unknown build: after an unclean end the next start is Guarded");
+		Check(UnknownBuild::Decide(UnknownBuild::ReadInputs(ini, 130045, UnknownBuild::SessionId(130045, 0x1A2B3C4D, 0x0F4A3000, "1.25.2")))
+			== Decision::Fallback, "unknown build: another loader build tries again");
+		WritePrivateProfileStringW(L"UnknownBuild", L"Retry", L"1", ini.c_str());
+		Check(decideFromIni(130045) == Decision::Fallback, "unknown build: Retry=1 tries again after an unclean end");
+
+		Check(UnknownBuild::EndSession(), "unknown build: a clean end clears the marker");
+		Check(session() == L"<none>", "unknown build: the marker is gone after a clean end");
+		Check(!UnknownBuild::EndSession(), "unknown build: a second end does nothing");
+		Check(UnknownBuild::Active(), "unknown build: the session stays active in the process after it ends");
+		Check(decideFromIni(130045) == Decision::Fallback, "unknown build: the next start after a clean end is Fallback");
+
+		WritePrivateProfileStringW(L"UnknownBuild", L"Enabled", L"0", ini.c_str());
+		Check(decideFromIni(130045) == Decision::SwitchedOff, "unknown build: Enabled=0 in the ini is SwitchedOff");
+		DeleteFileW(ini.c_str());
+
+		// The words the player reads: "map" is always the version object map, spelled out on first use.
+		const auto narrow = [](const std::wstring& w) { std::string out; for (wchar_t c : w) out += static_cast<char>(c); return out; };
+		const auto termsOk = [](const std::string& text)
+		{
+			bool first = true;
+			for (size_t at = text.find("map"); at != std::string::npos; at = text.find("map", at + 1))
+			{
+				const bool wordStart = at == 0 || !isalpha(static_cast<unsigned char>(text[at - 1]));
+				const bool wordEnd   = at + 3 >= text.size() || !isalpha(static_cast<unsigned char>(text[at + 3]));
+				if (!wordStart || !wordEnd)
+					continue;
+				const std::string before = text.substr(0, at);
+				const auto endsWith = [&](const char* tail)
+				{
+					const size_t n = strlen(tail);
+					return before.size() >= n && before.compare(before.size() - n, n, tail) == 0;
+				};
+				if (first ? !endsWith("version object ") : !(endsWith("version ") || endsWith("version object ")))
+					return false;
+				first = false;
+			}
+			return !first;
+		};
+		const std::string notice    = UnknownBuild::NoticeText(129402);
+		const std::string line      = UnknownBuild::ReportLine(130045, 129402);
+		const std::string preflight = narrow(UnknownBuild::PreflightNote(130045, 129402));
+		Check(termsOk(notice) && termsOk(line) && termsOk(preflight), "unknown build: the text says version object map first, then version map");
+		Check(!termsOk("The map is not known.") && !termsOk("a version map first, then the version object map"),
+			"unknown build: the term check catches a bare map and a short form before the long one");
+		Check(notice.find("CL-129402") != std::string::npos, "unknown build: the notice names the newest known CL");
+		Check(line.find("CL-130045") != std::string::npos && line.find("CL-129402") != std::string::npos
+			&& line.find('\n') == std::string::npos, "unknown build: the report line is one line with both CLs");
+		Check(preflight.find("CL-130045") != std::string::npos && preflight.find("CL-129402") != std::string::npos
+			&& preflight.size() >= 4 && preflight.compare(preflight.size() - 4, 4, "\r\n\r\n") == 0,
+			"unknown build: the preflight note names both CLs and ends in a blank line");
+		const std::wstring guard = UnknownBuild::GuardDetails(L"1.0.0-CL-130045", "1.25.0-dev.2");
+		Check(guard.find(L"[UnknownBuild]") != std::wstring::npos && guard.find(L"Retry=1") != std::wstring::npos
+			&& guard.find(L"1.0.0-CL-130045") != std::wstring::npos && guard.find(L"1.25.0-dev.2") != std::wstring::npos
+			&& guard.find(L"\r\n") != std::wstring::npos, "unknown build: the guard details say how to retry");
 	}
 
 	printf("%d checks, %d failed\n", g_checks, g_failed);

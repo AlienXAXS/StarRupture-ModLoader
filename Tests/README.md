@@ -275,6 +275,15 @@ The pattern scan, the scan cache, the game version and the log are test doubles
   reflection reader a native member is refused.
 - The loader's own site entry: `ModLoader/<name>`, its fingerprint, and a row with a pattern other
   than the site's own is not used.
+- A game build the version map has no rows for (CL-130045 against the two-build fixture): the newest build's
+  row is rescanned on this exe and an older one is not read; a pattern not found, found twice or
+  disagreeing with the request's own gives no address, and a recorded RVA is never used.
+- The unknown-build fallback (`core/unknown_build.cpp`): the decision table (no CL, switched off,
+  guarded, retry), the session id (it changes with the image stamp, the image size, the loader build
+  and the CL), the newest known CL, the `modloader.ini` round trip on a temporary file (arming clears
+  `Retry` and writes `Session`, a clean end clears it, a second end does nothing and a file that
+  cannot be written arms nothing), and the player text: every "map" reads "version object map" first
+  and "version map" after, both CLs are named, and the guard dialog says how to retry.
 - The loader's real map (`hooks/game/version_map.generated.h`) against its registry: format 2, every
   key a registry entry's, every row with that entry's kind and fingerprint. It also checks the real
   rows the image library reads (the six texture chain rows and the two heap rows, on the game builds
@@ -314,15 +323,15 @@ The feed fetch (`auto_update/feed_fetch.cpp`) and the `HttpGet` under it (`auto_
 against a server on 127.0.0.1 that the test starts. The test switch `allowPlainHttp` lets it use
 `http://`; every real request is HTTPS. It checks:
 
-- Stage 1's trigger (`Stage1Wanted`): an exe in neither map, an exe only the cache holds, an `absent`
-  row with a cache under and over a day old, an `absent` row the cache fills, a `ModLoader/` row under
-  the loader's own `fp` and under another.
 - No request (`WhyNot`): the server build, `[AutoUpdate] Enabled` off, no URL, no key. The server's hit
   count stays 0 through Refresh, Stage 1, Stage 3 and the refusal path.
-- The stages: Stage 3 asks nothing of a verified cache under a day old, asks once it is over a day old,
-  and the check restarts the clock; an empty, a truncated or a locked cache under a day old is asked
-  for at once, with the reason in the log line, and the fetched feed replaces it; a refusal
+- The stages: Stage 1 asks at every start and, with a cache whose ETag it holds, gets a 304 and changes nothing;
+  a newer feed is stored and logged as one plain line; a 404 leaves the cache and its ETag as they were;
+  Stage 3 asks once when nothing asked yet this launch and nothing after a request went out; a refusal
   after Stage 1 asked does not ask again; Stage 1 asks only with the main thread parked.
+- The ETag: the one the server answers with is kept beside the cache with its `seq`; the next request
+  sends it (`If-None-Match`) and a 304 is unchanged; an ETag kept for another `seq`, one with a control
+  character, none on file, and a server that sends none each fall back to asking for the whole feed.
 - The answers: a verified feed is stored verbatim; the same `seq` is unchanged; a 404, a server that never
   answers, a body that never arrives, a body over 1 MiB and a bad signature each fail and leave the cache
   as it was; a body that trickles in is cut off at the wall-clock deadline; `maxBytes` stops a longer
