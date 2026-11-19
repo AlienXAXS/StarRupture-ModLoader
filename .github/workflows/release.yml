@@ -288,21 +288,12 @@ jobs:
           # copy (text nobody rewrote for this release). A preview run only warns
           # and leaves "notes" out.
           $isPreview = "${{ steps.tag.outputs.IS_PREVIEW }}" -eq 'true'
-          $maxShortLines = 6
-          $maxShortChars = 600
-          $shortFile  = "$ws\UPDATE_NOTES_SHORT.txt"
-          $shortLines = @()
-          if (Test-Path $shortFile) {
-            $shortLines = @(Get-Content $shortFile | ForEach-Object { $_.Trim() } | Where-Object { $_ })
-          }
-          $shortText = $shortLines -join "`n"
-          if ($shortLines.Count -eq 0) {
-            if (-not $isPreview) { throw "UPDATE_NOTES_SHORT.txt is missing or empty." }
-            Write-Host "::warning title=Update box notes missing::UPDATE_NOTES_SHORT.txt is missing or empty, so the manifest has no short 'notes' and the Windows update box will list no changes."
-            $shortText = ""
-          } elseif ($shortLines.Count -gt $maxShortLines -or $shortText.Length -gt $maxShortChars) {
-            if (-not $isPreview) { throw "UPDATE_NOTES_SHORT.txt has $($shortLines.Count) lines and $($shortText.Length) characters (limit $maxShortLines and $maxShortChars)." }
-            Write-Host "::warning title=Update box notes too long::UPDATE_NOTES_SHORT.txt has $($shortLines.Count) lines and $($shortText.Length) characters (limit $maxShortLines and $maxShortChars), so the manifest has no short 'notes' and the Windows update box will list no changes."
+          $check = & "$ws\.github\scripts\check-update-notes-short.ps1" -Path "$ws\UPDATE_NOTES_SHORT.txt"
+          $shortText = $check.Text
+          if ($check.Problem) {
+            if (-not $isPreview) { throw "$($check.Problem)." }
+            $title = if ($check.Kind -eq 'Empty') { 'Update box notes missing' } else { 'Update box notes too long' }
+            Write-Host "::warning title=$title::$($check.Problem), so the manifest has no short 'notes' and the Windows update box will list no changes."
             $shortText = ""
           }
 

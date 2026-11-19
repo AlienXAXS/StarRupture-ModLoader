@@ -1,0 +1,36 @@
+name: Check update notes
+
+# Runs the release notes length check on a pull request, so a text that is too
+# long fails before the merge and not when the release is started. The limits
+# are in .github/scripts/check-update-notes-short.ps1, the same script
+# release.yml runs.
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'UPDATE_NOTES_SHORT.txt'
+      - '.github/scripts/check-update-notes-short.ps1'
+      - '.github/workflows/check-update-notes.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  update-notes-short:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check UPDATE_NOTES_SHORT.txt
+        shell: pwsh
+        run: |
+          $check = & .github/scripts/check-update-notes-short.ps1
+          if ($check.Problem) {
+            Write-Host "::error file=UPDATE_NOTES_SHORT.txt::$($check.Problem)."
+            exit 1
+          }
+          Write-Host "UPDATE_NOTES_SHORT.txt has $($check.Lines) lines and $($check.Chars) characters (limit $($check.MaxLines) and $($check.MaxChars))."
