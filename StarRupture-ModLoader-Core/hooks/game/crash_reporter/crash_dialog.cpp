@@ -100,6 +100,19 @@ namespace Hooks::CrashDialog
         L"You can play right now without plugins, or quit and come back once the ModLoader "
         L"has been updated. Your saves are untouched either way.";
 
+    static const wchar_t* kUnknownBuildHeaderText =
+        L"Mods are off for this start.\r\n"
+        L"\r\n"
+        L"Your game build is not in the ModLoader's version object map yet. Last time, the "
+        L"ModLoader ran on it with checked values from the newest build it knows, and that "
+        L"session did not end cleanly: the game crashed, stopped responding, or was closed "
+        L"without quitting. That may have nothing to do with mods, but to be safe nothing has "
+        L"been hooked and no plugins will be loaded this time.\r\n"
+        L"\r\n"
+        L"The ModLoader tries again by itself once the version map has your build, after a "
+        L"ModLoader update, or after the game updates. To try again sooner, see the last line "
+        L"below. Your saves are untouched either way.";
+
     // -----------------------------------------------------------------------
     // Log file locations
     // -----------------------------------------------------------------------
@@ -257,13 +270,14 @@ namespace Hooks::CrashDialog
         const bool patternMode = (mode == Mode::PatternFailure);
         const bool versionMode = (mode == Mode::VersionMismatch);
         const bool layoutMode  = (mode == Mode::LayoutMismatch);
+        const bool guardMode   = (mode == Mode::UnknownBuildGuard);
         // Every startup-failure mode ends with the same start/quit choice.
-        const bool choiceMode  = patternMode || versionMode || layoutMode;
+        const bool choiceMode  = patternMode || versionMode || layoutMode || guardMode;
 
-        // The version and layout explanations are longer than the other two,
+        // The version, layout and guard explanations are longer than the other two,
         // so they trade edit height for header height. Everything below
         // follows from those two numbers.
-        const bool longHeader = versionMode || layoutMode;
+        const bool longHeader = versionMode || layoutMode || guardMode;
         const int16_t headerH = longHeader ? 124 : 88;
         const int16_t labelY  = static_cast<int16_t>(7 + headerH + 4);
         const int16_t editY   = static_cast<int16_t>(labelY + 11);
@@ -274,9 +288,9 @@ namespace Hooks::CrashDialog
 
         DLGTEMPLATE dlg{};
         dlg.style = DS_SETFONT | DS_MODALFRAME | DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMENU;
-        // The pattern and version dialogs come up with the game already
+        // The pattern, version and guard dialogs come up with the game already
         // booting, so keep them above the game window once it appears.
-        if (patternMode || versionMode)
+        if (patternMode || versionMode || guardMode)
             dlg.dwExtendedStyle = WS_EX_TOPMOST;
         // Every mode has 7 controls: header, label, details edit, and a
         // four-button row (crash: Copy/ML log/SR log/Close; pattern,
@@ -290,6 +304,8 @@ namespace Hooks::CrashDialog
         AppendWord(buf, 0);   // default dialog class
         AppendString(buf, layoutMode
             ? L"StarRupture ModLoader - Game layout changed"
+            : guardMode
+            ? L"StarRupture ModLoader - Unknown game build"
             : versionMode
             ? L"StarRupture ModLoader - Unsupported game version"
             : patternMode
@@ -303,6 +319,7 @@ namespace Hooks::CrashDialog
         AppendControl(buf, WS_CHILD | WS_VISIBLE | SS_LEFT, 0,
             7, 7, kDlgW - 14, headerH, 0xFFFF, kClassStatic,
             layoutMode  ? kLayoutHeaderText
+                        : guardMode ? kUnknownBuildHeaderText
                         : versionMode ? kVersionHeaderText
                         : patternMode ? kPatternHeaderText : kCrashHeaderText);
 
@@ -311,6 +328,8 @@ namespace Hooks::CrashDialog
             7, labelY, kDlgW - 14, 9, 0xFFFF, kClassStatic,
             layoutMode
                 ? L"What changed (select and copy, or use the buttons below):"
+                : guardMode
+                ? L"Details (select and copy, or use the buttons below):"
                 : versionMode
                 ? L"Version details (select and copy, or use the buttons below):"
                 : patternMode
@@ -539,7 +558,8 @@ namespace Hooks::CrashDialog
         const std::vector<uint8_t> tmpl = BuildDialogTemplate(mode);
 
         const bool choiceMode =
-            (mode == Mode::PatternFailure || mode == Mode::VersionMismatch || mode == Mode::LayoutMismatch);
+            (mode == Mode::PatternFailure || mode == Mode::VersionMismatch || mode == Mode::LayoutMismatch
+             || mode == Mode::UnknownBuildGuard);
 
         // Default result if the dialog is dismissed without an explicit choice:
         // fail-safe is "keep going" in the startup-failure modes (game continues
@@ -571,6 +591,19 @@ namespace Hooks::CrashDialog
                     L"Start the game without the ModLoader?",
                     L"StarRupture ModLoader",
                     MB_YESNO | MB_ICONERROR | MB_TASKMODAL | MB_TOPMOST);
+                return choice == IDNO ? Result::QuitGame : Result::StartWithoutModLoader;
+            }
+
+            if (mode == Mode::UnknownBuildGuard)
+            {
+                const int choice = MessageBoxW(nullptr,
+                    L"Mods are off for this start: the last session on this game build, which the "
+                    L"ModLoader does not know yet, did not end cleanly.\n\n"
+                    L"To try again, add Retry=1 under [UnknownBuild] in ModLoader\\modloader.ini. "
+                    L"Details were written to ModLoader\\Logs\\ModLoader.log.\n\n"
+                    L"Start the game without the ModLoader?",
+                    L"StarRupture ModLoader",
+                    MB_YESNO | MB_ICONWARNING | MB_TASKMODAL | MB_TOPMOST);
                 return choice == IDNO ? Result::QuitGame : Result::StartWithoutModLoader;
             }
 

@@ -366,6 +366,41 @@ int main()
 	Check(At(r, 0x7000) && Logged(L"is not this site's own pattern") && Logged(L"own pattern, loader map, CL-127004 row agree"),
 		"loader site: a new pattern is not used, the built row stands in");
 
+	// A build the map has no rows for (the unknown-build fallback): the newest row's pattern is rescanned on
+	// this exe and checked, and the RVA recorded for another build is never used.
+	{
+		const VersionMap::Exe unknown{ 130045, 0x33333333, 0x03000000 };
+		const auto askUnknown = [&](const char* owner, const Request& request)
+		{
+			TestDoubles::g_log.clear();
+			return VersionMap::ResolveMapKey(owner, request, {}, unknown, false);
+		};
+
+		r = askUnknown("VmapProbe", Ask("Test::MapOnly", Kind::FunctionStart));
+		Check(At(r, 0x1000) && Logged(L"no row for CL-130045") && Logged(L"CL-128786 row") && !Logged(L"CL-127004"),
+			"unknown build: the newest build's row, rescanned on this exe; older rows are not read");
+
+		const uintptr_t newestRva = TestDoubles::g_rvas["AA 01"];
+		TestDoubles::g_rvas.erase("AA 01");
+		r = askUnknown("VmapProbe", Ask("Test::MapOnly", Kind::FunctionStart));
+		Check(!r.Succeeded() && r.address == 0, "unknown build: the newest row's pattern is not in this exe, so no address (the recorded RVA is not used)");
+		TestDoubles::g_rvas["AA 01"] = newestRva;
+
+		TestDoubles::g_counts["AA 01"] = 2;
+		r = askUnknown("VmapProbe", Ask("Test::MapOnly", Kind::FunctionStart));
+		Check(!r.Succeeded() && r.address == 0, "unknown build: the newest row's pattern matches twice here, so no address");
+		TestDoubles::g_counts.erase("AA 01");
+
+		r = askUnknown("VmapProbe", Ask("Test::MapOnly", Kind::FunctionStart, "AB 01"));
+		Check(r.outcome == Outcome::MultipleMatches && r.address == 0 && r.detail.find("AMBIGUOUS") == 0,
+			"unknown build: an own pattern that lands elsewhere than the newest row's is AMBIGUOUS");
+
+		TestDoubles::g_log.clear();
+		r = VersionMap::ResolveLoaderEntry(site, Ask("Test::Site", Kind::InFunction, "B0 01"), unknown);
+		Check(At(r, 0x7000) && Logged(L"the CL-128786 row is not this site's own pattern") && !Logged(L"CL-127004"),
+			"unknown build: a loader site looks at the newest build's row only, and scans its own pattern when that row's differs");
+	}
+
 	// The real map against the registry: every key is a registry row's, with its kind and fingerprint.
 	int unmatched = 0, wrong = 0;
 	for (const Real::VersionMap::Index& index : Real::VersionMap::kFunctions)
