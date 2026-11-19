@@ -496,7 +496,7 @@ jobs:
     if: |
       always() &&
       (github.event.inputs.sync_plugin_sdk == 'true' || github.event.inputs.sync_only == 'true') &&
-      (needs.release.result == 'success' || needs.release.result == 'skipped') &&
+      (needs.release.result == 'success' || (github.event.inputs.sync_only == 'true' && needs.release.result == 'skipped')) &&
       needs.release.outputs.is_preview != 'true'
     runs-on: windows-latest
     permissions:
