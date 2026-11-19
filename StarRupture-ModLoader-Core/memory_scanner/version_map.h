@@ -216,10 +216,11 @@ namespace VersionMap
 	void SetLayoutChanges(std::vector<std::string> classNames, std::vector<std::string> paths = {});
 
 	// Whether a plugin may run although classes changed. That list comes from
-	// the loader's own SDK compared with the game, so a plugin that declares
-	// the build it was compiled for (interface 72 or later, gameBuiltCL set),
-	// on that same build as `running`, is admitted: its layouts are that
-	// build's, on the plugin's word. Otherwise only one that takes every game layout from the version
+	// the loader's own SDK (kBuiltCL) compared with the game, so a plugin that
+	// declares the build it was compiled for (interface 72 or later,
+	// gameBuiltCL set), on that same build as `running`, is admitted when that
+	// build is not kBuiltCL: its layouts are that build's, on the plugin's
+	// word. Otherwise only one that takes every game layout from the version
 	// map (interface 72 or later, PLUGIN_MAP_MIGRATED, and a declared game
 	// build) may. Any other keeps the layouts compiled in and would read the
 	// changed classes' old ones.

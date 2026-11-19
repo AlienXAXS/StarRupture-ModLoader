@@ -512,9 +512,11 @@ namespace VersionMap
 	{
 		constexpr int kFirstMapInterface = 72;
 		const bool migrated = (built.mapFlags & PLUGIN_MAP_MIGRATED) != 0;
-		// The changed classes come from the loader's own SDK. A plugin that names
-		// the build it runs on was compiled against that build's layouts.
-		if (interfaceVersion >= kFirstMapInterface && built.declared && built.gameCL != 0 && running.cl == built.gameCL)
+		// The changed classes are the loader's own SDK (kBuiltCL) against the game.
+		// A plugin that names the build it runs on, when that is not kBuiltCL, was
+		// compiled against that build's layouts.
+		if (interfaceVersion >= kFirstMapInterface && built.declared && built.gameCL != 0
+			&& running.cl == built.gameCL && running.cl != kBuiltCL)
 			return {};
 		// The SDK names (not the /Script/ forms); the first two by name, so
 		// the reason fits the plugin list's line.
@@ -1503,11 +1505,14 @@ namespace VersionMap
 					value = ValueOf(*row);
 					how   = RowLabel(*row);
 				}
-				else if (onBuilt && haveBuilt && !anySize && (LayoutChanged(request.className) || SupersChanged(request.className)))
+				else if (onBuilt && haveBuilt && !anySize && running.cl == kBuiltCL
+					&& (LayoutChanged(request.className) || SupersChanged(request.className)))
 				{
 					// The compiled offset is the SDK's, and the layout check
 					// found this class, or one it derives from, laid out
-					// otherwise on this build.
+					// otherwise on this build. The check compares the loader's
+					// SDK (kBuiltCL) with the game, so it says nothing about a
+					// plugin whose SDK is another build, the one running.
 					error = "no row for " + ClText(running.cl) + ", and the layout check found " + request.className
 						+ " or a class it derives from changed on this build, so its built offset is not used";
 					return false;
