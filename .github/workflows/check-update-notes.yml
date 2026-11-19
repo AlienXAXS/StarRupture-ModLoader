@@ -1,14 +1,23 @@
 name: Check update notes
 
-# Runs the release notes length check on a pull request, so a text that is too
-# long fails before the merge and not when the release is started. The limits
-# are in .github/scripts/check-update-notes-short.ps1, the same script
-# release.yml runs.
+# Runs the release notes length check when UPDATE_NOTES_SHORT.txt changes: on
+# a pull request, and on a push to main or a release branch, because our own
+# changes reach main by branch merge and not by pull request. A text that is
+# too long fails before the release is started. The limits are in
+# .github/scripts/check-update-notes-short.ps1, the same script release.yml runs.
 
 on:
   pull_request:
     branches:
       - main
+    paths:
+      - 'UPDATE_NOTES_SHORT.txt'
+      - '.github/scripts/check-update-notes-short.ps1'
+      - '.github/workflows/check-update-notes.yml'
+  push:
+    branches:
+      - main
+      - 'release/**'
     paths:
       - 'UPDATE_NOTES_SHORT.txt'
       - '.github/scripts/check-update-notes-short.ps1'
