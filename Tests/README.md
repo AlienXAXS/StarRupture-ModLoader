@@ -275,7 +275,7 @@ The pattern scan, the scan cache, the game version and the log are test doubles
   reflection reader a native member is refused.
 - The loader's own site entry: `ModLoader/<name>`, its fingerprint, and a row with a pattern other
   than the site's own is not used.
-- A game build the map has no rows for (CL-130045 against the two-build fixture): the newest build's
+- A game build the version map has no rows for (CL-130045 against the two-build fixture): the newest build's
   row is rescanned on this exe and an older one is not read; a pattern not found, found twice or
   disagreeing with the request's own gives no address, and a recorded RVA is never used.
 - The unknown-build fallback (`core/unknown_build.cpp`): the decision table (no CL, switched off,

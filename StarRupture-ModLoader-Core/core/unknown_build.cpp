@@ -133,7 +133,8 @@ namespace UnknownBuild
         return L"Your game build:       " + gameVersion + L"\r\n"
             L"ModLoader version:     " + ToWide(loaderBuildTag) + L"\r\n"
             L"\r\n"
-            L"To try with mods again: in ModLoader\\modloader.ini, under [UnknownBuild], add the line Retry=1, "
+            L"To try with mods again, add the line Retry=1\r\n"
+            L"under [UnknownBuild] in ModLoader\\modloader.ini,\r\n"
             L"then start the game.";
     }
 
