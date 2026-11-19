@@ -1281,6 +1281,12 @@ namespace
 	// live object array as the loader's layout check verifies it.
 	void ResolveSdkGlobals()
 	{
+#if defined(MODLOADER_SERVER_BUILD)
+		// A server loader hands plugins no globals (SdkGlobals::ForPlugins is
+		// null there, and its registry has no rows for them), so none are
+		// resolved and GetSdkGlobals stays null, which no call counts for.
+		fprintf(stderr, "[SdkGlobals] server build: none handed to the plugin\n");
+#else
 		const VersionMap::Exe exe = VersionMap::ExeOf(g_image);
 		const struct { const char* name; const char* pattern; uintptr_t* out; } wanted[] = {
 			{ "GObjects",     ScanPatterns::GObjects_PreAllocate,  &g_sdkGlobals.gobjects },
@@ -1317,6 +1323,7 @@ namespace
 		g_sdkGlobalsGiven = withheld.empty();
 		fprintf(stderr, "[SdkGlobals] CL-%u: %s; %s\n", exe.cl, found.c_str(),
 			g_sdkGlobalsGiven ? "handed to the plugin" : ("not handed to the plugin: " + withheld).c_str());
+#endif
 	}
 
 	bool InitSEH(PluginInitFunc fn, IPluginSelf* self, bool& returned, DWORD& code)
