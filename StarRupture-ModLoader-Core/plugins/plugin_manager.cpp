@@ -509,9 +509,9 @@ namespace PluginManager
 		if (info->interfaceVersion >= 72 && !rec.gameBuild.declared)
 			ModLoaderLogger::LogWarn(L"Plugin '%S' declares no game build; judging it as built on CL-%u.",
 				info->name ? info->name : "(unknown)", rec.gameBuild.gameCL);
-		// The same holds on its own build when the layout check found classes
-		// changed (the loader's SDK against the game): a plugin that takes every
-		// layout from the map runs, and so does one that declares this very build.
+		// When the layout check found classes changed (the loader's SDK against
+		// the game), a plugin runs only if it takes every layout from the map or
+		// declares this very build.
 		const VersionMap::Exe runningExe = VersionMap::RunningExe();
 		std::string refusal = VersionMap::OffBuildRefusal(runningExe, info->interfaceVersion, rec.gameBuild, true);
 		if (refusal.empty())

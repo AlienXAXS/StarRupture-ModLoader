@@ -311,8 +311,9 @@ in a tail from interface v72: `gameBuiltCL` (the build its Game-SDK came from,
   run on CL-...", and it still loads on its own build.
 - On its own built CL it is also not refused when the startup layout check finds changed classes, as long
   as it declares that CL (interface 72 or later, `gameBuiltCL` set). Those classes come from the loader's
-  own SDK, and the plugin's SDK is the running build's. A plugin that declares no build, or another one,
-  is still refused then unless it sets `PLUGIN_MAP_MIGRATED`.
+  own SDK, and the plugin's SDK is the running build's. The loader takes the declared CL on the plugin's
+  word and does not check its headers. A plugin that declares no build, or another one, is still
+  refused then unless it sets `PLUGIN_MAP_MIGRATED`.
 - A v70 or v71 plugin has no tail and counts as built for `kLegacyPluginCL` (127004), the build
   the last loader without a version map required. So does a v72 or later plugin whose `gameBuiltCL` is 0,
   with the warning "declares no game build". A tail that sets `PLUGIN_MAP_MIGRATED` and names no
