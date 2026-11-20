@@ -323,7 +323,7 @@ The feed fetch (`auto_update/feed_fetch.cpp`) and the `HttpGet` under it (`auto_
 against a server on 127.0.0.1 that the test starts. The test switch `allowPlainHttp` lets it use
 `http://`; every real request is HTTPS. It checks:
 
-- No request (`WhyNot`): the server build, `[AutoUpdate] Enabled` off, no URL, no key. The server's hit
+- No request (`WhyNot`): the server build, `[VersionMap] Fetch` off, no URL, no key. The server's hit
   count stays 0 through Refresh, Stage 1, Stage 3 and the refusal path.
 - The stages: Stage 1 asks at every start and, with a cache whose ETag it holds, gets a 304 and changes nothing;
   a newer feed is stored and logged as one plain line; a 404 leaves the cache and its ETag as they were;

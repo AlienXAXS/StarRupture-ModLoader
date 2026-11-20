@@ -1069,6 +1069,10 @@ void ModLoaderLogger::RunAutoUpdate()
 	if (!cfg.enabled)
 	{
 		LogToFile::Info("[AutoUpdate] Disabled via modloader.ini — skipping");
+#ifdef MODLOADER_CLIENT_BUILD
+		// The version map fetch has its own switch, [VersionMap] Fetch.
+		FeedFetch::Stage3(FeedFetch::LoaderConfig());
+#endif
 		return;
 	}
 
