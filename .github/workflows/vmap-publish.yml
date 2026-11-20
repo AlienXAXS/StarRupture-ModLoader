@@ -73,7 +73,7 @@ jobs:
       FEED_ASSET: version-map-client.v1.txt
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # A rehearsal file is signed with the release key at a seq above the live one,
       # so on Latest it would replace the real version map for every player.
@@ -182,7 +182,7 @@ jobs:
       contents: read
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Name the command that runs it again
         env:
