@@ -1,30 +1,38 @@
 #!/usr/bin/env node
-// Checks that a published release is complete. release.yml runs it before the
-// Nexus upload and again at the end of the run; anything else that needs to know
-// whether a release is whole (a "covered" test, a person) calls the same file.
+// Checks that a release is complete. release.yml runs it on the draft before it
+// is published, before the Nexus upload and again at the end of the run; anything
+// else that needs to know whether a release is whole (a "covered" test, a
+// person) calls the same file.
 //
 //   node release-check.mjs --repo <owner/name> --tag <tag>
-//        [--version-map auto|require|skip] [--cl <n>]
+//        [--pre-publish] [--version-map auto|require|skip] [--cl <n>]
+//   node release-check.mjs find --repo <owner/name> --tag <tag>
 //
 // What it checks, with only `gh` and this one file (it imports nothing else):
-//   - the release for the tag is published (a tag alone, or a draft, is not);
+//   - the release for the tag is published (a tag alone, or a draft, is not).
+//     With --pre-publish it is the draft for the tag instead: GitHub answers a
+//     draft's tag with 404, so the draft is found in the releases list;
 //   - every asset listed in the release's own `release-assets.json` is there,
 //     fully uploaded, with the listed size and md5. release.yml writes that file
 //     from the same list it uploads, so the expected set is never kept twice;
 //   - the signed version object map (`version-map-client.v1.txt`, the asset
-//     release.yml attaches when it creates the release, and vmap-publish.yml
-//     otherwise) when the release is meant to carry one. `auto` (the default)
-//     means the release is not a preview and is the repo's Latest release;
-//     `require` always; `skip` never (release.yml uses it for the asset check
-//     that runs before Nexus). The file is checked
-//     for shape only (format line, seq, signature line); the signature itself is
-//     checked by verify-feed.mjs before either workflow attaches it.
+//     release.yml attaches to the draft) when the release is meant to carry one.
+//     `auto` (the default) means the release is not a preview and is the repo's
+//     Latest release (with --pre-publish: is not a preview, because publishing
+//     makes it Latest); `require` always; `skip` never (the check after the
+//     Nexus upload uses it). The file is checked for shape only (format line,
+//     seq, signature line); the signature itself is checked by verify-feed.mjs
+//     before it is attached.
 //   - --cl <n>: the version map has a build row for that game build. Implies
 //     `require` unless `skip` is given.
 //
 // Output: one JSON object on stdout. Exit 0 complete, 1 incomplete (see
 // "problems"), 2 the check itself could not run (gh failed, bad arguments).
 // A release made before release-assets.json existed reports `manifest_missing`.
+//
+// `find` says what exists for the tag, without downloading anything:
+// {"state":"public"|"draft"|"none"|"ambiguous", "id", "prerelease", "target"}.
+// It exits 0 whatever the state is.
 //
 // `write-manifest --tag <tag> --out <file> <asset>...` writes that file; see
 // manifestFor. release.yml calls it just before it creates the release.
@@ -44,20 +52,27 @@ const VERSION_MAP_CAP = 1024 * 1024;
 
 const md5 = (buf) => createHash('md5').update(buf).digest('hex');
 
-// io: { release(repo, tag) -> release | null, latestTag(repo) -> string | null,
-//       download(repo, asset) -> Buffer }. `release` is the GitHub release object
-// (draft, prerelease, assets[{ id, name, size, state }]).
-export function checkRelease({ repo, tag, versionMap = 'auto', cl = null }, io) {
+// io: { release(repo, tag) -> release | null, drafts(repo, tag) -> [release],
+//       latestTag(repo) -> string | null, download(repo, asset) -> Buffer }.
+// `release` is the GitHub release object (id, draft, prerelease, target_commitish,
+// assets[{ id, name, size, state }]).
+export function checkRelease({ repo, tag, versionMap = 'auto', cl = null, prePublish = false }, io) {
   const problems = [];
   const out = { repo, tag, complete: false, release: { exists: false }, expected: 0, problems };
 
-  const rel = io.release(repo, tag);
-  if (!rel) {
-    problems.push({ code: 'release_missing' });
-    return out;
+  let rel;
+  if (prePublish) {
+    const drafts = io.drafts(repo, tag);
+    if (drafts.length > 1) problems.push({ code: 'draft_ambiguous', count: drafts.length });
+    else if (drafts.length === 0) problems.push({ code: 'draft_missing' });
+    rel = drafts.length === 1 ? drafts[0] : null;
+  } else {
+    rel = io.release(repo, tag);
+    if (!rel) problems.push({ code: 'release_missing' });
   }
+  if (!rel) return out;
   const byName = new Map(rel.assets.map((a) => [a.name, a]));
-  out.release = { exists: true, prerelease: !!rel.prerelease, latest: null };
+  out.release = { exists: true, draft: prePublish, prerelease: !!rel.prerelease, latest: null };
 
   // The list the release says it should hold.
   const mAsset = byName.get(MANIFEST_ASSET);
@@ -90,8 +105,9 @@ export function checkRelease({ repo, tag, versionMap = 'auto', cl = null }, io) 
   if (versionMap !== 'skip') {
     let need = versionMap === 'require' || cl !== null;
     if (!need && !rel.prerelease) {
-      out.release.latest = io.latestTag(repo) === tag;
-      need = out.release.latest;
+      // A draft is never Latest yet; publishing it makes it Latest.
+      out.release.latest = prePublish ? false : io.latestTag(repo) === tag;
+      need = prePublish || out.release.latest;
     }
     if (need) checkVersionMap(byName.get(VERSION_MAP_ASSET), cl, repo, io, problems, out);
   }
@@ -132,6 +148,13 @@ export function ghIo(run = (args) => spawnSync('gh', args, { maxBuffer: 1 << 30,
       const body = call(['api', `repos/${repo}/releases/tags/${tag}`]);
       return body && JSON.parse(String(body));
     },
+    // releases/tags/{tag} never answers for a draft; the list does, to a token with
+    // push access. One compact JSON object per line.
+    drafts: (repo, tag) => {
+      const body = call(['api', '--paginate', `repos/${repo}/releases`, '--jq', '.[] | select(.draft == true) | tojson']);
+      if (!body) return [];
+      return String(body).split('\n').filter(Boolean).map((l) => JSON.parse(l)).filter((r) => r.tag_name === tag);
+    },
     latestTag: (repo) => {
       const body = call(['api', `repos/${repo}/releases/latest`]);
       return body ? JSON.parse(String(body)).tag_name : null;
@@ -166,9 +189,25 @@ function writeManifest(argv) {
   return files.length;
 }
 
+// What exists for the tag: a public release, a draft (found in the list), or nothing.
+export function findRelease({ repo, tag }, io) {
+  const describe = (state, r) => ({ repo, tag, state, id: r.id, prerelease: !!r.prerelease, target: r.target_commitish });
+  const published = io.release(repo, tag);
+  if (published) return describe('public', published);
+  const drafts = io.drafts(repo, tag);
+  if (drafts.length === 0) return { repo, tag, state: 'none' };
+  if (drafts.length > 1) return { repo, tag, state: 'ambiguous', count: drafts.length };
+  return describe('draft', drafts[0]);
+}
+
 function parseArgs(argv) {
-  const opts = { versionMap: 'auto', cl: null };
+  const opts = { versionMap: 'auto', cl: null, prePublish: false };
   for (let i = 0; i < argv.length; i += 2) {
+    if (argv[i] === '--pre-publish') {
+      opts.prePublish = true;
+      i -= 1;   // a flag with no value
+      continue;
+    }
     const [flag, value] = [argv[i], argv[i + 1]];
     if (value === undefined) throw new Error(`${flag} needs a value`);
     if (flag === '--repo') opts.repo = value;
@@ -189,6 +228,10 @@ export function main(argv, io = ghIo()) {
   try {
     if (argv[0] === 'write-manifest') {
       console.log(JSON.stringify({ manifest: writeManifest(argv.slice(1)) }));
+      return EXIT_COMPLETE;
+    }
+    if (argv[0] === 'find') {
+      console.log(JSON.stringify(findRelease(parseArgs(argv.slice(1)), io)));
       return EXIT_COMPLETE;
     }
     result = checkRelease(parseArgs(argv), io);

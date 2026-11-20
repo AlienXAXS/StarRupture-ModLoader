@@ -10,7 +10,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { checkRelease, ghIo, main, MANIFEST_ASSET, VERSION_MAP_ASSET } from './release-check.mjs';
+import { checkRelease, findRelease, ghIo, main, MANIFEST_ASSET, VERSION_MAP_ASSET } from './release-check.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const REPO = 'o/r';
@@ -18,9 +18,12 @@ const TAG = 'v1.2.3';
 const md5 = (b) => createHash('md5').update(b).digest('hex');
 const ZIP = Buffer.from('zip bytes');
 const MAP = Buffer.from('format\t1\nseq\t7\nbuild\t130045\t0x1\t0x2\tpublic\nsig\tk2\tAAAA\n');
+const SHA = '0123456789abcdef0123456789abcdef01234567';
 
 // A release whose assets are `files` ({ name: Buffer }); the manifest lists `listed`.
-function fixture({ files = { 'a.zip': ZIP }, listed = Object.keys(files), manifestTag = TAG, extra = {}, latest = TAG, prerelease = false, noManifest = false } = {}) {
+// With `draft` the release is only in the releases list, as GitHub has it: the
+// tags endpoint answers 404 for a draft.
+function fixture({ files = { 'a.zip': ZIP }, listed = Object.keys(files), manifestTag = TAG, extra = {}, latest = TAG, prerelease = false, noManifest = false, draft = false } = {}) {
   const blobs = { ...files };
   const entries = listed.map((n) => ({ name: n, size: files[n] ? files[n].length : 1, md5: files[n] ? md5(files[n]) : md5(Buffer.from('x')) }));
   if (!noManifest) blobs[MANIFEST_ASSET] = Buffer.from(JSON.stringify({ tag: manifestTag, assets: entries }));
@@ -30,7 +33,8 @@ function fixture({ files = { 'a.zip': ZIP }, listed = Object.keys(files), manife
   return {
     assets, calls,
     io: {
-      release: () => ({ prerelease, assets }),
+      release: () => (draft ? null : { id: 7, prerelease, target_commitish: SHA, assets }),
+      drafts: () => (draft ? [{ id: 8, draft: true, prerelease, target_commitish: SHA, tag_name: TAG, assets }] : []),
       latestTag: () => latest,
       download: (_r, a) => { calls.push(a.name); return store.get(a.id); },
     },
@@ -136,6 +140,7 @@ test('main prints one JSON object and maps the result to an exit code', () => {
   } finally { console.log = log; }
   const parsed = lines.map((l) => JSON.parse(l));
   assert.equal(parsed[0].complete, true);
+  assert.equal(parsed[0].release.draft, false);
   assert.deepEqual(parsed[1].problems, [{ code: 'version_map_missing', name: VERSION_MAP_ASSET }]);
   assert.match(parsed[2].error, /--tag/);
   assert.match(parsed[4].error, /boom/);
@@ -178,4 +183,80 @@ test('write-manifest lists the files it is given, and the check accepts what it 
 
 test('the asset names here are the ones the workflows use', () => {
   assert.match(readFileSync(join(root, '.github', 'workflows', 'vmap-publish.yml'), 'utf8'), new RegExp(`FEED_ASSET: ${VERSION_MAP_ASSET.replace(/\./g, '\\.')}`));
+});
+
+// Pre-publish mode: the release to check is the draft, which only the list shows.
+const PRE = { repo: REPO, tag: TAG, prePublish: true };
+
+test('pre-publish: a whole draft is complete, and the published check does not see it', () => {
+  const f = fixture({ draft: true, extra: { [VERSION_MAP_ASSET]: MAP } });
+  const r = checkRelease(PRE, f.io);
+  assert.equal(r.complete, true, JSON.stringify(r));
+  assert.deepEqual(r.release, { exists: true, draft: true, prerelease: false, latest: false });
+  assert.deepEqual(codes(checkRelease({ repo: REPO, tag: TAG }, f.io)), ['release_missing']);
+});
+
+test('pre-publish: no draft, or two drafts for the tag, is a problem and nothing is guessed', () => {
+  assert.deepEqual(codes(checkRelease(PRE, fixture().io)), ['draft_missing']);
+  const f = fixture({ draft: true });
+  const two = { ...f.io, drafts: () => [f.io.drafts()[0], f.io.drafts()[0]] };
+  const r = checkRelease(PRE, two);
+  assert.deepEqual(r.problems, [{ code: 'draft_ambiguous', count: 2 }]);
+  assert.equal(r.complete, false);
+});
+
+test('pre-publish: a missing asset, a wrong md5 and a wrong size on the draft are caught', () => {
+  const missing = fixture({ draft: true, files: { 'a.zip': ZIP }, listed: ['a.zip', 'b.zip'], extra: { [VERSION_MAP_ASSET]: MAP } });
+  assert.deepEqual(checkRelease(PRE, missing.io).problems, [{ code: 'asset_missing', name: 'b.zip' }]);
+
+  const f = fixture({ draft: true, extra: { [VERSION_MAP_ASSET]: MAP } });
+  const good = f.assets.find((a) => a.name === 'a.zip');
+  const bad = Buffer.from('zip bytez');   // same length, other bytes
+  const io = { ...f.io, download: (_r, a) => (a.id === good.id ? bad : f.io.download(_r, a)) };
+  assert.deepEqual(codes(checkRelease(PRE, io)), ['md5_mismatch']);
+
+  good.size = 3;
+  assert.deepEqual(codes(checkRelease(PRE, f.io)), ['size_mismatch']);
+});
+
+test('pre-publish: auto asks for the version map unless the release is a preview', () => {
+  assert.deepEqual(codes(checkRelease(PRE, fixture({ draft: true }).io)), ['version_map_missing']);
+  assert.equal(checkRelease(PRE, fixture({ draft: true, prerelease: true }).io).complete, true);
+  assert.equal(checkRelease({ ...PRE, versionMap: 'skip' }, fixture({ draft: true }).io).complete, true);
+  assert.deepEqual(codes(checkRelease({ ...PRE, versionMap: 'require' }, fixture({ draft: true, prerelease: true }).io)), ['version_map_missing']);
+});
+
+test('find says public, draft, none or ambiguous, with the id and the target commit', () => {
+  assert.deepEqual(findRelease({ repo: REPO, tag: TAG }, fixture().io), { repo: REPO, tag: TAG, state: 'public', id: 7, prerelease: false, target: SHA });
+  assert.deepEqual(findRelease({ repo: REPO, tag: TAG }, fixture({ draft: true, prerelease: true }).io), { repo: REPO, tag: TAG, state: 'draft', id: 8, prerelease: true, target: SHA });
+  assert.deepEqual(findRelease({ repo: REPO, tag: TAG }, { release: () => null, drafts: () => [] }), { repo: REPO, tag: TAG, state: 'none' });
+  assert.deepEqual(findRelease({ repo: REPO, tag: TAG }, { release: () => null, drafts: () => [{}, {}] }), { repo: REPO, tag: TAG, state: 'ambiguous', count: 2 });
+});
+
+test('main: --pre-publish is a flag without a value, and find prints one JSON object with exit 0', () => {
+  const lines = [];
+  const log = console.log;
+  console.log = (s) => lines.push(s);
+  try {
+    const ok = fixture({ draft: true, extra: { [VERSION_MAP_ASSET]: MAP } });
+    assert.equal(main(['--repo', REPO, '--tag', TAG, '--pre-publish'], ok.io), 0);
+    assert.equal(main(['--pre-publish', '--repo', REPO, '--tag', TAG, '--version-map', 'skip'], fixture({ draft: true }).io), 0);
+    assert.equal(main(['--repo', REPO, '--tag', TAG, '--pre-publish'], fixture().io), 1);
+    assert.equal(main(['find', '--repo', REPO, '--tag', TAG], ok.io), 0);
+    assert.equal(main(['find', '--repo', REPO], ok.io), 2);
+  } finally { console.log = log; }
+  assert.equal(JSON.parse(lines[0]).release.draft, true);
+  assert.equal(JSON.parse(lines[3]).state, 'draft');
+});
+
+test('ghIo: the drafts come from the releases list, the draft ones with this tag only', () => {
+  const seen = [];
+  const draftLine = (tag, id) => JSON.stringify({ id, draft: true, tag_name: tag, assets: [] });
+  const run = (args) => { seen.push(args); return { status: 0, stdout: Buffer.from(`${draftLine('v1.2.3', 1)}\n${draftLine('v9.9.9', 2)}\n${draftLine('v1.2.3', 3)}\n`) }; };
+  const found = ghIo(run).drafts(REPO, TAG);
+  assert.deepEqual(found.map((r) => r.id), [1, 3]);
+  assert.deepEqual(seen[0].slice(0, 3), ['api', '--paginate', `repos/${REPO}/releases`]);
+  assert.match(seen[0].join(' '), /select\(\.draft == true\)/);
+  assert.deepEqual(ghIo(() => ({ status: 0, stdout: Buffer.from('') })).drafts(REPO, TAG), []);
+  assert.throws(() => ghIo(() => ({ status: 1, stderr: Buffer.from('HTTP 502') })).drafts(REPO, TAG), /502/);
 });
