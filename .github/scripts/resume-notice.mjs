@@ -31,9 +31,11 @@ export function vmapCommand(env) {
   return `gh workflow run vmap-publish.yml --repo ${env.GITHUB_REPOSITORY} --ref ${env.GITHUB_REF_NAME} ${flags.join(' ')}`;
 }
 
-// The one command that finishes a release that is already public.
-export function resumeCommand(env) {
-  return `gh workflow run release.yml --repo ${env.GITHUB_REPOSITORY} --ref ${env.GITHUB_REF_NAME} -f resume_tag=${env.TAG}`;
+// The one command that finishes a release that is already public. Nexus is
+// skipped (`nexus: false`) when it is not what failed: a repeat would add a
+// second changelog entry there.
+export function resumeCommand(env, { nexus = true } = {}) {
+  return `gh workflow run release.yml --repo ${env.GITHUB_REPOSITORY} --ref ${env.GITHUB_REF_NAME} -f resume_tag=${env.TAG}${nexus ? '' : ' -f resume_nexus=none'}`;
 }
 
 // What to do by hand when the Nexus upload fails; the lead publishes Nexus then.
@@ -72,13 +74,14 @@ function releaseNotice(env, failed) {
   const lines = [`## Release ${env.TAG} is public but not finished`, '', `${found} in ${runUrl(env)}.`, ''];
   if (problems.some((p) => /^(asset_|size_|md5_|manifest_)/.test(p.code))) {
     lines.push(
-      'The release is missing assets or holds a wrong file. A resume cannot add or replace assets, so no command fixes it. Pulling this release by hand and running release.yml again is the owner\'s call; nothing deletes it for you.',
+      'The release is missing assets or holds a wrong file. A resume cannot add or replace assets, so no command fixes it. Pulling this release by hand (the release and its tag) and running release.yml again is the owner\'s call; nothing deletes it for you.',
       '',
       `release-check.mjs said: \`${JSON.stringify(check)}\``,
     );
   } else {
-    lines.push('Run this one command to finish it. It never makes a new release, tag or version:', '', fence(resumeCommand(env)));
-    if (failed.some((f) => f.startsWith('nexus '))) lines.push('', nexusText(env));
+    const nexusFailed = failed.some((f) => f.startsWith('nexus '));
+    lines.push('Run this one command to finish it. It never makes a new release, tag or version:', '', fence(resumeCommand(env, { nexus: nexusFailed })));
+    if (nexusFailed) lines.push('', nexusText(env));
   }
   return `${lines.join('\n')}\n`;
 }

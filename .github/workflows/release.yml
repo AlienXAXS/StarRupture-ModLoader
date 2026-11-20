@@ -73,7 +73,7 @@ jobs:
             exit 1
           fi
           if ! prerelease=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RESUME_TAG" --jq .prerelease); then
-            echo "::error::There is no published release for $RESUME_TAG, so there is nothing to resume. Nothing was changed. A release that never became public is made by running this workflow again without resume_tag."
+            echo "::error::There is no published release for $RESUME_TAG, so there is nothing to resume. Nothing was changed. A release that never became public is made by running this workflow again without resume_tag (a tag left behind by it has to be removed by hand first)."
             exit 1
           fi
           echo "Resuming $RESUME_TAG (preview: $prerelease). No version is bumped and no tag or release is created."
@@ -204,8 +204,12 @@ jobs:
           # A tag that is already there means this release was made, or half made.
           # Never make it again: resume_tag finishes it.
           git ls-remote --exit-code --tags origin "refs/tags/$tag" *> $null
-          if ($LASTEXITCODE -eq 0) {
-            throw "Tag $tag already exists, so this run would not be a new release. To finish the release that is already there, run this workflow with resume_tag=$tag."
+          $tagExists = ($LASTEXITCODE -eq 0)
+          # ls-remote exits 2 when the tag is absent, which is the normal case; the
+          # runner ends a pwsh step with $LASTEXITCODE, so clear it.
+          $global:LASTEXITCODE = 0
+          if ($tagExists) {
+            throw "Tag $tag already exists, so this run would not be a new release. If its release is public, finish it by running this workflow with resume_tag=$tag. If there is a tag but no release, the tag has to be removed by hand (the owner's call) before a new run can use it."
           }
           echo "TAG=$tag"          >> $env:GITHUB_OUTPUT
           echo "IS_PREVIEW=$($isPreview.ToString().ToLower())" >> $env:GITHUB_OUTPUT
@@ -537,7 +541,7 @@ jobs:
           node .github/scripts/release-check.mjs --repo "$GITHUB_REPOSITORY" --tag "$TAG" --version-map skip | tee "$RUNNER_TEMP/check.json"
           code=${PIPESTATUS[0]}
           if [ "$code" != 0 ]; then
-            echo "::error title=Release $TAG is not complete::$(cat "$RUNNER_TEMP/check.json") A resume cannot add or replace assets. Pulling this release by hand is the owner's call; Nexus was not touched."
+            echo "::error title=Release $TAG failed the asset check (exit $code)::$(cat "$RUNNER_TEMP/check.json") A resume cannot add or replace assets. Pulling this release by hand is the owner's call; Nexus was not touched."
           fi
           exit "$code"
 
@@ -551,7 +555,7 @@ jobs:
       always() &&
       needs.verify-release.result == 'success' &&
       needs.prepare.outputs.is_preview != 'true' &&
-      github.event.inputs.resume_nexus != 'none'
+      (github.event.inputs.resume_tag == '' || github.event.inputs.resume_nexus != 'none')
     runs-on: windows-latest
     permissions:
       contents: read
@@ -578,13 +582,15 @@ jobs:
         run: |
           git fetch --depth=1 origin "refs/tags/$($env:TAG):refs/tags/$($env:TAG)"
           if ($LASTEXITCODE -ne 0) { throw "Tag $($env:TAG) could not be fetched." }
-          $lines = @(git show "refs/tags/$($env:TAG):UPDATE_NOTES.txt" | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+          $lines = @(git show "refs/tags/$($env:TAG):UPDATE_NOTES.txt" 2>$null | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+          # A tag without the file is not an error: the changelog falls back to a link.
+          $global:LASTEXITCODE = 0
           $changelog = if ($lines.Count -gt 0) { $lines -join "`n" } else { "See https://github.com/$env:GITHUB_REPOSITORY/releases/tag/$env:TAG" }
           $delim = "EOF_" + [guid]::NewGuid().ToString('N')
           Add-Content -Path $env:GITHUB_OUTPUT -Value "changelog<<$delim`n$changelog`n$delim"
 
       - name: Upload Client build to Nexus Mods
-        if: ${{ github.event.inputs.resume_nexus != 'server-only' }}
+        if: ${{ github.event.inputs.resume_tag == '' || github.event.inputs.resume_nexus != 'server-only' }}
         uses: msantoro12/starrupture-release-actions/nexus-publish@nexus-publish-v1
         with:
           api_key: ${{ secrets.NEXUS_APIKEY }}

@@ -76,7 +76,7 @@ test('release: a version map missing from the Latest release is finished by a re
   const check = { complete: false, problems: [{ code: 'version_map_missing', name: 'version-map-client.v1.txt' }] };
   const text = notice('release', { ...REL, NEEDS_JSON: '{}', CHECK_JSON: JSON.stringify(check) });
   assert.match(text, /version_map_missing/);
-  assert.match(text, /resume_tag=v1\.2\.3/);
+  assert.ok(text.includes('resume_tag=v1.2.3 -f resume_nexus=none\n```'), 'Nexus did not fail, so it is not repeated');
   assert.doesNotMatch(text, /Nexus upload/);
 });
 

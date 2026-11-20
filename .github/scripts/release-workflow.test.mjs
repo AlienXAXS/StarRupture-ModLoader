@@ -38,9 +38,11 @@ test('a failed Nexus step puts the manual fallback in the run, and the last job 
 test('only the build and the release job are skipped on a resume', () => {
   assert.match(ifOf('build'), /resume_tag == ''/);
   assert.match(ifOf('release'), /resume_tag == ''/);
-  for (const job of ['verify-release', 'nexus', 'publish-feed']) {
+  for (const job of ['verify-release', 'publish-feed']) {
     assert.doesNotMatch(ifOf(job), /resume_tag == ''/, `${job} must run on a resume`);
   }
+  // Nexus names resume_tag only to apply resume_nexus on a resume; a fresh run always runs it.
+  assert.doesNotMatch(ifOf('nexus'), /&&\s*github\.event\.inputs\.resume_tag == ''/);
 });
 
 test('a resume computes no version and finds its release first', () => {
@@ -71,8 +73,15 @@ test('Nexus waits for the asset check, which does not ask for the version map', 
 });
 
 test('the resume options reach Nexus', () => {
-  assert.match(jobs.nexus, /name: Upload Client build to Nexus Mods\n {8}if: \$\{\{ github.event.inputs.resume_nexus != 'server-only' \}\}/);
-  assert.match(ifOf('nexus'), /resume_nexus != 'none'/);
+  assert.match(jobs.nexus, /name: Upload Client build to Nexus Mods\n {8}if: \$\{\{ github.event.inputs.resume_tag == '' \|\| github.event.inputs.resume_nexus != 'server-only' \}\}/);
+  assert.match(ifOf('nexus'), /\(github\.event\.inputs\.resume_tag == '' \|\| github\.event\.inputs\.resume_nexus != 'none'\)/, 'a fresh run ignores resume_nexus');
+});
+
+test('a pwsh step must not end on a native exit code that is not a failure', () => {
+  // The runner ends a pwsh step with $LASTEXITCODE: ls-remote exits 2 for "no such tag"
+  // and git show exits 128 for "no such file", both normal here.
+  assert.match(jobs.prepare, /git ls-remote --exit-code --tags origin "refs\/tags\/\$tag" \*> \$null\n.*\n.*\n.*\n {10}\$global:LASTEXITCODE = 0\n/);
+  assert.match(jobs.nexus, /git show "refs\/tags\/[^\n]*2>\$null[^\n]*\n.*\n {10}\$global:LASTEXITCODE = 0\n/);
 });
 
 test('the manifest the release uploads has the name the check reads', () => {
