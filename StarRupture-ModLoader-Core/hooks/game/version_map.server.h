@@ -19,6 +19,9 @@
 namespace VersionMap
 {
 
+// The server's build here is the one the loader's start check was written for.
+static_assert(kBuiltCL == 127004, "the server table is measured on CL-127004; move it with kBuiltCL");
+
 inline constexpr std::array<Build, 1> kServerBuilds = {{
 	{ 127004, 0x2E3595FF, 0x0E2A8000, "server steam_build 25642172" },
 }};

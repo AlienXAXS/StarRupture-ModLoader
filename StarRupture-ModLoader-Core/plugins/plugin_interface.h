@@ -1069,9 +1069,10 @@ enum PluginScanFlags
 
     // v72. hookName is a key in the loader's version map, and pattern and
     // candidates are this plugin's own fallback, each of which may be null.
-    // Game exe only. The dedicated server's map holds no rows, so there a key
-    // runs on pattern and candidates alone; the refused names below still
-    // apply.
+    // Game exe only. The dedicated server's map is its own table, served only
+    // on the exe it was measured on; for a key the table lacks, or on any other
+    // exe, a key runs on pattern and candidates alone. The refused names below
+    // still apply.
     //
     // For FUNCTION_START and DATA the key is global, the same for every
     // plugin: "Class::Function" or a global's name, never with a '/'. For any
@@ -1281,8 +1282,10 @@ static_assert(offsetof(PluginScanRequest, candidates)     == 56, "v72 starts whe
 // when that key names the same class and member (or a member the map records
 // as renamed), then the request's candidates for any changelist the map has
 // no row for. A candidate that disagrees with the map's row for its changelist
-// fails the request. The dedicated server has no version map: there only the
-// request's own candidates count, and a native member is not bounded.
+// fails the request. The dedicated server's map is its own table, served only
+// on the exe it was measured on; for a member the table lacks, or on any other
+// exe, only the request's own candidates count, and a native member is bounded
+// only when the table gave it a row.
 // ---------------------------------------------------------------------------
 enum PluginFieldFlags
 {

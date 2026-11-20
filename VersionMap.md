@@ -123,8 +123,8 @@ resolves, the pattern is not needed to load, so the loader checks it on the side
 per session, through `scan_cache.ini`, with the same rule as any scan. If it matches 0 or 2 or more
 places the loader logs one warning, `[Map] <plugin>: <key>: its own pattern matches <n> times on this
 exe ...`, and still uses the row. Without that check a pattern that is ambiguous would pass here and
-be refused wherever no row resolves the key (a loader with no version map, a dedicated server, a build none
-of the rows resolve on), since the pattern is then the only locator. A pattern that matches 0 times
+be refused wherever no row resolves the key (a loader with no version map, a dedicated server for a key its
+table lacks, a build none of the rows resolve on), since the pattern is then the only locator. A pattern that matches 0 times
 gets its own wording: it is stale for this build, and the row is carrying it. The count of a pattern
 that is not unique is kept in `scan_cache.ini` under the exe, so a later launch repeats the warning
 without scanning again. One line per pattern text: two plugins that share a pattern get one line,
