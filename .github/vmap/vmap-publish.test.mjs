@@ -156,7 +156,7 @@ test('a good newest feed on Latest sets the seq to beat and a newer feed is uplo
   assert.match(r.calls, /release upload v2 /);
 });
 
-test('a feed on a draft release is not a feed players can get and does not set the seq to beat', () => {
+test('a version map on a draft release is out of players\' reach and does not set the seq to beat', () => {
   // v3 is a draft release.yml is still making; its file is newer than anything public.
   const r = run({ releases: [{ tag: 'v3', draft: true, feed: feed(BASE + 50) }, { tag: 'v2', feed: feed(BASE + 10) }, { tag: 'v1', feed: feed(BASE + 5) }], newFeed: feed(BASE + 20) });
   assert.equal(r.status, 0, JSON.stringify(r.ran));

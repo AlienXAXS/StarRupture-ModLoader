@@ -87,6 +87,18 @@ test('a real run deletes neither Latest, the previous release nor a draft, nor t
   assert.match(gone, /refs\/tags\/v0\.9\.0$/m);
 });
 
+test('a draft.yml branch build (tag ending -draft) is pruned as before, with its tag; a release draft still is not', () => {
+  const releases = [[107, 'v1.25.2-draft', true, true], [106, 'v1.25.1', true, false], ...RELEASES.filter((r) => r[1] !== 'v1.25.1')];
+  const r = prune({ dryRun: false, releases, tags: [...TAGS, 'v1.25.2-draft'] });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  const gone = r.deletes.join('\n');
+  assert.match(gone, /releases\/107$/m);
+  assert.match(gone, /refs\/tags\/v1\.25\.2-draft$/m);
+  assert.doesNotMatch(gone, /releases\/106$/m);
+  assert.doesNotMatch(gone, /refs\/tags\/v1\.25\.1$/m);
+  assert.match(r.stdout, /^Keeping 1 draft release\(s\), left to the release run or to the owner: v1\.25\.1$/m);
+});
+
 test('with no release before Latest only Latest is kept, and no tag is lost to an empty pattern', () => {
   const r = prune({ dryRun: false, releases: [[104, 'v1.26.0', false, false], [105, 'v1.27.0-rc.1', false, true]], tags: ['v1.26.0', 'v0.9.0'] });
   assert.equal(r.status, 0, r.stdout + r.stderr);
