@@ -54,20 +54,37 @@ concurrency:
 permissions:
   contents: write  # uploads the asset to the Latest release
 
+# A failed or cancelled run is red and its last job (notice) puts the one command
+# that runs it again in the job summary; the run's failure e-mail is the alert.
+env:
+  FEED_REPO: ${{ inputs.feed_repo || 'msantoro12/starrupture-ci' }}
+  FEED_RELEASE: ${{ inputs.feed_release || 'vmap-feed' }}
+  ALLOW_TEST_KEY: ${{ inputs.allow_test_key && 'true' || 'false' }}
+  FIRST_PUBLISH: ${{ inputs.first_publish && 'true' || 'false' }}
+
 jobs:
   publish:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
       GH_TOKEN: ${{ github.token }}
-      FEED_REPO: ${{ inputs.feed_repo || 'msantoro12/starrupture-ci' }}
-      FEED_RELEASE: ${{ inputs.feed_release || 'vmap-feed' }}
       FEED_ASSET: version-map-client.v1.txt
-      ALLOW_TEST_KEY: ${{ inputs.allow_test_key && 'true' || 'false' }}
-      FIRST_PUBLISH: ${{ inputs.first_publish && 'true' || 'false' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+
+      # Without the signed file there is nothing to copy: stop here, loudly.
+      - name: Check the signed version map is there
+        run: |
+          set -uo pipefail
+          if ! names=$(gh release view "$FEED_RELEASE" --repo "$FEED_REPO" --json assets --jq '.assets[].name'); then
+            echo "::error title=Signed version map not readable::Release $FEED_RELEASE in $FEED_REPO could not be read, so nothing was copied to the Latest release of $GITHUB_REPOSITORY."
+            exit 1
+          fi
+          if ! grep -qxF "$FEED_ASSET" <<< "$names"; then
+            echo "::error title=No signed version map to copy::Release $FEED_RELEASE in $FEED_REPO has no $FEED_ASSET, so nothing was copied to the Latest release of $GITHUB_REPOSITORY."
+            exit 1
+          fi
 
       - name: Find the Latest release and its seq
         id: latest
@@ -123,3 +140,26 @@ jobs:
       - name: Upload it to Latest
         if: steps.verify.outputs.upload == 'true'
         run: gh release upload "${{ steps.latest.outputs.tag }}" "$RUNNER_TEMP/new/$FEED_ASSET" --repo "$GITHUB_REPOSITORY" --clobber
+
+  # A failed or cancelled copy: say which command runs it again. The job fails so
+  # the run is red either way; it reads and writes nothing else.
+  notice:
+    needs: publish
+    if: ${{ always() && (needs.publish.result == 'failure' || needs.publish.result == 'cancelled') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Name the command that runs it again
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: |
+          set +e
+          node .github/scripts/resume-notice.mjs vmap > "$RUNNER_TEMP/notice.md"
+          code=$?
+          cat "$RUNNER_TEMP/notice.md" >> "$GITHUB_STEP_SUMMARY"
+          cat "$RUNNER_TEMP/notice.md"
+          exit "$code"
