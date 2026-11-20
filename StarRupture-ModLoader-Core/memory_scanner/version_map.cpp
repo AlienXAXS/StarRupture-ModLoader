@@ -5,6 +5,9 @@
 #include "core/version_check.h"
 #include "hooks/game/scan_patterns.h"
 #include "hooks/game/version_map_built.h"
+#if !defined(MODLOADER_CLIENT_BUILD)
+#include "hooks/game/version_map.server.h"
+#endif
 #include "logging/logger.h"
 #include "plugins/plugin_interface.h"
 
@@ -196,31 +199,48 @@ namespace VersionMap
 		return cl;
 	}
 
-	const MapData& BaselineMap()
+	namespace
 	{
-		static const MapData baseline = []
+		// One compiled table (the arrays of a generated header) as MapData.
+		template <typename Builds, typename FunctionIndex, typename FunctionRows, typename FieldIndex,
+			typename FieldRows, typename Absent>
+		MapData CompiledMap(const Builds& builds, const FunctionIndex& functions, const FunctionRows& functionRows,
+			const FieldIndex& fields, const FieldRows& fieldRows, const Absent& absentFields)
 		{
 			MapData m;
-			for (const Build& b : kBuilds)
+			for (const Build& b : builds)
 				m.builds.push_back({ b.gameCL, b.imageStamp, b.imageSize, b.source ? b.source : "" });
-			for (const Index& i : kFunctions)
+			for (const Index& i : functions)
 				for (uint16_t n = i.first; n < i.first + i.count; ++n)
 				{
-					const FunctionRow& f = kFunctionRows[n];
+					const FunctionRow& f = functionRows[n];
 					m.functions.push_back({ i.key, f.gameCL, f.imageStamp, f.imageSize, f.kind, f.fp, f.absent,
 						f.pattern ? f.pattern : "", f.resultOffset, f.followRel32At, f.followRipDispAt, f.rva,
 						f.owners ? f.owners : "" });
 				}
-			for (const Index& i : kFields)
+			for (const Index& i : fields)
 				for (uint16_t n = i.first; n < i.first + i.count; ++n)
 				{
-					const FieldRow& f = kFieldRows[n];
+					const FieldRow& f = fieldRows[n];
 					m.fields.push_back({ i.key, f.gameCL, f.offset, f.size, f.boolMask, f.member ? f.member : "" });
 				}
-			for (const auto& a : kAbsentFields)
+			for (const auto& a : absentFields)
 				m.absentFields.push_back({ a.key, a.gameCL });
 			return m;
-		}();
+		}
+	}
+
+	const MapData& BaselineMap()
+	{
+		// The client's map is the generated header's. The server's is its own
+		// table (hooks/game/version_map.server.h), compiled into the Server build only.
+		static const MapData baseline =
+#if defined(MODLOADER_CLIENT_BUILD)
+			CompiledMap(kBuilds, kFunctions, kFunctionRows, kFields, kFieldRows, kAbsentFields);
+#else
+			CompiledMap(kServerBuilds, kServerFunctions, kServerFunctionRows, kServerFields, kServerFieldRows,
+				kServerAbsentFields);
+#endif
 		return baseline;
 	}
 
@@ -252,6 +272,29 @@ namespace VersionMap
 	bool PluginMapOff()
 	{
 		return g_pluginMapOff;
+	}
+
+	namespace
+	{
+		// Whether the loader's map has rows for the exe that is running. The
+		// client's map covers every build it lists, and the lookups then pick
+		// the row by CL. The server's holds the rows of the one exe it was
+		// measured on, so it serves them only on that exe: CL, PE time stamp and
+		// image size all equal. On any other exe the server runs as it did
+		// before the table, on its plugins' own patterns and rows.
+		bool MapServes(const Exe& running)
+		{
+#if defined(MODLOADER_CLIENT_BUILD)
+			(void)running;
+			return true;
+#else
+			const MapData& map = ActiveMap();
+			return std::any_of(map.builds.begin(), map.builds.end(), [&](const MapBuild& b)
+			{
+				return b.gameCL == running.cl && b.imageStamp == running.imageStamp && b.imageSize == running.imageSize;
+			});
+#endif
+		}
 	}
 
 	namespace
@@ -428,12 +471,8 @@ namespace VersionMap
 	std::vector<uint32_t> SupportedBuilds()
 	{
 		std::vector<uint32_t> builds;
-#if defined(MODLOADER_CLIENT_BUILD)
 		for (const MapBuild& b : ActiveMap().builds)
 			builds.push_back(b.gameCL);
-#else
-		builds.push_back(kBuiltCL);
-#endif
 		return builds;
 	}
 
@@ -914,10 +953,12 @@ namespace VersionMap
 			std::string            setAside;  // the key is in the map, but no row of it applies
 		};
 
-		Lookup LookUp(const std::string& key, int kind, uint32_t fp, const char* owner, uint32_t runningCL)
+		Lookup LookUp(const std::string& key, int kind, uint32_t fp, const char* owner, const Exe& running)
 		{
 			Lookup out;
-#if defined(MODLOADER_CLIENT_BUILD)
+			if (!MapServes(running))
+				return out;
+			const uint32_t runningCL = running.cl;
 			const MapData& map = ActiveMap();
 			if (key.empty() || std::none_of(map.functions.begin(), map.functions.end(),
 					[&](const MapFunctionRow& f) { return f.key == key; }))
@@ -1005,9 +1046,6 @@ namespace VersionMap
 					+ ScanValidation::KindName(static_cast<ScanValidation::Kind>(otherKind)) + ")";
 			else if (out.rows.empty() && otherFp)
 				out.setAside = "loader map row is for another request (fp " + Hex8(fp) + ")";
-#else
-			(void)key; (void)kind; (void)fp; (void)owner; (void)runningCL;
-#endif
 			return out;
 		}
 
@@ -1025,7 +1063,7 @@ namespace VersionMap
 		std::vector<Candidate> LoaderRows(const ScanPatterns::PreflightEntry& entry, const Exe& running, std::string& refusal)
 		{
 			Lookup found = LookUp(LoaderEntryKey(entry), static_cast<int>(entry.kind), LoaderEntryFingerprint(entry),
-				"ModLoader", running.cl);
+				"ModLoader", running);
 			refusal = found.refusal;
 			if (!found.setAside.empty())
 				ModLoaderLogger::LogInfo(L"[Map] ModLoader: %S: %S; own pattern", entry.name, found.setAside.c_str());
@@ -1124,7 +1162,7 @@ namespace VersionMap
 		if (PluginMapOff())
 			found.setAside = "the plugin map is switched off in modloader.ini";
 		else
-			found = LookUp(key, kind, fp, who, running.cl);
+			found = LookUp(key, kind, fp, who, running);
 		if (!found.refusal.empty())
 		{
 			LogPick(who, request.name, found.refusal + " (refused)");
@@ -1222,18 +1260,14 @@ namespace VersionMap
 		// Whether the loader's map lists `key` as absent on build `cl`: the game
 		// does not have the member. The map's rows are not served to a plugin
 		// when it is switched off in modloader.ini, and neither is this.
-		bool AbsentOnBuild(const char* owner, const std::string& key, uint32_t cl)
+		bool AbsentOnBuild(const char* owner, const std::string& key, const Exe& running)
 		{
-#if defined(MODLOADER_CLIENT_BUILD)
-			if (cl == 0 || (PluginMapOff() && !(owner && strcmp(owner, "ModLoader") == 0)))
+			const uint32_t cl = running.cl;
+			if (cl == 0 || !MapServes(running) || (PluginMapOff() && !(owner && strcmp(owner, "ModLoader") == 0)))
 				return false;
 			const MapData& data = ActiveMap();
 			return std::any_of(data.absentFields.begin(), data.absentFields.end(),
 				[&](const MapAbsentField& a) { return a.gameCL == cl && a.key == key; });
-#else
-			(void)owner; (void)key; (void)cl;
-			return false;
-#endif
 		}
 
 		std::mutex               g_sizeFindingsLock;
@@ -1271,10 +1305,12 @@ namespace VersionMap
 		// The rows a request is decided on: the loader map's under its key, then
 		// its own for every changelist the map has no row for. False, with
 		// error, when an own row disagrees with the map's for its changelist.
-		bool RowsFor(const char* owner, const FieldRequest& request, std::vector<FieldCandidate>& rows, std::string& error)
+		bool RowsFor(const char* owner, const FieldRequest& request, const Exe& running,
+			std::vector<FieldCandidate>& rows, std::string& error)
 		{
 			rows = request.candidates;
-#if defined(MODLOADER_CLIENT_BUILD)
+			if (!MapServes(running))
+				return true;
 			// Switched off in modloader.ini: a plugin reads its own rows only. The loader's
 			// own fields (owner ModLoader) keep the map.
 			if (PluginMapOff() && !(owner && strcmp(owner, "ModLoader") == 0))
@@ -1342,9 +1378,6 @@ namespace VersionMap
 				}
 			}
 			rows = std::move(map);
-#else
-			(void)owner; (void)error;
-#endif
 			return true;
 		}
 	}
@@ -1440,7 +1473,7 @@ namespace VersionMap
 					}
 
 			// The game build does not have the member: nothing to look up.
-			if (AbsentOnBuild(owner, request.key, running.cl))
+			if (AbsentOnBuild(owner, request.key, running))
 			{
 				error  = "not in this game version (" + ClText(running.cl) + ")";
 				absent = true;
@@ -1448,7 +1481,7 @@ namespace VersionMap
 			}
 
 			std::vector<FieldCandidate> rows;
-			if (!RowsFor(owner, request, rows, error))
+			if (!RowsFor(owner, request, running, rows, error))
 				return false;
 			const FieldCandidate* row = running.cl ? RowFor(rows, running.cl) : nullptr;
 			const bool onBuilt = running.cl != 0 && running.cl == request.builtCL;
@@ -1627,11 +1660,18 @@ namespace VersionMap
 				return false;
 			}
 
-#if defined(MODLOADER_CLIENT_BUILD)
 			// Reflection does not describe a native member, but it does describe
 			// its class: the member has to lie inside the class as this build
-			// lays it out, or the offset is not this member's.
-			if (native)
+			// lays it out, or the offset is not this member's. The client bounds
+			// every native member. The server keeps serving them from the
+			// offsets compiled into the plugin, and bounds only a member its
+			// table gave a row for.
+#if defined(MODLOADER_CLIENT_BUILD)
+			const bool bounded = native;
+#else
+			const bool bounded = native && row && row->fromMap;
+#endif
+			if (bounded)
 			{
 				if (!g_liveFields)
 				{
@@ -1664,7 +1704,6 @@ namespace VersionMap
 					return false;
 				}
 			}
-#endif
 
 			if (check)
 			{

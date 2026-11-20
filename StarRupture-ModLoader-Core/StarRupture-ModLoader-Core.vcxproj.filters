@@ -537,6 +537,9 @@
     <ClInclude Include="hooks\game\version_map_built.h">
       <Filter>Source Files\hooks\game</Filter>
     </ClInclude>
+    <ClInclude Include="hooks\game\version_map.server.h">
+      <Filter>Source Files\hooks\game</Filter>
+    </ClInclude>
     <ClInclude Include="UI\console_window.h">
       <Filter>Source Files\UI</Filter>
     </ClInclude>

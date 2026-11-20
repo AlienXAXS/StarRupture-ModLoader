@@ -162,8 +162,9 @@ namespace VersionMap
 	// The game builds this loader runs on, the gate VerifyGameVersion applies.
 	// The client runs on every build its map has rows for (kBuilds; CI adds a
 	// build only once every one of the loader's patterns resolves on it), the
-	// server only on the build it was written for (kBuiltCL). The server
-	// refuses any other build. On any other build that has a CL, the client's
+	// server only on the build its own table lists (kServerBuilds in
+	// hooks/game/version_map.server.h). The server refuses any other build.
+	// On any other build that has a CL, the client's
 	// VerifyGameVersion runs on the newest known build's values, each checked
 	// against the running game, unless [UnknownBuild] says otherwise
 	// (core/unknown_build.h).
@@ -269,8 +270,9 @@ namespace VersionMap
 	// named ModLoader is refused: the map's ModLoader/ keys are the loader's.
 	// ownerNameShared: another loaded plugin has the owner's name, so its site
 	// keys could be either plugin's, and a site key is refused (a global key
-	// is not affected). The client only; on the server the map holds no rows
-	// for it.
+	// is not affected). On the server the map is the server table's, and its
+	// rows are served only on the exe they were measured on (CL, PE time stamp
+	// and image size all equal).
 	ScanValidation::Result ResolveMapKey(const char* owner, const ScanValidation::Request& request,
 		const std::vector<Candidate>& own, const Exe& running, bool ownerNameShared);
 
@@ -283,8 +285,8 @@ namespace VersionMap
 	// The loader's own registry row (ScanPatterns::PreflightRegistry), resolved
 	// with the rows its map (hooks/game/version_map.generated.h) holds for it,
 	// under LoaderEntryKey and by the rules of ResolveMapKey. With no rows, the
-	// row's own pattern alone, as before the map. The client only: the server
-	// build stays on its exact CL.
+	// row's own pattern alone, as before the map. On the server the rows are
+	// the server table's, served only on the exe they were measured on.
 	//
 	// A row marked siteArithmetic takes map rows only where they carry its own
 	// pattern, because its hook site adds offsets that only that pattern's
@@ -320,8 +322,9 @@ namespace VersionMap
 	// the request's class and member, or the member one of its rows records
 	// as renamed; otherwise they are set aside and logged. An own row for a
 	// changelist the map has a row for must agree with it, or the request
-	// fails. The client only: on the server the map holds no rows for it, and
-	// with no reflection reader there a native member is not bounded.
+	// fails. On the server the map is the server table's, served only on the
+	// exe it was measured on. The client bounds every native member by its
+	// class; the server only a member the table gave a row for.
 
 	// One build's value for a field.
 	struct FieldCandidate
