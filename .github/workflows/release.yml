@@ -280,6 +280,34 @@ jobs:
             /m `
             /v:minimal
 
+      # A Client build whose Core DLL lacks the version object map URL or the release
+      # key cannot fetch or verify the signed version map, and would ship that way
+      # to every player. Fail here, before the build is uploaded and a release made.
+      # The strings are in the DLL as plain text (VMAP_FEED_URL, kK<n>Hex).
+      - name: Check the Client build carries the version map URL and key
+        if: ${{ matrix.variant == 'Client' }}
+        shell: bash
+        env:
+          DLL: build/Client Release/ModLoader/StarRupture-ModLoader-Core.dll
+          KEY_SOURCE: StarRupture-ModLoader-Core/memory_scanner/version_feed.cpp
+        run: |
+          set -uo pipefail
+          fail() { echo "::error title=Client build is missing the version map setting::$1 Nothing was uploaded and no release was made."; exit 1; }
+          [ -s "$DLL" ] || fail "The built Core DLL was not found at $DLL."
+          url="https://github.com/$GITHUB_REPOSITORY/releases/latest/download/version-map-client.v1.txt"
+          grep -qaF -- "$url" "$DLL" || fail "The Core DLL does not contain the version map URL $url (VmapFeedUrl)."
+          # Every key slot that is not a TEST key and holds a key: its public key must be in the DLL.
+          found=0
+          for slot in 1 2; do
+            hex=$(sed -n "s/.*kK${slot}Hex = \"\([0-9a-f]*\)\".*/\1/p" "$KEY_SOURCE")
+            test_only=$(sed -n "s/.*kK${slot}TestOnly = \(true\|false\).*/\1/p" "$KEY_SOURCE")
+            [ -n "$hex" ] && [ "$test_only" = "false" ] || continue
+            found=$((found + 1))
+            grep -qaF -- "$hex" "$DLL" || fail "The Core DLL does not contain the release public key of slot k$slot from $KEY_SOURCE."
+          done
+          [ "$found" -gt 0 ] || fail "$KEY_SOURCE names no release public key, so the build could not verify a version map."
+          echo "The Core DLL carries the version map URL and $found release public key(s)."
+
       - name: Upload ${{ matrix.variant }} build
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

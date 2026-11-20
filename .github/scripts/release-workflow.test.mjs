@@ -197,3 +197,64 @@ test('a version map that does not verify fails the step with the resume command,
     assert.ok(r.stdout.includes(`run: ${RESUME}`), what);
   }
 });
+
+// The Client build must carry the version map URL and the release key, or the release fails before upload.
+const dllStep = /- name: Check the Client build carries the version map URL and key\n((?: {8}.*\n|\n)+?)(?= {6}- name:)/.exec(`${jobs.build}\n`)[1];
+const KEY_SOURCE = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'StarRupture-ModLoader-Core', 'memory_scanner', 'version_feed.cpp');
+const realKeys = (src) => ({ k1: /kK1Hex = "([0-9a-f]{64})"/.exec(src)[1], k2: /kK2Hex = "([0-9a-f]{64})"/.exec(src)[1] });
+
+test('the DLL check runs for the Client build only, after the build and before the upload', () => {
+  assert.match(dllStep, /^ {8}if: \$\{\{ matrix\.variant == 'Client' \}\}\n/);
+  const at = (s) => jobs.build.indexOf(s);
+  assert.ok(at('name: Build Client Release') < at('Check the Client build carries') && at('Check the Client build carries') < at('name: Upload ${{ matrix.variant }} build'));
+  // The URL it looks for is the one the build is given.
+  assert.ok(jobs.build.includes('/p:VmapFeedUrl="https://github.com/${{ github.repository }}/releases/latest/download/version-map-client.v1.txt"'));
+  assert.ok(dllStep.includes('url="https://github.com/$GITHUB_REPOSITORY/releases/latest/download/version-map-client.v1.txt"'));
+});
+
+function runDllStep({ dll, keySource = KEY_SOURCE, repo = 'o/r' }) {
+  const dir = mkdtempSync(join(tmpdir(), 'dll-'));
+  const path = join(dir, 'Core.dll');
+  if (dll !== null) writeFileSync(path, dll);
+  const step = dllStep.replace(/^ {8}[\s\S]*?\n {8}run: \|\n/, '').replace(/^ {10}/gm, '');
+  return spawnSync('bash', ['-c', step], {
+    encoding: 'utf8',
+    windowsHide: true,
+    env: { ...process.env, DLL: posix(path), KEY_SOURCE: posix(keySource), GITHUB_REPOSITORY: repo },
+  });
+}
+// A stand-in for a DLL: binary noise with the given strings in it, NUL-terminated as the compiler stores them.
+const dllWith = (...strings) => Buffer.concat([Buffer.alloc(4096, 0x90), ...strings.flatMap((s) => [Buffer.from(s), Buffer.alloc(1), Buffer.alloc(64, 0x41)])]);
+const URL_FOR = (repo) => `https://github.com/${repo}/releases/latest/download/version-map-client.v1.txt`;
+
+test('a Core DLL with the version map URL and the release key passes', () => {
+  const keys = realKeys(readFileSync(KEY_SOURCE, 'utf8'));
+  const r = runDllStep({ dll: dllWith(URL_FOR('o/r'), keys.k2, keys.k1) });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.match(r.stdout, /carries the version map URL and 1 release public key/);
+  // The TEST key (slot k1) is not needed: a build may leave it out.
+  assert.equal(runDllStep({ dll: dllWith(URL_FOR('o/r'), keys.k2) }).status, 0);
+});
+
+test('a Core DLL without the URL, with another repository\'s URL, without the release key, or missing fails before upload', () => {
+  const keys = realKeys(readFileSync(KEY_SOURCE, 'utf8'));
+  const noUrl = runDllStep({ dll: dllWith(keys.k2, keys.k1) });
+  assert.equal(noUrl.status, 1);
+  assert.match(noUrl.stdout, /::error title=Client build is missing the version map setting::The Core DLL does not contain the version map URL https:\/\/github\.com\/o\/r\/releases\/latest\/download\/version-map-client\.v1\.txt \(VmapFeedUrl\)\. Nothing was uploaded and no release was made\./);
+  assert.equal(runDllStep({ dll: dllWith(URL_FOR('someone/else'), keys.k2) }).status, 1);
+  const noKey = runDllStep({ dll: dllWith(URL_FOR('o/r'), keys.k1) });
+  assert.equal(noKey.status, 1);
+  assert.match(noKey.stdout, /does not contain the release public key of slot k2/);
+  const gone = runDllStep({ dll: null });
+  assert.equal(gone.status, 1);
+  assert.match(gone.stdout, /The built Core DLL was not found/);
+});
+
+test('a key source with no release key fails the check instead of passing it', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ks-'));
+  const src = join(dir, 'version_feed.cpp');
+  writeFileSync(src, 'constexpr const char* kK1Hex = "' + 'a'.repeat(64) + '";\nconstexpr bool kK1TestOnly = true;\nconstexpr const char* kK2Hex = "";\nconstexpr bool kK2TestOnly = false;\n');
+  const r = runDllStep({ dll: dllWith(URL_FOR('o/r'), 'a'.repeat(64)), keySource: src });
+  assert.equal(r.status, 1);
+  assert.match(r.stdout, /names no release public key/);
+});
