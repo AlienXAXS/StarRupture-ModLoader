@@ -31,6 +31,7 @@
 struct AutoUpdateConfig
 {
 	bool enabled = true;
+	bool versionMapFetch = true; // [VersionMap] Fetch, read here because it shares the ini path
 	char manifestUrl[512] = {};
 	bool urlFromIni = false; // true if user overrode the URL in modloader.ini
 };
@@ -49,6 +50,9 @@ static AutoUpdateConfig ReadAutoUpdateConfig()
 
 	cfg.enabled = (GetPrivateProfileIntW(L"AutoUpdate", L"Enabled", 1, iniPath) != 0);
 	LogToFile::Debug("[AutoUpdate] Enabled=%s (from ini)", cfg.enabled ? "true" : "false");
+
+	cfg.versionMapFetch = (GetPrivateProfileIntW(L"VersionMap", L"Fetch", 1, iniPath) != 0);
+	LogToFile::Debug("[VersionMap] Fetch=%s (from ini)", cfg.versionMapFetch ? "true" : "false");
 
 	wchar_t wUrl[512]{};
 	GetPrivateProfileStringW(L"AutoUpdate", L"ManifestUrl", L"", wUrl, 512, iniPath);
@@ -1010,6 +1014,11 @@ bool AutoUpdateEnabled()
 	return ReadAutoUpdateConfig().enabled;
 }
 
+bool VersionMapFetchEnabled()
+{
+	return ReadAutoUpdateConfig().versionMapFetch;
+}
+
 // The feed URL is a compiled define of its own and never read from modloader.ini.
 #ifndef VMAP_FEED_URL
 #  define VMAP_FEED_URL ""
@@ -1043,7 +1052,7 @@ FeedFetch::Config FeedFetch::LoaderConfig()
 	cfg.url = VMAP_FEED_URL;
 	cfg.keys = VersionFeed::CompiledKeys();
 	cfg.cachePath = GetModLoaderDirPath(L"version-map-client.v1.cache");
-	cfg.autoUpdate = AutoUpdateEnabled();
+	cfg.fetchEnabled = VersionMapFetchEnabled();
 	return cfg;
 }
 

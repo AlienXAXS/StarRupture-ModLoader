@@ -79,8 +79,8 @@ namespace FeedFetch
 	{
 		if (!cfg.client)
 			return "this is the server build";
-		if (!cfg.autoUpdate)
-			return "[AutoUpdate] Enabled is off";
+		if (!cfg.fetchEnabled)
+			return "[VersionMap] Fetch is off";
 		if (cfg.url.empty())
 			return "no feed URL is compiled in";
 		if (cfg.keys.empty())

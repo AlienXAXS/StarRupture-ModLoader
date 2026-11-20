@@ -152,7 +152,10 @@ namespace LogToFile
 					"; Set to 0 to disable automatic plugin updates at startup\n"
 					"Enabled=1\n\n"
 					"; Override the manifest URL (leave empty to use the compiled-in default)\n"
-					"ManifestUrl=\n\n";
+					"ManifestUrl=\n\n"
+					"[VersionMap]\n"
+					"; Set to 0 to stop fetching newer version object maps at startup (client only)\n"
+					"Fetch=1\n\n";
 
 				DWORD written = 0;
 				WriteFile(hFile, defaultContent, static_cast<DWORD>(strlen(defaultContent)), &written, nullptr);

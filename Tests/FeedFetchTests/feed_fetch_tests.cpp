@@ -18,6 +18,7 @@
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <string>
 #include <thread>
 #include <vector>
@@ -320,7 +321,7 @@ namespace
 		cfg.keys = keys;
 		cfg.cachePath = cache;
 		cfg.client = true;
-		cfg.autoUpdate = true;
+		cfg.fetchEnabled = true;
 		cfg.allowPlainHttp = true;
 		return cfg;
 	}
@@ -609,9 +610,13 @@ int main()
 		FeedFetch::Config server = cfg;
 		server.client = false;
 		Check(FeedFetch::WhyNot(server) != nullptr, "WhyNot: the server never asks");
+		// [AutoUpdate] Enabled is not in the config at all: with updates off and
+		// [VersionMap] Fetch on, the loader hands WhyNot this same config.
+		Check(FeedFetch::WhyNot(cfg) == nullptr, "WhyNot: [AutoUpdate] Enabled off does not stop the fetch");
 		FeedFetch::Config off = cfg;
-		off.autoUpdate = false;
-		Check(FeedFetch::WhyNot(off) != nullptr, "WhyNot: [AutoUpdate] Enabled off");
+		off.fetchEnabled = false;
+		const char* offReason = FeedFetch::WhyNot(off);
+		Check(offReason != nullptr && strstr(offReason, "[VersionMap] Fetch") != nullptr, "WhyNot: [VersionMap] Fetch off names the switch");
 		FeedFetch::Config noUrl = cfg;
 		noUrl.url.clear();
 		Check(FeedFetch::WhyNot(noUrl) != nullptr, "WhyNot: no URL compiled in");
@@ -756,17 +761,17 @@ int main()
 		FeedFetch::Config server = ConfigFor(srv, "/ok", keys, cache);
 		server.client = false;
 		FeedFetch::Config off = ConfigFor(srv, "/ok", keys, cache);
-		off.autoUpdate = false;
+		off.fetchEnabled = false;
 		FeedFetch::Config noUrl = ConfigFor(srv, "/ok", keys, cache);
 		noUrl.url.clear();
 		FeedFetch::Config noKeys = ConfigFor(srv, "/ok", keys, cache);
 		noKeys.keys.clear();
 		Check(FeedFetch::Refresh(server, "test") == FeedFetch::Result::NotAllowed, "the server build makes no request");
-		Check(FeedFetch::Refresh(off, "test") == FeedFetch::Result::NotAllowed, "[AutoUpdate] Enabled off makes no request");
+		Check(FeedFetch::Refresh(off, "test") == FeedFetch::Result::NotAllowed, "[VersionMap] Fetch off makes no request");
 		Check(FeedFetch::Refresh(noUrl, "test") == FeedFetch::Result::NotAllowed, "no URL makes no request");
 		Check(FeedFetch::Refresh(noKeys, "test") == FeedFetch::Result::NotAllowed, "no key makes no request");
 		FeedFetch::AfterRefusal(server, false);
-		Check(!FeedFetch::Stage1(off, true), "Stage 1 with updates off makes no request");
+		Check(!FeedFetch::Stage1(off, true), "Stage 1 with [VersionMap] Fetch off makes no request");
 		Check(srv.hits == 0, "none of those reached the server");
 	}
 

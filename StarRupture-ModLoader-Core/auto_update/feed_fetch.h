@@ -24,7 +24,7 @@
 //   Stage3        on the auto-update thread, only when Stage 1 could not ask
 //                 (the injected path): fetch for the next launch.
 //
-// Nothing is fetched on the server build, with `[AutoUpdate] Enabled` off, with
+// Nothing is fetched on the server build, with `[VersionMap] Fetch` off, with
 // no VMAP_FEED_URL compiled in or with no public key. A request that fails
 // (offline, a 404, a timeout, a bad signature) leaves the cache as it was.
 // ---------------------------------------------------------------------------
@@ -41,7 +41,7 @@ namespace FeedFetch
 		std::vector<VersionFeed::PublicKey> keys;    // none: no fetch
 		std::wstring cachePath;
 		bool client      = false;                    // the server never fetches
-		bool autoUpdate  = true;                     // modloader.ini [AutoUpdate] Enabled
+		bool fetchEnabled = true;                    // modloader.ini [VersionMap] Fetch
 		bool allowPlainHttp = false;                 // for tests that run a local server
 	};
 
