@@ -337,13 +337,24 @@ starrupture-ci's `ci/VERSION-MAP.md`.
 
 **Asset.** `version-map-client.v1.txt`, on the loader's Latest release. The name carries the
 format version, so a later format never strands a loader that reads this one. Latest is where it
-sits because `prune_releases.yml` deletes the others. `vmap-publish.yml` puts the current signed
-file on Latest: on a new release as the last job of `release.yml`, and between releases at its
-scheduled run (every 15 minutes) whenever the `seq` rises. The first release that carries one needs a manual run with `first_publish` set.
-There is no server feed: only the client fetches.
+sits because `prune_releases.yml` deletes the others (it keeps the release before Latest too, so a
+bad Latest can be rolled back). `release.yml` attaches the current signed file when it creates a new
+release, and `vmap-publish.yml` puts it on Latest between releases, at its scheduled run (every 15
+minutes) whenever the `seq` rises. The first release that carries one needs a manual run with
+`first_publish` set. There is no server feed: only the client fetches.
+
+**What is refused.** Both check the file with `.github/vmap/verify-feed.mjs` first. It refuses a file
+that is altered, malformed, signed with an unknown or TEST key (`allow_test_key` is honoured only when
+the release being copied to is a prerelease), or that lists a game build twice or a function, absent
+or field row twice for one build (the loader would refuse the whole file). `vmap-publish.yml` never
+copies from the `vmap-feed-rehearsal` release, and skips with a warning a copy already on a release
+that fails the check. `release.yml` also fails the Client build, before any upload, when the Core DLL
+lacks the `VMAP_FEED_URL` text or the release public key.
 
 **If a copy fails.** A failed or cancelled `vmap-publish.yml` run is red, and its job summary holds
-the one command that runs it again (`gh workflow run vmap-publish.yml` with that run's inputs). A
+the one command that runs it again (`gh workflow run vmap-publish.yml` with that run's inputs). If
+the signed file is missing or does not verify when `release.yml` makes a release, the release is
+still made without it, the step is red and names the resume command below. A
 release that went public but did not finish (Nexus or the version map step failed) is finished with
 `gh workflow run release.yml -f resume_tag=<tag>`: it checks the release with
 `.github/scripts/release-check.mjs`, then runs Nexus and the version map step, and never makes a new
