@@ -144,9 +144,12 @@ jobs:
             return "v$($v.Major).$($v.Minor).$($v.Patch)"
           }
 
+          # Public releases only: a draft left by an earlier run must not push the
+          # next version past it. The tag guard below stops on a stuck draft.
           $latestParsed = $null
-          $releaseTags = gh release list --limit 100 --json tagName |
+          $releaseTags = gh release list --limit 100 --json tagName,isDraft |
             ConvertFrom-Json |
+            Where-Object { -not $_.isDraft } |
             Select-Object -ExpandProperty tagName |
             Where-Object { $_ -match '^v\d+\.\d+\.\d+$' }
 
@@ -239,6 +242,15 @@ jobs:
           $global:LASTEXITCODE = 0
           if ($tagExists) {
             throw "Tag $tag already exists, so this run would not be a new release. If its release is public, finish it by running this workflow with resume_tag=$tag. If there is a tag but no release, the tag has to be removed by hand (the owner's call) before a new run can use it."
+          }
+          # A draft for this tag is a release that was started and not published
+          # (a draft has no tag yet, so the check above cannot see it). Never make
+          # a second one: resume_tag repairs it and publishes it.
+          $found = node .github/scripts/release-check.mjs find --repo $env:GITHUB_REPOSITORY --tag $tag
+          if ($LASTEXITCODE -ne 0) { throw "Could not look for a draft of $tag, so nothing was made. Run this workflow again." }
+          $draftState = ($found | ConvertFrom-Json).state
+          if ($draftState -eq 'draft' -or $draftState -eq 'ambiguous') {
+            throw "Draft $tag exists; re-run ``gh workflow run release.yml --repo $env:GITHUB_REPOSITORY --ref $env:GITHUB_REF_NAME -f resume_tag=$tag`` to repair and publish, or delete the draft by hand (the owner's call). No new release was made."
           }
           echo "TAG=$tag"          >> $env:GITHUB_OUTPUT
           echo "IS_PREVIEW=$($isPreview.ToString().ToLower())" >> $env:GITHUB_OUTPUT

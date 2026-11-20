@@ -131,6 +131,15 @@ test('a tag that already exists stops a new run instead of bumping or reusing it
   assert.match(jobs.prepare, /git ls-remote --exit-code --tags origin "refs\/tags\/\$tag"[\s\S]*resume_tag=\$tag/);
 });
 
+test('a stuck draft for the computed tag stops a new run and names resume_tag; drafts do not move the version', () => {
+  const prepare = jobs.prepare;
+  assert.match(prepare, /gh release list --limit 100 --json tagName,isDraft \|\n\s+ConvertFrom-Json \|\n\s+Where-Object \{ -not \$_\.isDraft \}/);
+  assert.match(prepare, /release-check\.mjs find --repo \$env:GITHUB_REPOSITORY --tag \$tag/);
+  assert.match(prepare, /\$draftState -eq 'draft' -or \$draftState -eq 'ambiguous'\) \{\n\s+throw "Draft \$tag exists; re-run ``gh workflow run release\.yml --repo \$env:GITHUB_REPOSITORY --ref \$env:GITHUB_REF_NAME -f resume_tag=\$tag`` to repair and publish, or delete the draft by hand/);
+  // The guard comes before the outputs that start a build.
+  assert.ok(prepare.indexOf('release-check.mjs find --repo $env:GITHUB_REPOSITORY') < prepare.indexOf('echo "TAG=$tag"'));
+});
+
 test('jobs that run on a resume never tag, create, replace, delete or force', () => {
   const forbidden = /gh release (create|delete|edit|upload)|git (tag|push)|--clobber|--force|--cleanup-tag|gh api -X (DELETE|PATCH|PUT|POST)/;
   for (const job of ['prepare', 'inspect', 'verify-release', 'nexus']) {
