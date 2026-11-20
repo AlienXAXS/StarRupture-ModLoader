@@ -398,6 +398,70 @@ namespace
         const LayoutCheck::Result whole = LayoutCheck::Compare(sdk, find);
         Check(Contains(whole, "UPerBuild::Resolved: offset SDK 0x30, game 0x48"), "without a per-build rule every row is compared");
     }
+
+    // The loader's table is generated from the Client SDK (CL 130045). The
+    // two members of its scope that sit elsewhere on CL 127004 are per-build
+    // members, so a 127004 game is not a changed layout.
+    void ClientTableOnEitherBuild()
+    {
+        std::printf("The loader's table on a 130045 and a 127004 game\n");
+
+        Check(LayoutCheck::IsPluginPerBuildMember("UCrEnviroWaveTimerSubsystem", "TimerActor"),
+            "UCrEnviroWaveTimerSubsystem::TimerActor is a per-build member");
+        Check(!LayoutCheck::IsPluginPerBuildMember("UCrEnviroWaveTimerSubsystem", "Other")
+            && !LayoutCheck::IsPluginPerBuildMember("ACrCrafter", "TimerActor"),
+            "only that class and member");
+
+        Check(SrLayoutTable::kBuiltCL == 130045, "the table is the 130045 one");
+        const std::vector<LayoutCheck::TableClass> table = kLoaderTable();
+
+        const LayoutCheck::Result same = CompareWith(table, AsGame(table));
+        Check(same.lines.empty() && !LayoutCheck::FoundChanges(same) && !LayoutCheck::Decide(table, same).safeOff,
+            "a 130045 game: nothing changed, plugins stay on");
+
+        auto game = AsGame(table);
+        int moved = 0;
+        for (const LayoutCheck::TableClass& c : table)
+        {
+            const std::string name = c.name;
+            if (name != "UCrEnviroWaveTimerSubsystem" && name != "ACrCrafter")
+                continue;
+            for (LayoutCheck::LiveProperty& property : game[c.path].properties)
+            {
+                if (name == "UCrEnviroWaveTimerSubsystem" && property.name == "TimerActor" && property.offset == 0x98)
+                {
+                    property.offset = 0x90;
+                    ++moved;
+                }
+                if (name == "ACrCrafter" && property.name == "CraftComponent" && property.offset == 0x6E0)
+                {
+                    property.offset = 0x6D8;
+                    ++moved;
+                }
+            }
+        }
+        Check(moved == 2, "the table has TimerActor at 0x98 and CraftComponent at 0x6E0");
+
+        const LayoutCheck::Result whole = CompareWith(table, game);
+        Check(whole.mismatched == 2 && LayoutCheck::FoundChanges(whole),
+            "a 127004 game with no per-build rule: the two members count as changes");
+
+        const LayoutCheck::Result narrow = LayoutCheck::Compare(table,
+            [&game](const LayoutCheck::TableClass& c) -> const LayoutCheck::LiveStruct*
+            {
+                const auto it = game.find(c.path);
+                return it == game.end() ? nullptr : &it->second;
+            },
+            [](const LayoutCheck::TableClass& c, const LayoutCheck::TableRow& row)
+            {
+                // IsPerBuildField also holds CraftComponent (SdkGlobals, needs the SDK).
+                return LayoutCheck::IsPluginPerBuildMember(c.name, row.name)
+                    || (std::string(c.name) == "ACrCrafter" && std::string(row.name) == "CraftComponent");
+            });
+        Check(narrow.perBuild == 2 && narrow.mismatched == 0 && narrow.lines.empty() && !LayoutCheck::FoundChanges(narrow)
+            && !LayoutCheck::Decide(table, narrow).safeOff,
+            "a 127004 game: both are left to the version map, no changed class, no safe-off");
+    }
 }
 
 namespace
@@ -957,6 +1021,7 @@ int main()
     EachDifferenceIsReported();
     DumperRenamedMember();
     UsedMembersOnly();
+    ClientTableOnEitherBuild();
     ConsumersDecideWhatStops();
     ProcessEventSlotDecidesSafeOff();
     FunctionParamsFollowTheGame();

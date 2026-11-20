@@ -319,6 +319,7 @@ namespace SdkGlobals
 #include "../hooks/game/version_map_built.h"
 #include "../logging/logger.h"
 #include "../memory_scanner/version_map.h"
+#include "layout_check.h"
 
 #include <algorithm>
 #include <atomic>
@@ -432,7 +433,8 @@ namespace SdkGlobals
     bool IsPerBuildField(const char* className, const char* member)
     {
         return std::any_of(std::begin(kFieldSpecs), std::end(kFieldSpecs), [&](const FieldSpec& spec)
-            { return strcmp(spec.className, className) == 0 && strcmp(spec.member, member) == 0; });
+            { return strcmp(spec.className, className) == 0 && strcmp(spec.member, member) == 0; })
+            || LayoutCheck::IsPluginPerBuildMember(className, member);
     }
 
     SDK::AGameStateBase* WorldGameState(const SDK::UWorld* world)

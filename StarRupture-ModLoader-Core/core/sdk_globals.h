@@ -111,7 +111,9 @@ namespace SdkGlobals
     // compiled offsets.
     std::vector<std::string> ResolveFields();
 
-    // True for a member ResolveFields resolves (className is the SDK's name).
+    // True for a member ResolveFields resolves, and for one only plugins read
+    // per build (LayoutCheck::kPluginPerBuildMembers). className is the SDK's
+    // name.
     bool IsPerBuildField(const char* className, const char* member);
 
     // The member of the object, or null when the object is null or the

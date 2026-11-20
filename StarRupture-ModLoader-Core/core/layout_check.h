@@ -3,6 +3,7 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <functional>
 #include <map>
 #include <string>
@@ -94,6 +95,30 @@ namespace LayoutCheck
         std::vector<TableRow> rows;
         std::vector<std::string> consumers;  // what reads the layout (kConsumer*); empty = not known
     };
+
+    // Members only plugins read at an offset that moves between game builds.
+    // Each takes its offset from the version map's row for the running build
+    // (a plugin's field request), and the loader reads none of them, so the
+    // check does not compare them (SdkGlobals::IsPerBuildField). Without the
+    // entry the layout of one such member moving between two builds would
+    // count as a changed class. List a member here only when the version map
+    // has a field row for it on every build.
+    struct PerBuildMember
+    {
+        const char* className;  // the SDK's C++ name
+        const char* member;
+    };
+    inline constexpr PerBuildMember kPluginPerBuildMembers[] = {
+        { "UCrEnviroWaveTimerSubsystem", "TimerActor" },  // 0x90 on CL-127004, 0x98 from CL-128786
+    };
+
+    inline bool IsPluginPerBuildMember(const char* className, const char* member)
+    {
+        for (const PerBuildMember& listed : kPluginPerBuildMembers)
+            if (std::strcmp(listed.className, className) == 0 && std::strcmp(listed.member, member) == 0)
+                return true;
+        return false;
+    }
 
     // Consumer ids (tools\Update-LayoutTable.ps1 tags the table with them).
     inline constexpr const char* kConsumerCore      = "core";        // the loader's own code
