@@ -12,6 +12,7 @@
 
 #include "fixtures/layout_table_126119.h"
 #include "fixtures/layout_table_127004.h"
+#include "fixtures/layout_table_loader_127004.h"
 
 #include <windows.h>
 
@@ -73,6 +74,13 @@ namespace
     const auto kTable127004 = []
     {
         return LayoutCheck::ReadTable(SrLayoutTable127004::kNames, SrLayoutTable127004::kClasses, SrLayoutTable127004::kRows);
+    };
+
+    // The loader's table as v1.26.1 shipped it (CL 127004), with what reads each class.
+    const auto kLoaderTable127004 = []
+    {
+        return LayoutCheck::ReadTable(SrLayoutTable127004Loader::kNames, SrLayoutTable127004Loader::kClasses,
+            SrLayoutTable127004Loader::kRows, SrLayoutTable127004Loader::kConsumers, SrLayoutTable127004Loader::kClassConsumers);
     };
 
     // The loader's own table, with what reads each class.
@@ -461,6 +469,72 @@ namespace
         Check(narrow.perBuild == 2 && narrow.mismatched == 0 && narrow.lines.empty() && !LayoutCheck::FoundChanges(narrow)
             && !LayoutCheck::Decide(table, narrow).safeOff,
             "a 127004 game: both are left to the version map, no changed class, no safe-off");
+    }
+
+    // The per-build rule of the real check (SdkGlobals::IsPerBuildField needs the
+    // SDK, so it is written out here): the plugin members, and CraftComponent.
+    bool PerBuildRule(const LayoutCheck::TableClass& c, const LayoutCheck::TableRow& row)
+    {
+        return LayoutCheck::IsPluginPerBuildMember(c.name, row.name)
+            || (std::string(c.name) == "ACrCrafter" && std::string(row.name) == "CraftComponent");
+    }
+
+    // The new table checked against the layout a 127004 game really has. The
+    // 127004 side is the loader's own table of v1.26.1, which was made from the
+    // 127004 SDK, so this is the real 127004 layout of every class the table lists.
+    void NewTableOnARealLayoutOf127004()
+    {
+        std::printf("The 130045 table on the 127004 layout\n");
+        const std::vector<LayoutCheck::TableClass> table = kLoaderTable();
+        const std::vector<LayoutCheck::TableClass> old = kLoaderTable127004();
+        Check(SrLayoutTable127004Loader::kBuiltCL == 127004 && SrLayoutTable::kBuiltCL == 130045, "the two tables are the 127004 and 130045 ones");
+        Check(table.size() == old.size(), "both list the same classes");
+
+        const auto game = AsGame(old);
+        const auto find = [&game](const LayoutCheck::TableClass& c) -> const LayoutCheck::LiveStruct*
+        {
+            const auto it = game.find(c.path);
+            return it == game.end() ? nullptr : &it->second;
+        };
+
+        const LayoutCheck::Result bare = LayoutCheck::Compare(table, find);
+        Check(bare.mismatched == 2 && bare.checked == bare.classes && bare.missing == 0,
+            "without a per-build rule exactly two members differ and every class is found");
+        Check(Contains(bare, "UCrEnviroWaveTimerSubsystem::TimerActor: offset SDK 0x98, game 0x90")
+            && Contains(bare, "ACrCrafter::CraftComponent: offset SDK 0x6E0, game 0x6D8"),
+            "they are TimerActor and CraftComponent");
+
+        const LayoutCheck::Result result = LayoutCheck::Compare(table, find, PerBuildRule);
+        const LayoutCheck::Verdict verdict = LayoutCheck::Decide(table, result);
+        Check(result.perBuild == 2 && result.mismatched == 0 && result.lines.empty() && result.changedClasses.empty(),
+            "with the per-build rule: no changed class");
+        Check(!LayoutCheck::FoundChanges(result) && !verdict.safeOff && verdict.featuresOff.empty() && verdict.changed.empty(),
+            "no safe-off, no feature off, no plugin refused for a changed class");
+    }
+
+    // The same two layouts the other way round: what v1.26.1 (127004 table, CraftComponent
+    // alone per build) made of a 130045 game. TimerActor was a changed class there.
+    void OldLoaderOn130045()
+    {
+        std::printf("The v1.26.1 loader on the 130045 layout\n");
+        const std::vector<LayoutCheck::TableClass> old = kLoaderTable127004();
+        const auto game = AsGame(kLoaderTable());
+        const auto find = [&game](const LayoutCheck::TableClass& c) -> const LayoutCheck::LiveStruct*
+        {
+            const auto it = game.find(c.path);
+            return it == game.end() ? nullptr : &it->second;
+        };
+        const LayoutCheck::Result result = LayoutCheck::Compare(old, find,
+            [](const LayoutCheck::TableClass& c, const LayoutCheck::TableRow& row)
+            {
+                return std::string(c.name) == "ACrCrafter" && std::string(row.name) == "CraftComponent";
+            });
+        const LayoutCheck::Verdict verdict = LayoutCheck::Decide(old, result);
+        Check(result.mismatched == 1 && Contains(result, "UCrEnviroWaveTimerSubsystem::TimerActor: offset SDK 0x90, game 0x98"),
+            "v1.26.1 on 130045: TimerActor is the one difference");
+        Check(verdict.changed == std::vector<std::string>{ "UCrEnviroWaveTimerSubsystem" },
+            "so UCrEnviroWaveTimerSubsystem was a changed class");
+        std::printf("  info: that verdict: safeOff=%d, featuresOff=%zu\n", verdict.safeOff ? 1 : 0, verdict.featuresOff.size());
     }
 }
 
@@ -1022,6 +1096,8 @@ int main()
     DumperRenamedMember();
     UsedMembersOnly();
     ClientTableOnEitherBuild();
+    NewTableOnARealLayoutOf127004();
+    OldLoaderOn130045();
     ConsumersDecideWhatStops();
     ProcessEventSlotDecidesSafeOff();
     FunctionParamsFollowTheGame();

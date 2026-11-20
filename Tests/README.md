@@ -186,6 +186,10 @@ the other the running game. It covers:
 - The loader's CL-130045 table on a 130045 game (nothing changed) and on a 127004 game, where
   `UCrEnviroWaveTimerSubsystem::TimerActor` and `ACrCrafter::CraftComponent` sit at the older offsets:
   both count as changes without a per-build rule and none with it, and the verdict is not a safe-off.
+- The same CL-130045 table against the real 127004 layout of every class it lists (the loader's table
+  from v1.26.1, kept in `fixtures/layout_table_loader_127004.h`): the same two members differ and
+  nothing else, so a 127004 game has no changed class. The v1.26.1 table against a 130045 game, the
+  other way round, finds `TimerActor` as a changed class.
 - The `UObject::ProcessEvent` check: a stub virtual table whose slot holds the function the map resolved
   passes; one that holds another function adds one line to the result, is a found change with no class
   named, and gives a safe-off verdict; a different function in the next slot does not matter.
@@ -300,6 +304,17 @@ build\tests\version_map_tests.exe
 ```
 
 It prints each failed check and a count, and exits 0 when every check passes.
+
+The same project builds a second program with `/p:BuiltFor130045=true`: `plugin_class_tests.exe`,
+the loader's sources against `fixture130045\` (the fixture map with `kBuiltCL` 130045). Both
+programs run `plugin_class_matrix.h`: every kind of released plugin (no tail, built for 127004,
+migrated or not, built for 130045) on a running 127004 and a running 130045. The loader made for
+127004 (v1.26.1's build) and the one made for 130045 must admit and turn away the same plugins.
+
+```
+msbuild Tests\VersionMapTests\VersionMapTests.vcxproj /p:Configuration="Client Release" /p:Platform=x64 /p:BuiltFor130045=true
+build\tests\plugin_class_tests.exe
+```
 
 ## VersionFeedTests
 

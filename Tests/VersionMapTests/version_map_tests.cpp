@@ -2,6 +2,7 @@
 // against a fixture map (fixture/hooks/game/version_map.generated.h), and the
 // loader's real map against its registry (hooks/game/scan_patterns.h).
 #include "test_doubles.h"
+#include "plugin_class_matrix.h"
 
 #include "hooks/game/scan_patterns.h"
 #include "memory_scanner/hook_scanner_interface.h"
@@ -1436,6 +1437,10 @@ int main()
 			"admission: zero tail is refused on 128786");
 		Check(!refusal(127004, 72, 0, kM, true).empty() && !refusal(128786, 72, 0, kM, true).empty(), "admission: zero tail with MIGRATED is refused");
 	}
+
+	// Every released plugin class on a running 127004 and 130045 (also compiled
+	// into PluginClassTests, where the loader is made for 130045).
+	PluginClassMatrix::Run([](bool ok, const char* what) { Check(ok, what); });
 
 	// The load and unload settings (v73): PluginInfo::mapFlags bits, the busy reason, the world flag.
 	{

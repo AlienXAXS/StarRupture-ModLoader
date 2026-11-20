@@ -99,6 +99,7 @@
     <ClCompile Include="LayoutCheckTests.cpp" />
     <ClInclude Include="fixtures\layout_table_126119.h" />
     <ClInclude Include="fixtures\layout_table_127004.h" />
+    <ClInclude Include="fixtures\layout_table_loader_127004.h" />
   </ItemGroup>
   <ItemGroup Label="Loader sources under test">
     <ClCompile Include="$(CoreDir)core\layout_check.cpp" />
