@@ -963,14 +963,21 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # The release has no loose DLL assets: dwmapi.dll ships inside each
+          # variant's ZIP, so take it from there under the names the SDK release uses.
           $tag = "${{ steps.resolve.outputs.TAG }}"
           New-Item -ItemType Directory -Force modloader-dlls | Out-Null
-          gh release download $tag `
-            --repo ${{ github.repository }} `
-            --pattern "dwmapi-Client.dll" `
-            --pattern "dwmapi-Server.dll" `
-            --dir modloader-dlls
-          Write-Host "Downloaded DLLs from release $tag"
+          foreach ($variant in @("Client", "Server")) {
+            $zip = "StarRupture-ModLoader-$variant-$tag.zip"
+            gh release download $tag `
+              --repo ${{ github.repository }} `
+              --pattern $zip `
+              --dir sdk-sync-zips
+            if ($LASTEXITCODE -ne 0) { Write-Error "Could not download $zip from release $tag."; exit 1 }
+            Expand-Archive "sdk-sync-zips\$zip" "sdk-sync-zips\$variant" -Force
+            Copy-Item "sdk-sync-zips\$variant\dwmapi.dll" "modloader-dlls\dwmapi-$variant.dll"
+          }
+          Write-Host "Took the DLLs from the ZIPs of release $tag"
 
       - name: Sync headers into plugin SDK repo
         shell: pwsh

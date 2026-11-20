@@ -135,6 +135,19 @@ test('the SDK sync of a release run needs the DLLs of this run: a resume has non
   assert.match(ifOf('sync-plugin-sdk'), /sync_only == 'true' && needs\.publish\.result == 'skipped'/);
 });
 
+test('a sync-only run takes dwmapi.dll from the variant ZIPs of the release, which carry it; no loose DLL is a release asset', () => {
+  const step = /- name: Download pre-built dwmapi\.dll artifacts \(from latest release\)\n((?: {8}.*\n|\n)+?)(?= {6}- name:)/.exec(`${jobs['sync-plugin-sdk']}\n`)[1];
+  assert.match(step, /\$zip = "StarRupture-ModLoader-\$variant-\$tag\.zip"/);
+  assert.match(step, /--pattern \$zip/);
+  assert.match(step, /Expand-Archive "sdk-sync-zips\\\$zip" "sdk-sync-zips\\\$variant"/);
+  assert.match(step, /Copy-Item "sdk-sync-zips\\\$variant\\dwmapi\.dll" "modloader-dlls\\dwmapi-\$variant\.dll"/);
+  assert.doesNotMatch(step, /--pattern "dwmapi-/, 'the release has no dwmapi-Client.dll or dwmapi-Server.dll asset');
+  // The release job uploads the ZIPs by this name, and the SDK release step reads the DLLs by the names the step above writes.
+  assert.match(jobs.release, /\$zipPath = "\$ws\\StarRupture-ModLoader-\$variant-\$tag\.zip"/);
+  assert.match(jobs['sync-plugin-sdk'], /Copy-Item "modloader-dlls\\dwmapi-Client\.dll"/);
+  assert.match(jobs['sync-plugin-sdk'], /Copy-Item "modloader-dlls\\dwmapi-Server\.dll"/);
+});
+
 test('a draft is not resumed when a tag of that name has appeared, and a failed lookup says why', () => {
   const draftArm = /\n {12}draft\)([\s\S]*?)\n {12}ambiguous\)/.exec(jobs.prepare)[1];
   assert.match(draftArm, /git ls-remote --exit-code --tags origin "refs\/tags\/\$RESUME_TAG"[\s\S]*exit 1/);
