@@ -9,6 +9,10 @@
 
     msbuild Tests\VersionMapTests\VersionMapTests.vcxproj /p:Configuration="Client Release" /p:Platform=x64
 
+  The Server configurations build the server's table test instead (server_map_tests.cpp,
+  output build\tests\version_map_server_tests.exe): the real hooks\game\version_map.server.h
+  and the five places version_map.cpp serves it, with MODLOADER_SERVER_BUILD defined.
+
   It compiles the loader's own version_map.cpp, scanner.cpp and image_info.cpp
   against a fixture map (fixture\hooks\game\version_map.generated.h, made with
   starrupture-ci's ci/version-map.mjs), with the pattern scan, the scan cache and
@@ -23,6 +27,14 @@
     </ProjectConfiguration>
     <ProjectConfiguration Include="Client Release|x64">
       <Configuration>Client Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Server Debug|x64">
+      <Configuration>Server Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Server Release|x64">
+      <Configuration>Server Release</Configuration>
       <Platform>x64</Platform>
     </ProjectConfiguration>
   </ItemGroup>
@@ -48,6 +60,18 @@
     <PlatformToolset>v143</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Server Debug|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Server Release|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <ImportGroup Label="ExtensionSettings">
   </ImportGroup>
@@ -60,6 +84,7 @@
     <OutDir>$(SolutionDir)build\tests\</OutDir>
     <IntDir>$(SolutionDir)obj\Tests\$(ProjectName)\$(Platform)\$(Configuration)\</IntDir>
     <TargetName>version_map_tests</TargetName>
+    <TargetName Condition="$(Configuration.StartsWith('Server'))">version_map_server_tests</TargetName>
   </PropertyGroup>
   <!--
     /p:BuiltFor130045=true builds plugin_class_tests.exe instead: the same loader sources against
@@ -80,8 +105,8 @@
       <ConformanceMode>true</ConformanceMode>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <!-- MODLOADER_CLIENT_BUILD gates the map lookups under test. 4005: framework.h redefines the two macros below. -->
-      <PreprocessorDefinitions>MODLOADER_CLIENT_BUILD;_CONSOLE;NOMINMAX;WIN32_LEAN_AND_MEAN;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <!-- MODLOADER_CLIENT_BUILD gates the map lookups under test (MODLOADER_SERVER_BUILD in the Server configurations). 4005: framework.h redefines the two macros below. -->
+      <PreprocessorDefinitions>_CONSOLE;NOMINMAX;WIN32_LEAN_AND_MEAN;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <DisableSpecificWarnings>4005;%(DisableSpecificWarnings)</DisableSpecificWarnings>
       <!-- The fixture map first, so version_map.cpp reads it; every other header is the live loader's. -->
       <AdditionalIncludeDirectories>$(FixtureDir);$(ProjectDir);$(CoreDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
@@ -91,13 +116,23 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
     </Link>
   </ItemDefinitionGroup>
-  <ItemDefinitionGroup Condition="'$(Configuration)'=='Client Debug'">
+  <ItemDefinitionGroup Condition="$(Configuration.StartsWith('Client'))">
+    <ClCompile>
+      <PreprocessorDefinitions>MODLOADER_CLIENT_BUILD;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="$(Configuration.StartsWith('Server'))">
+    <ClCompile>
+      <PreprocessorDefinitions>MODLOADER_SERVER_BUILD;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)'=='Client Debug' Or '$(Configuration)'=='Server Debug'">
     <ClCompile>
       <PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
     </ClCompile>
   </ItemDefinitionGroup>
-  <ItemDefinitionGroup Condition="'$(Configuration)'=='Client Release'">
+  <ItemDefinitionGroup Condition="'$(Configuration)'=='Client Release' Or '$(Configuration)'=='Server Release'">
     <ClCompile>
       <PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
@@ -114,8 +149,9 @@
     <ClInclude Include="fixture130045\hooks\game\version_map.generated.h" />
     <ClInclude Include="test_doubles.h" />
     <ClInclude Include="plugin_class_matrix.h" />
-    <ClCompile Include="version_map_tests.cpp" Condition="'$(BuiltFor130045)' != 'true'" />
-    <ClCompile Include="plugin_class_tests.cpp" Condition="'$(BuiltFor130045)' == 'true'" />
+    <ClCompile Include="version_map_tests.cpp" Condition="$(Configuration.StartsWith('Client')) And '$(BuiltFor130045)' != 'true'" />
+    <ClCompile Include="plugin_class_tests.cpp" Condition="$(Configuration.StartsWith('Client')) And '$(BuiltFor130045)' == 'true'" />
+    <ClCompile Include="server_map_tests.cpp" Condition="$(Configuration.StartsWith('Server'))" />
     <ClCompile Include="test_doubles.cpp" />
   </ItemGroup>
   <ItemGroup Label="Loader sources under test">
