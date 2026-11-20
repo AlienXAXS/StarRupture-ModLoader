@@ -338,8 +338,8 @@ starrupture-ci's `ci/VERSION-MAP.md`.
 **Asset.** `version-map-client.v1.txt`, on the loader's Latest release. The name carries the
 format version, so a later format never strands a loader that reads this one. Latest is where it
 sits because `prune_releases.yml` deletes the others (it keeps the release before Latest too, so a
-bad Latest can be rolled back). `release.yml` attaches the current signed file when it creates a new
-release, and `vmap-publish.yml` puts it on Latest between releases, at its scheduled run (every 15
+bad Latest can be rolled back). `release.yml` puts the current signed file on a new release before it
+is published, and `vmap-publish.yml` puts it on Latest between releases, at its scheduled run (every 15
 minutes) whenever the `seq` rises. The first release that carries one needs a manual run with
 `first_publish` set. There is no server feed: only the client fetches.
 
@@ -352,16 +352,25 @@ that fails the check. `release.yml` also fails the Client build, before any uplo
 lacks the `VMAP_FEED_URL` text or the release public key.
 
 **If a copy fails.** A failed or cancelled `vmap-publish.yml` run is red, and its job summary holds
-the one command that runs it again (`gh workflow run vmap-publish.yml` with that run's inputs). If
-the signed file is missing or does not verify when `release.yml` makes a release, the release is
-still made without it, the step is red and names the resume command below. A
-release that went public but did not finish (Nexus or the version map step failed) is finished with
-`gh workflow run release.yml -f resume_tag=<tag>`: it checks the release with
-`.github/scripts/release-check.mjs`, then runs Nexus and the version map step, and never makes a new
-release (`-f resume_nexus=none` skips Nexus). A resume cannot add or replace assets: a release with a
-missing or wrong asset has to be pulled by hand, with its tag. The check needs only `gh`:
-`node release-check.mjs --repo <owner/name> --tag <tag>` prints what is missing as JSON and exits 0
-when the release is complete.
+the one command that runs it again (`gh workflow run vmap-publish.yml` with that run's inputs).
+
+**How a release is made.** `release.yml` makes the release as a draft, uploads every asset and the
+signed version map to it, checks the whole list and each file's md5 (`.github/scripts/release-check.mjs
+--pre-publish`), and only then publishes it. Nexus, the plugin SDK sync and the plugin builds run after
+the publish. If the signed file is missing or does not verify, the run stops before any release exists.
+
+- A failure before the publish counts as nothing: run `release.yml` again. A draft left behind stops
+  the new run and names the command below.
+- A draft is finished with `gh workflow run release.yml -f resume_tag=<tag>`. A whole draft is
+  checked and published; one with a missing or wrong asset is rebuilt whole from its own commit, every
+  asset replaced from that one build, then published.
+- A public release that did not finish (Nexus or the version map step failed) is finished with the same
+  command: it checks the release, then runs Nexus and the version map step (`-f resume_nexus=none`
+  skips Nexus). A public release with a missing or wrong asset is refused and never repaired in place;
+  pulling it, with its tag, is the owner's call.
+
+The check needs only `gh`: `node release-check.mjs --repo <owner/name> --tag <tag>` prints what is
+missing as JSON and exits 0 when the release is complete (`--pre-publish` checks a draft).
 
 **Fetch.** The URL is the compiled define `VMAP_FEED_URL` (`/p:VmapFeedUrl=` in `Shared.props`),
 never read from `modloader.ini`. An empty define, or no compiled public key, means no fetch. The
