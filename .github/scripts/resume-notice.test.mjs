@@ -64,12 +64,37 @@ test('release: a failed Nexus job gets the resume command and the manual fallbac
   assert.doesNotMatch(text, /the feed/i);
 });
 
-test('release: missing assets say a resume cannot fix them and offer no command', () => {
+test('release: a public release with a missing asset is refused, no command, no delete', () => {
   const check = { complete: false, problems: [{ code: 'asset_missing', name: 'a.zip' }] };
-  const text = notice('release', { ...REL, NEEDS_JSON: JSON.stringify({ 'verify-release': { result: 'failure' } }), CHECK_JSON: JSON.stringify(check) });
-  assert.match(text, /verify-release \(failure\), asset_missing a\.zip/);
+  const text = notice('release', { ...REL, NEEDS_JSON: JSON.stringify({ inspect: { result: 'failure' } }), CHECK_JSON: JSON.stringify(check), FIND_JSON: JSON.stringify({ state: 'public' }) });
+  assert.match(text, /inspect \(failure\), asset_missing a\.zip/);
+  assert.match(text, /Repair refused: the release is public/);
   assert.match(text, /no command fixes it/);
+  assert.match(text, /Pulling this release by hand .* is the owner's call; nothing deletes it for you/);
+  assert.doesNotMatch(text, /gh workflow run|gh release delete|--cleanup-tag/);
+});
+
+test('release: a stuck draft gets the one resume command and the by-hand choice', () => {
+  const env = { ...REL, NEEDS_JSON: JSON.stringify({ 'verify-release': { result: 'failure' }, publish: { result: 'skipped' } }), CHECK_JSON: JSON.stringify({ complete: false, problems: [{ code: 'release_missing' }] }), FIND_JSON: JSON.stringify({ state: 'draft', id: 7, target: 'a'.repeat(40) }) };
+  const text = notice('release', env);
+  assert.match(text, /## Release v1\.2\.3 is a draft and was not published/);
+  assert.match(text, /verify-release \(failure\) in https:\/\/github\.com\/o\/r\/actions\/runs\/42\. Nothing is public\./);
+  assert.match(text, /Draft v1\.2\.3 exists; re-run the one command below to repair and publish it, or delete the draft by hand/);
+  assert.ok(text.includes('```\ngh workflow run release.yml --repo o/r --ref main -f resume_tag=v1.2.3\n```'), 'default resume: Nexus has not run yet');
+  assert.equal(text.split('gh workflow run').length, 2, 'exactly one command');
+  assert.doesNotMatch(text, /gh release delete|--cleanup-tag|the feed/i);
+  // a run that ended with nothing failed but a draft left behind is still stuck
+  assert.match(notice('release', { ...env, NEEDS_JSON: '{}' }), /The run ended before the publish in /);
+});
+
+test('release: two drafts of one tag give no command and name the by-hand choice', () => {
+  const text = notice('release', { ...REL, NEEDS_JSON: '{}', FIND_JSON: JSON.stringify({ state: 'ambiguous' }) });
+  assert.match(text, /More than one draft has the tag v1\.2\.3/);
   assert.doesNotMatch(text, /gh workflow run/);
+});
+
+test('release: a public release is not a draft notice', () => {
+  assert.equal(notice('release', { ...REL, NEEDS_JSON: JSON.stringify({ nexus: { result: 'success' } }), FIND_JSON: JSON.stringify({ state: 'public' }) }), '');
 });
 
 test('release: a version map missing from the Latest release is finished by a resume', () => {

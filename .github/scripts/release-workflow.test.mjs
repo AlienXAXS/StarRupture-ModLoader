@@ -60,6 +60,9 @@ test('a failed Nexus step puts the manual fallback in the run, and the last job 
   assert.match(jobs.notice, /needs: \[prepare, inspect, release, verify-release, publish, nexus, publish-feed\]/);
   assert.match(jobs.notice, /release-check\.mjs --repo "\$GITHUB_REPOSITORY" --tag "\$TAG" >/);
   assert.match(jobs.notice, /resume-notice\.mjs release/);
+  // It sees a stuck draft: `find` answers for drafts too, which needs a token with push access.
+  assert.match(jobs.notice, /FIND_JSON=\$\(node \.github\/scripts\/release-check\.mjs find --repo "\$GITHUB_REPOSITORY" --tag "\$TAG"\)\n\s+export FIND_JSON/);
+  assert.match(jobs.notice, /permissions:\n {6}contents: write/);
   assert.doesNotMatch(text, /issues: write|gh issue/);
 });
 

@@ -11,7 +11,9 @@
 // job), GITHUB_REPOSITORY, GITHUB_SERVER_URL, GITHUB_RUN_ID, GITHUB_REF_NAME.
 //   vmap:    FEED_REPO, FEED_RELEASE, FIRST_PUBLISH (the
 //            vmap-publish inputs)
-//   release: TAG, and CHECK_JSON, the output of release-check.mjs
+//   release: TAG, CHECK_JSON (the output of release-check.mjs) and FIND_JSON (the
+//            output of `release-check.mjs find`: is the tag a draft, public or
+//            neither)
 //
 // Prints markdown on stdout. Exit 0 when nothing is stuck (prints nothing), 1
 // when something is, 2 for a bad call.
@@ -35,6 +37,22 @@ export function vmapCommand(env) {
 // second changelog entry there.
 export function resumeCommand(env, { nexus = true } = {}) {
   return `gh workflow run release.yml --repo ${env.GITHUB_REPOSITORY} --ref ${env.GITHUB_REF_NAME} -f resume_tag=${env.TAG}${nexus ? '' : ' -f resume_nexus=none'}`;
+}
+
+// A release that is still a draft is stuck: the one command repairs it if it needs
+// it and publishes it. Deleting a draft is the owner's call and no command here does it.
+function draftNotice(env, failed, find) {
+  const lines = [`## Release ${env.TAG} is a draft and was not published`, '', `${failed.length ? failed.join(', ') : 'The run ended before the publish'} in ${runUrl(env)}. Nothing is public.`, ''];
+  if (find.state === 'ambiguous') {
+    lines.push(`More than one draft has the tag ${env.TAG}, so it is not clear which one to resume. Deleting the extra drafts by hand is the owner's call; nothing deletes them for you.`);
+  } else {
+    lines.push(
+      `Draft ${env.TAG} exists; re-run the one command below to repair and publish it, or delete the draft by hand (the owner's call). A draft with a missing or wrong asset is rebuilt whole from its commit; a whole one is checked and published. It never makes a new release, tag or version.`,
+      '',
+      fence(resumeCommand(env)),
+    );
+  }
+  return `${lines.join('\n')}\n`;
 }
 
 // What to do by hand when the Nexus upload fails; the lead publishes Nexus then.
@@ -63,6 +81,8 @@ function vmapNotice(env, failed) {
 }
 
 function releaseNotice(env, failed) {
+  const find = JSON.parse(env.FIND_JSON || '{}');
+  if (find.state === 'draft' || find.state === 'ambiguous') return draftNotice(env, failed, find);
   const check = JSON.parse(env.CHECK_JSON || '{}');
   const problems = check.complete ? [] : (check.problems ?? [{ code: 'check_failed', name: check.error }]);
   // A tag with no public release: nothing is stuck, the next run retries.
@@ -73,7 +93,7 @@ function releaseNotice(env, failed) {
   const lines = [`## Release ${env.TAG} is public but not finished`, '', `${found} in ${runUrl(env)}.`, ''];
   if (problems.some((p) => /^(asset_|size_|md5_|manifest_)/.test(p.code))) {
     lines.push(
-      'The release is missing assets or holds a wrong file. A resume cannot add or replace assets, so no command fixes it. Pulling this release by hand (the release and its tag) and running release.yml again is the owner\'s call; nothing deletes it for you.',
+      'Repair refused: the release is public and is missing assets or holds a wrong file. A public release is never repaired in place, because its assets are what players download (the loader\'s update manifest URL points at the Latest release), so no command fixes it. Pulling this release by hand (the release and its tag) and running release.yml again is the owner\'s call; nothing deletes it for you.',
       '',
       `release-check.mjs said: \`${JSON.stringify(check)}\``,
     );

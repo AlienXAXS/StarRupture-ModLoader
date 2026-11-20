@@ -855,16 +855,18 @@ jobs:
       contents: write  # vmap-publish.yml uploads the asset to the new release
     uses: ./.github/workflows/vmap-publish.yml
 
-  # Last word on the release: checks it whole (assets, md5 and the version map)
-  # and, when a job failed or the check finds something missing after the release
-  # went public, fails the run and puts the one resume command in its summary.
-  # A tag with no public release is nothing stuck: run the workflow again.
+  # Last word on the release. A release still a draft is stuck (nothing is public):
+  # it fails the run and puts the one resume command in the summary. A public
+  # release is checked whole (assets, md5 and the version map) and, when a job
+  # failed or the check finds something missing, the run fails the same way, or
+  # says the repair was refused when an asset is wrong. A tag with no release is
+  # nothing stuck: run the workflow again.
   notice:
     needs: [prepare, inspect, release, verify-release, publish, nexus, publish-feed]
     if: ${{ always() && needs.prepare.result == 'success' }}
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write  # only to read: the releases list shows drafts to a token with push access
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -876,6 +878,8 @@ jobs:
           NEEDS_JSON: ${{ toJSON(needs) }}
         run: |
           set +e
+          FIND_JSON=$(node .github/scripts/release-check.mjs find --repo "$GITHUB_REPOSITORY" --tag "$TAG")
+          export FIND_JSON
           node .github/scripts/release-check.mjs --repo "$GITHUB_REPOSITORY" --tag "$TAG" > "$RUNNER_TEMP/check.json"
           CHECK_JSON=$(cat "$RUNNER_TEMP/check.json")
           export CHECK_JSON
