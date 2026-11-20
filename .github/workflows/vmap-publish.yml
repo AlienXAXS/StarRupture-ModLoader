@@ -104,7 +104,9 @@ jobs:
             exit 0
           fi
           last=
-          for t in $(gh release list --repo "$GITHUB_REPOSITORY" --limit 50 --json tagName --jq '.[].tagName'); do
+          # A draft (a release being made by release.yml) is not public: its feed
+          # is not a feed players can get, so it must not set the seq to beat.
+          for t in $(gh release list --repo "$GITHUB_REPOSITORY" --limit 50 --json tagName,isDraft --jq '.[] | select(.isDraft | not) | .tagName'); do
             gh release download "$t" --repo "$GITHUB_REPOSITORY" --pattern "$FEED_ASSET" --dir "$RUNNER_TEMP/cur" --clobber 2>/dev/null || continue
             args=(--source StarRupture-ModLoader-Core/memory_scanner/version_feed.cpp --refuse-test-key)
             # A feed on a release that does not verify must not stop every run:

@@ -65,7 +65,13 @@ case "$what" in
       *"--json tagName"*) cat "$FAKE_DIR/latest"; exit 0;;
       *"--json assets"*) cat "$FAKE_DIR/assets"; exit 0;;
     esac;;
-  "release list") cat "$FAKE_DIR/releases"; exit 0;;
+  "release list")
+    # Like gh: the drafts are listed (the token can push) and the --jq filter decides.
+    case "$all" in
+      *"--json tagName,isDraft"*"select(.isDraft | not)"*) awk -F'\t' '$2 != "draft" { print $1 }' "$FAKE_DIR/releases";;
+      *) cut -f1 "$FAKE_DIR/releases";;
+    esac
+    exit 0;;
   "release download")
     if [ "$repo" = "$FEED_REPO" ]; then src="$FAKE_DIR/new.txt"; else src="$FAKE_DIR/rel-$tag.txt"; fi
     [ -f "$src" ] || exit 1
@@ -78,7 +84,7 @@ echo "fake gh: unexpected call: $all" >&2
 exit 9
 `;
 
-// Runs the job. `releases` is newest first: [{ tag, feed? }]; the first is Latest.
+// Runs the job. `releases` is newest first: [{ tag, feed?, draft? }]; the first one that is not a draft is Latest.
 function run({ releases, newFeed, env = {}, brokenKeySource = false }) {
   const dir = mkdtempSync(join(tmpdir(), 'vmap-pub-'));
   const fake = join(dir, 'fake');
@@ -91,8 +97,8 @@ function run({ releases, newFeed, env = {}, brokenKeySource = false }) {
   writeFileSync(join(ws, 'StarRupture-ModLoader-Core', 'memory_scanner', 'version_feed.cpp'),
     brokenKeySource ? 'nothing here\n'
       : `constexpr const char* kK1Hex = "${TEST_KEY.hex}";\nconstexpr bool kK1TestOnly = true;\nconstexpr const char* kK2Hex = "${RELEASE_KEY.hex}";\nconstexpr bool kK2TestOnly = false;\n`);
-  writeFileSync(join(fake, 'latest'), `${releases[0].tag}\n`);
-  writeFileSync(join(fake, 'releases'), releases.map((r) => `${r.tag}\n`).join(''));
+  writeFileSync(join(fake, 'latest'), `${releases.find((r) => !r.draft).tag}\n`);
+  writeFileSync(join(fake, 'releases'), releases.map((r) => `${r.tag}${r.draft ? '\tdraft' : ''}\n`).join(''));
   writeFileSync(join(fake, 'assets'), 'version-map-client.v1.txt\n');
   writeFileSync(join(fake, 'calls.log'), '');
   for (const r of releases) if (r.feed) writeFileSync(join(fake, `rel-${r.tag}.txt`), r.feed);
@@ -148,6 +154,17 @@ test('a good newest feed on Latest sets the seq to beat and a newer feed is uplo
   assert.equal(r.outputs.latest.last, String(BASE + 10));
   assert.equal(r.uploaded, true);
   assert.match(r.calls, /release upload v2 /);
+});
+
+test('a feed on a draft release is not a feed players can get and does not set the seq to beat', () => {
+  // v3 is a draft release.yml is still making; its file is newer than anything public.
+  const r = run({ releases: [{ tag: 'v3', draft: true, feed: feed(BASE + 50) }, { tag: 'v2', feed: feed(BASE + 10) }, { tag: 'v1', feed: feed(BASE + 5) }], newFeed: feed(BASE + 20) });
+  assert.equal(r.status, 0, JSON.stringify(r.ran));
+  assert.equal(r.outputs.latest.last, String(BASE + 10));
+  assert.doesNotMatch(r.calls, /release download v3 /, 'the draft is never read');
+  assert.equal(r.uploaded, true);
+  assert.match(r.calls, /release upload v2 /);
+  assert.doesNotMatch(r.calls, /release upload v3 /);
 });
 
 test('an unverifiable newest feed is skipped with a warning and the newest one that verifies is used', () => {
