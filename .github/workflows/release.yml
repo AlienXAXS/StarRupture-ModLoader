@@ -80,12 +80,21 @@ jobs:
             echo "::error::resume_tag '$RESUME_TAG' is not a release tag like v1.2.3."
             exit 1
           fi
-          found=$(node .github/scripts/release-check.mjs find --repo "$GITHUB_REPOSITORY" --tag "$RESUME_TAG")
+          if ! found=$(node .github/scripts/release-check.mjs find --repo "$GITHUB_REPOSITORY" --tag "$RESUME_TAG"); then
+            echo "::error::Could not look for $RESUME_TAG: $found"
+            exit 1
+          fi
           state=$(jq -r .state <<< "$found")
           sha=
           case "$state" in
             public) ;;
             draft)
+              # A draft has no tag. A tag that has appeared since would make the
+              # publish attach the release to that tag's commit, not the draft's.
+              if git ls-remote --exit-code --tags origin "refs/tags/$RESUME_TAG" > /dev/null; then
+                echo "::error::Draft $RESUME_TAG exists but so does a tag $RESUME_TAG, so publishing could attach the release to a different commit than the draft's. Nothing was changed. Removing the tag is the owner's call."
+                exit 1
+              fi
               # The commit the draft was made on; a rebuild takes its sources from it.
               sha=$(jq -r .target <<< "$found")
               if ! [[ "$sha" =~ ^[0-9a-f]{40}$ ]]; then
@@ -890,15 +899,17 @@ jobs:
           exit "$code"
 
   # After the publish: it uses the same tag, and a release that is still a draft
-  # has no tag to sync from. The DLLs come from this run's build when it made one
-  # and from the published release when it did not (a resume).
+  # has no tag to sync from. A release run syncs only when it built the DLLs
+  # itself (they are a run artifact, not a release asset, so a resume has none).
   sync-plugin-sdk:
     needs: [prepare, release, publish]
     if: |
       always() &&
-      (github.event.inputs.sync_plugin_sdk == 'true' || github.event.inputs.sync_only == 'true') &&
-      (needs.publish.result == 'success' || (github.event.inputs.sync_only == 'true' && needs.publish.result == 'skipped')) &&
-      needs.prepare.outputs.is_preview != 'true'
+      needs.prepare.outputs.is_preview != 'true' &&
+      (
+        (github.event.inputs.sync_plugin_sdk == 'true' && needs.publish.result == 'success' && needs.release.result == 'success') ||
+        (github.event.inputs.sync_only == 'true' && needs.publish.result == 'skipped')
+      )
     runs-on: windows-latest
     permissions:
       contents: read

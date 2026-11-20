@@ -130,6 +130,18 @@ test('the SDK sync and the plugin builds take the tag from prepare and the DLLs 
   }
 });
 
+test('the SDK sync of a release run needs the DLLs of this run: a resume has none to sync (they are not release assets)', () => {
+  assert.match(ifOf('sync-plugin-sdk'), /sync_plugin_sdk == 'true' && needs\.publish\.result == 'success' && needs\.release\.result == 'success'/);
+  assert.match(ifOf('sync-plugin-sdk'), /sync_only == 'true' && needs\.publish\.result == 'skipped'/);
+});
+
+test('a draft is not resumed when a tag of that name has appeared, and a failed lookup says why', () => {
+  const draftArm = /\n {12}draft\)([\s\S]*?)\n {12}ambiguous\)/.exec(jobs.prepare)[1];
+  assert.match(draftArm, /git ls-remote --exit-code --tags origin "refs\/tags\/\$RESUME_TAG"[\s\S]*exit 1/);
+  assert.ok(draftArm.indexOf('ls-remote') < draftArm.indexOf('sha=$(jq'), 'the tag check comes before the sha is accepted');
+  assert.match(jobs.prepare, /if ! found=\$\(node \.github\/scripts\/release-check\.mjs find [^\n]*\); then\n\s+echo "::error::Could not look for \$RESUME_TAG: \$found"/);
+});
+
 test('a tag that already exists stops a new run instead of bumping or reusing it', () => {
   assert.match(jobs.prepare, /git ls-remote --exit-code --tags origin "refs\/tags\/\$tag"[\s\S]*resume_tag=\$tag/);
 });
