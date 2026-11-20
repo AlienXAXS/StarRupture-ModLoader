@@ -698,7 +698,7 @@ these for you.
 | `[Network]` | `ConnectionTimeout`, `InitialConnectTimeout` | `300.0` | Seconds, 1 to 3600; anything else logs a warning and uses 300. `0` keeps the engine default. See [Net timeouts](#net-timeouts) |
 | `[AutoUpdate]` | `Enabled` | `1` | Client only. `0` stops the loader update prompts and the plugin updates. It does not stop the check for a newer version object map |
 | | `ManifestUrl` | empty | Empty uses the built-in manifest |
-| `[VersionMap]` | `Fetch` | `1` | Client only. `0` stops the check for a newer version object map at every start; the loader then uses the version map it has. Works on its own, whatever `[AutoUpdate] Enabled` says. A line is added to `modloader.ini` for new installs only |
+| `[VersionMap]` | `Fetch` | `1` | Client only. `0` stops the check for a newer version object map at every start; the loader then uses the version map it has. Works on its own, whatever `[AutoUpdate] Enabled` says. The key is written to `modloader.ini` on new installs only |
 | `[Preload]` | `Enabled` | `1` | |
 | | `Disabled` | empty | Comma-separated DLL names to skip |
 | `[UE4SS]` | `Enabled` | `0` | Load UE4SS before plugins. `1` if you delete the key |

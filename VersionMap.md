@@ -350,7 +350,8 @@ There is no server feed: only the client fetches.
 
 **Fetch.** The URL is the compiled define `VMAP_FEED_URL` (`/p:VmapFeedUrl=` in `Shared.props`),
 never read from `modloader.ini`. An empty define, or no compiled public key, means no fetch. The
-loader fetches only on the client, unless `[VersionMap] Fetch=0` is set in `modloader.ini` (`[AutoUpdate] Enabled` does not matter: it is for update prompts). The one rule: at every start it
+loader fetches only on the client, unless `[VersionMap] Fetch=0` is set in `modloader.ini`.
+`[AutoUpdate] Enabled` does not matter: it is for update prompts. The one rule: at every start it
 asks whether a newer feed than the cached one is out, and if so applies it on that start.
 
 - The question is asked at startup, with the game's main thread parked (where WinHTTP is safe), before

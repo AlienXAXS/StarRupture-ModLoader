@@ -610,9 +610,8 @@ int main()
 		FeedFetch::Config server = cfg;
 		server.client = false;
 		Check(FeedFetch::WhyNot(server) != nullptr, "WhyNot: the server never asks");
-		// [AutoUpdate] Enabled is not in the config at all: with updates off and
-		// [VersionMap] Fetch on, the loader hands WhyNot this same config.
-		Check(FeedFetch::WhyNot(cfg) == nullptr, "WhyNot: [AutoUpdate] Enabled off does not stop the fetch");
+		// [AutoUpdate] Enabled is not part of Config: LoaderConfig() sets fetchEnabled
+		// from [VersionMap] Fetch alone, so only that switch can stop a fetch.
 		FeedFetch::Config off = cfg;
 		off.fetchEnabled = false;
 		const char* offReason = FeedFetch::WhyNot(off);

@@ -1009,11 +1009,6 @@ static void RunCentralManifestUpdate(const AutoUpdateConfig& cfg)
 	// truth when it can't read the Core DLL's file version resource.
 }
 
-bool AutoUpdateEnabled()
-{
-	return ReadAutoUpdateConfig().enabled;
-}
-
 bool VersionMapFetchEnabled()
 {
 	return ReadAutoUpdateConfig().versionMapFetch;
@@ -1068,7 +1063,7 @@ void ModLoaderLogger::RunAutoUpdate()
 
 	if (!cfg.enabled)
 	{
-		LogToFile::Info("[AutoUpdate] Disabled via modloader.ini — skipping");
+		LogToFile::Info("[AutoUpdate] Disabled via modloader.ini — skipping the update checks");
 #ifdef MODLOADER_CLIENT_BUILD
 		// The version map fetch has its own switch, [VersionMap] Fetch.
 		FeedFetch::Stage3(FeedFetch::LoaderConfig());

@@ -40,6 +40,10 @@
 //   - Disabled via modloader.ini [AutoUpdate] Enabled=0
 //   - Network or parse errors (failures are logged, never fatal)
 //
+// The signed version object map is not one of these passes. RunAutoUpdate()
+// also asks for it for the next launch (a client only, when startup could
+// not), and that depends on [VersionMap] Fetch, not on [AutoUpdate] Enabled.
+//
 // Per-plugin pass additionally skips a plugin when:
 //   - Its declared interface_version range does not overlap [MIN, MAX]
 //   - The remote manifest is unreachable or malformed
@@ -48,6 +52,8 @@
 //   [AutoUpdate]
 //   Enabled=1               ; Set to 0 to disable
 //   ManifestUrl=            ; Override the compiled-in central manifest URL
+//   [VersionMap]
+//   Fetch=1                 ; Set to 0 to stop fetching newer version object maps
 //
 // State (not user-editable):
 //   ModLoader\update_state.ini
@@ -65,9 +71,6 @@
 #else
 #  define AUTOUPDATE_DEFAULT_MANIFEST_URL ""
 #endif
-
-// Whether modloader.ini [AutoUpdate] Enabled is on (the default).
-bool AutoUpdateEnabled();
 
 // Whether modloader.ini [VersionMap] Fetch is on (the default). Separate from
 // [AutoUpdate] Enabled: the version map is signed data, not an update prompt.
