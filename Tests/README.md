@@ -298,6 +298,15 @@ build\tests\version_map_tests.exe
 
 It prints each failed check and a count, and exits 0 when every check passes.
 
+The Server configurations build the server table's test instead (`server_map_tests.cpp`): the real
+`hooks/game/version_map.server.h` against the five places `version_map.cpp` serves it, with
+`MODLOADER_SERVER_BUILD` defined.
+
+```
+msbuild Tests\VersionMapTests\VersionMapTests.vcxproj /p:Configuration="Server Release" /p:Platform=x64
+build\tests\version_map_server_tests.exe
+```
+
 ## VersionFeedTests
 
 The signed feed reader (`memory_scanner/version_feed.cpp`, with the vendored Monocypher) against the

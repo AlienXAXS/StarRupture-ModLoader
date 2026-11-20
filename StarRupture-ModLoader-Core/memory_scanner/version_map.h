@@ -164,8 +164,8 @@ namespace VersionMap
 	// build only once every one of the loader's patterns resolves on it), the
 	// server only on the build its own table lists (kServerBuilds in
 	// hooks/game/version_map.server.h). The server refuses any other build.
-	// On any other build that has a CL, the client's
-	// VerifyGameVersion runs on the newest known build's values, each checked
+	// On any other build that has a CL, the client's VerifyGameVersion runs on
+	// the newest known build's values, each checked
 	// against the running game, unless [UnknownBuild] says otherwise
 	// (core/unknown_build.h).
 	std::vector<uint32_t> SupportedBuilds();

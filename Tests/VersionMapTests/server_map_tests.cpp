@@ -163,6 +163,20 @@ int main()
 		Check(!Key("UCrSaveSubsystem::GetSaveData", VersionMap::Exe{}).Succeeded(), "guard 2, LookUp: an exe that is not identified resolves to nothing");
 	}
 
+	// Guard 2 again, with a row that carries a pattern. Such a row is rescanned on the running exe, so only the
+	// guard keeps it off an exe that is not the one the table was measured on.
+	{
+		TestDoubles::g_rvas["AA 01"] = 0x1000;
+		VersionMap::MapData data = VersionMap::BaselineMap();
+		data.functions.push_back({ "Test::PatternRow", 127004, 0x2E3595FF, 0x0E2A8000, 1, 0, false, "AA 01", 0, -1, -1, 0x1000, "" });
+		VersionMap::SetActiveMap(std::make_shared<const VersionMap::MapData>(data));
+		Check(At(Key("Test::PatternRow", kServer), 0x1000), "guard 2, LookUp: a row with a pattern is served on the server exe");
+		Check(!Key("Test::PatternRow", kWrongStamp).Succeeded(), "guard 2, LookUp: a row with a pattern is not served on an exe with the wrong time stamp");
+		Check(!Key("Test::PatternRow", kWrongSize).Succeeded(), "guard 2, LookUp: a row with a pattern is not served on an exe with the wrong image size");
+		Check(!Key("Test::PatternRow", kClientExe).Succeeded(), "guard 2, LookUp: a row with a pattern is not served on the client exe's identity");
+		VersionMap::SetActiveMap(nullptr);
+	}
+
 	// Guards 3 to 5 read the map the loader holds: the real table, with field and absent rows added for the cases.
 	VersionMap::SetLiveFieldSource(FakeLive);
 	{
