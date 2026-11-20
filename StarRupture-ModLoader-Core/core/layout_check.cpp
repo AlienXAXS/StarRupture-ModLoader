@@ -541,7 +541,9 @@ namespace LayoutCheck
 #if defined(MODLOADER_CLIENT_BUILD)
 
 #include "layout_table.generated.h"
+#include "../hooks/game/version_map_built.h"
 
+static_assert(SrLayoutTable::kBuiltCL == VersionMap::kBuiltCL, "the layout table is for another game build than the SDK: regenerate it (tools/Update-LayoutTable.ps1)");
 static_assert(SrLayoutTable::kFormatVersion == 1, "layout_check.cpp reads layout table format 1");
 static_assert(SrLayoutTable::kDetail == 1, "an embedded layout table needs member sizes and bool masks (generate it with --sdk)");
 

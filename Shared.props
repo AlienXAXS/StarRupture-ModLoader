@@ -95,8 +95,8 @@
        for, VersionMap::kBuiltCL (hooks\game\version_map_built.h).
        Read from the build_cl.txt beside that SDK's SDK\ folder, so
        it moves with the SDK pin; /p:ModLoaderBuiltCL=<CL> overrides
-       it. With neither, kBuiltCL is the CL named in
-       version_map.generated.h.
+       it. With neither, the Core project stops
+       (VerifyModLoaderBuiltCL, below).
        ============================================================ -->
   <PropertyGroup>
     <ModLoaderBuiltCLFile>$(StarRuptureSDKSourceDir)..\build_cl.txt</ModLoaderBuiltCLFile>
@@ -158,6 +158,20 @@
           Condition="$(Configuration.StartsWith(&apos;Local SDK&apos;))">
     <Error Condition="!Exists(&apos;$(StarRuptureSDKSourceDir)Basic.cpp&apos;)"
            Text="Configuration &apos;$(Configuration)&apos; expects a StarRupture-Game-SDK checkout at &apos;$(LocalStarRuptureSDKRoot)&apos; but found no SDK there. Clone StarRupture-Game-SDK alongside this repo, or build with /p:LocalStarRuptureSDKRoot=X:\your\SDK\ (trailing backslash required)." />
+  </Target>
+
+  <!-- ============================================================
+       VerifyModLoaderBuiltCL
+       The loader reads the CL its SDK was made for from build_cl.txt
+       beside the SDK. Without the file (an older Local SDK checkout)
+       it would fall back to the CL in version_map.generated.h, which
+       is the Client's, and trust a Server SDK's offsets on the wrong
+       build.
+       ============================================================ -->
+  <Target Name="VerifyModLoaderBuiltCL" BeforeTargets="ClCompile"
+          Condition="'$(MSBuildProjectName)' == 'StarRupture-ModLoader-Core' And '$(StarRuptureSDKSourceDir)' != ''">
+    <Error Condition="'$(ModLoaderBuiltCL)' == ''"
+           Text="No build_cl.txt at &apos;$(ModLoaderBuiltCLFile)&apos;. It names the game build (CL) the SDK was made for; add it there, or build with /p:ModLoaderBuiltCL=&lt;CL&gt;." />
   </Target>
 
   <!-- ============================================================

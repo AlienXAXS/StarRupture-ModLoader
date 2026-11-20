@@ -66,10 +66,11 @@ works offline on every build in it. The signed feed (below) adds to that.
 `VersionMap::kBuiltCL` is the CL of that SDK. The client is built against CL-130045 (`Client\build_cl.txt`
 in the SDK) and the server against CL-127004 (`Server\build_cl.txt`); `Shared.props` reads the number
 from the file and passes it as `MODLOADER_BUILT_CL`. The `kBuiltCL` line in `version_map.generated.h`
-is the client's (CI keeps that line), and a client build stops if it differs from `Client\build_cl.txt`.
+is the client's (CI keeps that line). A client build stops if that line differs from `Client\build_cl.txt`,
+if the file is missing, or if `core/layout_table.generated.h` is for another CL.
 The client's built-in rows still list every build it has run on, CL-127004 included, so the same
-files run on both: on CL-127004 the compiled offsets are not trusted, the Game-SDK globals are found by pattern, and a
-member that sits elsewhere on that build is read from the version map or the game. In the loader's
+files run on both. On CL-127004 the compiled offsets are not trusted, the Game-SDK globals are found
+by pattern, and a member that sits elsewhere on that build is read from the version map or the game. In the loader's
 layout table that is `UCrEnviroWaveTimerSubsystem::TimerActor` (0x90 on CL-127004, 0x98 from CL-128786)
 and `ACrCrafter::CraftComponent` (0x6D8 and 0x6E0). The start check leaves both out, so they do not
 count as a changed class. The server is compiled for CL-127004, lists only that build and is unchanged.
