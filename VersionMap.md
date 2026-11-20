@@ -342,6 +342,14 @@ file on Latest: on a new release as the last job of `release.yml`, and between r
 scheduled run (every 15 minutes) whenever the `seq` rises. The first release that carries one needs a manual run with `first_publish` set.
 There is no server feed: only the client fetches.
 
+**If a copy fails.** A failed or cancelled `vmap-publish.yml` run is red, and its job summary holds
+the one command that runs it again (`gh workflow run vmap-publish.yml` with that run's inputs). A
+release that went public but did not finish (Nexus failed, or an asset is missing) is finished with
+`gh workflow run release.yml -f resume_tag=<tag>`: it checks the release with
+`.github/scripts/release-check.mjs`, then runs Nexus and the version map step, and never makes a new
+release. The check needs only `gh`: `node release-check.mjs --repo <owner/name> --tag <tag>` prints
+what is missing as JSON and exits 0 when the release is complete.
+
 **Fetch.** The URL is the compiled define `VMAP_FEED_URL` (`/p:VmapFeedUrl=` in `Shared.props`),
 never read from `modloader.ini`. An empty define, or no compiled public key, means no fetch. The
 loader fetches only on the client, with `[AutoUpdate] Enabled` on. The one rule: at every start it
