@@ -378,7 +378,7 @@ namespace ScanPatterns
 	//
 	// Signature: void __fastcall <Menu>::NativeConstruct(<Menu>* this)
 	inline constexpr auto UCrUW_MainMenuWidget_NativeConstruct =
-		"40 55 53 56 57 41 54 41 55 41 56 41 57 48 8D 6C 24 ?? 48 81 EC 78 01 00 00 48 8B F1 E8";
+		"40 55 53 56 57 41 54 41 55 41 56 41 57 48 8D AC 24 78 FF FF FF 48 81 EC 88 01 00 00 48 8B F1";
 
 	inline constexpr auto UCrUW_PauseMenu_NativeConstruct =
 		"40 55 53 56 57 41 54 41 55 41 56 41 57 48 8D AC 24 ?? ?? ?? ?? 48 81 EC 58 02 00 00 48 8B F1 E8";
