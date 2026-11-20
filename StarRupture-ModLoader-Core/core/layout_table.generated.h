@@ -7,7 +7,7 @@
 namespace SrLayoutTable {
 
 inline constexpr uint32_t kFormatVersion = 1;
-inline constexpr uint32_t kBuiltCL = 127004;
+inline constexpr uint32_t kBuiltCL = 130045;
 inline constexpr uint32_t kDetail = 1;  // 0: offsets only; 1: Row::size and Row::boolMask are filled
 inline constexpr uint32_t kGranularity = 1;  // 0: every member of each class is listed; 1: a UClass lists only the members the sources use; 2: a struct too, and a size only where the sources depend on it
 inline constexpr uint32_t kNameCount = 419;
@@ -615,7 +615,7 @@ inline constexpr Row kRows[kRowCount] = {
     {269, 0x2B0, 0x8, 0x0},
     {223, 0xAF0, 0x8, 0x0},
     {287, 0x1180, 0x4, 0x0},
-    {118, 0x6D8, 0x8, 0x0},
+    {118, 0x6E0, 0x8, 0x0},
     {210, 0x308, 0x8, 0x0},
     {117, 0x2D8, 0x4, 0x0},
     {269, 0x2C8, 0x8, 0x0},
@@ -704,7 +704,7 @@ inline constexpr Row kRows[kRowCount] = {
     {101, 0x28, 0x8, 0x0},
     {416, 0x450, 0x1, 0xFF},
     {405, 0x1C0, 0x10, 0x0},
-    {292, 0x90, 0x8, 0x0},
+    {292, 0x98, 0x8, 0x0},
     {265, 0x738, 0x8, 0x0},
     {221, 0x740, 0x8, 0x0},
     {43, 0x5F0, 0x8, 0x0},
