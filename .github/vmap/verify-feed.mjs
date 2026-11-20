@@ -11,7 +11,9 @@
 // The signature covers every byte before the last line, which is
 // `sig<TAB><keyId><TAB><base64>` (Ed25519, RFC 8032). The file is at most
 // 1 MiB, starts with `format 1` and `seq <n>`, and its `seq` is not more than a
-// day ahead of the clock.
+// day ahead of the clock. A game build (CL) listed twice, or a function, absent
+// or field row listed twice for one CL, is refused: the loader refuses the whole
+// file for it (see findDuplicate).
 //
 // --last-seq: the `seq` of the file now on the release. A `seq` that does not
 //   rise above it is not an error but is not published either (exit 4).
@@ -64,6 +66,47 @@ export function readHeaderBuilds(headerText) {
   return builds;
 }
 
+// The first thing in the feed the loader would see twice, or null. The loader
+// refuses the whole file for it (ParseFeed in version_map.cpp), so one slip
+// switches the version object map off for every player. The same rules, with the
+// loader's lines:
+//   - two `build` lines for one CL (version_map.cpp:347-349);
+//   - two `function` or `absent` rows for one (key, fp, CL), the two kinds
+//     sharing one set (:315, :369-370);
+//   - two `field` rows for one (key, CL) (:316, :401-402).
+// Only rows the loader would read are counted: a known kind with too few columns,
+// or a number that is not written the way the loader reads it, is refused by the
+// loader for another reason. Numbers compare by value, as the loader's do.
+export function findDuplicate(lines) {
+  const dec = (s) => (/^[1-9][0-9]{0,9}$/.test(s ?? '') ? Number(s) : null);
+  const hex = (s) => (/^0x[0-9A-F]{1,8}$/.test(s ?? '') ? parseInt(s, 16) : null);
+  const seen = { build: new Map(), function: new Map(), field: new Map() };
+  for (let i = 0; i < lines.length; i++) {
+    const f = lines[i].split('\t');
+    let kind = null;
+    let id = null;
+    let what = null;
+    if (f[0] === 'build' && f.length >= 5) {
+      kind = 'build';
+      id = dec(f[1]);
+      what = `two build lines for CL-${f[1]}`;
+    } else if ((f[0] === 'function' && f.length >= 12) || (f[0] === 'absent' && f.length >= 8)) {
+      kind = 'function';
+      id = f[1] !== '' && hex(f[2]) !== null && dec(f[3]) !== null ? `${f[1]}\t${hex(f[2])}\t${dec(f[3])}` : null;
+      what = `two function or absent rows for ${f[1]} (fp ${f[2]}) on CL-${f[3]}`;
+    } else if (f[0] === 'field' && f.length >= 7) {
+      kind = 'field';
+      id = f[1] !== '' && dec(f[2]) !== null ? `${f[1]}\t${dec(f[2])}` : null;
+      what = `two field rows for ${f[1]} on CL-${f[2]}`;
+    }
+    if (id === null) continue;
+    const first = seen[kind].get(id);
+    if (first !== undefined) return `${what} (lines ${first} and ${i + 1})`;
+    seen[kind].set(id, i + 1);
+  }
+  return null;
+}
+
 export function check(signed, { keys, lastSeq = null, now = Math.floor(Date.now() / 1000), refuseTestKey = false, headerText = null }) {
   need(signed.length > 0 && signed.length <= CAP_BYTES, `the file is ${signed.length} bytes (1 to ${CAP_BYTES} allowed)`);
   need(signed[signed.length - 1] === 0x0a, 'the file does not end in LF');
@@ -82,6 +125,8 @@ export function check(signed, { keys, lastSeq = null, now = Math.floor(Date.now(
   need(sm && Number.isSafeInteger(Number(sm[1])), 'the second line is not a seq line');
   const seq = Number(sm[1]);
   need(seq <= now + MAX_SEQ_AHEAD, `seq ${seq} is more than a day ahead of the clock (${now})`);
+  const duplicate = findDuplicate(lines);
+  need(duplicate === null, `duplicate entry, the loader would refuse the whole file: ${duplicate}`);
   for (const line of lines) {
     const f = line.split('	');
     if (f[0] === 'function' && f[7] === '-')
