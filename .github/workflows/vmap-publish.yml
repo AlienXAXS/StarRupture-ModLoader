@@ -75,6 +75,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
+      # A rehearsal file is signed with the release key at a seq above the live one,
+      # so on Latest it would replace the real version map for every player.
+      - name: Refuse a rehearsal as the source
+        run: |
+          set -uo pipefail
+          if [ "${FEED_RELEASE,,}" = "vmap-feed-rehearsal" ]; then
+            echo "::error title=Rehearsal source refused::feed_release $FEED_RELEASE is the rehearsal prerelease. Its files are for tests and must not be copied to the Latest release of $GITHUB_REPOSITORY."
+            exit 1
+          fi
+
       # Without the signed file there is nothing to copy: stop here, loudly.
       - name: Check the signed version map is there
         run: |

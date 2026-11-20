@@ -216,3 +216,21 @@ test('a TEST-key file is refused when allow_test_key is not set', () => {
   assert.equal(r.status, 3);
   assert.equal(r.uploaded, false);
 });
+
+test('the rehearsal release is refused as a source, whatever its case, before anything is read', () => {
+  const releases = [{ tag: 'v2', feed: feed(BASE + 10) }];
+  for (const name of ['vmap-feed-rehearsal', 'VMAP-Feed-Rehearsal']) {
+    const r = run({ releases, newFeed: feed(BASE + 20), env: { FEED_RELEASE: name } });
+    assert.equal(r.status, 1, name);
+    assert.match(r.ran[0].stdout, /::error title=Rehearsal source refused::feed_release .*is the rehearsal prerelease/);
+    assert.equal(r.ran.length, 1);
+    assert.equal(r.calls, '');
+  }
+  const live = run({ releases, newFeed: feed(BASE + 20) });
+  assert.equal(live.status, 0, JSON.stringify(live.ran));
+  assert.equal(live.uploaded, true);
+});
+
+test('the rehearsal check is the first step that runs', () => {
+  assert.equal(STEPS[0].name, 'Refuse a rehearsal as the source');
+});
