@@ -28,7 +28,7 @@ on:
         type: boolean
         default: false
       resume_tag:
-        description: 'Resume a release that is already public (e.g. v1.2.3) — never bumps the version, tags or creates a release; checks its assets, then runs Nexus and the version map step. Leave blank for a normal release'
+        description: 'Resume a release that is a draft or already public (e.g. v1.2.3) — never bumps the version or makes a new release. A draft with a missing or wrong asset is rebuilt whole from its commit, then published; a public release is checked and its Nexus and version map steps run (one with a missing or wrong asset is refused). Leave blank for a normal release'
         type: string
         default: ''
       resume_nexus:
@@ -52,19 +52,22 @@ jobs:
     if: ${{ github.event.inputs.sync_only != 'true' }}
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write  # only to read: the releases list shows drafts to a token with push access
     outputs:
       tag:        ${{ steps.tag.outputs.TAG || steps.resume.outputs.TAG }}
       is_preview: ${{ steps.tag.outputs.IS_PREVIEW || steps.resume.outputs.IS_PREVIEW }}
+      # new (a fresh run), draft or public (a resume)
       state:      ${{ steps.tag.outputs.STATE || steps.resume.outputs.STATE }}
+      # the commit a build and the draft are made from
       sha:        ${{ steps.tag.outputs.SHA || steps.resume.outputs.SHA }}
+      draft_id:   ${{ steps.resume.outputs.DRAFT_ID }}
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # Resume: the release must already be public. Nothing below this step
-      # computes or creates a tag.
+      # Resume: the release is a draft (nothing public) or already public. Nothing
+      # below this step computes a version or makes a release or a tag.
       - name: Find the release to resume
         id: resume
         if: ${{ github.event.inputs.resume_tag != '' }}
@@ -77,14 +80,34 @@ jobs:
             echo "::error::resume_tag '$RESUME_TAG' is not a release tag like v1.2.3."
             exit 1
           fi
-          if ! prerelease=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RESUME_TAG" --jq .prerelease); then
-            echo "::error::There is no published release for $RESUME_TAG, so there is nothing to resume. Nothing was changed. A release that never became public is made by running this workflow again without resume_tag (a tag left behind by it has to be removed by hand first)."
-            exit 1
-          fi
-          echo "Resuming $RESUME_TAG (preview: $prerelease). No version is bumped and no tag or release is created."
-          echo "TAG=$RESUME_TAG" >> "$GITHUB_OUTPUT"
-          echo "IS_PREVIEW=$prerelease" >> "$GITHUB_OUTPUT"
-          echo "STATE=public" >> "$GITHUB_OUTPUT"
+          found=$(node .github/scripts/release-check.mjs find --repo "$GITHUB_REPOSITORY" --tag "$RESUME_TAG")
+          state=$(jq -r .state <<< "$found")
+          sha=
+          case "$state" in
+            public) ;;
+            draft)
+              # The commit the draft was made on; a rebuild takes its sources from it.
+              sha=$(jq -r .target <<< "$found")
+              if ! [[ "$sha" =~ ^[0-9a-f]{40}$ ]]; then
+                echo "::error::Draft $RESUME_TAG targets '$sha', not a commit, so a rebuild could not tell what to build. Nothing was changed. Deleting the draft by hand is the owner's call."
+                exit 1
+              fi ;;
+            ambiguous)
+              echo "::error::More than one draft has the tag $RESUME_TAG, so it is not clear which one to resume. Nothing was changed. Deleting the extra drafts by hand is the owner's call."
+              exit 1 ;;
+            *)
+              echo "::error::There is no release or draft for $RESUME_TAG, so there is nothing to resume. Nothing was changed. A release that never reached a draft is made by running this workflow again without resume_tag (a tag left behind by it has to be removed by hand first)."
+              exit 1 ;;
+          esac
+          prerelease=$(jq -r .prerelease <<< "$found")
+          echo "Resuming $RESUME_TAG ($state, preview: $prerelease). No version is bumped and no new release is made."
+          {
+            echo "TAG=$RESUME_TAG"
+            echo "IS_PREVIEW=$prerelease"
+            echo "STATE=$state"
+            echo "SHA=$sha"
+            echo "DRAFT_ID=$(jq -r .id <<< "$found")"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Generate release tag
         id: tag
@@ -223,9 +246,16 @@ jobs:
           echo "SHA=$env:GITHUB_SHA" >> $env:GITHUB_OUTPUT
 
   # Client and Server build side by side. The release job below waits for both.
+  # A new release builds the commit the run was started on. A resumed draft that
+  # is missing an asset or holds a wrong one is rebuilt whole, from the commit the
+  # draft was made on, with these same build flags.
   build:
-    needs: prepare
-    if: ${{ github.event.inputs.resume_tag == '' }}
+    needs: [prepare, inspect]
+    if: |
+      !cancelled() &&
+      needs.prepare.result == 'success' &&
+      (needs.prepare.outputs.state == 'new' ||
+       (needs.prepare.outputs.state == 'draft' && needs.inspect.outputs.complete == 'false'))
     runs-on: windows-latest
     permissions:
       contents: read
@@ -237,6 +267,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ needs.prepare.outputs.sha }}
           submodules: true
 
       - name: Add MSBuild to PATH
@@ -323,12 +354,14 @@ jobs:
           path: build/${{ matrix.variant }} Release
           retention-days: 1
 
+  # Makes the draft (a new release) or, for a resumed draft that was rebuilt,
+  # replaces every asset on it with the files of this one build. Never public.
   release:
     needs: [prepare, build]
-    if: ${{ github.event.inputs.resume_tag == '' }}
+    if: ${{ !cancelled() && needs.build.result == 'success' }}
     runs-on: windows-latest
     permissions:
-      contents: write  # Required to create releases and upload assets
+      contents: write  # Required to create the draft and upload assets
     outputs:
       tag:        ${{ needs.prepare.outputs.tag }}
       is_preview: ${{ needs.prepare.outputs.is_preview }}
@@ -338,6 +371,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ needs.prepare.outputs.sha }}
           fetch-depth: 0  # build-versioned-notes.ps1 reads UPDATE_NOTES.txt from earlier tags
 
       - name: Download Client build
@@ -533,6 +567,8 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_STATE: ${{ needs.prepare.outputs.state }}
+          DRAFT_ID: ${{ needs.prepare.outputs.draft_id }}
         run: |
           $tag = "${{ needs.prepare.outputs.tag }}"
           $ws  = $env:GITHUB_WORKSPACE
@@ -572,6 +608,27 @@ jobs:
           Write-Host "Uploading $($assets.Count) asset(s):"
           $assets | ForEach-Object { Write-Host "  $_" }
 
+          # A resumed draft that was rebuilt: every asset on it is replaced with the
+          # files of this one build, so the set is never a mix of two builds. Only a
+          # draft is touched. The check is repeated here, and the run group admits no
+          # other run, so nothing can publish it between this check and the upload.
+          if ($env:RELEASE_STATE -eq 'draft') {
+            $repo = $env:GITHUB_REPOSITORY
+            $isDraft = gh api "repos/$repo/releases/$($env:DRAFT_ID)" --jq .draft
+            if ($LASTEXITCODE -ne 0) { throw "Draft $tag (id $($env:DRAFT_ID)) could not be read." }
+            if ($isDraft -ne 'true') { throw "Release $tag is not a draft any more, so its assets are not touched." }
+            $old = @(gh api --paginate "repos/$repo/releases/$($env:DRAFT_ID)/assets" --jq '.[].id')
+            if ($LASTEXITCODE -ne 0) { throw "The assets of draft $tag could not be listed." }
+            foreach ($id in $old) {
+              gh api -X DELETE "repos/$repo/releases/assets/$id"
+              if ($LASTEXITCODE -ne 0) { throw "Asset $id of draft $tag could not be removed." }
+            }
+            Write-Host "Removed $($old.Count) asset(s) from draft $tag; uploading the rebuilt set."
+            gh release upload $tag @assets --clobber --repo $repo
+            if ($LASTEXITCODE -ne 0) { throw "The rebuilt assets could not be uploaded to draft $tag." }
+            exit 0
+          }
+
           $flags = @('--title', "StarRupture ModLoader $tag", '--generate-notes')
           # Put UPDATE_NOTES.txt above the generated list when it exists.
           $notesFile = "$ws\UPDATE_NOTES.txt"
@@ -586,22 +643,29 @@ jobs:
           $flags += @('--draft', '--target', "${{ needs.prepare.outputs.sha }}")
           gh release create $tag @assets @flags
 
-  # A release resumed after it went public must still hold every asset it lists,
-  # each with the right md5, before Nexus gets anything. A public release is never
-  # repaired in place: one that fails the check stops the run here, red, and pulling
-  # it (the release and its tag) is the owner's call. The version map is not asked
-  # for here: publish-feed attaches a newer one on its own.
+  # Only for a resume. Looks at what the release holds before anything is built:
+  # - A draft that is whole goes straight on to the check and the publish. A draft
+  #   that is missing an asset or holds a wrong one gets rebuilt whole (complete is
+  #   false), which is safe because nothing about a draft is public.
+  # - A public release must hold every asset it lists, each with the right md5,
+  #   before Nexus gets anything. It is never repaired in place: one that fails the
+  #   check stops the run here, red, and pulling it (the release and its tag) is the
+  #   owner's call. The version map is not asked for: publish-feed attaches a newer
+  #   one on its own.
   inspect:
     needs: prepare
-    if: ${{ needs.prepare.result == 'success' && needs.prepare.outputs.state == 'public' }}
+    if: ${{ needs.prepare.result == 'success' && (needs.prepare.outputs.state == 'public' || needs.prepare.outputs.state == 'draft') }}
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write  # only to read: the releases list shows drafts to a token with push access
+    outputs:
+      complete: ${{ steps.draft.outputs.complete }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Check the public release
+        if: ${{ needs.prepare.outputs.state == 'public' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ needs.prepare.outputs.tag }}
@@ -614,11 +678,31 @@ jobs:
           fi
           exit "$code"
 
+      - name: Check the draft
+        id: draft
+        if: ${{ needs.prepare.outputs.state == 'draft' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          set +e
+          node .github/scripts/release-check.mjs --repo "$GITHUB_REPOSITORY" --tag "$TAG" --pre-publish | tee "$RUNNER_TEMP/check.json"
+          code=${PIPESTATUS[0]}
+          case "$code" in
+            0) echo "complete=true" >> "$GITHUB_OUTPUT"; echo "Draft $TAG is whole." ;;
+            1) echo "complete=false" >> "$GITHUB_OUTPUT"; echo "::notice title=Draft $TAG is not whole::It will be rebuilt whole from its commit: $(cat "$RUNNER_TEMP/check.json")" ;;
+            *) echo "::error title=Draft $TAG could not be checked (exit $code)::$(cat "$RUNNER_TEMP/check.json") Nothing was changed."; exit "$code" ;;
+          esac
+
   # The draft holds every asset it lists, each with the right md5 and the signed
-  # version map, before it is published. Nothing is public while this runs.
+  # version map, before it is published. Nothing is public while this runs. A
+  # resumed draft that was whole skips the build and comes straight here.
   verify-release:
-    needs: [prepare, release]
-    if: ${{ !cancelled() && needs.release.result == 'success' }}
+    needs: [prepare, inspect, release]
+    if: |
+      !cancelled() &&
+      (needs.release.result == 'success' ||
+       (needs.prepare.outputs.state == 'draft' && needs.inspect.outputs.complete == 'true'))
     runs-on: ubuntu-latest
     permissions:
       contents: write  # only to read the draft: the releases list shows drafts to a token with push access
@@ -790,14 +874,15 @@ jobs:
           exit "$code"
 
   # After the publish: it uses the same tag, and a release that is still a draft
-  # has no tag to sync from.
+  # has no tag to sync from. The DLLs come from this run's build when it made one
+  # and from the published release when it did not (a resume).
   sync-plugin-sdk:
-    needs: [release, publish]
+    needs: [prepare, release, publish]
     if: |
       always() &&
       (github.event.inputs.sync_plugin_sdk == 'true' || github.event.inputs.sync_only == 'true') &&
       (needs.publish.result == 'success' || (github.event.inputs.sync_only == 'true' && needs.publish.result == 'skipped')) &&
-      needs.release.outputs.is_preview != 'true'
+      needs.prepare.outputs.is_preview != 'true'
     runs-on: windows-latest
     permissions:
       contents: read
@@ -808,13 +893,14 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          BUILD_TAG: ${{ needs.release.outputs.tag }}
+          BUILD_TAG: ${{ needs.prepare.outputs.tag }}
+          HAVE_ARTIFACT: ${{ needs.release.result == 'success' }}
         run: |
           if ($env:BUILD_TAG -and $env:BUILD_TAG -ne '') {
-            # Fresh build — tag came from the build job
-            Write-Host "Using tag from build job: $env:BUILD_TAG"
+            # This run's release (made now, or resumed) — the tag came from prepare
+            Write-Host "Using tag from this run: $env:BUILD_TAG"
             echo "TAG=$env:BUILD_TAG" >> $env:GITHUB_OUTPUT
-            echo "FROM_ARTIFACT=true"  >> $env:GITHUB_OUTPUT
+            echo "FROM_ARTIFACT=$($env:HAVE_ARTIFACT)" >> $env:GITHUB_OUTPUT
           } else {
             # Sync-only — fetch the latest release tag from this repo
             $tag = gh release list --repo ${{ github.repository }} --limit 1 --json tagName |
@@ -902,12 +988,12 @@ jobs:
 
   # After the publish, so a plugin build never runs against an unpublished loader.
   trigger-plugin-builds:
-    needs: [release, publish]
+    needs: [prepare, publish]
     if: |
       always() &&
       github.event.inputs.auto_build_plugins == 'true' &&
       needs.publish.result == 'success' &&
-      needs.release.outputs.is_preview != 'true'
+      needs.prepare.outputs.is_preview != 'true'
     uses: ./.github/workflows/build-plugins.yml
     with:
       plugins: all

@@ -41,7 +41,7 @@ test('the release is a draft until the publish job, which comes after the check'
   assert.match(jobs.publish, /needs: \[prepare, verify-release\]/);
   assert.match(ifOf('publish'), /needs\.verify-release\.result == 'success'/);
   assert.match(jobs['verify-release'], /release-check\.mjs --repo "\$GITHUB_REPOSITORY" --tag "\$TAG" --pre-publish \|/);
-  assert.match(jobs['verify-release'], /needs: \[prepare, release\]/);
+  assert.match(jobs['verify-release'], /needs: \[prepare, inspect, release\]/);
   // The publish makes the tag from the commit the draft was given; it does not delete or force anything.
   assert.doesNotMatch(jobs.publish, /--clobber|--force|gh release (create|delete|upload)|gh api -X (DELETE|PATCH|PUT|POST)|git (tag|push)/);
 });
@@ -63,23 +63,65 @@ test('a failed Nexus step puts the manual fallback in the run, and the last job 
   assert.doesNotMatch(text, /issues: write|gh issue/);
 });
 
-test('only the build and the release job are skipped on a resume', () => {
-  assert.match(ifOf('build'), /resume_tag == ''/);
-  assert.match(ifOf('release'), /resume_tag == ''/);
+test('a public release is not built again; a draft is rebuilt only when it is not whole', () => {
+  // Fresh run, or a resumed draft that the inspect job found not whole.
+  assert.match(ifOf('build'), /needs\.prepare\.outputs\.state == 'new'/);
+  assert.match(ifOf('build'), /needs\.prepare\.outputs\.state == 'draft' && needs\.inspect\.outputs\.complete == 'false'/);
+  assert.doesNotMatch(ifOf('build'), /'public'/);
+  assert.match(ifOf('release'), /needs\.build\.result == 'success'/);
+  // Both build from the commit the draft was made on, never from the ref of this run.
+  for (const job of ['build', 'release']) {
+    assert.match(jobs[job], /uses: actions\/checkout@[^\n]*\n {8}with:\n {10}ref: \$\{\{ needs\.prepare\.outputs\.sha \}\}\n/, `${job} must check out the draft's commit`);
+  }
   // The public release is checked by `inspect`, and publish-feed follows it.
-  assert.match(ifOf('inspect'), /needs\.prepare\.outputs\.state == 'public'/);
+  assert.match(ifOf('inspect'), /state == 'public' \|\| needs\.prepare\.outputs\.state == 'draft'/);
   assert.doesNotMatch(ifOf('publish-feed'), /resume_tag == ''/, 'publish-feed must run on a resume');
   assert.match(ifOf('publish-feed'), /needs\.prepare\.outputs\.state == 'public' && needs\.inspect\.result == 'success'/);
   // Nexus names resume_tag only to apply resume_nexus on a resume; a fresh run always runs it.
   assert.doesNotMatch(ifOf('nexus'), /&&\s*github\.event\.inputs\.resume_tag == ''/);
 });
 
-test('a resume computes no version and finds its release first', () => {
+test('a resume finds its release by state and never computes a version', () => {
   const prepare = jobs.prepare;
   assert.match(prepare, /name: Generate release tag\n {8}id: tag\n {8}if: \$\{\{ github.event.inputs.resume_tag == '' \}\}/);
   assert.match(prepare, /name: Find the release to resume\n {8}id: resume\n {8}if: \$\{\{ github.event.inputs.resume_tag != '' \}\}/);
-  assert.match(prepare, /releases\/tags\/\$RESUME_TAG/);
+  assert.match(prepare, /release-check\.mjs find --repo "\$GITHUB_REPOSITORY" --tag "\$RESUME_TAG"/);
   assert.match(prepare, /nothing to resume/);
+  assert.match(prepare, /More than one draft/);
+  // A draft whose target is not a commit cannot be rebuilt.
+  assert.match(prepare, /\^\[0-9a-f\]\{40\}\$/);
+});
+
+test('a draft that is not whole is rebuilt whole: the inspect job decides, the release job replaces every asset', () => {
+  // inspect: exit 0 whole, 1 not whole (not an error), anything else stops the run.
+  assert.match(jobs.inspect, /complete: \$\{\{ steps\.draft\.outputs\.complete \}\}/);
+  assert.match(jobs.inspect, /--pre-publish \| tee[\s\S]*0\) echo "complete=true"[\s\S]*1\) echo "complete=false"[\s\S]*\*\) echo "::error[\s\S]*exit "\$code"/);
+  // verify-release also runs for a draft that was whole and skipped the build.
+  assert.match(ifOf('verify-release'), /needs\.release\.result == 'success' \|\|\n\s+\(needs\.prepare\.outputs\.state == 'draft' && needs\.inspect\.outputs\.complete == 'true'\)/);
+  // The release job: only a draft is touched, every old asset goes, one upload with --clobber.
+  const create = /- name: Create GitHub Release\n([\s\S]*?)(?=\n {6}- name:|\n*$)/.exec(jobs.release)[1];
+  const repair = /if \(\$env:RELEASE_STATE -eq 'draft'\) \{([\s\S]*?)\n {10}\}\n/.exec(create)[1];
+  assert.match(repair, /\.draft\n[\s\S]*-ne 'true'\) \{ throw/, 'it checks the release is still a draft first');
+  assert.match(repair, /releases\/\$\(\$env:DRAFT_ID\)\/assets/);
+  assert.match(repair, /gh api -X DELETE "repos\/\$repo\/releases\/assets\/\$id"/);
+  assert.match(repair, /gh release upload \$tag @assets --clobber --repo \$repo/);
+  assert.match(repair, /exit 0$/, 'the repair never falls through to a create');
+  assert.ok(create.indexOf('RELEASE_STATE') < create.indexOf('gh release create'));
+  // No delete of a release or tag anywhere in the workflow, and no force (the SDK sync
+  // pushes to the SDK repo, not this one).
+  assert.doesNotMatch(text, /gh release delete|--cleanup-tag|--force/);
+  assert.doesNotMatch(text.replace(jobs['sync-plugin-sdk'], ''), /git push|git tag/);
+  assert.equal([...text.matchAll(/gh release upload [^\n]*--clobber/g)].length, 1, 'only the draft repair replaces assets');
+});
+
+test('the SDK sync and the plugin builds take the tag from prepare and the DLLs from the build only when there was one', () => {
+  assert.match(jobs['sync-plugin-sdk'], /needs: \[prepare, release, publish\]/);
+  assert.match(jobs['sync-plugin-sdk'], /BUILD_TAG: \$\{\{ needs\.prepare\.outputs\.tag \}\}/);
+  assert.match(jobs['sync-plugin-sdk'], /HAVE_ARTIFACT: \$\{\{ needs\.release\.result == 'success' \}\}/);
+  assert.match(jobs['trigger-plugin-builds'], /needs: \[prepare, publish\]/);
+  for (const job of ['sync-plugin-sdk', 'trigger-plugin-builds']) {
+    assert.match(ifOf(job), /needs\.prepare\.outputs\.is_preview != 'true'/, `${job} must not run for a preview`);
+  }
 });
 
 test('a tag that already exists stops a new run instead of bumping or reusing it', () => {
