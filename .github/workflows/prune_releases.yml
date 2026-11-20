@@ -1,8 +1,10 @@
-name: Delete all releases and tags except the latest
+name: Delete all releases and tags except the latest and the one before it
 
 # Keeps the release GitHub marks as "Latest" (newest non-draft, non-prerelease)
-# and its tag. Every other release -- drafts and prereleases included -- is
-# deleted, followed by every other tag, whether or not it had a release.
+# and the release before it (the next older non-draft, non-prerelease one), with
+# their tags, so a broken Latest can be rolled back to. Every other release --
+# drafts and prereleases included -- is deleted, followed by every other tag,
+# whether or not it had a release.
 
 on:
   workflow_dispatch:
@@ -39,17 +41,29 @@ jobs:
             exit 1
           fi
           echo "Keeping latest release: $latest"
-          echo
 
           # Releases are deleted by id rather than by tag: a draft may have no
           # tag yet, and two drafts can share one.
           gh api --paginate "repos/$REPO/releases" \
             --jq '.[] | [.id, .tag_name, .draft, .prerelease] | @tsv' > releases.tsv
 
-          awk -F'\t' -v keep="$latest" '$2 != keep' releases.tsv > delete-releases.tsv
+          # The release before Latest: the first published, non-prerelease release
+          # after it in the list, which GitHub returns newest first. A rollback
+          # target must be one that was shipped.
+          previous=$(awk -F'\t' -v latest="$latest" 'seen && $3 == "false" && $4 == "false" { print $2; exit } $2 == latest { seen = 1 }' releases.tsv)
+          if [ -n "$previous" ]; then
+            echo "Keeping the previous release: $previous"
+          else
+            echo "There is no release before the latest one to keep."
+          fi
+          echo
+
+          awk -F'\t' -v latest="$latest" -v previous="$previous" '$2 != latest && $2 != previous' releases.tsv > delete-releases.tsv
 
           gh api --paginate "repos/$REPO/tags" --jq '.[].name' | sort -u > tags.txt
-          grep -vxF "$latest" tags.txt > delete-tags.txt || true
+          # "$previous" is empty when there is none; an empty -e pattern would match
+          # every tag, so the latest tag stands in for it.
+          grep -vxF -e "$latest" -e "${previous:-$latest}" tags.txt > delete-tags.txt || true
 
           echo "Releases to delete ($(wc -l < delete-releases.tsv)):"
           while IFS=$'\t' read -r id tag draft pre; do
