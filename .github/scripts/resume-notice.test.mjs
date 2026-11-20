@@ -98,14 +98,6 @@ test('nexus-text prints the fallback on its own', () => {
   assert.match(lines[0], /Nexus upload for v1\.2\.3 did not finish/);
 });
 
-test('resume-command prints the resume command alone, with Nexus skipped', () => {
-  const lines = [];
-  const log = console.log;
-  console.log = (s) => lines.push(s);
-  try { assert.equal(main(['resume-command'], { ...ENV, TAG: 'v1.2.3' }), 0); } finally { console.log = log; }
-  assert.deepEqual(lines, ['gh workflow run release.yml --repo o/r --ref main -f resume_tag=v1.2.3 -f resume_nexus=none']);
-});
-
 test('the workflow opens no issue, takes no issue permission and ends in the notice job', () => {
   assert.doesNotMatch(workflow, /issues: write|gh issue|gh api -X POST/);
   assert.match(workflow, /\n {2}notice:\n {4}needs: publish\n {4}if: \$\{\{ always\(\) && \(needs\.publish\.result == 'failure' \|\| needs\.publish\.result == 'cancelled'\) \}\}/);

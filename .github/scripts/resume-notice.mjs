@@ -6,15 +6,12 @@
 //
 //   node resume-notice.mjs vmap|release     the notice for the run
 //   node resume-notice.mjs nexus-text       what to do by hand when Nexus fails
-//   node resume-notice.mjs resume-command   the resume command alone, Nexus skipped
-//                                           (a step before Nexus names it in its error)
 //
 // Reads from the environment: NEEDS_JSON (${{ toJSON(needs) }} of the calling
 // job), GITHUB_REPOSITORY, GITHUB_SERVER_URL, GITHUB_RUN_ID, GITHUB_REF_NAME.
 //   vmap:    FEED_REPO, FEED_RELEASE, FIRST_PUBLISH (the
 //            vmap-publish inputs)
 //   release: TAG, and CHECK_JSON, the output of release-check.mjs
-//   resume-command: TAG, GITHUB_REPOSITORY, GITHUB_REF_NAME only
 //
 // Prints markdown on stdout. Exit 0 when nothing is stuck (prints nothing), 1
 // when something is, 2 for a bad call.
@@ -100,12 +97,8 @@ export function main(argv, env = process.env) {
     console.log(nexusText(env));
     return 0;
   }
-  if (argv[0] === 'resume-command') {
-    console.log(resumeCommand(env, { nexus: false }));
-    return 0;
-  }
   if (argv[0] !== 'vmap' && argv[0] !== 'release') {
-    console.error('usage: resume-notice.mjs vmap|release|nexus-text|resume-command');
+    console.error('usage: resume-notice.mjs vmap|release|nexus-text');
     return 2;
   }
   const text = notice(argv[0], env);

@@ -1,10 +1,12 @@
-// Guards for the resume path of release.yml, read from the workflow text.
+// Guards for release.yml, read from the workflow text.
 //
 //   node --test .github/scripts/release-workflow.test.mjs
 //
-// A resume (resume_tag set) must finish a public release and nothing else: it
-// never bumps a version, tags, creates, deletes or replaces anything, and Nexus
-// only runs after the release assets were checked.
+// A release is made as a draft, checked while nothing is public and published by
+// one job; everything that reads or builds on it comes after that job. A resume
+// (resume_tag set) of a public release must finish it and nothing else: it never
+// bumps a version, tags, creates, deletes or replaces anything, and Nexus only
+// runs after the release assets were checked.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -26,13 +28,36 @@ const jobs = Object.fromEntries(
 const ifOf = (job) => /\n    if: (\|\n(?: {6}.*\n?)+|.*)/.exec(jobs[job])?.[1] ?? '';
 
 test('the jobs are the ones this test knows', () => {
-  assert.deepEqual(Object.keys(jobs), ['prepare', 'build', 'release', 'verify-release', 'nexus', 'publish-feed', 'notice', 'sync-plugin-sdk', 'trigger-plugin-builds']);
+  assert.deepEqual(Object.keys(jobs), ['prepare', 'build', 'release', 'inspect', 'verify-release', 'publish', 'nexus', 'publish-feed', 'notice', 'sync-plugin-sdk', 'trigger-plugin-builds']);
+});
+
+test('the release is a draft until the publish job, which comes after the check', () => {
+  // Created as a draft on a fixed commit; no git tag is made by the release job.
+  assert.match(jobs.release, /\$flags \+= @\('--draft', '--target', "\$\{\{ needs\.prepare\.outputs\.sha \}\}"\)\n\s+gh release create \$tag @assets @flags/);
+  assert.doesNotMatch(jobs.release, /git (tag|push)|--draft=false|gh release edit/);
+  // Only the publish job makes a release public, and only after the draft passed the check.
+  const publishers = Object.keys(jobs).filter((j) => /--draft=false/.test(jobs[j]));
+  assert.deepEqual(publishers, ['publish']);
+  assert.match(jobs.publish, /needs: \[prepare, verify-release\]/);
+  assert.match(ifOf('publish'), /needs\.verify-release\.result == 'success'/);
+  assert.match(jobs['verify-release'], /release-check\.mjs --repo "\$GITHUB_REPOSITORY" --tag "\$TAG" --pre-publish \|/);
+  assert.match(jobs['verify-release'], /needs: \[prepare, release\]/);
+  // The publish makes the tag from the commit the draft was given; it does not delete or force anything.
+  assert.doesNotMatch(jobs.publish, /--clobber|--force|gh release (create|delete|upload)|gh api -X (DELETE|PATCH|PUT|POST)|git (tag|push)/);
+});
+
+test('everything that reads or builds on the release comes after the publish job', () => {
+  for (const job of ['nexus', 'publish-feed', 'sync-plugin-sdk', 'trigger-plugin-builds']) {
+    assert.match(jobs[job], /(^|\n) {4}needs: \[[^\]]*\bpublish\b[^\]]*\]/, `${job} must need publish`);
+    assert.match(ifOf(job), /needs\.publish\.result == 'success'/, `${job} must run only after a successful publish`);
+  }
+  assert.match(jobs.notice, /needs: \[[^\]]*\bpublish\b/);
 });
 
 test('a failed Nexus step puts the manual fallback in the run, and the last job names the resume command', () => {
   assert.match(jobs.nexus, /name: Say how to publish Nexus by hand\n {8}if: \$\{\{ failure\(\) \}\}[\s\S]*resume-notice\.mjs nexus-text[\s\S]*::error title=Nexus publish failed::/);
   assert.match(ifOf('notice'), /always\(\) && needs\.prepare\.result == 'success'/);
-  assert.match(jobs.notice, /needs: \[prepare, release, verify-release, nexus, publish-feed\]/);
+  assert.match(jobs.notice, /needs: \[prepare, inspect, release, verify-release, publish, nexus, publish-feed\]/);
   assert.match(jobs.notice, /release-check\.mjs --repo "\$GITHUB_REPOSITORY" --tag "\$TAG" >/);
   assert.match(jobs.notice, /resume-notice\.mjs release/);
   assert.doesNotMatch(text, /issues: write|gh issue/);
@@ -41,9 +66,10 @@ test('a failed Nexus step puts the manual fallback in the run, and the last job 
 test('only the build and the release job are skipped on a resume', () => {
   assert.match(ifOf('build'), /resume_tag == ''/);
   assert.match(ifOf('release'), /resume_tag == ''/);
-  for (const job of ['verify-release', 'publish-feed']) {
-    assert.doesNotMatch(ifOf(job), /resume_tag == ''/, `${job} must run on a resume`);
-  }
+  // The public release is checked by `inspect`, and publish-feed follows it.
+  assert.match(ifOf('inspect'), /needs\.prepare\.outputs\.state == 'public'/);
+  assert.doesNotMatch(ifOf('publish-feed'), /resume_tag == ''/, 'publish-feed must run on a resume');
+  assert.match(ifOf('publish-feed'), /needs\.prepare\.outputs\.state == 'public' && needs\.inspect\.result == 'success'/);
   // Nexus names resume_tag only to apply resume_nexus on a resume; a fresh run always runs it.
   assert.doesNotMatch(ifOf('nexus'), /&&\s*github\.event\.inputs\.resume_tag == ''/);
 });
@@ -62,15 +88,16 @@ test('a tag that already exists stops a new run instead of bumping or reusing it
 
 test('jobs that run on a resume never tag, create, replace, delete or force', () => {
   const forbidden = /gh release (create|delete|edit|upload)|git (tag|push)|--clobber|--force|--cleanup-tag|gh api -X (DELETE|PATCH|PUT|POST)/;
-  for (const job of ['prepare', 'verify-release', 'nexus']) {
+  for (const job of ['prepare', 'inspect', 'verify-release', 'nexus']) {
     assert.doesNotMatch(jobs[job], forbidden, `${job} must not change the release`);
   }
 });
 
-test('Nexus waits for the asset check, which does not ask for the version map', () => {
-  assert.match(jobs.nexus, /needs: \[prepare, release, verify-release\]/);
-  assert.match(ifOf('nexus'), /needs\.verify-release\.result == 'success'/);
-  assert.match(jobs['verify-release'], /release-check\.mjs --repo "\$GITHUB_REPOSITORY" --tag "\$TAG" --version-map skip/);
+test('Nexus waits for a published release that passed the asset check', () => {
+  assert.match(jobs.nexus, /needs: \[prepare, inspect, release, publish\]/);
+  // Fresh: the publish job ran after the draft check. Resumed public release: the inspect job passed.
+  assert.match(ifOf('nexus'), /needs\.publish\.result == 'success' \|\|\n\s+\(needs\.prepare\.outputs\.state == 'public' && needs\.inspect\.result == 'success'\)/);
+  assert.match(jobs.inspect, /release-check\.mjs --repo "\$GITHUB_REPOSITORY" --tag "\$TAG" --version-map skip/);
   assert.match(jobs.nexus, /gh release download \$env:TAG/, 'Nexus takes the files that were checked');
   assert.doesNotMatch(text, /modloader-zips/);
 });
@@ -111,8 +138,8 @@ test('the release step takes the version map from the same place, with the same 
   assert.ok(vmapPublish.includes('node .github/vmap/verify-feed.mjs "$RUNNER_TEMP/new/$FEED_ASSET" "${args[@]}"') && vmapPublish.includes('--source StarRupture-ModLoader-Core/memory_scanner/version_feed.cpp'));
 });
 
-test('a missing or unverifiable version map does not stop the release, and the file goes on it when there is one', () => {
-  assert.match(vmapStep, /\n {8}continue-on-error: true\n/);
+test('a missing or unverifiable version map stops the run before a release exists, and the file goes on the draft', () => {
+  assert.doesNotMatch(vmapStep, /continue-on-error/);
   assert.match(vmapStep, /^ {8}if: \$\{\{ needs\.prepare\.outputs\.is_preview != 'true' \}\}\n/);
   // It runs before the release is created, and the create step adds the file to the upload list after the manifest.
   assert.ok(jobs.release.indexOf('Fetch the signed version map for the release') < jobs.release.indexOf('name: Create GitHub Release'));
@@ -127,12 +154,10 @@ function runVmapStep({ feed, missing = false, refuse = false }) {
   const ws = join(dir, 'ws');
   const bin = join(dir, 'bin');
   mkdirSync(join(ws, '.github', 'vmap'), { recursive: true });
-  mkdirSync(join(ws, '.github', 'scripts'), { recursive: true });
   mkdirSync(join(ws, 'StarRupture-ModLoader-Core', 'memory_scanner'), { recursive: true });
   mkdirSync(bin);
   const here = dirname(fileURLToPath(import.meta.url));
   copyFileSync(join(here, '..', 'vmap', 'verify-feed.mjs'), join(ws, '.github', 'vmap', 'verify-feed.mjs'));
-  copyFileSync(join(here, 'resume-notice.mjs'), join(ws, '.github', 'scripts', 'resume-notice.mjs'));
   writeFileSync(join(ws, 'StarRupture-ModLoader-Core', 'memory_scanner', 'version_feed.cpp'),
     `constexpr const char* kK1Hex = "${feed.test.hex}";\nconstexpr bool kK1TestOnly = true;\nconstexpr const char* kK2Hex = "${feed.release.hex}";\nconstexpr bool kK2TestOnly = false;\n`);
   writeFileSync(join(dir, 'feed.txt'), feed.file);
@@ -149,7 +174,7 @@ ${missing || refuse ? 'exit 1' : `dir=.; while [ $# -gt 0 ]; do [ "$1" = --dir ]
     env: {
       ...process.env,
       PATH: `${posix(bin)}${delimiter}${process.env.PATH}`,
-      FEED_REPO: 'x/ci', FEED_RELEASE: 'vmap-feed', FEED_ASSET: 'version-map-client.v1.txt', TAG: 'v1.2.3',
+      FEED_REPO: 'x/ci', FEED_RELEASE: 'vmap-feed', FEED_ASSET: 'version-map-client.v1.txt',
       GITHUB_REPOSITORY: 'o/r', GITHUB_REF_NAME: 'main', GH_TOKEN: 'x',
     },
   });
@@ -166,7 +191,6 @@ const signFeed = (k, id, body) => Buffer.from(`${body}sig\t${id}\t${sign(null, B
 const SEQ = Math.floor(Date.now() / 1000) - 1000;
 const GOOD_BODY = `format\t1\nseq\t${SEQ}\nbuild\t128786\t0x22222222\t0x2000000\tpublic_test_branch 2\nfield\tATest::Reflected\t128786\t0x30\t0x8\t0x0\t-\n`;
 const withKeys = (file, extra = {}) => ({ file, ...KEYS, ...extra });
-const RESUME = 'gh workflow run release.yml --repo o/r --ref main -f resume_tag=v1.2.3 -f resume_nexus=none';
 
 test('a version map that verifies is put in the workspace for the release', () => {
   const r = runVmapStep({ feed: withKeys(signFeed(KEYS.release, 'k2', GOOD_BODY)) });
@@ -175,15 +199,14 @@ test('a version map that verifies is put in the workspace for the release', () =
   assert.doesNotMatch(r.stdout, /::error/);
 });
 
-test('a version map that is missing or cannot be downloaded fails the step with the resume command, and leaves no file', () => {
+test('a version map that is missing or cannot be downloaded fails the step before any release is made, and leaves no file', () => {
   const r = runVmapStep({ feed: withKeys(signFeed(KEYS.release, 'k2', GOOD_BODY)), missing: true });
   assert.equal(r.status, 1);
   assert.equal(r.placed, false);
-  assert.match(r.stdout, /::error title=No version map on the release::The signed version map could not be downloaded from release vmap-feed in x\/ci\. The release goes out without it\./);
-  assert.ok(r.stdout.includes(`run: ${RESUME}`), r.stdout);
+  assert.match(r.stdout, /::error title=No version map for the release::The signed version map could not be downloaded from release vmap-feed in x\/ci\. No release was made\. Run this workflow again/);
 });
 
-test('a version map that does not verify fails the step with the resume command, and leaves no file', () => {
+test('a version map that does not verify fails the step before any release is made, and leaves no file', () => {
   const bad = {
     'a tampered file': Buffer.from(signFeed(KEYS.release, 'k2', GOOD_BODY).toString('latin1').replace('0x30', '0x31'), 'latin1'),
     'a duplicate build': signFeed(KEYS.release, 'k2', `${GOOD_BODY}build\t128786\t0x22222222\t0x2000000\tx\n`),
@@ -193,8 +216,7 @@ test('a version map that does not verify fails the step with the resume command,
     const r = runVmapStep({ feed: withKeys(file) });
     assert.equal(r.status, 1, what);
     assert.equal(r.placed, false, what);
-    assert.match(r.stdout, /::error title=No version map on the release::The signed version map from x\/ci does not verify/, what);
-    assert.ok(r.stdout.includes(`run: ${RESUME}`), what);
+    assert.match(r.stdout, /::error title=No version map for the release::The signed version map from x\/ci does not verify/, what);
   }
 });
 
