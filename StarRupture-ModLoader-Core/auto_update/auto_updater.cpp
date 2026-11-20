@@ -1009,11 +1009,6 @@ static void RunCentralManifestUpdate(const AutoUpdateConfig& cfg)
 	// truth when it can't read the Core DLL's file version resource.
 }
 
-bool VersionMapFetchEnabled()
-{
-	return ReadAutoUpdateConfig().versionMapFetch;
-}
-
 // The feed URL is a compiled define of its own and never read from modloader.ini.
 #ifndef VMAP_FEED_URL
 #  define VMAP_FEED_URL ""
@@ -1047,7 +1042,8 @@ FeedFetch::Config FeedFetch::LoaderConfig()
 	cfg.url = VMAP_FEED_URL;
 	cfg.keys = VersionFeed::CompiledKeys();
 	cfg.cachePath = GetModLoaderDirPath(L"version-map-client.v1.cache");
-	cfg.fetchEnabled = VersionMapFetchEnabled();
+	const AutoUpdateConfig ini = ReadAutoUpdateConfig();
+	cfg.fetchEnabled = FeedFetch::SwitchesAllowFetch(ini.versionMapFetch, ini.enabled);
 	return cfg;
 }
 
@@ -1066,7 +1062,8 @@ void ModLoaderLogger::RunAutoUpdate()
 		LogToFile::Info("[AutoUpdate] Disabled via modloader.ini — skipping the update checks");
 #ifdef MODLOADER_CLIENT_BUILD
 		// The version map fetch has its own switch, [VersionMap] Fetch.
-		FeedFetch::Stage3(FeedFetch::LoaderConfig());
+		if (FeedFetch::SwitchesAllowFetch(cfg.versionMapFetch, cfg.enabled))
+			FeedFetch::Stage3(FeedFetch::LoaderConfig());
 #endif
 		return;
 	}

@@ -75,6 +75,11 @@ namespace
 
 namespace FeedFetch
 {
+	bool SwitchesAllowFetch(bool versionMapFetch, bool /*autoUpdateEnabled*/)
+	{
+		return versionMapFetch;
+	}
+
 	const char* WhyNot(const Config& cfg)
 	{
 		if (!cfg.client)

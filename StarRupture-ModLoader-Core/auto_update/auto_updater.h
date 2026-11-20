@@ -72,10 +72,6 @@
 #  define AUTOUPDATE_DEFAULT_MANIFEST_URL ""
 #endif
 
-// Whether modloader.ini [VersionMap] Fetch is on (the default). Separate from
-// [AutoUpdate] Enabled: the version map is signed data, not an update prompt.
-bool VersionMapFetchEnabled();
-
 // Records the version a plugin with an update sidecar reports when it loads,
 // if it is newer than the stored one, so the plugin pass never replaces a
 // build installed by hand with an older release. The pass reads the installed

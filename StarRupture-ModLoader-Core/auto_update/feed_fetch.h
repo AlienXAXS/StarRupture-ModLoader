@@ -49,6 +49,12 @@ namespace FeedFetch
 	// to the other loader files.
 	Config LoaderConfig();
 
+	// Whether the two modloader.ini switches let the version map be fetched.
+	// Only [VersionMap] Fetch counts: [AutoUpdate] Enabled is for update prompts
+	// and plugin updates, so it is passed in only to keep this one rule, used by
+	// LoaderConfig and by the auto-update path that skips its passes, in one place.
+	bool SwitchesAllowFetch(bool versionMapFetch, bool autoUpdateEnabled);
+
 	// Why the loader makes no request under `cfg`, or null when it may.
 	const char* WhyNot(const Config& cfg);
 

@@ -610,8 +610,23 @@ int main()
 		FeedFetch::Config server = cfg;
 		server.client = false;
 		Check(FeedFetch::WhyNot(server) != nullptr, "WhyNot: the server never asks");
-		// [AutoUpdate] Enabled is not part of Config: LoaderConfig() sets fetchEnabled
-		// from [VersionMap] Fetch alone, so only that switch can stop a fetch.
+		// The two ini switches, as LoaderConfig() and RunAutoUpdate() read them.
+		for (int fetch = 0; fetch <= 1; ++fetch)
+		{
+			for (int updates = 0; updates <= 1; ++updates)
+			{
+				const bool allowed = FeedFetch::SwitchesAllowFetch(fetch != 0, updates != 0);
+				Check(allowed == (fetch != 0), "switches: only [VersionMap] Fetch decides");
+				FeedFetch::Config viaSwitches = cfg;
+				viaSwitches.fetchEnabled = allowed;
+				const char* why = FeedFetch::WhyNot(viaSwitches);
+				if (fetch)
+					Check(why == nullptr, updates ? "Fetch on, Auto Updates on: asks" : "Fetch on, Auto Updates off: asks");
+				else
+					Check(why != nullptr && strstr(why, "[VersionMap] Fetch") != nullptr,
+						updates ? "Fetch off, Auto Updates on: no request, names the switch" : "Fetch off, Auto Updates off: no request, names the switch");
+			}
+		}
 		FeedFetch::Config off = cfg;
 		off.fetchEnabled = false;
 		const char* offReason = FeedFetch::WhyNot(off);
