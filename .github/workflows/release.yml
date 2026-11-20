@@ -466,6 +466,36 @@ jobs:
             Write-Host "Created modloader ZIP: $zipPath"
           }
 
+      # The release goes out with the signed version object map on it, from the same
+      # place and through the same check as vmap-publish.yml, so a new loader release
+      # is never without one. A map that is missing or does not verify does not stop
+      # the release: this step shows red with the command that puts it on later, the
+      # release goes out without it, and publish-feed and the last job try again
+      # and report it. A preview is never Latest and gets none.
+      - name: Fetch the signed version map for the release
+        id: vmap
+        if: ${{ needs.prepare.outputs.is_preview != 'true' }}
+        continue-on-error: true
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FEED_REPO: msantoro12/starrupture-ci
+          FEED_RELEASE: vmap-feed
+          FEED_ASSET: version-map-client.v1.txt
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          set -uo pipefail
+          rm -f "$FEED_ASSET"
+          fail() {
+            rm -f "$FEED_ASSET"
+            echo "::error title=No version map on the release::$1 The release goes out without it. To put it on afterwards, run: $(node .github/scripts/resume-notice.mjs resume-command)"
+            exit 1
+          }
+          gh release download "$FEED_RELEASE" --repo "$FEED_REPO" --pattern "$FEED_ASSET" --dir . --clobber \
+            || fail "The signed version map could not be downloaded from release $FEED_RELEASE in $FEED_REPO."
+          node .github/vmap/verify-feed.mjs "$FEED_ASSET" --source StarRupture-ModLoader-Core/memory_scanner/version_feed.cpp --refuse-test-key \
+            || fail "The signed version map from $FEED_REPO does not verify (reason above)."
+
       - name: Create GitHub Release
         shell: pwsh
         env:
@@ -499,6 +529,12 @@ jobs:
           node "$ws\.github\scripts\release-check.mjs" write-manifest --tag $tag --out $manifest @assets
           if ($LASTEXITCODE -ne 0) { throw "release-assets.json could not be written." }
           $assets.Add($manifest)
+
+          # The signed version map, when the step before found a good one. It is not
+          # in the manifest: vmap-publish.yml may replace it with a newer one, and
+          # release-check.mjs reads it on its own.
+          $versionMap = "$ws\version-map-client.v1.txt"
+          if (Test-Path $versionMap) { $assets.Add($versionMap) }
 
           Write-Host "Uploading $($assets.Count) asset(s):"
           $assets | ForEach-Object { Write-Host "  $_" }

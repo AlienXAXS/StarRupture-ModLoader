@@ -8,8 +8,11 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { createPrivateKey, generateKeyPairSync, sign } from 'node:crypto';
+import { spawnSync } from 'node:child_process';
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { delimiter, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { MANIFEST_ASSET } from './release-check.mjs';
 
@@ -91,4 +94,106 @@ test('the manifest the release uploads has the name the check reads', () => {
 
 test('one release run at a time', () => {
   assert.match(text, /\nconcurrency:\n {2}group: release\n {2}cancel-in-progress: false\n/);
+});
+
+// The release carries the signed version object map from the moment it is public.
+const vmapStep = /- name: Fetch the signed version map for the release\n((?: {8}.*\n|\n)+?)(?= {6}- name:)/.exec(`${jobs.release}\n`)[1];
+const vmapPublish = readFileSync(join(workflows, 'vmap-publish.yml'), 'utf8').replace(/\r\n/g, '\n');
+
+test('the release step takes the version map from the same place, with the same check, as vmap-publish', () => {
+  for (const [name, value] of [['FEED_REPO', 'msantoro12/starrupture-ci'], ['FEED_RELEASE', 'vmap-feed'], ['FEED_ASSET', 'version-map-client.v1.txt']]) {
+    assert.ok(vmapStep.includes(`${name}: ${value}\n`), name);
+  }
+  // The two defaults in vmap-publish.yml are the same strings.
+  assert.ok(vmapPublish.includes("default: 'msantoro12/starrupture-ci'") && vmapPublish.includes("default: 'vmap-feed'") && vmapPublish.includes('FEED_ASSET: version-map-client.v1.txt'));
+  // The same verifier, key source and test-key refusal; no second verifier.
+  assert.match(vmapStep, /node \.github\/vmap\/verify-feed\.mjs "\$FEED_ASSET" --source StarRupture-ModLoader-Core\/memory_scanner\/version_feed\.cpp --refuse-test-key/);
+  assert.ok(vmapPublish.includes('node .github/vmap/verify-feed.mjs "$RUNNER_TEMP/new/$FEED_ASSET" "${args[@]}"') && vmapPublish.includes('--source StarRupture-ModLoader-Core/memory_scanner/version_feed.cpp'));
+});
+
+test('a missing or unverifiable version map does not stop the release, and the file goes on it when there is one', () => {
+  assert.match(vmapStep, /\n {8}continue-on-error: true\n/);
+  assert.match(vmapStep, /\n {8}if: \$\{\{ needs\.prepare\.outputs\.is_preview != 'true' \}\}\n/);
+  // It runs before the release is created, and the create step adds the file to the upload list after the manifest.
+  assert.ok(jobs.release.indexOf('Fetch the signed version map for the release') < jobs.release.indexOf('name: Create GitHub Release'));
+  assert.match(jobs.release, /\$assets\.Add\(\$manifest\)\n[\s\S]*\$versionMap = "\$ws\\version-map-client\.v1\.txt"\n {10}if \(Test-Path \$versionMap\) \{ \$assets\.Add\(\$versionMap\) \}\n[\s\S]*gh release create \$tag @assets @flags/);
+  // The version map is not in the manifest, so a newer copy from vmap-publish.yml is not a size or md5 mismatch.
+  assert.ok(jobs.release.indexOf('write-manifest') < jobs.release.indexOf('$assets.Add($versionMap)'));
+});
+
+// The step, run for real with a fake `gh`.
+function runVmapStep({ feed, missing = false, refuse = false }) {
+  const dir = mkdtempSync(join(tmpdir(), 'rel-vmap-'));
+  const ws = join(dir, 'ws');
+  const bin = join(dir, 'bin');
+  mkdirSync(join(ws, '.github', 'vmap'), { recursive: true });
+  mkdirSync(join(ws, '.github', 'scripts'), { recursive: true });
+  mkdirSync(join(ws, 'StarRupture-ModLoader-Core', 'memory_scanner'), { recursive: true });
+  mkdirSync(bin);
+  const here = dirname(fileURLToPath(import.meta.url));
+  copyFileSync(join(here, '..', 'vmap', 'verify-feed.mjs'), join(ws, '.github', 'vmap', 'verify-feed.mjs'));
+  copyFileSync(join(here, 'resume-notice.mjs'), join(ws, '.github', 'scripts', 'resume-notice.mjs'));
+  writeFileSync(join(ws, 'StarRupture-ModLoader-Core', 'memory_scanner', 'version_feed.cpp'),
+    `constexpr const char* kK1Hex = "${feed.test.hex}";\nconstexpr bool kK1TestOnly = true;\nconstexpr const char* kK2Hex = "${feed.release.hex}";\nconstexpr bool kK2TestOnly = false;\n`);
+  writeFileSync(join(dir, 'feed.txt'), feed.file);
+  writeFileSync(join(bin, 'gh'), `#!/bin/bash
+echo "$*" >> "${posix(join(dir, 'calls.log'))}"
+${missing || refuse ? 'exit 1' : `dir=.; while [ $# -gt 0 ]; do [ "$1" = --dir ] && dir="$2"; shift; done; cp "${posix(join(dir, 'feed.txt'))}" "$dir/version-map-client.v1.txt"`}
+`);
+  chmodSync(join(bin, 'gh'), 0o755);
+  const step = vmapStep.replace(/^ {8}[\s\S]*?\n {8}run: \|\n/, '').replace(/^ {10}/gm, '');
+  const r = spawnSync('bash', ['-c', step], {
+    cwd: ws,
+    encoding: 'utf8',
+    windowsHide: true,
+    env: {
+      ...process.env,
+      PATH: `${posix(bin)}${delimiter}${process.env.PATH}`,
+      FEED_REPO: 'x/ci', FEED_RELEASE: 'vmap-feed', FEED_ASSET: 'version-map-client.v1.txt', TAG: 'v1.2.3',
+      GITHUB_REPOSITORY: 'o/r', GITHUB_REF_NAME: 'main', GH_TOKEN: 'x',
+    },
+  });
+  return { ...r, placed: existsSync(join(ws, 'version-map-client.v1.txt')) };
+}
+const posix = (p) => p.replace(/\\/g, '/');
+
+const keyPair = () => {
+  const { privateKey, publicKey } = generateKeyPairSync('ed25519');
+  return { pem: privateKey.export({ type: 'pkcs8', format: 'pem' }), hex: publicKey.export({ type: 'spki', format: 'der' }).subarray(-32).toString('hex') };
+};
+const KEYS = { test: keyPair(), release: keyPair() };
+const signFeed = (k, id, body) => Buffer.from(`${body}sig\t${id}\t${sign(null, Buffer.from(body), createPrivateKey(k.pem)).toString('base64')}\n`);
+const SEQ = Math.floor(Date.now() / 1000) - 1000;
+const GOOD_BODY = `format\t1\nseq\t${SEQ}\nbuild\t128786\t0x22222222\t0x2000000\tpublic_test_branch 2\nfield\tATest::Reflected\t128786\t0x30\t0x8\t0x0\t-\n`;
+const withKeys = (file, extra = {}) => ({ file, ...KEYS, ...extra });
+const RESUME = 'gh workflow run release.yml --repo o/r --ref main -f resume_tag=v1.2.3 -f resume_nexus=none';
+
+test('a version map that verifies is put in the workspace for the release', () => {
+  const r = runVmapStep({ feed: withKeys(signFeed(KEYS.release, 'k2', GOOD_BODY)) });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.equal(r.placed, true);
+  assert.doesNotMatch(r.stdout, /::error/);
+});
+
+test('a version map that is missing or cannot be downloaded fails the step with the resume command, and leaves no file', () => {
+  const r = runVmapStep({ feed: withKeys(signFeed(KEYS.release, 'k2', GOOD_BODY)), missing: true });
+  assert.equal(r.status, 1);
+  assert.equal(r.placed, false);
+  assert.match(r.stdout, /::error title=No version map on the release::The signed version map could not be downloaded from release vmap-feed in x\/ci\. The release goes out without it\./);
+  assert.ok(r.stdout.includes(`run: ${RESUME}`), r.stdout);
+});
+
+test('a version map that does not verify fails the step with the resume command, and leaves no file', () => {
+  const bad = {
+    'a tampered file': Buffer.from(signFeed(KEYS.release, 'k2', GOOD_BODY).toString('latin1').replace('0x30', '0x31'), 'latin1'),
+    'a duplicate build': signFeed(KEYS.release, 'k2', `${GOOD_BODY}build\t128786\t0x22222222\t0x2000000\tx\n`),
+    'a TEST-key file': signFeed(KEYS.test, 'k1', GOOD_BODY),
+  };
+  for (const [what, file] of Object.entries(bad)) {
+    const r = runVmapStep({ feed: withKeys(file) });
+    assert.equal(r.status, 1, what);
+    assert.equal(r.placed, false, what);
+    assert.match(r.stdout, /::error title=No version map on the release::The signed version map from x\/ci does not verify/, what);
+    assert.ok(r.stdout.includes(`run: ${RESUME}`), what);
+  }
 });
