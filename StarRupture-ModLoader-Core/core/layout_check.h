@@ -27,8 +27,9 @@ namespace VersionMap { struct LiveField; }
 // when only that feature reads the class; all plugins (safe-off) when the
 // loader itself or every plugin reads it, or when nothing says who does.
 // Plugins that keep the game's layouts compiled in are refused whenever any
-// class changed (VersionMap::LayoutRefusal). The init thread acts on the
-// verdict and writes the compatibility report (compat_report.h).
+// class changed (VersionMap::LayoutRefusal), unless they declare the build
+// that is running. The init thread acts on the verdict and writes the
+// compatibility report (compat_report.h).
 //
 // Run also checks the one engine constant every plugin's SDK compiles in: the
 // vtable slot UObject::ProcessEvent is called through (CheckProcessEventSlot).

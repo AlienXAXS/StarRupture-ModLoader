@@ -80,7 +80,8 @@ static void EnterLayoutSafeOff(const LayoutCheck::Result& layout)
 
 // A layout mismatch that only some readers depend on (LayoutCheck::Decide):
 // the loader features that read a changed class switch off, and so does every
-// plugin that keeps the game's layouts compiled in. Preload plugins all do
+// plugin that keeps the game's layouts compiled in, unless it declares the build
+// that is running (VersionMap::LayoutRefusal). Preload plugins all do
 // (they have no way to take this build's layouts), and they are already
 // running, so they shut down here. Plugins that take every layout from the
 // version map still load; a request of theirs for a changed class's compiled
@@ -128,7 +129,7 @@ static void SwitchOffChangedLayoutUsers(const LayoutCheck::Result& layout)
     }
 
     ModLoaderLogger::LogWarn(L"[init] Layout changed on this build (%S): %S; plugins that keep the game's layouts"
-        L" compiled in are not loaded", changed.c_str(),
+        L" compiled in are not loaded unless they declare the build that is running", changed.c_str(),
         menusOff ? "the menu state for plugins is switched off" : "no loader feature reads them");
 }
 #endif

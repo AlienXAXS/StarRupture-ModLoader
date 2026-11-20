@@ -309,6 +309,12 @@ in a tail from interface v72: `gameBuiltCL` (the build its Game-SDK came from,
   counts; a build where the loader cannot find GObjects, `FName::AppendString` or `GWorld` hands
   the plugin none, with a log line saying which). Otherwise the Plugins tab shows it as **Incompatible**, with "Needs an update to
   run on CL-...", and it still loads on its own build.
+- On its own built CL it is also not refused when the startup layout check finds changed classes, as long
+  as it declares that CL (interface 72 or later, `gameBuiltCL` set) and it is not the build the loader
+  itself was built against. Those classes come from the loader's
+  own SDK, and the plugin's SDK is the running build's. The loader takes the declared CL on the plugin's
+  word and does not check its headers. A plugin that declares no build, or another one, is still
+  refused then unless it sets `PLUGIN_MAP_MIGRATED`.
 - A v70 or v71 plugin has no tail and counts as built for `kLegacyPluginCL` (127004), the build
   the last loader without a version map required. So does a v72 or later plugin whose `gameBuiltCL` is 0,
   with the warning "declares no game build". A tail that sets `PLUGIN_MAP_MIGRATED` and names no
@@ -528,7 +534,7 @@ What a player sees, and what the log says (`ModLoader\Logs\ModLoader.log`).
 | A plugin's own pattern matches 0 or 2 or more places, but a row resolves the key | The plugin loads on the row. `ModLoader.log` has one `[Map]` warning naming the plugin, the key and the count. Where no row resolves the key it would be refused, so the author should make the pattern unique (or update it, for 0). |
 | Two keys for one request disagree (AMBIGUOUS) | The request fails, with the locators listed: a declared feature turns off, any other key refuses the plugin. |
 | The game's `UObject` virtual table no longer holds `ProcessEvent` where the SDK calls it | Every plugin is switched off for the session, with the same dialog as a layout change. The log line is `[LayoutCheck] UObject::ProcessEvent: vtable slot 0x4C holds base+0x..., the function is at base+0x...`; when it is fine, the log says the slot holds the function the version map resolved. |
-| A game class a plugin reads moved | That plugin's own field request, or its `SR_SIZE_CHECK`, fails and the plugin alone is affected (a declared feature off, else refused), with the reason in the failure window. The loader's layout check covers the classes the loader and the Plugin SDK read, and what a change switches off depends on who reads the class: see the README. After any change, a plugin that keeps the game's layouts compiled in is not loaded; one that declares `PLUGIN_MAP_MIGRATED` (taken on its word) still loads, and a request of its for the compiled offset of a changed class, or of a class derived from one, is refused, which turns off only the feature that asked. |
+| A game class a plugin reads moved | That plugin's own field request, or its `SR_SIZE_CHECK`, fails and the plugin alone is affected (a declared feature off, else refused), with the reason in the failure window. The loader's layout check covers the classes the loader and the Plugin SDK read, and what a change switches off depends on who reads the class: see the README. After any change, a plugin that keeps the game's layouts compiled in is not loaded, unless it declares the build that is running (its layouts are that build's); one that declares `PLUGIN_MAP_MIGRATED` (taken on its word) still loads, and a request of its for the compiled offset of a changed class, or of a class derived from one, is refused, which turns off only the feature that asked, unless the request says its SDK came from the build that is running. |
 
 A fetched version map is read once at startup and never changes mid-session, so a RELOAD sees the same
 rows the loader's own hooks were installed from.

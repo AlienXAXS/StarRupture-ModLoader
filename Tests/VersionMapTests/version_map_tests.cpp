@@ -169,7 +169,7 @@ namespace
 
 	bool Field(const char* key, const char* className, const char* member, uint32_t flags, uint32_t size,
 		const std::vector<VersionMap::FieldCandidate>& own, VersionMap::FieldValue& out, std::string& error,
-		const VersionMap::Exe& running = kRunning, bool* absent = nullptr)
+		const VersionMap::Exe& running = kRunning, bool* absent = nullptr, uint32_t builtCL = 127004)
 	{
 		TestDoubles::g_log.clear();
 		TestDoubles::g_debugLog.clear();
@@ -180,7 +180,7 @@ namespace
 		request.member      = member;
 		request.flags       = flags;
 		request.size        = size;
-		request.builtCL     = 127004;
+		request.builtCL     = builtCL;
 		request.builtOffset = 0;
 		request.candidates  = own;
 		return VersionMap::SelectField("Test", request, running, out, error, nullptr, absent);
@@ -1059,7 +1059,15 @@ int main()
 			"field: a base class's change refuses a derived class's built offset");
 		Check(Field("AOther::Plain", "AOther", "Plain", PLUGIN_FIELD_NATIVE, 4, {}, v, e, built) && v.offset == 0,
 			"field: a class with another base is still unaffected");
+		// The list is the loader's SDK (127004) against the game, so a plugin whose SDK is the running
+		// build (not 127004) keeps its built offset; one built for another build gets no offset as before.
+		const VersionMap::Exe other{ 130045, 0, 0 };
 		VersionMap::SetLayoutChanges({ "ATest", "/Script/Mod.ATest" });
+		Check(Field("ATest::Plain", "ATest", "Plain", PLUGIN_FIELD_NATIVE, 4, {}, v, e, other, nullptr, 130045) && v.offset == 0,
+			"field: a changed class's built offset is kept for a plugin whose SDK is the running build");
+		Check(!Field("ATest::Plain", "ATest", "Plain", PLUGIN_FIELD_NATIVE, 4, {}, v, e, other, nullptr, 127004)
+			&& e.find("a native member has no other source") != std::string::npos,
+			"field: a plugin built for another build than the running one still gets no built offset");
 		Check(Field("ATest::Reflected", "ATest", "Reflected", 0, 8, {}, v, e, built) && v.offset == 0x30,
 			"field: a reflected member of a changed class is read from the game");
 		VersionMap::SetLayoutChanges({});
@@ -1386,11 +1394,13 @@ int main()
 		Check(refusal(128786, 72, 128786, 0, false).empty(), "admission: built CL 128786 loads on 128786");
 		Check(refusal(127004, 72, 128786, kM, true).empty(), "admission: built CL 128786 MIGRATED loads on 127004");
 
-		// Classes the layout check found changed: only a plugin that takes every layout from the map runs.
-		const auto layoutRefusal = [&](int version, uint32_t builtCL, uint32_t flags)
+		// Classes the layout check found changed: only a plugin that takes every layout from the map runs,
+		// or one that declares the build that is running (its layouts are that build's).
+		const auto layoutRefusalOn = [&](uint32_t runningCL, int version, uint32_t builtCL, uint32_t flags)
 		{
-			return VersionMap::LayoutRefusal(version, VersionMap::ReadPluginGameBuild(info(version, builtCL, flags)));
+			return VersionMap::LayoutRefusal(VersionMap::Exe{ runningCL, 0, 0 }, version, VersionMap::ReadPluginGameBuild(info(version, builtCL, flags)));
 		};
+		const auto layoutRefusal = [&](int version, uint32_t builtCL, uint32_t flags) { return layoutRefusalOn(128786, version, builtCL, flags); };
 		Check(layoutRefusal(71, 0, 0).empty() && layoutRefusal(72, 127004, 0).empty(), "layout: nothing changed, nothing refused");
 		VersionMap::SetLayoutChanges({ "ACrX", "/Script/Chimera.ACrX", "FCrY", "/Script/Chimera.FCrY", "UCrZ", "/Script/Chimera.UCrZ" });
 		const std::string notMigrated = layoutRefusal(72, 127004, 0);
@@ -1400,8 +1410,24 @@ int main()
 		Check(layoutRefusal(71, 0, 0).find("before the version map") != std::string::npos, "layout: a v71 plugin is refused");
 		Check(layoutRefusal(72, 0, kM).find("names no game build") != std::string::npos, "layout: MIGRATED with no build is refused");
 		Check(layoutRefusal(72, 127004, kM).empty(), "layout: a MIGRATED plugin with a build is admitted");
+		// A plugin that declares the running build, without the flag: its compiled layouts are that build's.
+		Check(layoutRefusalOn(130045, 72, 130045, 0).empty() && layoutRefusalOn(130045, 78, 130045, 0).empty(),
+			"layout: a plugin declaring the running build is admitted without the flag");
+		Check(layoutRefusalOn(130045, 72, 130045, kM).empty(), "layout: declaring the running build and MIGRATED is admitted");
+		Check(layoutRefusalOn(130045, 72, 128786, 0).find("PLUGIN_MAP_MIGRATED") != std::string::npos,
+			"layout: a plugin declaring another build than the running one is still refused");
+		Check(layoutRefusalOn(130045, 72, 128786, kM).empty(), "layout: another declared build with MIGRATED is admitted, as before");
+		// Undeclared counts as built on 127004, but declares nothing, so running 127004 does not admit it.
+		Check(layoutRefusalOn(127004, 72, 0, 0).find("PLUGIN_MAP_MIGRATED") != std::string::npos
+			&& layoutRefusalOn(127004, 71, 0, 0).find("before the version map") != std::string::npos,
+			"layout: an undeclared plugin is still refused, even where its judged build is the running one");
+		// On the loader's own build (127004) the list and the plugin's SDK are the same headers: no exemption.
+		Check(layoutRefusalOn(127004, 72, 127004, 0).find("PLUGIN_MAP_MIGRATED") != std::string::npos,
+			"layout: declaring the loader's own build, where a class changed, is still refused");
+		Check(layoutRefusalOn(130045, 72, 0, kM).find("names no game build") != std::string::npos, "layout: MIGRATED with no build is still refused");
 		VersionMap::SetLayoutChanges({});
 		Check(layoutRefusal(72, 127004, 0).empty(), "layout: cleared, admitted again");
+		Check(layoutRefusalOn(130045, 72, 130045, 0).empty() && layoutRefusalOn(130045, 72, 128786, 0).empty(), "layout: nothing changed, nothing refused, declared or not");
 
 		// A zero tail: judged as built on 127004, so refused on 128786; with the flag, refused everywhere.
 		Check(refusal(127004, 72, 0, 0, false).empty(), "admission: zero tail loads on 127004");
