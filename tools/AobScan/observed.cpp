@@ -7,14 +7,14 @@
 
 namespace AobScan
 {
+	bool LandsOn(const ScanValidation::Request& request, uintptr_t address)
+	{
+		const ScanValidation::Result r = ScanValidation::Resolve(request);
+		return r.Succeeded() && r.address == address;
+	}
+
 	namespace
 	{
-		bool LandsOn(const ScanValidation::Request& request, uintptr_t address)
-		{
-			const ScanValidation::Result r = ScanValidation::Resolve(request);
-			return r.Succeeded() && r.address == address;
-		}
-
 		// Whether a global absent row's owner list ("A,B") names `owner`.
 		bool ListsOwner(const std::string& owners, const std::string& owner)
 		{

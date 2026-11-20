@@ -18,6 +18,9 @@
 
 namespace AobScan
 {
+	// Whether `request`, resolved the way the loader resolves it, succeeds and lands on `address`.
+	bool LandsOn(const ScanValidation::Request& request, uintptr_t address);
+
 	struct ObservedLocator
 	{
 		bool        found = false;   // false: no pattern is known to land on the address (an address-only map row)

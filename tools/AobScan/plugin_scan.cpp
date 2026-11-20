@@ -85,6 +85,7 @@
 #include "plugin_scan.h"
 #include "suggest.h"
 
+#include <algorithm>
 #include <cstdarg>
 #include <cstdio>
 #include <cstring>
@@ -287,6 +288,7 @@ namespace
 		std::string            call;            // the IPluginHookScanner entry used
 		std::string            name;            // hookName, empty for a raw scan
 		std::vector<Candidate> patterns;        // one, or the candidate list
+		std::string            landing;         // the one distinct pattern that matches once at the address, of several
 		std::string            kind;
 		bool                   required = true;
 		bool                   recorded = true; // false: a raw scan the loader does not judge
@@ -549,7 +551,9 @@ namespace
 #if PLUGIN_INTERFACE_VERSION >= 72
 		// Locators for other game builds, after the request's own pattern.
 		for (uint32_t i = 0; local.candidates && i < local.candidateCount && i < 64; ++i)
-			if (local.candidates[i].pattern && local.candidates[i].pattern[0])
+			if (local.candidates[i].pattern && local.candidates[i].pattern[0]
+				&& std::none_of(row.patterns.begin(), row.patterns.end(),
+					[&](const Candidate& c) { return c.pattern == local.candidates[i].pattern; }))
 				row.patterns.push_back({ local.candidates[i].pattern });
 #endif
 
@@ -585,7 +589,7 @@ namespace
 
 		// A map row is made from the locator that matches at the address, not
 		// from the plugin's own pattern, which the loader may not have used.
-		if (address && wantsRow)
+		if (address)
 		{
 			Row& done = g_rows.back();
 			ScanValidation::Request asked;
@@ -596,9 +600,27 @@ namespace
 			asked.resultOffset  = local.resultOffset;
 			asked.vtableSlots   = local.vtableSlots;
 			asked.followRel32At = done.followRel32At;
-			done.observes = true;
-			done.seen     = AobScan::ObservePluginRequest(self && self->name ? self->name : "", done.key, done.fp, asked,
-				VersionMap::ExeOf(g_image), address);
+			if (wantsRow)
+			{
+				done.observes = true;
+				done.seen     = AobScan::ObservePluginRequest(self && self->name ? self->name : "", done.key, done.fp, asked,
+					VersionMap::ExeOf(g_image), address);
+			}
+			else if (done.patterns.size() > 1)
+			{
+				size_t landing = 0;
+				for (const Candidate& c : done.patterns)
+				{
+					asked.pattern = c.pattern;
+					if (AobScan::LandsOn(asked, address))
+					{
+						++landing;
+						done.landing = c.pattern;
+					}
+				}
+				if (landing != 1)
+					done.landing.clear();
+			}
 		}
 		return address;
 	}
@@ -1207,6 +1229,8 @@ namespace
 			}
 			else if (!row.patterns.empty())
 			{
+				if (!row.landing.empty())
+					printf(", \"pattern\": \"%s\"", JsonEscape(row.landing).c_str());
 				printf(", \"candidates\": [");
 				for (size_t c = 0; c < row.patterns.size(); ++c)
 					printf("%s{ \"pattern\": \"%s\", \"matches\": %zu }", c ? ", " : "",
