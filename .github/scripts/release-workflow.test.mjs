@@ -118,6 +118,9 @@ test('the SDK sync and the plugin builds take the tag from prepare and the DLLs 
   assert.match(jobs['sync-plugin-sdk'], /needs: \[prepare, release, publish\]/);
   assert.match(jobs['sync-plugin-sdk'], /BUILD_TAG: \$\{\{ needs\.prepare\.outputs\.tag \}\}/);
   assert.match(jobs['sync-plugin-sdk'], /HAVE_ARTIFACT: \$\{\{ needs\.release\.result == 'success' \}\}/);
+  // Sync only: the Latest release, not the first entry of a list that can start with a draft.
+  assert.match(jobs['sync-plugin-sdk'], /gh api "repos\/\$\{\{ github\.repository \}\}\/releases\/latest" --jq \.tag_name/);
+  assert.doesNotMatch(jobs['sync-plugin-sdk'], /gh release list/);
   assert.match(jobs['trigger-plugin-builds'], /needs: \[prepare, publish\]/);
   for (const job of ['sync-plugin-sdk', 'trigger-plugin-builds']) {
     assert.match(ifOf(job), /needs\.prepare\.outputs\.is_preview != 'true'/, `${job} must not run for a preview`);

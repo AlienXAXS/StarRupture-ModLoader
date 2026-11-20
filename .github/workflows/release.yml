@@ -902,11 +902,10 @@ jobs:
             echo "TAG=$env:BUILD_TAG" >> $env:GITHUB_OUTPUT
             echo "FROM_ARTIFACT=$($env:HAVE_ARTIFACT)" >> $env:GITHUB_OUTPUT
           } else {
-            # Sync-only — fetch the latest release tag from this repo
-            $tag = gh release list --repo ${{ github.repository }} --limit 1 --json tagName |
-              ConvertFrom-Json |
-              Select-Object -ExpandProperty tagName
-            if (-not $tag) { Write-Error "No releases found to sync."; exit 1 }
+            # Sync-only — the tag of the Latest release of this repo. Not the first
+            # entry of the release list: that can be a draft or a preview.
+            $tag = gh api "repos/${{ github.repository }}/releases/latest" --jq .tag_name
+            if ($LASTEXITCODE -ne 0 -or -not $tag) { Write-Error "No Latest release found to sync."; exit 1 }
             Write-Host "Sync-only mode — using latest release tag: $tag"
             echo "TAG=$tag"           >> $env:GITHUB_OUTPUT
             echo "FROM_ARTIFACT=false" >> $env:GITHUB_OUTPUT
