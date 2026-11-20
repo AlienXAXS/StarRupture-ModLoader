@@ -237,7 +237,7 @@ splash have none. How a plugin declares these is in the SDK's `PluginDevelopment
   next launch saves them again. <sup>[✦](#msantoro12)</sup>
 - **Connection Timeout**: see [Net timeouts](#net-timeouts).
 - **Enable Auto Updates** takes effect next launch. A mod loader update asks Yes or No first; a No
-  is remembered for that version.
+  is remembered for that version. It does not stop the check for a newer version object map.
 - **Open Tick Profiler**: **Log Tick Stutters** and **Stack Sample Stutters** reset on restart.
   Stack sampling needs stutter logging on and is the heavier of the two.
 
@@ -599,7 +599,7 @@ Plugins that declare they take their game data from the version map (`PLUGIN_MAP
 run on any listed build. A plugin that does not declare it loads only on the build it was compiled
 against, and shows **Incompatible** on the others.
 
-On a client build with `[AutoUpdate] Enabled` on, the loader checks at every start whether a newer version
+On a client build, unless `[VersionMap] Fetch=0` is set, the loader checks at every start whether a newer version
 map is out, as a signed file, and uses it on that start, so a new game build can be supported without a
 loader update. If the check fails, the copy it kept last time is used. A server build never reads one.
 How the version map is chosen, how a newer version map is fetched, signed and cached, how CI publishes it and what
@@ -612,7 +612,7 @@ must sit in the right part of the game's code or data, and a class member and it
 game itself. A member or size that nothing in the game can confirm waits for that build's rows. A plugin or
 feature that needs something that did not check out is switched off, and a window at the main menu says
 so. Once the version map has rows for the build, the check at the start finds them and they are used instead, on that start; with
-`[AutoUpdate] Enabled=0` that takes a loader update. The loader marks the session in `[UnknownBuild]`
+`[VersionMap] Fetch=0` that takes a loader update. The loader marks the session in `[UnknownBuild]`
 `Session` and clears it on a clean exit. If a session ends any other way (a crash, a hang or a forced
 close), the next start on that build runs without mods until `Retry=1` is added under `[UnknownBuild]`.
 `Enabled=0` keeps the old behaviour: the loader stays off on such a build. A dedicated server still
@@ -696,8 +696,9 @@ these for you.
 | `[Console]` | `OpenKey` | `Tilde` | |
 | `[HUD]` | `ShowFPS`, `ShowWorldName`, `ShowPlayerPosition`, `ShowDebugValues` | `0` | The Settings toggles |
 | `[Network]` | `ConnectionTimeout`, `InitialConnectTimeout` | `300.0` | Seconds, 1 to 3600; anything else logs a warning and uses 300. `0` keeps the engine default. See [Net timeouts](#net-timeouts) |
-| `[AutoUpdate]` | `Enabled` | `1` | Client only. `0` stops the update checks, including the check for a newer version object map at every start |
+| `[AutoUpdate]` | `Enabled` | `1` | Client only. `0` stops the loader update prompts and the plugin updates. It does not stop the check for a newer version object map |
 | | `ManifestUrl` | empty | Empty uses the built-in manifest |
+| `[VersionMap]` | `Fetch` | `1` | Client only. `0` stops the check for a newer version object map at every start; the loader then uses the version map it has. Works on its own, whatever `[AutoUpdate] Enabled` says. A line is added to `modloader.ini` for new installs only |
 | `[Preload]` | `Enabled` | `1` | |
 | | `Disabled` | empty | Comma-separated DLL names to skip |
 | `[UE4SS]` | `Enabled` | `0` | Load UE4SS before plugins. `1` if you delete the key |

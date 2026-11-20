@@ -350,7 +350,7 @@ There is no server feed: only the client fetches.
 
 **Fetch.** The URL is the compiled define `VMAP_FEED_URL` (`/p:VmapFeedUrl=` in `Shared.props`),
 never read from `modloader.ini`. An empty define, or no compiled public key, means no fetch. The
-loader fetches only on the client, with `[AutoUpdate] Enabled` on. The one rule: at every start it
+loader fetches only on the client, unless `[VersionMap] Fetch=0` is set in `modloader.ini` (`[AutoUpdate] Enabled` does not matter: it is for update prompts). The one rule: at every start it
 asks whether a newer feed than the cached one is out, and if so applies it on that start.
 
 - The question is asked at startup, with the game's main thread parked (where WinHTTP is safe), before
@@ -527,7 +527,7 @@ What a player sees, and what the log says (`ModLoader\Logs\ModLoader.log`).
 | The feed's signature is bad, the key unknown or the file malformed | The file is discarded whole, and the cache is untouched. Same as no feed. |
 | The feed is older than the cache (`seq` not higher) | Ignored. The cache stays. |
 | A release build is handed a `k1` (TEST) feed | Rejected as a bad key. |
-| `[AutoUpdate] Enabled` off, or a server build | No fetch. The built-in version map is used. A server stays exact on the build it was written for. |
+| `[VersionMap] Fetch=0`, or a server build | No fetch. The built-in version map is used. A server stays exact on the build it was written for. |
 | The feed has the build, but a row is `absent` for something a plugin needs | That plugin's request fails. If it belongs to a declared feature, that feature is off; otherwise the plugin is refused, with the reason in the failure window. Other plugins and the game run. |
 | The feed has the build but misses a required loader entry | That CL is dropped from the feed, and the build is unknown as above. |
 | A plugin built for another build does not declare `PLUGIN_MAP_MIGRATED` | **Incompatible**: "Needs an update to run on CL-...". It loads on its own build. |
