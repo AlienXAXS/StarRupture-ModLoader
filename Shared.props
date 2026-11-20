@@ -90,6 +90,27 @@
   </ItemDefinitionGroup>
 
   <!-- ============================================================
+       MODLOADER_BUILT_CL
+       The game build (CL) the active configuration's SDK was made
+       for, VersionMap::kBuiltCL (hooks\game\version_map_built.h).
+       Read from the build_cl.txt beside that SDK's SDK\ folder, so
+       it moves with the SDK pin; /p:ModLoaderBuiltCL=<CL> overrides
+       it. With neither, kBuiltCL is the CL named in
+       version_map.generated.h.
+       ============================================================ -->
+  <PropertyGroup>
+    <ModLoaderBuiltCLFile>$(StarRuptureSDKSourceDir)..\build_cl.txt</ModLoaderBuiltCLFile>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(ModLoaderBuiltCL)' == '' And Exists('$(ModLoaderBuiltCLFile)')">
+    <ModLoaderBuiltCL>$([System.IO.File]::ReadAllText('$(ModLoaderBuiltCLFile)').Trim())</ModLoaderBuiltCL>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(ModLoaderBuiltCL)' != ''">
+    <ClCompile>
+      <PreprocessorDefinitions>MODLOADER_BUILT_CL=$(ModLoaderBuiltCL)u;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+  </ItemDefinitionGroup>
+
+  <!-- ============================================================
        MODLOADER_BUILD_TAG
        Injected by CI via /p:ModLoaderBuildTag="release-YYYY.MM.DD-HHmmss".
        Plugins embed this in PluginInfo.version so the auto-updater

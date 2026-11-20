@@ -14,7 +14,7 @@
 #include "core/input_arbitration.h"
 #include "core/sdk_globals.h"
 #include "memory_scanner/version_map.h"
-#include "hooks/game/version_map.generated.h"
+#include "hooks/game/version_map_built.h"
 
 #include "Basic.hpp"
 

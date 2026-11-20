@@ -6,7 +6,7 @@
 #include "core/startup_utils.h"
 #include "memory_scanner/hook_scanner_interface.h"
 #include "memory_scanner/version_map.h"
-#include "hooks/game/version_map.generated.h"
+#include "hooks/game/version_map_built.h"
 #include "plugins/plugin_hook_report.h"
 #include "logging/log.h"
 #include "logging/logger.h"

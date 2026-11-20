@@ -4,7 +4,7 @@
 #include "memory_scanner/scanner.h"
 #include "core/version_check.h"
 #include "hooks/game/scan_patterns.h"
-#include "hooks/game/version_map.generated.h"
+#include "hooks/game/version_map_built.h"
 #include "logging/logger.h"
 #include "plugins/plugin_interface.h"
 

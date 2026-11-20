@@ -26,7 +26,7 @@
 #include "../memory_scanner/version_map.h"
 #include "../memory_scanner/version_feed.h"
 #include "../auto_update/feed_fetch.h"
-#include "../hooks/game/version_map.generated.h"
+#include "../hooks/game/version_map_built.h"
 #include "compat_report.h"
 #include "../plugins/plugin_manager.h"
 #include "../plugins/plugin_hook_report.h"

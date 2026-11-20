@@ -9,7 +9,7 @@
 #include "../memory_scanner/pattern_preflight.h"
 #include "../memory_scanner/scan_validation.h"
 #include "../memory_scanner/version_map.h"
-#include "../hooks/game/version_map.generated.h"
+#include "../hooks/game/version_map_built.h"
 #include "Engine_classes.hpp"
 
 #include <algorithm>
@@ -316,7 +316,7 @@ namespace SdkGlobals
 
 #include "Chimera_classes.hpp"
 #include "Engine_classes.hpp"
-#include "../hooks/game/version_map.generated.h"
+#include "../hooks/game/version_map_built.h"
 #include "../logging/logger.h"
 #include "../memory_scanner/version_map.h"
 
