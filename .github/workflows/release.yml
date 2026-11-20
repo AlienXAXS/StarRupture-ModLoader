@@ -27,6 +27,22 @@ on:
         description: 'Auto Build Plugins — rebuild all plugin repos after this release, each against the SDK tag its release.yml pins (not the one this run creates)'
         type: boolean
         default: false
+      resume_tag:
+        description: 'Resume a release that is already public (e.g. v1.2.3) — never bumps the version, tags or creates a release; checks its assets, then runs Nexus and the version map step. Leave blank for a normal release'
+        type: string
+        default: ''
+      resume_nexus:
+        description: 'Resume only — which Nexus uploads to run. Use server-only when the Client file is already on Nexus (a repeat adds a second changelog entry), none when Nexus was done by hand'
+        type: choice
+        options: [both, server-only, none]
+        default: both
+
+# A failure before the release is public counts as nothing: run again. A failure
+# after it is public is finished with resume_tag, which never makes another
+# release. One run at a time, so a resume waits for the run it follows.
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
   prepare:
@@ -35,15 +51,38 @@ jobs:
     permissions:
       contents: read
     outputs:
-      tag:        ${{ steps.tag.outputs.TAG }}
-      is_preview: ${{ steps.tag.outputs.IS_PREVIEW }}
+      tag:        ${{ steps.tag.outputs.TAG || steps.resume.outputs.TAG }}
+      is_preview: ${{ steps.tag.outputs.IS_PREVIEW || steps.resume.outputs.IS_PREVIEW }}
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
 
+      # Resume: the release must already be public. Nothing below this step
+      # computes or creates a tag.
+      - name: Find the release to resume
+        id: resume
+        if: ${{ github.event.inputs.resume_tag != '' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RESUME_TAG: ${{ github.event.inputs.resume_tag }}
+        run: |
+          set -euo pipefail
+          if ! [[ "$RESUME_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+            echo "::error::resume_tag '$RESUME_TAG' is not a release tag like v1.2.3."
+            exit 1
+          fi
+          if ! prerelease=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RESUME_TAG" --jq .prerelease); then
+            echo "::error::There is no published release for $RESUME_TAG, so there is nothing to resume. Nothing was changed. A release that never became public is made by running this workflow again without resume_tag."
+            exit 1
+          fi
+          echo "Resuming $RESUME_TAG (preview: $prerelease). No version is bumped and no tag or release is created."
+          echo "TAG=$RESUME_TAG" >> "$GITHUB_OUTPUT"
+          echo "IS_PREVIEW=$prerelease" >> "$GITHUB_OUTPUT"
+
       - name: Generate release tag
         id: tag
+        if: ${{ github.event.inputs.resume_tag == '' }}
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -161,12 +200,20 @@ jobs:
             $tag = "$tag-$suffix"
           }
           Write-Host "Final tag: $tag"
+
+          # A tag that is already there means this release was made, or half made.
+          # Never make it again: resume_tag finishes it.
+          git ls-remote --exit-code --tags origin "refs/tags/$tag" *> $null
+          if ($LASTEXITCODE -eq 0) {
+            throw "Tag $tag already exists, so this run would not be a new release. To finish the release that is already there, run this workflow with resume_tag=$tag."
+          }
           echo "TAG=$tag"          >> $env:GITHUB_OUTPUT
           echo "IS_PREVIEW=$($isPreview.ToString().ToLower())" >> $env:GITHUB_OUTPUT
 
   # Client and Server build side by side. The release job below waits for both.
   build:
     needs: prepare
+    if: ${{ github.event.inputs.resume_tag == '' }}
     runs-on: windows-latest
     permissions:
       contents: read
@@ -238,6 +285,7 @@ jobs:
 
   release:
     needs: [prepare, build]
+    if: ${{ github.event.inputs.resume_tag == '' }}
     runs-on: windows-latest
     permissions:
       contents: write  # Required to create releases and upload assets
@@ -414,16 +462,6 @@ jobs:
             Write-Host "Created modloader ZIP: $zipPath"
           }
 
-      - name: Upload Nexus ZIPs
-        if: ${{ needs.prepare.outputs.is_preview != 'true' }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: modloader-zips
-          path: |
-            StarRupture-ModLoader-Client-${{ needs.prepare.outputs.tag }}.zip
-            StarRupture-ModLoader-Server-${{ needs.prepare.outputs.tag }}.zip
-          retention-days: 3
-
       - name: Create GitHub Release
         shell: pwsh
         env:
@@ -450,6 +488,14 @@ jobs:
           Get-ChildItem "$ws\*-client-manifest.json", "$ws\*-server-manifest.json" |
             ForEach-Object { $assets.Add($_.FullName) }
 
+          # The release carries the list of what it should hold, with each file's
+          # size and md5, written from the list above. release-check.mjs reads it
+          # back to tell a whole release from a half-made one.
+          $manifest = "$ws\release-assets.json"
+          node "$ws\.github\scripts\release-check.mjs" write-manifest --tag $tag --out $manifest @assets
+          if ($LASTEXITCODE -ne 0) { throw "release-assets.json could not be written." }
+          $assets.Add($manifest)
+
           Write-Host "Uploading $($assets.Count) asset(s):"
           $assets | ForEach-Object { Write-Host "  $_" }
 
@@ -464,12 +510,48 @@ jobs:
           }
           gh release create $tag @assets @flags
 
-  # Nexus gets the same ZIPs after the release exists. It is a job of its own so a
-  # Nexus failure (API error, key, rate limit) cannot hold back publish-feed or
-  # the jobs after it: the release is already Latest by then.
-  nexus:
+  # The release as it is now public must hold every asset it lists, each with the
+  # right md5, before Nexus gets anything. It runs on a fresh release and on a
+  # resumed one, so Nexus never publishes a release that fails the check. The
+  # version map is not asked for here: publish-feed attaches it in parallel.
+  verify-release:
     needs: [prepare, release]
-    if: needs.prepare.outputs.is_preview != 'true'
+    if: |
+      always() &&
+      needs.prepare.result == 'success' &&
+      (needs.release.result == 'success' ||
+       (github.event.inputs.resume_tag != '' && needs.release.result == 'skipped'))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Check the release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          set +e
+          node .github/scripts/release-check.mjs --repo "$GITHUB_REPOSITORY" --tag "$TAG" --version-map skip | tee "$RUNNER_TEMP/check.json"
+          code=${PIPESTATUS[0]}
+          if [ "$code" != 0 ]; then
+            echo "::error title=Release $TAG is not complete::$(cat "$RUNNER_TEMP/check.json") A resume cannot add or replace assets. Pulling this release by hand is the owner's call; Nexus was not touched."
+          fi
+          exit "$code"
+
+  # Nexus gets the ZIPs from the checked release, not from the build run, so a
+  # resume has the same files. It is a job of its own so a Nexus failure (API
+  # error, key, rate limit) cannot hold back publish-feed or the jobs after it:
+  # the release is already Latest by then.
+  nexus:
+    needs: [prepare, release, verify-release]
+    if: |
+      always() &&
+      needs.verify-release.result == 'success' &&
+      needs.prepare.outputs.is_preview != 'true' &&
+      github.event.inputs.resume_nexus != 'none'
     runs-on: windows-latest
     permissions:
       contents: read
@@ -479,11 +561,30 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Download release ZIPs
-        uses: actions/download-artifact@v8
-        with:
-          name: modloader-zips
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: gh release download $env:TAG --repo $env:GITHUB_REPOSITORY --pattern "StarRupture-ModLoader-*-$env:TAG.zip" --dir .
+
+      # A fresh release has its changelog from the release job. A resumed one
+      # reads the same file, UPDATE_NOTES.txt, as it was at the tag.
+      - name: Read the changelog of the resumed release
+        id: resumed
+        if: ${{ github.event.inputs.resume_tag != '' }}
+        shell: pwsh
+        env:
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          git fetch --depth=1 origin "refs/tags/$($env:TAG):refs/tags/$($env:TAG)"
+          if ($LASTEXITCODE -ne 0) { throw "Tag $($env:TAG) could not be fetched." }
+          $lines = @(git show "refs/tags/$($env:TAG):UPDATE_NOTES.txt" | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+          $changelog = if ($lines.Count -gt 0) { $lines -join "`n" } else { "See https://github.com/$env:GITHUB_REPOSITORY/releases/tag/$env:TAG" }
+          $delim = "EOF_" + [guid]::NewGuid().ToString('N')
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "changelog<<$delim`n$changelog`n$delim"
 
       - name: Upload Client build to Nexus Mods
+        if: ${{ github.event.inputs.resume_nexus != 'server-only' }}
         uses: msantoro12/starrupture-release-actions/nexus-publish@nexus-publish-v1
         with:
           api_key: ${{ secrets.NEXUS_APIKEY }}
@@ -494,7 +595,7 @@ jobs:
           display_name: "StarRupture ModLoader Client ${{ needs.prepare.outputs.tag }}"
           file_description: "Changelog: https://github.com/${{ github.repository }}/releases/tag/${{ needs.prepare.outputs.tag }}"
           version: ${{ needs.prepare.outputs.tag }}
-          changelog: ${{ needs.release.outputs.changelog }}
+          changelog: ${{ needs.release.outputs.changelog || steps.resumed.outputs.changelog }}
           description_file: nexus/description.bbcode
           tag: ${{ needs.prepare.outputs.tag }}
 
@@ -510,11 +611,18 @@ jobs:
           version: ${{ needs.prepare.outputs.tag }}
           update_page: false
 
-  # The signed version map feed goes on the new release in the same run, so a
-  # Latest release is never without it. vmap-publish.yml holds the checks.
+  # The signed version object map goes on the new release in the same run, so a
+  # Latest release is never without it. vmap-publish.yml holds the checks. A
+  # resumed release runs it too: it puts the version map on Latest, or does
+  # nothing when Latest already has the newest one.
   publish-feed:
-    needs: release
-    if: needs.release.outputs.is_preview != 'true'
+    needs: [prepare, release]
+    if: |
+      always() &&
+      needs.prepare.result == 'success' &&
+      (needs.release.result == 'success' ||
+       (github.event.inputs.resume_tag != '' && needs.release.result == 'skipped')) &&
+      needs.prepare.outputs.is_preview != 'true'
     permissions:
       contents: write  # vmap-publish.yml uploads the asset to the new release
     uses: ./.github/workflows/vmap-publish.yml
