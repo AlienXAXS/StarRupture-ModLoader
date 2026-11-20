@@ -48,6 +48,56 @@ test('main: exit 1 when stuck, 0 when not, 2 for a bad call', () => {
   } finally { console.log = log; console.error = err; }
 });
 
+const REL = {
+  ...ENV, TAG: 'v1.2.3',
+  NEEDS_JSON: JSON.stringify({ prepare: { result: 'success' }, release: { result: 'success' }, 'verify-release': { result: 'success' }, nexus: { result: 'failure' }, 'publish-feed': { result: 'success' } }),
+  CHECK_JSON: JSON.stringify({ complete: true, problems: [] }),
+};
+
+test('release: a failed Nexus job gets the resume command and the manual fallback', () => {
+  const text = notice('release', REL);
+  assert.match(text, /nexus \(failure\)/);
+  assert.ok(text.includes('gh workflow run release.yml --repo o/r --ref main -f resume_tag=v1.2.3\n```'));
+  assert.match(text, /StarRupture-ModLoader-Client-v1\.2\.3\.zip \(Client file group\) and StarRupture-ModLoader-Server-v1\.2\.3\.zip/);
+  assert.match(text, /nexus\/description\.bbcode on the ref the run was dispatched from \(main\)/);
+  assert.match(text, /resume_nexus=server-only/);
+  assert.doesNotMatch(text, /the feed/i);
+});
+
+test('release: missing assets say a resume cannot fix them and offer no command', () => {
+  const check = { complete: false, problems: [{ code: 'asset_missing', name: 'a.zip' }] };
+  const text = notice('release', { ...REL, NEEDS_JSON: JSON.stringify({ 'verify-release': { result: 'failure' } }), CHECK_JSON: JSON.stringify(check) });
+  assert.match(text, /verify-release \(failure\), asset_missing a\.zip/);
+  assert.match(text, /no command fixes it/);
+  assert.doesNotMatch(text, /gh workflow run/);
+});
+
+test('release: a version map missing from the Latest release is finished by a resume', () => {
+  const check = { complete: false, problems: [{ code: 'version_map_missing', name: 'version-map-client.v1.txt' }] };
+  const text = notice('release', { ...REL, NEEDS_JSON: '{}', CHECK_JSON: JSON.stringify(check) });
+  assert.match(text, /version_map_missing/);
+  assert.match(text, /resume_tag=v1\.2\.3/);
+  assert.doesNotMatch(text, /Nexus upload/);
+});
+
+test('release: nothing public is nothing stuck, and a whole release is quiet', () => {
+  const gone = { ...REL, CHECK_JSON: JSON.stringify({ complete: false, problems: [{ code: 'release_missing' }] }) };
+  assert.equal(notice('release', gone), '');
+  assert.equal(notice('release', { ...REL, NEEDS_JSON: JSON.stringify({ nexus: { result: 'success' } }) }), '');
+});
+
+test('release: a check that could not run counts as stuck', () => {
+  assert.match(notice('release', { ...REL, NEEDS_JSON: '{}', CHECK_JSON: '' }), /check_failed/);
+});
+
+test('nexus-text prints the fallback on its own', () => {
+  const lines = [];
+  const log = console.log;
+  console.log = (s) => lines.push(s);
+  try { assert.equal(main(['nexus-text'], REL), 0); } finally { console.log = log; }
+  assert.match(lines[0], /Nexus upload for v1\.2\.3 did not finish/);
+});
+
 test('the workflow opens no issue, takes no issue permission and ends in the notice job', () => {
   assert.doesNotMatch(workflow, /issues: write|gh issue|gh api -X POST/);
   assert.match(workflow, /\n {2}notice:\n {4}needs: publish\n {4}if: \$\{\{ always\(\) && \(needs\.publish\.result == 'failure' \|\| needs\.publish\.result == 'cancelled'\) \}\}/);

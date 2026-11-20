@@ -611,6 +611,18 @@ jobs:
           version: ${{ needs.prepare.outputs.tag }}
           update_page: false
 
+      # The release is public already, so a failed upload is finished by a
+      # resume or by hand; this puts both ways in the run, not in a log.
+      - name: Say how to publish Nexus by hand
+        if: ${{ failure() }}
+        shell: bash
+        env:
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          text=$(node .github/scripts/resume-notice.mjs nexus-text)
+          printf '%s\n' "$text" >> "$GITHUB_STEP_SUMMARY"
+          echo "::error title=Nexus publish failed::${text//$'\n'/%0A}"
+
   # The signed version object map goes on the new release in the same run, so a
   # Latest release is never without it. vmap-publish.yml holds the checks. A
   # resumed release runs it too: it puts the version map on Latest, or does
@@ -626,6 +638,36 @@ jobs:
     permissions:
       contents: write  # vmap-publish.yml uploads the asset to the new release
     uses: ./.github/workflows/vmap-publish.yml
+
+  # Last word on the release: checks it whole (assets, md5 and the version map)
+  # and, when a job failed or the check finds something missing after the release
+  # went public, fails the run and puts the one resume command in its summary.
+  # A tag with no public release is nothing stuck: run the workflow again.
+  notice:
+    needs: [prepare, release, verify-release, nexus, publish-feed]
+    if: ${{ always() && needs.prepare.result == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Check the release and name the command that finishes it
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: |
+          set +e
+          node .github/scripts/release-check.mjs --repo "$GITHUB_REPOSITORY" --tag "$TAG" > "$RUNNER_TEMP/check.json"
+          CHECK_JSON=$(cat "$RUNNER_TEMP/check.json")
+          export CHECK_JSON
+          node .github/scripts/resume-notice.mjs release > "$RUNNER_TEMP/notice.md"
+          code=$?
+          cat "$RUNNER_TEMP/notice.md" >> "$GITHUB_STEP_SUMMARY"
+          cat "$RUNNER_TEMP/notice.md"
+          exit "$code"
 
   sync-plugin-sdk:
     needs: release

@@ -23,7 +23,16 @@ const jobs = Object.fromEntries(
 const ifOf = (job) => /\n    if: (\|\n(?: {6}.*\n?)+|.*)/.exec(jobs[job])?.[1] ?? '';
 
 test('the jobs are the ones this test knows', () => {
-  assert.deepEqual(Object.keys(jobs), ['prepare', 'build', 'release', 'verify-release', 'nexus', 'publish-feed', 'sync-plugin-sdk', 'trigger-plugin-builds']);
+  assert.deepEqual(Object.keys(jobs), ['prepare', 'build', 'release', 'verify-release', 'nexus', 'publish-feed', 'notice', 'sync-plugin-sdk', 'trigger-plugin-builds']);
+});
+
+test('a failed Nexus step puts the manual fallback in the run, and the last job names the resume command', () => {
+  assert.match(jobs.nexus, /name: Say how to publish Nexus by hand\n {8}if: \$\{\{ failure\(\) \}\}[\s\S]*resume-notice\.mjs nexus-text[\s\S]*::error title=Nexus publish failed::/);
+  assert.match(ifOf('notice'), /always\(\) && needs\.prepare\.result == 'success'/);
+  assert.match(jobs.notice, /needs: \[prepare, release, verify-release, nexus, publish-feed\]/);
+  assert.match(jobs.notice, /release-check\.mjs --repo "\$GITHUB_REPOSITORY" --tag "\$TAG" >/);
+  assert.match(jobs.notice, /resume-notice\.mjs release/);
+  assert.doesNotMatch(text, /issues: write|gh issue/);
 });
 
 test('only the build and the release job are skipped on a resume', () => {
