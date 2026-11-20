@@ -26,11 +26,13 @@ inline constexpr std::array<Build, 1> kServerBuilds = {{
 	{ 127004, 0x2E3595FF, 0x0E2A8000, "server steam_build 25642172" },
 }};
 
-inline constexpr std::array<FunctionRow, 14> kServerFunctionRows = {{
+inline constexpr std::array<FunctionRow, 15> kServerFunctionRows = {{
 	// FCrCraftingFragment::StaticStruct
 	{ 127004, 0x2E3595FF, 0x0E2A8000, 1, 0x00000000, false, nullptr, 0, -1, -1, 0x06B89D90, nullptr },
 	// FCrMassEntityReplicationHelper::FCrMassEntityReplicationHelper
 	{ 127004, 0x2E3595FF, 0x0E2A8000, 1, 0x00000000, false, nullptr, 0, -1, -1, 0x05E015D0, nullptr },
+	// FMassEntityManager::InternalGetFragmentDataPtr
+	{ 127004, 0x2E3595FF, 0x0E2A8000, 1, 0x00000000, false, nullptr, 0, -1, -1, 0x03C24BC0, nullptr },
 	// FMassEntityManager::IsEntityValid
 	{ 127004, 0x2E3595FF, 0x0E2A8000, 1, 0x00000000, false, nullptr, 0, -1, -1, 0x03C250C0, nullptr },
 	// UCrBaseCoreSubsystem::GetBaseCoresRangedBuilding
@@ -59,21 +61,22 @@ inline constexpr std::array<FunctionRow, 14> kServerFunctionRows = {{
 
 inline constexpr std::array<FieldRow, 0> kServerFieldRows = {};
 
-inline constexpr std::array<Index, 14> kServerFunctions = {{
+inline constexpr std::array<Index, 15> kServerFunctions = {{
 	{ "FCrCraftingFragment::StaticStruct", 0, 1 },
 	{ "FCrMassEntityReplicationHelper::FCrMassEntityReplicationHelper", 1, 1 },
-	{ "FMassEntityManager::IsEntityValid", 2, 1 },
-	{ "UCrBaseCoreSubsystem::GetBaseCoresRangedBuilding", 3, 1 },
-	{ "UCrBuildingCustomNameSubsystem::GetBuildingCustomNameByReplicationHelper", 4, 1 },
-	{ "UCrBuildingFunctionLibrary::AddTemperatureToEntity", 5, 1 },
-	{ "UCrMassEnviroWaveSubsystem::AddEntitiesToWave", 6, 1 },
-	{ "UCrMassEnviroWaveSubsystem::RemoveEntitiesFromWave", 7, 1 },
-	{ "UCrMassPersistentIDSubsystem::GetOrAddIDForHandle", 8, 1 },
-	{ "UCrMassPersistentIDSubsystem::SetIDHandlePair", 9, 1 },
-	{ "UCrSaveSubsystem::GetSaveData", 10, 1 },
-	{ "UCrSaveSubsystem::OnPreLoadMap", 11, 1 },
-	{ "UMassSignalSubsystem::SignalEntities", 12, 1 },
-	{ "UWorld::GetSubsystem<UMassEntitySubsystem>", 13, 1 },
+	{ "FMassEntityManager::InternalGetFragmentDataPtr", 2, 1 },
+	{ "FMassEntityManager::IsEntityValid", 3, 1 },
+	{ "UCrBaseCoreSubsystem::GetBaseCoresRangedBuilding", 4, 1 },
+	{ "UCrBuildingCustomNameSubsystem::GetBuildingCustomNameByReplicationHelper", 5, 1 },
+	{ "UCrBuildingFunctionLibrary::AddTemperatureToEntity", 6, 1 },
+	{ "UCrMassEnviroWaveSubsystem::AddEntitiesToWave", 7, 1 },
+	{ "UCrMassEnviroWaveSubsystem::RemoveEntitiesFromWave", 8, 1 },
+	{ "UCrMassPersistentIDSubsystem::GetOrAddIDForHandle", 9, 1 },
+	{ "UCrMassPersistentIDSubsystem::SetIDHandlePair", 10, 1 },
+	{ "UCrSaveSubsystem::GetSaveData", 11, 1 },
+	{ "UCrSaveSubsystem::OnPreLoadMap", 12, 1 },
+	{ "UMassSignalSubsystem::SignalEntities", 13, 1 },
+	{ "UWorld::GetSubsystem<UMassEntitySubsystem>", 14, 1 },
 }};
 
 inline constexpr std::array<Index, 0> kServerFields = {};

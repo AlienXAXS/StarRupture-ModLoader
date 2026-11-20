@@ -149,7 +149,7 @@ int main()
 			refusedNoCL       += !Key(index.key, kNoCL).Succeeded();
 		}
 		const int n = static_cast<int>(VersionMap::kServerFunctions.size());
-		Check(n == 14 && served == n, "guard 2, LookUp: every key serves its RVA on the server exe");
+		Check(n == 15 && served == n, "guard 2, LookUp: every key serves its RVA on the server exe");
 		Check(refusedWrongStamp == n, "guard 2, LookUp: no key serves on an exe with the wrong time stamp");
 		Check(refusedWrongSize == n, "guard 2, LookUp: no key serves on an exe with the wrong image size");
 		Check(refusedClient == n, "guard 2, LookUp: no key serves on the client exe's identity");
