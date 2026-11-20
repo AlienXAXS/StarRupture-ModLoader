@@ -1825,6 +1825,13 @@ int main()
 		newRow = functionRow("UCrBuildingStabilitySubsystem::OnDestroyBuildingEntity", 127004);
 		Check(oldRow && newRow && oldRow->rva == 0x07469170 && newRow->rva == 0x074691B0 && strcmp(oldRow->pattern, newRow->pattern) != 0,
 			"real function rows: building add and remove are two functions with two patterns on CL-127004 too");
+		oldRow = functionRow("UCrBuildingStabilitySubsystem::OnCreateBuildingEntity", 130045);
+		newRow = functionRow("UCrBuildingStabilitySubsystem::OnDestroyBuildingEntity", 130045);
+		Check(isStartRow(oldRow, 0x074E86D0) && isStartRow(newRow, 0x074E8710) && strcmp(oldRow->pattern, newRow->pattern) != 0,
+			"real function rows: building add and remove have a measured row on CL-130045 in the compiled table");
+		oldRow = functionRow("FAuAPSplineActorPayloadData::StaticStruct", 130045);
+		Check(oldRow && !oldRow->absent && oldRow->rva == 0x0668E770 && !oldRow->pattern,
+			"real function rows: the spline payload StaticStruct has an address-only row on CL-130045");
 		const char* const textureKeys[] = { "UTexture2D::CreateTransient", "FBulkData::Lock", "FBulkData::Unlock", "UTexture::GetResource", "MiniMap/UTexture::UpdateResource" };
 		bool textureBoth = true;
 		for (const char* key : textureKeys)
