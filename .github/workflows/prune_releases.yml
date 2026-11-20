@@ -3,8 +3,14 @@ name: Delete all releases and tags except the latest and the one before it
 # Keeps the release GitHub marks as "Latest" (newest non-draft, non-prerelease)
 # and the release before it (the next older non-draft, non-prerelease one), with
 # their tags, so a broken Latest can be rolled back to. Every other release --
-# drafts and prereleases included -- is deleted, followed by every other tag,
-# whether or not it had a release.
+# prereleases included -- is deleted, followed by every other tag, whether or not
+# it had a release.
+#
+# A draft is never deleted, and neither is the tag it will get. release.yml makes
+# each release as a draft and publishes it only after its assets are checked, and
+# a failed run leaves the draft for resume_tag to repair; deleting it here would
+# pull the release out from under a run that is using it. A draft nobody wants is
+# deleted by hand.
 
 on:
   workflow_dispatch:
@@ -58,12 +64,17 @@ jobs:
           fi
           echo
 
-          awk -F'\t' -v latest="$latest" -v previous="$previous" '$2 != latest && $2 != previous' releases.tsv > delete-releases.tsv
+          # Drafts are kept (see the header), and so are the tags they will get.
+          awk -F'\t' '$3 == "true" { print $2 }' releases.tsv > draft-tags.txt
+          if [ -s draft-tags.txt ]; then
+            echo "Keeping $(wc -l < draft-tags.txt) draft release(s), left to the release run or to the owner: $(paste -sd' ' draft-tags.txt)"
+          fi
+          awk -F'\t' -v latest="$latest" -v previous="$previous" '$2 != latest && $2 != previous && $3 != "true"' releases.tsv > delete-releases.tsv
 
           gh api --paginate "repos/$REPO/tags" --jq '.[].name' | sort -u > tags.txt
           # "$previous" is empty when there is none; an empty -e pattern would match
           # every tag, so the latest tag stands in for it.
-          grep -vxF -e "$latest" -e "${previous:-$latest}" tags.txt > delete-tags.txt || true
+          grep -vxF -e "$latest" -e "${previous:-$latest}" -f draft-tags.txt tags.txt > delete-tags.txt || true
 
           echo "Releases to delete ($(wc -l < delete-releases.tsv)):"
           while IFS=$'\t' read -r id tag draft pre; do

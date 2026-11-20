@@ -3,7 +3,8 @@
 //   node --test .github/scripts/prune-releases.test.mjs
 //
 // The release before Latest is kept with Latest, so a broken Latest can be rolled
-// back to. Nothing is deleted on a dry run.
+// back to. A draft is never deleted (a release run may be using it), nor is its
+// tag. Nothing is deleted on a dry run.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -21,7 +22,7 @@ const STEP = /\n {8}run: \|\n((?: {10}.*\n|\n)+)/.exec(text)[1].replace(/^ {10}/
 const RELEASES = [
   [105, 'v1.27.0-rc.1', false, true],
   [104, 'v1.26.0', false, false], // Latest
-  [103, 'v1.25.1', true, false],  // a draft: never the rollback target
+  [103, 'v1.25.1', true, false],  // a draft: never the rollback target, never deleted
   [102, 'v1.25.0-beta', false, true],
   [101, 'v1.25.0', false, false], // the release before Latest
   [100, 'v1.24.0', false, false],
@@ -62,25 +63,27 @@ function prune({ dryRun, releases = RELEASES, latest = 'v1.26.0', tags = TAGS })
   return { ...r, deletes };
 }
 
-test('a dry run lists the previous release as kept, and deletes nothing', () => {
+test('a dry run lists the previous release and the draft as kept, and deletes nothing', () => {
   const r = prune({ dryRun: true });
   assert.equal(r.status, 0, r.stdout + r.stderr);
   assert.match(r.stdout, /^Keeping latest release: v1\.26\.0$/m);
   assert.match(r.stdout, /^Keeping the previous release: v1\.25\.0$/m);
   const toDelete = /Releases to delete \(\d+\):\n((?:  .*\n)+)/.exec(r.stdout)[1];
-  assert.deepEqual(toDelete.trim().split('\n').map((l) => l.trim()), ['v1.27.0-rc.1 [ prerelease ]', 'v1.25.1 [ draft ]', 'v1.25.0-beta [ prerelease ]', 'v1.24.0']);
+  assert.deepEqual(toDelete.trim().split('\n').map((l) => l.trim()), ['v1.27.0-rc.1 [ prerelease ]', 'v1.25.0-beta [ prerelease ]', 'v1.24.0']);
+  assert.match(r.stdout, /^Keeping 1 draft release\(s\), left to the release run or to the owner: v1\.25\.1$/m);
   const tagList = /Tags to delete \(\d+\):\n((?:  .*\n)+)/.exec(r.stdout)[1].trim().split('\n').map((l) => l.trim());
   assert.ok(!tagList.includes('v1.25.0') && !tagList.includes('v1.26.0'), 'both kept tags stay');
+  assert.ok(!tagList.includes('v1.25.1'), 'the tag a draft will get stays');
   assert.deepEqual(r.deletes, []);
 });
 
-test('a real run deletes neither Latest nor the previous release, nor their tags', () => {
+test('a real run deletes neither Latest, the previous release nor a draft, nor their tags', () => {
   const r = prune({ dryRun: false });
   assert.equal(r.status, 0, r.stdout + r.stderr);
   const gone = r.deletes.join('\n');
-  assert.doesNotMatch(gone, /releases\/(104|101)\b/);
-  assert.doesNotMatch(gone, /refs\/tags\/v1\.(26\.0|25\.0)$/m);
-  for (const id of [105, 103, 102, 100]) assert.match(gone, new RegExp(`releases/${id}$`, 'm'));
+  assert.doesNotMatch(gone, /releases\/(104|103|101)\b/);
+  assert.doesNotMatch(gone, /refs\/tags\/v1\.(26\.0|25\.0|25\.1)$/m);
+  for (const id of [105, 102, 100]) assert.match(gone, new RegExp(`releases/${id}$`, 'm'));
   assert.match(gone, /refs\/tags\/v0\.9\.0$/m);
 });
 
