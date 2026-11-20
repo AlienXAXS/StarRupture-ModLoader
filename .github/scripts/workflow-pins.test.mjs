@@ -5,7 +5,8 @@
 //   node --test .github/scripts/workflow-pins.test.mjs
 //
 // release.yml and vmap-publish.yml are always checked; so is any other workflow
-// that asks for `contents: write`. Local calls (`uses: ./...`) have no tag to move.
+// that asks for `contents: write` or pushes with a personal access token secret.
+// Local calls (`uses: ./...`) have no tag to move.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -15,11 +16,11 @@ import { fileURLToPath } from 'node:url';
 
 const dir = join(dirname(fileURLToPath(import.meta.url)), '..', 'workflows');
 const read = (f) => readFileSync(join(dir, f), 'utf8').replace(/\r\n/g, '\n');
-const checked = readdirSync(dir).filter((f) => /\.ya?ml$/.test(f) && (['release.yml', 'vmap-publish.yml'].includes(f) || /contents: write/.test(read(f))));
+const checked = readdirSync(dir).filter((f) => /\.ya?ml$/.test(f) && (['release.yml', 'vmap-publish.yml'].includes(f) || /contents: write|secrets\.\w*PAT\b/.test(read(f))));
 const usesLines = (f) => read(f).split('\n').filter((l) => /^\s*(- )?uses: /.test(l)).map((l) => l.replace(/^\s*(- )?uses: /, ''));
 
 test('the workflows that write are the ones this test knows', () => {
-  assert.deepEqual(checked, ['cleanup_tags.yml', 'draft.yml', 'prune_releases.yml', 'release.yml', 'vmap-publish.yml']);
+  assert.deepEqual(checked, ['build-plugins.yml', 'cleanup_tags.yml', 'draft.yml', 'prune_releases.yml', 'release.yml', 'sync-plugin-interface.yml', 'sync-preload-interface.yml', 'vmap-publish.yml']);
 });
 
 test('every action in them is pinned to a commit sha with its version in a comment', () => {

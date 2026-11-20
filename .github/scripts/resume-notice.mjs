@@ -11,7 +11,7 @@
 //
 // Reads from the environment: NEEDS_JSON (${{ toJSON(needs) }} of the calling
 // job), GITHUB_REPOSITORY, GITHUB_SERVER_URL, GITHUB_RUN_ID, GITHUB_REF_NAME.
-//   vmap:    FEED_REPO, FEED_RELEASE, ALLOW_TEST_KEY, FIRST_PUBLISH (the
+//   vmap:    FEED_REPO, FEED_RELEASE, FIRST_PUBLISH (the
 //            vmap-publish inputs)
 //   release: TAG, and CHECK_JSON, the output of release-check.mjs
 //   resume-command: TAG, GITHUB_REPOSITORY, GITHUB_REF_NAME only
@@ -29,7 +29,6 @@ const failedJobs = (env) => Object.entries(JSON.parse(env.NEEDS_JSON || '{}')).f
 // The one command that runs vmap-publish.yml again with the inputs of this run.
 export function vmapCommand(env) {
   const flags = [`-f feed_repo=${env.FEED_REPO}`, `-f feed_release=${env.FEED_RELEASE}`];
-  if (env.ALLOW_TEST_KEY === 'true') flags.push('-f allow_test_key=true');
   if (env.FIRST_PUBLISH === 'true') flags.push('-f first_publish=true');
   return `gh workflow run vmap-publish.yml --repo ${env.GITHUB_REPOSITORY} --ref ${env.GITHUB_REF_NAME} ${flags.join(' ')}`;
 }

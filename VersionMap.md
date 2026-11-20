@@ -344,8 +344,8 @@ minutes) whenever the `seq` rises. The first release that carries one needs a ma
 `first_publish` set. There is no server feed: only the client fetches.
 
 **What is refused.** Both check the file with `.github/vmap/verify-feed.mjs` first. It refuses a file
-that is altered, malformed, signed with an unknown or TEST key (`allow_test_key` is honoured only when
-the release being copied to is a prerelease), or that lists a game build twice or a function, absent
+that is altered, malformed, signed with an unknown or TEST key (Latest is never a prerelease, so
+`vmap-publish.yml` has no way to accept one), or that lists a game build twice or a function, absent
 or field row twice for one build (the loader would refuse the whole file). `vmap-publish.yml` never
 copies from the `vmap-feed-rehearsal` release, and skips with a warning a copy already on a release
 that fails the check. `release.yml` also fails the Client build, before any upload, when the Core DLL

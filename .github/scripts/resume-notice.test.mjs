@@ -14,7 +14,7 @@ import { main, notice, vmapCommand } from './resume-notice.mjs';
 const workflow = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'workflows', 'vmap-publish.yml'), 'utf8').replace(/\r\n/g, '\n');
 const ENV = {
   GITHUB_REPOSITORY: 'o/r', GITHUB_SERVER_URL: 'https://github.com', GITHUB_RUN_ID: '42', GITHUB_REF_NAME: 'main',
-  FEED_REPO: 'x/ci', FEED_RELEASE: 'vmap-feed', ALLOW_TEST_KEY: 'false', FIRST_PUBLISH: 'false',
+  FEED_REPO: 'x/ci', FEED_RELEASE: 'vmap-feed', FIRST_PUBLISH: 'false',
   NEEDS_JSON: JSON.stringify({ publish: { result: 'failure', outputs: {} } }),
 };
 
@@ -25,10 +25,10 @@ test('a failed run names the one command with the exact inputs', () => {
   assert.equal(text.split('gh workflow run').length, 2, 'exactly one command');
 });
 
-test('a cancelled run is named too, and the boolean inputs are kept when set', () => {
-  const env = { ...ENV, NEEDS_JSON: JSON.stringify({ publish: { result: 'cancelled' } }), FIRST_PUBLISH: 'true', ALLOW_TEST_KEY: 'true' };
+test('a cancelled run is named too, and first_publish is kept when set', () => {
+  const env = { ...ENV, NEEDS_JSON: JSON.stringify({ publish: { result: 'cancelled' } }), FIRST_PUBLISH: 'true' };
   assert.match(notice('vmap', env), /publish \(cancelled\)/);
-  assert.equal(vmapCommand(env), 'gh workflow run vmap-publish.yml --repo o/r --ref main -f feed_repo=x/ci -f feed_release=vmap-feed -f allow_test_key=true -f first_publish=true');
+  assert.equal(vmapCommand(env), 'gh workflow run vmap-publish.yml --repo o/r --ref main -f feed_repo=x/ci -f feed_release=vmap-feed -f first_publish=true');
 });
 
 test('nothing failed, nothing printed', () => {

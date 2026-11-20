@@ -22,9 +22,9 @@ name: Publish the version-map feed
 # after that file verifies. With no feed on any release, only a manual run with
 # first_publish set uploads one, so an older signed feed cannot be the first.
 #
-# Slot k1 holds a TEST key and slot k2 the release key. The scheduled run
-# refuses a TEST-key feed; only a manual run with allow_test_key set
-# accepts one, and only when the release it copies to is a prerelease.
+# Slot k1 holds a TEST key and slot k2 the release key. A TEST-key feed is always
+# refused: the release this copies to is Latest, which release loaders read and
+# which is never a prerelease.
 
 on:
   workflow_call:
@@ -40,10 +40,6 @@ on:
         description: 'Release tag in that repository'
         type: string
         default: 'vmap-feed'
-      allow_test_key:
-        description: 'Accept a feed signed with a TEST key (only when the release to copy to is a prerelease)'
-        type: boolean
-        default: false
       first_publish:
         description: 'No release carries a feed yet; publish the first one'
         type: boolean
@@ -61,7 +57,6 @@ permissions:
 env:
   FEED_REPO: ${{ inputs.feed_repo || 'msantoro12/starrupture-ci' }}
   FEED_RELEASE: ${{ inputs.feed_release || 'vmap-feed' }}
-  ALLOW_TEST_KEY: ${{ inputs.allow_test_key && 'true' || 'false' }}
   FIRST_PUBLISH: ${{ inputs.first_publish && 'true' || 'false' }}
 
 jobs:
@@ -108,20 +103,10 @@ jobs:
             echo "tag=" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          # A TEST-key feed is for a prerelease only: Latest is what players' loaders
-          # read, and a release loader refuses a TEST-key file.
-          if [ "$ALLOW_TEST_KEY" = "true" ]; then
-            pre=$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isPrerelease --jq .isPrerelease)
-            if [ "$pre" != "true" ]; then
-              echo "::error title=allow_test_key refused::The release to copy to is $tag, which is not a prerelease. allow_test_key puts a file on it that release loaders refuse, so nothing was copied."
-              exit 1
-            fi
-          fi
           last=
           for t in $(gh release list --repo "$GITHUB_REPOSITORY" --limit 50 --json tagName --jq '.[].tagName'); do
             gh release download "$t" --repo "$GITHUB_REPOSITORY" --pattern "$FEED_ASSET" --dir "$RUNNER_TEMP/cur" --clobber 2>/dev/null || continue
-            args=(--source StarRupture-ModLoader-Core/memory_scanner/version_feed.cpp)
-            [ "$ALLOW_TEST_KEY" = "true" ] || args+=(--refuse-test-key)
+            args=(--source StarRupture-ModLoader-Core/memory_scanner/version_feed.cpp --refuse-test-key)
             # A feed on a release that does not verify must not stop every run:
             # it is left out and the newest one that verifies sets the seq to beat.
             # Only a refusal (exit 3) is skipped; a failure of the check itself is not.
@@ -140,7 +125,7 @@ jobs:
             break
           done
           if [ -z "$last" ]; then
-            [ "$FIRST_PUBLISH" = "true" ] || { echo "::error::No release carries a feed. Run this workflow with first_publish set to publish the first one."; exit 1; }
+            [ "$FIRST_PUBLISH" = "true" ] || { echo "::error::No release carries a feed that verifies. Run this workflow with first_publish set to publish the first one."; exit 1; }
             last=0
           fi
           echo "Latest is $tag, the seq to beat is $last."
@@ -156,8 +141,7 @@ jobs:
         if: steps.latest.outputs.tag != ''
         run: |
           set +e
-          args=(--source StarRupture-ModLoader-Core/memory_scanner/version_feed.cpp --last-seq "${{ steps.latest.outputs.last }}")
-          [ "$ALLOW_TEST_KEY" = "true" ] || args+=(--refuse-test-key)
+          args=(--source StarRupture-ModLoader-Core/memory_scanner/version_feed.cpp --last-seq "${{ steps.latest.outputs.last }}" --refuse-test-key)
           node .github/vmap/verify-feed.mjs "$RUNNER_TEMP/new/$FEED_ASSET" "${args[@]}"
           code=$?
           if [ "$code" = 4 ]; then

@@ -62,7 +62,6 @@ done
 case "$what" in
   "release view")
     case "$all" in
-      *isPrerelease*) cat "$FAKE_DIR/prerelease"; exit 0;;
       *"--json tagName"*) cat "$FAKE_DIR/latest"; exit 0;;
       *"--json assets"*) cat "$FAKE_DIR/assets"; exit 0;;
     esac;;
@@ -80,7 +79,7 @@ exit 9
 `;
 
 // Runs the job. `releases` is newest first: [{ tag, feed? }]; the first is Latest.
-function run({ releases, newFeed, env = {}, prerelease = false, brokenKeySource = false }) {
+function run({ releases, newFeed, env = {}, brokenKeySource = false }) {
   const dir = mkdtempSync(join(tmpdir(), 'vmap-pub-'));
   const fake = join(dir, 'fake');
   const bin = join(dir, 'bin');
@@ -94,7 +93,6 @@ function run({ releases, newFeed, env = {}, prerelease = false, brokenKeySource 
       : `constexpr const char* kK1Hex = "${TEST_KEY.hex}";\nconstexpr bool kK1TestOnly = true;\nconstexpr const char* kK2Hex = "${RELEASE_KEY.hex}";\nconstexpr bool kK2TestOnly = false;\n`);
   writeFileSync(join(fake, 'latest'), `${releases[0].tag}\n`);
   writeFileSync(join(fake, 'releases'), releases.map((r) => `${r.tag}\n`).join(''));
-  writeFileSync(join(fake, 'prerelease'), `${prerelease}\n`);
   writeFileSync(join(fake, 'assets'), 'version-map-client.v1.txt\n');
   writeFileSync(join(fake, 'calls.log'), '');
   for (const r of releases) if (r.feed) writeFileSync(join(fake, `rel-${r.tag}.txt`), r.feed);
@@ -108,7 +106,6 @@ function run({ releases, newFeed, env = {}, prerelease = false, brokenKeySource 
     FAKE_DIR: posix(fake),
     FEED_REPO: 'x/ci',
     FEED_RELEASE: 'vmap-feed',
-    ALLOW_TEST_KEY: 'false',
     FIRST_PUBLISH: 'false',
     FEED_ASSET: 'version-map-client.v1.txt',
     GITHUB_REPOSITORY: 'o/r',
@@ -166,7 +163,7 @@ test('an unverifiable newest feed is skipped with a warning and the newest one t
   assert.match(r.calls, /release upload v2 /);
 });
 
-test('a TEST-key file on a release is skipped the same way when the run did not ask for the test key', () => {
+test('a TEST-key file on a release is skipped the same way', () => {
   const r = run({ releases: [{ tag: 'v2', feed: feed(BASE + 10, { id: 'k1' }) }, { tag: 'v1', feed: feed(BASE + 5) }], newFeed: feed(BASE + 20) });
   assert.equal(r.status, 0, JSON.stringify(r.ran));
   assert.equal(warnings(r).length, 1);
@@ -177,7 +174,7 @@ test('when no release has a feed that verifies, the run still stops unless first
   const releases = [{ tag: 'v2', feed: feed(BASE + 10, { body: DUPLICATE }) }];
   const stopped = run({ releases, newFeed: feed(BASE + 20) });
   assert.equal(stopped.status, 1);
-  assert.match(stopped.last('Find').stdout, /No release carries a feed/);
+  assert.match(stopped.last('Find').stdout, /No release carries a feed that verifies/);
   assert.equal(stopped.uploaded, false);
   const first = run({ releases, newFeed: feed(BASE + 20), env: { FIRST_PUBLISH: 'true' } });
   assert.equal(first.status, 0, JSON.stringify(first.ran));
@@ -197,21 +194,16 @@ test('a new feed that does not verify still fails the run and is not uploaded', 
   assert.equal(r.uploaded, false);
 });
 
-test('allow_test_key against Latest is refused before anything is read or copied', () => {
-  const r = run({ releases: [{ tag: 'v2', feed: feed(BASE + 10) }], newFeed: feed(BASE + 20, { id: 'k1' }), env: { ALLOW_TEST_KEY: 'true' } });
-  assert.equal(r.status, 1);
-  assert.match(r.last('Find').stdout, /::error title=allow_test_key refused::.*v2, which is not a prerelease/);
-  assert.equal(r.uploaded, false);
-  assert.doesNotMatch(r.calls, /release download/);
+// Latest is what release loaders read and is never a prerelease, so the workflow has
+// no way to accept a TEST-key file: no input, and every verify call refuses it.
+test('there is no allow_test_key input, and every verify call passes --refuse-test-key', () => {
+  assert.doesNotMatch(workflow, /allow_test_key|ALLOW_TEST_KEY/);
+  const verifies = publishJob.match(/args=\([^)]*\)/g);
+  assert.equal(verifies.length, 2);
+  for (const v of verifies) assert.match(v, /--refuse-test-key/);
 });
 
-test('allow_test_key is honoured when the release to copy to is a prerelease', () => {
-  const r = run({ releases: [{ tag: 'v2-rc', feed: feed(BASE + 10, { id: 'k1' }) }], newFeed: feed(BASE + 20, { id: 'k1' }), env: { ALLOW_TEST_KEY: 'true' }, prerelease: true });
-  assert.equal(r.status, 0, JSON.stringify(r.ran));
-  assert.equal(r.uploaded, true);
-});
-
-test('a TEST-key file is refused when allow_test_key is not set', () => {
+test('a TEST-key file as the new file is refused and not uploaded', () => {
   const r = run({ releases: [{ tag: 'v2', feed: feed(BASE + 10) }], newFeed: feed(BASE + 20, { id: 'k1' }) });
   assert.equal(r.status, 3);
   assert.equal(r.uploaded, false);

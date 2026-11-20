@@ -12,12 +12,13 @@
 //     fully uploaded, with the listed size and md5. release.yml writes that file
 //     from the same list it uploads, so the expected set is never kept twice;
 //   - the signed version object map (`version-map-client.v1.txt`, the asset
-//     vmap-publish.yml attaches) when the release is meant to carry one. `auto`
-//     (the default) means the release is not a preview and is the repo's Latest
-//     release; `require` always; `skip` never (release.yml uses it before the
-//     version map step has run). The file is checked for shape only (format
-//     line, seq, signature line); the signature itself is checked by
-//     verify-feed.mjs when vmap-publish.yml attaches it.
+//     release.yml attaches when it creates the release, and vmap-publish.yml
+//     otherwise) when the release is meant to carry one. `auto` (the default)
+//     means the release is not a preview and is the repo's Latest release;
+//     `require` always; `skip` never (release.yml uses it for the asset check
+//     that runs before Nexus). The file is checked
+//     for shape only (format line, seq, signature line); the signature itself is
+//     checked by verify-feed.mjs before either workflow attaches it.
 //   - --cl <n>: the version map has a build row for that game build. Implies
 //     `require` unless `skip` is given.
 //

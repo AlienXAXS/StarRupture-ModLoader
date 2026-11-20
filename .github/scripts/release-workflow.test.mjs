@@ -113,7 +113,7 @@ test('the release step takes the version map from the same place, with the same 
 
 test('a missing or unverifiable version map does not stop the release, and the file goes on it when there is one', () => {
   assert.match(vmapStep, /\n {8}continue-on-error: true\n/);
-  assert.match(vmapStep, /\n {8}if: \$\{\{ needs\.prepare\.outputs\.is_preview != 'true' \}\}\n/);
+  assert.match(vmapStep, /^ {8}if: \$\{\{ needs\.prepare\.outputs\.is_preview != 'true' \}\}\n/);
   // It runs before the release is created, and the create step adds the file to the upload list after the manifest.
   assert.ok(jobs.release.indexOf('Fetch the signed version map for the release') < jobs.release.indexOf('name: Create GitHub Release'));
   assert.match(jobs.release, /\$assets\.Add\(\$manifest\)\n[\s\S]*\$versionMap = "\$ws\\version-map-client\.v1\.txt"\n {10}if \(Test-Path \$versionMap\) \{ \$assets\.Add\(\$versionMap\) \}\n[\s\S]*gh release create \$tag @assets @flags/);
