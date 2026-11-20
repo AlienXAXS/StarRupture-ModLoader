@@ -1,2 +1,1 @@
-- A plugin that names the game build it was made for now loads on that build after a game update changed only some of the game classes the loader checks, instead of showing as incompatible
 - The loader checks for a newer version object map even when Auto Updates is off. A new Fetch setting under [VersionMap] in modloader.ini turns that off
