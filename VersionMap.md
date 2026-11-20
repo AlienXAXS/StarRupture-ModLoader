@@ -343,6 +343,18 @@ in a tail from interface v72: `gameBuiltCL` (the build its Game-SDK came from,
 offsets or addresses (the checklist is in the SDK guide). The loader does not check that
 promise; starrupture-ci checks it for the plugins it tracks.
 
+## The dedicated server's table
+
+The Server build carries a built-in version map of its own, `hooks/game/version_map.server.h`, kept by hand
+because the generated header is the client's and is rewritten on every game update. It holds function rows
+for one exe, the server exe CI measured (CL-127004, PE time stamp `0x2E3595FF`, image size `0x0E2A8000`).
+Each row is an address with no pattern, so the server serves it only on that exe: the CL, the time stamp and
+the image size must all match. On any other exe the table is off and a plugin runs on its own patterns and
+rows, as it did before the table. The same applies to the lookups of absent members and of field rows, and
+to the class bound on native members: the server bounds only a member the table gave a row for. The client's
+table and its lookups are unchanged. A plugin gets a row from the table only when it asks for the map key
+(`PLUGIN_SCAN_FLAG_MAP_KEY`) on the server build too.
+
 ## The feed
 
 Between loader releases the version map can be refreshed from a signed file, so a new game build is
@@ -540,7 +552,7 @@ What a player sees, and what the log says (`ModLoader\Logs\ModLoader.log`).
 | The feed's signature is bad, the key unknown or the file malformed | The file is discarded whole, and the cache is untouched. Same as no feed. |
 | The feed is older than the cache (`seq` not higher) | Ignored. The cache stays. |
 | A release build is handed a `k1` (TEST) feed | Rejected as a bad key. |
-| `[AutoUpdate] Enabled` off, or a server build | No fetch. The built-in version map is used. A server stays exact on the build it was written for. |
+| `[AutoUpdate] Enabled` off, or a server build | No fetch. The built-in version map is used. A server stays exact on the build it was written for, and its built-in version map is its own table (see [The dedicated server's table](#the-dedicated-servers-table)). |
 | The feed has the build, but a row is `absent` for something a plugin needs | That plugin's request fails. If it belongs to a declared feature, that feature is off; otherwise the plugin is refused, with the reason in the failure window. Other plugins and the game run. |
 | The feed has the build but misses a required loader entry | That CL is dropped from the feed, and the build is unknown as above. |
 | A plugin built for another build does not declare `PLUGIN_MAP_MIGRATED` | **Incompatible**: "Needs an update to run on CL-...". It loads on its own build. |
