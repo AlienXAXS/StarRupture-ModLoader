@@ -1082,6 +1082,10 @@ namespace PluginManager
 		// The schema the config manager cached lives inside this module.
 		ModLoaderLogger::ForgetPluginSchema(p.cachedName.c_str());
 
+		// The feature catalog holds the address of each `enabled` flag the
+		// plugin declared, and those flags live inside this module.
+		PluginHookReport::ForgetFeatures(&p.self);
+
 		// A console command or a game-menu row this plugin registered is a
 		// handler address inside the module about to be unmapped, and the
 		// console front-ends and the game's own menu would go on listing it and

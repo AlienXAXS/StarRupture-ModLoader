@@ -206,6 +206,35 @@ namespace PluginHookReport
     // may read them (VersionMap::ResolveMapKey).
     bool SessionNameShared(const IPluginSelf* self);
 
+    // --- Feature catalog -------------------------------------------------------
+
+    // Every feature a loaded plugin declared, kept from EndSession until the
+    // plugin is unloaded or reloaded. The catalog is what a server's rules are
+    // applied to: it holds the address of each plugin's `enabled` flag, so an
+    // entry must be dropped before its DLL is freed (ForgetFeatures).
+    // A plugin that was refused is never in it.
+    struct FeatureInfo
+    {
+        enum class State { On, OffBuild, OffServer };
+
+        std::string plugin;
+        std::string id;
+        std::string title;
+        std::string reason;   // why it is off, empty when it is on
+        bool        preload = false;
+        State       state   = State::On;
+    };
+
+    // Copy of the catalog: every declared feature of every loaded plugin, with
+    // whether it is on, off for this game build, or off because of the server.
+    std::vector<FeatureInfo> Features();
+
+    // Drop the catalog entries of the plugin `self` (and, once the server's
+    // rules exist, the "turned off by this server" lines they put in the
+    // report). Called before every FreeLibrary of that plugin, and by
+    // BeginSession for a reload. Never opens the failure window.
+    void ForgetFeatures(const IPluginSelf* self);
+
     // --- Report, for the UI and the console -----------------------------------
 
     // Copy of every plugin report recorded this session.

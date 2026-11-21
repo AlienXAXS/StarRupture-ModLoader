@@ -60,7 +60,22 @@ namespace PluginHookReport
             }
         }
 
+        // A feature of a loaded plugin, kept from EndSession until the plugin
+        // is unloaded or reloaded (see the feature catalog in the header).
+        struct CatalogEntry
+        {
+            const IPluginSelf*       self = nullptr;   // identity of the plugin; a name two plugins share cannot mix entries
+            std::string              plugin;
+            std::string              file;
+            bool                     preload = false;
+            std::string              id;
+            std::string              title;
+            std::vector<std::string> configKeys;
+            bool*                    enabled = nullptr;   // the plugin's flag; valid until ForgetFeatures
+        };
+
         std::mutex                s_mutex;
+        std::vector<CatalogEntry> s_catalog;
         Session                   s_session{};      // self == nullptr when closed
         std::vector<PluginReport> s_reports;
         std::vector<PendingKey>   s_pending;        // keys waiting for a class, of loaded plugins
@@ -104,6 +119,39 @@ namespace PluginHookReport
         bool SameName(const std::string& a, const std::string& b)
         {
             return _stricmp(a.c_str(), b.c_str()) == 0;
+        }
+
+        // Whether the running game build has the feature switched off: a key it
+        // lists missed (a FeatureOff in the plugin's report), is waiting for a
+        // class, or is not in this build. Worked out from the lists each time,
+        // never cached, so a late resolve is seen the moment it happens.
+        // `reason`, when non-null, receives one plain line. Caller holds s_mutex.
+        bool BuildOffLocked(const std::string& plugin, bool preload, const std::string& id, std::string* reason)
+        {
+            for (const PluginReport& r : s_reports)
+            {
+                if (r.preload != preload || !SameName(r.plugin, plugin))
+                    continue;
+                for (const FeatureOff& f : r.featuresOff)
+                    if (f.id == id)
+                    {
+                        if (reason) *reason = f.reason;
+                        return true;
+                    }
+            }
+            for (const PendingKey& p : s_pending)
+                if (SameName(p.plugin, plugin) && p.featureId == id)
+                {
+                    if (reason) *reason = p.refused ? p.detail : "waiting for a game class that is not loaded yet";
+                    return true;
+                }
+            for (const AbsentKey& a : s_absent)
+                if (SameName(a.plugin, plugin) && a.featureId == id)
+                {
+                    if (reason) *reason = "this game version does not have it";
+                    return true;
+                }
+            return false;
         }
 
         // Calls log(first, keys) once per feature in `entries`: `first` is its
@@ -152,6 +200,12 @@ namespace PluginHookReport
         if (!self) return;
 
         std::lock_guard<std::mutex> lock(s_mutex);
+
+        // A reload: the old load's catalog entries go with its DLL. The plugin
+        // manager has already called ForgetFeatures before freeing it; this
+        // keeps the catalog right for any caller that did not.
+        s_catalog.erase(std::remove_if(s_catalog.begin(), s_catalog.end(),
+            [&](const CatalogEntry& e) { return e.self == self; }), s_catalog.end());
 
         s_session = Session{};
         s_session.self           = self;
@@ -208,7 +262,25 @@ namespace PluginHookReport
         PluginReport report = std::move(session->report);
         std::vector<PendingKey> pending = std::move(session->pending);
         std::vector<AbsentKey>  absent  = std::move(session->absent);
+        std::vector<Declared>   declared = std::move(session->declared);
         s_session = Session{};
+
+        // A plugin that loads keeps its features in the catalog until it is
+        // unloaded. A refused one is never run, so it has nothing to keep.
+        if (report.failures.empty())
+            for (Declared& d : declared)
+            {
+                CatalogEntry e;
+                e.self       = self;
+                e.plugin     = report.plugin;
+                e.file       = report.file;
+                e.preload    = report.preload;
+                e.id         = std::move(d.id);
+                e.title      = std::move(d.title);
+                e.configKeys = std::move(d.configKeys);
+                e.enabled    = d.enabled;
+                s_catalog.push_back(std::move(e));
+            }
 
         // Keys waiting for a class are kept unless the plugin is refused. They
         // are not failures: the log says so at Info, and no popup opens.
@@ -452,6 +524,34 @@ namespace PluginHookReport
     {
         std::lock_guard<std::mutex> lock(s_mutex);
         return s_pending;
+    }
+
+    std::vector<FeatureInfo> Features()
+    {
+        std::lock_guard<std::mutex> lock(s_mutex);
+        std::vector<FeatureInfo> out;
+        out.reserve(s_catalog.size());
+        for (const CatalogEntry& e : s_catalog)
+        {
+            FeatureInfo info;
+            info.plugin  = e.plugin;
+            info.id      = e.id;
+            info.title   = e.title;
+            info.preload = e.preload;
+            if (BuildOffLocked(e.plugin, e.preload, e.id, &info.reason))
+                info.state = FeatureInfo::State::OffBuild;
+            out.push_back(std::move(info));
+        }
+        return out;
+    }
+
+    void ForgetFeatures(const IPluginSelf* self)
+    {
+        if (!self)
+            return;
+        std::lock_guard<std::mutex> lock(s_mutex);
+        s_catalog.erase(std::remove_if(s_catalog.begin(), s_catalog.end(),
+            [&](const CatalogEntry& e) { return e.self == self; }), s_catalog.end());
     }
 
     void RecordAbsent(const IPluginSelf* self, const char* key, const char* detail)

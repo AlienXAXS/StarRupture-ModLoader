@@ -306,6 +306,9 @@
     <ClInclude Include="plugins\reload_policy.h">
       <Filter>Source Files\plugins</Filter>
     </ClInclude>
+    <ClInclude Include="plugins\host_rules.h">
+      <Filter>Source Files\plugins</Filter>
+    </ClInclude>
     <ClInclude Include="plugins\crash_restart.h">
       <Filter>Source Files\plugins</Filter>
     </ClInclude>
