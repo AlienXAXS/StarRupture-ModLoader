@@ -439,8 +439,11 @@ namespace
         if (!conn || !name) return r;
         const std::string ver = version ? version : "";
 
-        // Hot path: the same version is a match with no further lookup.
-        std::vector<std::string> otherVersions;
+        // Hot path: the same version is a match with no further lookup. The list
+        // is reused per thread so filling it under the manifest lock does not
+        // allocate on every packet.
+        thread_local std::vector<std::string> otherVersions;
+        otherVersions.clear();
         {
             std::lock_guard<std::mutex> lk(g_manifestMutex);
             auto it = g_manifests.find(conn);
