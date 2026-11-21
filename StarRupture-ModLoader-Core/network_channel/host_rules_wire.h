@@ -367,8 +367,8 @@ namespace HostRulesWire
 
     // The server's rule set. A deny row names a feature (or, with id "*", a
     // whole mod) to switch off; an allow row names one to leave on although the
-    // default or a wider row denies it. Working out which row wins for a given
-    // feature (feature row, then whole-mod row, then default) is the caller's.
+    // default or a wider row denies it. Which row wins for a given
+    // feature (feature row, then whole-mod row, then default) is ResolveDeny's.
     struct RulesSet
     {
         bool defaultAllow = true;
@@ -493,6 +493,44 @@ namespace HostRulesWire
                 s.allow.push_back(k);
         *out = std::move(s);
         return Status::Ok;
+    }
+
+    // What the client switches off: for each feature the client declares, the
+    // server's answer under the precedence of the design (section 7, 11.2):
+    //   1. a row naming the feature itself ("Plugin" + id), deny or allow;
+    //   2. else a row naming the whole mod ("Plugin" + "*"), deny or allow;
+    //   3. else the default (deny when !defaultAllow).
+    // The most specific row wins, so an allow row beats a wider deny and a deny
+    // row beats a wider allow. Two rows of the same level that disagree
+    // (possible only in a RulesSet that did not come through DecodeRules): deny
+    // wins, the safer reading and the one encode and decode apply too. The
+    // result is the exact (plugin, id) list ApplyHostRules takes, in the order
+    // declared, spelled as the client declared it; plugin names match without
+    // regard to case, ids exactly. A feature already off for the build is
+    // listed like any other: the server can only take a feature away, so the
+    // list never turns anything on. Rules for a mod or feature the client does
+    // not declare name nothing here; the caller resolves again when its
+    // catalog changes.
+    inline HostRules::DenySet ResolveDeny(const RulesSet& rules, const FeatPayload& declared)
+    {
+        HostRules::DenySet out;
+        for (const FeatRecord& f : declared.features)
+        {
+            if (f.plugin.empty() || f.id.empty())
+                continue;
+            bool deny = !rules.defaultAllow;
+            if (HostRules::Contains(rules.deny, f.plugin, f.id))
+                deny = true;
+            else if (HostRules::Contains(rules.allow, f.plugin, f.id))
+                deny = false;
+            else if (HostRules::Contains(rules.deny, f.plugin, kWholePlugin))
+                deny = true;
+            else if (HostRules::Contains(rules.allow, f.plugin, kWholePlugin))
+                deny = false;
+            if (deny)
+                out.push_back(HostRules::RuleKey{ f.plugin, f.id });
+        }
+        return HostRules::Normalize(out);
     }
 
     // ----------------------------------------------------------- Fragmentation

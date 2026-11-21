@@ -922,6 +922,94 @@ namespace
         Check(!d.single && d.sendable && d.chunkCount > 5, "a 120 feature declaration is fragmented");
     }
 
+    void TestHostResolve()
+    {
+        std::printf("Host rules: resolve the deny set\n");
+        HW::FeatPayload decl;
+        auto add = [&](const char* plugin, const char* id) {
+            HW::FeatRecord f; f.plugin = plugin; f.id = id; f.title = id; f.on = true;
+            decl.features.push_back(f);
+        };
+        add("BetterCheats", "movement");
+        add("BetterCheats", "spawner");
+        add("BetterDrone", "limits");
+        add("BetterDrone", "laser");
+        auto has = [](const HostRules::DenySet& d, const char* p, const char* id) { return HostRules::Contains(d, p, id); };
+
+        HW::RulesSet none;
+        Check(HW::ResolveDeny(none, decl).empty(), "default allow with no rows denies nothing");
+
+        HW::RulesSet defDeny;
+        defDeny.defaultAllow = false;
+        Check(HW::ResolveDeny(defDeny, decl).size() == 4, "default deny with no rows denies every declared feature");
+
+        HW::RulesSet one;
+        one.deny.push_back({ "BetterCheats", "movement" });
+        HostRules::DenySet d = HW::ResolveDeny(one, decl);
+        Check(d.size() == 1 && has(d, "BetterCheats", "movement"), "a feature row denies only that feature");
+
+        HW::RulesSet whole;
+        whole.deny.push_back({ "bettercheats", HW::kWholePlugin });
+        d = HW::ResolveDeny(whole, decl);
+        Check(d.size() == 2 && has(d, "BetterCheats", "movement") && has(d, "BetterCheats", "spawner"),
+            "a whole-mod deny row (plugin name in any case) denies each declared feature, spelled as declared");
+
+        HW::RulesSet wide;
+        wide.deny.push_back({ "BetterCheats", HW::kWholePlugin });
+        wide.allow.push_back({ "BetterCheats", "movement" });
+        d = HW::ResolveDeny(wide, decl);
+        Check(d.size() == 1 && has(d, "BetterCheats", "spawner") && !has(d, "BetterCheats", "movement"),
+            "a feature allow beats a whole-mod deny");
+
+        HW::RulesSet narrow;
+        narrow.allow.push_back({ "BetterDrone", HW::kWholePlugin });
+        narrow.deny.push_back({ "BetterDrone", "laser" });
+        d = HW::ResolveDeny(narrow, decl);
+        Check(d.size() == 1 && has(d, "BetterDrone", "laser"), "a feature deny beats a whole-mod allow");
+
+        HW::RulesSet dd;
+        dd.defaultAllow = false;
+        dd.allow.push_back({ "BetterCheats", HW::kWholePlugin });
+        dd.allow.push_back({ "BetterDrone", "limits" });
+        d = HW::ResolveDeny(dd, decl);
+        Check(d.size() == 1 && has(d, "BetterDrone", "laser"), "allow rows beat a default deny, feature and whole mod");
+
+        HW::RulesSet both;
+        both.deny.push_back({ "BetterCheats", "movement" });
+        both.allow.push_back({ "BetterCheats", "movement" });
+        both.deny.push_back({ "BetterDrone", HW::kWholePlugin });
+        both.allow.push_back({ "BetterDrone", HW::kWholePlugin });
+        d = HW::ResolveDeny(both, decl);
+        Check(d.size() == 3 && has(d, "BetterCheats", "movement") && has(d, "BetterDrone", "limits") && has(d, "BetterDrone", "laser"),
+            "an allow and a deny row at the same level: deny wins");
+
+        HW::RulesSet unknown;
+        unknown.deny.push_back({ "Other", HW::kWholePlugin });
+        unknown.deny.push_back({ "BetterCheats", "nosuch" });
+        Check(HW::ResolveDeny(unknown, decl).empty(), "rows for mods or features the client lacks name nothing");
+
+        HW::RulesSet idCase;
+        idCase.deny.push_back({ "BetterCheats", "Movement" });
+        Check(HW::ResolveDeny(idCase, decl).empty(), "feature ids match exactly");
+
+        HW::FeatPayload twice = decl;
+        twice.features.push_back(twice.features[0]);
+        Check(HW::ResolveDeny(defDeny, twice).size() == 4, "a feature declared twice is listed once");
+        Check(HW::ResolveDeny(defDeny, HW::FeatPayload{}).empty(), "nothing declared, nothing denied");
+
+        // Through the wire: what a server sends is what the client resolves.
+        HW::RulesSet sent;
+        sent.defaultAllow = false;
+        sent.allow.push_back({ "BetterCheats", HW::kWholePlugin });
+        sent.deny.push_back({ "BetterCheats", "spawner" });
+        const std::string bytes = HW::EncodeRules(sent);
+        HW::RulesSet got;
+        Check(HW::DecodeRules(bytes.data(), bytes.size(), &got) == HW::Status::Ok, "the rules decode");
+        d = HW::ResolveDeny(got, decl);
+        Check(d.size() == 3 && has(d, "BetterCheats", "spawner") && has(d, "BetterDrone", "limits") && has(d, "BetterDrone", "laser"),
+            "resolve after a wire round trip: default deny, mod allowed, one feature denied");
+    }
+
     void TestHostMinimum()
     {
         std::printf("Host rules: minimum loader tag\n");
@@ -989,6 +1077,7 @@ int main()
     TestHostRules();
     TestHostPlan();
     TestHostMinimum();
+    TestHostResolve();
 
     if (g_failures)
     {
