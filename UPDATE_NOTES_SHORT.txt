@@ -4,3 +4,4 @@
 - The dedicated server now hands plugins the same Game-SDK globals as the client when the version object map serves the running server build
 - When the game does not finish starting within the mod loader's wait on a build the mod loader was not made for, its message now says the game did not finish starting (and to check the game files in Steam) instead of saying the game layout changed. Plugins stay off for that session
 - The wait for the game to finish starting is now a true 2 minute limit
+- A fault in the game's world-end code is still swallowed, and ModLoader.log now records where it happened (module and offset, registers, short call stack) to help find its cause
