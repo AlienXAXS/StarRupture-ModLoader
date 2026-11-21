@@ -357,6 +357,40 @@ plugin's author. <sup>[✦](#msantoro12)</sup>
 
 <img src="images/popup-hooks-failed.png" width="383" alt="Plugin Hooks Failed pop-up with the missing hooks of one plugin">
 
+### A server can turn a feature off
+
+A plugin lists its features (a map overlay, a cheat, a new panel) so the loader can switch one off
+without switching the whole plugin off. A game update does that on its own. A server can do it too,
+for a feature it does not want on it: the server keeps a short deny list of plugin and feature pairs.
+A feature on the list is off, whatever the game build allows, and comes back when it is taken off the
+list. A feature the game build already turned off stays off either way.
+
+What the player sees: the feature's controls on the plugin's config page are greyed, with
+"*&lt;feature title&gt;* is off: turned off by this server". The plugin shows as `Loaded (1 off)` in the
+Plugins tab and in `plugins`, `hookfailures` lists it as `[feature off] <title> (<id>): turned off by this
+server`, and `ModLoader.log` says `feature "<title>" turned off by this server` (and `turned back on`
+later). No pop-up opens, and the plugin keeps running without the feature.
+
+The `features` command, on the server console or the client's developer console:
+
+| Command | Does |
+|---|---|
+| `features` | List every feature the loaded plugins declared and whether it is `on`, `off: build (<reason>)` or `off: server`, then the deny list |
+| `features hostoff <plugin> <id>` | Add one feature to the deny list. The plugin is the name `plugins` shows, the id is the one `features` shows |
+| `features hostclear` | Empty the deny list. Features the game build has on are on again |
+
+Example: `features` shows a plugin called `MyPlugin` with a feature `marker-labels` that is `on`.
+
+```
+features hostoff MyPlugin marker-labels
+```
+
+prints the list again with `marker-labels` as `off: server`, and the deny list shows `MyPlugin  marker-labels`.
+The plugin's own flag for the feature reads off from then on, even if the plugin is reloaded or loaded
+later. `features hostoff MyPlugin nothing` answers "No feature 'nothing' in plugin 'MyPlugin'" and changes
+nothing. `features hostclear` turns `marker-labels` back on. The deny list is kept in memory, not saved,
+and is empty at every start.
+
 ---
 
 ## The Server Console (dedicated server)
@@ -383,6 +417,7 @@ in `help` ([Console.md](Console.md)).
 | `load <target>` | | Load a plugin that is unloaded |
 | `rescan` | `scan` | Load plugin DLLs added to `Plugins\` since startup |
 | `hookfailures` | `hooks` | List plugins whose hook patterns did not resolve |
+| `features [hostoff <plugin> <id> \| hostclear]` | | List plugin features, or turn one off for this server, or lift every turn-off. See [A server can turn a feature off](#a-server-can-turn-a-feature-off) |
 | `hooklist` | | List every detoured address and the plugins sharing it |
 | `preload` | `preloads` | Show what happened to the DLLs in `Preload\` at startup |
 | `version` | `ver` | Show the mod loader build and plugin interface versions |
