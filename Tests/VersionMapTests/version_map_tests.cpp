@@ -1119,6 +1119,18 @@ int main()
 			fails("P.x=de\x01ny", ParseStatus::ControlChar, 1, "host rules text: a control character in a row is ControlChar");
 			fails("\n\nmessage=a\tb", ParseStatus::ControlChar, 3, "host rules text: a tab inside a message is ControlChar");
 			fails("message=a\rb", ParseStatus::ControlChar, 1, "host rules text: a bare CR inside a line is ControlChar");
+			fails("Al\tpha.fly=deny", ParseStatus::ControlChar, 1, "host rules text: a tab inside a key is ControlChar");
+			fails("Alpha.fly=de\tny", ParseStatus::ControlChar, 1, "host rules text: a tab inside a value is ControlChar");
+			fails("Alpha.fly\x01", ParseStatus::ControlChar, 1, "host rules text: a control character in a line with no '=' is ControlChar");
+			{
+				RulesSet r;
+				std::string e;
+				Check(parse("Alpha.fly\t=\tdeny\n", r, e).status == ParseStatus::Ok && r.deny.size() == 1 && r.deny[0].plugin == "Alpha" && r.deny[0].id == "fly",
+					"host rules text: tabs around the key and the value are blanks");
+				RulesSet d;
+				Check(parse("default\t=\tdeny\nmessage\t=\t  hello  \n", d, e).status == ParseStatus::Ok && !d.defaultAllow && d.message == "hello",
+					"host rules text: tabs around default and message are blanks");
+			}
 			fails(std::string(kMaxPayloadBytes + 1, '#'), ParseStatus::TooLarge, 0, "host rules text: text over the payload limit is TooLarge");
 			Check(status(std::string(kMaxPayloadBytes, '#')) == ParseStatus::Ok, "host rules text: text of exactly the payload limit is read");
 		}
@@ -2813,7 +2825,17 @@ int main()
 			Check(statusOf(std::string(129, 'A') + "=1.0\n") == ParseStatus::BadKey, "minimums text: a mod name over the limit is refused");
 			Check(statusOf(std::string(128, 'A') + "=1.0\n") == ParseStatus::Ok, "minimums text: a mod name at the limit is read");
 			Check(statusOf("A=1.0\x01\n", &err) == ParseStatus::ControlChar && err == "line 1: control character", "minimums text: a control character");
-			Check(statusOf("A\t=1.0\n") == ParseStatus::ControlChar, "minimums text: a tab inside a line is refused like in the rules text");
+			Check(statusOf("A\tB=1.0\n") == ParseStatus::ControlChar, "minimums text: a tab inside a key is refused like in the rules text");
+			Check(statusOf("A=1.\t0\n") == ParseStatus::ControlChar, "minimums text: a tab inside a value is refused");
+			{
+				Minimums tm;
+				std::string te;
+				Check(parseMin("A\t=\t1.0\n", tm, te).status == ParseStatus::Ok && tm.mods.size() == 1 && tm.mods[0].plugin == "A" && tm.mods[0].version == "1.0",
+					"minimums text: tabs around a mod key and value are blanks");
+				Minimums lm;
+				Check(parseMin("loader\t=\t1.27.0\t\n", lm, te).status == ParseStatus::Ok && lm.loader == "1.27.0",
+					"minimums text: tabs around loader= are blanks");
+			}
 			Check(statusOf(std::string(kMaxPayloadBytes + 1, ' '), &err) == ParseStatus::TooLarge && err.find("line") == std::string::npos, "minimums text: text over the payload limit");
 			Check(statusOf(std::string(kMaxPayloadBytes, '\n')) == ParseStatus::Ok, "minimums text: text at the limit is read");
 
@@ -2961,6 +2983,18 @@ int main()
 			const auto huge = reasonFor(longA + "=" + bigVer + "\n" + longB + "=" + bigVer + "\n", true, "1.27.0",
 				{ row(longA.c_str(), "1.0"), row(longB.c_str(), "1.0") });
 			Check(huge.size() <= kMaxBelowMinimumReason, "below minimum text: the hard cap holds against maximal numbers");
+
+			// Long version tags are cut, so the closing instruction is never the part that goes.
+			const std::string longTag(60, '7');
+			const auto longTags = BuildBelowMinimumReason({
+				Violation{ false, longA, longTag, longTag },
+				Violation{ false, longB, longTag, longTag } });
+			const std::string closing = "Update them and join again.";
+			Check(longTags.size() <= kMaxBelowMinimumReason && longTags.size() >= closing.size() &&
+				longTags.compare(longTags.size() - closing.size(), closing.size(), closing) == 0,
+				"below minimum text: two long-tag violations end with the instruction, within the cap");
+			Check(longTags.find(std::string(25, '7')) == std::string::npos && longTags.find(std::string(24, '7')) != std::string::npos,
+				"below minimum text: a version tag is shown at most 24 characters");
 
 			// A name with control characters or non-ASCII bytes is made plain.
 			const auto odd = BuildBelowMinimumReason({ Violation{ false, std::string("Bad\x01Na\xC3\xA9me"), "2.0", "1.0" } });
@@ -3172,16 +3206,16 @@ int main()
 		Check(!AdminPrompt::NotMeSendsAnswer(s, 1000), "admin prompt: not me sends nothing while closed");
 
 		// A line for a prompt that is not showing is dropped.
-		AdminPrompt::ApplyQuestion(s, AdminQKind::Info, "late");
-		AdminPrompt::ApplyQuestion(s, AdminQKind::Close, "late");
+		AdminPrompt::ApplyQuestion(s, AdminQKind::Info, "late", 0);
+		AdminPrompt::ApplyQuestion(s, AdminQKind::Close, "late", 0);
 		Check(!s.open && !s.final && s.status.empty(), "admin prompt: info and close with no prompt open change nothing");
 
 		// ask opens; info keeps it open and sets the line; close marks it final.
-		AdminPrompt::ApplyQuestion(s, AdminQKind::Ask, "");
+		AdminPrompt::ApplyQuestion(s, AdminQKind::Ask, "", 0);
 		Check(s.open && !s.final && s.status.empty(), "admin prompt: ask opens it");
-		AdminPrompt::ApplyQuestion(s, AdminQKind::Info, "Wrong code");
+		AdminPrompt::ApplyQuestion(s, AdminQKind::Info, "Wrong code", 0);
 		Check(s.open && !s.final && s.status == "Wrong code", "admin prompt: info sets the line and keeps it open");
-		AdminPrompt::ApplyQuestion(s, AdminQKind::Info, "Wrong code, 2 tries left");
+		AdminPrompt::ApplyQuestion(s, AdminQKind::Info, "Wrong code, 2 tries left", 0);
 		Check(s.open && s.status == "Wrong code, 2 tries left", "admin prompt: a second info replaces the line");
 
 		// Submit: trimming, caps, control characters, the 500 ms gap.
@@ -3202,31 +3236,50 @@ int main()
 		Check(!AdminPrompt::NotMeSendsAnswer(s, 5499) && AdminPrompt::NotMeSendsAnswer(s, 5500), "admin prompt: not me follows the same 500 ms gap");
 
 		// close: final line stays until dismissed; no input, no answer, no later lines.
-		AdminPrompt::ApplyQuestion(s, AdminQKind::Close, "You are the admin");
+		AdminPrompt::ApplyQuestion(s, AdminQKind::Close, "You are the admin", 0);
 		Check(s.open && s.final && s.status == "You are the admin", "admin prompt: close sets the last line and ends the input");
 		Check(AdminPrompt::CheckSubmit(s, "ABC", 9000, &out) == SubmitResult::NotOpen, "admin prompt: no code after the last line");
 		Check(!AdminPrompt::NotMeSendsAnswer(s, 9000), "admin prompt: dismissing the last line sends nothing");
-		AdminPrompt::ApplyQuestion(s, AdminQKind::Info, "ignored");
-		AdminPrompt::ApplyQuestion(s, AdminQKind::Close, "ignored");
+		AdminPrompt::ApplyQuestion(s, AdminQKind::Info, "ignored", 0);
+		AdminPrompt::ApplyQuestion(s, AdminQKind::Close, "ignored", 0);
 		Check(s.final && s.status == "You are the admin", "admin prompt: lines after the last one are dropped");
 
-		// Dismissed, then asked again: a clean prompt with no answer memory.
-		AdminPrompt::CloseLocally(s);
+		// Dismissed, then asked again: ignored for 60 s, then a clean prompt with no answer memory.
+		AdminPrompt::CloseLocally(s, 100000);
 		Check(!s.open && !s.final && s.status.empty(), "admin prompt: dismissing closes and clears the line");
-		AdminPrompt::ApplyQuestion(s, AdminQKind::Ask, "");
-		Check(s.open && !s.final && !s.hasLastAnswer, "admin prompt: a new ask starts clean");
+		AdminPrompt::ApplyQuestion(s, AdminQKind::Ask, "", 100000);
+		Check(!s.open, "admin prompt: an ask right after the dismissal is ignored");
+		AdminPrompt::ApplyQuestion(s, AdminQKind::Ask, "", 159999);
+		Check(!s.open, "admin prompt: an ask 59.999 s after the dismissal is ignored");
+		AdminPrompt::ApplyQuestion(s, AdminQKind::Info, "late", 120000);
+		AdminPrompt::ApplyQuestion(s, AdminQKind::Close, "late", 120000);
+		Check(!s.open && s.status.empty(), "admin prompt: info and close after a dismissal change nothing");
+		AdminPrompt::ApplyQuestion(s, AdminQKind::Ask, "", 99000);
+		Check(!s.open, "admin prompt: an ask with the clock gone back is ignored");
+		AdminPrompt::ApplyQuestion(s, AdminQKind::Ask, "", 160000);
+		Check(s.open && !s.final && !s.hasLastAnswer, "admin prompt: an ask 60 s after the dismissal starts clean");
+
+		// The server's own close still applies while the earlier dismissal's latch runs.
+		AdminPrompt::ApplyQuestion(s, AdminQKind::Close, "You are the admin", 160001);
+		Check(s.open && s.final, "admin prompt: a close from the server applies inside the latch window");
+		AdminPrompt::Reset(s);
+		AdminPrompt::ApplyQuestion(s, AdminQKind::Ask, "", 5);
+		Check(s.open, "admin prompt: no dismissal, no latch");
+		Check(!AdminPrompt::AskLatched(false, 5, 5) && AdminPrompt::AskLatched(true, 5, 5), "admin prompt: the latch needs a dismissal");
 
 		// Not me while asking: answer goes out, the window closes.
 		Check(AdminPrompt::NotMeSendsAnswer(s, 100), "admin prompt: not me while asking sends an answer");
-		AdminPrompt::CloseLocally(s);
+		AdminPrompt::CloseLocally(s, 100);
 		Check(!s.open, "admin prompt: not me closes it locally");
 
-		// Leaving the server clears everything.
-		AdminPrompt::ApplyQuestion(s, AdminQKind::Ask, "");
-		AdminPrompt::ApplyQuestion(s, AdminQKind::Info, "line");
+		// Leaving the server clears everything, the latch included.
+		AdminPrompt::Reset(s);
+		AdminPrompt::ApplyQuestion(s, AdminQKind::Ask, "", 101);
+		Check(s.open, "admin prompt: leaving the server lifts the latch");
+		AdminPrompt::ApplyQuestion(s, AdminQKind::Info, "line", 0);
 		AdminPrompt::NoteAnswerSent(s, 123);
 		AdminPrompt::Reset(s);
-		Check(!s.open && !s.final && s.status.empty() && !s.hasLastAnswer && s.lastAnswerMs == 0, "admin prompt: leaving the server clears the state");
+		Check(!s.open && !s.final && s.status.empty() && !s.hasLastAnswer && s.lastAnswerMs == 0 && !s.hasDismiss, "admin prompt: leaving the server clears the state");
 		Check(std::string(AdminPrompt::kPromptText).find("Not me") != std::string::npos, "admin prompt: the fixed text names Not me");
 	}
 

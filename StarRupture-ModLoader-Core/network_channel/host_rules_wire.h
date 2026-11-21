@@ -617,14 +617,19 @@ namespace HostRulesWire
             line = detail::TrimBlanks(line);
             if (line.empty() || line[0] == '#' || line[0] == ';')
                 continue;
-            if (detail::HasCtl(line))
-                return fail(ParseStatus::ControlChar, lineNo, "control character");
 
+            // Spaces and tabs around the key and the value are blanks; a control
+            // character anywhere else is an error.
             const size_t eq = line.find('=');
             if (eq == std::string_view::npos)
-                return fail(ParseStatus::BadLine, lineNo, "expected key=value");
+                return detail::HasCtl(line) ? fail(ParseStatus::ControlChar, lineNo, "control character")
+                                            : fail(ParseStatus::BadLine, lineNo, "expected key=value");
             const std::string key(detail::TrimBlanks(line.substr(0, eq)));
             const std::string value(detail::TrimBlanks(line.substr(eq + 1)));
+            if (detail::HasCtl(key))
+                return fail(ParseStatus::ControlChar, lineNo, "control character");
+            if (detail::HasCtl(value))
+                return fail(ParseStatus::ControlChar, lineNo, "control character");
 
             if (HostRules::SamePlugin(key, "message"))
             {
@@ -918,14 +923,19 @@ namespace HostRulesWire
             line = detail::TrimBlanks(line);
             if (line.empty() || line[0] == '#' || line[0] == ';')
                 continue;
-            if (detail::HasCtl(line))
-                return fail(ParseStatus::ControlChar, lineNo, "control character");
 
+            // Spaces and tabs around the key and the value are blanks; a control
+            // character anywhere else is an error.
             const size_t eq = line.find('=');
             if (eq == std::string_view::npos)
-                return fail(ParseStatus::BadLine, lineNo, "expected key=value");
+                return detail::HasCtl(line) ? fail(ParseStatus::ControlChar, lineNo, "control character")
+                                            : fail(ParseStatus::BadLine, lineNo, "expected key=value");
             const std::string key(detail::TrimBlanks(line.substr(0, eq)));
             const std::string value(detail::TrimBlanks(line.substr(eq + 1)));
+            if (detail::HasCtl(key))
+                return fail(ParseStatus::ControlChar, lineNo, "control character");
+            if (detail::HasCtl(value))
+                return fail(ParseStatus::ControlChar, lineNo, "control character");
 
             if (HostRules::SamePlugin(key, "loader"))
             {
@@ -1034,14 +1044,18 @@ namespace HostRulesWire
             return s;
         }
 
+        // Version tags are cut to this many characters in the message, so the
+        // closing instruction survives the final cut to kMaxBelowMinimumReason.
+        constexpr size_t kMaxShownTagLen = 24;
+
         // "RuptureTimer 0.11.0 or newer (you have 0.9.2)", "ModLoader 1.27.0 or
         // newer", "ProductionViewer to match the server's version (you have 0.18.4)".
         inline std::string NeedPhrase(const Violation& v, size_t nameLen)
         {
             std::string s = v.isLoader ? v.name : PlainName(v.name, nameLen);
-            s += v.need.empty() ? " to match the server's version" : " " + PlainName(v.need, kMaxBuildTagLen) + " or newer";
+            s += v.need.empty() ? " to match the server's version" : " " + PlainName(v.need, kMaxShownTagLen) + " or newer";
             if (!v.have.empty())
-                s += " (you have " + PlainName(v.have, kMaxBuildTagLen) + ")";
+                s += " (you have " + PlainName(v.have, kMaxShownTagLen) + ")";
             return s;
         }
 
