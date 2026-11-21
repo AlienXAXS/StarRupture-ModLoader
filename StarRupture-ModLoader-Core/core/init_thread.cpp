@@ -44,10 +44,10 @@
 // thread, with the game thread parked in the engine-init hook when the check ran.
 // That park ends on its own after a timeout, so plugin loads are refused and
 // the preload plugins shut down before the dialog waits on the player. The
-// loader's hooks stay in; the
-// world they read comes from SdkGlobals::GetWorld, which with no per-build
-// fields resolved (they are not, after a safe-off) reads GWorld: on a build
-// other than the SDK's own the resolved one, not Offsets::GWorld.
+// loader's hooks stay in; the world they read comes from SdkGlobals::GetWorld,
+// which with no per-build fields resolved (they are not, after a safe-off)
+// reads GWorld: on a build other than the SDK's own the resolved one, not
+// Offsets::GWorld.
 static void EnterLayoutSafeOff(const LayoutCheck::Result& layout,
     StartupWait::SafeOffKind kind = StartupWait::SafeOffKind::Mismatch)
 {
@@ -460,7 +460,10 @@ DWORD WINAPI MainInitThreadProc(LPVOID)
     LayoutCheck::Result layout;
     {
         bool ran = false;
-        if (Hooks::EngineInit::IsEngineInitialized())
+        // Read once: the same answer decides whether the check runs and which
+        // wording a skipped check gets.
+        const bool engineInitSeen = Hooks::EngineInit::IsEngineInitialized();
+        if (engineInitSeen)
         {
             ran = LayoutCheck::Run(layout);
             if (ran && LayoutCheck::FoundChanges(layout))
@@ -487,8 +490,7 @@ DWORD WINAPI MainInitThreadProc(LPVOID)
                 unchecked.lines.push_back("GObjects or FName::AppendString was not found on this build");
             if (unchecked.lines.size() > layout.lines.size())
             {
-                EnterLayoutSafeOff(unchecked,
-                    StartupWait::ClassifySafeOff(Hooks::EngineInit::IsEngineInitialized(), engineWaitTimedOut));
+                EnterLayoutSafeOff(unchecked, StartupWait::ClassifySafeOff(engineInitSeen, engineWaitTimedOut));
                 return 0;
             }
         }

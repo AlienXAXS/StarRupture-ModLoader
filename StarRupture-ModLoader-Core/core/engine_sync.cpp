@@ -144,8 +144,11 @@ bool WaitForEngineReady()
             }
             continue;
         }
-        LogToFile::Warn("[ModLoader] Timed out waiting for engine init (%lu ms) -- loading plugins anyway", StartupWait::kEngineTimeoutMs);
-        timedOut = true;
+        timedOut = (r == WAIT_TIMEOUT);
+        if (timedOut)
+            LogToFile::Warn("[ModLoader] Timed out waiting for engine init (%u ms) -- loading plugins anyway", StartupWait::kEngineTimeoutMs);
+        else
+            LogToFile::Warn("[ModLoader] Waiting for engine init failed (%lu) -- loading plugins anyway", r);
         break;
     }
 
