@@ -154,8 +154,12 @@ namespace LayoutCheck
     // the engine keeps them outside UPROPERTY and Dumper-7 writes them in by
     // hand, so no lookup by name can find them. A row listed here is not
     // compared when the game has no such member; one the game does reflect is
-    // compared like any other, so a moved offset still counts. Nothing checks
-    // the offset of a member listed here, so list one only where the SDK's
+    // compared like any other, so a moved offset still counts. The offset of
+    // a member listed here is never checked against the game: the version map
+    // may hold a row for it per build, but nothing compares that row with
+    // reflection. This is not kPluginPerBuildMembers because that list is for
+    // offsets that move between builds, and its rows are counted as resolved
+    // per build. List a member here only where the SDK's
     // header marks it as not auto-generated and the table generator did not
     // already leave it out (it tests for the marker at the start of the
     // comment, and the one on ULevel::Actors has text in front of it).
