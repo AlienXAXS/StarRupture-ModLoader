@@ -839,8 +839,8 @@ int main()
 					"feed, fields: where the file's row disagrees with the game, the game wins, and says so");
 				Check(!VersionMap::SelectField("ModLoader", VersionMap::LoaderFieldRequest("ACrCrafter::CraftComponent", 8, 0x100), kNew, v, e) && e.find("reflection") != std::string::npos,
 					"feed, fields: a loader member the game cannot answer fails on the second server CL (the loader's compiled offset is not used)");
-				Check(!VersionMap::SelectField("ModLoader", VersionMap::LoaderFieldRequest("UWorld::GameState", 8, 0x1B0), kNewRebuilt, v, e) || true,
-					"feed, fields: (reflection answers for any exe: the rows are not what makes it)");
+				Check(VersionMap::SelectField("ModLoader", VersionMap::LoaderFieldRequest("UWorld::GameState", 8, 0x1B0), kNewRebuilt, v, e) && v.offset == 0x1B8,
+					"feed, fields: a loader member is the game's answer on a rebuilt exe of that CL too (the game, not a row, is what answers)");
 				VersionMap::SetLiveFieldSource(Unreflected);
 				Check(Field("FTransform::Translation", PLUGIN_FIELD_NATIVE, 0x18, { OwnRow(127004, 0x20, 0x18) }, kNew, v, e) && v.offset == 0x20 && v.size == 0x18,
 					"feed, fields: a plugin's native member is served on the second server CL from the file's row");

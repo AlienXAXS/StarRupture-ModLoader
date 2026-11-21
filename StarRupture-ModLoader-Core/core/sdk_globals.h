@@ -111,8 +111,8 @@ namespace SdkGlobals
     // before any plugin loads. Returns "key: reason" for each one that did
     // not resolve. On VersionMap::kBuiltCL a member that does not resolve
     // keeps the SDK's compiled offset (logged), so only another build can
-    // return any. The server build, which runs on kBuiltCL only, takes the
-    // compiled offsets.
+    // return any. The server build takes the compiled offsets on kBuiltCL, and
+    // on any other build reads them as the client does.
     std::vector<std::string> ResolveFields();
 
     // True for a member ResolveFields resolves, and for one only plugins read
