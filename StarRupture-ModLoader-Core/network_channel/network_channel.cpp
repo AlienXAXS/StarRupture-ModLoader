@@ -421,6 +421,8 @@ namespace
     // its catalog changes, which replaces the entry. rulesSent is the last
     // "$ML:rules" payload put on the wire for this client; rulesSentOnce is set
     // after any send, so a list that went empty is sent once more.
+    // featAnnouncePending is set whenever a feature list arrives (first or
+    // changed) and cleared by PumpClientFeatures once the plugins were told.
     struct ClientFeatInfo
     {
         std::string loaderTag;
@@ -428,8 +430,20 @@ namespace
         std::vector<HostRulesWire::FeatRecord> features;
         std::string rulesSent;
         bool rulesSentOnce = false;
+        bool featAnnouncePending = false;
     };
     static std::unordered_map<void*, ClientFeatInfo> g_clientFeat;
+
+    // The rules a server plugin set (IPluginHostRules), under g_manifestMutex like
+    // g_clientFeat. g_setGlobal is the set for a connection with none of its own;
+    // g_connRules holds a connection's own set, which replaces the global one for
+    // it. Both start empty (everything allowed).
+    static HostRulesWire::RulesSet g_setGlobal;
+    static std::unordered_map<void*, HostRulesWire::RulesSet> g_connRules;
+
+    // True while some g_clientFeat entry has featAnnouncePending. Written under
+    // g_manifestMutex; read bare by the tick so the idle case costs one load.
+    static std::atomic<bool> g_featAnnounceDirty{ false };
 
     // The ack tail (the wire table) stays within this many bytes. A table that
     // does not fit is cut after whole entries.
@@ -1158,6 +1172,7 @@ namespace
             g_manifestTick.erase(conn);
             g_clientWires.erase(conn);
             g_clientFeat.erase(conn);
+            g_connRules.erase(conn);
         }
         {
             std::lock_guard<std::mutex> lk(g_helloMutex);
@@ -2896,22 +2911,37 @@ static void DispatchClientNarrow(const char* narrowData, size_t nbytes)
 #endif // MODLOADER_CLIENT_BUILD
 
 // Sends the server's rule set ("$ML:rules") to one client that already sent
-// "$ML:feat"; no other connection is ever a target. The payload is the local
-// deny list and message as they are now. It goes out again only when the
-// encoded bytes changed, unless force is set (a feature list arrived or was
-// replaced). Nothing is sent to a client while the list is empty and nothing
-// was sent before; once something was, an emptied list is sent once so the
-// client lets go of the old rows.
+// "$ML:feat"; no other connection is ever a target. The payload is the
+// connection's own set when a plugin gave it one, otherwise the plugins' global
+// set with the host console's deny list and message as they are now. It goes
+// out again only when the encoded bytes changed, unless force is set (a feature
+// list arrived or was replaced). Nothing is sent to a client while the set says
+// nothing and nothing was sent before; once something was, an emptied set is
+// sent once so the client lets go of the old rows.
 static void SendRulesTo(void* conn, bool force)
 {
     if (!conn) return;
 
-    HostRulesWire::RulesSet rules;
-    rules.defaultAllow = true;
-    rules.onDenied     = HostRulesWire::kOnDeniedSwitchOff;
-    rules.message      = PluginHookReport::HostMessage();
+    HostRulesWire::RulesSet global;
+    HostRulesWire::RulesSet own;
+    bool hasOwn = false;
+    {
+        std::lock_guard<std::mutex> lk(g_manifestMutex);
+        if (g_clientFeat.find(conn) == g_clientFeat.end()) return;
+        global = g_setGlobal;
+        const auto it = g_connRules.find(conn);
+        if (it != g_connRules.end())
+        {
+            own = it->second;
+            hasOwn = true;
+        }
+    }
+
+    HostRules::DenySet consoleDeny;
     for (const auto& row : PluginHookReport::HostDeny())
-        rules.deny.push_back({ row.first, row.second });
+        consoleDeny.push_back({ row.first, row.second });
+    const HostRulesWire::RulesSet rules = HostRulesWire::EffectiveRules(
+        global, hasOwn ? &own : nullptr, consoleDeny, PluginHookReport::HostMessage());
 
     HostRulesWire::EncodeStats stats;
     const std::string body = HostRulesWire::EncodeRules(rules, &stats);
@@ -2932,7 +2962,7 @@ static void SendRulesTo(void* conn, bool force)
         std::lock_guard<std::mutex> lk(g_manifestMutex);
         auto it = g_clientFeat.find(conn);
         if (it == g_clientFeat.end()) return;
-        if (rules.deny.empty() && !it->second.rulesSentOnce) return;
+        if (HostRulesWire::NothingToSend(rules) && !it->second.rulesSentOnce) return;
         if (!force && it->second.rulesSent == body) return;
     }
 
@@ -2963,6 +2993,193 @@ static void SendRulesTo(void* conn, bool force)
     ModLoaderLogger::LogDebug(
         L"[NetworkChannel] Sent the server rules to client %p (%zu bytes, %zu chunk(s))",
         conn, body.size(), plan.chunkCount);
+}
+
+// ============================================================
+// Per-player host rules  (IPluginHostRules, interface v79)
+// Authority only. A server plugin sets the global set, or one connection's own
+// set, from text; the loader sends the result to the clients at once.
+// ============================================================
+
+// Callbacks registered with RegisterOnClientFeatures. Plugin code, so never
+// called with a lock held.
+static std::mutex g_featCbMutex;
+static std::vector<PluginClientFeaturesCallback> g_featCbs;
+
+// Writes `text` into the caller's error buffer, NUL-terminated and cut to its
+// size. The buffer may be null or zero-sized.
+static void CopyErrorText(char* error, size_t errorSize, const std::string& text)
+{
+    if (!error || errorSize == 0) return;
+    const size_t n = (std::min)(text.size(), errorSize - 1);
+    std::memcpy(error, text.data(), n);
+    error[n] = '\0';
+}
+
+// A call from a process that is not the session authority has no clients to
+// reach: warn the first time, and let the caller return false or do nothing.
+static bool HostRulesAuthority(const char* what)
+{
+    if (HasNetAuthority()) return true;
+    static std::atomic<bool> warned{ false };
+    if (!warned.exchange(true))
+        ModLoaderLogger::LogWarn(
+            L"[NetworkChannel] %S ignored: this process is not the session authority, so it has "
+            L"no clients to send rules to",
+            what);
+    return false;
+}
+
+// Reads `text` (null reads as empty) into `set`. On a bad text, fills the
+// caller's error buffer and returns false with `set` untouched.
+static bool ReadRulesText(const char* text, HostRulesWire::RulesSet& set, char* error, size_t errorSize)
+{
+    std::string why;
+    const HostRulesWire::ParseResult res = HostRulesWire::ParseRulesText(
+        text ? std::string_view(text) : std::string_view(), set, why);
+    CopyErrorText(error, errorSize, res.status == HostRulesWire::ParseStatus::Ok ? std::string() : why);
+    return res.status == HostRulesWire::ParseStatus::Ok;
+}
+
+static bool HR_SetRules(const char* text, char* error, size_t errorSize)
+{
+    if (!HostRulesAuthority("SetRules"))
+    {
+        CopyErrorText(error, errorSize, "this process is not the session authority");
+        return false;
+    }
+
+    HostRulesWire::RulesSet set;
+    if (!ReadRulesText(text, set, error, errorSize)) return false;
+
+    {
+        std::lock_guard<std::mutex> lk(g_manifestMutex);
+        g_setGlobal = std::move(set);
+    }
+    NetworkChannel::HostRulesChanged();
+    return true;
+}
+
+static bool HR_SetRulesForConnection(void* playerController, const char* text, char* error, size_t errorSize)
+{
+    if (!HostRulesAuthority("SetRulesForConnection"))
+    {
+        CopyErrorText(error, errorSize, "this process is not the session authority");
+        return false;
+    }
+
+    void* conn = ConnectionForPlayer(playerController);
+    if (!conn)
+    {
+        CopyErrorText(error, errorSize, "no connection for this player controller");
+        return false;
+    }
+
+    HostRulesWire::RulesSet set;
+    if (!ReadRulesText(text, set, error, errorSize)) return false;
+
+    {
+        std::lock_guard<std::mutex> lk(g_manifestMutex);
+        g_connRules[conn] = std::move(set);
+    }
+    NetworkChannel::HostRulesChanged();
+    return true;
+}
+
+static void HR_ClearConnection(void* playerController)
+{
+    if (!HostRulesAuthority("ClearConnection")) return;
+
+    void* conn = ConnectionForPlayer(playerController);
+    if (!conn) return;
+    {
+        std::lock_guard<std::mutex> lk(g_manifestMutex);
+        if (g_connRules.erase(conn) == 0) return;
+    }
+    NetworkChannel::HostRulesChanged();
+}
+
+static void HR_RegisterOnClientFeatures(const IPluginSelf* self, PluginClientFeaturesCallback callback)
+{
+    if (!self || !self->name || !callback) return;
+    if (!HostRulesAuthority("RegisterOnClientFeatures")) return;
+
+    {
+        std::lock_guard<std::mutex> lk(g_featCbMutex);
+        if (std::find(g_featCbs.begin(), g_featCbs.end(), callback) != g_featCbs.end()) return;
+        g_featCbs.push_back(callback);
+    }
+    ModLoaderLogger::LogDebug(
+        L"[NetworkChannel] Client-features callback registered for plugin='%S'", self->name);
+}
+
+static void HR_UnregisterOnClientFeatures(const IPluginSelf* self, PluginClientFeaturesCallback callback)
+{
+    if (!self || !callback) return;
+
+    std::lock_guard<std::mutex> lk(g_featCbMutex);
+    g_featCbs.erase(std::remove(g_featCbs.begin(), g_featCbs.end(), callback), g_featCbs.end());
+}
+
+static IPluginHostRules g_hostRulesIface =
+{
+    HR_SetRules,
+    HR_SetRulesForConnection,
+    HR_ClearConnection,
+    HR_RegisterOnClientFeatures,
+    HR_UnregisterOnClientFeatures,
+};
+
+// Tells the registered plugins about every client whose feature list arrived or
+// changed since the last tick, on the game thread (the tick is). A client whose
+// controller does not exist yet stays pending and is retried next tick. With no
+// callback registered the pending marks are simply cleared.
+static void PumpClientFeatures()
+{
+    if (!g_featAnnounceDirty.load()) return;
+    if (!HasNetAuthority()) return;
+
+    std::vector<void*> controllers;
+    {
+        std::lock_guard<std::mutex> lk(g_manifestMutex);
+        bool stillPending = false;
+        for (auto& kv : g_clientFeat)
+        {
+            if (!kv.second.featAnnouncePending) continue;
+            void* pc = PlayerForConnection(kv.first);
+            if (!pc) { stillPending = true; continue; }
+            kv.second.featAnnouncePending = false;
+            controllers.push_back(pc);
+        }
+        g_featAnnounceDirty.store(stillPending);
+    }
+    if (controllers.empty()) return;
+
+    std::vector<PluginClientFeaturesCallback> cbs;
+    {
+        std::lock_guard<std::mutex> lk(g_featCbMutex);
+        cbs = g_featCbs;
+    }
+
+    for (void* pc : controllers)
+    {
+        for (PluginClientFeaturesCallback cb : cbs)
+        {
+            try
+            {
+                PluginGuard::Invoke(cb, "client-features callback", pc);
+            }
+            catch (const std::exception& ex)
+            {
+                ModLoaderLogger::LogError(
+                    L"[NetworkChannel] Exception in client-features callback: %S", ex.what());
+            }
+            catch (...)
+            {
+                ModLoaderLogger::LogError(L"[NetworkChannel] Unknown exception in client-features callback");
+            }
+        }
+    }
 }
 
 // ============================================================
@@ -3133,6 +3350,8 @@ static bool DispatchServerNarrow(void* senderConn, void* senderUObject,
                 info.loaderTag        = feat.buildTag;
                 info.interfaceVersion = feat.interfaceVersion;
                 info.features         = std::move(feat.features);
+                info.featAnnouncePending = true;
+                g_featAnnounceDirty.store(true);
             }
 
             const std::string who = PlayerNameForConnection(senderConn);
@@ -3301,6 +3520,7 @@ static void OnWorldEndPlayForgetConns(SDK::UWorld* /*world*/, const char* /*worl
         g_manifestTick.clear();
         g_clientWires.clear();
         g_clientFeat.clear();
+        g_connRules.clear();
     }
     {
         std::lock_guard<std::mutex> lk(g_helloMutex);
@@ -3473,6 +3693,7 @@ static void OnEngineTick(float /*deltaSeconds*/)
     // waiting on an answer, and (client, plugin) pairs waiting to be announced.
     PumpGreetings(now);
     PumpClientReady();
+    PumpClientFeatures();
 
 #ifdef MODLOADER_CLIENT_BUILD
     RefreshManifestIfStale();
@@ -3610,6 +3831,11 @@ IPluginNetworkChannel* NetworkChannel::GetInterface()
     return &g_networkIface;
 }
 
+IPluginHostRules* NetworkChannel::GetHostRulesInterface()
+{
+    return &g_hostRulesIface;
+}
+
 // Two call sites reach Initialize -- the startup phase, and the lazy path in
 // GetPluginHooks() that predates it -- and the registrations below are not
 // idempotent (each Register* appends). The guard lives here rather than at
@@ -3690,6 +3916,8 @@ void NetworkChannel::Shutdown()
         g_manifestTick.clear();
         g_clientWires.clear();
         g_clientFeat.clear();
+        g_connRules.clear();
+        g_setGlobal = HostRulesWire::RulesSet();
     }
     {
         std::lock_guard<std::mutex> lk(g_helloMutex);
@@ -3701,6 +3929,10 @@ void NetworkChannel::Shutdown()
         g_announced.clear();
         g_notReadyWarned.Clear();
         g_readyDirty = false;
+    }
+    {
+        std::lock_guard<std::mutex> lk(g_featCbMutex);
+        g_featCbs.clear();
     }
     {
         std::lock_guard<std::mutex> lk(g_wireLogMutex);
@@ -3770,6 +4002,10 @@ void NetworkChannel::ForgetModule(HMODULE module)
             PluginGuard::ForgetModule(kv.second, module);
     }
     {
+        std::lock_guard<std::mutex> lk(g_featCbMutex);
+        dropped += PluginGuard::ForgetModule(g_featCbs, module);
+    }
+    {
         std::lock_guard<std::mutex> lk(g_serverMutex);
         dropped += ForgetHandlersOf(g_serverHandlers, module);
     }
@@ -3791,6 +4027,7 @@ void NetworkChannel::ForgetModule(HMODULE module)
 #else // Generic (plain Debug/Release) build
 
 IPluginNetworkChannel* NetworkChannel::GetInterface() { return nullptr; }
+IPluginHostRules* NetworkChannel::GetHostRulesInterface() { return nullptr; }
 void NetworkChannel::Initialize() {}
 void NetworkChannel::Shutdown() {}
 void NetworkChannel::ForgetModule(HMODULE) {}

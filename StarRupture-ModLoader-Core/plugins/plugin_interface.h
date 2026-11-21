@@ -928,9 +928,21 @@
 //      or any index is outside vertex_count.
 // --- v78 ---
 //
+// v79 (2026-11-21): Adds IPluginHostRules and IPluginHooks::HostRules, for a
+//      server plugin that decides, player by player, which mod features a client
+//      may use. The pointer is appended after Images, preserving the existing
+//      prefix, and MIN stays at 70. A plugin declaring 79 is refused by a loader
+//      whose maximum is lower. A server plugin that wants to run on an older
+//      loader declares the older version, checks the loader's interface
+//      version, and uses the calls only when it is 79 or later: below 79 the
+//      HostRules pointer does not exist, and reading it reads past the table.
+//      The table is null on a generic build. Later versions add members
+//      after the ones here.
+// --- v79 ---
+//
 #define PLUGIN_INTERFACE_VERSION_MIN 70
-#define PLUGIN_INTERFACE_VERSION_MAX 78
-#define PLUGIN_INTERFACE_VERSION 78
+#define PLUGIN_INTERFACE_VERSION_MAX 79
+#define PLUGIN_INTERFACE_VERSION 79
 
 enum class PluginLogLevel { Trace = 0, Debug = 1, Info = 2, Warn = 3, Error = 4 };
 enum class ConfigValueType { String, Integer, Float, Boolean, Keybind, Choice /* v71 */, Hidden /* v71 */ };
@@ -1244,8 +1256,8 @@ static_assert(offsetof(PluginScanRequest, candidates)     == 56, "v72 starts whe
 //                           key; once resolved it never walks. A request made off
 //                           the game thread stays pending. The plugin sets its
 //                           own `enabled` flag once all the feature's keys
-//                           resolved; the loader writes it only while the
-//                           session is open. A class that is loaded and has no
+//                           resolved; the loader also writes it, as described
+//                           at PluginFeatureDesc::enabled. A class that is loaded and has no
 //                           such function or parameter is refused once, as for
 //                           any request. With NATIVE, CHECK or BITFIELD the
 //                           request is refused. A loader without this flag
@@ -1385,6 +1397,8 @@ struct PluginFeatureDesc
                                         // or hands it back (true, only if the game build has it), and again after a
                                         // late field resolve. Read it, never write it, and never keep a copy as
                                         // "what the build allows": the loader owns the flag until the plugin unloads.
+                                        // Read it where the feature acts, and put back anything the feature changed
+                                        // when it turns false.
 };
 
 #define PLUGIN_FEATURE_DESC_INIT { (uint32_t)sizeof(PluginFeatureDesc),                                    nullptr, nullptr, nullptr, 0, nullptr, 0, nullptr }
@@ -3892,6 +3906,52 @@ static_assert(offsetof(IPluginImages, Canonical)   == 48, "v77 layout");
 static_assert(offsetof(IPluginImages, GetSized)    == 56, "v77 layout");
 static_assert(sizeof(IPluginImages)                == 64, "v77 layout");
 
+// v79 -- authority side. Fired on the game thread for a connected client whose
+// mod loader reported its feature list ("$ML:feat"): once when the list first
+// arrives and again each time the client sends a changed one. playerController
+// is that client's controller, valid for this call only. From here a server
+// plugin can call SetRulesForConnection for that player. A client with an older
+// loader that sends no list never fires it, and a plugin that registers later is
+// not told about clients that reported before.
+typedef void (*PluginClientFeaturesCallback)(void* playerController);
+
+// v79 -- the rules a server sends to its clients' mod loaders, which switch a
+// feature off on the client when a rule denies it. Authority only: on any other
+// process (and on a generic build, where the table itself is null) a call warns
+// once and does nothing or returns false. Every function runs on the game
+// thread (Tick, or a callback fired from it); callbacks run there too.
+//
+// The text calls take one rule per line:
+//     # comment (a line starting with # or ;, and blank lines, are skipped)
+//     default=allow|deny        what a feature with no rule gets; once
+//     message=<one line>        shown to the player when a feature is off; once
+//     Plugin.feature=allow|deny one feature of one mod
+//     Plugin.*=allow|deny       every feature of one mod
+// They return true when the text was read and applied, and false when it was
+// not: the text is then left as it was, and, when error is not null and
+// errorSize is more than 0, error holds a NUL-terminated "line N: ..." reason
+// cut to errorSize; error may be null. Empty or null text is a set that allows
+// everything. The rules reach every client that reported its features at once,
+// with no further call.
+//
+// SetRules is the set for every connection that has none of its own.
+// SetRulesForConnection is that player's own set, which replaces the global one
+// for them whole (default, message and rows). The host console list
+// ("features hostoff", "features hostmessage") is added to the global set only,
+// so it does not reach a connection with a set of its own. ClearConnection puts
+// the player back on the global set. A player's own set is forgotten when the
+// player disconnects or the world ends. SetRulesForConnection is false (error:
+// "no connection for this player controller") for the listen host's own
+// controller and for a controller that is gone.
+struct IPluginHostRules
+{
+	bool (*SetRules)(const char* text, char* error, size_t errorSize);
+	bool (*SetRulesForConnection)(void* playerController, const char* text, char* error, size_t errorSize);
+	void (*ClearConnection)(void* playerController);
+	void (*RegisterOnClientFeatures)(const IPluginSelf* self, PluginClientFeaturesCallback callback);
+	void (*UnregisterOnClientFeatures)(const IPluginSelf* self, PluginClientFeaturesCallback callback);
+};
+
 struct IPluginHooks
 {
 	IPluginSpawnerHooks*   Spawner;        // v14
@@ -3919,10 +3979,12 @@ struct IPluginHooks
 	IPluginGameMenu*       GameMenu;        // v64 -- client only, null on server/generic; appended at end, do not relocate
 	IPluginPak*            Pak;             // v67 -- all builds; appended at end, do not relocate
 	IPluginImages*         Images;          // v77 -- client only, null on server/generic; appended at end, do not relocate
+	IPluginHostRules*      HostRules;       // v79 -- server and client builds, null on generic; absent below v79; appended at end, do not relocate
 };
 
 static_assert(offsetof(IPluginHooks, Pak)    == 184, "v67 layout");
 static_assert(offsetof(IPluginHooks, Images) == 192, "v77 starts where v67 ended");
+static_assert(offsetof(IPluginHooks, HostRules) == 200, "v79 starts where v77 ended");
 
 // ---------------------------------------------------------------------------
 // Plugin build target

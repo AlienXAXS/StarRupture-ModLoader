@@ -80,6 +80,10 @@ namespace NetworkChannel
     // Returns nullptr on generic (plain Debug/Release) builds.
     IPluginNetworkChannel* GetInterface();
 
+    // The v79 per-player rules table for IPluginHooks::HostRules. Same builds and
+    // same lifetime as GetInterface(); nullptr on generic builds.
+    IPluginHostRules* GetHostRulesInterface();
+
     // Called from InitPluginsPhase, before any PluginInit, on every build.
     // Installs the control-channel detour, the greeting hook and the join/leave
     // callbacks. Must run after GObjects is live (it does -- that phase runs

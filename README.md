@@ -400,6 +400,30 @@ list the player set with `features hostoff` on their own machine stays. A player
 mod loader is older than this gets no list, and `ModLoader.log` says once: "No host rules (the server's
 mod loader is older)."
 
+#### For a server plugin
+
+A server plugin sets the rules from text instead of the console, for everyone or for one player. The
+calls are in `hooks->HostRules` (interface 79; a loader below 79 has no such pointer, so check the
+loader's interface version first). `SetRules(text, error, errorSize)` is the set for every player with
+no set of their own, `SetRulesForConnection(playerController, text, error, errorSize)` is one player's set,
+and `ClearConnection(playerController)` puts that player back on the server-wide set. They return false and
+fill `error` ("line N: ...") when the text is not valid, and change nothing. One rule per line:
+
+```
+# comment
+default=allow
+message=Cheats are off on this server
+BetterCheats.*=deny
+MiniMap.waypoints=allow
+```
+
+`default=` is what a feature with no rule gets, `Plugin.*` is a whole mod, `Plugin.feature` one feature.
+A player's own set replaces the server-wide one whole, so the `features hostoff` list and
+`features hostmessage` text apply only to players with no set of their own. Changes reach every player
+who sent a feature list at once. `RegisterOnClientFeatures(self, callback)` calls you on the game thread when
+a player's feature list arrives or changes, with that player's controller; that is the time to call
+`SetRulesForConnection`. All calls are for the server's game thread and do nothing on a client.
+
 ---
 
 ## The Server Console (dedicated server)
