@@ -207,6 +207,28 @@ build\tests\layout_check_tests.exe
 
 It prints one line per check and exits 0 when every check passes.
 
+## NetCompatTests
+
+A console program like LayoutCheckTests, for the rule that decides whether a plugin's packets flow
+between a client and a server loader whose plugin versions differ. It compiles the loader's own
+`network_channel/wire_compat.h`, which has no game or Windows dependency, so nothing is linked. It
+covers:
+
+- The rule: equal version strings; equal wire id on two declared sides; the server's accept list
+  naming the client's version and the client's list naming the server's; neither side declared;
+  one side declared; a different plugin name (never matched by name alone); list elements matched
+  whole, never as a prefix or substring.
+- Accept lists: empty, garbage, duplicate, oversized and separator-bearing lists.
+- The wire table the two loaders swap: a round trip, every truncation point, an empty or garbage
+  table, unknown records and extra fields, and the ack with and without a tail.
+- The pair state the send, ready and receive paths share, and the once-per-connection warning keys.
+
+```
+msbuild Tests\NetCompatTests\NetCompatTests.vcxproj /p:Configuration="Client Release" /p:Platform=x64
+build\tests\net_compat_tests.exe
+```
+
+It prints one line per check and exits 0 when every check passes.
 ## KeyAndThreadTests
 
 A console program like PanelUnloadTests, for the two queries interface v72 gives a plugin's tick:
