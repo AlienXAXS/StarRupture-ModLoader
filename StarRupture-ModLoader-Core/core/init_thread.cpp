@@ -468,8 +468,9 @@ DWORD WINAPI MainInitThreadProc(LPVOID)
     // On a build other than the SDK's own, plugins run only on what was
     // checked: a check that could not run, or an SDK still on its built-in
     // Offsets:: for GObjects or FName::AppendString, switches them off too.
-    // What the check found stays in every report below, also when a later step
-    // switches the plugins off after only some features went off.
+    // On the client, what the check found stays in every report below, also
+    // when a later step switches the plugins off after only some features went
+    // off; the server has only the log, where each changed class is already.
     LayoutCheck::Result layout;
     // Whether the check ran: on a build other than the SDK's own, it has to have.
     bool layoutRan = false;

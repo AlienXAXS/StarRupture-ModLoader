@@ -424,7 +424,10 @@ has the same format, the same Ed25519 signatures and the same trusted keys as th
   plugin that keeps that layout compiled in is refused, one that takes it from the version map is not, as on
   the client. On a server game build other than CL-127004, a check that could not run adds a line to the list
   that keeps the server's plugins off; on CL-127004 it warns and the server carries on. The compatibility
-  report and the menu-state switch-off stay client-only.
+  report and the menu-state switch-off stay client-only. Every difference is logged as its own
+  `[LayoutCheck]` line, so a false alarm on CL-127004 can be read from `ModLoader.log`. To exempt a member that
+  only plugins read, at an offset that moves between builds, add it to `kPluginPerBuildMembers` in
+  `core/layout_check.h` (it needs a version map field row on every build).
 - **What the log says.** After the merge line, `[VersionFeed]` prints one line per build in the file:
   `this exe` or `other exe` (with its stamp and size), its row count, and whether it was identical to the
   loader's own (none used), differs (and whose rows are kept), added, or refused.
