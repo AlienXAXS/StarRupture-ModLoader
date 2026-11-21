@@ -17,6 +17,7 @@
 #include "../hooks/input/keybind_registry.h"
 #include "../hooks/input/mouse_wheel_registry.h"
 #include "../plugins/reload_policy.h"
+#include "../UI/admin_prompt_window.h"
 #include "../UI/global_settings.h"
 #include "../UI/hook_failure_window.h"
 #include "../UI/imgui_backend.h"
@@ -56,6 +57,7 @@ bool ShouldCaptureInputNow()
         || UI::UpdateNoticeWindow::IsOpen()
         || UI::PluginScanWindow::IsOpen()
         || UI::HookFailureWindow::IsOpen()
+        || UI::AdminPromptWindow::IsOpen()
         || UI::TickProfilerWindow::IsOpen()
         || UI::ConsoleWindow::IsOpen();
 
@@ -205,6 +207,7 @@ void InitClientUI()
             UI::UpdateNoticeWindow::Render();
             UI::PluginScanWindow::Render();
             UI::HookFailureWindow::Render();
+            UI::AdminPromptWindow::Render();
             UI::TickProfilerWindow::Render();
             UI::ConsoleWindow::Render();
             UI::PluginPanelRegistry::RenderPanelWindows(api);
