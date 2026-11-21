@@ -363,7 +363,7 @@ A plugin lists its features (a map overlay, a cheat, a new panel) so the loader 
 without switching the whole plugin off. A game update does that on its own. A server can do it too,
 for a feature it does not want on it: the server keeps a short deny list of plugin and feature pairs.
 A feature on the list is off, whatever the game build allows, and comes back when it is taken off the
-list. A feature the game build already turned off stays off either way.
+list. A feature the game build already turned off stays off either way. <sup>[✦](#msantoro12)</sup>
 
 What the player sees: the feature's controls on the plugin's config page are greyed, with
 "*&lt;feature title&gt;* is off: turned off by this server". The plugin shows as `Loaded (1 off)` in the
