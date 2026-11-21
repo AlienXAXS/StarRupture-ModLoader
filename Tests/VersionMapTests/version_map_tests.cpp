@@ -10,6 +10,7 @@
 #include "memory_scanner/version_map.h"
 #include "core/layout_check.h"
 #include "core/unknown_build.h"
+#include "plugins/host_rules.h"
 #include "plugins/plugin_hook_report.h"
 #include "plugins/plugin_interface.h"
 #include "plugins/reload_policy.h"
@@ -17,6 +18,7 @@
 #include "plugins/crash_restart.h"
 #include "plugins/remote_reload.h"
 #include "UI/update_notice_window.h"
+#include "utils/game_thread_dispatch.h"
 
 #include <array>
 #include <cstdint>
@@ -1028,6 +1030,258 @@ int main()
 		PluginHookReport::EndSession(&later, &refused);
 
 		g_bpLoaded = false;
+		VersionMap::SetLiveFieldSource(nullptr);
+	}
+
+	// Host rules: the server's list of features to keep off. The list is plain data (host_rules.h); applying it writes the
+	// plugins' own `enabled` flags and puts a "turned off by this server" line in the report, and lifting it hands a flag
+	// back only where the game build has the feature on.
+	{
+		VersionMap::SetLiveFieldSource(FakeLive);
+		IPluginHookScanner* scan = ModLoaderLogger::GetPluginHookScanner();
+		using HostRules::RuleKey;
+		using Info = PluginHookReport::FeatureInfo;
+
+		// The arithmetic: empty and repeated entries go, the plugin name ignores case, the id does not.
+		{
+			const HostRules::DenySet raw = { { "Alpha", "x" }, { "alpha", "x" }, { "Alpha", "" }, { "", "x" }, { "Alpha", "X" }, { "Beta", "y" } };
+			const HostRules::DenySet norm = HostRules::Normalize(raw);
+			Check(norm.size() == 3 && norm[0].plugin == "Alpha" && norm[0].id == "x" && norm[1].id == "X" && norm[2].plugin == "Beta",
+				"host rules: normalize drops empty entries and repeats, and keeps ids that differ in case");
+			Check(HostRules::Contains(norm, "ALPHA", "x") && !HostRules::Contains(norm, "Alpha", "Y") && !HostRules::Contains(norm, "Gamma", "x"),
+				"host rules: the plugin name compares without case, the id exactly");
+			const HostRules::DenyDiff diff = HostRules::DiffDeny({ { "Alpha", "x" }, { "Beta", "y" } }, { { "ALPHA", "x" }, { "Gamma", "z" } });
+			Check(diff.added.size() == 1 && diff.added[0].plugin == "Gamma" && diff.removed.size() == 1 && diff.removed[0].plugin == "Beta"
+				&& HostRules::DiffDeny(norm, norm).added.empty() && HostRules::DiffDeny(norm, norm).removed.empty(),
+				"host rules: the diff names what was added and what was removed, and nothing for an equal list");
+			Check(HostRules::EffectiveOn(true, false) && !HostRules::EffectiveOn(true, true) && !HostRules::EffectiveOn(false, false)
+				&& !HostRules::EffectiveOn(false, true), "host rules: a deny turns a feature off and nothing turns one on");
+		}
+
+		const auto resolve = [&](const IPluginSelf* self, const char* name, const char* pattern)
+		{
+			PluginScanRequest request = PLUGIN_SCAN_REQUEST_INIT;
+			request.hookName = name;
+			request.pattern  = pattern;
+			request.kind     = PLUGIN_SCAN_ANY;
+			return scan->Resolve(self, &request);
+		};
+		const auto declare = [&](const IPluginSelf* self, const char* id, const char* title,
+			std::vector<const char*> keys, std::vector<const char*> configKeys, bool* enabled)
+		{
+			PluginFeatureDesc desc = PLUGIN_FEATURE_DESC_INIT;
+			desc.id             = id;
+			desc.title          = title;
+			desc.keys           = keys.data();
+			desc.keyCount       = static_cast<uint32_t>(keys.size());
+			desc.configKeys     = configKeys.data();
+			desc.configKeyCount = static_cast<uint32_t>(configKeys.size());
+			desc.enabled        = enabled;
+			return scan->DeclareFeature(self, &desc);
+		};
+		const auto feature = [](const char* plugin, const char* id) -> Info
+		{
+			for (const Info& f : PluginHookReport::Features())
+				if (f.plugin == plugin && f.id == id)
+					return f;
+			Info none;
+			none.title = "(not in the catalog)";
+			return none;
+		};
+		const auto stateOf = [&](const char* plugin, const char* id) { return feature(plugin, id).state; };
+		const auto inCatalog = [&](const char* plugin, const char* id) { return feature(plugin, id).title != "(not in the catalog)"; };
+		// How many lines of this plugin's report are the server's.
+		const auto hostLines = [](const char* plugin)
+		{
+			int n = 0;
+			for (const PluginHookReport::PluginReport& r : PluginHookReport::Snapshot())
+				if (r.plugin == plugin)
+					for (const PluginHookReport::FeatureOff& f : r.featuresOff)
+						if (f.host)
+							++n;
+			return n;
+		};
+		const auto reportOf = [](const char* plugin) -> bool
+		{
+			for (const PluginHookReport::PluginReport& r : PluginHookReport::Snapshot())
+				if (r.plugin == plugin)
+					return true;
+			return false;
+		};
+		const Info::State On = Info::State::On, OffBuild = Info::State::OffBuild, OffServer = Info::State::OffServer;
+
+		// A plugin with two features that are on, one the build lost (a key misses), one absent on this build.
+		IPluginSelf self{ "HostPlug", "1", nullptr, nullptr, nullptr };
+		bool laser = false, hud = false, gone = true, absent = true, refused = true;
+		PluginHookReport::ClearHostRules();
+		PluginHookReport::BeginSession(&self, "HostPlug", "HostPlug.dll");
+		declare(&self, "laser", "Mining laser", { "Test::Kept" }, { "Laser.*" }, &laser);
+		declare(&self, "hud", "Heads-up display", { "Test::Kept" }, { "Hud.Show" }, &hud);
+		declare(&self, "gone", "Gone feature", { "Test::Gone" }, { "Gone.*" }, &gone);
+		declare(&self, "absent", "Absent feature", { "ATest::Gone" }, { "Absent.*" }, &absent);
+		resolve(&self, "Test::Kept", "AE 09");
+		resolve(&self, "Test::Gone", "ZZ 99");
+		PluginHookReport::RecordAbsent(&self, "ATest::Gone", "not in this game version (CL-128786)");
+		PluginHookReport::EndSession(&self, &refused);
+		Check(!refused && laser && hud && !gone && !absent
+			&& stateOf("HostPlug", "laser") == On && stateOf("HostPlug", "hud") == On
+			&& stateOf("HostPlug", "gone") == OffBuild && stateOf("HostPlug", "absent") == OffBuild
+			&& hostLines("HostPlug") == 0, "host rules: with no list the catalog shows what the build has on and off");
+
+		// A deny flips the flag, and says so in the report, without opening the failure window.
+		unsigned serial = PluginHookReport::GetCommitSerial();
+		TestDoubles::g_log.clear();
+		PluginHookReport::ApplyHostRules({ { "hostplug", "laser" } });
+		Check(!laser && hud && stateOf("HostPlug", "laser") == OffServer && stateOf("HostPlug", "hud") == On
+			&& feature("HostPlug", "laser").reason == "turned off by this server", "host rules: a deny writes the plugin's flag false");
+		Check(hostLines("HostPlug") == 1 && PluginHookReport::GetCommitSerial() == serial
+			&& PluginHookReport::ConfigOffReason("HostPlug", "Laser", "Scale") == "Mining laser is off: turned off by this server"
+			&& PluginHookReport::ConfigOffReason("HostPlug", "Hud", "Show").empty()
+			&& PluginHookReport::BuildReportText().find("[feature off] Mining laser (laser): turned off by this server") != std::string::npos,
+			"host rules: the report and the greyed config entries say the server did it, and no popup is opened");
+		Check(Logged(L"[Map] HostPlug: feature \"Mining laser\" turned off by this server"), "host rules: one log line when it goes off");
+		const auto list = PluginHookReport::HostDeny();
+		Check(list.size() == 1 && list[0].first == "hostplug" && list[0].second == "laser", "host rules: the list is kept as given");
+
+		// The same list again changes nothing and logs nothing.
+		TestDoubles::g_log.clear();
+		PluginHookReport::ApplyHostRules({ { "HOSTPLUG", "laser" }, { "HostPlug", "laser" } });
+		Check(hostLines("HostPlug") == 1 && !Logged(L"turned off by this server") && !laser, "host rules: the same list again is quiet");
+
+		// A feature the build already has off is not touched by the list, and a lift does not turn it on.
+		PluginHookReport::ApplyHostRules({ { "HostPlug", "laser" }, { "HostPlug", "gone" }, { "HostPlug", "absent" }, { "HostPlug", "nosuch" } });
+		Check(!gone && !absent && stateOf("HostPlug", "gone") == OffBuild && stateOf("HostPlug", "absent") == OffBuild
+			&& hostLines("HostPlug") == 1, "host rules: a deny on a feature the build has off adds no line and keeps the build's reason");
+		TestDoubles::g_log.clear();
+		PluginHookReport::ClearHostRules();
+		Check(laser && hud && !gone && !absent && hostLines("HostPlug") == 0 && PluginHookReport::HostDeny().empty()
+			&& stateOf("HostPlug", "laser") == On && stateOf("HostPlug", "gone") == OffBuild && stateOf("HostPlug", "absent") == OffBuild
+			&& PluginHookReport::ConfigOffReason("HostPlug", "Laser", "Scale").empty() && PluginHookReport::GetCommitSerial() == serial,
+			"host rules: a lift hands the flag back only where the build has the feature on");
+		Check(Logged(L"[Map] HostPlug: feature \"Mining laser\" turned back on") && !Logged(L"\"Gone feature\" turned back on")
+			&& !Logged(L"\"Absent feature\" turned back on"), "host rules: only the feature that came back is logged as back on");
+
+		// Changing the list: one comes back, another goes off.
+		PluginHookReport::ApplyHostRules({ { "HostPlug", "laser" } });
+		PluginHookReport::ApplyHostRules({ { "HostPlug", "hud" } });
+		Check(laser && !hud && stateOf("HostPlug", "laser") == On && stateOf("HostPlug", "hud") == OffServer && hostLines("HostPlug") == 1,
+			"host rules: a new list lifts what it dropped and denies what it added");
+
+		// The list outlives the plugin: it applies again when the plugin loads, and a reload keeps it.
+		PluginHookReport::ForgetFeatures(&self);
+		Check(!inCatalog("HostPlug", "hud") && hostLines("HostPlug") == 0 && PluginHookReport::HostDeny().size() == 1,
+			"host rules: unloading drops the catalog entries and the server's lines, and keeps the list");
+		laser = hud = true;
+		PluginHookReport::BeginSession(&self, "HostPlug", "HostPlug.dll");
+		declare(&self, "laser", "Mining laser", { "Test::Kept" }, { "Laser.*" }, &laser);
+		declare(&self, "hud", "Heads-up display", { "Test::Kept" }, { "Hud.Show" }, &hud);
+		resolve(&self, "Test::Kept", "AE 09");
+		serial = PluginHookReport::GetCommitSerial();
+		PluginHookReport::EndSession(&self, &refused);
+		Check(!refused && laser && !hud && stateOf("HostPlug", "hud") == OffServer && stateOf("HostPlug", "laser") == On
+			&& hostLines("HostPlug") == 1 && reportOf("HostPlug") && PluginHookReport::GetCommitSerial() == serial,
+			"host rules: a plugin that loads after the list is set starts with the feature off, with no popup");
+
+		// A reload that has no failure of its own leaves a report made only for the server's line; unloading removes it.
+		PluginHookReport::ForgetFeatures(&self);
+		Check(!reportOf("HostPlug") && !inCatalog("HostPlug", "laser"), "host rules: a report made only for the server's line goes with the plugin");
+
+		// A plugin with a failure of its own keeps that report when it unloads; only the server's line goes.
+		IPluginSelf mix{ "MixHost", "1", nullptr, nullptr, nullptr };
+		bool mixA = true, mixB = true;
+		PluginHookReport::ApplyHostRules({ { "MixHost", "a" } });
+		PluginHookReport::BeginSession(&mix, "MixHost", "MixHost.dll");
+		declare(&mix, "a", "Feature A", { "Test::Kept" }, {}, &mixA);
+		declare(&mix, "b", "Feature B", { "Test::Gone" }, {}, &mixB);
+		resolve(&mix, "Test::Kept", "AE 09");
+		resolve(&mix, "Test::Gone", "ZZ 99");
+		PluginHookReport::EndSession(&mix, &refused);
+		Check(!refused && !mixA && !mixB && hostLines("MixHost") == 1 && PluginHookReport::GetFeaturesOffCount("MixHost") == 2
+			&& stateOf("MixHost", "a") == OffServer && stateOf("MixHost", "b") == OffBuild, "host rules: the server's line sits beside the plugin's own failure");
+		PluginHookReport::ForgetFeatures(&mix);
+		Check(reportOf("MixHost") && hostLines("MixHost") == 0 && PluginHookReport::GetFeaturesOffCount("MixHost") == 1,
+			"host rules: unloading leaves the plugin's own failure report in place");
+		PluginHookReport::BeginSession(&mix, "MixHost", "MixHost.dll");   // a reload with nothing wrong clears the rest
+		PluginHookReport::EndSession(&mix, &refused);
+		PluginHookReport::ForgetFeatures(&mix);
+
+		// A plugin that was refused never reaches the catalog, so the list cannot touch its flags.
+		IPluginSelf core{ "RefusedHost", "1", nullptr, nullptr, nullptr };
+		bool fine = true;
+		PluginHookReport::ApplyHostRules({ { "RefusedHost", "fine" } });
+		PluginHookReport::BeginSession(&core, "RefusedHost", "RefusedHost.dll");
+		declare(&core, "fine", "Fine", { "Test::Kept" }, {}, &fine);
+		resolve(&core, "Test::Kept", "AE 09");
+		resolve(&core, "Test::CoreGone", "ZZ 99");
+		PluginHookReport::EndSession(&core, &refused);
+		Check(refused && fine && !inCatalog("RefusedHost", "fine") && hostLines("RefusedHost") == 0,
+			"host rules: a refused plugin has no catalog entry and keeps its flag");
+		PluginHookReport::ForgetFeatures(&core);
+
+		// A feature that waits for a game class: the list does not touch it while it waits, and applies one tick after the
+		// plugin's repeated request resolves it (the plugin writes its own flag as that call returns).
+		{
+			const char* sizeKey = "WBP_Slot_C_SetSize";
+			const auto ask = [&](const IPluginSelf* who, PluginFieldResult& result)
+			{
+				PluginFieldRequest request = PLUGIN_FIELD_REQUEST_INIT;
+				request.key       = sizeKey;
+				request.className = "WBP_Slot_C_SetSize";
+				request.flags     = PLUGIN_FIELD_LATE;
+				request.size      = 8;
+				request.builtCL   = 127004;
+				return scan->ResolveField(who, &request, &result);
+			};
+			IPluginSelf late{ "LateHost", "1", nullptr, nullptr, nullptr };
+			bool slot = true;
+			PluginFieldResult result{};
+			g_bpLoaded = false;
+			PluginHookReport::ClearHostRules();
+			PluginHookReport::ApplyHostRules({ { "LateHost", "slot" } });
+			PluginHookReport::BeginSession(&late, "LateHost", "LateHost.dll");
+			declare(&late, "slot", "Slot sizing", { sizeKey }, { "Slot.*" }, &slot);
+			Check(!ask(&late, result) && !slot, "host rules: the feature waits for its class");
+			PluginHookReport::EndSession(&late, &refused);
+			Check(!refused && !slot && stateOf("LateHost", "slot") == OffBuild && hostLines("LateHost") == 0,
+				"host rules: a feature that waits for a class is off for the build, not yet for the server");
+
+			g_bpLoaded = true;
+			GameThreadDispatch::Drain();
+			Check(ask(&late, result), "host rules: the class is loaded and the request resolves");
+			slot = true;   // what the plugin does when the call returns
+			Check(slot, "host rules: until the next tick the plugin's flag is its own");
+			GameThreadDispatch::Drain();
+			Check(!slot && stateOf("LateHost", "slot") == OffServer && hostLines("LateHost") == 1,
+				"host rules: one tick later the server's list switches it off again");
+
+			PluginHookReport::ClearHostRules();
+			Check(slot && stateOf("LateHost", "slot") == On && hostLines("LateHost") == 0, "host rules: and a lift brings it back");
+
+			// With no list, a resolve queues nothing for the server's rules.
+			IPluginSelf plain{ "LateNoList", "1", nullptr, nullptr, nullptr };
+			bool plainSlot = true;
+			g_bpLoaded = false;
+			PluginHookReport::BeginSession(&plain, "LateNoList", "LateNoList.dll");
+			declare(&plain, "slot", "Slot sizing", { sizeKey }, { "Slot.*" }, &plainSlot);
+			ask(&plain, result);
+			PluginHookReport::EndSession(&plain, &refused);
+			g_bpLoaded = true;
+			ask(&plain, result);
+			plainSlot = true;
+			GameThreadDispatch::Drain();
+			Check(plainSlot && hostLines("LateNoList") == 0, "host rules: a resolve with no list leaves the flag alone");
+			PluginHookReport::ForgetFeatures(&plain);
+			PluginHookReport::ForgetFeatures(&late);
+			g_bpLoaded = false;
+		}
+
+		// End of the block: nothing of ours is left for the tests after it (the catalog and the list are global).
+		PluginHookReport::ClearHostRules();
+		PluginHookReport::ForgetFeatures(&self);
+		PluginHookReport::ForgetFeatures(&mix);
+		PluginHookReport::ForgetFeatures(&core);
+		Check(PluginHookReport::HostDeny().empty() && !inCatalog("HostPlug", "laser") && !inCatalog("MixHost", "a") && !reportOf("HostPlug"),
+			"host rules: the block leaves no list and no catalog entry behind");
 		VersionMap::SetLiveFieldSource(nullptr);
 	}
 
