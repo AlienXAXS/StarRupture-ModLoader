@@ -400,6 +400,8 @@ list the player set with `features hostoff` on their own machine stays. A player
 mod loader is older than this gets no list, and `ModLoader.log` says once: "No host rules (the server's
 mod loader is older)."
 
+A server that has no admin yet can ask a player to claim it. The player sees a window saying "This server has no admin yet. If you run this server, enter the claim code from the server log. Otherwise choose Not me." with a text box and the buttons Send and Not me. The server shows a line in the window after each try (for example "Wrong code"), and when it is done the window shows its last line until the player dismisses it. Not me closes the window; whether that player is asked again is up to the server. Only a player whose mod loader sent its feature list is asked, and only a server that asks does this; on any other server nothing appears. The code is sent to the server once and is never written to `ModLoader.log`.
+
 #### For a server plugin
 
 A server plugin sets the rules from text instead of the console, for everyone or for one player. The
