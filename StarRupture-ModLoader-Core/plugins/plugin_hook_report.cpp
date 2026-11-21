@@ -79,7 +79,10 @@ namespace PluginHookReport
 
         std::mutex                s_mutex;
         std::vector<CatalogEntry> s_catalog;
-        HostRules::DenySet        s_deny;           // the server's list; outlives the plugins it names
+        HostRules::DenySet        s_deny;           // what is denied now: both sources together; outlives the plugins it names
+        HostRules::DenySources    s_sources;        // the console's list and the joined server's, kept apart
+        std::string               s_hostMessage;    // text that goes with the console's list
+        std::string               s_remoteMessage;  // text the joined server sent with its rules
         Session                   s_session{};      // self == nullptr when closed
         std::vector<PluginReport> s_reports;
         std::vector<PendingKey>   s_pending;        // keys waiting for a class, of loaded plugins
@@ -709,30 +712,90 @@ namespace PluginHookReport
             ++s_generation;
     }
 
+    namespace
+    {
+        HostRules::DenySet ToDenySet(const std::vector<std::pair<std::string, std::string>>& deny)
+        {
+            HostRules::DenySet set;
+            set.reserve(deny.size());
+            for (const auto& d : deny)
+                set.push_back(HostRules::RuleKey{ d.first, d.second });
+            return HostRules::Normalize(set);
+        }
+
+        // Switch what is denied to the two sources together: features that came
+        // onto the list go off, features that left it are handed back. Caller
+        // holds s_mutex. Game thread.
+        void ApplySourcesLocked()
+        {
+            HostRules::DenySet wanted = s_sources.Effective();
+            const HostRules::DenyDiff diff = HostRules::DiffDeny(s_deny, wanted);
+            s_deny = std::move(wanted);
+
+            bool changed = false;
+            for (const HostRules::DenySet* side : { &diff.added, &diff.removed })
+                for (const HostRules::RuleKey& r : *side)
+                    if (ApplyOverlayLocked(&r.plugin))
+                        changed = true;
+            if (changed)
+                ++s_generation;
+        }
+    }
+
     void ApplyHostRules(const std::vector<std::pair<std::string, std::string>>& deny)
     {
-        HostRules::DenySet wanted;
-        wanted.reserve(deny.size());
-        for (const auto& d : deny)
-            wanted.push_back(HostRules::RuleKey{ d.first, d.second });
-        wanted = HostRules::Normalize(wanted);
-
+        HostRules::DenySet wanted = ToDenySet(deny);
         std::lock_guard<std::mutex> lock(s_mutex);
-        const HostRules::DenyDiff diff = HostRules::DiffDeny(s_deny, wanted);
-        s_deny = std::move(wanted);
-
-        bool changed = false;
-        for (const HostRules::DenySet* side : { &diff.added, &diff.removed })
-            for (const HostRules::RuleKey& r : *side)
-                if (ApplyOverlayLocked(&r.plugin))
-                    changed = true;
-        if (changed)
-            ++s_generation;
+        s_sources.local = std::move(wanted);
+        ApplySourcesLocked();
     }
 
     void ClearHostRules()
     {
         ApplyHostRules({});
+        SetHostMessage(std::string());
+    }
+
+    void SetHostMessage(const std::string& message)
+    {
+        std::lock_guard<std::mutex> lock(s_mutex);
+        s_hostMessage = message;
+    }
+
+    std::string HostMessage()
+    {
+        std::lock_guard<std::mutex> lock(s_mutex);
+        return s_hostMessage;
+    }
+
+    void ApplyServerRules(const std::vector<std::pair<std::string, std::string>>& deny, const std::string& message)
+    {
+        HostRules::DenySet wanted = ToDenySet(deny);
+        std::lock_guard<std::mutex> lock(s_mutex);
+        s_sources.remote = std::move(wanted);
+        s_remoteMessage = message;
+        ApplySourcesLocked();
+    }
+
+    void ClearServerRules()
+    {
+        ApplyServerRules({}, std::string());
+    }
+
+    std::vector<std::pair<std::string, std::string>> ServerDeny()
+    {
+        std::lock_guard<std::mutex> lock(s_mutex);
+        std::vector<std::pair<std::string, std::string>> out;
+        out.reserve(s_sources.remote.size());
+        for (const HostRules::RuleKey& r : s_sources.remote)
+            out.emplace_back(r.plugin, r.id);
+        return out;
+    }
+
+    std::string ServerMessage()
+    {
+        std::lock_guard<std::mutex> lock(s_mutex);
+        return s_remoteMessage;
     }
 
     void ReapplyHostRules(const char* plugin)
@@ -749,8 +812,8 @@ namespace PluginHookReport
     {
         std::lock_guard<std::mutex> lock(s_mutex);
         std::vector<std::pair<std::string, std::string>> out;
-        out.reserve(s_deny.size());
-        for (const HostRules::RuleKey& r : s_deny)
+        out.reserve(s_sources.local.size());
+        for (const HostRules::RuleKey& r : s_sources.local)
             out.emplace_back(r.plugin, r.id);
         return out;
     }

@@ -93,6 +93,24 @@ namespace HostRules
         return d;
     }
 
+    // Where a deny list comes from. `local` is what the console on this machine
+    // set (features hostoff); `remote` is what the server this client is joined
+    // to sent. They are kept apart so a received set replaces only the remote
+    // part and leaving the server drops only that: a local entry survives both.
+    // What is switched off is the two together.
+    struct DenySources
+    {
+        DenySet local;
+        DenySet remote;
+
+        DenySet Effective() const
+        {
+            DenySet all = local;
+            all.insert(all.end(), remote.begin(), remote.end());
+            return Normalize(all);
+        }
+    };
+
     // Whether a feature runs: it is on for the build AND the server does not
     // deny it. The server can only take a feature away, never give one back.
     inline bool EffectiveOn(bool buildOn, bool hostOff)

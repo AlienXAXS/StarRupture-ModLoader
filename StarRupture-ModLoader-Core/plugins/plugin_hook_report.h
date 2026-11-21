@@ -262,15 +262,35 @@ namespace PluginHookReport
     // plugin unloads or reloads and applied again as the plugin loads.
     void ApplyHostRules(const std::vector<std::pair<std::string, std::string>>& deny);
 
-    // Drop the whole list (ApplyHostRules with nothing). Game thread only.
+    // Drop the whole list and its message (ApplyHostRules with nothing). Game
+    // thread only. What a joined server sent (ApplyServerRules) is not touched.
     void ClearHostRules();
+
+    // The text that goes with this machine's list: what a server sends to its
+    // clients next to the list (`features hostmessage`). Any thread.
+    void SetHostMessage(const std::string& message);
+    std::string HostMessage();
+
+    // A client joined to a server: the list and message that server sent. Kept
+    // apart from the one above, so a received set replaces only what the server
+    // set and `features hostoff` entered on this machine stays. The features
+    // denied are the two lists together. ClearServerRules is what leaving the
+    // server calls. Game thread only (it writes the plugins' flags).
+    void ApplyServerRules(const std::vector<std::pair<std::string, std::string>>& deny,
+                          const std::string& message);
+    void ClearServerRules();
+
+    // Copy of what the joined server sent, and its message. Any thread.
+    std::vector<std::pair<std::string, std::string>> ServerDeny();
+    std::string ServerMessage();
 
     // Apply the list again to one plugin's features (by name). What a plugin
     // that writes its `enabled` flag after a late resolve gets, one tick
     // later. Game thread only; a no-op for a plugin that has no denied feature.
     void ReapplyHostRules(const char* plugin);
 
-    // Copy of the server's list as (plugin name, feature id).
+    // Copy of this machine's own list (what `features hostoff` set, the one a
+    // server sends on) as (plugin name, feature id). Not the joined server's.
     std::vector<std::pair<std::string, std::string>> HostDeny();
 
     // --- Report, for the UI and the console -----------------------------------

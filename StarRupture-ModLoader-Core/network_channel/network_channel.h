@@ -142,6 +142,12 @@ namespace NetworkChannel
     // pure client and on generic builds.
     std::vector<ClientManifest> GetClientManifests();
 
+    // The server's deny list or its message changed (`features hostoff`,
+    // `hostclear`, `hostmessage`): send the rules again to every client that
+    // reported its features. Game thread. A no-op on a client, on a server with
+    // no such client and on generic builds.
+    void HostRulesChanged();
+
     // -----------------------------------------------------------------------
     // Fragmentation self-test (client side)
     //
