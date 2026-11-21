@@ -3205,6 +3205,28 @@ static void HR_UnregisterOnClientBelowMinimum(const IPluginSelf* self, PluginCli
     g_minCbs.erase(std::remove(g_minCbs.begin(), g_minCbs.end(), callback), g_minCbs.end());
 }
 
+static int HR_GetClientFeatures(void* playerController, char* buf, size_t size)
+{
+    if (!HostRulesAuthority("GetClientFeatures")) return -1;
+
+    void* conn = ConnectionForPlayer(playerController);
+    if (!conn) return -1;
+
+    std::string loaderTag;
+    uint32_t interfaceVersion = 0;
+    std::vector<HostRulesWire::FeatRecord> features;
+    {
+        std::lock_guard<std::mutex> lk(g_manifestMutex);
+        const auto it = g_clientFeat.find(conn);
+        if (it == g_clientFeat.end()) return -1;
+        loaderTag = it->second.loaderTag;
+        interfaceVersion = it->second.interfaceVersion;
+        features = it->second.features;
+    }
+    return HostRulesWire::CopyTextCut(
+        HostRulesWire::BuildClientFeaturesText(loaderTag, interfaceVersion, features), buf, size);
+}
+
 static IPluginHostRules g_hostRulesIface =
 {
     HR_SetRules,
@@ -3215,6 +3237,7 @@ static IPluginHostRules g_hostRulesIface =
     HR_SetVersionMinimums,
     HR_RegisterOnClientBelowMinimum,
     HR_UnregisterOnClientBelowMinimum,
+    HR_GetClientFeatures,
 };
 
 // The manifest rows of one connection for FindBelowMinimum. A row is wire-refused

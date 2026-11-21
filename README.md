@@ -444,6 +444,8 @@ checked, and a dev build or any version the loader cannot read is never below. A
 version counts as below a set `loader=` minimum after 30 seconds. Setting new minimums checks the players
 already connected that have not been reported yet.
 
+`GetClientFeatures(playerController, buf, size)` returns what one player's loader reported as text (`loader=<build tag> interface=<version>`, then one `Plugin.feature=on|off` line each) and its full length, or -1 when there is none; a null `buf` with `size` 0 measures.
+
 ---
 
 ## The Server Console (dedicated server)

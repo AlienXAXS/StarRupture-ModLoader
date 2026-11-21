@@ -3966,6 +3966,10 @@ typedef void (*PluginClientBelowMinimumCallback)(void* playerController, const c
 // seconds with no report. When a client is below, RegisterOnClientBelowMinimum's
 // callback fires once for that join, from the tick, outside all locks. Changing
 // the table checks the clients already connected that have not fired yet.
+//
+// v79 -- GetClientFeatures reads what one client's loader reported, as LF-separated
+// text: a first line "loader=<build tag> interface=<plugin interface version>",
+// then one line "<Plugin>.<featureId>=on|off" for each feature it reported.
 struct IPluginHostRules
 {
 	bool (*SetRules)(const char* text, char* error, size_t errorSize);
@@ -3978,6 +3982,13 @@ struct IPluginHostRules
 	bool (*SetVersionMinimums)(const char* text, char* error, size_t errorSize);
 	void (*RegisterOnClientBelowMinimum)(const IPluginSelf* self, PluginClientBelowMinimumCallback callback);
 	void (*UnregisterOnClientBelowMinimum)(const IPluginSelf* self, PluginClientBelowMinimumCallback callback);
+	// v79 -- the client's reported loader and features as text (see above). Game
+	// thread, authority only. Returns the full text length without the NUL, and
+	// writes the text NUL-terminated and cut to size; buf may be null with size 0
+	// to measure. -1: not authority, no connection for this controller (the listen
+	// host's own, or one that is gone), or the client sent no report (an older
+	// loader, or no mod loader).
+	int (*GetClientFeatures)(void* playerController, char* buf, size_t size);
 };
 
 struct IPluginHooks

@@ -2971,6 +2971,31 @@ int main()
 		}
 	}
 
+	// Client features text (host_rules_wire.h): what GetClientFeatures hands a server plugin.
+	{
+		using namespace HostRulesWire;
+		const std::string none = BuildClientFeaturesText("v1.26.1", 79, {});
+		Check(none == "loader=v1.26.1 interface=79", "client features text: no features is the loader line alone");
+
+		FeatRecord a; a.plugin = "Codex"; a.id = "pins"; a.on = true;
+		FeatRecord b; b.plugin = "MiniMap"; b.id = "zoom"; b.on = false;
+		Check(BuildClientFeaturesText("v1.26.1", 79, { a }) == "loader=v1.26.1 interface=79\nCodex.pins=on",
+			"client features text: one feature is one line after the loader line");
+		const std::string two = BuildClientFeaturesText("v1.26.1", 79, { a, b });
+		Check(two == "loader=v1.26.1 interface=79\nCodex.pins=on\nMiniMap.zoom=off", "client features text: lines keep the reported order and on/off");
+
+		Check(CopyTextCut(two, nullptr, 0) == static_cast<int>(two.size()), "client features copy: a null buffer measures the full length");
+		char big[128];
+		std::memset(big, 'x', sizeof(big));
+		Check(CopyTextCut(two, big, sizeof(big)) == static_cast<int>(two.size()) && two == big, "client features copy: a large buffer gets the whole text and a NUL");
+		char small[10];
+		std::memset(small, 'x', sizeof(small));
+		Check(CopyTextCut(two, small, sizeof(small)) == static_cast<int>(two.size()) && std::strcmp(small, "loader=v1") == 0,
+			"client features copy: a small buffer is cut and NUL-terminated, the length stays the full one");
+		char one[1] = { 'x' };
+		Check(CopyTextCut(two, one, 1) == static_cast<int>(two.size()) && one[0] == '\0', "client features copy: a one-byte buffer holds the NUL only");
+	}
+
 	printf("%d checks, %d failed\n", g_checks, g_failed);
 	return g_failed ? 1 : 0;
 }

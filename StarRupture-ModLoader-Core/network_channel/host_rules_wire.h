@@ -1082,4 +1082,36 @@ namespace HostRulesWire
             s.resize(kMaxBelowMinimumReason);
         return s;
     }
+
+    // What one client's loader reported, as LF-separated text for a server
+    // plugin: "loader=<build tag> interface=<version>", then one
+    // "<Plugin>.<id>=on|off" line per feature, in the order reported.
+    inline std::string BuildClientFeaturesText(const std::string& loaderTag, uint32_t interfaceVersion,
+                                               const std::vector<FeatRecord>& features)
+    {
+        std::string s = "loader=" + loaderTag + " interface=" + std::to_string(interfaceVersion);
+        for (const FeatRecord& f : features)
+        {
+            s += '\n';
+            s += f.plugin;
+            s += '.';
+            s += f.id;
+            s += f.on ? "=on" : "=off";
+        }
+        return s;
+    }
+
+    // snprintf-style copy for a caller's buffer: returns the full length of
+    // `text`, writes it NUL-terminated and cut to `size`; with a null buf or a
+    // size of 0 nothing is written (a measure-only call).
+    inline int CopyTextCut(const std::string& text, char* buf, size_t size)
+    {
+        if (buf && size > 0)
+        {
+            const size_t n = text.size() < size - 1 ? text.size() : size - 1;
+            text.copy(buf, n);
+            buf[n] = '\0';
+        }
+        return static_cast<int>(text.size());
+    }
 }
