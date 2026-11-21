@@ -1,11 +1,13 @@
 // NetCompatTests: the plugin packet compatibility rule and the wire table, with no game.
 //
-// Compiles the loader's own network_channel\wire_compat.h, which has no game or
+// Compiles the loader's own network_channel\wire_compat.h and host_rules_wire.h, which have no game or
 // Windows dependency. See Tests/README.md.
 
 #include "wire_compat.h"
+#include "host_rules_wire.h"
 
 #include <cstdio>
+#include <initializer_list>
 #include <string>
 #include <vector>
 
@@ -620,6 +622,360 @@ namespace
     }
 }
 
+namespace HW = HostRulesWire;
+
+namespace
+{
+    std::string Rec(std::initializer_list<std::string> fields)
+    {
+        std::string s;
+        bool first = true;
+        for (const std::string& f : fields)
+        {
+            if (!first)
+                s += HW::kFieldSep;
+            s += f;
+            first = false;
+        }
+        s += HW::kRecordSep;
+        return s;
+    }
+
+    HW::Status DecF(const std::string& s, HW::FeatPayload* p = nullptr)
+    {
+        HW::FeatPayload tmp;
+        return HW::DecodeFeat(s.data(), s.size(), p ? p : &tmp);
+    }
+
+    HW::Status DecR(const std::string& s, HW::RulesSet* r = nullptr)
+    {
+        HW::RulesSet tmp;
+        return HW::DecodeRules(s.data(), s.size(), r ? r : &tmp);
+    }
+
+    const std::string kFeatHead = Rec({ "$loader", "v1.27.0", "79" });
+    const std::string kRulesHead = Rec({ "$rules", "1", "1", "0", "" });
+
+    void TestHostFeat()
+    {
+        std::printf("Host rules: $ML:feat\n");
+        HW::FeatPayload in;
+        in.buildTag = "v1.26.1-dev.7";
+        in.interfaceVersion = 78;
+        in.features = { { "BetterCheats", "movement", "Movement", true },
+                        { "BetterCheats", "item-spawner", "Item spawner", false },
+                        { "BetterDrone", "drone-limits", "Drone limits \xC3\xA9", true } };
+        HW::EncodeStats st;
+        const std::string wire = HW::EncodeFeat(in, &st);
+        Check(st.dropped == 0 && st.truncated == 0, "encode drops and cuts nothing from a clean set");
+        Check(wire.rfind(Rec({ "$loader", "v1.26.1-dev.7", "78" }), 0) == 0, "first record is $loader tag and interface version");
+        HW::FeatPayload out;
+        Check(DecF(wire, &out) == HW::Status::Ok, "round trip decodes");
+        Check(out.buildTag == in.buildTag && out.interfaceVersion == 78 && out.features.size() == 3, "header and count survive");
+        bool same = out.features.size() == 3;
+        for (size_t i = 0; same && i < 3; ++i)
+            same = out.features[i].plugin == in.features[i].plugin && out.features[i].id == in.features[i].id
+                && out.features[i].title == in.features[i].title && out.features[i].on == in.features[i].on;
+        Check(same, "every feature survives: plugin, id, title (UTF-8), state");
+
+        HW::FeatPayload none;
+        none.buildTag = "dev";
+        Check(DecF(HW::EncodeFeat(none), &out) == HW::Status::Ok && out.features.empty() && out.buildTag == "dev",
+            "no features is a header only");
+
+        // Writer: what cannot travel.
+        HW::FeatPayload bad;
+        bad.buildTag = std::string("a") + HW::kFieldSep + "b";
+        bad.features = { { "", "x", "t", true }, { "$P", "x", "t", true }, { "P", "", "t", true }, { "P", "*", "t", true },
+                         { "P\x01", "x", "t", true }, { "P", "x\x1f", "t", true }, { std::string(129, 'p'), "x", "t", true },
+                         { "Good", "id", std::string("T\x1f") + "i\ntle", true } };
+        const std::string w2 = HW::EncodeFeat(bad, &st);
+        Check(st.dropped == 7, "encode drops empty, reserved, wildcard, control and oversize plugin or id");
+        Check(DecF(w2, &out) == HW::Status::Ok && out.buildTag == "dev" && out.features.size() == 1
+                && out.features[0].title == "T i tle",
+            "a bad tag goes out as dev; a title with control characters is made safe, not dropped");
+
+        // Reader: hostile input.
+        Check(DecF("") == HW::Status::Empty, "empty input");
+        Check(DecF(wire.substr(0, wire.size() - 1)) == HW::Status::Truncated, "last record cut before its separator");
+        Check(DecF(kFeatHead + "Pl" + HW::kFieldSep + "id") == HW::Status::Truncated, "unfinished tail record");
+        bool prefixOk = true;
+        for (size_t n = 0; n < wire.size(); ++n)
+            if (n == 0 || wire[n - 1] != HW::kRecordSep)
+                prefixOk = prefixOk && DecF(wire.substr(0, n)) != HW::Status::Ok;
+        Check(prefixOk, "no prefix that ends mid-record decodes (every cut checked)");
+        Check(DecF(Rec({ "$loaderx", "v1", "1" })) == HW::Status::BadHeader, "wrong marker");
+        Check(DecF(Rec({ "$loader", "v1" })) == HW::Status::BadHeader, "header with too few fields");
+        Check(DecF(Rec({ "$loader", "", "1" })) == HW::Status::BadHeader, "empty build tag");
+        Check(DecF(Rec({ "$loader", "v1", "x" })) == HW::Status::BadHeader, "interface version not a number");
+        Check(DecF(Rec({ "$loader", "v1", "4294967296" })) == HW::Status::BadHeader, "interface version over 32 bits");
+        Check(DecF(Rec({ "$loader", std::string(65, 'v'), "1" })) == HW::Status::FieldTooLong, "build tag too long");
+        Check(DecF(Rec({ "P", "i", "t", "1" })) == HW::Status::BadHeader, "no $loader record first");
+        Check(DecF(kFeatHead + Rec({ "P", "i", "t" })) == HW::Status::BadRecord, "row with three fields");
+        Check(DecF(kFeatHead + Rec({ "P", "i", "t", "2" })) == HW::Status::BadRecord, "state 2");
+        Check(DecF(kFeatHead + Rec({ "P", "i", "t", "" })) == HW::Status::BadRecord, "empty state");
+        Check(DecF(kFeatHead + Rec({ "", "i", "t", "1" })) == HW::Status::BadRecord, "empty plugin");
+        Check(DecF(kFeatHead + Rec({ "P", "", "t", "1" })) == HW::Status::BadRecord, "empty id");
+        Check(DecF(kFeatHead + Rec({ "P", "*", "t", "1" })) == HW::Status::BadRecord, "a feature cannot be named *");
+        Check(DecF(kFeatHead + std::string(1, HW::kRecordSep)) == HW::Status::BadRecord, "empty record");
+        Check(DecF(kFeatHead + Rec({ std::string(129, 'p'), "i", "t", "1" })) == HW::Status::FieldTooLong, "plugin too long");
+        Check(DecF(kFeatHead + Rec({ "P", std::string(129, 'i'), "t", "1" })) == HW::Status::FieldTooLong, "id too long");
+        Check(DecF(kFeatHead + Rec({ "P", "i", std::string(257, 't'), "1" })) == HW::Status::FieldTooLong, "title too long");
+        Check(DecF(kFeatHead + Rec({ "P", "i", std::string(256, 't'), "1" })) == HW::Status::Ok, "title at the limit is fine");
+        Check(DecF(kFeatHead + Rec({ "P", "i", "t", "1", "2", "3", "4", "5", "6" })) == HW::Status::BadRecord,
+            "more than the allowed fields in a row");
+        Check(DecF(kFeatHead + Rec({ "P", "i", "t", "1", "extra" })) == HW::Status::Ok, "an extra field is ignored");
+        for (char c : std::string("\x01\x02\t\n\r\x1b\x7f"))
+        {
+            const std::string t = std::string("a") + c + "b";
+            Check(DecF(kFeatHead + Rec({ "P", "i", t, "1" })) == HW::Status::ControlChar, "control character in a title is refused");
+            Check(DecF(Rec({ "$loader", t, "1" })) == HW::Status::ControlChar, "control character in the build tag is refused");
+        }
+        {
+            std::string nul = "a";
+            nul += '\0';
+            nul += "b";
+            Check(DecF(kFeatHead + Rec({ "P", nul, "t", "1" })) == HW::Status::ControlChar, "NUL inside a field is refused");
+        }
+        Check(DecF(kFeatHead + Rec({ "P", "i", "a" + std::string(1, HW::kFieldSep) + "b", "1" })) == HW::Status::BadRecord,
+            "a separator inside a title makes the state field 'b': refused");
+        Check(DecF(kFeatHead + Rec({ "$future", "x", "y" })) == HW::Status::Ok, "an unknown $ record is skipped");
+        Check(DecF(kFeatHead + Rec({ "P", "i", "t", "1" }) + Rec({ "p", "i", "t2", "0" }) + Rec({ "P", "j", "t", "0" }), &out) == HW::Status::Ok
+                && out.features.size() == 2 && out.features[0].title == "t" && out.features[0].on,
+            "a repeat of plugin (any case) and id is skipped, the first stays");
+
+        // Failure leaves the output alone.
+        HW::FeatPayload keep;
+        keep.buildTag = "keep";
+        DecF(kFeatHead + Rec({ "P", "i", "t", "9" }), &keep);
+        Check(keep.buildTag == "keep", "a refused payload leaves the output untouched");
+
+        // Record count and size.
+        std::string many = kFeatHead;
+        for (size_t i = 0; i + 1 < HW::kMaxRecords; ++i)
+            many += Rec({ "P", "id" + std::to_string(i), "t", "1" });
+        Check(DecF(many, &out) == HW::Status::Ok && out.features.size() == HW::kMaxRecords - 1, "exactly the record limit decodes");
+        Check(DecF(many + Rec({ "P", "last", "t", "1" })) == HW::Status::TooManyRecords, "one record over the limit");
+        std::string huge = kFeatHead + Rec({ "P", "i", "t", "1" });
+        huge.append(HW::kMaxPayloadBytes, 'x');
+        Check(DecF(huge) == HW::Status::TooLarge, "payload over the byte limit");
+
+        // 100+ features.
+        HW::FeatPayload big;
+        big.buildTag = "v1.27.0";
+        for (int i = 0; i < 300; ++i)
+            big.features.push_back({ "Plugin" + std::to_string(i % 7), "feature-" + std::to_string(i), "Title " + std::to_string(i), (i % 3) != 0 });
+        const std::string bw = HW::EncodeFeat(big, &st);
+        Check(DecF(bw, &out) == HW::Status::Ok && out.features.size() == 300 && st.truncated == 0, "300 features round trip");
+        Check(out.features[299].id == "feature-299" && out.features[299].on == true && out.features[297].on == false, "order and state of the last rows");
+
+        // Encode limits.
+        HW::FeatPayload over;
+        over.buildTag = "v1";
+        for (size_t i = 0; i < HW::kMaxRecords + 10; ++i)
+            over.features.push_back({ "P", "id" + std::to_string(i), "t", true });
+        const std::string ow = HW::EncodeFeat(over, &st);
+        Check(st.truncated == 11 && DecF(ow, &out) == HW::Status::Ok && out.features.size() == HW::kMaxRecords - 1,
+            "past the record limit the writer cuts and counts, and the reader still accepts the result");
+        HW::FeatPayload fat;
+        fat.buildTag = "v1";
+        for (int i = 0; i < 1000; ++i)
+            fat.features.push_back({ std::string(100, 'p'), std::string(100, 'i') + std::to_string(i), std::string(200, 't'), true });
+        const std::string fw = HW::EncodeFeat(fat, &st);
+        Check(fw.size() <= HW::kMaxPayloadBytes && st.truncated > 0 && DecF(fw, &out) == HW::Status::Ok, "past the size limit the writer cuts, and the result decodes");
+    }
+
+    void TestHostRules()
+    {
+        std::printf("Host rules: $ML:rules\n");
+        HW::RulesSet in;
+        in.defaultAllow = false;
+        in.onDenied = 0;
+        in.message = "This server restricts some mods. See #rules.";
+        in.deny = { { "BetterCheats", "movement" }, { "BetterCheats", "inventory" }, { "SomeOtherMod", "*" } };
+        in.allow = { { "BetterCheats", "*" }, { "BetterDrone", "map-reveal" } };
+        HW::EncodeStats st;
+        const std::string wire = HW::EncodeRules(in, &st);
+        Check(st.dropped == 0 && st.truncated == 0, "encode drops and cuts nothing from a clean set");
+        HW::RulesSet out;
+        Check(DecR(wire, &out) == HW::Status::Ok, "round trip decodes");
+        Check(!out.defaultAllow && out.onDenied == 0 && out.message == in.message, "header: default, mode and message survive");
+        Check(out.deny.size() == 3 && HostRules::Contains(out.deny, "BetterCheats", "movement")
+                && HostRules::Contains(out.deny, "bettercheats", "inventory") && HostRules::Contains(out.deny, "SomeOtherMod", "*"),
+            "deny rows land in the L1 deny set (plugin name any case, id exact, * kept)");
+        Check(out.allow.size() == 2 && HostRules::Contains(out.allow, "BetterCheats", "*") && HostRules::Contains(out.allow, "BetterDrone", "map-reveal"),
+            "allow rows are carried");
+
+        HW::RulesSet empty;
+        Check(DecR(HW::EncodeRules(empty), &out) == HW::Status::Ok && out.defaultAllow && out.deny.empty() && out.allow.empty(),
+            "an empty set is a header only: lifts every rule");
+        Check(HW::EncodeRules(empty) == Rec({ "$rules", "1", "1", "0", "" }), "the header bytes are as documented");
+
+        // Writer rules.
+        HW::RulesSet w;
+        w.message = std::string("line one\nline\ttwo ") + HW::kRecordSep + "x" + std::string(300, 'y');
+        w.deny = { { "P", "a" }, { "p", "a" }, { "P", "b" }, { "", "x" }, { "$R", "x" }, { "Q", "" }, { "Q\x02", "x" } };
+        w.allow = { { "P", "a" }, { "P", "c" } };
+        const std::string ww = HW::EncodeRules(w, &st);
+        Check(st.dropped == 2, "rows with a reserved or control-character plugin or id are dropped and counted (empty rows vanish in Normalize)");
+        Check(DecR(ww, &out) == HW::Status::Ok && out.deny.size() == 2 && out.allow.size() == 1
+                && HostRules::Contains(out.allow, "P", "c"),
+            "repeats collapse and an allow row that a deny row names is left out: deny wins");
+        Check(out.message.size() <= HW::kMaxMessageLen && out.message.find('\n') == std::string::npos
+                && out.message.find('\t') == std::string::npos && out.message.compare(0, 8, "line one") == 0,
+            "the message is cut to the limit and control characters become spaces");
+        Check(HW::SanitizeText(std::string(199, 'a') + "\xC3\xA9" + "bc", 200) == std::string(199, 'a'), "a cut never splits a UTF-8 character");
+        Check(HW::SanitizeText("  hi  ", 10) == "hi" && HW::SanitizeText("", 10).empty(), "ends are trimmed");
+
+        // Reader: hostile input.
+        Check(DecR("") == HW::Status::Empty, "empty input");
+        Check(DecR(wire.substr(0, wire.size() - 1)) == HW::Status::Truncated, "last record cut before its separator");
+        Check(DecR(kRulesHead + "P") == HW::Status::Truncated, "unfinished row");
+        Check(DecR(Rec({ "$rule", "1", "1", "0", "" })) == HW::Status::BadHeader, "wrong marker");
+        Check(DecR(Rec({ "$rules", "0", "1", "0", "" })) == HW::Status::BadHeader, "version 0");
+        Check(DecR(Rec({ "$rules", "1", "2", "0", "" })) == HW::Status::BadHeader, "default must be 0 or 1");
+        Check(DecR(Rec({ "$rules", "1", "1", "256", "" })) == HW::Status::BadHeader, "on-denied mode over 255");
+        Check(DecR(Rec({ "$rules", "1", "1", "x", "" })) == HW::Status::BadHeader, "on-denied mode not a number");
+        Check(DecR(Rec({ "$rules", "1", "1", "0" })) == HW::Status::BadHeader, "header without the message field");
+        Check(DecR(Rec({ "$rules", "1", "1", "0", std::string(201, 'm') })) == HW::Status::FieldTooLong, "message over the limit");
+        Check(DecR(Rec({ "$rules", "1", "1", "0", std::string(200, 'm') })) == HW::Status::Ok, "message at the limit is fine");
+        Check(DecR(Rec({ "$rules", "2", "1", "0", "", "future" })) == HW::Status::Ok, "a newer version with extra fields is read as version 1");
+        Check(DecR(Rec({ "$rules", "1", "1", "0", std::string("a\x01") + "b" })) == HW::Status::ControlChar, "control character in the message");
+        Check(DecR(kRulesHead + Rec({ "P", "i" })) == HW::Status::BadRecord, "row with two fields");
+        Check(DecR(kRulesHead + Rec({ "P", "i", "2" })) == HW::Status::BadRecord, "state 2");
+        Check(DecR(kRulesHead + Rec({ "", "i", "0" })) == HW::Status::BadRecord, "empty plugin");
+        Check(DecR(kRulesHead + Rec({ "P", "", "0" })) == HW::Status::BadRecord, "empty id");
+        Check(DecR(kRulesHead + Rec({ std::string(129, 'p'), "i", "0" })) == HW::Status::FieldTooLong, "plugin too long");
+        Check(DecR(kRulesHead + Rec({ "P", std::string(129, 'i'), "0" })) == HW::Status::FieldTooLong, "id too long");
+        Check(DecR(kRulesHead + Rec({ "P", "i\x1b", "0" })) == HW::Status::ControlChar, "control character in an id");
+        Check(DecR(kRulesHead + Rec({ "P", "a" + std::string(1, HW::kFieldSep) + "b", "0" })) == HW::Status::BadRecord,
+            "a separator inside an id shifts the state field: refused");
+        Check(DecR(kRulesHead + Rec({ "$future", "x", "0" })) == HW::Status::Ok, "an unknown $ record is skipped");
+        Check(DecR(kRulesHead + Rec({ "P", "i", "0", "1", "2", "3", "4", "5", "6" })) == HW::Status::BadRecord, "too many fields in a row");
+        HW::RulesSet keep;
+        keep.message = "keep";
+        DecR(kRulesHead + Rec({ "P", "i", "7" }), &keep);
+        Check(keep.message == "keep", "a refused payload leaves the output untouched");
+        Check(DecR(kRulesHead + Rec({ "P", "i", "0" }) + Rec({ "p", "i", "0" }) + Rec({ "p", "i", "1" }), &out) == HW::Status::Ok
+                && out.deny.size() == 1 && out.allow.empty(),
+            "a clash in the data is deny wins");
+
+        // 100+ rows and the limits.
+        HW::RulesSet big;
+        big.defaultAllow = true;
+        for (int i = 0; i < 400; ++i)
+            ((i % 4) ? big.deny : big.allow).push_back({ "Plugin" + std::to_string(i % 11), "feature-" + std::to_string(i) });
+        big.deny.push_back({ "Whole", "*" });
+        const std::string bw = HW::EncodeRules(big, &st);
+        Check(DecR(bw, &out) == HW::Status::Ok && out.deny.size() == 301 && out.allow.size() == 100 && st.truncated == 0, "400 rows round trip");
+        std::string many = kRulesHead;
+        for (size_t i = 0; i + 1 < HW::kMaxRecords; ++i)
+            many += Rec({ "P", "id" + std::to_string(i), "0" });
+        Check(DecR(many, &out) == HW::Status::Ok && out.deny.size() == HW::kMaxRecords - 1, "exactly the record limit decodes");
+        Check(DecR(many + Rec({ "P", "last", "0" })) == HW::Status::TooManyRecords, "one record over the limit");
+        HW::RulesSet over;
+        for (size_t i = 0; i < HW::kMaxRecords + 5; ++i)
+            over.deny.push_back({ "P", "id" + std::to_string(i) });
+        const std::string ow = HW::EncodeRules(over, &st);
+        Check(st.truncated == 6 && DecR(ow, &out) == HW::Status::Ok && out.deny.size() == HW::kMaxRecords - 1,
+            "past the record limit the writer cuts and counts, and the reader accepts the result");
+    }
+
+    void TestHostPlan()
+    {
+        std::printf("Host rules: fragmentation plan\n");
+        HW::FeatPayload p;
+        p.buildTag = "v1.27.0";
+        p.interfaceVersion = 79;
+        const std::string small = HW::EncodeFeat(p);
+        const HW::SendPlan a = HW::PlanSend(small.size(), HW::kTagFeat);
+        const std::string expect = "[MOD:$ML:feat:" + std::to_string(small.size()) + ":]";
+        Check(a.single && a.sendable && a.chunkCount == 1 && a.envelopeBytes == expect.size() + 4 * ((small.size() + 2) / 3),
+            "a small payload is one bunch; the envelope size is the header plus base64");
+        // The largest payload that stays in one bunch.
+        size_t n = 0;
+        while (HW::PlanSend(n + 1, HW::kTagRules).single)
+            ++n;
+        Check(n > 600 && n < 760 && HW::PlanSend(n, HW::kTagRules).envelopeBytes <= HW::kBunchBytes
+                && HW::PlanSend(n + 1, HW::kTagRules).envelopeBytes > HW::kBunchBytes,
+            "the single-bunch edge sits where the envelope reaches 1024 bytes");
+        const HW::SendPlan b = HW::PlanSend(n + 1, HW::kTagRules);
+        Check(!b.single && b.chunkBudget == 1024 - 22 - 3 && b.chunkCount == 2 && b.sendable, "one byte over is two chunks of 999");
+        // Chunks times budget covers the envelope, one fewer does not.
+        const HW::SendPlan c = HW::PlanSend(30000, HW::kTagRules);
+        Check(c.chunkCount * c.chunkBudget >= c.envelopeBytes && (c.chunkCount - 1) * c.chunkBudget < c.envelopeBytes, "chunk count is the ceiling");
+        // The real chunker agrees.
+        std::string env(c.envelopeBytes, 'x');
+        const auto frames = Fragmentation::BuildChunks(1, "$ML", reinterpret_cast<const uint8_t*>(env.data()), env.size(), c.chunkBudget);
+        Check(frames.size() == c.chunkCount && frames[0].size() <= HW::kBunchBytes, "BuildChunks gives the planned count and each frame fits a bunch");
+        // The largest payload either message can be.
+        const HW::SendPlan m = HW::PlanSend(HW::kMaxPayloadBytes, HW::kTagFeat);
+        Check(m.sendable && m.chunkCount < 1000, "a maximum size payload is sendable");
+        Check(!HW::PlanSend(10u * 1024u * 1024u, HW::kTagRules).sendable, "past the reassembler's byte limit is not sendable");
+        Check(!HW::PlanSend(5000, HW::kTagRules, 25).sendable, "a bunch with no room after the chunk header is not sendable");
+        Check(HW::PlanSend(0, HW::kTagFeat).single, "an empty payload is one bunch");
+        HW::FeatPayload big;
+        big.buildTag = "v1.27.0";
+        for (int i = 0; i < 120; ++i)
+            big.features.push_back({ "BetterCheats", "feature-" + std::to_string(i), "A feature title", true });
+        const HW::SendPlan d = HW::PlanSend(HW::EncodeFeat(big).size(), HW::kTagFeat);
+        Check(!d.single && d.sendable && d.chunkCount > 5, "a 120 feature declaration is fragmented");
+    }
+
+    void TestHostMinimum()
+    {
+        std::printf("Host rules: minimum loader tag\n");
+        using M = HW::MinCheck;
+        struct Row { const char* client; const char* minimum; M want; const char* what; };
+        const Row rows[] = {
+            { "v1.27.0", "1.27.0", M::Ok, "equal, v prefix on one side" },
+            { "1.27.0", "v1.27.0", M::Ok, "equal, v prefix on the other" },
+            { "V1.27.0", "1.27.0", M::Ok, "upper case V" },
+            { "1.27.1", "1.27.0", M::Ok, "patch higher" },
+            { "1.28.0", "1.27.9", M::Ok, "minor higher" },
+            { "2.0.0", "1.99.99", M::Ok, "major higher" },
+            { "1.26.1", "1.27.0", M::Below, "minor lower" },
+            { "1.27.0", "1.27.1", M::Below, "patch lower" },
+            { "0.99.99", "1.0.0", M::Below, "major lower" },
+            { "1.9.0", "1.10.0", M::Below, "numeric, not text: 9 under 10" },
+            { "1.10.0", "1.9.0", M::Ok, "numeric, not text: 10 over 9" },
+            { "1.27", "1.27.0", M::Ok, "two parts equal three with a zero" },
+            { "1.27", "1.27.1", M::Below, "two parts under a patch" },
+            { "1.27.0.1", "1.27.0", M::Ok, "fourth part higher" },
+            { "1.27.0.0", "1.27.0.1", M::Below, "fourth part lower" },
+            { "v1.26.1-dev.7", "1.26.1", M::Ok, "a dev build counts as its release part: not below its own release" },
+            { "v1.26.1-dev.7", "1.26.0", M::Ok, "a dev build over an older minimum" },
+            { "v1.26.1-dev.7", "1.27.0", M::Below, "a dev build under a newer minimum" },
+            { "1.27.0-dev.3", "1.27.0", M::Ok, "dev of the minimum release itself is not below" },
+            { "1.27.0", "1.27.0-dev.1", M::Ok, "a suffix on the minimum is ignored" },
+            { "1.26.9+build5", "1.27.0", M::Below, "plus suffix" },
+            { "1.27.0-rc1", "1.27.0", M::Ok, "release candidate" },
+            { "dev", "1.27.0", M::Unparseable, "the unlabeled dev tag" },
+            { "", "1.27.0", M::Unparseable, "empty client tag" },
+            { "1.27.0", "", M::Unparseable, "empty minimum" },
+            { "1.27.0", "dev", M::Unparseable, "unreadable minimum" },
+            { "1", "1.27.0", M::Unparseable, "one part" },
+            { "v", "1.27.0", M::Unparseable, "just a v" },
+            { "1.", "1.27.0", M::Unparseable, "trailing dot" },
+            { "1..2", "1.27.0", M::Unparseable, "empty part" },
+            { ".1.2", "1.27.0", M::Unparseable, "leading dot" },
+            { "1.2.3.4.5", "1.27.0", M::Unparseable, "five parts" },
+            { "1.2abc", "1.27.0", M::Unparseable, "letters straight after the number" },
+            { "1.27.0 ", "1.27.0", M::Unparseable, "trailing space" },
+            { " 1.27.0", "1.27.0", M::Unparseable, "leading space" },
+            { "-1.27.0", "1.27.0", M::Unparseable, "leading minus" },
+            { "1.27.0-\x01", "1.27.0", M::Unparseable, "control character in the suffix" },
+            { "latest", "1.27.0", M::Unparseable, "a word" },
+            { "1.-2.0", "1.27.0", M::Unparseable, "negative part" },
+        };
+        for (const Row& r : rows)
+            Check(HW::IsBelowMinimum(r.client, r.minimum) == r.want, r.what);
+        Check(HW::IsBelowMinimum(std::string("1.27.0\0x", 8), "1.27.0") == M::Unparseable, "embedded NUL");
+        Check(HW::IsBelowMinimum(std::string(65, '1'), "1.27.0") == M::Unparseable, "a tag over the length limit");
+        Check(HW::IsBelowMinimum("99999999999.0.0", "1.27.0") == M::Ok, "a huge number is clamped, not wrapped");
+    }
+}
+
 int main()
 {
     TestEvaluate();
@@ -629,6 +985,10 @@ int main()
     TestClassify();
     TestWarnOnce();
     TestMirror();
+    TestHostFeat();
+    TestHostRules();
+    TestHostPlan();
+    TestHostMinimum();
 
     if (g_failures)
     {

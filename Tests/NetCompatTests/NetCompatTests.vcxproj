@@ -9,7 +9,8 @@
 
     msbuild Tests\NetCompatTests\NetCompatTests.vcxproj /p:Configuration="Client Release" /p:Platform=x64
 
-  It compiles the loader's own network_channel\wire_compat.h, which includes
+  It compiles the loader's own network_channel\wire_compat.h and host_rules_wire.h
+  (with plugins\host_rules.h and auto_update\version_compare.h), which include
   nothing from the game or Windows, so no SDK and no logger are linked. Output
   goes to build\tests\net_compat_tests.exe.
 -->
@@ -68,7 +69,7 @@
       <LanguageStandard>stdcpp20</LanguageStandard>
       <PreprocessorDefinitions>_CONSOLE;NOMINMAX;WIN32_LEAN_AND_MEAN;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <!-- The live loader header, on purpose: a test built against a stale copy would pass while testing nothing. -->
-      <AdditionalIncludeDirectories>$(ProjectDir);$(CoreDir)network_channel;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(CoreDir);$(CoreDir)network_channel;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -95,9 +96,12 @@
   </ItemDefinitionGroup>
   <ItemGroup Label="Test">
     <ClCompile Include="NetCompatTests.cpp" />
+    <ClCompile Include="$(CoreDir)network_channel\packet_fragmentation.cpp" />
   </ItemGroup>
   <ItemGroup Label="Loader header under test">
     <ClInclude Include="$(CoreDir)network_channel\wire_compat.h" />
+    <ClInclude Include="$(CoreDir)network_channel\host_rules_wire.h" />
+    <ClInclude Include="$(CoreDir)plugins\host_rules.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="..\README.md" />

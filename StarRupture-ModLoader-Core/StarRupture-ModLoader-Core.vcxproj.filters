@@ -585,6 +585,9 @@
     <ClInclude Include="UI\named_entry_utils.h">
       <Filter>Source Files\UI</Filter>
     </ClInclude>
+    <ClInclude Include="network_channel\host_rules_wire.h">
+      <Filter>Source Files\network_channel</Filter>
+    </ClInclude>
     <ClInclude Include="network_channel\net_timeout.h">
       <Filter>Source Files\network_channel</Filter>
     </ClInclude>
