@@ -139,6 +139,7 @@ jobs:
             /p:PostBuildEventUseInBuild=false `
             /p:ModLoaderBuildTag="${{ steps.tag.outputs.TAG }}" `
             /p:AutoUpdateManifestUrl="https://github.com/${{ github.repository }}/releases/latest/download/manifest-server.json" `
+            /p:VmapServerFeedUrl="https://github.com/${{ github.repository }}/releases/latest/download/version-map-server.v1.txt" `
             /m `
             /v:minimal
 
