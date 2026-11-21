@@ -77,8 +77,6 @@ namespace FeedFetch
 {
 	const char* WhyNot(const Config& cfg)
 	{
-		if (!cfg.client)
-			return "this is the server build";
 		if (!cfg.autoUpdate)
 			return "[AutoUpdate] Enabled is off";
 		if (cfg.url.empty())
@@ -99,7 +97,7 @@ namespace FeedFetch
 		// Ask only whether anything is newer than the cache: with the ETag of
 		// the answer the cache came from, an unchanged feed comes back as a 304.
 		VersionFeed::SignedFeed cache;
-		const bool haveCache = VersionFeed::ReadCache(cfg.cachePath, cfg.keys, cache);
+		const bool haveCache = VersionFeed::ReadCache(cfg.cachePath, cfg.keys, cache, cfg.flavor);
 		std::string etag;
 		bool notModified = false;
 		HttpGetOptions options;
@@ -127,12 +125,12 @@ namespace FeedFetch
 
 		VersionFeed::SignedFeed feed;
 		std::string error;
-		if (!VersionFeed::ReadSigned(file, cfg.keys, feed, error))
+		if (!VersionFeed::ReadSigned(file, cfg.keys, feed, error, cfg.flavor))
 		{
 			ModLoaderLogger::LogWarn(L"[VersionFeed] The fetched version object map is refused (%hs); the cache is as it was", error.c_str());
 			return Result::Failed;
 		}
-		if (!VersionFeed::StoreCache(cfg.cachePath, file, cfg.keys, error))
+		if (!VersionFeed::StoreCache(cfg.cachePath, file, cfg.keys, error, cfg.flavor))
 		{
 			ModLoaderLogger::LogInfo(L"[VersionFeed] The fetched version object map is not stored (%hs)", error.c_str());
 			// The cache's own feed again: remember its ETag, so the next start can ask for a 304.
@@ -164,7 +162,7 @@ namespace FeedFetch
 		{
 			const Exe running = VersionMap::RunningExe();
 			VersionFeed::SignedFeed cache;
-			const bool haveCache = VersionFeed::ReadCache(cfg.cachePath, cfg.keys, cache);
+			const bool haveCache = VersionFeed::ReadCache(cfg.cachePath, cfg.keys, cache, cfg.flavor);
 			if (!HoldsExe(VersionMap::BaselineMap(), running) && !(haveCache && HoldsExe(cache.map, running)))
 				announce(running.cl);
 		}

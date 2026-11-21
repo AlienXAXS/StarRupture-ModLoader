@@ -148,6 +148,19 @@
   </ItemDefinitionGroup>
 
   <!-- ============================================================
+       VMAP_SERVER_FEED_URL
+       Injected per build via /p:VmapServerFeedUrl="https://...": where the
+       dedicated server build fetches its signed version-map feed
+       (version-map-server.v1.txt). Never read from modloader.ini. Empty ->
+       the server loader fetches no feed.
+       ============================================================ -->
+  <ItemDefinitionGroup Condition="'$(VmapServerFeedUrl)' != ''">
+    <ClCompile>
+      <PreprocessorDefinitions>VMAP_SERVER_FEED_URL="$(VmapServerFeedUrl)";%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+  </ItemDefinitionGroup>
+
+  <!-- ============================================================
        VerifyLocalStarRuptureSDK
        The Local SDK configurations pull their sources from outside
        the repo, so a missing checkout otherwise shows up as dozens

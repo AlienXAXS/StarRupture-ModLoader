@@ -1010,9 +1010,13 @@ bool AutoUpdateEnabled()
 	return ReadAutoUpdateConfig().enabled;
 }
 
-// The feed URL is a compiled define of its own and never read from modloader.ini.
+// The feed URLs are compiled defines of their own and never read from modloader.ini:
+// the client build's (VMAP_FEED_URL) and the dedicated server build's (VMAP_SERVER_FEED_URL).
 #ifndef VMAP_FEED_URL
 #  define VMAP_FEED_URL ""
+#endif
+#ifndef VMAP_SERVER_FEED_URL
+#  define VMAP_SERVER_FEED_URL ""
 #endif
 
 namespace
@@ -1033,16 +1037,21 @@ namespace
 // and never strands a loader that reads this one.
 static_assert(VersionMap::kFeedFormat == 1 && (VMAP_FEED_URL[0] == 0 || EndsWith(VMAP_FEED_URL, "/version-map-client.v1.txt")),
 	"VMAP_FEED_URL must name version-map-client.v<kFeedFormat>.txt");
+static_assert(VersionMap::kFeedFormat == 1 && (VMAP_SERVER_FEED_URL[0] == 0 || EndsWith(VMAP_SERVER_FEED_URL, "/version-map-server.v1.txt")),
+	"VMAP_SERVER_FEED_URL must name version-map-server.v<kFeedFormat>.txt");
 
 FeedFetch::Config FeedFetch::LoaderConfig()
 {
 	Config cfg;
-#ifdef MODLOADER_CLIENT_BUILD
-	cfg.client = true;
-#endif
+	cfg.flavor = VersionFeed::kBuildFlavor;
+#ifdef MODLOADER_SERVER_BUILD
+	cfg.url = VMAP_SERVER_FEED_URL;
+	cfg.cachePath = GetModLoaderDirPath(L"version-map-server.v1.cache");
+#else
 	cfg.url = VMAP_FEED_URL;
-	cfg.keys = VersionFeed::CompiledKeys();
 	cfg.cachePath = GetModLoaderDirPath(L"version-map-client.v1.cache");
+#endif
+	cfg.keys = VersionFeed::CompiledKeys();
 	cfg.autoUpdate = AutoUpdateEnabled();
 	return cfg;
 }
@@ -1098,8 +1107,6 @@ void ModLoaderLogger::RunAutoUpdate()
 #endif
 	RunPerPluginUpdates(pluginsDir);
 
-	// The signed version-map feed, for the next launch. The server never asks.
-#ifdef MODLOADER_CLIENT_BUILD
+	// The signed version-map feed, for the next launch.
 	FeedFetch::Stage3(FeedFetch::LoaderConfig());
-#endif
 }

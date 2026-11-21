@@ -24,9 +24,12 @@
 //   Stage3        on the auto-update thread, only when Stage 1 could not ask
 //                 (the injected path): fetch for the next launch.
 //
-// Nothing is fetched on the server build, with `[AutoUpdate] Enabled` off, with
-// no VMAP_FEED_URL compiled in or with no public key. A request that fails
-// (offline, a 404, a timeout, a bad signature) leaves the cache as it was.
+// The client build fetches version-map-client.v1.txt (VMAP_FEED_URL) and the
+// dedicated server build version-map-server.v1.txt (VMAP_SERVER_FEED_URL), each
+// into its own cache file, and each refuses the other's file. Nothing is
+// fetched with `[AutoUpdate] Enabled` off, with no URL compiled in for the
+// build or with no public key. A request that fails (offline, a 404, a
+// timeout, a bad signature, the other build's file) leaves the cache as it was.
 // ---------------------------------------------------------------------------
 
 namespace FeedFetch
@@ -40,13 +43,13 @@ namespace FeedFetch
 		std::string url;                             // empty: no fetch
 		std::vector<VersionFeed::PublicKey> keys;    // none: no fetch
 		std::wstring cachePath;
-		bool client      = false;                    // the server never fetches
+		VersionFeed::Flavor flavor = VersionFeed::kBuildFlavor;   // which file: the client's or the server's
 		bool autoUpdate  = true;                     // modloader.ini [AutoUpdate] Enabled
 		bool allowPlainHttp = false;                 // for tests that run a local server
 	};
 
-	// This loader's settings: VMAP_FEED_URL, the compiled keys, the cache next
-	// to the other loader files.
+	// This loader's settings: VMAP_FEED_URL (client) or VMAP_SERVER_FEED_URL
+	// (server), the compiled keys, the cache next to the other loader files.
 	Config LoaderConfig();
 
 	// Why the loader makes no request under `cfg`, or null when it may.

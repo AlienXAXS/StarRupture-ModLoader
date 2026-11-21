@@ -105,6 +105,18 @@ namespace
 		return region + "sig\t" + s.pub.id + "\t" + Base64(sig, 64) + "\n";
 	}
 
+	// The dedicated server's file: its build lines are labelled "server ...".
+	std::string ServerSignedFile(const Signer& s, uint64_t seq)
+	{
+		const std::string region = "format\t1\nseq\t" + std::to_string(seq) + "\n"
+			"build\t127004\t0x2E3595FF\t0x0E2A8000\tserver steam_build 1\n"
+			"build\t128786\t0x33333333\t0x03000000\tserver steam_build 2\n"
+			"function\tTest::ServerOnly\t0x00000000\t128786\t0x33333333\t0x03000000\t1\t-\t0\t-1\t-1\t0x00001000\n";
+		uint8_t sig[64];
+		crypto_ed25519_sign(sig, s.secret, reinterpret_cast<const uint8_t*>(region.data()), region.size());
+		return region + "sig\t" + s.pub.id + "\t" + Base64(sig, 64) + "\n";
+	}
+
 	// ---- files --------------------------------------------------------------
 
 	std::wstring TempPath(const wchar_t* name)
@@ -313,13 +325,14 @@ namespace
 		}
 	};
 
-	FeedFetch::Config ConfigFor(const Server& srv, const char* route, const std::vector<PublicKey>& keys, const std::wstring& cache)
+	FeedFetch::Config ConfigFor(const Server& srv, const char* route, const std::vector<PublicKey>& keys, const std::wstring& cache,
+		VersionFeed::Flavor flavor = VersionFeed::Flavor::Client)
 	{
 		FeedFetch::Config cfg;
 		cfg.url = srv.Url(route);
 		cfg.keys = keys;
 		cfg.cachePath = cache;
-		cfg.client = true;
+		cfg.flavor = flavor;
 		cfg.autoUpdate = true;
 		cfg.allowPlainHttp = true;
 		return cfg;
@@ -604,11 +617,12 @@ int main()
 		FeedFetch::Config cfg;
 		cfg.url = "https://example.invalid/version-map-client.v1.txt";
 		cfg.keys = keys;
-		cfg.client = true;
+		cfg.flavor = VersionFeed::Flavor::Client;
 		Check(FeedFetch::WhyNot(cfg) == nullptr, "WhyNot: a full client config may ask");
 		FeedFetch::Config server = cfg;
-		server.client = false;
-		Check(FeedFetch::WhyNot(server) != nullptr, "WhyNot: the server never asks");
+		server.flavor = VersionFeed::Flavor::Server;
+		server.url = "https://example.invalid/version-map-server.v1.txt";
+		Check(FeedFetch::WhyNot(server) == nullptr, "WhyNot: a full server config may ask");
 		FeedFetch::Config off = cfg;
 		off.autoUpdate = false;
 		Check(FeedFetch::WhyNot(off) != nullptr, "WhyNot: [AutoUpdate] Enabled off");
@@ -753,15 +767,16 @@ int main()
 	// ---- no request ------------------------------------------------------------
 	{
 		srv.hits = 0;
-		FeedFetch::Config server = ConfigFor(srv, "/ok", keys, cache);
-		server.client = false;
+		FeedFetch::Config server = ConfigFor(srv, "/ok", keys, cache, VersionFeed::Flavor::Server);
+		server.url.clear();   // a server build with no VMAP_SERVER_FEED_URL compiled in
 		FeedFetch::Config off = ConfigFor(srv, "/ok", keys, cache);
 		off.autoUpdate = false;
 		FeedFetch::Config noUrl = ConfigFor(srv, "/ok", keys, cache);
 		noUrl.url.clear();
 		FeedFetch::Config noKeys = ConfigFor(srv, "/ok", keys, cache);
 		noKeys.keys.clear();
-		Check(FeedFetch::Refresh(server, "test") == FeedFetch::Result::NotAllowed, "the server build makes no request");
+		Check(FeedFetch::Refresh(server, "test") == FeedFetch::Result::NotAllowed && FeedFetch::WhyNot(server) != nullptr,
+			"a server build with no feed URL makes no request");
 		Check(FeedFetch::Refresh(off, "test") == FeedFetch::Result::NotAllowed, "[AutoUpdate] Enabled off makes no request");
 		Check(FeedFetch::Refresh(noUrl, "test") == FeedFetch::Result::NotAllowed, "no URL makes no request");
 		Check(FeedFetch::Refresh(noKeys, "test") == FeedFetch::Result::NotAllowed, "no key makes no request");
@@ -853,6 +868,66 @@ int main()
 			"Stage 1 on an unknown exe, main parked: announces, asks once, stores");
 		DeleteFileW(none.c_str());
 		DeleteFileW(EtagFile(none).c_str());
+	}
+
+	// ---- the dedicated server's file ------------------------------------------
+	// The same fetch, each build with its own file: a server loader stores a
+	// server file in its own cache, and neither build takes the other's.
+	{
+		const std::wstring serverCache = TempPath(L"server.cache");
+		DeleteFileW(serverCache.c_str());
+		DeleteFileW(EtagFile(serverCache).c_str());
+		const std::string serverFile = ServerSignedFile(sk, 500);
+		const FeedFetch::Config server = ConfigFor(srv, "/ok", keys, serverCache, VersionFeed::Flavor::Server);
+
+		// A server file reaches a server loader's cache, with its ETag, and is read back as a server file.
+		srv.feed = serverFile;
+		srv.etag = "\"s500\"";
+		srv.hits = 0;
+		TestDoubles::g_log.clear();
+		Check(FeedFetch::Refresh(server, "test") == FeedFetch::Result::Stored && srv.hits == 1 && Slurp(serverCache) == serverFile
+			&& Slurp(EtagFile(serverCache)) == "500 \"s500\"", "server: a signed server file is fetched, stored verbatim in the server cache, with its ETag");
+		Check(Logged(L"[VersionFeed] Version object map seq 500 stored"), "server: ...and logged like the client's");
+		SignedFeed read;
+		Check(VersionFeed::ReadCache(serverCache, keys, read, VersionFeed::Flavor::Server) && read.seq == 500 && read.map.builds.size() == 2,
+			"server: the cache reads back as a server file");
+		Check(!VersionFeed::ReadCache(serverCache, keys, read, VersionFeed::Flavor::Client),
+			"server: ...and a client loader does not read it");
+		srv.served304 = 0;
+		Check(FeedFetch::Refresh(server, "test") == FeedFetch::Result::Unchanged && srv.lastIfNoneMatch == "\"s500\"" && srv.served304 == 1,
+			"server: the next start asks with the ETag and gets a 304");
+
+		// A client file on the server's URL is refused whole, and the cache and its ETag stay as they were.
+		srv.feed = SignedFile(sk, 600);
+		srv.etag = "\"c600\"";
+		const std::string before = Slurp(serverCache);
+		TestDoubles::g_log.clear();
+		Check(FeedFetch::Refresh(server, "test") == FeedFetch::Result::Failed && Slurp(serverCache) == before && Slurp(EtagFile(serverCache)) == "500 \"s500\"",
+			"server: a client file (a higher seq) is refused and the server cache is as it was");
+		Check(Logged(L"not a dedicated server file"), "server: ...and the log says it is not a server file");
+
+		// A server file on the client's URL, the other way round.
+		const std::wstring clientCache = TempPath(L"clientside.cache");
+		DeleteFileW(clientCache.c_str());
+		DeleteFileW(EtagFile(clientCache).c_str());
+		srv.feed = serverFile;
+		srv.etag = "\"s500\"";
+		TestDoubles::g_log.clear();
+		Check(FeedFetch::Refresh(ConfigFor(srv, "/ok", keys, clientCache), "test") == FeedFetch::Result::Failed && !Exists(clientCache) && !Exists(EtagFile(clientCache)),
+			"client: a server file is refused and nothing is stored");
+		Check(Logged(L"which a client loader does not read"), "client: ...and the log says so");
+
+		// Stage 1 on a server: asks once with the main thread parked, never otherwise, and has no splash to tell.
+		srv.hits = 0;
+		Check(!FeedFetch::Stage1(server, false) && srv.hits == 0, "server: Stage 1 with the main thread not parked makes no request");
+		srv.feed = ServerSignedFile(sk, 700);
+		srv.etag = "\"s700\"";
+		Check(FeedFetch::Stage1(server, true) && srv.hits == 1 && Slurp(serverCache) == srv.feed, "server: Stage 1 with the main thread parked asks once and stores a newer server file");
+		DeleteFileW(serverCache.c_str());
+		DeleteFileW(EtagFile(serverCache).c_str());
+		DeleteFileW(clientCache.c_str());
+		srv.feed = SignedFile(sk, 300);
+		srv.etag = "\"v300\"";
 	}
 
 	// ---- an unroutable host ----------------------------------------------------
