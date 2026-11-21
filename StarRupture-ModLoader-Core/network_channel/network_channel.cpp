@@ -2100,7 +2100,7 @@ namespace
     // server never learns about receives nothing forever, and a reloaded plugin
     // whose version string moved gets its traffic gated off. GetPluginGeneration()
     // increments on every load/unload/reload, which is exactly this question.
-    static void*    g_manifestSentTo  = nullptr;
+    static std::atomic<void*> g_manifestSentTo{ nullptr }; // also read by the admin popup (render thread)
     static unsigned g_manifestSentGen = 0;
 
     // An unacknowledged manifest is retried rather than assumed delivered. This
@@ -2132,7 +2132,7 @@ namespace
     // changes them. g_featHookGen is the report generation last looked at, so the
     // tick encodes the catalog only when something in the report moved.
     static unsigned    g_featSentSeq    = 0;
-    static bool        g_featProven     = false;
+    static std::atomic<bool> g_featProven{ false }; // also read by the admin popup (render thread)
     static bool        g_featPending    = false;
     static uint64_t    g_featLastTryMs  = 0;
     static unsigned    g_featHookGen    = 0;
@@ -2151,14 +2151,17 @@ namespace
     // The rule set the server sent in "$ML:rules", kept as received so it can be
     // resolved again against the features declared at that moment (a plugin that
     // loads or reloads later is covered by the "*" and default rows). The
-    // receive may run off the game thread, so the set sits behind a mutex and
-    // the apply is queued to the game thread; g_clientRulesValid is what a queued
-    // apply re-checks, so one that outlives the server it came from does nothing.
+    // control-channel detour delivers the receive on the game thread, but the set
+    // can also be cleared from another one (the process closing), so it sits
+    // behind a mutex and the apply is queued to the game thread. g_rulesEpoch
+    // counts the times the set was cleared: a queued apply remembers the epoch it
+    // was queued under, so one that outlives the server it came from does nothing.
     // g_rulesHookGen is the hook report generation the rules were last resolved
     // at, so the tick resolves again only when the report moved.
     static std::mutex               g_clientRulesMutex;
     static HostRulesWire::RulesSet  g_clientRules;
     static std::atomic<bool>        g_clientRulesValid{ false };
+    static unsigned                 g_rulesEpoch = 0; // under g_clientRulesMutex
     static std::atomic<unsigned>    g_rulesHookGen{ 0 };
 
     // The admin prompt's answers ("$ML:adminr"), queued by AdminPrompt from the
@@ -2192,8 +2195,9 @@ namespace
         {
             std::lock_guard<std::mutex> lk(g_clientRulesMutex);
             g_clientRules = HostRulesWire::RulesSet{};
+            ++g_rulesEpoch;
+            g_clientRulesValid = false;
         }
-        g_clientRulesValid = false;
         g_rulesHookGen     = 0;
     }
 
@@ -2236,7 +2240,7 @@ namespace
             if (g_manifestSentTo)
                 ModLoaderLogger::LogDebug(
                     L"[NetworkChannel] Manifest invalidated (conn %p->%p, generation %u->%u) -- resending",
-                    g_manifestSentTo, conn, g_manifestSentGen, gen);
+                    g_manifestSentTo.load(), conn, g_manifestSentGen, gen);
 
             // Another server's rules are not this one's; a changed plugin set on
             // the same connection keeps them (the server sends them again).
@@ -2467,12 +2471,12 @@ namespace
     // Resolves the server's rule set against the features declared now and, when
     // that differs from what is applied, hands the new list to the hook report.
     // Game thread: it writes the plugins' flags.
-    static void ApplyClientRules()
+    static void ApplyClientRules(unsigned epoch)
     {
         HostRulesWire::RulesSet rules;
         {
             std::lock_guard<std::mutex> lk(g_clientRulesMutex);
-            if (!g_clientRulesValid) return; // the server was left while this waited
+            if (!g_clientRulesValid || epoch != g_rulesEpoch) return; // the server was left while this waited
             rules = g_clientRules;
         }
 
@@ -2513,7 +2517,12 @@ namespace
     {
         if (!g_clientRulesValid) return;
         if (PluginHookReport::GetGeneration() == g_rulesHookGen) return;
-        ApplyClientRules();
+        unsigned epoch;
+        {
+            std::lock_guard<std::mutex> lk(g_clientRulesMutex);
+            epoch = g_rulesEpoch;
+        }
+        ApplyClientRules(epoch);
     }
 
     // The server's rule set. Only a connection whose ack proved the server reads
@@ -2539,12 +2548,18 @@ namespace
             return;
         }
 
+        // The proof check and the store happen under one lock hold with the epoch,
+        // so a clear that ran in between (the world ended) cannot be undone by a
+        // set that was decoded before it.
+        unsigned epoch;
         {
             std::lock_guard<std::mutex> lk(g_clientRulesMutex);
+            if (!g_featProven) return;
             g_clientRules = std::move(rules);
+            g_clientRulesValid = true;
+            epoch = g_rulesEpoch;
         }
-        g_clientRulesValid = true;
-        GameThreadDispatch::PostVoid([] { ApplyClientRules(); });
+        GameThreadDispatch::PostVoid([epoch] { ApplyClientRules(epoch); });
     }
 
     // A line for the admin prompt. Same proof rule as the rules; a malformed one
@@ -4546,10 +4561,10 @@ bool NetworkChannel::StartFragmentationTest(size_t bytes, std::string& err)
 #ifdef MODLOADER_CLIENT_BUILD
 bool NetworkChannel::SendAdminAnswer(bool notMe, const std::string& code)
 {
-    // Read from the window's thread, like g_featProven in OnHostRules: the tick
-    // checks both again before anything goes out.
+    // Read from the window's thread, so only atomics are touched here, never the
+    // engine: the tick checks the connection again before anything goes out.
     void* conn = g_manifestSentTo;
-    if (!conn || !g_featProven || HasNetAuthority()) return false;
+    if (!conn || !g_featProven) return false;
 
     std::string body = HostRulesWire::EncodeAdminAnswer(
         notMe ? HostRulesWire::AdminRKind::NotMe : HostRulesWire::AdminRKind::Code, code);
