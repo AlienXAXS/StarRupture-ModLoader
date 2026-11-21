@@ -604,6 +604,11 @@ namespace VersionMap
 		return "CL-" + std::to_string(build.gameCL) + (build.declared ? "" : " (none declared)");
 	}
 
+	bool ServesExe(const Exe& running)
+	{
+		return MapServes(running);
+	}
+
 	std::string SdkGlobalsWithheld(const Exe& running, uintptr_t gobjects, uintptr_t appendString, uintptr_t gworld)
 	{
 		std::string missing;

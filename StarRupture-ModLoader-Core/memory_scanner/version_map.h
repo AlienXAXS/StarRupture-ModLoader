@@ -228,6 +228,12 @@ namespace VersionMap
 	// Empty = admitted (also when nothing changed); else the reason.
 	std::string LayoutRefusal(const Exe& running, int interfaceVersion, const PluginGameBuild& built);
 
+	// Whether the loader's map has rows for `running`: always on the client,
+	// whose lookups pick the row by CL; on the server only the exe its table
+	// was measured on (CL, PE time stamp and image size all equal). The
+	// Game-SDK globals are resolved and handed to plugins only where it does.
+	bool ServesExe(const Exe& running);
+
 	// Whether the Game-SDK globals found on `running` may be handed to plugins
 	// (IPluginEngineEvents::GetSdkGlobals), as absolute addresses, 0 = not
 	// found. A plugin needs GObjects and FName::AppendString to set up its

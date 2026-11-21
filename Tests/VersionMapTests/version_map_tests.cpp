@@ -1344,6 +1344,11 @@ int main()
 		VersionMap::SetLiveFieldSource(nullptr);
 	}
 
+	// The client's map serves every exe (its lookups pick the row by CL), so the Game-SDK globals are
+	// resolved and handed out on any of them.
+	Check(VersionMap::ServesExe(VersionMap::Exe{ 127004, 0xE8972298, 0x0F35C000 }) && VersionMap::ServesExe(VersionMap::Exe{ 128786, 1, 2 })
+		&& VersionMap::ServesExe(VersionMap::Exe{}), "ServesExe: true on every exe in the client build");
+
 	// Admission by the plugin's built CL (R3). A PluginInfo as a plugin fills it.
 	{
 		const auto info = [](int version, uint32_t builtCL, uint32_t flags)
