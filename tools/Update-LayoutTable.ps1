@@ -60,6 +60,9 @@
     starrupture-ci and Plugin SDK commits it used; run this script with those two
     to get the same files, from a checkout with no other checkouts or worktrees
     inside it, as the generator reads every source file under the repository.
+    The server's table is made by a second job that runs this script with
+    -Server, so the files the Server configurations compile are read from the
+    project file only here.
 
 .PARAMETER Generator
     Path to layout-table.mjs.

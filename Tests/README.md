@@ -170,8 +170,10 @@ report's JSON and drops the parts that touch the game, so nothing else is linked
 The layout tables themselves are checked by CI (`.github/workflows/sr-layout-drift.yml`): it makes
 each `core/layout_table_<CL>.generated.h` again from the loader's sources and the Game-SDK commit it
 was made from (the submodule for the newest, `tools/layout-table-pins.json` for an older one) and
-diffs it with the committed file. A table that is out of date fails the run; fix it with
-`tools/Update-LayoutTable.ps1`.
+diffs it with the committed file. The server's table (`core/layout_table_server_<CL>.generated.h`) is
+checked the same way by a second job that runs `tools/Update-LayoutTable.ps1 -Server` itself, so the files
+the server build compiles are read from the project file in one place. A table that is out of date fails
+the run; fix it with `tools/Update-LayoutTable.ps1`.
 
 `fixtures/` holds two layout tables generated from the Game-SDK at CL 126119 and CL 127004 for
 `ACrCharacterPlayerBase` and its reflected bases (see `tools/Update-LayoutTable.ps1` for the

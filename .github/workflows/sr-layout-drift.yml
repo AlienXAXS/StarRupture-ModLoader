@@ -14,6 +14,14 @@ name: SR layout drift
 # the checkout, never on what those repos did since. No build, no secrets, no
 # artifacts; every repo is checked out read-only.
 #
+# The dedicated server has its own table (core/layout_table_server_<CL>
+# .generated.h, from the Server folder of the Game-SDK submodule). It is made
+# from only the files the Server configurations compile, and the Core project
+# file says which those are; tools/Update-LayoutTable.ps1 -Server reads that
+# list. A second job (layout-drift-server) runs that script on Windows instead
+# of repeating the project-file reading here, so CI and the script cannot
+# disagree about which files the server reads.
+#
 # Fix a red run: tools/Update-LayoutTable.ps1 (the failure text says how) and
 # commit the result with the change.
 
@@ -113,7 +121,9 @@ jobs:
             echo "::error::Could not read kBuiltCL from $C/hooks/game/version_map.generated.h"
             exit 1
           fi
-          tables="$(ls "$C"/core/layout_table_*.generated.h | sed -E 's/.*layout_table_([0-9]+)\.generated\.h$/\1/' | sort -n)"
+          # The server's table (layout_table_server_<CL>) is checked by the
+          # layout-drift-server job.
+          tables="$(ls "$C"/core/layout_table_[0-9]*.generated.h | sed -E 's/.*layout_table_([0-9]+)\.generated\.h$/\1/' | sort -n || true)"
           newest="$(printf '%s\n' "$tables" | tail -n1)"
           if [ "$newest" != "$built" ]; then
             echo "::error::version_map.generated.h says CL $built but the newest layout table is for CL $newest"
@@ -229,4 +239,129 @@ jobs:
           echo "Fix: run .\\tools\\Update-LayoutTable.ps1 -Generator <path to starrupture-ci>\\ci\\layout-table.mjs -PluginSdk <path to Plugin SDK>\\tools\\rule3-allow.json"
           echo "and commit the result with your change. For an older build also pass -SdkClient <Game-SDK Client folder at the pinned commit> -Cl <CL>"
           echo "(the commit is in tools\\layout-table-pins.json). Use the same two repos this job did: starrupture-ci at $CI_SHA and the Plugin SDK at $PLUGIN_SDK_SHA."
+          echo "The classes that changed are listed above."
+
+  # The server's table. The server build compiles fewer files than the client
+  # build, and which ones the Core project file says, so this job runs
+  # tools/Update-LayoutTable.ps1 -Server itself on the one OS the script is
+  # written for, instead of repeating its reading of the project file in bash.
+  layout-drift-server:
+    name: layout-drift-server
+    runs-on: windows-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7.0.1
+        with:
+          path: loader
+          # The server table is made from the Server folder of the loader's
+          # Game-SDK submodule.
+          submodules: true
+          persist-credentials: false
+
+      - name: Checkout the generator
+        uses: actions/checkout@v7.0.1
+        with:
+          repository: ${{ env.CI_REPO }}
+          ref: ${{ env.CI_SHA }}
+          path: ci
+          sparse-checkout: ci
+          persist-credentials: false
+
+      - name: Checkout Plugin SDK
+        uses: actions/checkout@v7.0.1
+        with:
+          repository: ${{ env.OWNER }}/StarRupture-Plugin-SDK
+          ref: ${{ env.PLUGIN_SDK_SHA }}
+          path: plugin-sdk
+          sparse-checkout: tools/rule3-allow.json
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7.1.0
+        with:
+          node-version: 26
+
+      - name: Check the server table and the server's build agree
+        working-directory: loader
+        shell: bash
+        run: |
+          # The CL of the server table, of the Server folder's build_cl.txt (which
+          # sets the server build's kBuiltCL in Shared.props) and of the assert in
+          # version_map.server.h must be one number.
+          C=StarRupture-ModLoader-Core
+          echo "generator: $CI_REPO at $CI_SHA"
+          echo "Plugin SDK: $OWNER/StarRupture-Plugin-SDK at $PLUGIN_SDK_SHA"
+          fail=0
+          tables="$(ls "$C"/core/layout_table_server_[0-9]*.generated.h | sed -E 's/.*layout_table_server_([0-9]+)\.generated\.h$/\1/' | sort -n || true)"
+          count="$(printf '%s\n' "$tables" | grep -c . || true)"
+          newest="$(printf '%s\n' "$tables" | tail -n1)"
+          if [ "$count" -ne 1 ]; then
+            echo "::error::found $count server layout tables ($(echo $tables)); this job checks one, the newest. Check an older one the way the client job does (a pin in tools/layout-table-pins.json) before adding another."
+            fail=1
+          fi
+          sdkcl="$(tr -d '[:space:]' 2>/dev/null < 'StarRupture SDK/Server/build_cl.txt' || true)"
+          if [ "$sdkcl" != "$newest" ]; then
+            echo "::error::the newest server layout table is for CL $newest but the Game-SDK submodule's Server/build_cl.txt says '$sdkcl'"
+            fail=1
+          fi
+          built="$(sed -nE 's/.*static_assert\([[:space:]]*kBuiltCL[[:space:]]*==[[:space:]]*([0-9]+).*/\1/p' "$C/hooks/game/version_map.server.h" | head -n1)"
+          if [ "$built" != "$newest" ]; then
+            echo "::error::the newest server layout table is for CL $newest but version_map.server.h asserts the server's kBuiltCL is '$built'"
+            fail=1
+          fi
+          echo "server tables: $(echo $tables); Server/build_cl.txt $sdkcl; version_map.server.h kBuiltCL $built"
+          exit $fail
+
+      - name: Make the server table again and diff it with the committed one
+        id: regen
+        working-directory: loader
+        shell: pwsh
+        run: |
+          # The same command as tools/Update-LayoutTable.ps1 -Server: the
+          # script itself, so the files it reads come from the project file in
+          # one place. It writes the table in place, so keep the committed one.
+          $gen = Join-Path $env:GITHUB_WORKSPACE 'ci\ci\layout-table.mjs'
+          $plugin = Join-Path $env:GITHUB_WORKSPACE 'plugin-sdk\tools\rule3-allow.json'
+          $core = Join-Path $PWD 'StarRupture-ModLoader-Core\core'
+          $committed = Get-ChildItem $core -Filter 'layout_table_server_*.generated.h' | Select-Object -First 1
+          $kept = Join-Path $env:RUNNER_TEMP 'committed-server-table.h'
+          Copy-Item -LiteralPath $committed.FullName -Destination $kept
+
+          # The script's own messages only: the generator also prints the table.
+          & .\tools\Update-LayoutTable.ps1 -Server -Generator $gen -PluginSdk $plugin |
+              Where-Object { $_ -match '^(Server sources|layout-table:|Wrote )' }
+
+          # The committed file has CRLF when checked out on Windows; the
+          # generator never writes it, so compare without it.
+          $made = Join-Path $core $committed.Name
+          $a = (Get-Content -Raw -LiteralPath $kept) -replace "`r`n", "`n"
+          $b = if (Test-Path -LiteralPath $made) { (Get-Content -Raw -LiteralPath $made) -replace "`r`n", "`n" } else { $null }
+          if ($a -ceq $b) {
+              Write-Host "core/$($committed.Name) is fresh"
+              exit 0
+          }
+          Write-Host "::error::core/$($committed.Name) is out of date"
+          Write-Host 'First 200 lines of the difference (- committed, + made again now):'
+          $keptLf = Join-Path $env:RUNNER_TEMP 'kept-server-table.h'
+          $madeLf = Join-Path $env:RUNNER_TEMP 'made-server-table.h'
+          [IO.File]::WriteAllText($keptLf, $a)
+          [IO.File]::WriteAllText($madeLf, $b)
+          git diff --no-index --no-color $keptLf $madeLf | Select-Object -First 200
+          Write-Host 'What the committed table gets wrong, as the table compare reports it:'
+          node $gen compare $keptLf $madeLf
+          exit 1
+
+      - name: What to do
+        if: failure() && steps.regen.outcome == 'failure'
+        shell: bash
+        run: |
+          echo "::error::The server layout table is out of date"
+          echo "The server layout table core\\layout_table_server_<CL>.generated.h is out of date. It is built from the loader's sources that the Server configurations compile and the Game-SDK's Server folder, and something it is built from changed."
+          echo
+          echo "Fix: run .\\tools\\Update-LayoutTable.ps1 -Server -Generator <path to starrupture-ci>\\ci\\layout-table.mjs -PluginSdk <path to Plugin SDK>\\tools\\rule3-allow.json"
+          echo "and commit the result with your change. Use the same two repos this job did: starrupture-ci at $CI_SHA and the Plugin SDK at $PLUGIN_SDK_SHA."
           echo "The classes that changed are listed above."
