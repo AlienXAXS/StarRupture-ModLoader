@@ -295,6 +295,11 @@ namespace WireCompat
     //   name US version US wireId-or-empty US accept RS   (one per plugin)
     // An empty wire id field means not declared. Names starting with '$' are
     // reserved for future record types.
+    //
+    // An ack tail is a run of records. The declaration table starts at its
+    // $wires header and its rows are the only records that do not start with
+    // '$'. Any other kind of record starts with '$' and follows the table; a
+    // reader skips a '$' record it does not know.
     inline bool EntryEncodable(const Entry& e)
     {
         return !e.name.empty() && e.name[0] != '$' && detail::FieldOk(e.name) && detail::FieldOk(e.version)
@@ -306,14 +311,20 @@ namespace WireCompat
     // Encodes the header and every encodable entry. Entries that cannot travel
     // (a separator character, a '$' name, an oversized field) are left out and
     // their names go to dropped, so the call site can warn like it does for the
-    // manifest.
-    inline std::string EncodeTable(const std::vector<Entry>& entries, std::vector<std::string>* dropped = nullptr)
+    // manifest. The result stays within maxBytes when it can: the header is
+    // always kept, entries go in whole, and the first one that would not fit
+    // ends the table. Entries cut that way are counted in truncated.
+    inline std::string EncodeTableCapped(const std::vector<Entry>& entries, size_t maxBytes,
+        std::vector<std::string>* dropped = nullptr, size_t* truncated = nullptr)
     {
         std::string out = kTableMarker;
         out += kFieldSep;
         out += std::to_string(kTableVersion);
         out += kRecordSep;
+        if (truncated)
+            *truncated = 0;
         size_t written = 0;
+        bool full = false;
         for (const Entry& e : entries)
         {
             if (!EntryEncodable(e) || written >= kMaxEntries)
@@ -322,19 +333,32 @@ namespace WireCompat
                     dropped->push_back(e.name);
                 continue;
             }
-            out += e.name;
-            out += kFieldSep;
-            out += e.version;
-            out += kFieldSep;
+            std::string record = e.name;
+            record += kFieldSep;
+            record += e.version;
+            record += kFieldSep;
             if (e.decl.declared)
-                out += std::to_string(e.decl.wireId);
-            out += kFieldSep;
+                record += std::to_string(e.decl.wireId);
+            record += kFieldSep;
             if (e.decl.declared)
-                out += e.decl.accept;
-            out += kRecordSep;
+                record += e.decl.accept;
+            record += kRecordSep;
+            if (full || maxBytes < out.size() || record.size() > maxBytes - out.size())
+            {
+                full = true;
+                if (truncated)
+                    ++*truncated;
+                continue;
+            }
+            out += record;
             ++written;
         }
         return out;
+    }
+
+    inline std::string EncodeTable(const std::vector<Entry>& entries, std::vector<std::string>* dropped = nullptr)
+    {
+        return EncodeTableCapped(entries, static_cast<size_t>(-1), dropped, nullptr);
     }
 
     // Offset just after the first record separator, which is where a wire table

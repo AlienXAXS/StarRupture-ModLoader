@@ -379,6 +379,47 @@ namespace
             Check(x.entries.size() == kMaxEntries && dropped.size() == 10, "encode caps the entry count and reports the rest");
         }
         Check(EntryEncodable(Undeclared("A", "1")) && !EntryEncodable(Undeclared("$A", "1")), "EntryEncodable");
+
+        // Size cap: whole entries, header always kept.
+        {
+            std::vector<Entry> in;
+            for (int i = 0; i < 20; ++i)
+                in.push_back(Declared(("Plugin" + std::to_string(i)).c_str(), "1.0.0", static_cast<uint32_t>(i), "0.9.0"));
+            const std::string full = EncodeTable(in);
+            const size_t headerLen = EncodeTable({}).size();
+
+            size_t truncated = 99;
+            std::vector<std::string> dropped;
+            const std::string roomy = EncodeTableCapped(in, full.size(), &dropped, &truncated);
+            Check(roomy == full && truncated == 0 && dropped.empty(), "cap equal to the full size keeps everything");
+
+            const std::string cut = EncodeTableCapped(in, full.size() - 1, &dropped, &truncated);
+            const DecodedTable c = Decode(cut);
+            Check(cut.size() <= full.size() - 1 && c.present && c.entries.size() == 19 && truncated == 1 && dropped.empty(),
+                "one byte short: the last entry goes, the rest decode");
+
+            const std::string mid = EncodeTableCapped(in, 200, nullptr, &truncated);
+            const DecodedTable m = Decode(mid);
+            Check(mid.size() <= 200 && m.present && !m.entries.empty() && m.entries.size() < in.size()
+                    && m.entries.size() + truncated == in.size(),
+                "a small cap gives fewer entries and counts the rest");
+            bool prefix = true;
+            for (size_t i = 0; i < m.entries.size(); ++i)
+                prefix = prefix && SameEntry(in[i], m.entries[i]);
+            Check(prefix, "a capped table keeps the first entries in order");
+
+            const std::string none = EncodeTableCapped(in, 0, nullptr, &truncated);
+            Check(none.size() == headerLen && Decode(none).present && Decode(none).entries.empty() && truncated == in.size(),
+                "cap 0 gives the header only");
+            Check(EncodeTableCapped(in, 0).size() == headerLen, "capped encode works without the counters");
+
+            std::vector<Entry> mixed;
+            mixed.push_back(Undeclared("$bad", "1"));
+            mixed.push_back(Undeclared("Ok", "1"));
+            dropped.clear();
+            const DecodedTable x = Decode(EncodeTableCapped(mixed, 4096, &dropped, &truncated));
+            Check(x.entries.size() == 1 && dropped.size() == 1 && truncated == 0, "unencodable entries are dropped, not counted as cut");
+        }
     }
 
     void TestAckTail()
@@ -420,6 +461,11 @@ namespace
 
         const std::string garbageTail = first + "garbage";
         Check(!DecodeAckTail(garbageTail.data(), garbageTail.size()).present, "garbage after the first record: no table");
+
+        // Another kind of record after the table: it starts with '$' and is skipped.
+        const std::string withFeature = first + table + "$feat" + US + "1" + US + "x" + RS;
+        const DecodedTable f = DecodeAckTail(withFeature.data(), withFeature.size());
+        Check(f.present && f.entries.size() == 2 && f.entries[1].name == "PV", "a '$' record after the table is skipped");
     }
 
     void TestClassify()
