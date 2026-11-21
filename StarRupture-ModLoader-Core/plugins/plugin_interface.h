@@ -3915,6 +3915,15 @@ static_assert(sizeof(IPluginImages)                == 64, "v77 layout");
 // not told about clients that reported before.
 typedef void (*PluginClientFeaturesCallback)(void* playerController);
 
+// v79 -- authority side. Fired on the game thread, at most once per join, for a
+// connected client whose mod loader or a mod is older than the minimums the
+// server set with SetVersionMinimums. playerController is that client's
+// controller, valid for this call only. plainReason is one line of plain words
+// for the player, valid for this call only (copy it). The loader only reports:
+// it never removes anyone, so the plugin decides what to do (an admin may be
+// exempt) and does the removal itself.
+typedef void (*PluginClientBelowMinimumCallback)(void* playerController, const char* plainReason);
+
 // v79 -- the rules a server sends to its clients' mod loaders, which switch a
 // feature off on the client when a rule denies it. Authority only: on any other
 // process (and on a generic build, where the table itself is null) a call warns
@@ -3943,6 +3952,20 @@ typedef void (*PluginClientFeaturesCallback)(void* playerController);
 // player disconnects or the world ends. SetRulesForConnection is false (error:
 // "no connection for this player controller") for the listen host's own
 // controller and for a controller that is gone.
+//
+// v79 -- minimum versions. SetVersionMinimums takes one rule per line, read the
+// same way (error, return value, empty or null text = all off):
+//     # comment
+//     loader=1.27.0            the oldest ModLoader allowed; empty = off
+//     RuptureTimer=0.11.0      the oldest version of one mod (name ignores case)
+//     ProductionViewer=wire    the player's copy must be one the wire check accepts
+// A version is [v]N.N[.N[.N]], optionally followed by - or + and text. A dev build
+// (a version the loader cannot read), a suffix, a mod the player does not have
+// and a vanilla player (no mod loader) are never below. A client whose loader is
+// too old to report its version counts as below a set loader minimum after 30
+// seconds with no report. When a client is below, RegisterOnClientBelowMinimum's
+// callback fires once for that join, from the tick, outside all locks. Changing
+// the table checks the clients already connected that have not fired yet.
 struct IPluginHostRules
 {
 	bool (*SetRules)(const char* text, char* error, size_t errorSize);
@@ -3950,6 +3973,11 @@ struct IPluginHostRules
 	void (*ClearConnection)(void* playerController);
 	void (*RegisterOnClientFeatures)(const IPluginSelf* self, PluginClientFeaturesCallback callback);
 	void (*UnregisterOnClientFeatures)(const IPluginSelf* self, PluginClientFeaturesCallback callback);
+	// v79 -- version minimums (see above). true = text read and stored; false =
+	// text left as it was, error holds "line N: ...". Not authority: false.
+	bool (*SetVersionMinimums)(const char* text, char* error, size_t errorSize);
+	void (*RegisterOnClientBelowMinimum)(const IPluginSelf* self, PluginClientBelowMinimumCallback callback);
+	void (*UnregisterOnClientBelowMinimum)(const IPluginSelf* self, PluginClientBelowMinimumCallback callback);
 };
 
 struct IPluginHooks

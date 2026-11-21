@@ -445,6 +445,34 @@ namespace
     // g_manifestMutex; read bare by the tick so the idle case costs one load.
     static std::atomic<bool> g_featAnnounceDirty{ false };
 
+    // The version minimums a server plugin set (SetVersionMinimums) and how far
+    // each connection got in being checked against them. Under g_manifestMutex
+    // like g_clientFeat; a connection's entry is forgotten with it. g_minimumsGen
+    // changes with every new table, which makes every connection that has not
+    // fired be checked again. `fired` is the once-per-join mark. `reason` holds a
+    // finding whose player controller did not exist yet; it is retried each tick.
+    // g_minimumsActive is true while the table is not empty, so an idle server
+    // pays one atomic load a tick.
+    struct MinimumsCheck
+    {
+        bool fired = false;
+        bool checked = false;
+        uint64_t gen = 0;
+        bool hadFeat = false;
+        uint64_t manifestTick = 0;
+        std::string reason;
+    };
+    static HostRulesWire::Minimums g_minimums;
+    static uint64_t g_minimumsGen = 0;
+    static std::unordered_map<void*, MinimumsCheck> g_minCheck;
+    static std::atomic<bool> g_minimumsActive{ false };
+
+    // A loader that sends a manifest but never "$ML:feat" is too old to report
+    // its version. The client answers the ack within about 20 s at worst
+    // (kRetryIntervalMs x kMaxAttempts), so this long after the manifest it is
+    // treated as reporting no version.
+    static constexpr uint64_t kLoaderReportGraceMs = 30000;
+
     // The ack tail (the wire table) stays within this many bytes. A table that
     // does not fit is cut after whole entries.
     static constexpr size_t kMaxTailBytes = 8192;
@@ -1173,6 +1201,7 @@ namespace
             g_clientWires.erase(conn);
             g_clientFeat.erase(conn);
             g_connRules.erase(conn);
+            g_minCheck.erase(conn);
         }
         {
             std::lock_guard<std::mutex> lk(g_helloMutex);
@@ -3006,6 +3035,10 @@ static void SendRulesTo(void* conn, bool force)
 static std::mutex g_featCbMutex;
 static std::vector<PluginClientFeaturesCallback> g_featCbs;
 
+// Callbacks registered with RegisterOnClientBelowMinimum, same rule.
+static std::mutex g_minCbMutex;
+static std::vector<PluginClientBelowMinimumCallback> g_minCbs;
+
 // Writes `text` into the caller's error buffer, NUL-terminated and cut to its
 // size. The buffer may be null or zero-sized.
 static void CopyErrorText(char* error, size_t errorSize, const std::string& text)
@@ -3121,6 +3154,57 @@ static void HR_UnregisterOnClientFeatures(const IPluginSelf* self, PluginClientF
     g_featCbs.erase(std::remove(g_featCbs.begin(), g_featCbs.end(), callback), g_featCbs.end());
 }
 
+static bool HR_SetVersionMinimums(const char* text, char* error, size_t errorSize)
+{
+    if (!HostRulesAuthority("SetVersionMinimums"))
+    {
+        CopyErrorText(error, errorSize, "this process is not the session authority");
+        return false;
+    }
+
+    HostRulesWire::Minimums table;
+    std::string why;
+    const HostRulesWire::ParseResult res = HostRulesWire::ParseMinimumsText(
+        text ? std::string_view(text) : std::string_view(), table, why);
+    CopyErrorText(error, errorSize, res.status == HostRulesWire::ParseStatus::Ok ? std::string() : why);
+    if (res.status != HostRulesWire::ParseStatus::Ok) return false;
+
+    const bool loaderOn = !table.loader.empty();
+    const size_t modCount = table.mods.size();
+    {
+        std::lock_guard<std::mutex> lk(g_manifestMutex);
+        g_minimums = std::move(table);
+        ++g_minimumsGen;
+        g_minimumsActive.store(loaderOn || modCount != 0);
+    }
+    ModLoaderLogger::LogInfo(
+        L"[NetworkChannel] Version minimums set: loader minimum %S, %zu mod minimum(s)",
+        loaderOn ? "on" : "off", modCount);
+    return true;
+}
+
+static void HR_RegisterOnClientBelowMinimum(const IPluginSelf* self, PluginClientBelowMinimumCallback callback)
+{
+    if (!self || !self->name || !callback) return;
+    if (!HostRulesAuthority("RegisterOnClientBelowMinimum")) return;
+
+    {
+        std::lock_guard<std::mutex> lk(g_minCbMutex);
+        if (std::find(g_minCbs.begin(), g_minCbs.end(), callback) != g_minCbs.end()) return;
+        g_minCbs.push_back(callback);
+    }
+    ModLoaderLogger::LogDebug(
+        L"[NetworkChannel] Below-minimum callback registered for plugin='%S'", self->name);
+}
+
+static void HR_UnregisterOnClientBelowMinimum(const IPluginSelf* self, PluginClientBelowMinimumCallback callback)
+{
+    if (!self || !callback) return;
+
+    std::lock_guard<std::mutex> lk(g_minCbMutex);
+    g_minCbs.erase(std::remove(g_minCbs.begin(), g_minCbs.end(), callback), g_minCbs.end());
+}
+
 static IPluginHostRules g_hostRulesIface =
 {
     HR_SetRules,
@@ -3128,7 +3212,181 @@ static IPluginHostRules g_hostRulesIface =
     HR_ClearConnection,
     HR_RegisterOnClientFeatures,
     HR_UnregisterOnClientFeatures,
+    HR_SetVersionMinimums,
+    HR_RegisterOnClientBelowMinimum,
+    HR_UnregisterOnClientBelowMinimum,
 };
+
+// The manifest rows of one connection for FindBelowMinimum. A row is wire-refused
+// when the server has the same plugin loaded, the wire check (CheckClientPair)
+// finds the pair incompatible, and at least one side declared wire information;
+// a plugin with no declaration on either side is judged by version minimums alone.
+// Only asked for when the table has a wire row, since it queries the plugin
+// manager.
+static std::vector<HostRulesWire::ManifestRow> BuildManifestRows(
+    void* conn, const std::vector<NetworkChannel::RemotePlugin>& plugins, bool needWire)
+{
+    std::vector<WireCompat::Entry> mine;
+    if (needWire) mine = PluginManager::GetWireEntries();
+
+    std::vector<HostRulesWire::ManifestRow> rows;
+    rows.reserve(plugins.size());
+    for (const auto& rp : plugins)
+    {
+        HostRulesWire::ManifestRow row;
+        row.plugin = rp.name;
+        row.version = rp.version;
+        if (needWire)
+        {
+            const WireCompat::Entry* local = WireCompat::FindEntry(mine, rp.name);
+            if (local)
+            {
+                const PairCheck pc = CheckClientPair(conn, rp.name.c_str(), local->version.c_str());
+                if (pc.state == WireCompat::PairState::Incompatible)
+                {
+                    bool clientDeclared = false;
+                    {
+                        std::lock_guard<std::mutex> lk(g_manifestMutex);
+                        auto wt = g_clientWires.find(conn);
+                        if (wt != g_clientWires.end())
+                            if (const WireCompat::Entry* e = WireCompat::FindEntry(wt->second, rp.name))
+                                clientDeclared = e->decl.declared;
+                    }
+                    row.wireRefused = pc.serverDecl.declared || clientDeclared;
+                }
+            }
+        }
+        rows.push_back(std::move(row));
+    }
+    return rows;
+}
+
+// Checks every connected client that has not fired yet against the minimums, and
+// tells the plugins about each one that is below, once per join. Runs from the
+// tick (the game thread). The client's loader version comes with "$ML:feat"; a
+// client with a manifest but no feature list 30 s after it is treated as having
+// reported no version. Vanilla players (no manifest) and the listen host's own
+// controller (no connection) are never looked at. A finding whose controller does
+// not exist yet is kept and retried each tick. With an empty table this is one
+// atomic load.
+static void PumpVersionMinimums()
+{
+    if (!g_minimumsActive.load()) return;
+    if (!HasNetAuthority()) return;
+
+    struct Candidate
+    {
+        void* conn;
+        std::vector<NetworkChannel::RemotePlugin> plugins;
+        bool loaderReported;
+        std::string loaderTag;
+        uint64_t gen;
+        uint64_t manifestTick;
+    };
+
+    HostRulesWire::Minimums table;
+    std::vector<Candidate> todo;
+    std::vector<void*> retry;
+    {
+        std::lock_guard<std::mutex> lk(g_manifestMutex);
+        table = g_minimums;
+        const uint64_t now = GetTickCount64();
+        for (const auto& kv : g_manifests)
+        {
+            MinimumsCheck& st = g_minCheck[kv.first];
+            if (st.fired) continue;
+
+            const auto tk = g_manifestTick.find(kv.first);
+            if (tk == g_manifestTick.end()) continue;
+            const auto ft = g_clientFeat.find(kv.first);
+            const bool hasFeat = (ft != g_clientFeat.end());
+            if (!hasFeat && now - tk->second < kLoaderReportGraceMs) continue;
+
+            if (st.checked && st.gen == g_minimumsGen && st.hadFeat == hasFeat &&
+                st.manifestTick == tk->second)
+            {
+                if (!st.reason.empty()) retry.push_back(kv.first);
+                continue;
+            }
+            todo.push_back({ kv.first, kv.second, hasFeat, hasFeat ? ft->second.loaderTag : std::string(),
+                             g_minimumsGen, tk->second });
+        }
+    }
+
+    bool needWire = false;
+    for (const auto& m : table.mods) needWire = needWire || m.wire;
+
+    for (const Candidate& c : todo)
+    {
+        const std::vector<HostRulesWire::ManifestRow> rows = BuildManifestRows(c.conn, c.plugins, needWire);
+        const std::string reason = HostRulesWire::BuildBelowMinimumReason(
+            HostRulesWire::FindBelowMinimum(table, c.loaderReported, c.loaderTag, rows));
+
+        std::lock_guard<std::mutex> lk(g_manifestMutex);
+        auto it = g_minCheck.find(c.conn);
+        // A table set while this was being checked leaves the entry for the
+        // next tick, which checks it against the new one.
+        if (it == g_minCheck.end() || it->second.fired || c.gen != g_minimumsGen) continue;
+        MinimumsCheck& st = it->second;
+        st.checked = true;
+        st.gen = c.gen;
+        st.hadFeat = c.loaderReported;
+        st.manifestTick = c.manifestTick;
+        st.reason = reason;
+        if (!reason.empty()) retry.push_back(c.conn);
+    }
+    if (retry.empty()) return;
+
+    struct Fire { void* pc; std::string reason; std::string who; };
+    std::vector<Fire> fires;
+    for (void* conn : retry)
+    {
+        void* pc = PlayerForConnection(conn);
+        if (!pc) continue;
+
+        Fire f;
+        {
+            std::lock_guard<std::mutex> lk(g_manifestMutex);
+            auto it = g_minCheck.find(conn);
+            if (it == g_minCheck.end() || it->second.fired || it->second.reason.empty()) continue;
+            it->second.fired = true;
+            f.reason = it->second.reason;
+        }
+        f.pc = pc;
+        f.who = PlayerNameForConnection(conn);
+        fires.push_back(std::move(f));
+    }
+    if (fires.empty()) return;
+
+    std::vector<PluginClientBelowMinimumCallback> cbs;
+    {
+        std::lock_guard<std::mutex> lk(g_minCbMutex);
+        cbs = g_minCbs;
+    }
+
+    for (const Fire& f : fires)
+    {
+        ModLoaderLogger::LogInfo(
+            L"[NetworkChannel] Player '%S' is below the server's minimum version: %S",
+            f.who.empty() ? "(unnamed)" : f.who.c_str(), f.reason.c_str());
+        for (PluginClientBelowMinimumCallback cb : cbs)
+        {
+            try
+            {
+                PluginGuard::Invoke(cb, "below-minimum callback", f.pc, f.reason.c_str());
+            }
+            catch (const std::exception& ex)
+            {
+                ModLoaderLogger::LogError(
+                    L"[NetworkChannel] Exception in below-minimum callback: %S", ex.what());
+            }
+            catch (...)
+            {
+                ModLoaderLogger::LogError(L"[NetworkChannel] Unknown exception in below-minimum callback");
+            }
+        }
+    }
+}
 
 // Tells the registered plugins about every client whose feature list arrived or
 // changed since the last tick, on the game thread (the tick is). A client whose
@@ -3521,6 +3779,7 @@ static void OnWorldEndPlayForgetConns(SDK::UWorld* /*world*/, const char* /*worl
         g_clientWires.clear();
         g_clientFeat.clear();
         g_connRules.clear();
+        g_minCheck.clear();
     }
     {
         std::lock_guard<std::mutex> lk(g_helloMutex);
@@ -3694,6 +3953,7 @@ static void OnEngineTick(float /*deltaSeconds*/)
     PumpGreetings(now);
     PumpClientReady();
     PumpClientFeatures();
+    PumpVersionMinimums();
 
 #ifdef MODLOADER_CLIENT_BUILD
     RefreshManifestIfStale();
@@ -3918,6 +4178,9 @@ void NetworkChannel::Shutdown()
         g_clientFeat.clear();
         g_connRules.clear();
         g_setGlobal = HostRulesWire::RulesSet();
+        g_minCheck.clear();
+        g_minimums = HostRulesWire::Minimums();
+        g_minimumsActive.store(false);
     }
     {
         std::lock_guard<std::mutex> lk(g_helloMutex);
@@ -3933,6 +4196,10 @@ void NetworkChannel::Shutdown()
     {
         std::lock_guard<std::mutex> lk(g_featCbMutex);
         g_featCbs.clear();
+    }
+    {
+        std::lock_guard<std::mutex> lk(g_minCbMutex);
+        g_minCbs.clear();
     }
     {
         std::lock_guard<std::mutex> lk(g_wireLogMutex);
@@ -4004,6 +4271,10 @@ void NetworkChannel::ForgetModule(HMODULE module)
     {
         std::lock_guard<std::mutex> lk(g_featCbMutex);
         dropped += PluginGuard::ForgetModule(g_featCbs, module);
+    }
+    {
+        std::lock_guard<std::mutex> lk(g_minCbMutex);
+        dropped += PluginGuard::ForgetModule(g_minCbs, module);
     }
     {
         std::lock_guard<std::mutex> lk(g_serverMutex);
