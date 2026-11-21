@@ -469,6 +469,15 @@ DWORD WINAPI MainInitThreadProc(LPVOID)
         }
     }
 #else
+    // The client verifies GObjects inside its layout check, which the server
+    // does not run. Plugins are handed the globals only once it has passed.
+    if (VersionMap::ServesExe(VersionMap::RunningExe()))
+    {
+        if (Hooks::EngineInit::IsEngineInitialized())
+            SdkGlobals::VerifyGObjects();
+        else
+            ModLoaderLogger::LogWarn(L"[SdkGlobals] GObjects not verified: engine init was not observed, so the game thread is not parked");
+    }
     SdkGlobals::ResolveFields();
 #endif
 

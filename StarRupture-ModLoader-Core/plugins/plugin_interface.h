@@ -1662,8 +1662,9 @@ struct IPluginEngineEvents
 
 	// --- v72 ---
 	// The Game-SDK globals as the loader found them on the running build (see
-	// PluginSdkGlobals). Null when the loader has none to give: a server build,
-	// or a loader that did not resolve them. Valid for the life of the process.
+	// PluginSdkGlobals). Null when the loader has none to give: it did not
+	// resolve them, or (on a dedicated server) its version map has no rows for
+	// the running server build. Valid for the life of the process.
 	const PluginSdkGlobals* (*GetSdkGlobals)();
 
 	// True when the caller is on the game thread, where UObjects may be

@@ -29,8 +29,9 @@ namespace SDK
 // any hook is installed. The game's main thread is still held then, so no
 // SDK call has run yet and nothing can race the hand-over.
 //
-// Client builds only; on a server build these do nothing and the SDK keeps
-// its Offsets:: values.
+// Both builds. The client's map serves every build it lists; the server's
+// serves only the exe it was measured on (VersionMap::ServesExe), and on any
+// other the SDK keeps its Offsets:: values.
 namespace SdkGlobals
 {
     // Resolves all four. GObjects and FName::AppendString are each handed to
@@ -38,7 +39,7 @@ namespace SdkGlobals
     // against Offsets::; a miss keeps that one on Offsets::, exactly as
     // before. GNames and GWorld are logged only -- the SDK has no run-time
     // entry point for either, and its Offsets:: values for them are not the
-    // engine globals.
+    // engine globals. Does nothing on an exe VersionMap::ServesExe refuses.
     void ResolveAndApply();
 
     // Checks that the GObjects the SDK now uses has the shape of the engine's
@@ -48,7 +49,9 @@ namespace SdkGlobals
     // right; nothing should walk GObjects then.
     //
     // Needs the engine's object array to be populated, so call it after
-    // engine init, with the game thread still parked.
+    // engine init, with the game thread still parked. The client's layout
+    // check calls it; the server, which has none, calls it once engine init
+    // is done.
     bool VerifyGObjects();
 
     // One global as ResolveAndApply found it, for the compatibility report.
@@ -62,14 +65,15 @@ namespace SdkGlobals
                                 // and the SDK uses Offsets:: (GObjects only)
     };
 
-    // Every global ResolveAndApply looked for, in order. Client builds only.
+    // Every global ResolveAndApply looked for, in order. Empty when it did not
+    // run (an exe the map has no rows for).
     const std::vector<Resolution>& Resolutions();
 
     // The globals for IPluginEngineEvents::GetSdkGlobals: the ones this build
     // resolved through the version map, with a GObjects the layout check has
     // verified. Null when VersionMap::SdkGlobalsWithheld says so (logged
-    // once), and on the server build. Settled on the first call, which comes
-    // from a PluginInit; valid for the life of the process.
+    // once), and on a server exe the map has no rows for. Settled on the first
+    // call, which comes from a PluginInit; valid for the life of the process.
     const PluginSdkGlobals* ForPlugins();
 
     // The current world, for the loader's own code; use it in place of

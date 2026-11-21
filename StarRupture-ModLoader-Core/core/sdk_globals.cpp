@@ -1,8 +1,6 @@
 #include "sdk_globals.h"
 #include "../plugins/plugin_interface.h"
 
-#if defined(MODLOADER_CLIENT_BUILD)
-
 #include "CoreUObject_classes.hpp"
 #include "../hooks/game/scan_patterns.h"
 #include "../logging/logger.h"
@@ -169,6 +167,15 @@ namespace SdkGlobals
 
     void ResolveAndApply()
     {
+        // The server's map holds the rows of the one exe it was measured on.
+        // On any other the SDK keeps its Offsets:: values, as it did before
+        // these were resolved on the server, and plugins are handed nothing.
+        if (!VersionMap::ServesExe(VersionMap::RunningExe()))
+        {
+            ModLoaderLogger::LogInfo(L"[SdkGlobals] The version map has no rows for this exe; the SDK keeps its built-in Offsets::");
+            return;
+        }
+
         const uintptr_t base = reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
 
         Global gObjects     { "GObjects",     ScanPatterns::GObjects_PreAllocate,  SDK::Offsets::GObjects };
@@ -267,6 +274,9 @@ namespace SdkGlobals
         static const PluginSdkGlobals* const globals = []() -> const PluginSdkGlobals*
         {
             static PluginSdkGlobals value{};
+            // Only an exe the map has rows for (always true on the client).
+            if (!VersionMap::ServesExe(VersionMap::RunningExe()))
+                return nullptr;
             const uintptr_t gObjects = g_gObjectsVerified
                 ? reinterpret_cast<uintptr_t>(SDK::UObject::GObjects.GetTypedPtr()) : 0;
             const std::string withheld = VersionMap::SdkGlobalsWithheld(VersionMap::RunningExe(),
@@ -296,21 +306,6 @@ namespace SdkGlobals
         return g_gWorld ? *reinterpret_cast<SDK::UWorld**>(g_gWorld) : nullptr;
     }
 }
-
-#else
-
-#include "Engine_classes.hpp"
-
-namespace SdkGlobals
-{
-    void ResolveAndApply() {}
-    bool VerifyGObjects() { return true; }
-    bool SdkOnResolvedGlobals() { return false; }
-    const PluginSdkGlobals* ForPlugins() { return nullptr; }
-    static SDK::UWorld* GetGWorld() { return SDK::UWorld::GetWorld(); }
-}
-
-#endif
 
 // ---- Members the loader reads, resolved per build (both builds) -----------
 

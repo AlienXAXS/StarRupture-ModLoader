@@ -546,9 +546,9 @@ namespace ScanPatterns
 	inline constexpr auto FBitReader_SerializeBits =
 		"48 89 5C 24 ?? 48 89 74 24 ?? 57 48 83 EC ?? F6 41 ?? ?? 49 8B F8 48 8B F2 48 8B D9 0F 85";
 
-#if defined(MODLOADER_CLIENT_BUILD)
+#if defined(MODLOADER_CLIENT_BUILD) || defined(MODLOADER_SERVER_BUILD)
 	// -----------------------------------------------------------------------
-	// Game-SDK globals  (client, see core/sdk_globals.h)
+	// Game-SDK globals  (client and server, see core/sdk_globals.h)
 	//
 	// The SDK ships these as fixed offsets (Offsets:: in Basic.hpp) that are
 	// right for exactly one game build. These patterns find the same things
@@ -605,7 +605,9 @@ namespace ScanPatterns
 	//   41 B0 01           mov  r8b, 1
 	inline constexpr auto GWorld_EngineLoopTick =
 		"48 8B 1D ?? ?? ?? ?? 48 85 DB 74 ?? 41 B0 01";
+#endif
 
+#if defined(MODLOADER_CLIENT_BUILD)
 	// FSlateRHIRenderer::PresentWindow_RenderThread(FRHICommandListImmediate&,
 	//   const FSlateDrawWindowPassInputs&, const FSlateDrawWindowPassOutputs&)
 	// Where Slate hands a window's finished back buffer to
@@ -749,6 +751,18 @@ namespace ScanPatterns
 		{ "FOutBunch::~FOutBunch",                     FOutBunch_dtor,                           true },
 		{ "FBitWriter::Serialize",                     FBitWriter_Serialize,                     true },
 		{ "FBitReader::SerializeBits",                 FBitReader_SerializeBits,                 true },
+		// Optional: the Game-SDK globals (core/sdk_globals.h). A miss leaves the
+		// SDK on its built-in Offsets:: values, which is what it used before.
+		// GObjects is ObjObjects, 0x10 into GUObjectArray: an address inside a
+		// global, not the start of one, so it is a site of kind Any (unique,
+		// no section check), not a Data global.
+		{ "GObjects (GUObjectArray.ObjObjects)",       GObjects_PreAllocate,                     false,
+		                                               PatternKind::Any, -1, 7 },
+		{ "GNames (NamePoolData)",                     GNames_NamePoolData,                      false,
+		                                               PatternKind::Data, -1, 0 },
+		{ "FName::AppendString",                       FName_AppendString,                       false },
+		{ "GWorld",                                    GWorld_EngineLoopTick,                    false,
+		                                               PatternKind::Data, -1, 0 },
 #endif
 
 #if defined(MODLOADER_CLIENT_BUILD)
@@ -774,18 +788,6 @@ namespace ScanPatterns
 		// key -- not a reason to refuse to boot.
 		{ "UCrUW_MainMenuWidget::NativeConstruct",     UCrUW_MainMenuWidget_NativeConstruct,     false },
 		{ "UCrUW_PauseMenu::NativeConstruct",          UCrUW_PauseMenu_NativeConstruct,          false },
-		// Optional: the Game-SDK globals (core/sdk_globals.h). A miss leaves the
-		// SDK on its built-in Offsets:: values, which is what it used before.
-		// GObjects is ObjObjects, 0x10 into GUObjectArray: an address inside a
-		// global, not the start of one, so it is a site of kind Any (unique,
-		// no section check), not a Data global.
-		{ "GObjects (GUObjectArray.ObjObjects)",       GObjects_PreAllocate,                     false,
-		                                               PatternKind::Any, -1, 7 },
-		{ "GNames (NamePoolData)",                     GNames_NamePoolData,                      false,
-		                                               PatternKind::Data, -1, 0 },
-		{ "FName::AppendString",                       FName_AppendString,                       false },
-		{ "GWorld",                                    GWorld_EngineLoopTick,                    false,
-		                                               PatternKind::Data, -1, 0 },
 		// Optional: without these the overlay is drawn at Present only, so
 		// frame generation shows it on real frames only.
 		{ "FSlateRHIRenderer::PresentWindow_RenderThread", FSlateRHIRenderer_PresentWindow_RenderThread, false },
