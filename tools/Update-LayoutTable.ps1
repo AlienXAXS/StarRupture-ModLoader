@@ -49,6 +49,18 @@
                   allow list); a change switches plugins off
     A class with no tag is unknown, and a change to it switches plugins off.
 
+    CI checks every table (.github\workflows\sr-layout-drift.yml): it makes each
+    one again from the loader's sources and the same Game-SDK commit, with this
+    script's command, and diffs it with the committed file; a difference fails
+    the run. The newest table uses the Game-SDK submodule; an older one uses the
+    commit listed for its CL in tools\layout-table-pins.json. When you add a
+    newer table, the previous newest becomes an older one: add its CL to the pins
+    file with the Game-SDK commit it was made from, and make every older table
+    again so it lists the classes the sources name now. The run names the
+    starrupture-ci and Plugin SDK commits it used; run this script with those two
+    to get the same files, from a checkout with no other checkouts or worktrees
+    inside it, as the generator reads every source file under the repository.
+
 .PARAMETER Generator
     Path to layout-table.mjs.
 

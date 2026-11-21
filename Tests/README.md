@@ -167,6 +167,12 @@ A console program like ConfigEditTests. It compiles the loader's own `core/layou
 `core/compat_report.cpp` without `MODLOADER_CLIENT_BUILD`, which keeps the comparison and the
 report's JSON and drops the parts that touch the game, so nothing else is linked.
 
+The layout tables themselves are checked by CI (`.github/workflows/sr-layout-drift.yml`): it makes
+each `core/layout_table_<CL>.generated.h` again from the loader's sources and the Game-SDK commit it
+was made from (the submodule for the newest, `tools/layout-table-pins.json` for an older one) and
+diffs it with the committed file. A table that is out of date fails the run; fix it with
+`tools/Update-LayoutTable.ps1`.
+
 `fixtures/` holds two layout tables generated from the Game-SDK at CL 126119 and CL 127004 for
 `ACrCharacterPlayerBase` and its reflected bases (see `tools/Update-LayoutTable.ps1` for the
 generator; these were made with `--used` naming just that class and `--namespace
