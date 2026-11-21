@@ -3281,7 +3281,7 @@ int main()
 		AdminPrompt::Reset(s);
 		Check(!s.open && !s.final && s.status.empty() && !s.hasLastAnswer && s.lastAnswerMs == 0 && !s.hasDismiss, "admin prompt: leaving the server clears the state");
 		Check(std::string(AdminPrompt::kPromptText).find("Not me") != std::string::npos, "admin prompt: the fixed text names Not me");
-	}
+	}
 
 	printf("%d checks, %d failed\n", g_checks, g_failed);
 	return g_failed ? 1 : 0;
