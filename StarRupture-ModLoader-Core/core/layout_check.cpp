@@ -114,6 +114,12 @@ namespace LayoutCheck
                     property = FindRenamedProperty(*live, row);
                 if (!property)
                 {
+                    if (const UnreflectedMember* unreflected = FindUnreflectedMember(sdk.name, row.name))
+                    {
+                        result.notReflected.push_back(
+                            Format("%s::%s: not compared, %s", sdk.name, row.name, unreflected->reason));
+                        continue;
+                    }
                     Record(result, sdk.name, row.name, kChangeMissing, 0, 0,
                         Format("%s::%s: not found in the game", sdk.name, row.name));
                     continue;
@@ -675,15 +681,17 @@ namespace LayoutCheck
 
         for (const std::string& line : result.lines)
             ModLoaderLogger::LogWarn(L"[LayoutCheck] %S", line.c_str());
+        for (const std::string& line : result.notReflected)
+            ModLoaderLogger::LogDebug(L"[LayoutCheck] %S", line.c_str());
 
         const double totalMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
         void (*const log)(const wchar_t*, ...) =
             FoundChanges(result) ? ModLoaderLogger::LogWarn : ModLoaderLogger::LogInfo;
         log(
             L"[LayoutCheck] SDK CL %u against the game: %d classes, %d checked, %d mismatched, %d missing, %d deferred,"
-            L" %d rows resolved per build -- GObjects pass %.1f ms (%d objects, %d types), %.1f ms in all; game build %u%s",
+            L" %d rows resolved per build, %d rows the game does not reflect -- GObjects pass %.1f ms (%d objects, %d types), %.1f ms in all; game build %u%s",
             tableEntry.cl, result.classes, result.checked, result.mismatched, result.missing, result.deferred,
-            result.perBuild,
+            result.perBuild, static_cast<int>(result.notReflected.size()),
             search.walkMs, search.objects, search.types, totalMs,
             runningCL, tableEntry.cl == runningCL ? L"" : L", no table of its own: the newest is used");
 

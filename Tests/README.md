@@ -199,6 +199,11 @@ the other the running game. It covers:
   changed on its own layout; a moved member of a class the loader's own code reads (`UWorld`) or a missing
   class is a safe-off, and a moved member of a class only a version map key names is listed as changed with no
   safe-off. The test build is a client build, so it reads the client's list of tables.
+- A member the game does not reflect (`ULevel::Actors`, listed in `kUnreflectedMembers`): the server's table
+  against a game that has every member but that one finds nothing changed, with the skipped row listed;
+  another member of the same class is still compared, the same member name on another class is still
+  reported, a moved core member is still a safe-off, and a game that does reflect `ULevel::Actors` at
+  another offset gets a mismatch.
 - The `UObject::ProcessEvent` check: a stub virtual table whose slot holds the function the map resolved
   passes; one that holds another function adds one line to the result, is a found change with no class
   named, and gives a safe-off verdict; a different function in the next slot does not matter.

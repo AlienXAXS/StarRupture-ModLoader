@@ -23,7 +23,8 @@ namespace VersionMap { struct LiveField; }
 // and logs every class whose layout no longer matches: after a game update
 // that is the list of SDK types that now read the wrong bytes. Members the
 // loader resolves per build (SdkGlobals::ResolveFields) are not compared
-// here: the version map checks those (VersionMap::SelectField).
+// here: the version map checks those (VersionMap::SelectField). Nor is a member
+// the game does not reflect at all (kUnreflectedMembers).
 //
 // Each class in the table is tagged with what reads its layout (its
 // consumers). On a mismatch Decide says what has to stop: a loader feature
@@ -149,6 +150,35 @@ namespace LayoutCheck
         return false;
     }
 
+    // Members the SDK declares that the game's reflection data does not carry:
+    // the engine keeps them outside UPROPERTY and Dumper-7 writes them in by
+    // hand, so no lookup by name can find them. A row listed here is not
+    // compared when the game has no such member; one the game does reflect is
+    // compared like any other, so a moved offset still counts. Nothing checks
+    // the offset of a member listed here, so list one only where the SDK's
+    // header marks it as not auto-generated and the table generator did not
+    // already leave it out (it tests for the marker at the start of the
+    // comment, and the one on ULevel::Actors has text in front of it).
+    struct UnreflectedMember
+    {
+        const char* className;  // the SDK's C++ name
+        const char* member;
+        const char* reason;
+    };
+    inline constexpr UnreflectedMember kUnreflectedMembers[] = {
+        { "ULevel", "Actors",
+          "an engine TArray outside UPROPERTY, which Dumper-7 predefines at 0xA0" },
+    };
+
+    // The entry for a class and member, or null.
+    inline const UnreflectedMember* FindUnreflectedMember(const char* className, const char* member)
+    {
+        for (const UnreflectedMember& listed : kUnreflectedMembers)
+            if (std::strcmp(listed.className, className) == 0 && std::strcmp(listed.member, member) == 0)
+                return &listed;
+        return nullptr;
+    }
+
     // Consumer ids (tools\Update-LayoutTable.ps1 tags the table with them).
     inline constexpr const char* kConsumerCore      = "core";        // the loader's own code
     inline constexpr const char* kConsumerPluginSdk = "plugin-sdk";  // compiled into every plugin
@@ -241,9 +271,10 @@ namespace LayoutCheck
         int perBuild   = 0;  // rows left to the per-build resolver, not compared
         int checked    = 0;  // found in the game and compared
         int mismatched = 0;  // found, but the layout differs
-        int missing    = 0;  // not found in the game
+        int missing    = 0;  // not found in the game (classes; a member the game lacks is a difference in its class)
         int slotMismatched = 0;  // vtable slots that do not hold the function the map resolved
         int deferred   = 0;  // not checked at startup (Blueprint classes, unknown kind)
+        std::vector<std::string> notReflected;    // rows of kUnreflectedMembers the game does not reflect: not compared, one line each, for the debug log
         std::vector<std::string> changedClasses;  // SDK names of the mismatched and missing classes
         std::vector<std::string> lines;           // one per difference, ready to log
         std::vector<Change>      changes;         // the same differences, one each
@@ -292,6 +323,8 @@ namespace LayoutCheck
     // and a UClass the loader reaches only through pointers has size 0 (one
     // it allocates or copies, such as UFunction, keeps its size). Rows for
     // which perBuild is true are skipped and counted in Result::perBuild.
+    // A row in kUnreflectedMembers that the game does not reflect is skipped
+    // and listed in Result::notReflected.
     // A row Dumper-7 renamed with a _<n> suffix (Class_0) matches the game's
     // member without it only at the same offset and size.
     using PerBuild = std::function<bool(const TableClass&, const TableRow&)>;

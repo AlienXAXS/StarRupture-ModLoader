@@ -1353,6 +1353,97 @@ namespace
                 "a key-only class moved: listed as changed, no safe-off");
         }
     }
+
+    // ULevel::Actors is a TArray the engine keeps outside UPROPERTY: Dumper-7
+    // writes it into the SDK, and the table lists it, but the game's
+    // reflection data has no such member. The server's first boot flagged it.
+    void MembersTheGameDoesNotReflect()
+    {
+        std::printf("A member the game does not reflect\n");
+        using LayoutCheck::Kind;
+
+        Check(LayoutCheck::FindUnreflectedMember("ULevel", "Actors") != nullptr
+            && LayoutCheck::FindUnreflectedMember("ULevel", "Other") == nullptr
+            && LayoutCheck::FindUnreflectedMember("AActor", "Actors") == nullptr,
+            "only that class and member are listed");
+
+        // The server's table, against a game that reflects every member but
+        // ULevel::Actors.
+        const std::vector<LayoutCheck::TableClass> server = LayoutCheck::kServerTables[0].read();
+        const LayoutCheck::TableClass* level = ClassNamed(server, "ULevel");
+        const bool levelHasActors = level && std::any_of(level->rows.begin(), level->rows.end(),
+            [](const LayoutCheck::TableRow& row) { return std::string(row.name) == "Actors"; });
+        Check(levelHasActors, "the server table lists ULevel::Actors");
+        if (levelHasActors)
+        {
+            const auto dropActors = [&](std::map<std::string, LayoutCheck::LiveStruct>& game)
+            {
+                auto& properties = game[level->path].properties;
+                properties.erase(std::remove_if(properties.begin(), properties.end(),
+                    [](const LayoutCheck::LiveProperty& p) { return p.name == "Actors"; }), properties.end());
+            };
+
+            auto game = AsGame(server);
+            dropActors(game);
+            const LayoutCheck::Result result = CompareWith(server, game);
+            Check(result.mismatched == 0 && result.missing == 0 && result.checked == result.classes && result.lines.empty()
+                && result.changedClasses.empty() && !LayoutCheck::FoundChanges(result)
+                && !LayoutCheck::Decide(server, result).safeOff,
+                "a game with no ULevel::Actors: nothing changed, plugins stay on");
+            Check(result.notReflected.size() == 1
+                && result.notReflected[0] == "ULevel::Actors: not compared, "
+                    "an engine TArray outside UPROPERTY, which Dumper-7 predefines at 0xA0",
+                "the skipped row is listed, with its reason, for the debug log");
+
+            // Real changes elsewhere still count, with the exempt member missing.
+            const LayoutCheck::TableClass* world = ClassNamed(server, "UWorld");
+            Check(world && !world->rows.empty(), "UWorld is in the server table with rows");
+            if (world && !world->rows.empty())
+            {
+                game[world->path].properties.front().offset += 8;
+                const LayoutCheck::Result moved = CompareWith(server, game);
+                const LayoutCheck::Verdict verdict = LayoutCheck::Decide(server, moved);
+                Check(LayoutCheck::FoundChanges(moved) && verdict.safeOff && verdict.changed == std::vector<std::string>{ "UWorld" },
+                    "a moved core member is still a safe-off, and ULevel is not among the changed classes");
+            }
+        }
+
+        const std::vector<LayoutCheck::TableClass> sdk = {
+            { "ULevel", "Engine.Level", 0, 0, Kind::Class,
+                { { "Actors", 0xA0, 16, 0 }, { "Other", 0xB0, 8, 0 } } },
+            { "UElse", "Mod.Else", 0, 0, Kind::Class, { { "Actors", 0xA0, 16, 0 } } },
+        };
+
+        // The same class's other members are still compared, and a member that
+        // is not listed is still reported when the game lacks it.
+        const std::map<std::string, LayoutCheck::LiveStruct> lacking = {
+            { "Engine.Level", { 0x100, 8, { { "Other", 0xB8, 8, false, 0 } } } },
+            { "Mod.Else", { 0x100, 8, {} } },
+        };
+        const LayoutCheck::Result partial = CompareWith(sdk, lacking);
+        Check(Contains(partial, "ULevel::Other: offset SDK 0xB0, game 0xB8"),
+            "another member of the same class is still compared");
+        Check(!Contains(partial, "ULevel::Actors: not found in the game") && partial.notReflected.size() == 1,
+            "ULevel::Actors is the one row skipped");
+        Check(Contains(partial, "UElse::Actors: not found in the game"),
+            "the same member name on another class is not exempt");
+
+        // A game that does reflect it is compared like any member.
+        const std::map<std::string, LayoutCheck::LiveStruct> reflected = {
+            { "Engine.Level", { 0x100, 8, { { "Actors", 0xB0, 16, false, 0 }, { "Other", 0xB0, 8, false, 0 } } } },
+            { "Mod.Else", { 0x100, 8, { { "Actors", 0xA0, 16, false, 0 } } } },
+        };
+        const LayoutCheck::Result moved = CompareWith(sdk, reflected);
+        Check(Contains(moved, "ULevel::Actors: offset SDK 0xA0, game 0xB0") && moved.notReflected.empty()
+            && LayoutCheck::FoundChanges(moved),
+            "a reflected ULevel::Actors at another offset is a mismatch");
+        const LayoutCheck::Result same = CompareWith(sdk, {
+            { "Engine.Level", { 0x100, 8, { { "Actors", 0xA0, 16, false, 0 }, { "Other", 0xB0, 8, false, 0 } } } },
+            { "Mod.Else", { 0x100, 8, { { "Actors", 0xA0, 16, false, 0 } } } },
+        });
+        Check(same.lines.empty() && same.notReflected.empty() && !LayoutCheck::FoundChanges(same),
+            "a reflected ULevel::Actors at the table's offset matches");
+    }
 }
 
 int main()
@@ -1372,6 +1463,7 @@ int main()
     OldLoaderOn130045();
     TablePerBuild();
     ServerTable();
+    MembersTheGameDoesNotReflect();
     ConsumersDecideWhatStops();
     ProcessEventSlotDecidesSafeOff();
     FunctionParamsFollowTheGame();
