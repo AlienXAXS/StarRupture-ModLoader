@@ -313,6 +313,7 @@ namespace
     static constexpr const char* kMlPlugin   = "$ML";
     static constexpr const char* kMlManifest = "manifest";
     static constexpr const char* kMlAck      = "ack";
+    static constexpr const char* kMlWires    = "wires";
     static constexpr const char* kMlEcho     = "echo";
     static constexpr const char* kMlEchoBack = "echoreply";
 
@@ -403,6 +404,15 @@ namespace
     // lifetime as g_manifests.
     static std::unordered_map<void*, uint64_t> g_manifestTick;
 
+    // The wire declarations each client sent after its manifest. Same lock and
+    // lifetime as g_manifests; an entry exists only once a well-formed table
+    // arrived, so a client that sent none is checked by exact version alone.
+    static std::unordered_map<void*, std::vector<WireCompat::Entry>> g_clientWires;
+
+    // The ack tail (the wire table) stays within this many bytes. A table that
+    // does not fit is cut after whole entries.
+    static constexpr size_t kMaxTailBytes = 8192;
+
     // How long ago this connection's manifest arrived, in ms. Huge when it has
     // not reported, so a pair with no manifest never counts as "still settling".
     static uint64_t ManifestAgeMs(void* conn)
@@ -442,13 +452,14 @@ namespace
         // Hot path: the same version is a match with no further lookup. The list
         // is reused per thread so filling it under the manifest lock does not
         // allocate on every packet.
-        thread_local std::vector<std::string> otherVersions;
+        thread_local std::vector<WireCompat::Entry> otherVersions;
         otherVersions.clear();
         {
             std::lock_guard<std::mutex> lk(g_manifestMutex);
             auto it = g_manifests.find(conn);
             if (it == g_manifests.end()) return r;
 
+            auto wt = g_clientWires.find(conn);
             for (const auto& rp : it->second)
             {
                 if (rp.name != name) continue;
@@ -458,7 +469,18 @@ namespace
                     r.why = WireCompat::Verdict::SameVersion;
                     return r;
                 }
-                otherVersions.push_back(rp.version);
+                // The client's declaration for this exact version, when its wire
+                // table carried one; otherwise the entry stays undeclared.
+                WireCompat::Entry other;
+                other.name = name;
+                other.version = rp.version;
+                if (wt != g_clientWires.end())
+                {
+                    if (const WireCompat::Entry* declared = WireCompat::FindEntry(wt->second, name))
+                        if (declared->version == rp.version)
+                            other.decl = declared->decl;
+                }
+                otherVersions.push_back(std::move(other));
             }
         }
         if (otherVersions.empty()) return r;   // NotReported
@@ -470,20 +492,17 @@ namespace
         r.serverDecl = local.decl;
         r.state = WireCompat::PairState::Incompatible;
         r.why = WireCompat::Verdict::Incompatible;
-        r.clientVersion = otherVersions.front();
+        r.clientVersion = otherVersions.front().version;
 
-        for (const std::string& cv : otherVersions)
+        for (WireCompat::Entry& client : otherVersions)
         {
-            WireCompat::Entry client;
-            client.name = name;
-            client.version = cv;
             WireCompat::Verdict v = WireCompat::Verdict::Incompatible;
             const WireCompat::PairState s = WireCompat::ClassifyPair(&client, local, true, &v);
             if (s == WireCompat::PairState::Ready)
             {
                 r.state = s;
                 r.why = v;
-                r.clientVersion = cv;
+                r.clientVersion = client.version;
                 r.clientDecl = client.decl;
                 break;
             }
@@ -496,6 +515,13 @@ namespace
     static std::mutex            g_wireLogMutex;
     static WireCompat::WarnOnce  g_wireBlockedWarned;
     static WireCompat::WarnOnce  g_wireAcceptedNoted;
+    // Keyed by (connection, "$wires"): one note per connection that sent a wire
+    // table the server could not read. A plugin name never starts with '$'.
+    static WireCompat::WarnOnce  g_wiresGarbageWarned;
+    // Plugin names already reported as left out of the wire table, so the
+    // warning is not repeated for every client that joins.
+    static std::set<std::string> g_wireDroppedWarned;
+    static bool                  g_wireCutWarned = false;
 
     // Says what CheckClientPair found, when there is something to say: one INFO
     // when a pair with different version strings is accepted, one WARN when a pair
@@ -540,6 +566,36 @@ namespace
             L"[NetworkChannel] Plugin '%S': client %p runs version '%S', the server runs '%S'%S. "
             L"Wire format not known to match, plugin data will not be exchanged.",
             name, conn, pc.clientVersion.c_str(), version ? version : "", ids.c_str());
+    }
+
+    // Says once what the wire table sent to clients is missing: plugins that
+    // cannot be described in it, and plugins that did not fit its size limit.
+    static void WarnWireTableGaps(const std::vector<std::string>& notEncoded, size_t cut)
+    {
+        std::vector<std::string> fresh;
+        bool cutFirst = false;
+        {
+            std::lock_guard<std::mutex> lk(g_wireLogMutex);
+            for (const std::string& n : notEncoded)
+                if (g_wireDroppedWarned.insert(n).second)
+                    fresh.push_back(n);
+            if (cut > 0 && !g_wireCutWarned)
+            {
+                g_wireCutWarned = true;
+                cutFirst = true;
+            }
+        }
+        for (const std::string& n : fresh)
+            ModLoaderLogger::LogWarn(
+                L"[NetworkChannel] Plugin '%S' has a separator character, a leading '$' or an oversized field "
+                L"and was left out of the wire table", n.c_str());
+        if (cutFirst)
+        {
+            const size_t total = PluginManager::GetWireEntries().size();
+            ModLoaderLogger::LogWarn(
+                L"[NetworkChannel] The plugin wire table was cut after %zu plugin(s) to fit one message; "
+                L"%zu plugin(s) were left out.", total - cut - notEncoded.size(), cut);
+        }
     }
 
     // Does this connection's plugin match the server's, so data may flow? False
@@ -1057,6 +1113,7 @@ namespace
             std::lock_guard<std::mutex> lk(g_manifestMutex);
             g_manifests.erase(conn);
             g_manifestTick.erase(conn);
+            g_clientWires.erase(conn);
         }
         {
             std::lock_guard<std::mutex> lk(g_helloMutex);
@@ -1074,6 +1131,7 @@ namespace
             std::lock_guard<std::mutex> lk(g_wireLogMutex);
             g_wireBlockedWarned.Forget(conn);
             g_wireAcceptedNoted.Forget(conn);
+            g_wiresGarbageWarned.Forget(conn);
         }
     }
 
@@ -2403,6 +2461,9 @@ static bool DispatchServerNarrow(void* senderConn, void* senderUObject,
                 std::lock_guard<std::mutex> lk(g_manifestMutex);
                 g_manifests[senderConn] = std::move(plugins);
                 g_manifestTick[senderConn] = GetTickCount64();
+                // A re-sent manifest may mean a different set of plugins: what the
+                // client declared before no longer applies until it sends it again.
+                g_clientWires.erase(senderConn);
             }
 
             // The other half of the pair above: one INFO line saying what this
@@ -2430,6 +2491,15 @@ static bool DispatchServerNarrow(void* senderConn, void* senderUObject,
             ack += std::to_string(PLUGIN_INTERFACE_VERSION);
             ack += kRecordSep;
 
+            // Behind the first record: this server's wire table. A client that
+            // reads only the first record ignores it; the ack is the only
+            // message that carries it.
+            std::vector<std::string> notEncoded;
+            size_t cut = 0;
+            ack += WireCompat::EncodeTableCapped(PluginManager::GetWireEntries(), kMaxTailBytes,
+                &notEncoded, &cut);
+            WarnWireTableGaps(notEncoded, cut);
+
             if (!SendWire(senderConn, kMlPlugin, BuildEnvelope(kMlPlugin, kMlAck,
                                                     reinterpret_cast<const uint8_t*>(ack.data()),
                                                     ack.size())))
@@ -2437,6 +2507,36 @@ static bool DispatchServerNarrow(void* senderConn, void* senderUObject,
                 ModLoaderLogger::LogWarn(
                     L"[NetworkChannel] Could not acknowledge client %p -- it will retry", senderConn);
             }
+        }
+        else if (env.typeTag == kMlWires && senderConn)
+        {
+            // The client's wire table, sent after its manifest. Out of order
+            // (no manifest yet) is dropped without a word; the client sends it
+            // again with the next manifest.
+            if (!HasManifest(senderConn))
+                return true;
+
+            const WireCompat::DecodedTable table = WireCompat::DecodeTable(
+                reinterpret_cast<const char*>(env.payload.data()), env.payload.size());
+            if (!table.present)
+            {
+                bool first;
+                {
+                    std::lock_guard<std::mutex> lk(g_wireLogMutex);
+                    first = g_wiresGarbageWarned.First(senderConn, "$wires");
+                }
+                if (first)
+                    ModLoaderLogger::LogWarn(
+                        L"[NetworkChannel] Ignoring a malformed plugin wire table from client %p; "
+                        L"its plugins keep the exact-version rule.", senderConn);
+                return true;
+            }
+
+            {
+                std::lock_guard<std::mutex> lk(g_manifestMutex);
+                g_clientWires[senderConn] = table.entries;
+            }
+            MarkReadyDirty();
         }
         else if (env.typeTag == kMlEcho && senderConn)
         {
@@ -2463,6 +2563,25 @@ static bool DispatchServerNarrow(void* senderConn, void* senderUObject,
                 env.typeTag.c_str(), senderConn);
         }
         return true;
+    }
+
+    // A client running a version of this plugin that is not known to speak the
+    // same wire format gets no packets through, as in the other direction. A
+    // peer that has not reported yet is let through as before.
+    if (senderConn)
+    {
+        if (const IPluginSelf* self = PluginManager::GetSelfForPlugin(env.pluginName.c_str()))
+        {
+            const PairCheck pc = CheckClientPair(senderConn, self->name, self->version);
+            ReportPair(senderConn, self->name, self->version, pc);
+            if (pc.state == WireCompat::PairState::Incompatible)
+            {
+                ModLoaderLogger::LogTrace(
+                    L"[NetworkChannel] ReceiveFromClient dropped: sender=%p runs an incompatible '%S'",
+                    senderConn, self->name);
+                return true;
+            }
+        }
     }
 
     // Dispatch to registered server-side handlers
@@ -2571,6 +2690,7 @@ static void OnWorldEndPlayForgetConns(SDK::UWorld* /*world*/, const char* /*worl
         std::lock_guard<std::mutex> lk(g_manifestMutex);
         g_manifests.clear();
         g_manifestTick.clear();
+        g_clientWires.clear();
     }
     {
         std::lock_guard<std::mutex> lk(g_helloMutex);
@@ -2586,6 +2706,7 @@ static void OnWorldEndPlayForgetConns(SDK::UWorld* /*world*/, const char* /*worl
         std::lock_guard<std::mutex> lk(g_wireLogMutex);
         g_wireBlockedWarned.Clear();
         g_wireAcceptedNoted.Clear();
+        g_wiresGarbageWarned.Clear();
     }
 #ifdef MODLOADER_CLIENT_BUILD
     // Our own report is void too: the next world means a new connection, so the
@@ -2927,6 +3048,7 @@ void NetworkChannel::Shutdown()
         std::lock_guard<std::mutex> lk(g_manifestMutex);
         g_manifests.clear();
         g_manifestTick.clear();
+        g_clientWires.clear();
     }
     {
         std::lock_guard<std::mutex> lk(g_helloMutex);
@@ -2943,6 +3065,7 @@ void NetworkChannel::Shutdown()
         std::lock_guard<std::mutex> lk(g_wireLogMutex);
         g_wireBlockedWarned.Clear();
         g_wireAcceptedNoted.Clear();
+        g_wiresGarbageWarned.Clear();
     }
 
     {
