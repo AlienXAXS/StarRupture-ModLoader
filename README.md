@@ -631,7 +631,9 @@ starts without plugins, with no dialog, when the loader cannot find everything i
 prints one line per build in a fetched file: this exe or another, its row count, and whether the rows are
 identical to the loader's own, differ, were added or were refused.
 
-At startup the loader also checks that the game classes it reads are laid out as it was built for. If a
+At startup the loader also checks that the game classes it reads are laid out as it was built for. It carries
+a layout table for each game build it supports and checks the running game against the table of its own build,
+or against the newest one when the build has no table of its own. If a
 game update changes a layout, only the features that read it are switched off, not every plugin. A plugin
 that keeps the game's layouts compiled in, instead of taking them from the version map, is not loaded then,
 unless it declares the game build it was compiled for and that build is the one running. The changed classes

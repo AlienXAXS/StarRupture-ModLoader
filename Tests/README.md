@@ -180,7 +180,7 @@ the other the running game. It covers:
   build), and the compatibility report's JSON carries the ProductVersion, the exe hash, a missed
   pattern with its quotes escaped, each global's RVA, and the class size and `ADSMoveSpeed` offset,
   old and new. The CL in the report's file name comes from the ProductVersion.
-- Static arrays: the loader's own `core/layout_table.generated.h` holds `UWorld::LineBatchers[4]` as
+- Static arrays: the loader's own `core/layout_table_130045.generated.h` holds `UWorld::LineBatchers[4]` as
   0x20 bytes, the whole member, which matches a game reflecting `ElementSize` 8 times `ArrayDim` 4;
   the size of one element, as Dumper-7 comments it, is the old false positive.
 - The loader's CL-130045 table on a 130045 game (nothing changed) and on a 127004 game, where
@@ -190,6 +190,10 @@ the other the running game. It covers:
   from v1.26.1, kept in `fixtures/layout_table_loader_127004.h`): the same two members differ and
   nothing else, so a 127004 game has no changed class. The v1.26.1 table against a 130045 game, the
   other way round, finds `TimerActor` as a changed class.
+- One table per game build: which table a running CL picks (its own, else the newest, whether the CL sits
+  between two tables, above the newest, below the oldest or is 0), that the list of tables is strictly
+  increasing, that each table's class and row counts are what its header says, and that a 127004 run selects
+  the 127004 table, which finds nothing changed on the real 127004 layout and needs no per-build rule.
 - The `UObject::ProcessEvent` check: a stub virtual table whose slot holds the function the map resolved
   passes; one that holds another function adds one line to the result, is a found change with no class
   named, and gives a safe-off verdict; a different function in the next slot does not matter.

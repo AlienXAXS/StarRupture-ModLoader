@@ -67,7 +67,9 @@ works offline on every build in it. The signed feed (below) adds to that.
 in the SDK) and the server against CL-127004 (`Server\build_cl.txt`); `Shared.props` reads the number
 from the file and passes it as `MODLOADER_BUILT_CL`. The `kBuiltCL` line in `version_map.generated.h`
 is the client's (CI keeps that line). A client build stops if that line differs from `Client\build_cl.txt`,
-if the file is missing, or if `core/layout_table.generated.h` is for another CL.
+if the file is missing, or if the newest layout table (`core/layout_table_<CL>.generated.h`) is for another CL.
+The loader carries one layout table for each build it supports (CL-127004 and CL-130045), and the start check
+uses the one for the running build's own CL, or the newest when the build has none.
 The client's built-in rows still list every build it has run on, CL-127004 included, so the same
 files run on both. On CL-127004 the compiled offsets are not trusted, the Game-SDK globals are found
 by pattern, and a member that sits elsewhere on that build is read from the version map or the game. In the loader's
