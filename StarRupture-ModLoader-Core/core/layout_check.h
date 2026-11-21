@@ -159,10 +159,11 @@ namespace LayoutCheck
     // may hold a row for it per build, but nothing compares that row with
     // reflection. This is not kPluginPerBuildMembers because that list is for
     // offsets that move between builds, and its rows are counted as resolved
-    // per build. List a member here only where the SDK's
-    // header marks it as not auto-generated and the table generator did not
-    // already leave it out (it tests for the marker at the start of the
-    // comment, and the one on ULevel::Actors has text in front of it).
+    // per build. The table generator leaves out a member whose SDK comment
+    // says NOT AUTO-GENERATED PROPERTY, so no table lists ULevel::Actors now
+    // and the entry below matches nothing; it stays as a safety net for a
+    // member the generator misses. List a member here only where the table
+    // still has a row the game does not reflect.
     struct UnreflectedMember
     {
         const char* className;  // the SDK's C++ name

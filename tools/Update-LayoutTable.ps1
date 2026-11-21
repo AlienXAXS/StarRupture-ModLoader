@@ -23,10 +23,10 @@
     it needs Node.js. Its format and the checks the loader makes are described
     in ci\LAYOUT-TABLE.md there.
 
-    Every client table in core\ lists the same classes. The class list follows
-    the loader's sources, which have grown since those tables were made, so a run
-    on today's sources lists more classes than the tables hold; widen the client
-    tables together or not at all.
+    Every client table in core\ lists the same classes, except those only a newer
+    SDK has. The class list follows the loader's sources: a source that names
+    a new SDK type adds a class to every client table, so regenerate all of them
+    together, each against its own Game-SDK commit.
 
     The dedicated server has its own table (-Server), made from the Game-SDK's
     Server folder and checked at the server's start the same way. It lists the
@@ -203,6 +203,7 @@ $consumers = @(
     "core=$core",
     "ui-menus=$(Join-Path $core 'hooks\game\game_menu\menu_layer.cpp')",
     "keys=$(Join-Path $core 'hooks\game\version_map.generated.h')",
+    "keys=$(Join-Path $core 'hooks\game\version_map.server.h')",
     "keys=$(Join-Path $core 'hooks\game\scan_patterns.h')"
 )
 $stage = $null

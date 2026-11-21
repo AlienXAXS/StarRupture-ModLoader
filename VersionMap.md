@@ -430,7 +430,8 @@ has the same format, the same Ed25519 signatures and the same trusted keys as th
   `core/layout_check.h` (it needs a version map field row on every build). A member the engine keeps outside
   reflection (`ULevel::Actors`) has no entry in the game's reflection data, so it is listed in
   `kUnreflectedMembers` in the same file: it is not compared when the game lacks it, and the summary line
-  counts it under `rows the game does not reflect`.
+  counts it under `rows the game does not reflect`. The table generator already leaves such a member out,
+  so no table has that row now and the count is 0; the list is a net for one the generator misses.
 - **What the log says.** After the merge line, `[VersionFeed]` prints one line per build in the file:
   `this exe` or `other exe` (with its stamp and size), its row count, and whether it was identical to the
   loader's own (none used), differs (and whose rows are kept), added, or refused.
