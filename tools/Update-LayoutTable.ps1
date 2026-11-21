@@ -15,8 +15,10 @@
     The newest table must be the one for the SDK the loader is built against, so
     run this after every "Update SDK.bat" and commit the result together with the
     submodule bump. To refresh the table of an older build, point -SdkClient at
-    the Client folder of the Game-SDK commit for that build and give -Cl. The
-    generator is layout-table.mjs from the starrupture-ci
+    the Client folder of the Game-SDK commit for that build and give -Cl. A table
+    for a new build also has to be listed in core\layout_tables.h (include, Read
+    function, kTables entry, newest last) and in the two Core project files and
+    the LayoutCheckTests project. The generator is layout-table.mjs from the starrupture-ci
     repo (https://github.com/msantoro12/starrupture-ci, ci\layout-table.mjs);
     it needs Node.js. Its format and the checks the loader makes are described
     in ci\LAYOUT-TABLE.md there.
@@ -29,8 +31,8 @@
     The classes come from the loader's own sources (every SDK type they name)
     plus their reflected base classes. A UClass keeps only the members those
     sources read (--granularity 1); script structs and function parameters
-    keep every member. The built CL is read from kBuiltCL in
-    hooks\game\version_map.generated.h.
+    keep every member. The table is written under namespace SrLayoutTable_<CL>,
+    so the tables of several builds can be compiled together.
 
     Each class is also tagged with what reads its layout, so a class that
     changed on a game build turns off only what reads it
@@ -48,6 +50,16 @@
 
 .PARAMETER PluginSdk
     Path to the Plugin SDK's tools\rule3-allow.json.
+
+.PARAMETER SdkClient
+    The Game-SDK's Client folder (the one with Assertions.inl and SDK). Default:
+    the Game-SDK submodule's. Needed with -Cl.
+
+.PARAMETER Cl
+    The game build the SDK is for. Default: kBuiltCL in
+    hooks\game\version_map.generated.h (the build the submodule is on). With
+    -Cl, -SdkClient is required, and a build_cl.txt in that folder must say the
+    same number.
 
 .EXAMPLE
     .\tools\Update-LayoutTable.ps1 -Generator ..\starrupture-ci\ci\layout-table.mjs `
@@ -75,6 +87,12 @@ if (-not (Test-Path $Generator)) { throw "Generator not found: $Generator" }
 if (-not (Test-Path $PluginSdk)) { throw "Plugin SDK allow list not found: $PluginSdk" }
 if (-not (Test-Path (Join-Path $sdk 'Assertions.inl'))) {
     throw "No Assertions.inl under '$sdk'. Run: git submodule update --init `"StarRupture SDK`", or pass -SdkClient"
+}
+
+if ($Cl -and -not $SdkClient) { throw '-Cl needs -SdkClient: the Client folder of the Game-SDK commit for that build' }
+$buildClFile = Join-Path $sdk 'build_cl.txt'
+if ($Cl -and (Test-Path $buildClFile) -and ((Get-Content -Raw $buildClFile).Trim() -ne $Cl)) {
+    throw "-Cl $Cl is not the build in '$buildClFile'"
 }
 
 if (-not $Cl) {

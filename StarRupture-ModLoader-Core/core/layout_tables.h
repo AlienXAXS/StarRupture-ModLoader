@@ -1,5 +1,7 @@
 #pragma once
 
+#include <iterator>
+
 #include "layout_check.h"
 #include "layout_table_127004.generated.h"
 #include "layout_table_130045.generated.h"
@@ -9,7 +11,9 @@
 // namespace). The running game's own CL picks the table it is checked against
 // (LayoutCheck::SelectTable); a build that has none is checked against the
 // newest, which is the table of the SDK the loader is built against
-// (VersionMap::kBuiltCL, asserted in layout_check.cpp).
+// (VersionMap::kBuiltCL, asserted in layout_check.cpp). A table for a new
+// build is listed here (include, Read function, kTables entry) and in the Core
+// and LayoutCheckTests projects.
 static_assert(SrLayoutTable_127004::kFormatVersion == 1 && SrLayoutTable_130045::kFormatVersion == 1,
     "layout_check.cpp reads layout table format 1");
 static_assert(SrLayoutTable_127004::kDetail == 1 && SrLayoutTable_130045::kDetail == 1,

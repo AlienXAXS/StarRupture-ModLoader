@@ -1214,6 +1214,40 @@ namespace
         const LayoutCheck::Result newestOnNewest = CompareWith(newest, AsGame(newest));
         Check(newestOnNewest.lines.empty() && !LayoutCheck::FoundChanges(newestOnNewest),
             "a 130045 run against the 130045 table finds nothing changed");
+
+        // The check skips the per-build members, so a 127004 game checked
+        // against its own table and a 130045 game against the newest agree on
+        // everything the loader reads only while the two compiled tables differ
+        // in those members alone. A regeneration that moves any other row
+        // fails here, so it is looked at before it ships.
+        const std::vector<LayoutCheck::TableClass> older = kTables[0].read();
+        Check(older.size() == newest.size(), "the two tables list the same classes");
+        int otherDifferences = 0;
+        int perBuildDifferences = 0;
+        for (size_t i = 0; i < older.size() && i < newest.size(); ++i)
+        {
+            const LayoutCheck::TableClass& a = older[i];
+            const LayoutCheck::TableClass& b = newest[i];
+            if (std::string(a.path) != b.path || a.sizeOf != b.sizeOf || a.alignOf != b.alignOf || a.rows.size() != b.rows.size())
+            {
+                ++otherDifferences;
+                continue;
+            }
+            for (size_t r = 0; r < a.rows.size(); ++r)
+            {
+                const LayoutCheck::TableRow& ra = a.rows[r];
+                const LayoutCheck::TableRow& rb = b.rows[r];
+                if (std::string(ra.name) == rb.name && ra.offset == rb.offset && ra.size == rb.size && ra.boolMask == rb.boolMask)
+                    continue;
+                if (std::string(ra.name) == rb.name && PerBuildRule(b, rb))
+                    ++perBuildDifferences;
+                else
+                    ++otherDifferences;
+            }
+        }
+        std::printf("  info: the tables differ in %d per-build member(s) and %d other place(s)\n", perBuildDifferences,
+            otherDifferences);
+        Check(otherDifferences == 0, "the 127004 and 130045 tables differ only in per-build members");
     }
 }
 

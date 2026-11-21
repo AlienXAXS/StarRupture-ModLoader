@@ -544,7 +544,7 @@ namespace LayoutCheck
 #include "../hooks/game/version_map_built.h"
 
 static_assert(LayoutCheck::kTables[std::size(LayoutCheck::kTables) - 1].cl == VersionMap::kBuiltCL,
-    "the newest layout table is for another game build than the SDK: regenerate it (tools/Update-LayoutTable.ps1)");
+    "the newest layout table is for another game build than the SDK: regenerate it (tools/Update-LayoutTable.ps1) and list it in layout_tables.h");
 
 namespace LayoutCheck
 {
@@ -684,12 +684,12 @@ namespace LayoutCheck
         void (*const log)(const wchar_t*, ...) =
             FoundChanges(result) ? ModLoaderLogger::LogWarn : ModLoaderLogger::LogInfo;
         log(
-            L"[LayoutCheck] SDK CL %u against the game (build %u%s): %d classes, %d checked, %d mismatched, %d missing,"
-            L" %d deferred, %d rows resolved per build -- GObjects pass %.1f ms (%d objects, %d types), %.1f ms in all",
-            tableEntry.cl, runningCL, tableEntry.cl == runningCL ? L"" : L", no table of its own: the newest is used",
-            result.classes, result.checked, result.mismatched, result.missing, result.deferred,
+            L"[LayoutCheck] SDK CL %u against the game: %d classes, %d checked, %d mismatched, %d missing, %d deferred,"
+            L" %d rows resolved per build -- GObjects pass %.1f ms (%d objects, %d types), %.1f ms in all; game build %u%s",
+            tableEntry.cl, result.classes, result.checked, result.mismatched, result.missing, result.deferred,
             result.perBuild,
-            search.walkMs, search.objects, search.types, totalMs);
+            search.walkMs, search.objects, search.types, totalMs,
+            runningCL, tableEntry.cl == runningCL ? L"" : L", no table of its own: the newest is used");
 
         result.verdict = Decide(table, result);
         out = std::move(result);
