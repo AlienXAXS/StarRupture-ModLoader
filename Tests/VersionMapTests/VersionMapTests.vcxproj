@@ -121,9 +121,10 @@
       <PreprocessorDefinitions>MODLOADER_CLIENT_BUILD;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
   </ItemDefinitionGroup>
+  <!-- The Server configurations also read a signed server feed (server_map_tests.cpp), which they sign with a seeded key of their own and trust through the TEST key slot k1, so they define VMAP_TRUST_TEST_KEY as the feed tests do. -->
   <ItemDefinitionGroup Condition="$(Configuration.StartsWith('Server'))">
     <ClCompile>
-      <PreprocessorDefinitions>MODLOADER_SERVER_BUILD;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>MODLOADER_SERVER_BUILD;VMAP_TRUST_TEST_KEY;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Client Debug' Or '$(Configuration)'=='Server Debug'">
@@ -161,6 +162,17 @@
     <ClCompile Include="$(CoreDir)memory_scanner\hook_scanner_interface.cpp" />
     <ClCompile Include="$(CoreDir)plugins\plugin_hook_report.cpp" />
     <ClCompile Include="$(CoreDir)core\unknown_build.cpp" />
+  </ItemGroup>
+  <ItemGroup Label="The signed feed reader, for the Server configurations" Condition="$(Configuration.StartsWith('Server'))">
+    <ClCompile Include="$(CoreDir)memory_scanner\version_feed.cpp" />
+    <ClCompile Include="$(CoreDir)third_party\monocypher\monocypher.c">
+      <WarningLevel>TurnOffAllWarnings</WarningLevel>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="$(CoreDir)third_party\monocypher\monocypher-ed25519.c">
+      <WarningLevel>TurnOffAllWarnings</WarningLevel>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

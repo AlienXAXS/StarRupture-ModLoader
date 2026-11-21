@@ -132,6 +132,27 @@ static void SwitchOffChangedLayoutUsers(const LayoutCheck::Result& layout)
         L" compiled in are not loaded unless they declare the build that is running", changed.c_str(),
         menusOff ? "the menu state for plugins is switched off" : "no loader feature reads them");
 }
+#else
+// Safe-off on a dedicated server game build the loader was not made for (one it
+// only knows from the downloaded version object map), when something the loader
+// reads there is not found. The server runs no layout check, so no plugin runs
+// on a build whose loader values are not all in hand: plugin loads are refused
+// and the preload plugins shut down, and the game goes on without plugins.
+// Called on the init thread with the game thread parked in the engine-init hook.
+static void EnterServerSafeOff(const std::vector<std::string>& lines)
+{
+    PluginManager::RefusePluginLoads();
+    PreloadManager::Shutdown();
+    ModLoaderLogger::LogError(L"[init] This server game build is not fully known -- plugins are switched off for this session");
+    for (const std::string& line : lines)
+        ModLoaderLogger::LogWarn(L"[init] %S", line.c_str());
+    Splash::Close();
+
+    if (g_pluginsReadyEvent)
+        SetEvent(g_pluginsReadyEvent);
+    if (g_pluginsLoadedEvent)
+        SetEvent(g_pluginsLoadedEvent);
+}
 #endif
 
 // Lets the game main thread run again at the end of Stage 1. Two ways it can
@@ -236,17 +257,23 @@ DWORD WINAPI MainInitThreadProc(LPVOID)
         VersionMap::SetPluginMapOff(true);
         ModLoaderLogger::LogWarn(L"[Map] modloader.ini [Debug] DisablePluginVersionMap=1: plugins get no map rows and use their own patterns and rows");
     }
+#endif
 
     // The map every lookup reads is fixed here, once, before anything reads
     // it: the one compiled into the loader, plus the signed feed cached by an
-    // earlier launch (or fetched just now, below) if it verifies. The server stays on its exact build.
+    // earlier launch (or fetched just now, below) if it verifies. The client
+    // reads the client feed and the dedicated server the server feed.
     // Whether a newer feed is out is asked here at every start, with the main
-    // thread parked, so a newer one is read by this very start.
+    // thread parked, so a newer one is read by this very start. The server has
+    // no splash text for it.
     const FeedFetch::Config feedConfig = FeedFetch::LoaderConfig();
+#ifdef MODLOADER_CLIENT_BUILD
     const bool feedAsked = FeedFetch::Stage1(feedConfig, g_mainThreadParked, [](uint32_t cl)
         { Splash::SetStatus((L"Downloading game data for CL-" + std::to_wstring(cl)).c_str()); });
-    VersionFeed::ActivateCached(feedConfig.cachePath);
+#else
+    const bool feedAsked = FeedFetch::Stage1(feedConfig, g_mainThreadParked);
 #endif
+    VersionFeed::ActivateCached(feedConfig.cachePath);
 
     // Version check before hook installation -- if the game build is wrong
     // we must not install hooks (the engine init hook would block the main
@@ -280,9 +307,11 @@ DWORD WINAPI MainInitThreadProc(LPVOID)
         }
         ModLoaderLogger::LogInfo(L"[init] User chose to start the game without the mod loader");
 #else
-        // Dedicated server: no UI to ask -- log, resume the game unmodified.
+        // Dedicated server: no UI to ask -- log, resume the game unmodified, and
+        // ask for a feed for the next launch (the game is booting, so WinHTTP is safe).
         ModLoaderLogger::LogError(L"[init] Starting the game unmodified");
         ReleaseMainThread(suspendedMainThread);
+        FeedFetch::AfterRefusal(feedConfig, feedAsked);
 #endif
         return 0;
     }
@@ -328,9 +357,11 @@ DWORD WINAPI MainInitThreadProc(LPVOID)
         }
         ModLoaderLogger::LogInfo(L"[init] User chose to start the game without the mod loader");
 #else
-        // Dedicated server: no UI to ask -- log, resume the game unmodified.
+        // Dedicated server: no UI to ask -- log, resume the game unmodified, and
+        // ask for a feed for the next launch.
         ModLoaderLogger::LogError(L"[init] Starting the game unmodified");
         ReleaseMainThread(suspendedMainThread);
+        FeedFetch::AfterRefusal(feedConfig, feedAsked);
 #endif
         return 0;
     }
@@ -478,7 +509,20 @@ DWORD WINAPI MainInitThreadProc(LPVOID)
         else
             ModLoaderLogger::LogWarn(L"[SdkGlobals] GObjects not verified: engine init was not observed, so the game thread is not parked");
     }
-    SdkGlobals::ResolveFields();
+    // On a game build other than the SDK's own, the loader's fields come from
+    // the game and the map, and plugins run only when they and the globals
+    // were found (the client's rule, without the layout check, which the
+    // server does not run).
+    {
+        std::vector<std::string> unresolved = SdkGlobals::ResolveFields();
+        if (VersionMap::RunningExe().cl != VersionMap::kBuiltCL && !SdkGlobals::SdkOnResolvedGlobals())
+            unresolved.push_back("GObjects or FName::AppendString was not found on this build");
+        if (!unresolved.empty())
+        {
+            EnterServerSafeOff(unresolved);
+            return 0;
+        }
+    }
 #endif
 
     // ------------------------------------------------------------------

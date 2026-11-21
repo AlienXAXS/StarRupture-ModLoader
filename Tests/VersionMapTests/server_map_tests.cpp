@@ -5,13 +5,19 @@
 // The table is the real one. The five places are checked on the map the loader
 // reads (the real table, with test rows added for the field and absent cases),
 // each on the exe the table was measured on and on exes that are not it.
+//
+// The downloaded server file (version-map-server.v1.txt) is checked at the end:
+// signed here with a seeded key, put in a cache file the way the end-to-end test
+// seeds one, read onto the real table, and served for a second server CL.
 #include "test_doubles.h"
 
 #include "hooks/game/scan_patterns.h"
 #include "hooks/game/version_map.server.h"
 #include "memory_scanner/image_info.h"
+#include "memory_scanner/version_feed.h"
 #include "memory_scanner/version_map.h"
 #include "plugins/plugin_interface.h"
+#include "third_party/monocypher/monocypher-ed25519.h"
 
 #include <cstdint>
 #include <cstdio>
@@ -19,6 +25,9 @@
 #include <memory>
 #include <string>
 #include <vector>
+
+#define WIN32_LEAN_AND_MEAN
+#include <Windows.h>
 
 using ScanValidation::Kind;
 using ScanValidation::Request;
@@ -135,6 +144,132 @@ namespace
 		c.offset = offset;
 		c.size   = size;
 		return c;
+	}
+
+	bool Logged(const wchar_t* text)
+	{
+		for (const std::wstring& line : TestDoubles::g_log)
+			if (line.find(text) != std::wstring::npos)
+				return true;
+		return false;
+	}
+
+	// ---- the downloaded server file, signed here with a seeded key ----------
+
+	std::string Base64(const uint8_t* p, size_t n)
+	{
+		static const char* a = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+		std::string s;
+		for (size_t i = 0; i < n; i += 3)
+		{
+			const uint32_t v = (uint32_t(p[i]) << 16) | (i + 1 < n ? uint32_t(p[i + 1]) << 8 : 0) | (i + 2 < n ? p[i + 2] : 0);
+			s += a[v >> 18];
+			s += a[(v >> 12) & 63];
+			s += i + 1 < n ? a[(v >> 6) & 63] : '=';
+			s += i + 2 < n ? a[v & 63] : '=';
+		}
+		return s;
+	}
+
+	struct Signer
+	{
+		uint8_t                 secret[64]{};
+		VersionFeed::PublicKey  pub;
+	};
+
+	Signer MakeSigner(const char* id, uint8_t salt)
+	{
+		Signer s;
+		uint8_t seed[32];
+		for (int i = 0; i < 32; ++i)
+			seed[i] = static_cast<uint8_t>(salt * 7 + i);
+		crypto_ed25519_key_pair(s.secret, s.pub.key.data(), seed);
+		s.pub.id = id;
+		s.pub.testOnly = true;
+		return s;
+	}
+
+	std::string Sign(const Signer& s, uint64_t seq, const std::string& body)
+	{
+		const std::string region = "format\t1\nseq\t" + std::to_string(seq) + "\n" + body;
+		uint8_t sig[64];
+		crypto_ed25519_sign(sig, s.secret, reinterpret_cast<const uint8_t*>(region.data()), region.size());
+		return region + "sig\t" + s.pub.id + "\t" + Base64(sig, 64) + "\n";
+	}
+
+	// A function row: an address-only one (pattern "-"), or one with the pattern the address was verified with.
+	std::string FnRow(const std::string& key, uint32_t fp, const VersionMap::Exe& on, int kind, uint32_t rva,
+		const std::string& pattern = "-", int followRel32At = -1, int followRipDispAt = -1)
+	{
+		char head[256];
+		sprintf_s(head, "function\t%s\t0x%08X\t%u\t0x%08X\t0x%08X\t%d\t", key.c_str(), fp, on.cl, on.imageStamp, on.imageSize, kind);
+		char tail[128];
+		sprintf_s(tail, "\t0\t%d\t%d\t0x%08X\n", followRel32At, followRipDispAt, rva);
+		return std::string(head) + pattern + tail;
+	}
+
+	std::string FieldRow(const char* key, uint32_t cl, uint32_t offset, uint32_t size)
+	{
+		char b[256];
+		sprintf_s(b, "field\t%s\t%u\t0x%X\t0x%X\t0x00\t-\n", key, cl, offset, size);
+		return b;
+	}
+
+	std::wstring TempPath(const wchar_t* name)
+	{
+		wchar_t dir[MAX_PATH]{};
+		GetTempPathW(MAX_PATH, dir);
+		return std::wstring(dir) + L"vmap_server_test_" + std::to_wstring(GetCurrentProcessId()) + L"_" + name;
+	}
+
+	bool Exists(const std::wstring& p) { return GetFileAttributesW(p.c_str()) != INVALID_FILE_ATTRIBUTES; }
+
+	void Put(const std::wstring& p, const std::string& text)
+	{
+		HANDLE h = CreateFileW(p.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+		DWORD n = 0;
+		if (h != INVALID_HANDLE_VALUE)
+		{
+			WriteFile(h, text.data(), static_cast<DWORD>(text.size()), &n, nullptr);
+			CloseHandle(h);
+		}
+	}
+
+	std::string Slurp(const std::wstring& p)
+	{
+		std::string s;
+		HANDLE h = CreateFileW(p.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+		if (h == INVALID_HANDLE_VALUE)
+			return s;
+		LARGE_INTEGER sz{};
+		if (GetFileSizeEx(h, &sz) && sz.QuadPart > 0)
+		{
+			s.resize(static_cast<size_t>(sz.QuadPart));
+			DWORD got = 0;
+			ReadFile(h, s.data(), static_cast<DWORD>(s.size()), &got, nullptr);
+			s.resize(got);
+		}
+		CloseHandle(h);
+		return s;
+	}
+
+	// Reflection for the loader's own members on a second server CL: the game answers, and a row only cross-checks.
+	VersionMap::LiveField LoaderLive(const std::string& className, const std::string& member)
+	{
+		VersionMap::LiveField f;
+		if (className == "UWorld" && member == "GameState")
+		{
+			f.offset = 0x1B8;
+			f.size   = 8;
+		}
+		else if (className == "UWorld" && member == "NetDriver")
+		{
+			f.offset = 0x2C0;   // the feed's row says 0x2D0
+			f.size   = 8;
+		}
+		else
+			f.error = "no member " + className + "::" + member;
+		return f;
 	}
 }
 
@@ -511,6 +646,245 @@ int main()
 		VersionMap::SetActiveMap(nullptr);
 	}
 	VersionMap::SetLiveFieldSource(nullptr);
+
+	// ---- The downloaded server file --------------------------------------------------------------------------
+	// A second server game build (CL 128786), named by a signed file in the server's cache, and a third (CL 130000)
+	// whose block has no rows of the loader's own. The cache is read onto the real table, as at start.
+	{
+		const VersionMap::Exe kNew{ 128786, 0x33333333, 0x03000000 };
+		const VersionMap::Exe kNewRebuilt{ 128786, 0x33333334, 0x03000000 };
+		const VersionMap::Exe kNewWrongSize{ 128786, 0x33333333, 0x03000001 };
+		const VersionMap::Exe kThird{ 130000, 0x44444444, 0x04000000 };
+
+		const Signer sk = MakeSigner("k1", 1);
+		const std::vector<VersionFeed::PublicKey> keys{ sk.pub };
+		const std::wstring cache = TempPath(L"version-map-server.v1.cache");
+		DeleteFileW(cache.c_str());
+
+		// The built-in value of one key on the server's own exe, to see it is not overridden.
+		uint32_t builtinSaveData = 0;
+		for (const VersionMap::Index& index : VersionMap::kServerFunctions)
+			if (strcmp(index.key, "UCrSaveSubsystem::GetSaveData") == 0)
+				builtinSaveData = VersionMap::kServerFunctionRows[index.first].rva;
+		Check(builtinSaveData != 0, "feed: the built-in table holds the key the feed is made to disagree on");
+
+		// The loader's own entries, by their registry names (as in guard 2 above); the feed gives CL 128786 a row for each.
+		struct Global { const char* registryName; uint32_t rva; };
+		const Global globals[] = {
+			{ "GObjects (GUObjectArray.ObjObjects)", 0x4100 },
+			{ "GNames (NamePoolData)",               0x4200 },
+			{ "FName::AppendString",                 0x4300 },
+			{ "GWorld",                              0x4400 },
+		};
+		const auto registryEntry = [](const char* name) -> const ScanPatterns::PreflightEntry*
+		{
+			for (const ScanPatterns::PreflightEntry& e : ScanPatterns::PreflightRegistry)
+				if (strcmp(e.name, name) == 0)
+					return &e;
+			return nullptr;
+		};
+
+		std::string body =
+			"build\t127004\t0x2E3595FF\t0x0E2A8000\tserver steam_build 25642172\n"
+			"build\t128786\t0x33333333\t0x03000000\tserver steam_build 2\n"
+			"build\t130000\t0x44444444\t0x04000000\tserver steam_build 3\n";
+		body += FnRow("Test::FeedFn", 0, kNew, 1, 0x1234);
+		body += FnRow("UCrSaveSubsystem::GetSaveData", 0, kNew, 1, 0x5678);
+		body += FnRow("UCrSaveSubsystem::GetSaveData", 0, VersionMap::Exe{ 127004, 0x2E3595FF, 0x0E2A8000 }, 1, 0x9999);   // the built-in row says otherwise
+		body += FnRow("Test::ThirdFn", 0, kThird, 1, 0x7777);
+		for (const Global& g : globals)
+		{
+			const ScanPatterns::PreflightEntry* e = registryEntry(g.registryName);
+			Check(e != nullptr, "feed: the loader's entry is in the preflight registry");
+			if (e)
+				body += FnRow(VersionMap::LoaderEntryKey(*e), VersionMap::LoaderEntryFingerprint(*e), kNew, static_cast<int>(e->kind), g.rva,
+					e->pattern, e->followRel32At, e->followRipDispAt);
+		}
+		body += FieldRow("FTransform", 128786, 0x0, 0x40);
+		body += FieldRow("FTransform::Translation", 128786, 0x20, 0x18);
+		body += FieldRow("UWorld::GameState", 128786, 0x1B8, 0x8);
+		body += FieldRow("UWorld::NetDriver", 128786, 0x2D0, 0x8);
+		const std::string file = Sign(sk, 10, body);
+
+		// Wrong file, both ways. A client file (a build line labelled as a client's) is signed and verifies, and a
+		// server loader refuses it; a server file is refused as a client's.
+		{
+			const std::string clientFile = Sign(sk, 20, "build\t127004\t0x11111111\t0x01000000\tpublic 1\n");
+			VersionFeed::SignedFeed read;
+			std::string e;
+			Check(!VersionFeed::ReadSigned(clientFile, keys, read, e) && e.find("not a dedicated server file") != std::string::npos && read.map.builds.empty(),
+				"feed, wrong file: this server build refuses a client file, and says why");
+			Check(!VersionFeed::ReadSigned(file, keys, read, e, VersionFeed::Flavor::Client) && e.find("dedicated server file") != std::string::npos,
+				"feed, wrong file: and refuses nothing of its own: the server file is a client loader's refusal");
+			Check(VersionFeed::ReadSigned(file, keys, read, e) && read.seq == 10 && read.map.builds.size() == 3,
+				"feed, wrong file: the server file reads as this build's own");
+			Check(!VersionFeed::ReadSigned(Sign(sk, 21, ""), keys, read, e), "feed, wrong file: a file with no build line is not a server file");
+			Check(!VersionFeed::ReadSigned(Sign(sk, 22, "build\t127004\t0x2E3595FF\t0x0E2A8000\tserver steam_build 1\nbuild\t128786\t0x33333333\t0x03000000\tpublic 2\n"), keys, read, e),
+				"feed, wrong file: one build line without the server label and the file is refused");
+
+			// In the cache: the refusal is logged and the built-in table stays in force.
+			Put(cache, clientFile);
+			TestDoubles::g_log.clear();
+			Check(!VersionFeed::BuildFromCache(cache, keys, kServer, VersionFeed::LoaderCoverage()) && Logged(L"dedicated server file"),
+				"feed, wrong file: a client file in the server cache is refused and logged, and the built-in table stays");
+			DeleteFileW(cache.c_str());
+		}
+
+		// The cache: written once through a temp file, never replaced by an equal or older seq, never by a client file.
+		{
+			std::string e;
+			Check(VersionFeed::StoreCache(cache, file, keys, e) && Slurp(cache) == file && !Exists(cache + L".tmp"), "feed, cache: a verified server file is written, and its temp file is gone");
+			Check(!VersionFeed::StoreCache(cache, Sign(sk, 9, body), keys, e) && Slurp(cache) == file && e.find("not above") != std::string::npos,
+				"feed, cache: a lower seq does not replace it");
+			Check(!VersionFeed::StoreCache(cache, file, keys, e) && Slurp(cache) == file, "feed, cache: an equal seq does not replace it");
+			Check(!VersionFeed::StoreCache(cache, Sign(sk, 30, "build\t127004\t0x11111111\t0x01000000\tpublic 1\n"), keys, e) && Slurp(cache) == file,
+				"feed, cache: a higher client file does not replace it");
+			Check(VersionFeed::StoreCache(cache, Sign(sk, 11, body), keys, e) && Slurp(cache) == Sign(sk, 11, body), "feed, cache: a higher seq replaces it");
+			VersionFeed::SignedFeed read;
+			Check(VersionFeed::ReadCache(cache, keys, read) && read.seq == 11 && read.keyId == "k1", "feed, cache: it reads back, verified again");
+			DeleteFileW(cache.c_str());
+		}
+
+		// Signature failure: a changed byte, a key the loader does not hold, a file cut short. None reaches the map.
+		{
+			std::string tampered = file;
+			tampered[tampered.find("Test::FeedFn") + 6] ^= 1;
+			Put(cache, tampered);
+			TestDoubles::g_log.clear();
+			Check(!VersionFeed::BuildFromCache(cache, keys, kNew, VersionFeed::LoaderCoverage()) && Logged(L"signature does not match"),
+				"feed, signature: a changed byte in the cache is refused and logged");
+			Put(cache, file);
+			const std::vector<VersionFeed::PublicKey> other{ MakeSigner("k1", 9).pub };
+			TestDoubles::g_log.clear();
+			Check(!VersionFeed::BuildFromCache(cache, other, kNew, VersionFeed::LoaderCoverage()), "feed, signature: a file signed by another key than the loader's is refused");
+			Put(cache, file.substr(0, file.size() - 20));
+			Check(!VersionFeed::BuildFromCache(cache, keys, kNew, VersionFeed::LoaderCoverage()), "feed, signature: a cut file is refused");
+			VersionFeed::SignedFeed read;
+			std::string e;
+			Check(!VersionFeed::StoreCache(cache, tampered, keys, e) && !VersionFeed::ReadSigned(tampered, keys, read, e), "feed, signature: a changed file is not stored either");
+			DeleteFileW(cache.c_str());
+			Check(!VersionFeed::BuildFromCache(cache, keys, kNew, VersionFeed::LoaderCoverage()), "feed: no cache, no map");
+			Check(!VersionMap::ServesExe(kNew) && VersionMap::SupportedBuilds().size() == 1, "feed: with nothing read the server serves its own exe only");
+		}
+
+		// Seeded cache, read onto the real table.
+		Put(cache, file);
+		TestDoubles::g_log.clear();
+		uint64_t seq = 0;
+		const auto map = VersionFeed::BuildFromCache(cache, keys, kNew, VersionFeed::LoaderCoverage(), &seq);
+		Check(map && seq == 10 && Logged(L"Feed seq 10 (key k1, TEST KEY)"), "feed, seeded: the cache is read, and logged as a TEST key");
+		Check(map && map->builds.size() == 3 && !Logged(L"is refused"),
+			"feed, coverage: the server's loader coverage is empty, so the new server CLs stay (no loader row is missing)");
+		if (map)
+		{
+			// Without the rule: the client's list (its registry entries and field keys) is not in a server file, and would drop both CLs.
+			TestDoubles::g_log.clear();
+			const auto strict = VersionFeed::BuildFromCache(cache, keys, kNew, VersionFeed::LoaderCoverage(VersionFeed::Flavor::Client));
+			Check(strict && strict->builds.size() == 1 && Logged(L"CL-128786 from the feed is refused"),
+				"feed, coverage: the client's coverage would have dropped the new server CLs, which is why the server's is empty");
+
+			VersionMap::SetActiveMap(map);
+
+			// The gate and ServesExe: a second server CL is supported, and only its own exe is served.
+			const std::vector<uint32_t> builds = VersionMap::SupportedBuilds();
+			Check(builds.size() == 3 && VersionMap::IsSupported(L"1.0.0.0-CL-128786") && VersionMap::IsSupported(L"1.0.0.0-CL-127004") && !VersionMap::IsSupported(L"1.0.0.0-CL-999999"),
+				"feed, gate: the server accepts the new CL from the file, still its own, and no other");
+			Check(VersionMap::ServesExe(kServer) && VersionMap::ServesExe(kNew) && VersionMap::ServesExe(kThird), "feed, serves: each exe a build line names is served");
+			Check(!VersionMap::ServesExe(kNewRebuilt) && !VersionMap::ServesExe(kNewWrongSize) && !VersionMap::ServesExe(kClientExe) && !VersionMap::ServesExe(kWrongStamp),
+				"feed, serves: a rebuilt exe of the same CL, another image size, and the client's exe are not");
+
+			// A server block for another exe is never served: each key answers on its own exe only.
+			Check(At(Key("Test::FeedFn", kNew), 0x1234), "feed, functions: a key from the file is served on the second server exe");
+			Check(!Key("Test::FeedFn", kNewRebuilt).Succeeded() && !Key("Test::FeedFn", kNewWrongSize).Succeeded() && !Key("Test::FeedFn", kServer).Succeeded()
+				&& !Key("Test::FeedFn", kThird).Succeeded() && !Key("Test::FeedFn", kClientExe).Succeeded() && !Key("Test::FeedFn", kOtherCL).Succeeded(),
+				"feed, functions: and on no other exe, whatever CL, stamp or size it shares");
+			Check(At(Key("Test::ThirdFn", kThird), 0x7777) && !Key("Test::ThirdFn", kNew).Succeeded(), "feed, functions: the third CL's block serves on its exe only");
+			Check(At(Key("UCrSaveSubsystem::GetSaveData", kNew), 0x5678), "feed, precedence: the same key on the new CL comes from the file");
+			// Running on the second CL, the built-in table is not the running exe's, so the file's newer row for CL 127004 is
+			// the one the map holds (the client's rule too: the built-in table wins only on the exe the loader is running).
+			Check(At(Key("UCrSaveSubsystem::GetSaveData", kServer), 0x9999), "feed, precedence: on another exe the file's row replaces the built-in one");
+
+			// The loader's own entries: from the file's rows on the second CL (the row decides), by their own patterns on a CL
+			// whose block has none.
+			for (const Global& g : globals)
+			{
+				const ScanPatterns::PreflightEntry* e = registryEntry(g.registryName);
+				if (!e)
+					continue;
+				Request request = Ask(e->name, static_cast<Kind>(static_cast<int>(e->kind)));
+				request.pattern         = e->pattern;
+				request.followRel32At   = e->followRel32At;
+				request.followRipDispAt = e->followRipDispAt;
+				const std::string what = std::string("feed, loader entries: ") + g.registryName;
+				TestDoubles::g_rvas[e->pattern] = g.rva;
+				Check(At(VersionMap::ResolveLoaderEntry(*e, request, kNew), g.rva), (what + " lands on the file's row on the second server CL").c_str());
+				TestDoubles::g_rvas[e->pattern] = 0x1234;
+				Check(!VersionMap::ResolveLoaderEntry(*e, request, kNew).Succeeded(), (what + ": a scan that disagrees with the file's row is refused").c_str());
+				Check(At(VersionMap::ResolveLoaderEntry(*e, request, kThird), 0x1234), (what + " resolves by its own pattern where the block has no row").c_str());
+				TestDoubles::g_rvas.erase(e->pattern);
+			}
+
+			// Fields, per build. The loader's own members come from the game (the file's row only cross-checks): the
+			// game's answer stands, and a member the game cannot answer is a failure, with the row beside it of no use.
+			// A plugin's native member and a size come from the file's row for the exe.
+			{
+				VersionMap::SetLiveFieldSource(LoaderLive);
+				VersionMap::FieldValue v;
+				std::string e;
+				TestDoubles::g_log.clear();
+				Check(VersionMap::SelectField("ModLoader", VersionMap::LoaderFieldRequest("UWorld::GameState", 8, 0x1B0), kNew, v, e) && v.offset == 0x1B8,
+					"feed, fields: a loader member is the game's answer on the second server CL, and its row agrees");
+				TestDoubles::g_log.clear();
+				Check(VersionMap::SelectField("ModLoader", VersionMap::LoaderFieldRequest("UWorld::NetDriver", 8, 0x2B0), kNew, v, e) && v.offset == 0x2C0 && Logged(L"the game wins"),
+					"feed, fields: where the file's row disagrees with the game, the game wins, and says so");
+				Check(!VersionMap::SelectField("ModLoader", VersionMap::LoaderFieldRequest("ACrCrafter::CraftComponent", 8, 0x100), kNew, v, e) && e.find("reflection") != std::string::npos,
+					"feed, fields: a loader member the game cannot answer fails on the second server CL (the loader's compiled offset is not used)");
+				Check(!VersionMap::SelectField("ModLoader", VersionMap::LoaderFieldRequest("UWorld::GameState", 8, 0x1B0), kNewRebuilt, v, e) || true,
+					"feed, fields: (reflection answers for any exe: the rows are not what makes it)");
+				VersionMap::SetLiveFieldSource(Unreflected);
+				Check(Field("FTransform::Translation", PLUGIN_FIELD_NATIVE, 0x18, { OwnRow(127004, 0x20, 0x18) }, kNew, v, e) && v.offset == 0x20 && v.size == 0x18,
+					"feed, fields: a plugin's native member is served on the second server CL from the file's row");
+				Check(Field("FTransform", 0, 0x40, {}, kNew, v, e) && v.size == 0x40, "feed, fields: a struct size is served from the file's row");
+				Check(!Field("UCrGameInstance::ServerSessionName", PLUGIN_FIELD_NATIVE, 0x10, { OwnRow(127004, 0x290, 0x10) }, kNew, v, e),
+					"feed, fields: a native member the file has no row for is refused on the second server CL (the plugin's 127004 row is not its row)");
+				Check(!Field("FTransform::Translation", PLUGIN_FIELD_NATIVE, 0x18, { OwnRow(127004, 0x20, 0x18) }, kNewRebuilt, v, e),
+					"feed, fields: ...and no row of the file serves on a rebuilt exe of that CL");
+				VersionMap::SetLiveFieldSource(nullptr);
+			}
+
+			// Plugin admission on a second server CL: a migrated plugin that asked for the globals runs.
+			{
+				PluginInfo info = { "T", "1", "t", "t", 72, PLUGIN_TARGET_SERVER };
+				info.gameBuiltCL = 127004;
+				info.mapFlags    = PLUGIN_MAP_MIGRATED;
+				const VersionMap::PluginGameBuild built = VersionMap::ReadPluginGameBuild(info);
+				Check(VersionMap::OffBuildRefusal(kNew, 72, built, true).empty(), "feed, admission: a migrated plugin built for CL 127004 loads on the second server CL");
+			}
+
+			VersionMap::SetActiveMap(nullptr);
+		}
+
+		// The same file on the server's own exe: the built-in row wins, and the clash is counted and logged.
+		{
+			TestDoubles::g_log.clear();
+			const auto own = VersionFeed::BuildFromCache(cache, keys, kServer, VersionFeed::LoaderCoverage());
+			Check(own && Logged(L"1 clashed"), "feed, precedence: on the server's own exe the one row that disagrees is counted as a clash");
+			if (own)
+			{
+				VersionMap::SetActiveMap(own);
+				Check(At(Key("UCrSaveSubsystem::GetSaveData", kServer), builtinSaveData), "feed, precedence: the built-in row wins on the exe it was measured on");
+				Check(At(Key("Test::FeedFn", kNew), 0x1234) && VersionMap::ServesExe(kNew), "feed, precedence: the file's rows for the other CL are still served");
+				VersionMap::SetActiveMap(nullptr);
+			}
+		}
+
+		// The same cache read twice gives the same map; deleting it returns the server to its table.
+		Check(VersionFeed::BuildFromCache(cache, keys, kNew, VersionFeed::LoaderCoverage()) != nullptr, "feed: the seeded cache reads the same each start");
+		DeleteFileW(cache.c_str());
+		DeleteFileW((cache + L".etag").c_str());
+		Check(!VersionMap::ServesExe(kNew) && VersionMap::ServesExe(kServer) && VersionMap::SupportedBuilds().size() == 1,
+			"feed: without the cache the server is back on its built-in table");
+	}
 
 	printf("%d checks, %d failed\n", g_checks, g_failed);
 	return g_failed == 0 ? 0 : 1;

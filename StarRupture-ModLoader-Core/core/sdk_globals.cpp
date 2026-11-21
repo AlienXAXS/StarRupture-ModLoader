@@ -396,13 +396,19 @@ namespace SdkGlobals
     std::vector<std::string> ResolveFields()
     {
         std::vector<std::string> unresolved;
-#if defined(MODLOADER_CLIENT_BUILD)
         const VersionMap::Exe running = VersionMap::RunningExe();
-#endif
         for (int id = 0; id < kFieldCount; ++id)
         {
             const FieldSpec& spec = kFieldSpecs[id];
-#if defined(MODLOADER_CLIENT_BUILD)
+#if defined(MODLOADER_SERVER_BUILD)
+            // The server's own build keeps the compiled offsets; a game build the
+            // downloaded map added reads them like the client does, below.
+            if (running.cl == VersionMap::kBuiltCL)
+            {
+                g_fieldOffsets[id].store(spec.compiled, std::memory_order_release);
+                continue;
+            }
+#endif
             VersionMap::FieldValue value;
             std::string error;
             if (VersionMap::SelectField("ModLoader", VersionMap::LoaderFieldRequest(spec.key, spec.size, spec.compiled), running, value, error))
@@ -419,7 +425,6 @@ namespace SdkGlobals
             }
             ModLoaderLogger::LogWarn(L"[Map] ModLoader: %S: the SDK's compiled offset 0x%X, on the build it was made for",
                 spec.key, spec.compiled);
-#endif
             g_fieldOffsets[id].store(spec.compiled, std::memory_order_release);
         }
         return unresolved;
