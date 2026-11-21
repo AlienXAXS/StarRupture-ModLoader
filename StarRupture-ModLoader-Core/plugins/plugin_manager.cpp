@@ -1510,6 +1510,7 @@ namespace PluginManager
 			FreeLibrary(p.hModule);
 			p.hModule = nullptr;
 			p.info    = nullptr;
+			p.wire    = WireCompat::Decl{};
 		}
 
 		p.isOutOfDate         = false;
