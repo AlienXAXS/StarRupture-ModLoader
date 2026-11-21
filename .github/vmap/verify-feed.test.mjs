@@ -83,6 +83,27 @@ test('refuses a TEST-key feed when asked to', () => {
   assert.equal(outcome(() => check(s, { keys: keys(k, true), now: NOW })), 'ok');
 });
 
+test('the flavor rule: a server file names only server exes, a client file none', () => {
+  const k = pair();
+  const opts = { keys: keys(k), now: NOW };
+  const SERVER = (seq) => BODY(seq).replace('public_test_branch 2', 'server steam_build 25642172');
+  const MIXED = (seq) => SERVER(seq).replace('field', 'build\t128787\t0x33333333\t0x03000000\tsteam_build 1\nfield');
+  const NONE = (seq) => `format\t1\nseq\t${seq}\n`;
+  const client = (body) => outcome(() => check(signed(k, body), { ...opts, flavor: 'client' }));
+  const server = (body) => outcome(() => check(signed(k, body), { ...opts, flavor: 'server' }));
+  assert.equal(client(BODY(NOW)), 'ok');
+  assert.equal(server(SERVER(NOW)), 'ok');
+  assert.match(client(SERVER(NOW)), /^refused: a dedicated server file, not a client file/);
+  assert.match(server(BODY(NOW)), /^refused: not a dedicated server file \(a build line is not labelled/);
+  assert.match(server(MIXED(NOW)), /^refused: not a dedicated server file \(a build line is not labelled/);
+  assert.match(client(MIXED(NOW)), /^refused: a dedicated server file/);
+  assert.match(server(NONE(NOW)), /^refused: not a dedicated server file \(it has no build line\)/);
+  assert.equal(client(NONE(NOW)), 'ok');
+  // No flavor given: the old behavior, no label check.
+  assert.equal(outcome(() => check(signed(k, SERVER(NOW)), opts)), 'ok');
+  assert.equal(outcome(() => check(signed(k, BODY(NOW)), opts)), 'ok');
+});
+
 test('the release gate wants every feed build in the header, with the same stamp and size', () => {
   const k = pair();
   const s = signed(k, BODY(NOW));
@@ -118,4 +139,14 @@ test('the command line exits 0, 4 and 3, and prints the seq', () => {
   writeFileSync(feed, readFileSync(feed, 'latin1').replace('0x50', '0x51'), 'latin1');
   assert.equal(run('--last-seq', String(NOW)).status, 3);
   assert.equal(run('--bogus').status, 2);
+  assert.equal(run('--flavor', 'both').status, 2);
+  // A client file under the server flavor is refused (3); a server file the other way too.
+  writeFileSync(feed, signed(k, BODY(NOW)));
+  assert.equal(run('--flavor', 'client').status, 0);
+  const refused = run('--flavor', 'server');
+  assert.equal(refused.status, 3);
+  assert.match(refused.stderr, /not a dedicated server file/);
+  writeFileSync(feed, signed(k, BODY(NOW).replace('public_test_branch 2', 'server steam_build 25642172')));
+  assert.equal(run('--flavor', 'server').status, 0);
+  assert.equal(run('--flavor', 'client').status, 3);
 });

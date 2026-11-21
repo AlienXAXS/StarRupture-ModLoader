@@ -4,7 +4,7 @@
 //
 //   node verify-feed.mjs <signed-feed> --source <version_feed.cpp>
 //        [--last-seq <n>] [--now <unix seconds>] [--refuse-test-key]
-//        [--header <version_map.generated.h>]
+//        [--header <version_map.generated.h>] [--flavor client|server]
 //
 // The public keys are read from the loader's own key slots (kK1Hex, kK2Hex in
 // version_feed.cpp), so the loader and this check cannot disagree about them.
@@ -20,6 +20,13 @@
 // --header: the release gate. Every build in the feed must be in the header's
 //   build table with the same image stamp and size, or a release built from
 //   this header would know fewer game builds than the feed it ships with.
+//
+// --flavor: which loader reads the file. The two files share one grammar and
+//   one signature, and the loader tells them apart by the source label of the
+//   build lines (the same rule as ReadSigned in version_feed.cpp): a server
+//   file has at least one build line and every one starts `server `; a client
+//   file has none that does. A file of the other flavor is refused here, so it
+//   is not uploaded just to be refused by every loader.
 //
 // Exit codes: 0 publish it; 3 refused (tampered, malformed, unknown key, test
 // key, gate); 4 valid but not newer; 2 usage error. Prints the `seq` on success.
@@ -39,6 +46,7 @@ export class Refused extends Error {}
 export class NotNewer extends Error {}
 const need = (cond, msg) => { if (!cond) throw new Refused(msg); };
 
+const SERVER_SOURCE_PREFIX = 'server ';
 const SPKI_PREFIX = Buffer.from('302a300506032b6570032100', 'hex');
 
 // { k1: { hex, test }, k2: { hex, test } } for each slot that holds a key.
@@ -64,7 +72,7 @@ export function readHeaderBuilds(headerText) {
   return builds;
 }
 
-export function check(signed, { keys, lastSeq = null, now = Math.floor(Date.now() / 1000), refuseTestKey = false, headerText = null }) {
+export function check(signed, { keys, lastSeq = null, now = Math.floor(Date.now() / 1000), refuseTestKey = false, headerText = null, flavor = null }) {
   need(signed.length > 0 && signed.length <= CAP_BYTES, `the file is ${signed.length} bytes (1 to ${CAP_BYTES} allowed)`);
   need(signed[signed.length - 1] === 0x0a, 'the file does not end in LF');
   const sigStart = signed.lastIndexOf(0x0a, signed.length - 2) + 1;
@@ -88,6 +96,16 @@ export function check(signed, { keys, lastSeq = null, now = Math.floor(Date.now(
       need([f[4], f[5], f[11]].every((v) => /^0x[0-9A-F]+$/.test(v ?? '') && parseInt(v, 16) !== 0),
         `an address-only row for ${f[1]} on CL-${f[3]} needs the exe's stamp and size and an RVA`);
   }
+  if (flavor !== null) {
+    const sources = lines.filter((line) => line.startsWith('build\t')).map((line) => line.split('\t')[4] ?? '');
+    const server = sources.filter((src) => src.startsWith(SERVER_SOURCE_PREFIX)).length;
+    if (flavor === 'server') {
+      need(sources.length > 0, 'not a dedicated server file (it has no build line)');
+      need(server === sources.length, 'not a dedicated server file (a build line is not labelled "server ...")');
+    } else {
+      need(server === 0, 'a dedicated server file, not a client file (a build line is labelled "server ...")');
+    }
+  }
   if (headerText !== null) {
     const have = readHeaderBuilds(headerText);
     for (const line of lines) {
@@ -108,11 +126,12 @@ function main(argv) {
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--refuse-test-key') opt.flags.add('refuse-test-key');
-    else if (['--source', '--last-seq', '--now', '--header'].includes(a) && i + 1 < argv.length) opt[a.slice(2)] = argv[++i];
+    else if (['--source', '--last-seq', '--now', '--header', '--flavor'].includes(a) && i + 1 < argv.length) opt[a.slice(2)] = argv[++i];
     else if (a.startsWith('--')) throw new Error(`unknown or incomplete option ${a}`);
     else rest.push(a);
   }
-  if (rest.length !== 1 || !opt.source) throw new Error('usage: verify-feed.mjs <signed-feed> --source <version_feed.cpp> [--last-seq n] [--now s] [--refuse-test-key] [--header h]');
+  if (rest.length !== 1 || !opt.source) throw new Error('usage: verify-feed.mjs <signed-feed> --source <version_feed.cpp> [--last-seq n] [--now s] [--refuse-test-key] [--header h] [--flavor client|server]');
+  if (opt.flavor !== undefined && !['client', 'server'].includes(opt.flavor)) throw new Error('--flavor is client or server');
   const int = (s, what) => { if (!/^\d+$/.test(s)) throw new Error(`${what} is a non-negative integer`); return Number(s); };
   try {
     const r = check(readFileSync(rest[0]), {
@@ -121,6 +140,7 @@ function main(argv) {
       now: opt.now === undefined ? undefined : int(opt.now, '--now'),
       refuseTestKey: opt.flags.has('refuse-test-key'),
       headerText: opt.header ? readFileSync(opt.header, 'utf8') : null,
+      flavor: opt.flavor ?? null,
     });
     process.stdout.write(`${r.seq}\n`);
     process.stderr.write(`verify-feed: ok, key ${r.keyId}${r.test ? ' (TEST key)' : ''}, seq ${r.seq}\n`);
