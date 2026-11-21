@@ -1984,6 +1984,18 @@ namespace
     // chance -- and a persistent failure shows up as a log line rather than a
     // plugin that mysteriously never receives anything.
     static bool     g_manifestAcked   = false;
+
+    // Our wire declarations follow the manifest, but only to a server whose ack
+    // carried a readable wire table (proof that its loader understands them).
+    // The sequence counts manifests put on the wire: a re-sent manifest makes the
+    // server forget our table, so it needs the table again, and an ack repeated
+    // for the same manifest must not send it twice. g_wiresPending marks a send
+    // that could not be put on the wire and is retried from the tick.
+    static unsigned g_manifestSendSeq = 0;
+    static unsigned g_wiresSentSeq    = 0;
+    static bool     g_wiresPending    = false;
+    static uint64_t g_wiresLastTryMs  = 0;
+
     static uint64_t g_lastAttemptMs   = 0;
     static int      g_attempts        = 0;
     static bool     g_gaveUpLogged    = false;
@@ -2019,6 +2031,7 @@ namespace
             g_manifestSentTo  = conn;
             g_manifestSentGen = gen;
             g_manifestAcked   = false;
+            g_wiresPending    = false;
             g_attempts        = 0;
             g_gaveUpLogged    = false;
             g_lastAttemptMs   = 0;
@@ -2066,6 +2079,9 @@ namespace
                                          reinterpret_cast<const uint8_t*>(body.data()),
                                          body.size())))
         {
+            ++g_manifestSendSeq;
+            g_wiresPending = false;
+
             // Only the first attempt is INFO. A retry means the previous one was
             // not acknowledged, which the give-up ERROR below reports properly --
             // ten INFO lines saying the same thing would just bury it.
@@ -2083,6 +2099,38 @@ namespace
             ModLoaderLogger::LogDebug(
                 L"[NetworkChannel] Manifest attempt %d could not be put on the wire; will retry in %llums",
                 g_attempts, kRetryIntervalMs);
+        }
+    }
+
+    // Sends this client's wire declarations to the server, once per manifest put
+    // on the wire. Only called after an ack whose tail was a readable wire table,
+    // so an old server never sees a message it cannot read.
+    static void SendWiresToServer()
+    {
+        void* conn = g_manifestSentTo;
+        if (!conn || g_wiresSentSeq == g_manifestSendSeq) return;
+
+        std::vector<std::string> notEncoded;
+        size_t cut = 0;
+        const std::string body = WireCompat::EncodeTableCapped(PluginManager::GetWireEntries(),
+            kMaxTailBytes, &notEncoded, &cut);
+        WarnWireTableGaps(notEncoded, cut);
+
+        g_wiresLastTryMs = GetTickCount64();
+        if (SendWire(conn, kMlPlugin, BuildEnvelope(kMlPlugin, kMlWires,
+                                         reinterpret_cast<const uint8_t*>(body.data()),
+                                         body.size())))
+        {
+            g_wiresSentSeq = g_manifestSendSeq;
+            g_wiresPending = false;
+            ModLoaderLogger::LogTrace(
+                L"[NetworkChannel] Sent our plugin wire table to the server (%zu bytes)", body.size());
+        }
+        else
+        {
+            g_wiresPending = true;
+            ModLoaderLogger::LogTrace(
+                L"[NetworkChannel] Could not put our plugin wire table on the wire; will retry");
         }
     }
 
@@ -2153,7 +2201,11 @@ namespace
         // cost this early-out exists to avoid.
         if (!g_serverSpeaksWire) { ReportNoGreetingOnce(); return; }
         if (g_manifestAcked && PluginManager::GetPluginGeneration() == g_manifestSentGen)
+        {
+            if (g_wiresPending && GetTickCount64() - g_wiresLastTryMs >= kRetryIntervalMs)
+                SendWiresToServer();
             return;
+        }
 
         SendManifestToServer(/*force*/ false);
     }
@@ -2210,7 +2262,9 @@ namespace
         const bool first = !g_manifestAcked;
         g_manifestAcked  = true;
 
-        StoreServerWireTable(reinterpret_cast<const char*>(data), len);
+        // Our declarations go back only to a server that proved it reads them.
+        if (StoreServerWireTable(reinterpret_cast<const char*>(data), len))
+            SendWiresToServer();
 
         if (first)
             ModLoaderLogger::LogInfo(
@@ -2773,6 +2827,7 @@ static void OnWorldEndPlayForgetConns(SDK::UWorld* /*world*/, const char* /*worl
     g_manifestSentTo  = nullptr;
     g_manifestSentGen = 0;
     g_manifestAcked   = false;
+    g_wiresPending    = false;
     g_attempts        = 0;
     g_gaveUpLogged    = false;
     g_lastAttemptMs   = 0;
