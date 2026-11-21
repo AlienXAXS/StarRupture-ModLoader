@@ -451,10 +451,9 @@ int wmain(int argc, wchar_t** argv)
 
 	if (plugin)
 	{
-#if defined(MODLOADER_CLIENT_BUILD)
-		// The loader reads fields from reflection on the client only.
+		// The loader reads fields from the game's reflection, on the client and
+		// on the server; the exe's PDB stands in for it here.
 		AobScan::UseLayoutForFields(path);
-#endif
 		return AobScan::ScanPlugin(module, plugin, json, verbose, session.get(), symbols);
 	}
 
