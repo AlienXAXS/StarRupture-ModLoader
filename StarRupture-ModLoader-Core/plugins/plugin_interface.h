@@ -3924,6 +3924,15 @@ typedef void (*PluginClientFeaturesCallback)(void* playerController);
 // exempt) and does the removal itself.
 typedef void (*PluginClientBelowMinimumCallback)(void* playerController, const char* plainReason);
 
+// v79 -- admin prompt, authority side. Fired on the game thread, from the tick and
+// outside all locks, when the player behind playerController answered the prompt
+// AskAdmin opened: notMe is false and code is what they typed (1 to 64 bytes,
+// no control characters), or notMe is true and code is "" (they chose "not me").
+// playerController and code are valid for this call only (copy the code if it is
+// needed later). The loader does not judge the code: the plugin does, and
+// answers with AdminMessage. A code is never logged by the loader.
+typedef void (*PluginAdminAnswerCallback)(void* playerController, bool notMe, const char* code);
+
 // v79 -- the rules a server sends to its clients' mod loaders, which switch a
 // feature off on the client when a rule denies it. Authority only: on any other
 // process (and on a generic build, where the table itself is null) a call warns
@@ -3989,6 +3998,23 @@ struct IPluginHostRules
 	// host's own, or one that is gone), or the client sent no report (an older
 	// loader, or no mod loader).
 	int (*GetClientFeatures)(void* playerController, char* buf, size_t size);
+	// v79 -- admin prompt. Authority only, game thread. AskAdmin opens a prompt on
+	// that player's screen asking for an admin code. true = the request was sent;
+	// false = not authority, no connection for this controller (the listen host's
+	// own, or one that is gone), or the player's loader sent no feature report
+	// (an older loader, or no mod loader: it has no prompt to open). Asking again
+	// while a prompt is open reopens it. Only a player that was asked can answer:
+	// an answer from anyone else is dropped. The answer reaches the callbacks of
+	// RegisterOnAdminAnswer, at most one per half second per player.
+	bool (*AskAdmin)(void* playerController);
+	// Shows one line of text (cut to 200 bytes; control characters become spaces)
+	// in that player's open prompt. close = false: the prompt stays open for
+	// another try. close = true: the prompt shows the line and closes. true = sent;
+	// false = not authority, no connection, no feature report, text null, or the
+	// player has no open prompt (never asked, or already closed).
+	bool (*AdminMessage)(void* playerController, const char* text, bool close);
+	void (*RegisterOnAdminAnswer)(const IPluginSelf* self, PluginAdminAnswerCallback callback);
+	void (*UnregisterOnAdminAnswer)(const IPluginSelf* self, PluginAdminAnswerCallback callback);
 };
 
 struct IPluginHooks

@@ -320,6 +320,8 @@ namespace
     static constexpr const char* kMlWires    = "wires";
     static constexpr const char* kMlFeat     = HostRulesWire::kTagFeat;
     static constexpr const char* kMlRules    = HostRulesWire::kTagRules;
+    static constexpr const char* kMlAdminQ   = HostRulesWire::kTagAdminQ;
+    static constexpr const char* kMlAdminR   = HostRulesWire::kTagAdminR;
     static constexpr const char* kMlEcho    = "echo";
     static constexpr const char* kMlEchoBack = "echoreply";
 
@@ -431,8 +433,30 @@ namespace
         std::string rulesSent;
         bool rulesSentOnce = false;
         bool featAnnouncePending = false;
+        // The admin prompt (AskAdmin): a prompt is open for this client until a
+        // close message goes out. lastAnswerMs is when its last accepted answer
+        // came in (GetTickCount64), for the rate limit.
+        bool adminAsked = false;
+        bool hasLastAnswer = false;
+        uint64_t lastAnswerMs = 0;
     };
     static std::unordered_map<void*, ClientFeatInfo> g_clientFeat;
+
+    // Admin answers waiting to be handed to the plugins from the tick, under
+    // g_manifestMutex like g_clientFeat. The code text lives only here and in the
+    // local copy the pump makes; it is wiped after the callbacks ran and never
+    // logged. queuedMs is when it was accepted: an answer whose player controller
+    // never appears is dropped after kAdminAnswerMaxWaitMs.
+    struct AdminAnswerQueued
+    {
+        void* conn = nullptr;
+        bool notMe = false;
+        std::string code;
+        uint64_t queuedMs = 0;
+    };
+    static std::vector<AdminAnswerQueued> g_adminAnswers;
+    static std::atomic<bool> g_adminAnswersDirty{ false };
+    static constexpr uint64_t kAdminAnswerMaxWaitMs = 5000;
 
     // The rules a server plugin set (IPluginHostRules), under g_manifestMutex like
     // g_clientFeat. g_setGlobal is the set for a connection with none of its own;
@@ -1182,6 +1206,19 @@ namespace
         }
     }
 
+    // Drops the queued admin answers of one connection (all of them for null),
+    // overwriting the code text first. The caller holds g_manifestMutex.
+    static void WipeAdminAnswers(void* conn)
+    {
+        for (auto it = g_adminAnswers.begin(); it != g_adminAnswers.end(); )
+        {
+            if (conn && it->conn != conn) { ++it; continue; }
+            std::fill(it->code.begin(), it->code.end(), '\0');
+            it = g_adminAnswers.erase(it);
+        }
+        if (g_adminAnswers.empty()) g_adminAnswersDirty.store(false);
+    }
+
     // Everything keyed by connection lives in several places; forgetting a peer has
     // to clear all of them or the leftovers outlive it. Defined here, after every
     // store exists.
@@ -1202,6 +1239,7 @@ namespace
             g_clientFeat.erase(conn);
             g_connRules.erase(conn);
             g_minCheck.erase(conn);
+            WipeAdminAnswers(conn);
         }
         {
             std::lock_guard<std::mutex> lk(g_helloMutex);
@@ -3227,6 +3265,94 @@ static int HR_GetClientFeatures(void* playerController, char* buf, size_t size)
         HostRulesWire::BuildClientFeaturesText(loaderTag, interfaceVersion, features), buf, size);
 }
 
+// Callbacks registered with RegisterOnAdminAnswer, same rule.
+static std::mutex g_adminCbMutex;
+static std::vector<PluginAdminAnswerCallback> g_adminCbs;
+
+// Puts one "$ML:adminq" message on the wire to `conn`.
+static bool SendAdminQuestion(void* conn, HostRulesWire::AdminQKind kind, const std::string& text)
+{
+    const std::string body = HostRulesWire::EncodeAdminQuestion(kind, text);
+    return SendWire(conn, kMlPlugin, BuildEnvelope(kMlPlugin, kMlAdminQ,
+                                                   reinterpret_cast<const uint8_t*>(body.data()),
+                                                   body.size()));
+}
+
+// The connection of a player that can be sent an admin prompt message: it has a
+// connection and its loader reported its features, which is the proof that it
+// speaks the host-rules messages. Null otherwise.
+static void* AdminTargetConnection(void* playerController)
+{
+    void* conn = ConnectionForPlayer(playerController);
+    if (!conn) return nullptr;
+    std::lock_guard<std::mutex> lk(g_manifestMutex);
+    return g_clientFeat.find(conn) != g_clientFeat.end() ? conn : nullptr;
+}
+
+static bool HR_AskAdmin(void* playerController)
+{
+    if (!HostRulesAuthority("AskAdmin")) return false;
+
+    void* conn = AdminTargetConnection(playerController);
+    if (!conn) return false;
+    if (!SendAdminQuestion(conn, HostRulesWire::AdminQKind::Ask, std::string())) return false;
+
+    std::lock_guard<std::mutex> lk(g_manifestMutex);
+    const auto it = g_clientFeat.find(conn);
+    if (it == g_clientFeat.end()) return true;
+    it->second.adminAsked = true;
+    it->second.hasLastAnswer = false;
+    return true;
+}
+
+static bool HR_AdminMessage(void* playerController, const char* text, bool close)
+{
+    if (!HostRulesAuthority("AdminMessage")) return false;
+    if (!text) return false;
+
+    void* conn = AdminTargetConnection(playerController);
+    if (!conn) return false;
+    {
+        std::lock_guard<std::mutex> lk(g_manifestMutex);
+        const auto it = g_clientFeat.find(conn);
+        if (it == g_clientFeat.end() || !it->second.adminAsked) return false;
+    }
+    if (!SendAdminQuestion(conn,
+                           close ? HostRulesWire::AdminQKind::Close : HostRulesWire::AdminQKind::Info,
+                           text))
+        return false;
+
+    if (close)
+    {
+        std::lock_guard<std::mutex> lk(g_manifestMutex);
+        const auto it = g_clientFeat.find(conn);
+        if (it != g_clientFeat.end()) it->second.adminAsked = false;
+    }
+    return true;
+}
+
+static void HR_RegisterOnAdminAnswer(const IPluginSelf* self, PluginAdminAnswerCallback callback)
+{
+    if (!self || !self->name || !callback) return;
+    if (!HostRulesAuthority("RegisterOnAdminAnswer")) return;
+
+    {
+        std::lock_guard<std::mutex> lk(g_adminCbMutex);
+        if (std::find(g_adminCbs.begin(), g_adminCbs.end(), callback) != g_adminCbs.end()) return;
+        g_adminCbs.push_back(callback);
+    }
+    ModLoaderLogger::LogDebug(
+        L"[NetworkChannel] Admin-answer callback registered for plugin='%S'", self->name);
+}
+
+static void HR_UnregisterOnAdminAnswer(const IPluginSelf* self, PluginAdminAnswerCallback callback)
+{
+    if (!self || !callback) return;
+
+    std::lock_guard<std::mutex> lk(g_adminCbMutex);
+    g_adminCbs.erase(std::remove(g_adminCbs.begin(), g_adminCbs.end(), callback), g_adminCbs.end());
+}
+
 static IPluginHostRules g_hostRulesIface =
 {
     HR_SetRules,
@@ -3238,6 +3364,10 @@ static IPluginHostRules g_hostRulesIface =
     HR_RegisterOnClientBelowMinimum,
     HR_UnregisterOnClientBelowMinimum,
     HR_GetClientFeatures,
+    HR_AskAdmin,
+    HR_AdminMessage,
+    HR_RegisterOnAdminAnswer,
+    HR_UnregisterOnAdminAnswer,
 };
 
 // The manifest rows of one connection for FindBelowMinimum. A row is wire-refused
@@ -3463,6 +3593,64 @@ static void PumpClientFeatures()
     }
 }
 
+// Hands the accepted admin answers to the registered plugins, on the game thread
+// (the tick is), outside all locks. The player controller is looked up from the
+// connection the answer arrived on. An answer whose controller does not exist yet
+// waits for a later tick, and is dropped after kAdminAnswerMaxWaitMs. The code
+// text is overwritten once the callbacks returned.
+static void PumpAdminAnswers(uint64_t now)
+{
+    if (!g_adminAnswersDirty.load()) return;
+    if (!HasNetAuthority()) return;
+
+    struct Due { void* pc; bool notMe; std::string code; };
+    std::vector<Due> due;
+    {
+        std::lock_guard<std::mutex> lk(g_manifestMutex);
+        std::vector<AdminAnswerQueued> waiting;
+        for (AdminAnswerQueued& q : g_adminAnswers)
+        {
+            void* pc = PlayerForConnection(q.conn);
+            if (pc)
+                due.push_back({ pc, q.notMe, std::move(q.code) });
+            else if (now - q.queuedMs < kAdminAnswerMaxWaitMs)
+                waiting.push_back(std::move(q));
+            else
+                std::fill(q.code.begin(), q.code.end(), '\0');
+        }
+        g_adminAnswers = std::move(waiting);
+        g_adminAnswersDirty.store(!g_adminAnswers.empty());
+    }
+    if (due.empty()) return;
+
+    std::vector<PluginAdminAnswerCallback> cbs;
+    {
+        std::lock_guard<std::mutex> lk(g_adminCbMutex);
+        cbs = g_adminCbs;
+    }
+
+    for (Due& d : due)
+    {
+        for (PluginAdminAnswerCallback cb : cbs)
+        {
+            try
+            {
+                PluginGuard::Invoke(cb, "admin-answer callback", d.pc, d.notMe, d.code.c_str());
+            }
+            catch (const std::exception& ex)
+            {
+                ModLoaderLogger::LogError(
+                    L"[NetworkChannel] Exception in admin-answer callback: %S", ex.what());
+            }
+            catch (...)
+            {
+                ModLoaderLogger::LogError(L"[NetworkChannel] Unknown exception in admin-answer callback");
+            }
+        }
+        std::fill(d.code.begin(), d.code.end(), '\0');
+    }
+}
+
 // ============================================================
 // Authority-side receive  (both builds)
 // Fed by the control-channel detour via OnWireReceive, which routes here only
@@ -3647,6 +3835,51 @@ static bool DispatchServerNarrow(void* senderConn, void* senderUObject,
 
             SendRulesTo(senderConn, true);
         }
+        else if (env.typeTag == kMlAdminR && senderConn)
+        {
+            // A player's answer to the admin prompt. The sender is the connection
+            // it arrived on, never anything in the payload. The code text is kept
+            // only in the queue entry and is never logged.
+            HostRulesWire::AdminAnswer answer;
+            const HostRulesWire::Status st = HostRulesWire::DecodeAdminAnswer(
+                reinterpret_cast<const char*>(env.payload.data()), env.payload.size(), &answer);
+            if (st != HostRulesWire::Status::Ok)
+            {
+                bool first;
+                {
+                    std::lock_guard<std::mutex> lk(g_wireLogMutex);
+                    first = g_wiresGarbageWarned.First(senderConn, "$adminr");
+                }
+                if (first)
+                    ModLoaderLogger::LogWarn(
+                        L"[NetworkChannel] Ignoring a malformed admin answer from client %p (%S).",
+                        senderConn, HostRulesWire::StatusText(st));
+                return true;
+            }
+
+            const uint64_t now = GetTickCount64();
+            {
+                std::lock_guard<std::mutex> lk(g_manifestMutex);
+                auto it = g_clientFeat.find(senderConn);
+                if (it == g_clientFeat.end()) return true;
+                ClientFeatInfo& info = it->second;
+                // Not asked, or too soon after the last answer: dropped without a word.
+                if (HostRulesWire::DecideAdminAnswer(info.adminAsked, now, info.hasLastAnswer,
+                                                     info.lastAnswerMs) !=
+                    HostRulesWire::AdminAnswerDecision::Accept)
+                    return true;
+                info.hasLastAnswer = true;
+                info.lastAnswerMs = now;
+
+                AdminAnswerQueued q;
+                q.conn = senderConn;
+                q.notMe = (answer.kind == HostRulesWire::AdminRKind::NotMe);
+                q.code = std::move(answer.code);
+                q.queuedMs = now;
+                g_adminAnswers.push_back(std::move(q));
+                g_adminAnswersDirty.store(true);
+            }
+        }
         else if (env.typeTag == kMlEcho && senderConn)
         {
             // Loopback for the fragmentation self-test. Bounced back verbatim so
@@ -3803,6 +4036,7 @@ static void OnWorldEndPlayForgetConns(SDK::UWorld* /*world*/, const char* /*worl
         g_clientFeat.clear();
         g_connRules.clear();
         g_minCheck.clear();
+        WipeAdminAnswers(nullptr);
     }
     {
         std::lock_guard<std::mutex> lk(g_helloMutex);
@@ -3977,6 +4211,7 @@ static void OnEngineTick(float /*deltaSeconds*/)
     PumpClientReady();
     PumpClientFeatures();
     PumpVersionMinimums();
+    PumpAdminAnswers(now);
 
 #ifdef MODLOADER_CLIENT_BUILD
     RefreshManifestIfStale();
@@ -4204,6 +4439,7 @@ void NetworkChannel::Shutdown()
         g_minCheck.clear();
         g_minimums = HostRulesWire::Minimums();
         g_minimumsActive.store(false);
+        WipeAdminAnswers(nullptr);
     }
     {
         std::lock_guard<std::mutex> lk(g_helloMutex);
@@ -4223,6 +4459,10 @@ void NetworkChannel::Shutdown()
     {
         std::lock_guard<std::mutex> lk(g_minCbMutex);
         g_minCbs.clear();
+    }
+    {
+        std::lock_guard<std::mutex> lk(g_adminCbMutex);
+        g_adminCbs.clear();
     }
     {
         std::lock_guard<std::mutex> lk(g_wireLogMutex);
@@ -4298,6 +4538,10 @@ void NetworkChannel::ForgetModule(HMODULE module)
     {
         std::lock_guard<std::mutex> lk(g_minCbMutex);
         dropped += PluginGuard::ForgetModule(g_minCbs, module);
+    }
+    {
+        std::lock_guard<std::mutex> lk(g_adminCbMutex);
+        dropped += PluginGuard::ForgetModule(g_adminCbs, module);
     }
     {
         std::lock_guard<std::mutex> lk(g_serverMutex);
