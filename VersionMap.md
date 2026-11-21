@@ -320,7 +320,7 @@ in a tail from interface v72: `gameBuiltCL` (the build its Game-SDK came from,
 - On any other supported CL it is admitted only if it is interface 72 or later, sets
   `PLUGIN_MAP_MIGRATED` in `mapFlags`, and called `GetSdkGlobals` in `PluginInit` (the call is what
   counts; a build where the loader cannot find GObjects, `FName::AppendString` or `GWorld` hands
-  the plugin none, with a log line saying which, and so does a dedicated server exe the version map has no rows for). Otherwise the Plugins tab shows it as **Incompatible**, with "Needs an update to
+  the plugin none, with a log line saying which). Otherwise the Plugins tab shows it as **Incompatible**, with "Needs an update to
   run on CL-...", and it still loads on its own build.
 - On its own built CL it is also not refused when the startup layout check finds changed classes, as long
   as it declares that CL (interface 72 or later, `gameBuiltCL` set) and it is not the build the loader
