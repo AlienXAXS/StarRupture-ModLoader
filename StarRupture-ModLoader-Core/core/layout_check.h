@@ -13,15 +13,17 @@ namespace VersionMap { struct LiveField; }
 
 // Startup layout check.
 //
-// layout_table.generated.h lists the Game-SDK classes the loader uses, with
-// the size of each and the offset, size and bool mask of the members it
-// reads, as the SDK the loader was built against has them
-// (tools\Update-LayoutTable.ps1 regenerates it). Run() walks the running
-// game's reflection data once and logs every class whose layout no longer
-// matches: after a game update that is the list of SDK types that now read
-// the wrong bytes. Members the loader resolves per build
-// (SdkGlobals::ResolveFields) are not compared here: the version map checks
-// those (VersionMap::SelectField).
+// A layout table (layout_table_<CL>.generated.h) lists the Game-SDK classes
+// the loader uses, with the size of each and the offset, size and bool mask
+// of the members it reads, as the SDK of that game build has them
+// (tools\Update-LayoutTable.ps1 regenerates one). The loader carries one table
+// for each game build it supports (layout_tables.h): the running game is
+// checked against the table of its own CL, and a build with no table of its
+// own against the newest. Run() walks the running game's reflection data once
+// and logs every class whose layout no longer matches: after a game update
+// that is the list of SDK types that now read the wrong bytes. Members the
+// loader resolves per build (SdkGlobals::ResolveFields) are not compared
+// here: the version map checks those (VersionMap::SelectField).
 //
 // Each class in the table is tagged with what reads its layout (its
 // consumers). On a mismatch Decide says what has to stop: a loader feature
@@ -38,14 +40,40 @@ namespace LayoutCheck
 {
     // Called once from the init thread after FEngineLoop::Init has returned,
     // while the game thread is still parked in the engine-init hook and before
-    // any plugin loads. Client builds only: the table is the client SDK's.
+    // any plugin loads. Client builds only: the tables are the client SDK's.
+    // `runningCL` is the running game's own CL (0: it has none); it picks the
+    // table (SelectTable).
     // Without MODLOADER_CLIENT_BUILD or MODLOADER_SERVER_BUILD (the offline
     // test) only the comparison below is compiled.
     //
     // False, and logged, when the check could not run (GObjects invalid, an
     // exception while reading reflection data); out is then left as it was.
     struct Result;
-    bool Run(Result& out);
+    bool Run(Result& out, uint32_t runningCL);
+
+    // Which of `tables` (each with a `cl` member, oldest first) a game build is
+    // checked against: the one with its own CL, else the newest, the last.
+    // Returns its index.
+    template <class TableT, size_t TableCount>
+    constexpr size_t SelectTable(const TableT (&tables)[TableCount], uint32_t runningCL)
+    {
+        static_assert(TableCount > 0, "no layout table");
+        for (size_t i = 0; i < TableCount; ++i)
+            if (tables[i].cl == runningCL)
+                return i;
+        return TableCount - 1;
+    }
+
+    // Whether `tables` list their CLs in strictly increasing order, so the last
+    // is the newest and no CL has two tables.
+    template <class TableT, size_t TableCount>
+    constexpr bool TablesStrictlyIncreasing(const TableT (&tables)[TableCount])
+    {
+        for (size_t i = 1; i < TableCount; ++i)
+            if (tables[i - 1].cl >= tables[i].cl)
+                return false;
+        return true;
+    }
 
     // The reflected layout of one member of a native class or script struct
     // (member empty: the struct's own size), for field requests
@@ -126,8 +154,8 @@ namespace LayoutCheck
     inline constexpr const char* kConsumerUiMenus   = "ui-menus";    // the menu-layer read only
     inline constexpr const char* kConsumerKeys      = "keys";        // named only as a version-map or pattern key
 
-    // Reads a generated table: ReadTable(SrLayoutTable::kNames,
-    // SrLayoutTable::kClasses, SrLayoutTable::kRows).
+    // Reads a generated table: ReadTable(SrLayoutTable_<CL>::kNames,
+    // SrLayoutTable_<CL>::kClasses, SrLayoutTable_<CL>::kRows).
     template <class ClassT, size_t ClassCount, class RowT, size_t RowCount, size_t NameCount>
     std::vector<TableClass> ReadTable(const char* const (&names)[NameCount],
         const ClassT (&classes)[ClassCount], const RowT (&rows)[RowCount])
@@ -146,8 +174,8 @@ namespace LayoutCheck
         return table;
     }
 
-    // A generated table with its consumer tags: ReadTable(..., SrLayoutTable::kConsumers,
-    // SrLayoutTable::kClassConsumers). A bit with no id gives "?", which no
+    // A generated table with its consumer tags: ReadTable(..., SrLayoutTable_<CL>::kConsumers,
+    // SrLayoutTable_<CL>::kClassConsumers). A bit with no id gives "?", which no
     // rule knows, so that class counts as not attributed.
     template <class ClassT, size_t ClassCount, class RowT, size_t RowCount, size_t NameCount, size_t ConsumerCount>
     std::vector<TableClass> ReadTable(const char* const (&names)[NameCount],

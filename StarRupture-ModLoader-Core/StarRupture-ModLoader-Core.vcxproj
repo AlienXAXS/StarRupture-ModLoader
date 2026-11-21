@@ -554,7 +554,9 @@
     <ClInclude Include="core\sdk_globals.h" />
     <ClInclude Include="core\layout_check.h" />
     <ClInclude Include="core\compat_report.h" />
-    <ClInclude Include="core\layout_table.generated.h" />
+    <ClInclude Include="core\layout_tables.h" />
+    <ClInclude Include="core\layout_table_127004.generated.h" />
+    <ClInclude Include="core\layout_table_130045.generated.h" />
     <ClInclude Include="core\engine_sync.h" />
     <ClInclude Include="core\hook_management.h" />
     <ClInclude Include="core\client_ui.h" />

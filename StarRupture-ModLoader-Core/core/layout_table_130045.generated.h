@@ -4,7 +4,7 @@
 
 #include <cstdint>
 
-namespace SrLayoutTable {
+namespace SrLayoutTable_130045 {
 
 inline constexpr uint32_t kFormatVersion = 1;
 inline constexpr uint32_t kBuiltCL = 130045;
@@ -917,4 +917,4 @@ inline constexpr uint32_t kClassConsumers[kClassCount] = {
     0x5,
 };
 
-}  // namespace SrLayoutTable
+}  // namespace SrLayoutTable_130045

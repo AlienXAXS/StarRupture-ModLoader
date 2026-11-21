@@ -8,7 +8,7 @@
 
 #include "compat_report.h"
 #include "layout_check.h"
-#include "layout_table.generated.h"
+#include "layout_tables.h"
 #include "startup_wait.h"
 
 #include "fixtures/layout_table_126119.h"
@@ -87,8 +87,8 @@ namespace
     // The loader's own table, with what reads each class.
     const auto kLoaderTable = []
     {
-        return LayoutCheck::ReadTable(SrLayoutTable::kNames, SrLayoutTable::kClasses, SrLayoutTable::kRows,
-            SrLayoutTable::kConsumers, SrLayoutTable::kClassConsumers);
+        return LayoutCheck::ReadTable(SrLayoutTable_130045::kNames, SrLayoutTable_130045::kClasses, SrLayoutTable_130045::kRows,
+            SrLayoutTable_130045::kConsumers, SrLayoutTable_130045::kClassConsumers);
     };
 
     const LayoutCheck::TableClass* ClassNamed(const std::vector<LayoutCheck::TableClass>& table, const char* name)
@@ -222,7 +222,7 @@ namespace
         std::printf("Static arrays\n");
         using LayoutCheck::Kind;
 
-        const auto table = LayoutCheck::ReadTable(SrLayoutTable::kNames, SrLayoutTable::kClasses, SrLayoutTable::kRows);
+        const auto table = LayoutCheck::ReadTable(SrLayoutTable_130045::kNames, SrLayoutTable_130045::kClasses, SrLayoutTable_130045::kRows);
         bool found = false;
         for (const LayoutCheck::TableClass& c : table)
         {
@@ -345,8 +345,8 @@ namespace
         std::printf("Granularity 1: the members the loader reads\n");
         using LayoutCheck::Kind;
 
-        Check(SrLayoutTable::kGranularity == 1, "the loader's table lists only the members it reads");
-        const std::vector<LayoutCheck::TableClass> table = LayoutCheck::ReadTable(SrLayoutTable::kNames, SrLayoutTable::kClasses, SrLayoutTable::kRows);
+        Check(SrLayoutTable_130045::kGranularity == 1, "the loader's table lists only the members it reads");
+        const std::vector<LayoutCheck::TableClass> table = LayoutCheck::ReadTable(SrLayoutTable_130045::kNames, SrLayoutTable_130045::kClasses, SrLayoutTable_130045::kRows);
         const auto row = [&table](const char* cls, const char* member) -> const LayoutCheck::TableRow*
         {
             for (const LayoutCheck::TableClass& c : table)
@@ -421,7 +421,7 @@ namespace
             && !LayoutCheck::IsPluginPerBuildMember("ACrCrafter", "TimerActor"),
             "only that class and member");
 
-        Check(SrLayoutTable::kBuiltCL == 130045, "the table is the 130045 one");
+        Check(SrLayoutTable_130045::kBuiltCL == 130045, "the table is the 130045 one");
         const std::vector<LayoutCheck::TableClass> table = kLoaderTable();
 
         const LayoutCheck::Result same = CompareWith(table, AsGame(table));
@@ -488,7 +488,7 @@ namespace
         std::printf("The 130045 table on the 127004 layout\n");
         const std::vector<LayoutCheck::TableClass> table = kLoaderTable();
         const std::vector<LayoutCheck::TableClass> old = kLoaderTable127004();
-        Check(SrLayoutTable127004Loader::kBuiltCL == 127004 && SrLayoutTable::kBuiltCL == 130045, "the two tables are the 127004 and 130045 ones");
+        Check(SrLayoutTable127004Loader::kBuiltCL == 127004 && SrLayoutTable_130045::kBuiltCL == 130045, "the two tables are the 127004 and 130045 ones");
         Check(table.size() == old.size(), "both list the same classes");
 
         const auto game = AsGame(old);
@@ -777,7 +777,7 @@ namespace
     void FunctionParamsFollowTheGame()
     {
         std::printf("function parameter structs\n");
-        const auto table = LayoutCheck::ReadTable(SrLayoutTable::kNames, SrLayoutTable::kClasses, SrLayoutTable::kRows);
+        const auto table = LayoutCheck::ReadTable(SrLayoutTable_130045::kNames, SrLayoutTable_130045::kClasses, SrLayoutTable_130045::kRows);
         const char* const kPlayer = "Engine.GameplayStatics.GetPlayerController";
         const char* const kPlayerName = "GameplayStatics_GetPlayerController";
 
@@ -1130,6 +1130,93 @@ namespace
     }
 }
 
+namespace
+{
+    // A table list with nothing but a CL, for the selection rule.
+    struct ClOnly { uint32_t cl; };
+
+    // The loader carries a table for each game build it supports, and the
+    // running game's own CL picks the one it is checked against.
+    void TablePerBuild()
+    {
+        std::printf("One table per game build\n");
+
+        constexpr ClOnly three[] = { { 100 }, { 200 }, { 300 } };
+        Check(LayoutCheck::SelectTable(three, 100) == 0 && LayoutCheck::SelectTable(three, 200) == 1
+            && LayoutCheck::SelectTable(three, 300) == 2, "a build with a table gets its own");
+        Check(LayoutCheck::SelectTable(three, 150) == 2 && LayoutCheck::SelectTable(three, 299) == 2,
+            "a build between two tables gets the newest");
+        Check(LayoutCheck::SelectTable(three, 301) == 2 && LayoutCheck::SelectTable(three, 0xFFFFFFFFu) == 2,
+            "a build newer than the newest table gets the newest");
+        Check(LayoutCheck::SelectTable(three, 99) == 2 && LayoutCheck::SelectTable(three, 0) == 2,
+            "a build older than the oldest table, or with no CL, gets the newest");
+        constexpr ClOnly one[] = { { 7 } };
+        Check(LayoutCheck::SelectTable(one, 7) == 0 && LayoutCheck::SelectTable(one, 8) == 0, "a single table is always the one");
+
+        constexpr ClOnly same[] = { { 1 }, { 1 }, { 2 } };
+        constexpr ClOnly down[] = { { 2 }, { 1 } };
+        constexpr ClOnly gap[] = { { 1 }, { 5 }, { 9 } };
+        Check(LayoutCheck::TablesStrictlyIncreasing(gap) && LayoutCheck::TablesStrictlyIncreasing(one),
+            "an increasing list passes");
+        Check(!LayoutCheck::TablesStrictlyIncreasing(same) && !LayoutCheck::TablesStrictlyIncreasing(down),
+            "a repeated or descending CL fails");
+
+        using LayoutCheck::kTables;
+        Check(std::size(kTables) == 2 && LayoutCheck::TablesStrictlyIncreasing(kTables),
+            "the loader lists two tables, oldest first");
+        Check(kTables[0].cl == 127004 && kTables[1].cl == 130045, "they are the 127004 and 130045 ones");
+        Check(kTables[0].cl == SrLayoutTable_127004::kBuiltCL && kTables[1].cl == SrLayoutTable_130045::kBuiltCL,
+            "each entry's CL is its table's own");
+
+        for (const LayoutCheck::TableEntry& entry : kTables)
+        {
+            const std::vector<LayoutCheck::TableClass> table = entry.read();
+            size_t rows = 0;
+            for (const LayoutCheck::TableClass& c : table)
+                rows += c.rows.size();
+            std::printf("  info: CL %u: %zu classes, %zu rows\n", entry.cl, table.size(), rows);
+            Check(entry.classCount > 0 && entry.rowCount > 0, "the table has classes and rows");
+            Check(table.size() == entry.classCount && rows == entry.rowCount, "the counts in its header are what it holds");
+        }
+        Check(std::size(SrLayoutTable_127004::kClasses) == SrLayoutTable_127004::kClassCount
+            && std::size(SrLayoutTable_127004::kRows) == SrLayoutTable_127004::kRowCount
+            && std::size(SrLayoutTable_130045::kClasses) == SrLayoutTable_130045::kClassCount
+            && std::size(SrLayoutTable_130045::kRows) == SrLayoutTable_130045::kRowCount,
+            "each header's arrays are as long as its constants say");
+
+        // What each running build is checked against.
+        Check(LayoutCheck::TableCLFor(127004) == 127004 && LayoutCheck::TableCLFor(130045) == 130045,
+            "127004 and 130045 each run against their own table");
+        Check(LayoutCheck::TableCLFor(128786) == 130045 && LayoutCheck::TableCLFor(140000) == 130045
+            && LayoutCheck::TableCLFor(120000) == 130045 && LayoutCheck::TableCLFor(0) == 130045,
+            "a build with no table is checked against the newest");
+
+        // A 127004 run selects the 127004 table, and that table is the real
+        // 127004 layout (v1.26.1's table, made from the 127004 SDK): nothing
+        // differs, so not even a per-build rule is needed. The 130045 table
+        // on the same layout is the two-member difference that
+        // NewTableOnARealLayoutOf127004 covers.
+        const auto game127004 = AsGame(kLoaderTable127004());
+        const auto find127004 = [&game127004](const LayoutCheck::TableClass& c) -> const LayoutCheck::LiveStruct*
+        {
+            const auto it = game127004.find(c.path);
+            return it == game127004.end() ? nullptr : &it->second;
+        };
+        const LayoutCheck::TableEntry& chosen = kTables[LayoutCheck::SelectTable(kTables, 127004)];
+        Check(chosen.cl == 127004, "a 127004 run selects the 127004 table");
+        const std::vector<LayoutCheck::TableClass> chosenTable = chosen.read();
+        const LayoutCheck::Result own = LayoutCheck::Compare(chosenTable, find127004);
+        Check(own.mismatched == 0 && own.missing == 0 && own.checked == own.classes && own.lines.empty()
+            && !LayoutCheck::FoundChanges(own) && !LayoutCheck::Decide(chosenTable, own).safeOff,
+            "its own table finds nothing changed on a 127004 layout, with no per-build rule");
+
+        const std::vector<LayoutCheck::TableClass> newest = kTables[LayoutCheck::SelectTable(kTables, 130045)].read();
+        const LayoutCheck::Result newestOnNewest = CompareWith(newest, AsGame(newest));
+        Check(newestOnNewest.lines.empty() && !LayoutCheck::FoundChanges(newestOnNewest),
+            "a 130045 run against the 130045 table finds nothing changed");
+    }
+}
+
 int main()
 {
     EngineWaitDeadlineAndWording();
@@ -1145,6 +1232,7 @@ int main()
     ClientTableOnEitherBuild();
     NewTableOnARealLayoutOf127004();
     OldLoaderOn130045();
+    TablePerBuild();
     ConsumersDecideWhatStops();
     ProcessEventSlotDecidesSafeOff();
     FunctionParamsFollowTheGame();

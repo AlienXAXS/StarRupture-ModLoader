@@ -540,12 +540,11 @@ namespace LayoutCheck
 
 #if defined(MODLOADER_CLIENT_BUILD)
 
-#include "layout_table.generated.h"
+#include "layout_tables.h"
 #include "../hooks/game/version_map_built.h"
 
-static_assert(SrLayoutTable::kBuiltCL == VersionMap::kBuiltCL, "the layout table is for another game build than the SDK: regenerate it (tools/Update-LayoutTable.ps1)");
-static_assert(SrLayoutTable::kFormatVersion == 1, "layout_check.cpp reads layout table format 1");
-static_assert(SrLayoutTable::kDetail == 1, "an embedded layout table needs member sizes and bool masks (generate it with --sdk)");
+static_assert(LayoutCheck::kTables[std::size(LayoutCheck::kTables) - 1].cl == VersionMap::kBuiltCL,
+    "the newest layout table is for another game build than the SDK: regenerate it (tools/Update-LayoutTable.ps1)");
 
 namespace LayoutCheck
 {
@@ -623,7 +622,7 @@ namespace LayoutCheck
         }
     }
 
-    bool Run(Result& out)
+    bool Run(Result& out, uint32_t runningCL)
     {
         const auto start = std::chrono::steady_clock::now();
 
@@ -633,8 +632,9 @@ namespace LayoutCheck
             return false;
         }
 
-        const std::vector<TableClass> table = ReadTable(SrLayoutTable::kNames, SrLayoutTable::kClasses, SrLayoutTable::kRows,
-            SrLayoutTable::kConsumers, SrLayoutTable::kClassConsumers);
+        // The table of the running build's own CL, else the newest.
+        const TableEntry& tableEntry = kTables[SelectTable(kTables, runningCL)];
+        const std::vector<TableClass> table = tableEntry.read();
 
         Search search;
         for (const TableClass& sdk : table)
@@ -684,9 +684,10 @@ namespace LayoutCheck
         void (*const log)(const wchar_t*, ...) =
             FoundChanges(result) ? ModLoaderLogger::LogWarn : ModLoaderLogger::LogInfo;
         log(
-            L"[LayoutCheck] SDK CL %u against the game: %d classes, %d checked, %d mismatched, %d missing, %d deferred,"
-            L" %d rows resolved per build -- GObjects pass %.1f ms (%d objects, %d types), %.1f ms in all",
-            SrLayoutTable::kBuiltCL, result.classes, result.checked, result.mismatched, result.missing, result.deferred,
+            L"[LayoutCheck] SDK CL %u against the game (build %u%s): %d classes, %d checked, %d mismatched, %d missing,"
+            L" %d deferred, %d rows resolved per build -- GObjects pass %.1f ms (%d objects, %d types), %.1f ms in all",
+            tableEntry.cl, runningCL, tableEntry.cl == runningCL ? L"" : L", no table of its own: the newest is used",
+            result.classes, result.checked, result.mismatched, result.missing, result.deferred,
             result.perBuild,
             search.walkMs, search.objects, search.types, totalMs);
 

@@ -106,7 +106,9 @@
     <ClInclude Include="$(CoreDir)core\layout_check.h" />
     <ClCompile Include="$(CoreDir)core\compat_report.cpp" />
     <ClInclude Include="$(CoreDir)core\compat_report.h" />
-    <ClInclude Include="$(CoreDir)core\layout_table.generated.h" />
+    <ClInclude Include="$(CoreDir)core\layout_tables.h" />
+    <ClInclude Include="$(CoreDir)core\layout_table_127004.generated.h" />
+    <ClInclude Include="$(CoreDir)core\layout_table_130045.generated.h" />
     <ClInclude Include="$(CoreDir)core\startup_wait.h" />
   </ItemGroup>
   <ItemGroup>

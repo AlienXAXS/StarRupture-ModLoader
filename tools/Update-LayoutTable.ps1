@@ -1,7 +1,8 @@
 <#
 .SYNOPSIS
-    Regenerates StarRupture-ModLoader-Core\core\layout_table.generated.h from
-    the Game-SDK submodule.
+    Regenerates the layout table of one game build,
+    StarRupture-ModLoader-Core\core\layout_table_<CL>.generated.h, from the
+    Game-SDK.
 
 .DESCRIPTION
     The layout table is the list of SDK classes the loader uses, with each
@@ -9,12 +10,21 @@
     them. At startup the loader compares it with the running game's reflection
     data (core\layout_check.cpp) and logs every class whose layout moved.
 
-    The table must match the SDK the loader is built against, so run this
-    after every "Update SDK.bat" and commit the result together with the
-    submodule bump. The generator is layout-table.mjs from the starrupture-ci
+    The loader carries one table per game build it supports (core\layout_tables.h
+    lists them); the running game's own CL picks the table it is checked against.
+    The newest table must be the one for the SDK the loader is built against, so
+    run this after every "Update SDK.bat" and commit the result together with the
+    submodule bump. To refresh the table of an older build, point -SdkClient at
+    the Client folder of the Game-SDK commit for that build and give -Cl. The
+    generator is layout-table.mjs from the starrupture-ci
     repo (https://github.com/msantoro12/starrupture-ci, ci\layout-table.mjs);
     it needs Node.js. Its format and the checks the loader makes are described
     in ci\LAYOUT-TABLE.md there.
+
+    Every table in core\ lists the same classes. The class list follows the
+    loader's sources, which have grown since those tables were made, so a run on
+    today's sources lists more classes than the tables hold; widen the tables
+    together or not at all.
 
     The classes come from the loader's own sources (every SDK type they name)
     plus their reflected base classes. A UClass keeps only the members those
@@ -48,30 +58,38 @@ param(
     [string]$Generator,
 
     [Parameter(Mandatory = $true)]
-    [string]$PluginSdk
+    [string]$PluginSdk,
+
+    [string]$SdkClient,
+
+    [string]$Cl
 )
 
 $ErrorActionPreference = 'Stop'
 
 $root = Split-Path -Parent $PSScriptRoot
-$sdk = Join-Path $root 'StarRupture SDK\Client'
+$sdk = if ($SdkClient) { $SdkClient } else { Join-Path $root 'StarRupture SDK\Client' }
 $core = Join-Path $root 'StarRupture-ModLoader-Core'
-$out = Join-Path $core 'core\layout_table.generated.h'
 
 if (-not (Test-Path $Generator)) { throw "Generator not found: $Generator" }
 if (-not (Test-Path $PluginSdk)) { throw "Plugin SDK allow list not found: $PluginSdk" }
 if (-not (Test-Path (Join-Path $sdk 'Assertions.inl'))) {
-    throw "No Client\Assertions.inl under '$sdk'. Run: git submodule update --init `"StarRupture SDK`""
+    throw "No Assertions.inl under '$sdk'. Run: git submodule update --init `"StarRupture SDK`", or pass -SdkClient"
 }
 
-$versionMap = Get-Content -Raw (Join-Path $core 'hooks\game\version_map.generated.h')
-if ($versionMap -notmatch 'kBuiltCL\s*=\s*(\d+)\s*;') {
-    throw 'Could not read kBuiltCL from hooks\game\version_map.generated.h'
+if (-not $Cl) {
+    $versionMap = Get-Content -Raw (Join-Path $core 'hooks\game\version_map.generated.h')
+    if ($versionMap -notmatch 'kBuiltCL\s*=\s*(\d+)\s*;') {
+        throw 'Could not read kBuiltCL from hooks\game\version_map.generated.h'
+    }
+    $Cl = $Matches[1]
 }
-$cl = $Matches[1]
+if ($Cl -notmatch '^\d+$') { throw "-Cl must be a number, got '$Cl'" }
 
-& node $Generator gen (Join-Path $sdk 'Assertions.inl') --cl $cl `
-    --src $root --sdk (Join-Path $sdk 'SDK') --granularity 1 --out $out `
+$out = Join-Path $core "core\layout_table_$Cl.generated.h"
+
+& node $Generator gen (Join-Path $sdk 'Assertions.inl') --cl $Cl `
+    --src $root --sdk (Join-Path $sdk 'SDK') --granularity 1 --out $out --namespace "SrLayoutTable_$Cl" `
     --consumer "core=$core" `
     --consumer "ui-menus=$(Join-Path $core 'hooks\game\game_menu\menu_layer.cpp')" `
     --consumer "keys=$(Join-Path $core 'hooks\game\version_map.generated.h')" `
@@ -79,4 +97,4 @@ $cl = $Matches[1]
     --plugin-sdk $PluginSdk
 if ($LASTEXITCODE -ne 0) { throw "layout-table.mjs failed (exit $LASTEXITCODE)" }
 
-Write-Host "Wrote $out for CL $cl"
+Write-Host "Wrote $out for CL $Cl"

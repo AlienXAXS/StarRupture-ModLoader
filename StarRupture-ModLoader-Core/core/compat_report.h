@@ -65,7 +65,7 @@ namespace CompatReport
         std::string                productVersion;  // the game exe's ProductVersion
         std::string                exeName;         // file name only
         std::string                exeSha256;       // lowercase hex; empty if it could not be read
-        uint32_t                   sdkCL;           // the CL of the SDK the loader was built against
+        uint32_t                   sdkCL;           // the CL of the layout table the check used (the running build's own, else the newest)
         std::vector<PatternMiss>   patternMisses;
         std::vector<GlobalRva>     globals;
         const LayoutCheck::Result* layout;

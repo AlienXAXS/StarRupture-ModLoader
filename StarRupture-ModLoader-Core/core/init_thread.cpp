@@ -465,7 +465,7 @@ DWORD WINAPI MainInitThreadProc(LPVOID)
         const bool engineInitSeen = Hooks::EngineInit::IsEngineInitialized();
         if (engineInitSeen)
         {
-            ran = LayoutCheck::Run(layout);
+            ran = LayoutCheck::Run(layout, VersionMap::RunningExe().cl);
             if (ran && LayoutCheck::FoundChanges(layout))
             {
                 if (layout.verdict.safeOff)
