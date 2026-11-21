@@ -161,9 +161,12 @@ namespace LayoutCheck
     // offsets that move between builds, and its rows are counted as resolved
     // per build. The table generator leaves out a member whose SDK comment
     // says NOT AUTO-GENERATED PROPERTY, so no table lists ULevel::Actors now
-    // and the entry below matches nothing; it stays as a safety net for a
-    // member the generator misses. List a member here only where the table
-    // still has a row the game does not reflect.
+    // and the entry below matches nothing. It stays as a safety net: the
+    // generator tells such a member by that comment, and one that gets past
+    // that test is a row the game never reflects, which the check would take
+    // for a changed layout and switch every plugin off (ULevel::Actors did,
+    // before the generator was fixed). List a member here only where the
+    // table still has a row the game does not reflect.
     struct UnreflectedMember
     {
         const char* className;  // the SDK's C++ name
