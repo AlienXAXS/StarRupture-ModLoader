@@ -618,6 +618,9 @@ close), the next start on that build runs without mods until `Retry=1` is added 
 `Enabled=0` keeps the old behaviour: the loader stays off on such a build. A dedicated server still
 stops on a build it does not list.
 
+The dedicated server hands plugins the same Game-SDK globals as the client when the version map serves the
+running server build. On any other server exe it hands them none, as before.
+
 At startup the loader also checks that the game classes it reads are laid out as it was built for. If a
 game update changes a layout, only the features that read it are switched off, not every plugin. A plugin
 that keeps the game's layouts compiled in, instead of taking them from the version map, is not loaded then,

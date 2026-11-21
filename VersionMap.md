@@ -320,7 +320,7 @@ in a tail from interface v72: `gameBuiltCL` (the build its Game-SDK came from,
 - On any other supported CL it is admitted only if it is interface 72 or later, sets
   `PLUGIN_MAP_MIGRATED` in `mapFlags`, and called `GetSdkGlobals` in `PluginInit` (the call is what
   counts; a build where the loader cannot find GObjects, `FName::AppendString` or `GWorld` hands
-  the plugin none, with a log line saying which). Otherwise the Plugins tab shows it as **Incompatible**, with "Needs an update to
+  the plugin none, with a log line saying which, and so does a dedicated server exe the version map has no rows for). Otherwise the Plugins tab shows it as **Incompatible**, with "Needs an update to
   run on CL-...", and it still loads on its own build.
 - On its own built CL it is also not refused when the startup layout check finds changed classes, as long
   as it declares that CL (interface 72 or later, `gameBuiltCL` set) and it is not the build the loader
@@ -351,7 +351,9 @@ one exe, the server exe CI measured (CL-127004, PE time stamp `0x2E3595FF`, imag
 
 - **Function rows** are addresses with no pattern: the start of one function, or the address of a game
   global (`GNames (NamePoolData)` and `GWorld`, which a plugin can ask for, and the loader's own
-  `ModLoader/GObjects` key, which only the loader's own request reads).
+  `ModLoader/GObjects` key, which only the loader's own request reads). `FName::AppendString` is the
+  `FString&` overload the Game-SDK calls: the game files hold three overloads of that name, so its row is
+  the start the loader's own pattern for it matches, the same as the SDK's `Offsets::AppendString`.
 - **Field rows** give a member's offset and size, and for a bool its mask (`0xFF`; a bit field has its bit).
   A **size row** is a class key (no `::`) at offset 0 that gives the struct's size. Both were measured from
   the server's own game files, and a member's size is the size a plugin reads it at, as in the client's
@@ -365,6 +367,14 @@ members: the server bounds only a member the table gave a row for. The client's 
 unchanged. A plugin gets a function row from the table only when it asks for the map key
 (`PLUGIN_SCAN_FLAG_MAP_KEY`) on the server build too, and a field or size row through the same member and
 size requests it makes on the client.
+
+**Game-SDK globals on the server.** The server resolves the same four Game-SDK globals as the client
+(GObjects, GNames, `FName::AppendString` and GWorld) through the same registry rows, and hands them to a
+plugin through `GetSdkGlobals` when the version map serves the running server build (the same match on CL,
+time stamp and image size as above), GObjects has passed the loader's structural check after engine init,
+and `FName::AppendString` was found (GWorld too, off the build the loader is compiled for). On any other server
+exe the loader resolves none of them, the SDK keeps its compiled offsets and `GetSdkGlobals` returns none, as
+before. The server still lists and runs on CL-127004 only.
 
 ## The feed
 

@@ -320,7 +320,8 @@ The Server configurations build the server table's test instead (`server_map_tes
 `hooks/game/version_map.server.h` (its function, field and size rows: counts, order, and the server's own
 values) against the five places `version_map.cpp` serves it, with `MODLOADER_SERVER_BUILD` defined. Every
 function, member and size row is asked for on the server exe and must come back with its value, and on
-any other exe must not.
+any other exe must not. The four Game-SDK globals' registry rows are checked against their server rows the
+same way, along with `VersionMap::ServesExe` and what plugins are handed on the server.
 
 ```
 msbuild Tests\VersionMapTests\VersionMapTests.vcxproj /p:Configuration="Server Release" /p:Platform=x64
