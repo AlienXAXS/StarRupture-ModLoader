@@ -412,9 +412,11 @@ has the same format, the same Ed25519 signatures and the same trusted keys as th
   own beside the client's, with its own `seq`, and refuses a file of the wrong kind. The server leg does
   nothing until the `vmap-feed` release holds a server file, and the first one needs a manual run with
   `first_publish` set, as the client's did.
-- **Not there yet.** No server file is published; the server has no layout check, so a changed game
-  class is not found by the loader (a plugin's own class check is the only guard). Until a first signed
-  server file exists, a server runs only the game build it was made for.
+- **No layout check.** The server has no layout check, so a changed game class is not found by the
+  loader (a plugin's own class check is the only guard).
+- **What the log says.** After the merge line, `[VersionFeed]` prints one line per build in the file:
+  `this exe` or `other exe` (with its stamp and size), its row count, and whether it was identical to the
+  loader's own (none used), differs (and whose rows are kept), added, or refused.
 
 To try it without a published file, build the Server configuration with `VMAP_TRUST_TEST_KEY` (the
 test key, `k1`), sign a server file with that key, and copy it byte for byte to
@@ -439,8 +441,7 @@ file on Latest: on a new release at its next run (every 15 minutes), and between
 the `seq` rises. The first release that carries one needs a manual run with `first_publish` set.
 The dedicated server has a file of its own, `version-map-server.v1.txt`, in the same format, which the
 same workflow puts on Latest in a leg of its own (its own `seq`, its own `first_publish`); see
-[The dedicated server's downloaded version map](#the-dedicated-servers-downloaded-version-map). None is
-published yet.
+[The dedicated server's downloaded version map](#the-dedicated-servers-downloaded-version-map).
 
 **Fetch.** The URL is the compiled define `VMAP_FEED_URL` (`/p:VmapFeedUrl=` in `Shared.props`),
 never read from `modloader.ini`. An empty define, or no compiled public key, means no fetch. The

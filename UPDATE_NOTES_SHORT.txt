@@ -1,4 +1,3 @@
 - A plugin that names the game build it was made for now loads on that build after a game update changed only some of the game classes the loader checks, instead of showing as incompatible
 - The mod loader is now built for game build CL-130045 and still runs on CL-127004. The dedicated server stays on CL-127004
-- The dedicated server now has a built-in version object map table for its own game build (function addresses, game globals, member offsets and struct sizes), off on any other server exe
-- The dedicated server now hands plugins the same Game-SDK globals as the client when the version object map serves the running server build
+- The dedicated server now supports the version object map: built-in rows for its own game build (CL-127004), the same Game-SDK globals as the client, and its own signed version map file so a newer server game build can be supported without a loader update ([AutoUpdate] Enabled=0 stops that request). On a server build only that file lists, if the loader cannot find everything it needs, the server starts with no plugins and ModLoader.log says why. ModLoader.log also prints one line per build in a fetched file

@@ -602,9 +602,10 @@ against, and shows **Incompatible** on the others.
 On a client build with `[AutoUpdate] Enabled` on, the loader checks at every start whether a newer version
 map is out, as a signed file, and uses it on that start, so a new game build can be supported without a
 loader update. If the check fails, the copy it kept last time is used. A dedicated server build reads
-its own, separate file the same way, when it was built with an address for one (see
-[VersionMap.md](VersionMap.md#the-dedicated-servers-downloaded-version-map)); none is published yet, so a
-server still runs only the game build it was made for.
+its own, separate file the same way (see
+[VersionMap.md](VersionMap.md#the-dedicated-servers-downloaded-version-map)): the Server release build
+carries its address, `[AutoUpdate] Enabled=0` stops that request too, and a server build made without an
+address fetches nothing and says so in `ModLoader.log`.
 How the version map is chosen, how a newer version map is fetched, signed and cached, how CI publishes it and what
 each failure looks like is in [VersionMap.md](VersionMap.md).
 
@@ -624,7 +625,10 @@ stops on a build it does not list.
 The dedicated server hands plugins the same Game-SDK globals as the client when the version map serves the
 running server build. On any other server exe it hands them none, as before. A server game build that only
 a downloaded server version map lists runs plugins that take their game data from the version map, and
-starts without plugins when the loader cannot find everything it needs there (`ModLoader.log` says what).
+starts without plugins, with no dialog, when the loader cannot find everything it needs there
+(`ModLoader.log` says what). On a server build that no list has, the loader still stops. The log also
+prints one line per build in a fetched file: this exe or another, its row count, and whether the rows are
+identical to the loader's own, differ, were added or were refused.
 
 At startup the loader also checks that the game classes it reads are laid out as it was built for. If a
 game update changes a layout, only the features that read it are switched off, not every plugin. A plugin
