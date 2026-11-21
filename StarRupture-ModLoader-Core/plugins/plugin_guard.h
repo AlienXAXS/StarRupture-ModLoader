@@ -108,6 +108,11 @@ namespace PluginGuard
 	{
 		using Thunk = void (*)(void* body);
 		bool Run(const void* callback, const char* what, Thunk thunk, void* body);
+
+		// The faulting thread's return addresses, innermost first, walked from a
+		// fault's CONTEXT with the OS unwind tables (no dbghelp, no heap, no
+		// locks). Call it from the exception filter, while the stack is intact.
+		size_t WalkFrames(const CONTEXT& fault, uintptr_t* frames, size_t max);
 	}
 
 	// Runs `body`, which calls the plugin callback `fn`, under the guard.

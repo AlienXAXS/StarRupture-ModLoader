@@ -38,16 +38,105 @@ namespace Hooks::WorldEndPlay
 		}
 	}
 
+	// What the filter keeps of a fault in the original UWorld::EndPlay, for the
+	// log lines the handler writes once the stack has unwound. Plain data (C2712).
+	// Registers and addresses only: nothing here is dereferenced.
+	static constexpr size_t kFaultFrames = 8;
+	struct EndPlayFault
+	{
+		uint32_t  code;
+		uintptr_t address;
+		bool      hasAccess;      // an access violation says what it touched
+		uintptr_t accessKind;     // 0 read, 1 write, 8 execute
+		uintptr_t accessAddress;
+		CONTEXT   context;
+		uintptr_t frames[kFaultFrames];
+		size_t    frameCount;
+	};
+
+	// Runs on the faulting thread before anything is unwound, so the stack
+	// walk sees the real frames. The fault is swallowed, as it always was.
+	static LONG CaptureEndPlayFault(EXCEPTION_POINTERS* ep, EndPlayFault* out)
+	{
+		const EXCEPTION_RECORD& rec = *ep->ExceptionRecord;
+		out->code          = rec.ExceptionCode;
+		out->address       = reinterpret_cast<uintptr_t>(rec.ExceptionAddress);
+		out->hasAccess     = (rec.ExceptionCode == EXCEPTION_ACCESS_VIOLATION && rec.NumberParameters >= 2);
+		out->accessKind    = out->hasAccess ? rec.ExceptionInformation[0] : 0;
+		out->accessAddress = out->hasAccess ? rec.ExceptionInformation[1] : 0;
+		out->context       = *ep->ContextRecord;
+		if (rec.ExceptionCode == EXCEPTION_STACK_OVERFLOW)
+		{
+			out->frames[0]  = out->address;   // no stack to spare for a walk
+			out->frameCount = 1;
+		}
+		else
+		{
+			out->frameCount = PluginGuard::Detail::WalkFrames(*ep->ContextRecord, out->frames, kFaultFrames);
+		}
+		return EXCEPTION_EXECUTE_HANDLER;
+	}
+
+	// "<module>+0x<offset>", or "<unknown>+0x<address>" outside every module.
+	static void FormatModuleOffset(uintptr_t address, wchar_t* out, size_t len)
+	{
+		const HMODULE module = PluginGuard::ModuleOf(reinterpret_cast<const void*>(address));
+		if (!module)
+		{
+			swprintf_s(out, len, L"<unknown>+0x%llX", static_cast<unsigned long long>(address));
+			return;
+		}
+		swprintf_s(out, len, L"%S+0x%llX", GetCallerModuleName(reinterpret_cast<void*>(address)).c_str(),
+		           static_cast<unsigned long long>(address - reinterpret_cast<uintptr_t>(module)));
+	}
+
+	// Three log lines for one swallowed fault: what and where, the registers, the
+	// stack. A fault here has no other trace, and a world that ends badly is the
+	// usual first sign of a bad save or a plugin that touched the world.
+	static void LogEndPlayFault(const EndPlayFault& f)
+	{
+		wchar_t where[MAX_PATH + 32];
+		FormatModuleOffset(f.address, where, std::size(where));
+
+		wchar_t access[64] = {};
+		if (f.hasAccess)
+			swprintf_s(access, L" (%s address 0x%llX)", f.accessKind == 0 ? L"reading" : f.accessKind == 1 ? L"writing" : L"executing",
+			           static_cast<unsigned long long>(f.accessAddress));
+
+		ModLoaderLogger::LogError(L"[WorldEndPlay] SEH exception in original UWorld::EndPlay (code=0x%08X) at %s%s",
+		                          f.code, where, access);
+
+		const CONTEXT& c = f.context;
+		const auto r = [](DWORD64 v) { return static_cast<unsigned long long>(v); };
+		ModLoaderLogger::LogError(
+			L"[WorldEndPlay]   registers: RIP=%llX RSP=%llX RBP=%llX RAX=%llX RBX=%llX RCX=%llX RDX=%llX RSI=%llX RDI=%llX "
+			L"R8=%llX R9=%llX R10=%llX R11=%llX R12=%llX R13=%llX R14=%llX R15=%llX",
+			r(c.Rip), r(c.Rsp), r(c.Rbp), r(c.Rax), r(c.Rbx), r(c.Rcx), r(c.Rdx), r(c.Rsi), r(c.Rdi),
+			r(c.R8), r(c.R9), r(c.R10), r(c.R11), r(c.R12), r(c.R13), r(c.R14), r(c.R15));
+
+		wchar_t stack[1024] = {};   // the log line holds no more than this
+		for (size_t i = 0; i < f.frameCount; ++i)
+		{
+			wchar_t frame[MAX_PATH + 32];
+			FormatModuleOffset(f.frames[i], frame, std::size(frame));
+			wchar_t entry[MAX_PATH + 40];
+			swprintf_s(entry, L" #%zu %s", i, frame);
+			wcsncat_s(stack, entry, _TRUNCATE);
+		}
+		ModLoaderLogger::LogError(L"[WorldEndPlay]   stack:%s", stack);
+	}
+
 	// SEH wrapper for original function — must be in its own function with no C++ objects to satisfy C2712.
 	static void CallOriginalSEH(void* worldThis, int endPlayReason)
 	{
+		EndPlayFault fault;   // filled by the filter, only when something faults
 		__try
 		{
 			g_original(worldThis, endPlayReason);
 		}
-		__except (EXCEPTION_EXECUTE_HANDLER)
+		__except (CaptureEndPlayFault(GetExceptionInformation(), &fault))
 		{
-			ModLoaderLogger::LogError(L"[WorldEndPlay] SEH exception in original UWorld::EndPlay (code=0x%08X)", GetExceptionCode());
+			LogEndPlayFault(fault);
 		}
 	}
 
