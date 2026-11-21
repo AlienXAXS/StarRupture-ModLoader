@@ -1307,6 +1307,23 @@ namespace PluginManager
 		return result;
 	}
 
+	std::vector<WireCompat::Entry> GetWireEntries()
+	{
+		std::vector<WireCompat::Entry> result;
+		EnterCriticalSection(&g_pluginLock);
+		for (const auto& p : g_loadedPlugins)
+		{
+			if (!p->isInitialized) continue;
+			WireCompat::Entry e;
+			e.name = p->cachedName;
+			e.version = p->cachedVersion;
+			e.decl = p->wire;
+			result.push_back(std::move(e));
+		}
+		LeaveCriticalSection(&g_pluginLock);
+		return result;
+	}
+
 	int GetInterfaceVersionForModule(HMODULE module)
 	{
 		if (!module) return 0;

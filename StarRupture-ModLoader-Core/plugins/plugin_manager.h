@@ -97,6 +97,10 @@ namespace PluginManager
     // the plugin its packets are compatible with.
     WireCompat::Decl GetWireDecl(const char* pluginName);
 
+    // Name, version and wire declaration of every initialized plugin, for the
+    // wire table the server sends behind its manifest ack.
+    std::vector<WireCompat::Entry> GetWireEntries();
+
     // The plugin interface version the plugin loaded from `module` declared in
     // its PluginInfo, or 0 when no loaded plugin owns that module. Lets a
     // registry decide whether a descriptor the plugin passed has the fields a
