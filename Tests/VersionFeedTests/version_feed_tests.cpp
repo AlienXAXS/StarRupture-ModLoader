@@ -322,6 +322,10 @@ int main()
 		Check(!fixture.empty() && Read(fixture, VersionFeed::CompiledKeys(), f, e) && f.seq == 1761900000 && f.keyId == "k1"
 			&& f.testKey && f.map.builds.size() == 2, "a feed signed by Node with the TEST key verifies against slot k1");
 #endif
+#if defined(VMAP_TRUST_TEST_KEY)
+		Check(!VersionFeed::ReadSigned(fixture, VersionFeed::CompiledKeys(), f, e, VersionFeed::Flavor::Server) && e.find("not a dedicated server file") != std::string::npos,
+			"the Node-signed client fixture is refused by a server loader: it verifies, and is the wrong file");
+#endif
 		std::string flipped = fixture;
 		flipped[flipped.find("AA 55") + 1] ^= 1;
 		Check(Rejected(flipped, VersionFeed::CompiledKeys()), "the Node-signed fixture with a flipped byte is rejected");
@@ -554,6 +558,77 @@ int main()
 		Put(path, std::string(VersionFeed::kMaxFileBytes + 1, 'x'));
 		Check(!VersionFeed::BuildFromCache(path, keys, kRunning, none), "an oversize cache is not read");
 		Check(!VersionFeed::BuildFromCache(path, {}, kRunning, none), "a loader with no keys reads no cache");
+		DeleteFileW(path.c_str());
+	}
+
+	// ---- the two files: a loader reads its own and refuses the other's ----------
+	// A server file and a client file share the grammar and the signature, and
+	// differ in the source label of their build lines ("server ..."). This is the
+	// client build's test: the server flavor is passed explicitly to cover both
+	// directions here; the server build's own cases are in version_map_server_tests.
+	{
+		using VersionFeed::Flavor;
+		const std::string serverBody = "build\t127004\t0x2E3595FF\t0x0E2A8000\tserver steam_build 1\n"
+			"build\t128786\t0x33333333\t0x03000000\tserver steam_build 2\n"
+			+ Fn("Test::ServerOnly", 0, 128786, 0x33333333, 0x03000000, 1, "-", 0x1000);
+		const std::string serverFile = Sign(sk1, Region(30, serverBody));
+		const std::string clientFile = Sign(sk1, Region(30, body));
+		SignedFeed f;
+		std::string e;
+
+		Check(Read(clientFile, keys, f, e) && f.map.builds.size() == 2 && VersionFeed::ReadSigned(clientFile, keys, f, e, Flavor::Client),
+			"flavor: a client file is read by a client loader");
+		Check(VersionFeed::ReadSigned(serverFile, keys, f, e, Flavor::Server) && f.seq == 30 && f.map.builds.size() == 2,
+			"flavor: a server file is read by a server loader");
+		Check(!VersionFeed::ReadSigned(serverFile, keys, f, e, Flavor::Client) && e.find("dedicated server file") != std::string::npos && f.map.builds.empty(),
+			"flavor: a client loader refuses a server file, and says why");
+		Check(!VersionFeed::ReadSigned(clientFile, keys, f, e, Flavor::Server) && e.find("not a dedicated server file") != std::string::npos && f.map.builds.empty(),
+			"flavor: a server loader refuses a client file, and says why");
+
+		// Each label has to agree: one build of the other kind and the file is the other's.
+		const std::string mixed = Sign(sk1, Region(31, "build\t127004\t0x2E3595FF\t0x0E2A8000\tserver steam_build 1\n"
+			"build\t128786\t0x22222222\t0x02000000\tpublic_test_branch 2\n"));
+		Check(!VersionFeed::ReadSigned(mixed, keys, f, e, Flavor::Server) && !VersionFeed::ReadSigned(mixed, keys, f, e, Flavor::Client),
+			"flavor: a file with a build line of each kind is refused by both");
+		// The label is "server " with the space: "servers" or "Server" are not it.
+		const std::string lookalike = Sign(sk1, Region(32, "build\t127004\t0x2E3595FF\t0x0E2A8000\tservers steam_build 1\n"));
+		Check(!VersionFeed::ReadSigned(lookalike, keys, f, e, Flavor::Server) && VersionFeed::ReadSigned(lookalike, keys, f, e, Flavor::Client),
+			"flavor: only the label \"server \" marks a server file");
+
+		// A server file names a server exe: with no build line there is nothing to tell it by.
+		const std::string noBuilds = Sign(sk1, Region(33, ""));
+		const bool clientOk = VersionFeed::ReadSigned(noBuilds, keys, f, e, Flavor::Client);
+		Check(!VersionFeed::ReadSigned(noBuilds, keys, f, e, Flavor::Server) && (clientOk || !e.empty()),
+			"flavor: a server loader refuses a file with no build line");
+
+		// The check follows the signature: an unsigned or wrongly signed server file says nothing of flavor.
+		std::string forged = serverFile;
+		forged[forged.find("Test::ServerOnly") + 6] ^= 1;
+		Check(!VersionFeed::ReadSigned(forged, keys, f, e, Flavor::Server) && e.find("signature") != std::string::npos,
+			"flavor: a tampered server file fails on its signature first");
+
+		// The loader's own coverage: the client's list is what it was; the server's is empty, so a server CL in the file is
+		// never dropped for a key the server file does not carry.
+		const Coverage clientCoverage = VersionFeed::LoaderCoverage(Flavor::Client);
+		const Coverage serverCoverage = VersionFeed::LoaderCoverage(Flavor::Server);
+		Check(!clientCoverage.functions.empty() && !clientCoverage.fields.empty() && VersionFeed::LoaderCoverage().functions.size() == clientCoverage.functions.size(),
+			"flavor: this client build's coverage is the loader's registry entries and field keys");
+		Check(serverCoverage.functions.empty() && serverCoverage.fields.empty(), "flavor: the server's coverage is empty");
+
+		// The cache: a server file never lands in a client cache, and the one cached stays.
+		const std::wstring path = TempPath(L"flavor.cache");
+		DeleteFileW(path.c_str());
+		Check(!VersionFeed::StoreCache(path, serverFile, keys, e) && !Exists(path) && !Exists(path + L".tmp"),
+			"flavor: a client loader's cache takes no server file");
+		Check(VersionFeed::StoreCache(path, clientFile, keys, e) && !VersionFeed::StoreCache(path, Sign(sk1, Region(40, serverBody)), keys, e)
+			&& Slurp(path) == clientFile, "flavor: ...and keeps the client file it has");
+		DeleteFileW(path.c_str());
+		Check(VersionFeed::StoreCache(path, serverFile, keys, e, Flavor::Server) && Slurp(path) == serverFile
+			&& VersionFeed::ReadCache(path, keys, f, Flavor::Server) && !VersionFeed::ReadCache(path, keys, f, Flavor::Client),
+			"flavor: a server loader's cache takes a server file, which only a server loader reads");
+		TestDoubles::g_log.clear();
+		Check(!VersionFeed::BuildFromCache(path, keys, kRunning, Coverage{}) && Logged(L"dedicated server file"),
+			"flavor: a client loader finding a server file in its cache logs the refusal and runs on its own map");
 		DeleteFileW(path.c_str());
 	}
 

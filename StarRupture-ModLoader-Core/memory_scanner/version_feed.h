@@ -12,8 +12,9 @@
 // ---------------------------------------------------------------------------
 // VersionFeed -- the signed map data a loader reads between releases.
 //
-// The feed is version-map-client.v1.txt (see VersionMap::ParseFeed for the
-// lines) plus two lines of its own:
+// The feed is version-map-client.v1.txt, or on a dedicated server
+// version-map-server.v1.txt (see VersionMap::ParseFeed for the lines), plus two
+// lines of its own:
 //
 //   format<TAB>1
 //   seq<TAB><n>                    the UTC second of signing, never 0
@@ -26,6 +27,11 @@
 // 1 MiB, with a `sig` line that is not the last, with an unknown key ID or
 // with any malformed line is rejected whole (a line of a kind the loader
 // does not know is not malformed: it is skipped).
+//
+// The two files share the grammar and the keys, and tell each other apart by
+// the source label of their build lines: a server file's labels all start with
+// "server ", a client file's never do. A loader refuses the other build's file
+// (Flavor). Each keeps its own cache file, so a file never lands in the other's.
 //
 // What a loader does with a verified feed:
 //   1. Merge it with the map compiled into the loader (Merge), one row per key
@@ -43,6 +49,23 @@
 namespace VersionFeed
 {
 	constexpr size_t kMaxFileBytes = 1u << 20;
+
+	// Which of the two files a loader reads: the client's or the dedicated server's.
+	enum class Flavor
+	{
+		Client,
+		Server,
+	};
+
+	// The file this build reads.
+#if defined(MODLOADER_SERVER_BUILD)
+	constexpr Flavor kBuildFlavor = Flavor::Server;
+#else
+	constexpr Flavor kBuildFlavor = Flavor::Client;
+#endif
+
+	// What the source label of a build line starts with in a server file.
+	constexpr const char* kServerSourcePrefix = "server ";
 
 	struct PublicKey
 	{
@@ -63,9 +86,12 @@ namespace VersionFeed
 		VersionMap::MapData   map;
 	};
 
-	// Verifies `file` against `keys`, then parses it. On failure `out` is left
-	// empty and `error` says why.
-	bool ReadSigned(const std::string& file, const std::vector<PublicKey>& keys, SignedFeed& out, std::string& error);
+	// Verifies `file` against `keys`, then parses it. A file of the other
+	// flavor is refused after it verifies: a server file needs at least one
+	// build line and every build line labelled "server ...", a client file has
+	// none labelled so. On failure `out` is left empty and `error` says why.
+	bool ReadSigned(const std::string& file, const std::vector<PublicKey>& keys, SignedFeed& out, std::string& error,
+		Flavor flavor = kBuildFlavor);
 
 	// What a merge did, for its one log line.
 	struct MergeReport
@@ -94,9 +120,12 @@ namespace VersionFeed
 		std::vector<std::string> fields;
 	};
 
-	// The loader's own: its required registry entries (LoaderEntryKey and
-	// LoaderEntryFingerprint) and kLoaderFieldKeys.
-	Coverage LoaderCoverage();
+	// The client loader's own: its required registry entries (LoaderEntryKey and
+	// LoaderEntryFingerprint) and kLoaderFieldKeys. Empty for the server: its
+	// file holds plugin rows only, the loader's own entries are found by their
+	// patterns and the loader's field requests are read from the game, so a
+	// server build in the file is never short of a loader key.
+	Coverage LoaderCoverage(Flavor flavor = kBuildFlavor);
 
 	// How many of `cov` the map lacks on `cl`.
 	size_t MissingKeys(const VersionMap::MapData& map, uint32_t cl, const Coverage& cov);
@@ -109,18 +138,20 @@ namespace VersionFeed
 
 	// The verified feed in the cache file at `path`; false, quietly, when
 	// there is none or it does not verify.
-	bool ReadCache(const std::wstring& path, const std::vector<PublicKey>& keys, SignedFeed& out);
+	bool ReadCache(const std::wstring& path, const std::vector<PublicKey>& keys, SignedFeed& out,
+		Flavor flavor = kBuildFlavor);
 
 	// Reads the cache file at `path` and builds the map to run on: the
 	// baseline merged with the verified feed. Returns null, and leaves the
 	// baseline in force, when there is no cache or it fails (logged). Logs one
 	// line for the merge and one for each CL refused.
 	std::shared_ptr<const VersionMap::MapData> BuildFromCache(const std::wstring& path,
-		const std::vector<PublicKey>& keys, const VersionMap::Exe& running, const Coverage& cov, uint64_t* seq = nullptr);
+		const std::vector<PublicKey>& keys, const VersionMap::Exe& running, const Coverage& cov, uint64_t* seq = nullptr,
+		Flavor flavor = kBuildFlavor);
 
-	// Stage 1's read: BuildFromCache with the compiled keys and the loader's
-	// coverage, then VersionMap::SetActiveMap. Once per process; a second
-	// call does nothing. Call it before anything reads the map. Returns
+	// Stage 1's read: BuildFromCache with the compiled keys and this build's
+	// coverage and flavor, then VersionMap::SetActiveMap. Once per process; a
+	// second call does nothing. Call it before anything reads the map. Returns
 	// whether a feed is now in force.
 	bool ActivateCached(const std::wstring& path);
 
@@ -129,5 +160,5 @@ namespace VersionFeed
 	// cache file with it through a temp file and MoveFileExW. A file that
 	// fails, or has an equal or lower `seq`, leaves the cache as it was.
 	bool StoreCache(const std::wstring& path, const std::string& file,
-		const std::vector<PublicKey>& keys, std::string& error);
+		const std::vector<PublicKey>& keys, std::string& error, Flavor flavor = kBuildFlavor);
 }

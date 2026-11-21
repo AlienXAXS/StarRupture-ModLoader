@@ -169,7 +169,8 @@ namespace VersionFeed
 		return keys;
 	}
 
-	bool ReadSigned(const std::string& file, const std::vector<PublicKey>& keys, SignedFeed& out, std::string& error)
+	bool ReadSigned(const std::string& file, const std::vector<PublicKey>& keys, SignedFeed& out, std::string& error,
+		Flavor flavor)
 	{
 		out = SignedFeed{};
 		const auto fail = [&](const std::string& why)
@@ -238,6 +239,17 @@ namespace VersionFeed
 		std::string parseError;
 		if (!VersionMap::ParseFeed(region.substr(0, l1 + 1) + region.substr(l2 + 1), map, parseError))
 			return fail(parseError);
+
+		// The right file for this loader: a server file names only server exes.
+		size_t serverBuilds = 0;
+		for (const MapBuild& b : map.builds)
+			serverBuilds += b.source.compare(0, std::strlen(kServerSourcePrefix), kServerSourcePrefix) == 0;
+		if (flavor == Flavor::Server && map.builds.empty())
+			return fail("this is not a dedicated server file (it has no build line)");
+		if (flavor == Flavor::Server && serverBuilds != map.builds.size())
+			return fail("this is not a dedicated server file (a build line is not labelled \"server ...\")");
+		if (flavor == Flavor::Client && serverBuilds != 0)
+			return fail("this is a dedicated server file, which a client loader does not read");
 
 		out.seq     = seq;
 		out.keyId   = key->id;
@@ -352,9 +364,11 @@ namespace VersionFeed
 		return out;
 	}
 
-	Coverage LoaderCoverage()
+	Coverage LoaderCoverage(Flavor flavor)
 	{
 		Coverage cov;
+		if (flavor == Flavor::Server)
+			return cov;
 		for (const ScanPatterns::PreflightEntry& entry : ScanPatterns::PreflightRegistry)
 			if (entry.required)
 				cov.functions.push_back({ VersionMap::LoaderEntryKey(entry), VersionMap::LoaderEntryFingerprint(entry) });
@@ -435,15 +449,15 @@ namespace VersionFeed
 		}
 	}
 
-	bool ReadCache(const std::wstring& path, const std::vector<PublicKey>& keys, SignedFeed& out)
+	bool ReadCache(const std::wstring& path, const std::vector<PublicKey>& keys, SignedFeed& out, Flavor flavor)
 	{
 		std::string file, error;
 		bool missing = false;
-		return !keys.empty() && ReadFileCapped(path, file, missing) && ReadSigned(file, keys, out, error);
+		return !keys.empty() && ReadFileCapped(path, file, missing) && ReadSigned(file, keys, out, error, flavor);
 	}
 
 	std::shared_ptr<const MapData> BuildFromCache(const std::wstring& path, const std::vector<PublicKey>& keys,
-		const Exe& running, const Coverage& cov, uint64_t* seqOut)
+		const Exe& running, const Coverage& cov, uint64_t* seqOut, Flavor flavor)
 	{
 		if (keys.empty())
 			return nullptr;
@@ -459,7 +473,7 @@ namespace VersionFeed
 			return nullptr;   // an empty file, as an older loader left after a request that got no feed
 		SignedFeed feed;
 		std::string error;
-		if (!ReadSigned(file, keys, feed, error))
+		if (!ReadSigned(file, keys, feed, error, flavor))
 		{
 			ModLoaderLogger::LogWarn(L"[VersionFeed] The feed cache is not usable (%ls); using the loader's own map", Widen(error).c_str());
 			return nullptr;
@@ -489,10 +503,11 @@ namespace VersionFeed
 		return true;
 	}
 
-	bool StoreCache(const std::wstring& path, const std::string& file, const std::vector<PublicKey>& keys, std::string& error)
+	bool StoreCache(const std::wstring& path, const std::string& file, const std::vector<PublicKey>& keys, std::string& error,
+		Flavor flavor)
 	{
 		SignedFeed incoming;
-		if (!ReadSigned(file, keys, incoming, error))
+		if (!ReadSigned(file, keys, incoming, error, flavor))
 			return false;
 
 		uint64_t cachedSeq = 0;
@@ -500,7 +515,7 @@ namespace VersionFeed
 		bool missing = false;
 		SignedFeed cached;
 		std::string ignored;
-		if (ReadFileCapped(path, old, missing) && ReadSigned(old, keys, cached, ignored))
+		if (ReadFileCapped(path, old, missing) && ReadSigned(old, keys, cached, ignored, flavor))
 			cachedSeq = cached.seq;
 		if (incoming.seq <= cachedSeq)
 		{
