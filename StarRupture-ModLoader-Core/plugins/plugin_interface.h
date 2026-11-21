@@ -1069,10 +1069,9 @@ enum PluginScanFlags
 
     // v72. hookName is a key in the loader's version map, and pattern and
     // candidates are this plugin's own fallback, each of which may be null.
-    // Game exe only. The dedicated server's map is its own table, served only
-    // on the exe it was measured on; for a key the table lacks, or on any other
-    // exe, a key runs on pattern and candidates alone. The refused names below
-    // still apply.
+    // Game exe only. The dedicated server's map holds no rows, so there a key
+    // runs on pattern and candidates alone; the refused names below still
+    // apply.
     //
     // For FUNCTION_START and DATA the key is global, the same for every
     // plugin: "Class::Function" or a global's name, never with a '/'. For any
@@ -1282,10 +1281,8 @@ static_assert(offsetof(PluginScanRequest, candidates)     == 56, "v72 starts whe
 // when that key names the same class and member (or a member the map records
 // as renamed), then the request's candidates for any changelist the map has
 // no row for. A candidate that disagrees with the map's row for its changelist
-// fails the request. The dedicated server's map is its own table, served only
-// on the exe it was measured on; for a member the table lacks, or on any other
-// exe, only the request's own candidates count, and a native member is bounded
-// only when the table gave it a row.
+// fails the request. The dedicated server has no version map: there only the
+// request's own candidates count, and a native member is not bounded.
 // ---------------------------------------------------------------------------
 enum PluginFieldFlags
 {
@@ -1628,6 +1625,10 @@ struct PluginSdkGlobals
 
 struct IPluginEngineEvents
 {
+	// RegisterOnInit: registered from PluginInit, the callback runs at once, inside
+	// the call, on the loader's init thread, not the game thread (the game's main
+	// thread is parked meanwhile). Do not wait for the game thread from it. If the
+	// loader could not hook engine init, it runs later on the game thread.
 	void      (*RegisterOnInit)(PluginEngineInitCallback);
 	void      (*UnregisterOnInit)(PluginEngineInitCallback);
 	void      (*RegisterOnShutdown)(PluginEngineShutdownCallback);
@@ -1662,9 +1663,8 @@ struct IPluginEngineEvents
 
 	// --- v72 ---
 	// The Game-SDK globals as the loader found them on the running build (see
-	// PluginSdkGlobals). Null when the loader has none to give: it did not
-	// resolve them, or (on a dedicated server) its version map has no rows for
-	// the running server build. Valid for the life of the process.
+	// PluginSdkGlobals). Null when the loader has none to give: a server build,
+	// or a loader that did not resolve them. Valid for the life of the process.
 	const PluginSdkGlobals* (*GetSdkGlobals)();
 
 	// True when the caller is on the game thread, where UObjects may be
