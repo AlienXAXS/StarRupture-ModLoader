@@ -1,11 +1,6 @@
-- A server can now turn a plugin feature off: the config page greys it ("turned off by this server") and the plugin shows as Loaded (1 off). New console command features lists features and the server list; features hostoff <plugin> <id> turns one off and features hostclear lifts them all
-- A plugin that names the game build it was made for now loads on that build after a game update changed only some of the game classes the loader checks, instead of showing as incompatible
-- The mod loader is now built for game build CL-130045 and still runs on CL-127004. The dedicated server stays on CL-127004
-- The dedicated server now supports the version object map: built-in rows for its own game build (CL-127004), the same Game-SDK globals as the client, and its own signed version map file so a newer server game build can be supported without a loader update ([AutoUpdate] Enabled=0 stops that request). On a server build only that file lists, if the loader cannot find everything it needs, the server starts with no plugins and ModLoader.log says why. ModLoader.log also prints one line per build in a fetched file
-- When the game does not finish starting within the mod loader's wait on a build the mod loader was not made for, its message now says the game did not finish starting (and to check the game files in Steam) instead of saying the game layout changed. Plugins stay off for that session
-- The wait for the game to finish starting is now a true 2 minute limit
-- The dedicated server's mod loader now checks the game's classes at start, as the client does: if a class the loader reads moved on the running server game build, the server starts with no plugins and ModLoader.log lists what changed
-- The mod loader's start check now has a table for each game build it supports (CL-127004 and CL-130045), so a game on either build is checked against its own
-- The mod loader's start check now covers more of the game's classes (259 on CL-130045, 255 on CL-127004, up from 159)
-- A fault in the game's world-end code is still swallowed, and ModLoader.log now records where it happened (module and offset, registers, short call stack) to help find its cause
-- Plugin data now also crosses between a server and a player on different versions of the same plugin, when the plugin says those versions are compatible (an optional GetPluginWireInfo export); it holds for data in both directions. When it cannot, ModLoader.log names the plugin and both versions on each side. A server with an older mod loader still needs identical plugin versions
+A server can now turn a plugin feature off
+The dedicated server now has the same version object map coverage as the game client, so server plugins keep working across server updates
+Server plugins updated: ServerUtility, KeepTicking, WaveOptimiser, ProductionViewer and RuptureTimer (they need this loader)
+If the game does not finish starting, ModLoader.log now says why in plain words
+A plugin that names its game build now loads after an update that changed only some game classes
+Mods that list compatible versions now keep exchanging data between a server and players on different releases

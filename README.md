@@ -378,6 +378,7 @@ The `features` command, on the server console or the client's developer console:
 | `features` | List every feature the loaded plugins declared and whether it is `on`, `off: build (<reason>)` or `off: server`, then the deny list |
 | `features hostoff <plugin> <id>` | Add one feature to the deny list. The plugin is the name `plugins` shows, the id is the one `features` shows |
 | `features hostclear` | Empty the deny list. Features the game build has on are on again |
+| `features hostmessage <text>` | Set the text players get with the list (empty text clears it) |
 
 Example: `features` shows a plugin called `MyPlugin` with a feature `marker-labels` that is `on`.
 
@@ -390,6 +391,14 @@ The plugin's own flag for the feature reads off from then on, even if the plugin
 later. `features hostoff MyPlugin nothing` answers "No feature 'nothing' in plugin 'MyPlugin'" and changes
 nothing. `features hostclear` turns `marker-labels` back on. The deny list is kept in memory, not saved,
 and is empty at every start.
+
+A server sends its deny list to every connected player whose mod loader sent its feature
+list: the player's loader switches those features off within a moment, and again when the list
+changes or the player's plugins change. A message set with `features hostmessage <text>` goes with the
+list and is written to the player's `ModLoader.log`. Leaving the server gives the features back, and a
+list the player set with `features hostoff` on their own machine stays. A player on a server whose
+mod loader is older than this gets no list, and `ModLoader.log` says once: "No host rules (the server's
+mod loader is older)."
 
 ---
 
@@ -417,7 +426,7 @@ in `help` ([Console.md](Console.md)).
 | `load <target>` | | Load a plugin that is unloaded |
 | `rescan` | `scan` | Load plugin DLLs added to `Plugins\` since startup |
 | `hookfailures` | `hooks` | List plugins whose hook patterns did not resolve |
-| `features [hostoff <plugin> <id> \| hostclear]` | | List plugin features, or turn one off for this server, or lift every turn-off. See [A server can turn a feature off](#a-server-can-turn-a-feature-off) |
+| `features [hostoff <plugin> <id> \| hostclear \| hostmessage <text>]` | | List plugin features, or turn one off for this server, lift every turn-off, or set the message players get. See [A server can turn a feature off](#a-server-can-turn-a-feature-off) |
 | `hooklist` | | List every detoured address and the plugins sharing it |
 | `preload` | `preloads` | Show what happened to the DLLs in `Preload\` at startup |
 | `version` | `ver` | Show the mod loader build and plugin interface versions |
