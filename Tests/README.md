@@ -317,8 +317,10 @@ build\tests\plugin_class_tests.exe
 ```
 
 The Server configurations build the server table's test instead (`server_map_tests.cpp`): the real
-`hooks/game/version_map.server.h` against the five places `version_map.cpp` serves it, with
-`MODLOADER_SERVER_BUILD` defined.
+`hooks/game/version_map.server.h` (its function, field and size rows: counts, order, and the server's own
+values) against the five places `version_map.cpp` serves it, with `MODLOADER_SERVER_BUILD` defined. Every
+function, member and size row is asked for on the server exe and must come back with its value, and on
+any other exe must not.
 
 ```
 msbuild Tests\VersionMapTests\VersionMapTests.vcxproj /p:Configuration="Server Release" /p:Platform=x64

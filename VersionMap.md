@@ -346,14 +346,25 @@ promise; starrupture-ci checks it for the plugins it tracks.
 ## The dedicated server's table
 
 The Server build carries a built-in version map of its own, `hooks/game/version_map.server.h`, kept by hand
-because the generated header is the client's and is rewritten on every game update. It holds function rows
-for one exe, the server exe CI measured (CL-127004, PE time stamp `0x2E3595FF`, image size `0x0E2A8000`).
-Each row is an address with no pattern, so the server serves it only on that exe: the CL, the time stamp and
-the image size must all match. On any other exe the table is off and a plugin runs on its own patterns and
-rows, as it did before the table. The same applies to the lookups of absent members and of field rows, and
-to the class bound on native members: the server bounds only a member the table gave a row for. The client's
-table and its lookups are unchanged. A plugin gets a row from the table only when it asks for the map key
-(`PLUGIN_SCAN_FLAG_MAP_KEY`) on the server build too.
+because the generated header is the client's and is rewritten on every game update. It holds the rows for
+one exe, the server exe CI measured (CL-127004, PE time stamp `0x2E3595FF`, image size `0x0E2A8000`):
+
+- **Function rows** are addresses with no pattern: the start of one function, or the address of a game
+  global (`GNames (NamePoolData)` and `GWorld`, which a plugin can ask for, and the loader's own
+  `ModLoader/GObjects` key, which only the loader's own request reads).
+- **Field rows** give a member's offset and size, and for a bool its mask (`0xFF`; a bit field has its bit).
+  A **size row** is a class key (no `::`) at offset 0 that gives the struct's size. Both were measured from
+  the server's own game files, and a member's size is the size a plugin reads it at, as in the client's
+  table (`FTransform::Translation` is a `0x20`-byte vector register in the game files and is read as a
+  `0x18`-byte `FVector`, so its row says `0x18`).
+
+The server serves a row only on that exe: the CL, the time stamp and the image size must all match. On any
+other exe the table is off and a plugin runs on its own patterns and rows, as it did before the table. The
+same applies to the lookups of absent members and of field and size rows, and to the class bound on native
+members: the server bounds only a member the table gave a row for. The client's table and its lookups are
+unchanged. A plugin gets a function row from the table only when it asks for the map key
+(`PLUGIN_SCAN_FLAG_MAP_KEY`) on the server build too, and a field or size row through the same member and
+size requests it makes on the client.
 
 ## The feed
 
