@@ -528,6 +528,44 @@ namespace WireCompat
         return AckTailKind::Table;
     }
 
+    // The host rules record: "$hostrules US 1 RS", a tail record behind the
+    // wire table. A server whose loader reads and applies host rules always
+    // writes it, so a client that finds it knows the server understands
+    // "$ML:feat" and sends it. A reader that does not know the record skips it
+    // like any other '$' record.
+    constexpr const char* kHostRulesMarker = "$hostrules";
+    constexpr uint32_t kHostRulesVersion = 1;
+
+    inline std::string EncodeHostRulesRecord()
+    {
+        std::string out = kHostRulesMarker;
+        out += kFieldSep;
+        out += std::to_string(kHostRulesVersion);
+        out += kRecordSep;
+        return out;
+    }
+
+    // True when a complete "$hostrules" record of version 1 or later follows
+    // the first record of an ack. An unfinished last record does not count.
+    inline bool TailHasHostRules(const char* data, size_t len)
+    {
+        const size_t at = FindTail(data, len);
+        if (at == kNoTail || at >= len)
+            return false;
+        const std::string all(data + at, len - at);
+        const size_t lastRs = all.rfind(kRecordSep);
+        if (lastRs == std::string::npos)
+            return false;
+        for (const std::string& record : detail::Split(all.substr(0, lastRs), kRecordSep))
+        {
+            const std::vector<std::string> f = detail::Split(record, kFieldSep);
+            uint32_t version = 0;
+            if (f.size() >= 2 && f[0] == kHostRulesMarker && detail::ParseUint32(f[1], &version) && version >= 1)
+                return true;
+        }
+        return false;
+    }
+
     // Remembers what was already reported so a warning or note about a plugin
     // on a connection is logged once. Keyed by connection and plugin name; the
     // connection is only an identity (never dereferenced). The caller locks.

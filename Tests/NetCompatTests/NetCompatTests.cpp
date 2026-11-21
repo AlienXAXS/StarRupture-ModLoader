@@ -489,6 +489,40 @@ namespace
         const std::string headerOnly = first + EncodeTable({});
         Check(ReadAckTail(headerOnly.data(), headerOnly.size(), &got) == AckTailKind::Table && got.entries.empty(),
             "tail kind: a header with no rows is a table (a new server with no plugins)");
+
+        // The host rules record behind the table.
+        const std::string rec = EncodeHostRulesRecord();
+        Check(rec == std::string("$hostrules") + US + "1" + RS, "host rules record: $hostrules US 1 RS");
+        const std::string withRules = first + table + rec;
+        Check(TailHasHostRules(withRules.data(), withRules.size()), "host rules record behind the table is found");
+        const std::string emptyWithRules = first + EncodeTable({}) + rec;
+        Check(TailHasHostRules(emptyWithRules.data(), emptyWithRules.size()), "found behind a header-only table");
+        const DecodedTable r = DecodeAckTail(withRules.data(), withRules.size());
+        Check(r.present && r.entries.size() == 2 && r.entries[1].name == "PV",
+            "an old decoder skips the host rules record and keeps every row");
+        Check(ReadAckTail(withRules.data(), withRules.size(), &got) == AckTailKind::Table && got.entries.size() == 2,
+            "an old tail reader still sees a table");
+        Check(!TailHasHostRules(newAck.data(), newAck.size()), "a table alone has no host rules record");
+        Check(!TailHasHostRules(oldAck.data(), oldAck.size()) && !TailHasHostRules(noSep.data(), noSep.size())
+                && !TailHasHostRules(nullptr, 0) && !TailHasHostRules("", 0),
+            "no tail, no separator, null, empty: no host rules record");
+        const std::string future = first + table + "$hostrules" + US + "2" + RS;
+        Check(TailHasHostRules(future.data(), future.size()), "a later record version still counts");
+        const std::string zero = first + table + "$hostrules" + US + "0" + RS;
+        const std::string nonNum = first + table + "$hostrules" + US + "x" + RS;
+        const std::string noVer = first + table + "$hostrules" + RS;
+        Check(!TailHasHostRules(zero.data(), zero.size()) && !TailHasHostRules(nonNum.data(), nonNum.size())
+                && !TailHasHostRules(noVer.data(), noVer.size()),
+            "version 0, a non-number or no version does not count");
+        const std::string cutRec = first + table + "$hostrules" + US + "1";
+        Check(!TailHasHostRules(cutRec.data(), cutRec.size()), "a record cut before its separator does not count");
+        const std::string before = first + rec + table;
+        Check(TailHasHostRules(before.data(), before.size()), "found wherever it sits in the tail");
+        bool cutsSafe = true;
+        for (size_t cut = 0; cut <= withRules.size(); ++cut)
+            if (TailHasHostRules(withRules.data(), cut) && cut != withRules.size())
+                cutsSafe = false;
+        Check(cutsSafe, "ack cut at every byte: the record counts only when whole");
     }
 
     void TestClassify()
@@ -922,6 +956,24 @@ namespace
         Check(!d.single && d.sendable && d.chunkCount > 5, "a 120 feature declaration is fragmented");
     }
 
+    // The client re-sends $ML:feat only when the encoded bytes change, so the
+    // same catalog must encode to the same bytes and a flipped state must not.
+    void TestHostFeatStable()
+    {
+        std::printf("Host rules: $ML:feat payload equality\n");
+        HW::FeatPayload a;
+        a.buildTag = "v1.27.0";
+        a.interfaceVersion = 79;
+        a.features = { { "P", "one", "One", true }, { "P", "two", "Two", false } };
+        HW::FeatPayload b = a;
+        Check(HW::EncodeFeat(a) == HW::EncodeFeat(b), "the same catalog encodes to the same bytes");
+        b.features[1].on = true;
+        Check(HW::EncodeFeat(a) != HW::EncodeFeat(b), "a changed build state changes the bytes");
+        b = a;
+        b.features.push_back({ "Q", "x", "X", true });
+        Check(HW::EncodeFeat(a) != HW::EncodeFeat(b), "an added feature changes the bytes");
+    }
+
     void TestHostResolve()
     {
         std::printf("Host rules: resolve the deny set\n");
@@ -1078,6 +1130,7 @@ int main()
     TestHostPlan();
     TestHostMinimum();
     TestHostResolve();
+    TestHostFeatStable();
 
     if (g_failures)
     {
