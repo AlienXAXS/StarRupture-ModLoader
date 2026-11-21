@@ -380,8 +380,8 @@ namespace LayoutCheck
     }
 }
 
-// The reflection reader below is in both game builds. Run, which compares
-// against the client SDK's layout table, is in the client build only.
+// The reflection reader below and Run are in both game builds; each build is
+// compared against the layout tables of its own SDK (layout_tables.h).
 #if defined(MODLOADER_CLIENT_BUILD) || defined(MODLOADER_SERVER_BUILD)
 
 #include "sdk_globals.h"
@@ -535,10 +535,6 @@ namespace LayoutCheck
         }
     }
 }
-
-#endif
-
-#if defined(MODLOADER_CLIENT_BUILD)
 
 #include "layout_tables.h"
 #include "../hooks/game/version_map_built.h"
@@ -696,10 +692,6 @@ namespace LayoutCheck
         return true;
     }
 }
-
-#endif
-
-#if defined(MODLOADER_CLIENT_BUILD) || defined(MODLOADER_SERVER_BUILD)
 
 namespace LayoutCheck
 {

@@ -194,6 +194,11 @@ the other the running game. It covers:
   between two tables, above the newest, below the oldest or is 0), that the list of tables is strictly
   increasing, that each table's class and row counts are what its header says, and that a 127004 run selects
   the 127004 table, which finds nothing changed on the real 127004 layout and needs no per-build rule.
+- The server's table (`core/layout_table_server_127004.generated.h`): one table, with the counts its header
+  states; no class is tagged for the menu layer and the client's menu classes are not in it; it finds nothing
+  changed on its own layout; a moved member of a class the loader's own code reads (`UWorld`) or a missing
+  class is a safe-off, and a moved member of a class only a version map key names is listed as changed with no
+  safe-off. The test build is a client build, so it reads the client's list of tables.
 - The `UObject::ProcessEvent` check: a stub virtual table whose slot holds the function the map resolved
   passes; one that holds another function adds one line to the result, is a found change with no class
   named, and gives a safe-off verdict; a different function in the next slot does not matter.

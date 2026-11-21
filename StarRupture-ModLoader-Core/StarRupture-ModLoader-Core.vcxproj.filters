@@ -501,6 +501,9 @@
     <ClInclude Include="core\layout_table_130045.generated.h">
       <Filter>Source Files\core</Filter>
     </ClInclude>
+    <ClInclude Include="core\layout_table_server_127004.generated.h">
+      <Filter>Source Files\core</Filter>
+    </ClInclude>
     <ClInclude Include="core\engine_sync.h">
       <Filter>Source Files\core</Filter>
     </ClInclude>

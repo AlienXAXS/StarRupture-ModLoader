@@ -40,7 +40,8 @@ namespace LayoutCheck
 {
     // Called once from the init thread after FEngineLoop::Init has returned,
     // while the game thread is still parked in the engine-init hook and before
-    // any plugin loads. Client builds only: the tables are the client SDK's.
+    // any plugin loads. Client and server builds, each against the tables of
+    // its own SDK (layout_tables.h).
     // `runningCL` is the running game's own CL (0: it has none); it picks the
     // table (SelectTable).
     // Without MODLOADER_CLIENT_BUILD or MODLOADER_SERVER_BUILD (the offline

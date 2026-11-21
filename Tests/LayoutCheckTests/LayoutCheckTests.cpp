@@ -1251,6 +1251,110 @@ namespace
     }
 }
 
+namespace
+{
+    // The dedicated server is checked against a table made from its own SDK,
+    // listing only the classes the server build reads.
+    void ServerTable()
+    {
+        std::printf("The server's table\n");
+        using LayoutCheck::kClientTables;
+        using LayoutCheck::kServerTables;
+
+        Check(std::size(kServerTables) == 1 && LayoutCheck::TablesStrictlyIncreasing(kServerTables),
+            "the loader lists one server table");
+        Check(kServerTables[0].cl == 127004 && kServerTables[0].cl == SrLayoutTable_Server_127004::kBuiltCL,
+            "it is the server's 127004 one, with its own CL");
+        Check(std::size(SrLayoutTable_Server_127004::kClasses) == SrLayoutTable_Server_127004::kClassCount
+            && std::size(SrLayoutTable_Server_127004::kRows) == SrLayoutTable_Server_127004::kRowCount,
+            "its arrays are as long as its constants say");
+
+        const std::vector<LayoutCheck::TableClass> server = kServerTables[0].read();
+        size_t rows = 0;
+        for (const LayoutCheck::TableClass& c : server)
+            rows += c.rows.size();
+        std::printf("  info: server CL %u: %zu classes, %zu rows\n", kServerTables[0].cl, server.size(), rows);
+        Check(server.size() == kServerTables[0].classCount && rows == kServerTables[0].rowCount && rows > 0,
+            "the counts in its header are what it holds");
+
+        // Each build reads its own list: this test defines neither build and
+        // sees the client's, so the server table is not mixed into it.
+        Check(std::size(kClientTables) == 2 && LayoutCheck::TableCLFor(127004) == 127004,
+            "the client list is the 127004 and 130045 tables");
+#if defined(MODLOADER_SERVER_BUILD)
+        Check(std::size(LayoutCheck::kTables) == std::size(kServerTables), "a server build reads the server list");
+#else
+        Check(std::size(LayoutCheck::kTables) == std::size(kClientTables), "a client build reads the client list");
+#endif
+
+        // A server game build with a CL the table is not for, or none, is
+        // checked against the only (newest) table.
+        Check(LayoutCheck::SelectTable(kServerTables, 127004) == 0 && LayoutCheck::SelectTable(kServerTables, 130045) == 0
+            && LayoutCheck::SelectTable(kServerTables, 0) == 0,
+            "a server build with any CL gets the server table");
+
+        // What the server reads: never a menu-layer class, and every class has
+        // a consumer, so a change to any of them is judged by a tag.
+        bool allTagged = true;
+        bool anyMenus = false;
+        for (const LayoutCheck::TableClass& c : server)
+        {
+            allTagged = allTagged && !c.consumers.empty();
+            anyMenus = anyMenus || std::find(c.consumers.begin(), c.consumers.end(), "ui-menus") != c.consumers.end();
+        }
+        Check(allTagged, "every class in the server table has a consumer");
+        Check(!anyMenus, "no class is tagged ui-menus: the server has no menu layer");
+        Check(ClassNamed(server, "UCrUW_MapMenu") == nullptr && ClassNamed(server, "UPrimaryGameLayout") == nullptr,
+            "the client's menu classes are not in it");
+
+        // The server's own table on the layout it describes: nothing changed.
+        const LayoutCheck::Result same = CompareWith(server, AsGame(server));
+        Check(same.mismatched == 0 && same.missing == 0 && same.checked == same.classes && same.lines.empty()
+            && !LayoutCheck::FoundChanges(same) && !LayoutCheck::Decide(server, same).safeOff,
+            "its own layout finds nothing changed");
+
+        // A member the loader's own code reads moves: safe-off, as on a client.
+        const LayoutCheck::TableClass* world = ClassNamed(server, "UWorld");
+        const bool worldIsCore = world && !world->rows.empty()
+            && std::find(world->consumers.begin(), world->consumers.end(), "core") != world->consumers.end();
+        Check(worldIsCore, "UWorld is in the server table, read by the loader's own code");
+        if (worldIsCore)
+        {
+            auto moved = AsGame(server);
+            moved[world->path].properties.front().offset += 8;
+            const LayoutCheck::Result result = CompareWith(server, moved);
+            const LayoutCheck::Verdict verdict = LayoutCheck::Decide(server, result);
+            Check(LayoutCheck::FoundChanges(result) && verdict.safeOff && verdict.featuresOff.empty()
+                && verdict.changed == std::vector<std::string>{ "UWorld" },
+                "a core member moved: found, plugins switched off");
+
+            auto gone = AsGame(server);
+            gone.erase(world->path);
+            const LayoutCheck::Result missing = CompareWith(server, gone);
+            Check(LayoutCheck::FoundChanges(missing) && LayoutCheck::Decide(server, missing).safeOff,
+                "a class the loader reads missing from the game: safe-off");
+        }
+
+        // A class only a version-map key names: listed as changed, and
+        // nothing else happens.
+        const LayoutCheck::TableClass* keysOnly = nullptr;
+        for (const LayoutCheck::TableClass& c : server)
+            if (!keysOnly && !c.rows.empty() && c.consumers == std::vector<std::string>{ "keys" })
+                keysOnly = &c;
+        Check(keysOnly != nullptr, "the server table has a class only a version-map key names");
+        if (keysOnly)
+        {
+            auto moved = AsGame(server);
+            moved[keysOnly->path].properties.front().offset += 8;
+            const LayoutCheck::Result result = CompareWith(server, moved);
+            const LayoutCheck::Verdict verdict = LayoutCheck::Decide(server, result);
+            Check(LayoutCheck::FoundChanges(result) && !verdict.safeOff && verdict.featuresOff.empty()
+                && verdict.changed == std::vector<std::string>{ keysOnly->name },
+                "a key-only class moved: listed as changed, no safe-off");
+        }
+    }
+}
+
 int main()
 {
     EngineWaitDeadlineAndWording();
@@ -1267,6 +1371,7 @@ int main()
     NewTableOnARealLayoutOf127004();
     OldLoaderOn130045();
     TablePerBuild();
+    ServerTable();
     ConsumersDecideWhatStops();
     ProcessEventSlotDecidesSafeOff();
     FunctionParamsFollowTheGame();

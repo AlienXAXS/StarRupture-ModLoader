@@ -68,6 +68,7 @@ in the SDK) and the server against CL-127004 (`Server\build_cl.txt`); `Shared.pr
 from the file and passes it as `MODLOADER_BUILT_CL`. The `kBuiltCL` line in `version_map.generated.h`
 is the client's (CI keeps that line). A client build stops if that line differs from `Client\build_cl.txt`,
 if the file is missing, or if the newest layout table (`core/layout_table_<CL>.generated.h`) is for another CL.
+The server build has its own table, `core/layout_table_server_<CL>.generated.h`, with the same rule.
 The loader carries one layout table for each build it supports (CL-127004 and CL-130045), and the start check
 uses the one for the running build's own CL, or the newest when the build has none.
 The client's built-in rows still list every build it has run on, CL-127004 included, so the same
@@ -414,8 +415,16 @@ has the same format, the same Ed25519 signatures and the same trusted keys as th
   own beside the client's, with its own `seq`, and refuses a file of the wrong kind. The server leg does
   nothing until the `vmap-feed` release holds a server file, and the first one needs a manual run with
   `first_publish` set, as the client's did.
-- **No layout check.** The server has no layout check, so a changed game class is not found by the
-  loader (a plugin's own class check is the only guard).
+- **The layout check.** The server runs the same start-up layout check as the client, against its own table
+  (`core/layout_table_server_127004.generated.h`, made from the Game-SDK's Server folder with
+  `tools\Update-LayoutTable.ps1 -Server`). It lists the classes the server build reads, not the client's UI
+  and input ones. A changed class that the loader's own code, or a layout plugins keep compiled in, reads
+  switches the plugins off for the session, with the changed classes in `ModLoader.log` (`[LayoutCheck]`
+  lines, then `plugins are switched off for this session`). A class only a version map key names does not: a
+  plugin that keeps that layout compiled in is refused, one that takes it from the version map is not, as on
+  the client. On a server game build other than CL-127004, a check that could not run adds a line to the list
+  that keeps the server's plugins off; on CL-127004 it warns and the server carries on. The compatibility
+  report and the menu-state switch-off stay client-only.
 - **What the log says.** After the merge line, `[VersionFeed]` prints one line per build in the file:
   `this exe` or `other exe` (with its stamp and size), its row count, and whether it was identical to the
   loader's own (none used), differs (and whose rows are kept), added, or refused.

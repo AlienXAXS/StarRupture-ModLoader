@@ -109,6 +109,7 @@
     <ClInclude Include="$(CoreDir)core\layout_tables.h" />
     <ClInclude Include="$(CoreDir)core\layout_table_127004.generated.h" />
     <ClInclude Include="$(CoreDir)core\layout_table_130045.generated.h" />
+    <ClInclude Include="$(CoreDir)core\layout_table_server_127004.generated.h" />
     <ClInclude Include="$(CoreDir)core\startup_wait.h" />
   </ItemGroup>
   <ItemGroup>

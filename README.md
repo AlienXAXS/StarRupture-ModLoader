@@ -641,6 +641,10 @@ are the ones the loader's own copy of the layouts gets wrong, and that plugin's 
 It also checks that the game still calls ProcessEvent, which every plugin uses to run game functions, at the
 place the plugins expect; if it does not, plugins are switched off the same way.
 
+The dedicated server runs the same check against a table of its own, made from the server's game files. If
+a game class the server's loader reads has moved, the server starts with no plugins, and `ModLoader.log` lists
+the classes that changed. The compatibility report is written by the client only.
+
 When the version map's row decides where a plugin's function is, the loader still checks the plugin's own
 AOB pattern against the running exe, once, and logs a warning if it matches 0 or 2 or more places.
 The plugin still loads. The warning is there so a pattern that only works because the version map covers
