@@ -7,8 +7,9 @@
 //
 //   $ML:feat   client -> server. Who the client is and which plugin features it
 //              declares, with whether each is on for this game build.
-//   $ML:rules  server -> client. The server's rule set: a default, a note for
-//              the player and one row per feature or mod it names.
+//   $ML:rules  server -> client. The server's rule set: a default, a note the
+//              client writes to its ModLoader.log and one row per feature or
+//              mod it names.
 //
 // Both payloads are records ending in kRecordSep, fields split on kFieldSep,
 // the same separators as the wire table (wire_compat.h), so a plugin name or a
@@ -373,7 +374,7 @@ namespace HostRulesWire
     {
         bool defaultAllow = true;
         uint8_t onDenied = kOnDeniedSwitchOff;
-        std::string message; // plain text for the player, at most kMaxMessageLen bytes
+        std::string message; // plain text the client writes to its ModLoader.log, at most kMaxMessageLen bytes
         HostRules::DenySet deny;
         HostRules::DenySet allow;
     };
@@ -446,8 +447,9 @@ namespace HostRulesWire
     // Reads a $ML:rules payload. Strict, like DecodeFeat; a '$' row is skipped
     // the same way. Deny and allow rows
     // come out repeat-free; an allow row a deny row also names is dropped (deny
-    // wins). A version above kRulesVersion is read the way version 1 is, extra
-    // fields ignored.
+    // wins). A version above kRulesVersion is read the way version 1 is: the
+    // header and rows are taken as they are, but a record with more than
+    // kMaxFieldsPerRecord fields is refused (BadRecord), as in version 1.
     inline Status DecodeRules(const char* data, size_t len, RulesSet* out)
     {
         std::vector<detail::Fields> recs;
@@ -540,7 +542,7 @@ namespace HostRulesWire
     //
     //   # a comment (also a line starting with ';'); blank lines are skipped
     //   default=allow|deny           what a feature no row names gets (once)
-    //   message=<text>               the note for the player, up to kMaxMessageLen bytes (once)
+    //   message=<text>               the note the client writes to its ModLoader.log, up to kMaxMessageLen bytes (once)
     //   Plugin.feature=allow|deny    one feature of a mod
     //   Plugin.*=allow|deny          the whole mod
     //

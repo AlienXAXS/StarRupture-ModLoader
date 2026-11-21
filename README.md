@@ -400,7 +400,7 @@ list the player set with `features hostoff` on their own machine stays. A player
 mod loader is older than this gets no list, and `ModLoader.log` says once: "No host rules (the server's
 mod loader is older)."
 
-A server that has no admin yet can ask a player to claim it. The player sees a window saying "This server has no admin yet. If you run this server, enter the claim code from the server log. Otherwise choose Not me." with a text box and the buttons Send and Not me. The server shows a line in the window after each try (for example "Wrong code"), and when it is done the window shows its last line until the player dismisses it. Not me closes the window (so does the X in its title bar); whether that player is asked again is up to the server. Only a player whose mod loader sent its feature list is asked, and only a server that asks does this; on any other server nothing appears. The code is sent to the server once and is never written to `ModLoader.log`.
+A server that has no admin yet can ask a player to claim it. The player sees a window saying "This server has no admin yet. If you run this server, enter the claim code from the server log. Otherwise choose Not me." with a text box and the buttons Send and Not me. The server shows a line in the window after each try (for example "Wrong code"), and when it is done the window shows its last line until the player dismisses it. Not me closes the window (so does the X in its title bar); whether that player is asked again is up to the server, but a window the player dismissed is not shown again for 60 seconds. Only a player whose mod loader sent its feature list is asked, and only a server that asks does this; on any other server nothing appears. The code is sent to the server once and is never written to `ModLoader.log`.
 
 #### For a server plugin
 
@@ -420,11 +420,14 @@ MiniMap.waypoints=allow
 ```
 
 `default=` is what a feature with no rule gets, `Plugin.*` is a whole mod, `Plugin.feature` one feature.
+The `message=` line is written to each player's `ModLoader.log`, it does not appear on screen. A rule
+splits at the first dot, so a plugin whose own name contains a dot cannot be named in the text.
 A player's own set replaces the server-wide one whole, so the `features hostoff` list and
 `features hostmessage` text apply only to players with no set of their own. Changes reach every player
 who sent a feature list at once. `RegisterOnClientFeatures(self, callback)` calls you on the game thread when
 a player's feature list arrives or changes, with that player's controller; that is the time to call
-`SetRulesForConnection`. All calls are for the server's game thread and do nothing on a client.
+`SetRulesForConnection`. That callback runs at most once per second per player, so a burst of changed lists
+is answered once. All calls are for the server's game thread and do nothing on a client.
 
 A server can also ask for a minimum version. `SetVersionMinimums(text, error, errorSize)` takes one line per
 rule (empty text turns everything off; a bad text returns false with `error` and changes nothing):
@@ -442,13 +445,15 @@ case), and `Plugin=wire` means the player's copy must be one the mod wire check 
 game thread, once per join, when a player is below. `plainReason` is one line of plain words for the player
 ("This server needs RuptureTimer 0.11.0 or newer (you have 0.9.2). ..."). The loader never removes anyone: your
 plugin decides (an admin may be exempt) and does the removal itself. Players with no mod loader are never
-checked, and a dev build or any version the loader cannot read is never below. A loader too old to report its
-version counts as below a set `loader=` minimum after 30 seconds. Setting new minimums checks the players
+checked, and a dev build or any version the loader cannot read is never below. A text after a `-` or `+` in a
+version is ignored when comparing, so `1.26.0-dev.3` counts as `1.26.0` and is below `1.27.0`. A loader too old
+to report its version counts as below a set `loader=` minimum after 30 seconds; time the game stalled (more
+than 2 seconds between engine ticks, such as a level load) does not count toward the 30. Setting new minimums checks the players
 already connected that have not been reported yet.
 
 `GetClientFeatures(playerController, buf, size)` returns what one player's loader reported as text (`loader=<build tag> interface=<version>`, then one `Plugin.feature=on|off` line each) and its full length, or -1 when there is none; a null `buf` with `size` 0 measures.
 
-`AskAdmin(playerController)` opens a prompt on that player's screen asking for an admin code; it returns false when the player has no loader report (an older loader, or no mod loader), has no connection, or this is not the server. `AdminMessage(playerController, text, close)` shows one line (up to 200 characters) in the open prompt; with `close` true the prompt shows the line and closes. `RegisterOnAdminAnswer` calls your function from the tick with the player, `notMe` (the player chose "not me") and the code they typed. The loader does not judge the code and never logs it, only answers from a player that was asked are passed on, and at most one per half second per player. Checking the code and what to do next is up to the plugin.
+`AskAdmin(playerController)` opens a prompt on that player's screen asking for an admin code; it returns false when the player has no loader report (an older loader, or no mod loader), has no connection, or this is not the server. `AdminMessage(playerController, text, close)` shows one line (up to 200 bytes) in the open prompt; with `close` true the prompt shows the line and closes. `RegisterOnAdminAnswer` calls your function from the tick with the player, `notMe` (the player chose "not me") and the code they typed. The loader does not judge the code and never logs it, it clears its own queued copy once your callbacks have run (it cannot reach copies in network buffers or the one your plugin keeps), only answers from a player that was asked are passed on, and at most one per half second per player. The loader sets no limit on tries, so your plugin counts wrong codes itself and closes the prompt (`AdminMessage` with `close` true) after a few. Checking the code and what to do next is up to the plugin.
 
 ---
 

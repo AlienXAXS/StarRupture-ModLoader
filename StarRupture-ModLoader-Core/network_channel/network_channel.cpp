@@ -454,8 +454,9 @@ namespace
 
     // Admin answers waiting to be handed to the plugins from the tick, under
     // g_manifestMutex like g_clientFeat. The code text lives only here and in the
-    // local copy the pump makes; it is wiped after the callbacks ran and never
-    // logged. queuedMs is when it was accepted: an answer whose player controller
+    // local copy the pump makes; it is never logged, and the loader's own copies
+    // are cleared after the callbacks ran (copies in network buffers and the
+    // plugin's own copy are out of its reach). queuedMs is when it was accepted: an answer whose player controller
     // never appears is dropped after kAdminAnswerMaxWaitMs.
     struct AdminAnswerQueued
     {
@@ -3769,7 +3770,7 @@ static void PumpClientFeatures(uint64_t now)
 // connection the answer arrived on, only while that connection is still in the
 // driver's list: an answer from one that left is dropped. An answer whose
 // controller does not exist yet waits for a later tick, and is dropped after
-// kAdminAnswerMaxWaitMs. The code text is overwritten once the callbacks ran.
+// kAdminAnswerMaxWaitMs. The loader's copy of the code text is cleared once the callbacks ran.
 static void PumpAdminAnswers(uint64_t now)
 {
     if (!g_adminAnswersDirty.load()) return;

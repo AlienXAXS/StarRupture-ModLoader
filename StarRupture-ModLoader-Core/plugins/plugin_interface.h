@@ -3908,8 +3908,10 @@ static_assert(sizeof(IPluginImages)                == 64, "v77 layout");
 
 // v79 -- authority side. Fired on the game thread for a connected client whose
 // mod loader reported its feature list ("$ML:feat"): once when the list first
-// arrives and again each time the client sends a changed one. playerController
-// is that client's controller, valid for this call only. From here a server
+// arrives and again each time the client sends a changed one, at most once per
+// second per player (a list that arrives sooner is held and acted on when the
+// second is over). playerController is that client's controller, valid for this
+// call only. From here a server
 // plugin can call SetRulesForConnection for that player. A client with an older
 // loader that sends no list never fires it, and a plugin that registers later is
 // not told about clients that reported before.
@@ -3930,7 +3932,11 @@ typedef void (*PluginClientBelowMinimumCallback)(void* playerController, const c
 // no control characters), or notMe is true and code is "" (they chose "not me").
 // playerController and code are valid for this call only (copy the code if it is
 // needed later). The loader does not judge the code: the plugin does, and
-// answers with AdminMessage. A code is never logged by the loader.
+// answers with AdminMessage. The loader never logs a code and clears its own
+// queued copy once the callbacks have run; it cannot reach copies in network
+// buffers or the one the plugin keeps. It allows one answer per 500 ms per player
+// and sets no limit on attempts: a plugin counts wrong codes itself and, after a
+// few, closes the prompt with AdminMessage(close = true).
 typedef void (*PluginAdminAnswerCallback)(void* playerController, bool notMe, const char* code);
 
 // v79 -- the rules a server sends to its clients' mod loaders, which switch a
@@ -3942,9 +3948,11 @@ typedef void (*PluginAdminAnswerCallback)(void* playerController, bool notMe, co
 // The text calls take one rule per line:
 //     # comment (a line starting with # or ;, and blank lines, are skipped)
 //     default=allow|deny        what a feature with no rule gets; once
-//     message=<one line>        shown to the player when a feature is off; once
+//     message=<one line>        written to the player's ModLoader.log when a feature is off; once
 //     Plugin.feature=allow|deny one feature of one mod
 //     Plugin.*=allow|deny       every feature of one mod
+// A key splits at its first dot, so a plugin whose own name contains a dot cannot
+// be addressed in the text (its rows would never match).
 // They return true when the text was read and applied, and false when it was
 // not: the text is then left as it was, and, when error is not null and
 // errorSize is more than 0, error holds a NUL-terminated "line N: ..." reason
@@ -3968,11 +3976,15 @@ typedef void (*PluginAdminAnswerCallback)(void* playerController, bool notMe, co
 //     loader=1.27.0            the oldest ModLoader allowed; empty = off
 //     RuptureTimer=0.11.0      the oldest version of one mod (name ignores case)
 //     ProductionViewer=wire    the player's copy must be one the wire check accepts
-// A version is [v]N.N[.N[.N]], optionally followed by - or + and text. A dev build
-// (a version the loader cannot read), a suffix, a mod the player does not have
-// and a vanilla player (no mod loader) are never below. A client whose loader is
-// too old to report its version counts as below a set loader minimum after 30
-// seconds with no report. When a client is below, RegisterOnClientBelowMinimum's
+// A version is [v]N.N[.N[.N]], optionally followed by - or + and text. The text
+// is ignored when versions are compared: 1.26.0-dev.3 counts as 1.26.0, so it is
+// below 1.27.0. A dev build (a version the loader cannot read), a mod the player
+// does not have and a vanilla player (no mod loader) are never below. A client
+// whose loader is too old to report its version counts as below a set loader
+// minimum after 30 seconds with no report; time the game stalled (more than 2
+// seconds between engine ticks, a level load for example) does not count toward
+// the 30. When a client is below,
+// RegisterOnClientBelowMinimum's
 // callback fires once for that join, from the tick, outside all locks. Changing
 // the table checks the clients already connected that have not fired yet.
 //
@@ -4005,7 +4017,9 @@ struct IPluginHostRules
 	// (an older loader, or no mod loader: it has no prompt to open). Asking again
 	// while a prompt is open reopens it. Only a player that was asked can answer:
 	// an answer from anyone else is dropped. The answer reaches the callbacks of
-	// RegisterOnAdminAnswer, at most one per half second per player.
+	// RegisterOnAdminAnswer, at most one per half second per player. The
+	// player's loader does not show a new ask for 60 seconds after the player
+	// dismissed the prompt (the call still returns true).
 	bool (*AskAdmin)(void* playerController);
 	// Shows one line of text (cut to 200 bytes; control characters become spaces)
 	// in that player's open prompt. close = false: the prompt stays open for
@@ -4013,9 +4027,27 @@ struct IPluginHostRules
 	// false = not authority, no connection, no feature report, text null, or the
 	// player has no open prompt (never asked, or already closed).
 	bool (*AdminMessage)(void* playerController, const char* text, bool close);
+	// The callback gets at most one answer per 500 ms per player and the loader sets
+	// no attempt limit: count wrong codes in the plugin and close the prompt
+	// (AdminMessage with close) after a few.
 	void (*RegisterOnAdminAnswer)(const IPluginSelf* self, PluginAdminAnswerCallback callback);
 	void (*UnregisterOnAdminAnswer)(const IPluginSelf* self, PluginAdminAnswerCallback callback);
 };
+
+static_assert(offsetof(IPluginHostRules, SetRules)                       ==   0, "v79 layout");
+static_assert(offsetof(IPluginHostRules, SetRulesForConnection)          ==   8, "v79 layout");
+static_assert(offsetof(IPluginHostRules, ClearConnection)                ==  16, "v79 layout");
+static_assert(offsetof(IPluginHostRules, RegisterOnClientFeatures)       ==  24, "v79 layout");
+static_assert(offsetof(IPluginHostRules, UnregisterOnClientFeatures)     ==  32, "v79 layout");
+static_assert(offsetof(IPluginHostRules, SetVersionMinimums)             ==  40, "v79 layout");
+static_assert(offsetof(IPluginHostRules, RegisterOnClientBelowMinimum)   ==  48, "v79 layout");
+static_assert(offsetof(IPluginHostRules, UnregisterOnClientBelowMinimum) ==  56, "v79 layout");
+static_assert(offsetof(IPluginHostRules, GetClientFeatures)              ==  64, "v79 layout");
+static_assert(offsetof(IPluginHostRules, AskAdmin)                       ==  72, "v79 layout");
+static_assert(offsetof(IPluginHostRules, AdminMessage)                   ==  80, "v79 layout");
+static_assert(offsetof(IPluginHostRules, RegisterOnAdminAnswer)          ==  88, "v79 layout");
+static_assert(offsetof(IPluginHostRules, UnregisterOnAdminAnswer)        ==  96, "v79 layout");
+static_assert(sizeof(IPluginHostRules)                                   == 13 * sizeof(void*), "v79 layout");
 
 struct IPluginHooks
 {

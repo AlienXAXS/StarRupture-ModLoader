@@ -175,7 +175,8 @@ namespace NetworkChannel
     // to a server whose ack proved it reads host rules; nothing goes out
     // otherwise. Any thread. Returns false when nothing was queued: no such
     // server, this build is the authority, or the code is empty. The code is
-    // never logged and is overwritten once sent. Called by AdminPrompt only.
+    // never logged and the loader's queued copy is cleared once sent. Called by
+    // AdminPrompt only.
     // -----------------------------------------------------------------------
     bool SendAdminAnswer(bool notMe, const std::string& code);
 #endif
