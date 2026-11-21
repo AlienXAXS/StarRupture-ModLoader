@@ -974,6 +974,28 @@ namespace
         Check(HW::EncodeFeat(a) != HW::EncodeFeat(b), "an added feature changes the bytes");
     }
 
+    void TestHostTiming()
+    {
+        std::printf("Host rules: stall grace and feat rate limit\n");
+        Check(HW::StallExtensionMs(0) == 0 && HW::StallExtensionMs(1999) == 0 && HW::StallExtensionMs(2000) == 0,
+            "a tick gap up to 2 s extends nothing");
+        Check(HW::StallExtensionMs(2001) == 2001 && HW::StallExtensionMs(80000) == 80000, "a longer gap is added whole");
+
+        const uint64_t grace = 30000;
+        Check(!HW::LoaderGraceOver(1000 + 29999, 1000, 0, grace), "grace not over just before 30 s");
+        Check(HW::LoaderGraceOver(1000 + 30000, 1000, 0, grace), "grace over at 30 s with no stall");
+        Check(!HW::LoaderGraceOver(1000 + 30000, 1000, 80000, grace), "grace not over at 30 s with an 80 s stall");
+        Check(!HW::LoaderGraceOver(1000 + 109999, 1000, 80000, grace), "grace not over just before 110 s");
+        Check(HW::LoaderGraceOver(1000 + 110000, 1000, 80000, grace), "grace over at 110 s");
+        Check(!HW::LoaderGraceOver(500, 1000, 0, grace), "a clock earlier than the manifest is not over");
+
+        Check(HW::DecideFeatAct(false, 5000, 0) == HW::FeatGate::Act, "the first feature list acts");
+        Check(HW::DecideFeatAct(true, 5999, 5000) == HW::FeatGate::Defer, "999 ms after the last act defers");
+        Check(HW::DecideFeatAct(true, 6000, 5000) == HW::FeatGate::Act, "1000 ms after the last act acts");
+        Check(HW::DecideFeatAct(true, 4000, 5000) == HW::FeatGate::Defer, "a clock that went back defers");
+        Check(HW::DecideFeatAct(true, 5000, 5000) == HW::FeatGate::Defer, "the same millisecond defers");
+    }
+
     void TestHostResolve()
     {
         std::printf("Host rules: resolve the deny set\n");
@@ -1131,6 +1153,7 @@ int main()
     TestHostMinimum();
     TestHostResolve();
     TestHostFeatStable();
+    TestHostTiming();
 
     if (g_failures)
     {

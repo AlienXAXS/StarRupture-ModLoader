@@ -1300,4 +1300,42 @@ namespace HostRulesWire
             return AdminAnswerDecision::RateLimited;
         return AdminAnswerDecision::Accept;
     }
+
+    // A gap between two ticks over this is an engine stall (a level load, a
+    // hitch), not time the client had to report its loader version in.
+    constexpr uint64_t kStallGapMs = 2000;
+
+    // How much of a tick gap to add to the loader-report grace: the whole gap
+    // when it is a stall, nothing otherwise.
+    inline uint64_t StallExtensionMs(uint64_t gapMs)
+    {
+        return gapMs > kStallGapMs ? gapMs : 0;
+    }
+
+    // True once a connection that sent a manifest has had graceMs, plus the
+    // stalled time, to send its feature list. A clock that reads earlier than
+    // the manifest is not over.
+    inline bool LoaderGraceOver(uint64_t nowMs, uint64_t manifestMs, uint64_t extraMs, uint64_t graceMs)
+    {
+        return nowMs >= manifestMs && nowMs - manifestMs >= graceMs + extraMs;
+    }
+
+    // At most one plugin announce and rules re-push per connection per this long
+    // when its "$ML:feat" messages come in a burst.
+    constexpr uint64_t kFeatActGapMs = 1000;
+
+    enum class FeatGate
+    {
+        Act,   // announce the plugins and re-push the rules now
+        Defer, // inside the gap: keep the data, act after the gap
+    };
+
+    // `hasPrev` and `lastActMs`: when this connection last acted on a feature
+    // list, if it did. A clock that reads earlier than lastActMs defers.
+    inline FeatGate DecideFeatAct(bool hasPrev, uint64_t nowMs, uint64_t lastActMs, uint64_t gapMs = kFeatActGapMs)
+    {
+        if (!hasPrev)
+            return FeatGate::Act;
+        return nowMs >= lastActMs && nowMs - lastActMs >= gapMs ? FeatGate::Act : FeatGate::Defer;
+    }
 }
