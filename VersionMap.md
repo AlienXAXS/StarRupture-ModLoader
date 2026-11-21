@@ -406,10 +406,15 @@ has the same format, the same Ed25519 signatures and the same trusted keys as th
   which and starts the game with no plugins. A plugin that takes its game data from the version map
   (`PLUGIN_MAP_MIGRATED`) runs on the second build with its fields read per build, from that build's rows.
   A plugin that does not stays refused there.
-- **Not there yet.** No server file is published; the release workflows do not build the server with an
-  address for one; the server has no layout check, so a changed game class is not found by the loader
-  (a plugin's own class check is the only guard). Until a first signed server file exists and the server
-  is built with its address, a server runs only the game build it was made for.
+- **How it is published.** `release.yml` and `draft.yml` build the Server configuration with the address of
+  the file on the loader's Latest release (`/p:VmapServerFeedUrl=`, the Client build's `/p:VmapFeedUrl=`
+  twin). `vmap-publish.yml` copies the signed server file there from the `vmap-feed` release, a leg of its
+  own beside the client's, with its own `seq`, and refuses a file of the wrong kind. The server leg does
+  nothing until the `vmap-feed` release holds a server file, and the first one needs a manual run with
+  `first_publish` set, as the client's did.
+- **Not there yet.** No server file is published; the server has no layout check, so a changed game
+  class is not found by the loader (a plugin's own class check is the only guard). Until a first signed
+  server file exists, a server runs only the game build it was made for.
 
 To try it without a published file, build the Server configuration with `VMAP_TRUST_TEST_KEY` (the
 test key, `k1`), sign a server file with that key, and copy it byte for byte to
@@ -432,7 +437,8 @@ format version, so a later format never strands a loader that reads this one. La
 sits because `prune_releases.yml` deletes the others. `vmap-publish.yml` puts the current signed
 file on Latest: on a new release at its next run (every 15 minutes), and between releases whenever
 the `seq` rises. The first release that carries one needs a manual run with `first_publish` set.
-The dedicated server has a file of its own, `version-map-server.v1.txt`, in the same format; see
+The dedicated server has a file of its own, `version-map-server.v1.txt`, in the same format, which the
+same workflow puts on Latest in a leg of its own (its own `seq`, its own `first_publish`); see
 [The dedicated server's downloaded version map](#the-dedicated-servers-downloaded-version-map). None is
 published yet.
 
