@@ -235,6 +235,15 @@ namespace PluginManager
 		return result;
 	}
 
+	static const PluginWireInfo* CallGetWireInfoSEH(PluginWireInfoFunc fn)
+	{
+		const PluginWireInfo* result = nullptr;
+		g_lastPluginCrash = {};
+		__try { result = fn(); }
+		__except (PluginCrashFilter(GetExceptionInformation())) {}
+		return result;
+	}
+
 	struct LoadLibrarySEHResult { HMODULE hModule; bool crashed; };
 	static LoadLibrarySEHResult LoadLibrarySEH(const wchar_t* path)
 	{
@@ -325,6 +334,7 @@ namespace PluginManager
 		PluginInitFunc init;
 		PluginShutdownFunc shutdown;
 		PluginLoadHooksFunc loadHooks;   // optional export, may be null
+		WireCompat::Decl wire;           // what GetPluginWireInfo returned, copied at load; undeclared without the export
 		std::wstring fileName;
 		bool isInitialized;
 
@@ -445,6 +455,11 @@ namespace PluginManager
 		// have one, and its absence is not an error.
 		PluginLoadHooksFunc loadHooks = reinterpret_cast<PluginLoadHooksFunc>(
 			GetProcAddress(hModule, PLUGIN_LOAD_HOOKS_FUNC_NAME));
+
+		// Optional fifth export: which other versions of the plugin its packets
+		// are compatible with. No export means undeclared.
+		PluginWireInfoFunc wireInfo = reinterpret_cast<PluginWireInfoFunc>(
+			GetProcAddress(hModule, PLUGIN_WIRE_INFO_FUNC_NAME));
 
 		if (!getInfo || !init || !shutdown)
 		{
@@ -585,6 +600,25 @@ namespace PluginManager
 		rec.cachedName     = info->name    ? info->name    : "";
 		rec.cachedVersion  = info->version ? info->version : "";
 		rec.cachedAuthor   = info->author  ? info->author  : "";
+
+		// Copied now: the struct the plugin returns dies with its DLL.
+		rec.wire = WireCompat::Decl{};
+		if (wireInfo)
+		{
+			const PluginWireInfo* wi = CallGetWireInfoSEH(wireInfo);
+			if (wi)
+			{
+				bool acceptRejected = false;
+				rec.wire = WireCompat::MakeDecl(wi->wireId, wi->acceptVersions, &acceptRejected);
+				if (acceptRejected)
+					ModLoaderLogger::LogWarn(L"Plugin '%S' returned a compatible-versions list from GetPluginWireInfo that cannot be sent (too long or has control characters); it is ignored.",
+						rec.cachedName.c_str());
+			}
+			else if (g_lastPluginCrash.code)
+			{
+				LogPluginCrash(rec.cachedName.c_str(), hModule, L"GetPluginWireInfo");
+			}
+		}
 
 		ModLoaderLogger::LogMessage(L"Successfully loaded plugin DLL: %S v%S (PluginInit deferred)", info->name, info->version);
 		return true;
@@ -1255,6 +1289,24 @@ namespace PluginManager
 		return result;
 	}
 
+	WireCompat::Decl GetWireDecl(const char* pluginName)
+	{
+		WireCompat::Decl result;
+		if (!pluginName) return result;
+
+		EnterCriticalSection(&g_pluginLock);
+		for (auto& p : g_loadedPlugins)
+		{
+			if (_stricmp(p->cachedName.c_str(), pluginName) == 0)
+			{
+				result = p->wire;
+				break;
+			}
+		}
+		LeaveCriticalSection(&g_pluginLock);
+		return result;
+	}
+
 	int GetInterfaceVersionForModule(HMODULE module)
 	{
 		if (!module) return 0;
@@ -1294,6 +1346,7 @@ namespace PluginManager
 		FreeLibrary(p.hModule);
 		p.hModule = nullptr;
 		p.info    = nullptr;
+		p.wire    = WireCompat::Decl{};
 		++g_pluginGeneration;
 		return true;
 	}
