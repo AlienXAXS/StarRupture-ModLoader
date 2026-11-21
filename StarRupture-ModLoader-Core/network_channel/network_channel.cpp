@@ -28,8 +28,10 @@
 #include "hooks/game/engine_tick/engine_tick.h"
 #include "plugins/plugin_manager.h"
 #include "plugins/plugin_hook_report.h"
+#include "utils/game_thread_dispatch.h"
 #include "host_rules_wire.h"
 
+#include <atomic>
 #include <mutex>
 #include <vector>
 #include <string>
@@ -2049,6 +2051,40 @@ namespace
         g_featSentPayload.clear();
     }
 
+    // The rule set the server sent in "$ML:rules", kept as received so it can be
+    // resolved again against the features declared at that moment (a plugin that
+    // loads or reloads later is covered by the "*" and default rows). The
+    // receive may run off the game thread, so the set sits behind a mutex and
+    // the apply is queued to the game thread; g_clientRulesValid is what a queued
+    // apply re-checks, so one that outlives the server it came from does nothing.
+    // g_rulesHookGen is the hook report generation the rules were last resolved
+    // at, so the tick resolves again only when the report moved.
+    static std::mutex               g_clientRulesMutex;
+    static HostRulesWire::RulesSet  g_clientRules;
+    static std::atomic<bool>        g_clientRulesValid{ false };
+    static std::atomic<unsigned>    g_rulesHookGen{ 0 };
+
+    // Leaving a server: its rules are void and the features it switched off come
+    // back. A caller that is not on the game thread queues the clear.
+    static void ForgetClientRules()
+    {
+        {
+            std::lock_guard<std::mutex> lk(g_clientRulesMutex);
+            g_clientRules = HostRulesWire::RulesSet{};
+        }
+        g_clientRulesValid = false;
+        g_rulesHookGen     = 0;
+    }
+
+    static void LeaveServerRules(bool onGameThread)
+    {
+        ForgetClientRules();
+        if (onGameThread)
+            PluginHookReport::ClearServerRules();
+        else
+            GameThreadDispatch::PostVoid([] { if (!g_clientRulesValid) PluginHookReport::ClearServerRules(); });
+    }
+
     static uint64_t g_lastAttemptMs   = 0;
     static int      g_attempts        = 0;
     static bool     g_gaveUpLogged    = false;
@@ -2080,6 +2116,11 @@ namespace
                 ModLoaderLogger::LogDebug(
                     L"[NetworkChannel] Manifest invalidated (conn %p->%p, generation %u->%u) -- resending",
                     g_manifestSentTo, conn, g_manifestSentGen, gen);
+
+            // Another server's rules are not this one's; a changed plugin set on
+            // the same connection keeps them (the server sends them again).
+            if (g_manifestSentTo && conn != g_manifestSentTo)
+                LeaveServerRules(/*onGameThread*/ false);
 
             g_manifestSentTo  = conn;
             g_manifestSentGen = gen;
@@ -2281,6 +2322,89 @@ namespace
             SendFeatToServer();
     }
 
+    // Resolves the server's rule set against the features declared now and, when
+    // that differs from what is applied, hands the new list to the hook report.
+    // Game thread: it writes the plugins' flags.
+    static void ApplyClientRules()
+    {
+        HostRulesWire::RulesSet rules;
+        {
+            std::lock_guard<std::mutex> lk(g_clientRulesMutex);
+            if (!g_clientRulesValid) return; // the server was left while this waited
+            rules = g_clientRules;
+        }
+
+        // Read before resolving, so a feature declared in between is seen next tick.
+        g_rulesHookGen = PluginHookReport::GetGeneration();
+
+        HostRulesWire::FeatPayload declared;
+        for (const PluginHookReport::FeatureInfo& f : PluginHookReport::Features())
+            declared.features.push_back({ f.plugin, f.id, f.title, true });
+
+        std::vector<std::pair<std::string, std::string>> deny;
+        for (const HostRules::RuleKey& r : HostRulesWire::ResolveDeny(rules, declared))
+            deny.emplace_back(r.plugin, r.id);
+
+        const bool hadDeny = !PluginHookReport::ServerDeny().empty();
+        if (PluginHookReport::ServerDeny() == deny && PluginHookReport::ServerMessage() == rules.message)
+            return;
+
+        PluginHookReport::ApplyServerRules(deny, rules.message);
+
+        if (!deny.empty())
+        {
+            if (rules.message.empty())
+                ModLoaderLogger::LogInfo(
+                    L"[Map] server rules: %zu feature(s) turned off by this server.", deny.size());
+            else
+                ModLoaderLogger::LogInfo(
+                    L"[Map] server rules: %zu feature(s) turned off by this server ('%S').",
+                    deny.size(), rules.message.c_str());
+        }
+        else if (hadDeny)
+            ModLoaderLogger::LogInfo(L"[Map] server rules: no features turned off by this server.");
+    }
+
+    // The tick side: the declared features moved since the rules were resolved (a
+    // plugin loaded, reloaded or unloaded), so resolve again.
+    static void RefreshHostRulesIfStale()
+    {
+        if (!g_clientRulesValid) return;
+        if (PluginHookReport::GetGeneration() == g_rulesHookGen) return;
+        ApplyClientRules();
+    }
+
+    // The server's rule set. Only a connection whose ack proved the server reads
+    // host rules takes one; a malformed set is dropped with one warning.
+    static void OnHostRules(const uint8_t* data, size_t len)
+    {
+        if (!g_featProven) return;
+
+        HostRulesWire::RulesSet rules;
+        const HostRulesWire::Status st = HostRulesWire::DecodeRules(
+            reinterpret_cast<const char*>(data), len, &rules);
+        if (st != HostRulesWire::Status::Ok)
+        {
+            bool first;
+            {
+                std::lock_guard<std::mutex> lk(g_wireLogMutex);
+                first = g_wiresGarbageWarned.First(g_manifestSentTo, "$rules");
+            }
+            if (first)
+                ModLoaderLogger::LogWarn(
+                    L"[NetworkChannel] Ignoring malformed rules from the server (%S).",
+                    HostRulesWire::StatusText(st));
+            return;
+        }
+
+        {
+            std::lock_guard<std::mutex> lk(g_clientRulesMutex);
+            g_clientRules = std::move(rules);
+        }
+        g_clientRulesValid = true;
+        GameThreadDispatch::PostVoid([] { ApplyClientRules(); });
+    }
+
     // The authority greeted us. Everything the client can do on the wire starts
     // here, and until it happens this client is indistinguishable from one with
     // no loader at all -- deliberately, because that is what makes it safe on a
@@ -2347,7 +2471,8 @@ namespace
         // so falling through to the net-mode call every frame is precisely the
         // cost this early-out exists to avoid.
         if (!g_serverSpeaksWire) { ReportNoGreetingOnce(); return; }
-        if (g_manifestAcked && PluginManager::GetPluginGeneration() == g_manifestSentGen)
+        RefreshHostRulesIfStale();
+        if (g_manifestAcked &&PluginManager::GetPluginGeneration() == g_manifestSentGen)
         {
             if (g_wiresPending && GetTickCount64() - g_wiresLastTryMs >= kRetryIntervalMs)
                 SendWiresToServer();
@@ -2510,8 +2635,7 @@ namespace
             }
             if (firstNote)
                 ModLoaderLogger::LogInfo(
-                    L"[NetworkChannel] The server's mod loader does not take host rules (it is older), "
-                    L"so it cannot switch this client's features off.");
+                    L"[NetworkChannel] No host rules (the server's mod loader is older).");
         }
 
         if (first)
@@ -2712,6 +2836,8 @@ static void DispatchClientNarrow(const char* narrowData, size_t nbytes)
     {
         if (env.typeTag == kMlAck)
             OnManifestAck(env.payload.data(), env.payload.size());
+        else if (env.typeTag == kMlRules)
+            OnHostRules(env.payload.data(), env.payload.size());
         else if (env.typeTag == kMlEchoBack)
             OnEchoReply(env.payload.data(), env.payload.size());
         else
@@ -3206,6 +3332,8 @@ static void OnWorldEndPlayForgetConns(SDK::UWorld* /*world*/, const char* /*worl
     g_manifestAcked   = false;
     g_wiresPending    = false;
     ResetFeatState();
+    // The rules of the server we just left: this hook runs on the game thread.
+    LeaveServerRules(/*onGameThread*/ true);
     g_attempts        = 0;
     g_gaveUpLogged    = false;
     g_lastAttemptMs   = 0;
@@ -3609,6 +3737,7 @@ void NetworkChannel::Shutdown()
     }
     g_serverSpeaksWire = false;
     g_serverGreetTag.clear();
+    ForgetClientRules(); // plugin flags are not touched here: the process is closing
     ModLoaderLogger::LogInfo(L"[NetworkChannel] Client network channel shut down");
 #else
     ModLoaderLogger::LogInfo(L"[NetworkChannel] Server network channel shut down");

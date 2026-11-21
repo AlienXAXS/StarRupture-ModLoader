@@ -1056,6 +1056,26 @@ int main()
 				"host rules: the diff names what was added and what was removed, and nothing for an equal list");
 			Check(HostRules::EffectiveOn(true, false) && !HostRules::EffectiveOn(true, true) && !HostRules::EffectiveOn(false, false)
 				&& !HostRules::EffectiveOn(false, true), "host rules: a deny turns a feature off and nothing turns one on");
+
+			// The two sources: this machine's own list and the one a joined server sent.
+			HostRules::DenySources src;
+			src.local = { { "Alpha", "x" } };
+			Check(HostRules::Contains(src.Effective(), "Alpha", "x") && src.Effective().size() == 1,
+				"host rules: a local entry alone is denied");
+			src.local.clear();
+			src.remote = { { "Beta", "y" } };
+			Check(HostRules::Contains(src.Effective(), "Beta", "y") && src.Effective().size() == 1,
+				"host rules: a server entry alone is denied");
+			src.local = { { "Beta", "y" }, { "Alpha", "x" } };
+			Check(src.Effective().size() == 2 && HostRules::Contains(src.Effective(), "beta", "y"),
+				"host rules: an entry on both lists counts once");
+			src.remote.clear();
+			Check(src.Effective().size() == 2 && HostRules::Contains(src.Effective(), "Alpha", "x"),
+				"host rules: clearing the server's list leaves the local one");
+			src.remote = { { "Gamma", "z" } };
+			src.local.clear();
+			Check(src.Effective().size() == 1 && HostRules::Contains(src.Effective(), "Gamma", "z"),
+				"host rules: clearing the local list leaves the server's");
 		}
 
 		const auto resolve = [&](const IPluginSelf* self, const char* name, const char* pattern)
