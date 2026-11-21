@@ -161,6 +161,7 @@
     <ClCompile Include="$(CoreDir)memory_scanner\image_info.cpp" />
     <ClCompile Include="$(CoreDir)memory_scanner\hook_scanner_interface.cpp" />
     <ClCompile Include="$(CoreDir)plugins\plugin_hook_report.cpp" />
+    <ClCompile Include="$(CoreDir)utils\game_thread_dispatch.cpp" />
     <ClCompile Include="$(CoreDir)core\unknown_build.cpp" />
   </ItemGroup>
   <ItemGroup Label="The signed feed reader, for the Server configurations" Condition="$(Configuration.StartsWith('Server'))">

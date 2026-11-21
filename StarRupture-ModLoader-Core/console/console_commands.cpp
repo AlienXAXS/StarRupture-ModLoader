@@ -21,6 +21,7 @@
 #ifdef MODLOADER_CLIENT_BUILD
 #include "UMG_classes.hpp"      // pak widget: UWidgetBlueprintLibrary::Create / UUserWidget::AddToViewport
 #endif
+#include "plugins/host_rules.h"
 #include "plugins/plugin_hook_report.h"
 #include "plugins/plugin_interface.h"
 #include "plugins/plugin_manager.h"
@@ -1374,6 +1375,112 @@ namespace ModConsole
 #endif
 
     // -----------------------------------------------------------------------
+    // features -- every feature a plugin declared, and the server's deny list
+    //
+    //   features                       list them
+    //   features hostoff <plugin> <id> turn one off for this server
+    //   features hostclear             lift every server deny
+    //
+    // hostoff and hostclear write the plugins' enabled flags, so the command
+    // is registered for the game thread.
+    // -----------------------------------------------------------------------
+    static void PrintFeatures(Sink& out)
+    {
+        const std::vector<PluginHookReport::FeatureInfo> features = PluginHookReport::Features();
+        const auto deny = PluginHookReport::HostDeny();
+
+        if (features.empty())
+            out.Out("No plugin has declared a feature.");
+        else
+            out.Notice("%-24s %-24s %-28s %s", "PLUGIN", "ID", "TITLE", "STATE");
+
+        for (const PluginHookReport::FeatureInfo& f : features)
+        {
+            const char* state = "on";
+            std::string reason;
+            if (f.state == PluginHookReport::FeatureInfo::State::OffBuild)
+            {
+                state = "off: build";
+                reason = " (" + f.reason + ")";
+            }
+            else if (f.state == PluginHookReport::FeatureInfo::State::OffServer)
+            {
+                state = "off: server";
+            }
+            out.Out("%-24s %-24s %-28s %s%s", f.plugin.c_str(), f.id.c_str(),
+                    ("\"" + f.title + "\"").c_str(), state, reason.c_str());
+        }
+
+        if (deny.empty())
+        {
+            out.Out("");
+            out.Out("The server's deny list is empty.");
+            return;
+        }
+
+        out.Out("");
+        out.Notice("Server deny list:");
+        for (const auto& d : deny)
+            out.Out("  %s  %s", d.first.c_str(), d.second.c_str());
+    }
+
+    static void Cmd_Features(const std::vector<std::string>& args, Sink& out)
+    {
+        if (args.size() < 2)
+        {
+            PrintFeatures(out);
+            return;
+        }
+
+        if (args[1] == "hostclear")
+        {
+            PluginHookReport::ClearHostRules();
+            out.Out("The server's deny list is cleared. A feature the game build has on is on again.");
+            return;
+        }
+
+        if (args[1] == "hostoff")
+        {
+            if (args.size() < 4)
+            {
+                out.Error("Usage: features hostoff <plugin> <id>");
+                return;
+            }
+
+            const std::string& plugin = args[2];
+            const std::string& id     = args[3];
+
+            bool known = false;
+            for (const PluginHookReport::FeatureInfo& f : PluginHookReport::Features())
+                if (f.id == id && HostRules::SamePlugin(f.plugin, plugin))
+                {
+                    known = true;
+                    break;
+                }
+            if (!known)
+            {
+                out.Error("No feature '%s' in plugin '%s'. Use 'features' to list them.",
+                          id.c_str(), plugin.c_str());
+                return;
+            }
+
+            auto deny = PluginHookReport::HostDeny();
+            bool listed = false;
+            for (const auto& d : deny)
+                if (d.second == id && HostRules::SamePlugin(d.first, plugin))
+                    listed = true;
+            if (!listed)
+                deny.emplace_back(plugin, id);
+
+            PluginHookReport::ApplyHostRules(deny);
+            PrintFeatures(out);
+            return;
+        }
+
+        out.Error("Usage: features | features hostoff <plugin> <id> | features hostclear");
+    }
+
+    // -----------------------------------------------------------------------
     // clients -- who is connected, and what they reported having installed
     // -----------------------------------------------------------------------
     static void Cmd_Clients(const std::vector<std::string>& args, Sink& out)
@@ -1512,6 +1619,11 @@ namespace ModConsole
         Register({ "hookfailures", "hooks",  "hookfailures",
                    "List plugins whose hook patterns did not resolve",
                    &Cmd_HookFailures, false });
+
+        // hostoff and hostclear write the plugins' flags: game thread.
+        Register({ "features", nullptr,     "features | features hostoff <plugin> <id> | features hostclear",
+                   "List plugin features, or turn one off (or lift every turn-off) for this server",
+                   &Cmd_Features, true });
 
         Register({ "hooks",   "hooklist",  "hooks",
                    "List every detoured address and the owners sharing it",
