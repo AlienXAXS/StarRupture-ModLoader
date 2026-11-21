@@ -98,7 +98,8 @@ packet, and since v56 it warns once per plugin per client in `modloader.log`.
 Send join-time state from the ready callback instead:
 
 ```cpp
-// server: fires once per client that has YOUR plugin at YOUR version
+// server: fires once per client that has your plugin at your version
+// (or one your plugin declares compatible)
 hooks->Network->RegisterClientReadyCallback(self, [](void* playerController) {
     Packet::SendToClient(hooks, self, playerController, WorldStateSnapshot{ ... });
 });
@@ -121,8 +122,11 @@ dropped -- so that decision stays with you. Send from the callback, or send on
 request; do not send hopefully.
 
 Readiness is per plugin, not per client: it means *this client reported your
-plugin at your exact version*. A client running the loader but not your plugin, or
-a different build of it, never becomes ready to you.
+plugin at your version, or at one your plugin declares compatible*. A client
+running the loader but not your plugin, or a build of it that cannot read your
+packets, never becomes ready to you. By default only an identical version string
+counts; a plugin that exports `GetPluginWireInfo` can list the older versions it
+still speaks (see "Letting older plugin versions talk to yours" in the README).
 
 ## Transport backing (implementation note)
 

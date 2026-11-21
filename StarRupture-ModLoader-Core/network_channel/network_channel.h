@@ -104,7 +104,9 @@ namespace NetworkChannel
     // A joining client volunteers the list of plugins it has loaded, with their
     // versions. The authority records it per connection and uses it to decide
     // who a plugin's packets are worth sending to: a packet from plugin P
-    // version V only goes to clients that reported P at exactly V.
+    // version V only goes to clients that reported P at V or at a version the
+    // two plugins declare compatible (GetPluginWireInfo). A plugin that declares
+    // nothing is held to the exact version string.
     //
     // The client must volunteer this -- the authority cannot ask. A request
     // would be a control bunch, and sending one to a peer that is not running
