@@ -329,7 +329,10 @@
 // v55: Server->client sends are now gated on a client plugin manifest. A joining
 //      client reports every plugin it has loaded, with versions; the authority
 //      records that per connection and delivers a packet from plugin P version V
-//      only to clients that reported P at exactly V.
+//      only to clients that reported P at a version it is compatible with: the
+//      same version string, or one the two plugins declare compatible (see the
+//      OPTIONAL GetPluginWireInfo export near PLUGIN_WIRE_INFO_FUNC_NAME; a plugin
+//      that declares nothing is held to the same version string, as at first).
 //
 //      No signature changed -- SendPacketToClient and SendPacketToAllClients
 //      already took `const IPluginSelf* self`, which carries both name and
@@ -338,11 +341,14 @@
 //      What changed for plugin authors, and it is worth reading twice:
 //
 //      - SendPacketToAllClients no longer means "every client". It means every
-//        client that has your plugin at your exact version. A version bump on one
-//        side silently stops delivery between the two -- which is the point, since
-//        two builds disagreeing about their own packet layout is the failure this
-//        prevents, but it will look like the network dropped your packet.
-//        Skipped clients are logged at Debug/Trace naming the plugin and version.
+//        client that has your plugin at your version string, or at a version your
+//        plugin and theirs declare compatible. A version bump on one side stops
+//        delivery between the two unless the plugins declare the new pair
+//        compatible -- which is the point, since two builds disagreeing about
+//        their own packet layout is the failure this prevents. The loader now
+//        says so: when a client's plugin cannot exchange data with yours it logs
+//        one WARN naming the plugin and both versions, and (client side) a
+//        matching WARN. Other skipped sends are logged at Debug/Trace.
 //
 //      - A client that has not (yet) reported receives nothing. A manifest is sent
 //        at world begin play and retried before the client's first outgoing
@@ -1551,8 +1557,8 @@ typedef void (*PluginNetworkServerMessageCallback)(void* senderPlayerController,
 
 // v56 -- authority side. Fired once per client, per registered plugin, at the
 // moment that client becomes a valid target for THAT plugin: it has reported the
-// plugin at the registering plugin's exact version, and its player controller
-// exists. This is strictly later than a player-joined hook; a packet sent from
+// plugin at the registering plugin's version (or one declared compatible, see
+// GetPluginWireInfo), and its player controller exists. This is strictly later than a player-joined hook; a packet sent from
 // player-joined is dropped, one sent from here is not.
 typedef void (*PluginClientReadyCallback)(void* playerController);
 
@@ -2902,10 +2908,11 @@ struct IPluginNetworkChannel
 	// Authority-only: no-ops (with a warning logged) when IsServer() is false.
 	// Both skip the listen host's own player controller, which has no connection.
 	//
-	// v55: both also skip any client that has not reported THIS plugin at THIS
-	// exact version in its manifest. "All clients" therefore means "all remote
-	// clients running the same build of me". See the v55 note at the top of this
-	// file before assuming a broadcast reached anyone.
+	// v55: both also skip any client that has not reported THIS plugin in its
+	// manifest at this version or at one the two plugins declare compatible
+	// (GetPluginWireInfo). "All clients" therefore means "all remote clients
+	// running a build of me that can read my packets". See the v55 note at the top
+	// of this file before assuming a broadcast reached anyone.
 	void (*SendPacketToClient)(void* playerController, const IPluginSelf* self, const char* typeTag, const uint8_t* data, size_t size);
 	void (*SendPacketToAllClients)(const IPluginSelf* self, const char* typeTag, const uint8_t* data, size_t size);
 	void (*RegisterMessageHandler)(const IPluginSelf* self, const char* typeTag, PluginNetworkMessageCallback callback);
@@ -2919,7 +2926,8 @@ struct IPluginNetworkChannel
 	// ---- Readiness (v56) -- see the v56 note at the top of this file ----------
 	//
 	// Authority side. IsClientReady is the exact predicate SendPacketToClient
-	// gates on: this client has reported YOUR plugin at YOUR version. False on a
+	// gates on: this client has reported YOUR plugin at your version or at one
+	// your plugin and theirs declare compatible. False on a
 	// pure client, for the listen host's own controller, and during the join
 	// window -- a client is NOT ready when a player-joined hook fires.
 	bool (*IsClientReady)(void* playerController, const IPluginSelf* self);
@@ -4040,21 +4048,57 @@ typedef void        (*PluginShutdownFunc)();
 //   }
 typedef void        (*PluginLoadHooksFunc)(IPluginSelf* self, IPluginHookScanner* scanner);
 
-// OPTIONAL fifth export. A plugin that sends packets to or from another copy of
-// itself (IPluginNetworkChannel) says here which versions of itself it can talk
-// to. Without it, plugin packets flow only between identical version strings.
+// OPTIONAL fifth export: GetPluginWireInfo. A plugin that sends packets to or
+// from another copy of itself (IPluginNetworkChannel) says here which versions of
+// itself it can talk to. No interface version bump: an older loader never looks
+// for the export, so a plugin that has it still loads there and behaves as if it
+// had declared nothing.
 //
-//   wireId         A number the author bumps whenever the packet format changes
-//                  and leaves alone when it does not. Two copies that declare the
-//                  same non-zero wireId are compatible, whatever their versions.
-//   acceptVersions Optional ';'-separated list of other versions this one can
-//                  talk to, e.g. "0.11.0;0.11.1". Exact version strings; null or
-//                  "" for none. An element cannot contain ';'.
+// A plugin that does not export it keeps the original rule: its packets flow only
+// between copies with identical version strings.
+//
+//   wireId         A number for the packet layout. Bump it whenever the layout
+//                  changes (a field added, removed, moved or resized, or a field
+//                  that means something else) and leave it alone when it does
+//                  not. Two copies that declare the same non-zero wireId are
+//                  compatible, whatever their version strings. 0 means "no wire
+//                  id": it never matches another 0.
+//   acceptVersions Optional list of other version strings this copy can exchange
+//                  packets with, separated by ';', e.g. "0.11.0;0.11.1". Each
+//                  element is compared exactly with the other side's version
+//                  string, never as a prefix or a range. null or "" for none. An
+//                  element cannot contain ';'. A list longer than 512 characters
+//                  is ignored, with a WARN in the log, and the plugin then keeps
+//                  its wireId alone.
+//
+// The two loaders compare the declarations of both sides, and packets flow when
+// the version strings are equal, OR both declared the same non-zero wireId, OR
+// either side's acceptVersions lists the other side's version. The accept list of
+// ONE side is enough, so a new build can list the released build it still speaks
+// to without that older build changing at all. List only versions with the SAME
+// packet layout as this one.
+//
+// When a pair is not compatible, the loader sends nothing for that plugin and
+// logs one WARN naming the plugin and both versions; when a pair with different
+// version strings is accepted it logs one INFO saying why. Your own receive
+// checks (schema byte, size) stay worthwhile as a second layer.
+//
+// Both sides need a loader that has this feature. If the server's loader does not,
+// it keeps requiring identical version strings, and a client's declaration cannot
+// change that; the client's log then says the server sends no wire table.
 //
 // Return a pointer to a static struct that stays valid while the DLL is loaded.
 //
-//   static const PluginWireInfo kWire = { 2, "0.11.0" };
+// Worked example. RuptureTimer 0.12 keeps the 0.11.0 packet layout and its
+// schema constant is 2. Its server build declares the schema as its wire id and
+// lists the released version it still speaks:
+//
+//   static const PluginWireInfo kWire = { kSchemaVersion /* 2 */, "0.11.0" };
 //   extern "C" __declspec(dllexport) const PluginWireInfo* GetPluginWireInfo() { return &kWire; }
+//
+// A 0.11.0 client (which exports nothing) then receives the 0.12 server's
+// packets. When 0.13 changes the layout, it declares kSchemaVersion 3 and drops
+// "0.11.0" from the list.
 struct PluginWireInfo
 {
 	uint32_t    wireId;
