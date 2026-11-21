@@ -585,6 +585,9 @@
     <ClInclude Include="UI\named_entry_utils.h">
       <Filter>Source Files\UI</Filter>
     </ClInclude>
+    <ClInclude Include="network_channel\admin_prompt.h">
+      <Filter>Source Files\network_channel</Filter>
+    </ClInclude>
     <ClInclude Include="network_channel\host_rules_wire.h">
       <Filter>Source Files\network_channel</Filter>
     </ClInclude>
@@ -919,6 +922,9 @@
     </ClCompile>
     <ClCompile Include="hooks\game\object_lookup\object_lookup.cpp">
       <Filter>Source Files\hooks\game\object_lookup</Filter>
+    </ClCompile>
+    <ClCompile Include="network_channel\admin_prompt.cpp">
+      <Filter>Source Files\network_channel</Filter>
     </ClCompile>
     <ClCompile Include="network_channel\net_timeout.cpp">
       <Filter>Source Files\network_channel</Filter>

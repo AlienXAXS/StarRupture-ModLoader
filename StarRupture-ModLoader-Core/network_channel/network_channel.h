@@ -166,4 +166,18 @@ namespace NetworkChannel
     // -----------------------------------------------------------------------
     bool StartFragmentationTest(size_t bytes, std::string& err);
 
+#ifdef MODLOADER_CLIENT_BUILD
+    // -----------------------------------------------------------------------
+    // Admin prompt answer (client builds only)
+    //
+    // Queues "$ML:adminr" for the server: the code the player typed, or "not me"
+    // (code ignored). Sent from the next engine tick, on the game thread, and only
+    // to a server whose ack proved it reads host rules; nothing goes out
+    // otherwise. Any thread. Returns false when nothing was queued: no such
+    // server, this build is the authority, or the code is empty. The code is
+    // never logged and is overwritten once sent. Called by AdminPrompt only.
+    // -----------------------------------------------------------------------
+    bool SendAdminAnswer(bool notMe, const std::string& code);
+#endif
+
 } // namespace NetworkChannel

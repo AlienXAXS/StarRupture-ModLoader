@@ -30,6 +30,9 @@
 #include "plugins/plugin_hook_report.h"
 #include "utils/game_thread_dispatch.h"
 #include "host_rules_wire.h"
+#ifdef MODLOADER_CLIENT_BUILD
+#include "admin_prompt.h"
+#endif
 
 #include <atomic>
 #include <mutex>
@@ -2146,10 +2149,34 @@ namespace
     static std::atomic<bool>        g_clientRulesValid{ false };
     static std::atomic<unsigned>    g_rulesHookGen{ 0 };
 
+    // The admin prompt's answers ("$ML:adminr"), queued by AdminPrompt from the
+    // render thread and put on the wire from the tick, where the control channel
+    // is safe to touch. Each carries the connection it was meant for, so one that
+    // outlives its server is dropped. The code sits in these bytes until sent;
+    // they are overwritten then and when the server is left.
+    struct AdminAnswerOut
+    {
+        void*       conn;
+        std::string body;
+    };
+    static std::mutex                  g_adminOutMutex;
+    static std::vector<AdminAnswerOut> g_adminOut;
+
+    static void WipeAdminOut()
+    {
+        std::lock_guard<std::mutex> lk(g_adminOutMutex);
+        for (AdminAnswerOut& a : g_adminOut)
+            SecureZeroMemory(a.body.data(), a.body.size());
+        g_adminOut.clear();
+    }
+
     // Leaving a server: its rules are void and the features it switched off come
-    // back. A caller that is not on the game thread queues the clear.
+    // back, and so does any admin prompt it had open. A caller that is not on the
+    // game thread queues the clear.
     static void ForgetClientRules()
     {
+        AdminPrompt::Leave();
+        WipeAdminOut();
         {
             std::lock_guard<std::mutex> lk(g_clientRulesMutex);
             g_clientRules = HostRulesWire::RulesSet{};
@@ -2382,6 +2409,27 @@ namespace
         }
     }
 
+    // Puts the queued admin answers on the wire. Game thread (the tick). An answer
+    // for a connection that is no longer the server, or for one that has not
+    // proved it reads host rules, is dropped, never held for later.
+    static void PumpAdminAnswerSend()
+    {
+        std::vector<AdminAnswerOut> out;
+        {
+            std::lock_guard<std::mutex> lk(g_adminOutMutex);
+            if (g_adminOut.empty()) return;
+            out.swap(g_adminOut);
+        }
+        for (AdminAnswerOut& a : out)
+        {
+            if (a.conn == g_manifestSentTo && g_featProven &&
+                !SendWire(a.conn, kMlPlugin, BuildEnvelope(kMlPlugin, kMlAdminR,
+                              reinterpret_cast<const uint8_t*>(a.body.data()), a.body.size())))
+                ModLoaderLogger::LogDebug(L"[NetworkChannel] Could not send an admin prompt answer");
+            SecureZeroMemory(a.body.data(), a.body.size());
+        }
+    }
+
     // The tick side of the above: when the hook report moved since last looked at
     // and the catalog now encodes to different bytes, send it again; and retry a
     // send that could not be put on the wire.
@@ -2485,6 +2533,33 @@ namespace
         }
         g_clientRulesValid = true;
         GameThreadDispatch::PostVoid([] { ApplyClientRules(); });
+    }
+
+    // A line for the admin prompt. Same proof rule as the rules; a malformed one
+    // is dropped with one warning. The prompt state is mutex-guarded, so this
+    // needs no hop to the game thread.
+    static void OnAdminQuestion(const uint8_t* data, size_t len)
+    {
+        if (!g_featProven) return;
+
+        HostRulesWire::AdminQuestion q;
+        const HostRulesWire::Status st = HostRulesWire::DecodeAdminQuestion(
+            reinterpret_cast<const char*>(data), len, &q);
+        if (st != HostRulesWire::Status::Ok)
+        {
+            bool first;
+            {
+                std::lock_guard<std::mutex> lk(g_wireLogMutex);
+                first = g_wiresGarbageWarned.First(g_manifestSentTo, "$adminq");
+            }
+            if (first)
+                ModLoaderLogger::LogWarn(
+                    L"[NetworkChannel] Ignoring a malformed admin prompt message from the server (%S).",
+                    HostRulesWire::StatusText(st));
+            return;
+        }
+
+        AdminPrompt::OnQuestion(q);
     }
 
     // The authority greeted us. Everything the client can do on the wire starts
@@ -2920,6 +2995,8 @@ static void DispatchClientNarrow(const char* narrowData, size_t nbytes)
             OnManifestAck(env.payload.data(), env.payload.size());
         else if (env.typeTag == kMlRules)
             OnHostRules(env.payload.data(), env.payload.size());
+        else if (env.typeTag == kMlAdminQ)
+            OnAdminQuestion(env.payload.data(), env.payload.size());
         else if (env.typeTag == kMlEchoBack)
             OnEchoReply(env.payload.data(), env.payload.size());
         else
@@ -4215,6 +4292,7 @@ static void OnEngineTick(float /*deltaSeconds*/)
 
 #ifdef MODLOADER_CLIENT_BUILD
     RefreshManifestIfStale();
+    PumpAdminAnswerSend();
 #endif
 }
 
@@ -4343,6 +4421,24 @@ bool NetworkChannel::StartFragmentationTest(size_t bytes, std::string& err)
     return false;
 #endif
 }
+
+#ifdef MODLOADER_CLIENT_BUILD
+bool NetworkChannel::SendAdminAnswer(bool notMe, const std::string& code)
+{
+    // Read from the window's thread, like g_featProven in OnHostRules: the tick
+    // checks both again before anything goes out.
+    void* conn = g_manifestSentTo;
+    if (!conn || !g_featProven || HasNetAuthority()) return false;
+
+    std::string body = HostRulesWire::EncodeAdminAnswer(
+        notMe ? HostRulesWire::AdminRKind::NotMe : HostRulesWire::AdminRKind::Code, code);
+    if (body.empty()) return false; // no code left after cleaning
+
+    std::lock_guard<std::mutex> lk(g_adminOutMutex);
+    g_adminOut.push_back({ conn, std::move(body) });
+    return true;
+}
+#endif
 
 IPluginNetworkChannel* NetworkChannel::GetInterface()
 {

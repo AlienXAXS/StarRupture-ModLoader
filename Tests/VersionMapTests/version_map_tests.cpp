@@ -10,6 +10,7 @@
 #include "memory_scanner/version_map.h"
 #include "core/layout_check.h"
 #include "core/unknown_build.h"
+#include "network_channel/admin_prompt.h"
 #include "network_channel/host_rules_wire.h"
 #include "plugins/host_rules.h"
 #include "plugins/plugin_hook_report.h"
@@ -3157,6 +3158,77 @@ int main()
 				DecideAdminAnswer(true, 10099, true, 10000, 100) == AdminAnswerDecision::RateLimited, "admin answer: the gap is a parameter");
 		}
 	}
+
+	// Admin prompt client state (admin_prompt.h): the pure steps behind the player's window.
+	{
+		using AdminPrompt::State;
+		using AdminPrompt::SubmitResult;
+		using HostRulesWire::AdminQKind;
+		std::string out;
+
+		State s;
+		Check(!s.open && !s.final && s.status.empty(), "admin prompt: starts closed and empty");
+		Check(AdminPrompt::CheckSubmit(s, "ABC", 1000, &out) == SubmitResult::NotOpen, "admin prompt: a code is refused while closed");
+		Check(!AdminPrompt::NotMeSendsAnswer(s, 1000), "admin prompt: not me sends nothing while closed");
+
+		// A line for a prompt that is not showing is dropped.
+		AdminPrompt::ApplyQuestion(s, AdminQKind::Info, "late");
+		AdminPrompt::ApplyQuestion(s, AdminQKind::Close, "late");
+		Check(!s.open && !s.final && s.status.empty(), "admin prompt: info and close with no prompt open change nothing");
+
+		// ask opens; info keeps it open and sets the line; close marks it final.
+		AdminPrompt::ApplyQuestion(s, AdminQKind::Ask, "");
+		Check(s.open && !s.final && s.status.empty(), "admin prompt: ask opens it");
+		AdminPrompt::ApplyQuestion(s, AdminQKind::Info, "Wrong code");
+		Check(s.open && !s.final && s.status == "Wrong code", "admin prompt: info sets the line and keeps it open");
+		AdminPrompt::ApplyQuestion(s, AdminQKind::Info, "Wrong code, 2 tries left");
+		Check(s.open && s.status == "Wrong code, 2 tries left", "admin prompt: a second info replaces the line");
+
+		// Submit: trimming, caps, control characters, the 500 ms gap.
+		Check(AdminPrompt::CheckSubmit(s, "  AB12  ", 1000, &out) == SubmitResult::Ok && out == "AB12", "admin prompt: a code is trimmed and accepted");
+		Check(AdminPrompt::CheckSubmit(s, nullptr, 1000, &out) == SubmitResult::Empty, "admin prompt: a null code is empty");
+		Check(AdminPrompt::CheckSubmit(s, "", 1000, &out) == SubmitResult::Empty, "admin prompt: no code is empty");
+		Check(AdminPrompt::CheckSubmit(s, "    ", 1000, &out) == SubmitResult::Empty, "admin prompt: only spaces is empty");
+		Check(AdminPrompt::CheckSubmit(s, std::string(64, 'K').c_str(), 1000, &out) == SubmitResult::Ok && out.size() == 64, "admin prompt: 64 bytes are accepted");
+		Check(AdminPrompt::CheckSubmit(s, std::string(65, 'K').c_str(), 1000, &out) == SubmitResult::TooLong, "admin prompt: 65 bytes are too long");
+		Check(AdminPrompt::CheckSubmit(s, "AB\x01" "CD", 1000, &out) == SubmitResult::ControlChar, "admin prompt: a control character is refused");
+		Check(AdminPrompt::CheckSubmit(s, "AB\tCD", 1000, &out) == SubmitResult::ControlChar, "admin prompt: a tab inside the code is refused");
+		Check(AdminPrompt::CheckSubmit(s, "AB\x7F" "CD", 1000, &out) == SubmitResult::ControlChar, "admin prompt: DEL is refused");
+		Check(AdminPrompt::CheckSubmit(s, "AB CD", 1000, &out) == SubmitResult::Ok && out == "AB CD", "admin prompt: a space inside the code is kept");
+
+		AdminPrompt::NoteAnswerSent(s, 5000);
+		Check(AdminPrompt::CheckSubmit(s, "ABC", 5499, &out) == SubmitResult::RateLimited, "admin prompt: a second code within 500 ms is ignored");
+		Check(AdminPrompt::CheckSubmit(s, "ABC", 5500, &out) == SubmitResult::Ok, "admin prompt: a code 500 ms after the last is accepted");
+		Check(!AdminPrompt::NotMeSendsAnswer(s, 5499) && AdminPrompt::NotMeSendsAnswer(s, 5500), "admin prompt: not me follows the same 500 ms gap");
+
+		// close: final line stays until dismissed; no input, no answer, no later lines.
+		AdminPrompt::ApplyQuestion(s, AdminQKind::Close, "You are the admin");
+		Check(s.open && s.final && s.status == "You are the admin", "admin prompt: close sets the last line and ends the input");
+		Check(AdminPrompt::CheckSubmit(s, "ABC", 9000, &out) == SubmitResult::NotOpen, "admin prompt: no code after the last line");
+		Check(!AdminPrompt::NotMeSendsAnswer(s, 9000), "admin prompt: dismissing the last line sends nothing");
+		AdminPrompt::ApplyQuestion(s, AdminQKind::Info, "ignored");
+		AdminPrompt::ApplyQuestion(s, AdminQKind::Close, "ignored");
+		Check(s.final && s.status == "You are the admin", "admin prompt: lines after the last one are dropped");
+
+		// Dismissed, then asked again: a clean prompt with no answer memory.
+		AdminPrompt::CloseLocally(s);
+		Check(!s.open && !s.final && s.status.empty(), "admin prompt: dismissing closes and clears the line");
+		AdminPrompt::ApplyQuestion(s, AdminQKind::Ask, "");
+		Check(s.open && !s.final && !s.hasLastAnswer, "admin prompt: a new ask starts clean");
+
+		// Not me while asking: answer goes out, the window closes.
+		Check(AdminPrompt::NotMeSendsAnswer(s, 100), "admin prompt: not me while asking sends an answer");
+		AdminPrompt::CloseLocally(s);
+		Check(!s.open, "admin prompt: not me closes it locally");
+
+		// Leaving the server clears everything.
+		AdminPrompt::ApplyQuestion(s, AdminQKind::Ask, "");
+		AdminPrompt::ApplyQuestion(s, AdminQKind::Info, "line");
+		AdminPrompt::NoteAnswerSent(s, 123);
+		AdminPrompt::Reset(s);
+		Check(!s.open && !s.final && s.status.empty() && !s.hasLastAnswer && s.lastAnswerMs == 0, "admin prompt: leaving the server clears the state");
+		Check(std::string(AdminPrompt::kPromptText).find("Not me") != std::string::npos, "admin prompt: the fixed text names Not me");
+	}
 
 	printf("%d checks, %d failed\n", g_checks, g_failed);
 	return g_failed ? 1 : 0;
