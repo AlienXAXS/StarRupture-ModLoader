@@ -447,6 +447,30 @@ namespace WireCompat
         return DecodeTable(data + at, len - at);
     }
 
+    // What follows the first record of an ack: nothing (an old server), bytes
+    // that are not a readable table, or a table. Only a table proves the
+    // server's loader understands the wire declarations.
+    enum class AckTailKind
+    {
+        None,
+        Garbage,
+        Table,
+    };
+
+    // table, when given, receives the decoded table for AckTailKind::Table.
+    inline AckTailKind ReadAckTail(const char* data, size_t len, DecodedTable* table = nullptr)
+    {
+        const size_t at = FindTail(data, len);
+        if (at == kNoTail || at >= len)
+            return AckTailKind::None;
+        DecodedTable t = DecodeTable(data + at, len - at);
+        if (!t.present)
+            return AckTailKind::Garbage;
+        if (table)
+            *table = std::move(t);
+        return AckTailKind::Table;
+    }
+
     // Remembers what was already reported so a warning or note about a plugin
     // on a connection is logged once. Keyed by connection and plugin name; the
     // connection is only an identity (never dereferenced). The caller locks.

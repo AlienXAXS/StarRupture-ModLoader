@@ -523,6 +523,22 @@ namespace
     static std::set<std::string> g_wireDroppedWarned;
     static bool                  g_wireCutWarned = false;
 
+#ifdef MODLOADER_CLIENT_BUILD
+    // Client side: the server's wire table from the tail of its ack, kept per
+    // server connection (one at a time), and the once-per-connection log keys
+    // for it. Guarded by g_wireLogMutex; forgotten with the connection.
+    struct ServerWireTable
+    {
+        void*                          conn    = nullptr;
+        bool                           present = false;   // the ack carried a readable table
+        std::vector<WireCompat::Entry> entries;
+    };
+    static ServerWireTable      g_serverWires;
+    // Keyed by (connection, "$wires"): one note per connection whose ack tail
+    // could not be read.
+    static WireCompat::WarnOnce g_serverTailWarned;
+#endif
+
     // Says what CheckClientPair found, when there is something to say: one INFO
     // when a pair with different version strings is accepted, one WARN when a pair
     // is blocked (once the manifest is old enough, see kWireWarnDelayMs). Silent
@@ -1132,6 +1148,11 @@ namespace
             g_wireBlockedWarned.Forget(conn);
             g_wireAcceptedNoted.Forget(conn);
             g_wiresGarbageWarned.Forget(conn);
+#ifdef MODLOADER_CLIENT_BUILD
+            g_serverTailWarned.Forget(conn);
+            if (g_serverWires.conn == conn)
+                g_serverWires = ServerWireTable{};
+#endif
         }
     }
 
@@ -2137,6 +2158,37 @@ namespace
         SendManifestToServer(/*force*/ false);
     }
 
+    // Reads what follows the ack's first record and keeps the server's wire
+    // table for this connection. True when the ack carried a readable table,
+    // which is the proof that the server's loader understands wire declarations.
+    // An ack with no tail is an old server; one with an unreadable tail is
+    // treated the same way, with one warning per connection.
+    static bool StoreServerWireTable(const char* data, size_t len)
+    {
+        // An ack that outlived its connection (world travel, disconnect) has
+        // nothing to attach a table to.
+        void* conn = g_manifestSentTo;
+        if (!conn) return false;
+
+        WireCompat::DecodedTable table;
+        const WireCompat::AckTailKind kind = WireCompat::ReadAckTail(data, len, &table);
+
+        bool warn = false;
+        {
+            std::lock_guard<std::mutex> lk(g_wireLogMutex);
+            g_serverWires.conn    = conn;
+            g_serverWires.present = (kind == WireCompat::AckTailKind::Table);
+            g_serverWires.entries = std::move(table.entries);
+            if (kind == WireCompat::AckTailKind::Garbage)
+                warn = g_serverTailWarned.First(conn, "$wires");
+        }
+        if (warn)
+            ModLoaderLogger::LogWarn(
+                L"[NetworkChannel] Ignoring a malformed plugin wire table from the server; "
+                L"its plugins keep the exact-version rule.");
+        return kind == WireCompat::AckTailKind::Table;
+    }
+
     // The authority answered our manifest. Payload is buildTag US interfaceVersion RS.
     static void OnManifestAck(const uint8_t* data, size_t len)
     {
@@ -2157,6 +2209,8 @@ namespace
 
         const bool first = !g_manifestAcked;
         g_manifestAcked  = true;
+
+        StoreServerWireTable(reinterpret_cast<const char*>(data), len);
 
         if (first)
             ModLoaderLogger::LogInfo(
@@ -2708,6 +2762,10 @@ static void OnWorldEndPlayForgetConns(SDK::UWorld* /*world*/, const char* /*worl
         g_wireBlockedWarned.Clear();
         g_wireAcceptedNoted.Clear();
         g_wiresGarbageWarned.Clear();
+#ifdef MODLOADER_CLIENT_BUILD
+        g_serverTailWarned.Clear();
+        g_serverWires = ServerWireTable{};
+#endif
     }
 #ifdef MODLOADER_CLIENT_BUILD
     // Our own report is void too: the next world means a new connection, so the
@@ -3067,6 +3125,10 @@ void NetworkChannel::Shutdown()
         g_wireBlockedWarned.Clear();
         g_wireAcceptedNoted.Clear();
         g_wiresGarbageWarned.Clear();
+#ifdef MODLOADER_CLIENT_BUILD
+        g_serverTailWarned.Clear();
+        g_serverWires = ServerWireTable{};
+#endif
     }
 
     {

@@ -466,6 +466,27 @@ namespace
         const std::string withFeature = first + table + "$feat" + US + "1" + US + "x" + RS;
         const DecodedTable f = DecodeAckTail(withFeature.data(), withFeature.size());
         Check(f.present && f.entries.size() == 2 && f.entries[1].name == "PV", "a '$' record after the table is skipped");
+
+        // What the client does with the tail: only a table proves a new server.
+        DecodedTable got;
+        Check(ReadAckTail(oldAck.data(), oldAck.size(), &got) == AckTailKind::None && !got.present,
+            "tail kind: an old ack has none");
+        Check(ReadAckTail(noSep.data(), noSep.size()) == AckTailKind::None, "tail kind: no separator is none");
+        Check(ReadAckTail(nullptr, 0) == AckTailKind::None, "tail kind: a null ack is none");
+        Check(ReadAckTail(garbageTail.data(), garbageTail.size(), &got) == AckTailKind::Garbage && !got.present,
+            "tail kind: bytes that are not a table are garbage");
+        const std::string noHeader = first + "RT" + US + "0.12.0" + US + "2" + US + "0.11.0" + RS;
+        Check(ReadAckTail(noHeader.data(), noHeader.size()) == AckTailKind::Garbage,
+            "tail kind: rows without the table header are garbage");
+        const std::string cutHeader = first + "$wires" + US + "1";
+        Check(ReadAckTail(cutHeader.data(), cutHeader.size()) == AckTailKind::Garbage,
+            "tail kind: a truncated header is garbage");
+        Check(ReadAckTail(newAck.data(), newAck.size(), &got) == AckTailKind::Table && got.entries.size() == 2,
+            "tail kind: a table is a table, with its rows");
+        Check(ReadAckTail(newAck.data(), newAck.size()) == AckTailKind::Table, "tail kind: the table out pointer is optional");
+        const std::string headerOnly = first + EncodeTable({});
+        Check(ReadAckTail(headerOnly.data(), headerOnly.size(), &got) == AckTailKind::Table && got.entries.empty(),
+            "tail kind: a header with no rows is a table (a new server with no plugins)");
     }
 
     void TestClassify()
