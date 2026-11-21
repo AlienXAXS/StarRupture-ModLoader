@@ -141,6 +141,71 @@ namespace VersionFeed
 			return r.gameCL == running.cl && r.imageStamp == running.imageStamp && r.imageSize == running.imageSize;
 		}
 
+		// One line per build the feed names, after the summary: what the file
+		// holds for it and what the merge did with it. Reads the feed and the
+		// baseline again; it changes nothing.
+		void LogBuilds(const MapData& baseline, const MapData& feed, const MapData& merged, const Exe& running)
+		{
+			constexpr size_t kMaxLines = 8;
+			using FKey = std::tuple<std::string, uint32_t, uint32_t>;
+			std::map<FKey, const MapFunctionRow*> baseFns;
+			for (const MapFunctionRow& r : baseline.functions)
+				baseFns[{ r.key, r.fp, r.gameCL }] = &r;
+			std::map<std::pair<std::string, uint32_t>, const MapFieldRow*> baseFields;
+			for (const MapFieldRow& r : baseline.fields)
+				baseFields[{ r.key, r.gameCL }] = &r;
+
+			size_t shown = 0;
+			for (const MapBuild& fb : feed.builds)
+			{
+				if (shown == kMaxLines)
+				{
+					ModLoaderLogger::LogInfo(L"[VersionFeed]   and %zu more build(s) in the file", feed.builds.size() - kMaxLines);
+					break;
+				}
+				++shown;
+
+				const uint32_t cl = fb.gameCL;
+				size_t rows = 0, same = 0, differ = 0;
+				for (const MapFunctionRow& r : feed.functions)
+				{
+					if (r.gameCL != cl)
+						continue;
+					++rows;
+					const auto it = baseFns.find({ r.key, r.fp, cl });
+					if (it != baseFns.end())
+						(SameRow(*it->second, r) ? same : differ)++;
+				}
+				for (const MapFieldRow& r : feed.fields)
+				{
+					if (r.gameCL != cl)
+						continue;
+					++rows;
+					const auto it = baseFields.find({ r.key, cl });
+					if (it != baseFields.end())
+						(SameRow(*it->second, r) ? same : differ)++;
+				}
+				const size_t added = rows - same - differ;
+
+				wchar_t label[96];
+				if (OnRunning(fb, running))
+					swprintf_s(label, L"CL %u (this exe)", cl);
+				else
+					swprintf_s(label, L"CL %u (other exe, stamp 0x%08X, size 0x%08X)", cl, fb.imageStamp, fb.imageSize);
+
+				const MapBuild* own = BuildOf(baseline, cl);
+				if (!BuildOf(merged, cl))
+					ModLoaderLogger::LogInfo(L"[VersionFeed]   %ls: %zu rows, refused (see below), not in the version map", label, rows);
+				else if (!own)
+					ModLoaderLogger::LogInfo(L"[VersionFeed]   %ls: %zu rows, a build the loader does not have, added to the version map", label, rows);
+				else if (differ == 0 && added == 0)
+					ModLoaderLogger::LogInfo(L"[VersionFeed]   %ls: %zu rows, identical to the loader's own, none used", label, rows);
+				else
+					ModLoaderLogger::LogInfo(L"[VersionFeed]   %ls: %zu rows, %zu differ from the loader's own (%ls rows kept), %zu not in the loader's own and added",
+						label, rows, differ, OnRunning(*own, running) ? L"the loader's" : L"the file's", added);
+			}
+		}
+
 		std::wstring Widen(const std::string& s)
 		{
 			return std::wstring(s.begin(), s.end());   // the texts logged here are ASCII
@@ -484,6 +549,7 @@ namespace VersionFeed
 		ModLoaderLogger::LogInfo(L"[VersionFeed] Feed seq %llu (key %ls%ls): %zu rows from the feed, %zu discarded (%zu clashed with the loader's map on this exe, %zu absent rows filled, %zu scoped rows without fp dropped)",
 			static_cast<unsigned long long>(feed.seq), Widen(feed.keyId).c_str(), feed.testKey ? L", TEST KEY" : L"",
 			report.fromFeed, report.discarded, report.clashes, report.absentFilled, report.droppedNoFp);
+		LogBuilds(VersionMap::BaselineMap(), feed.map, merged, running);
 		for (const auto& r : refused)
 			ModLoaderLogger::LogWarn(L"[VersionFeed] CL-%u from the feed is refused: it lacks %zu of the keys the loader needs", r.first, r.second);
 		if (seqOut)

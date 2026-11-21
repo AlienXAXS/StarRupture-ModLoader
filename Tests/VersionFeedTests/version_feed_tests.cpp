@@ -543,6 +543,18 @@ int main()
 		TestDoubles::g_log.clear();
 		auto m = VersionFeed::BuildFromCache(path, keys, kRunning, none, &seq);
 		Check(m && seq == 11 && !m->builds.empty() && Logged(L"Feed seq 11"), "the cache is verified, merged and logged");
+		// One line per build in the file, after the summary.
+		{
+			const std::string twoBuilds = std::string(kBuilds) + "build\t130000\t0x44444444\t0x04000000\tfeed\n"
+				+ Fn("Test::MapOnly", 0, 128786, 0x22222222, 0x02000000, 1, "AA 01", 0x1000)
+				+ Fn("Test::MapOnly", 0, 130000, 0x44444444, 0x04000000, 1, "AA 30", 0x3000)
+				+ FieldLine("ATest::Native", 130000, 0x30);
+			Put(path, Sign(sk1, Region(12, twoBuilds)));
+			TestDoubles::g_log.clear();
+			Check(VersionFeed::BuildFromCache(path, keys, kRunning, none) != nullptr
+				&& Logged(L"CL 128786 (this exe): 1 rows")
+				&& Logged(L"CL 130000 (other exe, stamp 0x44444444, size 0x04000000): 2 rows, a build the loader does not have, added to the version map"),
+				"the log names each build in the file, whether it is this exe, and what the merge did with it");		}
 		Put(path, at10.substr(0, at10.size() - 20));
 		TestDoubles::g_log.clear();
 		Check(!VersionFeed::BuildFromCache(path, keys, kRunning, none) && Logged(L"not usable"), "a damaged cache leaves the loader's own map in force");
