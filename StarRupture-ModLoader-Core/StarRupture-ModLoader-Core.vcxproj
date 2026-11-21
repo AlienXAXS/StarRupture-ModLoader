@@ -548,6 +548,7 @@
     <ClInclude Include="utils\engine_call_utils.h" />
     <ClInclude Include="core\globals.h" />
     <ClInclude Include="core\startup_utils.h" />
+    <ClInclude Include="core\startup_wait.h" />
     <ClInclude Include="core\version_check.h" />
     <ClInclude Include="core\unknown_build.h" />
     <ClInclude Include="core\sdk_globals.h" />

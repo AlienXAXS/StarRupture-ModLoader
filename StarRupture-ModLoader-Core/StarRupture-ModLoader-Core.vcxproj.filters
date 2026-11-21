@@ -474,6 +474,9 @@
     <ClInclude Include="core\startup_utils.h">
       <Filter>Source Files\core</Filter>
     </ClInclude>
+    <ClInclude Include="core\startup_wait.h">
+      <Filter>Source Files\core</Filter>
+    </ClInclude>
     <ClInclude Include="core\version_check.h">
       <Filter>Source Files\core</Filter>
     </ClInclude>

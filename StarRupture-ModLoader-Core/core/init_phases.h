@@ -10,6 +10,7 @@ void InstallHooksPhase();
 // preload/preload_manager.h. Cannot fail the boot: a preload plugin that breaks
 // is unloaded and the game starts without it.
 void PreloadPhase();
-void WaitForEnginePhase();
+// True when the wait for the engine's init signal ran out (WaitForEngineReady).
+bool WaitForEnginePhase();
 void LoadPluginsPhase();
 void InitPluginsPhase();

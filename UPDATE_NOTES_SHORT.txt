@@ -2,3 +2,5 @@
 - The mod loader is now built for game build CL-130045 and still runs on CL-127004. The dedicated server stays on CL-127004
 - The dedicated server now has a built-in version object map table for its own game build (function addresses, game globals, member offsets and struct sizes), off on any other server exe
 - The dedicated server now hands plugins the same Game-SDK globals as the client when the version object map serves the running server build
+- When the game does not finish starting within the mod loader's wait on a build the mod loader was not made for, its message now says the game did not finish starting (and to check the game files in Steam) instead of saying the game layout changed. Plugins stay off for that session
+- The wait for the game to finish starting is now a true 2 minute limit

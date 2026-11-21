@@ -2,6 +2,7 @@
 #include "globals.h"
 #include "version_check.h"
 #include "startup_utils.h"
+#include "startup_wait.h"
 #include "init_phases.h"
 #include "hook_management.h"
 #include "client_ui.h"
@@ -37,19 +38,26 @@
 #include "../utils/pak_list.h"
 
 #ifdef MODLOADER_CLIENT_BUILD
-// Safe-off after a layout mismatch: the SDK reads the wrong bytes on this game
-// build, so no plugin code may run. Called on the init thread with the game
-// thread parked in the engine-init hook. That park ends on its own after a
-// timeout, so plugin loads are refused and the preload plugins shut down
-// before the dialog waits on the player. The loader's hooks stay in; the
+// Safe-off after a layout mismatch (or, with SafeOffKind::CheckNotRun, after the
+// game did not finish starting so the check could not run): the SDK may read the
+// wrong bytes on this game build, so no plugin code may run. Called on the init
+// thread, with the game thread parked in the engine-init hook when the check ran.
+// That park ends on its own after a timeout, so plugin loads are refused and
+// the preload plugins shut down before the dialog waits on the player. The
+// loader's hooks stay in; the
 // world they read comes from SdkGlobals::GetWorld, which with no per-build
 // fields resolved (they are not, after a safe-off) reads GWorld: on a build
 // other than the SDK's own the resolved one, not Offsets::GWorld.
-static void EnterLayoutSafeOff(const LayoutCheck::Result& layout)
+static void EnterLayoutSafeOff(const LayoutCheck::Result& layout,
+    StartupWait::SafeOffKind kind = StartupWait::SafeOffKind::Mismatch)
 {
+    const bool notChecked = (kind == StartupWait::SafeOffKind::CheckNotRun);
     PluginManager::RefusePluginLoads();
     PreloadManager::Shutdown();
-    ModLoaderLogger::LogError(L"[init] Layout mismatch -- plugins are switched off for this session");
+    if (notChecked)
+        ModLoaderLogger::LogError(L"%s", StartupWait::NotCheckedLogLine().c_str());
+    else
+        ModLoaderLogger::LogError(L"[init] Layout mismatch -- plugins are switched off for this session");
 
     const std::wstring reportName = CompatReport::Write(layout, CompatReport::Outcome::SafeOff);
     Splash::Close();
@@ -62,10 +70,12 @@ static void EnterLayoutSafeOff(const LayoutCheck::Result& layout)
     for (const std::string& line : layout.lines)
         details += std::wstring(line.begin(), line.end()) + L"\r\n";
 
-    const auto choice = Hooks::CrashDialog::Show(Hooks::CrashDialog::Mode::LayoutMismatch, details);
+    const auto choice = Hooks::CrashDialog::Show(
+        notChecked ? Hooks::CrashDialog::Mode::LayoutNotChecked : Hooks::CrashDialog::Mode::LayoutMismatch, details);
     if (choice == Hooks::CrashDialog::Result::QuitGame)
     {
-        ModLoaderLogger::LogInfo(L"[init] User chose to quit the game after the layout mismatch");
+        ModLoaderLogger::LogInfo(notChecked ? L"[init] User chose to quit the game after the layout check did not run"
+                                            : L"[init] User chose to quit the game after the layout mismatch");
         UnknownBuild::EndSession();
         ExitProcess(0);
     }
@@ -422,8 +432,9 @@ DWORD WINAPI MainInitThreadProc(LPVOID)
     PluginWatchdog::Start();
     LogToFile::Info("[init] WorldBeginPlay + EngineTick hooks installed");
 
-    WaitForEnginePhase();
-    LogToFile::Info("[init] Stage 2 complete in %llu ms -- engine ready", GetTickCount64() - stage2Start);
+    [[maybe_unused]] const bool engineWaitTimedOut = WaitForEnginePhase();
+    LogToFile::Info("[init] Stage 2 complete in %llu ms -- %s", GetTickCount64() - stage2Start,
+        Hooks::EngineInit::IsEngineInitialized() ? "engine ready" : "engine init not observed");
 
     // Inventory the game's pak files now that the engine is up -- logged to
     // modloader.log and cached for the crash dialog, where user-installed pak
@@ -476,7 +487,8 @@ DWORD WINAPI MainInitThreadProc(LPVOID)
                 unchecked.lines.push_back("GObjects or FName::AppendString was not found on this build");
             if (unchecked.lines.size() > layout.lines.size())
             {
-                EnterLayoutSafeOff(unchecked);
+                EnterLayoutSafeOff(unchecked,
+                    StartupWait::ClassifySafeOff(Hooks::EngineInit::IsEngineInitialized(), engineWaitTimedOut));
                 return 0;
             }
         }

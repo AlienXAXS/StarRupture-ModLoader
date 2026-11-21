@@ -1,6 +1,7 @@
 #include "engine_sync.h"
 #include "globals.h"
 #include "startup_utils.h"
+#include "startup_wait.h"
 #include "../logging/log.h"
 #include "../logging/ue_log.h"
 #include "../memory_scanner/scanner.h"
@@ -110,20 +111,24 @@ void OnEngineInitForGObjectExport()
     LogToFile::Info("[ModLoader] GObjects export wrote %d entries", written);
 }
 
-void WaitForEngineReady()
+bool WaitForEngineReady()
 {
     if (!g_engineReadyEvent)
-        return;
+        return false;
 
     Splash::SetStatus(L"Waiting for engine...");
     Splash::SetProgress(0.45f);
     LogToFile::Info("[ModLoader] Waiting for engine initialization...");
 
-    static constexpr DWORD kEngineWaitTimeoutMs = 120'000;
+    // A deadline, not a timeout per wait: every window message that reaches this
+    // thread ends a wait, and the wait that follows must not start the full time over.
+    const ULONGLONG deadline = GetTickCount64() + StartupWait::kEngineTimeoutMs;
+    bool timedOut = false;
     HANDLE waitHandles[] = { g_engineReadyEvent };
     for (;;)
     {
-        DWORD r = MsgWaitForMultipleObjects(1, waitHandles, FALSE, kEngineWaitTimeoutMs, QS_ALLINPUT);
+        DWORD r = MsgWaitForMultipleObjects(1, waitHandles, FALSE,
+            StartupWait::RemainingMs(GetTickCount64(), deadline), QS_ALLINPUT);
         if (r == WAIT_OBJECT_0)
         {
             LogToFile::Info("[ModLoader] Engine ready -- proceeding to load plugins");
@@ -139,10 +144,12 @@ void WaitForEngineReady()
             }
             continue;
         }
-        LogToFile::Warn("[ModLoader] Timed out waiting for engine init (%lu ms) -- loading plugins anyway", kEngineWaitTimeoutMs);
+        LogToFile::Warn("[ModLoader] Timed out waiting for engine init (%lu ms) -- loading plugins anyway", StartupWait::kEngineTimeoutMs);
+        timedOut = true;
         break;
     }
 
     CloseHandle(g_engineReadyEvent);
     g_engineReadyEvent = NULL;
+    return timedOut;
 }

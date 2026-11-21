@@ -9,6 +9,7 @@
 #include "compat_report.h"
 #include "layout_check.h"
 #include "layout_table.generated.h"
+#include "startup_wait.h"
 
 #include "fixtures/layout_table_126119.h"
 #include "fixtures/layout_table_127004.h"
@@ -1084,8 +1085,54 @@ namespace
     }
 }
 
+namespace
+{
+    // ---- The engine-init wait and what the player is told when it runs out ----
+
+    void EngineWaitDeadlineAndWording()
+    {
+        std::printf("The engine-init wait: a true deadline, and the wording when it ran out\n");
+
+        // The deadline is computed once; a message that ends a wait early leaves
+        // only the time that is really left, never a fresh full wait.
+        const uint64_t start = 1'000'000;
+        const uint64_t deadline = start + StartupWait::kEngineTimeoutMs;
+        Check(StartupWait::RemainingMs(start, deadline) == StartupWait::kEngineTimeoutMs, "at the start the whole wait is left");
+        Check(StartupWait::RemainingMs(start + 38'700, deadline) == StartupWait::kEngineTimeoutMs - 38'700,
+            "a message 38.7 s in leaves 81.3 s, not another 120 s");
+        Check(StartupWait::RemainingMs(deadline - 1, deadline) == 1, "one millisecond before the deadline: 1 ms");
+        Check(StartupWait::RemainingMs(deadline, deadline) == 0, "at the deadline: nothing left");
+        Check(StartupWait::RemainingMs(deadline + 5'000, deadline) == 0, "past the deadline: still 0, no wrap-around");
+        Check(StartupWait::kEngineTimeoutMs == 120'000 && StartupWait::TimeoutSeconds() == 120, "the wait is 2 minutes");
+
+        // Only an engine init that was never observed after a wait that ran out is "the game did not
+        // finish starting". The rest keeps the mismatch wording.
+        using StartupWait::ClassifySafeOff;
+        using StartupWait::SafeOffKind;
+        Check(ClassifySafeOff(false, true) == SafeOffKind::CheckNotRun, "never observed, the wait ran out: the game did not finish starting");
+        Check(ClassifySafeOff(false, false) == SafeOffKind::Mismatch, "never observed, no wait (hook failed to install): mismatch wording stays");
+        Check(ClassifySafeOff(true, false) == SafeOffKind::Mismatch, "observed: a check that ran keeps the mismatch wording");
+        Check(ClassifySafeOff(true, true) == SafeOffKind::Mismatch, "observed late: mismatch wording");
+
+        // The words: plain, with the seconds, and none of the mismatch wording.
+        const std::wstring log = StartupWait::NotCheckedLogLine();
+        const std::wstring header = StartupWait::NotCheckedHeader();
+        const std::wstring summary = StartupWait::NotCheckedSummary();
+        const auto has = [](const std::wstring& text, const wchar_t* part) { return text.find(part) != std::wstring::npos; };
+        Check(has(log, L"did not finish starting within 120 seconds") && has(log, L"could not run")
+            && has(log, L"plugins are switched off for this session"), "the log line says the game did not finish starting, with the seconds");
+        Check(has(header, L"did not finish starting within 120 seconds") && has(summary, L"did not finish starting within 120 seconds"),
+            "the dialog says it, with the seconds");
+        Check(has(header, L"message box of its own") && has(header, L"verify the game files in Steam"), "the dialog hints at a stuck game or damaged files");
+        for (const std::wstring* text : { &log, &header, &summary })
+            Check(!has(*text, L"mismatch") && !has(*text, L"Game layout changed") && !has(*text, L"would break your plugins"),
+                "none of the mismatch wording");
+    }
+}
+
 int main()
 {
+    EngineWaitDeadlineAndWording();
     PlainTypesAreToldFromMisses();
     BlueprintFunctionsPendThenResolve();
     SameBuildMatches();
