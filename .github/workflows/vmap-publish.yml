@@ -4,6 +4,12 @@ name: Publish the version-map feed
 # from the feed repo's `vmap-feed` release, checks it with the public keys in
 # version_feed.cpp, and puts it on this repository's Latest release.
 #
+# There are two feeds, one per loader build: version-map-client.v1.txt and
+# version-map-server.v1.txt. Each is its own matrix leg with its own seq chain,
+# so a problem with one does not hold back the other. verify-feed.mjs refuses a
+# file of the other build's flavor. The server leg is optional: until the feed
+# release holds a server file it does nothing and stays green.
+#
 # A feed that fails the check fails the run and is not uploaded. A feed whose
 # seq does not rise above the newest one on a release is valid and is not
 # uploaded, unless Latest carries no feed (see below).
@@ -17,6 +23,8 @@ name: Publish the version-map feed
 # The seq to beat is that of the newest release that carries a feed, read only
 # after that file verifies. With no feed on any release, only a manual run with
 # first_publish set uploads one, so an older signed feed cannot be the first.
+# That holds per feed: first_publish takes effect only for a feed no release
+# carries yet (the first server publish needs one manual run).
 #
 # Slot k1 holds a TEST key and slot k2 the release key. The scheduled run
 # refuses a TEST-key feed; only a manual run with allow_test_key set
@@ -55,19 +63,47 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - asset: version-map-client.v1.txt
+            flavor: client
+            optional: false
+          - asset: version-map-server.v1.txt
+            flavor: server
+            optional: true
     env:
       GH_TOKEN: ${{ github.token }}
       FEED_REPO: ${{ inputs.feed_repo || 'msantoro12/starrupture-ci' }}
       FEED_RELEASE: ${{ inputs.feed_release || 'vmap-feed' }}
-      FEED_ASSET: version-map-client.v1.txt
+      FEED_ASSET: ${{ matrix.asset }}
+      FEED_FLAVOR: ${{ matrix.flavor }}
+      FEED_OPTIONAL: ${{ matrix.optional }}
       ALLOW_TEST_KEY: ${{ inputs.allow_test_key && 'true' || 'false' }}
       FIRST_PUBLISH: ${{ inputs.first_publish && 'true' || 'false' }}
     steps:
+      - name: Skip a feed the feed release does not hold yet
+        id: held
+        run: |
+          set -euo pipefail
+          held=true
+          # Only an optional feed is skipped, and only when the release can be
+          # read and lacks it. Any other failure goes on to the download, which
+          # fails the run.
+          if [ "$FEED_OPTIONAL" = "true" ] && names=$(gh release view "$FEED_RELEASE" --repo "$FEED_REPO" --json assets --jq '.assets[].name') && ! grep -qxF "$FEED_ASSET" <<< "$names"; then
+            echo "Release $FEED_RELEASE in $FEED_REPO holds no $FEED_ASSET yet. Nothing to publish."
+            held=false
+          fi
+          echo "held=$held" >> "$GITHUB_OUTPUT"
+
       - name: Checkout
+        if: steps.held.outputs.held == 'true'
         uses: actions/checkout@v4
 
       - name: Find the Latest release and its seq
         id: latest
+        if: steps.held.outputs.held == 'true'
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/cur" "$RUNNER_TEMP/new"
@@ -79,7 +115,7 @@ jobs:
           last=
           for t in $(gh release list --repo "$GITHUB_REPOSITORY" --limit 50 --json tagName --jq '.[].tagName'); do
             gh release download "$t" --repo "$GITHUB_REPOSITORY" --pattern "$FEED_ASSET" --dir "$RUNNER_TEMP/cur" --clobber 2>/dev/null || continue
-            args=(--source StarRupture-ModLoader-Core/memory_scanner/version_feed.cpp)
+            args=(--source StarRupture-ModLoader-Core/memory_scanner/version_feed.cpp --flavor "$FEED_FLAVOR")
             [ "$ALLOW_TEST_KEY" = "true" ] || args+=(--refuse-test-key)
             last=$(node .github/vmap/verify-feed.mjs "$RUNNER_TEMP/cur/$FEED_ASSET" "${args[@]}") || { echo "::error::The feed on release $t does not verify."; exit 1; }
             echo "The newest feed is on release $t, seq $last."
@@ -105,7 +141,7 @@ jobs:
         if: steps.latest.outputs.tag != ''
         run: |
           set +e
-          args=(--source StarRupture-ModLoader-Core/memory_scanner/version_feed.cpp --last-seq "${{ steps.latest.outputs.last }}")
+          args=(--source StarRupture-ModLoader-Core/memory_scanner/version_feed.cpp --flavor "$FEED_FLAVOR" --last-seq "${{ steps.latest.outputs.last }}")
           [ "$ALLOW_TEST_KEY" = "true" ] || args+=(--refuse-test-key)
           node .github/vmap/verify-feed.mjs "$RUNNER_TEMP/new/$FEED_ASSET" "${args[@]}"
           code=$?
