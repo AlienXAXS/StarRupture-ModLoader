@@ -559,6 +559,65 @@ namespace
         Check(w.First(&a, std::string("x") + RS + "y"), "any name works as a key");
         Check(!w.First(&a, std::string("x") + RS + "y"), "and is remembered");
     }
+
+    void TestMirror()
+    {
+        std::printf("Mirror\n");
+        const std::vector<Entry> server = {
+            Declared("Same", "1.0", 5),
+            Declared("Id", "2.0", 7),
+            Declared("SrvList", "3.0", 9, "2.5;2.6"),
+            Undeclared("CliList", "4.0"),
+            Undeclared("Bad", "5.0"),
+            Declared("OnlyServer", "1.0", 1),
+            Undeclared("Plain", "6.0"),
+        };
+        const std::vector<Entry> local = {
+            Declared("Same", "1.0", 5),
+            Declared("Id", "2.1", 7),
+            Declared("SrvList", "2.5", 8),
+            Declared("CliList", "4.1", 3, "4.0"),
+            Declared("Bad", "5.1", 1, "4.0"),
+            Undeclared("OnlyLocal", "1.0"),
+            Undeclared("Plain", "6.1"),
+        };
+        const std::vector<MirrorFinding> f = MirrorCheck(local, server);
+        auto find = [&](const char* n) -> const MirrorFinding* {
+            for (const MirrorFinding& m : f)
+                if (m.local.name == n)
+                    return &m;
+            return nullptr;
+        };
+
+        Check(f.size() == 5, "only plugins on both sides with different versions are findings");
+        Check(!find("Same"), "equal version strings are silent");
+        Check(!find("OnlyServer") && !find("OnlyLocal"), "a name on one side only is silent");
+        Check(find("Id") && find("Id")->state == PairState::Ready && find("Id")->why == Verdict::WireIdEqual,
+              "equal wire ids are accepted");
+        Check(find("SrvList") && find("SrvList")->state == PairState::Ready
+                  && find("SrvList")->why == Verdict::ServerListsClient,
+              "the server lists the client's version");
+        Check(find("CliList") && find("CliList")->state == PairState::Ready
+                  && find("CliList")->why == Verdict::ClientListsServer,
+              "the client lists the server's version");
+        Check(find("Bad") && find("Bad")->state == PairState::Incompatible && find("Bad")->why == Verdict::Incompatible,
+              "different wire ids and no list is blocked");
+        Check(find("Plain") && find("Plain")->state == PairState::Incompatible,
+              "undeclared on both sides with different versions is blocked");
+        Check(find("Bad") && find("Bad")->server.version == "5.0" && find("Bad")->local.version == "5.1",
+              "a finding carries both versions");
+        Check(MirrorCheck(local, {}).empty() && MirrorCheck({}, server).empty(), "an empty side has no findings");
+
+        const Decl a = MakeDecl(7, "");
+        const Decl b = MakeDecl(8, "");
+        Check(WireIdsNote(a, b) == " (wire id 7 on the server, 8 on the client)", "ids note names both ids");
+        Check(WireIdsNote(Decl{}, b).empty() && WireIdsNote(a, Decl{}).empty(), "ids note is empty unless both declared");
+
+        const std::vector<Entry> mine = { Undeclared("B", "2"), Undeclared("A", "1.0"), Undeclared("C", "3") };
+        Check(DescribePlugins({ "B", "A", "B", "Ghost" }, mine) == "A 1.0, B 2",
+              "plugin list is sorted, deduplicated and skips unknown names");
+        Check(DescribePlugins({}, mine).empty() && DescribePlugins({ "Ghost" }, mine).empty(), "nothing to list gives empty text");
+    }
 }
 
 int main()
@@ -569,6 +628,7 @@ int main()
     TestAckTail();
     TestClassify();
     TestWarnOnce();
+    TestMirror();
 
     if (g_failures)
     {

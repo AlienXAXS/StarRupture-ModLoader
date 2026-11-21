@@ -290,6 +290,63 @@ namespace WireCompat
         return IsCompatible(v) ? PairState::Ready : PairState::Incompatible;
     }
 
+    // " (wire id N on the server, M on the client)" for a warning when both sides
+    // declared, empty otherwise.
+    inline std::string WireIdsNote(const Decl& server, const Decl& client)
+    {
+        if (!server.declared || !client.declared)
+            return std::string();
+        return " (wire id " + WireIdText(server) + " on the server, " + WireIdText(client) + " on the client)";
+    }
+
+    // A local plugin that also runs on the server with a different version
+    // string, and what the shared rule says about the pair.
+    struct MirrorFinding
+    {
+        Entry local;
+        Entry server;
+        PairState state = PairState::Ready;
+        Verdict why = Verdict::SameVersion;
+    };
+
+    // The client's view of the server's table: one finding for every local
+    // plugin the server also lists whose version string differs. Plugins with
+    // equal versions, or that the server does not list, are not findings.
+    inline std::vector<MirrorFinding> MirrorCheck(const std::vector<Entry>& local, const std::vector<Entry>& serverTable)
+    {
+        std::vector<MirrorFinding> out;
+        for (const Entry& l : local)
+        {
+            const Entry* s = FindEntry(serverTable, l.name);
+            if (!s || s->version == l.version)
+                continue;
+            MirrorFinding f;
+            f.local = l;
+            f.server = *s;
+            f.state = ClassifyPair(s, l, false, &f.why);
+            out.push_back(std::move(f));
+        }
+        return out;
+    }
+
+    // "Name 1.2.3, Other 4.5" for the local plugins named in names (sorted, each
+    // once). A name with no local entry is left out.
+    inline std::string DescribePlugins(const std::vector<std::string>& names, const std::vector<Entry>& local)
+    {
+        std::set<std::string> sorted(names.begin(), names.end());
+        std::string out;
+        for (const std::string& n : sorted)
+        {
+            const Entry* e = FindEntry(local, n);
+            if (!e)
+                continue;
+            if (!out.empty())
+                out += ", ";
+            out += e->name + " " + e->version;
+        }
+        return out;
+    }
+
     // The wire table: records ending in kRecordSep, fields split on kFieldSep.
     //   $wires US 1 RS
     //   name US version US wireId-or-empty US accept RS   (one per plugin)

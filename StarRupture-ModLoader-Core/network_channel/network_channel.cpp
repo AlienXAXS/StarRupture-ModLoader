@@ -534,9 +534,15 @@ namespace
         std::vector<WireCompat::Entry> entries;
     };
     static ServerWireTable      g_serverWires;
-    // Keyed by (connection, "$wires"): one note per connection whose ack tail
-    // could not be read.
+    // Keyed by (connection, "$wires") and (connection, "$old"): one note per
+    // connection whose ack tail could not be read, and one for a server that
+    // sends no table. A plugin name never starts with '$'.
     static WireCompat::WarnOnce g_serverTailWarned;
+    // Keyed by (connection, plugin): the client's own WARN for a plugin whose
+    // version differs from the server's and is not known to match, and its INFO
+    // when it is accepted anyway.
+    static WireCompat::WarnOnce g_clientBlockedWarned;
+    static WireCompat::WarnOnce g_clientAcceptedNoted;
 #endif
 
     // Says what CheckClientPair found, when there is something to say: one INFO
@@ -574,10 +580,7 @@ namespace
         }
         if (!first) return;
 
-        std::string ids;
-        if (pc.serverDecl.declared && pc.clientDecl.declared)
-            ids = " (wire id " + WireCompat::WireIdText(pc.serverDecl) + " on the server, "
-                + WireCompat::WireIdText(pc.clientDecl) + " on the client)";
+        const std::string ids = WireCompat::WireIdsNote(pc.serverDecl, pc.clientDecl);
         ModLoaderLogger::LogWarn(
             L"[NetworkChannel] Plugin '%S': client %p runs version '%S', the server runs '%S'%S. "
             L"Wire format not known to match, plugin data will not be exchanged.",
@@ -1150,6 +1153,8 @@ namespace
             g_wiresGarbageWarned.Forget(conn);
 #ifdef MODLOADER_CLIENT_BUILD
             g_serverTailWarned.Forget(conn);
+            g_clientBlockedWarned.Forget(conn);
+            g_clientAcceptedNoted.Forget(conn);
             if (g_serverWires.conn == conn)
                 g_serverWires = ServerWireTable{};
 #endif
@@ -2211,11 +2216,12 @@ namespace
     }
 
     // Reads what follows the ack's first record and keeps the server's wire
-    // table for this connection. True when the ack carried a readable table,
-    // which is the proof that the server's loader understands wire declarations.
-    // An ack with no tail is an old server; one with an unreadable tail is
-    // treated the same way, with one warning per connection.
-    static bool StoreServerWireTable(const char* data, size_t len)
+    // table for this connection. kindOut says what the tail was; a table is the
+    // proof that the server's loader understands wire declarations. An ack with
+    // no tail is an old server; one with an unreadable tail is treated the same
+    // way, with one warning per connection. False when there is no connection
+    // to attach the ack to.
+    static bool StoreServerWireTable(const char* data, size_t len, WireCompat::AckTailKind* kindOut)
     {
         // An ack that outlived its connection (world travel, disconnect) has
         // nothing to attach a table to.
@@ -2224,6 +2230,7 @@ namespace
 
         WireCompat::DecodedTable table;
         const WireCompat::AckTailKind kind = WireCompat::ReadAckTail(data, len, &table);
+        *kindOut = kind;
 
         bool warn = false;
         {
@@ -2238,7 +2245,78 @@ namespace
             ModLoaderLogger::LogWarn(
                 L"[NetworkChannel] Ignoring a malformed plugin wire table from the server; "
                 L"its plugins keep the exact-version rule.");
-        return kind == WireCompat::AckTailKind::Table;
+        return true;
+    }
+
+    // What the client says about the server's plugins once its ack is read.
+    // With the server's table: for every plugin both sides run in different
+    // versions, one WARN when the pair is not known to share a wire format and
+    // one INFO when it is accepted (once per plugin and connection; equal
+    // versions are silent). Without one (an old server, or a table that could
+    // not be read): one INFO per connection naming the plugins here that use the
+    // network channel, since for them plugin data flows only on an exact match.
+    static void ReportServerWires(bool hasTable)
+    {
+        void* conn = g_manifestSentTo;
+        if (!conn) return;
+
+        // Before any lock of ours: this takes the plugin lock.
+        const std::vector<WireCompat::Entry> local = PluginManager::GetWireEntries();
+
+        if (!hasTable)
+        {
+            std::vector<std::string> names;
+            {
+                std::lock_guard<std::mutex> lk(g_mutex);
+                for (const auto& kv : g_handlers)
+                    names.push_back(kv.first.substr(0, kv.first.find('\x01')));
+            }
+            const std::string list = WireCompat::DescribePlugins(names, local);
+            if (list.empty()) return;
+
+            bool first;
+            {
+                std::lock_guard<std::mutex> lk(g_wireLogMutex);
+                first = g_serverTailWarned.First(conn, "$old");
+            }
+            if (first)
+                ModLoaderLogger::LogInfo(
+                    L"[NetworkChannel] The server's mod loader sends no plugin wire table, so plugin data "
+                    L"flows only for plugins whose version matches the server's exactly. Plugins here "
+                    L"using the network channel: %S.", list.c_str());
+            return;
+        }
+
+        std::vector<WireCompat::Entry> server;
+        {
+            std::lock_guard<std::mutex> lk(g_wireLogMutex);
+            if (g_serverWires.conn != conn || !g_serverWires.present) return;
+            server = g_serverWires.entries;
+        }
+
+        for (const WireCompat::MirrorFinding& f : WireCompat::MirrorCheck(local, server))
+        {
+            const bool ready = (f.state == WireCompat::PairState::Ready);
+            bool first;
+            {
+                std::lock_guard<std::mutex> lk(g_wireLogMutex);
+                first = (ready ? g_clientAcceptedNoted : g_clientBlockedWarned).First(conn, f.local.name);
+            }
+            if (!first) continue;
+
+            if (ready)
+                ModLoaderLogger::LogInfo(
+                    L"[NetworkChannel] Plugin '%S': this client runs version '%S', the server runs '%S'. "
+                    L"Plugin data is exchanged because they are compatible (%S).",
+                    f.local.name.c_str(), f.local.version.c_str(), f.server.version.c_str(),
+                    WireCompat::Reason(f.why));
+            else
+                ModLoaderLogger::LogWarn(
+                    L"[NetworkChannel] Plugin '%S': this client runs version '%S', the server runs '%S'%S. "
+                    L"Wire format not known to match, plugin data will not be exchanged.",
+                    f.local.name.c_str(), f.local.version.c_str(), f.server.version.c_str(),
+                    WireCompat::WireIdsNote(f.server.decl, f.local.decl).c_str());
+        }
     }
 
     // The authority answered our manifest. Payload is buildTag US interfaceVersion RS.
@@ -2263,7 +2341,10 @@ namespace
         g_manifestAcked  = true;
 
         // Our declarations go back only to a server that proved it reads them.
-        if (StoreServerWireTable(reinterpret_cast<const char*>(data), len))
+        WireCompat::AckTailKind tail = WireCompat::AckTailKind::None;
+        const bool tailStored = StoreServerWireTable(reinterpret_cast<const char*>(data), len, &tail);
+        const bool hasTable = tailStored && tail == WireCompat::AckTailKind::Table;
+        if (hasTable)
             SendWiresToServer();
 
         if (first)
@@ -2275,6 +2356,11 @@ namespace
             ModLoaderLogger::LogDebug(
                 L"[NetworkChannel] Duplicate manifest acknowledgement from server (build '%S')",
                 tag.c_str());
+
+        // After the acknowledgement line, so the notes about plugin versions
+        // read as what they are: details of the connection just reported.
+        if (tailStored)
+            ReportServerWires(hasTable);
 
         // The ack, not the greeting, is what plugins are told about: it is the
         // first moment the authority is known to have our plugin list, and
@@ -2818,6 +2904,8 @@ static void OnWorldEndPlayForgetConns(SDK::UWorld* /*world*/, const char* /*worl
         g_wiresGarbageWarned.Clear();
 #ifdef MODLOADER_CLIENT_BUILD
         g_serverTailWarned.Clear();
+        g_clientBlockedWarned.Clear();
+        g_clientAcceptedNoted.Clear();
         g_serverWires = ServerWireTable{};
 #endif
     }
@@ -3182,6 +3270,8 @@ void NetworkChannel::Shutdown()
         g_wiresGarbageWarned.Clear();
 #ifdef MODLOADER_CLIENT_BUILD
         g_serverTailWarned.Clear();
+        g_clientBlockedWarned.Clear();
+        g_clientAcceptedNoted.Clear();
         g_serverWires = ServerWireTable{};
 #endif
     }
