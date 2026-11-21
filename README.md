@@ -446,6 +446,8 @@ already connected that have not been reported yet.
 
 `GetClientFeatures(playerController, buf, size)` returns what one player's loader reported as text (`loader=<build tag> interface=<version>`, then one `Plugin.feature=on|off` line each) and its full length, or -1 when there is none; a null `buf` with `size` 0 measures.
 
+`AskAdmin(playerController)` opens a prompt on that player's screen asking for an admin code; it returns false when the player has no loader report (an older loader, or no mod loader), has no connection, or this is not the server. `AdminMessage(playerController, text, close)` shows one line (up to 200 characters) in the open prompt; with `close` true the prompt shows the line and closes. `RegisterOnAdminAnswer` calls your function from the tick with the player, `notMe` (the player chose "not me") and the code they typed. The loader does not judge the code and never logs it, only answers from a player that was asked are passed on, and at most one per half second per player. Checking the code and what to do next is up to the plugin.
+
 ---
 
 ## The Server Console (dedicated server)
