@@ -1114,4 +1114,190 @@ namespace HostRulesWire
         }
         return static_cast<int>(text.size());
     }
+
+    // ------------------------------------------------- $ML:adminq, $ML:adminr
+
+    // The admin prompt. A server plugin asks a joining player for an admin code
+    // ($ML:adminq, server to client); the client answers with the code or with
+    // "not me" ($ML:adminr, client to server). Both are one record:
+    // "<kind> US <text> RS".
+    constexpr const char* kTagAdminQ = "adminq";
+    constexpr const char* kTagAdminR = "adminr";
+
+    constexpr const char* kAdminKindAsk = "ask";     // open the prompt
+    constexpr const char* kAdminKindInfo = "info";   // a line for the open prompt, it stays open
+    constexpr const char* kAdminKindClose = "close"; // a last line, then the prompt closes
+    constexpr const char* kAdminKindCode = "code";   // the player typed a code
+    constexpr const char* kAdminKindNotMe = "notme"; // the player says they are not an admin
+
+    constexpr size_t kMaxAdminQText = kMaxMessageLen; // a line the server shows
+    constexpr size_t kMaxAdminRCode = 64;             // a code the player typed
+    // Longest valid payloads ("close" + US + text + RS, "notme" + US + RS). A
+    // longer payload is refused before it is cut into records.
+    constexpr size_t kMaxAdminQPayload = 5 + 1 + kMaxAdminQText + 1;
+    constexpr size_t kMaxAdminRPayload = 5 + 1 + kMaxAdminRCode + 1;
+
+    // The least time between two accepted answers from one connection.
+    constexpr uint64_t kAdminAnswerMinGapMs = 500;
+
+    enum class AdminQKind { Ask, Info, Close };
+    enum class AdminRKind { Code, NotMe };
+
+    struct AdminQuestion
+    {
+        AdminQKind kind = AdminQKind::Ask;
+        std::string text; // at most kMaxAdminQText bytes, may be empty
+    };
+
+    struct AdminAnswer
+    {
+        AdminRKind kind = AdminRKind::Code;
+        std::string code; // 1 to kMaxAdminRCode bytes for Code, empty for NotMe
+    };
+
+    namespace detail
+    {
+        inline const char* AdminQKindName(AdminQKind k)
+        {
+            switch (k)
+            {
+            case AdminQKind::Ask: return kAdminKindAsk;
+            case AdminQKind::Info: return kAdminKindInfo;
+            case AdminQKind::Close: return kAdminKindClose;
+            }
+            return kAdminKindAsk;
+        }
+
+        // The shape shared by both: one record of exactly two fields, within
+        // maxPayload bytes. Status::Ok leaves the fields in *kind and *text.
+        inline Status SplitAdmin(const char* data, size_t len, size_t maxPayload,
+                                 std::string_view* kind, std::string_view* text)
+        {
+            if (!data || len == 0)
+                return Status::Empty;
+            if (len > maxPayload)
+                return Status::TooLarge;
+            std::vector<Fields> recs;
+            const Status st = SplitRecords(data, len, &recs);
+            if (st != Status::Ok)
+                return st;
+            if (recs.size() != 1 || recs[0].size() != 2)
+                return Status::BadRecord;
+            *kind = recs[0][0];
+            *text = recs[0][1];
+            return Status::Ok;
+        }
+    }
+
+    // The payload for $ML:adminq. The text is made safe (controls to spaces,
+    // trimmed, cut to kMaxAdminQText bytes on a UTF-8 boundary).
+    inline std::string EncodeAdminQuestion(AdminQKind kind, const std::string& text)
+    {
+        std::string out = detail::AdminQKindName(kind);
+        out += kFieldSep;
+        out += SanitizeText(text, kMaxAdminQText);
+        out += kRecordSep;
+        return out;
+    }
+
+    // Reads a $ML:adminq payload. Strict: a wrong shape, an unknown kind
+    // (BadRecord), text over kMaxAdminQText (FieldTooLong) or a control
+    // character (ControlChar) is an error and *out stays as it was.
+    inline Status DecodeAdminQuestion(const char* data, size_t len, AdminQuestion* out)
+    {
+        std::string_view kind, text;
+        const Status st = detail::SplitAdmin(data, len, kMaxAdminQPayload, &kind, &text);
+        if (st != Status::Ok)
+            return st;
+        AdminQuestion q;
+        if (kind == kAdminKindAsk)
+            q.kind = AdminQKind::Ask;
+        else if (kind == kAdminKindInfo)
+            q.kind = AdminQKind::Info;
+        else if (kind == kAdminKindClose)
+            q.kind = AdminQKind::Close;
+        else
+            return Status::BadRecord;
+        if (text.size() > kMaxAdminQText)
+            return Status::FieldTooLong;
+        q.text.assign(text);
+        *out = std::move(q);
+        return Status::Ok;
+    }
+
+    // The payload for $ML:adminr. A code is made safe like a message and cut to
+    // kMaxAdminRCode bytes; a code that is empty after that cannot travel and
+    // gives "" (send nothing). NotMe carries no code.
+    inline std::string EncodeAdminAnswer(AdminRKind kind, const std::string& code)
+    {
+        std::string out;
+        if (kind == AdminRKind::Code)
+        {
+            const std::string safe = SanitizeText(code, kMaxAdminRCode);
+            if (safe.empty())
+                return out;
+            out = kAdminKindCode;
+            out += kFieldSep;
+            out += safe;
+        }
+        else
+        {
+            out = kAdminKindNotMe;
+            out += kFieldSep;
+        }
+        out += kRecordSep;
+        return out;
+    }
+
+    // Reads a $ML:adminr payload. Strict like DecodeAdminQuestion; also a code
+    // answer with no code, or a not-me answer with one, is BadRecord.
+    inline Status DecodeAdminAnswer(const char* data, size_t len, AdminAnswer* out)
+    {
+        std::string_view kind, text;
+        const Status st = detail::SplitAdmin(data, len, kMaxAdminRPayload, &kind, &text);
+        if (st != Status::Ok)
+            return st;
+        AdminAnswer a;
+        if (kind == kAdminKindCode)
+        {
+            a.kind = AdminRKind::Code;
+            if (text.empty())
+                return Status::BadRecord;
+            if (text.size() > kMaxAdminRCode)
+                return Status::FieldTooLong;
+            a.code.assign(text);
+        }
+        else if (kind == kAdminKindNotMe)
+        {
+            a.kind = AdminRKind::NotMe;
+            if (!text.empty())
+                return Status::BadRecord;
+        }
+        else
+            return Status::BadRecord;
+        *out = std::move(a);
+        return Status::Ok;
+    }
+
+    // Whether the server takes an admin answer from one connection.
+    enum class AdminAnswerDecision
+    {
+        Accept,      // the connection was asked and is not over the rate limit
+        NotAsked,    // no prompt is open for it: ignore the answer
+        RateLimited, // under minGapMs since its last accepted answer: drop it
+    };
+
+    // `asked`: a prompt is open for this connection. `hasLast` and
+    // `lastAnswerMs`: the time of its last accepted answer, if any. The caller
+    // records nowMs as the new last answer only on Accept. A clock that reads
+    // earlier than lastAnswerMs counts as inside the gap.
+    inline AdminAnswerDecision DecideAdminAnswer(bool asked, uint64_t nowMs, bool hasLast, uint64_t lastAnswerMs,
+                                                 uint64_t minGapMs = kAdminAnswerMinGapMs)
+    {
+        if (!asked)
+            return AdminAnswerDecision::NotAsked;
+        if (hasLast && (nowMs < lastAnswerMs || nowMs - lastAnswerMs < minGapMs))
+            return AdminAnswerDecision::RateLimited;
+        return AdminAnswerDecision::Accept;
+    }
 }

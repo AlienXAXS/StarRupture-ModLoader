@@ -2996,6 +2996,168 @@ int main()
 		Check(CopyTextCut(two, one, 1) == static_cast<int>(two.size()) && one[0] == '\0', "client features copy: a one-byte buffer holds the NUL only");
 	}
 
+	// Admin prompt codec (host_rules_wire.h): $ML:adminq (server to client) and $ML:adminr (client to server).
+	// These checks are in the Client-only test file; the Server exe builds server_map_tests.cpp and keeps its 179.
+	{
+		using namespace HostRulesWire;
+		const std::string US(1, kFieldSep);
+		const std::string RS(1, kRecordSep);
+		auto dq = [](const std::string& p, AdminQuestion* q) { return DecodeAdminQuestion(p.data(), p.size(), q); };
+		auto da = [](const std::string& p, AdminAnswer* a) { return DecodeAdminAnswer(p.data(), p.size(), a); };
+
+		Check(std::string(kTagAdminQ) == "adminq" && std::string(kTagAdminR) == "adminr", "admin tags: adminq and adminr");
+
+		// $ML:adminq: exact bytes and a round trip for each kind.
+		Check(EncodeAdminQuestion(AdminQKind::Ask, "") == "ask" + US + RS, "adminq encode: ask with no text is 'ask' US RS");
+		Check(EncodeAdminQuestion(AdminQKind::Info, "Wrong code, 4 tries left") == "info" + US + "Wrong code, 4 tries left" + RS,
+			"adminq encode: info carries its text");
+		Check(EncodeAdminQuestion(AdminQKind::Close, "Welcome, admin") == "close" + US + "Welcome, admin" + RS, "adminq encode: close carries its text");
+		{
+			const AdminQKind kinds[] = { AdminQKind::Ask, AdminQKind::Info, AdminQKind::Close };
+			for (AdminQKind k : kinds)
+			{
+				AdminQuestion q;
+				q.kind = (k == AdminQKind::Ask) ? AdminQKind::Close : AdminQKind::Ask; // not the kind under test
+				q.text = "stale";
+				const std::string txt = (k == AdminQKind::Ask) ? "" : "Line for the player";
+				const std::string wire = EncodeAdminQuestion(k, txt);
+				Check(dq(wire, &q) == Status::Ok && q.kind == k && q.text == txt, "adminq round trip: kind and text survive");
+			}
+		}
+		{
+			// A multi-byte text round trips as it is.
+			AdminQuestion q;
+			const std::string utf = "Caf\xC3\xA9 code?";
+			Check(dq(EncodeAdminQuestion(AdminQKind::Ask, utf), &q) == Status::Ok && q.text == utf, "adminq round trip: UTF-8 text is kept");
+		}
+
+		// adminq text cap at the boundary: 200 travels whole, 201 is cut by the encoder and refused by the decoder.
+		{
+			const std::string t200(200, 'a');
+			const std::string t201(201, 'a');
+			AdminQuestion q;
+			Check(dq(EncodeAdminQuestion(AdminQKind::Info, t200), &q) == Status::Ok && q.text == t200, "adminq cap: 200 bytes round trip whole");
+			Check(dq(EncodeAdminQuestion(AdminQKind::Info, t201), &q) == Status::Ok && q.text == t200, "adminq cap: the encoder cuts 201 bytes to 200");
+			Check(dq("info" + US + t200 + RS, &q) == Status::Ok, "adminq decode: 200 bytes of text are accepted");
+			Check(dq("info" + US + t201 + RS, &q) == Status::FieldTooLong, "adminq decode: 201 bytes of text are too long");
+			Check(dq("close" + US + t200 + RS, &q) == Status::Ok && q.kind == AdminQKind::Close, "adminq decode: the longest kind with 200 bytes is accepted");
+			Check(dq("close" + US + t201 + RS, &q) == Status::TooLarge, "adminq decode: the longest kind with 201 bytes is over the payload maximum");
+			// A cut never splits a UTF-8 character: 199 ASCII bytes then a 2-byte character is cut back to 199.
+			const std::string split = std::string(199, 'b') + "\xC3\xA9";
+			Check(dq(EncodeAdminQuestion(AdminQKind::Ask, split), &q) == Status::Ok && q.text == std::string(199, 'b'),
+				"adminq cap: a cut does not split a UTF-8 character");
+		}
+
+		// adminq decode: every non-Ok status, and *out is left as it was.
+		{
+			AdminQuestion keep;
+			keep.kind = AdminQKind::Info;
+			keep.text = "keep";
+			Check(DecodeAdminQuestion(nullptr, 5, &keep) == Status::Empty, "adminq decode: a null pointer is empty");
+			Check(DecodeAdminQuestion("x", 0, &keep) == Status::Empty, "adminq decode: zero bytes are empty");
+			Check(dq(std::string(300, 'a'), &keep) == Status::TooLarge, "adminq decode: a payload over the kind-plus-text maximum is too large");
+			Check(dq("ask" + US, &keep) == Status::Truncated, "adminq decode: no record separator is truncated");
+			Check(dq("ask" + US + "hello", &keep) == Status::Truncated, "adminq decode: cut text is truncated");
+			Check(dq("ask", &keep) == Status::Truncated, "adminq decode: a bare kind with no separators is truncated");
+			Check(dq("ask" + RS, &keep) == Status::BadRecord, "adminq decode: one field is a bad record");
+			Check(dq("ask" + US + "a" + US + "b" + RS, &keep) == Status::BadRecord, "adminq decode: three fields are a bad record");
+			Check(dq("ask" + US + RS + "ask" + US + RS, &keep) == Status::BadRecord, "adminq decode: two records are a bad record");
+			Check(dq("nope" + US + "x" + RS, &keep) == Status::BadRecord, "adminq decode: an unknown kind is a bad record");
+			Check(dq("ASK" + US + RS, &keep) == Status::BadRecord, "adminq decode: kinds are lower case only");
+			Check(dq("code" + US + "x" + RS, &keep) == Status::BadRecord, "adminq decode: an adminr kind is not an adminq kind");
+			Check(dq(US + "x" + RS, &keep) == Status::BadRecord, "adminq decode: an empty kind is a bad record");
+			Check(dq("info" + US + "a\x01" "b" + RS, &keep) == Status::ControlChar, "adminq decode: a control character in the text is refused");
+			Check(dq("info" + US + "a\x7F" "b" + RS, &keep) == Status::ControlChar, "adminq decode: DEL in the text is refused");
+			Check(dq("info" + US + "a\nb" + RS, &keep) == Status::ControlChar, "adminq decode: a newline in the text is refused");
+			Check(dq("in\x02" "fo" + US + "x" + RS, &keep) == Status::ControlChar, "adminq decode: a control character in the kind is refused");
+			Check(keep.kind == AdminQKind::Info && keep.text == "keep", "adminq decode: *out is untouched after every error");
+
+			// A control character in the encoder's input is made a space, not sent.
+			AdminQuestion q;
+			Check(dq(EncodeAdminQuestion(AdminQKind::Info, "a\x01\x1F" "b\r\nc"), &q) == Status::Ok && q.text == "a  b  c",
+				"adminq encode: control characters (separators too) become spaces");
+			Check(dq(EncodeAdminQuestion(AdminQKind::Info, "  padded  "), &q) == Status::Ok && q.text == "padded", "adminq encode: the text is trimmed");
+			// Only the given length is read: the bytes after it are never touched.
+			const std::string two = "ask" + US + RS + "junk";
+			Check(DecodeAdminQuestion(two.data(), 3 + 1 + 1, &q) == Status::Ok && q.kind == AdminQKind::Ask,
+				"adminq decode: only the given length is read");
+		}
+
+		// $ML:adminr: exact bytes and a round trip for each kind.
+		Check(EncodeAdminAnswer(AdminRKind::Code, "S3cret") == "code" + US + "S3cret" + RS, "adminr encode: code carries the code");
+		Check(EncodeAdminAnswer(AdminRKind::NotMe, "ignored") == "notme" + US + RS, "adminr encode: notme carries no code, whatever was passed");
+		Check(EncodeAdminAnswer(AdminRKind::Code, "").empty(), "adminr encode: an empty code gives no payload");
+		Check(EncodeAdminAnswer(AdminRKind::Code, " \x01 \t ").empty(), "adminr encode: a code of only controls and spaces gives no payload");
+		{
+			AdminAnswer a;
+			a.kind = AdminRKind::NotMe;
+			Check(da(EncodeAdminAnswer(AdminRKind::Code, "hunter2 with spaces"), &a) == Status::Ok && a.kind == AdminRKind::Code &&
+				a.code == "hunter2 with spaces", "adminr round trip: a code keeps its inner spaces");
+			a.kind = AdminRKind::Code;
+			a.code = "stale";
+			Check(da(EncodeAdminAnswer(AdminRKind::NotMe, ""), &a) == Status::Ok && a.kind == AdminRKind::NotMe && a.code.empty(),
+				"adminr round trip: notme comes back with no code");
+			Check(da(EncodeAdminAnswer(AdminRKind::Code, "a\x01\x1F" "b"), &a) == Status::Ok && a.code == "a  b",
+				"adminr encode: control characters (separators too) in a code become spaces");
+		}
+
+		// adminr code cap at the boundary: 64 travels whole, 65 is cut by the encoder and refused by the decoder.
+		{
+			const std::string c64(64, 'k');
+			const std::string c65(65, 'k');
+			AdminAnswer a;
+			Check(da(EncodeAdminAnswer(AdminRKind::Code, c64), &a) == Status::Ok && a.code == c64, "adminr cap: 64 bytes round trip whole");
+			Check(da(EncodeAdminAnswer(AdminRKind::Code, c65), &a) == Status::Ok && a.code == c64, "adminr cap: the encoder cuts 65 bytes to 64");
+			Check(da("code" + US + c64 + RS, &a) == Status::Ok, "adminr decode: 64 bytes of code are accepted");
+			Check(da("code" + US + c65 + RS, &a) == Status::FieldTooLong, "adminr decode: 65 bytes of code are too long");
+			Check(da("code" + US + std::string(200, 'k') + RS, &a) == Status::TooLarge, "adminr decode: a payload over the maximum is too large");
+		}
+
+		// adminr decode: every non-Ok status, and *out is left as it was.
+		{
+			AdminAnswer keep;
+			keep.kind = AdminRKind::Code;
+			keep.code = "keep";
+			Check(DecodeAdminAnswer(nullptr, 5, &keep) == Status::Empty, "adminr decode: a null pointer is empty");
+			Check(DecodeAdminAnswer("x", 0, &keep) == Status::Empty, "adminr decode: zero bytes are empty");
+			Check(da("code" + US + "abc", &keep) == Status::Truncated, "adminr decode: no record separator is truncated");
+			Check(da("notme" + US, &keep) == Status::Truncated, "adminr decode: notme with no record separator is truncated");
+			Check(da("code" + RS, &keep) == Status::BadRecord, "adminr decode: one field is a bad record");
+			Check(da("code" + US + "a" + US + "b" + RS, &keep) == Status::BadRecord, "adminr decode: three fields are a bad record");
+			Check(da("code" + US + "a" + RS + "code" + US + "b" + RS, &keep) == Status::BadRecord, "adminr decode: two records are a bad record");
+			Check(da("code" + US + RS, &keep) == Status::BadRecord, "adminr decode: a code answer with no code is a bad record");
+			Check(da("notme" + US + "x" + RS, &keep) == Status::BadRecord, "adminr decode: a notme answer with a code is a bad record");
+			Check(da("ask" + US + RS, &keep) == Status::BadRecord, "adminr decode: an adminq kind is not an adminr kind");
+			Check(da("other" + US + "x" + RS, &keep) == Status::BadRecord, "adminr decode: an unknown kind is a bad record");
+			Check(da("code" + US + "a\x01" "b" + RS, &keep) == Status::ControlChar, "adminr decode: a control character in the code is refused");
+			Check(da("code" + US + "a\x7F" "b" + RS, &keep) == Status::ControlChar, "adminr decode: DEL in the code is refused");
+			Check(da("notme" + US + "\t" + RS, &keep) == Status::ControlChar, "adminr decode: a control character in a notme text is refused");
+			Check(keep.kind == AdminRKind::Code && keep.code == "keep", "adminr decode: *out is untouched after every error");
+			const std::string more = "notme" + US + RS + "junk";
+			AdminAnswer a;
+			Check(DecodeAdminAnswer(more.data(), 5 + 1 + 1, &a) == Status::Ok && a.kind == AdminRKind::NotMe,
+				"adminr decode: only the given length is read");
+		}
+
+		// The answer decision: who may answer, and the 500 ms gap.
+		{
+			Check(kAdminAnswerMinGapMs == 500, "admin answer: the gap is 500 ms");
+			Check(DecideAdminAnswer(false, 10000, false, 0) == AdminAnswerDecision::NotAsked, "admin answer: never asked is not asked");
+			Check(DecideAdminAnswer(false, 10000, true, 9999) == AdminAnswerDecision::NotAsked, "admin answer: not asked wins over the rate limit");
+			Check(DecideAdminAnswer(true, 10000, false, 0) == AdminAnswerDecision::Accept, "admin answer: asked, no earlier answer, is accepted");
+			Check(DecideAdminAnswer(true, 0, false, 0) == AdminAnswerDecision::Accept, "admin answer: a first answer at time 0 is accepted");
+			Check(DecideAdminAnswer(true, 10000, true, 10000) == AdminAnswerDecision::RateLimited, "admin answer: the same millisecond is limited");
+			Check(DecideAdminAnswer(true, 10499, true, 10000) == AdminAnswerDecision::RateLimited, "admin answer: 499 ms after the last is limited");
+			Check(DecideAdminAnswer(true, 10500, true, 10000) == AdminAnswerDecision::Accept, "admin answer: 500 ms after the last is accepted");
+			Check(DecideAdminAnswer(true, 10501, true, 10000) == AdminAnswerDecision::Accept, "admin answer: 501 ms after the last is accepted");
+			Check(DecideAdminAnswer(true, 9000, true, 10000) == AdminAnswerDecision::RateLimited, "admin answer: a clock before the last answer is limited");
+			Check(DecideAdminAnswer(true, 10000, true, 0) == AdminAnswerDecision::Accept, "admin answer: a last answer at time 0 is a real time");
+			Check(DecideAdminAnswer(true, 100, true, 0) == AdminAnswerDecision::RateLimited, "admin answer: a last answer at time 0 still limits the next 500 ms");
+			Check(DecideAdminAnswer(true, 10100, true, 10000, 100) == AdminAnswerDecision::Accept &&
+				DecideAdminAnswer(true, 10099, true, 10000, 100) == AdminAnswerDecision::RateLimited, "admin answer: the gap is a parameter");
+		}
+	}
+
 	printf("%d checks, %d failed\n", g_checks, g_failed);
 	return g_failed ? 1 : 0;
 }
