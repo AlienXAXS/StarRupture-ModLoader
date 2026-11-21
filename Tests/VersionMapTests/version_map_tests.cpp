@@ -10,6 +10,7 @@
 #include "memory_scanner/version_map.h"
 #include "core/layout_check.h"
 #include "core/unknown_build.h"
+#include "network_channel/host_rules_wire.h"
 #include "plugins/host_rules.h"
 #include "plugins/plugin_hook_report.h"
 #include "plugins/plugin_interface.h"
@@ -1031,6 +1032,201 @@ int main()
 
 		g_bpLoaded = false;
 		VersionMap::SetLiveFieldSource(nullptr);
+	}
+
+	// Host rules as text (host_rules_wire.h): the format a server operator writes, how it parses, and which set a connection gets.
+	{
+		using namespace HostRulesWire;
+		using HostRules::Contains;
+		const auto parse = [](const std::string& text, RulesSet& out, std::string& err) { return ParseRulesText(text, out, err); };
+		const auto status = [&](const std::string& text, size_t* line = nullptr)
+		{
+			RulesSet s;
+			std::string err;
+			const ParseResult r = parse(text, s, err);
+			if (line)
+				*line = r.line;
+			return r.status;
+		};
+
+		// Empty text, blank lines and comments: an empty set that allows everything.
+		{
+			RulesSet s;
+			s.message = "kept";
+			std::string err = "stale";
+			const ParseResult r = parse("", s, err);
+			Check(r.status == ParseStatus::Ok && s.defaultAllow && s.message.empty() && s.deny.empty() && s.allow.empty() && err.empty()
+				&& s.onDenied == kOnDeniedSwitchOff, "host rules text: empty text is an empty set that allows everything");
+			s.message = "kept";
+			Check(parse("\n  \n# a comment\n   ; another\r\n\t\r\n", s, err).status == ParseStatus::Ok && s.message.empty() && s.deny.empty(),
+				"host rules text: blank lines and comment lines are skipped");
+		}
+
+		// A full file, with CRLF, a BOM, case and spaces around keys and values.
+		{
+			RulesSet s;
+			std::string err;
+			const std::string text = "\xEF\xBB\xBF# rules\r\nDefault = Allow\r\nMESSAGE=  Be kind # not a comment = ok  \r\n"
+				"Alpha.fly=deny\r\n  alpha.Dig = DENY \r\nBeta.*=deny\r\nBeta.ok=allow\r\nGamma.a.b=deny";
+			const ParseResult r = parse(text, s, err);
+			Check(r.status == ParseStatus::Ok && err.empty() && s.defaultAllow && s.message == "Be kind # not a comment = ok",
+				"host rules text: CRLF, a BOM, case and spaces are read; a message keeps '#' and '='");
+			Check(s.deny.size() == 4 && Contains(s.deny, "ALPHA", "fly") && Contains(s.deny, "Alpha", "Dig") && !Contains(s.deny, "Alpha", "dig")
+				&& Contains(s.deny, "Beta", "*") && Contains(s.deny, "Gamma", "a.b") && s.allow.size() == 1 && Contains(s.allow, "Beta", "ok"),
+				"host rules text: rows split at the first dot, ids stay exact, the plugin ignores case, the last line needs no newline");
+			RulesSet d;
+			Check(parse("default=deny\n", d, err).status == ParseStatus::Ok && !d.defaultAllow, "host rules text: default=deny");
+			Check(parse("default=ALLOW", d, err).status == ParseStatus::Ok && d.defaultAllow, "host rules text: default=allow in capitals");
+			Check(parse("message=\n", d, err).status == ParseStatus::Ok && d.message.empty(), "host rules text: an empty message is fine");
+			Check(parse("Alpha.*=allow", d, err).status == ParseStatus::Ok && d.allow.size() == 1 && Contains(d.allow, "alpha", "*") && d.deny.empty(),
+				"host rules text: a whole-mod allow row");
+			// It encodes and decodes to the same rules.
+			RulesSet back;
+			Check(DecodeRules(EncodeRules(s).data(), EncodeRules(s).size(), &back) == Status::Ok && back.message == s.message
+				&& back.deny.size() == 4 && back.allow.size() == 1 && back.defaultAllow, "host rules text: a parsed set survives the wire");
+		}
+
+		// Every error status, with its line number and an error text that starts "line N:". The output stays as it was.
+		{
+			RulesSet keep;
+			keep.defaultAllow = false;
+			keep.message = "before";
+			keep.deny = { { "Old", "x" } };
+			const auto fails = [&](const std::string& text, ParseStatus want, size_t wantLine, const char* what)
+			{
+				RulesSet s = keep;
+				std::string err;
+				const ParseResult r = parse(text, s, err);
+				const std::string prefix = wantLine ? "line " + std::to_string(wantLine) + ": " : std::string();
+				Check(r.status == want && r.line == wantLine && !err.empty() && err.compare(0, prefix.size(), prefix) == 0
+					&& !s.defaultAllow && s.message == "before" && s.deny.size() == 1 && s.allow.empty(), what);
+			};
+			fails("# ok\nno equals here\n", ParseStatus::BadLine, 2, "host rules text: a line with no '=' is BadLine");
+			fails("\n\n.x=deny\n", ParseStatus::BadKey, 3, "host rules text: '.x' (no plugin) is BadKey");
+			fails("P.=deny", ParseStatus::BadKey, 1, "host rules text: 'P.' (no id) is BadKey");
+			fails("$P.x=deny", ParseStatus::BadKey, 1, "host rules text: a plugin name starting with '$' is BadKey");
+			fails("nodot=deny", ParseStatus::BadKey, 1, "host rules text: a key with no dot is BadKey");
+			fails("=deny", ParseStatus::BadKey, 1, "host rules text: an empty key is BadKey");
+			fails("P." + std::string(kMaxIdLen + 1, 'i') + "=deny", ParseStatus::BadKey, 1, "host rules text: an id over the limit is BadKey");
+			fails(std::string(kMaxPluginLen + 1, 'p') + ".x=deny", ParseStatus::BadKey, 1, "host rules text: a plugin over the limit is BadKey");
+			fails("P.x=maybe", ParseStatus::BadValue, 1, "host rules text: a row value other than allow or deny is BadValue");
+			fails("default=maybe", ParseStatus::BadValue, 1, "host rules text: a default other than allow or deny is BadValue");
+			fails("P.x=", ParseStatus::BadValue, 1, "host rules text: an empty row value is BadValue");
+			fails("default=allow\ndefault=deny", ParseStatus::Duplicate, 2, "host rules text: default twice is Duplicate");
+			fails("message=a\n\nmessage=b", ParseStatus::Duplicate, 3, "host rules text: message twice is Duplicate");
+			fails("message=" + std::string(kMaxMessageLen + 1, 'm'), ParseStatus::MessageTooLong, 1, "host rules text: a message of 201 bytes is MessageTooLong");
+			fails("P.x=de\x01ny", ParseStatus::ControlChar, 1, "host rules text: a control character in a row is ControlChar");
+			fails("\n\nmessage=a\tb", ParseStatus::ControlChar, 3, "host rules text: a tab inside a message is ControlChar");
+			fails("message=a\rb", ParseStatus::ControlChar, 1, "host rules text: a bare CR inside a line is ControlChar");
+			fails(std::string(kMaxPayloadBytes + 1, '#'), ParseStatus::TooLarge, 0, "host rules text: text over the payload limit is TooLarge");
+			Check(status(std::string(kMaxPayloadBytes, '#')) == ParseStatus::Ok, "host rules text: text of exactly the payload limit is read");
+		}
+
+		// The message limit is 200 bytes, counted after the trim.
+		{
+			RulesSet s;
+			std::string err;
+			Check(parse("message=" + std::string(kMaxMessageLen, 'm') + "   \n", s, err).status == ParseStatus::Ok && s.message.size() == kMaxMessageLen,
+				"host rules text: a message of 200 bytes is read");
+			Check(status("message=" + std::string(kMaxMessageLen + 1, 'm')) == ParseStatus::MessageTooLong, "host rules text: 201 bytes is too long");
+		}
+
+		// The row limit is what one $ML:rules payload holds: kMaxRecords with the header record.
+		{
+			const auto rows = [](size_t n, const char* verb)
+			{
+				std::string t;
+				for (size_t i = 0; i < n; ++i)
+					t += "P.f" + std::to_string(i) + "=" + verb + "\n";
+				return t;
+			};
+			RulesSet s;
+			std::string err;
+			size_t line = 0;
+			Check(parse(rows(kMaxRecords - 1, "deny"), s, err).status == ParseStatus::Ok && s.deny.size() == kMaxRecords - 1,
+				"host rules text: 2047 rows are read");
+			Check(status(rows(kMaxRecords, "deny"), &line) == ParseStatus::TooManyRows && line == kMaxRecords,
+				"host rules text: 2048 rows are TooManyRows, at the line that passes the limit");
+			Check(status(rows(kMaxRecords, "allow")) == ParseStatus::TooManyRows, "host rules text: the limit counts allow rows too");
+			Check(status(rows(kMaxRecords - 1, "deny") + "P.f0=deny\nP.f1=allow\n") == ParseStatus::Ok,
+				"host rules text: a repeated key adds no row, so it does not pass the limit");
+			EncodeStats stats;
+			EncodeRules(s, &stats);
+			Check(stats.dropped == 0 && stats.truncated == 0, "host rules text: the largest parsed set encodes without a cut");
+		}
+
+		// The same key twice: deny wins, in either order, and a repeat adds no row.
+		{
+			RulesSet s;
+			std::string err;
+			Check(parse("P.x=allow\nP.x=deny\n", s, err).status == ParseStatus::Ok && s.deny.size() == 1 && s.allow.empty(), "host rules text: allow then deny is deny");
+			Check(parse("p.x=deny\nP.x=allow\n", s, err).status == ParseStatus::Ok && s.deny.size() == 1 && s.allow.empty(), "host rules text: deny then allow is deny");
+			Check(parse("P.x=deny\nP.x=deny\nP.y=allow\nP.y=allow", s, err).status == ParseStatus::Ok && s.deny.size() == 1 && s.allow.size() == 1,
+				"host rules text: a repeated row adds nothing");
+			Check(parse("P.x=allow\nP.X=deny\n", s, err).status == ParseStatus::Ok && s.deny.size() == 1 && s.allow.size() == 1,
+				"host rules text: ids that differ in case are two features");
+		}
+
+		// MergeConsole: the console's deny list is added, its note wins when it says something, the default stays the global's.
+		{
+			RulesSet g;
+			g.defaultAllow = false;
+			g.message = "global note";
+			g.deny = { { "Alpha", "x" } };
+			g.allow = { { "Beta", "*" } };
+			RulesSet m = MergeConsole(g, { { "alpha", "x" }, { "Gamma", "z" } }, "");
+			Check(!m.defaultAllow && m.message == "global note" && m.deny.size() == 2 && Contains(m.deny, "Alpha", "x") && Contains(m.deny, "Gamma", "z")
+				&& m.allow.size() == 1 && Contains(m.allow, "Beta", "*"), "host rules merge: the console list joins the deny rows once, the global note stays when the console has none");
+			m = MergeConsole(g, {}, "console note");
+			Check(m.message == "console note" && m.deny.size() == 1, "host rules merge: a console note replaces the global one");
+			m = MergeConsole(g, {}, "  \t ");
+			Check(m.message == "global note", "host rules merge: a blank console note does not replace the global one");
+			m = MergeConsole(RulesSet(), {}, "only console");
+			Check(m.defaultAllow && m.message == "only console" && m.deny.empty(), "host rules merge: a console note alone is kept");
+			Check(g.deny.size() == 1 && g.message == "global note", "host rules merge: the global set is not changed");
+			m = MergeConsole(RulesSet(), { { "A", "x" }, { "A", "x" }, { "", "y" } }, "");
+			Check(m.deny.size() == 1, "host rules merge: the console list is normalized");
+		}
+
+		// EffectiveRules: a connection's own set is used as it is; with none the global set and the console's list apply.
+		{
+			RulesSet g;
+			g.message = "global note";
+			g.deny = { { "Alpha", "x" } };
+			RulesSet own;
+			own.defaultAllow = false;
+			own.message = "own note";
+			own.deny = { { "Beta", "y" } };
+			const HostRules::DenySet console = { { "Gamma", "z" } };
+			RulesSet e = EffectiveRules(g, &own, console, "console note");
+			Check(!e.defaultAllow && e.message == "own note" && e.deny.size() == 1 && Contains(e.deny, "Beta", "y"),
+				"host rules effective: a connection's own set replaces the global one, its note and the console list");
+			RulesSet none;
+			e = EffectiveRules(g, &none, console, "console note");
+			Check(e.defaultAllow && e.message.empty() && e.deny.empty(), "host rules effective: an own set that allows everything is not topped up");
+			e = EffectiveRules(g, nullptr, console, "console note");
+			Check(e.message == "console note" && e.deny.size() == 2 && Contains(e.deny, "Alpha", "x") && Contains(e.deny, "Gamma", "z"),
+				"host rules effective: with no set of its own a connection gets the global set merged with the console");
+		}
+
+		// NothingToSend: allows everything, no rows and no note.
+		{
+			RulesSet s;
+			Check(NothingToSend(s), "host rules send: an empty set has nothing to send");
+			s.message = "  \t";
+			Check(NothingToSend(s), "host rules send: a note of blanks says nothing");
+			s.message = "note";
+			Check(!NothingToSend(s), "host rules send: a note alone is sent");
+			s.message.clear();
+			s.defaultAllow = false;
+			Check(!NothingToSend(s), "host rules send: default deny is sent");
+			s.defaultAllow = true;
+			s.deny = { { "A", "x" } };
+			Check(!NothingToSend(s), "host rules send: a deny row is sent");
+			s.deny.clear();
+			s.allow = { { "A", "x" } };
+			Check(NothingToSend(s), "host rules send: allow rows alone add nothing to an allow-all set");
+		}
 	}
 
 	// Host rules: the server's list of features to keep off. The list is plain data (host_rules.h); applying it writes the

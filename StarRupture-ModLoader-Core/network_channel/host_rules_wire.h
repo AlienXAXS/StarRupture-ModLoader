@@ -533,6 +533,196 @@ namespace HostRulesWire
         return HostRules::Normalize(out);
     }
 
+    // ---------------------------------------------------------- Rules as text
+
+    // How the server's operator (or a server plugin) writes a rule set. One
+    // line each; LF or CRLF; a UTF-8 BOM at the start is ignored:
+    //
+    //   # a comment (also a line starting with ';'); blank lines are skipped
+    //   default=allow|deny           what a feature no row names gets (once)
+    //   message=<text>               the note for the player, up to kMaxMessageLen bytes (once)
+    //   Plugin.feature=allow|deny    one feature of a mod
+    //   Plugin.*=allow|deny          the whole mod
+    //
+    // Keys and values ignore case, except the feature id, which is exact. The
+    // key splits at its first '.', so an id may hold dots. Spaces and tabs
+    // around a line, a key and a value are trimmed; a message keeps the rest of
+    // its line as written, so it may hold '#' and '='. A key naming the same
+    // feature twice is not an error: deny wins, as on the wire. Text with no
+    // rule lines is an empty set that allows everything.
+    enum class ParseStatus
+    {
+        Ok,
+        TooLarge,       // over kMaxPayloadBytes
+        BadLine,        // not a comment, and no '='
+        BadKey,         // not default, message or Plugin.feature
+        BadValue,       // not allow or deny
+        Duplicate,      // default or message given twice
+        MessageTooLong, // message over kMaxMessageLen bytes
+        ControlChar,    // a control character inside a line
+        TooManyRows,    // more rows than one $ML:rules payload can hold
+    };
+
+    struct ParseResult
+    {
+        ParseStatus status = ParseStatus::Ok;
+        size_t line = 0; // 1-based; 0 for TooLarge
+    };
+
+    namespace detail
+    {
+        inline std::string_view TrimBlanks(std::string_view s)
+        {
+            while (!s.empty() && (s.front() == ' ' || s.front() == '\t'))
+                s.remove_prefix(1);
+            while (!s.empty() && (s.back() == ' ' || s.back() == '\t'))
+                s.remove_suffix(1);
+            return s;
+        }
+    }
+
+    // Reads rules text into *out. On any error `out` is left as it was and
+    // `error` holds a line for the log or the console, "line N: ...". On Ok
+    // `error` is empty and `out` is the whole set, with the on-denied mode
+    // kOnDeniedSwitchOff.
+    inline ParseResult ParseRulesText(std::string_view text, RulesSet& out, std::string& error)
+    {
+        ParseResult res;
+        error.clear();
+        const auto fail = [&](ParseStatus st, size_t line, const std::string& why)
+        {
+            res.status = st;
+            res.line = line;
+            error = line ? "line " + std::to_string(line) + ": " + why : why;
+            return res;
+        };
+
+        if (text.size() > kMaxPayloadBytes)
+            return fail(ParseStatus::TooLarge, 0, "text is over " + std::to_string(kMaxPayloadBytes) + " bytes");
+        if (text.substr(0, 3) == "\xEF\xBB\xBF")
+            text.remove_prefix(3);
+
+        RulesSet s;
+        bool haveDefault = false;
+        bool haveMessage = false;
+        size_t lineNo = 0;
+        while (!text.empty())
+        {
+            ++lineNo;
+            const size_t nl = text.find('\n');
+            std::string_view line = text.substr(0, nl);
+            text = nl == std::string_view::npos ? std::string_view() : text.substr(nl + 1);
+            if (!line.empty() && line.back() == '\r')
+                line.remove_suffix(1);
+            line = detail::TrimBlanks(line);
+            if (line.empty() || line[0] == '#' || line[0] == ';')
+                continue;
+            if (detail::HasCtl(line))
+                return fail(ParseStatus::ControlChar, lineNo, "control character");
+
+            const size_t eq = line.find('=');
+            if (eq == std::string_view::npos)
+                return fail(ParseStatus::BadLine, lineNo, "expected key=value");
+            const std::string key(detail::TrimBlanks(line.substr(0, eq)));
+            const std::string value(detail::TrimBlanks(line.substr(eq + 1)));
+
+            if (HostRules::SamePlugin(key, "message"))
+            {
+                if (haveMessage)
+                    return fail(ParseStatus::Duplicate, lineNo, "message is given twice");
+                if (value.size() > kMaxMessageLen)
+                    return fail(ParseStatus::MessageTooLong, lineNo, "message is over " + std::to_string(kMaxMessageLen) + " bytes");
+                haveMessage = true;
+                s.message = value;
+                continue;
+            }
+
+            const bool isDefault = HostRules::SamePlugin(key, "default");
+            HostRules::RuleKey rk;
+            if (!isDefault)
+            {
+                const size_t dot = key.find('.');
+                if (dot != std::string::npos)
+                {
+                    rk.plugin = key.substr(0, dot);
+                    rk.id = key.substr(dot + 1);
+                }
+                if (dot == std::string::npos || !RuleEncodable(rk))
+                    return fail(ParseStatus::BadKey, lineNo, "key must be default, message, Plugin.feature or Plugin.*");
+            }
+            bool allowed = false;
+            if (HostRules::SamePlugin(value, "allow"))
+                allowed = true;
+            else if (!HostRules::SamePlugin(value, "deny"))
+                return fail(ParseStatus::BadValue, lineNo, "value must be allow or deny");
+
+            if (isDefault)
+            {
+                if (haveDefault)
+                    return fail(ParseStatus::Duplicate, lineNo, "default is given twice");
+                haveDefault = true;
+                s.defaultAllow = allowed;
+                continue;
+            }
+
+            // A feature named twice: deny wins, as EncodeRules and DecodeRules read it.
+            if (allowed)
+            {
+                if (HostRules::Contains(s.deny, rk.plugin, rk.id) || HostRules::Contains(s.allow, rk.plugin, rk.id))
+                    continue;
+            }
+            else
+            {
+                for (auto it = s.allow.begin(); it != s.allow.end(); ++it)
+                    if (HostRules::SameRule(*it, rk))
+                    {
+                        s.allow.erase(it);
+                        break;
+                    }
+                if (HostRules::Contains(s.deny, rk.plugin, rk.id))
+                    continue;
+            }
+            if (s.deny.size() + s.allow.size() + 1 >= kMaxRecords) // the header record counts
+                return fail(ParseStatus::TooManyRows, lineNo, "more than " + std::to_string(kMaxRecords - 1) + " rules");
+            (allowed ? s.allow : s.deny).push_back(std::move(rk));
+        }
+        out = std::move(s);
+        return res;
+    }
+
+    // ------------------------------------------------------ Console and per player
+
+    // The rules a connection with no set of its own is given: the global set
+    // with the host console's list (features hostoff) added to its deny rows,
+    // and the console's note (features hostmsg) in place of the global one when
+    // it says anything. The default and the on-denied mode stay the global's.
+    inline RulesSet MergeConsole(const RulesSet& global, const HostRules::DenySet& consoleDeny, const std::string& consoleMessage)
+    {
+        RulesSet m = global;
+        m.deny.insert(m.deny.end(), consoleDeny.begin(), consoleDeny.end());
+        m.deny = HostRules::Normalize(m.deny);
+        const std::string note = SanitizeText(consoleMessage, kMaxMessageLen);
+        if (!note.empty())
+            m.message = note;
+        return m;
+    }
+
+    // What a connection is sent: its own set when it has one (perConnection not
+    // null), taken as it is, so the console list and the console note do not
+    // apply to it; otherwise the global set merged with the console's.
+    inline RulesSet EffectiveRules(const RulesSet& global, const RulesSet* perConnection,
+        const HostRules::DenySet& consoleDeny, const std::string& consoleMessage)
+    {
+        return perConnection ? *perConnection : MergeConsole(global, consoleDeny, consoleMessage);
+    }
+
+    // True when a set says nothing to a client: it allows everything and has no
+    // note a player could read. A client that was never sent a set needs none.
+    inline bool NothingToSend(const RulesSet& s)
+    {
+        return s.defaultAllow && s.deny.empty() && SanitizeText(s.message, kMaxMessageLen).empty();
+    }
+
     // ----------------------------------------------------------- Fragmentation
 
     // How a payload goes out through the loader's SendWire (network_channel.cpp):
