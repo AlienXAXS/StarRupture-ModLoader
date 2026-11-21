@@ -12,13 +12,16 @@
 //
 // Function rows are addresses (no pattern: a plugin's own pattern stays its
 // fallback). A function row is the start of the one PDB symbol with that exact
-// name. A global row (kind 4, or the loader's scoped GObjects key, kind 6) is
-// the address of the variable; the GObjects row is GUObjectArray plus the
-// offset of ObjObjects, and is read by the loader's own request for it. The
-// client's patterns for the three globals match this exe once each and land on
-// the same addresses. 15 of the function rows were first found by scanning the
-// exe with the plugins' own patterns, and are the same addresses as their PDB
-// symbols.
+// name; FName::AppendString is the exception, as the PDB has three overloads of
+// that name: its row is the FString& one the SDK calls, the start the loader's
+// own pattern for it matches. A global row (kind 4, or the loader's scoped
+// GObjects key, kind 6) is the address of the variable; the GObjects row is
+// GUObjectArray plus the offset of ObjObjects. The loader's own requests for
+// GObjects, GNames, FName::AppendString and GWorld read these four rows (the
+// Game-SDK globals it hands to plugins); the client's patterns for them match
+// this exe once each and land on the same addresses. 15 of the function rows
+// were first found by scanning the exe with the plugins' own patterns, and are
+// the same addresses as their PDB symbols.
 //
 // Field rows and size rows (a size row is a class-key row: the key is the class
 // name, offset 0) are the layout measured from the server's PDB for the exe. A
@@ -39,7 +42,7 @@ inline constexpr std::array<Build, 1> kServerBuilds = {{
 	{ 127004, 0x2E3595FF, 0x0E2A8000, "server steam_build 25642172" },
 }};
 
-inline constexpr std::array<FunctionRow, 29> kServerFunctionRows = {{
+inline constexpr std::array<FunctionRow, 30> kServerFunctionRows = {{
 	// ACrGameModeBase::GetProfessionForNewPlayer
 	{ 127004, 0x2E3595FF, 0x0E2A8000, 1, 0x00000000, false, nullptr, 0, -1, -1, 0x06E7DBB0, nullptr },
 	// ACrGameModeBase::PreLogin
@@ -56,6 +59,8 @@ inline constexpr std::array<FunctionRow, 29> kServerFunctionRows = {{
 	{ 127004, 0x2E3595FF, 0x0E2A8000, 1, 0x00000000, false, nullptr, 0, -1, -1, 0x03C24BC0, nullptr },
 	// FMassEntityManager::IsEntityValid
 	{ 127004, 0x2E3595FF, 0x0E2A8000, 1, 0x00000000, false, nullptr, 0, -1, -1, 0x03C250C0, nullptr },
+	// FName::AppendString
+	{ 127004, 0x2E3595FF, 0x0E2A8000, 1, 0x00000000, false, nullptr, 0, -1, -1, 0x0142A250, nullptr },
 	// FPaths::ProjectSavedDir
 	{ 127004, 0x2E3595FF, 0x0E2A8000, 1, 0x00000000, false, nullptr, 0, -1, -1, 0x013F7D90, nullptr },
 	// GNames (NamePoolData)
@@ -321,7 +326,7 @@ inline constexpr std::array<FieldRow, 109> kServerFieldRows = {{
 	{ 127004, 0x840, 0x8, 0x00, nullptr },
 }};
 
-inline constexpr std::array<Index, 29> kServerFunctions = {{
+inline constexpr std::array<Index, 30> kServerFunctions = {{
 	{ "ACrGameModeBase::GetProfessionForNewPlayer", 0, 1 },
 	{ "ACrGameModeBase::PreLogin", 1, 1 },
 	{ "ACrGameStateBase::UpdatePause", 2, 1 },
@@ -330,27 +335,28 @@ inline constexpr std::array<Index, 29> kServerFunctions = {{
 	{ "FJsonObjectConverter::UStructToJsonObjectString", 5, 1 },
 	{ "FMassEntityManager::InternalGetFragmentDataPtr", 6, 1 },
 	{ "FMassEntityManager::IsEntityValid", 7, 1 },
-	{ "FPaths::ProjectSavedDir", 8, 1 },
-	{ "GNames (NamePoolData)", 9, 1 },
-	{ "GWorld", 10, 1 },
-	{ "ModLoader/GObjects (GUObjectArray.ObjObjects)", 11, 1 },
-	{ "UCrBaseCoreSubsystem::GetBaseCoresRangedBuilding", 12, 1 },
-	{ "UCrBuildingCustomNameSubsystem::GetBuildingCustomNameByReplicationHelper", 13, 1 },
-	{ "UCrBuildingFunctionLibrary::AddTemperatureToEntity", 14, 1 },
-	{ "UCrDedicatedServerSettingsComp::ParseSettings", 15, 1 },
-	{ "UCrMassEnviroWaveSubsystem::AddEntitiesToWave", 16, 1 },
-	{ "UCrMassEnviroWaveSubsystem::RemoveEntitiesFromWave", 17, 1 },
-	{ "UCrMassPersistentIDSubsystem::GetOrAddIDForHandle", 18, 1 },
-	{ "UCrMassPersistentIDSubsystem::SetIDHandlePair", 19, 1 },
-	{ "UCrSaveSubsystem::GetSaveData", 20, 1 },
-	{ "UCrSaveSubsystem::OnPreLoadMap", 21, 1 },
-	{ "UCrSaveSubsystem::SaveNextSaveGame", 22, 1 },
-	{ "UMassSignalSubsystem::SignalEntities", 23, 1 },
-	{ "UMassSignalSubsystem::SignalEntity", 24, 1 },
-	{ "UObject::ProcessEvent", 25, 1 },
-	{ "UReplicationGraph::AddNetworkActor", 26, 1 },
-	{ "UReplicationGraph::RemoveNetworkActor", 27, 1 },
-	{ "UWorld::GetSubsystem<UMassEntitySubsystem>", 28, 1 },
+	{ "FName::AppendString", 8, 1 },
+	{ "FPaths::ProjectSavedDir", 9, 1 },
+	{ "GNames (NamePoolData)", 10, 1 },
+	{ "GWorld", 11, 1 },
+	{ "ModLoader/GObjects (GUObjectArray.ObjObjects)", 12, 1 },
+	{ "UCrBaseCoreSubsystem::GetBaseCoresRangedBuilding", 13, 1 },
+	{ "UCrBuildingCustomNameSubsystem::GetBuildingCustomNameByReplicationHelper", 14, 1 },
+	{ "UCrBuildingFunctionLibrary::AddTemperatureToEntity", 15, 1 },
+	{ "UCrDedicatedServerSettingsComp::ParseSettings", 16, 1 },
+	{ "UCrMassEnviroWaveSubsystem::AddEntitiesToWave", 17, 1 },
+	{ "UCrMassEnviroWaveSubsystem::RemoveEntitiesFromWave", 18, 1 },
+	{ "UCrMassPersistentIDSubsystem::GetOrAddIDForHandle", 19, 1 },
+	{ "UCrMassPersistentIDSubsystem::SetIDHandlePair", 20, 1 },
+	{ "UCrSaveSubsystem::GetSaveData", 21, 1 },
+	{ "UCrSaveSubsystem::OnPreLoadMap", 22, 1 },
+	{ "UCrSaveSubsystem::SaveNextSaveGame", 23, 1 },
+	{ "UMassSignalSubsystem::SignalEntities", 24, 1 },
+	{ "UMassSignalSubsystem::SignalEntity", 25, 1 },
+	{ "UObject::ProcessEvent", 26, 1 },
+	{ "UReplicationGraph::AddNetworkActor", 27, 1 },
+	{ "UReplicationGraph::RemoveNetworkActor", 28, 1 },
+	{ "UWorld::GetSubsystem<UMassEntitySubsystem>", 29, 1 },
 }};
 
 inline constexpr std::array<Index, 109> kServerFields = {{
