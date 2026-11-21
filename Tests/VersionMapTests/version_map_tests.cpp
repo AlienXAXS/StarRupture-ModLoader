@@ -2724,6 +2724,253 @@ int main()
 			&& guard.find(L"\r\n") != std::wstring::npos, "unknown build: the guard details say how to retry");
 	}
 
+	// Version minimums (host_rules_wire.h): the host's table as text, who is below it, and what the player is told.
+	{
+		using namespace HostRulesWire;
+		const auto parseMin = [](const std::string& text, Minimums& out, std::string& err) { return ParseMinimumsText(text, out, err); };
+		const auto statusOf = [&](const std::string& text, std::string* err = nullptr)
+		{
+			Minimums m;
+			std::string e;
+			const ParseResult r = parseMin(text, m, e);
+			if (err)
+				*err = e;
+			return r.status;
+		};
+		const auto table = [&](const std::string& text)
+		{
+			Minimums m;
+			std::string e;
+			parseMin(text, m, e);
+			return m;
+		};
+		const auto row = [](const char* plugin, const char* version, bool wireRefused = false)
+		{
+			ManifestRow r;
+			r.plugin = plugin;
+			r.version = version;
+			r.wireRefused = wireRefused;
+			return r;
+		};
+		const auto find = [&](const std::string& text, bool reported, const std::string& loaderTag, const std::vector<ManifestRow>& rows)
+		{
+			return FindBelowMinimum(table(text), reported, loaderTag, rows);
+		};
+		const auto reasonFor = [&](const std::string& text, bool reported, const std::string& loaderTag, const std::vector<ManifestRow>& rows)
+		{
+			return BuildBelowMinimumReason(find(text, reported, loaderTag, rows));
+		};
+
+		// Parsing: what is read.
+		{
+			Minimums m;
+			std::string err = "stale";
+			ParseResult r = parseMin("", m, err);
+			Check(r.status == ParseStatus::Ok && m.Empty() && err.empty(), "minimums text: empty text is an empty table");
+			r = parseMin("\xEF\xBB\xBF# note\r\n  ; another\r\n\r\n\t\n", m, err);
+			Check(r.status == ParseStatus::Ok && m.Empty(), "minimums text: BOM, comments, blank lines and CRLF are skipped");
+			r = parseMin("loader=1.27.0\r\nRuptureTimer = v0.11.0 \r\nproductionviewer=wire\n", m, err);
+			Check(r.status == ParseStatus::Ok && m.loader == "1.27.0" && m.mods.size() == 2, "minimums text: loader and two mods");
+			Check(m.mods[0].plugin == "RuptureTimer" && m.mods[0].version == "v0.11.0" && !m.mods[0].wire,
+				"minimums text: a mod row keeps its name and its version as written, trimmed");
+			Check(m.mods[1].plugin == "productionviewer" && m.mods[1].version.empty() && m.mods[1].wire,
+				"minimums text: wire is a row with no number");
+			Check(parseMin("LOADER=1.2\nWire=WIRE\n", m, err).status == ParseStatus::Ok && m.loader == "1.2" && m.mods.size() == 1 && m.mods[0].wire,
+				"minimums text: the loader key and the wire value ignore case");
+			Check(parseMin("loader=\n", m, err).status == ParseStatus::Ok && m.loader.empty() && m.mods.empty(),
+				"minimums text: an empty loader value is off");
+			Check(parseMin("loader=1.27.0-dev.3\nA=0.1\n", m, err).status == ParseStatus::Ok && m.loader == "1.27.0-dev.3" && m.mods[0].version == "0.1",
+				"minimums text: a suffix and a two-part version are readable");
+			Check(parseMin("Some Mod=1.0\n", m, err).status == ParseStatus::Ok && m.mods[0].plugin == "Some Mod",
+				"minimums text: a mod name may hold a space");
+		}
+
+		// Parsing: what is refused, with the line and the text.
+		{
+			std::string err;
+			Minimums keep;
+			keep.loader = "9.9.9";
+			Minimums m = keep;
+			ParseResult r = parseMin("loader=1.2.3\nRuptureTimer=soon\n", m, err);
+			Check(r.status == ParseStatus::BadValue && r.line == 2 && err == "line 2: RuptureTimer needs a version such as 0.11.0, or wire", "minimums text: a version that cannot be read is refused with its line");
+			Check(m.loader == "9.9.9" && m.mods.empty(), "minimums text: out is untouched on an error");
+			r = parseMin("# c\nloader=dev\n", m, err);
+			Check(r.status == ParseStatus::BadValue && r.line == 2 && err == "line 2: loader needs a version such as 1.27.0, or nothing to turn it off", "minimums text: loader=dev is refused");
+			Check(statusOf("loader=wire\n") == ParseStatus::BadValue, "minimums text: wire is not a loader value");
+			Check(statusOf("loader=1\n") == ParseStatus::BadValue, "minimums text: a version with one part is refused");
+			Check(statusOf("loader=1.2abc\n") == ParseStatus::BadValue, "minimums text: trailing letters are refused");
+			Check(statusOf("A=\n") == ParseStatus::BadValue, "minimums text: a mod row with no value is refused");
+			Check(statusOf("A=1.2.3.4.5\n") == ParseStatus::BadValue, "minimums text: five parts are refused");
+			Check(statusOf("A=" + std::string(65, '1') + ".0\n") == ParseStatus::BadValue, "minimums text: a version over the tag limit is refused");
+			Check(statusOf("loader=1.0\nloader=1.1\n", &err) == ParseStatus::Duplicate && err == "line 2: loader is given twice", "minimums text: loader twice");
+			Check(statusOf("loader=\nloader=\n") == ParseStatus::Duplicate, "minimums text: empty loader twice is still a repeat");
+			Check(statusOf("A=1.0\na=2.0\n", &err) == ParseStatus::Duplicate && err == "line 2: a is given twice", "minimums text: a mod twice, ignoring case");
+			Check(statusOf("A=1.0\nB=wire\nb=wire\n") == ParseStatus::Duplicate, "minimums text: wire twice");
+			Check(statusOf("loader 1.0\n", &err) == ParseStatus::BadLine && err == "line 1: expected key=value", "minimums text: a line with no '='");
+			Check(statusOf("=1.0\n") == ParseStatus::BadKey, "minimums text: no key");
+			Check(statusOf("$Hidden=1.0\n") == ParseStatus::BadKey, "minimums text: a mod name starting with '$' is refused");
+			Check(statusOf(std::string(129, 'A') + "=1.0\n") == ParseStatus::BadKey, "minimums text: a mod name over the limit is refused");
+			Check(statusOf(std::string(128, 'A') + "=1.0\n") == ParseStatus::Ok, "minimums text: a mod name at the limit is read");
+			Check(statusOf("A=1.0\x01\n", &err) == ParseStatus::ControlChar && err == "line 1: control character", "minimums text: a control character");
+			Check(statusOf("A\t=1.0\n") == ParseStatus::ControlChar, "minimums text: a tab inside a line is refused like in the rules text");
+			Check(statusOf(std::string(kMaxPayloadBytes + 1, ' '), &err) == ParseStatus::TooLarge && err.find("line") == std::string::npos, "minimums text: text over the payload limit");
+			Check(statusOf(std::string(kMaxPayloadBytes, '\n')) == ParseStatus::Ok, "minimums text: text at the limit is read");
+
+			std::string many;
+			for (size_t i = 0; i < kMaxModMinimums; ++i)
+				many += "Mod" + std::to_string(i) + "=1.0\n";
+			Minimums big;
+			Check(parseMin(many, big, err).status == ParseStatus::Ok && big.mods.size() == kMaxModMinimums, "minimums text: the most rows are read");
+			Check(statusOf(many + "Extra=1.0\n", &err) == ParseStatus::TooManyRows && err.find("line " + std::to_string(kMaxModMinimums + 1) + ":") == 0, "minimums text: one row too many");
+		}
+
+		// FindBelowMinimum: the version rules.
+		{
+			const std::vector<ManifestRow> none;
+			Check(find("RuptureTimer=0.11.0\n", true, "1.27.0", { row("RuptureTimer", "0.11.0") }).empty(), "below minimum: equal is fine");
+			Check(find("RuptureTimer=0.11.0\n", true, "1.27.0", { row("RuptureTimer", "0.12.0") }).empty(), "below minimum: higher is fine");
+			Check(find("RuptureTimer=0.11.0\n", true, "1.27.0", { row("RuptureTimer", "0.10.9") }).size() == 1, "below minimum: lower is below");
+			Check(find("RuptureTimer=0.11.0\n", true, "1.27.0", { row("RuptureTimer", "0.9.2") }).size() == 1, "below minimum: numbers, not text (9 under 11)");
+			Check(find("RuptureTimer=0.11.0\n", true, "1.27.0", { row("RuptureTimer", "0.11.0-dev.6") }).empty(), "below minimum: a suffix is ignored (0.11.0-dev.6 is 0.11.0)");
+			Check(find("RuptureTimer=0.11.0-dev.1\n", true, "1.27.0", { row("RuptureTimer", "0.11.0") }).empty(), "below minimum: a suffix on the minimum is ignored too");
+			Check(find("RuptureTimer=0.11.0\n", true, "1.27.0", { row("RuptureTimer", "0.10.0-dev.6") }).size() == 1, "below minimum: a lower release with a suffix is below");
+			Check(find("RuptureTimer=v0.11.0\n", true, "1.27.0", { row("RuptureTimer", "0.11.0") }).empty(), "below minimum: a v prefix on the minimum");
+			Check(find("RuptureTimer=0.11.0\n", true, "1.27.0", { row("RuptureTimer", "v0.10.0") }).size() == 1, "below minimum: a v prefix on the client's version");
+			Check(find("RuptureTimer=0.11.0\n", true, "1.27.0", { row("rupturetimer", "0.10.0") }).size() == 1, "below minimum: the mod name ignores case");
+			Check(find("RuptureTimer=0.11.0\n", true, "1.27.0", { row("RuptureTimer", "dev") }).empty(), "below minimum: a mod version of dev is never below");
+			Check(find("RuptureTimer=0.11.0\n", true, "1.27.0", { row("RuptureTimer", "") }).empty(), "below minimum: an empty mod version is never below");
+			Check(find("RuptureTimer=0.11.0\n", true, "1.27.0", { row("RuptureTimer", "1") }).empty(), "below minimum: a one-part mod version is unreadable, never below");
+			Check(find("RuptureTimer=0.11.0\n", true, "1.27.0", { row("Other", "0.1.0") }).empty(), "below minimum: a mod with no row is never below");
+			Check(find("RuptureTimer=0.11.0\nOther=9.0\n", true, "1.27.0", { row("Other2", "0.1.0") }).empty(), "below minimum: a mod the player lacks is never below");
+			Check(find("RuptureTimer=0.11.0\n", true, "1.27.0", none).empty(), "below minimum: an empty manifest");
+			Check(find("", true, "0.1.0", { row("RuptureTimer", "0.0.1") }).empty(), "below minimum: an empty table is never below");
+			Check(find("", false, "", { row("RuptureTimer", "0.0.1") }).empty(), "below minimum: an empty table is never below, loader silent");
+
+			// The loader.
+			Check(find("loader=1.27.0\n", true, "1.27.0", none).empty(), "below minimum: loader equal");
+			Check(find("loader=1.27.0\n", true, "v1.28.0", none).empty(), "below minimum: loader higher");
+			Check(find("loader=1.27.0\n", true, "1.27.0-dev.3", none).empty(), "below minimum: a labeled dev loader counts as its release (1.27.0-dev.3)");
+			Check(find("loader=1.27.0\n", true, "1.26.1-dev.7", none).size() == 1, "below minimum: a labeled dev loader of an older release is below");
+			Check(find("loader=1.27.0\n", true, "dev", none).empty(), "below minimum: a loader tagged dev is never below");
+			Check(find("loader=1.27.0\n", true, "", none).empty(), "below minimum: a reported empty loader tag is never below");
+			Check(find("loader=1.27.0\n", true, "garbage", none).empty(), "below minimum: an unreadable loader tag is never below");
+			Check(find("loader=\n", false, "", none).empty(), "below minimum: no loader minimum, a silent loader is fine");
+			Check(find("RuptureTimer=1.0\n", false, "", none).empty(), "below minimum: mod rows only, a silent loader is fine");
+			{
+				const auto v = find("loader=1.27.0\n", false, "", none);
+				Check(v.size() == 1 && v[0].isLoader && v[0].have.empty() && v[0].need == "1.27.0" && v[0].name == "ModLoader",
+					"below minimum: a loader that reported no version is below any minimum, with nothing to show");
+				const auto w = find("loader=1.27.0\n", true, "1.25.0", none);
+				Check(w.size() == 1 && w[0].isLoader && w[0].have == "1.25.0" && w[0].need == "1.27.0",
+					"below minimum: a lower loader carries both numbers");
+			}
+
+			// wire.
+			Check(find("ProductionViewer=wire\n", true, "1.27.0", { row("ProductionViewer", "0.18.4", true) }).size() == 1, "below minimum: wire and refused is below");
+			Check(find("ProductionViewer=wire\n", true, "1.27.0", { row("ProductionViewer", "0.18.4", false) }).empty(), "below minimum: wire and accepted is fine");
+			Check(find("ProductionViewer=0.1.0\n", true, "1.27.0", { row("ProductionViewer", "0.18.4", true) }).empty(), "below minimum: a refused wire does not matter without a wire row");
+			Check(find("ProductionViewer=wire\n", true, "1.27.0", { row("ProductionViewer", "dev", true) }).size() == 1, "below minimum: wire refused with an unreadable version is still below");
+			{
+				const auto v = find("ProductionViewer=wire\n", true, "1.27.0", { row("ProductionViewer", "0.18.4", true) });
+				Check(v.size() == 1 && !v[0].isLoader && v[0].need.empty() && v[0].have == "0.18.4" && v[0].name == "ProductionViewer", "below minimum: a wire violation has no number to ask for");
+			}
+
+			// Order: loader first, then the manifest's order, not the table's.
+			const auto v = find("loader=1.27.0\nZeta=2.0\nAlpha=2.0\nMid=2.0\n", true, "1.0.0",
+				{ row("Mid", "1.0"), row("Alpha", "1.0"), row("Fine", "9.9"), row("Zeta", "1.0") });
+			Check(v.size() == 4 && v[0].isLoader && v[1].name == "Mid" && v[2].name == "Alpha" && v[3].name == "Zeta",
+				"below minimum: loader first, then mods in manifest order");
+			Check(v.size() == 4 && v[1].name == "Mid" && v[1].need == "2.0" && v[1].have == "1.0", "below minimum: a mod violation carries the host's number and the player's");
+			Check(find("loader=9.0\nA=9.0\n", true, "1.0.0", { row("A", "1.0"), row("A", "1.0") }).size() == 3, "below minimum: each manifest row is judged");
+		}
+
+		// The player's text: every wording.
+		{
+			const std::vector<ManifestRow> none;
+			const auto loaderOld = reasonFor("loader=1.27.0\n", true, "1.25.0", none);
+			Check(loaderOld == "This server needs ModLoader 1.27.0 or newer (you have 1.25.0). Update it, or remove the ModLoader to join without mods.",
+				"below minimum text: the loader line");
+			const auto loaderSilent = reasonFor("loader=1.27.0\n", false, "", none);
+			Check(loaderSilent == "This server needs ModLoader 1.27.0 or newer. Update it, or remove the ModLoader to join without mods.",
+				"below minimum text: a loader that reported no version has no (you have ...)");
+			const auto one = reasonFor("RuptureTimer=0.11.0\n", true, "1.27.0", { row("RuptureTimer", "0.9.2") });
+			Check(one == "This server needs RuptureTimer 0.11.0 or newer (you have 0.9.2). Update RuptureTimer, or remove it, and join again.",
+				"below minimum text: one mod");
+			const auto two = reasonFor("RuptureTimer=0.11.0\nProductionViewer=0.19.0\n", true, "1.27.0",
+				{ row("RuptureTimer", "0.9.2"), row("ProductionViewer", "0.18.4") });
+			Check(two == "This server needs RuptureTimer 0.11.0 or newer (you have 0.9.2) and ProductionViewer 0.19.0 or newer (you have 0.18.4). Update them and join again.",
+				"below minimum text: two mods");
+			const auto three = reasonFor("A=2.0\nB=2.0\nC=2.0\n", true, "1.27.0", { row("A", "1.0"), row("B", "1.0"), row("C", "1.0") });
+			Check(three == "This server needs A 2.0 or newer (you have 1.0) and B 2.0 or newer (you have 1.0) and 1 more. Update them and join again.",
+				"below minimum text: three mods name the first two and count the rest");
+			const auto five = reasonFor("A=2.0\nB=2.0\nC=2.0\nD=2.0\nE=2.0\n", true, "1.27.0",
+				{ row("A", "1.0"), row("B", "1.0"), row("C", "1.0"), row("D", "1.0"), row("E", "1.0") });
+			Check(five.find(" and 3 more. Update them and join again.") != std::string::npos && five.find("C 2.0") == std::string::npos,
+				"below minimum text: five mods say 3 more");
+			const auto wire = reasonFor("ProductionViewer=wire\n", true, "1.27.0", { row("ProductionViewer", "0.18.4", true) });
+			Check(wire == "This server needs ProductionViewer to match the server's version (you have 0.18.4). Update ProductionViewer, or remove it, and join again.",
+				"below minimum text: a wire row");
+			const auto wireNoVersion = reasonFor("ProductionViewer=wire\n", true, "1.27.0", { row("ProductionViewer", "", true) });
+			Check(wireNoVersion == "This server needs ProductionViewer to match the server's version. Update ProductionViewer, or remove it, and join again.",
+				"below minimum text: a wire row with no version shown");
+			const auto mixed = reasonFor("loader=1.27.0\nRuptureTimer=0.11.0\n", true, "1.25.0", { row("RuptureTimer", "0.9.2") });
+			Check(mixed == "This server needs ModLoader 1.27.0 or newer (you have 1.25.0) and RuptureTimer 0.11.0 or newer (you have 0.9.2). Update them and join again.",
+				"below minimum text: the loader and a mod together");
+			const auto wireAndNumber = reasonFor("A=wire\nB=2.0\n", true, "1.27.0", { row("A", "1.0", true), row("B", "1.0") });
+			Check(wireAndNumber == "This server needs A to match the server's version (you have 1.0) and B 2.0 or newer (you have 1.0). Update them and join again.",
+				"below minimum text: a wire row beside a number row");
+			Check(reasonFor("RuptureTimer=0.11.0\n", true, "1.27.0", { row("RuptureTimer", "0.12.0") }).empty(), "below minimum text: nothing below, no text");
+			Check(BuildBelowMinimumReason({}).empty(), "below minimum text: no violations, no text");
+			Check(reasonFor("RuptureTimer=v0.11.0\n", true, "1.27.0", { row("RuptureTimer", "0.9.2") }).find("RuptureTimer v0.11.0 or newer") != std::string::npos,
+				"below minimum text: the host's number is shown as written");
+
+			Check(loaderOld.size() <= 150 && one.size() <= 150 && wire.size() <= 150, "below minimum text: loader, one mod and wire are within 150 characters");
+			Check(two.size() <= 160, "below minimum text: two mods stay near 150 characters");
+
+			// Plain: ASCII only, one line, no mention of the version object map.
+			bool plain = true;
+			for (const std::string* t : { &loaderOld, &loaderSilent, &one, &two, &three, &five, &wire, &wireNoVersion, &mixed, &wireAndNumber })
+			{
+				for (char c : *t)
+					if (static_cast<unsigned char>(c) < 0x20 || static_cast<unsigned char>(c) > 0x7E)
+						plain = false;
+				if (t->find("map") != std::string::npos || t->find("Map") != std::string::npos)
+					plain = false;
+			}
+			Check(plain, "below minimum text: plain ASCII on one line, no word map");
+
+			// The cap: long mod names are cut at the end; the text never passes the cap.
+			const std::string longA(128, 'A');
+			const std::string longB(128, 'B');
+			const std::string table2 = longA + "=2.0\n" + longB + "=2.0\n";
+			const std::vector<ManifestRow> longRows = { row(longA.c_str(), "1.0"), row(longB.c_str(), "1.0") };
+			const auto cut = reasonFor(table2, true, "1.27.0", longRows);
+			Check(cut.size() <= kMaxBelowMinimumReason && cut.size() > 100, "below minimum text: two long names fit under the cap");
+			Check(cut.find("A 2.0 or newer (you have 1.0) and B") != std::string::npos && cut.find(" 2.0 or newer (you have 1.0). Update them and join again.") != std::string::npos,
+				"below minimum text: names are cut at the end, the numbers and the ask stay");
+			const auto cutOne = reasonFor(longA + "=2.0\n", true, "1.27.0", { row(longA.c_str(), "1.0") });
+			Check(cutOne.size() <= kMaxBelowMinimumReason && cutOne.find("Update A") != std::string::npos && cutOne.find("or remove it, and join again.") != std::string::npos,
+				"below minimum text: one long name is cut too and the ask stays");
+			Check(reasonFor("A=2.0\n", true, "1.27.0", { row("A", "1.0") }).size() < 150, "below minimum text: a short name is not cut");
+			const auto manyLong = reasonFor(longA + "=2.0\n" + longB + "=2.0\n" + "loader=1.27.0\n", true, "1.0.0", longRows);
+			Check(manyLong.size() <= kMaxBelowMinimumReason, "below minimum text: the loader and two long names stay under the cap");
+
+			// Even maximal numbers cannot pass the hard cap.
+			const std::string bigVer = "1." + std::string(60, '9');
+			const auto huge = reasonFor(longA + "=" + bigVer + "\n" + longB + "=" + bigVer + "\n", true, "1.27.0",
+				{ row(longA.c_str(), "1.0"), row(longB.c_str(), "1.0") });
+			Check(huge.size() <= kMaxBelowMinimumReason, "below minimum text: the hard cap holds against maximal numbers");
+
+			// A name with control characters or non-ASCII bytes is made plain.
+			const auto odd = BuildBelowMinimumReason({ Violation{ false, std::string("Bad\x01Na\xC3\xA9me"), "2.0", "1.0" } });
+			bool oddPlain = !odd.empty();
+			for (char c : odd)
+				if (static_cast<unsigned char>(c) < 0x20 || static_cast<unsigned char>(c) > 0x7E)
+					oddPlain = false;
+			Check(oddPlain && odd.find("Bad?Na??me") != std::string::npos, "below minimum text: control and non-ASCII bytes in a name become '?'");
+		}
+	}
+
 	printf("%d checks, %d failed\n", g_checks, g_failed);
 	return g_failed ? 1 : 0;
 }

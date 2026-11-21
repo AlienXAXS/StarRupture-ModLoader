@@ -844,4 +844,242 @@ namespace HostRulesWire
             return MinCheck::Unparseable;
         return AutoUpdateVersion::CompareVersions(a, b) < 0 ? MinCheck::Below : MinCheck::Ok;
     }
+
+    // ------------------------------------------------ Minimum versions, per mod
+
+    // The host's version table: the least ModLoader a client may run and the
+    // least version of each mod. Written as text, read by ParseMinimumsText:
+    //
+    //   # a comment (also a line starting with ';'); blank lines are skipped
+    //   loader=<version>        the minimum ModLoader; empty or absent = off
+    //   Plugin=<version>        the minimum version of one mod
+    //   Plugin=wire             the player's copy of the mod must be one the wire
+    //                           check accepts (wire_compat.h); no number
+    //
+    // Same line rules as the rules text: LF or CRLF, a UTF-8 BOM at the start
+    // ignored, spaces and tabs trimmed around a line, a key and a value, a
+    // control character inside a line is an error. Keys ignore case. A version
+    // is what IsBelowMinimum can read: "0.11.0", "v0.11.0", "1.27.0-dev.3". One
+    // it cannot read is refused, never stored. A key given twice is an error.
+    // The key "loader" is the loader's; a mod cannot be named that.
+    struct ModMinimum
+    {
+        std::string plugin;
+        std::string version; // empty when wire
+        bool wire = false;
+    };
+
+    struct Minimums
+    {
+        std::string loader; // empty = no loader minimum
+        std::vector<ModMinimum> mods;
+
+        bool Empty() const { return loader.empty() && mods.empty(); }
+    };
+
+    // Most rows one table may hold.
+    constexpr size_t kMaxModMinimums = 512;
+
+    // Reads minimums text into *out. On any error `out` is left as it was and
+    // `error` holds a line for the log or the console, "line N: ...". On Ok
+    // `error` is empty and `out` is the whole table. Empty or comment-only
+    // text is an empty table (everything off). Statuses: TooLarge, BadLine (no
+    // '='), BadKey (a mod name that cannot be sent), BadValue (a version that
+    // cannot be read, or a mod row with no value), Duplicate, ControlChar,
+    // TooManyRows.
+    inline ParseResult ParseMinimumsText(std::string_view text, Minimums& out, std::string& error)
+    {
+        ParseResult res;
+        error.clear();
+        const auto fail = [&](ParseStatus st, size_t line, const std::string& why)
+        {
+            res.status = st;
+            res.line = line;
+            error = line ? "line " + std::to_string(line) + ": " + why : why;
+            return res;
+        };
+
+        if (text.size() > kMaxPayloadBytes)
+            return fail(ParseStatus::TooLarge, 0, "text is over " + std::to_string(kMaxPayloadBytes) + " bytes");
+        if (text.substr(0, 3) == "\xEF\xBB\xBF")
+            text.remove_prefix(3);
+
+        Minimums m;
+        bool haveLoader = false;
+        size_t lineNo = 0;
+        while (!text.empty())
+        {
+            ++lineNo;
+            const size_t nl = text.find('\n');
+            std::string_view line = text.substr(0, nl);
+            text = nl == std::string_view::npos ? std::string_view() : text.substr(nl + 1);
+            if (!line.empty() && line.back() == '\r')
+                line.remove_suffix(1);
+            line = detail::TrimBlanks(line);
+            if (line.empty() || line[0] == '#' || line[0] == ';')
+                continue;
+            if (detail::HasCtl(line))
+                return fail(ParseStatus::ControlChar, lineNo, "control character");
+
+            const size_t eq = line.find('=');
+            if (eq == std::string_view::npos)
+                return fail(ParseStatus::BadLine, lineNo, "expected key=value");
+            const std::string key(detail::TrimBlanks(line.substr(0, eq)));
+            const std::string value(detail::TrimBlanks(line.substr(eq + 1)));
+
+            if (HostRules::SamePlugin(key, "loader"))
+            {
+                if (haveLoader)
+                    return fail(ParseStatus::Duplicate, lineNo, "loader is given twice");
+                haveLoader = true;
+                if (!value.empty() && !detail::TagWellFormed(value))
+                    return fail(ParseStatus::BadValue, lineNo, "loader needs a version such as 1.27.0, or nothing to turn it off");
+                m.loader = value;
+                continue;
+            }
+
+            if (!detail::PluginFieldOk(key))
+                return fail(ParseStatus::BadKey, lineNo, "key must be loader or a mod name");
+            for (const ModMinimum& have : m.mods)
+                if (HostRules::SamePlugin(have.plugin, key))
+                    return fail(ParseStatus::Duplicate, lineNo, key + " is given twice");
+
+            ModMinimum row;
+            row.plugin = key;
+            if (HostRules::SamePlugin(value, "wire"))
+                row.wire = true;
+            else if (detail::TagWellFormed(value))
+                row.version = value;
+            else
+                return fail(ParseStatus::BadValue, lineNo, key + " needs a version such as 0.11.0, or wire");
+            if (m.mods.size() >= kMaxModMinimums)
+                return fail(ParseStatus::TooManyRows, lineNo, "more than " + std::to_string(kMaxModMinimums) + " mods");
+            m.mods.push_back(std::move(row));
+        }
+        out = std::move(m);
+        return res;
+    }
+
+    // One mod of the client's manifest, as FindBelowMinimum needs it.
+    // wireRefused is the caller's answer for this mod on this connection:
+    // ClassifyPair gave PairState::Incompatible. It is read only for a
+    // Plugin=wire row.
+    struct ManifestRow
+    {
+        std::string plugin;
+        std::string version;
+        bool wireRefused = false;
+    };
+
+    // One thing a client is below. need is the number the host asked for, empty
+    // for a Plugin=wire row. have is what the client runs, empty when it has no
+    // version to show (a loader too old to report one).
+    struct Violation
+    {
+        bool isLoader = false;
+        std::string name; // "ModLoader", or the mod's name as the client reported it
+        std::string need;
+        std::string have;
+    };
+
+    // What the client is below, loader first, then mods in manifest order.
+    //   loaderReported  the client sent its loader tag ($ML:feat); false is a
+    //                   loader older than anything with the check
+    //   loaderTag       that tag ("" when not reported)
+    // A loader that did not report is below any loader minimum. A tag that
+    // cannot be read ("dev", empty) never is. A mod the host named and the
+    // client does not have, a mod version that cannot be read, and a mod with
+    // no row are never below. A suffix is ignored: "0.11.0-dev.6" is "0.11.0".
+    inline std::vector<Violation> FindBelowMinimum(const Minimums& table, bool loaderReported, const std::string& loaderTag,
+                                                   const std::vector<ManifestRow>& manifest)
+    {
+        std::vector<Violation> out;
+        if (!table.loader.empty() && detail::TagWellFormed(table.loader))
+        {
+            const bool below = loaderReported ? IsBelowMinimum(loaderTag, table.loader) == MinCheck::Below : true;
+            if (below)
+                out.push_back({ true, "ModLoader", table.loader, loaderReported ? loaderTag : std::string() });
+        }
+        for (const ManifestRow& row : manifest)
+        {
+            for (const ModMinimum& want : table.mods)
+            {
+                if (!HostRules::SamePlugin(want.plugin, row.plugin))
+                    continue;
+                const bool below = want.wire ? row.wireRefused : IsBelowMinimum(row.version, want.version) == MinCheck::Below;
+                if (below)
+                    out.push_back({ false, row.plugin, want.version, row.version });
+                break;
+            }
+        }
+        return out;
+    }
+
+    // The most characters a below-minimum message has. Mod names are cut at the
+    // end to stay under it.
+    constexpr size_t kMaxBelowMinimumReason = 240;
+
+    namespace detail
+    {
+        // A name for the message: plain ASCII, no control characters, cut to maxLen.
+        inline std::string PlainName(const std::string& in, size_t maxLen)
+        {
+            std::string s;
+            for (char c : in)
+            {
+                if (s.size() >= maxLen)
+                    break;
+                s += (static_cast<unsigned char>(c) < 0x20 || static_cast<unsigned char>(c) >= 0x7F) ? '?' : c;
+            }
+            return s;
+        }
+
+        // "RuptureTimer 0.11.0 or newer (you have 0.9.2)", "ModLoader 1.27.0 or
+        // newer", "ProductionViewer to match the server's version (you have 0.18.4)".
+        inline std::string NeedPhrase(const Violation& v, size_t nameLen)
+        {
+            std::string s = v.isLoader ? v.name : PlainName(v.name, nameLen);
+            s += v.need.empty() ? " to match the server's version" : " " + PlainName(v.need, kMaxBuildTagLen) + " or newer";
+            if (!v.have.empty())
+                s += " (you have " + PlainName(v.have, kMaxBuildTagLen) + ")";
+            return s;
+        }
+
+        inline std::string BelowMinimumText(const std::vector<Violation>& v, size_t nameLen)
+        {
+            const Violation& first = v.front();
+            std::string s = "This server needs " + NeedPhrase(first, nameLen);
+            if (v.size() == 1)
+            {
+                if (first.isLoader)
+                    return s + ". Update it, or remove the ModLoader to join without mods.";
+                const std::string name = PlainName(first.name, nameLen);
+                return s + ". Update " + name + ", or remove it, and join again.";
+            }
+            s += " and " + NeedPhrase(v[1], nameLen);
+            if (v.size() > 2)
+                s += " and " + std::to_string(v.size() - 2) + " more";
+            return s + ". Update them and join again.";
+        }
+    }
+
+    // The plain text a player sees when FindBelowMinimum found something: one
+    // line, ASCII, at most kMaxBelowMinimumReason characters ("" when there is
+    // nothing). The loader line and the mod lines are worded for the player; the
+    // text never mentions the version object map.
+    inline std::string BuildBelowMinimumReason(const std::vector<Violation>& violations)
+    {
+        if (violations.empty())
+            return {};
+        size_t nameLen = kMaxPluginLen;
+        std::string s = detail::BelowMinimumText(violations, nameLen);
+        while (s.size() > kMaxBelowMinimumReason && nameLen > 1)
+        {
+            nameLen = nameLen > 16 ? nameLen / 2 : nameLen - 1;
+            s = detail::BelowMinimumText(violations, nameLen);
+        }
+        if (s.size() > kMaxBelowMinimumReason)
+            s.resize(kMaxBelowMinimumReason);
+        return s;
+    }
 }
