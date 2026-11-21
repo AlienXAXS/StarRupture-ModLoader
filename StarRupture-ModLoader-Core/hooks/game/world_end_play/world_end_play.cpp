@@ -54,6 +54,23 @@ namespace Hooks::WorldEndPlay
 		size_t    frameCount;
 	};
 
+	// A call through a null pointer faults with RIP 0 and the caller's return
+	// address on top of the stack, which the unwind tables cannot see. Moves
+	// `ctx` to the caller. Holds no C++ objects (C2712).
+	static bool StepOutOfNullCall(CONTEXT& ctx)
+	{
+		__try
+		{
+			ctx.Rip = *reinterpret_cast<const DWORD64*>(ctx.Rsp);
+			ctx.Rsp += sizeof(DWORD64);
+			return true;
+		}
+		__except (EXCEPTION_EXECUTE_HANDLER)
+		{
+			return false;   // a stack too broken to read
+		}
+	}
+
 	// Runs on the faulting thread before anything is unwound, so the stack
 	// walk sees the real frames. The fault is swallowed, as it always was.
 	static LONG CaptureEndPlayFault(EXCEPTION_POINTERS* ep, EndPlayFault* out)
@@ -70,9 +87,17 @@ namespace Hooks::WorldEndPlay
 			out->frames[0]  = out->address;   // no stack to spare for a walk
 			out->frameCount = 1;
 		}
+		else if (!out->context.Rip)
+		{
+			out->frames[0]  = 0;
+			out->frameCount = 1;
+			CONTEXT caller = out->context;
+			if (StepOutOfNullCall(caller))
+				out->frameCount += PluginGuard::Detail::WalkFrames(caller, out->frames + 1, kFaultFrames - 1);
+		}
 		else
 		{
-			out->frameCount = PluginGuard::Detail::WalkFrames(*ep->ContextRecord, out->frames, kFaultFrames);
+			out->frameCount = PluginGuard::Detail::WalkFrames(out->context, out->frames, kFaultFrames);
 		}
 		return EXCEPTION_EXECUTE_HANDLER;
 	}
@@ -91,9 +116,9 @@ namespace Hooks::WorldEndPlay
 	}
 
 	// Three log lines for one swallowed fault: what and where, the registers, the
-	// stack. A fault here has no other trace, and a world that ends badly is the
-	// usual first sign of a bad save or a plugin that touched the world.
-	static void LogEndPlayFault(const EndPlayFault& f)
+	// stack. A fault here has no other trace. Kept out of CallOriginalSEH's frame,
+	// so the call that does not fault pays nothing for the buffers.
+	__declspec(noinline) static void LogEndPlayFault(const EndPlayFault& f)
 	{
 		wchar_t where[MAX_PATH + 32];
 		FormatModuleOffset(f.address, where, std::size(where));
@@ -107,14 +132,13 @@ namespace Hooks::WorldEndPlay
 		                          f.code, where, access);
 
 		const CONTEXT& c = f.context;
-		const auto r = [](DWORD64 v) { return static_cast<unsigned long long>(v); };
 		ModLoaderLogger::LogError(
 			L"[WorldEndPlay]   registers: RIP=%llX RSP=%llX RBP=%llX RAX=%llX RBX=%llX RCX=%llX RDX=%llX RSI=%llX RDI=%llX "
 			L"R8=%llX R9=%llX R10=%llX R11=%llX R12=%llX R13=%llX R14=%llX R15=%llX",
-			r(c.Rip), r(c.Rsp), r(c.Rbp), r(c.Rax), r(c.Rbx), r(c.Rcx), r(c.Rdx), r(c.Rsi), r(c.Rdi),
-			r(c.R8), r(c.R9), r(c.R10), r(c.R11), r(c.R12), r(c.R13), r(c.R14), r(c.R15));
+			c.Rip, c.Rsp, c.Rbp, c.Rax, c.Rbx, c.Rcx, c.Rdx, c.Rsi, c.Rdi,
+			c.R8, c.R9, c.R10, c.R11, c.R12, c.R13, c.R14, c.R15);
 
-		wchar_t stack[1024] = {};   // the log line holds no more than this
+		wchar_t stack[1024] = {};   // the logger's own limit for one line
 		for (size_t i = 0; i < f.frameCount; ++i)
 		{
 			wchar_t frame[MAX_PATH + 32];
