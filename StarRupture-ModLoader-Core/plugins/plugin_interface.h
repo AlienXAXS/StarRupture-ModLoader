@@ -1380,8 +1380,11 @@ struct PluginFeatureDesc
     const char* const* configKeys;      // "Section.Key" config entries the feature drives, or "Section.*"; may be null
     uint32_t           configKeyCount;
     bool*              enabled;         // may be null. The loader sets *enabled = true when the feature is declared
-                                        // and false if a key misses, before OnPluginLoadHooks returns. It writes
-                                        // it nowhere else, so the plugin may read it for as long as it is loaded.
+                                        // and false if a key misses, before OnPluginLoadHooks returns. It also
+                                        // writes it on the game thread when a server turns the feature off (false)
+                                        // or hands it back (true, only if the game build has it), and again after a
+                                        // late field resolve. Read it, never write it, and never keep a copy as
+                                        // "what the build allows": the loader owns the flag until the plugin unloads.
 };
 
 #define PLUGIN_FEATURE_DESC_INIT { (uint32_t)sizeof(PluginFeatureDesc),                                    nullptr, nullptr, nullptr, 0, nullptr, 0, nullptr }

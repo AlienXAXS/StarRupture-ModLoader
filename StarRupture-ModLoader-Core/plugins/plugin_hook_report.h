@@ -38,6 +38,7 @@
 // ---------------------------------------------------------------------------
 
 #include <string>
+#include <utility>
 #include <vector>
 
 struct IPluginSelf;
@@ -67,6 +68,11 @@ namespace PluginHookReport
         std::string              reason;      // one line, plain English, from the first miss's Cause
         std::vector<FeatureMiss> misses;      // the keys that did not resolve, in order
         std::vector<std::string> configKeys;  // "Section.Key" or "Section.*" entries it drives
+
+        // True for a feature the server turned off (ApplyHostRules), not one
+        // the game build lost. It has no misses, and it is never counted when
+        // the loader works out what the build itself switched off.
+        bool                     host = false;
     };
 
     // A key of a declared feature that waits for a game class that is not
@@ -173,7 +179,9 @@ namespace PluginHookReport
     // The repeated request, outside a session. Resolved: the pending entries
     // for the key are dropped (the plugin sets its own enabled flag). Refused:
     // the entries stay, marked, with the reason. Both leave a key that was
-    // never pending alone.
+    // never pending alone. A resolve that frees a feature also posts the
+    // server's rules for that plugin to the next game tick (ReapplyHostRules):
+    // the plugin writes its own `enabled` flag only after the call returns.
     void LateResolved(const IPluginSelf* self, const char* key);
     void LateRefused(const IPluginSelf* self, const char* key, const char* detail);
 
@@ -188,8 +196,9 @@ namespace PluginHookReport
 
     // v72. Declare a feature for the open session. keys are the names later
     // passed to RecordFailure; configKeys are "Section.Key" or "Section.*".
-    // *enabled (may be null) is set to true now and to false if a key misses,
-    // and never written after the session closes. False, with nothing declared,
+    // *enabled (may be null) is set to true now and to false if a key misses.
+    // After the session closes the loader writes it only for the server's list
+    // (ApplyHostRules) and a late resolve (LateResolved). False, with nothing declared,
     // for no session, an empty id, title or key list, or an id already declared.
     bool DeclareFeature(const IPluginSelf* self, const char* id, const char* title,
                         const std::vector<std::string>& keys, const std::vector<std::string>& configKeys,
@@ -229,11 +238,40 @@ namespace PluginHookReport
     // whether it is on, off for this game build, or off because of the server.
     std::vector<FeatureInfo> Features();
 
-    // Drop the catalog entries of the plugin `self` (and, once the server's
-    // rules exist, the "turned off by this server" lines they put in the
-    // report). Called before every FreeLibrary of that plugin, and by
-    // BeginSession for a reload. Never opens the failure window.
+    // Drop the catalog entries of the plugin `self` and the "turned off by
+    // this server" lines they put in the report. Called before every
+    // FreeLibrary of that plugin, and by BeginSession for a reload. The
+    // server's rules themselves stay: they are the server's, not the
+    // plugin's, and apply again when the plugin is back. Never opens the
+    // failure window.
     void ForgetFeatures(const IPluginSelf* self);
+
+    // --- Host rules: the server's "this feature stays off" list -----------------
+
+    // Make `deny` (plugin name, feature id) the server's list. Every catalog
+    // feature on the list goes off: its `enabled` flag is written false and a
+    // FeatureOff "turned off by this server" is added to the plugin's report,
+    // which the greyed config page, the plugin list and `hookfailures` already
+    // show. Every feature that was on the old list and is not on the new one is
+    // handed back (`*enabled = true`) -- but only if the game build has it on.
+    // A server can take a feature away, never give one the build lost. The
+    // failure window is not opened (no commit serial bump).
+    //
+    // GAME THREAD ONLY: it writes the plugins' flags. A caller on another
+    // thread wraps it in GameThreadDispatch::PostVoid. The list is kept when a
+    // plugin unloads or reloads and applied again as the plugin loads.
+    void ApplyHostRules(const std::vector<std::pair<std::string, std::string>>& deny);
+
+    // Drop the whole list (ApplyHostRules with nothing). Game thread only.
+    void ClearHostRules();
+
+    // Apply the list again to one plugin's features (by name). What a plugin
+    // that writes its `enabled` flag after a late resolve gets, one tick
+    // later. Game thread only; a no-op for a plugin that has no denied feature.
+    void ReapplyHostRules(const char* plugin);
+
+    // Copy of the server's list as (plugin name, feature id).
+    std::vector<std::pair<std::string, std::string>> HostDeny();
 
     // --- Report, for the UI and the console -----------------------------------
 
