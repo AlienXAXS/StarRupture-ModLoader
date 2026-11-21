@@ -424,6 +424,26 @@ who sent a feature list at once. `RegisterOnClientFeatures(self, callback)` call
 a player's feature list arrives or changes, with that player's controller; that is the time to call
 `SetRulesForConnection`. All calls are for the server's game thread and do nothing on a client.
 
+A server can also ask for a minimum version. `SetVersionMinimums(text, error, errorSize)` takes one line per
+rule (empty text turns everything off; a bad text returns false with `error` and changes nothing):
+
+```
+# comment
+loader=1.27.0
+RuptureTimer=0.11.0
+ProductionViewer=wire
+```
+
+`loader=` is the oldest ModLoader allowed, `Plugin=version` the oldest version of one mod (the name ignores
+case), and `Plugin=wire` means the player's copy must be one the mod wire check accepts. Register
+`RegisterOnClientBelowMinimum(self, callback)`; the loader calls `callback(playerController, plainReason)` on the
+game thread, once per join, when a player is below. `plainReason` is one line of plain words for the player
+("This server needs RuptureTimer 0.11.0 or newer (you have 0.9.2). ..."). The loader never removes anyone: your
+plugin decides (an admin may be exempt) and does the removal itself. Players with no mod loader are never
+checked, and a dev build or any version the loader cannot read is never below. A loader too old to report its
+version counts as below a set `loader=` minimum after 30 seconds. Setting new minimums checks the players
+already connected that have not been reported yet.
+
 ---
 
 ## The Server Console (dedicated server)
