@@ -4040,7 +4040,30 @@ typedef void        (*PluginShutdownFunc)();
 //   }
 typedef void        (*PluginLoadHooksFunc)(IPluginSelf* self, IPluginHookScanner* scanner);
 
+// OPTIONAL fifth export. A plugin that sends packets to or from another copy of
+// itself (IPluginNetworkChannel) says here which versions of itself it can talk
+// to. Without it, plugin packets flow only between identical version strings.
+//
+//   wireId         A number the author bumps whenever the packet format changes
+//                  and leaves alone when it does not. Two copies that declare the
+//                  same non-zero wireId are compatible, whatever their versions.
+//   acceptVersions Optional ';'-separated list of other versions this one can
+//                  talk to, e.g. "0.11.0;0.11.1". Exact version strings; null or
+//                  "" for none. An element cannot contain ';'.
+//
+// Return a pointer to a static struct that stays valid while the DLL is loaded.
+//
+//   static const PluginWireInfo kWire = { 2, "0.11.0" };
+//   extern "C" __declspec(dllexport) const PluginWireInfo* GetPluginWireInfo() { return &kWire; }
+struct PluginWireInfo
+{
+	uint32_t    wireId;
+	const char* acceptVersions;
+};
+typedef const PluginWireInfo* (*PluginWireInfoFunc)();
+
 #define PLUGIN_GET_INFO_FUNC_NAME   "GetPluginInfo"
 #define PLUGIN_INIT_FUNC_NAME       "PluginInit"
 #define PLUGIN_SHUTDOWN_FUNC_NAME   "PluginShutdown"
 #define PLUGIN_LOAD_HOOKS_FUNC_NAME "OnPluginLoadHooks"
+#define PLUGIN_WIRE_INFO_FUNC_NAME  "GetPluginWireInfo"

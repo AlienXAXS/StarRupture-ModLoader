@@ -399,21 +399,154 @@ namespace
         return g_manifests.find(conn) != g_manifests.end();
     }
 
-    // Does this connection's reported manifest contain the plugin at that exact
-    // version? False when the client never reported -- see the header note.
+    // When each connection's manifest arrived (GetTickCount64). Same lock and
+    // lifetime as g_manifests.
+    static std::unordered_map<void*, uint64_t> g_manifestTick;
+
+    // How long ago this connection's manifest arrived, in ms. Huge when it has
+    // not reported, so a pair with no manifest never counts as "still settling".
+    static uint64_t ManifestAgeMs(void* conn)
+    {
+        std::lock_guard<std::mutex> lk(g_manifestMutex);
+        auto it = g_manifestTick.find(conn);
+        if (it == g_manifestTick.end()) return UINT64_MAX;
+        return GetTickCount64() - it->second;
+    }
+
+    // A pair that cannot exchange data is warned about only this long after the
+    // manifest, so a peer whose wire declaration is still on its way is not
+    // reported as incompatible first.
+    static constexpr uint64_t kWireWarnDelayMs = 5000;
+
+    // What the wire check found for one plugin on one connection.
+    struct PairCheck
+    {
+        WireCompat::PairState state   = WireCompat::PairState::NotReported;
+        WireCompat::Verdict   why     = WireCompat::Verdict::NameMismatch;
+        std::string           clientVersion;   // the client's entry that decided it
+        WireCompat::Decl      serverDecl;
+        WireCompat::Decl      clientDecl;
+    };
+
+    // The one decision for whether this server plugin may exchange data with that
+    // connection, shared by the targeted send, the broadcast, the ready check and
+    // the ready pump. The client side is its manifest entry; the server side is
+    // this loader's own plugin and what it declared. Takes no lock the plugin
+    // manager's can wait on: the manifest lock is released before it is asked.
+    static PairCheck CheckClientPair(void* conn, const char* name, const char* version)
+    {
+        PairCheck r;
+        if (!conn || !name) return r;
+        const std::string ver = version ? version : "";
+
+        // Hot path: the same version is a match with no further lookup.
+        std::vector<std::string> otherVersions;
+        {
+            std::lock_guard<std::mutex> lk(g_manifestMutex);
+            auto it = g_manifests.find(conn);
+            if (it == g_manifests.end()) return r;
+
+            for (const auto& rp : it->second)
+            {
+                if (rp.name != name) continue;
+                if (rp.version == ver)
+                {
+                    r.state = WireCompat::PairState::Ready;
+                    r.why = WireCompat::Verdict::SameVersion;
+                    return r;
+                }
+                otherVersions.push_back(rp.version);
+            }
+        }
+        if (otherVersions.empty()) return r;   // NotReported
+
+        WireCompat::Entry local;
+        local.name = name;
+        local.version = ver;
+        local.decl = PluginManager::GetWireDecl(name);
+        r.serverDecl = local.decl;
+        r.state = WireCompat::PairState::Incompatible;
+        r.why = WireCompat::Verdict::Incompatible;
+        r.clientVersion = otherVersions.front();
+
+        for (const std::string& cv : otherVersions)
+        {
+            WireCompat::Entry client;
+            client.name = name;
+            client.version = cv;
+            WireCompat::Verdict v = WireCompat::Verdict::Incompatible;
+            const WireCompat::PairState s = WireCompat::ClassifyPair(&client, local, true, &v);
+            if (s == WireCompat::PairState::Ready)
+            {
+                r.state = s;
+                r.why = v;
+                r.clientVersion = cv;
+                r.clientDecl = client.decl;
+                break;
+            }
+        }
+        return r;
+    }
+
+    // Wire log lines, once per plugin and connection. The warn-once sets are
+    // forgotten with the connection in ForgetConnectionState.
+    static std::mutex            g_wireLogMutex;
+    static WireCompat::WarnOnce  g_wireBlockedWarned;
+    static WireCompat::WarnOnce  g_wireAcceptedNoted;
+
+    // Says what CheckClientPair found, when there is something to say: one INFO
+    // when a pair with different version strings is accepted, one WARN when a pair
+    // is blocked (once the manifest is old enough, see kWireWarnDelayMs). Silent
+    // when the versions match.
+    static void ReportPair(void* conn, const char* name, const char* version, const PairCheck& pc)
+    {
+        if (!conn || !name) return;
+
+        if (pc.state == WireCompat::PairState::Ready)
+        {
+            if (pc.why == WireCompat::Verdict::SameVersion) return;
+            bool first;
+            {
+                std::lock_guard<std::mutex> lk(g_wireLogMutex);
+                first = g_wireAcceptedNoted.First(conn, name);
+            }
+            if (first)
+                ModLoaderLogger::LogInfo(
+                    L"[NetworkChannel] Plugin '%S': client %p runs version '%S', the server runs '%S'. "
+                    L"Plugin data is exchanged because they are compatible (%S).",
+                    name, conn, pc.clientVersion.c_str(), version ? version : "",
+                    WireCompat::Reason(pc.why));
+            return;
+        }
+
+        if (pc.state != WireCompat::PairState::Incompatible) return;
+        if (ManifestAgeMs(conn) < kWireWarnDelayMs) return;
+
+        bool first;
+        {
+            std::lock_guard<std::mutex> lk(g_wireLogMutex);
+            first = g_wireBlockedWarned.First(conn, name);
+        }
+        if (!first) return;
+
+        std::string ids;
+        if (pc.serverDecl.declared && pc.clientDecl.declared)
+            ids = " (wire id " + WireCompat::WireIdText(pc.serverDecl) + " on the server, "
+                + WireCompat::WireIdText(pc.clientDecl) + " on the client)";
+        ModLoaderLogger::LogWarn(
+            L"[NetworkChannel] Plugin '%S': client %p runs version '%S', the server runs '%S'%S. "
+            L"Wire format not known to match, plugin data will not be exchanged.",
+            name, conn, pc.clientVersion.c_str(), version ? version : "", ids.c_str());
+    }
+
+    // Does this connection's plugin match the server's, so data may flow? False
+    // when the client never reported, or reported a version this one is not known
+    // to be compatible with.
     static bool ClientHasPlugin(void* conn, const char* name, const char* version)
     {
-        if (!conn || !name) return false;
-        const char* ver = version ? version : "";
-
-        std::lock_guard<std::mutex> lk(g_manifestMutex);
-        auto it = g_manifests.find(conn);
-        if (it == g_manifests.end()) return false;
-
-        for (const auto& rp : it->second)
-            if (rp.name == name && rp.version == ver)
-                return true;
-        return false;
+        const PairCheck pc = CheckClientPair(conn, name, version);
+        ReportPair(conn, name, version, pc);
+        return pc.state == WireCompat::PairState::Ready;
     }
 
     // ---- Connection lookups -------------------------------------------------
@@ -869,8 +1002,8 @@ namespace
     // Which callbacks have already been told about which connection.
     static std::unordered_map<void*, std::vector<PluginClientReadyCallback>> g_announced;
     static bool                        g_readyDirty = false;
-    // Warn-once keys ("plugin\x01<conn>") so a mistaken send does not spam.
-    static std::unordered_set<std::string> g_notReadyWarned;
+    // Warn-once per (connection, plugin) so a mistaken send does not spam.
+    static WireCompat::WarnOnce g_notReadyWarned;
 
     static void MarkReadyDirty()
     {
@@ -881,10 +1014,8 @@ namespace
     // True if this (plugin, connection) pair should be warned about now.
     static bool ShouldWarnNotReady(const char* plugin, void* conn)
     {
-        char key[160];
-        _snprintf_s(key, sizeof(key), _TRUNCATE, "%s\x01%p", plugin ? plugin : "", conn);
         std::lock_guard<std::mutex> lk(g_readyMutex);
-        return g_notReadyWarned.insert(key).second;
+        return g_notReadyWarned.First(conn, plugin ? plugin : "");
     }
 
     // Drop any pending greeting whose state names this controller.
@@ -907,7 +1038,7 @@ namespace
         }
     }
 
-    // Everything keyed by connection lives in five places; forgetting a peer has
+    // Everything keyed by connection lives in several places; forgetting a peer has
     // to clear all of them or the leftovers outlive it. Defined here, after every
     // store exists.
     static void ForgetConnectionState(void* conn)
@@ -922,6 +1053,7 @@ namespace
         {
             std::lock_guard<std::mutex> lk(g_manifestMutex);
             g_manifests.erase(conn);
+            g_manifestTick.erase(conn);
         }
         {
             std::lock_guard<std::mutex> lk(g_helloMutex);
@@ -930,9 +1062,15 @@ namespace
         {
             std::lock_guard<std::mutex> lk(g_readyMutex);
             g_announced.erase(conn);
-            // Cheap and rare, and re-warning about a peer that reconnects is
-            // wanted rather than avoided.
-            g_notReadyWarned.clear();
+            // Only this connection's keys: another peer leaving must not make a
+            // peer that is still connected warn again. A peer that reconnects gets
+            // a fresh connection and warns again, as wanted.
+            g_notReadyWarned.Forget(conn);
+        }
+        {
+            std::lock_guard<std::mutex> lk(g_wireLogMutex);
+            g_wireBlockedWarned.Forget(conn);
+            g_wireAcceptedNoted.Forget(conn);
         }
     }
 
@@ -949,12 +1087,36 @@ namespace
 
         if (!HasNetAuthority()) return;
 
-        // Snapshot the manifests, then the registrations, then decide. Callbacks
-        // are plugin code and are never invoked with a lock held.
-        std::unordered_map<void*, std::vector<NetworkChannel::RemotePlugin>> manifests;
+        // Snapshot the connections, then the registrations, then decide. Callbacks
+        // are plugin code and are never invoked with a lock held, and the wire
+        // check (which asks the plugin manager) runs with none held either.
+        std::vector<void*> conns;
         {
             std::lock_guard<std::mutex> lk(g_manifestMutex);
-            manifests = g_manifests;
+            for (const auto& kv : g_manifests) conns.push_back(kv.first);
+        }
+        std::vector<ClientReadyReg> regs;
+        {
+            std::lock_guard<std::mutex> lk(g_readyMutex);
+            regs = g_clientReadyRegs;
+        }
+
+        // Same check as the send paths, so a pair is ready exactly when a send
+        // to it would go out. A pair that is incompatible but whose manifest is
+        // still young stays pending: the peer's declaration may be on its way.
+        struct PairResult { bool ready = false; bool young = false; };
+        std::vector<PairResult> results(conns.size() * regs.size());
+        for (size_t ci = 0; ci < conns.size(); ++ci)
+        {
+            for (size_t ri = 0; ri < regs.size(); ++ri)
+            {
+                const PairCheck pc = CheckClientPair(conns[ci], regs[ri].plugin.c_str(), regs[ri].version.c_str());
+                ReportPair(conns[ci], regs[ri].plugin.c_str(), regs[ri].version.c_str(), pc);
+                PairResult& res = results[ci * regs.size() + ri];
+                res.ready = pc.state == WireCompat::PairState::Ready;
+                res.young = pc.state == WireCompat::PairState::Incompatible
+                    && ManifestAgeMs(conns[ci]) < kWireWarnDelayMs;
+            }
         }
 
         struct Pending { PluginClientReadyCallback cb; void* conn; void* pc; std::string plugin; };
@@ -963,18 +1125,18 @@ namespace
 
         {
             std::lock_guard<std::mutex> lk(g_readyMutex);
-            for (const auto& mkv : manifests)
+            for (size_t ci = 0; ci < conns.size(); ++ci)
             {
-                void* conn = mkv.first;
-                for (const auto& reg : g_clientReadyRegs)
+                void* conn = conns[ci];
+                for (size_t ri = 0; ri < regs.size(); ++ri)
                 {
+                    const ClientReadyReg& reg = regs[ri];
                     auto& told = g_announced[conn];
                     if (std::find(told.begin(), told.end(), reg.cb) != told.end()) continue;
 
-                    bool match = false;
-                    for (const auto& rp : mkv.second)
-                        if (rp.name == reg.plugin && rp.version == reg.version) { match = true; break; }
-                    if (!match) continue;
+                    const PairResult& res = results[ci * regs.size() + ri];
+                    if (res.young) stillWaiting = true;
+                    if (!res.ready) continue;
 
                     // The controller can lag the manifest. Leave the pair
                     // unannounced and try again next tick rather than handing a
@@ -1224,12 +1386,22 @@ namespace
             return;
         }
 
-        // Only send to a client that reported this exact plugin and version.
-        // A version mismatch is treated as absence on purpose: two builds of a
-        // plugin that disagree about their own packet layout is precisely the
-        // case this exists to stop.
+        // Only send to a client that reported this plugin at the same version, or
+        // at one the two plugins declare compatible (GetPluginWireInfo). Any other
+        // version is treated as absence on purpose: two builds of a plugin that
+        // disagree about their own packet layout is precisely the case this exists
+        // to stop.
         void* targetConn = ConnectionForPlayer(playerController);
-        if (!ClientHasPlugin(targetConn, self->name, self->version))
+        const PairCheck pair = CheckClientPair(targetConn, self->name, self->version);
+        ReportPair(targetConn, self->name, self->version, pair);
+        if (pair.state == WireCompat::PairState::Incompatible)
+        {
+            ModLoaderLogger::LogTrace(
+                L"[NetworkChannel] SendPacketToClient skipped: player=%p runs an incompatible '%S'",
+                playerController, self->name);
+            return;
+        }
+        if (pair.state != WireCompat::PairState::Ready)
         {
             // Warned, not logged at Debug, and warned once per plugin per peer:
             // a targeted send names a specific recipient, so a dropped one is
@@ -2227,6 +2399,7 @@ static bool DispatchServerNarrow(void* senderConn, void* senderUObject,
             {
                 std::lock_guard<std::mutex> lk(g_manifestMutex);
                 g_manifests[senderConn] = std::move(plugins);
+                g_manifestTick[senderConn] = GetTickCount64();
             }
 
             // The other half of the pair above: one INFO line saying what this
@@ -2394,6 +2567,7 @@ static void OnWorldEndPlayForgetConns(SDK::UWorld* /*world*/, const char* /*worl
     {
         std::lock_guard<std::mutex> lk(g_manifestMutex);
         g_manifests.clear();
+        g_manifestTick.clear();
     }
     {
         std::lock_guard<std::mutex> lk(g_helloMutex);
@@ -2402,8 +2576,13 @@ static void OnWorldEndPlayForgetConns(SDK::UWorld* /*world*/, const char* /*worl
     {
         std::lock_guard<std::mutex> lk(g_readyMutex);
         g_announced.clear();
-        g_notReadyWarned.clear();
+        g_notReadyWarned.Clear();
         g_readyDirty = !g_clientReadyRegs.empty(); // re-announce into the next world
+    }
+    {
+        std::lock_guard<std::mutex> lk(g_wireLogMutex);
+        g_wireBlockedWarned.Clear();
+        g_wireAcceptedNoted.Clear();
     }
 #ifdef MODLOADER_CLIENT_BUILD
     // Our own report is void too: the next world means a new connection, so the
@@ -2744,6 +2923,7 @@ void NetworkChannel::Shutdown()
     {
         std::lock_guard<std::mutex> lk(g_manifestMutex);
         g_manifests.clear();
+        g_manifestTick.clear();
     }
     {
         std::lock_guard<std::mutex> lk(g_helloMutex);
@@ -2753,8 +2933,13 @@ void NetworkChannel::Shutdown()
         std::lock_guard<std::mutex> lk(g_readyMutex);
         g_clientReadyRegs.clear();
         g_announced.clear();
-        g_notReadyWarned.clear();
+        g_notReadyWarned.Clear();
         g_readyDirty = false;
+    }
+    {
+        std::lock_guard<std::mutex> lk(g_wireLogMutex);
+        g_wireBlockedWarned.Clear();
+        g_wireAcceptedNoted.Clear();
     }
 
     {
