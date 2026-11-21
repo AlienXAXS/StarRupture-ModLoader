@@ -436,6 +436,13 @@ namespace
         std::string rulesSent;
         bool rulesSentOnce = false;
         bool featAnnouncePending = false;
+        // Rate limit on "$ML:feat": the plugin announce and the rules re-push
+        // run at most once per HostRulesWire::kFeatActGapMs per connection.
+        // featDeferred marks a message that arrived inside the gap; the pump
+        // acts on it after the gap. lastFeatActMs is GetTickCount64.
+        bool hasFeatAct = false;
+        uint64_t lastFeatActMs = 0;
+        bool featDeferred = false;
         // The admin prompt (AskAdmin): a prompt is open for this client until a
         // close message goes out. lastAnswerMs is when its last accepted answer
         // came in (GetTickCount64), for the rate limit.
@@ -487,6 +494,10 @@ namespace
         uint64_t gen = 0;
         bool hadFeat = false;
         uint64_t manifestTick = 0;
+        // Engine stall time seen while this connection had a manifest and no
+        // feature list: added to kLoaderReportGraceMs, since the client could
+        // not answer during it.
+        uint64_t graceExtraMs = 0;
         std::string reason;
     };
     static HostRulesWire::Minimums g_minimums;
@@ -497,7 +508,8 @@ namespace
     // A loader that sends a manifest but never "$ML:feat" is too old to report
     // its version. The client answers the ack within about 20 s at worst
     // (kRetryIntervalMs x kMaxAttempts), so this long after the manifest it is
-    // treated as reporting no version.
+    // treated as reporting no version. A stalled engine tick does not count
+    // toward it (MinimumsCheck::graceExtraMs).
     static constexpr uint64_t kLoaderReportGraceMs = 30000;
 
     // The ack tail (the wire table) stays within this many bytes. A table that
@@ -3226,8 +3238,17 @@ static bool HR_SetRulesForConnection(void* playerController, const char* text, c
     HostRulesWire::RulesSet set;
     if (!ReadRulesText(text, set, error, errorSize)) return false;
 
+    // A set is kept only for a connection the loader knows: one that sent its
+    // manifest, or one still in the driver's list. Anything else would sit in
+    // the map until the process ends.
+    const bool live = IsLiveClientConnection(conn);
     {
         std::lock_guard<std::mutex> lk(g_manifestMutex);
+        if (!live && g_manifests.find(conn) == g_manifests.end())
+        {
+            CopyErrorText(error, errorSize, "no connection for this player controller");
+            return false;
+        }
         g_connRules[conn] = std::move(set);
     }
     NetworkChannel::HostRulesChanged();
@@ -3498,8 +3519,11 @@ static std::vector<HostRulesWire::ManifestRow> BuildManifestRows(
 // reported no version. Vanilla players (no manifest) and the listen host's own
 // controller (no connection) are never looked at. A finding whose controller does
 // not exist yet is kept and retried each tick. With an empty table this is one
-// atomic load.
-static void PumpVersionMinimums()
+// atomic load. tickGapMs is the time since the previous tick: a stall longer
+// than HostRulesWire::kStallGapMs does not count toward the 30 s above.
+// Controllers are only resolved for connections still in the driver's list; the
+// state of one that left it is forgotten.
+static void PumpVersionMinimums(uint64_t tickGapMs)
 {
     if (!g_minimumsActive.load()) return;
     if (!HasNetAuthority()) return;
@@ -3530,7 +3554,12 @@ static void PumpVersionMinimums()
             if (tk == g_manifestTick.end()) continue;
             const auto ft = g_clientFeat.find(kv.first);
             const bool hasFeat = (ft != g_clientFeat.end());
-            if (!hasFeat && now - tk->second < kLoaderReportGraceMs) continue;
+            if (!hasFeat)
+            {
+                st.graceExtraMs += HostRulesWire::StallExtensionMs(tickGapMs);
+                if (!HostRulesWire::LoaderGraceOver(now, tk->second, st.graceExtraMs, kLoaderReportGraceMs))
+                    continue;
+            }
 
             if (st.checked && st.gen == g_minimumsGen && st.hadFeat == hasFeat &&
                 st.manifestTick == tk->second)
@@ -3567,12 +3596,17 @@ static void PumpVersionMinimums()
     }
     if (retry.empty()) return;
 
-    struct Fire { void* pc; std::string reason; std::string who; };
+    struct Fire { void* conn; std::string reason; std::string who; };
     std::vector<Fire> fires;
     for (void* conn : retry)
     {
-        void* pc = PlayerForConnection(conn);
-        if (!pc) continue;
+        // A connection that left the driver's list has no controller to read.
+        if (!IsLiveClientConnection(conn))
+        {
+            ForgetConnectionState(conn);
+            continue;
+        }
+        if (!PlayerForConnection(conn)) continue;
 
         Fire f;
         {
@@ -3582,7 +3616,7 @@ static void PumpVersionMinimums()
             it->second.fired = true;
             f.reason = it->second.reason;
         }
-        f.pc = pc;
+        f.conn = conn;
         f.who = PlayerNameForConnection(conn);
         fires.push_back(std::move(f));
     }
@@ -3601,9 +3635,13 @@ static void PumpVersionMinimums()
             f.who.empty() ? "(unnamed)" : f.who.c_str(), f.reason.c_str());
         for (PluginClientBelowMinimumCallback cb : cbs)
         {
+            // A callback may remove this player (or another one), so the
+            // controller is resolved again before each call.
+            void* pc = LiveControllerForConnection(f.conn);
+            if (!pc) break;
             try
             {
-                PluginGuard::Invoke(cb, "below-minimum callback", f.pc, f.reason.c_str());
+                PluginGuard::Invoke(cb, "below-minimum callback", pc, f.reason.c_str());
             }
             catch (const std::exception& ex)
             {
@@ -3620,28 +3658,65 @@ static void PumpVersionMinimums()
 
 // Tells the registered plugins about every client whose feature list arrived or
 // changed since the last tick, on the game thread (the tick is). A client whose
-// controller does not exist yet stays pending and is retried next tick. With no
-// callback registered the pending marks are simply cleared.
-static void PumpClientFeatures()
+// controller does not exist yet stays pending and is retried next tick; one that
+// left the driver's list is forgotten. A list that arrived inside the rate-limit
+// gap (featDeferred) is acted on here once the gap is over: the announce and the
+// rules push the receive skipped. With no callback registered the pending marks
+// are simply cleared.
+static void PumpClientFeatures(uint64_t now)
 {
     if (!g_featAnnounceDirty.load()) return;
     if (!HasNetAuthority()) return;
 
-    std::vector<void*> controllers;
+    struct Item { void* conn; bool resend; };
+    std::vector<Item> items;
     {
         std::lock_guard<std::mutex> lk(g_manifestMutex);
-        bool stillPending = false;
         for (auto& kv : g_clientFeat)
         {
-            if (!kv.second.featAnnouncePending) continue;
-            void* pc = PlayerForConnection(kv.first);
-            if (!pc) { stillPending = true; continue; }
-            kv.second.featAnnouncePending = false;
-            controllers.push_back(pc);
+            ClientFeatInfo& fi = kv.second;
+            bool resend = false;
+            if (fi.featDeferred &&
+                HostRulesWire::DecideFeatAct(fi.hasFeatAct, now, fi.lastFeatActMs) == HostRulesWire::FeatGate::Act)
+            {
+                fi.featDeferred = false;
+                fi.hasFeatAct = true;
+                fi.lastFeatActMs = now;
+                fi.featAnnouncePending = true;
+                resend = true;
+            }
+            if (resend || fi.featAnnouncePending)
+                items.push_back({ kv.first, resend });
         }
-        g_featAnnounceDirty.store(stillPending);
     }
-    if (controllers.empty()) return;
+
+    // No engine access under the lock: the controller is read from the
+    // connection only once it is known to be in the driver's list.
+    std::vector<void*> resolved;
+    for (const Item& it : items)
+    {
+        if (!IsLiveClientConnection(it.conn))
+        {
+            ForgetConnectionState(it.conn);
+            continue;
+        }
+        if (it.resend) SendRulesTo(it.conn, true);
+        if (PlayerForConnection(it.conn)) resolved.push_back(it.conn);
+    }
+
+    {
+        std::lock_guard<std::mutex> lk(g_manifestMutex);
+        for (void* conn : resolved)
+        {
+            const auto it = g_clientFeat.find(conn);
+            if (it != g_clientFeat.end()) it->second.featAnnouncePending = false;
+        }
+        bool stillOpen = false;
+        for (const auto& kv : g_clientFeat)
+            stillOpen = stillOpen || kv.second.featAnnouncePending || kv.second.featDeferred;
+        g_featAnnounceDirty.store(stillOpen);
+    }
+    if (resolved.empty()) return;
 
     std::vector<PluginClientFeaturesCallback> cbs;
     {
@@ -3649,10 +3724,14 @@ static void PumpClientFeatures()
         cbs = g_featCbs;
     }
 
-    for (void* pc : controllers)
+    for (void* conn : resolved)
     {
         for (PluginClientFeaturesCallback cb : cbs)
         {
+            // A callback may remove this player (or another one), so the
+            // controller is resolved again before each call.
+            void* pc = LiveControllerForConnection(conn);
+            if (!pc) break;
             try
             {
                 PluginGuard::Invoke(cb, "client-features callback", pc);
@@ -3672,30 +3751,41 @@ static void PumpClientFeatures()
 
 // Hands the accepted admin answers to the registered plugins, on the game thread
 // (the tick is), outside all locks. The player controller is looked up from the
-// connection the answer arrived on. An answer whose controller does not exist yet
-// waits for a later tick, and is dropped after kAdminAnswerMaxWaitMs. The code
-// text is overwritten once the callbacks returned.
+// connection the answer arrived on, only while that connection is still in the
+// driver's list: an answer from one that left is dropped. An answer whose
+// controller does not exist yet waits for a later tick, and is dropped after
+// kAdminAnswerMaxWaitMs. The code text is overwritten once the callbacks ran.
 static void PumpAdminAnswers(uint64_t now)
 {
     if (!g_adminAnswersDirty.load()) return;
     if (!HasNetAuthority()) return;
 
-    struct Due { void* pc; bool notMe; std::string code; };
-    std::vector<Due> due;
+    std::vector<AdminAnswerQueued> taken;
     {
         std::lock_guard<std::mutex> lk(g_manifestMutex);
-        std::vector<AdminAnswerQueued> waiting;
-        for (AdminAnswerQueued& q : g_adminAnswers)
+        taken.swap(g_adminAnswers);
+    }
+
+    std::vector<AdminAnswerQueued> due;
+    std::vector<AdminAnswerQueued> waiting;
+    for (AdminAnswerQueued& q : taken)
+    {
+        if (!IsLiveClientConnection(q.conn))
         {
-            void* pc = PlayerForConnection(q.conn);
-            if (pc)
-                due.push_back({ pc, q.notMe, std::move(q.code) });
-            else if (now - q.queuedMs < kAdminAnswerMaxWaitMs)
-                waiting.push_back(std::move(q));
-            else
-                std::fill(q.code.begin(), q.code.end(), '\0');
+            std::fill(q.code.begin(), q.code.end(), '\0');
+            ForgetConnectionState(q.conn);
         }
-        g_adminAnswers = std::move(waiting);
+        else if (PlayerForConnection(q.conn))
+            due.push_back(std::move(q));
+        else if (now - q.queuedMs < kAdminAnswerMaxWaitMs)
+            waiting.push_back(std::move(q));
+        else
+            std::fill(q.code.begin(), q.code.end(), '\0');
+    }
+    {
+        std::lock_guard<std::mutex> lk(g_manifestMutex);
+        for (AdminAnswerQueued& q : waiting)
+            g_adminAnswers.push_back(std::move(q));
         g_adminAnswersDirty.store(!g_adminAnswers.empty());
     }
     if (due.empty()) return;
@@ -3706,13 +3796,17 @@ static void PumpAdminAnswers(uint64_t now)
         cbs = g_adminCbs;
     }
 
-    for (Due& d : due)
+    for (AdminAnswerQueued& d : due)
     {
         for (PluginAdminAnswerCallback cb : cbs)
         {
+            // A callback may remove this player (or another one), so the
+            // controller is resolved again before each call.
+            void* pc = LiveControllerForConnection(d.conn);
+            if (!pc) break;
             try
             {
-                PluginGuard::Invoke(cb, "admin-answer callback", d.pc, d.notMe, d.code.c_str());
+                PluginGuard::Invoke(cb, "admin-answer callback", pc, d.notMe, d.code.c_str());
             }
             catch (const std::exception& ex)
             {
@@ -3886,6 +3980,7 @@ static bool DispatchServerNarrow(void* senderConn, void* senderUObject,
 
             const size_t featCount = feat.features.size();
             bool isNew = false;
+            bool act = false;
             {
                 std::lock_guard<std::mutex> lk(g_manifestMutex);
                 if (g_manifests.find(senderConn) == g_manifests.end())
@@ -3893,12 +3988,27 @@ static bool DispatchServerNarrow(void* senderConn, void* senderUObject,
                 auto it = g_clientFeat.find(senderConn);
                 isNew = (it == g_clientFeat.end());
                 ClientFeatInfo& info = g_clientFeat[senderConn];
+                // The stored entry is always replaced, so what the plugins read
+                // is current. Only the announce and the rules push are limited.
                 info.loaderTag        = feat.buildTag;
                 info.interfaceVersion = feat.interfaceVersion;
                 info.features         = std::move(feat.features);
-                info.featAnnouncePending = true;
+                const uint64_t nowMs = GetTickCount64();
+                act = HostRulesWire::DecideFeatAct(info.hasFeatAct, nowMs, info.lastFeatActMs) ==
+                      HostRulesWire::FeatGate::Act;
+                if (act)
+                {
+                    info.hasFeatAct = true;
+                    info.lastFeatActMs = nowMs;
+                    info.featDeferred = false;
+                    info.featAnnouncePending = true;
+                }
+                else
+                    info.featDeferred = true;
                 g_featAnnounceDirty.store(true);
             }
+            if (!act)
+                return true;
 
             const std::string who = PlayerNameForConnection(senderConn);
             if (isNew)
@@ -4275,6 +4385,9 @@ static void OnWireReceive(void* netConnection, const uint8_t* data, size_t len)
 static void OnEngineTick(float /*deltaSeconds*/)
 {
     const uint64_t now = GetTickCount64();
+    static uint64_t s_lastTickMs = 0;
+    const uint64_t tickGapMs = (s_lastTickMs && now >= s_lastTickMs) ? now - s_lastTickMs : 0;
+    s_lastTickMs = now;
 
     // Re-asserted every frame rather than once at engine init: the net driver is
     // recreated on travel and each new one starts at the engine default.
@@ -4286,8 +4399,8 @@ static void OnEngineTick(float /*deltaSeconds*/)
     // waiting on an answer, and (client, plugin) pairs waiting to be announced.
     PumpGreetings(now);
     PumpClientReady();
-    PumpClientFeatures();
-    PumpVersionMinimums();
+    PumpClientFeatures(now);
+    PumpVersionMinimums(tickGapMs);
     PumpAdminAnswers(now);
 
 #ifdef MODLOADER_CLIENT_BUILD
@@ -4300,8 +4413,16 @@ static void OnEngineTick(float /*deltaSeconds*/)
 // point at which the controller exists and is owned by the connection. It is not
 // necessarily a point at which the RPC will arrive, which is what the retry in
 // PumpGreetings is for.
+//
+// The state keyed by this peer's connection is cleared first: the engine can
+// reuse a freed connection's address, and what a previous peer left there (its
+// manifest, features, rules, minimums mark, admin prompt) must not carry over.
+// Nothing legitimate exists yet for a new peer: a loader client sends its
+// manifest only after the greeting below.
 static void OnPlayerJoinedGreet(void* playerController)
 {
+    if (void* conn = ConnectionForPlayer(playerController))
+        ForgetConnectionState(conn);
     BeginGreeting(playerController);
 }
 
