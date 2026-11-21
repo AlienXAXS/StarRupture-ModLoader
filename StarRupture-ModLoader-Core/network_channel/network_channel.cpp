@@ -2513,9 +2513,6 @@ static bool DispatchServerNarrow(void* senderConn, void* senderUObject,
             // The client's wire table, sent after its manifest. Out of order
             // (no manifest yet) is dropped without a word; the client sends it
             // again with the next manifest.
-            if (!HasManifest(senderConn))
-                return true;
-
             const WireCompat::DecodedTable table = WireCompat::DecodeTable(
                 reinterpret_cast<const char*>(env.payload.data()), env.payload.size());
             if (!table.present)
@@ -2533,7 +2530,11 @@ static bool DispatchServerNarrow(void* senderConn, void* senderUObject,
             }
 
             {
+                // Checked under the same lock as the store, so a connection that
+                // was forgotten in between does not get an entry back.
                 std::lock_guard<std::mutex> lk(g_manifestMutex);
+                if (g_manifests.find(senderConn) == g_manifests.end())
+                    return true;
                 g_clientWires[senderConn] = table.entries;
             }
             MarkReadyDirty();
