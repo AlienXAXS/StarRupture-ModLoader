@@ -50,13 +50,15 @@ namespace AdminPrompt
         std::lock_guard<std::mutex> lk(g_mutex);
         if (NotMeSendsAnswer(g_state, now) && NetworkChannel::SendAdminAnswer(/*notMe*/ true, std::string()))
             NoteAnswerSent(g_state, now);
-        CloseLocally(g_state);
+        CloseLocally(g_state, now);
     }
 
     void OnQuestion(const HostRulesWire::AdminQuestion& q)
     {
+        const uint64_t now = GetTickCount64();
+
         std::lock_guard<std::mutex> lk(g_mutex);
-        ApplyQuestion(g_state, q.kind, q.text);
+        ApplyQuestion(g_state, q.kind, q.text, now);
         ModLoaderLogger::LogDebug(L"[AdminPrompt] Server message: prompt is %s%s.",
             g_state.open ? L"open" : L"closed", g_state.final ? L" (final line)" : L"");
     }

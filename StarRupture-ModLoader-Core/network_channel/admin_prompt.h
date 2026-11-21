@@ -43,17 +43,33 @@ namespace AdminPrompt
         std::string status;
         bool        hasLastAnswer = false; // an answer went out, at lastAnswerMs
         uint64_t    lastAnswerMs  = 0;
+        bool        hasDismiss = false; // the player dismissed the prompt, at dismissMs
+        uint64_t    dismissMs  = 0;
     };
+
+    // After the player dismisses the prompt, a new ask on the same connection is
+    // ignored for this long, so a server (or a peer spoofing one) cannot pull the
+    // window back up again and again.
+    constexpr uint64_t kAskLatchMs = 60000;
+
+    // Whether an ask arriving at nowMs falls inside the latch. A clock that went
+    // back counts as inside.
+    inline bool AskLatched(bool hasDismiss, uint64_t nowMs, uint64_t dismissMs)
+    {
+        return hasDismiss && (nowMs < dismissMs || nowMs - dismissMs < kAskLatchMs);
+    }
 
     // $ML:adminq arrived. ask opens (or reopens) the prompt; info replaces the
     // status line and keeps it open; close sets the last line and ends the
     // input. A line for a prompt that is not showing (never asked, or the player
-    // already dismissed it) is dropped.
-    inline void ApplyQuestion(State& s, HostRulesWire::AdminQKind kind, const std::string& text)
+    // already dismissed it) is dropped, and so is an ask inside the latch of
+    // AskLatched. The info and close lines of a prompt that is showing always apply.
+    inline void ApplyQuestion(State& s, HostRulesWire::AdminQKind kind, const std::string& text, uint64_t nowMs)
     {
         switch (kind)
         {
         case HostRulesWire::AdminQKind::Ask:
+            if (AskLatched(s.hasDismiss, nowMs, s.dismissMs)) break;
             s.open = true;
             s.final = false;
             s.status.clear();
@@ -89,9 +105,12 @@ namespace AdminPrompt
         s.lastAnswerMs = nowMs;
     }
 
-    // The player is done with the window ("Not me", or dismissing a last line).
-    inline void CloseLocally(State& s)
+    // The player is done with the window ("Not me", the title bar's X, or
+    // dismissing a last line).
+    inline void CloseLocally(State& s, uint64_t nowMs)
     {
+        s.hasDismiss = true;
+        s.dismissMs = nowMs;
         s.open = false;
         s.final = false;
         s.status.clear();

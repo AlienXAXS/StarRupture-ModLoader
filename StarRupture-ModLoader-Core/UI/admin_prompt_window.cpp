@@ -11,9 +11,10 @@ namespace UI::AdminPromptWindow
 {
     namespace
     {
-        // The text box: the longest code the server takes, plus the NUL. It is
-        // wiped when the code is sent and whenever the window is not showing it,
-        // so a typed code never outlives the prompt.
+        // The text box: the longest code the server takes, plus the NUL. Our own
+        // buffer is zeroed when the code is sent and whenever the window is not
+        // showing it. ImGui keeps its own copy of the last edit until the widget
+        // is used again.
         char        s_code[HostRulesWire::kMaxAdminRCode + 1] = {};
         const char* s_failure = nullptr;   // why the last Send did not go out; a literal, or null
         bool        s_refocus = false;     // put the cursor back in the box for another try
