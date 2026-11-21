@@ -132,6 +132,10 @@ namespace NetworkChannel
         // which usually means it is not running the loader.
         int         greetingAttempts = 0;
         std::vector<RemotePlugin> plugins;
+        // What the client said about its features ("$ML:feat"): how many and its
+        // mod loader build. -1 = it sent none (an older client).
+        int         reportedFeatures = -1;
+        std::string loaderTag;
     };
 
     // Every client connection the authority currently knows about. Empty on a

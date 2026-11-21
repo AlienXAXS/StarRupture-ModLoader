@@ -1508,6 +1508,8 @@ namespace ModConsole
             const auto& c = clients[static_cast<size_t>(idx)];
             out.Notice("Client %d: %s", idx,
                        c.playerName.empty() ? "(name not resolved yet)" : c.playerName.c_str());
+            if (c.reportedFeatures >= 0)
+                out.Out("  Reported features: %d, mod loader %s", c.reportedFeatures, c.loaderTag.c_str());
 
             if (!c.reported)
             {

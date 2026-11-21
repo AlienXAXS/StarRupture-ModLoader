@@ -27,6 +27,8 @@
 #include "hooks/game/world_begin_play/world_begin_play.h"
 #include "hooks/game/engine_tick/engine_tick.h"
 #include "plugins/plugin_manager.h"
+#include "plugins/plugin_hook_report.h"
+#include "host_rules_wire.h"
 
 #include <mutex>
 #include <vector>
@@ -314,7 +316,8 @@ namespace
     static constexpr const char* kMlManifest = "manifest";
     static constexpr const char* kMlAck      = "ack";
     static constexpr const char* kMlWires    = "wires";
-    static constexpr const char* kMlEcho     = "echo";
+    static constexpr const char* kMlFeat     = HostRulesWire::kTagFeat;
+    static constexpr const char* kMlEcho    = "echo";
     static constexpr const char* kMlEchoBack = "echoreply";
 
     // Deterministic, position-dependent filler for the echo test. Position-dependent
@@ -408,6 +411,18 @@ namespace
     // lifetime as g_manifests; an entry exists only once a well-formed table
     // arrived, so a client that sent none is checked by exact version alone.
     static std::unordered_map<void*, std::vector<WireCompat::Entry>> g_clientWires;
+
+    // What each client said about its features in "$ML:feat": its loader build
+    // and its feature catalog. Same lock and lifetime as g_manifests; an entry
+    // exists only once a well-formed message arrived. A client re-sends it when
+    // its catalog changes, which replaces the entry.
+    struct ClientFeatInfo
+    {
+        std::string loaderTag;
+        uint32_t interfaceVersion = 0;
+        std::vector<HostRulesWire::FeatRecord> features;
+    };
+    static std::unordered_map<void*, ClientFeatInfo> g_clientFeat;
 
     // The ack tail (the wire table) stays within this many bytes. A table that
     // does not fit is cut after whole entries.
@@ -1135,6 +1150,7 @@ namespace
             g_manifests.erase(conn);
             g_manifestTick.erase(conn);
             g_clientWires.erase(conn);
+            g_clientFeat.erase(conn);
         }
         {
             std::lock_guard<std::mutex> lk(g_helloMutex);
@@ -2003,6 +2019,31 @@ namespace
     static bool     g_wiresPending    = false;
     static uint64_t g_wiresLastTryMs  = 0;
 
+    // The feature catalog goes to the server in "$ML:feat", but only to a server
+    // whose ack tail carried the "$hostrules" record (g_featProven): that record
+    // is how a server says it reads the message. It goes out once per manifest
+    // put on the wire, and again when the encoded bytes differ from what was last
+    // sent. The bytes carry only each feature's build state, so applying the
+    // server's rules (which also moves the hook report's generation) never
+    // changes them. g_featHookGen is the report generation last looked at, so the
+    // tick encodes the catalog only when something in the report moved.
+    static unsigned    g_featSentSeq    = 0;
+    static bool        g_featProven     = false;
+    static bool        g_featPending    = false;
+    static uint64_t    g_featLastTryMs  = 0;
+    static unsigned    g_featHookGen    = 0;
+    static std::string g_featSentPayload;
+
+    // Forget everything about the last "$ML:feat" exchange: a new connection,
+    // a changed plugin set or the end of the world voids what the server knew.
+    static void ResetFeatState()
+    {
+        g_featSentSeq = 0;
+        g_featProven  = false;
+        g_featPending = false;
+        g_featSentPayload.clear();
+    }
+
     static uint64_t g_lastAttemptMs   = 0;
     static int      g_attempts        = 0;
     static bool     g_gaveUpLogged    = false;
@@ -2039,6 +2080,7 @@ namespace
             g_manifestSentGen = gen;
             g_manifestAcked   = false;
             g_wiresPending    = false;
+            ResetFeatState();
             g_attempts        = 0;
             g_gaveUpLogged    = false;
             g_lastAttemptMs   = 0;
@@ -2141,6 +2183,99 @@ namespace
         }
     }
 
+    // The "$ML:feat" payload for the features declared now. "on" is the build
+    // state: a feature a server's rules turned off still reports what the build
+    // has, so the bytes do not move when rules are applied.
+    static std::string BuildFeatPayload()
+    {
+        HostRulesWire::FeatPayload feat;
+        feat.buildTag         = MODLOADER_BUILD_TAG;
+        feat.interfaceVersion = PLUGIN_INTERFACE_VERSION;
+        for (const PluginHookReport::FeatureInfo& f : PluginHookReport::Features())
+            feat.features.push_back({ f.plugin, f.id, f.title,
+                                      f.state != PluginHookReport::FeatureInfo::State::OffBuild });
+
+        HostRulesWire::EncodeStats stats;
+        std::string body = HostRulesWire::EncodeFeat(feat, &stats);
+        if (stats.dropped || stats.truncated)
+        {
+            static bool warned = false;
+            if (!warned)
+            {
+                warned = true;
+                ModLoaderLogger::LogWarn(
+                    L"[NetworkChannel] %zu feature(s) could not be reported to the server (%zu left out as "
+                    L"unreadable, %zu cut for size); the server cannot switch those off.",
+                    stats.dropped + stats.truncated, stats.dropped, stats.truncated);
+            }
+        }
+        return body;
+    }
+
+    // Sends the feature catalog to the server, once per manifest put on the wire
+    // and again from the tick when the payload changed. Only called once the ack
+    // tail carried the "$hostrules" record, so an older server never sees it.
+    static void SendFeatToServer()
+    {
+        void* conn = g_manifestSentTo;
+        if (!conn || !g_featProven) return;
+
+        const std::string body = BuildFeatPayload();
+        const HostRulesWire::SendPlan plan = HostRulesWire::PlanSend(body.size(), kMlFeat);
+        g_featLastTryMs = GetTickCount64();
+        if (!plan.sendable)
+        {
+            // Retrying cannot help; the payload is too large for the transport.
+            g_featPending = false;
+            g_featSentSeq = g_manifestSendSeq;
+            g_featSentPayload = body;
+            ModLoaderLogger::LogWarn(
+                L"[NetworkChannel] Our feature list (%zu bytes) is too large to send; the server cannot "
+                L"switch features off for this client.", body.size());
+            return;
+        }
+
+        if (SendWire(conn, kMlPlugin, BuildEnvelope(kMlPlugin, kMlFeat,
+                                         reinterpret_cast<const uint8_t*>(body.data()),
+                                         body.size())))
+        {
+            g_featSentSeq = g_manifestSendSeq;
+            g_featSentPayload = body;
+            g_featPending = false;
+            ModLoaderLogger::LogDebug(
+                L"[NetworkChannel] Sent our feature list to the server (%zu bytes, %zu chunk(s))",
+                body.size(), plan.chunkCount);
+        }
+        else
+        {
+            g_featPending = true;
+            ModLoaderLogger::LogTrace(
+                L"[NetworkChannel] Could not put our feature list on the wire; will retry");
+        }
+    }
+
+    // The tick side of the above: when the hook report moved since last looked at
+    // and the catalog now encodes to different bytes, send it again; and retry a
+    // send that could not be put on the wire.
+    static void RefreshFeatIfStale()
+    {
+        if (!g_featProven) return;
+
+        if (g_featPending)
+        {
+            if (GetTickCount64() - g_featLastTryMs >= kRetryIntervalMs)
+                SendFeatToServer();
+            return;
+        }
+
+        const unsigned gen = PluginHookReport::GetGeneration();
+        if (gen == g_featHookGen) return;
+        g_featHookGen = gen;
+        if (g_featSentSeq != g_manifestSendSeq) return; // the ack path sends it
+        if (BuildFeatPayload() != g_featSentPayload)
+            SendFeatToServer();
+    }
+
     // The authority greeted us. Everything the client can do on the wire starts
     // here, and until it happens this client is indistinguishable from one with
     // no loader at all -- deliberately, because that is what makes it safe on a
@@ -2211,6 +2346,7 @@ namespace
         {
             if (g_wiresPending && GetTickCount64() - g_wiresLastTryMs >= kRetryIntervalMs)
                 SendWiresToServer();
+            RefreshFeatIfStale();
             return;
         }
 
@@ -2348,6 +2484,30 @@ namespace
         const bool hasTable = tailStored && tail == WireCompat::AckTailKind::Table;
         if (hasTable)
             SendWiresToServer();
+
+        // The feature list goes only to a server that said it reads it: the
+        // "$hostrules" record behind its wire table. An older server never gets
+        // the message, and nothing is logged for it beyond one INFO.
+        const bool hasHostRules = hasTable && WireCompat::TailHasHostRules(reinterpret_cast<const char*>(data), len);
+        g_featProven = hasHostRules;
+        if (hasHostRules)
+        {
+            g_featHookGen = PluginHookReport::GetGeneration();
+            if (g_featSentSeq != g_manifestSendSeq)
+                SendFeatToServer();
+        }
+        else if (tailStored)
+        {
+            bool firstNote;
+            {
+                std::lock_guard<std::mutex> lk(g_wireLogMutex);
+                firstNote = g_serverTailWarned.First(g_manifestSentTo, "$hostrules");
+            }
+            if (firstNote)
+                ModLoaderLogger::LogInfo(
+                    L"[NetworkChannel] The server's mod loader does not take host rules (it is older), "
+                    L"so it cannot switch this client's features off.");
+        }
 
         if (first)
             ModLoaderLogger::LogInfo(
@@ -2696,6 +2856,10 @@ static bool DispatchServerNarrow(void* senderConn, void* senderUObject,
                 &notEncoded, &cut);
             WarnWireTableGaps(notEncoded, cut);
 
+            // After the table: this server reads "$ML:feat". A reader that does
+            // not know the record skips it. Always written, whatever the rules.
+            ack += WireCompat::EncodeHostRulesRecord();
+
             if (!SendWire(senderConn, kMlPlugin, BuildEnvelope(kMlPlugin, kMlAck,
                                                     reinterpret_cast<const uint8_t*>(ack.data()),
                                                     ack.size())))
@@ -2734,6 +2898,51 @@ static bool DispatchServerNarrow(void* senderConn, void* senderUObject,
                 g_clientWires[senderConn] = table.entries;
             }
             MarkReadyDirty();
+        }
+        else if (env.typeTag == kMlFeat && senderConn)
+        {
+            // The client's feature catalog, sent after its manifest was acked.
+            // Out of order (no manifest yet) is dropped without a word.
+            HostRulesWire::FeatPayload feat;
+            const HostRulesWire::Status st = HostRulesWire::DecodeFeat(
+                reinterpret_cast<const char*>(env.payload.data()), env.payload.size(), &feat);
+            if (st != HostRulesWire::Status::Ok)
+            {
+                bool first;
+                {
+                    std::lock_guard<std::mutex> lk(g_wireLogMutex);
+                    first = g_wiresGarbageWarned.First(senderConn, "$feat");
+                }
+                if (first)
+                    ModLoaderLogger::LogWarn(
+                        L"[NetworkChannel] Ignoring a malformed feature list from client %p (%S).",
+                        senderConn, HostRulesWire::StatusText(st));
+                return true;
+            }
+
+            const size_t featCount = feat.features.size();
+            bool isNew = false;
+            {
+                std::lock_guard<std::mutex> lk(g_manifestMutex);
+                if (g_manifests.find(senderConn) == g_manifests.end())
+                    return true;
+                auto it = g_clientFeat.find(senderConn);
+                isNew = (it == g_clientFeat.end());
+                ClientFeatInfo& info = g_clientFeat[senderConn];
+                info.loaderTag        = feat.buildTag;
+                info.interfaceVersion = feat.interfaceVersion;
+                info.features         = std::move(feat.features);
+            }
+
+            const std::string who = PlayerNameForConnection(senderConn);
+            if (isNew)
+                ModLoaderLogger::LogInfo(
+                    L"[NetworkChannel] Player '%S' reported %zu feature(s), mod loader '%S'",
+                    who.empty() ? "(unnamed)" : who.c_str(), featCount, feat.buildTag.c_str());
+            else
+                ModLoaderLogger::LogDebug(
+                    L"[NetworkChannel] Player '%S' updated its feature list (%zu feature(s))",
+                    who.empty() ? "(unnamed)" : who.c_str(), featCount);
         }
         else if (env.typeTag == kMlEcho && senderConn)
         {
@@ -2888,6 +3097,7 @@ static void OnWorldEndPlayForgetConns(SDK::UWorld* /*world*/, const char* /*worl
         g_manifests.clear();
         g_manifestTick.clear();
         g_clientWires.clear();
+        g_clientFeat.clear();
     }
     {
         std::lock_guard<std::mutex> lk(g_helloMutex);
@@ -2918,6 +3128,7 @@ static void OnWorldEndPlayForgetConns(SDK::UWorld* /*world*/, const char* /*worl
     g_manifestSentGen = 0;
     g_manifestAcked   = false;
     g_wiresPending    = false;
+    ResetFeatState();
     g_attempts        = 0;
     g_gaveUpLogged    = false;
     g_lastAttemptMs   = 0;
@@ -3151,6 +3362,12 @@ std::vector<NetworkChannel::ClientManifest> NetworkChannel::GetClientManifests()
         {
             entry.reported = true;
             entry.plugins  = it->second;
+            auto ft = g_clientFeat.find(conn);
+            if (ft != g_clientFeat.end())
+            {
+                entry.reportedFeatures = static_cast<int>(ft->second.features.size());
+                entry.loaderTag        = ft->second.loaderTag;
+            }
         }
         out.push_back(std::move(entry));
     }
@@ -3253,6 +3470,7 @@ void NetworkChannel::Shutdown()
         g_manifests.clear();
         g_manifestTick.clear();
         g_clientWires.clear();
+        g_clientFeat.clear();
     }
     {
         std::lock_guard<std::mutex> lk(g_helloMutex);
