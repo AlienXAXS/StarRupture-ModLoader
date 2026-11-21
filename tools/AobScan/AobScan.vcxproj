@@ -60,6 +60,8 @@
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)'=='Server Release'">
     <TargetName>sr-aobscan-server</TargetName>
+    <!-- VersionMap::kBuiltCL: the game build the Server SDK was made for, as in Shared.props. -->
+    <ModLoaderBuiltCL Condition="'$(ModLoaderBuiltCL)' == '' And Exists('$(SolutionDir)StarRupture SDK\Server\build_cl.txt')">$([System.IO.File]::ReadAllText('$(SolutionDir)StarRupture SDK\Server\build_cl.txt').Trim())</ModLoaderBuiltCL>
   </PropertyGroup>
   <ItemDefinitionGroup>
     <ClCompile>
@@ -92,6 +94,7 @@
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Server Release'">
     <ClCompile>
       <PreprocessorDefinitions>MODLOADER_SERVER_BUILD;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions Condition="'$(ModLoaderBuiltCL)' != ''">MODLOADER_BUILT_CL=$(ModLoaderBuiltCL)u;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemGroup Label="Tool">
