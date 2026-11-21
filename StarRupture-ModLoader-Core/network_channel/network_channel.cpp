@@ -317,6 +317,7 @@ namespace
     static constexpr const char* kMlAck      = "ack";
     static constexpr const char* kMlWires    = "wires";
     static constexpr const char* kMlFeat     = HostRulesWire::kTagFeat;
+    static constexpr const char* kMlRules    = HostRulesWire::kTagRules;
     static constexpr const char* kMlEcho    = "echo";
     static constexpr const char* kMlEchoBack = "echoreply";
 
@@ -415,12 +416,16 @@ namespace
     // What each client said about its features in "$ML:feat": its loader build
     // and its feature catalog. Same lock and lifetime as g_manifests; an entry
     // exists only once a well-formed message arrived. A client re-sends it when
-    // its catalog changes, which replaces the entry.
+    // its catalog changes, which replaces the entry. rulesSent is the last
+    // "$ML:rules" payload put on the wire for this client; rulesSentOnce is set
+    // after any send, so a list that went empty is sent once more.
     struct ClientFeatInfo
     {
         std::string loaderTag;
         uint32_t interfaceVersion = 0;
         std::vector<HostRulesWire::FeatRecord> features;
+        std::string rulesSent;
+        bool rulesSentOnce = false;
     };
     static std::unordered_map<void*, ClientFeatInfo> g_clientFeat;
 
@@ -2764,6 +2769,76 @@ static void DispatchClientNarrow(const char* narrowData, size_t nbytes)
 }
 #endif // MODLOADER_CLIENT_BUILD
 
+// Sends the server's rule set ("$ML:rules") to one client that already sent
+// "$ML:feat"; no other connection is ever a target. The payload is the local
+// deny list and message as they are now. It goes out again only when the
+// encoded bytes changed, unless force is set (a feature list arrived or was
+// replaced). Nothing is sent to a client while the list is empty and nothing
+// was sent before; once something was, an emptied list is sent once so the
+// client lets go of the old rows.
+static void SendRulesTo(void* conn, bool force)
+{
+    if (!conn) return;
+
+    HostRulesWire::RulesSet rules;
+    rules.defaultAllow = true;
+    rules.onDenied     = HostRulesWire::kOnDeniedSwitchOff;
+    rules.message      = PluginHookReport::HostMessage();
+    for (const auto& row : PluginHookReport::HostDeny())
+        rules.deny.push_back({ row.first, row.second });
+
+    HostRulesWire::EncodeStats stats;
+    const std::string body = HostRulesWire::EncodeRules(rules, &stats);
+    if (stats.dropped || stats.truncated)
+    {
+        static bool warned = false;
+        if (!warned)
+        {
+            warned = true;
+            ModLoaderLogger::LogWarn(
+                L"[NetworkChannel] %zu server rule(s) could not be sent (%zu unreadable, %zu cut for "
+                L"size); clients will not see those.",
+                stats.dropped + stats.truncated, stats.dropped, stats.truncated);
+        }
+    }
+
+    {
+        std::lock_guard<std::mutex> lk(g_manifestMutex);
+        auto it = g_clientFeat.find(conn);
+        if (it == g_clientFeat.end()) return;
+        if (rules.deny.empty() && !it->second.rulesSentOnce) return;
+        if (!force && it->second.rulesSent == body) return;
+    }
+
+    const HostRulesWire::SendPlan plan = HostRulesWire::PlanSend(body.size(), kMlRules);
+    if (!plan.sendable)
+    {
+        static bool warned = false;
+        if (!warned)
+        {
+            warned = true;
+            ModLoaderLogger::LogWarn(
+                L"[NetworkChannel] The server rules (%zu bytes) are too large to send to clients.",
+                body.size());
+        }
+        return;
+    }
+
+    if (!SendWire(conn, kMlPlugin, BuildEnvelope(kMlPlugin, kMlRules,
+                                     reinterpret_cast<const uint8_t*>(body.data()),
+                                     body.size())))
+        return;
+
+    std::lock_guard<std::mutex> lk(g_manifestMutex);
+    auto it = g_clientFeat.find(conn);
+    if (it == g_clientFeat.end()) return;
+    it->second.rulesSent     = body;
+    it->second.rulesSentOnce = true;
+    ModLoaderLogger::LogDebug(
+        L"[NetworkChannel] Sent the server rules to client %p (%zu bytes, %zu chunk(s))",
+        conn, body.size(), plan.chunkCount);
+}
+
 // ============================================================
 // Authority-side receive  (both builds)
 // Fed by the control-channel detour via OnWireReceive, which routes here only
@@ -2943,6 +3018,8 @@ static bool DispatchServerNarrow(void* senderConn, void* senderUObject,
                 ModLoaderLogger::LogDebug(
                     L"[NetworkChannel] Player '%S' updated its feature list (%zu feature(s))",
                     who.empty() ? "(unnamed)" : who.c_str(), featCount);
+
+            SendRulesTo(senderConn, true);
         }
         else if (env.typeTag == kMlEcho && senderConn)
         {
@@ -3375,6 +3452,20 @@ std::vector<NetworkChannel::ClientManifest> NetworkChannel::GetClientManifests()
     return out;
 }
 
+void NetworkChannel::HostRulesChanged()
+{
+    if (!HasNetAuthority()) return;
+
+    std::vector<void*> conns;
+    {
+        std::lock_guard<std::mutex> lk(g_manifestMutex);
+        for (const auto& kv : g_clientFeat)
+            conns.push_back(kv.first);
+    }
+    for (void* conn : conns)
+        SendRulesTo(conn, false);
+}
+
 bool NetworkChannel::StartFragmentationTest(size_t bytes, std::string& err)
 {
 #ifdef MODLOADER_CLIENT_BUILD
@@ -3575,6 +3666,7 @@ void NetworkChannel::Initialize() {}
 void NetworkChannel::Shutdown() {}
 void NetworkChannel::ForgetModule(HMODULE) {}
 std::vector<NetworkChannel::ClientManifest> NetworkChannel::GetClientManifests() { return {}; }
+void NetworkChannel::HostRulesChanged() {}
 bool NetworkChannel::StartFragmentationTest(size_t, std::string& err)
 {
     err = "Plugin networking is not present in this build.";

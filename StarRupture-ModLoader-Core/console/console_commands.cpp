@@ -1379,10 +1379,12 @@ namespace ModConsole
     //
     //   features                       list them
     //   features hostoff <plugin> <id> turn one off for this server
-    //   features hostclear             lift every server deny
+    //   features hostclear             lift every server deny and the message
+    //   features hostmessage <text>    the message players see (empty clears)
     //
     // hostoff and hostclear write the plugins' enabled flags, so the command
-    // is registered for the game thread.
+    // is registered for the game thread. Each change is sent on to connected
+    // clients.
     // -----------------------------------------------------------------------
     static void PrintFeatures(Sink& out)
     {
@@ -1411,17 +1413,33 @@ namespace ModConsole
                     ("\"" + f.title + "\"").c_str(), state, reason.c_str());
         }
 
+        out.Out("");
         if (deny.empty())
         {
-            out.Out("");
             out.Out("The server's deny list is empty.");
-            return;
+        }
+        else
+        {
+            out.Notice("Server deny list:");
+            for (const auto& d : deny)
+                out.Out("  %s  %s", d.first.c_str(), d.second.c_str());
         }
 
-        out.Out("");
-        out.Notice("Server deny list:");
-        for (const auto& d : deny)
-            out.Out("  %s  %s", d.first.c_str(), d.second.c_str());
+        const std::string hostMessage = PluginHookReport::HostMessage();
+        if (!hostMessage.empty())
+            out.Out("Message to players: %s", hostMessage.c_str());
+
+        const auto serverDeny = PluginHookReport::ServerDeny();
+        if (!serverDeny.empty())
+        {
+            out.Out("");
+            out.Notice("Denied by the server you joined:");
+            for (const auto& d : serverDeny)
+                out.Out("  %s  %s", d.first.c_str(), d.second.c_str());
+            const std::string serverMessage = PluginHookReport::ServerMessage();
+            if (!serverMessage.empty())
+                out.Out("Server message: %s", serverMessage.c_str());
+        }
     }
 
     static void Cmd_Features(const std::vector<std::string>& args, Sink& out)
@@ -1435,7 +1453,26 @@ namespace ModConsole
         if (args[1] == "hostclear")
         {
             PluginHookReport::ClearHostRules();
-            out.Out("The server's deny list is cleared. A feature the game build has on is on again.");
+            NetworkChannel::HostRulesChanged();
+            out.Out("The server's deny list and message are cleared. A feature the game build has on is on again.");
+            return;
+        }
+
+        if (args[1] == "hostmessage")
+        {
+            std::string text;
+            for (size_t i = 2; i < args.size(); ++i)
+            {
+                if (i > 2) text += ' ';
+                text += args[i];
+            }
+
+            PluginHookReport::SetHostMessage(text);
+            NetworkChannel::HostRulesChanged();
+            if (text.empty())
+                out.Out("The message to players is cleared.");
+            else
+                out.Out("Players whose features are turned off see: %s", text.c_str());
             return;
         }
 
@@ -1473,11 +1510,13 @@ namespace ModConsole
                 deny.emplace_back(plugin, id);
 
             PluginHookReport::ApplyHostRules(deny);
+            NetworkChannel::HostRulesChanged();
             PrintFeatures(out);
             return;
         }
 
-        out.Error("Usage: features | features hostoff <plugin> <id> | features hostclear");
+        out.Error("Usage: features | features hostoff <plugin> <id> | features hostclear | "
+                  "features hostmessage <text>");
     }
 
     // -----------------------------------------------------------------------
@@ -1622,9 +1661,10 @@ namespace ModConsole
                    "List plugins whose hook patterns did not resolve",
                    &Cmd_HookFailures, false });
 
-        // hostoff and hostclear write the plugins' flags: game thread.
-        Register({ "features", nullptr,     "features | features hostoff <plugin> <id> | features hostclear",
-                   "List plugin features, or turn one off (or lift every turn-off) for this server",
+        // hostoff, hostclear and hostmessage write the plugins' flags or send to
+        // clients: game thread.
+        Register({ "features", nullptr,     "features | features hostoff <plugin> <id> | features hostclear | features hostmessage <text>",
+                   "List plugin features, turn one off (or lift every turn-off) for this server, or set the message players see",
                    &Cmd_Features, true });
 
         Register({ "hooks",   "hooklist",  "hooks",
