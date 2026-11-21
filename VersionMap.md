@@ -73,7 +73,7 @@ files run on both. On CL-127004 the compiled offsets are not trusted, the Game-S
 by pattern, and a member that sits elsewhere on that build is read from the version map or the game. In the loader's
 layout table that is `UCrEnviroWaveTimerSubsystem::TimerActor` (0x90 on CL-127004, 0x98 from CL-128786)
 and `ACrCrafter::CraftComponent` (0x6D8 and 0x6E0). The start check leaves both out, so they do not
-count as a changed class. The server is compiled for CL-127004, lists only that build and is unchanged.
+count as a changed class. The server is compiled for CL-127004 and lists only that build, plus the builds a downloaded server file adds.
 
 **Not version map data.** Some values a plugin needs are not in the version map on purpose.
 
@@ -376,6 +376,46 @@ and `FName::AppendString` was found (GWorld too, off the build the loader is com
 exe the loader resolves none of them, the SDK keeps its compiled offsets and `GetSdkGlobals` returns none, as
 before. The server still lists and runs on CL-127004 only.
 
+## The dedicated server's downloaded version map
+
+A Server build can add game builds the same way the client does, from a signed file of its own. The file
+has the same format, the same Ed25519 signatures and the same trusted keys as the client's.
+
+- **What is downloaded.** `version-map-server.v1.txt`: one `build` line per server game build, each with a
+  source starting `server ` (for example `server steam_build 25642172`), then that build's function,
+  field and size rows. A server loader refuses a file with no build line, or with a build line that does
+  not start with `server `, and a client loader refuses a file that has one. The signature is checked first.
+- **Where it comes from.** The compiled define `VMAP_SERVER_FEED_URL` (`/p:VmapServerFeedUrl=` in
+  `Shared.props`), like the client's, never from `modloader.ini`. A Server build made without one fetches
+  nothing and logs `no feed URL is compiled in`. The check, the limits (https only, 2 s a step, 8 s
+  in all, 1 MiB) and the ETag are the client's, as described in [The feed](#the-feed). It is asked for with the
+  game's main thread parked at startup; when that is not so, or the build is refused, the file is asked
+  for for the next launch.
+- **Where it is kept.** `ModLoader\version-map-server.v1.cache`, with its ETag in
+  `version-map-server.v1.cache.etag`: the client's cache has a different name, so neither reads the other's,
+  and a file of the other kind is refused before it is stored.
+- **How an exe is matched.** Exactly as on the built-in table: the game build number, the exe's time stamp
+  and its image size must all equal a `build` line. A rebuilt exe of a listed build number gets no row from
+  the file. The server's built-in table still wins on the exe it was measured on, and a clash there is
+  counted in the log line, as on the client. On any other exe the file's rows replace the built-in ones.
+- **What the server checks.** The coverage rule the client uses (a game build from a file is kept only if
+  it has a row for each loader entry and field) is empty on the server: the loader finds its own entries by
+  their own patterns and reads its own fields from the game, so the file needs no `ModLoader/` rows. On a
+  server game build other than the one the loader was compiled for, the loader reads its fields from
+  the game and uses a file's row only to cross-check; if a field or a game global cannot be found it logs
+  which and starts the game with no plugins. A plugin that takes its game data from the version map
+  (`PLUGIN_MAP_MIGRATED`) runs on the second build with its fields read per build, from that build's rows.
+  A plugin that does not stays refused there.
+- **Not there yet.** No server file is published; the release workflows do not build the server with an
+  address for one; the server has no layout check, so a changed game class is not found by the loader
+  (a plugin's own class check is the only guard). Until a first signed server file exists and the server
+  is built with its address, a server runs only the game build it was made for.
+
+To try it without a published file, build the Server configuration with `VMAP_TRUST_TEST_KEY` (the
+test key, `k1`), sign a server file with that key, and copy it byte for byte to
+`ModLoader\version-map-server.v1.cache` next to the server exe. With no address compiled in it fetches
+nothing and reads the cache. `version_map_server_tests` does this with an in-process key.
+
 ## The feed
 
 Between loader releases the version map can be refreshed from a signed file, so a new game build is
@@ -392,12 +432,15 @@ format version, so a later format never strands a loader that reads this one. La
 sits because `prune_releases.yml` deletes the others. `vmap-publish.yml` puts the current signed
 file on Latest: on a new release at its next run (every 15 minutes), and between releases whenever
 the `seq` rises. The first release that carries one needs a manual run with `first_publish` set.
-There is no server feed: only the client fetches.
+The dedicated server has a file of its own, `version-map-server.v1.txt`, in the same format; see
+[The dedicated server's downloaded version map](#the-dedicated-servers-downloaded-version-map). None is
+published yet.
 
 **Fetch.** The URL is the compiled define `VMAP_FEED_URL` (`/p:VmapFeedUrl=` in `Shared.props`),
 never read from `modloader.ini`. An empty define, or no compiled public key, means no fetch. The
-loader fetches only on the client, with `[AutoUpdate] Enabled` on. The one rule: at every start it
-asks whether a newer feed than the cached one is out, and if so applies it on that start.
+client build fetches this file and the server build its own (below), with `[AutoUpdate] Enabled` on.
+The one rule: at every start it asks whether a newer feed than the cached one is out, and if so
+applies it on that start.
 
 - The question is asked at startup, with the game's main thread parked (where WinHTTP is safe), before
   the version check, so a newer feed is read by that very start. When the running exe is in neither the
@@ -573,7 +616,8 @@ What a player sees, and what the log says (`ModLoader\Logs\ModLoader.log`).
 | The feed's signature is bad, the key unknown or the file malformed | The file is discarded whole, and the cache is untouched. Same as no feed. |
 | The feed is older than the cache (`seq` not higher) | Ignored. The cache stays. |
 | A release build is handed a `k1` (TEST) feed | Rejected as a bad key. |
-| `[AutoUpdate] Enabled` off, or a server build | No fetch. The built-in version map is used. A server stays exact on the build it was written for, and its built-in version map is its own table (see [The dedicated server's table](#the-dedicated-servers-table)). |
+| `[AutoUpdate] Enabled` off, or a server build with no feed address | No fetch. The built-in version map is used. A server stays exact on the build it was written for, and its built-in version map is its own table (see [The dedicated server's table](#the-dedicated-servers-table)). |
+| A server finds a client file, or a client a server file | The file is refused whole, the log says "not a dedicated server file" or "a dedicated server file, which a client loader does not read", and the cache is untouched. |
 | The feed has the build, but a row is `absent` for something a plugin needs | That plugin's request fails. If it belongs to a declared feature, that feature is off; otherwise the plugin is refused, with the reason in the failure window. Other plugins and the game run. |
 | The feed has the build but misses a required loader entry | That CL is dropped from the feed, and the build is unknown as above. |
 | A plugin built for another build does not declare `PLUGIN_MAP_MIGRATED` | **Incompatible**: "Needs an update to run on CL-...". It loads on its own build. |
