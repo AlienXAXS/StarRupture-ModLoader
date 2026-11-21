@@ -146,7 +146,7 @@ int main()
 		Check(map.builds.size() == 1 && map.builds[0].gameCL == 127004 && map.builds[0].imageStamp == 0x2E3595FF
 			&& map.builds[0].imageSize == 0x0E2A8000, "table: one build, the server exe (CL 127004, stamp 2E3595FF, size 0E2A8000)");
 		Check(!map.functions.empty() && map.functions.size() == VersionMap::kServerFunctionRows.size(), "table: every function row is in the map");
-		Check(map.functions.size() == 29, "table: 26 function starts, 2 data globals and the loader's GObjects row");
+		Check(map.functions.size() == 30, "table: 27 function starts, 2 data globals and the loader's GObjects row");
 		bool allOnServer = true, allAddress = true;
 		int starts = 0, data = 0, scoped = 0;
 		for (const VersionMap::MapFunctionRow& f : map.functions)
@@ -160,7 +160,7 @@ int main()
 		}
 		Check(allOnServer, "table: every function row names the server exe");
 		Check(allAddress, "table: every function row is an address with no pattern (a start or a global, with a fingerprint only on the loader's key)");
-		Check(starts == 26 && data == 2 && scoped == 1, "table: 26 function starts, GNames and GWorld as data, and one scoped key");
+		Check(starts == 27 && data == 2 && scoped == 1, "table: 27 function starts, GNames and GWorld as data, and one scoped key");
 
 		// Field rows: every one is on the build, no absent rows, and a size row is a class key (no "::") at offset 0.
 		Check(map.fields.size() == VersionMap::kServerFields.size() && map.fields.size() == 109, "table: every field row is in the map (89 members, 20 sizes)");
@@ -236,7 +236,7 @@ int main()
 			refusedOtherCL    += !Key(index.key, kOtherCL, {}, kind).Succeeded();
 			refusedNoCL       += !Key(index.key, kNoCL, {}, kind).Succeeded();
 		}
-		Check(n == 28 && served == n, "guard 2, LookUp: every key serves its RVA on the server exe");
+		Check(n == 29 && served == n, "guard 2, LookUp: every key serves its RVA on the server exe");
 		// A key is served as the kind it was recorded with, and no other.
 		Check(!Key("GWorld", kServer).Succeeded() && !Key("UCrSaveSubsystem::GetSaveData", kServer, {}, Kind::Data).Succeeded(),
 			"guard 2, LookUp: a global is not served as a function start, nor a function start as data");
@@ -267,44 +267,98 @@ int main()
 		VersionMap::SetActiveMap(nullptr);
 	}
 
-	// Guard 2 for the loader's own scoped key: the GObjects row is read by the loader's request for it (the client's
-	// preflight entry), by key and fingerprint, and lands on the row's address on the server exe only.
+	// Guard 2 for the loader's own keys: the Game-SDK globals (GObjects, GNames, FName::AppendString, GWorld) are read
+	// by the loader's request for each, the registry row the server build now carries (the client's patterns), by key
+	// and fingerprint, and land on the row's address on the server exe only.
 	{
-		const char* pattern = "49 C1 E0 03 48 8B C8 48 89 05 ?? ?? ?? ?? E8";
-		ScanPatterns::PreflightEntry entry{};
-		entry.name            = "GObjects (GUObjectArray.ObjObjects)";
-		entry.pattern         = pattern;
-		entry.kind            = ScanPatterns::PatternKind::Any;
-		entry.followRipDispAt = 7;
-		const uint32_t rva    = 0x0D3A1A50;
+		struct Global { const char* registryName; const char* key; int kind; uint32_t rva; };
+		const Global globals[] = {
+			{ "GObjects (GUObjectArray.ObjObjects)", "ModLoader/GObjects (GUObjectArray.ObjObjects)", 6, 0x0D3A1A50 },
+			{ "GNames (NamePoolData)",               "GNames (NamePoolData)",                          4, 0x0D2BD600 },
+			{ "FName::AppendString",                 "FName::AppendString",                            1, 0x0142A250 },
+			{ "GWorld",                              "GWorld",                                         4, 0x0D50EE38 },
+		};
+		for (const Global& g : globals)
+		{
+			const ScanPatterns::PreflightEntry* found = nullptr;
+			for (const ScanPatterns::PreflightEntry& e : ScanPatterns::PreflightRegistry)
+				if (strcmp(e.name, g.registryName) == 0)
+					found = &e;
+			const std::string what = std::string("guard 2, LookUp: ") + g.registryName;
+			Check(found != nullptr, (what + " is in the server build's preflight registry").c_str());
+			if (!found)
+				continue;
+			const ScanPatterns::PreflightEntry& entry = *found;
 
-		Request request = Ask(entry.name, Kind::Any);
-		request.pattern         = pattern;
-		request.followRipDispAt = 7;
+			Request request = Ask(entry.name, static_cast<Kind>(static_cast<int>(entry.kind)));
+			request.pattern         = entry.pattern;
+			request.followRel32At   = entry.followRel32At;
+			request.followRipDispAt = entry.followRipDispAt;
 
-		const char* key = "ModLoader/GObjects (GUObjectArray.ObjObjects)";
-		const VersionMap::FunctionRow* row = nullptr;
-		for (const VersionMap::Index& index : VersionMap::kServerFunctions)
-			if (strcmp(index.key, key) == 0)
-				row = &VersionMap::kServerFunctionRows[index.first];
-		Check(VersionMap::LoaderEntryKey(entry) == key && row && row->kind == 6 && row->rva == rva
-			&& row->fp == VersionMap::LoaderEntryFingerprint(entry),
-			"guard 2, LookUp: the GObjects row has the key, kind and fingerprint of the loader's request for it");
+			const VersionMap::FunctionRow* row = nullptr;
+			for (const VersionMap::Index& index : VersionMap::kServerFunctions)
+				if (strcmp(index.key, g.key) == 0)
+					row = &VersionMap::kServerFunctionRows[index.first];
+			Check(VersionMap::LoaderEntryKey(entry) == g.key && row && row->kind == g.kind && row->rva == g.rva
+				&& row->fp == VersionMap::LoaderEntryFingerprint(entry),
+				(what + " has the key, kind and fingerprint of the loader's request for it").c_str());
 
-		// The pattern finds the address the row records: the row and the scan agree on the server exe.
-		TestDoubles::g_rvas[pattern] = rva;
-		TestDoubles::g_log.clear();
-		Check(At(VersionMap::ResolveLoaderEntry(entry, request, kServer), rva), "guard 2, LookUp: the loader's GObjects request lands on the row's address on the server exe");
+			// The pattern finds the address the row records: the row and the scan agree on the server exe.
+			TestDoubles::g_rvas[entry.pattern] = g.rva;
+			TestDoubles::g_log.clear();
+			Check(At(VersionMap::ResolveLoaderEntry(entry, request, kServer), g.rva),
+				(what + ": the loader's request lands on the row's address on the server exe").c_str());
 
-		// The scan finds another address: on the server exe the row decides and the request fails, on an exe that is
-		// not the server's the row is not read and the scan stands.
-		TestDoubles::g_rvas[pattern] = 0x1234;
-		Check(!VersionMap::ResolveLoaderEntry(entry, request, kServer).Succeeded(),
-			"guard 2, LookUp: on the server exe a scan that disagrees with the GObjects row is refused");
+			// The scan finds another address: on the server exe the row decides and the request fails, on an exe that is
+			// not the server's the row is not read and the scan stands.
+			TestDoubles::g_rvas[entry.pattern] = 0x1234;
+			Check(!VersionMap::ResolveLoaderEntry(entry, request, kServer).Succeeded(),
+				(what + ": on the server exe a scan that disagrees with the row is refused").c_str());
+			for (const VersionMap::Exe* other : { &kWrongStamp, &kWrongSize, &kClientExe, &kOtherCL, &kNoCL })
+				Check(At(VersionMap::ResolveLoaderEntry(entry, request, *other), 0x1234),
+					(what + ": the row is not read on an exe that is not the server's").c_str());
+			TestDoubles::g_rvas.erase(entry.pattern);
+		}
+	}
+
+	// ServesExe: the server's map serves the exe it was measured on and no other; a map with no builds serves none.
+	{
+		Check(VersionMap::ServesExe(kServer), "ServesExe: true on the exe the table was measured on");
 		for (const VersionMap::Exe* other : { &kWrongStamp, &kWrongSize, &kClientExe, &kOtherCL, &kNoCL })
-			Check(At(VersionMap::ResolveLoaderEntry(entry, request, *other), 0x1234),
-				"guard 2, LookUp: the GObjects row is not read on an exe that is not the server's");
-		TestDoubles::g_rvas.erase(pattern);
+			Check(!VersionMap::ServesExe(*other), "ServesExe: false on an exe that is not the server's");
+		Check(!VersionMap::ServesExe(VersionMap::Exe{}), "ServesExe: false on an exe that is not identified");
+		VersionMap::MapData none = VersionMap::BaselineMap();
+		none.builds.clear();
+		VersionMap::SetActiveMap(std::make_shared<const VersionMap::MapData>(none));
+		Check(!VersionMap::ServesExe(kServer), "ServesExe: false on every exe when the map has no builds");
+		VersionMap::SetActiveMap(nullptr);
+	}
+
+	// What plugins are handed on the server: GObjects and FName::AppendString always, GWorld only off the build the
+	// loader was made for (the server's CL 127004 here).
+	{
+		Check(VersionMap::SdkGlobalsWithheld(kServer, 0x1000, 0x2000, 0x3000).empty(), "globals: all four found on the server exe, handed out");
+		Check(VersionMap::SdkGlobalsWithheld(kServer, 0x1000, 0x2000, 0).empty(), "globals: GWorld missing on the server's own build, still handed out");
+		Check(VersionMap::SdkGlobalsWithheld(kServer, 0, 0x2000, 0x3000).find("GObjects") != std::string::npos, "globals: GObjects missing on the server exe, withheld");
+		Check(VersionMap::SdkGlobalsWithheld(kServer, 0x1000, 0, 0x3000).find("FName::AppendString") != std::string::npos, "globals: FName::AppendString missing on the server exe, withheld");
+		Check(VersionMap::SdkGlobalsWithheld(kOtherCL, 0x1000, 0x2000, 0x3000).empty(), "globals: all found on another server CL, handed out");
+		Check(VersionMap::SdkGlobalsWithheld(kOtherCL, 0x1000, 0x2000, 0).find("GWorld") != std::string::npos, "globals: GWorld missing on another server CL, withheld");
+	}
+
+	// Admission of a plugin off the server's build: a migrated one loads when it asked for the globals, not otherwise.
+	{
+		PluginInfo info = { "T", "1", "t", "t", 72, PLUGIN_TARGET_SERVER };
+		info.gameBuiltCL = 127004;
+		info.mapFlags    = PLUGIN_MAP_MIGRATED;
+		const VersionMap::PluginGameBuild built = VersionMap::ReadPluginGameBuild(info);
+		Check(VersionMap::OffBuildRefusal(kOtherCL, 72, built, true).empty(), "admission: a migrated plugin built for CL 127004 loads on another server CL when it asked for the globals");
+		Check(VersionMap::OffBuildRefusal(kOtherCL, 72, built, false).find("GetSdkGlobals") != std::string::npos,
+			"admission: a migrated plugin that did not ask for the globals is refused on another server CL");
+		Check(VersionMap::OffBuildRefusal(kServer, 72, built, false).empty(), "admission: and loads on the server's own build either way");
+		info.mapFlags = 0;
+		const VersionMap::PluginGameBuild plain = VersionMap::ReadPluginGameBuild(info);
+		Check(VersionMap::OffBuildRefusal(kOtherCL, 72, plain, true).find("PLUGIN_MAP_MIGRATED") != std::string::npos,
+			"admission: a plugin that is not migrated is refused on another server CL, globals or not");
 	}
 
 	// Guard 4 on the table's own rows: every member and size row is served on the server exe with the row's values,
