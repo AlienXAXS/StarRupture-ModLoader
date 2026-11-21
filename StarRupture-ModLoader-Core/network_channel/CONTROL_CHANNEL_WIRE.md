@@ -174,7 +174,9 @@ table  = "$wires" US "1" RS                       header: marker, table format
 record: one row for every initialized plugin on the server, cut after whole rows
 at 8192 bytes (the cut is logged). Later record kinds may follow the table, each
 starting with `$`. An older client reads the ack only up to the first RS, so it
-never sees the table.
+never sees the table. A newer client does, so the server tells every joining client
+which plugins it runs (name, version, wire info), as the client's manifest already
+does in the other direction.
 
 **Client to server: `$ML:wires`.** The payload is exactly the table above, with
 no first record, carrying every plugin the client has loaded. The client sends it
@@ -184,7 +186,9 @@ server whose ack has no tail is never sent `wires`, because an older server woul
 log an unknown `$ML` message for it. A manifest sent again (a plugin reloaded)
 makes the server forget the client's table until `wires` arrives again; the
 manifest record format itself is unchanged. A `wires` message with no manifest
-before it is dropped.
+before it is dropped. A packet from a client whose plugin is compatible only by wire
+id is dropped if it arrives before the client's `wires` message (about one round
+trip after its manifest).
 
 Both loaders then evaluate every plugin against the other side's table with the
 same rule, so each logs its own line when a pair is blocked or accepted.

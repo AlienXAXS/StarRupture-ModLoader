@@ -611,9 +611,10 @@ namespace
         if (cutFirst)
         {
             const size_t total = PluginManager::GetWireEntries().size();
+            const size_t omitted = cut + notEncoded.size();
             ModLoaderLogger::LogWarn(
                 L"[NetworkChannel] The plugin wire table was cut after %zu plugin(s) to fit one message; "
-                L"%zu plugin(s) were left out.", total - cut - notEncoded.size(), cut);
+                L"%zu plugin(s) were left out.", total > omitted ? total - omitted : 0, cut);
         }
     }
 
@@ -1053,7 +1054,8 @@ namespace
     // ---- Readiness (authority side) -----------------------------------------
     //
     // "Ready" is not one state, it is one per plugin: a client is a valid target
-    // for plugin P version V exactly when it reported P at V, which is the same
+    // for plugin P version V exactly when it reported P at V, or at a version the
+    // two plugins declare compatible (GetPluginWireInfo), which is the same
     // predicate the send path gates on. Exposing anything coarser would invite
     // the mistake this is here to prevent -- a plugin seeing "client connected"
     // and sending to a client that has no idea what it is.

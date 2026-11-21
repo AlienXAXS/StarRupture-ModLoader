@@ -1558,8 +1558,9 @@ typedef void (*PluginNetworkServerMessageCallback)(void* senderPlayerController,
 // v56 -- authority side. Fired once per client, per registered plugin, at the
 // moment that client becomes a valid target for THAT plugin: it has reported the
 // plugin at the registering plugin's version (or one declared compatible, see
-// GetPluginWireInfo), and its player controller exists. This is strictly later than a player-joined hook; a packet sent from
-// player-joined is dropped, one sent from here is not.
+// GetPluginWireInfo), and its player controller exists. This is strictly later
+// than a player-joined hook; a packet sent from player-joined is dropped, one
+// sent from here is not.
 typedef void (*PluginClientReadyCallback)(void* playerController);
 
 // v56 -- client side. Fired once per connection when the authority acknowledges
