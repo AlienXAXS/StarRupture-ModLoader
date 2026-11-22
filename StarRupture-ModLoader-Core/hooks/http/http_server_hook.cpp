@@ -5,6 +5,7 @@
 #include "logging/logger.h"
 #include "plugins/plugin_guard.h"
 #include "memory_scanner/scanner.h"
+#include "memory_scanner/version_map.h"
 #include "hooks/memory/engine_allocator.h"
 #include "hooks/game/scan_patterns.h"
 
@@ -15,6 +16,7 @@
 #include <string_view>
 #include <vector>
 #include <algorithm>
+#include <atomic>
 #include <mutex>
 #include <cwchar>
 #include <filesystem>
@@ -32,14 +34,19 @@ namespace Hooks::HttpServer
 	// a3  : TFunction<void(TUniquePtr<FHttpServerResponse>&&)> � response callback.
 	//
 	// Confirmed FHttpServerRequest offsets (verified experimentally):
-	//   obj+0   : HTTP verb  FString { wchar_t* Data @+0,  int32 Num @+8  }
-	//   obj+16  : RelativePath FString { wchar_t* Data @+16, int32 Num @+24 }
-	//   obj+280 : Body TArray<uint8> { uint8* Data @+280, int32 Num @+288 }
+	//   obj+0x00 : PeerAddress TSharedPtr<FInternetAddr>
+	//   obj+0x10 : RelativePath FString { wchar_t* Data @+16, int32 Num @+24 }
+	//   obj+0x20 : Verb, uint16 EHttpServerRequestVerbs bit flags (GET=1, POST=2, PUT=4,
+	//              PATCH=8, DELETE=16, OPTIONS=32); its offset comes from the version map
+	//   obj+0x118: Body TArray<uint8> { uint8* Data @+280, int32 Num @+288 }
 	// ---------------------------------------------------------------------------
 
-	static constexpr size_t k_VerbOffset = 0;
 	static constexpr size_t k_UrlOffset = 16;
 	static constexpr size_t k_BodyOffset = 280;
+
+	// Offset of the verb flags in FHttpServerRequest, read from the version map when the hook
+	// is installed. -1: this build has no row, so the method stays HttpMethod::Other.
+	static std::atomic<int32_t> g_verbOffset{ -1 };
 
 	// ---------------------------------------------------------------------------
 	// Hook state
@@ -251,16 +258,41 @@ namespace Hooks::HttpServer
 		return out;
 	}
 
-	static HttpMethod ParseVerb(const std::string& v)
+	// The request's method from its EHttpServerRequestVerbs flags. A missing row, an unreadable
+	// value, HEAD (it has no flag) and anything else give Other.
+	static HttpMethod ReadMethod(uintptr_t req)
 	{
-		if (v == "get")     return HttpMethod::Get;
-		if (v == "post")    return HttpMethod::Post;
-		if (v == "put")     return HttpMethod::Put;
-		if (v == "delete")  return HttpMethod::Delete;
-		if (v == "patch")   return HttpMethod::Patch;
-		if (v == "options") return HttpMethod::Options;
-		if (v == "head")    return HttpMethod::Head;
-		return HttpMethod::Other;
+		const int32_t offset = g_verbOffset.load(std::memory_order_relaxed);
+		if (offset < 0)
+			return HttpMethod::Other;
+		uint16_t flags = 0;
+		if (TryReadBytes(req + static_cast<uintptr_t>(offset), &flags, sizeof(flags)) != sizeof(flags))
+			return HttpMethod::Other;
+		switch (flags)
+		{
+		case 1:  return HttpMethod::Get;
+		case 2:  return HttpMethod::Post;
+		case 4:  return HttpMethod::Put;
+		case 8:  return HttpMethod::Patch;
+		case 16: return HttpMethod::Delete;
+		case 32: return HttpMethod::Options;
+		default: return HttpMethod::Other;
+		}
+	}
+
+	static const wchar_t* MethodName(HttpMethod method)
+	{
+		switch (method)
+		{
+		case HttpMethod::Get:     return L"GET";
+		case HttpMethod::Post:    return L"POST";
+		case HttpMethod::Put:     return L"PUT";
+		case HttpMethod::Delete:  return L"DELETE";
+		case HttpMethod::Patch:   return L"PATCH";
+		case HttpMethod::Options: return L"OPTIONS";
+		case HttpMethod::Head:    return L"HEAD";
+		default:                  return L"(unknown)";
+		}
 	}
 
 	static uintptr_t FindErrorFunction(uintptr_t processRequestAddr)
@@ -930,7 +962,7 @@ namespace Hooks::HttpServer
 	static bool TryDispatchRawRoute(__int64 a1, __int64 a3,
 		const std::string& urlLower,
 		const std::string& urlOrig,
-		const std::string& verbLower,
+		HttpMethod method,
 		const std::string& bodyStr)
 	{
 		std::lock_guard lock(g_rawRoutesMutex);
@@ -955,7 +987,7 @@ namespace Hooks::HttpServer
 			req.url = urlOrig.c_str();
 			req.body = bodyStr.empty() ? nullptr : bodyStr.c_str();
 			req.bodyLen = bodyStr.size();
-			req.method = ParseVerb(verbLower);
+			req.method = method;
 
 			PluginHttpResponse resp{};
 			resp.statusCode = 200;
@@ -998,42 +1030,10 @@ namespace Hooks::HttpServer
 			uint64_t p = 0;
 			if (TryReadBytes(reinterpret_cast<uintptr_t>(a2), &p, sizeof(p)) == sizeof(p) && p != 0)
 			{
-				// ---------------------------------------------------------------------------
-				// Resolve the actual FHttpServerRequest* from the TSharedPtr.
-				//
-				// UE5 TSharedPtr<T> layout (x64):
-				//   +0x00  T*      Object pointer   <- this is what *a2 gives us
-				//   +0x08  FSharedReferencer*  Reference controller
-				//
-				// So p == *a2 should already BE the FHttpServerRequest*, not a ref-controller.
-				// However, in some UE builds / inlining scenarios the compiler passes the
-				// TSharedPtr storage address itself rather than dereferencing it, meaning
-				// p is a pointer-to-pointer.  We detect this by sanity-checking the verb
-				// FString::Num field (at req+8): a valid HTTP verb is 2�7 chars.
-				// If Num is out of that range, follow one extra level of indirection.
-				// ---------------------------------------------------------------------------
-				uint64_t req = p;
+				// *a2 is the FHttpServerRequest pointer itself (the first word of the TSharedPtr).
+				const uint64_t req = p;
 
-				int32_t verbNum = 0;
-				if (TryReadBytes(req + k_VerbOffset + 8, &verbNum, sizeof(verbNum)) == sizeof(verbNum)
-					&& (verbNum < 1 || verbNum > 16))
-				{
-					// p doesn't look like a request object � try treating it as a pointer-to-object.
-					uint64_t inner = 0;
-					if (TryReadBytes(p, &inner, sizeof(inner)) == sizeof(inner) && inner != 0)
-					{
-						int32_t innerVerbNum = 0;
-						if (TryReadBytes(inner + k_VerbOffset + 8, &innerVerbNum, sizeof(innerVerbNum)) == sizeof(innerVerbNum)
-							&& innerVerbNum >= 1 && innerVerbNum <= 16)
-						{
-							ModLoaderLogger::LogTrace(L"[HttpServer] Detour: followed extra TSharedPtr deref (verbNum=%d -> inner verbNum=%d)",
-								verbNum, innerVerbNum);
-							req = inner;
-						}
-					}
-				}
-
-				std::string verbLower = ReadFStringUtf8Lower(req, k_VerbOffset);
+				const HttpMethod method = ReadMethod(req);
 				std::string urlLower  = ReadFStringUtf8Lower(req, k_UrlOffset);
 				std::string urlOrig   = ReadFStringUtf8(req, k_UrlOffset);
 				std::string body      = ReadByteArray(req, k_BodyOffset);
@@ -1068,12 +1068,11 @@ namespace Hooks::HttpServer
 				// Trace: log every incoming HTTP request with full details
 				// ---------------------------------------------------------------------------
 				{
-					std::wstring wVerb(verbLower.begin(), verbLower.end());
 					std::wstring wUrl(urlOrig.begin(), urlOrig.end());
 
 					ModLoaderLogger::LogTrace(
 						L"[HttpServer] >> Incoming request: method=%s url=%s body_len=%zu a1=0x%llX a2=0x%llX a3=0x%llX",
-						wVerb.empty() ? L"(unknown)" : wVerb.c_str(),
+						MethodName(method),
 						wUrl.empty() ? L"(unknown)" : wUrl.c_str(),
 						body.size(),
 						static_cast<unsigned long long>(a1),
@@ -1117,7 +1116,7 @@ namespace Hooks::HttpServer
 					req.url = urlOrig.c_str();
 					req.body = body.empty() ? nullptr : body.c_str();
 					req.bodyLen = body.size();
-					req.method = ParseVerb(verbLower);
+					req.method = method;
 
 					std::lock_guard lock(g_filtersMutex);
 					ModLoaderLogger::LogTrace(L"[HttpServer] Phase 1: evaluating %zu filter(s)", g_filters.size());
@@ -1143,7 +1142,7 @@ namespace Hooks::HttpServer
 
 				// Phase 2a: raw-response routes � plugin-owned handlers
 				ModLoaderLogger::LogTrace(L"[HttpServer] Phase 2a: dispatching to raw routes");
-				if (TryDispatchRawRoute(a1, a3, urlLower, urlOrig, verbLower, body))
+				if (TryDispatchRawRoute(a1, a3, urlLower, urlOrig, method, body))
 				{
 					ModLoaderLogger::LogTrace(L"[HttpServer] Phase 2a: raw route handled request, returning");
 					return;
@@ -1204,6 +1203,23 @@ namespace Hooks::HttpServer
 				static_cast<unsigned long long>(g_createFuncAddr));
 		else
 			ModLoaderLogger::LogWarn(L"[HttpServer] FHttpServerResponse::Create not found � HTTP OK responses will not function");
+
+		// The request's verb: a native member the game's reflection does not describe, so only the
+		// version map's row for this build places it (a missing row keeps the method at Other).
+		{
+			VersionMap::FieldRequest request = VersionMap::LoaderFieldRequest("FHttpServerRequest::Verb", sizeof(uint16_t), -1);
+			request.flags   = PLUGIN_FIELD_NATIVE;
+			request.builtCL = 0;
+			VersionMap::FieldValue value;
+			std::string error;
+			if (VersionMap::SelectField("ModLoader", request, VersionMap::RunningExe(), value, error))
+			{
+				g_verbOffset.store(value.offset, std::memory_order_relaxed);
+				ModLoaderLogger::LogDebug(L"[HttpServer] FHttpServerRequest::Verb at +0x%X", static_cast<unsigned>(value.offset));
+			}
+			else
+				ModLoaderLogger::LogWarn(L"[HttpServer] No FHttpServerRequest::Verb row for this build (%S) -- plugins see every request method as Other", error.c_str());
+		}
 
 		bool ok = g_hook.Install(addr, reinterpret_cast<void*>(&Detour), reinterpret_cast<void**>(&g_original));
 
