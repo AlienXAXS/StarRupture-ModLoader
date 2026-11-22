@@ -30,6 +30,7 @@
 #include "plugins/plugin_hook_report.h"
 #include "utils/game_thread_dispatch.h"
 #include "host_rules_wire.h"
+#include "memory_scanner/version_map.h"
 #ifdef MODLOADER_CLIENT_BUILD
 #include "admin_prompt.h"
 #endif
@@ -432,6 +433,7 @@ namespace
     {
         std::string loaderTag;
         uint32_t interfaceVersion = 0;
+        uint32_t gameCL = 0; // the game build it reported; 0 = not sent
         std::vector<HostRulesWire::FeatRecord> features;
         std::string rulesSent;
         bool rulesSentOnce = false;
@@ -2363,6 +2365,10 @@ namespace
         HostRulesWire::FeatPayload feat;
         feat.buildTag         = MODLOADER_BUILD_TAG;
         feat.interfaceVersion = PLUGIN_INTERFACE_VERSION;
+        const VersionMap::Exe exe = VersionMap::RunningExe();
+        feat.gameCL           = exe.cl;
+        feat.gameImageStamp   = exe.imageStamp;
+        feat.gameImageSize    = exe.imageSize;
         for (const PluginHookReport::FeatureInfo& f : PluginHookReport::Features())
             feat.features.push_back({ f.plugin, f.id, f.title,
                                       f.state != PluginHookReport::FeatureInfo::State::OffBuild });
@@ -3995,6 +4001,7 @@ static bool DispatchServerNarrow(void* senderConn, void* senderUObject,
             }
 
             const size_t featCount = feat.features.size();
+            const uint32_t clientCL = feat.gameCL;
             bool isNew = false;
             bool act = false;
             {
@@ -4008,6 +4015,7 @@ static bool DispatchServerNarrow(void* senderConn, void* senderUObject,
                 // is current. Only the announce and the rules push are limited.
                 info.loaderTag        = feat.buildTag;
                 info.interfaceVersion = feat.interfaceVersion;
+                info.gameCL           = clientCL;
                 info.features         = std::move(feat.features);
                 const uint64_t nowMs = GetTickCount64();
                 act = HostRulesWire::DecideFeatAct(info.hasFeatAct, nowMs, info.lastFeatActMs) ==
@@ -4028,9 +4036,17 @@ static bool DispatchServerNarrow(void* senderConn, void* senderUObject,
 
             const std::string who = PlayerNameForConnection(senderConn);
             if (isNew)
+            {
                 ModLoaderLogger::LogInfo(
                     L"[NetworkChannel] Player '%S' reported %zu feature(s), mod loader '%S'",
                     who.empty() ? "(unnamed)" : who.c_str(), featCount, feat.buildTag.c_str());
+                const uint32_t serverCL = VersionMap::RunningExe().cl;
+                if (HostRulesWire::GameBuildMismatch(clientCL, serverCL))
+                    ModLoaderLogger::LogWarn(
+                        L"[NetworkChannel] Player '%S' runs game build CL-%u, this server runs CL-%u. "
+                        L"Expect garbled data or disconnects until they use the matching build.",
+                        who.empty() ? "(unnamed)" : who.c_str(), clientCL, serverCL);
+            }
             else
                 ModLoaderLogger::LogDebug(
                     L"[NetworkChannel] Player '%S' updated its feature list (%zu feature(s))",

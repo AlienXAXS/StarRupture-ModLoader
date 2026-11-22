@@ -17,6 +17,7 @@
 //
 //   $ML:feat payload
 //     $loader US <build tag> US <interface version> RS          (first record)
+//     $game US <CL> US <image stamp, hex> US <image size, hex> RS  (optional)
 //     <plugin> US <feature id> US <title> US <1 on | 0 off by build> RS
 //
 //   $ML:rules payload
@@ -35,6 +36,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -55,6 +57,7 @@ namespace HostRulesWire
     constexpr const char* kTagRules = "rules";
 
     constexpr const char* kLoaderMarker = "$loader";
+    constexpr const char* kGameMarker = "$game";
     constexpr const char* kRulesMarker = "$rules";
     constexpr uint32_t kRulesVersion = 1;
 
@@ -142,6 +145,29 @@ namespace HostRulesWire
             if (v > 0xFFFFFFFFull)
                 return false;
             *out = static_cast<uint32_t>(v);
+            return true;
+        }
+
+        // Hexadecimal digits only, no prefix, at most 8.
+        inline bool ParseHex(std::string_view s, uint32_t* out)
+        {
+            if (s.empty() || s.size() > 8)
+                return false;
+            uint32_t v = 0;
+            for (char c : s)
+            {
+                uint32_t d;
+                if (c >= '0' && c <= '9')
+                    d = static_cast<uint32_t>(c - '0');
+                else if (c >= 'a' && c <= 'f')
+                    d = static_cast<uint32_t>(c - 'a' + 10);
+                else if (c >= 'A' && c <= 'F')
+                    d = static_cast<uint32_t>(c - 'A' + 10);
+                else
+                    return false;
+                v = (v << 4) | d;
+            }
+            *out = v;
             return true;
         }
 
@@ -256,6 +282,9 @@ namespace HostRulesWire
     {
         std::string buildTag;          // the client loader's build tag
         uint32_t interfaceVersion = 0; // its plugin interface version
+        uint32_t gameCL = 0;           // the game build the client runs; 0 = not sent
+        uint32_t gameImageStamp = 0;
+        uint32_t gameImageSize = 0;
         std::vector<FeatRecord> features;
     };
 
@@ -283,6 +312,20 @@ namespace HostRulesWire
         out += kRecordSep;
 
         size_t records = 1;
+        if (p.gameCL != 0)
+        {
+            // Right after the header, so a long feature list never cuts it.
+            char hex[24];
+            std::snprintf(hex, sizeof(hex), "%x%c%x", static_cast<unsigned>(p.gameImageStamp), kFieldSep,
+                          static_cast<unsigned>(p.gameImageSize));
+            out += kGameMarker;
+            out += kFieldSep;
+            out += std::to_string(p.gameCL);
+            out += kFieldSep;
+            out += hex;
+            out += kRecordSep;
+            ++records;
+        }
         bool full = false;
         for (const FeatRecord& f : p.features)
         {
@@ -316,7 +359,9 @@ namespace HostRulesWire
     // Reads a $ML:feat payload. Strict: any row that is not well formed ends
     // the read with an error and *out stays as it was. A repeat of a plugin and
     // feature id already seen is skipped, and a row whose plugin name starts
-    // with '$' is skipped as a record kind this reader does not know.
+    // with '$' is skipped as a record kind this reader does not know. The one
+    // such record read here is "$game", leniently: a "$game" row that is not
+    // well formed is ignored and the rest still decodes.
     inline Status DecodeFeat(const char* data, size_t len, FeatPayload* out)
     {
         std::vector<detail::Fields> recs;
@@ -338,7 +383,17 @@ namespace HostRulesWire
         {
             const detail::Fields& r = recs[i];
             if (!r[0].empty() && r[0][0] == '$')
+            {
+                uint32_t cl = 0, stamp = 0, size = 0;
+                if (r[0] == kGameMarker && r.size() >= 4 && detail::ParseUint(r[1], &cl) && cl != 0 &&
+                    detail::ParseHex(r[2], &stamp) && detail::ParseHex(r[3], &size))
+                {
+                    p.gameCL = cl;
+                    p.gameImageStamp = stamp;
+                    p.gameImageSize = size;
+                }
                 continue;
+            }
             bool on = false;
             if (r.size() < 4 || r[0].empty() || r[1].empty() || r[1] == kWholePlugin || !detail::ParseFlag(r[3], &on))
                 return Status::BadRecord;
@@ -1353,5 +1408,13 @@ namespace HostRulesWire
         if (!hasPrev)
             return FeatGate::Act;
         return nowMs >= lastActMs && nowMs - lastActMs >= gapMs ? FeatGate::Act : FeatGate::Defer;
+    }
+
+    // True when a client and a server run different game builds: both builds
+    // known (non-zero) and not equal. A build that is not known, as from an
+    // older loader, is never a mismatch.
+    inline bool GameBuildMismatch(uint32_t clientCL, uint32_t serverCL)
+    {
+        return clientCL != 0 && serverCL != 0 && clientCL != serverCL;
     }
 }
