@@ -32,6 +32,10 @@ namespace Hooks::HttpServer
 	// -----------------------------------------------------------------------
 
 	bool Install();
+
+	// Looks up where the request's verb flags are (the version object map's row for this build).
+	// Call once on the game thread, after VersionMap::SetLiveFieldSource and the engine init.
+	void ResolveVerbOffset();
 	void Remove();
 	bool IsInstalled();
 

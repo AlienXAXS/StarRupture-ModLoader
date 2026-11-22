@@ -35,17 +35,17 @@ namespace Hooks::HttpServer
 	//
 	// Confirmed FHttpServerRequest offsets (verified experimentally):
 	//   obj+0x00 : PeerAddress TSharedPtr<FInternetAddr>
-	//   obj+0x10 : RelativePath FString { wchar_t* Data @+16, int32 Num @+24 }
+	//   obj+0x10 : RelativePath FString { wchar_t* Data @+0x10, int32 Num @+0x18 }
 	//   obj+0x20 : Verb, uint16 EHttpServerRequestVerbs bit flags (GET=1, POST=2, PUT=4,
 	//              PATCH=8, DELETE=16, OPTIONS=32); its offset comes from the version map
-	//   obj+0x118: Body TArray<uint8> { uint8* Data @+280, int32 Num @+288 }
+	//   obj+0x118: Body TArray<uint8> { uint8* Data @+0x118, int32 Num @+0x120 }
 	// ---------------------------------------------------------------------------
 
 	static constexpr size_t k_UrlOffset = 16;
 	static constexpr size_t k_BodyOffset = 280;
 
-	// Offset of the verb flags in FHttpServerRequest, read from the version map when the hook
-	// is installed. -1: this build has no row, so the method stays HttpMethod::Other.
+	// Offset of the verb flags in FHttpServerRequest, set by ResolveVerbOffset (game thread, once
+	// the live field source is set). -1: unresolved, so the method stays HttpMethod::Other.
 	static std::atomic<int32_t> g_verbOffset{ -1 };
 
 	// ---------------------------------------------------------------------------
@@ -290,7 +290,6 @@ namespace Hooks::HttpServer
 		case HttpMethod::Delete:  return L"DELETE";
 		case HttpMethod::Patch:   return L"PATCH";
 		case HttpMethod::Options: return L"OPTIONS";
-		case HttpMethod::Head:    return L"HEAD";
 		default:                  return L"(unknown)";
 		}
 	}
@@ -666,8 +665,8 @@ namespace Hooks::HttpServer
 		}
 
 		// Create takes FString* for body � convert UTF-8 body bytes to UTF-16.
-		int bodyWideLen = 0;
 		wchar_t* bodyData = nullptr;
+		int bodyWideLen = 0;
 		if (bodyLen > 0)
 		{
 			bodyWideLen = MultiByteToWideChar(CP_UTF8, 0, body, static_cast<int>(bodyLen), nullptr, 0);
@@ -1207,28 +1206,29 @@ namespace Hooks::HttpServer
 		else
 			ModLoaderLogger::LogWarn(L"[HttpServer] FHttpServerResponse::Create not found � HTTP OK responses will not function");
 
-		// The request's verb: a native member the game's reflection does not describe, so only the
-		// version map's row for this build places it (a missing row keeps the method at Other).
-		{
-			VersionMap::FieldRequest request = VersionMap::LoaderFieldRequest("FHttpServerRequest::Verb", sizeof(uint16_t), -1);
-			request.flags   = PLUGIN_FIELD_NATIVE;
-			request.builtCL = 0;
-			VersionMap::FieldValue value;
-			std::string error;
-			if (VersionMap::SelectField("ModLoader", request, VersionMap::RunningExe(), value, error))
-			{
-				g_verbOffset.store(value.offset, std::memory_order_relaxed);
-				ModLoaderLogger::LogDebug(L"[HttpServer] FHttpServerRequest::Verb at +0x%X", static_cast<unsigned>(value.offset));
-			}
-			else
-				ModLoaderLogger::LogWarn(L"[HttpServer] No FHttpServerRequest::Verb row for this build (%S) -- plugins see every request method as Other", error.c_str());
-		}
-
 		bool ok = g_hook.Install(addr, reinterpret_cast<void*>(&Detour), reinterpret_cast<void**>(&g_original));
 
 		if (ok) ModLoaderLogger::LogInfo(L"[HttpServer] Hook installed successfully");
 		else    ModLoaderLogger::LogError(L"[HttpServer] Hook installation failed");
 		return ok;
+	}
+
+	void ResolveVerbOffset()
+	{
+		// FHttpServerRequest::Verb is a native member the game's reflection does not describe, so
+		// only the version object map's row for this build places it, and the map bounds that row
+		// by the class's size from reflection. That data exists once engine init is over, so this
+		// runs after the live field source is set, not in Install(). Until it succeeds the method
+		// stays Other.
+		VersionMap::FieldRequest request = VersionMap::LoaderFieldRequest("FHttpServerRequest::Verb", sizeof(uint16_t), -1);
+		request.flags   = PLUGIN_FIELD_NATIVE;
+		request.builtCL = 0;
+		VersionMap::FieldValue value;
+		std::string error;
+		if (VersionMap::SelectField("ModLoader", request, VersionMap::RunningExe(), value, error))
+			g_verbOffset.store(value.offset, std::memory_order_relaxed);
+		else
+			ModLoaderLogger::LogWarn(L"[HttpServer] Could not place FHttpServerRequest::Verb (%S) -- plugins see every request method as Other", error.c_str());
 	}
 
 	void Remove()

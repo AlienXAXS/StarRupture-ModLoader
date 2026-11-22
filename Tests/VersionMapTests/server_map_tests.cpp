@@ -529,6 +529,17 @@ int main()
 		Check(notServedOwnRow == members, "guard 4, RowsFor: a member whose own row disagrees with the table's is refused on the server exe");
 	}
 
+	// The HTTP server hook's verb row, asked before the loader has a live field source (the order of the hook's
+	// install): a row from the table is bounded by the class's size, so with no reflection data it is refused.
+	// That is why the hook resolves it only after the source is set.
+	VersionMap::SetLiveFieldSource(nullptr);
+	{
+		VersionMap::FieldValue v;
+		std::string e;
+		Check(!Field("FHttpServerRequest::Verb", PLUGIN_FIELD_NATIVE, 2, {}, kServer, v, e) && e.find("no reflection data") != std::string::npos,
+			"http verb: with no live field source the verb row is refused, so the hook cannot resolve it at install");
+	}
+
 	// The native members the shipped server plugins ask for, each as the plugin sends it (its key, the size it is
 	// compiled for and its own CL-127004 row): served with that row on the server exe, and from the table alone.
 	VersionMap::SetLiveFieldSource(Unreflected);
@@ -559,10 +570,10 @@ int main()
 		Check(withOwn == n, "guard 4, RowsFor: each native member a shipped server plugin asks for is served on the server exe with the plugin's own row");
 		Check(tableOnly == n, "guard 4, RowsFor: and from the table's row alone");
 
-		// The HTTP server hook reads the request's verb flags (a uint16) by name, with no row of its own.
+		// Once the source is set, the HTTP server hook reads the request's verb flags (a uint16) by name, with no row of its own.
 		const char* verbKey = "FHttpServerRequest::Verb";
 		Check(Field(verbKey, PLUGIN_FIELD_NATIVE, 2, {}, kServer, v, e) && v.offset == 0x20 && v.size == 2 && v.boolMask == 0,
-			"http verb: the request's verb flags are served on the server exe at 0x20, 2 bytes");
+			"http verb: with the live field source set, the request's verb flags are served on the server exe at 0x20, 2 bytes");
 		Check(!Field(verbKey, PLUGIN_FIELD_NATIVE, 2, {}, kOtherCL, v, e) && !Field(verbKey, PLUGIN_FIELD_NATIVE, 2, {}, kClientExe, v, e),
 			"http verb: no row on another server CL or on the client exe, so the hook leaves the method as Other");
 	}
