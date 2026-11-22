@@ -666,10 +666,11 @@ namespace Hooks::HttpServer
 		}
 
 		// Create takes FString* for body � convert UTF-8 body bytes to UTF-16.
+		int bodyWideLen = 0;
 		wchar_t* bodyData = nullptr;
 		if (bodyLen > 0)
 		{
-			int bodyWideLen = MultiByteToWideChar(CP_UTF8, 0, body, static_cast<int>(bodyLen), nullptr, 0);
+			bodyWideLen = MultiByteToWideChar(CP_UTF8, 0, body, static_cast<int>(bodyLen), nullptr, 0);
 			if (bodyWideLen > 0)
 			{
 				bodyData = static_cast<wchar_t*>(EngineAllocator::Alloc(
@@ -688,8 +689,9 @@ namespace Hooks::HttpServer
 		if (!ctData) { if (bodyData) EngineAllocator::Free(bodyData); return; }
 		MultiByteToWideChar(CP_UTF8, 0, contentType, -1, ctData, ctNeeded);
 
-		// FString::Num includes the null terminator. Num=0 when Data is null.
-		const int32_t bodyNum = bodyData ? (static_cast<int32_t>(bodyLen) + 1) : 0;
+		// FString::Num includes the null terminator and counts wide characters, not UTF-8 bytes.
+		// Num=0 when Data is null.
+		const int32_t bodyNum = bodyData ? (bodyWideLen + 1) : 0;
 		FakeString bodyFs = { bodyData, bodyNum,   bodyNum };
 		FakeString ctFs = { ctData,   ctNeeded,  ctNeeded };
 
