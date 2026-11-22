@@ -435,7 +435,8 @@ namespace Hooks::HttpServer
 		if (!errData) { ModLoaderLogger::LogWarn(L"[HttpServer] EngineAlloc failed � dropping connection"); return; }
 		memcpy(errData, kErrCode, sizeof(kErrCode));
 
-		FakeString errCodeStr = { errData, kErrCodeChars - 1, kErrCodeChars };
+		// FString::Num counts the null terminator, as in the other FStrings built here.
+		FakeString errCodeStr = { errData, kErrCodeChars, kErrCodeChars };
 		FakeString emptyStr = { nullptr, 0, 0 };
 
 		void* response = nullptr;
@@ -630,7 +631,7 @@ namespace Hooks::HttpServer
 			if (!codeData) return;
 			memcpy(codeData, wCodeStr, wLen * sizeof(wchar_t));
 
-			FakeString codeFs = { codeData, wLen - 1, wLen };
+			FakeString codeFs = { codeData, wLen, wLen };
 			FakeString emptyFs = { nullptr, 0, 0 };
 
 			ModLoaderLogger::LogTrace(L"[HttpServer] SendRawResponse: calling FHttpServerResponse::Error (0x%llX), code=%S",
