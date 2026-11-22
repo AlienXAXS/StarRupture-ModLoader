@@ -12,12 +12,14 @@
 #include "test_doubles.h"
 #include "core/ui_state.h"
 #include "core/input_arbitration.h"
+#include "logging/ue_log.h"
 
 #include <windows.h>
 #include <atomic>
 #include <cstdio>
 #include <cstdlib>
 #include <new>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -1084,6 +1086,67 @@ static void ForgetPluginBlockingDropsItsOwners()
     CHECK(blocked[0] == '\0');
 }
 
+// ---------------------------------------------------------------------------
+// UELog::Write: the text handed to the engine's BasicLogV is a format string,
+// so every '%' in a message must arrive doubled.
+// ---------------------------------------------------------------------------
+static std::wstring g_lastFormat;
+static int g_logCalls = 0;
+
+static void __fastcall FakeBasicLogV(const UELog::FLogCategoryBase*,
+                                     const UELog::FStaticBasicLogRecord* record, char*)
+{
+    g_lastFormat = record->Format;
+    ++g_logCalls;
+}
+
+static std::wstring LoggedFormat(const std::string& message)
+{
+    g_lastFormat.clear();
+    UELog::Write(UELog::ELogVerbosity::Log, message.c_str());
+    return g_lastFormat;
+}
+
+static void UELogEscapesPercent()
+{
+    UELog::g_basicLogV = &FakeBasicLogV;
+    UELog::g_initialized.store(true);
+
+    CHECK(LoggedFormat("plain") == L"plain");
+    CHECK(LoggedFormat("100%") == L"100%%");
+    CHECK(LoggedFormat("%d%s") == L"%%d%%s");
+    CHECK(LoggedFormat("%%") == L"%%%%");
+    CHECK(LoggedFormat("a%25b") == L"a%%25b");
+    CHECK(LoggedFormat("") == L"");
+
+    // A message that doubles to more than the buffer holds is cut, still
+    // terminated, and ends on a whole "%%" pair.
+    g_logCalls = 0;
+    const std::wstring cut = LoggedFormat(std::string(1500, '%'));
+    CHECK(g_logCalls == 1);
+    CHECK(cut.size() == 2046);
+    CHECK(cut.find_first_not_of(L'%') == std::wstring::npos);
+
+    // A cut that falls after a "%%" pair keeps the text that fits.
+    const std::wstring cutText = LoggedFormat(std::string(1000, '%') + std::string(1000, 'x'));
+    CHECK(cutText.size() == 2047);
+    CHECK(cutText.compare(0, 2000, std::wstring(2000, L'%')) == 0);
+    CHECK(cutText.find_first_not_of(L'x', 2000) == std::wstring::npos);
+
+    // A surrogate pair (U+1F600) is kept whole when it fits and dropped whole
+    // when it does not.
+    const std::string smile = { char(0xF0), char(0x9F), char(0x98), char(0x80) };
+    const std::wstring fits = LoggedFormat(std::string(1022, '%') + smile);
+    CHECK(fits.size() == 2046);
+    CHECK(fits[2044] == 0xD83D && fits[2045] == 0xDE00);
+    const std::wstring dropped = LoggedFormat(std::string(1023, '%') + smile);
+    CHECK(dropped.size() == 2046);
+    CHECK(dropped.find_first_not_of(L'%') == std::wstring::npos);
+
+    UELog::g_initialized.store(false);
+    UELog::g_basicLogV = nullptr;
+}
+
 int main()
 {
     RunTest("IsGameThread: false on every thread before the first tick", GameThreadBeforeFirstTick);
@@ -1118,7 +1181,8 @@ int main()
     RunTest("InputKey: a held blocked key does not block another key", BlockedKeyHeldOtherPressed);
     RunTest("InputKey: a blocking combo needs its own modifiers", BlockingComboModifiers);
     RunTest("ForgetPluginBlocking: an unloading plugin's blocking goes", ForgetPluginBlockingDropsItsOwners);
-    RunTest("ForgetModule: an unloading plugin's keybinds go", ForgetModuleDropsItsKeybinds);
+    RunTest("UELog: percent signs reach the engine escaped", UELogEscapesPercent);
+    RunTest("ForgetModule: an unloading plugin's keybinds go",ForgetModuleDropsItsKeybinds);
     RunTest("ForgetModule: an unloading plugin's game-thread tasks go", ForgetModuleDropsItsGameThreadTasks);
     RunTest("UIState: mask filter, once per change", UIStateMaskAndOncePerChange);
     RunTest("UIState: first comparison is against 0", UIStateFirstComparisonIsAgainstZero);
