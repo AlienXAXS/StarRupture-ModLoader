@@ -690,6 +690,95 @@ namespace
     const std::string kFeatHead = Rec({ "$loader", "v1.27.0", "79" });
     const std::string kRulesHead = Rec({ "$rules", "1", "1", "0", "" });
 
+    // The reader as it was before "$game": every '$' row is skipped, nothing is read from it.
+    HW::Status OldDecodeFeat(const std::string& s, HW::FeatPayload* out)
+    {
+        std::vector<HW::detail::Fields> recs;
+        const HW::Status st = HW::detail::SplitRecords(s.data(), s.size(), &recs);
+        if (st != HW::Status::Ok)
+            return st;
+        uint32_t iface = 0;
+        const HW::detail::Fields& h = recs[0];
+        if (h.size() < 3 || h[0] != HW::kLoaderMarker || h[1].empty() || !HW::detail::ParseUint(h[2], &iface))
+            return HW::Status::BadHeader;
+        HW::FeatPayload p;
+        p.buildTag.assign(h[1]);
+        p.interfaceVersion = iface;
+        for (size_t i = 1; i < recs.size(); ++i)
+        {
+            const HW::detail::Fields& r = recs[i];
+            if (!r[0].empty() && r[0][0] == '$')
+                continue;
+            bool on = false;
+            if (r.size() < 4 || r[0].empty() || r[1].empty() || !HW::detail::ParseFlag(r[3], &on))
+                return HW::Status::BadRecord;
+            p.features.push_back({ std::string(r[0]), std::string(r[1]), std::string(r[2]), on });
+        }
+        *out = std::move(p);
+        return HW::Status::Ok;
+    }
+
+    void TestHostGameBuild()
+    {
+        std::printf("Host rules: $game record in $ML:feat\n");
+        HW::FeatPayload in;
+        in.buildTag = "v1.26.1-dev.14";
+        in.interfaceVersion = 79;
+        in.gameCL = 130045;
+        in.gameImageStamp = 0x6A1B2C3Du;
+        in.gameImageSize = 0x0123ABCDu;
+        in.features = { { "BetterCheats", "movement", "Movement", true } };
+        const std::string wire = HW::EncodeFeat(in);
+        Check(wire.find(Rec({ "$game", "130045", "6a1b2c3d", "123abcd" })) == Rec({ "$loader", "v1.26.1-dev.14", "79" }).size(),
+            "the $game record follows the header: decimal CL, hex stamp, hex size");
+        HW::FeatPayload out;
+        Check(DecF(wire, &out) == HW::Status::Ok && out.gameCL == 130045 && out.gameImageStamp == 0x6A1B2C3Du
+                && out.gameImageSize == 0x0123ABCDu && out.features.size() == 1 && out.buildTag == in.buildTag,
+            "round trip with $game keeps the build and the features");
+
+        in.gameCL = 0;
+        const std::string plain = HW::EncodeFeat(in);
+        Check(plain.find("$game") == std::string::npos, "CL 0: no $game record is written");
+        Check(DecF(plain, &out) == HW::Status::Ok && out.gameCL == 0 && out.features.size() == 1, "round trip without $game: CL stays 0");
+
+        // An old client's payload through the new reader: nothing known, nothing refused.
+        Check(DecF(kFeatHead + Rec({ "P", "i", "t", "1" }), &out) == HW::Status::Ok && out.gameCL == 0 && out.features.size() == 1,
+            "an old-format payload decodes with no game build");
+
+        // A new client's payload through the unchanged old reader: the record is skipped.
+        HW::FeatPayload old;
+        Check(OldDecodeFeat(wire, &old) == HW::Status::Ok && old.features.size() == 1 && old.features[0].id == "movement"
+                && old.buildTag == in.buildTag,
+            "a payload with $game decodes through the old skip-$ reader");
+
+        // A bad $game record is ignored; the feature rows still decode.
+        const std::string row = Rec({ "P", "i", "t", "1" });
+        const char* badCL[] = { "", "x", "0", "4294967296", "-5" };
+        for (const char* cl : badCL)
+            Check(DecF(kFeatHead + Rec({ "$game", cl, "1", "2" }) + row, &out) == HW::Status::Ok && out.gameCL == 0 && out.features.size() == 1,
+                "a $game record with a bad CL is ignored");
+        Check(DecF(kFeatHead + Rec({ "$game", "5", "zz", "2" }) + row, &out) == HW::Status::Ok && out.gameCL == 0 && out.features.size() == 1,
+            "a $game record with a bad stamp is ignored");
+        Check(DecF(kFeatHead + Rec({ "$game", "5", "1", "" }) + row, &out) == HW::Status::Ok && out.gameCL == 0 && out.features.size() == 1,
+            "a $game record with an empty size is ignored");
+        Check(DecF(kFeatHead + Rec({ "$game", "5", "123456789", "2" }) + row, &out) == HW::Status::Ok && out.gameCL == 0,
+            "a $game record with a stamp over 8 digits is ignored");
+        Check(DecF(kFeatHead + Rec({ "$game", "5" }) + row, &out) == HW::Status::Ok && out.gameCL == 0 && out.features.size() == 1,
+            "a $game record with too few fields is ignored");
+        Check(DecF(kFeatHead + Rec({ "$game", "5", "A", "B" }) + row, &out) == HW::Status::Ok && out.gameCL == 5 && out.gameImageStamp == 0xA,
+            "hex digits are read in either case");
+        Check(DecF(kFeatHead + Rec({ "$game", "5", "1", "2" }) + Rec({ "$game", "6", "1", "2" }) + row, &out) == HW::Status::Ok && out.gameCL == 6,
+            "with two $game records the last good one is kept");
+
+        // The decision.
+        Check(!HW::GameBuildMismatch(130045, 130045), "same build is no mismatch");
+        Check(HW::GameBuildMismatch(130045, 127004), "different builds are a mismatch");
+        Check(HW::GameBuildMismatch(127004, 130045), "different builds are a mismatch the other way");
+        Check(!HW::GameBuildMismatch(0, 127004), "client build unknown (old loader): no mismatch");
+        Check(!HW::GameBuildMismatch(130045, 0), "server build unknown: no mismatch");
+        Check(!HW::GameBuildMismatch(0, 0), "both unknown: no mismatch");
+    }
+
     void TestHostFeat()
     {
         std::printf("Host rules: $ML:feat\n");
@@ -1148,6 +1237,7 @@ int main()
     TestWarnOnce();
     TestMirror();
     TestHostFeat();
+    TestHostGameBuild();
     TestHostRules();
     TestHostPlan();
     TestHostMinimum();
