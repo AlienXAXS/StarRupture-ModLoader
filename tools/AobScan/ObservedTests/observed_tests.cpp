@@ -8,7 +8,7 @@
 #include "../carry.h"
 #include "../observed.h"
 #include "../plugin_scan.h"
-#include "hooks/game/version_map.generated.h"
+#include "hooks/game/version_map_built.h"
 #include "memory_scanner/image_info.h"
 
 #include <cstdint>
@@ -257,6 +257,14 @@ int main()
 		Check(seen.found && seen.fromMap && seen.pattern == kMapRow,
 			"a new build: the latest other build's row that decided the address");
 
+		// The built CL's row, newest of the other builds: the code's pattern stands in for it.
+		UseMap({ Row(widget, 128786, kMapRow), Row(widget, VersionMap::kBuiltCL, kMapRow) });
+		TestDoubles::g_rvas = { { kRegistry, 0x98B4480 } };
+		seen = Observe(widget, next, r);
+		Check(r.Succeeded() && seen.found && !seen.fromMap && seen.pattern == kRegistry,
+			"a new build: the built CL's row is the code's pattern, not the row's");
+
+		UseMap({ Row(widget, 127004, kRegistry), Row(widget, 128786, kMapRow) });
 		TestDoubles::g_rvas = { { kRegistry, 0x98B4480 }, { kMapRow, 0x98B4480 } };
 		seen = Observe(widget, next, r);
 		Check(r.Succeeded() && seen.found && !seen.fromMap && seen.pattern == kRegistry,

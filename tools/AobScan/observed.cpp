@@ -1,6 +1,6 @@
 #include "observed.h"
 
-#include "hooks/game/version_map.generated.h"
+#include "hooks/game/version_map_built.h"
 
 #include <algorithm>
 #include <vector>

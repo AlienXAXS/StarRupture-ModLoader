@@ -77,7 +77,7 @@
 
 #include "core/version_check.h"
 #include "hooks/game/scan_patterns.h"
-#include "hooks/game/version_map.generated.h"
+#include "hooks/game/version_map_built.h"
 #include "memory_scanner/image_info.h"
 #include "memory_scanner/scan_validation.h"
 #include "memory_scanner/version_feed.h"
@@ -471,11 +471,12 @@ int wmain(int argc, wchar_t** argv)
 		// with the loader's version-map rows for it, whose "[Map]" line goes to
 		// stderr.
 		ScanValidation::Request request;
-		request.name          = entry.name;
-		request.pattern       = entry.pattern;
-		request.kind          = static_cast<ScanValidation::Kind>(static_cast<int>(entry.kind));
-		request.followRel32At = entry.followRel32At;
-		request.module        = module;
+		request.name            = entry.name;
+		request.pattern         = entry.pattern;
+		request.kind            = static_cast<ScanValidation::Kind>(static_cast<int>(entry.kind));
+		request.followRel32At   = entry.followRel32At;
+		request.followRipDispAt = entry.followRipDispAt;
+		request.module          = module;
 
 		Row row;
 		row.entry  = &entry;
