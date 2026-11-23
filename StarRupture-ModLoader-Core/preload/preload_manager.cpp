@@ -512,6 +512,7 @@ namespace PreloadManager
 				record.status = Status::Crashed;
 				record.detail = "faulted inside PreloadInit";
 				g_records.push_back(std::move(record));
+				PluginHookReport::ForgetFeatures(&entry.self);
 				FreeLibrary(entry.module);
 				entry.module = nullptr;
 				ClearBreadcrumb();
@@ -526,6 +527,7 @@ namespace PreloadManager
 				record.status = Status::InitFailed;
 				record.detail = "PreloadInit returned false";
 				g_records.push_back(std::move(record));
+				PluginHookReport::ForgetFeatures(&entry.self);
 				FreeLibrary(entry.module);
 				entry.module = nullptr;
 				ClearBreadcrumb();

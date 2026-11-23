@@ -141,3 +141,54 @@ ReceivedBunch detour (every connection exchanges control traffic at join), keyed
 `UNetDriver::ClientConnections` / `APlayerController::NetConnection`; client via
 `UNetDriver::ServerConnection`. Alternative: `UNetConnection::Channels[0]` is the
 control channel (Channels array offset not yet pulled).
+
+## Plugin wire table (ack tail and `$ML:wires`)
+
+The loader's own messages ride the same wire as plugin packets, in envelopes
+whose plugin name is `$ML` (`$ML:manifest`, `$ML:ack`, and the one below). By
+default a plugin's packets flow only between identical version strings. A plugin
+that exports `GetPluginWireInfo` (see `plugins/plugin_interface.h`) also tells
+the loader its wire id and the versions it accepts, and the two loaders swap
+those declarations in a **wire table**. The compatibility rule itself, and the
+table codec, live in `wire_compat.h`.
+
+Separators: records end with RS (0x1E), fields split on US (0x1F).
+
+```
+table  = "$wires" US "1" RS                       header: marker, table format
+       + name US version US wireId US accept RS   one row per plugin
+```
+
+- `wireId` is a decimal number, or empty for a plugin that declared nothing.
+  `accept` is the `;` separated version list, or empty.
+- Limits: name and version 256 bytes each, accept list 512 bytes and 32 items, 512
+  rows. A plugin whose fields hold a separator, whose name starts with `$`, or
+  that exceeds a limit is left out of the table and logged once.
+- A reader ignores rows with fewer than 4 fields, extra fields on a row, rows
+  with a bad wire id or a name already seen, and records that start with `$` that
+  it does not know. An unfinished last record (no RS) is dropped. A table without
+  its header is no table, and the plugins in it keep the exact-version rule.
+
+**Server to client: the tail of `$ML:ack`.** The ack stays
+`buildTag US interfaceVersion RS`, and the table is appended after that first
+record: one row for every initialized plugin on the server, cut after whole rows
+at 8192 bytes (the cut is logged). Later record kinds may follow the table, each
+starting with `$`. An older client reads the ack only up to the first RS, so it
+never sees the table. A newer client does, so the server tells every joining client
+which plugins it runs (name, version, wire info), as the client's manifest already
+does in the other direction.
+
+**Client to server: `$ML:wires`.** The payload is exactly the table above, with
+no first record, carrying every plugin the client has loaded. The client sends it
+once per manifest it puts on the wire, and only after an ack whose tail was a
+readable table. That is the proof that the server's loader understands it: a
+server whose ack has no tail is never sent `wires`, because an older server would
+log an unknown `$ML` message for it. A manifest sent again (a plugin reloaded)
+makes the server forget the client's table until `wires` arrives again; the
+manifest record format itself is unchanged. A `wires` message with no manifest
+before it is dropped. A packet from a client whose plugin is compatible only by wire
+id is dropped if it arrives before the client's `wires` message (about one round
+trip after its manifest).
+
+Both loaders then evaluate every plugin against the other side's table with the
+same rule, so each logs its own line when a pair is blocked or accepted.

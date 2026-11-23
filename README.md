@@ -357,6 +357,104 @@ plugin's author. <sup>[✦](#msantoro12)</sup>
 
 <img src="images/popup-hooks-failed.png" width="383" alt="Plugin Hooks Failed pop-up with the missing hooks of one plugin">
 
+### A server can turn a feature off
+
+A plugin lists its features (a map overlay, a cheat, a new panel) so the loader can switch one off
+without switching the whole plugin off. A game update does that on its own. A server can do it too,
+for a feature it does not want on it: the server keeps a short deny list of plugin and feature pairs.
+A feature on the list is off, whatever the game build allows, and comes back when it is taken off the
+list. A feature the game build already turned off stays off either way. <sup>[✦](#msantoro12)</sup>
+
+What the player sees: the feature's controls on the plugin's config page are greyed, with
+"*&lt;feature title&gt;* is off: turned off by this server". The plugin shows as `Loaded (1 off)` in the
+Plugins tab and in `plugins`, `hookfailures` lists it as `[feature off] <title> (<id>): turned off by this
+server`, and `ModLoader.log` says `feature "<title>" turned off by this server` (and `turned back on`
+later). No pop-up opens, and the plugin keeps running without the feature.
+
+The `features` command, on the server console or the client's developer console:
+
+| Command | Does |
+|---|---|
+| `features` | List every feature the loaded plugins declared and whether it is `on`, `off: build (<reason>)` or `off: server`, then the deny list |
+| `features hostoff <plugin> <id>` | Add one feature to the deny list. The plugin is the name `plugins` shows, the id is the one `features` shows |
+| `features hostclear` | Empty the deny list. Features the game build has on are on again |
+| `features hostmessage <text>` | Set the text players get with the list (empty text clears it) |
+
+Example: `features` shows a plugin called `MyPlugin` with a feature `marker-labels` that is `on`.
+
+```
+features hostoff MyPlugin marker-labels
+```
+
+prints the list again with `marker-labels` as `off: server`, and the deny list shows `MyPlugin  marker-labels`.
+The plugin's own flag for the feature reads off from then on, even if the plugin is reloaded or loaded
+later. `features hostoff MyPlugin nothing` answers "No feature 'nothing' in plugin 'MyPlugin'" and changes
+nothing. `features hostclear` turns `marker-labels` back on. The deny list is kept in memory, not saved,
+and is empty at every start.
+
+A server sends its deny list to every connected player whose mod loader sent its feature
+list: the player's loader switches those features off within a moment, and again when the list
+changes or the player's plugins change. A message set with `features hostmessage <text>` goes with the
+list and is written to the player's `ModLoader.log`. Leaving the server gives the features back, and a
+list the player set with `features hostoff` on their own machine stays. A player on a server whose
+mod loader is older than this gets no list, and `ModLoader.log` says once: "No host rules (the server's
+mod loader is older)."
+
+A server that has no admin yet can ask a player to claim it. The player sees a window saying "This server has no admin yet. If you run this server, enter the claim code from the server log. Otherwise choose Not me." with a text box and the buttons Send and Not me. The server shows a line in the window after each try (for example "Wrong code"), and when it is done the window shows its last line until the player dismisses it. Not me closes the window (so does the X in its title bar); whether that player is asked again is up to the server, but a window the player dismissed is not shown again for 60 seconds. Only a player whose mod loader sent its feature list is asked, and only a server that asks does this; on any other server nothing appears. The code is sent to the server once and is never written to `ModLoader.log`.
+
+#### For a server plugin
+
+A server plugin sets the rules from text instead of the console, for everyone or for one player. The
+calls are in `hooks->HostRules` (interface 79; a loader below 79 has no such pointer, so check the
+loader's interface version first). `SetRules(text, error, errorSize)` is the set for every player with
+no set of their own, `SetRulesForConnection(playerController, text, error, errorSize)` is one player's set,
+and `ClearConnection(playerController)` puts that player back on the server-wide set. They return false and
+fill `error` ("line N: ...") when the text is not valid, and change nothing. One rule per line:
+
+```
+# comment
+default=allow
+message=Cheats are off on this server
+BetterCheats.*=deny
+MiniMap.waypoints=allow
+```
+
+`default=` is what a feature with no rule gets, `Plugin.*` is a whole mod, `Plugin.feature` one feature.
+The `message=` line is written to each player's `ModLoader.log`, it does not appear on screen. A rule
+splits at the first dot, so a plugin whose own name contains a dot cannot be named in the text.
+A player's own set replaces the server-wide one whole, so the `features hostoff` list and
+`features hostmessage` text apply only to players with no set of their own. Changes reach every player
+who sent a feature list at once. `RegisterOnClientFeatures(self, callback)` calls you on the game thread when
+a player's feature list arrives or changes, with that player's controller; that is the time to call
+`SetRulesForConnection`. That callback runs at most once per second per player, so a burst of changed lists
+is answered once. All calls are for the server's game thread and do nothing on a client.
+
+A server can also ask for a minimum version. `SetVersionMinimums(text, error, errorSize)` takes one line per
+rule (empty text turns everything off; a bad text returns false with `error` and changes nothing):
+
+```
+# comment
+loader=1.27.0
+RuptureTimer=0.11.0
+ProductionViewer=wire
+```
+
+`loader=` is the oldest ModLoader allowed, `Plugin=version` the oldest version of one mod (the name ignores
+case), and `Plugin=wire` means the player's copy must be one the mod wire check accepts. Register
+`RegisterOnClientBelowMinimum(self, callback)`; the loader calls `callback(playerController, plainReason)` on the
+game thread, once per join, when a player is below. `plainReason` is one line of plain words for the player
+("This server needs RuptureTimer 0.11.0 or newer (you have 0.9.2). ..."). The loader never removes anyone: your
+plugin decides (an admin may be exempt) and does the removal itself. Players with no mod loader are never
+checked, and a dev build or any version the loader cannot read is never below. A text after a `-` or `+` in a
+version is ignored when comparing, so `1.26.0-dev.3` counts as `1.26.0` and is below `1.27.0`. A loader too old
+to report its version counts as below a set `loader=` minimum after 30 seconds; time the game stalled (more
+than 2 seconds between engine ticks, such as a level load) does not count toward the 30. Setting new minimums checks the players
+already connected that have not been reported yet.
+
+`GetClientFeatures(playerController, buf, size)` returns what one player's loader reported as text (`loader=<build tag> interface=<version>`, then one `Plugin.feature=on|off` line each) and its full length, or -1 when there is none; a null `buf` with `size` 0 measures.
+
+`AskAdmin(playerController)` opens a prompt on that player's screen asking for an admin code; it returns false when the player has no loader report (an older loader, or no mod loader), has no connection, or this is not the server. `AdminMessage(playerController, text, close)` shows one line (up to 200 bytes) in the open prompt; with `close` true the prompt shows the line and closes. `RegisterOnAdminAnswer` calls your function from the tick with the player, `notMe` (the player chose "not me") and the code they typed. The loader does not judge the code and never logs it, it clears its own queued copy once your callbacks have run (it cannot reach copies in network buffers or the one your plugin keeps), only answers from a player that was asked are passed on, and at most one per half second per player. The loader sets no limit on tries, so your plugin counts wrong codes itself and closes the prompt (`AdminMessage` with `close` true) after a few. Checking the code and what to do next is up to the plugin.
+
 ---
 
 ## The Server Console (dedicated server)
@@ -383,6 +481,7 @@ in `help` ([Console.md](Console.md)).
 | `load <target>` | | Load a plugin that is unloaded |
 | `rescan` | `scan` | Load plugin DLLs added to `Plugins\` since startup |
 | `hookfailures` | `hooks` | List plugins whose hook patterns did not resolve |
+| `features [hostoff <plugin> <id> \| hostclear \| hostmessage <text>]` | | List plugin features, or turn one off for this server, lift every turn-off, or set the message players get. See [A server can turn a feature off](#a-server-can-turn-a-feature-off) |
 | `hooklist` | | List every detoured address and the plugins sharing it |
 | `preload` | `preloads` | Show what happened to the DLLs in `Preload\` at startup |
 | `version` | `ver` | Show the mod loader build and plugin interface versions |
@@ -545,6 +644,33 @@ name and rename it to `remote_reload.txt`, so the loader never reads half a file
 no record of is a failure line; a plugin dropped in after startup needs **LOAD NEW** first.
 <sup>[✦](#msantoro12)</sup>
 
+### Letting older plugin versions talk to yours
+
+By default the loader passes a plugin's packets only between copies with the same version string, so
+a version bump stops them even when the packets did not change. To say which versions still work,
+export `GetPluginWireInfo` (no interface version bump; a loader without this feature ignores it):
+
+```cpp
+static const PluginWireInfo kWire = { kSchemaVersion /* wire id */, "0.11.0;0.11.1" /* accepted versions */ };
+extern "C" __declspec(dllexport) const PluginWireInfo* GetPluginWireInfo() { return &kWire; }
+```
+
+Packets then flow when the version strings are equal, or both sides declare the same non-zero wire id,
+or either side lists the other's version. One side's list is enough, so a new build can list the
+released one without that one changing. The rule holds for data in both directions: a player whose
+version is not known to match no longer sends that plugin's data to the server either. A plugin that
+declares nothing keeps the identical-version rule.
+When the loader blocks a pair it logs one WARN naming the plugin and both versions; when it accepts a
+pair with different versions it logs one INFO saying why.
+
+- Bump the wire id whenever the packet layout changes. List only versions with the same layout.
+- Versions in the list are exact strings separated by `;`, at most 512 characters in all.
+- Both ends need a mod loader with this feature. A server on an older loader still requires identical
+  versions. Keep your own receive checks (a schema byte, the size); they are a second layer.
+
+[Networking.md](Networking.md) has the rest of the networking API.
+<sup>[✦](#msantoro12)</sup>
+
 ### Preload plugins
 
 A **preload plugin** is a DLL in `ModLoader\Preload\` that runs *before the game executable's
@@ -577,7 +703,9 @@ the whole API and you can hot-reload it while the game runs.
 | **UNKNOWN GAME BUILD** at the main menu | The game updated to a build the version object map does not list yet. The mod loader is running on checked values from the newest build it lists, and the window says what, if anything, was switched off. Nothing to do: once the version map has rows for your build, the check at every start finds them and uses them. See [Game updates](#game-updates). |
 | A dialog says the last session on an unknown game build did not end cleanly | The game crashed, stopped responding or was closed without quitting the last time it ran on this build with the mod loader on checked values, so mods are off for this start. To try again, add `Retry=1` under `[UnknownBuild]` in `ModLoader\modloader.ini` and start the game. |
 | A dialog says the game has changed in a way that would break your plugins | At startup the mod loader checks that the game classes it and its plugins read are still laid out the way it was built for. A game update moved some of them. When what moved is read by only some loader features, only those features turn off; when it is read by every plugin, no plugins load this session: start the game without them, or quit until an update is out. The loader writes `ModLoader\compat-report-<CL>.json` (the game build, the executable's SHA-256, what moved and the struct sizes plugins asked for). It says whether only some features turned off or every plugin did, and is what a loader update is made from, so attach it to your report. |
+| A dialog says the game did not finish starting within 120 seconds | The mod loader waits up to 2 minutes for the game to finish starting, then checks the game's layout. On a game build the mod loader was not made for, a game that has not finished starting by then cannot be checked, so no plugins load this session. The game may be stuck on a message box of its own, or its files may be damaged: verify the game files in Steam, then start again. A Steam verify does not remove extra .pak mod files, and they can break on major game updates, so move any extra .pak mod files out of the game's `StarRupture\Content\Paks` folder. ModLoader.log has the line `The game did not finish starting within 120 seconds`. |
 | A plugin says "Needs an update to run on CL-..." | The plugin was built for another game build and does not declare that it takes its game data from the version map, so it would read this game's data where its own build had it. It loads on the build it names. Ask its author for an update. See [Game updates](#game-updates) and [VersionMap.md](VersionMap.md). |
+| Plugin data does not show up on one side, or the plugin waits for server data | A plugin's data only crosses between a server and a player when their copies of it can read each other's packets. Search `ModLoader\Logs\ModLoader.log`, on the server and on the player's PC, for `[NetworkChannel] Plugin '<name>'`. **`Wire format not known to match, plugin data will not be exchanged.`** (logged a few seconds after joining, once per plugin, with both versions in it) means the two run different versions of that plugin and the plugin has not said they work together: put the same version on both sides, or update both to a build whose author lists the other version as compatible. **`Plugin data is exchanged because they are compatible (...)`** is only a note that two different versions were accepted. **`The server's mod loader sends no plugin wire table, so plugin data flows only for plugins whose version matches the server's exactly.`** is logged once on the player's PC, when a plugin there uses the network channel, and means the server's mod loader is older than this feature: it still needs identical plugin versions and cannot be told otherwise, so match the versions exactly or update the server's mod loader. |
 | Logs / diagnostics | Check `ModLoader\Logs\ModLoader.log`. Raise the detail in the **Logging** tab, or set `Level=DEBUG` under `[Logging]` in `ModLoader\modloader.ini`. |
 | One plugin is flooding the log | See [Log Levels](#log-levels) — turn that plugin down on its own, or use `-PluginLogLevel=` if it happens during startup. |
 | The *game's* log is flooding on a dedicated server | Hundreds of `LogTemp` / `LogSkinnedMeshComp` warnings a second come from the game itself, not the mod loader. Server builds turn those two categories down to errors automatically; edit `GameLogCategories` under `[Logging]` in `ModLoader\modloader.ini` to change the list, or blank it to leave the game log alone. `-LogCmds=` has no effect on this build. |
@@ -602,9 +730,10 @@ against, and shows **Incompatible** on the others.
 On a client build with `[AutoUpdate] Enabled` on, the loader checks at every start whether a newer version
 map is out, as a signed file, and uses it on that start, so a new game build can be supported without a
 loader update. If the check fails, the copy it kept last time is used. A dedicated server build reads
-its own, separate file the same way, when it was built with an address for one (see
-[VersionMap.md](VersionMap.md#the-dedicated-servers-downloaded-version-map)); none is published yet, so a
-server still runs only the game build it was made for.
+its own, separate file the same way (see
+[VersionMap.md](VersionMap.md#the-dedicated-servers-downloaded-version-map)): the Server release build
+carries its address, `[AutoUpdate] Enabled=0` stops that request too, and a server build made without an
+address fetches nothing and says so in `ModLoader.log`.
 How the version map is chosen, how a newer version map is fetched, signed and cached, how CI publishes it and what
 each failure looks like is in [VersionMap.md](VersionMap.md).
 
@@ -624,15 +753,24 @@ stops on a build it does not list.
 The dedicated server hands plugins the same Game-SDK globals as the client when the version map serves the
 running server build. On any other server exe it hands them none, as before. A server game build that only
 a downloaded server version map lists runs plugins that take their game data from the version map, and
-starts without plugins when the loader cannot find everything it needs there (`ModLoader.log` says what).
+starts without plugins, with no dialog, when the loader cannot find everything it needs there
+(`ModLoader.log` says what). On a server build that no list has, the loader still stops. The log also
+prints one line per build in a fetched file: this exe or another, its row count, and whether the rows are
+identical to the loader's own, differ, were added or were refused.
 
-At startup the loader also checks that the game classes it reads are laid out as it was built for. If a
+At startup the loader also checks that the game classes it reads are laid out as it was built for. It carries
+a layout table for each game build it supports and checks the running game against the table of its own build,
+or against the newest one when the build has no table of its own. If a
 game update changes a layout, only the features that read it are switched off, not every plugin. A plugin
 that keeps the game's layouts compiled in, instead of taking them from the version map, is not loaded then,
 unless it declares the game build it was compiled for and that build is the one running. The changed classes
 are the ones the loader's own copy of the layouts gets wrong, and that plugin's copy is the running build's.
 It also checks that the game still calls ProcessEvent, which every plugin uses to run game functions, at the
 place the plugins expect; if it does not, plugins are switched off the same way.
+
+The dedicated server runs the same check against a table of its own, made from the server's game files. If
+a game class the server's loader reads has moved, the server starts with no plugins, and `ModLoader.log` lists
+the classes that changed. The compatibility report is written by the client only.
 
 When the version map's row decides where a plugin's function is, the loader still checks the plugin's own
 AOB pattern against the running exe, once, and logs a warning if it matches 0 or 2 or more places.

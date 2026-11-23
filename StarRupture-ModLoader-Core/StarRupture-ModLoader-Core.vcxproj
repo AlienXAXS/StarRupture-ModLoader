@@ -469,6 +469,8 @@
     <ClInclude Include="hooks\input\input_processor.h" />
     <ClInclude Include="hooks\input\input_hook.h" />
     <ClInclude Include="logging\logger_interface.h" />
+    <ClInclude Include="network_channel\admin_prompt.h" />
+    <ClInclude Include="network_channel\host_rules_wire.h" />
     <ClInclude Include="network_channel\net_timeout.h" />
     <ClInclude Include="network_channel\network_channel.h" />
     <ClInclude Include="network_channel\packet_fragmentation.h" />
@@ -485,6 +487,7 @@
     <ClInclude Include="UI\modloader_window.h" />
     <ClInclude Include="UI\overlay.h" />
     <ClInclude Include="UI\wheel_test.h" />
+    <ClInclude Include="UI\admin_prompt_window.h" />
     <ClInclude Include="UI\hook_failure_window.h" />
     <ClInclude Include="UI\update_notice_window.h" />
     <ClInclude Include="UI\toast.h" />
@@ -537,6 +540,7 @@
     <ClInclude Include="plugins\plugin_hook_report.h" />
     <ClInclude Include="plugins\plugin_manager.h" />
     <ClInclude Include="plugins\reload_policy.h" />
+    <ClInclude Include="plugins\host_rules.h" />
     <ClInclude Include="plugins\crash_restart.h" />
     <ClInclude Include="plugins\remote_reload.h" />
     <ClInclude Include="plugins\plugin_watchdog.h" />
@@ -548,12 +552,16 @@
     <ClInclude Include="utils\engine_call_utils.h" />
     <ClInclude Include="core\globals.h" />
     <ClInclude Include="core\startup_utils.h" />
+    <ClInclude Include="core\startup_wait.h" />
     <ClInclude Include="core\version_check.h" />
     <ClInclude Include="core\unknown_build.h" />
     <ClInclude Include="core\sdk_globals.h" />
     <ClInclude Include="core\layout_check.h" />
     <ClInclude Include="core\compat_report.h" />
-    <ClInclude Include="core\layout_table.generated.h" />
+    <ClInclude Include="core\layout_tables.h" />
+    <ClInclude Include="core\layout_table_127004.generated.h" />
+    <ClInclude Include="core\layout_table_130045.generated.h" />
+    <ClInclude Include="core\layout_table_server_127004.generated.h" />
     <ClInclude Include="core\engine_sync.h" />
     <ClInclude Include="core\hook_management.h" />
     <ClInclude Include="core\client_ui.h" />
@@ -653,6 +661,9 @@
     <ClCompile Include="hooks\game\text_localization\text_key.cpp" />
     <ClCompile Include="hooks\game\world_begin_play\world_begin_play.cpp" />
     <ClCompile Include="hooks\game\world_end_play\world_end_play.cpp" />
+    <ClCompile Include="network_channel\admin_prompt.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)' != 'Client Debug' And '$(Configuration)' != 'Client Release' And '$(Configuration)' != 'Local SDK Client Debug' And '$(Configuration)' != 'Local SDK Client Release'">true</ExcludedFromBuild>
+    </ClCompile>
     <ClCompile Include="network_channel\net_timeout.cpp" />
     <ClCompile Include="network_channel\network_channel.cpp" />
     <ClCompile Include="network_channel\packet_fragmentation.cpp" />
@@ -699,6 +710,9 @@
       <ExcludedFromBuild Condition="'$(Configuration)' != 'Client Debug' And '$(Configuration)' != 'Client Release' And '$(Configuration)' != 'Local SDK Client Debug' And '$(Configuration)' != 'Local SDK Client Release'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="UI\wheel_test.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)' != 'Client Debug' And '$(Configuration)' != 'Client Release' And '$(Configuration)' != 'Local SDK Client Debug' And '$(Configuration)' != 'Local SDK Client Release'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="UI\admin_prompt_window.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)' != 'Client Debug' And '$(Configuration)' != 'Client Release' And '$(Configuration)' != 'Local SDK Client Debug' And '$(Configuration)' != 'Local SDK Client Release'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="UI\hook_failure_window.cpp">

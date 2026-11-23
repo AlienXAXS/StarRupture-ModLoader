@@ -1,4 +1,6 @@
-- A plugin that names the game build it was made for now loads on that build after a game update changed only some of the game classes the loader checks, instead of showing as incompatible
-- The mod loader is now built for game build CL-130045 and still runs on CL-127004. The dedicated server stays on CL-127004
-- The dedicated server now has a built-in version object map table for its own game build (function addresses, game globals, member offsets and struct sizes), off on any other server exe
-- The dedicated server now hands plugins the same Game-SDK globals as the client when the version object map serves the running server build
+A server can now set features per player, ask for a minimum version and ask players for an admin code
+The dedicated server now has the same version object map coverage as the game client, so server plugins survive server updates
+Server plugins updated: ServerUtility, KeepTicking, WaveOptimiser, ProductionViewer and RuptureTimer (they need this loader)
+If the game does not finish starting, ModLoader.log now says why
+A plugin that names its game build now loads after an update that changed only some game classes
+Mods that list compatible versions keep exchanging data across different releases

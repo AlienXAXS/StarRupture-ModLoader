@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include "plugins/plugin_interface.h"
+#include "network_channel/wire_compat.h"
 
 namespace PluginManager
 {
@@ -89,6 +90,16 @@ namespace PluginManager
     // as a batch in UnloadAllPlugins (full shutdown), never removed individually,
     // so it stays stable across UnloadPlugin/ReloadPlugin cycles too.
     const IPluginSelf* GetSelfForPlugin(const char* pluginName);
+
+    // What the named plugin's GetPluginWireInfo export declared, copied at load,
+    // or an undeclared Decl when it has no such export, is not loaded, or no
+    // plugin has that name. The network channel asks it which other versions of
+    // the plugin its packets are compatible with.
+    WireCompat::Decl GetWireDecl(const char* pluginName);
+
+    // Name, version and wire declaration of every initialized plugin, for the
+    // wire table the server sends behind its manifest ack.
+    std::vector<WireCompat::Entry> GetWireEntries();
 
     // The plugin interface version the plugin loaded from `module` declared in
     // its PluginInfo, or 0 when no loaded plugin owns that module. Lets a

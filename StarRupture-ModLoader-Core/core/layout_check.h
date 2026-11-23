@@ -13,15 +13,18 @@ namespace VersionMap { struct LiveField; }
 
 // Startup layout check.
 //
-// layout_table.generated.h lists the Game-SDK classes the loader uses, with
-// the size of each and the offset, size and bool mask of the members it
-// reads, as the SDK the loader was built against has them
-// (tools\Update-LayoutTable.ps1 regenerates it). Run() walks the running
-// game's reflection data once and logs every class whose layout no longer
-// matches: after a game update that is the list of SDK types that now read
-// the wrong bytes. Members the loader resolves per build
-// (SdkGlobals::ResolveFields) are not compared here: the version map checks
-// those (VersionMap::SelectField).
+// A layout table (layout_table_<CL>.generated.h) lists the Game-SDK classes
+// the loader uses, with the size of each and the offset, size and bool mask
+// of the members it reads, as the SDK of that game build has them
+// (tools\Update-LayoutTable.ps1 regenerates one). The loader carries one table
+// for each game build it supports (layout_tables.h): the running game is
+// checked against the table of its own CL, and a build with no table of its
+// own against the newest. Run() walks the running game's reflection data once
+// and logs every class whose layout no longer matches: after a game update
+// that is the list of SDK types that now read the wrong bytes. Members the
+// loader resolves per build (SdkGlobals::ResolveFields) are not compared
+// here: the version map checks those (VersionMap::SelectField). Nor is a member
+// the game does not reflect at all (kUnreflectedMembers).
 //
 // Each class in the table is tagged with what reads its layout (its
 // consumers). On a mismatch Decide says what has to stop: a loader feature
@@ -38,14 +41,41 @@ namespace LayoutCheck
 {
     // Called once from the init thread after FEngineLoop::Init has returned,
     // while the game thread is still parked in the engine-init hook and before
-    // any plugin loads. Client builds only: the table is the client SDK's.
+    // any plugin loads. Client and server builds, each against the tables of
+    // its own SDK (layout_tables.h).
+    // `runningCL` is the running game's own CL (0: it has none); it picks the
+    // table (SelectTable).
     // Without MODLOADER_CLIENT_BUILD or MODLOADER_SERVER_BUILD (the offline
     // test) only the comparison below is compiled.
     //
     // False, and logged, when the check could not run (GObjects invalid, an
     // exception while reading reflection data); out is then left as it was.
     struct Result;
-    bool Run(Result& out);
+    bool Run(Result& out, uint32_t runningCL);
+
+    // Which of `tables` (each with a `cl` member, oldest first) a game build is
+    // checked against: the one with its own CL, else the newest, the last.
+    // Returns its index.
+    template <class TableT, size_t TableCount>
+    constexpr size_t SelectTable(const TableT (&tables)[TableCount], uint32_t runningCL)
+    {
+        static_assert(TableCount > 0, "no layout table");
+        for (size_t i = 0; i < TableCount; ++i)
+            if (tables[i].cl == runningCL)
+                return i;
+        return TableCount - 1;
+    }
+
+    // Whether `tables` list their CLs in strictly increasing order, so the last
+    // is the newest and no CL has two tables.
+    template <class TableT, size_t TableCount>
+    constexpr bool TablesStrictlyIncreasing(const TableT (&tables)[TableCount])
+    {
+        for (size_t i = 1; i < TableCount; ++i)
+            if (tables[i - 1].cl >= tables[i].cl)
+                return false;
+        return true;
+    }
 
     // The reflected layout of one member of a native class or script struct
     // (member empty: the struct's own size), for field requests
@@ -120,14 +150,51 @@ namespace LayoutCheck
         return false;
     }
 
+    // Members the SDK declares that the game's reflection data does not carry:
+    // the engine keeps them outside UPROPERTY and Dumper-7 writes them in by
+    // hand, so no lookup by name can find them. A row listed here is not
+    // compared when the game has no such member; one the game does reflect is
+    // compared like any other, so a moved offset still counts. The offset of
+    // a member listed here is never checked against the game: the version map
+    // may hold a row for it per build, but nothing compares that row with
+    // reflection. This is not kPluginPerBuildMembers because that list is for
+    // offsets that move between builds, and its rows are counted as resolved
+    // per build. The table generator leaves out a member whose SDK comment
+    // says NOT AUTO-GENERATED PROPERTY, so no table lists ULevel::Actors now
+    // and the entry below matches nothing. It stays as a safety net: the
+    // generator tells such a member by that comment, and one that gets past
+    // that test is a row the game never reflects, which the check would take
+    // for a changed layout and switch every plugin off (ULevel::Actors did,
+    // before the generator was fixed). List a member here only where the
+    // table still has a row the game does not reflect.
+    struct UnreflectedMember
+    {
+        const char* className;  // the SDK's C++ name
+        const char* member;
+        const char* reason;
+    };
+    inline constexpr UnreflectedMember kUnreflectedMembers[] = {
+        { "ULevel", "Actors",
+          "an engine TArray outside UPROPERTY, which Dumper-7 predefines at 0xA0" },
+    };
+
+    // The entry for a class and member, or null.
+    inline const UnreflectedMember* FindUnreflectedMember(const char* className, const char* member)
+    {
+        for (const UnreflectedMember& listed : kUnreflectedMembers)
+            if (std::strcmp(listed.className, className) == 0 && std::strcmp(listed.member, member) == 0)
+                return &listed;
+        return nullptr;
+    }
+
     // Consumer ids (tools\Update-LayoutTable.ps1 tags the table with them).
     inline constexpr const char* kConsumerCore      = "core";        // the loader's own code
     inline constexpr const char* kConsumerPluginSdk = "plugin-sdk";  // compiled into every plugin
     inline constexpr const char* kConsumerUiMenus   = "ui-menus";    // the menu-layer read only
     inline constexpr const char* kConsumerKeys      = "keys";        // named only as a version-map or pattern key
 
-    // Reads a generated table: ReadTable(SrLayoutTable::kNames,
-    // SrLayoutTable::kClasses, SrLayoutTable::kRows).
+    // Reads a generated table: ReadTable(SrLayoutTable_<CL>::kNames,
+    // SrLayoutTable_<CL>::kClasses, SrLayoutTable_<CL>::kRows).
     template <class ClassT, size_t ClassCount, class RowT, size_t RowCount, size_t NameCount>
     std::vector<TableClass> ReadTable(const char* const (&names)[NameCount],
         const ClassT (&classes)[ClassCount], const RowT (&rows)[RowCount])
@@ -146,8 +213,8 @@ namespace LayoutCheck
         return table;
     }
 
-    // A generated table with its consumer tags: ReadTable(..., SrLayoutTable::kConsumers,
-    // SrLayoutTable::kClassConsumers). A bit with no id gives "?", which no
+    // A generated table with its consumer tags: ReadTable(..., SrLayoutTable_<CL>::kConsumers,
+    // SrLayoutTable_<CL>::kClassConsumers). A bit with no id gives "?", which no
     // rule knows, so that class counts as not attributed.
     template <class ClassT, size_t ClassCount, class RowT, size_t RowCount, size_t NameCount, size_t ConsumerCount>
     std::vector<TableClass> ReadTable(const char* const (&names)[NameCount],
@@ -212,9 +279,10 @@ namespace LayoutCheck
         int perBuild   = 0;  // rows left to the per-build resolver, not compared
         int checked    = 0;  // found in the game and compared
         int mismatched = 0;  // found, but the layout differs
-        int missing    = 0;  // not found in the game
+        int missing    = 0;  // not found in the game (classes; a member the game lacks is a difference in its class)
         int slotMismatched = 0;  // vtable slots that do not hold the function the map resolved
         int deferred   = 0;  // not checked at startup (Blueprint classes, unknown kind)
+        std::vector<std::string> notReflected;    // rows of kUnreflectedMembers the game does not reflect: not compared, one line each, for the debug log
         std::vector<std::string> changedClasses;  // SDK names of the mismatched and missing classes
         std::vector<std::string> lines;           // one per difference, ready to log
         std::vector<Change>      changes;         // the same differences, one each
@@ -263,6 +331,8 @@ namespace LayoutCheck
     // and a UClass the loader reaches only through pointers has size 0 (one
     // it allocates or copies, such as UFunction, keeps its size). Rows for
     // which perBuild is true are skipped and counted in Result::perBuild.
+    // A row in kUnreflectedMembers that the game does not reflect is skipped
+    // and listed in Result::notReflected.
     // A row Dumper-7 renamed with a _<n> suffix (Class_0) matches the game's
     // member without it only at the same offset and size.
     using PerBuild = std::function<bool(const TableClass&, const TableRow&)>;

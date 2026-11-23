@@ -170,7 +170,7 @@ namespace PluginGuard
 		// The faulting thread's return addresses, walked from the fault's
 		// CONTEXT. Done in the filter: once the handler runs, the stack below it
 		// has been unwound and is reused. Holds no C++ objects (C2712).
-		static size_t WalkFrames(const CONTEXT& fault, uintptr_t* frames, size_t max)
+		size_t WalkFrames(const CONTEXT& fault, uintptr_t* frames, size_t max)
 		{
 			CONTEXT ctx = fault;
 			size_t  n   = 0;

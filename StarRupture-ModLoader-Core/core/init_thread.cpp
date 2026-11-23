@@ -2,6 +2,7 @@
 #include "globals.h"
 #include "version_check.h"
 #include "startup_utils.h"
+#include "startup_wait.h"
 #include "init_phases.h"
 #include "hook_management.h"
 #include "client_ui.h"
@@ -36,62 +37,19 @@
 #include "../utils/thread_utils.h"
 #include "../utils/pak_list.h"
 
-#ifdef MODLOADER_CLIENT_BUILD
-// Safe-off after a layout mismatch: the SDK reads the wrong bytes on this game
-// build, so no plugin code may run. Called on the init thread with the game
-// thread parked in the engine-init hook. That park ends on its own after a
-// timeout, so plugin loads are refused and the preload plugins shut down
-// before the dialog waits on the player. The loader's hooks stay in; the
-// world they read comes from SdkGlobals::GetWorld, which with no per-build
-// fields resolved (they are not, after a safe-off) reads GWorld: on a build
-// other than the SDK's own the resolved one, not Offsets::GWorld.
-static void EnterLayoutSafeOff(const LayoutCheck::Result& layout)
+// The part of a partial layout change (LayoutCheck::Decide) both builds share:
+// the preload plugins shut down (they keep the game's layouts compiled in and
+// are already running), and the changed classes are handed to the version map,
+// which then refuses every plugin that keeps the game's layouts compiled in
+// unless it declares the build that is running (VersionMap::LayoutRefusal).
+// Plugins that take every layout from the version map still load; a request of
+// theirs for a changed class's compiled offset is refused
+// (VersionMap::SelectField), which turns off only the feature that asked for
+// it. `effect` finishes the log line with what else went off. Returns the
+// changed classes' names, comma separated.
+static std::string ApplyChangedLayouts(const LayoutCheck::Verdict& verdict, const char* effect)
 {
-    PluginManager::RefusePluginLoads();
     PreloadManager::Shutdown();
-    ModLoaderLogger::LogError(L"[init] Layout mismatch -- plugins are switched off for this session");
-
-    const std::wstring reportName = CompatReport::Write(layout, CompatReport::Outcome::SafeOff);
-    Splash::Close();
-
-    // CRLF: the crash dialog's edit control does not render bare '\n'.
-    std::wstring details = L"Your game build:  " + GetGameVersionString() + L"\r\n";
-    if (!reportName.empty())
-        details += L"Report:           ModLoader\\" + reportName + L"\r\n";
-    details += L"\r\n";
-    for (const std::string& line : layout.lines)
-        details += std::wstring(line.begin(), line.end()) + L"\r\n";
-
-    const auto choice = Hooks::CrashDialog::Show(Hooks::CrashDialog::Mode::LayoutMismatch, details);
-    if (choice == Hooks::CrashDialog::Result::QuitGame)
-    {
-        ModLoaderLogger::LogInfo(L"[init] User chose to quit the game after the layout mismatch");
-        UnknownBuild::EndSession();
-        ExitProcess(0);
-    }
-    ModLoaderLogger::LogInfo(L"[init] User chose to start the game without plugins");
-
-    // Let the game thread go, and tell shutdown there is nothing to wait for.
-    if (g_pluginsReadyEvent)
-        SetEvent(g_pluginsReadyEvent);
-    if (g_pluginsLoadedEvent)
-        SetEvent(g_pluginsLoadedEvent);
-}
-
-// A layout mismatch that only some readers depend on (LayoutCheck::Decide):
-// the loader features that read a changed class switch off, and so does every
-// plugin that keeps the game's layouts compiled in, unless it declares the build
-// that is running (VersionMap::LayoutRefusal). Preload plugins all do
-// (they have no way to take this build's layouts), and they are already
-// running, so they shut down here. Plugins that take every layout from the
-// version map still load; a request of theirs for a changed class's compiled
-// offset is refused (VersionMap::SelectField), which turns off only the
-// feature that asked for it.
-static void SwitchOffChangedLayoutUsers(const LayoutCheck::Result& layout)
-{
-    const LayoutCheck::Verdict& verdict = layout.verdict;
-    PreloadManager::Shutdown();
-    CompatReport::Write(layout, CompatReport::Outcome::Partial);
 
     std::vector<std::string> classNames, paths;
     for (size_t i = 0; i < verdict.changed.size(); ++i)
@@ -111,8 +69,75 @@ static void SwitchOffChangedLayoutUsers(const LayoutCheck::Result& layout)
     for (const std::string& name : verdict.changed)
         changed += (changed.empty() ? "" : ", ") + name;
 
+    ModLoaderLogger::LogWarn(L"[init] Layout changed on this build (%S): %S; plugins that keep the game's layouts"
+        L" compiled in are not loaded unless they declare the build that is running", changed.c_str(), effect);
+    return changed;
+}
+
+#ifdef MODLOADER_CLIENT_BUILD
+// Safe-off after a layout mismatch (or, with SafeOffKind::CheckNotRun, after the
+// game did not finish starting so the check could not run): the SDK may read the
+// wrong bytes on this game build, so no plugin code may run. Called on the init
+// thread, with the game thread parked in the engine-init hook when the check ran.
+// That park ends on its own after a timeout, so plugin loads are refused and
+// the preload plugins shut down before the dialog waits on the player. The
+// loader's hooks stay in; the world they read comes from SdkGlobals::GetWorld,
+// which with no per-build fields resolved (they are not, after a safe-off)
+// reads GWorld: on a build other than the SDK's own the resolved one, not
+// Offsets::GWorld.
+static void EnterLayoutSafeOff(const LayoutCheck::Result& layout,
+    StartupWait::SafeOffKind kind = StartupWait::SafeOffKind::Mismatch)
+{
+    const bool notChecked = (kind == StartupWait::SafeOffKind::CheckNotRun);
+    PluginManager::RefusePluginLoads();
+    PreloadManager::Shutdown();
+    if (notChecked)
+        ModLoaderLogger::LogError(L"%s", StartupWait::NotCheckedLogLine().c_str());
+    else
+        ModLoaderLogger::LogError(L"[init] Layout mismatch -- plugins are switched off for this session");
+
+    const std::wstring reportName = CompatReport::Write(layout, CompatReport::Outcome::SafeOff);
+    Splash::Close();
+
+    // CRLF: the crash dialog's edit control does not render bare '\n'.
+    std::wstring details = L"Your game build:  " + GetGameVersionString() + L"\r\n";
+    if (!reportName.empty())
+        details += L"Report:           ModLoader\\" + reportName + L"\r\n";
+    details += L"\r\n";
+    for (const std::string& line : layout.lines)
+        details += std::wstring(line.begin(), line.end()) + L"\r\n";
+
+    const auto choice = Hooks::CrashDialog::Show(
+        notChecked ? Hooks::CrashDialog::Mode::LayoutNotChecked : Hooks::CrashDialog::Mode::LayoutMismatch, details);
+    if (choice == Hooks::CrashDialog::Result::QuitGame)
+    {
+        ModLoaderLogger::LogInfo(notChecked ? L"[init] User chose to quit the game after the layout check did not run"
+                                            : L"[init] User chose to quit the game after the layout mismatch");
+        UnknownBuild::EndSession();
+        ExitProcess(0);
+    }
+    ModLoaderLogger::LogInfo(L"[init] User chose to start the game without plugins");
+
+    // Let the game thread go, and tell shutdown there is nothing to wait for.
+    if (g_pluginsReadyEvent)
+        SetEvent(g_pluginsReadyEvent);
+    if (g_pluginsLoadedEvent)
+        SetEvent(g_pluginsLoadedEvent);
+}
+
+// A layout mismatch that only some readers depend on (LayoutCheck::Decide):
+// the loader features that read a changed class switch off, and so does every
+// plugin that keeps the game's layouts compiled in, unless it declares the build
+// that is running (ApplyChangedLayouts, shared with the server).
+static void SwitchOffChangedLayoutUsers(const LayoutCheck::Result& layout)
+{
+    const LayoutCheck::Verdict& verdict = layout.verdict;
     const bool menusOff = std::find(verdict.featuresOff.begin(), verdict.featuresOff.end(),
         LayoutCheck::kConsumerUiMenus) != verdict.featuresOff.end();
+    const std::string changed = ApplyChangedLayouts(verdict,
+        menusOff ? "the menu state for plugins is switched off" : "no loader feature reads them");
+    CompatReport::Write(layout, CompatReport::Outcome::Partial);
+
     if (menusOff)
     {
         UIState::DisableMenuRead();
@@ -127,23 +152,21 @@ static void SwitchOffChangedLayoutUsers(const LayoutCheck::Result& layout)
             " build menu or a station menu opening will not see it open", {}, {} });
         PluginHookReport::AddReport(report);
     }
-
-    ModLoaderLogger::LogWarn(L"[init] Layout changed on this build (%S): %S; plugins that keep the game's layouts"
-        L" compiled in are not loaded unless they declare the build that is running", changed.c_str(),
-        menusOff ? "the menu state for plugins is switched off" : "no loader feature reads them");
 }
 #else
-// Safe-off on a dedicated server game build the loader was not made for (one it
-// only knows from the downloaded version object map), when something the loader
-// reads there is not found. The server runs no layout check, so no plugin runs
-// on a build whose loader values are not all in hand: plugin loads are refused
-// and the preload plugins shut down, and the game goes on without plugins.
+// Safe-off on a dedicated server: the layout check found a change the loader or
+// every plugin depends on, or the game build is one the loader was not made for
+// (one it only knows from the downloaded version object map) and something the
+// loader reads there, or the layout check itself, did not come out. No plugin
+// runs on a build whose loader values are not all in hand: plugin loads are
+// refused and the preload plugins shut down, and the game goes on without
+// plugins. `reason` is the first log line, `lines` the details.
 // Called on the init thread with the game thread parked in the engine-init hook.
-static void EnterServerSafeOff(const std::vector<std::string>& lines)
+static void EnterServerSafeOff(const std::vector<std::string>& lines, const wchar_t* reason)
 {
     PluginManager::RefusePluginLoads();
     PreloadManager::Shutdown();
-    ModLoaderLogger::LogError(L"[init] This server game build is not fully known -- plugins are switched off for this session");
+    ModLoaderLogger::LogError(L"[init] %s -- plugins are switched off for this session", reason);
     for (const std::string& line : lines)
         ModLoaderLogger::LogWarn(L"[init] %S", line.c_str());
     Splash::Close();
@@ -422,15 +445,15 @@ DWORD WINAPI MainInitThreadProc(LPVOID)
     PluginWatchdog::Start();
     LogToFile::Info("[init] WorldBeginPlay + EngineTick hooks installed");
 
-    WaitForEnginePhase();
-    LogToFile::Info("[init] Stage 2 complete in %llu ms -- engine ready", GetTickCount64() - stage2Start);
+    [[maybe_unused]] const bool engineWaitTimedOut = WaitForEnginePhase();
+    LogToFile::Info("[init] Stage 2 complete in %llu ms -- %s", GetTickCount64() - stage2Start,
+        Hooks::EngineInit::IsEngineInitialized() ? "engine ready" : "engine init not observed");
 
     // Inventory the game's pak files now that the engine is up -- logged to
     // modloader.log and cached for the crash dialog, where user-installed pak
     // mods are the most common real cause of "modloader" crashes.
     PakList::CaptureAndLog();
 
-#ifdef MODLOADER_CLIENT_BUILD
     // Compare the SDK's class layouts with the game's reflection data. Only
     // once engine init has been seen (FEngineLoop::Init returned, or one of
     // its fallbacks fired): every native class is registered by then, and the
@@ -439,27 +462,42 @@ DWORD WINAPI MainInitThreadProc(LPVOID)
     // timed-out wait leaves the game thread running, so the check is skipped.
     // A mismatch the loader or every plugin depends on, or one nothing says
     // who reads, switches plugins off and ends the boot here; any other turns
-    // off only what reads the changed classes (SwitchOffChangedLayoutUsers).
+    // off only what reads the changed classes (SwitchOffChangedLayoutUsers on
+    // the client, ApplyChangedLayouts on the server).
     //
     // On a build other than the SDK's own, plugins run only on what was
     // checked: a check that could not run, or an SDK still on its built-in
     // Offsets:: for GObjects or FName::AppendString, switches them off too.
-    // What the check found stays in every report below, also when a later step
-    // switches the plugins off after only some features went off.
+    // On the client, what the check found stays in every report below, also
+    // when a later step switches the plugins off after only some features went
+    // off; the server has only the log, where each changed class is already.
     LayoutCheck::Result layout;
+    // Whether the check ran: on a build other than the SDK's own, it has to have.
+    bool layoutRan = false;
     {
-        bool ran = false;
-        if (Hooks::EngineInit::IsEngineInitialized())
+        // Read once: the same answer decides whether the check runs and which
+        // wording a skipped check gets.
+        const bool engineInitSeen = Hooks::EngineInit::IsEngineInitialized();
+        if (engineInitSeen)
         {
-            ran = LayoutCheck::Run(layout);
-            if (ran && LayoutCheck::FoundChanges(layout))
+            layoutRan = LayoutCheck::Run(layout, VersionMap::RunningExe().cl);
+            if (layoutRan && LayoutCheck::FoundChanges(layout))
             {
+#ifdef MODLOADER_CLIENT_BUILD
                 if (layout.verdict.safeOff)
                 {
                     EnterLayoutSafeOff(layout);
                     return 0;
                 }
                 SwitchOffChangedLayoutUsers(layout);
+#else
+                if (layout.verdict.safeOff)
+                {
+                    EnterServerSafeOff(layout.lines, L"The layout check failed on this server game build");
+                    return 0;
+                }
+                ApplyChangedLayouts(layout.verdict, "no loader feature reads them");
+#endif
             }
         }
         else
@@ -467,21 +505,22 @@ DWORD WINAPI MainInitThreadProc(LPVOID)
             ModLoaderLogger::LogWarn(L"[LayoutCheck] Skipped: engine init was not observed, so the game thread is not parked");
         }
 
+#ifdef MODLOADER_CLIENT_BUILD
         if (VersionMap::RunningExe().cl != VersionMap::kBuiltCL)
         {
             LayoutCheck::Result unchecked = layout;
-            if (!ran)
+            if (!layoutRan)
                 unchecked.lines.push_back("The layout check did not run, and this is not the build the SDK was made for");
             if (!SdkGlobals::SdkOnResolvedGlobals())
                 unchecked.lines.push_back("GObjects or FName::AppendString was not found on this build");
             if (unchecked.lines.size() > layout.lines.size())
             {
-                EnterLayoutSafeOff(unchecked);
+                EnterLayoutSafeOff(unchecked, StartupWait::ClassifySafeOff(engineInitSeen, engineWaitTimedOut));
                 return 0;
             }
         }
-    }
 #endif
+    }
 
     // Field requests read the game's reflection data from here on, on the
     // dedicated server as on the client.
@@ -500,26 +539,21 @@ DWORD WINAPI MainInitThreadProc(LPVOID)
         }
     }
 #else
-    // The client verifies GObjects inside its layout check, which the server
-    // does not run. Plugins are handed the globals only once it has passed.
-    if (VersionMap::ServesExe(VersionMap::RunningExe()))
-    {
-        if (Hooks::EngineInit::IsEngineInitialized())
-            SdkGlobals::VerifyGObjects();
-        else
-            ModLoaderLogger::LogWarn(L"[SdkGlobals] GObjects not verified: engine init was not observed, so the game thread is not parked");
-    }
     // On a game build other than the SDK's own, the loader's fields come from
     // the game and the map, and plugins run only when they and the globals
-    // were found (the client's rule, without the layout check, which the
-    // server does not run).
+    // were found and the layout was checked (the client's rule).
     {
         std::vector<std::string> unresolved = SdkGlobals::ResolveFields();
-        if (VersionMap::RunningExe().cl != VersionMap::kBuiltCL && !SdkGlobals::SdkOnResolvedGlobals())
-            unresolved.push_back("GObjects or FName::AppendString was not found on this build");
+        if (VersionMap::RunningExe().cl != VersionMap::kBuiltCL)
+        {
+            if (!layoutRan)
+                unresolved.push_back("The layout check did not run, and this is not the build the SDK was made for");
+            if (!SdkGlobals::SdkOnResolvedGlobals())
+                unresolved.push_back("GObjects or FName::AppendString was not found on this build");
+        }
         if (!unresolved.empty())
         {
-            EnterServerSafeOff(unresolved);
+            EnterServerSafeOff(unresolved, L"This server game build is not fully known");
             return 0;
         }
     }

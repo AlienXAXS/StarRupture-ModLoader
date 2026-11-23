@@ -201,6 +201,9 @@
     <ClInclude Include="UI\wheel_test.h">
       <Filter>Source Files\UI\modloader</Filter>
     </ClInclude>
+    <ClInclude Include="UI\admin_prompt_window.h">
+      <Filter>Source Files\UI\modloader</Filter>
+    </ClInclude>
     <ClInclude Include="UI\hook_failure_window.h">
       <Filter>Source Files\UI\modloader</Filter>
     </ClInclude>
@@ -304,6 +307,9 @@
       <Filter>Source Files\plugins</Filter>
     </ClInclude>
     <ClInclude Include="plugins\reload_policy.h">
+      <Filter>Source Files\plugins</Filter>
+    </ClInclude>
+    <ClInclude Include="plugins\host_rules.h">
       <Filter>Source Files\plugins</Filter>
     </ClInclude>
     <ClInclude Include="plugins\crash_restart.h">
@@ -474,6 +480,9 @@
     <ClInclude Include="core\startup_utils.h">
       <Filter>Source Files\core</Filter>
     </ClInclude>
+    <ClInclude Include="core\startup_wait.h">
+      <Filter>Source Files\core</Filter>
+    </ClInclude>
     <ClInclude Include="core\version_check.h">
       <Filter>Source Files\core</Filter>
     </ClInclude>
@@ -489,7 +498,16 @@
     <ClInclude Include="core\compat_report.h">
       <Filter>Source Files\core</Filter>
     </ClInclude>
-    <ClInclude Include="core\layout_table.generated.h">
+    <ClInclude Include="core\layout_tables.h">
+      <Filter>Source Files\core</Filter>
+    </ClInclude>
+    <ClInclude Include="core\layout_table_127004.generated.h">
+      <Filter>Source Files\core</Filter>
+    </ClInclude>
+    <ClInclude Include="core\layout_table_130045.generated.h">
+      <Filter>Source Files\core</Filter>
+    </ClInclude>
+    <ClInclude Include="core\layout_table_server_127004.generated.h">
       <Filter>Source Files\core</Filter>
     </ClInclude>
     <ClInclude Include="core\engine_sync.h">
@@ -569,6 +587,12 @@
     </ClInclude>
     <ClInclude Include="UI\named_entry_utils.h">
       <Filter>Source Files\UI</Filter>
+    </ClInclude>
+    <ClInclude Include="network_channel\admin_prompt.h">
+      <Filter>Source Files\network_channel</Filter>
+    </ClInclude>
+    <ClInclude Include="network_channel\host_rules_wire.h">
+      <Filter>Source Files\network_channel</Filter>
     </ClInclude>
     <ClInclude Include="network_channel\net_timeout.h">
       <Filter>Source Files\network_channel</Filter>
@@ -693,6 +717,9 @@
       <Filter>Source Files\UI\modloader</Filter>
     </ClCompile>
     <ClCompile Include="UI\wheel_test.cpp">
+      <Filter>Source Files\UI\modloader</Filter>
+    </ClCompile>
+    <ClCompile Include="UI\admin_prompt_window.cpp">
       <Filter>Source Files\UI\modloader</Filter>
     </ClCompile>
     <ClCompile Include="UI\hook_failure_window.cpp">
@@ -901,6 +928,9 @@
     </ClCompile>
     <ClCompile Include="hooks\game\object_lookup\object_lookup.cpp">
       <Filter>Source Files\hooks\game\object_lookup</Filter>
+    </ClCompile>
+    <ClCompile Include="network_channel\admin_prompt.cpp">
+      <Filter>Source Files\network_channel</Filter>
     </ClCompile>
     <ClCompile Include="network_channel\net_timeout.cpp">
       <Filter>Source Files\network_channel</Filter>

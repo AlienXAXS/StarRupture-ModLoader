@@ -8,7 +8,8 @@
 
 #include "compat_report.h"
 #include "layout_check.h"
-#include "layout_table.generated.h"
+#include "layout_tables.h"
+#include "startup_wait.h"
 
 #include "fixtures/layout_table_126119.h"
 #include "fixtures/layout_table_127004.h"
@@ -86,8 +87,8 @@ namespace
     // The loader's own table, with what reads each class.
     const auto kLoaderTable = []
     {
-        return LayoutCheck::ReadTable(SrLayoutTable::kNames, SrLayoutTable::kClasses, SrLayoutTable::kRows,
-            SrLayoutTable::kConsumers, SrLayoutTable::kClassConsumers);
+        return LayoutCheck::ReadTable(SrLayoutTable_130045::kNames, SrLayoutTable_130045::kClasses, SrLayoutTable_130045::kRows,
+            SrLayoutTable_130045::kConsumers, SrLayoutTable_130045::kClassConsumers);
     };
 
     const LayoutCheck::TableClass* ClassNamed(const std::vector<LayoutCheck::TableClass>& table, const char* name)
@@ -96,6 +97,31 @@ namespace
             if (std::string(c.name) == name)
                 return &c;
         return nullptr;
+    }
+
+    // The classes of `table` that `reference` also lists, each with only the
+    // members `reference` lists for it (matched by reflection path and member name).
+    std::vector<LayoutCheck::TableClass> OnlyWhatIn(const std::vector<LayoutCheck::TableClass>& table,
+        const std::vector<LayoutCheck::TableClass>& reference)
+    {
+        std::vector<LayoutCheck::TableClass> kept;
+        for (const LayoutCheck::TableClass& c : table)
+            for (const LayoutCheck::TableClass& r : reference)
+                if (std::string(c.path) == r.path)
+                {
+                    LayoutCheck::TableClass copy = c;
+                    copy.rows.clear();
+                    for (const LayoutCheck::TableRow& row : c.rows)
+                        for (const LayoutCheck::TableRow& listed : r.rows)
+                            if (std::string(row.name) == listed.name)
+                            {
+                                copy.rows.push_back(row);
+                                break;
+                            }
+                    kept.push_back(copy);
+                    break;
+                }
+        return kept;
     }
 
     void SameBuildMatches()
@@ -221,7 +247,7 @@ namespace
         std::printf("Static arrays\n");
         using LayoutCheck::Kind;
 
-        const auto table = LayoutCheck::ReadTable(SrLayoutTable::kNames, SrLayoutTable::kClasses, SrLayoutTable::kRows);
+        const auto table = LayoutCheck::ReadTable(SrLayoutTable_130045::kNames, SrLayoutTable_130045::kClasses, SrLayoutTable_130045::kRows);
         bool found = false;
         for (const LayoutCheck::TableClass& c : table)
         {
@@ -344,8 +370,8 @@ namespace
         std::printf("Granularity 1: the members the loader reads\n");
         using LayoutCheck::Kind;
 
-        Check(SrLayoutTable::kGranularity == 1, "the loader's table lists only the members it reads");
-        const std::vector<LayoutCheck::TableClass> table = LayoutCheck::ReadTable(SrLayoutTable::kNames, SrLayoutTable::kClasses, SrLayoutTable::kRows);
+        Check(SrLayoutTable_130045::kGranularity == 1, "the loader's table lists only the members it reads");
+        const std::vector<LayoutCheck::TableClass> table = LayoutCheck::ReadTable(SrLayoutTable_130045::kNames, SrLayoutTable_130045::kClasses, SrLayoutTable_130045::kRows);
         const auto row = [&table](const char* cls, const char* member) -> const LayoutCheck::TableRow*
         {
             for (const LayoutCheck::TableClass& c : table)
@@ -420,7 +446,7 @@ namespace
             && !LayoutCheck::IsPluginPerBuildMember("ACrCrafter", "TimerActor"),
             "only that class and member");
 
-        Check(SrLayoutTable::kBuiltCL == 130045, "the table is the 130045 one");
+        Check(SrLayoutTable_130045::kBuiltCL == 130045, "the table is the 130045 one");
         const std::vector<LayoutCheck::TableClass> table = kLoaderTable();
 
         const LayoutCheck::Result same = CompareWith(table, AsGame(table));
@@ -481,14 +507,16 @@ namespace
 
     // The new table checked against the layout a 127004 game really has. The
     // 127004 side is the loader's own table of v1.26.1, which was made from the
-    // 127004 SDK, so this is the real 127004 layout of every class the table lists.
+    // 127004 SDK, so this is the real 127004 layout of every class that table
+    // lists. The current table lists more classes and members than v1.26.1's
+    // did, so the comparison is of the classes and members both have.
     void NewTableOnARealLayoutOf127004()
     {
         std::printf("The 130045 table on the 127004 layout\n");
-        const std::vector<LayoutCheck::TableClass> table = kLoaderTable();
         const std::vector<LayoutCheck::TableClass> old = kLoaderTable127004();
-        Check(SrLayoutTable127004Loader::kBuiltCL == 127004 && SrLayoutTable::kBuiltCL == 130045, "the two tables are the 127004 and 130045 ones");
-        Check(table.size() == old.size(), "both list the same classes");
+        const std::vector<LayoutCheck::TableClass> table = OnlyWhatIn(kLoaderTable(), old);
+        Check(SrLayoutTable127004Loader::kBuiltCL == 127004 && SrLayoutTable_130045::kBuiltCL == 130045, "the two tables are the 127004 and 130045 ones");
+        Check(table.size() == old.size(), "the table lists every class v1.26.1's table did");
 
         const auto game = AsGame(old);
         const auto find = [&game](const LayoutCheck::TableClass& c) -> const LayoutCheck::LiveStruct*
@@ -776,7 +804,7 @@ namespace
     void FunctionParamsFollowTheGame()
     {
         std::printf("function parameter structs\n");
-        const auto table = LayoutCheck::ReadTable(SrLayoutTable::kNames, SrLayoutTable::kClasses, SrLayoutTable::kRows);
+        const auto table = LayoutCheck::ReadTable(SrLayoutTable_130045::kNames, SrLayoutTable_130045::kClasses, SrLayoutTable_130045::kRows);
         const char* const kPlayer = "Engine.GameplayStatics.GetPlayerController";
         const char* const kPlayerName = "GameplayStatics_GetPlayerController";
 
@@ -1084,8 +1112,442 @@ namespace
     }
 }
 
+namespace
+{
+    // ---- The engine-init wait and what the player is told when it runs out ----
+
+    void EngineWaitDeadlineAndWording()
+    {
+        std::printf("The engine-init wait: a true deadline, and the wording when it ran out\n");
+
+        // The deadline is computed once; a message that ends a wait early leaves
+        // only the time that is really left, never a fresh full wait.
+        const uint64_t start = 1'000'000;
+        const uint64_t deadline = start + StartupWait::kEngineTimeoutMs;
+        Check(StartupWait::RemainingMs(start, deadline) == StartupWait::kEngineTimeoutMs, "at the start the whole wait is left");
+        Check(StartupWait::RemainingMs(start + 38'700, deadline) == StartupWait::kEngineTimeoutMs - 38'700,
+            "a message 38.7 s in leaves 81.3 s, not another 120 s");
+        Check(StartupWait::RemainingMs(deadline - 1, deadline) == 1, "one millisecond before the deadline: 1 ms");
+        Check(StartupWait::RemainingMs(deadline, deadline) == 0, "at the deadline: nothing left");
+        Check(StartupWait::RemainingMs(deadline + 5'000, deadline) == 0, "past the deadline: still 0, no wrap-around");
+        Check(StartupWait::kEngineTimeoutMs == 120'000 && StartupWait::TimeoutSeconds() == 120, "the wait is 2 minutes");
+
+        // Only an engine init that was never observed after a wait that ran out is "the game did not
+        // finish starting". The rest keeps the mismatch wording.
+        using StartupWait::ClassifySafeOff;
+        using StartupWait::SafeOffKind;
+        Check(ClassifySafeOff(false, true) == SafeOffKind::CheckNotRun, "never observed, the wait ran out: the game did not finish starting");
+        Check(ClassifySafeOff(false, false) == SafeOffKind::Mismatch, "never observed, no wait (hook failed to install): mismatch wording stays");
+        Check(ClassifySafeOff(true, false) == SafeOffKind::Mismatch, "observed: a check that ran keeps the mismatch wording");
+        Check(ClassifySafeOff(true, true) == SafeOffKind::Mismatch, "observed late: mismatch wording");
+
+        // The words: plain, with the seconds, and none of the mismatch wording.
+        const std::wstring log = StartupWait::NotCheckedLogLine();
+        const std::wstring header = StartupWait::NotCheckedHeader();
+        const std::wstring summary = StartupWait::NotCheckedSummary();
+        const auto has = [](const std::wstring& text, const wchar_t* part) { return text.find(part) != std::wstring::npos; };
+        Check(has(log, L"did not finish starting within 120 seconds") && has(log, L"could not run")
+            && has(log, L"plugins are switched off for this session"), "the log line says the game did not finish starting, with the seconds");
+        Check(has(header, L"did not finish starting within 120 seconds") && has(summary, L"did not finish starting within 120 seconds"),
+            "the dialog says it, with the seconds");
+        Check(has(header, L"message box of its own") && has(header, L"verify the game files in Steam"), "the dialog hints at a stuck game or damaged files");
+        for (const std::wstring* text : { &log, &header, &summary })
+            Check(!has(*text, L"mismatch") && !has(*text, L"Game layout changed") && !has(*text, L"would break your plugins"),
+                "none of the mismatch wording");
+    }
+}
+
+namespace
+{
+    // A table list with nothing but a CL, for the selection rule.
+    struct ClOnly { uint32_t cl; };
+
+    // The loader carries a table for each game build it supports, and the
+    // running game's own CL picks the one it is checked against.
+    void TablePerBuild()
+    {
+        std::printf("One table per game build\n");
+
+        constexpr ClOnly three[] = { { 100 }, { 200 }, { 300 } };
+        Check(LayoutCheck::SelectTable(three, 100) == 0 && LayoutCheck::SelectTable(three, 200) == 1
+            && LayoutCheck::SelectTable(three, 300) == 2, "a build with a table gets its own");
+        Check(LayoutCheck::SelectTable(three, 150) == 2 && LayoutCheck::SelectTable(three, 299) == 2,
+            "a build between two tables gets the newest");
+        Check(LayoutCheck::SelectTable(three, 301) == 2 && LayoutCheck::SelectTable(three, 0xFFFFFFFFu) == 2,
+            "a build newer than the newest table gets the newest");
+        Check(LayoutCheck::SelectTable(three, 99) == 2 && LayoutCheck::SelectTable(three, 0) == 2,
+            "a build older than the oldest table, or with no CL, gets the newest");
+        constexpr ClOnly one[] = { { 7 } };
+        Check(LayoutCheck::SelectTable(one, 7) == 0 && LayoutCheck::SelectTable(one, 8) == 0, "a single table is always the one");
+
+        constexpr ClOnly same[] = { { 1 }, { 1 }, { 2 } };
+        constexpr ClOnly down[] = { { 2 }, { 1 } };
+        constexpr ClOnly gap[] = { { 1 }, { 5 }, { 9 } };
+        Check(LayoutCheck::TablesStrictlyIncreasing(gap) && LayoutCheck::TablesStrictlyIncreasing(one),
+            "an increasing list passes");
+        Check(!LayoutCheck::TablesStrictlyIncreasing(same) && !LayoutCheck::TablesStrictlyIncreasing(down),
+            "a repeated or descending CL fails");
+
+        using LayoutCheck::kTables;
+        Check(std::size(kTables) == 2 && LayoutCheck::TablesStrictlyIncreasing(kTables),
+            "the loader lists two tables, oldest first");
+        Check(kTables[0].cl == 127004 && kTables[1].cl == 130045, "they are the 127004 and 130045 ones");
+        Check(kTables[0].cl == SrLayoutTable_127004::kBuiltCL && kTables[1].cl == SrLayoutTable_130045::kBuiltCL,
+            "each entry's CL is its table's own");
+
+        for (const LayoutCheck::TableEntry& entry : kTables)
+        {
+            const std::vector<LayoutCheck::TableClass> table = entry.read();
+            size_t rows = 0;
+            for (const LayoutCheck::TableClass& c : table)
+                rows += c.rows.size();
+            std::printf("  info: CL %u: %zu classes, %zu rows\n", entry.cl, table.size(), rows);
+            Check(entry.classCount > 0 && entry.rowCount > 0, "the table has classes and rows");
+            Check(table.size() == entry.classCount && rows == entry.rowCount, "the counts in its header are what it holds");
+        }
+        Check(std::size(SrLayoutTable_127004::kClasses) == SrLayoutTable_127004::kClassCount
+            && std::size(SrLayoutTable_127004::kRows) == SrLayoutTable_127004::kRowCount
+            && std::size(SrLayoutTable_130045::kClasses) == SrLayoutTable_130045::kClassCount
+            && std::size(SrLayoutTable_130045::kRows) == SrLayoutTable_130045::kRowCount,
+            "each header's arrays are as long as its constants say");
+
+        // What each running build is checked against.
+        Check(LayoutCheck::TableCLFor(127004) == 127004 && LayoutCheck::TableCLFor(130045) == 130045,
+            "127004 and 130045 each run against their own table");
+        Check(LayoutCheck::TableCLFor(128786) == 130045 && LayoutCheck::TableCLFor(140000) == 130045
+            && LayoutCheck::TableCLFor(120000) == 130045 && LayoutCheck::TableCLFor(0) == 130045,
+            "a build with no table is checked against the newest");
+
+        // A 127004 run selects the 127004 table, and that table is the real
+        // 127004 layout (v1.26.1's table, made from the 127004 SDK): nothing
+        // differs, so not even a per-build rule is needed. The 130045 table
+        // on the same layout is the two-member difference that
+        // NewTableOnARealLayoutOf127004 covers.
+        const auto game127004 = AsGame(kLoaderTable127004());
+        const auto find127004 = [&game127004](const LayoutCheck::TableClass& c) -> const LayoutCheck::LiveStruct*
+        {
+            const auto it = game127004.find(c.path);
+            return it == game127004.end() ? nullptr : &it->second;
+        };
+        const LayoutCheck::TableEntry& chosen = kTables[LayoutCheck::SelectTable(kTables, 127004)];
+        Check(chosen.cl == 127004, "a 127004 run selects the 127004 table");
+        // v1.26.1's table lists fewer classes and members than the table does
+        // now, so only those have a real 127004 layout to compare with.
+        const std::vector<LayoutCheck::TableClass> chosenTable = OnlyWhatIn(chosen.read(), kLoaderTable127004());
+        const LayoutCheck::Result own = LayoutCheck::Compare(chosenTable, find127004);
+        Check(own.mismatched == 0 && own.missing == 0 && own.checked == own.classes && own.lines.empty()
+            && !LayoutCheck::FoundChanges(own) && !LayoutCheck::Decide(chosenTable, own).safeOff,
+            "its own table finds nothing changed on a 127004 layout, with no per-build rule");
+
+        const std::vector<LayoutCheck::TableClass> newest = kTables[LayoutCheck::SelectTable(kTables, 130045)].read();
+        const LayoutCheck::Result newestOnNewest = CompareWith(newest, AsGame(newest));
+        Check(newestOnNewest.lines.empty() && !LayoutCheck::FoundChanges(newestOnNewest),
+            "a 130045 run against the 130045 table finds nothing changed");
+
+        // The check skips the per-build members, and a build is compared with
+        // its own table, so a member that moved between the two builds is not a
+        // changed class on either. What a 127004 game and a 130045 game
+        // do not share is what the loader reads at one compiled offset, so
+        // look at the classes whose layout a plugin keeps compiled in
+        // (plugin-sdk): they must not differ between the tables except in
+        // per-build members. A regeneration that moves one fails here, so it
+        // is looked at before it ships. Other classes legitimately differ
+        // (the tables list the same classes the sources name, and a game update
+        // moves members); they are only counted.
+        const std::vector<LayoutCheck::TableClass> older = kTables[0].read();
+        std::map<std::string, const LayoutCheck::TableClass*> newestByPath;
+        for (const LayoutCheck::TableClass& c : newest)
+            newestByPath[c.path] = &c;
+        int onlyInOlder = 0;
+        int perBuildDifferences = 0;
+        int pluginDifferences = 0;
+        int otherDifferences = 0;
+        int pluginClassesCompared = 0;
+        for (const LayoutCheck::TableClass& a : older)
+        {
+            const auto found = newestByPath.find(a.path);
+            if (found == newestByPath.end())
+            {
+                ++onlyInOlder;
+                continue;
+            }
+            const LayoutCheck::TableClass& b = *found->second;
+            const bool pluginReads = std::find(b.consumers.begin(), b.consumers.end(), LayoutCheck::kConsumerPluginSdk) != b.consumers.end();
+            if (pluginReads)
+                ++pluginClassesCompared;
+            const auto note = [&](bool perBuild)
+            {
+                if (perBuild)
+                    ++perBuildDifferences;
+                else if (pluginReads)
+                    ++pluginDifferences;
+                else
+                    ++otherDifferences;
+            };
+            if (a.sizeOf != b.sizeOf || a.alignOf != b.alignOf || a.kind != b.kind)
+                note(false);
+            for (const LayoutCheck::TableRow& ra : a.rows)
+            {
+                const LayoutCheck::TableRow* rb = nullptr;
+                for (const LayoutCheck::TableRow& candidate : b.rows)
+                    if (std::string(candidate.name) == ra.name)
+                        rb = &candidate;
+                if (rb && ra.offset == rb->offset && ra.size == rb->size && ra.boolMask == rb->boolMask)
+                    continue;
+                note(rb && PerBuildRule(b, *rb));
+            }
+            for (const LayoutCheck::TableRow& rb : b.rows)
+            {
+                const bool inOlder = std::any_of(a.rows.begin(), a.rows.end(),
+                    [&rb](const LayoutCheck::TableRow& ra) { return std::string(ra.name) == rb.name; });
+                if (!inOlder)
+                    note(false);
+            }
+        }
+        std::printf("  info: %d class(es) only in the 127004 table; %d plugin-sdk class(es) compared; the tables differ in %d per-build "
+                    "member(s), %d place(s) in plugin-sdk classes and %d place(s) elsewhere\n",
+            onlyInOlder, pluginClassesCompared, perBuildDifferences, pluginDifferences, otherDifferences);
+        Check(onlyInOlder == 0, "the 130045 table lists every class the 127004 table does");
+        Check(pluginClassesCompared > 0, "the plugin-sdk comparison saw classes, so the check below is not empty");
+        Check(pluginDifferences == 0, "the tables differ in no class a plugin keeps compiled in, except in per-build members");
+    }
+}
+
+namespace
+{
+    // The dedicated server is checked against a table made from its own SDK,
+    // listing only the classes the server build reads.
+    void ServerTable()
+    {
+        std::printf("The server's table\n");
+        using LayoutCheck::kClientTables;
+        using LayoutCheck::kServerTables;
+
+        Check(std::size(kServerTables) == 1 && LayoutCheck::TablesStrictlyIncreasing(kServerTables),
+            "the loader lists one server table");
+        Check(kServerTables[0].cl == 127004 && kServerTables[0].cl == SrLayoutTable_Server_127004::kBuiltCL,
+            "it is the server's 127004 one, with its own CL");
+        Check(std::size(SrLayoutTable_Server_127004::kClasses) == SrLayoutTable_Server_127004::kClassCount
+            && std::size(SrLayoutTable_Server_127004::kRows) == SrLayoutTable_Server_127004::kRowCount,
+            "its arrays are as long as its constants say");
+
+        const std::vector<LayoutCheck::TableClass> server = kServerTables[0].read();
+        size_t rows = 0;
+        for (const LayoutCheck::TableClass& c : server)
+            rows += c.rows.size();
+        std::printf("  info: server CL %u: %zu classes, %zu rows\n", kServerTables[0].cl, server.size(), rows);
+        Check(server.size() == kServerTables[0].classCount && rows == kServerTables[0].rowCount && rows > 0,
+            "the counts in its header are what it holds");
+
+        // Each build reads its own list: this test defines neither build and
+        // sees the client's, so the server table is not mixed into it.
+        Check(std::size(kClientTables) == 2 && LayoutCheck::TableCLFor(127004) == 127004,
+            "the client list is the 127004 and 130045 tables");
+#if defined(MODLOADER_SERVER_BUILD)
+        Check(std::size(LayoutCheck::kTables) == std::size(kServerTables), "a server build reads the server list");
+#else
+        Check(std::size(LayoutCheck::kTables) == std::size(kClientTables), "a client build reads the client list");
+#endif
+
+        // A server game build with a CL the table is not for, or none, is
+        // checked against the only (newest) table.
+        Check(LayoutCheck::SelectTable(kServerTables, 127004) == 0 && LayoutCheck::SelectTable(kServerTables, 130045) == 0
+            && LayoutCheck::SelectTable(kServerTables, 0) == 0,
+            "a server build with any CL gets the server table");
+
+        // What the server reads: never a menu-layer class, and every class has
+        // a consumer, so a change to any of them is judged by a tag.
+        bool allTagged = true;
+        bool anyMenus = false;
+        for (const LayoutCheck::TableClass& c : server)
+        {
+            allTagged = allTagged && !c.consumers.empty();
+            anyMenus = anyMenus || std::find(c.consumers.begin(), c.consumers.end(), "ui-menus") != c.consumers.end();
+        }
+        Check(allTagged, "every class in the server table has a consumer");
+        Check(!anyMenus, "no class is tagged ui-menus: the server has no menu layer");
+        Check(ClassNamed(server, "UCrUW_MapMenu") == nullptr && ClassNamed(server, "UPrimaryGameLayout") == nullptr,
+            "the client's menu classes are not in it");
+
+        // The server's own table on the layout it describes: nothing changed.
+        const LayoutCheck::Result same = CompareWith(server, AsGame(server));
+        Check(same.mismatched == 0 && same.missing == 0 && same.checked == same.classes && same.lines.empty()
+            && !LayoutCheck::FoundChanges(same) && !LayoutCheck::Decide(server, same).safeOff,
+            "its own layout finds nothing changed");
+
+        // A member the loader's own code reads moves: safe-off, as on a client.
+        const LayoutCheck::TableClass* world = ClassNamed(server, "UWorld");
+        const bool worldIsCore = world && !world->rows.empty()
+            && std::find(world->consumers.begin(), world->consumers.end(), "core") != world->consumers.end();
+        Check(worldIsCore, "UWorld is in the server table, read by the loader's own code");
+        if (worldIsCore)
+        {
+            auto moved = AsGame(server);
+            moved[world->path].properties.front().offset += 8;
+            const LayoutCheck::Result result = CompareWith(server, moved);
+            const LayoutCheck::Verdict verdict = LayoutCheck::Decide(server, result);
+            Check(LayoutCheck::FoundChanges(result) && verdict.safeOff && verdict.featuresOff.empty()
+                && verdict.changed == std::vector<std::string>{ "UWorld" },
+                "a core member moved: found, plugins switched off");
+
+            auto gone = AsGame(server);
+            gone.erase(world->path);
+            const LayoutCheck::Result missing = CompareWith(server, gone);
+            Check(LayoutCheck::FoundChanges(missing) && LayoutCheck::Decide(server, missing).safeOff,
+                "a class the loader reads missing from the game: safe-off");
+        }
+
+        // A class only a version-map key names: listed as changed, and
+        // nothing else happens.
+        const LayoutCheck::TableClass* keysOnly = nullptr;
+        for (const LayoutCheck::TableClass& c : server)
+            if (!keysOnly && !c.rows.empty() && c.consumers == std::vector<std::string>{ "keys" })
+                keysOnly = &c;
+        Check(keysOnly != nullptr, "the server table has a class only a version-map key names");
+        if (keysOnly)
+        {
+            auto moved = AsGame(server);
+            moved[keysOnly->path].properties.front().offset += 8;
+            const LayoutCheck::Result result = CompareWith(server, moved);
+            const LayoutCheck::Verdict verdict = LayoutCheck::Decide(server, result);
+            Check(LayoutCheck::FoundChanges(result) && !verdict.safeOff && verdict.featuresOff.empty()
+                && verdict.changed == std::vector<std::string>{ keysOnly->name },
+                "a key-only class moved: listed as changed, no safe-off");
+        }
+    }
+
+    // ULevel::Actors is a TArray the engine keeps outside UPROPERTY: Dumper-7
+    // writes it into the SDK, but the game's reflection data has no such
+    // member. The table generator now leaves the row out (the SDK's comment
+    // says NOT AUTO-GENERATED PROPERTY), so no compiled table lists it;
+    // kUnreflectedMembers stays as a net for a marker the generator misses.
+    // The tests below give the tables the row again, to see the net work.
+    void MembersTheGameDoesNotReflect()
+    {
+        std::printf("A member the game does not reflect\n");
+        using LayoutCheck::Kind;
+
+        Check(LayoutCheck::FindUnreflectedMember("ULevel", "Actors") != nullptr
+            && LayoutCheck::FindUnreflectedMember("ULevel", "Other") == nullptr
+            && LayoutCheck::FindUnreflectedMember("AActor", "Actors") == nullptr,
+            "only that class and member are listed");
+
+        const auto listsActors = [](const std::vector<LayoutCheck::TableClass>& table)
+        {
+            const LayoutCheck::TableClass* level = ClassNamed(table, "ULevel");
+            return level && std::any_of(level->rows.begin(), level->rows.end(),
+                [](const LayoutCheck::TableRow& row) { return std::string(row.name) == "Actors"; });
+        };
+        const auto dropActors = [](std::map<std::string, LayoutCheck::LiveStruct>& game, const char* path)
+        {
+            auto& properties = game[path].properties;
+            properties.erase(std::remove_if(properties.begin(), properties.end(),
+                [](const LayoutCheck::LiveProperty& p) { return p.name == "Actors"; }), properties.end());
+        };
+        // The table as an older generator made it: ULevel with its Actors row.
+        const auto withActors = [](std::vector<LayoutCheck::TableClass> table)
+        {
+            for (LayoutCheck::TableClass& cls : table)
+                if (std::string(cls.name) == "ULevel")
+                    cls.rows.push_back({ "Actors", 0xA0, 16, 0 });
+            return table;
+        };
+
+        // Every compiled table is made without the row, and a game that does
+        // not reflect it is clean against each, as it was with the row skipped.
+        const std::vector<LayoutCheck::TableClass> server = LayoutCheck::kServerTables[0].read();
+        Check(ClassNamed(server, "ULevel") != nullptr && !listsActors(server), "the server table has no ULevel::Actors row");
+        for (const LayoutCheck::TableEntry& entry : LayoutCheck::kClientTables)
+        {
+            const std::vector<LayoutCheck::TableClass> client = entry.read();
+            Check(ClassNamed(client, "ULevel") != nullptr && !listsActors(client),
+                entry.cl == 127004 ? "the client CL-127004 table has no ULevel::Actors row"
+                                   : "the client CL-130045 table has no ULevel::Actors row");
+            auto game = AsGame(client);
+            const LayoutCheck::Result result = CompareWith(client, game);
+            Check(result.mismatched == 0 && result.missing == 0 && result.lines.empty() && !LayoutCheck::FoundChanges(result)
+                && !LayoutCheck::Decide(client, result).safeOff && result.notReflected.empty(),
+                "a client game with no ULevel::Actors: nothing changed, plugins stay on, nothing skipped");
+        }
+
+        // The net: each compiled table with the row put back, against a game
+        // that reflects every member but ULevel::Actors.
+        std::vector<std::vector<LayoutCheck::TableClass>> tables = { withActors(server) };
+        for (const LayoutCheck::TableEntry& entry : LayoutCheck::kClientTables)
+            tables.push_back(withActors(entry.read()));
+        for (const std::vector<LayoutCheck::TableClass>& table : tables)
+        {
+            const LayoutCheck::TableClass* level = ClassNamed(table, "ULevel");
+            Check(listsActors(table), "the table with the row put back lists ULevel::Actors");
+            if (!level || !listsActors(table))
+                continue;
+
+            auto game = AsGame(table);
+            dropActors(game, level->path);
+            const LayoutCheck::Result result = CompareWith(table, game);
+            Check(result.mismatched == 0 && result.missing == 0 && result.checked == result.classes && result.lines.empty()
+                && result.changedClasses.empty() && !LayoutCheck::FoundChanges(result)
+                && !LayoutCheck::Decide(table, result).safeOff,
+                "a game with no ULevel::Actors: nothing changed, plugins stay on");
+            Check(result.notReflected.size() == 1
+                && result.notReflected[0] == "ULevel::Actors: not compared, "
+                    "an engine TArray outside UPROPERTY, which Dumper-7 predefines at 0xA0",
+                "the skipped row is listed, with its reason, for the debug log");
+
+            // Real changes elsewhere still count, with the exempt member missing.
+            const LayoutCheck::TableClass* world = ClassNamed(table, "UWorld");
+            Check(world && !world->rows.empty(), "UWorld is in the table with rows");
+            if (world && !world->rows.empty())
+            {
+                game[world->path].properties.front().offset += 8;
+                const LayoutCheck::Result moved = CompareWith(table, game);
+                const LayoutCheck::Verdict verdict = LayoutCheck::Decide(table, moved);
+                Check(LayoutCheck::FoundChanges(moved) && verdict.safeOff && verdict.changed == std::vector<std::string>{ "UWorld" },
+                    "a moved core member is still a safe-off, and ULevel is not among the changed classes");
+            }
+        }
+
+        const std::vector<LayoutCheck::TableClass> sdk = {
+            { "ULevel", "Engine.Level", 0, 0, Kind::Class,
+                { { "Actors", 0xA0, 16, 0 }, { "Other", 0xB0, 8, 0 } } },
+            { "UElse", "Mod.Else", 0, 0, Kind::Class, { { "Actors", 0xA0, 16, 0 } } },
+        };
+
+        // The same class's other members are still compared, and a member that
+        // is not listed is still reported when the game lacks it.
+        const std::map<std::string, LayoutCheck::LiveStruct> lacking = {
+            { "Engine.Level", { 0x100, 8, { { "Other", 0xB8, 8, false, 0 } } } },
+            { "Mod.Else", { 0x100, 8, {} } },
+        };
+        const LayoutCheck::Result partial = CompareWith(sdk, lacking);
+        Check(Contains(partial, "ULevel::Other: offset SDK 0xB0, game 0xB8"),
+            "another member of the same class is still compared");
+        Check(!Contains(partial, "ULevel::Actors: not found in the game") && partial.notReflected.size() == 1,
+            "ULevel::Actors is the one row skipped");
+        Check(Contains(partial, "UElse::Actors: not found in the game"),
+            "the same member name on another class is not exempt");
+
+        // A game that does reflect it is compared like any member.
+        const std::map<std::string, LayoutCheck::LiveStruct> reflected = {
+            { "Engine.Level", { 0x100, 8, { { "Actors", 0xB0, 16, false, 0 }, { "Other", 0xB0, 8, false, 0 } } } },
+            { "Mod.Else", { 0x100, 8, { { "Actors", 0xA0, 16, false, 0 } } } },
+        };
+        const LayoutCheck::Result moved = CompareWith(sdk, reflected);
+        Check(Contains(moved, "ULevel::Actors: offset SDK 0xA0, game 0xB0") && moved.notReflected.empty()
+            && LayoutCheck::FoundChanges(moved),
+            "a reflected ULevel::Actors at another offset is a mismatch");
+        const LayoutCheck::Result same = CompareWith(sdk, {
+            { "Engine.Level", { 0x100, 8, { { "Actors", 0xA0, 16, false, 0 }, { "Other", 0xB0, 8, false, 0 } } } },
+            { "Mod.Else", { 0x100, 8, { { "Actors", 0xA0, 16, false, 0 } } } },
+        });
+        Check(same.lines.empty() && same.notReflected.empty() && !LayoutCheck::FoundChanges(same),
+            "a reflected ULevel::Actors at the table's offset matches");
+    }
+}
+
 int main()
 {
+    EngineWaitDeadlineAndWording();
     PlainTypesAreToldFromMisses();
     BlueprintFunctionsPendThenResolve();
     SameBuildMatches();
@@ -1098,6 +1560,9 @@ int main()
     ClientTableOnEitherBuild();
     NewTableOnARealLayoutOf127004();
     OldLoaderOn130045();
+    TablePerBuild();
+    ServerTable();
+    MembersTheGameDoesNotReflect();
     ConsumersDecideWhatStops();
     ProcessEventSlotDecidesSafeOff();
     FunctionParamsFollowTheGame();

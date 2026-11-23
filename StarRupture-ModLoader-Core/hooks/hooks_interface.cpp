@@ -1901,6 +1901,8 @@ namespace ModLoaderLogger
 		nullptr,             // v67 -- Pak; filled in below by GetPluginHooks() on every build
 		nullptr,             // v77 -- Images; filled in below by GetPluginHooks() on client builds,
 		                     //        and left null on server/generic ones
+		nullptr,             // v79 -- HostRules; filled in below by GetPluginHooks() next to
+		                     //        Network, and left null on generic builds
 	};
 	static bool g_networkChannelInitialized = false;
 
@@ -1943,6 +1945,8 @@ namespace ModLoaderLogger
 				g_networkChannelInitialized = true;
 			}
 		}
+		if (!g_pluginHooks.HostRules)
+			g_pluginHooks.HostRules = NetworkChannel::GetHostRulesInterface();
 #ifdef MODLOADER_CLIENT_BUILD
 		// Resolve the ImGui texture API pointer on first call (valid after Initialize).
 		if (!g_pluginHooks.ImGuiTextures)

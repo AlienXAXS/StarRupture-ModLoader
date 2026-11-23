@@ -329,7 +329,10 @@
 // v55: Server->client sends are now gated on a client plugin manifest. A joining
 //      client reports every plugin it has loaded, with versions; the authority
 //      records that per connection and delivers a packet from plugin P version V
-//      only to clients that reported P at exactly V.
+//      only to clients that reported P at a version it is compatible with: the
+//      same version string, or one the two plugins declare compatible (see the
+//      OPTIONAL GetPluginWireInfo export near PLUGIN_WIRE_INFO_FUNC_NAME; a plugin
+//      that declares nothing is held to the same version string, as at first).
 //
 //      No signature changed -- SendPacketToClient and SendPacketToAllClients
 //      already took `const IPluginSelf* self`, which carries both name and
@@ -338,11 +341,14 @@
 //      What changed for plugin authors, and it is worth reading twice:
 //
 //      - SendPacketToAllClients no longer means "every client". It means every
-//        client that has your plugin at your exact version. A version bump on one
-//        side silently stops delivery between the two -- which is the point, since
-//        two builds disagreeing about their own packet layout is the failure this
-//        prevents, but it will look like the network dropped your packet.
-//        Skipped clients are logged at Debug/Trace naming the plugin and version.
+//        client that has your plugin at your version string, or at a version your
+//        plugin and theirs declare compatible. A version bump on one side stops
+//        delivery between the two unless the plugins declare the new pair
+//        compatible -- which is the point, since two builds disagreeing about
+//        their own packet layout is the failure this prevents. The loader now
+//        says so: when a client's plugin cannot exchange data with yours it logs
+//        one WARN naming the plugin and both versions, and (client side) a
+//        matching WARN. Other skipped sends are logged at Debug/Trace.
 //
 //      - A client that has not (yet) reported receives nothing. A manifest is sent
 //        at world begin play and retried before the client's first outgoing
@@ -922,9 +928,21 @@
 //      or any index is outside vertex_count.
 // --- v78 ---
 //
+// v79 (2026-11-21): Adds IPluginHostRules and IPluginHooks::HostRules, for a
+//      server plugin that decides, player by player, which mod features a client
+//      may use. The pointer is appended after Images, preserving the existing
+//      prefix, and MIN stays at 70. A plugin declaring 79 is refused by a loader
+//      whose maximum is lower. A server plugin that wants to run on an older
+//      loader declares the older version, checks the loader's interface
+//      version, and uses the calls only when it is 79 or later: below 79 the
+//      HostRules pointer does not exist, and reading it reads past the table.
+//      The table is null on a generic build. Later versions add members
+//      after the ones here.
+// --- v79 ---
+//
 #define PLUGIN_INTERFACE_VERSION_MIN 70
-#define PLUGIN_INTERFACE_VERSION_MAX 78
-#define PLUGIN_INTERFACE_VERSION 78
+#define PLUGIN_INTERFACE_VERSION_MAX 79
+#define PLUGIN_INTERFACE_VERSION 79
 
 enum class PluginLogLevel { Trace = 0, Debug = 1, Info = 2, Warn = 3, Error = 4 };
 enum class ConfigValueType { String, Integer, Float, Boolean, Keybind, Choice /* v71 */, Hidden /* v71 */ };
@@ -1238,8 +1256,8 @@ static_assert(offsetof(PluginScanRequest, candidates)     == 56, "v72 starts whe
 //                           key; once resolved it never walks. A request made off
 //                           the game thread stays pending. The plugin sets its
 //                           own `enabled` flag once all the feature's keys
-//                           resolved; the loader writes it only while the
-//                           session is open. A class that is loaded and has no
+//                           resolved; the loader also writes it, as described
+//                           at PluginFeatureDesc::enabled. A class that is loaded and has no
 //                           such function or parameter is refused once, as for
 //                           any request. With NATIVE, CHECK or BITFIELD the
 //                           request is refused. A loader without this flag
@@ -1374,8 +1392,13 @@ struct PluginFeatureDesc
     const char* const* configKeys;      // "Section.Key" config entries the feature drives, or "Section.*"; may be null
     uint32_t           configKeyCount;
     bool*              enabled;         // may be null. The loader sets *enabled = true when the feature is declared
-                                        // and false if a key misses, before OnPluginLoadHooks returns. It writes
-                                        // it nowhere else, so the plugin may read it for as long as it is loaded.
+                                        // and false if a key misses, before OnPluginLoadHooks returns. It also
+                                        // writes it on the game thread when a server turns the feature off (false)
+                                        // or hands it back (true, only if the game build has it), and again after a
+                                        // late field resolve. Read it, never write it, and never keep a copy as
+                                        // "what the build allows": the loader owns the flag until the plugin unloads.
+                                        // Read it where the feature acts, and put back anything the feature changed
+                                        // when it turns false.
 };
 
 #define PLUGIN_FEATURE_DESC_INIT { (uint32_t)sizeof(PluginFeatureDesc),                                    nullptr, nullptr, nullptr, 0, nullptr, 0, nullptr }
@@ -1551,9 +1574,10 @@ typedef void (*PluginNetworkServerMessageCallback)(void* senderPlayerController,
 
 // v56 -- authority side. Fired once per client, per registered plugin, at the
 // moment that client becomes a valid target for THAT plugin: it has reported the
-// plugin at the registering plugin's exact version, and its player controller
-// exists. This is strictly later than a player-joined hook; a packet sent from
-// player-joined is dropped, one sent from here is not.
+// plugin at the registering plugin's version (or one declared compatible, see
+// GetPluginWireInfo), and its player controller exists. This is strictly later
+// than a player-joined hook; a packet sent from player-joined is dropped, one
+// sent from here is not.
 typedef void (*PluginClientReadyCallback)(void* playerController);
 
 // v56 -- client side. Fired once per connection when the authority acknowledges
@@ -2902,10 +2926,11 @@ struct IPluginNetworkChannel
 	// Authority-only: no-ops (with a warning logged) when IsServer() is false.
 	// Both skip the listen host's own player controller, which has no connection.
 	//
-	// v55: both also skip any client that has not reported THIS plugin at THIS
-	// exact version in its manifest. "All clients" therefore means "all remote
-	// clients running the same build of me". See the v55 note at the top of this
-	// file before assuming a broadcast reached anyone.
+	// v55: both also skip any client that has not reported THIS plugin in its
+	// manifest at this version or at one the two plugins declare compatible
+	// (GetPluginWireInfo). "All clients" therefore means "all remote clients
+	// running a build of me that can read my packets". See the v55 note at the top
+	// of this file before assuming a broadcast reached anyone.
 	void (*SendPacketToClient)(void* playerController, const IPluginSelf* self, const char* typeTag, const uint8_t* data, size_t size);
 	void (*SendPacketToAllClients)(const IPluginSelf* self, const char* typeTag, const uint8_t* data, size_t size);
 	void (*RegisterMessageHandler)(const IPluginSelf* self, const char* typeTag, PluginNetworkMessageCallback callback);
@@ -2919,7 +2944,8 @@ struct IPluginNetworkChannel
 	// ---- Readiness (v56) -- see the v56 note at the top of this file ----------
 	//
 	// Authority side. IsClientReady is the exact predicate SendPacketToClient
-	// gates on: this client has reported YOUR plugin at YOUR version. False on a
+	// gates on: this client has reported YOUR plugin at your version or at one
+	// your plugin and theirs declare compatible. False on a
 	// pure client, for the listen host's own controller, and during the join
 	// window -- a client is NOT ready when a player-joined hook fires.
 	bool (*IsClientReady)(void* playerController, const IPluginSelf* self);
@@ -3880,6 +3906,149 @@ static_assert(offsetof(IPluginImages, Canonical)   == 48, "v77 layout");
 static_assert(offsetof(IPluginImages, GetSized)    == 56, "v77 layout");
 static_assert(sizeof(IPluginImages)                == 64, "v77 layout");
 
+// v79 -- authority side. Fired on the game thread for a connected client whose
+// mod loader reported its feature list ("$ML:feat"): once when the list first
+// arrives and again each time the client sends a changed one, at most once per
+// second per player (a list that arrives sooner is held and acted on when the
+// second is over). playerController is that client's controller, valid for this
+// call only. From here a server
+// plugin can call SetRulesForConnection for that player. A client with an older
+// loader that sends no list never fires it, and a plugin that registers later is
+// not told about clients that reported before.
+typedef void (*PluginClientFeaturesCallback)(void* playerController);
+
+// v79 -- authority side. Fired on the game thread, at most once per join, for a
+// connected client whose mod loader or a mod is older than the minimums the
+// server set with SetVersionMinimums. playerController is that client's
+// controller, valid for this call only. plainReason is one line of plain words
+// for the player, valid for this call only (copy it). The loader only reports:
+// it never removes anyone, so the plugin decides what to do (an admin may be
+// exempt) and does the removal itself.
+typedef void (*PluginClientBelowMinimumCallback)(void* playerController, const char* plainReason);
+
+// v79 -- admin prompt, authority side. Fired on the game thread, from the tick and
+// outside all locks, when the player behind playerController answered the prompt
+// AskAdmin opened: notMe is false and code is what they typed (1 to 64 bytes,
+// no control characters), or notMe is true and code is "" (they chose "not me").
+// playerController and code are valid for this call only (copy the code if it is
+// needed later). The loader does not judge the code: the plugin does, and
+// answers with AdminMessage. The loader never logs a code and clears its own
+// queued copy once the callbacks have run; it cannot reach copies in network
+// buffers or the one the plugin keeps. It allows one answer per 500 ms per player
+// and sets no limit on attempts: a plugin counts wrong codes itself and, after a
+// few, closes the prompt with AdminMessage(close = true).
+typedef void (*PluginAdminAnswerCallback)(void* playerController, bool notMe, const char* code);
+
+// v79 -- the rules a server sends to its clients' mod loaders, which switch a
+// feature off on the client when a rule denies it. Authority only: on any other
+// process (and on a generic build, where the table itself is null) a call warns
+// once and does nothing or returns false. Every function runs on the game
+// thread (Tick, or a callback fired from it); callbacks run there too.
+//
+// The text calls take one rule per line:
+//     # comment (a line starting with # or ;, and blank lines, are skipped)
+//     default=allow|deny        what a feature with no rule gets; once
+//     message=<one line>        written to the player's ModLoader.log when a feature is off; once
+//     Plugin.feature=allow|deny one feature of one mod
+//     Plugin.*=allow|deny       every feature of one mod
+// A key splits at its first dot, so a plugin whose own name contains a dot cannot
+// be addressed in the text (its rows would never match).
+// They return true when the text was read and applied, and false when it was
+// not: the text is then left as it was, and, when error is not null and
+// errorSize is more than 0, error holds a NUL-terminated "line N: ..." reason
+// cut to errorSize; error may be null. Empty or null text is a set that allows
+// everything. The rules reach every client that reported its features at once,
+// with no further call.
+//
+// SetRules is the set for every connection that has none of its own.
+// SetRulesForConnection is that player's own set, which replaces the global one
+// for them whole (default, message and rows). The host console list
+// ("features hostoff", "features hostmessage") is added to the global set only,
+// so it does not reach a connection with a set of its own. ClearConnection puts
+// the player back on the global set. A player's own set is forgotten when the
+// player disconnects or the world ends. SetRulesForConnection is false (error:
+// "no connection for this player controller") for the listen host's own
+// controller and for a controller that is gone.
+//
+// v79 -- minimum versions. SetVersionMinimums takes one rule per line, read the
+// same way (error, return value, empty or null text = all off):
+//     # comment
+//     loader=1.27.0            the oldest ModLoader allowed; empty = off
+//     RuptureTimer=0.11.0      the oldest version of one mod (name ignores case)
+//     ProductionViewer=wire    the player's copy must be one the wire check accepts
+// A version is [v]N.N[.N[.N]], optionally followed by - or + and text. The text
+// is ignored when versions are compared: 1.26.0-dev.3 counts as 1.26.0, so it is
+// below 1.27.0. A dev build (a version the loader cannot read), a mod the player
+// does not have and a vanilla player (no mod loader) are never below. A client
+// whose loader is too old to report its version counts as below a set loader
+// minimum after 30 seconds with no report; time the game stalled (more than 2
+// seconds between engine ticks, a level load for example) does not count toward
+// the 30. When a client is below,
+// RegisterOnClientBelowMinimum's
+// callback fires once for that join, from the tick, outside all locks. Changing
+// the table checks the clients already connected that have not fired yet.
+//
+// v79 -- GetClientFeatures reads what one client's loader reported, as LF-separated
+// text: a first line "loader=<build tag> interface=<plugin interface version>",
+// then one line "<Plugin>.<featureId>=on|off" for each feature it reported.
+struct IPluginHostRules
+{
+	bool (*SetRules)(const char* text, char* error, size_t errorSize);
+	bool (*SetRulesForConnection)(void* playerController, const char* text, char* error, size_t errorSize);
+	void (*ClearConnection)(void* playerController);
+	void (*RegisterOnClientFeatures)(const IPluginSelf* self, PluginClientFeaturesCallback callback);
+	void (*UnregisterOnClientFeatures)(const IPluginSelf* self, PluginClientFeaturesCallback callback);
+	// v79 -- version minimums (see above). true = text read and stored; false =
+	// text left as it was, error holds "line N: ...". Not authority: false.
+	bool (*SetVersionMinimums)(const char* text, char* error, size_t errorSize);
+	void (*RegisterOnClientBelowMinimum)(const IPluginSelf* self, PluginClientBelowMinimumCallback callback);
+	void (*UnregisterOnClientBelowMinimum)(const IPluginSelf* self, PluginClientBelowMinimumCallback callback);
+	// v79 -- the client's reported loader and features as text (see above). Game
+	// thread, authority only. Returns the full text length without the NUL, and
+	// writes the text NUL-terminated and cut to size; buf may be null with size 0
+	// to measure. -1: not authority, no connection for this controller (the listen
+	// host's own, or one that is gone), or the client sent no report (an older
+	// loader, or no mod loader).
+	int (*GetClientFeatures)(void* playerController, char* buf, size_t size);
+	// v79 -- admin prompt. Authority only, game thread. AskAdmin opens a prompt on
+	// that player's screen asking for an admin code. true = the request was sent;
+	// false = not authority, no connection for this controller (the listen host's
+	// own, or one that is gone), or the player's loader sent no feature report
+	// (an older loader, or no mod loader: it has no prompt to open). Asking again
+	// while a prompt is open reopens it. Only a player that was asked can answer:
+	// an answer from anyone else is dropped. The answer reaches the callbacks of
+	// RegisterOnAdminAnswer, at most one per half second per player. The
+	// player's loader does not show a new ask for 60 seconds after the player
+	// dismissed the prompt (the call still returns true).
+	bool (*AskAdmin)(void* playerController);
+	// Shows one line of text (cut to 200 bytes; control characters become spaces)
+	// in that player's open prompt. close = false: the prompt stays open for
+	// another try. close = true: the prompt shows the line and closes. true = sent;
+	// false = not authority, no connection, no feature report, text null, or the
+	// player has no open prompt (never asked, or already closed).
+	bool (*AdminMessage)(void* playerController, const char* text, bool close);
+	// The callback gets at most one answer per 500 ms per player and the loader sets
+	// no attempt limit: count wrong codes in the plugin and close the prompt
+	// (AdminMessage with close) after a few.
+	void (*RegisterOnAdminAnswer)(const IPluginSelf* self, PluginAdminAnswerCallback callback);
+	void (*UnregisterOnAdminAnswer)(const IPluginSelf* self, PluginAdminAnswerCallback callback);
+};
+
+static_assert(offsetof(IPluginHostRules, SetRules)                       ==   0, "v79 layout");
+static_assert(offsetof(IPluginHostRules, SetRulesForConnection)          ==   8, "v79 layout");
+static_assert(offsetof(IPluginHostRules, ClearConnection)                ==  16, "v79 layout");
+static_assert(offsetof(IPluginHostRules, RegisterOnClientFeatures)       ==  24, "v79 layout");
+static_assert(offsetof(IPluginHostRules, UnregisterOnClientFeatures)     ==  32, "v79 layout");
+static_assert(offsetof(IPluginHostRules, SetVersionMinimums)             ==  40, "v79 layout");
+static_assert(offsetof(IPluginHostRules, RegisterOnClientBelowMinimum)   ==  48, "v79 layout");
+static_assert(offsetof(IPluginHostRules, UnregisterOnClientBelowMinimum) ==  56, "v79 layout");
+static_assert(offsetof(IPluginHostRules, GetClientFeatures)              ==  64, "v79 layout");
+static_assert(offsetof(IPluginHostRules, AskAdmin)                       ==  72, "v79 layout");
+static_assert(offsetof(IPluginHostRules, AdminMessage)                   ==  80, "v79 layout");
+static_assert(offsetof(IPluginHostRules, RegisterOnAdminAnswer)          ==  88, "v79 layout");
+static_assert(offsetof(IPluginHostRules, UnregisterOnAdminAnswer)        ==  96, "v79 layout");
+static_assert(sizeof(IPluginHostRules)                                   == 13 * sizeof(void*), "v79 layout");
+
 struct IPluginHooks
 {
 	IPluginSpawnerHooks*   Spawner;        // v14
@@ -3907,10 +4076,12 @@ struct IPluginHooks
 	IPluginGameMenu*       GameMenu;        // v64 -- client only, null on server/generic; appended at end, do not relocate
 	IPluginPak*            Pak;             // v67 -- all builds; appended at end, do not relocate
 	IPluginImages*         Images;          // v77 -- client only, null on server/generic; appended at end, do not relocate
+	IPluginHostRules*      HostRules;       // v79 -- server and client builds, null on generic; absent below v79; appended at end, do not relocate
 };
 
 static_assert(offsetof(IPluginHooks, Pak)    == 184, "v67 layout");
 static_assert(offsetof(IPluginHooks, Images) == 192, "v77 starts where v67 ended");
+static_assert(offsetof(IPluginHooks, HostRules) == 200, "v79 starts where v77 ended");
 
 // ---------------------------------------------------------------------------
 // Plugin build target
@@ -4040,7 +4211,66 @@ typedef void        (*PluginShutdownFunc)();
 //   }
 typedef void        (*PluginLoadHooksFunc)(IPluginSelf* self, IPluginHookScanner* scanner);
 
+// OPTIONAL fifth export: GetPluginWireInfo. A plugin that sends packets to or
+// from another copy of itself (IPluginNetworkChannel) says here which versions of
+// itself it can talk to. No interface version bump: an older loader never looks
+// for the export, so a plugin that has it still loads there and behaves as if it
+// had declared nothing.
+//
+// A plugin that does not export it keeps the original rule: its packets flow only
+// between copies with identical version strings.
+//
+//   wireId         A number for the packet layout. Bump it whenever the layout
+//                  changes (a field added, removed, moved or resized, or a field
+//                  that means something else) and leave it alone when it does
+//                  not. Two copies that declare the same non-zero wireId are
+//                  compatible, whatever their version strings. 0 means "no wire
+//                  id": it never matches another 0.
+//   acceptVersions Optional list of other version strings this copy can exchange
+//                  packets with, separated by ';', e.g. "0.11.0;0.11.1". Each
+//                  element is compared exactly with the other side's version
+//                  string, never as a prefix or a range. null or "" for none. An
+//                  element cannot contain ';'. A list longer than 512 characters
+//                  is ignored, with a WARN in the log, and the plugin then keeps
+//                  its wireId alone.
+//
+// The two loaders compare the declarations of both sides, and packets flow when
+// the version strings are equal, OR both declared the same non-zero wireId, OR
+// either side's acceptVersions lists the other side's version. The accept list of
+// ONE side is enough, so a new build can list the released build it still speaks
+// to without that older build changing at all. List only versions with the SAME
+// packet layout as this one.
+//
+// When a pair is not compatible, the loader sends nothing for that plugin and
+// logs one WARN naming the plugin and both versions; when a pair with different
+// version strings is accepted it logs one INFO saying why. Your own receive
+// checks (schema byte, size) stay worthwhile as a second layer.
+//
+// Both sides need a loader that has this feature. If the server's loader does not,
+// it keeps requiring identical version strings, and a client's declaration cannot
+// change that; the client's log then says the server sends no wire table.
+//
+// Return a pointer to a static struct that stays valid while the DLL is loaded.
+//
+// Worked example. RuptureTimer 0.12 keeps the 0.11.0 packet layout and its
+// schema constant is 2. Its server build declares the schema as its wire id and
+// lists the released version it still speaks:
+//
+//   static const PluginWireInfo kWire = { kSchemaVersion /* 2 */, "0.11.0" };
+//   extern "C" __declspec(dllexport) const PluginWireInfo* GetPluginWireInfo() { return &kWire; }
+//
+// A 0.11.0 client (which exports nothing) then receives the 0.12 server's
+// packets. When 0.13 changes the layout, it declares kSchemaVersion 3 and drops
+// "0.11.0" from the list.
+struct PluginWireInfo
+{
+	uint32_t    wireId;
+	const char* acceptVersions;
+};
+typedef const PluginWireInfo* (*PluginWireInfoFunc)();
+
 #define PLUGIN_GET_INFO_FUNC_NAME   "GetPluginInfo"
 #define PLUGIN_INIT_FUNC_NAME       "PluginInit"
 #define PLUGIN_SHUTDOWN_FUNC_NAME   "PluginShutdown"
 #define PLUGIN_LOAD_HOOKS_FUNC_NAME "OnPluginLoadHooks"
+#define PLUGIN_WIRE_INFO_FUNC_NAME  "GetPluginWireInfo"

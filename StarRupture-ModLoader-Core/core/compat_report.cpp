@@ -157,7 +157,7 @@ namespace CompatReport
 
 #if defined(MODLOADER_CLIENT_BUILD)
 
-#include "layout_table.generated.h"
+#include "layout_tables.h"
 #include "sdk_globals.h"
 #include "startup_utils.h"
 #include "version_check.h"
@@ -249,7 +249,7 @@ namespace CompatReport
         const wchar_t* lastSlash = wcsrchr(exePath, L'\\');
 
         Inputs inputs{ WideToUtf8(GetGameVersionString()), WideToUtf8(lastSlash ? lastSlash + 1 : exePath),
-            Sha256OfFile(exePath), SrLayoutTable::kBuiltCL, {}, {}, &layout, outcome, {} };
+            Sha256OfFile(exePath), LayoutCheck::TableCLFor(VersionMap::RunningExe().cl), {}, {}, &layout, outcome, {} };
         for (const PatternPreflight::Miss& miss : PatternPreflight::Misses())
             inputs.patternMisses.push_back(PatternMiss{ miss.name, miss.pattern, miss.required, miss.structural });
         for (const SdkGlobals::Resolution& global : SdkGlobals::Resolutions())

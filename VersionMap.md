@@ -67,7 +67,10 @@ works offline on every build in it. The signed feed (below) adds to that.
 in the SDK) and the server against CL-127004 (`Server\build_cl.txt`); `Shared.props` reads the number
 from the file and passes it as `MODLOADER_BUILT_CL`. The `kBuiltCL` line in `version_map.generated.h`
 is the client's (CI keeps that line). A client build stops if that line differs from `Client\build_cl.txt`,
-if the file is missing, or if `core/layout_table.generated.h` is for another CL.
+if the file is missing, or if the newest layout table (`core/layout_table_<CL>.generated.h`) is for another CL.
+The server build has its own table, `core/layout_table_server_<CL>.generated.h`, with the same rule.
+The loader carries one layout table for each build it supports (CL-127004 and CL-130045), and the start check
+uses the one for the running build's own CL, or the newest when the build has none.
 The client's built-in rows still list every build it has run on, CL-127004 included, so the same
 files run on both. On CL-127004 the compiled offsets are not trusted, the Game-SDK globals are found
 by pattern, and a member that sits elsewhere on that build is read from the version map or the game. In the loader's
@@ -412,9 +415,26 @@ has the same format, the same Ed25519 signatures and the same trusted keys as th
   own beside the client's, with its own `seq`, and refuses a file of the wrong kind. The server leg does
   nothing until the `vmap-feed` release holds a server file, and the first one needs a manual run with
   `first_publish` set, as the client's did.
-- **Not there yet.** No server file is published; the server has no layout check, so a changed game
-  class is not found by the loader (a plugin's own class check is the only guard). Until a first signed
-  server file exists, a server runs only the game build it was made for.
+- **The layout check.** The server runs the same start-up layout check as the client, against its own table
+  (`core/layout_table_server_127004.generated.h`, made from the Game-SDK's Server folder with
+  `tools\Update-LayoutTable.ps1 -Server`). It lists the classes the server build reads, not the client's UI
+  and input ones. A changed class that the loader's own code, or a layout plugins keep compiled in, reads
+  switches the plugins off for the session, with the changed classes in `ModLoader.log` (`[LayoutCheck]`
+  lines, then `plugins are switched off for this session`). A class only a version map key names does not: a
+  plugin that keeps that layout compiled in is refused, one that takes it from the version map is not, as on
+  the client. On a server game build other than CL-127004, a check that could not run adds a line to the list
+  that keeps the server's plugins off; on CL-127004 it warns and the server carries on. The compatibility
+  report and the menu-state switch-off stay client-only. Every difference is logged as its own
+  `[LayoutCheck]` line, so a false alarm on CL-127004 can be read from `ModLoader.log`. To exempt a member that
+  only plugins read, at an offset that moves between builds, add it to `kPluginPerBuildMembers` in
+  `core/layout_check.h` (it needs a version map field row on every build). A member the engine keeps outside
+  reflection (`ULevel::Actors`) has no entry in the game's reflection data, so it is listed in
+  `kUnreflectedMembers` in the same file: it is not compared when the game lacks it, and the summary line
+  counts it under `rows the game does not reflect`. The table generator already leaves such a member out,
+  so no table has that row now and the count is 0; the list is a net for one the generator misses.
+- **What the log says.** After the merge line, `[VersionFeed]` prints one line per build in the file:
+  `this exe` or `other exe` (with its stamp and size), its row count, and whether it was identical to the
+  loader's own (none used), differs (and whose rows are kept), added, or refused.
 
 To try it without a published file, build the Server configuration with `VMAP_TRUST_TEST_KEY` (the
 test key, `k1`), sign a server file with that key, and copy it byte for byte to
@@ -439,8 +459,7 @@ file on Latest: on a new release at its next run (every 15 minutes), and between
 the `seq` rises. The first release that carries one needs a manual run with `first_publish` set.
 The dedicated server has a file of its own, `version-map-server.v1.txt`, in the same format, which the
 same workflow puts on Latest in a leg of its own (its own `seq`, its own `first_publish`); see
-[The dedicated server's downloaded version map](#the-dedicated-servers-downloaded-version-map). None is
-published yet.
+[The dedicated server's downloaded version map](#the-dedicated-servers-downloaded-version-map).
 
 **Fetch.** The URL is the compiled define `VMAP_FEED_URL` (`/p:VmapFeedUrl=` in `Shared.props`),
 never read from `modloader.ini`. An empty define, or no compiled public key, means no fetch. The

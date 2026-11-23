@@ -64,10 +64,11 @@ void PreloadPhase()
     PreloadManager::RunPhase();
 }
 
-void WaitForEnginePhase()
+bool WaitForEnginePhase()
 {
-    WaitForEngineReady();
+    const bool timedOut = WaitForEngineReady();
     Splash::SetProgress(0.50f);
+    return timedOut;
 }
 
 void LoadPluginsPhase()

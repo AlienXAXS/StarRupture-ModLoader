@@ -1,11 +1,13 @@
 #include "pch.h"
 #ifdef MODLOADER_CLIENT_BUILD
 #include "crash_dialog.h"
+#include "core/startup_wait.h"
 
 #include <windows.h>
 #include <shellapi.h>
 #include <shlobj.h>
 #pragma comment(lib, "Shell32.lib")
+#include <string>
 #include <vector>
 #include <cstdint>
 
@@ -99,6 +101,9 @@ namespace Hooks::CrashDialog
         L"\r\n"
         L"You can play right now without plugins, or quit and come back once the ModLoader "
         L"has been updated. Your saves are untouched either way.";
+
+    // Built from the wait's real length, so the dialog cannot say a different number.
+    static const std::wstring kNotCheckedHeaderText = StartupWait::NotCheckedHeader();
 
     static const wchar_t* kUnknownBuildHeaderText =
         L"Mods are off for this start.\r\n"
@@ -269,7 +274,8 @@ namespace Hooks::CrashDialog
 
         const bool patternMode = (mode == Mode::PatternFailure);
         const bool versionMode = (mode == Mode::VersionMismatch);
-        const bool layoutMode  = (mode == Mode::LayoutMismatch);
+        const bool notCheckedMode = (mode == Mode::LayoutNotChecked);
+        const bool layoutMode  = (mode == Mode::LayoutMismatch) || notCheckedMode;
         const bool guardMode   = (mode == Mode::UnknownBuildGuard);
         // Every startup-failure mode ends with the same start/quit choice.
         const bool choiceMode  = patternMode || versionMode || layoutMode || guardMode;
@@ -302,7 +308,9 @@ namespace Hooks::CrashDialog
         AppendData(buf, &dlg, sizeof(dlg));
         AppendWord(buf, 0);   // no menu
         AppendWord(buf, 0);   // default dialog class
-        AppendString(buf, layoutMode
+        AppendString(buf, notCheckedMode
+            ? L"StarRupture ModLoader - Game did not finish starting"
+            : layoutMode
             ? L"StarRupture ModLoader - Game layout changed"
             : guardMode
             ? L"StarRupture ModLoader - Unknown game build"
@@ -318,7 +326,8 @@ namespace Hooks::CrashDialog
         // Header explanation text
         AppendControl(buf, WS_CHILD | WS_VISIBLE | SS_LEFT, 0,
             7, 7, kDlgW - 14, headerH, 0xFFFF, kClassStatic,
-            layoutMode  ? kLayoutHeaderText
+            notCheckedMode ? kNotCheckedHeaderText.c_str()
+                        : layoutMode ? kLayoutHeaderText
                         : guardMode ? kUnknownBuildHeaderText
                         : versionMode ? kVersionHeaderText
                         : patternMode ? kPatternHeaderText : kCrashHeaderText);
@@ -326,7 +335,9 @@ namespace Hooks::CrashDialog
         // Details label
         AppendControl(buf, WS_CHILD | WS_VISIBLE | SS_LEFT, 0,
             7, labelY, kDlgW - 14, 9, 0xFFFF, kClassStatic,
-            layoutMode
+            notCheckedMode
+                ? L"Details (select and copy, or use the buttons below):"
+                : layoutMode
                 ? L"What changed (select and copy, or use the buttons below):"
                 : guardMode
                 ? L"Details (select and copy, or use the buttons below):"
@@ -559,7 +570,7 @@ namespace Hooks::CrashDialog
 
         const bool choiceMode =
             (mode == Mode::PatternFailure || mode == Mode::VersionMismatch || mode == Mode::LayoutMismatch
-             || mode == Mode::UnknownBuildGuard);
+             || mode == Mode::LayoutNotChecked || mode == Mode::UnknownBuildGuard);
 
         // Default result if the dialog is dismissed without an explicit choice:
         // fail-safe is "keep going" in the startup-failure modes (game continues
@@ -617,6 +628,16 @@ namespace Hooks::CrashDialog
                     L"compatibility report to the ModLoader folder.\n\n"
                     L"Start the game without plugins?",
                     L"StarRupture ModLoader",
+                    MB_YESNO | MB_ICONERROR | MB_TASKMODAL);
+                return choice == IDNO ? Result::QuitGame : Result::StartWithoutModLoader;
+            }
+
+            if (mode == Mode::LayoutNotChecked)
+            {
+                const std::wstring text = StartupWait::NotCheckedSummary() + L"\n\n" + StartupWait::NotCheckedHint()
+                    + L"\n\nDetails were written to ModLoader\\Logs\\ModLoader.log, and a compatibility report to "
+                      L"the ModLoader folder.\n\nStart the game without plugins?";
+                const int choice = MessageBoxW(nullptr, text.c_str(), L"StarRupture ModLoader",
                     MB_YESNO | MB_ICONERROR | MB_TASKMODAL);
                 return choice == IDNO ? Result::QuitGame : Result::StartWithoutModLoader;
             }

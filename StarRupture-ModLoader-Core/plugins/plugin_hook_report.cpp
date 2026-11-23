@@ -1,9 +1,11 @@
 #include "plugins/plugin_hook_report.h"
 
+#include "plugins/host_rules.h"
 #include "plugins/plugin_interface.h"
 #include "logging/logger.h"
 #include "core/version_check.h"
 #include "core/unknown_build.h"
+#include "utils/game_thread_dispatch.h"
 
 #include <windows.h>
 #include <algorithm>
@@ -60,7 +62,27 @@ namespace PluginHookReport
             }
         }
 
+        // A feature of a loaded plugin, kept from EndSession until the plugin
+        // is unloaded or reloaded (see the feature catalog in the header).
+        struct CatalogEntry
+        {
+            const IPluginSelf*       self = nullptr;   // identity of the plugin; a name two plugins share cannot mix entries
+            std::string              plugin;
+            std::string              file;
+            bool                     preload = false;
+            std::string              id;
+            std::string              title;
+            std::vector<std::string> configKeys;
+            bool*                    enabled = nullptr;   // the plugin's flag; valid until ForgetFeatures
+            bool                     hostOff = false;     // the server's list has switched it off
+        };
+
         std::mutex                s_mutex;
+        std::vector<CatalogEntry> s_catalog;
+        HostRules::DenySet        s_deny;           // what is denied now: both sources together; outlives the plugins it names
+        HostRules::DenySources    s_sources;        // the console's list and the joined server's, kept apart
+        std::string               s_hostMessage;    // text that goes with the console's list
+        std::string               s_remoteMessage;  // text the joined server sent with its rules
         Session                   s_session{};      // self == nullptr when closed
         std::vector<PluginReport> s_reports;
         std::vector<PendingKey>   s_pending;        // keys waiting for a class, of loaded plugins
@@ -104,6 +126,151 @@ namespace PluginHookReport
         bool SameName(const std::string& a, const std::string& b)
         {
             return _stricmp(a.c_str(), b.c_str()) == 0;
+        }
+
+        // Whether the running game build has the feature switched off: a key it
+        // lists missed (a FeatureOff in the plugin's report), is waiting for a
+        // class, or is not in this build. Worked out from the lists each time,
+        // never cached, so a late resolve is seen the moment it happens.
+        // `reason`, when non-null, receives one plain line. Caller holds s_mutex.
+        bool BuildOffLocked(const std::string& plugin, bool preload, const std::string& id, std::string* reason)
+        {
+            for (const PluginReport& r : s_reports)
+            {
+                if (r.preload != preload || !SameName(r.plugin, plugin))
+                    continue;
+                for (const FeatureOff& f : r.featuresOff)
+                    if (!f.host && f.id == id)
+                    {
+                        if (reason) *reason = f.reason;
+                        return true;
+                    }
+            }
+            for (const PendingKey& p : s_pending)
+                if (SameName(p.plugin, plugin) && p.featureId == id)
+                {
+                    if (reason) *reason = p.refused ? p.detail : "waiting for a game class that is not loaded yet";
+                    return true;
+                }
+            for (const AbsentKey& a : s_absent)
+                if (SameName(a.plugin, plugin) && a.featureId == id)
+                {
+                    if (reason) *reason = "this game version does not have it";
+                    return true;
+                }
+            return false;
+        }
+
+        const char* const kHostOffReason = "turned off by this server";
+
+        // The plugin's report, or null. Caller holds s_mutex.
+        PluginReport* FindReportLocked(const std::string& plugin, bool preload)
+        {
+            for (PluginReport& r : s_reports)
+                if (r.preload == preload && SameName(r.plugin, plugin))
+                    return &r;
+            return nullptr;
+        }
+
+        // Make sure the plugin's report lists the feature as turned off by the
+        // server, making a report for a plugin that has none. The report this
+        // makes is not a failure and does not touch the commit serial, so the
+        // failure window stays shut. True if a line was added. Caller holds s_mutex.
+        bool EnsureHostOffLocked(const CatalogEntry& e)
+        {
+            PluginReport* r = FindReportLocked(e.plugin, e.preload);
+            if (!r)
+            {
+                PluginReport made;
+                made.plugin   = e.plugin;
+                made.file     = e.file;
+                made.refused  = false;
+                made.resolved = 0;
+                made.preload  = e.preload;
+                s_reports.push_back(std::move(made));
+                r = &s_reports.back();
+            }
+            for (const FeatureOff& f : r->featuresOff)
+                if (f.host && f.id == e.id)
+                    return false;
+
+            FeatureOff off;
+            off.id         = e.id;
+            off.title      = e.title;
+            off.reason     = kHostOffReason;
+            off.configKeys = e.configKeys;
+            off.host       = true;
+            r->featuresOff.push_back(std::move(off));
+            return true;
+        }
+
+        // Take the server's line for the feature out of the plugin's report, and
+        // the report itself when that leaves nothing in it (one made for that
+        // line alone). True if a line was removed. Caller holds s_mutex.
+        bool RemoveHostOffLocked(const std::string& plugin, bool preload, const std::string& id)
+        {
+            for (size_t i = 0; i < s_reports.size(); ++i)
+            {
+                PluginReport& r = s_reports[i];
+                if (r.preload != preload || !SameName(r.plugin, plugin))
+                    continue;
+                const auto it = std::remove_if(r.featuresOff.begin(), r.featuresOff.end(),
+                    [&](const FeatureOff& f) { return f.host && f.id == id; });
+                if (it == r.featuresOff.end())
+                    return false;
+                r.featuresOff.erase(it, r.featuresOff.end());
+                if (r.failures.empty() && r.featuresOff.empty())
+                    s_reports.erase(s_reports.begin() + static_cast<ptrdiff_t>(i));
+                return true;
+            }
+            return false;
+        }
+
+        // Bring the catalog features of `plugin` (every plugin when null) in line
+        // with the server's list. A feature goes off when it is on the list and
+        // the build has it on; it comes back only when it is off for the server
+        // and the build has it on. A feature that is already off for the server
+        // gets its flag written false again, which is what a plugin that wrote
+        // the flag after a late resolve needs. The report line is never added
+        // under the commit serial. True if the report list changed. Game thread:
+        // it writes the plugins' flags. Caller holds s_mutex.
+        bool ApplyOverlayLocked(const std::string* plugin)
+        {
+            bool changed = false;
+            for (CatalogEntry& e : s_catalog)
+            {
+                if (plugin && !SameName(e.plugin, *plugin))
+                    continue;
+
+                const bool buildOn = !BuildOffLocked(e.plugin, e.preload, e.id, nullptr);
+                const bool hostOff = buildOn && HostRules::Contains(s_deny, e.plugin, e.id);
+
+                if (hostOff)
+                {
+                    if (e.enabled)
+                        *e.enabled = HostRules::EffectiveOn(buildOn, hostOff);
+                    if (!e.hostOff)
+                    {
+                        e.hostOff = true;
+                        ModLoaderLogger::LogInfo(L"[Map] %S: feature \"%S\" turned off by this server",
+                            e.plugin.c_str(), e.title.c_str());
+                    }
+                    if (EnsureHostOffLocked(e))
+                        changed = true;
+                }
+                else if (e.hostOff)
+                {
+                    e.hostOff = false;
+                    if (e.enabled && buildOn)
+                        *e.enabled = HostRules::EffectiveOn(buildOn, hostOff);
+                    if (RemoveHostOffLocked(e.plugin, e.preload, e.id))
+                        changed = true;
+                    if (buildOn)
+                        ModLoaderLogger::LogInfo(L"[Map] %S: feature \"%S\" turned back on",
+                            e.plugin.c_str(), e.title.c_str());
+                }
+            }
+            return changed;
         }
 
         // Calls log(first, keys) once per feature in `entries`: `first` is its
@@ -152,6 +319,12 @@ namespace PluginHookReport
         if (!self) return;
 
         std::lock_guard<std::mutex> lock(s_mutex);
+
+        // A reload: the old load's catalog entries go with its DLL. The plugin
+        // manager has already called ForgetFeatures before freeing it; this
+        // keeps the catalog right for any caller that did not.
+        s_catalog.erase(std::remove_if(s_catalog.begin(), s_catalog.end(),
+            [&](const CatalogEntry& e) { return e.self == self; }), s_catalog.end());
 
         s_session = Session{};
         s_session.self           = self;
@@ -206,9 +379,28 @@ namespace PluginHookReport
                         session->report.plugin.c_str(), d.title.c_str(), key.c_str());
 
         PluginReport report = std::move(session->report);
+        const std::string pluginName = report.plugin;
         std::vector<PendingKey> pending = std::move(session->pending);
         std::vector<AbsentKey>  absent  = std::move(session->absent);
+        std::vector<Declared>   declared = std::move(session->declared);
         s_session = Session{};
+
+        // A plugin that loads keeps its features in the catalog until it is
+        // unloaded. A refused one is never run, so it has nothing to keep.
+        if (report.failures.empty())
+            for (Declared& d : declared)
+            {
+                CatalogEntry e;
+                e.self       = self;
+                e.plugin     = report.plugin;
+                e.file       = report.file;
+                e.preload    = report.preload;
+                e.id         = std::move(d.id);
+                e.title      = std::move(d.title);
+                e.configKeys = std::move(d.configKeys);
+                e.enabled    = d.enabled;
+                s_catalog.push_back(std::move(e));
+            }
 
         // Keys waiting for a class are kept unless the plugin is refused. They
         // are not failures: the log says so at Info, and no popup opens.
@@ -240,6 +432,8 @@ namespace PluginHookReport
             if (report.resolved > 0)
                 ModLoaderLogger::LogInfo(L"[HookScan] %S: %d pattern(s) resolved, no failures",
                     report.plugin.c_str(), report.resolved);
+            if (ApplyOverlayLocked(&pluginName))
+                ++s_generation;
             return;
         }
 
@@ -288,6 +482,10 @@ namespace PluginHookReport
         s_reports.push_back(std::move(report));
         ++s_generation;
         ++s_commitSerial;
+
+        // After the push, so the server's line joins the plugin's own report
+        // (the commit serial above is already spent on the plugin's problems).
+        ApplyOverlayLocked(&pluginName);
     }
 
     void RecordSessionCrash(const IPluginSelf* self, const char* detail)
@@ -423,12 +621,23 @@ namespace PluginHookReport
     {
         if (!self || !self->name || !key)
             return;
-        std::lock_guard<std::mutex> lock(s_mutex);
-        const size_t before = s_pending.size();
-        s_pending.erase(std::remove_if(s_pending.begin(), s_pending.end(),
-            [&](const PendingKey& p) { return SameName(p.plugin, self->name) && p.key == key; }), s_pending.end());
-        if (s_pending.size() != before)
+        {
+            std::lock_guard<std::mutex> lock(s_mutex);
+            const size_t before = s_pending.size();
+            s_pending.erase(std::remove_if(s_pending.begin(), s_pending.end(),
+                [&](const PendingKey& p) { return SameName(p.plugin, self->name) && p.key == key; }), s_pending.end());
+            if (s_pending.size() == before)
+                return;
             ++s_generation;
+            if (s_deny.empty())
+                return;
+        }
+
+        // The feature may be on the server's list. The plugin writes its own
+        // `enabled` flag when this call returns, so the list is applied on the
+        // next game tick, after that write.
+        const std::string plugin = self->name;
+        GameThreadDispatch::PostVoid([plugin] { ReapplyHostRules(plugin.c_str()); });
     }
 
     void LateRefused(const IPluginSelf* self, const char* key, const char* detail)
@@ -452,6 +661,161 @@ namespace PluginHookReport
     {
         std::lock_guard<std::mutex> lock(s_mutex);
         return s_pending;
+    }
+
+    std::vector<FeatureInfo> Features()
+    {
+        std::lock_guard<std::mutex> lock(s_mutex);
+        std::vector<FeatureInfo> out;
+        out.reserve(s_catalog.size());
+        for (const CatalogEntry& e : s_catalog)
+        {
+            FeatureInfo info;
+            info.plugin  = e.plugin;
+            info.id      = e.id;
+            info.title   = e.title;
+            info.preload = e.preload;
+            if (e.hostOff)
+            {
+                info.state  = FeatureInfo::State::OffServer;
+                info.reason = kHostOffReason;
+            }
+            else if (BuildOffLocked(e.plugin, e.preload, e.id, &info.reason))
+                info.state = FeatureInfo::State::OffBuild;
+            out.push_back(std::move(info));
+        }
+        return out;
+    }
+
+    void ForgetFeatures(const IPluginSelf* self)
+    {
+        if (!self)
+            return;
+        std::lock_guard<std::mutex> lock(s_mutex);
+        bool changed = false;
+        std::vector<std::string> names;
+        for (const CatalogEntry& e : s_catalog)
+            if (e.self == self)
+            {
+                if (e.hostOff && RemoveHostOffLocked(e.plugin, e.preload, e.id))
+                    changed = true;
+                names.push_back(e.plugin);
+            }
+        s_catalog.erase(std::remove_if(s_catalog.begin(), s_catalog.end(),
+            [&](const CatalogEntry& e) { return e.self == self; }), s_catalog.end());
+
+        // Another loaded plugin that shares the name keeps its own lines.
+        for (const std::string& name : names)
+            if (ApplyOverlayLocked(&name))
+                changed = true;
+        if (changed)
+            ++s_generation;
+    }
+
+    namespace
+    {
+        HostRules::DenySet ToDenySet(const std::vector<std::pair<std::string, std::string>>& deny)
+        {
+            HostRules::DenySet set;
+            set.reserve(deny.size());
+            for (const auto& d : deny)
+                set.push_back(HostRules::RuleKey{ d.first, d.second });
+            return HostRules::Normalize(set);
+        }
+
+        // Switch what is denied to the two sources together: features that came
+        // onto the list go off, features that left it are handed back. Caller
+        // holds s_mutex. Game thread.
+        void ApplySourcesLocked()
+        {
+            HostRules::DenySet wanted = s_sources.Effective();
+            const HostRules::DenyDiff diff = HostRules::DiffDeny(s_deny, wanted);
+            s_deny = std::move(wanted);
+
+            bool changed = false;
+            for (const HostRules::DenySet* side : { &diff.added, &diff.removed })
+                for (const HostRules::RuleKey& r : *side)
+                    if (ApplyOverlayLocked(&r.plugin))
+                        changed = true;
+            if (changed)
+                ++s_generation;
+        }
+    }
+
+    void ApplyHostRules(const std::vector<std::pair<std::string, std::string>>& deny)
+    {
+        HostRules::DenySet wanted = ToDenySet(deny);
+        std::lock_guard<std::mutex> lock(s_mutex);
+        s_sources.local = std::move(wanted);
+        ApplySourcesLocked();
+    }
+
+    void ClearHostRules()
+    {
+        ApplyHostRules({});
+        SetHostMessage(std::string());
+    }
+
+    void SetHostMessage(const std::string& message)
+    {
+        std::lock_guard<std::mutex> lock(s_mutex);
+        s_hostMessage = message;
+    }
+
+    std::string HostMessage()
+    {
+        std::lock_guard<std::mutex> lock(s_mutex);
+        return s_hostMessage;
+    }
+
+    void ApplyServerRules(const std::vector<std::pair<std::string, std::string>>& deny, const std::string& message)
+    {
+        HostRules::DenySet wanted = ToDenySet(deny);
+        std::lock_guard<std::mutex> lock(s_mutex);
+        s_sources.remote = std::move(wanted);
+        s_remoteMessage = message;
+        ApplySourcesLocked();
+    }
+
+    void ClearServerRules()
+    {
+        ApplyServerRules({}, std::string());
+    }
+
+    std::vector<std::pair<std::string, std::string>> ServerDeny()
+    {
+        std::lock_guard<std::mutex> lock(s_mutex);
+        std::vector<std::pair<std::string, std::string>> out;
+        out.reserve(s_sources.remote.size());
+        for (const HostRules::RuleKey& r : s_sources.remote)
+            out.emplace_back(r.plugin, r.id);
+        return out;
+    }
+
+    std::string ServerMessage()
+    {
+        std::lock_guard<std::mutex> lock(s_mutex);
+        return s_remoteMessage;
+    }
+
+    void ReapplyHostRules(const char* plugin)
+    {
+        if (!plugin || !plugin[0])
+            return;
+        const std::string name = plugin;
+        std::lock_guard<std::mutex> lock(s_mutex);
+        if (ApplyOverlayLocked(&name))
+            ++s_generation;
+    }
+
+    std::vector<std::pair<std::string, std::string>> HostDeny()
+    {
+        std::lock_guard<std::mutex> lock(s_mutex);
+        std::vector<std::pair<std::string, std::string>> out;
+        out.reserve(s_sources.local.size());
+        for (const HostRules::RuleKey& r : s_sources.local)
+            out.emplace_back(r.plugin, r.id);
+        return out;
     }
 
     void RecordAbsent(const IPluginSelf* self, const char* key, const char* detail)

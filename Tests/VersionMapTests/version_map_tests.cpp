@@ -10,6 +10,9 @@
 #include "memory_scanner/version_map.h"
 #include "core/layout_check.h"
 #include "core/unknown_build.h"
+#include "network_channel/admin_prompt.h"
+#include "network_channel/host_rules_wire.h"
+#include "plugins/host_rules.h"
 #include "plugins/plugin_hook_report.h"
 #include "plugins/plugin_interface.h"
 #include "plugins/reload_policy.h"
@@ -17,6 +20,7 @@
 #include "plugins/crash_restart.h"
 #include "plugins/remote_reload.h"
 #include "UI/update_notice_window.h"
+#include "utils/game_thread_dispatch.h"
 
 #include <array>
 #include <cstdint>
@@ -1028,6 +1032,485 @@ int main()
 		PluginHookReport::EndSession(&later, &refused);
 
 		g_bpLoaded = false;
+		VersionMap::SetLiveFieldSource(nullptr);
+	}
+
+	// Host rules as text (host_rules_wire.h): the format a server operator writes, how it parses, and which set a connection gets.
+	{
+		using namespace HostRulesWire;
+		using HostRules::Contains;
+		const auto parse = [](const std::string& text, RulesSet& out, std::string& err) { return ParseRulesText(text, out, err); };
+		const auto status = [&](const std::string& text, size_t* line = nullptr)
+		{
+			RulesSet s;
+			std::string err;
+			const ParseResult r = parse(text, s, err);
+			if (line)
+				*line = r.line;
+			return r.status;
+		};
+
+		// Empty text, blank lines and comments: an empty set that allows everything.
+		{
+			RulesSet s;
+			s.message = "kept";
+			std::string err = "stale";
+			const ParseResult r = parse("", s, err);
+			Check(r.status == ParseStatus::Ok && s.defaultAllow && s.message.empty() && s.deny.empty() && s.allow.empty() && err.empty()
+				&& s.onDenied == kOnDeniedSwitchOff, "host rules text: empty text is an empty set that allows everything");
+			s.message = "kept";
+			Check(parse("\n  \n# a comment\n   ; another\r\n\t\r\n", s, err).status == ParseStatus::Ok && s.message.empty() && s.deny.empty(),
+				"host rules text: blank lines and comment lines are skipped");
+		}
+
+		// A full file, with CRLF, a BOM, case and spaces around keys and values.
+		{
+			RulesSet s;
+			std::string err;
+			const std::string text = "\xEF\xBB\xBF# rules\r\nDefault = Allow\r\nMESSAGE=  Be kind # not a comment = ok  \r\n"
+				"Alpha.fly=deny\r\n  alpha.Dig = DENY \r\nBeta.*=deny\r\nBeta.ok=allow\r\nGamma.a.b=deny";
+			const ParseResult r = parse(text, s, err);
+			Check(r.status == ParseStatus::Ok && err.empty() && s.defaultAllow && s.message == "Be kind # not a comment = ok",
+				"host rules text: CRLF, a BOM, case and spaces are read; a message keeps '#' and '='");
+			Check(s.deny.size() == 4 && Contains(s.deny, "ALPHA", "fly") && Contains(s.deny, "Alpha", "Dig") && !Contains(s.deny, "Alpha", "dig")
+				&& Contains(s.deny, "Beta", "*") && Contains(s.deny, "Gamma", "a.b") && s.allow.size() == 1 && Contains(s.allow, "Beta", "ok"),
+				"host rules text: rows split at the first dot, ids stay exact, the plugin ignores case, the last line needs no newline");
+			RulesSet d;
+			Check(parse("default=deny\n", d, err).status == ParseStatus::Ok && !d.defaultAllow, "host rules text: default=deny");
+			Check(parse("default=ALLOW", d, err).status == ParseStatus::Ok && d.defaultAllow, "host rules text: default=allow in capitals");
+			Check(parse("message=\n", d, err).status == ParseStatus::Ok && d.message.empty(), "host rules text: an empty message is fine");
+			Check(parse("Alpha.*=allow", d, err).status == ParseStatus::Ok && d.allow.size() == 1 && Contains(d.allow, "alpha", "*") && d.deny.empty(),
+				"host rules text: a whole-mod allow row");
+			// It encodes and decodes to the same rules.
+			RulesSet back;
+			Check(DecodeRules(EncodeRules(s).data(), EncodeRules(s).size(), &back) == Status::Ok && back.message == s.message
+				&& back.deny.size() == 4 && back.allow.size() == 1 && back.defaultAllow, "host rules text: a parsed set survives the wire");
+		}
+
+		// Every error status, with its line number and an error text that starts "line N:". The output stays as it was.
+		{
+			RulesSet keep;
+			keep.defaultAllow = false;
+			keep.message = "before";
+			keep.deny = { { "Old", "x" } };
+			const auto fails = [&](const std::string& text, ParseStatus want, size_t wantLine, const char* what)
+			{
+				RulesSet s = keep;
+				std::string err;
+				const ParseResult r = parse(text, s, err);
+				const std::string prefix = wantLine ? "line " + std::to_string(wantLine) + ": " : std::string();
+				Check(r.status == want && r.line == wantLine && !err.empty() && err.compare(0, prefix.size(), prefix) == 0
+					&& !s.defaultAllow && s.message == "before" && s.deny.size() == 1 && s.allow.empty(), what);
+			};
+			fails("# ok\nno equals here\n", ParseStatus::BadLine, 2, "host rules text: a line with no '=' is BadLine");
+			fails("\n\n.x=deny\n", ParseStatus::BadKey, 3, "host rules text: '.x' (no plugin) is BadKey");
+			fails("P.=deny", ParseStatus::BadKey, 1, "host rules text: 'P.' (no id) is BadKey");
+			fails("$P.x=deny", ParseStatus::BadKey, 1, "host rules text: a plugin name starting with '$' is BadKey");
+			fails("nodot=deny", ParseStatus::BadKey, 1, "host rules text: a key with no dot is BadKey");
+			fails("=deny", ParseStatus::BadKey, 1, "host rules text: an empty key is BadKey");
+			fails("P." + std::string(kMaxIdLen + 1, 'i') + "=deny", ParseStatus::BadKey, 1, "host rules text: an id over the limit is BadKey");
+			fails(std::string(kMaxPluginLen + 1, 'p') + ".x=deny", ParseStatus::BadKey, 1, "host rules text: a plugin over the limit is BadKey");
+			fails("P.x=maybe", ParseStatus::BadValue, 1, "host rules text: a row value other than allow or deny is BadValue");
+			fails("default=maybe", ParseStatus::BadValue, 1, "host rules text: a default other than allow or deny is BadValue");
+			fails("P.x=", ParseStatus::BadValue, 1, "host rules text: an empty row value is BadValue");
+			fails("default=allow\ndefault=deny", ParseStatus::Duplicate, 2, "host rules text: default twice is Duplicate");
+			fails("message=a\n\nmessage=b", ParseStatus::Duplicate, 3, "host rules text: message twice is Duplicate");
+			fails("message=" + std::string(kMaxMessageLen + 1, 'm'), ParseStatus::MessageTooLong, 1, "host rules text: a message of 201 bytes is MessageTooLong");
+			fails("P.x=de\x01ny", ParseStatus::ControlChar, 1, "host rules text: a control character in a row is ControlChar");
+			fails("\n\nmessage=a\tb", ParseStatus::ControlChar, 3, "host rules text: a tab inside a message is ControlChar");
+			fails("message=a\rb", ParseStatus::ControlChar, 1, "host rules text: a bare CR inside a line is ControlChar");
+			fails("Al\tpha.fly=deny", ParseStatus::ControlChar, 1, "host rules text: a tab inside a key is ControlChar");
+			fails("Alpha.fly=de\tny", ParseStatus::ControlChar, 1, "host rules text: a tab inside a value is ControlChar");
+			fails("Alpha.fly\x01", ParseStatus::ControlChar, 1, "host rules text: a control character in a line with no '=' is ControlChar");
+			{
+				RulesSet r;
+				std::string e;
+				Check(parse("Alpha.fly\t=\tdeny\n", r, e).status == ParseStatus::Ok && r.deny.size() == 1 && r.deny[0].plugin == "Alpha" && r.deny[0].id == "fly",
+					"host rules text: tabs around the key and the value are blanks");
+				RulesSet d;
+				Check(parse("default\t=\tdeny\nmessage\t=\t  hello  \n", d, e).status == ParseStatus::Ok && !d.defaultAllow && d.message == "hello",
+					"host rules text: tabs around default and message are blanks");
+			}
+			fails(std::string(kMaxPayloadBytes + 1, '#'), ParseStatus::TooLarge, 0, "host rules text: text over the payload limit is TooLarge");
+			Check(status(std::string(kMaxPayloadBytes, '#')) == ParseStatus::Ok, "host rules text: text of exactly the payload limit is read");
+		}
+
+		// The message limit is 200 bytes, counted after the trim.
+		{
+			RulesSet s;
+			std::string err;
+			Check(parse("message=" + std::string(kMaxMessageLen, 'm') + "   \n", s, err).status == ParseStatus::Ok && s.message.size() == kMaxMessageLen,
+				"host rules text: a message of 200 bytes is read");
+			Check(status("message=" + std::string(kMaxMessageLen + 1, 'm')) == ParseStatus::MessageTooLong, "host rules text: 201 bytes is too long");
+		}
+
+		// The row limit is what one $ML:rules payload holds: kMaxRecords with the header record.
+		{
+			const auto rows = [](size_t n, const char* verb)
+			{
+				std::string t;
+				for (size_t i = 0; i < n; ++i)
+					t += "P.f" + std::to_string(i) + "=" + verb + "\n";
+				return t;
+			};
+			RulesSet s;
+			std::string err;
+			size_t line = 0;
+			Check(parse(rows(kMaxRecords - 1, "deny"), s, err).status == ParseStatus::Ok && s.deny.size() == kMaxRecords - 1,
+				"host rules text: 2047 rows are read");
+			Check(status(rows(kMaxRecords, "deny"), &line) == ParseStatus::TooManyRows && line == kMaxRecords,
+				"host rules text: 2048 rows are TooManyRows, at the line that passes the limit");
+			Check(status(rows(kMaxRecords, "allow")) == ParseStatus::TooManyRows, "host rules text: the limit counts allow rows too");
+			Check(status(rows(kMaxRecords - 1, "deny") + "P.f0=deny\nP.f1=allow\n") == ParseStatus::Ok,
+				"host rules text: a repeated key adds no row, so it does not pass the limit");
+			EncodeStats stats;
+			EncodeRules(s, &stats);
+			Check(stats.dropped == 0 && stats.truncated == 0, "host rules text: the largest parsed set encodes without a cut");
+		}
+
+		// The same key twice: deny wins, in either order, and a repeat adds no row.
+		{
+			RulesSet s;
+			std::string err;
+			Check(parse("P.x=allow\nP.x=deny\n", s, err).status == ParseStatus::Ok && s.deny.size() == 1 && s.allow.empty(), "host rules text: allow then deny is deny");
+			Check(parse("p.x=deny\nP.x=allow\n", s, err).status == ParseStatus::Ok && s.deny.size() == 1 && s.allow.empty(), "host rules text: deny then allow is deny");
+			Check(parse("P.x=deny\nP.x=deny\nP.y=allow\nP.y=allow", s, err).status == ParseStatus::Ok && s.deny.size() == 1 && s.allow.size() == 1,
+				"host rules text: a repeated row adds nothing");
+			Check(parse("P.x=allow\nP.X=deny\n", s, err).status == ParseStatus::Ok && s.deny.size() == 1 && s.allow.size() == 1,
+				"host rules text: ids that differ in case are two features");
+		}
+
+		// MergeConsole: the console's deny list is added, its note wins when it says something, the default stays the global's.
+		{
+			RulesSet g;
+			g.defaultAllow = false;
+			g.message = "global note";
+			g.deny = { { "Alpha", "x" } };
+			g.allow = { { "Beta", "*" } };
+			RulesSet m = MergeConsole(g, { { "alpha", "x" }, { "Gamma", "z" } }, "");
+			Check(!m.defaultAllow && m.message == "global note" && m.deny.size() == 2 && Contains(m.deny, "Alpha", "x") && Contains(m.deny, "Gamma", "z")
+				&& m.allow.size() == 1 && Contains(m.allow, "Beta", "*"), "host rules merge: the console list joins the deny rows once, the global note stays when the console has none");
+			m = MergeConsole(g, {}, "console note");
+			Check(m.message == "console note" && m.deny.size() == 1, "host rules merge: a console note replaces the global one");
+			m = MergeConsole(g, {}, "  \t ");
+			Check(m.message == "global note", "host rules merge: a blank console note does not replace the global one");
+			m = MergeConsole(RulesSet(), {}, "only console");
+			Check(m.defaultAllow && m.message == "only console" && m.deny.empty(), "host rules merge: a console note alone is kept");
+			Check(g.deny.size() == 1 && g.message == "global note", "host rules merge: the global set is not changed");
+			m = MergeConsole(RulesSet(), { { "A", "x" }, { "A", "x" }, { "", "y" } }, "");
+			Check(m.deny.size() == 1, "host rules merge: the console list is normalized");
+		}
+
+		// EffectiveRules: a connection's own set is used as it is; with none the global set and the console's list apply.
+		{
+			RulesSet g;
+			g.message = "global note";
+			g.deny = { { "Alpha", "x" } };
+			RulesSet own;
+			own.defaultAllow = false;
+			own.message = "own note";
+			own.deny = { { "Beta", "y" } };
+			const HostRules::DenySet console = { { "Gamma", "z" } };
+			RulesSet e = EffectiveRules(g, &own, console, "console note");
+			Check(!e.defaultAllow && e.message == "own note" && e.deny.size() == 1 && Contains(e.deny, "Beta", "y"),
+				"host rules effective: a connection's own set replaces the global one, its note and the console list");
+			RulesSet none;
+			e = EffectiveRules(g, &none, console, "console note");
+			Check(e.defaultAllow && e.message.empty() && e.deny.empty(), "host rules effective: an own set that allows everything is not topped up");
+			e = EffectiveRules(g, nullptr, console, "console note");
+			Check(e.message == "console note" && e.deny.size() == 2 && Contains(e.deny, "Alpha", "x") && Contains(e.deny, "Gamma", "z"),
+				"host rules effective: with no set of its own a connection gets the global set merged with the console");
+		}
+
+		// NothingToSend: allows everything, no rows and no note.
+		{
+			RulesSet s;
+			Check(NothingToSend(s), "host rules send: an empty set has nothing to send");
+			s.message = "  \t";
+			Check(NothingToSend(s), "host rules send: a note of blanks says nothing");
+			s.message = "note";
+			Check(!NothingToSend(s), "host rules send: a note alone is sent");
+			s.message.clear();
+			s.defaultAllow = false;
+			Check(!NothingToSend(s), "host rules send: default deny is sent");
+			s.defaultAllow = true;
+			s.deny = { { "A", "x" } };
+			Check(!NothingToSend(s), "host rules send: a deny row is sent");
+			s.deny.clear();
+			s.allow = { { "A", "x" } };
+			Check(NothingToSend(s), "host rules send: allow rows alone add nothing to an allow-all set");
+		}
+	}
+
+	// Host rules: the server's list of features to keep off. The list is plain data (host_rules.h); applying it writes the
+	// plugins' own `enabled` flags and puts a "turned off by this server" line in the report, and lifting it hands a flag
+	// back only where the game build has the feature on.
+	{
+		VersionMap::SetLiveFieldSource(FakeLive);
+		IPluginHookScanner* scan = ModLoaderLogger::GetPluginHookScanner();
+		using HostRules::RuleKey;
+		using Info = PluginHookReport::FeatureInfo;
+
+		// The arithmetic: empty and repeated entries go, the plugin name ignores case, the id does not.
+		{
+			const HostRules::DenySet raw = { { "Alpha", "x" }, { "alpha", "x" }, { "Alpha", "" }, { "", "x" }, { "Alpha", "X" }, { "Beta", "y" } };
+			const HostRules::DenySet norm = HostRules::Normalize(raw);
+			Check(norm.size() == 3 && norm[0].plugin == "Alpha" && norm[0].id == "x" && norm[1].id == "X" && norm[2].plugin == "Beta",
+				"host rules: normalize drops empty entries and repeats, and keeps ids that differ in case");
+			Check(HostRules::Contains(norm, "ALPHA", "x") && !HostRules::Contains(norm, "Alpha", "Y") && !HostRules::Contains(norm, "Gamma", "x"),
+				"host rules: the plugin name compares without case, the id exactly");
+			const HostRules::DenyDiff diff = HostRules::DiffDeny({ { "Alpha", "x" }, { "Beta", "y" } }, { { "ALPHA", "x" }, { "Gamma", "z" } });
+			Check(diff.added.size() == 1 && diff.added[0].plugin == "Gamma" && diff.removed.size() == 1 && diff.removed[0].plugin == "Beta"
+				&& HostRules::DiffDeny(norm, norm).added.empty() && HostRules::DiffDeny(norm, norm).removed.empty(),
+				"host rules: the diff names what was added and what was removed, and nothing for an equal list");
+			Check(HostRules::EffectiveOn(true, false) && !HostRules::EffectiveOn(true, true) && !HostRules::EffectiveOn(false, false)
+				&& !HostRules::EffectiveOn(false, true), "host rules: a deny turns a feature off and nothing turns one on");
+
+			// The two sources: this machine's own list and the one a joined server sent.
+			HostRules::DenySources src;
+			src.local = { { "Alpha", "x" } };
+			Check(HostRules::Contains(src.Effective(), "Alpha", "x") && src.Effective().size() == 1,
+				"host rules: a local entry alone is denied");
+			src.local.clear();
+			src.remote = { { "Beta", "y" } };
+			Check(HostRules::Contains(src.Effective(), "Beta", "y") && src.Effective().size() == 1,
+				"host rules: a server entry alone is denied");
+			src.local = { { "Beta", "y" }, { "Alpha", "x" } };
+			Check(src.Effective().size() == 2 && HostRules::Contains(src.Effective(), "beta", "y"),
+				"host rules: an entry on both lists counts once");
+			src.remote.clear();
+			Check(src.Effective().size() == 2 && HostRules::Contains(src.Effective(), "Alpha", "x"),
+				"host rules: clearing the server's list leaves the local one");
+			src.remote = { { "Gamma", "z" } };
+			src.local.clear();
+			Check(src.Effective().size() == 1 && HostRules::Contains(src.Effective(), "Gamma", "z"),
+				"host rules: clearing the local list leaves the server's");
+		}
+
+		const auto resolve = [&](const IPluginSelf* self, const char* name, const char* pattern)
+		{
+			PluginScanRequest request = PLUGIN_SCAN_REQUEST_INIT;
+			request.hookName = name;
+			request.pattern  = pattern;
+			request.kind     = PLUGIN_SCAN_ANY;
+			return scan->Resolve(self, &request);
+		};
+		const auto declare = [&](const IPluginSelf* self, const char* id, const char* title,
+			std::vector<const char*> keys, std::vector<const char*> configKeys, bool* enabled)
+		{
+			PluginFeatureDesc desc = PLUGIN_FEATURE_DESC_INIT;
+			desc.id             = id;
+			desc.title          = title;
+			desc.keys           = keys.data();
+			desc.keyCount       = static_cast<uint32_t>(keys.size());
+			desc.configKeys     = configKeys.data();
+			desc.configKeyCount = static_cast<uint32_t>(configKeys.size());
+			desc.enabled        = enabled;
+			return scan->DeclareFeature(self, &desc);
+		};
+		const auto feature = [](const char* plugin, const char* id) -> Info
+		{
+			for (const Info& f : PluginHookReport::Features())
+				if (f.plugin == plugin && f.id == id)
+					return f;
+			Info none;
+			none.title = "(not in the catalog)";
+			return none;
+		};
+		const auto stateOf = [&](const char* plugin, const char* id) { return feature(plugin, id).state; };
+		const auto inCatalog = [&](const char* plugin, const char* id) { return feature(plugin, id).title != "(not in the catalog)"; };
+		// How many lines of this plugin's report are the server's.
+		const auto hostLines = [](const char* plugin)
+		{
+			int n = 0;
+			for (const PluginHookReport::PluginReport& r : PluginHookReport::Snapshot())
+				if (r.plugin == plugin)
+					for (const PluginHookReport::FeatureOff& f : r.featuresOff)
+						if (f.host)
+							++n;
+			return n;
+		};
+		const auto reportOf = [](const char* plugin) -> bool
+		{
+			for (const PluginHookReport::PluginReport& r : PluginHookReport::Snapshot())
+				if (r.plugin == plugin)
+					return true;
+			return false;
+		};
+		const Info::State On = Info::State::On, OffBuild = Info::State::OffBuild, OffServer = Info::State::OffServer;
+
+		// A plugin with two features that are on, one the build lost (a key misses), one absent on this build.
+		IPluginSelf self{ "HostPlug", "1", nullptr, nullptr, nullptr };
+		bool laser = false, hud = false, gone = true, absent = true, refused = true;
+		PluginHookReport::ClearHostRules();
+		PluginHookReport::BeginSession(&self, "HostPlug", "HostPlug.dll");
+		declare(&self, "laser", "Mining laser", { "Test::Kept" }, { "Laser.*" }, &laser);
+		declare(&self, "hud", "Heads-up display", { "Test::Kept" }, { "Hud.Show" }, &hud);
+		declare(&self, "gone", "Gone feature", { "Test::Gone" }, { "Gone.*" }, &gone);
+		declare(&self, "absent", "Absent feature", { "ATest::Gone" }, { "Absent.*" }, &absent);
+		resolve(&self, "Test::Kept", "AE 09");
+		resolve(&self, "Test::Gone", "ZZ 99");
+		PluginHookReport::RecordAbsent(&self, "ATest::Gone", "not in this game version (CL-128786)");
+		PluginHookReport::EndSession(&self, &refused);
+		Check(!refused && laser && hud && !gone && !absent
+			&& stateOf("HostPlug", "laser") == On && stateOf("HostPlug", "hud") == On
+			&& stateOf("HostPlug", "gone") == OffBuild && stateOf("HostPlug", "absent") == OffBuild
+			&& hostLines("HostPlug") == 0, "host rules: with no list the catalog shows what the build has on and off");
+
+		// A deny flips the flag, and says so in the report, without opening the failure window.
+		unsigned serial = PluginHookReport::GetCommitSerial();
+		TestDoubles::g_log.clear();
+		PluginHookReport::ApplyHostRules({ { "hostplug", "laser" } });
+		Check(!laser && hud && stateOf("HostPlug", "laser") == OffServer && stateOf("HostPlug", "hud") == On
+			&& feature("HostPlug", "laser").reason == "turned off by this server", "host rules: a deny writes the plugin's flag false");
+		Check(hostLines("HostPlug") == 1 && PluginHookReport::GetCommitSerial() == serial
+			&& PluginHookReport::ConfigOffReason("HostPlug", "Laser", "Scale") == "Mining laser is off: turned off by this server"
+			&& PluginHookReport::ConfigOffReason("HostPlug", "Hud", "Show").empty()
+			&& PluginHookReport::BuildReportText().find("[feature off] Mining laser (laser): turned off by this server") != std::string::npos,
+			"host rules: the report and the greyed config entries say the server did it, and no popup is opened");
+		Check(Logged(L"[Map] HostPlug: feature \"Mining laser\" turned off by this server"), "host rules: one log line when it goes off");
+		const auto list = PluginHookReport::HostDeny();
+		Check(list.size() == 1 && list[0].first == "hostplug" && list[0].second == "laser", "host rules: the list is kept as given");
+
+		// The same list again changes nothing and logs nothing.
+		TestDoubles::g_log.clear();
+		PluginHookReport::ApplyHostRules({ { "HOSTPLUG", "laser" }, { "HostPlug", "laser" } });
+		Check(hostLines("HostPlug") == 1 && !Logged(L"turned off by this server") && !laser, "host rules: the same list again is quiet");
+
+		// A feature the build already has off is not touched by the list, and a lift does not turn it on.
+		PluginHookReport::ApplyHostRules({ { "HostPlug", "laser" }, { "HostPlug", "gone" }, { "HostPlug", "absent" }, { "HostPlug", "nosuch" } });
+		Check(!gone && !absent && stateOf("HostPlug", "gone") == OffBuild && stateOf("HostPlug", "absent") == OffBuild
+			&& hostLines("HostPlug") == 1, "host rules: a deny on a feature the build has off adds no line and keeps the build's reason");
+		TestDoubles::g_log.clear();
+		PluginHookReport::ClearHostRules();
+		Check(laser && hud && !gone && !absent && hostLines("HostPlug") == 0 && PluginHookReport::HostDeny().empty()
+			&& stateOf("HostPlug", "laser") == On && stateOf("HostPlug", "gone") == OffBuild && stateOf("HostPlug", "absent") == OffBuild
+			&& PluginHookReport::ConfigOffReason("HostPlug", "Laser", "Scale").empty() && PluginHookReport::GetCommitSerial() == serial,
+			"host rules: a lift hands the flag back only where the build has the feature on");
+		Check(Logged(L"[Map] HostPlug: feature \"Mining laser\" turned back on") && !Logged(L"\"Gone feature\" turned back on")
+			&& !Logged(L"\"Absent feature\" turned back on"), "host rules: only the feature that came back is logged as back on");
+
+		// Changing the list: one comes back, another goes off.
+		PluginHookReport::ApplyHostRules({ { "HostPlug", "laser" } });
+		PluginHookReport::ApplyHostRules({ { "HostPlug", "hud" } });
+		Check(laser && !hud && stateOf("HostPlug", "laser") == On && stateOf("HostPlug", "hud") == OffServer && hostLines("HostPlug") == 1,
+			"host rules: a new list lifts what it dropped and denies what it added");
+
+		// The list outlives the plugin: it applies again when the plugin loads, and a reload keeps it.
+		PluginHookReport::ForgetFeatures(&self);
+		Check(!inCatalog("HostPlug", "hud") && hostLines("HostPlug") == 0 && PluginHookReport::HostDeny().size() == 1,
+			"host rules: unloading drops the catalog entries and the server's lines, and keeps the list");
+		laser = hud = true;
+		PluginHookReport::BeginSession(&self, "HostPlug", "HostPlug.dll");
+		declare(&self, "laser", "Mining laser", { "Test::Kept" }, { "Laser.*" }, &laser);
+		declare(&self, "hud", "Heads-up display", { "Test::Kept" }, { "Hud.Show" }, &hud);
+		resolve(&self, "Test::Kept", "AE 09");
+		serial = PluginHookReport::GetCommitSerial();
+		PluginHookReport::EndSession(&self, &refused);
+		Check(!refused && laser && !hud && stateOf("HostPlug", "hud") == OffServer && stateOf("HostPlug", "laser") == On
+			&& hostLines("HostPlug") == 1 && reportOf("HostPlug") && PluginHookReport::GetCommitSerial() == serial,
+			"host rules: a plugin that loads after the list is set starts with the feature off, with no popup");
+
+		// A reload that has no failure of its own leaves a report made only for the server's line; unloading removes it.
+		PluginHookReport::ForgetFeatures(&self);
+		Check(!reportOf("HostPlug") && !inCatalog("HostPlug", "laser"), "host rules: a report made only for the server's line goes with the plugin");
+
+		// A plugin with a failure of its own keeps that report when it unloads; only the server's line goes.
+		IPluginSelf mix{ "MixHost", "1", nullptr, nullptr, nullptr };
+		bool mixA = true, mixB = true;
+		PluginHookReport::ApplyHostRules({ { "MixHost", "a" } });
+		PluginHookReport::BeginSession(&mix, "MixHost", "MixHost.dll");
+		declare(&mix, "a", "Feature A", { "Test::Kept" }, {}, &mixA);
+		declare(&mix, "b", "Feature B", { "Test::Gone" }, {}, &mixB);
+		resolve(&mix, "Test::Kept", "AE 09");
+		resolve(&mix, "Test::Gone", "ZZ 99");
+		PluginHookReport::EndSession(&mix, &refused);
+		Check(!refused && !mixA && !mixB && hostLines("MixHost") == 1 && PluginHookReport::GetFeaturesOffCount("MixHost") == 2
+			&& stateOf("MixHost", "a") == OffServer && stateOf("MixHost", "b") == OffBuild, "host rules: the server's line sits beside the plugin's own failure");
+		PluginHookReport::ForgetFeatures(&mix);
+		Check(reportOf("MixHost") && hostLines("MixHost") == 0 && PluginHookReport::GetFeaturesOffCount("MixHost") == 1,
+			"host rules: unloading leaves the plugin's own failure report in place");
+		PluginHookReport::BeginSession(&mix, "MixHost", "MixHost.dll");   // a reload with nothing wrong clears the rest
+		PluginHookReport::EndSession(&mix, &refused);
+		PluginHookReport::ForgetFeatures(&mix);
+
+		// A plugin that was refused never reaches the catalog, so the list cannot touch its flags.
+		IPluginSelf core{ "RefusedHost", "1", nullptr, nullptr, nullptr };
+		bool fine = true;
+		PluginHookReport::ApplyHostRules({ { "RefusedHost", "fine" } });
+		PluginHookReport::BeginSession(&core, "RefusedHost", "RefusedHost.dll");
+		declare(&core, "fine", "Fine", { "Test::Kept" }, {}, &fine);
+		resolve(&core, "Test::Kept", "AE 09");
+		resolve(&core, "Test::CoreGone", "ZZ 99");
+		PluginHookReport::EndSession(&core, &refused);
+		Check(refused && fine && !inCatalog("RefusedHost", "fine") && hostLines("RefusedHost") == 0,
+			"host rules: a refused plugin has no catalog entry and keeps its flag");
+		PluginHookReport::ForgetFeatures(&core);
+
+		// A feature that waits for a game class: the list does not touch it while it waits, and applies one tick after the
+		// plugin's repeated request resolves it (the plugin writes its own flag as that call returns).
+		{
+			const char* sizeKey = "WBP_Slot_C_SetSize";
+			const auto ask = [&](const IPluginSelf* who, PluginFieldResult& result)
+			{
+				PluginFieldRequest request = PLUGIN_FIELD_REQUEST_INIT;
+				request.key       = sizeKey;
+				request.className = "WBP_Slot_C_SetSize";
+				request.flags     = PLUGIN_FIELD_LATE;
+				request.size      = 8;
+				request.builtCL   = 127004;
+				return scan->ResolveField(who, &request, &result);
+			};
+			IPluginSelf late{ "LateHost", "1", nullptr, nullptr, nullptr };
+			bool slot = true;
+			PluginFieldResult result{};
+			g_bpLoaded = false;
+			PluginHookReport::ClearHostRules();
+			PluginHookReport::ApplyHostRules({ { "LateHost", "slot" } });
+			PluginHookReport::BeginSession(&late, "LateHost", "LateHost.dll");
+			declare(&late, "slot", "Slot sizing", { sizeKey }, { "Slot.*" }, &slot);
+			Check(!ask(&late, result) && !slot, "host rules: the feature waits for its class");
+			PluginHookReport::EndSession(&late, &refused);
+			Check(!refused && !slot && stateOf("LateHost", "slot") == OffBuild && hostLines("LateHost") == 0,
+				"host rules: a feature that waits for a class is off for the build, not yet for the server");
+
+			g_bpLoaded = true;
+			GameThreadDispatch::Drain();
+			Check(ask(&late, result), "host rules: the class is loaded and the request resolves");
+			slot = true;   // what the plugin does when the call returns
+			Check(slot, "host rules: until the next tick the plugin's flag is its own");
+			GameThreadDispatch::Drain();
+			Check(!slot && stateOf("LateHost", "slot") == OffServer && hostLines("LateHost") == 1,
+				"host rules: one tick later the server's list switches it off again");
+
+			PluginHookReport::ClearHostRules();
+			Check(slot && stateOf("LateHost", "slot") == On && hostLines("LateHost") == 0, "host rules: and a lift brings it back");
+
+			// With no list, a resolve queues nothing for the server's rules.
+			IPluginSelf plain{ "LateNoList", "1", nullptr, nullptr, nullptr };
+			bool plainSlot = true;
+			g_bpLoaded = false;
+			PluginHookReport::BeginSession(&plain, "LateNoList", "LateNoList.dll");
+			declare(&plain, "slot", "Slot sizing", { sizeKey }, { "Slot.*" }, &plainSlot);
+			ask(&plain, result);
+			PluginHookReport::EndSession(&plain, &refused);
+			g_bpLoaded = true;
+			ask(&plain, result);
+			plainSlot = true;
+			GameThreadDispatch::Drain();
+			Check(plainSlot && hostLines("LateNoList") == 0, "host rules: a resolve with no list leaves the flag alone");
+			PluginHookReport::ForgetFeatures(&plain);
+			PluginHookReport::ForgetFeatures(&late);
+			g_bpLoaded = false;
+		}
+
+		// End of the block: nothing of ours is left for the tests after it (the catalog and the list are global).
+		PluginHookReport::ClearHostRules();
+		PluginHookReport::ForgetFeatures(&self);
+		PluginHookReport::ForgetFeatures(&mix);
+		PluginHookReport::ForgetFeatures(&core);
+		Check(PluginHookReport::HostDeny().empty() && !inCatalog("HostPlug", "laser") && !inCatalog("MixHost", "a") && !reportOf("HostPlug"),
+			"host rules: the block leaves no list and no catalog entry behind");
 		VersionMap::SetLiveFieldSource(nullptr);
 	}
 
@@ -2252,6 +2735,552 @@ int main()
 		Check(guard.find(L"[UnknownBuild]") != std::wstring::npos && guard.find(L"Retry=1") != std::wstring::npos
 			&& guard.find(L"1.0.0-CL-130045") != std::wstring::npos && guard.find(L"1.25.0-dev.2") != std::wstring::npos
 			&& guard.find(L"\r\n") != std::wstring::npos, "unknown build: the guard details say how to retry");
+	}
+
+	// Version minimums (host_rules_wire.h): the host's table as text, who is below it, and what the player is told.
+	{
+		using namespace HostRulesWire;
+		const auto parseMin = [](const std::string& text, Minimums& out, std::string& err) { return ParseMinimumsText(text, out, err); };
+		const auto statusOf = [&](const std::string& text, std::string* err = nullptr)
+		{
+			Minimums m;
+			std::string e;
+			const ParseResult r = parseMin(text, m, e);
+			if (err)
+				*err = e;
+			return r.status;
+		};
+		const auto table = [&](const std::string& text)
+		{
+			Minimums m;
+			std::string e;
+			parseMin(text, m, e);
+			return m;
+		};
+		const auto row = [](const char* plugin, const char* version, bool wireRefused = false)
+		{
+			ManifestRow r;
+			r.plugin = plugin;
+			r.version = version;
+			r.wireRefused = wireRefused;
+			return r;
+		};
+		const auto find = [&](const std::string& text, bool reported, const std::string& loaderTag, const std::vector<ManifestRow>& rows)
+		{
+			return FindBelowMinimum(table(text), reported, loaderTag, rows);
+		};
+		const auto reasonFor = [&](const std::string& text, bool reported, const std::string& loaderTag, const std::vector<ManifestRow>& rows)
+		{
+			return BuildBelowMinimumReason(find(text, reported, loaderTag, rows));
+		};
+
+		// Parsing: what is read.
+		{
+			Minimums m;
+			std::string err = "stale";
+			ParseResult r = parseMin("", m, err);
+			Check(r.status == ParseStatus::Ok && m.Empty() && err.empty(), "minimums text: empty text is an empty table");
+			r = parseMin("\xEF\xBB\xBF# note\r\n  ; another\r\n\r\n\t\n", m, err);
+			Check(r.status == ParseStatus::Ok && m.Empty(), "minimums text: BOM, comments, blank lines and CRLF are skipped");
+			r = parseMin("loader=1.27.0\r\nRuptureTimer = v0.11.0 \r\nproductionviewer=wire\n", m, err);
+			Check(r.status == ParseStatus::Ok && m.loader == "1.27.0" && m.mods.size() == 2, "minimums text: loader and two mods");
+			Check(m.mods[0].plugin == "RuptureTimer" && m.mods[0].version == "v0.11.0" && !m.mods[0].wire,
+				"minimums text: a mod row keeps its name and its version as written, trimmed");
+			Check(m.mods[1].plugin == "productionviewer" && m.mods[1].version.empty() && m.mods[1].wire,
+				"minimums text: wire is a row with no number");
+			Check(parseMin("LOADER=1.2\nWire=WIRE\n", m, err).status == ParseStatus::Ok && m.loader == "1.2" && m.mods.size() == 1 && m.mods[0].wire,
+				"minimums text: the loader key and the wire value ignore case");
+			Check(parseMin("loader=\n", m, err).status == ParseStatus::Ok && m.loader.empty() && m.mods.empty(),
+				"minimums text: an empty loader value is off");
+			Check(parseMin("loader=1.27.0-dev.3\nA=0.1\n", m, err).status == ParseStatus::Ok && m.loader == "1.27.0-dev.3" && m.mods[0].version == "0.1",
+				"minimums text: a suffix and a two-part version are readable");
+			Check(parseMin("Some Mod=1.0\n", m, err).status == ParseStatus::Ok && m.mods[0].plugin == "Some Mod",
+				"minimums text: a mod name may hold a space");
+		}
+
+		// Parsing: what is refused, with the line and the text.
+		{
+			std::string err;
+			Minimums keep;
+			keep.loader = "9.9.9";
+			Minimums m = keep;
+			ParseResult r = parseMin("loader=1.2.3\nRuptureTimer=soon\n", m, err);
+			Check(r.status == ParseStatus::BadValue && r.line == 2 && err == "line 2: RuptureTimer needs a version such as 0.11.0, or wire", "minimums text: a version that cannot be read is refused with its line");
+			Check(m.loader == "9.9.9" && m.mods.empty(), "minimums text: out is untouched on an error");
+			r = parseMin("# c\nloader=dev\n", m, err);
+			Check(r.status == ParseStatus::BadValue && r.line == 2 && err == "line 2: loader needs a version such as 1.27.0, or nothing to turn it off", "minimums text: loader=dev is refused");
+			Check(statusOf("loader=wire\n") == ParseStatus::BadValue, "minimums text: wire is not a loader value");
+			Check(statusOf("loader=1\n") == ParseStatus::BadValue, "minimums text: a version with one part is refused");
+			Check(statusOf("loader=1.2abc\n") == ParseStatus::BadValue, "minimums text: trailing letters are refused");
+			Check(statusOf("A=\n") == ParseStatus::BadValue, "minimums text: a mod row with no value is refused");
+			Check(statusOf("A=1.2.3.4.5\n") == ParseStatus::BadValue, "minimums text: five parts are refused");
+			Check(statusOf("A=" + std::string(65, '1') + ".0\n") == ParseStatus::BadValue, "minimums text: a version over the tag limit is refused");
+			Check(statusOf("loader=1.0\nloader=1.1\n", &err) == ParseStatus::Duplicate && err == "line 2: loader is given twice", "minimums text: loader twice");
+			Check(statusOf("loader=\nloader=\n") == ParseStatus::Duplicate, "minimums text: empty loader twice is still a repeat");
+			Check(statusOf("A=1.0\na=2.0\n", &err) == ParseStatus::Duplicate && err == "line 2: a is given twice", "minimums text: a mod twice, ignoring case");
+			Check(statusOf("A=1.0\nB=wire\nb=wire\n") == ParseStatus::Duplicate, "minimums text: wire twice");
+			Check(statusOf("loader 1.0\n", &err) == ParseStatus::BadLine && err == "line 1: expected key=value", "minimums text: a line with no '='");
+			Check(statusOf("=1.0\n") == ParseStatus::BadKey, "minimums text: no key");
+			Check(statusOf("$Hidden=1.0\n") == ParseStatus::BadKey, "minimums text: a mod name starting with '$' is refused");
+			Check(statusOf(std::string(129, 'A') + "=1.0\n") == ParseStatus::BadKey, "minimums text: a mod name over the limit is refused");
+			Check(statusOf(std::string(128, 'A') + "=1.0\n") == ParseStatus::Ok, "minimums text: a mod name at the limit is read");
+			Check(statusOf("A=1.0\x01\n", &err) == ParseStatus::ControlChar && err == "line 1: control character", "minimums text: a control character");
+			Check(statusOf("A\tB=1.0\n") == ParseStatus::ControlChar, "minimums text: a tab inside a key is refused like in the rules text");
+			Check(statusOf("A=1.\t0\n") == ParseStatus::ControlChar, "minimums text: a tab inside a value is refused");
+			{
+				Minimums tm;
+				std::string te;
+				Check(parseMin("A\t=\t1.0\n", tm, te).status == ParseStatus::Ok && tm.mods.size() == 1 && tm.mods[0].plugin == "A" && tm.mods[0].version == "1.0",
+					"minimums text: tabs around a mod key and value are blanks");
+				Minimums lm;
+				Check(parseMin("loader\t=\t1.27.0\t\n", lm, te).status == ParseStatus::Ok && lm.loader == "1.27.0",
+					"minimums text: tabs around loader= are blanks");
+			}
+			Check(statusOf(std::string(kMaxPayloadBytes + 1, ' '), &err) == ParseStatus::TooLarge && err.find("line") == std::string::npos, "minimums text: text over the payload limit");
+			Check(statusOf(std::string(kMaxPayloadBytes, '\n')) == ParseStatus::Ok, "minimums text: text at the limit is read");
+
+			std::string many;
+			for (size_t i = 0; i < kMaxModMinimums; ++i)
+				many += "Mod" + std::to_string(i) + "=1.0\n";
+			Minimums big;
+			Check(parseMin(many, big, err).status == ParseStatus::Ok && big.mods.size() == kMaxModMinimums, "minimums text: the most rows are read");
+			Check(statusOf(many + "Extra=1.0\n", &err) == ParseStatus::TooManyRows && err.find("line " + std::to_string(kMaxModMinimums + 1) + ":") == 0, "minimums text: one row too many");
+		}
+
+		// FindBelowMinimum: the version rules.
+		{
+			const std::vector<ManifestRow> none;
+			Check(find("RuptureTimer=0.11.0\n", true, "1.27.0", { row("RuptureTimer", "0.11.0") }).empty(), "below minimum: equal is fine");
+			Check(find("RuptureTimer=0.11.0\n", true, "1.27.0", { row("RuptureTimer", "0.12.0") }).empty(), "below minimum: higher is fine");
+			Check(find("RuptureTimer=0.11.0\n", true, "1.27.0", { row("RuptureTimer", "0.10.9") }).size() == 1, "below minimum: lower is below");
+			Check(find("RuptureTimer=0.11.0\n", true, "1.27.0", { row("RuptureTimer", "0.9.2") }).size() == 1, "below minimum: numbers, not text (9 under 11)");
+			Check(find("RuptureTimer=0.11.0\n", true, "1.27.0", { row("RuptureTimer", "0.11.0-dev.6") }).empty(), "below minimum: a suffix is ignored (0.11.0-dev.6 is 0.11.0)");
+			Check(find("RuptureTimer=0.11.0-dev.1\n", true, "1.27.0", { row("RuptureTimer", "0.11.0") }).empty(), "below minimum: a suffix on the minimum is ignored too");
+			Check(find("RuptureTimer=0.11.0\n", true, "1.27.0", { row("RuptureTimer", "0.10.0-dev.6") }).size() == 1, "below minimum: a lower release with a suffix is below");
+			Check(find("RuptureTimer=v0.11.0\n", true, "1.27.0", { row("RuptureTimer", "0.11.0") }).empty(), "below minimum: a v prefix on the minimum");
+			Check(find("RuptureTimer=0.11.0\n", true, "1.27.0", { row("RuptureTimer", "v0.10.0") }).size() == 1, "below minimum: a v prefix on the client's version");
+			Check(find("RuptureTimer=0.11.0\n", true, "1.27.0", { row("rupturetimer", "0.10.0") }).size() == 1, "below minimum: the mod name ignores case");
+			Check(find("RuptureTimer=0.11.0\n", true, "1.27.0", { row("RuptureTimer", "dev") }).empty(), "below minimum: a mod version of dev is never below");
+			Check(find("RuptureTimer=0.11.0\n", true, "1.27.0", { row("RuptureTimer", "") }).empty(), "below minimum: an empty mod version is never below");
+			Check(find("RuptureTimer=0.11.0\n", true, "1.27.0", { row("RuptureTimer", "1") }).empty(), "below minimum: a one-part mod version is unreadable, never below");
+			Check(find("RuptureTimer=0.11.0\n", true, "1.27.0", { row("Other", "0.1.0") }).empty(), "below minimum: a mod with no row is never below");
+			Check(find("RuptureTimer=0.11.0\nOther=9.0\n", true, "1.27.0", { row("Other2", "0.1.0") }).empty(), "below minimum: a mod the player lacks is never below");
+			Check(find("RuptureTimer=0.11.0\n", true, "1.27.0", none).empty(), "below minimum: an empty manifest");
+			Check(find("", true, "0.1.0", { row("RuptureTimer", "0.0.1") }).empty(), "below minimum: an empty table is never below");
+			Check(find("", false, "", { row("RuptureTimer", "0.0.1") }).empty(), "below minimum: an empty table is never below, loader silent");
+
+			// The loader.
+			Check(find("loader=1.27.0\n", true, "1.27.0", none).empty(), "below minimum: loader equal");
+			Check(find("loader=1.27.0\n", true, "v1.28.0", none).empty(), "below minimum: loader higher");
+			Check(find("loader=1.27.0\n", true, "1.27.0-dev.3", none).empty(), "below minimum: a labeled dev loader counts as its release (1.27.0-dev.3)");
+			Check(find("loader=1.27.0\n", true, "1.26.1-dev.7", none).size() == 1, "below minimum: a labeled dev loader of an older release is below");
+			Check(find("loader=1.27.0\n", true, "dev", none).empty(), "below minimum: a loader tagged dev is never below");
+			Check(find("loader=1.27.0\n", true, "", none).empty(), "below minimum: a reported empty loader tag is never below");
+			Check(find("loader=1.27.0\n", true, "garbage", none).empty(), "below minimum: an unreadable loader tag is never below");
+			Check(find("loader=\n", false, "", none).empty(), "below minimum: no loader minimum, a silent loader is fine");
+			Check(find("RuptureTimer=1.0\n", false, "", none).empty(), "below minimum: mod rows only, a silent loader is fine");
+			{
+				const auto v = find("loader=1.27.0\n", false, "", none);
+				Check(v.size() == 1 && v[0].isLoader && v[0].have.empty() && v[0].need == "1.27.0" && v[0].name == "ModLoader",
+					"below minimum: a loader that reported no version is below any minimum, with nothing to show");
+				const auto w = find("loader=1.27.0\n", true, "1.25.0", none);
+				Check(w.size() == 1 && w[0].isLoader && w[0].have == "1.25.0" && w[0].need == "1.27.0",
+					"below minimum: a lower loader carries both numbers");
+			}
+
+			// wire.
+			Check(find("ProductionViewer=wire\n", true, "1.27.0", { row("ProductionViewer", "0.18.4", true) }).size() == 1, "below minimum: wire and refused is below");
+			Check(find("ProductionViewer=wire\n", true, "1.27.0", { row("ProductionViewer", "0.18.4", false) }).empty(), "below minimum: wire and accepted is fine");
+			Check(find("ProductionViewer=0.1.0\n", true, "1.27.0", { row("ProductionViewer", "0.18.4", true) }).empty(), "below minimum: a refused wire does not matter without a wire row");
+			Check(find("ProductionViewer=wire\n", true, "1.27.0", { row("ProductionViewer", "dev", true) }).size() == 1, "below minimum: wire refused with an unreadable version is still below");
+			{
+				const auto v = find("ProductionViewer=wire\n", true, "1.27.0", { row("ProductionViewer", "0.18.4", true) });
+				Check(v.size() == 1 && !v[0].isLoader && v[0].need.empty() && v[0].have == "0.18.4" && v[0].name == "ProductionViewer", "below minimum: a wire violation has no number to ask for");
+			}
+
+			// Order: loader first, then the manifest's order, not the table's.
+			const auto v = find("loader=1.27.0\nZeta=2.0\nAlpha=2.0\nMid=2.0\n", true, "1.0.0",
+				{ row("Mid", "1.0"), row("Alpha", "1.0"), row("Fine", "9.9"), row("Zeta", "1.0") });
+			Check(v.size() == 4 && v[0].isLoader && v[1].name == "Mid" && v[2].name == "Alpha" && v[3].name == "Zeta",
+				"below minimum: loader first, then mods in manifest order");
+			Check(v.size() == 4 && v[1].name == "Mid" && v[1].need == "2.0" && v[1].have == "1.0", "below minimum: a mod violation carries the host's number and the player's");
+			Check(find("loader=9.0\nA=9.0\n", true, "1.0.0", { row("A", "1.0"), row("A", "1.0") }).size() == 3, "below minimum: each manifest row is judged");
+		}
+
+		// The player's text: every wording.
+		{
+			const std::vector<ManifestRow> none;
+			const auto loaderOld = reasonFor("loader=1.27.0\n", true, "1.25.0", none);
+			Check(loaderOld == "This server needs ModLoader 1.27.0 or newer (you have 1.25.0). Update it, or remove the ModLoader to join without mods.",
+				"below minimum text: the loader line");
+			const auto loaderSilent = reasonFor("loader=1.27.0\n", false, "", none);
+			Check(loaderSilent == "This server needs ModLoader 1.27.0 or newer. Update it, or remove the ModLoader to join without mods.",
+				"below minimum text: a loader that reported no version has no (you have ...)");
+			const auto one = reasonFor("RuptureTimer=0.11.0\n", true, "1.27.0", { row("RuptureTimer", "0.9.2") });
+			Check(one == "This server needs RuptureTimer 0.11.0 or newer (you have 0.9.2). Update RuptureTimer, or remove it, and join again.",
+				"below minimum text: one mod");
+			const auto two = reasonFor("RuptureTimer=0.11.0\nProductionViewer=0.19.0\n", true, "1.27.0",
+				{ row("RuptureTimer", "0.9.2"), row("ProductionViewer", "0.18.4") });
+			Check(two == "This server needs RuptureTimer 0.11.0 or newer (you have 0.9.2) and ProductionViewer 0.19.0 or newer (you have 0.18.4). Update them and join again.",
+				"below minimum text: two mods");
+			const auto three = reasonFor("A=2.0\nB=2.0\nC=2.0\n", true, "1.27.0", { row("A", "1.0"), row("B", "1.0"), row("C", "1.0") });
+			Check(three == "This server needs A 2.0 or newer (you have 1.0) and B 2.0 or newer (you have 1.0) and 1 more. Update them and join again.",
+				"below minimum text: three mods name the first two and count the rest");
+			const auto five = reasonFor("A=2.0\nB=2.0\nC=2.0\nD=2.0\nE=2.0\n", true, "1.27.0",
+				{ row("A", "1.0"), row("B", "1.0"), row("C", "1.0"), row("D", "1.0"), row("E", "1.0") });
+			Check(five.find(" and 3 more. Update them and join again.") != std::string::npos && five.find("C 2.0") == std::string::npos,
+				"below minimum text: five mods say 3 more");
+			const auto wire = reasonFor("ProductionViewer=wire\n", true, "1.27.0", { row("ProductionViewer", "0.18.4", true) });
+			Check(wire == "This server needs ProductionViewer to match the server's version (you have 0.18.4). Update ProductionViewer, or remove it, and join again.",
+				"below minimum text: a wire row");
+			const auto wireNoVersion = reasonFor("ProductionViewer=wire\n", true, "1.27.0", { row("ProductionViewer", "", true) });
+			Check(wireNoVersion == "This server needs ProductionViewer to match the server's version. Update ProductionViewer, or remove it, and join again.",
+				"below minimum text: a wire row with no version shown");
+			const auto mixed = reasonFor("loader=1.27.0\nRuptureTimer=0.11.0\n", true, "1.25.0", { row("RuptureTimer", "0.9.2") });
+			Check(mixed == "This server needs ModLoader 1.27.0 or newer (you have 1.25.0) and RuptureTimer 0.11.0 or newer (you have 0.9.2). Update them and join again.",
+				"below minimum text: the loader and a mod together");
+			const auto wireAndNumber = reasonFor("A=wire\nB=2.0\n", true, "1.27.0", { row("A", "1.0", true), row("B", "1.0") });
+			Check(wireAndNumber == "This server needs A to match the server's version (you have 1.0) and B 2.0 or newer (you have 1.0). Update them and join again.",
+				"below minimum text: a wire row beside a number row");
+			Check(reasonFor("RuptureTimer=0.11.0\n", true, "1.27.0", { row("RuptureTimer", "0.12.0") }).empty(), "below minimum text: nothing below, no text");
+			Check(BuildBelowMinimumReason({}).empty(), "below minimum text: no violations, no text");
+			Check(reasonFor("RuptureTimer=v0.11.0\n", true, "1.27.0", { row("RuptureTimer", "0.9.2") }).find("RuptureTimer v0.11.0 or newer") != std::string::npos,
+				"below minimum text: the host's number is shown as written");
+
+			Check(loaderOld.size() <= 150 && one.size() <= 150 && wire.size() <= 150, "below minimum text: loader, one mod and wire are within 150 characters");
+			Check(two.size() <= 160, "below minimum text: two mods stay near 150 characters");
+
+			// Plain: ASCII only, one line, no mention of the version object map.
+			bool plain = true;
+			for (const std::string* t : { &loaderOld, &loaderSilent, &one, &two, &three, &five, &wire, &wireNoVersion, &mixed, &wireAndNumber })
+			{
+				for (char c : *t)
+					if (static_cast<unsigned char>(c) < 0x20 || static_cast<unsigned char>(c) > 0x7E)
+						plain = false;
+				if (t->find("map") != std::string::npos || t->find("Map") != std::string::npos)
+					plain = false;
+			}
+			Check(plain, "below minimum text: plain ASCII on one line, no word map");
+
+			// The cap: long mod names are cut at the end; the text never passes the cap.
+			const std::string longA(128, 'A');
+			const std::string longB(128, 'B');
+			const std::string table2 = longA + "=2.0\n" + longB + "=2.0\n";
+			const std::vector<ManifestRow> longRows = { row(longA.c_str(), "1.0"), row(longB.c_str(), "1.0") };
+			const auto cut = reasonFor(table2, true, "1.27.0", longRows);
+			Check(cut.size() <= kMaxBelowMinimumReason && cut.size() > 100, "below minimum text: two long names fit under the cap");
+			Check(cut.find("A 2.0 or newer (you have 1.0) and B") != std::string::npos && cut.find(" 2.0 or newer (you have 1.0). Update them and join again.") != std::string::npos,
+				"below minimum text: names are cut at the end, the numbers and the ask stay");
+			const auto cutOne = reasonFor(longA + "=2.0\n", true, "1.27.0", { row(longA.c_str(), "1.0") });
+			Check(cutOne.size() <= kMaxBelowMinimumReason && cutOne.find("Update A") != std::string::npos && cutOne.find("or remove it, and join again.") != std::string::npos,
+				"below minimum text: one long name is cut too and the ask stays");
+			Check(reasonFor("A=2.0\n", true, "1.27.0", { row("A", "1.0") }).size() < 150, "below minimum text: a short name is not cut");
+			const auto manyLong = reasonFor(longA + "=2.0\n" + longB + "=2.0\n" + "loader=1.27.0\n", true, "1.0.0", longRows);
+			Check(manyLong.size() <= kMaxBelowMinimumReason, "below minimum text: the loader and two long names stay under the cap");
+
+			// Even maximal numbers cannot pass the hard cap.
+			const std::string bigVer = "1." + std::string(60, '9');
+			const auto huge = reasonFor(longA + "=" + bigVer + "\n" + longB + "=" + bigVer + "\n", true, "1.27.0",
+				{ row(longA.c_str(), "1.0"), row(longB.c_str(), "1.0") });
+			Check(huge.size() <= kMaxBelowMinimumReason, "below minimum text: the hard cap holds against maximal numbers");
+
+			// Long version tags are cut, so the closing instruction is never the part that goes.
+			const std::string longTag(60, '7');
+			const auto longTags = BuildBelowMinimumReason({
+				Violation{ false, longA, longTag, longTag },
+				Violation{ false, longB, longTag, longTag } });
+			const std::string closing = "Update them and join again.";
+			Check(longTags.size() <= kMaxBelowMinimumReason && longTags.size() >= closing.size() &&
+				longTags.compare(longTags.size() - closing.size(), closing.size(), closing) == 0,
+				"below minimum text: two long-tag violations end with the instruction, within the cap");
+			Check(longTags.find(std::string(25, '7')) == std::string::npos && longTags.find(std::string(24, '7')) != std::string::npos,
+				"below minimum text: a version tag is shown at most 24 characters");
+
+			// A name with control characters or non-ASCII bytes is made plain.
+			const auto odd = BuildBelowMinimumReason({ Violation{ false, std::string("Bad\x01Na\xC3\xA9me"), "2.0", "1.0" } });
+			bool oddPlain = !odd.empty();
+			for (char c : odd)
+				if (static_cast<unsigned char>(c) < 0x20 || static_cast<unsigned char>(c) > 0x7E)
+					oddPlain = false;
+			Check(oddPlain && odd.find("Bad?Na??me") != std::string::npos, "below minimum text: control and non-ASCII bytes in a name become '?'");
+		}
+	}
+
+	// Client features text (host_rules_wire.h): what GetClientFeatures hands a server plugin.
+	{
+		using namespace HostRulesWire;
+		const std::string none = BuildClientFeaturesText("v1.26.1", 79, {});
+		Check(none == "loader=v1.26.1 interface=79", "client features text: no features is the loader line alone");
+
+		FeatRecord a; a.plugin = "Codex"; a.id = "pins"; a.on = true;
+		FeatRecord b; b.plugin = "MiniMap"; b.id = "zoom"; b.on = false;
+		Check(BuildClientFeaturesText("v1.26.1", 79, { a }) == "loader=v1.26.1 interface=79\nCodex.pins=on",
+			"client features text: one feature is one line after the loader line");
+		const std::string two = BuildClientFeaturesText("v1.26.1", 79, { a, b });
+		Check(two == "loader=v1.26.1 interface=79\nCodex.pins=on\nMiniMap.zoom=off", "client features text: lines keep the reported order and on/off");
+
+		Check(CopyTextCut(two, nullptr, 0) == static_cast<int>(two.size()), "client features copy: a null buffer measures the full length");
+		char big[128];
+		std::memset(big, 'x', sizeof(big));
+		Check(CopyTextCut(two, big, sizeof(big)) == static_cast<int>(two.size()) && two == big, "client features copy: a large buffer gets the whole text and a NUL");
+		char small[10];
+		std::memset(small, 'x', sizeof(small));
+		Check(CopyTextCut(two, small, sizeof(small)) == static_cast<int>(two.size()) && std::strcmp(small, "loader=v1") == 0,
+			"client features copy: a small buffer is cut and NUL-terminated, the length stays the full one");
+		char one[1] = { 'x' };
+		Check(CopyTextCut(two, one, 1) == static_cast<int>(two.size()) && one[0] == '\0', "client features copy: a one-byte buffer holds the NUL only");
+	}
+
+	// Admin prompt codec (host_rules_wire.h): $ML:adminq (server to client) and $ML:adminr (client to server).
+	// These checks are in the Client-only test file; the Server exe builds server_map_tests.cpp and keeps its 179.
+	{
+		using namespace HostRulesWire;
+		const std::string US(1, kFieldSep);
+		const std::string RS(1, kRecordSep);
+		auto dq = [](const std::string& p, AdminQuestion* q) { return DecodeAdminQuestion(p.data(), p.size(), q); };
+		auto da = [](const std::string& p, AdminAnswer* a) { return DecodeAdminAnswer(p.data(), p.size(), a); };
+
+		Check(std::string(kTagAdminQ) == "adminq" && std::string(kTagAdminR) == "adminr", "admin tags: adminq and adminr");
+
+		// $ML:adminq: exact bytes and a round trip for each kind.
+		Check(EncodeAdminQuestion(AdminQKind::Ask, "") == "ask" + US + RS, "adminq encode: ask with no text is 'ask' US RS");
+		Check(EncodeAdminQuestion(AdminQKind::Info, "Wrong code, 4 tries left") == "info" + US + "Wrong code, 4 tries left" + RS,
+			"adminq encode: info carries its text");
+		Check(EncodeAdminQuestion(AdminQKind::Close, "Welcome, admin") == "close" + US + "Welcome, admin" + RS, "adminq encode: close carries its text");
+		{
+			const AdminQKind kinds[] = { AdminQKind::Ask, AdminQKind::Info, AdminQKind::Close };
+			for (AdminQKind k : kinds)
+			{
+				AdminQuestion q;
+				q.kind = (k == AdminQKind::Ask) ? AdminQKind::Close : AdminQKind::Ask; // not the kind under test
+				q.text = "stale";
+				const std::string txt = (k == AdminQKind::Ask) ? "" : "Line for the player";
+				const std::string wire = EncodeAdminQuestion(k, txt);
+				Check(dq(wire, &q) == Status::Ok && q.kind == k && q.text == txt, "adminq round trip: kind and text survive");
+			}
+		}
+		{
+			// A multi-byte text round trips as it is.
+			AdminQuestion q;
+			const std::string utf = "Caf\xC3\xA9 code?";
+			Check(dq(EncodeAdminQuestion(AdminQKind::Ask, utf), &q) == Status::Ok && q.text == utf, "adminq round trip: UTF-8 text is kept");
+		}
+
+		// adminq text cap at the boundary: 200 travels whole, 201 is cut by the encoder and refused by the decoder.
+		{
+			const std::string t200(200, 'a');
+			const std::string t201(201, 'a');
+			AdminQuestion q;
+			Check(dq(EncodeAdminQuestion(AdminQKind::Info, t200), &q) == Status::Ok && q.text == t200, "adminq cap: 200 bytes round trip whole");
+			Check(dq(EncodeAdminQuestion(AdminQKind::Info, t201), &q) == Status::Ok && q.text == t200, "adminq cap: the encoder cuts 201 bytes to 200");
+			Check(dq("info" + US + t200 + RS, &q) == Status::Ok, "adminq decode: 200 bytes of text are accepted");
+			Check(dq("info" + US + t201 + RS, &q) == Status::FieldTooLong, "adminq decode: 201 bytes of text are too long");
+			Check(dq("close" + US + t200 + RS, &q) == Status::Ok && q.kind == AdminQKind::Close, "adminq decode: the longest kind with 200 bytes is accepted");
+			Check(dq("close" + US + t201 + RS, &q) == Status::TooLarge, "adminq decode: the longest kind with 201 bytes is over the payload maximum");
+			// A cut never splits a UTF-8 character: 199 ASCII bytes then a 2-byte character is cut back to 199.
+			const std::string split = std::string(199, 'b') + "\xC3\xA9";
+			Check(dq(EncodeAdminQuestion(AdminQKind::Ask, split), &q) == Status::Ok && q.text == std::string(199, 'b'),
+				"adminq cap: a cut does not split a UTF-8 character");
+		}
+
+		// adminq decode: every non-Ok status, and *out is left as it was.
+		{
+			AdminQuestion keep;
+			keep.kind = AdminQKind::Info;
+			keep.text = "keep";
+			Check(DecodeAdminQuestion(nullptr, 5, &keep) == Status::Empty, "adminq decode: a null pointer is empty");
+			Check(DecodeAdminQuestion("x", 0, &keep) == Status::Empty, "adminq decode: zero bytes are empty");
+			Check(dq(std::string(300, 'a'), &keep) == Status::TooLarge, "adminq decode: a payload over the kind-plus-text maximum is too large");
+			Check(dq("ask" + US, &keep) == Status::Truncated, "adminq decode: no record separator is truncated");
+			Check(dq("ask" + US + "hello", &keep) == Status::Truncated, "adminq decode: cut text is truncated");
+			Check(dq("ask", &keep) == Status::Truncated, "adminq decode: a bare kind with no separators is truncated");
+			Check(dq("ask" + RS, &keep) == Status::BadRecord, "adminq decode: one field is a bad record");
+			Check(dq("ask" + US + "a" + US + "b" + RS, &keep) == Status::BadRecord, "adminq decode: three fields are a bad record");
+			Check(dq("ask" + US + RS + "ask" + US + RS, &keep) == Status::BadRecord, "adminq decode: two records are a bad record");
+			Check(dq("nope" + US + "x" + RS, &keep) == Status::BadRecord, "adminq decode: an unknown kind is a bad record");
+			Check(dq("ASK" + US + RS, &keep) == Status::BadRecord, "adminq decode: kinds are lower case only");
+			Check(dq("code" + US + "x" + RS, &keep) == Status::BadRecord, "adminq decode: an adminr kind is not an adminq kind");
+			Check(dq(US + "x" + RS, &keep) == Status::BadRecord, "adminq decode: an empty kind is a bad record");
+			Check(dq("info" + US + "a\x01" "b" + RS, &keep) == Status::ControlChar, "adminq decode: a control character in the text is refused");
+			Check(dq("info" + US + "a\x7F" "b" + RS, &keep) == Status::ControlChar, "adminq decode: DEL in the text is refused");
+			Check(dq("info" + US + "a\nb" + RS, &keep) == Status::ControlChar, "adminq decode: a newline in the text is refused");
+			Check(dq("in\x02" "fo" + US + "x" + RS, &keep) == Status::ControlChar, "adminq decode: a control character in the kind is refused");
+			Check(keep.kind == AdminQKind::Info && keep.text == "keep", "adminq decode: *out is untouched after every error");
+
+			// A control character in the encoder's input is made a space, not sent.
+			AdminQuestion q;
+			Check(dq(EncodeAdminQuestion(AdminQKind::Info, "a\x01\x1F" "b\r\nc"), &q) == Status::Ok && q.text == "a  b  c",
+				"adminq encode: control characters (separators too) become spaces");
+			Check(dq(EncodeAdminQuestion(AdminQKind::Info, "  padded  "), &q) == Status::Ok && q.text == "padded", "adminq encode: the text is trimmed");
+			// Only the given length is read: the bytes after it are never touched.
+			const std::string two = "ask" + US + RS + "junk";
+			Check(DecodeAdminQuestion(two.data(), 3 + 1 + 1, &q) == Status::Ok && q.kind == AdminQKind::Ask,
+				"adminq decode: only the given length is read");
+		}
+
+		// $ML:adminr: exact bytes and a round trip for each kind.
+		Check(EncodeAdminAnswer(AdminRKind::Code, "S3cret") == "code" + US + "S3cret" + RS, "adminr encode: code carries the code");
+		Check(EncodeAdminAnswer(AdminRKind::NotMe, "ignored") == "notme" + US + RS, "adminr encode: notme carries no code, whatever was passed");
+		Check(EncodeAdminAnswer(AdminRKind::Code, "").empty(), "adminr encode: an empty code gives no payload");
+		Check(EncodeAdminAnswer(AdminRKind::Code, " \x01 \t ").empty(), "adminr encode: a code of only controls and spaces gives no payload");
+		{
+			AdminAnswer a;
+			a.kind = AdminRKind::NotMe;
+			Check(da(EncodeAdminAnswer(AdminRKind::Code, "hunter2 with spaces"), &a) == Status::Ok && a.kind == AdminRKind::Code &&
+				a.code == "hunter2 with spaces", "adminr round trip: a code keeps its inner spaces");
+			a.kind = AdminRKind::Code;
+			a.code = "stale";
+			Check(da(EncodeAdminAnswer(AdminRKind::NotMe, ""), &a) == Status::Ok && a.kind == AdminRKind::NotMe && a.code.empty(),
+				"adminr round trip: notme comes back with no code");
+			Check(da(EncodeAdminAnswer(AdminRKind::Code, "a\x01\x1F" "b"), &a) == Status::Ok && a.code == "a  b",
+				"adminr encode: control characters (separators too) in a code become spaces");
+		}
+
+		// adminr code cap at the boundary: 64 travels whole, 65 is cut by the encoder and refused by the decoder.
+		{
+			const std::string c64(64, 'k');
+			const std::string c65(65, 'k');
+			AdminAnswer a;
+			Check(da(EncodeAdminAnswer(AdminRKind::Code, c64), &a) == Status::Ok && a.code == c64, "adminr cap: 64 bytes round trip whole");
+			Check(da(EncodeAdminAnswer(AdminRKind::Code, c65), &a) == Status::Ok && a.code == c64, "adminr cap: the encoder cuts 65 bytes to 64");
+			Check(da("code" + US + c64 + RS, &a) == Status::Ok, "adminr decode: 64 bytes of code are accepted");
+			Check(da("code" + US + c65 + RS, &a) == Status::FieldTooLong, "adminr decode: 65 bytes of code are too long");
+			Check(da("code" + US + std::string(200, 'k') + RS, &a) == Status::TooLarge, "adminr decode: a payload over the maximum is too large");
+		}
+
+		// adminr decode: every non-Ok status, and *out is left as it was.
+		{
+			AdminAnswer keep;
+			keep.kind = AdminRKind::Code;
+			keep.code = "keep";
+			Check(DecodeAdminAnswer(nullptr, 5, &keep) == Status::Empty, "adminr decode: a null pointer is empty");
+			Check(DecodeAdminAnswer("x", 0, &keep) == Status::Empty, "adminr decode: zero bytes are empty");
+			Check(da("code" + US + "abc", &keep) == Status::Truncated, "adminr decode: no record separator is truncated");
+			Check(da("notme" + US, &keep) == Status::Truncated, "adminr decode: notme with no record separator is truncated");
+			Check(da("code" + RS, &keep) == Status::BadRecord, "adminr decode: one field is a bad record");
+			Check(da("code" + US + "a" + US + "b" + RS, &keep) == Status::BadRecord, "adminr decode: three fields are a bad record");
+			Check(da("code" + US + "a" + RS + "code" + US + "b" + RS, &keep) == Status::BadRecord, "adminr decode: two records are a bad record");
+			Check(da("code" + US + RS, &keep) == Status::BadRecord, "adminr decode: a code answer with no code is a bad record");
+			Check(da("notme" + US + "x" + RS, &keep) == Status::BadRecord, "adminr decode: a notme answer with a code is a bad record");
+			Check(da("ask" + US + RS, &keep) == Status::BadRecord, "adminr decode: an adminq kind is not an adminr kind");
+			Check(da("other" + US + "x" + RS, &keep) == Status::BadRecord, "adminr decode: an unknown kind is a bad record");
+			Check(da("code" + US + "a\x01" "b" + RS, &keep) == Status::ControlChar, "adminr decode: a control character in the code is refused");
+			Check(da("code" + US + "a\x7F" "b" + RS, &keep) == Status::ControlChar, "adminr decode: DEL in the code is refused");
+			Check(da("notme" + US + "\t" + RS, &keep) == Status::ControlChar, "adminr decode: a control character in a notme text is refused");
+			Check(keep.kind == AdminRKind::Code && keep.code == "keep", "adminr decode: *out is untouched after every error");
+			const std::string more = "notme" + US + RS + "junk";
+			AdminAnswer a;
+			Check(DecodeAdminAnswer(more.data(), 5 + 1 + 1, &a) == Status::Ok && a.kind == AdminRKind::NotMe,
+				"adminr decode: only the given length is read");
+		}
+
+		// The answer decision: who may answer, and the 500 ms gap.
+		{
+			Check(kAdminAnswerMinGapMs == 500, "admin answer: the gap is 500 ms");
+			Check(DecideAdminAnswer(false, 10000, false, 0) == AdminAnswerDecision::NotAsked, "admin answer: never asked is not asked");
+			Check(DecideAdminAnswer(false, 10000, true, 9999) == AdminAnswerDecision::NotAsked, "admin answer: not asked wins over the rate limit");
+			Check(DecideAdminAnswer(true, 10000, false, 0) == AdminAnswerDecision::Accept, "admin answer: asked, no earlier answer, is accepted");
+			Check(DecideAdminAnswer(true, 0, false, 0) == AdminAnswerDecision::Accept, "admin answer: a first answer at time 0 is accepted");
+			Check(DecideAdminAnswer(true, 10000, true, 10000) == AdminAnswerDecision::RateLimited, "admin answer: the same millisecond is limited");
+			Check(DecideAdminAnswer(true, 10499, true, 10000) == AdminAnswerDecision::RateLimited, "admin answer: 499 ms after the last is limited");
+			Check(DecideAdminAnswer(true, 10500, true, 10000) == AdminAnswerDecision::Accept, "admin answer: 500 ms after the last is accepted");
+			Check(DecideAdminAnswer(true, 10501, true, 10000) == AdminAnswerDecision::Accept, "admin answer: 501 ms after the last is accepted");
+			Check(DecideAdminAnswer(true, 9000, true, 10000) == AdminAnswerDecision::RateLimited, "admin answer: a clock before the last answer is limited");
+			Check(DecideAdminAnswer(true, 10000, true, 0) == AdminAnswerDecision::Accept, "admin answer: a last answer at time 0 is a real time");
+			Check(DecideAdminAnswer(true, 100, true, 0) == AdminAnswerDecision::RateLimited, "admin answer: a last answer at time 0 still limits the next 500 ms");
+			Check(DecideAdminAnswer(true, 10100, true, 10000, 100) == AdminAnswerDecision::Accept &&
+				DecideAdminAnswer(true, 10099, true, 10000, 100) == AdminAnswerDecision::RateLimited, "admin answer: the gap is a parameter");
+		}
+	}
+
+	// Admin prompt client state (admin_prompt.h): the pure steps behind the player's window.
+	{
+		using AdminPrompt::State;
+		using AdminPrompt::SubmitResult;
+		using HostRulesWire::AdminQKind;
+		std::string out;
+
+		State s;
+		Check(!s.open && !s.final && s.status.empty(), "admin prompt: starts closed and empty");
+		Check(AdminPrompt::CheckSubmit(s, "ABC", 1000, &out) == SubmitResult::NotOpen, "admin prompt: a code is refused while closed");
+		Check(!AdminPrompt::NotMeSendsAnswer(s, 1000), "admin prompt: not me sends nothing while closed");
+
+		// A line for a prompt that is not showing is dropped.
+		AdminPrompt::ApplyQuestion(s, AdminQKind::Info, "late", 0);
+		AdminPrompt::ApplyQuestion(s, AdminQKind::Close, "late", 0);
+		Check(!s.open && !s.final && s.status.empty(), "admin prompt: info and close with no prompt open change nothing");
+
+		// ask opens; info keeps it open and sets the line; close marks it final.
+		AdminPrompt::ApplyQuestion(s, AdminQKind::Ask, "", 0);
+		Check(s.open && !s.final && s.status.empty(), "admin prompt: ask opens it");
+		AdminPrompt::ApplyQuestion(s, AdminQKind::Info, "Wrong code", 0);
+		Check(s.open && !s.final && s.status == "Wrong code", "admin prompt: info sets the line and keeps it open");
+		AdminPrompt::ApplyQuestion(s, AdminQKind::Info, "Wrong code, 2 tries left", 0);
+		Check(s.open && s.status == "Wrong code, 2 tries left", "admin prompt: a second info replaces the line");
+
+		// Submit: trimming, caps, control characters, the 500 ms gap.
+		Check(AdminPrompt::CheckSubmit(s, "  AB12  ", 1000, &out) == SubmitResult::Ok && out == "AB12", "admin prompt: a code is trimmed and accepted");
+		Check(AdminPrompt::CheckSubmit(s, nullptr, 1000, &out) == SubmitResult::Empty, "admin prompt: a null code is empty");
+		Check(AdminPrompt::CheckSubmit(s, "", 1000, &out) == SubmitResult::Empty, "admin prompt: no code is empty");
+		Check(AdminPrompt::CheckSubmit(s, "    ", 1000, &out) == SubmitResult::Empty, "admin prompt: only spaces is empty");
+		Check(AdminPrompt::CheckSubmit(s, std::string(64, 'K').c_str(), 1000, &out) == SubmitResult::Ok && out.size() == 64, "admin prompt: 64 bytes are accepted");
+		Check(AdminPrompt::CheckSubmit(s, std::string(65, 'K').c_str(), 1000, &out) == SubmitResult::TooLong, "admin prompt: 65 bytes are too long");
+		Check(AdminPrompt::CheckSubmit(s, "AB\x01" "CD", 1000, &out) == SubmitResult::ControlChar, "admin prompt: a control character is refused");
+		Check(AdminPrompt::CheckSubmit(s, "AB\tCD", 1000, &out) == SubmitResult::ControlChar, "admin prompt: a tab inside the code is refused");
+		Check(AdminPrompt::CheckSubmit(s, "AB\x7F" "CD", 1000, &out) == SubmitResult::ControlChar, "admin prompt: DEL is refused");
+		Check(AdminPrompt::CheckSubmit(s, "AB CD", 1000, &out) == SubmitResult::Ok && out == "AB CD", "admin prompt: a space inside the code is kept");
+
+		AdminPrompt::NoteAnswerSent(s, 5000);
+		Check(AdminPrompt::CheckSubmit(s, "ABC", 5499, &out) == SubmitResult::RateLimited, "admin prompt: a second code within 500 ms is ignored");
+		Check(AdminPrompt::CheckSubmit(s, "ABC", 5500, &out) == SubmitResult::Ok, "admin prompt: a code 500 ms after the last is accepted");
+		Check(!AdminPrompt::NotMeSendsAnswer(s, 5499) && AdminPrompt::NotMeSendsAnswer(s, 5500), "admin prompt: not me follows the same 500 ms gap");
+
+		// close: final line stays until dismissed; no input, no answer, no later lines.
+		AdminPrompt::ApplyQuestion(s, AdminQKind::Close, "You are the admin", 0);
+		Check(s.open && s.final && s.status == "You are the admin", "admin prompt: close sets the last line and ends the input");
+		Check(AdminPrompt::CheckSubmit(s, "ABC", 9000, &out) == SubmitResult::NotOpen, "admin prompt: no code after the last line");
+		Check(!AdminPrompt::NotMeSendsAnswer(s, 9000), "admin prompt: dismissing the last line sends nothing");
+		AdminPrompt::ApplyQuestion(s, AdminQKind::Info, "ignored", 0);
+		AdminPrompt::ApplyQuestion(s, AdminQKind::Close, "ignored", 0);
+		Check(s.final && s.status == "You are the admin", "admin prompt: lines after the last one are dropped");
+
+		// Dismissed, then asked again: ignored for 60 s, then a clean prompt with no answer memory.
+		AdminPrompt::CloseLocally(s, 100000);
+		Check(!s.open && !s.final && s.status.empty(), "admin prompt: dismissing closes and clears the line");
+		AdminPrompt::ApplyQuestion(s, AdminQKind::Ask, "", 100000);
+		Check(!s.open, "admin prompt: an ask right after the dismissal is ignored");
+		AdminPrompt::ApplyQuestion(s, AdminQKind::Ask, "", 159999);
+		Check(!s.open, "admin prompt: an ask 59.999 s after the dismissal is ignored");
+		AdminPrompt::ApplyQuestion(s, AdminQKind::Info, "late", 120000);
+		AdminPrompt::ApplyQuestion(s, AdminQKind::Close, "late", 120000);
+		Check(!s.open && s.status.empty(), "admin prompt: info and close after a dismissal change nothing");
+		AdminPrompt::ApplyQuestion(s, AdminQKind::Ask, "", 99000);
+		Check(!s.open, "admin prompt: an ask with the clock gone back is ignored");
+		AdminPrompt::ApplyQuestion(s, AdminQKind::Ask, "", 160000);
+		Check(s.open && !s.final && !s.hasLastAnswer, "admin prompt: an ask 60 s after the dismissal starts clean");
+
+		// The server's own close still applies while the earlier dismissal's latch runs.
+		AdminPrompt::ApplyQuestion(s, AdminQKind::Close, "You are the admin", 160001);
+		Check(s.open && s.final, "admin prompt: a close from the server applies inside the latch window");
+		AdminPrompt::Reset(s);
+		AdminPrompt::ApplyQuestion(s, AdminQKind::Ask, "", 5);
+		Check(s.open, "admin prompt: no dismissal, no latch");
+		Check(!AdminPrompt::AskLatched(false, 5, 5) && AdminPrompt::AskLatched(true, 5, 5), "admin prompt: the latch needs a dismissal");
+
+		// Not me while asking: answer goes out, the window closes.
+		Check(AdminPrompt::NotMeSendsAnswer(s, 100), "admin prompt: not me while asking sends an answer");
+		AdminPrompt::CloseLocally(s, 100);
+		Check(!s.open, "admin prompt: not me closes it locally");
+
+		// Leaving the server clears everything, the latch included.
+		AdminPrompt::Reset(s);
+		AdminPrompt::ApplyQuestion(s, AdminQKind::Ask, "", 101);
+		Check(s.open, "admin prompt: leaving the server lifts the latch");
+		AdminPrompt::ApplyQuestion(s, AdminQKind::Info, "line", 0);
+		AdminPrompt::NoteAnswerSent(s, 123);
+		AdminPrompt::Reset(s);
+		Check(!s.open && !s.final && s.status.empty() && !s.hasLastAnswer && s.lastAnswerMs == 0 && !s.hasDismiss, "admin prompt: leaving the server clears the state");
+		Check(std::string(AdminPrompt::kPromptText).find("Not me") != std::string::npos, "admin prompt: the fixed text names Not me");
 	}
 
 	printf("%d checks, %d failed\n", g_checks, g_failed);

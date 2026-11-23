@@ -27,7 +27,14 @@
 #include "hooks/game/world_begin_play/world_begin_play.h"
 #include "hooks/game/engine_tick/engine_tick.h"
 #include "plugins/plugin_manager.h"
+#include "plugins/plugin_hook_report.h"
+#include "utils/game_thread_dispatch.h"
+#include "host_rules_wire.h"
+#ifdef MODLOADER_CLIENT_BUILD
+#include "admin_prompt.h"
+#endif
 
+#include <atomic>
 #include <mutex>
 #include <vector>
 #include <string>
@@ -313,7 +320,12 @@ namespace
     static constexpr const char* kMlPlugin   = "$ML";
     static constexpr const char* kMlManifest = "manifest";
     static constexpr const char* kMlAck      = "ack";
-    static constexpr const char* kMlEcho     = "echo";
+    static constexpr const char* kMlWires    = "wires";
+    static constexpr const char* kMlFeat     = HostRulesWire::kTagFeat;
+    static constexpr const char* kMlRules    = HostRulesWire::kTagRules;
+    static constexpr const char* kMlAdminQ   = HostRulesWire::kTagAdminQ;
+    static constexpr const char* kMlAdminR   = HostRulesWire::kTagAdminR;
+    static constexpr const char* kMlEcho    = "echo";
     static constexpr const char* kMlEchoBack = "echoreply";
 
     // Deterministic, position-dependent filler for the echo test. Position-dependent
@@ -399,21 +411,325 @@ namespace
         return g_manifests.find(conn) != g_manifests.end();
     }
 
-    // Does this connection's reported manifest contain the plugin at that exact
-    // version? False when the client never reported -- see the header note.
+    // When each connection's manifest arrived (GetTickCount64). Same lock and
+    // lifetime as g_manifests.
+    static std::unordered_map<void*, uint64_t> g_manifestTick;
+
+    // The wire declarations each client sent after its manifest. Same lock and
+    // lifetime as g_manifests; an entry exists only once a well-formed table
+    // arrived, so a client that sent none is checked by exact version alone.
+    static std::unordered_map<void*, std::vector<WireCompat::Entry>> g_clientWires;
+
+    // What each client said about its features in "$ML:feat": its loader build
+    // and its feature catalog. Same lock and lifetime as g_manifests; an entry
+    // exists only once a well-formed message arrived. A client re-sends it when
+    // its catalog changes, which replaces the entry. rulesSent is the last
+    // "$ML:rules" payload put on the wire for this client; rulesSentOnce is set
+    // after any send, so a list that went empty is sent once more.
+    // featAnnouncePending is set whenever a feature list arrives (first or
+    // changed) and cleared by PumpClientFeatures once the plugins were told.
+    struct ClientFeatInfo
+    {
+        std::string loaderTag;
+        uint32_t interfaceVersion = 0;
+        std::vector<HostRulesWire::FeatRecord> features;
+        std::string rulesSent;
+        bool rulesSentOnce = false;
+        bool featAnnouncePending = false;
+        // Rate limit on "$ML:feat": the plugin announce and the rules re-push
+        // run at most once per HostRulesWire::kFeatActGapMs per connection.
+        // featDeferred marks a message that arrived inside the gap; the pump
+        // acts on it after the gap. lastFeatActMs is GetTickCount64.
+        bool hasFeatAct = false;
+        uint64_t lastFeatActMs = 0;
+        bool featDeferred = false;
+        // The admin prompt (AskAdmin): a prompt is open for this client until a
+        // close message goes out. lastAnswerMs is when its last accepted answer
+        // came in (GetTickCount64), for the rate limit.
+        bool adminAsked = false;
+        bool hasLastAnswer = false;
+        uint64_t lastAnswerMs = 0;
+    };
+    static std::unordered_map<void*, ClientFeatInfo> g_clientFeat;
+
+    // Admin answers waiting to be handed to the plugins from the tick, under
+    // g_manifestMutex like g_clientFeat. The code text lives only here and in the
+    // local copy the pump makes; it is never logged, and the loader's own copies
+    // are cleared after the callbacks ran (copies in network buffers and the
+    // plugin's own copy are out of its reach). queuedMs is when it was accepted: an answer whose player controller
+    // never appears is dropped after kAdminAnswerMaxWaitMs.
+    struct AdminAnswerQueued
+    {
+        void* conn = nullptr;
+        bool notMe = false;
+        std::string code;
+        uint64_t queuedMs = 0;
+    };
+    static std::vector<AdminAnswerQueued> g_adminAnswers;
+    static std::atomic<bool> g_adminAnswersDirty{ false };
+    static constexpr uint64_t kAdminAnswerMaxWaitMs = 5000;
+
+    // The rules a server plugin set (IPluginHostRules), under g_manifestMutex like
+    // g_clientFeat. g_setGlobal is the set for a connection with none of its own;
+    // g_connRules holds a connection's own set, which replaces the global one for
+    // it. Both start empty (everything allowed).
+    static HostRulesWire::RulesSet g_setGlobal;
+    static std::unordered_map<void*, HostRulesWire::RulesSet> g_connRules;
+
+    // True while some g_clientFeat entry has featAnnouncePending. Written under
+    // g_manifestMutex; read bare by the tick so the idle case costs one load.
+    static std::atomic<bool> g_featAnnounceDirty{ false };
+
+    // The version minimums a server plugin set (SetVersionMinimums) and how far
+    // each connection got in being checked against them. Under g_manifestMutex
+    // like g_clientFeat; a connection's entry is forgotten with it. g_minimumsGen
+    // changes with every new table, which makes every connection that has not
+    // fired be checked again. `fired` is the once-per-join mark. `reason` holds a
+    // finding whose player controller did not exist yet; it is retried each tick.
+    // g_minimumsActive is true while the table is not empty, so an idle server
+    // pays one atomic load a tick.
+    struct MinimumsCheck
+    {
+        bool fired = false;
+        bool checked = false;
+        uint64_t gen = 0;
+        bool hadFeat = false;
+        uint64_t manifestTick = 0;
+        // Engine stall time seen while this connection had a manifest and no
+        // feature list: added to kLoaderReportGraceMs, since the client could
+        // not answer during it.
+        uint64_t graceExtraMs = 0;
+        std::string reason;
+    };
+    static HostRulesWire::Minimums g_minimums;
+    static uint64_t g_minimumsGen = 0;
+    static std::unordered_map<void*, MinimumsCheck> g_minCheck;
+    static std::atomic<bool> g_minimumsActive{ false };
+
+    // A loader that sends a manifest but never "$ML:feat" is too old to report
+    // its version. The client answers the ack within about 20 s at worst
+    // (kRetryIntervalMs x kMaxAttempts), so this long after the manifest it is
+    // treated as reporting no version. A stalled engine tick does not count
+    // toward it (MinimumsCheck::graceExtraMs).
+    static constexpr uint64_t kLoaderReportGraceMs = 30000;
+
+    // The ack tail (the wire table) stays within this many bytes. A table that
+    // does not fit is cut after whole entries.
+    static constexpr size_t kMaxTailBytes = 8192;
+
+    // How long ago this connection's manifest arrived, in ms. Huge when it has
+    // not reported, so a pair with no manifest never counts as "still settling".
+    static uint64_t ManifestAgeMs(void* conn)
+    {
+        std::lock_guard<std::mutex> lk(g_manifestMutex);
+        auto it = g_manifestTick.find(conn);
+        if (it == g_manifestTick.end()) return UINT64_MAX;
+        return GetTickCount64() - it->second;
+    }
+
+    // A pair that cannot exchange data is warned about only this long after the
+    // manifest, so a peer whose wire declaration is still on its way is not
+    // reported as incompatible first.
+    static constexpr uint64_t kWireWarnDelayMs = 5000;
+
+    // What the wire check found for one plugin on one connection.
+    struct PairCheck
+    {
+        WireCompat::PairState state   = WireCompat::PairState::NotReported;
+        WireCompat::Verdict   why     = WireCompat::Verdict::NameMismatch;
+        std::string           clientVersion;   // the client's entry that decided it
+        WireCompat::Decl      serverDecl;
+        WireCompat::Decl      clientDecl;
+    };
+
+    // The one decision for whether this server plugin may exchange data with that
+    // connection, shared by the targeted send, the broadcast, the ready check and
+    // the ready pump. The client side is its manifest entry; the server side is
+    // this loader's own plugin and what it declared. Takes no lock the plugin
+    // manager's can wait on: the manifest lock is released before it is asked.
+    static PairCheck CheckClientPair(void* conn, const char* name, const char* version)
+    {
+        PairCheck r;
+        if (!conn || !name) return r;
+        const std::string ver = version ? version : "";
+
+        // Hot path: the same version is a match with no further lookup. The list
+        // is reused per thread so filling it under the manifest lock does not
+        // allocate on every packet.
+        thread_local std::vector<WireCompat::Entry> otherVersions;
+        otherVersions.clear();
+        {
+            std::lock_guard<std::mutex> lk(g_manifestMutex);
+            auto it = g_manifests.find(conn);
+            if (it == g_manifests.end()) return r;
+
+            auto wt = g_clientWires.find(conn);
+            for (const auto& rp : it->second)
+            {
+                if (rp.name != name) continue;
+                if (rp.version == ver)
+                {
+                    r.state = WireCompat::PairState::Ready;
+                    r.why = WireCompat::Verdict::SameVersion;
+                    return r;
+                }
+                // The client's declaration for this exact version, when its wire
+                // table carried one; otherwise the entry stays undeclared.
+                WireCompat::Entry other;
+                other.name = name;
+                other.version = rp.version;
+                if (wt != g_clientWires.end())
+                {
+                    if (const WireCompat::Entry* declared = WireCompat::FindEntry(wt->second, name))
+                        if (declared->version == rp.version)
+                            other.decl = declared->decl;
+                }
+                otherVersions.push_back(std::move(other));
+            }
+        }
+        if (otherVersions.empty()) return r;   // NotReported
+
+        WireCompat::Entry local;
+        local.name = name;
+        local.version = ver;
+        local.decl = PluginManager::GetWireDecl(name);
+        r.serverDecl = local.decl;
+        r.state = WireCompat::PairState::Incompatible;
+        r.why = WireCompat::Verdict::Incompatible;
+        r.clientVersion = otherVersions.front().version;
+
+        for (WireCompat::Entry& client : otherVersions)
+        {
+            WireCompat::Verdict v = WireCompat::Verdict::Incompatible;
+            const WireCompat::PairState s = WireCompat::ClassifyPair(&client, local, true, &v);
+            if (s == WireCompat::PairState::Ready)
+            {
+                r.state = s;
+                r.why = v;
+                r.clientVersion = client.version;
+                r.clientDecl = client.decl;
+                break;
+            }
+        }
+        return r;
+    }
+
+    // Wire log lines, once per plugin and connection. The warn-once sets are
+    // forgotten with the connection in ForgetConnectionState.
+    static std::mutex            g_wireLogMutex;
+    static WireCompat::WarnOnce  g_wireBlockedWarned;
+    static WireCompat::WarnOnce  g_wireAcceptedNoted;
+    // Keyed by (connection, "$wires"): one note per connection that sent a wire
+    // table the server could not read. A plugin name never starts with '$'.
+    static WireCompat::WarnOnce  g_wiresGarbageWarned;
+    // Plugin names already reported as left out of the wire table, so the
+    // warning is not repeated for every client that joins.
+    static std::set<std::string> g_wireDroppedWarned;
+    static bool                  g_wireCutWarned = false;
+
+#ifdef MODLOADER_CLIENT_BUILD
+    // Client side: the server's wire table from the tail of its ack, kept per
+    // server connection (one at a time), and the once-per-connection log keys
+    // for it. Guarded by g_wireLogMutex; forgotten with the connection.
+    struct ServerWireTable
+    {
+        void*                          conn    = nullptr;
+        bool                           present = false;   // the ack carried a readable table
+        std::vector<WireCompat::Entry> entries;
+    };
+    static ServerWireTable      g_serverWires;
+    // Keyed by (connection, "$wires") and (connection, "$old"): one note per
+    // connection whose ack tail could not be read, and one for a server that
+    // sends no table. A plugin name never starts with '$'.
+    static WireCompat::WarnOnce g_serverTailWarned;
+    // Keyed by (connection, plugin): the client's own WARN for a plugin whose
+    // version differs from the server's and is not known to match, and its INFO
+    // when it is accepted anyway.
+    static WireCompat::WarnOnce g_clientBlockedWarned;
+    static WireCompat::WarnOnce g_clientAcceptedNoted;
+#endif
+
+    // Says what CheckClientPair found, when there is something to say: one INFO
+    // when a pair with different version strings is accepted, one WARN when a pair
+    // is blocked (once the manifest is old enough, see kWireWarnDelayMs). Silent
+    // when the versions match.
+    static void ReportPair(void* conn, const char* name, const char* version, const PairCheck& pc)
+    {
+        if (!conn || !name) return;
+
+        if (pc.state == WireCompat::PairState::Ready)
+        {
+            if (pc.why == WireCompat::Verdict::SameVersion) return;
+            bool first;
+            {
+                std::lock_guard<std::mutex> lk(g_wireLogMutex);
+                first = g_wireAcceptedNoted.First(conn, name);
+            }
+            if (first)
+                ModLoaderLogger::LogInfo(
+                    L"[NetworkChannel] Plugin '%S': client %p runs version '%S', the server runs '%S'. "
+                    L"Plugin data is exchanged because they are compatible (%S).",
+                    name, conn, pc.clientVersion.c_str(), version ? version : "",
+                    WireCompat::Reason(pc.why));
+            return;
+        }
+
+        if (pc.state != WireCompat::PairState::Incompatible) return;
+        if (ManifestAgeMs(conn) < kWireWarnDelayMs) return;
+
+        bool first;
+        {
+            std::lock_guard<std::mutex> lk(g_wireLogMutex);
+            first = g_wireBlockedWarned.First(conn, name);
+        }
+        if (!first) return;
+
+        const std::string ids = WireCompat::WireIdsNote(pc.serverDecl, pc.clientDecl);
+        ModLoaderLogger::LogWarn(
+            L"[NetworkChannel] Plugin '%S': client %p runs version '%S', the server runs '%S'%S. "
+            L"Wire format not known to match, plugin data will not be exchanged.",
+            name, conn, pc.clientVersion.c_str(), version ? version : "", ids.c_str());
+    }
+
+    // Says once what the wire table sent to clients is missing: plugins that
+    // cannot be described in it, and plugins that did not fit its size limit.
+    static void WarnWireTableGaps(const std::vector<std::string>& notEncoded, size_t cut)
+    {
+        std::vector<std::string> fresh;
+        bool cutFirst = false;
+        {
+            std::lock_guard<std::mutex> lk(g_wireLogMutex);
+            for (const std::string& n : notEncoded)
+                if (g_wireDroppedWarned.insert(n).second)
+                    fresh.push_back(n);
+            if (cut > 0 && !g_wireCutWarned)
+            {
+                g_wireCutWarned = true;
+                cutFirst = true;
+            }
+        }
+        for (const std::string& n : fresh)
+            ModLoaderLogger::LogWarn(
+                L"[NetworkChannel] Plugin '%S' has a separator character, a leading '$' or an oversized field "
+                L"and was left out of the wire table", n.c_str());
+        if (cutFirst)
+        {
+            const size_t total = PluginManager::GetWireEntries().size();
+            const size_t omitted = cut + notEncoded.size();
+            ModLoaderLogger::LogWarn(
+                L"[NetworkChannel] The plugin wire table was cut after %zu plugin(s) to fit one message; "
+                L"%zu plugin(s) were left out.", total > omitted ? total - omitted : 0, cut);
+        }
+    }
+
+    // Does this connection's plugin match the server's, so data may flow? False
+    // when the client never reported, or reported a version this one is not known
+    // to be compatible with.
     static bool ClientHasPlugin(void* conn, const char* name, const char* version)
     {
-        if (!conn || !name) return false;
-        const char* ver = version ? version : "";
-
-        std::lock_guard<std::mutex> lk(g_manifestMutex);
-        auto it = g_manifests.find(conn);
-        if (it == g_manifests.end()) return false;
-
-        for (const auto& rp : it->second)
-            if (rp.name == name && rp.version == ver)
-                return true;
-        return false;
+        const PairCheck pc = CheckClientPair(conn, name, version);
+        ReportPair(conn, name, version, pc);
+        return pc.state == WireCompat::PairState::Ready;
     }
 
     // ---- Connection lookups -------------------------------------------------
@@ -842,7 +1158,8 @@ namespace
     // ---- Readiness (authority side) -----------------------------------------
     //
     // "Ready" is not one state, it is one per plugin: a client is a valid target
-    // for plugin P version V exactly when it reported P at V, which is the same
+    // for plugin P version V exactly when it reported P at V, or at a version the
+    // two plugins declare compatible (GetPluginWireInfo), which is the same
     // predicate the send path gates on. Exposing anything coarser would invite
     // the mistake this is here to prevent -- a plugin seeing "client connected"
     // and sending to a client that has no idea what it is.
@@ -869,8 +1186,8 @@ namespace
     // Which callbacks have already been told about which connection.
     static std::unordered_map<void*, std::vector<PluginClientReadyCallback>> g_announced;
     static bool                        g_readyDirty = false;
-    // Warn-once keys ("plugin\x01<conn>") so a mistaken send does not spam.
-    static std::unordered_set<std::string> g_notReadyWarned;
+    // Warn-once per (connection, plugin) so a mistaken send does not spam.
+    static WireCompat::WarnOnce g_notReadyWarned;
 
     static void MarkReadyDirty()
     {
@@ -881,10 +1198,8 @@ namespace
     // True if this (plugin, connection) pair should be warned about now.
     static bool ShouldWarnNotReady(const char* plugin, void* conn)
     {
-        char key[160];
-        _snprintf_s(key, sizeof(key), _TRUNCATE, "%s\x01%p", plugin ? plugin : "", conn);
         std::lock_guard<std::mutex> lk(g_readyMutex);
-        return g_notReadyWarned.insert(key).second;
+        return g_notReadyWarned.First(conn, plugin ? plugin : "");
     }
 
     // Drop any pending greeting whose state names this controller.
@@ -907,7 +1222,20 @@ namespace
         }
     }
 
-    // Everything keyed by connection lives in five places; forgetting a peer has
+    // Drops the queued admin answers of one connection (all of them for null),
+    // overwriting the code text first. The caller holds g_manifestMutex.
+    static void WipeAdminAnswers(void* conn)
+    {
+        for (auto it = g_adminAnswers.begin(); it != g_adminAnswers.end(); )
+        {
+            if (conn && it->conn != conn) { ++it; continue; }
+            std::fill(it->code.begin(), it->code.end(), '\0');
+            it = g_adminAnswers.erase(it);
+        }
+        if (g_adminAnswers.empty()) g_adminAnswersDirty.store(false);
+    }
+
+    // Everything keyed by connection lives in several places; forgetting a peer has
     // to clear all of them or the leftovers outlive it. Defined here, after every
     // store exists.
     static void ForgetConnectionState(void* conn)
@@ -922,6 +1250,12 @@ namespace
         {
             std::lock_guard<std::mutex> lk(g_manifestMutex);
             g_manifests.erase(conn);
+            g_manifestTick.erase(conn);
+            g_clientWires.erase(conn);
+            g_clientFeat.erase(conn);
+            g_connRules.erase(conn);
+            g_minCheck.erase(conn);
+            WipeAdminAnswers(conn);
         }
         {
             std::lock_guard<std::mutex> lk(g_helloMutex);
@@ -930,9 +1264,23 @@ namespace
         {
             std::lock_guard<std::mutex> lk(g_readyMutex);
             g_announced.erase(conn);
-            // Cheap and rare, and re-warning about a peer that reconnects is
-            // wanted rather than avoided.
-            g_notReadyWarned.clear();
+            // Only this connection's keys: another peer leaving must not make a
+            // peer that is still connected warn again. A peer that reconnects gets
+            // a fresh connection and warns again, as wanted.
+            g_notReadyWarned.Forget(conn);
+        }
+        {
+            std::lock_guard<std::mutex> lk(g_wireLogMutex);
+            g_wireBlockedWarned.Forget(conn);
+            g_wireAcceptedNoted.Forget(conn);
+            g_wiresGarbageWarned.Forget(conn);
+#ifdef MODLOADER_CLIENT_BUILD
+            g_serverTailWarned.Forget(conn);
+            g_clientBlockedWarned.Forget(conn);
+            g_clientAcceptedNoted.Forget(conn);
+            if (g_serverWires.conn == conn)
+                g_serverWires = ServerWireTable{};
+#endif
         }
     }
 
@@ -949,12 +1297,36 @@ namespace
 
         if (!HasNetAuthority()) return;
 
-        // Snapshot the manifests, then the registrations, then decide. Callbacks
-        // are plugin code and are never invoked with a lock held.
-        std::unordered_map<void*, std::vector<NetworkChannel::RemotePlugin>> manifests;
+        // Snapshot the connections, then the registrations, then decide. Callbacks
+        // are plugin code and are never invoked with a lock held, and the wire
+        // check (which asks the plugin manager) runs with none held either.
+        std::vector<void*> conns;
         {
             std::lock_guard<std::mutex> lk(g_manifestMutex);
-            manifests = g_manifests;
+            for (const auto& kv : g_manifests) conns.push_back(kv.first);
+        }
+        std::vector<ClientReadyReg> regs;
+        {
+            std::lock_guard<std::mutex> lk(g_readyMutex);
+            regs = g_clientReadyRegs;
+        }
+
+        // Same check as the send paths, so a pair is ready exactly when a send
+        // to it would go out. A pair that is incompatible but whose manifest is
+        // still young stays pending: the peer's declaration may be on its way.
+        struct PairResult { bool ready = false; bool young = false; };
+        std::vector<PairResult> results(conns.size() * regs.size());
+        for (size_t ci = 0; ci < conns.size(); ++ci)
+        {
+            for (size_t ri = 0; ri < regs.size(); ++ri)
+            {
+                const PairCheck pc = CheckClientPair(conns[ci], regs[ri].plugin.c_str(), regs[ri].version.c_str());
+                ReportPair(conns[ci], regs[ri].plugin.c_str(), regs[ri].version.c_str(), pc);
+                PairResult& res = results[ci * regs.size() + ri];
+                res.ready = pc.state == WireCompat::PairState::Ready;
+                res.young = pc.state == WireCompat::PairState::Incompatible
+                    && ManifestAgeMs(conns[ci]) < kWireWarnDelayMs;
+            }
         }
 
         struct Pending { PluginClientReadyCallback cb; void* conn; void* pc; std::string plugin; };
@@ -963,18 +1335,18 @@ namespace
 
         {
             std::lock_guard<std::mutex> lk(g_readyMutex);
-            for (const auto& mkv : manifests)
+            for (size_t ci = 0; ci < conns.size(); ++ci)
             {
-                void* conn = mkv.first;
-                for (const auto& reg : g_clientReadyRegs)
+                void* conn = conns[ci];
+                for (size_t ri = 0; ri < regs.size(); ++ri)
                 {
+                    const ClientReadyReg& reg = regs[ri];
                     auto& told = g_announced[conn];
                     if (std::find(told.begin(), told.end(), reg.cb) != told.end()) continue;
 
-                    bool match = false;
-                    for (const auto& rp : mkv.second)
-                        if (rp.name == reg.plugin && rp.version == reg.version) { match = true; break; }
-                    if (!match) continue;
+                    const PairResult& res = results[ci * regs.size() + ri];
+                    if (res.young) stillWaiting = true;
+                    if (!res.ready) continue;
 
                     // The controller can lag the manifest. Leave the pair
                     // unannounced and try again next tick rather than handing a
@@ -1224,12 +1596,22 @@ namespace
             return;
         }
 
-        // Only send to a client that reported this exact plugin and version.
-        // A version mismatch is treated as absence on purpose: two builds of a
-        // plugin that disagree about their own packet layout is precisely the
-        // case this exists to stop.
+        // Only send to a client that reported this plugin at the same version, or
+        // at one the two plugins declare compatible (GetPluginWireInfo). Any other
+        // version is treated as absence on purpose: two builds of a plugin that
+        // disagree about their own packet layout is precisely the case this exists
+        // to stop.
         void* targetConn = ConnectionForPlayer(playerController);
-        if (!ClientHasPlugin(targetConn, self->name, self->version))
+        const PairCheck pair = CheckClientPair(targetConn, self->name, self->version);
+        ReportPair(targetConn, self->name, self->version, pair);
+        if (pair.state == WireCompat::PairState::Incompatible)
+        {
+            ModLoaderLogger::LogTrace(
+                L"[NetworkChannel] SendPacketToClient skipped: player=%p runs an incompatible '%S'",
+                playerController, self->name);
+            return;
+        }
+        if (pair.state != WireCompat::PairState::Ready)
         {
             // Warned, not logged at Debug, and warned once per plugin per peer:
             // a targeted send names a specific recipient, so a dropped one is
@@ -1719,7 +2101,7 @@ namespace
     // server never learns about receives nothing forever, and a reloaded plugin
     // whose version string moved gets its traffic gated off. GetPluginGeneration()
     // increments on every load/unload/reload, which is exactly this question.
-    static void*    g_manifestSentTo  = nullptr;
+    static std::atomic<void*> g_manifestSentTo{ nullptr }; // also read by the admin popup (render thread)
     static unsigned g_manifestSentGen = 0;
 
     // An unacknowledged manifest is retried rather than assumed delivered. This
@@ -1730,6 +2112,105 @@ namespace
     // chance -- and a persistent failure shows up as a log line rather than a
     // plugin that mysteriously never receives anything.
     static bool     g_manifestAcked   = false;
+
+    // Our wire declarations follow the manifest, but only to a server whose ack
+    // carried a readable wire table (proof that its loader understands them).
+    // The sequence counts manifests put on the wire: a re-sent manifest makes the
+    // server forget our table, so it needs the table again, and an ack repeated
+    // for the same manifest must not send it twice. g_wiresPending marks a send
+    // that could not be put on the wire and is retried from the tick.
+    static unsigned g_manifestSendSeq = 0;
+    static unsigned g_wiresSentSeq    = 0;
+    static bool     g_wiresPending    = false;
+    static uint64_t g_wiresLastTryMs  = 0;
+
+    // The feature catalog goes to the server in "$ML:feat", but only to a server
+    // whose ack tail carried the "$hostrules" record (g_featProven): that record
+    // is how a server says it reads the message. It goes out once per manifest
+    // put on the wire, and again when the encoded bytes differ from what was last
+    // sent. The bytes carry only each feature's build state, so applying the
+    // server's rules (which also moves the hook report's generation) never
+    // changes them. g_featHookGen is the report generation last looked at, so the
+    // tick encodes the catalog only when something in the report moved.
+    static unsigned    g_featSentSeq    = 0;
+    static std::atomic<bool> g_featProven{ false }; // also read by the admin popup (render thread)
+    static bool        g_featPending    = false;
+    static uint64_t    g_featLastTryMs  = 0;
+    static unsigned    g_featHookGen    = 0;
+    static std::string g_featSentPayload;
+
+    // Forget everything about the last "$ML:feat" exchange: a new connection,
+    // a changed plugin set or the end of the world voids what the server knew.
+    static void ResetFeatState()
+    {
+        g_featSentSeq = 0;
+        g_featProven  = false;
+        g_featPending = false;
+        g_featSentPayload.clear();
+    }
+
+    // The rule set the server sent in "$ML:rules", kept as received so it can be
+    // resolved again against the features declared at that moment (a plugin that
+    // loads or reloads later is covered by the "*" and default rows). The
+    // control-channel detour delivers the receive on the game thread, but the set
+    // can also be cleared from another one (the process closing), so it sits
+    // behind a mutex and the apply is queued to the game thread. g_rulesEpoch
+    // counts the times the set was cleared: a queued apply remembers the epoch it
+    // was queued under, so one that outlives the server it came from does nothing.
+    // g_rulesHookGen is the hook report generation the rules were last resolved
+    // at, so the tick resolves again only when the report moved.
+    static std::mutex               g_clientRulesMutex;
+    static HostRulesWire::RulesSet  g_clientRules;
+    static std::atomic<bool>        g_clientRulesValid{ false };
+    static unsigned                 g_rulesEpoch = 0; // under g_clientRulesMutex
+    static std::atomic<unsigned>    g_rulesHookGen{ 0 };
+
+    // The admin prompt's answers ("$ML:adminr"), queued by AdminPrompt from the
+    // render thread and put on the wire from the tick, where the control channel
+    // is safe to touch. Each carries the connection it was meant for, so one that
+    // outlives its server is dropped. The code sits in these bytes until sent;
+    // they are overwritten then and when the server is left.
+    struct AdminAnswerOut
+    {
+        void*       conn;
+        std::string body;
+    };
+    static std::mutex                  g_adminOutMutex;
+    static std::vector<AdminAnswerOut> g_adminOut;
+
+    static void WipeAdminOut()
+    {
+        std::lock_guard<std::mutex> lk(g_adminOutMutex);
+        for (AdminAnswerOut& a : g_adminOut)
+            SecureZeroMemory(a.body.data(), a.body.size());
+        g_adminOut.clear();
+    }
+
+    // Leaving a server: its rules are void and the features it switched off come
+    // back, and so does any admin prompt it had open. A caller that is not on the
+    // game thread queues the clear.
+    static void ForgetClientRules()
+    {
+        AdminPrompt::Leave();
+        WipeAdminOut();
+        {
+            std::lock_guard<std::mutex> lk(g_clientRulesMutex);
+            g_clientRules = HostRulesWire::RulesSet{};
+            ++g_rulesEpoch;
+            g_clientRulesValid = false;
+        }
+        g_rulesHookGen     = 0;
+    }
+
+    static void LeaveServerRules(bool onGameThread)
+    {
+        ForgetClientRules();
+        if (onGameThread)
+            PluginHookReport::ClearServerRules();
+        else
+            GameThreadDispatch::PostVoid([] { if (!g_clientRulesValid) PluginHookReport::ClearServerRules(); });
+    }
+
     static uint64_t g_lastAttemptMs   = 0;
     static int      g_attempts        = 0;
     static bool     g_gaveUpLogged    = false;
@@ -1760,11 +2241,18 @@ namespace
             if (g_manifestSentTo)
                 ModLoaderLogger::LogDebug(
                     L"[NetworkChannel] Manifest invalidated (conn %p->%p, generation %u->%u) -- resending",
-                    g_manifestSentTo, conn, g_manifestSentGen, gen);
+                    g_manifestSentTo.load(), conn, g_manifestSentGen, gen);
+
+            // Another server's rules are not this one's; a changed plugin set on
+            // the same connection keeps them (the server sends them again).
+            if (g_manifestSentTo && conn != g_manifestSentTo)
+                LeaveServerRules(/*onGameThread*/ false);
 
             g_manifestSentTo  = conn;
             g_manifestSentGen = gen;
             g_manifestAcked   = false;
+            g_wiresPending    = false;
+            ResetFeatState();
             g_attempts        = 0;
             g_gaveUpLogged    = false;
             g_lastAttemptMs   = 0;
@@ -1812,6 +2300,9 @@ namespace
                                          reinterpret_cast<const uint8_t*>(body.data()),
                                          body.size())))
         {
+            ++g_manifestSendSeq;
+            g_wiresPending = false;
+
             // Only the first attempt is INFO. A retry means the previous one was
             // not acknowledged, which the give-up ERROR below reports properly --
             // ten INFO lines saying the same thing would just bury it.
@@ -1830,6 +2321,273 @@ namespace
                 L"[NetworkChannel] Manifest attempt %d could not be put on the wire; will retry in %llums",
                 g_attempts, kRetryIntervalMs);
         }
+    }
+
+    // Sends this client's wire declarations to the server, once per manifest put
+    // on the wire. Only called after an ack whose tail was a readable wire table,
+    // so an old server never sees a message it cannot read.
+    static void SendWiresToServer()
+    {
+        void* conn = g_manifestSentTo;
+        if (!conn || g_wiresSentSeq == g_manifestSendSeq) return;
+
+        std::vector<std::string> notEncoded;
+        size_t cut = 0;
+        const std::string body = WireCompat::EncodeTableCapped(PluginManager::GetWireEntries(),
+            kMaxTailBytes, &notEncoded, &cut);
+        WarnWireTableGaps(notEncoded, cut);
+
+        g_wiresLastTryMs = GetTickCount64();
+        if (SendWire(conn, kMlPlugin, BuildEnvelope(kMlPlugin, kMlWires,
+                                         reinterpret_cast<const uint8_t*>(body.data()),
+                                         body.size())))
+        {
+            g_wiresSentSeq = g_manifestSendSeq;
+            g_wiresPending = false;
+            ModLoaderLogger::LogTrace(
+                L"[NetworkChannel] Sent our plugin wire table to the server (%zu bytes)", body.size());
+        }
+        else
+        {
+            g_wiresPending = true;
+            ModLoaderLogger::LogTrace(
+                L"[NetworkChannel] Could not put our plugin wire table on the wire; will retry");
+        }
+    }
+
+    // The "$ML:feat" payload for the features declared now. "on" is the build
+    // state: a feature a server's rules turned off still reports what the build
+    // has, so the bytes do not move when rules are applied.
+    static std::string BuildFeatPayload()
+    {
+        HostRulesWire::FeatPayload feat;
+        feat.buildTag         = MODLOADER_BUILD_TAG;
+        feat.interfaceVersion = PLUGIN_INTERFACE_VERSION;
+        for (const PluginHookReport::FeatureInfo& f : PluginHookReport::Features())
+            feat.features.push_back({ f.plugin, f.id, f.title,
+                                      f.state != PluginHookReport::FeatureInfo::State::OffBuild });
+
+        HostRulesWire::EncodeStats stats;
+        std::string body = HostRulesWire::EncodeFeat(feat, &stats);
+        if (stats.dropped || stats.truncated)
+        {
+            static bool warned = false;
+            if (!warned)
+            {
+                warned = true;
+                ModLoaderLogger::LogWarn(
+                    L"[NetworkChannel] %zu feature(s) could not be reported to the server (%zu left out as "
+                    L"unreadable, %zu cut for size); the server cannot switch those off.",
+                    stats.dropped + stats.truncated, stats.dropped, stats.truncated);
+            }
+        }
+        return body;
+    }
+
+    // Sends the feature catalog to the server, once per manifest put on the wire
+    // and again from the tick when the payload changed. Only called once the ack
+    // tail carried the "$hostrules" record, so an older server never sees it.
+    static void SendFeatToServer()
+    {
+        void* conn = g_manifestSentTo;
+        if (!conn || !g_featProven) return;
+
+        const std::string body = BuildFeatPayload();
+        const HostRulesWire::SendPlan plan = HostRulesWire::PlanSend(body.size(), kMlFeat);
+        g_featLastTryMs = GetTickCount64();
+        if (!plan.sendable)
+        {
+            // Retrying cannot help; the payload is too large for the transport.
+            g_featPending = false;
+            g_featSentSeq = g_manifestSendSeq;
+            g_featSentPayload = body;
+            ModLoaderLogger::LogWarn(
+                L"[NetworkChannel] Our feature list (%zu bytes) is too large to send; the server cannot "
+                L"switch features off for this client.", body.size());
+            return;
+        }
+
+        if (SendWire(conn, kMlPlugin, BuildEnvelope(kMlPlugin, kMlFeat,
+                                         reinterpret_cast<const uint8_t*>(body.data()),
+                                         body.size())))
+        {
+            g_featSentSeq = g_manifestSendSeq;
+            g_featSentPayload = body;
+            g_featPending = false;
+            ModLoaderLogger::LogDebug(
+                L"[NetworkChannel] Sent our feature list to the server (%zu bytes, %zu chunk(s))",
+                body.size(), plan.chunkCount);
+        }
+        else
+        {
+            g_featPending = true;
+            ModLoaderLogger::LogTrace(
+                L"[NetworkChannel] Could not put our feature list on the wire; will retry");
+        }
+    }
+
+    // Puts the queued admin answers on the wire. Game thread (the tick). An answer
+    // for a connection that is no longer the server, or for one that has not
+    // proved it reads host rules, is dropped, never held for later.
+    static void PumpAdminAnswerSend()
+    {
+        std::vector<AdminAnswerOut> out;
+        {
+            std::lock_guard<std::mutex> lk(g_adminOutMutex);
+            if (g_adminOut.empty()) return;
+            out.swap(g_adminOut);
+        }
+        for (AdminAnswerOut& a : out)
+        {
+            if (a.conn == g_manifestSentTo && g_featProven &&
+                !SendWire(a.conn, kMlPlugin, BuildEnvelope(kMlPlugin, kMlAdminR,
+                              reinterpret_cast<const uint8_t*>(a.body.data()), a.body.size())))
+                ModLoaderLogger::LogDebug(L"[NetworkChannel] Could not send an admin prompt answer");
+            SecureZeroMemory(a.body.data(), a.body.size());
+        }
+    }
+
+    // The tick side of the above: when the hook report moved since last looked at
+    // and the catalog now encodes to different bytes, send it again; and retry a
+    // send that could not be put on the wire.
+    static void RefreshFeatIfStale()
+    {
+        if (!g_featProven) return;
+
+        if (g_featPending)
+        {
+            if (GetTickCount64() - g_featLastTryMs >= kRetryIntervalMs)
+                SendFeatToServer();
+            return;
+        }
+
+        const unsigned gen = PluginHookReport::GetGeneration();
+        if (gen == g_featHookGen) return;
+        g_featHookGen = gen;
+        if (g_featSentSeq != g_manifestSendSeq) return; // the ack path sends it
+        if (BuildFeatPayload() != g_featSentPayload)
+            SendFeatToServer();
+    }
+
+    // Resolves the server's rule set against the features declared now and, when
+    // that differs from what is applied, hands the new list to the hook report.
+    // Game thread: it writes the plugins' flags.
+    static void ApplyClientRules(unsigned epoch)
+    {
+        HostRulesWire::RulesSet rules;
+        {
+            std::lock_guard<std::mutex> lk(g_clientRulesMutex);
+            if (!g_clientRulesValid || epoch != g_rulesEpoch) return; // the server was left while this waited
+            rules = g_clientRules;
+        }
+
+        // Read before resolving, so a feature declared in between is seen next tick.
+        g_rulesHookGen = PluginHookReport::GetGeneration();
+
+        HostRulesWire::FeatPayload declared;
+        for (const PluginHookReport::FeatureInfo& f : PluginHookReport::Features())
+            declared.features.push_back({ f.plugin, f.id, f.title, true });
+
+        std::vector<std::pair<std::string, std::string>> deny;
+        for (const HostRules::RuleKey& r : HostRulesWire::ResolveDeny(rules, declared))
+            deny.emplace_back(r.plugin, r.id);
+
+        const bool hadDeny = !PluginHookReport::ServerDeny().empty();
+        if (PluginHookReport::ServerDeny() == deny && PluginHookReport::ServerMessage() == rules.message)
+            return;
+
+        PluginHookReport::ApplyServerRules(deny, rules.message);
+
+        if (!deny.empty())
+        {
+            if (rules.message.empty())
+                ModLoaderLogger::LogInfo(
+                    L"[Map] server rules: %zu feature(s) turned off by this server.", deny.size());
+            else
+                ModLoaderLogger::LogInfo(
+                    L"[Map] server rules: %zu feature(s) turned off by this server ('%S').",
+                    deny.size(), rules.message.c_str());
+        }
+        else if (hadDeny)
+            ModLoaderLogger::LogInfo(L"[Map] server rules: no features turned off by this server.");
+    }
+
+    // The tick side: the declared features moved since the rules were resolved (a
+    // plugin loaded, reloaded or unloaded), so resolve again.
+    static void RefreshHostRulesIfStale()
+    {
+        if (!g_clientRulesValid) return;
+        if (PluginHookReport::GetGeneration() == g_rulesHookGen) return;
+        unsigned epoch;
+        {
+            std::lock_guard<std::mutex> lk(g_clientRulesMutex);
+            epoch = g_rulesEpoch;
+        }
+        ApplyClientRules(epoch);
+    }
+
+    // The server's rule set. Only a connection whose ack proved the server reads
+    // host rules takes one; a malformed set is dropped with one warning.
+    static void OnHostRules(const uint8_t* data, size_t len)
+    {
+        if (!g_featProven) return;
+
+        HostRulesWire::RulesSet rules;
+        const HostRulesWire::Status st = HostRulesWire::DecodeRules(
+            reinterpret_cast<const char*>(data), len, &rules);
+        if (st != HostRulesWire::Status::Ok)
+        {
+            bool first;
+            {
+                std::lock_guard<std::mutex> lk(g_wireLogMutex);
+                first = g_wiresGarbageWarned.First(g_manifestSentTo, "$rules");
+            }
+            if (first)
+                ModLoaderLogger::LogWarn(
+                    L"[NetworkChannel] Ignoring malformed rules from the server (%S).",
+                    HostRulesWire::StatusText(st));
+            return;
+        }
+
+        // The proof check and the store happen under one lock hold with the epoch,
+        // so a clear that ran in between (the world ended) cannot be undone by a
+        // set that was decoded before it.
+        unsigned epoch;
+        {
+            std::lock_guard<std::mutex> lk(g_clientRulesMutex);
+            if (!g_featProven) return;
+            g_clientRules = std::move(rules);
+            g_clientRulesValid = true;
+            epoch = g_rulesEpoch;
+        }
+        GameThreadDispatch::PostVoid([epoch] { ApplyClientRules(epoch); });
+    }
+
+    // A line for the admin prompt. Same proof rule as the rules; a malformed one
+    // is dropped with one warning. The prompt state is mutex-guarded, so this
+    // needs no hop to the game thread.
+    static void OnAdminQuestion(const uint8_t* data, size_t len)
+    {
+        if (!g_featProven) return;
+
+        HostRulesWire::AdminQuestion q;
+        const HostRulesWire::Status st = HostRulesWire::DecodeAdminQuestion(
+            reinterpret_cast<const char*>(data), len, &q);
+        if (st != HostRulesWire::Status::Ok)
+        {
+            bool first;
+            {
+                std::lock_guard<std::mutex> lk(g_wireLogMutex);
+                first = g_wiresGarbageWarned.First(g_manifestSentTo, "$adminq");
+            }
+            if (first)
+                ModLoaderLogger::LogWarn(
+                    L"[NetworkChannel] Ignoring a malformed admin prompt message from the server (%S).",
+                    HostRulesWire::StatusText(st));
+            return;
+        }
+
+        AdminPrompt::OnQuestion(q);
     }
 
     // The authority greeted us. Everything the client can do on the wire starts
@@ -1898,10 +2656,120 @@ namespace
         // so falling through to the net-mode call every frame is precisely the
         // cost this early-out exists to avoid.
         if (!g_serverSpeaksWire) { ReportNoGreetingOnce(); return; }
-        if (g_manifestAcked && PluginManager::GetPluginGeneration() == g_manifestSentGen)
+        RefreshHostRulesIfStale();
+        if (g_manifestAcked &&PluginManager::GetPluginGeneration() == g_manifestSentGen)
+        {
+            if (g_wiresPending && GetTickCount64() - g_wiresLastTryMs >= kRetryIntervalMs)
+                SendWiresToServer();
+            RefreshFeatIfStale();
             return;
+        }
 
         SendManifestToServer(/*force*/ false);
+    }
+
+    // Reads what follows the ack's first record and keeps the server's wire
+    // table for this connection. kindOut says what the tail was; a table is the
+    // proof that the server's loader understands wire declarations. An ack with
+    // no tail is an old server; one with an unreadable tail is treated the same
+    // way, with one warning per connection. False when there is no connection
+    // to attach the ack to.
+    static bool StoreServerWireTable(const char* data, size_t len, WireCompat::AckTailKind* kindOut)
+    {
+        // An ack that outlived its connection (world travel, disconnect) has
+        // nothing to attach a table to.
+        void* conn = g_manifestSentTo;
+        if (!conn) return false;
+
+        WireCompat::DecodedTable table;
+        const WireCompat::AckTailKind kind = WireCompat::ReadAckTail(data, len, &table);
+        *kindOut = kind;
+
+        bool warn = false;
+        {
+            std::lock_guard<std::mutex> lk(g_wireLogMutex);
+            g_serverWires.conn    = conn;
+            g_serverWires.present = (kind == WireCompat::AckTailKind::Table);
+            g_serverWires.entries = std::move(table.entries);
+            if (kind == WireCompat::AckTailKind::Garbage)
+                warn = g_serverTailWarned.First(conn, "$wires");
+        }
+        if (warn)
+            ModLoaderLogger::LogWarn(
+                L"[NetworkChannel] Ignoring a malformed plugin wire table from the server; "
+                L"its plugins keep the exact-version rule.");
+        return true;
+    }
+
+    // What the client says about the server's plugins once its ack is read.
+    // With the server's table: for every plugin both sides run in different
+    // versions, one WARN when the pair is not known to share a wire format and
+    // one INFO when it is accepted (once per plugin and connection; equal
+    // versions are silent). Without one (an old server, or a table that could
+    // not be read): one INFO per connection naming the plugins here that use the
+    // network channel, since for them plugin data flows only on an exact match.
+    static void ReportServerWires(bool hasTable)
+    {
+        void* conn = g_manifestSentTo;
+        if (!conn) return;
+
+        // Before any lock of ours: this takes the plugin lock.
+        const std::vector<WireCompat::Entry> local = PluginManager::GetWireEntries();
+
+        if (!hasTable)
+        {
+            std::vector<std::string> names;
+            {
+                std::lock_guard<std::mutex> lk(g_mutex);
+                for (const auto& kv : g_handlers)
+                    names.push_back(kv.first.substr(0, kv.first.find('\x01')));
+            }
+            const std::string list = WireCompat::DescribePlugins(names, local);
+            if (list.empty()) return;
+
+            bool first;
+            {
+                std::lock_guard<std::mutex> lk(g_wireLogMutex);
+                first = g_serverTailWarned.First(conn, "$old");
+            }
+            if (first)
+                ModLoaderLogger::LogInfo(
+                    L"[NetworkChannel] The server's mod loader sends no plugin wire table, so plugin data "
+                    L"flows only for plugins whose version matches the server's exactly. Plugins here "
+                    L"using the network channel: %S.", list.c_str());
+            return;
+        }
+
+        std::vector<WireCompat::Entry> server;
+        {
+            std::lock_guard<std::mutex> lk(g_wireLogMutex);
+            if (g_serverWires.conn != conn || !g_serverWires.present) return;
+            server = g_serverWires.entries;
+        }
+
+        for (const WireCompat::MirrorFinding& f : WireCompat::MirrorCheck(local, server))
+        {
+            const bool ready = (f.state == WireCompat::PairState::Ready);
+            bool first;
+            {
+                std::lock_guard<std::mutex> lk(g_wireLogMutex);
+                first = (ready ? g_clientAcceptedNoted : g_clientBlockedWarned).First(conn, f.local.name);
+            }
+            if (!first) continue;
+
+            if (ready)
+                ModLoaderLogger::LogInfo(
+                    L"[NetworkChannel] Plugin '%S': this client runs version '%S', the server runs '%S'. "
+                    L"Plugin data is exchanged because they are compatible (%S).",
+                    f.local.name.c_str(), f.local.version.c_str(), f.server.version.c_str(),
+                    WireCompat::Reason(f.why));
+            else
+                ModLoaderLogger::LogWarn(
+                    L"[NetworkChannel] Plugin '%S': this client runs version '%S', the server runs '%S'%S. "
+                    L"Wire format not known to match, plugin data will not be exchanged.",
+                    f.local.name.c_str(), f.local.version.c_str(), f.server.version.c_str(),
+                    WireCompat::WireIdsNote(f.server.decl, f.local.decl).c_str());
+        }
     }
 
     // The authority answered our manifest. Payload is buildTag US interfaceVersion RS.
@@ -1925,6 +2793,36 @@ namespace
         const bool first = !g_manifestAcked;
         g_manifestAcked  = true;
 
+        // Our declarations go back only to a server that proved it reads them.
+        WireCompat::AckTailKind tail = WireCompat::AckTailKind::None;
+        const bool tailStored = StoreServerWireTable(reinterpret_cast<const char*>(data), len, &tail);
+        const bool hasTable = tailStored && tail == WireCompat::AckTailKind::Table;
+        if (hasTable)
+            SendWiresToServer();
+
+        // The feature list goes only to a server that said it reads it: the
+        // "$hostrules" record behind its wire table. An older server never gets
+        // the message, and nothing is logged for it beyond one INFO.
+        const bool hasHostRules = hasTable && WireCompat::TailHasHostRules(reinterpret_cast<const char*>(data), len);
+        g_featProven = hasHostRules;
+        if (hasHostRules)
+        {
+            g_featHookGen = PluginHookReport::GetGeneration();
+            if (g_featSentSeq != g_manifestSendSeq)
+                SendFeatToServer();
+        }
+        else if (tailStored)
+        {
+            bool firstNote;
+            {
+                std::lock_guard<std::mutex> lk(g_wireLogMutex);
+                firstNote = g_serverTailWarned.First(g_manifestSentTo, "$hostrules");
+            }
+            if (firstNote)
+                ModLoaderLogger::LogInfo(
+                    L"[NetworkChannel] No host rules (the server's mod loader is older).");
+        }
+
         if (first)
             ModLoaderLogger::LogInfo(
                 L"[NetworkChannel] Server acknowledged our manifest after %d attempt(s) "
@@ -1934,6 +2832,11 @@ namespace
             ModLoaderLogger::LogDebug(
                 L"[NetworkChannel] Duplicate manifest acknowledgement from server (build '%S')",
                 tag.c_str());
+
+        // After the acknowledgement line, so the notes about plugin versions
+        // read as what they are: details of the connection just reported.
+        if (tailStored)
+            ReportServerWires(hasTable);
 
         // The ack, not the greeting, is what plugins are told about: it is the
         // first moment the authority is known to have our plugin list, and
@@ -2118,6 +3021,10 @@ static void DispatchClientNarrow(const char* narrowData, size_t nbytes)
     {
         if (env.typeTag == kMlAck)
             OnManifestAck(env.payload.data(), env.payload.size());
+        else if (env.typeTag == kMlRules)
+            OnHostRules(env.payload.data(), env.payload.size());
+        else if (env.typeTag == kMlAdminQ)
+            OnAdminQuestion(env.payload.data(), env.payload.size());
         else if (env.typeTag == kMlEchoBack)
             OnEchoReply(env.payload.data(), env.payload.size());
         else
@@ -2175,6 +3082,762 @@ static void DispatchClientNarrow(const char* narrowData, size_t nbytes)
 }
 #endif // MODLOADER_CLIENT_BUILD
 
+// Sends the server's rule set ("$ML:rules") to one client that already sent
+// "$ML:feat"; no other connection is ever a target. The payload is the
+// connection's own set when a plugin gave it one, otherwise the plugins' global
+// set with the host console's deny list and message as they are now. It goes
+// out again only when the encoded bytes changed, unless force is set (a feature
+// list arrived or was replaced). Nothing is sent to a client while the set says
+// nothing and nothing was sent before; once something was, an emptied set is
+// sent once so the client lets go of the old rows.
+static void SendRulesTo(void* conn, bool force)
+{
+    if (!conn) return;
+
+    HostRulesWire::RulesSet global;
+    HostRulesWire::RulesSet own;
+    bool hasOwn = false;
+    {
+        std::lock_guard<std::mutex> lk(g_manifestMutex);
+        if (g_clientFeat.find(conn) == g_clientFeat.end()) return;
+        global = g_setGlobal;
+        const auto it = g_connRules.find(conn);
+        if (it != g_connRules.end())
+        {
+            own = it->second;
+            hasOwn = true;
+        }
+    }
+
+    HostRules::DenySet consoleDeny;
+    for (const auto& row : PluginHookReport::HostDeny())
+        consoleDeny.push_back({ row.first, row.second });
+    const HostRulesWire::RulesSet rules = HostRulesWire::EffectiveRules(
+        global, hasOwn ? &own : nullptr, consoleDeny, PluginHookReport::HostMessage());
+
+    HostRulesWire::EncodeStats stats;
+    const std::string body = HostRulesWire::EncodeRules(rules, &stats);
+    if (stats.dropped || stats.truncated)
+    {
+        static bool warned = false;
+        if (!warned)
+        {
+            warned = true;
+            ModLoaderLogger::LogWarn(
+                L"[NetworkChannel] %zu server rule(s) could not be sent (%zu unreadable, %zu cut for "
+                L"size); clients will not see those.",
+                stats.dropped + stats.truncated, stats.dropped, stats.truncated);
+        }
+    }
+
+    {
+        std::lock_guard<std::mutex> lk(g_manifestMutex);
+        auto it = g_clientFeat.find(conn);
+        if (it == g_clientFeat.end()) return;
+        if (HostRulesWire::NothingToSend(rules) && !it->second.rulesSentOnce) return;
+        if (!force && it->second.rulesSent == body) return;
+    }
+
+    const HostRulesWire::SendPlan plan = HostRulesWire::PlanSend(body.size(), kMlRules);
+    if (!plan.sendable)
+    {
+        static bool warned = false;
+        if (!warned)
+        {
+            warned = true;
+            ModLoaderLogger::LogWarn(
+                L"[NetworkChannel] The server rules (%zu bytes) are too large to send to clients.",
+                body.size());
+        }
+        return;
+    }
+
+    if (!SendWire(conn, kMlPlugin, BuildEnvelope(kMlPlugin, kMlRules,
+                                     reinterpret_cast<const uint8_t*>(body.data()),
+                                     body.size())))
+        return;
+
+    std::lock_guard<std::mutex> lk(g_manifestMutex);
+    auto it = g_clientFeat.find(conn);
+    if (it == g_clientFeat.end()) return;
+    it->second.rulesSent     = body;
+    it->second.rulesSentOnce = true;
+    ModLoaderLogger::LogDebug(
+        L"[NetworkChannel] Sent the server rules to client %p (%zu bytes, %zu chunk(s))",
+        conn, body.size(), plan.chunkCount);
+}
+
+// ============================================================
+// Per-player host rules  (IPluginHostRules, interface v79)
+// Authority only. A server plugin sets the global set, or one connection's own
+// set, from text; the loader sends the result to the clients at once.
+// ============================================================
+
+// Callbacks registered with RegisterOnClientFeatures. Plugin code, so never
+// called with a lock held.
+static std::mutex g_featCbMutex;
+static std::vector<PluginClientFeaturesCallback> g_featCbs;
+
+// Callbacks registered with RegisterOnClientBelowMinimum, same rule.
+static std::mutex g_minCbMutex;
+static std::vector<PluginClientBelowMinimumCallback> g_minCbs;
+
+// Writes `text` into the caller's error buffer, NUL-terminated and cut to its
+// size. The buffer may be null or zero-sized.
+static void CopyErrorText(char* error, size_t errorSize, const std::string& text)
+{
+    if (!error || errorSize == 0) return;
+    const size_t n = (std::min)(text.size(), errorSize - 1);
+    std::memcpy(error, text.data(), n);
+    error[n] = '\0';
+}
+
+// A call from a process that is not the session authority has no clients to
+// reach: warn the first time, and let the caller return false or do nothing.
+static bool HostRulesAuthority(const char* what)
+{
+    if (HasNetAuthority()) return true;
+    static std::atomic<bool> warned{ false };
+    if (!warned.exchange(true))
+        ModLoaderLogger::LogWarn(
+            L"[NetworkChannel] %S ignored: this process is not the session authority, so it has "
+            L"no clients to send rules to",
+            what);
+    return false;
+}
+
+// Reads `text` (null reads as empty) into `set`. On a bad text, fills the
+// caller's error buffer and returns false with `set` untouched.
+static bool ReadRulesText(const char* text, HostRulesWire::RulesSet& set, char* error, size_t errorSize)
+{
+    std::string why;
+    const HostRulesWire::ParseResult res = HostRulesWire::ParseRulesText(
+        text ? std::string_view(text) : std::string_view(), set, why);
+    CopyErrorText(error, errorSize, res.status == HostRulesWire::ParseStatus::Ok ? std::string() : why);
+    return res.status == HostRulesWire::ParseStatus::Ok;
+}
+
+static bool HR_SetRules(const char* text, char* error, size_t errorSize)
+{
+    if (!HostRulesAuthority("SetRules"))
+    {
+        CopyErrorText(error, errorSize, "this process is not the session authority");
+        return false;
+    }
+
+    HostRulesWire::RulesSet set;
+    if (!ReadRulesText(text, set, error, errorSize)) return false;
+
+    {
+        std::lock_guard<std::mutex> lk(g_manifestMutex);
+        g_setGlobal = std::move(set);
+    }
+    NetworkChannel::HostRulesChanged();
+    return true;
+}
+
+static bool HR_SetRulesForConnection(void* playerController, const char* text, char* error, size_t errorSize)
+{
+    if (!HostRulesAuthority("SetRulesForConnection"))
+    {
+        CopyErrorText(error, errorSize, "this process is not the session authority");
+        return false;
+    }
+
+    void* conn = ConnectionForPlayer(playerController);
+    if (!conn)
+    {
+        CopyErrorText(error, errorSize, "no connection for this player controller");
+        return false;
+    }
+
+    HostRulesWire::RulesSet set;
+    if (!ReadRulesText(text, set, error, errorSize)) return false;
+
+    // A set is kept only for a connection the loader knows: one that sent its
+    // manifest, or one still in the driver's list. Anything else would sit in
+    // the map until the process ends.
+    const bool live = IsLiveClientConnection(conn);
+    {
+        std::lock_guard<std::mutex> lk(g_manifestMutex);
+        if (!live && g_manifests.find(conn) == g_manifests.end())
+        {
+            CopyErrorText(error, errorSize, "no connection for this player controller");
+            return false;
+        }
+        g_connRules[conn] = std::move(set);
+    }
+    NetworkChannel::HostRulesChanged();
+    return true;
+}
+
+static void HR_ClearConnection(void* playerController)
+{
+    if (!HostRulesAuthority("ClearConnection")) return;
+
+    void* conn = ConnectionForPlayer(playerController);
+    if (!conn) return;
+    {
+        std::lock_guard<std::mutex> lk(g_manifestMutex);
+        if (g_connRules.erase(conn) == 0) return;
+    }
+    NetworkChannel::HostRulesChanged();
+}
+
+static void HR_RegisterOnClientFeatures(const IPluginSelf* self, PluginClientFeaturesCallback callback)
+{
+    if (!self || !self->name || !callback) return;
+    if (!HostRulesAuthority("RegisterOnClientFeatures")) return;
+
+    {
+        std::lock_guard<std::mutex> lk(g_featCbMutex);
+        if (std::find(g_featCbs.begin(), g_featCbs.end(), callback) != g_featCbs.end()) return;
+        g_featCbs.push_back(callback);
+    }
+    ModLoaderLogger::LogDebug(
+        L"[NetworkChannel] Client-features callback registered for plugin='%S'", self->name);
+}
+
+static void HR_UnregisterOnClientFeatures(const IPluginSelf* self, PluginClientFeaturesCallback callback)
+{
+    if (!self || !callback) return;
+
+    std::lock_guard<std::mutex> lk(g_featCbMutex);
+    g_featCbs.erase(std::remove(g_featCbs.begin(), g_featCbs.end(), callback), g_featCbs.end());
+}
+
+static bool HR_SetVersionMinimums(const char* text, char* error, size_t errorSize)
+{
+    if (!HostRulesAuthority("SetVersionMinimums"))
+    {
+        CopyErrorText(error, errorSize, "this process is not the session authority");
+        return false;
+    }
+
+    HostRulesWire::Minimums table;
+    std::string why;
+    const HostRulesWire::ParseResult res = HostRulesWire::ParseMinimumsText(
+        text ? std::string_view(text) : std::string_view(), table, why);
+    CopyErrorText(error, errorSize, res.status == HostRulesWire::ParseStatus::Ok ? std::string() : why);
+    if (res.status != HostRulesWire::ParseStatus::Ok) return false;
+
+    const bool loaderOn = !table.loader.empty();
+    const size_t modCount = table.mods.size();
+    {
+        std::lock_guard<std::mutex> lk(g_manifestMutex);
+        g_minimums = std::move(table);
+        ++g_minimumsGen;
+        g_minimumsActive.store(loaderOn || modCount != 0);
+    }
+    ModLoaderLogger::LogInfo(
+        L"[NetworkChannel] Version minimums set: loader minimum %S, %zu mod minimum(s)",
+        loaderOn ? "on" : "off", modCount);
+    return true;
+}
+
+static void HR_RegisterOnClientBelowMinimum(const IPluginSelf* self, PluginClientBelowMinimumCallback callback)
+{
+    if (!self || !self->name || !callback) return;
+    if (!HostRulesAuthority("RegisterOnClientBelowMinimum")) return;
+
+    {
+        std::lock_guard<std::mutex> lk(g_minCbMutex);
+        if (std::find(g_minCbs.begin(), g_minCbs.end(), callback) != g_minCbs.end()) return;
+        g_minCbs.push_back(callback);
+    }
+    ModLoaderLogger::LogDebug(
+        L"[NetworkChannel] Below-minimum callback registered for plugin='%S'", self->name);
+}
+
+static void HR_UnregisterOnClientBelowMinimum(const IPluginSelf* self, PluginClientBelowMinimumCallback callback)
+{
+    if (!self || !callback) return;
+
+    std::lock_guard<std::mutex> lk(g_minCbMutex);
+    g_minCbs.erase(std::remove(g_minCbs.begin(), g_minCbs.end(), callback), g_minCbs.end());
+}
+
+static int HR_GetClientFeatures(void* playerController, char* buf, size_t size)
+{
+    if (!HostRulesAuthority("GetClientFeatures")) return -1;
+
+    void* conn = ConnectionForPlayer(playerController);
+    if (!conn) return -1;
+
+    std::string loaderTag;
+    uint32_t interfaceVersion = 0;
+    std::vector<HostRulesWire::FeatRecord> features;
+    {
+        std::lock_guard<std::mutex> lk(g_manifestMutex);
+        const auto it = g_clientFeat.find(conn);
+        if (it == g_clientFeat.end()) return -1;
+        loaderTag = it->second.loaderTag;
+        interfaceVersion = it->second.interfaceVersion;
+        features = it->second.features;
+    }
+    return HostRulesWire::CopyTextCut(
+        HostRulesWire::BuildClientFeaturesText(loaderTag, interfaceVersion, features), buf, size);
+}
+
+// Callbacks registered with RegisterOnAdminAnswer, same rule.
+static std::mutex g_adminCbMutex;
+static std::vector<PluginAdminAnswerCallback> g_adminCbs;
+
+// Puts one "$ML:adminq" message on the wire to `conn`.
+static bool SendAdminQuestion(void* conn, HostRulesWire::AdminQKind kind, const std::string& text)
+{
+    const std::string body = HostRulesWire::EncodeAdminQuestion(kind, text);
+    return SendWire(conn, kMlPlugin, BuildEnvelope(kMlPlugin, kMlAdminQ,
+                                                   reinterpret_cast<const uint8_t*>(body.data()),
+                                                   body.size()));
+}
+
+// The connection of a player that can be sent an admin prompt message: it has a
+// connection and its loader reported its features, which is the proof that it
+// speaks the host-rules messages. Null otherwise.
+static void* AdminTargetConnection(void* playerController)
+{
+    void* conn = ConnectionForPlayer(playerController);
+    if (!conn) return nullptr;
+    std::lock_guard<std::mutex> lk(g_manifestMutex);
+    return g_clientFeat.find(conn) != g_clientFeat.end() ? conn : nullptr;
+}
+
+static bool HR_AskAdmin(void* playerController)
+{
+    if (!HostRulesAuthority("AskAdmin")) return false;
+
+    void* conn = AdminTargetConnection(playerController);
+    if (!conn) return false;
+    if (!SendAdminQuestion(conn, HostRulesWire::AdminQKind::Ask, std::string())) return false;
+
+    std::lock_guard<std::mutex> lk(g_manifestMutex);
+    const auto it = g_clientFeat.find(conn);
+    if (it == g_clientFeat.end()) return true;
+    it->second.adminAsked = true;
+    it->second.hasLastAnswer = false;
+    return true;
+}
+
+static bool HR_AdminMessage(void* playerController, const char* text, bool close)
+{
+    if (!HostRulesAuthority("AdminMessage")) return false;
+    if (!text) return false;
+
+    void* conn = AdminTargetConnection(playerController);
+    if (!conn) return false;
+    {
+        std::lock_guard<std::mutex> lk(g_manifestMutex);
+        const auto it = g_clientFeat.find(conn);
+        if (it == g_clientFeat.end() || !it->second.adminAsked) return false;
+    }
+    if (!SendAdminQuestion(conn,
+                           close ? HostRulesWire::AdminQKind::Close : HostRulesWire::AdminQKind::Info,
+                           text))
+        return false;
+
+    if (close)
+    {
+        std::lock_guard<std::mutex> lk(g_manifestMutex);
+        const auto it = g_clientFeat.find(conn);
+        if (it != g_clientFeat.end()) it->second.adminAsked = false;
+    }
+    return true;
+}
+
+static void HR_RegisterOnAdminAnswer(const IPluginSelf* self, PluginAdminAnswerCallback callback)
+{
+    if (!self || !self->name || !callback) return;
+    if (!HostRulesAuthority("RegisterOnAdminAnswer")) return;
+
+    {
+        std::lock_guard<std::mutex> lk(g_adminCbMutex);
+        if (std::find(g_adminCbs.begin(), g_adminCbs.end(), callback) != g_adminCbs.end()) return;
+        g_adminCbs.push_back(callback);
+    }
+    ModLoaderLogger::LogDebug(
+        L"[NetworkChannel] Admin-answer callback registered for plugin='%S'", self->name);
+}
+
+static void HR_UnregisterOnAdminAnswer(const IPluginSelf* self, PluginAdminAnswerCallback callback)
+{
+    if (!self || !callback) return;
+
+    std::lock_guard<std::mutex> lk(g_adminCbMutex);
+    g_adminCbs.erase(std::remove(g_adminCbs.begin(), g_adminCbs.end(), callback), g_adminCbs.end());
+}
+
+static IPluginHostRules g_hostRulesIface =
+{
+    HR_SetRules,
+    HR_SetRulesForConnection,
+    HR_ClearConnection,
+    HR_RegisterOnClientFeatures,
+    HR_UnregisterOnClientFeatures,
+    HR_SetVersionMinimums,
+    HR_RegisterOnClientBelowMinimum,
+    HR_UnregisterOnClientBelowMinimum,
+    HR_GetClientFeatures,
+    HR_AskAdmin,
+    HR_AdminMessage,
+    HR_RegisterOnAdminAnswer,
+    HR_UnregisterOnAdminAnswer,
+};
+
+// The manifest rows of one connection for FindBelowMinimum. A row is wire-refused
+// when the server has the same plugin loaded, the wire check (CheckClientPair)
+// finds the pair incompatible, and at least one side declared wire information;
+// a plugin with no declaration on either side is judged by version minimums alone.
+// Only asked for when the table has a wire row, since it queries the plugin
+// manager.
+static std::vector<HostRulesWire::ManifestRow> BuildManifestRows(
+    void* conn, const std::vector<NetworkChannel::RemotePlugin>& plugins, bool needWire)
+{
+    std::vector<WireCompat::Entry> mine;
+    if (needWire) mine = PluginManager::GetWireEntries();
+
+    std::vector<HostRulesWire::ManifestRow> rows;
+    rows.reserve(plugins.size());
+    for (const auto& rp : plugins)
+    {
+        HostRulesWire::ManifestRow row;
+        row.plugin = rp.name;
+        row.version = rp.version;
+        if (needWire)
+        {
+            const WireCompat::Entry* local = WireCompat::FindEntry(mine, rp.name);
+            if (local)
+            {
+                const PairCheck pc = CheckClientPair(conn, rp.name.c_str(), local->version.c_str());
+                if (pc.state == WireCompat::PairState::Incompatible)
+                {
+                    bool clientDeclared = false;
+                    {
+                        std::lock_guard<std::mutex> lk(g_manifestMutex);
+                        auto wt = g_clientWires.find(conn);
+                        if (wt != g_clientWires.end())
+                            if (const WireCompat::Entry* e = WireCompat::FindEntry(wt->second, rp.name))
+                                clientDeclared = e->decl.declared;
+                    }
+                    row.wireRefused = pc.serverDecl.declared || clientDeclared;
+                }
+            }
+        }
+        rows.push_back(std::move(row));
+    }
+    return rows;
+}
+
+// Checks every connected client that has not fired yet against the minimums, and
+// tells the plugins about each one that is below, once per join. Runs from the
+// tick (the game thread). The client's loader version comes with "$ML:feat"; a
+// client with a manifest but no feature list 30 s after it is treated as having
+// reported no version. Vanilla players (no manifest) and the listen host's own
+// controller (no connection) are never looked at. A finding whose controller does
+// not exist yet is kept and retried each tick. With an empty table this is one
+// atomic load. tickGapMs is the time since the previous tick: a stall longer
+// than HostRulesWire::kStallGapMs does not count toward the 30 s above.
+// Controllers are only resolved for connections still in the driver's list; the
+// state of one that left it is forgotten.
+static void PumpVersionMinimums(uint64_t tickGapMs)
+{
+    if (!g_minimumsActive.load()) return;
+    if (!HasNetAuthority()) return;
+
+    struct Candidate
+    {
+        void* conn;
+        std::vector<NetworkChannel::RemotePlugin> plugins;
+        bool loaderReported;
+        std::string loaderTag;
+        uint64_t gen;
+        uint64_t manifestTick;
+    };
+
+    HostRulesWire::Minimums table;
+    std::vector<Candidate> todo;
+    std::vector<void*> retry;
+    {
+        std::lock_guard<std::mutex> lk(g_manifestMutex);
+        table = g_minimums;
+        const uint64_t now = GetTickCount64();
+        for (const auto& kv : g_manifests)
+        {
+            MinimumsCheck& st = g_minCheck[kv.first];
+            if (st.fired) continue;
+
+            const auto tk = g_manifestTick.find(kv.first);
+            if (tk == g_manifestTick.end()) continue;
+            const auto ft = g_clientFeat.find(kv.first);
+            const bool hasFeat = (ft != g_clientFeat.end());
+            if (!hasFeat)
+            {
+                st.graceExtraMs += HostRulesWire::StallExtensionMs(tickGapMs);
+                if (!HostRulesWire::LoaderGraceOver(now, tk->second, st.graceExtraMs, kLoaderReportGraceMs))
+                    continue;
+            }
+
+            if (st.checked && st.gen == g_minimumsGen && st.hadFeat == hasFeat &&
+                st.manifestTick == tk->second)
+            {
+                if (!st.reason.empty()) retry.push_back(kv.first);
+                continue;
+            }
+            todo.push_back({ kv.first, kv.second, hasFeat, hasFeat ? ft->second.loaderTag : std::string(),
+                             g_minimumsGen, tk->second });
+        }
+    }
+
+    bool needWire = false;
+    for (const auto& m : table.mods) needWire = needWire || m.wire;
+
+    for (const Candidate& c : todo)
+    {
+        const std::vector<HostRulesWire::ManifestRow> rows = BuildManifestRows(c.conn, c.plugins, needWire);
+        const std::string reason = HostRulesWire::BuildBelowMinimumReason(
+            HostRulesWire::FindBelowMinimum(table, c.loaderReported, c.loaderTag, rows));
+
+        std::lock_guard<std::mutex> lk(g_manifestMutex);
+        auto it = g_minCheck.find(c.conn);
+        // A table set while this was being checked leaves the entry for the
+        // next tick, which checks it against the new one.
+        if (it == g_minCheck.end() || it->second.fired || c.gen != g_minimumsGen) continue;
+        MinimumsCheck& st = it->second;
+        st.checked = true;
+        st.gen = c.gen;
+        st.hadFeat = c.loaderReported;
+        st.manifestTick = c.manifestTick;
+        st.reason = reason;
+        if (!reason.empty()) retry.push_back(c.conn);
+    }
+    if (retry.empty()) return;
+
+    struct Fire { void* conn; std::string reason; std::string who; };
+    std::vector<Fire> fires;
+    for (void* conn : retry)
+    {
+        // A connection that left the driver's list has no controller to read.
+        if (!IsLiveClientConnection(conn))
+        {
+            ForgetConnectionState(conn);
+            continue;
+        }
+        if (!PlayerForConnection(conn)) continue;
+
+        Fire f;
+        {
+            std::lock_guard<std::mutex> lk(g_manifestMutex);
+            auto it = g_minCheck.find(conn);
+            if (it == g_minCheck.end() || it->second.fired || it->second.reason.empty()) continue;
+            it->second.fired = true;
+            f.reason = it->second.reason;
+        }
+        f.conn = conn;
+        f.who = PlayerNameForConnection(conn);
+        fires.push_back(std::move(f));
+    }
+    if (fires.empty()) return;
+
+    std::vector<PluginClientBelowMinimumCallback> cbs;
+    {
+        std::lock_guard<std::mutex> lk(g_minCbMutex);
+        cbs = g_minCbs;
+    }
+
+    for (const Fire& f : fires)
+    {
+        ModLoaderLogger::LogInfo(
+            L"[NetworkChannel] Player '%S' is below the server's minimum version: %S",
+            f.who.empty() ? "(unnamed)" : f.who.c_str(), f.reason.c_str());
+        for (PluginClientBelowMinimumCallback cb : cbs)
+        {
+            // A callback may remove this player (or another one), so the
+            // controller is resolved again before each call.
+            void* pc = LiveControllerForConnection(f.conn);
+            if (!pc) break;
+            try
+            {
+                PluginGuard::Invoke(cb, "below-minimum callback", pc, f.reason.c_str());
+            }
+            catch (const std::exception& ex)
+            {
+                ModLoaderLogger::LogError(
+                    L"[NetworkChannel] Exception in below-minimum callback: %S", ex.what());
+            }
+            catch (...)
+            {
+                ModLoaderLogger::LogError(L"[NetworkChannel] Unknown exception in below-minimum callback");
+            }
+        }
+    }
+}
+
+// Tells the registered plugins about every client whose feature list arrived or
+// changed since the last tick, on the game thread (the tick is). A client whose
+// controller does not exist yet stays pending and is retried next tick; one that
+// left the driver's list is forgotten. A list that arrived inside the rate-limit
+// gap (featDeferred) is acted on here once the gap is over: the announce and the
+// rules push the receive skipped. With no callback registered the pending marks
+// are simply cleared.
+static void PumpClientFeatures(uint64_t now)
+{
+    if (!g_featAnnounceDirty.load()) return;
+    if (!HasNetAuthority()) return;
+
+    struct Item { void* conn; bool resend; };
+    std::vector<Item> items;
+    {
+        std::lock_guard<std::mutex> lk(g_manifestMutex);
+        for (auto& kv : g_clientFeat)
+        {
+            ClientFeatInfo& fi = kv.second;
+            bool resend = false;
+            if (fi.featDeferred &&
+                HostRulesWire::DecideFeatAct(fi.hasFeatAct, now, fi.lastFeatActMs) == HostRulesWire::FeatGate::Act)
+            {
+                fi.featDeferred = false;
+                fi.hasFeatAct = true;
+                fi.lastFeatActMs = now;
+                fi.featAnnouncePending = true;
+                resend = true;
+            }
+            if (resend || fi.featAnnouncePending)
+                items.push_back({ kv.first, resend });
+        }
+    }
+
+    // No engine access under the lock: the controller is read from the
+    // connection only once it is known to be in the driver's list.
+    std::vector<void*> resolved;
+    for (const Item& it : items)
+    {
+        if (!IsLiveClientConnection(it.conn))
+        {
+            ForgetConnectionState(it.conn);
+            continue;
+        }
+        if (it.resend) SendRulesTo(it.conn, true);
+        if (PlayerForConnection(it.conn)) resolved.push_back(it.conn);
+    }
+
+    {
+        std::lock_guard<std::mutex> lk(g_manifestMutex);
+        for (void* conn : resolved)
+        {
+            const auto it = g_clientFeat.find(conn);
+            if (it != g_clientFeat.end()) it->second.featAnnouncePending = false;
+        }
+        bool stillOpen = false;
+        for (const auto& kv : g_clientFeat)
+            stillOpen = stillOpen || kv.second.featAnnouncePending || kv.second.featDeferred;
+        g_featAnnounceDirty.store(stillOpen);
+    }
+    if (resolved.empty()) return;
+
+    std::vector<PluginClientFeaturesCallback> cbs;
+    {
+        std::lock_guard<std::mutex> lk(g_featCbMutex);
+        cbs = g_featCbs;
+    }
+
+    for (void* conn : resolved)
+    {
+        for (PluginClientFeaturesCallback cb : cbs)
+        {
+            // A callback may remove this player (or another one), so the
+            // controller is resolved again before each call.
+            void* pc = LiveControllerForConnection(conn);
+            if (!pc) break;
+            try
+            {
+                PluginGuard::Invoke(cb, "client-features callback", pc);
+            }
+            catch (const std::exception& ex)
+            {
+                ModLoaderLogger::LogError(
+                    L"[NetworkChannel] Exception in client-features callback: %S", ex.what());
+            }
+            catch (...)
+            {
+                ModLoaderLogger::LogError(L"[NetworkChannel] Unknown exception in client-features callback");
+            }
+        }
+    }
+}
+
+// Hands the accepted admin answers to the registered plugins, on the game thread
+// (the tick is), outside all locks. The player controller is looked up from the
+// connection the answer arrived on, only while that connection is still in the
+// driver's list: an answer from one that left is dropped. An answer whose
+// controller does not exist yet waits for a later tick, and is dropped after
+// kAdminAnswerMaxWaitMs. The loader's copy of the code text is cleared once the callbacks ran.
+static void PumpAdminAnswers(uint64_t now)
+{
+    if (!g_adminAnswersDirty.load()) return;
+    if (!HasNetAuthority()) return;
+
+    std::vector<AdminAnswerQueued> taken;
+    {
+        std::lock_guard<std::mutex> lk(g_manifestMutex);
+        taken.swap(g_adminAnswers);
+    }
+
+    std::vector<AdminAnswerQueued> due;
+    std::vector<AdminAnswerQueued> waiting;
+    for (AdminAnswerQueued& q : taken)
+    {
+        if (!IsLiveClientConnection(q.conn))
+        {
+            std::fill(q.code.begin(), q.code.end(), '\0');
+            ForgetConnectionState(q.conn);
+        }
+        else if (PlayerForConnection(q.conn))
+            due.push_back(std::move(q));
+        else if (now - q.queuedMs < kAdminAnswerMaxWaitMs)
+            waiting.push_back(std::move(q));
+        else
+            std::fill(q.code.begin(), q.code.end(), '\0');
+    }
+    {
+        std::lock_guard<std::mutex> lk(g_manifestMutex);
+        for (AdminAnswerQueued& q : waiting)
+            g_adminAnswers.push_back(std::move(q));
+        g_adminAnswersDirty.store(!g_adminAnswers.empty());
+    }
+    if (due.empty()) return;
+
+    std::vector<PluginAdminAnswerCallback> cbs;
+    {
+        std::lock_guard<std::mutex> lk(g_adminCbMutex);
+        cbs = g_adminCbs;
+    }
+
+    for (AdminAnswerQueued& d : due)
+    {
+        for (PluginAdminAnswerCallback cb : cbs)
+        {
+            // A callback may remove this player (or another one), so the
+            // controller is resolved again before each call.
+            void* pc = LiveControllerForConnection(d.conn);
+            if (!pc) break;
+            try
+            {
+                PluginGuard::Invoke(cb, "admin-answer callback", pc, d.notMe, d.code.c_str());
+            }
+            catch (const std::exception& ex)
+            {
+                ModLoaderLogger::LogError(
+                    L"[NetworkChannel] Exception in admin-answer callback: %S", ex.what());
+            }
+            catch (...)
+            {
+                ModLoaderLogger::LogError(L"[NetworkChannel] Unknown exception in admin-answer callback");
+            }
+        }
+        std::fill(d.code.begin(), d.code.end(), '\0');
+    }
+}
+
 // ============================================================
 // Authority-side receive  (both builds)
 // Fed by the control-channel detour via OnWireReceive, which routes here only
@@ -2227,6 +3890,10 @@ static bool DispatchServerNarrow(void* senderConn, void* senderUObject,
             {
                 std::lock_guard<std::mutex> lk(g_manifestMutex);
                 g_manifests[senderConn] = std::move(plugins);
+                g_manifestTick[senderConn] = GetTickCount64();
+                // A re-sent manifest may mean a different set of plugins: what the
+                // client declared before no longer applies until it sends it again.
+                g_clientWires.erase(senderConn);
             }
 
             // The other half of the pair above: one INFO line saying what this
@@ -2254,12 +3921,166 @@ static bool DispatchServerNarrow(void* senderConn, void* senderUObject,
             ack += std::to_string(PLUGIN_INTERFACE_VERSION);
             ack += kRecordSep;
 
+            // Behind the first record: this server's wire table. A client that
+            // reads only the first record ignores it; the ack is the only
+            // message that carries it.
+            std::vector<std::string> notEncoded;
+            size_t cut = 0;
+            ack += WireCompat::EncodeTableCapped(PluginManager::GetWireEntries(), kMaxTailBytes,
+                &notEncoded, &cut);
+            WarnWireTableGaps(notEncoded, cut);
+
+            // After the table: this server reads "$ML:feat". A reader that does
+            // not know the record skips it. Always written, whatever the rules.
+            ack += WireCompat::EncodeHostRulesRecord();
+
             if (!SendWire(senderConn, kMlPlugin, BuildEnvelope(kMlPlugin, kMlAck,
                                                     reinterpret_cast<const uint8_t*>(ack.data()),
                                                     ack.size())))
             {
                 ModLoaderLogger::LogWarn(
                     L"[NetworkChannel] Could not acknowledge client %p -- it will retry", senderConn);
+            }
+        }
+        else if (env.typeTag == kMlWires && senderConn)
+        {
+            // The client's wire table, sent after its manifest. Out of order
+            // (no manifest yet) is dropped without a word; the client sends it
+            // again with the next manifest.
+            const WireCompat::DecodedTable table = WireCompat::DecodeTable(
+                reinterpret_cast<const char*>(env.payload.data()), env.payload.size());
+            if (!table.present)
+            {
+                bool first;
+                {
+                    std::lock_guard<std::mutex> lk(g_wireLogMutex);
+                    first = g_wiresGarbageWarned.First(senderConn, "$wires");
+                }
+                if (first)
+                    ModLoaderLogger::LogWarn(
+                        L"[NetworkChannel] Ignoring a malformed plugin wire table from client %p; "
+                        L"its plugins keep the exact-version rule.", senderConn);
+                return true;
+            }
+
+            {
+                // Checked under the same lock as the store, so a connection that
+                // was forgotten in between does not get an entry back.
+                std::lock_guard<std::mutex> lk(g_manifestMutex);
+                if (g_manifests.find(senderConn) == g_manifests.end())
+                    return true;
+                g_clientWires[senderConn] = table.entries;
+            }
+            MarkReadyDirty();
+        }
+        else if (env.typeTag == kMlFeat && senderConn)
+        {
+            // The client's feature catalog, sent after its manifest was acked.
+            // Out of order (no manifest yet) is dropped without a word.
+            HostRulesWire::FeatPayload feat;
+            const HostRulesWire::Status st = HostRulesWire::DecodeFeat(
+                reinterpret_cast<const char*>(env.payload.data()), env.payload.size(), &feat);
+            if (st != HostRulesWire::Status::Ok)
+            {
+                bool first;
+                {
+                    std::lock_guard<std::mutex> lk(g_wireLogMutex);
+                    first = g_wiresGarbageWarned.First(senderConn, "$feat");
+                }
+                if (first)
+                    ModLoaderLogger::LogWarn(
+                        L"[NetworkChannel] Ignoring a malformed feature list from client %p (%S).",
+                        senderConn, HostRulesWire::StatusText(st));
+                return true;
+            }
+
+            const size_t featCount = feat.features.size();
+            bool isNew = false;
+            bool act = false;
+            {
+                std::lock_guard<std::mutex> lk(g_manifestMutex);
+                if (g_manifests.find(senderConn) == g_manifests.end())
+                    return true;
+                auto it = g_clientFeat.find(senderConn);
+                isNew = (it == g_clientFeat.end());
+                ClientFeatInfo& info = g_clientFeat[senderConn];
+                // The stored entry is always replaced, so what the plugins read
+                // is current. Only the announce and the rules push are limited.
+                info.loaderTag        = feat.buildTag;
+                info.interfaceVersion = feat.interfaceVersion;
+                info.features         = std::move(feat.features);
+                const uint64_t nowMs = GetTickCount64();
+                act = HostRulesWire::DecideFeatAct(info.hasFeatAct, nowMs, info.lastFeatActMs) ==
+                      HostRulesWire::FeatGate::Act;
+                if (act)
+                {
+                    info.hasFeatAct = true;
+                    info.lastFeatActMs = nowMs;
+                    info.featDeferred = false;
+                    info.featAnnouncePending = true;
+                }
+                else
+                    info.featDeferred = true;
+                g_featAnnounceDirty.store(true);
+            }
+            if (!act)
+                return true;
+
+            const std::string who = PlayerNameForConnection(senderConn);
+            if (isNew)
+                ModLoaderLogger::LogInfo(
+                    L"[NetworkChannel] Player '%S' reported %zu feature(s), mod loader '%S'",
+                    who.empty() ? "(unnamed)" : who.c_str(), featCount, feat.buildTag.c_str());
+            else
+                ModLoaderLogger::LogDebug(
+                    L"[NetworkChannel] Player '%S' updated its feature list (%zu feature(s))",
+                    who.empty() ? "(unnamed)" : who.c_str(), featCount);
+
+            SendRulesTo(senderConn, true);
+        }
+        else if (env.typeTag == kMlAdminR && senderConn)
+        {
+            // A player's answer to the admin prompt. The sender is the connection
+            // it arrived on, never anything in the payload. The code text is kept
+            // only in the queue entry and is never logged.
+            HostRulesWire::AdminAnswer answer;
+            const HostRulesWire::Status st = HostRulesWire::DecodeAdminAnswer(
+                reinterpret_cast<const char*>(env.payload.data()), env.payload.size(), &answer);
+            if (st != HostRulesWire::Status::Ok)
+            {
+                bool first;
+                {
+                    std::lock_guard<std::mutex> lk(g_wireLogMutex);
+                    first = g_wiresGarbageWarned.First(senderConn, "$adminr");
+                }
+                if (first)
+                    ModLoaderLogger::LogWarn(
+                        L"[NetworkChannel] Ignoring a malformed admin answer from client %p (%S).",
+                        senderConn, HostRulesWire::StatusText(st));
+                return true;
+            }
+
+            const uint64_t now = GetTickCount64();
+            {
+                std::lock_guard<std::mutex> lk(g_manifestMutex);
+                auto it = g_clientFeat.find(senderConn);
+                if (it == g_clientFeat.end()) return true;
+                ClientFeatInfo& info = it->second;
+                // Not asked, or too soon after the last answer: dropped without a word.
+                if (HostRulesWire::DecideAdminAnswer(info.adminAsked, now, info.hasLastAnswer,
+                                                     info.lastAnswerMs) !=
+                    HostRulesWire::AdminAnswerDecision::Accept)
+                    return true;
+                info.hasLastAnswer = true;
+                info.lastAnswerMs = now;
+
+                AdminAnswerQueued q;
+                q.conn = senderConn;
+                q.notMe = (answer.kind == HostRulesWire::AdminRKind::NotMe);
+                q.code = std::move(answer.code);
+                q.queuedMs = now;
+                g_adminAnswers.push_back(std::move(q));
+                g_adminAnswersDirty.store(true);
             }
         }
         else if (env.typeTag == kMlEcho && senderConn)
@@ -2287,6 +4108,25 @@ static bool DispatchServerNarrow(void* senderConn, void* senderUObject,
                 env.typeTag.c_str(), senderConn);
         }
         return true;
+    }
+
+    // A client running a version of this plugin that is not known to speak the
+    // same wire format gets no packets through, as in the other direction. A
+    // peer that has not reported yet is let through as before.
+    if (senderConn)
+    {
+        if (const IPluginSelf* self = PluginManager::GetSelfForPlugin(env.pluginName.c_str()))
+        {
+            const PairCheck pc = CheckClientPair(senderConn, self->name, self->version);
+            ReportPair(senderConn, self->name, self->version, pc);
+            if (pc.state == WireCompat::PairState::Incompatible)
+            {
+                ModLoaderLogger::LogTrace(
+                    L"[NetworkChannel] ReceiveFromClient dropped: sender=%p runs an incompatible '%S'",
+                    senderConn, self->name);
+                return true;
+            }
+        }
     }
 
     // Dispatch to registered server-side handlers
@@ -2394,6 +4234,12 @@ static void OnWorldEndPlayForgetConns(SDK::UWorld* /*world*/, const char* /*worl
     {
         std::lock_guard<std::mutex> lk(g_manifestMutex);
         g_manifests.clear();
+        g_manifestTick.clear();
+        g_clientWires.clear();
+        g_clientFeat.clear();
+        g_connRules.clear();
+        g_minCheck.clear();
+        WipeAdminAnswers(nullptr);
     }
     {
         std::lock_guard<std::mutex> lk(g_helloMutex);
@@ -2402,8 +4248,20 @@ static void OnWorldEndPlayForgetConns(SDK::UWorld* /*world*/, const char* /*worl
     {
         std::lock_guard<std::mutex> lk(g_readyMutex);
         g_announced.clear();
-        g_notReadyWarned.clear();
+        g_notReadyWarned.Clear();
         g_readyDirty = !g_clientReadyRegs.empty(); // re-announce into the next world
+    }
+    {
+        std::lock_guard<std::mutex> lk(g_wireLogMutex);
+        g_wireBlockedWarned.Clear();
+        g_wireAcceptedNoted.Clear();
+        g_wiresGarbageWarned.Clear();
+#ifdef MODLOADER_CLIENT_BUILD
+        g_serverTailWarned.Clear();
+        g_clientBlockedWarned.Clear();
+        g_clientAcceptedNoted.Clear();
+        g_serverWires = ServerWireTable{};
+#endif
     }
 #ifdef MODLOADER_CLIENT_BUILD
     // Our own report is void too: the next world means a new connection, so the
@@ -2411,6 +4269,10 @@ static void OnWorldEndPlayForgetConns(SDK::UWorld* /*world*/, const char* /*worl
     g_manifestSentTo  = nullptr;
     g_manifestSentGen = 0;
     g_manifestAcked   = false;
+    g_wiresPending    = false;
+    ResetFeatState();
+    // The rules of the server we just left: this hook runs on the game thread.
+    LeaveServerRules(/*onGameThread*/ true);
     g_attempts        = 0;
     g_gaveUpLogged    = false;
     g_lastAttemptMs   = 0;
@@ -2539,6 +4401,9 @@ static void OnWireReceive(void* netConnection, const uint8_t* data, size_t len)
 static void OnEngineTick(float /*deltaSeconds*/)
 {
     const uint64_t now = GetTickCount64();
+    static uint64_t s_lastTickMs = 0;
+    const uint64_t tickGapMs = (s_lastTickMs && now >= s_lastTickMs) ? now - s_lastTickMs : 0;
+    s_lastTickMs = now;
 
     // Re-asserted every frame rather than once at engine init: the net driver is
     // recreated on travel and each new one starts at the engine default.
@@ -2550,9 +4415,13 @@ static void OnEngineTick(float /*deltaSeconds*/)
     // waiting on an answer, and (client, plugin) pairs waiting to be announced.
     PumpGreetings(now);
     PumpClientReady();
+    PumpClientFeatures(now);
+    PumpVersionMinimums(tickGapMs);
+    PumpAdminAnswers(now);
 
 #ifdef MODLOADER_CLIENT_BUILD
     RefreshManifestIfStale();
+    PumpAdminAnswerSend();
 #endif
 }
 
@@ -2560,8 +4429,16 @@ static void OnEngineTick(float /*deltaSeconds*/)
 // point at which the controller exists and is owned by the connection. It is not
 // necessarily a point at which the RPC will arrive, which is what the retry in
 // PumpGreetings is for.
+//
+// The state keyed by this peer's connection is cleared first: the engine can
+// reuse a freed connection's address, and what a previous peer left there (its
+// manifest, features, rules, minimums mark, admin prompt) must not carry over.
+// Nothing legitimate exists yet for a new peer: a loader client sends its
+// manifest only after the greeting below.
 static void OnPlayerJoinedGreet(void* playerController)
 {
+    if (void* conn = ConnectionForPlayer(playerController))
+        ForgetConnectionState(conn);
     BeginGreeting(playerController);
 }
 
@@ -2644,11 +4521,31 @@ std::vector<NetworkChannel::ClientManifest> NetworkChannel::GetClientManifests()
         {
             entry.reported = true;
             entry.plugins  = it->second;
+            auto ft = g_clientFeat.find(conn);
+            if (ft != g_clientFeat.end())
+            {
+                entry.reportedFeatures = static_cast<int>(ft->second.features.size());
+                entry.loaderTag        = ft->second.loaderTag;
+            }
         }
         out.push_back(std::move(entry));
     }
 
     return out;
+}
+
+void NetworkChannel::HostRulesChanged()
+{
+    if (!HasNetAuthority()) return;
+
+    std::vector<void*> conns;
+    {
+        std::lock_guard<std::mutex> lk(g_manifestMutex);
+        for (const auto& kv : g_clientFeat)
+            conns.push_back(kv.first);
+    }
+    for (void* conn : conns)
+        SendRulesTo(conn, false);
 }
 
 bool NetworkChannel::StartFragmentationTest(size_t bytes, std::string& err)
@@ -2662,9 +4559,32 @@ bool NetworkChannel::StartFragmentationTest(size_t bytes, std::string& err)
 #endif
 }
 
+#ifdef MODLOADER_CLIENT_BUILD
+bool NetworkChannel::SendAdminAnswer(bool notMe, const std::string& code)
+{
+    // Read from the window's thread, so only atomics are touched here, never the
+    // engine: the tick checks the connection again before anything goes out.
+    void* conn = g_manifestSentTo;
+    if (!conn || !g_featProven) return false;
+
+    std::string body = HostRulesWire::EncodeAdminAnswer(
+        notMe ? HostRulesWire::AdminRKind::NotMe : HostRulesWire::AdminRKind::Code, code);
+    if (body.empty()) return false; // no code left after cleaning
+
+    std::lock_guard<std::mutex> lk(g_adminOutMutex);
+    g_adminOut.push_back({ conn, std::move(body) });
+    return true;
+}
+#endif
+
 IPluginNetworkChannel* NetworkChannel::GetInterface()
 {
     return &g_networkIface;
+}
+
+IPluginHostRules* NetworkChannel::GetHostRulesInterface()
+{
+    return &g_hostRulesIface;
 }
 
 // Two call sites reach Initialize -- the startup phase, and the lazy path in
@@ -2744,6 +4664,15 @@ void NetworkChannel::Shutdown()
     {
         std::lock_guard<std::mutex> lk(g_manifestMutex);
         g_manifests.clear();
+        g_manifestTick.clear();
+        g_clientWires.clear();
+        g_clientFeat.clear();
+        g_connRules.clear();
+        g_setGlobal = HostRulesWire::RulesSet();
+        g_minCheck.clear();
+        g_minimums = HostRulesWire::Minimums();
+        g_minimumsActive.store(false);
+        WipeAdminAnswers(nullptr);
     }
     {
         std::lock_guard<std::mutex> lk(g_helloMutex);
@@ -2753,8 +4682,32 @@ void NetworkChannel::Shutdown()
         std::lock_guard<std::mutex> lk(g_readyMutex);
         g_clientReadyRegs.clear();
         g_announced.clear();
-        g_notReadyWarned.clear();
+        g_notReadyWarned.Clear();
         g_readyDirty = false;
+    }
+    {
+        std::lock_guard<std::mutex> lk(g_featCbMutex);
+        g_featCbs.clear();
+    }
+    {
+        std::lock_guard<std::mutex> lk(g_minCbMutex);
+        g_minCbs.clear();
+    }
+    {
+        std::lock_guard<std::mutex> lk(g_adminCbMutex);
+        g_adminCbs.clear();
+    }
+    {
+        std::lock_guard<std::mutex> lk(g_wireLogMutex);
+        g_wireBlockedWarned.Clear();
+        g_wireAcceptedNoted.Clear();
+        g_wiresGarbageWarned.Clear();
+#ifdef MODLOADER_CLIENT_BUILD
+        g_serverTailWarned.Clear();
+        g_clientBlockedWarned.Clear();
+        g_clientAcceptedNoted.Clear();
+        g_serverWires = ServerWireTable{};
+#endif
     }
 
     {
@@ -2779,6 +4732,7 @@ void NetworkChannel::Shutdown()
     }
     g_serverSpeaksWire = false;
     g_serverGreetTag.clear();
+    ForgetClientRules(); // plugin flags are not touched here: the process is closing
     ModLoaderLogger::LogInfo(L"[NetworkChannel] Client network channel shut down");
 #else
     ModLoaderLogger::LogInfo(L"[NetworkChannel] Server network channel shut down");
@@ -2811,6 +4765,18 @@ void NetworkChannel::ForgetModule(HMODULE module)
             PluginGuard::ForgetModule(kv.second, module);
     }
     {
+        std::lock_guard<std::mutex> lk(g_featCbMutex);
+        dropped += PluginGuard::ForgetModule(g_featCbs, module);
+    }
+    {
+        std::lock_guard<std::mutex> lk(g_minCbMutex);
+        dropped += PluginGuard::ForgetModule(g_minCbs, module);
+    }
+    {
+        std::lock_guard<std::mutex> lk(g_adminCbMutex);
+        dropped += PluginGuard::ForgetModule(g_adminCbs, module);
+    }
+    {
         std::lock_guard<std::mutex> lk(g_serverMutex);
         dropped += ForgetHandlersOf(g_serverHandlers, module);
     }
@@ -2832,10 +4798,12 @@ void NetworkChannel::ForgetModule(HMODULE module)
 #else // Generic (plain Debug/Release) build
 
 IPluginNetworkChannel* NetworkChannel::GetInterface() { return nullptr; }
+IPluginHostRules* NetworkChannel::GetHostRulesInterface() { return nullptr; }
 void NetworkChannel::Initialize() {}
 void NetworkChannel::Shutdown() {}
 void NetworkChannel::ForgetModule(HMODULE) {}
 std::vector<NetworkChannel::ClientManifest> NetworkChannel::GetClientManifests() { return {}; }
+void NetworkChannel::HostRulesChanged() {}
 bool NetworkChannel::StartFragmentationTest(size_t, std::string& err)
 {
     err = "Plugin networking is not present in this build.";

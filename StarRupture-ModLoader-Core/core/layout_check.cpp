@@ -114,6 +114,12 @@ namespace LayoutCheck
                     property = FindRenamedProperty(*live, row);
                 if (!property)
                 {
+                    if (const UnreflectedMember* unreflected = FindUnreflectedMember(sdk.name, row.name))
+                    {
+                        result.notReflected.push_back(
+                            Format("%s::%s: not compared, %s", sdk.name, row.name, unreflected->reason));
+                        continue;
+                    }
                     Record(result, sdk.name, row.name, kChangeMissing, 0, 0,
                         Format("%s::%s: not found in the game", sdk.name, row.name));
                     continue;
@@ -380,8 +386,8 @@ namespace LayoutCheck
     }
 }
 
-// The reflection reader below is in both game builds. Run, which compares
-// against the client SDK's layout table, is in the client build only.
+// The reflection reader below and Run are in both game builds; each build is
+// compared against the layout tables of its own SDK (layout_tables.h).
 #if defined(MODLOADER_CLIENT_BUILD) || defined(MODLOADER_SERVER_BUILD)
 
 #include "sdk_globals.h"
@@ -536,16 +542,11 @@ namespace LayoutCheck
     }
 }
 
-#endif
-
-#if defined(MODLOADER_CLIENT_BUILD)
-
-#include "layout_table.generated.h"
+#include "layout_tables.h"
 #include "../hooks/game/version_map_built.h"
 
-static_assert(SrLayoutTable::kBuiltCL == VersionMap::kBuiltCL, "the layout table is for another game build than the SDK: regenerate it (tools/Update-LayoutTable.ps1)");
-static_assert(SrLayoutTable::kFormatVersion == 1, "layout_check.cpp reads layout table format 1");
-static_assert(SrLayoutTable::kDetail == 1, "an embedded layout table needs member sizes and bool masks (generate it with --sdk)");
+static_assert(LayoutCheck::kTables[std::size(LayoutCheck::kTables) - 1].cl == VersionMap::kBuiltCL,
+    "the newest layout table is for another game build than the SDK: regenerate it (tools/Update-LayoutTable.ps1) and list it in layout_tables.h");
 
 namespace LayoutCheck
 {
@@ -623,7 +624,7 @@ namespace LayoutCheck
         }
     }
 
-    bool Run(Result& out)
+    bool Run(Result& out, uint32_t runningCL)
     {
         const auto start = std::chrono::steady_clock::now();
 
@@ -633,8 +634,9 @@ namespace LayoutCheck
             return false;
         }
 
-        const std::vector<TableClass> table = ReadTable(SrLayoutTable::kNames, SrLayoutTable::kClasses, SrLayoutTable::kRows,
-            SrLayoutTable::kConsumers, SrLayoutTable::kClassConsumers);
+        // The table of the running build's own CL, else the newest.
+        const TableEntry& tableEntry = kTables[SelectTable(kTables, runningCL)];
+        const std::vector<TableClass> table = tableEntry.read();
 
         Search search;
         for (const TableClass& sdk : table)
@@ -679,26 +681,25 @@ namespace LayoutCheck
 
         for (const std::string& line : result.lines)
             ModLoaderLogger::LogWarn(L"[LayoutCheck] %S", line.c_str());
+        for (const std::string& line : result.notReflected)
+            ModLoaderLogger::LogDebug(L"[LayoutCheck] %S", line.c_str());
 
         const double totalMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
         void (*const log)(const wchar_t*, ...) =
             FoundChanges(result) ? ModLoaderLogger::LogWarn : ModLoaderLogger::LogInfo;
         log(
             L"[LayoutCheck] SDK CL %u against the game: %d classes, %d checked, %d mismatched, %d missing, %d deferred,"
-            L" %d rows resolved per build -- GObjects pass %.1f ms (%d objects, %d types), %.1f ms in all",
-            SrLayoutTable::kBuiltCL, result.classes, result.checked, result.mismatched, result.missing, result.deferred,
-            result.perBuild,
-            search.walkMs, search.objects, search.types, totalMs);
+            L" %d rows resolved per build, %d rows the game does not reflect -- GObjects pass %.1f ms (%d objects, %d types), %.1f ms in all; game build %u%s",
+            tableEntry.cl, result.classes, result.checked, result.mismatched, result.missing, result.deferred,
+            result.perBuild, static_cast<int>(result.notReflected.size()),
+            search.walkMs, search.objects, search.types, totalMs,
+            runningCL, tableEntry.cl == runningCL ? L"" : L", no table of its own: the newest is used");
 
         result.verdict = Decide(table, result);
         out = std::move(result);
         return true;
     }
 }
-
-#endif
-
-#if defined(MODLOADER_CLIENT_BUILD) || defined(MODLOADER_SERVER_BUILD)
 
 namespace LayoutCheck
 {

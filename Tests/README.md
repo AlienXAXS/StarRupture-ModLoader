@@ -167,6 +167,14 @@ A console program like ConfigEditTests. It compiles the loader's own `core/layou
 `core/compat_report.cpp` without `MODLOADER_CLIENT_BUILD`, which keeps the comparison and the
 report's JSON and drops the parts that touch the game, so nothing else is linked.
 
+The layout tables themselves are checked by CI (`.github/workflows/sr-layout-drift.yml`): it makes
+each `core/layout_table_<CL>.generated.h` again from the loader's sources and the Game-SDK commit it
+was made from (the submodule for the newest, `tools/layout-table-pins.json` for an older one) and
+diffs it with the committed file. The server's table (`core/layout_table_server_<CL>.generated.h`) is
+checked the same way by a second job that runs `tools/Update-LayoutTable.ps1 -Server` itself, so the files
+the server build compiles are read from the project file in one place. A table that is out of date fails
+the run; fix it with `tools/Update-LayoutTable.ps1`.
+
 `fixtures/` holds two layout tables generated from the Game-SDK at CL 126119 and CL 127004 for
 `ACrCharacterPlayerBase` and its reflected bases (see `tools/Update-LayoutTable.ps1` for the
 generator; these were made with `--used` naming just that class and `--namespace
@@ -180,16 +188,37 @@ the other the running game. It covers:
   build), and the compatibility report's JSON carries the ProductVersion, the exe hash, a missed
   pattern with its quotes escaped, each global's RVA, and the class size and `ADSMoveSpeed` offset,
   old and new. The CL in the report's file name comes from the ProductVersion.
-- Static arrays: the loader's own `core/layout_table.generated.h` holds `UWorld::LineBatchers[4]` as
+- Static arrays: the loader's own `core/layout_table_130045.generated.h` holds `UWorld::LineBatchers[4]` as
   0x20 bytes, the whole member, which matches a game reflecting `ElementSize` 8 times `ArrayDim` 4;
   the size of one element, as Dumper-7 comments it, is the old false positive.
 - The loader's CL-130045 table on a 130045 game (nothing changed) and on a 127004 game, where
   `UCrEnviroWaveTimerSubsystem::TimerActor` and `ACrCrafter::CraftComponent` sit at the older offsets:
   both count as changes without a per-build rule and none with it, and the verdict is not a safe-off.
-- The same CL-130045 table against the real 127004 layout of every class it lists (the loader's table
-  from v1.26.1, kept in `fixtures/layout_table_loader_127004.h`): the same two members differ and
-  nothing else, so a 127004 game has no changed class. The v1.26.1 table against a 130045 game, the
-  other way round, finds `TimerActor` as a changed class.
+- The same CL-130045 table against the real 127004 layout of the classes and members the loader's table
+  from v1.26.1 lists (kept in `fixtures/layout_table_loader_127004.h`; the tables list more since): the
+  same two members differ and nothing else, so a 127004 game has no changed class. The v1.26.1 table
+  against a 130045 game, the other way round, finds `TimerActor` as a changed class.
+- One table per game build: which table a running CL picks (its own, else the newest, whether the CL sits
+  between two tables, above the newest, below the oldest or is 0), that the list of tables is strictly
+  increasing, that each table's class and row counts are what its header says, and that a 127004 run selects
+  the 127004 table, which finds nothing changed on the real 127004 layout and needs no per-build rule. The
+  two tables list the same classes except the ones only the 130045 SDK has, and no class a plugin keeps
+  compiled in differs between them except in per-build members, and that comparison saw at least one such
+  class. Members that moved between the builds in other classes (the loader's own, the menu layer, the
+  version-map keys) are only counted, not asserted: each build is compared with its own table, and a move
+  there only matters to a build that has no table of its own.
+- The server's table (`core/layout_table_server_127004.generated.h`): one table, with the counts its header
+  states; no class is tagged for the menu layer and the client's menu classes are not in it; it finds nothing
+  changed on its own layout; a moved member of a class the loader's own code reads (`UWorld`) or a missing
+  class is a safe-off, and a moved member of a class only a version map key names is listed as changed with no
+  safe-off. The test build is a client build, so it reads the client's list of tables.
+- A member the game does not reflect (`ULevel::Actors`, listed in `kUnreflectedMembers`): the table generator
+  leaves it out, so none of the three tables has the row and each finds nothing changed on a game without it, with
+  nothing skipped. The list stays as a net for a member the generator misses, so the same cases run on each table
+  with the row put back: a game that has every member but that one finds nothing changed, with the skipped row
+  listed; another member of the same class is still compared, the same member name on another class is still
+  reported, a moved core member is still a safe-off, and a game that does reflect `ULevel::Actors` at
+  another offset gets a mismatch.
 - The `UObject::ProcessEvent` check: a stub virtual table whose slot holds the function the map resolved
   passes; one that holds another function adds one line to the result, is a found change with no class
   named, and gives a safe-off verdict; a different function in the next slot does not matter.
@@ -207,6 +236,28 @@ build\tests\layout_check_tests.exe
 
 It prints one line per check and exits 0 when every check passes.
 
+## NetCompatTests
+
+A console program like LayoutCheckTests, for the rule that decides whether a plugin's packets flow
+between a client and a server loader whose plugin versions differ. It compiles the loader's own
+`network_channel/wire_compat.h`, which has no game or Windows dependency, so nothing is linked. It
+covers:
+
+- The rule: equal version strings; equal wire id on two declared sides; the server's accept list
+  naming the client's version and the client's list naming the server's; neither side declared;
+  one side declared; a different plugin name (never matched by name alone); list elements matched
+  whole, never as a prefix or substring.
+- Accept lists: empty, garbage, duplicate, oversized and separator-bearing lists.
+- The wire table the two loaders swap: a round trip, every truncation point, an empty or garbage
+  table, unknown records and extra fields, and the ack with and without a tail.
+- The pair state the send, ready and receive paths share, and the once-per-connection warning keys.
+
+```
+msbuild Tests\NetCompatTests\NetCompatTests.vcxproj /p:Configuration="Client Release" /p:Platform=x64
+build\tests\net_compat_tests.exe
+```
+
+It prints one line per check and exits 0 when every check passes.
 ## KeyAndThreadTests
 
 A console program like PanelUnloadTests, for the two queries interface v72 gives a plugin's tick:

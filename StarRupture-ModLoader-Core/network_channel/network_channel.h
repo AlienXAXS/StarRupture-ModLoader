@@ -80,6 +80,10 @@ namespace NetworkChannel
     // Returns nullptr on generic (plain Debug/Release) builds.
     IPluginNetworkChannel* GetInterface();
 
+    // The v79 per-player rules table for IPluginHooks::HostRules. Same builds and
+    // same lifetime as GetInterface(); nullptr on generic builds.
+    IPluginHostRules* GetHostRulesInterface();
+
     // Called from InitPluginsPhase, before any PluginInit, on every build.
     // Installs the control-channel detour, the greeting hook and the join/leave
     // callbacks. Must run after GObjects is live (it does -- that phase runs
@@ -104,7 +108,9 @@ namespace NetworkChannel
     // A joining client volunteers the list of plugins it has loaded, with their
     // versions. The authority records it per connection and uses it to decide
     // who a plugin's packets are worth sending to: a packet from plugin P
-    // version V only goes to clients that reported P at exactly V.
+    // version V only goes to clients that reported P at V or at a version the
+    // two plugins declare compatible (GetPluginWireInfo). A plugin that declares
+    // nothing is held to the exact version string.
     //
     // The client must volunteer this -- the authority cannot ask. A request
     // would be a control bunch, and sending one to a peer that is not running
@@ -130,11 +136,21 @@ namespace NetworkChannel
         // which usually means it is not running the loader.
         int         greetingAttempts = 0;
         std::vector<RemotePlugin> plugins;
+        // What the client said about its features ("$ML:feat"): how many and its
+        // mod loader build. -1 = it sent none (an older client).
+        int         reportedFeatures = -1;
+        std::string loaderTag;
     };
 
     // Every client connection the authority currently knows about. Empty on a
     // pure client and on generic builds.
     std::vector<ClientManifest> GetClientManifests();
+
+    // The server's deny list or its message changed (`features hostoff`,
+    // `hostclear`, `hostmessage`): send the rules again to every client that
+    // reported its features. Game thread. A no-op on a client, on a server with
+    // no such client and on generic builds.
+    void HostRulesChanged();
 
     // -----------------------------------------------------------------------
     // Fragmentation self-test (client side)
@@ -149,5 +165,20 @@ namespace NetworkChannel
     // lands in modloader.log at INFO/ERROR when the reply arrives.
     // -----------------------------------------------------------------------
     bool StartFragmentationTest(size_t bytes, std::string& err);
+
+#ifdef MODLOADER_CLIENT_BUILD
+    // -----------------------------------------------------------------------
+    // Admin prompt answer (client builds only)
+    //
+    // Queues "$ML:adminr" for the server: the code the player typed, or "not me"
+    // (code ignored). Sent from the next engine tick, on the game thread, and only
+    // to a server whose ack proved it reads host rules; nothing goes out
+    // otherwise. Any thread. Returns false when nothing was queued: no such
+    // server, this build is the authority, or the code is empty. The code is
+    // never logged and the loader's queued copy is cleared once sent. Called by
+    // AdminPrompt only.
+    // -----------------------------------------------------------------------
+    bool SendAdminAnswer(bool notMe, const std::string& code);
+#endif
 
 } // namespace NetworkChannel
