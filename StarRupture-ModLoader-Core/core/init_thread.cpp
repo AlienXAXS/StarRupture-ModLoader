@@ -34,6 +34,7 @@
 #include "../preload/preload_manager.h"
 #include "ui_state.h"
 #include "../hooks/game/engine_init/engine_init.h"
+#include "../hooks/http/http_server_hook.h"
 #include "../utils/thread_utils.h"
 #include "../utils/pak_list.h"
 
@@ -557,6 +558,11 @@ DWORD WINAPI MainInitThreadProc(LPVOID)
             return 0;
         }
     }
+#ifdef MODLOADER_SERVER_BUILD
+    // The HTTP server hook's request layout is a native member only the map's
+    // row places, and the map bounds it by reflection, so it is looked up here.
+    Hooks::HttpServer::ResolveVerbOffset();
+#endif
 #endif
 
     // ------------------------------------------------------------------
