@@ -1,0 +1,1619 @@
+// sr-aobscan --plugin <dll>: a plugin's patterns, checked the way the loader
+// checks them.
+//
+// The patterns are not read from a list. The plugin DLL is loaded and its own
+// OnPluginLoadHooks export is called, exactly as PluginManager calls it before
+// PluginInit, with the loader's own IPluginHookScanner table
+// (memory_scanner/hook_scanner_interface.cpp, compiled in as it is). So every
+// pattern the plugin resolves on this build of its source is checked, through
+// the same ScanValidation calls, with the same kinds, follows and offsets, and
+// whatever the plugin works out for itself between scans (raw finds, its own
+// unwind or RIP decoding, ReportFailure) runs as it does in game.
+//
+// The one difference is where "the game" is. Inside this process the main
+// module is the game exe as MapImage laid it out: GetModuleHandle(nullptr) is
+// redirected to the mapped image in this tool's own imports and in the
+// plugin's, so loader code and plugin code that ask for the main module both
+// get the game. Each section then gets the page protection the Windows loader
+// would give it, because plugins check that (an executable branch target, a
+// readable global). Game code is never started: its imports, TLS and
+// initialisers are not set up, so game code a plugin calls during the event
+// faults. Such a call is stopped (see "Calls into the game" below) and the
+// hook carries on; any other fault is reported as CRASH.
+//
+// self->hooks is null, as it is for the duration of the event in game. The
+// logger prints to stderr; the config hands back every default.
+//
+// The hook then runs a second time, with the scan cache the first run filled,
+// as on the next launch of the same exe: there the loader re-checks only what
+// it picked before ("agreed on an earlier launch"). Every row the plugin asks
+// for again must come out as it did the first time. The report is the first
+// run's; the second only adds its line to the note, or turns a pass into FAIL.
+// It is skipped after a crash or a stopped game call.
+//
+// --json gives a map-key request that resolved the locator that matches at its
+// rva (pattern, resultOffset, followRel32At, followRipDispAt): the plugin's own
+// pattern when that lands there, otherwise the version map's row that does
+// (observed.h). When no pattern lands there exactly once the pattern is left
+// out, so map mode refuses the write instead of making a row from a pattern
+// the loader would refuse on that exe. "matches" is always the count of the
+// plugin's own pattern.
+//
+// A request can carry locators for other game builds (interface 72). Their
+// patterns are listed in the row after the request's own, and the loader's
+// "[Map]" line, which says which locator it took, goes to stderr.
+//
+// Verdict, as the loader decides it (plugins/plugin_hook_report.h, linked in as
+// it is): any recorded failure on a key no declared feature lists refuses the
+// plugin, required or optional, and so does a crash inside the event or an
+// interface version outside the loader's range. A miss on a key a feature
+// lists turns that feature off instead: the plugin loads, the verdict is not
+// lowered, and the report says "FEATURES OFF: n" with a line for each.
+// Raw scans (FindAllPatterns*) record nothing with the loader; they are listed
+// for information and the plugin decides what a miss means.
+//
+// The plugin's own pattern. A request resolves on whatever the loader's version
+// map holds for the running build, and then the plugin's own pattern is never
+// scanned, so a pattern that matches two functions (or none) still passes
+// there while a loader without that map row refuses it. The report therefore
+// counts the own pattern on this exe for every request that resolved, whatever
+// carried it, and fails the plugin when it is not exactly one: OWN-MISSING for
+// none, OWN-AMBIGUOUS for several. The row's result stays OK.
+//
+//   PASS       no recorded failure
+//   GAME-CALL  PARTIAL coverage, never a full pass: no recorded failure, at
+//              least one pattern resolved, and the hook's calls into game code
+//              were stopped. A plugin that bails out on the null a stopped call
+//              returns skips every later scan; those are not exercised
+//   FAIL       a recorded failure (MISSING, AMBIGUOUS, ...), game calls or not,
+//              or a row the second run answered differently, or a request that
+//              resolved whose own pattern does not match this exe exactly once
+//              (OWN-MISSING, OWN-AMBIGUOUS: see "The plugin's own pattern")
+//   CRASH      a fault that is not a game call, or a game call with no
+//              pattern resolved
+//   REFUSED    interface version outside [MIN, MAX]; the hook is not run
+//   On a build other than the one the plugin was built for (its PluginInfo
+//   tail), the note says when the loader would not admit the plugin there
+//   (VersionMap::OffBuildRefusal): from before interface 72, or one that does
+//   not declare PLUGIN_MAP_MIGRATED. The verdict stays the pattern verdict. For
+//   the loader's third condition, GetSdkGlobals in PluginInit, a plugin that
+//   declares PLUGIN_MAP_MIGRATED has its PluginInit run with that
+//   one function as its hooks table (see "PluginInit" below); the note says
+//   whether it took the globals.
+//   NONE       no OnPluginLoadHooks export
+#include "pdb.h"
+#include "plugin_scan.h"
+#include "suggest.h"
+
+#include <algorithm>
+#include <cstdarg>
+#include <cstdio>
+#include <cstring>
+#include <map>
+#include <set>
+#include <vector>
+
+#include "hooks/game/scan_patterns.h"
+#include "memory_scanner/hook_scanner_interface.h"
+#include "memory_scanner/scanner.h"
+#include "memory_scanner/version_map.h"
+#include "observed.h"
+#include "plugins/plugin_hook_report.h"
+
+namespace
+{
+#if defined(MODLOADER_SERVER_BUILD)
+	constexpr int         kTarget     = PLUGIN_TARGET_SERVER;
+	constexpr const char* kTargetName = "server";
+#else
+	constexpr int         kTarget     = PLUGIN_TARGET_CLIENT;
+	constexpr const char* kTargetName = "client";
+#endif
+
+	// A failed resolve is classified by counting the raw pattern matches, which
+	// is the uniqueness verdict ScanValidation applies; this many is plenty to
+	// tell "none", "one" and "several" apart in a report.
+	constexpr size_t kCountCap = 64;
+
+	HMODULE g_image   = nullptr;
+	bool    g_verbose = false;
+
+	// ---- The main module is the mapped game image ---------------------------
+
+	using GetModuleHandleWFn = HMODULE(WINAPI*)(LPCWSTR);
+	using GetModuleHandleAFn = HMODULE(WINAPI*)(LPCSTR);
+	GetModuleHandleWFn g_realGetModuleHandleW = nullptr;
+	GetModuleHandleAFn g_realGetModuleHandleA = nullptr;
+
+	HMODULE WINAPI ImageGetModuleHandleW(LPCWSTR name)
+	{
+		return name ? g_realGetModuleHandleW(name) : g_image;
+	}
+
+	HMODULE WINAPI ImageGetModuleHandleA(LPCSTR name)
+	{
+		return name ? g_realGetModuleHandleA(name) : g_image;
+	}
+
+	// Points module's imports of GetModuleHandleW/A at the two above.
+	bool RedirectMainModule(HMODULE module)
+	{
+		auto* base = reinterpret_cast<uint8_t*>(module);
+		const auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(base);
+		const auto* nt  = reinterpret_cast<const IMAGE_NT_HEADERS64*>(base + dos->e_lfanew);
+		const IMAGE_DATA_DIRECTORY dir = nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT];
+		if (!dir.VirtualAddress)
+			return true;
+
+		for (auto* desc = reinterpret_cast<const IMAGE_IMPORT_DESCRIPTOR*>(base + dir.VirtualAddress); desc->Name; ++desc)
+		{
+			if (!desc->OriginalFirstThunk)
+				continue;
+			const auto* names = reinterpret_cast<const IMAGE_THUNK_DATA64*>(base + desc->OriginalFirstThunk);
+			auto*       slots = reinterpret_cast<IMAGE_THUNK_DATA64*>(base + desc->FirstThunk);
+			for (; names->u1.AddressOfData; ++names, ++slots)
+			{
+				if (IMAGE_SNAP_BY_ORDINAL64(names->u1.Ordinal))
+					continue;
+				const char* fn = reinterpret_cast<const IMAGE_IMPORT_BY_NAME*>(base + names->u1.AddressOfData)->Name;
+				ULONGLONG replacement = 0;
+				if (strcmp(fn, "GetModuleHandleW") == 0)      replacement = reinterpret_cast<ULONGLONG>(&ImageGetModuleHandleW);
+				else if (strcmp(fn, "GetModuleHandleA") == 0) replacement = reinterpret_cast<ULONGLONG>(&ImageGetModuleHandleA);
+				else continue;
+
+				DWORD old = 0;
+				if (!VirtualProtect(&slots->u1.Function, sizeof(slots->u1.Function), PAGE_READWRITE, &old))
+					return false;
+				slots->u1.Function = replacement;
+				VirtualProtect(&slots->u1.Function, sizeof(slots->u1.Function), old, &old);
+			}
+		}
+		return true;
+	}
+
+	// Gives each section of the mapped image the protection its characteristics
+	// ask for, and the headers read-only, as the Windows loader does.
+	bool ProtectSections(HMODULE module)
+	{
+		auto* base = reinterpret_cast<uint8_t*>(module);
+		const auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(base);
+		const auto* nt  = reinterpret_cast<const IMAGE_NT_HEADERS64*>(base + dos->e_lfanew);
+		const size_t align = nt->OptionalHeader.SectionAlignment ? nt->OptionalHeader.SectionAlignment : 0x1000;
+		const auto   round = [align](size_t n) { return (n + align - 1) & ~(align - 1); };
+
+		DWORD old = 0;
+		if (!VirtualProtect(base, round(nt->OptionalHeader.SizeOfHeaders), PAGE_READONLY, &old))
+			return false;
+
+		const IMAGE_SECTION_HEADER* section = IMAGE_FIRST_SECTION(nt);
+		for (WORD i = 0; i < nt->FileHeader.NumberOfSections; ++i, ++section)
+		{
+			const size_t size = round(section->Misc.VirtualSize ? section->Misc.VirtualSize : section->SizeOfRawData);
+			if (!size)
+				continue;
+			const DWORD c = section->Characteristics;
+			const bool  x = (c & IMAGE_SCN_MEM_EXECUTE) != 0;
+			const bool  r = (c & IMAGE_SCN_MEM_READ) != 0;
+			const bool  w = (c & IMAGE_SCN_MEM_WRITE) != 0;
+			const DWORD protect = x ? (w ? PAGE_EXECUTE_READWRITE : r ? PAGE_EXECUTE_READ : PAGE_EXECUTE)
+			                        : (w ? PAGE_READWRITE : r ? PAGE_READONLY : PAGE_NOACCESS);
+			if (!VirtualProtect(base + section->VirtualAddress, size, protect, &old))
+				return false;
+		}
+		return true;
+	}
+
+	// ---- What the plugin is handed as self ----------------------------------
+
+	void Print(const IPluginSelf* self, const char* level, const char* format, va_list args)
+	{
+		char text[2048];
+		vsnprintf(text, sizeof(text), format, args);
+		fprintf(stderr, "  [%s] %s: %s\n", (self && self->name) ? self->name : "plugin", level, text);
+	}
+
+	void LogLine(PluginLogLevel, const IPluginSelf* self, const char* message)
+	{
+		fprintf(stderr, "  [%s] %s\n", (self && self->name) ? self->name : "plugin", message ? message : "");
+	}
+
+#define AOBSCAN_LOG_FN(fnName, level, always)                                  \
+	void fnName(const IPluginSelf* self, const char* format, ...)              \
+	{                                                                          \
+		if (!(always) && !g_verbose) return;                                   \
+		va_list args;                                                          \
+		va_start(args, format);                                                \
+		Print(self, level, format, args);                                      \
+		va_end(args);                                                          \
+	}
+	AOBSCAN_LOG_FN(LogTrace, "TRACE", false)
+	AOBSCAN_LOG_FN(LogDebug, "DEBUG", false)
+	AOBSCAN_LOG_FN(LogInfo,  "INFO",  true)
+	AOBSCAN_LOG_FN(LogWarn,  "WARN",  true)
+	AOBSCAN_LOG_FN(LogError, "ERROR", true)
+#undef AOBSCAN_LOG_FN
+
+	bool ReadString(const IPluginSelf*, const char*, const char*, char* out, int maxLen, const char* def)
+	{
+		if (out && maxLen > 0)
+			strncpy_s(out, static_cast<size_t>(maxLen), def ? def : "", _TRUNCATE);
+		return true;
+	}
+	bool  WriteString(const IPluginSelf*, const char*, const char*, const char*) { return true; }
+	int   ReadInt(const IPluginSelf*, const char*, const char*, int def) { return def; }
+	bool  WriteInt(const IPluginSelf*, const char*, const char*, int) { return true; }
+	float ReadFloat(const IPluginSelf*, const char*, const char*, float def) { return def; }
+	bool  WriteFloat(const IPluginSelf*, const char*, const char*, float) { return true; }
+	bool  ReadBool(const IPluginSelf*, const char*, const char*, bool def) { return def; }
+	bool  WriteBool(const IPluginSelf*, const char*, const char*, bool) { return true; }
+	bool  InitializeFromSchema(const IPluginSelf*, const ConfigSchema*) { return true; }
+	void  ValidateConfig(const IPluginSelf*, const ConfigSchema*) {}
+
+	// ---- The scan session -----------------------------------------------------
+	// The loader's own PluginHookReport (plugins/plugin_hook_report.cpp, compiled
+	// in as it is) keeps the session, as the plugin manager runs it: BeginSession
+	// before the hook, EndSession after, and the report it commits says whether
+	// the plugin is refused and which of its features are off.
+
+	PluginHookReport::PluginReport g_report;   // the first run's
+	bool                           g_refused = false;
+
+	void OpenSession(const IPluginSelf* self, const std::string& file)
+	{
+		PluginHookReport::BeginSession(self, self->name, file.c_str());
+	}
+
+	// Closes the session and returns what the loader committed for it; empty
+	// when the plugin resolved everything cleanly.
+	PluginHookReport::PluginReport CloseSession(const IPluginSelf* self, bool& refused)
+	{
+		refused = false;
+		PluginHookReport::EndSession(self, &refused);
+		for (PluginHookReport::PluginReport& report : PluginHookReport::Snapshot())
+			if (report.plugin == self->name)
+				return std::move(report);
+		return PluginHookReport::PluginReport{};
+	}
+
+	// ---- What the plugin asked for, one row per call --------------------------
+
+	struct Candidate
+	{
+		std::string pattern;
+		size_t      matches = 0;
+	};
+
+	struct Row
+	{
+		std::string            call;            // the IPluginHookScanner entry used
+		std::string            name;            // hookName, empty for a raw scan
+		std::vector<Candidate> patterns;        // one, or the candidate list
+		std::string            landing;         // the one distinct pattern that matches once at the address, of several
+		std::string            kind;
+		bool                   required = true;
+		bool                   recorded = true; // false: a raw scan the loader does not judge
+		int32_t                resultOffset  = 0;
+		int32_t                followRel32At = -1;
+		std::string            key;             // the map key, for a PLUGIN_SCAN_FLAG_MAP_KEY request
+		uint32_t               fp = 0;          // its fingerprint: 0 for a global key and for a site with no pattern
+		bool                   otherModule   = false;
+		std::string            result;
+		bool                   hasRva = false;
+		uint64_t               rva    = 0;
+		std::string            detail;
+		const char*            own = nullptr;  // OWN-MISSING / OWN-AMBIGUOUS: see GradeOwnPatterns
+		bool                   observes = false;   // a map-key request that resolved: `seen` is what a map row is made of
+		AobScan::ObservedLocator seen;             // the locator that matches at the resolved address
+		AobScan::Suggest::Result suggest;  // MISSING / AMBIGUOUS, with --suggest
+	};
+
+	std::vector<Row> g_rows;
+	AobScan::Suggest::Session* g_suggest = nullptr;
+
+	const IPluginHookScanner& Loader()
+	{
+		return *ModLoaderLogger::GetPluginHookScanner();
+	}
+
+	size_t CountMatches(HMODULE module, const char* pattern)
+	{
+		if (!pattern || !pattern[0])
+			return 0;
+		return Scanner::CountMatchesInModule(module ? module : g_image, pattern, kCountCap, nullptr);
+	}
+
+	void SetRva(Row& row, uintptr_t address)
+	{
+		const auto base = reinterpret_cast<uintptr_t>(g_image);
+		if (!row.otherModule && address >= base)
+		{
+			row.hasRva = true;
+			row.rva    = address - base;
+		}
+	}
+
+	// Runs one recorded resolve through the loader and fills in the row from
+	// its verdict. A failure is classified by the raw match count of each
+	// pattern: none is MISSING, several is AMBIGUOUS, exactly one means the
+	// match was found but refused (WRONGKIND, or BADREQUEST for a request the
+	// loader turned down before scanning).
+	template <typename Fn>
+	uintptr_t Record(Row row, HMODULE module, bool badRequest, Fn&& resolve)
+	{
+		const uintptr_t address = resolve();
+
+		if (address)
+		{
+			row.result = "OK";
+			for (Candidate& c : row.patterns)
+				c.matches = CountMatches(module, c.pattern.c_str());
+			SetRva(row, address);
+		}
+		else
+		{
+			size_t total = 0, most = 0;
+			for (Candidate& c : row.patterns)
+			{
+				c.matches = CountMatches(module, c.pattern.c_str());
+				total += c.matches;
+				if (c.matches > most) most = c.matches;
+			}
+			if (badRequest || row.patterns.empty())  row.result = "BADREQUEST";
+			else if (total == 0)                     row.result = "MISSING";
+			else if (most > 1)                       row.result = "AMBIGUOUS";
+			else                                     row.result = "WRONGKIND";
+		}
+		g_rows.push_back(std::move(row));
+		return address;
+	}
+
+	const char* KindShortName(int kind)
+	{
+		switch (kind)
+		{
+		case PLUGIN_SCAN_FUNCTION_START: return "function";
+		case PLUGIN_SCAN_IN_FUNCTION:    return "infunction";
+		case PLUGIN_SCAN_CODE:           return "code";
+		case PLUGIN_SCAN_DATA:           return "data";
+		case PLUGIN_SCAN_VTABLE:         return "vtable";
+		case PLUGIN_SCAN_ANY:            return "any";
+		default:                         return "unspecified";
+		}
+	}
+
+	Row LegacyRow(const char* call, const char* hookName, const char* pattern, HMODULE module, bool required)
+	{
+		Row row;
+		row.call        = call;
+		row.name        = hookName ? hookName : "";
+		row.kind        = "any";
+		row.required    = required;
+		row.otherModule = module != nullptr && module != g_image;
+		row.patterns.push_back({ pattern ? pattern : "" });
+		return row;
+	}
+
+	// ---- The table handed to the plugin ---------------------------------------
+	// Each entry records the call and passes it to the loader's own entry.
+
+	uintptr_t ResolveRequired(const IPluginSelf* self, const char* hookName, const char* pattern)
+	{
+		return Record(LegacyRow("ResolveRequired", hookName, pattern, nullptr, true), nullptr,
+			!hookName || !hookName[0] || !pattern || !pattern[0],
+			[&] { return Loader().ResolveRequired(self, hookName, pattern); });
+	}
+
+	uintptr_t ResolveOptional(const IPluginSelf* self, const char* hookName, const char* pattern)
+	{
+		return Record(LegacyRow("ResolveOptional", hookName, pattern, nullptr, false), nullptr,
+			!hookName || !hookName[0] || !pattern || !pattern[0],
+			[&] { return Loader().ResolveOptional(self, hookName, pattern); });
+	}
+
+	uintptr_t ResolveRequiredInModule(const IPluginSelf* self, const char* hookName, HMODULE module, const char* pattern)
+	{
+		return Record(LegacyRow("ResolveRequiredInModule", hookName, pattern, module, true), module,
+			!hookName || !hookName[0] || !pattern || !pattern[0],
+			[&] { return Loader().ResolveRequiredInModule(self, hookName, module, pattern); });
+	}
+
+	uintptr_t ResolveOptionalInModule(const IPluginSelf* self, const char* hookName, HMODULE module, const char* pattern)
+	{
+		return Record(LegacyRow("ResolveOptionalInModule", hookName, pattern, module, false), module,
+			!hookName || !hookName[0] || !pattern || !pattern[0],
+			[&] { return Loader().ResolveOptionalInModule(self, hookName, module, pattern); });
+	}
+
+	Row UniqueRow(const char* call, const char* hookName, const char** patterns, int count, bool required)
+	{
+		Row row;
+		row.call     = call;
+		row.name     = hookName ? hookName : "";
+		row.kind     = "any";
+		row.required = required;
+		for (int i = 0; patterns && i < count; ++i)
+			if (patterns[i] && patterns[i][0])
+				row.patterns.push_back({ patterns[i] });
+		return row;
+	}
+
+	uintptr_t ResolveRequiredUnique(const IPluginSelf* self, const char* hookName, const char** patterns, int count, int* outIndex)
+	{
+		return Record(UniqueRow("ResolveRequiredUnique", hookName, patterns, count, true), nullptr,
+			!hookName || !hookName[0] || !patterns || count <= 0,
+			[&] { return Loader().ResolveRequiredUnique(self, hookName, patterns, count, outIndex); });
+	}
+
+	uintptr_t ResolveOptionalUnique(const IPluginSelf* self, const char* hookName, const char** patterns, int count, int* outIndex)
+	{
+		return Record(UniqueRow("ResolveOptionalUnique", hookName, patterns, count, false), nullptr,
+			!hookName || !hookName[0] || !patterns || count <= 0,
+			[&] { return Loader().ResolveOptionalUnique(self, hookName, patterns, count, outIndex); });
+	}
+
+	// Raw scans record nothing with the loader. Listed once per pattern.
+	void RecordRaw(const char* call, const char* pattern, HMODULE module, int count, const uintptr_t* out, int maxResults)
+	{
+		const std::string text = pattern ? pattern : "";
+		for (const Row& row : g_rows)
+			if (!row.recorded && !row.patterns.empty() && row.patterns[0].pattern == text)
+				return;
+
+		Row row;
+		row.call        = call;
+		row.kind        = "raw";
+		row.required    = false;
+		row.recorded    = false;
+		row.otherModule = module != nullptr && module != g_image;
+		row.patterns.push_back({ text, static_cast<size_t>(count > 0 ? count : 0) });
+		row.result      = count == 0 ? "MISSING" : count == 1 ? "OK" : "AMBIGUOUS";
+		if (count >= 1 && out && maxResults > 0)
+			SetRva(row, out[0]);
+		g_rows.push_back(std::move(row));
+	}
+
+	int FindAllPatternsInMainModule(const IPluginSelf* self, const char* pattern, uintptr_t* out, int maxResults)
+	{
+		const int count = Loader().FindAllPatternsInMainModule(self, pattern, out, maxResults);
+		RecordRaw("FindAllPatternsInMainModule", pattern, nullptr, count, out, maxResults);
+		return count;
+	}
+
+	int FindAllPatternsInModule(const IPluginSelf* self, HMODULE module, const char* pattern, uintptr_t* out, int maxResults)
+	{
+		const int count = Loader().FindAllPatternsInModule(self, module, pattern, out, maxResults);
+		RecordRaw("FindAllPatternsInModule", pattern, module, count, out, maxResults);
+		return count;
+	}
+
+	int FindXrefsToAddress(const IPluginSelf* self, uintptr_t target, uintptr_t start, size_t size, PluginXRef* out, int maxResults)
+	{
+		return Loader().FindXrefsToAddress(self, target, start, size, out, maxResults);
+	}
+
+	int FindXrefsToAddressInModule(const IPluginSelf* self, uintptr_t target, HMODULE module, PluginXRef* out, int maxResults)
+	{
+		return Loader().FindXrefsToAddressInModule(self, target, module, out, maxResults);
+	}
+
+	int FindXrefsToAddressInMainModule(const IPluginSelf* self, uintptr_t target, PluginXRef* out, int maxResults)
+	{
+		return Loader().FindXrefsToAddressInMainModule(self, target, out, maxResults);
+	}
+
+	void RecordReported(const char* call, const char* hookName, const char* detail, bool required)
+	{
+		Row row;
+		row.call     = call;
+		row.name     = hookName ? hookName : "(unnamed)";
+		row.kind     = "reported";
+		row.required = required;
+		row.result   = "REPORTED";
+		row.detail   = detail ? detail : "";
+		g_rows.push_back(std::move(row));
+	}
+
+	void ReportFailure(const IPluginSelf* self, const char* hookName, const char* detail)
+	{
+		RecordReported("ReportFailure", hookName, detail, true);
+		Loader().ReportFailure(self, hookName, detail);
+	}
+
+	void ReportWarning(const IPluginSelf* self, const char* hookName, const char* detail)
+	{
+		RecordReported("ReportWarning", hookName, detail, false);
+		Loader().ReportWarning(self, hookName, detail);
+	}
+
+	bool HasFailures(const IPluginSelf* self)
+	{
+		return Loader().HasFailures(self);
+	}
+
+	uintptr_t Resolve(const IPluginSelf* self, const PluginScanRequest* request)
+	{
+		// Read the request the way the loader does: no further than the
+		// plugin's own structSize.
+		PluginScanRequest local{};
+		local.followRel32At = -1;
+		if (request && request->structSize >= offsetof(PluginScanRequest, kind) + sizeof(int))
+			memcpy(&local, request, request->structSize < sizeof(local) ? request->structSize : sizeof(local));
+
+		Row row;
+		row.call          = "Resolve";
+		row.name          = local.hookName ? local.hookName : "";
+		row.kind          = KindShortName(local.kind);
+		row.required      = (local.flags & PLUGIN_SCAN_FLAG_OPTIONAL) == 0;
+		row.resultOffset  = local.resultOffset;
+		row.followRel32At = (local.flags & PLUGIN_SCAN_FLAG_FOLLOW_REL32) ? local.followRel32At : -1;
+		row.otherModule   = local.module != nullptr && local.module != g_image;
+		row.patterns.push_back({ local.pattern ? local.pattern : "" });
+#if PLUGIN_INTERFACE_VERSION >= 72
+		// Locators for other game builds, after the request's own pattern.
+		for (uint32_t i = 0; local.candidates && i < local.candidateCount && i < 64; ++i)
+			if (local.candidates[i].pattern && local.candidates[i].pattern[0]
+				&& std::none_of(row.patterns.begin(), row.patterns.end(),
+					[&](const Candidate& c) { return c.pattern == local.candidates[i].pattern; }))
+				row.patterns.push_back({ local.candidates[i].pattern });
+#endif
+
+		bool keyOnly = false;   // a map key with no pattern: the loader's to refuse, not a bad request
+#if PLUGIN_INTERFACE_VERSION >= 72
+		keyOnly = (local.flags & PLUGIN_SCAN_FLAG_MAP_KEY) != 0 && (!local.pattern || !local.pattern[0]);
+		if (local.flags & PLUGIN_SCAN_FLAG_MAP_KEY)
+		{
+			// The key the loader's map keeps the request under
+			// (VersionMap::ResolveMapKey): the hook name for a global kind, the
+			// plugin's own site for any other, with the fingerprint of the request.
+			const ScanValidation::Kind kind = ScanValidation::ParseKind(row.kind.c_str());
+			if (kind == ScanValidation::Kind::FunctionStart || kind == ScanValidation::Kind::Data)
+			{
+				if (row.name.find('/') == std::string::npos)
+					row.key = row.name;
+			}
+			else if (kind != ScanValidation::Kind::Unspecified)
+			{
+				row.key = std::string(self && self->name ? self->name : "") + "/" + row.name;
+				row.fp  = VersionMap::Fingerprint(static_cast<int>(kind), local.pattern ? local.pattern : "",
+					local.resultOffset, row.followRel32At, -1, 0);
+			}
+		}
+#endif
+		const bool badRequest = !request || !local.hookName || !local.hookName[0]
+			|| ((!local.pattern || !local.pattern[0]) && !keyOnly)
+			|| local.kind < PLUGIN_SCAN_FUNCTION_START || local.kind > PLUGIN_SCAN_ANY;
+
+		const bool wantsRow = !row.key.empty() && row.patterns.size() == 1;
+		const uintptr_t address = Record(std::move(row), local.module, badRequest,
+			[&] { return Loader().Resolve(self, request); });
+
+		// A map row is made from the locator that matches at the address, not
+		// from the plugin's own pattern, which the loader may not have used.
+		if (address)
+		{
+			Row& done = g_rows.back();
+			ScanValidation::Request asked;
+			asked.name          = done.name;
+			asked.pattern       = done.patterns[0].pattern;
+			asked.kind          = ScanValidation::ParseKind(done.kind.c_str());
+			asked.module        = local.module;
+			asked.resultOffset  = local.resultOffset;
+			asked.vtableSlots   = local.vtableSlots;
+			asked.followRel32At = done.followRel32At;
+			if (wantsRow)
+			{
+				done.observes = true;
+				done.seen     = AobScan::ObservePluginRequest(self && self->name ? self->name : "", done.key, done.fp, asked,
+					VersionMap::ExeOf(g_image), address);
+			}
+			else if (done.patterns.size() > 1)
+			{
+				size_t landing = 0;
+				for (const Candidate& c : done.patterns)
+				{
+					asked.pattern = c.pattern;
+					if (AobScan::LandsOn(asked, address))
+					{
+						++landing;
+						done.landing = c.pattern;
+					}
+				}
+				if (landing != 1)
+					done.landing.clear();
+			}
+		}
+		return address;
+	}
+
+#if PLUGIN_INTERFACE_VERSION >= 72
+	bool ResolveField(const IPluginSelf* self, const PluginFieldRequest* request, PluginFieldResult* result)
+	{
+		return Loader().ResolveField(self, request, result);
+	}
+#endif
+
+#if PLUGIN_INTERFACE_VERSION >= 73
+	bool DeclareFeature(const IPluginSelf* self, const PluginFeatureDesc* desc)
+	{
+		return Loader().DeclareFeature(self, desc);
+	}
+#endif
+
+	IPluginHookScanner g_scanner = {
+		ResolveRequired,
+		ResolveOptional,
+		ResolveRequiredInModule,
+		ResolveOptionalInModule,
+		ResolveRequiredUnique,
+		ResolveOptionalUnique,
+		FindAllPatternsInMainModule,
+		FindAllPatternsInModule,
+		FindXrefsToAddress,
+		FindXrefsToAddressInModule,
+		FindXrefsToAddressInMainModule,
+		ReportFailure,
+		ReportWarning,
+		HasFailures,
+		Resolve,
+#if PLUGIN_INTERFACE_VERSION >= 72
+		ResolveField,
+#endif
+#if PLUGIN_INTERFACE_VERSION >= 73
+		DeclareFeature,
+#endif
+	};
+#if PLUGIN_INTERFACE_VERSION >= 73
+	static_assert(offsetof(IPluginHookScanner, DeclareFeature) == 128, "v73 starts where v72 ended");
+#endif
+
+	// ---- Calls into the game --------------------------------------------------
+	// Game code cannot run here, so a plugin that calls a game function from its
+	// load hook (MiniMap asks for a StaticStruct once its patterns resolve) gets
+	// a fault. Whether the fault is such a call is decided from the stack alone:
+	// the faulting code is game code, or the unbound value of one of the game's
+	// import slots (game code calling or jumping to an import), and every frame
+	// between it and the plugin is game code. The call is then stopped: the
+	// plugin resumes just after it as if it had returned 0, so the rest of the
+	// hook still runs and every pattern it goes on to resolve is still seen.
+	// What the plugin would only have done had the call succeeded is not seen,
+	// which is why a game call never upgrades a verdict, only keeps a pass
+	// from becoming a false CRASH. Any other fault is a CRASH.
+
+	constexpr int kMaxGameCalls = 64;
+
+	struct GameCall
+	{
+		DWORD       code       = 0;
+		uintptr_t   callSite   = 0;        // the plugin's return address
+		uintptr_t   function   = 0;        // the outermost game function entered, or 0
+		const char* importDll  = nullptr;  // set when the fault was an unbound import
+		const char* importName = nullptr;
+	};
+
+	HMODULE  g_plugin     = nullptr;
+	size_t   g_pluginSize = 0;
+	size_t   g_imageSize  = 0;
+	int      g_gameCalls  = 0;
+	GameCall g_firstGameCall;
+	size_t   g_rowsAtFirstCall = 0;  // scans done when the first game call was stopped
+
+	size_t ImageSize(HMODULE module)
+	{
+		const auto* base = reinterpret_cast<const uint8_t*>(module);
+		const auto* dos  = reinterpret_cast<const IMAGE_DOS_HEADER*>(base);
+		return reinterpret_cast<const IMAGE_NT_HEADERS64*>(base + dos->e_lfanew)->OptionalHeader.SizeOfImage;
+	}
+
+	bool InModule(uintptr_t address, HMODULE module, size_t size)
+	{
+		const auto base = reinterpret_cast<uintptr_t>(module);
+		return module && address >= base && address - base < size;
+	}
+
+	// Code, not data: a jump into the game's data is the plugin's own fault.
+	bool IsGameCode(uintptr_t address)
+	{
+		MEMORY_BASIC_INFORMATION mbi{};
+		constexpr DWORD kExecutable = PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY;
+		return InModule(address, g_image, g_imageSize)
+			&& VirtualQuery(reinterpret_cast<const void*>(address), &mbi, sizeof(mbi)) == sizeof(mbi)
+			&& (mbi.Protect & kExecutable) != 0;
+	}
+
+	// True when address is what one of the game's import slots holds. The
+	// slots are never bound here, so they still hold the RVA of the import's
+	// name, and a call through one lands on that value.
+	bool FindUnboundImport(uintptr_t address, const char*& dll, const char*& name)
+	{
+		const auto* base = reinterpret_cast<const uint8_t*>(g_image);
+		const auto* dos  = reinterpret_cast<const IMAGE_DOS_HEADER*>(base);
+		const auto* nt   = reinterpret_cast<const IMAGE_NT_HEADERS64*>(base + dos->e_lfanew);
+		const IMAGE_DATA_DIRECTORY dir = nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT];
+		if (!dir.VirtualAddress || address == 0 || address >= g_imageSize)
+			return false;
+
+		for (auto* desc = reinterpret_cast<const IMAGE_IMPORT_DESCRIPTOR*>(base + dir.VirtualAddress); desc->Name; ++desc)
+		{
+			const auto* slot  = reinterpret_cast<const IMAGE_THUNK_DATA64*>(base + desc->FirstThunk);
+			const auto* names = desc->OriginalFirstThunk
+				? reinterpret_cast<const IMAGE_THUNK_DATA64*>(base + desc->OriginalFirstThunk) : slot;
+			for (; slot->u1.Function; ++slot, ++names)
+			{
+				if (slot->u1.Function != address)
+					continue;
+				dll  = reinterpret_cast<const char*>(base + desc->Name);
+				name = IMAGE_SNAP_BY_ORDINAL64(names->u1.Ordinal) ? nullptr
+					: reinterpret_cast<const IMAGE_IMPORT_BY_NAME*>(base + names->u1.AddressOfData)->Name;
+				return true;
+			}
+		}
+		return false;
+	}
+
+	// Unwinds c from the fault to the plugin frame that called into the game.
+	// Returns false, leaving the fault a CRASH, unless every frame on the way
+	// is game code (or, innermost, an unbound game import).
+	bool UnwindGameCall(CONTEXT& c, GameCall& call)
+	{
+		ULONG_PTR stackLow = 0, stackHigh = 0;
+		GetCurrentThreadStackLimits(&stackLow, &stackHigh);
+
+		bool inGame = false;
+		for (int depth = 0; depth < 256; ++depth)
+		{
+			const uintptr_t ip = c.Rip;
+			if (InModule(ip, g_plugin, g_pluginSize))
+			{
+				call.callSite = ip;
+				return inGame;
+			}
+
+			DWORD64           base     = 0;
+			PRUNTIME_FUNCTION function = nullptr;
+			if (IsGameCode(ip))
+			{
+				function      = RtlLookupFunctionEntry(ip, &base, nullptr);
+				call.function = function ? base + function->BeginAddress : ip;
+			}
+			else if (depth != 0 || !FindUnboundImport(ip, call.importDll, call.importName))
+				return false;
+			inGame = true;
+
+			if (function)
+			{
+				void*   handlerData = nullptr;
+				DWORD64 frame       = 0;
+				RtlVirtualUnwind(UNW_FLAG_NHANDLER, base, ip, function, &c, &handlerData, &frame, nullptr);
+			}
+			else
+			{
+				// A leaf, or the import's landing address: the return address is
+				// on top of the stack.
+				if (c.Rsp < stackLow || c.Rsp + sizeof(DWORD64) > stackHigh)
+					return false;
+				c.Rip  = *reinterpret_cast<const DWORD64*>(c.Rsp);
+				c.Rsp += sizeof(DWORD64);
+			}
+		}
+		return false;
+	}
+
+	// The load hook's exception filter. Stops a game call and resumes the
+	// plugin after it; anything else unwinds to the handler as a CRASH.
+	int OnLoadHooksException(EXCEPTION_POINTERS* e, DWORD& code)
+	{
+		code = e->ExceptionRecord->ExceptionCode;
+		if (code == EXCEPTION_STACK_OVERFLOW || (e->ExceptionRecord->ExceptionFlags & EXCEPTION_NONCONTINUABLE)
+			|| g_gameCalls >= kMaxGameCalls)
+			return EXCEPTION_EXECUTE_HANDLER;
+
+		CONTEXT  c = *e->ContextRecord;
+		GameCall call;
+		call.code = code;
+		if (!UnwindGameCall(c, call))
+			return EXCEPTION_EXECUTE_HANDLER;
+
+		if (g_gameCalls++ == 0)
+		{
+			g_firstGameCall   = call;
+			g_rowsAtFirstCall = g_rows.size();
+		}
+		c.Rax  = 0;
+		c.Xmm0 = {};
+		*e->ContextRecord = c;
+		return EXCEPTION_CONTINUE_EXECUTION;
+	}
+
+	// ---- Calling into the plugin ----------------------------------------------
+
+	HMODULE LoadSEH(const wchar_t* path, DWORD& code)
+	{
+		__try
+		{
+			return LoadLibraryExW(path, nullptr, LOAD_WITH_ALTERED_SEARCH_PATH);
+		}
+		__except (code = GetExceptionCode(), EXCEPTION_EXECUTE_HANDLER)
+		{
+			return nullptr;
+		}
+	}
+
+	PluginInfo* GetInfoSEH(GetPluginInfoFunc fn, DWORD& code)
+	{
+		__try
+		{
+			return fn();
+		}
+		__except (code = GetExceptionCode(), EXCEPTION_EXECUTE_HANDLER)
+		{
+			return nullptr;
+		}
+	}
+
+	bool LoadHooksSEH(PluginLoadHooksFunc fn, IPluginSelf* self, IPluginHookScanner* scanner, DWORD& code)
+	{
+		__try
+		{
+			fn(self, scanner);
+			return true;
+		}
+		__except (OnLoadHooksException(GetExceptionInformation(), code))
+		{
+			return false;
+		}
+	}
+
+	std::string Narrow(const wchar_t* text)
+	{
+		char buf[MAX_PATH * 2]{};
+		WideCharToMultiByte(CP_UTF8, 0, text, -1, buf, static_cast<int>(sizeof(buf)), nullptr, nullptr);
+		return buf;
+	}
+
+	std::string Hex(uint64_t value)
+	{
+		char buf[24];
+		sprintf_s(buf, "0x%llX", static_cast<unsigned long long>(value));
+		return buf;
+	}
+
+	struct Summary
+	{
+		size_t total = 0, ok = 0, missing = 0, ambiguous = 0, other = 0, reported = 0, failing = 0, raw = 0;
+		size_t off = 0;   // rows that missed on a key only a feature that is off uses
+		size_t ownPattern = 0;   // resolved rows whose own pattern is not unique on this exe
+	};
+
+	// The detail the loader recorded for each miss, which the report holds by
+	// name in the order the plugin asked, set on the rows that missed. A miss
+	// on a key a feature lists sits in that feature (every feature listing it
+	// holds the same one); any other is a core failure.
+	void AttachDetails(const PluginHookReport::PluginReport& report)
+	{
+		std::map<std::string, std::vector<std::string>> byName;
+		for (const auto& f : report.failures)
+			byName[f.hookName].push_back(f.detail);
+		std::map<std::string, std::string> owner;
+		for (const auto& feature : report.featuresOff)
+			for (const auto& miss : feature.misses)
+				if (owner.emplace(miss.key, feature.id).first->second == feature.id)
+					byName[miss.key].push_back(miss.detail);
+
+		std::map<std::string, size_t> next;
+		for (Row& row : g_rows)
+		{
+			if (!row.recorded || row.result == "OK")
+				continue;
+			const std::string name = row.name.empty() ? "(unnamed)" : row.name;
+			const auto at = byName.find(name);
+			size_t& used = next[name];
+			if (at == byName.end() || used >= at->second.size())
+				continue;
+			const std::string& detail = at->second[used++];
+			if (row.result == "REPORTED")
+				continue;
+			row.detail = detail;
+			// Locators for several builds that each match once but land on
+			// different addresses: the loader's selection says so itself.
+			if (row.detail.rfind("AMBIGUOUS", 0) == 0)
+				row.result = "AMBIGUOUS";
+		}
+	}
+
+	bool IsOff(const Row& row)
+	{
+		if (!row.recorded || row.result == "OK")
+			return false;
+		const std::string name = row.name.empty() ? "(unnamed)" : row.name;
+		for (const auto& feature : g_report.featuresOff)
+			for (const auto& miss : feature.misses)
+				if (miss.key == name)
+					return true;
+		return false;
+	}
+
+	// The plugin's own pattern on this exe, for every request that resolved. A
+	// request with its own pattern and a list of locators for other builds
+	// (Resolve) is graded on the own pattern, the first; a call that lists
+	// alternatives (the Unique calls) is not, because only one of them needs to
+	// match. Returns what to tell the author, one entry per row graded.
+	std::vector<std::string> GradeOwnPatterns()
+	{
+		std::vector<std::string> found;
+		for (Row& row : g_rows)
+		{
+			if (!AobScan::OwnPatternGraded(row.call, row.recorded, row.result, row.patterns.size(),
+				row.patterns.empty() || row.patterns[0].pattern.empty()))
+				continue;
+			row.own = AobScan::OwnPatternLabel(row.patterns[0].matches);
+			if (row.own)
+				found.push_back(std::string(row.own) + " " + (row.name.empty() ? "(unnamed)" : row.name) + " ("
+					+ std::to_string(row.patterns[0].matches) + (row.patterns[0].matches >= kCountCap ? "+" : "") + " matches)");
+		}
+		return found;
+	}
+
+	Summary Summarise()
+	{
+		Summary s;
+		for (const Row& row : g_rows)
+		{
+			if (!row.recorded) { ++s.raw; continue; }
+			++s.total;
+			if (row.result == "OK")             ++s.ok;
+			else if (row.result == "MISSING")   ++s.missing;
+			else if (row.result == "AMBIGUOUS") ++s.ambiguous;
+			else if (row.result == "REPORTED")  ++s.reported;
+			else                                ++s.other;
+			if (IsOff(row))                     ++s.off;
+			if (row.own)                        ++s.ownPattern;
+		}
+		s.failing = g_report.failures.size();
+		return s;
+	}
+
+	// The verdict, and what the report says about it beyond the counts.
+	struct Outcome
+	{
+		const char* verdict = "PASS";
+		std::string crash;     // CRASH: what faulted
+		std::string note;      // GAME-CALL and REFUSED: the one-line reason
+		std::string gameCall;  // the first game call, when there was one
+		std::string second;    // what the second run, with the cache warm, found
+		bool        secondDiffers = false;
+	};
+
+	std::string DescribeGameCall(const std::string& file, const GameCall& call)
+	{
+		std::string text = file + "+" + Hex(call.callSite - reinterpret_cast<uintptr_t>(g_plugin)) + " called ";
+		if (call.function)
+		{
+			const uint64_t rva = call.function - reinterpret_cast<uintptr_t>(g_image);
+			std::string name;
+			for (const Row& row : g_rows)
+				if (row.recorded && row.hasRva && row.rva == rva && !row.otherModule)
+				{
+					name = row.name;
+					break;
+				}
+			text += (name.empty() ? "game code" : name) + " (RVA " + Hex(rva) + ")";
+			if (call.importDll)
+				text += ", which called its import ";
+		}
+		else
+			text += "the game's import ";
+		if (call.importDll)
+			text += std::string(call.importDll) + "!" + (call.importName ? call.importName : "(ordinal)") + ", not bound offline";
+		return text + "; exception " + Hex(call.code);
+	}
+
+	bool SameRequest(const Row& a, const Row& b)
+	{
+		if (a.call != b.call || a.name != b.name || a.patterns.size() != b.patterns.size())
+			return false;
+		for (size_t i = 0; i < a.patterns.size(); ++i)
+			if (a.patterns[i].pattern != b.patterns[i].pattern)
+				return false;
+		return true;
+	}
+
+	std::string Answer(const Row& row)
+	{
+		return row.result + (row.hasRva ? " at " + Hex(row.rva) : "");
+	}
+
+	// The hook again, with the scan cache the first run stored (see the top of
+	// this file), in a session of its own. Leaves the first run's rows, report
+	// and game calls as they were.
+	void SecondPass(PluginLoadHooksFunc loadHooks, IPluginSelf* self, const std::string& file, Outcome& o)
+	{
+		std::vector<Row> first = std::move(g_rows);
+		const int      gameCalls       = g_gameCalls;
+		const GameCall firstCall       = g_firstGameCall;
+		const size_t   rowsAtFirstCall = g_rowsAtFirstCall;
+		g_rows.clear();
+
+		AobScan::WarmScanCache();
+		fputs("Second run, with the scan cache the first one filled:\n", stderr);
+		DWORD code = 0;
+		OpenSession(self, file);
+		const bool ran    = LoadHooksSEH(loadHooks, self, &g_scanner, code);
+		bool secondRefused = false;
+		CloseSession(self, secondRefused);
+		const bool called = g_gameCalls != gameCalls;
+
+		std::vector<Row> second = std::move(g_rows);
+		g_rows            = std::move(first);
+		g_gameCalls       = gameCalls;
+		g_firstGameCall   = firstCall;
+		g_rowsAtFirstCall = rowsAtFirstCall;
+
+		o.secondDiffers = true;
+		if (!ran)
+		{
+			o.second = "the second run (scan cache warm) crashed, exception " + Hex(code);
+			return;
+		}
+		if (called)
+		{
+			o.second = "the second run (scan cache warm) called into the game; the first did not";
+			return;
+		}
+
+		std::vector<bool> used(g_rows.size());
+		size_t same = 0;
+		std::string diff;
+		for (const Row& again : second)
+		{
+			const Row* before = nullptr;
+			for (size_t i = 0; i < g_rows.size() && !before; ++i)
+				if (!used[i] && SameRequest(g_rows[i], again))
+				{
+					used[i] = true;
+					before  = &g_rows[i];
+				}
+			if (before && before->result == again.result && before->hasRva == again.hasRva && before->rva == again.rva)
+			{
+				++same;
+				continue;
+			}
+			if (diff.empty())
+				diff = (again.name.empty() ? "(raw) " + (again.patterns.empty() ? std::string() : again.patterns[0].pattern) : again.name)
+					+ ": " + (before ? Answer(*before) : std::string("not asked in the first run")) + ", then " + Answer(again);
+		}
+		o.secondDiffers = !diff.empty();
+		o.second = "second run, scan cache warm: " + std::to_string(same) + "/" + std::to_string(second.size())
+			+ " rows the same" + (diff.empty() ? "" : "; " + diff);
+	}
+
+	// The game build the plugin says it was compiled against, as the loader
+	// reads it; empty with a header older than v72's PluginInfo tail.
+	std::string GameBuild(const PluginInfo& info)
+	{
+#ifdef PLUGIN_GAME_BUILT_CL
+		return VersionMap::DescribePluginGameBuild(VersionMap::ReadPluginGameBuild(info));
+#else
+		(void)info;
+		return {};
+#endif
+	}
+
+	// What the loader's report says about the plugin's features: a feature with a
+	// key that missed is off, the plugin still loads, and the miss is not a
+	// failure. The loader logs the same on its "[Map]" lines.
+	void PrintFeatures(FILE* out)
+	{
+		fprintf(out, "FEATURES OFF: %zu; refused: %s\n", g_report.featuresOff.size(), g_refused ? "yes" : "no");
+		for (const auto& feature : g_report.featuresOff)
+		{
+			fprintf(out, "  feature \"%s\" (%s) is off: %s\n", feature.title.c_str(), feature.id.c_str(), feature.reason.c_str());
+			for (const auto& miss : feature.misses)
+				fprintf(out, "    %s\n", miss.key.c_str());
+		}
+		// A refusing failure that has no row above: a field request or a check
+		// has no pattern to list.
+		for (const auto& f : g_report.failures)
+		{
+			bool listed = false;
+			for (const Row& row : g_rows)
+				listed = listed || (row.recorded && (row.name.empty() ? "(unnamed)" : row.name) == f.hookName);
+			if (!listed)
+				fprintf(out, "  refused by %s: %s\n", f.hookName.c_str(), f.detail.c_str());
+		}
+	}
+
+	void PrintFeaturesJson()
+	{
+		using AobScan::JsonEscape;
+		printf("  \"refused\": %s,\n  \"featuresOff\": [", g_refused ? "true" : "false");
+		for (size_t i = 0; i < g_report.featuresOff.size(); ++i)
+		{
+			const auto& feature = g_report.featuresOff[i];
+			printf("%s\n    { \"id\": \"%s\", \"title\": \"%s\", \"reason\": \"%s\", \"misses\": [",
+				i ? "," : "", JsonEscape(feature.id).c_str(), JsonEscape(feature.title).c_str(),
+				JsonEscape(feature.reason).c_str());
+			for (size_t m = 0; m < feature.misses.size(); ++m)
+				printf("%s{ \"key\": \"%s\", \"detail\": \"%s\" }", m ? ", " : "",
+					JsonEscape(feature.misses[m].key).c_str(),
+					JsonEscape(AobScan::JsonDetail(feature.misses[m].detail)).c_str());
+			printf("], \"configKeys\": [");
+			for (size_t c = 0; c < feature.configKeys.size(); ++c)
+				printf("%s\"%s\"", c ? ", " : "", JsonEscape(feature.configKeys[c]).c_str());
+			printf("] }");
+		}
+		printf("%s],\n", g_report.featuresOff.empty() ? "" : "\n  ");
+	}
+
+	void PrintTable(FILE* out, const std::string& file, const PluginInfo* info, const Outcome& o, const Summary& s)
+	{
+		fprintf(out, "sr-aobscan --plugin (%s build): %s", kTargetName, file.c_str());
+		if (info)
+		{
+			fprintf(out, " = %s %s (interface %d", info->name ? info->name : "?", info->version ? info->version : "?",
+				info->interfaceVersion);
+			const std::string build = GameBuild(*info);
+			if (!build.empty())
+				fprintf(out, ", game build %s", build.c_str());
+			fprintf(out, ")");
+		}
+		fprintf(out, "\n%-13s %-60s %-10s %-4s %7s  %s\n", "RESULT", "NAME", "KIND", "REQ", "MATCHES", "RVA");
+		for (const Row& row : g_rows)
+		{
+			const std::string rva = row.hasRva ? Hex(row.rva) : "-";
+			size_t matches = 0;
+			for (const Candidate& c : row.patterns) matches += c.matches;
+			const std::string name = row.name.empty() ? "(raw) " + (row.patterns.empty() ? "" : row.patterns[0].pattern) : row.name;
+			fprintf(out, "%-13s %-60.60s %-10s %-4s %7zu  %s\n", row.own ? row.own : row.result.c_str(), name.c_str(), row.kind.c_str(),
+				!row.recorded ? "-" : row.required ? "yes" : "no", matches, rva.c_str());
+			if (row.recorded && row.result != "OK" && !row.detail.empty())
+				AobScan::PrintDetail(out, row.detail);
+			AobScan::Suggest::PrintText(out, row.suggest);
+		}
+		PrintFeatures(out);
+		if (g_gameCalls)
+			fprintf(out, "Game calls stopped: %d. The first: %s\n", g_gameCalls, o.gameCall.c_str());
+		if (!o.crash.empty())
+			fprintf(out, "OnPluginLoadHooks crashed: %s\n", o.crash.c_str());
+		fprintf(out, "%s: %zu recorded patterns: %zu OK, %zu MISSING, %zu AMBIGUOUS, %zu other, %zu reported by the plugin; "
+			"%zu failures (any refuses the plugin); %zu raw scans\n",
+			o.verdict, s.total, s.ok, s.missing, s.ambiguous, s.other, s.reported, s.failing, s.raw);
+		if (s.ownPattern)
+			fprintf(out, "%s: %zu resolved requests whose own pattern does not match this exe exactly once (OWN-PATTERN, fails the plugin)\n",
+				o.verdict, s.ownPattern);
+		if (!o.note.empty())
+			fprintf(out, "%s: %s\n", o.verdict, o.note.c_str());
+	}
+
+	void PrintJson(const std::string& file, const PluginInfo* info, bool hasLoadHooks, const Outcome& o, const Summary& s,
+		AobScan::SymbolStarts& symbols)
+	{
+		using AobScan::JsonEscape;
+		printf("{\n  \"target\": \"%s\",\n", kTargetName);
+		if (g_suggest)
+			printf("  \"suggest\": %s,\n", g_suggest->EnvJson().c_str());
+		printf("  \"plugin\": { \"file\": \"%s\"", JsonEscape(file).c_str());
+		if (info)
+			printf(", \"name\": \"%s\", \"version\": \"%s\", \"interfaceVersion\": %d",
+				JsonEscape(info->name ? info->name : "").c_str(), JsonEscape(info->version ? info->version : "").c_str(),
+				info->interfaceVersion);
+		if (info && !GameBuild(*info).empty())
+			printf(", \"gameBuild\": \"%s\"", JsonEscape(GameBuild(*info)).c_str());
+		printf(", \"hasLoadHooks\": %s },\n", hasLoadHooks ? "true" : "false");
+		printf("  \"verdict\": \"%s\",\n", o.verdict);
+		PrintFeaturesJson();
+		if (!o.note.empty())
+			printf("  \"note\": \"%s\",\n", JsonEscape(o.note).c_str());
+		if (!o.crash.empty())
+			printf("  \"crash\": \"%s\",\n", JsonEscape(o.crash).c_str());
+		if (g_gameCalls)
+			printf("  \"gameCalls\": { \"stopped\": %d, \"first\": \"%s\" },\n", g_gameCalls, JsonEscape(o.gameCall).c_str());
+		printf("  \"summary\": { \"total\": %zu, \"ok\": %zu, \"missing\": %zu, \"ambiguous\": %zu, \"other\": %zu, "
+		       "\"reported\": %zu, \"failing\": %zu, \"raw\": %zu, \"ownPattern\": %zu },\n  \"patterns\": [\n",
+			s.total, s.ok, s.missing, s.ambiguous, s.other, s.reported, s.failing, s.raw, s.ownPattern);
+		for (size_t i = 0; i < g_rows.size(); ++i)
+		{
+			const Row& row = g_rows[i];
+			printf("    { \"call\": \"%s\", \"name\": \"%s\", \"kind\": \"%s\", \"required\": %s, \"recorded\": %s, "
+			       "\"result\": \"%s\"",
+				row.call.c_str(), JsonEscape(row.name).c_str(), row.kind.c_str(), row.required ? "true" : "false",
+				row.recorded ? "true" : "false", row.result.c_str());
+			// A map-key request that resolved reports the locator that matches at
+			// its address (the map's row when that decided it) and none when no
+			// single pattern does, so a row is never made from a pattern the loader
+			// would refuse on this exe. "matches" counts the plugin's own pattern.
+			if (row.patterns.size() == 1)
+			{
+				if (!row.observes || row.seen.found)
+					printf(", \"pattern\": \"%s\"", JsonEscape(row.observes ? row.seen.pattern : row.patterns[0].pattern).c_str());
+				printf(", \"matches\": %zu", row.patterns[0].matches);
+			}
+			else if (!row.patterns.empty())
+			{
+				if (!row.landing.empty())
+					printf(", \"pattern\": \"%s\"", JsonEscape(row.landing).c_str());
+				printf(", \"candidates\": [");
+				for (size_t c = 0; c < row.patterns.size(); ++c)
+					printf("%s{ \"pattern\": \"%s\", \"matches\": %zu }", c ? ", " : "",
+						JsonEscape(row.patterns[c].pattern).c_str(), row.patterns[c].matches);
+				printf("]");
+			}
+			const bool fromRow = row.observes && row.seen.found;
+			const int  followRel32At   = fromRow ? row.seen.followRel32At : row.followRel32At;
+			const int  followRipDispAt = fromRow ? row.seen.followRipDispAt : -1;
+			if (followRel32At >= 0)
+				printf(", \"followRel32At\": %d", followRel32At);
+			if (followRipDispAt >= 0)
+				printf(", \"followRipDispAt\": %d", followRipDispAt);
+			if (row.own)
+				printf(", \"ownPattern\": \"%s\"", row.own);
+			printf(", \"resultOffset\": %d", fromRow ? row.seen.resultOffset : row.resultOffset);
+			if (!row.key.empty())
+			{
+				// A request has no followRipDispAt: the fingerprint is made with -1.
+				printf(", \"key\": \"%s\"", JsonEscape(row.key).c_str());
+				if (row.fp || row.key.find('/') == std::string::npos)
+					printf(", \"fp\": \"0x%08X\"", row.fp);
+				printf(", \"siteArithmetic\": 0");
+			}
+			if (row.otherModule)
+				printf(", \"otherModule\": true");
+			if (row.hasRva)
+				printf(", \"rva\": \"%s\"", Hex(row.rva).c_str());
+			// Where the PDB symbol holding the resolved address starts, when there is one.
+			uint64_t symbolRva = 0;
+			if (row.result == "OK" && row.hasRva && symbols.Of(row.rva, symbolRva))
+				printf(", \"symbolRva\": \"%s\"", Hex(symbolRva).c_str());
+			if (!row.detail.empty())
+				printf(", \"detail\": \"%s\"", JsonEscape(AobScan::JsonDetail(row.detail)).c_str());
+			if (row.suggest.attempted)
+				printf(", \"suggest\": %s", AobScan::Suggest::Json(row.suggest).c_str());
+			printf(" }%s\n", i + 1 < g_rows.size() ? "," : "");
+		}
+		printf("  ]\n}\n");
+	}
+}
+
+namespace
+{
+	// ---- PluginInit, for the Game-SDK globals (interface 72) -----------------
+	//
+	// The loader's third off-build point: a plugin that asked the map for its
+	// offsets must also take the Game-SDK globals (GetSdkGlobals) in
+	// PluginInit. Its PluginInit runs here with a hooks table that holds
+	// GetSdkGlobals and nothing else, so whatever it does after that call
+	// faults on a null table and is stopped; only the call counts, and only
+	// one made on the thread that runs PluginInit, as the loader counts it.
+
+	PluginSdkGlobals g_sdkGlobals{};
+	bool             g_sdkGlobalsGiven = false;
+	unsigned         g_sdkGlobalsCalls = 0;
+	DWORD            g_initThread = 0;
+
+	const PluginSdkGlobals* GetSdkGlobals()
+	{
+		if (!g_sdkGlobalsGiven)
+			return nullptr;
+		if (GetCurrentThreadId() == g_initThread)
+			++g_sdkGlobalsCalls;
+		return &g_sdkGlobals;
+	}
+
+	// The globals the loader would hand out on this exe: its registry rows for
+	// them, resolved through its version map as preflight resolves them (each
+	// one's "[Map]" line goes to stderr), and the same rule for withholding
+	// them. The game is not running, so GObjects is not verified against the
+	// live object array as the loader's layout check verifies it.
+	void ResolveSdkGlobals()
+	{
+		const VersionMap::Exe exe = VersionMap::ExeOf(g_image);
+		const struct { const char* name; const char* pattern; uintptr_t* out; } wanted[] = {
+			{ "GObjects",     ScanPatterns::GObjects_PreAllocate,  &g_sdkGlobals.gobjects },
+			{ "GNames",       ScanPatterns::GNames_NamePoolData,   &g_sdkGlobals.gnames },
+			{ "AppendString", ScanPatterns::FName_AppendString,    &g_sdkGlobals.appendString },
+			{ "GWorld",       ScanPatterns::GWorld_EngineLoopTick, &g_sdkGlobals.gworld },
+		};
+		g_sdkGlobals = PluginSdkGlobals{};
+		g_sdkGlobals.structSize = sizeof(PluginSdkGlobals);
+		std::string found;
+		for (const auto& global : wanted)
+		{
+			for (const ScanPatterns::PreflightEntry& entry : ScanPatterns::PreflightRegistry)
+			{
+				if (entry.pattern != global.pattern)
+					continue;
+				ScanValidation::Request request;
+				request.name            = entry.name;
+				request.pattern         = entry.pattern;
+				request.kind            = static_cast<ScanValidation::Kind>(static_cast<int>(entry.kind));
+				request.followRel32At   = entry.followRel32At;
+				request.followRipDispAt = entry.followRipDispAt;
+				request.module          = g_image;
+				const ScanValidation::Result result = VersionMap::ResolveLoaderEntry(entry, request, exe);
+				if (result.Succeeded())
+					*global.out = result.address;
+				break;
+			}
+			found += std::string(found.empty() ? "" : ", ") + global.name + " "
+				+ (*global.out ? Hex(*global.out - reinterpret_cast<uintptr_t>(g_image)) : std::string("not found"));
+		}
+		const std::string withheld = VersionMap::SdkGlobalsWithheld(exe, g_sdkGlobals.gobjects,
+			g_sdkGlobals.appendString, g_sdkGlobals.gworld);
+		// The loader hands the globals out only for an exe its map has rows for.
+		const bool served = VersionMap::ServesExe(exe);
+		g_sdkGlobalsGiven = served && withheld.empty();
+		fprintf(stderr, "[SdkGlobals] CL-%u: %s; %s\n", exe.cl, found.c_str(),
+			g_sdkGlobalsGiven ? "handed to the plugin"
+				: served ? ("not handed to the plugin: " + withheld).c_str()
+				         : "not handed to the plugin: the version map has no rows for this exe");
+	}
+
+	bool InitSEH(PluginInitFunc fn, IPluginSelf* self, bool& returned, DWORD& code)
+	{
+		__try
+		{
+			returned = fn(self);
+			return true;
+		}
+		__except (code = GetExceptionCode(), EXCEPTION_EXECUTE_HANDLER)
+		{
+			return false;
+		}
+	}
+
+	void ShutdownSEH(PluginShutdownFunc fn)
+	{
+		__try
+		{
+			fn();
+		}
+		__except (EXCEPTION_EXECUTE_HANDLER)
+		{
+		}
+	}
+
+	// Runs PluginInit (and PluginShutdown after it) with GetSdkGlobals as the
+	// whole hooks table. True when the plugin took the globals; `note` says
+	// what happened.
+	bool TakesSdkGlobals(HMODULE plugin, IPluginSelf* self, std::string& note)
+	{
+		const auto init     = reinterpret_cast<PluginInitFunc>(GetProcAddress(plugin, PLUGIN_INIT_FUNC_NAME));
+		const auto shutdown = reinterpret_cast<PluginShutdownFunc>(GetProcAddress(plugin, PLUGIN_SHUTDOWN_FUNC_NAME));
+		if (!init)
+		{
+			note = "no " PLUGIN_INIT_FUNC_NAME " export, so it does not take the Game-SDK globals";
+			return false;
+		}
+		ResolveSdkGlobals();
+
+		static IPluginEngineEvents engine{};
+		engine.GetSdkGlobals = GetSdkGlobals;
+		static IPluginHooks hooks{};
+		hooks.Engine = &engine;
+		self->hooks  = &hooks;
+
+		g_sdkGlobalsCalls = 0;
+		g_initThread      = GetCurrentThreadId();
+		bool returned = false;
+		DWORD code = 0;
+		const bool ran = InitSEH(init, self, returned, code);
+		if (ran && returned && shutdown)
+			ShutdownSEH(shutdown);
+		self->hooks = nullptr;
+
+		const bool took = g_sdkGlobalsCalls > 0;
+		note = std::string(PLUGIN_INIT_FUNC_NAME) + (took ? " took" : " did not take") + " the Game-SDK globals";
+		// The probe hands PluginInit one function and nothing else, so a plugin
+		// that goes on to use any other part of its hooks table meets the null
+		// the probe left there. That is the probe's planned end for it, not a
+		// fault of the plugin's: only the globals call was being checked.
+		if (!ran)
+			note += std::string("; the probe ended ") + PLUGIN_INIT_FUNC_NAME + " there, as planned, when it reached for a hook the probe does not provide ("
+				+ Hex(code) + ")";
+		return took;
+	}
+}
+
+namespace AobScan
+{
+	int ScanPlugin(HMODULE image, const wchar_t* dllPath, bool json, bool verbose, Suggest::Session* suggest,
+		SymbolStarts& symbols)
+	{
+		g_image     = image;
+		g_suggest   = suggest;
+		g_imageSize = ImageSize(image);
+		g_verbose   = verbose;
+
+		wchar_t fullPath[MAX_PATH]{};
+		if (!GetFullPathNameW(dllPath, MAX_PATH, fullPath, nullptr))
+		{
+			fprintf(stderr, "sr-aobscan: %ls: bad path\n", dllPath);
+			return kExitBadInput;
+		}
+		const wchar_t* slash = wcsrchr(fullPath, L'\\');
+		const std::string file = Narrow(slash ? slash + 1 : fullPath);
+
+		const HMODULE kernel32 = GetModuleHandleW(L"kernel32.dll");
+		g_realGetModuleHandleW = reinterpret_cast<GetModuleHandleWFn>(GetProcAddress(kernel32, "GetModuleHandleW"));
+		g_realGetModuleHandleA = reinterpret_cast<GetModuleHandleAFn>(GetProcAddress(kernel32, "GetModuleHandleA"));
+		const HMODULE self_ = GetModuleHandleW(nullptr);
+		if (!g_realGetModuleHandleW || !g_realGetModuleHandleA || !RedirectMainModule(self_))
+		{
+			fprintf(stderr, "sr-aobscan: cannot redirect the main module to the game image\n");
+			return kExitBadInput;
+		}
+		if (!ProtectSections(image))
+		{
+			fprintf(stderr, "sr-aobscan: cannot set the game image's section protections, error %lu\n", GetLastError());
+			return kExitBadInput;
+		}
+
+		DWORD code = 0;
+		const HMODULE plugin = LoadSEH(fullPath, code);
+		if (!plugin)
+		{
+			fprintf(stderr, "sr-aobscan: %s: %s\n", file.c_str(),
+				code ? ("DllMain crashed, exception " + Hex(code)).c_str()
+				     : ("LoadLibrary failed, error " + std::to_string(GetLastError())).c_str());
+			return kExitBadInput;
+		}
+		if (!RedirectMainModule(plugin))
+		{
+			fprintf(stderr, "sr-aobscan: %s: cannot redirect its main module to the game image\n", file.c_str());
+			return kExitBadInput;
+		}
+		g_plugin     = plugin;
+		g_pluginSize = ImageSize(plugin);
+
+		const auto getInfo   = reinterpret_cast<GetPluginInfoFunc>(GetProcAddress(plugin, PLUGIN_GET_INFO_FUNC_NAME));
+		const auto loadHooks = reinterpret_cast<PluginLoadHooksFunc>(GetProcAddress(plugin, PLUGIN_LOAD_HOOKS_FUNC_NAME));
+		if (!getInfo)
+		{
+			fprintf(stderr, "sr-aobscan: %s has no %s export, so it is not a plugin\n", file.c_str(), PLUGIN_GET_INFO_FUNC_NAME);
+			return kExitBadInput;
+		}
+		const PluginInfo* info = GetInfoSEH(getInfo, code);
+		if (!info)
+		{
+			fprintf(stderr, "sr-aobscan: %s: GetPluginInfo %s\n", file.c_str(),
+				code ? ("crashed, exception " + Hex(code)).c_str() : "returned null");
+			return kExitBadInput;
+		}
+		if (info->pluginTarget != kTarget)
+		{
+			fprintf(stderr, "sr-aobscan: %s is not a %s plugin\n", file.c_str(), kTargetName);
+			return kExitBadInput;
+		}
+
+		Outcome o;
+		bool askedSdkGlobals = true;   // only asked of a plugin that declares PLUGIN_MAP_MIGRATED
+		const VersionMap::PluginGameBuild built = VersionMap::ReadPluginGameBuild(*info);
+		const bool refused = info->interfaceVersion < PLUGIN_INTERFACE_VERSION_MIN
+			|| info->interfaceVersion > PLUGIN_INTERFACE_VERSION_MAX;
+		if (refused)
+			o.note = "interface " + std::to_string(info->interfaceVersion) + " is outside the loader's ["
+				+ std::to_string(PLUGIN_INTERFACE_VERSION_MIN) + ", " + std::to_string(PLUGIN_INTERFACE_VERSION_MAX)
+				+ "], so the loader does not load it";
+		else if (loadHooks)
+		{
+			static IPluginLogger logger{};
+			logger.Log   = LogLine;
+			logger.Trace = LogTrace;
+			logger.Debug = LogDebug;
+			logger.Info  = LogInfo;
+			logger.Warn  = LogWarn;
+			logger.Error = LogError;
+
+			static IPluginConfig config{};
+			config.ReadString           = ReadString;
+			config.WriteString          = WriteString;
+			config.ReadInt              = ReadInt;
+			config.WriteInt             = WriteInt;
+			config.ReadFloat            = ReadFloat;
+			config.WriteFloat           = WriteFloat;
+			config.ReadBool             = ReadBool;
+			config.WriteBool            = WriteBool;
+			config.InitializeFromSchema = InitializeFromSchema;
+			config.ValidateConfig       = ValidateConfig;
+
+			static IPluginSelf self{};
+			self.name    = info->name;
+			self.version = info->version;
+			self.logger  = &logger;
+			self.config  = &config;
+			self.hooks   = nullptr;
+
+			code = 0;
+			OpenSession(&self, file);
+			const bool hookRan = LoadHooksSEH(loadHooks, &self, &g_scanner, code);
+			g_report = CloseSession(&self, g_refused);
+			AttachDetails(g_report);
+			if (!hookRan)
+				o.crash = "exception " + Hex(code)
+					+ (g_gameCalls ? " after " + std::to_string(g_gameCalls) + " game call(s) were stopped" : "");
+			else if (!g_gameCalls)
+				SecondPass(loadHooks, &self, file, o);
+			// PluginInit only for a plugin past the first two points, after a
+			// hook that did not crash. Game calls stopped in the hook do not
+			// skip it: the loader asks every such plugin.
+			if (o.crash.empty() && (built.mapFlags & PLUGIN_MAP_MIGRATED))
+			{
+				std::string initNote;
+				askedSdkGlobals = TakesSdkGlobals(plugin, &self, initNote);
+				o.note = o.note.empty() ? initNote : o.note + "; " + initNote;
+			}
+		}
+
+		// Proposals for what failed, once the plugin is done asking.
+		if (suggest)
+			for (Row& row : g_rows)
+			{
+				if (!row.recorded || row.otherModule || (row.result != "MISSING" && row.result != "AMBIGUOUS"))
+					continue;
+				Suggest::Request failed;
+				failed.name          = row.name;
+				failed.kind          = ScanValidation::ParseKind(row.kind.c_str());
+				failed.resultOffset  = row.resultOffset;
+				failed.followRel32At = row.followRel32At;
+				for (const Candidate& c : row.patterns)
+					failed.patterns.push_back(c.pattern);
+				row.suggest = suggest->Propose(failed);
+			}
+
+		const std::vector<std::string> ownFound = GradeOwnPatterns();
+		const Summary s = Summarise();
+		if (g_gameCalls)
+			o.gameCall = DescribeGameCall(file, g_firstGameCall);
+		// A stopped game call only keeps a pass from turning into a false
+		// CRASH, and only once something was checked: with no pattern resolved
+		// there is no evidence the hook ever reached its patterns.
+		const bool patternsOk = s.ok > 0 && s.ok + s.off == s.total && !s.failing;
+		const std::string offBuild = refused ? std::string()
+			: VersionMap::OffBuildRefusal(VersionMap::RunningExe(), info->interfaceVersion, built, askedSdkGlobals);
+		if (!offBuild.empty())
+			o.note = o.note.empty() ? offBuild : o.note + "; " + offBuild;
+		if (refused)               o.verdict = "REFUSED";
+		else if (!loadHooks)       o.verdict = "NONE";
+		else if (!o.crash.empty()) o.verdict = "CRASH";
+		else if (s.failing)        o.verdict = "FAIL";
+		else if (s.ownPattern)     o.verdict = "FAIL";
+		else if (o.secondDiffers)  o.verdict = "FAIL";
+		else if (!g_gameCalls)     o.verdict = "PASS";
+		else if (patternsOk)
+		{
+			o.verdict = "GAME-CALL";
+			size_t before = 0, beforeOk = 0;
+			for (size_t i = 0; i < g_rowsAtFirstCall && i < g_rows.size(); ++i)
+			{
+				if (!g_rows[i].recorded) continue;
+				++before;
+				if (g_rows[i].result == "OK") ++beforeOk;
+			}
+			const std::string calls = std::to_string(beforeOk) + "/" + std::to_string(before)
+				+ " resolved before first game call; later scans not exercised";
+			o.note = o.note.empty() ? calls : calls + "; " + o.note;
+		}
+		else
+		{
+			o.verdict = "CRASH";
+			o.crash   = "called into the game before any pattern resolved";
+		}
+
+		if (!ownFound.empty())
+		{
+			std::string own = "own pattern not unique on this build, whatever the map holds:";
+			for (const std::string& f : ownFound)
+				own += " " + f + ";";
+			own.pop_back();
+			o.note = o.note.empty() ? own : o.note + "; " + own;
+		}
+		if (!o.second.empty())
+			o.note = o.note.empty() ? o.second : o.note + "; " + o.second;
+
+		PrintTable(json ? stderr : stdout, file, info, o, s);
+		if (json)
+			PrintJson(file, info, loadHooks != nullptr, o, s, symbols);
+
+		const std::string verdict = o.verdict;
+		return (verdict == "PASS" || verdict == "GAME-CALL" || verdict == "NONE") ? kExitOk : kExitFailed;
+	}
+}
