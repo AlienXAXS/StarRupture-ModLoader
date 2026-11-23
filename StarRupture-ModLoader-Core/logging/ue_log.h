@@ -20,8 +20,8 @@
 //
 // We construct a minimal FLogCategoryBase (just enough fields that BasicLogV
 // reads) and a FStaticBasicLogRecord with a pre-formatted message so we never
-// pass variadic args at all — we embed the final string directly in the format
-// field and pass nullptr for Args.
+// pass variadic args at all — we embed the message, with its '%' escaped, in
+// the format field and pass nullptr for Args.
 //
 // Thread safety: Initialize() uses an atomic flag; Write() is safe to call
 // from any thread once initialized, because BasicLogV uses its own internal
@@ -148,9 +148,41 @@ namespace UELog
     }
 
     // -----------------------------------------------------------------------
+    // EscapePercent — copy a null-terminated wide string, doubling each '%'.
+    // The result always fits in outCap wchar_ts and is always null-terminated;
+    // a string too long for that is cut, never in the middle of a "%%" pair
+    // or a surrogate pair.
+    // -----------------------------------------------------------------------
+    inline void EscapePercent(const wchar_t* in, wchar_t* out, size_t outCap)
+    {
+        size_t n = 0;
+        for (; *in; ++in)
+        {
+            size_t need = (*in == L'%') ? 2 : 1;
+            if (*in >= 0xD800 && *in <= 0xDBFF && in[1] >= 0xDC00 && in[1] <= 0xDFFF)
+                need = 2;
+            if (n + need > outCap - 1)
+                break;
+            if (*in == L'%')
+            {
+                out[n++] = L'%';
+                out[n++] = L'%';
+            }
+            else
+            {
+                out[n++] = *in;
+                if (need == 2)
+                    out[n++] = *++in;
+            }
+        }
+        out[n] = L'\0';
+    }
+
+    // -----------------------------------------------------------------------
     // Write — forward a pre-formatted narrow string to the UE log.
     // verbosity: use ELogVerbosity values above.
-    // message:   plain narrow (UTF-8/ASCII) string — we convert to wide here.
+    // message:   plain narrow (UTF-8/ASCII) string — we convert to wide here
+    //            and escape '%' so the engine prints it as written.
     // -----------------------------------------------------------------------
     inline void Write(ELogVerbosity verbosity, const char* message)
     {
@@ -162,9 +194,14 @@ namespace UELog
 
         // Convert to wide.  The record holds a pointer to this buffer, so it
         // must stay alive across the BasicLogV call.  Stack-allocated is fine.
-        wchar_t wbuf[2048];
-        if (MultiByteToWideChar(CP_UTF8, 0, message, -1, wbuf, 2048) == 0)
+        wchar_t wide[2048];
+        if (MultiByteToWideChar(CP_UTF8, 0, message, -1, wide, 2048) == 0)
             return;
+
+        // The engine reads this text as a printf-style format, so every '%'
+        // in it is doubled to print as itself.
+        wchar_t wbuf[2048];
+        EscapePercent(wide, wbuf, 2048);
 
         // Build record on the stack — BasicLogV does not retain it
         FStaticBasicLogRecord record{};
@@ -173,8 +210,8 @@ namespace UELog
         record.Line      = 0;
         record.Verbosity = static_cast<uint8_t>(verbosity);
 
-        // Args = nullptr because our format string IS the final message
-        // (no % specifiers), so BasicLogV won't try to va_arg anything.
+        // Args = nullptr because every '%' in the format string is escaped
+        // (see EscapePercent), so BasicLogV won't try to va_arg anything.
         __try
         {
             g_basicLogV(&g_category, &record, nullptr);
