@@ -9,6 +9,7 @@
 //   * no hooks         -- the file on disk is the shipped image, so there is
 //                         nothing for PatchOverlay to put back.
 //   * no DbgHelp       -- failure reports lose the optional symbol name.
+//   * no game thread   -- posted tasks are dropped; the scan never queues any.
 // Three answers are real ones, for the per-build locator selection in
 // memory_scanner/version_map.cpp:
 //   * the game version -- the mapped exe's own ProductVersion.
@@ -35,6 +36,7 @@
 #include "hooks/symbol_resolver.h"
 #include "logging/logger.h"
 #include "memory_scanner/scan_cache.h"
+#include "utils/game_thread_dispatch.h"
 
 namespace
 {
@@ -147,4 +149,9 @@ namespace Hooks::SymbolResolver
 	{
 		return {};
 	}
+}
+
+namespace GameThreadDispatch
+{
+	void PostVoid(std::function<void()>, HMODULE) {}
 }
