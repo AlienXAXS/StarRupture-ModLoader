@@ -2338,6 +2338,36 @@ namespace UI::ModLoaderWindow
         ShellExecuteW(nullptr, L"open", wide.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
     }
 
+    // One row of the Browse table: name and summary, version, author, then the
+    // Installed marker and the Open page button.
+    static void DrawBrowseRow(const ModIndex::Entry& e, const std::vector<std::string>& loadedNames)
+    {
+        ImGui::TableNextRow();
+
+        ImGui::TableSetColumnIndex(0);
+        ImGui::TextUnformatted(e.name.c_str());
+        if (!e.summary.empty())
+        {
+            ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
+            ImGui::TextWrapped("%s", e.summary.c_str());
+            ImGui::PopStyleColor();
+        }
+
+        ImGui::TableSetColumnIndex(1);
+        ImGui::TextUnformatted(e.version.empty() ? "?" : e.version.c_str());
+
+        ImGui::TableSetColumnIndex(2);
+        ImGui::TextUnformatted(e.author.empty() ? "?" : e.author.c_str());
+
+        ImGui::TableSetColumnIndex(3);
+        if (ModIndex::IsInstalled(e, loadedNames))
+            ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "Installed");
+        if (e.interfaceVersionMin > PLUGIN_INTERFACE_VERSION_MAX)
+            ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.1f, 1.0f), "Needs a newer ModLoader");
+        if (ImGui::Button("Open page"))
+            OpenPageUrl(e.pageUrl);
+    }
+
     // The mod index, display only (auto_update/mod_index_fetcher.h). The list
     // is downloaded once on a worker thread; this only reads what it published.
     static void RenderBrowseTab()
@@ -2405,33 +2435,8 @@ namespace UI::ModLoaderWindow
 
             for (size_t i = 0; i < snap->entries.size(); ++i)
             {
-                const ModIndex::Entry& e = snap->entries[i];
-                ImGui::TableNextRow();
                 ImGui::PushID(static_cast<int>(i));
-
-                ImGui::TableSetColumnIndex(0);
-                ImGui::TextUnformatted(e.name.c_str());
-                if (!e.summary.empty())
-                {
-                    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
-                    ImGui::TextWrapped("%s", e.summary.c_str());
-                    ImGui::PopStyleColor();
-                }
-
-                ImGui::TableSetColumnIndex(1);
-                ImGui::TextUnformatted(e.version.empty() ? "?" : e.version.c_str());
-
-                ImGui::TableSetColumnIndex(2);
-                ImGui::TextUnformatted(e.author.empty() ? "?" : e.author.c_str());
-
-                ImGui::TableSetColumnIndex(3);
-                if (ModIndex::IsInstalled(e, loadedNames))
-                    ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "Installed");
-                if (e.interfaceVersionMin > PLUGIN_INTERFACE_VERSION_MAX)
-                    ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.1f, 1.0f), "Needs a newer ModLoader");
-                if (ImGui::Button("Open page"))
-                    OpenPageUrl(e.pageUrl);
-
+                DrawBrowseRow(snap->entries[i], loadedNames);
                 ImGui::PopID();
             }
             ImGui::EndTable();
