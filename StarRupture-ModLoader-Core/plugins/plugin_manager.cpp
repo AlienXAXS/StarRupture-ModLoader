@@ -1273,7 +1273,7 @@ namespace PluginManager
 	{
 		const std::wstring dir = GetModLoaderDirPath(L"Logs");
 		CreateDirectoryW(dir.c_str(), nullptr);
-		const std::wstring path = dir + L"\declared-features.v1.txt";
+		const std::wstring path = dir + L"\\declared-features.v1.txt";
 		if (!DeclaredFeaturesText::WriteAtomic(std::filesystem::path(path), BuildDeclaredFeaturesText()))
 			ModLoaderLogger::LogWarn(L"Could not write %s", path.c_str());
 	}
@@ -1565,6 +1565,7 @@ namespace PluginManager
 			{
 				++g_pluginGeneration;   // it is shut down now
 				LeaveCriticalSection(&g_pluginLock);
+				WriteDeclaredFeaturesDump();
 				return false;
 			}
 
