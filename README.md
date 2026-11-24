@@ -103,7 +103,7 @@ turned off in the **Settings** tab.
 
 <img src="images/pause-menu.png" width="360" alt="The pause menu with the MOD LOADER, BETTER CHEATS and BETTER DRONE rows">
 
-The tabs down the left are **Plugins**, **Config**, **Settings**, **Logging**, **Theme** and **About**
+The tabs down the left are **Plugins**, **Config**, **Settings**, **Logging**, **Theme**, **Browse** and **About**
 (the build tag and the plugins currently loaded). The menu row is set in
 [`modloader.ini`](#modloaderini). A splash window shows startup progress. In the main menu a
 bottom-left banner shows the build tag, plugin count and open key, plus a red note when an update
@@ -251,6 +251,15 @@ splash have none. How a plugin declares these is in the SDK's `PluginDevelopment
 - Colour edits apply at once; **Save** keeps them and **Reload** discards them.
 - **Font Family** only lists fonts found on your PC. Microsoft YaHei, Meiryo, Malgun Gothic and
   Arial + CJK add Chinese, Japanese or Korean text.
+
+### Browse tab <sup>[✦](#msantoro12)</sup>
+
+Lists plugins from the mod index. Each row shows the plugin's name, summary, version and author, an
+**Installed** marker when a plugin of that name is loaded, and an **Open page** button that opens the
+plugin's page (Nexus Mods or GitHub) in your browser. The list is downloaded once, the first time you
+open the tab, and kept until the game closes. If the download fails, the tab says so and **Retry** tries
+again. The tab only lists plugins; it never downloads or installs one. The format of the index and how to
+add a plugin are in [`mod-index/README.md`](mod-index/README.md).
 
 ### Image library <sup>[✦](#msantoro12)</sup>
 
@@ -995,6 +1004,7 @@ these for you.
 | `[Network]` | `ConnectionTimeout`, `InitialConnectTimeout` | `300.0` | Seconds, 1 to 3600; anything else logs a warning and uses 300. `0` keeps the engine default. See [Net timeouts](#net-timeouts) |
 | `[AutoUpdate]` | `Enabled` | `1` | Client only, except that a dedicated server also reads it for its own check for a newer version object map file. `0` stops the update checks, including the check for a newer version object map at every start |
 | | `ManifestUrl` | empty | Empty uses the built-in manifest |
+| | `ModIndexUrl` | empty | The address of the mod index the Browse tab lists. Empty uses the loader's built-in index address. Must be `https` |
 | `[Preload]` | `Enabled` | `1` | |
 | | `Disabled` | empty | Comma-separated DLL names to skip |
 | `[UE4SS]` | `Enabled` | `0` | Load UE4SS before plugins. `1` if you delete the key |

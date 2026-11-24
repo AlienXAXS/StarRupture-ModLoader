@@ -50,6 +50,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ImageDiskTests", "Tests\Ima
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ImageCacheCareTests", "Tests\ImageCacheCareTests\ImageCacheCareTests.vcxproj", "{5C9A2E48-71B3-4D06-9F85-A3E1C7D40B62}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ModIndexTests", "Tests\ModIndexTests\ModIndexTests.vcxproj", "{6D3F8A21-B4C7-4E95-8A10-27C5E9B3D648}"
+EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ImageShrinkHarness", "Tests\ImageShrinkHarness\ImageShrinkHarness.vcxproj", "{3B8D5E17-92A4-4C0F-A6D1-5E7F20C48B93}"
 EndProject
 Global
@@ -163,6 +165,7 @@ Global
 		{7E4A91C2-5B3D-4A68-8F20-1D6C9B3E0A57}.Client Debug|x64.ActiveCfg = Client Debug|x64
 		{3B8D5E71-9C24-4F06-A1D3-6E72B4C95A18}.Client Debug|x64.ActiveCfg = Client Debug|x64
 		{5C9A2E48-71B3-4D06-9F85-A3E1C7D40B62}.Client Debug|x64.ActiveCfg = Client Debug|x64
+		{6D3F8A21-B4C7-4E95-8A10-27C5E9B3D648}.Client Debug|x64.ActiveCfg = Client Debug|x64
 		{3B8D5E17-92A4-4C0F-A6D1-5E7F20C48B93}.Client Debug|x64.ActiveCfg = Client Debug|x64
 		{5C7E2B94-1D36-4F8A-A0B2-3E9D6C41F7A8}.Client Release|x64.ActiveCfg = Client Release|x64
 		{8B1D4F27-6A59-4C03-9E7A-2F5C83D0B614}.Client Release|x64.ActiveCfg = Client Release|x64
@@ -177,6 +180,7 @@ Global
 		{7E4A91C2-5B3D-4A68-8F20-1D6C9B3E0A57}.Client Release|x64.ActiveCfg = Client Release|x64
 		{3B8D5E71-9C24-4F06-A1D3-6E72B4C95A18}.Client Release|x64.ActiveCfg = Client Release|x64
 		{5C9A2E48-71B3-4D06-9F85-A3E1C7D40B62}.Client Release|x64.ActiveCfg = Client Release|x64
+		{6D3F8A21-B4C7-4E95-8A10-27C5E9B3D648}.Client Release|x64.ActiveCfg = Client Release|x64
 		{3B8D5E17-92A4-4C0F-A6D1-5E7F20C48B93}.Client Release|x64.ActiveCfg = Client Release|x64
 		{5C7E2B94-1D36-4F8A-A0B2-3E9D6C41F7A8}.Debug|x64.ActiveCfg = Client Debug|x64
 		{8B1D4F27-6A59-4C03-9E7A-2F5C83D0B614}.Debug|x64.ActiveCfg = Client Debug|x64
@@ -191,6 +195,7 @@ Global
 		{7E4A91C2-5B3D-4A68-8F20-1D6C9B3E0A57}.Debug|x64.ActiveCfg = Client Debug|x64
 		{3B8D5E71-9C24-4F06-A1D3-6E72B4C95A18}.Debug|x64.ActiveCfg = Client Debug|x64
 		{5C9A2E48-71B3-4D06-9F85-A3E1C7D40B62}.Debug|x64.ActiveCfg = Client Debug|x64
+		{6D3F8A21-B4C7-4E95-8A10-27C5E9B3D648}.Debug|x64.ActiveCfg = Client Debug|x64
 		{3B8D5E17-92A4-4C0F-A6D1-5E7F20C48B93}.Debug|x64.ActiveCfg = Client Debug|x64
 		{5C7E2B94-1D36-4F8A-A0B2-3E9D6C41F7A8}.Local SDK Client Debug|x64.ActiveCfg = Client Debug|x64
 		{8B1D4F27-6A59-4C03-9E7A-2F5C83D0B614}.Local SDK Client Debug|x64.ActiveCfg = Client Debug|x64
@@ -205,6 +210,7 @@ Global
 		{7E4A91C2-5B3D-4A68-8F20-1D6C9B3E0A57}.Local SDK Client Debug|x64.ActiveCfg = Client Debug|x64
 		{3B8D5E71-9C24-4F06-A1D3-6E72B4C95A18}.Local SDK Client Debug|x64.ActiveCfg = Client Debug|x64
 		{5C9A2E48-71B3-4D06-9F85-A3E1C7D40B62}.Local SDK Client Debug|x64.ActiveCfg = Client Debug|x64
+		{6D3F8A21-B4C7-4E95-8A10-27C5E9B3D648}.Local SDK Client Debug|x64.ActiveCfg = Client Debug|x64
 		{3B8D5E17-92A4-4C0F-A6D1-5E7F20C48B93}.Local SDK Client Debug|x64.ActiveCfg = Client Debug|x64
 		{5C7E2B94-1D36-4F8A-A0B2-3E9D6C41F7A8}.Local SDK Client Release|x64.ActiveCfg = Client Release|x64
 		{8B1D4F27-6A59-4C03-9E7A-2F5C83D0B614}.Local SDK Client Release|x64.ActiveCfg = Client Release|x64
@@ -219,6 +225,7 @@ Global
 		{7E4A91C2-5B3D-4A68-8F20-1D6C9B3E0A57}.Local SDK Client Release|x64.ActiveCfg = Client Release|x64
 		{3B8D5E71-9C24-4F06-A1D3-6E72B4C95A18}.Local SDK Client Release|x64.ActiveCfg = Client Release|x64
 		{5C9A2E48-71B3-4D06-9F85-A3E1C7D40B62}.Local SDK Client Release|x64.ActiveCfg = Client Release|x64
+		{6D3F8A21-B4C7-4E95-8A10-27C5E9B3D648}.Local SDK Client Release|x64.ActiveCfg = Client Release|x64
 		{3B8D5E17-92A4-4C0F-A6D1-5E7F20C48B93}.Local SDK Client Release|x64.ActiveCfg = Client Release|x64
 		{5C7E2B94-1D36-4F8A-A0B2-3E9D6C41F7A8}.Local SDK Server Debug|x64.ActiveCfg = Client Debug|x64
 		{8B1D4F27-6A59-4C03-9E7A-2F5C83D0B614}.Local SDK Server Debug|x64.ActiveCfg = Client Debug|x64
@@ -233,6 +240,7 @@ Global
 		{7E4A91C2-5B3D-4A68-8F20-1D6C9B3E0A57}.Local SDK Server Debug|x64.ActiveCfg = Client Debug|x64
 		{3B8D5E71-9C24-4F06-A1D3-6E72B4C95A18}.Local SDK Server Debug|x64.ActiveCfg = Client Debug|x64
 		{5C9A2E48-71B3-4D06-9F85-A3E1C7D40B62}.Local SDK Server Debug|x64.ActiveCfg = Client Debug|x64
+		{6D3F8A21-B4C7-4E95-8A10-27C5E9B3D648}.Local SDK Server Debug|x64.ActiveCfg = Client Debug|x64
 		{3B8D5E17-92A4-4C0F-A6D1-5E7F20C48B93}.Local SDK Server Debug|x64.ActiveCfg = Client Debug|x64
 		{5C7E2B94-1D36-4F8A-A0B2-3E9D6C41F7A8}.Local SDK Server Release|x64.ActiveCfg = Client Release|x64
 		{8B1D4F27-6A59-4C03-9E7A-2F5C83D0B614}.Local SDK Server Release|x64.ActiveCfg = Client Release|x64
@@ -247,6 +255,7 @@ Global
 		{7E4A91C2-5B3D-4A68-8F20-1D6C9B3E0A57}.Local SDK Server Release|x64.ActiveCfg = Client Release|x64
 		{3B8D5E71-9C24-4F06-A1D3-6E72B4C95A18}.Local SDK Server Release|x64.ActiveCfg = Client Release|x64
 		{5C9A2E48-71B3-4D06-9F85-A3E1C7D40B62}.Local SDK Server Release|x64.ActiveCfg = Client Release|x64
+		{6D3F8A21-B4C7-4E95-8A10-27C5E9B3D648}.Local SDK Server Release|x64.ActiveCfg = Client Release|x64
 		{3B8D5E17-92A4-4C0F-A6D1-5E7F20C48B93}.Local SDK Server Release|x64.ActiveCfg = Client Release|x64
 		{5C7E2B94-1D36-4F8A-A0B2-3E9D6C41F7A8}.Release|x64.ActiveCfg = Client Release|x64
 		{8B1D4F27-6A59-4C03-9E7A-2F5C83D0B614}.Release|x64.ActiveCfg = Client Release|x64
@@ -261,6 +270,7 @@ Global
 		{7E4A91C2-5B3D-4A68-8F20-1D6C9B3E0A57}.Release|x64.ActiveCfg = Client Release|x64
 		{3B8D5E71-9C24-4F06-A1D3-6E72B4C95A18}.Release|x64.ActiveCfg = Client Release|x64
 		{5C9A2E48-71B3-4D06-9F85-A3E1C7D40B62}.Release|x64.ActiveCfg = Client Release|x64
+		{6D3F8A21-B4C7-4E95-8A10-27C5E9B3D648}.Release|x64.ActiveCfg = Client Release|x64
 		{3B8D5E17-92A4-4C0F-A6D1-5E7F20C48B93}.Release|x64.ActiveCfg = Client Release|x64
 		{5C7E2B94-1D36-4F8A-A0B2-3E9D6C41F7A8}.Server Debug|x64.ActiveCfg = Client Debug|x64
 		{8B1D4F27-6A59-4C03-9E7A-2F5C83D0B614}.Server Debug|x64.ActiveCfg = Client Debug|x64
@@ -275,6 +285,7 @@ Global
 		{7E4A91C2-5B3D-4A68-8F20-1D6C9B3E0A57}.Server Debug|x64.ActiveCfg = Client Debug|x64
 		{3B8D5E71-9C24-4F06-A1D3-6E72B4C95A18}.Server Debug|x64.ActiveCfg = Client Debug|x64
 		{5C9A2E48-71B3-4D06-9F85-A3E1C7D40B62}.Server Debug|x64.ActiveCfg = Client Debug|x64
+		{6D3F8A21-B4C7-4E95-8A10-27C5E9B3D648}.Server Debug|x64.ActiveCfg = Client Debug|x64
 		{3B8D5E17-92A4-4C0F-A6D1-5E7F20C48B93}.Server Debug|x64.ActiveCfg = Client Debug|x64
 		{5C7E2B94-1D36-4F8A-A0B2-3E9D6C41F7A8}.Server Release|x64.ActiveCfg = Client Release|x64
 		{8B1D4F27-6A59-4C03-9E7A-2F5C83D0B614}.Server Release|x64.ActiveCfg = Client Release|x64
@@ -289,6 +300,7 @@ Global
 		{7E4A91C2-5B3D-4A68-8F20-1D6C9B3E0A57}.Server Release|x64.ActiveCfg = Client Release|x64
 		{3B8D5E71-9C24-4F06-A1D3-6E72B4C95A18}.Server Release|x64.ActiveCfg = Client Release|x64
 		{5C9A2E48-71B3-4D06-9F85-A3E1C7D40B62}.Server Release|x64.ActiveCfg = Client Release|x64
+		{6D3F8A21-B4C7-4E95-8A10-27C5E9B3D648}.Server Release|x64.ActiveCfg = Client Release|x64
 		{3B8D5E17-92A4-4C0F-A6D1-5E7F20C48B93}.Server Release|x64.ActiveCfg = Client Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
@@ -309,6 +321,7 @@ Global
 		{7E4A91C2-5B3D-4A68-8F20-1D6C9B3E0A57} = {3C7F92A8-1E64-4B0D-A5F7-8D24B6E01C39}
 		{3B8D5E71-9C24-4F06-A1D3-6E72B4C95A18} = {3C7F92A8-1E64-4B0D-A5F7-8D24B6E01C39}
 		{5C9A2E48-71B3-4D06-9F85-A3E1C7D40B62} = {3C7F92A8-1E64-4B0D-A5F7-8D24B6E01C39}
+		{6D3F8A21-B4C7-4E95-8A10-27C5E9B3D648} = {3C7F92A8-1E64-4B0D-A5F7-8D24B6E01C39}
 		{3B8D5E17-92A4-4C0F-A6D1-5E7F20C48B93} = {3C7F92A8-1E64-4B0D-A5F7-8D24B6E01C39}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution

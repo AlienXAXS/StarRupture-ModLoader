@@ -658,6 +658,30 @@ build\tests\image_cache_care_tests.exe
 
 It prints one line per test and exits 0 when every check passes.
 
+## ModIndexTests
+
+The mod index behind the Browse tab (`auto_update/mod_index.h`, `mod_index_fetcher.cpp`), with no network and
+no game. It checks:
+
+- The parser on a good index, a missing optional field, an empty list, a list with bad objects (skipped and
+  counted), text that is not an array, malformed or cut off, over the 256 KB cap, past 200 entries, over the
+  field caps, and hostile text (deep nesting, braces in strings, NUL bytes, unterminated strings).
+- The page URL allowlist: https on nexusmods.com, www.nexusmods.com, github.com and www.github.com only, and
+  look-alike hosts, user info, ports, backslashes, control characters and other schemes refused.
+- `IsInstalled` by id or name, in any case.
+- The sample `mod-index/index.json` parses with none skipped.
+- The Fetcher's states (Idle, Loading, Ready, Failed) through an injected request: one request however often
+  the first load is asked for, Retry from Failed or an empty list, Shutdown, and a worker that outlives its
+  Fetcher. `HttpGet` is a stand-in the test defines, which also shows the request passes the feed's timeouts
+  and the index size cap.
+
+```
+msbuild Tests\ModIndexTests\ModIndexTests.vcxproj /p:Configuration="Client Release" /p:Platform=x64
+build\tests\mod_index_tests.exe
+```
+
+It prints one line per failed check and a total, and exits 0 when every check passes.
+
 ## ImageShrinkTests
 
 The size, level and byte rules of the shrink (`UI/image_shrink.h`), with no GPU. It checks that a larger

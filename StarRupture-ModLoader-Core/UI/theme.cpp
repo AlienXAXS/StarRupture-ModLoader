@@ -931,6 +931,7 @@ namespace UI::Theme
         const char* Settings = "\xEE\xA2\xB8"; // settings   U+E8B8
         const char* Logging  = "\xEE\xA3\x92"; // subject    U+E8D2
         const char* Theme    = "\xEE\x90\x8A"; // palette    U+E40A
+        const char* Browse   = "\xEE\xA1\xBA"; // explore    U+E87A
         const char* About    = "\xEE\xA2\x8E"; // info       U+E88E
         const char* Reset    = "\xEE\x81\x82"; // replay     U+E042
     }

@@ -7,6 +7,7 @@
 #include "version_compare.h"
 #include "feed_fetch.h"
 #include "json_extract.h"
+#include "mod_index_fetcher.h"
 #include "loader_manifest.h"
 #include "core/startup_utils.h"
 #include "logging/log.h"
@@ -237,128 +238,9 @@ static void ReadUpdaterLogs(std::string& currentLog, std::string& previousLog)
 
 // ===========================================================================
 // Section D — Minimal JSON helpers
-// No external library — only handles the flat manifest schema. The string and
-// integer readers are in json_extract.h.
+// No external library — only handles the flat manifest schema. The readers
+// (string, decoded string, integer, object array) are in json_extract.h.
 // ===========================================================================
-
-// Extract a top-level string field and decode its JSON escapes. Used for the
-// manifest's "notes": JsonExtractString (json_extract.h) drops the backslash, so it
-// cannot tell \n from the letter n. Handles \n \t \" \\ \/ and \uXXXX; \r is
-// dropped, and a \u escape outside printable ASCII becomes '?' so the text
-// always draws in the overlay font.
-static std::string JsonExtractDecodedString(const std::string& json, const char* key)
-{
-	std::string needle = std::string("\"") + key + "\"";
-	size_t kpos = json.find(needle);
-	if (kpos == std::string::npos)
-		return {};
-
-	size_t vstart = json.find('"', kpos + needle.size());
-	if (vstart == std::string::npos)
-		return {};
-	++vstart;
-
-	std::string value;
-	for (size_t i = vstart; i < json.size(); ++i)
-	{
-		if (json[i] == '"')
-			break;
-
-		if (json[i] != '\\' || i + 1 >= json.size())
-		{
-			value += json[i];
-			continue;
-		}
-
-		switch (json[++i])
-		{
-		case 'n': value += '\n'; break;
-		case 't': value += '\t'; break;
-		case 'r': break;
-		case 'u':
-		{
-			bool ok = i + 4 < json.size();
-			for (size_t k = 1; ok && k <= 4; ++k)
-				ok = isxdigit(static_cast<unsigned char>(json[i + k])) != 0;
-			const unsigned code = ok ? std::stoul(json.substr(i + 1, 4), nullptr, 16) : 0;
-			if (ok)
-				i += 4;
-			value += (ok && (code == '\n' || (code >= 0x20 && code < 0x7F))) ? static_cast<char>(code) : '?';
-			break;
-		}
-		default: value += json[i]; break;
-		}
-	}
-	return value;
-}
-
-// Split the "plugins": [ ... ] array into individual { } object strings.
-// Works via brace-depth tracking; assumes no nested objects inside entries.
-static std::vector<std::string> JsonExtractObjectArray(
-	const std::string& json, const char* arrayKey)
-{
-	std::vector<std::string> results;
-
-	std::string needle = std::string("\"") + arrayKey + "\"";
-	size_t kpos = json.find(needle);
-	if (kpos == std::string::npos)
-		return results;
-
-	size_t apos = json.find('[', kpos + needle.size());
-	if (apos == std::string::npos)
-		return results;
-
-	size_t i = apos + 1;
-	while (i < json.size())
-	{
-		if (json[i] == ' ' || json[i] == '\t' ||
-			json[i] == '\r' || json[i] == '\n' || json[i] == ',')
-		{
-			++i;
-			continue;
-		}
-
-		if (json[i] == ']')
-			break;
-
-		if (json[i] == '{')
-		{
-			size_t start = i;
-			int depth = 0;
-			bool inString = false;
-			while (i < json.size())
-			{
-				char c = json[i];
-				if (inString)
-				{
-					if (c == '\\') { ++i; }
-					else if (c == '"') { inString = false; }
-				}
-				else
-				{
-					if (c == '"') { inString = true; }
-					else if (c == '{') { ++depth; }
-					else if (c == '}')
-					{
-						--depth;
-						if (depth == 0)
-						{
-							results.push_back(json.substr(start, i - start + 1));
-							++i;
-							break;
-						}
-					}
-				}
-				++i;
-			}
-			continue;
-		}
-
-		++i;
-	}
-
-	return results;
-}
 
 // ===========================================================================
 // Section E — Download a single plugin DLL
@@ -986,6 +868,36 @@ bool AutoUpdateEnabled()
 #ifndef VMAP_SERVER_FEED_URL
 #  define VMAP_SERVER_FEED_URL ""
 #endif
+
+// The Browse tab's mod index (mod_index.h): the index.json in the repo's
+// mod-index folder. modloader.ini [AutoUpdate] ModIndexUrl
+// overrides it, the way ManifestUrl overrides the manifest.
+#ifndef MOD_INDEX_URL
+#  define MOD_INDEX_URL "https://raw.githubusercontent.com/AlienXAXS/StarRupture-ModLoader/main/mod-index/index.json"
+#endif
+
+namespace
+{
+	std::string ReadModIndexUrl()
+	{
+		wchar_t wUrl[512]{};
+		GetPrivateProfileStringW(L"AutoUpdate", L"ModIndexUrl", L"", wUrl, 512,
+		                         GetModLoaderDirPath(L"modloader.ini").c_str());
+		if (wUrl[0] == L'\0')
+			return MOD_INDEX_URL;
+
+		char url[512]{};
+		WideCharToMultiByte(CP_UTF8, 0, wUrl, -1, url, sizeof(url), nullptr, nullptr);
+		LogToFile::Debug("[AutoUpdate] ModIndexUrl: overridden via modloader.ini");
+		return url;
+	}
+}
+
+ModIndex::Fetcher& ModIndex::Instance()
+{
+	static Fetcher fetcher(ReadModIndexUrl());
+	return fetcher;
+}
 
 namespace
 {
