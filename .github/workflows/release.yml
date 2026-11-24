@@ -498,7 +498,7 @@ jobs:
           name: modloader-dlls
           path: modloader-dlls
 
-      - name: Download pre-built dwmapi.dll artifacts (from latest release)
+      - name: Take dwmapi.dll from the release ZIPs
         if: ${{ steps.resolve.outputs.FROM_ARTIFACT == 'false' }}
         shell: pwsh
         env:
@@ -507,7 +507,7 @@ jobs:
           # The release has no loose DLL assets: dwmapi.dll ships inside each
           # variant's ZIP, so take it from there under the names the SDK release uses.
           $tag = "${{ steps.resolve.outputs.TAG }}"
-          New-Item -ItemType Directory -Force modloader-dlls | Out-Null
+          New-Item -ItemType Directory -Force modloader-dlls, sdk-sync-zips | Out-Null
           foreach ($variant in @("Client", "Server")) {
             $zip = "StarRupture-ModLoader-$variant-$tag.zip"
             gh release download $tag `
@@ -591,11 +591,13 @@ jobs:
       - name: Dispatch vmap-publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.build.outputs.tag }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           # The release is already out, so a failed dispatch only warns; the
           # scheduled run publishes the version map instead.
-          if gh workflow run vmap-publish.yml --repo "$GITHUB_REPOSITORY" --ref "${{ github.event.repository.default_branch }}"; then
-            echo "Dispatched vmap-publish.yml for release ${{ needs.build.outputs.tag }}."
+          if gh workflow run vmap-publish.yml --repo "$GITHUB_REPOSITORY" --ref "$DEFAULT_BRANCH"; then
+            echo "Dispatched vmap-publish.yml for release $TAG."
           else
-            echo "::warning title=vmap-publish not dispatched::Could not dispatch vmap-publish.yml; the scheduled run will attach the version map to ${{ needs.build.outputs.tag }}."
+            echo "::warning title=vmap-publish not dispatched::Could not dispatch vmap-publish.yml; the scheduled run will attach the version map to $TAG."
           fi
