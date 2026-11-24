@@ -5,6 +5,7 @@
 //   node verify-feed.mjs <signed-feed> --source <version_feed.cpp>
 //        [--last-seq <n>] [--now <unix seconds>] [--refuse-test-key]
 //        [--header <version_map.generated.h>] [--flavor client|server]
+//        [--kind feed|mod-index]
 //
 // The public keys are read from the loader's own key slots (kK1Hex, kK2Hex in
 // version_feed.cpp), so the loader and this check cannot disagree about them.
@@ -28,6 +29,14 @@
 //   file has none that does. A file of the other flavor is refused here, so it
 //   is not uploaded just to be refused by every loader.
 //
+// --kind mod-index: the signed mod index (mod-index.v1.txt) instead of a version
+//   map feed. Same signature, keys, --last-seq and exit codes. The file is
+//   `format 1`, `seq <n>`, `kind mod-index`, the index JSON, then the sig line,
+//   and at most 256 KiB in all. The body must be non-empty UTF-8 JSON; the
+//   entries are the loader's to read, so they are not checked here (the
+//   builder, build-mod-index.mjs, checks them before signing). --flavor and
+//   --header do not apply to it.
+//
 // Exit codes: 0 publish it; 3 refused (tampered, malformed, unknown key, test
 // key, gate); 4 valid but not newer; 2 usage error. Prints the `seq` on success.
 
@@ -40,6 +49,7 @@ export const EXIT_ERROR = 2;
 export const EXIT_REFUSED = 3;
 export const EXIT_NOT_NEWER = 4;
 const CAP_BYTES = 1024 * 1024;
+const MOD_INDEX_CAP_BYTES = 256 * 1024;
 const MAX_SEQ_AHEAD = 24 * 60 * 60;
 
 export class Refused extends Error {}
@@ -72,8 +82,10 @@ export function readHeaderBuilds(headerText) {
   return builds;
 }
 
-export function check(signed, { keys, lastSeq = null, now = Math.floor(Date.now() / 1000), refuseTestKey = false, headerText = null, flavor = null }) {
-  need(signed.length > 0 && signed.length <= CAP_BYTES, `the file is ${signed.length} bytes (1 to ${CAP_BYTES} allowed)`);
+export function check(signed, { keys, lastSeq = null, now = Math.floor(Date.now() / 1000), refuseTestKey = false, headerText = null, flavor = null, kind = 'feed' }) {
+  const modIndex = kind === 'mod-index';
+  const cap = modIndex ? MOD_INDEX_CAP_BYTES : CAP_BYTES;
+  need(signed.length > 0 && signed.length <= cap, `the file is ${signed.length} bytes (1 to ${cap} allowed)`);
   need(signed[signed.length - 1] === 0x0a, 'the file does not end in LF');
   const sigStart = signed.lastIndexOf(0x0a, signed.length - 2) + 1;
   const m = /^sig\t([a-z0-9]+)\t([A-Za-z0-9+/]{86}==)$/.exec(signed.subarray(sigStart, signed.length - 1).toString('latin1'));
@@ -90,6 +102,18 @@ export function check(signed, { keys, lastSeq = null, now = Math.floor(Date.now(
   need(sm && Number.isSafeInteger(Number(sm[1])), 'the second line is not a seq line');
   const seq = Number(sm[1]);
   need(seq <= now + MAX_SEQ_AHEAD, `seq ${seq} is more than a day ahead of the clock (${now})`);
+  if (modIndex) {
+    need(lines[2] === 'kind\tmod-index', 'the third line is not `kind mod-index`');
+    const json = body.subarray(lines.slice(0, 3).join('\n').length + 1);
+    need(json.length > 0, 'the mod index is empty');
+    try {
+      JSON.parse(new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(json));
+    } catch (e) {
+      throw new Refused(`the mod index is not UTF-8 JSON: ${e.message}`);
+    }
+    if (lastSeq !== null && seq <= lastSeq) throw new NotNewer(`seq ${seq} does not rise above ${lastSeq}`);
+    return { keyId: m[1], seq, test: key.test };
+  }
   for (const line of lines) {
     const f = line.split('	');
     if (f[0] === 'function' && f[7] === '-')
@@ -126,12 +150,14 @@ function main(argv) {
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--refuse-test-key') opt.flags.add('refuse-test-key');
-    else if (['--source', '--last-seq', '--now', '--header', '--flavor'].includes(a) && i + 1 < argv.length) opt[a.slice(2)] = argv[++i];
+    else if (['--source', '--last-seq', '--now', '--header', '--flavor', '--kind'].includes(a) && i + 1 < argv.length) opt[a.slice(2)] = argv[++i];
     else if (a.startsWith('--')) throw new Error(`unknown or incomplete option ${a}`);
     else rest.push(a);
   }
-  if (rest.length !== 1 || !opt.source) throw new Error('usage: verify-feed.mjs <signed-feed> --source <version_feed.cpp> [--last-seq n] [--now s] [--refuse-test-key] [--header h] [--flavor client|server]');
+  if (rest.length !== 1 || !opt.source) throw new Error('usage: verify-feed.mjs <signed-feed> --source <version_feed.cpp> [--last-seq n] [--now s] [--refuse-test-key] [--header h] [--flavor client|server] [--kind feed|mod-index]');
   if (opt.flavor !== undefined && !['client', 'server'].includes(opt.flavor)) throw new Error('--flavor is client or server');
+  if (opt.kind !== undefined && !['feed', 'mod-index'].includes(opt.kind)) throw new Error('--kind is feed or mod-index');
+  if (opt.kind === 'mod-index' && (opt.flavor !== undefined || opt.header !== undefined)) throw new Error('--flavor and --header do not apply to --kind mod-index');
   const int = (s, what) => { if (!/^\d+$/.test(s)) throw new Error(`${what} is a non-negative integer`); return Number(s); };
   try {
     const r = check(readFileSync(rest[0]), {
@@ -141,6 +167,7 @@ function main(argv) {
       refuseTestKey: opt.flags.has('refuse-test-key'),
       headerText: opt.header ? readFileSync(opt.header, 'utf8') : null,
       flavor: opt.flavor ?? null,
+      kind: opt.kind ?? 'feed',
     });
     process.stdout.write(`${r.seq}\n`);
     process.stderr.write(`verify-feed: ok, key ${r.keyId}${r.test ? ' (TEST key)' : ''}, seq ${r.seq}\n`);
