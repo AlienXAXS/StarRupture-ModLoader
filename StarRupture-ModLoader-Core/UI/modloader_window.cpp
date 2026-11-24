@@ -2371,7 +2371,7 @@ namespace UI::ModLoaderWindow
             ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.1f, 1.0f), "Needs a newer ModLoader");
             ImGui::SameLine();
         }
-        if (!e.testedLoader.empty())
+        else if (!e.testedLoader.empty())
         {
             ImGui::TextDisabled("Tested on %s", e.testedLoader.c_str());
             ImGui::SameLine();

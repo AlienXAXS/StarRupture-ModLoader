@@ -327,6 +327,8 @@ namespace VersionFeed
 		// read an empty map, which the cache would then keep ahead of the real one.
 		if (region.compare(l2 + 1, 20, "kind\tplugin-catalog\n") == 0)
 			return fail("this is a plugin catalog, not a version map");
+		if (region.compare(l2 + 1, 15, "kind\tmod-index\n") == 0)
+			return fail("this is a mod index, not a version map");
 		MapData map;
 		std::string parseError;
 		if (!VersionMap::ParseFeed(region.substr(0, l1 + 1) + region.substr(l2 + 1), map, parseError))

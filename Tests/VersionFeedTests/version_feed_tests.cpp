@@ -703,6 +703,8 @@ int main()
 			SignedFeed f;
 			Check(!Read(cat10, keys, f, e) && e.find("plugin catalog") != std::string::npos,
 				"ReadSigned refuses a signed plugin catalog instead of reading it as an empty map");
+			Check(!Read(Sign(sk1, Region(10, std::string("kind\tmod-index\n") + "[]\n")), keys, f, e) && e.find("mod index") != std::string::npos,
+				"ReadSigned refuses a signed mod index instead of reading it as an empty map");
 		}
 
 		// Nothing stored yet.
