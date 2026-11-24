@@ -2,6 +2,8 @@
 
 #include "memory_scanner/version_feed.h"
 
+#include <cstddef>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -41,7 +43,13 @@ namespace PluginCatalog
 	// fails to verify or parse is logged and leaves the copy empty.
 	void LoadCache(const std::wstring& path, const std::vector<VersionFeed::PublicKey>& keys);
 
-	// The catalog in plugin_catalog_text.h's grammar, or "unavailable" when the
-	// loader holds none. Takes a lock for the length of a pointer copy; no I/O.
-	std::string AccessorText();
+	// The catalog in plugin_catalog_text.h's grammar, or null when the loader
+	// holds none. The text is never changed once published, so the caller may
+	// keep the pointer. Takes a lock for the length of a pointer copy; no I/O.
+	std::shared_ptr<const std::string> AccessorText();
+
+	// IPluginRegistry::GetFeatureCatalog: AccessorText copied into buf the way
+	// snprintf does (the full length, NUL-terminated and cut to size; a null buf
+	// and a size of 0 only measure), or -1 when the loader holds no catalog.
+	int CopyAccessorText(char* buf, size_t size);
 }

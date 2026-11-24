@@ -1857,7 +1857,8 @@ namespace ModLoaderLogger
 	// Global hooks interface instance
 	static IPluginRegistry g_pluginRegistry = {
 		PluginManager::GetPluginVersion,
-		PluginManager::GetDeclaredFeatures
+		PluginManager::GetDeclaredFeatures,
+		PluginManager::GetFeatureCatalog
 	};
 
 	static IPluginHooks g_pluginHooks = {

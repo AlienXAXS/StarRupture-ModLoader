@@ -91,6 +91,11 @@ namespace PluginManager
     // until the startup plugin init has finished. Any thread.
     int GetDeclaredFeatures(char* buf, size_t size);
 
+    // IPluginRegistry::GetFeatureCatalog: the cached signed plugin catalog (see
+    // plugins/plugin_catalog.h), copied into buf as snprintf does. -1 when there
+    // is none, and always on a server build. Any thread.
+    int GetFeatureCatalog(char* buf, size_t size);
+
     // Copy status snapshots for ALL plugin records (loaded and unloaded) into out.
     // Returns total record count (may exceed maxCount).
     int GetAllPluginStatuses(PluginStatus* out, int maxCount);

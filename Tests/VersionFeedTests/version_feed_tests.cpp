@@ -674,6 +674,7 @@ int main()
 		const std::wstring path = TempPath(L"catalog.cache");
 		DeleteFileW(path.c_str());
 		std::string e;
+		const auto Served = [] { const auto t = PluginCatalog::AccessorText(); return t ? *t : std::string("<none>"); };
 
 		// VerifySigned agrees with ReadSigned on the map files: same seq, key and verdict.
 		{
@@ -698,15 +699,21 @@ int main()
 		}
 
 		// Nothing stored yet.
-		Check(PluginCatalog::AccessorText() == "unavailable", "the accessor says unavailable before any catalog");
+		Check(PluginCatalog::AccessorText() == nullptr && PluginCatalog::CopyAccessorText(nullptr, 0) == -1,
+			"the accessor has no text, and answers -1, before any catalog");
 		PluginCatalog::LoadCache(path, keys);
-		Check(PluginCatalog::AccessorText() == "unavailable", "a missing cache file loads nothing, quietly");
+		Check(PluginCatalog::AccessorText() == nullptr && PluginCatalog::CopyAccessorText(nullptr, 0) == -1,
+			"a missing cache file loads nothing, quietly");
+		{
+			char guard[4] = { 'x', 'x', 'x', 'x' };
+			Check(PluginCatalog::CopyAccessorText(guard, sizeof(guard)) == -1 && guard[0] == 'x', "-1 writes nothing to the buffer");
+		}
 
 		// A good file is accepted and cached.
 		Check(PluginCatalog::Store(path, cat10, keys, e) == PluginCatalog::Outcome::Stored, "a good signed catalog is stored");
 		Check(Slurp(path) == cat10, "the cache file is the signed file, byte for byte");
 		const std::string accessor10 = "format\t1\nseq\t10\n" + catBody;
-		Check(PluginCatalog::AccessorText() == accessor10, "the accessor serves the stored catalog");
+		Check(Served() == accessor10, "the accessor serves the stored catalog");
 
 		// Refusals keep the last good file.
 		Check(PluginCatalog::Store(path, cat10, keys, e) == PluginCatalog::Outcome::Unchanged && Slurp(path) == cat10,
@@ -736,27 +743,73 @@ int main()
 		Check(PluginCatalog::Store(path, cat10.substr(0, cat10.find("sig\t")), keys, e) == PluginCatalog::Outcome::Rejected && Slurp(path) == cat10,
 			"a file with no sig line is rejected");
 		Check(PluginCatalog::Store(path, "", keys, e) == PluginCatalog::Outcome::Rejected && Slurp(path) == cat10, "an empty file is rejected");
-		Check(PluginCatalog::AccessorText() == accessor10, "the accessor still serves the last good catalog after every refusal");
+		Check(Served() == accessor10, "the accessor still serves the last good catalog after every refusal");
 
 		// A higher seq replaces the cache and the accessor.
 		const std::string body11 = std::string("kind\tplugin-catalog\n") + "plugin\tAlpha\t1.3.0\n";
 		const std::string cat11 = Sign(sk2, Region(11, body11));
 		Check(PluginCatalog::Store(path, cat11, keys, e) == PluginCatalog::Outcome::Stored && Slurp(path) == cat11
-			&& PluginCatalog::AccessorText() == "format\t1\nseq\t11\n" + body11, "a higher seq replaces the cache and the accessor");
+			&& Served() == "format\t1\nseq\t11\n" + body11, "a higher seq replaces the cache and the accessor");
+
+		// The copy convention (the same as GetDeclaredFeatures), on the stored text.
+		{
+			const std::string text = "format	1
+seq	11
+" + body11;
+			const int len = static_cast<int>(text.size());
+			char big[512];
+			Check(PluginCatalog::CopyAccessorText(nullptr, 0) == len, "a null buffer with size 0 measures");
+			char marker[2] = { 'x', 'x' };
+			Check(PluginCatalog::CopyAccessorText(marker, 0) == len && marker[0] == 'x', "size 0 writes nothing");
+			Check(PluginCatalog::CopyAccessorText(marker, 1) == len && marker[0] == ' ' && marker[1] == 'x', "size 1 writes just the NUL");
+			Check(PluginCatalog::CopyAccessorText(big, sizeof(big)) == len && text == big, "a big buffer gets the whole text, NUL-terminated");
+			char exact[512];
+			Check(PluginCatalog::CopyAccessorText(exact, static_cast<size_t>(len) + 1) == len && text == exact, "a buffer of length + 1 holds it all");
+			char cut[512];
+			std::memset(cut, 'x', sizeof(cut));
+			Check(PluginCatalog::CopyAccessorText(cut, static_cast<size_t>(len)) == len && std::string(cut) == text.substr(0, text.size() - 1) && cut[len - 1] == ' ',
+				"a buffer of exactly the length is cut by one and keeps its NUL");
+			Check(PluginCatalog::CopyAccessorText(cut, 7) == len && std::string(cut) == text.substr(0, 6), "a small buffer is cut to size - 1 plus NUL, the full length returned");
+		}
+
+		// A title with multi-byte characters is served byte for byte, and the length counts bytes.
+		{
+			const std::string utf8Body = std::string("kind	plugin-catalog
+") + "plugin	Alpha	1.3.0
+"
+				+ "feature	Alpha	cafe	-	CafÃ© â¦ ðº
+";
+			const std::string utf8Text = "format	1
+seq	12
+" + utf8Body;
+			Check(PluginCatalog::Store(path, Sign(sk1, Region(12, utf8Body)), keys, e) == PluginCatalog::Outcome::Stored
+				&& Served() == utf8Text && PluginCatalog::CopyAccessorText(nullptr, 0) == static_cast<int>(utf8Text.size()),
+				"a title with two-, three- and four-byte characters is stored and measured in bytes");
+			std::string buf(utf8Text.size() + 1, ' ');
+			Check(PluginCatalog::CopyAccessorText(buf.data(), buf.size()) == static_cast<int>(utf8Text.size()) && buf.compare(0, utf8Text.size(), utf8Text) == 0,
+				"and copied whole");
+			// Put the last good text back for the cache tests below.
+			Check(PluginCatalog::Store(path, Sign(sk1, Region(11, body11)), keys, e) == PluginCatalog::Outcome::RefusedRollback && Served() == utf8Text,
+				"a rollback after it leaves it served");
+			Check(PluginCatalog::Store(path, Sign(sk1, Region(13, body11)), keys, e) == PluginCatalog::Outcome::Stored
+				&& Served() == "format	1
+seq	13
+" + body11, "and a higher seq replaces it");
+		}
 
 		// The cache survives a reload from disk, and a cache that no longer verifies loads nothing new.
 		{
 			const std::wstring other = TempPath(L"catalog2.cache");
 			Put(other, cat10);
 			PluginCatalog::LoadCache(other, keys);
-			Check(PluginCatalog::AccessorText() == accessor10, "LoadCache reads the cache file back into the accessor");
+			Check(Served() == accessor10, "LoadCache reads the cache file back into the accessor");
 			Put(other, flipped);
 			TestDoubles::g_log.clear();
 			PluginCatalog::LoadCache(other, keys);
-			Check(PluginCatalog::AccessorText() == accessor10 && Logged(L"not usable"),
+			Check(Served() == accessor10 && Logged(L"not usable"),
 				"a cache file that fails verification is logged and leaves the copy in memory as it was");
 			PluginCatalog::LoadCache(other, std::vector<PublicKey>{});
-			Check(PluginCatalog::AccessorText() == accessor10, "no keys loads nothing");
+			Check(Served() == accessor10, "no keys loads nothing");
 			DeleteFileW(other.c_str());
 		}
 		DeleteFileW(path.c_str());

@@ -944,7 +944,9 @@
 //      GetPluginVersion (whether another plugin is loaded and enabled, and its
 //      version) and GetDeclaredFeatures (the features every running plugin
 //      declares, as tab-separated text; the loader also writes it to
-//      Logs\declared-features.v1.txt). The pointer is appended after
+//      Logs\declared-features.v1.txt) and GetFeatureCatalog (the signed plugin
+//      catalog the project publishes next to the version object map, as text,
+//      from the loader's cache). The pointer is appended after
 //      HostRules, preserving the existing prefix, and MIN stays at 70. A
 //      plugin that uses it declares 80, so a loader below 80 refuses it (below
 //      80 the Registry pointer does not exist, and reading it reads past the
@@ -4160,15 +4162,52 @@ static_assert(sizeof(IPluginHostRules)                                   == 13 *
 // tabs and other control characters turned into spaces and are cut to 80 bytes
 // at a UTF-8 character boundary. Rows are sorted by plugin, then id, without
 // regard to case.
+//
+// GetFeatureCatalog copies the plugin catalog, the project's own list of
+// plugins and the features they declare, into buf as UTF-8 text, with the same
+// convention as GetDeclaredFeatures: it returns the full length without the
+// terminating NUL, writes the text NUL-terminated and cut to size (a cut can
+// fall inside a character, so measure first and allocate), and with a null buf
+// and a size of 0 only measures. It returns -1 when the loader holds no
+// verified catalog: nothing has been published or fetched yet, the cached file
+// is missing or failed its check, and always on a server build for now. Call it
+// from Tick, like the other two. It touches no game object and no file, but
+// keep it out of render callbacks all the same.
+//
+// The catalog is published by the project's CI next to the version object map
+// and signed with the same key. The loader checks the signature, fetches it
+// once per launch, keeps the last good copy on disk and refuses an older
+// file, so the text is a snapshot of the last verified file. It can be older
+// than the plugin set that is running, and a feature the catalog lists need
+// not be one a running plugin declares: compare with GetDeclaredFeatures for
+// what is running now. Until a catalog is published the accessor returns -1.
+// An older loader (interface below 80) has no GetFeatureCatalog member, and
+// refuses a plugin that declares 80, so a plugin that gets this far has it.
+//
+// The rows have the same shapes as GetDeclaredFeatures, in this order, so one
+// parser reads both:
+//
+//     format<TAB>1
+//     seq<TAB><n>                                              the catalog's own number, rising
+//     kind<TAB>plugin-catalog
+//     plugin<TAB><name><TAB><version>                          one per plugin
+//     feature<TAB><plugin><TAB><id><TAB><off><TAB><title>      one per feature
+//
+// <off> is "-" when the feature is on in every game build, "*" when it is off
+// in every build, or the game CLs it is off in (decimal, ascending, separated
+// by commas, no spaces). Split a row on tabs only: a plugin name can hold a
+// space.
 struct IPluginRegistry
 {
 	bool (*GetPluginVersion)(const char* name, char* out, size_t cap);
 	int  (*GetDeclaredFeatures)(char* buf, size_t size);
+	int  (*GetFeatureCatalog)(char* buf, size_t size);    // v80, appended after GetDeclaredFeatures
 };
 
 static_assert(offsetof(IPluginRegistry, GetPluginVersion)    == 0 * sizeof(void*), "v80 layout");
 static_assert(offsetof(IPluginRegistry, GetDeclaredFeatures) == 1 * sizeof(void*), "v80 layout");
-static_assert(sizeof(IPluginRegistry)                        == 2 * sizeof(void*), "v80 layout");
+static_assert(offsetof(IPluginRegistry, GetFeatureCatalog)   == 2 * sizeof(void*), "v80 layout");
+static_assert(sizeof(IPluginRegistry)                        == 3 * sizeof(void*), "v80 layout");
 
 struct IPluginHooks
 {

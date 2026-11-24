@@ -786,6 +786,7 @@ int main()
 	// ---- the plugin catalog: one GET, verified, cached ---------------------------
 	{
 		const std::wstring catCache = TempPath(L"catalog.cache");
+		const auto Served = [] { const auto t = PluginCatalog::AccessorText(); return t ? *t : std::string(); };
 		DeleteFileW(catCache.c_str());
 		FeedFetch::Config cfg = ConfigFor(srv, "/ok", keys, cache);
 		cfg.catalogUrl = srv.Url("/catalog");
@@ -795,8 +796,8 @@ int main()
 		srv.catalog = SignedCatalog(sk, 5, "1.0.0");
 		Check(FeedFetch::RefreshCatalog(cfg) == FeedFetch::Result::Stored && srv.hits == 1 && Slurp(catCache) == srv.catalog,
 			"catalog: a verified catalog is stored in its cache, verbatim");
-		Check(PluginCatalog::AccessorText().find("seq\t5\n") != std::string::npos
-			&& PluginCatalog::AccessorText().find("plugin\tAlpha\t1.0.0\n") != std::string::npos, "catalog: the accessor serves it at once");
+		Check(Served().find("seq\t5\n") != std::string::npos
+			&& Served().find("plugin\tAlpha\t1.0.0\n") != std::string::npos, "catalog: the accessor serves it at once");
 		Check(srv.lastIfNoneMatch.empty(), "catalog: no ETag is sent");
 
 		Check(FeedFetch::RefreshCatalog(cfg) == FeedFetch::Result::Unchanged && Slurp(catCache) == srv.catalog,
@@ -818,7 +819,7 @@ int main()
 
 		srv.catalog = SignedCatalog(sk, 7, "1.2.0");
 		Check(FeedFetch::RefreshCatalog(cfg) == FeedFetch::Result::Stored && Slurp(catCache) == srv.catalog
-			&& PluginCatalog::AccessorText().find("plugin\tAlpha\t1.2.0\n") != std::string::npos, "catalog: a higher seq replaces the cache");
+			&& Served().find("plugin\tAlpha\t1.2.0\n") != std::string::npos, "catalog: a higher seq replaces the cache");
 
 		srv.hits = 0;
 		FeedFetch::Config off = cfg;

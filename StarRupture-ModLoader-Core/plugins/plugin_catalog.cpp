@@ -1,5 +1,6 @@
 #include "plugin_catalog.h"
 #include "plugin_catalog_text.h"
+#include "declared_features_text.h"
 #include "logging/logger.h"
 
 #include <memory>
@@ -91,13 +92,17 @@ namespace PluginCatalog
 			static_cast<unsigned long long>(catalog.seq), catalog.plugins.size(), catalog.features.size());
 	}
 
-	std::string AccessorText()
+	std::shared_ptr<const std::string> AccessorText()
 	{
-		std::shared_ptr<const std::string> text;
-		{
-			std::lock_guard<std::mutex> lock(g_lock);
-			text = g_text;
-		}
-		return text ? *text : std::string("unavailable");
+		std::lock_guard<std::mutex> lock(g_lock);
+		return g_text;
+	}
+
+	int CopyAccessorText(char* buf, size_t size)
+	{
+		const std::shared_ptr<const std::string> text = AccessorText();
+		if (!text)
+			return -1;
+		return DeclaredFeaturesText::CopyCut(*text, buf, size);
 	}
 }

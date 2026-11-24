@@ -13,6 +13,7 @@
 #include "plugins/plugin_guard.h"
 #include "plugins/plugin_version_query.h"
 #include "plugins/declared_features_text.h"
+#include "plugins/plugin_catalog.h"
 #include "auto_update/auto_updater.h"
 #include "plugins/plugin_watchdog.h"
 #include "utils/game_thread_dispatch.h"
@@ -1272,6 +1273,18 @@ namespace PluginManager
 		if (!g_featuresReady)
 			return -1;
 		return DeclaredFeaturesText::CopyCut(BuildDeclaredFeaturesText(), buf, size);
+	}
+
+	int GetFeatureCatalog(char* buf, size_t size)
+	{
+#ifdef MODLOADER_CLIENT_BUILD
+		return PluginCatalog::CopyAccessorText(buf, size);
+#else
+		// A server build does not fetch the catalog yet.
+		(void)buf;
+		(void)size;
+		return -1;
+#endif
 	}
 
 	// Best effort: a failure costs one warning and nothing else.
