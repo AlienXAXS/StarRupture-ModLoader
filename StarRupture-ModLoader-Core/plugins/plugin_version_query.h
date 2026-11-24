@@ -13,8 +13,9 @@
 // its own. The caller holds the table's lock around Find.
 //
 // A plugin counts only while it is running. A plugin that is not in the table,
-// is disabled, was unloaded (the overlay's RELOAD button unloads before it loads
-// again), or is part-way through a shutdown or reload is "not loaded". The name
+// is disabled, was switched off after a fault, was unloaded (the overlay's RELOAD
+// button unloads before it loads again), or is part-way through a shutdown or
+// reload is "not loaded". The name
 // compares without regard to case, as the plugin list and the ini do.
 // ---------------------------------------------------------------------------
 namespace PluginVersionQuery
@@ -24,7 +25,7 @@ namespace PluginVersionQuery
     {
         const std::string* name;     // PluginInfo name
         const std::string* version;  // PluginInfo version
-        bool               running;  // initialized and not being shut down
+        bool               running;  // initialized, not being shut down, not switched off after a fault
     };
 
     // True, with the plugin's version in out (NUL-terminated), for the first

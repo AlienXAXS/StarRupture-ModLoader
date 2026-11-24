@@ -1227,7 +1227,8 @@ namespace PluginManager
 		const bool found = PluginVersionQuery::Find(g_loadedPlugins,
 			[](const std::unique_ptr<LoadedPlugin>& p)
 			{
-				return PluginVersionQuery::Row{ &p->cachedName, &p->cachedVersion, p->isInitialized && !p->isUnloading };
+				return PluginVersionQuery::Row{ &p->cachedName, &p->cachedVersion,
+					p->isInitialized && !p->isUnloading && !(p->hModule && PluginGuard::GetFault(p->hModule, nullptr)) };
 			},
 			name, out, cap);
 		LeaveCriticalSection(&g_pluginLock);

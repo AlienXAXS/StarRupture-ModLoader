@@ -629,14 +629,13 @@ game's menu layer, so its bit is set whenever the menu is open.
 
 #### Asking whether another plugin is loaded
 
-`hooks->Registry->GetPluginVersion(name, out, cap)` (interface 80; a loader below 80 has no `Registry`, so check
-the loader's interface version first) answers whether a plugin is loaded and enabled, and copies its version
-text into `out`. It returns false when that plugin is not loaded, is disabled, is unloading or reloading, or when
+`hooks->Registry->GetPluginVersion(name, out, cap)` (interface 80: a plugin that uses it declares 80, so an older loader refuses it) answers whether a plugin is loaded and enabled, and copies its version
+text into `out`. It returns false when that plugin is not loaded, is disabled, is unloading or reloading, was switched off after a crash, or when
 `cap` is too small for the whole text (`out` is then empty). Pass `nullptr` for `out` to only ask whether it is
-loaded. The name is the plugin's name, case does not matter. Call it from the game thread or a render callback.
+loaded. The name is the plugin's name, case does not matter. Call it from `Tick`, not from a render callback. A plugin that has not finished its own `PluginInit` (the caller included) reads as not loaded.
 
 ```cpp
-if (loaderInterfaceVersion >= 80 && hooks->Registry)
+if (hooks->Registry)
 {
     char version[64];
     if (hooks->Registry->GetPluginVersion("BetterCheats", version, sizeof(version)))
