@@ -563,7 +563,7 @@ namespace UI::ModLoaderWindow
                     {
                         char need[160];
                         PluginManager::DescribeLoaderNeed(s.declaredInterface, need, sizeof(need));
-                        ImGui::TextDisabled("This plugin %s", need);
+                        ImGui::TextDisabled("%s", need);
                     }
                     else
                     {

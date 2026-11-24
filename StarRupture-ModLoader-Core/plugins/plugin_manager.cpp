@@ -522,7 +522,7 @@ namespace PluginManager
 			{
 				char need[160];
 				LoaderManifest::Describe(info->interfaceVersion, latest, need, sizeof(need));
-				ModLoaderLogger::LogMessage(L"[AutoUpdate] %S (interface %d) %S",
+				ModLoaderLogger::LogMessage(L"[AutoUpdate] %S (interface %d): %S",
 					info->name ? info->name : "(unknown)", info->interfaceVersion, need);
 			}
 			// info points into the plugin's own image, so read it before the free.
@@ -2055,7 +2055,7 @@ namespace PluginManager
 				char need[160];
 				DescribeLoaderNeed(why.interfaceVersion, need, sizeof(need));
 				snprintf(text, sizeof(text),
-					"Built for plugin interface v%d, newer than this loader (%s accepts up to v%d). This plugin %s.",
+					"Built for plugin interface v%d, newer than this loader (%s accepts up to v%d). %s.",
 					why.interfaceVersion, MODLOADER_BUILD_TAG, PLUGIN_INTERFACE_VERSION_MAX, need);
 			}
 			break;

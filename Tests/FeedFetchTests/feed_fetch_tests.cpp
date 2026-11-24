@@ -1029,14 +1029,14 @@ int main()
 
 		// the sentence a refused plugin gets
 		char buf[160];
-		Check(strcmp(Describe(81, a, buf, sizeof(buf)), "needs ModLoader v1.28.0 or newer") == 0, "describe: the latest release supports it");
-		Check(strcmp(Describe(80, a, buf, sizeof(buf)), "needs ModLoader v1.28.0 or newer") == 0, "describe: a plugin below the latest's maximum");
-		Check(strcmp(Describe(82, a, buf, sizeof(buf)), "is built for a ModLoader newer than the latest release (v1.28.0)") == 0, "describe: one past the latest's maximum");
-		Check(strcmp(Describe(82, o, buf, sizeof(buf)), "needs a newer ModLoader") == 0, "describe: a manifest without the range");
-		Check(strcmp(Describe(82, Latest{}, buf, sizeof(buf)), "needs a newer ModLoader") == 0, "describe: no manifest at all");
+		Check(strcmp(Describe(81, a, buf, sizeof(buf)), "Needs ModLoader v1.28.0 or newer") == 0, "describe: the latest release supports it");
+		Check(strcmp(Describe(80, a, buf, sizeof(buf)), "Needs ModLoader v1.28.0 or newer") == 0, "describe: a plugin below the latest's maximum");
+		Check(strcmp(Describe(82, a, buf, sizeof(buf)), "Built for a ModLoader newer than the latest release (v1.28.0)") == 0, "describe: one past the latest's maximum");
+		Check(strcmp(Describe(82, o, buf, sizeof(buf)), "Needs a newer ModLoader") == 0, "describe: a manifest without the range");
+		Check(strcmp(Describe(82, Latest{}, buf, sizeof(buf)), "Needs a newer ModLoader") == 0, "describe: no manifest at all");
 		char small[12];
 		Describe(81, a, small, sizeof(small));
-		Check(strlen(small) == sizeof(small) - 1 && strncmp(small, "needs ModLoa", 11) == 0, "describe: cut to the buffer");
+		Check(strlen(small) == sizeof(small) - 1 && strncmp(small, "Needs ModLoa", 11) == 0, "describe: cut to the buffer");
 	}
 
 	// ---- an unroutable host ----------------------------------------------------

@@ -102,8 +102,8 @@ namespace PluginManager
     int GetAllPluginStatuses(PluginStatus* out, int maxCount);
 
     // What to say about a plugin built for plugin interface `declared` that this
-    // loader refused as too new: a phrase to follow "This plugin", such as
-    // "needs ModLoader v1.28.0 or newer", worked out from the latest release the
+    // loader refused as too new: a capitalised sentence, such as
+    // "Needs ModLoader v1.28.0 or newer", worked out from the latest release the
     // loader's manifest named (auto_update/loader_manifest.h). Cut to cap like snprintf.
     const char* DescribeLoaderNeed(int declared, char* buf, size_t cap);
 

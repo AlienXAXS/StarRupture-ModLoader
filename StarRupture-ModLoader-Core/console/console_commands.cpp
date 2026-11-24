@@ -508,7 +508,7 @@ namespace ModConsole
             {
                 char need[160];
                 PluginManager::DescribeLoaderNeed(s.declaredInterface, need, sizeof(need));
-                out.Notice("      this plugin %s", need);
+                out.Notice("      %s", need);
             }
 
             // A running plugin the loader will not unload or reload right now,

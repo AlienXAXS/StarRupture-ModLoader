@@ -39,16 +39,16 @@ namespace LoaderManifest
 	}
 
 	// What to say about a plugin built for plugin interface `declared`, which
-	// this loader refused as too new. A phrase to follow "This plugin", cut to
+	// this loader refused as too new, as a capitalised sentence. Cut to
 	// cap like snprintf.
 	inline const char* Describe(int declared, const Latest& latest, char* buf, size_t cap)
 	{
 		if (latest.HasRange() && latest.ifaceMax >= declared)
-			snprintf(buf, cap, "needs ModLoader %s or newer", latest.tag.c_str());
+			snprintf(buf, cap, "Needs ModLoader %s or newer", latest.tag.c_str());
 		else if (latest.HasRange())
-			snprintf(buf, cap, "is built for a ModLoader newer than the latest release (%s)", latest.tag.c_str());
+			snprintf(buf, cap, "Built for a ModLoader newer than the latest release (%s)", latest.tag.c_str());
 		else
-			snprintf(buf, cap, "needs a newer ModLoader");
+			snprintf(buf, cap, "Needs a newer ModLoader");
 		return buf;
 	}
 }
