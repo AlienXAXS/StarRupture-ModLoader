@@ -770,9 +770,11 @@ than that refuses it. To use a newer member without raising that level, also set
 reach the member through its accessor. On a loader that has the member you get it; on an older one the
 accessor returns `nullptr` and the feature stays off.
 
+In the project's preprocessor definitions (every configuration, the same in every file):
+`PLUGIN_NEEDS_INTERFACE=73` is the oldest loader the plugin runs on, and `PLUGIN_OPTIONAL_INTERFACE=80`
+is the newest level it may use.
+
 ```cpp
-#define PLUGIN_NEEDS_INTERFACE 73      // the oldest loader the plugin runs on
-#define PLUGIN_OPTIONAL_INTERFACE 80   // used only when the loader has it
 #include "plugin_interface.h"
 
 PLUGIN_EXPORT_HOST_INFO()              // once, in one .cpp file
@@ -784,8 +786,8 @@ if (IPluginRegistry* reg = PluginOptRegistry(self->hooks))
 }
 ```
 
-Before `PluginInit`, a loader with interface 80 calls the plugin's `PluginSetHostInfo` once and tells it
-its own interface level. A loader below 80 never calls it, so `PluginHostLevel()` stays at the plugin's
+Before any of the plugin's own code runs, a loader with interface 80 calls its `PluginSetHostInfo` once and
+tells it the loader's interface level. A loader below 80 never calls it, so `PluginHostLevel()` stays at the plugin's
 declared need and every accessor returns `nullptr`. `PluginHostHas(n)` says whether the loader has level
 `n`. The accessors are `PluginOptImages` (77), `PluginOptDL_AddTexturedTriangles` (78),
 `PluginOptHostRules` (79), `PluginOptRegistry` and `PluginOptServerAddress` (80); each exists only when
