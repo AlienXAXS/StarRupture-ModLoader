@@ -303,6 +303,9 @@
     <ClInclude Include="plugins\plugin_hook_report.h">
       <Filter>Source Files\plugins</Filter>
     </ClInclude>
+    <ClInclude Include="plugins\plugin_host_info.h">
+      <Filter>Source Files\plugins</Filter>
+    </ClInclude>
     <ClInclude Include="plugins\plugin_manager.h">
       <Filter>Source Files\plugins</Filter>
     </ClInclude>

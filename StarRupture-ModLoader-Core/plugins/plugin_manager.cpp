@@ -11,6 +11,7 @@
 #include "memory_scanner/hook_scanner_interface.h"
 #include "plugins/plugin_hook_report.h"
 #include "plugins/plugin_guard.h"
+#include "plugins/plugin_host_info.h"
 #include "plugins/plugin_version_query.h"
 #include "plugins/declared_features_text.h"
 #include "plugins/plugin_catalog.h"
@@ -337,6 +338,7 @@ namespace PluginManager
 		PluginInitFunc init;
 		PluginShutdownFunc shutdown;
 		PluginLoadHooksFunc loadHooks;   // optional export, may be null
+		PluginSetHostInfoFunc setHostInfo;   // optional export, may be null
 		WireCompat::Decl wire;           // what GetPluginWireInfo returned, copied at load; undeclared without the export
 		std::wstring fileName;
 		bool isInitialized;
@@ -465,6 +467,10 @@ namespace PluginManager
 		// are compatible with. No export means undeclared.
 		PluginWireInfoFunc wireInfo = reinterpret_cast<PluginWireInfoFunc>(
 			GetProcAddress(hModule, PLUGIN_WIRE_INFO_FUNC_NAME));
+
+		// Optional sixth export: tells the plugin which interface level this loader has.
+		PluginSetHostInfoFunc setHostInfo = reinterpret_cast<PluginSetHostInfoFunc>(
+			GetProcAddress(hModule, PLUGIN_SET_HOST_INFO_FUNC_NAME));
 
 		if (!getInfo || !init || !shutdown)
 		{
@@ -612,6 +618,7 @@ namespace PluginManager
 		rec.init           = init;
 		rec.shutdown       = shutdown;
 		rec.loadHooks      = loadHooks;
+		rec.setHostInfo    = setHostInfo;
 		rec.isInitialized  = false;  // deferred -- InitAllLoadedPlugins() calls PluginInit
 		rec.cachedName     = info->name    ? info->name    : "";
 		rec.cachedVersion  = info->version ? info->version : "";
@@ -906,6 +913,7 @@ namespace PluginManager
 		plugin.init      = nullptr;
 		plugin.shutdown  = nullptr;
 		plugin.loadHooks = nullptr;
+		plugin.setHostInfo = nullptr;
 	}
 
 	static bool ShutDownAndFree(LoadedPlugin& p, const wchar_t* action);
@@ -930,6 +938,20 @@ namespace PluginManager
 		plugin.self.hooks   = nullptr;   // populated below, after the scan phase
 		ReloadPolicy::SetBusyReason(&plugin.self, nullptr);   // a new instance starts not busy
 		PluginGuard::Track(plugin.hModule, plugin.cachedName.c_str());   // its callbacks are guarded from here on
+
+		// Tell the plugin which interface level this loader has, before it runs anything
+		// of its own. A fault here is handled like a fault in PluginInit.
+		if (plugin.setHostInfo)
+		{
+			g_lastPluginCrash = {};
+			if (!PluginHostInfoCall::Run(plugin.setHostInfo, PluginCrashFilter))
+			{
+				LogPluginCrash(plugin.cachedName.c_str(), plugin.hModule, L"PluginSetHostInfo");
+				ModLoaderLogger::LogError(L"Plugin '%S' crashed during PluginSetHostInfo -- it has been left unloaded", plugin.cachedName.c_str());
+				ForgetRegistrations(plugin);
+				return false;
+			}
+		}
 
 		const bool resolved = RunLoadHooksPhase(plugin);
 		const int interfaceVersion = plugin.info ? plugin.info->interfaceVersion : 0;

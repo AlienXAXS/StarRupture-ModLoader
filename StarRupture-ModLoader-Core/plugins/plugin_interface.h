@@ -1,6 +1,7 @@
 #pragma once
 
 #include <windows.h>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 
@@ -10,6 +11,15 @@
 //   Fill PluginInfo::interfaceVersion with PLUGIN_DECLARED_INTERFACE. A loader older than that refuses the plugin.
 //   Members added after your level are not declared: using one is a compile error (the compiler says the member does not exist; the comment beside the member gives the level to raise to).
 //   Raise it only when the compiler tells you to. The loader itself builds with PLUGIN_INTERFACE_HOST_BUILD and sees all.
+//
+// PLUGIN_OPTIONAL_INTERFACE: the highest level your plugin uses only when the loader has it.
+//   Unset, it is your need. Allowed: your need up to PLUGIN_INTERFACE_VERSION_MAX. Your plugin still declares
+//   only its need, so it loads on every loader that has that level.
+//   Add PLUGIN_EXPORT_HOST_INFO() to one .cpp file; a loader that has interface 80 then tells the plugin its
+//   own level. Ask for a newer member through its PluginOpt accessor (PluginOptRegistry, PluginOptImages,
+//   PluginOptHostRules, PluginOptDL_AddTexturedTriangles, PluginOptServerAddress): it returns nullptr on a
+//   loader that is below the member's level, so the plugin never reads past that loader's table.
+//   PluginHostHas(n) says whether the loader has level n.
 
 // v19: Introduced IPluginSelf.  MIN bumped to 19.
 // v20: Added OnBeforeWorldEndPlay / OnAfterWorldEndPlay.  MIN remains 19.
@@ -969,6 +979,14 @@
 //      a loader below 80 refuses it (below 80 the member does not exist, and
 //      reading it reads past the table). Later versions add members after the
 //      ones here.
+//
+//      v80 also adds an optional export, PluginSetHostInfo (see
+//      PLUGIN_EXPORT_HOST_INFO), so a plugin can use a member newer than its
+//      declared need only when the loader has it. After GetPluginInfo and before
+//      OnPluginLoadHooks and PluginInit the loader calls it once with a
+//      PluginHostInfo holding its own PLUGIN_INTERFACE_VERSION_MAX; an export that
+//      faults is handled like a fault in PluginInit. A loader below 80 never calls
+//      it, and ignores the export. A plugin that does not export it is untouched.
 // --- v80 ---
 //
 #define PLUGIN_INTERFACE_VERSION_MIN 70
@@ -1001,6 +1019,67 @@ static_assert(PLUGIN_NEEDS_INTERFACE >= 72 && PLUGIN_NEEDS_INTERFACE <= PLUGIN_I
 #  define PLUGIN_INTERFACE_STRINGIZE(x) PLUGIN_INTERFACE_STRINGIZE2(x)
 #  pragma detect_mismatch("PluginNeedsInterface", PLUGIN_INTERFACE_STRINGIZE(PLUGIN_NEEDS_INTERFACE))
 #endif
+
+// The highest level the plugin uses only when the loader has it (v80). Unset, it is the need.
+#ifndef PLUGIN_OPTIONAL_INTERFACE
+#  define PLUGIN_OPTIONAL_INTERFACE PLUGIN_NEEDS_INTERFACE
+#endif
+
+static_assert(PLUGIN_OPTIONAL_INTERFACE >= PLUGIN_NEEDS_INTERFACE && PLUGIN_OPTIONAL_INTERFACE <= PLUGIN_INTERFACE_VERSION_MAX,
+	"PLUGIN_OPTIONAL_INTERFACE must be between PLUGIN_NEEDS_INTERFACE and PLUGIN_INTERFACE_VERSION_MAX");
+
+#if defined(_MSC_VER)
+#  pragma detect_mismatch("PluginOptionalInterface", PLUGIN_INTERFACE_STRINGIZE(PLUGIN_OPTIONAL_INTERFACE))
+#endif
+
+// What a loader that has interface 80 tells a plugin that exports PluginSetHostInfo, once per
+// load, after GetPluginInfo and before PluginInit. structSize is sizeof of the struct the
+// loader fills; fields are only ever appended. hostInterface is the loader's own
+// PLUGIN_INTERFACE_VERSION_MAX.
+struct PluginHostInfo
+{
+	uint32_t structSize;
+	uint32_t hostInterface;
+};
+static_assert(sizeof(PluginHostInfo) == 8, "v80 layout");
+
+typedef void (*PluginSetHostInfoFunc)(const PluginHostInfo* info);
+#define PLUGIN_SET_HOST_INFO_FUNC_NAME "PluginSetHostInfo"
+
+// The level the loader reported, 0 until it does. A loader below 80 never calls the export.
+inline std::atomic<uint32_t>& PluginHostLevelStore()
+{
+	static std::atomic<uint32_t> level{ 0 };
+	return level;
+}
+
+// The body of the PluginSetHostInfo export. PLUGIN_EXPORT_HOST_INFO() calls it.
+inline void PluginRecordHostInfo(const PluginHostInfo* info)
+{
+	if (info && info->structSize >= offsetof(PluginHostInfo, hostInterface) + sizeof(uint32_t))
+		PluginHostLevelStore().store(info->hostInterface, std::memory_order_release);
+}
+
+// The interface level of the running loader: the one it reported, else the level this plugin
+// declares (every loader that loaded the plugin has at least that).
+inline uint32_t PluginHostLevel()
+{
+	const uint32_t reported = PluginHostLevelStore().load(std::memory_order_acquire);
+	return reported ? reported : static_cast<uint32_t>(PLUGIN_DECLARED_INTERFACE);
+}
+
+// True when the running loader has interface level n.
+inline bool PluginHostHas(uint32_t n)
+{
+	return PluginHostLevel() >= n;
+}
+
+// Put this once in one .cpp file of the plugin. It defines the PluginSetHostInfo export.
+#define PLUGIN_EXPORT_HOST_INFO()                                                              \
+	extern "C" __declspec(dllexport) void PluginSetHostInfo(const PluginHostInfo* info)         \
+	{                                                                                           \
+		PluginRecordHostInfo(info);                                                             \
+	}
 
 enum class PluginLogLevel { Trace = 0, Debug = 1, Info = 2, Warn = 3, Error = 4 };
 enum class ConfigValueType { String, Integer, Float, Boolean, Keybind, Choice /* v71 */, Hidden /* v71 */ };
@@ -4331,6 +4410,91 @@ static_assert(offsetof(IPluginHooks, HostRules) == 200, "v79 starts where v77 en
 #endif
 #if PLUGIN_NEEDS_INTERFACE >= 80
 static_assert(offsetof(IPluginHooks, Registry)  == 208, "v80 starts where v79 ended");
+#endif
+
+// ---------------------------------------------------------------------------
+// Optional newer members (v80)
+//
+// A plugin that declares its need as N may still use a member added after N when the
+// running loader has it. The member itself is hidden below the need, so the accessor is
+// the only door: it exists only when PLUGIN_OPTIONAL_INTERFACE is at least the member's
+// level, and returns nullptr unless the loader reported that level (PluginHostHas). It
+// reads the slot at the member's frozen offset. Where the member is visible (a level the
+// plugin needs, or the loader's own host build) the offset is checked against it, so a
+// wrong number cannot compile.
+//
+//   PLUGIN_EXPORT_HOST_INFO()                      // once, in one .cpp file
+//   if (IPluginRegistry* reg = PluginOptRegistry(self->hooks)) { ... }   // null on an older loader
+// ---------------------------------------------------------------------------
+constexpr size_t PLUGIN_OPT_OFFSET_IMAGES                 = 192;    // IPluginHooks::Images, v77
+constexpr size_t PLUGIN_OPT_OFFSET_ADD_TEXTURED_TRIANGLES = 2048;   // IModLoaderImGui::DL_AddTexturedTriangles, v78
+constexpr size_t PLUGIN_OPT_OFFSET_HOST_RULES             = 200;    // IPluginHooks::HostRules, v79
+constexpr size_t PLUGIN_OPT_OFFSET_REGISTRY               = 208;    // IPluginHooks::Registry, v80
+constexpr size_t PLUGIN_OPT_OFFSET_SERVER_ADDRESS         = 128;    // IPluginNetworkChannel::GetServerAddress, v80
+
+#if PLUGIN_NEEDS_INTERFACE >= 77
+static_assert(offsetof(IPluginHooks, Images) == PLUGIN_OPT_OFFSET_IMAGES, "optional offset: Images");
+#endif
+#if PLUGIN_NEEDS_INTERFACE >= 78
+static_assert(offsetof(IModLoaderImGui, DL_AddTexturedTriangles) == PLUGIN_OPT_OFFSET_ADD_TEXTURED_TRIANGLES, "optional offset: DL_AddTexturedTriangles");
+#endif
+#if PLUGIN_NEEDS_INTERFACE >= 79
+static_assert(offsetof(IPluginHooks, HostRules) == PLUGIN_OPT_OFFSET_HOST_RULES, "optional offset: HostRules");
+#endif
+#if PLUGIN_NEEDS_INTERFACE >= 80
+static_assert(offsetof(IPluginHooks, Registry) == PLUGIN_OPT_OFFSET_REGISTRY, "optional offset: Registry");
+static_assert(offsetof(IPluginNetworkChannel, GetServerAddress) == PLUGIN_OPT_OFFSET_SERVER_ADDRESS, "optional offset: GetServerAddress");
+#endif
+
+// The slot of a table at a byte offset, read only after PluginHostHas said the table has it.
+template<class T>
+inline T PluginOptSlot(const void* table, size_t offset)
+{
+	return *reinterpret_cast<const T*>(static_cast<const char*>(table) + offset);
+}
+
+#if PLUGIN_OPTIONAL_INTERFACE >= 77
+// IPluginHooks::Images. Client only, null on server/generic as the member is.
+inline IPluginImages* PluginOptImages(const IPluginHooks* hooks)
+{
+	return (hooks && PluginHostHas(77)) ? PluginOptSlot<IPluginImages*>(hooks, PLUGIN_OPT_OFFSET_IMAGES) : nullptr;
+}
+#endif
+
+#if PLUGIN_OPTIONAL_INTERFACE >= 78
+typedef PluginDrawResult (*PluginAddTexturedTrianglesFunc)(PluginDrawList dl, PluginTextureHandle tex,
+	const PluginDrawVertex* vertices, uint32_t vertex_count,
+	const PluginDrawIndex* indices, uint32_t index_count);
+
+// IModLoaderImGui::DL_AddTexturedTriangles.
+inline PluginAddTexturedTrianglesFunc PluginOptDL_AddTexturedTriangles(const IModLoaderImGui* imgui)
+{
+	return (imgui && PluginHostHas(78)) ? PluginOptSlot<PluginAddTexturedTrianglesFunc>(imgui, PLUGIN_OPT_OFFSET_ADD_TEXTURED_TRIANGLES) : nullptr;
+}
+#endif
+
+#if PLUGIN_OPTIONAL_INTERFACE >= 79
+// IPluginHooks::HostRules. Null on a generic build as the member is.
+inline IPluginHostRules* PluginOptHostRules(const IPluginHooks* hooks)
+{
+	return (hooks && PluginHostHas(79)) ? PluginOptSlot<IPluginHostRules*>(hooks, PLUGIN_OPT_OFFSET_HOST_RULES) : nullptr;
+}
+#endif
+
+#if PLUGIN_OPTIONAL_INTERFACE >= 80
+typedef int (*PluginGetServerAddressFunc)(char* buf, size_t size);
+
+// IPluginHooks::Registry.
+inline IPluginRegistry* PluginOptRegistry(const IPluginHooks* hooks)
+{
+	return (hooks && PluginHostHas(80)) ? PluginOptSlot<IPluginRegistry*>(hooks, PLUGIN_OPT_OFFSET_REGISTRY) : nullptr;
+}
+
+// IPluginNetworkChannel::GetServerAddress.
+inline PluginGetServerAddressFunc PluginOptServerAddress(const IPluginNetworkChannel* network)
+{
+	return (network && PluginHostHas(80)) ? PluginOptSlot<PluginGetServerAddressFunc>(network, PLUGIN_OPT_OFFSET_SERVER_ADDRESS) : nullptr;
+}
 #endif
 
 // ---------------------------------------------------------------------------

@@ -100,7 +100,11 @@
     <ClCompile Include="need_80.cpp" />
     <ClCompile Include="need_default.cpp" />
     <ClCompile Include="need_host.cpp" />
+    <ClCompile Include="opt_73_80.cpp" />
+    <ClCompile Include="opt_75_77.cpp" />
+    <ClCompile Include="opt_default.cpp" />
     <ClInclude Include="need_checks.h" />
+    <ClInclude Include="opt_checks.h" />
   </ItemGroup>
   <ItemGroup Label="Loader header under test">
     <ClInclude Include="$(CoreDir)plugins\plugin_interface.h" />
