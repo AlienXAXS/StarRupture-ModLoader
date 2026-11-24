@@ -641,7 +641,7 @@ Save the file with LF line endings and a final newline, and check it before you 
 
 It says `ok`, or names the entry that has to change.
 
-After your PR is merged, the signed list is published within the publish cycle. A ModLoader release is
+After your PR is merged, the maintainers sign and publish the list. A ModLoader release is
 not needed.
 
 ## Failure modes

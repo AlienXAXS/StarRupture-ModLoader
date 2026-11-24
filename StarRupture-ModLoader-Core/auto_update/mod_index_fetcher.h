@@ -33,7 +33,8 @@
 // Shutdown: the worker owns a share of the state, so it can finish after the
 // Fetcher is gone and at process exit. Shutdown(waitMs) stops new requests and
 // waits up to waitMs for a running one (the request itself ends by the HttpGet
-// deadline). Nothing is read from or written to disk.
+// deadline). This class does no disk I/O itself; the loader's own instance gets its
+// fetch function from mod_index_signed.h, which keeps the cache file.
 // ---------------------------------------------------------------------------
 
 namespace ModIndex

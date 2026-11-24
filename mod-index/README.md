@@ -48,8 +48,8 @@ It prints `ok`, or names the entry that breaks a rule below.
 
 ## After it is merged
 
-The list is signed and published as `mod-index.v1.txt` together with the version map. It reaches
-players within that publish cycle; no ModLoader release is needed. The loader checks the signature
+The maintainers sign the list and publish it as `mod-index.v1.txt` together with the version map;
+no ModLoader release is needed. The loader checks the signature
 before it reads an entry, and keeps its last good copy for when a download fails.
 
 ## The page_url rule
