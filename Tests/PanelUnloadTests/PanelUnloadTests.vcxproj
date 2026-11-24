@@ -66,7 +66,7 @@
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <!-- MODLOADER_CLIENT_BUILD gates every symbol under test. 4005: framework.h redefines the two macros below. -->
-      <PreprocessorDefinitions>MODLOADER_CLIENT_BUILD;_CONSOLE;NOMINMAX;WIN32_LEAN_AND_MEAN;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>PLUGIN_INTERFACE_HOST_BUILD;MODLOADER_CLIENT_BUILD;_CONSOLE;NOMINMAX;WIN32_LEAN_AND_MEAN;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <DisableSpecificWarnings>4005;%(DisableSpecificWarnings)</DisableSpecificWarnings>
       <!-- The live loader headers, on purpose: a test built against a stale copy would pass while testing nothing. -->
       <AdditionalIncludeDirectories>$(ProjectDir);$(CoreDir);$(CoreDir)UI;$(ImGuiRootDir);$(ImGuiRootDir)imgui;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>

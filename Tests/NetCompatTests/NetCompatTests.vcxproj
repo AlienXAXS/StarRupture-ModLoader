@@ -67,7 +67,7 @@
       <ConformanceMode>true</ConformanceMode>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <PreprocessorDefinitions>_CONSOLE;NOMINMAX;WIN32_LEAN_AND_MEAN;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>PLUGIN_INTERFACE_HOST_BUILD;_CONSOLE;NOMINMAX;WIN32_LEAN_AND_MEAN;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <!-- The live loader header, on purpose: a test built against a stale copy would pass while testing nothing. -->
       <AdditionalIncludeDirectories>$(ProjectDir);$(CoreDir);$(CoreDir)network_channel;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>

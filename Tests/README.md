@@ -258,6 +258,28 @@ build\tests\net_compat_tests.exe
 ```
 
 It prints one line per check and exits 0 when every check passes.
+## PluginNeedTests
+
+A compile test for `plugins/plugin_interface.h`, which hides every host-table member added after the
+interface level a plugin declares with `PLUGIN_NEEDS_INTERFACE` (default: 75). It builds one small
+source file per level (72 to 80), one file with nothing set, and one with
+`PLUGIN_INTERFACE_HOST_BUILD` (what the loader itself uses). Each file includes `need_checks.h`,
+which checks with `static_assert` that:
+
+- a member added at version N is visible exactly when the level is N or more,
+- a visible member sits at its frozen offset, and each host table's `sizeof` ends at its last
+  visible member,
+- the structs a plugin allocates (`PluginInfo`, `PluginPanelDesc`) are never cut down.
+
+`need_default.cpp` also checks that a plugin which sets nothing declares 75 and cannot name
+`Images`, `HostRules`, `Registry`, `DL_AddTexturedTriangles` or `GetServerAddress`.
+
+There is nothing to run: it is a static library, and the build is the test.
+
+```
+msbuild Tests\PluginNeedTests\PluginNeedTests.vcxproj /p:Configuration="Client Release" /p:Platform=x64
+```
+
 ## KeyAndThreadTests
 
 A console program like PanelUnloadTests, for the two queries interface v72 gives a plugin's tick:

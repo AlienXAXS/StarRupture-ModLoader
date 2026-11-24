@@ -1,0 +1,114 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<!--
+  PluginNeedTests : a compile test for PLUGIN_NEEDS_INTERFACE in plugins\plugin_interface.h.
+  See Tests/README.md.
+
+  Each source file includes the live plugin_interface.h at one level (72 to 80, the
+  default, and the loader's own host build) and static_asserts which host table
+  members are visible and where they sit. Building the library is the test: a wrong
+  #if, a shifted offset or a member that is visible when it should not be stops the
+  compiler. Nothing here is linked or run, because the files declare different levels
+  on purpose (a mix of levels in one plugin is a link error, which is the point of
+  detect_mismatch).
+
+  Like the other projects here it is in the solution but NOT built by "Build Solution"
+  or by CI. Build the project file directly:
+
+    msbuild Tests\PluginNeedTests\PluginNeedTests.vcxproj /p:Configuration="Client Release" /p:Platform=x64
+-->
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Client Debug|x64">
+      <Configuration>Client Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Client Release|x64">
+      <Configuration>Client Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>17.0</VCProjectVersion>
+    <Keyword>Win32Proj</Keyword>
+    <ProjectGuid>{3F9C2B71-6A48-4D1E-8B05-C7E2A4D91F36}</ProjectGuid>
+    <RootNamespace>PluginNeedTests</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+    <!-- Set by Visual Studio and by building the .sln; empty when this project file is built on its own. -->
+    <SolutionDir Condition="'$(SolutionDir)' == ''">$(MSBuildThisFileDirectory)..\..\</SolutionDir>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Client Debug|x64'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Client Release|x64'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup>
+    <CoreDir>$(SolutionDir)StarRupture-ModLoader-Core\</CoreDir>
+    <OutDir>$(SolutionDir)build\tests\</OutDir>
+    <IntDir>$(SolutionDir)obj\Tests\$(ProjectName)\$(Platform)\$(Configuration)\</IntDir>
+    <TargetName>plugin_need_tests</TargetName>
+  </PropertyGroup>
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <ConformanceMode>true</ConformanceMode>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <PreprocessorDefinitions>_CONSOLE;NOMINMAX;WIN32_LEAN_AND_MEAN;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <!-- The live loader header, on purpose: a test built against a stale copy would pass while testing nothing. -->
+      <AdditionalIncludeDirectories>$(ProjectDir);$(CoreDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)'=='Client Debug'">
+    <ClCompile>
+      <PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
+    </ClCompile>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)'=='Client Release'">
+    <ClCompile>
+      <PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+    </ClCompile>
+  </ItemDefinitionGroup>
+  <ItemGroup Label="Test">
+    <ClCompile Include="need_72.cpp" />
+    <ClCompile Include="need_73.cpp" />
+    <ClCompile Include="need_74.cpp" />
+    <ClCompile Include="need_75.cpp" />
+    <ClCompile Include="need_76.cpp" />
+    <ClCompile Include="need_77.cpp" />
+    <ClCompile Include="need_78.cpp" />
+    <ClCompile Include="need_79.cpp" />
+    <ClCompile Include="need_80.cpp" />
+    <ClCompile Include="need_default.cpp" />
+    <ClCompile Include="need_host.cpp" />
+    <ClInclude Include="need_checks.h" />
+  </ItemGroup>
+  <ItemGroup Label="Loader header under test">
+    <ClInclude Include="$(CoreDir)plugins\plugin_interface.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="..\README.md" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>

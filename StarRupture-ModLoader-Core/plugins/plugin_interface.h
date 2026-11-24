@@ -4,6 +4,13 @@
 #include <cstddef>
 #include <cstdint>
 
+// PLUGIN_NEEDS_INTERFACE: the interface level your plugin needs.
+//   Set it for the whole project (PreprocessorDefinitions), e.g. PLUGIN_NEEDS_INTERFACE=77.
+//   Unset, it is PLUGIN_INTERFACE_BASELINE (75). Allowed: 72 up to PLUGIN_INTERFACE_VERSION_MAX.
+//   Fill PluginInfo::interfaceVersion with PLUGIN_DECLARED_INTERFACE. A loader older than that refuses the plugin.
+//   Members added after your level are not declared: using one is a compile error that names the level to raise to.
+//   Raise it only when the compiler tells you to. The loader itself builds with PLUGIN_INTERFACE_HOST_BUILD and sees all.
+
 // v19: Introduced IPluginSelf.  MIN bumped to 19.
 // v20: Added OnBeforeWorldEndPlay / OnAfterWorldEndPlay.  MIN remains 19.
 // v21: Added IPluginNativePointers.  MIN remains 19.
@@ -933,9 +940,10 @@
 //      may use. The pointer is appended after Images, preserving the existing
 //      prefix, and MIN stays at 70. A plugin declaring 79 is refused by a loader
 //      whose maximum is lower. A server plugin that wants to run on an older
-//      loader declares the older version, checks the loader's interface
-//      version, and uses the calls only when it is 79 or later: below 79 the
-//      HostRules pointer does not exist, and reading it reads past the table.
+//      loader declares the older version and does not use the calls: below 79
+//      the HostRules pointer does not exist, and reading it reads past the
+//      table. The loader has no call that reports its own interface version.
+//      The header hides HostRules while PLUGIN_NEEDS_INTERFACE is below 79.
 //      The table is null on a generic build. Later versions add members
 //      after the ones here.
 // --- v79 ---
@@ -965,6 +973,33 @@
 #define PLUGIN_INTERFACE_VERSION_MIN 70
 #define PLUGIN_INTERFACE_VERSION_MAX 80
 #define PLUGIN_INTERFACE_VERSION 80
+
+// The oldest level every current plugin release uses (v1.23.0). A plugin that
+// does not set PLUGIN_NEEDS_INTERFACE gets this one.
+#define PLUGIN_INTERFACE_BASELINE 75
+
+#ifndef PLUGIN_NEEDS_INTERFACE
+#  ifdef PLUGIN_INTERFACE_HOST_BUILD
+#    define PLUGIN_NEEDS_INTERFACE PLUGIN_INTERFACE_VERSION_MAX
+#  else
+#    define PLUGIN_NEEDS_INTERFACE PLUGIN_INTERFACE_BASELINE
+#  endif
+#endif
+
+static_assert(PLUGIN_NEEDS_INTERFACE >= 72 && PLUGIN_NEEDS_INTERFACE <= PLUGIN_INTERFACE_VERSION_MAX,
+	"PLUGIN_NEEDS_INTERFACE must be between 72 and PLUGIN_INTERFACE_VERSION_MAX: set it in your project's "
+	"PreprocessorDefinitions to the lowest level your plugin uses, or remove it to get the baseline");
+
+// What a plugin declares in PluginInfo::interfaceVersion: the level it needs,
+// not the level of the header it was built with.
+#define PLUGIN_DECLARED_INTERFACE PLUGIN_NEEDS_INTERFACE
+
+// A plugin that mixes values across files (75 here, 79 there) fails to link.
+#if defined(_MSC_VER)
+#  define PLUGIN_INTERFACE_STRINGIZE2(x) #x
+#  define PLUGIN_INTERFACE_STRINGIZE(x) PLUGIN_INTERFACE_STRINGIZE2(x)
+#  pragma detect_mismatch("PluginNeedsInterface", PLUGIN_INTERFACE_STRINGIZE(PLUGIN_NEEDS_INTERFACE))
+#endif
 
 enum class PluginLogLevel { Trace = 0, Debug = 1, Info = 2, Warn = 3, Error = 4 };
 enum class ConfigValueType { String, Integer, Float, Boolean, Keybind, Choice /* v71 */, Hidden /* v71 */ };
@@ -1552,7 +1587,10 @@ struct IPluginHookScanner
 	// miss. True when declared; false, and nothing declared, when the call is
 	// outside OnPluginLoadHooks, the description is malformed, or the id was
 	// declared already. A feature that is not declared leaves its keys core.
-	bool (*DeclareFeature)(const IPluginSelf* self, const PluginFeatureDesc* desc);
+	// Raise PLUGIN_NEEDS_INTERFACE to 73 to use this.
+#if PLUGIN_NEEDS_INTERFACE >= 73
+	bool (*DeclareFeature)(const IPluginSelf* self, const PluginFeatureDesc* desc);   // since v73
+#endif
 };
 
 static_assert(offsetof(IPluginHookScanner, ResolveRequired)                ==   0, "v70 layout");
@@ -1571,7 +1609,9 @@ static_assert(offsetof(IPluginHookScanner, ReportWarning)                  ==  9
 static_assert(offsetof(IPluginHookScanner, HasFailures)                    == 104, "v70 layout");
 static_assert(offsetof(IPluginHookScanner, Resolve)                        == 112, "v70 layout");
 static_assert(offsetof(IPluginHookScanner, ResolveField)                   == 120, "v72 starts where v71 ended");
+#if PLUGIN_NEEDS_INTERFACE >= 73
 static_assert(offsetof(IPluginHookScanner, DeclareFeature)                 == 128, "v73 starts where v72 ended");
+#endif
 
 typedef void* HookHandle;
 namespace SDK { class UWorld; class UTexture2D; }
@@ -1734,7 +1774,10 @@ struct IPluginEngineEvents
 	// characters). Safe to call from any thread, and the loader never calls
 	// back to ask: it only reads the reason. self is the IPluginSelf given to
 	// PluginInit. A plugin that unloads or reloads starts with no reason.
-	void (*SetBusyReason)(const IPluginSelf* self, const char* reason);
+	// Raise PLUGIN_NEEDS_INTERFACE to 73 to use this.
+#if PLUGIN_NEEDS_INTERFACE >= 73
+	void (*SetBusyReason)(const IPluginSelf* self, const char* reason);   // since v73
+#endif
 };
 
 static_assert(offsetof(IPluginEngineEvents, RegisterOnInit)                       ==   0, "v70 layout");
@@ -1756,7 +1799,9 @@ static_assert(offsetof(IPluginEngineEvents, GetLoadPackageAddress)              
 static_assert(offsetof(IPluginEngineEvents, GetAssetDataFastGetAssetAddress)      == 128, "v70 layout");
 static_assert(offsetof(IPluginEngineEvents, GetSdkGlobals)                        == 136, "v72 starts where v71 ended");
 static_assert(offsetof(IPluginEngineEvents, IsGameThread)                         == 144, "v72 layout");
+#if PLUGIN_NEEDS_INTERFACE >= 73
 static_assert(offsetof(IPluginEngineEvents, SetBusyReason)                        == 152, "v73 starts where v72 ended");
+#endif
 
 struct IPluginWorldEvents
 {
@@ -2415,12 +2460,15 @@ struct IModLoaderImGui
 	// sets; pass 0 for an axis to keep that axis auto-fitted, e.g.
 	// SetNextWindowSize(540, 0, PluginCond_Always) is a fixed width with an
 	// auto height.
-	void (*SetNextWindowSize)(float width, float height, int condition);
+	// Raise PLUGIN_NEEDS_INTERFACE to 74 to use this and the next member.
+#if PLUGIN_NEEDS_INTERFACE >= 74
+	void (*SetNextWindowSize)(float width, float height, int condition);   // since v74
 
 	// ImGui::SetNextWindowSizeConstraints, plain minimum and maximum (no
 	// callback). A minimum width keeps an auto-sized window from collapsing to
 	// a narrow strip. Pass FLT_MAX for a limit you do not want.
-	void (*SetNextWindowSizeConstraints)(float min_width, float min_height, float max_width, float max_height);
+	void (*SetNextWindowSizeConstraints)(float min_width, float min_height, float max_width, float max_height);   // since v74
+#endif
 
 	// Submit one textured indexed triangle batch to a draw list obtained from a
 	// draw-list getter during the current render callback. Indices are
@@ -2440,15 +2488,22 @@ struct IModLoaderImGui
 	// by the loader, so callers must use a current-frame getter result. This
 	// appended slot is an interface-78 extension; a plugin may use it
 	// only with a loader that implements this expanded table.
+	// Raise PLUGIN_NEEDS_INTERFACE to 78 to use this.
+#if PLUGIN_NEEDS_INTERFACE >= 78
 	PluginDrawResult (*DL_AddTexturedTriangles)(PluginDrawList dl, PluginTextureHandle tex,
 		const PluginDrawVertex* vertices, uint32_t vertex_count,
-		const PluginDrawIndex* indices, uint32_t index_count);
+		const PluginDrawIndex* indices, uint32_t index_count);   // since v78
+#endif
 };
 
 static_assert(offsetof(IModLoaderImGui, IsKeyPressed) == 2024, "v71 starts where v70 ended");
+#if PLUGIN_NEEDS_INTERFACE >= 74
 static_assert(offsetof(IModLoaderImGui, SetNextWindowSize) == 2032, "v74 starts where v73 ended");
 static_assert(offsetof(IModLoaderImGui, SetNextWindowSizeConstraints) == 2040, "v74 appends in order");
+#endif
+#if PLUGIN_NEEDS_INTERFACE >= 78
 static_assert(offsetof(IModLoaderImGui, DL_AddTexturedTriangles) == 2048, "v78 bulk triangle API appends after v74");
+#endif
 
 typedef void (*PluginImGuiRenderCallback)(IModLoaderImGui* imgui);
 
@@ -2737,9 +2792,11 @@ struct IPluginUIEvents
 	bool (*IsOverlayOpen)();
 
 	// --- v75 ---
+	// Raise PLUGIN_NEEDS_INTERFACE to 75 to use the next two members.
+#if PLUGIN_NEEDS_INTERFACE >= 75
 	// True while the panel is collapsed to its title bar. False for a null or
 	// stale handle. Safe from any thread.
-	bool (*IsPanelCollapsed)(PanelHandle handle);
+	bool (*IsPanelCollapsed)(PanelHandle handle);   // since v75
 	// Collapse the panel to its title bar (true) or expand it again (false).
 	// A collapsed panel keeps its width, shows only the title bar (with the
 	// buttons titleBarFn draws and the close button) and does not call
@@ -2747,12 +2804,15 @@ struct IPluginUIEvents
 	// panel is closed too: it then opens in that state. The state is kept for
 	// the session but not saved by the loader. Ignored for a null or stale
 	// handle. Safe from any thread; the window changes on the next frame.
-	void (*SetPanelCollapsed)(PanelHandle handle, bool collapsed);
+	void (*SetPanelCollapsed)(PanelHandle handle, bool collapsed);   // since v75
+#endif
 };
 
 static_assert(offsetof(IPluginUIEvents, IsOverlayOpen)      == 120, "v71 starts where v70 ended");
+#if PLUGIN_NEEDS_INTERFACE >= 75
 static_assert(offsetof(IPluginUIEvents, IsPanelCollapsed)   == 128, "v75 starts where v71 ended");
 static_assert(offsetof(IPluginUIEvents, SetPanelCollapsed)  == 136, "v75 layout");
+#endif
 
 // ---------------------------------------------------------------------------
 // In-world debug drawing (v50, client only) -- hooks->HUD->DebugDraw
@@ -3015,12 +3075,19 @@ struct IPluginNetworkChannel
 	// prints the IPv4 address and port, for example "203.0.113.7:7780"; a relay or
 	// peer route may print something else. Pin the text as it is, and treat a
 	// changed text as a different server.
-	int (*GetServerAddress)(char* buf, size_t size);
+	// Raise PLUGIN_NEEDS_INTERFACE to 80 to use this.
+#if PLUGIN_NEEDS_INTERFACE >= 80
+	int (*GetServerAddress)(char* buf, size_t size);   // since v80
+#endif
 };
 
 static_assert(offsetof(IPluginNetworkChannel, UnregisterServerReadyCallback) == 15 * sizeof(void*), "v56 layout");
+#if PLUGIN_NEEDS_INTERFACE >= 80
 static_assert(offsetof(IPluginNetworkChannel, GetServerAddress)              == 16 * sizeof(void*), "v80 starts where v56 ended");
 static_assert(sizeof(IPluginNetworkChannel)                                  == 17 * sizeof(void*), "v80 layout");
+#else
+static_assert(sizeof(IPluginNetworkChannel)                                  == 16 * sizeof(void*), "v56 layout");
+#endif
 
 // ---------------------------------------------------------------------------
 // Native pointers (v21)
@@ -3705,6 +3772,8 @@ struct IPluginGameMenu
 	bool (*IsPauseMenuOpen)();
 
 	// --- v74 ---
+	// Raise PLUGIN_NEEDS_INTERFACE to 74 to use the next three members.
+#if PLUGIN_NEEDS_INTERFACE >= 74
 	// The game's UI state as PluginUIState bits: IN_GAMEPLAY, PAUSE_MENU and
 	// CURSOR_UP. Safe from any thread: one atomic read of the state as of the
 	// last game tick, so it lags by up to a frame.
@@ -3713,7 +3782,7 @@ struct IPluginGameMenu
 	// loader reads them from the game only while a plugin has a
 	// RegisterOnUIStateChanged callback for one of them; for the menu bits,
 	// register a callback.
-	uint64_t (*GetUIState)();
+	uint64_t (*GetUIState)();   // since v74
 
 	// Calls callback on the GAME THREAD whenever a bit in mask changes (pass
 	// ~0ull for every bit), with the whole state before and after the change.
@@ -3727,13 +3796,16 @@ struct IPluginGameMenu
 
 	// Removes a registration, matched by callback and userData. Any thread,
 	// including from inside the callback.
-	void (*UnregisterOnUIStateChanged)(PluginUIStateCallback callback, void* userData);
+	void (*UnregisterOnUIStateChanged)(PluginUIStateCallback callback, void* userData);   // since v74
+#endif
 };
 
 static_assert(offsetof(IPluginGameMenu, IsPauseMenuOpen)            == 32, "v71 starts where v70 ended");
+#if PLUGIN_NEEDS_INTERFACE >= 74
 static_assert(offsetof(IPluginGameMenu, GetUIState)                 == 40, "v74 starts where v71 ended");
 static_assert(offsetof(IPluginGameMenu, RegisterOnUIStateChanged)   == 48, "v74 layout");
 static_assert(offsetof(IPluginGameMenu, UnregisterOnUIStateChanged) == 56, "v74 layout");
+#endif
 
 // ---------------------------------------------------------------------------
 // Pak mounting and asset loading (v67) -- all builds
@@ -4237,15 +4309,28 @@ struct IPluginHooks
 	IPluginConsole*        Console;         // v63 -- appended at end, do not relocate
 	IPluginGameMenu*       GameMenu;        // v64 -- client only, null on server/generic; appended at end, do not relocate
 	IPluginPak*            Pak;             // v67 -- all builds; appended at end, do not relocate
+	// Raise PLUGIN_NEEDS_INTERFACE to 77 to use Images, 79 for HostRules, 80 for Registry.
+#if PLUGIN_NEEDS_INTERFACE >= 77
 	IPluginImages*         Images;          // v77 -- client only, null on server/generic; appended at end, do not relocate
+#endif
+#if PLUGIN_NEEDS_INTERFACE >= 79
 	IPluginHostRules*      HostRules;       // v79 -- server and client builds, null on generic; absent below v79; appended at end, do not relocate
+#endif
+#if PLUGIN_NEEDS_INTERFACE >= 80
 	IPluginRegistry*       Registry;        // v80 -- every build; absent below v80; appended at end, do not relocate
+#endif
 };
 
 static_assert(offsetof(IPluginHooks, Pak)    == 184, "v67 layout");
+#if PLUGIN_NEEDS_INTERFACE >= 77
 static_assert(offsetof(IPluginHooks, Images) == 192, "v77 starts where v67 ended");
+#endif
+#if PLUGIN_NEEDS_INTERFACE >= 79
 static_assert(offsetof(IPluginHooks, HostRules) == 200, "v79 starts where v77 ended");
+#endif
+#if PLUGIN_NEEDS_INTERFACE >= 80
 static_assert(offsetof(IPluginHooks, Registry)  == 208, "v80 starts where v79 ended");
+#endif
 
 // ---------------------------------------------------------------------------
 // Plugin build target

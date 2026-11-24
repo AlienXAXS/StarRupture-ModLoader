@@ -106,7 +106,7 @@
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <!-- MODLOADER_CLIENT_BUILD gates the map lookups under test (MODLOADER_SERVER_BUILD in the Server configurations). 4005: framework.h redefines the two macros below. -->
-      <PreprocessorDefinitions>_CONSOLE;NOMINMAX;WIN32_LEAN_AND_MEAN;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>PLUGIN_INTERFACE_HOST_BUILD;_CONSOLE;NOMINMAX;WIN32_LEAN_AND_MEAN;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <DisableSpecificWarnings>4005;%(DisableSpecificWarnings)</DisableSpecificWarnings>
       <!-- The fixture map first, so version_map.cpp reads it; every other header is the live loader's. -->
       <AdditionalIncludeDirectories>$(FixtureDir);$(ProjectDir);$(CoreDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>

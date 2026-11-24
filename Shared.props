@@ -89,6 +89,15 @@
     </ClCompile>
   </ItemDefinitionGroup>
 
+  <!-- PLUGIN_INTERFACE_HOST_BUILD: the loader implements every plugin interface table, so its
+       builds see every member (plugins\plugin_interface.h sets PLUGIN_NEEDS_INTERFACE to the
+       maximum). Plugins leave it undefined and declare what they need. -->
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <PreprocessorDefinitions>PLUGIN_INTERFACE_HOST_BUILD;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+  </ItemDefinitionGroup>
+
   <!-- ============================================================
        MODLOADER_BUILT_CL
        The game build (CL) the active configuration's SDK was made
