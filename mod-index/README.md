@@ -1,7 +1,7 @@
 # Mod index
 
 `index.json` is the list of ModLoader plugins the overlay's Browse tab shows. The loader
-downloads it once, when the tab is first opened, and keeps it in memory.
+downloads it once, when the tab is first opened. The list players get is a signed copy of this file.
 
 ## Add a plugin
 
@@ -49,7 +49,8 @@ It prints `ok`, or names the entry that breaks a rule below.
 ## After it is merged
 
 The list is signed and published as `mod-index.v1.txt` together with the version map. It reaches
-players within that publish cycle; no ModLoader release is needed.
+players within that publish cycle; no ModLoader release is needed. The loader checks the signature
+before it reads an entry, and keeps its last good copy for when a download fails.
 
 ## The page_url rule
 
@@ -58,13 +59,15 @@ players within that publish cycle; no ModLoader release is needed.
 spaces. An entry that breaks the rule is left out of the list, and so is an entry missing `id`,
 `name` or `page_url`. The other entries still load.
 
-## Use another index
+## Try your own index
 
-Point the loader at your own file in `ModLoader\modloader.ini`:
+To test a list before it is merged, point the loader at your own file in `ModLoader\modloader.ini`:
 
 ```
 [AutoUpdate]
 ModIndexUrl=https://example.com/my-index.json
 ```
 
-The URL must be https. The entries are checked by the same rules.
+The URL must be https. The file can be a plain `index.json` like the one in this folder, or a
+signed `mod-index.v1.txt`. A plain file is read without a signature check and is not cached. The
+entries are checked by the same rules either way. The built-in address takes only the signed file.
