@@ -925,7 +925,8 @@
 //      v78 functionality may deliberately declare 77 or 75, subject to its
 //      actual API requirements. Declaring 77 while calling the new function can
 //      read past a 1.24.0 loader's function table; every plugin calling
-//      DL_AddTexturedTriangles must declare 78. Current headers default to 78.
+//      DL_AddTexturedTriangles must declare 78. The header hides it while
+//      PLUGIN_NEEDS_INTERFACE is below 78.
 //      The batch uses fixed 16-bit indices into at most 65,535 vertices, and
 //      each draw list's vertex and index buffers together may total no more than
 //      16 MiB, including data already in the buffers and the incoming batch.

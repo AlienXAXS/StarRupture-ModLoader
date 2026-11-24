@@ -70,7 +70,7 @@
       <ConformanceMode>true</ConformanceMode>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <PreprocessorDefinitions>NDEBUG;_CONSOLE;NOMINMAX;_CRT_SECURE_NO_WARNINGS;VMAP_TRUST_TEST_KEY;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>PLUGIN_INTERFACE_HOST_BUILD;NDEBUG;_CONSOLE;NOMINMAX;_CRT_SECURE_NO_WARNINGS;VMAP_TRUST_TEST_KEY;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <!-- The live loader headers, on purpose: a scanner built against a stale copy would check nothing. -->
       <AdditionalIncludeDirectories>$(CoreDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <!-- Static runtime: the tool runs on a CI runner with nothing installed. -->
