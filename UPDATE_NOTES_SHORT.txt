@@ -3,4 +3,4 @@ Server plugins now survive server updates (full version object map coverage)
 Server plugins updated: ServerUtility, KeepTicking, WaveOptimiser, ProductionViewer and RuptureTimer (they need this loader)
 If the game does not finish starting, ModLoader.log says why
 A plugin that names its game build now loads after an update that changed only some game classes
-Mods that list compatible versions keep exchanging data across releases; plugins can check other plugins and read the server's address
+Mods that list compatible versions keep talking across releases; plugins can check each other, the server's address and the plugin catalog

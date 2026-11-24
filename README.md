@@ -680,6 +680,41 @@ if (len > 0)
 ```
 <sup>[✦](#msantoro12)</sup>
 
+#### Reading the plugin catalog
+
+`hooks->Registry->GetFeatureCatalog(buf, size)` (interface 80) copies the plugin catalog into `buf` as text: the
+project's own list of plugins and the features they declare. It is published by the project's CI next to the version
+object map and signed with the same key. The mod loader checks the signature, fetches the file once per launch, keeps
+the last good copy on disk and refuses an older file, so the text is a snapshot of the last verified file. It can be
+older than the plugins you are running; use `GetDeclaredFeatures` for what is running now. It works like
+`GetDeclaredFeatures`: the full length comes back, the text is cut to `size` and ends in a NUL, and a null `buf` with
+a `size` of 0 only measures (a cut can fall inside a character, so measure first). It returns -1 when the mod loader
+holds no verified catalog: until a catalog is published, before the first fetch has finished on a first launch, and
+always on a dedicated server for now. Call it from `Tick`, not from a render callback.
+
+```
+format	1
+seq	3
+kind	plugin-catalog
+plugin	Waila	1.2.0
+feature	Waila	tooltip	-	Show what a block is
+feature	Waila	hud	128786,130045	HUD readout
+```
+
+`feature` rows end in the game builds the feature is off in: `-` for none, `*` for every build, or a comma-separated
+list of game CLs. A plugin name can hold a space, so split a row on tabs only.
+
+```cpp
+int len = hooks->Registry ? hooks->Registry->GetFeatureCatalog(nullptr, 0) : -1;
+if (len > 0)
+{
+    std::string text(len + 1, ' ');
+    hooks->Registry->GetFeatureCatalog(text.data(), text.size());
+    text.resize(len);   // same rows as GetDeclaredFeatures: split on lines, then on tabs
+}
+```
+<sup>[✦](#msantoro12)</sup>
+
 #### Reading the address of the server you are connected to
 
 `hooks->Network->GetServerAddress(buf, size)` (interface 80) copies the address of the server this client is
