@@ -12,8 +12,8 @@
 #include "../hooks/game/engine_shutdown/engine_shutdown.h"
 #include "../preload/preload_manager.h"
 #include "../auto_update/mod_index_fetcher.h"
-#include "../auto_update/readme_fetcher.h"
 #ifdef MODLOADER_CLIENT_BUILD
+#include "../auto_update/readme_fetcher.h"
 #include "../UI/readme_view.h"
 #endif
 

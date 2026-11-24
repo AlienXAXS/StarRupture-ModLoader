@@ -198,11 +198,52 @@ namespace ModIndex
 			break;
 
 		case ImageFormat::Gif:
-			if (b.size() < 10)
+		{
+			// The decoder sizes its buffer by the first frame, which can be larger
+			// than the logical screen, so read the first image descriptor too and
+			// take the larger of each side. A GIF whose first frame cannot be
+			// found inside the bytes is refused.
+			if (b.size() < 13)
 				return false;
 			w = Le16(b, 6);
 			h = Le16(b, 8);
+			const unsigned flags = Byte(b, 10);
+			size_t i = 13;
+			if (flags & 0x80)
+				i += static_cast<size_t>(3) << ((flags & 7) + 1);   // global colour table
+			for (;;)
+			{
+				if (i >= b.size())
+					return false;
+				const unsigned block = Byte(b, i);
+				if (block == 0x2C)
+				{
+					// left, top, width, height, packed
+					if (i + 10 > b.size())
+						return false;
+					const int64_t fw = Le16(b, i + 5);
+					const int64_t fh = Le16(b, i + 7);
+					if (fw > w)
+						w = fw;
+					if (fh > h)
+						h = fh;
+					break;
+				}
+				if (block != 0x21)
+					return false;           // trailer or garbage: no frame
+				i += 2;                     // introducer and label, then data sub-blocks
+				for (;;)
+				{
+					if (i >= b.size())
+						return false;
+					const size_t len = Byte(b, i);
+					i += 1 + len;
+					if (len == 0)
+						break;
+				}
+			}
 			break;
+		}
 
 		case ImageFormat::Bmp:
 			// DetectImageFormat has checked 26 bytes and the DIB header size.

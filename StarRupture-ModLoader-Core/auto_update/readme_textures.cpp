@@ -58,6 +58,23 @@ namespace ModIndex
 				st->loading = true;
 			}
 
+			// Clears the flags on every exit, a throw included, and only after the
+			// job's last texture call, so Shutdown (which waits for !loading) never
+			// returns while this job can still call into the host.
+			struct Done
+			{
+				const std::shared_ptr<ReadmeTextures::State>& st;
+				~Done()
+				{
+					{
+						std::lock_guard<std::mutex> lock(st->mutex);
+						st->loading = false;
+						st->inFlight = false;
+					}
+					st->idle.notify_all();
+				}
+			} done{ st };
+
 			void* handle = nullptr;
 			int width = 0;
 			int height = 0;
@@ -112,10 +129,7 @@ namespace ModIndex
 				{
 					discard = handle;   // closed while decoding: never shown
 				}
-				st->loading = false;
-				st->inFlight = false;
 			}
-			st->idle.notify_all();
 			if (discard && ops.free)
 				ops.free(discard);
 		}

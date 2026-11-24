@@ -281,7 +281,8 @@ namespace
 	void TestLimits()
 	{
 		// Text length: exactly the limit is kept whole, one byte over is cut.
-		Document d = P(Repeat("a", kMaxReadmeBytes));
+		// Short paragraphs, so that no block hits its own limits: 1310 x 100 bytes, then 72 more.
+		Document d = P(Repeat(std::string(98, 'a') + "\n\n", 1310) + std::string(72, 'a'));
 		Check(!d.shortened, "text at the limit is not shortened");
 		d = P(Repeat("a", kMaxReadmeBytes + 1));
 		Check(d.shortened, "text over the limit is shortened");
@@ -300,8 +301,18 @@ namespace
 		exact += "x";
 		d = P(exact);
 		Check(d.blocks.size() == 1 && d.blocks[0].spans.size() == kMaxSpans, "exactly kMaxSpans spans");
+		Check(!d.shortened, "exactly kMaxSpans spans loses nothing");
 		d = P(Repeat("[a](https://github.com/o/r) ", 40) + "x");
 		Check(d.blocks.size() == 1 && d.blocks[0].spans.size() == kMaxSpans, "spans over the limit are cut");
+		Check(d.shortened, "links lost past kMaxSpans set shortened");
+		d = P(Repeat("**b** and `c` ", 35));
+		Check(d.shortened, "70 bold and code spans in one block set shortened");
+		d = P(Repeat("**b** and `c` ", 10));
+		Check(!d.shortened, "20 bold and code spans do not set shortened");
+		d = P(Repeat("`a` ", 32) + "   ");
+		Check(!d.shortened, "trailing blanks past the span limit lose nothing");
+		d = P(Repeat("a", 130000));
+		Check(d.shortened, "one paragraph longer than all its spans can hold sets shortened");
 		d = P(Repeat("`a` b ", 200));
 		Check(d.blocks.size() == 1 && d.blocks[0].spans.size() <= kMaxSpans, "code and plain alternating stays within the limit");
 
@@ -315,12 +326,21 @@ namespace
 		d = P("```\n" + Repeat("a", kMaxCodeBytes) + "\n```\n");
 		const Block* code = First(d, BlockKind::CodeBlock);
 		Check(code && code->code.size() == kMaxCodeBytes, "code at the limit is kept whole");
+		Check(!d.shortened, "code at the limit is not shortened");
 		d = P("```\n" + Repeat("a", kMaxCodeBytes + 500) + "\n```\n");
 		code = First(d, BlockKind::CodeBlock);
 		Check(code && code->code.size() == kMaxCodeBytes, "code over the limit is cut");
+		Check(d.shortened, "a code line cut at the limit sets shortened");
 		d = P("```\n" + Repeat("line\n", 2000) + "```\n");
 		code = First(d, BlockKind::CodeBlock);
 		Check(code && code->code.size() <= kMaxCodeBytes, "many code lines are capped");
+		Check(d.shortened, "code lines dropped past the limit set shortened");
+		d = P("    " + Repeat("a", kMaxCodeBytes + 500) + "\n");
+		Check(d.shortened, "an indented code line cut at the limit sets shortened");
+		d = P("```\n" + Repeat("line\n", 100) + "```\n");
+		Check(!d.shortened, "a normal code block is not shortened");
+		d = P("para\n" + Repeat("&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;&amp;\n", 2840));
+		Check(d.shortened, "lines dropped from a full pending paragraph set shortened");
 		d = P("para\n\n    start\n" + Repeat("\n", 20000) + "    end\n");
 		Check(Sane(d), "blank lines in indented code are capped");
 
@@ -917,13 +937,31 @@ namespace
 		return s;
 	}
 
-	std::string GifSized(unsigned w, unsigned h)
+	// Logical screen w x h, then (optionally) a global colour table and a graphic
+	// control extension, then the first image descriptor of size fw x fh.
+	std::string GifFrame(unsigned w, unsigned h, unsigned fw, unsigned fh, bool table = false, bool extension = false)
 	{
 		std::string s("GIF89a");
 		Put16(s, w, false);
 		Put16(s, h, false);
-		s += std::string("\x00\x00\x00", 3);
+		s += static_cast<char>(table ? 0x80 : 0x00);   // table of 2 colours
+		s += std::string("\x00\x00", 2);
+		if (table)
+			s += std::string(6, '\x11');
+		if (extension)
+			s += std::string("\x21\xF9\x04\x00\x00\x00\x00\x00", 8);   // introducer, label, one sub-block of 4, end
+		s += '\x2C';
+		Put16(s, 0, false);
+		Put16(s, 0, false);
+		Put16(s, fw, false);
+		Put16(s, fh, false);
+		s += '\x00';
 		return s;
+	}
+
+	std::string GifSized(unsigned w, unsigned h)
+	{
+		return GifFrame(w, h, w, h);
 	}
 
 	std::string BmpSized(int32_t w, int32_t h, bool core = false)
@@ -1103,6 +1141,31 @@ namespace
 		Check(!IsImageSizeAllowed(JpegSized(65535, 65535, 0xC1)), "huge JPEG refused");
 		Check(!IsImageSizeAllowed(WebpLossless(16384, 16)), "WebP side over 4096 refused");
 		Check(IsImageSizeAllowed(GifSized(1, 1)), "1 x 1 GIF allowed");
+
+		// A GIF is decoded at the size of its first frame, not its logical screen.
+		Check(!IsImageSizeAllowed(GifFrame(1, 1, 65535, 65535)), "small screen with a huge first frame refused");
+		Check(!IsImageSizeAllowed(GifFrame(1, 1, 65535, 65535, true, true)), "huge first frame behind a colour table and extension refused");
+		Check(!IsImageSizeAllowed(GifFrame(100, 100, 5000, 10)), "first frame over a side limit refused");
+		Check(IsImageSizeAllowed(GifFrame(200, 100, 100, 50, true, true)), "normal GIF with table and extension allowed");
+		{
+			int64_t gw = 0;
+			int64_t gh = 0;
+			Check(ReadImageSize(GifFrame(200, 100, 100, 300), &gw, &gh) && gw == 200 && gh == 300, "GIF size is the larger of screen and frame per side");
+			// Truncated at every length, and a block chain that runs off the end: refused, no read past the end.
+			const std::string full = GifFrame(10, 10, 10, 10, true, true);
+			bool anyRead = false;
+			for (size_t cut = 0; cut < full.size(); ++cut)
+				if (ReadImageSize(full.substr(0, cut), &gw, &gh))
+					anyRead = true;
+			Check(!anyRead, "a truncated GIF is never read");
+			std::string runaway = GifFrame(10, 10, 10, 10).substr(0, 13);
+			runaway += std::string("\x21\xF9\xFF", 3);
+			runaway += std::string(20, '\x01');
+			Check(!ReadImageSize(runaway, &gw, &gh), "a GIF extension that runs past the end is refused");
+			std::string noFrame = GifFrame(10, 10, 10, 10).substr(0, 13);
+			noFrame += '\x3B';
+			Check(!ReadImageSize(noFrame, &gw, &gh), "a GIF with no frame is refused");
+		}
 	}
 
 	// ---- FitPicture --------------------------------------------------------

@@ -362,7 +362,10 @@ namespace ModIndex
 				if (kind == SpanKind::Link)
 				{
 					if (SpansFull())
+					{
+						doc.shortened = true;   // the page says text is missing
 						return;
+					}
 					Span sp;
 					sp.kind = kind;
 					sp.text = text.substr(0, CutUtf8(text, 0, kMaxSpanBytes));
@@ -386,7 +389,11 @@ namespace ModIndex
 						}
 					}
 					if (SpansFull())
+					{
+						if (!Trim(text.substr(pos)).empty())
+							doc.shortened = true;   // the page says text is missing
 						return;
+					}
 					size_t end = CutUtf8(text, pos, kMaxSpanBytes);
 					if (end == pos)
 						end = text.size();
@@ -853,7 +860,11 @@ namespace ModIndex
 						--take;
 					code.append(line.substr(0, take));
 					code += '\n';
+					if (take < line.size())
+						doc.shortened = true;   // the rest of the line is cut
 				}
+				else if (line.find_first_not_of(' ') != std::string_view::npos)
+					doc.shortened = true;       // the rest of the code block is cut
 			}
 
 			void Heading(int level, std::string t)
@@ -1050,6 +1061,8 @@ namespace ModIndex
 					text += hardBreak ? '\n' : ' ';
 					text.append(rest);
 				}
+				else
+					doc.shortened = true;   // the block's text is full: this line is cut
 				hardBreak = hard;
 			}
 

@@ -66,6 +66,16 @@ namespace UI::ReadmeView
 		// Text
 		// -------------------------------------------------------------------
 
+		// Widgets that take a label (TextLink, SeparatorText) read "##" as the start
+		// of an ID and hide what follows. A space between the two marks shows all of it.
+		std::string SafeLabel(std::string text)
+		{
+			for (size_t i = 1; i < text.size(); ++i)
+				if (text[i] == '#' && text[i - 1] == '#')
+					text.insert(i, " ");
+			return text;
+		}
+
 		// A run of words in one style, flowed across the line end. Wrapping a
 		// paragraph that mixes styles cannot be left to TextWrapped (a wrapped item
 		// restarts at its own x), so this places one word at a time: it asks the
@@ -131,7 +141,7 @@ namespace UI::ReadmeView
 				if (link)
 				{
 					// TextLink takes a C string: a word is cut out of the span's text.
-					const std::string label(word, len);
+					const std::string label = SafeLabel(std::string(word, len));
 					if (ImGui::TextLink(label.c_str()))
 						OpenPage::Open(sp.url);
 					if (ImGui::IsItemHovered())
@@ -194,7 +204,7 @@ namespace UI::ReadmeView
 			if (b.level <= 1)
 			{
 				ImGui::Spacing();
-				ImGui::SeparatorText(text.c_str());
+				ImGui::SeparatorText(SafeLabel(text).c_str());
 			}
 			else
 			{
