@@ -79,7 +79,7 @@ namespace ModIndex
 		struct Shared;   // the state the worker shares; defined in the .cpp
 
 	private:
-		void Start();
+		void Start(bool retry);
 		std::shared_ptr<Shared> m_shared;
 	};
 

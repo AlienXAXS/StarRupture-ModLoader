@@ -869,8 +869,8 @@ bool AutoUpdateEnabled()
 #  define VMAP_SERVER_FEED_URL ""
 #endif
 
-// The Browse tab's mod index (mod_index.h). Hosting is not final: this is the
-// index.json in the repo's mod-index folder. modloader.ini [AutoUpdate] ModIndexUrl
+// The Browse tab's mod index (mod_index.h): the index.json in the repo's
+// mod-index folder. modloader.ini [AutoUpdate] ModIndexUrl
 // overrides it, the way ManifestUrl overrides the manifest.
 #ifndef MOD_INDEX_URL
 #  define MOD_INDEX_URL "https://raw.githubusercontent.com/AlienXAXS/StarRupture-ModLoader/main/mod-index/index.json"

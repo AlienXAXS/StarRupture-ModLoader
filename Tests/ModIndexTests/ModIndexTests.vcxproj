@@ -11,7 +11,7 @@
 
     msbuild Tests\ModIndexTests\ModIndexTests.vcxproj /p:Configuration="Client Release" /p:Platform=x64
 
-  Output goes to build	ests\mod_index_tests.exe.
+  Output goes to build\tests\mod_index_tests.exe.
 -->
 <Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">

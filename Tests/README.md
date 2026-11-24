@@ -659,7 +659,7 @@ no game. It checks:
 
 ```
 msbuild Tests\ModIndexTests\ModIndexTests.vcxproj /p:Configuration="Client Release" /p:Platform=x64
-build	ests\mod_index_tests.exe
+build\tests\mod_index_tests.exe
 ```
 
 It prints one line per failed check and a total, and exits 0 when every check passes.

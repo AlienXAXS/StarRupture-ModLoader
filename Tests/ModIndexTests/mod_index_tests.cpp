@@ -244,7 +244,8 @@ namespace
 			deep += "]";
 			Check(ParseModIndex(deep).entries.empty(), "hostile: 200000 open braces give no entry and no crash");
 			std::string deepBoth = "[" + std::string(50000, '{') + std::string(50000, '}') + "]";
-			Check(ParseModIndex(deepBoth).skipped >= 0, "hostile: balanced deep nesting does not crash");
+			const ParseResult balanced = ParseModIndex(deepBoth);
+			Check(balanced.entries.empty(), "hostile: balanced deep nesting gives no entry and no crash");
 
 			// brackets and braces inside strings
 			const ParseResult r = ParseModIndex("[{\"id\": \"a\", \"name\": \"A}]{\", \"page_url\": \"" + std::string(kGood) + "\", \"summary\": \"[{\\\"}\"}]");
@@ -323,7 +324,7 @@ namespace
 		Check(IsInstalled(e, { "codex recipes" }), "installed: name, any case");
 		Check(!IsInstalled(e, { "Codexx", "Code", "" }), "installed: no partial match");
 		Entry empty;
-		Check(!IsInstalled(empty, { "" }) || true, "installed: an empty entry does not crash");
+		Check(!IsInstalled(empty, { "" }), "installed: an empty entry matches nothing");
 	}
 
 	std::string SamplePath()

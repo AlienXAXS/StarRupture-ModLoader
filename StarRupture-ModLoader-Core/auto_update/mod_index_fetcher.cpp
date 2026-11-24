@@ -64,33 +64,33 @@ namespace ModIndex
 
 	void Fetcher::RequestFirstLoad()
 	{
-		{
-			std::lock_guard<std::mutex> lock(m_shared->mutex);
-			if (m_shared->stopped || m_shared->running || m_shared->snapshot->state != State::Idle)
-				return;
-		}
-		Start();
+		Start(false);
 	}
 
 	void Fetcher::Retry()
 	{
-		{
-			std::lock_guard<std::mutex> lock(m_shared->mutex);
-			const Snapshot& s = *m_shared->snapshot;
-			const bool retryable = s.state == State::Failed || (s.state == State::Ready && s.entries.empty());
-			if (m_shared->stopped || m_shared->running || !retryable)
-				return;
-		}
-		Start();
+		Start(true);
 	}
 
-	// Moves to Loading and starts the worker, under one lock, so two callers
-	// cannot both start one.
-	void Fetcher::Start()
+	// Checks the state, moves to Loading and starts the worker, all under one
+	// lock, so a request that ends in between cannot be fetched over again and
+	// two callers cannot both start one.
+	void Fetcher::Start(bool retry)
 	{
 		std::lock_guard<std::mutex> lock(m_shared->mutex);
 		if (m_shared->stopped || m_shared->running)
 			return;
+
+		const Snapshot& s = *m_shared->snapshot;
+		if (retry)
+		{
+			if (!(s.state == State::Failed || (s.state == State::Ready && s.entries.empty())))
+				return;
+		}
+		else if (s.state != State::Idle)
+		{
+			return;
+		}
 
 		auto loading = std::make_shared<Snapshot>();
 		loading->state = State::Loading;

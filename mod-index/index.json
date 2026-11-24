@@ -54,7 +54,7 @@
     "interface_version_min": 77
   },
   {
-    "id": "rupturetimer",
+    "id": "axrupturetimer",
     "name": "RuptureTimer",
     "author": "AlienXAXS",
     "version": "0.11.0",

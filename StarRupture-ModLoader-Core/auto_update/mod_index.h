@@ -187,7 +187,7 @@ namespace ModIndex
 	inline bool IsInstalled(const Entry& entry, const std::vector<std::string>& loadedPluginNames)
 	{
 		for (const std::string& loaded : loadedPluginNames)
-			if (detail::EqualsNoCase(loaded, entry.id) || detail::EqualsNoCase(loaded, entry.name))
+			if (!loaded.empty() && (detail::EqualsNoCase(loaded, entry.id) || detail::EqualsNoCase(loaded, entry.name)))
 				return true;
 		return false;
 	}
