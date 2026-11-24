@@ -762,6 +762,37 @@ name and rename it to `remote_reload.txt`, so the loader never reads half a file
 no record of is a failure line; a plugin dropped in after startup needs **LOAD NEW** first.
 <sup>[✦](#msantoro12)</sup>
 
+### Using a newer loader feature only when it is there
+
+A plugin declares the lowest plugin interface it needs with `PLUGIN_NEEDS_INTERFACE`, and a loader older
+than that refuses it. To use a newer member without raising that level, also set
+`PLUGIN_OPTIONAL_INTERFACE` to the newest level you use, export `PluginSetHostInfo` with one line, and
+reach the member through its accessor. On a loader that has the member you get it; on an older one the
+accessor returns `nullptr` and the feature stays off.
+
+```cpp
+#define PLUGIN_NEEDS_INTERFACE 73      // the oldest loader the plugin runs on
+#define PLUGIN_OPTIONAL_INTERFACE 80   // used only when the loader has it
+#include "plugin_interface.h"
+
+PLUGIN_EXPORT_HOST_INFO()              // once, in one .cpp file
+
+// in the plugin's tick:
+if (IPluginRegistry* reg = PluginOptRegistry(self->hooks))
+{
+    // loader 80 or newer
+}
+```
+
+Before `PluginInit`, a loader with interface 80 calls the plugin's `PluginSetHostInfo` once and tells it
+its own interface level. A loader below 80 never calls it, so `PluginHostLevel()` stays at the plugin's
+declared need and every accessor returns `nullptr`. `PluginHostHas(n)` says whether the loader has level
+`n`. The accessors are `PluginOptImages` (77), `PluginOptDL_AddTexturedTriangles` (78),
+`PluginOptHostRules` (79), `PluginOptRegistry` and `PluginOptServerAddress` (80); each exists only when
+`PLUGIN_OPTIONAL_INTERFACE` is at least its level. A plugin without the export loads as before. A fault
+inside the export is handled like a fault in `PluginInit`.
+<sup>[✦](#msantoro12)</sup>
+
 ### Letting older plugin versions talk to yours
 
 By default the loader passes a plugin's packets only between copies with the same version string, so
