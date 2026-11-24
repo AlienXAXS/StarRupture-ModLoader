@@ -8,17 +8,53 @@
 // manifest schema. Shared by the update passes (auto_updater.cpp),
 // loader_manifest.h and the mod index (mod_index.h).
 
+// Find the value of "key": the first string token equal to key that sits
+// outside any other string and is followed by a colon. Returns the position of
+// the value's first character, or npos. A string value that merely spells the
+// key (such as "name": "id") is not a key, and escaped quotes are skipped over.
+inline size_t JsonFindValue(const std::string& json, const char* key)
+{
+	const size_t keyLen = std::char_traits<char>::length(key);
+	size_t i = 0;
+	while (i < json.size())
+	{
+		if (json[i] != '"')
+		{
+			++i;
+			continue;
+		}
+
+		const size_t start = ++i;
+		while (i < json.size() && json[i] != '"')
+			i += (json[i] == '\\') ? 2 : 1;
+		if (i >= json.size())
+			return std::string::npos;
+		const size_t end = i++;
+
+		size_t next = i;
+		while (next < json.size() && isspace(static_cast<unsigned char>(json[next])))
+			++next;
+		if (next >= json.size() || json[next] != ':')
+			continue;
+
+		if (end - start == keyLen && json.compare(start, keyLen, key) == 0)
+		{
+			++next;
+			while (next < json.size() && isspace(static_cast<unsigned char>(json[next])))
+				++next;
+			return next < json.size() ? next : std::string::npos;
+		}
+	}
+	return std::string::npos;
+}
+
 // Extract the value of a top-level string field: "key": "value"
-// Handles basic \" escapes inside the value.
+// Handles basic \" escapes inside the value. Empty when the key is missing or
+// its value is not a string.
 inline std::string JsonExtractString(const std::string& json, const char* key)
 {
-	std::string needle = std::string("\"") + key + "\"";
-	size_t kpos = json.find(needle);
-	if (kpos == std::string::npos)
-		return {};
-
-	size_t vstart = json.find('"', kpos + needle.size());
-	if (vstart == std::string::npos)
+	size_t vstart = JsonFindValue(json, key);
+	if (vstart == std::string::npos || json[vstart] != '"')
 		return {};
 	++vstart;
 
@@ -45,18 +81,8 @@ inline std::string JsonExtractString(const std::string& json, const char* key)
 // Extract the value of a top-level integer field: "key": 12
 inline int JsonExtractInt(const std::string& json, const char* key, int fallback = 0)
 {
-	std::string needle = std::string("\"") + key + "\"";
-	size_t kpos = json.find(needle);
-	if (kpos == std::string::npos)
-		return fallback;
-
-	size_t vpos = kpos + needle.size();
-	while (vpos < json.size() && (json[vpos] == ' ' || json[vpos] == '\t'
-		|| json[vpos] == '\r' || json[vpos] == '\n'
-		|| json[vpos] == ':'))
-		++vpos;
-
-	if (vpos >= json.size() || !isdigit(static_cast<unsigned char>(json[vpos])))
+	const size_t vpos = JsonFindValue(json, key);
+	if (vpos == std::string::npos || !isdigit(static_cast<unsigned char>(json[vpos])))
 		return fallback;
 
 	return std::stoi(json.substr(vpos));
@@ -69,13 +95,8 @@ inline int JsonExtractInt(const std::string& json, const char* key, int fallback
 // always draws in the overlay font.
 inline std::string JsonExtractDecodedString(const std::string& json, const char* key)
 {
-	std::string needle = std::string("\"") + key + "\"";
-	size_t kpos = json.find(needle);
-	if (kpos == std::string::npos)
-		return {};
-
-	size_t vstart = json.find('"', kpos + needle.size());
-	if (vstart == std::string::npos)
+	size_t vstart = JsonFindValue(json, key);
+	if (vstart == std::string::npos || json[vstart] != '"')
 		return {};
 	++vstart;
 
@@ -179,13 +200,8 @@ inline std::vector<std::string> JsonSplitObjectArray(
 inline std::vector<std::string> JsonExtractObjectArray(
 	const std::string& json, const char* arrayKey)
 {
-	std::string needle = std::string("\"") + arrayKey + "\"";
-	size_t kpos = json.find(needle);
-	if (kpos == std::string::npos)
-		return {};
-
-	size_t apos = json.find('[', kpos + needle.size());
-	if (apos == std::string::npos)
+	const size_t apos = JsonFindValue(json, arrayKey);
+	if (apos == std::string::npos || json[apos] != '[')
 		return {};
 
 	return JsonSplitObjectArray(json, apos);

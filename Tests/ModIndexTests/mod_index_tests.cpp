@@ -879,8 +879,83 @@ namespace
 	}
 }
 
+namespace
+{
+// The shared key lookup in auto_update/json_extract.h: a key matches only as a
+// real key, and the value read is the one that belongs to it.
+void JsonExtractTests()
+{
+	// Non-string values read as absent, never as the next string in the text
+	Check(JsonExtractString("{\"version\": 1.2, \"name\": \"X\"}", "version").empty(), "json: a number value is not a string");
+	Check(JsonExtractString("{\"version\": true, \"name\": \"X\"}", "version").empty(), "json: true is not a string");
+	Check(JsonExtractString("{\"version\": false, \"name\": \"X\"}", "version").empty(), "json: false is not a string");
+	Check(JsonExtractString("{\"version\": null, \"name\": \"X\"}", "version").empty(), "json: null is not a string");
+	Check(JsonExtractString("{\"version\": {\"a\": \"b\"}, \"name\": \"X\"}", "version").empty(), "json: an object value is not a string");
+	Check(JsonExtractString("{\"version\": [\"a\"], \"name\": \"X\"}", "version").empty(), "json: an array value is not a string");
+	Check(JsonExtractDecodedString("{\"version\": 1.2, \"name\": \"X\"}", "version").empty(), "json: decoded: a number value is not a string");
+	Check(JsonExtractDecodedString("{\"version\": null, \"name\": \"X\"}", "version").empty(), "json: decoded: null is not a string");
+	Check(JsonExtractDecodedString("{\"version\": [\"a\"], \"name\": \"X\"}", "version").empty(), "json: decoded: an array value is not a string");
+	Check(JsonExtractString("{\"version\": 1.2, \"name\": \"X\"}", "name") == "X", "json: the next field still reads after a number");
+
+	// A value that spells a key is not that key
+	Check(JsonExtractString("{\"name\":\"id\",\"id\":\"real\"}", "id") == "real", "json: a value equal to the key does not stand in for it");
+	Check(JsonExtractDecodedString("{\"name\":\"id\",\"id\":\"real\"}", "id") == "real", "json: decoded: a value equal to the key does not stand in for it");
+	Check(JsonExtractString("{\"name\":\"id\"}", "id").empty(), "json: a value equal to the key is not found as a key");
+	Check(JsonExtractInt("{\"name\":\"n\",\"n\":5}", "n", -1) == 5, "json: an int lookup skips a value equal to the key");
+	Check(JsonExtractInt("{\"name\":\"n\"}", "n", -1) == -1, "json: an int lookup finds no key in a value");
+
+	// Escapes and spacing
+	Check(JsonExtractString("{\"a\": \"x \\\"id\\\": y\", \"id\": \"real\"}", "id") == "real", "json: an escaped key inside a value is skipped");
+	Check(JsonExtractString("{\"id\"\t:\r\n \"v\"}", "id") == "v", "json: whitespace around the colon is allowed");
+	Check(JsonExtractString("{\"a\": \"c:\\\\\", \"id\": \"v\"}", "id") == "v", "json: a value ending in an escaped backslash closes");
+	Check(JsonExtractString("{\"id\": \"v", "id") == "v", "json: an unterminated value reads to the end, as before");
+	Check(JsonExtractString("{\"id\": ", "id").empty() && JsonExtractInt("{\"id\":", "id", -1) == -1, "json: a key with no value is absent");
+	Check(JsonExtractString("{\"a\": \"unterminated", "id").empty(), "json: an unterminated string does not loop or match");
+	Check(JsonExtractString("{\"identity\": \"x\"}", "id").empty(), "json: a longer key does not match its prefix");
+
+	Check(JsonExtractString("{\"a\": \"5\\\" pipe\", \"id\": \"real\"}", "id") == "real", "json: a single escaped quote in a value does not end the string");
+	Check(JsonExtractString("{\"a\": \"x\\", "id").empty() && JsonExtractInt("{\"a\": \"x\\", "id", -1) == -1, "json: a trailing backslash ends the walk");
+
+	// Nested objects: the first real key in the text still wins
+	Check(JsonExtractString("{\"a\": {\"id\": \"inner\"}, \"id\": \"outer\"}", "id") == "inner", "json: the first match in text order wins");
+	Check(JsonExtractString("{\"id\": \"outer\", \"a\": {\"id\": \"inner\"}}", "id") == "outer", "json: the outer key first wins");
+
+	// The object-array lookup needs a real array value
+	Check(JsonExtractObjectArray("{\"plugins\": [{\"a\":\"1\"},{\"a\":\"2\"}]}", "plugins").size() == 2, "json: an object array splits");
+	Check(JsonExtractObjectArray("{\"plugins\": 3, \"other\": [{\"a\":\"1\"}]}", "plugins").empty(), "json: a non-array value gives no objects");
+	Check(JsonExtractObjectArray("{\"x\":\"plugins\", \"other\": [{\"a\":\"1\"}]}", "plugins").empty(), "json: a value equal to the array key gives no objects");
+
+	// Release manifests as the release workflow writes them: unchanged
+	const std::string manifest =
+		"{\n"
+		"  \"build_tag\": \"v1.28.0\",\n"
+		"  \"download_url\": \"https://example.test/releases/download/v1.28.0/ModLoader.zip\",\n"
+		"  \"plugin_name\": \"ModLoader\",\n"
+		"  \"version\": \"1.28.0\",\n"
+		"  \"interface_version_min\": 19,\n"
+		"  \"interface_version_max\": 81,\n"
+		"  \"notes\": \"Line one.\\nSays \\\"hi\\\" and the key \\\"version\\\": 7.\",\n"
+		"  \"release_notes\": \"## v1.28.0\\n- A change\"\n"
+		"}";
+	Check(JsonExtractString(manifest, "build_tag") == "v1.28.0", "manifest: build_tag");
+	Check(JsonExtractString(manifest, "download_url") == "https://example.test/releases/download/v1.28.0/ModLoader.zip", "manifest: download_url");
+	Check(JsonExtractString(manifest, "plugin_name") == "ModLoader", "manifest: plugin_name");
+	Check(JsonExtractString(manifest, "version") == "1.28.0", "manifest: version");
+	Check(JsonExtractInt(manifest, "interface_version_min", -1) == 19 && JsonExtractInt(manifest, "interface_version_max", -1) == 81, "manifest: the interface range");
+	Check(JsonExtractDecodedString(manifest, "notes") == "Line one.\nSays \"hi\" and the key \"version\": 7.", "manifest: notes decode with an escaped key in the text");
+	Check(JsonExtractDecodedString(manifest, "release_notes") == "## v1.28.0\n- A change", "manifest: release_notes");
+	Check(JsonExtractString(manifest, "manifest_url").empty(), "manifest: an absent key is empty");
+
+	// A plugin's own update manifest (flat)
+	const std::string pluginManifest = "{\"version\":\"0.26.0\",\"download_url\":\"https://example.test/p.zip\",\"plugin_name\":\"BetterCheats\",\"interface_version_min\":77}";
+	Check(JsonExtractString(pluginManifest, "version") == "0.26.0" && JsonExtractString(pluginManifest, "plugin_name") == "BetterCheats", "manifest: a flat plugin manifest reads");
+	Check(JsonExtractInt(pluginManifest, "interface_version_min", -1) == 77 && JsonExtractInt(pluginManifest, "interface_version_max", -1) == -1, "manifest: a plugin manifest's min is read and a missing max falls back");
+}
+}
+
 int main()
 {
+	JsonExtractTests();
 	ParserTests();
 	UrlTests();
 	InstalledTests();
