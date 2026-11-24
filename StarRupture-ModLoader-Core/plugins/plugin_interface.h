@@ -975,7 +975,7 @@
 #define PLUGIN_INTERFACE_VERSION_MAX 80
 #define PLUGIN_INTERFACE_VERSION 80
 
-// The oldest level every current plugin release uses (v1.23.0). A plugin that
+// The lowest level every loader since v1.23.0 accepts (their MAX is 75 or higher). A plugin that
 // does not set PLUGIN_NEEDS_INTERFACE gets this one.
 #define PLUGIN_INTERFACE_BASELINE 75
 

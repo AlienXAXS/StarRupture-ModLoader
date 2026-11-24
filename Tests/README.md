@@ -258,6 +258,7 @@ build\tests\net_compat_tests.exe
 ```
 
 It prints one line per check and exits 0 when every check passes.
+
 ## PluginNeedTests
 
 A compile test for `plugins/plugin_interface.h`, which hides every host-table member added after the
