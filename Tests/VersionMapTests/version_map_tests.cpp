@@ -3283,6 +3283,76 @@ int main()
 		Check(std::string(AdminPrompt::kPromptText).find("Not me") != std::string::npos, "admin prompt: the fixed text names Not me");
 	}
 
+	// A plugin name with one inner space ("Best Builder") in the host-rules path.
+	{
+		using namespace HostRulesWire;
+		using HostRules::Contains;
+
+		// The rules text keeps the inner space and trims the ends.
+		{
+			RulesSet s;
+			std::string err;
+			Check(ParseRulesText("Best Builder.some_feature=deny\n", s, err).status == ParseStatus::Ok && s.deny.size() == 1 && s.allow.empty()
+				&& s.deny[0].plugin == "Best Builder" && s.deny[0].id == "some_feature",
+				"host rules text: a plugin name with an inner space is read as one name");
+			RulesSet t;
+			Check(ParseRulesText(" \t Best Builder.some_feature \t = \t deny \t \r\n", t, err).status == ParseStatus::Ok && t.deny.size() == 1
+				&& t.deny[0].plugin == "Best Builder" && t.deny[0].id == "some_feature",
+				"host rules text: spaces and tabs around the row are trimmed, the inner space stays");
+		}
+
+		// Rules and features survive the wire with the name verbatim.
+		{
+			RulesSet s;
+			s.defaultAllow = false;
+			s.message = "Use the host's build";
+			s.deny = { { "Best Builder", "some_feature" }, { "Best Builder", "*" } };
+			s.allow = { { "Best Builder", "other_feature" } };
+			const std::string rules = EncodeRules(s);
+			RulesSet back;
+			Check(DecodeRules(rules.data(), rules.size(), &back) == Status::Ok && !back.defaultAllow && back.message == s.message
+				&& back.deny.size() == 2 && back.allow.size() == 1
+				&& Contains(back.deny, "Best Builder", "some_feature") && Contains(back.deny, "Best Builder", "*")
+				&& Contains(back.allow, "Best Builder", "other_feature")
+				&& back.deny[0].plugin == "Best Builder" && back.allow[0].plugin == "Best Builder",
+				"host rules wire: rows for a plugin name with an inner space round trip with the name verbatim");
+
+			FeatPayload in;
+			in.buildTag = "v1.27.0";
+			in.interfaceVersion = 80;
+			in.features = { { "Best Builder", "some_feature", "Some feature", true }, { "Best Builder", "other_feature", "Other", false } };
+			const std::string feat = EncodeFeat(in);
+			FeatPayload out;
+			Check(DecodeFeat(feat.data(), feat.size(), &out) == Status::Ok && out.buildTag == in.buildTag && out.interfaceVersion == in.interfaceVersion
+				&& out.features.size() == 2
+				&& out.features[0].plugin == "Best Builder" && out.features[0].id == "some_feature" && out.features[0].title == "Some feature" && out.features[0].on
+				&& out.features[1].plugin == "Best Builder" && out.features[1].id == "other_feature" && !out.features[1].on,
+				"host rules wire: $ML:feat rows for a plugin name with an inner space round trip with the name verbatim");
+		}
+
+		// A minimum row for the name matches the client's manifest row.
+		{
+			Minimums m;
+			std::string err;
+			Check(ParseMinimumsText("Best Builder=0.2.0\n", m, err).status == ParseStatus::Ok && m.mods.size() == 1 && m.mods[0].plugin == "Best Builder",
+				"minimums text: Best Builder=0.2.0 is read as one name");
+			const auto manifest = [](const char* plugin, const char* version)
+			{
+				ManifestRow r;
+				r.plugin = plugin;
+				r.version = version;
+				return std::vector<ManifestRow>{ r };
+			};
+			const std::vector<Violation> below = FindBelowMinimum(m, true, "1.27.0", manifest("Best Builder", "0.1.0"));
+			Check(below.size() == 1 && !below[0].isLoader && below[0].name == "Best Builder" && below[0].need == "0.2.0" && below[0].have == "0.1.0",
+				"below minimum: a plugin name with an inner space at 0.1.0 is below 0.2.0");
+			Check(FindBelowMinimum(m, true, "1.27.0", manifest("best builder", "0.1.0")).size() == 1,
+				"below minimum: the name with an inner space ignores case");
+			Check(FindBelowMinimum(m, true, "1.27.0", manifest("Best Builder", "0.2.0")).empty(),
+				"below minimum: a plugin name with an inner space at the minimum is not below");
+		}
+	}
+
 	printf("%d checks, %d failed\n", g_checks, g_failed);
 	return g_failed ? 1 : 0;
 }
