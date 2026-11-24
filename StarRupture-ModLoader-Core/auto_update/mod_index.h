@@ -13,11 +13,13 @@
 // The file is one JSON array of objects:
 //   [ { "id": "codex", "name": "Codex", "author": "...", "version": "1.2.3",
 //       "summary": "...", "page_url": "https://github.com/...",
-//       "interface_version_min": 79 }, ... ]
+//       "interface_version_min": 79, "tested_loader": "1.27.0",
+//       "readme_url": "https://raw.githubusercontent.com/..." }, ... ]
 // id, name and page_url are required; the rest may be left out. The file is
 // read as untrusted text: sizes are capped, control characters become spaces,
 // and an entry whose page_url is not on the allowlist is dropped, because the
-// Browse tab opens that address in the player's browser.
+// Browse tab opens that address in the player's browser. A readme_url that is
+// not on its allowlist is dropped from the entry, not the entry.
 // ---------------------------------------------------------------------------
 
 namespace ModIndex
@@ -29,6 +31,7 @@ namespace ModIndex
 	constexpr size_t kMaxNameLen    = 64;
 	constexpr size_t kMaxAuthorLen  = 64;
 	constexpr size_t kMaxVersionLen = 32;
+	constexpr size_t kMaxTestedLoaderLen = 32;
 	constexpr size_t kMaxSummaryLen = 300;
 	constexpr size_t kMaxUrlLen     = 200;   // longer: the entry is dropped, never cut
 
@@ -40,6 +43,8 @@ namespace ModIndex
 		std::string version;
 		std::string summary;
 		std::string pageUrl;                 // always passes IsAllowedPageUrl
+		std::string testedLoader;            // the ModLoader version the entry was last tried on; empty: not stated
+		std::string readmeUrl;               // empty, or passes IsAllowedReadmeUrl
 		int interfaceVersionMin = -1;        // -1: not stated
 	};
 
@@ -94,33 +99,52 @@ namespace ModIndex
 		}
 	}
 
+	namespace detail
+	{
+		// The shared URL check: https, at most kMaxUrlLen bytes, no control or
+		// non-ASCII character, no space, no backslash, no user info or port, and
+		// a host that equals one of `hosts` (ignoring case).
+		template <size_t N>
+		inline bool IsAllowedUrl(const std::string& url, const char* const (&hosts)[N])
+		{
+			static const char kScheme[] = "https://";
+			constexpr size_t kSchemeLen = sizeof(kScheme) - 1;
+			if (url.size() <= kSchemeLen || url.size() > kMaxUrlLen || url.compare(0, kSchemeLen, kScheme) != 0)
+				return false;
+
+			for (char c : url)
+			{
+				const unsigned char u = static_cast<unsigned char>(c);
+				if (u <= 0x20 || u >= 0x7F || c == '\')
+					return false;
+			}
+
+			const size_t end = url.find_first_of("/?#", kSchemeLen);
+			const std::string host = url.substr(kSchemeLen, end == std::string::npos ? std::string::npos : end - kSchemeLen);
+			if (host.find_first_of("@:") != std::string::npos)
+				return false;
+
+			for (const char* allowed : hosts)
+				if (EqualsNoCase(host, allowed))
+					return true;
+			return false;
+		}
+	}
+
 	// Only https, on these hosts exactly: nexusmods.com, www.nexusmods.com,
 	// github.com, www.github.com. No user info, no port, no backslash, no
 	// control or non-ASCII character, no space.
 	inline bool IsAllowedPageUrl(const std::string& url)
 	{
-		static const char kScheme[] = "https://";
-		constexpr size_t kSchemeLen = sizeof(kScheme) - 1;
-		if (url.size() <= kSchemeLen || url.size() > kMaxUrlLen || url.compare(0, kSchemeLen, kScheme) != 0)
-			return false;
-
-		for (char c : url)
-		{
-			const unsigned char u = static_cast<unsigned char>(c);
-			if (u <= 0x20 || u >= 0x7F || c == '\\')
-				return false;
-		}
-
-		const size_t end = url.find_first_of("/?#", kSchemeLen);
-		const std::string host = url.substr(kSchemeLen, end == std::string::npos ? std::string::npos : end - kSchemeLen);
-		if (host.find_first_of("@:") != std::string::npos)
-			return false;
-
 		static const char* const kHosts[] = { "nexusmods.com", "www.nexusmods.com", "github.com", "www.github.com" };
-		for (const char* allowed : kHosts)
-			if (detail::EqualsNoCase(host, allowed))
-				return true;
-		return false;
+		return detail::IsAllowedUrl(url, kHosts);
+	}
+
+	// A plugin's README: the same rules, on the host raw.githubusercontent.com only.
+	inline bool IsAllowedReadmeUrl(const std::string& url)
+	{
+		static const char* const kHosts[] = { "raw.githubusercontent.com" };
+		return detail::IsAllowedUrl(url, kHosts);
 	}
 
 	// Parse the index text. One bad object never fails the list: it is skipped
@@ -172,6 +196,10 @@ namespace ModIndex
 			e.author  = detail::Clean(JsonExtractDecodedString(obj, "author"),  kMaxAuthorLen);
 			e.version = detail::Clean(JsonExtractDecodedString(obj, "version"), kMaxVersionLen);
 			e.summary = detail::Clean(JsonExtractDecodedString(obj, "summary"), kMaxSummaryLen);
+			e.testedLoader = detail::Clean(JsonExtractDecodedString(obj, "tested_loader"), kMaxTestedLoaderLen);
+			const std::string readme = JsonExtractDecodedString(obj, "readme_url");
+			if (IsAllowedReadmeUrl(readme))
+				e.readmeUrl = readme;
 			e.interfaceVersionMin = detail::ReadInt(obj, "interface_version_min");
 			if (e.interfaceVersionMin < 0)
 				e.interfaceVersionMin = -1;

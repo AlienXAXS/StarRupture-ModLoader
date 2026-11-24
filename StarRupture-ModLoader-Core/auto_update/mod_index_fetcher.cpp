@@ -1,6 +1,4 @@
 #include "mod_index_fetcher.h"
-#include "feed_fetch.h"
-#include "http_get.h"
 
 #include <chrono>
 #include <exception>
@@ -23,15 +21,6 @@ namespace ModIndex
 
 	namespace
 	{
-		std::string DefaultFetch(const std::string& url)
-		{
-			HttpGetOptions options;
-			options.resolveMs = options.connectMs = options.sendMs = options.receiveMs = FeedFetch::kOperationMs;
-			options.deadlineMs = FeedFetch::kDeadlineMs;
-			options.maxBytes = kMaxIndexBytes;
-			return HttpGet(url.c_str(), "mod index", options);
-		}
-
 		std::shared_ptr<const Snapshot> Failed(const char* why)
 		{
 			auto s = std::make_shared<Snapshot>();
@@ -48,7 +37,7 @@ namespace ModIndex
 		: m_shared(std::make_shared<Shared>())
 	{
 		m_shared->url = std::move(url);
-		m_shared->fetch = fetch ? std::move(fetch) : FetchFn(&DefaultFetch);
+		m_shared->fetch = std::move(fetch);
 	}
 
 	Fetcher::~Fetcher()
@@ -124,10 +113,11 @@ namespace ModIndex
 			std::shared_ptr<const Snapshot> answer;
 			try
 			{
-				const std::string body = shared->fetch(shared->url);
+				std::string error;
+				const std::string body = shared->fetch(shared->url, error);
 				if (body.empty())
 				{
-					answer = Failed("Could not download the mod list. Check your connection and try again.");
+					answer = Failed(error.empty() ? "Could not download the mod list. Check your connection and try again." : error.c_str());
 				}
 				else
 				{
