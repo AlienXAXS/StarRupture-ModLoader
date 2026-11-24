@@ -708,7 +708,7 @@ list of game CLs. A plugin name can hold a space, so split a row on tabs only.
 int len = hooks->Registry ? hooks->Registry->GetFeatureCatalog(nullptr, 0) : -1;
 if (len > 0)
 {
-    std::string text(len + 1, ' ');
+    std::string text(len + 1, '\0');
     hooks->Registry->GetFeatureCatalog(text.data(), text.size());
     text.resize(len);   // same rows as GetDeclaredFeatures: split on lines, then on tabs
 }

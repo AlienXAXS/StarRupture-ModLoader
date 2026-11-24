@@ -753,48 +753,39 @@ int main()
 
 		// The copy convention (the same as GetDeclaredFeatures), on the stored text.
 		{
-			const std::string text = "format	1
-seq	11
-" + body11;
+			const std::string text = "format\t1\nseq\t11\n" + body11;
 			const int len = static_cast<int>(text.size());
 			char big[512];
 			Check(PluginCatalog::CopyAccessorText(nullptr, 0) == len, "a null buffer with size 0 measures");
 			char marker[2] = { 'x', 'x' };
 			Check(PluginCatalog::CopyAccessorText(marker, 0) == len && marker[0] == 'x', "size 0 writes nothing");
-			Check(PluginCatalog::CopyAccessorText(marker, 1) == len && marker[0] == ' ' && marker[1] == 'x', "size 1 writes just the NUL");
+			Check(PluginCatalog::CopyAccessorText(marker, 1) == len && marker[0] == '\0' && marker[1] == 'x', "size 1 writes just the NUL");
 			Check(PluginCatalog::CopyAccessorText(big, sizeof(big)) == len && text == big, "a big buffer gets the whole text, NUL-terminated");
 			char exact[512];
 			Check(PluginCatalog::CopyAccessorText(exact, static_cast<size_t>(len) + 1) == len && text == exact, "a buffer of length + 1 holds it all");
 			char cut[512];
 			std::memset(cut, 'x', sizeof(cut));
-			Check(PluginCatalog::CopyAccessorText(cut, static_cast<size_t>(len)) == len && std::string(cut) == text.substr(0, text.size() - 1) && cut[len - 1] == ' ',
+			Check(PluginCatalog::CopyAccessorText(cut, static_cast<size_t>(len)) == len && std::string(cut) == text.substr(0, text.size() - 1) && cut[len - 1] == '\0',
 				"a buffer of exactly the length is cut by one and keeps its NUL");
 			Check(PluginCatalog::CopyAccessorText(cut, 7) == len && std::string(cut) == text.substr(0, 6), "a small buffer is cut to size - 1 plus NUL, the full length returned");
 		}
 
 		// A title with multi-byte characters is served byte for byte, and the length counts bytes.
 		{
-			const std::string utf8Body = std::string("kind	plugin-catalog
-") + "plugin	Alpha	1.3.0
-"
-				+ "feature	Alpha	cafe	-	CafÃ© â¦ ðº
-";
-			const std::string utf8Text = "format	1
-seq	12
-" + utf8Body;
+			const std::string utf8Body = std::string("kind\tplugin-catalog\n") + "plugin\tAlpha\t1.3.0\n"
+				+ "feature\tAlpha\tcafe\t-\tCaf\xC3\xA9 \xE2\x9C\xA6 \xF0\x9F\x97\xBA\n";
+			const std::string utf8Text = "format\t1\nseq\t12\n" + utf8Body;
 			Check(PluginCatalog::Store(path, Sign(sk1, Region(12, utf8Body)), keys, e) == PluginCatalog::Outcome::Stored
 				&& Served() == utf8Text && PluginCatalog::CopyAccessorText(nullptr, 0) == static_cast<int>(utf8Text.size()),
 				"a title with two-, three- and four-byte characters is stored and measured in bytes");
-			std::string buf(utf8Text.size() + 1, ' ');
+			std::string buf(utf8Text.size() + 1, '\0');
 			Check(PluginCatalog::CopyAccessorText(buf.data(), buf.size()) == static_cast<int>(utf8Text.size()) && buf.compare(0, utf8Text.size(), utf8Text) == 0,
 				"and copied whole");
 			// Put the last good text back for the cache tests below.
 			Check(PluginCatalog::Store(path, Sign(sk1, Region(11, body11)), keys, e) == PluginCatalog::Outcome::RefusedRollback && Served() == utf8Text,
 				"a rollback after it leaves it served");
 			Check(PluginCatalog::Store(path, Sign(sk1, Region(13, body11)), keys, e) == PluginCatalog::Outcome::Stored
-				&& Served() == "format	1
-seq	13
-" + body11, "and a higher seq replaces it");
+				&& Served() == "format\t1\nseq\t13\n" + body11, "and a higher seq replaces it");
 		}
 
 		// The cache survives a reload from disk, and a cache that no longer verifies loads nothing new.
