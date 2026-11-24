@@ -30,11 +30,20 @@ shared per-game-build data the loader serves): open a PR.
 | `author` | no | Up to 64 characters. |
 | `version` | no | The latest release. Up to 32 characters. |
 | `summary` | no | One or two sentences. Up to 300 characters. |
-| `readme_url` | no | A raw GitHub link to your README (host `raw.githubusercontent.com`, https). Please include it. |
+| `readme_url` | no | A raw GitHub link to your README (host `raw.githubusercontent.com`, https). Up to 200 characters. Please include it: the Browse card then shows a README button. See below. |
 | `tested_loader` | no | The ModLoader version you tested on, for example `1.27.0`. Up to 32 characters. Please include it. |
 | `interface_version_min` | no | The plugin interface number the plugin declares. Leave it out when unknown. |
 
 The list holds up to 200 plugins, and the file stays under 256 KB.
+
+## The README button
+
+When an entry has a `readme_url`, its card in the Browse tab shows a **README** button that opens your
+README inside the window. Use the raw link, for example
+`https://raw.githubusercontent.com/<owner>/<repo>/main/README.md`. A picture written with a relative path,
+such as `![Screenshot](images/shot.png)`, is loaded from the same folder as that file. Pictures must be
+on GitHub (PNG, JPEG, GIF, WebP or BMP, not SVG), up to 8 per README and 2 MB each. Links to GitHub and
+Nexus Mods open in the browser. Tables show as plain text.
 
 ## Check it before you send it
 

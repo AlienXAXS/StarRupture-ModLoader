@@ -262,6 +262,13 @@ downloaded once, the first time you open the tab, and kept until the game closes
 the tab says so and **Retry** tries again. The tab only lists plugins; it never downloads or installs one.
 The format of the index and how to add a plugin are in [`mod-index/README.md`](mod-index/README.md).
 
+A card whose plugin has a README shows a **README** button. It opens a page inside the window with the
+author's README from their GitHub repo, text and pictures; **Back** returns to the list. The page shows
+headings, paragraphs, lists, bold, inline and block code, links and pictures. Tables show as plain
+text, and SVG pictures and scripts are not shown or run. Only GitHub and Nexus Mods links can be clicked,
+and they open in your browser. Pictures come only from GitHub, up to 8 per README and 2 MB each. Nothing
+is saved to disk, and leaving the page frees the pictures.
+
 The index the loader uses is a signed file published beside the version object map. The loader checks
 the signature before it reads a single entry, and keeps the last good copy in `mod-index.v1.cache` in the
 ModLoader folder. If the download fails, the tab shows that copy; a file that fails the check, or is older
