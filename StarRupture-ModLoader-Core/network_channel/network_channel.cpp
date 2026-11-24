@@ -2963,9 +2963,11 @@ namespace
         return ok;
     }
 
-    // v80. Game thread (Tick) only: it reads the world and the connection.
+    // v80. Game thread (Tick) only: it reads the world and the connection, so any
+    // other thread gets -1 instead of a read of game objects.
     static int NC_GetServerAddress(char* buf, size_t size)
     {
+        if (!GameThreadDispatch::IsGameThread()) return -1;
         std::string text;
         if (!ReadServerAddress(text)) return -1;
         return HostRulesWire::CopyTextCut(text, buf, size);

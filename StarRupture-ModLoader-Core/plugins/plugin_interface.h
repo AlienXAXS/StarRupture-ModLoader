@@ -3005,8 +3005,9 @@ struct IPluginNetworkChannel
 	// pin and must not answer a pairing challenge. That is: a dedicated server or
 	// a generic build, no world or network driver, no connection to a server (main
 	// menu, travelling, single player, the listen host itself), a game build whose
-	// address call the loader could not place, a call that faulted, an empty text,
-	// or the engine's own text "Invalid" (a connection with no address).
+	// address call the loader could not place, a call from a thread other than the
+	// game thread, a call that faulted, an empty text, or the engine's own text
+	// "Invalid" (a connection with no address).
 	//
 	// The text is whatever the engine prints for the route. A direct connection
 	// prints the IPv4 address and port, for example "203.0.113.7:7780"; a relay or

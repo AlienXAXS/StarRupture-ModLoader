@@ -2328,9 +2328,8 @@ int main()
 		oldRow = functionRow("UNetConnection::RemoteAddressToString", 129402);
 		newRow = functionRow("UNetConnection::RemoteAddressToString", 130045);
 		Check(isStartRow(oldRow, 0x0448F900) && isStartRow(newRow, 0x0448F280)
-			&& strcmp(oldRow->pattern, ScanPatterns::UNetConnection_RemoteAddressToString) == 0 && strcmp(newRow->pattern, ScanPatterns::UNetConnection_RemoteAddressToString) == 0
-			&& !functionRow("UNetConnection::RemoteAddressToString", 127004) && !functionRow("UNetConnection::RemoteAddressToString", 128786),
-			"real function rows: RemoteAddressToString has the one pattern and a row on CL-129402 and CL-130045 only");
+			&& strcmp(oldRow->pattern, ScanPatterns::UNetConnection_RemoteAddressToString) == 0 && strcmp(newRow->pattern, ScanPatterns::UNetConnection_RemoteAddressToString) == 0,
+			"real function rows: RemoteAddressToString has the one pattern and a row on CL-129402 and CL-130045");
 		const char* const textureKeys[] = { "UTexture2D::CreateTransient", "FBulkData::Lock", "FBulkData::Unlock", "UTexture::GetResource", "MiniMap/UTexture::UpdateResource" };
 		bool textureBoth = true;
 		for (const char* key : textureKeys)

@@ -691,7 +691,8 @@ and treat a changed text as a different server. The loader never logs the text, 
 
 It returns -1 when there is no address to give: on a dedicated server or a generic build, before a world or a
 connection to a server exists (main menu, travelling, single player, the host of a listen server), on a game build
-whose address call the loader could not place, or when the engine has no address for the connection. Then do not pin
+whose address call the loader could not place, from any thread but the game thread, or when the engine has no
+address for the connection. Then do not pin
 and do not answer a pairing challenge. Call it from `Tick`, once `IsServerReady()` is true, not from `PluginInit`, a
 render callback or a worker thread: it reads game objects, which only the game thread may. A plugin that needs the
 text in a render callback copies it during `Tick` into its own variable.
