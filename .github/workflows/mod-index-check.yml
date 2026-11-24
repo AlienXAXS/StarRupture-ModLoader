@@ -1,0 +1,29 @@
+name: Check the mod index
+
+# A pull request that changes mod-index/index.json (or the builder that checks it) runs the
+# same builder the publish uses, so a bad entry is refused here and not after the merge. The
+# builder refuses the whole file for one bad entry, so one typo would otherwise hold back
+# every other entry. Nothing is signed or published here.
+
+on:
+  pull_request:
+    paths:
+      - 'mod-index/**'
+      - '.github/vmap/build-mod-index.mjs'
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+
+      - name: Build the index
+        run: node .github/vmap/build-mod-index.mjs mod-index/index.json --out "$RUNNER_TEMP/mod-index.txt"
+
+      - name: Run the builder tests
+        run: node --test .github/vmap/build-mod-index.test.mjs
