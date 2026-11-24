@@ -254,12 +254,20 @@ splash have none. How a plugin declares these is in the SDK's `PluginDevelopment
 
 ### Browse tab <sup>[✦](#msantoro12)</sup>
 
-Lists plugins from the mod index. Each row shows the plugin's name, summary, version and author, an
-**Installed** marker when a plugin of that name is loaded, and an **Open page** button that opens the
-plugin's page (Nexus Mods or GitHub) in your browser. The list is downloaded once, the first time you
-open the tab, and kept until the game closes. If the download fails, the tab says so and **Retry** tries
-again. The tab only lists plugins; it never downloads or installs one. The format of the index and how to
-add a plugin are in [`mod-index/README.md`](mod-index/README.md).
+Lists plugins from the mod index. Each plugin is a card: its name, version and author, its summary, and
+a line with an **Installed** marker when a plugin of that name is loaded, the ModLoader version it was
+last tried on (when the index says), and an **Open page** button that opens the plugin's page (Nexus Mods
+or GitHub) in your browser. A plugin that needs a newer ModLoader than yours says so instead. The list is
+downloaded once, the first time you open the tab, and kept until the game closes. If the download fails,
+the tab says so and **Retry** tries again. The tab only lists plugins; it never downloads or installs one.
+The format of the index and how to add a plugin are in [`mod-index/README.md`](mod-index/README.md).
+
+The index the loader uses is a signed file published beside the version object map. The loader checks
+the signature before it reads a single entry, and keeps the last good copy in `mod-index.v1.cache` in the
+ModLoader folder. If the download fails, the tab shows that copy; a file that fails the check, or is older
+than the copy, is refused and the tab says so. `ModIndexUrl` in `modloader.ini` replaces the address: the
+built-in address takes only a verified signed file, while an address you set yourself may serve a signed
+file or a plain index file (handy for trying an index out). Nothing from a plain file is cached.
 
 ### Image library <sup>[✦](#msantoro12)</sup>
 
@@ -971,7 +979,7 @@ these for you.
 | `[Network]` | `ConnectionTimeout`, `InitialConnectTimeout` | `300.0` | Seconds, 1 to 3600; anything else logs a warning and uses 300. `0` keeps the engine default. See [Net timeouts](#net-timeouts) |
 | `[AutoUpdate]` | `Enabled` | `1` | Client only, except that a dedicated server also reads it for its own check for a newer version object map file. `0` stops the update checks, including the check for a newer version object map at every start |
 | | `ManifestUrl` | empty | Empty uses the built-in manifest |
-| | `ModIndexUrl` | empty | The address of the mod index the Browse tab lists. Empty uses the loader's built-in index address. Must be `https` |
+| | `ModIndexUrl` | empty | The address of the mod index the Browse tab lists. Empty uses the loader's built-in signed index, which must pass the signature check. An address you set may serve that signed file or a plain index file. Must be `https` |
 | `[Preload]` | `Enabled` | `1` | |
 | | `Disabled` | empty | Comma-separated DLL names to skip |
 | `[UE4SS]` | `Enabled` | `0` | Load UE4SS before plugins. `1` if you delete the key |

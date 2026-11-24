@@ -115,7 +115,7 @@ namespace ModIndex
 			for (char c : url)
 			{
 				const unsigned char u = static_cast<unsigned char>(c);
-				if (u <= 0x20 || u >= 0x7F || c == '\')
+				if (u <= 0x20 || u >= 0x7F || c == '\\')
 					return false;
 			}
 

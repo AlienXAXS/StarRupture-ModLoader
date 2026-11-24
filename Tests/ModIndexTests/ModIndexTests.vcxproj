@@ -97,16 +97,16 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup Label="Test">
-    <ClInclude Include="..\VersionMapTestsixture\hooks\gameersion_map.generated.h" />
-    <ClInclude Include="..\VersionMapTests	est_doubles.h" />
+    <ClInclude Include="..\VersionMapTests\fixture\hooks\game\version_map.generated.h" />
+    <ClInclude Include="..\VersionMapTests\test_doubles.h" />
     <ClCompile Include="mod_index_tests.cpp" />
-    <ClCompile Include="..\VersionMapTests	est_doubles.cpp" />
+    <ClCompile Include="..\VersionMapTests\test_doubles.cpp" />
   </ItemGroup>
   <ItemGroup Label="Loader sources under test">
     <ClCompile Include="$(CoreDir)auto_update\mod_index_fetcher.cpp" />
     <ClCompile Include="$(CoreDir)auto_update\mod_index_signed.cpp" />
-    <ClCompile Include="$(CoreDir)memory_scannerersion_map.cpp" />
-    <ClCompile Include="$(CoreDir)memory_scannerersion_feed.cpp" />
+    <ClCompile Include="$(CoreDir)memory_scanner\version_map.cpp" />
+    <ClCompile Include="$(CoreDir)memory_scanner\version_feed.cpp" />
     <ClCompile Include="$(CoreDir)plugins\plugin_catalog.cpp" />
     <ClCompile Include="$(CoreDir)third_party\monocypher\monocypher.c">
       <WarningLevel>TurnOffAllWarnings</WarningLevel>

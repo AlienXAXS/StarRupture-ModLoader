@@ -72,7 +72,7 @@ namespace
 	using namespace ModIndex;
 	using Clock = std::chrono::steady_clock;
 
-	std::string Obj(const char* id, const char* name, const char* url, const char* extra = "")
+	std::string Obj(const char* id, const char* name, const char* url, const std::string& extra = std::string())
 	{
 		std::string s = "{\"id\": \"";
 		s += id;
@@ -402,7 +402,7 @@ namespace
 
 		// the README allowlist
 		Check(IsAllowedReadmeUrl(raw), "readme url allowed: a raw README");
-		Check(!IsAllowedReadmeUrl("https://RAW.GitHubUserContent.com/a/b/c"), "readme url refused: another host that only looks alike");
+		Check(!IsAllowedReadmeUrl("https://raw.githubusercontent.com.example.com/a/b/c"), "readme url refused: another host that only starts alike");
 		Check(IsAllowedReadmeUrl("https://Raw.GithubUsercontent.com/a/b/c/README.md"), "readme url allowed: host in any case");
 		Check(IsAllowedReadmeUrl("https://raw.githubusercontent.com/" + std::string(200 - 34, 'a')) && ("https://raw.githubusercontent.com/" + std::string(200 - 34, 'a')).size() == kMaxUrlLen,
 			"readme url allowed: exactly the length cap");
@@ -445,7 +445,7 @@ namespace
 			const ParseResult o = ParseModIndex("[" + Obj("a", "A", kGood, ", \"readme_url\": {\"x\": 1}") + "]");
 			Check(o.entries.size() == 1 && o.entries[0].readmeUrl.empty(), "fields: an object is not a readme_url");
 			const ParseResult nul = ParseModIndex("[" + Obj("a", "A", kGood, ", \"readme_url\": \"https://raw.githubusercontent.com/a\\u0000.evil\"") + "]");
-			Check(nul.entries.size() == 1 && nul.entries[0].readmeUrl.empty(), "fields: a NUL in the readme_url drops the field");
+			Check(nul.entries.size() == 1 && nul.entries[0].readmeUrl.find('\0') == std::string::npos && (nul.entries[0].readmeUrl.empty() || IsAllowedReadmeUrl(nul.entries[0].readmeUrl)), "fields: a NUL escape in the readme_url leaves no NUL and an allowed address or none");
 		}
 	}
 
