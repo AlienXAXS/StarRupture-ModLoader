@@ -46,7 +46,7 @@ namespace LoaderManifest
 		if (latest.HasRange() && latest.ifaceMax >= declared)
 			snprintf(buf, cap, "Needs ModLoader %s or newer", latest.tag.c_str());
 		else if (latest.HasRange())
-			snprintf(buf, cap, "Built for a ModLoader newer than the latest release (%s)", latest.tag.c_str());
+			snprintf(buf, cap, "Needs a ModLoader newer than %s", latest.tag.c_str());
 		else
 			snprintf(buf, cap, "Needs a newer ModLoader");
 		return buf;
