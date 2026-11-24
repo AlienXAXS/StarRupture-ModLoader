@@ -455,8 +455,8 @@ starrupture-ci's `ci/VERSION-MAP.md`.
 **Asset.** `version-map-client.v1.txt`, on the loader's Latest release. The name carries the
 format version, so a later format never strands a loader that reads this one. Latest is where it
 sits because `prune_releases.yml` deletes the others. `vmap-publish.yml` puts the current signed
-file on Latest: on a new release at its next run (every 15 minutes), and between releases whenever
-the `seq` rises. The first release that carries one needs a manual run with `first_publish` set.
+file on Latest: a new release dispatches it itself (the run every 15 minutes is the fallback), and
+between releases whenever the `seq` rises. The first release that carries one needs a manual run with `first_publish` set.
 The dedicated server has a file of its own, `version-map-server.v1.txt`, in the same format, which the
 same workflow puts on Latest in a leg of its own (its own `seq`, its own `first_publish`); see
 [The dedicated server's downloaded version map](#the-dedicated-servers-downloaded-version-map).
