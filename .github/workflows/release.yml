@@ -573,3 +573,29 @@ jobs:
       plugins: all
     secrets:
       PLUGIN_BUILD_PAT: ${{ secrets.PLUGIN_BUILD_PAT }}
+
+  publish-version-map:
+    # A release made with GITHUB_TOKEN starts no `release: published` workflow,
+    # but a workflow_dispatch made with it does run. Without this the new
+    # release has no version map file until the next scheduled vmap-publish run.
+    needs: build
+    if: |
+      needs.build.result == 'success' &&
+      needs.build.outputs.is_preview != 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write  # Required to dispatch vmap-publish.yml
+      contents: read
+
+    steps:
+      - name: Dispatch vmap-publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # The release is already out, so a failed dispatch only warns; the
+          # scheduled run publishes the version map instead.
+          if gh workflow run vmap-publish.yml --repo "$GITHUB_REPOSITORY" --ref "${{ github.event.repository.default_branch }}"; then
+            echo "Dispatched vmap-publish.yml for release ${{ needs.build.outputs.tag }}."
+          else
+            echo "::warning title=vmap-publish not dispatched::Could not dispatch vmap-publish.yml; the scheduled run will attach the version map to ${{ needs.build.outputs.tag }}."
+          fi
