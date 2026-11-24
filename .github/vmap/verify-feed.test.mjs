@@ -150,3 +150,84 @@ test('the command line exits 0, 4 and 3, and prints the seq', () => {
   assert.equal(run('--flavor', 'server').status, 0);
   assert.equal(run('--flavor', 'client').status, 3);
 });
+
+// The signed mod index: format 1, seq, `kind mod-index`, the index JSON, the sig line.
+const INDEX = '[{"id":"codex","name":"Codex","page_url":"https://github.com/AlienXAXS/StarRupture-Plugin-Codex"}]\n';
+const MI = (seq, body = INDEX, kind = 'mod-index') => `format\t1\nseq\t${seq}\nkind\t${kind}\n${body}`;
+const MI_CAP = 256 * 1024;
+
+test('mod index: accepts a good file and reports its seq', () => {
+  const k = pair();
+  const opts = { keys: keys(k), now: NOW, kind: 'mod-index' };
+  assert.deepEqual(check(signed(k, MI(NOW)), opts), { keyId: 'k1', seq: NOW, test: false });
+  assert.deepEqual(check(signed(k, MI(NOW)), { ...opts, keys: keys(k, true) }), { keyId: 'k1', seq: NOW, test: true });
+});
+
+test('mod index: a tampered body, a wrong key id and a missing or cut sig line are refused', () => {
+  const k = pair();
+  const opts = { keys: keys(k), now: NOW, kind: 'mod-index' };
+  const s = signed(k, MI(NOW));
+  assert.match(outcome(() => check(Buffer.from(s.toString('latin1').replace('Codex', 'Kodex'), 'latin1'), opts)), /^refused: the signature does not verify/);
+  assert.match(outcome(() => check(signed(k, MI(NOW), 'k2'), opts)), /^refused: no key in slot k2/);
+  assert.match(outcome(() => check(Buffer.from(MI(NOW)), opts)), /^refused: the last line is not a sig line/);
+  assert.match(outcome(() => check(s.subarray(0, -10), opts)), /^refused: the file does not end in LF/);
+  assert.match(outcome(() => check(s.subarray(0, -1), opts)), /^refused: the (file does not end in LF|last line is not a sig line)/);
+  assert.match(outcome(() => check(Buffer.alloc(0), opts)), /^refused: the file is 0 bytes/);
+});
+
+test('mod index: the kind line, the body and the size are checked', () => {
+  const k = pair();
+  const opts = { keys: keys(k), now: NOW, kind: 'mod-index' };
+  assert.match(outcome(() => check(signed(k, MI(NOW, INDEX, 'catalog')), opts)), /^refused: the third line is not `kind mod-index`/);
+  assert.match(outcome(() => check(signed(k, BODY(NOW)), opts)), /^refused: the third line/);
+  assert.match(outcome(() => check(signed(k, `format\t1\nseq\t${NOW}\n${INDEX}`), opts)), /^refused: the third line/);
+  assert.match(outcome(() => check(signed(k, MI(NOW, '')), opts)), /^refused: the mod index is empty/);
+  assert.match(outcome(() => check(signed(k, MI(NOW, '[{"id":\n')), opts)), /^refused: the mod index is not UTF-8 JSON/);
+  assert.match(outcome(() => check(signed(k, MI(NOW, '﻿[]\n')), opts)), /^refused: the mod index is not UTF-8 JSON/);
+  assert.match(outcome(() => check(signed(k, 'format\t2\nseq\t1\nkind\tmod-index\n[]\n'), opts)), /not a format 1/);
+  // The whole file, sig line included, is at most 256 KiB. A version map feed may be larger.
+  const pad = (n) => signed(k, MI(NOW, `[${' '.repeat(n)}]\n`));
+  const room = MI_CAP - pad(0).length;
+  assert.equal(pad(room).length, MI_CAP);
+  assert.equal(outcome(() => check(pad(room), opts)), 'ok');
+  assert.match(outcome(() => check(pad(room + 1), opts)), /^refused: the file is 262145 bytes \(1 to 262144 allowed\)/);
+  assert.equal(outcome(() => check(signed(k, `${BODY(NOW)}note\t${'x'.repeat(MI_CAP)}\n`), { keys: keys(k), now: NOW })), 'ok');
+});
+
+test('mod index: an old seq is valid but not newer, a tampered one is still refused', () => {
+  const k = pair();
+  const opts = { keys: keys(k), now: NOW, kind: 'mod-index' };
+  const s = signed(k, MI(NOW));
+  assert.match(outcome(() => check(s, { ...opts, lastSeq: NOW })), /^notnewer/);
+  assert.match(outcome(() => check(s, { ...opts, lastSeq: NOW + 9 })), /^notnewer/);
+  assert.equal(outcome(() => check(s, { ...opts, lastSeq: NOW - 1 })), 'ok');
+  assert.match(outcome(() => check(Buffer.from(s.toString('latin1').replace('Codex', 'Kodex'), 'latin1'), { ...opts, lastSeq: NOW })), /^refused/);
+  assert.match(outcome(() => check(signed(k, MI(NOW + 86401)), opts)), /a day ahead/);
+});
+
+test('mod index: a TEST-key file is refused when asked to', () => {
+  const k = pair();
+  assert.match(outcome(() => check(signed(k, MI(NOW)), { keys: keys(k, true), now: NOW, kind: 'mod-index', refuseTestKey: true })), /TEST key/);
+});
+
+test('mod index: the command line exits 0, 4 and 3 and refuses options that do not apply', () => {
+  const k = pair();
+  const dir = mkdtempSync(join(tmpdir(), 'vmap-verify-mi-'));
+  const src = join(dir, 'version_feed.cpp');
+  writeFileSync(src, `constexpr const char* kK1Hex = "${k.hex}";\nconstexpr bool kK1TestOnly = false;\nconstexpr const char* kK2Hex = "";\n`);
+  const file = join(dir, 'mod-index.v1.txt');
+  writeFileSync(file, signed(k, MI(NOW)));
+  const run = (...a) => spawnSync(process.execPath, [TOOL, file, '--source', src, '--now', String(NOW), ...a], { encoding: 'utf8', windowsHide: true });
+  const ok = run('--kind', 'mod-index', '--last-seq', String(NOW - 1));
+  assert.equal(ok.status, 0, ok.stderr);
+  assert.equal(ok.stdout, `${NOW}\n`);
+  assert.equal(run('--kind', 'mod-index', '--last-seq', String(NOW)).status, 4);
+  assert.equal(run('--kind', 'mod-index', '--flavor', 'client').status, 2);
+  assert.equal(run('--kind', 'nope').status, 2);
+  // A version map feed is not a mod index, and the other way round the feed path is unchanged.
+  writeFileSync(file, signed(k, BODY(NOW)));
+  assert.equal(run('--kind', 'mod-index').status, 3);
+  assert.equal(run('--kind', 'feed').status, 0);
+  writeFileSync(file, readFileSync(file, 'latin1').replace('0x50', '0x51'), 'latin1');
+  assert.equal(run('--kind', 'mod-index').status, 3);
+});
