@@ -412,7 +412,7 @@ jobs:
           if ("${{ steps.tag.outputs.IS_PREVIEW }}" -eq 'true') {
             $flags += '--prerelease'
           }
-          gh release create $tag @assets @flags
+          gh release create $tag --target ${{ github.sha }} @assets @flags
 
       - name: Upload Client build to Nexus Mods
         if: ${{ steps.tag.outputs.IS_PREVIEW != 'true' }}
@@ -481,6 +481,7 @@ jobs:
       - name: Checkout main repo
         uses: actions/checkout@v4
         with:
+          ref: ${{ steps.resolve.outputs.TAG }}
           path: main
 
       - name: Checkout plugin SDK repo
@@ -517,6 +518,7 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force "sdk\include" | Out-Null
           Copy-Item "main\StarRupture-ModLoader-Core\plugins\plugin_interface.h" "sdk\include\plugin_interface.h" -Force
+          Copy-Item "main\StarRupture-ModLoader-Core\plugins\known_gobjects.generated.h" "sdk\include\known_gobjects.generated.h" -Force
           Write-Host "Sync complete."
 
       - name: Commit and push to SDK repo

@@ -1,6 +1,5 @@
 A server can now set features per player, require a minimum version and ask for an admin code
-Server plugins now survive server updates (full version object map coverage)
-Server plugins updated: ServerUtility, KeepTicking, WaveOptimiser, ProductionViewer and RuptureTimer (they need this loader)
+The dedicated server now has the same version object map coverage as the game client, so server plugins survive server updates
 If the game does not finish starting, ModLoader.log says why
 A plugin that names its game build now loads after an update that changed only some game classes
 Mods that list compatible versions keep talking across releases; plugins can check each other, the server's address and the plugin catalog
