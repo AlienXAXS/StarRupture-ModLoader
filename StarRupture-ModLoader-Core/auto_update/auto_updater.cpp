@@ -242,7 +242,7 @@ static void ReadUpdaterLogs(std::string& currentLog, std::string& previousLog)
 // ===========================================================================
 
 // Extract a top-level string field and decode its JSON escapes. Used for the
-// manifest's "notes": JsonExtractString above drops the backslash, so it
+// manifest's "notes": JsonExtractString (json_extract.h) drops the backslash, so it
 // cannot tell \n from the letter n. Handles \n \t \" \\ \/ and \uXXXX; \r is
 // dropped, and a \u escape outside printable ASCII becomes '?' so the text
 // always draws in the overlay font.
