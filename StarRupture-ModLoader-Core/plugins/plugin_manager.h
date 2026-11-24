@@ -80,6 +80,12 @@ namespace PluginManager
     // Returned pointers remain valid as long as plugins are loaded.
     int GetLoadedPluginInfos(const PluginInfo** outInfos, int maxCount);
 
+    // IPluginRegistry::GetPluginVersion: the version of the running plugin with
+    // this name (case-insensitive), copied into out. False for no such plugin, one
+    // that is disabled, unloaded or being shut down, a null or empty name, or an
+    // out too small for the whole version. Any thread; takes g_pluginLock only.
+    bool GetPluginVersion(const char* name, char* out, size_t cap);
+
     // Copy status snapshots for ALL plugin records (loaded and unloaded) into out.
     // Returns total record count (may exceed maxCount).
     int GetAllPluginStatuses(PluginStatus* out, int maxCount);

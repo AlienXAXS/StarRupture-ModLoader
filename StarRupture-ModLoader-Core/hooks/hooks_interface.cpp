@@ -23,6 +23,7 @@
 #include "hooks/game/mass_do_spawning/mass_do_spawning.h"
 #include "console/plugin_console.h"
 #include "plugins/pak_registry.h"
+#include "plugins/plugin_manager.h"
 #include "plugins/reload_policy.h"
 #include "memory_scanner/scanner.h"
 #include "hooks/game/scan_patterns.h"
@@ -1854,6 +1855,10 @@ namespace ModLoaderLogger
 #endif // MODLOADER_SERVER_BUILD
 
 	// Global hooks interface instance
+	static IPluginRegistry g_pluginRegistry = {
+		PluginManager::GetPluginVersion
+	};
+
 	static IPluginHooks g_pluginHooks = {
 		&g_spawnerHooks,
 		&g_hookUtils,
@@ -1903,6 +1908,7 @@ namespace ModLoaderLogger
 		                     //        and left null on server/generic ones
 		nullptr,             // v79 -- HostRules; filled in below by GetPluginHooks() next to
 		                     //        Network, and left null on generic builds
+		&g_pluginRegistry,   // v80 -- Registry; every build
 	};
 	static bool g_networkChannelInitialized = false;
 

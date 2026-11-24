@@ -5,6 +5,7 @@
 
 #include "wire_compat.h"
 #include "host_rules_wire.h"
+#include "plugins/plugin_version_query.h"
 
 #include <cstdio>
 #include <initializer_list>
@@ -1225,6 +1226,91 @@ namespace
         Check(HW::IsBelowMinimum(std::string(65, '1'), "1.27.0") == M::Unparseable, "a tag over the length limit");
         Check(HW::IsBelowMinimum("99999999999.0.0", "1.27.0") == M::Ok, "a huge number is clamped, not wrapped");
     }
+    // IPluginRegistry::GetPluginVersion: which plugins count as loaded, and what the caller gets back.
+    struct FakePlugin
+    {
+        std::string name;
+        std::string version;
+        bool initialized = true;   // what the loader sets while the plugin runs
+        bool unloading = false;    // set from the start of a shutdown or reload until it ends
+    };
+
+    bool AskVersion(const std::vector<FakePlugin>& table, const char* name, char* out, size_t cap)
+    {
+        return PluginVersionQuery::Find(table,
+            [](const FakePlugin& p)
+            {
+                return PluginVersionQuery::Row{ &p.name, &p.version, p.initialized && !p.unloading };
+            },
+            name, out, cap);
+    }
+
+    void TestPluginVersionQuery()
+    {
+        std::printf("plugin version query\n");
+        std::vector<FakePlugin> table;
+        table.push_back({ "BetterCheats", "1.12.0-dev.3", true, false });
+        table.push_back({ "Codex", "0.4.0", true, false });
+        char buf[64];
+
+        // Loaded and enabled.
+        Check(AskVersion(table, "BetterCheats", buf, sizeof(buf)) && std::string(buf) == "1.12.0-dev.3", "a running plugin reports its version");
+        Check(AskVersion(table, "Codex", buf, sizeof(buf)) && std::string(buf) == "0.4.0", "the second entry is found too");
+
+        // Not present.
+        std::strcpy(buf, "stale");
+        Check(!AskVersion(table, "Missing", buf, sizeof(buf)) && buf[0] == '\0', "an unknown plugin is not loaded and out is empty");
+
+        // Case rule: the plugin list's, so case does not matter.
+        Check(AskVersion(table, "bettercheats", buf, sizeof(buf)) && std::string(buf) == "1.12.0-dev.3", "the name matches without regard to case");
+        Check(AskVersion(table, "CODEX", buf, sizeof(buf)), "upper case matches too");
+        Check(!AskVersion(table, "Better", buf, sizeof(buf)), "a part of a name does not match");
+
+        // Present but disabled (or failed to load): the record exists, it never ran.
+        table[1].initialized = false;
+        Check(!AskVersion(table, "Codex", buf, sizeof(buf)), "a disabled plugin is not loaded");
+
+        // Unloaded by the overlay RELOAD (before it loads again).
+        table[0].initialized = false;
+        Check(!AskVersion(table, "BetterCheats", buf, sizeof(buf)), "an unloaded plugin is not loaded");
+        table[0].initialized = true;
+        Check(AskVersion(table, "BetterCheats", buf, sizeof(buf)), "and it is loaded again once it runs");
+
+        // Mid-reload: the record is out of service while its shutdown runs.
+        table[0].initialized = false;
+        table[0].unloading = true;
+        Check(!AskVersion(table, "BetterCheats", buf, sizeof(buf)), "a plugin that is shutting down reads as not loaded");
+        table[0].unloading = false;
+        table[0].initialized = true;
+        table[0].version = "1.12.0-dev.4";
+        Check(AskVersion(table, "BetterCheats", buf, sizeof(buf)) && std::string(buf) == "1.12.0-dev.4", "after the reload it reports the new version");
+
+        // A stopped record does not hide a running one of the same name.
+        table.push_back({ "BetterCheats", "2.0.0", true, false });
+        table[0].initialized = false;
+        Check(AskVersion(table, "BetterCheats", buf, sizeof(buf)) && std::string(buf) == "2.0.0", "a running entry is found past a stopped one of the same name");
+
+        // Null and empty names.
+        std::strcpy(buf, "stale");
+        Check(!AskVersion(table, nullptr, buf, sizeof(buf)) && buf[0] == '\0', "a null name is not loaded");
+        Check(!AskVersion(table, "", buf, sizeof(buf)), "an empty name is not loaded");
+        Check(!AskVersion(std::vector<FakePlugin>(), "Codex", buf, sizeof(buf)), "an empty table has no plugins");
+
+        // Buffer size.
+        table[0].initialized = true;
+        table[0].version = "1.2.3";
+        table.erase(table.begin() + 2);
+        std::memset(buf, 'x', sizeof(buf));
+        Check(AskVersion(table, "BetterCheats", buf, 6) && std::string(buf) == "1.2.3", "a buffer of exactly version plus NUL is enough");
+        std::memset(buf, 'x', sizeof(buf));
+        Check(!AskVersion(table, "BetterCheats", buf, 5) && buf[0] == '\0', "a buffer one byte short fails with an empty string, never a cut version");
+        std::memset(buf, 'x', sizeof(buf));
+        Check(!AskVersion(table, "BetterCheats", buf, 0) && buf[0] == 'x', "a size of zero fails and writes nothing");
+        Check(AskVersion(table, "BetterCheats", nullptr, 0), "a null buffer only asks whether it is running");
+        Check(!AskVersion(table, "Missing", nullptr, 0), "a null buffer on an unknown plugin is false");
+        table[0].version.clear();
+        Check(AskVersion(table, "BetterCheats", buf, sizeof(buf)) && buf[0] == '\0', "a plugin with no version text reports an empty version");
+    }
 }
 
 int main()
@@ -1244,6 +1330,7 @@ int main()
     TestHostResolve();
     TestHostFeatStable();
     TestHostTiming();
+    TestPluginVersionQuery();
 
     if (g_failures)
     {

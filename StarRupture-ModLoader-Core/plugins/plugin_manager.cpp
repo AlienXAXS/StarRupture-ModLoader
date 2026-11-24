@@ -11,6 +11,7 @@
 #include "memory_scanner/hook_scanner_interface.h"
 #include "plugins/plugin_hook_report.h"
 #include "plugins/plugin_guard.h"
+#include "plugins/plugin_version_query.h"
 #include "auto_update/auto_updater.h"
 #include "plugins/plugin_watchdog.h"
 #include "utils/game_thread_dispatch.h"
@@ -1218,6 +1219,19 @@ namespace PluginManager
 		}
 		LeaveCriticalSection(&g_pluginLock);
 		return total;
+	}
+
+	bool GetPluginVersion(const char* name, char* out, size_t cap)
+	{
+		EnterCriticalSection(&g_pluginLock);
+		const bool found = PluginVersionQuery::Find(g_loadedPlugins,
+			[](const std::unique_ptr<LoadedPlugin>& p)
+			{
+				return PluginVersionQuery::Row{ &p->cachedName, &p->cachedVersion, p->isInitialized && !p->isUnloading };
+			},
+			name, out, cap);
+		LeaveCriticalSection(&g_pluginLock);
+		return found;
 	}
 
 	int GetAllPluginStatuses(PluginStatus* out, int maxCount)

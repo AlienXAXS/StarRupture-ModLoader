@@ -940,9 +940,20 @@
 //      after the ones here.
 // --- v79 ---
 //
+// v80 (2026-11-23): Adds IPluginRegistry and IPluginHooks::Registry, with
+//      GetPluginVersion: whether another plugin is loaded and enabled, and its
+//      version. The pointer is appended after HostRules, preserving the existing
+//      prefix, and MIN stays at 70. A plugin that only wants to ask does not
+//      need to declare 80: it declares the version it was built against, reads
+//      the loader's interface version, and uses the pointer only when that is
+//      80 or later (below 80 the Registry pointer does not exist, and reading
+//      it reads past the table). A plugin declaring 80 is refused by a loader
+//      whose maximum is lower. Later versions add members after the ones here.
+// --- v80 ---
+//
 #define PLUGIN_INTERFACE_VERSION_MIN 70
-#define PLUGIN_INTERFACE_VERSION_MAX 79
-#define PLUGIN_INTERFACE_VERSION 79
+#define PLUGIN_INTERFACE_VERSION_MAX 80
+#define PLUGIN_INTERFACE_VERSION 80
 
 enum class PluginLogLevel { Trace = 0, Debug = 1, Info = 2, Warn = 3, Error = 4 };
 enum class ConfigValueType { String, Integer, Float, Boolean, Keybind, Choice /* v71 */, Hidden /* v71 */ };
@@ -4049,6 +4060,42 @@ static_assert(offsetof(IPluginHostRules, RegisterOnAdminAnswer)          ==  88,
 static_assert(offsetof(IPluginHostRules, UnregisterOnAdminAnswer)        ==  96, "v79 layout");
 static_assert(sizeof(IPluginHostRules)                                   == 13 * sizeof(void*), "v79 layout");
 
+// ---------------------------------------------------------------------------
+// IPluginRegistry (v80) -- questions about the other plugins
+// ---------------------------------------------------------------------------
+//
+// Read-only. Every build target.
+//
+// GetPluginVersion asks whether a plugin is loaded and enabled, and which
+// version it is. name is the plugin's PluginInfo name, compared without regard
+// to case. On true, out holds the version as NUL-terminated text and cap is its
+// size in bytes. True only while the plugin is running: a plugin that is not
+// there, is disabled, was unloaded (the overlay's RELOAD button unloads a
+// plugin before it loads it again), or is part-way through a shutdown or reload
+// returns false, and out is left as an empty string. Also false for a null or
+// empty name, and when cap is too small for the whole version: out is then
+// empty, never a cut version, so a buffer of 64 bytes is always enough. out may
+// be null to ask only whether the plugin is running.
+//
+// Any thread, including a render callback; it takes the same short lock the
+// plugin list takes and never touches a game object, a file or the heap. No
+// pointer is returned, so nothing the caller holds can go stale. The answer is
+// true for the instant of the call: the plugin can be reloaded a moment later,
+// so ask again each time it matters (when drawing a section, not once at start).
+//
+// An older loader has no such table. Check the interface version first:
+//
+//     IPluginRegistry* reg = (hooks && loaderInterfaceVersion >= 80) ? hooks->Registry : nullptr;
+//     char version[64];
+//     if (reg && reg->GetPluginVersion("BetterCheats", version, sizeof(version))) { ... }
+struct IPluginRegistry
+{
+	bool (*GetPluginVersion)(const char* name, char* out, size_t cap);
+};
+
+static_assert(offsetof(IPluginRegistry, GetPluginVersion) == 0, "v80 layout");
+static_assert(sizeof(IPluginRegistry)                     == 1 * sizeof(void*), "v80 layout");
+
 struct IPluginHooks
 {
 	IPluginSpawnerHooks*   Spawner;        // v14
@@ -4077,11 +4124,13 @@ struct IPluginHooks
 	IPluginPak*            Pak;             // v67 -- all builds; appended at end, do not relocate
 	IPluginImages*         Images;          // v77 -- client only, null on server/generic; appended at end, do not relocate
 	IPluginHostRules*      HostRules;       // v79 -- server and client builds, null on generic; absent below v79; appended at end, do not relocate
+	IPluginRegistry*       Registry;        // v80 -- every build; absent below v80; appended at end, do not relocate
 };
 
 static_assert(offsetof(IPluginHooks, Pak)    == 184, "v67 layout");
 static_assert(offsetof(IPluginHooks, Images) == 192, "v77 starts where v67 ended");
 static_assert(offsetof(IPluginHooks, HostRules) == 200, "v79 starts where v77 ended");
+static_assert(offsetof(IPluginHooks, Registry)  == 208, "v80 starts where v79 ended");
 
 // ---------------------------------------------------------------------------
 // Plugin build target
