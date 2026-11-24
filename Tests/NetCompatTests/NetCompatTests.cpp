@@ -8,6 +8,7 @@
 #include "plugins/plugin_version_query.h"
 #include "plugins/declared_features_text.h"
 #include "plugins/server_address_text.h"
+#include "plugins/plugin_catalog_text.h"
 
 #include <cstdio>
 #include <cstring>
@@ -1478,6 +1479,139 @@ namespace
         Check(CopyTextCut(text, tight, sizeof(tight)) == static_cast<int>(text.size()) && tight[15] == '\0' && text.compare(0, 15, tight) == 0, "a buffer of exactly the length is cut by one and NUL-terminated");
         Check(CopyTextCut(text, big, sizeof(big)) == static_cast<int>(text.size()) && text == big, "a big buffer gets the whole text");
     }
+
+    // plugin-catalog.v1.txt: grammar and cache rules.
+    void TestPluginCatalogText()
+    {
+        using namespace PluginCatalogText;
+        std::printf("plugin catalog text\n");
+
+        const std::string head = "format\t1\nseq\t42\nkind\tplugin-catalog\n";
+        const std::string good = head + "plugin\tCodex\t1.2.0\nplugin\tBest Builder\t0.9.1-rc.1+b5\n"
+                                        "feature\tCodex\tpins\t-\tPinned recipes\n"
+                                        "feature\tBest Builder\tgrid\t*\tSnap to grid\n"
+                                        "feature\tCodex\tmap_view\t127004,128786\tMap view\n";
+        auto Ok = [](const std::string& body) { Catalog c; std::string e; return Parse(body, c, e); };
+        auto OneFeature = [&](const std::string& tail) { return head + "plugin\tCodex\t1\n" + tail; };
+        auto OneRow = [&](const std::string& row) { return head + row + "\n"; };
+
+        Catalog c;
+        std::string err;
+        Check(Parse(good, c, err) && err.empty(), "a good file parses");
+        Check(c.seq == 42 && c.plugins.size() == 2 && c.features.size() == 3, "seq, plugins and features are read");
+        Check(c.plugins[1].name == "Best Builder" && c.plugins[1].version == "0.9.1-rc.1+b5", "name and version are kept");
+        Check(c.features[2].off == "127004,128786" && c.features[0].title == "Pinned recipes", "off and title are kept");
+        Check(ToAccessorText(c) == good, "round trip is byte-stable for a canonical file");
+        Check(!Parse("", c, err) && c.plugins.empty() && c.seq == 0 && !err.empty(), "a refused file leaves out empty and sets error");
+
+        // Names.
+        auto Name = [&](const std::string& n) { return Ok(OneRow("plugin\t" + n + "\t1")); };
+        Check(Name("Best Builder") && Name("A_b-9") && Name("a b c"), "names: letters, digits, _ and -, single inner spaces");
+        Check(!Name("Best  Builder") && !Name(" Best") && !Name("Best ") && !Name("") && !Name("Best.Builder") && !Name("Bést"),
+            "names: double, leading, trailing space, empty and other characters refused");
+        Check(Name(std::string(64, 'a')) && !Name(std::string(65, 'a')), "names: 64 bytes ok, 65 refused");
+
+        // Ids.
+        auto Id = [&](const std::string& id) { return Ok(OneFeature("feature\tCodex\t" + id + "\t-\tT\n")); };
+        Check(Id("a_B-9") && Id(std::string(64, 'x')) && !Id(std::string(65, 'x')), "ids: 64 bytes ok, 65 refused");
+        Check(!Id("") && !Id("a b") && !Id("a.b"), "ids: empty, space and dot refused");
+
+        // Versions.
+        auto Ver = [&](const std::string& v) { return Ok(OneRow("plugin\tCodex\t" + v)); };
+        Check(Ver("1.2.3-rc_1+x") && Ver(std::string(32, '1')) && !Ver(std::string(33, '1')), "versions: 32 bytes ok, 33 refused");
+        Check(!Ver("") && !Ver("1 2") && !Ver("v1:2"), "versions: empty, space and colon refused");
+
+        // Titles.
+        auto Title = [&](const std::string& t) { return Ok(OneFeature("feature\tCodex\tid\t-\t" + t + "\n")); };
+        Check(Title(std::string(80, 'a')) && !Title(std::string(81, 'a')) && !Title(""), "titles: 80 bytes ok, 81 and empty refused");
+        const std::string eAcute = "\xC3\xA9";   // 2 bytes
+        Check(Title(std::string(78, 'a') + eAcute) && !Title(std::string(79, 'a') + eAcute),
+            "titles: a multi-byte character ending exactly at byte 80 is ok, one ending at 81 is refused");
+        Check(Title("\xE2\x82\xAC \xF0\x9F\x98\x80"), "titles: 3 and 4 byte characters ok");
+        Check(!Title("a\xC3") && !Title("\xC3(") && !Title("\xC0\x80") && !Title("\xED\xA0\x80") && !Title("\xF4\x90\x80\x80") && !Title("\xFF"),
+            "titles: truncated, bad continuation, overlong, surrogate, over U+10FFFF and 0xFF refused");
+        Check(!Title("a\x01" "b") && !Title("a\x7F" "b") && !Title("a\xC2\x85" "b"), "titles: C0, DEL and C1 control characters refused");
+        Check(!Ok(OneFeature("feature\tCodex\tid\t-\ta\tb\n")), "titles: a tab makes a sixth field and is refused");
+
+        // Off.
+        auto Off = [&](const std::string& o) { return Ok(OneFeature("feature\tCodex\tid\t" + o + "\tT\n")); };
+        Check(Off("-") && Off("*") && Off("127004") && Off("127004,128786") && Off("0,1,4294967295"), "off: -, *, one CL and an ascending list ok");
+        Check(!Off("128786,127004") && !Off("127004,127004") && !Off("") && !Off("127004,") && !Off(",127004"),
+            "off: unsorted, duplicated, empty and dangling comma refused");
+        Check(!Off("127004, 128786") && !Off("12x") && !Off("-1") && !Off("*,1") && !Off("007") && !Off("12345678901"),
+            "off: space, non-digit, sign, mixed, leading zero and over 10 digits refused");
+
+        // Rows and references.
+        Check(!Ok(OneFeature("feature\tNobody\tid\t-\tT\n")), "a feature for an unknown plugin is refused");
+        Check(!Ok(OneFeature("feature\tcodex\tid\t-\tT\n")), "a feature's plugin must match exactly, case included");
+        Check(!Ok(head + "plugin\tCodex\t1\nplugin\tCODEX\t1\n"), "plugins differing only in case are duplicates");
+        Check(Ok(OneFeature("feature\tCodex\tID\t-\tT\nfeature\tCodex\tid\t-\tT\n")), "feature ids differing in case are distinct");
+        Check(!Ok(OneFeature("feature\tCodex\tid\t-\tT\nfeature\tCodex\tid\t*\tU\n")), "a duplicate feature id is refused");
+        Check(Ok(head + "plugin\tA\t1\nplugin\tB\t1\nfeature\tA\tid\t-\tT\nfeature\tB\tid\t-\tT\n"), "the same id under two plugins is fine");
+        Check(!Ok(head + "plugin\tA\t1\nfeature\tA\tid\t-\tT\nplugin\tB\t1\n"), "a plugin row after a feature row is refused");
+        Check(!Ok(head), "a file with no plugin row is refused");
+        Check(!Ok(OneRow("feature\tCodex\tid\t-\tT")), "a feature before any plugin is refused");
+        Check(!Ok(OneRow("plugin\tCodex")) && !Ok(OneRow("plugin\tCodex\t1\textra")), "plugin rows with too few or too many fields refused");
+        Check(!Ok(OneFeature("feature\tCodex\tid\t-\n")) && !Ok(OneFeature("feature\tCodex\tid\t-\tT\tx\n")), "feature rows with wrong field counts refused");
+        Check(!Ok(OneFeature("bogus\tx\n")), "an unknown row kind is refused");
+
+        // Header.
+        Check(!Ok("seq\t42\nformat\t1\nkind\tplugin-catalog\nplugin\tCodex\t1\n"), "header rows out of order are refused");
+        Check(!Ok("format\t1\nkind\tplugin-catalog\nplugin\tCodex\t1\n"), "a missing seq is refused");
+        Check(!Ok("format\t2\nseq\t1\nkind\tplugin-catalog\nplugin\tCodex\t1\n"), "format other than 1 is refused");
+        Check(!Ok("format\t1\nseq\t1\nkind\tdeclared-features\nplugin\tCodex\t1\n"), "another kind is refused");
+        auto Seq = [&](const std::string& s) { return Ok("format\t1\nseq\t" + s + "\nkind\tplugin-catalog\nplugin\tCodex\t1\n"); };
+        Check(Seq("1") && Seq("18446744073709551615"), "seq: decimal up to 2^64-1 ok");
+        Check(!Seq("18446744073709551616") && !Seq("") && !Seq("0x10") && !Seq("-1") && !Seq("1.5") && !Seq("01") && !Seq("1 "),
+            "seq: overflow, empty, hex, sign, fraction, leading zero and space refused");
+
+        // File shape.
+        Check(!Ok(good.substr(0, good.size() - 1)), "no trailing LF is refused");
+        Check(!Ok(good + "\n"), "two trailing LFs are refused");
+        Check(!Ok(head + "\nplugin\tCodex\t1\n"), "an empty row is refused");
+        std::string crlf;
+        for (char ch : good) { if (ch == '\n') crlf += '\r'; crlf += ch; }
+        Check(!Ok(crlf), "CR in the file is refused");
+
+        // Limits.
+        auto Plugins = [&](size_t n) {
+            std::string s = head;
+            for (size_t i = 0; i < n; ++i) s += "plugin\tP" + std::to_string(i) + "\t1\n";
+            return s;
+        };
+        Check(Ok(Plugins(200)) && !Ok(Plugins(201)), "200 plugins ok, 201 refused");
+        auto Features = [&](size_t n) {
+            std::string s = head + "plugin\tCodex\t1\n";
+            for (size_t i = 0; i < n; ++i) s += "feature\tCodex\tf" + std::to_string(i) + "\t-\tT\n";
+            return s;
+        };
+        Check(Ok(Features(2000)) && !Ok(Features(2001)), "2000 features ok, 2001 refused");
+
+        // A valid file of exactly 256 KiB: feature rows with a 64-byte id, their titles sized to fill it.
+        const size_t target = 256 * 1024;
+        std::string full = head + "plugin\tP\t1\n";
+        const size_t fixedRow = std::string("feature\tP\t").size() + 64 + std::string("\t-\t\n").size();
+        const size_t room = target - full.size();
+        const size_t rows = (room + fixedRow + 79) / (fixedRow + 80);
+        const size_t titleBytes = room - rows * fixedRow;
+        for (size_t i = 0; i < rows; ++i)
+        {
+            std::string id = "i" + std::to_string(i);
+            id.resize(64, 'x');
+            full += "feature\tP\t" + id + "\t-\t" + std::string(titleBytes / rows + (i < titleBytes % rows ? 1 : 0), 'T') + "\n";
+        }
+        Check(full.size() == target && Ok(full), "a file of exactly 256 KiB is accepted");
+        Check(!Ok(full + "x") && !Ok(full.substr(0, full.size() - 1) + "x\n"), "one byte over 256 KiB is refused");
+
+        // Cache rules.
+        Cached cache{ 42, good };
+        const std::string other = good + "plugin\tMore\t1\n";
+        Check(DecideCache(nullptr, 1, good) == CacheDecision::Replace, "no cache: the candidate is taken");
+        Check(DecideCache(&cache, 43, other) == CacheDecision::Replace, "a higher seq replaces the cache");
+        Check(DecideCache(&cache, 41, other) == CacheDecision::RefuseRollback, "a lower seq is refused as a rollback");
+        Check(DecideCache(&cache, 42, good) == CacheDecision::Unchanged, "equal seq and identical bytes is unchanged");
+        Check(DecideCache(&cache, 42, other) == CacheDecision::RefuseConflict, "equal seq and different bytes is refused");
+    }
 }
 
 int main()
@@ -1500,6 +1634,7 @@ int main()
     TestPluginVersionQuery();
     TestDeclaredFeaturesText();
     TestServerAddressText();
+    TestPluginCatalogText();
 
     if (g_failures)
     {
