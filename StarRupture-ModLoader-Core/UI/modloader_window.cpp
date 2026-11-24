@@ -15,6 +15,7 @@
 #include "theme.h"
 #include "named_entry_utils.h"
 #include "update_notice_window.h"
+#include "auto_update/mod_index_fetcher.h"
 #include "plugin_scan_window.h"
 #include "hook_failure_window.h"
 #include "hooks/input/keybind_registry.h"
@@ -37,6 +38,8 @@
 #include <string>
 #include <functional>
 #include <atomic>
+#include <memory>
+#include <shellapi.h>
 
 // Build tag is set by CI; fall back to a local placeholder.
 #ifndef MODLOADER_BUILD_TAG
@@ -63,6 +66,7 @@ namespace UI::ModLoaderWindow
         kTabSettings,
         kTabLogging,
         kTabTheme,
+        kTabBrowse,
         kTabAbout,
         kTabCount,
     };
@@ -2323,6 +2327,117 @@ namespace UI::ModLoaderWindow
                             "you use Save/Save As under Theme, at the top of this tab.");
     }
 
+    // Opens a Browse page in the player's browser. The address is the index
+    // entry's page_url as ModIndex checked it; the check is made again here,
+    // at the one place it is acted on. Called on a click only.
+    static void OpenPageUrl(const std::string& url)
+    {
+        if (!ModIndex::IsAllowedPageUrl(url))
+            return;
+        const std::wstring wide(url.begin(), url.end()); // ASCII only, by the same check
+        ShellExecuteW(nullptr, L"open", wide.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+    }
+
+    // The mod index, display only (auto_update/mod_index_fetcher.h). The list
+    // is downloaded once on a worker thread; this only reads what it published.
+    static void RenderBrowseTab()
+    {
+        ImGui::Spacing();
+        ImGui::SeparatorText("Browse");
+        ImGui::TextDisabled("Plugins that work with the ModLoader. Open a page to download one.");
+        ImGui::Spacing();
+
+        ModIndex::Fetcher& index = ModIndex::Instance();
+        const std::shared_ptr<const ModIndex::Snapshot> snap = index.Get();
+
+        switch (snap->state)
+        {
+        case ModIndex::State::Idle:
+            index.RequestFirstLoad();
+            ImGui::TextDisabled("Loading...");
+            return;
+        case ModIndex::State::Loading:
+            ImGui::TextDisabled("Loading...");
+            return;
+        case ModIndex::State::Failed:
+            ImGui::TextUnformatted(snap->error.c_str());
+            if (ImGui::Button("Retry"))
+                index.Retry();
+            return;
+        case ModIndex::State::Ready:
+            break;
+        }
+
+        if (snap->entries.empty())
+        {
+            ImGui::TextUnformatted("The mod list is empty right now.");
+            if (ImGui::Button("Retry"))
+                index.Retry();
+            return;
+        }
+
+        if (snap->skipped > 0)
+            ImGui::TextDisabled("%d entries in the list were left out because they could not be read.", snap->skipped);
+        if (snap->truncated)
+            ImGui::TextDisabled("The list is long, so only the first %d plugins are shown.", static_cast<int>(snap->entries.size()));
+
+        std::vector<std::string> loadedNames;
+        static const PluginInfo* infos[64];
+        const int loadedTotal = PluginManager::GetLoadedPluginInfos(infos, 64);
+        const int loadedCount = loadedTotal < 64 ? loadedTotal : 64;
+        for (int i = 0; i < loadedCount; ++i)
+            loadedNames.emplace_back(infos[i]->name ? infos[i]->name : "");
+
+        ImGuiTableFlags tableFlags =
+            ImGuiTableFlags_Borders |
+            ImGuiTableFlags_RowBg |
+            ImGuiTableFlags_ScrollY |
+            ImGuiTableFlags_Resizable |
+            ImGuiTableFlags_SizingStretchProp;
+
+        if (ImGui::BeginTable("##browse", 4, tableFlags))
+        {
+            ImGui::TableSetupColumn("Plugin",  ImGuiTableColumnFlags_WidthStretch, 3.0f);
+            ImGui::TableSetupColumn("Version", ImGuiTableColumnFlags_WidthStretch, 0.8f);
+            ImGui::TableSetupColumn("Author",  ImGuiTableColumnFlags_WidthStretch, 1.2f);
+            ImGui::TableSetupColumn("",        ImGuiTableColumnFlags_WidthStretch, 1.6f);
+            ImGui::TableHeadersRow();
+
+            for (size_t i = 0; i < snap->entries.size(); ++i)
+            {
+                const ModIndex::Entry& e = snap->entries[i];
+                ImGui::TableNextRow();
+                ImGui::PushID(static_cast<int>(i));
+
+                ImGui::TableSetColumnIndex(0);
+                ImGui::TextUnformatted(e.name.c_str());
+                if (!e.summary.empty())
+                {
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
+                    ImGui::TextWrapped("%s", e.summary.c_str());
+                    ImGui::PopStyleColor();
+                }
+
+                ImGui::TableSetColumnIndex(1);
+                ImGui::TextUnformatted(e.version.empty() ? "?" : e.version.c_str());
+
+                ImGui::TableSetColumnIndex(2);
+                ImGui::TextUnformatted(e.author.empty() ? "?" : e.author.c_str());
+
+                ImGui::TableSetColumnIndex(3);
+                if (ModIndex::IsInstalled(e, loadedNames))
+                    ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "Installed");
+                if (e.interfaceVersionMin > PLUGIN_INTERFACE_VERSION_MAX)
+                    ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.1f, 1.0f), "Needs a newer ModLoader");
+                if (ImGui::Button("Open page"))
+                    OpenPageUrl(e.pageUrl);
+
+                ImGui::PopID();
+            }
+            ImGui::EndTable();
+        }
+    }
+
     static void RenderAboutTab()
     {
         ImGui::Spacing();
@@ -2446,6 +2561,7 @@ namespace UI::ModLoaderWindow
             UI::Theme::Icons::Settings,
             UI::Theme::Icons::Logging,
             UI::Theme::Icons::Theme,
+            UI::Theme::Icons::Browse,
             UI::Theme::Icons::About,
         };
 
@@ -2459,6 +2575,7 @@ namespace UI::ModLoaderWindow
             "Settings",
             "Logging",
             "Theme",
+            "Browse",
             "About",
         };
         static const char* s_tabTooltips[kTabCount] =
@@ -2468,6 +2585,7 @@ namespace UI::ModLoaderWindow
             "Settings (3) -- HUD overlays, auto-update and diagnostics",
             "Logging (4) -- log levels for the loader, the game and each plugin",
             "Theme (5) -- font, text size and every UI color",
+            "Browse -- plugins that work with the ModLoader, and where to get them",
             "About -- build tag and the plugins currently loaded",
         };
 
@@ -2503,6 +2621,7 @@ namespace UI::ModLoaderWindow
         case kTabSettings: RenderGlobalSettingsTab(); break;
         case kTabLogging:  UI::LoggingTab::Render();  break;
         case kTabTheme:    RenderThemeTab();          break;
+        case kTabBrowse:   RenderBrowseTab();         break;
         case kTabAbout:    RenderAboutTab();          break;
         default: break;
         }

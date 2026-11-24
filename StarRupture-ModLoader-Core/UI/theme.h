@@ -253,6 +253,7 @@ namespace UI::Theme
         extern const char* Settings;
         extern const char* Logging;
         extern const char* Theme;
+        extern const char* Browse;
         extern const char* About;
         extern const char* Reset; // replay -- reset buttons (config rows, Logging tab)
     }
