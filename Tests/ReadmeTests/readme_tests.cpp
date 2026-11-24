@@ -1,20 +1,26 @@
 // ReadmeTests: the README reader (auto_update/readme_markdown.cpp), the picture
 // and link address rules (readme_images.h) and the README fetcher's states
-// (readme_fetcher.cpp) through an injected download. No network, no game.
+// (readme_fetcher.cpp) through an injected download, the picture header size
+// rule, the texture handoff (readme_textures.cpp) and the open-page helper
+// through injected calls. No network, no game.
 
 #include "auto_update/http_get.h"
 #include "auto_update/readme_fetcher.h"
 #include "auto_update/readme_images.h"
 #include "auto_update/readme_markdown.h"
+#include "auto_update/readme_textures.h"
+#include "utils/open_page.h"
 
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
 #include <cstdio>
+#include <functional>
 #include <map>
 #include <memory>
 #include <mutex>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <vector>
@@ -883,6 +889,635 @@ namespace
 		Check(!ReadmeInstance().Open("x", "https://evil.example.com/README.md"), "the loader's instance refuses a bad address");
 		Check(ShutdownReadmeInstance(1000), "the loader's instance shuts down");
 	}
+
+	// ---- picture header sizes (before any decoder runs) --------------------
+
+	void Put16(std::string& s, unsigned v, bool bigEndian)
+	{
+		const char lo = static_cast<char>(v & 0xFF);
+		const char hi = static_cast<char>((v >> 8) & 0xFF);
+		if (bigEndian) { s.push_back(hi); s.push_back(lo); }
+		else           { s.push_back(lo); s.push_back(hi); }
+	}
+
+	void Put32(std::string& s, uint32_t v, bool bigEndian)
+	{
+		if (bigEndian) { Put16(s, v >> 16, true);  Put16(s, v & 0xFFFF, true); }
+		else           { Put16(s, v & 0xFFFF, false); Put16(s, v >> 16, false); }
+	}
+
+	std::string PngSized(uint32_t w, uint32_t h)
+	{
+		std::string s("\x89PNG\r\n\x1a\n", 8);
+		Put32(s, 13, true);
+		s += "IHDR";
+		Put32(s, w, true);
+		Put32(s, h, true);
+		s += std::string("\x08\x06\x00\x00\x00", 5);
+		return s;
+	}
+
+	std::string GifSized(unsigned w, unsigned h)
+	{
+		std::string s("GIF89a");
+		Put16(s, w, false);
+		Put16(s, h, false);
+		s += std::string("\x00\x00\x00", 3);
+		return s;
+	}
+
+	std::string BmpSized(int32_t w, int32_t h, bool core = false)
+	{
+		std::string s("BM");
+		Put32(s, 100, false);   // file size
+		Put32(s, 0, false);
+		Put32(s, 54, false);    // pixel data offset
+		if (core)
+		{
+			Put32(s, 12, false);
+			Put16(s, static_cast<unsigned>(w), false);
+			Put16(s, static_cast<unsigned>(h), false);
+			Put16(s, 1, false);
+			Put16(s, 24, false);
+			s.append(8, '\0');
+		}
+		else
+		{
+			Put32(s, 40, false);
+			Put32(s, static_cast<uint32_t>(w), false);
+			Put32(s, static_cast<uint32_t>(h), false);
+			s.append(32, '\0');
+		}
+		return s;
+	}
+
+	// SOI, an APP0 segment, padding, then a frame header of the given marker.
+	std::string JpegSized(unsigned w, unsigned h, unsigned sof = 0xC0)
+	{
+		std::string s("\xFF\xD8", 2);
+		s += std::string("\xFF\xE0", 2);
+		Put16(s, 16, true);
+		s.append(14, '\0');
+		s.push_back('\xFF');   // padding byte before the next marker
+		s.push_back('\xFF');
+		s.push_back(static_cast<char>(sof));
+		Put16(s, 17, true);
+		s.push_back('\x08');
+		Put16(s, h, true);
+		Put16(s, w, true);
+		s += std::string("\x03\x01\x22\x00\x02\x11\x01\x03\x11\x01", 10);
+		return s;
+	}
+
+	std::string WebpHeader(const char* fourcc, const std::string& data)
+	{
+		std::string s("RIFF");
+		Put32(s, static_cast<uint32_t>(4 + 8 + data.size()), false);
+		s += "WEBP";
+		s += fourcc;
+		Put32(s, static_cast<uint32_t>(data.size()), false);
+		return s + data;
+	}
+
+	std::string WebpLossy(unsigned w, unsigned h)
+	{
+		std::string d("\x10\x02\x00\x9D\x01\x2A", 6);
+		Put16(d, w, false);
+		Put16(d, h, false);
+		return WebpHeader("VP8 ", d);
+	}
+
+	std::string WebpLossless(unsigned w, unsigned h)
+	{
+		std::string d("\x2F", 1);
+		Put32(d, ((w - 1) & 0x3FFF) | (((h - 1) & 0x3FFF) << 14), false);
+		d.append(4, '\0');
+		return WebpHeader("VP8L", d);
+	}
+
+	std::string WebpExtended(uint32_t w, uint32_t h)
+	{
+		std::string d("\x00\x00\x00\x00", 4);
+		const uint32_t cw = w - 1;
+		const uint32_t ch = h - 1;
+		d.push_back(static_cast<char>(cw & 0xFF));
+		d.push_back(static_cast<char>((cw >> 8) & 0xFF));
+		d.push_back(static_cast<char>((cw >> 16) & 0xFF));
+		d.push_back(static_cast<char>(ch & 0xFF));
+		d.push_back(static_cast<char>((ch >> 8) & 0xFF));
+		d.push_back(static_cast<char>((ch >> 16) & 0xFF));
+		return WebpHeader("VP8X", d);
+	}
+
+	bool SizeIs(const std::string& bytes, int64_t w, int64_t h)
+	{
+		int64_t gw = -1;
+		int64_t gh = -1;
+		return ReadImageSize(bytes, &gw, &gh) && gw == w && gh == h;
+	}
+
+	void TestImageHeaderSize()
+	{
+		Check(SizeIs(PngSized(640, 480), 640, 480), "PNG size");
+		Check(SizeIs(GifSized(320, 200), 320, 200), "GIF size");
+		Check(SizeIs(BmpSized(200, 100), 200, 100), "BMP size");
+		Check(SizeIs(BmpSized(200, -100), 200, 100), "BMP top-down height is its absolute value");
+		Check(SizeIs(BmpSized(30, 20, true), 30, 20), "BMP with the old core header");
+		Check(SizeIs(JpegSized(800, 600), 800, 600), "JPEG size past a segment and padding");
+		Check(SizeIs(JpegSized(800, 600, 0xC2), 800, 600), "progressive JPEG size");
+		Check(SizeIs(WebpLossy(300, 150), 300, 150), "WebP VP8 size");
+		Check(SizeIs(WebpLossless(300, 150), 300, 150), "WebP VP8L size");
+		Check(SizeIs(WebpExtended(70000, 5), 70000, 5), "WebP VP8X size (24 bit sides)");
+
+		// Hostile headers read as written; the allow rule decides.
+		Check(SizeIs(PngSized(0x7FFFFFFFu, 0x7FFFFFFFu), 0x7FFFFFFF, 0x7FFFFFFF), "PNG with a huge header reads as written");
+		Check(SizeIs(PngSized(0xFFFFFFFFu, 1), 0xFFFFFFFFLL, 1), "PNG width above 32 bit signed");
+
+		// Zero size, truncated, garbage.
+		int64_t w = 0;
+		int64_t h = 0;
+		Check(!ReadImageSize(PngSized(0, 10), &w, &h), "PNG zero width refused");
+		Check(!ReadImageSize(GifSized(0, 0), &w, &h), "GIF zero size refused");
+		Check(!ReadImageSize(BmpSized(0, 5), &w, &h), "BMP zero width refused");
+		Check(!ReadImageSize(JpegSized(0, 5), &w, &h), "JPEG zero width refused");
+		Check(!ReadImageSize(WebpLossy(0, 5), &w, &h), "WebP VP8 zero width refused");
+
+		const std::string formats[] = { PngSized(10, 10), GifSized(10, 10), BmpSized(10, 10), BmpSized(10, 10, true),
+			JpegSized(10, 10), WebpLossy(10, 10), WebpLossless(10, 10), WebpExtended(10, 10) };
+		bool anyCutReads = false;
+		for (const std::string& full : formats)
+		{
+			// The full header reads; every shorter prefix must not crash, and a prefix
+			// that cuts into the size fields must not read.
+			Check(ReadImageSize(full, &w, &h), "a complete header reads");
+			for (size_t cut = 0; cut + 1 < full.size(); ++cut)
+			{
+				const std::string part = full.substr(0, cut);
+				int64_t pw = 0;
+				int64_t ph = 0;
+				if (ReadImageSize(part, &pw, &ph) && (pw != 10 || ph != 10))
+					anyCutReads = true;
+			}
+		}
+		Check(!anyCutReads, "a truncated header never reads a wrong size");
+		Check(!ReadImageSize(PngSized(10, 10).substr(0, 23), &w, &h), "PNG cut inside the height");
+		Check(!ReadImageSize(GifSized(10, 10).substr(0, 9), &w, &h), "GIF cut inside the height");
+		Check(!ReadImageSize(JpegSized(10, 10).substr(0, 29), &w, &h), "JPEG cut inside the frame header");
+		Check(!ReadImageSize(WebpLossy(10, 10).substr(0, 29), &w, &h), "WebP cut inside the height");
+
+		// A PNG whose first chunk is not IHDR, a JPEG with no frame header, a WebP with an unknown chunk.
+		std::string badPng = PngSized(10, 10);
+		badPng.replace(12, 4, "IDAT");
+		Check(!ReadImageSize(badPng, &w, &h), "PNG without IHDR first");
+		std::string noFrame("\xFF\xD8\xFF\xDA", 4);
+		noFrame.append(40, '\0');
+		Check(!ReadImageSize(noFrame, &w, &h), "JPEG scan before any frame header");
+		std::string loopJpeg("\xFF\xD8\xFF\xE0\x00\x02", 6);   // a segment of length 2, then nothing
+		Check(!ReadImageSize(loopJpeg, &w, &h), "JPEG that ends in segments");
+		std::string zeroLen("\xFF\xD8\xFF\xE0\x00\x00", 6);
+		zeroLen.append(20, '\xFF');
+		Check(!ReadImageSize(zeroLen, &w, &h), "JPEG segment of length 0 does not loop");
+		Check(!ReadImageSize(WebpHeader("ABCD", std::string(20, '\0')), &w, &h), "WebP with an unknown first chunk");
+		Check(!ReadImageSize("", &w, &h), "empty bytes");
+		Check(!ReadImageSize(std::string(200, 'x'), &w, &h), "garbage");
+		Check(!ReadImageSize("<svg width=\"10\" height=\"10\"></svg>", &w, &h), "markup");
+		std::string bigJpeg("\xFF\xD8", 2);
+		for (int i = 0; i < 5000; ++i)
+			bigJpeg += std::string("\xFF\xE1\x00\x04xx", 6);
+		Check(!ReadImageSize(bigJpeg, &w, &h), "JPEG with thousands of segments and no frame ends cleanly");
+
+		// The allow rule.
+		Check(IsImageSizeAllowed(PngSized(4096, 3900)), "4096 wide is allowed up to 16 million pixels");
+		Check(!IsImageSizeAllowed(PngSized(4096, 4096)), "16.7 million pixels refused");
+		Check(IsImageSizeAllowed(PngSized(4000, 4000)), "exactly 16 million pixels allowed");
+		Check(!IsImageSizeAllowed(PngSized(4097, 10)), "width over 4096 refused");
+		Check(!IsImageSizeAllowed(PngSized(10, 4097)), "height over 4096 refused");
+		Check(!IsImageSizeAllowed(PngSized(0x7FFFFFFFu, 0x7FFFFFFFu)), "huge PNG refused");
+		Check(!IsImageSizeAllowed(PngSized(0xFFFFFFFFu, 0xFFFFFFFFu)), "maximum PNG sides refused without overflow");
+		Check(!IsImageSizeAllowed(WebpExtended(16777216u, 16777216u)), "maximum WebP canvas refused without overflow");
+		Check(!IsImageSizeAllowed(BmpSized(INT32_MIN, 5)), "BMP width of the smallest int refused");
+		Check(!IsImageSizeAllowed(PngSized(0, 0)), "zero size refused");
+		Check(!IsImageSizeAllowed(PngBytes(10)), "a signature with no header refused");
+		Check(!IsImageSizeAllowed(""), "no bytes refused");
+		Check(IsImageSizeAllowed(JpegSized(4096, 100)), "JPEG at the side limit allowed");
+		Check(!IsImageSizeAllowed(JpegSized(65535, 65535, 0xC1)), "huge JPEG refused");
+		Check(!IsImageSizeAllowed(WebpLossless(16384, 16)), "WebP side over 4096 refused");
+		Check(IsImageSizeAllowed(GifSized(1, 1)), "1 x 1 GIF allowed");
+	}
+
+	// ---- FitPicture --------------------------------------------------------
+
+	void TestFitPicture()
+	{
+		float w = -1.0f;
+		float h = -1.0f;
+		FitPicture(100, 50, 200.0f, 200.0f, &w, &h);
+		Check(w == 100.0f && h == 50.0f, "a small picture is never enlarged");
+		FitPicture(400, 200, 200.0f, 200.0f, &w, &h);
+		Check(w == 200.0f && h == 100.0f, "a wide picture shrinks to the width");
+		FitPicture(100, 400, 200.0f, 200.0f, &w, &h);
+		Check(w == 50.0f && h == 200.0f, "a tall picture shrinks to the height, aspect kept");
+		FitPicture(400, 400, 200.0f, 100.0f, &w, &h);
+		Check(w == 100.0f && h == 100.0f, "both limits apply");
+		FitPicture(0, 50, 200.0f, 200.0f, &w, &h);
+		Check(w == 0.0f && h == 0.0f, "zero width gives nothing");
+		FitPicture(50, -5, 200.0f, 200.0f, &w, &h);
+		Check(w == 0.0f && h == 0.0f, "negative height gives nothing");
+		FitPicture(50, 50, 0.0f, 200.0f, &w, &h);
+		Check(w == 0.0f && h == 0.0f, "no room gives nothing");
+	}
+
+	// ---- the texture handoff -----------------------------------------------
+
+	// Stands in for the texture calls and the game thread: `post` only queues; the
+	// test runs the queue itself.
+	struct FakeTex
+	{
+		std::mutex mutex;
+		std::vector<std::function<void()>> queue;
+		std::map<void*, std::pair<int, int>> live;   // loaded and not yet freed
+		std::map<size_t, std::string> bytes;         // by slot, until taken
+		std::map<size_t, std::pair<int, int>> sizeOf;   // reported size by slot, default 64 x 32
+		int loads = 0;
+		int frees = 0;
+		int takes = 0;
+		int nextHandle = 1;
+		bool throwOnLoad = false;
+		bool nullOnLoad = false;
+		std::function<void()> inLoad;                // runs inside load, before it returns
+
+		static std::string Valid() { return PngSized(64, 32); }
+
+		size_t Queued()
+		{
+			std::lock_guard<std::mutex> lock(mutex);
+			return queue.size();
+		}
+
+		size_t LiveCount()
+		{
+			std::lock_guard<std::mutex> lock(mutex);
+			return live.size();
+		}
+
+		// Runs one queued job on the calling thread, the way the game thread would.
+		bool RunOne()
+		{
+			std::function<void()> job;
+			{
+				std::lock_guard<std::mutex> lock(mutex);
+				if (queue.empty())
+					return false;
+				job = queue.front();
+				queue.erase(queue.begin());
+			}
+			job();
+			return true;
+		}
+	};
+
+	TextureOps MakeOps(const std::shared_ptr<FakeTex>& t)
+	{
+		TextureOps ops;
+		ops.load = [t](const void*, size_t, const char*) -> void*
+		{
+			std::function<void()> hook;
+			{
+				std::lock_guard<std::mutex> lock(t->mutex);
+				++t->loads;
+				hook = t->inLoad;
+			}
+			if (hook)
+				hook();
+			std::lock_guard<std::mutex> lock(t->mutex);
+			if (t->throwOnLoad)
+				throw std::runtime_error("no texture slot");
+			if (t->nullOnLoad)
+				return nullptr;
+			void* h = reinterpret_cast<void*>(static_cast<uintptr_t>(t->nextHandle++));
+			t->live[h] = { 64, 32 };
+			return h;
+		};
+		ops.free = [t](void* h)
+		{
+			if (!h)
+				return;
+			std::lock_guard<std::mutex> lock(t->mutex);
+			++t->frees;
+			t->live.erase(h);
+		};
+		ops.size = [t](void* h, int* w, int* hh)
+		{
+			std::lock_guard<std::mutex> lock(t->mutex);
+			auto it = t->live.find(h);
+			*w = it == t->live.end() ? 0 : it->second.first;
+			*hh = it == t->live.end() ? 0 : it->second.second;
+		};
+		ops.post = [t](std::function<void()> job)
+		{
+			std::lock_guard<std::mutex> lock(t->mutex);
+			t->queue.push_back(std::move(job));
+		};
+		ops.take = [t](size_t slot)
+		{
+			std::lock_guard<std::mutex> lock(t->mutex);
+			++t->takes;
+			auto it = t->bytes.find(slot);
+			if (it == t->bytes.end())
+				return std::string();
+			std::string out = std::move(it->second);
+			t->bytes.erase(it);
+			return out;
+		};
+		return ops;
+	}
+
+	void TestTexturesBasics()
+	{
+		auto t = std::make_shared<FakeTex>();
+		t->bytes[0] = FakeTex::Valid();
+		t->bytes[1] = FakeTex::Valid();
+		ReadmeTextures tex(MakeOps(t));
+		tex.BeginPage();
+
+		Check(tex.Get(0).state == PictureState::None, "a new page has no pictures");
+		tex.Request(0);
+		Check(tex.Get(0).state == PictureState::Decoding && t->Queued() == 1, "Request posts one job and marks Decoding");
+		Check(t->loads == 0 && t->takes == 0, "Request itself never decodes or takes");
+		tex.Request(0);
+		tex.Request(1);
+		Check(t->Queued() == 1, "one job at a time: further requests while one is in flight do nothing");
+		Check(tex.Get(1).state == PictureState::None, "the second picture waits");
+
+		Check(t->RunOne(), "the job runs");
+		Picture p = tex.Get(0);
+		Check(p.state == PictureState::Ready && p.handle != nullptr && p.width == 64 && p.height == 32, "Ready with the texture and its size");
+		Check(tex.Held() == 1 && t->LiveCount() == 1, "one texture held");
+
+		tex.Request(0);
+		Check(t->Queued() == 0, "a Ready picture is not requested again");
+		tex.Request(1);
+		Check(t->Queued() == 1, "the next request goes through once the first job ended");
+		t->RunOne();
+		Check(tex.Held() == 2 && t->LiveCount() == 2, "two textures held");
+
+		tex.Request(kMaxPictures);
+		tex.Request(9999);
+		Check(t->Queued() == 0, "a slot out of range is ignored");
+		Check(tex.Get(kMaxPictures).state == PictureState::None, "Get out of range is empty");
+
+		tex.EndPage();
+		Check(tex.Held() == 0 && t->LiveCount() == 0 && t->frees == 2, "EndPage frees every texture");
+		Check(tex.Get(0).state == PictureState::None && tex.Get(1).state == PictureState::None, "EndPage clears the slots");
+
+		t->bytes[0] = FakeTex::Valid();
+		tex.BeginPage();
+		tex.Request(0);
+		t->RunOne();
+		Check(tex.Get(0).state == PictureState::Ready, "a new page can load again");
+		tex.BeginPage();
+		Check(tex.Held() == 0 && t->LiveCount() == 0, "BeginPage frees the old page's textures");
+	}
+
+	void TestTexturesFailures()
+	{
+		{
+			// Bytes already taken or none: Failed, and it is not retried.
+			auto t = std::make_shared<FakeTex>();
+			ReadmeTextures tex(MakeOps(t));
+			tex.BeginPage();
+			tex.Request(0);
+			t->RunOne();
+			Check(tex.Get(0).state == PictureState::Failed && t->loads == 0, "no bytes: Failed without a load");
+			tex.Request(0);
+			Check(t->Queued() == 0, "a Failed picture is not retried");
+		}
+		{
+			auto t = std::make_shared<FakeTex>();
+			t->bytes[0] = FakeTex::Valid();
+			t->throwOnLoad = true;
+			ReadmeTextures tex(MakeOps(t));
+			tex.BeginPage();
+			tex.Request(0);
+			t->RunOne();
+			Check(tex.Get(0).state == PictureState::Failed && tex.Held() == 0, "a load that throws gives Failed");
+			t->throwOnLoad = false;
+			t->nullOnLoad = true;
+			t->bytes[1] = FakeTex::Valid();
+			tex.Request(1);
+			t->RunOne();
+			Check(tex.Get(1).state == PictureState::Failed, "a load that returns null gives Failed");
+			Check(tex.Held() == 0 && t->LiveCount() == 0, "nothing leaks on a failed load");
+		}
+		{
+			// A hostile header never reaches the decoder.
+			auto t = std::make_shared<FakeTex>();
+			t->bytes[0] = PngSized(60000, 60000);
+			t->bytes[1] = PngSized(4097, 10);
+			t->bytes[2] = PngBytes(40);   // a signature and nothing else
+			t->bytes[3] = std::string(100, 'x');
+			ReadmeTextures tex(MakeOps(t));
+			tex.BeginPage();
+			for (size_t slot = 0; slot < 4; ++slot)
+			{
+				tex.Request(slot);
+				t->RunOne();
+				Check(tex.Get(slot).state == PictureState::Failed, "a refused header gives Failed");
+			}
+			Check(t->loads == 0, "a refused header never reaches LoadFromMemory");
+			Check(t->takes == 4 && t->bytes.empty(), "the bytes were taken (and dropped)");
+		}
+		{
+			// The decoded size is a second guard.
+			auto t = std::make_shared<FakeTex>();
+			t->bytes[0] = FakeTex::Valid();
+			auto ops = MakeOps(t);
+			auto realLoad = ops.load;
+			ops.load = [t, realLoad](const void* d, size_t n, const char* name) -> void*
+			{
+				void* h = realLoad(d, n, name);
+				std::lock_guard<std::mutex> lock(t->mutex);
+				t->live[h] = { 5000, 10 };   // the decoder says otherwise
+				return h;
+			};
+			ReadmeTextures tex(ops);
+			tex.BeginPage();
+			tex.Request(0);
+			t->RunOne();
+			Check(tex.Get(0).state == PictureState::Failed && tex.Held() == 0, "a decoded size over the limit gives Failed");
+			Check(t->LiveCount() == 0 && t->frees == 1, "and the texture is freed");
+		}
+		{
+			// No way to post: Failed at once, nothing in flight.
+			auto t = std::make_shared<FakeTex>();
+			auto ops = MakeOps(t);
+			ops.post = nullptr;
+			ReadmeTextures tex(ops);
+			tex.BeginPage();
+			tex.Request(0);
+			Check(tex.Get(0).state == PictureState::Failed, "without a game thread hop the picture fails");
+		}
+	}
+
+	void TestTexturesClose()
+	{
+		{
+			// Closed after the request, before the job runs: nothing is taken or made.
+			auto t = std::make_shared<FakeTex>();
+			t->bytes[0] = FakeTex::Valid();
+			ReadmeTextures tex(MakeOps(t));
+			tex.BeginPage();
+			tex.Request(0);
+			tex.EndPage();
+			Check(t->RunOne(), "the stale job still runs");
+			Check(t->takes == 0 && t->loads == 0, "a stale job takes nothing and loads nothing");
+			Check(tex.Get(0).state == PictureState::None && tex.Held() == 0, "nothing is shown after Close");
+			tex.BeginPage();
+			t->bytes[0] = FakeTex::Valid();
+			tex.Request(0);
+			Check(t->Queued() == 1, "a new page can request once the stale job has ended");
+			t->RunOne();
+			Check(tex.Get(0).state == PictureState::Ready, "the new page loads");
+			tex.EndPage();
+		}
+		{
+			// Closed while the texture is being made: it is freed, never shown.
+			auto t = std::make_shared<FakeTex>();
+			t->bytes[0] = FakeTex::Valid();
+			ReadmeTextures tex(MakeOps(t));
+			tex.BeginPage();
+			t->inLoad = [&tex] { tex.EndPage(); };
+			tex.Request(0);
+			t->RunOne();
+			Check(t->loads == 1 && t->frees == 1 && t->LiveCount() == 0, "a texture made during Close is freed");
+			Check(tex.Get(0).state == PictureState::None && tex.Held() == 0, "and never shown");
+		}
+		{
+			// A new page begins while the old page's job is making a texture.
+			auto t = std::make_shared<FakeTex>();
+			t->bytes[0] = FakeTex::Valid();
+			ReadmeTextures tex(MakeOps(t));
+			tex.BeginPage();
+			t->inLoad = [&tex] { tex.BeginPage(); };
+			tex.Request(0);
+			t->RunOne();
+			Check(t->LiveCount() == 0 && tex.Get(0).state == PictureState::None, "the old page's texture does not appear on the new page");
+		}
+		{
+			// A job posted for a texture owner that is already gone is harmless.
+			auto t = std::make_shared<FakeTex>();
+			t->bytes[0] = FakeTex::Valid();
+			{
+				ReadmeTextures tex(MakeOps(t));
+				tex.BeginPage();
+				tex.Request(0);
+			}
+			Check(t->RunOne(), "the job outlives its owner");
+			Check(t->takes == 0 && t->loads == 0 && t->LiveCount() == 0, "and does nothing");
+		}
+	}
+
+	void TestTexturesShutdown()
+	{
+		{
+			auto t = std::make_shared<FakeTex>();
+			t->bytes[0] = FakeTex::Valid();
+			ReadmeTextures tex(MakeOps(t));
+			tex.BeginPage();
+			tex.Request(0);
+			t->RunOne();
+			Check(tex.Held() == 1, "one texture before Shutdown");
+			Check(tex.Shutdown(1000), "Shutdown with no load running returns true");
+			Check(tex.Held() == 0 && t->LiveCount() == 0, "Shutdown frees what is held");
+			t->bytes[1] = FakeTex::Valid();
+			tex.Request(1);
+			Check(t->Queued() == 0, "no request after Shutdown");
+		}
+		{
+			// Shutdown waits for a load that is running; its texture is freed, not kept.
+			auto t = std::make_shared<FakeTex>();
+			t->bytes[0] = FakeTex::Valid();
+			std::mutex gm;
+			std::condition_variable gcv;
+			bool entered = false;
+			bool release = false;
+			t->inLoad = [&]
+			{
+				std::unique_lock<std::mutex> lock(gm);
+				entered = true;
+				gcv.notify_all();
+				gcv.wait(lock, [&] { return release; });
+			};
+			ReadmeTextures tex(MakeOps(t));
+			tex.BeginPage();
+			tex.Request(0);
+			std::thread game([&] { t->RunOne(); });
+			{
+				std::unique_lock<std::mutex> lock(gm);
+				gcv.wait_for(lock, std::chrono::seconds(5), [&] { return entered; });
+			}
+			Check(entered, "the load is running");
+			Check(!tex.Shutdown(50), "Shutdown reports a load that is still running");
+			{
+				std::lock_guard<std::mutex> lock(gm);
+				release = true;
+			}
+			gcv.notify_all();
+			Check(tex.Shutdown(3000), "Shutdown returns true once the load ends");
+			game.join();
+			Check(tex.Held() == 0 && t->LiveCount() == 0 && t->frees == 1, "the texture made during Shutdown is freed");
+			Check(tex.Get(0).state == PictureState::None, "and never shown");
+		}
+		{
+			// The destructor frees too.
+			auto t = std::make_shared<FakeTex>();
+			t->bytes[0] = FakeTex::Valid();
+			{
+				ReadmeTextures tex(MakeOps(t));
+				tex.BeginPage();
+				tex.Request(0);
+				t->RunOne();
+				Check(t->LiveCount() == 1, "a texture is live");
+			}
+			Check(t->LiveCount() == 0, "destroying the owner frees its textures");
+		}
+	}
+
+	// ---- the open-page helper ----------------------------------------------
+
+	void TestOpenPage()
+	{
+		std::vector<std::wstring> opened;
+		auto opener = [&opened](const std::wstring& u) { opened.push_back(u); };
+
+		Check(OpenPage::Open("https://www.nexusmods.com/starrupture/mods/1", opener) && opened.size() == 1, "a Nexus page opens");
+		Check(opened.back() == L"https://www.nexusmods.com/starrupture/mods/1", "the address is handed over as it is");
+		Check(OpenPage::Open("https://github.com/o/r", opener) && opened.size() == 2, "a GitHub page opens");
+		Check(OpenPage::Open("https://GitHub.com/o/r#readme", opener) && opened.size() == 3, "the host is compared without case");
+
+		const size_t before = opened.size();
+		const char* const refused[] = {
+			"http://github.com/o/r",
+			"https://evil.example.com/o/r",
+			"https://github.com.evil.example.com/o/r",
+			"https://user@github.com/o/r",
+			"https://github.com:8080/o/r",
+			"https://github.com/o/r with space",
+			"https://github.com/o\\r",
+			"https://raw.githubusercontent.com/o/r/main/README.md",
+			"javascript:alert(1)",
+			"file:///C:/Windows/System32/calc.exe",
+			"ftp://github.com/o/r",
+			"github.com/o/r",
+			"https://",
+			"",
+		};
+		for (const char* url : refused)
+			Check(!OpenPage::Open(url, opener), "an address outside the allowlist is refused");
+		Check(opened.size() == before, "a refused address never reaches the shell");
+		Check(!OpenPage::Open(std::string("https://github.com/o/r\x01"), opener) && opened.size() == before, "a control character is refused");
+		Check(!OpenPage::Open(std::string("https://github.com/") + std::string(300, 'a'), opener) && opened.size() == before, "an address over the length limit is refused");
+	}
 }
 
 int main()
@@ -899,6 +1534,13 @@ int main()
 	TestFetcherImageRules();
 	TestFetcherAddressAndClose();
 	TestFetcherShutdown();
+	TestImageHeaderSize();
+	TestFitPicture();
+	TestTexturesBasics();
+	TestTexturesFailures();
+	TestTexturesClose();
+	TestTexturesShutdown();
+	TestOpenPage();
 
 	printf("%d checks, %d failed\n", g_checks, g_failed);
 	return g_failed == 0 ? 0 : 1;

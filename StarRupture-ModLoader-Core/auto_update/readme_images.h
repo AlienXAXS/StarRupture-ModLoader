@@ -3,6 +3,7 @@
 #include "auto_update/mod_index.h"
 
 #include <cstddef>
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -163,6 +164,158 @@ namespace ModIndex
 				return ImageFormat::Bmp;
 		}
 		return ImageFormat::None;
+	}
+
+	constexpr int     kMaxImageSide   = 4096;       // a picture wider or taller is refused
+	constexpr int64_t kMaxImagePixels = 16000000;   // so is one with more pixels than this
+
+	namespace detail
+	{
+		inline unsigned Byte(const std::string& b, size_t i) { return i < b.size() ? static_cast<unsigned char>(b[i]) : 0u; }
+		inline unsigned Le16(const std::string& b, size_t i) { return Byte(b, i) | (Byte(b, i + 1) << 8); }
+		inline unsigned Be16(const std::string& b, size_t i) { return (Byte(b, i) << 8) | Byte(b, i + 1); }
+		inline uint32_t Le32(const std::string& b, size_t i) { return Le16(b, i) | (static_cast<uint32_t>(Le16(b, i + 2)) << 16); }
+		inline uint32_t Be32(const std::string& b, size_t i) { return (static_cast<uint32_t>(Be16(b, i)) << 16) | Be16(b, i + 2); }
+	}
+
+	// The pixel size written in the header of a PNG, GIF, BMP, JPEG or WebP (VP8,
+	// VP8L, VP8X), read without decoding anything. Every read is bounds-checked.
+	// False when the bytes are cut short, the header is not what the format says,
+	// or a side is zero. The sizes are as stored, so a side can be huge.
+	inline bool ReadImageSize(const std::string& b, int64_t* width, int64_t* height)
+	{
+		using namespace detail;
+		int64_t w = 0;
+		int64_t h = 0;
+		switch (DetectImageFormat(b))
+		{
+		case ImageFormat::Png:
+			// 8 byte signature, then the IHDR chunk: length, "IHDR", width, height.
+			if (b.size() < 24 || b.compare(12, 4, "IHDR") != 0)
+				return false;
+			w = Be32(b, 16);
+			h = Be32(b, 20);
+			break;
+
+		case ImageFormat::Gif:
+			if (b.size() < 10)
+				return false;
+			w = Le16(b, 6);
+			h = Le16(b, 8);
+			break;
+
+		case ImageFormat::Bmp:
+			// DetectImageFormat has checked 26 bytes and the DIB header size.
+			if (Le32(b, 14) == 12)
+			{
+				w = Le16(b, 18);
+				h = Le16(b, 20);
+			}
+			else
+			{
+				w = static_cast<int32_t>(Le32(b, 18));
+				h = static_cast<int32_t>(Le32(b, 22));
+				if (w < 0)
+					w = -w;
+				if (h < 0)
+					h = -h;   // negative height means top-down rows
+			}
+			break;
+
+		case ImageFormat::Jpeg:
+		{
+			size_t i = 2;
+			for (;;)
+			{
+				// Each marker is 0xFF, then its code; 0xFF bytes in between are padding.
+				while (i < b.size() && Byte(b, i) == 0xFF && Byte(b, i + 1) == 0xFF)
+					++i;
+				if (i + 2 > b.size() || Byte(b, i) != 0xFF)
+					return false;
+				const unsigned code = Byte(b, i + 1);
+				i += 2;
+				if (code == 0x01 || (code >= 0xD0 && code <= 0xD8))
+					continue;                       // no length
+				if (code == 0xD9 || code == 0xDA || code == 0x00)
+					return false;                   // end of image, scan data or not a marker: no frame header seen
+				if (i + 2 > b.size())
+					return false;
+				const size_t length = Be16(b, i);
+				const bool frame = code >= 0xC0 && code <= 0xCF && code != 0xC4 && code != 0xC8 && code != 0xCC;
+				if (frame)
+				{
+					// length, precision, height, width
+					if (length < 8 || i + 7 > b.size())
+						return false;
+					h = Be16(b, i + 3);
+					w = Be16(b, i + 5);
+					break;
+				}
+				if (length < 2)
+					return false;
+				i += length;
+			}
+			break;
+		}
+
+		case ImageFormat::WebP:
+		{
+			// "RIFF", size, "WEBP", then the first chunk: tag, size, data.
+			if (b.size() < 21)
+				return false;
+			if (b.compare(12, 4, "VP8 ") == 0)
+			{
+				// 3 byte frame tag, start code 9D 01 2A, 14 bit width and height.
+				if (b.size() < 30 || Byte(b, 23) != 0x9D || Byte(b, 24) != 0x01 || Byte(b, 25) != 0x2A)
+					return false;
+				w = Le16(b, 26) & 0x3FFF;
+				h = Le16(b, 28) & 0x3FFF;
+			}
+			else if (b.compare(12, 4, "VP8L") == 0)
+			{
+				// signature 0x2F, then 14 bit (width - 1) and 14 bit (height - 1).
+				if (b.size() < 25 || Byte(b, 20) != 0x2F)
+					return false;
+				const uint32_t bits = Le32(b, 21);
+				w = static_cast<int64_t>(bits & 0x3FFF) + 1;
+				h = static_cast<int64_t>((bits >> 14) & 0x3FFF) + 1;
+			}
+			else if (b.compare(12, 4, "VP8X") == 0)
+			{
+				// flags, 3 reserved bytes, then 24 bit (width - 1) and (height - 1).
+				if (b.size() < 30)
+					return false;
+				w = static_cast<int64_t>(Le16(b, 24) | (Byte(b, 26) << 16)) + 1;
+				h = static_cast<int64_t>(Le16(b, 27) | (Byte(b, 29) << 16)) + 1;
+			}
+			else
+			{
+				return false;
+			}
+			break;
+		}
+
+		default:
+			return false;
+		}
+
+		if (w <= 0 || h <= 0)
+			return false;
+		*width = w;
+		*height = h;
+		return true;
+	}
+
+	// Whether the bytes may be handed to the decoder: the size can be read, no side
+	// is over kMaxImageSide and the pixel count is within kMaxImagePixels. Decoders
+	// allocate the whole decoded picture first, so this runs before they do.
+	inline bool IsImageSizeAllowed(const std::string& b)
+	{
+		int64_t w = 0;
+		int64_t h = 0;
+		if (!ReadImageSize(b, &w, &h))
+			return false;
+		return w <= kMaxImageSide && h <= kMaxImageSide && w * h <= kMaxImagePixels;
 	}
 
 	// True when the bytes read as SVG, XML or HTML: after an optional byte

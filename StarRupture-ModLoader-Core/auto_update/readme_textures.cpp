@@ -1,5 +1,7 @@
 #include "auto_update/readme_textures.h"
 
+#include "auto_update/readme_images.h"
+
 #include <chrono>
 #include <cstdio>
 #include <exception>
@@ -61,7 +63,9 @@ namespace ModIndex
 			int height = 0;
 
 			const std::string bytes = ops.take ? ops.take(slot) : std::string();
-			if (!bytes.empty() && ops.load)
+			// The decoder allocates the whole decoded picture before any size check of
+			// ours can run, so a picture whose header asks for too much never reaches it.
+			if (!bytes.empty() && ops.load && IsImageSizeAllowed(bytes))
 			{
 				char name[48];
 				snprintf(name, sizeof(name), "ModLoader.Readme.%llu.%zu", static_cast<unsigned long long>(generation), slot);

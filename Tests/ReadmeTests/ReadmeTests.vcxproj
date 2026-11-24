@@ -103,6 +103,10 @@
     <ClInclude Include="$(CoreDir)auto_update\readme_images.h" />
     <ClInclude Include="$(CoreDir)auto_update\readme_markdown.h" />
     <ClInclude Include="$(CoreDir)auto_update\readme_fetcher.h" />
+    <ClInclude Include="$(CoreDir)auto_update\readme_textures.h" />
+    <ClInclude Include="$(CoreDir)utils\open_page.h" />
+    <ClCompile Include="$(CoreDir)auto_update\readme_textures.cpp" />
+    <ClCompile Include="$(CoreDir)utils\open_page.cpp" />
     <ClCompile Include="$(CoreDir)auto_update\readme_markdown.cpp" />
     <ClCompile Include="$(CoreDir)auto_update\readme_fetcher.cpp" />
   </ItemGroup>
