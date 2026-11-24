@@ -2380,6 +2380,58 @@ int main()
 	checkIndex(Real::VersionMap::kFields, Real::VersionMap::kFieldRows, "field");
 	Check(wrong == 0, "every real map row has its registry row's kind and fp");
 
+	// Best Builder's heat-gate site: the hand rows for the two builds proven on disk carry the fingerprint of the
+	// plugin's own PluginMap::Site request (kind IN_FUNCTION, resultOffset 43, no follow), and the key resolves to
+	// each row on its build.
+	{
+		const char* const key = "Best Builder/ACrPlayerControllerBase::FindDeconstructibleTarget.HeatGate";
+		const char* const pattern =
+			"0F 2F 30 0F 82 ?? ?? ?? ?? 48 8B 9D ?? ?? ?? ?? E8 ?? ?? ?? ?? 4C 8B C0 48 8B D3 48 8B CE "
+			"E8 ?? ?? ?? ?? 48 85 C0 74 05 0F 2F 30 72 ?? 48 8B 07 48 8B CF FF 90 00 08 00 00";
+		const uint32_t expectedFp = VersionMap::Fingerprint(static_cast<int>(Kind::InFunction), pattern, 43, -1, -1, 0);
+		struct HeatGate { uint32_t cl, rva; };
+		const HeatGate expected[] = { { 129402, 0x07646F10 }, { 130045, 0x07648FC0 } };
+		VersionMap::MapData data;
+		int found = 0;
+		for (const Real::VersionMap::Index& index : Real::VersionMap::kFunctions)
+			if (strcmp(index.key, key) == 0)
+				for (uint16_t i = index.first; i < index.first + index.count; ++i)
+				{
+					const Real::VersionMap::FunctionRow& row = Real::VersionMap::kFunctionRows[i];
+					++found;
+					VersionMap::MapFunctionRow f;
+					f.key = key; f.gameCL = row.gameCL; f.imageStamp = row.imageStamp; f.imageSize = row.imageSize;
+					f.kind = row.kind; f.fp = row.fp; f.absent = row.absent; f.pattern = row.pattern;
+					f.resultOffset = row.resultOffset; f.followRel32At = row.followRel32At; f.followRipDispAt = row.followRipDispAt;
+					f.rva = row.rva;
+					data.functions.push_back(f);
+					data.builds.push_back({ row.gameCL, row.imageStamp, row.imageSize, "x" });
+					Check(row.kind == static_cast<int>(Kind::InFunction) && row.fp == expectedFp && !row.absent
+						&& strcmp(row.pattern, pattern) == 0 && row.resultOffset == 43 && row.followRel32At == -1 && row.followRipDispAt == -1,
+						"heat gate row: kind, fingerprint, pattern and offset are the plugin's request");
+				}
+		Check(found == 2, "heat gate: one row each for CL-129402 and CL-130045");
+		VersionMap::SetActiveMap(std::make_shared<const VersionMap::MapData>(data));
+		for (const HeatGate& e : expected)
+		{
+			const VersionMap::MapFunctionRow* mapRow = nullptr;
+			for (const VersionMap::MapFunctionRow& f : data.functions)
+				if (f.gameCL == e.cl)
+					mapRow = &f;
+			Check(mapRow && mapRow->rva == e.rva, "heat gate: the row's rva is the pattern match plus 43");
+			if (!mapRow)
+				continue;
+			TestDoubles::g_rvas[pattern] = e.rva - 43;
+			Request request = Ask("ACrPlayerControllerBase::FindDeconstructibleTarget.HeatGate", Kind::InFunction, pattern);
+			request.resultOffset = 43;
+			TestDoubles::g_log.clear();
+			const Result r = VersionMap::ResolveMapKey("Best Builder", request, {}, VersionMap::Exe{ e.cl, mapRow->imageStamp, mapRow->imageSize }, false);
+			Check(At(r, e.rva) && Logged(L"loader map, CL-"), "heat gate: the key resolves to the row on its build");
+			TestDoubles::g_rvas.erase(pattern);
+		}
+		VersionMap::SetActiveMap(nullptr);
+	}
+
 	// Restarting a plugin the crash guard switched off: the plan for each setting, the limiter, the timing.
 	{
 		using CrashRestart::Plan;
