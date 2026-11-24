@@ -196,16 +196,15 @@ namespace UI::ReadmeView
 				ImGui::Spacing();
 				ImGui::SeparatorText(text.c_str());
 			}
-			else if (b.level == 2)
+			else
 			{
-				ImGui::Spacing();
+				// Level 2 gets a gap above; deeper levels read as headings by colour
+				// alone, since the text is the same size as a paragraph's.
+				if (b.level == 2)
+					ImGui::Spacing();
 				ImGui::PushStyleColor(ImGuiCol_Text, UI::Theme::AccentColorVec4());
 				ImGui::TextWrapped("%s", text.c_str());
 				ImGui::PopStyleColor();
-			}
-			else
-			{
-				ImGui::TextWrapped("%s", text.c_str());
 			}
 		}
 
