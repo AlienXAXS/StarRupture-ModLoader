@@ -382,7 +382,7 @@ namespace UI::ModLoaderWindow
             RenderLoadNewPlugins();
     }
 
-    // 1-5 open the sidebar sections in order (About has no number). Only while
+    // 1-5 open the first five sidebar sections in order (Browse and About have no number). Only while
     // this window has the focus and nothing is taking keys: a text field, a
     // slider being dragged, the keybind capture. Called inside the window.
     static void HandleTabHotkeys()
@@ -2409,7 +2409,7 @@ namespace UI::ModLoaderWindow
         if (snap->skipped > 0)
             ImGui::TextDisabled("%d entries in the list were left out because they could not be read.", snap->skipped);
         if (snap->truncated)
-            ImGui::TextDisabled("The list is long, so only the first %d plugins are shown.", static_cast<int>(snap->entries.size()));
+            ImGui::TextDisabled("The list is long, so not every plugin is shown.");
 
         std::vector<std::string> loadedNames;
         static const PluginInfo* infos[64];
