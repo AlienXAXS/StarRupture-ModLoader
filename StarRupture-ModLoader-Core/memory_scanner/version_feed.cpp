@@ -234,10 +234,9 @@ namespace VersionFeed
 		return keys;
 	}
 
-	bool ReadSigned(const std::string& file, const std::vector<PublicKey>& keys, SignedFeed& out, std::string& error,
-		Flavor flavor)
+	bool VerifySigned(const std::string& file, const std::vector<PublicKey>& keys, VerifiedBody& out, std::string& error)
 	{
-		out = SignedFeed{};
+		out = VerifiedBody{};
 		const auto fail = [&](const std::string& why)
 		{
 			error = why;
@@ -282,7 +281,7 @@ namespace VersionFeed
 			reinterpret_cast<const uint8_t*>(region.data()), region.size()) != 0)
 			return fail("the signature does not match the file");
 
-		// Verified. Now the text: `format`, then `seq`, then the lines ParseFeed reads.
+		// Verified. Now the second line: `seq`.
 		const size_t l1 = region.find('\n');
 		const size_t l2 = l1 == std::string::npos ? std::string::npos : region.find('\n', l1 + 1);
 		if (l2 == std::string::npos)
@@ -300,6 +299,30 @@ namespace VersionFeed
 			seq = seq * 10 + static_cast<uint64_t>(seqLine[i] - '0');
 		}
 
+		out.seq     = seq;
+		out.keyId   = key->id;
+		out.testKey = key->testOnly;
+		out.body    = region;
+		return true;
+	}
+
+	bool ReadSigned(const std::string& file, const std::vector<PublicKey>& keys, SignedFeed& out, std::string& error,
+		Flavor flavor)
+	{
+		out = SignedFeed{};
+		VerifiedBody verified;
+		if (!VerifySigned(file, keys, verified, error))
+			return false;
+		const auto fail = [&](const std::string& why)
+		{
+			error = why;
+			return false;
+		};
+
+		// The text ParseFeed reads: `format`, then everything after the `seq` line.
+		const std::string& region = verified.body;
+		const size_t l1 = region.find('\n');
+		const size_t l2 = region.find('\n', l1 + 1);
 		MapData map;
 		std::string parseError;
 		if (!VersionMap::ParseFeed(region.substr(0, l1 + 1) + region.substr(l2 + 1), map, parseError))
@@ -316,9 +339,9 @@ namespace VersionFeed
 		if (flavor == Flavor::Client && serverBuilds != 0)
 			return fail("this is a dedicated server file, which a client loader does not read");
 
-		out.seq     = seq;
-		out.keyId   = key->id;
-		out.testKey = key->testOnly;
+		out.seq     = verified.seq;
+		out.keyId   = verified.keyId;
+		out.testKey = verified.testKey;
 		out.map     = std::move(map);
 		return true;
 	}
@@ -485,33 +508,50 @@ namespace VersionFeed
 		return refused;
 	}
 
-	namespace
+	bool ReadFileCapped(const std::wstring& path, std::string& out, bool& missing)
 	{
-		// The file at `path`, at most kMaxFileBytes. False: missing, over the
-		// cap or unreadable (`missing` tells the first from the rest).
-		bool ReadFileCapped(const std::wstring& path, std::string& out, bool& missing)
+		out.clear();
+		missing = false;
+		HANDLE h = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+		if (h == INVALID_HANDLE_VALUE)
 		{
-			out.clear();
-			missing = false;
-			HANDLE h = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
-			if (h == INVALID_HANDLE_VALUE)
-			{
-				missing = GetLastError() == ERROR_FILE_NOT_FOUND || GetLastError() == ERROR_PATH_NOT_FOUND;
-				return false;
-			}
-			LARGE_INTEGER size{};
-			bool ok = GetFileSizeEx(h, &size) && size.QuadPart >= 0 && static_cast<uint64_t>(size.QuadPart) <= kMaxFileBytes;
-			if (ok)
-			{
-				out.resize(static_cast<size_t>(size.QuadPart));
-				DWORD got = 0;
-				ok = out.empty() || (ReadFile(h, out.data(), static_cast<DWORD>(out.size()), &got, nullptr) && got == out.size());
-			}
-			CloseHandle(h);
-			if (!ok)
-				out.clear();
-			return ok;
+			missing = GetLastError() == ERROR_FILE_NOT_FOUND || GetLastError() == ERROR_PATH_NOT_FOUND;
+			return false;
 		}
+		LARGE_INTEGER size{};
+		bool ok = GetFileSizeEx(h, &size) && size.QuadPart >= 0 && static_cast<uint64_t>(size.QuadPart) <= kMaxFileBytes;
+		if (ok)
+		{
+			out.resize(static_cast<size_t>(size.QuadPart));
+			DWORD got = 0;
+			ok = out.empty() || (ReadFile(h, out.data(), static_cast<DWORD>(out.size()), &got, nullptr) && got == out.size());
+		}
+		CloseHandle(h);
+		if (!ok)
+			out.clear();
+		return ok;
+	}
+
+	bool WriteFileAtomic(const std::wstring& path, const std::string& data, std::string& error)
+	{
+		const std::wstring temp = path + L".tmp";
+		HANDLE h = CreateFileW(temp.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+		if (h == INVALID_HANDLE_VALUE)
+		{
+			error = "cannot create the temp file (error " + std::to_string(GetLastError()) + ")";
+			return false;
+		}
+		DWORD wrote = 0;
+		const bool ok = WriteFile(h, data.data(), static_cast<DWORD>(data.size()), &wrote, nullptr)
+			&& wrote == data.size() && FlushFileBuffers(h);
+		CloseHandle(h);
+		if (!ok || !MoveFileExW(temp.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
+		{
+			error = "cannot write the cache (error " + std::to_string(GetLastError()) + ")";
+			DeleteFileW(temp.c_str());
+			return false;
+		}
+		return true;
 	}
 
 	bool ReadCache(const std::wstring& path, const std::vector<PublicKey>& keys, SignedFeed& out, Flavor flavor)
@@ -589,23 +629,6 @@ namespace VersionFeed
 			return false;
 		}
 
-		const std::wstring temp = path + L".tmp";
-		HANDLE h = CreateFileW(temp.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
-		if (h == INVALID_HANDLE_VALUE)
-		{
-			error = "cannot create the temp file (error " + std::to_string(GetLastError()) + ")";
-			return false;
-		}
-		DWORD wrote = 0;
-		const bool ok = WriteFile(h, file.data(), static_cast<DWORD>(file.size()), &wrote, nullptr)
-			&& wrote == file.size() && FlushFileBuffers(h);
-		CloseHandle(h);
-		if (!ok || !MoveFileExW(temp.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
-		{
-			error = "cannot write the cache (error " + std::to_string(GetLastError()) + ")";
-			DeleteFileW(temp.c_str());
-			return false;
-		}
-		return true;
+		return WriteFileAtomic(path, file, error);
 	}
 }

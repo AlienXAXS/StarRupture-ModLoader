@@ -78,6 +78,23 @@ namespace VersionFeed
 	// none, the loader reads no feed and fetches none.
 	const std::vector<PublicKey>& CompiledKeys();
 
+	// A signed file whose signature has passed, not yet read as a map: every
+	// byte before the `sig` line, and the `seq` line's number. Other signed
+	// files (plugin-catalog.v1.txt) are checked the same way.
+	struct VerifiedBody
+	{
+		uint64_t    seq = 0;
+		std::string keyId;
+		bool        testKey = false;
+		std::string body;   // `format`, `seq` and everything after, up to the `sig` line
+	};
+
+	// Checks size, the closing line feed, the last `sig` line, the key and the
+	// signature, then that the second line is `seq<TAB><n>` (n >= 1, no leading
+	// zero). Nothing else is read: the `format` line and the rest belong to the
+	// caller. On failure `out` is left empty and `error` says why.
+	bool VerifySigned(const std::string& file, const std::vector<PublicKey>& keys, VerifiedBody& out, std::string& error);
+
 	struct SignedFeed
 	{
 		uint64_t              seq = 0;
@@ -135,6 +152,14 @@ namespace VersionFeed
 	// the number of keys it lacked.
 	std::vector<std::pair<uint32_t, size_t>> DropUncovered(VersionMap::MapData& merged,
 		const VersionMap::MapData& baseline, const Coverage& cov);
+
+	// The file at `path`, at most kMaxFileBytes. False: missing, over the cap or
+	// unreadable (`missing` tells the first from the rest).
+	bool ReadFileCapped(const std::wstring& path, std::string& out, bool& missing);
+
+	// Writes `data` to `path` through `path`.tmp and MoveFileExW, flushed to disk.
+	// On failure `path` is as it was and `error` says why.
+	bool WriteFileAtomic(const std::wstring& path, const std::string& data, std::string& error);
 
 	// The verified feed in the cache file at `path`; false, quietly, when
 	// there is none or it does not verify.
