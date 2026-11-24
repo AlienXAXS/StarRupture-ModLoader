@@ -15,6 +15,8 @@
 #include "theme.h"
 #include "named_entry_utils.h"
 #include "update_notice_window.h"
+#include "readme_view.h"
+#include "utils/open_page.h"
 #include "auto_update/mod_index_fetcher.h"
 #include "plugin_scan_window.h"
 #include "hook_failure_window.h"
@@ -39,7 +41,6 @@
 #include <functional>
 #include <atomic>
 #include <memory>
-#include <shellapi.h>
 
 // Build tag is set by CI; fall back to a local placeholder.
 #ifndef MODLOADER_BUILD_TAG
@@ -2327,17 +2328,6 @@ namespace UI::ModLoaderWindow
                             "you use Save/Save As under Theme, at the top of this tab.");
     }
 
-    // Opens a Browse page in the player's browser. The address is the index
-    // entry's page_url as ModIndex checked it; the check is made again here,
-    // at the one place it is acted on. Called on a click only.
-    static void OpenPageUrl(const std::string& url)
-    {
-        if (!ModIndex::IsAllowedPageUrl(url))
-            return;
-        const std::wstring wide(url.begin(), url.end()); // ASCII only, by the same check
-        ShellExecuteW(nullptr, L"open", wide.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
-    }
-
     // One card of the Browse list: the name with its version and author, the
     // summary, then one line with the Installed marker, the ModLoader version the
     // entry was last tried on and the Open page button.
@@ -2377,13 +2367,25 @@ namespace UI::ModLoaderWindow
             ImGui::SameLine();
         }
         if (ImGui::Button("Open page"))
-            OpenPageUrl(e.pageUrl);
+            OpenPage::Open(e.pageUrl);
+        if (!e.readmeUrl.empty())
+        {
+            ImGui::SameLine();
+            if (ImGui::Button("README"))
+                UI::ReadmeView::Open(e);
+        }
     }
 
     // The mod index, display only (auto_update/mod_index_fetcher.h). The list
     // is downloaded once on a worker thread; this only reads what it published.
     static void RenderBrowseTab()
     {
+        if (UI::ReadmeView::IsOpen())
+        {
+            UI::ReadmeView::Draw();
+            return;
+        }
+
         ImGui::Spacing();
         ImGui::SeparatorText("Browse");
         ImGui::TextDisabled("Plugins that work with the ModLoader. Open a page to download one.");
@@ -2524,6 +2526,10 @@ namespace UI::ModLoaderWindow
 
     void Render(IModLoaderImGui* imgui)
     {
+        // Before the early return below: a README page ends here when it was not
+        // drawn last frame (another tab, the window closed or collapsed).
+        UI::ReadmeView::BeginFrame();
+
         if (!s_isOpen)
             return;
 
