@@ -559,9 +559,16 @@ namespace UI::ModLoaderWindow
                 }
                 else if (s.isOutOfDate)
                 {
-                    ImGui::TextDisabled(s.needsModLoaderUpdate
-                        ? "Update The Mod Loader"
-                        : "Please Update The Plugin");
+                    if (s.needsModLoaderUpdate)
+                    {
+                        char need[160];
+                        PluginManager::DescribeLoaderNeed(s.declaredInterface, need, sizeof(need));
+                        ImGui::TextDisabled("This plugin %s", need);
+                    }
+                    else
+                    {
+                        ImGui::TextDisabled("Please Update The Plugin");
+                    }
                 }
                 else if (s.isLoaded ? s.unloadBlock[0] != '\0' : s.reloadBlock[0] != '\0')
                 {

@@ -17,6 +17,7 @@ namespace PluginManager
         bool isLoaded;   // initialized, or inside its PluginShutdown for an unload or reload
         bool isOutOfDate;
         bool needsModLoaderUpdate;
+        int  declaredInterface;   // the plugin interface it declares; kept for a plugin refused as too new
         bool isWrongTarget;
 
         // True when the plugin's OnPluginLoadHooks event reported a required
@@ -99,6 +100,12 @@ namespace PluginManager
     // Copy status snapshots for ALL plugin records (loaded and unloaded) into out.
     // Returns total record count (may exceed maxCount).
     int GetAllPluginStatuses(PluginStatus* out, int maxCount);
+
+    // What to say about a plugin built for plugin interface `declared` that this
+    // loader refused as too new: a phrase to follow "This plugin", such as
+    // "needs ModLoader v1.28.0 or newer", worked out from the latest release the
+    // loader's manifest named (auto_update/loader_manifest.h). Cut to cap like snprintf.
+    const char* DescribeLoaderNeed(int declared, char* buf, size_t cap);
 
     // Returns the stable IPluginSelf* for the named plugin record, or nullptr if
     // no plugin with that name has ever been loaded this session. The pointer is

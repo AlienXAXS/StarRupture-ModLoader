@@ -60,11 +60,18 @@
 // Compiled-in default manifest URL.
 // Set by CI via /p:AutoUpdateManifestUrl="https://...".
 // Empty string on dev / generic builds -> auto-update disabled at runtime.
+#include "auto_update/loader_manifest.h"
+
 #ifdef AUTOUPDATE_MANIFEST_URL
 #  define AUTOUPDATE_DEFAULT_MANIFEST_URL AUTOUPDATE_MANIFEST_URL
 #else
 #  define AUTOUPDATE_DEFAULT_MANIFEST_URL ""
 #endif
+
+// The latest loader release the central manifest named (its tag and the plugin
+// interface range it supports). False, with an empty result, when the manifest
+// was not read: no URL, no connection, or updates off. Safe from any thread.
+bool GetLatestLoaderRelease(LoaderManifest::Latest& out);
 
 // Whether modloader.ini [AutoUpdate] Enabled is on (the default).
 bool AutoUpdateEnabled();

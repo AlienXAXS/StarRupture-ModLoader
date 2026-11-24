@@ -124,7 +124,7 @@ is available.
     the main menu), unless the plugin checks the current world itself.
   - **Needs restart** is a new DLL in the Preload folder, which only loads at game start.
   - **Incompatible** is a plugin built for a newer plugin interface than this loader's (update the mod
-    loader), or, on a game build other than the one the plugin was built for, says the plugin needs an
+    loader; the row says which release the plugin needs, from the latest release's plugin interface range), or, on a game build other than the one the plugin was built for, says the plugin needs an
     update (see [Game updates](#game-updates)). A plugin is never refused for an older interface; one from
     before interface v70 counts as built for a game build before CL-127004.
   - **Hooks failed** has a **WHY?** button for the [report](#pop-up-windows).

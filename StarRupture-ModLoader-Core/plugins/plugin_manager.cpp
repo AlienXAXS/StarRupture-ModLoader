@@ -514,6 +514,17 @@ namespace PluginManager
 			rec.cachedAuthor        = info->author  ? info->author  : "";
 			rec.isOutOfDate         = true;
 			rec.needsModLoaderUpdate = true;
+			rec.interfaceVersion    = info->interfaceVersion;
+			// The manifest is read before plugins load, so the latest release is
+			// normally known here: say which one the plugin needs.
+			LoaderManifest::Latest latest;
+			if (GetLatestLoaderRelease(latest) && latest.HasRange())
+			{
+				char need[160];
+				LoaderManifest::Describe(info->interfaceVersion, latest, need, sizeof(need));
+				ModLoaderLogger::LogMessage(L"[AutoUpdate] %S (interface %d) %S",
+					info->name ? info->name : "(unknown)", info->interfaceVersion, need);
+			}
 			// info points into the plugin's own image, so read it before the free.
 			if (why) { why->kind = LoadFailure::OutOfDate; why->interfaceVersion = info->interfaceVersion; }
 			FreeLibrary(hModule);
@@ -1301,6 +1312,13 @@ namespace PluginManager
 			ModLoaderLogger::LogWarn(L"Could not write %s", path.c_str());
 	}
 
+	const char* DescribeLoaderNeed(int declared, char* buf, size_t cap)
+	{
+		LoaderManifest::Latest latest;
+		GetLatestLoaderRelease(latest);
+		return LoaderManifest::Describe(declared, latest, buf, cap);
+	}
+
 	int GetAllPluginStatuses(PluginStatus* out, int maxCount)
 	{
 		EnterCriticalSection(&g_pluginLock);
@@ -1317,6 +1335,7 @@ namespace PluginManager
 				out[i].isLoaded              = p.isInitialized || p.isUnloading;
 				out[i].isOutOfDate           = p.isOutOfDate;
 				out[i].needsModLoaderUpdate  = p.needsModLoaderUpdate;
+				out[i].declaredInterface     = p.interfaceVersion;
 				out[i].isWrongTarget         = p.isWrongTarget;
 				out[i].hookScanFailed        = p.hookScanFailed;
 
@@ -2032,9 +2051,13 @@ namespace PluginManager
 			break;
 		case LoadFailure::OutOfDate:
 			r.status = ScanStatus::Incompatible;
-			snprintf(text, sizeof(text),
-				"Built for plugin interface v%d, newer than this loader (%s accepts up to v%d). Update the mod loader.",
-				why.interfaceVersion, MODLOADER_BUILD_TAG, PLUGIN_INTERFACE_VERSION_MAX);
+			{
+				char need[160];
+				DescribeLoaderNeed(why.interfaceVersion, need, sizeof(need));
+				snprintf(text, sizeof(text),
+					"Built for plugin interface v%d, newer than this loader (%s accepts up to v%d). This plugin %s.",
+					why.interfaceVersion, MODLOADER_BUILD_TAG, PLUGIN_INTERFACE_VERSION_MAX, need);
+			}
 			break;
 		case LoadFailure::OffBuild:
 			r.status = ScanStatus::Incompatible;

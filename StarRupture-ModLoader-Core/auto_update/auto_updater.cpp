@@ -6,6 +6,8 @@
 #include "plugin_dll_version.h"
 #include "version_compare.h"
 #include "feed_fetch.h"
+#include "json_extract.h"
+#include "loader_manifest.h"
 #include "core/startup_utils.h"
 #include "logging/log.h"
 #include "plugins/plugin_interface.h"
@@ -19,6 +21,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <winhttp.h>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -114,6 +117,19 @@ static void WriteStoredBuildTag(const char* tag)
 		LogToFile::Warn("[AutoUpdate] Failed to write build tag to update_state.ini (%lu: %s)", err,
 		                FormatWinHttpError(err).c_str());
 	}
+}
+
+// The latest release the central manifest named, kept for the plugin list. The
+// manifest is read before plugins load, and ScanForNewPlugins can refuse a
+// plugin later from another thread, so reads copy under the lock.
+static std::mutex g_latestMutex;
+static LoaderManifest::Latest g_latest;
+
+bool GetLatestLoaderRelease(LoaderManifest::Latest& out)
+{
+	std::lock_guard<std::mutex> lock(g_latestMutex);
+	out = g_latest;
+	return g_latest.known;
 }
 
 // The release the loader last listed its notes for (the manifest's build_tag).
@@ -221,42 +237,9 @@ static void ReadUpdaterLogs(std::string& currentLog, std::string& previousLog)
 
 // ===========================================================================
 // Section D — Minimal JSON helpers
-// No external library — only handles the flat manifest schema.
+// No external library — only handles the flat manifest schema. The string and
+// integer readers are in json_extract.h.
 // ===========================================================================
-
-// Extract the value of a top-level string field: "key": "value"
-// Handles basic \" escapes inside the value.
-static std::string JsonExtractString(const std::string& json, const char* key)
-{
-	std::string needle = std::string("\"") + key + "\"";
-	size_t kpos = json.find(needle);
-	if (kpos == std::string::npos)
-		return {};
-
-	size_t vstart = json.find('"', kpos + needle.size());
-	if (vstart == std::string::npos)
-		return {};
-	++vstart;
-
-	std::string value;
-	for (size_t i = vstart; i < json.size(); ++i)
-	{
-		if (json[i] == '\\' && i + 1 < json.size())
-		{
-			value += json[i + 1];
-			++i;
-		}
-		else if (json[i] == '"')
-		{
-			break;
-		}
-		else
-		{
-			value += json[i];
-		}
-	}
-	return value;
-}
 
 // Extract a top-level string field and decode its JSON escapes. Used for the
 // manifest's "notes": JsonExtractString above drops the backslash, so it
@@ -307,26 +290,6 @@ static std::string JsonExtractDecodedString(const std::string& json, const char*
 		}
 	}
 	return value;
-}
-
-// Extract the value of a top-level integer field: "key": 12
-static int JsonExtractInt(const std::string& json, const char* key, int fallback = 0)
-{
-	std::string needle = std::string("\"") + key + "\"";
-	size_t kpos = json.find(needle);
-	if (kpos == std::string::npos)
-		return fallback;
-
-	size_t vpos = kpos + needle.size();
-	while (vpos < json.size() && (json[vpos] == ' ' || json[vpos] == '\t'
-		|| json[vpos] == '\r' || json[vpos] == '\n'
-		|| json[vpos] == ':'))
-		++vpos;
-
-	if (vpos >= json.size() || !isdigit(static_cast<unsigned char>(json[vpos])))
-		return fallback;
-
-	return std::stoi(json.substr(vpos));
 }
 
 // Split the "plugins": [ ... ] array into individual { } object strings.
@@ -937,6 +900,11 @@ static void RunCentralManifestUpdate(const AutoUpdateConfig& cfg)
 	}
 
 	LogToFile::Debug("[AutoUpdate] Remote build_tag: %s", remoteBuildTag.c_str());
+
+	{
+		std::lock_guard<std::mutex> lock(g_latestMutex);
+		g_latest = LoaderManifest::Parse(manifest);
+	}
 
 	// The build tag stamped into this DLL by CI (via /p:ModLoaderBuildTag=...).
 	// Empty on dev/generic builds.

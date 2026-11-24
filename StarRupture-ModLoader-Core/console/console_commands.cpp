@@ -504,6 +504,13 @@ namespace ModConsole
             if (crashed)
                 out.Notice("      crashed: %s -- reload or unload it", s.crashReason);
 
+            if (s.isOutOfDate && s.needsModLoaderUpdate)
+            {
+                char need[160];
+                PluginManager::DescribeLoaderNeed(s.declaredInterface, need, sizeof(need));
+                out.Notice("      this plugin %s", need);
+            }
+
             // A running plugin the loader will not unload or reload right now,
             // or an unloaded one it will not load, and why.
             const char* block = s.isLoaded && s.unloadBlock[0] ? s.unloadBlock : s.reloadBlock;

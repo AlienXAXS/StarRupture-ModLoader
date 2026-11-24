@@ -336,6 +336,10 @@ jobs:
             if ($releaseNotes) {
               $manifest["release_notes"] = $releaseNotes
             }
+            # The plugin interface range this release accepts, so a loader that
+            # refuses a newer plugin can say which release it needs.
+            $manifest["interface_version_min"] = $ifaceMin
+            $manifest["interface_version_max"] = $ifaceMax
             $out = "$ws\manifest-$variant.json"
             $manifest | ConvertTo-Json -Depth 1 | Out-File $out -Encoding utf8NoBOM
             Write-Host "Generated modloader manifest: $out"

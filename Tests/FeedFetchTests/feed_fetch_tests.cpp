@@ -8,6 +8,7 @@
 
 #include "auto_update/feed_fetch.h"
 #include "auto_update/http_get.h"
+#include "auto_update/loader_manifest.h"
 #include "auto_update/plugin_dll_version.h"
 #include "auto_update/version_compare.h"
 #include "memory_scanner/version_feed.h"
@@ -19,6 +20,7 @@
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <string>
 #include <thread>
 #include <vector>
@@ -998,6 +1000,43 @@ int main()
 		DeleteFileW(clientCache.c_str());
 		srv.feed = SignedFile(sk, 300);
 		srv.etag = "\"v300\"";
+	}
+
+	// ---- the loader manifest's interface range ----------------------------------
+	{
+		using namespace LoaderManifest;
+
+		// present: what the release workflow writes now
+		Latest a = Parse("{\n  \"build_tag\": \"v1.28.0\",\n  \"interface_version_min\": 19,\n  \"interface_version_max\": 81,\n  \"notes\": \"x\"\n}");
+		Check(a.known && a.tag == "v1.28.0" && a.ifaceMin == 19 && a.ifaceMax == 81 && a.HasRange(), "manifest: build_tag and the interface range are read");
+
+		// absent: a manifest from before the range was added
+		Latest o = Parse("{\"build_tag\":\"v1.27.0\",\"notes\":\"x\"}");
+		Check(o.known && o.tag == "v1.27.0" && o.ifaceMin == -1 && o.ifaceMax == -1 && !o.HasRange(), "manifest: one without the range reads -1 and -1");
+
+		// malformed: nothing throws, and a bad field is absent
+		Latest n = Parse("{\"build_tag\":\"v1.28.0\",\"interface_version_min\":\"19\",\"interface_version_max\":null}");
+		Check(n.known && n.ifaceMin == -1 && n.ifaceMax == -1, "manifest: a quoted or null number reads as absent");
+		Latest big = Parse("{\"build_tag\":\"v1.28.0\",\"interface_version_min\":99999999999999,\"interface_version_max\":81}");
+		Check(big.ifaceMin == -1 && big.ifaceMax == 81, "manifest: a number too large for an int reads as absent, the other field is kept");
+		Latest cut = Parse("{\"build_tag\":\"v1.28.0\",\"interface_version_max\":");
+		Check(cut.known && cut.ifaceMax == -1, "manifest: a truncated manifest reads what is there");
+		Latest cut2 = Parse("{\"build_tag\":\"v1.2");
+		Check(!cut2.HasRange(), "manifest: a truncated tag has no range");
+		Latest none = Parse("{\"interface_version_min\":19,\"interface_version_max\":81}");
+		Check(!none.known && !none.HasRange() && none.ifaceMax == 81, "manifest: one without a build_tag is not known");
+		Check(!Parse("").known && !Parse("not json").known && !Parse("[1,2,3]").known, "manifest: empty or not JSON is not known");
+
+		// the sentence a refused plugin gets
+		char buf[160];
+		Check(strcmp(Describe(81, a, buf, sizeof(buf)), "needs ModLoader v1.28.0 or newer") == 0, "describe: the latest release supports it");
+		Check(strcmp(Describe(80, a, buf, sizeof(buf)), "needs ModLoader v1.28.0 or newer") == 0, "describe: a plugin below the latest's maximum");
+		Check(strcmp(Describe(82, a, buf, sizeof(buf)), "is built for a ModLoader newer than the latest release (v1.28.0)") == 0, "describe: one past the latest's maximum");
+		Check(strcmp(Describe(82, o, buf, sizeof(buf)), "needs a newer ModLoader") == 0, "describe: a manifest without the range");
+		Check(strcmp(Describe(82, Latest{}, buf, sizeof(buf)), "needs a newer ModLoader") == 0, "describe: no manifest at all");
+		char small[12];
+		Describe(81, a, small, sizeof(small));
+		Check(strlen(small) == sizeof(small) - 1 && strncmp(small, "needs ModLoa", 11) == 0, "describe: cut to the buffer");
 	}
 
 	// ---- an unroutable host ----------------------------------------------------
