@@ -116,7 +116,7 @@ namespace ScanPatterns
 	// Signature: FString* __fastcall UNetConnection::RemoteAddressToString(UNetConnection* this,
 	//               FString* outResult)
 	inline constexpr auto UNetConnection_RemoteAddressToString =
-		"40 53 48 83 EC 20 48 8B 89 ?? ?? ?? ?? 48 8B DA 48 85 C9 74 ?? 48 8B 01 41 B0 01 FF 90 80 00 00 00 48 8B C3 48 83 C4 20 5B C3 48 8D 15 ?? ?? ?? ?? 48 8B CB E8 ?? ?? ?? ?? 48 8B C3 48 83 C4 20 5B C3";
+		"40 53 48 83 EC 20 48 8B 89 ?? ?? ?? ?? 48 8B DA 48 85 C9 74 ?? 48 8B 01 41 B0 01 FF 90 80 00 00 00";
 	// ULineBatchComponent::DrawLines -- appends a batch of FBatchedLine into the
 	// component's BatchedLines array (offset 0x530) and marks the render state dirty.
 	// This is the only in-world line-drawing entry point that survived Shipping:
