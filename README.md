@@ -680,6 +680,33 @@ if (len > 0)
 ```
 <sup>[✦](#msantoro12)</sup>
 
+#### Reading the address of the server you are connected to
+
+`hooks->Network->GetServerAddress(buf, size)` (interface 80) copies the address of the server this client is
+connected to into `buf`, as its own connection reports it, as lower-case UTF-8 text such as `203.0.113.7:7780`, and
+returns the length of the whole text. It works like `snprintf`: the text is cut to `size` and ends in a NUL, and a
+null `buf` with a `size` of 0 only measures. A plugin can pin a secret it was paired with to this text, instead of
+trusting anything the server says about itself. The text is whatever the engine prints for the route; pin it as it is
+and treat a changed text as a different server. The loader never logs the text, and a plugin should not either.
+
+It returns -1 when there is no address to give: on a dedicated server or a generic build, before a world or a
+connection to a server exists (main menu, travelling, single player, the host of a listen server), on a game build
+whose address call the loader could not place, or when the engine has no address for the connection. Then do not pin
+and do not answer a pairing challenge. Call it from `Tick`, once `IsServerReady()` is true, not from `PluginInit`, a
+render callback or a worker thread: it reads game objects, which only the game thread may. A plugin that needs the
+text in a render callback copies it during `Tick` into its own variable.
+
+```cpp
+int len = hooks->Network ? hooks->Network->GetServerAddress(nullptr, 0) : -1;
+if (len > 0)
+{
+    std::string address(len + 1, '\0');
+    hooks->Network->GetServerAddress(address.data(), address.size());
+    address.resize(len);   // for example "203.0.113.7:7780"
+}
+```
+<sup>[✦](#msantoro12)</sup>
+
 ### Reloading a plugin from a script
 
 To try a new build without pressing **RELOAD**, turn on `[Developer] RemoteReload=1` in `modloader.ini`

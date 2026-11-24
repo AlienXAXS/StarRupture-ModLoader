@@ -31,6 +31,10 @@
 #include "utils/game_thread_dispatch.h"
 #include "host_rules_wire.h"
 #include "memory_scanner/version_map.h"
+#include "memory_scanner/scanner.h"
+#include "hooks/game/scan_patterns.h"
+#include "hooks/memory/engine_allocator.h"
+#include "plugins/server_address_text.h"
 #ifdef MODLOADER_CLIENT_BUILD
 #include "admin_prompt.h"
 #endif
@@ -1762,6 +1766,9 @@ namespace
     // A dedicated server has no server to become ready to.
     static bool NC_IsServerReady() { return false; }
 
+    // A dedicated server is not connected to a server, so it has no address to give.
+    static int NC_GetServerAddress(char*, size_t) { return -1; }
+
     static void NC_RegisterServerReadyCallback(const IPluginSelf* self, PluginServerReadyCallback)
     {
         if (self && self->name)
@@ -2868,6 +2875,102 @@ namespace
 
     static bool NC_IsServerReady() { return ServerReadyNow(); }
 
+    // ---- Server address (client side) ---------------------------------------
+    //
+    // The address the engine prints for the connection to the server, found
+    // through the version map and called on the game thread. Mirrors FString's
+    // layout (TArray<wchar_t>); the returned buffer is engine-allocated.
+    struct FStringPod
+    {
+        wchar_t* Data;
+        int32_t  Num;
+        int32_t  Max;
+    };
+    static_assert(sizeof(FStringPod) == 0x10, "FStringPod size mismatch");
+
+    using RemoteAddressToString_t = FStringPod*(__fastcall*)(void* connection, FStringPod* outResult);
+
+    static RemoteAddressToString_t g_remoteAddressToString = nullptr;
+    static bool                    g_remoteAddressScanned  = false;
+
+    static bool ResolveRemoteAddressToString()
+    {
+        if (g_remoteAddressToString) return true;
+        if (g_remoteAddressScanned)  return false;
+        g_remoteAddressScanned = true;
+
+        const uintptr_t addr = Scanner::FindPatternInMainModule(
+            "UNetConnection::RemoteAddressToString",
+            ScanPatterns::UNetConnection_RemoteAddressToString);
+        if (!addr)
+        {
+            ModLoaderLogger::LogWarn(
+                L"[NetworkChannel] UNetConnection::RemoteAddressToString not found on this build "
+                L"-- GetServerAddress will return -1");
+            return false;
+        }
+        g_remoteAddressToString = reinterpret_cast<RemoteAddressToString_t>(addr);
+        return true;
+    }
+
+    // The native call, kept in its own SEH-guarded helper with no C++ objects in
+    // scope (C2712).
+    static bool CallRemoteAddressToStringSEH(void* connection, FStringPod* out)
+    {
+        __try
+        {
+            g_remoteAddressToString(connection, out);
+            return true;
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER)
+        {
+            return false;
+        }
+    }
+
+    // The address text, or false when there is none. Never logs the text.
+    static bool ReadServerAddress(std::string& text)
+    {
+        text.clear();
+        if (!ResolveRemoteAddressToString()) return false;
+
+        void* connection = ServerConnection();
+        if (!connection) return false;
+
+        FStringPod out{};
+        if (!CallRemoteAddressToStringSEH(connection, &out))
+        {
+            // A plugin asks every tick: say it once.
+            static bool s_faultLogged = false;
+            if (!s_faultLogged)
+            {
+                s_faultLogged = true;
+                ModLoaderLogger::LogWarn(L"[NetworkChannel] The call for the server address faulted -- GetServerAddress returns -1");
+            }
+            return false;
+        }
+
+        // The returned buffer is engine-allocated: copy it out, then hand it back.
+        const bool ok = ServerAddressText::FromEngineText(out.Data, out.Num, text);
+        if (out.Data)
+        {
+            if (EngineAllocator::IsAvailable())
+                EngineAllocator::Free(out.Data);
+            else
+                ModLoaderLogger::LogWarn(
+                    L"[NetworkChannel] Engine allocator unavailable -- leaking the returned FString");
+        }
+        return ok;
+    }
+
+    // v80. Game thread (Tick) only: it reads the world and the connection.
+    static int NC_GetServerAddress(char* buf, size_t size)
+    {
+        std::string text;
+        if (!ReadServerAddress(text)) return -1;
+        return HostRulesWire::CopyTextCut(text, buf, size);
+    }
+
     // ---- Echo self-test (client side) ---------------------------------------
 
     static size_t   g_echoExpectedBytes = 0;
@@ -2990,6 +3093,8 @@ namespace
         NC_IsServerReady,
         NC_RegisterServerReadyCallback,
         NC_UnregisterServerReadyCallback,
+        // v80 -- appended, never inserted.
+        NC_GetServerAddress,
     };
 
 } // anonymous namespace

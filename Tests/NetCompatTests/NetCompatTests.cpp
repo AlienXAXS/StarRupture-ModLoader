@@ -7,6 +7,7 @@
 #include "host_rules_wire.h"
 #include "plugins/plugin_version_query.h"
 #include "plugins/declared_features_text.h"
+#include "plugins/server_address_text.h"
 
 #include <cstdio>
 #include <cstring>
@@ -1418,6 +1419,65 @@ namespace
         Check(!WriteAtomic(dir / "missing" / "x.txt", "t"), "a folder that is not there fails without throwing");
         fs::remove_all(dir, ec);
     }
+
+    void TestServerAddressText()
+    {
+        using namespace ServerAddressText;
+        std::printf("server address text\n");
+
+        std::string out = "stale";
+        Check(FromEngineText(L"203.0.113.7:7780", 17, out) && out == "203.0.113.7:7780", "an address comes through as it is");
+        Check(FromEngineText(L"[2001:DB8::1]:7780", 19, out) && out == "[2001:db8::1]:7780", "upper case is lower-cased");
+        Check(FromEngineText(L"HOST.Example.COM:7780", 22, out) && out == "host.example.com:7780", "a host name is lower-cased too");
+
+        out = "stale";
+        Check(!FromEngineText(L"Invalid", 8, out) && out.empty(), "the engine's \"Invalid\" is no address, and out is cleared");
+        Check(!FromEngineText(L"invalid", 8, out), "\"invalid\" in any case is no address");
+        Check(!FromEngineText(L"INVALID", 8, out), "\"INVALID\" is no address either");
+        Check(FromEngineText(L"invalid.example:7780", 21, out) && out == "invalid.example:7780", "a text that only starts with \"invalid\" is an address");
+
+        out = "stale";
+        Check(!FromEngineText(L"", 1, out) && out.empty(), "an empty FString (num 1, just the NUL) is no address");
+        Check(!FromEngineText(L"", 0, out), "num 0 is no address");
+        Check(!FromEngineText(L"1.2.3.4:5", -3, out), "a negative num is no address");
+        Check(!FromEngineText(nullptr, 17, out), "null data is no address");
+        Check(!FromEngineText(nullptr, 0, out), "null data with num 0 is no address");
+        Check(!FromEngineText(L"\0" L"1.2.3.4:5", 11, out), "text that starts with a NUL is empty, so no address");
+
+        const std::wstring longText(kMaxUnits, L'a');
+        Check(FromEngineText(longText.c_str(), kMaxUnits + 1, out) && out.size() == static_cast<size_t>(kMaxUnits), "the longest accepted text is taken whole");
+        const std::wstring tooLong(kMaxUnits + 1, L'a');
+        Check(!FromEngineText(tooLong.c_str(), kMaxUnits + 2, out) && out.empty(), "one unit over the cap is no address");
+        Check(!FromEngineText(L"1.2.3.4:5", 0x7FFFFFFF, out), "a huge num is rejected before anything is read");
+
+        Check(FromEngineText(L"1.2.3.4\0" L"junk", 13, out) && out == "1.2.3.4", "an embedded NUL ends the text");
+
+        // UTF-16 to UTF-8.
+        Check(WideToUtf8(L"\xE9", 1) == "\xC3\xA9", "a two-byte character");
+        Check(WideToUtf8(L"\x20AC", 1) == "\xE2\x82\xAC", "a three-byte character");
+        Check(WideToUtf8(L"\xD83D\xDE00", 2) == "\xF0\x9F\x98\x80", "a surrogate pair becomes one four-byte character");
+        Check(WideToUtf8(L"\xD83D", 1) == "\xEF\xBF\xBD", "a high surrogate at the end becomes U+FFFD");
+        Check(WideToUtf8(L"\xD83D" L"a", 2) == "\xEF\xBF\xBD" "a", "a high surrogate without a partner becomes U+FFFD and the next unit stays");
+        Check(WideToUtf8(L"\xDE00", 1) == "\xEF\xBF\xBD", "a lone low surrogate becomes U+FFFD");
+        Check(FromEngineText(L"H\xC9" L"st:1", 7, out) && out == "h\xC3\x89st:1", "non-ASCII text comes through as UTF-8, only ASCII letters are lower-cased");
+
+        // The copy into the caller's buffer.
+        const std::string text = "203.0.113.7:7780";
+        using HostRulesWire::CopyTextCut;
+        Check(CopyTextCut(text, nullptr, 0) == static_cast<int>(text.size()), "a null buffer with size 0 measures");
+        char big[64];
+        std::memset(big, 'x', sizeof(big));
+        Check(CopyTextCut(text, big, 0) == static_cast<int>(text.size()) && big[0] == 'x', "size 0 writes nothing");
+        char one[1] = { 'x' };
+        Check(CopyTextCut(text, one, 1) == static_cast<int>(text.size()) && one[0] == '\0', "size 1 gets just the NUL");
+        char exact[17];
+        std::memset(exact, 'x', sizeof(exact));
+        Check(CopyTextCut(text, exact, sizeof(exact)) == static_cast<int>(text.size()) && text == exact, "a buffer one over the length gets the whole text");
+        char tight[16];
+        std::memset(tight, 'x', sizeof(tight));
+        Check(CopyTextCut(text, tight, sizeof(tight)) == static_cast<int>(text.size()) && tight[15] == '\0' && text.compare(0, 15, tight) == 0, "a buffer of exactly the length is cut by one and NUL-terminated");
+        Check(CopyTextCut(text, big, sizeof(big)) == static_cast<int>(text.size()) && text == big, "a big buffer gets the whole text");
+    }
 }
 
 int main()
@@ -1439,6 +1499,7 @@ int main()
     TestHostTiming();
     TestPluginVersionQuery();
     TestDeclaredFeaturesText();
+    TestServerAddressText();
 
     if (g_failures)
     {

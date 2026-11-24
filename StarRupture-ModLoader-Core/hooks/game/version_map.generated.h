@@ -22,7 +22,7 @@ inline constexpr std::array<Build, 4> kBuilds = {{
 	{ 130045, 0xCCBFE20D, 0x0F47F000, "steam_build 26750759" },
 }};
 
-inline constexpr std::array<FunctionRow, 913> kFunctionRows = {{
+inline constexpr std::array<FunctionRow, 915> kFunctionRows = {{
 	// AAbstractMassEnemySpawner::ActivateSpawner
 	{ 127004, 0xE8972298, 0x0F35C000, 1, 0x00000000, false, "48 89 5C 24 ?? 57 48 83 EC ?? 48 8B 81 ?? ?? ?? ?? 48 8B D9 33 D2", 0, -1, -1, 0x08C4AF80, nullptr },
 	{ 128786, 0xCF8579A6, 0x0F47D000, 1, 0x00000000, false, "48 89 5C 24 ?? 57 48 83 EC ?? 48 8B 81 ?? ?? ?? ?? 48 8B D9 33 D2", 0, -1, -1, 0x08CDACC0, nullptr },
@@ -1038,6 +1038,9 @@ inline constexpr std::array<FunctionRow, 913> kFunctionRows = {{
 	{ 128786, 0xCF8579A6, 0x0F47D000, 1, 0x00000000, false, "48 89 5C 24 ?? 4C 89 44 24 ?? 57 48 83 EC ?? 48 8B DA 48 8B F9 45 85 C0", 0, -1, -1, 0x0660B150, nullptr },
 	{ 129402, 0x6499F129, 0x0F482000, 1, 0x00000000, false, "48 89 5C 24 ?? 4C 89 44 24 ?? 57 48 83 EC ?? 48 8B DA 48 8B F9 45 85 C0", 0, -1, -1, 0x0660AFD0, nullptr },
 	{ 130045, 0xCCBFE20D, 0x0F47F000, 1, 0x00000000, false, "48 89 5C 24 ?? 4C 89 44 24 ?? 57 48 83 EC ?? 48 8B DA 48 8B F9 45 85 C0", 0, -1, -1, 0x0660AC50, nullptr },
+	// UNetConnection::RemoteAddressToString
+	{ 129402, 0x6499F129, 0x0F482000, 1, 0x00000000, false, "40 53 48 83 EC 20 48 8B 89 ?? ?? ?? ?? 48 8B DA 48 85 C9 74 ?? 48 8B 01 41 B0 01 FF 90 80 00 00 00 48 8B C3 48 83 C4 20 5B C3 48 8D 15 ?? ?? ?? ?? 48 8B CB E8 ?? ?? ?? ?? 48 8B C3 48 83 C4 20 5B C3", 0, -1, -1, 0x0448F900, nullptr },
+	{ 130045, 0xCCBFE20D, 0x0F47F000, 1, 0x00000000, false, "40 53 48 83 EC 20 48 8B 89 ?? ?? ?? ?? 48 8B DA 48 85 C9 74 ?? 48 8B 01 41 B0 01 FF 90 80 00 00 00 48 8B C3 48 83 C4 20 5B C3 48 8D 15 ?? ?? ?? ?? 48 8B CB E8 ?? ?? ?? ?? 48 8B C3 48 83 C4 20 5B C3", 0, -1, -1, 0x0448F280, nullptr },
 	// UObject::AddRef
 	{ 127004, 0xE8972298, 0x0F35C000, 1, 0x00000000, false, "40 53 48 83 EC 30 8B 59 0C 85 DB 79 ?? 4C 8D 0D ?? ?? ?? ?? 41 B8 0D 04 00 00 48 8D 15 ?? ?? ?? ?? 48 8D 0D ?? ?? ?? ?? E8 ?? ?? ?? ?? 84 C0 74 ?? 90 CC 48 8B 05 ?? ?? ?? ?? 3B D8 0F 8D ?? ?? ?? ?? 48 89 74 24 40 48 89 7C 24 48 8B FB C1 EF 10 0F B7 F3 3B D8 7D ?? 85 DB 79 ?? 4C 8D 0D ?? ?? ?? ?? 89 5C 24 20 41 B8 2C 03 00 00 48 8D 15 ?? ?? ?? ?? 48 8D 0D ?? ?? ?? ?? E8 ?? ?? ?? ?? 84 C0 74 ?? 90 CC 8B 05 ?? ?? ?? ?? 3B F8 72 ?? 89 44 24 28 4C 8D 0D ?? ?? ?? ?? 41 B8 2D 03 00 00 89 7C 24 20 48 8D 15 ?? ?? ?? ?? 48 8D 0D ?? ?? ?? ?? E8 ?? ?? ?? ?? 84 C0 74 ?? 90 CC 8B 05 ?? ?? ?? ?? 3B D8 7C ?? 89 44 24 28 4C 8D 0D ?? ?? ?? ?? 41 B8 2E 03 00 00 89 5C 24 20 48 8D 15 ?? ?? ?? ?? 48 8D 0D ?? ?? ?? ?? E8 ?? ?? ?? ?? 84 C0 74 ?? 90 CC 48 8B 05 ?? ?? ?? ?? 48 8B 1C F8 48 8B 7C 24 48 48 85 DB 75 ?? 4C 8D 0D ?? ?? ?? ?? 41 B8 30 03 00 00 48 8D 15 ?? ?? ?? ?? 48 8D 0D ?? ?? ?? ?? E8 ?? ?? ?? ?? 84 C0 74 ?? 90 CC 48 8D 0C 76 48 8B 74 24 40 48 8D 1C CB 48 85 DB 75 ?? 4C 8D 0D ?? ?? ?? ?? 41 B8 4B 03 00 00 48 8D 15 ?? ?? ?? ?? 48 8D 0D ?? ?? ?? ?? E8 ?? ?? ?? ?? 84 C0 74 ?? 90 CC EB ?? 33 DB F0 FF 43 14 8B 43 08 0F BA E0 1D 72 ?? BA 00 00 00 20 48 8B CB 48 83 C4 30 5B E9 ?? ?? ?? ?? 48 83 C4 30 5B C3 CC CC CC CC CC CC CC CC CC CC CC CC CC CC 48 89 5C 24 10 57 48 83 EC 20 48 8B 02 48 8B FA 48 8B D9 48 8D 51 78 45 33 C9 45 33 C0 48 8B CF FF 90 88 00 00 00 F6 43 10 01 74 ?? 48 8B 43 10 48 83 E0 FE EB ?? 33 C0 80 3D ?? ?? ?? ?? 00 48 89 44 24 30 74 ?? 48 85 C0 74 ?? 48 8B C8 E8 ?? ?? ?? ?? 48 8B 44 24 30 48 85 C0 74 ?? 48 8B 07", 0, -1, -1, 0x016205F0, nullptr },
 	{ 128786, 0xCF8579A6, 0x0F47D000, 1, 0x00000000, false, "40 53 48 83 EC 30 8B 59 0C 85 DB 79 ?? 4C 8D 0D ?? ?? ?? ?? 41 B8 0D 04 00 00 48 8D 15 ?? ?? ?? ?? 48 8D 0D ?? ?? ?? ?? E8 ?? ?? ?? ?? 84 C0 74 ?? 90 CC 48 8B 05 ?? ?? ?? ?? 3B D8 0F 8D ?? ?? ?? ?? 48 89 74 24 40 48 89 7C 24 48 8B FB C1 EF 10 0F B7 F3 3B D8 7D ?? 85 DB 79 ?? 4C 8D 0D ?? ?? ?? ?? 89 5C 24 20 41 B8 2C 03 00 00 48 8D 15 ?? ?? ?? ?? 48 8D 0D ?? ?? ?? ?? E8 ?? ?? ?? ?? 84 C0 74 ?? 90 CC 8B 05 ?? ?? ?? ?? 3B F8 72 ?? 89 44 24 28 4C 8D 0D ?? ?? ?? ?? 41 B8 2D 03 00 00 89 7C 24 20 48 8D 15 ?? ?? ?? ?? 48 8D 0D ?? ?? ?? ?? E8 ?? ?? ?? ?? 84 C0 74 ?? 90 CC 8B 05 ?? ?? ?? ?? 3B D8 7C ?? 89 44 24 28 4C 8D 0D ?? ?? ?? ?? 41 B8 2E 03 00 00 89 5C 24 20 48 8D 15 ?? ?? ?? ?? 48 8D 0D ?? ?? ?? ?? E8 ?? ?? ?? ?? 84 C0 74 ?? 90 CC 48 8B 05 ?? ?? ?? ?? 48 8B 1C F8 48 8B 7C 24 48 48 85 DB 75 ?? 4C 8D 0D ?? ?? ?? ?? 41 B8 30 03 00 00 48 8D 15 ?? ?? ?? ?? 48 8D 0D ?? ?? ?? ?? E8 ?? ?? ?? ?? 84 C0 74 ?? 90 CC 48 8D 0C 76 48 8B 74 24 40 48 8D 1C CB 48 85 DB 75 ?? 4C 8D 0D ?? ?? ?? ?? 41 B8 4B 03 00 00 48 8D 15 ?? ?? ?? ?? 48 8D 0D ?? ?? ?? ?? E8 ?? ?? ?? ?? 84 C0 74 ?? 90 CC EB ?? 33 DB F0 FF 43 14 8B 43 08 0F BA E0 1D 72 ?? BA 00 00 00 20 48 8B CB 48 83 C4 30 5B E9 ?? ?? ?? ?? 48 83 C4 30 5B C3 CC CC CC CC CC CC CC CC CC CC CC CC CC CC 48 89 5C 24 10 57 48 83 EC 20 48 8B 02 48 8B FA 48 8B D9 48 8D 51 78 45 33 C9 45 33 C0 48 8B CF FF 90 88 00 00 00 F6 43 10 01 74 ?? 48 8B 43 10 48 83 E0 FE EB ?? 33 C0 80 3D ?? ?? ?? ?? 00 48 89 44 24 30 74 ?? 48 85 C0 74 ?? 48 8B C8 E8 ?? ?? ?? ?? 48 8B 44 24 30 48 85 C0 74 ?? 48 8B 07", 0, -1, -1, 0x01626B90, nullptr },
@@ -2238,7 +2241,7 @@ inline constexpr std::array<FieldRow, 761> kFieldRows = {{
 	{ 130045, 0x0, 0x10, 0x00, nullptr },
 }};
 
-inline constexpr std::array<Index, 232> kFunctions = {{
+inline constexpr std::array<Index, 233> kFunctions = {{
 	{ "AAbstractMassEnemySpawner::ActivateSpawner", 0, 4 },
 	{ "AAbstractMassEnemySpawner::DeactivateSpawner", 4, 4 },
 	{ "AActor::BeginPlay", 8, 4 },
@@ -2445,32 +2448,33 @@ inline constexpr std::array<Index, 232> kFunctions = {{
 	{ "UMassActorSubsystem::GetEntityHandleFromActor", 797, 4 },
 	{ "UMassSignalSubsystem::SignalEntities", 801, 4 },
 	{ "UMassSignalSubsystem::SignalEntity", 805, 4 },
-	{ "UObject::AddRef", 809, 4 },
-	{ "UObject::ProcessEvent", 813, 4 },
-	{ "UPackage::FullyLoad", 817, 4 },
-	{ "UStreamableRenderAsset::SetForceMipLevelsToBeResident", 821, 4 },
-	{ "UStreamableRenderAsset::WaitForPendingInitOrStreaming", 825, 4 },
-	{ "UStreamableRenderAsset::WaitForStreaming", 829, 4 },
-	{ "UTexture2D::CreateTransient", 833, 4 },
-	{ "UTexture2D::GetNumMips", 837, 4 },
-	{ "UTexture2D::GetNumMipsAllowed", 841, 4 },
-	{ "UTexture2D::GetNumResidentMips", 845, 4 },
-	{ "UTexture2D::StreamIn", 849, 4 },
-	{ "UTexture::GetResource", 853, 4 },
-	{ "UTextureRenderTarget2D::GameThread_GetRenderTargetResource", 857, 4 },
-	{ "UTextureRenderTarget2D::InitCustomFormat", 861, 4 },
-	{ "UWidgetBlueprintLibrary::GetBrushResourceAsTexture2D", 865, 4 },
-	{ "UWorld::BeginPlay", 869, 4 },
-	{ "UWorld::CleanupWorld", 873, 4 },
-	{ "UWorld::CreateWorld", 877, 4 },
-	{ "UWorld::DestroyActor", 881, 4 },
-	{ "UWorld::EndPlay", 885, 4 },
-	{ "UWorld::GetFirstPlayerController", 889, 4 },
-	{ "UWorld::GetSubsystem<UCrEntityGridSubsystem>", 893, 4 },
-	{ "UWorld::GetSubsystem<UMassEntitySubsystem>", 897, 4 },
-	{ "UWorld::InitWorld", 901, 4 },
-	{ "UWorld::IsVisibilityRequestPending", 905, 4 },
-	{ "UWorld::UpdateWorldComponents", 909, 4 },
+	{ "UNetConnection::RemoteAddressToString", 809, 2 },
+	{ "UObject::AddRef", 811, 4 },
+	{ "UObject::ProcessEvent", 815, 4 },
+	{ "UPackage::FullyLoad", 819, 4 },
+	{ "UStreamableRenderAsset::SetForceMipLevelsToBeResident", 823, 4 },
+	{ "UStreamableRenderAsset::WaitForPendingInitOrStreaming", 827, 4 },
+	{ "UStreamableRenderAsset::WaitForStreaming", 831, 4 },
+	{ "UTexture2D::CreateTransient", 835, 4 },
+	{ "UTexture2D::GetNumMips", 839, 4 },
+	{ "UTexture2D::GetNumMipsAllowed", 843, 4 },
+	{ "UTexture2D::GetNumResidentMips", 847, 4 },
+	{ "UTexture2D::StreamIn", 851, 4 },
+	{ "UTexture::GetResource", 855, 4 },
+	{ "UTextureRenderTarget2D::GameThread_GetRenderTargetResource", 859, 4 },
+	{ "UTextureRenderTarget2D::InitCustomFormat", 863, 4 },
+	{ "UWidgetBlueprintLibrary::GetBrushResourceAsTexture2D", 867, 4 },
+	{ "UWorld::BeginPlay", 871, 4 },
+	{ "UWorld::CleanupWorld", 875, 4 },
+	{ "UWorld::CreateWorld", 879, 4 },
+	{ "UWorld::DestroyActor", 883, 4 },
+	{ "UWorld::EndPlay", 887, 4 },
+	{ "UWorld::GetFirstPlayerController", 891, 4 },
+	{ "UWorld::GetSubsystem<UCrEntityGridSubsystem>", 895, 4 },
+	{ "UWorld::GetSubsystem<UMassEntitySubsystem>", 899, 4 },
+	{ "UWorld::InitWorld", 903, 4 },
+	{ "UWorld::IsVisibilityRequestPending", 907, 4 },
+	{ "UWorld::UpdateWorldComponents", 911, 4 },
 }};
 
 inline constexpr std::array<Index, 304> kFields = {{

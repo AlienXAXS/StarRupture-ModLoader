@@ -948,7 +948,16 @@
 //      HostRules, preserving the existing prefix, and MIN stays at 70. A
 //      plugin that uses it declares 80, so a loader below 80 refuses it (below
 //      80 the Registry pointer does not exist, and reading it reads past the
-//      table). Later versions add members after the ones here.
+//      table).
+//
+//      v80 also adds IPluginNetworkChannel::GetServerAddress, appended after
+//      UnregisterServerReadyCallback: a client plugin reads the address of the
+//      server it is connected to, as its own connection reports it, as lower-case
+//      UTF-8 text, so a pairing secret can be pinned to that server. It returns
+//      -1 when there is no address to give. A plugin that uses it declares 80, so
+//      a loader below 80 refuses it (below 80 the member does not exist, and
+//      reading it reads past the table). Later versions add members after the
+//      ones here.
 // --- v80 ---
 //
 #define PLUGIN_INTERFACE_VERSION_MIN 70
@@ -2976,7 +2985,39 @@ struct IPluginNetworkChannel
 	// Fires when IsServerReady() becomes true; fires immediately if it already is.
 	void (*RegisterServerReadyCallback)(const IPluginSelf* self, PluginServerReadyCallback callback);
 	void (*UnregisterServerReadyCallback)(const IPluginSelf* self, PluginServerReadyCallback callback);
+
+	// v80 -- appended at the end, do not relocate. Client side: the address of the
+	// server this client is connected to, as its own connection reports it, as
+	// UTF-8 text "ip:port", lower-cased, so a plugin can pin a pairing secret to
+	// the server instead of trusting anything the server says about itself.
+	//
+	// Same text convention as GetDeclaredFeatures: returns the full length of the
+	// text without the NUL, writes it NUL-terminated and cut to size, and with a
+	// null buf and a size of 0 only measures.
+	//
+	// Call it from Tick, once IsServerReady() is true. Not from PluginInit, not
+	// from a render or ImGui callback, not from a worker thread: it reads game
+	// objects, which only the game thread may. A plugin that needs the text in a
+	// render callback copies it during Tick into its own variable. The loader
+	// never logs the text, and neither should a plugin.
+	//
+	// Returns -1 when there is no address to give, and then the plugin must not
+	// pin and must not answer a pairing challenge. That is: a dedicated server or
+	// a generic build, no world or network driver, no connection to a server (main
+	// menu, travelling, single player, the listen host itself), a game build whose
+	// address call the loader could not place, a call that faulted, an empty text,
+	// or the engine's own text "Invalid" (a connection with no address).
+	//
+	// The text is whatever the engine prints for the route. A direct connection
+	// prints the IPv4 address and port, for example "203.0.113.7:7780"; a relay or
+	// peer route may print something else. Pin the text as it is, and treat a
+	// changed text as a different server.
+	int (*GetServerAddress)(char* buf, size_t size);
 };
+
+static_assert(offsetof(IPluginNetworkChannel, UnregisterServerReadyCallback) == 15 * sizeof(void*), "v56 layout");
+static_assert(offsetof(IPluginNetworkChannel, GetServerAddress)              == 16 * sizeof(void*), "v80 starts where v56 ended");
+static_assert(sizeof(IPluginNetworkChannel)                                  == 17 * sizeof(void*), "v80 layout");
 
 // ---------------------------------------------------------------------------
 // Native pointers (v21)
