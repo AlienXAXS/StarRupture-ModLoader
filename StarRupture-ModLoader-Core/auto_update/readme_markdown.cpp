@@ -116,8 +116,8 @@ namespace ModIndex
 				}
 				if (ok)
 				{
-					const unsigned min = len == 2 ? 0x80 : len == 3 ? 0x800 : 0x10000;
-					ok = cp >= min && cp <= 0x10FFFF && !(cp >= 0xD800 && cp <= 0xDFFF);
+					const unsigned lowest = len == 2 ? 0x80 : len == 3 ? 0x800 : 0x10000;
+					ok = cp >= lowest && cp <= 0x10FFFF && !(cp >= 0xD800 && cp <= 0xDFFF);
 				}
 
 				if (!ok)
@@ -139,8 +139,11 @@ namespace ModIndex
 		{
 			if (s[i] != '&')
 				return 0;
-			const size_t semi = s.find(';', i + 1);
-			if (semi == std::string::npos || semi - i > 10)
+			const size_t last = std::min(s.size(), i + 11);
+			size_t semi = i + 1;
+			while (semi < last && s[semi] != ';')
+				++semi;
+			if (semi >= last || semi - i > 10)
 				return 0;
 			const std::string name = s.substr(i + 1, semi - i - 1);
 			if (name == "amp") out += '&';
@@ -631,7 +634,7 @@ namespace ModIndex
 			{
 				const size_t n = s.size();
 				size_t i = 0;
-				while (i < n && !stop && !(SpansFull() && plain.empty()))
+				while (i < n && !stop)
 				{
 					if (bold && i >= boldEnd)
 					{
@@ -704,7 +707,7 @@ namespace ModIndex
 						}
 						else
 							plain.append(2, c);
-						i += close != std::string::npos ? 2 : 2;
+						i += 2;
 					}
 					else if (c == '*')
 					{
@@ -945,7 +948,7 @@ namespace ModIndex
 				if (rest.empty())
 				{
 					if (inIndented)
-						code += '\n';
+						code += code.size() < kMaxCodeBytes ? "\n" : "";
 					else
 						Flush();
 					return;
