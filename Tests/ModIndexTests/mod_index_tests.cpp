@@ -511,6 +511,8 @@ namespace
 	}
 }
 
+namespace
+{
 // The shared key lookup in auto_update/json_extract.h: a key matches only as a
 // real key, and the value read is the one that belongs to it.
 void JsonExtractTests()
@@ -542,6 +544,9 @@ void JsonExtractTests()
 	Check(JsonExtractString("{\"id\": ", "id").empty() && JsonExtractInt("{\"id\":", "id", -1) == -1, "json: a key with no value is absent");
 	Check(JsonExtractString("{\"a\": \"unterminated", "id").empty(), "json: an unterminated string does not loop or match");
 	Check(JsonExtractString("{\"identity\": \"x\"}", "id").empty(), "json: a longer key does not match its prefix");
+
+	Check(JsonExtractString("{\"a\": \"5\\\" pipe\", \"id\": \"real\"}", "id") == "real", "json: a single escaped quote in a value does not end the string");
+	Check(JsonExtractString("{\"a\": \"x\\", "id").empty() && JsonExtractInt("{\"a\": \"x\\", "id", -1) == -1, "json: a trailing backslash ends the walk");
 
 	// Nested objects: the first real key in the text still wins
 	Check(JsonExtractString("{\"a\": {\"id\": \"inner\"}, \"id\": \"outer\"}", "id") == "inner", "json: the first match in text order wins");
@@ -577,6 +582,7 @@ void JsonExtractTests()
 	const std::string pluginManifest = "{\"version\":\"0.26.0\",\"download_url\":\"https://example.test/p.zip\",\"plugin_name\":\"BetterCheats\",\"interface_version_min\":77}";
 	Check(JsonExtractString(pluginManifest, "version") == "0.26.0" && JsonExtractString(pluginManifest, "plugin_name") == "BetterCheats", "manifest: a flat plugin manifest reads");
 	Check(JsonExtractInt(pluginManifest, "interface_version_min", -1) == 77 && JsonExtractInt(pluginManifest, "interface_version_max", -1) == -1, "manifest: a plugin manifest's min is read and a missing max falls back");
+}
 }
 
 int main()
