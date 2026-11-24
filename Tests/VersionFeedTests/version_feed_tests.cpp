@@ -9,6 +9,7 @@
 #include "memory_scanner/image_info.h"
 #include "memory_scanner/version_feed.h"
 #include "memory_scanner/version_map.h"
+#include "plugins/plugin_catalog.h"
 #include "third_party/monocypher/monocypher-ed25519.h"
 
 #include <cstdint>
@@ -661,6 +662,105 @@ int main()
 		DeleteFileW(path.c_str());
 	}
 #endif
+
+	// ---- the signed plugin catalog: verify-only entry, cache, accessor ------
+	{
+		const std::string catBody = std::string("kind\tplugin-catalog\n")
+			+ "plugin\tAlpha\t1.2.0\n"
+			+ "plugin\tBeta Two\t0.3\n"
+			+ "feature\tAlpha\tfast-mode\t-\tFast mode\n"
+			+ "feature\tBeta Two\tsmoke\t128786\tSmoke effect\n";
+		const std::string cat10 = Sign(sk1, Region(10, catBody));
+		const std::wstring path = TempPath(L"catalog.cache");
+		DeleteFileW(path.c_str());
+		std::string e;
+
+		// VerifySigned agrees with ReadSigned on the map files: same seq, key and verdict.
+		{
+			SignedFeed f;
+			VersionFeed::VerifiedBody v;
+			Check(Read(good, keys, f, e) && VersionFeed::VerifySigned(good, keys, v, e)
+				&& v.seq == f.seq && v.keyId == f.keyId && v.testKey == f.testKey && v.body == Region(100, body),
+				"VerifySigned and ReadSigned agree on a valid map file, and the body is everything before the sig line");
+			std::string flipped = good;
+			flipped[flipped.find("AA 01") + 1] ^= 1;
+			Check(!Read(flipped, keys, f, e) && !VersionFeed::VerifySigned(flipped, keys, v, e) && !e.empty(),
+				"both refuse a map file with a flipped byte");
+			Check(!VersionFeed::VerifySigned(Sign(sk1, Region(100, body), "k9"), keys, v, e), "VerifySigned refuses an unknown key ID");
+			Check(!VersionFeed::VerifySigned(good.substr(0, good.size() - 1), keys, v, e), "VerifySigned refuses a file that does not end in a line feed");
+#if defined(VMAP_TRUST_TEST_KEY)
+			const std::string fixture = Slurp(FixturePath("test-feed-k1.txt"));
+			Check(Read(fixture, VersionFeed::CompiledKeys(), f, e)
+				&& VersionFeed::VerifySigned(fixture, VersionFeed::CompiledKeys(), v, e)
+				&& v.seq == f.seq && v.seq == 1761900000 && v.keyId == "k1" && v.testKey,
+				"VerifySigned agrees with ReadSigned on the Node-signed fixture");
+#endif
+		}
+
+		// Nothing stored yet.
+		Check(PluginCatalog::AccessorText() == "unavailable", "the accessor says unavailable before any catalog");
+		PluginCatalog::LoadCache(path, keys);
+		Check(PluginCatalog::AccessorText() == "unavailable", "a missing cache file loads nothing, quietly");
+
+		// A good file is accepted and cached.
+		Check(PluginCatalog::Store(path, cat10, keys, e) == PluginCatalog::Outcome::Stored, "a good signed catalog is stored");
+		Check(Slurp(path) == cat10, "the cache file is the signed file, byte for byte");
+		const std::string accessor10 = "format\t1\nseq\t10\n" + catBody;
+		Check(PluginCatalog::AccessorText() == accessor10, "the accessor serves the stored catalog");
+
+		// Refusals keep the last good file.
+		Check(PluginCatalog::Store(path, cat10, keys, e) == PluginCatalog::Outcome::Unchanged && Slurp(path) == cat10,
+			"the same file again is unchanged");
+		Check(PluginCatalog::Store(path, Sign(sk2, Region(10, catBody)), keys, e) == PluginCatalog::Outcome::Unchanged && Slurp(path) == cat10,
+			"the same body signed by another key is unchanged");
+		Check(PluginCatalog::Store(path, Sign(sk1, Region(9, catBody)), keys, e) == PluginCatalog::Outcome::RefusedRollback
+			&& e.find("below") != std::string::npos && Slurp(path) == cat10, "a lower seq is refused as a rollback");
+		Check(PluginCatalog::Store(path, Sign(sk1, Region(10, catBody + "feature\tAlpha\textra\t*\tExtra\n")), keys, e) == PluginCatalog::Outcome::RefusedConflict
+			&& Slurp(path) == cat10, "the same seq with another body is refused as a conflict");
+		std::string flipped = cat10;
+		flipped[flipped.find("Alpha") + 1] ^= 1;
+		Check(PluginCatalog::Store(path, flipped, keys, e) == PluginCatalog::Outcome::Rejected && Slurp(path) == cat10,
+			"a bad signature is rejected and the last good file stays");
+		Check(PluginCatalog::Store(path, Sign(sk1, "format\t2\nseq\t20\n" + catBody), keys, e) == PluginCatalog::Outcome::Rejected
+			&& e.find("format") != std::string::npos && Slurp(path) == cat10, "an unknown header version is rejected");
+		Check(PluginCatalog::Store(path, Sign(sk1, Region(20, catBody), "k9"), keys, e) == PluginCatalog::Outcome::Rejected && Slurp(path) == cat10,
+			"an unknown key ID is rejected");
+		Check(PluginCatalog::Store(path, Sign(sk1, Region(20, std::string("kind\tversion-map\n") + "plugin\tAlpha\t1.0\n")), keys, e) == PluginCatalog::Outcome::Rejected
+			&& Slurp(path) == cat10, "a signed file of another kind is rejected");
+		Check(PluginCatalog::Store(path, Sign(sk1, Region(20, std::string("kind\tplugin-catalog\n"))), keys, e) == PluginCatalog::Outcome::Rejected
+			&& Slurp(path) == cat10, "a signed catalog with no plugin is rejected");
+		Check(PluginCatalog::Store(path, cat10.substr(0, cat10.size() - 1), keys, e) == PluginCatalog::Outcome::Rejected && Slurp(path) == cat10,
+			"a file cut before its last line feed is rejected");
+		Check(PluginCatalog::Store(path, cat10.substr(0, cat10.size() - 20), keys, e) == PluginCatalog::Outcome::Rejected && Slurp(path) == cat10,
+			"a file cut inside the signature is rejected");
+		Check(PluginCatalog::Store(path, cat10.substr(0, cat10.find("sig\t")), keys, e) == PluginCatalog::Outcome::Rejected && Slurp(path) == cat10,
+			"a file with no sig line is rejected");
+		Check(PluginCatalog::Store(path, "", keys, e) == PluginCatalog::Outcome::Rejected && Slurp(path) == cat10, "an empty file is rejected");
+		Check(PluginCatalog::AccessorText() == accessor10, "the accessor still serves the last good catalog after every refusal");
+
+		// A higher seq replaces the cache and the accessor.
+		const std::string body11 = std::string("kind\tplugin-catalog\n") + "plugin\tAlpha\t1.3.0\n";
+		const std::string cat11 = Sign(sk2, Region(11, body11));
+		Check(PluginCatalog::Store(path, cat11, keys, e) == PluginCatalog::Outcome::Stored && Slurp(path) == cat11
+			&& PluginCatalog::AccessorText() == "format\t1\nseq\t11\n" + body11, "a higher seq replaces the cache and the accessor");
+
+		// The cache survives a reload from disk, and a cache that no longer verifies loads nothing new.
+		{
+			const std::wstring other = TempPath(L"catalog2.cache");
+			Put(other, cat10);
+			PluginCatalog::LoadCache(other, keys);
+			Check(PluginCatalog::AccessorText() == accessor10, "LoadCache reads the cache file back into the accessor");
+			Put(other, flipped);
+			TestDoubles::g_log.clear();
+			PluginCatalog::LoadCache(other, keys);
+			Check(PluginCatalog::AccessorText() == accessor10 && Logged(L"not usable"),
+				"a cache file that fails verification is logged and leaves the copy in memory as it was");
+			PluginCatalog::LoadCache(other, std::vector<PublicKey>{});
+			Check(PluginCatalog::AccessorText() == accessor10, "no keys loads nothing");
+			DeleteFileW(other.c_str());
+		}
+		DeleteFileW(path.c_str());
+	}
 
 	printf("%d checks, %d failed\n", g_checks, g_failed);
 	return g_failed ? 1 : 0;

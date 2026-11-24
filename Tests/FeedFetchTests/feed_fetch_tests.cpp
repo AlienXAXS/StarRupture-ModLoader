@@ -12,6 +12,7 @@
 #include "auto_update/version_compare.h"
 #include "memory_scanner/version_feed.h"
 #include "memory_scanner/version_map.h"
+#include "plugins/plugin_catalog.h"
 #include "third_party/monocypher/monocypher-ed25519.h"
 
 #include <atomic>
@@ -105,6 +106,16 @@ namespace
 		return region + "sig\t" + s.pub.id + "\t" + Base64(sig, 64) + "\n";
 	}
 
+	std::string SignedCatalog(const Signer& s, uint64_t seq, const char* version)
+	{
+		const std::string region = "format\t1\nseq\t" + std::to_string(seq) + "\nkind\tplugin-catalog\n"
+			"plugin\tAlpha\t" + version + "\n"
+			"feature\tAlpha\tfast-mode\t-\tFast mode\n";
+		uint8_t sig[64];
+		crypto_ed25519_sign(sig, s.secret, reinterpret_cast<const uint8_t*>(region.data()), region.size());
+		return region + "sig\t" + s.pub.id + "\t" + Base64(sig, 64) + "\n";
+	}
+
 	// The dedicated server's file: its build lines are labelled "server ...".
 	std::string ServerSignedFile(const Signer& s, uint64_t seq)
 	{
@@ -149,6 +160,7 @@ namespace
 	// Routes:
 	//   /ok        200 with the current feed (and its ETag, when one is set); 304 when
 	//              the request's If-None-Match is that ETag
+	//   /catalog   200 with the current plugin catalog, no ETag
 	//   /redirect  302 to /ok
 	//   /missing   404
 	//   /hang      reads the request and says nothing
@@ -162,6 +174,7 @@ namespace
 		std::atomic<int> served304{ 0 };
 		std::string feed;
 		std::string etag;                // set between requests, never during one
+		std::string catalog;             // served at /catalog, with no ETag
 		std::string lastIfNoneMatch;     // of the latest request; read after its answer arrived
 
 		bool Start()
@@ -281,6 +294,12 @@ namespace
 					SendAll(c, h.data(), h.size());
 					SendAll(c, feed.data(), feed.size());
 				}
+			}
+			else if (path == "/catalog")
+			{
+				const std::string h = Head(200, "OK", catalog.size());
+				SendAll(c, h.data(), h.size());
+				SendAll(c, catalog.data(), catalog.size());
 			}
 			else if (path == "/redirect")
 			{
@@ -762,6 +781,56 @@ int main()
 		srv.etag = "\"v200\"";
 		Check(FeedFetch::Refresh(ConfigFor(srv, "/ok", keys, cache), "test") == FeedFetch::Result::Stored && Slurp(cache) == srv.feed,
 			"a higher seq replaces the cache");
+	}
+
+	// ---- the plugin catalog: one GET, verified, cached ---------------------------
+	{
+		const std::wstring catCache = TempPath(L"catalog.cache");
+		DeleteFileW(catCache.c_str());
+		FeedFetch::Config cfg = ConfigFor(srv, "/ok", keys, cache);
+		cfg.catalogUrl = srv.Url("/catalog");
+		cfg.catalogCachePath = catCache;
+
+		srv.hits = 0;
+		srv.catalog = SignedCatalog(sk, 5, "1.0.0");
+		Check(FeedFetch::RefreshCatalog(cfg) == FeedFetch::Result::Stored && srv.hits == 1 && Slurp(catCache) == srv.catalog,
+			"catalog: a verified catalog is stored in its cache, verbatim");
+		Check(PluginCatalog::AccessorText().find("seq\t5\n") != std::string::npos
+			&& PluginCatalog::AccessorText().find("plugin\tAlpha\t1.0.0\n") != std::string::npos, "catalog: the accessor serves it at once");
+		Check(srv.lastIfNoneMatch.empty(), "catalog: no ETag is sent");
+
+		Check(FeedFetch::RefreshCatalog(cfg) == FeedFetch::Result::Unchanged && Slurp(catCache) == srv.catalog,
+			"catalog: the same file again is unchanged");
+
+		const std::string at5 = srv.catalog;
+		srv.catalog = SignedCatalog(sk, 4, "0.9.0");
+		Check(FeedFetch::RefreshCatalog(cfg) == FeedFetch::Result::Unchanged && Slurp(catCache) == at5,
+			"catalog: a lower seq leaves the cache as it was");
+		srv.catalog = SignedCatalog(sk, 6, "1.1.0");
+		srv.catalog[40] ^= 1;
+		Check(FeedFetch::RefreshCatalog(cfg) == FeedFetch::Result::Failed && Slurp(catCache) == at5,
+			"catalog: a file that fails its signature leaves the cache as it was");
+
+		cfg.catalogUrl = srv.Url("/missing");
+		Check(FeedFetch::RefreshCatalog(cfg) == FeedFetch::Result::Failed && Slurp(catCache) == at5,
+			"catalog: a 404 leaves the cache as it was");
+		cfg.catalogUrl = srv.Url("/catalog");
+
+		srv.catalog = SignedCatalog(sk, 7, "1.2.0");
+		Check(FeedFetch::RefreshCatalog(cfg) == FeedFetch::Result::Stored && Slurp(catCache) == srv.catalog
+			&& PluginCatalog::AccessorText().find("plugin\tAlpha\t1.2.0\n") != std::string::npos, "catalog: a higher seq replaces the cache");
+
+		srv.hits = 0;
+		FeedFetch::Config off = cfg;
+		off.autoUpdate = false;
+		FeedFetch::Config noUrl = cfg;
+		noUrl.catalogUrl.clear();
+		FeedFetch::Config noKeys = cfg;
+		noKeys.keys.clear();
+		Check(FeedFetch::RefreshCatalog(off) == FeedFetch::Result::NotAllowed && FeedFetch::RefreshCatalog(noUrl) == FeedFetch::Result::NotAllowed
+			&& FeedFetch::RefreshCatalog(noKeys) == FeedFetch::Result::NotAllowed && srv.hits == 0,
+			"catalog: updates off, no URL or no key makes no request");
+		DeleteFileW(catCache.c_str());
 	}
 
 	// ---- no request ------------------------------------------------------------
