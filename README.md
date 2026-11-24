@@ -627,6 +627,23 @@ menu-layer read and the class list in Kian369's MiniMap. The build menu is also 
 game's menu layer, so its bit is set whenever the menu is open.
 <sup>[✦](#msantoro12)</sup>
 
+#### Asking whether another plugin is loaded
+
+`hooks->Registry->GetPluginVersion(name, out, cap)` (interface 80; a loader below 80 has no `Registry`, so check
+the loader's interface version first) answers whether a plugin is loaded and enabled, and copies its version
+text into `out`. It returns false when that plugin is not loaded, is disabled, is unloading or reloading, or when
+`cap` is too small for the whole text (`out` is then empty). Pass `nullptr` for `out` to only ask whether it is
+loaded. The name is the plugin's name, case does not matter. Call it from the game thread or a render callback.
+
+```cpp
+if (loaderInterfaceVersion >= 80 && hooks->Registry)
+{
+    char version[64];
+    if (hooks->Registry->GetPluginVersion("BetterCheats", version, sizeof(version)))
+        LOG_INFO("BetterCheats %s is loaded, leaving that feature to it", version);
+}
+```
+
 ### Reloading a plugin from a script
 
 To try a new build without pressing **RELOAD**, turn on `[Developer] RemoteReload=1` in `modloader.ini`
