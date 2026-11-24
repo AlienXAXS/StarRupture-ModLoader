@@ -63,3 +63,6 @@ CLAUDE.md
 
 # Local plugin build/deploy config (machine-specific paths)
 tools/build-plugins.config.json
+
+# Output of the mod index check (build-mod-index.mjs)
+/mod-index.txt

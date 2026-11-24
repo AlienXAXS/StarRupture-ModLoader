@@ -30,8 +30,8 @@ shared per-game-build data the loader serves): open a PR.
 | `author` | no | Up to 64 characters. |
 | `version` | no | The latest release. Up to 32 characters. |
 | `summary` | no | One or two sentences. Up to 300 characters. |
-| `readme_url` | yes | A raw GitHub link to your README (host `raw.githubusercontent.com`, https). |
-| `tested_loader` | yes | The ModLoader version you tested on, for example `1.27.0`. Up to 32 characters. |
+| `readme_url` | no | A raw GitHub link to your README (host `raw.githubusercontent.com`, https). Please include it. |
+| `tested_loader` | no | The ModLoader version you tested on, for example `1.27.0`. Up to 32 characters. Please include it. |
 | `interface_version_min` | no | The plugin interface number the plugin declares. Leave it out when unknown. |
 
 The list holds up to 200 plugins, and the file stays under 256 KB.
@@ -48,8 +48,8 @@ It prints `ok`, or names the entry that breaks a rule below.
 
 ## After it is merged
 
-The list is signed and published as `mod-index.v1.txt` by the same run that publishes the version
-map. It reaches players within that publish cycle; no ModLoader release is needed.
+The list is signed and published as `mod-index.v1.txt` together with the version map. It reaches
+players within that publish cycle; no ModLoader release is needed.
 
 ## The page_url rule
 

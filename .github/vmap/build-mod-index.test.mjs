@@ -59,7 +59,12 @@ test('every entry needs an id, a name and a page_url on an allowed https host', 
   const ok = ['https://github.com/a/b', 'https://www.github.com/a/b', 'https://nexusmods.com/starrupture/mods/1', 'https://www.nexusmods.com/starrupture/mods/1'];
   for (const u of ok) assert.equal(outcome(() => build([entry({ page_url: u })])), 'ok', u);
   const bad = ['http://github.com/a/b', 'https://evil.example/a', 'https://github.com.evil.example/a', 'https://github.com:8443/a', 'https://me@github.com/a',
-    'https://github.com\\a', 'https://github.com/a b', 'https://raw.githubusercontent.com/a/b', 'ftp://github.com/a', 'github.com/a', 42];
+    'https://github.com\\a', 'https://github.com/a b', 'https://raw.githubusercontent.com/a/b', 'ftp://github.com/a', 'github.com/a', 42,
+    'https://github.com:443/a', 'https://github.com:/a', 'https://@github.com/a', 'https:///github.com/a', 'https://github.com/café',
+    'https://github.com/a\tb', `https://github.com/${'a'.repeat(200 - 'https://github.com/'.length + 1)}`, 'https://'];
+  assert.equal(outcome(() => build([entry({ page_url: `https://github.com/${'a'.repeat(200 - 'https://github.com/'.length)}` })])), 'ok');
+  assert.equal(outcome(() => build([entry({ page_url: 'https://GitHub.com/a/b?x=1#y' })])), 'ok');
+  assert.match(outcome(() => build([entry({ name: ' \t ' })])), /^refused: entry 1 \(codex\) has no name/);
   for (const u of bad) assert.match(outcome(() => build([entry({ page_url: u })])), /^refused: .*page_url must be https on nexusmods.com or github.com/, String(u));
 });
 

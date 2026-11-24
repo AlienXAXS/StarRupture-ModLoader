@@ -39,14 +39,21 @@ const README_HOSTS = ['raw.githubusercontent.com'];
 export class Refused extends Error {}
 const need = (cond, msg) => { if (!cond) throw new Refused(msg); };
 
-// A string that is an https URL on one of the hosts: no port, no user name, no
-// backslash and no space, as the loader requires.
+// The loader's URL rule (IsAllowedUrl in mod_index.h), word for word: https, at
+// most 200 bytes, only printable ASCII, no backslash, no user info or port, and
+// a host equal to one of the allowed hosts (case does not matter).
+const MAX_URL_LEN = 200;
 function allowedUrl(value, hosts) {
-  if (typeof value !== 'string' || /[\\\s]/.test(value) || !value.startsWith('https://')) return false;
-  let u;
-  try { u = new URL(value); } catch { return false; }
-  return u.protocol === 'https:' && u.port === '' && u.username === '' && u.password === '' && hosts.includes(u.hostname);
+  if (typeof value !== 'string' || !value.startsWith('https://') || value.length <= 'https://'.length || value.length > MAX_URL_LEN) return false;
+  if (/[^!-~]|\\/.test(value)) return false;
+  const end = value.slice('https://'.length).search(/[/?#]/);
+  const host = end === -1 ? value.slice('https://'.length) : value.slice('https://'.length, 'https://'.length + end);
+  if (/[@:]/.test(host)) return false;
+  return hosts.includes(host.toLowerCase());
 }
+
+// The loader trims control characters and spaces from a name and an id, and drops an entry left with none.
+const hasText = (v) => typeof v === 'string' && v.replace(/[\x00-\x20\x7f]/g, '') !== '';
 
 // Throws Refused with the reason, naming the entry, when the index is not fit to publish.
 export function checkIndex(bytes) {
@@ -65,8 +72,8 @@ export function checkIndex(bytes) {
   list.forEach((e, i) => {
     const who = `entry ${i + 1}${typeof e?.id === 'string' && e.id !== '' ? ` (${e.id})` : ''}`;
     need(e !== null && typeof e === 'object' && !Array.isArray(e), `${who} is not an object`);
-    need(typeof e.id === 'string' && e.id !== '', `${who} has no id`);
-    need(typeof e.name === 'string' && e.name !== '', `${who} has no name`);
+    need(hasText(e.id), `${who} has no id`);
+    need(hasText(e.name), `${who} has no name`);
     need(allowedUrl(e.page_url, PAGE_HOSTS), `${who}: page_url must be https on nexusmods.com or github.com`);
     need(e.readme_url === undefined || allowedUrl(e.readme_url, README_HOSTS), `${who}: readme_url must be https on raw.githubusercontent.com`);
   });
@@ -91,7 +98,7 @@ function main(argv) {
     else rest.push(a);
   }
   if (rest.length !== 1 || !opt.out) throw new Error('usage: build-mod-index.mjs <index.json> --out <file> [--seq n]');
-  if (opt.seq !== undefined && !/^[1-9][0-9]*$/.test(opt.seq)) throw new Error('--seq is a positive integer');
+  if (opt.seq !== undefined && !(/^[1-9][0-9]*$/.test(opt.seq) && Number.isSafeInteger(Number(opt.seq)))) throw new Error('--seq is a positive integer');
   try {
     const built = buildModIndex(readFileSync(rest[0]), { seq: opt.seq === undefined ? null : Number(opt.seq) });
     writeFileSync(opt.out, built);
