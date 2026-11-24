@@ -648,11 +648,13 @@ if (hooks->Registry)
 `hooks->Registry->GetDeclaredFeatures(buf, size)` (interface 80) copies the features the running plugins declare into
 `buf` as text, and returns the length of the whole text. It works like `snprintf`: the text is cut to `size` and ends
 in a NUL, and a null `buf` with a `size` of 0 only measures, so ask for the length first. It returns -1 before the mod
-loader has finished starting the plugins; ask again from a later `Tick`. Call it from `Tick` or `PluginInit`, not
-from a render callback.
+loader has finished starting the plugins. Call it from `Tick`, not from `PluginInit` (during startup every plugin is
+still initialising, so a call there gets -1), and not from a render callback. Plugins that load in the preload stage
+are not listed.
 
 The same text is written to `ModLoader\Logs\declared-features.v1.txt` once the plugins have started and again after
-each reload. Fields are separated by a tab and rows end in a line feed:
+each reload. The file is a snapshot of that moment; the function is always live. Fields are separated by a tab and
+rows end in a line feed:
 
 ```
 format	1

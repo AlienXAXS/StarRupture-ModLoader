@@ -232,6 +232,9 @@ namespace PluginHookReport
         std::string reason;   // why it is off, empty when it is on
         bool        preload = false;
         State       state   = State::On;
+        // The game build has it off, whether or not a server turned it off too
+        // (state says OffServer then). True is the same as "off in this build".
+        bool        buildOff = false;
     };
 
     // Copy of the catalog: every declared feature of every loaded plugin, with

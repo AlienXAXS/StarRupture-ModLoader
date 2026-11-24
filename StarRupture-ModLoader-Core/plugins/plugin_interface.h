@@ -944,11 +944,11 @@
 //      GetPluginVersion (whether another plugin is loaded and enabled, and its
 //      version) and GetDeclaredFeatures (the features every running plugin
 //      declares, as tab-separated text; the loader also writes it to
-//      Logs\declared-features.v1.txt). The pointer is appended after HostRules, preserving the existing
-//      prefix, and MIN stays at 70. A plugin that uses it declares 80, so a
-//      loader below 80 refuses it (below 80 the Registry pointer does not
-//      exist, and reading it reads past the table). Later versions add members
-//      after the ones here.
+//      Logs\declared-features.v1.txt). The pointer is appended after
+//      HostRules, preserving the existing prefix, and MIN stays at 70. A
+//      plugin that uses it declares 80, so a loader below 80 refuses it (below
+//      80 the Registry pointer does not exist, and reading it reads past the
+//      table). Later versions add members after the ones here.
 // --- v80 ---
 //
 #define PLUGIN_INTERFACE_VERSION_MIN 70
@@ -4097,12 +4097,14 @@ static_assert(sizeof(IPluginHostRules)                                   == 13 *
 // the full length of the text without the terminating NUL, writes the text
 // NUL-terminated and cut to size, and with a null buf and a size of 0 only
 // measures, so a caller can ask for the length first and allocate. It returns
-// -1 only before the loader has finished starting the plugins; ask again from
-// a later Tick. Call it from Tick or PluginInit, never from a render callback
-// (same rule as GetPluginVersion).
+// -1 only before the loader has finished starting the plugins. Call it from
+// Tick, not from PluginInit: during startup every plugin is still initialising,
+// so a PluginInit call gets -1. Never call it from a render callback.
 //
-// The text is the same as the file Logs\declared-features.v1.txt. Fields are
-// separated by a tab, rows by a line feed:
+// The text is the same as the file Logs\declared-features.v1.txt, except that
+// the file is a snapshot written once the plugins have started and again after
+// a reload, while the accessor is always live. Plugins that load in the preload
+// stage are not listed. Fields are separated by a tab, rows by a line feed:
 //
 //     format<TAB>1
 //     kind<TAB>declared-features

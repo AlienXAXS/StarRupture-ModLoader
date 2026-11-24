@@ -675,13 +675,18 @@ namespace PluginHookReport
             info.id      = e.id;
             info.title   = e.title;
             info.preload = e.preload;
+            std::string buildReason;
+            info.buildOff = BuildOffLocked(e.plugin, e.preload, e.id, &buildReason);
             if (e.hostOff)
             {
                 info.state  = FeatureInfo::State::OffServer;
                 info.reason = kHostOffReason;
             }
-            else if (BuildOffLocked(e.plugin, e.preload, e.id, &info.reason))
-                info.state = FeatureInfo::State::OffBuild;
+            else if (info.buildOff)
+            {
+                info.state  = FeatureInfo::State::OffBuild;
+                info.reason = buildReason;
+            }
             out.push_back(std::move(info));
         }
         return out;

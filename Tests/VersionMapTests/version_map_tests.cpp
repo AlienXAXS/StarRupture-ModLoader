@@ -1318,6 +1318,7 @@ int main()
 			return none;
 		};
 		const auto stateOf = [&](const char* plugin, const char* id) { return feature(plugin, id).state; };
+		const auto buildOffOf = [&](const char* plugin, const char* id) { return feature(plugin, id).buildOff; };
 		const auto inCatalog = [&](const char* plugin, const char* id) { return feature(plugin, id).title != "(not in the catalog)"; };
 		// How many lines of this plugin's report are the server's.
 		const auto hostLines = [](const char* plugin)
@@ -1356,6 +1357,8 @@ int main()
 			&& stateOf("HostPlug", "laser") == On && stateOf("HostPlug", "hud") == On
 			&& stateOf("HostPlug", "gone") == OffBuild && stateOf("HostPlug", "absent") == OffBuild
 			&& hostLines("HostPlug") == 0, "host rules: with no list the catalog shows what the build has on and off");
+		Check(!buildOffOf("HostPlug", "laser") && !buildOffOf("HostPlug", "hud") && buildOffOf("HostPlug", "gone") && buildOffOf("HostPlug", "absent"),
+			"host rules: buildOff is true for the features the build has off, whatever state says");
 
 		// A deny flips the flag, and says so in the report, without opening the failure window.
 		unsigned serial = PluginHookReport::GetCommitSerial();
@@ -1363,6 +1366,8 @@ int main()
 		PluginHookReport::ApplyHostRules({ { "hostplug", "laser" } });
 		Check(!laser && hud && stateOf("HostPlug", "laser") == OffServer && stateOf("HostPlug", "hud") == On
 			&& feature("HostPlug", "laser").reason == "turned off by this server", "host rules: a deny writes the plugin's flag false");
+		Check(!buildOffOf("HostPlug", "laser") && !buildOffOf("HostPlug", "hud"),
+			"host rules: a server's deny leaves buildOff false for a feature the build has on");
 		Check(hostLines("HostPlug") == 1 && PluginHookReport::GetCommitSerial() == serial
 			&& PluginHookReport::ConfigOffReason("HostPlug", "Laser", "Scale") == "Mining laser is off: turned off by this server"
 			&& PluginHookReport::ConfigOffReason("HostPlug", "Hud", "Show").empty()

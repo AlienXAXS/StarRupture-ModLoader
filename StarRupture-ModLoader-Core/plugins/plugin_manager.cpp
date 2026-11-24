@@ -1228,14 +1228,20 @@ namespace PluginManager
 		return total;
 	}
 
+	// A plugin that is running: initialised, not unloading and not switched off
+	// by a crash. Caller holds g_pluginLock.
+	static bool IsRunning(const LoadedPlugin& p)
+	{
+		return p.isInitialized && !p.isUnloading && !(p.hModule && PluginGuard::GetFault(p.hModule, nullptr));
+	}
+
 	bool GetPluginVersion(const char* name, char* out, size_t cap)
 	{
 		EnterCriticalSection(&g_pluginLock);
 		const bool found = PluginVersionQuery::Find(g_loadedPlugins,
 			[](const std::unique_ptr<LoadedPlugin>& p)
 			{
-				return PluginVersionQuery::Row{ &p->cachedName, &p->cachedVersion,
-					p->isInitialized && !p->isUnloading && !(p->hModule && PluginGuard::GetFault(p->hModule, nullptr)) };
+				return PluginVersionQuery::Row{ &p->cachedName, &p->cachedVersion, IsRunning(*p) };
 			},
 			name, out, cap);
 		LeaveCriticalSection(&g_pluginLock);
@@ -1249,12 +1255,12 @@ namespace PluginManager
 		std::vector<DeclaredFeaturesText::FeatureRow> features;
 		for (const PluginHookReport::FeatureInfo& f : PluginHookReport::Features())
 			if (!f.preload)
-				features.push_back({ f.plugin, f.id, f.title, f.state != PluginHookReport::FeatureInfo::State::OffBuild });
+				features.push_back({ f.plugin, f.id, f.title, !f.buildOff });
 
 		std::vector<DeclaredFeaturesText::PluginRow> plugins;
 		EnterCriticalSection(&g_pluginLock);
 		for (const std::unique_ptr<LoadedPlugin>& p : g_loadedPlugins)
-			if (p->isInitialized && !p->isUnloading && !(p->hModule && PluginGuard::GetFault(p->hModule, nullptr)))
+			if (IsRunning(*p))
 				plugins.push_back({ p->cachedName, p->cachedVersion });
 		LeaveCriticalSection(&g_pluginLock);
 
@@ -1271,6 +1277,10 @@ namespace PluginManager
 	// Best effort: a failure costs one warning and nothing else.
 	static void WriteDeclaredFeaturesDump()
 	{
+		// One writer at a time: two reloads share the temp file's name.
+		static std::mutex s_dumpMutex;
+		std::lock_guard<std::mutex> lock(s_dumpMutex);
+
 		const std::wstring dir = GetModLoaderDirPath(L"Logs");
 		CreateDirectoryW(dir.c_str(), nullptr);
 		const std::wstring path = dir + L"\\declared-features.v1.txt";
