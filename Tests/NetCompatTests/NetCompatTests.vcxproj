@@ -103,6 +103,7 @@
     <ClInclude Include="$(CoreDir)network_channel\host_rules_wire.h" />
     <ClInclude Include="$(CoreDir)plugins\host_rules.h" />
     <ClInclude Include="$(CoreDir)plugins\plugin_version_query.h" />
+    <ClInclude Include="$(CoreDir)plugins\declared_features_text.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="..\README.md" />

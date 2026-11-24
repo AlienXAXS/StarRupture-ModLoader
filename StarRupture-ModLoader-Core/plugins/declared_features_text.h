@@ -23,7 +23,7 @@
 //   kind<TAB>declared-features
 //   game_cl<TAB><running game CL>
 //   loader<TAB><loader build tag>
-//   plugin<TAB><name><TAB><version>                          one per plugin with features
+//   plugin<TAB><name><TAB><version>                          one per running plugin
 //   feature<TAB><plugin><TAB><id><TAB><state><TAB><title>    state is on or off
 // Sorted by plugin, then id, without regard to case.
 // ---------------------------------------------------------------------------
@@ -97,9 +97,9 @@ namespace DeclaredFeaturesText
         return la != lb ? la < lb : a < b;
     }
 
-    // The whole text. Only a plugin in `plugins` that has at least one feature
-    // appears; a feature whose plugin is not in `plugins` is left out. Where two
-    // plugins share a name the first one listed wins.
+    // The whole text: a plugin row for every plugin in `plugins`, each followed by
+    // its features. A feature whose plugin is not in `plugins` is left out. Where
+    // two plugins share a name the first one listed wins.
     inline std::string Build(uint32_t gameCL, const std::string& loader,
                              const std::vector<PluginRow>& plugins, const std::vector<FeatureRow>& features)
     {
@@ -122,8 +122,6 @@ namespace DeclaredFeaturesText
             for (const FeatureRow& f : features)
                 if (Lower(f.plugin) == key)
                     mine.push_back(&f);
-            if (mine.empty())
-                continue;
             std::sort(mine.begin(), mine.end(), [](const FeatureRow* a, const FeatureRow* b)
                 { return NameLess(a->id, b->id); });
 

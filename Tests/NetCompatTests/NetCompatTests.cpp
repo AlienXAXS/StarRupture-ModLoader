@@ -6,8 +6,13 @@
 #include "wire_compat.h"
 #include "host_rules_wire.h"
 #include "plugins/plugin_version_query.h"
+#include "plugins/declared_features_text.h"
 
 #include <cstdio>
+#include <cstring>
+#include <filesystem>
+#include <fstream>
+#include <sstream>
 #include <initializer_list>
 #include <string>
 #include <vector>
@@ -1311,6 +1316,108 @@ namespace
         table[0].version.clear();
         Check(AskVersion(table, "BetterCheats", buf, sizeof(buf)) && buf[0] == '\0', "a plugin with no version text reports an empty version");
     }
+
+    // IPluginRegistry::GetDeclaredFeatures and Logs\declared-features.v1.txt: the text and how it is handed out.
+    std::string ReadAll(const std::filesystem::path& p)
+    {
+        std::ifstream in(p, std::ios::binary);
+        std::ostringstream ss;
+        ss << in.rdbuf();
+        return ss.str();
+    }
+
+    void TestDeclaredFeaturesText()
+    {
+        using namespace DeclaredFeaturesText;
+        std::printf("declared features text\n");
+
+        const std::vector<PluginRow> plugins = {
+            { "Waila", "1.2.0" }, { "Best Builder", "0.9.1" }, { "bettercheats", "1.12.0" }, { "Idle", "1.0.0" } };
+        const std::vector<FeatureRow> features = {
+            { "Waila", "tooltip", "Tooltip", true },
+            { "BetterCheats", "Zoom", "Zoom", false },
+            { "bettercheats", "alpha", "Alpha", true },
+            { "Best Builder", "snap", "Snap to grid", true },
+            { "Ghost", "x", "A plugin that is not running", true } };
+
+        // Rows and order: header, then plugins by name, features by id, both without regard to case.
+        const std::string text = Build(130045, "v1.26.1", plugins, features);
+        const std::string want =
+            "format\t1\nkind\tdeclared-features\ngame_cl\t130045\nloader\tv1.26.1\n"
+            "plugin\tBest Builder\t0.9.1\n"
+            "feature\tBest Builder\tsnap\ton\tSnap to grid\n"
+            "plugin\tbettercheats\t1.12.0\n"
+            "feature\tbettercheats\talpha\ton\tAlpha\n"
+            "feature\tbettercheats\tZoom\toff\tZoom\n"
+            "plugin\tIdle\t1.0.0\n"
+            "plugin\tWaila\t1.2.0\n"
+            "feature\tWaila\ttooltip\ton\tTooltip\n";
+        Check(text == want, "header, plugins and features come out sorted without regard to case, on and off kept");
+        Check(text.find("Ghost") == std::string::npos, "a feature of a plugin that is not running is left out");
+        Check(text.find("plugin\tBest Builder\t0.9.1\n") != std::string::npos, "a plugin name with a space stays whole");
+        Check(text.find("feature\tBest Builder\tsnap\t") != std::string::npos, "and so does its feature row");
+
+        // The order does not depend on the input order.
+        const std::vector<PluginRow> rp(plugins.rbegin(), plugins.rend());
+        const std::vector<FeatureRow> rf(features.rbegin(), features.rend());
+        Check(Build(130045, "v1.26.1", rp, rf) == want, "reversed input gives the same text");
+
+        // Sanitising.
+        Check(SanitiseTitle("a\tb\r\nc\x01" "d\x7f" "e") == "a b  c d e", "tab, CR, LF and control characters become spaces");
+        const std::vector<FeatureRow> odd = { { "Waila", "x", "line one\nline\ttwo", true } };
+        const std::string oddText = Build(1, "t", plugins, odd);
+        Check(oddText.find("\tline one line two\n") != std::string::npos, "a title with a line break stays on one row");
+        size_t rows = 0;
+        for (char c : oddText)
+            rows += (c == '\n');
+        Check(rows == 4 + 4 + 1, "one row per plugin and feature, none added by a title");
+
+        // The 80-byte cut.
+        Check(SanitiseTitle(std::string(80, 'a')) == std::string(80, 'a'), "an 80-byte title is kept whole");
+        Check(SanitiseTitle(std::string(81, 'a')) == std::string(80, 'a'), "an 81-byte title is cut to 80");
+        const std::string e = "\xC3\xA9";  // e acute, 2 bytes
+        Check(SanitiseTitle(std::string(79, 'a') + e) == std::string(79, 'a'), "a cut inside a 2-byte character drops the whole character");
+        std::string forty;
+        for (int i = 0; i < 40; ++i)
+            forty += e;
+        Check(SanitiseTitle(forty) == forty, "40 two-byte characters (80 bytes) are kept");
+        Check(SanitiseTitle(forty + e) == forty, "one more character is dropped whole");
+        const std::string euro = "\xE2\x82\xAC";  // 3 bytes
+        Check(SanitiseTitle(std::string(78, 'a') + euro) == std::string(78, 'a'), "a cut inside a 3-byte character backs up to its start");
+        Check(SanitiseTitle(std::string(77, 'a') + euro) == std::string(77, 'a') + euro, "a 3-byte character that ends at byte 80 stays");
+
+        // Measure and cut.
+        char big[1024];
+        Check(CopyCut(text, nullptr, 0) == static_cast<int>(text.size()), "a null buffer with size 0 measures");
+        std::memset(big, 'x', sizeof(big));
+        Check(CopyCut(text, big, 0) == static_cast<int>(text.size()) && big[0] == 'x', "size 0 writes nothing");
+        Check(CopyCut(text, big, sizeof(big)) == static_cast<int>(text.size()) && text == big, "a big enough buffer gets the whole text, NUL-terminated");
+        char small[16];
+        std::memset(small, 'x', sizeof(small));
+        Check(CopyCut(text, small, sizeof(small)) == static_cast<int>(text.size()), "a small buffer still returns the full length");
+        Check(small[15] == '\0' && std::strlen(small) == 15 && text.compare(0, 15, small) == 0, "and holds the start of the text, cut to size, NUL-terminated");
+        char one[1] = { 'x' };
+        Check(CopyCut(text, one, 1) == static_cast<int>(text.size()) && one[0] == '\0', "a size of 1 gets just the NUL");
+
+        // The file: temp then rename.
+        namespace fs = std::filesystem;
+        const fs::path dir = fs::temp_directory_path() / "declared_features_test";
+        std::error_code ec;
+        fs::remove_all(dir, ec);
+        fs::create_directories(dir, ec);
+        const fs::path file = dir / "declared-features.v1.txt";
+        Check(WriteAtomic(file, "old text\n") && ReadAll(file) == "old text\n", "a first write creates the file");
+        Check(WriteAtomic(file, text) && ReadAll(file) == text, "a second write replaces the existing file");
+        size_t files = 0;
+        for (const fs::directory_entry& d : fs::directory_iterator(dir))
+        {
+            (void)d;
+            ++files;
+        }
+        Check(files == 1 && !fs::exists(dir / "declared-features.v1.txt.tmp"), "no temp file is left behind");
+        Check(!WriteAtomic(dir / "missing" / "x.txt", "t"), "a folder that is not there fails without throwing");
+        fs::remove_all(dir, ec);
+    }
 }
 
 int main()
@@ -1331,6 +1438,7 @@ int main()
     TestHostFeatStable();
     TestHostTiming();
     TestPluginVersionQuery();
+    TestDeclaredFeaturesText();
 
     if (g_failures)
     {

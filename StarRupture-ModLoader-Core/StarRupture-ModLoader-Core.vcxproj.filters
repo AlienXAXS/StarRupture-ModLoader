@@ -315,6 +315,9 @@
     <ClInclude Include="plugins\plugin_version_query.h">
       <Filter>Source Files\plugins</Filter>
     </ClInclude>
+    <ClInclude Include="plugins\declared_features_text.h">
+      <Filter>Source Files\plugins</Filter>
+    </ClInclude>
     <ClInclude Include="plugins\crash_restart.h">
       <Filter>Source Files\plugins</Filter>
     </ClInclude>

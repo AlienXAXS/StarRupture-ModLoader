@@ -643,6 +643,41 @@ if (hooks->Registry)
 }
 ```
 
+#### Listing the features plugins declare
+
+`hooks->Registry->GetDeclaredFeatures(buf, size)` (interface 80) copies the features the running plugins declare into
+`buf` as text, and returns the length of the whole text. It works like `snprintf`: the text is cut to `size` and ends
+in a NUL, and a null `buf` with a `size` of 0 only measures, so ask for the length first. It returns -1 before the mod
+loader has finished starting the plugins; ask again from a later `Tick`. Call it from `Tick` or `PluginInit`, not
+from a render callback.
+
+The same text is written to `ModLoader\Logs\declared-features.v1.txt` once the plugins have started and again after
+each reload. Fields are separated by a tab and rows end in a line feed:
+
+```
+format	1
+kind	declared-features
+game_cl	130045
+loader	1.26.1
+plugin	Waila	1.2.0
+feature	Waila	tooltip	on	Show what a block is
+```
+
+`on` means the feature is on in this game build; `off` means a game update moved something it needs. Rows are sorted
+by plugin and then id. A plugin name can hold a space (`Best Builder`), so split a row on tabs only. Titles are cut to
+80 bytes.
+
+```cpp
+int len = hooks->Registry ? hooks->Registry->GetDeclaredFeatures(nullptr, 0) : -1;
+if (len > 0)
+{
+    std::string text(len + 1, '\0');
+    hooks->Registry->GetDeclaredFeatures(text.data(), text.size());
+    text.resize(len);   // one row per line, fields split on tabs
+}
+```
+<sup>[✦](#msantoro12)</sup>
+
 ### Reloading a plugin from a script
 
 To try a new build without pressing **RELOAD**, turn on `[Developer] RemoteReload=1` in `modloader.ini`

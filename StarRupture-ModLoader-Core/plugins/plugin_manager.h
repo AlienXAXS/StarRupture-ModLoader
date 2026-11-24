@@ -86,6 +86,11 @@ namespace PluginManager
     // out too small for the whole version. Any thread; takes g_pluginLock only.
     bool GetPluginVersion(const char* name, char* out, size_t cap);
 
+    // IPluginRegistry::GetDeclaredFeatures: the declared-features text (see
+    // plugins/declared_features_text.h), copied into buf as snprintf does. -1
+    // until the startup plugin init has finished. Any thread.
+    int GetDeclaredFeatures(char* buf, size_t size);
+
     // Copy status snapshots for ALL plugin records (loaded and unloaded) into out.
     // Returns total record count (may exceed maxCount).
     int GetAllPluginStatuses(PluginStatus* out, int maxCount);

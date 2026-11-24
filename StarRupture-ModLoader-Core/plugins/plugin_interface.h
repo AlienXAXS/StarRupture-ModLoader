@@ -941,8 +941,10 @@
 // --- v79 ---
 //
 // v80 (2026-11-23): Adds IPluginRegistry and IPluginHooks::Registry, with
-//      GetPluginVersion: whether another plugin is loaded and enabled, and its
-//      version. The pointer is appended after HostRules, preserving the existing
+//      GetPluginVersion (whether another plugin is loaded and enabled, and its
+//      version) and GetDeclaredFeatures (the features every running plugin
+//      declares, as tab-separated text; the loader also writes it to
+//      Logs\declared-features.v1.txt). The pointer is appended after HostRules, preserving the existing
 //      prefix, and MIN stays at 70. A plugin that uses it declares 80, so a
 //      loader below 80 refuses it (below 80 the Registry pointer does not
 //      exist, and reading it reads past the table). Later versions add members
@@ -4089,13 +4091,40 @@ static_assert(sizeof(IPluginHostRules)                                   == 13 *
 //
 //     char version[64];
 //     if (hooks->Registry && hooks->Registry->GetPluginVersion("BetterCheats", version, sizeof(version))) { ... }
+//
+// GetDeclaredFeatures copies the features the running plugins declare (the
+// ones the loader lists under "features") into buf as UTF-8 text. It returns
+// the full length of the text without the terminating NUL, writes the text
+// NUL-terminated and cut to size, and with a null buf and a size of 0 only
+// measures, so a caller can ask for the length first and allocate. It returns
+// -1 only before the loader has finished starting the plugins; ask again from
+// a later Tick. Call it from Tick or PluginInit, never from a render callback
+// (same rule as GetPluginVersion).
+//
+// The text is the same as the file Logs\declared-features.v1.txt. Fields are
+// separated by a tab, rows by a line feed:
+//
+//     format<TAB>1
+//     kind<TAB>declared-features
+//     game_cl<TAB><game CL>
+//     loader<TAB><loader version>
+//     plugin<TAB><name><TAB><version>                         one per running plugin
+//     feature<TAB><plugin><TAB><id><TAB><on|off><TAB><title>  one per declared feature
+//
+// "on" means the feature is on in this running game build (not switched off for
+// it). A plugin name can hold a space, so split a row on tabs only. Titles have
+// tabs and other control characters turned into spaces and are cut to 80 bytes
+// at a UTF-8 character boundary. Rows are sorted by plugin, then id, without
+// regard to case.
 struct IPluginRegistry
 {
 	bool (*GetPluginVersion)(const char* name, char* out, size_t cap);
+	int  (*GetDeclaredFeatures)(char* buf, size_t size);
 };
 
-static_assert(offsetof(IPluginRegistry, GetPluginVersion) == 0, "v80 layout");
-static_assert(sizeof(IPluginRegistry)                     == 1 * sizeof(void*), "v80 layout");
+static_assert(offsetof(IPluginRegistry, GetPluginVersion)    == 0 * sizeof(void*), "v80 layout");
+static_assert(offsetof(IPluginRegistry, GetDeclaredFeatures) == 1 * sizeof(void*), "v80 layout");
+static_assert(sizeof(IPluginRegistry)                        == 2 * sizeof(void*), "v80 layout");
 
 struct IPluginHooks
 {

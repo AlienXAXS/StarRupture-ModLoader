@@ -12,6 +12,7 @@
 #include "plugins/plugin_hook_report.h"
 #include "plugins/plugin_guard.h"
 #include "plugins/plugin_version_query.h"
+#include "plugins/declared_features_text.h"
 #include "auto_update/auto_updater.h"
 #include "plugins/plugin_watchdog.h"
 #include "utils/game_thread_dispatch.h"
@@ -377,6 +378,8 @@ namespace PluginManager
 	// you clicked onto another plugin and back.
 	static unsigned g_pluginGeneration = 0;
 	static HANDLE g_initCompleteEvent  = NULL;
+	// Set once InitAllLoadedPlugins has finished; GetDeclaredFeatures answers -1 before it.
+	static std::atomic<bool> g_featuresReady{ false };
 
 	// What the plugin list and the console say, in place of the buttons and as
 	// the refusal, while a plugin is inside its PluginShutdown (isUnloading).
@@ -989,6 +992,8 @@ namespace PluginManager
 		return success;
 	}
 
+	static void WriteDeclaredFeaturesDump();
+
 	void InitAllLoadedPlugins()
 	{
 		if (!g_managerInitialized)
@@ -1037,6 +1042,8 @@ namespace PluginManager
 #endif
 
 		ModLoaderLogger::LogMessage(L"InitAllLoadedPlugins: %d initialized, %d failed (of %d deferred)", initCount, failCount, totalDeferred);
+		g_featuresReady = true;
+		WriteDeclaredFeaturesDump();
 		if (g_initCompleteEvent) SetEvent(g_initCompleteEvent);
 	}
 
@@ -1233,6 +1240,42 @@ namespace PluginManager
 			name, out, cap);
 		LeaveCriticalSection(&g_pluginLock);
 		return found;
+	}
+
+	// The declared-features text for the plugins running now. The feature catalog
+	// is read before g_pluginLock is taken (it has its own lock).
+	static std::string BuildDeclaredFeaturesText()
+	{
+		std::vector<DeclaredFeaturesText::FeatureRow> features;
+		for (const PluginHookReport::FeatureInfo& f : PluginHookReport::Features())
+			if (!f.preload)
+				features.push_back({ f.plugin, f.id, f.title, f.state != PluginHookReport::FeatureInfo::State::OffBuild });
+
+		std::vector<DeclaredFeaturesText::PluginRow> plugins;
+		EnterCriticalSection(&g_pluginLock);
+		for (const std::unique_ptr<LoadedPlugin>& p : g_loadedPlugins)
+			if (p->isInitialized && !p->isUnloading && !(p->hModule && PluginGuard::GetFault(p->hModule, nullptr)))
+				plugins.push_back({ p->cachedName, p->cachedVersion });
+		LeaveCriticalSection(&g_pluginLock);
+
+		return DeclaredFeaturesText::Build(VersionMap::RunningExe().cl, MODLOADER_BUILD_TAG, plugins, features);
+	}
+
+	int GetDeclaredFeatures(char* buf, size_t size)
+	{
+		if (!g_featuresReady)
+			return -1;
+		return DeclaredFeaturesText::CopyCut(BuildDeclaredFeaturesText(), buf, size);
+	}
+
+	// Best effort: a failure costs one warning and nothing else.
+	static void WriteDeclaredFeaturesDump()
+	{
+		const std::wstring dir = GetModLoaderDirPath(L"Logs");
+		CreateDirectoryW(dir.c_str(), nullptr);
+		const std::wstring path = dir + L"\declared-features.v1.txt";
+		if (!DeclaredFeaturesText::WriteAtomic(std::filesystem::path(path), BuildDeclaredFeaturesText()))
+			ModLoaderLogger::LogWarn(L"Could not write %s", path.c_str());
 	}
 
 	int GetAllPluginStatuses(PluginStatus* out, int maxCount)
@@ -1560,6 +1603,7 @@ namespace PluginManager
 			ModLoaderLogger::LogMessage(L"Plugin reload failed for index %d", index);
 		}
 
+		WriteDeclaredFeaturesDump();
 		return ok;
 	}
 
