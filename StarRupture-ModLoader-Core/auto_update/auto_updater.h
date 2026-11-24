@@ -48,7 +48,7 @@
 //   [AutoUpdate]
 //   Enabled=1               ; Set to 0 to disable
 //   ManifestUrl=            ; Override the compiled-in central manifest URL
-//   ModIndexUrl=            ; Override the Browse tab's mod index URL (https only)
+//   ModIndexUrl=            ; Read the Browse tab's mod index from this https URL instead
 //
 // State (not user-editable):
 //   ModLoader\update_state.ini

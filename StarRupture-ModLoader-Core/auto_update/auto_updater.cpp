@@ -8,6 +8,7 @@
 #include "feed_fetch.h"
 #include "json_extract.h"
 #include "mod_index_fetcher.h"
+#include "mod_index_signed.h"
 #include "loader_manifest.h"
 #include "core/startup_utils.h"
 #include "logging/log.h"
@@ -869,22 +870,29 @@ bool AutoUpdateEnabled()
 #  define VMAP_SERVER_FEED_URL ""
 #endif
 
-// The Browse tab's mod index (mod_index.h): the index.json in the repo's
-// mod-index folder. modloader.ini [AutoUpdate] ModIndexUrl
-// overrides it, the way ManifestUrl overrides the manifest.
-#ifndef MOD_INDEX_URL
-#  define MOD_INDEX_URL "https://raw.githubusercontent.com/AlienXAXS/StarRupture-ModLoader/main/mod-index/index.json"
-#endif
+// A file published in the same release as the client feed: the feed's address
+// with its file name swapped for `asset`.
+static std::string UrlBesideFeed(const std::string& feedUrl, const char* asset)
+{
+	constexpr char kFeedName[] = "version-map-client.v1.txt";
+	if (feedUrl.empty())
+		return {};
+	return feedUrl.substr(0, feedUrl.size() - (sizeof(kFeedName) - 1)) + asset;
+}
 
 namespace
 {
-	std::string ReadModIndexUrl()
+	// The Browse tab's mod index (mod_index_signed.h) sits beside the client feed.
+	// modloader.ini [AutoUpdate] ModIndexUrl overrides it, the way ManifestUrl
+	// overrides the manifest; such an address is the player's own (`playersOwn`).
+	std::string ModIndexUrl(bool& playersOwn)
 	{
 		wchar_t wUrl[512]{};
 		GetPrivateProfileStringW(L"AutoUpdate", L"ModIndexUrl", L"", wUrl, 512,
 		                         GetModLoaderDirPath(L"modloader.ini").c_str());
-		if (wUrl[0] == L'\0')
-			return MOD_INDEX_URL;
+		playersOwn = wUrl[0] != L'\0';
+		if (!playersOwn)
+			return UrlBesideFeed(VMAP_FEED_URL, "mod-index.v1.txt");
 
 		char url[512]{};
 		WideCharToMultiByte(CP_UTF8, 0, wUrl, -1, url, sizeof(url), nullptr, nullptr);
@@ -895,7 +903,17 @@ namespace
 
 ModIndex::Fetcher& ModIndex::Instance()
 {
-	static Fetcher fetcher(ReadModIndexUrl());
+	static Fetcher fetcher = []
+	{
+		bool playersOwn = false;
+		std::string url = ModIndexUrl(playersOwn);
+
+		Source source;
+		source.keys       = VersionFeed::CompiledKeys();
+		source.cachePath  = GetModLoaderDirPath(L"mod-index.v1.cache");
+		source.signedOnly = !playersOwn;
+		return Fetcher(std::move(url), MakeFetch(std::move(source)));
+	}();
 	return fetcher;
 }
 
@@ -920,17 +938,6 @@ static_assert(VersionMap::kFeedFormat == 1 && (VMAP_FEED_URL[0] == 0 || EndsWith
 static_assert(VersionMap::kFeedFormat == 1 && (VMAP_SERVER_FEED_URL[0] == 0 || EndsWith(VMAP_SERVER_FEED_URL, "/version-map-server.v1.txt")),
 	"VMAP_SERVER_FEED_URL must name version-map-server.v<kFeedFormat>.txt");
 
-#ifndef MODLOADER_SERVER_BUILD
-// The plugin catalog sits in the same release as the client feed.
-static std::string CatalogUrlBesideFeed(const std::string& feedUrl)
-{
-	constexpr char kFeedName[] = "version-map-client.v1.txt";
-	if (feedUrl.empty())
-		return {};
-	return feedUrl.substr(0, feedUrl.size() - (sizeof(kFeedName) - 1)) + "plugin-catalog.v1.txt";
-}
-#endif
-
 FeedFetch::Config FeedFetch::LoaderConfig()
 {
 	Config cfg;
@@ -941,7 +948,7 @@ FeedFetch::Config FeedFetch::LoaderConfig()
 #else
 	cfg.url = VMAP_FEED_URL;
 	cfg.cachePath = GetModLoaderDirPath(L"version-map-client.v1.cache");
-	cfg.catalogUrl = CatalogUrlBesideFeed(cfg.url);
+	cfg.catalogUrl = UrlBesideFeed(cfg.url, "plugin-catalog.v1.txt");
 	cfg.catalogCachePath = GetModLoaderDirPath(L"plugin-catalog.v1.cache");
 #endif
 	cfg.keys = VersionFeed::CompiledKeys();

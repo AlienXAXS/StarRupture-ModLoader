@@ -5,7 +5,10 @@
 #include "auto_update/http_get.h"
 #include "auto_update/mod_index.h"
 #include "auto_update/mod_index_fetcher.h"
+#include "auto_update/mod_index_signed.h"
 #include "auto_update/feed_fetch.h"
+#include "memory_scanner/version_feed.h"
+#include "third_party/monocypher/monocypher-ed25519.h"
 
 #include <atomic>
 #include <chrono>
@@ -27,7 +30,10 @@ namespace
 	std::mutex g_httpMutex;
 	std::string g_httpUrl;
 	HttpGetOptions g_httpOptions;
+	std::string g_httpIfNoneMatch;
 	std::string g_httpAnswer;
+	std::string g_httpEtagOut;           // the ETag header the stand-in server sends
+	bool g_httpNotModified = false;      // answer a conditional request with 304
 	int g_httpCalls = 0;
 }
 
@@ -37,6 +43,14 @@ std::string HttpGet(const char* url, const char* /*label*/, const HttpGetOptions
 	++g_httpCalls;
 	g_httpUrl = url;
 	g_httpOptions = options;
+	g_httpIfNoneMatch = options.ifNoneMatch;
+	if (g_httpNotModified && !options.ifNoneMatch.empty() && options.notModified)
+	{
+		*options.notModified = true;
+		return {};
+	}
+	if (options.etag)
+		*options.etag = g_httpEtagOut;
 	return g_httpAnswer;
 }
 
@@ -354,6 +368,362 @@ namespace
 		Check(r.entries.size() >= 5, "sample: has entries");
 		for (const Entry& e : r.entries)
 			Check(IsAllowedPageUrl(e.pageUrl) && !e.id.empty() && !e.name.empty() && e.interfaceVersionMin > 0, ("sample: complete entry " + e.id).c_str());
+		for (const Entry& e : r.entries)
+			Check(e.testedLoader == "1.27.0" && IsAllowedReadmeUrl(e.readmeUrl), ("sample: tested_loader and readme_url on " + e.id).c_str());
+	}
+
+	void EntryFieldTests()
+	{
+		const std::string raw = "https://raw.githubusercontent.com/AlienXAXS/StarRupture-Plugin-Codex/main/README.md";
+
+		// both new fields read
+		{
+			const ParseResult r = ParseModIndex("[" + Obj("a", "A", kGood, ", \"tested_loader\": \"1.27.0\", \"readme_url\": \"" + raw + "\"") + "]");
+			Check(r.ok && r.entries.size() == 1 && r.entries[0].testedLoader == "1.27.0" && r.entries[0].readmeUrl == raw, "fields: tested_loader and readme_url are read");
+		}
+
+		// both are optional
+		{
+			const ParseResult r = ParseModIndex("[" + Obj("a", "A", kGood) + "]");
+			Check(r.ok && r.entries.size() == 1 && r.skipped == 0 && r.entries[0].testedLoader.empty() && r.entries[0].readmeUrl.empty(),
+				"fields: an entry without them stays valid");
+		}
+
+		// tested_loader is cleaned and capped
+		{
+			const ParseResult r = ParseModIndex("[" + Obj("a", "A", kGood, ", \"tested_loader\": \"" + std::string(60, '9') + "\"") + "]");
+			Check(r.entries.size() == 1 && r.entries[0].testedLoader.size() == kMaxTestedLoaderLen, "fields: tested_loader is cut at the cap");
+			const ParseResult c = ParseModIndex("[" + Obj("a", "A", kGood, ", \"tested_loader\": \"1.2\\n7\\u0000.0\"") + "]");
+			Check(c.entries.size() == 1 && c.entries[0].testedLoader.find('\n') == std::string::npos && c.entries[0].testedLoader.find('\0') == std::string::npos,
+				"fields: control characters in tested_loader do not survive");
+			const ParseResult n = ParseModIndex("[" + Obj("a", "A", kGood, ", \"tested_loader\": 127") + "]");
+			Check(n.entries.size() == 1 && n.entries[0].testedLoader.empty(), "fields: a number is not a tested_loader");
+		}
+
+		// the README allowlist
+		Check(IsAllowedReadmeUrl(raw), "readme url allowed: a raw README");
+		Check(!IsAllowedReadmeUrl("https://RAW.GitHubUserContent.com/a/b/c"), "readme url refused: another host that only looks alike");
+		Check(IsAllowedReadmeUrl("https://Raw.GithubUsercontent.com/a/b/c/README.md"), "readme url allowed: host in any case");
+		Check(IsAllowedReadmeUrl("https://raw.githubusercontent.com/" + std::string(200 - 34, 'a')) && ("https://raw.githubusercontent.com/" + std::string(200 - 34, 'a')).size() == kMaxUrlLen,
+			"readme url allowed: exactly the length cap");
+		Check(!IsAllowedReadmeUrl("https://raw.githubusercontent.com/" + std::string(200 - 33, 'a')), "readme url refused: one byte over the cap");
+		Check(!IsAllowedPageUrl(raw), "page url refused: the README host is not a page host");
+		Check(!IsAllowedReadmeUrl(kGood) && !IsAllowedReadmeUrl("https://www.nexusmods.com/starrupture/mods/1"), "readme url refused: the page hosts");
+
+		const char* bad[] = {
+			"", "https://", "raw.githubusercontent.com/a", "//raw.githubusercontent.com/a",
+			"http://raw.githubusercontent.com/a/b", "HTTPS://raw.githubusercontent.com/a/b",
+			"javascript:alert(1)", "file:///C:/Windows/System32/calc.exe", "ftp://raw.githubusercontent.com/a", "data:text/html,x",
+			"https://raw.githubusercontent.com.evil.com/a", "https://evilraw.githubusercontent.com/a", "https://sub.raw.githubusercontent.com/a",
+			"https://evil.com/raw.githubusercontent.com", "https://github.com/a/b", "https://githubusercontent.com/a/b", "https://gist.githubusercontent.com/a",
+			"https://raw.githubusercontent.com@evil.com/a", "https://evil.com@raw.githubusercontent.com/a", "https://user:pass@raw.githubusercontent.com/a",
+			"https://raw.githubusercontent.com:8443/a", "https://raw.githubusercontent.com:/a",
+			"https://raw.githubusercontent.com\\@evil.com/a", "https://raw.githubusercontent.com/a\\b",
+			"https://raw.githubusercontent.com/a b", "https://raw.githubusercontent.com/a\tb", "https://raw.githubusercontent.com/a\nb",
+			" https://raw.githubusercontent.com/a", "https://raw.githubusercontent.com/a ",
+			"https://raw.githubusercontent.com/a\x01", "https://raw.githubusercontent.com/\x7F", "https://raw.githubusercontent.com/\xC3\xA9",
+			"https://raw.githubusercontent.com./a", "https://raw%2Egithubusercontent.com/a", "https://[::1]/a", "https://127.0.0.1/a",
+		};
+		for (const char* u : bad)
+			Check(!IsAllowedReadmeUrl(u), (std::string("readme url refused: ") + u).c_str());
+
+		// a bad readme_url drops the field, never the entry
+		const char* hostile[] = {
+			"http://raw.githubusercontent.com/a/b", "https://evil.com/a", "https://raw.githubusercontent.com.evil.com/a",
+			"javascript:alert(1)", "https://user@raw.githubusercontent.com/a", "https://github.com/a/b/blob/main/README.md",
+		};
+		for (const char* u : hostile)
+		{
+			const ParseResult r = ParseModIndex("[" + Obj("a", "A", kGood, std::string(", \"readme_url\": \"") + u + "\"") + "]");
+			Check(r.ok && r.entries.size() == 1 && r.skipped == 0 && r.entries[0].readmeUrl.empty() && r.entries[0].pageUrl == kGood,
+				(std::string("fields: the entry stays, the readme_url goes: ") + u).c_str());
+		}
+		{
+			const std::string longUrl = "https://raw.githubusercontent.com/" + std::string(200, 'a');
+			const ParseResult r = ParseModIndex("[" + Obj("a", "A", kGood, ", \"readme_url\": \"" + longUrl + "\"") + "]");
+			Check(r.entries.size() == 1 && r.entries[0].readmeUrl.empty(), "fields: an overlong readme_url is dropped, not cut");
+			const ParseResult o = ParseModIndex("[" + Obj("a", "A", kGood, ", \"readme_url\": {\"x\": 1}") + "]");
+			Check(o.entries.size() == 1 && o.entries[0].readmeUrl.empty(), "fields: an object is not a readme_url");
+			const ParseResult nul = ParseModIndex("[" + Obj("a", "A", kGood, ", \"readme_url\": \"https://raw.githubusercontent.com/a\\u0000.evil\"") + "]");
+			Check(nul.entries.size() == 1 && nul.entries[0].readmeUrl.empty(), "fields: a NUL in the readme_url drops the field");
+		}
+	}
+
+	// ---- the signed file ---------------------------------------------------
+
+	std::string Base64(const uint8_t* p, size_t n)
+	{
+		static const char* a = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+		std::string s;
+		for (size_t i = 0; i < n; i += 3)
+		{
+			const uint32_t v = (uint32_t(p[i]) << 16) | (i + 1 < n ? uint32_t(p[i + 1]) << 8 : 0) | (i + 2 < n ? p[i + 2] : 0);
+			s += a[v >> 18];
+			s += a[(v >> 12) & 63];
+			s += i + 1 < n ? a[(v >> 6) & 63] : '=';
+			s += i + 2 < n ? a[v & 63] : '=';
+		}
+		return s;
+	}
+
+	struct Signer
+	{
+		uint8_t                secret[64]{};
+		VersionFeed::PublicKey pub;
+	};
+
+	Signer MakeSigner(const char* id, uint8_t salt)
+	{
+		Signer s;
+		uint8_t seed[32];
+		for (int i = 0; i < 32; ++i)
+			seed[i] = static_cast<uint8_t>(salt * 7 + i);
+		crypto_ed25519_key_pair(s.secret, s.pub.key.data(), seed);
+		s.pub.id = id;
+		return s;
+	}
+
+	// `region` is everything the signature covers.
+	std::string Sign(const Signer& s, const std::string& region, const char* keyId = nullptr)
+	{
+		uint8_t sig[64];
+		crypto_ed25519_sign(sig, s.secret, reinterpret_cast<const uint8_t*>(region.data()), region.size());
+		return region + "sig\t" + (keyId ? keyId : s.pub.id.c_str()) + "\t" + Base64(sig, 64) + "\n";
+	}
+
+	// The file as it is published: format, seq, kind, the index, the signature.
+	std::string SignedFile(const Signer& s, uint64_t seq, const std::string& json, const char* kind = "mod-index")
+	{
+		return Sign(s, "format\t1\nseq\t" + std::to_string(seq) + "\nkind\t" + kind + "\n" + json);
+	}
+
+	std::string IndexOf(const char* id) { return "[" + Obj(id, "A", kGood, ", \"tested_loader\": \"1.27.0\"") + "]\n"; }
+
+	std::wstring TempCache()
+	{
+		static int n = 0;
+		wchar_t dir[MAX_PATH]{};
+		GetTempPathW(MAX_PATH, dir);
+		return std::wstring(dir) + L"mod_index_tests_" + std::to_wstring(GetCurrentProcessId()) + L"_" + std::to_wstring(++n) + L".cache";
+	}
+
+	void RemoveCache(const std::wstring& cache)
+	{
+		DeleteFileW(cache.c_str());
+		DeleteFileW((cache + L".etag").c_str());
+	}
+
+	bool Exists(const std::wstring& path) { return GetFileAttributesW(path.c_str()) != INVALID_FILE_ATTRIBUTES; }
+
+	std::string Slurp(const std::wstring& path)
+	{
+		std::ifstream in(path, std::ios::binary);
+		return std::string(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+	}
+
+	void Spit(const std::wstring& path, const std::string& text)
+	{
+		std::ofstream out(path, std::ios::binary | std::ios::trunc);
+		out << text;
+	}
+
+	// What the stand-in server answers next.
+	void Serve(const std::string& file, const std::string& etag = "", bool notModified = false)
+	{
+		std::lock_guard<std::mutex> l(g_httpMutex);
+		g_httpAnswer = file;
+		g_httpEtagOut = etag;
+		g_httpNotModified = notModified;
+	}
+
+	void EnvelopeTests()
+	{
+		const Signer sk1 = MakeSigner("k1", 1);
+		const Signer sk2 = MakeSigner("k2", 2);
+		const Signer other = MakeSigner("k2", 9);
+		const std::vector<VersionFeed::PublicKey> keys{ sk1.pub, sk2.pub };
+		const std::string json = IndexOf("a");
+
+		const auto read = [&](const std::string& file, Envelope& out, std::string& error) { return ReadEnvelope(file, keys, out, error); };
+		Envelope e;
+		std::string err;
+
+		Check(read(SignedFile(sk2, 7, json), e, err) && e.seq == 7 && e.body == json && err.empty(), "envelope: a good file gives its seq and the body byte for byte");
+		Check(read(SignedFile(sk1, 1, json), e, err) && e.seq == 1, "envelope: the first key slot verifies too");
+		Check(IsEnvelope(SignedFile(sk2, 7, json)) && !IsEnvelope(json) && !IsEnvelope("") && !IsEnvelope("form"), "envelope: IsEnvelope tells a signed file from a bare index");
+
+		std::string tampered = SignedFile(sk2, 7, json);
+		tampered.replace(tampered.find("\"A\""), 3, "\"B\"");
+		Check(!read(tampered, e, err) && e.body.empty() && !err.empty(), "envelope: a changed byte in the body is refused and nothing is taken");
+		std::string reSeq = SignedFile(sk2, 7, json);
+		reSeq.replace(reSeq.find("seq\t7"), 5, "seq\t8");
+		Check(!read(reSeq, e, err) && e.body.empty(), "envelope: a changed seq is refused");
+		Check(!read(SignedFile(other, 7, json), e, err) && e.body.empty(), "envelope: another key's signature is refused");
+		Check(!read(Sign(sk2, "format\t1\nseq\t7\nkind\tmod-index\n" + json, "k9"), e, err), "envelope: an unknown key id is refused");
+		Check(!read(Sign(sk2, "format\t1\nseq\t7\nkind\tmod-index\n" + json, "k1"), e, err), "envelope: a key id that does not match is refused");
+
+		Check(!read(SignedFile(sk2, 7, json, "plugin-catalog"), e, err) && e.body.empty() && err.find("form") != std::string::npos, "envelope: another kind is refused, in plain words");
+		Check(!read(Sign(sk2, "format\t2\nseq\t7\nkind\tmod-index\n" + json), e, err) && e.body.empty(), "envelope: another format is refused");
+		Check(!read(Sign(sk2, "format\t1\nseq\t7\n" + json), e, err) && e.body.empty(), "envelope: a missing kind line is refused");
+		Check(!read(Sign(sk2, "format\t1\nseq\t0\nkind\tmod-index\n" + json), e, err), "envelope: seq 0 is refused");
+
+		const std::string good = SignedFile(sk2, 7, json);
+		Check(!read(good.substr(0, good.size() - 12), e, err), "envelope: a truncated file is refused");
+		Check(!read(good.substr(0, good.find("sig\t")), e, err), "envelope: a file with no sig line is refused");
+		Check(!read(json, e, err) && e.body.empty(), "envelope: a bare index is refused here");
+		Check(!read("", e, err), "envelope: an empty file is refused");
+		Check(!read(SignedFile(sk2, 7, "[" + std::string(1024 * 1024, ' ') + "]\n"), e, err), "envelope: a signed file over 1 MiB is refused");
+	}
+
+	void SignedFetchTests()
+	{
+		const Signer sk1 = MakeSigner("k1", 1);
+		const Signer sk2 = MakeSigner("k2", 2);
+		const std::string url = "https://example.test/mod-index.v1.txt";
+		const std::string idxA = IndexOf("aaa");
+		const std::string idxB = IndexOf("bbb");
+
+		Source src;
+		src.keys = { sk1.pub, sk2.pub };
+		src.cachePath = TempCache();
+		const FetchFn fetch = MakeFetch(src);
+		std::string error;
+
+		// first download: taken, cached with its ETag, asked for the feed's way
+		{
+			std::lock_guard<std::mutex> l(g_httpMutex); g_httpCalls = 0;
+		}
+		const std::string file5 = SignedFile(sk2, 5, idxA);
+		Serve(file5, "\"e5\"");
+		Check(fetch(url, error) == idxA && error.empty(), "fetch: a verified file gives its body");
+		Check(Slurp(src.cachePath) == file5 && Slurp(src.cachePath + L".etag") == "5 \"e5\"", "fetch: the verified file and its ETag are kept");
+		{
+			std::lock_guard<std::mutex> l(g_httpMutex);
+			Check(g_httpCalls == 1 && g_httpUrl == url && g_httpIfNoneMatch.empty(), "fetch: one request for the URL, unconditional the first time");
+			Check(g_httpOptions.maxBytes == VersionFeed::kMaxFileBytes, "fetch: the response is capped at the feed's file size");
+			Check(g_httpOptions.deadlineMs == FeedFetch::kDeadlineMs && g_httpOptions.receiveMs == FeedFetch::kOperationMs && g_httpOptions.connectMs == FeedFetch::kOperationMs,
+				"fetch: the feed's deadline and timeouts");
+		}
+
+		// unchanged: a conditional request, answered 304, the cached list
+		Serve("", "", true);
+		Check(fetch(url, error) == idxA, "fetch: 304 gives the cached list");
+		{
+			std::lock_guard<std::mutex> l(g_httpMutex);
+			Check(g_httpIfNoneMatch == "\"e5\"", "fetch: the stored ETag is sent");
+		}
+
+		// no answer: the verified cached list
+		Serve("");
+		Check(fetch(url, error) == idxA && error.empty(), "fetch: a failed download shows the cached list");
+
+		// a lower seq is refused and the cache stays
+		Serve(SignedFile(sk2, 4, idxB), "\"e4\"");
+		Check(fetch(url, error).empty() && error.find("older") != std::string::npos, "fetch: a lower seq is a failure, in plain words");
+		Check(Slurp(src.cachePath) == file5 && Slurp(src.cachePath + L".etag") == "5 \"e5\"", "fetch: a refused file leaves the cache alone");
+
+		// the same seq: the cached body
+		error.clear();
+		Serve(SignedFile(sk2, 5, idxB), "\"e5b\"");
+		Check(fetch(url, error) == idxA && error.empty(), "fetch: an equal seq serves the cached body");
+
+		// a file that does not verify fails, whatever the cache holds
+		std::string forged = SignedFile(sk2, 9, idxB);
+		forged.replace(forged.find("\"A\""), 3, "\"B\"");
+		Serve(forged);
+		Check(fetch(url, error).empty() && !error.empty(), "fetch: an unverified file fails and the cache is not used");
+		Check(Slurp(src.cachePath) == file5, "fetch: an unverified file is not cached");
+		error.clear();
+		Serve(idxB);
+		Check(fetch(url, error).empty() && !error.empty(), "fetch: a bare index fails on the loader's own address");
+		error.clear();
+		Serve(SignedFile(sk2, 9, idxB, "plugin-catalog"));
+		Check(fetch(url, error).empty() && !error.empty(), "fetch: another kind fails");
+
+		// a higher seq replaces the cache
+		error.clear();
+		const std::string file6 = SignedFile(sk2, 6, idxB);
+		Serve(file6, "\"e6\"");
+		Check(fetch(url, error) == idxB && error.empty(), "fetch: a higher seq is taken");
+		Check(Slurp(src.cachePath) == file6 && Slurp(src.cachePath + L".etag") == "6 \"e6\"", "fetch: the cache moves to the new file");
+
+		// a cache that no longer verifies is ignored
+		Spit(src.cachePath, file6 + "x");
+		Serve("");
+		Check(fetch(url, error).empty() && error.empty(), "fetch: a damaged cache is not shown");
+		RemoveCache(src.cachePath);
+
+		// nothing cached, nothing downloaded
+		Check(fetch(url, error).empty() && error.empty() && !Exists(src.cachePath), "fetch: no cache and no answer is a plain failure");
+
+		// no answer at all, with a stale cache older than a later download
+		Serve(SignedFile(sk2, 3, idxA));
+		Check(fetch(url, error) == idxA && Exists(src.cachePath), "fetch: a first file is taken when nothing is cached");
+		RemoveCache(src.cachePath);
+
+		// through the Fetcher
+		{
+			Serve(SignedFile(sk2, 2, idxA));
+			Fetcher f(url, MakeFetch(src));
+			f.RequestFirstLoad();
+			Check(WaitFor(f, State::Ready) && f.Get()->entries.size() == 1 && f.Get()->entries[0].id == "aaa" && f.Get()->entries[0].testedLoader == "1.27.0",
+				"fetcher: a verified file reaches Ready with its entries");
+			f.Shutdown(1000);
+		}
+		{
+			std::string bad = SignedFile(sk2, 3, idxB);
+			bad.replace(bad.find("\"A\""), 3, "\"B\"");
+			Serve(bad);
+			Fetcher f(url, MakeFetch(src));
+			f.RequestFirstLoad();
+			Check(WaitFor(f, State::Failed) && f.Get()->entries.empty() && f.Get()->error.find("verified") != std::string::npos,
+				"fetcher: an unverified file is Failed with a plain error and no entries");
+			f.Shutdown(1000);
+		}
+		{
+			Serve("");
+			Fetcher f(url, MakeFetch(src));
+			f.RequestFirstLoad();
+			Check(WaitFor(f, State::Ready) && f.Get()->entries.size() == 1 && f.Get()->entries[0].id == "aaa", "fetcher: a failed download shows the cached list");
+			f.Shutdown(1000);
+		}
+		RemoveCache(src.cachePath);
+	}
+
+	void PlayersOwnFetchTests()
+	{
+		const Signer sk2 = MakeSigner("k2", 2);
+		const std::string url = "https://example.test/my-index.json";
+		const std::string idxA = IndexOf("aaa");
+
+		Source src;
+		src.keys = { sk2.pub };
+		src.cachePath = TempCache();
+		src.signedOnly = false;
+		const FetchFn fetch = MakeFetch(src);
+		std::string error;
+
+		Serve(idxA, "\"x\"");
+		Check(fetch(url, error) == idxA && error.empty(), "own url: a bare index is read as it comes");
+		Check(!Exists(src.cachePath) && !Exists(src.cachePath + L".etag"), "own url: nothing is cached");
+		{
+			std::lock_guard<std::mutex> l(g_httpMutex);
+			Check(g_httpIfNoneMatch.empty() && g_httpUrl == url, "own url: the request is unconditional");
+		}
+
+		Serve(SignedFile(sk2, 4, idxA), "\"x\"");
+		Check(fetch(url, error) == idxA && error.empty() && !Exists(src.cachePath), "own url: a verified envelope gives its body");
+
+		std::string forged = SignedFile(sk2, 4, idxA);
+		forged.replace(forged.find("\"A\""), 3, "\"B\"");
+		Serve(forged);
+		Check(fetch(url, error).empty() && !error.empty(), "own url: an envelope that does not verify fails");
+		error.clear();
+		Serve(SignedFile(sk2, 4, idxA, "plugin-catalog"));
+		Check(fetch(url, error).empty() && !error.empty(), "own url: an envelope of another kind fails");
+		error.clear();
+		Serve("");
+		Check(fetch(url, error).empty() && error.empty(), "own url: no answer is a plain failure");
 	}
 
 	std::string OneEntryIndex() { return "[" + Obj("a", "A", kGood) + "]"; }
@@ -363,7 +733,7 @@ namespace
 		// Idle until asked; Get never starts anything
 		{
 			std::atomic<int> calls{ 0 };
-			Fetcher f("https://example.test/index.json", [&](const std::string&) { ++calls; return OneEntryIndex(); });
+			Fetcher f("https://example.test/index.json", [&](const std::string&, std::string&) { ++calls; return OneEntryIndex(); });
 			Check(f.Get()->state == State::Idle, "fetcher: starts Idle");
 			f.Get(); f.Get();
 			std::this_thread::sleep_for(std::chrono::milliseconds(30));
@@ -376,7 +746,7 @@ namespace
 			std::atomic<bool> release{ false };
 			std::string seenUrl;
 			std::mutex m;
-			Fetcher f("https://example.test/index.json", [&](const std::string& url)
+			Fetcher f("https://example.test/index.json", [&](const std::string& url, std::string&)
 			{
 				{ std::lock_guard<std::mutex> l(m); seenUrl = url; }
 				while (!release)
@@ -399,7 +769,7 @@ namespace
 		{
 			std::atomic<int> calls{ 0 };
 			std::atomic<bool> release{ false };
-			Fetcher f("u", [&](const std::string&) { ++calls; while (!release) std::this_thread::sleep_for(std::chrono::milliseconds(1)); return OneEntryIndex(); });
+			Fetcher f("u", [&](const std::string&, std::string&) { ++calls; while (!release) std::this_thread::sleep_for(std::chrono::milliseconds(1)); return OneEntryIndex(); });
 			std::vector<std::thread> threads;
 			for (int i = 0; i < 8; ++i)
 				threads.emplace_back([&] { for (int k = 0; k < 50; ++k) f.RequestFirstLoad(); });
@@ -418,7 +788,7 @@ namespace
 		{
 			std::atomic<int> calls{ 0 };
 			std::atomic<bool> fail{ true };
-			Fetcher f("u", [&](const std::string&) { ++calls; return fail ? std::string() : OneEntryIndex(); });
+			Fetcher f("u", [&](const std::string&, std::string&) { ++calls; return fail ? std::string() : OneEntryIndex(); });
 			f.Retry();
 			std::this_thread::sleep_for(std::chrono::milliseconds(20));
 			Check(calls == 0 && f.Get()->state == State::Idle, "retry: from Idle does nothing");
@@ -436,10 +806,10 @@ namespace
 
 		// bad body -> Failed with the parser's message; thrown request -> Failed
 		{
-			Fetcher f("u", [](const std::string&) { return std::string("<html>404</html>"); });
+			Fetcher f("u", [](const std::string&, std::string&) { return std::string("<html>404</html>"); });
 			f.RequestFirstLoad();
 			Check(WaitFor(f, State::Failed) && f.Get()->error == "The mod list is not a JSON array.", "failure: a body that is not an array reaches Failed with the parser's message");
-			Fetcher g("u", [](const std::string&) -> std::string { throw std::runtime_error("boom"); });
+			Fetcher g("u", [](const std::string&, std::string&) -> std::string { throw std::runtime_error("boom"); });
 			g.RequestFirstLoad();
 			Check(WaitFor(g, State::Failed) && !g.Get()->error.empty(), "failure: a request that throws reaches Failed");
 		}
@@ -447,7 +817,7 @@ namespace
 		// Ready with no entries can retry; skipped count is carried
 		{
 			std::atomic<int> calls{ 0 };
-			Fetcher f("u", [&](const std::string&) { return ++calls == 1 ? std::string("[]") : "[{\"id\":\"x\"}," + Obj("a", "A", kGood) + "]"; });
+			Fetcher f("u", [&](const std::string&, std::string&) { return ++calls == 1 ? std::string("[]") : "[{\"id\":\"x\"}," + Obj("a", "A", kGood) + "]"; });
 			f.RequestFirstLoad();
 			Check(WaitFor(f, State::Ready) && f.Get()->entries.empty(), "empty list: Ready with no entries");
 			f.Retry();
@@ -458,23 +828,21 @@ namespace
 			Check(f.Get()->state == State::Ready && f.Get()->entries.size() == 1 && f.Get()->skipped == 1, "empty list: the second answer is Ready with the skip counted");
 		}
 
-		// default request: HttpGet with the feed's timeouts and the size cap
+		// the request's own words reach the Failed state; a plain empty answer gets the generic ones
 		{
-			{ std::lock_guard<std::mutex> l(g_httpMutex); g_httpAnswer = OneEntryIndex(); g_httpCalls = 0; }
-			Fetcher f("https://example.test/default.json");
+			Fetcher f("u", [](const std::string&, std::string& error) { error = "Plain words from the request."; return std::string(); });
 			f.RequestFirstLoad();
-			Check(WaitFor(f, State::Ready), "default request: reaches Ready through HttpGet");
-			std::lock_guard<std::mutex> l(g_httpMutex);
-			Check(g_httpCalls == 1 && g_httpUrl == "https://example.test/default.json", "default request: one HttpGet with the URL");
-			Check(g_httpOptions.maxBytes == kMaxIndexBytes, "default request: the response size cap is the index cap");
-			Check(g_httpOptions.deadlineMs == FeedFetch::kDeadlineMs && g_httpOptions.receiveMs == FeedFetch::kOperationMs && g_httpOptions.connectMs == FeedFetch::kOperationMs, "default request: the feed's deadline and timeouts");
+			Check(WaitFor(f, State::Failed) && f.Get()->error == "Plain words from the request.", "failed: the request's error text is shown");
+			Fetcher g("u", [](const std::string&, std::string&) { return std::string(); });
+			g.RequestFirstLoad();
+			Check(WaitFor(g, State::Failed) && !g.Get()->error.empty(), "failed: an empty answer gets the generic text");
 		}
 
 		// shutdown: waits for a running request, blocks new ones, safe with a worker still running
 		{
 			std::atomic<bool> release{ false };
 			std::atomic<bool> started{ false };
-			Fetcher f("u", [&](const std::string&) { started = true; while (!release) std::this_thread::sleep_for(std::chrono::milliseconds(1)); return OneEntryIndex(); });
+			Fetcher f("u", [&](const std::string&, std::string&) { started = true; while (!release) std::this_thread::sleep_for(std::chrono::milliseconds(1)); return OneEntryIndex(); });
 			f.RequestFirstLoad();
 			while (!started)
 				std::this_thread::sleep_for(std::chrono::milliseconds(1));
@@ -493,7 +861,7 @@ namespace
 			std::atomic<bool> started{ false };
 			std::atomic<bool> finished{ false };
 			{
-				Fetcher f("u", [&](const std::string&) { started = true; while (!release) std::this_thread::sleep_for(std::chrono::milliseconds(1)); finished = true; return OneEntryIndex(); });
+				Fetcher f("u", [&](const std::string&, std::string&) { started = true; while (!release) std::this_thread::sleep_for(std::chrono::milliseconds(1)); finished = true; return OneEntryIndex(); });
 				f.RequestFirstLoad();
 				while (!started)
 					std::this_thread::sleep_for(std::chrono::milliseconds(1));
@@ -505,7 +873,7 @@ namespace
 			Check(finished, "shutdown: a worker outlives its Fetcher and finishes cleanly");
 		}
 		{
-			Fetcher f("u", [](const std::string&) { return std::string(); });
+			Fetcher f("u", [](const std::string&, std::string&) { return std::string(); });
 			Check(f.Shutdown(100), "shutdown: with nothing running returns true at once");
 		}
 	}
@@ -517,6 +885,10 @@ int main()
 	UrlTests();
 	InstalledTests();
 	SampleTests();
+	EntryFieldTests();
+	EnvelopeTests();
+	SignedFetchTests();
+	PlayersOwnFetchTests();
 	FetcherTests();
 
 	printf("%d checks, %d failed\n", g_checks, g_failed);
