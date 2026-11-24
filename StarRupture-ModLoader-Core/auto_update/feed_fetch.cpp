@@ -1,6 +1,7 @@
 #include "feed_fetch.h"
 #include "http_get.h"
 #include "logging/logger.h"
+#include "plugins/plugin_catalog.h"
 
 #include <atomic>
 #include <cstdlib>
@@ -142,6 +143,55 @@ namespace FeedFetch
 			WriteEtag(cfg.cachePath, feed.seq, etag);
 		ModLoaderLogger::LogInfo(L"[VersionFeed] Version object map seq %llu stored", static_cast<unsigned long long>(feed.seq));
 		return Result::Stored;
+	}
+
+	Result RefreshCatalog(const Config& cfg)
+	{
+		const char* reason = !cfg.autoUpdate ? "[AutoUpdate] Enabled is off" : cfg.catalogUrl.empty() ? "no catalog URL is compiled in"
+			: cfg.keys.empty() ? "no public key is compiled in" : nullptr;
+		if (reason)
+		{
+			ModLoaderLogger::LogInfo(L"[PluginCatalog] No catalog request: %hs", reason);
+			return Result::NotAllowed;
+		}
+
+		try
+		{
+			HttpGetOptions options;
+			options.resolveMs = options.connectMs = options.sendMs = options.receiveMs = kOperationMs;
+			options.deadlineMs = kDeadlineMs;
+			options.maxBytes = VersionFeed::kMaxFileBytes;
+			options.allowPlainHttp = cfg.allowPlainHttp;
+
+			const std::string file = HttpGet(cfg.catalogUrl.c_str(), "plugin catalog", options);
+			if (file.empty())
+			{
+				ModLoaderLogger::LogInfo(L"[PluginCatalog] The plugin catalog could not be fetched; the cache is as it was");
+				return Result::Failed;
+			}
+			std::string error;
+			switch (PluginCatalog::Store(cfg.catalogCachePath, file, cfg.keys, error))
+			{
+			case PluginCatalog::Outcome::Stored:
+				ModLoaderLogger::LogInfo(L"[PluginCatalog] Plugin catalog stored");
+				return Result::Stored;
+			case PluginCatalog::Outcome::Unchanged:
+				ModLoaderLogger::LogInfo(L"[PluginCatalog] No newer plugin catalog");
+				return Result::Unchanged;
+			case PluginCatalog::Outcome::RefusedRollback:
+			case PluginCatalog::Outcome::RefusedConflict:
+				ModLoaderLogger::LogWarn(L"[PluginCatalog] The fetched plugin catalog is refused (%hs); the cache is as it was", error.c_str());
+				return Result::Unchanged;
+			case PluginCatalog::Outcome::Rejected:
+				break;
+			}
+			ModLoaderLogger::LogWarn(L"[PluginCatalog] The fetched plugin catalog is rejected (%hs); the cache is as it was", error.c_str());
+		}
+		catch (...)
+		{
+			ModLoaderLogger::LogWarn(L"[PluginCatalog] The plugin catalog fetch failed unexpectedly; the cache is as it was");
+		}
+		return Result::Failed;
 	}
 
 	bool Stage1(const Config& cfg, bool mainParked, void (*announce)(uint32_t cl))

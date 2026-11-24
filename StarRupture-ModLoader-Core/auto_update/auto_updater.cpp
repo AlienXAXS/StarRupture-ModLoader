@@ -1040,6 +1040,17 @@ static_assert(VersionMap::kFeedFormat == 1 && (VMAP_FEED_URL[0] == 0 || EndsWith
 static_assert(VersionMap::kFeedFormat == 1 && (VMAP_SERVER_FEED_URL[0] == 0 || EndsWith(VMAP_SERVER_FEED_URL, "/version-map-server.v1.txt")),
 	"VMAP_SERVER_FEED_URL must name version-map-server.v<kFeedFormat>.txt");
 
+#ifndef MODLOADER_SERVER_BUILD
+// The plugin catalog sits in the same release as the client feed.
+static std::string CatalogUrlBesideFeed(const std::string& feedUrl)
+{
+	constexpr char kFeedName[] = "version-map-client.v1.txt";
+	if (feedUrl.empty())
+		return {};
+	return feedUrl.substr(0, feedUrl.size() - (sizeof(kFeedName) - 1)) + "plugin-catalog.v1.txt";
+}
+#endif
+
 FeedFetch::Config FeedFetch::LoaderConfig()
 {
 	Config cfg;
@@ -1050,6 +1061,8 @@ FeedFetch::Config FeedFetch::LoaderConfig()
 #else
 	cfg.url = VMAP_FEED_URL;
 	cfg.cachePath = GetModLoaderDirPath(L"version-map-client.v1.cache");
+	cfg.catalogUrl = CatalogUrlBesideFeed(cfg.url);
+	cfg.catalogCachePath = GetModLoaderDirPath(L"plugin-catalog.v1.cache");
 #endif
 	cfg.keys = VersionFeed::CompiledKeys();
 	cfg.autoUpdate = AutoUpdateEnabled();
@@ -1109,4 +1122,7 @@ void ModLoaderLogger::RunAutoUpdate()
 
 	// The signed version-map feed, for the next launch.
 	FeedFetch::Stage3(FeedFetch::LoaderConfig());
+#ifdef MODLOADER_CLIENT_BUILD
+	FeedFetch::RefreshCatalog(FeedFetch::LoaderConfig());
+#endif
 }

@@ -44,6 +44,8 @@ namespace FeedFetch
 		std::vector<VersionFeed::PublicKey> keys;    // none: no fetch
 		std::wstring cachePath;
 		VersionFeed::Flavor flavor = VersionFeed::kBuildFlavor;   // which file: the client's or the server's
+		std::string  catalogUrl;                     // plugin-catalog.v1.txt beside the map feed; empty: no catalog fetch (the server build)
+		std::wstring catalogCachePath;
 		bool autoUpdate  = true;                     // modloader.ini [AutoUpdate] Enabled
 		bool allowPlainHttp = false;                 // for tests that run a local server
 	};
@@ -68,6 +70,12 @@ namespace FeedFetch
 	// seq it belongs to, and sent back only while the cache still holds that
 	// seq. `why` is for the log.
 	Result Refresh(const Config& cfg, const char* why);
+
+	// One GET of cfg.catalogUrl (the signed plugin catalog), stored in the
+	// catalog cache by PluginCatalog::Store. Unchanged: a refused or repeated
+	// file; Failed: nothing usable came back. On the auto-update thread, after
+	// Stage3; the cache is read at the next start. Never throws.
+	Result RefreshCatalog(const Config& cfg);
 
 	// Stage 1: the check. `mainParked`: the main thread is parked on the APC
 	// path, the only place the request is safe. Returns whether a request was

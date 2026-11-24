@@ -544,6 +544,7 @@
     <ClInclude Include="plugins\plugin_version_query.h" />
     <ClInclude Include="plugins\declared_features_text.h" />
     <ClInclude Include="plugins\plugin_catalog_text.h" />
+    <ClInclude Include="plugins\plugin_catalog.h" />
     <ClInclude Include="plugins\server_address_text.h" />
     <ClInclude Include="plugins\crash_restart.h" />
     <ClInclude Include="plugins\remote_reload.h" />
@@ -806,6 +807,7 @@
     <ClCompile Include="console\engine_output_hook.cpp" />
     <ClCompile Include="console\server_console.cpp" />
     <ClCompile Include="plugins\plugin_guard.cpp" />
+    <ClCompile Include="plugins\plugin_catalog.cpp" />
     <ClCompile Include="plugins\plugin_hook_report.cpp" />
     <ClCompile Include="plugins\plugin_manager.cpp" />
     <ClCompile Include="plugins\plugin_watchdog.cpp" />

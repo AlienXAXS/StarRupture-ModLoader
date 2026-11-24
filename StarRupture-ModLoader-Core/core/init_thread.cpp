@@ -27,6 +27,7 @@
 #include "../memory_scanner/version_map.h"
 #include "../memory_scanner/version_feed.h"
 #include "../auto_update/feed_fetch.h"
+#include "../plugins/plugin_catalog.h"
 #include "../hooks/game/version_map_built.h"
 #include "compat_report.h"
 #include "../plugins/plugin_manager.h"
@@ -298,6 +299,9 @@ DWORD WINAPI MainInitThreadProc(LPVOID)
     const bool feedAsked = FeedFetch::Stage1(feedConfig, g_mainThreadParked);
 #endif
     VersionFeed::ActivateCached(feedConfig.cachePath);
+#ifdef MODLOADER_CLIENT_BUILD
+    PluginCatalog::LoadCache(feedConfig.catalogCachePath, feedConfig.keys);
+#endif
 
     // Version check before hook installation -- if the game build is wrong
     // we must not install hooks (the engine init hook would block the main

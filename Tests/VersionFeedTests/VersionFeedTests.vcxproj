@@ -106,6 +106,7 @@
   <ItemGroup Label="Loader sources under test">
     <ClCompile Include="$(CoreDir)memory_scanner\version_map.cpp" />
     <ClCompile Include="$(CoreDir)memory_scanner\version_feed.cpp" />
+    <ClCompile Include="$(CoreDir)plugins\plugin_catalog.cpp" />
     <ClCompile Include="$(CoreDir)third_party\monocypher\monocypher.c">
       <WarningLevel>TurnOffAllWarnings</WarningLevel>
       <CompileAs>CompileAsC</CompileAs>
