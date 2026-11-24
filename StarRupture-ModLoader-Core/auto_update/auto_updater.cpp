@@ -7,6 +7,7 @@
 #include "version_compare.h"
 #include "feed_fetch.h"
 #include "json_extract.h"
+#include "mod_index_fetcher.h"
 #include "loader_manifest.h"
 #include "core/startup_utils.h"
 #include "logging/log.h"
@@ -867,6 +868,36 @@ bool AutoUpdateEnabled()
 #ifndef VMAP_SERVER_FEED_URL
 #  define VMAP_SERVER_FEED_URL ""
 #endif
+
+// The Browse tab's mod index (mod_index.h). Hosting is not final: this is the
+// index.json in the repo's mod-index folder. modloader.ini [AutoUpdate] ModIndexUrl
+// overrides it, the way ManifestUrl overrides the manifest.
+#ifndef MOD_INDEX_URL
+#  define MOD_INDEX_URL "https://raw.githubusercontent.com/AlienXAXS/StarRupture-ModLoader/main/mod-index/index.json"
+#endif
+
+namespace
+{
+	std::string ReadModIndexUrl()
+	{
+		wchar_t wUrl[512]{};
+		GetPrivateProfileStringW(L"AutoUpdate", L"ModIndexUrl", L"", wUrl, 512,
+		                         GetModLoaderDirPath(L"modloader.ini").c_str());
+		if (wUrl[0] == L' ')
+			return MOD_INDEX_URL;
+
+		char url[512]{};
+		WideCharToMultiByte(CP_UTF8, 0, wUrl, -1, url, sizeof(url), nullptr, nullptr);
+		LogToFile::Debug("[AutoUpdate] ModIndexUrl: overridden via modloader.ini");
+		return url;
+	}
+}
+
+ModIndex::Fetcher& ModIndex::Instance()
+{
+	static Fetcher fetcher(ReadModIndexUrl());
+	return fetcher;
+}
 
 namespace
 {

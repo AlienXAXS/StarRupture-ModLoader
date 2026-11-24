@@ -11,6 +11,7 @@
 #include "../console/server_console.h"
 #include "../hooks/game/engine_shutdown/engine_shutdown.h"
 #include "../preload/preload_manager.h"
+#include "../auto_update/mod_index_fetcher.h"
 
 void ShutdownAll()
 {
@@ -79,6 +80,9 @@ void ShutdownAll()
 
 #ifdef MODLOADER_CLIENT_BUILD
     ShutdownClientUI();
+    // The Browse tab's index request may still be running; it ends by its own
+    // deadline, so this waits only briefly.
+    ModIndex::Instance().Shutdown(2000);
 #endif
 
     PluginWatchdog::Stop();

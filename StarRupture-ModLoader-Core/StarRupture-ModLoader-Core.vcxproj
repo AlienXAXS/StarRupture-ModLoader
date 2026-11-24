@@ -416,6 +416,8 @@
     <ClInclude Include="auto_update\http_get.h" />
     <ClInclude Include="auto_update\json_extract.h" />
     <ClInclude Include="auto_update\loader_manifest.h" />
+    <ClInclude Include="auto_update\mod_index.h" />
+    <ClInclude Include="auto_update\mod_index_fetcher.h" />
     <ClInclude Include="auto_update\plugin_dll_version.h" />
     <ClInclude Include="auto_update\version_compare.h" />
     <ClInclude Include="config\config_manager.h" />
@@ -596,6 +598,7 @@
     <ClCompile Include="auto_update\auto_updater.cpp" />
     <ClCompile Include="auto_update\feed_fetch.cpp" />
     <ClCompile Include="auto_update\http_get.cpp" />
+    <ClCompile Include="auto_update\mod_index_fetcher.cpp" />
     <ClCompile Include="config\config_manager.cpp" />
     <ClCompile Include="config\config_edit.cpp" />
     <ClCompile Include="core\globals.cpp" />
