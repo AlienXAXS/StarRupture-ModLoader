@@ -883,7 +883,7 @@ namespace
 		wchar_t wUrl[512]{};
 		GetPrivateProfileStringW(L"AutoUpdate", L"ModIndexUrl", L"", wUrl, 512,
 		                         GetModLoaderDirPath(L"modloader.ini").c_str());
-		if (wUrl[0] == L' ')
+		if (wUrl[0] == L'\0')
 			return MOD_INDEX_URL;
 
 		char url[512]{};

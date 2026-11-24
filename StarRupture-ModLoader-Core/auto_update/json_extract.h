@@ -125,9 +125,8 @@ inline std::vector<std::string> JsonSplitObjectArray(
 	size_t i = arrayStart + 1;
 	while (i < json.size() && results.size() < maxObjects)
 	{
-		if (json[i] == ' ' || json[i] == '	' ||
-			json[i] == '\r' || json[i] == '
-' || json[i] == ',')
+		if (json[i] == ' ' || json[i] == '\t' ||
+			json[i] == '\r' || json[i] == '\n' || json[i] == ',')
 		{
 			++i;
 			continue;
@@ -146,7 +145,7 @@ inline std::vector<std::string> JsonSplitObjectArray(
 				char c = json[i];
 				if (inString)
 				{
-					if (c == '\') { ++i; }
+					if (c == '\\') { ++i; }
 					else if (c == '"') { inString = false; }
 				}
 				else
