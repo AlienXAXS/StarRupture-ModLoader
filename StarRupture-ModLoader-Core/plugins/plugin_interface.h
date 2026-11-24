@@ -8,7 +8,7 @@
 //   Set it for the whole project (PreprocessorDefinitions), e.g. PLUGIN_NEEDS_INTERFACE=77.
 //   Unset, it is PLUGIN_INTERFACE_BASELINE (75). Allowed: 72 up to PLUGIN_INTERFACE_VERSION_MAX.
 //   Fill PluginInfo::interfaceVersion with PLUGIN_DECLARED_INTERFACE. A loader older than that refuses the plugin.
-//   Members added after your level are not declared: using one is a compile error that names the level to raise to.
+//   Members added after your level are not declared: using one is a compile error (the compiler says the member does not exist; the comment beside the member gives the level to raise to).
 //   Raise it only when the compiler tells you to. The loader itself builds with PLUGIN_INTERFACE_HOST_BUILD and sees all.
 
 // v19: Introduced IPluginSelf.  MIN bumped to 19.

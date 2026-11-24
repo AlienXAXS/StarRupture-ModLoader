@@ -14,7 +14,8 @@
 // Build and run (from the repo root, in a VS developer prompt):
 //
 //   cl /nologo /std:c++20 /EHsc /DNOMINMAX /DUNICODE /D_UNICODE ^
-//      /D_CRT_SECURE_NO_WARNINGS /I StarRupture-ModLoader-Core ^
+//      /D_CRT_SECURE_NO_WARNINGS /DPLUGIN_INTERFACE_HOST_BUILD ^
+//      /I StarRupture-ModLoader-Core ^
 //      /Fe:patch_overlay_test.exe tools\patch_overlay_test.cpp ^
 //      StarRupture-ModLoader-Core\memory_scanner\patch_overlay.cpp ^
 //      StarRupture-ModLoader-Core\memory_scanner\scanner.cpp ^
