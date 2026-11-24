@@ -15,6 +15,8 @@
 #include "theme.h"
 #include "named_entry_utils.h"
 #include "update_notice_window.h"
+#include "readme_view.h"
+#include "utils/open_page.h"
 #include "auto_update/mod_index_fetcher.h"
 #include "plugin_scan_window.h"
 #include "hook_failure_window.h"
@@ -39,7 +41,6 @@
 #include <functional>
 #include <atomic>
 #include <memory>
-#include <shellapi.h>
 
 // Build tag is set by CI; fall back to a local placeholder.
 #ifndef MODLOADER_BUILD_TAG
@@ -2327,51 +2328,64 @@ namespace UI::ModLoaderWindow
                             "you use Save/Save As under Theme, at the top of this tab.");
     }
 
-    // Opens a Browse page in the player's browser. The address is the index
-    // entry's page_url as ModIndex checked it; the check is made again here,
-    // at the one place it is acted on. Called on a click only.
-    static void OpenPageUrl(const std::string& url)
-    {
-        if (!ModIndex::IsAllowedPageUrl(url))
-            return;
-        const std::wstring wide(url.begin(), url.end()); // ASCII only, by the same check
-        ShellExecuteW(nullptr, L"open", wide.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
-    }
-
-    // One row of the Browse table: name and summary, version, author, then the
-    // Installed marker and the Open page button.
+    // One card of the Browse list: the name with its version and author, the
+    // summary, then one line with the Installed marker, the ModLoader version the
+    // entry was last tried on and the Open page button.
     static void DrawBrowseRow(const ModIndex::Entry& e, const std::vector<std::string>& loadedNames)
     {
         ImGui::TableNextRow();
-
         ImGui::TableSetColumnIndex(0);
+
         ImGui::TextUnformatted(e.name.c_str());
-        if (!e.summary.empty())
+        if (!e.version.empty())
         {
-            ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
-            ImGui::TextWrapped("%s", e.summary.c_str());
-            ImGui::PopStyleColor();
+            ImGui::SameLine();
+            ImGui::TextDisabled("%s", e.version.c_str());
         }
+        if (!e.author.empty())
+        {
+            ImGui::SameLine();
+            ImGui::TextDisabled("by %s", e.author.c_str());
+        }
+        if (!e.summary.empty())
+            ImGui::TextWrapped("%s", e.summary.c_str());
 
-        ImGui::TableSetColumnIndex(1);
-        ImGui::TextUnformatted(e.version.empty() ? "?" : e.version.c_str());
-
-        ImGui::TableSetColumnIndex(2);
-        ImGui::TextUnformatted(e.author.empty() ? "?" : e.author.c_str());
-
-        ImGui::TableSetColumnIndex(3);
+        ImGui::AlignTextToFramePadding();
         if (ModIndex::IsInstalled(e, loadedNames))
+        {
             ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "Installed");
+            ImGui::SameLine();
+        }
         if (e.interfaceVersionMin > PLUGIN_INTERFACE_VERSION_MAX)
+        {
             ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.1f, 1.0f), "Needs a newer ModLoader");
+            ImGui::SameLine();
+        }
+        else if (!e.testedLoader.empty())
+        {
+            ImGui::TextDisabled("Tested on %s", e.testedLoader.c_str());
+            ImGui::SameLine();
+        }
         if (ImGui::Button("Open page"))
-            OpenPageUrl(e.pageUrl);
+            OpenPage::Open(e.pageUrl);
+        if (!e.readmeUrl.empty())
+        {
+            ImGui::SameLine();
+            if (ImGui::Button("README"))
+                UI::ReadmeView::Open(e);
+        }
     }
 
     // The mod index, display only (auto_update/mod_index_fetcher.h). The list
     // is downloaded once on a worker thread; this only reads what it published.
     static void RenderBrowseTab()
     {
+        if (UI::ReadmeView::IsOpen())
+        {
+            UI::ReadmeView::Draw();
+            return;
+        }
+
         ImGui::Spacing();
         ImGui::SeparatorText("Browse");
         ImGui::TextDisabled("Plugins that work with the ModLoader. Open a page to download one.");
@@ -2425,13 +2439,9 @@ namespace UI::ModLoaderWindow
             ImGuiTableFlags_Resizable |
             ImGuiTableFlags_SizingStretchProp;
 
-        if (ImGui::BeginTable("##browse", 4, tableFlags))
+        if (ImGui::BeginTable("##browse", 1, tableFlags))
         {
-            ImGui::TableSetupColumn("Plugin",  ImGuiTableColumnFlags_WidthStretch, 3.0f);
-            ImGui::TableSetupColumn("Version", ImGuiTableColumnFlags_WidthStretch, 0.8f);
-            ImGui::TableSetupColumn("Author",  ImGuiTableColumnFlags_WidthStretch, 1.2f);
-            ImGui::TableSetupColumn("",        ImGuiTableColumnFlags_WidthStretch, 1.6f);
-            ImGui::TableHeadersRow();
+            ImGui::TableSetupColumn("Plugin", ImGuiTableColumnFlags_WidthStretch);
 
             for (size_t i = 0; i < snap->entries.size(); ++i)
             {
@@ -2516,6 +2526,10 @@ namespace UI::ModLoaderWindow
 
     void Render(IModLoaderImGui* imgui)
     {
+        // Before the early return below: a README page ends here when it was not
+        // drawn last frame (another tab, the window closed or collapsed).
+        UI::ReadmeView::BeginFrame();
+
         if (!s_isOpen)
             return;
 

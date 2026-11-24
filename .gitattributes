@@ -1,2 +1,5 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# The mod index is signed byte for byte, so it stays LF on every checkout.
+mod-index/index.json text eol=lf

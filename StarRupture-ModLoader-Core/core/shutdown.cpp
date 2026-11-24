@@ -12,6 +12,10 @@
 #include "../hooks/game/engine_shutdown/engine_shutdown.h"
 #include "../preload/preload_manager.h"
 #include "../auto_update/mod_index_fetcher.h"
+#ifdef MODLOADER_CLIENT_BUILD
+#include "../auto_update/readme_fetcher.h"
+#include "../UI/readme_view.h"
+#endif
 
 void ShutdownAll()
 {
@@ -79,11 +83,14 @@ void ShutdownAll()
     RemoveAllHooks();
 
 #ifdef MODLOADER_CLIENT_BUILD
+    // Textures go back before the ImGui host is unloaded.
+    UI::ReadmeView::Shutdown();
     ShutdownClientUI();
     // The Browse tab's index request may still be running. It cannot be
     // cancelled and ends by its own deadline, so this waits up to 2 s; a request
     // still running after that ends with the process.
     ModIndex::Instance().Shutdown(2000);
+    ModIndex::ShutdownReadmeInstance(2000);
 #endif
 
     PluginWatchdog::Stop();

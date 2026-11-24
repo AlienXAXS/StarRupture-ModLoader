@@ -418,6 +418,13 @@
     <ClInclude Include="auto_update\loader_manifest.h" />
     <ClInclude Include="auto_update\mod_index.h" />
     <ClInclude Include="auto_update\mod_index_fetcher.h" />
+    <ClInclude Include="auto_update\mod_index_signed.h" />
+    <ClInclude Include="auto_update\readme_fetcher.h" />
+    <ClInclude Include="auto_update\readme_images.h" />
+    <ClInclude Include="auto_update\readme_markdown.h" />
+    <ClInclude Include="auto_update\readme_textures.h" />
+    <ClInclude Include="utils\open_page.h" />
+    <ClInclude Include="UI\readme_view.h" />
     <ClInclude Include="auto_update\plugin_dll_version.h" />
     <ClInclude Include="auto_update\version_compare.h" />
     <ClInclude Include="config\config_manager.h" />
@@ -600,6 +607,16 @@
     <ClCompile Include="auto_update\feed_fetch.cpp" />
     <ClCompile Include="auto_update\http_get.cpp" />
     <ClCompile Include="auto_update\mod_index_fetcher.cpp" />
+    <ClCompile Include="auto_update\mod_index_signed.cpp" />
+    <ClCompile Include="auto_update\readme_fetcher.cpp" />
+    <ClCompile Include="auto_update\readme_markdown.cpp" />
+    <ClCompile Include="auto_update\readme_textures.cpp" />
+    <ClCompile Include="utils\open_page.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)' != 'Client Debug' And '$(Configuration)' != 'Client Release' And '$(Configuration)' != 'Local SDK Client Debug' And '$(Configuration)' != 'Local SDK Client Release'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="UI\readme_view.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)' != 'Client Debug' And '$(Configuration)' != 'Client Release' And '$(Configuration)' != 'Local SDK Client Debug' And '$(Configuration)' != 'Local SDK Client Release'">true</ExcludedFromBuild>
+    </ClCompile>
     <ClCompile Include="config\config_manager.cpp" />
     <ClCompile Include="config\config_edit.cpp" />
     <ClCompile Include="core\globals.cpp" />

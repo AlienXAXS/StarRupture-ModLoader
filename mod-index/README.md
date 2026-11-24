@@ -1,11 +1,12 @@
 # Mod index
 
 `index.json` is the list of ModLoader plugins the overlay's Browse tab shows. The loader
-downloads it once, when the tab is first opened, and keeps it in memory.
+downloads it once, when the tab is first opened. The list players get is a signed copy of this file.
 
 ## Add a plugin
 
-Add one object to the array:
+Add one object to the array. Send it the way you send rows for the version object map (the
+shared per-game-build data the loader serves): open a PR.
 
 ```json
 {
@@ -15,6 +16,8 @@ Add one object to the array:
   "version": "1.2.0",
   "summary": "In-game recipe codex: search any item or recipe.",
   "page_url": "https://github.com/AlienXAXS/StarRupture-Plugin-Codex",
+  "readme_url": "https://raw.githubusercontent.com/AlienXAXS/StarRupture-Plugin-Codex/main/README.md",
+  "tested_loader": "1.27.0",
   "interface_version_min": 77
 }
 ```
@@ -27,9 +30,36 @@ Add one object to the array:
 | `author` | no | Up to 64 characters. |
 | `version` | no | The latest release. Up to 32 characters. |
 | `summary` | no | One or two sentences. Up to 300 characters. |
+| `readme_url` | no | A raw GitHub link to your README (host `raw.githubusercontent.com`, https). Up to 200 characters. Please include it: the Browse card then shows a README button. See below. |
+| `tested_loader` | no | The ModLoader version you tested on, for example `1.27.0`. Up to 32 characters. Please include it. |
 | `interface_version_min` | no | The plugin interface number the plugin declares. Leave it out when unknown. |
 
 The list holds up to 200 plugins, and the file stays under 256 KB.
+
+## The README button
+
+When an entry has a `readme_url`, its card in the Browse tab shows a **README** button that opens your
+README inside the window. Use the raw link, for example
+`https://raw.githubusercontent.com/<owner>/<repo>/main/README.md`. A picture written with a relative path,
+such as `![Screenshot](images/shot.png)`, is loaded from the same folder as that file. Pictures must be
+on GitHub (PNG, JPEG, GIF, WebP or BMP, not SVG), up to 8 per README and 2 MB each. Links to GitHub and
+Nexus Mods open in the browser. Tables show as plain text.
+
+## Check it before you send it
+
+Save `index.json` with LF line endings and a final newline, then run:
+
+```
+node .github/vmap/build-mod-index.mjs mod-index/index.json --out mod-index.txt
+```
+
+It prints `ok`, or names the entry that breaks a rule below.
+
+## After it is merged
+
+The maintainers sign the list and publish it as `mod-index.v1.txt` together with the version map;
+no ModLoader release is needed. The loader checks the signature
+before it reads an entry, and keeps its last good copy for when a download fails.
 
 ## The page_url rule
 
@@ -38,13 +68,15 @@ The list holds up to 200 plugins, and the file stays under 256 KB.
 spaces. An entry that breaks the rule is left out of the list, and so is an entry missing `id`,
 `name` or `page_url`. The other entries still load.
 
-## Use another index
+## Try your own index
 
-Point the loader at your own file in `ModLoader\modloader.ini`:
+To test a list before it is merged, point the loader at your own file in `ModLoader\modloader.ini`:
 
 ```
 [AutoUpdate]
 ModIndexUrl=https://example.com/my-index.json
 ```
 
-The URL must be https. The entries are checked by the same rules.
+The URL must be https. The file can be a plain `index.json` like the one in this folder, or a
+signed `mod-index.v1.txt`. A plain file is read without a signature check and is not cached. The
+entries are checked by the same rules either way. The built-in address takes only the signed file.

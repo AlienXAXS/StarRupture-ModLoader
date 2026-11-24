@@ -4,11 +4,16 @@ name: Publish the version-map feed
 # from the feed repo's `vmap-feed` release, checks it with the public keys in
 # version_feed.cpp, and puts it on this repository's Latest release.
 #
-# There are two feeds, one per loader build: version-map-client.v1.txt and
+# There are two version map feeds, one per loader build: version-map-client.v1.txt and
 # version-map-server.v1.txt. Each is its own matrix leg with its own seq chain,
 # so a problem with one does not hold back the other. verify-feed.mjs refuses a
 # file of the other build's flavor. The server leg is optional: until the feed
 # release holds a server file it does nothing and stays green.
+#
+# The same flow carries the signed mod index (mod-index.v1.txt, built from
+# mod-index/index.json), as a third leg with kind `mod-index` that verify-feed.mjs
+# checks with --kind mod-index. It is optional like the server feed, and it is its
+# own job, so a missing or invalid mod index never holds back a version map feed.
 #
 # A feed that fails the check fails the run and is not uploaded. A feed whose
 # seq does not rise above the newest one on a release is valid and is not
@@ -24,7 +29,8 @@ name: Publish the version-map feed
 # after that file verifies. With no feed on any release, only a manual run with
 # first_publish set uploads one, so an older signed feed cannot be the first.
 # That holds per feed: first_publish takes effect only for a feed no release
-# carries yet (the first server publish needs one manual run).
+# carries yet (the first server publish and the first mod index publish each
+# need one manual run; until then that leg fails and the others are not held back).
 #
 # Slot k1 holds a TEST key and slot k2 the release key. The scheduled run
 # refuses a TEST-key feed; only a manual run with allow_test_key set
@@ -68,16 +74,23 @@ jobs:
       matrix:
         include:
           - asset: version-map-client.v1.txt
+            kind: feed
             flavor: client
             optional: false
           - asset: version-map-server.v1.txt
+            kind: feed
             flavor: server
+            optional: true
+          - asset: mod-index.v1.txt
+            kind: mod-index
+            flavor: ''
             optional: true
     env:
       GH_TOKEN: ${{ github.token }}
       FEED_REPO: ${{ inputs.feed_repo || 'msantoro12/starrupture-ci' }}
       FEED_RELEASE: ${{ inputs.feed_release || 'vmap-feed' }}
       FEED_ASSET: ${{ matrix.asset }}
+      FEED_KIND: ${{ matrix.kind }}
       FEED_FLAVOR: ${{ matrix.flavor }}
       FEED_OPTIONAL: ${{ matrix.optional }}
       ALLOW_TEST_KEY: ${{ inputs.allow_test_key && 'true' || 'false' }}
@@ -115,7 +128,8 @@ jobs:
           last=
           for t in $(gh release list --repo "$GITHUB_REPOSITORY" --limit 50 --json tagName --jq '.[].tagName'); do
             gh release download "$t" --repo "$GITHUB_REPOSITORY" --pattern "$FEED_ASSET" --dir "$RUNNER_TEMP/cur" --clobber 2>/dev/null || continue
-            args=(--source StarRupture-ModLoader-Core/memory_scanner/version_feed.cpp --flavor "$FEED_FLAVOR")
+            args=(--source StarRupture-ModLoader-Core/memory_scanner/version_feed.cpp)
+            if [ "$FEED_KIND" = "mod-index" ]; then args+=(--kind mod-index); else args+=(--flavor "$FEED_FLAVOR"); fi
             [ "$ALLOW_TEST_KEY" = "true" ] || args+=(--refuse-test-key)
             last=$(node .github/vmap/verify-feed.mjs "$RUNNER_TEMP/cur/$FEED_ASSET" "${args[@]}") || { echo "::error::The feed on release $t does not verify."; exit 1; }
             echo "The newest feed is on release $t, seq $last."
@@ -141,7 +155,8 @@ jobs:
         if: steps.latest.outputs.tag != ''
         run: |
           set +e
-          args=(--source StarRupture-ModLoader-Core/memory_scanner/version_feed.cpp --flavor "$FEED_FLAVOR" --last-seq "${{ steps.latest.outputs.last }}")
+          args=(--source StarRupture-ModLoader-Core/memory_scanner/version_feed.cpp --last-seq "${{ steps.latest.outputs.last }}")
+          if [ "$FEED_KIND" = "mod-index" ]; then args+=(--kind mod-index); else args+=(--flavor "$FEED_FLAVOR"); fi
           [ "$ALLOW_TEST_KEY" = "true" ] || args+=(--refuse-test-key)
           node .github/vmap/verify-feed.mjs "$RUNNER_TEMP/new/$FEED_ASSET" "${args[@]}"
           code=$?

@@ -33,7 +33,8 @@
 // Shutdown: the worker owns a share of the state, so it can finish after the
 // Fetcher is gone and at process exit. Shutdown(waitMs) stops new requests and
 // waits up to waitMs for a running one (the request itself ends by the HttpGet
-// deadline). Nothing is read from or written to disk.
+// deadline). This class does no disk I/O itself; the loader's own instance gets its
+// fetch function from mod_index_signed.h, which keeps the cache file.
 // ---------------------------------------------------------------------------
 
 namespace ModIndex
@@ -49,15 +50,16 @@ namespace ModIndex
 		std::string error;              // Failed only: plain words for the player
 	};
 
-	// The request: the body on success, or an empty string on any failure, as
-	// HttpGet answers. Left empty, the Fetcher calls HttpGet with the feed's
-	// timeouts (FeedFetch::kOperationMs, kDeadlineMs) and the index size cap.
-	using FetchFn = std::function<std::string(const std::string& url)>;
+	// Where the index text comes from: the index (JSON) on success, or an empty
+	// string on any failure, with `error` set to plain words for the player (left
+	// empty, the Fetcher says the download failed). mod_index_signed.h makes the
+	// loader's own, which downloads, verifies and caches.
+	using FetchFn = std::function<std::string(const std::string& url, std::string& error)>;
 
 	class Fetcher
 	{
 	public:
-		explicit Fetcher(std::string url, FetchFn fetch = {});
+		Fetcher(std::string url, FetchFn fetch);
 		~Fetcher();
 		Fetcher(const Fetcher&) = delete;
 		Fetcher& operator=(const Fetcher&) = delete;
@@ -84,6 +86,6 @@ namespace ModIndex
 	};
 
 	// The loader's one index: the URL from modloader.ini [AutoUpdate] ModIndexUrl,
-	// else the compiled-in default. Made on first use and kept to the end of the process.
+	// else the signed mod-index.v1.txt beside the loader's version map feed. Made on first use and kept to the end of the process.
 	Fetcher& Instance();
 }

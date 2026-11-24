@@ -627,6 +627,23 @@ that it reads no game data from compiled-in offsets, and the SDK's rule-3 check
 (`tools/rule3-check.mjs`) is the scan that backs that promise. Run `Tests\VersionMapTests` and
 `node --test ci/*.test.mjs` in starrupture-ci; both must pass.
 
+### Listing your plugin in the Browse tab
+
+The Browse tab in the overlay shows the plugins in `mod-index/index.json`. You add your plugin the same
+way you add version map rows: send a PR that adds one object to the array. The fields and a worked
+example are in [mod-index/README.md](mod-index/README.md). `id`, `name` and `page_url` are required;
+please add `readme_url` (a raw GitHub link to your README) and `tested_loader` (the ModLoader version you
+tested on) too.
+
+Save the file with LF line endings and a final newline, and check it before you send it:
+
+    node .github/vmap/build-mod-index.mjs mod-index/index.json --out mod-index.txt
+
+It says `ok`, or names the entry that has to change.
+
+After your PR is merged, the maintainers sign and publish the list. A ModLoader release is
+not needed.
+
 ## Failure modes
 
 What a player sees, and what the log says (`ModLoader\Logs\ModLoader.log`).
