@@ -698,6 +698,13 @@ int main()
 #endif
 		}
 
+		// A signed plugin catalog is not read as a version map.
+		{
+			SignedFeed f;
+			Check(!Read(cat10, keys, f, e) && e.find("plugin catalog") != std::string::npos,
+				"ReadSigned refuses a signed plugin catalog instead of reading it as an empty map");
+		}
+
 		// Nothing stored yet.
 		Check(PluginCatalog::AccessorText() == nullptr && PluginCatalog::CopyAccessorText(nullptr, 0) == -1,
 			"the accessor has no text, and answers -1, before any catalog");

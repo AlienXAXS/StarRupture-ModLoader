@@ -689,7 +689,7 @@ the last good copy on disk and refuses an older file, so the text is a snapshot 
 older than the plugins you are running; use `GetDeclaredFeatures` for what is running now. It works like
 `GetDeclaredFeatures`: the full length comes back, the text is cut to `size` and ends in a NUL, and a null `buf` with
 a `size` of 0 only measures (a cut can fall inside a character, so measure first). It returns -1 when the mod loader
-holds no verified catalog: until a catalog is published, before the first fetch has finished on a first launch, and
+holds no verified catalog: until a catalog is published, on a first launch that could not fetch it, and
 always on a dedicated server for now. Call it from `Tick`, not from a render callback.
 
 ```
@@ -710,7 +710,7 @@ if (len > 0)
 {
     std::string text(len + 1, '\0');
     hooks->Registry->GetFeatureCatalog(text.data(), text.size());
-    text.resize(len);   // same rows as GetDeclaredFeatures: split on lines, then on tabs
+    text.resize(len);   // rows end in a line feed, fields are split on tabs only
 }
 ```
 <sup>[✦](#msantoro12)</sup>

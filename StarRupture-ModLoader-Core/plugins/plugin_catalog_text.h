@@ -25,7 +25,8 @@
 //   feature<TAB><plugin><TAB><id><TAB><off><TAB><title>   zero or more
 // `off` is - (on in every build), * (off in every build) or the game CLs the
 // feature is off in: decimal, ascending, comma-separated, no spaces.
-// The same row shapes GetDeclaredFeatures serves, so a plugin reads both alike.
+// Tab-separated like GetDeclaredFeatures, but not the same rows: the header
+// differs and `off` names builds, where GetDeclaredFeatures says on or off.
 //
 // A file that breaks any rule is rejected whole. No CR, no empty row, and
 // exactly one LF ends the file.

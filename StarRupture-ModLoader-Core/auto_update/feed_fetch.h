@@ -74,7 +74,7 @@ namespace FeedFetch
 	// One GET of cfg.catalogUrl (the signed plugin catalog), stored in the
 	// catalog cache by PluginCatalog::Store. Unchanged: a refused or repeated
 	// file; Failed: nothing usable came back. On the auto-update thread, after
-	// Stage3; the cache is read at the next start. Never throws.
+	// Stage3; the accessor serves a stored catalog at once. Never throws.
 	Result RefreshCatalog(const Config& cfg);
 
 	// Stage 1: the check. `mainParked`: the main thread is parked on the APC

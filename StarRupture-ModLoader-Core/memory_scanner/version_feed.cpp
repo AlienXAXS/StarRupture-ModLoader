@@ -323,6 +323,10 @@ namespace VersionFeed
 		const std::string& region = verified.body;
 		const size_t l1 = region.find('\n');
 		const size_t l2 = region.find('\n', l1 + 1);
+		// A signed plugin catalog is not a version map: ParseFeed would skip its rows and
+		// read an empty map, which the cache would then keep ahead of the real one.
+		if (region.compare(l2 + 1, 20, "kind\tplugin-catalog\n") == 0)
+			return fail("this is a plugin catalog, not a version map");
 		MapData map;
 		std::string parseError;
 		if (!VersionMap::ParseFeed(region.substr(0, l1 + 1) + region.substr(l2 + 1), map, parseError))

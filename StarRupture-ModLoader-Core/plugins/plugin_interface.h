@@ -4184,8 +4184,10 @@ static_assert(sizeof(IPluginHostRules)                                   == 13 *
 // An older loader (interface below 80) has no GetFeatureCatalog member, and
 // refuses a plugin that declares 80, so a plugin that gets this far has it.
 //
-// The rows have the same shapes as GetDeclaredFeatures, in this order, so one
-// parser reads both:
+// The rows are tab-separated like GetDeclaredFeatures, but the header rows
+// and the <off> field differ (<off> names the builds a feature is off in,
+// where GetDeclaredFeatures says on or off for the running build), so read
+// them with a parser of their own, in this order:
 //
 //     format<TAB>1
 //     seq<TAB><n>                                              the catalog's own number, rising
