@@ -627,6 +627,38 @@ that it reads no game data from compiled-in offsets, and the SDK's rule-3 check
 (`tools/rule3-check.mjs`) is the scan that backs that promise. Run `Tests\VersionMapTests` and
 `node --test ci/*.test.mjs` in starrupture-ci; both must pass.
 
+### Listing your plugin in the Browse tab
+
+The Browse tab in the overlay shows the plugins in `mod-index/index.json`. You add your plugin the same
+way you add version map rows: send a PR. Add one object to the array:
+
+```json
+{
+  "id": "mycompass",
+  "name": "MyCompass",
+  "author": "YourName",
+  "version": "1.0.0",
+  "summary": "Shows a compass bar at the top of the screen.",
+  "page_url": "https://github.com/YourName/StarRupture-Plugin-MyCompass",
+  "readme_url": "https://raw.githubusercontent.com/YourName/StarRupture-Plugin-MyCompass/main/README.md",
+  "tested_loader": "1.27.0",
+  "interface_version_min": 79
+}
+```
+
+`id`, `name` and `page_url` are required. `readme_url` is a raw GitHub link to your README, and
+`tested_loader` is the ModLoader version you tested on. `interface_version_min` is optional. The
+full field list is in [mod-index/README.md](mod-index/README.md).
+
+Save the file with LF line endings and a final newline. Check it before you send it:
+
+    node .github/vmap/build-mod-index.mjs mod-index/index.json --out mod-index.txt
+
+It prints `ok`, or the entry that has to change.
+
+After your PR is merged, the signed list is published with the next publish run. A ModLoader release is
+not needed.
+
 ## Failure modes
 
 What a player sees, and what the log says (`ModLoader\Logs\ModLoader.log`).
