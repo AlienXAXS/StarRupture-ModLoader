@@ -727,12 +727,12 @@ namespace
 		Check(after == startFiles, "run: Plugins is as it started");
 		printf("\n");
 	}
+
 	void TestIdentity()
 	{
-		const std::wstring ini = g_root + L"\identity.ini";
+		const std::wstring ini = g_root + L"\\identity.ini";
 		Check(ReadIdentity(ini, L"A.dll").name.empty(), "identity: nothing cached");
-		Check(SaveIdentity(ini, L"A.dll", { L"Café 日", L"1.2", L"me
-Name=x" }), "identity: saved");
+		Check(SaveIdentity(ini, L"A.dll", { L"Café 日", L"1.2", L"me\nName=x" }), "identity: saved");
 		const Identity who = ReadIdentity(ini, L"a.dll");
 		Check(who.name == L"Café 日" && who.version == L"1.2", "identity: Unicode round trip, name case aside");
 		Check(who.author == L"me Name=x", "identity: a line break cannot start a key");

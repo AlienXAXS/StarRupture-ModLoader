@@ -1444,9 +1444,9 @@ namespace PluginManager
 				out[i].hookScanFailed        = p.hookScanFailed;
 				out[i].isDisabled            = p.isDisabled;
 #ifdef MODLOADER_CLIENT_BUILD
-			out[i].isRemoved             = p.isUninstalled;
+				out[i].isRemoved             = p.isUninstalled;
 #else
-			out[i].isRemoved             = false;
+				out[i].isRemoved             = false;
 #endif
 
 				// Plugin paths are ASCII in practice; anything else degrades to '?'
@@ -2571,6 +2571,8 @@ namespace PluginManager
 	{
 		const std::wstring path = ManageFolders().plugins + L"\\" + fileName;
 		const ChangeOutcome later{ ManageResult::AfterRestart, "It will be on after you restart the game.", true };
+		if (GetFileAttributesW(path.c_str()) == INVALID_FILE_ATTRIBUTES)
+			return { ManageResult::Failed, "Its file is not in ModLoader\\Plugins." };
 
 		EnterCriticalSection(&g_pluginLock);
 		const int index = IndexByFile(fileName);
@@ -2680,8 +2682,18 @@ namespace PluginManager
 				ModLoaderLogger::LogWarn(L"Uninstall of %s failed on %s (result %d, error %lu)", fileName.c_str(),
 					moved.failedFile.c_str(), static_cast<int>(moved.result), moved.error);
 				if (moved.result == PluginManage::FileResult::RollbackFailed)
+				{
+					// The DLL may be the file that stayed moved.
+					const std::wstring path = folders.plugins + L"\\" + fileName;
+					if (GetFileAttributesW(path.c_str()) == INVALID_FILE_ATTRIBUTES)
+					{
+						EnterCriticalSection(&g_pluginLock);
+						s_uninstalledPaths.insert(LowerCase(path));
+						LeaveCriticalSection(&g_pluginLock);
+					}
 					return { ManageResult::RollbackFailed,
 						"Uninstall only partly worked. Check ModLoader\\Plugins and ModLoader\\Removed." };
+				}
 				return { ManageResult::MoveFailed, "Couldn't uninstall it. Nothing was changed." };
 			}
 			PluginManage::SaveDisabled(ini, fileName, false);
