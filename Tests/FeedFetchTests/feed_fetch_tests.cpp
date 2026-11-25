@@ -178,6 +178,7 @@ namespace
 		std::string etag;                // set between requests, never during one
 		std::string catalog;             // served at /catalog, with no ETag
 		std::string lastIfNoneMatch;     // of the latest request; read after its answer arrived
+		std::string lastPath;            // the same, path and query
 
 		bool Start()
 		{
@@ -258,7 +259,7 @@ namespace
 		{
 			std::string req;
 			char buf[1024];
-			while (req.find("\r\n\r\n") == std::string::npos && req.size() < 8192)
+			while (req.find("\r\n\r\n") == std::string::npos && req.size() < 16384)
 			{
 				const int n = recv(c, buf, sizeof(buf), 0);
 				if (n <= 0)
@@ -279,6 +280,7 @@ namespace
 			if (at != std::string::npos)
 				inm = req.substr(at + headerName.size(), req.find("\r\n", at) - at - headerName.size());
 			lastIfNoneMatch = inm;
+			lastPath = path;
 			++hits;
 
 			if (path == "/ok")
@@ -700,6 +702,32 @@ int main()
 			"an HTTP-to-HTTP redirect is followed, and the If-None-Match goes through it to the 304");
 		Check(HttpGet(srv.Url("/redirect").c_str(), "test", [] { HttpGetOptions o; o.allowPlainHttp = true; return o; }()) == srv.feed,
 			"HttpGet returns the body after a redirect");
+		{
+			HttpGetOptions o;
+			o.allowPlainHttp = true;
+			o.noRedirect = true;
+			std::string location = "left over";
+			unsigned status = 0;
+			o.location = &location;
+			o.status = &status;
+			srv.hits = 0;
+			Check(HttpGet(srv.Url("/redirect").c_str(), "test", o).empty() && status == 302 && location == "/ok" && srv.hits == 1,
+				"with noRedirect a 302 is not followed, and its status and Location are handed back");
+
+			// A signed address: a long path and a longer query, both sent whole.
+			const std::string query = "?sig=" + std::string(1800, 'q') + "&sp=r";
+			const std::string longPath = "/" + std::string(1500, 'p');
+			TestDoubles::g_log.clear();
+			HttpGet(srv.Url((longPath + query + "#part").c_str()).c_str(), "test", o);
+			Check(srv.lastPath == longPath + query, "a long path and its query reach the server whole, without the fragment");
+			Check(!Logged(L"qqqq"), "...and the query is not logged");
+
+			std::atomic<bool> cancel{ true };
+			o.cancel = &cancel;
+			srv.hits = 0;
+			Check(HttpGet(srv.Url("/ok").c_str(), "test", o).empty() && status == 0 && srv.hits == 0,
+				"a cancelled request is not sent");
+		}
 		HttpGetOptions strict;
 		strict.allowPlainHttp = false;
 		srv.hits = 0;
@@ -765,10 +793,12 @@ int main()
 			"a body over 1 MiB fails and leaves the cache as it was");
 		HttpGetOptions o;
 		o.allowPlainHttp = true;
+		bool overLimit = false;
+		o.overLimit = &overLimit;
 		o.maxBytes = srv.feed.size() - 1;
-		Check(HttpGet(srv.Url("/ok").c_str(), "test", o).empty(), "HttpGet stops at its own byte limit");
+		Check(HttpGet(srv.Url("/ok").c_str(), "test", o).empty() && overLimit, "HttpGet stops at its own byte limit and says so");
 		o.maxBytes = srv.feed.size();
-		Check(HttpGet(srv.Url("/ok").c_str(), "test", o) == srv.feed, "...and passes a body exactly at the limit");
+		Check(HttpGet(srv.Url("/ok").c_str(), "test", o) == srv.feed && !overLimit, "...and passes a body exactly at the limit");
 	}
 
 	// ---- a bad signature -----------------------------------------------------

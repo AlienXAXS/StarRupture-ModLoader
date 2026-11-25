@@ -48,6 +48,7 @@ namespace ModIndex
 		int  skipped   = 0;             // objects the parser dropped
 		bool truncated = false;         // the list was cut at kMaxEntries
 		std::string error;              // Failed only: plain words for the player
+		bool signatureVerified = false; // Ready only: the list passed its signature check
 	};
 
 	// Where the index text comes from: the index (JSON) on success, or an empty
@@ -59,7 +60,9 @@ namespace ModIndex
 	class Fetcher
 	{
 	public:
-		Fetcher(std::string url, FetchFn fetch);
+		// bodySigned: set by `fetch`, on the worker, for the body it returns.
+		// None: the list counts as unsigned.
+		Fetcher(std::string url, FetchFn fetch, std::shared_ptr<const bool> bodySigned = nullptr);
 		~Fetcher();
 		Fetcher(const Fetcher&) = delete;
 		Fetcher& operator=(const Fetcher&) = delete;
@@ -88,4 +91,9 @@ namespace ModIndex
 	// The loader's one index: the URL from modloader.ini [AutoUpdate] ModIndexUrl,
 	// else the signed mod-index.v1.txt beside the loader's version map feed. Made on first use and kept to the end of the process.
 	Fetcher& Instance();
+
+	// Whether the list comes from an address the player set in modloader.ini. The
+	// loader's own address is signed only; a list that is not signed can only
+	// come from the player's.
+	bool PlayersOwnUrl();
 }

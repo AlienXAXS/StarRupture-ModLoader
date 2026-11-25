@@ -4,6 +4,7 @@
 #include "memory_scanner/version_feed.h"
 
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -54,6 +55,7 @@ namespace ModIndex
 		std::wstring cachePath;                      // the verified file and, beside it, its ETag
 		bool signedOnly = true;                      // the loader's own address; false: the player's ModIndexUrl
 		bool allowPlainHttp = false;                 // for tests that run a local server
+		std::shared_ptr<bool> bodySigned;            // when set: whether the returned body passed its signature check
 	};
 
 	// The request for the Fetcher: one GET of the URL, verified, and (signedOnly)

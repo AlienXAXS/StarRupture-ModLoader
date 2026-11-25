@@ -17,6 +17,7 @@ namespace ModIndex
 		bool stopped = false;                           // Shutdown was called
 		std::string url;
 		FetchFn fetch;
+		std::shared_ptr<const bool> bodySigned;
 	};
 
 	namespace
@@ -33,11 +34,12 @@ namespace ModIndex
 		void Work(std::shared_ptr<Fetcher::Shared> shared);
 	}
 
-	Fetcher::Fetcher(std::string url, FetchFn fetch)
+	Fetcher::Fetcher(std::string url, FetchFn fetch, std::shared_ptr<const bool> bodySigned)
 		: m_shared(std::make_shared<Shared>())
 	{
 		m_shared->url = std::move(url);
 		m_shared->fetch = std::move(fetch);
+		m_shared->bodySigned = std::move(bodySigned);
 	}
 
 	Fetcher::~Fetcher()
@@ -130,6 +132,7 @@ namespace ModIndex
 					{
 						auto ready = std::make_shared<Snapshot>();
 						ready->state = State::Ready;
+						ready->signatureVerified = shared->bodySigned && *shared->bodySigned;
 						ready->entries = std::move(parsed.entries);
 						ready->skipped = parsed.skipped;
 						ready->truncated = parsed.truncated;

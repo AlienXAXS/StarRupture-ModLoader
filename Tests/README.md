@@ -457,7 +457,7 @@ against a server on 127.0.0.1 that the test starts. The test switch `allowPlainH
 - The answers: a verified feed is stored verbatim; the same `seq` is unchanged; a 404, a server that never
   answers, a body that never arrives, a body over 1 MiB and a bad signature each fail and leave the cache
   as it was; a body that trickles in is cut off at the wall-clock deadline; `maxBytes` stops a longer
-  body and passes one exactly at the limit; an HTTP-to-HTTP redirect is followed.
+  body, reports that it was over the limit, and passes one exactly at the limit; an HTTP-to-HTTP redirect is followed.
 - An unroutable host (192.0.2.1) fails inside the deadline plus one timeout.
 - Release notes per version (`auto_update/version_compare.h`): `SelectVersionedNotes` lists the `## <tag>` sections
   newer than the previous version (two from 1.22.1, one from 1.23.0, none when previous is at or above all, the current
@@ -669,7 +669,39 @@ no game. It checks:
 - The page URL allowlist: https on nexusmods.com, www.nexusmods.com, github.com and www.github.com only, and
   look-alike hosts, user info, ports, backslashes, control characters and other schemes refused.
 - `IsInstalled` by id or name, in any case.
-- The sample `mod-index/index.json` parses with none skipped.
+- The sample `mod-index/index.json` parses with none skipped, lists the install fields on every entry
+  except the two server-only ones, and sets `server_only` on exactly those two.
+- The install fields: `download_url`, `download_sha256`, `download_size`, `install_files` (either order, with
+  or without the `.json`) and `update_manifest_url`. An entry with a field missing or wrong is still listed,
+  with nothing to install, and the old fields read as before.
+- `server_only`: true only for a literal `true`; absent or anything else is false. A `server_only` entry that
+  also carries the install fields reads with nothing to install.
+- The list failure texts: HTTP 404 ("The mod list isn't published yet."), any other status ("The mod list
+  server answered with an error (HTTP 503)."), a download over 1 MB ("The mod list is larger than allowed."),
+  and no answer, which keeps the connection text. A list over 256 KB that did download is refused by the
+  parser with "The mod list is too large to read.". Checked for the built-in address and for `ModIndexUrl`.
+- The Browse search: names, authors and descriptions in any case, several words in any order, extra spaces
+  and tabs, a word of 3 letters or more whose letters follow in the name ("minmap" finds MiniMap), and no
+  match for words under 3 letters, letters out of order or letters scattered through a description.
+- SHA-256 of a known text.
+- The download, with a stand-in for the network: the size cap, the file, one redirect and then the file, the
+  signed query passed on as it came, a wrong first address never asked for, redirects to another host, to
+  http, with a port or user name, a relative one, a later hop, and a fourth redirect refused. A wrong hash, a
+  short file, a long file, an interrupted answer, no answer and any other status fail with a reason. Cancelling
+  before or during stops it. `HttpGet` is a stand-in here, so the test checks the options the loader passes
+  to it (`noRedirect`, no plain http) and not what WinHTTP does with them; a body over the size in the mod
+  list fails as the wrong-file case ("The downloaded file does not match the mod list, so nothing was installed.").
+- Writing the files into a temp folder: the DLL and `.json` land with no temp file left, an existing `.json`
+  or DLL is refused and named, a file that appears before the rename is left alone and nothing of ours stays,
+  a failed rename cleans up, and a Vortex-listed mod is refused with the same words before the download and
+  at the write; a `X.json` left over from our own earlier install (the DLL gone) does not refuse and is
+  replaced, while one that is not ours still does; a rename that hits a sharing violation is tried again
+  a few times, and a name that is simply taken is not tried again.
+- The requirement messages ("MainMap needs MiniMap. Install MiniMap first.", "Enable MiniMap first.").
+- The installer: one install at a time, the outcome names what was placed, nothing starts after Shutdown
+  (`Halted()` is false before it), and a Shutdown during a download writes nothing and calls nobody back.
+- Whether a list was signed: the loader's own address is, a bare list from `ModIndexUrl` is not, a signed
+  file from `ModIndexUrl` is.
 - The Fetcher's states (Idle, Loading, Ready, Failed) through an injected request: one request however often
   the first load is asked for, Retry from Failed or an empty list, Shutdown, and a worker that outlives its
   Fetcher. `HttpGet` is a stand-in the test defines, which also shows the request passes the feed's timeouts
@@ -680,7 +712,13 @@ msbuild Tests\ModIndexTests\ModIndexTests.vcxproj /p:Configuration="Client Relea
 build\tests\mod_index_tests.exe
 ```
 
-It prints one line per failed check and a total, and exits 0 when every check passes.
+It prints one line per failed check and a total, and exits 0 when every check passes. The last run was
+`585 checks, 0 failed`.
+
+The mod index builder has its own tests (`node --test .github/vmap/build-mod-index.test.mjs`, 14 of 14): the
+install fields it accepts and refuses, exactly one plugin `.dll` in `install_files`, an install field that is
+repeated or nested, a size not written as plain digits, `server_only` that is not `true` or `false`, and
+`server_only` together with install fields.
 
 ## PluginManageTests
 
@@ -719,13 +757,26 @@ and 13 game starts, each start a process of its own, so a restart is a real one.
   name.
 - A DLL copied back in the same session is picked up by LOAD NEW.
 - A plugin Vortex placed is not uninstalled by the loader, read from a real `vortex.deployment.json`.
+- Install, through the call the Browse tab makes, with the download a stand-in (`install` step, 45 checks): a
+  list that isn't signed installs nothing unless the player chose it with `ModIndexUrl`; a DLL that is already
+  there is refused before any download; a missing or disabled requirement is named; a bad hash or a failed
+  download leaves no file and no temp file, and says why; a plugin installed after an uninstall loads at once
+  (`Done`), clears its Disabled entry and records the entry's version for the auto-updater; a plugin whose old
+  code is still loaded installs as "after restart" without loading its code twice; a `server_only` entry is
+  refused even when it carries the install fields; and a second install while one runs is refused with
+  "Another mod is installing. Try again when it finishes." (the first install is held in its download while
+  the second is asked for).
+- What this step does not reach: in the tests `PostVoid` runs the task inline (`manager_stubs.cpp`), so the
+  hop to the game thread, the lock order and the posted task's `Halted()` check are not exercised. Those
+  are checked by reading the code and in the game.
 
 ```
 msbuild Tests\PluginManageTests\PluginManageTests.vcxproj /p:Configuration="Client Release" /p:Platform=x64
 build\tests\plugin_manage_tests.exe
 ```
 
-It prints one line per failed check and a total, and exits 0 when every check passes.
+It prints one line per failed check and a total, and exits 0 when every check passes. The last run was
+`638 checks, 0 failed`.
 
 ## ImageShrinkTests
 

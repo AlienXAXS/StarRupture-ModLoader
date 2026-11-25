@@ -564,6 +564,18 @@ void NoteInstalledPluginVersion(const wchar_t* dllFileName, const char* version)
         WritePluginVersion(stateIniPath, key, version);
 }
 
+void SetInstalledPluginVersion(const wchar_t* dllFileName, const char* version)
+{
+    if (!dllFileName || !version)
+        return;
+
+    wchar_t stateIniPath[MAX_PATH]{};
+    GetUpdateStateIniPath(stateIniPath, MAX_PATH);
+    char key[256]{};
+    WideCharToMultiByte(CP_UTF8, 0, dllFileName, -1, key, sizeof(key), nullptr, nullptr);
+    WritePluginVersion(stateIniPath, key, version);
+}
+
 // Fetch and process a single per-plugin manifest.
 // Downloads the plugin DLL if the remote version is newer than stored.
 static void ProcessPluginSidecar(const PluginSidecar& sc,
@@ -941,6 +953,13 @@ namespace
 	}
 }
 
+bool ModIndex::PlayersOwnUrl()
+{
+	bool playersOwn = false;
+	ModIndexUrl(playersOwn);
+	return playersOwn;
+}
+
 ModIndex::Fetcher& ModIndex::Instance()
 {
 	static Fetcher fetcher = []
@@ -952,7 +971,9 @@ ModIndex::Fetcher& ModIndex::Instance()
 		source.keys       = VersionFeed::CompiledKeys();
 		source.cachePath  = GetModLoaderDirPath(L"mod-index.v1.cache");
 		source.signedOnly = !playersOwn;
-		return Fetcher(std::move(url), MakeFetch(std::move(source)));
+		source.bodySigned = std::make_shared<bool>(false);
+		std::shared_ptr<const bool> bodySigned = source.bodySigned;
+		return Fetcher(std::move(url), MakeFetch(std::move(source)), std::move(bodySigned));
 	}();
 	return fetcher;
 }

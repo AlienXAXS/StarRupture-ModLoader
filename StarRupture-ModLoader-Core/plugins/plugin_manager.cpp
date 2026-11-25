@@ -16,6 +16,7 @@
 #include "plugins/declared_features_text.h"
 #include "plugins/plugin_catalog.h"
 #include "auto_update/auto_updater.h"
+#include "auto_update/mod_index_fetcher.h"
 #include "plugins/plugin_watchdog.h"
 #include "utils/game_thread_dispatch.h"
 #include "plugins/reload_policy.h"
@@ -395,7 +396,7 @@ namespace PluginManager
 
 	// What the plugin list and the console say, in place of the buttons and as
 	// the refusal, while a plugin is inside its PluginShutdown (isUnloading).
-	static constexpr const char* kUnloadingNow = "This plugin is being unloaded right now";
+	static constexpr const char* kUnloadingNow = "This plugin is being unloaded right now.";
 
 	// A record with no code, its plugin turned off or uninstalled. A
 	// name lookup passes over it while another record has the name.
@@ -2395,7 +2396,7 @@ namespace PluginManager
 	}
 
 #ifdef MODLOADER_CLIENT_BUILD
-	// ---- Disable, enable, uninstall and restore ----------------------------
+	// ---- Disable, enable, uninstall, restore and install -------------------
 	// Everything below that is named s_* is guarded by g_pluginLock. The lock
 	// is not held across file reads, nor when calling UnloadPlugin or
 	// ReloadPlugin: ShutDownWithoutLock must be able to release it.
@@ -2407,8 +2408,13 @@ namespace PluginManager
 		ManageOp lastOp = ManageOp::Disable;
 		ManageResult lastResult = ManageResult::None;
 		std::string message;
+		// Install only: it has a card before it has a file.
+		std::string fileName, name;
+		bool listSigned = false;
 	};
 
+	static constexpr const char* kAnotherInstall = "Another mod is installing. Try again when it finishes.";
+	static bool s_installing = false;
 	static std::map<std::wstring, ManageState> s_manageStates; // by LowerCase(file name)
 	static std::vector<std::pair<std::wstring, ManagedPlugin>> s_managedFiles; // path, what was read
 	static std::vector<std::string> s_preloadNames;
@@ -2435,6 +2441,14 @@ namespace PluginManager
 	static PluginManage::Folders ManageFolders()
 	{
 		return { GetModLoaderDirPath(L"Plugins"), GetModLoaderDirPath(L"Removed") };
+	}
+
+	// The game exe's folder, no trailing backslash.
+	static std::wstring GameDir()
+	{
+		std::wstring dir = GetExeDir();
+		if (!dir.empty() && dir.back() == L'\\') dir.pop_back();
+		return dir;
 	}
 
 	// The record for a DLL file name, or -1. Caller holds g_pluginLock.
@@ -2474,11 +2488,9 @@ namespace PluginManager
 		PluginManage::ReadDisabledList(GetModLoaderDirPath(L"modloader.ini"), disabled);
 		const std::vector<PluginManage::Backup> backups = PluginManage::ListBackups(folders);
 
-		std::wstring gameDir = GetExeDir();
-		if (!gameDir.empty() && gameDir.back() == L'\\') gameDir.pop_back();
 		const std::wstring identityIni = GetModLoaderDirPath(PluginManage::kIdentityFile);
 
-		const VortexNotice::Deployment vortex = VortexNotice::ReadDeployment(gameDir);
+		const VortexNotice::Deployment vortex = VortexNotice::ReadDeployment(GameDir());
 
 		std::vector<std::pair<std::wstring, ManagedPlugin>> files;
 		const auto entry = [&](const std::wstring& path) -> ManagedPlugin&
@@ -2551,8 +2563,20 @@ namespace PluginManager
 		ManageSnapshot out;
 		if (!g_managerInitialized) return out;
 
+		const auto apply = [](ManagedPlugin& m, const ManageState& state)
+		{
+			m.facts.working = state.working;
+			m.facts.enableWaitsForRestart = state.enableWaitsForRestart;
+			m.lastOp = state.lastOp;
+			m.lastResult = state.lastResult;
+			m.message = state.message;
+			m.listSigned = state.lastOp == ManageOp::Install && state.listSigned;
+		};
+
 		EnterCriticalSection(&g_pluginLock);
 		out.preloadNames = s_preloadNames;
+		out.installing = s_installing;
+		std::set<std::wstring> carded;
 		for (const auto& [path, read] : s_managedFiles)
 		{
 			ManagedPlugin m = read;
@@ -2571,13 +2595,19 @@ namespace PluginManager
 			}
 			const auto state = s_manageStates.find(LowerCase(file));
 			if (state != s_manageStates.end())
-			{
-				m.facts.working = state->second.working;
-				m.facts.enableWaitsForRestart = state->second.enableWaitsForRestart;
-				m.lastOp = state->second.lastOp;
-				m.lastResult = state->second.lastResult;
-				m.message = state->second.message;
-			}
+				apply(m, state->second);
+			carded.insert(LowerCase(file));
+			out.plugins.push_back(std::move(m));
+		}
+		// An install that has written nothing, so far or at all.
+		for (const auto& [key, state] : s_manageStates)
+		{
+			if (state.lastOp != ManageOp::Install || carded.count(key))
+				continue;
+			ManagedPlugin m;
+			m.fileName = state.fileName;
+			m.name = state.name;
+			apply(m, state);
 			out.plugins.push_back(std::move(m));
 		}
 		LeaveCriticalSection(&g_pluginLock);
@@ -2775,10 +2805,8 @@ namespace PluginManager
 
 		case ManageOp::Uninstall:
 		{
-			std::wstring gameDir = GetExeDir();
-			if (!gameDir.empty() && gameDir.back() == L'\\') gameDir.pop_back();
 			const std::string stem = "ModLoader\\Plugins\\" + Narrow(PluginManage::Stem(fileName), CP_UTF8);
-			if (VortexNotice::ReadDeployment(gameDir).Lists({ stem + ".dll", stem + ".pdb", stem + ".json" })
+			if (VortexNotice::ReadDeployment(GameDir()).Lists({ stem + ".dll", stem + ".pdb", stem + ".json" })
 				== VortexNotice::Listing::Listed)
 				return { ManageResult::Vortex, "Vortex installed this mod. Uninstall it in Vortex." };
 
@@ -2894,15 +2922,33 @@ namespace PluginManager
 		return { ManageResult::Failed };
 	}
 
+	static void RecordOutcome(const std::wstring& file, ManageOp op, const ChangeOutcome& outcome)
+	{
+		EnterCriticalSection(&g_pluginLock);
+		ManageState& done = s_manageStates[LowerCase(file)];
+		done.working = false;
+		done.lastOp = op;
+		done.lastResult = outcome.result;
+		done.message = outcome.message;
+		done.enableWaitsForRestart = outcome.enableWaitsForRestart;
+		LeaveCriticalSection(&g_pluginLock);
+	}
+
 	void RequestPluginChange(ManageOp op, const std::string& fileName)
 	{
 		const std::wstring file = Widen(fileName);
-		if (!g_managerInitialized || !PluginManage::IsPluginDllName(file)) return;
+		if (!g_managerInitialized || op == ManageOp::Install || !PluginManage::IsPluginDllName(file)) return;
 
 		EnterCriticalSection(&g_pluginLock);
 		ManageState& state = s_manageStates[LowerCase(file)];
 		const bool busy = state.working;
-		state.working = true;
+		if (!busy)
+		{
+			state.working = true;
+			state.lastOp = op;
+			state.lastResult = ManageResult::None;
+			state.message.clear();
+		}
 		LeaveCriticalSection(&g_pluginLock);
 		if (busy) return;
 
@@ -2910,16 +2956,182 @@ namespace PluginManager
 		{
 			const ChangeOutcome outcome = ApplyChange(op, file);
 			RefreshManagedFiles();
-
-			EnterCriticalSection(&g_pluginLock);
-			ManageState& done = s_manageStates[LowerCase(file)];
-			done.working = false;
-			done.lastOp = op;
-			done.lastResult = outcome.result;
-			done.message = outcome.message;
-			done.enableWaitsForRestart = outcome.enableWaitsForRestart;
-			LeaveCriticalSection(&g_pluginLock);
+			RecordOutcome(file, op, outcome);
 		});
+	}
+
+	static ModInstall::Need NeedState(const ModIndex::Entry& needed, const ManageSnapshot& managed)
+	{
+		bool disabled = false;
+		for (const ManagedPlugin& plugin : managed.plugins)
+		{
+			if (!plugin.facts.inPlugins || !ListingMatches(needed, plugin))
+				continue;
+			if (!plugin.facts.listedDisabled)
+				return ModInstall::Need::Met;
+			disabled = true;
+		}
+		if (ModIndex::IsInstalled(needed, managed.preloadNames))
+			return ModInstall::Need::Met;
+		return disabled ? ModInstall::Need::Disabled : ModInstall::Need::Missing;
+	}
+
+	std::string InstallBlockedReason(const ModIndex::Entry& entry, const std::vector<ModIndex::Entry>& list,
+		const ManageSnapshot& managed)
+	{
+		// A server-only plugin is never installed on a PC, whatever install fields it has.
+		if (entry.serverOnly || !ModIndex::detail::IsInstallDllName(entry.install.dllFile))
+			return "This mod can't be installed from here. Open its page.";
+		if (entry.interfaceVersionMin > PLUGIN_INTERFACE_VERSION_MAX)
+			return "Needs a newer ModLoader.";
+		for (const ManagedPlugin& plugin : managed.plugins)
+			if (plugin.facts.vortexListed && ListingMatches(entry, plugin))
+				return ModInstall::kVortexManaged;
+		if (managed.installing)
+			return kAnotherInstall;
+
+		std::vector<ModInstall::Requirement> needs;
+		for (const std::string& id : entry.requiredIds)
+		{
+			ModIndex::Entry needed;
+			needed.id = needed.name = id;
+			for (const ModIndex::Entry& listed : list)
+				if (ModIndex::detail::EqualsNoCase(listed.id, id))
+				{
+					needed = listed;
+					break;
+				}
+			needs.push_back({ needed.name, NeedState(needed, managed) });
+		}
+		return ModInstall::RequirementMessage(entry.name, needs);
+	}
+
+	// Game thread. The new files are in Plugins: clear an old Disabled entry,
+	// then load them.
+	static ChangeOutcome FinishInstall(const std::wstring& fileName, const std::string& version)
+	{
+		// Before the load, which only ever raises the record.
+		SetInstalledPluginVersion(fileName.c_str(), version.c_str());
+		if (PluginManage::SaveDisabled(GetModLoaderDirPath(L"modloader.ini"), fileName, false) !=
+		    PluginManage::SaveResult::Ok)
+			return { ManageResult::SaveFailed, "Installed, but still disabled." };
+
+		EnterCriticalSection(&g_pluginLock);
+		// What was learned about an earlier file at this path.
+		s_notPlugins.erase(LowerCase(ManageFolders().plugins + L"\\" + fileName));
+		const int index = IndexByFile(fileName);
+		LoadedPlugin* rec = index >= 0 ? g_loadedPlugins[index].get() : nullptr;
+		const bool unloading = rec && rec->isUnloading;
+		// The files are new, so code mapped under this name is an older copy.
+		const bool oldCodeMapped = rec && rec->hModule;
+		if (rec && !unloading)
+			rec->isDisabled = false;
+		LeaveCriticalSection(&g_pluginLock);
+
+		const ChangeOutcome later{ ManageResult::AfterRestart, "It will be on after you restart the game.", true };
+		if (!g_startupComplete || unloading)
+			return later;
+		const ChangeOutcome loaded = LoadNow(fileName);
+		return oldCodeMapped ? later : loaded;
+	}
+
+	static void LogInstall(const std::string& name, const ChangeOutcome& outcome)
+	{
+		if (outcome.result == ManageResult::Done)
+			ModLoaderLogger::LogInfo(L"[Install] %hs: installed and loaded", name.c_str());
+		else if (outcome.result == ManageResult::AfterRestart)
+			ModLoaderLogger::LogInfo(L"[Install] %hs: installed, waits for a restart (%hs)", name.c_str(),
+				outcome.message.c_str());
+		else
+			ModLoaderLogger::LogWarn(L"[Install] %hs: failed: %hs", name.c_str(), outcome.message.c_str());
+	}
+
+	static ManageResult RefusalResult(const std::string& why)
+	{
+		return why == ModInstall::kVortexManaged ? ManageResult::Vortex : ManageResult::Failed;
+	}
+
+	// Ends an install: the card gets its result and another may start.
+	static void EndInstall(const std::wstring& file, const ChangeOutcome& outcome)
+	{
+		EnterCriticalSection(&g_pluginLock);
+		s_installing = false;
+		RecordOutcome(file, ManageOp::Install, outcome);
+		LeaveCriticalSection(&g_pluginLock);
+	}
+
+	void RequestPluginInstall(const ModIndex::Entry& entry, const std::vector<ModIndex::Entry>& list,
+		bool listSigned, ModInstall::Installer& installer)
+	{
+		const std::wstring file = Widen(entry.install.dllFile);
+		if (!g_managerInitialized || !ModIndex::detail::IsInstallDllName(entry.install.dllFile)) return;
+
+		// Only a signed list, or one the player chose in modloader.ini, may install.
+		std::string why = g_startupComplete ? InstallBlockedReason(entry, list, GetManageSnapshot())
+		                                    : "The plugins are still starting.";
+		if (why.empty() && !listSigned && !ModIndex::PlayersOwnUrl())
+			why = "This list isn't signed, so nothing can be installed from it.";
+
+		EnterCriticalSection(&g_pluginLock);
+		ManageState& state = s_manageStates[LowerCase(file)];
+		if (state.working)
+		{
+			LeaveCriticalSection(&g_pluginLock);
+			return;
+		}
+		state = { true, false, ManageOp::Install, ManageResult::None, {}, entry.install.dllFile, entry.name,
+		          listSigned };
+		if (why.empty() && s_installing)
+			why = kAnotherInstall;
+		const bool starting = why.empty();
+		if (starting)
+			s_installing = true;
+		LeaveCriticalSection(&g_pluginLock);
+
+		if (!starting)
+		{
+			const ChangeOutcome refused{ RefusalResult(why), why };
+			LogInstall(entry.name, refused);
+			RecordOutcome(file, ManageOp::Install, refused);
+			return;
+		}
+
+		ModInstall::Request request;
+		request.name = entry.name;
+		request.version = entry.version;
+		request.info = entry.install;
+		request.pluginsDir = ManageFolders().plugins;
+		request.gameDir = GameDir();
+		request.listSigned = listSigned;
+
+		// Called without g_pluginLock: the callback runs under the installer's
+		// own lock and only hands the result to the game thread.
+		const bool started = installer.Start(std::move(request),
+			[file, name = entry.name, &installer](const ModInstall::Outcome& installed)
+			{
+				GameThreadDispatch::PostVoid([file, name, installed, &installer]
+				{
+					// A task queued before the installer was shut down must not load
+					// into a loader that is tearing down.
+					if (!g_managerInitialized || installer.Halted()) return;
+					// The installer has logged why when it wrote nothing.
+					ChangeOutcome outcome{ RefusalResult(installed.message), installed.message };
+					if (installed.placed)
+					{
+						outcome = FinishInstall(file, installed.version);
+						LogInstall(name, outcome);
+					}
+					RefreshManagedFiles();
+					EndInstall(file, outcome);
+				});
+			});
+		if (!started)
+		{
+			const ChangeOutcome refused{ ManageResult::Failed,
+				"The install couldn't start. Restart the game and try again." };
+			LogInstall(entry.name, refused);
+			EndInstall(file, refused);
+		}
 	}
 #endif
 

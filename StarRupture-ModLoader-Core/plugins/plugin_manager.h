@@ -7,6 +7,7 @@
 #include "network_channel/wire_compat.h"
 #ifdef MODLOADER_CLIENT_BUILD
 #include "plugins/plugin_manage.h"
+#include "auto_update/mod_install.h"
 #endif
 
 namespace PluginManager
@@ -254,9 +255,9 @@ namespace PluginManager
     int ScanForNewPlugins(std::vector<ScanResult>* outResults = nullptr);
 
 #ifdef MODLOADER_CLIENT_BUILD
-    // ---- Disable, enable, uninstall and restore (client builds) ------------
+    // ---- Disable, enable, uninstall, restore and install (client builds) ---
 
-    enum class ManageOp { Disable, Enable, Uninstall, Restore };
+    enum class ManageOp { Disable, Enable, Uninstall, Restore, Install };
 
     enum class ManageResult
     {
@@ -264,7 +265,7 @@ namespace PluginManager
         Done,
         AfterRestart,      // saved or moved; the running game changes at the next start
         NotReady,          // the plugins are still starting
-        Vortex,            // Vortex placed its files: uninstall it there
+        Vortex,            // Vortex manages its files: install or uninstall it there
         AlreadyInstalled,  // restore: a copy is in ModLoader\Plugins
         SaveFailed,        // the disabled list could not be written; nothing changed
         MoveFailed,        // the files could not be moved; nothing changed
@@ -281,13 +282,29 @@ namespace PluginManager
         ManageOp     lastOp = ManageOp::Disable;
         ManageResult lastResult = ManageResult::None;
         std::string  message;            // why, when the result needs saying
+        // Install only: the mod list it came from passed its signature check.
+        bool         listSigned = false;
     };
 
     struct ManageSnapshot
     {
         std::vector<ManagedPlugin> plugins;
         std::vector<std::string> preloadNames; // for ModIndex::IsInstalled
+        bool installing = false;               // one install runs at a time
     };
+
+    // Whether a mod index entry describes this file: by the DLL it installs, by
+    // the name the plugin reports or, when it never reported one, by its file
+    // name.
+    inline bool ListingMatches(const ModIndex::Entry& entry, const ManagedPlugin& plugin)
+    {
+        if (!entry.install.dllFile.empty() &&
+            ModIndex::detail::EqualsNoCase(plugin.fileName, entry.install.dllFile))
+            return true;
+        const std::string name = !plugin.name.empty()
+            ? plugin.name : plugin.fileName.substr(0, plugin.fileName.rfind('.'));
+        return ModIndex::IsInstalled(entry, { name });
+    }
 
     // Any thread, the render thread included. The work runs on the next game
     // tick; until then the file's facts.working is set. A request for a file
@@ -296,6 +313,20 @@ namespace PluginManager
 
     // Any thread. Copies what is in memory: no file or UObject access.
     ManageSnapshot GetManageSnapshot();
+
+    // Why `entry` cannot be installed now, in plain words; empty: it can. `list`
+    // is the whole mod list, for the names of what the entry needs. Any thread.
+    // Reads only what is passed in; the installer checks the disk itself.
+    std::string InstallBlockedReason(const ModIndex::Entry& entry, const std::vector<ModIndex::Entry>& list,
+        const ManageSnapshot& managed);
+
+    // Any thread. Downloads the entry's DLL, checks its size and SHA-256, writes
+    // it and loads it on the game thread, or says that it waits for a restart.
+    // The card of entry.install.dllFile shows the progress and the result: lastOp
+    // is Install, and facts.working is set until it ends. A test passes its own
+    // installer.
+    void RequestPluginInstall(const ModIndex::Entry& entry, const std::vector<ModIndex::Entry>& list,
+        bool listSigned, ModInstall::Installer& installer = ModInstall::Instance());
 
     // Game thread. Reads the plugin folder, the disabled list, the backups and
     // the Vortex manifests again. The loader does it after startup, a scan and
