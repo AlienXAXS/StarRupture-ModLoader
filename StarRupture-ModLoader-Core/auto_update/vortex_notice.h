@@ -76,8 +76,14 @@ namespace VortexNotice
 		CloseHandle(file);
 
 		const size_t first = text.find_first_not_of(" \t\r\n\xEF\xBB\xBF");
-		const size_t last = text.find_last_not_of(" \t\r\n");
-		if (first == std::string::npos || text[first] != '{' || text[last] != '}')
+		if (first == std::string::npos || text[first] != '{')
+			return {};
+
+		// The object has to close where the text ends. A cut-short manifest can
+		// still end in the brace of its last complete entry.
+		const std::vector<std::string> object = JsonSplitObjectArray("[" + text.substr(first), 0, 1);
+		const size_t end = text.find_last_not_of(" \t\r\n") + 1;
+		if (object.empty() || object[0].size() != end - first)
 			return {};
 		return text;
 	}
