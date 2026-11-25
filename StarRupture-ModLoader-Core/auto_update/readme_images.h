@@ -166,8 +166,8 @@ namespace ModIndex
 		return ImageFormat::None;
 	}
 
-	constexpr int     kMaxImageSide   = 4096;       // a picture wider or taller is refused
-	constexpr int64_t kMaxImagePixels = 16000000;   // so is one with more pixels than this
+	constexpr int     kMaxImageSide   = 2048;       // a picture wider or taller is refused
+	constexpr int64_t kMaxImagePixels = 4000000;    // so is one with more pixels than this
 
 	namespace detail
 	{

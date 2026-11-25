@@ -1426,11 +1426,11 @@ namespace
 		Check(!ReadImageSize(bigJpeg, &w, &h), "JPEG with thousands of segments and no frame ends cleanly");
 
 		// The allow rule.
-		Check(IsImageSizeAllowed(PngSized(4096, 3900)), "4096 wide is allowed up to 16 million pixels");
-		Check(!IsImageSizeAllowed(PngSized(4096, 4096)), "16.7 million pixels refused");
-		Check(IsImageSizeAllowed(PngSized(4000, 4000)), "exactly 16 million pixels allowed");
-		Check(!IsImageSizeAllowed(PngSized(4097, 10)), "width over 4096 refused");
-		Check(!IsImageSizeAllowed(PngSized(10, 4097)), "height over 4096 refused");
+		Check(IsImageSizeAllowed(PngSized(2048, 1900)), "2048 wide is allowed up to 4 million pixels");
+		Check(!IsImageSizeAllowed(PngSized(2048, 2048)), "4.2 million pixels refused");
+		Check(IsImageSizeAllowed(PngSized(2000, 2000)), "exactly 4 million pixels allowed");
+		Check(!IsImageSizeAllowed(PngSized(2049, 10)), "width over 2048 refused");
+		Check(!IsImageSizeAllowed(PngSized(10, 2049)), "height over 2048 refused");
 		Check(!IsImageSizeAllowed(PngSized(0x7FFFFFFFu, 0x7FFFFFFFu)), "huge PNG refused");
 		Check(!IsImageSizeAllowed(PngSized(0xFFFFFFFFu, 0xFFFFFFFFu)), "maximum PNG sides refused without overflow");
 		Check(!IsImageSizeAllowed(WebpExtended(16777216u, 16777216u)), "maximum WebP canvas refused without overflow");
@@ -1438,9 +1438,9 @@ namespace
 		Check(!IsImageSizeAllowed(PngSized(0, 0)), "zero size refused");
 		Check(!IsImageSizeAllowed(PngBytes(10)), "a signature with no header refused");
 		Check(!IsImageSizeAllowed(""), "no bytes refused");
-		Check(IsImageSizeAllowed(JpegSized(4096, 100)), "JPEG at the side limit allowed");
+		Check(IsImageSizeAllowed(JpegSized(2048, 100)), "JPEG at the side limit allowed");
 		Check(!IsImageSizeAllowed(JpegSized(65535, 65535, 0xC1)), "huge JPEG refused");
-		Check(!IsImageSizeAllowed(WebpLossless(16384, 16)), "WebP side over 4096 refused");
+		Check(!IsImageSizeAllowed(WebpLossless(16384, 16)), "WebP side over 2048 refused");
 		Check(IsImageSizeAllowed(GifSized(1, 1)), "1 x 1 GIF allowed");
 
 		// A GIF is decoded at the size of its first frame, not its logical screen.

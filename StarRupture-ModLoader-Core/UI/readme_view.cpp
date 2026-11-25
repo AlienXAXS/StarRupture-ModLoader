@@ -12,7 +12,9 @@
 #include "utils/open_page.h"
 
 #include <algorithm>
+#include <memory>
 #include <string>
+#include <vector>
 
 namespace UI::ReadmeView
 {
@@ -22,6 +24,29 @@ namespace UI::ReadmeView
 		bool               s_open = false;
 		ModIndex::Entry    s_entry;           // a copy: the list may be refreshed while the page is open
 		int                s_lastDrawnFrame = 0;
+
+		// What a block's height was the last time it was drawn, and what that was
+		// measured at. A block that is wholly outside the visible part of the page
+		// is not laid out again: a gap of its height stands in for it.
+		struct BlockHeights
+		{
+			struct Key
+			{
+				float width = 0.0f;
+				float lineHeight = 0.0f;
+				float frameHeight = 0.0f;
+				float itemSpacing = 0.0f;
+				bool operator==(const Key& o) const
+				{
+					return width == o.width && lineHeight == o.lineHeight && frameHeight == o.frameHeight
+					       && itemSpacing == o.itemSpacing;
+				}
+			};
+			std::shared_ptr<const ModIndex::Document> document;   // held, so a new document is never mistaken for it
+			Key key;
+			std::vector<float> heights;   // 0: not measured, or too small to stand in for
+		};
+		BlockHeights       s_heights;
 
 		// The decode and the texture upload run on the game thread (the same hop the
 		// RELOAD button uses); freeing is safe from any thread.
@@ -368,30 +393,60 @@ namespace UI::ReadmeView
 					Textures().Request(i);
 		}
 
+		void DrawBlock(const ModIndex::Block& b, const ModIndex::ReadmeSnapshot& snap)
+		{
+			switch (b.kind)
+			{
+			case ModIndex::BlockKind::Heading:   DrawHeading(b);          break;
+			case ModIndex::BlockKind::Paragraph: DrawSpans(b.spans);      break;
+			case ModIndex::BlockKind::ListItem:  DrawListItem(b);         break;
+			case ModIndex::BlockKind::Image:     DrawImage(b, snap);      break;
+			case ModIndex::BlockKind::Rule:      ImGui::Separator();      break;
+			case ModIndex::BlockKind::Table:     DrawTable(b);            break;
+			case ModIndex::BlockKind::CodeBlock:
+				ImGui::BeginChild("##code", ImVec2(0, 0), ImGuiChildFlags_Borders | ImGuiChildFlags_AutoResizeY);
+				ImGui::TextWrapped("%s", b.code.c_str());
+				ImGui::EndChild();
+				break;
+			}
+		}
+
 		void DrawDocument(const ModIndex::ReadmeSnapshot& snap)
 		{
 			RequestPictures(snap);
 			ImGui::BeginChild("##readme_doc", ImVec2(0, 0), ImGuiChildFlags_Borders);
 			const std::vector<ModIndex::Block>& blocks = snap.document->blocks;
+
+			// Heights measured at another width or text size no longer apply.
+			BlockHeights::Key key;
+			key.width = ImGui::GetContentRegionAvail().x;
+			key.lineHeight = ImGui::GetTextLineHeight();
+			key.frameHeight = ImGui::GetFrameHeight();
+			key.itemSpacing = ImGui::GetStyle().ItemSpacing.y;
+			if (s_heights.document != snap.document || !(s_heights.key == key))
+			{
+				s_heights.document = snap.document;
+				s_heights.key = key;
+				s_heights.heights.assign(blocks.size(), 0.0f);
+			}
+
 			for (size_t i = 0; i < blocks.size(); ++i)
 			{
 				const ModIndex::Block& b = blocks[i];
-				ImGui::PushID(static_cast<int>(i));
-				switch (b.kind)
+				// A picture's height changes when it loads, so pictures are always drawn.
+				float& height = s_heights.heights[i];
+				if (height > 0.0f && b.kind != ModIndex::BlockKind::Image && !ImGui::IsRectVisible(ImVec2(key.width, height)))
 				{
-				case ModIndex::BlockKind::Heading:   DrawHeading(b);          break;
-				case ModIndex::BlockKind::Paragraph: DrawSpans(b.spans);      break;
-				case ModIndex::BlockKind::ListItem:  DrawListItem(b);         break;
-				case ModIndex::BlockKind::Image:     DrawImage(b, snap);      break;
-				case ModIndex::BlockKind::Rule:      ImGui::Separator();      break;
-				case ModIndex::BlockKind::Table:     DrawTable(b);            break;
-				case ModIndex::BlockKind::CodeBlock:
-					ImGui::BeginChild("##code", ImVec2(0, 0), ImGuiChildFlags_Borders | ImGuiChildFlags_AutoResizeY);
-					ImGui::TextWrapped("%s", b.code.c_str());
-					ImGui::EndChild();
-					break;
+					// The block's height includes the gap after its last item, which Dummy adds again.
+					ImGui::Dummy(ImVec2(0.0f, height - key.itemSpacing));
+					continue;
 				}
+				const float top = ImGui::GetCursorPosY();
+				ImGui::PushID(static_cast<int>(i));
+				DrawBlock(b, snap);
 				ImGui::PopID();
+				const float drawn = ImGui::GetCursorPosY() - top;
+				height = drawn > key.itemSpacing ? drawn : 0.0f;
 			}
 			if (snap.document->shortened)
 				ImGui::TextDisabled("This README is long, so only the start is shown.");
@@ -404,6 +459,7 @@ namespace UI::ReadmeView
 		if (entry.readmeUrl.empty())
 			return;
 		s_entry = entry;
+		s_heights = BlockHeights();
 		s_open = true;
 		s_lastDrawnFrame = ImGui::GetFrameCount();
 		StartRequest();
@@ -414,6 +470,7 @@ namespace UI::ReadmeView
 		if (!s_open)
 			return;
 		s_open = false;
+		s_heights = BlockHeights();
 		ModIndex::ReadmeInstance().Close();
 		Textures().EndPage();
 	}
