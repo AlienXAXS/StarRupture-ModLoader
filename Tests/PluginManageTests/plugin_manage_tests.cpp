@@ -763,6 +763,23 @@ namespace
 		Check(!SaveIdentity(ini, L"C.dll", {}), "identity: no name, nothing saved");
 		DeleteFileW(ini.c_str());
 	}
+
+	void TestPluginFolderRoot()
+	{
+		const std::wstring want = L"C:\\Game\\Binaries\\Win64\\ModLoader\\Plugins\\ServerUtility\\admin";
+		Check(PluginFolderRoot(L"C:\\Game\\Binaries\\Win64", L"ServerUtility", L"admin") == want,
+		      "folder root: the exe directory is the base, ModLoader is added once");
+		Check(PluginFolderRoot(L"C:\\Game\\Binaries\\Win64\\", L"ServerUtility", L"admin") == want,
+		      "folder root: one trailing backslash");
+		Check(PluginFolderRoot(L"C:\\Game\\Binaries\\Win64\\\\/", L"ServerUtility", L"admin") == want,
+		      "folder root: several trailing separators");
+		Check(PluginFolderRoot(L"C:\\Game\\Binaries\\Win64", L"My.Plugin.v2", L"web.ui") ==
+		      L"C:\\Game\\Binaries\\Win64\\ModLoader\\Plugins\\My.Plugin.v2\\web.ui",
+		      "folder root: dots in plugin and folder names stay");
+		Check(PluginFolderRoot(L"D:\\Server With Space\\Win64", L"A", L"b") ==
+		      L"D:\\Server With Space\\Win64\\ModLoader\\Plugins\\A\\b",
+		      "folder root: spaces in the base");
+	}
 }
 
 int main(int argc, char** argv)
@@ -794,6 +811,7 @@ int main(int argc, char** argv)
 	TestPreloadNames();
 	TestCards();
 	TestIdentity();
+	TestPluginFolderRoot();
 	TestVortexListing();
 	ScriptedRun();
 	RunManagerTests(g_root, g_checks, g_failed);

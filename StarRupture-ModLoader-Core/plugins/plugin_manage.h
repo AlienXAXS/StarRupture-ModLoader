@@ -28,6 +28,19 @@
 
 namespace PluginManage
 {
+	// --- Plugin folders ---------------------------------------------------------
+
+	// <binDir>\ModLoader\Plugins\<plugin>\<folder>, where binDir is the directory
+	// of the game exe (Binaries\Win64), the base the plugin scan uses. The loader's
+	// own DLL sits in ModLoader\ itself, so its directory is not a base. Trailing
+	// separators on binDir are ignored.
+	inline std::wstring PluginFolderRoot(std::wstring binDir, const std::wstring& plugin, const std::wstring& folder)
+	{
+		while (!binDir.empty() && (binDir.back() == L'\\' || binDir.back() == L'/'))
+			binDir.pop_back();
+		return binDir + L"\\ModLoader\\Plugins\\" + plugin + L"\\" + folder;
+	}
+
 	// --- Name lists -------------------------------------------------------------
 
 	// A comma-separated ini value as its items, spaces and tabs trimmed (a
