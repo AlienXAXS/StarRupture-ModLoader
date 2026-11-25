@@ -28,6 +28,13 @@
 #include "plugins/pak_registry.h"
 #include "preload/preload_manager.h"
 #ifdef MODLOADER_CLIENT_BUILD
+#include "auto_update/vortex_notice.h"
+#include "auto_update/plugin_dll_version.h"
+#include <algorithm>
+#include <map>
+#include <set>
+#endif
+#ifdef MODLOADER_CLIENT_BUILD
 #include "hooks/game/game_menu/game_menu_registry.h"
 #include "hooks/input/keybind_registry.h"
 #include "hooks/input/mouse_wheel_registry.h"
@@ -359,6 +366,8 @@ namespace PluginManager
 		bool needsModLoaderUpdate;   // true when plugin interface version is too new
 		bool isWrongTarget;          // true when plugin was built for a different build target
 		bool hookScanFailed;         // true when OnPluginLoadHooks missed anything at all
+		bool isDisabled;             // on [Plugins] Disabled when its load was last asked for
+		bool isUninstalled = false;  // its files were moved to ModLoader\Removed
 
 		// Stable identity struct passed to PluginInit and retained by the plugin->
 		// name/version point into cachedName/cachedVersion so they outlive PluginInfo.
@@ -388,6 +397,30 @@ namespace PluginManager
 	// the refusal, while a plugin is inside its PluginShutdown (isUnloading).
 	static constexpr const char* kUnloadingNow = "This plugin is being unloaded right now";
 
+	// A record with no code, its plugin turned off or uninstalled. A
+	// name lookup passes over it while another record has the name.
+	static bool IsShelved(const LoadedPlugin& p)
+	{
+		return !p.hModule && (p.isDisabled || p.isUninstalled);
+	}
+
+	// The record a plugin name means: the first one that is not shelved, else
+	// the first with the name, or -1. Caller must hold g_pluginLock.
+	static int IndexByName(const char* name)
+	{
+		int shelved = -1;
+		for (int i = 0; i < static_cast<int>(g_loadedPlugins.size()); ++i)
+		{
+			if (_stricmp(g_loadedPlugins[i]->cachedName.c_str(), name) != 0)
+				continue;
+			if (!IsShelved(*g_loadedPlugins[i]))
+				return i;
+			if (shelved < 0)
+				shelved = i;
+		}
+		return shelved;
+	}
+
 	// Update self pointers after loading or reloading a plugin, so they point to the cached strings.
 	static void RefreshSelfPointers(LoadedPlugin& rec)
 	{
@@ -397,7 +430,11 @@ namespace PluginManager
 
 	// Why a DLL did not come up, so ScanForNewPlugins can say so. Most failures
 	// leave no record behind, so the reason has to travel out separately.
-	enum class LoadFailure { None, CouldNotLoad, Crashed, NotAPlugin, OutOfDate, WrongTarget, OffBuild, Refused };
+	enum class LoadFailure { None, CouldNotLoad, Crashed, NotAPlugin, OutOfDate, WrongTarget, OffBuild, Refused, Disabled, NeedsRestart };
+
+	// What the console and a refusal say about a disabled plugin.
+	static constexpr const char* kDisabledWhy = "disabled; enable it on the Browse page";
+	static constexpr const char* kStaleWhy = "an uninstalled copy is still loaded; restart the game first";
 
 	struct LoadFailureInfo
 	{
@@ -409,7 +446,47 @@ namespace PluginManager
 	};
 
 	static const wchar_t* BaseFileName(const std::wstring& path);
+	static int ScanPlugins(std::vector<ScanResult>* outResults, const std::wstring* only);
 	static bool HasUpdateSidecar(const std::wstring& dllPath);
+#ifdef MODLOADER_CLIENT_BUILD
+	static int LoadReturnedCopies(std::vector<ScanResult>* outResults);
+#endif
+
+#ifdef MODLOADER_CLIENT_BUILD
+	// Is this DLL on modloader.ini [Plugins] Disabled? Reads the file, so only
+	// for a load that is being asked for, never per frame.
+	static bool IsListedDisabled(const std::wstring& dllPath)
+	{
+		std::vector<std::wstring> disabled;
+		PluginManage::ReadDisabledList(GetModLoaderDirPath(L"modloader.ini"), disabled);
+		return PluginManage::ListHas(disabled, BaseFileName(dllPath));
+	}
+
+	static std::wstring LowerCase(std::wstring text)
+	{
+		if (!text.empty())
+			CharLowerBuffW(text.data(), static_cast<DWORD>(text.size()));
+		return text;
+	}
+
+	// Paths uninstalled this session, each with the backup that holds the code
+	// that may still be mapped from it, and DLLs that turned out to be no plugin.
+	// Both are keyed by LowerCase path and guarded by g_pluginLock.
+	static std::map<std::wstring, std::wstring> s_uninstalledPaths;
+	static std::set<std::wstring> s_notPlugins;
+
+	// A module uninstalled from this path is still mapped: LoadLibrary would
+	// hand it back whatever file is there now.
+	static bool IsStale(const std::wstring& path)
+	{
+		EnterCriticalSection(&g_pluginLock);
+		const bool uninstalled = s_uninstalledPaths.count(LowerCase(path)) != 0;
+		LeaveCriticalSection(&g_pluginLock);
+		return uninstalled && GetModuleHandleW(path.c_str());
+	}
+
+	static void FillCachedIdentity(LoadedPlugin& rec);
+#endif
 
 	// Inner load helper: performs LoadLibrary, GetProcAddress, GetPluginInfo,
 	// version check, and PluginInit on an existing LoadedPlugin record.
@@ -430,6 +507,25 @@ namespace PluginManager
 				rec.fileName.c_str());
 			return false;
 		}
+
+#ifdef MODLOADER_CLIENT_BUILD
+		// Before LoadLibrary: a disabled plugin runs none of its code. Every
+		// load path comes through here.
+		rec.isDisabled = IsListedDisabled(rec.fileName);
+		if (rec.isDisabled)
+		{
+			ModLoaderLogger::LogMessage(L"Plugin is disabled -- not loading: %s", rec.fileName.c_str());
+			FillCachedIdentity(rec);
+			if (why) why->kind = LoadFailure::Disabled;
+			return false;
+		}
+		if (IsStale(rec.fileName))
+		{
+			ModLoaderLogger::LogWarn(L"Load of %s refused: %S", rec.fileName.c_str(), kStaleWhy);
+			if (why) why->kind = LoadFailure::NeedsRestart;
+			return false;
+		}
+#endif
 
 		ModLoaderLogger::LogMessage(L"Loading plugin: %s", rec.fileName.c_str());
 
@@ -476,6 +572,11 @@ namespace PluginManager
 		{
 			ModLoaderLogger::LogMessage(L"Plugin missing required exports: %s", rec.fileName.c_str());
 			FreeLibrary(hModule);
+#ifdef MODLOADER_CLIENT_BUILD
+			EnterCriticalSection(&g_pluginLock);
+			s_notPlugins.insert(LowerCase(rec.fileName));
+			LeaveCriticalSection(&g_pluginLock);
+#endif
 			if (why) why->kind = LoadFailure::NotAPlugin;
 			return false;
 		}
@@ -656,14 +757,17 @@ namespace PluginManager
 		rec->needsModLoaderUpdate = false;
 		rec->isWrongTarget        = false;
 		rec->hookScanFailed       = false;
+		rec->isDisabled           = false;
 
 		if (!LoadPluginIntoRecord(*rec, startup, why))
 		{
 			if (why) why->name = rec->cachedName;
 
-			// Keep the record visible in the UI for out-of-date or wrong-target plugins.
-			if (rec->isOutOfDate || rec->isWrongTarget)
+			// Keep the record visible in the UI for out-of-date, wrong-target or
+			// disabled plugins.
+			if (rec->isOutOfDate || rec->isWrongTarget || rec->isDisabled)
 			{
+				RefreshSelfPointers(*rec);
 				EnterCriticalSection(&g_pluginLock);
 				g_loadedPlugins.push_back(std::move(rec));
 				LeaveCriticalSection(&g_pluginLock);
@@ -795,6 +899,9 @@ namespace PluginManager
 		if (dllPaths.empty())
 		{
 			ModLoaderLogger::LogMessage(L"No plugins found in Plugins directory");
+#ifdef MODLOADER_CLIENT_BUILD
+			RefreshManagedFiles(); // there may be backups to restore
+#endif
 			return;
 		}
 
@@ -821,6 +928,7 @@ namespace PluginManager
 
 #ifdef MODLOADER_CLIENT_BUILD
 		Splash::ClearSubBar();
+		RefreshManagedFiles();
 #endif
 
 		ModLoaderLogger::LogMessage(L"Loaded %d plugin DLL(s) from Plugins (PluginInit deferred)", loadedCount);
@@ -834,6 +942,7 @@ namespace PluginManager
 		for (const auto& other : g_loadedPlugins)
 		{
 			if (other.get() != &rec && (!loadedOnly || other->hModule)
+				&& !IsShelved(*other) && !rec.cachedName.empty()
 				&& _stricmp(other->cachedName.c_str(), rec.cachedName.c_str()) == 0)
 				return other.get();
 		}
@@ -1360,6 +1469,12 @@ namespace PluginManager
 				out[i].declaredInterface     = p.interfaceVersion;
 				out[i].isWrongTarget         = p.isWrongTarget;
 				out[i].hookScanFailed        = p.hookScanFailed;
+				out[i].isDisabled            = p.isDisabled;
+#ifdef MODLOADER_CLIENT_BUILD
+				out[i].isRemoved             = p.isUninstalled;
+#else
+				out[i].isRemoved             = false;
+#endif
 
 				// Plugin paths are ASCII in practice; anything else degrades to '?'
 				// rather than failing the whole snapshot. Cleared first so a
@@ -1401,16 +1516,10 @@ namespace PluginManager
 
 		EnterCriticalSection(&g_pluginLock);
 		const IPluginSelf* result = nullptr;
-		for (auto& p : g_loadedPlugins)
-		{
-			if (_stricmp(p->cachedName.c_str(), pluginName) == 0)
-			{
-				// Nothing to notify while its PluginShutdown runs.
-				if (!p->isUnloading)
-					result = &p->self;
-				break;
-			}
-		}
+		const int index = IndexByName(pluginName);
+		// Nothing to notify while its PluginShutdown runs.
+		if (index >= 0 && !g_loadedPlugins[index]->isUnloading)
+			result = &g_loadedPlugins[index]->self;
 		LeaveCriticalSection(&g_pluginLock);
 		return result;
 	}
@@ -1421,14 +1530,9 @@ namespace PluginManager
 		if (!pluginName) return result;
 
 		EnterCriticalSection(&g_pluginLock);
-		for (auto& p : g_loadedPlugins)
-		{
-			if (_stricmp(p->cachedName.c_str(), pluginName) == 0)
-			{
-				result = p->wire;
-				break;
-			}
-		}
+		const int index = IndexByName(pluginName);
+		if (index >= 0)
+			result = g_loadedPlugins[index]->wire;
 		LeaveCriticalSection(&g_pluginLock);
 		return result;
 	}
@@ -1593,6 +1697,32 @@ namespace PluginManager
 		}
 
 		LoadedPlugin& p = *g_loadedPlugins[index];
+
+#ifdef MODLOADER_CLIENT_BUILD
+		// Asked before anything is shut down: a plugin that may not load again
+		// keeps running.
+		if (IsListedDisabled(p.fileName))
+		{
+			p.isDisabled = true;
+			ModLoaderLogger::LogWarn(L"Load of %s refused: %S", BaseFileName(p.fileName), kDisabledWhy);
+			LeaveCriticalSection(&g_pluginLock);
+			if (refusal) *refusal = kDisabledWhy;
+			return false;
+		}
+		const char* blocked = nullptr;
+		if (IsStale(p.fileName))
+			blocked = kStaleWhy;
+		else if (GetFileAttributesW(p.fileName.c_str()) == INVALID_FILE_ATTRIBUTES)
+			blocked = "its file is not in ModLoader\\Plugins";
+		if (blocked)
+		{
+			ModLoaderLogger::LogWarn(L"Load of %s refused: %S", BaseFileName(p.fileName), blocked);
+			LeaveCriticalSection(&g_pluginLock);
+			if (refusal) *refusal = blocked;
+			return false;
+		}
+		p.isUninstalled = false; // a file is back at its path
+#endif
 
 		if (p.isUnloading)
 		{
@@ -1926,18 +2056,9 @@ namespace PluginManager
 
 		EnterCriticalSection(&g_pluginLock);
 
-		int found = -1;
-
 		// PluginInfo name first -- that is what `plugins` displays and what a
 		// user is most likely to type.
-		for (int i = 0; i < static_cast<int>(g_loadedPlugins.size()); ++i)
-		{
-			if (_stricmp(g_loadedPlugins[i]->cachedName.c_str(), nameOrFile) == 0)
-			{
-				found = i;
-				break;
-			}
-		}
+		int found = IndexByName(nameOrFile);
 
 		// Then the DLL file name, with and without the extension. A record whose
 		// load failed has no cached name at all, so this is the only way to
@@ -1996,6 +2117,7 @@ namespace PluginManager
 		case ScanStatus::Failed:       return "Failed";
 		case ScanStatus::Duplicate:    return "Duplicate";
 		case ScanStatus::Refused:      return "Refused";
+		case ScanStatus::Disabled:     return "Disabled";
 		}
 		return "?";
 	}
@@ -2090,6 +2212,14 @@ namespace PluginManager
 			r.status = ScanStatus::Refused;
 			snprintf(text, sizeof(text), "%s", why.detail.c_str());
 			break;
+		case LoadFailure::Disabled:
+			r.status = ScanStatus::Disabled;
+			snprintf(text, sizeof(text), "It is %s.", kDisabledWhy);
+			break;
+		case LoadFailure::NeedsRestart:
+			r.status = ScanStatus::NeedsRestart;
+			snprintf(text, sizeof(text), "Not loaded: %s.", kStaleWhy);
+			break;
 		case LoadFailure::WrongTarget:
 			r.status = ScanStatus::WrongTarget;
 			snprintf(text, sizeof(text), "Built for the other build target: a server plugin on the client, or the reverse.");
@@ -2134,7 +2264,8 @@ namespace PluginManager
 		return r;
 	}
 
-	int ScanForNewPlugins(std::vector<ScanResult>* outResults)
+	// ScanForNewPlugins, or with `only` the same for that one path.
+	static int ScanPlugins(std::vector<ScanResult>* outResults, const std::wstring* only)
 	{
 		if (!g_managerInitialized)
 		{
@@ -2143,7 +2274,9 @@ namespace PluginManager
 		}
 
 		std::vector<std::wstring> dllPaths;
-		if (!CollectPluginDllPaths(dllPaths))
+		if (only)
+			dllPaths.push_back(*only);
+		else if (!CollectPluginDllPaths(dllPaths))
 			return 0;
 
 		// Held across the whole scan so nothing can append a record between the
@@ -2235,7 +2368,7 @@ namespace PluginManager
 
 		// Preload plugins run before the game starts, so a new one cannot be
 		// loaded now. Say so rather than leave it looking ignored.
-		for (const std::string& file : PreloadManager::FindNewDlls())
+		for (const std::string& file : only ? std::vector<std::string>() : PreloadManager::FindNewDlls())
 		{
 			ModLoaderLogger::LogMessage(L"ScanForNewPlugins: new Preload DLL %S needs a game restart", file.c_str());
 			if (outResults)
@@ -2246,6 +2379,549 @@ namespace PluginManager
 		ModLoaderLogger::LogMessage(L"ScanForNewPlugins: %d new DLL(s) loaded, %d initialized", loadedCount, initedCount);
 		return initedCount;
 	}
+
+	int ScanForNewPlugins(std::vector<ScanResult>* outResults)
+	{
+#ifdef MODLOADER_CLIENT_BUILD
+		// First, so that the scan below does not list one twice.
+		const int returned = g_managerInitialized ? LoadReturnedCopies(outResults) : 0;
+		const int initedCount = returned + ScanPlugins(outResults, nullptr);
+		if (g_managerInitialized)
+			RefreshManagedFiles();
+#else
+		const int initedCount = ScanPlugins(outResults, nullptr);
+#endif
+		return initedCount;
+	}
+
+#ifdef MODLOADER_CLIENT_BUILD
+	// ---- Disable, enable, uninstall and restore ----------------------------
+	// Everything below that is named s_* is guarded by g_pluginLock. The lock
+	// is not held across file reads, nor when calling UnloadPlugin or
+	// ReloadPlugin: ShutDownWithoutLock must be able to release it.
+
+	struct ManageState
+	{
+		bool working = false;
+		bool enableWaitsForRestart = false;
+		ManageOp lastOp = ManageOp::Disable;
+		ManageResult lastResult = ManageResult::None;
+		std::string message;
+	};
+
+	static std::map<std::wstring, ManageState> s_manageStates; // by LowerCase(file name)
+	static std::vector<std::pair<std::wstring, ManagedPlugin>> s_managedFiles; // path, what was read
+	static std::vector<std::string> s_preloadNames;
+
+	static std::string Narrow(const std::wstring& text, UINT codePage = CP_ACP)
+	{
+		const int length = WideCharToMultiByte(codePage, 0, text.c_str(), -1, nullptr, 0, nullptr, nullptr);
+		if (length <= 1) return {};
+		std::string out(length - 1, '\0');
+		WideCharToMultiByte(codePage, 0, text.c_str(), -1, out.data(), length, nullptr, nullptr);
+		return out;
+	}
+
+	static std::wstring Widen(const std::string& text, UINT codePage = CP_ACP)
+	{
+		const int length = MultiByteToWideChar(codePage, 0, text.c_str(), -1, nullptr, 0);
+		if (length <= 1) return {};
+		std::wstring out(length - 1, L'\0');
+		MultiByteToWideChar(codePage, 0, text.c_str(), -1, out.data(), length);
+		return out;
+	}
+
+	// "...\Win64\ModLoader\" + name
+	static PluginManage::Folders ManageFolders()
+	{
+		return { GetModLoaderDirPath(L"Plugins"), GetModLoaderDirPath(L"Removed") };
+	}
+
+	// The record for a DLL file name, or -1. Caller holds g_pluginLock.
+	static int IndexByFile(const std::wstring& fileName)
+	{
+		for (int i = 0; i < static_cast<int>(g_loadedPlugins.size()); ++i)
+			if (PluginManage::SameName(BaseFileName(g_loadedPlugins[i]->fileName), fileName))
+				return i;
+		return -1;
+	}
+
+	static void SaveIdentityOf(const LoadedPlugin& rec)
+	{
+		// PluginInfo strings are UTF-8 or plain ASCII.
+		PluginManage::SaveIdentity(GetModLoaderDirPath(PluginManage::kIdentityFile), BaseFileName(rec.fileName),
+			{ Widen(rec.cachedName, CP_UTF8), Widen(rec.cachedVersion, CP_UTF8), Widen(rec.cachedAuthor, CP_UTF8) });
+	}
+
+	// A disabled record loads nothing, so its strings come from the cache.
+	static void FillCachedIdentity(LoadedPlugin& rec)
+	{
+		if (!rec.cachedName.empty()) return;
+		const PluginManage::Identity who = PluginManage::ReadIdentity(
+			GetModLoaderDirPath(PluginManage::kIdentityFile), BaseFileName(rec.fileName));
+		rec.cachedName    = Narrow(who.name, CP_UTF8);
+		rec.cachedVersion = Narrow(who.version, CP_UTF8);
+		rec.cachedAuthor  = Narrow(who.author, CP_UTF8);
+	}
+
+	void RefreshManagedFiles()
+	{
+		const PluginManage::Folders folders = ManageFolders();
+		std::vector<std::wstring> paths;
+		CollectPluginDllPaths(paths);
+
+		std::vector<std::wstring> disabled;
+		PluginManage::ReadDisabledList(GetModLoaderDirPath(L"modloader.ini"), disabled);
+		const std::vector<PluginManage::Backup> backups = PluginManage::ListBackups(folders);
+
+		std::wstring gameDir = GetExeDir();
+		if (!gameDir.empty() && gameDir.back() == L'\\') gameDir.pop_back();
+		const std::wstring identityIni = GetModLoaderDirPath(PluginManage::kIdentityFile);
+
+		const VortexNotice::Deployment vortex = VortexNotice::ReadDeployment(gameDir);
+
+		std::vector<std::pair<std::wstring, ManagedPlugin>> files;
+		const auto entry = [&](const std::wstring& path) -> ManagedPlugin&
+		{
+			for (auto& f : files)
+				if (PluginManage::SameName(BaseFileName(f.first), BaseFileName(path)))
+					return f.second;
+			ManagedPlugin m;
+			const std::wstring file = BaseFileName(path);
+			m.fileName = Narrow(file);
+			m.facts.canBeDisabled = PluginManage::CanBeDisabled(file);
+			m.facts.listedDisabled = PluginManage::ListHas(disabled, file);
+			const PluginManage::Identity who = PluginManage::ReadIdentity(identityIni, file);
+			m.name = Narrow(who.name, CP_UTF8);
+			m.version = Narrow(who.version, CP_UTF8);
+			m.author = Narrow(who.author, CP_UTF8);
+			files.emplace_back(path, std::move(m));
+			return files.back().second;
+		};
+
+		for (const std::wstring& path : paths)
+		{
+			if (!PluginManage::IsPluginDllName(BaseFileName(path))) continue;
+			ManagedPlugin& m = entry(path);
+			m.facts.inPlugins = true;
+
+			const std::string stem = "ModLoader\\Plugins\\" + Narrow(PluginManage::Stem(BaseFileName(path)), CP_UTF8);
+			const VortexNotice::Listing listing = vortex.Lists(
+				{ stem + ".dll", stem + ".pdb", stem + ".json" });
+			m.facts.vortexListed = listing == VortexNotice::Listing::Listed;
+			m.vortexUnsure = listing == VortexNotice::Listing::Unsure;
+		}
+		for (const PluginManage::Backup& backup : backups)
+		{
+			ManagedPlugin& m = entry(folders.plugins + L"\\" + backup.dllName);
+			m.facts.hasBackup = true;
+			if (m.name.empty())
+			{
+				m.name = Narrow(backup.name, CP_UTF8);
+				m.version = Narrow(backup.version, CP_UTF8);
+			}
+		}
+
+		std::vector<std::string> preloadNames;
+		for (const PreloadManager::Record& r : PreloadManager::GetRecords())
+			PluginManage::AddPreloadNames(r.fileName, r.name == r.fileName ? std::string() : r.name, preloadNames);
+		for (const std::string& file : PreloadManager::FindNewDlls())
+			PluginManage::AddPreloadNames(file, std::string(), preloadNames);
+
+		EnterCriticalSection(&g_pluginLock);
+		// A file that is gone but whose code is still mapped keeps its card.
+		for (const auto& rec : g_loadedPlugins)
+			if (rec->hModule)
+				entry(rec->fileName);
+		for (const auto& rec : g_loadedPlugins)
+			if (!rec->isUnloading) // nothing writes a record while it unloads
+				rec->isDisabled = PluginManage::ListHas(disabled, BaseFileName(rec->fileName));
+		// A DLL that is not a plugin gets no card.
+		files.erase(std::remove_if(files.begin(), files.end(), [](const auto& f)
+			{
+				return f.second.facts.inPlugins && !f.second.facts.hasBackup && s_notPlugins.count(LowerCase(f.first));
+			}), files.end());
+		s_managedFiles = std::move(files);
+		s_preloadNames = std::move(preloadNames);
+		LeaveCriticalSection(&g_pluginLock);
+	}
+
+	ManageSnapshot GetManageSnapshot()
+	{
+		ManageSnapshot out;
+		if (!g_managerInitialized) return out;
+
+		EnterCriticalSection(&g_pluginLock);
+		out.preloadNames = s_preloadNames;
+		for (const auto& [path, read] : s_managedFiles)
+		{
+			ManagedPlugin m = read;
+			const std::wstring file = BaseFileName(path);
+			const int index = IndexByFile(file);
+			if (index >= 0)
+			{
+				const LoadedPlugin& rec = *g_loadedPlugins[index];
+				m.facts.running = rec.hModule != nullptr;
+				if (!rec.cachedName.empty())
+				{
+					m.name = rec.cachedName;
+					m.version = rec.cachedVersion;
+					m.author = rec.cachedAuthor;
+				}
+			}
+			const auto state = s_manageStates.find(LowerCase(file));
+			if (state != s_manageStates.end())
+			{
+				m.facts.working = state->second.working;
+				m.facts.enableWaitsForRestart = state->second.enableWaitsForRestart;
+				m.lastOp = state->second.lastOp;
+				m.lastResult = state->second.lastResult;
+				m.message = state->second.message;
+			}
+			out.plugins.push_back(std::move(m));
+		}
+		LeaveCriticalSection(&g_pluginLock);
+		return out;
+	}
+
+	struct ChangeOutcome
+	{
+		ManageResult result = ManageResult::Done;
+		std::string message;
+		bool enableWaitsForRestart = false;
+	};
+
+	static bool IsStillMapped(const std::wstring& fileName)
+	{
+		EnterCriticalSection(&g_pluginLock);
+		const int index = IndexByFile(fileName);
+		const bool mapped = index >= 0 && g_loadedPlugins[index]->hModule;
+		LeaveCriticalSection(&g_pluginLock);
+		return mapped;
+	}
+
+	// Load an installed, enabled plugin now, or say that it waits for a restart.
+	static ChangeOutcome LoadNow(const std::wstring& fileName)
+	{
+		const std::wstring path = ManageFolders().plugins + L"\\" + fileName;
+		const ChangeOutcome later{ ManageResult::AfterRestart, "It will be on after you restart the game.", true };
+		if (GetFileAttributesW(path.c_str()) == INVALID_FILE_ATTRIBUTES)
+			return { ManageResult::Failed, "Its file is not in ModLoader\\Plugins." };
+
+		EnterCriticalSection(&g_pluginLock);
+		const int index = IndexByFile(fileName);
+		bool running = false, wait = IsStale(path);
+		if (index >= 0)
+		{
+			LoadedPlugin& rec = *g_loadedPlugins[index];
+			rec.isUninstalled = false;
+			running = rec.hModule && rec.isInitialized;
+			// ReloadPlugin does not look for a second plugin under the name.
+			wait = wait || (rec.hModule && !running) || (!running && OtherPluginNamed(rec, true));
+		}
+		LeaveCriticalSection(&g_pluginLock);
+
+		if (running) return {};
+		if (wait) return later;
+
+		if (index >= 0)
+		{
+			std::string why;
+			if (ReloadPlugin(index, &why)) return {};
+			return why.empty() ? ChangeOutcome{ ManageResult::Failed, "It could not be loaded. See ModLoader.log." }
+			                   : ChangeOutcome{ ManageResult::AfterRestart, why, true };
+		}
+
+		std::vector<ScanResult> results;
+		ScanPlugins(&results, &path);
+		if (results.empty() || results.front().status == ScanStatus::Live || results.front().status == ScanStatus::Late)
+			return {};
+		if (results.front().status == ScanStatus::Refused || results.front().status == ScanStatus::Duplicate)
+			return { ManageResult::AfterRestart, results.front().action, true };
+		return { ManageResult::Failed, results.front().action };
+	}
+
+	// A record stays after an uninstall, so a scan takes its path as known. A
+	// DLL put back there since is loaded here.
+	static int LoadReturnedCopies(std::vector<ScanResult>* outResults)
+	{
+		std::vector<std::wstring> paths;
+		EnterCriticalSection(&g_pluginLock);
+		for (const auto& rec : g_loadedPlugins)
+			if (rec->isUninstalled && !rec->isUnloading)
+				paths.push_back(rec->fileName);
+		LeaveCriticalSection(&g_pluginLock);
+
+		int liveCount = 0;
+		for (const std::wstring& path : paths)
+		{
+			if (GetFileAttributesW(path.c_str()) == INVALID_FILE_ATTRIBUTES)
+				continue;
+			const std::wstring file = BaseFileName(path);
+			ScanResult r;
+			r.fileName = Narrow(file);
+			// The old code is still mapped, whether or not it is still running.
+			if (IsStale(path) || IsStillMapped(file))
+			{
+				r.status = ScanStatus::NeedsRestart;
+				r.action = std::string("Not loaded: ") + kStaleWhy + ".";
+			}
+			else
+			{
+				const ChangeOutcome outcome = LoadNow(file);
+				r.status = outcome.result == ManageResult::Done ? ScanStatus::Live
+					: outcome.result == ManageResult::AfterRestart ? ScanStatus::NeedsRestart
+					: ScanStatus::Failed;
+				r.action = outcome.message;
+				if (r.status == ScanStatus::Live)
+					++liveCount;
+			}
+			EnterCriticalSection(&g_pluginLock);
+			const int index = IndexByFile(file);
+			r.name = index >= 0 ? g_loadedPlugins[index]->cachedName : r.fileName;
+			LeaveCriticalSection(&g_pluginLock);
+			if (outResults)
+				outResults->push_back(std::move(r));
+		}
+		return liveCount;
+	}
+
+	// The other DLL in Plugins that is already the plugin called `name`, or
+	// empty. A restore beside it would leave two copies to load at the next start.
+	static std::wstring OtherCopyOf(const std::wstring& name, const std::wstring& fileName)
+	{
+		std::vector<std::wstring> paths;
+		if (name.empty() || !CollectPluginDllPaths(paths))
+			return {};
+
+		std::vector<std::wstring> disabled;
+		PluginManage::ReadDisabledList(GetModLoaderDirPath(L"modloader.ini"), disabled);
+		const std::wstring identityIni = GetModLoaderDirPath(PluginManage::kIdentityFile);
+		for (const std::wstring& path : paths)
+		{
+			const std::wstring file = BaseFileName(path);
+			if (PluginManage::SameName(file, fileName))
+				continue;
+
+			std::wstring other;
+			EnterCriticalSection(&g_pluginLock);
+			const int index = IndexByFile(file);
+			if (index >= 0 && !g_loadedPlugins[index]->isUninstalled)
+				other = Widen(g_loadedPlugins[index]->cachedName, CP_UTF8);
+			LeaveCriticalSection(&g_pluginLock);
+			if (other.empty())
+				other = PluginManage::ReadIdentity(identityIni, file).name;
+			// A DLL put there since the last start. None of a disabled one is read.
+			if (other.empty() && !PluginManage::ListHas(disabled, file))
+				other = Widen(PluginDllVersion::Read(path.c_str(), &PluginInfo::name), CP_UTF8);
+
+			if (PluginManage::SameName(other, name))
+				return file;
+		}
+		return {};
+	}
+
+	static ChangeOutcome ApplyChange(ManageOp op, const std::wstring& fileName)
+	{
+		if (!g_startupComplete)
+			return { ManageResult::NotReady, "The plugins are still starting." };
+
+		const std::wstring ini = GetModLoaderDirPath(L"modloader.ini");
+		const PluginManage::Folders folders = ManageFolders();
+
+		EnterCriticalSection(&g_pluginLock);
+		const int index = IndexByFile(fileName);
+		LoadedPlugin* rec = index >= 0 ? g_loadedPlugins[index].get() : nullptr;
+		if (rec && rec->isUnloading)
+		{
+			LeaveCriticalSection(&g_pluginLock);
+			return { ManageResult::Failed, kUnloadingNow };
+		}
+		const std::string name = rec ? rec->cachedName : std::string();
+		const std::string version = rec ? rec->cachedVersion : std::string();
+		const bool initialized = rec && rec->isInitialized;
+		LeaveCriticalSection(&g_pluginLock);
+
+		switch (op)
+		{
+		case ManageOp::Disable:
+		{
+			// Saved first: if the plugin cannot stop now it is off next start.
+			if (PluginManage::SaveDisabled(ini, fileName, true) != PluginManage::SaveResult::Ok)
+				return { ManageResult::SaveFailed, "Couldn't save the change. Nothing was changed." };
+			if (rec)
+			{
+				EnterCriticalSection(&g_pluginLock);
+				rec->isDisabled = true;
+				SaveIdentityOf(*rec);
+				LeaveCriticalSection(&g_pluginLock);
+			}
+			std::string why;
+			if (initialized) UnloadPlugin(index, &why);
+			if (IsStillMapped(fileName))
+				return { ManageResult::AfterRestart, why };
+			return {};
+		}
+		case ManageOp::Enable:
+			if (PluginManage::SaveDisabled(ini, fileName, false) != PluginManage::SaveResult::Ok)
+				return { ManageResult::SaveFailed, "Couldn't save the change. Nothing was changed." };
+			if (rec)
+			{
+				EnterCriticalSection(&g_pluginLock);
+				rec->isDisabled = false;
+				LeaveCriticalSection(&g_pluginLock);
+			}
+			return LoadNow(fileName);
+
+		case ManageOp::Uninstall:
+		{
+			std::wstring gameDir = GetExeDir();
+			if (!gameDir.empty() && gameDir.back() == L'\\') gameDir.pop_back();
+			const std::string stem = "ModLoader\\Plugins\\" + Narrow(PluginManage::Stem(fileName), CP_UTF8);
+			if (VortexNotice::ReadDeployment(gameDir).Lists({ stem + ".dll", stem + ".pdb", stem + ".json" })
+				== VortexNotice::Listing::Listed)
+				return { ManageResult::Vortex, "Vortex installed this mod. Uninstall it in Vortex." };
+
+			PluginManage::Identity who{ Widen(name, CP_UTF8), Widen(version, CP_UTF8), {} };
+			if (who.name.empty())
+				who = PluginManage::ReadIdentity(GetModLoaderDirPath(PluginManage::kIdentityFile), fileName);
+
+			// The files move first, so a failed move leaves the plugin as it was.
+			std::vector<std::wstring> disabled;
+			PluginManage::ReadDisabledList(ini, disabled);
+			const std::wstring path = folders.plugins + L"\\" + fileName;
+			const bool alreadyStale = IsStale(path);
+			SYSTEMTIME now{};
+			GetSystemTime(&now);
+			const PluginManage::Outcome moved = PluginManage::Uninstall(folders, fileName, who.name, who.version,
+				PluginManage::BackupStamp(now), PluginManage::MoveOnSameVolume,
+				PluginManage::ListHas(disabled, fileName));
+			if (moved.result != PluginManage::FileResult::Ok)
+			{
+				ModLoaderLogger::LogWarn(L"Uninstall of %s failed on %s (result %d, error %lu)", fileName.c_str(),
+					moved.failedFile.c_str(), static_cast<int>(moved.result), moved.error);
+				if (moved.result == PluginManage::FileResult::RollbackFailed)
+				{
+					// The DLL may be the file that stayed moved.
+					if (GetFileAttributesW(path.c_str()) == INVALID_FILE_ATTRIBUTES)
+					{
+						EnterCriticalSection(&g_pluginLock);
+						s_uninstalledPaths.emplace(LowerCase(path), moved.backupDir);
+						LeaveCriticalSection(&g_pluginLock);
+					}
+					return { ManageResult::RollbackFailed,
+						"Uninstall only partly worked. Check ModLoader\\Plugins and ModLoader\\Removed." };
+				}
+				return { ManageResult::MoveFailed, "Couldn't uninstall it. Nothing was changed." };
+			}
+			// A copy installed later starts enabled. The backup remembers the rest,
+			// and a restore sets the list again whether or not this write works.
+			PluginManage::SaveDisabled(ini, fileName, false);
+
+			EnterCriticalSection(&g_pluginLock);
+			// A module still mapped under this path must not be handed back
+			// for a new file put there. An older one keeps its entry.
+			if (!alreadyStale)
+				s_uninstalledPaths[LowerCase(path)] = moved.backupDir;
+			if (rec)
+			{
+				SaveIdentityOf(*rec);
+				rec->isUninstalled = true;
+				rec->isDisabled = false;
+				++g_pluginGeneration;
+			}
+			LeaveCriticalSection(&g_pluginLock);
+
+			std::string why;
+			if (initialized) UnloadPlugin(index, &why);
+			if (IsStillMapped(fileName))
+				return { ManageResult::AfterRestart, why };
+			return {};
+		}
+		case ManageOp::Restore:
+		{
+			PluginManage::Backup backup;
+			const bool found = PluginManage::FindNewestBackup(folders, fileName, backup) == PluginManage::FileResult::Ok;
+			if (const std::wstring other = found ? OtherCopyOf(backup.name, fileName) : std::wstring(); !other.empty())
+				return { ManageResult::AlreadyInstalled, "A copy is already installed as " + Narrow(other, CP_UTF8) +
+					", so the old one stays in ModLoader\\Removed." };
+
+			// The plugin comes back as it was. Set first: a plugin that was
+			// disabled must never be in Plugins without its entry.
+			std::vector<std::wstring> disabled;
+			PluginManage::ReadDisabledList(ini, disabled);
+			const bool wasListed = PluginManage::ListHas(disabled, fileName);
+			const bool relist = found && wasListed != backup.disabled;
+			if (relist && PluginManage::SaveDisabled(ini, fileName, backup.disabled) != PluginManage::SaveResult::Ok)
+				return { ManageResult::SaveFailed, "Couldn't save the change. Nothing was changed." };
+
+			const PluginManage::Outcome moved = PluginManage::Restore(folders, fileName);
+			if (relist && moved.result != PluginManage::FileResult::Ok &&
+			    moved.result != PluginManage::FileResult::RollbackFailed)
+				PluginManage::SaveDisabled(ini, fileName, wasListed);
+			if (moved.result == PluginManage::FileResult::AlreadyInstalled)
+				return { ManageResult::AlreadyInstalled,
+					"A copy is already installed, so the old one stays in ModLoader\\Removed." };
+			if (moved.result == PluginManage::FileResult::RollbackFailed)
+				return { ManageResult::RollbackFailed,
+					"Restore only partly worked. Check ModLoader\\Plugins and ModLoader\\Removed." };
+			if (moved.result != PluginManage::FileResult::Ok)
+				return { ManageResult::MoveFailed, "Couldn't restore it. Nothing was changed." };
+
+			const std::wstring path = folders.plugins + L"\\" + fileName;
+			EnterCriticalSection(&g_pluginLock);
+			// The file whose code may still be mapped is back: no longer stale.
+			const auto stale = s_uninstalledPaths.find(LowerCase(path));
+			if (stale != s_uninstalledPaths.end() && stale->second == moved.backupDir)
+				s_uninstalledPaths.erase(stale);
+			const int restored = IndexByFile(fileName);
+			if (restored >= 0)
+			{
+				g_loadedPlugins[restored]->isUninstalled = false;
+				g_loadedPlugins[restored]->isDisabled = backup.disabled;
+				++g_pluginGeneration;
+			}
+			LeaveCriticalSection(&g_pluginLock);
+
+			if (!backup.disabled)
+				return LoadNow(fileName);
+			// Lists it as disabled. None of its code is loaded.
+			if (restored < 0)
+				ScanPlugins(nullptr, &path);
+			return {};
+		}
+		}
+		return { ManageResult::Failed };
+	}
+
+	void RequestPluginChange(ManageOp op, const std::string& fileName)
+	{
+		const std::wstring file = Widen(fileName);
+		if (!g_managerInitialized || !PluginManage::IsPluginDllName(file)) return;
+
+		EnterCriticalSection(&g_pluginLock);
+		ManageState& state = s_manageStates[LowerCase(file)];
+		const bool busy = state.working;
+		state.working = true;
+		LeaveCriticalSection(&g_pluginLock);
+		if (busy) return;
+
+		GameThreadDispatch::PostVoid([op, file]
+		{
+			const ChangeOutcome outcome = ApplyChange(op, file);
+			RefreshManagedFiles();
+
+			EnterCriticalSection(&g_pluginLock);
+			ManageState& done = s_manageStates[LowerCase(file)];
+			done.working = false;
+			done.lastOp = op;
+			done.lastResult = outcome.result;
+			done.message = outcome.message;
+			done.enableWaitsForRestart = outcome.enableWaitsForRestart;
+			LeaveCriticalSection(&g_pluginLock);
+		});
+	}
+#endif
 
 	void RefusePluginLoads()
 	{

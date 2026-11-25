@@ -19,6 +19,7 @@
 #include "UI/splash_window.h"
 #include "UI/update_notice_window.h"
 #include "vortex_notice.h"
+#include "plugins/plugin_manage.h"
 #endif
 
 #define WIN32_LEAN_AND_MEAN
@@ -449,6 +450,11 @@ static std::vector<PluginSidecar> ScanForSidecars(const wchar_t* pluginsDir)
     if (hFind == INVALID_HANDLE_VALUE)
         return results;
 
+#ifdef MODLOADER_CLIENT_BUILD
+    std::vector<std::wstring> disabled;
+    PluginManage::ReadDisabledList(GetModLoaderDirPath(L"modloader.ini"), disabled);
+#endif
+
     do
     {
         // Skip directories
@@ -478,6 +484,13 @@ static std::vector<PluginSidecar> ScanForSidecars(const wchar_t* pluginsDir)
             LogToFile::Debug("[AutoUpdate][Sidecar] '%s' has no matching DLL — skipping", narrowName);
             continue;
         }
+
+#ifdef MODLOADER_CLIENT_BUILD
+        // A disabled plugin is neither downloaded over nor asked for its
+        // version. It catches up at the first start after it is enabled.
+        if (PluginManage::ListHas(disabled, dllName))
+            continue;
+#endif
 
         std::string manifestUrl = ReadSidecarManifestUrl(jsonPath);
         if (manifestUrl.empty())

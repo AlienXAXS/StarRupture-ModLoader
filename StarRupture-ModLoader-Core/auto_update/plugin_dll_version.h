@@ -14,7 +14,8 @@ namespace PluginDllVersion
 {
     // GetPluginInfo returns a pointer to a table in the DLL's own image. The
     // call is guarded: a DLL that was not mapped to run (see Read) may fault.
-    inline bool CopyReportedVersion(HMODULE module, char* out, size_t outSize)
+    inline bool CopyReportedVersion(HMODULE module, char* out, size_t outSize,
+                                    const char* PluginInfo::* field = &PluginInfo::version)
     {
         const auto getInfo = reinterpret_cast<GetPluginInfoFunc>(
             GetProcAddress(module, PLUGIN_GET_INFO_FUNC_NAME));
@@ -24,9 +25,9 @@ namespace PluginDllVersion
         __try
         {
             const PluginInfo* info = getInfo();
-            if (!info || !info->version || !info->version[0])
+            if (!info || !(info->*field) || !(info->*field)[0])
                 return false;
-            strncpy_s(out, outSize, info->version, _TRUNCATE);
+            strncpy_s(out, outSize, info->*field, _TRUNCATE);
             return true;
         }
         __except (EXCEPTION_EXECUTE_HANDLER)
@@ -42,15 +43,15 @@ namespace PluginDllVersion
     // imports resolved, no DllMain and no static initialisers run, so nothing
     // of the plugin starts. A plugin's GetPluginInfo returns a constant table,
     // which needs none of that.
-    inline std::string Read(const wchar_t* path)
+    inline std::string Read(const wchar_t* path, const char* PluginInfo::* field = &PluginInfo::version)
     {
         HMODULE module = LoadLibraryExW(path, nullptr, DONT_RESOLVE_DLL_REFERENCES);
         if (!module)
             return {};
 
-        char version[128] = {};
-        const bool ok = CopyReportedVersion(module, version, sizeof(version));
+        char text[128] = {};
+        const bool ok = CopyReportedVersion(module, text, sizeof(text), field);
         FreeLibrary(module);
-        return ok ? std::string(version) : std::string();
+        return ok ? std::string(text) : std::string();
     }
 }

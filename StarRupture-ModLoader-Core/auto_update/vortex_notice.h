@@ -7,7 +7,8 @@
 // which copy to keep. These checks tell the updater and the loader that an
 // update replaced such a file, so they can say which answer keeps the update.
 // Everything here only reads, and anything that cannot be read or parsed counts
-// as "not managed". Header-only: the loader and the updater exe both use it.
+// as "not managed" (Deployment answers Unsure instead). Header-only: the
+// loader and the updater exe both use it.
 
 #include "json_extract.h"
 #include "../utils/engine_call_utils.h"
@@ -19,6 +20,7 @@
 
 #include <cstdlib>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 namespace VortexNotice
@@ -92,6 +94,16 @@ namespace VortexNotice
 		return text;
 	}
 
+	// The file a "files" entry records, relative to the deploy folder, as it is
+	// compared. relPath is under `target`, a folder in the deploy folder that is
+	// empty for the loader's own mod types.
+	inline std::string ListedPath(const std::string& entry)
+	{
+		const std::string target = JsonExtractString(entry, "target");
+		const std::string relPath = JsonExtractString(entry, "relPath");
+		return NormalizePath(target.empty() ? relPath : target + "\\" + relPath);
+	}
+
 	// True when `manifest` lists one of `paths` (UTF-8, relative to gameDir) with a
 	// modified time other than the one the file on disk has now.
 	inline bool ManifestShowsReplaced(const std::string& manifest, const std::wstring& gameDir,
@@ -99,11 +111,7 @@ namespace VortexNotice
 	{
 		for (const std::string& entry : JsonExtractObjectArray(manifest, "files"))
 		{
-			// relPath is under `target`, a folder in the deploy folder that is
-			// empty for the loader's own mod types.
-			const std::string target = JsonExtractString(entry, "target");
-			const std::string relPath = JsonExtractString(entry, "relPath");
-			const std::string listed = NormalizePath(target.empty() ? relPath : target + "\\" + relPath);
+			const std::string listed = ListedPath(entry);
 			for (const std::string& path : paths)
 			{
 				if (listed != NormalizePath(path))
@@ -121,6 +129,55 @@ namespace VortexNotice
 			}
 		}
 		return false;
+	}
+
+	enum class Listing
+	{
+		NotListed,
+		Listed,
+		Unsure, // not in any manifest that could be read, and one could not
+	};
+
+	// What the deploy folder's manifests list, read once so that any number of
+	// files can be asked about.
+	struct Deployment
+	{
+		std::unordered_set<std::string> files; // ListedPath of every entry
+		bool unreadable = false;               // a manifest could not be read
+
+		// Did Vortex place one of `paths` (relative to the deploy folder, either
+		// slash, UTF-8)? A manifest that cannot be read does not count as "no":
+		// the answer is then Unsure, unless another manifest lists the path.
+		Listing Lists(const std::vector<std::string>& paths) const
+		{
+			for (const std::string& path : paths)
+				if (files.count(NormalizePath(path)))
+					return Listing::Listed;
+			return unreadable ? Listing::Unsure : Listing::NotListed;
+		}
+	};
+
+	inline Deployment ReadDeployment(const std::wstring& gameDir)
+	{
+		Deployment out;
+		WIN32_FIND_DATAW found{};
+		HANDLE search = FindFirstFileW((gameDir + L"\\vortex.deployment*.json").c_str(), &found);
+		if (search == INVALID_HANDLE_VALUE)
+		{
+			out.unreadable = GetLastError() != ERROR_FILE_NOT_FOUND;
+			return out;
+		}
+		do
+		{
+			const std::string manifest = ReadManifest(gameDir + L"\\" + found.cFileName);
+			if (manifest.empty())
+				out.unreadable = true;
+			else
+				for (const std::string& entry : JsonExtractObjectArray(manifest, "files"))
+					out.files.insert(ListedPath(entry));
+		} while (FindNextFileW(search, &found));
+		FindClose(search);
+		return out;
 	}
 
 	// Did replacing `paths` (relative to gameDir, either slash) replace a file

@@ -488,6 +488,8 @@ namespace ModConsole
             if (s.isWrongTarget)        state = "Wrong target";
             else if (s.hookScanFailed)  state = "Hooks failed";
             else if (s.isOutOfDate)     state = s.needsModLoaderUpdate ? "Needs loader" : "Needs update";
+            else if (s.isRemoved && !s.isLoaded) state = "Uninstalled";
+            else if (s.isDisabled && !s.isLoaded) state = "Disabled";
             else if (s.isCrashed)       state = "Crashed";
             else if (s.isLoaded)        state = loadedState;
 

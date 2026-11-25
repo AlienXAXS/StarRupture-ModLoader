@@ -14,12 +14,14 @@
 //   [ { "id": "codex", "name": "Codex", "author": "...", "version": "1.2.3",
 //       "summary": "...", "page_url": "https://github.com/...",
 //       "interface_version_min": 79, "tested_loader": "1.27.0",
-//       "readme_url": "https://raw.githubusercontent.com/..." }, ... ]
+//       "readme_url": "https://raw.githubusercontent.com/...",
+//       "requires": ["minimap"] }, ... ]
 // id, name and page_url are required; the rest may be left out. The file is
 // read as untrusted text: sizes are capped, control characters become spaces,
 // and an entry whose page_url is not on the allowlist is dropped, because the
 // Browse tab opens that address in the player's browser. A readme_url that is
-// not on its allowlist is dropped from the entry, not the entry.
+// not on its allowlist is dropped from the entry, not the entry. requires is
+// the ids of the plugins this one needs: strings only, never objects.
 // ---------------------------------------------------------------------------
 
 namespace ModIndex
@@ -34,6 +36,7 @@ namespace ModIndex
 	constexpr size_t kMaxTestedLoaderLen = 32;
 	constexpr size_t kMaxSummaryLen = 300;
 	constexpr size_t kMaxUrlLen     = 200;   // longer: the entry is dropped, never cut
+	constexpr size_t kMaxRequires   = 8;     // each cut at kMaxIdLen, as an id is
 
 	struct Entry
 	{
@@ -46,6 +49,7 @@ namespace ModIndex
 		std::string testedLoader;            // the ModLoader version the entry was last tried on; empty: not stated
 		std::string readmeUrl;               // empty, or passes IsAllowedReadmeUrl
 		int interfaceVersionMin = -1;        // -1: not stated
+		std::vector<std::string> requiredIds; // "requires": ids of the plugins this one needs
 	};
 
 	struct ParseResult
@@ -203,6 +207,12 @@ namespace ModIndex
 			e.interfaceVersionMin = detail::ReadInt(obj, "interface_version_min");
 			if (e.interfaceVersionMin < 0)
 				e.interfaceVersionMin = -1;
+			for (const std::string& item : JsonExtractStringArray(obj, "requires"))
+			{
+				std::string id = detail::Clean(item, kMaxIdLen);
+				if (!id.empty() && e.requiredIds.size() < kMaxRequires)
+					e.requiredIds.push_back(std::move(id));
+			}
 			result.entries.push_back(std::move(e));
 		}
 

@@ -271,13 +271,36 @@ splash have none. How a plugin declares these is in the SDK's `PluginDevelopment
 
 ### Browse tab <sup>[✦](#msantoro12)</sup>
 
-Lists plugins from the mod index. Each plugin is a card: its name, version and author, its summary, and
-a line with an **Installed** marker when a plugin of that name is loaded, the ModLoader version it was
-last tried on (when the index says), and an **Open page** button that opens the plugin's page (Nexus Mods
-or GitHub) in your browser. A plugin that needs a newer ModLoader than yours says so instead. The list is
+Turn plugins off, uninstall them or bring them back, and find new ones. It lists every plugin in the mod
+index plus the ones you have installed; installed plugins the index doesn't know come first, and stay
+listed if the index can't be downloaded. (A [Preload](#preload-plugins) plugin gets a card only if the
+index names it.)
+
+- **Disable** turns a plugin off, and it stays off after you restart the game. **Enable** turns it back on.
+- **Uninstall** asks first, then moves the plugin's DLL, and its `.json` and `.pdb` files if it has them,
+  into `ModLoader\Removed`. Your settings, save data and any subfolders stay where they are. The updater
+  doesn't bring the plugin back.
+- **Restore**, on the same card, puts the files back as they were: a plugin that was on comes back on, and
+  one you had disabled stays disabled.
+- If the same plugin is already installed under another file name, **Restore** is refused and the card says
+  which file it is: "A copy is already installed as X.dll, so the old one stays in ModLoader\Removed."
+  To get the old one back, uninstall that copy first.
+- If a plugin can't stop or start right away, the card says the change happens after you restart the game.
+  If a change fails, the card says that too.
+- **Vortex:** a plugin Vortex installed has no **Uninstall** button. Uninstall it in Vortex. You can still
+  disable it here. If the loader can't tell whether Vortex installed it, the button stays and the uninstall
+  prompt warns you.
+- If another installed, enabled plugin needs the one you're disabling or uninstalling, the tab warns you
+  first. It only knows what the mod index lists, so no warning doesn't prove nothing needs it.
+- A plugin with a comma or `..` in its file name can't be disabled.
+- On the Plugins tab, a plugin shows **Disabled** or **Uninstalled** and points you here.
+
+A card for a plugin in the index shows its name, version and author, its summary, the ModLoader version it
+was last tried on (when the index says), and an **Open page** button that opens the plugin's page (Nexus
+Mods or GitHub) in your browser. A plugin that needs a newer ModLoader than yours says so. The index is
 downloaded once, the first time you open the tab, and kept until the game closes. If the download fails,
-the tab says so and **Retry** tries again. The tab only lists plugins; it never downloads or installs one.
-The format of the index and how to add a plugin are in [`mod-index/README.md`](mod-index/README.md).
+the tab says so and **Retry** tries again. The tab never downloads or installs a plugin. The format of the
+index and how to add a plugin are in [`mod-index/README.md`](mod-index/README.md).
 
 A card whose plugin has a README shows a **README** button. It opens a page inside the window with the
 author's README from their GitHub repo, text and pictures; **Back** returns to the list. The page shows
@@ -1030,6 +1053,7 @@ these for you.
 | | `Theme` | empty | Empty is `Default`, unless the file has an old `[ThemeColors]` block: that is saved as the `Custom` theme. Set by **Active Theme** |
 | | `KeyboardNavigation` | `1` | `0` turns off Tab, arrow-key and Space or Enter navigation. Set by **Keyboard navigation** |
 | `[Plugins]` | `RestartCrashed` | `1` | `0` stops crashed plugins restarting on their own. Set by **Restart crashed plugins automatically** |
+| | `Disabled` | empty | Client only. Comma-separated plugin DLL names the loader does not load. Written by **Disable** and **Enable** on the [Browse tab](#browse-tab-) |
 | `[Images]` | `Preload` | `0` | `1` reads the picture sets that mods list in the background. Set by **Preload images from the game** |
 | `[Input]` | `SuppressKeybindsWhileTyping` | `1` | Keybinds ignore keys typed into a game text box |
 | `[Console]` | `OpenKey` | `Tilde` | |
@@ -1061,6 +1085,8 @@ Other files, all under `ModLoader\`:
 | `scan_cache.ini` | Pattern scan results for the current game exe, kept per ProductVersion, PE timestamp and image size. A file from an older loader is discarded and rebuilt on the first launch |
 | `image-cache\<folder>\` | Pictures saved by the [image library](#image-library) (`*.img`, with `names.lst` and `sets.lst`, the item names and preload sets they belong to), one folder per game build and pak set. **Clear image cache** empties it |
 | `Preload\.state` | Marks a preload plugin that did not finish loading |
+| `Removed\<plugin>\<time>\` | The files **Uninstall** moved out of `Plugins\`, with a `removed.ini` that **Restore** reads |
+| `plugin_manage.ini` | Each plugin's name, version and author by file name, so a disabled one still has a name. Not for editing |
 
 ---
 

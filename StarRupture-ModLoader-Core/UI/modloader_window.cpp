@@ -101,6 +101,20 @@ namespace UI::ModLoaderWindow
     };
     static RebindState s_rebind;
 
+    // The Browse tab's Disable or Uninstall prompt. Keyed by file name, not by
+    // card position.
+    struct BrowseConfirm
+    {
+        bool                     active      = false;
+        bool                     pendingOpen = false;
+        PluginManager::ManageOp  op          = PluginManager::ManageOp::Disable;
+        std::string              fileName;
+        std::string              name;
+        std::vector<std::string> neededBy;
+        bool                     vortexUnsure = false;
+    };
+    static BrowseConfirm s_confirm;
+
     // -----------------------------------------------------------------------
     // Helpers
     // -----------------------------------------------------------------------
@@ -542,12 +556,17 @@ namespace UI::ModLoaderWindow
                     }
                 }
                 else
-                    ImGui::TextDisabled("Unloaded");
+                    ImGui::TextDisabled(s.isRemoved ? "Uninstalled" : s.isDisabled ? "Disabled" : "Unloaded");
 
                 ImGui::TableSetColumnIndex(4);
                 ImGui::PushID(i);
 
-                if (s.isWrongTarget)
+                if (!s.isLoaded && (s.isDisabled || s.isRemoved))
+                {
+                    ImGui::TextDisabled(s.isRemoved ? "Restore it on the Browse tab"
+                                                    : "Enable it on the Browse tab");
+                }
+                else if (s.isWrongTarget)
                 {
                     ImGui::TextDisabled("You're either trying to load a Server plugin on the Client, or vice versa");
                 }
@@ -2328,56 +2347,388 @@ namespace UI::ModLoaderWindow
                             "you use Save/Save As under Theme, at the top of this tab.");
     }
 
-    // One card of the Browse list: the name with its version and author, the
-    // summary, then one line with the Installed marker, the ModLoader version the
-    // entry was last tried on and the Open page button.
-    static void DrawBrowseRow(const ModIndex::Entry& e, const std::vector<std::string>& loadedNames)
+    // One card of the Browse list: an index entry, an installed plugin, or both.
+    struct BrowseCard
+    {
+        const ModIndex::Entry*              entry  = nullptr; // null: not in the mod index
+        const PluginManager::ManagedPlugin* plugin = nullptr; // null: no files of it here
+        PluginManage::CardFacts             facts;
+        bool                                showFileName = false; // another card has this name
+    };
+
+    static std::string BrowseName(const BrowseCard& card)
+    {
+        if (card.plugin && !card.plugin->name.empty())
+            return card.plugin->name;
+        return card.entry ? card.entry->name : card.plugin->fileName;
+    }
+
+    // Whether an index entry describes this installed file: by the name it
+    // reports, or, when it never reported one, by its file name.
+    static bool EntryMatches(const ModIndex::Entry& entry, const PluginManager::ManagedPlugin& p)
+    {
+        const std::string name = !p.name.empty() ? p.name : p.fileName.substr(0, p.fileName.rfind('.'));
+        return ModIndex::IsInstalled(entry, { name });
+    }
+
+    // Every plugin the loader knows and every entry in the index: first the
+    // installed ones the index does not list, then the index in its own order.
+    static std::vector<BrowseCard> BuildBrowseCards(const std::vector<ModIndex::Entry>& entries,
+                                                    const PluginManager::ManageSnapshot& managed)
+    {
+        std::vector<const PluginManager::ManagedPlugin*> known;
+        for (const PluginManager::ManagedPlugin& p : managed.plugins)
+        {
+            const PluginManage::CardFacts& f = p.facts;
+            const bool failed = p.lastResult != PluginManager::ManageResult::None &&
+                                p.lastResult != PluginManager::ManageResult::Done;
+            if (f.inPlugins || f.running || f.hasBackup || f.working || failed)
+                known.push_back(&p);
+        }
+
+        std::vector<BrowseCard> cards;
+        for (const PluginManager::ManagedPlugin* p : known)
+        {
+            bool listed = false;
+            for (const ModIndex::Entry& e : entries)
+                listed = listed || EntryMatches(e, *p);
+            if (!listed)
+                cards.push_back({ nullptr, p, p->facts });
+        }
+
+        std::vector<bool> placed(known.size(), false);
+        for (const ModIndex::Entry& e : entries)
+        {
+            const bool preload = ModIndex::IsInstalled(e, managed.preloadNames);
+            bool any = false;
+            for (size_t i = 0; i < known.size(); ++i)
+            {
+                if (placed[i] || !EntryMatches(e, *known[i]))
+                    continue;
+                placed[i] = true;
+                any = true;
+                cards.push_back({ &e, known[i], known[i]->facts });
+                cards.back().facts.asPreload = preload;
+            }
+            if (!any)
+            {
+                cards.push_back({ &e, nullptr, {} });
+                cards.back().facts.asPreload = preload;
+            }
+        }
+
+        for (BrowseCard& card : cards)
+        {
+            if (!card.plugin)
+                continue;
+            const std::string name = BrowseName(card);
+            for (const BrowseCard& other : cards)
+                if (&other != &card && other.plugin && BrowseName(other) == name)
+                    card.showFileName = true;
+        }
+        return cards;
+    }
+
+    // The installed, enabled plugins whose index entry says they need this one.
+    static std::vector<std::string> BrowseNeededBy(const BrowseCard& target, const std::vector<BrowseCard>& cards)
+    {
+        const std::string id = target.entry ? target.entry->id : BrowseName(target);
+        std::vector<std::string> names;
+        for (const BrowseCard& card : cards)
+        {
+            if (&card == &target || !card.entry || !card.plugin ||
+                !card.facts.inPlugins || card.facts.listedDisabled)
+                continue;
+            for (const std::string& required : card.entry->requiredIds)
+                if (ModIndex::detail::EqualsNoCase(required, id))
+                {
+                    names.push_back(BrowseName(card));
+                    break;
+                }
+        }
+        return names;
+    }
+
+    static const char* const kVortexLine =
+        "Vortex installed this mod. Uninstall it in Vortex, or it may come back. You can still disable it here.";
+
+    // What to say about the last thing asked for this file; empty when the
+    // card's own state already says it.
+    static std::string BrowseResultText(const PluginManager::ManagedPlugin& p, const std::string& name)
+    {
+        using Op     = PluginManager::ManageOp;
+        using Result = PluginManager::ManageResult;
+        const std::string verb = p.lastOp == Op::Disable   ? "disable"
+                               : p.lastOp == Op::Enable    ? "enable"
+                               : p.lastOp == Op::Uninstall ? "uninstall"
+                                                           : "restore";
+        switch (p.lastResult)
+        {
+        case Result::None:
+        case Result::Done:
+            return {};
+        case Result::AfterRestart:
+            if (p.lastOp == Op::Disable)
+                return name + " can't stop right now. It will be off after you restart the game.";
+            if (p.lastOp == Op::Uninstall)
+                return "Moved. " + name + " keeps running until you restart the game.";
+            return "It will be on after you restart the game.";
+        case Result::NotReady:
+            return "Plugins are still starting. Try again in a moment.";
+        case Result::Vortex:
+            return kVortexLine;
+        case Result::AlreadyInstalled:
+            return p.message; // names the other file, when the loader knows it
+        case Result::SaveFailed:
+            return "Couldn't save the change. Nothing was changed.";
+        case Result::MoveFailed:
+            if (p.lastOp == Op::Uninstall)
+                return "Couldn't uninstall " + name +
+                       ". Nothing was changed. Close the game and try again, or delete it by hand.";
+            return "Couldn't " + verb + " " + name + ". Nothing was changed.";
+        case Result::RollbackFailed:
+            return std::string(p.lastOp == Op::Restore ? "Restore" : "Uninstall") +
+                   " only partly worked. Check ModLoader\\Plugins and ModLoader\\Removed.";
+        case Result::Failed:
+            break;
+        }
+        return "Couldn't " + verb + " " + name + (p.message.empty() ? ". See ModLoader.log." : ".");
+    }
+
+    static void DrawBrowseState(const PluginManage::Card& state, const BrowseCard& card)
+    {
+        using State = PluginManage::CardState;
+        const ImVec4 green(0.4f, 1.0f, 0.4f, 1.0f);
+        const ImVec4 orange(1.0f, 0.5f, 0.1f, 1.0f);
+        switch (state.state)
+        {
+        case State::NotInstalled:
+        case State::Working:
+            return;
+        case State::Running:
+            if (card.plugin && !card.plugin->version.empty())
+                ImGui::TextColored(green, "Installed v%s", card.plugin->version.c_str());
+            else
+                ImGui::TextColored(green, "Installed");
+            break;
+        case State::Preload:            ImGui::TextColored(green, "Installed");               break;
+        case State::NotRunning:         ImGui::TextColored(orange, "Installed, not running"); break;
+        case State::Disabled:           ImGui::TextDisabled("Disabled");                      break;
+        case State::DisablePending:     ImGui::TextColored(orange, "Off after restart");      break;
+        case State::EnablePending:      ImGui::TextColored(orange, "On after restart");       break;
+        case State::Uninstalled:        ImGui::TextDisabled("Uninstalled");                   break;
+        case State::UninstalledRunning: ImGui::TextColored(orange, "Gone after you restart"); break;
+        }
+        ImGui::SameLine();
+    }
+
+    static void AskBrowseConfirm(PluginManager::ManageOp op, const BrowseCard& card,
+                                 std::vector<std::string> neededBy)
+    {
+        s_confirm.active       = true;
+        s_confirm.pendingOpen  = true; // OpenPopup deferred: called from inside the table
+        s_confirm.op           = op;
+        s_confirm.fileName     = card.plugin->fileName;
+        s_confirm.name         = BrowseName(card);
+        s_confirm.neededBy     = std::move(neededBy);
+        s_confirm.vortexUnsure = card.plugin->vortexUnsure;
+    }
+
+    // The buttons PluginManage::DeriveCard allows for this card's state. Each
+    // is followed by SameLine, so the page buttons share the line.
+    static void DrawBrowseManageButtons(const PluginManage::Card& state, const BrowseCard& card,
+                                        const std::vector<BrowseCard>& cards)
+    {
+        using Op = PluginManager::ManageOp;
+        if (state.state == PluginManage::CardState::Working)
+        {
+            ImGui::BeginDisabled();
+            ImGui::Button("...");
+            ImGui::EndDisabled();
+            ImGui::SameLine();
+            return;
+        }
+        if (!card.plugin)
+            return;
+
+        if (state.buttons & PluginManage::kEnable)
+        {
+            if (ImGui::Button("Enable"))
+                PluginManager::RequestPluginChange(Op::Enable, card.plugin->fileName);
+            ImGui::SameLine();
+        }
+        if (state.buttons & PluginManage::kDisable)
+        {
+            ImGui::BeginDisabled(state.disableGreyed);
+            if (ImGui::Button("Disable"))
+            {
+                std::vector<std::string> neededBy = BrowseNeededBy(card, cards);
+                if (neededBy.empty())
+                    PluginManager::RequestPluginChange(Op::Disable, card.plugin->fileName);
+                else
+                    AskBrowseConfirm(Op::Disable, card, std::move(neededBy));
+            }
+            ImGui::EndDisabled();
+            if (state.disableGreyed && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+                ImGui::SetTooltip("A mod with a comma or two dots in a row in its file name can't be disabled.");
+            ImGui::SameLine();
+        }
+        if (state.buttons & PluginManage::kUninstall)
+        {
+            if (ImGui::Button("Uninstall"))
+                AskBrowseConfirm(Op::Uninstall, card, BrowseNeededBy(card, cards));
+            ImGui::SameLine();
+        }
+        if (state.buttons & PluginManage::kRestore)
+        {
+            if (ImGui::Button("Restore"))
+                PluginManager::RequestPluginChange(Op::Restore, card.plugin->fileName);
+            ImGui::SameLine();
+        }
+    }
+
+    // One card: the name with its version and author, the summary, then one line
+    // with the state, the ModLoader version the entry was last tried on and the
+    // buttons, then anything the player has to be told.
+    static void DrawBrowseRow(const BrowseCard& card, const std::vector<BrowseCard>& cards)
     {
         ImGui::TableNextRow();
         ImGui::TableSetColumnIndex(0);
 
-        ImGui::TextUnformatted(e.name.c_str());
-        if (!e.version.empty())
-        {
-            ImGui::SameLine();
-            ImGui::TextDisabled("%s", e.version.c_str());
-        }
-        if (!e.author.empty())
-        {
-            ImGui::SameLine();
-            ImGui::TextDisabled("by %s", e.author.c_str());
-        }
-        if (!e.summary.empty())
-            ImGui::TextWrapped("%s", e.summary.c_str());
+        const ModIndex::Entry* e = card.entry;
+        const std::string name = BrowseName(card);
+        const std::string& version = e ? e->version : card.plugin->version;
+        const std::string& author  = e ? e->author : card.plugin->author;
 
-        ImGui::AlignTextToFramePadding();
-        if (ModIndex::IsInstalled(e, loadedNames))
+        ImGui::TextUnformatted(e ? e->name.c_str() : name.c_str());
+        if (!version.empty())
         {
-            ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "Installed");
             ImGui::SameLine();
+            ImGui::TextDisabled("%s", version.c_str());
         }
-        if (e.interfaceVersionMin > PLUGIN_INTERFACE_VERSION_MAX)
+        if (!author.empty())
+        {
+            ImGui::SameLine();
+            ImGui::TextDisabled("by %s", author.c_str());
+        }
+        if (card.showFileName)
+        {
+            ImGui::SameLine();
+            ImGui::TextDisabled("(%s)", card.plugin->fileName.c_str());
+        }
+        if (e && !e->summary.empty())
+            ImGui::TextWrapped("%s", e->summary.c_str());
+
+        const PluginManage::Card state = PluginManage::DeriveCard(card.facts);
+        ImGui::AlignTextToFramePadding();
+        DrawBrowseState(state, card);
+        if (e && e->interfaceVersionMin > PLUGIN_INTERFACE_VERSION_MAX)
         {
             ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.1f, 1.0f), "Needs a newer ModLoader");
             ImGui::SameLine();
         }
-        else if (!e.testedLoader.empty())
+        else if (e && !e->testedLoader.empty())
         {
-            ImGui::TextDisabled("Tested on %s", e.testedLoader.c_str());
+            ImGui::TextDisabled("Tested on %s", e->testedLoader.c_str());
             ImGui::SameLine();
         }
-        if (ImGui::Button("Open page"))
-            OpenPage::Open(e.pageUrl);
-        if (!e.readmeUrl.empty())
+        DrawBrowseManageButtons(state, card, cards);
+        if (e)
         {
-            ImGui::SameLine();
-            if (ImGui::Button("README"))
-                UI::ReadmeView::Open(e);
+            if (ImGui::Button("Open page"))
+                OpenPage::Open(e->pageUrl);
+            if (!e->readmeUrl.empty())
+            {
+                ImGui::SameLine();
+                if (ImGui::Button("README"))
+                    UI::ReadmeView::Open(*e);
+            }
+        }
+        else
+            ImGui::NewLine(); // ends the line the state or last button left open
+
+        if (state.uninstallInVortex)
+            ImGui::TextWrapped("%s", kVortexLine);
+        if (card.plugin && state.state != PluginManage::CardState::Working &&
+            !(state.uninstallInVortex && card.plugin->lastResult == PluginManager::ManageResult::Vortex))
+        {
+            const std::string said = BrowseResultText(*card.plugin, name);
+            if (!said.empty())
+            {
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.5f, 0.1f, 1.0f));
+                ImGui::TextWrapped("%s", said.c_str());
+                ImGui::PopStyleColor();
+                // The reason, where the line above does not already give it. For
+                // the other results the loader's message says the same thing.
+                const bool hasReason = card.plugin->lastResult == PluginManager::ManageResult::AfterRestart ||
+                                       card.plugin->lastResult == PluginManager::ManageResult::Failed;
+                if (hasReason && !card.plugin->message.empty() && card.plugin->message != said)
+                    ImGui::TextWrapped("%s", card.plugin->message.c_str());
+            }
         }
     }
 
-    // The mod index, display only (auto_update/mod_index_fetcher.h). The list
-    // is downloaded once on a worker thread; this only reads what it published.
+    static void RenderBrowseConfirm()
+    {
+        if (!s_confirm.active)
+            return;
+
+        // OpenPopup must be called at the same ID-stack level as BeginPopupModal.
+        if (s_confirm.pendingOpen)
+        {
+            ImGui::OpenPopup("##browse_confirm");
+            s_confirm.pendingOpen = false;
+        }
+
+        const ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+        ImGui::SetNextWindowPos(center, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+        ImGui::SetNextWindowSize(ImVec2(440, 0), ImGuiCond_Always);
+
+        if (!ImGui::BeginPopupModal("##browse_confirm", nullptr,
+                                    ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoTitleBar))
+        {
+            s_confirm.active = false;
+            return;
+        }
+
+        const bool uninstall = s_confirm.op == PluginManager::ManageOp::Uninstall;
+        const char* name = s_confirm.name.c_str();
+        ImGui::TextWrapped("%s %s?", uninstall ? "Uninstall" : "Disable", name);
+        ImGui::Spacing();
+        for (const std::string& other : s_confirm.neededBy)
+            ImGui::TextWrapped("%s needs %s. Without it, %s may not work right.",
+                               other.c_str(), name, other.c_str());
+        if (uninstall)
+        {
+            ImGui::TextWrapped("This moves the mod's files to ModLoader\\Removed. Your settings and save data stay. "
+                               "You can restore it here.");
+            if (s_confirm.vortexUnsure)
+                ImGui::TextWrapped("If you use Vortex, uninstall it there instead, or it may come back.");
+        }
+        ImGui::Spacing();
+
+        const char* go = !uninstall ? "Disable anyway"
+                       : s_confirm.neededBy.empty() ? "Uninstall" : "Uninstall anyway";
+        bool close = false;
+        if (ImGui::Button(go))
+        {
+            PluginManager::RequestPluginChange(s_confirm.op, s_confirm.fileName);
+            close = true;
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel") || ImGui::IsKeyPressed(ImGuiKey_Escape, false))
+            close = true;
+        if (close)
+        {
+            s_confirm.active = false;
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+    }
+
+    // The mod index (auto_update/mod_index_fetcher.h) and the installed plugins.
+    // The index is downloaded once on a worker thread and the plugin snapshot is
+    // a copy of what the loader holds in memory: this only reads the two.
     static void RenderBrowseTab()
     {
         if (UI::ReadmeView::IsOpen())
@@ -2388,49 +2739,46 @@ namespace UI::ModLoaderWindow
 
         ImGui::Spacing();
         ImGui::SeparatorText("Browse");
-        ImGui::TextDisabled("Plugins that work with the ModLoader. Open a page to download one.");
+        ImGui::TextDisabled("Manage your installed plugins here. To get a new one, open its page and download it.");
         ImGui::Spacing();
 
         ModIndex::Fetcher& index = ModIndex::Instance();
         const std::shared_ptr<const ModIndex::Snapshot> snap = index.Get();
 
+        // The installed plugins are listed below whatever the index is doing.
+        static const std::vector<ModIndex::Entry> noEntries;
+        const std::vector<ModIndex::Entry>* entries = &noEntries;
         switch (snap->state)
         {
         case ModIndex::State::Idle:
             index.RequestFirstLoad();
             ImGui::TextDisabled("Loading...");
-            return;
+            break;
         case ModIndex::State::Loading:
             ImGui::TextDisabled("Loading...");
-            return;
+            break;
         case ModIndex::State::Failed:
             ImGui::TextUnformatted(snap->error.c_str());
             if (ImGui::Button("Retry"))
                 index.Retry();
-            return;
+            break;
         case ModIndex::State::Ready:
+            entries = &snap->entries;
+            if (snap->entries.empty())
+            {
+                ImGui::TextUnformatted("The mod list is empty right now.");
+                if (ImGui::Button("Retry"))
+                    index.Retry();
+            }
+            if (snap->skipped > 0)
+                ImGui::TextDisabled("%d entries in the list were left out because they could not be read.", snap->skipped);
+            if (snap->truncated)
+                ImGui::TextDisabled("The list is long, so not every plugin is shown.");
             break;
         }
 
-        if (snap->entries.empty())
-        {
-            ImGui::TextUnformatted("The mod list is empty right now.");
-            if (ImGui::Button("Retry"))
-                index.Retry();
-            return;
-        }
-
-        if (snap->skipped > 0)
-            ImGui::TextDisabled("%d entries in the list were left out because they could not be read.", snap->skipped);
-        if (snap->truncated)
-            ImGui::TextDisabled("The list is long, so not every plugin is shown.");
-
-        std::vector<std::string> loadedNames;
-        static const PluginInfo* infos[64];
-        const int loadedTotal = PluginManager::GetLoadedPluginInfos(infos, 64);
-        const int loadedCount = loadedTotal < 64 ? loadedTotal : 64;
-        for (int i = 0; i < loadedCount; ++i)
-            loadedNames.emplace_back(infos[i]->name ? infos[i]->name : "");
+        const PluginManager::ManageSnapshot managed = PluginManager::GetManageSnapshot();
+        const std::vector<BrowseCard> cards = BuildBrowseCards(*entries, managed);
 
         ImGuiTableFlags tableFlags =
             ImGuiTableFlags_Borders |
@@ -2439,18 +2787,20 @@ namespace UI::ModLoaderWindow
             ImGuiTableFlags_Resizable |
             ImGuiTableFlags_SizingStretchProp;
 
-        if (ImGui::BeginTable("##browse", 1, tableFlags))
+        if (!cards.empty() && ImGui::BeginTable("##browse", 1, tableFlags))
         {
             ImGui::TableSetupColumn("Plugin", ImGuiTableColumnFlags_WidthStretch);
 
-            for (size_t i = 0; i < snap->entries.size(); ++i)
+            for (size_t i = 0; i < cards.size(); ++i)
             {
-                ImGui::PushID(static_cast<int>(i));
-                DrawBrowseRow(snap->entries[i], loadedNames);
+                ImGui::PushID(cards[i].plugin ? cards[i].plugin->fileName.c_str() : cards[i].entry->id.c_str());
+                DrawBrowseRow(cards[i], cards);
                 ImGui::PopID();
             }
             ImGui::EndTable();
         }
+
+        RenderBrowseConfirm();
     }
 
     static void RenderAboutTab()
@@ -2571,7 +2921,7 @@ namespace UI::ModLoaderWindow
         // that just cancelled a capture also close the window -- this keeps
         // that check looking at whether a capture was active when the frame
         // started, not whether one is still active by the time it finishes.
-        const bool wasCapturingThisFrame = s_rebind.active;
+        const bool wasCapturingThisFrame = s_rebind.active || s_confirm.active;
 
         static const char* s_tabIcons[kTabCount] =
         {
@@ -2644,6 +2994,8 @@ namespace UI::ModLoaderWindow
         case kTabAbout:    RenderAboutTab();          break;
         default: break;
         }
+        if (s_activeTab != kTabBrowse)
+            s_confirm.active = false;
         ImGui::EndChild();
 
         // Escape closes the window whenever it's open -- deliberately not

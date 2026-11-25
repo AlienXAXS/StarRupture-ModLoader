@@ -309,6 +309,9 @@
     <ClInclude Include="plugins\plugin_manager.h">
       <Filter>Source Files\plugins</Filter>
     </ClInclude>
+    <ClInclude Include="plugins\plugin_manage.h">
+      <Filter>Source Files\plugins</Filter>
+    </ClInclude>
     <ClInclude Include="plugins\reload_policy.h">
       <Filter>Source Files\plugins</Filter>
     </ClInclude>

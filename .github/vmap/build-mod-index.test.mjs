@@ -74,6 +74,26 @@ test('a readme_url is optional, and when present is https on raw.githubuserconte
   assert.match(outcome(() => build([entry({ readme_url: 'http://raw.githubusercontent.com/a' })])), /^refused: .*readme_url/);
 });
 
+test('requires is optional, and when present is a short list of short ids, strings only', () => {
+  const ok = (requires) => assert.equal(outcome(() => build([entry({ requires })])), 'ok', JSON.stringify(requires));
+  const no = (requires) => assert.match(outcome(() => build([entry({ requires })])), /^refused: .*requires must be at most 8 ids/, JSON.stringify(requires));
+  ok([]);
+  ok(['minimap']);
+  ok(Array.from({ length: 8 }, (_, i) => `p${i}`));
+  ok(['x'.repeat(64)]);
+  no(Array.from({ length: 9 }, (_, i) => `p${i}`));
+  no(['x'.repeat(65)]);
+  no(['é'.repeat(33)]);
+  no('minimap');
+  no(null);
+  no({ id: 'minimap' });
+  no([{ id: 'minimap' }]);
+  no([['minimap']]);
+  no([5]);
+  no(['']);
+  no(['  ']);
+});
+
 test('the index in the repository builds, and the command line writes the file', () => {
   const dir = mkdtempSync(join(tmpdir(), 'build-mod-index-'));
   const out = join(dir, 'mod-index.txt');
