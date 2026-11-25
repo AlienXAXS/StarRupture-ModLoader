@@ -2415,7 +2415,7 @@ int main()
 	checkIndex(Real::VersionMap::kFields, Real::VersionMap::kFieldRows, "field");
 	Check(wrong == 0, "every real map row has its registry row's kind and fp");
 
-	// Best Builder's heat-gate site: the hand rows for the two builds proven on disk carry the fingerprint of the
+	// Best Builder's heat-gate site: the rows for the builds with an exe on disk carry the fingerprint of the
 	// plugin's own PluginMap::Site request (kind IN_FUNCTION, resultOffset 43, no follow), and the key resolves to
 	// each row on its build.
 	{
@@ -2425,7 +2425,7 @@ int main()
 			"E8 ?? ?? ?? ?? 48 85 C0 74 05 0F 2F 30 72 ?? 48 8B 07 48 8B CF FF 90 00 08 00 00";
 		const uint32_t expectedFp = VersionMap::Fingerprint(static_cast<int>(Kind::InFunction), pattern, 43, -1, -1, 0);
 		struct HeatGate { uint32_t cl, rva; };
-		const HeatGate expected[] = { { 129402, 0x07646F10 }, { 130045, 0x07648FC0 } };
+		const HeatGate expected[] = { { 127004, 0x075F3100 }, { 128786, 0x076461A0 }, { 129402, 0x07646F10 }, { 130045, 0x07648FC0 } };
 		VersionMap::MapData data;
 		int found = 0;
 		for (const Real::VersionMap::Index& index : Real::VersionMap::kFunctions)
@@ -2445,7 +2445,7 @@ int main()
 						&& strcmp(row.pattern, pattern) == 0 && row.resultOffset == 43 && row.followRel32At == -1 && row.followRipDispAt == -1,
 						"heat gate row: kind, fingerprint, pattern and offset are the plugin's request");
 				}
-		Check(found == 2, "heat gate: one row each for CL-129402 and CL-130045");
+		Check(found == 4, "heat gate: one row each for CL-127004, CL-128786, CL-129402 and CL-130045");
 		VersionMap::SetActiveMap(std::make_shared<const VersionMap::MapData>(data));
 		for (const HeatGate& e : expected)
 		{
