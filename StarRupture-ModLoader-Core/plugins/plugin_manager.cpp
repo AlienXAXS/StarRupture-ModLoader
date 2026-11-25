@@ -396,7 +396,7 @@ namespace PluginManager
 
 	// What the plugin list and the console say, in place of the buttons and as
 	// the refusal, while a plugin is inside its PluginShutdown (isUnloading).
-	static constexpr const char* kUnloadingNow = "This plugin is being unloaded right now";
+	static constexpr const char* kUnloadingNow = "This plugin is being unloaded right now.";
 
 	// A record with no code, its plugin turned off or uninstalled. A
 	// name lookup passes over it while another record has the name.
