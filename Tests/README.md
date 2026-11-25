@@ -713,7 +713,7 @@ build\tests\mod_index_tests.exe
 ```
 
 It prints one line per failed check and a total, and exits 0 when every check passes. The last run was
-`583 checks, 0 failed`.
+`585 checks, 0 failed`.
 
 The mod index builder has its own tests (`node --test .github/vmap/build-mod-index.test.mjs`, 14 of 14): the
 install fields it accepts and refuses, exactly one plugin `.dll` in `install_files`, an install field that is
