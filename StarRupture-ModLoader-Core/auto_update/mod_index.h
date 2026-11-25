@@ -210,7 +210,8 @@ namespace ModIndex
 				&& PluginManage::IsPluginDllName(std::wstring(name.begin(), name.end()));
 		}
 
-		inline std::vector<std::string> SplitPath(const std::string& s)
+		// Every piece of a URL split on '/', empty ones included, so the count is exact.
+		inline std::vector<std::string> SplitSegments(const std::string& s)
 		{
 			std::vector<std::string> parts;
 			size_t start = 0;
@@ -232,7 +233,7 @@ namespace ModIndex
 		static const std::string kStart = "https://github.com/";
 		if (url.size() > kMaxUrlLen || url.compare(0, kStart.size(), kStart) != 0)
 			return false;
-		const std::vector<std::string> p = detail::SplitPath(url.substr(kStart.size()));
+		const std::vector<std::string> p = detail::SplitSegments(url.substr(kStart.size()));
 		if (p.size() != 6 || p[2] != "releases" || p[3] != "download")
 			return false;
 		for (const std::string& part : p)
@@ -257,8 +258,8 @@ namespace ModIndex
 				return {};
 			info.size = static_cast<size_t>(size);
 
-			const std::vector<std::string> page = SplitPath(pageUrl);   // https: "" host owner repo ...
-			const std::vector<std::string> from = SplitPath(info.url);
+			const std::vector<std::string> page = SplitSegments(pageUrl);   // https: "" host owner repo ...
+			const std::vector<std::string> from = SplitSegments(info.url);
 			if (page.size() < 5 || !EqualsNoCase(page[2], "github.com")
 				|| !EqualsNoCase(page[3], from[3]) || !EqualsNoCase(page[4], from[4]))
 				return {};
