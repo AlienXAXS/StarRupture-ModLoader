@@ -2979,8 +2979,8 @@ namespace PluginManager
 	std::string InstallBlockedReason(const ModIndex::Entry& entry, const std::vector<ModIndex::Entry>& list,
 		const ManageSnapshot& managed)
 	{
-		// A server-only plugin never has one.
-		if (!ModIndex::detail::IsInstallDllName(entry.install.dllFile))
+		// A server-only plugin is never installed on a PC, whatever install fields it has.
+		if (entry.serverOnly || !ModIndex::detail::IsInstallDllName(entry.install.dllFile))
 			return "This mod can't be installed from here. Open its page.";
 		if (entry.interfaceVersionMin > PLUGIN_INTERFACE_VERSION_MAX)
 			return "Needs a newer ModLoader.";

@@ -369,7 +369,9 @@ namespace ModIndex
 				if (!id.empty() && e.requiredIds.size() < kMaxRequires)
 					e.requiredIds.push_back(std::move(id));
 			}
-			e.install = detail::ReadInstall(obj, e.pageUrl);
+			// A server plugin is never installed on a PC, whatever else the entry says.
+			if (!e.serverOnly)
+				e.install = detail::ReadInstall(obj, e.pageUrl);
 			result.entries.push_back(std::move(e));
 		}
 
