@@ -953,6 +953,13 @@ namespace
 	}
 }
 
+bool ModIndex::PlayersOwnUrl()
+{
+	bool playersOwn = false;
+	ModIndexUrl(playersOwn);
+	return playersOwn;
+}
+
 ModIndex::Fetcher& ModIndex::Instance()
 {
 	static Fetcher fetcher = []

@@ -3,11 +3,15 @@
 // DLLs. Each game start is a process of its own, so a restart is a real one.
 #include "plugins/plugin_manager.h"
 #include "plugins/plugin_manage.h"
+#include "auto_update/auto_updater.h"
+#include "auto_update/mod_install.h"
+#include "utils/sha256.h"
 #include "manager_tests.h"
 
 #undef MoveFileExW
 
 #include <algorithm>
+#include <atomic>
 #include <cstdio>
 #include <fstream>
 #include <iterator>
@@ -409,6 +413,143 @@ namespace
 		Ask(ManageOp::Uninstall, "B.dll", ManageResult::Done, "uninstall a plugin Vortex does not list");
 	}
 
+	// ---- Browse install -------------------------------------------------------
+
+	// What the installer's one GET gets, and how often it was asked.
+	ModInstall::Hop g_answer;
+	std::atomic<int> g_hopCalls{ 0 };
+
+	ModIndex::Entry InstallEntry(const char* stem, const char* version, const std::string& bytes)
+	{
+		ModIndex::Entry entry;
+		entry.id = entry.name = stem;
+		entry.version = version;
+		entry.install.dllFile = std::string(stem) + ".dll";
+		entry.install.url = "https://github.com/owner/repo/releases/download/v1/" + entry.install.dllFile;
+		entry.install.sha256 = Sha256::OfBytes(bytes);
+		entry.install.size = bytes.size();
+		return entry;
+	}
+
+	// The card's own result, once the install has ended.
+	ManagedPlugin InstallAndWait(const ModIndex::Entry& entry, const std::vector<ModIndex::Entry>& list,
+		bool listSigned, ModInstall::Installer& installer)
+	{
+		RequestPluginInstall(entry, list, listSigned, installer);
+		for (int i = 0; i < 500 && Card(entry.install.dllFile).facts.working; ++i)
+			Sleep(20);
+		const ManagedPlugin card = Card(entry.install.dllFile);
+		printf("  [%s] install %s -> result %d %s\n", g_step.c_str(), entry.install.dllFile.c_str(),
+			static_cast<int>(card.lastResult), card.message.c_str());
+		Expect(!card.facts.working && !GetManageSnapshot().installing, "the install has ended");
+		Expect(card.lastOp == ManageOp::Install, "the card shows an install");
+		return card;
+	}
+
+	// Files in Plugins whose name starts with `stem`, and any install temp file.
+	int Leftovers(const wchar_t* stem)
+	{
+		int found = 0;
+		WIN32_FIND_DATAW data{};
+		const HANDLE search = FindFirstFileW((PluginsDir() + L"\\*").c_str(), &data);
+		if (search == INVALID_HANDLE_VALUE)
+			return 0;
+		do
+		{
+			const std::wstring name = data.cFileName;
+			if (name.rfind(stem, 0) == 0 || name.find(L".install.tmp") != std::wstring::npos)
+				++found;
+		} while (FindNextFileW(search, &data));
+		FindClose(search);
+		return found;
+	}
+
+	std::string StoredVersion(const wchar_t* file)
+	{
+		wchar_t value[64]{};
+		GetPrivateProfileStringW(L"PluginVersions", file, L"", value, 64,
+			(ExeFolder() + L"ModLoader\\update_state.ini").c_str());
+		return std::string(value, value + wcslen(value));
+	}
+
+	void Installing()
+	{
+		const std::string bytes = Bytes(ExeFolder() + L"manage_test_plugin.dll");
+		g_answer = { 200, "", bytes };
+		ModInstall::Installer installer([](const std::string&, size_t, unsigned, const std::atomic<bool>&)
+		{
+			++g_hopCalls;
+			return g_answer;
+		});
+		const std::wstring ini = ExeFolder() + L"ModLoader\\modloader.ini";
+
+		// A list that is not signed installs nothing, unless the player chose it.
+		const ModIndex::Entry fresh = InstallEntry("Fresh", "1.0.0", bytes);
+		ManagedPlugin card = InstallAndWait(fresh, { fresh }, false, installer);
+		Expect(card.lastResult == ManageResult::Failed && card.message.find("isn't signed") != std::string::npos &&
+			g_hopCalls == 0 && !Installed(L"Fresh.dll"), "an unsigned list from the default address is refused");
+
+		// A plugin that is already there.
+		const ModIndex::Entry same = InstallEntry("A", "9.9.9", bytes);
+		card = InstallAndWait(same, { same }, true, installer);
+		Expect(card.lastResult == ManageResult::Failed && !card.message.empty() && g_hopCalls == 0,
+			"an existing A.dll is refused before any download");
+		ExpectCard("A.dll", CardState::Running, "an existing A.dll is refused");
+
+		// Requirements.
+		ModIndex::Entry needs = InstallEntry("Needs", "1.0.0", bytes);
+		needs.requiredIds = { "ghost" };
+		card = InstallAndWait(needs, { needs }, true, installer);
+		Expect(card.lastResult == ManageResult::Failed && card.message.find("ghost") != std::string::npos &&
+			g_hopCalls == 0 && !Installed(L"Needs.dll"), "a missing requirement is named and nothing is fetched");
+
+		Ask(ManageOp::Disable, "B.dll", ManageResult::Done, "disable B");
+		needs.requiredIds = { "B" };
+		const ModIndex::Entry b = InstallEntry("B", "1.0.0", bytes);
+		card = InstallAndWait(needs, { needs, b }, true, installer);
+		Expect(card.lastResult == ManageResult::Failed && card.message.find("B") != std::string::npos &&
+			g_hopCalls == 0 && !Installed(L"Needs.dll"), "a disabled requirement is refused");
+		Ask(ManageOp::Enable, "B.dll", ManageResult::Done, "enable B");
+
+		// A download that fails leaves nothing.
+		ModIndex::Entry wrong = InstallEntry("Wrong", "1.0.0", bytes);
+		wrong.install.sha256 = Sha256::OfBytes("something else");
+		card = InstallAndWait(wrong, { wrong }, true, installer);
+		Expect(card.lastResult == ManageResult::Failed && !card.message.empty() && g_hopCalls == 1 &&
+			Leftovers(L"Wrong") == 0, "a bad hash leaves nothing and says why");
+
+		g_answer = {};
+		g_hopCalls = 0;
+		const ModIndex::Entry silent = InstallEntry("Silent", "1.0.0", bytes);
+		card = InstallAndWait(silent, { silent }, true, installer);
+		Expect(card.lastResult == ManageResult::Failed && !card.message.empty() && g_hopCalls == 1 &&
+			Leftovers(L"Silent") == 0, "a hop with no answer leaves nothing and says why");
+		g_answer = { 200, "", bytes };
+
+		// Live load: A was uninstalled and is on the disabled list, with a newer version on record.
+		Ask(ManageOp::Uninstall, "A.dll", ManageResult::Done, "uninstall A");
+		Expect(PluginManage::SaveDisabled(ini, L"A.dll", true) == PluginManage::SaveResult::Ok, "A is disabled");
+		SetInstalledPluginVersion(L"A.dll", "99.0.0");
+		const int inits = Count("init A");
+		card = InstallAndWait(same, { same }, true, installer);
+		Expect(card.lastResult == ManageResult::Done && card.listSigned, "install A: loaded now");
+		ExpectCard("A.dll", CardState::Running, "install A");
+		Expect(Installed(L"A.dll") && Count("init A") == inits + 1, "install A: its code started");
+		Expect(StoredVersion(L"A.dll") == "9.9.9", "install A: the stored version is the entry's, not 99.0.0");
+		Expect(!Card("A.dll").facts.listedDisabled, "install A: no longer disabled");
+
+		// Restart: StuckC's old code is still mapped. The player's own list installs.
+		Ask(ManageOp::Uninstall, "StuckC.dll", ManageResult::AfterRestart, "uninstall StuckC");
+		Expect(WritePrivateProfileStringW(L"AutoUpdate", L"ModIndexUrl", L"https://example.test/index.json",
+			ini.c_str()) != 0, "the player sets ModIndexUrl");
+		const ModIndex::Entry stuck = InstallEntry("StuckC", "1.0.0", bytes);
+		const int attaches = Count("attach StuckC");
+		card = InstallAndWait(stuck, { stuck }, false, installer);
+		Expect(card.lastResult == ManageResult::AfterRestart && !card.listSigned, "install StuckC: waits for a restart");
+		Expect(Installed(L"StuckC.dll") && Count("attach StuckC") == attaches, "install StuckC: files in, code not loaded twice");
+		installer.Shutdown(2000);
+	}
+
 	struct Step { const char* name; void (*run)(); };
 	const Step kSteps[] = {
 		{ "disable", Disabling }, { "still-disabled", StillDisabled }, { "uninstall", Uninstalling },
@@ -417,6 +558,7 @@ namespace
 		{ "rollback-dll-back", RollbackPutsDllBack }, { "rollback-dll-back-restart", RestoreAfterSecondUninstall },
 		{ "restore-disabled", RestoringDisabled }, { "restored-stays-disabled", RestoredStaysDisabled },
 		{ "copied-back", CopiedBack }, { "duplicate-name", RestoreBesideACopy }, { "vortex", VortexDeployed },
+		{ "install", Installing },
 	};
 
 	struct Game
@@ -497,6 +639,7 @@ void RunManagerTests(const std::wstring& root, int& checks, int& failures)
 		{ { L"A", L"StuckC" }, { L"copied-back" } },
 		{ { L"A" }, { L"duplicate-name" } },
 		{ { L"A", L"B" }, { L"vortex" } },
+		{ { L"A", L"B", L"StuckC" }, { L"install" } },
 	};
 
 	wchar_t self[MAX_PATH]{};

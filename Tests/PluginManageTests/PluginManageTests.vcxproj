@@ -108,6 +108,7 @@
   <ItemGroup Label="Loader sources under test">
     <ClCompile Include="$(CoreDir)plugins\plugin_manager.cpp" />
     <ClCompile Include="$(CoreDir)plugins\plugin_guard.cpp" />
+    <ClCompile Include="$(CoreDir)auto_update\mod_install.cpp" />
     <ClCompile Include="$(CoreDir)plugins\plugin_watchdog.cpp" />
   </ItemGroup>
   <!-- The DLL the manager steps load, built into the same folder. -->

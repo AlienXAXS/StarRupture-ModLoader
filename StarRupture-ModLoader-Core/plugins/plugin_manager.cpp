@@ -16,6 +16,7 @@
 #include "plugins/declared_features_text.h"
 #include "plugins/plugin_catalog.h"
 #include "auto_update/auto_updater.h"
+#include "auto_update/mod_index_fetcher.h"
 #include "plugins/plugin_watchdog.h"
 #include "utils/game_thread_dispatch.h"
 #include "plugins/reload_policy.h"
@@ -3065,8 +3066,11 @@ namespace PluginManager
 		const std::wstring file = Widen(entry.install.dllFile);
 		if (!g_managerInitialized || !ModIndex::detail::IsInstallDllName(entry.install.dllFile)) return;
 
+		// Only a signed list, or one the player chose in modloader.ini, may install.
 		std::string why = g_startupComplete ? InstallBlockedReason(entry, list, GetManageSnapshot())
 		                                    : "The plugins are still starting.";
+		if (why.empty() && !listSigned && !ModIndex::PlayersOwnUrl())
+			why = "This list isn't signed, so nothing can be installed from it.";
 
 		EnterCriticalSection(&g_pluginLock);
 		ManageState& state = s_manageStates[LowerCase(file)];
