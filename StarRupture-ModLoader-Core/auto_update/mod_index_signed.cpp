@@ -141,7 +141,11 @@ namespace ModIndex
 			if (!IsEnvelope(file))
 				return file;
 			Envelope envelope;
-			return ReadEnvelope(file, source.keys, envelope, error) ? envelope.body : std::string();
+			if (!ReadEnvelope(file, source.keys, envelope, error))
+				return {};
+			if (source.bodySigned)
+				*source.bodySigned = true;
+			return envelope.body;
 		}
 	}
 
@@ -149,7 +153,15 @@ namespace ModIndex
 	{
 		return [source = std::move(source)](const std::string& url, std::string& error)
 		{
-			return source.signedOnly ? FetchSigned(source, url, error) : FetchAsServed(source, url, error);
+			if (source.bodySigned)
+				*source.bodySigned = false;
+			if (!source.signedOnly)
+				return FetchAsServed(source, url, error);
+			// Every body from this address, fetched or saved, has been verified.
+			std::string body = FetchSigned(source, url, error);
+			if (source.bodySigned)
+				*source.bodySigned = !body.empty();
+			return body;
 		};
 	}
 }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "auto_update/json_extract.h"
+#include "plugins/plugin_manage.h"
 
 #include <cstddef>
 #include <string>
@@ -22,6 +23,13 @@
 // Browse tab opens that address in the player's browser. A readme_url that is
 // not on its allowlist is dropped from the entry, not the entry. requires is
 // the ids of the plugins this one needs: strings only, never objects.
+//
+// An entry the Browse tab may install also has download_url (the .dll asset of a
+// GitHub release of page_url's repository), download_sha256 (64 lowercase hex),
+// download_size (bytes), install_files (the .dll name to write and, for
+// auto-updates, the same name with .json) and, exactly when the .json is listed,
+// update_manifest_url. One of them missing or wrong: the entry is still listed,
+// with nothing to install.
 // ---------------------------------------------------------------------------
 
 namespace ModIndex
@@ -37,9 +45,21 @@ namespace ModIndex
 	constexpr size_t kMaxSummaryLen = 300;
 	constexpr size_t kMaxUrlLen     = 200;   // longer: the entry is dropped, never cut
 	constexpr size_t kMaxRequires   = 8;     // each cut at kMaxIdLen, as an id is
+	constexpr int    kMaxDownloadBytes = 32 * 1024 * 1024;
+
+	// What installing an entry downloads and writes. dllFile empty: nothing.
+	struct InstallInfo
+	{
+		std::string url;
+		std::string sha256;
+		size_t size = 0;
+		std::string dllFile;      // a bare ASCII plugin DLL name
+		std::string manifestUrl;  // empty: no .json is written beside the DLL
+	};
 
 	struct Entry
 	{
+		InstallInfo install;
 		std::string id;
 		std::string name;
 		std::string author;
@@ -151,6 +171,131 @@ namespace ModIndex
 		return detail::IsAllowedUrl(url, kHosts);
 	}
 
+	namespace detail
+	{
+		// ASCII letters, digits, '_', '.', '-', with no "..": nothing a URL
+		// reads differently (no '%', '?', '#') and nothing a path does.
+		inline bool IsPlainSegment(const std::string& s)
+		{
+			if (s.empty() || s == "." || s.find("..") != std::string::npos)
+				return false;
+			for (char c : s)
+				if (!((Lower(c) >= 'a' && Lower(c) <= 'z') || (c >= '0' && c <= '9') || c == '_' || c == '.' || c == '-'))
+					return false;
+			return true;
+		}
+
+		inline bool EndsWithNoCase(const std::string& s, const std::string& tail)
+		{
+			return s.size() >= tail.size() && EqualsNoCase(s.substr(s.size() - tail.size()), tail);
+		}
+
+		// A device name stays one with any extension.
+		inline bool IsDeviceName(const std::string& file)
+		{
+			std::string base = file.substr(0, file.find('.'));
+			for (char& c : base)
+				c = Lower(c);
+			if (base == "con" || base == "prn" || base == "aux" || base == "nul")
+				return true;
+			return base.size() == 4 && (base.compare(0, 3, "com") == 0 || base.compare(0, 3, "lpt") == 0)
+				&& base[3] >= '0' && base[3] <= '9';
+		}
+
+		// A file name the index may have the loader write or download as a plugin.
+		inline bool IsInstallDllName(const std::string& name)
+		{
+			return name.size() <= 80 && IsPlainSegment(name) && name.front() != '.' && !IsDeviceName(name)
+				&& !EndsWithNoCase(name, "-Server.dll")
+				&& PluginManage::IsPluginDllName(std::wstring(name.begin(), name.end()));
+		}
+
+		inline std::vector<std::string> SplitPath(const std::string& s)
+		{
+			std::vector<std::string> parts;
+			size_t start = 0;
+			for (;;)
+			{
+				const size_t slash = s.find('/', start);
+				parts.push_back(s.substr(start, slash == std::string::npos ? std::string::npos : slash - start));
+				if (slash == std::string::npos)
+					return parts;
+				start = slash + 1;
+			}
+		}
+	}
+
+	// The only address a download may start at:
+	// https://github.com/<owner>/<repo>/releases/download/<tag>/<name>.dll
+	inline bool IsReleaseAssetUrl(const std::string& url)
+	{
+		static const std::string kStart = "https://github.com/";
+		if (url.size() > kMaxUrlLen || url.compare(0, kStart.size(), kStart) != 0)
+			return false;
+		const std::vector<std::string> p = detail::SplitPath(url.substr(kStart.size()));
+		if (p.size() != 6 || p[2] != "releases" || p[3] != "download")
+			return false;
+		for (const std::string& part : p)
+			if (!detail::IsPlainSegment(part))
+				return false;
+		return detail::IsInstallDllName(p[5]);
+	}
+
+	namespace detail
+	{
+		// The entry's install fields, or none when any of them is missing or wrong.
+		// The download and the manifest must belong to page_url's repository.
+		inline InstallInfo ReadInstall(const std::string& obj, const std::string& pageUrl)
+		{
+			InstallInfo info;
+			info.url    = JsonExtractDecodedString(obj, "download_url");
+			info.sha256 = JsonExtractDecodedString(obj, "download_sha256");
+			const int size = ReadInt(obj, "download_size");
+			if (!IsReleaseAssetUrl(info.url) || info.sha256.size() != 64
+				|| info.sha256.find_first_not_of("0123456789abcdef") != std::string::npos
+				|| size < 1 || size > kMaxDownloadBytes)
+				return {};
+			info.size = static_cast<size_t>(size);
+
+			const std::vector<std::string> page = SplitPath(pageUrl);   // https: "" host owner repo ...
+			const std::vector<std::string> from = SplitPath(info.url);
+			if (page.size() < 5 || !EqualsNoCase(page[2], "github.com")
+				|| !EqualsNoCase(page[3], from[3]) || !EqualsNoCase(page[4], from[4]))
+				return {};
+
+			const std::vector<std::string> files = JsonExtractStringArray(obj, "install_files");
+			if (files.empty() || files.size() > 2)
+				return {};
+			std::string json;
+			for (const std::string& file : files)
+			{
+				if (IsInstallDllName(file) && info.dllFile.empty())
+					info.dllFile = file;
+				else if (json.empty() && EndsWithNoCase(file, ".json"))
+					json = file;
+				else
+					return {};
+			}
+			if (info.dllFile.empty() || (!json.empty() && !EqualsNoCase(json, info.dllFile.substr(0, info.dllFile.size() - 4) + ".json")))
+				return {};
+
+			info.manifestUrl = JsonExtractDecodedString(obj, "update_manifest_url");
+			if (info.manifestUrl.empty() != json.empty())
+				return {};
+			if (!json.empty())
+			{
+				const std::string start = "https://github.com/" + from[3] + "/" + from[4] + "/releases/latest/download/";
+				if (info.manifestUrl.size() > kMaxUrlLen || info.manifestUrl.size() <= start.size()
+					|| !EqualsNoCase(info.manifestUrl.substr(0, start.size()), start))
+					return {};
+				const std::string name = info.manifestUrl.substr(start.size());
+				if (!IsPlainSegment(name) || !EndsWithNoCase(name, "-client-manifest.json"))
+					return {};
+			}
+			return info;
+		}
+	}
+
 	// Parse the index text. One bad object never fails the list: it is skipped
 	// and counted. The text itself failing (too large, not an array, cut off)
 	// returns ok = false with a plain message.
@@ -213,6 +358,7 @@ namespace ModIndex
 				if (!id.empty() && e.requiredIds.size() < kMaxRequires)
 					e.requiredIds.push_back(std::move(id));
 			}
+			e.install = detail::ReadInstall(obj, e.pageUrl);
 			result.entries.push_back(std::move(e));
 		}
 

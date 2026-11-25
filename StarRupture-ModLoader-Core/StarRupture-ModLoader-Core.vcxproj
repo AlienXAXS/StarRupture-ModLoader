@@ -420,6 +420,7 @@
     <ClInclude Include="auto_update\mod_index.h" />
     <ClInclude Include="auto_update\mod_index_fetcher.h" />
     <ClInclude Include="auto_update\mod_index_signed.h" />
+    <ClInclude Include="auto_update\mod_install.h" />
     <ClInclude Include="auto_update\readme_fetcher.h" />
     <ClInclude Include="auto_update\readme_images.h" />
     <ClInclude Include="auto_update\readme_markdown.h" />
@@ -611,6 +612,7 @@
     <ClCompile Include="auto_update\http_get.cpp" />
     <ClCompile Include="auto_update\mod_index_fetcher.cpp" />
     <ClCompile Include="auto_update\mod_index_signed.cpp" />
+    <ClCompile Include="auto_update\mod_install.cpp" />
     <ClCompile Include="auto_update\readme_fetcher.cpp" />
     <ClCompile Include="auto_update\readme_markdown.cpp" />
     <ClCompile Include="auto_update\readme_textures.cpp" />

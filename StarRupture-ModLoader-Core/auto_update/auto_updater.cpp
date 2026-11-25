@@ -952,7 +952,9 @@ ModIndex::Fetcher& ModIndex::Instance()
 		source.keys       = VersionFeed::CompiledKeys();
 		source.cachePath  = GetModLoaderDirPath(L"mod-index.v1.cache");
 		source.signedOnly = !playersOwn;
-		return Fetcher(std::move(url), MakeFetch(std::move(source)));
+		source.bodySigned = std::make_shared<bool>(false);
+		std::shared_ptr<const bool> bodySigned = source.bodySigned;
+		return Fetcher(std::move(url), MakeFetch(std::move(source)), std::move(bodySigned));
 	}();
 	return fetcher;
 }

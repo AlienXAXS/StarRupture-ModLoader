@@ -185,6 +185,6 @@ namespace FeedFetch
 namespace ModIndex
 {
 	FetchFn MakeFetch(Source) { return {}; }
-	Fetcher::Fetcher(std::string, FetchFn) {}
+	Fetcher::Fetcher(std::string, FetchFn, std::shared_ptr<const bool>) {}
 	Fetcher::~Fetcher() {}
 }

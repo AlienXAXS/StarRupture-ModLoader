@@ -48,6 +48,7 @@ namespace ModIndex
 		int  skipped   = 0;             // objects the parser dropped
 		bool truncated = false;         // the list was cut at kMaxEntries
 		std::string error;              // Failed only: plain words for the player
+		bool signatureVerified = false; // Ready only: the list passed its signature check
 	};
 
 	// Where the index text comes from: the index (JSON) on success, or an empty
@@ -59,7 +60,9 @@ namespace ModIndex
 	class Fetcher
 	{
 	public:
-		Fetcher(std::string url, FetchFn fetch);
+		// bodySigned: set by `fetch`, on the worker, for the body it returns.
+		// None: the list counts as unsigned.
+		Fetcher(std::string url, FetchFn fetch, std::shared_ptr<const bool> bodySigned = nullptr);
 		~Fetcher();
 		Fetcher(const Fetcher&) = delete;
 		Fetcher& operator=(const Fetcher&) = delete;
