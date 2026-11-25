@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <cstddef>
 #include <string>
 
@@ -36,6 +37,20 @@ struct HttpGetOptions
 	std::string  ifNoneMatch;
 	std::string* etag        = nullptr;
 	bool*        notModified = nullptr;
+
+	// Follow no redirect, for a caller that checks every hop itself. A 3xx
+	// answer fails like any non-200 one, and with location set its Location
+	// header is copied into it ("" when it has none, or one that is not plain
+	// text or is too long).
+	bool         noRedirect = false;
+	std::string* location   = nullptr;
+
+	// With status set, the answer's HTTP status; 0 when no answer arrived.
+	unsigned* status = nullptr;
+
+	// Once true, the request fails at its next step. A call that is already
+	// waiting ends on its own timeout.
+	const std::atomic<bool>* cancel = nullptr;
 };
 
 // A WinHTTP (or Win32) error code as text.
@@ -43,5 +58,6 @@ std::string FormatWinHttpError(unsigned long err);
 
 // The response body on success, or an empty string on any error (a non-200
 // status except a 304 to a conditional request, a timeout or deadline, a body
-// over the cap). `label` names what is being fetched in the log.
+// over the cap). `label` names what is being fetched in the log. A URL's query
+// is sent and never logged: a signed download address carries its key there.
 std::string HttpGet(const char* url, const char* label = "resource", const HttpGetOptions& options = {});

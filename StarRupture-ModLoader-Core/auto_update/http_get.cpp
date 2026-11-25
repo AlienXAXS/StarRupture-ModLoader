@@ -8,6 +8,7 @@
 #include <windows.h>
 #include <winhttp.h>
 #include <string>
+#include <vector>
 
 #pragma comment(lib, "winhttp.lib")
 
@@ -54,15 +55,44 @@ namespace
 		HINTERNET h = nullptr;
 		~Handle() { if (h) WinHttpCloseHandle(h); }
 	};
+
+	// The longest URL, path or query taken. A signed download address runs to
+	// well over a thousand characters.
+	constexpr DWORD kUrlChars = 4096;
+
+	// A header's text, kept only when it is printable ASCII of at most maxLen.
+	std::string PlainHeader(HINTERNET request, DWORD query, const wchar_t* name, size_t maxLen)
+	{
+		std::vector<wchar_t> value(maxLen + 1, L'\0');
+		DWORD size = static_cast<DWORD>(value.size() * sizeof(wchar_t));
+		std::string text;
+		if (!WinHttpQueryHeaders(request, query, name, value.data(), &size, WINHTTP_NO_HEADER_INDEX))
+			return text;
+		for (const wchar_t* p = value.data(); *p; ++p)
+		{
+			if (*p < 0x20 || *p > 0x7E || text.size() >= maxLen)
+				return {};
+			text += static_cast<char>(*p);
+		}
+		return text;
+	}
 }
 
 // Returns the full HTTP response body on success, or an empty string on any
-// error.  Handles HTTPS and follows redirects (required for GitHub CDN), but
-// never from HTTPS to HTTP.  `label` is used only in log messages to identify
-// what's being fetched.
+// error.  Handles HTTPS and follows redirects (required for GitHub CDN) unless
+// the caller asks for none, but never from HTTPS to HTTP.  `label` is used only
+// in log messages to identify what's being fetched.
 std::string HttpGet(const char* url, const char* label, const HttpGetOptions& options)
 {
-	LogToFile::Debug("[AutoUpdate] HttpGet [%s]: %s", label, url);
+	const std::string shown = std::string(url).substr(0, std::string(url).find('?'));
+	LogToFile::Debug("[AutoUpdate] HttpGet [%s]: %s", label, shown.c_str());
+	if (options.status)
+		*options.status = 0;
+	if (options.location)
+		options.location->clear();
+	const auto cancelled = [&] { return options.cancel && options.cancel->load(); };
+	if (cancelled())
+		return {};
 	const ULONGLONG started = GetTickCount64();
 	const auto expired = [&] { return options.deadlineMs != 0 && GetTickCount64() - started >= options.deadlineMs; };
 	const auto fail = [&](const char* what)
@@ -74,28 +104,37 @@ std::string HttpGet(const char* url, const char* label, const HttpGetOptions& op
 	};
 
 	// Convert URL to wide string
-	wchar_t wUrl[1024]{};
-	if (MultiByteToWideChar(CP_UTF8, 0, url, -1, wUrl, 1024) == 0)
+	std::vector<wchar_t> wUrl(kUrlChars, L'\0');
+	if (MultiByteToWideChar(CP_UTF8, 0, url, -1, wUrl.data(), kUrlChars) == 0)
 		return fail("URL encoding");
 
-	// Crack the URL into host + path components
+	// Crack the URL into host, path and query components
 	URL_COMPONENTS uc{};
 	uc.dwStructSize = sizeof(uc);
-	wchar_t host[256]{}, path[768]{};
+	wchar_t host[256]{};
+	std::vector<wchar_t> path(kUrlChars, L'\0'), extra(kUrlChars, L'\0');
 	uc.lpszHostName = host;
 	uc.dwHostNameLength = 256;
-	uc.lpszUrlPath = path;
-	uc.dwUrlPathLength = 768;
-	if (!WinHttpCrackUrl(wUrl, 0, 0, &uc))
+	uc.lpszUrlPath = path.data();
+	uc.dwUrlPathLength = kUrlChars;
+	uc.lpszExtraInfo = extra.data();
+	uc.dwExtraInfoLength = kUrlChars;
+	if (!WinHttpCrackUrl(wUrl.data(), 0, 0, &uc))
 		return fail("WinHttpCrackUrl");
 
-	LogToFile::Debug("[AutoUpdate] HttpGet [%s]: host=%ls path=%ls port=%d", label, host, path,
+	LogToFile::Debug("[AutoUpdate] HttpGet [%s]: host=%ls path=%ls port=%d", label, host, path.data(),
 	                 static_cast<int>(uc.nPort));
+
+	// The query goes with the path; a fragment is never sent.
+	std::wstring target = std::wstring(path.data()) + extra.data();
+	const size_t fragment = target.find(L'#');
+	if (fragment != std::wstring::npos)
+		target.resize(fragment);
 
 	const bool plain = options.allowPlainHttp && uc.nScheme == INTERNET_SCHEME_HTTP;
 	if (uc.nScheme != INTERNET_SCHEME_HTTPS && !plain)
 	{
-		LogToFile::Warn("[AutoUpdate] HttpGet [%s]: refused %s: the URL is not https", label, url);
+		LogToFile::Warn("[AutoUpdate] HttpGet [%s]: refused %s: the URL is not https", label, shown.c_str());
 		return {};
 	}
 
@@ -122,15 +161,17 @@ std::string HttpGet(const char* url, const char* label, const HttpGetOptions& op
 
 	Handle request;
 	request.h = WinHttpOpenRequest(
-		connect.h, L"GET", path,
+		connect.h, L"GET", target.c_str(),
 		nullptr, nullptr, nullptr, plain ? 0 : WINHTTP_FLAG_SECURE);
 	if (!request.h)
 		return fail("WinHttpOpenRequest");
 
 	// Follow GitHub CDN redirects automatically, but never from HTTPS to HTTP.
-	DWORD redirectPolicy = WINHTTP_OPTION_REDIRECT_POLICY_DISALLOW_HTTPS_TO_HTTP;
-	WinHttpSetOption(request.h, WINHTTP_OPTION_REDIRECT_POLICY,
-	                 &redirectPolicy, sizeof(redirectPolicy));
+	DWORD redirectPolicy = options.noRedirect ? WINHTTP_OPTION_REDIRECT_POLICY_NEVER
+	                                          : WINHTTP_OPTION_REDIRECT_POLICY_DISALLOW_HTTPS_TO_HTTP;
+	if (!WinHttpSetOption(request.h, WINHTTP_OPTION_REDIRECT_POLICY, &redirectPolicy, sizeof(redirectPolicy))
+		&& options.noRedirect)
+		return fail("WinHttpSetOption(redirect policy)");
 
 	if (!options.ifNoneMatch.empty())
 	{
@@ -139,6 +180,8 @@ std::string HttpGet(const char* url, const char* label, const HttpGetOptions& op
 	}
 
 	LogToFile::Debug("[AutoUpdate] HttpGet [%s]: sending request...", label);
+	if (cancelled())
+		return {};
 
 	if (!WinHttpSendRequest(request.h, nullptr, 0, nullptr, 0, 0, 0))
 		return fail("WinHttpSendRequest");
@@ -148,6 +191,8 @@ std::string HttpGet(const char* url, const char* label, const HttpGetOptions& op
 		return {};
 	}
 
+	if (cancelled())
+		return {};
 	if (!WinHttpReceiveResponse(request.h, nullptr))
 		return fail("WinHttpReceiveResponse");
 
@@ -160,6 +205,16 @@ std::string HttpGet(const char* url, const char* label, const HttpGetOptions& op
 	                    &statusCode, &statusSize, nullptr);
 
 	LogToFile::Debug("[AutoUpdate] HttpGet [%s]: HTTP %lu", label, statusCode);
+	if (options.status)
+		*options.status = statusCode;
+
+	// Not followed: the caller reads the address and decides.
+	if (options.noRedirect && statusCode >= 300 && statusCode < 400 && statusCode != 304)
+	{
+		if (options.location)
+			*options.location = PlainHeader(request.h, WINHTTP_QUERY_LOCATION, WINHTTP_HEADER_NAME_BY_INDEX, kUrlChars - 1);
+		return {};
+	}
 
 	if (statusCode == 304 && !options.ifNoneMatch.empty() && options.notModified)
 	{
@@ -174,31 +229,13 @@ std::string HttpGet(const char* url, const char* label, const HttpGetOptions& op
 		//   404 -- release does not exist or is a private/draft release
 		//   403 -- asset requires authentication (private repo)
 		//   5xx -- GitHub CDN or release server error
-		LogToFile::Warn("[AutoUpdate] HttpGet [%s]: server returned HTTP %lu (URL: %s)", label, statusCode, url);
+		LogToFile::Warn("[AutoUpdate] HttpGet [%s]: server returned HTTP %lu (URL: %s)", label, statusCode, shown.c_str());
 		return {};
 	}
 
+	// Only printable ASCII, since it goes back out in a request header.
 	if (options.etag)
-	{
-		wchar_t value[160]{};
-		DWORD size = sizeof(value);
-		options.etag->clear();
-		if (WinHttpQueryHeaders(request.h, WINHTTP_QUERY_CUSTOM, L"ETag", value, &size, WINHTTP_NO_HEADER_INDEX))
-		{
-			// Only printable ASCII, since it goes back out in a request header.
-			std::string text;
-			for (const wchar_t* p = value; *p; ++p)
-			{
-				if (*p < 0x20 || *p > 0x7E || text.size() >= 128)
-				{
-					text.clear();
-					break;
-				}
-				text += static_cast<char>(*p);
-			}
-			*options.etag = text;
-		}
-	}
+		*options.etag = PlainHeader(request.h, WINHTTP_QUERY_CUSTOM, L"ETag", 128);
 
 	// Read response body in chunks
 	std::string body;
@@ -206,6 +243,8 @@ std::string HttpGet(const char* url, const char* label, const HttpGetOptions& op
 
 	for (;;)
 	{
+		if (cancelled())
+			return {};
 		if (expired())
 		{
 			LogToFile::Warn("[AutoUpdate] HttpGet [%s]: deadline of %u ms passed -- %zu bytes received so far; discarding", label, options.deadlineMs, body.size());
