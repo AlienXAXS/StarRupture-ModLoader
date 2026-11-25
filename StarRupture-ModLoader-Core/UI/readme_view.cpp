@@ -218,6 +218,29 @@ namespace UI::ReadmeView
 			}
 		}
 
+		// One line per row, cells apart by a bar.
+		void DrawTableLines(const ModIndex::Block& b)
+		{
+			const auto line = [](const ModIndex::TableRow& row)
+			{
+				std::vector<ModIndex::Span> spans;
+				for (size_t i = 0; i < row.size(); ++i)
+				{
+					if (i > 0)
+						spans.push_back({ ModIndex::SpanKind::Plain, " | " });
+					spans.insert(spans.end(), row[i].begin(), row[i].end());
+				}
+				DrawSpans(spans);
+			};
+			line(b.header);
+			for (size_t i = 0; i < b.rows.size(); ++i)
+			{
+				ImGui::PushID(static_cast<int>(i));
+				line(b.rows[i]);
+				ImGui::PopID();
+			}
+		}
+
 		void DrawListItem(const ModIndex::Block& b)
 		{
 			if (b.depth > 0)
@@ -298,6 +321,7 @@ namespace UI::ReadmeView
 				case ModIndex::BlockKind::ListItem:  DrawListItem(b);         break;
 				case ModIndex::BlockKind::Image:     DrawImage(b, snap);      break;
 				case ModIndex::BlockKind::Rule:      ImGui::Separator();      break;
+				case ModIndex::BlockKind::Table:     DrawTableLines(b);       break;
 				case ModIndex::BlockKind::CodeBlock:
 					ImGui::BeginChild("##code", ImVec2(0, 0), ImGuiChildFlags_Borders | ImGuiChildFlags_AutoResizeY);
 					ImGui::TextWrapped("%s", b.code.c_str());

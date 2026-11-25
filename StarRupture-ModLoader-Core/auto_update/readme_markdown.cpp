@@ -65,6 +65,176 @@ namespace ModIndex
 			return (cp >= 0x80 && cp <= 0x9F) || cp == 0xFEFF || (cp >= 0x202A && cp <= 0x202E) || (cp >= 0x2066 && cp <= 0x2069);
 		}
 
+		// What the built-in font cannot draw: nullptr keeps the code point, ""
+		// drops it, anything else replaces it. No replacement is longer in bytes
+		// than what it replaces, so the size limits still hold.
+		const char* FontText(unsigned cp)
+		{
+			if (cp == 0xA0)
+				return " ";
+			if (cp == 0xAD)
+				return "";                       // soft hyphen
+			if (cp < 0x300)
+				return nullptr;
+
+			switch (cp)
+			{
+			case 0x2010: case 0x2011: case 0x2012: case 0x2013: case 0x2212: return "-";
+			case 0x2014: case 0x2015: return "--";
+			case 0x2018: case 0x2019: case 0x201A: case 0x201B: case 0x2032: return "'";
+			case 0x201C: case 0x201D: case 0x201E: case 0x201F: case 0x2033: return "\"";
+			case 0x2039: return "<";
+			case 0x203A: return ">";
+			case 0x2022: case 0x2023: case 0x2043: case 0x2217: case 0x2219: case 0x25A0: case 0x25A1:
+			case 0x25AA: case 0x25AB: case 0x25CB: case 0x25CF: case 0x25E6: return "*";
+			case 0x2026: return "...";
+			case 0x2028: case 0x2029: case 0x202F: case 0x205F: case 0x3000: return " ";
+			case 0x2044: case 0x2215: return "/";
+			case 0x2122: return "TM";
+			case 0x2190: case 0x27F5: return "<-";
+			case 0x2192: case 0x21A6: case 0x2794: case 0x279C: case 0x27A1: case 0x27F6: return "->";
+			case 0x2194: case 0x27F7: return "<->";
+			case 0x21D0: case 0x2264: return "<=";
+			case 0x21D2: return "=>";
+			case 0x21D4: return "<=>";
+			case 0x2265: return ">=";
+			case 0x2260: return "!=";
+			case 0x2248: return "~";
+			case 0x2191: case 0x25B2: case 0x25B4: return "^";
+			case 0x2193: case 0x25BC: case 0x25BE: return "v";
+			case 0x25B6: case 0x25B8: case 0x25BA: return ">";
+			case 0x25C0: case 0x25C2: case 0x25C4: return "<";
+			// Box drawing, so that a folder tree still reads as one.
+			case 0x2500: case 0x2501: case 0x2504: case 0x2505: case 0x2508: case 0x2509:
+			case 0x254C: case 0x254D: case 0x2550: case 0x2574: case 0x2576: case 0x2578:
+			case 0x257A: case 0x257C: case 0x257E: return "-";
+			case 0x2502: case 0x2503: case 0x2506: case 0x2507: case 0x250A: case 0x250B:
+			case 0x254E: case 0x254F: case 0x2551: case 0x2575: case 0x2577: case 0x2579:
+			case 0x257B: case 0x257D: case 0x257F: return "|";
+			case 0x2514: case 0x2515: case 0x2516: case 0x2517: case 0x2558: case 0x2559:
+			case 0x255A: case 0x2570: return "`";
+			default: break;
+			}
+
+			if (cp >= 0x2500 && cp <= 0x257F)
+				return "+";                          // the other corners and joints
+			if (cp >= 0x2580 && cp <= 0x259F)
+				return "#";                          // block elements (bars)
+			if (cp >= 0x2000 && cp <= 0x200A)
+				return " ";
+			if ((cp >= 0x0300 && cp <= 0x036F) ||    // combining accents: the letter stays
+			    (cp >= 0x200B && cp <= 0x206F) ||    // joiners, marks, other punctuation
+			    (cp >= 0x20D0 && cp <= 0x20FF) ||    // keycap and other combining signs
+			    (cp >= 0x2100 && cp <= 0x2BFF) ||    // arrows, technical signs, shapes, dingbats
+			    (cp >= 0xE000 && cp <= 0xF8FF) ||    // private use
+			    (cp >= 0xFE00 && cp <= 0xFE0F) ||    // variation selectors
+			    cp == 0xFFFC ||
+			    (cp >= 0x1F000 && cp <= 0x1FBFF) ||  // emoji
+			    cp >= 0xE0000)                       // tags, selectors, private use
+				return "";
+			return nullptr;
+		}
+
+		// Fits one block's (or cell's) shown text to the font, piece by piece, in
+		// order. Where something was dropped, the space after it goes too when
+		// there is already one, or a line start, before it.
+		struct FontFit
+		{
+			bool afterSpace = true;     // nothing kept yet, or the last was a space or '\n'
+			bool dropped = false;       // something was dropped since then
+
+			void Apply(std::string& text)
+			{
+				std::string out;
+				out.reserve(text.size());
+				for (size_t i = 0; i < text.size();)
+				{
+					const unsigned char c = U(text[i]);
+					const size_t len = std::min<size_t>(c < 0xC0 ? 1 : c < 0xE0 ? 2 : c < 0xF0 ? 3 : 4, text.size() - i);
+					unsigned cp = len == 1 ? c : c & (0x7Fu >> len);
+					for (size_t k = 1; k < len; ++k)
+						cp = (cp << 6) | (U(text[i + k]) & 0x3F);
+
+					const char* const other = FontText(cp);
+					const std::string_view piece = other ? std::string_view(other) : std::string_view(text).substr(i, len);
+					i += len;
+					if (piece.empty())
+						dropped = true;
+					else if (piece == " " && dropped && afterSpace)
+						dropped = false;
+					else
+					{
+						out.append(piece);
+						afterSpace = IsSpace(piece.back());
+						dropped = false;
+					}
+				}
+				text = std::move(out);
+			}
+
+			// The next text is left as it is.
+			void Skip() { afterSpace = dropped = false; }
+		};
+
+		void FitSpans(std::vector<Span>& spans)
+		{
+			FontFit fit;
+			for (Span& sp : spans)
+			{
+				if (sp.kind == SpanKind::Link && sp.text == sp.url)
+				{
+					fit.Skip();                     // an address is shown as written
+					continue;
+				}
+				fit.Apply(sp.text);
+				// A usable link whose whole text was dropped shows its address.
+				if (sp.text.empty() && sp.kind == SpanKind::Link && sp.clickable)
+				{
+					sp.text = sp.url;
+					fit.Skip();
+				}
+			}
+			spans.erase(std::remove_if(spans.begin(), spans.end(), [](const Span& sp) { return sp.text.empty(); }), spans.end());
+			// Dropped at the very end: no space is left hanging.
+			while (fit.dropped && !spans.empty() && spans.back().kind != SpanKind::Link)
+			{
+				std::string& t = spans.back().text;
+				t.erase(t.find_last_not_of(' ') + 1);
+				if (!t.empty())
+					break;
+				spans.pop_back();
+			}
+		}
+
+		// Fits every shown text and removes the blocks that have none left.
+		void FitToFont(Document& doc)
+		{
+			for (Block& b : doc.blocks)
+			{
+				FitSpans(b.spans);
+				FontFit().Apply(b.code);
+				FontFit().Apply(b.alt);
+				for (TableCell& cell : b.header)
+					FitSpans(cell);
+				for (TableRow& row : b.rows)
+					for (TableCell& cell : row)
+						FitSpans(cell);
+			}
+			const auto nothingLeft = [](const Block& b)
+			{
+				switch (b.kind)
+				{
+				case BlockKind::Heading:
+				case BlockKind::Paragraph:
+				case BlockKind::ListItem:  return b.spans.empty();
+				case BlockKind::CodeBlock: return b.code.find_first_not_of(" \n") == std::string::npos;
+				case BlockKind::Image:     return b.url.empty() && b.alt.empty();
+				default:                   return false;
+				}
+			};
+			doc.blocks.erase(std::remove_if(doc.blocks.begin(), doc.blocks.end(), nothingLeft), doc.blocks.end());
+		}
+
 		// Cut at kMaxReadmeBytes, then: valid UTF-8 only (a bad byte becomes
 		// U+FFFD), control characters and NUL out, tabs to four spaces, CR and CRLF
 		// to LF.
@@ -199,6 +369,112 @@ namespace ModIndex
 			while (a < b && IsSpace(s[a])) ++a;
 			while (b > a && IsSpace(s[b - 1])) --b;
 			return s.substr(a, b - a);
+		}
+
+		// ---- table lines ------------------------------------------------
+
+		// The cells of one table line, trimmed, "\|" turned into "|". A pipe
+		// inside `code` does not split; a backtick run with no partner is text.
+		// Only the first `maxCells` are returned; `total` counts them all.
+		std::vector<std::string> SplitRow(std::string_view line, size_t maxCells, size_t& total)
+		{
+			while (!line.empty() && line.front() == ' ') line.remove_prefix(1);
+			while (!line.empty() && line.back() == ' ') line.remove_suffix(1);
+			if (!line.empty() && line.front() == '|') line.remove_prefix(1);
+
+			std::vector<std::string> cells;
+			std::string cell;
+			total = 0;
+			const auto closeCell = [&]
+			{
+				if (++total <= maxCells)
+					cells.push_back(Trim(cell));
+				cell.clear();
+			};
+
+			const size_t n = line.size();
+			bool endsWithPipe = false;
+			for (size_t i = 0; i < n;)
+			{
+				const char c = line[i];
+				endsWithPipe = false;
+				if (c == '\\' && i + 1 < n)
+				{
+					if (line[i + 1] != '|')
+						cell += c;
+					cell += line[i + 1];
+					i += 2;
+				}
+				else if (c == '`')
+				{
+					size_t run = 1;
+					while (i + run < n && line[i + run] == '`') ++run;
+					size_t end = i + run;       // only the opening marks, unless closed
+					for (size_t k = i + run, lim = std::min(n, i + run + kLook); k < lim;)
+					{
+						if (line[k] != '`') { ++k; continue; }
+						size_t r = 1;
+						while (k + r < n && line[k + r] == '`') ++r;
+						if (r == run) { end = k + r; break; }
+						k += r;
+					}
+					for (; i < end; ++i)
+						if (!(line[i] == '\\' && i + 1 < end && line[i + 1] == '|'))
+							cell += line[i];
+				}
+				else if (c == '|')
+				{
+					closeCell();
+					endsWithPipe = true;
+					++i;
+				}
+				else
+				{
+					cell += c;
+					++i;
+				}
+			}
+			if (!endsWithPipe)
+				closeCell();
+			return cells;
+		}
+
+		// Only pipes, dashes, colons and spaces, with a pipe and a dash.
+		bool IsDelimiterShape(std::string_view v)
+		{
+			return v.find_first_not_of("|-: ") == std::string_view::npos &&
+			       v.find('|') != std::string_view::npos && v.find('-') != std::string_view::npos;
+		}
+
+		// The column count of a delimiter line, or 0 when it is not one.
+		size_t DelimiterColumns(std::string_view v)
+		{
+			if (!IsDelimiterShape(v))
+				return 0;
+			size_t total = 0;
+			for (const std::string& c : SplitRow(v, std::string::npos, total))
+			{
+				const size_t a = !c.empty() && c.front() == ':' ? 1 : 0;
+				const size_t b = c.size() > a && c.back() == ':' ? c.size() - 1 : c.size();
+				if (a >= b || c.find_first_not_of('-', a) < b)
+					return 0;
+			}
+			return total;
+		}
+
+		// Block quote marks are dropped; the text reads as ordinary lines.
+		std::string_view StripQuote(std::string_view line)
+		{
+			for (;;)
+			{
+				size_t ind = 0;
+				while (ind < line.size() && ind < 3 && line[ind] == ' ') ++ind;
+				if (ind >= line.size() || line[ind] != '>')
+					return line;
+				line.remove_prefix(ind + 1);
+				if (!line.empty() && line[0] == ' ')
+					line.remove_prefix(1);
+			}
 		}
 
 		// At s[i] == '[': the matching ']' within kLook bytes, or npos.
@@ -797,6 +1073,14 @@ namespace ModIndex
 			bool inIndented = false;
 			std::string code;
 
+			bool inTable = false;           // body lines add to doc.blocks.back()
+			bool droppingTable = false;     // ...or are dropped: over the cell limit
+			bool skipLine = false;          // the delimiter line, read with its header
+			bool pipeRows = false;          // the pending text has a delimiter line that made no table
+			bool pipeLine = false;          // the pending text's last line is a pipe line
+			size_t tableCells = 0;          // in all tables so far
+			std::vector<Block> pictures;    // from the open table's cells
+
 			void Inline(Block meta, const std::string& t)
 			{
 				if (stop)
@@ -825,6 +1109,135 @@ namespace ModIndex
 				pending = Pending::None;
 				text.clear();
 				hardBreak = false;
+				pipeRows = pipeLine = false;
+				EndTable();
+			}
+
+			// The pictures found in the table's cells follow it.
+			void EndTable()
+			{
+				inTable = droppingTable = false;
+				for (Block& b : pictures)
+				{
+					if (stop)
+						break;
+					if (doc.blocks.size() >= kMaxBlocks)
+					{
+						doc.shortened = true;
+						stop = true;
+						break;
+					}
+					doc.blocks.push_back(std::move(b));
+				}
+				pictures.clear();
+			}
+
+			// One cell's text becomes spans. A picture cannot be drawn in a cell.
+			TableCell Cell(const std::string& t)
+			{
+				Document part;
+				bool partStop = false;
+				InlineRun run{ part, t, base, Block{}, partStop };
+				run.Run();
+				if (part.shortened)
+					doc.shortened = true;
+
+				TableCell cell;
+				for (Block& b : part.blocks)
+				{
+					if (b.kind == BlockKind::Image)
+					{
+						if (pictures.size() < kMaxBlocks)
+							pictures.push_back(std::move(b));
+						continue;
+					}
+					for (Span& sp : b.spans)
+					{
+						if (cell.size() >= kMaxSpans)
+						{
+							doc.shortened = true;
+							break;
+						}
+						cell.push_back(std::move(sp));
+					}
+				}
+				return cell;
+			}
+
+			// A line's cells as a row of exactly `columns` cells.
+			TableRow Row(std::string_view line, size_t columns)
+			{
+				size_t total = 0;
+				const std::vector<std::string> parts = SplitRow(line, columns, total);
+				if (total > columns)
+					doc.shortened = true;       // cells past the last column are dropped
+				TableRow row(columns);
+				for (size_t i = 0; i < parts.size(); ++i)
+					row[i] = Cell(parts[i]);
+				tableCells += columns;
+				return row;
+			}
+
+			void TableLine(std::string_view line)
+			{
+				if (droppingTable)
+					return;
+				Block& table = doc.blocks.back();
+				const size_t columns = table.header.size();
+				if (table.rows.size() >= kMaxTableRows || tableCells + columns > kMaxTableCells)
+					doc.shortened = true;
+				else
+					table.rows.push_back(Row(line, columns));
+			}
+
+			// `line` is a table's header when `next` is a delimiter line with as
+			// many cells. A table over the cell limit is read and dropped.
+			bool TryTable(std::string_view line, std::string_view next)
+			{
+				if (line.find('|') == std::string_view::npos)
+					return false;
+				next = StripQuote(next);
+				const size_t first = next.find_first_not_of(' ');
+				if (first == std::string_view::npos || first >= 4)
+					return false;
+				next.remove_prefix(first);
+				while (!next.empty() && next.back() == ' ')
+					next.remove_suffix(1);
+				const size_t columns = DelimiterColumns(next);
+				size_t headerCells = 0;
+				if (columns == 0)
+					return false;
+				SplitRow(line, 0, headerCells);
+				if (headerCells != columns)
+					return false;
+
+				Flush();
+				if (stop)
+					return true;
+				skipLine = true;
+				const size_t kept = std::min(columns, kMaxTableColumns);
+				Block b;
+				b.kind = BlockKind::Table;
+				if (columns > kept)
+					doc.shortened = true;
+				if (doc.blocks.size() >= kMaxBlocks)
+				{
+					doc.shortened = true;
+					stop = true;
+				}
+				else if (tableCells + kept > kMaxTableCells)
+				{
+					doc.shortened = true;
+					tableCells = kMaxTableCells;
+					droppingTable = inTable = true;
+				}
+				else
+				{
+					b.header = Row(line, kept);
+					doc.blocks.push_back(std::move(b));
+					inTable = true;
+				}
+				return true;
 			}
 
 			void EmitCode()
@@ -918,7 +1331,7 @@ namespace ModIndex
 				return count >= 3;
 			}
 
-			void Line(std::string_view line)
+			void Line(std::string_view line, std::string_view next)
 			{
 				if (inFence)
 				{
@@ -934,20 +1347,12 @@ namespace ModIndex
 					return;
 				}
 
-				// Block quote marks are dropped; the text reads as ordinary lines.
-				for (;;)
+				if (skipLine)
 				{
-					size_t ind = 0;
-					while (ind < line.size() && ind < 3 && line[ind] == ' ') ++ind;
-					if (ind < line.size() && line[ind] == '>')
-					{
-						line.remove_prefix(ind + 1);
-						if (!line.empty() && line[0] == ' ')
-							line.remove_prefix(1);
-					}
-					else
-						break;
+					skipLine = false;
+					return;
 				}
+				line = StripQuote(line);
 
 				size_t indent = 0;
 				while (indent < line.size() && line[indent] == ' ') ++indent;
@@ -976,6 +1381,7 @@ namespace ModIndex
 				}
 				if (indent >= 4 && pending == Pending::None)
 				{
+					EndTable();
 					inIndented = true;
 					AddCodeLine(line.substr(4));
 					return;
@@ -1022,6 +1428,9 @@ namespace ModIndex
 					return;
 				}
 
+				if (!inTable && TryTable(rest, next))
+					return;
+
 				// A list item: "- ", "* ", "+ ", "1. " or "1) ".
 				size_t marker = 0;
 				bool isOrdered = false;
@@ -1051,6 +1460,20 @@ namespace ModIndex
 					return;
 				}
 
+				if (inTable)
+				{
+					if (rest[0] != '<')
+					{
+						TableLine(rest);
+						return;
+					}
+					EndTable();                 // an HTML block ends the table
+				}
+
+				// Pipes that made no table keep their lines apart.
+				const bool delimiter = IsDelimiterShape(rest);
+				const bool isPipeLine = rest[0] == '|' || delimiter || (pipeRows && rest.find('|') != std::string_view::npos);
+				const bool ownLine = isPipeLine || pipeLine;
 				if (pending == Pending::None)
 				{
 					pending = Pending::Para;
@@ -1058,24 +1481,32 @@ namespace ModIndex
 				}
 				else if (text.size() < kPendingMax)
 				{
-					text += hardBreak ? '\n' : ' ';
+					text += hardBreak || ownLine ? '\n' : ' ';
 					text.append(rest);
 				}
 				else
 					doc.shortened = true;   // the block's text is full: this line is cut
+				pipeRows = pipeRows || delimiter;
+				pipeLine = isPipeLine;
 				hardBreak = hard;
 			}
 
 			void Run(const std::string& in)
 			{
 				size_t pos = 0;
+				const std::string_view all(in);
+				const auto lineAt = [&all](size_t from)
+				{
+					if (from >= all.size())
+						return std::string_view();
+					return all.substr(from, std::min(all.find('\n', from), all.size()) - from);
+				};
 				while (pos <= in.size() && !stop)
 				{
-					size_t nl = in.find('\n', pos);
-					if (nl == std::string::npos)
-						nl = in.size();
-					Line(std::string_view(in).substr(pos, nl - pos));
-					pos = nl + 1;
+					const std::string_view line = lineAt(pos);
+					const size_t after = pos + line.size() + 1;
+					Line(line, lineAt(after));
+					pos = after;
 				}
 				if (inFence || inIndented)
 					EmitCode();
@@ -1090,6 +1521,7 @@ namespace ModIndex
 		const std::string text = Sanitize(textIn, doc.shortened);
 		Parser parser{ doc, readmeUrl };
 		parser.Run(text);
+		FitToFont(doc);
 		return doc;
 	}
 }
