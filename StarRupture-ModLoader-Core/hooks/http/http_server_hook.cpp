@@ -4,6 +4,7 @@
 #include "hooks/hooks_common.h"
 #include "logging/logger.h"
 #include "plugins/plugin_guard.h"
+#include "plugins/plugin_manage.h"
 #include "memory_scanner/scanner.h"
 #include "memory_scanner/version_map.h"
 #include "hooks/memory/engine_allocator.h"
@@ -77,7 +78,7 @@ namespace Hooks::HttpServer
 	{
 		std::string  pluginName; // original casing (for logging)
 		std::string  folderName; // original casing (for logging)
-		std::wstring fsRoot;     // absolute path on disk: <exe_dir>\Plugins\<pluginName>\<folderName>
+		std::wstring fsRoot;     // absolute path on disk: <exe_dir>\ModLoader\Plugins\<pluginName>\<folderName>
 		std::string  urlPrefix;  // lowercased, no /plugins/ prefix: "/<pluginName>/<FolderName>/"
 	};
 
@@ -1254,27 +1255,18 @@ namespace Hooks::HttpServer
 			return false;
 		}
 
-		// Resolve the plugin's directory from the modloader DLL path, not the exe path.
-		// The modloader DLL lives at:  <game>\Binaries\Win64\dwmapi.dll
-		// Plugin DLLs live at:         <game>\Binaries\Win64\ModLoader\Plugins\<pluginName>\<pluginName>.dll
-		// Static files live at:        <game>\Binaries\Win64\ModLoader\Plugins\<pluginName>\<folderName>\
-		// We find the modloader DLL path and derive the Plugins directory from its parent.
-		wchar_t dllPath[MAX_PATH]{};
-		HMODULE hSelf = nullptr;
-		GetModuleHandleExW(
-			GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-			reinterpret_cast<LPCWSTR>(&AddRoute),
-			&hSelf);
-		GetModuleFileNameW(hSelf, dllPath, MAX_PATH);
-		// Strip filename to get directory containing the modloader DLL
-		if (wchar_t* s = wcsrchr(dllPath, L'\\')) *s = L'\0';
+		// Static files live at <game>\Binaries\Win64\ModLoader\Plugins\<pluginName>\<folderName>\,
+		// the same base the plugin scan uses: the directory of the game exe. This
+		// DLL sits in ModLoader\ itself, so its own directory is not that base.
+		wchar_t exePath[MAX_PATH]{};
+		GetModuleFileNameW(nullptr, exePath, MAX_PATH);
+		if (wchar_t* s = wcsrchr(exePath, L'\\')) *s = L'\0';
 
 		wchar_t pluginNameW[256]{}, folderNameW[256]{};
 		MultiByteToWideChar(CP_UTF8, 0, pluginName, -1, pluginNameW, 256);
 		MultiByteToWideChar(CP_UTF8, 0, folderName, -1, folderNameW, 256);
 
-		wchar_t fsRoot[MAX_PATH]{};
-		swprintf_s(fsRoot, L"%s\\ModLoader\\Plugins\\%s\\%s", dllPath, pluginNameW, folderNameW);
+		const std::wstring fsRoot = PluginManage::PluginFolderRoot(exePath, pluginNameW, folderNameW);
 
 		auto toLower = [](std::string s) {
 			std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return static_cast<char>(tolower(c)); });
@@ -1297,7 +1289,7 @@ namespace Hooks::HttpServer
 		entry.urlPrefix = prefix;
 		g_routes.push_back(std::move(entry));
 
-		ModLoaderLogger::LogInfo(L"[HttpServer] Route registered: %S  ->  %s", prefix.c_str(), fsRoot);
+		ModLoaderLogger::LogInfo(L"[HttpServer] Route registered: %S  ->  %s", prefix.c_str(), fsRoot.c_str());
 		return true;
 	}
 
