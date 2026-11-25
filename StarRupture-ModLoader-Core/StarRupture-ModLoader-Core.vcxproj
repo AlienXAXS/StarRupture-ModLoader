@@ -550,6 +550,7 @@
     <ClInclude Include="plugins\known_gobjects.generated.h" />
     <ClInclude Include="plugins\plugin_guard.h" />
     <ClInclude Include="plugins\plugin_hook_report.h" />
+    <ClInclude Include="plugins\plugin_host_info.h" />
     <ClInclude Include="plugins\plugin_manager.h" />
     <ClInclude Include="plugins\plugin_manage.h" />
     <ClInclude Include="plugins\reload_policy.h" />

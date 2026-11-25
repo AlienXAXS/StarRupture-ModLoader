@@ -275,11 +275,29 @@ which checks with `static_assert` that:
 `need_default.cpp` also checks that a plugin which sets nothing declares 75 and cannot name
 `Images`, `HostRules`, `Registry`, `DL_AddTexturedTriangles` or `GetServerAddress`.
 
+`opt_73_80.cpp`, `opt_75_77.cpp` and `opt_default.cpp` do the same for the optional-member accessors (`PLUGIN_OPTIONAL_INTERFACE`, `PluginOptRegistry` and the others): an accessor exists exactly when the optional level reaches its member, and the offsets it reads match the table where the member is visible.
+
 There is nothing to run: it is a static library, and the build is the test.
 
 ```
 msbuild Tests\PluginNeedTests\PluginNeedTests.vcxproj /p:Configuration="Client Release" /p:Platform=x64
 ```
+
+## PluginHostInfoTests
+
+A console program for the loader's call to a plugin's optional `PluginSetHostInfo` export and what the plugin's side does with it. A stand-in plugin declares need 73 and optional 80, exports the function with `PLUGIN_EXPORT_HOST_INFO()`, and the loader's own `plugins/plugin_host_info.h` (the function `plugin_manager.cpp` calls) makes the call. Host tables are byte buffers with a marker in each optional slot. It covers:
+
+- a loader that never calls the export (and an export given a null or short struct): the level stays at the declared need and every accessor returns `nullptr`;
+- the call passes the struct's size and the loader's own level (`PLUGIN_INTERFACE_VERSION_MAX`);
+- after the call every accessor returns the member in its slot, and a lower reported level turns on only the members it has;
+- a fault in the export makes the call return false and the filter sees the exception.
+
+```
+msbuild Tests\PluginHostInfoTests\PluginHostInfoTests.vcxproj /p:Configuration="Client Release" /p:Platform=x64
+build\tests\plugin_host_info_tests.exe
+```
+
+It prints one line per failed check and a count, and exits 0 when every check passes.
 
 ## KeyAndThreadTests
 

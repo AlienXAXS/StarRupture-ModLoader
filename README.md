@@ -91,15 +91,17 @@ turned off in the **Settings** tab.
 An update the mod loader makes itself, to a plugin or to itself, can replace files Vortex installed.
 Vortex then asks about them in a window called **External Changes** the next time it deploys.
 
-- To keep the update, choose **Save change (use deployed file)**.
+- To keep the update, choose **Save change (use deployed file)** for each updated mod, then
+  **Confirm**.
 - Don't choose **Revert change (use staging file)** or **Revert all changes**: reverting restores the
   old file from Vortex's staging folder.
 - The window starts on **Use newer file**. That should keep the update too, since the updated file
   is the newer one.
 
-After replacing a file Vortex installed, the mod loader reminds you in its **Plugins Updated** window
-or its update box, and in the log: "Vortex manages these files. Next time Vortex asks about changed
-files, keep the default (Use newer file). Revert would undo this update."
+You may also see this reminder after such an update, in the mod loader's **Plugins Updated** window
+or its update box, and in the log:
+
+> Vortex manages these files. When Vortex shows External Changes, choose "Save change (use deployed file)" for each updated mod, then Confirm. Revert would undo this update.
 
 ---
 
@@ -279,10 +281,11 @@ The format of the index and how to add a plugin are in [`mod-index/README.md`](m
 
 A card whose plugin has a README shows a **README** button. It opens a page inside the window with the
 author's README from their GitHub repo, text and pictures; **Back** returns to the list. The page shows
-headings, paragraphs, lists, bold, inline and block code, links and pictures. Tables show as plain
-text, and SVG pictures and scripts are not shown or run. Only GitHub and Nexus Mods links can be clicked,
-and they open in your browser. Pictures come only from GitHub, up to 8 per README and 2 MB each. Nothing
-is saved to disk, and leaving the page frees the pictures.
+headings, paragraphs, lists, tables, bold, inline and block code, links and pictures. SVG pictures and
+scripts are not shown or run. Very large tables are cut short. Emoji and some other symbols are left out
+or written with plain characters, so a folder tree is drawn with `+`, `-` and `|`. Only GitHub and Nexus
+Mods links can be clicked, and they open in your browser. Pictures come only from GitHub, up to 8 per
+README and 2 MB each. Nothing is saved to disk, and leaving the page frees the pictures.
 
 The index the loader uses is a signed file published beside the version object map. The loader checks
 the signature before it reads a single entry, and keeps the last good copy in `mod-index.v1.cache` in the
@@ -799,6 +802,39 @@ usual and the plugin's load and unload settings still apply. Each name gets one 
 Copy the new DLL into `ModLoader\Plugins\` first, then create the request: write it under another
 name and rename it to `remote_reload.txt`, so the loader never reads half a file. A name the loader has
 no record of is a failure line; a plugin dropped in after startup needs **LOAD NEW** first.
+<sup>[✦](#msantoro12)</sup>
+
+### Using a newer loader feature only when it is there
+
+A plugin declares the lowest plugin interface it needs with `PLUGIN_NEEDS_INTERFACE`, and a loader older
+than that refuses it. To use a newer member without raising that level, also set
+`PLUGIN_OPTIONAL_INTERFACE` to the newest level you use, export `PluginSetHostInfo` with one line, and
+reach the member through its accessor. On a loader that has the member you get it; on an older one the
+accessor returns `nullptr` and the feature stays off.
+
+In the project's preprocessor definitions (every configuration, the same in every file):
+`PLUGIN_NEEDS_INTERFACE=73` is the oldest loader the plugin runs on, and `PLUGIN_OPTIONAL_INTERFACE=80`
+is the newest level it may use.
+
+```cpp
+#include "plugin_interface.h"
+
+PLUGIN_EXPORT_HOST_INFO()              // once, in one .cpp file
+
+// in the plugin's tick:
+if (IPluginRegistry* reg = PluginOptRegistry(self->hooks))
+{
+    // loader 80 or newer
+}
+```
+
+Before any of the plugin's own code runs, a loader with interface 80 calls its `PluginSetHostInfo` once and
+tells it the loader's interface level. A loader below 80 never calls it, so `PluginHostLevel()` stays at the plugin's
+declared need and every accessor returns `nullptr`. `PluginHostHas(n)` says whether the loader has level
+`n`. The accessors are `PluginOptImages` (77), `PluginOptDL_AddTexturedTriangles` (78),
+`PluginOptHostRules` (79), `PluginOptRegistry` and `PluginOptServerAddress` (80); each exists only when
+`PLUGIN_OPTIONAL_INTERFACE` is at least its level. A plugin without the export loads as before. A fault
+inside the export is handled like a fault in `PluginInit`.
 <sup>[✦](#msantoro12)</sup>
 
 ### Letting older plugin versions talk to yours

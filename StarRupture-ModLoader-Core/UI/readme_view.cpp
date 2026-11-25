@@ -11,6 +11,7 @@
 #include "utils/game_thread_dispatch.h"
 #include "utils/open_page.h"
 
+#include <algorithm>
 #include <string>
 
 namespace UI::ReadmeView
@@ -85,7 +86,8 @@ namespace UI::ReadmeView
 		{
 		public:
 			Flow()
-				: m_lineRight(ImGui::GetCursorScreenPos().x + ImGui::GetContentRegionAvail().x)
+				: m_width(ImGui::GetContentRegionAvail().x)
+				, m_lineRight(ImGui::GetCursorScreenPos().x + m_width)
 			{
 			}
 
@@ -128,13 +130,19 @@ namespace UI::ReadmeView
 			{
 				const char* const wordEnd = word + len;
 				const float width = ImGui::CalcTextSize(word, wordEnd).x;
+				// A word wider than the whole line (a long name in a narrow table
+				// column) starts its own line and breaks inside the word.
+				const bool tooWide = width > m_width;
 				if (m_lineStarted)
 				{
-					if (ImGui::GetItemRectMax().x + width <= m_lineRight)
+					// A broken word is one item several lines tall, and SameLine
+					// would return to its top line: what follows starts below it.
+					if (!m_broke && !tooWide && ImGui::GetItemRectMax().x + width <= m_lineRight)
 						ImGui::SameLine(0.0f, 0.0f);
 					// else: the cursor is already on the next line
 				}
 				m_lineStarted = true;
+				m_broke = tooWide;
 
 				ImGui::PushID(m_id++);
 				const bool link = sp.kind == ModIndex::SpanKind::Link && sp.clickable;
@@ -155,26 +163,42 @@ namespace UI::ReadmeView
 				else
 				{
 					const char* const end = wordEnd + spaces;
-					if (sp.kind == ModIndex::SpanKind::Bold)
+					if (tooWide)
+						ImGui::PushTextWrapPos(0.0f);
+					if (sp.kind == ModIndex::SpanKind::Code)
+						CodeBack(word, end, tooWide ? m_width : -1.0f);
+					else if (sp.kind == ModIndex::SpanKind::Bold)
 						ImGui::PushStyleColor(ImGuiCol_Text, UI::Theme::AccentColorVec4());
-					else if (sp.kind == ModIndex::SpanKind::Code)
-						ImGui::PushStyleColor(ImGuiCol_Text, UI::Theme::HighlightColorVec4());
 					ImGui::TextUnformatted(word, end);
-					if (sp.kind == ModIndex::SpanKind::Bold || sp.kind == ModIndex::SpanKind::Code)
+					if (sp.kind == ModIndex::SpanKind::Bold)
 						ImGui::PopStyleColor();
+					if (tooWide)
+						ImGui::PopTextWrapPos();
 				}
 				ImGui::PopID();
 			}
 
+			// Inline code is plain text on the input-box colour, so it cannot be
+			// taken for a link (coloured and underlined). Call before the text.
+			static void CodeBack(const char* text, const char* end, float wrapWidth)
+			{
+				const ImVec2 min = ImGui::GetCursorScreenPos();
+				const ImVec2 size = ImGui::CalcTextSize(text, end, false, wrapWidth);
+				ImGui::GetWindowDrawList()->AddRectFilled(
+					min, ImVec2(min.x + size.x, min.y + size.y), ImGui::GetColorU32(ImGuiCol_FrameBg));
+			}
+
+			float m_width;
 			float m_lineRight;
 			bool  m_lineStarted = false;
+			bool  m_broke = false;       // the last word was broken across lines
 			int   m_id = 0;
 		};
 
 		// A paragraph or list item's spans. One plain span is the framework's own
 		// wrapped text; mixed styles flow word by word, with the line gap taken out
 		// so the lines sit as close as wrapped text does.
-		void DrawSpans(const std::vector<ModIndex::Span>& spans)
+		void DrawSpans(const std::vector<ModIndex::Span>& spans, bool paragraphGap = true)
 		{
 			if (spans.empty())
 				return;
@@ -187,7 +211,8 @@ namespace UI::ReadmeView
 			ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(style.ItemSpacing.x, 0.0f));
 			Flow().Spans(spans);
 			ImGui::PopStyleVar();
-			ImGui::Spacing();
+			if (paragraphGap)
+				ImGui::Spacing();
 		}
 
 		std::string Joined(const std::vector<ModIndex::Span>& spans)
@@ -198,24 +223,85 @@ namespace UI::ReadmeView
 			return s;
 		}
 
+		// Levels 1 and 2 are section headers as the loader's own pages draw them;
+		// deeper levels are accent text with a gap above.
 		void DrawHeading(const ModIndex::Block& b)
 		{
 			const std::string text = Joined(b.spans);
-			if (b.level <= 1)
+			ImGui::Spacing();
+			if (b.level >= 3)
 			{
-				ImGui::Spacing();
-				ImGui::SeparatorText(SafeLabel(text).c_str());
-			}
-			else
-			{
-				// Level 2 gets a gap above; deeper levels read as headings by colour
-				// alone, since the text is the same size as a paragraph's.
-				if (b.level == 2)
-					ImGui::Spacing();
 				ImGui::PushStyleColor(ImGuiCol_Text, UI::Theme::AccentColorVec4());
 				ImGui::TextWrapped("%s", text.c_str());
 				ImGui::PopStyleColor();
+				return;
 			}
+			// SeparatorText cuts a label short, so one that does not fit wraps
+			// above a plain rule.
+			const std::string label = SafeLabel(text);
+			if (ImGui::CalcTextSize(label.c_str()).x + ImGui::GetStyle().SeparatorTextPadding.x * 2.0f
+			    <= ImGui::GetContentRegionAvail().x)
+			{
+				ImGui::SeparatorText(label.c_str());
+			}
+			else
+			{
+				ImGui::TextWrapped("%s", text.c_str());
+				ImGui::Separator();
+			}
+			ImGui::Spacing();
+		}
+
+		void DrawTableRow(const ModIndex::TableRow& row, ImGuiTableRowFlags flags)
+		{
+			ImGui::TableNextRow(flags);
+			for (size_t c = 0; c < row.size(); ++c)
+			{
+				ImGui::TableSetColumnIndex(static_cast<int>(c));
+				ImGui::PushID(static_cast<int>(c));
+				DrawSpans(row[c], false);
+				ImGui::PopID();
+			}
+		}
+
+		// The width of the column's widest cell on one line. It is the column's
+		// stretch weight: ImGui's own proportional weights are measured from the
+		// cells as drawn, and these wrap to whatever width the column has. It stops
+		// at `cap`, so one long column cannot squeeze the short ones to nothing.
+		float ColumnWeight(const ModIndex::Block& b, size_t column, float cap)
+		{
+			// Runs every frame: a cell of one span is measured without a copy.
+			const auto width = [](const ModIndex::TableCell& cell)
+			{
+				return ImGui::CalcTextSize(cell.size() == 1 ? cell[0].text.c_str() : Joined(cell).c_str()).x;
+			};
+			float widest = width(b.header[column]);
+			for (const ModIndex::TableRow& row : b.rows)
+				widest = (std::max)(widest, width(row[column]));
+			return std::clamp(widest, 1.0f, cap);
+		}
+
+		// The loader's own table look. The header row is marked as one instead of
+		// using TableHeadersRow, which takes plain labels that do not wrap.
+		void DrawTable(const ModIndex::Block& b)
+		{
+			const ImGuiTableFlags flags =
+				ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp;
+			const int columns = static_cast<int>(b.header.size());
+			const float equalShare = (std::max)(ImGui::GetContentRegionAvail().x / columns, 1.0f);
+			if (!ImGui::BeginTable("##table", columns, flags))
+				return;
+			for (int c = 0; c < columns; ++c)
+				ImGui::TableSetupColumn("##column", ImGuiTableColumnFlags_WidthStretch, ColumnWeight(b, c, equalShare));
+			DrawTableRow(b.header, ImGuiTableRowFlags_Headers);
+			for (size_t i = 0; i < b.rows.size(); ++i)
+			{
+				ImGui::PushID(static_cast<int>(i) + 1);
+				DrawTableRow(b.rows[i], ImGuiTableRowFlags_None);
+				ImGui::PopID();
+			}
+			ImGui::EndTable();
+			ImGui::Spacing();
 		}
 
 		void DrawListItem(const ModIndex::Block& b)
@@ -298,6 +384,7 @@ namespace UI::ReadmeView
 				case ModIndex::BlockKind::ListItem:  DrawListItem(b);         break;
 				case ModIndex::BlockKind::Image:     DrawImage(b, snap);      break;
 				case ModIndex::BlockKind::Rule:      ImGui::Separator();      break;
+				case ModIndex::BlockKind::Table:     DrawTable(b);            break;
 				case ModIndex::BlockKind::CodeBlock:
 					ImGui::BeginChild("##code", ImVec2(0, 0), ImGuiChildFlags_Borders | ImGuiChildFlags_AutoResizeY);
 					ImGui::TextWrapped("%s", b.code.c_str());

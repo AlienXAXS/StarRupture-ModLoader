@@ -96,6 +96,67 @@
     "page_url": "https://github.com/LetMeInside/StarRupture-Plugin-MainMap",
     "interface_version_min": 79,
     "tested_loader": "1.27.0",
-    "readme_url": "https://raw.githubusercontent.com/LetMeInside/StarRupture-Plugin-MainMap/main/README.md"
+    "readme_url": "https://raw.githubusercontent.com/LetMeInside/StarRupture-Plugin-MainMap/main/README.md",
+    "requires": ["minimap"]
+  },
+  {
+    "id": "waila",
+    "name": "WAILA",
+    "author": "AlienXAXS",
+    "version": "0.22.0",
+    "summary": "What Am I Looking At: shows what you are pointing at, with details.",
+    "page_url": "https://github.com/AlienXAXS/StarRupture-Plugin-WAILA",
+    "interface_version_min": 77,
+    "readme_url": "https://raw.githubusercontent.com/AlienXAXS/StarRupture-Plugin-WAILA/main/README.md"
+  },
+  {
+    "id": "waveoptimiser",
+    "name": "WaveOptimiser",
+    "author": "AlienXAXS",
+    "version": "0.13.0",
+    "summary": "Optimises how rupture waves are handled, on the client and on dedicated servers.",
+    "page_url": "https://github.com/AlienXAXS/StarRupture-Plugin-WaveOptimiser",
+    "interface_version_min": 75,
+    "readme_url": "https://raw.githubusercontent.com/AlienXAXS/StarRupture-Plugin-WaveOptimiser/main/README.md"
+  },
+  {
+    "id": "serverutility",
+    "name": "ServerUtility",
+    "author": "AlienXAXS",
+    "version": "0.19.0",
+    "summary": "Dedicated server plugin: set server options on the command line and run server commands over Source RCON.",
+    "page_url": "https://github.com/AlienXAXS/StarRupture-Plugin-ServerUtility",
+    "interface_version_min": 70,
+    "readme_url": "https://raw.githubusercontent.com/AlienXAXS/StarRupture-Plugin-ServerUtility/main/README.md"
+  },
+  {
+    "id": "keepticking",
+    "name": "KeepTicking",
+    "author": "AlienXAXS",
+    "version": "0.19.0",
+    "summary": "Dedicated server plugin: keeps the server producing while no players are online.",
+    "page_url": "https://github.com/AlienXAXS/StarRupture-Plugin-KeepTicking",
+    "interface_version_min": 70,
+    "readme_url": "https://raw.githubusercontent.com/AlienXAXS/StarRupture-Plugin-KeepTicking/main/README.md"
+  },
+  {
+    "id": "persistentidfix",
+    "name": "PersistentIdFix",
+    "author": "LetMeInside",
+    "version": "1.4.1",
+    "summary": "Stops saves from running out of persistent IDs.",
+    "page_url": "https://github.com/LetMeInside/StarRupture-Plugin-PersistentIdFix",
+    "interface_version_min": 78,
+    "readme_url": "https://raw.githubusercontent.com/LetMeInside/StarRupture-Plugin-PersistentIdFix/main/README.md"
+  },
+  {
+    "id": "confirmhotkey",
+    "name": "ConfirmHotkey",
+    "author": "NasserHabib",
+    "version": "2.4.0",
+    "summary": "Adds a key (default E) that presses the confirm button in the Recycler and Analyzer.",
+    "page_url": "https://github.com/NasserHabib/StarRupture-Plugin-ConfirmHotkey",
+    "interface_version_min": 70,
+    "readme_url": "https://raw.githubusercontent.com/NasserHabib/StarRupture-Plugin-ConfirmHotkey/main/README.md"
   }
 ]

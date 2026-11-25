@@ -1,6 +1,3 @@
-A server can switch a plugin feature off for its players with the new features hostoff console command
-The dedicated server now has the same version object map coverage as the game client, so server plugins survive server updates
-If the game does not finish starting, ModLoader.log says why
-A plugin that names its game build now loads after an update that changed only some game classes
-Mods that list compatible versions keep talking across releases; plugins can check each other, the server's address and the plugin catalog
-Vortex users: after an update, the mod loader tells you how to keep it
+Plugin authors: plugins can now check each other, the server's address and the plugin catalog
+Vortex users: the mod loader can now remind you how to keep an update
+Plugin authors: the SDK's main branch now changes only with a mod loader release

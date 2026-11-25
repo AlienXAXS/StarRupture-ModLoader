@@ -303,6 +303,9 @@
     <ClInclude Include="plugins\plugin_hook_report.h">
       <Filter>Source Files\plugins</Filter>
     </ClInclude>
+    <ClInclude Include="plugins\plugin_host_info.h">
+      <Filter>Source Files\plugins</Filter>
+    </ClInclude>
     <ClInclude Include="plugins\plugin_manager.h">
       <Filter>Source Files\plugins</Filter>
     </ClInclude>
@@ -382,9 +385,6 @@
       <Filter>Source Files\auto_update</Filter>
     </ClInclude>
     <ClInclude Include="auto_update\version_compare.h">
-      <Filter>Source Files\auto_update</Filter>
-    </ClInclude>
-    <ClInclude Include="auto_update\json_extract.h">
       <Filter>Source Files\auto_update</Filter>
     </ClInclude>
     <ClInclude Include="auto_update\vortex_notice.h">

@@ -369,7 +369,7 @@ namespace
 		for (const Entry& e : r.entries)
 			Check(IsAllowedPageUrl(e.pageUrl) && !e.id.empty() && !e.name.empty() && e.interfaceVersionMin > 0, ("sample: complete entry " + e.id).c_str());
 		for (const Entry& e : r.entries)
-			Check(e.testedLoader == "1.27.0" && IsAllowedReadmeUrl(e.readmeUrl), ("sample: tested_loader and readme_url on " + e.id).c_str());
+			Check((e.testedLoader.empty() || e.testedLoader == "1.27.0") && IsAllowedReadmeUrl(e.readmeUrl), ("sample: tested_loader and readme_url on " + e.id).c_str());
 	}
 
 	void RequiresTests()
