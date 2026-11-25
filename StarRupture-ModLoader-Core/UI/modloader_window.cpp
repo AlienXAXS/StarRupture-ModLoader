@@ -16,6 +16,7 @@
 #include "named_entry_utils.h"
 #include "update_notice_window.h"
 #include "readme_view.h"
+#include "browse_thumbnails.h"
 #include "utils/open_page.h"
 #include "auto_update/mod_index_fetcher.h"
 #include "plugin_scan_window.h"
@@ -2362,6 +2363,7 @@ namespace UI::ModLoaderWindow
         const std::vector<ModIndex::Entry>&   entries;
         const PluginManager::ManageSnapshot&  managed;
         bool                                  signedList;
+        bool                                  pictures;   // the cards have a picture column
     };
 
     static std::string BrowseName(const BrowseCard& card)
@@ -2633,14 +2635,60 @@ namespace UI::ModLoaderWindow
         return why;
     }
 
+    // The picture column of a card: the picture, or a disabled button of the same
+    // size that says why there is none. The box is the column wide and 16:9, the
+    // shape of a thumbnail. A card that is scrolled out of view asks for nothing.
+    static void DrawBrowseThumb(const ModIndex::Entry* e)
+    {
+        namespace Thumbs = UI::BrowseThumbnails;
+
+        const float avail = ImGui::GetContentRegionAvail().x;
+        float boxW = 0.0f;
+        float boxH = 0.0f;
+        ModIndex::FitPicture(ModIndex::kMaxThumbnailWidth, ModIndex::kMaxThumbnailHeight, avail, avail, &boxW, &boxH);
+        const ImVec2 box(boxW, boxH);
+
+        Thumbs::Thumb thumb;
+        if (e && ImGui::IsRectVisible(box))
+            thumb = Thumbs::Get(*e);
+
+        IPluginImGuiTextures* const api = UI::ImGuiBackend::GetTextureAPI();
+        if (thumb.view == Thumbs::View::Ready && api && api->Image)
+        {
+            float w = 0.0f;
+            float h = 0.0f;
+            ModIndex::FitPicture(thumb.width, thumb.height, boxW, boxH, &w, &h);
+            if (w > 0.0f)
+            {
+                api->Image(thumb.handle, w, h);
+                return;
+            }
+        }
+
+        const char* label = "No picture";
+        if (thumb.view == Thumbs::View::Loading)
+            label = "Loading...";
+        else if (thumb.view == Thumbs::View::Failed || thumb.view == Thumbs::View::Mismatch)
+            label = "Picture unavailable";
+        ImGui::BeginDisabled();
+        ImGui::Button(label, box);
+        ImGui::EndDisabled();
+    }
+
     // One card: the name with its version and author, the summary, then one line
     // with the state, the ModLoader version the entry was last tried on and the
-    // buttons, then anything the player has to be told.
+    // buttons, then anything the player has to be told. With a picture column the
+    // picture comes first and the text is the second column.
     static void DrawBrowseRow(const BrowseCard& card, const std::vector<BrowseCard>& cards,
                               const BrowseList& list)
     {
         ImGui::TableNextRow();
-        ImGui::TableSetColumnIndex(0);
+        if (list.pictures)
+        {
+            ImGui::TableSetColumnIndex(0);
+            DrawBrowseThumb(card.entry);
+        }
+        ImGui::TableSetColumnIndex(list.pictures ? 1 : 0);
 
         const ModIndex::Entry* e = card.entry;
         const std::string name = BrowseName(card);
@@ -2821,6 +2869,7 @@ namespace UI::ModLoaderWindow
 
         ModIndex::Fetcher& index = ModIndex::Instance();
         const std::shared_ptr<const ModIndex::Snapshot> snap = index.Get();
+        UI::BrowseThumbnails::Sync(snap);
 
         // The installed plugins are listed below whatever the index is doing.
         static const std::vector<ModIndex::Entry> noEntries;
@@ -2837,7 +2886,10 @@ namespace UI::ModLoaderWindow
         case ModIndex::State::Failed:
             ImGui::TextUnformatted(snap->error.c_str());
             if (ImGui::Button("Retry"))
+            {
                 index.Retry();
+                UI::BrowseThumbnails::Retry();
+            }
             break;
         case ModIndex::State::Ready:
             entries = &snap->entries;
@@ -2845,7 +2897,10 @@ namespace UI::ModLoaderWindow
             {
                 ImGui::TextUnformatted("The mod list is empty right now.");
                 if (ImGui::Button("Retry"))
+                {
                     index.Retry();
+                    UI::BrowseThumbnails::Retry();
+                }
             }
             if (!snap->signatureVerified && !snap->entries.empty())
                 ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.1f, 1.0f), "This list isn't signed. It comes from the address you set yourself.");
@@ -2858,7 +2913,12 @@ namespace UI::ModLoaderWindow
 
         const PluginManager::ManageSnapshot managed = PluginManager::GetManageSnapshot();
         const std::vector<BrowseCard> cards = BuildBrowseCards(*entries, managed);
-        const BrowseList list{ *entries, managed, snap->signatureVerified };
+        // Pictures only come with the built-in signed list; a list the player set
+        // up looks as it always did.
+        const bool pictures = snap->signatureVerified &&
+            std::any_of(entries->begin(), entries->end(),
+                        [](const ModIndex::Entry& e) { return !e.thumbnail.url.empty(); });
+        const BrowseList list{ *entries, managed, snap->signatureVerified, pictures };
 
         std::vector<size_t> shown;
         for (size_t i = 0; i < cards.size(); ++i)
@@ -2874,8 +2934,10 @@ namespace UI::ModLoaderWindow
             ImGuiTableFlags_Resizable |
             ImGuiTableFlags_SizingStretchProp;
 
-        if (!shown.empty() && ImGui::BeginTable("##browse", 1, tableFlags))
+        if (!shown.empty() && ImGui::BeginTable("##browse", pictures ? 2 : 1, tableFlags))
         {
+            if (pictures)
+                ImGui::TableSetupColumn("Picture", ImGuiTableColumnFlags_WidthFixed, ImGui::GetFontSize() * 10.0f);
             ImGui::TableSetupColumn("Plugin", ImGuiTableColumnFlags_WidthStretch);
 
             for (const size_t i : shown)
