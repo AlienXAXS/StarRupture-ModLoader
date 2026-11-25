@@ -7,6 +7,7 @@
 #include "auto_update/mod_index_fetcher.h"
 #include "auto_update/mod_index_signed.h"
 #include "auto_update/mod_install.h"
+#include "auto_update/thumbnail_check.h"
 #include "utils/sha256.h"
 #include "auto_update/feed_fetch.h"
 #include "memory_scanner/version_feed.h"
@@ -950,6 +951,165 @@ namespace
 		}
 	}
 
+	// ---- Thumbnail: the parser's fields and the PNG header check --------------
+
+	const std::string kCommit = "0123456789abcdef0123456789abcdef01234567";
+	const std::string kThumbUrl = "https://raw.githubusercontent.com/Owner/Repo/" + kCommit + "/images/thumbnail.png";
+
+	std::string ThumbJson(const std::string& url, const std::string& sha, const std::string& size)
+	{
+		std::string s;
+		if (!url.empty())  s += ", \"thumbnail_url\": \"" + url + "\"";
+		if (!sha.empty())  s += ", \"thumbnail_sha256\": \"" + sha + "\"";
+		if (!size.empty()) s += ", \"thumbnail_size\": " + size;
+		return s;
+	}
+
+	void ThumbnailParserTests()
+	{
+		const std::string sha(64, 'b');
+		const auto parse = [](const std::string& extra, const char* page)
+		{
+			const ParseResult r = ParseModIndex("[" + Obj("thing", "Thing", page, extra) + "]");
+			return r.entries.size() == 1 ? r.entries[0] : Entry();
+		};
+		const auto has = [&](const Entry& e) { return e.thumbnail.url == kThumbUrl && e.thumbnail.sha256 == sha && e.thumbnail.size == 183296; };
+
+		const Entry full = parse(ThumbJson(kThumbUrl, sha, "183296"), kRepoPage);
+		Check(has(full), "thumbnail fields: all read");
+		Check(parse(ThumbJson(kThumbUrl, sha, "1"), kRepoPage).thumbnail.size == 1, "thumbnail fields: the smallest size");
+		Check(parse(ThumbJson(kThumbUrl, sha, "524288"), kRepoPage).thumbnail.size == 512u * 1024
+			&& kMaxThumbnailBytes == 512u * 1024, "thumbnail fields: the size limit");
+		Check(has(parse(ThumbJson(kThumbUrl, sha, "183296"), "https://github.com/owner/REPO")), "thumbnail fields: owner and repository match whatever the case");
+		Check(has(parse(ThumbJson(kThumbUrl, sha, "183296"), "https://github.com/Owner/Repo/")), "thumbnail fields: a page with a trailing slash");
+		Check(has(parse(ThumbJson(kThumbUrl, sha, "183296"), "https://github.com/Owner/Repo/releases")), "thumbnail fields: a page with a path");
+		Check(has(parse(ThumbJson(kThumbUrl, sha, "183296") + ", \"server_only\": true", kRepoPage)), "thumbnail fields: a server_only entry keeps them");
+
+		// no keys: no picture, and every other field as before
+		const Entry none = parse("", kRepoPage);
+		Check(none.id == "thing" && none.thumbnail.url.empty() && none.thumbnail.sha256.empty() && none.thumbnail.size == 0,
+			"thumbnail fields: none given, none set");
+		// with the keys: the other fields read the same, install included
+		const std::string install = InstallJson(kAssetUrl, sha, "1234", "[\"Thing.dll\", \"Thing.json\"]", kOwnManifest)
+			+ ", \"author\": \"Al\", \"version\": \"1.2.3\", \"summary\": \"S\", \"tested_loader\": \"1.27.0\", \"interface_version_min\": 79, \"requires\": [\"a\"]";
+		const Entry before = parse(install, kRepoPage);
+		const Entry after = parse(install + ThumbJson(kThumbUrl, sha, "183296"), kRepoPage);
+		Check(has(after) && before.thumbnail.url.empty(), "thumbnail fields: read beside the install fields");
+		Check(after.id == before.id && after.name == before.name && after.author == before.author && after.version == before.version
+			&& after.summary == before.summary && after.testedLoader == before.testedLoader && after.pageUrl == before.pageUrl
+			&& after.interfaceVersionMin == before.interfaceVersionMin && after.requiredIds == before.requiredIds
+			&& after.install.url == before.install.url && after.install.sha256 == before.install.sha256
+			&& after.install.size == before.install.size && after.install.dllFile == before.install.dllFile
+			&& after.install.manifestUrl == before.install.manifestUrl && before.install.dllFile == "Thing.dll",
+			"thumbnail fields: the other fields read the same with or without them");
+		// bad install keys and good thumbnail keys do not touch each other
+		Check(parse(ThumbJson(kThumbUrl, sha, "183296") + ", \"download_url\": \"x\"", kRepoPage).install.url.empty()
+			&& has(parse(ThumbJson(kThumbUrl, sha, "183296") + ", \"download_url\": \"x\"", kRepoPage)), "thumbnail fields: independent of the install fields");
+
+		struct Bad { const char* what; std::string extra; const char* page; };
+		const std::string raw = "https://raw.githubusercontent.com/Owner/Repo/";
+		const auto url = [&](const std::string& u) { return ThumbJson(u, sha, "10"); };
+		const std::vector<Bad> bad = {
+			{ "no url", ThumbJson("", sha, "10"), kRepoPage },
+			{ "no sha", ThumbJson(kThumbUrl, "", "10"), kRepoPage },
+			{ "no size", ThumbJson(kThumbUrl, sha, ""), kRepoPage },
+			{ "only a size", ThumbJson("", "", "10"), kRepoPage },
+			{ "an http url", url("http://raw.githubusercontent.com/Owner/Repo/" + kCommit + "/images/thumbnail.png"), kRepoPage },
+			{ "another host", url("https://example.test/Owner/Repo/" + kCommit + "/images/thumbnail.png"), kRepoPage },
+			{ "a github.com raw path", url("https://github.com/Owner/Repo/raw/" + kCommit + "/images/thumbnail.png"), kRepoPage },
+			{ "a lookalike host", url("https://raw.githubusercontent.com.example.test/Owner/Repo/" + kCommit + "/images/thumbnail.png"), kRepoPage },
+			{ "an upper case host", url("https://RAW.githubusercontent.com/Owner/Repo/" + kCommit + "/images/thumbnail.png"), kRepoPage },
+			{ "user info", url("https://x@raw.githubusercontent.com/Owner/Repo/" + kCommit + "/images/thumbnail.png"), kRepoPage },
+			{ "a branch", url(raw + "main/images/thumbnail.png"), kRepoPage },
+			{ "a tag", url(raw + "v1.2.0/images/thumbnail.png"), kRepoPage },
+			{ "a short commit", url(raw + kCommit.substr(1) + "/images/thumbnail.png"), kRepoPage },
+			{ "a long commit", url(raw + kCommit + "0/images/thumbnail.png"), kRepoPage },
+			{ "an upper case commit", url(raw + std::string(40, 'A') + "/images/thumbnail.png"), kRepoPage },
+			{ "a commit that is not hex", url(raw + std::string(40, 'g') + "/images/thumbnail.png"), kRepoPage },
+			{ "a query", url(raw + kCommit + "/images/thumbnail.png?x=1"), kRepoPage },
+			{ "a fragment", url(raw + kCommit + "/images/thumbnail.png#x"), kRepoPage },
+			{ "a trailing slash", url(raw + kCommit + "/images/thumbnail.png/"), kRepoPage },
+			{ "another file name", url(raw + kCommit + "/images/other.png"), kRepoPage },
+			{ "another folder", url(raw + kCommit + "/Images/thumbnail.png"), kRepoPage },
+			{ "a second path", url(raw + kCommit + "/extra/images/thumbnail.png"), kRepoPage },
+			{ "dot dot", url("https://raw.githubusercontent.com/../" + kCommit + "/images/thumbnail.png"), kRepoPage },
+			{ "an escape", url(raw + kCommit + "/images/thumbnail%2epng"), kRepoPage },
+			{ "another repository", url("https://raw.githubusercontent.com/Owner/Other/" + kCommit + "/images/thumbnail.png"), kRepoPage },
+			{ "another owner", url("https://raw.githubusercontent.com/Else/Repo/" + kCommit + "/images/thumbnail.png"), kRepoPage },
+			{ "a url over the length limit", url(raw + kCommit + "/images/thumbnail.png" + std::string(200, 'x')), kRepoPage },
+			{ "a short sha", ThumbJson(kThumbUrl, std::string(63, 'b'), "10"), kRepoPage },
+			{ "an uppercase sha", ThumbJson(kThumbUrl, std::string(64, 'B'), "10"), kRepoPage },
+			{ "a sha that is not hex", ThumbJson(kThumbUrl, std::string(64, 'g'), "10"), kRepoPage },
+			{ "size zero", ThumbJson(kThumbUrl, sha, "0"), kRepoPage },
+			{ "a negative size", ThumbJson(kThumbUrl, sha, "-5"), kRepoPage },
+			{ "a size over the limit", ThumbJson(kThumbUrl, sha, "524289"), kRepoPage },
+			{ "a huge size", ThumbJson(kThumbUrl, sha, "99999999999999999999"), kRepoPage },
+			{ "a size as text", ThumbJson(kThumbUrl, sha, "\"10\""), kRepoPage },
+			{ "a nexusmods.com page", ThumbJson(kThumbUrl, sha, "10"), "https://www.nexusmods.com/starrupture/mods/1" },
+			{ "a bare nexusmods.com page", ThumbJson(kThumbUrl, sha, "10"), "https://nexusmods.com/starrupture/mods/1" },
+			{ "a www.github.com page", ThumbJson(kThumbUrl, sha, "10"), "https://www.github.com/Owner/Repo" },
+			{ "a page that is another repository", ThumbJson(kThumbUrl, sha, "10"), "https://github.com/Owner/Other" },
+			{ "a page with a query after the repository", ThumbJson(kThumbUrl, sha, "10"), "https://github.com/Owner/Repo/issues?x=1" },
+			{ "a page with an empty segment", ThumbJson(kThumbUrl, sha, "10"), "https://github.com/Owner/Repo//issues" },
+		};
+		for (const Bad& b : bad)
+		{
+			const Entry e = parse(b.extra, b.page);
+			Check(e.id == "thing" && e.name == "Thing" && e.thumbnail.url.empty() && e.thumbnail.sha256.empty() && e.thumbnail.size == 0,
+				(std::string("thumbnail fields: listed with no picture for ") + b.what).c_str());
+		}
+
+		// the address check on its own
+		Check(IsThumbnailUrl(kThumbUrl, kRepoPage) && !IsThumbnailUrl(kThumbUrl, "https://www.nexusmods.com/starrupture/mods/1")
+			&& !IsThumbnailUrl("", kRepoPage) && !IsThumbnailUrl(kThumbUrl, ""), "thumbnail url: only for the page's own GitHub repository");
+	}
+
+	// The header of a PNG: signature, IHDR chunk length 13, "IHDR", width and height (big endian).
+	std::string PngHeader(unsigned w, unsigned h, unsigned length = 13, const char* type = "IHDR")
+	{
+		std::string s("\x89PNG\r\n\x1A\n", 8);
+		const auto be = [&](unsigned v) { for (int shift = 24; shift >= 0; shift -= 8) s += static_cast<char>((v >> shift) & 0xFF); };
+		be(length);
+		s += type;
+		be(w);
+		be(h);
+		s += std::string(5, '\0');   // bit depth, colour type, compression, filter, interlace
+		return s;
+	}
+
+	void ThumbnailHeaderTests()
+	{
+		unsigned w = 0, h = 0;
+		Check(CheckThumbnailHeader(PngHeader(640, 360), &w, &h) == ThumbnailCheck::Ok && w == 640 && h == 360, "thumbnail header: a 640 x 360 PNG");
+		Check(CheckThumbnailHeader(PngHeader(640, 360)) == ThumbnailCheck::Ok, "thumbnail header: no out parameters");
+		Check(CheckThumbnailHeader(PngHeader(1280, 720)) == ThumbnailCheck::Ok, "thumbnail header: the largest allowed");
+		Check(CheckThumbnailHeader(PngHeader(1, 1)) == ThumbnailCheck::Ok, "thumbnail header: the smallest allowed");
+		Check(CheckThumbnailHeader(PngHeader(640, 360) + std::string(5000, 'x')) == ThumbnailCheck::Ok, "thumbnail header: only the header is read");
+		Check(kMaxThumbnailWidth == 1280 && kMaxThumbnailHeight == 720, "thumbnail header: the limits");
+
+		w = h = 0;
+		Check(CheckThumbnailHeader(PngHeader(1281, 720), &w, &h) == ThumbnailCheck::BadSize && w == 1281 && h == 720, "thumbnail header: 1281 wide is too big, and read");
+		Check(CheckThumbnailHeader(PngHeader(1280, 721)) == ThumbnailCheck::BadSize, "thumbnail header: 721 high is too big");
+		Check(CheckThumbnailHeader(PngHeader(0, 360)) == ThumbnailCheck::BadSize, "thumbnail header: width 0");
+		Check(CheckThumbnailHeader(PngHeader(640, 0)) == ThumbnailCheck::BadSize, "thumbnail header: height 0");
+		Check(CheckThumbnailHeader(PngHeader(0xFFFFFFFFu, 0xFFFFFFFFu)) == ThumbnailCheck::BadSize, "thumbnail header: 4 billion square");
+
+		Check(CheckThumbnailHeader("") == ThumbnailCheck::NotPng, "thumbnail header: empty");
+		Check(CheckThumbnailHeader(PngHeader(640, 360).substr(0, 23)) == ThumbnailCheck::NotPng, "thumbnail header: cut off one byte short");
+		Check(CheckThumbnailHeader(PngHeader(640, 360).substr(0, 8)) == ThumbnailCheck::NotPng, "thumbnail header: the signature alone");
+		Check(CheckThumbnailHeader(std::string("\xFF\xD8\xFF\xE0", 4) + std::string(60, '\0')) == ThumbnailCheck::NotPng, "thumbnail header: a JPEG");
+		Check(CheckThumbnailHeader("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"640\" height=\"360\"></svg>") == ThumbnailCheck::NotPng, "thumbnail header: SVG text");
+		Check(CheckThumbnailHeader("GIF89a" + std::string(60, '\0')) == ThumbnailCheck::NotPng, "thumbnail header: a GIF");
+		std::string wrong = PngHeader(640, 360);
+		wrong[1] = 'p';
+		Check(CheckThumbnailHeader(wrong) == ThumbnailCheck::NotPng, "thumbnail header: a wrong signature byte");
+		std::string noCrLf = PngHeader(640, 360);
+		noCrLf[4] = '\n';
+		Check(CheckThumbnailHeader(noCrLf) == ThumbnailCheck::NotPng, "thumbnail header: a signature with its line ends changed");
+		Check(CheckThumbnailHeader(PngHeader(640, 360, 12)) == ThumbnailCheck::NotPng, "thumbnail header: an IHDR of the wrong length");
+		Check(CheckThumbnailHeader(PngHeader(640, 360, 13, "IDAT")) == ThumbnailCheck::NotPng, "thumbnail header: another chunk first");
+	}
+
 	// A game folder of its own under %TEMP%, removed again.
 	struct GameDir
 	{
@@ -1699,6 +1859,8 @@ int main()
 	PlayersOwnFetchTests();
 	FetcherTests();
 	InstallParserTests();
+	ThumbnailParserTests();
+	ThumbnailHeaderTests();
 	DownloadTests();
 	PlaceTests();
 	InstallerTests();
