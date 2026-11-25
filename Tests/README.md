@@ -684,12 +684,14 @@ It prints one line per failed check and a total, and exits 0 when every check pa
 
 ## PluginManageTests
 
-The rules behind disabling and uninstalling a plugin (`plugins/plugin_manage.h`), with no loader and no game.
-Every case works in its own folder under the temp directory. It checks:
+Disabling and uninstalling a plugin, with no game. It has two parts, and every case works in its own folder under
+the temp directory.
+
+The rules (`plugins/plugin_manage.h`):
 
 - The `[Plugins] Disabled=` list: splitting, adding and removing a name in any case, and saving it to
   `modloader.ini` without touching the other sections or leaving a half-written line.
-- Which names are refused: paths, `..`, colons, device names, anything that is not a plain `<name>.dll`.
+- Which names are refused: paths, `..`, colons, anything that is not a plain `<name>.dll`.
   Junctions and linked files are refused too. The linked-file case is skipped, and says so, when the account may
   not create a file link.
 - Uninstall moves only `X.dll`, `X.pdb` and `X.json` into `Removed\X\<stamp>`. Settings, subfolders and
@@ -700,8 +702,23 @@ Every case works in its own folder under the temp directory. It checks:
 - A DLL loaded in the test process can be moved out of the folder and back.
 - The names a preload DLL answers to, the card states and buttons, and the "Vortex placed this file" check.
 
-The last part is a scripted run (disable, enable, uninstall, restore) that prints each step and the files after
+This part ends with a scripted run (disable, enable, uninstall, restore) that prints each step and the files after
 it.
+
+The plugin manager (`manager_tests.cpp`) runs the loader's own `plugin_manager.cpp` against small test plugin DLLs
+(`ManageTestPlugin.vcxproj`, built along with the tests). The preload step, the network and the other loader parts
+it calls are stand-ins, and work meant for the game thread runs on the caller. There are 7 made-up game folders
+and 13 game starts, each start a process of its own, so a restart is a real one. It checks:
+
+- Disable, uninstall and restore through the same calls the Browse tab makes, which plugin code runs after each,
+  and that file contents do not change.
+- A plugin that cannot unload keeps running until the restart.
+- The auto-updater's sidecar scan skips disabled and uninstalled plugins, and a `.json` left without its DLL.
+- Recovery after a rollback that could not finish.
+- Restore leaves a disabled plugin disabled, and is refused when the same plugin is installed under another file
+  name.
+- A DLL copied back in the same session is picked up by LOAD NEW.
+- A plugin Vortex placed is not uninstalled by the loader, read from a real `vortex.deployment.json`.
 
 ```
 msbuild Tests\PluginManageTests\PluginManageTests.vcxproj /p:Configuration="Client Release" /p:Platform=x64
