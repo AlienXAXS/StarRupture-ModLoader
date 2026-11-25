@@ -27,6 +27,9 @@
 #include "plugins/pak_registry.h"
 #include "preload/preload_manager.h"
 #ifdef MODLOADER_CLIENT_BUILD
+#include "plugins/plugin_manage.h"
+#endif
+#ifdef MODLOADER_CLIENT_BUILD
 #include "hooks/game/game_menu/game_menu_registry.h"
 #include "hooks/input/keybind_registry.h"
 #include "hooks/input/mouse_wheel_registry.h"
@@ -357,6 +360,7 @@ namespace PluginManager
 		bool needsModLoaderUpdate;   // true when plugin interface version is too new
 		bool isWrongTarget;          // true when plugin was built for a different build target
 		bool hookScanFailed;         // true when OnPluginLoadHooks missed anything at all
+		bool isDisabled;             // on [Plugins] Disabled when its load was last asked for
 
 		// Stable identity struct passed to PluginInit and retained by the plugin->
 		// name/version point into cachedName/cachedVersion so they outlive PluginInfo.
@@ -386,6 +390,30 @@ namespace PluginManager
 	// the refusal, while a plugin is inside its PluginShutdown (isUnloading).
 	static constexpr const char* kUnloadingNow = "This plugin is being unloaded right now";
 
+	// A record that holds no code because the player turned its plugin off. A
+	// name lookup passes over it while another record has the name.
+	static bool IsShelved(const LoadedPlugin& p)
+	{
+		return !p.hModule && p.isDisabled;
+	}
+
+	// The record a plugin name means: the first one that is not shelved, else
+	// the first with the name, or -1. Caller must hold g_pluginLock.
+	static int IndexByName(const char* name)
+	{
+		int shelved = -1;
+		for (int i = 0; i < static_cast<int>(g_loadedPlugins.size()); ++i)
+		{
+			if (_stricmp(g_loadedPlugins[i]->cachedName.c_str(), name) != 0)
+				continue;
+			if (!IsShelved(*g_loadedPlugins[i]))
+				return i;
+			if (shelved < 0)
+				shelved = i;
+		}
+		return shelved;
+	}
+
 	// Update self pointers after loading or reloading a plugin, so they point to the cached strings.
 	static void RefreshSelfPointers(LoadedPlugin& rec)
 	{
@@ -395,7 +423,10 @@ namespace PluginManager
 
 	// Why a DLL did not come up, so ScanForNewPlugins can say so. Most failures
 	// leave no record behind, so the reason has to travel out separately.
-	enum class LoadFailure { None, CouldNotLoad, Crashed, NotAPlugin, OutOfDate, WrongTarget, OffBuild, Refused };
+	enum class LoadFailure { None, CouldNotLoad, Crashed, NotAPlugin, OutOfDate, WrongTarget, OffBuild, Refused, Disabled };
+
+	// What the console and a refusal say about a disabled plugin.
+	static constexpr const char* kDisabledWhy = "disabled; enable it on the Browse page";
 
 	struct LoadFailureInfo
 	{
@@ -408,6 +439,17 @@ namespace PluginManager
 
 	static const wchar_t* BaseFileName(const std::wstring& path);
 	static bool HasUpdateSidecar(const std::wstring& dllPath);
+
+#ifdef MODLOADER_CLIENT_BUILD
+	// Is this DLL on modloader.ini [Plugins] Disabled? Reads the file, so only
+	// for a load that is being asked for, never per frame.
+	static bool IsListedDisabled(const std::wstring& dllPath)
+	{
+		std::vector<std::wstring> disabled;
+		PluginManage::ReadDisabledList(GetModLoaderDirPath(L"modloader.ini"), disabled);
+		return PluginManage::ListHas(disabled, BaseFileName(dllPath));
+	}
+#endif
 
 	// Inner load helper: performs LoadLibrary, GetProcAddress, GetPluginInfo,
 	// version check, and PluginInit on an existing LoadedPlugin record.
@@ -428,6 +470,18 @@ namespace PluginManager
 				rec.fileName.c_str());
 			return false;
 		}
+
+#ifdef MODLOADER_CLIENT_BUILD
+		// Before LoadLibrary: a disabled plugin runs none of its code. Every
+		// load path comes through here.
+		rec.isDisabled = IsListedDisabled(rec.fileName);
+		if (rec.isDisabled)
+		{
+			ModLoaderLogger::LogMessage(L"Plugin is disabled -- not loading: %s", rec.fileName.c_str());
+			if (why) why->kind = LoadFailure::Disabled;
+			return false;
+		}
+#endif
 
 		ModLoaderLogger::LogMessage(L"Loading plugin: %s", rec.fileName.c_str());
 
@@ -649,14 +703,17 @@ namespace PluginManager
 		rec->needsModLoaderUpdate = false;
 		rec->isWrongTarget        = false;
 		rec->hookScanFailed       = false;
+		rec->isDisabled           = false;
 
 		if (!LoadPluginIntoRecord(*rec, startup, why))
 		{
 			if (why) why->name = rec->cachedName;
 
-			// Keep the record visible in the UI for out-of-date or wrong-target plugins.
-			if (rec->isOutOfDate || rec->isWrongTarget)
+			// Keep the record visible in the UI for out-of-date, wrong-target or
+			// disabled plugins.
+			if (rec->isOutOfDate || rec->isWrongTarget || rec->isDisabled)
 			{
+				RefreshSelfPointers(*rec);
 				EnterCriticalSection(&g_pluginLock);
 				g_loadedPlugins.push_back(std::move(rec));
 				LeaveCriticalSection(&g_pluginLock);
@@ -827,6 +884,7 @@ namespace PluginManager
 		for (const auto& other : g_loadedPlugins)
 		{
 			if (other.get() != &rec && (!loadedOnly || other->hModule)
+				&& !IsShelved(*other) && !rec.cachedName.empty()
 				&& _stricmp(other->cachedName.c_str(), rec.cachedName.c_str()) == 0)
 				return other.get();
 		}
@@ -1338,6 +1396,7 @@ namespace PluginManager
 				out[i].declaredInterface     = p.interfaceVersion;
 				out[i].isWrongTarget         = p.isWrongTarget;
 				out[i].hookScanFailed        = p.hookScanFailed;
+				out[i].isDisabled            = p.isDisabled;
 
 				// Plugin paths are ASCII in practice; anything else degrades to '?'
 				// rather than failing the whole snapshot. Cleared first so a
@@ -1379,16 +1438,10 @@ namespace PluginManager
 
 		EnterCriticalSection(&g_pluginLock);
 		const IPluginSelf* result = nullptr;
-		for (auto& p : g_loadedPlugins)
-		{
-			if (_stricmp(p->cachedName.c_str(), pluginName) == 0)
-			{
-				// Nothing to notify while its PluginShutdown runs.
-				if (!p->isUnloading)
-					result = &p->self;
-				break;
-			}
-		}
+		const int index = IndexByName(pluginName);
+		// Nothing to notify while its PluginShutdown runs.
+		if (index >= 0 && !g_loadedPlugins[index]->isUnloading)
+			result = &g_loadedPlugins[index]->self;
 		LeaveCriticalSection(&g_pluginLock);
 		return result;
 	}
@@ -1399,14 +1452,9 @@ namespace PluginManager
 		if (!pluginName) return result;
 
 		EnterCriticalSection(&g_pluginLock);
-		for (auto& p : g_loadedPlugins)
-		{
-			if (_stricmp(p->cachedName.c_str(), pluginName) == 0)
-			{
-				result = p->wire;
-				break;
-			}
-		}
+		const int index = IndexByName(pluginName);
+		if (index >= 0)
+			result = g_loadedPlugins[index]->wire;
 		LeaveCriticalSection(&g_pluginLock);
 		return result;
 	}
@@ -1571,6 +1619,19 @@ namespace PluginManager
 		}
 
 		LoadedPlugin& p = *g_loadedPlugins[index];
+
+#ifdef MODLOADER_CLIENT_BUILD
+		// Asked before anything is shut down: a plugin that may not load again
+		// keeps running.
+		if (IsListedDisabled(p.fileName))
+		{
+			p.isDisabled = true;
+			ModLoaderLogger::LogWarn(L"Load of %s refused: %S", BaseFileName(p.fileName), kDisabledWhy);
+			LeaveCriticalSection(&g_pluginLock);
+			if (refusal) *refusal = kDisabledWhy;
+			return false;
+		}
+#endif
 
 		if (p.isUnloading)
 		{
@@ -1904,18 +1965,9 @@ namespace PluginManager
 
 		EnterCriticalSection(&g_pluginLock);
 
-		int found = -1;
-
 		// PluginInfo name first -- that is what `plugins` displays and what a
 		// user is most likely to type.
-		for (int i = 0; i < static_cast<int>(g_loadedPlugins.size()); ++i)
-		{
-			if (_stricmp(g_loadedPlugins[i]->cachedName.c_str(), nameOrFile) == 0)
-			{
-				found = i;
-				break;
-			}
-		}
+		int found = IndexByName(nameOrFile);
 
 		// Then the DLL file name, with and without the extension. A record whose
 		// load failed has no cached name at all, so this is the only way to
@@ -1974,6 +2026,7 @@ namespace PluginManager
 		case ScanStatus::Failed:       return "Failed";
 		case ScanStatus::Duplicate:    return "Duplicate";
 		case ScanStatus::Refused:      return "Refused";
+		case ScanStatus::Disabled:     return "Disabled";
 		}
 		return "?";
 	}
@@ -2067,6 +2120,10 @@ namespace PluginManager
 			// Not a fault: the plugin asked not to be loaded in this state.
 			r.status = ScanStatus::Refused;
 			snprintf(text, sizeof(text), "%s", why.detail.c_str());
+			break;
+		case LoadFailure::Disabled:
+			r.status = ScanStatus::Disabled;
+			snprintf(text, sizeof(text), "It is %s.", kDisabledWhy);
 			break;
 		case LoadFailure::WrongTarget:
 			r.status = ScanStatus::WrongTarget;

@@ -27,6 +27,10 @@ namespace PluginManager
         // what the plugin list needs to explain the state it is showing.
         bool hookScanFailed;
 
+        // On modloader.ini [Plugins] Disabled (client builds): the loader does
+        // not load it. With isLoaded still set it is off after a restart.
+        bool isDisabled;
+
         // Bare DLL file name (no directory), e.g. "ServerUtility.dll". Lets the
         // console address a plugin by file when its PluginInfo name is unknown --
         // an out-of-date or crashed-on-load record has no usable name.
@@ -193,6 +197,7 @@ namespace PluginManager
         Failed,        // crashed or returned an error while loading or in PluginInit
         Duplicate,     // a plugin with that name is already in the plugin list
         Refused,       // its load setting does not allow loading it now (MENU in a world, RESTART)
+        Disabled,      // the player turned it off (modloader.ini [Plugins] Disabled)
     };
 
     // One-time events that are replayed to a plugin registering late only while
