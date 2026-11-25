@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <fstream>
 #include <memory>
 #include <string>
 #include <vector>
@@ -67,8 +68,20 @@ namespace
 		Check(ok, "fixture file written");
 	}
 
-	// Every file and folder below dir, as "relative path = content", sorted. A
-	// link is listed and not followed.
+	// FNV-1a of a file's bytes: two files of one size still differ.
+	std::wstring ContentHash(const std::wstring& path)
+	{
+		std::ifstream in(path, std::ios::binary);
+		if (!in)
+			return L"unread";
+		unsigned long long hash = 14695981039346656037ull;
+		for (char c; in.get(c);)
+			hash = (hash ^ static_cast<unsigned char>(c)) * 1099511628211ull;
+		return std::to_wstring(hash);
+	}
+
+	// Every file and folder below dir, sorted: "relative path:size:content hash"
+	// for a file. A link is listed and not followed.
 	void Walk(const std::wstring& dir, const std::wstring& prefix, std::vector<std::wstring>& out)
 	{
 		WIN32_FIND_DATAW found{};
@@ -81,7 +94,9 @@ namespace
 			if (name == L"." || name == L"..")
 				continue;
 			const bool folder = (found.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
-			out.push_back(prefix + name + (folder ? L"\\" : L":" + std::to_wstring(found.nFileSizeLow)));
+			const bool link = (found.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0;
+			out.push_back(prefix + name + (folder ? L"\\" : L":" + std::to_wstring(found.nFileSizeLow) +
+				(link ? std::wstring() : L":" + ContentHash(dir + L"\\" + name))));
 			if (folder && !(found.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT))
 				Walk(dir + L"\\" + name, prefix + name + L"\\", out);
 		} while (FindNextFileW(search, &found));
@@ -689,7 +704,7 @@ namespace
 		printf("[Plugins] Disabled=%s\n", list.c_str());
 		for (const std::wstring& entry : Tree())
 		{
-			// "name:size" for a file, "name\" for a folder
+			// "name:size:hash" for a file, "name\" for a folder
 			printf("  %s\n", Utf8(entry).c_str());
 		}
 	}
@@ -704,7 +719,7 @@ namespace
 		Write(L"Plugins\\config\\MiniMap.ini", "[General]\r\nEnabled=1\r\n");
 		Write(L"Plugins\\MiniMap\\waypoints.dat", "player data");
 		Write(L"Plugins\\Compass.dll", "compass code");
-		printf("\nScripted run (name:bytes is a file, name\\ a folder)\n");
+		printf("\nScripted run (name:bytes:hash is a file, name\\ a folder)\n");
 		Show("Start");
 		const std::vector<std::wstring> start = Tree();
 		std::vector<std::wstring> names;

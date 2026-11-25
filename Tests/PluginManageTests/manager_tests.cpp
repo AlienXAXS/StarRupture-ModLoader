@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <fstream>
+#include <iterator>
 #include <string>
 #include <vector>
 
@@ -111,11 +112,47 @@ namespace
 		return false;
 	}
 
+	const ScanResult* ResultFor(const std::vector<ScanResult>& results, const char* file)
+	{
+		for (const ScanResult& result : results)
+			if (result.fileName == file)
+				return &result;
+		return nullptr;
+	}
+
 	void ExpectNotLoadedByRescan(const char* file, const std::string& name, const char* when)
 	{
 		const int before = Count("attach " + name);
-		ScanForNewPlugins();
-		Expect(Count("attach " + name) == before, std::string(when) + ": a rescan does not load " + file);
+		std::vector<ScanResult> results;
+		ScanForNewPlugins(&results);
+		Expect(Count("attach " + name) == before && !ResultFor(results, file),
+			std::string(when) + ": a rescan does not load or report " + file);
+	}
+
+	std::string Bytes(const std::wstring& path)
+	{
+		std::ifstream in(path, std::ios::binary);
+		return std::string(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+	}
+
+	// One folder of ModLoader\Removed\<stem> holds the three files as they were.
+	bool BackupIntact(const std::wstring& stem)
+	{
+		const std::wstring root = ExeFolder() + L"ModLoader\\Removed\\" + stem;
+		const std::string dll = Bytes(ExeFolder() + L"manage_test_plugin.dll");
+		WIN32_FIND_DATAW found{};
+		const HANDLE search = FindFirstFileW((root + L"\\*").c_str(), &found);
+		if (search == INVALID_HANDLE_VALUE)
+			return false;
+		bool intact = false;
+		do
+		{
+			const std::wstring base = root + L"\\" + found.cFileName + L"\\" + stem;
+			intact = !dll.empty() && Bytes(base + L".dll") == dll && Bytes(base + L".pdb") == "symbols" &&
+				Bytes(base + L".json") == "{\"manifest_url\":\"https://example.invalid/m.json\"}";
+		} while (!intact && FindNextFileW(search, &found));
+		FindClose(search);
+		return intact;
 	}
 
 	bool WriteText(const std::wstring& path, const char* text)
@@ -184,7 +221,11 @@ namespace
 		Expect((Buttons("A.dll") & PluginManage::kRestore) != 0, "A offers Restore");
 		Expect(!UpdaterChecks("A.dll"), "the updater skips uninstalled A");
 		ExpectNotLoadedByRescan("A.dll", "A", "uninstalled");
-		Expect(!Installed(L"A.dll"), "nothing put A back");
+		Expect(!Installed(L"A.dll") && BackupIntact(L"A"), "the rescan leaves A's backup as it was");
+		// A sidecar left or put back by itself must not make the updater fetch the DLL.
+		Expect(WriteText(PluginsDir() + L"\\A.json", "{}") && !UpdaterChecks("A.dll"),
+			"the updater passes over a sidecar without its DLL");
+		DeleteFileW((PluginsDir() + L"\\A.json").c_str());
 
 		Ask(ManageOp::Uninstall, "StuckC.dll", ManageResult::AfterRestart, "uninstall a restart-only plugin");
 		ExpectCard("StuckC.dll", CardState::UninstalledRunning, "uninstall a restart-only plugin");
@@ -204,7 +245,10 @@ namespace
 	void Restoring()
 	{
 		Expect(Count("attach A") == 0 && Count("attach StuckC") == 0, "uninstalled plugins stay out after restart");
-		Expect(!Installed(L"A.dll") && !Installed(L"StuckC.dll"), "nothing restored their files");
+		ExpectNotLoadedByRescan("A.dll", "A", "uninstalled, after restart");
+		ExpectNotLoadedByRescan("StuckC.dll", "StuckC", "uninstalled, after restart");
+		Expect(!Installed(L"A.dll") && !Installed(L"StuckC.dll") && BackupIntact(L"A") && BackupIntact(L"StuckC"),
+			"the start leaves both backups as they were");
 		ExpectCard("A.dll", CardState::Uninstalled, "after restart");
 		ExpectCard("StuckC.dll", CardState::Uninstalled, "after restart");
 		for (const char* file : { "A.dll", "StuckC.dll" })
@@ -303,14 +347,6 @@ namespace
 	{
 		return CopyFileW((ExeFolder() + L"manage_test_plugin.dll").c_str(),
 			(PluginsDir() + L"\\" + file).c_str(), TRUE) != 0;
-	}
-
-	const ScanResult* ResultFor(const std::vector<ScanResult>& results, const char* file)
-	{
-		for (const ScanResult& result : results)
-			if (result.fileName == file)
-				return &result;
-		return nullptr;
 	}
 
 	void CopiedBack()
