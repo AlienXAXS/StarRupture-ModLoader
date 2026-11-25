@@ -60,6 +60,11 @@ namespace ModInstall
 	// the files already there and for Vortex managing them.
 	std::string CheckTarget(const Request& request);
 
+	// Removes the X.json that CheckTarget accepted as a leftover of ours, but only
+	// if it still holds exactly the text this install writes. Anything else is
+	// left in place.
+	void ClearStranded(const Request& request);
+
 	// Writes verified bytes: temp files first, then renames that never replace a
 	// file. On false nothing this call made is left behind. A test passes its own
 	// `move` to change the folder just before a rename.

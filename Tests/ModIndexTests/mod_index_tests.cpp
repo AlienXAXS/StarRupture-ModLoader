@@ -1210,6 +1210,18 @@ namespace
 				&& dir.Listing() == "Thing.json" && Slurp(dir.At(L"Thing.json")) == text,
 				"place: a sidecar with other text is the player's and is kept");
 		}
+		// the delete re-checks the text: an X.json that someone else wrote after the
+		// check is not ours to remove
+		{
+			const GameDir dir;
+			Spit(dir.At(L"Thing.json"), "theirs");
+			ModInstall::ClearStranded(RequestFor(dir));
+			Check(dir.Listing() == "Thing.json" && Slurp(dir.At(L"Thing.json")) == "theirs",
+				"clear: an X.json that is not our text is not deleted");
+			Spit(dir.At(L"Thing.json"), sidecar);
+			ModInstall::ClearStranded(RequestFor(dir));
+			Check(dir.Listing().empty(), "clear: an X.json that holds our text is deleted");
+		}
 		// a rename held up by a scanner is tried again; any other error is final
 		for (const DWORD error : { ERROR_SHARING_VIOLATION, ERROR_ACCESS_DENIED })
 		{

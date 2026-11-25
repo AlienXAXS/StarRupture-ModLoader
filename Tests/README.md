@@ -677,8 +677,9 @@ no game. It checks:
 - `server_only`: true only for a literal `true`; absent or anything else is false. A `server_only` entry that
   also carries the install fields reads with nothing to install.
 - The list failure texts: HTTP 404 ("The mod list isn't published yet."), any other status ("The mod list
-  server answered with an error (HTTP 503)."), a body over the limit, and no answer, which keeps the
-  connection text. Checked for the built-in address and for `ModIndexUrl`.
+  server answered with an error (HTTP 503)."), a download over 1 MB ("The mod list is larger than allowed."),
+  and no answer, which keeps the connection text. A list over 256 KB that did download is refused by the
+  parser with "The mod list is too large to read.". Checked for the built-in address and for `ModIndexUrl`.
 - The Browse search: names, authors and descriptions in any case, several words in any order, extra spaces
   and tabs, a word of 3 letters or more whose letters follow in the name ("minmap" finds MiniMap), and no
   match for words under 3 letters, letters out of order or letters scattered through a description.
@@ -688,8 +689,8 @@ no game. It checks:
   http, with a port or user name, a relative one, a later hop, and a fourth redirect refused. A wrong hash, a
   short file, a long file, an interrupted answer, no answer and any other status fail with a reason. Cancelling
   before or during stops it. `HttpGet` is a stand-in here, so the test checks the options the loader passes
-  to it (`noRedirect`, no plain http) and not what WinHTTP does with them; a body over the limit comes back
-  as "The mod list is larger than allowed.".
+  to it (`noRedirect`, no plain http) and not what WinHTTP does with them; a body over the size in the mod
+  list fails as the wrong-file case ("The downloaded file does not match the mod list, so nothing was installed.").
 - Writing the files into a temp folder: the DLL and `.json` land with no temp file left, an existing `.json`
   or DLL is refused and named, a file that appears before the rename is left alone and nothing of ours stays,
   a failed rename cleans up, and a Vortex-listed mod is refused with the same words before the download and

@@ -301,7 +301,7 @@ Mods or GitHub) in your browser. A plugin that needs a newer ModLoader than your
 downloaded once, the first time you open the tab, and kept until the game closes. If the download fails,
 the tab says why and **Retry** tries again: "The mod list isn't published yet." when the list isn't at its
 address yet, "The mod list server answered with an error (HTTP 503)." (with the number the server sent) for
-any other server error, and "The mod list is larger than allowed." for a list over the size limit. The format of the index and how to add a plugin are in
+any other server error, and "The mod list is larger than allowed." for a download over 1 MB. A list that downloads but is over 256 KB shows "The mod list is too large to read." The format of the index and how to add a plugin are in
 [`mod-index/README.md`](mod-index/README.md); the steps for an author are in
 [Getting your mod into Browse, and onto Nexus](mod-index/GETTING-LISTED.md).
 

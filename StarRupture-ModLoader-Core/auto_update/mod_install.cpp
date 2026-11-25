@@ -229,6 +229,13 @@ namespace ModInstall
 		return {};
 	}
 
+	void ClearStranded(const Request& request)
+	{
+		const std::wstring json = request.pluginsDir + L"\\" + Wide(SidecarName(request.info.dllFile));
+		if (!request.info.manifestUrl.empty() && HoldsText(json, SidecarBody(request.info.manifestUrl)))
+			DeleteFileW(json.c_str());
+	}
+
 	bool Place(const Request& request, const std::string& bytes, std::string& why, const PluginManage::MoveFn& move)
 	{
 		why = CheckTarget(request);
@@ -250,7 +257,7 @@ namespace ModInstall
 		DWORD error = ok ? ERROR_SUCCESS : GetLastError();
 		if (ok && sidecar)
 		{
-			DeleteFileW(json.c_str());   // CheckTarget passed: nothing here, or the stranded one of ours
+			ClearStranded(request);
 			error = MoveWithRetry(move, jsonTemp, json);
 			ok = jsonPlaced = error == ERROR_SUCCESS;
 		}
