@@ -2330,6 +2330,24 @@ int main()
 		Check(isStartRow(oldRow, 0x0448F900) && isStartRow(newRow, 0x0448F280)
 			&& strcmp(oldRow->pattern, ScanPatterns::UNetConnection_RemoteAddressToString) == 0 && strcmp(newRow->pattern, ScanPatterns::UNetConnection_RemoteAddressToString) == 0,
 			"real function rows: RemoteAddressToString has the one pattern and a row on CL-129402 and CL-130045");
+		// UObject::ReleaseRef is the engine's reference release that pairs with UObject::AddRef: a global key, so any
+		// plugin may ask for it by name. Its entry is the target of the guard wrapper MiniMap's site row points at,
+		// not that row. Both keys have one function-start row on each build, and ReleaseRef's pattern is its own.
+		{
+			struct RefKey { uint32_t cl, addRef, releaseRef; };
+			const RefKey refKeys[] = {
+				{ 127004, 0x016205F0, 0x0168F6F0 }, { 128786, 0x01626B90, 0x01695C90 },
+				{ 129402, 0x016267B0, 0x016958B0 }, { 130045, 0x016262B0, 0x016953B0 },
+			};
+			bool refRows = true;
+			for (const RefKey& k : refKeys)
+			{
+				oldRow = functionRow("UObject::AddRef", k.cl);
+				newRow = functionRow("UObject::ReleaseRef", k.cl);
+				refRows = refRows && isStartRow(oldRow, k.addRef) && isStartRow(newRow, k.releaseRef) && strcmp(oldRow->pattern, newRow->pattern) != 0;
+			}
+			Check(refRows, "real function rows: UObject::AddRef and UObject::ReleaseRef each have a function-start row on all four builds");
+		}
 		const char* const textureKeys[] = { "UTexture2D::CreateTransient", "FBulkData::Lock", "FBulkData::Unlock", "UTexture::GetResource", "MiniMap/UTexture::UpdateResource" };
 		bool textureBoth = true;
 		for (const char* key : textureKeys)
