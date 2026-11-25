@@ -16,8 +16,9 @@
 //       "summary": "...", "page_url": "https://github.com/...",
 //       "interface_version_min": 79, "tested_loader": "1.27.0",
 //       "readme_url": "https://raw.githubusercontent.com/...",
-//       "requires": ["minimap"] }, ... ]
-// id, name and page_url are required; the rest may be left out. The file is
+//       "requires": ["minimap"], "server_only": true }, ... ]
+// id, name and page_url are required; the rest may be left out. server_only
+// marks a plugin that runs on a dedicated server (the Browse tab labels it). The file is
 // read as untrusted text: sizes are capped, control characters become spaces,
 // and an entry whose page_url is not on the allowlist is dropped, because the
 // Browse tab opens that address in the player's browser. A readme_url that is
@@ -69,6 +70,7 @@ namespace ModIndex
 		std::string testedLoader;            // the ModLoader version the entry was last tried on; empty: not stated
 		std::string readmeUrl;               // empty, or passes IsAllowedReadmeUrl
 		int interfaceVersionMin = -1;        // -1: not stated
+		bool serverOnly = false;             // "server_only": true; runs on a dedicated server
 		std::vector<std::string> requiredIds; // "requires": ids of the plugins this one needs
 	};
 
@@ -114,6 +116,13 @@ namespace ModIndex
 				s.resize(cut);
 			}
 			return s;
+		}
+
+		// True only for a literal true; absent or anything else reads as false.
+		inline bool ReadBool(const std::string& json, const char* key)
+		{
+			const size_t at = JsonFindValue(json, key);
+			return at != std::string::npos && json.compare(at, 4, "true") == 0;
 		}
 
 		inline int ReadInt(const std::string& json, const char* key)
@@ -350,6 +359,7 @@ namespace ModIndex
 			const std::string readme = JsonExtractDecodedString(obj, "readme_url");
 			if (IsAllowedReadmeUrl(readme))
 				e.readmeUrl = readme;
+			e.serverOnly = detail::ReadBool(obj, "server_only");
 			e.interfaceVersionMin = detail::ReadInt(obj, "interface_version_min");
 			if (e.interfaceVersionMin < 0)
 				e.interfaceVersionMin = -1;
@@ -365,6 +375,82 @@ namespace ModIndex
 
 		result.ok = true;
 		return result;
+	}
+
+	// The Browse tab's search box. The words of the search, lowercased; none:
+	// show everything.
+	inline std::vector<std::string> SearchTokens(const std::string& query)
+	{
+		std::vector<std::string> tokens;
+		std::string word;
+		for (char c : query)
+		{
+			if (c == ' ' || c == '	')
+			{
+				if (!word.empty())
+					tokens.push_back(std::move(word));
+				word.clear();
+			}
+			else
+				word.push_back(detail::Lower(c));
+		}
+		if (!word.empty())
+			tokens.push_back(std::move(word));
+		return tokens;
+	}
+
+	namespace detail
+	{
+		// `word` (already lowercase) appears in `text`, ignoring case.
+		inline bool ContainsWord(const std::string& text, const std::string& word)
+		{
+			if (word.size() > text.size())
+				return false;
+			for (size_t i = 0; i + word.size() <= text.size(); ++i)
+			{
+				size_t j = 0;
+				while (j < word.size() && Lower(text[i + j]) == word[j])
+					++j;
+				if (j == word.size())
+					return true;
+			}
+			return false;
+		}
+
+		// The letters of `word` (already lowercase) appear in `text` in order,
+		// with anything between them, ignoring case: "minmap" in "MiniMap".
+		inline bool InOrder(const std::string& text, const std::string& word)
+		{
+			size_t at = 0;
+			for (char c : text)
+				if (at < word.size() && Lower(c) == word[at])
+					++at;
+			return at == word.size();
+		}
+	}
+
+	// Whether a listing passes the search: every word has to match, in any
+	// order. A word matches when it is inside the name, the author or the
+	// description, or, from 3 letters up, when its letters follow each other in
+	// the name. The loose match stays off the description, which is long enough
+	// to hold any short word's letters by chance.
+	inline bool MatchesSearch(const std::vector<std::string>& tokens, const std::string& name,
+	                          const std::string& author, const std::string& description)
+	{
+		for (const std::string& word : tokens)
+		{
+			const bool found = detail::ContainsWord(name, word) || detail::ContainsWord(author, word) ||
+			                   detail::ContainsWord(description, word) ||
+			                   (word.size() >= 3 && detail::InOrder(name, word));
+			if (!found)
+				return false;
+		}
+		return true;
+	}
+
+	inline bool MatchesSearch(const std::vector<std::string>& tokens, const Entry& entry)
+	{
+		return MatchesSearch(tokens, entry.name, entry.author, entry.summary);
 	}
 
 	// Whether a plugin with this entry's id or name is loaded. Case-insensitive.

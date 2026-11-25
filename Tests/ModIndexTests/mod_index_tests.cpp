@@ -1489,6 +1489,57 @@ void JsonExtractTests()
 	Check(JsonExtractString(pluginManifest, "version") == "0.26.0" && JsonExtractString(pluginManifest, "plugin_name") == "BetterCheats", "manifest: a flat plugin manifest reads");
 	Check(JsonExtractInt(pluginManifest, "interface_version_min", -1) == 77 && JsonExtractInt(pluginManifest, "interface_version_max", -1) == -1, "manifest: a plugin manifest's min is read and a missing max falls back");
 }
+
+// The Browse tab's search box and the server-only label.
+void SearchTests()
+{
+	const std::string mini = "A minimap that follows the player.";
+	const auto hit = [&](const char* query, const char* name, const char* author = "Kian", const std::string& text = std::string())
+	{
+		return MatchesSearch(SearchTokens(query), name, author, text.empty() ? mini : text);
+	};
+
+	// the loose match
+	Check(hit("minmap", "MiniMap"), "search: minmap finds MiniMap");
+	Check(!hit("mm", "MiniMap"), "search: a word under 3 letters does not match by letters alone");
+	Check(!hit("minmapx", "MiniMap"), "search: letters out of the name do not match");
+	Check(!hit("mapmini", "MiniMap", "Kian", "Shows a view."), "search: letters in the wrong order do not match");
+
+	// case
+	Check(hit("MINIMAP", "MiniMap") && hit("miniMAP", "minimap"), "search: case is ignored");
+	Check(hit("kian", "MiniMap") && hit("KIAN", "MiniMap"), "search: the author is searched");
+	Check(hit("player", "MiniMap") && hit("FOLLOWS", "MiniMap"), "search: the description is searched");
+	Check(!hit("zzz", "MiniMap"), "search: no match");
+
+	// every word, any order
+	Check(hit("map mini", "MiniMap"), "search: words match in any order");
+	Check(hit("kian minimap player", "MiniMap"), "search: words may come from name, author and description");
+	Check(!hit("minimap zzz", "MiniMap"), "search: one word that matches nothing fails the listing");
+	Check(hit("  mini 	 map  ", "MiniMap"), "search: extra spaces and tabs are ignored");
+
+	// the description is never matched by letters alone
+	Check(!hit("mnmp", "Codex", "AlienX", "A very long description of many things, maybe not mapped."), "search: letters across a description do not match");
+	Check(hit("mnmp", "MiniMap"), "search: the letters of a longer word may be spread over the name");
+
+	// nothing typed
+	Check(SearchTokens("").empty() && SearchTokens("  	 ").empty(), "search: an empty or blank search has no words");
+	Check(MatchesSearch(SearchTokens(""), "Anything", "", ""), "search: an empty search shows every listing");
+
+	// the entry overload
+	{
+		const ParseResult r = ParseModIndex("[" + Obj("a", "WAILA", kGood, ", \"author\": \"AlienXAXS\", \"summary\": \"Shows what you look at\"") + "]");
+		Check(r.entries.size() == 1 && MatchesSearch(SearchTokens("wla alien"), r.entries[0]) && !MatchesSearch(SearchTokens("minimap"), r.entries[0]),
+			"search: an entry matches on its name, author and summary");
+	}
+
+	// server_only
+	{
+		const ParseResult r = ParseModIndex("[" + Obj("a", "A", kGood, ", \"server_only\": true") + "," + Obj("b", "B", kGood, ", \"server_only\": false") + "," +
+			Obj("c", "C", kGood) + "," + Obj("d", "D", kGood, ", \"server_only\": \"true\"") + "]");
+		Check(r.entries.size() == 4 && r.entries[0].serverOnly && !r.entries[1].serverOnly && !r.entries[2].serverOnly && !r.entries[3].serverOnly,
+			"server_only: only a literal true marks an entry");
+	}
+}
 }
 
 int main()
@@ -1509,6 +1560,7 @@ int main()
 	PlaceTests();
 	InstallerTests();
 	SignatureStateTests();
+	SearchTests();
 
 	printf("%d checks, %d failed\n", g_checks, g_failed);
 	return g_failed ? 1 : 0;

@@ -140,6 +140,7 @@ export function checkIndex(bytes) {
     need(allowedUrl(e.page_url, PAGE_HOSTS), `${who}: page_url must be https on nexusmods.com or github.com`);
     need(e.readme_url === undefined || allowedUrl(e.readme_url, README_HOSTS), `${who}: readme_url must be https on raw.githubusercontent.com`);
     need(e.requires === undefined || allowedRequires(e.requires), `${who}: requires must be at most ${MAX_REQUIRES} ids, each a string of at most ${MAX_ID_BYTES} bytes`);
+    need(e.server_only === undefined || typeof e.server_only === 'boolean', `${who}: server_only must be true or false`);
     checkInstall(e, who);
   });
 }
