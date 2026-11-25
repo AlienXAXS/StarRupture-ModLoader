@@ -2377,8 +2377,7 @@ namespace
         feat.gameImageStamp   = exe.imageStamp;
         feat.gameImageSize    = exe.imageSize;
         for (const PluginHookReport::FeatureInfo& f : PluginHookReport::Features())
-            feat.features.push_back({ f.plugin, f.id, f.title,
-                                      f.state != PluginHookReport::FeatureInfo::State::OffBuild });
+            feat.features.push_back({ f.plugin, f.id, f.title, !f.buildOff });
 
         HostRulesWire::EncodeStats stats;
         std::string body = HostRulesWire::EncodeFeat(feat, &stats);
@@ -2932,6 +2931,9 @@ namespace
     static bool ReadServerAddress(std::string& text)
     {
         text.clear();
+        // Without the engine allocator the returned buffer could not be freed,
+        // so the call is not made at all (a plugin asks every tick).
+        if (!EngineAllocator::IsAvailable()) return false;
         if (!ResolveRemoteAddressToString()) return false;
 
         void* connection = ServerConnection();
@@ -2953,13 +2955,7 @@ namespace
         // The returned buffer is engine-allocated: copy it out, then hand it back.
         const bool ok = ServerAddressText::FromEngineText(out.Data, out.Num, text);
         if (out.Data)
-        {
-            if (EngineAllocator::IsAvailable())
-                EngineAllocator::Free(out.Data);
-            else
-                ModLoaderLogger::LogWarn(
-                    L"[NetworkChannel] Engine allocator unavailable -- leaking the returned FString");
-        }
+            EngineAllocator::Free(out.Data);
         return ok;
     }
 
