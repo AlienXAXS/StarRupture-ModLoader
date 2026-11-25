@@ -2183,6 +2183,23 @@ int main()
 		oldRow = fieldRow("UCrEnviroWaveTimerSubsystem::TimerActor", 127004);
 		newRow = fieldRow("UCrEnviroWaveTimerSubsystem::TimerActor", 128786);
 		Check(oldRow && oldRow->offset == 0x90 && newRow && newRow->offset == 0x98, "real field rows: TimerActor 0x90 on CL-127004, 0x98 on CL-128786");
+		// The controller's cinematic bits share one byte at 0x4D0 on every build: bit 1 bCinematicMode, bit 2
+		// bHidePawnInCinematicMode and bit 4 bPlayerIsWaiting, one row each with the bit's mask.
+		{
+			struct BitKey { const char* key; uint8_t mask; };
+			const BitKey kBits[] = {
+				{ "APlayerController::bCinematicMode", 0x02 }, { "APlayerController::bHidePawnInCinematicMode", 0x04 },
+				{ "APlayerController::bPlayerIsWaiting", 0x10 },
+			};
+			bool bitRows = true;
+			for (const BitKey& b : kBits)
+				for (const uint32_t cl : { 127004u, 128786u, 129402u, 130045u })
+				{
+					const Real::VersionMap::FieldRow* row = fieldRow(b.key, cl);
+					bitRows = bitRows && row && row->offset == 0x4D0 && row->size == 0x1 && row->boolMask == b.mask;
+				}
+			Check(bitRows, "real field rows: the controller's three cinematic bits are 0x4D0 byte rows with their masks on all four builds");
+		}
 		// The hotbar subsystem exists only on CL-129402: a row there, none on the older builds.
 		const Real::VersionMap::FieldRow* index = fieldRow("UCrHotbarLocalPlayerSubsystem::CurrentHotbarIndex", 129402);
 		const Real::VersionMap::FieldRow* pages = fieldRow("UCrHotbarLocalPlayerSubsystem::Hotbars", 129402);
