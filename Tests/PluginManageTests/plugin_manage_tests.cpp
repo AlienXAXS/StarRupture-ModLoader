@@ -674,7 +674,7 @@ namespace
 		Check(listing() == Listing::Listed, "vortex: listed beside a bad manifest");
 		Write(L"vortex.deployment.json", manifest("dwmapi.dll"));
 		Check(listing() == Listing::Unsure, "vortex: a bad manifest is unsure, not listed");
-		Check(VortexNotice::ListedByVortex(g_dir + L"\\missing", paths) == Listing::Unsure, "vortex: an unreadable folder is unsure");
+		Check(VortexNotice::ReadDeployment(g_dir + L"\\missing").Lists(paths) == Listing::Unsure, "vortex: an unreadable folder is unsure");
 	}
 
 	// --- The scripted run -------------------------------------------------------
