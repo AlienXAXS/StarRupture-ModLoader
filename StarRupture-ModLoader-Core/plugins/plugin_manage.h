@@ -592,6 +592,50 @@ namespace PluginManage
 		return out;
 	}
 
+	// --- Identity cache: ModLoader\plugin_manage.ini ----------------------------
+
+	// What a plugin called itself, kept by file name so a disabled plugin still
+	// has a name: nothing of it is loaded to ask.
+	constexpr const wchar_t* kIdentityFile = L"plugin_manage.ini";
+
+	struct Identity
+	{
+		std::wstring name, version, author;
+	};
+
+	// False when nothing was written: no name, a file name that cannot head an
+	// ini section, or a failed write.
+	inline bool SaveIdentity(const std::wstring& ini, const std::wstring& dllName, const Identity& who)
+	{
+		if (!IsPluginDllName(dllName) || dllName.find_first_of(L"[]") != std::wstring::npos || who.name.empty())
+			return false;
+
+		// The profile functions write Unicode only into a file that starts with
+		// a UTF-16 byte order mark. CREATE_NEW leaves an existing file alone.
+		const HANDLE file = CreateFileW(ini.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW,
+		                                FILE_ATTRIBUTE_NORMAL, nullptr);
+		if (file != INVALID_HANDLE_VALUE)
+		{
+			const wchar_t mark = 0xFEFF;
+			DWORD written = 0;
+			WriteFile(file, &mark, sizeof(mark), &written, nullptr);
+			CloseHandle(file);
+		}
+
+		const auto put = [&](const wchar_t* key, const std::wstring& value)
+		{
+			return WritePrivateProfileStringW(dllName.c_str(), key, detail::OneLine(value).c_str(), ini.c_str()) != 0;
+		};
+		return put(L"Name", who.name) && put(L"Version", who.version) && put(L"Author", who.author);
+	}
+
+	inline Identity ReadIdentity(const std::wstring& ini, const std::wstring& dllName)
+	{
+		return { detail::ReadIni(ini, dllName.c_str(), L"Name"),
+		         detail::ReadIni(ini, dllName.c_str(), L"Version"),
+		         detail::ReadIni(ini, dllName.c_str(), L"Author") };
+	}
+
 	// --- Preload DLLs -----------------------------------------------------------
 
 	// The names a DLL in ModLoader\Preload answers to: the one it reports (empty

@@ -5,6 +5,9 @@
 #include <vector>
 #include "plugins/plugin_interface.h"
 #include "network_channel/wire_compat.h"
+#ifdef MODLOADER_CLIENT_BUILD
+#include "plugins/plugin_manage.h"
+#endif
 
 namespace PluginManager
 {
@@ -30,6 +33,10 @@ namespace PluginManager
         // On modloader.ini [Plugins] Disabled (client builds): the loader does
         // not load it. With isLoaded still set it is off after a restart.
         bool isDisabled;
+
+        // Uninstalled this session (client builds). With isLoaded still set it is
+        // gone after a restart.
+        bool isRemoved;
 
         // Bare DLL file name (no directory), e.g. "ServerUtility.dll". Lets the
         // console address a plugin by file when its PluginInfo name is unknown --
@@ -245,6 +252,56 @@ namespace PluginManager
     //
     // Game thread only: PluginInit runs here.
     int ScanForNewPlugins(std::vector<ScanResult>* outResults = nullptr);
+
+#ifdef MODLOADER_CLIENT_BUILD
+    // ---- Disable, enable, uninstall and restore (client builds) ------------
+
+    enum class ManageOp { Disable, Enable, Uninstall, Restore };
+
+    enum class ManageResult
+    {
+        None,              // nothing asked for this file yet
+        Done,
+        AfterRestart,      // saved or moved; the running game changes at the next start
+        NotReady,          // the plugins are still starting
+        Vortex,            // Vortex placed its files: uninstall it there
+        AlreadyInstalled,  // restore: a copy is in ModLoader\Plugins
+        SaveFailed,        // the disabled list could not be written; nothing changed
+        MoveFailed,        // the files could not be moved; nothing changed
+        RollbackFailed,    // files are split between Plugins and Removed
+        Failed,            // see ModLoader.log
+    };
+
+    struct ManagedPlugin
+    {
+        std::string fileName;            // identity: bare DLL name
+        std::string name, version, author; // empty when never reported
+        PluginManage::CardFacts facts;   // pass to PluginManage::DeriveCard
+        bool vortexUnsure = false;       // a Vortex manifest could not be read
+        ManageOp     lastOp = ManageOp::Disable;
+        ManageResult lastResult = ManageResult::None;
+        std::string  message;            // why, when the result needs saying
+    };
+
+    struct ManageSnapshot
+    {
+        std::vector<ManagedPlugin> plugins;
+        std::vector<std::string> preloadNames; // for ModIndex::IsInstalled
+    };
+
+    // Any thread, the render thread included. The work runs on the next game
+    // tick; until then the file's facts.working is set. A request for a file
+    // that is already working is dropped.
+    void RequestPluginChange(ManageOp op, const std::string& fileName);
+
+    // Any thread. Copies what is in memory: no file or UObject access.
+    ManageSnapshot GetManageSnapshot();
+
+    // Game thread. Reads the plugin folder, the disabled list, the backups and
+    // the Vortex manifests again. The loader does it after startup, a scan and
+    // each change.
+    void RefreshManagedFiles();
+#endif
 
     // Refuses every plugin DLL load from now on -- startup, ReloadPlugin and
     // ScanForNewPlugins alike. Set by the init thread, before any plugin

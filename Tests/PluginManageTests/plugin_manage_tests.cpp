@@ -727,6 +727,19 @@ namespace
 		Check(after == startFiles, "run: Plugins is as it started");
 		printf("\n");
 	}
+	void TestIdentity()
+	{
+		const std::wstring ini = g_root + L"\identity.ini";
+		Check(ReadIdentity(ini, L"A.dll").name.empty(), "identity: nothing cached");
+		Check(SaveIdentity(ini, L"A.dll", { L"Café 日", L"1.2", L"me
+Name=x" }), "identity: saved");
+		const Identity who = ReadIdentity(ini, L"a.dll");
+		Check(who.name == L"Café 日" && who.version == L"1.2", "identity: Unicode round trip, name case aside");
+		Check(who.author == L"me Name=x", "identity: a line break cannot start a key");
+		Check(!SaveIdentity(ini, L"B[1].dll", { L"B", L"1", L"" }), "identity: brackets refused");
+		Check(!SaveIdentity(ini, L"C.dll", {}), "identity: no name, nothing saved");
+		DeleteFileW(ini.c_str());
+	}
 }
 
 int main()
@@ -754,6 +767,7 @@ int main()
 	TestLoadedDll();
 	TestPreloadNames();
 	TestCards();
+	TestIdentity();
 	TestVortexListing();
 	ScriptedRun();
 
