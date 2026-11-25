@@ -323,12 +323,15 @@ namespace VersionFeed
 		const std::string& region = verified.body;
 		const size_t l1 = region.find('\n');
 		const size_t l2 = region.find('\n', l1 + 1);
-		// A signed plugin catalog is not a version map: ParseFeed would skip its rows and
-		// read an empty map, which the cache would then keep ahead of the real one.
+		// Another signed kind is not a version map: ParseFeed would skip its rows and
+		// read an empty map, which the cache would then keep ahead of the real one. A
+		// version map has no kind line, so any kind line is refused, named or not.
 		if (region.compare(l2 + 1, 20, "kind\tplugin-catalog\n") == 0)
 			return fail("this is a plugin catalog, not a version map");
 		if (region.compare(l2 + 1, 15, "kind\tmod-index\n") == 0)
 			return fail("this is a mod index, not a version map");
+		if (region.compare(l2 + 1, 5, "kind\t") == 0)
+			return fail("this is another kind of file, not a version map");
 		MapData map;
 		std::string parseError;
 		if (!VersionMap::ParseFeed(region.substr(0, l1 + 1) + region.substr(l2 + 1), map, parseError))
