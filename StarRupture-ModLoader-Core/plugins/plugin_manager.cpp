@@ -3066,10 +3066,10 @@ namespace PluginManager
 		const std::wstring file = Widen(entry.install.dllFile);
 		if (!g_managerInitialized || !ModIndex::detail::IsInstallDllName(entry.install.dllFile)) return;
 
-		// Only a signed list, or one the player chose in modloader.ini, may install.
+		// Only a signed list may install.
 		std::string why = g_startupComplete ? InstallBlockedReason(entry, list, GetManageSnapshot())
 		                                    : "The plugins are still starting.";
-		if (why.empty() && !listSigned && !ModIndex::PlayersOwnUrl())
+		if (why.empty() && !listSigned)
 			why = "This list isn't signed, so nothing can be installed from it.";
 
 		EnterCriticalSection(&g_pluginLock);

@@ -2848,7 +2848,7 @@ namespace UI::ModLoaderWindow
                     index.Retry();
             }
             if (!snap->signatureVerified && !snap->entries.empty())
-                ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.1f, 1.0f), "This list isn't signed. It comes from the address you set yourself.");
+                ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.1f, 1.0f), "This list isn't signed. It comes from the address you set yourself. Nothing can be installed from it.");
             if (snap->skipped > 0)
                 ImGui::TextDisabled("%d entries in the list were left out because they could not be read.", snap->skipped);
             if (snap->truncated)

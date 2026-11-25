@@ -757,8 +757,8 @@ and 13 game starts, each start a process of its own, so a restart is a real one.
   name.
 - A DLL copied back in the same session is picked up by LOAD NEW.
 - A plugin Vortex placed is not uninstalled by the loader, read from a real `vortex.deployment.json`.
-- Install, through the call the Browse tab makes, with the download a stand-in (`install` step, 45 checks): a
-  list that isn't signed installs nothing unless the player chose it with `ModIndexUrl`; a DLL that is already
+- Install, through the call the Browse tab makes, with the download a stand-in (`install` step, 46 checks): a
+  list that isn't signed installs nothing, whether it comes from the built-in address or from `ModIndexUrl`; a DLL that is already
   there is refused before any download; a missing or disabled requirement is named; a bad hash or a failed
   download leaves no file and no temp file, and says why; a plugin installed after an uninstall loads at once
   (`Done`), clears its Disabled entry and records the entry's version for the auto-updater; a plugin whose old

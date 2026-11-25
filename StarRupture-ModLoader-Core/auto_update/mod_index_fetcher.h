@@ -91,9 +91,4 @@ namespace ModIndex
 	// The loader's one index: the URL from modloader.ini [AutoUpdate] ModIndexUrl,
 	// else the signed mod-index.v1.txt beside the loader's version map feed. Made on first use and kept to the end of the process.
 	Fetcher& Instance();
-
-	// Whether the list comes from an address the player set in modloader.ini. The
-	// loader's own address is signed only; a list that is not signed can only
-	// come from the player's.
-	bool PlayersOwnUrl();
 }

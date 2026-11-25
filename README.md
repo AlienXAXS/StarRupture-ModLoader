@@ -339,10 +339,11 @@ author or its description, in any order: "letmeinside minimap" finds MiniMap. A 
 also matches a name that has those letters in that order, so "minmap" finds MiniMap. "No mods match." shows
 when nothing fits.
 
-**Install and the signed list.** Install works for the loader's built-in index, which is signed, and for a
-list you set yourself with `ModIndexUrl`. A list from your own address that isn't signed shows the line
-"This list isn't signed. It comes from the address you set yourself." and installs from it all the same,
-so only point `ModIndexUrl` at a list you trust. The SHA-256 the loader checks comes from the list.
+**Install and the signed list.** Install works only from a signed list: the loader's built-in index, or a
+list you set yourself with `ModIndexUrl` that serves the signed file. A list from your own address that
+isn't signed shows the line "This list isn't signed. It comes from the address you set yourself. Nothing
+can be installed from it." You can still read its cards, but Install is refused. The SHA-256 the loader
+checks comes from the list.
 
 A card whose plugin has a README shows a **README** button. It opens a page inside the window with the
 author's README from their GitHub repo, text and pictures; **Back** returns to the list. The page shows
@@ -1103,7 +1104,7 @@ these for you.
 | `[Network]` | `ConnectionTimeout`, `InitialConnectTimeout` | `300.0` | Seconds, 1 to 3600; anything else logs a warning and uses 300. `0` keeps the engine default. See [Net timeouts](#net-timeouts) |
 | `[AutoUpdate]` | `Enabled` | `1` | Client only, except that a dedicated server also reads it for its own check for a newer version object map file. `0` stops the update checks, including the check for a newer version object map at every start |
 | | `ManifestUrl` | empty | Empty uses the built-in manifest |
-| | `ModIndexUrl` | empty | The address of the mod index the Browse tab lists. Empty uses the loader's built-in signed index, which must pass the signature check. An address you set may serve that signed file or a plain index file, and the Browse tab installs from it either way. Must be `https` |
+| | `ModIndexUrl` | empty | The address of the mod index the Browse tab lists. Empty uses the loader's built-in signed index, which must pass the signature check. An address you set may serve that signed file or a plain index file; the Browse tab lists either, but installs only from a signed one. Must be `https` |
 | `[Preload]` | `Enabled` | `1` | |
 | | `Disabled` | empty | Comma-separated DLL names to skip |
 | `[UE4SS]` | `Enabled` | `0` | Load UE4SS before plugins. `1` if you delete the key |

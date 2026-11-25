@@ -160,6 +160,7 @@ ModIndexUrl=https://example.com/my-index.json
 
 The URL must be https. The file can be a plain `index.json` like the one in this folder, or a
 signed `mod-index.v1.txt`. A plain file is read without a signature check and is not cached. The
-entries are checked by the same rules either way, and Install works from it: the card shows the line
-"This list isn't signed. It comes from the address you set yourself." The built-in address takes only the
-signed file.
+entries are checked by the same rules either way. A plain file shows the line
+"This list isn't signed. It comes from the address you set yourself. Nothing can be installed from it."
+and its Install buttons are refused: Install works only from a signed list. The built-in address takes
+only the signed file.

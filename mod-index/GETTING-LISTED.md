@@ -120,8 +120,9 @@ node .github/vmap/build-mod-index.mjs mod-index/index.json --out mod-index.txt
 
 It prints `ok`, or names the entry and the rule it breaks. It also refuses a download size written as
 `2e6`, an install field written twice, and install fields on a `server_only` entry. Then open a PR with the new entry, the way
-[README.md](README.md) describes. To try the Install button before it is merged, point your own copy of the
-loader at your file with `ModIndexUrl` (see "Try your own index" in the same README).
+[README.md](README.md) describes. To see how your card reads before it is merged, point your own copy of the
+loader at your file with `ModIndexUrl` (see "Try your own index" in the same README). Install works only
+from the signed list, so the button works once your entry is merged and published.
 
 On the PR, a second check downloads your release file and confirms the size, the SHA-256 and that it is a
 64-bit plugin DLL. If it fails, the log names the entry and what to fix.

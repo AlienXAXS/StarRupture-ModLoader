@@ -483,7 +483,7 @@ namespace
 		});
 		const std::wstring ini = ExeFolder() + L"ModLoader\\modloader.ini";
 
-		// A list that is not signed installs nothing, unless the player chose it.
+		// A list that is not signed installs nothing.
 		const ModIndex::Entry fresh = InstallEntry("Fresh", "1.0.0", bytes);
 		ManagedPlugin card = InstallAndWait(fresh, { fresh }, false, installer);
 		Expect(card.lastResult == ManageResult::Failed && card.message.find("isn't signed") != std::string::npos &&
@@ -549,14 +549,19 @@ namespace
 		Expect(StoredVersion(L"A.dll") == "9.9.9", "install A: the stored version is the entry's, not 99.0.0");
 		Expect(!Card("A.dll").facts.listedDisabled, "install A: no longer disabled");
 
-		// Restart: StuckC's old code is still mapped. The player's own list installs.
+		// Restart: StuckC's old code is still mapped. A signed list from the player's own address installs.
 		Ask(ManageOp::Uninstall, "StuckC.dll", ManageResult::AfterRestart, "uninstall StuckC");
 		Expect(WritePrivateProfileStringW(L"AutoUpdate", L"ModIndexUrl", L"https://example.test/index.json",
 			ini.c_str()) != 0, "the player sets ModIndexUrl");
 		const ModIndex::Entry stuck = InstallEntry("StuckC", "1.0.0", bytes);
 		const int attaches = Count("attach StuckC");
+		// The same address serving a list that is not signed is refused.
+		g_hopCalls = 0;
 		card = InstallAndWait(stuck, { stuck }, false, installer);
-		Expect(card.lastResult == ManageResult::AfterRestart && !card.listSigned, "install StuckC: waits for a restart");
+		Expect(card.lastResult == ManageResult::Failed && card.message.find("isn't signed") != std::string::npos &&
+			g_hopCalls == 0 && !Installed(L"StuckC.dll"), "an unsigned list from the player's own address is refused");
+		card = InstallAndWait(stuck, { stuck }, true, installer);
+		Expect(card.lastResult == ManageResult::AfterRestart && card.listSigned, "install StuckC: waits for a restart");
 		Expect(Installed(L"StuckC.dll") && Count("attach StuckC") == attaches, "install StuckC: files in, code not loaded twice");
 
 		// One install at a time: while a slow one runs, another entry is refused
