@@ -2200,6 +2200,18 @@ int main()
 				}
 			Check(bitRows, "real field rows: the controller's three cinematic bits are 0x4D0 byte rows with their masks on all four builds");
 		}
+		// An item data asset's stack members are the same on every build: StackingType a byte at 0x28, MaxStack an int at 0x2C.
+		{
+			bool stackRows = true;
+			for (const uint32_t cl : { 127004u, 128786u, 129402u, 130045u })
+			{
+				const Real::VersionMap::FieldRow* type = fieldRow("UAuItemDataBase::StackingType", cl);
+				const Real::VersionMap::FieldRow* max = fieldRow("UAuItemDataBase::MaxStack", cl);
+				stackRows = stackRows && type && type->offset == 0x28 && type->size == 0x1 && type->boolMask == 0
+					&& max && max->offset == 0x2C && max->size == 0x4 && max->boolMask == 0;
+			}
+			Check(stackRows, "real field rows: UAuItemDataBase StackingType (0x28, 1 byte) and MaxStack (0x2C, 4 bytes) on all four builds");
+		}
 		// The hotbar subsystem exists only on CL-129402: a row there, none on the older builds.
 		const Real::VersionMap::FieldRow* index = fieldRow("UCrHotbarLocalPlayerSubsystem::CurrentHotbarIndex", 129402);
 		const Real::VersionMap::FieldRow* pages = fieldRow("UCrHotbarLocalPlayerSubsystem::Hotbars", 129402);

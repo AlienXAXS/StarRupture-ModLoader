@@ -28,6 +28,8 @@
 // member's size is the size a plugin reads it at, as in the client table:
 // FTransform::Translation is a 0x20-byte vector register in the PDB and is read
 // as a 0x18-byte FVector, so its row says 0x18. A bool member has bool mask 0xFF.
+// UAuItemDataBase::MaxStack and ::StackingType were added from the CL-127004 Server Game-SDK header
+// (offsetof asserts 0x2C and 0x28), the same offsets the client has on all four builds.
 #pragma once
 
 #include "hooks/game/version_map_built.h"
@@ -105,7 +107,7 @@ inline constexpr std::array<FunctionRow, 30> kServerFunctionRows = {{
 	{ 127004, 0x2E3595FF, 0x0E2A8000, 1, 0x00000000, false, nullptr, 0, -1, -1, 0x03BE9E90, nullptr },
 }};
 
-inline constexpr std::array<FieldRow, 110> kServerFieldRows = {{
+inline constexpr std::array<FieldRow, 112> kServerFieldRows = {{
 	// ACrGameStateBase::WaveTimerActor
 	{ 127004, 0x318, 0x8, 0x00, nullptr },
 	// ACrGatherableSpawnersRepActor::RepEnviroWaveStageChange
@@ -256,6 +258,10 @@ inline constexpr std::array<FieldRow, 110> kServerFieldRows = {{
 	{ 127004, 0x10, 0x4, 0x00, nullptr },
 	// UAuItemDataBase::ItemName
 	{ 127004, 0x2E0, 0x10, 0x00, nullptr },
+	// UAuItemDataBase::MaxStack
+	{ 127004, 0x2C, 0x4, 0x00, nullptr },
+	// UAuItemDataBase::StackingType
+	{ 127004, 0x28, 0x1, 0x00, nullptr },
 	// UAuItemDataBase::UniqueItemName
 	{ 127004, 0x2F0, 0x8, 0x00, nullptr },
 	// UAuItemDataBaseSubsystem::ItemDataBaseArray
@@ -361,7 +367,7 @@ inline constexpr std::array<Index, 30> kServerFunctions = {{
 	{ "UWorld::GetSubsystem<UMassEntitySubsystem>", 29, 1 },
 }};
 
-inline constexpr std::array<Index, 110> kServerFields = {{
+inline constexpr std::array<Index, 112> kServerFields = {{
 	{ "ACrGameStateBase::WaveTimerActor", 0, 1 },
 	{ "ACrGatherableSpawnersRepActor::RepEnviroWaveStageChange", 1, 1 },
 	{ "ACrGatherableSpawnersRepActor::RepEnviroWaveTypeChange", 2, 1 },
@@ -437,41 +443,43 @@ inline constexpr std::array<Index, 110> kServerFields = {{
 	{ "FTransformFragment::Transform", 72, 1 },
 	{ "FUObjectItem::SerialNumber", 73, 1 },
 	{ "UAuItemDataBase::ItemName", 74, 1 },
-	{ "UAuItemDataBase::UniqueItemName", 75, 1 },
-	{ "UAuItemDataBaseSubsystem::ItemDataBaseArray", 76, 1 },
-	{ "UCrDedicatedServerSettingsComp::SaveGameInterval", 77, 1 },
-	{ "UCrDedicatedServerSettingsComp::SaveGameName", 78, 1 },
-	{ "UCrDedicatedServerSettingsComp::SessionName", 79, 1 },
-	{ "UCrDedicatedServerSettingsComp::bLoadSavedGame", 80, 1 },
-	{ "UCrDedicatedServerSettingsComp::bStartNewGame", 81, 1 },
-	{ "UCrEnviroWaveSubsystem::CurrentFadeoutSubstage", 82, 1 },
-	{ "UCrEnviroWaveSubsystem::CurrentGrowbackSubstage", 83, 1 },
-	{ "UCrEnviroWaveSubsystem::CurrentPreWaveSubstage", 84, 1 },
-	{ "UCrEnviroWaveTimerSubsystem::NextWaveTimer", 85, 1 },
-	{ "UCrEnviroWaveTimerSubsystem::TimerActor", 86, 1 },
-	{ "UCrEnviroWaveTimerSubsystem::bStopWaves", 87, 1 },
-	{ "UCrEnviroWaveTimerSubsystem::bWaitingForNextWave", 88, 1 },
-	{ "UCrGameInstance::ServerSessionName", 89, 1 },
-	{ "UCrMassPersistentIDSubsystem::HandleIDMap", 90, 1 },
-	{ "UCrMassPersistentIDSubsystem::IDHandleMap", 91, 1 },
-	{ "UCrMassPersistentIDSubsystem::MaxID", 92, 1 },
-	{ "UCrReplicationGraph::ClassRepNodePolicies", 93, 1 },
-	{ "UCrSaveSubsystem::OnAfterSave", 94, 1 },
-	{ "UCrSaveSubsystem::OnPreSaveStart", 95, 1 },
-	{ "UCrSaveSubsystem::SaveData", 96, 1 },
-	{ "UMassActorSubsystem::ActorManager", 97, 1 },
-	{ "UMassEntitySubsystem::EntityManager", 98, 1 },
-	{ "UMassSignalSubsystem::CachedWorld", 99, 1 },
-	{ "UNetDriver::ClientConnections", 100, 1 },
-	{ "UObject::ClassPrivate", 101, 1 },
-	{ "UObject::InternalIndex", 102, 1 },
-	{ "UObject::OuterPrivate", 103, 1 },
-	{ "UWorld::AudioTimeSeconds", 104, 1 },
-	{ "UWorld::GameState", 105, 1 },
-	{ "UWorld::NetDriver", 106, 1 },
-	{ "UWorld::RealTimeSeconds", 107, 1 },
-	{ "UWorld::TimeSeconds", 108, 1 },
-	{ "UWorld::UnpausedTimeSeconds", 109, 1 },
+	{ "UAuItemDataBase::MaxStack", 75, 1 },
+	{ "UAuItemDataBase::StackingType", 76, 1 },
+	{ "UAuItemDataBase::UniqueItemName", 77, 1 },
+	{ "UAuItemDataBaseSubsystem::ItemDataBaseArray", 78, 1 },
+	{ "UCrDedicatedServerSettingsComp::SaveGameInterval", 79, 1 },
+	{ "UCrDedicatedServerSettingsComp::SaveGameName", 80, 1 },
+	{ "UCrDedicatedServerSettingsComp::SessionName", 81, 1 },
+	{ "UCrDedicatedServerSettingsComp::bLoadSavedGame", 82, 1 },
+	{ "UCrDedicatedServerSettingsComp::bStartNewGame", 83, 1 },
+	{ "UCrEnviroWaveSubsystem::CurrentFadeoutSubstage", 84, 1 },
+	{ "UCrEnviroWaveSubsystem::CurrentGrowbackSubstage", 85, 1 },
+	{ "UCrEnviroWaveSubsystem::CurrentPreWaveSubstage", 86, 1 },
+	{ "UCrEnviroWaveTimerSubsystem::NextWaveTimer", 87, 1 },
+	{ "UCrEnviroWaveTimerSubsystem::TimerActor", 88, 1 },
+	{ "UCrEnviroWaveTimerSubsystem::bStopWaves", 89, 1 },
+	{ "UCrEnviroWaveTimerSubsystem::bWaitingForNextWave", 90, 1 },
+	{ "UCrGameInstance::ServerSessionName", 91, 1 },
+	{ "UCrMassPersistentIDSubsystem::HandleIDMap", 92, 1 },
+	{ "UCrMassPersistentIDSubsystem::IDHandleMap", 93, 1 },
+	{ "UCrMassPersistentIDSubsystem::MaxID", 94, 1 },
+	{ "UCrReplicationGraph::ClassRepNodePolicies", 95, 1 },
+	{ "UCrSaveSubsystem::OnAfterSave", 96, 1 },
+	{ "UCrSaveSubsystem::OnPreSaveStart", 97, 1 },
+	{ "UCrSaveSubsystem::SaveData", 98, 1 },
+	{ "UMassActorSubsystem::ActorManager", 99, 1 },
+	{ "UMassEntitySubsystem::EntityManager", 100, 1 },
+	{ "UMassSignalSubsystem::CachedWorld", 101, 1 },
+	{ "UNetDriver::ClientConnections", 102, 1 },
+	{ "UObject::ClassPrivate", 103, 1 },
+	{ "UObject::InternalIndex", 104, 1 },
+	{ "UObject::OuterPrivate", 105, 1 },
+	{ "UWorld::AudioTimeSeconds", 106, 1 },
+	{ "UWorld::GameState", 107, 1 },
+	{ "UWorld::NetDriver", 108, 1 },
+	{ "UWorld::RealTimeSeconds", 109, 1 },
+	{ "UWorld::TimeSeconds", 110, 1 },
+	{ "UWorld::UnpausedTimeSeconds", 111, 1 },
 }};
 
 inline constexpr std::array<AbsentField, 0> kServerAbsentFields = {};

@@ -298,7 +298,7 @@ int main()
 		Check(starts == 27 && data == 2 && scoped == 1, "table: 27 function starts, GNames and GWorld as data, and one scoped key");
 
 		// Field rows: every one is on the build, no absent rows, and a size row is a class key (no "::") at offset 0.
-		Check(map.fields.size() == VersionMap::kServerFields.size() && map.fields.size() == 110, "table: every field row is in the map (90 members, 20 sizes)");
+		Check(map.fields.size() == VersionMap::kServerFields.size() && map.fields.size() == 112, "table: every field row is in the map (92 members, 20 sizes)");
 		Check(map.absentFields.empty(), "table: no absent rows");
 		int members = 0, sizes = 0;
 		bool fieldsOnBuild = true, sizesWellFormed = true, masksWellFormed = true;
@@ -317,7 +317,7 @@ int main()
 			}
 		}
 		Check(fieldsOnBuild, "table: every field row is for CL 127004 and has a size");
-		Check(members == 90 && sizes == 20, "table: 90 member rows and 20 size rows");
+		Check(members == 92 && sizes == 20, "table: 92 member rows and 20 size rows");
 		Check(sizesWellFormed, "table: a size row is a class key at offset 0 with no bool mask");
 		Check(masksWellFormed, "table: a bool mask is 0xFF (a bool) or one bit (a bit field)");
 
@@ -344,10 +344,14 @@ int main()
 				anchors = anchors && f.offset == 0x20 && f.size == 0x18;   // the size a plugin reads, as on the client's row
 			if (f.key == "FCrCraftingFragment::CraftingMultiplier")
 				anchors = anchors && f.offset == 0x70 && f.size == 4;
+			if (f.key == "UAuItemDataBase::StackingType")
+				anchors = anchors && f.offset == 0x28 && f.size == 1;
+			if (f.key == "UAuItemDataBase::MaxStack")
+				anchors = anchors && f.offset == 0x2C && f.size == 4;
 			if (f.key == "UCrReplicationGraph::ClassRepNodePolicies")
 				anchors = anchors && f.offset == 0x5E0 && f.size == 0x80;
 		}
-		Check(anchors, "table: the measured values for FTransform::Translation, CraftingMultiplier and ClassRepNodePolicies");
+		Check(anchors, "table: the measured values for FTransform::Translation, CraftingMultiplier, ClassRepNodePolicies and the item stack members");
 		const std::vector<uint32_t> builds = VersionMap::SupportedBuilds();
 		Check(builds.size() == 1 && builds[0] == 127004, "guard 1, SupportedBuilds: the server's build is the one its table lists");
 	}
@@ -523,7 +527,7 @@ int main()
 			// A native member whose own row disagrees with the table's is refused on the server exe.
 			notServedOwnRow += !isSize && !Field(index.key, flags, row.size, { OwnRow(127004, row.offset + 8, row.size) }, kServer, v, e);
 		}
-		Check(members == 90 && sizes == 20, "guard 4, RowsFor: the table's keys are 90 members and 20 sizes");
+		Check(members == 92 && sizes == 20, "guard 4, RowsFor: the table's keys are 92 members and 20 sizes");
 		Check(served == members + sizes, "guard 4, RowsFor: every member and size row is served on the server exe, with its offset, size and bool mask");
 		Check(notServed == members + sizes, "guard 4, RowsFor: no table row is served on an exe that is not the server's");
 		Check(notServedOwnRow == members, "guard 4, RowsFor: a member whose own row disagrees with the table's is refused on the server exe");
