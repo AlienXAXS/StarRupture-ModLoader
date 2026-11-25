@@ -14,10 +14,20 @@
 //
 // Understood: # / ## / ### headings (#### and deeper count as level 3), setext
 // headings, paragraphs, bulleted and numbered list items (two levels), fenced
-// and indented code, horizontal rules, `code`, **bold**, [text](url), images
-// ![alt](url), <https://...> and bare https:// links; block quote marks are
-// dropped. HTML: <img src alt> is an image, <br> a line break, every other tag
+// and indented code, horizontal rules, pipe tables, `code`, **bold**,
+// [text](url), images ![alt](url), <https://...> and bare https:// links; block
+// quote marks are dropped. HTML: <img src alt> is an image, <br> a line break, every other tag
 // is dropped and its text kept, comments are dropped.
+//
+// A table is a header line, a delimiter line (| --- | :-: |) with as many cells,
+// and the lines after it up to a blank line or another kind of block. Outer
+// pipes are optional; "\|" and a pipe inside `code` do not split a cell. Lines
+// with pipes that make no table stay one line each.
+//
+// Shown text (never an address) is fitted to the built-in font, which draws
+// ASCII, Latin-1 and the euro sign: dashes, quotes, bullets, arrows, box
+// drawing and the like become ASCII; emoji and other symbols are dropped.
+// Letters of other scripts are kept for the fonts that have them.
 // ---------------------------------------------------------------------------
 
 namespace ModIndex
@@ -27,6 +37,9 @@ namespace ModIndex
 	constexpr size_t kMaxSpans       = 64;           // per block; the rest of that block is dropped
 	constexpr size_t kMaxSpanBytes   = 2000;         // per span; longer plain text continues in the next span
 	constexpr size_t kMaxCodeBytes   = 4000;         // per code block; the rest is dropped
+	constexpr size_t kMaxTableColumns = 8;           // further columns are dropped, shortened set
+	constexpr size_t kMaxTableRows    = 100;         // body rows per table; the rest is dropped, shortened set
+	constexpr size_t kMaxTableCells   = 2000;        // all tables together, headers included; same
 	// URLs longer than kMaxUrlLen (mod_index.h, 200 bytes): a link becomes plain
 	// text, an image is skipped.
 
@@ -40,7 +53,10 @@ namespace ModIndex
 		bool clickable = false;     // Link only: url passes IsAllowedPageUrl (https, nexusmods.com or github.com)
 	};
 
-	enum class BlockKind { Heading, Paragraph, ListItem, CodeBlock, Image, Rule };
+	enum class BlockKind { Heading, Paragraph, ListItem, CodeBlock, Image, Rule, Table };
+
+	using TableCell = std::vector<Span>;   // may be empty; at most kMaxSpans spans
+	using TableRow  = std::vector<TableCell>;
 
 	struct Block
 	{
@@ -54,6 +70,8 @@ namespace ModIndex
 		std::string url;            // Image: the accepted https address; empty when refused (draw alt as text)
 		std::string alt;            // Image
 		int imageSlot = -1;         // Image: index into the fetcher's image slots; -1 = none (draw alt)
+		TableRow header;            // Table: its size is the column count, 1 to kMaxTableColumns
+		std::vector<TableRow> rows; // Table: body rows, each exactly header.size() cells; may be none
 	};
 
 	struct Document
