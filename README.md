@@ -86,6 +86,23 @@ for a new version at startup and downloads it. The **Plugins** tab marks those w
 (amber means the plugin has no update manifest and has to be updated by hand). Auto-updating can be
 turned off in the **Settings** tab.
 
+### If you use Vortex
+
+An update the mod loader makes itself, to a plugin or to itself, can replace files Vortex installed.
+Vortex then asks about them in a window called **External Changes** the next time it deploys.
+
+- To keep the update, choose **Save change (use deployed file)** for each updated mod, then
+  **Confirm**.
+- Don't choose **Revert change (use staging file)** or **Revert all changes**: reverting restores the
+  old file from Vortex's staging folder.
+- The window starts on **Use newer file**. That should keep the update too, since the updated file
+  is the newer one.
+
+You may also see this reminder after such an update, in the mod loader's **Plugins Updated** window
+or its update box, and in the log:
+
+> Vortex manages these files. When Vortex shows External Changes, choose "Save change (use deployed file)" for each updated mod, then Confirm. Revert would undo this update.
+
 ---
 
 ## The Mod Loader Window (client)

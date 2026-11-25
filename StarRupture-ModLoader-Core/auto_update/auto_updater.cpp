@@ -18,6 +18,7 @@
 #include "UI/global_settings.h"
 #include "UI/splash_window.h"
 #include "UI/update_notice_window.h"
+#include "vortex_notice.h"
 #endif
 
 #define WIN32_LEAN_AND_MEAN
@@ -368,6 +369,29 @@ static bool DownloadPlugin(const char* url,
 // downloaded until the plugin has loaded once.
 // ===========================================================================
 
+#ifdef MODLOADER_CLIENT_BUILD
+// Tell the player how to keep an update that replaced a file Vortex placed:
+// in the "Plugins Updated" window, and once in the log. `path` is relative to
+// the game directory.
+static void NoteIfVortexFile(const std::string& path)
+{
+	static bool noted = false;
+	if (noted)
+		return;
+
+	wchar_t gameDir[MAX_PATH]{};
+	GetModuleFileNameW(nullptr, gameDir, MAX_PATH);
+	if (wchar_t* slash = wcsrchr(gameDir, L'\\'))
+		*slash = L'\0';
+	if (!VortexNotice::ReplacedVortexFiles(gameDir, { path }))
+		return;
+
+	noted = true;
+	LogToFile::Info("[AutoUpdate] %s", VortexNotice::kMessage);
+	UI::UpdateNoticeWindow::ShowVortexNotice();
+}
+#endif
+
 struct PluginSidecar
 {
     std::string dllFilename;  // e.g. "MyPlugin.dll"
@@ -639,6 +663,7 @@ static void ProcessPluginSidecar(const PluginSidecar& sc,
         LogToFile::Info("[AutoUpdate][Sidecar] '%s' — updated to %s", displayName, remoteVersion.c_str());
         WritePluginVersion(stateIniPath, sc.dllFilename.c_str(), remoteVersion.c_str());
 #ifdef MODLOADER_CLIENT_BUILD
+        NoteIfVortexFile("ModLoader\\Plugins\\" + sc.dllFilename);
         UI::UpdateNoticeWindow::AddUpdatedPlugin(displayName,
                                                  decision.installed.c_str(),
                                                  remoteVersion.c_str(),
@@ -733,6 +758,8 @@ static void ListLoaderNotesOnce(const char* running, const std::string& remoteTa
 	LogToFile::Info("[AutoUpdate] Listing the release notes of %s (previous version %s) in the Plugins Updated window",
 	                remoteTag.c_str(), previous.empty() ? "unknown" : previous.c_str());
 	UI::UpdateNoticeWindow::AddUpdatedPlugin(UI::UpdateNoticeWindow::kLoaderRowName, previous.c_str(), remoteTag.c_str(), d.text.c_str());
+	// The updater that installed this release may be too old to say so itself.
+	NoteIfVortexFile("ModLoader\\StarRupture-ModLoader-Core.dll");
 	UI::UpdateNoticeWindow::SetOnShown([tag = remoteTag]()
 	{
 		// Shown first: a crash between the two writes leaves a stale
