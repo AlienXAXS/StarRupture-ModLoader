@@ -664,6 +664,34 @@ build\tests\mod_index_tests.exe
 
 It prints one line per failed check and a total, and exits 0 when every check passes.
 
+## PluginManageTests
+
+The rules behind disabling and uninstalling a plugin (`plugins/plugin_manage.h`), with no loader and no game.
+Every case works in its own folder under the temp directory. It checks:
+
+- The `[Plugins] Disabled=` list: splitting, adding and removing a name in any case, and saving it to
+  `modloader.ini` without touching the other sections or leaving a half-written line.
+- Which names are refused: paths, `..`, colons, device names, anything that is not a plain `<name>.dll`.
+  Junctions and linked files are refused too. The linked-file case is skipped, and says so, when the account may
+  not create a file link.
+- Uninstall moves only `X.dll`, `X.pdb` and `X.json` into `Removed\X\<stamp>`. Settings, subfolders and
+  neighbouring files stay.
+- Rollback when the move of file 1, 2 or 3 fails, in both directions, and what is reported when the rollback
+  fails as well.
+- Restore: the newest backup, refusal when a file is already back, and a `removed.ini` that was edited by hand.
+- A DLL loaded in the test process can be moved out of the folder and back.
+- The names a preload DLL answers to, the card states and buttons, and the "Vortex placed this file" check.
+
+The last part is a scripted run (disable, enable, uninstall, restore) that prints each step and the files after
+it.
+
+```
+msbuild Tests\PluginManageTests\PluginManageTests.vcxproj /p:Configuration="Client Release" /p:Platform=x64
+build\tests\plugin_manage_tests.exe
+```
+
+It prints one line per failed check and a total, and exits 0 when every check passes.
+
 ## ImageShrinkTests
 
 The size, level and byte rules of the shrink (`UI/image_shrink.h`), with no GPU. It checks that a larger
