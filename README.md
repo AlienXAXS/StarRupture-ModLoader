@@ -280,12 +280,16 @@ index names it.)
 - **Uninstall** asks first, then moves the plugin's DLL, and its `.json` and `.pdb` files if it has them,
   into `ModLoader\Removed`. Your settings, save data and any subfolders stay where they are. The updater
   doesn't bring the plugin back.
-- **Restore**, on the same card, puts the files back and turns the plugin on, even if it was disabled
-  before.
+- **Restore**, on the same card, puts the files back as they were: a plugin that was on comes back on, and
+  one you had disabled stays disabled.
+- If the same plugin is already installed under another file name, **Restore** is refused and the card says
+  which file it is: "A copy is already installed as X.dll, so the old one stays in ModLoader\Removed."
+  To get the old one back, uninstall that copy first.
 - If a plugin can't stop or start right away, the card says the change happens after you restart the game.
   If a change fails, the card says that too.
 - **Vortex:** a plugin Vortex installed has no **Uninstall** button. Uninstall it in Vortex. You can still
-  disable it here.
+  disable it here. If the loader can't tell whether Vortex installed it, the button stays and the uninstall
+  prompt warns you.
 - If another installed, enabled plugin needs the one you're disabling or uninstalling, the tab warns you
   first. It only knows what the mod index lists, so no warning doesn't prove nothing needs it.
 - A plugin with a comma in its file name can't be disabled.
@@ -1049,6 +1053,7 @@ these for you.
 | | `Theme` | empty | Empty is `Default`, unless the file has an old `[ThemeColors]` block: that is saved as the `Custom` theme. Set by **Active Theme** |
 | | `KeyboardNavigation` | `1` | `0` turns off Tab, arrow-key and Space or Enter navigation. Set by **Keyboard navigation** |
 | `[Plugins]` | `RestartCrashed` | `1` | `0` stops crashed plugins restarting on their own. Set by **Restart crashed plugins automatically** |
+| | `Disabled` | empty | Client only. Comma-separated plugin DLL names the loader does not load. Written by **Disable** and **Enable** on the [Browse tab](#browse-tab-) |
 | `[Images]` | `Preload` | `0` | `1` reads the picture sets that mods list in the background. Set by **Preload images from the game** |
 | `[Input]` | `SuppressKeybindsWhileTyping` | `1` | Keybinds ignore keys typed into a game text box |
 | `[Console]` | `OpenKey` | `Tilde` | |
@@ -1080,6 +1085,8 @@ Other files, all under `ModLoader\`:
 | `scan_cache.ini` | Pattern scan results for the current game exe, kept per ProductVersion, PE timestamp and image size. A file from an older loader is discarded and rebuilt on the first launch |
 | `image-cache\<folder>\` | Pictures saved by the [image library](#image-library) (`*.img`, with `names.lst` and `sets.lst`, the item names and preload sets they belong to), one folder per game build and pak set. **Clear image cache** empties it |
 | `Preload\.state` | Marks a preload plugin that did not finish loading |
+| `Removed\<plugin>\<time>\` | The files **Uninstall** moved out of `Plugins\`, with a `removed.ini` that **Restore** reads |
+| `plugin_manage.ini` | Each plugin's name, version and author by file name, so a disabled one still has a name. Not for editing |
 
 ---
 
