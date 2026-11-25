@@ -299,7 +299,9 @@ A card for a plugin in the index shows its name, version and author, its summary
 was last tried on (when the index says), and an **Open page** button that opens the plugin's page (Nexus
 Mods or GitHub) in your browser. A plugin that needs a newer ModLoader than yours says so. The index is
 downloaded once, the first time you open the tab, and kept until the game closes. If the download fails,
-the tab says so and **Retry** tries again. The format of the index and how to add a plugin are in
+the tab says why and **Retry** tries again: "The mod list isn't published yet." when the list isn't at its
+address yet, "The mod list server answered with an error (HTTP 503)." (with the number the server sent) for
+any other server error, and "The mod list is larger than allowed." for a list over the size limit. The format of the index and how to add a plugin are in
 [`mod-index/README.md`](mod-index/README.md); the steps for an author are in
 [Getting your mod into Browse, and onto Nexus](mod-index/GETTING-LISTED.md).
 
@@ -319,7 +321,7 @@ While a mod installs, its button reads "Installing..." and the other **Install**
 `ModLoader.log` has an `[Install]` line for each step.
 
 The button is greyed out when it can't work. The reason shows when you point at the button, and under the
-card (unless the reason is that another install is running):
+card (while an install runs, the lines under the cards are hidden):
 
 - the mod needs another mod that isn't installed or is disabled ("MainMap needs MiniMap. Install MiniMap
   first." or "Enable MiniMap first."). Install the other one first; nothing is installed for you;
@@ -329,7 +331,8 @@ card (unless the reason is that another install is running):
 
 A mod that only runs on a dedicated server has a **(Server)** label after its author name (point at it for
 "Runs on a dedicated server") and no **Install** button, since there is nothing to install on your PC.
-Use **Open page** to get it. So does a mod whose entry lists no download.
+The loader never offers Install for it, even if its entry lists a download. Use **Open page** to get it.
+So does a mod whose entry lists no download.
 
 **Search.** The box under the tab's heading filters the list as you type. Type words from a mod's name, its
 author or its description, in any order: "letmeinside minimap" finds MiniMap. A word of 3 letters or more

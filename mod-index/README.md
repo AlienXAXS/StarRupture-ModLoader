@@ -40,7 +40,7 @@ card with an Install button, and on to Nexus, follow [GETTING-LISTED.md](GETTING
 | `tested_loader` | no | The ModLoader version you tested on, for example `1.27.0`. Up to 32 characters. Please include it. |
 | `interface_version_min` | no | The plugin interface number the plugin declares. Leave it out when unknown. |
 | `requires` | no | The ids of other plugins this one needs, as a list of text, for example `["minimap"]`. The Browse tab warns a player who disables or uninstalls a plugin yours needs, and Install refuses your plugin until the ones it needs are installed and enabled. The card doesn't list requirements, so also say it in `summary`. |
-| `server_only` | no | `true` for a plugin that runs only on a dedicated server. The card then shows **(Server)** after the author, and has no Install button. Leave it out for any other plugin. See below. |
+| `server_only` | no | `true` for a plugin that runs only on a dedicated server. The card then shows **(Server)** after the author, and never has an Install button, even if the install fields are there. Leave it out for any other plugin. See below. |
 | `download_url` | for Install | The `.dll` asset of a GitHub release of the repository `page_url` names (so `page_url` is the GitHub repository): `https://github.com/<owner>/<repo>/releases/download/<tag>/<file>.dll`. Up to 200 characters. A name ending `-Server.dll` is not installed. |
 | `download_sha256` | for Install | The SHA-256 of that file: 64 lowercase hex characters. |
 | `download_size` | for Install | The size of that file in bytes: a whole number from 1 to 33554432 (32 MB). |
@@ -61,8 +61,8 @@ then writes `install_files` to `ModLoader\Plugins`. It never replaces a file tha
 Rules for the download:
 
 - `https://github.com/<owner>/<repo>/releases/download/...` only, and the owner and repository must be the
-  ones in `page_url`. The loader follows GitHub's own redirect to its release download host and nothing
-  else.
+  ones in `page_url`. The loader follows GitHub's own redirect to its release download hosts
+  (`release-assets.githubusercontent.com` and `objects.githubusercontent.com`) and nothing else.
 - A file attached to a GitHub release. Not another host, not a link to a branch, not a zip of the source.
 - Never replace a file after it is listed. A new version is a new release with its own file, and the
   entry's `version`, `download_url`, `download_sha256` and `download_size` change together. If the file
@@ -87,7 +87,8 @@ The entry needs the hash in lowercase; `certutil` already prints it that way.
 
 A plugin that loads only on a dedicated server is no use on a player's PC. Mark it `"server_only": true` and
 leave out the install fields. The Browse card shows **(Server)** after the author (the tooltip says "Runs on
-a dedicated server") and an **Open page** button. The field is optional and append-only: leave it out, or use
+a dedicated server") and an **Open page** button, never **Install**: the loader ignores the install fields of
+a `server_only` entry, and the check below refuses an entry that has both. The field is optional and append-only: leave it out, or use
 `false`, for every other plugin. Older loaders ignore it.
 
 ```json
@@ -127,7 +128,9 @@ node .github/vmap/build-mod-index.mjs mod-index/index.json --out mod-index.txt
 
 It prints `ok`, or names the entry that breaks a rule below. It checks the install fields too: a
 `download_url` that isn't a release asset of your repository, a `download_sha256` that isn't 64 lowercase
-hex characters, a size out of range, or a `server_only` that isn't `true` or `false`.
+hex characters, a size out of range or not written as plain digits (`2e6` is refused), `install_files` that
+don't name exactly one plugin `.dll`, an install field that appears twice or is nested inside another
+value, a `server_only` that isn't `true` or `false`, or a `server_only` entry that has install fields.
 
 ## After it is merged
 

@@ -25,6 +25,7 @@ In a Windows command prompt, with the file in the current folder:
 
 ```
 certutil -hashfile QuickHaul-Client.dll SHA256
+dir QuickHaul-Client.dll
 ```
 
 Or in PowerShell:
@@ -106,7 +107,8 @@ leave out the download fields:
 ```
 
 Its card shows **(Server)** after the author, with the tooltip "Runs on a dedicated server", and an **Open
-page** button, and no Install button.
+page** button. It never has an Install button: the loader ignores download fields on a `server_only`
+entry, and the check in step 6 refuses an entry that has both.
 
 ## 6. Check it and send it
 
@@ -116,7 +118,8 @@ Save `index.json` with LF line endings and a final newline, and run the check:
 node .github/vmap/build-mod-index.mjs mod-index/index.json --out mod-index.txt
 ```
 
-It prints `ok`, or names the entry and the rule it breaks. Then open a PR with the new entry, the way
+It prints `ok`, or names the entry and the rule it breaks. It also refuses a download size written as
+`2e6`, an install field written twice, and install fields on a `server_only` entry. Then open a PR with the new entry, the way
 [README.md](README.md) describes. To try the Install button before it is merged, point your own copy of the
 loader at your file with `ModIndexUrl` (see "Try your own index" in the same README).
 
