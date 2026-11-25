@@ -628,7 +628,7 @@ namespace
 			Check(c.state == state && c.buttons == buttons && !c.disableGreyed && !c.uninstallInVortex, what);
 		};
 		CardFacts f;
-		card(f, CardState::NotInstalled, kOpenPage | kReadme, "card: not installed");
+		card(f, CardState::NotInstalled, kNoButtons, "card: not installed");
 		f = {}; f.inPlugins = f.running = true;
 		card(f, CardState::Running, kDisable | kUninstall, "card: running");
 		f.running = false;
@@ -640,7 +640,7 @@ namespace
 		f.running = true;
 		card(f, CardState::DisablePending, kEnable | kUninstall, "card: disable pending");
 		f = {}; f.hasBackup = true;
-		card(f, CardState::Uninstalled, kRestore | kOpenPage, "card: uninstalled");
+		card(f, CardState::Uninstalled, kRestore, "card: uninstalled");
 		f.running = true;
 		card(f, CardState::UninstalledRunning, kRestore, "card: gone after a restart");
 		f.hasBackup = false;

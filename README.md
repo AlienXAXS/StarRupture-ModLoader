@@ -292,7 +292,7 @@ index names it.)
   prompt warns you.
 - If another installed, enabled plugin needs the one you're disabling or uninstalling, the tab warns you
   first. It only knows what the mod index lists, so no warning doesn't prove nothing needs it.
-- A plugin with a comma in its file name can't be disabled.
+- A plugin with a comma or `..` in its file name can't be disabled.
 - On the Plugins tab, a plugin shows **Disabled** or **Uninstalled** and points you here.
 
 A card for a plugin in the index shows its name, version and author, its summary, the ModLoader version it

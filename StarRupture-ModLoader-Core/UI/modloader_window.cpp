@@ -2570,7 +2570,7 @@ namespace UI::ModLoaderWindow
             }
             ImGui::EndDisabled();
             if (state.disableGreyed && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-                ImGui::SetTooltip("A mod with a comma in its file name can't be disabled.");
+                ImGui::SetTooltip("A mod with a comma or two dots in a row in its file name can't be disabled.");
             ImGui::SameLine();
         }
         if (state.buttons & PluginManage::kUninstall)
@@ -2739,7 +2739,7 @@ namespace UI::ModLoaderWindow
 
         ImGui::Spacing();
         ImGui::SeparatorText("Browse");
-        ImGui::TextDisabled("Plugins that work with the ModLoader. Open a page to download one.");
+        ImGui::TextDisabled("Manage your installed plugins here. To get a new one, open its page and download it.");
         ImGui::Spacing();
 
         ModIndex::Fetcher& index = ModIndex::Instance();

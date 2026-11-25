@@ -689,8 +689,6 @@ namespace PluginManage
 		kEnable    = 1u << 1,
 		kUninstall = 1u << 2,
 		kRestore   = 1u << 3,
-		kOpenPage  = 1u << 4, // needs an index entry, as does README
-		kReadme    = 1u << 5,
 	};
 
 	struct CardFacts
@@ -740,9 +738,9 @@ namespace PluginManage
 		else if (facts.asPreload) // before the backup: it is installed, so not "Uninstalled"
 			is(CardState::Preload, kNoButtons);
 		else if (facts.hasBackup)
-			is(CardState::Uninstalled, kRestore | kOpenPage);
+			is(CardState::Uninstalled, kRestore);
 		else
-			is(CardState::NotInstalled, kOpenPage | kReadme);
+			is(CardState::NotInstalled, kNoButtons);
 
 		if (facts.vortexListed && (card.buttons & kUninstall))
 		{

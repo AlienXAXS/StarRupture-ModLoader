@@ -2534,7 +2534,8 @@ namespace PluginManager
 			if (rec->hModule)
 				entry(rec->fileName);
 		for (const auto& rec : g_loadedPlugins)
-			rec->isDisabled = PluginManage::ListHas(disabled, BaseFileName(rec->fileName));
+			if (!rec->isUnloading) // nothing writes a record while it unloads
+				rec->isDisabled = PluginManage::ListHas(disabled, BaseFileName(rec->fileName));
 		// A DLL that is not a plugin gets no card.
 		files.erase(std::remove_if(files.begin(), files.end(), [](const auto& f)
 			{
