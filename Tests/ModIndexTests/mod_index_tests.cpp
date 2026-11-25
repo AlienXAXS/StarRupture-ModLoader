@@ -6,13 +6,18 @@
 #include "auto_update/mod_index.h"
 #include "auto_update/mod_index_fetcher.h"
 #include "auto_update/mod_index_signed.h"
+#include "auto_update/mod_install.h"
+#include "utils/sha256.h"
 #include "auto_update/feed_fetch.h"
 #include "memory_scanner/version_feed.h"
 #include "third_party/monocypher/monocypher-ed25519.h"
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstdio>
+#include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <iterator>
 #include <mutex>
@@ -772,6 +777,492 @@ namespace
 
 	std::string OneEntryIndex() { return "[" + Obj("a", "A", kGood) + "]"; }
 
+	// ---- Install: the parser's fields, the downloader and the writer ----------
+
+	const char* kRepoPage  = "https://github.com/Owner/Repo";
+	const char* kAssetUrl  = "https://github.com/Owner/Repo/releases/download/v1.0.0/Thing.dll";
+	const char* kSignedHop = "https://release-assets.githubusercontent.com/github-production-release-asset/1/abc?sp=r&sig=a%2Bb%3D&rscd=attachment%3B+filename%3DThing.dll";
+	const char* kOwnManifest = "https://github.com/Owner/Repo/releases/latest/download/Thing-client-manifest.json";
+
+	std::string InstallJson(const std::string& url, const std::string& sha, const std::string& size,
+		const std::string& files, const std::string& manifest)
+	{
+		std::string s;
+		if (!url.empty())      s += ", \"download_url\": \"" + url + "\"";
+		if (!sha.empty())      s += ", \"download_sha256\": \"" + sha + "\"";
+		if (!size.empty())     s += ", \"download_size\": " + size;
+		if (!files.empty())    s += ", \"install_files\": " + files;
+		if (!manifest.empty()) s += ", \"update_manifest_url\": \"" + manifest + "\"";
+		return s;
+	}
+
+	void InstallParserTests()
+	{
+		const std::string sha(64, 'a');
+		const std::string both = "[\"Thing.dll\", \"Thing.json\"]";
+		const std::string one = "[\"Thing.dll\"]";
+		const auto parse = [](const std::string& extra, const char* page)
+		{
+			const ParseResult r = ParseModIndex("[" + Obj("thing", "Thing", page, extra) + "]");
+			return r.entries.size() == 1 ? r.entries[0] : Entry();
+		};
+
+		const Entry full = parse(InstallJson(kAssetUrl, sha, "1234", both, kOwnManifest), kRepoPage);
+		Check(full.install.url == kAssetUrl && full.install.sha256 == sha && full.install.size == 1234
+			&& full.install.dllFile == "Thing.dll" && full.install.manifestUrl == kOwnManifest, "install fields: all read");
+		const Entry reversed = parse(InstallJson(kAssetUrl, sha, "1234", "[\"Thing.json\", \"Thing.dll\"]", kOwnManifest), kRepoPage);
+		Check(reversed.install.dllFile == "Thing.dll", "install fields: the file order does not matter");
+		const Entry alone = parse(InstallJson(kAssetUrl, sha, "33554432", one, ""), kRepoPage);
+		Check(alone.install.dllFile == "Thing.dll" && alone.install.manifestUrl.empty() && alone.install.size == 32u * 1024 * 1024,
+			"install fields: a DLL alone, at the size limit");
+
+		struct Bad { const char* what; std::string extra; const char* page; };
+		const std::string good = InstallJson(kAssetUrl, sha, "10", both, kOwnManifest);
+		const auto url = [&](const std::string& u) { return InstallJson(u, sha, "10", one, ""); };
+		const auto files = [&](const std::string& f) { return InstallJson(kAssetUrl, sha, "10", f, ""); };
+		const auto manifest = [&](const std::string& m) { return InstallJson(kAssetUrl, sha, "10", both, m); };
+		const std::string base = "https://github.com/Owner/Repo/releases/download/v1.0.0/";
+		const std::string latest = "https://github.com/Owner/Repo/releases/latest/download/";
+		const std::vector<Bad> bad = {
+			{ "no url", InstallJson("", sha, "10", one, ""), kRepoPage },
+			{ "an http url", url("http://github.com/Owner/Repo/releases/download/v1.0.0/Thing.dll"), kRepoPage },
+			{ "another host", url("https://example.test/Owner/Repo/releases/download/v1.0.0/Thing.dll"), kRepoPage },
+			{ "a lookalike host", url("https://github.com.example.test/Owner/Repo/releases/download/v1/Thing.dll"), kRepoPage },
+			{ "user info", url("https://x@github.com/Owner/Repo/releases/download/v1/Thing.dll"), kRepoPage },
+			{ "a query", url(base + "Thing.dll?x=1"), kRepoPage },
+			{ "dot dot", url(base + "../Thing.dll"), kRepoPage },
+			{ "an escape", url(base + "%2e%2e"), kRepoPage },
+			{ "not a release asset", url("https://github.com/Owner/Repo/raw/main/x/Thing.dll"), kRepoPage },
+			{ "not a dll", url(base + "Thing.zip"), kRepoPage },
+			{ "another repository", url("https://github.com/Owner/Other/releases/download/v1/Thing.dll"), kRepoPage },
+			{ "another owner", url("https://github.com/Else/Repo/releases/download/v1/Thing.dll"), kRepoPage },
+			{ "a page that is not GitHub", good, "https://www.nexusmods.com/starrupture/mods/1" },
+			{ "no sha", InstallJson(kAssetUrl, "", "10", one, ""), kRepoPage },
+			{ "a short sha", InstallJson(kAssetUrl, std::string(63, 'a'), "10", one, ""), kRepoPage },
+			{ "an uppercase sha", InstallJson(kAssetUrl, std::string(64, 'A'), "10", one, ""), kRepoPage },
+			{ "a sha that is not hex", InstallJson(kAssetUrl, std::string(64, 'g'), "10", one, ""), kRepoPage },
+			{ "no size", InstallJson(kAssetUrl, sha, "", one, ""), kRepoPage },
+			{ "size zero", InstallJson(kAssetUrl, sha, "0", one, ""), kRepoPage },
+			{ "a negative size", InstallJson(kAssetUrl, sha, "-5", one, ""), kRepoPage },
+			{ "a size over the limit", InstallJson(kAssetUrl, sha, "33554433", one, ""), kRepoPage },
+			{ "a huge size", InstallJson(kAssetUrl, sha, "99999999999999999999", one, ""), kRepoPage },
+			{ "no files", InstallJson(kAssetUrl, sha, "10", "", ""), kRepoPage },
+			{ "an empty file list", files("[]"), kRepoPage },
+			{ "two dlls", files("[\"Thing.dll\", \"Other.dll\"]"), kRepoPage },
+			{ "three files", InstallJson(kAssetUrl, sha, "10", "[\"Thing.dll\", \"Thing.json\", \"x.ini\"]", kOwnManifest), kRepoPage },
+			{ "an exe", files("[\"Thing.exe\"]"), kRepoPage },
+			{ "a parent path", files("[\"../Thing.dll\"]"), kRepoPage },
+			{ "a folder", files("[\"sub/Thing.dll\"]"), kRepoPage },
+			{ "a backslash path", files("[\"..\\\\Thing.dll\"]"), kRepoPage },
+			{ "a stream", files("[\"a:Thing.dll\"]"), kRepoPage },
+			{ "a server dll", files("[\"Thing-Server.dll\"]"), kRepoPage },
+			{ "a device name", files("[\"CON.dll\"]"), kRepoPage },
+			{ "a leading dot", files("[\".Thing.dll\"]"), kRepoPage },
+			{ "a json alone", InstallJson(kAssetUrl, sha, "10", "[\"Thing.json\"]", kOwnManifest), kRepoPage },
+			{ "a json with another stem", InstallJson(kAssetUrl, sha, "10", "[\"Thing.dll\", \"Other.json\"]", kOwnManifest), kRepoPage },
+			{ "a json with no manifest url", manifest(""), kRepoPage },
+			{ "a manifest url with no json", InstallJson(kAssetUrl, sha, "10", one, kOwnManifest), kRepoPage },
+			{ "a manifest of another repository", manifest("https://github.com/Owner/Other/releases/latest/download/Thing-client-manifest.json"), kRepoPage },
+			{ "a manifest on another host", manifest("https://example.test/Owner/Repo/releases/latest/download/Thing-client-manifest.json"), kRepoPage },
+			{ "a manifest of one tag", manifest(base + "Thing-client-manifest.json"), kRepoPage },
+			{ "a manifest by another name", manifest(latest + "Thing.json"), kRepoPage },
+			{ "a manifest name with a quote", manifest(latest + "a\\\"-client-manifest.json"), kRepoPage },
+		};
+		for (const Bad& b : bad)
+		{
+			const Entry e = parse(b.extra, b.page);
+			Check(e.id == "thing" && e.name == "Thing" && e.install.dllFile.empty() && e.install.url.empty(),
+				(std::string("install fields: listed with nothing to install for ") + b.what).c_str());
+		}
+	}
+
+	// A game folder of its own under %TEMP%, removed again.
+	struct GameDir
+	{
+		std::wstring game, plugins;
+		GameDir()
+		{
+			static int n = 0;
+			wchar_t temp[MAX_PATH]{};
+			GetTempPathW(MAX_PATH, temp);
+			game = std::wstring(temp) + L"mod_install_tests_" + std::to_wstring(GetCurrentProcessId()) + L"_" + std::to_wstring(++n);
+			plugins = game + L"\\ModLoader\\Plugins";
+			std::filesystem::create_directories(plugins);
+		}
+		~GameDir()
+		{
+			std::error_code ignored;
+			std::filesystem::remove_all(game, ignored);
+		}
+		// The names in Plugins, sorted, as one string: "" when it is empty.
+		std::string Listing() const
+		{
+			std::vector<std::string> names;
+			std::error_code ignored;
+			for (const auto& item : std::filesystem::directory_iterator(plugins, ignored))
+				names.push_back(item.path().filename().string());
+			std::sort(names.begin(), names.end());
+			std::string all;
+			for (const std::string& name : names)
+				all += (all.empty() ? "" : ",") + name;
+			return all;
+		}
+		std::wstring At(const wchar_t* name) const { return plugins + L"\\" + name; }
+	};
+
+	const std::string kModBytes = std::string("MZ\0\x01 not a real plugin", 21) + std::string(2000, 'x');
+
+	ModInstall::Request RequestFor(const GameDir& dir)
+	{
+		ModInstall::Request r;
+		r.name = "Thing";
+		r.version = "1.0.0";
+		r.info.url = kAssetUrl;
+		r.info.sha256 = Sha256::OfBytes(kModBytes);
+		r.info.size = kModBytes.size();
+		r.info.dllFile = "Thing.dll";
+		r.info.manifestUrl = kOwnManifest;
+		r.pluginsDir = dir.plugins;
+		r.gameDir = dir.game;
+		r.listSigned = true;
+		return r;
+	}
+
+	ModInstall::Hop To(const std::string& location, unsigned status = 302) { return { status, location, "" }; }
+	ModInstall::Hop Body(const std::string& body) { return { 200, "", body }; }
+
+	struct Fetched
+	{
+		bool ok = false;
+		std::string why;
+		std::vector<std::string> asked;
+		size_t maxBytes = 0;
+		bool Says(const char* part) const { return !ok && why.find(part) != std::string::npos; }
+	};
+
+	// Runs Download against `answers`, one per request.
+	Fetched Fetch(const std::vector<ModInstall::Hop>& answers, const ModIndex::InstallInfo* info = nullptr)
+	{
+		const GameDir dir;
+		Fetched out;
+		const ModInstall::HopFn hop = [&](const std::string& url, size_t maxBytes, unsigned, const std::atomic<bool>&)
+		{
+			out.asked.push_back(url);
+			out.maxBytes = maxBytes;
+			return out.asked.size() <= answers.size() ? answers[out.asked.size() - 1] : ModInstall::Hop();
+		};
+		std::atomic<bool> cancel{ false };
+		std::string bytes = "stale";
+		out.ok = ModInstall::Download(info ? *info : RequestFor(dir).info, "Thing", hop, cancel, bytes, out.why);
+		Check(out.ok ? bytes == kModBytes && out.why.empty() : bytes.empty() && !out.why.empty(),
+			"download: bytes only on success, words only on failure");
+		return out;
+	}
+
+	void DownloadTests()
+	{
+		const char* const mismatch = "does not match";
+		const char* const refused = "not allowed";
+		const char* const failed = "download failed";
+
+		Check(Sha256::OfBytes("abc") == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", "sha256: a known digest");
+
+		for (unsigned status : { 301u, 302u, 303u, 307u, 308u })
+		{
+			const Fetched f = Fetch({ To(kSignedHop, status), Body(kModBytes) });
+			Check(f.ok && f.asked.size() == 2, "download: one redirect, then the file");
+		}
+		{
+			const Fetched f = Fetch({ To(kSignedHop), Body(kModBytes) });
+			Check(f.asked.size() == 2 && f.asked[0] == kAssetUrl && f.asked[1] == kSignedHop, "download: the signed query is asked for as it came");
+			Check(f.maxBytes == kModBytes.size(), "download: the answer is capped at the listed size");
+		}
+
+		std::string other = kModBytes;
+		other.back() = 'y';
+		Check(Fetch({ Body(other) }).Says(mismatch), "download: a hash mismatch is refused");
+		Check(Fetch({ Body(kModBytes.substr(0, kModBytes.size() - 1)) }).Says(mismatch), "download: a short file is refused");
+		Check(Fetch({ Body(kModBytes + "x") }).Says(mismatch), "download: a long file is refused");
+		Check(Fetch({ Body("") }).Says(failed), "download: an interrupted answer is a failed download");
+		Check(Fetch({ ModInstall::Hop() }).Says(failed), "download: no answer is a failed download");
+		Check(Fetch({ To(kSignedHop), ModInstall::Hop() }).Says(failed), "download: the file's host not answering is a failed download");
+		for (unsigned status : { 204u, 206u, 300u, 304u, 403u, 404u, 500u })
+		{
+			const Fetched f = Fetch({ { status, kSignedHop, kModBytes } });
+			Check(f.Says(failed) && f.asked.size() == 1, "download: any other status fails");
+		}
+
+		const std::vector<std::string> badTargets = {
+			"", "/owner/file", "//release-assets.githubusercontent.com/x", "release-assets.githubusercontent.com/x",
+			"http://release-assets.githubusercontent.com/x", "file:///c:/x.dll",
+			"https://example.test/x", "https://github.com/Owner/Repo/releases/download/v1/Thing.dll",
+			"https://release-assets.githubusercontent.com.example.test/x", "https://xrelease-assets.githubusercontent.com/x",
+			"https://raw.githubusercontent.com/x", "https://release-assets.githubusercontent.com./x",
+			"https://release-assets.githubusercontent.com:443/x", "https://user@release-assets.githubusercontent.com/x",
+			"https://release-assets.githubusercontent.com@example.test/x", "https://example.test\\@release-assets.githubusercontent.com/x",
+			"https://example.test%2f.release-assets.githubusercontent.com/x", "https://release-assets.githubusercontent.com/x y",
+			"https://release-assets.githubusercontent.com/x\r\nHost: example.test",
+		};
+		for (const std::string& target : badTargets)
+		{
+			const Fetched f = Fetch({ To(target), Body(kModBytes) });
+			Check(f.Says(refused) && f.asked.size() == 1, ("download: redirect refused: " + target).c_str());
+		}
+		{
+			const Fetched f = Fetch({ To(kSignedHop), To("https://example.test/x"), Body(kModBytes) });
+			Check(f.Says(refused) && f.asked.size() == 2, "download: a later hop is checked too");
+		}
+
+		const std::string next = "https://objects.githubusercontent.com/next";
+		{
+			const Fetched three = Fetch({ To(kSignedHop), To(next), To(kSignedHop), Body(kModBytes) });
+			Check(three.ok && three.asked.size() == 4, "download: three redirects are followed");
+			const Fetched four = Fetch({ To(kSignedHop), To(next), To(kSignedHop), To(next), Body(kModBytes) });
+			Check(four.Says(refused) && four.asked.size() == 4, "download: a fourth redirect is refused");
+		}
+
+		for (const char* start : { "http://github.com/Owner/Repo/releases/download/v1.0.0/Thing.dll",
+			"https://example.test/Owner/Repo/releases/download/v1.0.0/Thing.dll",
+			"https://release-assets.githubusercontent.com/x" })
+		{
+			const GameDir dir;
+			ModIndex::InstallInfo info = RequestFor(dir).info;
+			info.url = start;
+			const Fetched f = Fetch({ Body(kModBytes) }, &info);
+			Check(!f.ok && f.asked.empty(), "download: a wrong first address is never asked for");
+		}
+		{
+			const GameDir dir;
+			ModIndex::InstallInfo info = RequestFor(dir).info;
+			info.size = static_cast<size_t>(ModIndex::kMaxDownloadBytes) + 1;
+			const Fetched f = Fetch({ Body(kModBytes) }, &info);
+			Check(!f.ok && f.asked.empty(), "download: a size over the limit is never asked for");
+		}
+
+		// cancel: before the first request, and while one is answering
+		{
+			const GameDir dir;
+			std::atomic<bool> cancel{ true };
+			int calls = 0;
+			std::string bytes, why;
+			const bool before = ModInstall::Download(RequestFor(dir).info, "Thing",
+				[&](const std::string&, size_t, unsigned, const std::atomic<bool>&) { ++calls; return Body(kModBytes); },
+				cancel, bytes, why);
+			Check(!before && calls == 0 && bytes.empty(), "download: cancelled before it starts, nothing is asked for");
+			cancel = false;
+			const bool during = ModInstall::Download(RequestFor(dir).info, "Thing",
+				[&](const std::string&, size_t, unsigned, const std::atomic<bool>&) { cancel = true; return Body(kModBytes); },
+				cancel, bytes, why);
+			Check(!during && bytes.empty() && why.find("stopped") != std::string::npos,
+				"download: cancelled while answering, the bytes are dropped");
+		}
+
+		// the loader's own hop: one request that follows nothing
+		{
+			Serve("the body");
+			std::atomic<bool> cancel{ false };
+			ModInstall::HttpHop()(kAssetUrl, 77, 5000, cancel);
+			std::lock_guard<std::mutex> lock(g_httpMutex);
+			Check(g_httpUrl == kAssetUrl && g_httpOptions.noRedirect && !g_httpOptions.allowPlainHttp && g_httpOptions.location
+				&& g_httpOptions.status && g_httpOptions.maxBytes == 77 && g_httpOptions.deadlineMs == 5000 && g_httpOptions.cancel == &cancel,
+				"hop: HTTPS only, no redirect followed, capped, with a deadline and cancel");
+		}
+	}
+
+	void PlaceTests()
+	{
+		const std::string sidecar = std::string("{\n  \"manifest_url\": \"") + kOwnManifest + "\"\n}\n";
+		std::string why;
+		{
+			const GameDir dir;
+			Check(ModInstall::Place(RequestFor(dir), kModBytes, why) && why.empty(), "place: written");
+			Check(dir.Listing() == "Thing.dll,Thing.json", "place: the DLL and its .json, no temp files");
+			Check(Slurp(dir.At(L"Thing.dll")) == kModBytes && Slurp(dir.At(L"Thing.json")) == sidecar, "place: both contents");
+		}
+		{
+			const GameDir dir;
+			ModInstall::Request r = RequestFor(dir);
+			r.info.manifestUrl.clear();
+			Spit(dir.At(L"Thing.json"), "mine");
+			Check(ModInstall::Place(r, kModBytes, why) && dir.Listing() == "Thing.dll,Thing.json" && Slurp(dir.At(L"Thing.json")) == "mine",
+				"place: with no manifest only the DLL is written");
+		}
+		for (const wchar_t* there : { L"Thing.dll", L"thing.DLL", L"Thing.json" })
+		{
+			const GameDir dir;
+			Spit(dir.At(there), "mine");
+			const std::string before = dir.Listing();
+			Check(!ModInstall::Place(RequestFor(dir), kModBytes, why) && why.find("already in") != std::string::npos,
+				"place: an existing file is refused");
+			Check(dir.Listing() == before && Slurp(dir.At(there)) == "mine", "place: and nothing changes");
+		}
+		// a file that appears after the check, just before its rename
+		for (const char* late : { "Thing.dll", "Thing.json" })
+		{
+			const GameDir dir;
+			const std::wstring target = dir.plugins + L"\\" + std::wstring(late, late + strlen(late));
+			const bool ok = ModInstall::Place(RequestFor(dir), kModBytes, why,
+				[&](const std::wstring& from, const std::wstring& to)
+				{
+					if (to == target)
+						Spit(target, "theirs");
+					return PluginManage::MoveOnSameVolume(from, to);
+				});
+			Check(!ok && !why.empty(), "place: a file that appears before the rename fails the install");
+			Check(dir.Listing() == late && Slurp(target) == "theirs", "place: it is left alone, and nothing of ours stays");
+		}
+		{
+			const GameDir dir;
+			Spit(dir.At(L"Thing.dll.install.tmp"), "left over");
+			Check(ModInstall::Place(RequestFor(dir), kModBytes, why) && dir.Listing() == "Thing.dll,Thing.json"
+				&& Slurp(dir.At(L"Thing.dll")) == kModBytes, "place: a temp file of an earlier attempt is replaced");
+		}
+		{
+			const GameDir dir;
+			ModInstall::Request r = RequestFor(dir);
+			r.info.dllFile = "..\\Thing.dll";
+			Check(!ModInstall::Place(r, kModBytes, why) && dir.Listing().empty()
+				&& !Exists(dir.game + L"\\ModLoader\\Thing.dll"), "place: a name with a path is refused");
+		}
+		{
+			const GameDir dir;
+			Spit(dir.game + L"\\vortex.deployment.json", "{\"files\": [{\"relPath\": \"ModLoader\\\\Plugins\\\\Thing.pdb\"}]}");
+			Check(!ModInstall::Place(RequestFor(dir), kModBytes, why) && why.find("Vortex") != std::string::npos && dir.Listing().empty(),
+				"place: a mod Vortex manages is refused");
+			Check(ModInstall::CheckTarget(RequestFor(dir)) == why, "check: the same words before the download");
+		}
+
+		using ModInstall::Need;
+		Check(ModInstall::RequirementMessage("MainMap", {}).empty()
+			&& ModInstall::RequirementMessage("MainMap", { { "MiniMap", Need::Met } }).empty(), "requires: met");
+		Check(ModInstall::RequirementMessage("MainMap", { { "A", Need::Met }, { "MiniMap", Need::Missing } })
+			== "MainMap needs MiniMap. Install MiniMap first.", "requires: missing");
+		Check(ModInstall::RequirementMessage("MainMap", { { "MiniMap", Need::Disabled }, { "B", Need::Missing } })
+			== "MainMap needs MiniMap. Enable MiniMap first.", "requires: disabled, the first unmet one is named");
+	}
+
+	template <class F>
+	bool Until(F done)
+	{
+		const auto end = Clock::now() + std::chrono::seconds(5);
+		while (!done() && Clock::now() < end)
+			std::this_thread::sleep_for(std::chrono::milliseconds(2));
+		return done();
+	}
+
+	// An install's `done`, which can be waited for.
+	struct Run
+	{
+		std::atomic<int> calls{ 0 };
+		ModInstall::Outcome outcome;
+		ModInstall::DoneFn Done()
+		{
+			return [this](const ModInstall::Outcome& o) { outcome = o; ++calls; };
+		}
+		bool Wait() { return Until([this] { return calls.load() > 0; }); }
+	};
+
+	void InstallerTests()
+	{
+		{
+			const GameDir dir;
+			std::atomic<bool> release{ false };
+			std::atomic<int> hops{ 0 };
+			Run first, second, again;
+			ModInstall::Installer installer([&](const std::string&, size_t, unsigned, const std::atomic<bool>&)
+			{
+				++hops;
+				Until([&] { return release.load(); });
+				return Body(kModBytes);
+			});
+			Check(installer.Start(RequestFor(dir), first.Done()) && installer.Busy(), "installer: starts, and is busy");
+			Check(!installer.Start(RequestFor(dir), second.Done()), "installer: one install at a time");
+			release = true;
+			Check(first.Wait() && first.outcome.placed && first.outcome.dllFile == "Thing.dll" && first.outcome.version == "1.0.0",
+				"installer: done says what was placed");
+			Check(Until([&] { return !installer.Busy(); }) && second.calls == 0 && hops == 1 && dir.Listing() == "Thing.dll,Thing.json",
+				"installer: free again, and the refused start did nothing");
+
+			Check(installer.Start(RequestFor(dir), again.Done()) && again.Wait() && !again.outcome.placed
+				&& again.outcome.message.find("already in") != std::string::npos && hops == 1,
+				"installer: a file already there stops it before the download");
+			installer.Shutdown(1000);
+			Check(!installer.Start(RequestFor(dir), again.Done()), "installer: nothing starts after Shutdown");
+		}
+
+		// a failure ends in done, with the folder as it was: wrong bytes, a request
+		// that throws, and a DLL that appears during the download
+		for (int kind = 0; kind < 3; ++kind)
+		{
+			const GameDir dir;
+			Run run;
+			ModInstall::Installer installer([&](const std::string&, size_t, unsigned, const std::atomic<bool>&) -> ModInstall::Hop
+			{
+				if (kind == 0)
+					return Body(std::string(kModBytes.size(), 'z'));
+				if (kind == 1)
+					throw std::runtime_error("boom");
+				Spit(dir.At(L"Thing.dll"), "theirs");
+				return Body(kModBytes);
+			});
+			Check(installer.Start(RequestFor(dir), run.Done()) && run.Wait() && !run.outcome.placed && !run.outcome.message.empty(),
+				"installer: a failed install says why");
+			Check(dir.Listing() == (kind == 2 ? "Thing.dll" : "") && (kind != 2 || Slurp(dir.At(L"Thing.dll")) == "theirs"),
+				"installer: and leaves the folder as it was");
+			installer.Shutdown(1000);
+		}
+
+		// Shutdown during the download: with a request that notices, and with one
+		// that answers with the whole file anyway
+		for (const bool noticesCancel : { true, false })
+		{
+			const GameDir dir;
+			std::atomic<bool> started{ false }, release{ false };
+			Run run;
+			ModInstall::Installer installer([&](const std::string&, size_t, unsigned, const std::atomic<bool>& cancel)
+			{
+				started = true;
+				Until([&] { return release.load() || (noticesCancel && cancel.load()); });
+				return Body(kModBytes);
+			});
+			installer.Start(RequestFor(dir), run.Done());
+			Until([&] { return started.load(); });
+			const bool ended = installer.Shutdown(noticesCancel ? 4000 : 0);
+			Check(ended == noticesCancel, "shutdown: says whether the worker has ended");
+			release = true;
+			Check(Until([&] { return !installer.Busy(); }), "shutdown: the worker ends");
+			Check(run.calls == 0 && dir.Listing().empty(), "shutdown: nothing is written and done is not called");
+		}
+	}
+
+	void SignatureStateTests()
+	{
+		const Signer sk2 = MakeSigner("k2", 2);
+		const std::string url = "https://example.test/mod-index.v1.txt";
+		const std::string idx = IndexOf("aaa");
+		const auto verified = [&](bool signedOnly, const std::string& served)
+		{
+			Source src;
+			src.keys = { sk2.pub };
+			src.cachePath = TempCache();
+			src.signedOnly = signedOnly;
+			src.bodySigned = std::make_shared<bool>(!signedOnly);
+			std::shared_ptr<const bool> flag = src.bodySigned;
+			const std::wstring cache = src.cachePath;
+			Serve(served);
+			Fetcher f(url, MakeFetch(std::move(src)), std::move(flag));
+			f.RequestFirstLoad();
+			Check(WaitFor(f, State::Ready), "signature state: the list loads");
+			const bool result = f.Get()->signatureVerified;
+			f.Shutdown(1000);
+			RemoveCache(cache);
+			return result;
+		};
+		Check(verified(true, SignedFile(sk2, 2, idx)), "signature state: the loader's own list is verified");
+		Check(!verified(false, idx), "signature state: a bare list from ModIndexUrl is not");
+		Check(verified(false, SignedFile(sk2, 2, idx)), "signature state: a signed file from ModIndexUrl is");
+	}
+
 	void FetcherTests()
 	{
 		// Idle until asked; Get never starts anything
@@ -1010,6 +1501,11 @@ int main()
 	SignedFetchTests();
 	PlayersOwnFetchTests();
 	FetcherTests();
+	InstallParserTests();
+	DownloadTests();
+	PlaceTests();
+	InstallerTests();
+	SignatureStateTests();
 
 	printf("%d checks, %d failed\n", g_checks, g_failed);
 	return g_failed ? 1 : 0;

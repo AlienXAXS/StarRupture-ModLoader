@@ -186,7 +186,7 @@ namespace ModInstall
 		return {};
 	}
 
-	bool Place(const Request& request, const std::string& bytes, std::string& why)
+	bool Place(const Request& request, const std::string& bytes, std::string& why, const PluginManage::MoveFn& move)
 	{
 		why = CheckTarget(request);
 		if (!why.empty())
@@ -208,12 +208,12 @@ namespace ModInstall
 		DWORD error = ok ? ERROR_SUCCESS : GetLastError();
 		if (ok && sidecar)
 		{
-			error = PluginManage::MoveOnSameVolume(jsonTemp, json);
+			error = move(jsonTemp, json);
 			ok = jsonPlaced = error == ERROR_SUCCESS;
 		}
 		if (ok)
 		{
-			error = PluginManage::MoveOnSameVolume(dllTemp, dll);
+			error = move(dllTemp, dll);
 			ok = error == ERROR_SUCCESS;
 		}
 		if (ok)

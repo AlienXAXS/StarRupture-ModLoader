@@ -60,8 +60,10 @@ namespace ModInstall
 	std::string CheckTarget(const Request& request);
 
 	// Writes verified bytes: temp files first, then renames that never replace a
-	// file. On false nothing this call made is left behind.
-	bool Place(const Request& request, const std::string& bytes, std::string& why);
+	// file. On false nothing this call made is left behind. A test passes its own
+	// `move` to change the folder just before a rename.
+	bool Place(const Request& request, const std::string& bytes, std::string& why,
+		const PluginManage::MoveFn& move = PluginManage::MoveOnSameVolume);
 
 	// A plugin an entry needs, as the caller sees it now.
 	enum class Need { Met, Missing, Disabled };
