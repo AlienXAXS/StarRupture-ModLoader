@@ -92,8 +92,9 @@ A card can show a picture of the plugin. Give all three of `thumbnail_url`, `thu
 `thumbnail_size`, or none. When one is missing or wrong, the entry is still listed, with no picture.
 
 1. Commit a PNG to your repository as `images/thumbnail.png`. Use 16:9: 640 x 360 is a
-   good size. The loader accepts up to 1280 x 720, a picture of another shape is shown whole, smaller than
-   its frame, and the file must be at most 524288 bytes.
+   good size. The loader accepts only PNG files, up to 1280 x 720 and at most 524288 bytes. A picture of
+   another shape is shown whole, smaller than its frame. A Nexus main image can't be used as it is: Nexus
+   serves it as WebP, often larger than 1280 x 720. Export your own PNG.
 2. Copy the full 40-character id of the commit that holds it, and build the address from it:
    `https://raw.githubusercontent.com/<owner>/<repo>/<commit>/images/thumbnail.png`. A branch name such as
    `main` is not accepted.

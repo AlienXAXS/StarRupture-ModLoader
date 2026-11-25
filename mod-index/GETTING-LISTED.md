@@ -94,8 +94,8 @@ The `.json` and `update_manifest_url` go together: both or neither.
 A card can show a picture of your plugin.
 
 1. Make a PNG and commit it to your repository as `images/thumbnail.png`. Use 16:9: 640 x 360 is a
-   good size. The loader accepts up to 1280 x 720, a picture of another shape is shown whole, smaller than
-   its frame, and the file must be at most 524288 bytes.
+   good size. The loader accepts only PNG files, up to 1280 x 720 and at most 524288 bytes. A picture of
+   another shape is shown whole, smaller than its frame.
 2. Copy the full 40-character id of the commit that holds it (not a branch name like `main`), and build the
    address `https://raw.githubusercontent.com/<owner>/<repo>/<commit>/images/thumbnail.png`. The owner and
    repository are the ones in `page_url`.
@@ -111,7 +111,9 @@ A card can show a picture of your plugin.
 
 Never change the file behind a listed address. A new picture is a new commit, so a new address, a new
 SHA-256 and a new size, changed together. An entry whose `page_url` is a Nexus Mods page takes no thumbnail
-fields. Use the same picture as your Nexus main image, so the Browse card and the Nexus page match.
+fields. To match your Nexus page you can use the same artwork as your Nexus main image, but not the same
+file: Nexus serves its main image as WebP (even when the address ends in `.png`), often larger than
+1280 x 720, and the loader reads PNG only. Export your own 16:9 PNG.
 
 ## 4. Write the name, author and summary so people find it
 
