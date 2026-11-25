@@ -123,6 +123,9 @@ It prints `ok`, or names the entry and the rule it breaks. It also refuses a dow
 [README.md](README.md) describes. To try the Install button before it is merged, point your own copy of the
 loader at your file with `ModIndexUrl` (see "Try your own index" in the same README).
 
+On the PR, a second check downloads your release file and confirms the size, the SHA-256 and that it is a
+64-bit plugin DLL. If it fails, the log names the entry and what to fix.
+
 ## 7. Nexus Mods
 
 1. Publish the GitHub release first (step 1), and get it into the index. Update the Nexus page or file only

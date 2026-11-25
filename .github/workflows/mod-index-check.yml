@@ -29,3 +29,44 @@ jobs:
 
       - name: Run the builder tests
         run: node --test .github/vmap/build-mod-index.test.mjs
+
+  # Downloads the release file of each new or changed plugin entry and reads it as data: size,
+  # SHA-256, and a look at the DLL's headers and exports. The file is never loaded or run, so the
+  # job needs no secrets and only the read-only token above.
+  intake:
+    name: plugin entries
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out the pull request
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: pr
+          persist-credentials: false
+
+      - name: Check out the base index
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: base
+          sparse-checkout: mod-index
+          persist-credentials: false
+
+      - name: Check out the intake script
+        uses: actions/checkout@v7.0.1
+        with:
+          repository: msantoro12/starrupture-ci
+          ref: d3544078706cd6172322af6eda8dbdbfeec0f683
+          path: ci-tools
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: 26
+
+      - name: Check the new and changed entries
+        run: |
+          base_args=()
+          if [ -f base/mod-index/index.json ]; then base_args=(--base base/mod-index/index.json); fi
+          node ci-tools/ci/mod-index-intake.mjs --index pr/mod-index/index.json "${base_args[@]}" --summary "$GITHUB_STEP_SUMMARY"

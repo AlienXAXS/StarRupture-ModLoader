@@ -132,6 +132,10 @@ hex characters, a size out of range or not written as plain digits (`2e6` is ref
 don't name exactly one plugin `.dll`, an install field that appears twice or is nested inside another
 value, a `server_only` that isn't `true` or `false`, or a `server_only` entry that has install fields.
 
+When you open a PR, a second check also downloads the release file of each new or changed entry. It checks
+that the size and SHA-256 match the entry and that the file is a 64-bit plugin DLL with the three plugin
+exports. It only reads the file; it never runs it.
+
 ## After it is merged
 
 The maintainers sign the list and publish it as `mod-index.v1.txt` together with the version map;
