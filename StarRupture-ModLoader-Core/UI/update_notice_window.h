@@ -37,6 +37,11 @@ namespace UI::UpdateNoticeWindow
     void AddUpdatedPlugin(const char* name, const char* oldVersion, const char* newVersion,
                           const char* notes);
 
+    // Show VortexNotice::kMessage above the list: an update replaced a file the
+    // Vortex mod manager placed. Thread-safe; it does not open the window by
+    // itself.
+    void ShowVortexNotice();
+
     // Run `fn` once, on the game thread, when the window actually opens. The
     // loader uses it to record that its release notes were shown. Replaces any
     // earlier callback; never called when the window does not open.

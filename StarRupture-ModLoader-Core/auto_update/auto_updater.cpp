@@ -6,6 +6,7 @@
 #include "plugin_dll_version.h"
 #include "version_compare.h"
 #include "feed_fetch.h"
+#include "json_extract.h"
 #include "core/startup_utils.h"
 #include "logging/log.h"
 #include "plugins/plugin_interface.h"
@@ -14,6 +15,7 @@
 #include "UI/global_settings.h"
 #include "UI/splash_window.h"
 #include "UI/update_notice_window.h"
+#include "vortex_notice.h"
 #endif
 
 #define WIN32_LEAN_AND_MEAN
@@ -221,181 +223,9 @@ static void ReadUpdaterLogs(std::string& currentLog, std::string& previousLog)
 
 // ===========================================================================
 // Section D — Minimal JSON helpers
-// No external library — only handles the flat manifest schema.
+// No external library — only handles the flat manifest schema. The readers
+// (string, decoded string, integer, object array) are in json_extract.h.
 // ===========================================================================
-
-// Extract the value of a top-level string field: "key": "value"
-// Handles basic \" escapes inside the value.
-static std::string JsonExtractString(const std::string& json, const char* key)
-{
-	std::string needle = std::string("\"") + key + "\"";
-	size_t kpos = json.find(needle);
-	if (kpos == std::string::npos)
-		return {};
-
-	size_t vstart = json.find('"', kpos + needle.size());
-	if (vstart == std::string::npos)
-		return {};
-	++vstart;
-
-	std::string value;
-	for (size_t i = vstart; i < json.size(); ++i)
-	{
-		if (json[i] == '\\' && i + 1 < json.size())
-		{
-			value += json[i + 1];
-			++i;
-		}
-		else if (json[i] == '"')
-		{
-			break;
-		}
-		else
-		{
-			value += json[i];
-		}
-	}
-	return value;
-}
-
-// Extract a top-level string field and decode its JSON escapes. Used for the
-// manifest's "notes": JsonExtractString above drops the backslash, so it
-// cannot tell \n from the letter n. Handles \n \t \" \\ \/ and \uXXXX; \r is
-// dropped, and a \u escape outside printable ASCII becomes '?' so the text
-// always draws in the overlay font.
-static std::string JsonExtractDecodedString(const std::string& json, const char* key)
-{
-	std::string needle = std::string("\"") + key + "\"";
-	size_t kpos = json.find(needle);
-	if (kpos == std::string::npos)
-		return {};
-
-	size_t vstart = json.find('"', kpos + needle.size());
-	if (vstart == std::string::npos)
-		return {};
-	++vstart;
-
-	std::string value;
-	for (size_t i = vstart; i < json.size(); ++i)
-	{
-		if (json[i] == '"')
-			break;
-
-		if (json[i] != '\\' || i + 1 >= json.size())
-		{
-			value += json[i];
-			continue;
-		}
-
-		switch (json[++i])
-		{
-		case 'n': value += '\n'; break;
-		case 't': value += '\t'; break;
-		case 'r': break;
-		case 'u':
-		{
-			bool ok = i + 4 < json.size();
-			for (size_t k = 1; ok && k <= 4; ++k)
-				ok = isxdigit(static_cast<unsigned char>(json[i + k])) != 0;
-			const unsigned code = ok ? std::stoul(json.substr(i + 1, 4), nullptr, 16) : 0;
-			if (ok)
-				i += 4;
-			value += (ok && (code == '\n' || (code >= 0x20 && code < 0x7F))) ? static_cast<char>(code) : '?';
-			break;
-		}
-		default: value += json[i]; break;
-		}
-	}
-	return value;
-}
-
-// Extract the value of a top-level integer field: "key": 12
-static int JsonExtractInt(const std::string& json, const char* key, int fallback = 0)
-{
-	std::string needle = std::string("\"") + key + "\"";
-	size_t kpos = json.find(needle);
-	if (kpos == std::string::npos)
-		return fallback;
-
-	size_t vpos = kpos + needle.size();
-	while (vpos < json.size() && (json[vpos] == ' ' || json[vpos] == '\t'
-		|| json[vpos] == '\r' || json[vpos] == '\n'
-		|| json[vpos] == ':'))
-		++vpos;
-
-	if (vpos >= json.size() || !isdigit(static_cast<unsigned char>(json[vpos])))
-		return fallback;
-
-	return std::stoi(json.substr(vpos));
-}
-
-// Split the "plugins": [ ... ] array into individual { } object strings.
-// Works via brace-depth tracking; assumes no nested objects inside entries.
-static std::vector<std::string> JsonExtractObjectArray(
-	const std::string& json, const char* arrayKey)
-{
-	std::vector<std::string> results;
-
-	std::string needle = std::string("\"") + arrayKey + "\"";
-	size_t kpos = json.find(needle);
-	if (kpos == std::string::npos)
-		return results;
-
-	size_t apos = json.find('[', kpos + needle.size());
-	if (apos == std::string::npos)
-		return results;
-
-	size_t i = apos + 1;
-	while (i < json.size())
-	{
-		if (json[i] == ' ' || json[i] == '\t' ||
-			json[i] == '\r' || json[i] == '\n' || json[i] == ',')
-		{
-			++i;
-			continue;
-		}
-
-		if (json[i] == ']')
-			break;
-
-		if (json[i] == '{')
-		{
-			size_t start = i;
-			int depth = 0;
-			bool inString = false;
-			while (i < json.size())
-			{
-				char c = json[i];
-				if (inString)
-				{
-					if (c == '\\') { ++i; }
-					else if (c == '"') { inString = false; }
-				}
-				else
-				{
-					if (c == '"') { inString = true; }
-					else if (c == '{') { ++depth; }
-					else if (c == '}')
-					{
-						--depth;
-						if (depth == 0)
-						{
-							results.push_back(json.substr(start, i - start + 1));
-							++i;
-							break;
-						}
-					}
-				}
-				++i;
-			}
-			continue;
-		}
-
-		++i;
-	}
-
-	return results;
-}
 
 // ===========================================================================
 // Section E — Download a single plugin DLL
@@ -521,6 +351,29 @@ static bool DownloadPlugin(const char* url,
 // pattern as the central updater. With no version known at all, nothing is
 // downloaded until the plugin has loaded once.
 // ===========================================================================
+
+#ifdef MODLOADER_CLIENT_BUILD
+// Tell the player how to keep an update that replaced a file Vortex placed:
+// in the "Plugins Updated" window, and once in the log. `path` is relative to
+// the game directory.
+static void NoteIfVortexFile(const std::string& path)
+{
+	static bool noted = false;
+	if (noted)
+		return;
+
+	wchar_t gameDir[MAX_PATH]{};
+	GetModuleFileNameW(nullptr, gameDir, MAX_PATH);
+	if (wchar_t* slash = wcsrchr(gameDir, L'\\'))
+		*slash = L'\0';
+	if (!VortexNotice::ReplacedVortexFiles(gameDir, { path }))
+		return;
+
+	noted = true;
+	LogToFile::Info("[AutoUpdate] %s", VortexNotice::kMessage);
+	UI::UpdateNoticeWindow::ShowVortexNotice();
+}
+#endif
 
 struct PluginSidecar
 {
@@ -793,6 +646,7 @@ static void ProcessPluginSidecar(const PluginSidecar& sc,
         LogToFile::Info("[AutoUpdate][Sidecar] '%s' — updated to %s", displayName, remoteVersion.c_str());
         WritePluginVersion(stateIniPath, sc.dllFilename.c_str(), remoteVersion.c_str());
 #ifdef MODLOADER_CLIENT_BUILD
+        NoteIfVortexFile("ModLoader\\Plugins\\" + sc.dllFilename);
         UI::UpdateNoticeWindow::AddUpdatedPlugin(displayName,
                                                  decision.installed.c_str(),
                                                  remoteVersion.c_str(),
@@ -887,6 +741,8 @@ static void ListLoaderNotesOnce(const char* running, const std::string& remoteTa
 	LogToFile::Info("[AutoUpdate] Listing the release notes of %s (previous version %s) in the Plugins Updated window",
 	                remoteTag.c_str(), previous.empty() ? "unknown" : previous.c_str());
 	UI::UpdateNoticeWindow::AddUpdatedPlugin(UI::UpdateNoticeWindow::kLoaderRowName, previous.c_str(), remoteTag.c_str(), d.text.c_str());
+	// The updater that installed this release may be too old to say so itself.
+	NoteIfVortexFile("ModLoader\\StarRupture-ModLoader-Core.dll");
 	UI::UpdateNoticeWindow::SetOnShown([tag = remoteTag]()
 	{
 		// Shown first: a crash between the two writes leaves a stale

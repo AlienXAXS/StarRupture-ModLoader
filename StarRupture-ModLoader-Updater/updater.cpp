@@ -6,7 +6,9 @@
 
 #include "autoupdate_log.h"
 #include "miniz.h"
+#include "../StarRupture-ModLoader-Core/auto_update/json_extract.h"
 #include "../StarRupture-ModLoader-Core/auto_update/version_compare.h"
+#include "../StarRupture-ModLoader-Core/auto_update/vortex_notice.h"
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -179,89 +181,6 @@ namespace
         sprintf_s(buf, "%d.%d.%d", v.parts[0], v.parts[1], v.parts[2]);
         outDisplay = buf;
         return v;
-    }
-
-    // =======================================================================
-    // Minimal JSON string field extraction (flat manifest only)
-    // =======================================================================
-
-    std::string JsonExtractString(const std::string& json, const char* key)
-    {
-        std::string needle = std::string("\"") + key + "\"";
-        size_t kpos = json.find(needle);
-        if (kpos == std::string::npos)
-            return {};
-
-        size_t vstart = json.find('"', kpos + needle.size());
-        if (vstart == std::string::npos)
-            return {};
-        ++vstart;
-
-        std::string value;
-        for (size_t i = vstart; i < json.size(); ++i)
-        {
-            if (json[i] == '\\' && i + 1 < json.size())
-            {
-                value += json[i + 1];
-                ++i;
-            }
-            else if (json[i] == '"')
-                break;
-            else
-                value += json[i];
-        }
-        return value;
-    }
-
-    // Same as JsonExtractString, but decodes the JSON escapes instead of
-    // dropping the backslash, so a "notes" value keeps its line breaks.
-    // Handles \n \t \" \\ \/ and \uXXXX; \r is dropped, and a \u escape
-    // outside printable ASCII becomes '?' so the text always shows in a
-    // message box.
-    std::string JsonExtractDecodedString(const std::string& json, const char* key)
-    {
-        std::string needle = std::string("\"") + key + "\"";
-        size_t kpos = json.find(needle);
-        if (kpos == std::string::npos)
-            return {};
-
-        size_t vstart = json.find('"', kpos + needle.size());
-        if (vstart == std::string::npos)
-            return {};
-        ++vstart;
-
-        std::string value;
-        for (size_t i = vstart; i < json.size(); ++i)
-        {
-            if (json[i] == '"')
-                break;
-
-            if (json[i] != '\\' || i + 1 >= json.size())
-            {
-                value += json[i];
-                continue;
-            }
-
-            switch (json[++i])
-            {
-            case 'n': value += '\n'; break;
-            case 't': value += '\t'; break;
-            case 'r': break;
-            case 'u':
-            {
-                bool ok = i + 4 < json.size();
-                for (size_t k = 1; ok && k <= 4; ++k)
-                    ok = isxdigit(static_cast<unsigned char>(json[i + k])) != 0;
-                const unsigned code = ok ? std::stoul(json.substr(i + 1, 4), nullptr, 16) : 0;
-                if (ok)
-                    i += 4;
-                value += (ok && (code == '\n' || (code >= 0x20 && code < 0x7F))) ? static_cast<char>(code) : '?';
-                break;
-            }
-            default: value += json[i]; break;
-            }
-        }
-        return value;
     }
 
     // =======================================================================
@@ -495,8 +414,10 @@ namespace
 
     // Downloads the release ZIP, decompresses it entirely in memory, then
     // installs every file except dwmapi.dll with backup/rollback.  Returns
-    // true only when every file has been placed successfully.
-    bool DownloadAndInstall(const std::string& zipUrl, const std::string& remoteTag)
+    // true only when every file has been placed successfully; `vortexFiles`
+    // then says whether any file it replaced was one Vortex placed.
+    bool DownloadAndInstall(const std::string& zipUrl, const std::string& remoteTag,
+                            bool& vortexFiles)
     {
         // ------------------------------------------------------------------
         // Phase 1: download (memory only; capped at 256 MB sanity limit)
@@ -686,6 +607,16 @@ namespace
 
         AutoUpdateLog::Info("Install: update %s installed successfully (%zu files)",
                             remoteTag.c_str(), applied.size());
+
+        std::vector<std::string> replaced;
+        for (const AppliedFile& af : applied)
+        {
+            if (!af.backup.empty())
+                replaced.push_back(Narrow(af.target.substr(g_gameDir.size() + 1)));
+        }
+        vortexFiles = VortexNotice::ReplacedVortexFiles(g_gameDir, replaced);
+        if (vortexFiles)
+            AutoUpdateLog::Info("%s", VortexNotice::kMessage);
         return true;
     }
 }
@@ -891,17 +822,21 @@ int RunUpdater(const wchar_t* gameDir)
                  "StarRupture-ModLoader-Client-" + remoteTag + ".zip";
     }
 
-    if (DownloadAndInstall(zipUrl, remoteTag))
+    bool vortexFiles = false;
+    if (DownloadAndInstall(zipUrl, remoteTag, vortexFiles))
     {
         // Record the new tag and clear the declined marker.
         IniWriteString(stateIni, L"AutoUpdate", L"BuildTag", Widen(remoteTag).c_str());
         IniWriteString(stateIni, L"AutoUpdate", L"ProxyDeclinedTag", nullptr);
 
-        MessageBoxW(nullptr,
-                    L"The mod loader has been updated successfully.\n\n"
-                    L"The game will now continue loading with the new version.\n\n"
-                    L"One small file finishes updating the next time you "
-                    L"launch the game -- no action needed.",
+        std::wstring done = L"The mod loader has been updated successfully.\n\n"
+                            L"The game will now continue loading with the new version.\n\n"
+                            L"One small file finishes updating the next time you "
+                            L"launch the game -- no action needed.";
+        if (vortexFiles)
+            done += L"\n\n" + Widen(VortexNotice::kMessage);
+
+        MessageBoxW(nullptr, done.c_str(),
                     L"StarRupture Mod Loader -- Update Installed",
                     MB_OK | MB_ICONINFORMATION | MB_SETFOREGROUND | MB_TOPMOST);
         return UPDATER_EXIT_UPDATED;
