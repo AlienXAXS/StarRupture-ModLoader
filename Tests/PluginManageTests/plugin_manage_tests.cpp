@@ -774,7 +774,7 @@ int main(int argc, char** argv)
 	TestIdentity();
 	TestVortexListing();
 	ScriptedRun();
-	g_failed += RunManagerTests(g_root);
+	RunManagerTests(g_root, g_checks, g_failed);
 
 	Wipe(g_root);
 

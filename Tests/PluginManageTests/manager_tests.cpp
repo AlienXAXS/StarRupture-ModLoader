@@ -288,14 +288,22 @@ namespace
 		return static_cast<bool>(out);
 	}
 
-	bool Start(const std::wstring& exe, const std::wstring& step)
+	// A start leaves its counts beside its exe: the exit code alone cannot carry them.
+	void Start(const std::wstring& exe, const std::wstring& step, const std::wstring& countsFile,
+		int& checks, int& failures)
 	{
+		DeleteFileW(countsFile.c_str());
 		std::wstring command = L"\"" + exe + L"\" --manager " + step;
 		STARTUPINFOW startup{ sizeof(startup) };
 		PROCESS_INFORMATION process{};
 		fflush(stdout);
 		if (!CreateProcessW(exe.c_str(), command.data(), nullptr, nullptr, TRUE, 0, nullptr, nullptr, &startup, &process))
-			return false;
+		{
+			++checks;
+			++failures;
+			printf("FAIL start %ls could not be run\n", step.c_str());
+			return;
+		}
 		DWORD code = 1;
 		if (WaitForSingleObject(process.hProcess, 60000) != WAIT_OBJECT_0)
 			TerminateProcess(process.hProcess, 1);
@@ -303,9 +311,18 @@ namespace
 			GetExitCodeProcess(process.hProcess, &code);
 		CloseHandle(process.hThread);
 		CloseHandle(process.hProcess);
-		if (code != 0)
-			printf("FAIL start %ls ended with code %lu\n", step.c_str(), code);
-		return code == 0;
+		int ran = 0;
+		int bad = 0;
+		std::ifstream in(countsFile);
+		const bool reported = static_cast<bool>(in >> ran >> bad) && ran > 0;
+		checks += reported ? ran : 0;
+		failures += reported ? bad : 0;
+		if (!reported || (code != 0 && bad == 0))
+		{
+			++checks;
+			++failures;
+			printf("FAIL start %ls ended with code %lu%s\n", step.c_str(), code, reported ? "" : " and no counts");
+		}
 	}
 }
 
@@ -328,10 +345,12 @@ int RunManagerStart(const std::string& step)
 	Expect(known, "known step");
 	printf("start %s: %d checks, %d failed\n", step.c_str(), g_checks, g_failed);
 	fflush(stdout);
-	return g_failed ? 1 : 0;
+	const bool saved = WriteText(ExeFolder() + L"counts.txt",
+		(std::to_string(g_checks) + " " + std::to_string(g_failed)).c_str());
+	return g_failed || !saved ? 1 : 0;
 }
 
-int RunManagerTests(const std::wstring& root)
+void RunManagerTests(const std::wstring& root, int& checks, int& failures)
 {
 	const Game games[] = {
 		{ { L"A", L"B", L"StuckC" }, { L"disable", L"still-disabled", L"uninstall", L"restore" } },
@@ -343,7 +362,6 @@ int RunManagerTests(const std::wstring& root)
 	GetModuleFileNameW(nullptr, self, MAX_PATH);
 	const std::wstring plugin = ExeFolder() + L"manage_test_plugin.dll";
 
-	int failed = 0;
 	int number = 0;
 	for (const Game& game : games)
 	{
@@ -365,16 +383,15 @@ int RunManagerTests(const std::wstring& root)
 		if (!ready)
 		{
 			printf("FAIL could not set up %ls (is manage_test_plugin.dll built?)\n", dir.c_str());
-			++failed;
+			++checks;
+			++failures;
 			continue;
 		}
 
 		for (const wchar_t* step : game.starts)
 		{
 			DeleteFileW((dir + L"\\events.log").c_str());
-			if (!Start(dir + L"\\game.exe", step))
-				++failed;
+			Start(dir + L"\\game.exe", step, dir + L"\\counts.txt", checks, failures);
 		}
 	}
-	return failed;
 }
