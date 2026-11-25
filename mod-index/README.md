@@ -33,7 +33,7 @@ shared per-game-build data the loader serves): open a PR.
 | `readme_url` | no | A raw GitHub link to your README (host `raw.githubusercontent.com`, https). Up to 200 characters. Please include it: the Browse card then shows a README button. See below. |
 | `tested_loader` | no | The ModLoader version you tested on, for example `1.27.0`. Up to 32 characters. Please include it. |
 | `interface_version_min` | no | The plugin interface number the plugin declares. Leave it out when unknown. |
-| `requires` | no | The ids of other plugins this one needs, as a list of text, for example `["minimap"]`. The Browse tab does not show it yet, so also say it in `summary`. |
+| `requires` | no | The ids of other plugins this one needs, as a list of text, for example `["minimap"]`. The Browse tab warns a player who disables or uninstalls a plugin yours needs. The card doesn't list requirements, so also say it in `summary`. |
 
 The list holds up to 200 plugins, and the file stays under 256 KB.
 
