@@ -55,7 +55,10 @@ Add one object to `mod-index/index.json` (the full field list is in [README.md](
   "download_url": "https://github.com/example-author/StarRupture-Plugin-QuickHaul/releases/download/v1.0.0/QuickHaul-Client.dll",
   "download_sha256": "9f2c1a7e5b4d3c8a6e0f1b2d4c5a7e9f8b6d3c1a2e4f5a7b9c0d1e2f3a4b5c6d",
   "download_size": 183296,
-  "install_files": ["QuickHaul.dll"]
+  "install_files": ["QuickHaul.dll"],
+  "thumbnail_url": "https://raw.githubusercontent.com/example-author/StarRupture-Plugin-QuickHaul/3f1c9a0b7d5e4a2c8b6f0d1e9a7c5b3d2f4e6a80/images/thumbnail.png",
+  "thumbnail_sha256": "b1946ac92492d2347c6235b4d2611184c3a6f6ad0f1e5b8f9d3c2a7e4b5d6c01",
+  "thumbnail_size": 48213
 }
 ```
 
@@ -69,6 +72,7 @@ What Browse shows for each field:
 | `readme_url` | A **README** button that opens your README in the window. |
 | `tested_loader` | "Tested on 1.28.0". |
 | `download_url`, `download_sha256`, `download_size`, `install_files` | The **Install** button. Without any one of them the card has no Install button, only **Open page**. |
+| `thumbnail_url`, `thumbnail_sha256`, `thumbnail_size` | The picture on the card. Without all three the card has no picture. See "Add a thumbnail" below. |
 | `requires` | Install is refused until the mods you name are installed and enabled: "QuickHaul needs MiniMap. Install MiniMap first." Add `"requires": ["minimap"]` (their `id` values) and say it in `summary` too. |
 
 `install_files` is the name the DLL gets in the player's `ModLoader\Plugins` folder. It can differ from the
@@ -84,6 +88,29 @@ auto-updater keeps the plugin current:
 ```
 
 The `.json` and `update_manifest_url` go together: both or neither.
+
+### Add a thumbnail (optional)
+
+A card can show a picture of your plugin.
+
+1. Make a PNG and commit it to your repository as `images/thumbnail.png`. 640 x 360 is a good size. The
+   loader accepts up to 1280 x 720, and the file must be at most 524288 bytes.
+2. Copy the full 40-character id of the commit that holds it (not a branch name like `main`), and build the
+   address `https://raw.githubusercontent.com/<owner>/<repo>/<commit>/images/thumbnail.png`. The owner and
+   repository are the ones in `page_url`.
+3. Work out the SHA-256 and the size as in step 2:
+
+   ```
+   certutil -hashfile images	humbnail.png SHA256
+   dir images	humbnail.png
+   ```
+
+4. Add the three fields to your entry, as in the example above: `thumbnail_url`, `thumbnail_sha256` and
+   `thumbnail_size`. Give all three or none.
+
+Never change the file behind a listed address. A new picture is a new commit, so a new address, a new
+SHA-256 and a new size, changed together. An entry whose `page_url` is a Nexus Mods page takes no thumbnail
+fields. Use the same picture as your Nexus main image, so the Browse card and the Nexus page match.
 
 ## 4. Write the name, author and summary so people find it
 
@@ -119,7 +146,8 @@ node .github/vmap/build-mod-index.mjs mod-index/index.json --out mod-index.txt
 ```
 
 It prints `ok`, or names the entry and the rule it breaks. It also refuses a download size written as
-`2e6`, an install field written twice, and install fields on a `server_only` entry. Then open a PR with the new entry, the way
+`2e6`, an install field written twice, install fields on a `server_only` entry, and thumbnail fields that
+are not all three, are wrong, or sit on a Nexus Mods entry. Then open a PR with the new entry, the way
 [README.md](README.md) describes. To try the Install button before it is merged, point your own copy of the
 loader at your file with `ModIndexUrl` (see "Try your own index" in the same README).
 

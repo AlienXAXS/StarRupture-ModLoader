@@ -46,6 +46,9 @@ card with an Install button, and on to Nexus, follow [GETTING-LISTED.md](GETTING
 | `download_size` | for Install | The size of that file in bytes: a whole number from 1 to 33554432 (32 MB). |
 | `install_files` | for Install | The name the DLL gets in `ModLoader\Plugins`, and optionally the same name ending `.json`, as a list: `["Codex.dll", "Codex.json"]`. A plain name of letters, digits, `_`, `.` and `-`, up to 80 characters, ending `.dll`. It can differ from the asset's name (`Codex-Client.dll` is installed as `Codex.dll`). |
 | `update_manifest_url` | with the `.json` | Needed exactly when `install_files` lists the `.json`, and only then: `https://github.com/<owner>/<repo>/releases/latest/download/<name>-client-manifest.json`, in the same repository. The loader writes the `.json` beside the DLL itself, so the auto-updater keeps the plugin current. |
+| `thumbnail_url` | for a picture | A picture of your plugin for the card: `https://raw.githubusercontent.com/<owner>/<repo>/<commit>/images/thumbnail.png`, where `<owner>/<repo>` is the repository `page_url` names and `<commit>` is a full 40-character commit id. Up to 200 characters. See "Thumbnail" below. |
+| `thumbnail_sha256` | for a picture | The SHA-256 of that picture: 64 lowercase hex characters. |
+| `thumbnail_size` | for a picture | The size of that picture in bytes: a whole number from 1 to 524288 (512 KB). |
 
 The list holds up to 200 plugins, and the file stays under 256 KB.
 
@@ -82,6 +85,30 @@ or in PowerShell:
 ```
 
 The entry needs the hash in lowercase; `certutil` already prints it that way.
+
+## Thumbnail
+
+A card can show a picture of the plugin. Give all three of `thumbnail_url`, `thumbnail_sha256` and
+`thumbnail_size`, or none. When one is missing or wrong, the entry is still listed, with no picture.
+
+1. Commit a PNG to your repository as `images/thumbnail.png`. 640 x 360 is a good size; the loader accepts
+   up to 1280 x 720, and the file must be at most 524288 bytes.
+2. Copy the full 40-character id of the commit that holds it, and build the address from it:
+   `https://raw.githubusercontent.com/<owner>/<repo>/<commit>/images/thumbnail.png`. A branch name such as
+   `main` is not accepted.
+3. Work out the SHA-256 and the size the same way as for a download (see "Install fields").
+4. Add the three fields to your entry.
+
+```json
+  "thumbnail_url": "https://raw.githubusercontent.com/AlienXAXS/StarRupture-Plugin-Codex/3f1c9a0b7d5e4a2c8b6f0d1e9a7c5b3d2f4e6a80/images/thumbnail.png",
+  "thumbnail_sha256": "b1946ac92492d2347c6235b4d2611184c3a6f6ad0f1e5b8f9d3c2a7e4b5d6c01",
+  "thumbnail_size": 48213
+```
+
+Never change the file behind a listed address. A new picture is a new commit, so a new address, a new
+SHA-256 and a new size, changed together. An entry whose `page_url` is a Nexus Mods page has no GitHub
+repository to take the picture from, so it takes no thumbnail fields; the check below refuses them. Older
+loaders ignore the fields.
 
 ## server_only
 
@@ -130,7 +157,8 @@ It prints `ok`, or names the entry that breaks a rule below. It checks the insta
 `download_url` that isn't a release asset of your repository, a `download_sha256` that isn't 64 lowercase
 hex characters, a size out of range or not written as plain digits (`2e6` is refused), `install_files` that
 don't name exactly one plugin `.dll`, an install field that appears twice or is nested inside another
-value, a `server_only` that isn't `true` or `false`, or a `server_only` entry that has install fields.
+value, a `server_only` that isn't `true` or `false`, a `server_only` entry that has install fields, or a
+thumbnail field that is missing from the three, wrong, written twice, nested, or on a Nexus Mods entry.
 
 ## After it is merged
 

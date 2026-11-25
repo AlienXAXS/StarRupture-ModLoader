@@ -683,6 +683,13 @@ no game. It checks:
 - The Browse search: names, authors and descriptions in any case, several words in any order, extra spaces
   and tabs, a word of 3 letters or more whose letters follow in the name ("minmap" finds MiniMap), and no
   match for words under 3 letters, letters out of order or letters scattered through a description.
+- The thumbnail fields: all three or none, the address (`raw.githubusercontent.com`, the repository `page_url`
+  names, a 40-character lowercase commit id, `images/thumbnail.png`; a branch name, another repository, another
+  file name, a look-alike or upper case host, user info refused), the SHA-256 (64 lowercase hex) and the size (1 to 524288, plain
+  digits; text reads as absent). One key missing or wrong leaves the entry listed with no picture and
+  every other field, the install fields included, unchanged; an entry on a Nexus Mods page has no picture.
+- The PNG header check on its own (`thumbnail_check.h`): a good header, a wrong signature, no IHDR first, a
+  file cut off in the signature or the header, and a width or height of 0 or over 1280 x 720.
 - SHA-256 of a known text.
 - The download, with a stand-in for the network: the size cap, the file, one redirect and then the file, the
   signed query passed on as it came, a wrong first address never asked for, redirects to another host, to
@@ -713,12 +720,13 @@ build\tests\mod_index_tests.exe
 ```
 
 It prints one line per failed check and a total, and exits 0 when every check passes. The last run was
-`585 checks, 0 failed`.
+`659 checks, 0 failed`.
 
 The mod index builder has its own tests (`node --test .github/vmap/build-mod-index.test.mjs`, 14 of 14): the
 install fields it accepts and refuses, exactly one plugin `.dll` in `install_files`, an install field that is
 repeated or nested, a size not written as plain digits, `server_only` that is not `true` or `false`, and
-`server_only` together with install fields.
+`server_only` together with install fields, and the thumbnail fields: all three or none, the address, the
+SHA-256 and the size, and none allowed on a Nexus Mods entry.
 
 ## PluginManageTests
 
