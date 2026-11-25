@@ -103,6 +103,8 @@
     <ClInclude Include="miniz.h" />
     <ClInclude Include="..\StarRupture-ModLoader-Proxy\autoupdate_log.h" />
     <ClInclude Include="..\StarRupture-ModLoader-Core\auto_update\version_compare.h" />
+    <ClInclude Include="..\StarRupture-ModLoader-Core\auto_update\json_extract.h" />
+    <ClInclude Include="..\StarRupture-ModLoader-Core\auto_update\vortex_notice.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp" />

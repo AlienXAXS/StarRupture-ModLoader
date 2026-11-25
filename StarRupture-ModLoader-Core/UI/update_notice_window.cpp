@@ -5,6 +5,7 @@
 
 #include "imgui/imgui.h"
 #include "theme.h"
+#include "auto_update/vortex_notice.h"
 #include <algorithm>
 #include <functional>
 #include <mutex>
@@ -26,6 +27,7 @@ namespace UI::UpdateNoticeWindow
     static std::mutex                 s_mutex;
     static std::vector<UpdatedPlugin> s_updates;
     static std::function<void()>      s_onShown;
+    static bool s_vortexNotice = false;
     static bool s_isOpen = false;
     static bool s_shown  = false;   // one-shot: only auto-open once per session
     static int  s_centerFrames = 0; // frames left to keep the window centered while it sizes itself
@@ -59,6 +61,12 @@ namespace UI::UpdateNoticeWindow
             pos = end + 1;
         }
         s_updates.push_back(std::move(u));
+    }
+
+    void ShowVortexNotice()
+    {
+        std::lock_guard<std::mutex> lock(s_mutex);
+        s_vortexNotice = true;
     }
 
     void SetOnShown(std::function<void()> fn)
@@ -113,10 +121,12 @@ namespace UI::UpdateNoticeWindow
         }
 
         bool freshInstall = false;
+        bool vortexNotice = false;
         {
             std::lock_guard<std::mutex> lock(s_mutex);
             freshInstall = !s_updates.empty() &&
                            IsFreshLoaderInstall(s_updates.size(), s_updates.front().name, s_updates.front().oldVersion);
+            vortexNotice = s_vortexNotice;
         }
 
         if (!UI::Theme::BeginChamferedWindow("Plugin Updates##update_notice",
@@ -128,6 +138,11 @@ namespace UI::UpdateNoticeWindow
 
         ImGui::TextUnformatted(freshInstall ? "The mod loader has been installed:"
                                             : "The following plugins were updated automatically:");
+        if (vortexNotice)
+        {
+            ImGui::Spacing();
+            ImGui::TextWrapped("%s", VortexNotice::kMessage);
+        }
         ImGui::Spacing();
         ImGui::Separator();
         ImGui::Spacing();

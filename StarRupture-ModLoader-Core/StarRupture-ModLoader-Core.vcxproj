@@ -425,6 +425,7 @@
     <ClInclude Include="auto_update\readme_textures.h" />
     <ClInclude Include="utils\open_page.h" />
     <ClInclude Include="UI\readme_view.h" />
+    <ClInclude Include="auto_update\vortex_notice.h" />
     <ClInclude Include="auto_update\plugin_dll_version.h" />
     <ClInclude Include="auto_update\version_compare.h" />
     <ClInclude Include="config\config_manager.h" />

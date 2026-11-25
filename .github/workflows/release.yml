@@ -502,20 +502,27 @@ jobs:
           name: modloader-dlls
           path: modloader-dlls
 
-      - name: Download pre-built dwmapi.dll artifacts (from latest release)
+      - name: Take dwmapi.dll from the release ZIPs
         if: ${{ steps.resolve.outputs.FROM_ARTIFACT == 'false' }}
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # The release has no loose DLL assets: dwmapi.dll ships inside each
+          # variant's ZIP, so take it from there under the names the SDK release uses.
           $tag = "${{ steps.resolve.outputs.TAG }}"
-          New-Item -ItemType Directory -Force modloader-dlls | Out-Null
-          gh release download $tag `
-            --repo ${{ github.repository }} `
-            --pattern "dwmapi-Client.dll" `
-            --pattern "dwmapi-Server.dll" `
-            --dir modloader-dlls
-          Write-Host "Downloaded DLLs from release $tag"
+          New-Item -ItemType Directory -Force modloader-dlls, sdk-sync-zips | Out-Null
+          foreach ($variant in @("Client", "Server")) {
+            $zip = "StarRupture-ModLoader-$variant-$tag.zip"
+            gh release download $tag `
+              --repo ${{ github.repository }} `
+              --pattern $zip `
+              --dir sdk-sync-zips
+            if ($LASTEXITCODE -ne 0) { Write-Host "::error::Could not download $zip from release $tag."; exit 1 }
+            Expand-Archive "sdk-sync-zips\$zip" "sdk-sync-zips\$variant" -Force
+            Copy-Item "sdk-sync-zips\$variant\dwmapi.dll" "modloader-dlls\dwmapi-$variant.dll"
+          }
+          Write-Host "Took the DLLs from the ZIPs of release $tag"
 
       - name: Sync headers into plugin SDK repo
         shell: pwsh
@@ -570,3 +577,31 @@ jobs:
       plugins: all
     secrets:
       PLUGIN_BUILD_PAT: ${{ secrets.PLUGIN_BUILD_PAT }}
+
+  publish-version-map:
+    # A release made with GITHUB_TOKEN starts no `release: published` workflow,
+    # but a workflow_dispatch made with it does run. Without this the new
+    # release has no version map file until the next scheduled vmap-publish run.
+    needs: build
+    if: |
+      needs.build.result == 'success' &&
+      needs.build.outputs.is_preview != 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write  # Required to dispatch vmap-publish.yml
+      contents: read
+
+    steps:
+      - name: Dispatch vmap-publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.build.outputs.tag }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          # The release is already out, so a failed dispatch only warns; the
+          # scheduled run publishes the version map instead.
+          if gh workflow run vmap-publish.yml --repo "$GITHUB_REPOSITORY" --ref "$DEFAULT_BRANCH"; then
+            echo "Dispatched vmap-publish.yml for release $TAG."
+          else
+            echo "::warning title=vmap-publish not dispatched::Could not dispatch vmap-publish.yml; the scheduled run will attach the version map to $TAG."
+          fi
