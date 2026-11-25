@@ -491,10 +491,10 @@ namespace
 
 		// A plugin that is already there.
 		const ModIndex::Entry same = InstallEntry("A", "9.9.9", bytes);
-		const std::string aBefore = Bytes(PluginsDir() + L"\A.dll");
+		const std::string aBefore = Bytes(PluginsDir() + L"\\A.dll");
 		card = InstallAndWait(same, { same }, true, installer);
 		Expect(card.lastResult == ManageResult::Failed && card.message.find("A.dll is already in") != std::string::npos &&
-			g_hopCalls == 0 && Bytes(PluginsDir() + L"\A.dll") == aBefore && !aBefore.empty(),
+			g_hopCalls == 0 && Bytes(PluginsDir() + L"\\A.dll") == aBefore && !aBefore.empty(),
 			"an existing A.dll is refused before any download and is left as it was");
 		ExpectCard("A.dll", CardState::Running, "an existing A.dll is refused");
 
