@@ -2478,7 +2478,7 @@ namespace UI::ModLoaderWindow
         case Result::Vortex:
             return kVortexLine;
         case Result::AlreadyInstalled:
-            return "A copy of " + name + " is already installed, so the old one stays in ModLoader\\Removed.";
+            return p.message; // names the other file, when the loader knows it
         case Result::SaveFailed:
             return "Couldn't save the change. Nothing was changed.";
         case Result::MoveFailed:
