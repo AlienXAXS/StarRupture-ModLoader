@@ -416,6 +416,7 @@
     <ClInclude Include="auto_update\http_get.h" />
     <ClInclude Include="auto_update\json_extract.h" />
     <ClInclude Include="auto_update\loader_manifest.h" />
+    <ClInclude Include="utils\sha256.h" />
     <ClInclude Include="auto_update\mod_index.h" />
     <ClInclude Include="auto_update\mod_index_fetcher.h" />
     <ClInclude Include="auto_update\mod_index_signed.h" />

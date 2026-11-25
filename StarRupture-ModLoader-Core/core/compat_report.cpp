@@ -164,21 +164,16 @@ namespace CompatReport
 #include "../logging/logger.h"
 #include "../memory_scanner/pattern_preflight.h"
 #include "../memory_scanner/version_map.h"
+#include "../utils/sha256.h"
 
 #include <windows.h>
-#include <bcrypt.h>
 
 #include <fstream>
-
-#pragma comment(lib, "bcrypt.lib")
 
 namespace CompatReport
 {
     namespace
     {
-        constexpr DWORD  kHashChunkBytes = 1 << 20;
-        constexpr size_t kSha256Bytes    = 32;
-
         std::string WideToUtf8(const std::wstring& text)
         {
             const int size = WideCharToMultiByte(CP_UTF8, 0, text.c_str(), static_cast<int>(text.size()), nullptr, 0, nullptr, nullptr);
@@ -187,50 +182,6 @@ namespace CompatReport
             std::string out(static_cast<size_t>(size), '\0');
             WideCharToMultiByte(CP_UTF8, 0, text.c_str(), static_cast<int>(text.size()), out.data(), size, nullptr, nullptr);
             return out;
-        }
-
-        // Lowercase hex SHA-256 of a file, read in chunks; empty on any failure.
-        std::string Sha256OfFile(const wchar_t* path)
-        {
-            const HANDLE file = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                nullptr, OPEN_EXISTING, FILE_FLAG_SEQUENTIAL_SCAN, nullptr);
-            if (file == INVALID_HANDLE_VALUE)
-                return std::string();
-
-            BCRYPT_ALG_HANDLE  algorithm = nullptr;
-            BCRYPT_HASH_HANDLE hash      = nullptr;
-            UCHAR digest[kSha256Bytes]{};
-            bool ok = BCRYPT_SUCCESS(BCryptOpenAlgorithmProvider(&algorithm, BCRYPT_SHA256_ALGORITHM, nullptr, 0))
-                && BCRYPT_SUCCESS(BCryptCreateHash(algorithm, &hash, nullptr, 0, nullptr, 0, 0));
-
-            std::vector<UCHAR> chunk(kHashChunkBytes);
-            while (ok)
-            {
-                DWORD read = 0;
-                ok = ReadFile(file, chunk.data(), kHashChunkBytes, &read, nullptr) != FALSE;
-                if (!ok || read == 0)
-                    break;
-                ok = BCRYPT_SUCCESS(BCryptHashData(hash, chunk.data(), read, 0));
-            }
-            ok = ok && BCRYPT_SUCCESS(BCryptFinishHash(hash, digest, sizeof(digest), 0));
-
-            if (hash)
-                BCryptDestroyHash(hash);
-            if (algorithm)
-                BCryptCloseAlgorithmProvider(algorithm, 0);
-            CloseHandle(file);
-
-            if (!ok)
-                return std::string();
-
-            std::string hex;
-            for (const UCHAR byte : digest)
-            {
-                char pair[3];
-                snprintf(pair, sizeof(pair), "%02x", byte);
-                hex += pair;
-            }
-            return hex;
         }
     }
 
@@ -249,7 +200,7 @@ namespace CompatReport
         const wchar_t* lastSlash = wcsrchr(exePath, L'\\');
 
         Inputs inputs{ WideToUtf8(GetGameVersionString()), WideToUtf8(lastSlash ? lastSlash + 1 : exePath),
-            Sha256OfFile(exePath), LayoutCheck::TableCLFor(VersionMap::RunningExe().cl), {}, {}, &layout, outcome, {} };
+            Sha256::OfFile(exePath), LayoutCheck::TableCLFor(VersionMap::RunningExe().cl), {}, {}, &layout, outcome, {} };
         for (const PatternPreflight::Miss& miss : PatternPreflight::Misses())
             inputs.patternMisses.push_back(PatternMiss{ miss.name, miss.pattern, miss.required, miss.structural });
         for (const SdkGlobals::Resolution& global : SdkGlobals::Resolutions())
