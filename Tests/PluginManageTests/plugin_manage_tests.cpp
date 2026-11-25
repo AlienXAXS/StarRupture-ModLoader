@@ -393,7 +393,8 @@ namespace
 		Check(found.dllName == L"Compass.dll" && found.files.size() == 3 && found.files[0] == L"Compass.dll", "three: disk spelling, DLL first");
 		Check(found.name == L"Comp\x00E4ss \x2713  Dll=..\\evil.dll" && found.version == L"1.2", "three: name kept on one line, as Unicode");
 		const std::vector<Backup> all = ListBackups(g_folders);
-		Check(all.size() == 1 && all[0].dir == found.dir, "three: listed");
+		// the folder keeps whichever spelling asked first, so the paths match without case
+		Check(all.size() == 1 && PluginManage::SameName(all[0].dir, found.dir) && all[0].dllName == L"Compass.dll", "three: listed");
 
 		// a DLL alone, and a folder named like one of the files
 		Fresh(L"alone");
