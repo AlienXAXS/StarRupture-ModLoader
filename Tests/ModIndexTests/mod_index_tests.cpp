@@ -39,6 +39,8 @@ namespace
 	std::string g_httpAnswer;
 	std::string g_httpEtagOut;           // the ETag header the stand-in server sends
 	bool g_httpNotModified = false;      // answer a conditional request with 304
+	unsigned g_httpStatus = 0;           // the status the stand-in server reports with no body
+	bool g_httpOverLimit = false;        // report a body over the byte limit
 	int g_httpCalls = 0;
 }
 
@@ -49,6 +51,10 @@ std::string HttpGet(const char* url, const char* /*label*/, const HttpGetOptions
 	g_httpUrl = url;
 	g_httpOptions = options;
 	g_httpIfNoneMatch = options.ifNoneMatch;
+	if (options.status)
+		*options.status = g_httpAnswer.empty() ? g_httpStatus : 200;
+	if (options.overLimit)
+		*options.overLimit = g_httpOverLimit;
 	if (g_httpNotModified && !options.ifNoneMatch.empty() && options.notModified)
 	{
 		*options.notModified = true;
@@ -589,6 +595,17 @@ namespace
 		g_httpAnswer = file;
 		g_httpEtagOut = etag;
 		g_httpNotModified = notModified;
+		g_httpStatus = 0;
+		g_httpOverLimit = false;
+	}
+
+	// An answer with no list: the HTTP status it carried (0 = none arrived) or a body over the limit.
+	void ServeNothing(unsigned status, bool overLimit = false)
+	{
+		Serve("");
+		std::lock_guard<std::mutex> l(g_httpMutex);
+		g_httpStatus = status;
+		g_httpOverLimit = overLimit;
 	}
 
 	void EnvelopeTests()
@@ -711,6 +728,42 @@ namespace
 		// nothing cached, nothing downloaded
 		Check(fetch(url, error).empty() && error.empty() && !Exists(src.cachePath), "fetch: no cache and no answer is a plain failure");
 
+		// no list: the reason is said in plain words, whatever the cause
+		ServeNothing(404);
+		Check(fetch(url, error).empty() && error == "The mod list isn't published yet.", "fetch: an HTTP 404 says the list isn't published");
+		error.clear();
+		ServeNothing(503);
+		Check(fetch(url, error).empty() && error == "The mod list server answered with an error (HTTP 503).", "fetch: another HTTP status is named");
+		error.clear();
+		ServeNothing(200, true);
+		Check(fetch(url, error).empty() && error == "The mod list is larger than allowed.", "fetch: a body over the limit says so");
+		error.clear();
+		ServeNothing(0);
+		Check(fetch(url, error).empty() && error.empty(), "fetch: no answer leaves the reason empty, for the connection text");
+		ServeNothing(200);
+		Check(fetch(url, error).empty() && error.empty(), "fetch: a 200 with no body leaves the reason empty");
+		{
+			Fetcher f(url, MakeFetch(src));
+			ServeNothing(404);
+			f.RequestFirstLoad();
+			Check(WaitFor(f, State::Failed) && f.Get()->error == "The mod list isn't published yet.", "fetcher: a 404 shows the not-published text");
+			f.Shutdown(1000);
+		}
+		{
+			Fetcher f(url, MakeFetch(src));
+			ServeNothing(0);
+			f.RequestFirstLoad();
+			Check(WaitFor(f, State::Failed) && f.Get()->error.find("Check your connection") != std::string::npos, "fetcher: no answer keeps the connection text");
+			f.Shutdown(1000);
+		}
+		// a saved list is still shown when the server answers with an error
+		Serve(SignedFile(sk2, 3, idxA));
+		Check(fetch(url, error) == idxA, "fetch: a first file is taken");
+		ServeNothing(404);
+		error.clear();
+		Check(fetch(url, error) == idxA && error.empty(), "fetch: a 404 shows the saved list, with no error");
+		RemoveCache(src.cachePath);
+
 		// no answer at all, with a stale cache older than a later download
 		Serve(SignedFile(sk2, 3, idxA));
 		Check(fetch(url, error) == idxA && Exists(src.cachePath), "fetch: a first file is taken when nothing is cached");
@@ -779,6 +832,14 @@ namespace
 		error.clear();
 		Serve("");
 		Check(fetch(url, error).empty() && error.empty(), "own url: no answer is a plain failure");
+		ServeNothing(404);
+		Check(fetch(url, error).empty() && error == "The mod list isn't published yet.", "own url: an HTTP 404 says the list isn't published");
+		error.clear();
+		ServeNothing(500);
+		Check(fetch(url, error).empty() && error == "The mod list server answered with an error (HTTP 500).", "own url: another HTTP status is named");
+		error.clear();
+		ServeNothing(200, true);
+		Check(fetch(url, error).empty() && error == "The mod list is larger than allowed.", "own url: a body over the limit says so");
 	}
 
 	std::string OneEntryIndex() { return "[" + Obj("a", "A", kGood) + "]"; }

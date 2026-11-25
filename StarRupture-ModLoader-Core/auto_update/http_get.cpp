@@ -88,6 +88,8 @@ std::string HttpGet(const char* url, const char* label, const HttpGetOptions& op
 	LogToFile::Debug("[AutoUpdate] HttpGet [%s]: %s", label, shown.c_str());
 	if (options.status)
 		*options.status = 0;
+	if (options.overLimit)
+		*options.overLimit = false;
 	if (options.location)
 		options.location->clear();
 	const auto cancelled = [&] { return options.cancel && options.cancel->load(); };
@@ -266,6 +268,8 @@ std::string HttpGet(const char* url, const char* label, const HttpGetOptions& op
 		if (options.maxBytes != 0 && body.size() + available > options.maxBytes)
 		{
 			LogToFile::Warn("[AutoUpdate] HttpGet [%s]: the body is over the %zu byte limit -- cut off", label, options.maxBytes);
+			if (options.overLimit)
+				*options.overLimit = true;
 			return {};
 		}
 

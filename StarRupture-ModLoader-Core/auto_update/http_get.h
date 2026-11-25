@@ -48,6 +48,10 @@ struct HttpGetOptions
 	// With status set, the answer's HTTP status; 0 when no answer arrived.
 	unsigned* status = nullptr;
 
+	// With overLimit set, true when the request failed because the body went
+	// over maxBytes.
+	bool* overLimit = nullptr;
+
 	// Once true, the request fails at its next step. A call that is already
 	// waiting ends on its own timeout.
 	const std::atomic<bool>* cancel = nullptr;

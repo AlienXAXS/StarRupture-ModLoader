@@ -793,10 +793,12 @@ int main()
 			"a body over 1 MiB fails and leaves the cache as it was");
 		HttpGetOptions o;
 		o.allowPlainHttp = true;
+		bool overLimit = false;
+		o.overLimit = &overLimit;
 		o.maxBytes = srv.feed.size() - 1;
-		Check(HttpGet(srv.Url("/ok").c_str(), "test", o).empty(), "HttpGet stops at its own byte limit");
+		Check(HttpGet(srv.Url("/ok").c_str(), "test", o).empty() && overLimit, "HttpGet stops at its own byte limit and says so");
 		o.maxBytes = srv.feed.size();
-		Check(HttpGet(srv.Url("/ok").c_str(), "test", o) == srv.feed, "...and passes a body exactly at the limit");
+		Check(HttpGet(srv.Url("/ok").c_str(), "test", o) == srv.feed && !overLimit, "...and passes a body exactly at the limit");
 	}
 
 	// ---- a bad signature -----------------------------------------------------

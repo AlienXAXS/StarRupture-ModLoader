@@ -4,6 +4,7 @@
 #include "http_get.h"
 #include "logging/logger.h"
 
+#include <string>
 #include <utility>
 
 namespace ModIndex
@@ -13,6 +14,21 @@ namespace ModIndex
 		constexpr const char kUnverified[]   = "The mod list could not be verified, so it was not used.";
 		constexpr const char kUnknownForm[]  = "The mod list is in a form this loader does not know, so it was not used.";
 		constexpr const char kOlder[]        = "The mod list on the server is older than the one this loader already has, so it was not used.";
+		constexpr const char kNotPublished[] = "The mod list isn't published yet.";
+		constexpr const char kTooLarge[]     = "The mod list is larger than allowed.";
+
+		// Why a request ended with no list, in plain words. Empty when no answer
+		// arrived or the cause is not known: the Fetcher then asks to check the connection.
+		std::string NoListReason(unsigned status, bool overLimit)
+		{
+			if (overLimit)
+				return kTooLarge;
+			if (status == 404)
+				return kNotPublished;
+			if (status != 0 && status != 200)
+				return "The mod list server answered with an error (HTTP " + std::to_string(status) + ").";
+			return {};
+		}
 
 		// The line `text` holds from `at`, without its line feed; `next` is where the following line starts.
 		std::string Line(const std::string& text, size_t at, size_t& next)
@@ -74,6 +90,8 @@ namespace ModIndex
 
 			std::string etag;
 			bool notModified = false;
+			unsigned status = 0;
+			bool overLimit = false;
 			HttpGetOptions options;
 			options.resolveMs = options.connectMs = options.sendMs = options.receiveMs = FeedFetch::kOperationMs;
 			options.deadlineMs = FeedFetch::kDeadlineMs;
@@ -82,6 +100,8 @@ namespace ModIndex
 			options.ifNoneMatch = haveCache ? FeedFetch::ReadEtag(source.cachePath, cache.seq) : std::string();
 			options.etag = &etag;
 			options.notModified = &notModified;
+			options.status = &status;
+			options.overLimit = &overLimit;
 
 			const std::string file = HttpGet(url.c_str(), "mod index", options);
 			if (notModified && haveCache)
@@ -95,6 +115,7 @@ namespace ModIndex
 						static_cast<unsigned long long>(cache.seq));
 					return cache.body;
 				}
+				error = NoListReason(status, overLimit);
 				return {};
 			}
 
@@ -136,8 +157,17 @@ namespace ModIndex
 			options.deadlineMs = FeedFetch::kDeadlineMs;
 			options.maxBytes = VersionFeed::kMaxFileBytes;
 			options.allowPlainHttp = source.allowPlainHttp;
+			unsigned status = 0;
+			bool overLimit = false;
+			options.status = &status;
+			options.overLimit = &overLimit;
 
 			const std::string file = HttpGet(url.c_str(), "mod index", options);
+			if (file.empty())
+			{
+				error = NoListReason(status, overLimit);
+				return {};
+			}
 			if (!IsEnvelope(file))
 				return file;
 			Envelope envelope;
