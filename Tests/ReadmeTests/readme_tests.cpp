@@ -9,6 +9,7 @@
 #include "auto_update/readme_images.h"
 #include "auto_update/readme_markdown.h"
 #include "auto_update/readme_textures.h"
+#include "logging/logger.h"
 #include "utils/open_page.h"
 
 #include <atomic>
@@ -30,6 +31,9 @@ std::string HttpGet(const char* /*url*/, const char* /*label*/, const HttpGetOpt
 {
 	return {};
 }
+
+// The open-page helper logs a failed open; the tests have no log.
+void ModLoaderLogger::LogWarn(const wchar_t* /*format*/, ...) {}
 
 using namespace ModIndex;
 
