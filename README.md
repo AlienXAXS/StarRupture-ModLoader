@@ -426,9 +426,9 @@ mod loader is older)."
 
 A player's mod loader also tells the server which game build it runs (its CL number), as one extra record in the feature list. When both builds are known and differ, the server's `ModLoader.log` gets one warning per join: "Player 'X' runs game build CL-130045, this server runs CL-127004." Nothing is refused, and an older mod loader that sends no build is never reported.
 
-A server that has no admin yet can ask a player to claim it. The player sees a window saying "This server has no admin yet. If you run this server, enter the claim code from the server log. Otherwise choose Not me." with a text box and the buttons Send and Not me. The server shows a line in the window after each try (for example "Wrong code"), and when it is done the window shows its last line until the player dismisses it. Not me closes the window (so does the X in its title bar); whether that player is asked again is up to the server, but a window the player dismissed is not shown again for 60 seconds. Only a player whose mod loader sent its feature list is asked, and only a server that asks does this; on any other server nothing appears. The code is sent to the server once and is never written to `ModLoader.log`.
-
 #### For a server plugin
+
+These calls do nothing for a server host until a server plugin uses them.
 
 A server plugin sets the rules from text instead of the console, for everyone or for one player. The
 calls are in `hooks->HostRules` (interface 79; a loader below 79 has no such pointer, so check the
@@ -479,7 +479,7 @@ already connected that have not been reported yet.
 
 `GetClientFeatures(playerController, buf, size)` returns what one player's loader reported as text (`loader=<build tag> interface=<version>`, then one `Plugin.feature=on|off` line each) and its full length, or -1 when there is none; a null `buf` with `size` 0 measures.
 
-`AskAdmin(playerController)` opens a prompt on that player's screen asking for an admin code; it returns false when the player has no loader report (an older loader, or no mod loader), has no connection, or this is not the server. `AdminMessage(playerController, text, close)` shows one line (up to 200 bytes) in the open prompt; with `close` true the prompt shows the line and closes. `RegisterOnAdminAnswer` calls your function from the tick with the player, `notMe` (the player chose "not me") and the code they typed. The loader does not judge the code and never logs it, it clears its own queued copy once your callbacks have run (it cannot reach copies in network buffers or the one your plugin keeps), only answers from a player that was asked are passed on, and at most one per half second per player. The loader sets no limit on tries, so your plugin counts wrong codes itself and closes the prompt (`AdminMessage` with `close` true) after a few. Checking the code and what to do next is up to the plugin.
+`AskAdmin(playerController)` opens a prompt on that player's screen (a window with a text box and the buttons Send and Not me) asking for an admin code; it returns false when the player has no loader report (an older loader, or no mod loader), has no connection, or this is not the server. `AdminMessage(playerController, text, close)` shows one line (up to 200 bytes) in the open prompt; with `close` true the prompt shows the line and closes. `RegisterOnAdminAnswer` calls your function from the tick with the player, `notMe` (the player chose "not me") and the code they typed. The loader does not judge the code and never logs it, it clears its own queued copy once your callbacks have run (it cannot reach copies in network buffers or the one your plugin keeps), only answers from a player that was asked are passed on, and at most one per half second per player. The loader sets no limit on tries, so your plugin counts wrong codes itself and closes the prompt (`AdminMessage` with `close` true) after a few. Checking the code and what to do next is up to the plugin.
 
 ---
 

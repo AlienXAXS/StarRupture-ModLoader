@@ -20,8 +20,9 @@ name: Publish the version-map feed
 # uploaded, unless Latest carries no feed (see below).
 #
 # release.yml does not attach the file, and a release made with GITHUB_TOKEN
-# starts no `release: published` workflow, so a new release gets the feed from
-# the next scheduled run. Latest with no feed of its own takes the current
+# starts no `release: published` workflow, so release.yml dispatches this one
+# once it has published a release. If that dispatch fails, the next scheduled
+# run attaches the feed. Latest with no feed of its own takes the current
 # feed even when its seq equals the one on an older release; it is never given
 # an older one.
 #
