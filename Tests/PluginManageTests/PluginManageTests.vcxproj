@@ -52,6 +52,7 @@
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup>
     <CoreDir>$(SolutionDir)StarRupture-ModLoader-Core\</CoreDir>
+    <ImGuiRootDir>$(SolutionDir)StarRupture-ImGui\</ImGuiRootDir>
     <OutDir>$(SolutionDir)build\tests\</OutDir>
     <IntDir>$(SolutionDir)obj\Tests\$(ProjectName)\$(Platform)\$(Configuration)\</IntDir>
     <TargetName>plugin_manage_tests</TargetName>
@@ -63,8 +64,12 @@
       <ConformanceMode>true</ConformanceMode>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <PreprocessorDefinitions>_CONSOLE;NOMINMAX;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>$(CoreDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <!-- The defines the loader builds its client with. 4005: framework.h redefines two of them. -->
+      <PreprocessorDefinitions>PLUGIN_INTERFACE_HOST_BUILD;MODLOADER_CLIENT_BUILD;_CONSOLE;NOMINMAX;WIN32_LEAN_AND_MEAN;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <DisableSpecificWarnings>4005;%(DisableSpecificWarnings)</DisableSpecificWarnings>
+      <AdditionalIncludeDirectories>$(MSBuildThisFileDirectory);$(CoreDir);$(CoreDir)UI;$(ImGuiRootDir);$(ImGuiRootDir)imgui;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <!-- Only here: lets a manager step make a chosen file move fail. -->
+      <ForcedIncludeFiles>$(MSBuildThisFileDirectory)move_hook.h;%(ForcedIncludeFiles)</ForcedIncludeFiles>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -95,6 +100,22 @@
     <ClInclude Include="$(CoreDir)auto_update\vortex_notice.h" />
     <ClInclude Include="$(CoreDir)auto_update\json_extract.h" />
     <ClCompile Include="plugin_manage_tests.cpp" />
+    <ClCompile Include="manager_tests.cpp" />
+    <ClCompile Include="manager_stubs.cpp" />
+    <ClCompile Include="updater_under_test.cpp" />
+  </ItemGroup>
+  <!-- The loader's own manager; the updater is compiled through updater_under_test.cpp. -->
+  <ItemGroup Label="Loader sources under test">
+    <ClCompile Include="$(CoreDir)plugins\plugin_manager.cpp" />
+    <ClCompile Include="$(CoreDir)plugins\plugin_guard.cpp" />
+    <ClCompile Include="$(CoreDir)plugins\plugin_watchdog.cpp" />
+  </ItemGroup>
+  <!-- The DLL the manager steps load, built into the same folder. -->
+  <ItemGroup>
+    <ProjectReference Include="ManageTestPlugin.vcxproj">
+      <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
+      <LinkLibraryDependencies>false</LinkLibraryDependencies>
+    </ProjectReference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

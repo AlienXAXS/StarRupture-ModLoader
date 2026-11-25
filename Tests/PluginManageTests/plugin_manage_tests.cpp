@@ -6,6 +6,7 @@
 #include "plugins/plugin_manage.h"
 #include "auto_update/mod_index.h"
 #include "auto_update/vortex_notice.h"
+#include "manager_tests.h"
 
 #include <winioctl.h>
 
@@ -742,8 +743,11 @@ namespace
 	}
 }
 
-int main()
+int main(int argc, char** argv)
 {
+	if (argc == 3 && std::string(argv[1]) == "--manager")
+		return RunManagerStart(argv[2]);
+
 	wchar_t temp[MAX_PATH]{};
 	GetTempPathW(MAX_PATH, temp);
 	wchar_t full[MAX_PATH]{};
@@ -770,6 +774,7 @@ int main()
 	TestIdentity();
 	TestVortexListing();
 	ScriptedRun();
+	g_failed += RunManagerTests(g_root);
 
 	Wipe(g_root);
 

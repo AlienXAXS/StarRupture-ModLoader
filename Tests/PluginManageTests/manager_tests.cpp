@@ -1,0 +1,380 @@
+// The manager-level operations the Browse tab calls (RequestPluginChange and
+// GetManageSnapshot), on the loader's own plugin_manager.cpp, with real plugin
+// DLLs. Each game start is a process of its own, so a restart is a real one.
+#include "plugins/plugin_manager.h"
+#include "plugins/plugin_manage.h"
+#include "manager_tests.h"
+
+#undef MoveFileExW
+
+#include <algorithm>
+#include <cstdio>
+#include <fstream>
+#include <string>
+#include <vector>
+
+using namespace PluginManager;
+using PluginManage::CardState;
+
+namespace
+{
+	int g_checks = 0;
+	int g_failed = 0;
+	std::string g_step;
+
+	void Expect(bool ok, const std::string& what)
+	{
+		++g_checks;
+		if (!ok)
+		{
+			++g_failed;
+			printf("FAIL [%s] %s\n", g_step.c_str(), what.c_str());
+		}
+	}
+
+	std::wstring ExeFolder()
+	{
+		wchar_t exe[MAX_PATH]{};
+		GetModuleFileNameW(nullptr, exe, MAX_PATH);
+		const std::wstring path = exe;
+		return path.substr(0, path.find_last_of(L'\\') + 1);
+	}
+
+	std::wstring PluginsDir() { return ExeFolder() + L"ModLoader\\Plugins"; }
+
+	bool Installed(const wchar_t* file)
+	{
+		return GetFileAttributesW((PluginsDir() + L"\\" + file).c_str()) != INVALID_FILE_ATTRIBUTES;
+	}
+
+	// What the plugin DLLs wrote since this start began.
+	std::vector<std::string> Events()
+	{
+		std::ifstream in(ExeFolder() + L"events.log");
+		std::vector<std::string> lines;
+		for (std::string line; std::getline(in, line);)
+		{
+			if (!line.empty() && line.back() == '\r') line.pop_back();
+			lines.push_back(line);
+		}
+		return lines;
+	}
+
+	int Count(const std::string& line)
+	{
+		const std::vector<std::string> events = Events();
+		return static_cast<int>(std::count(events.begin(), events.end(), line));
+	}
+
+	ManagedPlugin Card(const std::string& file)
+	{
+		for (const ManagedPlugin& plugin : GetManageSnapshot().plugins)
+			if (plugin.fileName == file)
+				return plugin;
+		return {};
+	}
+
+	void ExpectCard(const std::string& file, CardState state, const char* when)
+	{
+		const ManagedPlugin plugin = Card(file);
+		const CardState got = PluginManage::DeriveCard(plugin.facts).state;
+		Expect(!plugin.fileName.empty() && got == state, std::string(when) + ": card of " + file + " is state " +
+			std::to_string(static_cast<int>(got)) + (plugin.fileName.empty() ? " (no card)" : "") +
+			", wanted " + std::to_string(static_cast<int>(state)));
+	}
+
+	unsigned Buttons(const std::string& file) { return PluginManage::DeriveCard(Card(file).facts).buttons; }
+
+	void Ask(ManageOp op, const std::string& file, ManageResult wanted, const char* when)
+	{
+		RequestPluginChange(op, file);
+		const ManagedPlugin plugin = Card(file);
+		printf("  [%s] %s: op %d on %s -> result %d %s\n", g_step.c_str(), when, static_cast<int>(op), file.c_str(),
+			static_cast<int>(plugin.lastResult), plugin.message.c_str());
+		Expect(plugin.lastResult == wanted, std::string(when) + ": " + file + " result " +
+			std::to_string(static_cast<int>(plugin.lastResult)) + ", wanted " + std::to_string(static_cast<int>(wanted)));
+	}
+
+	bool UpdaterChecks(const char* file)
+	{
+		const std::vector<std::string> names = UpdaterSidecars(PluginsDir());
+		return std::find(names.begin(), names.end(), file) != names.end();
+	}
+
+	bool MarkedRemoved(const std::string& name)
+	{
+		PluginStatus statuses[16]{};
+		const int count = GetAllPluginStatuses(statuses, 16);
+		for (int i = 0; i < count; ++i)
+			if (name == statuses[i].name)
+				return statuses[i].isRemoved;
+		return false;
+	}
+
+	void ExpectNotLoadedByRescan(const char* file, const std::string& name, const char* when)
+	{
+		const int before = Count("attach " + name);
+		ScanForNewPlugins();
+		Expect(Count("attach " + name) == before, std::string(when) + ": a rescan does not load " + file);
+	}
+
+	// ---- disable, restarts, enable, uninstall and restore -------------------
+
+	void Disabling()
+	{
+		for (const char* file : { "A.dll", "B.dll", "StuckC.dll" })
+		{
+			ExpectCard(file, CardState::Running, "first start");
+			Expect(UpdaterChecks(file), std::string("the updater checks ") + file);
+		}
+
+		Ask(ManageOp::Disable, "A.dll", ManageResult::Done, "disable");
+		ExpectCard("A.dll", CardState::Disabled, "disable");
+		Expect(Count("shutdown-file-there A") == 1 && Count("detach A") == 1, "disable unloads A");
+		ExpectNotLoadedByRescan("A.dll", "A", "disabled");
+
+		Ask(ManageOp::Disable, "StuckC.dll", ManageResult::AfterRestart, "disable a restart-only plugin");
+		ExpectCard("StuckC.dll", CardState::DisablePending, "disable a restart-only plugin");
+		Expect(GetModuleHandleW((PluginsDir() + L"\\StuckC.dll").c_str()) != nullptr, "StuckC stays loaded");
+
+		Expect(!UpdaterChecks("A.dll") && !UpdaterChecks("StuckC.dll"), "the updater skips disabled plugins");
+		Expect(UpdaterChecks("B.dll"), "the updater still checks B");
+	}
+
+	void StillDisabled()
+	{
+		Expect(Count("attach A") == 0 && Count("attach StuckC") == 0, "no disabled plugin's code ran at start");
+		Expect(Count("init B") == 1, "B started");
+		ExpectCard("A.dll", CardState::Disabled, "after restart");
+		ExpectCard("StuckC.dll", CardState::Disabled, "after restart");
+		Expect((Buttons("A.dll") & PluginManage::kEnable) != 0, "A offers Enable");
+		ExpectNotLoadedByRescan("A.dll", "A", "after restart");
+		const int index = FindPluginIndex("A.dll");
+		if (index >= 0)
+		{
+			ReloadPlugin(index);
+			Expect(Count("attach A") == 0, "a reload does not load disabled A");
+		}
+		Expect(!UpdaterChecks("A.dll") && !UpdaterChecks("StuckC.dll"), "the updater skips them after a restart");
+
+		Ask(ManageOp::Enable, "A.dll", ManageResult::Done, "enable");
+		ExpectCard("A.dll", CardState::Running, "enable");
+		Expect(Count("init A") == 1, "A started");
+		Expect(UpdaterChecks("A.dll"), "the updater checks enabled A");
+		Ask(ManageOp::Enable, "StuckC.dll", ManageResult::Done, "enable");
+		ExpectCard("StuckC.dll", CardState::Running, "enable");
+	}
+
+	void Uninstalling()
+	{
+		for (const char* file : { "A.dll", "B.dll", "StuckC.dll" })
+			ExpectCard(file, CardState::Running, "enabled stays enabled");
+
+		Ask(ManageOp::Uninstall, "A.dll", ManageResult::Done, "uninstall");
+		Expect(Count("shutdown-file-gone A") == 1 && Count("detach A") == 1, "files moved first, then A unloaded");
+		Expect(!Installed(L"A.dll") && !Installed(L"A.pdb") && !Installed(L"A.json"), "A's three files are gone");
+		ExpectCard("A.dll", CardState::Uninstalled, "uninstall");
+		Expect((Buttons("A.dll") & PluginManage::kRestore) != 0, "A offers Restore");
+		Expect(!UpdaterChecks("A.dll"), "the updater skips uninstalled A");
+		ExpectNotLoadedByRescan("A.dll", "A", "uninstalled");
+		Expect(!Installed(L"A.dll"), "nothing put A back");
+
+		Ask(ManageOp::Uninstall, "StuckC.dll", ManageResult::AfterRestart, "uninstall a restart-only plugin");
+		ExpectCard("StuckC.dll", CardState::UninstalledRunning, "uninstall a restart-only plugin");
+		Expect(!Installed(L"StuckC.dll") && Count("detach StuckC") == 0, "StuckC's files moved, its code stays");
+		Expect(MarkedRemoved("StuckC"), "StuckC is marked removed");
+
+		Ask(ManageOp::Enable, "StuckC.dll", ManageResult::Failed, "enable with the DLL missing");
+		Expect(MarkedRemoved("StuckC"), "a failed enable keeps the removed mark");
+		ExpectCard("StuckC.dll", CardState::UninstalledRunning, "enable with the DLL missing");
+
+		Ask(ManageOp::Restore, "StuckC.dll", ManageResult::Done, "undo while still loaded");
+		ExpectCard("StuckC.dll", CardState::Running, "undo while still loaded");
+		Expect(Installed(L"StuckC.dll") && !MarkedRemoved("StuckC"), "StuckC is installed again");
+		Ask(ManageOp::Uninstall, "StuckC.dll", ManageResult::AfterRestart, "uninstall again");
+	}
+
+	void Restoring()
+	{
+		Expect(Count("attach A") == 0 && Count("attach StuckC") == 0, "uninstalled plugins stay out after restart");
+		Expect(!Installed(L"A.dll") && !Installed(L"StuckC.dll"), "nothing restored their files");
+		ExpectCard("A.dll", CardState::Uninstalled, "after restart");
+		ExpectCard("StuckC.dll", CardState::Uninstalled, "after restart");
+		for (const char* file : { "A.dll", "StuckC.dll" })
+		{
+			Ask(ManageOp::Restore, file, ManageResult::Done, "restore after restart");
+			ExpectCard(file, CardState::Running, "restore after restart");
+		}
+		Expect(Installed(L"A.pdb") && Installed(L"A.json") && Count("init A") == 1, "A is back, files and all");
+	}
+
+	// ---- an uninstall whose rollback fails too ------------------------------
+
+	// The files move dll, pdb, json. Failing the 3rd move starts the rollback,
+	// which is the 4th (pdb back) and the 5th (dll back).
+	void RollbackLeavesDllOut()
+	{
+		for (const char* file : { "A.dll", "StuckC.dll" })
+		{
+			FailMoves(3, 5);
+			Ask(ManageOp::Uninstall, file, ManageResult::RollbackFailed, "DLL cannot be put back");
+			FailMoves(0, 0);
+		}
+		Expect(!Installed(L"A.dll") && Installed(L"A.pdb") && Installed(L"A.json"), "only A's DLL stayed out");
+		ExpectCard("A.dll", CardState::UninstalledRunning, "DLL cannot be put back");
+		Expect((Buttons("A.dll") & PluginManage::kRestore) != 0, "A offers Restore");
+		Expect(Count("detach A") == 0, "A is still loaded");
+		Expect(!UpdaterChecks("A.dll"), "the updater does not fetch A's DLL back");
+	}
+
+	void RestoreAfterRollback()
+	{
+		Expect(Count("attach A") == 0 && Count("attach StuckC") == 0, "neither loads without its DLL");
+		ExpectCard("A.dll", CardState::Uninstalled, "restart after a failed rollback");
+
+		Ask(ManageOp::Restore, "A.dll", ManageResult::Done, "Restore after a failed rollback");
+		ExpectCard("A.dll", CardState::Running, "Restore after a failed rollback");
+
+		// The other way out: put the DLL back by hand, then uninstall.
+		Expect(CopyFileW((ExeFolder() + L"manage_test_plugin.dll").c_str(),
+			(PluginsDir() + L"\\StuckC.dll").c_str(), TRUE) != 0, "copy StuckC back by hand");
+		ScanForNewPlugins();
+		RefreshManagedFiles();
+		ExpectCard("StuckC.dll", CardState::Running, "reinstall by copying the DLL");
+		Ask(ManageOp::Uninstall, "StuckC.dll", ManageResult::AfterRestart, "uninstall after reinstalling");
+		Expect(!Installed(L"StuckC.dll") && !Installed(L"StuckC.json"), "StuckC uninstalled");
+	}
+
+	void RollbackPutsDllBack()
+	{
+		FailMoves(3, 4);
+		Ask(ManageOp::Uninstall, "A.dll", ManageResult::RollbackFailed, "PDB cannot be put back");
+		FailMoves(0, 0);
+		Expect(Installed(L"A.dll") && !Installed(L"A.pdb") && Installed(L"A.json"), "only A's PDB stayed out");
+		ExpectCard("A.dll", CardState::Running, "PDB cannot be put back");
+
+		// The path is not blocked: off and on again works without a restart.
+		Ask(ManageOp::Disable, "A.dll", ManageResult::Done, "disable after a failed rollback");
+		Ask(ManageOp::Enable, "A.dll", ManageResult::Done, "enable after a failed rollback");
+		Ask(ManageOp::Uninstall, "A.dll", ManageResult::Done, "uninstall after a failed rollback");
+		ExpectCard("A.dll", CardState::Uninstalled, "uninstall after a failed rollback");
+	}
+
+	void RestoreAfterSecondUninstall()
+	{
+		ExpectCard("A.dll", CardState::Uninstalled, "restart");
+		Ask(ManageOp::Restore, "A.dll", ManageResult::Done, "restore the newest backup");
+		ExpectCard("A.dll", CardState::Running, "restore the newest backup");
+	}
+
+	struct Step { const char* name; void (*run)(); };
+	const Step kSteps[] = {
+		{ "disable", Disabling }, { "still-disabled", StillDisabled }, { "uninstall", Uninstalling },
+		{ "restore", Restoring },
+		{ "rollback-dll-out", RollbackLeavesDllOut }, { "rollback-dll-out-restart", RestoreAfterRollback },
+		{ "rollback-dll-back", RollbackPutsDllBack }, { "rollback-dll-back-restart", RestoreAfterSecondUninstall },
+	};
+
+	struct Game
+	{
+		std::vector<const wchar_t*> plugins;
+		std::vector<const wchar_t*> starts;
+	};
+
+	bool WriteText(const std::wstring& path, const char* text)
+	{
+		std::ofstream out(path, std::ios::binary);
+		out << text;
+		return static_cast<bool>(out);
+	}
+
+	bool Start(const std::wstring& exe, const std::wstring& step)
+	{
+		std::wstring command = L"\"" + exe + L"\" --manager " + step;
+		STARTUPINFOW startup{ sizeof(startup) };
+		PROCESS_INFORMATION process{};
+		fflush(stdout);
+		if (!CreateProcessW(exe.c_str(), command.data(), nullptr, nullptr, TRUE, 0, nullptr, nullptr, &startup, &process))
+			return false;
+		DWORD code = 1;
+		if (WaitForSingleObject(process.hProcess, 60000) != WAIT_OBJECT_0)
+			TerminateProcess(process.hProcess, 1);
+		else
+			GetExitCodeProcess(process.hProcess, &code);
+		CloseHandle(process.hThread);
+		CloseHandle(process.hProcess);
+		if (code != 0)
+			printf("FAIL start %ls ended with code %lu\n", step.c_str(), code);
+		return code == 0;
+	}
+}
+
+int RunManagerStart(const std::string& step)
+{
+	g_step = step;
+	InitializePluginManager();
+	LoadAllPlugins();
+	InitAllLoadedPlugins();
+	MarkStartupComplete();
+	RefreshManagedFiles();
+
+	bool known = false;
+	for (const Step& s : kSteps)
+		if (step == s.name)
+		{
+			known = true;
+			s.run();
+		}
+	Expect(known, "known step");
+	printf("start %s: %d checks, %d failed\n", step.c_str(), g_checks, g_failed);
+	fflush(stdout);
+	return g_failed ? 1 : 0;
+}
+
+int RunManagerTests(const std::wstring& root)
+{
+	const Game games[] = {
+		{ { L"A", L"B", L"StuckC" }, { L"disable", L"still-disabled", L"uninstall", L"restore" } },
+		{ { L"A", L"StuckC" }, { L"rollback-dll-out", L"rollback-dll-out-restart" } },
+		{ { L"A" }, { L"rollback-dll-back", L"rollback-dll-back-restart" } },
+	};
+
+	wchar_t self[MAX_PATH]{};
+	GetModuleFileNameW(nullptr, self, MAX_PATH);
+	const std::wstring plugin = ExeFolder() + L"manage_test_plugin.dll";
+
+	int failed = 0;
+	int number = 0;
+	for (const Game& game : games)
+	{
+		const std::wstring dir = root + L"\\game" + std::to_wstring(++number);
+		const std::wstring plugins = dir + L"\\ModLoader\\Plugins";
+		CreateDirectoryW(dir.c_str(), nullptr);
+		CreateDirectoryW((dir + L"\\ModLoader").c_str(), nullptr);
+		CreateDirectoryW(plugins.c_str(), nullptr);
+
+		bool ready = CopyFileW(self, (dir + L"\\game.exe").c_str(), TRUE) != 0 &&
+			CopyFileW(plugin.c_str(), (dir + L"\\manage_test_plugin.dll").c_str(), TRUE) != 0;
+		for (const wchar_t* name : game.plugins)
+		{
+			const std::wstring stem = plugins + L"\\" + name;
+			ready = ready && CopyFileW(plugin.c_str(), (stem + L".dll").c_str(), TRUE) != 0 &&
+				WriteText(stem + L".pdb", "symbols") &&
+				WriteText(stem + L".json", "{\"manifest_url\":\"https://example.invalid/m.json\"}");
+		}
+		if (!ready)
+		{
+			printf("FAIL could not set up %ls (is manage_test_plugin.dll built?)\n", dir.c_str());
+			++failed;
+			continue;
+		}
+
+		for (const wchar_t* step : game.starts)
+		{
+			DeleteFileW((dir + L"\\events.log").c_str());
+			if (!Start(dir + L"\\game.exe", step))
+				++failed;
+		}
+	}
+	return failed;
+}
