@@ -31,6 +31,13 @@
 // auto-updates, the same name with .json) and, exactly when the .json is listed,
 // update_manifest_url. One of them missing or wrong: the entry is still listed,
 // with nothing to install.
+//
+// An entry whose page is a GitHub repository may also have a picture, as three
+// keys that come all or none: thumbnail_url
+// (https://raw.githubusercontent.com/<owner>/<repo>/<40 hex commit>/images/thumbnail.png,
+// of page_url's repository), thumbnail_sha256 (64 lowercase hex) and
+// thumbnail_size (bytes, 1 to kMaxThumbnailBytes). One of them missing or wrong,
+// or a page on nexusmods.com: the entry is still listed, with no picture.
 // ---------------------------------------------------------------------------
 
 namespace ModIndex
@@ -47,6 +54,9 @@ namespace ModIndex
 	constexpr size_t kMaxUrlLen     = 200;   // longer: the entry is dropped, never cut
 	constexpr size_t kMaxRequires   = 8;     // each cut at kMaxIdLen, as an id is
 	constexpr int    kMaxDownloadBytes = 32 * 1024 * 1024;
+	constexpr size_t kMaxThumbnailBytes  = 512 * 1024;
+	constexpr unsigned kMaxThumbnailWidth  = 1280;   // the picture's pixels, read from its PNG header
+	constexpr unsigned kMaxThumbnailHeight = 720;
 
 	// What installing an entry downloads and writes. dllFile empty: nothing.
 	struct InstallInfo
@@ -58,9 +68,18 @@ namespace ModIndex
 		std::string manifestUrl;  // empty: no .json is written beside the DLL
 	};
 
+	// The picture the Browse card shows. url empty: no picture.
+	struct ThumbnailInfo
+	{
+		std::string url;
+		std::string sha256;
+		size_t size = 0;
+	};
+
 	struct Entry
 	{
 		InstallInfo install;
+		ThumbnailInfo thumbnail;
 		std::string id;
 		std::string name;
 		std::string author;
@@ -194,6 +213,12 @@ namespace ModIndex
 			return true;
 		}
 
+		// Exactly `len` characters, each 0-9 or a-f.
+		inline bool IsLowerHex(const std::string& s, size_t len)
+		{
+			return s.size() == len && s.find_first_not_of("0123456789abcdef") == std::string::npos;
+		}
+
 		inline bool EndsWithNoCase(const std::string& s, const std::string& tail)
 		{
 			return s.size() >= tail.size() && EqualsNoCase(s.substr(s.size() - tail.size()), tail);
@@ -251,8 +276,48 @@ namespace ModIndex
 		return detail::IsInstallDllName(p[5]);
 	}
 
+	// The only address a thumbnail may start at, for the repository page_url names:
+	// https://raw.githubusercontent.com/<owner>/<repo>/<40 lowercase hex commit>/images/thumbnail.png
+	// The page must be https://github.com/<owner>/<repo>, with only plain segments after
+	// that; a page on nexusmods.com has no repository to compare with, so it never passes.
+	inline bool IsThumbnailUrl(const std::string& url, const std::string& pageUrl)
+	{
+		static const std::string kStart = "https://raw.githubusercontent.com/";
+		if (url.size() > kMaxUrlLen || url.compare(0, kStart.size(), kStart) != 0)
+			return false;
+		const std::vector<std::string> p = detail::SplitSegments(url.substr(kStart.size()));
+		if (p.size() != 5 || !detail::IsPlainSegment(p[0]) || !detail::IsPlainSegment(p[1])
+			|| !detail::IsLowerHex(p[2], 40) || p[3] != "images" || p[4] != "thumbnail.png")
+			return false;
+
+		std::vector<std::string> page = detail::SplitSegments(pageUrl);   // https: "" host owner repo ...
+		if (page.size() >= 6 && page.back().empty())
+			page.pop_back();                                              // one trailing slash
+		if (page.size() < 5 || page[0] != "https:" || !page[1].empty() || !detail::EqualsNoCase(page[2], "github.com")
+			|| !detail::EqualsNoCase(page[3], p[0]) || !detail::EqualsNoCase(page[4], p[1]))
+			return false;
+		for (size_t i = 5; i < page.size(); ++i)
+			if (!detail::IsPlainSegment(page[i]))
+				return false;
+		return true;
+	}
+
 	namespace detail
 	{
+		// The entry's thumbnail fields, or none when any of them is missing or wrong.
+		inline ThumbnailInfo ReadThumbnail(const std::string& obj, const std::string& pageUrl)
+		{
+			ThumbnailInfo info;
+			info.url    = JsonExtractDecodedString(obj, "thumbnail_url");
+			info.sha256 = JsonExtractDecodedString(obj, "thumbnail_sha256");
+			const int size = ReadInt(obj, "thumbnail_size");
+			if (!IsThumbnailUrl(info.url, pageUrl) || !IsLowerHex(info.sha256, 64)
+				|| size < 1 || static_cast<size_t>(size) > kMaxThumbnailBytes)
+				return {};
+			info.size = static_cast<size_t>(size);
+			return info;
+		}
+
 		// The entry's install fields, or none when any of them is missing or wrong.
 		// The download and the manifest must belong to page_url's repository.
 		inline InstallInfo ReadInstall(const std::string& obj, const std::string& pageUrl)
@@ -261,8 +326,7 @@ namespace ModIndex
 			info.url    = JsonExtractDecodedString(obj, "download_url");
 			info.sha256 = JsonExtractDecodedString(obj, "download_sha256");
 			const int size = ReadInt(obj, "download_size");
-			if (!IsReleaseAssetUrl(info.url) || info.sha256.size() != 64
-				|| info.sha256.find_first_not_of("0123456789abcdef") != std::string::npos
+			if (!IsReleaseAssetUrl(info.url) || !IsLowerHex(info.sha256, 64)
 				|| size < 1 || size > kMaxDownloadBytes)
 				return {};
 			info.size = static_cast<size_t>(size);
@@ -369,6 +433,7 @@ namespace ModIndex
 				if (!id.empty() && e.requiredIds.size() < kMaxRequires)
 					e.requiredIds.push_back(std::move(id));
 			}
+			e.thumbnail = detail::ReadThumbnail(obj, e.pageUrl);
 			// A server plugin is never installed on a PC, whatever else the entry says.
 			if (!e.serverOnly)
 				e.install = detail::ReadInstall(obj, e.pageUrl);

@@ -203,3 +203,78 @@ test('refuses what the loader would read differently from JSON.parse', () => {
   assert.match(outcome(() => build([entry({ nested: [1] })])), /^refused: .*nested must be a plain value/);
   assert.match(outcome(() => build([installable({ summary: 'a "download_size": 5 in text is fine' })])), /^ok$/);
 });
+
+const COMMIT = '0123456789abcdef0123456789abcdef01234567';
+const PICTURE = `https://raw.githubusercontent.com/AlienXAXS/StarRupture-Plugin-Codex/${COMMIT}/images/thumbnail.png`;
+const withPicture = (over = {}) => entry({ thumbnail_url: PICTURE, thumbnail_sha256: SHA, thumbnail_size: 183296, ...over });
+
+test('takes the thumbnail keys the loader takes', () => {
+  assert.equal(outcome(() => build([withPicture()])), 'ok');
+  assert.equal(outcome(() => build([withPicture({ thumbnail_size: 1 })])), 'ok');
+  assert.equal(outcome(() => build([withPicture({ thumbnail_size: 512 * 1024 })])), 'ok');
+  // the owner and repository match the page_url's whatever the case, and the page may have a path
+  assert.equal(outcome(() => build([withPicture({ page_url: 'https://github.com/alienxaxs/starrupture-plugin-codex/' })])), 'ok');
+  assert.equal(outcome(() => build([withPicture({ page_url: 'https://github.com/AlienXAXS/StarRupture-Plugin-Codex/releases' })])), 'ok');
+  // with install keys, and on a server_only entry
+  assert.equal(outcome(() => build([installable(withPicture())])), 'ok');
+  assert.equal(outcome(() => build([withPicture({ server_only: true })])), 'ok');
+  // an entry with none of the three is as before
+  assert.equal(outcome(() => build([entry()])), 'ok');
+});
+
+test('refuses thumbnail keys the signer or the loader would drop', () => {
+  const repo = 'https://raw.githubusercontent.com/AlienXAXS/StarRupture-Plugin-Codex';
+  const bad = [
+    [{ thumbnail_url: undefined }, /all or none, missing thumbnail_url$/],
+    [{ thumbnail_sha256: undefined }, /all or none, missing thumbnail_sha256$/],
+    [{ thumbnail_size: undefined }, /all or none, missing thumbnail_size$/],
+    [{ thumbnail_sha256: undefined, thumbnail_size: undefined }, /all or none, missing thumbnail_sha256, thumbnail_size$/],
+    [{ thumbnail_url: `http://raw.githubusercontent.com/AlienXAXS/StarRupture-Plugin-Codex/${COMMIT}/images/thumbnail.png` }, /thumbnail_url must be/],
+    [{ thumbnail_url: `https://github.com/AlienXAXS/StarRupture-Plugin-Codex/raw/${COMMIT}/images/thumbnail.png` }, /thumbnail_url must be/],
+    [{ thumbnail_url: `https://example.test/AlienXAXS/StarRupture-Plugin-Codex/${COMMIT}/images/thumbnail.png` }, /thumbnail_url must be/],
+    [{ thumbnail_url: `${repo}/main/images/thumbnail.png` }, /thumbnail_url must be/],
+    [{ thumbnail_url: `${repo}/v1.2.0/images/thumbnail.png` }, /thumbnail_url must be/],
+    [{ thumbnail_url: `${repo}/${COMMIT.slice(1)}/images/thumbnail.png` }, /thumbnail_url must be/],
+    [{ thumbnail_url: `${repo}/${COMMIT.toUpperCase()}/images/thumbnail.png` }, /thumbnail_url must be/],
+    [{ thumbnail_url: `${repo}/${COMMIT}0/images/thumbnail.png` }, /thumbnail_url must be/],
+    [{ thumbnail_url: `${repo}/${COMMIT}/images/thumbnail.png?x=1` }, /thumbnail_url must be/],
+    [{ thumbnail_url: `${repo}/${COMMIT}/images/thumbnail.png#x` }, /thumbnail_url must be/],
+    [{ thumbnail_url: `${repo}/${COMMIT}/images/thumbnail.png/` }, /thumbnail_url must be/],
+    [{ thumbnail_url: `${repo}/${COMMIT}/extra/images/thumbnail.png` }, /thumbnail_url must be/],
+    [{ thumbnail_url: `${repo}/${COMMIT}/images/other.png` }, /thumbnail_url must be/],
+    [{ thumbnail_url: `${repo}/${COMMIT}/images/sub/thumbnail.png` }, /thumbnail_url must be/],
+    [{ thumbnail_url: `${repo}/${COMMIT}/Images/thumbnail.png` }, /thumbnail_url must be/],
+    [{ thumbnail_url: `${repo}/${COMMIT}/images/../thumbnail.png` }, /thumbnail_url must be/],
+    [{ thumbnail_url: 'https://raw.githubusercontent.com/AlienXAXS/Other/' + COMMIT + '/images/thumbnail.png' }, /belong to the GitHub repository/],
+    [{ thumbnail_url: 'https://raw.githubusercontent.com/Else/StarRupture-Plugin-Codex/' + COMMIT + '/images/thumbnail.png' }, /belong to the GitHub repository/],
+    [{ thumbnail_sha256: 'A'.repeat(64) }, /thumbnail_sha256/],
+    [{ thumbnail_sha256: 'a'.repeat(63) }, /thumbnail_sha256/],
+    [{ thumbnail_sha256: `sha256:${SHA}` }, /thumbnail_sha256/],
+    [{ thumbnail_size: 0 }, /thumbnail_size/],
+    [{ thumbnail_size: -5 }, /thumbnail_size/],
+    [{ thumbnail_size: '10' }, /thumbnail_size/],
+    [{ thumbnail_size: 1.5 }, /thumbnail_size/],
+    [{ thumbnail_size: 512 * 1024 + 1 }, /thumbnail_size/],
+    [{ thumbnail_url: null }, /thumbnail_url must be/],
+  ];
+  for (const [over, why] of bad) assert.match(outcome(() => build([withPicture(over)])), why, JSON.stringify(over));
+});
+
+test('a nexusmods.com entry has no thumbnail keys', () => {
+  for (const page of ['https://www.nexusmods.com/starrupture/mods/1', 'https://nexusmods.com/starrupture/mods/1'])
+    assert.match(outcome(() => build([withPicture({ page_url: page })])), /^refused: entry 1 \(codex\): thumbnail_url must belong to the GitHub repository page_url names; a nexusmods\.com entry has no repository/, page);
+  assert.equal(outcome(() => build([entry({ page_url: 'https://www.nexusmods.com/starrupture/mods/1' })])), 'ok');
+  // the same picture on a GitHub page is fine
+  assert.equal(outcome(() => build([withPicture()])), 'ok');
+});
+
+test('refuses thumbnail keys the loader would read differently from JSON.parse', () => {
+  const body = text([withPicture()]);
+  for (const size of ['2e5', '1.0e3', '10.0'])
+    assert.match(outcome(() => build(body.replace('"thumbnail_size": 183296', `"thumbnail_size": ${size}`))), /^refused: thumbnail_size must be written as plain digits/, size);
+  const twice = body.replace('"thumbnail_size": 183296', '"thumbnail_size": 183296,\n    "thumbnail_size": 20');
+  assert.match(outcome(() => build(twice)), /^refused: thumbnail_size must appear once/);
+  assert.match(outcome(() => build([entry({ extra: withPicture() })])), /^refused: .*extra must be a plain value/);
+  assert.match(outcome(() => build([entry({ extra: [{ thumbnail_url: PICTURE }] })])), /^refused: .*extra must be a plain value/);
+  assert.match(outcome(() => build([withPicture({ summary: 'a "thumbnail_size": 5 in text is fine' })])), /^ok$/);
+});

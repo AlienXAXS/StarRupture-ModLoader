@@ -24,6 +24,8 @@
 //     most 64 bytes (never objects: the loader would read their keys as the
 //     entry's)
 //   - the install keys, when any is present, are all valid (see checkInstall)
+//   - the thumbnail keys come all or none, and are valid (see checkThumbnail);
+//     a nexusmods.com entry has none
 //
 // Exit codes: 0 built; 3 the index is refused; 2 usage error.
 
@@ -118,6 +120,41 @@ function checkInstall(e, who) {
     `${who}: update_manifest_url must be a -client-manifest.json of the repository's latest release`);
 }
 
+// The loader's thumbnail rules (IsThumbnailUrl and ReadThumbnail in mod_index.h).
+// The loader lists an entry that breaks one with no picture; here it is refused.
+const THUMBNAIL_KEYS = ['thumbnail_url', 'thumbnail_sha256', 'thumbnail_size'];
+const MAX_THUMBNAIL_BYTES = 512 * 1024;
+
+// https://raw.githubusercontent.com/<owner>/<repo>/<40 lowercase hex commit>/images/thumbnail.png, as [owner, repo], or null.
+function thumbnailRepo(url) {
+  const start = 'https://raw.githubusercontent.com/';
+  if (typeof url !== 'string' || url.length > MAX_URL_LEN || !url.startsWith(start)) return null;
+  const p = url.slice(start.length).split('/');
+  return p.length === 5 && p.slice(0, 2).every(plainSegment) && /^[0-9a-f]{40}$/.test(p[2]) && p[3] === 'images' && p[4] === 'thumbnail.png'
+    ? [p[0], p[1]] : null;
+}
+
+// Whether page_url is https://github.com/<owner>/<repo>[/plain segments], case aside.
+function pageNames(pageUrl, [owner, repo]) {
+  const page = pageUrl.split('/'); // https: "" host owner repo ...
+  return page.length >= 5 && page[0] === 'https:' && page[1] === '' && sameName(page[2], 'github.com') &&
+    sameName(page[3], owner) && sameName(page[4], repo) && page.slice(5, page.at(-1) === '' ? -1 : undefined).every(plainSegment);
+}
+
+function checkThumbnail(e, who) {
+  const missing = THUMBNAIL_KEYS.filter((key) => e[key] === undefined);
+  if (missing.length === THUMBNAIL_KEYS.length) return;
+  need(missing.length === 0, `${who}: the thumbnail keys come all or none, missing ${missing.join(', ')}`);
+  const repo = thumbnailRepo(e.thumbnail_url);
+  need(repo, `${who}: thumbnail_url must be https://raw.githubusercontent.com/<owner>/<repo>/<40 lowercase hex commit>/images/thumbnail.png`);
+  need(pageNames(e.page_url, repo),
+    `${who}: thumbnail_url must belong to the GitHub repository page_url names; a nexusmods.com entry has no repository, so it has no thumbnail keys`);
+  need(typeof e.thumbnail_sha256 === 'string' && /^[0-9a-f]{64}$/.test(e.thumbnail_sha256),
+    `${who}: thumbnail_sha256 must be 64 lowercase hex characters`);
+  need(Number.isInteger(e.thumbnail_size) && e.thumbnail_size >= 1 && e.thumbnail_size <= MAX_THUMBNAIL_BYTES,
+    `${who}: thumbnail_size must be a whole number from 1 to ${MAX_THUMBNAIL_BYTES}`);
+}
+
 // Throws Refused with the reason, naming the entry, when the index is not fit to publish.
 export function checkIndex(bytes) {
   need(bytes.length > 0, 'the index is empty');
@@ -150,22 +187,23 @@ export function checkIndex(bytes) {
     need(e.server_only !== true || INSTALL_KEYS.every((key) => e[key] === undefined),
       `${who}: a server_only entry has no install keys`);
     checkInstall(e, who);
+    checkThumbnail(e, who);
   });
-  checkRawInstallKeys(raw, list);
+  checkRawKeys(raw, list);
 }
 
 // What JSON.parse hides: it keeps the last of a repeated key and drops a key
 // nested in another one, while the loader takes the first occurrence at any
-// depth. Each install key must appear once per entry that has it, and
-// download_size must be written as plain digits (the loader reads "2e6" as 2).
-function checkRawInstallKeys(raw, list) {
-  for (const key of INSTALL_KEYS) {
+// depth. Each install and thumbnail key must appear once per entry that has
+// it, and a size must be written as plain digits (the loader reads "2e6" as 2).
+function checkRawKeys(raw, list) {
+  for (const key of [...INSTALL_KEYS, ...THUMBNAIL_KEYS]) {
     const found = [...raw.matchAll(new RegExp(String.raw`(?<!\\)"${key}"\s*:\s*([^,}\]\s]*)`, 'g'))];
     need(found.length === list.filter((e) => e[key] !== undefined).length,
       `${key} must appear once, at the top of the entries that have it`);
-    if (key === 'download_size')
+    if (key === 'download_size' || key === 'thumbnail_size')
       for (const match of found)
-        need(/^[0-9]+$/.test(match[1]), 'download_size must be written as plain digits');
+        need(/^[0-9]+$/.test(match[1]), `${key} must be written as plain digits`);
   }
 }
 
