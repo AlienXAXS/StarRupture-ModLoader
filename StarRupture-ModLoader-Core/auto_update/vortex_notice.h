@@ -93,6 +93,16 @@ namespace VortexNotice
 		return text;
 	}
 
+	// The file a "files" entry records, relative to the deploy folder, as it is
+	// compared. relPath is under `target`, a folder in the deploy folder that is
+	// empty for the loader's own mod types.
+	inline std::string ListedPath(const std::string& entry)
+	{
+		const std::string target = JsonExtractString(entry, "target");
+		const std::string relPath = JsonExtractString(entry, "relPath");
+		return NormalizePath(target.empty() ? relPath : target + "\\" + relPath);
+	}
+
 	// True when `manifest` lists one of `paths` (UTF-8, relative to gameDir) with a
 	// modified time other than the one the file on disk has now.
 	inline bool ManifestShowsReplaced(const std::string& manifest, const std::wstring& gameDir,
@@ -100,11 +110,7 @@ namespace VortexNotice
 	{
 		for (const std::string& entry : JsonExtractObjectArray(manifest, "files"))
 		{
-			// relPath is under `target`, a folder in the deploy folder that is
-			// empty for the loader's own mod types.
-			const std::string target = JsonExtractString(entry, "target");
-			const std::string relPath = JsonExtractString(entry, "relPath");
-			const std::string listed = NormalizePath(target.empty() ? relPath : target + "\\" + relPath);
+			const std::string listed = ListedPath(entry);
 			for (const std::string& path : paths)
 			{
 				if (listed != NormalizePath(path))
@@ -136,7 +142,7 @@ namespace VortexNotice
 	{
 		for (const std::string& entry : JsonExtractObjectArray(manifest, "files"))
 		{
-			const std::string listed = NormalizePath(JsonExtractString(entry, "relPath"));
+			const std::string listed = ListedPath(entry);
 			for (const std::string& path : paths)
 				if (listed == NormalizePath(path))
 					return true;

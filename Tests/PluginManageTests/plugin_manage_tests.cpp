@@ -662,6 +662,14 @@ namespace
 		Check(listing() == Listing::NotListed, "vortex: not listed");
 		Write(L"vortex.deployment.json", manifest("modloader/plugins/COMPASS.PDB"));
 		Check(listing() == Listing::Listed, "vortex: listed, any case and slash, no file time needed");
+		Write(L"vortex.deployment.json",
+		      "{\"files\":[{\"relPath\":\"Compass.dll\",\"target\":\"ModLoader/Plugins\",\"time\":1}]}
+");
+		Check(listing() == Listing::Listed, "vortex: listed under the entry's target");
+		Write(L"vortex.deployment.json",
+		      "{\"files\":[{\"relPath\":\"ModLoader/Plugins/Compass.dll\",\"target\":\"Other\"}]}
+");
+		Check(listing() == Listing::NotListed, "vortex: another target is another file");
 		Write(L"vortex.deployment.a.json", "{ cut");
 		Check(listing() == Listing::Listed, "vortex: listed beside a bad manifest");
 		Write(L"vortex.deployment.json", manifest("dwmapi.dll"));
