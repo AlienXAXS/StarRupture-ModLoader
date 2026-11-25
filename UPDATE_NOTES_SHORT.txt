@@ -1,3 +1,4 @@
+Browse tab: turn plugins off, uninstall them, and restore them
 Plugin authors: plugins can now check each other, the server's address and the plugin catalog
 Vortex users: the mod loader can now remind you how to keep an update
 Plugin authors: the SDK's main branch now changes only with a mod loader release
