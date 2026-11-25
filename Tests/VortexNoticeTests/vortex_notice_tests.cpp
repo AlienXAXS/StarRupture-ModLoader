@@ -4,6 +4,7 @@
 #include "auto_update/vortex_notice.h"
 
 #include <cstdio>
+#include <cstdlib>
 #include <string>
 #include <vector>
 
@@ -60,11 +61,12 @@ namespace
 		DeleteFileW((g_dir + L"\\" + relPath).c_str());
 	}
 
-	// One files[] entry as Vortex writes it; relPath is given JSON-escaped.
-	std::string Entry(const std::string& relPath, long long time)
+	// One files[] entry as Vortex writes it; relPath and target are given
+	// JSON-escaped.
+	std::string Entry(const std::string& relPath, long long time, const std::string& target = "")
 	{
-		return "{\"relPath\":\"" + relPath + "\",\"source\":\"Some Mod-1-0\",\"target\":\"\",\"time\":" +
-			std::to_string(time) + "}";
+		return "{\"relPath\":\"" + relPath + "\",\"source\":\"Some Mod-1-0\",\"target\":\"" + target +
+			"\",\"time\":" + std::to_string(time) + "}";
 	}
 
 	std::string Manifest(const std::string& entries)
@@ -182,6 +184,41 @@ namespace
 		Check(Replaced({ kPlugin }), "a byte order mark");
 	}
 
+	void TestTarget()
+	{
+		Reset();
+		Write(kLoaderManifest, Manifest(Entry("Plugins\\\\Compass.dll", kDeployedMs, "ModLoader")));
+		Check(Replaced({ kPlugin }), "a target is the folder relPath is under");
+
+		Write(kLoaderManifest, Manifest(Entry("ModLoader\\\\Plugins\\\\Compass.dll", kDeployedMs, "Other")));
+		Check(!Replaced({ kPlugin }), "the same relPath under another target is another file");
+	}
+
+	void TestNonAsciiName()
+	{
+		Reset();
+		const wchar_t* onDisk = L"ModLoader\\Plugins\\Kompa\u00DF.dll";
+		Write(onDisk, "new plugin");
+		SetModified(onDisk, kUpdatedMs);
+		Write(kLoaderManifest, Manifest(Entry("ModLoader\\\\Plugins\\\\Kompa\xC3\x9F.dll", kDeployedMs)));
+		Check(Replaced({ "ModLoader\\Plugins\\Kompa\xC3\x9F.dll" }), "a UTF-8 file name finds the file on disk");
+		Delete(onDisk);
+	}
+
+	// A link's own time is not the time of the file behind it. A junction is the
+	// reparse point that can be made without extra rights.
+	void TestReparsePoint()
+	{
+		Reset();
+		const std::wstring link = g_dir + L"\\ModLoader\\Linked";
+		const std::wstring command = L"mklink /J \"" + link + L"\" \"" + g_dir + L"\\ModLoader\\Plugins\" >nul";
+		Check(_wsystem(command.c_str()) == 0, "fixture junction made");
+		Check(VortexNotice::ModifiedTimeMs(link) == -1, "a reparse point has no modified time to compare");
+		Write(kLoaderManifest, Manifest(Entry("ModLoader\\\\Linked", kDeployedMs)));
+		Check(!Replaced({ "ModLoader\\Linked" }), "a listed link is not reported as replaced");
+		RemoveDirectoryW(link.c_str());
+	}
+
 	void TestBadManifests()
 	{
 		Reset();
@@ -227,6 +264,9 @@ int main()
 	TestPluginsOnly();
 	TestModifiedTime();
 	TestPathVariants();
+	TestTarget();
+	TestNonAsciiName();
+	TestReparsePoint();
 	TestBadManifests();
 
 	Reset();

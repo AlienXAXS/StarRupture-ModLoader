@@ -10,6 +10,7 @@
 // as "not managed". Header-only: the loader and the updater exe both use it.
 
 #include "json_extract.h"
+#include "../utils/engine_call_utils.h"
 
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -23,8 +24,9 @@
 namespace VortexNotice
 {
 	inline constexpr const char* kMessage =
-		"Vortex manages these files. Next time Vortex asks about changed files, "
-		"keep the default (Use newer file). Revert would undo this update.";
+		"Vortex manages these files. When Vortex shows External Changes, choose "
+		"\"Save change (use deployed file)\" for each updated mod, then Confirm. "
+		"Revert would undo this update.";
 
 	// A manifest lists every file of every mod deployed to the folder, so it can
 	// be large; one past this is not read.
@@ -43,11 +45,13 @@ namespace VortexNotice
 	}
 
 	// A file's modified time in milliseconds since 1970, or -1 when it cannot
-	// be read.
+	// be read. Also -1 for a link (a reparse point): the time read would be the
+	// link's own. A file an update wrote is a regular file.
 	inline long long ModifiedTimeMs(const std::wstring& path)
 	{
 		WIN32_FILE_ATTRIBUTE_DATA data{};
-		if (!GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &data))
+		if (!GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &data) ||
+		    (data.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT))
 			return -1;
 		const long long ticks =
 			(static_cast<long long>(data.ftLastWriteTime.dwHighDateTime) << 32) |
@@ -88,14 +92,18 @@ namespace VortexNotice
 		return text;
 	}
 
-	// True when `manifest` lists one of `paths` (relative to gameDir) with a
+	// True when `manifest` lists one of `paths` (UTF-8, relative to gameDir) with a
 	// modified time other than the one the file on disk has now.
 	inline bool ManifestShowsReplaced(const std::string& manifest, const std::wstring& gameDir,
 	                                  const std::vector<std::string>& paths)
 	{
 		for (const std::string& entry : JsonExtractObjectArray(manifest, "files"))
 		{
-			const std::string listed = NormalizePath(JsonExtractString(entry, "relPath"));
+			// relPath is under `target`, a folder in the deploy folder that is
+			// empty for the loader's own mod types.
+			const std::string target = JsonExtractString(entry, "target");
+			const std::string relPath = JsonExtractString(entry, "relPath");
+			const std::string listed = NormalizePath(target.empty() ? relPath : target + "\\" + relPath);
 			for (const std::string& path : paths)
 			{
 				if (listed != NormalizePath(path))
@@ -107,8 +115,7 @@ namespace VortexNotice
 					continue;
 				const long long recorded = std::strtoll(entry.c_str() + value, nullptr, 10);
 
-				// Our file names are ASCII, so widening byte by byte is exact.
-				const long long onDisk = ModifiedTimeMs(gameDir + L"\\" + std::wstring(path.begin(), path.end()));
+				const long long onDisk = ModifiedTimeMs(gameDir + L"\\" + EngineCall::Widen(path));
 				if (onDisk >= 0 && std::llabs(onDisk - recorded) > kTimeToleranceMs)
 					return true;
 			}
