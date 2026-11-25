@@ -2469,6 +2469,8 @@ namespace PluginManager
 		if (!gameDir.empty() && gameDir.back() == L'\\') gameDir.pop_back();
 		const std::wstring identityIni = GetModLoaderDirPath(PluginManage::kIdentityFile);
 
+		const VortexNotice::Deployment vortex = VortexNotice::ReadDeployment(gameDir);
+
 		std::vector<std::pair<std::wstring, ManagedPlugin>> files;
 		const auto entry = [&](const std::wstring& path) -> ManagedPlugin&
 		{
@@ -2495,7 +2497,7 @@ namespace PluginManager
 			m.facts.inPlugins = true;
 
 			const std::string stem = "ModLoader\\Plugins\\" + Narrow(PluginManage::Stem(BaseFileName(path)), CP_UTF8);
-			const VortexNotice::Listing listing = VortexNotice::ListedByVortex(gameDir,
+			const VortexNotice::Listing listing = vortex.Lists(
 				{ stem + ".dll", stem + ".pdb", stem + ".json" });
 			m.facts.vortexListed = listing == VortexNotice::Listing::Listed;
 			m.vortexUnsure = listing == VortexNotice::Listing::Unsure;
@@ -2686,7 +2688,7 @@ namespace PluginManager
 			std::wstring gameDir = GetExeDir();
 			if (!gameDir.empty() && gameDir.back() == L'\\') gameDir.pop_back();
 			const std::string stem = "ModLoader\\Plugins\\" + Narrow(PluginManage::Stem(fileName), CP_UTF8);
-			if (VortexNotice::ListedByVortex(gameDir, { stem + ".dll", stem + ".pdb", stem + ".json" })
+			if (VortexNotice::ReadDeployment(gameDir).Lists({ stem + ".dll", stem + ".pdb", stem + ".json" })
 				== VortexNotice::Listing::Listed)
 				return { ManageResult::Vortex, "Vortex installed this mod. Uninstall it in Vortex." };
 

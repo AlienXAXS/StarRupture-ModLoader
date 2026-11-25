@@ -652,7 +652,7 @@ namespace
 		using VortexNotice::Listing;
 		Fresh(L"vortex");
 		const std::vector<std::string> paths = { "ModLoader\\Plugins\\Compass.dll", "ModLoader\\Plugins\\Compass.pdb" };
-		const auto listing = [&paths] { return VortexNotice::ListedByVortex(g_dir, paths); };
+		const auto listing = [&paths] { return VortexNotice::ReadDeployment(g_dir).Lists(paths); };
 		const auto manifest = [](const std::string& relPath)
 		{
 			return "{\"files\":[{\"relPath\":\"" + relPath + "\",\"time\":1}]}\n";
