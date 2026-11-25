@@ -94,6 +94,18 @@ test('requires is optional, and when present is a short list of short ids, strin
   no(['  ']);
 });
 
+test('server_only is optional, and when present is true or false', () => {
+  const ok = (server_only) => assert.equal(outcome(() => build([entry({ server_only })])), 'ok', JSON.stringify(server_only));
+  const no = (server_only) => assert.match(outcome(() => build([entry({ server_only })])), /^refused: .*server_only must be true or false/, JSON.stringify(server_only));
+  ok(true);
+  ok(false);
+  ok(undefined);
+  no('true');
+  no(1);
+  no(null);
+  no([true]);
+});
+
 test('the index in the repository builds, and the command line writes the file', () => {
   const dir = mkdtempSync(join(tmpdir(), 'build-mod-index-'));
   const out = join(dir, 'mod-index.txt');

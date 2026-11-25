@@ -378,6 +378,9 @@ namespace
 		// every entry but the two server-only ones installs, as the loader reads it
 		for (const Entry& e : r.entries)
 			Check(e.install.dllFile.empty() == (e.id == "serverutility" || e.id == "keepticking"), ("sample: install fields on " + e.id).c_str());
+		// and only those two are marked server_only
+		for (const Entry& e : r.entries)
+			Check(e.serverOnly == (e.id == "serverutility" || e.id == "keepticking"), ("sample: server_only on " + e.id).c_str());
 	}
 
 	void RequiresTests()
