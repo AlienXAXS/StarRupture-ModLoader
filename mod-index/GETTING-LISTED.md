@@ -101,8 +101,8 @@ A card can show a picture of your plugin.
 3. Work out the SHA-256 and the size as in step 2:
 
    ```
-   certutil -hashfile images	humbnail.png SHA256
-   dir images	humbnail.png
+   certutil -hashfile images\thumbnail.png SHA256
+   dir images\thumbnail.png
    ```
 
 4. Add the three fields to your entry, as in the example above: `thumbnail_url`, `thumbnail_sha256` and
