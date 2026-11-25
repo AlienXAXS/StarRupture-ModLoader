@@ -17,7 +17,6 @@ namespace ModInstall
 		constexpr const char kFailed[]         = "The download failed. Check your connection and try again.";
 		constexpr const char kWrongFile[]      = "The downloaded file does not match the mod list, so nothing was installed.";
 		constexpr const char kWriteFailed[]    = "The mod's files could not be written. Nothing was installed.";
-		constexpr const char kVortex[]         = "Vortex manages this mod. Install it in Vortex.";
 		constexpr const char kCancelled[]      = "The install was stopped.";
 		constexpr const char kTempSuffix[]     = ".install.tmp";
 
@@ -176,7 +175,7 @@ namespace ModInstall
 		const std::string stem = "ModLoader\\Plugins\\" + dll.substr(0, dll.size() - 4);
 		if (VortexNotice::ReadDeployment(request.gameDir).Lists({ stem + ".dll", stem + ".pdb", stem + ".json" })
 			== VortexNotice::Listing::Listed)
-			return kVortex;
+			return kVortexManaged;
 
 		if (Exists(request.pluginsDir + L"\\" + Wide(dll)))
 			return dll + " is already in ModLoader\\Plugins, so nothing was installed.";

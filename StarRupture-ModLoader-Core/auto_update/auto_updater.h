@@ -84,6 +84,10 @@ bool AutoUpdateEnabled();
 // name ("MyPlugin.dll").
 void NoteInstalledPluginVersion(const wchar_t* dllFileName, const char* version);
 
+// Replaces the stored version, whatever it was. For a DLL the player just
+// installed: an older record left by an uninstalled copy must not outlive it.
+void SetInstalledPluginVersion(const wchar_t* dllFileName, const char* version);
+
 namespace ModLoaderLogger
 {
 	// Fetch the remote manifest, compare build_tag against update_state.ini,

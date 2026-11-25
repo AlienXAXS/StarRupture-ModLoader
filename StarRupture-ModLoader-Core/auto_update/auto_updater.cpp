@@ -564,6 +564,18 @@ void NoteInstalledPluginVersion(const wchar_t* dllFileName, const char* version)
         WritePluginVersion(stateIniPath, key, version);
 }
 
+void SetInstalledPluginVersion(const wchar_t* dllFileName, const char* version)
+{
+    if (!dllFileName || !version)
+        return;
+
+    wchar_t stateIniPath[MAX_PATH]{};
+    GetUpdateStateIniPath(stateIniPath, MAX_PATH);
+    char key[256]{};
+    WideCharToMultiByte(CP_UTF8, 0, dllFileName, -1, key, sizeof(key), nullptr, nullptr);
+    WritePluginVersion(stateIniPath, key, version);
+}
+
 // Fetch and process a single per-plugin manifest.
 // Downloads the plugin DLL if the remote version is newer than stored.
 static void ProcessPluginSidecar(const PluginSidecar& sc,

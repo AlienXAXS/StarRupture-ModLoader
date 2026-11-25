@@ -2363,14 +2363,6 @@ namespace UI::ModLoaderWindow
         return card.entry ? card.entry->name : card.plugin->fileName;
     }
 
-    // Whether an index entry describes this installed file: by the name it
-    // reports, or, when it never reported one, by its file name.
-    static bool EntryMatches(const ModIndex::Entry& entry, const PluginManager::ManagedPlugin& p)
-    {
-        const std::string name = !p.name.empty() ? p.name : p.fileName.substr(0, p.fileName.rfind('.'));
-        return ModIndex::IsInstalled(entry, { name });
-    }
-
     // Every plugin the loader knows and every entry in the index: first the
     // installed ones the index does not list, then the index in its own order.
     static std::vector<BrowseCard> BuildBrowseCards(const std::vector<ModIndex::Entry>& entries,
@@ -2391,7 +2383,7 @@ namespace UI::ModLoaderWindow
         {
             bool listed = false;
             for (const ModIndex::Entry& e : entries)
-                listed = listed || EntryMatches(e, *p);
+                listed = listed || PluginManager::ListingMatches(e, *p);
             if (!listed)
                 cards.push_back({ nullptr, p, p->facts });
         }
@@ -2403,7 +2395,7 @@ namespace UI::ModLoaderWindow
             bool any = false;
             for (size_t i = 0; i < known.size(); ++i)
             {
-                if (placed[i] || !EntryMatches(e, *known[i]))
+                if (placed[i] || !PluginManager::ListingMatches(e, *known[i]))
                     continue;
                 placed[i] = true;
                 any = true;
@@ -2458,6 +2450,14 @@ namespace UI::ModLoaderWindow
     {
         using Op     = PluginManager::ManageOp;
         using Result = PluginManager::ManageResult;
+        if (p.lastOp == Op::Install)
+        {
+            if (p.lastResult == Result::None || p.lastResult == Result::Done)
+                return {};
+            if (p.lastResult == Result::AfterRestart)
+                return "Installed. It will be on after you restart the game.";
+            return p.message;
+        }
         const std::string verb = p.lastOp == Op::Disable   ? "disable"
                                : p.lastOp == Op::Enable    ? "enable"
                                : p.lastOp == Op::Uninstall ? "uninstall"

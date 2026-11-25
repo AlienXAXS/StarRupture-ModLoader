@@ -14,6 +14,7 @@
 #include "../auto_update/mod_index_fetcher.h"
 #ifdef MODLOADER_CLIENT_BUILD
 #include "../auto_update/readme_fetcher.h"
+#include "../auto_update/mod_install.h"
 #include "../UI/readme_view.h"
 #endif
 
@@ -71,6 +72,11 @@ void ShutdownAll()
     // Before the plugins go: a console command dispatched from here on would be
     // operating on a plugin list that is being torn down underneath it.
     ServerConsole::Shutdown();
+
+#ifdef MODLOADER_CLIENT_BUILD
+    // An install still running writes and loads nothing once this returns.
+    ModInstall::Instance().Shutdown(2000);
+#endif
 
     PluginManager::UnloadAllPlugins();
     NetworkChannel::Shutdown();

@@ -22,6 +22,7 @@ namespace ModInstall
 {
 	constexpr unsigned kDeadlineMs   = 120000;   // the whole download, every hop
 	constexpr int      kMaxRedirects = 3;
+	constexpr char     kVortexManaged[] = "Vortex manages this mod. Install it in Vortex.";
 
 	// One GET that follows no redirect. status 0: no answer. body: a 200's, whole.
 	struct Hop
