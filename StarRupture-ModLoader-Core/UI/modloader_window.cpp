@@ -2492,7 +2492,7 @@ namespace UI::ModLoaderWindow
         case Result::Failed:
             break;
         }
-        return "Couldn't " + verb + " " + name + ". See ModLoader.log.";
+        return "Couldn't " + verb + " " + name + (p.message.empty() ? ". See ModLoader.log." : ".");
     }
 
     static void DrawBrowseState(const PluginManage::Card& state, const BrowseCard& card)
@@ -2658,7 +2658,11 @@ namespace UI::ModLoaderWindow
                 ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.5f, 0.1f, 1.0f));
                 ImGui::TextWrapped("%s", said.c_str());
                 ImGui::PopStyleColor();
-                if (!card.plugin->message.empty())
+                // The reason, where the line above does not already give it. For
+                // the other results the loader's message says the same thing.
+                const bool hasReason = card.plugin->lastResult == PluginManager::ManageResult::AfterRestart ||
+                                       card.plugin->lastResult == PluginManager::ManageResult::Failed;
+                if (hasReason && !card.plugin->message.empty() && card.plugin->message != said)
                     ImGui::TextWrapped("%s", card.plugin->message.c_str());
             }
         }
