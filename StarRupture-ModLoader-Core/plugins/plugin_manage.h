@@ -248,6 +248,7 @@ namespace PluginManage
 		std::wstring dllName;            // as it was in Plugins
 		std::wstring name;               // the plugin's own name and version, when known
 		std::wstring version;
+		bool disabled = false;           // it was disabled when it was uninstalled
 		std::vector<std::wstring> files; // those in the backup, the DLL first
 	};
 
@@ -353,7 +354,7 @@ namespace PluginManage
 		}
 
 		inline bool WriteRecord(const std::wstring& dir, const std::vector<std::wstring>& files,
-		                        const std::wstring& name, const std::wstring& version)
+		                        const std::wstring& name, const std::wstring& version, bool disabled)
 		{
 			const std::wstring path = dir + L"\\" + kRecordFile;
 
@@ -374,7 +375,8 @@ namespace PluginManage
 			{
 				return WritePrivateProfileStringW(kRecordSection, key, value.c_str(), path.c_str()) != 0;
 			};
-			bool ok = put(L"Name", OneLine(name)) && put(L"Version", OneLine(version));
+			bool ok = put(L"Name", OneLine(name)) && put(L"Version", OneLine(version)) &&
+				put(L"Disabled", disabled ? L"1" : L"0");
 			for (const std::wstring& entry : files)
 				for (size_t i = 0; ok && i < 3; ++i)
 					if (SameName(entry, Stem(entry) + kExtensions[i]))
@@ -408,10 +410,12 @@ namespace PluginManage
 
 	// Move the plugin's X.dll, X.pdb and X.json (those that exist) to a new
 	// folder Removed\X\<stamp>, the DLL first, with a removed.ini beside them.
-	// Nothing else is touched. `name` and `version` are kept for the card.
+	// Nothing else is touched. `name` and `version` are kept for the card, and
+	// `disabled` so that a restore can leave the plugin as it was.
 	inline Outcome Uninstall(const Folders& folders, const std::wstring& dllName,
 	                         const std::wstring& name, const std::wstring& version,
-	                         const std::wstring& stamp, const MoveFn& move = MoveOnSameVolume)
+	                         const std::wstring& stamp, const MoveFn& move = MoveOnSameVolume,
+	                         bool disabled = false)
 	{
 		Outcome out;
 		const auto refuse = [&out](FileResult result, const std::wstring& what)
@@ -470,7 +474,7 @@ namespace PluginManage
 
 		// The record goes first, so a process that dies during the moves leaves
 		// a backup that can be restored.
-		if (!detail::WriteRecord(backupDir, files, name, version))
+		if (!detail::WriteRecord(backupDir, files, name, version, disabled))
 		{
 			out.error = GetLastError();
 			discard();
@@ -538,6 +542,7 @@ namespace PluginManage
 		}
 		found.name = detail::ReadIni(record, kRecordSection, L"Name");
 		found.version = detail::ReadIni(record, kRecordSection, L"Version");
+		found.disabled = detail::ReadIni(record, kRecordSection, L"Disabled") == L"1";
 		backup = std::move(found);
 		return FileResult::Ok;
 	}

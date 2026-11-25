@@ -29,6 +29,7 @@
 #include "preload/preload_manager.h"
 #ifdef MODLOADER_CLIENT_BUILD
 #include "auto_update/vortex_notice.h"
+#include "auto_update/plugin_dll_version.h"
 #include <algorithm>
 #include <map>
 #include <set>
@@ -447,6 +448,9 @@ namespace PluginManager
 	static const wchar_t* BaseFileName(const std::wstring& path);
 	static int ScanPlugins(std::vector<ScanResult>* outResults, const std::wstring* only);
 	static bool HasUpdateSidecar(const std::wstring& dllPath);
+#ifdef MODLOADER_CLIENT_BUILD
+	static int LoadReturnedCopies(std::vector<ScanResult>* outResults);
+#endif
 
 #ifdef MODLOADER_CLIENT_BUILD
 	// Is this DLL on modloader.ini [Plugins] Disabled? Reads the file, so only
@@ -465,9 +469,10 @@ namespace PluginManager
 		return text;
 	}
 
-	// Paths uninstalled this session, and DLLs that turned out to be no plugin.
-	// Both hold LowerCase paths and are guarded by g_pluginLock.
-	static std::set<std::wstring> s_uninstalledPaths;
+	// Paths uninstalled this session, each with the backup that holds the code
+	// that may still be mapped from it, and DLLs that turned out to be no plugin.
+	// Both are keyed by LowerCase path and guarded by g_pluginLock.
+	static std::map<std::wstring, std::wstring> s_uninstalledPaths;
 	static std::set<std::wstring> s_notPlugins;
 
 	// A module uninstalled from this path is still mapped: LoadLibrary would
@@ -2377,10 +2382,14 @@ namespace PluginManager
 
 	int ScanForNewPlugins(std::vector<ScanResult>* outResults)
 	{
-		const int initedCount = ScanPlugins(outResults, nullptr);
 #ifdef MODLOADER_CLIENT_BUILD
+		// First, so that the scan below does not list one twice.
+		const int returned = g_managerInitialized ? LoadReturnedCopies(outResults) : 0;
+		const int initedCount = returned + ScanPlugins(outResults, nullptr);
 		if (g_managerInitialized)
 			RefreshManagedFiles();
+#else
+		const int initedCount = ScanPlugins(outResults, nullptr);
 #endif
 		return initedCount;
 	}
@@ -2631,6 +2640,86 @@ namespace PluginManager
 		return { ManageResult::Failed, results.front().action };
 	}
 
+	// A record stays after an uninstall, so a scan takes its path as known. A
+	// DLL put back there since is loaded here.
+	static int LoadReturnedCopies(std::vector<ScanResult>* outResults)
+	{
+		std::vector<std::wstring> paths;
+		EnterCriticalSection(&g_pluginLock);
+		for (const auto& rec : g_loadedPlugins)
+			if (rec->isUninstalled && !rec->isUnloading)
+				paths.push_back(rec->fileName);
+		LeaveCriticalSection(&g_pluginLock);
+
+		int liveCount = 0;
+		for (const std::wstring& path : paths)
+		{
+			if (GetFileAttributesW(path.c_str()) == INVALID_FILE_ATTRIBUTES)
+				continue;
+			const std::wstring file = BaseFileName(path);
+			ScanResult r;
+			r.fileName = Narrow(file);
+			// The old code is still mapped, whether or not it is still running.
+			if (IsStale(path) || IsStillMapped(file))
+			{
+				r.status = ScanStatus::NeedsRestart;
+				r.action = std::string("Not loaded: ") + kStaleWhy + ".";
+			}
+			else
+			{
+				const ChangeOutcome outcome = LoadNow(file);
+				r.status = outcome.result == ManageResult::Done ? ScanStatus::Live
+					: outcome.result == ManageResult::AfterRestart ? ScanStatus::NeedsRestart
+					: ScanStatus::Failed;
+				r.action = outcome.message;
+				if (r.status == ScanStatus::Live)
+					++liveCount;
+			}
+			EnterCriticalSection(&g_pluginLock);
+			const int index = IndexByFile(file);
+			r.name = index >= 0 ? g_loadedPlugins[index]->cachedName : r.fileName;
+			LeaveCriticalSection(&g_pluginLock);
+			if (outResults)
+				outResults->push_back(std::move(r));
+		}
+		return liveCount;
+	}
+
+	// The other DLL in Plugins that is already the plugin called `name`, or
+	// empty. A restore beside it would leave two copies to load at the next start.
+	static std::wstring OtherCopyOf(const std::wstring& name, const std::wstring& fileName)
+	{
+		std::vector<std::wstring> paths;
+		if (name.empty() || !CollectPluginDllPaths(paths))
+			return {};
+
+		std::vector<std::wstring> disabled;
+		PluginManage::ReadDisabledList(GetModLoaderDirPath(L"modloader.ini"), disabled);
+		const std::wstring identityIni = GetModLoaderDirPath(PluginManage::kIdentityFile);
+		for (const std::wstring& path : paths)
+		{
+			const std::wstring file = BaseFileName(path);
+			if (PluginManage::SameName(file, fileName))
+				continue;
+
+			std::wstring other;
+			EnterCriticalSection(&g_pluginLock);
+			const int index = IndexByFile(file);
+			if (index >= 0 && !g_loadedPlugins[index]->isUninstalled)
+				other = Widen(g_loadedPlugins[index]->cachedName, CP_UTF8);
+			LeaveCriticalSection(&g_pluginLock);
+			if (other.empty())
+				other = PluginManage::ReadIdentity(identityIni, file).name;
+			// A DLL put there since the last start. None of a disabled one is read.
+			if (other.empty() && !PluginManage::ListHas(disabled, file))
+				other = Widen(PluginDllVersion::Read(path.c_str(), &PluginInfo::name), CP_UTF8);
+
+			if (PluginManage::SameName(other, name))
+				return file;
+		}
+		return {};
+	}
+
 	static ChangeOutcome ApplyChange(ManageOp op, const std::wstring& fileName)
 	{
 		if (!g_startupComplete)
@@ -2697,10 +2786,15 @@ namespace PluginManager
 				who = PluginManage::ReadIdentity(GetModLoaderDirPath(PluginManage::kIdentityFile), fileName);
 
 			// The files move first, so a failed move leaves the plugin as it was.
+			std::vector<std::wstring> disabled;
+			PluginManage::ReadDisabledList(ini, disabled);
+			const std::wstring path = folders.plugins + L"\\" + fileName;
+			const bool alreadyStale = IsStale(path);
 			SYSTEMTIME now{};
-			GetLocalTime(&now);
+			GetSystemTime(&now);
 			const PluginManage::Outcome moved = PluginManage::Uninstall(folders, fileName, who.name, who.version,
-				PluginManage::BackupStamp(now));
+				PluginManage::BackupStamp(now), PluginManage::MoveOnSameVolume,
+				PluginManage::ListHas(disabled, fileName));
 			if (moved.result != PluginManage::FileResult::Ok)
 			{
 				ModLoaderLogger::LogWarn(L"Uninstall of %s failed on %s (result %d, error %lu)", fileName.c_str(),
@@ -2708,11 +2802,10 @@ namespace PluginManager
 				if (moved.result == PluginManage::FileResult::RollbackFailed)
 				{
 					// The DLL may be the file that stayed moved.
-					const std::wstring path = folders.plugins + L"\\" + fileName;
 					if (GetFileAttributesW(path.c_str()) == INVALID_FILE_ATTRIBUTES)
 					{
 						EnterCriticalSection(&g_pluginLock);
-						s_uninstalledPaths.insert(LowerCase(path));
+						s_uninstalledPaths.emplace(LowerCase(path), moved.backupDir);
 						LeaveCriticalSection(&g_pluginLock);
 					}
 					return { ManageResult::RollbackFailed,
@@ -2720,12 +2813,15 @@ namespace PluginManager
 				}
 				return { ManageResult::MoveFailed, "Couldn't uninstall it. Nothing was changed." };
 			}
+			// A copy installed later starts enabled. The backup remembers the rest,
+			// and a restore sets the list again whether or not this write works.
 			PluginManage::SaveDisabled(ini, fileName, false);
 
 			EnterCriticalSection(&g_pluginLock);
 			// A module still mapped under this path must not be handed back
-			// for a new file put there.
-			s_uninstalledPaths.insert(LowerCase(folders.plugins + L"\\" + fileName));
+			// for a new file put there. An older one keeps its entry.
+			if (!alreadyStale)
+				s_uninstalledPaths[LowerCase(path)] = moved.backupDir;
 			if (rec)
 			{
 				SaveIdentityOf(*rec);
@@ -2743,7 +2839,25 @@ namespace PluginManager
 		}
 		case ManageOp::Restore:
 		{
+			PluginManage::Backup backup;
+			const bool found = PluginManage::FindNewestBackup(folders, fileName, backup) == PluginManage::FileResult::Ok;
+			if (const std::wstring other = found ? OtherCopyOf(backup.name, fileName) : std::wstring(); !other.empty())
+				return { ManageResult::AlreadyInstalled, "A copy is already installed as " + Narrow(other, CP_UTF8) +
+					", so the old one stays in ModLoader\\Removed." };
+
+			// The plugin comes back as it was. Set first: a plugin that was
+			// disabled must never be in Plugins without its entry.
+			std::vector<std::wstring> disabled;
+			PluginManage::ReadDisabledList(ini, disabled);
+			const bool wasListed = PluginManage::ListHas(disabled, fileName);
+			const bool relist = found && wasListed != backup.disabled;
+			if (relist && PluginManage::SaveDisabled(ini, fileName, backup.disabled) != PluginManage::SaveResult::Ok)
+				return { ManageResult::SaveFailed, "Couldn't save the change. Nothing was changed." };
+
 			const PluginManage::Outcome moved = PluginManage::Restore(folders, fileName);
+			if (relist && moved.result != PluginManage::FileResult::Ok &&
+			    moved.result != PluginManage::FileResult::RollbackFailed)
+				PluginManage::SaveDisabled(ini, fileName, wasListed);
 			if (moved.result == PluginManage::FileResult::AlreadyInstalled)
 				return { ManageResult::AlreadyInstalled,
 					"A copy is already installed, so the old one stays in ModLoader\\Removed." };
@@ -2752,7 +2866,28 @@ namespace PluginManager
 					"Restore only partly worked. Check ModLoader\\Plugins and ModLoader\\Removed." };
 			if (moved.result != PluginManage::FileResult::Ok)
 				return { ManageResult::MoveFailed, "Couldn't restore it. Nothing was changed." };
-			return LoadNow(fileName);
+
+			const std::wstring path = folders.plugins + L"\\" + fileName;
+			EnterCriticalSection(&g_pluginLock);
+			// The file whose code may still be mapped is back: no longer stale.
+			const auto stale = s_uninstalledPaths.find(LowerCase(path));
+			if (stale != s_uninstalledPaths.end() && stale->second == moved.backupDir)
+				s_uninstalledPaths.erase(stale);
+			const int restored = IndexByFile(fileName);
+			if (restored >= 0)
+			{
+				g_loadedPlugins[restored]->isUninstalled = false;
+				g_loadedPlugins[restored]->isDisabled = backup.disabled;
+				++g_pluginGeneration;
+			}
+			LeaveCriticalSection(&g_pluginLock);
+
+			if (!backup.disabled)
+				return LoadNow(fileName);
+			// Lists it as disabled. None of its code is loaded.
+			if (restored < 0)
+				ScanPlugins(nullptr, &path);
+			return {};
 		}
 		}
 		return { ManageResult::Failed };
