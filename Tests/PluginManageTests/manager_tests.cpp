@@ -491,9 +491,11 @@ namespace
 
 		// A plugin that is already there.
 		const ModIndex::Entry same = InstallEntry("A", "9.9.9", bytes);
+		const std::string aBefore = Bytes(PluginsDir() + L"\A.dll");
 		card = InstallAndWait(same, { same }, true, installer);
-		Expect(card.lastResult == ManageResult::Failed && !card.message.empty() && g_hopCalls == 0,
-			"an existing A.dll is refused before any download");
+		Expect(card.lastResult == ManageResult::Failed && card.message.find("A.dll is already in") != std::string::npos &&
+			g_hopCalls == 0 && Bytes(PluginsDir() + L"\A.dll") == aBefore && !aBefore.empty(),
+			"an existing A.dll is refused before any download and is left as it was");
 		ExpectCard("A.dll", CardState::Running, "an existing A.dll is refused");
 
 		// Requirements.
@@ -507,7 +509,7 @@ namespace
 		needs.requiredIds = { "B" };
 		const ModIndex::Entry b = InstallEntry("B", "1.0.0", bytes);
 		card = InstallAndWait(needs, { needs, b }, true, installer);
-		Expect(card.lastResult == ManageResult::Failed && card.message.find("B") != std::string::npos &&
+		Expect(card.lastResult == ManageResult::Failed && card.message.find("Enable B first") != std::string::npos &&
 			g_hopCalls == 0 && !Installed(L"Needs.dll"), "a disabled requirement is refused");
 		Ask(ManageOp::Enable, "B.dll", ManageResult::Done, "enable B");
 
@@ -547,6 +549,40 @@ namespace
 		card = InstallAndWait(stuck, { stuck }, false, installer);
 		Expect(card.lastResult == ManageResult::AfterRestart && !card.listSigned, "install StuckC: waits for a restart");
 		Expect(Installed(L"StuckC.dll") && Count("attach StuckC") == attaches, "install StuckC: files in, code not loaded twice");
+
+		// One install at a time: while a slow one runs, another entry is refused
+		// and never reaches the network. The slow one ends on a wrong hash.
+		{
+			g_hopCalls = 0;
+			std::atomic<bool> release{ false };
+			ModInstall::Installer slow([&](const std::string&, size_t, unsigned, const std::atomic<bool>&)
+			{
+				++g_hopCalls;
+				while (!release)
+					Sleep(2);
+				return g_answer;
+			});
+			ModIndex::Entry slowEntry = InstallEntry("SlowOne", "1.0.0", bytes);
+			slowEntry.install.sha256 = Sha256::OfBytes("something else");
+			const ModIndex::Entry other = InstallEntry("Other", "1.0.0", bytes);
+			RequestPluginInstall(slowEntry, { slowEntry, other }, true, slow);
+			Expect(GetManageSnapshot().installing && Card("SlowOne.dll").facts.working, "a slow install is running");
+			RequestPluginInstall(other, { slowEntry, other }, true, slow);
+			const ManagedPlugin refused = Card("Other.dll");
+			Expect(refused.lastResult == ManageResult::Failed && !refused.facts.working &&
+				refused.message.find("Another mod is installing") != std::string::npos && !Installed(L"Other.dll"),
+				"a second install is refused while one runs");
+			Expect(GetManageSnapshot().installing && Card("SlowOne.dll").facts.working,
+				"and the first is still running");
+			release = true;
+			for (int i = 0; i < 500 && Card("SlowOne.dll").facts.working; ++i)
+				Sleep(20);
+			Expect(!Card("SlowOne.dll").facts.working && !GetManageSnapshot().installing &&
+				Card("SlowOne.dll").lastResult == ManageResult::Failed && g_hopCalls == 1 &&
+				Leftovers(L"SlowOne") == 0 && Leftovers(L"Other") == 0,
+				"the slow install ends, and the refused one never reached the network");
+			slow.Shutdown(2000);
+		}
 		installer.Shutdown(2000);
 	}
 

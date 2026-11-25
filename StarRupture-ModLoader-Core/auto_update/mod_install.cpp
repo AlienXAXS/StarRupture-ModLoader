@@ -19,6 +19,8 @@ namespace ModInstall
 		constexpr const char kWriteFailed[]    = "The mod's files could not be written. Nothing was installed.";
 		constexpr const char kCancelled[]      = "The install was stopped.";
 		constexpr const char kTempSuffix[]     = ".install.tmp";
+		constexpr int        kMoveRetries      = 3;
+		constexpr DWORD      kMoveRetryMs      = 200;
 
 		// The two hosts GitHub serves release assets from.
 		const char* const kDownloadHosts[] = { "release-assets.githubusercontent.com", "objects.githubusercontent.com" };
@@ -49,6 +51,42 @@ namespace ModInstall
 		bool Exists(const std::wstring& path) { return GetFileAttributesW(path.c_str()) != INVALID_FILE_ATTRIBUTES; }
 
 		std::string SidecarName(const std::string& dllFile) { return dllFile.substr(0, dllFile.size() - 4) + ".json"; }
+
+		// The sidecar's whole text. The URL passed IsPluginDllName's rules and holds nothing to escape.
+		std::string SidecarBody(const std::string& manifestUrl)
+		{
+			return "{\n  \"manifest_url\": \"" + manifestUrl + "\"\n}\n";
+		}
+
+		// Whether the file at `path` holds exactly `text`.
+		bool HoldsText(const std::wstring& path, const std::string& text)
+		{
+			const HANDLE file = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr,
+				OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+			if (file == INVALID_HANDLE_VALUE)
+				return false;
+			std::string read(text.size() + 1, '\0');
+			DWORD got = 0;
+			const bool ok = ReadFile(file, &read[0], static_cast<DWORD>(read.size()), &got, nullptr) != FALSE;
+			CloseHandle(file);
+			read.resize(ok ? got : 0);
+			return ok && read == text;
+		}
+
+		// A rename that is tried again a few times when a virus scanner or indexer
+		// still holds the new file. Any other error, such as a name that is already
+		// taken, is final.
+		DWORD MoveWithRetry(const PluginManage::MoveFn& move, const std::wstring& from, const std::wstring& to)
+		{
+			DWORD error = move(from, to);
+			for (int retry = 0; retry < kMoveRetries
+				&& (error == ERROR_SHARING_VIOLATION || error == ERROR_ACCESS_DENIED); ++retry)
+			{
+				Sleep(kMoveRetryMs);
+				error = move(from, to);
+			}
+			return error;
+		}
 
 		// A temp file of our own. One left by an earlier attempt is deleted, and
 		// CREATE_NEW never writes through whatever else is at that name.
@@ -169,6 +207,7 @@ namespace ModInstall
 		const std::string& dll = request.info.dllFile;
 		if (!ModIndex::detail::IsInstallDllName(dll))
 			return kWriteFailed;
+		// Same rule as uninstall and restore: a linked Plugins folder is never written to.
 		if (PluginManage::IsReparsePoint(request.pluginsDir))
 			return "ModLoader\\Plugins is a link, so nothing was installed.";
 
@@ -179,8 +218,13 @@ namespace ModInstall
 
 		if (Exists(request.pluginsDir + L"\\" + Wide(dll)))
 			return dll + " is already in ModLoader\\Plugins, so nothing was installed.";
+		// A sidecar left by an install that was stopped between its two renames has
+		// no DLL beside it and holds exactly what this install would write: it is
+		// ours, and Place replaces it. Any other X.json is the player's.
 		const std::string json = SidecarName(dll);
-		if (!request.info.manifestUrl.empty() && Exists(request.pluginsDir + L"\\" + Wide(json)))
+		const std::wstring jsonPath = request.pluginsDir + L"\\" + Wide(json);
+		if (!request.info.manifestUrl.empty() && Exists(jsonPath)
+			&& !HoldsText(jsonPath, SidecarBody(request.info.manifestUrl)))
 			return json + " is already in ModLoader\\Plugins, so nothing was installed.";
 		return {};
 	}
@@ -199,20 +243,20 @@ namespace ModInstall
 
 		CreateDirectoryW(request.pluginsDir.c_str(), nullptr);
 
-		// The URL passed IsPluginDllName's rules and holds nothing to escape.
 		bool ok = WriteTemp(dllTemp, bytes)
-			&& (!sidecar || WriteTemp(jsonTemp, "{\n  \"manifest_url\": \"" + request.info.manifestUrl + "\"\n}\n"));
+			&& (!sidecar || WriteTemp(jsonTemp, SidecarBody(request.info.manifestUrl)));
 		// The sidecar goes first, so the DLL is never there without it.
 		bool jsonPlaced = false;
 		DWORD error = ok ? ERROR_SUCCESS : GetLastError();
 		if (ok && sidecar)
 		{
-			error = move(jsonTemp, json);
+			DeleteFileW(json.c_str());   // CheckTarget passed: nothing here, or the stranded one of ours
+			error = MoveWithRetry(move, jsonTemp, json);
 			ok = jsonPlaced = error == ERROR_SUCCESS;
 		}
 		if (ok)
 		{
-			error = move(dllTemp, dll);
+			error = MoveWithRetry(move, dllTemp, dll);
 			ok = error == ERROR_SUCCESS;
 		}
 		if (ok)
@@ -245,7 +289,7 @@ namespace ModInstall
 		std::condition_variable idle;
 		std::atomic<bool> cancel{ false };
 		bool running = false;
-		bool stopped = false;
+		std::atomic<bool> stopped{ false };   // set under the mutex; read without it
 		HopFn hop;
 	};
 
@@ -326,6 +370,11 @@ namespace ModInstall
 			return false;
 		}
 		return true;
+	}
+
+	bool Installer::Halted() const
+	{
+		return m_shared->stopped;
 	}
 
 	bool Installer::Busy() const

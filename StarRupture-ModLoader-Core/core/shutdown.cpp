@@ -74,7 +74,9 @@ void ShutdownAll()
     ServerConsole::Shutdown();
 
 #ifdef MODLOADER_CLIENT_BUILD
-    // An install still running writes and loads nothing once this returns.
+    // Cancels an install: from here on it writes nothing and queues no load. It
+    // waits 2 s for the worker, but a download stuck in WinHTTP can outlast that
+    // and then ends on its own, so the result is not checked.
     ModInstall::Instance().Shutdown(2000);
 #endif
 

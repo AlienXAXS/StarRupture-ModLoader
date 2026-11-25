@@ -3107,11 +3107,13 @@ namespace PluginManager
 		// Called without g_pluginLock: the callback runs under the installer's
 		// own lock and only hands the result to the game thread.
 		const bool started = installer.Start(std::move(request),
-			[file, name = entry.name](const ModInstall::Outcome& installed)
+			[file, name = entry.name, &installer](const ModInstall::Outcome& installed)
 			{
-				GameThreadDispatch::PostVoid([file, name, installed]
+				GameThreadDispatch::PostVoid([file, name, installed, &installer]
 				{
-					if (!g_managerInitialized) return;
+					// A task queued before the installer was shut down must not load
+					// into a loader that is tearing down.
+					if (!g_managerInitialized || installer.Halted()) return;
 					// The installer has logged why when it wrote nothing.
 					ChangeOutcome outcome{ RefusalResult(installed.message), installed.message };
 					if (installed.placed)

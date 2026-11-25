@@ -106,6 +106,10 @@ namespace ModInstall
 
 		bool Busy() const;
 
+		// Whether Shutdown has been called. Takes no lock, so a task `done` handed
+		// to another thread can ask it while this thread still holds the lock.
+		bool Halted() const;
+
 		// Cancels. Once this returns nothing more is written and no `done` is
 		// called. Waits up to waitMs; returns whether the worker has ended.
 		bool Shutdown(unsigned waitMs);

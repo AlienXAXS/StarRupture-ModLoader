@@ -898,7 +898,7 @@ namespace
 			{ "user info", url("https://x@github.com/Owner/Repo/releases/download/v1/Thing.dll"), kRepoPage },
 			{ "a query", url(base + "Thing.dll?x=1"), kRepoPage },
 			{ "dot dot", url(base + "../Thing.dll"), kRepoPage },
-			{ "an escape", url(base + "%2e%2e"), kRepoPage },
+			{ "an escape", url(base + "Thing%2e.dll"), kRepoPage },
 			{ "not a release asset", url("https://github.com/Owner/Repo/raw/main/x/Thing.dll"), kRepoPage },
 			{ "not a dll", url(base + "Thing.zip"), kRepoPage },
 			{ "another repository", url("https://github.com/Owner/Other/releases/download/v1/Thing.dll"), kRepoPage },
@@ -1184,6 +1184,61 @@ namespace
 			Check(ModInstall::Place(RequestFor(dir), kModBytes, why) && dir.Listing() == "Thing.dll,Thing.json"
 				&& Slurp(dir.At(L"Thing.dll")) == kModBytes, "place: a temp file of an earlier attempt is replaced");
 		}
+		// an X.json left by an install that was stopped between its two renames:
+		// no DLL beside it and the text this install writes, so it is ours and is
+		// replaced. The same name with other text is the player's.
+		{
+			const GameDir dir;
+			Spit(dir.At(L"Thing.json"), sidecar);
+			Check(ModInstall::CheckTarget(RequestFor(dir)).empty(), "check: a stranded sidecar of ours does not refuse");
+			Check(ModInstall::Place(RequestFor(dir), kModBytes, why) && dir.Listing() == "Thing.dll,Thing.json"
+				&& Slurp(dir.At(L"Thing.dll")) == kModBytes && Slurp(dir.At(L"Thing.json")) == sidecar,
+				"place: a stranded sidecar of ours is replaced");
+		}
+		for (const std::string& text : { sidecar + " ", std::string("{}"), std::string() })
+		{
+			const GameDir dir;
+			Spit(dir.At(L"Thing.json"), text);
+			Check(!ModInstall::Place(RequestFor(dir), kModBytes, why) && why.find("Thing.json is already in") != std::string::npos
+				&& dir.Listing() == "Thing.json" && Slurp(dir.At(L"Thing.json")) == text,
+				"place: a sidecar with other text is the player's and is kept");
+		}
+		// a rename held up by a scanner is tried again; any other error is final
+		for (const DWORD error : { ERROR_SHARING_VIOLATION, ERROR_ACCESS_DENIED })
+		{
+			const GameDir dir;
+			int dllMoves = 0;
+			const bool ok = ModInstall::Place(RequestFor(dir), kModBytes, why,
+				[&](const std::wstring& from, const std::wstring& to)
+				{
+					if (to.compare(to.size() - 4, 4, L".dll") == 0 && ++dllMoves <= 2)
+						return error;
+					return PluginManage::MoveOnSameVolume(from, to);
+				});
+			Check(ok && dllMoves == 3 && dir.Listing() == "Thing.dll,Thing.json" && Slurp(dir.At(L"Thing.dll")) == kModBytes,
+				"place: a rename that fails twice with a lock error is retried and succeeds");
+		}
+		{
+			const GameDir dir;
+			int moves = 0;
+			const bool ok = ModInstall::Place(RequestFor(dir), kModBytes, why,
+				[&](const std::wstring& from, const std::wstring& to)
+				{
+					if (to.compare(to.size() - 4, 4, L".dll") != 0)
+						return PluginManage::MoveOnSameVolume(from, to);
+					++moves;
+					return static_cast<DWORD>(ERROR_SHARING_VIOLATION);
+				});
+			Check(!ok && moves == 4 && !why.empty() && dir.Listing().empty(),
+				"place: a lock that never lets go gives up after three retries and leaves nothing");
+		}
+		{
+			const GameDir dir;
+			int moves = 0;
+			const bool ok = ModInstall::Place(RequestFor(dir), kModBytes, why,
+				[&](const std::wstring&, const std::wstring&) { ++moves; return static_cast<DWORD>(ERROR_ALREADY_EXISTS); });
+			Check(!ok && moves == 1 && dir.Listing().empty(), "place: a name that is taken is not retried");
+		}
 		{
 			const GameDir dir;
 			ModInstall::Request r = RequestFor(dir);
@@ -1253,8 +1308,10 @@ namespace
 			Check(installer.Start(RequestFor(dir), again.Done()) && again.Wait() && !again.outcome.placed
 				&& again.outcome.message.find("already in") != std::string::npos && hops == 1,
 				"installer: a file already there stops it before the download");
+			Check(!installer.Halted(), "installer: not halted before Shutdown");
 			installer.Shutdown(1000);
-			Check(!installer.Start(RequestFor(dir), again.Done()), "installer: nothing starts after Shutdown");
+			Check(installer.Halted() && !installer.Start(RequestFor(dir), again.Done()),
+				"installer: halted, and nothing starts, after Shutdown");
 		}
 
 		// a failure ends in done, with the folder as it was: wrong bytes, a request
@@ -1566,6 +1623,9 @@ void SearchTests()
 	// the loose match
 	Check(hit("minmap", "MiniMap"), "search: minmap finds MiniMap");
 	Check(!hit("mm", "MiniMap"), "search: a word under 3 letters does not match by letters alone");
+	Check(hit("mi", "MiniMap", "Someone", "Shows a view.") && hit("ki", "Kian", "Someone", "Shows a view."),
+		"search: a word of 1 or 2 letters matches as a piece of the name");
+	Check(!hit("mm", "MiniMap", "Someone", "Shows a view."), "search: and not as letters spread over the name");
 	Check(!hit("minmapx", "MiniMap"), "search: letters out of the name do not match");
 	Check(!hit("mapmini", "MiniMap", "Kian", "Shows a view."), "search: letters in the wrong order do not match");
 
