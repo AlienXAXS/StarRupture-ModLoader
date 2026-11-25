@@ -133,10 +133,16 @@ export function checkIndex(bytes) {
   }
   need(Array.isArray(list), 'the index is not a JSON array');
   need(list.length <= MAX_ENTRIES, `the index has ${list.length} entries (at most ${MAX_ENTRIES})`);
+  // The loader keys a card by its id and finds a required mod by id without regard to case, so two
+  // entries may not share one (compared as the loader reads it: control characters and the ends trimmed).
+  const seen = new Set();
   list.forEach((e, i) => {
     const who = `entry ${i + 1}${typeof e?.id === 'string' && e.id !== '' ? ` (${e.id})` : ''}`;
     need(e !== null && typeof e === 'object' && !Array.isArray(e), `${who} is not an object`);
     need(hasText(e.id), `${who} has no id`);
+    const id = e.id.replace(/[\x00-\x1f\x7f]/g, ' ').trim().toLowerCase();
+    need(!seen.has(id), `${who}: the id is already used by an earlier entry`);
+    seen.add(id);
     need(hasText(e.name), `${who} has no name`);
     need(allowedUrl(e.page_url, PAGE_HOSTS), `${who}: page_url must be https on nexusmods.com or github.com`);
     need(e.readme_url === undefined || allowedUrl(e.readme_url, README_HOSTS), `${who}: readme_url must be https on raw.githubusercontent.com`);

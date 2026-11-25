@@ -175,6 +175,13 @@ test('refuses install keys the loader would drop', () => {
   for (const [over, why] of bad) assert.match(outcome(() => build([installable(over)])), why, JSON.stringify(over));
 });
 
+test('refuses an id another entry already has, however it is cased or padded', () => {
+  assert.match(outcome(() => build([entry(), entry({ name: 'Other' })])), /^refused: entry 2 \(codex\): the id is already used by an earlier entry/);
+  assert.match(outcome(() => build([entry(), entry({ id: 'CODEX' })])), /^refused: entry 2 \(CODEX\): the id is already used/);
+  assert.match(outcome(() => build([entry(), entry({ id: ' codex\t' })])), /^refused: entry 2 .*the id is already used/);
+  assert.equal(outcome(() => build([entry(), entry({ id: 'codex2' })])), 'ok');
+});
+
 test('every install entry of the real index names one version', () => {
   for (const e of JSON.parse(readFileSync(REAL_INDEX, 'utf8'))) {
     if (e.download_url) assert.ok(e.download_url.includes(`/releases/download/v${e.version}/`), e.id);
