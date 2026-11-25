@@ -223,7 +223,8 @@ namespace
 		ExpectNotLoadedByRescan("A.dll", "A", "uninstalled");
 		Expect(!Installed(L"A.dll") && BackupIntact(L"A"), "the rescan leaves A's backup as it was");
 		// A sidecar left or put back by itself must not make the updater fetch the DLL.
-		Expect(WriteText(PluginsDir() + L"\\A.json", "{}") && !UpdaterChecks("A.dll"),
+		Expect(CopyFileW((ExeFolder() + L"ModLoader\\Plugins\\B.json").c_str(),
+			(PluginsDir() + L"\\A.json").c_str(), TRUE) != 0 && !UpdaterChecks("A.dll"),
 			"the updater passes over a sidecar without its DLL");
 		DeleteFileW((PluginsDir() + L"\\A.json").c_str());
 
