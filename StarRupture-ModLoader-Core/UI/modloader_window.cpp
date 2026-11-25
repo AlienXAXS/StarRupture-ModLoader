@@ -2872,6 +2872,13 @@ namespace UI::ModLoaderWindow
         const std::shared_ptr<const ModIndex::Snapshot> snap = index.Get();
         UI::BrowseThumbnails::Sync(snap);
 
+        // Pictures that failed are asked for again each time the list comes into
+        // view: a frame this was not drawn means it was just opened. Not per frame.
+        static int s_lastDrawnFrame = 0;
+        if (ImGui::GetFrameCount() - s_lastDrawnFrame > 1)
+            UI::BrowseThumbnails::Retry();
+        s_lastDrawnFrame = ImGui::GetFrameCount();
+
         // The installed plugins are listed below whatever the index is doing.
         static const std::vector<ModIndex::Entry> noEntries;
         const std::vector<ModIndex::Entry>* entries = &noEntries;

@@ -93,8 +93,9 @@ The `.json` and `update_manifest_url` go together: both or neither.
 
 A card can show a picture of your plugin.
 
-1. Make a PNG and commit it to your repository as `images/thumbnail.png`. 640 x 360 is a good size. The
-   loader accepts up to 1280 x 720, and the file must be at most 524288 bytes.
+1. Make a PNG and commit it to your repository as `images/thumbnail.png`. Use 16:9: 640 x 360 is a
+   good size. The loader accepts up to 1280 x 720, a picture of another shape is shown whole, smaller than
+   its frame, and the file must be at most 524288 bytes.
 2. Copy the full 40-character id of the commit that holds it (not a branch name like `main`), and build the
    address `https://raw.githubusercontent.com/<owner>/<repo>/<commit>/images/thumbnail.png`. The owner and
    repository are the ones in `page_url`.

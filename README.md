@@ -295,7 +295,7 @@ index names it.)
 - A plugin with a comma or `..` in its file name can't be disabled.
 - On the Plugins tab, a plugin shows **Disabled** or **Uninstalled** and points you here.
 
-**Pictures.** When the built-in list gives a mod a picture, its card shows it on the left. The loader downloads each picture once, checks its size and SHA-256 against the list, and keeps it in `ModLoader\thumbs`, so the next launch shows it without downloading again. A card says "Loading..." while the picture is on its way, "Picture unavailable" when it could not be had or did not match (**Retry** asks again) and "No picture" when the mod has none. A list from your own `ModIndexUrl` address shows no pictures; the list is then shown as before.
+**Pictures.** When the built-in list gives a mod a picture, its card shows it on the left. The loader downloads each picture once, checks its size and SHA-256 against the list, and keeps it in `ModLoader\thumbs`, so the next launch shows it without downloading again. A card says "Loading..." while the picture is on its way, "Picture unavailable" when it could not be had or did not match and "No picture" when the mod has none. Each time you open the Browse tab, or come back to the list from a README, the pictures that failed are asked for again; a session makes at most 40 picture downloads, failed ones included, so a picture that keeps failing stops being asked for after that. A list from your own `ModIndexUrl` address shows no pictures; the list is then shown as before.
 
 A card for a plugin in the index shows its name, version and author, its summary, the ModLoader version it
 was last tried on (when the index says), and an **Open page** button that opens the plugin's page (Nexus
@@ -1130,7 +1130,7 @@ Other files, all under `ModLoader\`:
 | `image-cache\<folder>\` | Pictures saved by the [image library](#image-library) (`*.img`, with `names.lst` and `sets.lst`, the item names and preload sets they belong to), one folder per game build and pak set. **Clear image cache** empties it |
 | `Preload\.state` | Marks a preload plugin that did not finish loading |
 | `Removed\<plugin>\<time>\` | The files **Uninstall** moved out of `Plugins\`, with a `removed.ini` that **Restore** reads |
-| `thumbs\<sha256>.png` | The pictures of the [Browse tab](#browse-tab-) cards, one file per picture, named by its SHA-256. Safe to delete; they are downloaded again. Pictures the list no longer names are removed after 30 days, and the folder is kept under 32 MB |
+| `thumbs\<sha256>.png` | The pictures of the [Browse tab](#browse-tab-) cards, one file per picture, named by its SHA-256. Safe to delete; they are downloaded again. Pictures the list no longer names are removed after 30 days, and while the folder is over 32 MB the oldest pictures the list does not name go first. Pictures the list names are always kept |
 | `plugin_manage.ini` | Each plugin's name, version and author by file name, so a disabled one still has a name. Not for editing |
 
 ---
