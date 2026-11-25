@@ -17,6 +17,7 @@
 #include "update_notice_window.h"
 #include "readme_view.h"
 #include "browse_thumbnails.h"
+#include "imgui_backend.h"
 #include "utils/open_page.h"
 #include "auto_update/mod_index_fetcher.h"
 #include "plugin_scan_window.h"
