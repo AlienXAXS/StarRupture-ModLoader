@@ -341,10 +341,11 @@ namespace ModInstall
 						request.name.c_str(), request.info.dllFile.c_str(), trust);
 				else
 					ModLoaderLogger::LogWarn(L"[Install] %hs: failed: %hs", request.name.c_str(), outcome.message.c_str());
-				shared->running = false;
 				try { done(outcome); }
 				catch (...) {}
 			}
+			// Still under the lock taken above, so Start and Busy never see a
+			// stale value.
 			shared->running = false;
 			shared->idle.notify_all();
 		}
