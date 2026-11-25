@@ -3,3 +3,4 @@ The dedicated server now has the same version object map coverage as the game cl
 If the game does not finish starting, ModLoader.log says why
 A plugin that names its game build now loads after an update that changed only some game classes
 Plugin authors can now declare which versions of their plugin exchange data
+Vortex users: after an update, the mod loader tells you how to keep it
