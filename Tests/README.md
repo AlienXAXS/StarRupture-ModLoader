@@ -690,6 +690,24 @@ no game. It checks:
   every other field, the install fields included, unchanged; an entry on a Nexus Mods page has no picture.
 - The PNG header check on its own (`thumbnail_check.h`): a good header, a wrong signature, no IHDR first, a
   file cut off in the signature or the header, and a width or height of 0 or over 1280 x 720.
+- The thumbnail cache rules (`thumbnail_cache.h`): what counts as a hash, the file name and path built from it
+  (nothing else becomes a name), the per-session download and byte budget (40 downloads, 16 MiB, no overflow),
+  and which files the cleanup deletes: a leftover `.png.tmp`, an unnamed picture over 30 days old, then the
+  oldest unnamed ones while the folder is over its size limit. A picture the list names and any other file name
+  stay.
+- The thumbnail fetcher (`thumbnail_fetcher.cpp`), with a stand-in network and a temp folder: nothing is
+  fetched before a signed list is set or for an unsigned one; one request at a time, first wanted first fetched,
+  none while an install runs; the request carries the listed size cap and the 15 s deadline; a wrong hash, a body
+  shorter or longer than listed, an empty answer, a redirect, a 404, a file that is not a PNG and a PNG over
+  1280 x 720 each fail with nothing written; a good picture is written as `<hash>.png` through a temp file; a
+  cached picture is re-hashed and used with no request, a bad cache file is replaced; a failed picture is not asked
+  for again until the list's Retry; the 40-download and 16 MiB limits; a card that stopped asking is skipped;
+  Shutdown cancels the open request and writes nothing; the folder tidy at the first job.
+- The thumbnail textures (`ThumbnailTextures`), with stand-in texture calls that count loads and frees: a request
+  posts one job at a time and loads nothing itself; the bytes are taken once; a load that returns nothing, a
+  decoded size over the limit and bytes that are not a PNG end Failed; at most 16 textures, the least recently
+  drawn is freed and the fetcher told, one drawn lately is kept, and a new one waits when all 16 were drawn just
+  now; every load is paired with a free; Shutdown frees what is held and waits for a load that is running.
 - SHA-256 of a known text.
 - The download, with a stand-in for the network: the size cap, the file, one redirect and then the file, the
   signed query passed on as it came, a wrong first address never asked for, redirects to another host, to
@@ -720,7 +738,7 @@ build\tests\mod_index_tests.exe
 ```
 
 It prints one line per failed check and a total, and exits 0 when every check passes. The last run was
-`659 checks, 0 failed`.
+`791 checks, 0 failed`.
 
 The mod index builder has its own tests (`node --test .github/vmap/build-mod-index.test.mjs`, 14 of 14): the
 install fields it accepts and refuses, exactly one plugin `.dll` in `install_files`, an install field that is

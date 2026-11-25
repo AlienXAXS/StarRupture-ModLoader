@@ -1928,10 +1928,10 @@ void SearchTests()
 				CF(Hex('c') + ".png", 400, now - 200),
 				CF(Hex('d') + ".png", 400, now - 100),
 			};
-			const std::vector<std::string> doomed = SelectCacheDeletions(files, listed, now, 1000, 1000000);
+			const std::vector<std::string> doomed = SelectCacheDeletions(files, listed, now, 1300, 1000000);
 			Check(doomed.size() == 1 && doomed[0] == Hex('b') + ".png", "thumb cleanup: over the size limit, the oldest unnamed picture goes, only as many as needed");
 			Check(SelectCacheDeletions(files, listed, now, 1700, 1000000).empty(), "thumb cleanup: exactly at the size limit deletes nothing");
-			const std::vector<std::string> two = SelectCacheDeletions(files, listed, now, 600, 1000000);
+			const std::vector<std::string> two = SelectCacheDeletions(files, listed, now, 1000, 1000000);
 			Check(two.size() == 2 && two[0] == Hex('b') + ".png" && two[1] == Hex('c') + ".png", "thumb cleanup: oldest first");
 			const std::vector<std::string> all = SelectCacheDeletions(files, listed, now, 0, 1000000);
 			Check(all.size() == 3 && std::find(all.begin(), all.end(), Hex('a') + ".png") == all.end(), "thumb cleanup: a named picture stays even when the limit cannot be met");
@@ -2405,9 +2405,9 @@ void SearchTests()
 			ops.load = [this](const void*, size_t, const char*) -> void*
 			{
 				std::lock_guard<std::mutex> lock(mutex);
-				++loads;
 				if (nullOnLoad)
-					return nullptr;
+					return nullptr;   // nothing was made, so there is nothing to free
+				++loads;
 				void* h = reinterpret_cast<void*>(static_cast<uintptr_t>(nextHandle++));
 				live.insert(h);
 				return h;
