@@ -2725,7 +2725,7 @@ namespace UI::ModLoaderWindow
                 // the other results the loader's message says the same thing.
                 const bool hasReason = card.plugin->lastResult == PluginManager::ManageResult::AfterRestart ||
                                        card.plugin->lastResult == PluginManager::ManageResult::Failed;
-                if (hasReason && !card.plugin->message.empty() && card.plugin->message != said)
+                if (hasReason && !card.plugin->message.empty() && said.find(card.plugin->message) == std::string::npos)
                     ImGui::TextWrapped("%s", card.plugin->message.c_str());
             }
         }
