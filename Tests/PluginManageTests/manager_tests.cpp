@@ -118,6 +118,13 @@ namespace
 		Expect(Count("attach " + name) == before, std::string(when) + ": a rescan does not load " + file);
 	}
 
+	bool WriteText(const std::wstring& path, const char* text)
+	{
+		std::ofstream out(path, std::ios::binary);
+		out << text;
+		return static_cast<bool>(out);
+	}
+
 	// ---- disable, restarts, enable, uninstall and restore -------------------
 
 	void Disabling()
@@ -267,12 +274,112 @@ namespace
 		ExpectCard("A.dll", CardState::Running, "restore the newest backup");
 	}
 
+	// ---- a restore leaves a plugin as it was --------------------------------
+
+	void RestoringDisabled()
+	{
+		Ask(ManageOp::Disable, "A.dll", ManageResult::Done, "disable");
+		Ask(ManageOp::Uninstall, "A.dll", ManageResult::Done, "uninstall a disabled plugin");
+		const int attaches = Count("attach A");
+		Ask(ManageOp::Restore, "A.dll", ManageResult::Done, "restore a disabled plugin");
+		ExpectCard("A.dll", CardState::Disabled, "restore a disabled plugin");
+		Expect(Installed(L"A.dll"), "A's DLL is back");
+		Expect(Count("attach A") == attaches, "the restore runs none of A's code");
+		Expect(!UpdaterChecks("A.dll"), "the updater skips restored, disabled A");
+		ExpectNotLoadedByRescan("A.dll", "A", "restored disabled");
+	}
+
+	void RestoredStaysDisabled()
+	{
+		Expect(Count("attach A") == 0, "restored, disabled A does not run at the next start");
+		ExpectCard("A.dll", CardState::Disabled, "start after the restore");
+		Ask(ManageOp::Enable, "A.dll", ManageResult::Done, "enable the restored plugin");
+		ExpectCard("A.dll", CardState::Running, "enable the restored plugin");
+	}
+
+	// ---- files put into Plugins while the game runs -------------------------
+
+	bool PutPlugin(const wchar_t* file)
+	{
+		return CopyFileW((ExeFolder() + L"manage_test_plugin.dll").c_str(),
+			(PluginsDir() + L"\\" + file).c_str(), TRUE) != 0;
+	}
+
+	const ScanResult* ResultFor(const std::vector<ScanResult>& results, const char* file)
+	{
+		for (const ScanResult& result : results)
+			if (result.fileName == file)
+				return &result;
+		return nullptr;
+	}
+
+	void CopiedBack()
+	{
+		Ask(ManageOp::Uninstall, "A.dll", ManageResult::Done, "uninstall");
+		Ask(ManageOp::Uninstall, "StuckC.dll", ManageResult::AfterRestart, "uninstall a restart-only plugin");
+		Expect(Count("init A") == 1 && Count("detach A") == 1, "A is unloaded");
+		Expect(PutPlugin(L"A.dll") && PutPlugin(L"StuckC.dll"), "copy both back by hand");
+
+		std::vector<ScanResult> results;
+		const int live = ScanForNewPlugins(&results);
+		const ScanResult* a = ResultFor(results, "A.dll");
+		const ScanResult* stuck = ResultFor(results, "StuckC.dll");
+		Expect(live == 1 && Count("init A") == 2, "Load New starts the A that was put back");
+		Expect(a && a->status == ScanStatus::Live, "Load New reports A as loaded");
+		Expect(stuck && stuck->status == ScanStatus::NeedsRestart, "StuckC's old code is mapped: restart");
+		Expect(Count("attach StuckC") == 1, "StuckC is not loaded a second time");
+		ExpectCard("A.dll", CardState::Running, "put back by hand");
+	}
+
+	void RestoreBesideACopy()
+	{
+		Ask(ManageOp::Uninstall, "A.dll", ManageResult::Done, "uninstall");
+		Expect(PutPlugin(L"A~new.dll"), "the same plugin under another file name");
+		const int attaches = Count("attach A");
+
+		// Not loaded yet: the loader reads the name without running the DLL.
+		Ask(ManageOp::Restore, "A.dll", ManageResult::AlreadyInstalled, "restore beside an unloaded copy");
+		Expect(!Installed(L"A.dll"), "the restore moved nothing back");
+		Expect(Card("A.dll").message.find("A~new.dll") != std::string::npos, "the refusal names the other file");
+		Expect(Count("attach A") == attaches, "reading the copy's name runs none of its code");
+
+		ScanForNewPlugins();
+		Expect(Count("attach A") == attaches + 1, "Load New starts the copy");
+		Ask(ManageOp::Restore, "A.dll", ManageResult::AlreadyInstalled, "restore beside a running copy");
+		Expect(!Installed(L"A.dll") && Installed(L"A~new.dll"), "only the copy is installed");
+	}
+
+	// ---- a plugin Vortex deployed -------------------------------------------
+
+	// The manifest is in the game folder, and the loader's own search finds it.
+	// A's entry is under a "target" folder.
+	void VortexDeployed()
+	{
+		Expect(WriteText(ExeFolder() + L"vortex.deployment.json",
+			R"({"files":[{"relPath":"Plugins\\A.dll","target":"ModLoader","time":1700000000000}]})"),
+			"write the manifest");
+		RefreshManagedFiles();
+
+		Expect(Card("A.dll").facts.vortexListed, "A is listed by Vortex");
+		Expect(PluginManage::DeriveCard(Card("A.dll").facts).uninstallInVortex &&
+			(Buttons("A.dll") & PluginManage::kUninstall) == 0, "A's card sends Uninstall to Vortex");
+		Expect(!Card("B.dll").facts.vortexListed && (Buttons("B.dll") & PluginManage::kUninstall) != 0,
+			"B offers Uninstall");
+
+		Ask(ManageOp::Uninstall, "A.dll", ManageResult::Vortex, "uninstall a Vortex plugin");
+		Expect(Installed(L"A.dll") && Installed(L"A.pdb") && Installed(L"A.json") && Count("detach A") == 0,
+			"A is untouched");
+		Ask(ManageOp::Uninstall, "B.dll", ManageResult::Done, "uninstall a plugin Vortex does not list");
+	}
+
 	struct Step { const char* name; void (*run)(); };
 	const Step kSteps[] = {
 		{ "disable", Disabling }, { "still-disabled", StillDisabled }, { "uninstall", Uninstalling },
 		{ "restore", Restoring },
 		{ "rollback-dll-out", RollbackLeavesDllOut }, { "rollback-dll-out-restart", RestoreAfterRollback },
 		{ "rollback-dll-back", RollbackPutsDllBack }, { "rollback-dll-back-restart", RestoreAfterSecondUninstall },
+		{ "restore-disabled", RestoringDisabled }, { "restored-stays-disabled", RestoredStaysDisabled },
+		{ "copied-back", CopiedBack }, { "duplicate-name", RestoreBesideACopy }, { "vortex", VortexDeployed },
 	};
 
 	struct Game
@@ -280,13 +387,6 @@ namespace
 		std::vector<const wchar_t*> plugins;
 		std::vector<const wchar_t*> starts;
 	};
-
-	bool WriteText(const std::wstring& path, const char* text)
-	{
-		std::ofstream out(path, std::ios::binary);
-		out << text;
-		return static_cast<bool>(out);
-	}
 
 	// A start leaves its counts beside its exe: the exit code alone cannot carry them.
 	void Start(const std::wstring& exe, const std::wstring& step, const std::wstring& countsFile,
@@ -356,6 +456,10 @@ void RunManagerTests(const std::wstring& root, int& checks, int& failures)
 		{ { L"A", L"B", L"StuckC" }, { L"disable", L"still-disabled", L"uninstall", L"restore" } },
 		{ { L"A", L"StuckC" }, { L"rollback-dll-out", L"rollback-dll-out-restart" } },
 		{ { L"A" }, { L"rollback-dll-back", L"rollback-dll-back-restart" } },
+		{ { L"A" }, { L"restore-disabled", L"restored-stays-disabled" } },
+		{ { L"A", L"StuckC" }, { L"copied-back" } },
+		{ { L"A" }, { L"duplicate-name" } },
+		{ { L"A", L"B" }, { L"vortex" } },
 	};
 
 	wchar_t self[MAX_PATH]{};
