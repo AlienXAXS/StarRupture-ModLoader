@@ -7,7 +7,9 @@
 #include "auto_update/mod_index_fetcher.h"
 #include "auto_update/mod_index_signed.h"
 #include "auto_update/mod_install.h"
+#include "auto_update/thumbnail_cache.h"
 #include "auto_update/thumbnail_check.h"
+#include "auto_update/thumbnail_fetcher.h"
 #include "utils/sha256.h"
 #include "auto_update/feed_fetch.h"
 #include "memory_scanner/version_feed.h"
@@ -18,9 +20,13 @@
 #include <chrono>
 #include <cstdio>
 #include <cstring>
+#include <ctime>
 #include <filesystem>
+#include <functional>
 #include <fstream>
 #include <iterator>
+#include <map>
+#include <set>
 #include <mutex>
 #include <stdexcept>
 #include <string>
@@ -1843,6 +1849,773 @@ void SearchTests()
 			"server_only: only a literal true marks an entry");
 	}
 }
+
+	// ---- Thumbnails: the cache rules and the budget (thumbnail_cache.h) ------
+
+	CacheFile CF(const std::string& name, uint64_t size, int64_t modifiedSec)
+	{
+		CacheFile f;
+		f.name = name;
+		f.size = size;
+		f.modifiedSec = modifiedSec;
+		return f;
+	}
+
+	std::string Hex(char c) { return std::string(64, c); }
+
+	void ThumbnailCacheRuleTests()
+	{
+		// names and paths
+		Check(IsThumbnailHash(Hex('a')) && IsThumbnailHash(Hex('0')), "thumb cache: a 64-character lowercase hex is a hash");
+		Check(!IsThumbnailHash(Hex('A')) && !IsThumbnailHash(Hex('g')) && !IsThumbnailHash(std::string(63, 'a')) && !IsThumbnailHash(std::string(65, 'a')) && !IsThumbnailHash(""),
+			"thumb cache: upper case, a non-hex letter, 63, 65 and 0 characters are not hashes");
+		Check(ThumbnailCacheName(Hex('b')) == Hex('b') + ".png" && ThumbnailCacheName("..\\x").empty() && ThumbnailCacheName("").empty(),
+			"thumb cache: the name is the hash and .png, and nothing else is turned into one");
+		Check(IsThumbnailCacheName(Hex('c') + ".png") && !IsThumbnailCacheName(Hex('c') + ".PNG") && !IsThumbnailCacheName(Hex('c') + ".png.tmp")
+			&& !IsThumbnailCacheName(Hex('c')) && !IsThumbnailCacheName("a.png") && !IsThumbnailCacheName("x" + Hex('c') + ".png"),
+			"thumb cache: only <hash>.png is a cache name");
+		Check(IsThumbnailTempName(Hex('d') + ".png.tmp") && !IsThumbnailTempName(Hex('d') + ".png") && !IsThumbnailTempName(Hex('d') + ".tmp")
+			&& !IsThumbnailTempName("x" + Hex('d') + ".png.tmp"),
+			"thumb cache: only <hash>.png.tmp is a temp name");
+		Check(ThumbnailCachePath(L"C:\\ML\\thumbs", Hex('e')) == L"C:\\ML\\thumbs\\" + std::wstring(64, L'e') + L".png"
+			&& ThumbnailCachePath(L"C:\\ML\\thumbs", "../../evil").empty(),
+			"thumb cache: the path is the folder and the name; a bad hash gives no path");
+
+		// budget
+		{
+			ThumbnailBudget b(3, 1000);
+			Check(b.Reserve(400) && b.Reserve(400) && b.Downloads() == 2 && b.Bytes() == 800, "thumb budget: reserves count and bytes");
+			Check(!b.Reserve(201) && b.Downloads() == 2 && b.Bytes() == 800, "thumb budget: a download that would pass the byte limit is refused and not counted");
+			Check(b.Reserve(200) && b.Bytes() == 1000, "thumb budget: exactly the byte limit is allowed");
+			Check(!b.Reserve(1) && !b.Reserve(0), "thumb budget: the download limit stops even an empty one");
+		}
+		{
+			ThumbnailBudget b;
+			for (size_t i = 0; i < kMaxThumbnailDownloads; ++i)
+				Check(b.Reserve(1), "thumb budget: 40 small downloads fit");
+			Check(!b.Reserve(1) && b.Downloads() == 40, "thumb budget: the 41st is refused");
+			ThumbnailBudget big;
+			Check(!big.Reserve(kMaxThumbnailSessionBytes + 1) && big.Reserve(kMaxThumbnailSessionBytes) && !big.Reserve(1),
+				"thumb budget: 16 MiB per session, no overflow on a huge declared size");
+			ThumbnailBudget wrap(5, 100);
+			Check(!wrap.Reserve(static_cast<size_t>(-1)), "thumb budget: a size near SIZE_MAX does not wrap");
+		}
+
+		// cleanup selection
+		{
+			const int64_t now = 100 * 24 * 3600;
+			const int64_t day = 24 * 3600;
+			const std::set<std::string> listed = { Hex('1') };
+			const std::vector<CacheFile> files = {
+				CF(Hex('1') + ".png", 100, now - 90 * day),          // named by the list: kept however old
+				CF(Hex('2') + ".png", 100, now - 31 * day),          // unnamed and old: goes
+				CF(Hex('3') + ".png", 100, now - 29 * day),          // unnamed, recent: kept
+				CF(Hex('4') + ".png.tmp", 10, now),                  // interrupted write: goes
+				CF("notes.txt", 100, now - 90 * day),                // not ours: never touched
+				CF(Hex('5').substr(1) + ".png", 100, now - 90 * day) // 63 characters: not ours
+			};
+			const std::vector<std::string> doomed = SelectCacheDeletions(files, listed, now, 1000000, 30 * day);
+			Check(doomed.size() == 2 && std::find(doomed.begin(), doomed.end(), Hex('2') + ".png") != doomed.end()
+				&& std::find(doomed.begin(), doomed.end(), Hex('4') + ".png.tmp") != doomed.end(),
+				"thumb cleanup: a leftover temp and an old unnamed picture go; named, recent and foreign names stay");
+		}
+		{
+			const int64_t now = 1000000;
+			const std::set<std::string> listed = { Hex('a') };
+			const std::vector<CacheFile> files = {
+				CF(Hex('a') + ".png", 500, now - 10),   // named: never taken for size
+				CF(Hex('b') + ".png", 400, now - 300),  // oldest unnamed
+				CF(Hex('c') + ".png", 400, now - 200),
+				CF(Hex('d') + ".png", 400, now - 100),
+			};
+			const std::vector<std::string> doomed = SelectCacheDeletions(files, listed, now, 1000, 1000000);
+			Check(doomed.size() == 1 && doomed[0] == Hex('b') + ".png", "thumb cleanup: over the size limit, the oldest unnamed picture goes, only as many as needed");
+			Check(SelectCacheDeletions(files, listed, now, 1700, 1000000).empty(), "thumb cleanup: exactly at the size limit deletes nothing");
+			const std::vector<std::string> two = SelectCacheDeletions(files, listed, now, 600, 1000000);
+			Check(two.size() == 2 && two[0] == Hex('b') + ".png" && two[1] == Hex('c') + ".png", "thumb cleanup: oldest first");
+			const std::vector<std::string> all = SelectCacheDeletions(files, listed, now, 0, 1000000);
+			Check(all.size() == 3 && std::find(all.begin(), all.end(), Hex('a') + ".png") == all.end(), "thumb cleanup: a named picture stays even when the limit cannot be met");
+			Check(SelectCacheDeletions({}, listed, now, 0, 0).empty(), "thumb cleanup: an empty folder");
+		}
+	}
+
+	// ---- Thumbnails: the fetcher, with a stand-in network and a temp folder ---
+
+	struct ThumbDir
+	{
+		std::filesystem::path path;
+		ThumbDir()
+		{
+			static std::atomic<int> n{ 0 };
+			path = std::filesystem::temp_directory_path() / ("mod_index_thumbs_" + std::to_string(GetCurrentProcessId()) + "_" + std::to_string(++n));
+			std::error_code ignored;
+			std::filesystem::remove_all(path, ignored);
+		}
+		~ThumbDir()
+		{
+			std::error_code ignored;
+			std::filesystem::remove_all(path, ignored);
+		}
+		std::wstring Wide() const { return path.wstring(); }
+		std::vector<std::string> Names() const
+		{
+			std::vector<std::string> names;
+			std::error_code ec;
+			if (std::filesystem::exists(path, ec))
+				for (const auto& e : std::filesystem::directory_iterator(path, ec))
+					names.push_back(e.path().filename().string());
+			std::sort(names.begin(), names.end());
+			return names;
+		}
+		void Put(const std::string& name, const std::string& bytes) const
+		{
+			std::filesystem::create_directories(path);
+			std::ofstream out(path / name, std::ios::binary);
+			out << bytes;
+		}
+		std::string Read(const std::string& name) const
+		{
+			std::ifstream in(path / name, std::ios::binary);
+			return std::string(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+		}
+	};
+
+	struct ThumbNet
+	{
+		std::mutex mutex;
+		std::map<std::string, ModInstall::Hop> answers;   // by url
+		std::vector<std::string> asked;
+		std::vector<size_t> maxBytes;
+		std::vector<unsigned> deadlines;
+		int running = 0;
+		int mostAtOnce = 0;
+		std::atomic<bool> blockUntilCancel{ false };
+		std::atomic<bool> sawCancel{ false };
+
+		ModInstall::HopFn Fn()
+		{
+			return [this](const std::string& url, size_t max, unsigned deadline, const std::atomic<bool>& cancel)
+			{
+				{
+					std::lock_guard<std::mutex> lock(mutex);
+					asked.push_back(url);
+					maxBytes.push_back(max);
+					deadlines.push_back(deadline);
+					++running;
+					mostAtOnce = std::max(mostAtOnce, running);
+				}
+				if (blockUntilCancel)
+				{
+					while (!cancel.load())
+						std::this_thread::sleep_for(std::chrono::milliseconds(2));
+					sawCancel = true;
+				}
+				std::this_thread::sleep_for(std::chrono::milliseconds(3));
+				ModInstall::Hop hop;
+				{
+					std::lock_guard<std::mutex> lock(mutex);
+					--running;
+					const auto it = answers.find(url);
+					if (it != answers.end())
+						hop = it->second;
+				}
+				return hop;
+			};
+		}
+		size_t Calls()
+		{
+			std::lock_guard<std::mutex> lock(mutex);
+			return asked.size();
+		}
+	};
+
+	std::string ThumbUrl(char tag)
+	{
+		return "https://raw.githubusercontent.com/owner/repo/" + std::string(40, tag) + "/images/thumbnail.png";
+	}
+
+	std::string ThumbBody(unsigned w = 640, unsigned h = 360, char fill = 'p')
+	{
+		return PngHeader(w, h) + std::string(200, fill);
+	}
+
+	ThumbnailInfo ThumbInfoFor(const std::string& body, char tag)
+	{
+		ThumbnailInfo info;
+		info.url = ThumbUrl(tag);
+		info.sha256 = Sha256::OfBytes(body);
+		info.size = body.size();
+		return info;
+	}
+
+	ModInstall::Hop Ok200(const std::string& body)
+	{
+		ModInstall::Hop hop;
+		hop.status = 200;
+		hop.body = body;
+		return hop;
+	}
+
+	bool WaitUntil(const std::function<bool()>& done, unsigned ms = 5000)
+	{
+		const auto end = Clock::now() + std::chrono::milliseconds(ms);
+		while (!done())
+		{
+			if (Clock::now() > end)
+				return false;
+			std::this_thread::sleep_for(std::chrono::milliseconds(2));
+		}
+		return true;
+	}
+
+	ThumbnailFetcherConfig ThumbConfig(const ThumbDir& dir, ThumbNet& net)
+	{
+		ThumbnailFetcherConfig config;
+		config.cacheDir = dir.Wide();
+		config.hop = net.Fn();
+		return config;
+	}
+
+	// Wants `id` until it leaves Loading, as the card does each frame.
+	ThumbnailState Settle(ThumbnailFetcher& f, const std::string& id, const ThumbnailInfo& info)
+	{
+		f.Want(id, info);
+		WaitUntil([&] { f.Want(id, info); return f.State(id) != ThumbnailState::Loading; });
+		return f.State(id);
+	}
+
+	void ThumbnailFetcherTests()
+	{
+		// a download: checked, kept, handed out once
+		{
+			ThumbDir dir;
+			ThumbNet net;
+			const std::string body = ThumbBody();
+			const ThumbnailInfo info = ThumbInfoFor(body, 'a');
+			net.answers[info.url] = Ok200(body);
+			ThumbnailFetcher f(ThumbConfig(dir, net));
+			f.SetList({ info.sha256 }, true);
+			Check(f.State("m") == ThumbnailState::None, "thumb fetch: nothing asked, no state");
+			Check(Settle(f, "m", info) == ThumbnailState::Bytes, "thumb fetch: a good picture ends as Bytes");
+			Check(net.Calls() == 1 && net.maxBytes[0] == body.size() && net.deadlines[0] == kThumbnailDeadlineMs && net.asked[0] == info.url,
+				"thumb fetch: one request, capped at the listed size, with the 15 s deadline");
+			Check(dir.Names() == std::vector<std::string>{ info.sha256 + ".png" } && dir.Read(info.sha256 + ".png") == body,
+				"thumb fetch: the file is <sha>.png, whole, and no .tmp is left");
+			Check(f.BytesHeld() == body.size() && f.Downloads() == 1, "thumb fetch: held bytes and the download count");
+			Check(f.TakeBytes("m") == body && f.State("m") == ThumbnailState::Handed && f.TakeBytes("m").empty() && f.BytesHeld() == 0,
+				"thumb fetch: the bytes are handed out once");
+			f.Want("m", info);
+			Check(f.State("m") == ThumbnailState::Handed && net.Calls() == 1, "thumb fetch: asking again for a handed picture does nothing");
+			f.Forget("m");
+			Check(f.State("m") == ThumbnailState::None, "thumb fetch: Forget drops a handed picture");
+			Check(Settle(f, "m", info) == ThumbnailState::Bytes && net.Calls() == 1 && f.Downloads() == 1,
+				"thumb fetch: after Forget the picture comes from the cache folder with no download");
+			Check(f.Shutdown(2000) && f.Shutdown(0), "thumb fetch: Shutdown ends the worker, twice is fine");
+			f.Want("n", info);
+			Check(f.State("n") == ThumbnailState::None, "thumb fetch: nothing is queued after Shutdown");
+		}
+
+		// a second session with the picture on disk: no network
+		{
+			ThumbDir dir;
+			ThumbNet net;
+			const std::string body = ThumbBody();
+			const ThumbnailInfo info = ThumbInfoFor(body, 'a');
+			dir.Put(info.sha256 + ".png", body);
+			ThumbnailFetcher f(ThumbConfig(dir, net));
+			f.SetList({ info.sha256 }, true);
+			Check(Settle(f, "m", info) == ThumbnailState::Bytes && net.Calls() == 0 && f.TakeBytes("m") == body,
+				"thumb cache: a cached picture is used with no request (offline player)");
+		}
+
+		// a corrupt cache file is replaced; a missing one offline is Failed
+		{
+			ThumbDir dir;
+			ThumbNet net;
+			const std::string body = ThumbBody();
+			const ThumbnailInfo info = ThumbInfoFor(body, 'a');
+			dir.Put(info.sha256 + ".png", ThumbBody(640, 360, 'q'));   // same size, other bytes
+			net.answers[info.url] = Ok200(body);
+			ThumbnailFetcher f(ThumbConfig(dir, net));
+			f.SetList({ info.sha256 }, true);
+			Check(Settle(f, "m", info) == ThumbnailState::Bytes && net.Calls() == 1 && dir.Read(info.sha256 + ".png") == body && f.TakeBytes("m") == body,
+				"thumb cache: a cache file whose hash is wrong is deleted, fetched again and replaced");
+		}
+		{
+			ThumbDir dir;
+			ThumbNet net;
+			const std::string body = ThumbBody();
+			const ThumbnailInfo info = ThumbInfoFor(body, 'a');
+			ThumbnailFetcher f(ThumbConfig(dir, net));   // the network has no answer: status 0
+			f.SetList({ info.sha256 }, true);
+			Check(Settle(f, "m", info) == ThumbnailState::Failed && dir.Names().empty(), "thumb offline: no cache and no answer is Failed, nothing written");
+			// Retry
+			net.answers[info.url] = Ok200(body);
+			f.Want("m", info);
+			Check(f.State("m") == ThumbnailState::Failed, "thumb retry: a failed picture is not asked for again by itself");
+			f.ClearFailures();
+			Check(Settle(f, "m", info) == ThumbnailState::Bytes, "thumb retry: after ClearFailures it is fetched again");
+		}
+
+		// refusals: nothing may reach the disk
+		{
+			ThumbDir dir;
+			ThumbNet net;
+			const std::string body = ThumbBody();
+			const ThumbnailInfo info = ThumbInfoFor(body, 'a');
+			net.answers[info.url] = Ok200(ThumbBody(640, 360, 'x'));   // same length, other bytes
+			ThumbnailFetcher f(ThumbConfig(dir, net));
+			f.SetList({ info.sha256 }, true);
+			Check(Settle(f, "m", info) == ThumbnailState::Mismatch && dir.Names().empty(), "thumb refuse: a wrong hash is Mismatch and writes nothing");
+
+			const ThumbnailInfo shortInfo = ThumbInfoFor(body, 'b');
+			net.answers[shortInfo.url] = Ok200(body.substr(0, body.size() - 1));
+			Check(Settle(f, "s", shortInfo) == ThumbnailState::Mismatch && dir.Names().empty(), "thumb refuse: a body shorter than listed is Mismatch");
+			const ThumbnailInfo longInfo = ThumbInfoFor(body, 'c');
+			net.answers[longInfo.url] = Ok200(body + "x");
+			Check(Settle(f, "l", longInfo) == ThumbnailState::Mismatch && dir.Names().empty(), "thumb refuse: a body longer than listed is Mismatch");
+			const ThumbnailInfo emptyInfo = ThumbInfoFor(body, 'd');
+			net.answers[emptyInfo.url] = Ok200("");
+			Check(Settle(f, "e", emptyInfo) == ThumbnailState::Failed && dir.Names().empty(), "thumb refuse: an empty 200 is Failed");
+
+			const ThumbnailInfo r302 = ThumbInfoFor(body, 'e');
+			ModInstall::Hop redirect;
+			redirect.status = 302;
+			redirect.location = "https://evil.example/x.png";
+			net.answers[r302.url] = redirect;
+			Check(Settle(f, "r", r302) == ThumbnailState::Failed && dir.Names().empty(), "thumb refuse: a redirect is not followed");
+			const ThumbnailInfo r404 = ThumbInfoFor(body, 'f');
+			ModInstall::Hop gone;
+			gone.status = 404;
+			net.answers[r404.url] = gone;
+			Check(Settle(f, "g", r404) == ThumbnailState::Failed && dir.Names().empty(), "thumb refuse: a 404 is Failed");
+
+			const std::string jpeg = std::string("\xFF\xD8\xFF\xE0", 4) + std::string(100, 'j');
+			const ThumbnailInfo notPng = ThumbInfoFor(jpeg, 'g');
+			net.answers[notPng.url] = Ok200(jpeg);
+			Check(Settle(f, "j", notPng) == ThumbnailState::Failed && dir.Names().empty(), "thumb refuse: a right-hash file that is not a PNG is Failed, nothing written");
+			const std::string wide = ThumbBody(1281, 720);
+			const ThumbnailInfo tooWide = ThumbInfoFor(wide, 'h');
+			net.answers[tooWide.url] = Ok200(wide);
+			Check(Settle(f, "w", tooWide) == ThumbnailState::Failed && dir.Names().empty(), "thumb refuse: a right-hash PNG over 1280 x 720 is Failed, nothing written");
+			Check(f.BytesHeld() == 0, "thumb refuse: no refused picture is held");
+		}
+
+		// who may be fetched
+		{
+			ThumbDir dir;
+			ThumbNet net;
+			const std::string body = ThumbBody();
+			const ThumbnailInfo info = ThumbInfoFor(body, 'a');
+			net.answers[info.url] = Ok200(body);
+			ThumbnailFetcher f(ThumbConfig(dir, net));
+			f.Want("m", info);
+			Check(f.State("m") == ThumbnailState::None, "thumb signed: before any list is set nothing is fetched");
+			f.SetList({ info.sha256 }, false);
+			f.Want("m", info);
+			std::this_thread::sleep_for(std::chrono::milliseconds(50));
+			Check(f.State("m") == ThumbnailState::None && net.Calls() == 0 && dir.Names().empty(), "thumb signed: a list that is not signed fetches nothing and caches nothing");
+
+			f.SetList({ info.sha256 }, true);
+			ThumbnailInfo other = info;
+			other.url = "https://example.com/a.png";
+			f.Want("o", other);
+			other = info;
+			other.sha256 = "ABC";
+			f.Want("p", other);
+			other = info;
+			other.size = kMaxThumbnailBytes + 1;
+			f.Want("q", other);
+			other = info;
+			other.size = 0;
+			f.Want("r", other);
+			f.Want("s", ThumbnailInfo());
+			std::this_thread::sleep_for(std::chrono::milliseconds(50));
+			Check(net.Calls() == 0 && f.State("o") == ThumbnailState::None && f.State("p") == ThumbnailState::None && f.State("q") == ThumbnailState::None
+				&& f.State("r") == ThumbnailState::None && f.State("s") == ThumbnailState::None,
+				"thumb signed: another host, a bad hash, a size over 512 KiB or 0 and an empty entry are never fetched");
+			Check(Settle(f, "m", info) == ThumbnailState::Bytes, "thumb signed: the same entry is fetched once the list is signed");
+		}
+
+		// one at a time, in order
+		{
+			ThumbDir dir;
+			ThumbNet net;
+			std::vector<ThumbnailInfo> infos;
+			for (char tag : { 'a', 'b', 'c' })
+			{
+				const std::string body = ThumbBody(640, 360, tag);
+				infos.push_back(ThumbInfoFor(body, tag));
+				net.answers[infos.back().url] = Ok200(body);
+			}
+			ThumbnailFetcher f(ThumbConfig(dir, net));
+			f.SetList({ infos[0].sha256, infos[1].sha256, infos[2].sha256 }, true);
+			f.Want("a", infos[0]);
+			f.Want("b", infos[1]);
+			f.Want("c", infos[2]);
+			Check(WaitUntil([&] { f.Want("a", infos[0]); f.Want("b", infos[1]); f.Want("c", infos[2]);
+				return f.State("a") == ThumbnailState::Bytes && f.State("b") == ThumbnailState::Bytes && f.State("c") == ThumbnailState::Bytes; }),
+				"thumb order: three pictures all arrive");
+			Check(net.mostAtOnce == 1 && net.asked.size() == 3 && net.asked[0] == infos[0].url && net.asked[1] == infos[1].url && net.asked[2] == infos[2].url,
+				"thumb order: one request at a time, first wanted first fetched");
+		}
+
+		// the session limit; a failed download counts
+		{
+			ThumbDir dir;
+			ThumbNet net;
+			std::vector<ThumbnailInfo> infos;
+			for (char tag : { 'a', 'b', 'c' })
+			{
+				const std::string body = ThumbBody(640, 360, tag);
+				infos.push_back(ThumbInfoFor(body, tag));
+				if (tag != 'a')
+					net.answers[infos.back().url] = Ok200(body);   // 'a' gets no answer: fails
+			}
+			ThumbnailFetcherConfig config = ThumbConfig(dir, net);
+			config.maxDownloads = 2;
+			ThumbnailFetcher f(config);
+			f.SetList({ infos[0].sha256, infos[1].sha256, infos[2].sha256 }, true);
+			Check(Settle(f, "a", infos[0]) == ThumbnailState::Failed, "thumb limit: the first download fails");
+			Check(Settle(f, "b", infos[1]) == ThumbnailState::Bytes, "thumb limit: the second works");
+			Check(Settle(f, "c", infos[2]) == ThumbnailState::Failed && net.Calls() == 2 && f.Downloads() == 2,
+				"thumb limit: the failed one counted, so the third is Failed without a request");
+			dir.Put(infos[2].sha256 + ".png", ThumbBody(640, 360, 'c'));
+			f.ClearFailures();
+			Check(Settle(f, "c", infos[2]) == ThumbnailState::Bytes && net.Calls() == 2,
+				"thumb limit: a cached picture needs no download, so the limit does not stop it");
+		}
+		{
+			ThumbDir dir;
+			ThumbNet net;
+			const std::string body = ThumbBody();
+			const ThumbnailInfo info = ThumbInfoFor(body, 'a');
+			net.answers[info.url] = Ok200(body);
+			ThumbnailFetcherConfig config = ThumbConfig(dir, net);
+			config.maxSessionBytes = body.size() - 1;
+			ThumbnailFetcher f(config);
+			f.SetList({ info.sha256 }, true);
+			Check(Settle(f, "m", info) == ThumbnailState::Failed && net.Calls() == 0, "thumb limit: a picture over the session byte budget is not downloaded");
+		}
+
+		// paused during an install; stale cards are skipped
+		{
+			ThumbDir dir;
+			ThumbNet net;
+			const std::string body = ThumbBody();
+			const ThumbnailInfo info = ThumbInfoFor(body, 'a');
+			net.answers[info.url] = Ok200(body);
+			std::atomic<bool> installing{ true };
+			std::atomic<uint64_t> clock{ 1000 };
+			ThumbnailFetcherConfig config = ThumbConfig(dir, net);
+			config.paused = [&] { return installing.load(); };
+			config.nowMs = [&] { return clock.load(); };
+			ThumbnailFetcher f(config);
+			f.SetList({ info.sha256 }, true);
+			f.Want("m", info);
+			std::this_thread::sleep_for(std::chrono::milliseconds(400));
+			Check(net.Calls() == 0 && f.State("m") == ThumbnailState::Loading, "thumb pause: while an install runs nothing is requested");
+			installing = false;
+			Check(WaitUntil([&] { return f.State("m") == ThumbnailState::Bytes; }) && net.Calls() == 1, "thumb pause: it resumes when the install ends");
+
+			// stale: asked, the install holds it up, the card scrolls away
+			const std::string body2 = ThumbBody(640, 360, 'z');
+			const ThumbnailInfo info2 = ThumbInfoFor(body2, 'b');
+			net.answers[info2.url] = Ok200(body2);
+			installing = true;
+			f.Want("n", info2);
+			clock += kThumbnailStaleMs + 1;
+			installing = false;
+			Check(WaitUntil([&] { return f.State("n") == ThumbnailState::None; }) && net.Calls() == 1, "thumb stale: a card that stopped asking is skipped, with no request");
+			Check(Settle(f, "n", info2) == ThumbnailState::Bytes && net.Calls() == 2, "thumb stale: asking again fetches it");
+		}
+
+		// Shutdown while a request is open
+		{
+			ThumbDir dir;
+			ThumbNet net;
+			net.blockUntilCancel = true;
+			const std::string body = ThumbBody();
+			const ThumbnailInfo info = ThumbInfoFor(body, 'a');
+			net.answers[info.url] = Ok200(body);
+			ThumbnailFetcher f(ThumbConfig(dir, net));
+			f.SetList({ info.sha256 }, true);
+			f.Want("m", info);
+			WaitUntil([&] { return net.Calls() == 1; });
+			Check(f.Shutdown(3000) && net.sawCancel && f.State("m") == ThumbnailState::None && dir.Names().empty(),
+				"thumb shutdown: the open request is cancelled, the worker ends, nothing is written");
+		}
+
+		// the tidy runs once, before the first fetch of a signed list
+		{
+			ThumbDir dir;
+			ThumbNet net;
+			const std::string body = ThumbBody();
+			const ThumbnailInfo info = ThumbInfoFor(body, 'a');
+			net.answers[info.url] = Ok200(body);
+			dir.Put(Hex('9') + ".png.tmp", "half");
+			dir.Put("keep.txt", "mine");
+			ThumbnailFetcher f(ThumbConfig(dir, net));
+			f.SetList({ info.sha256 }, true);
+			Check(Settle(f, "m", info) == ThumbnailState::Bytes, "thumb tidy: the fetch works");
+			Check(dir.Names() == std::vector<std::string>{ "keep.txt", info.sha256 + ".png" }
+				|| dir.Names() == std::vector<std::string>{ info.sha256 + ".png", "keep.txt" },
+				"thumb tidy: a leftover temp file went, the picture and a foreign file stayed");
+		}
+		{
+			ThumbDir dir;
+			dir.Put(Hex('1') + ".png", "listed");
+			dir.Put(Hex('2') + ".png", "old");
+			dir.Put(Hex('3') + ".png", "new");
+			dir.Put("readme.md", "foreign");
+			std::error_code ec;
+			const auto old = std::filesystem::file_time_type::clock::now() - std::chrono::hours(24 * 60);
+			std::filesystem::last_write_time(dir.path / (Hex('1') + ".png"), old, ec);
+			std::filesystem::last_write_time(dir.path / (Hex('2') + ".png"), old, ec);
+			const int64_t now = static_cast<int64_t>(std::time(nullptr));
+			const size_t gone = TidyThumbnailCache(dir.Wide(), { Hex('1') }, now);
+			Check(gone == 1 && dir.Names() == std::vector<std::string>{ Hex('1') + ".png", Hex('3') + ".png", "readme.md" },
+				"thumb tidy: on disk, only the old unnamed picture is deleted");
+			Check(TidyThumbnailCache(dir.Wide() + L"\\missing", {}, now) == 0, "thumb tidy: a missing folder is not an error");
+		}
+	}
+
+	// ---- Thumbnails: the textures, with fake texture calls --------------------
+
+	struct ThumbTex
+	{
+		std::mutex mutex;
+		std::vector<std::function<void()>> queue;
+		std::set<void*> live;
+		std::map<std::string, std::string> bytes;     // by id, until taken
+		std::vector<std::string> released;
+		std::atomic<uint64_t> clock{ 10000 };
+		int loads = 0;
+		int frees = 0;
+		int nextHandle = 1;
+		bool nullOnLoad = false;
+		int width = 640;
+		int height = 360;
+
+		ThumbTex() {}
+
+		TextureOps Ops()
+		{
+			TextureOps ops;
+			ops.load = [this](const void*, size_t, const char*) -> void*
+			{
+				std::lock_guard<std::mutex> lock(mutex);
+				++loads;
+				if (nullOnLoad)
+					return nullptr;
+				void* h = reinterpret_cast<void*>(static_cast<uintptr_t>(nextHandle++));
+				live.insert(h);
+				return h;
+			};
+			ops.free = [this](void* h)
+			{
+				std::lock_guard<std::mutex> lock(mutex);
+				++frees;
+				live.erase(h);
+			};
+			ops.size = [this](void*, int* w, int* h) { *w = width; *h = height; };
+			ops.post = [this](std::function<void()> job)
+			{
+				std::lock_guard<std::mutex> lock(mutex);
+				queue.push_back(std::move(job));
+			};
+			return ops;
+		}
+
+		ThumbnailTexturesHooks Hooks()
+		{
+			ThumbnailTexturesHooks hooks;
+			hooks.take = [this](const std::string& id)
+			{
+				std::lock_guard<std::mutex> lock(mutex);
+				const auto it = bytes.find(id);
+				if (it == bytes.end())
+					return std::string();
+				std::string out = it->second;
+				bytes.erase(it);
+				return out;
+			};
+			hooks.released = [this](const std::string& id)
+			{
+				std::lock_guard<std::mutex> lock(mutex);
+				released.push_back(id);
+			};
+			hooks.nowMs = [this] { return clock.load(); };
+			return hooks;
+		}
+
+		size_t Queued()
+		{
+			std::lock_guard<std::mutex> lock(mutex);
+			return queue.size();
+		}
+
+		bool RunOne()
+		{
+			std::function<void()> job;
+			{
+				std::lock_guard<std::mutex> lock(mutex);
+				if (queue.empty())
+					return false;
+				job = queue.front();
+				queue.erase(queue.begin());
+			}
+			job();
+			return true;
+		}
+
+		void Give(const std::string& id) { bytes[id] = ThumbBody(); }
+	};
+
+	void ThumbnailTextureTests()
+	{
+		// one picture, from request to draw
+		{
+			ThumbTex t;
+			ThumbnailTextures tex(t.Ops(), t.Hooks());
+			t.Give("a");
+			Check(tex.Get("a").state == PictureState::None, "thumb texture: nothing before a request");
+			tex.Request("a");
+			Check(t.Queued() == 1 && t.loads == 0 && tex.Get("a").state == PictureState::Decoding, "thumb texture: a request posts a job and loads nothing itself");
+			tex.Request("b");
+			tex.Request("a");
+			Check(t.Queued() == 1, "thumb texture: one job at a time");
+			t.RunOne();
+			const Picture p = tex.Get("a");
+			Check(p.state == PictureState::Ready && p.handle && p.width == 640 && p.height == 360 && tex.Held() == 1, "thumb texture: the job makes the texture and sizes it");
+			Check(t.bytes.empty() && t.loads == 1, "thumb texture: the bytes were taken once");
+			tex.Request("a");
+			Check(t.Queued() == 0, "thumb texture: a picture that is Ready is not requested again");
+			tex.Shutdown(1000);
+			Check(t.loads == t.frees && t.live.empty() && tex.Held() == 0, "thumb texture: Shutdown frees what is held, every load paired with a free");
+		}
+
+		// failures end Failed and free what they made
+		{
+			ThumbTex t;
+			ThumbnailTextures tex(t.Ops(), t.Hooks());
+			t.nullOnLoad = true;
+			t.Give("a");
+			tex.Request("a");
+			t.RunOne();
+			Check(tex.Get("a").state == PictureState::Failed && tex.Held() == 0, "thumb texture: a load that returns nothing is Failed");
+			tex.Request("a");
+			Check(t.Queued() == 0, "thumb texture: a Failed picture is not tried again by itself");
+			t.nullOnLoad = false;
+			tex.ClearFailures();
+			Check(tex.Get("a").state == PictureState::None && t.released == std::vector<std::string>{ "a" }, "thumb texture: ClearFailures forgets it and tells the fetcher");
+			t.Give("a");
+			tex.Request("a");
+			t.RunOne();
+			Check(tex.Get("a").state == PictureState::Ready, "thumb texture: after ClearFailures it can be made");
+
+			t.Give("big");
+			t.width = 5000;
+			tex.Request("big");
+			t.RunOne();
+			Check(tex.Get("big").state == PictureState::Failed && t.live.size() == 1, "thumb texture: a decoded size over the limit is freed and Failed");
+			t.width = 640;
+
+			t.bytes["junk"] = std::string("\xFF\xD8\xFF\xE0", 4) + std::string(80, 'j');
+			const int loadsBefore = t.loads;
+			tex.Request("junk");
+			t.RunOne();
+			Check(tex.Get("junk").state == PictureState::Failed && t.loads == loadsBefore, "thumb texture: bytes that are not a PNG within the limits never reach the decoder");
+			tex.Request("none");
+			t.RunOne();
+			Check(tex.Get("none").state == PictureState::Failed, "thumb texture: no bytes to take is Failed");
+			tex.Shutdown(1000);
+			Check(t.loads == t.frees && t.live.empty(), "thumb texture: every load is paired with a free");
+		}
+
+		// 16 textures
+		{
+			ThumbTex t;
+			ThumbnailTextures tex(t.Ops(), t.Hooks());
+			for (size_t i = 0; i < kMaxThumbnailTextures; ++i)
+			{
+				const std::string id = "id" + std::to_string(i);
+				t.Give(id);
+				tex.Request(id);
+				t.RunOne();
+				tex.Get(id);                 // drawn now
+				t.clock += 10;
+			}
+			Check(tex.Held() == 16 && t.live.size() == 16, "thumb texture: 16 textures held");
+
+			// all drawn within the last second: a 17th waits
+			t.Give("late");
+			tex.Request("late");
+			Check(t.Queued() == 0 && tex.Get("late").state == PictureState::None, "thumb texture: when every held picture was drawn lately a new one waits");
+
+			// time passes, one picture is drawn again: the oldest goes
+			t.clock += kThumbnailRecentMs;
+			tex.Get("id0");
+			t.clock += 5;
+			tex.Request("late");
+			Check(t.Queued() == 1, "thumb texture: once the oldest has not been drawn for a while there is room");
+			t.RunOne();
+			Check(tex.Held() == 16 && tex.Get("late").state == PictureState::Ready, "thumb texture: the new one is held and the count stays 16");
+			Check(tex.Get("id1").state == PictureState::None && t.released == std::vector<std::string>{ "id1" },
+				"thumb texture: the least recently drawn (not the one drawn again) was freed and the fetcher told");
+			Check(tex.Get("id0").state == PictureState::Ready, "thumb texture: the one drawn again stayed");
+			Check(t.live.size() == 16 && t.loads - t.frees == 16, "thumb texture: the freed one is really freed");
+
+			// the evicted picture can come back
+			t.clock += 2000;
+			t.Give("id1");
+			tex.Request("id1");
+			t.RunOne();
+			Check(tex.Get("id1").state == PictureState::Ready && tex.Held() == 16, "thumb texture: an evicted picture is made again on request");
+			tex.Shutdown(1000);
+			Check(t.loads == t.frees && t.live.empty(), "thumb texture: after 18 loads every one was freed");
+		}
+
+		// Shutdown before the job runs
+		{
+			ThumbTex t;
+			ThumbnailTextures tex(t.Ops(), t.Hooks());
+			t.Give("a");
+			tex.Request("a");
+			Check(tex.Shutdown(1000), "thumb texture: Shutdown with a job posted but not started");
+			t.RunOne();
+			Check(t.loads == 0 && t.live.empty() && tex.Get("a").state == PictureState::None, "thumb texture: a job that runs after Shutdown makes nothing");
+			tex.Request("b");
+			Check(t.Queued() == 0, "thumb texture: no request after Shutdown");
+		}
+
+		// a load that is running while Shutdown is called is freed, not shown
+		{
+			ThumbTex t;
+			std::atomic<bool> inLoad{ false };
+			std::atomic<bool> release{ false };
+			TextureOps ops = t.Ops();
+			const auto realLoad = ops.load;
+			ops.load = [&](const void* d, size_t n, const char* name) -> void*
+			{
+				inLoad = true;
+				while (!release)
+					std::this_thread::sleep_for(std::chrono::milliseconds(2));
+				return realLoad(d, n, name);
+			};
+			ThumbnailTextures tex(ops, t.Hooks());
+			t.Give("a");
+			tex.Request("a");
+			std::thread game([&] { t.RunOne(); });
+			WaitUntil([&] { return inLoad.load(); });
+			std::thread later([&] { std::this_thread::sleep_for(std::chrono::milliseconds(50)); release = true; });
+			const bool idle = tex.Shutdown(3000);
+			later.join();
+			game.join();
+			Check(idle && t.loads == 1 && t.frees == 1 && t.live.empty() && tex.Get("a").state == PictureState::None,
+				"thumb texture: a load running at Shutdown is waited for and its texture freed, never shown");
+		}
+	}
 }
 
 int main()
@@ -1866,6 +2639,9 @@ int main()
 	InstallerTests();
 	SignatureStateTests();
 	SearchTests();
+	ThumbnailCacheRuleTests();
+	ThumbnailFetcherTests();
+	ThumbnailTextureTests();
 
 	printf("%d checks, %d failed\n", g_checks, g_failed);
 	return g_failed ? 1 : 0;

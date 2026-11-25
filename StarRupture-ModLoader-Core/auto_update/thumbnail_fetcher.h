@@ -15,7 +15,7 @@
 // ---------------------------------------------------------------------------
 // thumbnail_fetcher.h -- gets the pictures of the Browse cards (mod_index.h,
 // ThumbnailInfo) onto the loader's memory, checked, on one worker thread. It
-// makes no texture: ThumbnailTextures (thumbnail_textures.h) takes the bytes.
+// makes no texture: ThumbnailTextures (below) takes the bytes.
 //
 // A picture is fetched only for an entry of a list that passed its signature
 // (SetList): the hash that guards the bytes comes from that list. For a list the
@@ -185,6 +185,10 @@ namespace ModIndex
 
 		// What to draw; counts as drawn now. state None: not made (yet). Render thread.
 		Picture Get(const std::string& id);
+
+		// Pictures whose texture could not be made may be asked for again: forgets
+		// them here and tells `hooks.released`, so the fetcher brings the bytes back.
+		void ClearFailures();
 
 		// Textures held (Ready).
 		size_t Held() const;

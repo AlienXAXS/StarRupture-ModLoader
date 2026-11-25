@@ -16,6 +16,7 @@
 #include "../auto_update/readme_fetcher.h"
 #include "../auto_update/mod_install.h"
 #include "../UI/readme_view.h"
+#include "../UI/browse_thumbnails.h"
 #endif
 
 void ShutdownAll()
@@ -93,6 +94,7 @@ void ShutdownAll()
 #ifdef MODLOADER_CLIENT_BUILD
     // Textures go back before the ImGui host is unloaded.
     UI::ReadmeView::Shutdown();
+    UI::BrowseThumbnails::Shutdown();
     ShutdownClientUI();
     // The Browse tab's index request may still be running. It cannot be
     // cancelled and ends by its own deadline, so this waits up to 2 s; a request

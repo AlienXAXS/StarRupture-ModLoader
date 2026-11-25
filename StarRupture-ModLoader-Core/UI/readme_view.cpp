@@ -6,9 +6,9 @@
 #include "imgui/imgui.h"
 #include "imgui_backend.h"
 #include "theme.h"
+#include "browse_thumbnails.h"
 #include "auto_update/readme_fetcher.h"
 #include "auto_update/readme_textures.h"
-#include "utils/game_thread_dispatch.h"
 #include "utils/open_page.h"
 
 #include <algorithm>
@@ -23,29 +23,9 @@ namespace UI::ReadmeView
 		ModIndex::Entry    s_entry;           // a copy: the list may be refreshed while the page is open
 		int                s_lastDrawnFrame = 0;
 
-		// The decode and the texture upload run on the game thread (the same hop the
-		// RELOAD button uses); freeing is safe from any thread.
 		ModIndex::TextureOps MakeOps()
 		{
-			ModIndex::TextureOps ops;
-			ops.load = [](const void* data, size_t size, const char* name) -> void*
-			{
-				IPluginImGuiTextures* const api = UI::ImGuiBackend::GetTextureAPI();
-				return (api && api->LoadFromMemory) ? api->LoadFromMemory(data, size, name) : nullptr;
-			};
-			ops.free = [](void* handle)
-			{
-				IPluginImGuiTextures* const api = UI::ImGuiBackend::GetTextureAPI();
-				if (api && api->FreeTexture)
-					api->FreeTexture(handle);
-			};
-			ops.size = [](void* handle, int* width, int* height)
-			{
-				IPluginImGuiTextures* const api = UI::ImGuiBackend::GetTextureAPI();
-				if (api && api->GetSize)
-					api->GetSize(handle, width, height);
-			};
-			ops.post = [](std::function<void()> job) { GameThreadDispatch::PostVoid(std::move(job)); };
+			ModIndex::TextureOps ops = UI::BrowseThumbnails::HostTextureOps();
 			ops.take = [](size_t slot) { return ModIndex::ReadmeInstance().TakeImageBytes(slot); };
 			return ops;
 		}

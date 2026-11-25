@@ -10,6 +10,7 @@
 #include <ctime>
 #include <deque>
 #include <exception>
+#include <cstdio>
 #include <map>
 #include <mutex>
 #include <thread>
@@ -437,5 +438,275 @@ namespace ModIndex
 		for (const auto& entry : m_shared->items)
 			total += entry.second.bytes.size();
 		return total;
+	}
+
+	// ------------------------------------------------------------------------
+	// ThumbnailTextures
+	// ------------------------------------------------------------------------
+
+	// Shared with the posted job, so a job that runs after the owner is gone
+	// still touches live memory.
+	struct ThumbnailTextures::State
+	{
+		struct Slot
+		{
+			Picture picture;
+			uint64_t lastDrawn = 0;   // the clock's ms of the latest Get
+		};
+
+		mutable std::mutex mutex;
+		std::condition_variable idle;       // signalled when a load that was running ends
+		std::map<std::string, Slot> slots;  // Decoding, Ready or Failed; absent: not tried
+		uint64_t made = 0;                  // numbers the texture names
+		bool inFlight = false;              // a job is posted or running
+		bool loading = false;               // the job is inside take/load/size right now
+		bool stopped = false;
+	};
+
+	namespace
+	{
+		uint64_t TexturesNow(const ThumbnailTexturesHooks& hooks)
+		{
+			return hooks.nowMs ? hooks.nowMs() : SteadyNowMs();
+		}
+
+		size_t ReadyCount(const ThumbnailTextures::State& s)
+		{
+			size_t n = 0;
+			for (const auto& slot : s.slots)
+				if (slot.second.picture.state == PictureState::Ready)
+					++n;
+			return n;
+		}
+
+		// The Ready slot drawn longest ago, `except` aside, or end().
+		std::map<std::string, ThumbnailTextures::State::Slot>::iterator LeastRecentlyDrawn(ThumbnailTextures::State& s,
+			const std::string& except = std::string())
+		{
+			auto best = s.slots.end();
+			for (auto it = s.slots.begin(); it != s.slots.end(); ++it)
+				if (it->second.picture.state == PictureState::Ready && it->first != except
+					&& (best == s.slots.end() || it->second.lastDrawn < best->second.lastDrawn))
+					best = it;
+			return best;
+		}
+
+		void FreeHandle(const TextureOps& ops, void* handle)
+		{
+			if (handle && ops.free)
+				ops.free(handle);
+		}
+
+		// The posted job. Game thread.
+		void RunTextureJob(const std::shared_ptr<ThumbnailTextures::State>& st, const TextureOps& ops,
+			const ThumbnailTexturesHooks& hooks, const std::string& id)
+		{
+			{
+				std::lock_guard<std::mutex> lock(st->mutex);
+				if (st->stopped)
+				{
+					st->inFlight = false;
+					return;
+				}
+				st->loading = true;
+			}
+
+			// Clears the flags on every exit, a throw included, and only after the
+			// job's last texture call, so Shutdown (which waits for !loading) never
+			// returns while this job can still call into the host.
+			struct Done
+			{
+				const std::shared_ptr<ThumbnailTextures::State>& st;
+				~Done()
+				{
+					{
+						std::lock_guard<std::mutex> lock(st->mutex);
+						st->loading = false;
+						st->inFlight = false;
+					}
+					st->idle.notify_all();
+				}
+			} done{ st };
+
+			void* handle = nullptr;
+			int width = 0;
+			int height = 0;
+
+			uint64_t number = 0;
+			{
+				std::lock_guard<std::mutex> lock(st->mutex);
+				number = ++st->made;
+			}
+			const std::string bytes = hooks.take ? hooks.take(id) : std::string();
+			// The fetcher checked the header already; the decoder allocates the whole
+			// picture before any check of ours can run, so it is checked once more here.
+			if (!bytes.empty() && ops.load && CheckThumbnailHeader(bytes) == ThumbnailCheck::Ok)
+			{
+				char name[48];
+				snprintf(name, sizeof(name), "ModLoader.Thumb.%llu", static_cast<unsigned long long>(number));
+				try
+				{
+					handle = ops.load(bytes.data(), bytes.size(), name);
+				}
+				catch (const std::exception&)
+				{
+					handle = nullptr;   // no texture slot left, or the decode threw
+				}
+			}
+			if (handle)
+			{
+				if (ops.size)
+					ops.size(handle, &width, &height);
+				if (width <= 0 || height <= 0 || width > kMaxTextureSide || height > kMaxTextureSide)
+				{
+					FreeHandle(ops, handle);
+					handle = nullptr;
+				}
+			}
+
+			void* discard = nullptr;
+			void* evicted = nullptr;
+			std::string evictedId;
+			{
+				std::lock_guard<std::mutex> lock(st->mutex);
+				if (st->stopped)
+				{
+					discard = handle;   // loader shutting down: never shown
+				}
+				else
+				{
+					ThumbnailTextures::State::Slot& slot = st->slots[id];
+					if (handle)
+					{
+						slot.picture.state = PictureState::Ready;
+						slot.picture.handle = handle;
+						slot.picture.width = width;
+						slot.picture.height = height;
+						slot.lastDrawn = TexturesNow(hooks);
+						if (ReadyCount(*st) > kMaxThumbnailTextures)
+						{
+							const auto victim = LeastRecentlyDrawn(*st, id);
+							evicted = victim->second.picture.handle;
+							evictedId = victim->first;
+							st->slots.erase(victim);
+						}
+					}
+					else
+					{
+						slot.picture = Picture();
+						slot.picture.state = PictureState::Failed;
+					}
+				}
+			}
+			FreeHandle(ops, discard);
+			if (evicted)
+			{
+				FreeHandle(ops, evicted);
+				if (hooks.released)
+					hooks.released(evictedId);
+			}
+		}
+	}
+
+	ThumbnailTextures::ThumbnailTextures(TextureOps ops, ThumbnailTexturesHooks hooks)
+		: m_ops(std::move(ops))
+		, m_hooks(std::move(hooks))
+		, m_state(std::make_shared<State>())
+	{
+	}
+
+	ThumbnailTextures::~ThumbnailTextures()
+	{
+		Shutdown(1000);
+	}
+
+	void ThumbnailTextures::Request(const std::string& id)
+	{
+		{
+			std::lock_guard<std::mutex> lock(m_state->mutex);
+			State& s = *m_state;
+			if (s.stopped || s.inFlight || s.slots.count(id))
+				return;
+			if (ReadyCount(s) >= kMaxThumbnailTextures)
+			{
+				// Full: only when the least recently drawn has been off screen for a
+				// while is there room. Otherwise the cards on screen outnumber the
+				// textures, and this one waits (see the header).
+				const auto victim = LeastRecentlyDrawn(s);
+				if (TexturesNow(m_hooks) - victim->second.lastDrawn < kThumbnailRecentMs)
+					return;
+			}
+			s.slots[id].picture.state = PictureState::Decoding;
+			s.inFlight = true;
+		}
+		if (!m_ops.post)
+		{
+			std::lock_guard<std::mutex> lock(m_state->mutex);
+			m_state->slots[id].picture.state = PictureState::Failed;
+			m_state->inFlight = false;
+			return;
+		}
+		std::shared_ptr<State> st = m_state;
+		TextureOps ops = m_ops;
+		ThumbnailTexturesHooks hooks = m_hooks;
+		m_ops.post([st, ops, hooks, id]() { RunTextureJob(st, ops, hooks, id); });
+	}
+
+	Picture ThumbnailTextures::Get(const std::string& id)
+	{
+		const uint64_t now = TexturesNow(m_hooks);
+		std::lock_guard<std::mutex> lock(m_state->mutex);
+		const auto it = m_state->slots.find(id);
+		if (it == m_state->slots.end())
+			return Picture();
+		it->second.lastDrawn = now;
+		return it->second.picture;
+	}
+
+	void ThumbnailTextures::ClearFailures()
+	{
+		std::vector<std::string> cleared;
+		{
+			std::lock_guard<std::mutex> lock(m_state->mutex);
+			for (auto it = m_state->slots.begin(); it != m_state->slots.end();)
+			{
+				if (it->second.picture.state == PictureState::Failed)
+				{
+					cleared.push_back(it->first);
+					it = m_state->slots.erase(it);
+				}
+				else
+				{
+					++it;
+				}
+			}
+		}
+		if (m_hooks.released)
+			for (const std::string& id : cleared)
+				m_hooks.released(id);
+	}
+
+	size_t ThumbnailTextures::Held() const
+	{
+		std::lock_guard<std::mutex> lock(m_state->mutex);
+		return ReadyCount(*m_state);
+	}
+
+	bool ThumbnailTextures::Shutdown(unsigned waitMs)
+	{
+		std::vector<void*> handles;
+		bool idle = false;
+		{
+			std::unique_lock<std::mutex> lock(m_state->mutex);
+			m_state->stopped = true;
+			for (auto& slot : m_state->slots)
+				if (slot.second.picture.state == PictureState::Ready && slot.second.picture.handle)
+					handles.push_back(slot.second.picture.handle);
+			m_state->slots.clear();
+			idle = m_state->idle.wait_for(lock, std::chrono::milliseconds(waitMs), [this] { return !m_state->loading; });
+		}
+		for (void* h : handles)
+			FreeHandle(m_ops, h);
+		return idle;
 	}
 }

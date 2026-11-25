@@ -425,9 +425,12 @@
     <ClInclude Include="auto_update\readme_images.h" />
     <ClInclude Include="auto_update\readme_markdown.h" />
     <ClInclude Include="auto_update\readme_textures.h" />
+    <ClInclude Include="auto_update\thumbnail_cache.h" />
     <ClInclude Include="auto_update\thumbnail_check.h" />
+    <ClInclude Include="auto_update\thumbnail_fetcher.h" />
     <ClInclude Include="utils\open_page.h" />
     <ClInclude Include="UI\readme_view.h" />
+    <ClInclude Include="UI\browse_thumbnails.h" />
     <ClInclude Include="auto_update\vortex_notice.h" />
     <ClInclude Include="auto_update\plugin_dll_version.h" />
     <ClInclude Include="auto_update\version_compare.h" />
@@ -617,10 +620,14 @@
     <ClCompile Include="auto_update\readme_fetcher.cpp" />
     <ClCompile Include="auto_update\readme_markdown.cpp" />
     <ClCompile Include="auto_update\readme_textures.cpp" />
+    <ClCompile Include="auto_update\thumbnail_fetcher.cpp" />
     <ClCompile Include="utils\open_page.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)' != 'Client Debug' And '$(Configuration)' != 'Client Release' And '$(Configuration)' != 'Local SDK Client Debug' And '$(Configuration)' != 'Local SDK Client Release'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="UI\readme_view.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)' != 'Client Debug' And '$(Configuration)' != 'Client Release' And '$(Configuration)' != 'Local SDK Client Debug' And '$(Configuration)' != 'Local SDK Client Release'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="UI\browse_thumbnails.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)' != 'Client Debug' And '$(Configuration)' != 'Client Release' And '$(Configuration)' != 'Local SDK Client Debug' And '$(Configuration)' != 'Local SDK Client Release'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="config\config_manager.cpp" />

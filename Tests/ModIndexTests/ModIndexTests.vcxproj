@@ -106,6 +106,7 @@
     <ClCompile Include="$(CoreDir)auto_update\mod_index_fetcher.cpp" />
     <ClCompile Include="$(CoreDir)auto_update\mod_index_signed.cpp" />
     <ClCompile Include="$(CoreDir)auto_update\mod_install.cpp" />
+    <ClCompile Include="$(CoreDir)auto_update\thumbnail_fetcher.cpp" />
     <ClCompile Include="$(CoreDir)memory_scanner\version_map.cpp" />
     <ClCompile Include="$(CoreDir)memory_scanner\version_feed.cpp" />
     <ClCompile Include="$(CoreDir)plugins\plugin_catalog.cpp" />
