@@ -111,27 +111,79 @@ namespace
 	}
 
 	// The limits and the text rules every Document must keep, whatever went in.
+	bool SaneSpans(const std::vector<Span>& spans)
+	{
+		if (spans.size() > kMaxSpans)
+			return false;
+		for (const Span& s : spans)
+		{
+			if (s.text.size() > kMaxSpanBytes || !ValidUtf8(s.text) || !ValidUtf8(s.url))
+				return false;
+			if (s.text.find('\0') != std::string::npos)
+				return false;
+		}
+		return true;
+	}
+
+	size_t TableCellCount(const Document& d)
+	{
+		size_t n = 0;
+		for (const Block& b : d.blocks)
+			n += b.header.size() * (1 + b.rows.size());
+		return n;
+	}
+
+	bool SaneTable(const Block& b)
+	{
+		if (b.kind != BlockKind::Table)
+			return b.header.empty() && b.rows.empty();
+		if (b.header.empty() || b.header.size() > kMaxTableColumns || b.rows.size() > kMaxTableRows)
+			return false;
+		for (const TableCell& cell : b.header)
+			if (!SaneSpans(cell))
+				return false;
+		for (const TableRow& row : b.rows)
+		{
+			if (row.size() != b.header.size())
+				return false;
+			for (const TableCell& cell : row)
+				if (!SaneSpans(cell))
+					return false;
+		}
+		return true;
+	}
+
 	bool Sane(const Document& d)
 	{
-		if (d.blocks.size() > kMaxBlocks)
+		if (d.blocks.size() > kMaxBlocks || TableCellCount(d) > kMaxTableCells)
 			return false;
 		for (const Block& b : d.blocks)
 		{
-			if (b.spans.size() > kMaxSpans || b.code.size() > kMaxCodeBytes)
+			if (b.code.size() > kMaxCodeBytes || !SaneSpans(b.spans) || !SaneTable(b))
 				return false;
 			if (!ValidUtf8(b.code) || !ValidUtf8(b.alt) || !ValidUtf8(b.url))
 				return false;
 			if (b.level < 0 || b.level > 3 || b.depth < 0 || b.depth > 1)
 				return false;
-			for (const Span& s : b.spans)
-			{
-				if (s.text.size() > kMaxSpanBytes || !ValidUtf8(s.text))
-					return false;
-				if (s.text.find('\0') != std::string::npos)
-					return false;
-			}
 		}
 		return true;
+	}
+
+	std::string CellText(const TableCell& cell)
+	{
+		std::string t;
+		for (const Span& s : cell)
+			t += s.text;
+		return t;
+	}
+
+	// The cells' texts, a '/' between cells.
+	std::string RowText(const TableRow& row)
+	{
+		std::string t;
+		for (size_t i = 0; i < row.size(); ++i)
+			t += (i ? "/" : "") + CellText(row[i]);
+		return t;
 	}
 
 	std::string Repeat(const std::string& unit, size_t times)
@@ -432,6 +484,238 @@ namespace
 		const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0).count();
 		Check(Sane(d) && d.shortened, "1 MB input is cut and sane");
 		Check(ms < 3000, "1 MB input under 3 s");
+	}
+
+	// The text of a document that is one block.
+	std::string OnlyText(const std::string& markdown)
+	{
+		const Document d = P(markdown);
+		return Sane(d) && d.blocks.size() == 1 ? AllText(d.blocks[0]) : "<not one sane block>";
+	}
+
+	// ---- tables ------------------------------------------------------------
+
+	void TestTables()
+	{
+		// ProductionViewer's Configuration table.
+		Document d = P(
+			"| Section | Key               | Default | Description                               |\n"
+			"|---------|-------------------|---------|-------------------------------------------|\n"
+			"| General | Enabled           | true    | Enable or disable the plugin              |\n"
+			"| Menu    | ToggleKey         | P       | Key to open / close the Production Viewer |\n"
+			"| Network | BroadcastInterval | 1.0     | Seconds between production updates        |\n");
+		const Block* t = First(d, BlockKind::Table);
+		Check(Sane(d) && d.blocks.size() == 1 && t && !d.shortened, "config table is one table block");
+		Check(t && RowText(t->header) == "Section/Key/Default/Description", "config table header");
+		Check(t && t->rows.size() == 3 && RowText(t->rows[0]) == "General/Enabled/true/Enable or disable the plugin", "config table first row");
+		Check(t && t->rows.size() == 3 && RowText(t->rows[1]) == "Menu/ToggleKey/P/Key to open / close the Production Viewer", "a slash in a cell stays");
+
+		d = P("a | b\n--- | :-:\n1 | 2\n");
+		t = First(d, BlockKind::Table);
+		Check(Sane(d) && t && RowText(t->header) == "a/b" && t->rows.size() == 1 && RowText(t->rows[0]) == "1/2", "table without outer pipes");
+
+		d = P("> | a | b |\n> |---|---|\n> | 1 | 2 |\n");
+		t = First(d, BlockKind::Table);
+		Check(Sane(d) && t && t->rows.size() == 1 && RowText(t->rows[0]) == "1/2", "quoted table");
+
+		d = P("| **bold** | `a|b` | [link](https://github.com/o/r) | x \\| y |\n|---|---|---|---|\n| `c \\| d` | e\\*f | | z |\n");
+		t = First(d, BlockKind::Table);
+		const bool spansTable = Sane(d) && t && t->header.size() == 4 && t->rows.size() == 1 && !d.shortened;
+		Check(spansTable, "table with spans");
+		if (spansTable)
+		{
+			Check(t->header[0].size() == 1 && t->header[0][0].kind == SpanKind::Bold && t->header[0][0].text == "bold", "bold in a cell");
+			Check(t->header[1].size() == 1 && t->header[1][0].kind == SpanKind::Code && t->header[1][0].text == "a|b", "a pipe in code does not split");
+			Check(t->header[2].size() == 1 && t->header[2][0].kind == SpanKind::Link && t->header[2][0].clickable, "link in a cell");
+			Check(CellText(t->header[3]) == "x | y", "an escaped pipe is text");
+			Check(CellText(t->rows[0][0]) == "c | d", "an escaped pipe in code loses its backslash");
+			Check(CellText(t->rows[0][1]) == "e*f", "other escapes still work in a cell");
+			Check(t->rows[0][2].empty(), "empty cell");
+		}
+
+		// Whatever follows ends the table.
+		const auto endsAt = [](const std::string& after, BlockKind kind)
+		{
+			const Document doc = P("| a |\n|---|\n| 1 |\n" + after);
+			return Sane(doc) && doc.blocks.size() == 2 && doc.blocks[0].kind == BlockKind::Table &&
+			       doc.blocks[0].rows.size() == 1 && doc.blocks[1].kind == kind;
+		};
+		Check(endsAt("\ntext\n", BlockKind::Paragraph), "a blank line ends a table");
+		Check(endsAt("# H\n", BlockKind::Heading), "a heading ends a table");
+		Check(endsAt("- item\n", BlockKind::ListItem), "a list item ends a table");
+		Check(endsAt("```\ncode\n```\n", BlockKind::CodeBlock), "a fence ends a table");
+		Check(endsAt("    code\n", BlockKind::CodeBlock), "indented code ends a table");
+		Check(endsAt("---\n", BlockKind::Rule), "a rule ends a table");
+		Check(endsAt("<p>html</p>\n", BlockKind::Paragraph), "HTML ends a table");
+
+		d = P("| a | b |\n|---|---|\n");
+		t = First(d, BlockKind::Table);
+		Check(Sane(d) && t && t->rows.empty(), "header-only table");
+
+		// Pipes that make no table: one line each.
+		Check(OnlyText("| a | b |\n|---|\n| 1 | 2 |\n") == "| a | b |\n|---|\n| 1 | 2 |", "wrong delimiter count keeps one line per row");
+		Check(OnlyText("| a | b |\n| c | d |\n") == "| a | b |\n| c | d |", "pipe rows without a delimiter keep their lines");
+		Check(OnlyText("run a | b here\nnext line\n") == "run a | b here next line", "prose with a pipe still flows");
+
+		// Ragged rows.
+		d = P("|a|b|c|\n|-|-|-|\n|1|\n");
+		t = First(d, BlockKind::Table);
+		Check(Sane(d) && t && t->rows.size() == 1 && RowText(t->rows[0]) == "1//" && !d.shortened, "a short row is filled");
+		d = P("|a|b|c|\n|-|-|-|\n|1|2|3|4|5|\n");
+		t = First(d, BlockKind::Table);
+		Check(Sane(d) && t && t->rows.size() == 1 && RowText(t->rows[0]) == "1/2/3" && d.shortened, "extra cells are dropped, shortened");
+
+		// Each cap: at the limit nothing is lost, one over sets shortened.
+		const auto wide = [](size_t columns)
+		{
+			return P(Repeat("|h", columns) + "|\n" + Repeat("|-", columns) + "|\n" + Repeat("|c", columns) + "|\n");
+		};
+		d = wide(kMaxTableColumns);
+		Check(Sane(d) && TableCellCount(d) == 2 * kMaxTableColumns && !d.shortened, "columns at the cap");
+		d = wide(kMaxTableColumns + 1);
+		Check(Sane(d) && TableCellCount(d) == 2 * kMaxTableColumns && d.shortened, "one column over is dropped, shortened");
+		d = wide(10000);
+		Check(Sane(d) && TableCellCount(d) == 2 * kMaxTableColumns && d.shortened, "10,000 columns");
+
+		const auto tall = [](size_t rows) { return P("|h|\n|-|\n" + Repeat("|c|\n", rows)); };
+		d = tall(kMaxTableRows);
+		t = First(d, BlockKind::Table);
+		Check(Sane(d) && t && t->rows.size() == kMaxTableRows && !d.shortened, "rows at the cap");
+		d = tall(kMaxTableRows + 1);
+		t = First(d, BlockKind::Table);
+		Check(Sane(d) && t && t->rows.size() == kMaxTableRows && d.shortened && d.blocks.size() == 1, "one row over is dropped, shortened");
+		d = tall(20000);
+		Check(Sane(d) && d.blocks.size() == 1 && d.shortened, "huge table");
+
+		// Five tables of 8 columns and 50 lines are exactly kMaxTableCells.
+		const std::string line = Repeat("|c", 8) + "|\n";
+		const std::string head = line + Repeat("|-", 8) + "|\n";
+		const std::string full = head + Repeat(line, 49) + "\n";
+		d = P(Repeat(full, 5));
+		Check(Sane(d) && TableCellCount(d) == kMaxTableCells && !d.shortened, "cells at the cap");
+		d = P(Repeat(full, 5) + "|h|\n|-|\n|c|\n\ntail\n");
+		Check(Sane(d) && TableCellCount(d) == kMaxTableCells && d.shortened, "a table past the cell cap is dropped, shortened");
+		Check(d.blocks.size() == 6 && AllText(d.blocks.back()) == "tail", "text after a dropped table is kept");
+		d = P(Repeat(full, 4) + head + Repeat(line, 60));
+		Check(Sane(d) && TableCellCount(d) == kMaxTableCells && d.shortened, "rows past the cell cap are dropped, shortened");
+
+		d = P("|h|\n|-|\n|" + Repeat("`a` ", 100) + "|\n");
+		t = First(d, BlockKind::Table);
+		Check(Sane(d) && t && t->rows.size() == 1 && t->rows[0][0].size() == kMaxSpans - 1 && d.shortened, "spans past the cap in a cell, shortened");   // the 64th was a space: trimmed
+		const std::string links = Repeat("[a](https://github.com/o/r)", 40);
+		d = P("|h|\n|-|\n|" + links + "![p](a.png)" + links + "|\n");
+		t = First(d, BlockKind::Table);
+		Check(Sane(d) && t && t->rows.size() == 1 && t->rows[0][0].size() == kMaxSpans && d.shortened, "a cell split by a picture keeps the cap, shortened");
+
+		// Hostile cells and lines.
+		d = P("| `open | b |\n|---|---|\n| `x | y |\n");
+		t = First(d, BlockKind::Table);
+		Check(Sane(d) && t && RowText(t->header) == "`open/b" && t->rows.size() == 1 && RowText(t->rows[0]) == "`x/y", "unterminated code in a cell");
+		d = P(Repeat("|", 10000) + "\n");
+		Check(Sane(d) && Count(d, BlockKind::Table) == 0, "10,000 pipes on a line");
+		d = P(Repeat("|", 10000) + "\n" + Repeat("|-", 10000) + "\n");
+		Check(Sane(d), "10,000 pipes over a delimiter line");
+		d = P("|a|\n|-|\n" + Repeat("|", 10000) + "\n");
+		Check(Sane(d) && d.shortened, "10,000 pipes as a body row");
+
+		d = P("| a |\n|---|\n| text ![pic](https://raw.githubusercontent.com/o/r/main/a.png) |\n");
+		Check(Sane(d) && d.blocks.size() == 2 && d.blocks[0].kind == BlockKind::Table && d.blocks[1].kind == BlockKind::Image &&
+		      d.blocks[0].rows.size() == 1 && CellText(d.blocks[0].rows[0][0]) == "text", "a picture in a cell follows the table");
+		d = P("|h|\n|-|\n" + Repeat("|" + Repeat("![p](a.png)", 40) + "|\n", 100));
+		Check(Sane(d) && d.blocks.size() == kMaxBlocks && d.shortened, "pictures in cells stay within the block cap");
+		d = P(Repeat("|x|\n|-|\n\n", 5000));
+		Check(Sane(d) && d.shortened, "thousands of tiny tables");
+
+		const auto t0 = std::chrono::steady_clock::now();
+		d = P(Repeat("a|b\n-|-\n" + Repeat("`x|", 40) + "\n\n", 2000));
+		Check(Sane(d), "many tables with open code marks");
+		d = P("|h|\n|-|\n|" + Repeat("`x", 200) + std::string(100000, '`') + "|\n");
+		Check(Sane(d), "backtick runs in a cell");
+		const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0).count();
+		Check(ms < 3000, "hostile tables under 3 s");
+	}
+
+	// ---- text fitted to the built-in font -----------------------------------
+
+	void TestFontText()
+	{
+		// ProductionViewer's folder tree, in a code block.
+		Document d = P(
+			"```\n"
+			"<parent folder>/\n"
+			"\xE2\x94\x9C\xE2\x94\x80\xE2\x94\x80 StarRupture-Plugin-SDK/\n"
+			"\xE2\x94\x94\xE2\x94\x80\xE2\x94\x80 StarRupture-Plugin-ProductionViewer/\n"
+			"```\n");
+		const Block* code = First(d, BlockKind::CodeBlock);
+		Check(Sane(d) && code && code->code == "<parent folder>/\n+-- StarRupture-Plugin-SDK/\n`-- StarRupture-Plugin-ProductionViewer/", "folder tree reads as a tree");
+		d = P("```\n\xE2\x94\x82   file\n```\n");
+		code = First(d, BlockKind::CodeBlock);
+		Check(code && code->code == "|   file", "vertical bar keeps its indent");
+
+		// Codex: U+2726 marks a credit in the bullets and in the key.
+		Check(OnlyText("- **Pins, your way** <sup>[\xE2\x9C\xA6](#msantoro12)</sup> -- pins are saved\n") == "Pins, your way * -- pins are saved", "credit mark in a bullet becomes *");
+		Check(OnlyText("- <a id=\"msantoro12\"></a><sup>\xE2\x9C\xA6</sup> [@x](https://github.com/x)\n") == "* @x", "credit mark in the key becomes *");
+
+		Check(OnlyText("not interchangeable \xE2\x80\x94 and both\n") == "not interchangeable -- and both", "em dash");
+		Check(OnlyText("1\xE2\x80\x93" "2 \xE2\x80\x9Cq\xE2\x80\x9D \xE2\x80\x98s\xE2\x80\x99 etc\xE2\x80\xA6\n") == "1-2 \"q\" 's' etc...", "dashes, quotes, ellipsis");
+		Check(OnlyText("a \xE2\x86\x92 b \xE2\x86\x90 c \xE2\x96\xB8 d \xE2\x80\xA2 e\xC2\xA0" "f\n") == "a -> b <- c > d * e f", "arrows, bullets, non-breaking space");
+		Check(OnlyText("x &#x2014; y\n") == "x -- y", "an entity is fitted too");
+		Check(OnlyText("run `a \xE2\x86\x92 b` now\n") == "run a -> b now", "inline code is fitted");
+
+		// What the font cannot draw is dropped, without a double or hanging space.
+		Check(OnlyText("a \xF0\x9F\x9A\x80 b\n") == "a b", "emoji between words");
+		Check(OnlyText("\xF0\x9F\x9A\x80 Start\n") == "Start", "emoji at the start");
+		Check(OnlyText("done \xE2\x9C\x85\n") == "done", "symbol at the end");
+		Check(OnlyText("x \xE2\x9A\xA0\xEF\xB8\x8F y\n") == "x y", "variation selector goes with its symbol");
+		Check(OnlyText("a \xF0\x9F\x91\xA8\xE2\x80\x8D\xF0\x9F\x92\xBB b\n") == "a b", "joined emoji");
+		Check(OnlyText("wo\xE2\x80\x8Brd\n") == "word", "zero-width space inside a word");
+		Check(OnlyText("## \xF0\x9F\x9A\x80 Features\n") == "Features", "emoji heading");
+		Check(OnlyText("**\xF0\x9F\x9A\x80 Bold** text\n") == "Bold text", "emoji at the start of a bold span");
+		Check(OnlyText("**a \xF0\x9F\x9A\x80** b\n") == "a b", "emoji at the end of a bold span");
+		d = P("## \xF0\x9F\x9A\x80\n\ntext\n");
+		Check(Sane(d) && d.blocks.size() == 1 && d.blocks[0].kind == BlockKind::Paragraph, "a heading of only emoji goes");
+		d = P("|h|\n|-|\n| \xE2\x9C\x85 yes \xE2\x80\x94 ok |\n");
+		const Block* t = First(d, BlockKind::Table);
+		Check(t && t->rows.size() == 1 && CellText(t->rows[0][0]) == "yes -- ok", "table cells are fitted");
+		d = P("![a \xE2\x80\x94 b](https://example.com/x.png)\n");
+		const Block* image = First(d, BlockKind::Image);
+		Check(image && image->alt == "a -- b", "picture alt text is fitted");
+
+		// Letters the built-in or a chosen font may draw are left alone.
+		const std::string letters = "caf\xC3\xA9 \xC3\xBC \xE2\x82\xAC \xD0\x9F\xD1\x80\xD0\xB8 \xE4\xB8\xAD";
+		Check(OnlyText(letters + "\n") == letters, "letters are kept");
+
+		// Addresses are never changed.
+		const std::string address = "https://github.com/o/r/\xE2\x80\x93x";
+		d = P("[a \xE2\x80\x93 b](" + address + ")\n");
+		Check(Sane(d) && d.blocks.size() == 1 && d.blocks[0].spans.size() == 1 && d.blocks[0].spans[0].text == "a - b" &&
+		      d.blocks[0].spans[0].url == address, "link text is fitted, its address is not");
+		d = P("<" + address + ">\n");
+		Check(Sane(d) && d.blocks.size() == 1 && d.blocks[0].spans.size() == 1 && d.blocks[0].spans[0].text == address &&
+		      d.blocks[0].spans[0].url == address, "an address shown as text is not fitted");
+		Check(OnlyText("[\xF0\x9F\x9A\x80](https://github.com/o/r)\n") == "https://github.com/o/r", "a link of only emoji shows its address");
+
+		// Malformed input stays valid UTF-8 everywhere text can go.
+		const std::string bad = "a\xC3 \xE2\x94 \xED\xA0\x80 \xF4\x90\x80\x80 \xC0\xAF \x80\xA0\xAD \xF0\x9F z";
+		d = P(bad + "\n\n```\n" + bad + "\n```\n\n|" + bad + "|`" + bad + "`|\n|-|-|\n|[" + bad + "](https://github.com/o/r)|![" + bad + "](a.png)|\n\n## " + bad + "\xE2\x94");
+		Check(Sane(d) && Count(d, BlockKind::Table) == 1, "malformed UTF-8 stays valid");
+
+		const char* const pieces[] = { "|", "-", ":", "`", "\\", "\n", " ", "a", "*", "[", "]", "(", ")", "!", "<", ">",
+			"\xE2\x94\x80", "\xE2\x9C\xA6", "\xF0\x9F\x9A\x80", "\xE2\x80\x8D", "\xC2\xA0", "\xE2", "\x80", "\xF0\x9F", "\xC3\xA9" };
+		uint32_t seed = 12345;
+		bool allSane = true;
+		for (int run = 0; run < 400; ++run)
+		{
+			std::string in = run % 2 ? "|a|b|\n|-|-|\n" : "";
+			for (int i = 0; i < 400; ++i)
+			{
+				seed = seed * 1664525u + 1013904223u;
+				in += pieces[(seed >> 16) % (sizeof(pieces) / sizeof(pieces[0]))];
+			}
+			if (!Sane(P(in)))
+				allSane = false;
+		}
+		Check(allSane, "seeded random table and symbol pieces: always sane");
 	}
 
 	// ---- address and picture rules -----------------------------------------
@@ -1591,6 +1875,8 @@ int main()
 	TestImages();
 	TestLimits();
 	TestHostile();
+	TestTables();
+	TestFontText();
 	TestAddressRules();
 	TestFetcherOk();
 	TestFetcherFailures();

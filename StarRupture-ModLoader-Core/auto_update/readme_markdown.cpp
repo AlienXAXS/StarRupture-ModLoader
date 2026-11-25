@@ -86,7 +86,8 @@ namespace ModIndex
 			case 0x2039: return "<";
 			case 0x203A: return ">";
 			case 0x2022: case 0x2023: case 0x2043: case 0x2217: case 0x2219: case 0x25A0: case 0x25A1:
-			case 0x25AA: case 0x25AB: case 0x25CB: case 0x25CF: case 0x25E6: return "*";
+			case 0x25AA: case 0x25AB: case 0x25CB: case 0x25CF: case 0x25E6:
+			case 0x2726: return "*";                // a footnote mark in credit keys
 			case 0x2026: return "...";
 			case 0x2028: case 0x2029: case 0x202F: case 0x205F: case 0x3000: return " ";
 			case 0x2044: case 0x2215: return "/";
