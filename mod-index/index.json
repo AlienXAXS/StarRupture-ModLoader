@@ -8,7 +8,12 @@
     "page_url": "https://github.com/AlienXAXS/StarRupture-Plugin-Codex",
     "interface_version_min": 77,
     "tested_loader": "1.27.0",
-    "readme_url": "https://raw.githubusercontent.com/AlienXAXS/StarRupture-Plugin-Codex/main/README.md"
+    "readme_url": "https://raw.githubusercontent.com/AlienXAXS/StarRupture-Plugin-Codex/main/README.md",
+    "download_url": "https://github.com/AlienXAXS/StarRupture-Plugin-Codex/releases/download/v1.2.0/Codex-Client.dll",
+    "download_sha256": "ed04640a6abd9ea0e69ad133056e7e0986260743d5b3b4a753814ffa91286f3b",
+    "download_size": 4026880,
+    "install_files": ["Codex.dll", "Codex.json"],
+    "update_manifest_url": "https://github.com/AlienXAXS/StarRupture-Plugin-Codex/releases/latest/download/Codex-client-manifest.json"
   },
   {
     "id": "bettercheats",
@@ -19,7 +24,12 @@
     "page_url": "https://github.com/AlienXAXS/StarRupture-Plugin-BetterCheats",
     "interface_version_min": 77,
     "tested_loader": "1.27.0",
-    "readme_url": "https://raw.githubusercontent.com/AlienXAXS/StarRupture-Plugin-BetterCheats/main/README.md"
+    "readme_url": "https://raw.githubusercontent.com/AlienXAXS/StarRupture-Plugin-BetterCheats/main/README.md",
+    "download_url": "https://github.com/AlienXAXS/StarRupture-Plugin-BetterCheats/releases/download/v0.26.0/BetterCheats-Client.dll",
+    "download_sha256": "9692bd7be9cd4d5415164c0da02903b5dca03b29e6139e5d959184077831d713",
+    "download_size": 5182976,
+    "install_files": ["BetterCheats.dll", "BetterCheats.json"],
+    "update_manifest_url": "https://github.com/AlienXAXS/StarRupture-Plugin-BetterCheats/releases/latest/download/BetterCheats-client-manifest.json"
   },
   {
     "id": "betterdrone",
@@ -30,7 +40,12 @@
     "page_url": "https://github.com/AlienXAXS/StarRupture-Plugin-BetterDrone",
     "interface_version_min": 77,
     "tested_loader": "1.27.0",
-    "readme_url": "https://raw.githubusercontent.com/AlienXAXS/StarRupture-Plugin-BetterDrone/main/README.md"
+    "readme_url": "https://raw.githubusercontent.com/AlienXAXS/StarRupture-Plugin-BetterDrone/main/README.md",
+    "download_url": "https://github.com/AlienXAXS/StarRupture-Plugin-BetterDrone/releases/download/v0.26.0/BetterDrone-Client.dll",
+    "download_sha256": "2bc4b99a3c340e6f074ee02ee578babb133c4abdde4e7c7d3fa66a244216c60c",
+    "download_size": 4861952,
+    "install_files": ["BetterDrone.dll", "BetterDrone.json"],
+    "update_manifest_url": "https://github.com/AlienXAXS/StarRupture-Plugin-BetterDrone/releases/latest/download/BetterDrone-client-manifest.json"
   },
   {
     "id": "compass",
@@ -41,7 +56,12 @@
     "page_url": "https://github.com/AlienXAXS/StarRupture-Plugin-Compass",
     "interface_version_min": 75,
     "tested_loader": "1.27.0",
-    "readme_url": "https://raw.githubusercontent.com/AlienXAXS/StarRupture-Plugin-Compass/main/README.md"
+    "readme_url": "https://raw.githubusercontent.com/AlienXAXS/StarRupture-Plugin-Compass/main/README.md",
+    "download_url": "https://github.com/AlienXAXS/StarRupture-Plugin-Compass/releases/download/v0.22.0/Compass_Plugin-Client.dll",
+    "download_sha256": "0f5f404c8632294d6029397f7151e9955357426e4705a586fbd9e4bd6c18c960",
+    "download_size": 118272,
+    "install_files": ["Compass_Plugin.dll", "Compass_Plugin.json"],
+    "update_manifest_url": "https://github.com/AlienXAXS/StarRupture-Plugin-Compass/releases/latest/download/Compass_Plugin-client-manifest.json"
   },
   {
     "id": "cameracontrols",
@@ -52,7 +72,12 @@
     "page_url": "https://github.com/AlienXAXS/StarRupture-Plugin-CameraControls",
     "interface_version_min": 75,
     "tested_loader": "1.27.0",
-    "readme_url": "https://raw.githubusercontent.com/AlienXAXS/StarRupture-Plugin-CameraControls/main/README.md"
+    "readme_url": "https://raw.githubusercontent.com/AlienXAXS/StarRupture-Plugin-CameraControls/main/README.md",
+    "download_url": "https://github.com/AlienXAXS/StarRupture-Plugin-CameraControls/releases/download/v0.2.0/CameraControls-Client.dll",
+    "download_sha256": "cd4a944466dae0b8e5d66e89d91f091b9dbc998f47dcf0214666c4b976c77615",
+    "download_size": 469504,
+    "install_files": ["CameraControls.dll", "CameraControls.json"],
+    "update_manifest_url": "https://github.com/AlienXAXS/StarRupture-Plugin-CameraControls/releases/latest/download/CameraControls-client-manifest.json"
   },
   {
     "id": "productionviewer",
@@ -63,7 +88,12 @@
     "page_url": "https://github.com/AlienXAXS/StarRupture-Plugin-ProductionViewer",
     "interface_version_min": 77,
     "tested_loader": "1.27.0",
-    "readme_url": "https://raw.githubusercontent.com/AlienXAXS/StarRupture-Plugin-ProductionViewer/main/README.md"
+    "readme_url": "https://raw.githubusercontent.com/AlienXAXS/StarRupture-Plugin-ProductionViewer/main/README.md",
+    "download_url": "https://github.com/AlienXAXS/StarRupture-Plugin-ProductionViewer/releases/download/v0.19.0/ProductionViewer-Client.dll",
+    "download_sha256": "bd39b8280a5f82eaac584a5a836ac1cde4b073df8af140554d63e32de00142e0",
+    "download_size": 3491328,
+    "install_files": ["ProductionViewer.dll", "ProductionViewer.json"],
+    "update_manifest_url": "https://github.com/AlienXAXS/StarRupture-Plugin-ProductionViewer/releases/latest/download/ProductionViewer-client-manifest.json"
   },
   {
     "id": "axrupturetimer",
@@ -74,7 +104,12 @@
     "page_url": "https://github.com/AlienXAXS/StarRupture-Plugin-RuptureTimer",
     "interface_version_min": 75,
     "tested_loader": "1.27.0",
-    "readme_url": "https://raw.githubusercontent.com/AlienXAXS/StarRupture-Plugin-RuptureTimer/main/README.md"
+    "readme_url": "https://raw.githubusercontent.com/AlienXAXS/StarRupture-Plugin-RuptureTimer/main/README.md",
+    "download_url": "https://github.com/AlienXAXS/StarRupture-Plugin-RuptureTimer/releases/download/v0.11.0/RuptureTimer-Client.dll",
+    "download_sha256": "466392c472210ffe6e4b5d634b20134f1203fc61cb98fc3dca49c678d4321230",
+    "download_size": 88576,
+    "install_files": ["RuptureTimer.dll", "RuptureTimer.json"],
+    "update_manifest_url": "https://github.com/AlienXAXS/StarRupture-Plugin-RuptureTimer/releases/latest/download/RuptureTimer-client-manifest.json"
   },
   {
     "id": "minimap",
@@ -85,7 +120,12 @@
     "page_url": "https://github.com/LetMeInside/StarRupture-Plugin-MiniMap",
     "interface_version_min": 78,
     "tested_loader": "1.27.0",
-    "readme_url": "https://raw.githubusercontent.com/LetMeInside/StarRupture-Plugin-MiniMap/main/README.md"
+    "readme_url": "https://raw.githubusercontent.com/LetMeInside/StarRupture-Plugin-MiniMap/main/README.md",
+    "download_url": "https://github.com/LetMeInside/StarRupture-Plugin-MiniMap/releases/download/v1.3.4/MiniMap-Client.dll",
+    "download_sha256": "07f2622ade95468e07717623435e007cdb2fd7ddb20f406ae50fd0646ee4f3dd",
+    "download_size": 950784,
+    "install_files": ["MiniMap.dll", "MiniMap.json"],
+    "update_manifest_url": "https://github.com/LetMeInside/StarRupture-Plugin-MiniMap/releases/latest/download/MiniMap-client-manifest.json"
   },
   {
     "id": "mainmap",
@@ -97,7 +137,12 @@
     "interface_version_min": 79,
     "tested_loader": "1.27.0",
     "readme_url": "https://raw.githubusercontent.com/LetMeInside/StarRupture-Plugin-MainMap/main/README.md",
-    "requires": ["minimap"]
+    "requires": ["minimap"],
+    "download_url": "https://github.com/LetMeInside/StarRupture-Plugin-MainMap/releases/download/v1.0.1/MainMap-Client.dll",
+    "download_sha256": "c18d41c0f1e43dcbb3786796234ae6bde93e1391e9caf78bd54337a3ef1ab8f0",
+    "download_size": 634880,
+    "install_files": ["MainMap.dll", "MainMap.json"],
+    "update_manifest_url": "https://github.com/LetMeInside/StarRupture-Plugin-MainMap/releases/latest/download/MainMap-client-manifest.json"
   },
   {
     "id": "waila",
@@ -107,7 +152,12 @@
     "summary": "What Am I Looking At: shows what you are pointing at, with details.",
     "page_url": "https://github.com/AlienXAXS/StarRupture-Plugin-WAILA",
     "interface_version_min": 77,
-    "readme_url": "https://raw.githubusercontent.com/AlienXAXS/StarRupture-Plugin-WAILA/main/README.md"
+    "readme_url": "https://raw.githubusercontent.com/AlienXAXS/StarRupture-Plugin-WAILA/main/README.md",
+    "download_url": "https://github.com/AlienXAXS/StarRupture-Plugin-WAILA/releases/download/v0.22.0/Waila-Client.dll",
+    "download_sha256": "533a007a8d0cb78f584adc369bef1437d01c7e84be05bca2129fd341b4470c53",
+    "download_size": 341504,
+    "install_files": ["Waila.dll", "Waila.json"],
+    "update_manifest_url": "https://github.com/AlienXAXS/StarRupture-Plugin-WAILA/releases/latest/download/Waila-client-manifest.json"
   },
   {
     "id": "waveoptimiser",
@@ -117,7 +167,12 @@
     "summary": "Optimises how rupture waves are handled, on the client and on dedicated servers.",
     "page_url": "https://github.com/AlienXAXS/StarRupture-Plugin-WaveOptimiser",
     "interface_version_min": 75,
-    "readme_url": "https://raw.githubusercontent.com/AlienXAXS/StarRupture-Plugin-WaveOptimiser/main/README.md"
+    "readme_url": "https://raw.githubusercontent.com/AlienXAXS/StarRupture-Plugin-WaveOptimiser/main/README.md",
+    "download_url": "https://github.com/AlienXAXS/StarRupture-Plugin-WaveOptimiser/releases/download/v0.13.0/WaveOptimiser-Client.dll",
+    "download_sha256": "508eea5af82739d72c57b2094a0a6d1b87e302048525736216fc22b9395bcc72",
+    "download_size": 73216,
+    "install_files": ["WaveOptimiser_Plugin.dll", "WaveOptimiser_Plugin.json"],
+    "update_manifest_url": "https://github.com/AlienXAXS/StarRupture-Plugin-WaveOptimiser/releases/latest/download/WaveOptimiser-client-manifest.json"
   },
   {
     "id": "serverutility",
@@ -147,7 +202,12 @@
     "summary": "Stops saves from running out of persistent IDs.",
     "page_url": "https://github.com/LetMeInside/StarRupture-Plugin-PersistentIdFix",
     "interface_version_min": 78,
-    "readme_url": "https://raw.githubusercontent.com/LetMeInside/StarRupture-Plugin-PersistentIdFix/main/README.md"
+    "readme_url": "https://raw.githubusercontent.com/LetMeInside/StarRupture-Plugin-PersistentIdFix/main/README.md",
+    "download_url": "https://github.com/LetMeInside/StarRupture-Plugin-PersistentIdFix/releases/download/v1.4.1/PersistentIdFix-Client.dll",
+    "download_sha256": "8ceb421da60e51058facb06f3b67c2ba7d70f81e325be81b5a6bda92a9f1b565",
+    "download_size": 179712,
+    "install_files": ["PersistentIdFix.dll", "PersistentIdFix.json"],
+    "update_manifest_url": "https://github.com/LetMeInside/StarRupture-Plugin-PersistentIdFix/releases/latest/download/PersistentIdFix-client-manifest.json"
   },
   {
     "id": "confirmhotkey",
@@ -157,6 +217,11 @@
     "summary": "Adds a key (default E) that presses the confirm button in the Recycler and Analyzer.",
     "page_url": "https://github.com/NasserHabib/StarRupture-Plugin-ConfirmHotkey",
     "interface_version_min": 70,
-    "readme_url": "https://raw.githubusercontent.com/NasserHabib/StarRupture-Plugin-ConfirmHotkey/main/README.md"
+    "readme_url": "https://raw.githubusercontent.com/NasserHabib/StarRupture-Plugin-ConfirmHotkey/main/README.md",
+    "download_url": "https://github.com/NasserHabib/StarRupture-Plugin-ConfirmHotkey/releases/download/v2.4.0/ConfirmHotkey-Client.dll",
+    "download_sha256": "b4a243649eaff22d429fff6679698ff8130b64d85bdf08f20a4ad51ebde22163",
+    "download_size": 37376,
+    "install_files": ["ConfirmHotkey.dll", "ConfirmHotkey.json"],
+    "update_manifest_url": "https://github.com/NasserHabib/StarRupture-Plugin-ConfirmHotkey/releases/latest/download/ConfirmHotkey-client-manifest.json"
   }
 ]

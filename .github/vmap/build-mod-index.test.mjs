@@ -115,3 +115,56 @@ test('the index in the repository builds, and the command line writes the file',
   assert.equal(run(REAL_INDEX, '--out', out, '--seq', '0').status, 2);
   assert.equal(run(REAL_INDEX, '--out', out, '--bogus').status, 2);
 });
+
+const SHA = 'a'.repeat(64);
+const ASSET = 'https://github.com/AlienXAXS/StarRupture-Plugin-Codex/releases/download/v1.2.0/';
+const LATEST = 'https://github.com/AlienXAXS/StarRupture-Plugin-Codex/releases/latest/download/';
+const installable = (over = {}) => entry({
+  download_url: `${ASSET}Codex-Client.dll`, download_sha256: SHA, download_size: 10,
+  install_files: ['Codex-Client.dll', 'Codex-Client.json'], update_manifest_url: `${LATEST}Codex-client-manifest.json`, ...over,
+});
+
+test('takes the install keys the loader takes', () => {
+  assert.equal(outcome(() => build([installable()])), 'ok');
+  assert.equal(outcome(() => build([installable({ install_files: ['Codex-Client.dll'], update_manifest_url: undefined })])), 'ok');
+  assert.equal(outcome(() => build([installable({ download_size: 32 * 1024 * 1024 })])), 'ok');
+});
+
+test('refuses install keys the loader would drop', () => {
+  const bad = [
+    [{ download_url: undefined }, /download_url/],
+    [{ download_url: `http://github.com/AlienXAXS/StarRupture-Plugin-Codex/releases/download/v1/Codex-Client.dll` }, /download_url/],
+    [{ download_url: 'https://evil.example/o/r/releases/download/v1/Codex-Client.dll' }, /download_url/],
+    [{ download_url: `${ASSET}Codex-Client.dll?x=1` }, /download_url/],
+    [{ download_url: `${ASSET}../Codex-Client.dll` }, /download_url/],
+    [{ download_url: `${ASSET}Codex-Server.dll` }, /download_url/],
+    [{ download_url: `${ASSET}Codex.zip` }, /download_url/],
+    [{ download_url: 'https://github.com/AlienXAXS/Other/releases/download/v1/Codex-Client.dll' }, /repository/],
+    [{ page_url: 'https://www.nexusmods.com/starrupture/mods/1' }, /repository/],
+    [{ download_sha256: 'A'.repeat(64) }, /download_sha256/],
+    [{ download_sha256: `sha256:${SHA}` }, /download_sha256/],
+    [{ download_size: 0 }, /download_size/],
+    [{ download_size: '10' }, /download_size/],
+    [{ download_size: 1.5 }, /download_size/],
+    [{ download_size: 32 * 1024 * 1024 + 1 }, /download_size/],
+    [{ install_files: [] }, /install_files/],
+    [{ install_files: ['../Codex-Client.dll'] }, /install_files/],
+    [{ install_files: ['CON.dll'] }, /install_files/],
+    [{ install_files: ['.Codex.dll'] }, /install_files/],
+    [{ install_files: ['Codex-Client.json'] }, /install_files/],
+    [{ install_files: ['Codex-Client.dll', 'Other.json'] }, /install_files/],
+    [{ install_files: ['Codex-Client.dll', 'Other.dll'] }, /install_files/],
+    [{ update_manifest_url: undefined }, /update_manifest_url/],
+    [{ install_files: ['Codex-Client.dll'] }, /update_manifest_url/],
+    [{ update_manifest_url: `${ASSET}Codex-client-manifest.json` }, /update_manifest_url/],
+    [{ update_manifest_url: `${LATEST}Codex.json` }, /update_manifest_url/],
+    [{ update_manifest_url: 'https://github.com/AlienXAXS/Other/releases/latest/download/x-client-manifest.json' }, /update_manifest_url/],
+  ];
+  for (const [over, why] of bad) assert.match(outcome(() => build([installable(over)])), why, JSON.stringify(over));
+});
+
+test('every install entry of the real index names one version', () => {
+  for (const e of JSON.parse(readFileSync(REAL_INDEX, 'utf8'))) {
+    if (e.download_url) assert.ok(e.download_url.includes(`/releases/download/v${e.version}/`), e.id);
+  }
+});
