@@ -271,7 +271,7 @@ splash have none. How a plugin declares these is in the SDK's `PluginDevelopment
 
 ### Browse tab <sup>[✦](#msantoro12)</sup>
 
-Turn plugins off, uninstall them or bring them back, and find new ones. It lists every plugin in the mod
+Install plugins, turn them off, uninstall them or bring them back, and find new ones. It lists every plugin in the mod
 index plus the ones you have installed; installed plugins the index doesn't know come first, and stay
 listed if the index can't be downloaded. (A [Preload](#preload-plugins) plugin gets a card only if the
 index names it.)
@@ -299,8 +299,47 @@ A card for a plugin in the index shows its name, version and author, its summary
 was last tried on (when the index says), and an **Open page** button that opens the plugin's page (Nexus
 Mods or GitHub) in your browser. A plugin that needs a newer ModLoader than yours says so. The index is
 downloaded once, the first time you open the tab, and kept until the game closes. If the download fails,
-the tab says so and **Retry** tries again. The tab never downloads or installs a plugin. The format of the
-index and how to add a plugin are in [`mod-index/README.md`](mod-index/README.md).
+the tab says so and **Retry** tries again. The format of the index and how to add a plugin are in
+[`mod-index/README.md`](mod-index/README.md); the steps for an author are in
+[Getting your mod into Browse, and onto Nexus](mod-index/GETTING-LISTED.md).
+
+**Install.** A plugin you don't have, and whose index entry lists a download, has an **Install** button.
+One click installs one mod:
+
+1. The loader downloads the mod from its GitHub release (https only, and only from GitHub's release
+   download addresses).
+2. It checks the file's size and SHA-256 against the index. Nothing is written to disk unless both match.
+3. It writes the plugin's `.dll` to `ModLoader\Plugins`, with its `.json` for the auto-updater when the
+   entry lists one, and starts the plugin right away when it can. If it can't, the card says "Installed. It
+   will be on after you restart the game."
+
+Install never replaces a file: if the `.dll` (or its `.json`) is already in `ModLoader\Plugins`, it stops
+and names the file. A download that fails or doesn't match leaves nothing behind, and the card says why.
+While a mod installs, its button reads "Installing..." and the other **Install** buttons wait.
+`ModLoader.log` has an `[Install]` line for each step.
+
+The button is greyed out when it can't work. The reason shows when you point at the button, and under the
+card (unless the reason is that another install is running):
+
+- the mod needs another mod that isn't installed or is disabled ("MainMap needs MiniMap. Install MiniMap
+  first." or "Enable MiniMap first."). Install the other one first; nothing is installed for you;
+- Vortex manages the mod ("Vortex manages this mod. Install it in Vortex.");
+- the mod needs a newer ModLoader than yours ("Needs a newer ModLoader.");
+- another install is running ("Another mod is installing. Try again when it finishes.").
+
+A mod that only runs on a dedicated server has a **(Server)** label after its author name (point at it for
+"Runs on a dedicated server") and no **Install** button, since there is nothing to install on your PC.
+Use **Open page** to get it. So does a mod whose entry lists no download.
+
+**Search.** The box under the tab's heading filters the list as you type. Type words from a mod's name, its
+author or its description, in any order: "letmeinside minimap" finds MiniMap. A word of 3 letters or more
+also matches a name that has those letters in that order, so "minmap" finds MiniMap. "No mods match." shows
+when nothing fits.
+
+**Install and the signed list.** Install works for the loader's built-in index, which is signed, and for a
+list you set yourself with `ModIndexUrl`. A list from your own address that isn't signed shows the line
+"This list isn't signed. It comes from the address you set yourself." and installs from it all the same,
+so only point `ModIndexUrl` at a list you trust. The SHA-256 the loader checks comes from the list.
 
 A card whose plugin has a README shows a **README** button. It opens a page inside the window with the
 author's README from their GitHub repo, text and pictures; **Back** returns to the list. The page shows
@@ -1061,7 +1100,7 @@ these for you.
 | `[Network]` | `ConnectionTimeout`, `InitialConnectTimeout` | `300.0` | Seconds, 1 to 3600; anything else logs a warning and uses 300. `0` keeps the engine default. See [Net timeouts](#net-timeouts) |
 | `[AutoUpdate]` | `Enabled` | `1` | Client only, except that a dedicated server also reads it for its own check for a newer version object map file. `0` stops the update checks, including the check for a newer version object map at every start |
 | | `ManifestUrl` | empty | Empty uses the built-in manifest |
-| | `ModIndexUrl` | empty | The address of the mod index the Browse tab lists. Empty uses the loader's built-in signed index, which must pass the signature check. An address you set may serve that signed file or a plain index file. Must be `https` |
+| | `ModIndexUrl` | empty | The address of the mod index the Browse tab lists. Empty uses the loader's built-in signed index, which must pass the signature check. An address you set may serve that signed file or a plain index file, and the Browse tab installs from it either way. Must be `https` |
 | `[Preload]` | `Enabled` | `1` | |
 | | `Disabled` | empty | Comma-separated DLL names to skip |
 | `[UE4SS]` | `Enabled` | `0` | Load UE4SS before plugins. `1` if you delete the key |
