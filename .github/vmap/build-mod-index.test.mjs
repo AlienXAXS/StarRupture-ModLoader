@@ -180,3 +180,26 @@ test('every install entry of the real index names one version', () => {
     if (e.download_url) assert.ok(e.download_url.includes(`/releases/download/v${e.version}/`), e.id);
   }
 });
+
+test('a server_only entry has no install keys', () => {
+  assert.match(outcome(() => build([installable({ server_only: true })])), /^refused: .*a server_only entry has no install keys/);
+  assert.match(outcome(() => build([installable({ server_only: true, install_files: undefined, update_manifest_url: undefined })])), /^refused: .*server_only entry has no install keys/);
+  assert.equal(outcome(() => build([entry({ server_only: true })])), 'ok');
+  assert.equal(outcome(() => build([installable({ server_only: false })])), 'ok');
+});
+
+test('refuses what the loader would read differently from JSON.parse', () => {
+  const body = text([installable()]);
+  // download_size in exponent or fraction form: JSON.parse sees 2000000, the loader reads 2
+  for (const size of ['2e6', '1.0e3', '10.0']) {
+    assert.match(outcome(() => build(body.replace('"download_size": 10', `"download_size": ${size}`))), /^refused: download_size must be written as plain digits/, size);
+  }
+  // one .dll in install_files, not two of the same
+  assert.match(outcome(() => build([installable({ install_files: ['Codex-Client.dll', 'Codex-Client.dll'], update_manifest_url: undefined })])), /^refused: .*exactly one plugin .dll name/);
+  // a key repeated in the entry, or nested in another value
+  const twice = body.replace('"download_size": 10,', '"download_size": 10,\n    "download_size": 20,');
+  assert.match(outcome(() => build(twice)), /^refused: download_size must appear once/);
+  assert.match(outcome(() => build([entry({ extra: installable() })])), /^refused: .*extra must be a plain value/);
+  assert.match(outcome(() => build([entry({ nested: [1] })])), /^refused: .*nested must be a plain value/);
+  assert.match(outcome(() => build([installable({ summary: 'a "download_size": 5 in text is fine' })])), /^ok$/);
+});

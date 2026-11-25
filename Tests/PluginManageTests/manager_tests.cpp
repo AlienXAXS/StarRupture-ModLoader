@@ -498,6 +498,15 @@ namespace
 			"an existing A.dll is refused before any download and is left as it was");
 		ExpectCard("A.dll", CardState::Running, "an existing A.dll is refused");
 
+		// A server_only entry is refused even when the list gives it install fields.
+		ModIndex::Entry serverEntry = InstallEntry("Srv", "1.0.0", bytes);
+		serverEntry.serverOnly = true;
+		Expect(!InstallBlockedReason(serverEntry, { serverEntry }, GetManageSnapshot()).empty(),
+			"a server_only entry has no install, so it is blocked");
+		card = InstallAndWait(serverEntry, { serverEntry }, true, installer);
+		Expect(card.lastResult == ManageResult::Failed && g_hopCalls == 0 && !Installed(L"Srv.dll") &&
+			Leftovers(L"Srv") == 0, "a server_only entry is refused at the gate, nothing fetched or written");
+
 		// Requirements.
 		ModIndex::Entry needs = InstallEntry("Needs", "1.0.0", bytes);
 		needs.requiredIds = { "ghost" };

@@ -101,8 +101,8 @@ function checkInstall(e, who) {
   const files = e.install_files;
   need(Array.isArray(files) && files.length >= 1 && files.length <= 2 && files.every((f) => typeof f === 'string'),
     `${who}: install_files must be one .dll name, with or without its .json`);
+  need(files.filter(installDllName).length === 1, `${who}: install_files must have exactly one plugin .dll name`);
   const dll = files.find(installDllName);
-  need(dll, `${who}: install_files has no plugin .dll name`);
   const json = files.filter((f) => f !== dll);
   need(json.length === 0 || (json.length === 1 && sameName(json[0], `${dll.slice(0, -4)}.json`)),
     `${who}: install_files may only add ${dll.slice(0, -4)}.json`);
@@ -124,9 +124,10 @@ export function checkIndex(bytes) {
   need(bytes.length <= MAX_BODY_BYTES, `the index is ${bytes.length} bytes (at most ${MAX_BODY_BYTES})`);
   need(!bytes.includes(0x0d), 'the index has a CR; save it with LF line endings');
   need(bytes[bytes.length - 1] === 0x0a, 'the index does not end in a newline');
-  let list;
+  let list, raw;
   try {
-    list = JSON.parse(new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes));
+    raw = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes);
+    list = JSON.parse(raw);
   } catch (e) {
     throw new Refused(`the index is not valid UTF-8 JSON: ${e.message}`);
   }
@@ -141,8 +142,31 @@ export function checkIndex(bytes) {
     need(e.readme_url === undefined || allowedUrl(e.readme_url, README_HOSTS), `${who}: readme_url must be https on raw.githubusercontent.com`);
     need(e.requires === undefined || allowedRequires(e.requires), `${who}: requires must be at most ${MAX_REQUIRES} ids, each a string of at most ${MAX_ID_BYTES} bytes`);
     need(e.server_only === undefined || typeof e.server_only === 'boolean', `${who}: server_only must be true or false`);
+    // The loader reads the first occurrence of a key at any depth, so an object
+    // or an array it does not expect could be read as a field of the entry.
+    for (const [key, value] of Object.entries(e))
+      need(value === null || typeof value !== 'object' || (Array.isArray(value) && (key === 'requires' || key === 'install_files')),
+        `${who}: ${key} must be a plain value`);
+    need(e.server_only !== true || INSTALL_KEYS.every((key) => e[key] === undefined),
+      `${who}: a server_only entry has no install keys`);
     checkInstall(e, who);
   });
+  checkRawInstallKeys(raw, list);
+}
+
+// What JSON.parse hides: it keeps the last of a repeated key and drops a key
+// nested in another one, while the loader takes the first occurrence at any
+// depth. Each install key must appear once per entry that has it, and
+// download_size must be written as plain digits (the loader reads "2e6" as 2).
+function checkRawInstallKeys(raw, list) {
+  for (const key of INSTALL_KEYS) {
+    const found = [...raw.matchAll(new RegExp(String.raw`(?<!\\)"${key}"\s*:\s*([^,}\]\s]*)`, 'g'))];
+    need(found.length === list.filter((e) => e[key] !== undefined).length,
+      `${key} must appear once, at the top of the entries that have it`);
+    if (key === 'download_size')
+      for (const match of found)
+        need(/^[0-9]+$/.test(match[1]), 'download_size must be written as plain digits');
+  }
 }
 
 // bytes: the index file. Returns the file to hand to the signer, or with seq

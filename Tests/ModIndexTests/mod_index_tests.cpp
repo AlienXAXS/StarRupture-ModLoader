@@ -877,6 +877,13 @@ namespace
 		const Entry full = parse(InstallJson(kAssetUrl, sha, "1234", both, kOwnManifest), kRepoPage);
 		Check(full.install.url == kAssetUrl && full.install.sha256 == sha && full.install.size == 1234
 			&& full.install.dllFile == "Thing.dll" && full.install.manifestUrl == kOwnManifest, "install fields: all read");
+		// a server_only entry is never installable, whatever install fields it carries
+		const Entry server = parse(InstallJson(kAssetUrl, sha, "1234", both, kOwnManifest) + ", \"server_only\": true", kRepoPage);
+		Check(server.id == "thing" && server.serverOnly && server.install.url.empty() && server.install.dllFile.empty()
+			&& server.install.sha256.empty() && server.install.size == 0 && server.install.manifestUrl.empty(),
+			"install fields: a server_only entry keeps none of them");
+		Check(parse(InstallJson(kAssetUrl, sha, "1234", both, kOwnManifest) + ", \"server_only\": false", kRepoPage).install.dllFile == "Thing.dll",
+			"install fields: server_only false still installs");
 		const Entry reversed = parse(InstallJson(kAssetUrl, sha, "1234", "[\"Thing.json\", \"Thing.dll\"]", kOwnManifest), kRepoPage);
 		Check(reversed.install.dllFile == "Thing.dll", "install fields: the file order does not matter");
 		const Entry alone = parse(InstallJson(kAssetUrl, sha, "33554432", one, ""), kRepoPage);
