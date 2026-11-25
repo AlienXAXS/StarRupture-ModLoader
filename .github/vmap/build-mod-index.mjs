@@ -20,6 +20,9 @@
 //   - every entry has an id, a name and a page_url that is https on
 //     nexusmods.com or github.com; a readme_url, when present, is https on
 //     raw.githubusercontent.com
+//   - requires, when present, is an array of at most 8 ids, each a string of at
+//     most 64 bytes (never objects: the loader would read their keys as the
+//     entry's)
 //
 // Exit codes: 0 built; 3 the index is refused; 2 usage error.
 
@@ -35,6 +38,8 @@ export const MAX_ENTRIES = 200;
 export const MAX_BODY_BYTES = 256 * 1024 - 256;
 const PAGE_HOSTS = ['nexusmods.com', 'www.nexusmods.com', 'github.com', 'www.github.com'];
 const README_HOSTS = ['raw.githubusercontent.com'];
+const MAX_REQUIRES = 8;
+const MAX_ID_BYTES = 64;
 
 export class Refused extends Error {}
 const need = (cond, msg) => { if (!cond) throw new Refused(msg); };
@@ -54,6 +59,9 @@ function allowedUrl(value, hosts) {
 
 // The loader trims control characters and spaces from a name and an id, and drops an entry left with none.
 const hasText = (v) => typeof v === 'string' && v.replace(/[\x00-\x20\x7f]/g, '') !== '';
+
+const allowedRequires = (value) => Array.isArray(value) && value.length <= MAX_REQUIRES &&
+  value.every((id) => hasText(id) && Buffer.byteLength(id) <= MAX_ID_BYTES);
 
 // Throws Refused with the reason, naming the entry, when the index is not fit to publish.
 export function checkIndex(bytes) {
@@ -76,6 +84,7 @@ export function checkIndex(bytes) {
     need(hasText(e.name), `${who} has no name`);
     need(allowedUrl(e.page_url, PAGE_HOSTS), `${who}: page_url must be https on nexusmods.com or github.com`);
     need(e.readme_url === undefined || allowedUrl(e.readme_url, README_HOSTS), `${who}: readme_url must be https on raw.githubusercontent.com`);
+    need(e.requires === undefined || allowedRequires(e.requires), `${who}: requires must be at most ${MAX_REQUIRES} ids, each a string of at most ${MAX_ID_BYTES} bytes`);
   });
 }
 

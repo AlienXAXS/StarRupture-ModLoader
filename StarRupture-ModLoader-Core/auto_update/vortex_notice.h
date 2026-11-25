@@ -7,7 +7,8 @@
 // which copy to keep. These checks tell the updater and the loader that an
 // update replaced such a file, so they can say which answer keeps the update.
 // Everything here only reads, and anything that cannot be read or parsed counts
-// as "not managed". Header-only: the loader and the updater exe both use it.
+// as "not managed" (ListedByVortex answers Unsure instead). Header-only: the
+// loader and the updater exe both use it.
 
 #include "json_extract.h"
 
@@ -114,6 +115,49 @@ namespace VortexNotice
 			}
 		}
 		return false;
+	}
+
+	enum class Listing
+	{
+		NotListed,
+		Listed,
+		Unsure, // not in any manifest that could be read, and one could not
+	};
+
+	// Does `manifest` list one of `paths` (relative to the deploy folder)?
+	inline bool ManifestLists(const std::string& manifest, const std::vector<std::string>& paths)
+	{
+		for (const std::string& entry : JsonExtractObjectArray(manifest, "files"))
+		{
+			const std::string listed = NormalizePath(JsonExtractString(entry, "relPath"));
+			for (const std::string& path : paths)
+				if (listed == NormalizePath(path))
+					return true;
+		}
+		return false;
+	}
+
+	// Did Vortex place one of `paths` (relative to gameDir, either slash, UTF-8)?
+	// A manifest that cannot be read does not count as "no": the answer is then
+	// Unsure, unless another manifest lists the path.
+	inline Listing ListedByVortex(const std::wstring& gameDir, const std::vector<std::string>& paths)
+	{
+		WIN32_FIND_DATAW found{};
+		HANDLE search = FindFirstFileW((gameDir + L"\\vortex.deployment*.json").c_str(), &found);
+		if (search == INVALID_HANDLE_VALUE)
+			return GetLastError() == ERROR_FILE_NOT_FOUND ? Listing::NotListed : Listing::Unsure;
+
+		Listing result = Listing::NotListed;
+		do
+		{
+			const std::string manifest = ReadManifest(gameDir + L"\\" + found.cFileName);
+			if (manifest.empty())
+				result = Listing::Unsure;
+			else if (ManifestLists(manifest, paths))
+				result = Listing::Listed;
+		} while (result != Listing::Listed && FindNextFileW(search, &found));
+		FindClose(search);
+		return result;
 	}
 
 	// Did replacing `paths` (relative to gameDir, either slash) replace a file

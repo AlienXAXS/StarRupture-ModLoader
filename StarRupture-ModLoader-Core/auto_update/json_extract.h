@@ -88,20 +88,12 @@ inline int JsonExtractInt(const std::string& json, const char* key, int fallback
 	return std::stoi(json.substr(vpos));
 }
 
-// Extract a top-level string field and decode its JSON escapes. Used for the
-// manifest's "notes": JsonExtractString (json_extract.h) drops the backslash, so it
-// cannot tell \n from the letter n. Handles \n \t \" \\ \/ and \uXXXX; \r is
-// dropped, and a \u escape outside printable ASCII becomes '?' so the text
-// always draws in the overlay font.
-inline std::string JsonExtractDecodedString(const std::string& json, const char* key)
+// Decode the string whose first character (after the opening quote) is json[i].
+// Leaves i on the closing quote, or at json.size() when there is none.
+inline std::string JsonDecodeStringAt(const std::string& json, size_t& i)
 {
-	size_t vstart = JsonFindValue(json, key);
-	if (vstart == std::string::npos || json[vstart] != '"')
-		return {};
-	++vstart;
-
 	std::string value;
-	for (size_t i = vstart; i < json.size(); ++i)
+	for (; i < json.size(); ++i)
 	{
 		if (json[i] == '"')
 			break;
@@ -132,6 +124,43 @@ inline std::string JsonExtractDecodedString(const std::string& json, const char*
 		}
 	}
 	return value;
+}
+
+// Extract a top-level string field and decode its JSON escapes. Used for the
+// manifest's "notes": JsonExtractString (json_extract.h) drops the backslash, so it
+// cannot tell \n from the letter n. Handles \n \t \" \\ \/ and \uXXXX; \r is
+// dropped, and a \u escape outside printable ASCII becomes '?' so the text
+// always draws in the overlay font.
+inline std::string JsonExtractDecodedString(const std::string& json, const char* key)
+{
+	size_t i = JsonFindValue(json, key);
+	if (i == std::string::npos || json[i] != '"')
+		return {};
+	return JsonDecodeStringAt(json, ++i);
+}
+
+// The value of "key": ["a", "b"], decoded. Empty when the key is missing, the
+// value is not an array, it is cut off, or any item is not a string. Items
+// must be strings: JsonFindValue finds a key at any depth, so the keys of an
+// object inside the array would be read as the enclosing object's.
+inline std::vector<std::string> JsonExtractStringArray(const std::string& json, const char* key)
+{
+	size_t i = JsonFindValue(json, key);
+	if (i == std::string::npos || json[i] != '[')
+		return {};
+
+	std::vector<std::string> items;
+	for (++i; i < json.size(); ++i)
+	{
+		const char c = json[i];
+		if (c == ']')
+			return items;
+		if (c == '"')
+			items.push_back(JsonDecodeStringAt(json, ++i));
+		else if (c != ',' && !isspace(static_cast<unsigned char>(c)))
+			break;
+	}
+	return {};
 }
 
 // Split the array whose '[' is at json[arrayStart] into its { } object strings,

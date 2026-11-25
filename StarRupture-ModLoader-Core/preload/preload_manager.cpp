@@ -8,6 +8,7 @@
 #include "memory_scanner/version_map.h"
 #include "hooks/game/version_map_built.h"
 #include "plugins/plugin_hook_report.h"
+#include "plugins/plugin_manage.h"
 #include "logging/log.h"
 #include "logging/logger.h"
 #include "logging/logger_interface.h"
@@ -153,34 +154,12 @@ namespace PreloadManager
 
 		std::vector<std::string> DisabledList()
 		{
-			std::vector<std::string> out;
-
 			const std::wstring ini = GetModLoaderDirPath(L"modloader.ini");
 			wchar_t value[1024]{};
 			GetPrivateProfileStringW(L"Preload", L"Disabled", L"", value,
 				static_cast<DWORD>(std::size(value)), ini.c_str());
 
-			const std::string list = Narrow(value);
-			size_t start = 0;
-			while (start < list.size())
-			{
-				const size_t comma = list.find(',', start);
-				std::string item = list.substr(start,
-					comma == std::string::npos ? std::string::npos : comma - start);
-
-				// Trimmed because a hand-edited ini will have spaces after the commas.
-				while (!item.empty() && (item.front() == ' ' || item.front() == '\t')) item.erase(item.begin());
-				while (!item.empty() && (item.back()  == ' ' || item.back()  == '\t')) item.pop_back();
-
-				if (!item.empty())
-					out.push_back(item);
-
-				if (comma == std::string::npos)
-					break;
-				start = comma + 1;
-			}
-
-			return out;
+			return PluginManage::SplitNameList(Narrow(value));
 		}
 
 		// --- Breadcrumb -----------------------------------------------------
