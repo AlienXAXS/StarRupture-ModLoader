@@ -161,7 +161,7 @@ namespace VortexNotice
 	{
 		Deployment out;
 		WIN32_FIND_DATAW found{};
-		HANDLE search = FindFirstFileW((gameDir + L"\vortex.deployment*.json").c_str(), &found);
+		HANDLE search = FindFirstFileW((gameDir + L"\\vortex.deployment*.json").c_str(), &found);
 		if (search == INVALID_HANDLE_VALUE)
 		{
 			out.unreadable = GetLastError() != ERROR_FILE_NOT_FOUND;
