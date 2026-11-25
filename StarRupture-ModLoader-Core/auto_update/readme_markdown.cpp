@@ -83,6 +83,10 @@ namespace ModIndex
 			case 0x2014: case 0x2015: return "--";
 			case 0x2018: case 0x2019: case 0x201A: case 0x201B: case 0x2032: return "'";
 			case 0x201C: case 0x201D: case 0x201E: case 0x201F: case 0x2033: return "\"";
+			case 0x2020: case 0x2021: return "+";     // daggers are footnote marks too
+			// Check and cross marks carry a feature table's answers.
+			case 0x2611: case 0x2705: case 0x2713: case 0x2714: return "yes";
+			case 0x2715: case 0x2716: case 0x2717: case 0x2718: case 0x274C: return "no";
 			case 0x2039: return "<";
 			case 0x203A: return ">";
 			case 0x2022: case 0x2023: case 0x2043: case 0x2217: case 0x2219: case 0x25A0: case 0x25A1:

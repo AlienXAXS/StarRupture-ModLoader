@@ -665,7 +665,7 @@ namespace
 		// What the font cannot draw is dropped, without a double or hanging space.
 		Check(OnlyText("a \xF0\x9F\x9A\x80 b\n") == "a b", "emoji between words");
 		Check(OnlyText("\xF0\x9F\x9A\x80 Start\n") == "Start", "emoji at the start");
-		Check(OnlyText("done \xE2\x9C\x85\n") == "done", "symbol at the end");
+		Check(OnlyText("done \xE2\xAD\x90\n") == "done", "symbol at the end");
 		Check(OnlyText("x \xE2\x9A\xA0\xEF\xB8\x8F y\n") == "x y", "variation selector goes with its symbol");
 		Check(OnlyText("a \xF0\x9F\x91\xA8\xE2\x80\x8D\xF0\x9F\x92\xBB b\n") == "a b", "joined emoji");
 		Check(OnlyText("wo\xE2\x80\x8Brd\n") == "word", "zero-width space inside a word");
@@ -674,9 +674,22 @@ namespace
 		Check(OnlyText("**a \xF0\x9F\x9A\x80** b\n") == "a b", "emoji at the end of a bold span");
 		d = P("## \xF0\x9F\x9A\x80\n\ntext\n");
 		Check(Sane(d) && d.blocks.size() == 1 && d.blocks[0].kind == BlockKind::Paragraph, "a heading of only emoji goes");
-		d = P("|h|\n|-|\n| \xE2\x9C\x85 yes \xE2\x80\x94 ok |\n");
+		d = P("|h|\n|-|\n| \xE2\xAD\x90 yes \xE2\x80\x94 ok |\n");
 		const Block* t = First(d, BlockKind::Table);
 		Check(t && t->rows.size() == 1 && CellText(t->rows[0][0]) == "yes -- ok", "table cells are fitted");
+		// Check and cross marks answer a feature table: they must not vanish.
+		const auto markCell = [](const char* mark)
+		{
+			const Document doc = P("|h|\n|-|\n| " + std::string(mark) + " |\n");
+			const Block* table = First(doc, BlockKind::Table);
+			return table && table->rows.size() == 1 ? CellText(table->rows[0][0]) : std::string("no table");
+		};
+		for (const char* const mark : { "\xE2\x9C\x85", "\xE2\x9C\x93", "\xE2\x9C\x94\xEF\xB8\x8F", "\xE2\x98\x91" })
+			Check(markCell(mark) == "yes", "a check mark reads yes");
+		for (const char* const mark : { "\xE2\x9D\x8C", "\xE2\x9C\x95", "\xE2\x9C\x96", "\xE2\x9C\x97", "\xE2\x9C\x98" })
+			Check(markCell(mark) == "no", "a cross mark reads no");
+		Check(OnlyText("a\xE2\x80\xA0 b\xE2\x80\xA1\n") == "a+ b+", "daggers become +");
+
 		d = P("![a \xE2\x80\x94 b](https://example.com/x.png)\n");
 		const Block* image = First(d, BlockKind::Image);
 		Check(image && image->alt == "a -- b", "picture alt text is fitted");

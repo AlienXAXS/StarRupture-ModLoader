@@ -135,11 +135,14 @@ namespace UI::ReadmeView
 				const bool tooWide = width > m_width;
 				if (m_lineStarted)
 				{
-					if (!tooWide && ImGui::GetItemRectMax().x + width <= m_lineRight)
+					// A broken word is one item several lines tall, and SameLine
+					// would return to its top line: what follows starts below it.
+					if (!m_broke && !tooWide && ImGui::GetItemRectMax().x + width <= m_lineRight)
 						ImGui::SameLine(0.0f, 0.0f);
 					// else: the cursor is already on the next line
 				}
 				m_lineStarted = true;
+				m_broke = tooWide;
 
 				ImGui::PushID(m_id++);
 				const bool link = sp.kind == ModIndex::SpanKind::Link && sp.clickable;
@@ -188,6 +191,7 @@ namespace UI::ReadmeView
 			float m_width;
 			float m_lineRight;
 			bool  m_lineStarted = false;
+			bool  m_broke = false;       // the last word was broken across lines
 			int   m_id = 0;
 		};
 
@@ -234,10 +238,11 @@ namespace UI::ReadmeView
 			}
 			// SeparatorText cuts a label short, so one that does not fit wraps
 			// above a plain rule.
-			if (ImGui::CalcTextSize(text.c_str()).x + ImGui::GetStyle().SeparatorTextPadding.x * 2.0f
+			const std::string label = SafeLabel(text);
+			if (ImGui::CalcTextSize(label.c_str()).x + ImGui::GetStyle().SeparatorTextPadding.x * 2.0f
 			    <= ImGui::GetContentRegionAvail().x)
 			{
-				ImGui::SeparatorText(SafeLabel(text).c_str());
+				ImGui::SeparatorText(label.c_str());
 			}
 			else
 			{
@@ -265,9 +270,14 @@ namespace UI::ReadmeView
 		// at `cap`, so one long column cannot squeeze the short ones to nothing.
 		float ColumnWeight(const ModIndex::Block& b, size_t column, float cap)
 		{
-			float widest = ImGui::CalcTextSize(Joined(b.header[column]).c_str()).x;
+			// Runs every frame: a cell of one span is measured without a copy.
+			const auto width = [](const ModIndex::TableCell& cell)
+			{
+				return ImGui::CalcTextSize(cell.size() == 1 ? cell[0].text.c_str() : Joined(cell).c_str()).x;
+			};
+			float widest = width(b.header[column]);
 			for (const ModIndex::TableRow& row : b.rows)
-				widest = (std::max)(widest, ImGui::CalcTextSize(Joined(row[column]).c_str()).x);
+				widest = (std::max)(widest, width(row[column]));
 			return std::clamp(widest, 1.0f, cap);
 		}
 
@@ -282,11 +292,7 @@ namespace UI::ReadmeView
 			if (!ImGui::BeginTable("##table", columns, flags))
 				return;
 			for (int c = 0; c < columns; ++c)
-			{
-				ImGui::PushID(c);
 				ImGui::TableSetupColumn("##column", ImGuiTableColumnFlags_WidthStretch, ColumnWeight(b, c, equalShare));
-				ImGui::PopID();
-			}
 			DrawTableRow(b.header, ImGuiTableRowFlags_Headers);
 			for (size_t i = 0; i < b.rows.size(); ++i)
 			{
