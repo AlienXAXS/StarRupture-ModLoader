@@ -271,13 +271,32 @@ splash have none. How a plugin declares these is in the SDK's `PluginDevelopment
 
 ### Browse tab <sup>[✦](#msantoro12)</sup>
 
-Lists plugins from the mod index. Each plugin is a card: its name, version and author, its summary, and
-a line with an **Installed** marker when a plugin of that name is loaded, the ModLoader version it was
-last tried on (when the index says), and an **Open page** button that opens the plugin's page (Nexus Mods
-or GitHub) in your browser. A plugin that needs a newer ModLoader than yours says so instead. The list is
+Turn plugins off, uninstall them or bring them back, and find new ones. It lists every plugin in the mod
+index plus the ones you have installed; installed plugins the index doesn't know come first, and stay
+listed if the index can't be downloaded. (A [Preload](#preload-plugins) plugin gets a card only if the
+index names it.)
+
+- **Disable** turns a plugin off, and it stays off after you restart the game. **Enable** turns it back on.
+- **Uninstall** asks first, then moves the plugin's DLL, and its `.json` and `.pdb` files if it has them,
+  into `ModLoader\Removed`. Your settings, save data and any subfolders stay where they are. The updater
+  doesn't bring the plugin back.
+- **Restore**, on the same card, puts the files back and turns the plugin on, even if it was disabled
+  before.
+- If a plugin can't stop or start right away, the card says the change happens after you restart the game.
+  If a change fails, the card says that too.
+- **Vortex:** a plugin Vortex installed has no **Uninstall** button. Uninstall it in Vortex. You can still
+  disable it here.
+- If another installed, enabled plugin needs the one you're disabling or uninstalling, the tab warns you
+  first. It only knows what the mod index lists, so no warning doesn't prove nothing needs it.
+- A plugin with a comma in its file name can't be disabled.
+- On the Plugins tab, a plugin shows **Disabled** or **Uninstalled** and points you here.
+
+A card for a plugin in the index shows its name, version and author, its summary, the ModLoader version it
+was last tried on (when the index says), and an **Open page** button that opens the plugin's page (Nexus
+Mods or GitHub) in your browser. A plugin that needs a newer ModLoader than yours says so. The index is
 downloaded once, the first time you open the tab, and kept until the game closes. If the download fails,
-the tab says so and **Retry** tries again. The tab only lists plugins; it never downloads or installs one.
-The format of the index and how to add a plugin are in [`mod-index/README.md`](mod-index/README.md).
+the tab says so and **Retry** tries again. The tab never downloads or installs a plugin. The format of the
+index and how to add a plugin are in [`mod-index/README.md`](mod-index/README.md).
 
 A card whose plugin has a README shows a **README** button. It opens a page inside the window with the
 author's README from their GitHub repo, text and pictures; **Back** returns to the list. The page shows
