@@ -20,6 +20,7 @@
 
 #include <cstdio>
 #include <cstring>
+#include <cwctype>
 #include <functional>
 #include <string>
 #include <utility>
@@ -420,8 +421,9 @@ namespace PluginManage
 			return out;
 		};
 
+		// A bare stamp only: a second backup in the same second gets its suffix here.
 		std::pair<std::wstring, int> order;
-		if (!IsPluginDllName(dllName) || !ParseBackupFolder(stamp, order))
+		if (!IsPluginDllName(dllName) || !ParseBackupFolder(stamp, order) || order.first != stamp)
 			return refuse(FileResult::BadName, dllName);
 
 		const std::wstring stem = Stem(dllName);

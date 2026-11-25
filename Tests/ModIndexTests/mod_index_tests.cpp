@@ -372,6 +372,50 @@ namespace
 			Check(e.testedLoader == "1.27.0" && IsAllowedReadmeUrl(e.readmeUrl), ("sample: tested_loader and readme_url on " + e.id).c_str());
 	}
 
+	void RequiresTests()
+	{
+		const auto parse = [](const std::string& extra)
+		{
+			return ParseModIndex("[" + Obj("a", "A", kGood, extra) + "]");
+		};
+		const auto idsAre = [&parse](const std::string& extra, const std::vector<std::string>& ids)
+		{
+			const ParseResult r = parse(extra);
+			return r.ok && r.entries.size() == 1 && r.entries[0].id == "a" && r.entries[0].requiredIds == ids;
+		};
+
+		Check(idsAre("", {}), "requires: absent");
+		Check(idsAre(", \"requires\": []", {}), "requires: empty");
+		Check(idsAre(", \"requires\": [ \"minimap\" , \"codex\" ]", { "minimap", "codex" }), "requires: ids read in order");
+		Check(idsAre(", \"requires\": [\"a\\\"b\", \"c]d\", \"id\"]", { "a\"b", "c]d", "id" }), "requires: quotes, brackets and key names inside an id");
+		Check(idsAre(", \"requires\": [\"\", \"  \", \"x\"]", { "x" }), "requires: blank ids are left out");
+		Check(idsAre(", \"requires\": \"minimap\"", {}), "requires: a string is not a list");
+		Check(idsAre(", \"requires\": [12]", {}), "requires: a number refuses the list");
+		Check(idsAre(", \"requires\": [\"a\", {\"id\": \"z\"}]", {}), "requires: an object refuses the list, and the entry keeps its own id");
+		Check(idsAre(", \"requires\": [[\"a\"]]", {}), "requires: a nested array refuses the list");
+
+		std::string many = ", \"requires\": [";
+		std::vector<std::string> kept;
+		for (size_t i = 0; i < kMaxRequires + 3; ++i)
+		{
+			many += (i ? ",\"p" : "\"p") + std::to_string(i) + "\"";
+			if (i < kMaxRequires)
+				kept.push_back("p" + std::to_string(i));
+		}
+		Check(idsAre(many + "]", kept), "requires: at most kMaxRequires ids");
+		Check(idsAre(", \"requires\": [\"" + std::string(kMaxIdLen + 5, 'r') + "\"]", { std::string(kMaxIdLen, 'r') }), "requires: a long id is cut as an id is");
+
+		Check(JsonExtractStringArray("{\"requires\": [\"a\", \"b", "requires").empty(), "requires: cut inside a string");
+		Check(JsonExtractStringArray("{\"requires\": [\"a\",", "requires").empty(), "requires: cut after a comma");
+		Check(JsonExtractStringArray("{\"requires\": [\"a\\", "requires").empty(), "requires: cut after a backslash");
+		Check(JsonExtractStringArray("{\"requires\": [\"a\u00", "requires").empty(), "requires: cut inside an escape");
+		Check(JsonExtractStringArray("{\"requires\": [", "requires").empty(), "requires: cut after the bracket");
+
+		const ParseResult r = parse(", \"requires\": [\"b\"], \"version\": \"2.0\", \"interface_version_min\": 79");
+		Check(r.ok && r.entries.size() == 1 && r.entries[0].version == "2.0" && r.entries[0].interfaceVersionMin == 79 &&
+		      r.entries[0].name == "A" && r.entries[0].pageUrl == kGood, "requires: the other fields read as before");
+	}
+
 	void EntryFieldTests()
 	{
 		const std::string raw = "https://raw.githubusercontent.com/AlienXAXS/StarRupture-Plugin-Codex/main/README.md";
@@ -960,6 +1004,7 @@ int main()
 	UrlTests();
 	InstalledTests();
 	SampleTests();
+	RequiresTests();
 	EntryFieldTests();
 	EnvelopeTests();
 	SignedFetchTests();
