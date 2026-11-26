@@ -10,6 +10,7 @@
 #include <exception>
 #include <memory>
 #include <mutex>
+#include <optional>
 
 #include "console/server_console.h"
 #include "logging/log.h"
@@ -24,6 +25,7 @@
 #include "plugins/host_rules.h"
 #include "plugins/plugin_hook_report.h"
 #include "plugins/plugin_interface.h"
+#include "plugins/plugin_call_gate.h"
 #include "plugins/plugin_manager.h"
 #include "plugins/reload_policy.h"
 #include "preload/preload_manager.h"
@@ -1817,6 +1819,12 @@ namespace ModConsole
                            const std::vector<std::string>& args,
                            const std::shared_ptr<Sink>& sink)
     {
+        // A plugin's command: held from the check that it is still registered
+        // until its handler returns. Not for built-ins, which may unload.
+        std::optional<PluginCallGate::Scope> gate;
+        if (!cmd.owner.empty())
+            gate.emplace();
+
         if (cmd.ctxHandler)
         {
             if (!PluginCommandStillValid(cmd) ||

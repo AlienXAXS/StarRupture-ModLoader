@@ -14,6 +14,7 @@
 #include "console/console_commands.h"
 #include "logging/logger.h"
 #include "plugins/plugin_interface.h"
+#include "plugins/plugin_call_gate.h"
 #include "plugins/plugin_guard.h"
 
 namespace PluginConsole
@@ -118,6 +119,27 @@ namespace PluginConsole
         }
     }
 
+    // Counts ForgetPlugin per owner, so that a callback a plugin handed over
+    // before it was unloaded is not run afterwards. The mapped-module check
+    // alone passes when the DLL comes back at the same address.
+    static std::vector<std::pair<std::string, unsigned>> s_forgotten;   // under s_contextMutex
+
+    static unsigned ForgetCount(const char* owner)
+    {
+        std::lock_guard<std::mutex> lk(s_contextMutex);
+        for (const auto& f : s_forgotten)
+            if (_stricmp(f.first.c_str(), owner) == 0) return f.second;
+        return 0;
+    }
+
+    static void CountForget(const char* owner)
+    {
+        std::lock_guard<std::mutex> lk(s_contextMutex);
+        for (auto& f : s_forgotten)
+            if (_stricmp(f.first.c_str(), owner) == 0) { ++f.second; return; }
+        s_forgotten.emplace_back(owner, 1u);
+    }
+
     // -----------------------------------------------------------------------
     // The ModConsole handler every plugin command is registered with.
     // -----------------------------------------------------------------------
@@ -172,6 +194,7 @@ namespace PluginConsole
         CallbackSink(std::string owner, PluginConsoleOutputCallback onLine,
                      PluginConsoleCompleteCallback onComplete, void* userData)
             : m_owner(std::move(owner)), m_onLine(onLine), m_userData(userData),
+              m_forgets(ForgetCount(m_owner.c_str())),
               m_module(PluginGuard::ModuleOf(onLine ? reinterpret_cast<const void*>(onLine)
                                                     : reinterpret_cast<const void*>(onComplete))) {}
 
@@ -180,6 +203,12 @@ namespace PluginConsole
         void Write(ModConsole::LineKind kind, const char* text) override
         {
             if (!m_onLine || !text) return;
+            PluginCallGate::Scope gate;
+            if (ForgetCount(m_owner.c_str()) != m_forgets)
+            {
+                m_onLine = nullptr;   // the plugin was unloaded mid-command
+                return;
+            }
             if (!StillMapped(reinterpret_cast<const void*>(m_onLine)))
             {
                 m_onLine = nullptr;   // the plugin went away mid-command
@@ -196,6 +225,7 @@ namespace PluginConsole
         std::string                 m_owner;
         PluginConsoleOutputCallback m_onLine;
         void*                       m_userData;
+        unsigned                    m_forgets;
         HMODULE                     m_module;   // the calling plugin's
     };
 
@@ -335,8 +365,12 @@ namespace PluginConsole
             return {};
 
         std::string ownerName = owner;
-        return [onComplete, userData, ownerName]()
+        const unsigned forgets = ForgetCount(owner);
+        return [onComplete, userData, ownerName, forgets]()
         {
+            PluginCallGate::Scope gate;
+            if (ForgetCount(ownerName.c_str()) != forgets)
+                return;
             if (!StillMapped(reinterpret_cast<const void*>(onComplete)))
             {
                 ModLoaderLogger::LogWarn(L"[PluginConsole] Dropping completion for '%S': callback is unmapped",
@@ -397,6 +431,7 @@ namespace PluginConsole
 
         const int removed = ModConsole::ForgetPluginCommands(pluginName);
         KillContexts(pluginName, nullptr);
+        CountForget(pluginName);
 
         if (removed > 0)
             ModLoaderLogger::LogInfo(L"[PluginConsole] Removed %d console command(s) registered by '%S'",

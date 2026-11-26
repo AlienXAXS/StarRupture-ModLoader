@@ -1,9 +1,11 @@
 #include "pch.h"
 #include "game_thread_dispatch.h"
+#include "plugins/plugin_call_gate.h"
 
 #include <atomic>
 #include <deque>
 #include <mutex>
+#include <optional>
 #include <variant>
 #include <vector>
 
@@ -95,6 +97,11 @@ namespace GameThreadDispatch
 
         for (;;)
         {
+            // Taken before the task leaves the queue: after that ForgetModule
+            // cannot drop it, so a plugin's task has to hold the gate. A loader
+            // task gives it up, or an unload it runs would only be queued again.
+            std::optional<PluginCallGate::Scope> gate;
+            gate.emplace();
             Task t;
             {
                 std::lock_guard<std::mutex> lock(g_mutex);
@@ -106,6 +113,8 @@ namespace GameThreadDispatch
                 t = std::move(batch.front());
                 batch.pop_front();
             }
+            if (!t.owner)
+                gate.reset();
             if (std::holds_alternative<VoidTask>(t.run))
                 std::get<VoidTask>(t.run)();
             else
