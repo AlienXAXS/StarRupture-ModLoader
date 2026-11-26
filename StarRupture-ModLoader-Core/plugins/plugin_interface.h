@@ -11,15 +11,22 @@
 //   Fill PluginInfo::interfaceVersion with PLUGIN_DECLARED_INTERFACE. A loader older than that refuses the plugin.
 //   Members added after your level are not declared: using one is a compile error (the compiler says the member does not exist; the comment beside the member gives the level to raise to).
 //   Raise it only when the compiler tells you to. The loader itself builds with PLUGIN_INTERFACE_HOST_BUILD and sees all.
+//   Members are hidden, and so are PluginReload, PLUGIN_RELOAD_* and the PluginLoadSetting and
+//   PluginUnloadSetting helpers below 73. Other flags and constants are not: PLUGIN_FIELD_ANY_SIZE and PluginCond_* came in at 74,
+//   PLUGIN_FIELD_LATE and PluginWindowFlags_MenuMouseWhereUncovered at 75. Use one only when your need covers its
+//   level; an older loader refuses the request or ignores the flag, and the feature stays off.
 //
 // PLUGIN_OPTIONAL_INTERFACE: the highest level your plugin uses only when the loader has it.
 //   Unset, it is your need. Allowed: your need up to PLUGIN_INTERFACE_VERSION_MAX. Your plugin still declares
 //   only its need, so it loads on every loader that has that level.
-//   Add PLUGIN_EXPORT_HOST_INFO() to one .cpp file; a loader that has interface 80 then tells the plugin its
-//   own level. Ask for a newer member through its PluginOpt accessor (PluginOptRegistry, PluginOptImages,
-//   PluginOptHostRules, PluginOptDL_AddTexturedTriangles, PluginOptServerAddress): it returns nullptr on a
-//   loader that is below the member's level, so the plugin never reads past that loader's table.
-//   PluginHostHas(n) says whether the loader has level n.
+//   Add PLUGIN_EXPORT_HOST_INFO() to one .cpp file (leaving it out is a link error once the optional level is
+//   above the need); a loader that has interface 80 then tells the plugin its own level, after GetPluginInfo and
+//   before OnPluginLoadHooks and PluginInit. Ask for a newer member through its PluginOpt accessor
+//   (PluginOptRegistry, PluginOptImages, PluginOptHostRules, PluginOptDL_AddTexturedTriangles,
+//   PluginOptServerAddress): it returns nullptr unless the loader reported a level that has the member. Loaders
+//   below 80 never report, so on them every accessor above the plugin's need returns nullptr, even for a member
+//   that loader has. The plugin never reads past a loader's table.
+//   PluginHostHas(n) says whether the loader is known to have level n (the need always counts).
 
 // v19: Introduced IPluginSelf.  MIN bumped to 19.
 // v20: Added OnBeforeWorldEndPlay / OnAfterWorldEndPlay.  MIN remains 19.
@@ -953,7 +960,8 @@
 //      whose maximum is lower. A server plugin that wants to run on an older
 //      loader declares the older version and does not use the calls: below 79
 //      the HostRules pointer does not exist, and reading it reads past the
-//      table. The loader has no call that reports its own interface version.
+//      table. Before v80 the loader has no call that reports its own interface
+//      version; v80 adds PluginSetHostInfo, below.
 //      The header hides HostRules while PLUGIN_NEEDS_INTERFACE is below 79.
 //      The table is null on a generic build. Later versions add members
 //      after the ones here.
@@ -1073,6 +1081,13 @@ inline bool PluginHostHas(uint32_t n)
 {
 	return PluginHostLevel() >= n;
 }
+
+// A plugin that asks for a member above its need must export PluginSetHostInfo, or no
+// accessor would ever turn on. Naming the symbol here makes a missing
+// PLUGIN_EXPORT_HOST_INFO() a link error (LNK2001) instead of a silent null.
+#if defined(_MSC_VER) && !defined(PLUGIN_INTERFACE_HOST_BUILD) && PLUGIN_OPTIONAL_INTERFACE > PLUGIN_NEEDS_INTERFACE
+#  pragma comment(linker, "/include:PluginSetHostInfo")
+#endif
 
 // Put this once in one .cpp file of the plugin. It defines the PluginSetHostInfo export.
 #define PLUGIN_EXPORT_HOST_INFO()                                                              \
@@ -1535,7 +1550,9 @@ struct PluginFeatureDesc
                                         // late field resolve. Read it, never write it, and never keep a copy as
                                         // "what the build allows": the loader owns the flag until the plugin unloads.
                                         // Read it where the feature acts, and put back anything the feature changed
-                                        // when it turns false.
+                                        // when it turns false. From a thread other than the game thread, read it
+                                        // with std::atomic_ref<bool> (PluginMapFeature::On() does), so each read
+                                        // goes to memory and sees the loader's latest value.
 };
 
 #define PLUGIN_FEATURE_DESC_INIT { (uint32_t)sizeof(PluginFeatureDesc),                                    nullptr, nullptr, nullptr, 0, nullptr, 0, nullptr }
@@ -2779,11 +2796,16 @@ struct PluginPanelDesc
 	// title bar, so a label may repeat one in renderFn. Runs also while the
 	// panel is collapsed. Read only when the plugin declares interface 75 or
 	// later; a plugin built before leaves it out and the loader never looks.
+	// Raise PLUGIN_NEEDS_INTERFACE to 75 to use this.
+#if PLUGIN_NEEDS_INTERFACE >= 75
 	PluginImGuiRenderCallback titleBarFn;
+#endif
 };
 
 static_assert(offsetof(PluginPanelDesc, renderFn)   == 16, "v15 layout");
+#if PLUGIN_NEEDS_INTERFACE >= 75
 static_assert(offsetof(PluginPanelDesc, titleBarFn) == 24, "v75 starts where v15 ended");
+#endif
 
 typedef void* PanelHandle;
 typedef void* WidgetHandle;
@@ -4549,6 +4571,9 @@ enum PluginMapFlags : uint32_t
 //
 // A reload is an unload followed by a load, so it needs both to allow it.
 // Game shutdown unloads every plugin whatever these say.
+// Raise PLUGIN_NEEDS_INTERFACE to 73 to use PluginReload and the two setting helpers:
+// the loader reads the bits only from a plugin that declares 73 or later.
+#if PLUGIN_NEEDS_INTERFACE >= 73
 enum class PluginReload : uint32_t
 {
     ANYTIME = 0,
@@ -4565,6 +4590,7 @@ constexpr uint32_t PLUGIN_RELOAD_MASK         = 3;
 //                                       | PluginUnloadSetting(PluginReload::MENU);
 constexpr uint32_t PluginLoadSetting(PluginReload when)   { return static_cast<uint32_t>(when) << PLUGIN_RELOAD_LOAD_SHIFT; }
 constexpr uint32_t PluginUnloadSetting(PluginReload when) { return static_cast<uint32_t>(when) << PLUGIN_RELOAD_UNLOAD_SHIFT; }
+#endif
 
 struct PluginInfo
 {
