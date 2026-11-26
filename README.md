@@ -5,6 +5,10 @@ A plugin-based mod loader for [StarRupture](https://store.steampowered.com/app/1
 
 Like this project? Give it a star here on GitHub!
 
+## Find and install mods <sup>[✦](#msantoro12)</sup>
+
+You can find, install and update mods from inside the mod loader. Open the **Browse** tab in the mod loader window, pick a mod and press **Install**. The mods in the list are signed and install from the author's GitHub release, and most of them are on Nexus Mods too. **Open page** on a card takes you to the mod's page. See [Browse tab](#browse-tab-).
+
 ---
 
 ## Discord
