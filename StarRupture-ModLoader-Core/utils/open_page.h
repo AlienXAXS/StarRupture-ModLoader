@@ -5,8 +5,8 @@
 
 // ---------------------------------------------------------------------------
 // open_page.h -- the one place the loader opens a web page in the player's
-// browser. Only an address that passes ModIndex::IsAllowedPageUrl (https, on
-// nexusmods.com or github.com) is opened; anything else is ignored. Used by the
+// browser. Only an address that passes ModIndex::IsAllowedLinkUrl (https, on
+// nexusmods.com, github.com or YouTube) is opened; anything else is ignored. Used by the
 // Browse cards and the README view's links.
 //
 // Call it on a click, from the render thread: it is a one-shot ShellExecute.

@@ -666,8 +666,11 @@ no game. It checks:
 - The parser on a good index, a missing optional field, an empty list, a list with bad objects (skipped and
   counted), text that is not an array, malformed or cut off, over the 256 KB cap, past 200 entries, over the
   field caps, and hostile text (deep nesting, braces in strings, NUL bytes, unterminated strings).
-- The page URL allowlist: https on nexusmods.com, www.nexusmods.com, github.com and www.github.com only, and
-  look-alike hosts, user info, ports, backslashes, control characters and other schemes refused.
+- The page URL allowlist: https on nexusmods.com, www.nexusmods.com, github.com and www.github.com only (a YouTube
+  address is refused), and look-alike hosts, user info, ports, backslashes, control characters and other
+  schemes refused.
+- The README link allowlist (`IsAllowedLinkUrl`): the same hosts plus youtube.com, www.youtube.com,
+  m.youtube.com and youtu.be, with the same refusals.
 - `IsInstalled` by id or name, in any case.
 - The sample `mod-index/index.json` parses with none skipped, lists the install fields on every entry
   except the two server-only ones, and sets `server_only` on exactly those two.

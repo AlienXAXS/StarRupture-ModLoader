@@ -336,6 +336,45 @@ namespace
 		};
 		for (const char* u : bad)
 			Check(!IsAllowedPageUrl(u), (std::string("url refused: ") + u).c_str());
+
+		// A mod's page stays on Nexus and GitHub: a YouTube address is a link in a
+		// README, not a page, and an index entry that names one is skipped.
+		Check(!IsAllowedPageUrl("https://www.youtube.com/watch?v=abc") && !IsAllowedPageUrl("https://youtu.be/abc"), "page url refused: YouTube");
+		const ParseResult yt = ParseModIndex("[" + Obj("a", "A", "https://www.youtube.com/@author") + "]");
+		Check(yt.ok && yt.entries.empty() && yt.skipped == 1, "page url refused: an index entry with a YouTube page is skipped");
+	}
+
+	// The links a README view may open: the page hosts and YouTube.
+	void LinkUrlTests()
+	{
+		const char* const hosts[] = { "youtube.com", "www.youtube.com", "m.youtube.com" };
+		const char* const paths[] = { "/watch?v=dQw4w9WgXcQ", "/watch?v=dQw4w9WgXcQ&t=42s", "/shorts/abcDEF12345", "/@handle", "/channel/UCabcdefghijklmnopqrstuv", "" };
+		for (const char* host : hosts)
+			for (const char* path : paths)
+			{
+				const std::string u = std::string("https://") + host + path;
+				Check(IsAllowedLinkUrl(u), ("link allowed: " + u).c_str());
+			}
+
+		const char* const good[] = {
+			"https://youtu.be/dQw4w9WgXcQ", "https://youtu.be/dQw4w9WgXcQ?t=42", "https://youtu.be",
+			"https://YouTu.be/dQw4w9WgXcQ", "https://WWW.YouTube.com/watch?v=abc",
+			"https://github.com/AlienXAXS/StarRupture-ModLoader", "https://www.nexusmods.com/starrupture/mods/1",
+		};
+		for (const char* u : good)
+			Check(IsAllowedLinkUrl(u), (std::string("link allowed: ") + u).c_str());
+
+		const char* const bad[] = {
+			"https://youtube.com.evil.com/watch?v=abc", "https://www.youtube.com.evil.com/watch?v=abc", "https://youtu.be.evil.com/abc",
+			"https://evil-youtube.com/watch?v=abc", "https://evilyoutube.com/watch?v=abc", "https://notyoutu.be/abc", "https://sub.youtube.com/abc",
+			"https://music.youtube.com/watch?v=abc", "https://youtube.com@evil.com/watch?v=abc", "https://evil.com@youtube.com/watch?v=abc",
+			"https://user:pass@youtu.be/abc", "http://youtube.com/watch?v=abc", "http://youtu.be/abc", "https://youtube.com:8443/watch?v=abc",
+			"https://youtu.be:443/abc", "https://youtube.com\\@evil.com/watch", "https://youtube.com/watch?v=a b", "https://youtube.com/\xC3\xA9",
+			"https://youtube.com./watch?v=abc", "https://evil.com/youtube.com", "https://evil.com/?u=https://youtu.be/abc", "youtube.com/watch?v=abc",
+			"https://", "https://evil.example.com/o/r", "javascript:alert(1)",
+		};
+		for (const char* u : bad)
+			Check(!IsAllowedLinkUrl(u), (std::string("link refused: ") + u).c_str());
 	}
 
 	void InstalledTests()
@@ -1689,6 +1728,7 @@ int main()
 	JsonExtractTests();
 	ParserTests();
 	UrlTests();
+	LinkUrlTests();
 	InstalledTests();
 	SampleTests();
 	RequiresTests();

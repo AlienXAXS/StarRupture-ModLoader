@@ -349,8 +349,8 @@ A card whose plugin has a README shows a **README** button. It opens a page insi
 author's README from their GitHub repo, text and pictures; **Back** returns to the list. The page shows
 headings, paragraphs, lists, tables, bold, inline and block code, links and pictures. SVG pictures and
 scripts are not shown or run. Very large tables are cut short. Emoji and some other symbols are left out
-or written with plain characters, so a folder tree is drawn with `+`, `-` and `|`. Only GitHub and Nexus
-Mods links can be clicked, and they open in your browser. Pictures come only from GitHub, up to 8 per
+or written with plain characters, so a folder tree is drawn with `+`, `-` and `|`. Only GitHub, Nexus
+Mods and YouTube links can be clicked, and they open in your browser. Pictures come only from GitHub, up to 8 per
 README, each up to 2 MB and 4 megapixels (2048 px a side). Nothing is saved to disk, and leaving the page frees the pictures.
 
 The index the loader uses is a signed file published beside the version object map. The loader checks

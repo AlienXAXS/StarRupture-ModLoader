@@ -50,7 +50,7 @@ namespace ModIndex
 		SpanKind kind = SpanKind::Plain;
 		std::string text;           // may hold '\n' for a line break (hard break or <br>)
 		std::string url;            // Link only: as written; may be relative or not allowed
-		bool clickable = false;     // Link only: url passes IsAllowedPageUrl (https, nexusmods.com or github.com)
+		bool clickable = false;     // Link only: url passes IsAllowedLinkUrl (https, nexusmods.com, github.com or YouTube)
 	};
 
 	enum class BlockKind { Heading, Paragraph, ListItem, CodeBlock, Image, Rule, Table };

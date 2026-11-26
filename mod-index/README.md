@@ -115,8 +115,8 @@ When an entry has a `readme_url`, its card in the Browse tab shows a **README** 
 README inside the window. Use the raw link, for example
 `https://raw.githubusercontent.com/<owner>/<repo>/main/README.md`. A picture written with a relative path,
 such as `![Screenshot](images/shot.png)`, is loaded from the same folder as that file. Pictures must be
-on GitHub (PNG, JPEG, GIF, WebP or BMP, not SVG), up to 8 per README and 2 MB each. Links to GitHub and
-Nexus Mods open in the browser. Tables show as plain text.
+on GitHub (PNG, JPEG, GIF, WebP or BMP, not SVG), up to 8 per README and 2 MB each. Links to GitHub,
+Nexus Mods and YouTube open in the browser. Tables show as plain text.
 
 ## Check it before you send it
 

@@ -10,7 +10,7 @@ namespace OpenPage
 {
 	bool Open(const std::string& url, const std::function<void(const std::wstring&)>& opener)
 	{
-		if (!ModIndex::IsAllowedPageUrl(url))
+		if (!ModIndex::IsAllowedLinkUrl(url))
 			return false;
 		const std::wstring wide(url.begin(), url.end()); // ASCII only, by the same check
 		opener(wide);

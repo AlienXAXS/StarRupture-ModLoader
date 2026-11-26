@@ -173,6 +173,15 @@ namespace ModIndex
 		return detail::IsAllowedUrl(url, kHosts);
 	}
 
+	// A link in a README the player may click: a page address, or the same rules
+	// on youtube.com, www.youtube.com, m.youtube.com or youtu.be. A mod's index
+	// entry keeps to IsAllowedPageUrl.
+	inline bool IsAllowedLinkUrl(const std::string& url)
+	{
+		static const char* const kHosts[] = { "youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be" };
+		return IsAllowedPageUrl(url) || detail::IsAllowedUrl(url, kHosts);
+	}
+
 	// A plugin's README: the same rules, on the host raw.githubusercontent.com only.
 	inline bool IsAllowedReadmeUrl(const std::string& url)
 	{

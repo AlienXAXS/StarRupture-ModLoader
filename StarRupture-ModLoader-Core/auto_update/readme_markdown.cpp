@@ -753,7 +753,7 @@ namespace ModIndex
 				if (dest.empty() || dest.size() > kMaxUrlLen)
 					AddSpan(bold ? SpanKind::Bold : SpanKind::Plain, shown);
 				else
-					AddSpan(SpanKind::Link, shown, dest, IsAllowedPageUrl(dest));
+					AddSpan(SpanKind::Link, shown, dest, IsAllowedLinkUrl(dest));
 			}
 
 			// Link text shows as plain text: code marks and ** are dropped.

@@ -266,6 +266,13 @@ namespace
 			}
 		Check(links == 2 && clickable, "autolink and bare link");
 
+		d = P("[video](https://www.youtube.com/watch?v=abc) [short](https://youtu.be/abc?t=5) [fake](https://youtube.com.evil.com/x) [plain](http://youtube.com/x)\n");
+		size_t open = 0, shut = 0;
+		for (const Span& s : d.blocks[0].spans)
+			if (s.kind == SpanKind::Link)
+				(s.clickable ? open : shut)++;
+		Check(open == 2 && shut == 2, "YouTube links are clickable, look-alike and http ones are not");
+
 		d = P("one  \ntwo\n");
 		Check(d.blocks.size() == 1 && AllText(d.blocks[0]).find('\n') != std::string::npos, "hard line break");
 	}
@@ -1879,8 +1886,20 @@ namespace
 		for (const char* url : refused)
 			Check(!OpenPage::Open(url, opener), "an address outside the allowlist is refused");
 		Check(opened.size() == before, "a refused address never reaches the shell");
-		Check(!OpenPage::Open(std::string("https://github.com/o/r\x01"), opener) && opened.size() == before, "a control character is refused");
-		Check(!OpenPage::Open(std::string("https://github.com/") + std::string(300, 'a'), opener) && opened.size() == before, "an address over the length limit is refused");
+		Check(OpenPage::Open("https://www.youtube.com/watch?v=abc", opener) && OpenPage::Open("https://youtu.be/abc?t=5", opener) && opened.size() == before + 2, "a YouTube address opens");
+		const size_t afterYoutube = opened.size();
+		const char* const refusedYoutube[] = {
+			"https://youtube.com.evil.com/watch?v=abc",
+			"https://youtube.com@evil.com/watch?v=abc",
+			"http://youtube.com/watch?v=abc",
+			"https://youtube.com:8443/watch?v=abc",
+			"https://notyoutu.be/abc",
+		};
+		for (const char* url : refusedYoutube)
+			Check(!OpenPage::Open(url, opener), "a look-alike YouTube address is refused");
+		Check(opened.size() == afterYoutube, "a look-alike YouTube address never reaches the shell");
+		Check(!OpenPage::Open(std::string("https://github.com/o/r\x01"), opener) && opened.size() == afterYoutube, "a control character is refused");
+		Check(!OpenPage::Open(std::string("https://github.com/") + std::string(300, 'a'), opener) && opened.size() == afterYoutube, "an address over the length limit is refused");
 	}
 }
 
