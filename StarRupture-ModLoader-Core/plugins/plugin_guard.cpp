@@ -183,7 +183,7 @@ namespace PluginGuard
 
 	bool IsDeniedName(const char* pluginName)
 	{
-		if (!pluginName)
+		if (!pluginName || s_deniedCount.load(std::memory_order_relaxed) == 0)
 			return false;
 		std::lock_guard<std::mutex> lock(s_mutex);
 		return NameDenied(pluginName);

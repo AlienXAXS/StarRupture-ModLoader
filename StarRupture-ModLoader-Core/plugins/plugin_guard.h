@@ -102,8 +102,8 @@ namespace PluginGuard
 	bool IsDenied(const void* address);
 
 	// The same by plugin name, for records that hold a name and no callback
-	// address. Takes a lock: for per-event work, not for a per-frame game
-	// detour. Any thread.
+	// address. One relaxed atomic load while none is denied, else it takes a
+	// lock: for per-event work, not for per-frame work. Any thread.
 	bool IsDeniedName(const char* pluginName);
 
 	// Drops every element of `v` whose callback lives in `module`; `addressOf`

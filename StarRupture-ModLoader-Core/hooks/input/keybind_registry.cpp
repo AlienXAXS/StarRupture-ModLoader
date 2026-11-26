@@ -864,7 +864,14 @@ namespace Hooks::Input
 
 		std::lock_guard<std::mutex> lock(s_mutex);
 		auto it = s_blockingMap.find(canonical);
-		return (it != s_blockingMap.end()) && !it->second.empty();
+		if (it == s_blockingMap.end()) return false;
+
+		// An owner is "<plugin>|<section>|<key>". A plugin the joined server
+		// denies takes no key from the game.
+		return std::any_of(it->second.begin(), it->second.end(), [](const std::string& owner)
+		{
+			return !PluginGuard::IsDeniedName(owner.substr(0, owner.find('|')).c_str());
+		});
 	}
 
 	// -----------------------------------------------------------------------
@@ -940,7 +947,8 @@ namespace Hooks::Input
 	// two windows toggling on one keystroke.
 	//
 	// So an exact match shadows the agnostic ones. When nothing claims the held
-	// modifiers, behaviour is exactly as before.
+	// modifiers, behaviour is exactly as before. A denied plugin's bind claims
+	// nothing, so it cannot silence another plugin's.
 	//
 	// Caller must hold s_mutex.
 	// -----------------------------------------------------------------------
@@ -948,12 +956,24 @@ namespace Hooks::Input
 	{
 		if (mods == EModKeyMod_None) return false;
 
+		const auto claims = [&](const auto& e)
+		{
+			return e.key == key && e.event == event && e.mods == mods &&
+			       !PluginGuard::IsDenied(reinterpret_cast<const void*>(e.callback));
+		};
 		for (const auto& e : s_namedCombos)
-			if (e.key == key && e.event == event && e.mods == mods) return true;
+			if (claims(e)) return true;
 		for (const auto& e : s_comboCallbacks)
-			if (e.key == key && e.event == event && e.mods == mods) return true;
+			if (claims(e)) return true;
 
 		return false;
+	}
+
+	// A plugin the joined server denies hears no key press. It still hears the
+	// release, so a key held when the deny arrives does not stay down for it.
+	static bool IsPressDenied(const void* callback, EModKeyEvent event)
+	{
+		return event == EModKeyEvent::Pressed && PluginGuard::IsDenied(callback);
 	}
 
 	void Dispatch(EModKey key, EModKeyModifiers mods, EModKeyEvent event)
@@ -984,7 +1004,8 @@ namespace Hooks::Input
 					continue;
 				}
 
-				toCall.push_back(it->callback);
+				if (!IsPressDenied(reinterpret_cast<const void*>(it->callback), event))
+					toCall.push_back(it->callback);
 				++it;
 			}
 		}
@@ -1041,7 +1062,8 @@ namespace Hooks::Input
 					continue;
 				}
 
-				namedToCall.push_back(it->callback);
+				if (!IsPressDenied(reinterpret_cast<const void*>(it->callback), event))
+					namedToCall.push_back(it->callback);
 				++it;
 			}
 
@@ -1059,7 +1081,8 @@ namespace Hooks::Input
 					continue;
 				}
 
-				advToCall.push_back(it->callback);
+				if (!IsPressDenied(reinterpret_cast<const void*>(it->callback), event))
+					advToCall.push_back(it->callback);
 				++it;
 			}
 		}
