@@ -11,5 +11,6 @@ static_assert(PLUGIN_OPT_OFFSET_HOST_RULES == offsetof(IPluginHooks, HostRules),
 static_assert(PLUGIN_OPT_OFFSET_REGISTRY == offsetof(IPluginHooks, Registry), "Registry offset");
 static_assert(PLUGIN_OPT_OFFSET_SERVER_ADDRESS == offsetof(IPluginNetworkChannel, GetServerAddress), "GetServerAddress offset");
 static_assert(PLUGIN_OPT_OFFSET_HOST_RULES_STATE == offsetof(IPluginNetworkChannel, GetHostRulesState), "GetHostRulesState offset");
+static_assert(PLUGIN_OPT_OFFSET_HOST_DENIED == offsetof(IPluginNetworkChannel, IsDeniedByHost), "IsDeniedByHost offset");
 static_assert(PLUGIN_OPTIONAL_INTERFACE == PLUGIN_INTERFACE_VERSION_MAX, "the host build has every accessor");
 #include "opt_checks.h"

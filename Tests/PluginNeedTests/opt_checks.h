@@ -14,6 +14,7 @@ template<class T> concept HasOptHostRules   = requires(const T* t) { PluginOptHo
 template<class T> concept HasOptRegistry    = requires(const T* t) { PluginOptRegistry(t); };
 template<class T> concept HasOptServerAddr  = requires(const T* t) { PluginOptServerAddress(t); };
 template<class T> concept HasOptRulesState  = requires(const T* t) { PluginOptHostRulesState(t); };
+template<class T> concept HasOptHostDenied  = requires(const T* t) { PluginOptHostDenied(t); };
 
 static_assert(HasOptImages<IPluginHooks>             == (OPT >= 77), "PluginOptImages exists from level 77");
 static_assert(HasOptDrawTris<IModLoaderImGui>        == (OPT >= 78), "PluginOptDL_AddTexturedTriangles exists from level 78");
@@ -21,6 +22,7 @@ static_assert(HasOptHostRules<IPluginHooks>          == (OPT >= 79), "PluginOptH
 static_assert(HasOptRegistry<IPluginHooks>           == (OPT >= 80), "PluginOptRegistry exists from level 80");
 static_assert(HasOptServerAddr<IPluginNetworkChannel> == (OPT >= 80), "PluginOptServerAddress exists from level 80");
 static_assert(HasOptRulesState<IPluginNetworkChannel> == (OPT >= 81), "PluginOptHostRulesState exists from level 81");
+static_assert(HasOptHostDenied<IPluginNetworkChannel> == (OPT >= 82), "PluginOptHostDenied exists from level 82");
 
 // The offsets the accessors read, against the table as laid out in the header.
 static_assert(PLUGIN_OPT_OFFSET_IMAGES                 == 192,  "Images offset");
@@ -29,6 +31,7 @@ static_assert(PLUGIN_OPT_OFFSET_HOST_RULES             == 200,  "HostRules offse
 static_assert(PLUGIN_OPT_OFFSET_REGISTRY               == 208,  "Registry offset");
 static_assert(PLUGIN_OPT_OFFSET_SERVER_ADDRESS         == 128,  "GetServerAddress offset");
 static_assert(PLUGIN_OPT_OFFSET_HOST_RULES_STATE       == 136,  "GetHostRulesState offset");
+static_assert(PLUGIN_OPT_OFFSET_HOST_DENIED            == 144,  "IsDeniedByHost offset");
 
 // The export macro and the level helpers are there at every level.
 static_assert(sizeof(PluginHostInfo) == 8, "PluginHostInfo layout");

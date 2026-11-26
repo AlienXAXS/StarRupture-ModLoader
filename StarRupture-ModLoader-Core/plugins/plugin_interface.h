@@ -23,7 +23,7 @@
 //   above the need); a loader that has interface 80 then tells the plugin its own level, after GetPluginInfo and
 //   before OnPluginLoadHooks and PluginInit. Ask for a newer member through its PluginOpt accessor
 //   (PluginOptRegistry, PluginOptImages, PluginOptHostRules, PluginOptDL_AddTexturedTriangles,
-//   PluginOptServerAddress, PluginOptHostRulesState): it returns nullptr
+//   PluginOptServerAddress, PluginOptHostRulesState, PluginOptHostDenied): it returns nullptr
 //   unless the loader reported a level that has the member. Loaders
 //   below 80 never report, so on them every accessor above the plugin's need returns nullptr, even for a member
 //   that loader has. The plugin never reads past a loader's table.
@@ -1004,9 +1004,15 @@
 //      needs no higher declared need: ask through PluginOptHostRulesState.
 // --- v81 ---
 //
+// v82 (2026-11-26): Adds IPluginNetworkChannel::IsDeniedByHost, appended after
+//      GetHostRulesState: a client plugin reads whether the server it joined has
+//      turned it off as a whole. Optional use needs no higher declared need: ask
+//      through PluginOptHostDenied.
+// --- v82 ---
+//
 #define PLUGIN_INTERFACE_VERSION_MIN 70
-#define PLUGIN_INTERFACE_VERSION_MAX 81
-#define PLUGIN_INTERFACE_VERSION 81
+#define PLUGIN_INTERFACE_VERSION_MAX 82
+#define PLUGIN_INTERFACE_VERSION 82
 
 // The lowest level every loader since v1.23.0 accepts (their MAX is 75 or higher). A plugin that
 // does not set PLUGIN_NEEDS_INTERFACE gets this one.
@@ -3210,10 +3216,34 @@ struct IPluginNetworkChannel
 #if PLUGIN_NEEDS_INTERFACE >= 81
 	int (*GetHostRulesState)();   // since v81
 #endif
+
+	// v82 -- appended at the end, do not relocate. Client side: whether the joined
+	// server's host has turned this plugin off as a whole. Pass your own self.
+	//
+	//   1  turned off: the loader no longer draws the plugin's widgets, panels,
+	//      menu rows or HUD callbacks, and no longer gives it key presses, the
+	//      wheel or console commands. Ticks, key releases and other callbacks
+	//      still run, so the plugin can undo what it changed in the game.
+	//   0  not turned off. Also single player, a listen host, a dedicated server,
+	//      a generic build and no rule set.
+	//
+	// It can change at any time and goes back to 0 when the host allows the plugin
+	// again or the connection ends, so read it each tick rather than keeping it.
+	// While it is 1, a key release can arrive with no press before it. Safe from
+	// any thread.
+	// Raise PLUGIN_NEEDS_INTERFACE to 82 to use this.
+#if PLUGIN_NEEDS_INTERFACE >= 82
+	int (*IsDeniedByHost)(const IPluginSelf* self);   // since v82
+#endif
 };
 
 static_assert(offsetof(IPluginNetworkChannel, UnregisterServerReadyCallback) == 15 * sizeof(void*), "v56 layout");
-#if PLUGIN_NEEDS_INTERFACE >= 81
+#if PLUGIN_NEEDS_INTERFACE >= 82
+static_assert(offsetof(IPluginNetworkChannel, GetServerAddress)              == 16 * sizeof(void*), "v80 starts where v56 ended");
+static_assert(offsetof(IPluginNetworkChannel, GetHostRulesState)             == 17 * sizeof(void*), "v81 starts where v80 ended");
+static_assert(offsetof(IPluginNetworkChannel, IsDeniedByHost)                == 18 * sizeof(void*), "v82 starts where v81 ended");
+static_assert(sizeof(IPluginNetworkChannel)                                  == 19 * sizeof(void*), "v82 layout");
+#elif PLUGIN_NEEDS_INTERFACE >= 81
 static_assert(offsetof(IPluginNetworkChannel, GetServerAddress)              == 16 * sizeof(void*), "v80 starts where v56 ended");
 static_assert(offsetof(IPluginNetworkChannel, GetHostRulesState)             == 17 * sizeof(void*), "v81 starts where v80 ended");
 static_assert(sizeof(IPluginNetworkChannel)                                  == 18 * sizeof(void*), "v81 layout");
@@ -4487,6 +4517,7 @@ constexpr size_t PLUGIN_OPT_OFFSET_HOST_RULES             = 200;    // IPluginHo
 constexpr size_t PLUGIN_OPT_OFFSET_REGISTRY               = 208;    // IPluginHooks::Registry, v80
 constexpr size_t PLUGIN_OPT_OFFSET_SERVER_ADDRESS         = 128;    // IPluginNetworkChannel::GetServerAddress, v80
 constexpr size_t PLUGIN_OPT_OFFSET_HOST_RULES_STATE       = 136;    // IPluginNetworkChannel::GetHostRulesState, v81
+constexpr size_t PLUGIN_OPT_OFFSET_HOST_DENIED            = 144;    // IPluginNetworkChannel::IsDeniedByHost, v82
 
 #if PLUGIN_NEEDS_INTERFACE >= 77
 static_assert(offsetof(IPluginHooks, Images) == PLUGIN_OPT_OFFSET_IMAGES, "optional offset: Images");
@@ -4503,6 +4534,9 @@ static_assert(offsetof(IPluginNetworkChannel, GetServerAddress) == PLUGIN_OPT_OF
 #endif
 #if PLUGIN_NEEDS_INTERFACE >= 81
 static_assert(offsetof(IPluginNetworkChannel, GetHostRulesState) == PLUGIN_OPT_OFFSET_HOST_RULES_STATE, "optional offset: GetHostRulesState");
+#endif
+#if PLUGIN_NEEDS_INTERFACE >= 82
+static_assert(offsetof(IPluginNetworkChannel, IsDeniedByHost) == PLUGIN_OPT_OFFSET_HOST_DENIED, "optional offset: IsDeniedByHost");
 #endif
 
 // The slot of a table at a byte offset, read only after PluginHostHas said the table has it.
@@ -4563,6 +4597,16 @@ typedef int (*PluginGetHostRulesStateFunc)();
 inline PluginGetHostRulesStateFunc PluginOptHostRulesState(const IPluginNetworkChannel* network)
 {
 	return (network && PluginHostHas(81)) ? PluginOptSlot<PluginGetHostRulesStateFunc>(network, PLUGIN_OPT_OFFSET_HOST_RULES_STATE) : nullptr;
+}
+#endif
+
+#if PLUGIN_OPTIONAL_INTERFACE >= 82
+typedef int (*PluginIsDeniedByHostFunc)(const IPluginSelf* self);
+
+// IPluginNetworkChannel::IsDeniedByHost. Null on an older loader: take it as "not turned off".
+inline PluginIsDeniedByHostFunc PluginOptHostDenied(const IPluginNetworkChannel* network)
+{
+	return (network && PluginHostHas(82)) ? PluginOptSlot<PluginIsDeniedByHostFunc>(network, PLUGIN_OPT_OFFSET_HOST_DENIED) : nullptr;
 }
 #endif
 

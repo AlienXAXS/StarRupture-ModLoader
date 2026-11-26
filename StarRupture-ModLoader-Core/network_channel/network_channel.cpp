@@ -1771,6 +1771,9 @@ namespace
     static int NC_GetServerAddress(char*, size_t) { return -1; }
     static int NC_GetHostRulesState() { return -1; }
 
+    // No host turns off a dedicated server's own plugins.
+    static int NC_IsDeniedByHost(const IPluginSelf*) { return 0; }
+
     static void NC_RegisterServerReadyCallback(const IPluginSelf* self, PluginServerReadyCallback)
     {
         if (self && self->name)
@@ -3027,6 +3030,12 @@ namespace
     // v81. Atomics only: any thread.
     static int NC_GetHostRulesState() { return g_rulesState.Value(); }
 
+    // v82. Any thread.
+    static int NC_IsDeniedByHost(const IPluginSelf* self)
+    {
+        return self && PluginGuard::IsDeniedName(self->name) ? 1 : 0;
+    }
+
     static int NC_GetServerAddress(char* buf, size_t size)
     {
         if (!GameThreadDispatch::IsGameThread()) return -1;
@@ -3161,6 +3170,8 @@ namespace
         NC_GetServerAddress,
         // v81 -- appended, never inserted.
         NC_GetHostRulesState,
+        // v82 -- appended, never inserted.
+        NC_IsDeniedByHost,
     };
 
 } // anonymous namespace

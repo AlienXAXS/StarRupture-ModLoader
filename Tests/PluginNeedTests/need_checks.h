@@ -51,6 +51,7 @@ NEED_MEMBER_CHECK(IPluginHooks,         HostRules,                      79, 200)
 NEED_MEMBER_CHECK(IPluginHooks,         Registry,                       80, 208)
 NEED_MEMBER_CHECK(IPluginNetworkChannel, GetServerAddress,              80, 128)
 NEED_MEMBER_CHECK(IPluginNetworkChannel, GetHostRulesState,             81, 136)
+NEED_MEMBER_CHECK(IPluginNetworkChannel, IsDeniedByHost,                82, 144)
 
 // The last members that were already there before 72, to show the prefix never moves.
 static_assert(offsetof(IPluginHooks, Pak) == 184, "IPluginHooks::Pak moved");
@@ -63,7 +64,7 @@ static_assert(sizeof(IPluginInputEvents)    == 72,                              
 static_assert(sizeof(IModLoaderImGui)       == (NEED >= 78 ? 2056 : NEED >= 74 ? 2048 : 2032),                     "IModLoaderImGui size");
 static_assert(sizeof(IPluginGameMenu)       == (NEED >= 74 ? 64 : 40),                                            "IPluginGameMenu size");
 static_assert(sizeof(IPluginUIEvents)       == (NEED >= 75 ? 144 : 128),                                          "IPluginUIEvents size");
-static_assert(sizeof(IPluginNetworkChannel) == (NEED >= 81 ? 144 : NEED >= 80 ? 136 : 128),                        "IPluginNetworkChannel size");
+static_assert(sizeof(IPluginNetworkChannel) == (NEED >= 82 ? 152 : NEED >= 81 ? 144 : NEED >= 80 ? 136 : 128),     "IPluginNetworkChannel size");
 static_assert(sizeof(IPluginHooks)          == (NEED >= 80 ? 216 : NEED >= 79 ? 208 : NEED >= 77 ? 200 : 192),     "IPluginHooks size");
 
 // Structs the plugin allocates and the loader reads. PluginInfo is whole at every level;
