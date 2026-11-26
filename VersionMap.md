@@ -586,18 +586,22 @@ and the plugin's own row second (see [Selection](#selection)). A plugin written 
 or later can also declare features, so a value that does not resolve turns one feature off instead
 of refusing the plugin. Older plugins are accepted too, as [Admission](#admission) says.
 
-A plugin's own rows are only as current as its last release. To have the pipeline keep a value
-current on every game build, send a PR that adds it to the shared version map and to the CI key list:
+A plugin's own rows are only as current as its last release. A released plugin reads every game value from
+the shared version map and loads on every current game build, so its rows move there before its release.
+To have the pipeline keep a value current on every game build, open an issue on the
+[SDK repository](https://github.com/AlienXAXS/StarRupture-Plugin-SDK/issues) with your plugin's name and the
+`Class::Member` list. We add the key to the shared version map and to the CI key list, and sign and publish
+the rows. What we add:
 
-1. **A function or global.** Add the plugin's rows for the build you tested to
+1. **A function or global.** We add the plugin's rows for the build you tested to
    `hooks/game/version_map.generated.h` (`kFunctionRows`), with the `rva` you verified. The key is
    `Class::Function` for a game symbol. A site key is `<PluginName>/<hookName>` and carries the
    request's `fp`. The CI pipeline regenerates these rows for each new build, from the scans of
-   the plugins it tracks (the `plugins` input of `sr-client-check.yml`), so name your plugin there
-   too.
-2. **A member.** Add a row to `kFieldRows` for the build you tested, and a line to
+   the plugins it tracks (the `plugins` input of `sr-client-check.yml`), so we add your plugin
+   there too.
+2. **A member.** We add a row to `kFieldRows` for the build you tested, and a line to
    `ci/native-keys.txt` in starrupture-ci so `field-rows.mjs` reads it from the PDB on every build.
-3. **Optional or required.** A key is optional if the plugin runs without it. Mark it `optional`
+3. **Optional or required.** Tell us which. A key is optional if the plugin runs without it. Mark it `optional`
    on the `native-keys.txt` line so a miss on a new build is not a failure; a key is optional
    only when every plugin's line for it says so.
 
@@ -621,7 +625,7 @@ That is `<plugin> <Class::Member>`, then optionally an offset, size and mask in 
 PDB's size is not the plugin's, then `optional`. The header of `ci/native-keys.txt` has the full
 format.
 
-Before you send it, check that the plugin meets what the version map relies on. `PluginGameBuild.props`
+Before you ask, check that the plugin meets what the version map relies on. `PluginGameBuild.props`
 (in the SDK) defines the plugin's `PLUGIN_GAME_BUILT_CL`, `PLUGIN_MAP_MIGRATED` is the promise
 that it reads no game data from compiled-in offsets, and the SDK's rule-3 check
 (`tools/rule3-check.mjs`) is the scan that backs that promise. Run `Tests\VersionMapTests` and
@@ -630,7 +634,7 @@ that it reads no game data from compiled-in offsets, and the SDK's rule-3 check
 ### Listing your plugin in the Browse tab
 
 The Browse tab in the overlay shows the plugins in `mod-index/index.json`. You add your plugin the same
-way you add version map rows: send a PR that adds one object to the array. The fields and a worked
+way: open a pull request that adds one object to the array. The fields and a worked
 example are in [mod-index/README.md](mod-index/README.md). `id`, `name` and `page_url` are required;
 please add `readme_url` (a raw GitHub link to your README) and `tested_loader` (the ModLoader version you
 tested on) too.

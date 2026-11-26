@@ -5,8 +5,7 @@ downloads it once, when the tab is first opened. The list players get is a signe
 
 ## Add a plugin
 
-Add one object to the array. Send it the way you send rows for the version object map (the
-shared per-game-build data the loader serves): open a PR. For the whole path from a GitHub release to a
+Add one object to the array and open a pull request. For the whole path from a GitHub release to a
 card with an Install button, and on to Nexus, follow [GETTING-LISTED.md](GETTING-LISTED.md).
 
 ```json
@@ -113,8 +112,8 @@ the plugin does, in plain words.
 
 When an entry has a `readme_url`, its card in the Browse tab shows a **README** button that opens your
 README inside the window. Use the raw link, for example
-`https://raw.githubusercontent.com/<owner>/<repo>/main/README.md`. A picture written with a relative path,
-such as `![Screenshot](images/shot.png)`, is loaded from the same folder as that file. Pictures must be
+`https://raw.githubusercontent.com/<owner>/<repo>/main/README.md`. A picture written with a relative path
+is loaded from the same folder as that file. Pictures must be
 on GitHub (PNG, JPEG, GIF, WebP or BMP, not SVG), up to 8 per README and 2 MB each. Links to GitHub,
 Nexus Mods and YouTube open in the browser. Tables show as plain text.
 
