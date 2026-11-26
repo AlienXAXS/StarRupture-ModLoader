@@ -3289,8 +3289,8 @@ struct IPluginNetworkChannel
 	//  -1  the other side does not have targetPlugin loaded. To the server this
 	//      is known only from a list the server sends after you join; until it
 	//      arrives, or from an older server, the packet goes out and returns 1.
-	//      A server with these sends sends its list again about a second after
-	//      its plugins change; an older one sends it only when you report, so a
+	//      From v83 a server sends its list again about a second after its
+	//      plugins change; an older one sends it only when you report, so a
 	//      plugin it loads later returns -1 until then. A very long list can be
 	//      cut short, and a plugin left out of it returns -1.
 	//  -2  bad arguments, nothing sent: a null self, controller, name or tag; an

@@ -4597,6 +4597,7 @@ static void OnWorldEndPlayForgetConns(SDK::UWorld* /*world*/, const char* /*worl
         std::lock_guard<std::mutex> lk(g_manifestMutex);
         g_manifests.clear();
         g_manifestTick.clear();
+        g_ackSent.clear();
         g_clientWires.clear();
         g_clientFeat.clear();
         g_connRules.clear();
@@ -5042,6 +5043,7 @@ void NetworkChannel::Shutdown()
         std::lock_guard<std::mutex> lk(g_manifestMutex);
         g_manifests.clear();
         g_manifestTick.clear();
+        g_ackSent.clear();
         g_clientWires.clear();
         g_clientFeat.clear();
         g_connRules.clear();
