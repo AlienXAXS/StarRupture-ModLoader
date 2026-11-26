@@ -5,6 +5,7 @@
 
 #include "wire_compat.h"
 #include "host_rules_wire.h"
+#include "host_rules_state.h"
 #include "plugins/plugin_version_query.h"
 #include "plugins/declared_features_text.h"
 #include "plugins/server_address_text.h"
@@ -1158,6 +1159,17 @@ namespace
         unknown.deny.push_back({ "Other", HW::kWholePlugin });
         unknown.deny.push_back({ "BetterCheats", "nosuch" });
         Check(HW::ResolveDeny(unknown, decl).empty(), "rows for mods or features the client lacks name nothing");
+
+        HW::RulesStateCell cell;
+        Check(cell.Value() == -1, "rules state: nothing joined is -1");
+        cell.Greeted(true);
+        Check(cell.Value() == 0, "rules state: a server with the loader and no set in effect is 0");
+        cell.InEffect();
+        Check(cell.Value() == 1, "rules state: a set whose flags are written is 1");
+        cell.Cleared();
+        Check(cell.Value() == 0, "rules state: a cleared set is not claimed");
+        cell.Greeted(false);
+        Check(cell.Value() == -1, "rules state: a server that was left is -1 again");
 
         HW::RulesSet idCase;
         idCase.deny.push_back({ "BetterCheats", "Movement" });

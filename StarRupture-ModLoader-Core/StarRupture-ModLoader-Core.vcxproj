@@ -484,6 +484,7 @@
     <ClInclude Include="hooks\input\input_hook.h" />
     <ClInclude Include="logging\logger_interface.h" />
     <ClInclude Include="network_channel\admin_prompt.h" />
+    <ClInclude Include="network_channel\host_rules_state.h" />
     <ClInclude Include="network_channel\host_rules_wire.h" />
     <ClInclude Include="network_channel\net_timeout.h" />
     <ClInclude Include="network_channel\network_channel.h" />

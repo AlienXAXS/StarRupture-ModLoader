@@ -10,6 +10,7 @@
 #include "config/config_manager.h"
 #include "memory_scanner/hook_scanner_interface.h"
 #include "plugins/plugin_hook_report.h"
+#include "network_channel/network_channel.h"
 #include "plugins/plugin_guard.h"
 #include "plugins/plugin_host_info.h"
 #include "plugins/plugin_version_query.h"
@@ -1007,6 +1008,9 @@ namespace PluginManager
 
 		bool refused = false;
 		PluginHookReport::EndSession(&plugin.self, &refused);
+#ifdef MODLOADER_CLIENT_BUILD
+		NetworkChannel::PluginFeaturesDeclared();
+#endif
 		return !refused;
 	}
 

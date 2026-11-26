@@ -50,6 +50,7 @@ NEED_MEMBER_CHECK(IModLoaderImGui,      DL_AddTexturedTriangles,        78, 2048
 NEED_MEMBER_CHECK(IPluginHooks,         HostRules,                      79, 200)
 NEED_MEMBER_CHECK(IPluginHooks,         Registry,                       80, 208)
 NEED_MEMBER_CHECK(IPluginNetworkChannel, GetServerAddress,              80, 128)
+NEED_MEMBER_CHECK(IPluginNetworkChannel, GetHostRulesState,             81, 136)
 
 // The last members that were already there before 72, to show the prefix never moves.
 static_assert(offsetof(IPluginHooks, Pak) == 184, "IPluginHooks::Pak moved");

@@ -30,6 +30,7 @@
 #include "plugins/plugin_hook_report.h"
 #include "utils/game_thread_dispatch.h"
 #include "host_rules_wire.h"
+#include "host_rules_state.h"
 #include "memory_scanner/version_map.h"
 #include "memory_scanner/scanner.h"
 #include "hooks/game/scan_patterns.h"
@@ -1768,6 +1769,7 @@ namespace
 
     // A dedicated server is not connected to a server, so it has no address to give.
     static int NC_GetServerAddress(char*, size_t) { return -1; }
+    static int NC_GetHostRulesState() { return -1; }
 
     static void NC_RegisterServerReadyCallback(const IPluginSelf* self, PluginServerReadyCallback)
     {
@@ -2173,6 +2175,8 @@ namespace
     static std::atomic<bool>        g_clientRulesValid{ false };
     static unsigned                 g_rulesEpoch = 0; // under g_clientRulesMutex
     static std::atomic<unsigned>    g_rulesHookGen{ 0 };
+    // v81. In effect only while the plugins' flags reflect g_clientRules.
+    static HostRulesWire::RulesStateCell g_rulesState;
 
     // The admin prompt's answers ("$ML:adminr"), queued by AdminPrompt from the
     // render thread and put on the wire from the tick, where the control channel
@@ -2205,6 +2209,7 @@ namespace
         {
             std::lock_guard<std::mutex> lk(g_clientRulesMutex);
             g_clientRules = HostRulesWire::RulesSet{};
+            g_rulesState.Cleared(); // before any flag is handed back
             ++g_rulesEpoch;
             g_clientRulesValid = false;
         }
@@ -2505,10 +2510,18 @@ namespace
             deny.emplace_back(r.plugin, r.id);
 
         const bool hadDeny = !PluginHookReport::ServerDeny().empty();
-        if (PluginHookReport::ServerDeny() == deny && PluginHookReport::ServerMessage() == rules.message)
-            return;
+        const bool same = PluginHookReport::ServerDeny() == deny && PluginHookReport::ServerMessage() == rules.message;
+        if (!same)
+            PluginHookReport::ApplyServerRules(deny, rules.message);
 
-        PluginHookReport::ApplyServerRules(deny, rules.message);
+        // The flags are written: say so, unless the server was left meanwhile.
+        {
+            std::lock_guard<std::mutex> lk(g_clientRulesMutex);
+            if (g_clientRulesValid && epoch == g_rulesEpoch)
+                g_rulesState.InEffect();
+        }
+        if (same)
+            return;
 
         if (!deny.empty())
         {
@@ -2524,8 +2537,22 @@ namespace
             ModLoaderLogger::LogInfo(L"[Map] server rules: no features turned off by this server.");
     }
 
+    // Writes the flags for the set stored under `epoch`. On the game thread they
+    // change right here, so no plugin ticks between the cause and its flags. From
+    // any other thread nothing is claimed while the apply waits for it.
+    static void ApplyClientRulesSoon(unsigned epoch)
+    {
+        if (GameThreadDispatch::IsGameThread())
+        {
+            ApplyClientRules(epoch);
+            return;
+        }
+        g_rulesState.Cleared();
+        GameThreadDispatch::PostVoid([epoch] { ApplyClientRules(epoch); });
+    }
+
     // The tick side: the declared features moved since the rules were resolved (a
-    // plugin loaded, reloaded or unloaded), so resolve again.
+    // plugin reloaded or unloaded), so resolve again.
     static void RefreshHostRulesIfStale()
     {
         if (!g_clientRulesValid) return;
@@ -2572,7 +2599,7 @@ namespace
             g_clientRulesValid = true;
             epoch = g_rulesEpoch;
         }
-        GameThreadDispatch::PostVoid([epoch] { ApplyClientRules(epoch); });
+        ApplyClientRulesSoon(epoch);
     }
 
     // A line for the admin prompt. Same proof rule as the rules; a malformed one
@@ -2622,6 +2649,7 @@ namespace
         }
 
         g_serverSpeaksWire = true;
+        g_rulesState.Greeted(true);
         g_serverGreetTag   = narrow[0] ? narrow : "(unknown)";
 
         ModLoaderLogger::LogInfo(
@@ -2961,6 +2989,9 @@ namespace
 
     // v80. Game thread (Tick) only: it reads the world and the connection, so any
     // other thread gets -1 instead of a read of game objects.
+    // v81. Atomics only: any thread.
+    static int NC_GetHostRulesState() { return g_rulesState.Value(); }
+
     static int NC_GetServerAddress(char* buf, size_t size)
     {
         if (!GameThreadDispatch::IsGameThread()) return -1;
@@ -3093,6 +3124,8 @@ namespace
         NC_UnregisterServerReadyCallback,
         // v80 -- appended, never inserted.
         NC_GetServerAddress,
+        // v81 -- appended, never inserted.
+        NC_GetHostRulesState,
     };
 
 } // anonymous namespace
@@ -4400,6 +4433,7 @@ static void OnWorldEndPlayForgetConns(SDK::UWorld* /*world*/, const char* /*worl
     // across worlds is precisely how a client that once played on a modded
     // server would go on to disconnect itself from a vanilla one.
     g_serverSpeaksWire = false;
+    g_rulesState.Greeted(false);
     g_serverGreetTag.clear();
     g_worldStartedMs   = 0;
     g_noGreetingLogged = false;
@@ -4653,6 +4687,19 @@ std::vector<NetworkChannel::ClientManifest> NetworkChannel::GetClientManifests()
     return out;
 }
 
+#ifdef MODLOADER_CLIENT_BUILD
+void NetworkChannel::PluginFeaturesDeclared()
+{
+    if (!g_clientRulesValid) return;
+    unsigned epoch;
+    {
+        std::lock_guard<std::mutex> lk(g_clientRulesMutex);
+        epoch = g_rulesEpoch;
+    }
+    ApplyClientRulesSoon(epoch);
+}
+#endif
+
 void NetworkChannel::HostRulesChanged()
 {
     if (!HasNetAuthority()) return;
@@ -4850,6 +4897,7 @@ void NetworkChannel::Shutdown()
         g_earlySendWarned.clear();
     }
     g_serverSpeaksWire = false;
+    g_rulesState.Greeted(false);
     g_serverGreetTag.clear();
     ForgetClientRules(); // plugin flags are not touched here: the process is closing
     ModLoaderLogger::LogInfo(L"[NetworkChannel] Client network channel shut down");

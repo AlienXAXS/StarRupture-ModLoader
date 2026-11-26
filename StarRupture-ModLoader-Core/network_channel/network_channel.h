@@ -168,6 +168,15 @@ namespace NetworkChannel
 
 #ifdef MODLOADER_CLIENT_BUILD
     // -----------------------------------------------------------------------
+    // A plugin's features were just declared (client builds only)
+    //
+    // Resolves a joined server's rules against them, so a plugin that loads
+    // while connected has its denied features off before PluginInit. The tick
+    // cannot do this: a clean load moves nothing it watches.
+    // -----------------------------------------------------------------------
+    void PluginFeaturesDeclared();
+
+    // -----------------------------------------------------------------------
     // Admin prompt answer (client builds only)
     //
     // Queues "$ML:adminr" for the server: the code the player typed, or "not me"

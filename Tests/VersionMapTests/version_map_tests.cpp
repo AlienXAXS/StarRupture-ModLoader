@@ -1416,6 +1416,24 @@ int main()
 			&& hostLines("HostPlug") == 1 && reportOf("HostPlug") && PluginHookReport::GetCommitSerial() == serial,
 			"host rules: a plugin that loads after the list is set starts with the feature off, with no popup");
 
+		// A joined server's list is only as wide as the features declared when it was resolved. One
+		// resolved while the plugin is unloaded drops its row, and a clean load then moves nothing a
+		// tick watches: the rules have to be resolved again right after EndSession.
+		PluginHookReport::ClearHostRules();
+		PluginHookReport::ForgetFeatures(&self);
+		PluginHookReport::ApplyServerRules({}, std::string());
+		const unsigned unmoved = PluginHookReport::GetGeneration();
+		laser = hud = false;
+		PluginHookReport::BeginSession(&self, "HostPlug", "HostPlug.dll");
+		declare(&self, "hud", "Heads-up display", { "Test::Kept" }, { "Hud.Show" }, &hud);
+		resolve(&self, "Test::Kept", "AE 09");
+		PluginHookReport::EndSession(&self, &refused);
+		Check(hud && PluginHookReport::GetGeneration() == unmoved, "server rules: a clean load alone leaves a new feature on and unnoticed");
+		PluginHookReport::ApplyServerRules({ { "HostPlug", "hud" } }, std::string());
+		Check(!hud, "server rules: resolving after the load turns the feature off at once");
+		PluginHookReport::ClearServerRules();
+		PluginHookReport::ApplyHostRules({ { "HostPlug", "hud" } });
+
 		// A reload that has no failure of its own leaves a report made only for the server's line; unloading removes it.
 		PluginHookReport::ForgetFeatures(&self);
 		Check(!reportOf("HostPlug") && !inCatalog("HostPlug", "laser"), "host rules: a report made only for the server's line goes with the plugin");
