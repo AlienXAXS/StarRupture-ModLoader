@@ -1058,6 +1058,86 @@ static void Test_GuardForgetModuleDropsOnlyThatModule()
     CHECK(regs.size() == 1);
 }
 
+// ---------------------------------------------------------------------------
+// A plugin the joined server denies as a whole
+// ---------------------------------------------------------------------------
+
+// A denied plugin's open panel is not drawn, and CloseForModule closes it the
+// normal way, so its panel-closed callback runs. It stays shut while denied and
+// after the allow. The other plugin's panel is left alone.
+static void Test_DeniedPanelClosesAndStaysShut()
+{
+    const PluginPanelDesc panelB = { "B", "Panel B", RenderB() };
+    PluginGuard::Track(ThisModule(), "A");
+    PluginGuard::Track(Kernel32(), "B");
+    g_closedA = 0;
+    Registry::RegisterOnPanelWindowClosed(ClosedA);
+    PanelHandle a = Registry::RegisterPanel(&kPanelA);
+    PanelHandle b = Registry::RegisterPanel(&panelB);
+    const bool drawWindows = TestDoubles::drawWindows;
+    TestDoubles::drawWindows = false;
+    Registry::SetPanelOpen(a);
+    Registry::SetPanelOpen(b);
+
+    CHECK(PluginGuard::SetDenied({ "A" }).size() == 1);
+    TestDoubles::drawnTitles.clear();
+    DrawPanels();
+    CHECK(TestDoubles::drawnTitles == std::vector<std::string>{ "Panel B" });
+
+    Registry::SetPanelClose(b);
+    g_closedA = 0;
+    CHECK(!Registry::AnyPanelOpen());   // A's is still open here, and takes no input
+
+    Registry::CloseForModule(ThisModule());
+    CHECK(g_closedA == 1);
+    Registry::CloseForModule(ThisModule());
+    CHECK(g_closedA == 1);              // nothing left open
+
+    Registry::SetPanelOpen(a);
+    PluginGuard::SetDenied({});
+    CHECK(!Registry::AnyPanelOpen());
+    Registry::SetPanelOpen(a);
+    CHECK(Registry::AnyPanelOpen());
+
+    Registry::ForgetModule(ThisModule());
+    Registry::ForgetModule(ModuleB());
+    PluginGuard::Untrack(ThisModule());
+    PluginGuard::Untrack(Kernel32());
+    TestDoubles::drawWindows = drawWindows;
+}
+
+static int g_widgetDraws = 0;
+static void CountWidgetDraw(IModLoaderImGui*) { ++g_widgetDraws; }
+
+// A denied plugin's widget is not drawn and asks for no menu mouse.
+static void Test_DeniedWidgetIsNotDrawn()
+{
+    PluginWindowHints hints = {};
+    hints.extra_window_flags = PluginWindowFlags_MenuMouseWhereUncovered;
+    const PluginWidgetDesc widget = { "Denied widget", CountWidgetDraw, &hints };
+    PluginGuard::Track(ThisModule(), "A");
+    CHECK(UI::PluginWidgetRegistry::RegisterWidget(&widget) != nullptr);
+    g_widgetDraws = 0;
+    const auto frame = [] { UI::PluginWidgetRegistry::RenderWidgets(nullptr); };   // inside main's frame
+
+    frame();
+    CHECK(g_widgetDraws == 1);
+    CHECK(UI::PluginWidgetRegistry::AnyWantsMenuHover());
+
+    PluginGuard::SetDenied({ "A" });
+    frame();
+    CHECK(g_widgetDraws == 1);
+    CHECK(!UI::PluginWidgetRegistry::AnyWantsMenuHover());
+
+    PluginGuard::SetDenied({});
+    frame();
+    CHECK(g_widgetDraws == 2);
+    CHECK(UI::PluginWidgetRegistry::AnyWantsMenuHover());
+
+    UI::PluginWidgetRegistry::ForgetModule(ThisModule());
+    PluginGuard::Untrack(ThisModule());
+}
+
 int main()
 {
     RunTest("PanelsPurgedByModule",              Test_PanelsPurgedByModule);
@@ -1096,6 +1176,8 @@ int main()
     RunTest("GuardTwoThreadsFaultAtOnce",           Test_GuardTwoThreadsFaultAtOnce);
     RunTest("GuardStaleCallbacks",                  Test_GuardStaleCallbacks);
     RunTest("GuardRestoresImGuiAfterRenderFault",   Test_GuardRestoresImGuiAfterRenderFault);
+    RunTest("DeniedPanelClosesAndStaysShut",        Test_DeniedPanelClosesAndStaysShut);
+    RunTest("DeniedWidgetIsNotDrawn",               Test_DeniedWidgetIsNotDrawn);
 
     RunTest("TitleBarCallbackRuns",                 Test_TitleBarCallbackRuns);
     RunTest("OldSizedDescriptorIsNeverReadPastItsEnd", Test_OldSizedDescriptorIsNeverReadPastItsEnd);
