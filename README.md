@@ -7,7 +7,7 @@ Like this project? Give it a star here on GitHub!
 
 ## Find and install mods <sup>[✦](#msantoro12)</sup>
 
-You can find every mod from inside the mod loader. Open the **Browse** tab in the mod loader window. Client mods install and update from there: pick a mod and press **Install**. They are signed and install from the author's GitHub release. Server mods (marked Server) link to their page. Most of the mods in the list are on Nexus too, and **Open page** on a card takes you to the mod's page. See [Browse tab](#browse-tab-).
+You can find every mod from inside the mod loader. Open the **Browse** tab in the mod loader window. Client mods install and update from there: pick a mod and press **Install**. They are signed and install from the author's GitHub release. Server mods (marked Server) link to their page. Every mod in the list is on Nexus too, and **Open page** on a card takes you to the mod's page. See [Browse tab](#browse-tab-).
 
 ---
 
