@@ -1223,6 +1223,28 @@ static void Test_DenyLeavesOtherTokensAlone()
     PluginGuard::Untrack(ThisModule());
 }
 
+// Unloading a plugin drops the tokens it took in a loader call, so one it never
+// released cannot count again once its deny is forgotten. A token taken outside
+// any call stays until it is released.
+static void Test_ForgetModuleDropsTokensTakenInItsCalls()
+{
+    PluginGuard::Track(ThisModule(), "A");
+    TakeBothTokens(0);
+    void* const capture = g_takenCapture;
+    void* const passthrough = g_takenPassthrough;
+    CHECK(PluginGuard::Invoke(TakeBothTokens, "tick callback", 0));
+    PluginGuard::SetDenied({ "A" });
+
+    Registry::ForgetModule(ThisModule());
+    PluginGuard::Untrack(ThisModule());
+    PluginGuard::SetDenied({});
+    CHECK(BothRequested());
+    ReleaseBoth(capture, passthrough);
+    CHECK(NeitherRequested());
+    ReleaseBoth(g_takenCapture, g_takenPassthrough);   // a late release does nothing
+    CHECK(NeitherRequested());
+}
+
 static const void* g_runningSeen[3];
 static void SeeRunning(int slot) { g_runningSeen[slot] = PluginGuard::RunningCallback(); }
 static void SeeRunningAroundNested(int)
@@ -1304,6 +1326,7 @@ int main()
     RunTest("DeniedTokensAreNotHonoured",           Test_DeniedTokensAreNotHonoured);
     RunTest("DenyLeavesOtherTokensAlone",           Test_DenyLeavesOtherTokensAlone);
     RunTest("GuardRemembersRunningCallback",        Test_GuardRemembersRunningCallback);
+    RunTest("ForgetModuleDropsTokensTakenInItsCalls", Test_ForgetModuleDropsTokensTakenInItsCalls);
 
     RunTest("TitleBarCallbackRuns",                 Test_TitleBarCallbackRuns);
     RunTest("OldSizedDescriptorIsNeverReadPastItsEnd", Test_OldSizedDescriptorIsNeverReadPastItsEnd);

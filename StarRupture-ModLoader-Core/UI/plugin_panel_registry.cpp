@@ -309,6 +309,17 @@ namespace UI::PluginPanelRegistry
                 std::remove_if(s_panelClosedCallbacks.begin(), s_panelClosedCallbacks.end(),
                                [&](const PanelClosedEntry& e) { return e.owner == module; }),
                 s_panelClosedCallbacks.end());
+            // An input token taken in a call into the module has nothing left to
+            // release it, and would count again once the guard forgets that the
+            // module was turned off. The token itself is not freed, so a late
+            // release cannot match a newer one.
+            const auto drop = [&](std::map<void*, InputToken>& tokens)
+            {
+                for (auto it = tokens.begin(); it != tokens.end();)
+                    it = PluginGuard::ModuleOf(it->second.takenIn) == module ? tokens.erase(it) : std::next(it);
+            };
+            drop(s_captureTokens);
+            drop(s_passthroughTokens);
         };
         forget();
 
