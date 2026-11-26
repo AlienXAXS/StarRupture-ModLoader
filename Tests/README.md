@@ -263,7 +263,7 @@ It prints one line per check and exits 0 when every check passes.
 
 A compile test for `plugins/plugin_interface.h`, which hides every host-table member added after the
 interface level a plugin declares with `PLUGIN_NEEDS_INTERFACE` (default: 75). It builds one small
-source file per level (72 to 81), one file with nothing set, and one with
+source file per level (72 to 82), one file with nothing set, and one with
 `PLUGIN_INTERFACE_HOST_BUILD` (what the loader itself uses). Each file includes `need_checks.h`,
 which checks with `static_assert` that:
 

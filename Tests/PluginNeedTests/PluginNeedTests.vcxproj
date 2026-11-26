@@ -99,6 +99,7 @@
     <ClCompile Include="need_79.cpp" />
     <ClCompile Include="need_80.cpp" />
     <ClCompile Include="need_81.cpp" />
+    <ClCompile Include="need_82.cpp" />
     <ClCompile Include="need_default.cpp" />
     <ClCompile Include="need_host.cpp" />
     <ClCompile Include="opt_73_80.cpp" />
