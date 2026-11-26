@@ -1668,6 +1668,40 @@ namespace
     }
 }
 
+static void TestAddressedSend()
+{
+    std::printf("addressed send arguments\n");
+
+    Check(IsAddressableName("ServerUtility"), "a plugin name is addressable");
+    Check(IsAddressableName("Best Builder"), "a space is allowed");
+    Check(IsAddressableName("a$b"), "'$' is only reserved as the first character");
+    Check(!IsAddressableName(nullptr) && !IsAddressableName(""), "null and empty names are refused");
+    Check(!IsAddressableName("$ML"), "the loader's own name is refused");
+    Check(!IsAddressableName("$ML:rules"), "the loader's name with a tag is refused");
+    Check(!IsAddressableName("$wires") && !IsAddressableName("$"), "every '$' name is refused");
+    Check(!IsAddressableName("Other:$ML") && !IsAddressableName("Other:tag"),
+        "a name cannot hold ':', so it cannot move where the name field ends");
+    Check(!IsAddressableName("a\x01" "b") && !IsAddressableName("a\n") && !IsAddressableName("a\x1f")
+        && !IsAddressableName("a\x7f"), "control bytes are refused");
+
+    const std::string full(kMaxSendTextLen, 'n');
+    const std::string over(kMaxSendTextLen + 1, 'n');
+    Check(IsAddressableName(full.c_str()) && !IsAddressableName(over.c_str()), "names stop at 256 bytes");
+    Check(IsAddressableTag(full.c_str()) && !IsAddressableTag(over.c_str()), "tags stop at 256 bytes");
+    Check(IsAddressableTag("su.cheat") && IsAddressableTag("ns::Type") && IsAddressableTag("$x"),
+        "a tag may hold ':' and '$'");
+    Check(!IsAddressableTag(nullptr) && !IsAddressableTag("") && !IsAddressableTag("a\x01"),
+        "null, empty and control-byte tags are refused");
+
+    const char byte = 'x';
+    Check(AddressedArgsOk("ServerUtility", "t", &byte, 1), "good arguments pass");
+    Check(AddressedArgsOk("ServerUtility", "t", nullptr, 0), "size 0 needs no data");
+    Check(!AddressedArgsOk("ServerUtility", "t", nullptr, 1), "data may not be null with a size");
+    Check(AddressedArgsOk("ServerUtility", "t", &byte, kMaxAddressedSize)
+        && !AddressedArgsOk("ServerUtility", "t", &byte, kMaxAddressedSize + 1), "size stops at 65536");
+    Check(!AddressedArgsOk("$ML", "rules", &byte, 1), "no arguments address the loader");
+}
+
 int main()
 {
     TestEvaluate();
@@ -1690,6 +1724,7 @@ int main()
     TestDeclaredFeaturesText();
     TestServerAddressText();
     TestPluginCatalogText();
+    TestAddressedSend();
 
     if (g_failures)
     {

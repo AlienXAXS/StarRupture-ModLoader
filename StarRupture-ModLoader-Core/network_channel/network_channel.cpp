@@ -1743,6 +1743,46 @@ namespace
             sent, actors.Num(), self->name);
     }
 
+    // v83. The envelope's plugin field is the target's name, which
+    // AddressedArgsOk keeps clear of the loader's own. self only says who sent.
+    static int NC_SendPacketToClientPlugin(void* playerController, const IPluginSelf* self,
+                                           const char* targetPlugin, const char* typeTag,
+                                           const uint8_t* data, size_t size)
+    {
+        if (!playerController || !self || !self->name
+            || !WireCompat::AddressedArgsOk(targetPlugin, typeTag, data, size))
+            return WireCompat::kSendBadArgs;
+        if (!HasNetAuthority()) return WireCompat::kSendWrongSide;
+
+        void* conn = ConnectionForPlayer(playerController);
+        if (!conn) return WireCompat::kSendNotReady;
+
+        // Listed at any version: a message between two plugins carries its own
+        // protocol.
+        {
+            std::lock_guard<std::mutex> lk(g_manifestMutex);
+            auto it = g_manifests.find(conn);
+            if (it == g_manifests.end()) return WireCompat::kSendNotReady;
+            if (std::none_of(it->second.begin(), it->second.end(),
+                    [targetPlugin](const NetworkChannel::RemotePlugin& rp) { return rp.name == targetPlugin; }))
+                return WireCompat::kSendNoPlugin;
+        }
+
+        ModLoaderLogger::LogDebug(
+            L"[NetworkChannel] SendPacketToClientPlugin: player=%p from '%S' to '%S' tag='%S' payload=%zu bytes",
+            playerController, self->name, targetPlugin, typeTag, size);
+
+        if (size > 1400)
+        {
+            ModLoaderLogger::LogWarn(
+                L"[NetworkChannel] SendPacketToClientPlugin: payload %zu bytes exceeds 1400-byte recommended limit for plugin '%S'",
+                size, self->name);
+        }
+
+        return SendWire(conn, targetPlugin, BuildEnvelope(targetPlugin, typeTag, data, size))
+            ? WireCompat::kSendQueued : WireCompat::kSendNotReady;
+    }
+
 #ifndef MODLOADER_CLIENT_BUILD
     // Server->Client receive and Client->Server send exist only on client builds.
     // A dedicated server never receives a ClientMessage and never sends to itself.
@@ -1763,6 +1803,13 @@ namespace
     static void NC_SendPacketToServer(const IPluginSelf*, const char*, const uint8_t*, size_t)
     {
         // No-op on server
+    }
+
+    static int NC_SendPacketToServerPlugin(const IPluginSelf* self, const char* targetPlugin,
+                                           const char* typeTag, const uint8_t* data, size_t size)
+    {
+        return self && self->name && WireCompat::AddressedArgsOk(targetPlugin, typeTag, data, size)
+            ? WireCompat::kSendWrongSide : WireCompat::kSendBadArgs;
     }
 
     // A dedicated server has no server to become ready to.
@@ -2105,6 +2152,45 @@ namespace
         }
 
         SendWire(ServerConnection(), self->name, BuildEnvelope(self->name, typeTag, data, size));
+    }
+
+    // v83. As SendPacketToServer, with the target's name in the envelope and a
+    // status for the caller in place of the warning about an early send.
+    static int NC_SendPacketToServerPlugin(const IPluginSelf* self, const char* targetPlugin,
+                                           const char* typeTag, const uint8_t* data, size_t size)
+    {
+        if (!self || !self->name || !WireCompat::AddressedArgsOk(targetPlugin, typeTag, data, size))
+            return WireCompat::kSendBadArgs;
+        if (HasNetAuthority()) return WireCompat::kSendWrongSide;
+
+        void* conn = ServerConnection();
+        if (!conn || !ServerReadyNow()) return WireCompat::kSendNotReady;
+
+        // As in SendPacketToServer.
+        SendManifestToServer(/*force*/ false);
+
+        // Only a table this server sent can say the plugin is missing. A server
+        // that sent none is sent to as before.
+        {
+            std::lock_guard<std::mutex> lk(g_wireLogMutex);
+            if (g_serverWires.conn == conn && g_serverWires.present
+                && !WireCompat::FindEntry(g_serverWires.entries, targetPlugin))
+                return WireCompat::kSendNoPlugin;
+        }
+
+        ModLoaderLogger::LogDebug(
+            L"[NetworkChannel] SendPacketToServerPlugin: from '%S' to '%S' tag='%S' payload=%zu bytes",
+            self->name, targetPlugin, typeTag, size);
+
+        if (size > 1400)
+        {
+            ModLoaderLogger::LogWarn(
+                L"[NetworkChannel] SendPacketToServerPlugin: payload %zu bytes exceeds 1400-byte limit for plugin '%S'",
+                size, self->name);
+        }
+
+        return SendWire(conn, targetPlugin, BuildEnvelope(targetPlugin, typeTag, data, size))
+            ? WireCompat::kSendQueued : WireCompat::kSendNotReady;
     }
 
     // Tell the authority which plugins we have.
@@ -3172,6 +3258,11 @@ namespace
         // v81 -- appended, never inserted.
         NC_GetHostRulesState,
         // v82 -- appended, never inserted.
+        NC_IsDeniedByHost,
+        // v83 -- appended, never inserted.
+        NC_SendPacketToServerPlugin,
+        NC_SendPacketToClientPlugin,
+    };
         NC_IsDeniedByHost,
     };
 

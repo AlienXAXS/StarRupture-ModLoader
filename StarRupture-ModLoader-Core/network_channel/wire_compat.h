@@ -566,6 +566,59 @@ namespace WireCompat
         return false;
     }
 
+    // A send that names the plugin it is for. The name goes into the envelope's
+    // plugin field, which the receiver reads up to the first ':' and takes as
+    // loader traffic when it is "$ML". So a name that a plugin chooses must not
+    // hold a ':' and must not start with '$', the prefix kept for the loader.
+    constexpr size_t kMaxSendTextLen = 256;     // target name, type tag
+    constexpr size_t kMaxAddressedSize = 65536; // payload bytes
+
+    // The status SendPacketToServerPlugin and SendPacketToClientPlugin return.
+    constexpr int kSendQueued = 1;
+    constexpr int kSendNotReady = 0;
+    constexpr int kSendNoPlugin = -1;
+    constexpr int kSendBadArgs = -2;
+    constexpr int kSendWrongSide = -3;
+
+    namespace detail
+    {
+        // 1 to kMaxSendTextLen bytes and no control byte. Reads no further
+        // than one byte past the limit.
+        inline bool SendTextOk(const char* s)
+        {
+            if (!s)
+                return false;
+            size_t n = 0;
+            for (; s[n] != '\0'; ++n)
+            {
+                const unsigned char c = static_cast<unsigned char>(s[n]);
+                if (n >= kMaxSendTextLen || c < 0x20 || c == 0x7f)
+                    return false;
+            }
+            return n > 0;
+        }
+    }
+
+    inline bool IsAddressableName(const char* name)
+    {
+        if (!detail::SendTextOk(name) || name[0] == '$')
+            return false;
+        for (const char* p = name; *p != '\0'; ++p)
+            if (*p == ':')
+                return false;
+        return true;
+    }
+
+    // A tag may hold ':'. The receiver finds its end from the end of the header.
+    inline bool IsAddressableTag(const char* tag) { return detail::SendTextOk(tag); }
+
+    // The arguments both addressed sends share. Size 0 is a message with no payload.
+    inline bool AddressedArgsOk(const char* target, const char* tag, const void* data, size_t size)
+    {
+        return IsAddressableName(target) && IsAddressableTag(tag)
+            && size <= kMaxAddressedSize && (data != nullptr || size == 0);
+    }
+
     // Remembers what was already reported so a warning or note about a plugin
     // on a connection is logged once. Keyed by connection and plugin name; the
     // connection is only an identity (never dereferenced). The caller locks.
