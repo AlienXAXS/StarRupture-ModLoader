@@ -1632,9 +1632,9 @@ static void ASizeThatChangesAmongSteadySizesIsNeverMade()
 
 static void TheInterfaceNumberCoversTheSizedEntry()
 {
-    // GetSized grew the v77 image table from 56 to 64 bytes; the current interface also includes v78, v79 and v80.
-    CHECK(PLUGIN_INTERFACE_VERSION == 80);
-    CHECK(PLUGIN_INTERFACE_VERSION_MAX == 80);
+    // GetSized grew the v77 image table from 56 to 64 bytes; every later interface includes it.
+    CHECK(PLUGIN_INTERFACE_VERSION >= 80);
+    CHECK(PLUGIN_INTERFACE_VERSION_MAX == PLUGIN_INTERFACE_VERSION);
     CHECK(PLUGIN_INTERFACE_VERSION_MIN == 70);
     CHECK(sizeof(IPluginImages) == 64);
 }
