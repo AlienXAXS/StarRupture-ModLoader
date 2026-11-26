@@ -251,6 +251,8 @@ covers:
 - The wire table the two loaders swap: a round trip, every truncation point, an empty or garbage
   table, unknown records and extra fields, and the ack with and without a tail.
 - The pair state the send, ready and receive paths share, and the once-per-connection warning keys.
+- The arguments of the two sends that name their target plugin, including that no name they accept
+  can be the loader's own.
 
 ```
 msbuild Tests\NetCompatTests\NetCompatTests.vcxproj /p:Configuration="Client Release" /p:Platform=x64
