@@ -10,10 +10,12 @@
 
 // ---------------------------------------------------------------------------
 // mod_install.h -- downloads one plugin of the mod index (mod_index.h) and puts
-// it in ModLoader\Plugins. It installs code, so the index and every redirect
-// are untrusted: only a GitHub release asset, only to GitHub's own download
-// hosts, and nothing is written until the size and SHA-256 match. No file that
-// is already there is replaced. Loading the DLL is the caller's job.
+// it in ModLoader\Plugins. It installs code, so the index, the mod's release
+// manifest and every redirect are untrusted: only a GitHub release asset of the
+// repository the list names, only to GitHub's own download hosts. The list's
+// own file is written only if its size and SHA-256 match. A newer release (see
+// ResolveLatest) has no hash in the list. No file that is already there is
+// replaced. Loading the DLL is the caller's job.
 //
 // The network is passed in (HopFn), so a test uses it without one.
 // ---------------------------------------------------------------------------
@@ -22,6 +24,7 @@ namespace ModInstall
 {
 	constexpr unsigned kDeadlineMs   = 120000;   // the whole download, every hop
 	constexpr int      kMaxRedirects = 3;
+	constexpr size_t   kMaxManifestBytes = 64 * 1024;   // a release manifest
 	constexpr char     kVortexManaged[] = "Vortex manages this mod. Install it in Vortex.";
 
 	// One GET that follows no redirect. status 0: no answer. body: a 200's, whole.
@@ -41,10 +44,13 @@ namespace ModInstall
 	// port; from github.com or a download host, to a download host only.
 	bool IsAllowedRedirect(const std::string& from, const std::string& to);
 
-	// The bytes of `info`, with the size and SHA-256 checked. On false `why` is
-	// plain words for the player. `label` names the mod in the log.
+	// The bytes of `info`. With info.hashPinned the size and SHA-256 must match.
+	// Without it the file is at most kMaxDownloadBytes, starts "MZ", and matches
+	// info.sha256 when that is set. On false `why` is plain words for the player.
+	// `label` names the mod in the log. startedMs: the GetTickCount64 that
+	// kDeadlineMs counts from; 0: now.
 	bool Download(const ModIndex::InstallInfo& info, const std::string& label, const HopFn& hop,
-		const std::atomic<bool>& cancel, std::string& bytes, std::string& why);
+		const std::atomic<bool>& cancel, std::string& bytes, std::string& why, unsigned long long startedMs = 0);
 
 	struct Request
 	{
@@ -54,6 +60,19 @@ namespace ModInstall
 		std::wstring pluginsDir;      // ...\ModLoader\Plugins, no trailing backslash
 		std::wstring gameDir;         // the game exe's folder, no trailing backslash
 	};
+
+	enum class Pick { Pinned, Latest, Refuse };
+
+	// What to download for `request`. Reads the release manifest at the list's
+	// manifestUrl. Latest: it offers a newer version this loader can take, and
+	// `out` and `version` describe it. Pinned: `out` and `version` are the list's
+	// (no manifest, none that can be read, or nothing newer that fits). Refuse:
+	// the manifest sends a release the auto-update would take to anywhere but
+	// the same file of the list's repository; nothing may be installed, and `why`
+	// is plain words for the player. The manifest never picks the repository,
+	// the file's name on disk or the .json's text.
+	Pick ResolveLatest(const Request& request, const HopFn& hop, const std::atomic<bool>& cancel,
+		unsigned long long startedMs, ModIndex::InstallInfo& out, std::string& version, std::string& why);
 
 	// Why `request` may not be written, in plain words; empty: it may. Looks for
 	// the files already there and for Vortex managing them.

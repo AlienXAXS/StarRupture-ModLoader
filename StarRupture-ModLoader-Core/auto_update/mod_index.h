@@ -56,6 +56,10 @@ namespace ModIndex
 		size_t size = 0;
 		std::string dllFile;      // a bare ASCII plugin DLL name
 		std::string manifestUrl;  // empty: no .json is written beside the DLL
+		// size and sha256 are the list's, and the download must match both. False
+		// only for the newer release ModInstall::ResolveLatest picked: size is not
+		// known, and sha256 is the release manifest's or empty.
+		bool hashPinned = true;
 	};
 
 	struct Entry

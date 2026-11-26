@@ -1,7 +1,9 @@
 #include "mod_install.h"
 #include "auto_update/vortex_notice.h"
 #include "auto_update/http_get.h"
+#include "auto_update/version_compare.h"
 #include "logging/logger.h"
+#include "plugins/plugin_interface.h"
 #include "utils/sha256.h"
 
 #include <chrono>
@@ -16,6 +18,8 @@ namespace ModInstall
 		constexpr const char kRefusedAddress[] = "The download was sent to an address that is not allowed, so nothing was installed.";
 		constexpr const char kFailed[]         = "The download failed. Check your connection and try again.";
 		constexpr const char kWrongFile[]      = "The downloaded file does not match the mod list, so nothing was installed.";
+		constexpr const char kWrongRelease[]   = "The downloaded file is not the one the mod's latest release describes, so nothing was installed.";
+		constexpr const char kRefusedRelease[] = "The mod's latest release points somewhere the mod list doesn't allow, so nothing was installed.";
 		constexpr const char kWriteFailed[]    = "The mod's files could not be written. Nothing was installed.";
 		constexpr const char kCancelled[]      = "The install was stopped.";
 		constexpr const char kTempSuffix[]     = ".install.tmp";
@@ -44,6 +48,120 @@ namespace ModInstall
 				if (ModIndex::detail::EqualsNoCase(host, allowed))
 					return true;
 			return false;
+		}
+
+		// The pieces after the host of a github.com address of the form
+		// <owner>/<repo>/releases/<a>/<b>/<name>, all plain; else none.
+		std::vector<std::string> ReleaseSegments(const std::string& url)
+		{
+			static const std::string kStart = "https://github.com/";
+			if (url.size() > ModIndex::kMaxUrlLen || url.compare(0, kStart.size(), kStart) != 0)
+				return {};
+			std::vector<std::string> p = ModIndex::detail::SplitSegments(url.substr(kStart.size()));
+			if (p.size() != 6 || p[2] != "releases")
+				return {};
+			for (const std::string& part : p)
+				if (!ModIndex::detail::IsPlainSegment(part))
+					return {};
+			return p;
+		}
+
+		bool SameRepo(const std::vector<std::string>& a, const std::vector<std::string>& b)
+		{
+			return ModIndex::detail::EqualsNoCase(a[0], b[0]) && ModIndex::detail::EqualsNoCase(a[1], b[1]);
+		}
+
+		// .../releases/latest/download/<x>-client-manifest.json of the repository
+		// the list's download is in.
+		bool IsOwnLatestManifest(const std::string& manifestUrl, const std::string& listedUrl)
+		{
+			const std::vector<std::string> manifest = ReleaseSegments(manifestUrl);
+			const std::vector<std::string> listed = ReleaseSegments(listedUrl);
+			return !manifest.empty() && !listed.empty() && SameRepo(manifest, listed)
+				&& manifest[3] == "latest" && manifest[4] == "download"
+				&& ModIndex::detail::EndsWithNoCase(manifest[5], "-client-manifest.json");
+		}
+
+		// GitHub answers .../releases/latest/download/<name> by naming the tag:
+		// .../releases/download/<tag>/<name>, in the same repository.
+		bool IsLatestTagStep(const std::string& latest, const std::string& to)
+		{
+			const std::vector<std::string> from = ReleaseSegments(latest);
+			const std::vector<std::string> next = ReleaseSegments(to);
+			return !from.empty() && !next.empty() && SameRepo(from, next)
+				&& next[3] == "download" && next[5] == from[5];
+		}
+
+		// The list's own file name, in a release of the list's repository.
+		bool IsSameAsset(const std::string& url, const std::string& listedUrl)
+		{
+			if (!ModIndex::IsReleaseAssetUrl(url))
+				return false;
+			const std::vector<std::string> offered = ReleaseSegments(url);
+			const std::vector<std::string> listed = ReleaseSegments(listedUrl);
+			return !offered.empty() && !listed.empty() && SameRepo(offered, listed)
+				&& ModIndex::detail::EqualsNoCase(offered[5], listed[5]);
+		}
+
+		// A manifest's version is untrusted text that ends up in update_state.ini.
+		bool IsPlainVersion(const std::string& version)
+		{
+			if (version.empty() || version.size() > ModIndex::kMaxVersionLen)
+				return false;
+			for (const char c : version)
+				if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
+					|| c == '.' || c == '-' || c == '_' || c == '+'))
+					return false;
+			return true;
+		}
+
+		// GETs `first` within maxBytes and what is left of kDeadlineMs since
+		// `started`, checking every redirect. latestManifest: `first` is a
+		// releases/latest/download address, whose first redirect must be the tag
+		// step and nothing else. Later ones follow the same rules as any.
+		bool Fetch(const std::string& first, size_t maxBytes, bool latestManifest, const std::string& label,
+			const HopFn& hop, const std::atomic<bool>& cancel, ULONGLONG started, std::string& body, std::string& why)
+		{
+			std::string url = first;
+			for (int redirects = 0;; ++redirects)
+			{
+				const ULONGLONG spent = GetTickCount64() - started;
+				if (cancel.load() || spent >= kDeadlineMs)
+				{
+					why = cancel.load() ? kCancelled : kFailed;
+					return false;
+				}
+				Hop answer = hop(url, maxBytes, kDeadlineMs - static_cast<unsigned>(spent), cancel);
+				if (cancel.load())
+				{
+					why = kCancelled;
+					return false;
+				}
+				if (answer.status == 200)
+				{
+					body = std::move(answer.body);
+					return true;
+				}
+				const unsigned s = answer.status;
+				if (s != 301 && s != 302 && s != 303 && s != 307 && s != 308)
+				{
+					why = kFailed;
+					return false;
+				}
+				const bool allowed = latestManifest && redirects == 0
+					? IsLatestTagStep(url, answer.location)
+					: IsAllowedRedirect(url, answer.location);
+				if (redirects >= kMaxRedirects || !allowed)
+				{
+					// The host only: the rest of a download address can carry a key.
+					const std::string host = HttpsHost(answer.location);
+					ModLoaderLogger::LogWarn(L"[Install] %hs: refused redirect to %hs", label.c_str(),
+						host.empty() ? "an address that is not a plain https one" : host.c_str());
+					why = kRefusedAddress;
+					return false;
+				}
+				url = std::move(answer.location);
+			}
 		}
 
 		std::wstring Wide(const std::string& ascii) { return std::wstring(ascii.begin(), ascii.end()); }
@@ -131,75 +249,149 @@ namespace ModInstall
 	}
 
 	bool Download(const ModIndex::InstallInfo& info, const std::string& label, const HopFn& hop,
-		const std::atomic<bool>& cancel, std::string& bytes, std::string& why)
+		const std::atomic<bool>& cancel, std::string& bytes, std::string& why, unsigned long long startedMs)
 	{
 		bytes.clear();
-		if (!ModIndex::IsReleaseAssetUrl(info.url) || info.size == 0
-			|| info.size > static_cast<size_t>(ModIndex::kMaxDownloadBytes))
+		const size_t limit = static_cast<size_t>(ModIndex::kMaxDownloadBytes);
+		if (!ModIndex::IsReleaseAssetUrl(info.url) || (info.hashPinned && (info.size == 0 || info.size > limit)))
 		{
 			why = kRefusedAddress;
 			return false;
 		}
+		const char* const wrong = info.hashPinned ? kWrongFile : kWrongRelease;
 
-		const ULONGLONG started = GetTickCount64();
-		std::string url = info.url;
-		for (int redirects = 0;; ++redirects)
+		if (!Fetch(info.url, info.hashPinned ? info.size : limit, false, label, hop, cancel,
+			startedMs ? startedMs : GetTickCount64(), bytes, why))
 		{
-			const ULONGLONG spent = GetTickCount64() - started;
-			if (cancel.load() || spent >= kDeadlineMs)
-			{
-				why = cancel.load() ? kCancelled : kFailed;
-				return false;
-			}
-			Hop answer = hop(url, info.size, kDeadlineMs - static_cast<unsigned>(spent), cancel);
-			if (cancel.load())
-			{
-				why = kCancelled;
-				return false;
-			}
-			if (answer.status == 200)
-			{
-				bytes = std::move(answer.body);
-				break;
-			}
-			const unsigned s = answer.status;
-			if (s != 301 && s != 302 && s != 303 && s != 307 && s != 308)
-			{
-				why = kFailed;
-				return false;
-			}
-			if (redirects >= kMaxRedirects || !IsAllowedRedirect(url, answer.location))
-			{
-				// The host only: the rest of a download address can carry a key.
-				const std::string host = HttpsHost(answer.location);
-				ModLoaderLogger::LogWarn(L"[Install] %hs: refused redirect to %hs", label.c_str(),
-					host.empty() ? "an address that is not a plain https one" : host.c_str());
-				why = kRefusedAddress;
-				return false;
-			}
-			url = std::move(answer.location);
-		}
-
-		if (bytes.size() != info.size)
-		{
-			ModLoaderLogger::LogWarn(L"[Install] %hs: got %zu bytes, expected %zu; nothing written",
-				label.c_str(), bytes.size(), info.size);
-			// No body: the request itself failed.
-			why = bytes.empty() ? kFailed : kWrongFile;
 			bytes.clear();
 			return false;
 		}
+
+		if (info.hashPinned ? bytes.size() != info.size : bytes.empty() || bytes.size() > limit)
+		{
+			ModLoaderLogger::LogWarn(L"[Install] %hs: got %zu bytes, expected %hs %zu; nothing written",
+				label.c_str(), bytes.size(), info.hashPinned ? "exactly" : "1 to",
+				info.hashPinned ? info.size : limit);
+			// No body: the request itself failed.
+			why = bytes.empty() ? kFailed : wrong;
+			bytes.clear();
+			return false;
+		}
+		if (!info.hashPinned && bytes.compare(0, 2, "MZ") != 0)
+		{
+			ModLoaderLogger::LogWarn(L"[Install] %hs: the latest release's file is not a DLL; nothing written", label.c_str());
+			bytes.clear();
+			why = wrong;
+			return false;
+		}
 		const std::string digest = Sha256::OfBytes(bytes);
-		if (digest.empty() || digest != info.sha256)
+		const bool compare = info.hashPinned || !info.sha256.empty();
+		if (digest.empty() || (compare && digest != info.sha256))
 		{
 			ModLoaderLogger::LogWarn(L"[Install] %hs: SHA-256 mismatch: expected %hs, got %hs; nothing written",
 				label.c_str(), info.sha256.c_str(), digest.c_str());
 			bytes.clear();
-			why = kWrongFile;
+			why = wrong;
 			return false;
 		}
-		ModLoaderLogger::LogInfo(L"[Install] %hs: SHA-256 matches %hs", label.c_str(), digest.c_str());
+		ModLoaderLogger::LogInfo(L"[Install] %hs: SHA-256 %hs (%hs)", label.c_str(), digest.c_str(),
+			info.hashPinned ? "matches the list" : compare ? "latest release, matches its manifest" : "latest release, not pinned");
 		return true;
+	}
+
+	Pick ResolveLatest(const Request& request, const HopFn& hop, const std::atomic<bool>& cancel,
+		unsigned long long startedMs, ModIndex::InstallInfo& out, std::string& version, std::string& why)
+	{
+		out = request.info;
+		version = request.version;
+		why.clear();
+		const char* const name = request.name.c_str();
+		const char* const listed = request.version.c_str();
+		if (request.info.manifestUrl.empty())
+		{
+			ModLoaderLogger::LogInfo(L"[Install] %hs: no release manifest, installing the list's %hs", name, listed);
+			return Pick::Pinned;
+		}
+		const auto failed = [&](const char* reason)
+		{
+			ModLoaderLogger::LogWarn(L"[Install] %hs: latest release check failed (%hs), installing the list's %hs",
+				name, reason, listed);
+			return Pick::Pinned;
+		};
+
+		ModLoaderLogger::LogInfo(L"[Install] %hs: checking latest release", name);
+		if (!IsOwnLatestManifest(request.info.manifestUrl, request.info.url))
+			return failed("the manifest address is not the repository's latest release");
+		std::string manifest, fetchWhy;
+		if (!Fetch(request.info.manifestUrl, kMaxManifestBytes, true, request.name, hop, cancel, startedMs,
+			manifest, fetchWhy))
+			return failed(fetchWhy.c_str());
+		if (manifest.size() > kMaxManifestBytes)
+			return failed("the manifest is too large");
+
+		// Read as the auto-update reads them, so what is checked here is what it
+		// would fetch.
+		const std::string remote = JsonExtractString(manifest, "version");
+		const std::string url = JsonExtractString(manifest, "download_url");
+		if (remote.empty() || url.empty())
+			return failed("the manifest has no version or download_url");
+		const std::string shown = ModIndex::detail::Clean(remote, ModIndex::kMaxVersionLen);
+
+		const bool hasMin = JsonFindValue(manifest, "interface_version_min") != std::string::npos;
+		const bool hasMax = JsonFindValue(manifest, "interface_version_max") != std::string::npos;
+		const int ifaceMin = ModIndex::detail::ReadInt(manifest, "interface_version_min");
+		const int ifaceMax = ModIndex::detail::ReadInt(manifest, "interface_version_max");
+		if (ifaceMin >= 0 && ifaceMax >= 0
+			&& (ifaceMax < PLUGIN_INTERFACE_VERSION_MIN || ifaceMin > PLUGIN_INTERFACE_VERSION_MAX))
+		{
+			ModLoaderLogger::LogWarn(L"[Install] %hs: latest %hs needs interface [%d, %d], installing the list's %hs",
+				name, shown.c_str(), ifaceMin, ifaceMax, listed);
+			return Pick::Pinned;
+		}
+
+		const AutoUpdateVersion::ParsedVersion offered = AutoUpdateVersion::ParseVersion(remote.c_str());
+		const AutoUpdateVersion::ParsedVersion pinned = AutoUpdateVersion::ParseVersion(listed);
+
+		// The .json written beside the DLL names this manifest. If the next launch
+		// could take its release from somewhere else, nothing is installed. With
+		// a list version that has no number to compare, it always could: the
+		// auto-update then goes by the version the DLL reports.
+		if (!IsSameAsset(url, request.info.url)
+			&& (!pinned.valid || AutoUpdateVersion::ReleaseIsNewer(remote.c_str(), listed)))
+		{
+			ModLoaderLogger::LogWarn(L"[Install] %hs: latest %hs refused: its download address is not the list's file in the list's repository",
+				name, shown.c_str());
+			why = kRefusedRelease;
+			return Pick::Refuse;
+		}
+
+		if (!IsPlainVersion(remote) || !offered.valid || !pinned.valid
+			|| AutoUpdateVersion::CompareVersions(offered, pinned) <= 0)
+		{
+			ModLoaderLogger::LogInfo(L"[Install] %hs: latest %hs not newer than list %hs, installing the list's",
+				name, shown.c_str(), listed);
+			return Pick::Pinned;
+		}
+		if ((hasMin && ifaceMin < 0) || (hasMax && ifaceMax < 0))
+			return failed("its interface range cannot be read");
+
+		std::string sha;
+		if (JsonFindValue(manifest, "download_sha256") != std::string::npos)
+		{
+			sha = JsonExtractString(manifest, "download_sha256");
+			for (char& c : sha)
+				c = ModIndex::detail::Lower(c);
+			if (sha.size() != 64 || sha.find_first_not_of("0123456789abcdef") != std::string::npos)
+				return failed("its download_sha256 is not 64 hex digits");
+		}
+
+		out.url = url;
+		out.sha256 = sha;
+		out.size = 0;
+		out.hashPinned = false;
+		version = remote;
+		ModLoaderLogger::LogInfo(L"[Install] %hs: latest is %hs (list %hs), installing it", name, remote.c_str(), listed);
+		return Pick::Latest;
 	}
 
 	std::string CheckTarget(const Request& request)
@@ -311,11 +503,23 @@ namespace ModInstall
 			bool downloaded = false;
 			try
 			{
-				ModLoaderLogger::LogInfo(L"[Install] %hs: downloading %hs (%zu bytes)",
-					request.name.c_str(), request.info.url.c_str(), request.info.size);
 				outcome.message = CheckTarget(request);
-				downloaded = outcome.message.empty()
-					&& Download(request.info, request.name, shared->hop, shared->cancel, bytes, outcome.message);
+				if (outcome.message.empty())
+				{
+					// One deadline for the release check and the download. A download
+					// that fails is a failed install: only the check falls back.
+					const ULONGLONG started = GetTickCount64();
+					ModIndex::InstallInfo info;
+					std::string version, why;
+					if (ResolveLatest(request, shared->hop, shared->cancel, started, info, version, why) == Pick::Refuse)
+						outcome.message = why;
+					else
+					{
+						outcome.version = version;
+						ModLoaderLogger::LogInfo(L"[Install] %hs: downloading %hs", request.name.c_str(), info.url.c_str());
+						downloaded = Download(info, request.name, shared->hop, shared->cancel, bytes, outcome.message, started);
+					}
+				}
 			}
 			catch (...)
 			{

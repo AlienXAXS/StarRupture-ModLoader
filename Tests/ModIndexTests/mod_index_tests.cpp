@@ -7,6 +7,7 @@
 #include "auto_update/mod_index_fetcher.h"
 #include "auto_update/mod_index_signed.h"
 #include "auto_update/mod_install.h"
+#include "plugins/plugin_interface.h"
 #include "utils/sha256.h"
 #include "auto_update/feed_fetch.h"
 #include "memory_scanner/version_feed.h"
@@ -19,7 +20,9 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <iterator>
+#include <map>
 #include <mutex>
 #include <stdexcept>
 #include <string>
@@ -1359,11 +1362,12 @@ namespace
 			release = true;
 			Check(first.Wait() && first.outcome.placed && first.outcome.dllFile == "Thing.dll" && first.outcome.version == "1.0.0",
 				"installer: done says what was placed");
-			Check(Until([&] { return !installer.Busy(); }) && second.calls == 0 && hops == 1 && dir.Listing() == "Thing.dll,Thing.json",
+			// two requests: the release manifest, which says nothing, then the file
+			Check(Until([&] { return !installer.Busy(); }) && second.calls == 0 && hops == 2 && dir.Listing() == "Thing.dll,Thing.json",
 				"installer: free again, and the refused start did nothing");
 
 			Check(installer.Start(RequestFor(dir), again.Done()) && again.Wait() && !again.outcome.placed
-				&& again.outcome.message.find("already in") != std::string::npos && hops == 1,
+				&& again.outcome.message.find("already in") != std::string::npos && hops == 2,
 				"installer: a file already there stops it before the download");
 			Check(!installer.Halted(), "installer: not halted before Shutdown");
 			installer.Shutdown(1000);
@@ -1399,9 +1403,11 @@ namespace
 		{
 			const GameDir dir;
 			std::atomic<bool> started{ false }, release{ false };
+			std::atomic<int> asked{ 0 };
 			Run run;
 			ModInstall::Installer installer([&](const std::string&, size_t, unsigned, const std::atomic<bool>& cancel)
 			{
+				++asked;
 				started = true;
 				Until([&] { return release.load() || (noticesCancel && cancel.load()); });
 				return Body(kModBytes);
@@ -1413,6 +1419,262 @@ namespace
 			release = true;
 			Check(Until([&] { return !installer.Busy(); }), "shutdown: the worker ends");
 			Check(run.calls == 0 && dir.Listing().empty(), "shutdown: nothing is written and done is not called");
+			// stopped during the release check: no download follows
+			Check(asked == 1, "shutdown: nothing more is asked for");
+		}
+	}
+
+	// A release as GitHub serves it: releases/latest/download/<name> names the
+	// tag in the same repository, and the tag's address names the download host.
+	const std::string kTagManifest = "https://github.com/Owner/Repo/releases/download/v1.2.0/Thing-client-manifest.json";
+	const std::string kManifestFile = "https://release-assets.githubusercontent.com/github-production-release-asset/1/manifest?sig=m";
+	const std::string kNewDll = "https://github.com/Owner/Repo/releases/download/v1.2.0/Thing.dll";
+	const std::string kNewFile = "https://release-assets.githubusercontent.com/github-production-release-asset/1/new?sig=n";
+	const std::string kNewBytes = "MZ" + std::string(3000, 'n');
+
+	// Every address a test serves; any other gets no answer.
+	using Site = std::map<std::string, ModInstall::Hop>;
+
+	std::string RangeOf(int low, int high)
+	{
+		return "\"interface_version_min\": " + std::to_string(low) + ", \"interface_version_max\": " + std::to_string(high);
+	}
+
+	const std::string kFits = RangeOf(PLUGIN_INTERFACE_VERSION_MIN, PLUGIN_INTERFACE_VERSION_MAX);
+
+	std::string ReleaseOf(const std::string& version, const std::string& url, const std::string& extra = kFits)
+	{
+		return "{\n  \"plugin_name\": \"Thing\",\n  \"version\": \"" + version + "\",\n  " + (extra.empty() ? "" : extra + ",\n  ")
+			+ "\"download_url\": \"" + url + "\"\n}\n";
+	}
+
+	// The list's 1.0.0 and a newer release described by `manifest`.
+	Site SiteWith(const std::string& manifest)
+	{
+		return {
+			{ kOwnManifest, To(kTagManifest) }, { kTagManifest, To(kManifestFile) }, { kManifestFile, Body(manifest) },
+			{ kAssetUrl, To(kSignedHop) }, { kSignedHop, Body(kModBytes) },
+			{ kNewDll, To(kNewFile) }, { kNewFile, Body(kNewBytes) },
+		};
+	}
+
+	struct Installed
+	{
+		bool placed = false;
+		std::string message, version, listing, dll, sidecar;
+		std::vector<std::string> asked;
+		std::vector<size_t> caps;
+		bool Asked(const std::string& url) const { return std::find(asked.begin(), asked.end(), url) != asked.end(); }
+	};
+
+	// A whole install, as Browse > Install runs it.
+	Installed InstallFrom(const Site& site, const std::function<void(ModInstall::Request&)>& change = nullptr)
+	{
+		const GameDir dir;
+		Installed out;
+		Run run;
+		ModInstall::Installer installer([&](const std::string& url, size_t maxBytes, unsigned, const std::atomic<bool>&)
+		{
+			out.asked.push_back(url);
+			out.caps.push_back(maxBytes);
+			const auto it = site.find(url);
+			return it != site.end() ? it->second : ModInstall::Hop();
+		});
+		ModInstall::Request request = RequestFor(dir);
+		if (change)
+			change(request);
+		Check(installer.Start(std::move(request), run.Done()) && run.Wait(), "latest: the install ends");
+		installer.Shutdown(1000);
+		out.placed = run.outcome.placed;
+		out.message = run.outcome.message;
+		out.version = run.outcome.version;
+		out.listing = dir.Listing();
+		if (out.placed)
+		{
+			out.dll = Slurp(dir.At(L"Thing.dll"));
+			if (out.listing == "Thing.dll,Thing.json")
+				out.sidecar = Slurp(dir.At(L"Thing.json"));
+		}
+		return out;
+	}
+
+	void LatestTests()
+	{
+		const std::string sidecar = std::string("{\n  \"manifest_url\": \"") + kOwnManifest + "\"\n}\n";
+		const auto listed = [&](const Installed& i)
+		{
+			return i.placed && i.version == "1.0.0" && i.dll == kModBytes && i.sidecar == sidecar
+				&& i.asked.size() >= 2 && i.asked[i.asked.size() - 2] == kAssetUrl && i.asked.back() == kSignedHop
+				&& !i.Asked(kNewDll);
+		};
+		const auto latest = [&](const Installed& i, const char* version)
+		{
+			return i.placed && i.version == version && i.dll == kNewBytes && i.sidecar == sidecar && !i.Asked(kAssetUrl);
+		};
+		const auto nothing = [](const Installed& i, const char* words)
+		{
+			return !i.placed && i.listing.empty() && i.message.find(words) != std::string::npos && !i.Asked(kAssetUrl);
+		};
+
+		{
+			const Installed i = InstallFrom(SiteWith(ReleaseOf("1.2.0", kNewDll)));
+			Check(latest(i, "1.2.0"), "latest: a newer release is installed, with the list's .json and the new version");
+			Check(i.asked == std::vector<std::string>{ kOwnManifest, kTagManifest, kManifestFile, kNewDll, kNewFile },
+				"latest: GitHub's two redirects to the manifest, then one to the file");
+			const size_t manifestCap = ModInstall::kMaxManifestBytes;
+			const size_t fileCap = static_cast<size_t>(ModIndex::kMaxDownloadBytes);
+			Check(i.caps == std::vector<size_t>{ manifestCap, manifestCap, manifestCap, fileCap, fileCap },
+				"latest: the manifest and the unlisted file are each capped");
+		}
+		Check(latest(InstallFrom(SiteWith(ReleaseOf("v1.2.0", kNewDll, ""))), "v1.2.0"),
+			"latest: a manifest with no interface range is taken, as the auto-update takes it");
+		Check(latest(InstallFrom(SiteWith(ReleaseOf("1.0.1", kNewDll,
+			kFits + ", \"download_sha256\": \"" + Sha256::OfBytes(kNewBytes) + "\""))), "1.0.1"),
+			"latest: the manifest's SHA-256 matches");
+		{
+			std::string upper = Sha256::OfBytes(kNewBytes);
+			for (char& c : upper)
+				c = static_cast<char>(toupper(static_cast<unsigned char>(c)));
+			Check(latest(InstallFrom(SiteWith(ReleaseOf("1.2.0", kNewDll, "\"download_sha256\": \"" + upper + "\""))), "1.2.0"),
+				"latest: the manifest's SHA-256 in capitals");
+		}
+		{
+			const std::string cased = "https://github.com/owner/REPO/releases/download/v1.2.0/thing.DLL";
+			Site site = SiteWith(ReleaseOf("1.2.0", cased));
+			site[cased] = To(kNewFile);
+			Check(latest(InstallFrom(site), "1.2.0"), "latest: owner, repository and file name compare without case");
+		}
+
+		// no release check, or one that says nothing usable: the list's file
+		{
+			const Installed i = InstallFrom(SiteWith(ReleaseOf("1.2.0", kNewDll)),
+				[](ModInstall::Request& r) { r.info.manifestUrl.clear(); });
+			Check(i.placed && i.version == "1.0.0" && i.dll == kModBytes && i.listing == "Thing.dll"
+				&& i.asked == std::vector<std::string>{ kAssetUrl, kSignedHop }, "latest: no manifest, the list's file");
+		}
+		for (const char* manifest : { "https://github.com/Owner/Other/releases/latest/download/Thing-client-manifest.json",
+			"https://github.com/Owner/Repo/releases/download/v1.2.0/Thing-client-manifest.json",
+			"https://example.test/Thing-client-manifest.json" })
+		{
+			const Installed i = InstallFrom(SiteWith(ReleaseOf("1.2.0", kNewDll)),
+				[&](ModInstall::Request& r) { r.info.manifestUrl = manifest; });
+			Check(i.placed && i.version == "1.0.0" && !i.Asked(manifest),
+				"latest: a manifest address that is not the repository's latest release is not asked for");
+		}
+		for (const std::string& at : { std::string(kOwnManifest), kTagManifest, kManifestFile })
+		{
+			for (const ModInstall::Hop& answer : { ModInstall::Hop{ 404, "", "" }, ModInstall::Hop() })
+			{
+				Site site = SiteWith(ReleaseOf("1.2.0", kNewDll));
+				site[at] = answer;
+				Check(listed(InstallFrom(site)), "latest: a manifest that cannot be fetched, the list's file");
+			}
+		}
+		// the first redirect may only name the tag: same repository, same file
+		for (const std::string& target : std::vector<std::string>{
+			"https://github.com/Owner/Other/releases/download/v1.2.0/Thing-client-manifest.json",
+			"https://github.com/Other/Repo/releases/download/v1.2.0/Thing-client-manifest.json",
+			"https://github.com/Owner/Repo/releases/download/v1.2.0/Other-client-manifest.json",
+			"https://github.com/Owner/Repo/releases/download/v1.2.0/thing-client-manifest.json",
+			"https://github.com/Owner/Repo/releases/download/v1.2.0/more/Thing-client-manifest.json",
+			"https://github.com/Owner/Repo/releases/download/v1.2.0/Thing-client-manifest.json?x=1",
+			"https://github.com/Owner/Repo/releases/latest/download/Thing-client-manifest.json",
+			"https://github.com/Owner/Repo/raw/main/Thing-client-manifest.json",
+			"http://github.com/Owner/Repo/releases/download/v1.2.0/Thing-client-manifest.json",
+			"https://example.test/Owner/Repo/releases/download/v1.2.0/Thing-client-manifest.json",
+			"/Owner/Repo/releases/download/v1.2.0/Thing-client-manifest.json",
+			kManifestFile, "https://example.test/x" })
+		{
+			Site site = SiteWith(ReleaseOf("1.2.0", kNewDll));
+			site[kOwnManifest] = To(target);
+			if (target != kOwnManifest && !site.count(target))
+				site[target] = Body(ReleaseOf("1.2.0", kNewDll));
+			const Installed i = InstallFrom(site);
+			Check(listed(i) && i.asked.size() == 3, ("latest: first manifest redirect not followed: " + target).c_str());
+		}
+		// later redirects follow the download's rules
+		for (const std::string& target : std::vector<std::string>{ "https://example.test/x",
+			"https://github.com/Owner/Repo/releases/download/v1.3.0/Thing-client-manifest.json" })
+		{
+			Site site = SiteWith(ReleaseOf("1.2.0", kNewDll));
+			site[kTagManifest] = To(target);
+			site[target] = Body(ReleaseOf("1.2.0", kNewDll));
+			const Installed i = InstallFrom(site);
+			Check(listed(i) && !i.Asked(target), ("latest: later manifest redirect not followed: " + target).c_str());
+		}
+		// the tag step is the manifest's alone
+		{
+			Site site = SiteWith("");
+			site[kAssetUrl] = To(kNewDll);
+			const Installed i = InstallFrom(site);
+			Check(!i.placed && i.listing.empty() && !i.Asked(kNewDll), "latest: the file's own redirect may not name a tag");
+		}
+
+		const std::string outside = "https://example.test/Thing.dll";
+		const std::vector<std::pair<const char*, std::string>> keptToList = {
+			{ "older", ReleaseOf("0.9.0", kNewDll) },
+			{ "equal", ReleaseOf("1.0.0", kNewDll) },
+			{ "equal with a v", ReleaseOf("v1.0.0", kNewDll) },
+			{ "equal with a suffix", ReleaseOf("1.0.0-fix", kNewDll) },
+			{ "a version with no number", ReleaseOf("latest", kNewDll) },
+			{ "a version with a space", ReleaseOf("1.2.0 x", kNewDll) },
+			{ "a version too long", ReleaseOf("1.2.0-" + std::string(40, 'a'), kNewDll) },
+			{ "older, pointing elsewhere", ReleaseOf("0.9.0", outside) },
+			{ "equal, pointing elsewhere", ReleaseOf("1.0.0", outside) },
+			{ "needs a newer loader", ReleaseOf("1.2.0", kNewDll, RangeOf(PLUGIN_INTERFACE_VERSION_MAX + 1, PLUGIN_INTERFACE_VERSION_MAX + 2)) },
+			{ "only for older loaders", ReleaseOf("1.2.0", kNewDll, RangeOf(1, PLUGIN_INTERFACE_VERSION_MIN - 1)) },
+			{ "needs a newer loader, pointing elsewhere", ReleaseOf("1.2.0", outside, RangeOf(PLUGIN_INTERFACE_VERSION_MAX + 1, PLUGIN_INTERFACE_VERSION_MAX + 2)) },
+			{ "an interface number in quotes", ReleaseOf("1.2.0", kNewDll, "\"interface_version_min\": \"70\", \"interface_version_max\": 80") },
+			{ "an interface number too large", ReleaseOf("1.2.0", kNewDll, "\"interface_version_max\": 99999999999999999999") },
+			{ "a short SHA-256", ReleaseOf("1.2.0", kNewDll, "\"download_sha256\": \"abc\"") },
+			{ "a SHA-256 that is no string", ReleaseOf("1.2.0", kNewDll, "\"download_sha256\": 5") },
+			{ "no version", "{\"download_url\": \"" + kNewDll + "\"}" },
+			{ "no download_url", "{\"version\": \"1.2.0\"}" },
+			{ "no JSON", "<html>" },
+			{ "nothing", "" },
+			{ "too large", ReleaseOf("1.2.0", kNewDll) + std::string(ModInstall::kMaxManifestBytes, ' ') },
+		};
+		for (const auto& c : keptToList)
+			Check(listed(InstallFrom(SiteWith(c.second))), (std::string("latest: the list's file when the release is ") + c.first).c_str());
+
+		// a release the auto-update would take from anywhere else: nothing at all
+		for (const std::string& url : std::vector<std::string>{ outside,
+			"https://github.com/Owner/Other/releases/download/v1.2.0/Thing.dll",
+			"https://github.com/Other/Repo/releases/download/v1.2.0/Thing.dll",
+			"https://github.com/Owner/Repo/releases/download/v1.2.0/Other.dll",
+			"https://github.com/Owner/Repo/releases/latest/download/Thing.dll",
+			"https://github.com/Owner/Repo/raw/main/Thing.dll",
+			"https://github.com/Owner/Repo/releases/download/v1.2.0/Thing.dll?x=1",
+			"https://github.com/Owner/Repo/releases/download/../../Thing.dll",
+			"https://github.com@example.test/Owner/Repo/releases/download/v1.2.0/Thing.dll",
+			"http://github.com/Owner/Repo/releases/download/v1.2.0/Thing.dll", kNewFile })
+		{
+			const Installed i = InstallFrom(SiteWith(ReleaseOf("1.2.0", url)));
+			Check(nothing(i, "doesn't allow") && i.asked.size() == 3, ("latest: refused, nothing written: " + url).c_str());
+		}
+		Check(nothing(InstallFrom(SiteWith(ReleaseOf("latest", outside))), "doesn't allow"),
+			"latest: a version with no number that points elsewhere is refused, as the auto-update would take it");
+		Check(nothing(InstallFrom(SiteWith(ReleaseOf("one", outside)), [](ModInstall::Request& r) { r.version = "one"; }), "doesn't allow"),
+			"latest: with a list version that has no number, any address elsewhere is refused");
+
+		// a failed download of the newer release does not fall back
+		Check(nothing(InstallFrom(SiteWith(ReleaseOf("1.2.0", kNewDll, "\"download_sha256\": \"" + Sha256::OfBytes(kModBytes) + "\""))),
+			"latest release describes"), "latest: a manifest SHA-256 that does not match, nothing written");
+		{
+			Site site = SiteWith(ReleaseOf("1.2.0", kNewDll));
+			site[kNewFile] = Body("PK" + std::string(100, 'x'));
+			Check(nothing(InstallFrom(site), "latest release describes"), "latest: a file that is not a DLL, nothing written");
+			site[kNewFile] = Body("");
+			Check(nothing(InstallFrom(site), "download failed"), "latest: an empty answer fails the install");
+			site[kNewFile] = { 404, "", "" };
+			Check(nothing(InstallFrom(site), "download failed"), "latest: a missing file fails the install");
+			site[kNewDll] = To("https://example.test/Thing.dll");
+			Check(nothing(InstallFrom(site), "not allowed"), "latest: a refused redirect fails the install");
+		}
+		{
+			Site site = SiteWith(ReleaseOf("1.2.0", kNewDll));
+			site[kNewFile] = Body("MZ" + std::string(static_cast<size_t>(ModIndex::kMaxDownloadBytes) - 1, 'x'));
+			Check(nothing(InstallFrom(site), "latest release describes"), "latest: a file over the limit, nothing written");
 		}
 	}
 
@@ -1741,6 +2003,7 @@ int main()
 	DownloadTests();
 	PlaceTests();
 	InstallerTests();
+	LatestTests();
 	SignatureStateTests();
 	SearchTests();
 
