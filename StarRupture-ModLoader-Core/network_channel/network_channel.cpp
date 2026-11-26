@@ -421,6 +421,8 @@ namespace
     // When each connection's manifest arrived (GetTickCount64). Same lock and
     // lifetime as g_manifests.
     static std::unordered_map<void*, uint64_t> g_manifestTick;
+    // The last acknowledgement sent to each of them. Same lock and lifetime.
+    static std::unordered_map<void*, std::string> g_ackSent;
 
     // The wire declarations each client sent after its manifest. Same lock and
     // lifetime as g_manifests; an entry exists only once a well-formed table
@@ -1259,6 +1261,7 @@ namespace
             std::lock_guard<std::mutex> lk(g_manifestMutex);
             g_manifests.erase(conn);
             g_manifestTick.erase(conn);
+            g_ackSent.erase(conn);
             g_clientWires.erase(conn);
             g_clientFeat.erase(conn);
             g_connRules.erase(conn);
@@ -1741,6 +1744,97 @@ namespace
         ModLoaderLogger::LogTrace(
             L"[NetworkChannel] SendPacketToAllClients: delivered to %d of %d controllers for plugin '%S'",
             sent, actors.Num(), self->name);
+    }
+
+    // The "$ML:ack" payload: buildTag US interfaceVersion RS, then this server's
+    // wire table and the host rules record.
+    static std::string BuildAckPayload()
+    {
+        std::string ack = MODLOADER_BUILD_TAG;
+        ack += kUnitSep;
+        ack += std::to_string(PLUGIN_INTERFACE_VERSION);
+        ack += kRecordSep;
+
+        // Behind the first record: this server's wire table. A client that
+        // reads only the first record ignores it; the ack is the only
+        // message that carries it.
+        std::vector<std::string> notEncoded;
+        size_t cut = 0;
+        ack += WireCompat::EncodeTableCapped(PluginManager::GetWireEntries(), kMaxTailBytes,
+            &notEncoded, &cut);
+        WarnWireTableGaps(notEncoded, cut);
+
+        // After the table: this server reads "$ML:feat". A reader that does
+        // not know the record skips it. Always written, whatever the rules.
+        ack += WireCompat::EncodeHostRulesRecord();
+        return ack;
+    }
+
+    static bool SendAck(void* conn, const std::string& ack)
+    {
+        if (!SendWire(conn, kMlPlugin, BuildEnvelope(kMlPlugin, kMlAck,
+                reinterpret_cast<const uint8_t*>(ack.data()), ack.size())))
+            return false;
+
+        // Only for a connection still known, so a forgotten one gets no entry back.
+        std::lock_guard<std::mutex> lk(g_manifestMutex);
+        if (g_manifests.find(conn) != g_manifests.end())
+            g_ackSent[conn] = ack;
+        return true;
+    }
+
+    // How long the plugin list has to stay unchanged before clients get it again,
+    // so a reload or a run of loads goes out once.
+    static constexpr uint64_t kAckRefreshSettleMs = 1000;
+
+    // Authority side. A client answers SendPacketToServerPlugin from the wire
+    // table in our last ack, so when the plugins running here change (a reload, a
+    // late load, an unload) each client whose copy is now wrong gets the ack
+    // again. Every client takes a repeated ack: it replaces its table and does
+    // not tell its plugins "ready" a second time. Runs from the tick.
+    static void PumpAckRefresh(uint64_t nowMs)
+    {
+        static unsigned s_generation = 0;
+        static uint64_t s_changedMs  = 0;
+
+        const unsigned generation = PluginManager::GetPluginGeneration();
+        if (generation != s_generation)
+        {
+            s_generation = generation;
+            s_changedMs  = nowMs;
+            return;
+        }
+        if (!s_changedMs || nowMs - s_changedMs < kAckRefreshSettleMs) return;
+        s_changedMs = 0;
+
+        {
+            std::lock_guard<std::mutex> lk(g_manifestMutex);
+            if (g_ackSent.empty()) return;
+        }
+        if (!HasNetAuthority()) return;
+
+        // Built before our lock: it takes the plugin lock.
+        const std::string ack = BuildAckPayload();
+
+        std::vector<void*> stale;
+        {
+            std::lock_guard<std::mutex> lk(g_manifestMutex);
+            for (const auto& kv : g_ackSent)
+                if (kv.second != ack) stale.push_back(kv.first);
+        }
+
+        for (void* conn : stale)
+        {
+            // A connection can leave without PlayerLeft naming it.
+            if (!IsLiveClientConnection(conn))
+            {
+                ForgetConnectionState(conn);
+                continue;
+            }
+            if (!SendAck(conn, ack))
+                ModLoaderLogger::LogWarn(
+                    L"[NetworkChannel] Could not send client %p the new plugin list", conn);
+        }
     }
 
     // v83. The envelope's plugin field is the target's name, which
@@ -4194,27 +4288,7 @@ static bool DispatchServerNarrow(void* senderConn, void* senderUObject,
             // Answer so the client knows it landed. Without this it cannot tell a
             // delivered manifest from one that vanished, and would either retry
             // forever or assume success wrongly.
-            std::string ack = MODLOADER_BUILD_TAG;
-            ack += kUnitSep;
-            ack += std::to_string(PLUGIN_INTERFACE_VERSION);
-            ack += kRecordSep;
-
-            // Behind the first record: this server's wire table. A client that
-            // reads only the first record ignores it; the ack is the only
-            // message that carries it.
-            std::vector<std::string> notEncoded;
-            size_t cut = 0;
-            ack += WireCompat::EncodeTableCapped(PluginManager::GetWireEntries(), kMaxTailBytes,
-                &notEncoded, &cut);
-            WarnWireTableGaps(notEncoded, cut);
-
-            // After the table: this server reads "$ML:feat". A reader that does
-            // not know the record skips it. Always written, whatever the rules.
-            ack += WireCompat::EncodeHostRulesRecord();
-
-            if (!SendWire(senderConn, kMlPlugin, BuildEnvelope(kMlPlugin, kMlAck,
-                                                    reinterpret_cast<const uint8_t*>(ack.data()),
-                                                    ack.size())))
+            if (!SendAck(senderConn, BuildAckPayload()))
             {
                 ModLoaderLogger::LogWarn(
                     L"[NetworkChannel] Could not acknowledge client %p -- it will retry", senderConn);
@@ -4707,6 +4781,7 @@ static void OnEngineTick(float /*deltaSeconds*/)
     PumpClientFeatures(now);
     PumpVersionMinimums(tickGapMs);
     PumpAdminAnswers(now);
+    PumpAckRefresh(now);
 
 #ifdef MODLOADER_CLIENT_BUILD
     RefreshManifestIfStale();
