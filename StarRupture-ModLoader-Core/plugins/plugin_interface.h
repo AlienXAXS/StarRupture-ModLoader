@@ -3220,12 +3220,32 @@ struct IPluginNetworkChannel
 	// v82 -- appended at the end, do not relocate. Client side: whether the joined
 	// server's host has turned this plugin off as a whole. Pass your own self.
 	//
-	//   1  turned off: the loader no longer draws the plugin's widgets, panels,
-	//      menu rows or HUD callbacks, and no longer gives it key presses, the
-	//      wheel or console commands. Ticks, key releases and other callbacks
-	//      still run, so the plugin can undo what it changed in the game.
+	//   1  turned off.
 	//   0  not turned off. Also single player, a listen host, a dedicated server,
 	//      a generic build and no rule set.
+	//
+	// While it is 1 the loader:
+	//   - draws none of the plugin's widgets, menu rows or HUD post-render
+	//     callbacks, runs no menu row clicks and greys its config page;
+	//   - closes its open panels the normal way, so panel-closed callbacks run.
+	//     They do not reopen on an allow, and SetPanelOpen does nothing;
+	//   - gives it no key presses, wheel turns or console commands, and takes
+	//     no key from the game on its behalf;
+	//   - for what the plugin does inside a call the loader makes into it:
+	//     IsKeyHeld is false and the DebugDraw Draw* functions draw nothing
+	//     (the clearing calls still work). An input capture or passthrough token
+	//     taken in such a call, before or during the deny, has no effect until
+	//     an allow. Releasing it works as always.
+	//
+	// It cannot block what the plugin does outside those calls. A token taken,
+	// a key read or a shape drawn on the plugin's own thread or in its own
+	// detour works as before, so a plugin that can hold a capture or
+	// passthrough token must release it when it reads 1. Nor does it undo or
+	// stop what the plugin does by other means: debug shapes already drawn, UI
+	// it makes through the engine, its hooks, patches and other changes to the
+	// game, direct reads of the keyboard or mouse, and its network traffic.
+	// Ticks, key releases, events and its other callbacks still run, so the
+	// plugin can undo its changes.
 	//
 	// It can change at any time and goes back to 0 when the host allows the plugin
 	// again or the connection ends, so read it each tick rather than keeping it.
