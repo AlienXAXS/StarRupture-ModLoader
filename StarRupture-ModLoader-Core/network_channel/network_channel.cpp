@@ -3263,8 +3263,6 @@ namespace
         NC_SendPacketToServerPlugin,
         NC_SendPacketToClientPlugin,
     };
-        NC_IsDeniedByHost,
-    };
 
 } // anonymous namespace
 
