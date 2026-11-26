@@ -551,6 +551,7 @@
     <ClInclude Include="console\server_console.h" />
     <ClInclude Include="plugins\plugin_interface.h" />
     <ClInclude Include="plugins\known_gobjects.generated.h" />
+    <ClInclude Include="plugins\plugin_call_gate.h" />
     <ClInclude Include="plugins\plugin_guard.h" />
     <ClInclude Include="plugins\plugin_hook_report.h" />
     <ClInclude Include="plugins\plugin_host_info.h" />
@@ -836,6 +837,7 @@
     <ClCompile Include="console\console_screen.cpp" />
     <ClCompile Include="console\engine_output_hook.cpp" />
     <ClCompile Include="console\server_console.cpp" />
+    <ClCompile Include="plugins\plugin_call_gate.cpp" />
     <ClCompile Include="plugins\plugin_guard.cpp" />
     <ClCompile Include="plugins\plugin_catalog.cpp" />
     <ClCompile Include="plugins\plugin_hook_report.cpp" />
