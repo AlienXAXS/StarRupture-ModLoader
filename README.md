@@ -465,106 +465,6 @@ plugin's author. <sup>[✦](#msantoro12)</sup>
 
 <img src="images/popup-hooks-failed.png" width="383" alt="Plugin Hooks Failed pop-up with the missing hooks of one plugin">
 
-### A server can turn a feature off
-
-A plugin lists its features (a map overlay, a cheat, a new panel) so the loader can switch one off
-without switching the whole plugin off. A game update does that on its own. A server can do it too,
-for a feature it does not want on it: the server keeps a short deny list of plugin and feature pairs.
-A feature on the list is off, whatever the game build allows, and comes back when it is taken off the
-list. A feature the game build already turned off stays off either way. <sup>[✦](#msantoro12)</sup>
-
-What the player sees: the feature's controls on the plugin's config page are greyed, with
-"*&lt;feature title&gt;* is off: turned off by this server". The plugin shows as `Loaded (1 off)` in the
-Plugins tab and in `plugins`, `hookfailures` lists it as `[feature off] <title> (<id>): turned off by this
-server`, and `ModLoader.log` says `feature "<title>" turned off by this server` (and `turned back on`
-later). No pop-up opens, and the plugin keeps running without the feature.
-
-The `features` command, on the server console or the client's developer console:
-
-| Command | Does |
-|---|---|
-| `features` | List every feature the loaded plugins declared and whether it is `on`, `off: build (<reason>)` or `off: server`, then the deny list |
-| `features hostoff <plugin> <id>` | Add one feature to the deny list. The plugin is the name `plugins` shows, the id is the one `features` shows |
-| `features hostclear` | Empty the deny list. Features the game build has on are on again |
-| `features hostmessage <text>` | Set the text players get with the list (empty text clears it) |
-
-Example: `features` shows a plugin called `MyPlugin` with a feature `marker-labels` that is `on`.
-
-```
-features hostoff MyPlugin marker-labels
-```
-
-prints the list again with `marker-labels` as `off: server`, and the deny list shows `MyPlugin  marker-labels`.
-The plugin's own flag for the feature reads off from then on, even if the plugin is reloaded or loaded
-later. `features hostoff MyPlugin nothing` answers "No feature 'nothing' in plugin 'MyPlugin'" and changes
-nothing. `features hostclear` turns `marker-labels` back on. The deny list is kept in memory, not saved,
-and is empty at every start.
-
-A server sends its deny list to every connected player whose mod loader sent its feature
-list: the player's loader switches those features off within a moment, and again when the list
-changes or the player's plugins change. A message set with `features hostmessage <text>` goes with the
-list and is written to the player's `ModLoader.log`. Leaving the server gives the features back, and a
-list the player set with `features hostoff` on their own machine stays. A player on a server whose
-mod loader is older than this gets no list, and `ModLoader.log` says once: "No host rules (the server's
-mod loader is older)."
-
-A player's mod loader also tells the server which game build it runs (its CL number), as one extra record in the feature list. When both builds are known and differ, the server's `ModLoader.log` gets one warning per join: "Player 'X' runs game build CL-130045, this server runs CL-127004." Nothing is refused, and an older mod loader that sends no build is never reported.
-
-#### For a server plugin
-
-These calls do nothing for a server host until a server plugin uses them.
-
-A server plugin sets the rules from text instead of the console, for everyone or for one player. The
-calls are in `hooks->HostRules` (interface 79; a loader below 79 has no such pointer, so check the
-loader's interface version first). `SetRules(text, error, errorSize)` is the set for every player with
-no set of their own, `SetRulesForConnection(playerController, text, error, errorSize)` is one player's set,
-and `ClearConnection(playerController)` puts that player back on the server-wide set. They return false and
-fill `error` ("line N: ...") when the text is not valid, and change nothing. One rule per line:
-
-```
-# comment
-default=allow
-message=Cheats are off on this server
-BetterCheats.*=deny
-MiniMap.waypoints=allow
-```
-
-`default=` is what a feature with no rule gets, `Plugin.*` is a whole mod, `Plugin.feature` one feature.
-The `message=` line is written to each player's `ModLoader.log`, it does not appear on screen. A rule
-splits at the first dot, so a plugin whose own name contains a dot cannot be named in the text.
-A player's own set replaces the server-wide one whole, so the `features hostoff` list and
-`features hostmessage` text apply only to players with no set of their own. Changes reach every player
-who sent a feature list at once. `RegisterOnClientFeatures(self, callback)` calls you on the game thread when
-a player's feature list arrives or changes, with that player's controller; that is the time to call
-`SetRulesForConnection`. That callback runs at most once per second per player, so a burst of changed lists
-is answered once. All calls are for the server's game thread and do nothing on a client.
-
-A server can also ask for a minimum version. `SetVersionMinimums(text, error, errorSize)` takes one line per
-rule (empty text turns everything off; a bad text returns false with `error` and changes nothing):
-
-```
-# comment
-loader=1.27.0
-RuptureTimer=0.11.0
-ProductionViewer=wire
-```
-
-`loader=` is the oldest ModLoader allowed, `Plugin=version` the oldest version of one mod (the name ignores
-case), and `Plugin=wire` means the player's copy must be one the mod wire check accepts. Register
-`RegisterOnClientBelowMinimum(self, callback)`; the loader calls `callback(playerController, plainReason)` on the
-game thread, once per join, when a player is below. `plainReason` is one line of plain words for the player
-("This server needs RuptureTimer 0.11.0 or newer (you have 0.9.2). ..."). The loader never removes anyone: your
-plugin decides (an admin may be exempt) and does the removal itself. Players with no mod loader are never
-checked, and a dev build or any version the loader cannot read is never below. A text after a `-` or `+` in a
-version is ignored when comparing, so `1.26.0-dev.3` counts as `1.26.0` and is below `1.27.0`. A loader too old
-to report its version counts as below a set `loader=` minimum after 30 seconds; time the game stalled (more
-than 2 seconds between engine ticks, such as a level load) does not count toward the 30. Setting new minimums checks the players
-already connected that have not been reported yet.
-
-`GetClientFeatures(playerController, buf, size)` returns what one player's loader reported as text (`loader=<build tag> interface=<version>`, then one `Plugin.feature=on|off` line each) and its full length, or -1 when there is none; a null `buf` with `size` 0 measures.
-
-`AskAdmin(playerController)` opens a prompt on that player's screen (a window with a text box and the buttons Send and Not me) asking for an admin code; it returns false when the player has no loader report (an older loader, or no mod loader), has no connection, or this is not the server. `AdminMessage(playerController, text, close)` shows one line (up to 200 bytes) in the open prompt; with `close` true the prompt shows the line and closes. `RegisterOnAdminAnswer` calls your function from the tick with the player, `notMe` (the player chose "not me") and the code they typed. The loader does not judge the code and never logs it, it clears its own queued copy once your callbacks have run (it cannot reach copies in network buffers or the one your plugin keeps), only answers from a player that was asked are passed on, and at most one per half second per player. The loader sets no limit on tries, so your plugin counts wrong codes itself and closes the prompt (`AdminMessage` with `close` true) after a few. Checking the code and what to do next is up to the plugin.
-
 ---
 
 ## The Server Console (dedicated server)
@@ -591,7 +491,6 @@ in `help` ([Console.md](Console.md)).
 | `load <target>` | | Load a plugin that is unloaded |
 | `rescan` | `scan` | Load plugin DLLs added to `Plugins\` since startup |
 | `hookfailures` | `hooks` | List plugins whose hook patterns did not resolve |
-| `features [hostoff <plugin> <id> \| hostclear \| hostmessage <text>]` | | List plugin features, or turn one off for this server, lift every turn-off, or set the message players get. See [A server can turn a feature off](#a-server-can-turn-a-feature-off) |
 | `hooklist` | | List every detoured address and the plugins sharing it |
 | `preload` | `preloads` | Show what happened to the DLLs in `Preload\` at startup |
 | `version` | `ver` | Show the mod loader build and plugin interface versions |
@@ -898,7 +797,7 @@ Before any of the plugin's own code runs, a loader with interface 80 calls its `
 tells it the loader's interface level. A loader below 80 never calls it, so `PluginHostLevel()` stays at the plugin's
 declared need and every accessor returns `nullptr`. `PluginHostHas(n)` says whether the loader has level
 `n`. The accessors are `PluginOptImages` (77), `PluginOptDL_AddTexturedTriangles` (78),
-`PluginOptHostRules` (79), `PluginOptRegistry` and `PluginOptServerAddress` (80); each exists only when
+`PluginOptRegistry` and `PluginOptServerAddress` (80); each exists only when
 `PLUGIN_OPTIONAL_INTERFACE` is at least its level. A plugin without the export loads as before. A fault
 inside the export is handled like a fault in `PluginInit`.
 <sup>[✦](#msantoro12)</sup>
