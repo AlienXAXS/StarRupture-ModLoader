@@ -3153,7 +3153,7 @@ int main()
 	}
 
 	// Admin prompt codec (host_rules_wire.h): $ML:adminq (server to client) and $ML:adminr (client to server).
-	// These checks are in the Client-only test file; the Server exe builds server_map_tests.cpp and keeps its 179.
+	// These checks are in the Client-only test file; the Server exe builds server_map_tests.cpp and has none of them.
 	{
 		using namespace HostRulesWire;
 		const std::string US(1, kFieldSep);
