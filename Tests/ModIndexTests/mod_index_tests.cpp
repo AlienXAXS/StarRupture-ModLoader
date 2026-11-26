@@ -998,7 +998,6 @@ namespace
 		r.info.manifestUrl = kOwnManifest;
 		r.pluginsDir = dir.plugins;
 		r.gameDir = dir.game;
-		r.listSigned = true;
 		return r;
 	}
 

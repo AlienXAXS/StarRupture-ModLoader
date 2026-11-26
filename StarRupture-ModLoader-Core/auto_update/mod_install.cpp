@@ -307,13 +307,12 @@ namespace ModInstall
 			Outcome outcome;
 			outcome.dllFile = request.info.dllFile;
 			outcome.version = request.version;
-			const char* const trust = request.listSigned ? "signed" : "not signed (ModIndexUrl)";
 			std::string bytes;
 			bool downloaded = false;
 			try
 			{
-				ModLoaderLogger::LogInfo(L"[Install] %hs: downloading %hs (%zu bytes), mod list %hs",
-					request.name.c_str(), request.info.url.c_str(), request.info.size, trust);
+				ModLoaderLogger::LogInfo(L"[Install] %hs: downloading %hs (%zu bytes)",
+					request.name.c_str(), request.info.url.c_str(), request.info.size);
 				outcome.message = CheckTarget(request);
 				downloaded = outcome.message.empty()
 					&& Download(request.info, request.name, shared->hop, shared->cancel, bytes, outcome.message);
@@ -337,8 +336,8 @@ namespace ModInstall
 					outcome.message = kWriteFailed;
 				}
 				if (outcome.placed)
-					ModLoaderLogger::LogInfo(L"[Install] %hs: %hs written, mod list %hs",
-						request.name.c_str(), request.info.dllFile.c_str(), trust);
+					ModLoaderLogger::LogInfo(L"[Install] %hs: %hs written",
+						request.name.c_str(), request.info.dllFile.c_str());
 				else
 					ModLoaderLogger::LogWarn(L"[Install] %hs: failed: %hs", request.name.c_str(), outcome.message.c_str());
 				try { done(outcome); }

@@ -53,7 +53,6 @@ namespace ModInstall
 		ModIndex::InstallInfo info;
 		std::wstring pluginsDir;      // ...\ModLoader\Plugins, no trailing backslash
 		std::wstring gameDir;         // the game exe's folder, no trailing backslash
-		bool listSigned = false;      // ModIndex::Snapshot::signatureVerified
 	};
 
 	// Why `request` may not be written, in plain words; empty: it may. Looks for

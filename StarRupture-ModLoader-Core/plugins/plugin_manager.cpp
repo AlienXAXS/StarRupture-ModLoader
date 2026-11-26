@@ -3102,7 +3102,6 @@ namespace PluginManager
 		request.info = entry.install;
 		request.pluginsDir = ManageFolders().plugins;
 		request.gameDir = GameDir();
-		request.listSigned = listSigned;
 
 		// Called without g_pluginLock: the callback runs under the installer's
 		// own lock and only hands the result to the game thread.
