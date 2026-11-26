@@ -113,9 +113,8 @@ namespace PluginGuard
 	bool IsDeniedName(std::string_view pluginName);
 
 	// True inside a loader call into a denied plugin on this thread, for the
-	// loader APIs that take no `self`. The innermost call counts. False on a
-	// plugin's own threads and in its own detours, which run outside any
-	// loader call.
+	// loader APIs that take no `self`. The innermost loader call counts, whoever's
+	// code is running under it. False on a thread with no loader call on it.
 	bool IsCallerDenied();
 
 	// The address of the plugin code the loader is calling on this thread, or

@@ -3237,15 +3237,22 @@ struct IPluginNetworkChannel
 	//     taken in such a call, before or during the deny, has no effect until
 	//     an allow. Releasing it works as always.
 	//
-	// It cannot block what the plugin does outside those calls. A token taken,
-	// a key read or a shape drawn on the plugin's own thread or in its own
-	// detour works as before, so a plugin that can hold a capture or
-	// passthrough token must release it when it reads 1. Nor does it undo or
-	// stop what the plugin does by other means: debug shapes already drawn, UI
-	// it makes through the engine, its hooks, patches and other changes to the
-	// game, direct reads of the keyboard or mouse, and its network traffic.
-	// Ticks, key releases, events and its other callbacks still run, so the
-	// plugin can undo its changes.
+	// "Inside a call" goes by the loader call running on the thread, not by whose
+	// code is executing. Anything reached during a call into this plugin counts
+	// as this plugin, including another plugin's detour or exported function.
+	// This plugin's detour or exported function, reached during a call into
+	// another plugin, counts as that one. So a deny can also catch what another
+	// plugin does there.
+	//
+	// It cannot block what the plugin does outside any such call: on its own
+	// threads, or in a detour the game calls outside every loader call. A token
+	// taken, a key read or a shape drawn there works as before, so a plugin that
+	// can hold a capture or passthrough token must release it when it reads 1.
+	// Nor does it undo or stop what the plugin does by other means: debug shapes
+	// already drawn, UI it makes through the engine, its hooks, patches and other
+	// changes to the game, direct reads of the keyboard or mouse, and its network
+	// traffic. Ticks, key releases, events and its other callbacks still run, so
+	// the plugin can undo its changes.
 	//
 	// It can change at any time and goes back to 0 when the host allows the plugin
 	// again or the connection ends, so read it each tick rather than keeping it.
