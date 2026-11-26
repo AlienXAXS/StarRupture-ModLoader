@@ -4,6 +4,7 @@
 #include "packet_fragmentation.h"
 #include "net_timeout.h"
 #include "logging/logger.h"
+#include "plugins/plugin_call_gate.h"
 #include "plugins/plugin_guard.h"
 #include "UI/plugin_panel_registry.h"
 
@@ -1308,6 +1309,7 @@ namespace
 
         if (!HasNetAuthority()) return;
 
+        PluginCallGate::Scope gate;   // before the callbacks are read
         // Snapshot the connections, then the registrations, then decide. Callbacks
         // are plugin code and are never invoked with a lock held, and the wire
         // check (which asks the plugin manager) runs with none held either.
@@ -2166,6 +2168,7 @@ namespace
     {
         if (!self || !self->name || !callback) return;
 
+        PluginCallGate::Scope gate;   // before the callbacks are read
         std::vector<PluginServerReadyCallback> fireNow;
         std::string tag;
         {
@@ -3100,6 +3103,7 @@ namespace
         // The ack, not the greeting, is what plugins are told about: it is the
         // first moment the authority is known to have our plugin list, and
         // therefore the first moment a packet from us can be routed anywhere.
+        PluginCallGate::Scope gate;   // before the callbacks are read
         std::vector<PluginServerReadyCallback> toFire;
         std::string readyTag;
         {
@@ -3408,6 +3412,7 @@ static void DispatchClientNarrow(const char* narrowData, size_t nbytes)
     // Dispatch to registered handlers
     std::string key = MakeHandlerKey(env.pluginName.c_str(), env.typeTag.c_str());
 
+    PluginCallGate::Scope gate;   // before the callbacks are read
     std::vector<PluginNetworkMessageCallback> callbacks;
     {
         std::lock_guard<std::mutex> lk(g_mutex);
@@ -4010,6 +4015,7 @@ static void PumpVersionMinimums(uint64_t tickGapMs)
     }
     if (fires.empty()) return;
 
+    PluginCallGate::Scope gate;   // before the callbacks are read
     std::vector<PluginClientBelowMinimumCallback> cbs;
     {
         std::lock_guard<std::mutex> lk(g_minCbMutex);
@@ -4106,6 +4112,7 @@ static void PumpClientFeatures(uint64_t now)
     }
     if (resolved.empty()) return;
 
+    PluginCallGate::Scope gate;   // before the callbacks are read
     std::vector<PluginClientFeaturesCallback> cbs;
     {
         std::lock_guard<std::mutex> lk(g_featCbMutex);
@@ -4178,6 +4185,7 @@ static void PumpAdminAnswers(uint64_t now)
     }
     if (due.empty()) return;
 
+    PluginCallGate::Scope gate;   // before the callbacks are read
     std::vector<PluginAdminAnswerCallback> cbs;
     {
         std::lock_guard<std::mutex> lk(g_adminCbMutex);
@@ -4494,6 +4502,7 @@ static bool DispatchServerNarrow(void* senderConn, void* senderUObject,
     // Dispatch to registered server-side handlers
     std::string key = MakeHandlerKey(env.pluginName.c_str(), env.typeTag.c_str());
 
+    PluginCallGate::Scope gate;   // before the callbacks are read
     std::vector<PluginNetworkServerMessageCallback> callbacks;
     {
         std::lock_guard<std::mutex> lk(g_serverMutex);
