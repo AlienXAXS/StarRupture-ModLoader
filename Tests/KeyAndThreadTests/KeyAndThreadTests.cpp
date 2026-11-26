@@ -8,6 +8,7 @@
 // touching the real desktop. Key messages go straight to the registry's
 // ProcessWindowMessage, as the overlay's window procedure hands them over.
 #include "hooks/input/keybind_registry.h"
+#include "plugins/plugin_guard.h"
 #include "utils/game_thread_dispatch.h"
 #include "test_doubles.h"
 #include "core/ui_state.h"
@@ -1087,6 +1088,142 @@ static void ForgetPluginBlockingDropsItsOwners()
 }
 
 // ---------------------------------------------------------------------------
+// A plugin the joined server denies as a whole
+// ---------------------------------------------------------------------------
+static std::atomic<int> g_gatePressed{ 0 };
+static std::atomic<int> g_gateReleased{ 0 };
+static void OnGate(EModKey, EModKeyEvent event)
+{
+    ++(event == EModKeyEvent::Pressed ? g_gatePressed : g_gateReleased);
+}
+static void OnGateCombo(EModKey key, EModKeyModifiers, EModKeyEvent event) { OnGate(key, event); }
+
+static void ResetGate()
+{
+    Reset();
+    g_gatePressed = 0;
+    g_gateReleased = 0;
+}
+
+static void DeniedPluginHearsReleasesOnly()
+{
+    ResetGate();
+    const HMODULE self = GetModuleHandleW(nullptr);
+    PluginGuard::Track(self, "A");
+    for (const EModKeyEvent event : { EModKeyEvent::Pressed, EModKeyEvent::Released })
+    {
+        Hooks::Input::RegisterKeybind(EModKey::K, event, OnGate);
+        Hooks::Input::RegisterKeybindByName("K", event, OnGate);
+        Hooks::Input::RegisterKeybindCombo(EModKey::K, EModKeyMod_None, event, OnGateCombo);
+    }
+
+    Press('K');
+    Release('K');
+    const int each = g_gatePressed.load();
+    CHECK(each == 3);
+    CHECK(g_gateReleased.load() == each);
+
+    // The deny arrives while the key is held: the release still comes.
+    ResetGate();
+    Press('K');
+    const std::vector<HMODULE> newly = PluginGuard::SetDenied({ "a" });    // case is ignored
+    CHECK(newly.size() == 1 && newly[0] == self);
+    CHECK(PluginGuard::SetDenied({ "A" }).empty());                        // already denied
+    Release('K');
+    CHECK(g_gatePressed.load() == each);
+    CHECK(g_gateReleased.load() == each);
+
+    ResetGate();
+    Press('K');
+    Release('K');
+    CHECK(g_gatePressed.load() == 0);
+    CHECK(g_gateReleased.load() == each);
+
+    ResetGate();
+    CHECK(PluginGuard::SetDenied({}).empty());
+    Press('K');
+    Release('K');
+    CHECK(g_gatePressed.load() == each);
+    CHECK(g_gateReleased.load() == each);
+
+    Hooks::Input::ForgetModule(self);
+    PluginGuard::Untrack(self);
+}
+
+// A denied plugin's exact bind no longer shadows another plugin's plain bind.
+static void DeniedExactBindShadowsNothing()
+{
+    ResetGate();
+    const HMODULE self = GetModuleHandleW(nullptr);
+    const HMODULE b = GetModuleHandleW(L"kernel32.dll");
+    PluginGuard::Track(b, "B");
+    // A callback that lives in B and ignores its arguments.
+    const auto inB = reinterpret_cast<PluginKeybindComboCallback>(GetProcAddress(b, "GetCurrentProcessId"));
+    Hooks::Input::RegisterKeybindByName("K", EModKeyEvent::Pressed, OnGate);
+    Hooks::Input::RegisterKeybindCombo(EModKey::K, EModKeyMod_Ctrl, EModKeyEvent::Pressed, inB);
+
+    SetKeyDown(VK_LCONTROL, true);
+    Press('K');
+    Release('K');
+    CHECK(g_gatePressed.load() == 0);      // B's Ctrl+K claims the press
+
+    PluginGuard::SetDenied({ "B" });
+    Press('K');
+    Release('K');
+    CHECK(g_gatePressed.load() == 1);
+
+    PluginGuard::SetDenied({});
+    SetKeyDown(VK_LCONTROL, false);
+    Hooks::Input::ForgetModule(b);
+    Hooks::Input::ForgetModule(self);
+    PluginGuard::Untrack(b);
+}
+
+// A denied plugin takes no key from the game; another owner of the combo still does.
+static void DeniedPluginBlocksNoKey()
+{
+    Reset();
+    const HMODULE self = GetModuleHandleW(nullptr);
+    PluginGuard::Track(self, "Drone");
+    SetComboBlocking("Drone|Controls|Toggle", "F10", true);
+    SetComboBlocking("Drone|Controls|Boost", "F9", true);
+    SetComboBlocking("Cheats|Controls|Toggle", "F10", true);
+    CHECK(ShouldBlock(EModKey::F9, EModKeyMod_None));
+
+    PluginGuard::SetDenied({ "Drone" });
+    CHECK(!ShouldBlock(EModKey::F9, EModKeyMod_None));
+    CHECK(ShouldBlock(EModKey::F10, EModKeyMod_None));
+
+    PluginGuard::SetDenied({});
+    CHECK(ShouldBlock(EModKey::F9, EModKeyMod_None));
+
+    Hooks::Input::ForgetPluginBlocking("Drone");
+    Hooks::Input::ForgetPluginBlocking("Cheats");
+    PluginGuard::Untrack(self);
+}
+
+// A name longer than the crash report keeps is still matched whole, by callback
+// and by name. A plugin tracked after the deny starts denied.
+static void DeniedLongName()
+{
+    const HMODULE self = GetModuleHandleW(nullptr);
+    const std::string name = std::string(100, 'n') + "Mod";
+    const void* callback = reinterpret_cast<const void*>(&OnGate);
+    PluginGuard::SetDenied({ name });
+    PluginGuard::Track(self, name.c_str());
+    const std::vector<std::string> tracked = PluginGuard::TrackedNames();
+    CHECK(tracked.size() == 1 && tracked[0] == name);
+    CHECK(PluginGuard::IsDenied(callback));
+    CHECK(PluginGuard::IsDeniedName(name.c_str()));
+    CHECK(!PluginGuard::IsDeniedName(name.substr(0, 63).c_str()));
+
+    PluginGuard::SetDenied({});
+    CHECK(!PluginGuard::IsDenied(callback));
+    CHECK(!PluginGuard::IsDeniedName(name.c_str()));
+    PluginGuard::Untrack(self);
+}
+
+// ---------------------------------------------------------------------------
 // UELog::Write: the text handed to the engine's BasicLogV is a format string,
 // so every '%' in a message must arrive doubled.
 // ---------------------------------------------------------------------------
@@ -1181,6 +1318,10 @@ int main()
     RunTest("InputKey: a held blocked key does not block another key", BlockedKeyHeldOtherPressed);
     RunTest("InputKey: a blocking combo needs its own modifiers", BlockingComboModifiers);
     RunTest("ForgetPluginBlocking: an unloading plugin's blocking goes", ForgetPluginBlockingDropsItsOwners);
+    RunTest("Deny: no key press, releases still arrive", DeniedPluginHearsReleasesOnly);
+    RunTest("Deny: a denied exact bind shadows nothing", DeniedExactBindShadowsNothing);
+    RunTest("Deny: no key taken from the game", DeniedPluginBlocksNoKey);
+    RunTest("Deny: a long plugin name matches whole", DeniedLongName);
     RunTest("UELog: percent signs reach the engine escaped", UELogEscapesPercent);
     RunTest("ForgetModule: an unloading plugin's keybinds go",ForgetModuleDropsItsKeybinds);
     RunTest("ForgetModule: an unloading plugin's game-thread tasks go", ForgetModuleDropsItsGameThreadTasks);
