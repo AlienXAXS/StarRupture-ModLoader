@@ -15,7 +15,7 @@ You can find every mod from inside the mod loader. Open the **Browse** tab in th
 
 [Join our Discord server](https://discord.gg/G5a4GYsvrz) to chat about the mod loader and plugins.
 
-Found a bug? [Tell us on Discord](https://discord.gg/G5a4GYsvrz) and attach your `ModLoader.log` (in `<game>\StarRupture\Binaries\Win64\ModLoader\Logs\`).
+Found a bug? [Tell us on Discord](https://discord.gg/G5a4GYsvrz) and attach your `ModLoader.log` (in `<game>\StarRupture\Binaries\Win64\ModLoader\Logs\`). The log shows only the game's program name and the switch names it was started with, never their values, so it is safe to share.
 
 ---
 

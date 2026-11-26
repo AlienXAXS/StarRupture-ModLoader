@@ -1,5 +1,6 @@
 #include "startup_utils.h"
 #include "globals.h"
+#include "command_line_log.h"
 #include "../logging/log.h"
 
 #include <windows.h>
@@ -50,7 +51,8 @@ void LogStartupEnvironment()
     GetCurrentDirectoryW(MAX_PATH, cwd);
     LogToFile::Info("Working directory: %ls", cwd);
 
-    LogToFile::Info("Command line: %ls", GetCommandLineW());
+    // Program name and switch names only: the values can hold a server password.
+    LogToFile::Info("Command line: %ls", CommandLineLog::Redact(GetCommandLineW()).c_str());
 
     HMODULE mainModule = GetModuleHandleW(nullptr);
     MODULEINFO mi{};

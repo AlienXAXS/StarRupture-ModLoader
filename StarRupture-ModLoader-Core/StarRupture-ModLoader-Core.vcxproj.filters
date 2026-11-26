@@ -507,6 +507,9 @@
     <ClInclude Include="core\globals.h">
       <Filter>Source Files\core</Filter>
     </ClInclude>
+    <ClInclude Include="core\command_line_log.h">
+      <Filter>Source Files\core</Filter>
+    </ClInclude>
     <ClInclude Include="core\startup_utils.h">
       <Filter>Source Files\core</Filter>
     </ClInclude>

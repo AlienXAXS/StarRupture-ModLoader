@@ -1,6 +1,7 @@
 // proxy_log.cpp -- see proxy_log.h for overview.
 
 #include "proxy_log.h"
+#include "../StarRupture-ModLoader-Core/core/command_line_log.h"
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -251,7 +252,8 @@ namespace ProxyLog
         wchar_t exePath[MAX_PATH]{};
         GetModuleFileNameW(nullptr, exePath, MAX_PATH);
         Info("  host process : %ls (pid %lu)", exePath, GetCurrentProcessId());
-        Info("  command line : %ls", GetCommandLineW());
+        // Program name and switch names only: the values can hold a server password.
+        Info("  command line : %ls", CommandLineLog::Redact(GetCommandLineW()).c_str());
         Info("  game dir     : %ls", gameDir);
 
         // Which dwmapi.dll are we? If this path is System32 the game loaded the

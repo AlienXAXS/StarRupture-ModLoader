@@ -572,6 +572,7 @@
     <ClInclude Include="utils\mem_utils.h" />
     <ClInclude Include="utils\engine_call_utils.h" />
     <ClInclude Include="core\globals.h" />
+    <ClInclude Include="core\command_line_log.h" />
     <ClInclude Include="core\startup_utils.h" />
     <ClInclude Include="core\startup_wait.h" />
     <ClInclude Include="core\version_check.h" />
