@@ -299,7 +299,7 @@ namespace GameMenu::Registry
 		for (int i = 0; i < s_orderCount && written < maxOut; ++i)
 		{
 			const Entry& e = s_entries[s_order[i]];
-			if (!e.live || (e.targets & target) == 0)
+			if (!e.live || (e.targets & target) == 0 || PluginGuard::IsDeniedName(e.owner.c_str()))
 				continue;
 
 			EntryView& v = out[written++];
@@ -316,7 +316,7 @@ namespace GameMenu::Registry
 		for (int i = 0; i < s_orderCount; ++i)
 		{
 			const Entry& e = s_entries[s_order[i]];
-			if (e.live && (e.targets & target) != 0)
+			if (e.live && (e.targets & target) != 0 && !PluginGuard::IsDeniedName(e.owner.c_str()))
 				return true;
 		}
 		return false;
@@ -348,6 +348,10 @@ namespace GameMenu::Registry
 			owner    = e.owner;
 			id       = e.id;
 		}
+
+		// A row built before the deny can still be on screen.
+		if (PluginGuard::IsDenied(reinterpret_cast<const void*>(callback)))
+			return;
 
 		// Loader-owned callbacks live in this DLL, which is still mapped by
 		// definition -- we are executing in it.  A plugin's is worth checking.
