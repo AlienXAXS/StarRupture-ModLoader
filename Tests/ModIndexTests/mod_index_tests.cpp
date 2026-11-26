@@ -1590,7 +1590,8 @@ namespace
 			if (target != kOwnManifest && !site.count(target))
 				site[target] = Body(ReleaseOf("1.2.0", kNewDll));
 			const Installed i = InstallFrom(site);
-			Check(listed(i) && i.asked.size() == 3, ("latest: first manifest redirect not followed: " + target).c_str());
+			Check(nothing(i, "doesn't allow") && i.asked.size() == 1,
+				("latest: first manifest redirect refused, nothing written: " + target).c_str());
 		}
 		// later redirects follow the download's rules
 		for (const std::string& target : std::vector<std::string>{ "https://example.test/x",
@@ -1600,7 +1601,8 @@ namespace
 			site[kTagManifest] = To(target);
 			site[target] = Body(ReleaseOf("1.2.0", kNewDll));
 			const Installed i = InstallFrom(site);
-			Check(listed(i) && !i.Asked(target), ("latest: later manifest redirect not followed: " + target).c_str());
+			Check(nothing(i, "doesn't allow") && !i.Asked(target),
+				("latest: later manifest redirect refused, nothing written: " + target).c_str());
 		}
 		// the tag step is the manifest's alone
 		{
@@ -1632,10 +1634,19 @@ namespace
 			{ "no download_url", "{\"version\": \"1.2.0\"}" },
 			{ "no JSON", "<html>" },
 			{ "nothing", "" },
-			{ "too large", ReleaseOf("1.2.0", kNewDll) + std::string(ModInstall::kMaxManifestBytes, ' ') },
 		};
 		for (const auto& c : keptToList)
 			Check(listed(InstallFrom(SiteWith(c.second))), (std::string("latest: the list's file when the release is ") + c.first).c_str());
+
+		// a manifest too large to check: the auto-update would still read it
+		Check(nothing(InstallFrom(SiteWith(ReleaseOf("1.2.0", outside) + std::string(ModInstall::kMaxManifestBytes, ' '))),
+			"too large"), "latest: a manifest over the cap, nothing written");
+		{
+			// as HttpHop answers it: the body is cut off, so none of it is here
+			Site site = SiteWith(ReleaseOf("1.2.0", kNewDll));
+			site[kManifestFile] = ModInstall::Hop{ 200, "", "", true };
+			Check(nothing(InstallFrom(site), "too large"), "latest: a manifest the hop cut off, nothing written");
+		}
 
 		// a release the auto-update would take from anywhere else: nothing at all
 		for (const std::string& url : std::vector<std::string>{ outside,

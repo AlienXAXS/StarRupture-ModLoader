@@ -320,8 +320,9 @@ One click installs one mod:
    - The file the index lists must match the size and SHA-256 in the index.
    - A newer release has no hash in the index. It must have the same file name, in the same GitHub
      repository, as the listed file. It can be at most 32 MB, must start like a Windows program file, and
-     must match the manifest's SHA-256 when the manifest gives one. If a newer release points anywhere
-     else, nothing is installed. If it fails to download, the install fails; the listed file isn't used
+     must match the manifest's SHA-256 when the manifest gives one. If a newer release that works with
+     your loader points anywhere else, nothing is installed. Nothing is installed either if the release
+     manifest is over 1 MB or sends the loader to an address that isn't allowed. If it fails to download, the install fails; the listed file isn't used
      instead.
 3. It writes the plugin's `.dll` to `ModLoader\Plugins`, with its `.json` for the auto-updater when the
    entry lists one, and starts the plugin right away when it can. If it can't, the card says "Installed. It

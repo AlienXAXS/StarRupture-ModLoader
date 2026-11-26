@@ -93,12 +93,14 @@ read, or your latest release doesn't fit the player's loader. To set this up:
    manifest and in your entry.
 2. Make `download_url` the `.dll` of a release in the same repository:
    `https://github.com/<owner>/<repo>/releases/download/<tag>/<file>.dll`.
-3. Use the same file name as in your entry, in every release. If a newer release points anywhere else,
-   Install refuses it and installs nothing.
+3. Use the same file name as in your entry, in every release. If a newer release that fits the player's
+   loader points anywhere else, Install refuses it and installs nothing.
 4. To keep a release away from loaders it can't run on, give both `interface_version_min` and
    `interface_version_max`.
 5. If you like, add `download_sha256`, the file's SHA-256 (64 hex characters). The download must then
    match it.
+6. Keep the manifest under 1 MB, and attach it to the release as its own file. A bigger one installs
+   nothing.
 
 The index has no hash for a newer release. The loader checks that it is at most 32 MB, that it starts like a
 Windows program file, and that it matches the manifest's `download_sha256` if there is one.

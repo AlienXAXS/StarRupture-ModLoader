@@ -24,7 +24,7 @@ namespace ModInstall
 {
 	constexpr unsigned kDeadlineMs   = 120000;   // the whole download, every hop
 	constexpr int      kMaxRedirects = 3;
-	constexpr size_t   kMaxManifestBytes = 64 * 1024;   // a release manifest
+	constexpr size_t   kMaxManifestBytes = 1024 * 1024;   // a release manifest, release notes and all
 	constexpr char     kVortexManaged[] = "Vortex manages this mod. Install it in Vortex.";
 
 	// One GET that follows no redirect. status 0: no answer. body: a 200's, whole.
@@ -33,6 +33,7 @@ namespace ModInstall
 		unsigned status = 0;
 		std::string location;
 		std::string body;
+		bool overLimit = false;   // the body went over maxBytes, so it is not here
 	};
 	using HopFn = std::function<Hop(const std::string& url, size_t maxBytes, unsigned deadlineMs,
 		const std::atomic<bool>& cancel)>;
@@ -67,9 +68,11 @@ namespace ModInstall
 	// manifestUrl. Latest: it offers a newer version this loader can take, and
 	// `out` and `version` describe it. Pinned: `out` and `version` are the list's
 	// (no manifest, none that can be read, or nothing newer that fits). Refuse:
-	// the manifest sends a release the auto-update would take to anywhere but
-	// the same file of the list's repository; nothing may be installed, and `why`
-	// is plain words for the player. The manifest never picks the repository,
+	// the manifest cannot be checked (it is over kMaxManifestBytes, or a redirect
+	// to it is not allowed), or it sends a release the auto-update would take to
+	// anywhere but the same file of the list's repository. The auto-update reads
+	// the same manifest with neither limit, so nothing may be installed, and
+	// `why` is plain words for the player. The manifest never picks the repository,
 	// the file's name on disk or the .json's text.
 	Pick ResolveLatest(const Request& request, const HopFn& hop, const std::atomic<bool>& cancel,
 		unsigned long long startedMs, ModIndex::InstallInfo& out, std::string& version, std::string& why);

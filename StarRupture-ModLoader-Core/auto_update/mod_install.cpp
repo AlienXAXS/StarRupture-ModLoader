@@ -20,6 +20,7 @@ namespace ModInstall
 		constexpr const char kWrongFile[]      = "The downloaded file does not match the mod list, so nothing was installed.";
 		constexpr const char kWrongRelease[]   = "The downloaded file is not the one the mod's latest release describes, so nothing was installed.";
 		constexpr const char kRefusedRelease[] = "The mod's latest release points somewhere the mod list doesn't allow, so nothing was installed.";
+		constexpr const char kHugeRelease[]    = "The mod's latest release information is too large to check, so nothing was installed.";
 		constexpr const char kWriteFailed[]    = "The mod's files could not be written. Nothing was installed.";
 		constexpr const char kCancelled[]      = "The install was stopped.";
 		constexpr const char kTempSuffix[]     = ".install.tmp";
@@ -137,6 +138,11 @@ namespace ModInstall
 					why = kCancelled;
 					return false;
 				}
+				if (latestManifest && answer.overLimit)
+				{
+					why = kHugeRelease;
+					return false;
+				}
 				if (answer.status == 200)
 				{
 					body = std::move(answer.body);
@@ -236,6 +242,7 @@ namespace ModInstall
 			options.location = &hop.location;
 			options.status = &hop.status;
 			options.cancel = &cancel;
+			options.overLimit = &hop.overLimit;
 			hop.body = HttpGet(url.c_str(), "mod install", options);
 			return hop;
 		};
@@ -319,15 +326,28 @@ namespace ModInstall
 			return Pick::Pinned;
 		};
 
+		const auto refused = [&](const char* reason, const char* words)
+		{
+			ModLoaderLogger::LogWarn(L"[Install] %hs: latest release refused (%hs); nothing installed", name, reason);
+			why = words;
+			return Pick::Refuse;
+		};
+
 		ModLoaderLogger::LogInfo(L"[Install] %hs: checking latest release", name);
 		if (!IsOwnLatestManifest(request.info.manifestUrl, request.info.url))
 			return failed("the manifest address is not the repository's latest release");
 		std::string manifest, fetchWhy;
 		if (!Fetch(request.info.manifestUrl, kMaxManifestBytes, true, request.name, hop, cancel, startedMs,
 			manifest, fetchWhy))
+		{
+			if (fetchWhy == kRefusedAddress)
+				return refused("the manifest was sent to an address that is not allowed", kRefusedRelease);
+			if (fetchWhy == kHugeRelease)
+				return refused("the manifest is too large", kHugeRelease);
 			return failed(fetchWhy.c_str());
+		}
 		if (manifest.size() > kMaxManifestBytes)
-			return failed("the manifest is too large");
+			return refused("the manifest is too large", kHugeRelease);
 
 		// Read as the auto-update reads them, so what is checked here is what it
 		// would fetch.
