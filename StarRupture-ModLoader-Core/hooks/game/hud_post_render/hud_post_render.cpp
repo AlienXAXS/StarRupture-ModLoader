@@ -32,7 +32,9 @@ namespace Hooks::HUDPostRender
 		// Notify registered plugins
 		for (size_t i = 0; i < g_pluginCallbacks.size(); ++i)
 		{
-			if (!g_pluginCallbacks[i])
+			// A plugin the joined server denies draws nothing.
+			if (!g_pluginCallbacks[i] ||
+			    PluginGuard::IsDenied(reinterpret_cast<const void*>(g_pluginCallbacks[i])))
 				continue;
 
 			try
