@@ -1407,6 +1407,15 @@ namespace ModLoaderLogger
 			GameThreadDispatch::PostVoid(std::forward<Fn>(fn));
 	}
 
+	// A Draw* from a mod the joined server turned off draws nothing. The
+	// clearing calls do not come through here.
+	template <class Fn>
+	static void DrawOnGameThread(Fn&& fn)
+	{
+		if (!PluginGuard::IsCallerDenied())
+			OnGameThread(std::forward<Fn>(fn));
+	}
+
 	static bool DebugDrawIsAvailable()
 	{
 		return DD::Resolve();
@@ -1418,7 +1427,7 @@ namespace ModLoaderLogger
 		const DD::DVec   a = ToVec(start);
 		const DD::DVec   b = ToVec(end);
 		const DD::DStyle s = ToStyle(style);
-		OnGameThread([a, b, s]() { DD::DrawLine(a, b, s); });
+		DrawOnGameThread([a, b, s]() { DD::DrawLine(a, b, s); });
 	}
 
 	static void DebugDrawPoint(const PluginDebugVector* position, float size,
@@ -1426,7 +1435,7 @@ namespace ModLoaderLogger
 	{
 		const DD::DVec   p = ToVec(position);
 		const DD::DStyle s = ToStyle(style);
-		OnGameThread([p, size, s]() { DD::DrawPoint(p, size, s); });
+		DrawOnGameThread([p, size, s]() { DD::DrawPoint(p, size, s); });
 	}
 
 	static void DebugDrawCircle(const PluginDebugVector* center, float radius, int numSegments,
@@ -1437,7 +1446,7 @@ namespace ModLoaderLogger
 		const DD::DVec   y = yAxis ? ToVec(yAxis) : DD::DVec{ 0.0, 1.0, 0.0 };
 		const DD::DVec   z = zAxis ? ToVec(zAxis) : DD::DVec{ 0.0, 0.0, 1.0 };
 		const DD::DStyle s = ToStyle(style);
-		OnGameThread([c, radius, numSegments, y, z, bDrawAxis, s]()
+		DrawOnGameThread([c, radius, numSegments, y, z, bDrawAxis, s]()
 		{
 			DD::DrawCircle(c, radius, numSegments, y, z, bDrawAxis, s);
 		});
@@ -1448,7 +1457,7 @@ namespace ModLoaderLogger
 	{
 		const DD::DVec   c = ToVec(center);
 		const DD::DStyle s = ToStyle(style);
-		OnGameThread([c, radius, segments, s]() { DD::DrawSphere(c, radius, segments, s); });
+		DrawOnGameThread([c, radius, segments, s]() { DD::DrawSphere(c, radius, segments, s); });
 	}
 
 	static void DebugDrawBox(const PluginDebugVector* center, const PluginDebugVector* extent,
@@ -1458,7 +1467,7 @@ namespace ModLoaderLogger
 		const DD::DVec   e = ToVec(extent);
 		const DD::DRot   r = ToRot(rotation);
 		const DD::DStyle s = ToStyle(style);
-		OnGameThread([c, e, r, s]() { DD::DrawBox(c, e, r, s); });
+		DrawOnGameThread([c, e, r, s]() { DD::DrawBox(c, e, r, s); });
 	}
 
 	static void DebugDrawCapsule(const PluginDebugVector* center, float halfHeight, float radius,
@@ -1467,7 +1476,7 @@ namespace ModLoaderLogger
 		const DD::DVec   c = ToVec(center);
 		const DD::DRot   r = ToRot(rotation);
 		const DD::DStyle s = ToStyle(style);
-		OnGameThread([c, halfHeight, radius, r, s]()
+		DrawOnGameThread([c, halfHeight, radius, r, s]()
 		{
 			DD::DrawCapsule(c, halfHeight, radius, r, s);
 		});
@@ -1479,7 +1488,7 @@ namespace ModLoaderLogger
 		const DD::DVec   a = ToVec(start);
 		const DD::DVec   b = ToVec(end);
 		const DD::DStyle s = ToStyle(style);
-		OnGameThread([a, b, radius, segments, s]() { DD::DrawCylinder(a, b, radius, segments, s); });
+		DrawOnGameThread([a, b, radius, segments, s]() { DD::DrawCylinder(a, b, radius, segments, s); });
 	}
 
 	static void DebugDrawConeInDegrees(const PluginDebugVector* origin, const PluginDebugVector* direction,
@@ -1489,7 +1498,7 @@ namespace ModLoaderLogger
 		const DD::DVec   o   = ToVec(origin);
 		const DD::DVec   dir = direction ? ToVec(direction) : DD::DVec{ 1.0, 0.0, 0.0 };
 		const DD::DStyle s   = ToStyle(style);
-		OnGameThread([o, dir, length, angleWidthDeg, angleHeightDeg, numSides, s]()
+		DrawOnGameThread([o, dir, length, angleWidthDeg, angleHeightDeg, numSides, s]()
 		{
 			DD::DrawConeInDegrees(o, dir, length, angleWidthDeg, angleHeightDeg, numSides, s);
 		});
@@ -1501,7 +1510,7 @@ namespace ModLoaderLogger
 		const DD::DVec   a = ToVec(start);
 		const DD::DVec   b = ToVec(end);
 		const DD::DStyle s = ToStyle(style);
-		OnGameThread([a, b, arrowSize, s]() { DD::DrawArrow(a, b, arrowSize, s); });
+		DrawOnGameThread([a, b, arrowSize, s]() { DD::DrawArrow(a, b, arrowSize, s); });
 	}
 
 	static void DebugDrawCoordinateSystem(const PluginDebugVector* location, const PluginDebugRotator* rotation,
@@ -1510,7 +1519,7 @@ namespace ModLoaderLogger
 		const DD::DVec   l = ToVec(location);
 		const DD::DRot   r = ToRot(rotation);
 		const DD::DStyle s = ToStyle(style);
-		OnGameThread([l, r, scale, s]() { DD::DrawCoordinateSystem(l, r, scale, s); });
+		DrawOnGameThread([l, r, scale, s]() { DD::DrawCoordinateSystem(l, r, scale, s); });
 	}
 
 	static void DebugDrawPlane(const PluginDebugPlane* plane, const PluginDebugVector* location,
@@ -1519,7 +1528,7 @@ namespace ModLoaderLogger
 		const DD::DPlane p = ToPlane(plane);
 		const DD::DVec   l = ToVec(location);
 		const DD::DStyle s = ToStyle(style);
-		OnGameThread([p, l, size, s]() { DD::DrawPlane(p, l, size, s); });
+		DrawOnGameThread([p, l, size, s]() { DD::DrawPlane(p, l, size, s); });
 	}
 
 	static void DebugDrawFrustum(const PluginDebugTransform* frustumTransform,
@@ -1527,13 +1536,13 @@ namespace ModLoaderLogger
 	{
 		const DD::DTransform t = ToTransform(frustumTransform);
 		const DD::DStyle     s = ToStyle(style);
-		OnGameThread([t, s]() { DD::DrawFrustum(t, s); });
+		DrawOnGameThread([t, s]() { DD::DrawFrustum(t, s); });
 	}
 
 	static void DebugDrawCamera(void* cameraActor, float scale, const PluginDebugDrawStyle* style)
 	{
 		const DD::DStyle s = ToStyle(style);
-		OnGameThread([cameraActor, scale, s]() { DD::DrawCamera(cameraActor, scale, s); });
+		DrawOnGameThread([cameraActor, scale, s]() { DD::DrawCamera(cameraActor, scale, s); });
 	}
 
 	static void DebugDrawCameraAt(const PluginDebugVector* location, const PluginDebugRotator* rotation,
@@ -1542,7 +1551,7 @@ namespace ModLoaderLogger
 		const DD::DVec   l = ToVec(location);
 		const DD::DRot   r = ToRot(rotation);
 		const DD::DStyle s = ToStyle(style);
-		OnGameThread([l, r, fovDegrees, scale, s]() { DD::DrawCameraAt(l, r, fovDegrees, scale, s); });
+		DrawOnGameThread([l, r, fovDegrees, scale, s]() { DD::DrawCameraAt(l, r, fovDegrees, scale, s); });
 	}
 
 	static void DebugDrawString(const PluginDebugVector* location, const char* text, void* testBaseActor,
@@ -1559,7 +1568,7 @@ namespace ModLoaderLogger
 		const DD::DColor c = ToColor(color);
 		std::wstring     owned(wide);
 
-		OnGameThread([l, c, owned = std::move(owned), testBaseActor, duration, fontScale]()
+		DrawOnGameThread([l, c, owned = std::move(owned), testBaseActor, duration, fontScale]()
 		{
 			DD::DrawString(l, owned.c_str(), testBaseActor, c, duration, fontScale);
 		});
@@ -1587,7 +1596,7 @@ namespace ModLoaderLogger
 			bAuto    = history->bAutoAdjustMinMax;
 		}
 
-		OnGameThread([samples = std::move(samples), transform, drawSize, style,
+		DrawOnGameThread([samples = std::move(samples), transform, drawSize, style,
 		              minValue, maxValue, bAuto, bUseTransform]()
 		{
 			DD::DFloatHistory h{};

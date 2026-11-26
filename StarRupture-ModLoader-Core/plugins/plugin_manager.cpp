@@ -219,6 +219,7 @@ namespace PluginManager
 	static bool CallShutdown(PluginShutdownFunc fn)
 	{
 		PluginWatchdog::Scope watch(reinterpret_cast<const void*>(fn), "PluginShutdown");
+		PluginGuard::RunningScope running(reinterpret_cast<const void*>(fn));
 		return CallShutdownSEH(fn);
 	}
 
@@ -996,6 +997,7 @@ namespace PluginManager
 		PluginHookReport::BeginSession(&plugin.self, plugin.cachedName.c_str(), fileNameA,
 			/*preload*/ false, OtherPluginNamed(plugin, true) != nullptr);
 
+		PluginGuard::RunningScope running(reinterpret_cast<const void*>(plugin.loadHooks));
 		const bool survived = CallLoadHooksSEH(plugin.loadHooks, &plugin.self,
 			ModLoaderLogger::GetPluginHookScanner());
 
@@ -1100,6 +1102,7 @@ namespace PluginManager
 #endif
 
 		const unsigned globalsCallsBefore = ModLoaderLogger::SdkGlobalsCallsOnThisThread();
+		PluginGuard::RunningScope running(reinterpret_cast<const void*>(plugin.init));
 		InitSEHResult initResult = CallInitSEH(plugin.init, &plugin.self);
 		const bool askedSdkGlobals = ModLoaderLogger::SdkGlobalsCallsOnThisThread() != globalsCallsBefore;
 		const std::string lateRefusal = VersionMap::OffBuildRefusal(VersionMap::RunningExe(), interfaceVersion,

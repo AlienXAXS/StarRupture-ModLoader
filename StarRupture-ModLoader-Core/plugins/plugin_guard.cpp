@@ -89,6 +89,16 @@ namespace PluginGuard
 		return false;
 	}
 
+	static thread_local const void* t_running = nullptr;
+
+	const void* RunningCallback() { return t_running; }
+
+	bool IsCallerDenied() { return IsDenied(t_running); }
+
+	RunningScope::RunningScope(const void* callback) : m_outer(t_running) { t_running = callback; }
+
+	RunningScope::~RunningScope() { t_running = m_outer; }
+
 	void Track(HMODULE module, const char* pluginName)
 	{
 		if (!module) return;
@@ -310,7 +320,13 @@ namespace PluginGuard
 		// Must hold no C++ objects (C2712).
 		static bool RunSEH(const void* callback, const char* what, Thunk thunk, void* body, Capture* out)
 		{
-			__try { thunk(body); return true; }
+			const void* const outer = t_running;
+			__try
+			{
+				// __finally also runs when a C++ exception passes through.
+				__try { t_running = callback; thunk(body); return true; }
+				__finally { t_running = outer; }
+			}
 			__except (Filter(GetExceptionInformation(), callback, what, out)) { return false; }
 		}
 

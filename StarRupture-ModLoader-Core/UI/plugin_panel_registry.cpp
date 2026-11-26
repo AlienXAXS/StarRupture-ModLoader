@@ -64,8 +64,13 @@ namespace UI::PluginPanelRegistry
     // Token -> the module that acquired it (see ResolveCallerModule). A map
     // rather than a set purely so a leak can be attributed; the token identity
     // and lifetime rules are unchanged.
-    static std::map<void*, std::string> s_captureTokens;
-    static std::map<void*, std::string> s_passthroughTokens;
+    struct InputToken
+    {
+        std::string owner;     // the DLL, for the debug HUD
+        const void* takenIn;   // the plugin call it was taken in, or null
+    };
+    static std::map<void*, InputToken> s_captureTokens;
+    static std::map<void*, InputToken> s_passthroughTokens;
     static char s_currentPlugin[64];   // set by plugin_manager before each PluginInit call
     static unsigned s_lastSerial = 0;
     // Calls into plugin code made outside s_mutex; see plugin_call_tracker.h.
@@ -389,7 +394,7 @@ namespace UI::PluginPanelRegistry
     // entry per module, so a plugin that leaks a token every time it opens its
     // editor reads as a growing count against a single name rather than as an
     // unreadable wall of identical lines.
-    static void SummariseOwners(const std::map<void*, std::string>& tokens,
+    static void SummariseOwners(const std::map<void*, InputToken>& tokens,
                                 char* out, int outSize)
     {
         if (outSize <= 0) return;
@@ -400,11 +405,11 @@ namespace UI::PluginPanelRegistry
         {
             auto it = std::find_if(counts.begin(), counts.end(),
                                    [&](const std::pair<std::string, int>& c)
-                                   { return c.first == entry.second; });
+                                   { return c.first == entry.second.owner; });
             if (it != counts.end())
                 ++it->second;
             else
-                counts.emplace_back(entry.second, 1);
+                counts.emplace_back(entry.second.owner, 1);
         }
 
         // snprintf, not _snprintf_s with _TRUNCATE: the latter returns -1 when it
@@ -430,6 +435,19 @@ namespace UI::PluginPanelRegistry
         }
     }
 
+    // A token taken while the loader was calling a mod the joined server has
+    // since turned off holds nothing until the mod is let back: the mod loses
+    // the draws and key presses it would end it with. One taken on a mod's own
+    // thread or in its own detour has no known holder and always counts.
+    // Caller holds s_mutex.
+    static bool AnyHonoured(const std::map<void*, InputToken>& tokens)
+    {
+        return std::any_of(tokens.begin(), tokens.end(), [](const auto& entry)
+        {
+            return !PluginGuard::IsDenied(entry.second.takenIn);
+        });
+    }
+
     void* AcquireInputCapture()
     {
         void* token = new char;
@@ -440,7 +458,7 @@ namespace UI::PluginPanelRegistry
         std::string owner = ResolveCallerModule();
 
         std::lock_guard<std::mutex> lock(s_mutex);
-        s_captureTokens.emplace(token, std::move(owner));
+        s_captureTokens.emplace(token, InputToken{ std::move(owner), PluginGuard::RunningCallback() });
         return token;
     }
 
@@ -458,7 +476,7 @@ namespace UI::PluginPanelRegistry
     bool AnyInputCaptureRequested()
     {
         std::lock_guard<std::mutex> lock(s_mutex);
-        return !s_captureTokens.empty();
+        return AnyHonoured(s_captureTokens);
     }
 
     void* AcquireInputPassthrough()
@@ -467,7 +485,7 @@ namespace UI::PluginPanelRegistry
         std::string owner = ResolveCallerModule();
 
         std::lock_guard<std::mutex> lock(s_mutex);
-        s_passthroughTokens.emplace(token, std::move(owner));
+        s_passthroughTokens.emplace(token, InputToken{ std::move(owner), PluginGuard::RunningCallback() });
         return token;
     }
 
@@ -485,7 +503,7 @@ namespace UI::PluginPanelRegistry
     bool AnyInputPassthroughRequested()
     {
         std::lock_guard<std::mutex> lock(s_mutex);
-        return !s_passthroughTokens.empty();
+        return AnyHonoured(s_passthroughTokens);
     }
 
     void GetInputTokenSummary(InputTokenSummary* out)

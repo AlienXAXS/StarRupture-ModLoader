@@ -112,6 +112,29 @@ namespace PluginGuard
 	// a tick. An empty name is never denied. Any thread.
 	bool IsDeniedName(std::string_view pluginName);
 
+	// True inside a loader call into a denied plugin on this thread, for the
+	// loader APIs that take no `self`. The innermost call counts. False on a
+	// plugin's own threads and in its own detours, which run outside any
+	// loader call.
+	bool IsCallerDenied();
+
+	// The address of the plugin code the loader is calling on this thread, or
+	// null outside any call.
+	const void* RunningCallback();
+
+	// Names the plugin being called where the call does not go through Call:
+	// PluginInit and the like.
+	class RunningScope
+	{
+	public:
+		explicit RunningScope(const void* callback);
+		~RunningScope();
+		RunningScope(const RunningScope&) = delete;
+		RunningScope& operator=(const RunningScope&) = delete;
+	private:
+		const void* m_outer;
+	};
+
 	// Drops every element of `v` whose callback lives in `module`; `addressOf`
 	// maps an element to that callback. Returns how many were dropped. The
 	// caller holds whatever lock guards `v`.

@@ -745,6 +745,10 @@ namespace Hooks::Input
 		if (!KeyBit(s_polledKeys, vk))
 			SetKeyBit(s_polledKeys, vk, true);
 
+		// A mod the joined server turned off reads no key as held.
+		if (PluginGuard::IsCallerDenied())
+			return false;
+
 		// GetAsyncKeyState reads the keyboard, not the game's input, so a key
 		// held in another window would read as held here without this.
 		const HWND game = UI::ImGuiBackend::GetGameWindow();
