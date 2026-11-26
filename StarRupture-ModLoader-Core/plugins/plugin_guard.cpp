@@ -21,7 +21,8 @@ namespace PluginGuard
 		std::atomic<bool>        denied{ false };
 		std::atomic<uint32_t>    code{ 0 };
 		std::atomic<const char*> callback{ nullptr };
-		char                     name[64] = {};
+		char                     name[64] = {};   // cut to fit: for the crash report
+		std::string              fullName;        // what a deny is matched against; under s_mutex
 	};
 
 	// More plugins than this are loaded without the guard (and say so).
@@ -80,7 +81,7 @@ namespace PluginGuard
 	}
 
 	// Caller holds s_mutex.
-	static bool NameDenied(const char* name)
+	static bool NameDenied(const std::string& name)
 	{
 		for (const std::string& denied : s_deniedNames)
 			if (HostRules::SamePlugin(denied, name))
@@ -107,12 +108,13 @@ namespace PluginGuard
 			                         kMaxModules, pluginName ? pluginName : "?");
 			return;
 		}
-		strncpy_s(free->name, pluginName ? pluginName : "?", _TRUNCATE);
+		free->fullName = pluginName ? pluginName : "?";
+		strncpy_s(free->name, free->fullName.c_str(), _TRUNCATE);
 		free->off.store(false, std::memory_order_relaxed);
 		free->code.store(0, std::memory_order_relaxed);
 		free->callback.store(nullptr, std::memory_order_relaxed);
 		free->end.store(ImageEnd(module), std::memory_order_relaxed);
-		const bool denied = NameDenied(free->name);
+		const bool denied = NameDenied(free->fullName);
 		free->denied.store(denied, std::memory_order_relaxed);
 		if (denied)
 			s_deniedCount.fetch_add(1);
@@ -151,7 +153,7 @@ namespace PluginGuard
 		std::lock_guard<std::mutex> lock(s_mutex);
 		for (const Slot& s : s_slots)
 			if (s.base.load(std::memory_order_relaxed))
-				names.emplace_back(s.name);
+				names.push_back(s.fullName);
 		return names;
 	}
 
@@ -164,7 +166,7 @@ namespace PluginGuard
 		{
 			const uintptr_t base = s.base.load(std::memory_order_relaxed);
 			if (!base) continue;
-			const bool denied = NameDenied(s.name);
+			const bool denied = NameDenied(s.fullName);
 			if (s.denied.exchange(denied) == denied) continue;
 			s_deniedCount.fetch_add(denied ? 1 : -1);
 			if (denied)
