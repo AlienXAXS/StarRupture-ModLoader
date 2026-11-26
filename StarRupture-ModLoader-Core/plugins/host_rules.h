@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <string_view>
 #include <vector>
 
 // ---------------------------------------------------------------------------
@@ -42,7 +43,7 @@ namespace HostRules
         return (c >= 'A' && c <= 'Z') ? static_cast<char>(c - 'A' + 'a') : c;
     }
 
-    inline bool SamePlugin(const std::string& a, const std::string& b)
+    inline bool SamePlugin(std::string_view a, std::string_view b)
     {
         if (a.size() != b.size())
             return false;

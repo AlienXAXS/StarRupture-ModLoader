@@ -81,7 +81,7 @@ namespace PluginGuard
 	}
 
 	// Caller holds s_mutex.
-	static bool NameDenied(const std::string& name)
+	static bool NameDenied(std::string_view name)
 	{
 		for (const std::string& denied : s_deniedNames)
 			if (HostRules::SamePlugin(denied, name))
@@ -183,9 +183,9 @@ namespace PluginGuard
 		return s && s->denied.load(std::memory_order_acquire);
 	}
 
-	bool IsDeniedName(const char* pluginName)
+	bool IsDeniedName(std::string_view pluginName)
 	{
-		if (!pluginName || s_deniedCount.load(std::memory_order_relaxed) == 0)
+		if (pluginName.empty() || s_deniedCount.load(std::memory_order_relaxed) == 0)
 			return false;
 		std::lock_guard<std::mutex> lock(s_mutex);
 		return NameDenied(pluginName);

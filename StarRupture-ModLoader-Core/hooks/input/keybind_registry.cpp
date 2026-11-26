@@ -706,6 +706,9 @@ namespace Hooks::Input
 	// key-up.
 	static std::atomic<uint64_t> s_polledKeys[4]   = {};
 	static std::atomic<uint64_t> s_withheldKeys[4] = {};
+	// Keys whose key-down the window procedure let through to the game. Their
+	// key-up goes through too, even if the combo blocks by then.
+	static std::atomic<uint64_t> s_gameKeys[4]     = {};
 
 	static bool KeyBit(const std::atomic<uint64_t> (&bits)[4], int vk)
 	{
@@ -870,7 +873,7 @@ namespace Hooks::Input
 		// denies takes no key from the game.
 		return std::any_of(it->second.begin(), it->second.end(), [](const std::string& owner)
 		{
-			return !PluginGuard::IsDeniedName(owner.substr(0, owner.find('|')).c_str());
+			return !PluginGuard::IsDeniedName(std::string_view(owner).substr(0, owner.find('|')));
 		});
 	}
 
@@ -1287,9 +1290,15 @@ namespace Hooks::Input
 		// modifier must never do is get blocked from the game: Shift is sprint,
 		// and Ctrl/Alt drive their own core bindings, so ShouldBlock's answer --
 		// which only ever reflects a combo's own blocking flag -- is ignored here.
-		if (isModifierKey) return false;
-
-		return ShouldBlock(mk, mods);
+		const bool block = !isModifierKey && ShouldBlock(mk, mods);
+		if (event == EModKeyEvent::Released && KeyBit(s_gameKeys, vk))
+		{
+			SetKeyBit(s_gameKeys, vk, false);
+			return false;
+		}
+		if (event == EModKeyEvent::Pressed && !block)
+			SetKeyBit(s_gameKeys, vk, true);
+		return block;
 	}
 } // namespace Hooks::Input
 

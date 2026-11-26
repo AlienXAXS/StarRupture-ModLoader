@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <string_view>
 #include <type_traits>
 #include <vector>
 
@@ -106,9 +107,10 @@ namespace PluginGuard
 	bool IsDenied(const void* address);
 
 	// The same by plugin name, for records that hold a name and no callback
-	// address. One relaxed atomic load while none is denied, else it takes a
-	// lock: for per-event work, not for per-frame work. Any thread.
-	bool IsDeniedName(const char* pluginName);
+	// address. One relaxed atomic load while none is denied, else a short lock
+	// and a compare per listed name, with no allocation: cheap enough for once
+	// a tick. An empty name is never denied. Any thread.
+	bool IsDeniedName(std::string_view pluginName);
 
 	// Drops every element of `v` whose callback lives in `module`; `addressOf`
 	// maps an element to that callback. Returns how many were dropped. The
