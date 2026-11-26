@@ -677,7 +677,7 @@ feature	Waila	tooltip	on	Show what a block is
 ```
 
 `on` means the feature is on in this game build; `off` means a game update moved something it needs. Rows are sorted
-by plugin and then id. A plugin name can hold a space (`Best Builder`), so split a row on tabs only. Titles are cut to
+by plugin and then id. A plugin name can hold a space (`My Plugin`), so split a row on tabs only. Titles are cut to
 80 bytes.
 
 ```cpp
