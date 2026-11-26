@@ -1138,6 +1138,129 @@ static void Test_DeniedWidgetIsNotDrawn()
     PluginGuard::Untrack(ThisModule());
 }
 
+static void* g_takenCapture = nullptr;
+static void* g_takenPassthrough = nullptr;
+static void TakeBothTokens(int)
+{
+    g_takenCapture = Registry::AcquireInputCapture();
+    g_takenPassthrough = Registry::AcquireInputPassthrough();
+}
+
+static bool BothRequested()
+{
+    return Registry::AnyInputCaptureRequested() && Registry::AnyInputPassthroughRequested();
+}
+
+static bool NeitherRequested()
+{
+    return !Registry::AnyInputCaptureRequested() && !Registry::AnyInputPassthroughRequested();
+}
+
+static void ReleaseBoth(void* capture, void* passthrough)
+{
+    Registry::ReleaseInputCapture(capture);
+    Registry::ReleaseInputPassthrough(passthrough);
+}
+
+// A token a denied plugin took inside a loader call holds nothing until the
+// plugin is let back, whether it was taken before the deny or during it, and the
+// plugin's release still works.
+static void Test_DeniedTokensAreNotHonoured()
+{
+    PluginGuard::Track(ThisModule(), "A");
+    CHECK(PluginGuard::Invoke(TakeBothTokens, "tick callback", 0));
+    CHECK(BothRequested());
+
+    PluginGuard::SetDenied({ "A" });
+    CHECK(NeitherRequested());
+    PluginGuard::SetDenied({});
+    CHECK(BothRequested());
+
+    PluginGuard::SetDenied({ "A" });
+    ReleaseBoth(g_takenCapture, g_takenPassthrough);
+    PluginGuard::SetDenied({});
+    CHECK(NeitherRequested());
+
+    PluginGuard::SetDenied({ "A" });
+    CHECK(PluginGuard::Invoke(TakeBothTokens, "tick callback", 0));
+    CHECK(NeitherRequested());
+    PluginGuard::SetDenied({});
+    CHECK(BothRequested());
+    ReleaseBoth(g_takenCapture, g_takenPassthrough);
+
+    PluginGuard::Untrack(ThisModule());
+}
+
+// A token with no known holder, taken outside any loader call, and one taken in
+// a call into a plugin that is not denied both count during a deny.
+static void Test_DenyLeavesOtherTokensAlone()
+{
+    PluginGuard::Track(ThisModule(), "A");
+    PluginGuard::Track(Kernel32(), "B");
+    PluginGuard::SetDenied({ "A" });
+
+    TakeBothTokens(0);
+    CHECK(BothRequested());
+    ReleaseBoth(g_takenCapture, g_takenPassthrough);
+
+    {
+        PluginGuard::RunningScope b(reinterpret_cast<const void*>(GetProcAddress(Kernel32(), "GetCurrentProcessId")));
+        TakeBothTokens(0);
+    }
+    void* const capture = g_takenCapture;
+    void* const passthrough = g_takenPassthrough;
+    CHECK(BothRequested());
+
+    // The denied plugin's own tokens beside them change nothing.
+    CHECK(PluginGuard::Invoke(TakeBothTokens, "tick callback", 0));
+    CHECK(BothRequested());
+    ReleaseBoth(capture, passthrough);
+    CHECK(NeitherRequested());
+    ReleaseBoth(g_takenCapture, g_takenPassthrough);
+
+    PluginGuard::SetDenied({});
+    PluginGuard::Untrack(Kernel32());
+    PluginGuard::Untrack(ThisModule());
+}
+
+static const void* g_runningSeen[3];
+static void SeeRunning(int slot) { g_runningSeen[slot] = PluginGuard::RunningCallback(); }
+static void SeeRunningAroundNested(int)
+{
+    SeeRunning(0);
+    PluginGuard::Invoke(SeeRunning, "tick callback", 1);
+    SeeRunning(2);
+}
+static void ThrowInside(int) { throw 42; }
+
+// The guard names the plugin code it is calling, and names the outer one again
+// when a nested call returns or a C++ exception or a fault leaves it.
+static void Test_GuardRemembersRunningCallback()
+{
+    PluginGuard::Track(ThisModule(), "A");
+    CHECK(PluginGuard::RunningCallback() == nullptr);
+    CHECK(PluginGuard::Invoke(SeeRunningAroundNested, "tick callback", 0));
+    CHECK(g_runningSeen[0] == reinterpret_cast<const void*>(&SeeRunningAroundNested));
+    CHECK(g_runningSeen[1] == reinterpret_cast<const void*>(&SeeRunning));
+    CHECK(g_runningSeen[2] == g_runningSeen[0]);
+    CHECK(PluginGuard::RunningCallback() == nullptr);
+
+    const void* const outer = reinterpret_cast<const void*>(&SeeRunning);
+    {
+        PluginGuard::RunningScope scope(outer);
+        int caught = 0;
+        try { PluginGuard::Invoke(ThrowInside, "tick callback", 0); }
+        catch (int v) { caught = v; }
+        CHECK(caught == 42);
+        CHECK(PluginGuard::RunningCallback() == outer);
+
+        CHECK(!PluginGuard::Invoke(FaultA, "tick callback", 0));
+        CHECK(PluginGuard::RunningCallback() == outer);
+    }
+    CHECK(PluginGuard::RunningCallback() == nullptr);
+    PluginGuard::Untrack(ThisModule());
+}
+
 int main()
 {
     RunTest("PanelsPurgedByModule",              Test_PanelsPurgedByModule);
@@ -1178,6 +1301,9 @@ int main()
     RunTest("GuardRestoresImGuiAfterRenderFault",   Test_GuardRestoresImGuiAfterRenderFault);
     RunTest("DeniedPanelClosesAndStaysShut",        Test_DeniedPanelClosesAndStaysShut);
     RunTest("DeniedWidgetIsNotDrawn",               Test_DeniedWidgetIsNotDrawn);
+    RunTest("DeniedTokensAreNotHonoured",           Test_DeniedTokensAreNotHonoured);
+    RunTest("DenyLeavesOtherTokensAlone",           Test_DenyLeavesOtherTokensAlone);
+    RunTest("GuardRemembersRunningCallback",        Test_GuardRemembersRunningCallback);
 
     RunTest("TitleBarCallbackRuns",                 Test_TitleBarCallbackRuns);
     RunTest("OldSizedDescriptorIsNeverReadPastItsEnd", Test_OldSizedDescriptorIsNeverReadPastItsEnd);

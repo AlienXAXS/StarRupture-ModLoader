@@ -1202,6 +1202,79 @@ static void DeniedPluginBlocksNoKey()
     PluginGuard::Untrack(self);
 }
 
+// A press the game was given gets its release too, though the combo has started
+// blocking again by then, as after a deny is lifted.
+static void DeniedKeyHeldAcrossAllow()
+{
+    Reset();
+    const HMODULE self = GetModuleHandleW(nullptr);
+    PluginGuard::Track(self, "Drone");
+    SetComboBlocking("Drone|Controls|Toggle", "F10", true);
+
+    PluginGuard::SetDenied({ "Drone" });
+    SetKeyDown(VK_F10, true);
+    CHECK(!ProcessWindowMessage(WM_KEYDOWN, VK_F10, 0));
+    PluginGuard::SetDenied({});
+    SetKeyDown(VK_F10, false);
+    CHECK(!ProcessWindowMessage(WM_KEYUP, VK_F10, 0xC0000000));
+
+    // The next press is the mod's again, release and all.
+    SetKeyDown(VK_F10, true);
+    CHECK(ProcessWindowMessage(WM_KEYDOWN, VK_F10, 0));
+    SetKeyDown(VK_F10, false);
+    CHECK(ProcessWindowMessage(WM_KEYUP, VK_F10, 0xC0000000));
+
+    Hooks::Input::ForgetPluginBlocking("Drone");
+    PluginGuard::Untrack(self);
+}
+
+// Inside a loader call into a denied plugin no key reads as held, and the caller
+// is known to be denied, which is what the debug draws check. A call into a
+// plugin that is not denied, and a call outside any, read the keyboard.
+static void DeniedPluginPollsNoHeldKey()
+{
+    Reset();
+    const HMODULE self = GetModuleHandleW(nullptr);
+    const HMODULE b = GetModuleHandleW(L"kernel32.dll");
+    PluginGuard::Track(self, "A");
+    PluginGuard::Track(b, "B");
+    const void* inA = reinterpret_cast<const void*>(&OnGate);
+    const void* inB = reinterpret_cast<const void*>(GetProcAddress(b, "GetCurrentProcessId"));
+    SetKeyDown('K', true);
+
+    PluginGuard::SetDenied({ "A" });
+    CHECK(IsKeyHeld("K"));
+    CHECK(!PluginGuard::IsCallerDenied());
+    {
+        PluginGuard::RunningScope a(inA);
+        CHECK(!IsKeyHeld("K"));
+        CHECK(PluginGuard::IsCallerDenied());
+        {
+            // The innermost call counts.
+            PluginGuard::RunningScope other(inB);
+            CHECK(IsKeyHeld("K"));
+            CHECK(!PluginGuard::IsCallerDenied());
+        }
+        CHECK(!IsKeyHeld("K"));
+
+        // Another thread is not inside the call this one is in.
+        bool held = false;
+        std::thread([&] { held = IsKeyHeld("K"); }).join();
+        CHECK(held);
+    }
+    CHECK(PluginGuard::RunningCallback() == nullptr);
+
+    PluginGuard::SetDenied({});
+    {
+        PluginGuard::RunningScope a(inA);
+        CHECK(IsKeyHeld("K"));
+        CHECK(!PluginGuard::IsCallerDenied());
+    }
+
+    PluginGuard::Untrack(b);
+    PluginGuard::Untrack(self);
+}
+
 // A name longer than the crash report keeps is still matched whole, by callback
 // and by name. A plugin tracked after the deny starts denied.
 static void DeniedLongName()
@@ -1322,6 +1395,8 @@ int main()
     RunTest("Deny: a denied exact bind shadows nothing", DeniedExactBindShadowsNothing);
     RunTest("Deny: no key taken from the game", DeniedPluginBlocksNoKey);
     RunTest("Deny: a long plugin name matches whole", DeniedLongName);
+    RunTest("Deny: a held key's release survives an allow", DeniedKeyHeldAcrossAllow);
+    RunTest("Deny: no held key inside a denied mod's call", DeniedPluginPollsNoHeldKey);
     RunTest("UELog: percent signs reach the engine escaped", UELogEscapesPercent);
     RunTest("ForgetModule: an unloading plugin's keybinds go",ForgetModuleDropsItsKeybinds);
     RunTest("ForgetModule: an unloading plugin's game-thread tasks go", ForgetModuleDropsItsGameThreadTasks);
