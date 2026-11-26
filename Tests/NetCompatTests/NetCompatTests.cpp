@@ -1193,6 +1193,48 @@ namespace
             "resolve after a wire round trip: default deny, mod allowed, one feature denied");
     }
 
+    void TestHostDeniedAsWhole()
+    {
+        std::printf("Host rules: a mod denied as a whole\n");
+        auto rules = [](bool defaultAllow, std::initializer_list<HostRules::RuleKey> deny,
+                        std::initializer_list<HostRules::RuleKey> allow = {}) {
+            HW::RulesSet s;
+            s.defaultAllow = defaultAllow;
+            s.deny = HostRules::DenySet(deny);
+            s.allow = HostRules::DenySet(allow);
+            return s;
+        };
+        const char* all = HW::kWholePlugin;
+        struct Case { HW::RulesSet set; const char* plugin; bool want; const char* what; };
+        const Case cases[] = {
+            { rules(true, {}), "P", false, "default allow, no rows: not denied" },
+            { rules(true, { { "P", all } }), "P", true, "a whole-mod deny row: denied" },
+            { rules(true, { { "P", all } }, { { "P", "f" } }), "P", false, "a whole-mod deny with a feature allow: not denied" },
+            { rules(true, { { "P", "f" }, { "P", "g" } }), "P", false, "only feature denies: not denied" },
+            { rules(true, { { "Other", all } }), "P", false, "a whole-mod deny of another mod: not denied" },
+            { rules(false, {}), "P", true, "default deny, no row for the mod: denied" },
+            { rules(false, { { "P", "f" } }), "P", true, "default deny and a feature deny: denied" },
+            { rules(false, {}, { { "P", all } }), "P", false, "default deny and a whole-mod allow: not denied" },
+            { rules(false, {}, { { "P", "f" } }), "P", false, "default deny and a feature allow: not denied" },
+            { rules(false, {}, { { "Other", all } }), "P", true, "default deny, another mod allowed: denied" },
+            { rules(false, {}), "ServerUtility", false, "ServerUtility under a default deny: never denied" },
+            { rules(true, { { "ServerUtility", all } }), "ServerUtility", false, "ServerUtility under its own deny row: never denied" },
+            { rules(false, { { "serverutility", all } }), "SERVERUTILITY", false, "the ServerUtility exemption ignores case" },
+            { rules(true, { { "bettercheats", all } }), "BetterCheats", true, "a deny row matches the name in any case" },
+            { rules(false, {}, { { "BETTERCHEATS", "f" } }), "BetterCheats", false, "an allow row matches the name in any case" },
+            { rules(false, {}), "", false, "an empty name is never denied" },
+        };
+        for (const Case& c : cases)
+            Check(HW::DeniedAsWhole(c.set, c.plugin) == c.want, c.what);
+
+        // Through the wire: a whole-mod deny a server sends arrives as one.
+        const HW::RulesSet sent = rules(true, { { "P", all } });
+        const std::string bytes = HW::EncodeRules(sent);
+        HW::RulesSet got;
+        Check(HW::DecodeRules(bytes.data(), bytes.size(), &got) == HW::Status::Ok && HW::DeniedAsWhole(got, "P"),
+            "a whole-mod deny survives a wire round trip");
+    }
+
     void TestHostMinimum()
     {
         std::printf("Host rules: minimum loader tag\n");
@@ -1641,6 +1683,7 @@ int main()
     TestHostPlan();
     TestHostMinimum();
     TestHostResolve();
+    TestHostDeniedAsWhole();
     TestHostFeatStable();
     TestHostTiming();
     TestPluginVersionQuery();

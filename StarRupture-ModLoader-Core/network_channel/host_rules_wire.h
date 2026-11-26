@@ -590,6 +590,21 @@ namespace HostRulesWire
         return HostRules::Normalize(out);
     }
 
+    // The mod the host's rule set turns off as a whole: no row allows any part
+    // of it, and a whole-mod deny row or a deny default covers it. Needs no
+    // declared features, so any loaded plugin can be asked about. Names match
+    // without regard to case. The ServerUtility client is never denied: it
+    // holds the admin panel that edits these rules.
+    inline bool DeniedAsWhole(const RulesSet& rules, const std::string& plugin)
+    {
+        if (plugin.empty() || HostRules::SamePlugin(plugin, "ServerUtility"))
+            return false;
+        for (const HostRules::RuleKey& r : rules.allow)
+            if (HostRules::SamePlugin(r.plugin, plugin))
+                return false;
+        return !rules.defaultAllow || HostRules::Contains(rules.deny, plugin, kWholePlugin);
+    }
+
     // ---------------------------------------------------------- Rules as text
 
     // How the server's operator (or a server plugin) writes a rule set. One
