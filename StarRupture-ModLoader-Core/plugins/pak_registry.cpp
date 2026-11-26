@@ -4,6 +4,7 @@
 
 #include "plugins/plugin_interface.h"
 #include "logging/logger.h"
+#include "plugins/plugin_call_gate.h"
 #include "plugins/plugin_guard.h"
 #include "hooks/game/pak_mount/pak_mount.h"
 #include "hooks/game/world_begin_play/world_begin_play.h"
@@ -418,6 +419,7 @@ namespace PakRegistry
 
     static void SpawnModActors(SDK::UWorld* world, const char* worldName, int onlySlot)
     {
+        PluginCallGate::Scope gate;   // before the callbacks are read
         std::vector<ModActorJob> jobs;
         {
             std::lock_guard<std::recursive_mutex> lk(s_mutex);

@@ -9,6 +9,7 @@
 #include "plugin_call_tracker.h"
 #include "plugins/plugin_manager.h"
 #include "plugins/plugin_watchdog.h"
+#include "plugins/plugin_call_gate.h"
 #include "plugins/plugin_guard.h"
 #include "logging/logger.h"
 #include <mutex>
@@ -80,6 +81,7 @@ namespace UI::PluginPanelRegistry
     // Must NOT be called while holding s_mutex.
     static void FirePanelClosed(PanelHandle handle)
     {
+        PluginCallGate::Scope gate;   // before the callbacks are read
         std::unique_lock<std::mutex> lock(s_mutex);
         const std::vector<PanelClosedEntry> callbacks = s_panelClosedCallbacks;
         for (const PanelClosedEntry& cb : callbacks)
@@ -204,6 +206,7 @@ namespace UI::PluginPanelRegistry
         // compare -- also sidesteps any case-sensitivity mismatch entirely.
         const IPluginSelf* changedSelf = pluginName ? PluginManager::GetSelfForPlugin(pluginName) : nullptr;
 
+        PluginCallGate::Scope gate;   // before the callbacks are read
         std::vector<PluginConfigChangedCallback> toCall;
         {
             std::lock_guard<std::mutex> lock(s_mutex);
@@ -606,6 +609,7 @@ namespace UI::PluginPanelRegistry
 
     void RenderPanelWindows(IModLoaderImGui* imgui)
     {
+        PluginCallGate::Scope gate;   // before the callbacks are read
         // Snapshot which panels to draw, not pointers to use: an entry can be
         // erased (an unload, or UnregisterPanel on any thread) whenever the
         // lock is not held, so each one is looked up again before it is read.

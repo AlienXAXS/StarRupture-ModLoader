@@ -8,6 +8,7 @@
 #include "plugin_call_tracker.h"
 #include "logging/logger.h"
 #include "plugins/plugin_watchdog.h"
+#include "plugins/plugin_call_gate.h"
 #include "plugins/plugin_guard.h"
 #include "../core/client_ui.h"
 #include "../core/input_arbitration.h"
@@ -137,6 +138,7 @@ namespace UI::PluginWidgetRegistry
 
     void RenderWidgets(IModLoaderImGui* imgui)
     {
+        PluginCallGate::Scope gate;   // before the callbacks are read
         // Snapshot which widgets to draw. The copy alone is not enough: the
         // desc it points to is the plugin's, gone once the plugin unregisters
         // or unloads, so each one is looked up again before it is read.

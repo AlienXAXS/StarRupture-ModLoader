@@ -3,6 +3,7 @@
 
 #include "hooks/hooks_common.h"
 #include "logging/logger.h"
+#include "plugins/plugin_call_gate.h"
 #include "plugins/plugin_guard.h"
 #include "plugins/plugin_manage.h"
 #include "memory_scanner/scanner.h"
@@ -968,6 +969,7 @@ namespace Hooks::HttpServer
 		HttpMethod method,
 		const std::string& bodyStr)
 	{
+		PluginCallGate::Scope gate;   // before the callbacks are read
 		std::lock_guard lock(g_rawRoutesMutex);
 
 		ModLoaderLogger::LogTrace(L"[HttpServer] TryDispatchRawRoute: checking %zu registered raw route(s) for url=%S",
@@ -1121,6 +1123,7 @@ namespace Hooks::HttpServer
 					req.bodyLen = body.size();
 					req.method = method;
 
+					PluginCallGate::Scope gate;   // before the callbacks are read
 					std::lock_guard lock(g_filtersMutex);
 					ModLoaderLogger::LogTrace(L"[HttpServer] Phase 1: evaluating %zu filter(s)", g_filters.size());
 					size_t filterIdx = 0;
