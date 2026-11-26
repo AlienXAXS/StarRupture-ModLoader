@@ -815,3 +815,17 @@ the harness says the debug layer is not available and exits 1 even though its ch
 msbuild Tests\ImageShrinkHarness\ImageShrinkHarness.vcxproj /p:Configuration="Client Release" /p:Platform=x64
 build\tests\image_shrink_harness.exe
 ```
+
+## CommandLineLogTests
+
+A console program that includes the loader's own `core/command_line_log.h`, which both the loader
+and the proxy use to log the game's command line. It checks that only the program's file name and
+the switch names come out (`-Key=Value`, `-Key:Value`, `-Key Value`, quoted values, a URL
+argument), never a value or a directory.
+
+```
+msbuild Tests\CommandLineLogTests\CommandLineLogTests.vcxproj /p:Configuration="Client Release" /p:Platform=x64
+build\tests\command_line_log_tests.exe
+```
+
+It prints the number of checks and how many failed, and exits 0 when none did.

@@ -2,18 +2,22 @@
 
 // What the logs may say about the process command line: the program's file
 // name and the switch names, never a value. A dedicated server's command line
-// can carry a password (-RCONPassword=..., or Map?Password=... in the URL), and
+// can carry a password (-RCONPassword=..., -RCONPassword:..., or Map?Password=... in the URL), and
 // a log is something people attach to bug reports.
 //
 // The line is split the way Windows splits it (double quotes group a token,
 // a token may hold spaces). The first token is the program; of the rest, a
-// token that starts with "-" is kept up to its first "=" and every other token
-// is dropped. That covers -Key=Value, -Key Value and /Map?Password=x.
+// token that starts with "-" is kept up to its first "=" or ":" and every other
+// token is dropped. That covers -Key=Value, -Key:Value, -Key Value and
+// /Map?Password=x.
 //
 // Known limit: in the "-Key Value" form a value that itself starts with "-"
 // is logged as a switch name.
 //
-// Header-only: the loader and the proxy both use it.
+// Header-only: the loader and the proxy both use it. It has its own
+// splitter because a value must never leak through a misread quote, so it
+// follows the Windows rules exactly (program name, backslashes before quotes),
+// which the console command tokenizer, made for typed commands, does not.
 
 #include <string>
 #include <vector>
@@ -97,7 +101,7 @@ namespace CommandLineLog
 			if (tokens[i].empty() || tokens[i][0] != L'-')
 				continue;
 			out += L' ';
-			out += tokens[i].substr(0, tokens[i].find(L'='));
+			out += tokens[i].substr(0, tokens[i].find_first_of(L"=:"));
 		}
 		return out;
 	}

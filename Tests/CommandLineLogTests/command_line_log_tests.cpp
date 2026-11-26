@@ -44,6 +44,8 @@ namespace
 		     L"Game.exe -log -RCONPassword -port -nosplash", "several switches");
 		Case(L"Game.exe /Game/Maps/X?listen?Password=secret -log", L"Game.exe -log", "URL argument");
 		Case(L"Game.exe -Opt=a=secret", L"Game.exe -Opt", "cut at the first =");
+		Case(L"Game.exe -RCONPassword:secret -log", L"Game.exe -RCONPassword -log", "-Key:Value");
+		Case(L"Game.exe -Opt:a=secret -Opt2=b:secret", L"Game.exe -Opt -Opt2", "cut at the first = or :");
 	}
 
 	void TestQuotes()
