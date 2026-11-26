@@ -3,7 +3,7 @@
   PluginNeedTests : a compile test for PLUGIN_NEEDS_INTERFACE in plugins\plugin_interface.h.
   See Tests/README.md.
 
-  Each source file includes the live plugin_interface.h at one level (72 to 80, the
+  Each source file includes the live plugin_interface.h at one level (72 to 81, the
   default, and the loader's own host build) and static_asserts which host table
   members are visible and where they sit. Building the library is the test: a wrong
   #if, a shifted offset or a member that is visible when it should not be stops the
@@ -98,6 +98,7 @@
     <ClCompile Include="need_78.cpp" />
     <ClCompile Include="need_79.cpp" />
     <ClCompile Include="need_80.cpp" />
+    <ClCompile Include="need_81.cpp" />
     <ClCompile Include="need_default.cpp" />
     <ClCompile Include="need_host.cpp" />
     <ClCompile Include="opt_73_80.cpp" />

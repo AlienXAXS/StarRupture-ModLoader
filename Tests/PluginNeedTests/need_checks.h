@@ -63,9 +63,12 @@ static_assert(sizeof(IPluginInputEvents)    == 72,                              
 static_assert(sizeof(IModLoaderImGui)       == (NEED >= 78 ? 2056 : NEED >= 74 ? 2048 : 2032),                     "IModLoaderImGui size");
 static_assert(sizeof(IPluginGameMenu)       == (NEED >= 74 ? 64 : 40),                                            "IPluginGameMenu size");
 static_assert(sizeof(IPluginUIEvents)       == (NEED >= 75 ? 144 : 128),                                          "IPluginUIEvents size");
-static_assert(sizeof(IPluginNetworkChannel) == (NEED >= 80 ? 136 : 128),                                          "IPluginNetworkChannel size");
+static_assert(sizeof(IPluginNetworkChannel) == (NEED >= 81 ? 144 : NEED >= 80 ? 136 : 128),                        "IPluginNetworkChannel size");
 static_assert(sizeof(IPluginHooks)          == (NEED >= 80 ? 216 : NEED >= 79 ? 208 : NEED >= 77 ? 200 : 192),     "IPluginHooks size");
 
-// Structs the plugin allocates and the loader reads are not cut down at any level.
+// Structs the plugin allocates and the loader reads. PluginInfo is whole at every level;
+// PluginPanelDesc has titleBarFn from level 75, which is all the loader reads it for.
 static_assert(sizeof(PluginInfo) == 48, "PluginInfo is not truncated");
+#if PLUGIN_NEEDS_INTERFACE >= 75
 static_assert(offsetof(PluginPanelDesc, titleBarFn) == 24, "PluginPanelDesc::titleBarFn is not truncated");
+#endif

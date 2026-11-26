@@ -11,6 +11,7 @@
 #include "memory_scanner/hook_scanner_interface.h"
 #include "memory_scanner/version_map.h"
 #include "memory_scanner/version_feed.h"
+#include "network_channel/network_channel.h"
 #include "hooks/hooks_interface.h"
 #include "hooks/game/game_menu/game_menu_registry.h"
 #include "hooks/input/keybind_registry.h"
@@ -158,6 +159,7 @@ namespace PreloadManager
 }
 
 namespace GameMenu::Registry { void ForgetPlugin(const char*) {} }
+namespace NetworkChannel { void PluginFeaturesDeclared() {} }
 namespace Hooks::Input { void ForgetPluginBlocking(const char*) {} }
 namespace Hooks::MouseWheel { void ForgetModule(HMODULE) {} }
 namespace ImageLibrary { void ForgetPlugin(const IPluginSelf*) {} }
