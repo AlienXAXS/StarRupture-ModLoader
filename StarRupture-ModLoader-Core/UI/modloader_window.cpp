@@ -6,6 +6,7 @@
 #include "imgui/imgui.h"
 #include "plugin_panel_registry.h"
 #include "plugins/plugin_manager.h"
+#include "plugins/plugin_guard.h"
 #include "plugins/plugin_hook_report.h"
 #include "core/unknown_build.h"
 #include "config/config_manager.h"
@@ -84,6 +85,10 @@ namespace UI::ModLoaderWindow
     // plugin already on screen invalidates them. Starts at a value the counter
     // cannot be on the first frame, so the first render always loads.
     static unsigned s_lastConfigGeneration = static_cast<unsigned>(-1);
+
+    // The shown plugin's module, looked up when the cache above is rebuilt, so
+    // whether the server denies it can be asked every frame without a lock.
+    static HMODULE s_configModule = nullptr;
 
     // ConfigEdit change counter the cached entries were copied at, so a value
     // a plugin writes itself shows up here without the plugin being reloaded.
@@ -543,7 +548,14 @@ namespace UI::ModLoaderWindow
                 else if (s.isLoaded)
                 {
                     ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "Loaded");
-                    if (featuresOff > 0)
+                    if (s.isDenied)
+                    {
+                        ImGui::SameLine();
+                        ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.1f, 1.0f), "(off by server)");
+                        if (ImGui::IsItemHovered())
+                            ImGui::SetTooltip("%s", PluginGuard::kDeniedReason);
+                    }
+                    else if (featuresOff > 0)
                     {
                         ImGui::SameLine();
                         ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.1f, 1.0f), "(%d off)", featuresOff);
@@ -1440,6 +1452,7 @@ namespace UI::ModLoaderWindow
             {
                 s_lastConfigPlugin     = s_selectedPlugin;
                 s_lastConfigGeneration = generation;
+                s_configModule         = PluginManager::GetPluginModule(info->name);
                 ConfigEdit::Load(info->name);
                 RefreshConfigEntries(info->name);
             }
@@ -1463,6 +1476,17 @@ namespace UI::ModLoaderWindow
             // doesn't inherit that gap from "##tab_content" the way a
             // non-scrolling tab does.
             ImGui::Spacing();
+
+            // A plugin the joined server denies keeps its page, greyed.
+            const bool denied = PluginGuard::IsDenied(s_configModule);
+            if (denied)
+            {
+                ImGui::Indent(kSectionIndent);
+                ImGui::TextWrapped("%s", PluginGuard::kDeniedReason);
+                ImGui::Unindent(kSectionIndent);
+                ImGui::Spacing();
+            }
+            ImGui::BeginDisabled(denied);
 
             // Plugin panels button row (shown before config entries)
             ImGui::Indent(kSectionIndent);
@@ -1755,6 +1779,8 @@ namespace UI::ModLoaderWindow
 
                 ImGui::Spacing(); // gap before the bottom of the scroll region, matching the top
             }
+
+            ImGui::EndDisabled();
         }
 
         RenderRebindModal();

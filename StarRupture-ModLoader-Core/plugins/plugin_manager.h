@@ -66,6 +66,9 @@ namespace PluginManager
         // says how, e.g. "0xC0000005 in tick callback".
         bool isCrashed;
         char crashReason[96];
+
+        // True while the joined server denies it (plugins/plugin_guard.h).
+        bool isDenied;
     };
 
     // Initialize the plugin manager

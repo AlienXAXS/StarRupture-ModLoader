@@ -1509,6 +1509,7 @@ namespace PluginManager
 
 				PluginGuard::Fault fault;
 				out[i].isCrashed      = p.hModule && PluginGuard::GetFault(p.hModule, &fault);
+				out[i].isDenied       = p.hModule && PluginGuard::IsDenied(p.hModule);
 				out[i].crashReason[0] = '\0';
 				if (out[i].isCrashed)
 					sprintf_s(out[i].crashReason, "0x%08X in %s", fault.code, fault.callback ? fault.callback : "a callback");
