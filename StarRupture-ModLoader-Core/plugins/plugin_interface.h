@@ -23,7 +23,8 @@
 //   above the need); a loader that has interface 80 then tells the plugin its own level, after GetPluginInfo and
 //   before OnPluginLoadHooks and PluginInit. Ask for a newer member through its PluginOpt accessor
 //   (PluginOptRegistry, PluginOptImages, PluginOptHostRules, PluginOptDL_AddTexturedTriangles,
-//   PluginOptServerAddress, PluginOptHostRulesState, PluginOptHostDenied): it returns nullptr
+//   PluginOptServerAddress, PluginOptHostRulesState, PluginOptHostDenied, PluginOptSendToServerPlugin,
+//   PluginOptSendToClientPlugin): it returns nullptr
 //   unless the loader reported a level that has the member. Loaders
 //   below 80 never report, so on them every accessor above the plugin's need returns nullptr, even for a member
 //   that loader has. The plugin never reads past a loader's table.
@@ -1010,8 +1011,15 @@
 //      through PluginOptHostDenied.
 // --- v82 ---
 //
+// v83 (2026-11-26): Adds IPluginNetworkChannel::SendPacketToServerPlugin and
+//      SendPacketToClientPlugin, appended after IsDeniedByHost: a send addressed
+//      to a named plugin on the other side, for two plugins that work together.
+//      Receiving is unchanged. Optional use needs no higher declared need: ask
+//      through PluginOptSendToServerPlugin and PluginOptSendToClientPlugin.
+// --- v83 ---
+//
 #define PLUGIN_INTERFACE_VERSION_MIN 70
-#define PLUGIN_INTERFACE_VERSION_MAX 82
+#define PLUGIN_INTERFACE_VERSION_MAX 83
 #define PLUGIN_INTERFACE_VERSION 82
 
 // The lowest level every loader since v1.23.0 accepts (their MAX is 75 or higher). A plugin that
@@ -3262,10 +3270,55 @@ struct IPluginNetworkChannel
 #if PLUGIN_NEEDS_INTERFACE >= 82
 	int (*IsDeniedByHost)(const IPluginSelf* self);   // since v82
 #endif
+
+	// v83 -- appended at the end, do not relocate. Send to a named plugin on the
+	// other side, which need not be a copy of yours. The packet is the one the
+	// plain sends make, with targetPlugin where your own name would be, so it
+	// reaches the handler the target registered itself for typeTag
+	// (RegisterServerMessageHandler or RegisterMessageHandler); its pluginName
+	// argument is the target's own name. The receiver is not told who sent it:
+	// if that matters, say so in the payload, and treat it as unproven.
+	//
+	// SendPacketToServerPlugin is the client side, SendPacketToClientPlugin the
+	// authority side (dedicated server or listen host). Both return:
+	//   1  queued.
+	//   0  not ready. To the server: no connection, or IsServerReady() is false.
+	//      To a client: it has not reported its plugins yet, or the controller
+	//      has no connection (the listen host's own controller has none).
+	//  -1  the other side does not have targetPlugin loaded. To the server this
+	//      is known only from a list the server sends after you join; until it
+	//      arrives, or from an older server, the packet goes out and returns 1.
+	//      The list can be out of date if the server loads a plugin later.
+	//  -2  bad arguments, nothing sent: a null self, controller, name or tag; an
+	//      empty name or tag, or one over 256 bytes or holding a control
+	//      character; a name holding ':' or starting with '$' (the loader's
+	//      own); data null while size is above 0; size above 65536.
+	//  -3  wrong side: SendPacketToServerPlugin on the authority, or
+	//      SendPacketToClientPlugin anywhere else.
+	//
+	// A size of 0 is allowed. No plugin version is checked, so put your own
+	// protocol version in the payload. 1 does not promise that the target
+	// registered a handler. Call them from the game thread, as for
+	// SendPacketToServer and SendPacketToClient: the loader does not move a send
+	// to the game thread for you.
+	// Raise PLUGIN_NEEDS_INTERFACE to 83 to use these.
+#if PLUGIN_NEEDS_INTERFACE >= 83
+	int (*SendPacketToServerPlugin)(const IPluginSelf* self, const char* targetPlugin,
+		const char* typeTag, const uint8_t* data, size_t size);   // since v83
+	int (*SendPacketToClientPlugin)(void* playerController, const IPluginSelf* self, const char* targetPlugin,
+		const char* typeTag, const uint8_t* data, size_t size);   // since v83
+#endif
 };
 
 static_assert(offsetof(IPluginNetworkChannel, UnregisterServerReadyCallback) == 15 * sizeof(void*), "v56 layout");
-#if PLUGIN_NEEDS_INTERFACE >= 82
+#if PLUGIN_NEEDS_INTERFACE >= 83
+static_assert(offsetof(IPluginNetworkChannel, GetServerAddress)              == 16 * sizeof(void*), "v80 starts where v56 ended");
+static_assert(offsetof(IPluginNetworkChannel, GetHostRulesState)             == 17 * sizeof(void*), "v81 starts where v80 ended");
+static_assert(offsetof(IPluginNetworkChannel, IsDeniedByHost)                == 18 * sizeof(void*), "v82 starts where v81 ended");
+static_assert(offsetof(IPluginNetworkChannel, SendPacketToServerPlugin)      == 19 * sizeof(void*), "v83 starts where v82 ended");
+static_assert(offsetof(IPluginNetworkChannel, SendPacketToClientPlugin)      == 20 * sizeof(void*), "v83 second slot");
+static_assert(sizeof(IPluginNetworkChannel)                                  == 21 * sizeof(void*), "v83 layout");
+#elif PLUGIN_NEEDS_INTERFACE >= 82
 static_assert(offsetof(IPluginNetworkChannel, GetServerAddress)              == 16 * sizeof(void*), "v80 starts where v56 ended");
 static_assert(offsetof(IPluginNetworkChannel, GetHostRulesState)             == 17 * sizeof(void*), "v81 starts where v80 ended");
 static_assert(offsetof(IPluginNetworkChannel, IsDeniedByHost)                == 18 * sizeof(void*), "v82 starts where v81 ended");
@@ -4545,6 +4598,8 @@ constexpr size_t PLUGIN_OPT_OFFSET_REGISTRY               = 208;    // IPluginHo
 constexpr size_t PLUGIN_OPT_OFFSET_SERVER_ADDRESS         = 128;    // IPluginNetworkChannel::GetServerAddress, v80
 constexpr size_t PLUGIN_OPT_OFFSET_HOST_RULES_STATE       = 136;    // IPluginNetworkChannel::GetHostRulesState, v81
 constexpr size_t PLUGIN_OPT_OFFSET_HOST_DENIED            = 144;    // IPluginNetworkChannel::IsDeniedByHost, v82
+constexpr size_t PLUGIN_OPT_OFFSET_SEND_TO_SERVER_PLUGIN  = 152;    // IPluginNetworkChannel::SendPacketToServerPlugin, v83
+constexpr size_t PLUGIN_OPT_OFFSET_SEND_TO_CLIENT_PLUGIN  = 160;    // IPluginNetworkChannel::SendPacketToClientPlugin, v83
 
 #if PLUGIN_NEEDS_INTERFACE >= 77
 static_assert(offsetof(IPluginHooks, Images) == PLUGIN_OPT_OFFSET_IMAGES, "optional offset: Images");
@@ -4564,6 +4619,10 @@ static_assert(offsetof(IPluginNetworkChannel, GetHostRulesState) == PLUGIN_OPT_O
 #endif
 #if PLUGIN_NEEDS_INTERFACE >= 82
 static_assert(offsetof(IPluginNetworkChannel, IsDeniedByHost) == PLUGIN_OPT_OFFSET_HOST_DENIED, "optional offset: IsDeniedByHost");
+#endif
+#if PLUGIN_NEEDS_INTERFACE >= 83
+static_assert(offsetof(IPluginNetworkChannel, SendPacketToServerPlugin) == PLUGIN_OPT_OFFSET_SEND_TO_SERVER_PLUGIN, "optional offset: SendPacketToServerPlugin");
+static_assert(offsetof(IPluginNetworkChannel, SendPacketToClientPlugin) == PLUGIN_OPT_OFFSET_SEND_TO_CLIENT_PLUGIN, "optional offset: SendPacketToClientPlugin");
 #endif
 
 // The slot of a table at a byte offset, read only after PluginHostHas said the table has it.
@@ -4634,6 +4693,24 @@ typedef int (*PluginIsDeniedByHostFunc)(const IPluginSelf* self);
 inline PluginIsDeniedByHostFunc PluginOptHostDenied(const IPluginNetworkChannel* network)
 {
 	return (network && PluginHostHas(82)) ? PluginOptSlot<PluginIsDeniedByHostFunc>(network, PLUGIN_OPT_OFFSET_HOST_DENIED) : nullptr;
+}
+#endif
+
+#if PLUGIN_OPTIONAL_INTERFACE >= 83
+typedef int (*PluginSendToServerPluginFunc)(const IPluginSelf* self, const char* targetPlugin,
+	const char* typeTag, const uint8_t* data, size_t size);
+typedef int (*PluginSendToClientPluginFunc)(void* playerController, const IPluginSelf* self, const char* targetPlugin,
+	const char* typeTag, const uint8_t* data, size_t size);
+
+// IPluginNetworkChannel::SendPacketToServerPlugin and SendPacketToClientPlugin. Null on an older loader.
+inline PluginSendToServerPluginFunc PluginOptSendToServerPlugin(const IPluginNetworkChannel* network)
+{
+	return (network && PluginHostHas(83)) ? PluginOptSlot<PluginSendToServerPluginFunc>(network, PLUGIN_OPT_OFFSET_SEND_TO_SERVER_PLUGIN) : nullptr;
+}
+
+inline PluginSendToClientPluginFunc PluginOptSendToClientPlugin(const IPluginNetworkChannel* network)
+{
+	return (network && PluginHostHas(83)) ? PluginOptSlot<PluginSendToClientPluginFunc>(network, PLUGIN_OPT_OFFSET_SEND_TO_CLIENT_PLUGIN) : nullptr;
 }
 #endif
 
