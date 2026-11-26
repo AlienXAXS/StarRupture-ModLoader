@@ -64,10 +64,10 @@ namespace UI::ModLoaderWindow
     {
         kTabPlugins = 0,
         kTabConfig,
+        kTabBrowse,
         kTabSettings,
         kTabLogging,
         kTabTheme,
-        kTabBrowse,
         kTabAbout,
         kTabCount,
     };
@@ -397,12 +397,14 @@ namespace UI::ModLoaderWindow
             RenderLoadNewPlugins();
     }
 
-    // 1-5 open the first five sidebar sections in order (Browse and About have no number). Only while
+    // 1-5 open Plugins, Config, Settings, Logging and Theme (Browse and About have no number). Only while
     // this window has the focus and nothing is taking keys: a text field, a
     // slider being dragged, the keybind capture. Called inside the window.
     static void HandleTabHotkeys()
     {
-        static_assert(kTabTheme == 4, "the number keys 1-5 map to the first five tabs");
+        // In key order, 1 first.
+        static constexpr int kNumberKeyTabs[] = { kTabPlugins, kTabConfig, kTabSettings, kTabLogging, kTabTheme };
+        constexpr int kNumberKeys = static_cast<int>(std::size(kNumberKeyTabs));
 
         // The keybind capture reads its key with GetAsyncKeyState and ends in the
         // frame the key goes down, while ImGui gets the same press from the
@@ -415,9 +417,9 @@ namespace UI::ModLoaderWindow
         else if (s_holdFrames > 0)
         {
             bool numberKeyDown = false;
-            for (int tab = kTabPlugins; tab <= kTabTheme; ++tab)
-                numberKeyDown |= (GetAsyncKeyState('1' + tab) & 0x8000) != 0 ||
-                                 (GetAsyncKeyState(VK_NUMPAD1 + tab) & 0x8000) != 0;
+            for (int key = 0; key < kNumberKeys; ++key)
+                numberKeyDown |= (GetAsyncKeyState('1' + key) & 0x8000) != 0 ||
+                                 (GetAsyncKeyState(VK_NUMPAD1 + key) & 0x8000) != 0;
             if (!numberKeyDown)
                 --s_holdFrames;
         }
@@ -429,11 +431,11 @@ namespace UI::ModLoaderWindow
             io.KeyCtrl || io.KeyAlt || io.KeyShift || io.KeySuper)
             return;
 
-        for (int tab = kTabPlugins; tab <= kTabTheme; ++tab)
+        for (int key = 0; key < kNumberKeys; ++key)
         {
-            if (ImGui::IsKeyPressed(static_cast<ImGuiKey>(ImGuiKey_1 + tab), false) ||
-                ImGui::IsKeyPressed(static_cast<ImGuiKey>(ImGuiKey_Keypad1 + tab), false))
-                s_activeTab = tab;
+            if (ImGui::IsKeyPressed(static_cast<ImGuiKey>(ImGuiKey_1 + key), false) ||
+                ImGui::IsKeyPressed(static_cast<ImGuiKey>(ImGuiKey_Keypad1 + key), false))
+                s_activeTab = kNumberKeyTabs[key];
         }
     }
 
@@ -3014,10 +3016,10 @@ namespace UI::ModLoaderWindow
         {
             UI::Theme::Icons::Plugins,
             UI::Theme::Icons::Config,
+            UI::Theme::Icons::Browse,
             UI::Theme::Icons::Settings,
             UI::Theme::Icons::Logging,
             UI::Theme::Icons::Theme,
-            UI::Theme::Icons::Browse,
             UI::Theme::Icons::About,
         };
 
@@ -3028,20 +3030,20 @@ namespace UI::ModLoaderWindow
         {
             "Plugins",
             "Config",
+            "Browse",
             "Settings",
             "Logging",
             "Theme",
-            "Browse",
             "About",
         };
         static const char* s_tabTooltips[kTabCount] =
         {
             "Plugins (1) -- load, unload and reload installed plugins",
             "Plugin Config (2) -- edit each plugin's own settings and keybinds",
+            "Browse -- plugins that work with the ModLoader, and where to get them",
             "Settings (3) -- HUD overlays, auto-update and diagnostics",
             "Logging (4) -- log levels for the loader, the game and each plugin",
             "Theme (5) -- font, text size and every UI color",
-            "Browse -- plugins that work with the ModLoader, and where to get them",
             "About -- build tag and the plugins currently loaded",
         };
 

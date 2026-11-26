@@ -124,7 +124,7 @@ or its update box, and in the log:
 
 <img src="images/pause-menu.png" width="360" alt="The pause menu with the MOD LOADER, BETTER CHEATS and BETTER DRONE rows">
 
-The tabs down the left are **Plugins**, **Config**, **Settings**, **Logging**, **Theme**, **Browse** and **About**
+The tabs down the left are **Plugins**, **Config**, **Browse**, **Settings**, **Logging**, **Theme** and **About**
 (the build tag and the plugins currently loaded). The menu row is set in
 [`modloader.ini`](#modloaderini). A splash window shows startup progress. In the main menu a
 bottom-left banner shows the build tag, plugin count and open key, plus a red note when an update
