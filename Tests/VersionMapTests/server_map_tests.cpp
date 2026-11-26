@@ -281,7 +281,7 @@ int main()
 		Check(map.builds.size() == 1 && map.builds[0].gameCL == 127004 && map.builds[0].imageStamp == 0x2E3595FF
 			&& map.builds[0].imageSize == 0x0E2A8000, "table: one build, the server exe (CL 127004, stamp 2E3595FF, size 0E2A8000)");
 		Check(!map.functions.empty() && map.functions.size() == VersionMap::kServerFunctionRows.size(), "table: every function row is in the map");
-		Check(map.functions.size() == 30, "table: 27 function starts, 2 data globals and the loader's GObjects row");
+		Check(map.functions.size() == 31, "table: 28 function starts, 2 data globals and the loader's GObjects row");
 		bool allOnServer = true, allAddress = true;
 		int starts = 0, data = 0, scoped = 0;
 		for (const VersionMap::MapFunctionRow& f : map.functions)
@@ -295,7 +295,7 @@ int main()
 		}
 		Check(allOnServer, "table: every function row names the server exe");
 		Check(allAddress, "table: every function row is an address with no pattern (a start or a global, with a fingerprint only on the loader's key)");
-		Check(starts == 27 && data == 2 && scoped == 1, "table: 27 function starts, GNames and GWorld as data, and one scoped key");
+		Check(starts == 28 && data == 2 && scoped == 1, "table: 28 function starts, GNames and GWorld as data, and one scoped key");
 
 		// Field rows: every one is on the build, no absent rows, and a size row is a class key (no "::") at offset 0.
 		Check(map.fields.size() == VersionMap::kServerFields.size() && map.fields.size() == 113, "table: every field row is in the map (93 members, 20 sizes)");
@@ -348,6 +348,8 @@ int main()
 				anchors = anchors && f.offset == 0x5E0 && f.size == 0x80;
 		}
 		Check(anchors, "table: the measured values for FTransform::Translation, CraftingMultiplier and ClassRepNodePolicies");
+		Check(At(Key("UAuItemsComponent::AddNewItem", kServer, {}, static_cast<Kind>(1)), 0x05FD95A0),
+			"table: UAuItemsComponent::AddNewItem serves its measured start");
 		const std::vector<uint32_t> builds = VersionMap::SupportedBuilds();
 		Check(builds.size() == 1 && builds[0] == 127004, "guard 1, SupportedBuilds: the server's build is the one its table lists");
 	}
@@ -371,7 +373,7 @@ int main()
 			refusedOtherCL    += !Key(index.key, kOtherCL, {}, kind).Succeeded();
 			refusedNoCL       += !Key(index.key, kNoCL, {}, kind).Succeeded();
 		}
-		Check(n == 29 && served == n, "guard 2, LookUp: every key serves its RVA on the server exe");
+		Check(n == 30 && served == n, "guard 2, LookUp: every key serves its RVA on the server exe");
 		// A key is served as the kind it was recorded with, and no other.
 		Check(!Key("GWorld", kServer).Succeeded() && !Key("UCrSaveSubsystem::GetSaveData", kServer, {}, Kind::Data).Succeeded(),
 			"guard 2, LookUp: a global is not served as a function start, nor a function start as data");

@@ -42,7 +42,7 @@ inline constexpr std::array<Build, 1> kServerBuilds = {{
 	{ 127004, 0x2E3595FF, 0x0E2A8000, "server steam_build 25642172" },
 }};
 
-inline constexpr std::array<FunctionRow, 30> kServerFunctionRows = {{
+inline constexpr std::array<FunctionRow, 31> kServerFunctionRows = {{
 	// ACrGameModeBase::GetProfessionForNewPlayer
 	{ 127004, 0x2E3595FF, 0x0E2A8000, 1, 0x00000000, false, nullptr, 0, -1, -1, 0x06E7DBB0, nullptr },
 	// ACrGameModeBase::PreLogin
@@ -69,6 +69,8 @@ inline constexpr std::array<FunctionRow, 30> kServerFunctionRows = {{
 	{ 127004, 0x2E3595FF, 0x0E2A8000, 4, 0x00000000, false, nullptr, 0, -1, -1, 0x0D50EE38, nullptr },
 	// ModLoader/GObjects (GUObjectArray.ObjObjects)
 	{ 127004, 0x2E3595FF, 0x0E2A8000, 6, 0xD7B4F6BF, false, nullptr, 0, -1, -1, 0x0D3A1A50, nullptr },
+	// UAuItemsComponent::AddNewItem
+	{ 127004, 0x2E3595FF, 0x0E2A8000, 1, 0x00000000, false, nullptr, 0, -1, -1, 0x05FD95A0, nullptr },
 	// UCrBaseCoreSubsystem::GetBaseCoresRangedBuilding
 	{ 127004, 0x2E3595FF, 0x0E2A8000, 1, 0x00000000, false, nullptr, 0, -1, -1, 0x06CD5E40, nullptr },
 	// UCrBuildingCustomNameSubsystem::GetBuildingCustomNameByReplicationHelper
@@ -334,7 +336,7 @@ inline constexpr std::array<FieldRow, 113> kServerFieldRows = {{
 	{ 127004, 0x840, 0x8, 0x00, nullptr },
 }};
 
-inline constexpr std::array<Index, 30> kServerFunctions = {{
+inline constexpr std::array<Index, 31> kServerFunctions = {{
 	{ "ACrGameModeBase::GetProfessionForNewPlayer", 0, 1 },
 	{ "ACrGameModeBase::PreLogin", 1, 1 },
 	{ "ACrGameStateBase::UpdatePause", 2, 1 },
@@ -348,23 +350,24 @@ inline constexpr std::array<Index, 30> kServerFunctions = {{
 	{ "GNames (NamePoolData)", 10, 1 },
 	{ "GWorld", 11, 1 },
 	{ "ModLoader/GObjects (GUObjectArray.ObjObjects)", 12, 1 },
-	{ "UCrBaseCoreSubsystem::GetBaseCoresRangedBuilding", 13, 1 },
-	{ "UCrBuildingCustomNameSubsystem::GetBuildingCustomNameByReplicationHelper", 14, 1 },
-	{ "UCrBuildingFunctionLibrary::AddTemperatureToEntity", 15, 1 },
-	{ "UCrDedicatedServerSettingsComp::ParseSettings", 16, 1 },
-	{ "UCrMassEnviroWaveSubsystem::AddEntitiesToWave", 17, 1 },
-	{ "UCrMassEnviroWaveSubsystem::RemoveEntitiesFromWave", 18, 1 },
-	{ "UCrMassPersistentIDSubsystem::GetOrAddIDForHandle", 19, 1 },
-	{ "UCrMassPersistentIDSubsystem::SetIDHandlePair", 20, 1 },
-	{ "UCrSaveSubsystem::GetSaveData", 21, 1 },
-	{ "UCrSaveSubsystem::OnPreLoadMap", 22, 1 },
-	{ "UCrSaveSubsystem::SaveNextSaveGame", 23, 1 },
-	{ "UMassSignalSubsystem::SignalEntities", 24, 1 },
-	{ "UMassSignalSubsystem::SignalEntity", 25, 1 },
-	{ "UObject::ProcessEvent", 26, 1 },
-	{ "UReplicationGraph::AddNetworkActor", 27, 1 },
-	{ "UReplicationGraph::RemoveNetworkActor", 28, 1 },
-	{ "UWorld::GetSubsystem<UMassEntitySubsystem>", 29, 1 },
+	{ "UAuItemsComponent::AddNewItem", 13, 1 },
+	{ "UCrBaseCoreSubsystem::GetBaseCoresRangedBuilding", 14, 1 },
+	{ "UCrBuildingCustomNameSubsystem::GetBuildingCustomNameByReplicationHelper", 15, 1 },
+	{ "UCrBuildingFunctionLibrary::AddTemperatureToEntity", 16, 1 },
+	{ "UCrDedicatedServerSettingsComp::ParseSettings", 17, 1 },
+	{ "UCrMassEnviroWaveSubsystem::AddEntitiesToWave", 18, 1 },
+	{ "UCrMassEnviroWaveSubsystem::RemoveEntitiesFromWave", 19, 1 },
+	{ "UCrMassPersistentIDSubsystem::GetOrAddIDForHandle", 20, 1 },
+	{ "UCrMassPersistentIDSubsystem::SetIDHandlePair", 21, 1 },
+	{ "UCrSaveSubsystem::GetSaveData", 22, 1 },
+	{ "UCrSaveSubsystem::OnPreLoadMap", 23, 1 },
+	{ "UCrSaveSubsystem::SaveNextSaveGame", 24, 1 },
+	{ "UMassSignalSubsystem::SignalEntities", 25, 1 },
+	{ "UMassSignalSubsystem::SignalEntity", 26, 1 },
+	{ "UObject::ProcessEvent", 27, 1 },
+	{ "UReplicationGraph::AddNetworkActor", 28, 1 },
+	{ "UReplicationGraph::RemoveNetworkActor", 29, 1 },
+	{ "UWorld::GetSubsystem<UMassEntitySubsystem>", 30, 1 },
 }};
 
 inline constexpr std::array<Index, 113> kServerFields = {{
