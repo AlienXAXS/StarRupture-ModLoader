@@ -433,9 +433,11 @@ namespace UI::ReadmeView
 			for (size_t i = 0; i < blocks.size(); ++i)
 			{
 				const ModIndex::Block& b = blocks[i];
-				// A picture's height changes when it loads, so pictures are always drawn.
+				// A picture's height changes when it loads and a code block's settles a frame after
+				// it is first drawn, so both are always drawn.
 				float& height = s_heights.heights[i];
-				if (height > 0.0f && b.kind != ModIndex::BlockKind::Image && !ImGui::IsRectVisible(ImVec2(key.width, height)))
+				const bool settles = b.kind == ModIndex::BlockKind::Image || b.kind == ModIndex::BlockKind::CodeBlock;
+				if (height > 0.0f && !settles && !ImGui::IsRectVisible(ImVec2(key.width, height)))
 				{
 					// The block's height includes the gap after its last item, which Dummy adds again.
 					ImGui::Dummy(ImVec2(0.0f, height - key.itemSpacing));
