@@ -46,6 +46,11 @@ namespace UI::PluginPanelRegistry
     void SetPanelOpen(PanelHandle handle);
     void SetPanelClose(PanelHandle handle);
 
+    // SetPanelClose on every open panel `module` draws, so its panel-closed
+    // callbacks run and it releases what it took. Any thread; calls plugins, so
+    // the caller holds no lock.
+    void CloseForModule(HMODULE module);
+
     // Collapse a panel to its title bar, or expand it again, and ask which it
     // is. A collapsed panel keeps its width, draws no renderFn and still draws
     // the plugin's title-bar buttons. Kept for the session, not saved. A null

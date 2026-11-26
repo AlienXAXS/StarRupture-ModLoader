@@ -5,6 +5,7 @@
 #include "net_timeout.h"
 #include "logging/logger.h"
 #include "plugins/plugin_guard.h"
+#include "UI/plugin_panel_registry.h"
 
 #if defined(MODLOADER_SERVER_BUILD) || defined(MODLOADER_CLIENT_BUILD)
 
@@ -2516,10 +2517,10 @@ namespace
         ModLoaderLogger::LogInfo(
             L"[Map] server rules: %zu mod(s) turned off as a whole by this server.", denied.size());
 
+        // A plugin still loading has no panel yet, so a load that gets here
+        // calls into no plugin.
         for (HMODULE module : newlyDenied)
-        {
-            // Close this module's open panels here: no lock of this file is held.
-        }
+            UI::PluginPanelRegistry::CloseForModule(module);
     }
 
     // Resolves the server's rule set against the features declared now and, when

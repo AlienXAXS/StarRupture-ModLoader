@@ -224,8 +224,11 @@ namespace UI::PluginPanelRegistry
     void SetPanelOpen(PanelHandle handle)
     {
         std::lock_guard<std::mutex> lock(s_mutex);
+        // A denied plugin's panel stays shut, so an allow does not bring up a
+        // window the player never opened.
         if (PanelEntry* e = FindEntry(handle))
-            e->isOpen = true;
+            if (!PluginGuard::IsDenied(reinterpret_cast<const void*>(e->desc->renderFn)))
+                e->isOpen = true;
     }
 
     void SetPanelClose(PanelHandle handle)
@@ -241,6 +244,19 @@ namespace UI::PluginPanelRegistry
         }
         if (wasOpen)
             FirePanelClosed(handle);
+    }
+
+    void CloseForModule(HMODULE module)
+    {
+        std::vector<PanelHandle> open;
+        {
+            std::lock_guard<std::mutex> lock(s_mutex);
+            for (auto& e : s_panels)
+                if (e.owner == module && e.isOpen)
+                    open.push_back(static_cast<PanelHandle>(&e));
+        }
+        for (PanelHandle handle : open)
+            SetPanelClose(handle);
     }
 
     bool IsPanelCollapsed(PanelHandle handle)
@@ -501,7 +517,8 @@ namespace UI::PluginPanelRegistry
     {
         std::lock_guard<std::mutex> lock(s_mutex);
         for (const auto& e : s_panels)
-            if (e.isOpen) return true;
+            if (e.isOpen && !PluginGuard::IsDenied(reinterpret_cast<const void*>(e.desc->renderFn)))
+                return true;
         return false;
     }
 
@@ -516,7 +533,8 @@ namespace UI::PluginPanelRegistry
                 _stricmp(entry.pluginName, pluginName) != 0)
                 continue;
             const char* label = entry.desc->buttonLabel ? entry.desc->buttonLabel : entry.desc->windowTitle;
-            if (imgui->Button(label))
+            if (imgui->Button(label) &&
+                !PluginGuard::IsDenied(reinterpret_cast<const void*>(entry.desc->renderFn)))
                 entry.isOpen = true;
         }
     }
@@ -590,6 +608,8 @@ namespace UI::PluginPanelRegistry
             const PanelEntry panel = *live;
             if (PluginGuard::IsOff(reinterpret_cast<const void*>(panel.desc->renderFn)))
                 continue;   // its plugin crashed and is switched off
+            if (PluginGuard::IsDenied(reinterpret_cast<const void*>(panel.desc->renderFn)))
+                continue;   // the joined server denies its plugin
 
             bool open = true;
             const bool nowCollapsed = panel.collapsed;
