@@ -87,20 +87,22 @@ The `.json` and `update_manifest_url` go together: both or neither.
 
 With a manifest, **Install** also takes your latest GitHub release when it is newer than your entry. The
 file in your entry is the oldest one a player gets. It is also what installs when the manifest can't be
-read, or your latest release doesn't fit the player's loader. To set this up:
+read, or when its interface range (step 4) leaves out the player's loader. To set this up:
 
 1. Put `version` and `download_url` in the manifest. Write the version as numbers, like `1.2.0`, in the
    manifest and in your entry.
 2. Make `download_url` the `.dll` of a release in the same repository:
    `https://github.com/<owner>/<repo>/releases/download/<tag>/<file>.dll`.
-3. Use the same file name as in your entry, in every release. If a newer release that fits the player's
-   loader points anywhere else, Install refuses it and installs nothing.
+3. Use the same file name as in your entry, in every release. A newer release that points anywhere else
+   installs nothing, unless step 4 skips it.
 4. To keep a release away from loaders it can't run on, give both `interface_version_min` and
-   `interface_version_max`.
+   `interface_version_max`. With only one of them, or neither, Install doesn't check this.
 5. If you like, add `download_sha256`, the file's SHA-256 (64 hex characters). The download must then
    match it.
 6. Keep the manifest under 1 MB, and attach it to the release as its own file. A bigger one installs
    nothing.
+7. Use only letters, digits, `.`, `-` and `_` in release tags. If your latest release's tag has anything
+   else, such as `+`, `/` or `@`, Install installs nothing.
 
 The index has no hash for a newer release. The loader checks that it is at most 32 MB, that it starts like a
 Windows program file, and that it matches the manifest's `download_sha256` if there is one.

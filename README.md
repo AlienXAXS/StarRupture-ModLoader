@@ -314,16 +314,17 @@ One click installs one mod:
 
 1. The loader downloads the mod from its GitHub release (https only, and only from GitHub's release
    download addresses). When the index entry names the author's release manifest, it takes the author's
-   latest release if that is newer than the index's version and works with your loader. Otherwise, or if it
-   can't read the manifest, it takes the file the index lists.
+   latest release if that is newer than the index's version. It takes the file the index lists instead when
+   the release isn't newer, when it can't read the manifest, or when the manifest gives both ends of a
+   plugin interface range and that range leaves out your ModLoader.
 2. It checks the file before it writes anything:
    - The file the index lists must match the size and SHA-256 in the index.
    - A newer release has no hash in the index. It must have the same file name, in the same GitHub
      repository, as the listed file. It can be at most 32 MB, must start like a Windows program file, and
-     must match the manifest's SHA-256 when the manifest gives one. If a newer release that works with
-     your loader points anywhere else, nothing is installed. Nothing is installed either if the release
-     manifest is over 1 MB or sends the loader to an address that isn't allowed. If it fails to download, the install fails; the listed file isn't used
-     instead.
+     must match the manifest's SHA-256 when the manifest gives one. Unless it is skipped for its interface
+     range, a newer release that points anywhere else installs nothing. Nothing is installed either if the
+     release manifest is over 1 MB or sends the loader to an address that isn't allowed. If the newer
+     release fails to download, the install fails; the listed file isn't used instead.
 3. It writes the plugin's `.dll` to `ModLoader\Plugins`, with its `.json` for the auto-updater when the
    entry lists one, and starts the plugin right away when it can. If it can't, the card says "Installed. It
    will be on after you restart the game."

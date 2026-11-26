@@ -66,7 +66,7 @@ Rules for a newer release:
 - The manifest has `version` (up to 32 letters, digits, `.`, `-`, `_` and `+`, such
   as `1.2.0`) and `download_url`.
 - `download_url` is a `.dll` release asset of the same repository with the same file name (letter case
-  aside) as the entry's `download_url`. If a newer release whose interface range fits the loader names
+  aside) as the entry's `download_url`. If a newer release that isn't skipped for its interface range names
   anything else, Install refuses it and installs nothing. If the entry's `version` has no number to compare, any other address is refused.
 - The index has no size or hash for it: the file is at most 32 MB, must start `MZ`, and must match the
   manifest's `download_sha256` (64 hex characters, optional) when there is one.
