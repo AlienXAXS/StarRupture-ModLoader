@@ -9,6 +9,7 @@
 
 #include <windows.h>
 #include <algorithm>
+#include <atomic>
 #include <mutex>
 #include <set>
 
@@ -28,6 +29,13 @@ namespace PluginHookReport
 {
     namespace
     {
+        // The plugin reads its flag with std::atomic_ref (PluginMapFeature::On), so
+        // every loader write goes through the same type.
+        void StoreFeatureOn(bool& flag, bool on)
+        {
+            std::atomic_ref<bool>(flag).store(on, std::memory_order_relaxed);
+        }
+
         // A feature a plugin declared in this session (IPluginHookScanner::
         // DeclareFeature). Its keys are matched by RecordFailure.
         struct Declared
@@ -248,7 +256,7 @@ namespace PluginHookReport
                 if (hostOff)
                 {
                     if (e.enabled)
-                        *e.enabled = HostRules::EffectiveOn(buildOn, hostOff);
+                        StoreFeatureOn(*e.enabled, HostRules::EffectiveOn(buildOn, hostOff));
                     if (!e.hostOff)
                     {
                         e.hostOff = true;
@@ -262,7 +270,7 @@ namespace PluginHookReport
                 {
                     e.hostOff = false;
                     if (e.enabled && buildOn)
-                        *e.enabled = HostRules::EffectiveOn(buildOn, hostOff);
+                        StoreFeatureOn(*e.enabled, HostRules::EffectiveOn(buildOn, hostOff));
                     if (RemoveHostOffLocked(e.plugin, e.preload, e.id))
                         changed = true;
                     if (buildOn)
@@ -564,7 +572,7 @@ namespace PluginHookReport
             }
             off->misses.push_back(FeatureMiss{ name, detail ? detail : "" });
             if (d.enabled)
-                *d.enabled = false;
+                StoreFeatureOn(*d.enabled, false);
         }
         if (covered)
             return;
@@ -597,7 +605,7 @@ namespace PluginHookReport
                 continue;
             covered = true;
             if (d.enabled)
-                *d.enabled = false;
+                StoreFeatureOn(*d.enabled, false);
             PendingKey p;
             p.plugin       = session->report.plugin;
             p.key          = name;
@@ -844,7 +852,7 @@ namespace PluginHookReport
                 continue;
             covered = true;
             if (d.enabled)
-                *d.enabled = false;
+                StoreFeatureOn(*d.enabled, false);
             if (std::any_of(session->absent.begin(), session->absent.end(),
                     [&](const AbsentKey& x) { return x.featureId == d.id && x.key == name; }))
                 continue;
@@ -891,7 +899,7 @@ namespace PluginHookReport
         d.configKeys = configKeys;
         d.enabled    = enabled;
         if (enabled)
-            *enabled = true;
+            StoreFeatureOn(*enabled, true);
         session->declared.push_back(std::move(d));
         return true;
     }
