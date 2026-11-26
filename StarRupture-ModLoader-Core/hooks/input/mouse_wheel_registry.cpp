@@ -153,7 +153,9 @@ namespace Hooks::MouseWheel
 					it = s_entries.erase(it);
 					continue;
 				}
-				toCall.push_back(*it);
+				// A denied plugin consumes nothing: the wheel goes on down the chain.
+				if (!PluginGuard::IsDenied(reinterpret_cast<const void*>(it->callback)))
+					toCall.push_back(*it);
 				++it;
 			}
 		}
