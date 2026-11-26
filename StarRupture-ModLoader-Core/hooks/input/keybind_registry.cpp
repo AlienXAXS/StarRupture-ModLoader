@@ -4,6 +4,7 @@
 #include "UI/imgui_backend.h"
 #include "logging/logger.h"
 #include "plugins/plugin_manager.h"
+#include "plugins/plugin_call_gate.h"
 #include "plugins/plugin_guard.h"
 
 #include <windows.h>
@@ -982,6 +983,8 @@ namespace Hooks::Input
 
 	void Dispatch(EModKey key, EModKeyModifiers mods, EModKeyEvent event)
 	{
+		const PluginCallGate::Scope gate;   // before the callbacks are read
+
 		// Snapshot callbacks under lock, then call without lock held
 		std::vector<PluginKeybindCallback> toCall;
 		{
@@ -1031,6 +1034,8 @@ namespace Hooks::Input
 	// -----------------------------------------------------------------------
 	void DispatchCombo(EModKey key, EModKeyModifiers mods, EModKeyEvent event)
 	{
+		const PluginCallGate::Scope gate;   // before the callbacks are read
+
 		// Snapshot both named-combo and advanced-combo lists under lock.
 		std::vector<PluginKeybindCallback>      namedToCall;
 		std::vector<PluginKeybindComboCallback> advToCall;

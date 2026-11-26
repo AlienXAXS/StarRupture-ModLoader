@@ -3,6 +3,7 @@
 #include "tick_profiler.h"
 #include "stack_sampler.h"
 #include "logging/logger.h"
+#include "plugins/plugin_call_gate.h"
 #include "plugins/plugin_guard.h"
 #include "plugins/plugin_manager.h"
 #include "plugins/reload_policy.h"
@@ -132,8 +133,11 @@ namespace Hooks::EngineTick
 		if (profileThisTick)
 			s_callbackMs.assign(g_pluginCallbacks.size(), 0.0);
 
+		// Not around the pumps above: a RELOAD asked for under a gate is put off
+		// to the next tick.
 		for (size_t i = 0; i < g_pluginCallbacks.size(); ++i)
 		{
+			const PluginCallGate::Scope gate;   // before the callback is read
 			if (g_pluginCallbacks[i])
 			{
 				LARGE_INTEGER cbStart{}, cbEnd{};

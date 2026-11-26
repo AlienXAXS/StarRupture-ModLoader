@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "experience_load_complete.h"
 #include "logging/logger.h"
+#include "plugins/plugin_call_gate.h"
 #include "plugins/plugin_guard.h"
 #include "memory_scanner/scanner.h"
 #include "../ufunction_resolve.h"
@@ -53,6 +54,7 @@ namespace Hooks::ExperienceLoadComplete
 		{
 			ModLoaderLogger::LogDebug(L"[ExperienceLoadComplete] Notifying %zu plugin(s)...", g_pluginCallbacks.size());
 
+			const PluginCallGate::Scope gate;   // before the callbacks are read
 			for (size_t i = 0; i < g_pluginCallbacks.size(); ++i)
 			{
 				if (!g_pluginCallbacks[i])

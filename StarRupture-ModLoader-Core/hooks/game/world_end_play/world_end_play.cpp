@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "world_end_play.h"
 #include "logging/logger.h"
+#include "plugins/plugin_call_gate.h"
 #include "plugins/plugin_guard.h"
 #include "memory_scanner/scanner.h"
 #include "../scan_patterns.h"
@@ -191,6 +192,7 @@ namespace Hooks::WorldEndPlay
 		if (!g_beforeCallbacks.empty())
 		{
 			ModLoaderLogger::LogDebug(L"[WorldEndPlay] Notifying %zu before callback(s)...", g_beforeCallbacks.size());
+			const PluginCallGate::Scope gate;   // before the callbacks are read
 			for (size_t i = 0; i < g_beforeCallbacks.size(); ++i)
 			{
 				if (g_beforeCallbacks[i])
@@ -214,6 +216,7 @@ namespace Hooks::WorldEndPlay
 		if (!g_afterCallbacks.empty())
 		{
 			ModLoaderLogger::LogDebug(L"[WorldEndPlay] Notifying %zu after callback(s)...", g_afterCallbacks.size());
+			const PluginCallGate::Scope gate;   // before the callbacks are read
 			for (size_t i = 0; i < g_afterCallbacks.size(); ++i)
 			{
 				if (g_afterCallbacks[i])

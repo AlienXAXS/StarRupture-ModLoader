@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "mass_spawner_activate.h"
 #include "logging/logger.h"
+#include "plugins/plugin_call_gate.h"
 #include "plugins/plugin_guard.h"
 #include "memory_scanner/scanner.h"
 #include "../scan_patterns.h"
@@ -29,6 +30,7 @@ namespace Hooks::MassSpawnerActivate
 		{
 			ModLoaderLogger::LogDebug(L"[MassSpawnerActivate] Running %zu Before callback(s)",
 			                          g_beforeCallbacks.size());
+			const PluginCallGate::Scope gate;   // before the callbacks are read
 			for (size_t i = 0; i < g_beforeCallbacks.size(); ++i)
 			{
 				if (!g_beforeCallbacks[i])
@@ -72,6 +74,7 @@ namespace Hooks::MassSpawnerActivate
 		if (!g_afterCallbacks.empty())
 		{
 			ModLoaderLogger::LogDebug(L"[MassSpawnerActivate] Running %zu After callback(s)", g_afterCallbacks.size());
+			const PluginCallGate::Scope gate;   // before the callbacks are read
 			for (size_t i = 0; i < g_afterCallbacks.size(); ++i)
 			{
 				if (!g_afterCallbacks[i])

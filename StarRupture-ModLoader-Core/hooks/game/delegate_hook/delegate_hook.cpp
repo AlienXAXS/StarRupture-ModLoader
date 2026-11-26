@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "delegate_hook.h"
 #include "logging/logger.h"
+#include "plugins/plugin_call_gate.h"
 #include "plugins/plugin_guard.h"
 #include "hooks/hooks_common.h"
 #include "hooks/memory/engine_allocator.h"
@@ -406,6 +407,8 @@ namespace Hooks::DelegateHook
 		{
 			const HookHandle handle = tls_pendingHandle;
 			tls_pendingHandle = 0;
+
+			const PluginCallGate::Scope gate;   // before the callback is read
 
 			DelegateCallback cb = nullptr;
 			void* userContext = nullptr;

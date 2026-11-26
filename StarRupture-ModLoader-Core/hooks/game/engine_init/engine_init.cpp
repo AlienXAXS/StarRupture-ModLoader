@@ -1,6 +1,7 @@
 ﻿#include "pch.h"
 #include "engine_init.h"
 #include "logging/logger.h"
+#include "plugins/plugin_call_gate.h"
 #include "plugins/plugin_guard.h"
 #include "logging/log.h"
 #include "logging/game_log_filter.h"
@@ -156,6 +157,7 @@ namespace Hooks::EngineInit
 		{
 			ModLoaderLogger::LogDebug(L"[EngineInit] Notifying %zu plugin(s)...", g_pluginCallbacks.size());
 
+			const PluginCallGate::Scope gate;   // before the callbacks are read
 			for (size_t i = 0; i < g_pluginCallbacks.size(); ++i)
 			{
 				if (!g_pluginCallbacks[i])

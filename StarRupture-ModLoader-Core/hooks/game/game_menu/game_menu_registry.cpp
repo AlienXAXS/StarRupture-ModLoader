@@ -4,6 +4,7 @@
 #include "game_menu_registry.h"
 #include "game_menu.h"
 #include "logging/logger.h"
+#include "plugins/plugin_call_gate.h"
 #include "plugins/plugin_guard.h"
 #include "core/ui_state.h"
 
@@ -324,6 +325,8 @@ namespace GameMenu::Registry
 
 	void Invoke(int slot)
 	{
+		const PluginCallGate::Scope gate;   // before the callback is read
+
 		if (slot < 0 || slot >= kMaxEntries)
 			return;
 

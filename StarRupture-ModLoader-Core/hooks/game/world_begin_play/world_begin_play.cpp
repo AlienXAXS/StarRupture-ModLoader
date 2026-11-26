@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "world_begin_play.h"
 #include "logging/logger.h"
+#include "plugins/plugin_call_gate.h"
 #include "plugins/plugin_guard.h"
 #include "memory_scanner/scanner.h"
 #include "../scan_patterns.h"
@@ -99,6 +100,7 @@ namespace Hooks::WorldBeginPlay
 			ModLoaderLogger::LogDebug(L"[WorldBeginPlay] Notifying %zu any-world callback(s) for '%S'...",
 			                          g_anyWorldCallbacks.size(), worldName.c_str());
 
+			const PluginCallGate::Scope gate;   // before the callbacks are read
 			for (size_t i = 0; i < g_anyWorldCallbacks.size(); ++i)
 			{
 				if (!g_anyWorldCallbacks[i])
@@ -143,6 +145,7 @@ namespace Hooks::WorldBeginPlay
 			ModLoaderLogger::LogDebug(L"[WorldBeginPlay] Notifying %zu ChimeraMain plugin(s)...",
 			                          g_pluginCallbacks.size());
 
+			const PluginCallGate::Scope gate;   // before the callbacks are read
 			for (size_t i = 0; i < g_pluginCallbacks.size(); ++i)
 			{
 				if (!g_pluginCallbacks[i])

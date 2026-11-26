@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "mouse_wheel_registry.h"
 #include "logging/logger.h"
+#include "plugins/plugin_call_gate.h"
 #include "plugins/plugin_guard.h"
 
 #include <windows.h>
@@ -132,6 +133,8 @@ namespace Hooks::MouseWheel
 
 		// Snapshot under the lock, call without it: a handler may register or
 		// unregister (itself included) from inside the callback.
+		const PluginCallGate::Scope gate;   // before the callbacks are read
+
 		std::vector<Entry> toCall;
 		{
 			std::lock_guard<std::mutex> lock(s_mutex);

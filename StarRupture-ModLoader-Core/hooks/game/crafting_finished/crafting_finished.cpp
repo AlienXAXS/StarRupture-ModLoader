@@ -2,6 +2,7 @@
 #include "crafting_finished.h"
 #include "core/sdk_globals.h"
 #include "logging/logger.h"
+#include "plugins/plugin_call_gate.h"
 #include "plugins/plugin_guard.h"
 #include "memory_scanner/scanner.h"
 #include "../scan_patterns.h"
@@ -37,6 +38,7 @@ namespace Hooks::CraftingFinished
 		int32_t entitySerial = static_cast<int32_t>((entityHandle >> 32) & 0xFFFFFFFFu);
 
 		// Notify registered plugins
+		const PluginCallGate::Scope gate;   // before the callbacks are read
 		for (size_t i = 0; i < g_pluginCallbacks.size(); ++i)
 		{
 			if (!g_pluginCallbacks[i])

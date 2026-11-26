@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "ui_state.h"
 #include "logging/logger.h"
+#include "plugins/plugin_call_gate.h"
 #include "plugins/plugin_guard.h"
 
 #include <atomic>
@@ -161,6 +162,8 @@ namespace UIState
 		s_state.store(state, std::memory_order_release);
 		if (s_count.load(std::memory_order_relaxed) == 0)
 			return;
+
+		const PluginCallGate::Scope gate;   // before the callbacks are read
 
 		// Decide under the lock, call without it: a callback may register or
 		// unregister (itself included).
