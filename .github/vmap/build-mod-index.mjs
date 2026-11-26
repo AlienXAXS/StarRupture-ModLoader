@@ -40,7 +40,7 @@ export const MAX_BODY_BYTES = 256 * 1024 - 256;
 const PAGE_HOSTS = ['nexusmods.com', 'www.nexusmods.com', 'github.com', 'www.github.com'];
 const README_HOSTS = ['raw.githubusercontent.com'];
 const MAX_REQUIRES = 8;
-const MAX_ID_BYTES = 64;
+const MAX_ID_BYTES = 64;   // the loader's kMaxIdLen (mod_index.h): it cuts an id here, so a longer one is refused
 
 export class Refused extends Error {}
 const need = (cond, msg) => { if (!cond) throw new Refused(msg); };
@@ -140,7 +140,9 @@ export function checkIndex(bytes) {
     const who = `entry ${i + 1}${typeof e?.id === 'string' && e.id !== '' ? ` (${e.id})` : ''}`;
     need(e !== null && typeof e === 'object' && !Array.isArray(e), `${who} is not an object`);
     need(hasText(e.id), `${who} has no id`);
-    const id = e.id.replace(/[\x00-\x1f\x7f]/g, ' ').trim().toLowerCase();
+    const cleaned = e.id.replace(/[\x00-\x1f\x7f]/g, ' ').trim();
+    need(Buffer.byteLength(cleaned) <= MAX_ID_BYTES, `${who}: the id is longer than ${MAX_ID_BYTES} bytes`);
+    const id = cleaned.toLowerCase();
     need(!seen.has(id), `${who}: the id is already used by an earlier entry`);
     seen.add(id);
     need(hasText(e.name), `${who} has no name`);

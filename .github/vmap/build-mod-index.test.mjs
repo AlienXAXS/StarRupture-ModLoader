@@ -182,6 +182,12 @@ test('refuses an id another entry already has, however it is cased or padded', (
   assert.equal(outcome(() => build([entry(), entry({ id: 'codex2' })])), 'ok');
 });
 
+test('refuses an id longer than the loader keeps', () => {
+  const long = 'a'.repeat(64);
+  assert.equal(outcome(() => build([entry({ id: long })])), 'ok');
+  assert.match(outcome(() => build([entry({ id: `${long}b` })])), /^refused: entry 1 .*the id is longer than 64 bytes/);
+});
+
 test('every install entry of the real index names one version', () => {
   for (const e of JSON.parse(readFileSync(REAL_INDEX, 'utf8'))) {
     if (e.download_url) assert.ok(e.download_url.includes(`/releases/download/v${e.version}/`), e.id);
