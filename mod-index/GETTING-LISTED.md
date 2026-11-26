@@ -20,7 +20,7 @@ with `https://github.com/`, and no other site works.
 
 ## 2. Work out the SHA-256 and the size
 
-The index lists the SHA-256 and the size of the file, and the loader checks both before it writes anything.
+The index lists the SHA-256 and the size of the file, and the loader checks both before it writes that file.
 In a Windows command prompt, with the file in the current folder:
 
 ```
@@ -85,6 +85,24 @@ auto-updater keeps the plugin current:
 
 The `.json` and `update_manifest_url` go together: both or neither.
 
+With a manifest, **Install** also takes your latest GitHub release when it is newer than your entry. The
+file in your entry is the oldest one a player gets. It is also what installs when the manifest can't be
+read, or your latest release doesn't fit the player's loader. To set this up:
+
+1. Put `version` and `download_url` in the manifest. Write the version as numbers, like `1.2.0`, in the
+   manifest and in your entry.
+2. Make `download_url` the `.dll` of a release in the same repository:
+   `https://github.com/<owner>/<repo>/releases/download/<tag>/<file>.dll`.
+3. Use the same file name as in your entry, in every release. If a newer release points anywhere else,
+   Install refuses it and installs nothing.
+4. To keep a release away from loaders it can't run on, give both `interface_version_min` and
+   `interface_version_max`.
+5. If you like, add `download_sha256`, the file's SHA-256 (64 hex characters). The download must then
+   match it.
+
+The index has no hash for a newer release. The loader checks that it is at most 32 MB, that it starts like a
+Windows program file, and that it matches the manifest's `download_sha256` if there is one.
+
 ## 4. Write the name, author and summary so people find it
 
 The search box matches what a player types against your `name`, `author` and `summary`, in any case and in
@@ -139,6 +157,11 @@ On the PR, a second check downloads your release file and confirms the size, the
 
 ## When you release again
 
-A new version is a new release with its own file. Change `version`, `download_url`, `download_sha256` and
-`download_size` together in your entry, and keep the old release's file where it is. If the file behind a
-listed address changes, Install refuses it.
+A new version is a new release with its own file. Keep the old release's file where it is. If the file
+behind a listed address changes, Install refuses that file.
+
+- With a manifest (step 3), Install picks up your new release by itself. Updating your entry is optional. Do
+  it when you want the new version to be the oldest one a player can get.
+- Without a manifest, update your entry.
+
+To update your entry, change `version`, `download_url`, `download_sha256` and `download_size` together.

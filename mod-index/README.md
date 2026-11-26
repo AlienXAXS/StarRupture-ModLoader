@@ -54,18 +54,37 @@ An entry with the install fields (`download_url`, `download_sha256`, `download_s
 when the `.json` is listed, `update_manifest_url`) gets an **Install** button on its card. Give all of them
 or none. When one is missing or wrong, the loader still lists the entry, with **Open page** and no Install.
 
-What Install does: it downloads `download_url`, checks the size and the SHA-256 against the entry, and only
-then writes `install_files` to `ModLoader\Plugins`. It never replaces a file that is already there.
+What Install does: with an `update_manifest_url`, it reads that release manifest first. It takes the
+manifest's `download_url` when the manifest's `version` is higher than the entry's `version` and its
+interface range, if it gives both ends, fits the loader. Otherwise (no `update_manifest_url`, a manifest it
+can't read, or nothing newer that fits) it takes the entry's `download_url` and checks the size and the
+SHA-256 against the entry. Only a file that passes is written, as `install_files`, to
+`ModLoader\Plugins`. Install never replaces a file that is already there.
+
+Rules for a newer release:
+
+- The manifest is at most 64 KB and has `version` (up to 32 letters, digits, `.`, `-`, `_` and `+`, such
+  as `1.2.0`) and `download_url`.
+- `download_url` is a `.dll` release asset of the same repository with the same file name (letter case
+  aside) as the entry's `download_url`. If a newer release names anything else, Install refuses it and
+  installs nothing. If the entry's `version` has no number to compare, any other address is refused.
+- The index has no size or hash for it: the file is at most 32 MB, must start `MZ`, and must match the
+  manifest's `download_sha256` (64 hex characters, optional) when there is one.
+- Once the newer release is chosen, a download that fails is a failed install. The entry's file is not
+  installed instead.
 
 Rules for the download:
 
 - `https://github.com/<owner>/<repo>/releases/download/...` only, and the owner and repository must be the
   ones in `page_url`. The loader follows GitHub's own redirect to its release download hosts
-  (`release-assets.githubusercontent.com` and `objects.githubusercontent.com`) and nothing else.
+  (`release-assets.githubusercontent.com` and `objects.githubusercontent.com`) and nothing else. For the
+  manifest it first follows GitHub's step from `releases/latest/download/<name>` to
+  `releases/download/<tag>/<name>` in the same repository.
 - A file attached to a GitHub release. Not another host, not a link to a branch, not a zip of the source.
-- Never replace a file after it is listed. A new version is a new release with its own file, and the
-  entry's `version`, `download_url`, `download_sha256` and `download_size` change together. If the file
-  behind a listed address changes, Install refuses it.
+- Never replace a file after it is listed. A new version is a new release with its own file. To list it,
+  change the entry's `version`, `download_url`, `download_sha256` and `download_size` together. With an
+  `update_manifest_url` that is optional: the listed file stays the oldest one a player gets and the
+  fallback. If the file behind a listed address changes, Install refuses that file.
 
 To get the SHA-256 and the size on Windows, with the file in the current folder:
 

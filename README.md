@@ -7,7 +7,7 @@ Like this project? Give it a star here on GitHub!
 
 ## Find and install mods <sup>[✦](#msantoro12)</sup>
 
-You can find every mod from inside the mod loader. Open the **Browse** tab in the mod loader window. Client mods install and update from there: pick a mod and press **Install**. They are signed and install from the author's GitHub release. Server mods (marked Server) link to their page. The Mod Loader and AlienX's client mods now install from Nexus with Vortex. **Open page** on a card takes you to the mod's page. See [Browse tab](#browse-tab-).
+You can find every mod from inside the mod loader. Open the **Browse** tab in the mod loader window. Client mods install and update from there: pick a mod and press **Install**. The mod list is signed, and mods install from the author's GitHub releases. Server mods (marked Server) link to their page. The Mod Loader and AlienX's client mods now install from Nexus with Vortex. **Open page** on a card takes you to the mod's page. See [Browse tab](#browse-tab-).
 
 ---
 
@@ -313,8 +313,16 @@ any other server error, and "The mod list is larger than allowed." for a downloa
 One click installs one mod:
 
 1. The loader downloads the mod from its GitHub release (https only, and only from GitHub's release
-   download addresses).
-2. It checks the file's size and SHA-256 against the index. Nothing is written to disk unless both match.
+   download addresses). When the index entry names the author's release manifest, it takes the author's
+   latest release if that is newer than the index's version and works with your loader. Otherwise, or if it
+   can't read the manifest, it takes the file the index lists.
+2. It checks the file before it writes anything:
+   - The file the index lists must match the size and SHA-256 in the index.
+   - A newer release has no hash in the index. It must have the same file name, in the same GitHub
+     repository, as the listed file. It can be at most 32 MB, must start like a Windows program file, and
+     must match the manifest's SHA-256 when the manifest gives one. If a newer release points anywhere
+     else, nothing is installed. If it fails to download, the install fails; the listed file isn't used
+     instead.
 3. It writes the plugin's `.dll` to `ModLoader\Plugins`, with its `.json` for the auto-updater when the
    entry lists one, and starts the plugin right away when it can. If it can't, the card says "Installed. It
    will be on after you restart the game."
@@ -346,8 +354,9 @@ when nothing fits.
 **Install and the signed list.** Install works only from a signed list: the loader's built-in index, or a
 list you set yourself with `ModIndexUrl` that serves the signed file. A list from your own address that
 isn't signed shows the line "This list isn't signed. It comes from the address you set yourself. Nothing
-can be installed from it." You can still read its cards, but Install is refused. The SHA-256 the loader
-checks comes from the list.
+can be installed from it." You can still read its cards, but Install is refused. The list says which
+GitHub repository and file a mod installs from, the oldest version you get, and the size and SHA-256 of
+that file.
 
 A card whose plugin has a README shows a **README** button. It opens a page inside the window with the
 author's README from their GitHub repo, text and pictures; **Back** returns to the list. The page shows
