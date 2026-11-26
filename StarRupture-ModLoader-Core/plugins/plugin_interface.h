@@ -1020,7 +1020,7 @@
 //
 #define PLUGIN_INTERFACE_VERSION_MIN 70
 #define PLUGIN_INTERFACE_VERSION_MAX 83
-#define PLUGIN_INTERFACE_VERSION 82
+#define PLUGIN_INTERFACE_VERSION 83
 
 // The lowest level every loader since v1.23.0 accepts (their MAX is 75 or higher). A plugin that
 // does not set PLUGIN_NEEDS_INTERFACE gets this one.
@@ -3284,11 +3284,15 @@ struct IPluginNetworkChannel
 	//   1  queued.
 	//   0  not ready. To the server: no connection, or IsServerReady() is false.
 	//      To a client: it has not reported its plugins yet, or the controller
-	//      has no connection (the listen host's own controller has none).
+	//      has no connection (the listen host's own controller has none). Also
+	//      returned when the send itself fails.
 	//  -1  the other side does not have targetPlugin loaded. To the server this
 	//      is known only from a list the server sends after you join; until it
 	//      arrives, or from an older server, the packet goes out and returns 1.
-	//      The list can be out of date if the server loads a plugin later.
+	//      A server with these sends sends its list again about a second after
+	//      its plugins change; an older one sends it only when you report, so a
+	//      plugin it loads later returns -1 until then. A very long list can be
+	//      cut short, and a plugin left out of it returns -1.
 	//  -2  bad arguments, nothing sent: a null self, controller, name or tag; an
 	//      empty name or tag, or one over 256 bytes or holding a control
 	//      character; a name holding ':' or starting with '$' (the loader's
@@ -3296,8 +3300,11 @@ struct IPluginNetworkChannel
 	//  -3  wrong side: SendPacketToServerPlugin on the authority, or
 	//      SendPacketToClientPlugin anywhere else.
 	//
-	// A size of 0 is allowed. No plugin version is checked, so put your own
-	// protocol version in the payload. 1 does not promise that the target
+	// A size of 0 is allowed. The sender's version is not checked, so put your
+	// own protocol version in the payload. One check can still drop a packet
+	// after a 1: if the client also has a plugin with the target's name, at a
+	// version the loader does not pair with the server's copy, the server drops
+	// what that client sends it. 1 does not promise that the target
 	// registered a handler. Call them from the game thread, as for
 	// SendPacketToServer and SendPacketToClient: the loader does not move a send
 	// to the game thread for you.

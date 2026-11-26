@@ -1688,7 +1688,7 @@ static void TestAddressedSend()
     const std::string over(kMaxSendTextLen + 1, 'n');
     Check(IsAddressableName(full.c_str()) && !IsAddressableName(over.c_str()), "names stop at 256 bytes");
     Check(IsAddressableTag(full.c_str()) && !IsAddressableTag(over.c_str()), "tags stop at 256 bytes");
-    Check(IsAddressableTag("su.cheat") && IsAddressableTag("ns::Type") && IsAddressableTag("$x"),
+    Check(IsAddressableTag("op.request") && IsAddressableTag("ns::Type") && IsAddressableTag("$x"),
         "a tag may hold ':' and '$'");
     Check(!IsAddressableTag(nullptr) && !IsAddressableTag("") && !IsAddressableTag("a\x01"),
         "null, empty and control-byte tags are refused");
