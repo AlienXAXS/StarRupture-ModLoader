@@ -168,11 +168,13 @@ namespace NetworkChannel
 
 #ifdef MODLOADER_CLIENT_BUILD
     // -----------------------------------------------------------------------
-    // A plugin's features were just declared (client builds only)
+    // A plugin's features were just declared, or its DLL is about to be
+    // initialized (client builds only)
     //
-    // Resolves a joined server's rules against them, so a plugin that loads
-    // while connected has its denied features off before PluginInit. The tick
-    // cannot do this: a clean load moves nothing it watches.
+    // Resolves a joined server's rules again, so a plugin that loads while
+    // connected has its denied features off, or is denied as a whole, before
+    // PluginInit. The tick cannot do this: a clean load moves nothing it
+    // watches.
     // -----------------------------------------------------------------------
     void PluginFeaturesDeclared();
 

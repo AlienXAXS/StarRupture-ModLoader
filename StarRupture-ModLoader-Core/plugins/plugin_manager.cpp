@@ -1052,6 +1052,9 @@ namespace PluginManager
 		plugin.self.hooks   = nullptr;   // populated below, after the scan phase
 		ReloadPolicy::SetBusyReason(&plugin.self, nullptr);   // a new instance starts not busy
 		PluginGuard::Track(plugin.hModule, plugin.cachedName.c_str());   // its callbacks are guarded from here on
+#ifdef MODLOADER_CLIENT_BUILD
+		NetworkChannel::PluginFeaturesDeclared();   // joined rules may deny it: settle that before it registers anything
+#endif
 
 		// Tell the plugin which interface level this loader has, before it runs anything
 		// of its own. A fault here is handled like a fault in PluginInit.

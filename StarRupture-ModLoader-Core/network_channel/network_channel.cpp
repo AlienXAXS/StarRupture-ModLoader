@@ -2175,6 +2175,8 @@ namespace
     static std::atomic<bool>        g_clientRulesValid{ false };
     static unsigned                 g_rulesEpoch = 0; // under g_clientRulesMutex
     static std::atomic<unsigned>    g_rulesHookGen{ 0 };
+    // The plugins the set turns off as a whole, as last handed to PluginGuard.
+    static std::vector<std::string> g_deniedPlugins; // under g_clientRulesMutex
     // v81. In effect only while the plugins' flags reflect g_clientRules.
     static HostRulesWire::RulesStateCell g_rulesState;
 
@@ -2209,6 +2211,8 @@ namespace
         {
             std::lock_guard<std::mutex> lk(g_clientRulesMutex);
             g_clientRules = HostRulesWire::RulesSet{};
+            g_deniedPlugins.clear();
+            PluginGuard::SetDenied({});
             g_rulesState.Cleared(); // before any flag is handed back
             ++g_rulesEpoch;
             g_clientRulesValid = false;
@@ -2486,6 +2490,35 @@ namespace
             SendFeatToServer();
     }
 
+    // Tells PluginGuard which loaded plugins `rules` turns off as a whole. It is
+    // set under g_clientRulesMutex with the epoch checked again, so a deny never
+    // outlives the server it came from. Game thread.
+    static void ApplyDeniedPlugins(const HostRulesWire::RulesSet& rules, unsigned epoch)
+    {
+        std::vector<std::string> denied;
+        for (std::string& name : PluginGuard::TrackedNames())
+            if (HostRulesWire::DeniedAsWhole(rules, name))
+                denied.push_back(std::move(name));
+        std::sort(denied.begin(), denied.end()); // the same plugins compare equal in any load order
+
+        std::vector<HMODULE> newlyDenied;
+        {
+            std::lock_guard<std::mutex> lk(g_clientRulesMutex);
+            if (!g_clientRulesValid || epoch != g_rulesEpoch) return;
+            if (denied == g_deniedPlugins) return;
+            g_deniedPlugins = denied;
+            newlyDenied = PluginGuard::SetDenied(denied);
+        }
+
+        ModLoaderLogger::LogInfo(
+            L"[Map] server rules: %zu mod(s) turned off as a whole by this server.", denied.size());
+
+        for (HMODULE module : newlyDenied)
+        {
+            // Close this module's open panels here: no lock of this file is held.
+        }
+    }
+
     // Resolves the server's rule set against the features declared now and, when
     // that differs from what is applied, hands the new list to the hook report.
     // Game thread: it writes the plugins' flags.
@@ -2500,6 +2533,8 @@ namespace
 
         // Read before resolving, so a feature declared in between is seen next tick.
         g_rulesHookGen = PluginHookReport::GetGeneration();
+
+        ApplyDeniedPlugins(rules, epoch);
 
         HostRulesWire::FeatPayload declared;
         for (const PluginHookReport::FeatureInfo& f : PluginHookReport::Features())

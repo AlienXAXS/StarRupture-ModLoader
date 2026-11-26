@@ -3,7 +3,9 @@
 #include <windows.h>
 #include <cstddef>
 #include <cstdint>
+#include <string>
 #include <type_traits>
+#include <vector>
 
 // ---------------------------------------------------------------------------
 // PluginGuard
@@ -80,6 +82,29 @@ namespace PluginGuard
 
 	// The module an address lives in, or null when it is in none.
 	HMODULE ModuleOf(const void* address);
+
+	// Denied = the joined server's host turned the plugin off as a whole: the
+	// loader skips its draws and presses; it still ticks. IsOff, Invoke and
+	// Call take no notice, so ticks, key releases and other callbacks run. Only
+	// a client build that joined a server sets it.
+
+	// The names of the tracked plugins, to choose the denied ones from. Any thread.
+	std::vector<std::string> TrackedNames();
+
+	// Replaces the denied names (matched without regard to case); an empty list
+	// lets every plugin back. A plugin tracked later starts denied when its name
+	// is listed. Returns the modules that were not denied before and are now.
+	// Any thread.
+	std::vector<HMODULE> SetDenied(const std::vector<std::string>& names);
+
+	// True when the plugin `address` lives in is denied. Lock-free, any thread;
+	// one relaxed atomic load while none is.
+	bool IsDenied(const void* address);
+
+	// The same by plugin name, for records that hold a name and no callback
+	// address. Takes a lock: for per-event work, not for a per-frame game
+	// detour. Any thread.
+	bool IsDeniedName(const char* pluginName);
 
 	// Drops every element of `v` whose callback lives in `module`; `addressOf`
 	// maps an element to that callback. Returns how many were dropped. The

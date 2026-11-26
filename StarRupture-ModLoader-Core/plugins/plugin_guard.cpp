@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "plugin_guard.h"
 #include "logging/logger.h"
+#include "plugins/host_rules.h"
 
 #include <atomic>
 #include <cstring>
@@ -17,6 +18,7 @@ namespace PluginGuard
 		std::atomic<uintptr_t>   base{ 0 };
 		std::atomic<uintptr_t>   end{ 0 };
 		std::atomic<bool>        off{ false };
+		std::atomic<bool>        denied{ false };
 		std::atomic<uint32_t>    code{ 0 };
 		std::atomic<const char*> callback{ nullptr };
 		char                     name[64] = {};
@@ -27,8 +29,10 @@ namespace PluginGuard
 
 	static Slot                  s_slots[kMaxModules];
 	static std::atomic<int>      s_offCount{ 0 };   // slots with off set: IsOff's fast path
+	static std::atomic<int>      s_deniedCount{ 0 }; // slots with denied set: IsDenied's fast path
 	static std::atomic<Reporter> s_reporter{ nullptr };
-	static std::mutex            s_mutex;           // Track, Untrack and switching a plugin off
+	static std::mutex            s_mutex;           // Track, Untrack, switching a plugin off, s_deniedNames
+	static std::vector<std::string> s_deniedNames;
 
 	// Callbacks that faulted at an address no module holds any more, each logged once.
 	static constexpr size_t      kMaxStale = 32;
@@ -75,6 +79,15 @@ namespace PluginGuard
 		s_reporter.store(reporter);
 	}
 
+	// Caller holds s_mutex.
+	static bool NameDenied(const char* name)
+	{
+		for (const std::string& denied : s_deniedNames)
+			if (HostRules::SamePlugin(denied, name))
+				return true;
+		return false;
+	}
+
 	void Track(HMODULE module, const char* pluginName)
 	{
 		if (!module) return;
@@ -99,6 +112,10 @@ namespace PluginGuard
 		free->code.store(0, std::memory_order_relaxed);
 		free->callback.store(nullptr, std::memory_order_relaxed);
 		free->end.store(ImageEnd(module), std::memory_order_relaxed);
+		const bool denied = NameDenied(free->name);
+		free->denied.store(denied, std::memory_order_relaxed);
+		if (denied)
+			s_deniedCount.fetch_add(1);
 		free->base.store(base, std::memory_order_release);
 	}
 
@@ -114,6 +131,8 @@ namespace PluginGuard
 			s.base.store(0, std::memory_order_release);
 			if (s.off.exchange(false))
 				s_offCount.fetch_sub(1);
+			if (s.denied.exchange(false))
+				s_deniedCount.fetch_sub(1);
 			return;
 		}
 	}
@@ -124,6 +143,50 @@ namespace PluginGuard
 			return false;
 		const Slot* s = SlotFor(reinterpret_cast<uintptr_t>(address));
 		return s && s->off.load(std::memory_order_acquire);
+	}
+
+	std::vector<std::string> TrackedNames()
+	{
+		std::vector<std::string> names;
+		std::lock_guard<std::mutex> lock(s_mutex);
+		for (const Slot& s : s_slots)
+			if (s.base.load(std::memory_order_relaxed))
+				names.emplace_back(s.name);
+		return names;
+	}
+
+	std::vector<HMODULE> SetDenied(const std::vector<std::string>& names)
+	{
+		std::vector<HMODULE> newlyDenied;
+		std::lock_guard<std::mutex> lock(s_mutex);
+		s_deniedNames = names;
+		for (Slot& s : s_slots)
+		{
+			const uintptr_t base = s.base.load(std::memory_order_relaxed);
+			if (!base) continue;
+			const bool denied = NameDenied(s.name);
+			if (s.denied.exchange(denied) == denied) continue;
+			s_deniedCount.fetch_add(denied ? 1 : -1);
+			if (denied)
+				newlyDenied.push_back(reinterpret_cast<HMODULE>(base));
+		}
+		return newlyDenied;
+	}
+
+	bool IsDenied(const void* address)
+	{
+		if (s_deniedCount.load(std::memory_order_relaxed) == 0)
+			return false;
+		const Slot* s = SlotFor(reinterpret_cast<uintptr_t>(address));
+		return s && s->denied.load(std::memory_order_acquire);
+	}
+
+	bool IsDeniedName(const char* pluginName)
+	{
+		if (!pluginName)
+			return false;
+		std::lock_guard<std::mutex> lock(s_mutex);
+		return NameDenied(pluginName);
 	}
 
 	bool GetFault(HMODULE module, Fault* out)
