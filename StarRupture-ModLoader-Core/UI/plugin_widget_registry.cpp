@@ -128,7 +128,8 @@ namespace UI::PluginWidgetRegistry
         for (const WidgetEntry& e : s_widgets)
         {
             const PluginWindowHints* hints = e.desc->windowHints;
-            if (e.isVisible && hints && (hints->extra_window_flags & PluginWindowFlags_MenuMouseWhereUncovered))
+            if (e.isVisible && hints && (hints->extra_window_flags & PluginWindowFlags_MenuMouseWhereUncovered) &&
+                !PluginGuard::IsDenied(reinterpret_cast<const void*>(e.desc->renderFn)))
                 return true;
         }
         return false;
@@ -171,6 +172,8 @@ namespace UI::PluginWidgetRegistry
             const WidgetEntry entry = *live;
             if (PluginGuard::IsOff(reinterpret_cast<const void*>(entry.desc->renderFn)))
                 continue;   // its plugin crashed and is switched off
+            if (PluginGuard::IsDenied(reinterpret_cast<const void*>(entry.desc->renderFn)))
+                continue;   // the joined server denies its plugin
 
             // Called without the lock, so the widget can call back into this
             // registry; tracked so an unload waits for it. Relocks on scope exit.
