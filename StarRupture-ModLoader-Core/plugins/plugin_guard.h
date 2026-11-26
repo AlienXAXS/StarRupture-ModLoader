@@ -97,6 +97,10 @@ namespace PluginGuard
 	// Any thread.
 	std::vector<HMODULE> SetDenied(const std::vector<std::string>& names);
 
+	// What the player reads where a denied plugin is turned away.
+	inline constexpr const char* kDeniedReason =
+		"Turned off by this server's rules. Ask the server's admin.";
+
 	// True when the plugin `address` lives in is denied. Lock-free, any thread;
 	// one relaxed atomic load while none is.
 	bool IsDenied(const void* address);

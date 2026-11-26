@@ -138,6 +138,12 @@ namespace PluginConsole
             return;
         }
 
+        if (PluginGuard::IsDenied(reinterpret_cast<const void*>(handler)))
+        {
+            out.Error("%s", PluginGuard::kDeniedReason);
+            return;
+        }
+
         std::vector<const char*> argv;
         argv.reserve(args.size());
         for (const std::string& a : args)
