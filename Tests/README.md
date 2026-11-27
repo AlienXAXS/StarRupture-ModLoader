@@ -347,6 +347,24 @@ build\tests\key_and_thread_tests.exe
 
 It prints one line per test and exits 0 when every check passes.
 
+## HookBrokerTests
+
+A console program like PanelUnloadTests, for the hook broker (`hooks/hook_broker.cpp`), cuts included.
+It compiles the loader's own `hook_broker.cpp` and `hooks_common.cpp` and puts real prologue patches
+on small functions it writes into its own pages; the logger is the only test double. After each
+change it reads every thunk slot back: each one must go to the detour of the first later link that is
+not cut, else to the trampoline, and the patched bytes must not have changed. It covers cutting and
+restoring the first, middle, last and all links, links added before and during a cut, removing links
+under every cut pattern, links with no module (never cut), and three threads calling a function while
+the cuts are switched 10,000 times. It ends itself after two minutes if it hangs.
+
+```
+msbuild Tests\HookBrokerTests\HookBrokerTests.vcxproj /p:Configuration="Client Release" /p:Platform=x64
+build	ests\hook_broker_tests.exe
+```
+
+It prints each test's name and any failed check, and exits 0 when every check passes.
+
 ## VersionMapTests
 
 A console program like LayoutCheckTests, for the loader's map keys (interface v72): a plugin's
