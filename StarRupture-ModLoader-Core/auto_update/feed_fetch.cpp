@@ -5,7 +5,10 @@
 #include "plugins/plugin_catalog.h"
 
 #include <atomic>
+#include <chrono>
 #include <cstdlib>
+#include <future>
+#include <memory>
 
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
@@ -30,10 +33,56 @@ namespace
 				return true;
 		return false;
 	}
+
+	// The feed's request and all it writes to: its thread can outlive the wait.
+	struct Request
+	{
+		std::string url, file, etag;
+		bool notModified = false;
+		std::atomic<bool> cancel{ false };
+		HttpGetOptions options;
+	};
+
+	struct Job
+	{
+		std::function<void()> request;
+		std::promise<void> ended;
+		HMODULE module;
+	};
+
+	DWORD WINAPI JobMain(void* argument)
+	{
+		HMODULE module;
+		{
+			const std::unique_ptr<Job> job(static_cast<Job*>(argument));
+			module = job->module;
+			try { job->request(); } catch (...) {}
+			job->ended.set_value();
+		}
+		FreeLibraryAndExitThread(module, 0);
+	}
 }
 
 namespace FeedFetch
 {
+	bool RunWithin(std::function<void()> request, unsigned limitMs)
+	{
+		HMODULE module = nullptr;
+		if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS, reinterpret_cast<LPCWSTR>(&JobMain), &module))
+			return false;
+		auto job = std::make_unique<Job>(Job{ std::move(request), {}, module });
+		const std::future<void> ended = job->ended.get_future();
+		const HANDLE thread = CreateThread(nullptr, 0, JobMain, job.get(), 0, nullptr);
+		if (!thread)
+		{
+			FreeLibrary(module);
+			return false;
+		}
+		job.release();   // the thread's now
+		CloseHandle(thread);
+		return ended.wait_for(std::chrono::milliseconds(limitMs)) == std::future_status::ready;
+	}
+
 	const char* WhyNot(const Config& cfg)
 	{
 		if (!cfg.autoUpdate)
@@ -57,20 +106,37 @@ namespace FeedFetch
 		// the answer the cache came from, an unchanged feed comes back as a 304.
 		VersionFeed::SignedFeed cache;
 		const bool haveCache = VersionFeed::ReadCache(cfg.cachePath, cfg.keys, cache, cfg.flavor);
-		std::string etag;
-		bool notModified = false;
-		HttpGetOptions options;
+		const auto request = std::make_shared<Request>();
+		request->url = cfg.url;
+		HttpGetOptions& options = request->options;
 		options.resolveMs = options.connectMs = options.sendMs = options.receiveMs = kOperationMs;
 		options.deadlineMs = kDeadlineMs;
 		options.maxBytes = VersionFeed::kMaxFileBytes;
 		options.allowPlainHttp = cfg.allowPlainHttp;
 		options.ifNoneMatch = haveCache ? ReadEtag(cfg.cachePath, cache.seq) : std::string();
-		options.etag = &etag;
-		options.notModified = &notModified;
+		options.etag = &request->etag;
+		options.notModified = &request->notModified;
 
 		g_requestedThisLaunch = true;
 		ModLoaderLogger::LogInfo(L"[VersionFeed] Checking for a newer version object map (%hs)", why);
-		const std::string file = HttpGet(cfg.url.c_str(), "version map feed", options);
+		const auto get = [request] { request->file = HttpGet(request->url.c_str(), "version map feed", request->options); };
+		if (cfg.flavor == VersionFeed::Flavor::Server)
+		{
+			// HttpGet looks at its deadline between steps only, and redirects and
+			// connect retries run inside one step, so the wait is bounded here.
+			options.cancel = &request->cancel;
+			if (!RunWithin(get, kDeadlineMs))
+			{
+				request->cancel = true;
+				ModLoaderLogger::LogInfo(L"[VersionFeed] The version object map request has not ended in %u ms and is given up on; the cache is as it was", kDeadlineMs);
+				return Result::Failed;
+			}
+		}
+		else
+			get();
+		const std::string& file = request->file;
+		const std::string& etag = request->etag;
+		const bool notModified = request->notModified;
 		if (notModified)
 		{
 			ModLoaderLogger::LogInfo(L"[VersionFeed] No newer version object map: seq %llu is current", static_cast<unsigned long long>(cache.seq));

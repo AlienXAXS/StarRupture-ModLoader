@@ -4,6 +4,7 @@
 #include "memory_scanner/version_map.h"
 
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -30,6 +31,9 @@
 // fetched with `[AutoUpdate] Enabled` off, with no URL compiled in for the
 // build or with no public key. A request that fails (offline, a 404, a
 // timeout, a bad signature, the other build's file) leaves the cache as it was.
+//
+// On the dedicated server the wait for the request ends after kDeadlineMs,
+// whatever WinHTTP is doing (RunWithin). An answer that comes later is dropped.
 // ---------------------------------------------------------------------------
 
 namespace FeedFetch
@@ -64,6 +68,13 @@ namespace FeedFetch
 		Unchanged,    // nothing newer: a 304, or a verified feed whose seq is not above the cache's
 		Stored,       // verified, newer, and now the cache
 	};
+
+	// Runs `request` on a thread of its own and waits at most limitMs for it.
+	// False when it has not ended by then, or no thread could be started. A
+	// request that is given up on runs on to its own end, so it must own all it
+	// touches; its thread holds a reference on this module until then. Not to be
+	// called under the loader lock.
+	bool RunWithin(std::function<void()> request, unsigned limitMs);
 
 	// One conditional GET of cfg.url, verified, then stored if its seq is above
 	// the cache's. The ETag of the answer is kept next to the cache, with the

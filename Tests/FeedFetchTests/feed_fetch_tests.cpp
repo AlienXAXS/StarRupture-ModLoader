@@ -21,6 +21,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <memory>
 #include <string>
 #include <thread>
 #include <vector>
@@ -317,6 +318,17 @@ namespace
 			{
 				const std::string h = Head(302, "Found", 0, "Location: /ok\r\n");
 				SendAll(c, h.data(), h.size());
+			}
+			else if (path.rfind("/slowhop?", 0) == 0)
+			{
+				// Seven answers, each inside one operation's timeout, 10.5 s in all.
+				const int hop = atoi(path.c_str() + 9);
+				Nap(1500);
+				const std::string next = "Location: /slowhop?" + std::to_string(hop + 1) + "\r\n";
+				const std::string h = hop < 7 ? Head(302, "Found", 0, next.c_str()) : Head(200, "OK", feed.size());
+				SendAll(c, h.data(), h.size());
+				if (hop >= 7)
+					SendAll(c, feed.data(), feed.size());
 			}
 			else if (path == "/missing")
 			{
@@ -1270,6 +1282,45 @@ int main()
 		char small[12];
 		Describe(81, a, small, sizeof(small));
 		Check(strlen(small) == sizeof(small) - 1 && strncmp(small, "Needs ModLoa", 11) == 0, "describe: cut to the buffer");
+	}
+
+	// ---- the wait with a limit -------------------------------------------------
+	{
+		// What the request touches is its own: it can outlive the wait.
+		struct Slow
+		{
+			HANDLE go = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+			HANDLE done = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+			~Slow() { CloseHandle(go); CloseHandle(done); }
+		};
+		const auto slow = std::make_shared<Slow>();
+		const auto t = Clock::now();
+		const bool ended = FeedFetch::RunWithin([slow] { WaitForSingleObject(slow->go, 10000); SetEvent(slow->done); }, 300);
+		const long long ms = MsSince(t);
+		Check(!ended && ms >= 250 && ms < 2000 && WaitForSingleObject(slow->done, 0) == WAIT_TIMEOUT,
+			"limit: a request that has not ended is given up on at the limit");
+		SetEvent(slow->go);
+		Check(WaitForSingleObject(slow->done, 5000) == WAIT_OBJECT_0, "limit: ...and runs on to its own end");
+		const auto value = std::make_shared<int>(0);
+		Check(FeedFetch::RunWithin([value] { *value = 7; }, 5000) && *value == 7, "limit: a request that ends in time is waited for");
+	}
+
+	// ---- the server's request has a limit in all -------------------------------
+	{
+		const std::wstring slow = TempPath(L"slowhop.cache");
+		DeleteFileW(slow.c_str());
+		DeleteFileW(EtagFile(slow).c_str());
+		srv.feed = ServerSignedFile(sk, 800);
+		srv.etag = "";
+		const FeedFetch::Config cfg = ConfigFor(srv, "/slowhop?1", keys, slow, VersionFeed::Flavor::Server);
+		const auto t = Clock::now();
+		const auto r = FeedFetch::Refresh(cfg, "test");
+		const long long ms = MsSince(t);
+		Check(r == FeedFetch::Result::Failed && ms < FeedFetch::kDeadlineMs + 1000,
+			"server: a chain of slow redirects is given up on at the limit");
+		printf("  slow redirects %lld ms\n", ms);
+		Sleep(4000);   // past the end of the chain
+		Check(!Exists(slow) && !Exists(EtagFile(slow)), "server: ...and what answers later is not stored");
 	}
 
 	// ---- an unroutable host ----------------------------------------------------
