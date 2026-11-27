@@ -489,7 +489,7 @@ namespace ModConsole
             const char* state = "Unloaded";
             if (s.isWrongTarget)        state = "Wrong target";
             else if (s.hookScanFailed)  state = "Hooks failed";
-            else if (s.isOutOfDate)     state = s.needsModLoaderUpdate ? "Needs loader" : "Needs update";
+            else if (s.isOutOfDate && !s.awaitingFree) state = s.needsModLoaderUpdate ? "Needs loader" : "Needs update";
             else if (s.isRemoved && !s.isLoaded) state = "Uninstalled";
             else if (s.isDisabled && !s.isLoaded) state = "Disabled";
             else if (s.isCrashed)       state = "Crashed";
@@ -1902,11 +1902,16 @@ namespace ModConsole
             // Queued, not run: the game thread picks this up on its next tick.
             // Everything the handler needs is captured by value, so it does not
             // matter how long that takes or whether the caller has moved on.
+            // A loader command is posted as the loader's own: counted as the
+            // asking plugin's it would run as a plugin call, so a reload or
+            // unload in it would be queued again and its result never sent.
+            // The sink and onComplete check for themselves that the plugin is
+            // still there.
             GameThreadDispatch::PostVoid([cmd, args, sink, onComplete]()
             {
                 RunHandler(cmd, args, sink);
                 if (onComplete) onComplete();
-            }, sink->Owner());
+            }, cmd.owner.empty() ? nullptr : sink->Owner());
             return;
         }
 

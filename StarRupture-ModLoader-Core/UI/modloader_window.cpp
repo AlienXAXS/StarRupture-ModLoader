@@ -536,7 +536,7 @@ namespace UI::ModLoaderWindow
                     ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "Cannot Load");
                 else if (s.hookScanFailed)
                     ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "Hooks Failed");
-                else if (s.isOutOfDate)
+                else if (s.isOutOfDate && !s.awaitingFree)
                     ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.1f, 1.0f), "Needs Update");
                 else if (s.isCrashed)
                 {
@@ -601,7 +601,7 @@ namespace UI::ModLoaderWindow
                     ImGui::SameLine();
                     ImGui::TextDisabled("A hook it needs could not be found in this game build");
                 }
-                else if (s.isOutOfDate)
+                else if (s.isOutOfDate && !s.awaitingFree)
                 {
                     if (s.needsModLoaderUpdate)
                     {

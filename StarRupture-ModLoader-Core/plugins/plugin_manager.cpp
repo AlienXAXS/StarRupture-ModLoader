@@ -405,10 +405,18 @@ namespace PluginManager
 	// What the plugin list and the console say, in place of the buttons and as
 	// the refusal, while a plugin is inside its PluginShutdown (isUnloading).
 	static constexpr const char* kUnloadingNow = "This plugin is being unloaded right now.";
-	static constexpr const char* kBusyNote =
-		"A plugin call is still running, so nothing was changed. Press RELOAD again.";
+	// An unload is also what the mod manager's Disable and Uninstall run, so its
+	// notes must not send anyone to RELOAD.
+	static constexpr const char* kReloadBusyNote =
+		"A plugin call is still running, so nothing was reloaded. Press RELOAD again.";
+	static constexpr const char* kUnloadBusyNote =
+		"A plugin call is still running, so nothing was unloaded. Try again.";
 	static constexpr const char* kShutDownNote =
 		"It is shut down but stays loaded: a plugin call was still running. Press RELOAD or UNLOAD again.";
+	static constexpr const char* kUnloadShutDownNote =
+		"It is shut down but stays loaded: a plugin call was still running. Press UNLOAD again.";
+	static constexpr const char* kRefusedStaysNote =
+		"It was not loaded, but its file stays in memory until you restart the game.";
 	static std::string BaseFileNameA(const std::wstring& path);
 	static void ShowCrashToast(const std::string& name, const std::string& text);
 
@@ -427,7 +435,13 @@ namespace PluginManager
 			++g_recordsInUse;   // UnloadAllPlugins must not drop the records
 			LeaveCriticalSection(&g_pluginLock);
 		}
-		PluginCallGate::FreeWhenIdle(module, name.c_str());
+		// No record keeps the module, so nothing can free it later, and a later
+		// load of this path would get this copy again.
+		if (!PluginCallGate::FreeWhenIdle(module, name.c_str()))
+		{
+			ModLoaderLogger::LogWarn(L"[PluginManager] '%S': %S", name.c_str(), kRefusedStaysNote);
+			ShowCrashToast(name, kRefusedStaysNote);
+		}
 		if (lockHeld)
 		{
 			EnterCriticalSection(&g_pluginLock);
@@ -1073,6 +1087,7 @@ namespace PluginManager
 
 	static bool ShutDownAndFree(LoadedPlugin& p);
 	static void ForgetRegistrations(LoadedPlugin&);
+	static void SayStillBusy(const std::string& name, const char* note, std::string* refusal);
 
 	// What the plugin says it is busy with. A plugin that crashed and was
 	// switched off is busy with nothing: a reason it set before the crash
@@ -1173,6 +1188,8 @@ namespace PluginManager
 			plugin.isOutOfDate   = true;
 			if (ShutDownAndFree(plugin))
 				ForgetEntryPoints(plugin);
+			else
+				SayStillBusy(plugin.cachedName, kShutDownNote, nullptr);
 		}
 		else if (initResult.retval)
 		{
@@ -1703,7 +1720,7 @@ namespace PluginManager
 	// Before anything is shut down: waits for the running plugin calls, and takes
 	// the time that took off waitMs, which the free then has left. False when
 	// they did not return, with nothing changed.
-	static bool CallsReturned(int index, DWORD& waitMs, std::string* refusal)
+	static bool CallsReturned(int index, DWORD& waitMs, const char* busyNote, std::string* refusal)
 	{
 		std::string name;
 		EnterCriticalSection(&g_pluginLock);
@@ -1718,7 +1735,7 @@ namespace PluginManager
 		const ULONGLONG start = GetTickCount64();
 		if (!PluginCallGate::WaitUntilIdle(waitMs))
 		{
-			SayStillBusy(name, kBusyNote, refusal);
+			SayStillBusy(name, busyNote, refusal);
 			return false;
 		}
 		const ULONGLONG waited = GetTickCount64() - start;
@@ -1732,7 +1749,7 @@ namespace PluginManager
 		if (QueuedOutOfCall(&UnloadPlugin, index, refusal))
 			return false;
 		DWORD waitMs = PluginCallGate::kWaitTimeoutMs;
-		if (!CallsReturned(index, waitMs, refusal))
+		if (!CallsReturned(index, waitMs, kUnloadBusyNote, refusal))
 			return false;
 		EnterCriticalSection(&g_pluginLock);
 
@@ -1774,7 +1791,7 @@ namespace PluginManager
 		if (freed)
 			ModLoaderLogger::LogMessage(L"Plugin unloaded: %S", name.c_str());
 		else
-			SayStillBusy(name, kShutDownNote, refusal);
+			SayStillBusy(name, kUnloadShutDownNote, refusal);
 		return freed;
 	}
 
@@ -1784,7 +1801,7 @@ namespace PluginManager
 		if (QueuedOutOfCall(&ReloadPlugin, index, refusal))
 			return false;
 		DWORD waitMs = PluginCallGate::kWaitTimeoutMs;
-		if (!CallsReturned(index, waitMs, refusal))
+		if (!CallsReturned(index, waitMs, kReloadBusyNote, refusal))
 			return false;
 		EnterCriticalSection(&g_pluginLock);
 
@@ -2433,7 +2450,7 @@ namespace PluginManager
 		for (size_t i = firstNew; i < g_loadedPlugins.size(); ++i)
 		{
 			LoadedPlugin& rec = *g_loadedPlugins[i];
-			if (rec.isInitialized || !rec.init)
+			if (rec.isInitialized || rec.isUnloading || rec.awaitingFree || !rec.init)
 				continue;
 
 			// The registrations in PluginInit report any one-time event they
