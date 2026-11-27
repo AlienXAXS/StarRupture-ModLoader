@@ -575,6 +575,35 @@ namespace ScanPatterns
 	// UCrSaveSubsystem::GetSaveData
 	inline constexpr auto UCrSaveSubsystem_GetSaveData =
 		"48 89 6C 24 10 48 89 74 24 18 57 41 56 41 57 48 83 EC ?? 8B 42 ?? 48 8D 79 ?? 49 8B E9 4D 8B F0 48 8B F2 85 C0 74 ?? 48 8B 12";
+
+	// UCrSaveSubsystem::OnPreLoadMap
+	inline constexpr auto UCrSaveSubsystem_OnPreLoadMap =
+		"40 53 48 83 EC ?? 48 8B D9 48 81 C1 ?? ?? ?? ?? E8 ?? ?? ?? ?? 48 8B 93 ?? ?? ?? ?? 48 85 D2 74 ?? 48 8D 0D ?? ?? ?? ?? E8 ?? ?? ?? ??";
+
+	// UMassSignalSubsystem::SignalEntities
+	inline constexpr auto UMassSignalSubsystem_SignalEntities =
+		"48 8B C4 48 89 50 10 55 48 81 EC ?? ?? ?? ?? 41 83 78 ?? 00 48 89 58 ?? 48 8B DA 48 89 70 ?? 48 8B F1 48 89 78 ??";
+
+	// UWorld::GetSubsystem<UMassEntitySubsystem>
+	// Taken from a call to it: its own code matches other subsystem getters. The
+	// match is the engine function UE::Mass::Utils::GetEntityManager(const
+	// UObject*), unique before the call. It gets the world and then this
+	// subsystem, the one that owns the entity manager, so it has no reason to ask
+	// for another, and as engine code it moves only with an engine change.
+	inline constexpr auto UWorld_GetSubsystem_UMassEntitySubsystem_CallSite =
+		"48 83 EC ?? 48 85 C9 74 ?? 48 8B 01 48 89 5C 24 ?? FF 90 ?? ?? ?? ?? 48 85 C0 74 ?? 48 8B C8 E8 ?? ?? ?? ?? 48 8B D8 48 85 C0 74 ??";
+
+	// UCrDedicatedServerSettingsComp::ParseSettings
+	inline constexpr auto UCrDedicatedServerSettingsComp_ParseSettings =
+		"48 8B C4 55 41 54 48 8D 6C 24 ?? 48 81 EC ?? ?? ?? ?? 48 89 58 ?? 48 8D 15 ?? ?? ?? ?? 4C 89 68 ?? 4C 89 70 ??";
+
+	// ACrGameModeBase::GetProfessionForNewPlayer
+	inline constexpr auto ACrGameModeBase_GetProfessionForNewPlayer =
+		"48 8B C4 48 89 50 10 55 53 41 56 48 8D 68 ?? 48 81 EC ?? ?? ?? ?? 48 89 70 ?? 4C 8B F2 33 F6 48 89 78 ??";
+
+	// ACrGameModeBase::PreLogin
+	inline constexpr auto ACrGameModeBase_PreLogin =
+		"48 89 5C 24 08 48 89 6C 24 10 48 89 74 24 18 57 41 56 41 57 48 83 EC ?? 80 3D ?? ?? ?? ?? 03 49 8B E9 4D 8B F0 4C 8B FA 48 8B F1 0F 82 ?? ?? ?? ??";
 #endif
 
 	// -----------------------------------------------------------------------
@@ -940,6 +969,12 @@ namespace ScanPatterns
 		{ "UCrMassPersistentIDSubsystem::GetOrAddIDForHandle", UCrMassPersistentIDSubsystem_GetOrAddIDForHandle, false },
 		{ "UCrMassPersistentIDSubsystem::SetIDHandlePair", UCrMassPersistentIDSubsystem_SetIDHandlePair, false },
 		{ "UCrSaveSubsystem::GetSaveData", UCrSaveSubsystem_GetSaveData, false },
+		{ "UCrSaveSubsystem::OnPreLoadMap", UCrSaveSubsystem_OnPreLoadMap, false },
+		{ "UMassSignalSubsystem::SignalEntities", UMassSignalSubsystem_SignalEntities, false },
+		{ "UWorld::GetSubsystem<UMassEntitySubsystem>", UWorld_GetSubsystem_UMassEntitySubsystem_CallSite, false, PatternKind::FunctionStart, 31 },
+		{ "UCrDedicatedServerSettingsComp::ParseSettings", UCrDedicatedServerSettingsComp_ParseSettings, false },
+		{ "ACrGameModeBase::GetProfessionForNewPlayer", ACrGameModeBase_GetProfessionForNewPlayer, false },
+		{ "ACrGameModeBase::PreLogin", ACrGameModeBase_PreLogin, false },
 #endif
 
 		// Optional: losing it only costs engine-command fallthrough in the -console window.
