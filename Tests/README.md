@@ -356,7 +356,9 @@ change it reads every thunk slot back: each one must go to the detour of the fir
 not cut, else to the trampoline, and the patched bytes must not have changed. It covers cutting and
 restoring the first, middle, last and all links, links added before and during a cut, removing links
 under every cut pattern, links with no module (never cut), and three threads calling a function while
-the cuts are switched 10,000 times. It ends itself after two minutes if it hangs.
+the cuts are switched 10,000 times. It also checks that the head slot already leads to the trampoline
+when a first patch is written, which it sees from the log line before the write. It ends itself after
+two minutes if it hangs.
 
 ```
 msbuild Tests\HookBrokerTests\HookBrokerTests.vcxproj /p:Configuration="Client Release" /p:Platform=x64
