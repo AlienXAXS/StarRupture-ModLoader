@@ -474,9 +474,8 @@ namespace ScanPatterns
 		"48 89 5C 24 ?? 55 56 57 41 54 41 55 41 56 41 57 48 8D 6C 24 ?? 48 81 EC ?? ?? ?? ?? 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 45 ?? 48 8B F9 4D 8B E0";
 
 #if defined(MODLOADER_SERVER_BUILD)
-	// Building placement, availability and resource gathering functions, server
-	// build only. Plugins ask for them by name; the server scan finds them on a
-	// new build with these.
+	// Game and engine functions, server build only. Plugins ask for them by name;
+	// the server scan finds them on a new build with these.
 
 	// ACrAPHelper::GetBoxCollisionResult
 	// The overload taking (FVector min, FVector max, TArray<AActor*>,
@@ -515,6 +514,43 @@ namespace ScanPatterns
 	// UCrSocketSnapPlacementMethod::GetSnappedSocket
 	inline constexpr auto UCrSocketSnapPlacementMethod_GetSnappedSocket =
 		"4C 89 4C 24 20 48 89 54 24 10 48 89 4C 24 08 55 53 57 41 55 41 57 48 8D AC 24 ?? ?? ?? ?? 48 81 EC ?? ?? ?? ?? 48 8B 85 ?? ?? ?? ?? 33 FF 49 8B D9 4D 8B E8";
+
+	// FCrCraftingFragment::StaticStruct
+	// Taken from a call to it: its own code matches other StaticStruct getters.
+	// The match is FCrMassReplicationProcessorCraftingHandler::CacheFragmentViews,
+	// unique before the call. That handler is for this one fragment and calls
+	// this getter once, so there is no second fragment type for the compiler to
+	// put in the same place. If the code up to the call changes, nothing matches.
+	inline constexpr auto FCrCraftingFragment_StaticStruct_CallSite =
+		"48 89 5C 24 18 48 89 74 24 20 57 48 83 EC ?? 48 8B FA 48 8B F1 E8 ?? ?? ?? ?? 48 8D 8F ?? ?? ?? ?? 8B D0 E8 ?? ?? ?? ?? 88 06 E8 ?? ?? ?? ?? 4C 8B 87 ?? ?? ?? ?? 48 8B DF";
+
+	// FCrMassEntityReplicationHelper::FCrMassEntityReplicationHelper
+	// The constructor taking (FMassEntityHandle, const UObject*).
+	inline constexpr auto FCrMassEntityReplicationHelper_ctor =
+		"48 89 5C 24 10 48 89 6C 24 18 48 89 74 24 20 57 48 83 EC ?? 33 ED C7 41 ?? FF FF FF FF 89 29 48 8B F9 48 89 69 ?? 49 8B F0 48 8D 4C 24 ??";
+
+	// FMassEntityManager::InternalGetFragmentDataPtr
+	// Taken from a call to it: its own code differs from look-alikes only in a
+	// constant that changes with the source. The match is
+	// ACrBaseCore::ShouldActiveCoolingWorking, unique before the call: a fragment
+	// type, then this lookup for the same entity, then a null test. The function
+	// reads two fragments this way and both reads call this one function, so their
+	// order does not matter. The null test keeps out a checked lookup, whose
+	// result is not tested.
+	inline constexpr auto FMassEntityManager_InternalGetFragmentDataPtr_CallSite =
+		"48 89 5C 24 08 48 89 74 24 10 57 48 83 EC ?? 48 8B DA 48 8B F1 E8 ?? ?? ?? ?? 4C 8B C0 48 8B D3 48 8B CE E8 ?? ?? ?? ?? 48 85 C0 74 ??";
+
+	// FMassEntityManager::IsEntityValid
+	inline constexpr auto FMassEntityManager_IsEntityValid =
+		"48 89 5C 24 08 48 89 74 24 20 48 89 54 24 10 57 48 83 EC ?? 48 8B DA 85 D2 74 ?? 0F B6 41 ?? 48 8D 79 ?? 48 8D 35 ?? ?? ?? ??";
+
+	// UCrBaseCoreSubsystem::GetBaseCoresRangedBuilding
+	inline constexpr auto UCrBaseCoreSubsystem_GetBaseCoresRangedBuilding =
+		"48 89 5C 24 10 48 89 6C 24 18 56 57 41 56 48 83 EC ?? 65 48 8B 04 25 ?? ?? ?? ?? 48 8B FA 8B 15 ?? ?? ?? ?? 48 8B F1 B9 ?? ?? ?? ?? 41 0F B6 E9";
+
+	// UCrBuildingCustomNameSubsystem::GetBuildingCustomNameByReplicationHelper
+	inline constexpr auto UCrBuildingCustomNameSubsystem_GetBuildingCustomNameByReplicationHelper =
+		"48 89 5C 24 08 48 89 6C 24 10 48 89 74 24 18 57 48 83 EC ?? 49 8B F9 49 8B D8 48 8B EA 48 8B F1 E8 ?? ?? ?? ?? 0F 10 03 4C 8D 44 24 ?? 4C 8B CF";
 #endif
 
 	// -----------------------------------------------------------------------
@@ -868,6 +904,12 @@ namespace ScanPatterns
 		{ "UCrBuildingComponent::GetPlacementResourceConditionResult", UCrBuildingComponent_GetPlacementResourceConditionResult, false },
 		{ "UCrBuildingStabilitySubsystem::IsSocketFree", UCrBuildingStabilitySubsystem_IsSocketFree, false },
 		{ "UCrSocketSnapPlacementMethod::GetSnappedSocket", UCrSocketSnapPlacementMethod_GetSnappedSocket, false },
+		{ "FCrCraftingFragment::StaticStruct", FCrCraftingFragment_StaticStruct_CallSite, false, PatternKind::FunctionStart, 42 },
+		{ "FCrMassEntityReplicationHelper::FCrMassEntityReplicationHelper", FCrMassEntityReplicationHelper_ctor, false },
+		{ "FMassEntityManager::InternalGetFragmentDataPtr", FMassEntityManager_InternalGetFragmentDataPtr_CallSite, false, PatternKind::FunctionStart, 35 },
+		{ "FMassEntityManager::IsEntityValid", FMassEntityManager_IsEntityValid, false },
+		{ "UCrBaseCoreSubsystem::GetBaseCoresRangedBuilding", UCrBaseCoreSubsystem_GetBaseCoresRangedBuilding, false },
+		{ "UCrBuildingCustomNameSubsystem::GetBuildingCustomNameByReplicationHelper", UCrBuildingCustomNameSubsystem_GetBuildingCustomNameByReplicationHelper, false },
 #endif
 
 		// Optional: losing it only costs engine-command fallthrough in the -console window.
