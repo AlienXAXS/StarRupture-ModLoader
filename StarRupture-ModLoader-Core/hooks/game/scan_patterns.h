@@ -551,6 +551,30 @@ namespace ScanPatterns
 	// UCrBuildingCustomNameSubsystem::GetBuildingCustomNameByReplicationHelper
 	inline constexpr auto UCrBuildingCustomNameSubsystem_GetBuildingCustomNameByReplicationHelper =
 		"48 89 5C 24 08 48 89 6C 24 10 48 89 74 24 18 57 48 83 EC ?? 49 8B F9 49 8B D8 48 8B EA 48 8B F1 E8 ?? ?? ?? ?? 0F 10 03 4C 8D 44 24 ?? 4C 8B CF";
+
+	// UCrBuildingFunctionLibrary::AddTemperatureToEntity
+	inline constexpr auto UCrBuildingFunctionLibrary_AddTemperatureToEntity =
+		"48 89 5C 24 20 48 89 54 24 10 55 48 83 EC ?? 0F 29 74 24 ?? 48 8B DA 0F 28 F2 E8 ?? ?? ?? ?? 48 8B E8";
+
+	// UCrMassEnviroWaveSubsystem::AddEntitiesToWave
+	inline constexpr auto UCrMassEnviroWaveSubsystem_AddEntitiesToWave =
+		"48 89 5C 24 18 48 89 54 24 10 48 89 4C 24 08 55 56 57 41 54 41 55 41 56 41 57 48 8D 6C 24 ?? 48 81 EC ?? ?? ?? ?? 48 8B DA 48 8B F9 E8 ?? ?? ?? ?? 48 8B C8 E8 ?? ?? ?? ??";
+
+	// UCrMassEnviroWaveSubsystem::RemoveEntitiesFromWave
+	inline constexpr auto UCrMassEnviroWaveSubsystem_RemoveEntitiesFromWave =
+		"48 89 5C 24 18 55 56 57 41 54 41 55 41 56 41 57 48 8D 6C 24 ?? 48 81 EC ?? ?? ?? ?? 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 45 ?? 48 8B DA 48 89 54 24 ?? 48 8B F9 48 89 4D ?? E8 ?? ?? ?? ?? 48 8B C8 E8 ?? ?? ?? ??";
+
+	// UCrMassPersistentIDSubsystem::GetOrAddIDForHandle
+	inline constexpr auto UCrMassPersistentIDSubsystem_GetOrAddIDForHandle =
+		"48 89 5C 24 10 4C 89 44 24 18 57 48 83 EC ?? 4C 8B D9 48 8D 99 ?? ?? ?? ?? 4D 8B D0 45 8B C8 49 C1 EA 20";
+
+	// UCrMassPersistentIDSubsystem::SetIDHandlePair
+	inline constexpr auto UCrMassPersistentIDSubsystem_SetIDHandlePair =
+		"4C 89 44 24 18 48 89 54 24 10 53 41 54 41 57 48 81 EC ?? ?? ?? ?? 44 8B 12 4C 8B E2 48 8B D9 44 3B 91 ?? ?? ?? ??";
+
+	// UCrSaveSubsystem::GetSaveData
+	inline constexpr auto UCrSaveSubsystem_GetSaveData =
+		"48 89 6C 24 10 48 89 74 24 18 57 41 56 41 57 48 83 EC ?? 8B 42 ?? 48 8D 79 ?? 49 8B E9 4D 8B F0 48 8B F2 85 C0 74 ?? 48 8B 12";
 #endif
 
 	// -----------------------------------------------------------------------
@@ -910,6 +934,12 @@ namespace ScanPatterns
 		{ "FMassEntityManager::IsEntityValid", FMassEntityManager_IsEntityValid, false },
 		{ "UCrBaseCoreSubsystem::GetBaseCoresRangedBuilding", UCrBaseCoreSubsystem_GetBaseCoresRangedBuilding, false },
 		{ "UCrBuildingCustomNameSubsystem::GetBuildingCustomNameByReplicationHelper", UCrBuildingCustomNameSubsystem_GetBuildingCustomNameByReplicationHelper, false },
+		{ "UCrBuildingFunctionLibrary::AddTemperatureToEntity", UCrBuildingFunctionLibrary_AddTemperatureToEntity, false },
+		{ "UCrMassEnviroWaveSubsystem::AddEntitiesToWave", UCrMassEnviroWaveSubsystem_AddEntitiesToWave, false },
+		{ "UCrMassEnviroWaveSubsystem::RemoveEntitiesFromWave", UCrMassEnviroWaveSubsystem_RemoveEntitiesFromWave, false },
+		{ "UCrMassPersistentIDSubsystem::GetOrAddIDForHandle", UCrMassPersistentIDSubsystem_GetOrAddIDForHandle, false },
+		{ "UCrMassPersistentIDSubsystem::SetIDHandlePair", UCrMassPersistentIDSubsystem_SetIDHandlePair, false },
+		{ "UCrSaveSubsystem::GetSaveData", UCrSaveSubsystem_GetSaveData, false },
 #endif
 
 		// Optional: losing it only costs engine-command fallthrough in the -console window.
