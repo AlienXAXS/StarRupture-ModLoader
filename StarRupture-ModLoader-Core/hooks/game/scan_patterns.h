@@ -473,6 +473,45 @@ namespace ScanPatterns
 	inline constexpr auto FHttpServerResponse_Create =
 		"48 89 5C 24 ?? 55 56 57 41 54 41 55 41 56 41 57 48 8D 6C 24 ?? 48 81 EC ?? ?? ?? ?? 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 45 ?? 48 8B F9 4D 8B E0";
 
+#if defined(MODLOADER_SERVER_BUILD)
+	// Building placement and unlock functions, server build only. Plugins ask
+	// for them by name; the server scan finds them on a new build with these.
+
+	// ACrAPHelper::GetBoxCollisionResult
+	// The overload taking (FVector min, FVector max, TArray<AActor*>,
+	// TArray<TSubclassOf<AActor>>, bool). The two taking an FBox call it.
+	inline constexpr auto ACrAPHelper_GetBoxCollisionResult =
+		"48 89 5C 24 18 55 56 57 41 54 41 55 41 56 41 57 48 8D AC 24 ?? ?? ?? ?? 48 81 EC ?? ?? ?? ?? 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 85 ?? ?? ?? ?? 48 8B 01 45 33 E4 48 8B B5 ?? ?? ?? ?? 4D 8B F1 4C 89 4C 24 ?? 49 8B D8 48 8B FA";
+
+	// ACrAPHelperActorCustom::CheckMainMeshCollision
+	inline constexpr auto ACrAPHelperActorCustom_CheckMainMeshCollision =
+		"40 55 53 56 57 41 55 48 8D AC 24 ?? ?? ?? ?? 48 81 EC ?? ?? ?? ?? 48 83 B9 ?? ?? ?? ?? 00 4C 8B E9 48 8B 01 0F 84 ?? ?? ?? ?? 33 FF";
+
+	// ACrAPHelperActorCustom::CheckStability
+	inline constexpr auto ACrAPHelperActorCustom_CheckStability =
+		"40 53 57 48 81 EC ?? ?? ?? ?? 48 8B DA 48 8B F9 48 85 D2 75 ?? 32 C0 48 81 C4 ?? ?? ?? ?? 5F 5B C3 C7 81 ?? ?? ?? ?? 00 00 80 BF";
+
+	// ACrAPHelperDynamicPillar::CheckStability
+	inline constexpr auto ACrAPHelperDynamicPillar_CheckStability =
+		"40 56 48 83 EC ?? 48 83 B9 ?? ?? ?? ?? 00 48 8B F1 75 ?? 32 C0 48 83 C4 ?? 5E C3 48 89 5C 24 ?? 48 89 6C 24 ??";
+
+	// ACrTechnologyKeeper::CheckAvailableBuildings
+	inline constexpr auto ACrTechnologyKeeper_CheckAvailableBuildings =
+		"48 89 4C 24 08 55 56 48 8D 6C 24 ?? 48 81 EC ?? ?? ?? ?? 80 B9 ?? ?? ?? ?? 03 48 8B F1 0F 85 ?? ?? ?? ??";
+
+	// UCrBuildingComponent::GetPlacementResourceConditionResult
+	inline constexpr auto UCrBuildingComponent_GetPlacementResourceConditionResult =
+		"48 89 5C 24 10 48 89 6C 24 18 56 57 41 56 48 83 EC ?? 48 8B F9 48 8B 89 ?? ?? ?? ?? 48 85 C9 74 ?? 48 8B 01 FF 90 ?? ?? ?? ?? 8B F0";
+
+	// UCrBuildingStabilitySubsystem::IsSocketFree
+	inline constexpr auto UCrBuildingStabilitySubsystem_IsSocketFree =
+		"4C 89 44 24 18 55 53 56 57 41 56 41 57 48 8D 6C 24 ?? 48 81 EC ?? ?? ?? ?? 4C 8B FA 48 8B F1 E8 ?? ?? ?? ?? 48 8B C8 E8 ?? ?? ?? ?? 33 FF 4C 8B F0";
+
+	// UCrSocketSnapPlacementMethod::GetSnappedSocket
+	inline constexpr auto UCrSocketSnapPlacementMethod_GetSnappedSocket =
+		"4C 89 4C 24 20 48 89 54 24 10 48 89 4C 24 08 55 53 57 41 55 41 57 48 8D AC 24 ?? ?? ?? ?? 48 81 EC ?? ?? ?? ?? 48 8B 85 ?? ?? ?? ?? 33 FF 49 8B D9 4D 8B E8";
+#endif
+
 	// -----------------------------------------------------------------------
 	// Preflight registry
 	//
@@ -812,6 +851,17 @@ namespace ScanPatterns
 #if defined(MODLOADER_SERVER_BUILD)
 		{ "FHttpConnection::ProcessRequest",           FHttpConnection_ProcessRequest,           true },
 		{ "FHttpServerResponse::Create",               FHttpServerResponse_Create,               true },
+
+		// Optional: only the plugin features that ask for one of these by name
+		// go without it.
+		{ "ACrAPHelper::GetBoxCollisionResult", ACrAPHelper_GetBoxCollisionResult, false },
+		{ "ACrAPHelperActorCustom::CheckMainMeshCollision", ACrAPHelperActorCustom_CheckMainMeshCollision, false },
+		{ "ACrAPHelperActorCustom::CheckStability", ACrAPHelperActorCustom_CheckStability, false },
+		{ "ACrAPHelperDynamicPillar::CheckStability", ACrAPHelperDynamicPillar_CheckStability, false },
+		{ "ACrTechnologyKeeper::CheckAvailableBuildings", ACrTechnologyKeeper_CheckAvailableBuildings, false },
+		{ "UCrBuildingComponent::GetPlacementResourceConditionResult", UCrBuildingComponent_GetPlacementResourceConditionResult, false },
+		{ "UCrBuildingStabilitySubsystem::IsSocketFree", UCrBuildingStabilitySubsystem_IsSocketFree, false },
+		{ "UCrSocketSnapPlacementMethod::GetSnappedSocket", UCrSocketSnapPlacementMethod_GetSnappedSocket, false },
 #endif
 
 		// Optional: losing it only costs engine-command fallthrough in the -console window.
