@@ -981,6 +981,15 @@ namespace Hooks::Input
 		return event == EModKeyEvent::Pressed && PluginGuard::IsDenied(callback);
 	}
 
+	// A callback copied by a dispatch may have been removed since, by an earlier
+	// one or by an unload that stopped waiting for this dispatch.
+	template <class Entry, class Callback>
+	static bool StillRegistered(const std::vector<Entry>& list, Callback cb)
+	{
+		std::lock_guard<std::mutex> lock(s_mutex);
+		return std::any_of(list.begin(), list.end(), [cb](const Entry& e) { return e.callback == cb; });
+	}
+
 	void Dispatch(EModKey key, EModKeyModifiers mods, EModKeyEvent event)
 	{
 		const PluginCallGate::Scope gate;   // before the callbacks are read
@@ -1019,7 +1028,7 @@ namespace Hooks::Input
 
 		for (auto cb : toCall)
 		{
-			if (cb)
+			if (cb && StillRegistered(s_callbacks, cb))
 			{
 				try { PluginGuard::Invoke(cb, "keybind callback", key, event); }
 				catch (...)
@@ -1098,11 +1107,13 @@ namespace Hooks::Input
 
 		for (auto cb : namedToCall)
 		{
-			if (cb) try { PluginGuard::Invoke(cb, "keybind callback", key, event); } catch (...) {}
+			if (cb && StillRegistered(s_namedCombos, cb))
+				try { PluginGuard::Invoke(cb, "keybind callback", key, event); } catch (...) {}
 		}
 		for (auto cb : advToCall)
 		{
-			if (cb) try { PluginGuard::Invoke(cb, "keybind callback", key, mods, event); } catch (...) {}
+			if (cb && StillRegistered(s_comboCallbacks, cb))
+				try { PluginGuard::Invoke(cb, "keybind callback", key, mods, event); } catch (...) {}
 		}
 	}
 

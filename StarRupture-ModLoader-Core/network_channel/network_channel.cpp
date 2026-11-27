@@ -56,6 +56,24 @@
 #define MODLOADER_BUILD_TAG "dev"
 #endif
 
+// A dispatch below copies its callbacks, then calls them one at a time. One may
+// have been removed since, by an earlier call or by an unload that stopped
+// waiting for this dispatch, so each is looked up again before its call.
+template <class T>
+static bool StillListed(std::mutex& mutex, const std::vector<T>& list, T value)
+{
+    std::lock_guard<std::mutex> lk(mutex);
+    return std::find(list.begin(), list.end(), value) != list.end();
+}
+
+template <class Map, class Key, class T>
+static bool StillHandled(std::mutex& mutex, const Map& handlers, const Key& key, T cb)
+{
+    std::lock_guard<std::mutex> lk(mutex);
+    const auto it = handlers.find(key);
+    return it != handlers.end() && std::find(it->second.begin(), it->second.end(), cb) != it->second.end();
+}
+
 // ============================================================
 // Base64 helpers (no external dependency)
 // ============================================================
@@ -1376,6 +1394,12 @@ namespace
 
         for (const auto& p : pending)
         {
+            {
+                std::lock_guard<std::mutex> lk(g_readyMutex);
+                if (std::none_of(g_clientReadyRegs.begin(), g_clientReadyRegs.end(),
+                        [&p](const ClientReadyReg& reg) { return reg.cb == p.cb; }))
+                    continue;
+            }
             ModLoaderLogger::LogDebug(
                 L"[NetworkChannel] Client %p is ready for plugin '%S' -- notifying",
                 p.conn, p.plugin.c_str());
@@ -2150,7 +2174,7 @@ namespace
     {
         for (auto* cb : cbs)
         {
-            if (!cb) continue;
+            if (!cb || !StillListed(g_srvReadyMutex, g_serverReadyCbs, cb)) continue;
             try { PluginGuard::Invoke(cb, "server-ready callback", tag.c_str()); }
             catch (const std::exception& ex)
             {
@@ -3436,7 +3460,7 @@ static void DispatchClientNarrow(const char* narrowData, size_t nbytes)
 
     for (auto* cb : callbacks)
     {
-        if (!cb) continue;
+        if (!cb || !StillHandled(g_mutex, g_handlers, key, cb)) continue;
         try
         {
             PluginGuard::Invoke(cb, "network message handler",
@@ -4029,6 +4053,7 @@ static void PumpVersionMinimums(uint64_t tickGapMs)
             f.who.empty() ? "(unnamed)" : f.who.c_str(), f.reason.c_str());
         for (PluginClientBelowMinimumCallback cb : cbs)
         {
+            if (!StillListed(g_minCbMutex, g_minCbs, cb)) continue;
             // A callback may remove this player (or another one), so the
             // controller is resolved again before each call.
             void* pc = LiveControllerForConnection(f.conn);
@@ -4123,6 +4148,7 @@ static void PumpClientFeatures(uint64_t now)
     {
         for (PluginClientFeaturesCallback cb : cbs)
         {
+            if (!StillListed(g_featCbMutex, g_featCbs, cb)) continue;
             // A callback may remove this player (or another one), so the
             // controller is resolved again before each call.
             void* pc = LiveControllerForConnection(conn);
@@ -4196,6 +4222,7 @@ static void PumpAdminAnswers(uint64_t now)
     {
         for (PluginAdminAnswerCallback cb : cbs)
         {
+            if (!StillListed(g_adminCbMutex, g_adminCbs, cb)) continue;
             // A callback may remove this player (or another one), so the
             // controller is resolved again before each call.
             void* pc = LiveControllerForConnection(d.conn);
@@ -4527,7 +4554,7 @@ static bool DispatchServerNarrow(void* senderConn, void* senderUObject,
 
     for (auto* cb : callbacks)
     {
-        if (!cb) continue;
+        if (!cb || !StillHandled(g_serverMutex, g_serverHandlers, key, cb)) continue;
         try
         {
             PluginGuard::Invoke(cb, "network message handler", senderUObject,
