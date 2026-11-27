@@ -4,6 +4,7 @@
 // hook_broker.h.
 
 #include "hooks/hook_broker.h"
+#include "hooks/hooks_common.h"
 #include "logging/logger.h"
 
 #include <atomic>
@@ -541,6 +542,25 @@ static void Test_TwoModulesCutOnOneChainAndTheLoaderNever()
 	other.Close();
 }
 
+// The way a plugin's hook is installed: the module handed to Hook::Install is
+// the one its link is cut with.
+static void Test_AnInstalledHookCarriesItsModule()
+{
+	AllowAll();
+	Target target;
+	Hooks::Hook hook;
+	CHECK(hook.Install(target.Address(), kDetour[0], &g_original[0], "test", "link", Module(0)));
+	CHECK(target.Trace() == "0");
+	Deny(0, true);
+	CHECK(Broker::SyncCuts() == 1);
+	CHECK(target.Trace().empty());
+	AllowAll();
+	CHECK(Broker::SyncCuts() == 1);
+	CHECK(target.Trace() == "0");
+	hook.Remove();
+	CHECK(memcmp(target.code, target.shipped, kCodeBytes) == 0);
+}
+
 // Retires fake module `m`. Its image is the one byte that stands for it, which
 // no detour is inside.
 static size_t Retire(int m) { return Broker::RetireModule(Module(m), 1); }
@@ -630,11 +650,12 @@ static void Test_AModuleAtTheSameAddressStartsClean()
 static void Test_ADetourInsideAFreedImageIsRetired()
 {
 	AllowAll();
-	CHECK(Broker::RetireModule(nullptr, ~static_cast<size_t>(0)) == 0);
 	Built c;
 	c.Add(0, 1);
 	c.Add(1, -1);
 	c.Add(2, -1);
+	// No module names nothing, even with every address in range.
+	CHECK(Broker::RetireModule(nullptr, ~static_cast<size_t>(0)) == 0);
 	// An image that ends at the third detour, and one that starts just past it.
 	const auto third = reinterpret_cast<uintptr_t>(kDetour[2]);
 	CHECK(Broker::RetireModule(reinterpret_cast<HMODULE>(third - 1), 1) == 0);
@@ -747,6 +768,7 @@ int main()
 		T(Test_ALateSyncLeavesNoStaleCut),
 		T(Test_DetachWithEveryCutPattern),
 		T(Test_TwoModulesCutOnOneChainAndTheLoaderNever),
+		T(Test_AnInstalledHookCarriesItsModule),
 		T(Test_ARetiredLinkStaysCut),
 		T(Test_RetiringCutsLiveLinksAtOnce),
 		T(Test_AModuleAtTheSameAddressStartsClean),

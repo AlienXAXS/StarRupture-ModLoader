@@ -1347,6 +1347,61 @@ static size_t CountOf(const std::string& text, const char* what)
     return count;
 }
 
+// The statement that follows `what`, ignoring the space between them.
+static bool NextIs(const std::string& src, const char* what, const char* statement)
+{
+    const size_t at = src.find(what);
+    if (at == std::string::npos) return false;
+    const size_t next = src.find_first_not_of(" \t\r\n", at + strlen(what));
+    return next != std::string::npos && src.compare(next, strlen(statement), statement) == 0;
+}
+
+// The brace block that directly follows `head`, without its closing brace.
+static std::string BlockAfter(const std::string& src, const char* head)
+{
+    if (!NextIs(src, head, "{")) return "";
+    const size_t open = src.find('{', src.find(head) + strlen(head));
+    int depth = 0;
+    for (size_t end = open; end < src.size(); ++end)
+    {
+        if (src[end] == '{') ++depth;
+        else if (src[end] == '}' && --depth == 0)
+            return src.substr(open, end - open);
+    }
+    return "";
+}
+
+// Both steps that make a plugin's hooks cuttable: the hooks interface has to
+// say whose hook it installs, and the loader has to take the opt-out from the
+// right declared flag. Neither file can be linked into a console program, so
+// both are read as source. HookBrokerTests drives Hook::Install itself.
+static void Test_PluginHooksAreInstalledUnderTheirModule()
+{
+    wchar_t exe[MAX_PATH];
+    GetModuleFileNameW(nullptr, exe, MAX_PATH);
+    std::filesystem::path core = exe;
+    core = core.parent_path().parent_path().parent_path() / L"StarRupture-ModLoader-Core";
+
+    const std::string hooks = ReadSource(core / L"hooks" / L"hooks_interface.cpp");
+    const std::string install = FunctionBody(hooks,
+        "static HookHandle HooksInstallHook(uintptr_t targetAddress, void* detourFunction, void** originalFunction)");
+    const size_t site = install.find(
+        "const void* site = PluginGuard::HookSite(_ReturnAddress(), detourFunction);");
+    const size_t module = install.find("const HMODULE module = PluginGuard::ModuleOf(site);");
+    const size_t call = install.find(
+        "hook->Install(targetAddress, detourFunction, originalFunction, owner.c_str(), name, module)");
+    CHECK(site != std::string::npos);
+    CHECK(module != std::string::npos);
+    CHECK(call != std::string::npos);
+    CHECK(site < module && module < call);
+    CHECK(CountOf(install, "->Install(") == 1);
+
+    const std::string manager = ReadSource(core / L"plugins" / L"plugin_manager.cpp");
+    CHECK(CountOf(manager, "PluginGuard::Track(") == 1);
+    CHECK(NextIs(manager, "PluginGuard::Track(plugin.hModule, plugin.cachedName.c_str(),",
+                 "(plugin.gameBuild.mapFlags & PLUGIN_HANDLES_HOST_DENY) != 0);"));
+}
+
 // The hooks are resynced only when a loaded plugin switched, after the rules
 // lock is released, and never by the clear itself, which also runs when the
 // channel shuts down. A cut delegate callback is skipped before it is called.
@@ -1389,11 +1444,13 @@ static void Test_DenyChangesResyncTheCutHooks()
     const std::string leave = FunctionBody(net, "static void LeaveServerRules(bool onGameThread)", "\n    }");
     CHECK(CountOf(leave, sync) == 2);
     CHECK(CountOf(leave, "if (restored)") == 2);
-    const size_t direct = leave.find(sync);
-    const size_t otherwise = leave.find("else");
-    const size_t posted = leave.find("GameThreadDispatch::PostVoid([] { Hooks::Broker::SyncCuts(); });");
-    CHECK(direct != std::string::npos && direct < otherwise);
-    CHECK(posted != std::string::npos && otherwise < posted);
+    const std::string onThread = BlockAfter(leave, "if (onGameThread)");
+    const std::string offThread = BlockAfter(leave, "else");
+    CHECK(CountOf(onThread, sync) == 1);
+    CHECK(NextIs(onThread, "if (restored)", "Hooks::Broker::SyncCuts();"));
+    CHECK(CountOf(offThread, sync) == 1);
+    CHECK(NextIs(offThread, "if (restored)",
+                 "GameThreadDispatch::PostVoid([] { Hooks::Broker::SyncCuts(); });"));
 
     const std::string delegates = ReadSource(core / L"hooks" / L"game" / L"delegate_hook" / L"delegate_hook.cpp");
     const size_t query = delegates.find("if (PluginGuard::IsHookCut(reinterpret_cast<const void*>(cb)))");
@@ -1859,6 +1916,7 @@ int main()
     RunTest("HookSiteFallsBackToTheDetoursPlugin",  Test_HookSiteFallsBackToTheDetoursPlugin);
     RunTest("DeniedHooksAreCutUnlessKept",          Test_DeniedHooksAreCutUnlessKept);
     RunTest("SetDeniedReportsASwitch",              Test_SetDeniedReportsASwitch);
+    RunTest("PluginHooksAreInstalledUnderTheirModule", Test_PluginHooksAreInstalledUnderTheirModule);
     RunTest("DenyChangesResyncTheCutHooks",         Test_DenyChangesResyncTheCutHooks);
     RunTest("DeniedPanelClosesAndStaysShut",        Test_DeniedPanelClosesAndStaysShut);
     RunTest("DeniedWidgetIsNotDrawn",               Test_DeniedWidgetIsNotDrawn);
