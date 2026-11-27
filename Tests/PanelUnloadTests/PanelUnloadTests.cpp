@@ -310,6 +310,165 @@ static std::string ReadSource(const std::filesystem::path& file)
     return StripLineComments(std::string(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()));
 }
 
+// True when the block that is open at 'from' is still open at 'to'.
+static bool StillInBlock(const std::string& src, size_t from, size_t to)
+{
+    int depth = 0;
+    for (size_t i = from; i < to; ++i)
+    {
+        if (src[i] == '{') ++depth;
+        else if (src[i] == '}' && --depth < 0) return false;
+    }
+    return true;
+}
+
+// One place the loader calls a plugin. After anchor come, in this order, the
+// gate, the first read of the registry and the plugin call.
+struct DispatchSite
+{
+    const char* file;
+    const char* anchor;
+    const char* read;
+    const char* call;
+    const char* gate = "PluginCallGate::Scope";
+};
+
+// A dispatcher takes the gate before it reads its registry, and still holds it
+// at the plugin call. A gate moved below the copy, or closed before the call,
+// would pass every test that drives the gate alone.
+static void Test_DispatchersTakeTheGateFirst()
+{
+    wchar_t exe[MAX_PATH];
+    GetModuleFileNameW(nullptr, exe, MAX_PATH);
+    std::filesystem::path core = exe;
+    core = core.parent_path().parent_path().parent_path() / L"StarRupture-ModLoader-Core";
+
+    const char* const detour = "static void __fastcall Detour(";
+    const char* const tickRead = "g_pluginCallbacks[i]";
+    const char* const tickCall = "PluginGuard::Invoke(g_pluginCallbacks[i]";
+    const DispatchSite sites[] = {
+        { "console/console_commands.cpp", "static void RunHandler(const ResolvedCommand& cmd,",
+          "PluginCommandStillValid(", "cmd.handler(args, *sink)", "gate.emplace()" },
+        { "console/plugin_console.cpp", "void Write(", "ForgetCount(m_owner.c_str())", "PluginGuard::Invoke(m_onLine" },
+        { "console/plugin_console.cpp", "MakeCompletion(const char* owner,",
+          "ForgetCount(ownerName.c_str())", "PluginGuard::Invoke(onComplete" },
+        { "core/ui_state.cpp", "void Publish(uint64_t state)", "s_entries", "PluginGuard::Invoke(c.callback" },
+        { "hooks/game/actor_begin_play/actor_begin_play.cpp", detour, tickRead, tickCall },
+        { "hooks/game/crafting_finished/crafting_finished.cpp", detour, tickRead, tickCall },
+        { "hooks/game/delegate_hook/delegate_hook.cpp", "void __fastcall DispatchClonedExecFunction(",
+          "g_hooks.find(handle)", "PluginGuard::Invoke(cb, " },
+        { "hooks/game/engine_init/engine_init.cpp", "static void NotifyEngineReady(", tickRead, tickCall },
+        { "hooks/game/engine_shutdown/engine_shutdown.cpp", "static void NotifyEngineShuttingDown(", tickRead, tickCall },
+        { "hooks/game/engine_tick/engine_tick.cpp", detour, tickRead, tickCall },
+        { "hooks/game/experience_load_complete/experience_load_complete.cpp", detour, tickRead, tickCall },
+        { "hooks/game/game_menu/game_menu_registry.cpp", "void Invoke(int slot)",
+          "s_entries[slot]", "PluginGuard::Invoke(callback" },
+        { "hooks/game/hud_post_render/hud_post_render.cpp", detour, tickRead, tickCall },
+        { "hooks/game/mass_do_spawning/mass_do_spawning.cpp", detour,
+          "g_beforeCallbacks[i]", "InvokeInto(&cancel, g_beforeCallbacks[i]" },
+        { "hooks/game/mass_do_spawning/mass_do_spawning.cpp", "InvokeInto(&cancel, g_beforeCallbacks[i]",
+          "g_afterCallbacks[i]", "PluginGuard::Invoke(g_afterCallbacks[i]" },
+        { "hooks/game/mass_spawner_activate/mass_spawner_activate.cpp", detour,
+          "g_beforeCallbacks[i]", "InvokeInto(&cancel, g_beforeCallbacks[i]" },
+        { "hooks/game/mass_spawner_activate/mass_spawner_activate.cpp", "InvokeInto(&cancel, g_beforeCallbacks[i]",
+          "g_afterCallbacks[i]", "PluginGuard::Invoke(g_afterCallbacks[i]" },
+        { "hooks/game/mass_spawner_deactivate/mass_spawner_deactivate.cpp", detour,
+          "g_beforeCallbacks[i]", "InvokeInto(&cancel, g_beforeCallbacks[i]" },
+        { "hooks/game/mass_spawner_deactivate/mass_spawner_deactivate.cpp", "InvokeInto(&cancel, g_beforeCallbacks[i]",
+          "g_afterCallbacks[i]", "PluginGuard::Invoke(g_afterCallbacks[i]" },
+        { "hooks/game/player_joined/player_joined.cpp", detour, tickRead, tickCall },
+        { "hooks/game/player_left/player_left.cpp", detour, tickRead, tickCall },
+        { "hooks/game/save_loaded/save_loaded.cpp", detour, tickRead, tickCall },
+        { "hooks/game/world_begin_play/world_begin_play.cpp", detour,
+          "g_anyWorldCallbacks[i]", "PluginGuard::Invoke(g_anyWorldCallbacks[i]" },
+        { "hooks/game/world_begin_play/world_begin_play.cpp", "PluginGuard::Invoke(g_anyWorldCallbacks[i]",
+          tickRead, tickCall },
+        { "hooks/game/world_end_play/world_end_play.cpp", "static char __fastcall Detour(",
+          "g_beforeCallbacks[i]", "InvokeCallbackSEH(g_beforeCallbacks[i]" },
+        { "hooks/game/world_end_play/world_end_play.cpp", "InvokeCallbackSEH(g_beforeCallbacks[i]",
+          "g_afterCallbacks[i]", "InvokeCallbackSEH(g_afterCallbacks[i]" },
+        { "hooks/http/http_server_hook.cpp", "static bool TryDispatchRawRoute(",
+          "g_rawRoutes", "InvokeRawRouteCallbackSEH(route.callback" },
+        { "hooks/http/http_server_hook.cpp", detour, "filters = g_filters", "InvokeFilterSEH(cb, &req)" },
+        { "hooks/input/keybind_registry.cpp", "void Dispatch(EModKey key,", "s_callbacks", "PluginGuard::Invoke(cb, " },
+        { "hooks/input/keybind_registry.cpp", "void DispatchCombo(EModKey key,", "s_namedCombos", "PluginGuard::Invoke(cb, " },
+        { "hooks/input/mouse_wheel_registry.cpp", "bool Dispatch(UINT msg,", "s_entries", "InvokeInto(&consumed, e.callback" },
+        { "network_channel/network_channel.cpp", "static void PumpClientReady()",
+          "regs = g_clientReadyRegs", "PluginGuard::Invoke(p.cb" },
+        { "network_channel/network_channel.cpp",
+          "NC_RegisterServerReadyCallback(const IPluginSelf* self, PluginServerReadyCallback callback)",
+          "g_serverReadyCbs", "FireServerReady(fireNow" },
+        { "network_channel/network_channel.cpp", "static void OnManifestAck(", "g_srvReadyMutex", "FireServerReady(" },
+        { "network_channel/network_channel.cpp", "static void DispatchClientNarrow(",
+          "g_handlers.find(key)", "PluginGuard::Invoke(cb, \"network message handler\"" },
+        { "network_channel/network_channel.cpp", "static void PumpVersionMinimums(",
+          "cbs = g_minCbs", "PluginGuard::Invoke(cb, \"below-minimum callback\"" },
+        { "network_channel/network_channel.cpp", "static void PumpClientFeatures(",
+          "cbs = g_featCbs", "PluginGuard::Invoke(cb, \"client-features callback\"" },
+        { "network_channel/network_channel.cpp", "static void PumpAdminAnswers(",
+          "cbs = g_adminCbs", "PluginGuard::Invoke(cb, \"admin-answer callback\"" },
+        { "network_channel/network_channel.cpp", "PluginGuard::Invoke(cb, \"admin-answer callback\"",
+          "g_serverHandlers.find(key)", "PluginGuard::Invoke(cb, " },
+        { "plugins/pak_registry.cpp", "static void SpawnModActors(", "s_entries", "PluginGuard::Invoke(job.callback" },
+        { "UI/plugin_panel_registry.cpp", "static void FirePanelClosed(",
+          "s_panelClosedCallbacks", "PluginGuard::Invoke(cb.callback" },
+        { "UI/plugin_panel_registry.cpp", "void FireConfigChanged(const char* pluginName",
+          "s_configCallbacks", "PluginGuard::Invoke(cb, \"config-changed callback\"" },
+        { "UI/plugin_panel_registry.cpp", "void RenderPanelWindows(IModLoaderImGui* imgui)",
+          "s_panels", "PluginGuard::Invoke(panel.desc->renderFn" },
+        { "UI/plugin_widget_registry.cpp", "void RenderWidgets(IModLoaderImGui* imgui)",
+          "s_widgets", "PluginGuard::Invoke(entry.desc->renderFn" },
+        { "utils/game_thread_dispatch.cpp", "void Drain()",
+          "std::move(batch.front())", "std::get<VoidTask>(t.run)()", "gate.emplace()" },
+    };
+
+    for (const DispatchSite& site : sites)
+    {
+        const std::string src = ReadSource(core / site.file);
+        const size_t from = src.find(site.anchor);
+        const size_t after = from == std::string::npos ? from : from + strlen(site.anchor);
+        const size_t gate = src.find(site.gate, after);
+        const size_t read = src.find(site.read, after);
+        const size_t call = src.find(site.call, after);
+        const bool ordered = from != std::string::npos && call != std::string::npos
+            && gate < read && read < call && StillInBlock(src, gate, call);
+        if (!ordered)
+            printf("    %s after %s\n", site.file, site.anchor);
+        CHECK(ordered);
+    }
+
+    // HTTP: no registry lock is held at the handler or filter call. The lock
+    // that runs one call of a kind at a time is taken after the gate, and only
+    // by its dispatcher, so no unload path can wait on it.
+    const std::string http = ReadSource(core / L"hooks" / L"http" / L"http_server_hook.cpp");
+    struct HttpSite { const char* anchor; const char* calls; const char* registry; const char* call; };
+    for (const HttpSite& s : { HttpSite{ "static bool TryDispatchRawRoute(", "g_rawRouteCallsMutex",
+                                        "lock(g_rawRoutesMutex)", "InvokeRawRouteCallbackSEH(route.callback" },
+                              HttpSite{ detour, "g_filterCallsMutex",
+                                        "lock(g_filtersMutex)", "InvokeFilterSEH(cb, &req)" } })
+    {
+        const size_t from = http.find(s.anchor);
+        const size_t call = http.find(s.call, from);
+        const size_t gate = http.find("PluginCallGate::Scope", from);
+        const size_t calls = http.find(std::string("calls(") + s.calls + ")", from);
+        CHECK(from != std::string::npos);
+        CHECK(call != std::string::npos);
+        CHECK(gate < calls && calls < call);
+        int registryLocks = 0;
+        for (size_t at = http.find(s.registry, from); at < call; at = http.find(s.registry, at + 1))
+        {
+            ++registryLocks;
+            CHECK(!StillInBlock(http, at, call));
+        }
+        CHECK(registryLocks > 0);
+        // Named twice in the file: where it is declared and where it is taken.
+        int named = 0;
+        for (size_t at = http.find(s.calls); at != std::string::npos; at = http.find(s.calls, at + 1))
+            ++named;
+        CHECK(named == 2);
+    }
+}
+
 // Every ForgetModule(HMODULE) and ForgetPlugin(const char*) a loader header
 // declares is called from ForgetRegistrations or ForgetPluginCallbacks: a
 // registry added later without being wired in would keep a freed plugin's
@@ -1395,8 +1554,12 @@ static void Test_GateRefusesFromInsideACall()
     {
         Gate::Scope gate;
         CHECK(Gate::InsideCall());
+        // Without the inside-call check both still return false, but only
+        // after waiting 5 s for this thread's own call.
+        const ULONGLONG start = GetTickCount64();
         CHECK(!Gate::WaitUntilIdle(5000));
         CHECK(!Gate::FreeWhenIdle(FakeModule(), "inside", 5000));
+        CHECK(GetTickCount64() - start < 1000);
     }
     CHECK(g_gateFrees == 0);
 
@@ -1454,6 +1617,7 @@ int main()
     RunTest("WidgetsPurgedByModule",             Test_WidgetsPurgedByModule);
     RunTest("UnloadPathsPurgePanels",            Test_UnloadPathsPurgePanels);
     RunTest("EveryForgetModuleIsCalledOnUnload", Test_EveryForgetModuleIsCalledOnUnload);
+    RunTest("DispatchersTakeTheGateFirst",       Test_DispatchersTakeTheGateFirst);
 
     // RenderPanelWindows sizes each window through Dear ImGui, which needs a
     // context; nothing is drawn.
