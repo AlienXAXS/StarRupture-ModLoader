@@ -181,7 +181,7 @@ namespace PluginGuard
 		return names;
 	}
 
-	std::vector<HMODULE> SetDenied(const std::vector<std::string>& names)
+	std::vector<HMODULE> SetDenied(const std::vector<std::string>& names, bool* switched)
 	{
 		std::vector<HMODULE> newlyDenied;
 		std::lock_guard<std::mutex> lock(s_mutex);
@@ -192,6 +192,8 @@ namespace PluginGuard
 			if (!base) continue;
 			const bool denied = NameDenied(s.fullName);
 			if (s.denied.exchange(denied) == denied) continue;
+			if (switched)
+				*switched = true;
 			s_deniedCount.fetch_add(denied ? 1 : -1);
 			if (denied)
 				newlyDenied.push_back(reinterpret_cast<HMODULE>(base));

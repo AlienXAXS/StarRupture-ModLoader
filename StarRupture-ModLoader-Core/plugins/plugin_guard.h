@@ -103,9 +103,9 @@ namespace PluginGuard
 
 	// Replaces the denied names (matched without regard to case); an empty list
 	// lets every plugin back. A plugin tracked later starts denied when its name
-	// is listed. Returns the modules that were not denied before and are now.
-	// Any thread.
-	std::vector<HMODULE> SetDenied(const std::vector<std::string>& names);
+	// is listed. Returns the modules that were not denied before and are now;
+	// *switched is true when any tracked plugin went either way. Any thread.
+	std::vector<HMODULE> SetDenied(const std::vector<std::string>& names, bool* switched = nullptr);
 
 	// What the player reads where a denied plugin is turned away.
 	inline constexpr const char* kDeniedReason =

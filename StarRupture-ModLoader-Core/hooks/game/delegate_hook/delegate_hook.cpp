@@ -438,7 +438,7 @@ namespace Hooks::DelegateHook
 				return;   // this server's rules turned its plugin off as a whole
 
 			ModLoaderLogger::LogTrace(
-				L"[DelegateHook] DispatchClonedExecFunction firing:context=%p handle=%llu userContext=%p caller=%S",
+				L"[DelegateHook] DispatchClonedExecFunction firing: context=%p handle=%llu userContext=%p caller=%S",
 				context, static_cast<unsigned long long>(handle), userContext, Hooks::GetCallerModuleName(_ReturnAddress()).c_str());
 
 			try

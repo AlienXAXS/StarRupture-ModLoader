@@ -2415,33 +2415,32 @@ namespace
 
     // Leaving a server: its rules are void and the features it switched off come
     // back, and so does any admin prompt it had open. A caller that is not on the
-    // game thread queues the clear. True when the rules had turned a mod off as a
-    // whole, so its hooks may be waiting to be put back.
+    // game thread queues the clear. True when a loaded mod had been turned off as
+    // a whole, so its hooks may be waiting to be put back.
     static bool ForgetClientRules()
     {
         AdminPrompt::Leave();
         WipeAdminOut();
-        bool hadDenied;
+        bool restored = false;
         {
             std::lock_guard<std::mutex> lk(g_clientRulesMutex);
             g_clientRules = HostRulesWire::RulesSet{};
-            hadDenied = !g_deniedPlugins.empty();
             g_deniedPlugins.clear();
-            PluginGuard::SetDenied({});
+            PluginGuard::SetDenied({}, &restored);
             g_rulesState.Cleared(); // before any flag is handed back
             ++g_rulesEpoch;
             g_clientRulesValid = false;
         }
         g_rulesHookGen     = 0;
-        return hadDenied;
+        return restored;
     }
 
     static void LeaveServerRules(bool onGameThread)
     {
-        const bool hadDenied = ForgetClientRules();
+        const bool restored = ForgetClientRules();
         if (onGameThread)
         {
-            if (hadDenied)
+            if (restored)
                 Hooks::Broker::SyncCuts();
             PluginHookReport::ClearServerRules();
         }
@@ -2449,7 +2448,7 @@ namespace
         {
             // SyncCuts follows what is denied when it runs, so it is still right
             // if the next server's rules are in force by then.
-            if (hadDenied)
+            if (restored)
                 GameThreadDispatch::PostVoid([] { Hooks::Broker::SyncCuts(); });
             GameThreadDispatch::PostVoid([] { if (!g_clientRulesValid) PluginHookReport::ClearServerRules(); });
         }
@@ -2721,31 +2720,26 @@ namespace
     // outlives the server it came from. Game thread.
     static void ApplyDeniedPlugins(const HostRulesWire::RulesSet& rules, unsigned epoch)
     {
-        const std::vector<std::string> tracked = PluginGuard::TrackedNames();
         std::vector<std::string> denied;
-        for (const std::string& name : tracked)
+        for (std::string& name : PluginGuard::TrackedNames())
             if (HostRulesWire::DeniedAsWhole(rules, name))
-                denied.push_back(name);
+                denied.push_back(std::move(name));
         std::sort(denied.begin(), denied.end()); // the same plugins compare equal in any load order
 
         std::vector<HMODULE> newlyDenied;
-        bool allowedAgain = false;
+        bool switched = false;
         {
             std::lock_guard<std::mutex> lk(g_clientRulesMutex);
             if (!g_clientRulesValid || epoch != g_rulesEpoch) return;
             if (denied == g_deniedPlugins) return;
-            for (const std::string& name : g_deniedPlugins)
-                if (!std::binary_search(denied.begin(), denied.end(), name)
-                    && std::find(tracked.begin(), tracked.end(), name) != tracked.end())
-                    allowedAgain = true;
             g_deniedPlugins = denied;
-            newlyDenied = PluginGuard::SetDenied(denied);
+            newlyDenied = PluginGuard::SetDenied(denied, &switched);
         }
 
         // Only when a loaded plugin changed sides. A name also leaves the list
         // when its plugin is unloaded, and a sync then would wire a hook it
         // never removed back into the freed DLL.
-        if (allowedAgain || !newlyDenied.empty())
+        if (switched)
             Hooks::Broker::SyncCuts();
 
         ModLoaderLogger::LogInfo(
