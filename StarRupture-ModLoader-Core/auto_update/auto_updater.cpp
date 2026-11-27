@@ -672,7 +672,7 @@ static void ProcessPluginSidecar(const PluginSidecar& sc,
     if (decision.installed.empty())
     {
         LogToFile::Info("[AutoUpdate][Sidecar] '%s' — installed version not known yet (remote %s); "
-                        "it is recorded when the plugin loads", displayName, remoteVersion.c_str());
+                        "it is recorded when the plugin loads, if it reports a version number", displayName, remoteVersion.c_str());
         return;
     }
 

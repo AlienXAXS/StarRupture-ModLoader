@@ -364,9 +364,10 @@ namespace ModInstall
 		const AutoUpdateVersion::ParsedVersion pinned = AutoUpdateVersion::ParseVersion(listed);
 
 		// The .json written beside the DLL names this manifest. If the next launch
-		// could take its release from somewhere else, nothing is installed. With
-		// a list version that has no number to compare, it always could: the
-		// auto-update then goes by the version the DLL reports.
+		// could take its release from somewhere else, nothing is installed. A
+		// latest version with no number is never taken, so only a newer number
+		// counts. With no number in the list's version, count it as possible:
+		// the auto-update then goes by the version the DLL reports.
 		if (!IsSameAsset(url, request.info.url)
 			&& (!pinned.valid || AutoUpdateVersion::ReleaseIsNewer(remote.c_str(), listed)))
 		{

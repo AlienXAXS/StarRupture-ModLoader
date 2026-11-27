@@ -101,10 +101,9 @@ an older one:
 When an update is refused, the file you have stays. A plugin shows no pop-up:
 `ModLoader\Logs\ModLoader.log` has an `[AutoUpdate]` line that says `update refused` (the address) or
 `can't be compared by number` or `installed version not known yet` (the version). To get the new version
-of a plugin, replace its `.dll` by hand with the one from the author's page, or, for a mod the **Browse**
-tab installs, **Uninstall** it and **Install** it again. Then tell the author what the log line says. If
-the mod loader can't update itself, download the new release and extract it over your install;
-`ModLoader\Logs\AutoUpdate.log` says why.
+of a plugin, close the game and replace its `.dll` by hand with the newer one from the author's page.
+Then tell the author what the log line says. If the mod loader can't update itself, download the new
+release and extract it over your install; `ModLoader\Logs\AutoUpdate.log` says why.
 
 ### If you use Vortex
 
@@ -889,7 +888,8 @@ For the loader to take an update:
 4. Your DLL reports its version, in `PluginInfo::version`, the same way. A DLL that reports something
    else, and that the loader has no earlier version number for, is never updated: players have to
    replace it by hand once with a build that reports a number.
-5. Only a `version` higher than the installed one is downloaded.
+5. Only a `version` higher than the installed one is downloaded. Keep one numbering scheme: after
+   `20240105`, a release numbered `2.0.0` counts as older and is never downloaded.
 
 ### Preload plugins
 
