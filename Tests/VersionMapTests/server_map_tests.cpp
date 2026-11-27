@@ -281,7 +281,7 @@ int main()
 		Check(map.builds.size() == 1 && map.builds[0].gameCL == 127004 && map.builds[0].imageStamp == 0x2E3595FF
 			&& map.builds[0].imageSize == 0x0E2A8000, "table: one build, the server exe (CL 127004, stamp 2E3595FF, size 0E2A8000)");
 		Check(!map.functions.empty() && map.functions.size() == VersionMap::kServerFunctionRows.size(), "table: every function row is in the map");
-		Check(map.functions.size() == 38, "table: 35 function starts, 2 data globals and the loader's GObjects row");
+		Check(map.functions.size() == 46, "table: 43 function starts, 2 data globals and the loader's GObjects row");
 		bool allOnServer = true, allAddress = true;
 		int starts = 0, data = 0, scoped = 0;
 		for (const VersionMap::MapFunctionRow& f : map.functions)
@@ -295,10 +295,10 @@ int main()
 		}
 		Check(allOnServer, "table: every function row names the server exe");
 		Check(allAddress, "table: every function row is an address with no pattern (a start or a global, with a fingerprint only on the loader's key)");
-		Check(starts == 35 && data == 2 && scoped == 1, "table: 35 function starts, GNames and GWorld as data, and one scoped key");
+		Check(starts == 43 && data == 2 && scoped == 1, "table: 43 function starts, GNames and GWorld as data, and one scoped key");
 
 		// Field rows: every one is on the build, no absent rows, and a size row is a class key (no "::") at offset 0.
-		Check(map.fields.size() == VersionMap::kServerFields.size() && map.fields.size() == 116, "table: every field row is in the map (96 members, 20 sizes)");
+		Check(map.fields.size() == VersionMap::kServerFields.size() && map.fields.size() == 117, "table: every field row is in the map (97 members, 20 sizes)");
 		Check(map.absentFields.empty(), "table: no absent rows");
 		int members = 0, sizes = 0;
 		bool fieldsOnBuild = true, sizesWellFormed = true, masksWellFormed = true;
@@ -317,7 +317,7 @@ int main()
 			}
 		}
 		Check(fieldsOnBuild, "table: every field row is for CL 127004 and has a size");
-		Check(members == 96 && sizes == 20, "table: 96 member rows and 20 size rows");
+		Check(members == 97 && sizes == 20, "table: 97 member rows and 20 size rows");
 		Check(sizesWellFormed, "table: a size row is a class key at offset 0 with no bool mask");
 		Check(masksWellFormed, "table: a bool mask is 0xFF (a bool) or one bit (a bit field)");
 
@@ -373,7 +373,7 @@ int main()
 			refusedOtherCL    += !Key(index.key, kOtherCL, {}, kind).Succeeded();
 			refusedNoCL       += !Key(index.key, kNoCL, {}, kind).Succeeded();
 		}
-		Check(n == 37 && served == n, "guard 2, LookUp: every key serves its RVA on the server exe");
+		Check(n == 45 && served == n, "guard 2, LookUp: every key serves its RVA on the server exe");
 		// A key is served as the kind it was recorded with, and no other.
 		Check(!Key("GWorld", kServer).Succeeded() && !Key("UCrSaveSubsystem::GetSaveData", kServer, {}, Kind::Data).Succeeded(),
 			"guard 2, LookUp: a global is not served as a function start, nor a function start as data");
@@ -525,7 +525,7 @@ int main()
 			// A native member whose own row disagrees with the table's is refused on the server exe.
 			notServedOwnRow += !isSize && !Field(index.key, flags, row.size, { OwnRow(127004, row.offset + 8, row.size) }, kServer, v, e);
 		}
-		Check(members == 96 && sizes == 20, "guard 4, RowsFor: the table's keys are 96 members and 20 sizes");
+		Check(members == 97 && sizes == 20, "guard 4, RowsFor: the table's keys are 97 members and 20 sizes");
 		Check(served == members + sizes, "guard 4, RowsFor: every member and size row is served on the server exe, with its offset, size and bool mask");
 		Check(notServed == members + sizes, "guard 4, RowsFor: no table row is served on an exe that is not the server's");
 		Check(notServedOwnRow == members, "guard 4, RowsFor: a member whose own row disagrees with the table's is refused on the server exe");
