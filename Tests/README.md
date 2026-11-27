@@ -159,8 +159,20 @@ and `UI/plugin_widget_registry.cpp` and replaces only what those call out to (se
   free is done; a free asked for from inside a call is refused at once (in under a second, not after the
   full wait); an exception leaves the gate open.
 - Every dispatch site takes the call gate before it reads its registry, and an HTTP handler or filter is
-  copied and then called with no registry lock held. Checked by reading the sources, 44 sites and the HTTP
+  copied and then called with no registry lock held. Checked by reading the sources, 45 sites and the HTTP
   locks. No test runs an HTTP request through the hook.
+- The free step retires the module's hooks, then untracks it, then calls `FreeLibrary`, and syncs no
+  cuts. The `FreeLibrary` calls in the loader's sources are counted per file, so a new one fails the test
+  until it goes through the call gate or is added to the list. Checked by reading the sources.
+- Whose hook it is (`plugins/plugin_guard.cpp`): the caller's module, or the detour's when the caller is
+  in no plugin. A denied plugin's hooks are cut unless it is tracked as keeping them, one tracked while
+  its name is denied starts cut, MainMap's are never cut, a reused slot does not inherit the opt-out, and
+  `SetDenied` reports whether a tracked plugin switched.
+- The wiring around that, checked by reading the sources: the hooks interface installs under the module
+  of that hook site; the plugin manager takes the opt-out from the `PLUGIN_HANDLES_HOST_DENY` flag; the
+  cuts are resynced only when a plugin switched, outside the rules lock, directly on the game thread and
+  posted to it otherwise; and the delegate dispatcher asks whether a callback is cut before calling it.
+  No test runs the delegate dispatcher or the network channel.
 
 ```
 msbuild Tests\PanelUnloadTests\PanelUnloadTests.vcxproj /p:Configuration="Client Release" /p:Platform=x64
@@ -355,8 +367,11 @@ on small functions it writes into its own pages; the logger is the only test dou
 change it reads every thunk slot back: each one must go to the detour of the first later link that is
 not cut, else to the trampoline, and the patched bytes must not have changed. It covers cutting and
 restoring the first, middle, last and all links, links added before and during a cut, removing links
-under every cut pattern, links with no module (never cut), and three threads calling a function while
-the cuts are switched 10,000 times. It also checks that the head slot already leads to the trampoline
+under every cut pattern, links with no module (never cut), a hook installed through `Hook::Install`
+carrying its module, and three threads calling a function while the cuts are switched 10,000 times.
+It also covers retired links, those of a module being freed: they stay cut through later syncs, live
+ones are cut at once, a new module at the same address starts clean, a link whose detour is inside the
+freed image is retired whoever it is named for, and retiring no module does nothing. It also checks that the head slot already leads to the trampoline
 when a first patch is written, which it sees from the log line before the write. It ends itself after
 two minutes if it hangs.
 
