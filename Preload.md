@@ -207,7 +207,7 @@ Three things follow:
   against an address or try to read bytes through it. It can be rewired underneath you when a link
   in front of yours is removed.
 - **If you don't call your `original`, nothing behind you runs.** That's a legitimate thing to do
-  deliberately, and a confusing bug otherwise. `hooklist` in the console shows the order.
+  deliberately, and a confusing bug otherwise. `hooks` in the console shows the order.
 - **Unhooking only unhooks you.** The original prologue is restored when the *last* link on that
   address goes, so removing your hook never disturbs anyone else's.
 

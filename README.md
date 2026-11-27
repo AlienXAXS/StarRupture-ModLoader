@@ -505,8 +505,8 @@ in `help` ([Console.md](Console.md)).
 | `unload <target>` | | Shut a plugin down and free its DLL |
 | `load <target>` | | Load a plugin that is unloaded |
 | `rescan` | `scan` | Load plugin DLLs added to `Plugins\` since startup |
-| `hookfailures` | `hooks` | List plugins whose hook patterns did not resolve |
-| `hooklist` | | List every detoured address and the plugins sharing it |
+| `hookfailures` | | List plugins whose hook patterns did not resolve |
+| `hooks` | `hooklist` | List every detoured address and the plugins sharing it |
 | `preload` | `preloads` | Show what happened to the DLLs in `Preload\` at startup |
 | `version` | `ver` | Show the mod loader build and plugin interface versions |
 | `pak <action>` | `paks` | Mount and unmount paks, and load, spawn or preview assets from them. Actions: `list` (or `ls`), `mount <path> [order]`, `unmount <n or path>`, `load <path>`, `loadclass <path>`, `spawn <class> [x y z]`, `spawnmesh <mesh> [x y z]`, and on a client `widget <class> [zorder]` or `widget close` |

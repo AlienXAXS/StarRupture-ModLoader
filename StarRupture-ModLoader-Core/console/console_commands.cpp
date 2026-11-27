@@ -1678,7 +1678,7 @@ namespace ModConsole
                    "Load plugin DLLs added to the Plugins folder since startup",
                    &Cmd_Rescan,  true });
 
-        Register({ "hookfailures", "hooks",  "hookfailures",
+        Register({ "hookfailures", nullptr,  "hookfailures",
                    "List plugins whose hook patterns did not resolve",
                    &Cmd_HookFailures, false });
 
