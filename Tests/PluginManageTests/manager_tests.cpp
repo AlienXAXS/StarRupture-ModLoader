@@ -3,6 +3,7 @@
 // DLLs. Each game start is a process of its own, so a restart is a real one.
 #include "plugins/plugin_manager.h"
 #include "plugins/plugin_manage.h"
+#include "plugins/plugin_call_gate.h"
 #include "auto_update/auto_updater.h"
 #include "auto_update/mod_install.h"
 #include "utils/sha256.h"
@@ -16,6 +17,7 @@
 #include <fstream>
 #include <iterator>
 #include <string>
+#include <thread>
 #include <vector>
 
 using namespace PluginManager;
@@ -346,6 +348,45 @@ namespace
 		ExpectCard("A.dll", CardState::Running, "enable the restored plugin");
 	}
 
+	// ---- a plugin call that does not return ---------------------------------
+
+	int IndexOf(const std::string& name)
+	{
+		PluginStatus statuses[16]{};
+		const int count = GetAllPluginStatuses(statuses, 16);
+		for (int i = 0; i < count; ++i)
+			if (name == statuses[i].name)
+				return i;
+		return -1;
+	}
+
+	void BusyCall()
+	{
+		std::atomic<bool> inside{ false }, leave{ false };
+		std::thread call([&]
+		{
+			const PluginCallGate::Scope gate;
+			inside = true;
+			while (!leave) Sleep(1);
+		});
+		while (!inside) Sleep(1);
+
+		std::string why;
+		Expect(!UnloadPlugin(IndexOf("A"), &why) && why.find("nothing was unloaded") != std::string::npos &&
+			why.find("RELOAD") == std::string::npos, "a blocked unload does not send anyone to RELOAD: " + why);
+		Expect(!ReloadPlugin(IndexOf("A"), &why) && why.find("nothing was reloaded") != std::string::npos,
+			"a blocked reload says so: " + why);
+		Ask(ManageOp::Disable, "A.dll", ManageResult::AfterRestart, "disable during the call");
+		const std::string message = Card("A.dll").message;
+		Expect(message.find("nothing was unloaded") != std::string::npos &&
+			message.find("RELOAD") == std::string::npos, "Disable gives the unload note: " + message);
+		Expect(Count("shutdown-file-there A") == 0 && Count("detach A") == 0, "A is left as it was");
+
+		leave = true;
+		call.join();
+		Expect(UnloadPlugin(IndexOf("A"), &why) && Count("detach A") == 1, "UNLOAD finishes it afterwards: " + why);
+	}
+
 	// ---- files put into Plugins while the game runs -------------------------
 
 	bool PutPlugin(const wchar_t* file)
@@ -609,6 +650,7 @@ namespace
 		{ "restore-disabled", RestoringDisabled }, { "restored-stays-disabled", RestoredStaysDisabled },
 		{ "copied-back", CopiedBack }, { "duplicate-name", RestoreBesideACopy }, { "vortex", VortexDeployed },
 		{ "install", Installing },
+		{ "busy-call", BusyCall },
 	};
 
 	struct Game
@@ -690,6 +732,7 @@ void RunManagerTests(const std::wstring& root, int& checks, int& failures)
 		{ { L"A" }, { L"duplicate-name" } },
 		{ { L"A", L"B" }, { L"vortex" } },
 		{ { L"A", L"B", L"StuckC" }, { L"install" } },
+		{ { L"A" }, { L"busy-call" } },
 	};
 
 	wchar_t self[MAX_PATH]{};
