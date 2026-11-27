@@ -6,6 +6,7 @@
 
 #include "autoupdate_log.h"
 #include "miniz.h"
+#include "../StarRupture-ModLoader-Core/auto_update/http_get.h"
 #include "../StarRupture-ModLoader-Core/auto_update/json_extract.h"
 #include "../StarRupture-ModLoader-Core/auto_update/version_compare.h"
 #include "../StarRupture-ModLoader-Core/auto_update/vortex_notice.h"
@@ -205,27 +206,39 @@ namespace
         return buf;
     }
 
-    // Returns the response body, or empty on any error.  maxSize caps the
-    // download so a bad server cannot exhaust memory.
-    std::string HttpGet(const std::string& url, const char* label, size_t maxSize)
+    // One request that follows no redirect. Returns the body of a 200, or
+    // empty on anything else; a redirect's address goes into location.
+    // maxSize caps the download so a bad server cannot exhaust memory.
+    std::string HttpGetOnce(const std::string& url, const char* label, size_t maxSize,
+                            unsigned& status, std::string& location)
     {
-        AutoUpdateLog::Info("HttpGet [%s]: %s", label, url.c_str());
+        // Without the query: a signed download address carries its key there.
+        AutoUpdateLog::Info("HttpGet [%s]: %s", label, url.substr(0, url.find('?')).c_str());
 
         std::wstring wUrl = Widen(url);
 
         URL_COMPONENTS uc{};
         uc.dwStructSize = sizeof(uc);
-        wchar_t host[256]{}, path[1024]{};
+        // A signed download address runs to well over a thousand characters.
+        constexpr DWORD kUrlChars = 4096;
+        wchar_t host[256]{};
+        std::vector<wchar_t> path(kUrlChars, L'\0'), extra(kUrlChars, L'\0');
         uc.lpszHostName = host;
         uc.dwHostNameLength = 256;
-        uc.lpszUrlPath = path;
-        uc.dwUrlPathLength = 1024;
+        uc.lpszUrlPath = path.data();
+        uc.dwUrlPathLength = kUrlChars;
+        uc.lpszExtraInfo = extra.data();
+        uc.dwExtraInfoLength = kUrlChars;
         if (!WinHttpCrackUrl(wUrl.c_str(), 0, 0, &uc))
         {
             AutoUpdateLog::Error("HttpGet [%s]: invalid URL (%lu: %s)",
                                  label, GetLastError(), FormatWin32Error(GetLastError()).c_str());
             return {};
         }
+
+        // The query goes with the path; a fragment is never sent.
+        std::wstring target = std::wstring(path.data()) + extra.data();
+        target = target.substr(0, target.find(L'#'));
 
         HINTERNET hSession = WinHttpOpen(L"StarRupture-ModLoader-Updater/1.0",
                                          WINHTTP_ACCESS_TYPE_NO_PROXY, nullptr, nullptr, 0);
@@ -256,7 +269,7 @@ namespace
                 break;
             }
 
-            hRequest = WinHttpOpenRequest(hConnect, L"GET", path,
+            hRequest = WinHttpOpenRequest(hConnect, L"GET", target.c_str(),
                                           nullptr, nullptr, nullptr, WINHTTP_FLAG_SECURE);
             if (!hRequest)
             {
@@ -265,9 +278,15 @@ namespace
                 break;
             }
 
-            DWORD redirectPolicy = WINHTTP_OPTION_REDIRECT_POLICY_ALWAYS;
-            WinHttpSetOption(hRequest, WINHTTP_OPTION_REDIRECT_POLICY,
-                             &redirectPolicy, sizeof(redirectPolicy));
+            // Redirects are followed by the caller, which checks each one.
+            DWORD redirectPolicy = WINHTTP_OPTION_REDIRECT_POLICY_NEVER;
+            if (!WinHttpSetOption(hRequest, WINHTTP_OPTION_REDIRECT_POLICY,
+                                  &redirectPolicy, sizeof(redirectPolicy)))
+            {
+                AutoUpdateLog::Error("HttpGet [%s]: could not turn off redirects (%lu: %s)",
+                                     label, GetLastError(), FormatWin32Error(GetLastError()).c_str());
+                break;
+            }
 
             if (!WinHttpSendRequest(hRequest, nullptr, 0, nullptr, 0, 0, 0) ||
                 !WinHttpReceiveResponse(hRequest, nullptr))
@@ -281,6 +300,16 @@ namespace
             WinHttpQueryHeaders(hRequest,
                                 WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
                                 nullptr, &statusCode, &statusSize, nullptr);
+            status = statusCode;
+            if (statusCode >= 300 && statusCode < 400)
+            {
+                std::vector<wchar_t> to(kUrlChars, L'\0');
+                DWORD toSize = kUrlChars * sizeof(wchar_t);
+                if (WinHttpQueryHeaders(hRequest, WINHTTP_QUERY_LOCATION, WINHTTP_HEADER_NAME_BY_INDEX,
+                                        to.data(), &toSize, WINHTTP_NO_HEADER_INDEX))
+                    location = Narrow(to.data());
+                break;
+            }
             if (statusCode != 200)
             {
                 AutoUpdateLog::Error("HttpGet [%s]: server returned HTTP %lu", label, statusCode);
@@ -337,6 +366,22 @@ namespace
 
         if (!ok)
             return {};
+        return body;
+    }
+
+    // GETs part of an update. `source` is the manifest URL: it and every
+    // redirect must be on an expected host (UpdateHosts, in Core's http_get.h).
+    std::string HttpGet(const std::string& url, const std::string& source, const char* label, size_t maxSize)
+    {
+        std::string refused;
+        std::string body = UpdateHosts::Follow(url, source,
+            [label, maxSize](const std::string& at, unsigned& status, std::string& location)
+            {
+                return HttpGetOnce(at, label, maxSize, status, location);
+            }, refused);
+        if (!refused.empty())
+            AutoUpdateLog::Error("HttpGet [%s]: update refused: it points to %s, not an expected update host",
+                                 label, refused.c_str());
         return body;
     }
 
@@ -416,13 +461,13 @@ namespace
     // installs every file except dwmapi.dll with backup/rollback.  Returns
     // true only when every file has been placed successfully; `vortexFiles`
     // then says whether any file it replaced was one Vortex placed.
-    bool DownloadAndInstall(const std::string& zipUrl, const std::string& remoteTag,
+    bool DownloadAndInstall(const std::string& zipUrl, const std::string& source, const std::string& remoteTag,
                             bool& vortexFiles)
     {
         // ------------------------------------------------------------------
         // Phase 1: download (memory only; capped at 256 MB sanity limit)
         // ------------------------------------------------------------------
-        std::string zipData = HttpGet(zipUrl, "release zip", 256u * 1024 * 1024);
+        std::string zipData = HttpGet(zipUrl, source, "release zip", 256u * 1024 * 1024);
         if (zipData.size() < 1024)
         {
             AutoUpdateLog::Error("Install: download failed or implausibly small (%zu bytes) -- aborting",
@@ -725,7 +770,7 @@ int RunUpdater(const wchar_t* gameDir)
     // ----------------------------------------------------------------------
     // Fetch and parse the remote manifest.
     // ----------------------------------------------------------------------
-    std::string manifest = HttpGet(manifestUrl, "manifest", 1024 * 1024);
+    std::string manifest = HttpGet(manifestUrl, manifestUrl, "manifest", 1024 * 1024);
     if (manifest.empty())
     {
         AutoUpdateLog::Warn("Manifest fetch failed -- update check skipped this session");
@@ -741,7 +786,9 @@ int RunUpdater(const wchar_t* gameDir)
 
     ParsedVersion remoteVer = ParseVersion(remoteTag.c_str());
     AutoUpdateLog::Info("Remote build_tag: %s", remoteTag.c_str());
-    if (!remoteVer.valid)
+    // The tag becomes part of the ZIP's address, so it must be plain text.
+    if (!remoteVer.valid || remoteTag.find_first_not_of(
+            "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-_+") != std::string::npos)
     {
         AutoUpdateLog::Error("Remote build_tag '%s' is not a valid version -- update check skipped",
                              remoteTag.c_str());
@@ -823,7 +870,7 @@ int RunUpdater(const wchar_t* gameDir)
     }
 
     bool vortexFiles = false;
-    if (DownloadAndInstall(zipUrl, remoteTag, vortexFiles))
+    if (DownloadAndInstall(zipUrl, manifestUrl, remoteTag, vortexFiles))
     {
         // Record the new tag and clear the declined marker.
         IniWriteString(stateIni, L"AutoUpdate", L"BuildTag", Widen(remoteTag).c_str());
