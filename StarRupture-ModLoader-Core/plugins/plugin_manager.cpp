@@ -219,6 +219,7 @@ namespace PluginManager
 	// plugin's own locks held, so a shutdown that hangs is named in the log.
 	static bool CallShutdown(PluginShutdownFunc fn)
 	{
+		const PluginCallGate::Scope gate;   // an unload it asks for is queued
 		PluginWatchdog::Scope watch(reinterpret_cast<const void*>(fn), "PluginShutdown");
 		PluginGuard::RunningScope running(reinterpret_cast<const void*>(fn));
 		return CallShutdownSEH(fn);
@@ -1032,8 +1033,12 @@ namespace PluginManager
 			/*preload*/ false, OtherPluginNamed(plugin, true) != nullptr);
 
 		PluginGuard::RunningScope running(reinterpret_cast<const void*>(plugin.loadHooks));
-		const bool survived = CallLoadHooksSEH(plugin.loadHooks, &plugin.self,
-			ModLoaderLogger::GetPluginHookScanner());
+		bool survived = false;
+		{
+			const PluginCallGate::Scope gate;
+			survived = CallLoadHooksSEH(plugin.loadHooks, &plugin.self,
+				ModLoaderLogger::GetPluginHookScanner());
+		}
 
 		if (!survived)
 		{
@@ -1097,7 +1102,12 @@ namespace PluginManager
 		if (plugin.setHostInfo)
 		{
 			g_lastPluginCrash = {};
-			if (!PluginHostInfoCall::Run(plugin.setHostInfo, PluginCrashFilter))
+			bool survived = false;
+			{
+				const PluginCallGate::Scope gate;
+				survived = PluginHostInfoCall::Run(plugin.setHostInfo, PluginCrashFilter);
+			}
+			if (!survived)
 			{
 				LogPluginCrash(plugin.cachedName.c_str(), plugin.hModule, L"PluginSetHostInfo");
 				ModLoaderLogger::LogError(L"Plugin '%S' crashed during PluginSetHostInfo -- it has been left unloaded", plugin.cachedName.c_str());
@@ -1136,7 +1146,12 @@ namespace PluginManager
 
 		const unsigned globalsCallsBefore = ModLoaderLogger::SdkGlobalsCallsOnThisThread();
 		PluginGuard::RunningScope running(reinterpret_cast<const void*>(plugin.init));
-		InitSEHResult initResult = CallInitSEH(plugin.init, &plugin.self);
+		InitSEHResult initResult = {};
+		{
+			// A reload or unload asked for in there is queued, not run under it.
+			const PluginCallGate::Scope gate;
+			initResult = CallInitSEH(plugin.init, &plugin.self);
+		}
 		const bool askedSdkGlobals = ModLoaderLogger::SdkGlobalsCallsOnThisThread() != globalsCallsBefore;
 		const std::string lateRefusal = VersionMap::OffBuildRefusal(VersionMap::RunningExe(), interfaceVersion,
 			plugin.gameBuild, askedSdkGlobals);
@@ -1194,7 +1209,8 @@ namespace PluginManager
 		// Pre-count deferred plugins so we can show accurate (i/total) progress.
 		int totalDeferred = 0;
 		for (const auto& plugin : g_loadedPlugins)
-			if (!plugin->isInitialized && !plugin->isUnloading && plugin->init) totalDeferred++;
+			if (!plugin->isInitialized && !plugin->isUnloading && !plugin->awaitingFree && plugin->init)
+				totalDeferred++;
 
 		int initCount = 0;
 		int failCount = 0;
@@ -1204,7 +1220,7 @@ namespace PluginManager
 		for (size_t i = 0; i < g_loadedPlugins.size(); ++i)
 		{
 			LoadedPlugin* const plugin = g_loadedPlugins[i].get();
-			if (plugin->isInitialized || plugin->isUnloading || !plugin->init)
+			if (plugin->isInitialized || plugin->isUnloading || plugin->awaitingFree || !plugin->init)
 				continue;
 
 			current++;
