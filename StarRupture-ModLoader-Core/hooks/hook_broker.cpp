@@ -174,16 +174,18 @@ namespace Hooks::Broker
 			if (!fresh.headThunk)
 				return LinkId{};
 
-			void* trampoline = nullptr;
-			if (!fresh.prologue.InstallRaw(target, fresh.headThunk, &trampoline))
+			// The head slot is where InstallRaw puts the trampoline, which it
+			// does before it patches the target: a thread that calls the target
+			// the moment the patch lands finds somewhere to go.
+			void** const headSlot = reinterpret_cast<void**>(fresh.headThunk + kThunkSlotOff);
+			if (!fresh.prologue.InstallRaw(target, fresh.headThunk, headSlot))
 			{
 				LogToFile::Error("[HookBroker] Could not install the prologue patch at 0x%llX",
 					static_cast<unsigned long long>(target));
 				return LinkId{};
 			}
 
-			fresh.trampoline = reinterpret_cast<uintptr_t>(trampoline);
-			SetThunkTarget(fresh.headThunk, fresh.trampoline);
+			fresh.trampoline = GetThunkTarget(fresh.headThunk);
 
 			g_chains.push_back(std::move(fresh));
 			chain = &g_chains.back();

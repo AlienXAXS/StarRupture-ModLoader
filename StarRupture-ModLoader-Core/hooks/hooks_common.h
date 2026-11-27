@@ -69,7 +69,8 @@ namespace Hooks
 		// of these per hooked address and is the only thing that may call them;
 		// everything else uses Install/Remove above. Calling InstallRaw directly
 		// on an address that is already hooked is exactly the corruption the
-		// broker exists to prevent.
+		// broker exists to prevent. InstallRaw writes outTrampoline before it
+		// patches the target.
 		bool InstallRaw(uintptr_t target, void* jumpTo, void** outTrampoline);
 		void RemoveRaw();
 	};

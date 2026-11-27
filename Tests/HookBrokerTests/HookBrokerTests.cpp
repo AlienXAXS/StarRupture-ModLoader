@@ -7,16 +7,39 @@
 #include "logging/logger.h"
 
 #include <atomic>
+#include <cstdarg>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <cwchar>
 #include <string>
 #include <thread>
 #include <vector>
 
+// What the head slot held when InstallRaw was about to write the patch. The log
+// line just before the write is the one place to look from outside.
+static const uint8_t* g_patchHead = nullptr;
+static uintptr_t      g_slotBeforePatch = 0;
+static int            g_patchesSeen = 0;
+
 namespace ModLoaderLogger
 {
-	void LogDebug(const wchar_t*, ...) {}
+	void LogDebug(const wchar_t* format, ...)
+	{
+		va_list args;
+		va_start(args, format);
+		if (wcsstr(format, L"InstallRaw: target=") && wcsstr(format, L"jumpTo="))
+		{
+			va_arg(args, unsigned long long);
+			g_patchHead = reinterpret_cast<const uint8_t*>(va_arg(args, unsigned long long));
+		}
+		else if (wcsstr(format, L"writing JMP patch") && g_patchHead)
+		{
+			g_slotBeforePatch = *reinterpret_cast<const volatile uintptr_t*>(g_patchHead + 8);
+			++g_patchesSeen;
+		}
+		va_end(args);
+	}
 	void LogInfo(const wchar_t*, ...) {}
 	void LogWarn(const wchar_t*, ...) {}
 	void LogError(const wchar_t*, ...) {}
@@ -263,6 +286,28 @@ static void Test_NothingIsCutWithoutAQuery()
 	CHECK(Broker::SyncCuts() == 0);
 	CHECK(c.Cuts() == "0");
 	VERIFY(c);
+	c.Close();
+}
+
+// A thread can call the target as soon as the patch is in, so the head slot must
+// lead somewhere before then.
+static void Test_TheHeadSlotIsSetBeforeThePatch()
+{
+	AllowAll();
+	g_patchHead = nullptr;
+	g_slotBeforePatch = 0;
+	const int seen = g_patchesSeen;
+
+	Built c;
+	c.Add(0, 0);
+	CHECK(g_patchesSeen == seen + 1);
+	CHECK(g_patchHead == HeadThunk(c.target));
+	uintptr_t trampoline = 0;
+	for (const Broker::ChainInfo& info : Broker::Snapshot())
+		if (info.target == c.target.Address())
+			trampoline = info.trampoline;
+	CHECK(trampoline != 0);
+	CHECK(g_slotBeforePatch == trampoline);
 	c.Close();
 }
 
@@ -585,6 +630,7 @@ int main()
 	struct { const char* name; void (*run)(); } const kTests[] = {
 #define T(f) { #f, f }
 		T(Test_NothingIsCutWithoutAQuery),       // first: runs before the query is set
+		T(Test_TheHeadSlotIsSetBeforeThePatch),
 		T(Test_CutAndRestoreFirstMiddleLastAll),
 		T(Test_CallsAreCountedOnlyOnLiveDetours),
 		T(Test_ACutLinksOwnOriginalSkipsToTheNextLiveLink),

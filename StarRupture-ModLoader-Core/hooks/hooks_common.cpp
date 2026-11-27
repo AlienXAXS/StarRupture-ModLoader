@@ -1083,7 +1083,9 @@ namespace Hooks
 		DWORD oldProtect = 0;
 		VirtualProtect(trampoline, trampolineSize, PAGE_EXECUTE_READ, &oldProtect);
 
-		// Give the caller a pointer to the trampoline so they can call the original
+		// Give the caller a pointer to the trampoline so they can call the
+		// original. This stays ahead of the patch: the broker passes the slot the
+		// patch jumps through.
 		*outTrampoline = trampoline;
 		ModLoaderLogger::LogDebug(L"[Hooks] Hook::InstallRaw: original function pointer set to trampoline at 0x%p",
 		                          static_cast<void*>(trampoline));
