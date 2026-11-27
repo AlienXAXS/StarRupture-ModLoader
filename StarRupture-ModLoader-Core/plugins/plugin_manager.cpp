@@ -411,15 +411,27 @@ namespace PluginManager
 	static std::string BaseFileNameA(const std::wstring& path);
 	static void ShowCrashToast(const std::string& name, const std::string& text);
 
+	// How many FreeRefused calls have g_pluginLock released while their caller
+	// still uses a record. Only read or written with g_pluginLock held.
+	static int g_recordsInUse = 0;
+
 	// Frees a DLL that never became a running plugin. Its DllMain has run, so
 	// another plugin may already have found it by name and be calling it.
 	// lockHeld: this thread holds g_pluginLock (once); it is released for the wait.
 	static void FreeRefused(HMODULE module, const std::wstring& path, bool lockHeld)
 	{
 		const std::string name = BaseFileNameA(path);
-		if (lockHeld) LeaveCriticalSection(&g_pluginLock);
+		if (lockHeld)
+		{
+			++g_recordsInUse;   // UnloadAllPlugins must not drop the records
+			LeaveCriticalSection(&g_pluginLock);
+		}
 		PluginCallGate::FreeWhenIdle(module, name.c_str());
-		if (lockHeld) EnterCriticalSection(&g_pluginLock);
+		if (lockHeld)
+		{
+			EnterCriticalSection(&g_pluginLock);
+			--g_recordsInUse;
+		}
 	}
 
 	// A record with no code, its plugin turned off or uninstalled. A
@@ -1284,6 +1296,8 @@ namespace PluginManager
 	// is still using the record, so the record must not be freed.
 	static bool AnyPluginUnloading()
 	{
+		if (g_recordsInUse > 0)
+			return true;
 		for (const auto& plugin : g_loadedPlugins)
 			if (plugin->isUnloading)
 				return true;
