@@ -285,7 +285,7 @@ static bool DownloadPlugin(const char* url,
 	swprintf_s(tmpPath, L"%s\\%s.tmp", pluginsDir, filename);
 	swprintf_s(finalPath, L"%s\\%s", pluginsDir, filename);
 
-	std::string body = HttpGetUpdate(url, manifestUrl, displayName);
+	std::string body = HttpGetUpdate(url, manifestUrl, UpdateHosts::Owner::Plugin, displayName);
 	if (body.empty())
 	{
 		LogToFile::Debug("[AutoUpdate] Download [%s]: HttpGet returned empty body", displayName);
@@ -359,9 +359,11 @@ static bool DownloadPlugin(const char* url,
 //   }
 //
 // Both addresses are https. download_url, and every redirect of either fetch,
-// must be on github.com, GitHub's two release asset hosts, or the same host
-// (and port) as manifest_url. "version" is numbers with at least two parts,
-// like 1.2.0 or v1.2.0-rc1; one that has none is never downloaded.
+// must be on github.com, raw.githubusercontent.com, GitHub's two release asset
+// hosts, manifest_url's own host, or that host with "www." added or removed (a
+// port must match). "version" is numbers such as 1.2.0, v1.2.0-rc1 or a plain
+// 5; one that can't be read that way is never downloaded. A suffix is ignored,
+// so 1.2.0-rc1 and 1.2.0 count as the same version.
 //
 // "notes" is optional: one change per line, lines separated by the \n escape.
 // When present it is listed under the plugin in the "Plugins Updated" pop-up.
@@ -594,7 +596,8 @@ static void ProcessPluginSidecar(const PluginSidecar& sc,
     LogToFile::Debug("[AutoUpdate][Sidecar] Checking '%s' via %s",
                      sc.dllFilename.c_str(), sc.manifestUrl.c_str());
 
-    std::string json = HttpGetUpdate(sc.manifestUrl, sc.manifestUrl, sc.dllFilename.c_str());
+    std::string json = HttpGetUpdate(sc.manifestUrl, sc.manifestUrl, UpdateHosts::Owner::Plugin,
+                                     sc.dllFilename.c_str());
     if (json.empty())
     {
         LogToFile::Warn("[AutoUpdate][Sidecar] '%s' — manifest fetch failed, skipping",
@@ -832,7 +835,8 @@ static void RunCentralManifestUpdate(const AutoUpdateConfig& cfg)
 	Splash::SetSubProgress(0.0f);
 #endif
 
-	std::string manifest = HttpGetUpdate(cfg.manifestUrl, cfg.manifestUrl, "manifest");
+	std::string manifest = HttpGetUpdate(cfg.manifestUrl, cfg.manifestUrl, UpdateHosts::Owner::Loader,
+	                                     "manifest");
 	if (manifest.empty())
 	{
 		LogToFile::Warn("[AutoUpdate] Manifest fetch failed — skipping modloader version check");

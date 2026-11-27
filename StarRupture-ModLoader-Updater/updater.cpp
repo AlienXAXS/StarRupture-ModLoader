@@ -179,7 +179,7 @@ namespace
         v.valid = (v.parts[0] | v.parts[1] | v.parts[2] | v.parts[3]) != 0;
 
         char buf[64];
-        sprintf_s(buf, "%d.%d.%d", v.parts[0], v.parts[1], v.parts[2]);
+        sprintf_s(buf, "%lld.%lld.%lld", v.parts[0], v.parts[1], v.parts[2]);
         outDisplay = buf;
         return v;
     }
@@ -220,7 +220,7 @@ namespace
         URL_COMPONENTS uc{};
         uc.dwStructSize = sizeof(uc);
         // A signed download address runs to well over a thousand characters.
-        constexpr DWORD kUrlChars = 4096;
+        constexpr DWORD kUrlChars = 16384;
         wchar_t host[256]{};
         std::vector<wchar_t> path(kUrlChars, L'\0'), extra(kUrlChars, L'\0');
         uc.lpszHostName = host;
@@ -374,7 +374,7 @@ namespace
     std::string HttpGet(const std::string& url, const std::string& source, const char* label, size_t maxSize)
     {
         std::string refused;
-        std::string body = UpdateHosts::Follow(url, source,
+        std::string body = UpdateHosts::Follow(url, source, UpdateHosts::Owner::Loader,
             [label, maxSize](const std::string& at, unsigned& status, std::string& location)
             {
                 return HttpGetOnce(at, label, maxSize, status, location);

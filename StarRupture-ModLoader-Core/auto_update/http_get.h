@@ -61,10 +61,14 @@ struct HttpGetOptions
 
 // Where an update may be fetched from. The configured address (a plugin's
 // manifest_url, or the loader's manifest URL) names its own host; besides it,
-// only GitHub's release hosts are expected. Shared with the updater exe, so
-// everything here is inline.
+// GitHub's release hosts are expected, and for a plugin also GitHub's raw file
+// host and the "www." twin of the configured host. Shared with the updater exe,
+// so everything here is inline.
 namespace UpdateHosts
 {
+	// Whose update is being fetched.
+	enum class Owner { Loader, Plugin };
+
 	// The two hosts GitHub serves release assets from.
 	inline constexpr const char* kDownloadHosts[] = { "release-assets.githubusercontent.com", "objects.githubusercontent.com" };
 
@@ -113,11 +117,19 @@ namespace UpdateHosts
 	}
 
 	// Whether `url` may be fetched for an update whose configured address is
-	// `source`. Hosts match whole: no suffixes.
-	inline bool IsExpected(const std::string& url, const std::string& source)
+	// `source`. Hosts match whole, with their port: no suffixes.
+	inline bool IsExpected(const std::string& url, const std::string& source, Owner owner)
 	{
 		const std::string to = Authority(url);
-		return !to.empty() && (to == "github.com" || IsDownloadHost(to) || to == Authority(source));
+		if (to.empty())
+			return false;
+		const std::string own = Authority(source);
+		if (to == "github.com" || IsDownloadHost(to) || to == own)
+			return true;
+		// A github.com .../raw/... link redirects to the raw host, and whoever
+		// holds a domain holds both of its twins.
+		return owner == Owner::Plugin && (to == "raw.githubusercontent.com"
+			|| (!own.empty() && (to == "www." + own || own == "www." + to)));
 	}
 
 	// A Location header as a full address, against the one that answered.
@@ -133,6 +145,8 @@ namespace UpdateHosts
 		const std::string origin = from.substr(0, from.find_first_of("/?#", 8));
 		if (location[0] == '/')
 			return origin + location;
+		if (location[0] == '?')
+			return from.substr(0, from.find_first_of("?#")) + location;
 		const std::string path = from.substr(0, from.find_first_of("?#"));
 		const size_t slash = path.rfind('/');
 		return (slash == std::string::npos || slash < origin.size() ? origin + "/" : path.substr(0, slash + 1)) + location;
@@ -143,12 +157,13 @@ namespace UpdateHosts
 
 	// GETs `url`, following redirects by hand so that it and every address it
 	// is sent on to pass IsExpected. `refused` gets what was turned down.
-	inline std::string Follow(std::string url, const std::string& source, const HopFn& hop, std::string& refused)
+	inline std::string Follow(std::string url, const std::string& source, Owner owner, const HopFn& hop,
+	                          std::string& refused)
 	{
 		refused.clear();
 		for (int redirects = 0;; ++redirects)
 		{
-			if (!IsExpected(url, source))
+			if (!IsExpected(url, source, owner))
 			{
 				// The host only: the rest of a download address can carry a key.
 				const std::string host = Authority(url);
@@ -181,4 +196,5 @@ std::string HttpGet(const char* url, const char* label = "resource", const HttpG
 
 // HttpGet for an update's manifest or file, held to UpdateHosts::Follow.
 // `source` is the configured address the update started from.
-std::string HttpGetUpdate(const std::string& url, const std::string& source, const char* label);
+std::string HttpGetUpdate(const std::string& url, const std::string& source, UpdateHosts::Owner owner,
+                          const char* label);

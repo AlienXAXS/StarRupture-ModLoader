@@ -58,7 +58,8 @@ namespace
 
 	// The longest URL, path or query taken. A signed download address runs to
 	// well over a thousand characters.
-	constexpr DWORD kUrlChars = 4096;
+	// A signed download address runs to well over a thousand characters.
+	constexpr DWORD kUrlChars = 16384;
 
 	// A header's text, kept only when it is printable ASCII of at most maxLen.
 	std::string PlainHeader(HINTERNET request, DWORD query, const wchar_t* name, size_t maxLen)
@@ -291,10 +292,11 @@ std::string HttpGet(const char* url, const char* label, const HttpGetOptions& op
 	return body;
 }
 
-std::string HttpGetUpdate(const std::string& url, const std::string& source, const char* label)
+std::string HttpGetUpdate(const std::string& url, const std::string& source, UpdateHosts::Owner owner,
+                          const char* label)
 {
 	std::string refused;
-	std::string body = UpdateHosts::Follow(url, source,
+	std::string body = UpdateHosts::Follow(url, source, owner,
 		[label](const std::string& at, unsigned& status, std::string& location)
 		{
 			HttpGetOptions options;

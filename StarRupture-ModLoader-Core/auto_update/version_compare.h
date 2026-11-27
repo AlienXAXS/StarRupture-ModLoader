@@ -10,12 +10,14 @@ namespace AutoUpdateVersion
 {
     struct ParsedVersion
     {
-        int  parts[4] = { 0, 0, 0, 0 };
+        // Wide enough for a date or timestamp used as a release number.
+        long long parts[4] = { 0, 0, 0, 0 };
         bool valid = false;
         bool hasSuffix = false; // e.g. "-preview" / "-beta.1"
     };
 
-    // Accepts "v1.15.4", "1.15.2.0", "v1.16.0-beta.1", etc.
+    // Accepts "v1.15.4", "1.15.2.0", "v1.16.0-beta.1", etc., and one plain
+    // number such as "5" or "v5".
     inline ParsedVersion ParseVersion(const char* s)
     {
         ParsedVersion v;
@@ -31,21 +33,24 @@ namespace AutoUpdateVersion
         {
             if (*p < '0' || *p > '9')
                 break;
-            long val = 0;
+            constexpr long long kMaxPart = 100000000000000000;
+            long long val = 0;
             while (*p >= '0' && *p <= '9')
             {
                 val = val * 10 + (*p - '0');
-                if (val > 1000000) val = 1000000;
+                if (val > kMaxPart) val = kMaxPart;
                 ++p;
             }
-            v.parts[idx++] = static_cast<int>(val);
+            v.parts[idx++] = val;
             if (*p == '.')
                 ++p;
             else
                 break;
         }
 
-        v.valid = (idx >= 2); // require at least major.minor
+        // major.minor at least, or a number with nothing after it: "5b" and
+        // "2024-01-05" are not release numbers to compare.
+        v.valid = idx >= 2 || (idx == 1 && !*p);
         v.hasSuffix = (*p == '-' || *p == '+');
         return v;
     }
