@@ -103,6 +103,7 @@
   <ItemGroup Label="Loader sources under test">
     <ClCompile Include="$(CoreDir)hooks\input\keybind_registry.cpp" />
     <ClCompile Include="$(CoreDir)plugins\plugin_guard.cpp" />
+    <ClCompile Include="$(CoreDir)plugins\plugin_call_gate.cpp" />
     <ClCompile Include="$(CoreDir)core\ui_state.cpp" />
     <ClCompile Include="$(CoreDir)utils\game_thread_dispatch.cpp" />
   </ItemGroup>

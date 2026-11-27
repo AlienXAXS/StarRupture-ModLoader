@@ -127,3 +127,6 @@ namespace ScanCache
 }
 
 std::wstring GetGameVersionString() { return std::wstring(); }
+
+// The call gate only reaches the guard when it frees a module, which no test here does.
+namespace PluginGuard { void Untrack(HMODULE) {} }
