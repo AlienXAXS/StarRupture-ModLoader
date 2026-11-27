@@ -105,10 +105,10 @@ namespace PluginCallGate
 			return false;
 		}
 
+		struct ReopenOnExit { ~ReopenOnExit() { Reopen(); } } reopen;
 		if (whileIdle)
 			whileIdle();
 		s_freeStep.load()(module);
-		Reopen();
 		return true;
 	}
 }

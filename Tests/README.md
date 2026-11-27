@@ -127,7 +127,7 @@ plugin list, the logger, the window theme -- see `test_doubles.cpp`). It covers:
   does not fire `OnConfigChanged`.
 - A handler that clamps a value by calling `IPluginConfig::Write*` has its clamped value persisted by `Commit`.
 - A hand-edited INI that spells a section or key in another case still applies its Block state on load.
-- Forgetting a plugin's `OnConfigChanged` callbacks drops its own and leaves the next plugin's alone, and each of `UnloadAllPlugins`, `FreeShutDownPlugin` (which `UnloadPlugin` and `ShutDownAndFree` free through) and `ReloadPlugin` calls `ForgetRegistrations` before `FreeLibrary`, which in turn calls that. The loader's plugin manager cannot be linked into a console program, so the second half is checked by reading `plugin_manager.cpp`; deleting any of those calls fails the test.
+- Forgetting a plugin's `OnConfigChanged` callbacks drops its own and leaves the next plugin's alone, and `FreeShutDownPlugin` (which every unload and reload frees through) calls `ForgetRegistrations` before it waits at the call gate and again before the free, which in turn calls that. The loader's plugin manager cannot be linked into a console program, so the second half is checked by reading `plugin_manager.cpp`; deleting any of those calls fails the test.
 
 Build it from the command line (it creates `ModLoader\Plugins\config` beside the exe, under
 `build\tests`, and removes its own INI files when it finishes):
@@ -150,9 +150,13 @@ and `UI/plugin_widget_registry.cpp` and replaces only what those call out to (se
 - An unload that races the render thread waits out a panel render or panel-closed callback still
   inside the module; a render that never returns makes `ForgetModule` give up and say so; a
   `renderFn` may unregister its own panel; a panel forgotten mid-frame is not drawn.
-- Each of `UnloadAllPlugins`, `UnloadPlugin` and `ReloadPlugin` waits out the plugin's renders and
-  calls both registries' `ForgetModule` before `FreeLibrary`, and stops before `FreeLibrary` when the
-  wait gives up. As with ConfigEditTests, this is checked by reading `plugin_manager.cpp`.
+- `FreeShutDownPlugin`, which every unload and reload frees through, calls `ForgetRegistrations` (both
+  registries' `ForgetModule`) before it waits at the call gate, and keeps the module when the gate does
+  not free it. As with ConfigEditTests, this is checked by reading `plugin_manager.cpp`.
+- The call gate (`plugins/plugin_call_gate.cpp`), with the free step replaced: nothing is freed while a
+  thread holds a callback it copied from a registry but has not called yet, or while a widget is being
+  drawn; a running call can nest while a free waits; a new call and a second free are held back until the
+  free is done; a free asked for from inside a call is refused at once; an exception leaves the gate open.
 
 ```
 msbuild Tests\PanelUnloadTests\PanelUnloadTests.vcxproj /p:Configuration="Client Release" /p:Platform=x64

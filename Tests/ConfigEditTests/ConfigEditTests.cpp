@@ -500,39 +500,33 @@ static void Test_UnloadPathsPurgeCallbacks()
     const std::string src = StripLineComments(
         std::string(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()));
 
-    const char* const kPaths[] =
-    {
-        "void UnloadAllPlugins()",
-        "static bool FreeShutDownPlugin(LoadedPlugin& p, const wchar_t* action)",
-        "bool ReloadPlugin(int index, std::string* refusal)",
-    };
-    for (const char* signature : kPaths)
+    // Every unload frees through FreeShutDownPlugin, which drops what the
+    // plugin registered before it waits at the call gate, and again with no
+    // call running, in case a running call registered more.
+    const std::string freeShutDown = FunctionBody(src, "static bool FreeShutDownPlugin(LoadedPlugin& p, DWORD waitMs)");
+    const size_t forgetFirst = freeShutDown.find("ForgetRegistrations(p);");
+    const size_t gated       = freeShutDown.find("PluginCallGate::FreeWhenIdle(");
+    CHECK(forgetFirst != std::string::npos);
+    CHECK(gated != std::string::npos);
+    CHECK(forgetFirst < gated);
+    CHECK(freeShutDown.find("ForgetRegistrations(p);", gated) != std::string::npos);
+    // ...and a free that did not happen keeps the module in the record.
+    const size_t kept    = freeShutDown.find("if (!freed)", gated);
+    const size_t cleared = freeShutDown.find("p.hModule = nullptr", gated);
+    CHECK(kept != std::string::npos);
+    CHECK(cleared != std::string::npos);
+    CHECK(kept < cleared);
+
+    for (const char* signature : { "void UnloadAllPlugins()", "bool UnloadPlugin(int index, std::string* refusal)",
+             "bool ReloadPlugin(int index, std::string* refusal)", "static bool ShutDownAndFree(LoadedPlugin& p)" })
     {
         printf("    %s\n", signature);
         const std::string body = FunctionBody(src, signature);
         CHECK(!body.empty());
-
-        const size_t forget = body.find("ForgetRegistrations(");
-        const size_t free   = body.find("FreeLibrary(");
-        CHECK(forget != std::string::npos);
-        CHECK(free != std::string::npos);
-        CHECK(forget < free);
+        CHECK(body.find("FreeShutDownPlugin(") != std::string::npos);
     }
-
-    // UNLOAD shuts the plugin down without the lock, then frees through
-    // FreeShutDownPlugin, checked above; it has no free of its own.
-    const std::string unload = FunctionBody(src, "bool UnloadPlugin(int index, std::string* refusal)");
-    const size_t shutDown = unload.find("ShutDownWithoutLock(");
-    const size_t freeIt   = unload.find("FreeShutDownPlugin(");
-    CHECK(shutDown != std::string::npos);
-    CHECK(freeIt != std::string::npos);
-    CHECK(shutDown < freeIt);
-    CHECK(unload.find("FreeLibrary(") == std::string::npos);
-
-    // ShutDownAndFree (the refusal paths of a load) frees through it as well.
-    const std::string shutDownAndFree = FunctionBody(src, "static bool ShutDownAndFree(LoadedPlugin& p, const wchar_t* action)");
-    CHECK(shutDownAndFree.find("FreeShutDownPlugin(") != std::string::npos);
-    CHECK(shutDownAndFree.find("FreeLibrary(") == std::string::npos);
+    // The plugin manager unmaps nothing itself.
+    CHECK(src.find("FreeLibrary(") == std::string::npos);
 
     // ForgetRegistrations drops the plugin's OnConfigChanged callbacks.
     CHECK(FunctionBody(src, "static void ForgetRegistrations(LoadedPlugin& p)").find("ForgetConfigCallbacks(") != std::string::npos);

@@ -115,11 +115,11 @@ namespace UI
 	namespace ModLoaderWindow { void LoadBlockingStateForPlugin(const char*) {} }
 	namespace PluginPanelRegistry
 	{
-		bool ForgetModule(HMODULE) { return true; }
+		bool ForgetModule(HMODULE, DWORD) { return true; }
 		void ForgetConfigCallbacks(const IPluginSelf*) {}
 		void SetCurrentRegistrationPlugin(const char*) {}
 	}
-	namespace PluginWidgetRegistry { bool ForgetModule(HMODULE) { return true; } }
+	namespace PluginWidgetRegistry { bool ForgetModule(HMODULE, DWORD) { return true; } }
 	namespace Toast { void Show(const std::string&, const std::string&) {} }
 	namespace UpdateNoticeWindow
 	{

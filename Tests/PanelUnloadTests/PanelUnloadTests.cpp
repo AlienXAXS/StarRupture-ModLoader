@@ -12,6 +12,7 @@
 #include "UI/plugin_panel_registry.h"
 #include "UI/plugin_widget_registry.h"
 #include "UI/plugin_call_tracker.h"
+#include "plugins/plugin_call_gate.h"
 #include "plugins/plugin_guard.h"
 #include "imgui/imgui.h"
 #include "imgui/imgui_internal.h"   // GImGui, to see what a crashed render left behind
@@ -24,6 +25,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <mutex>
 #include <string>
 #include <thread>
 #include <vector>
@@ -251,56 +253,33 @@ static void Test_UnloadPathsPurgePanels()
     const std::string src = StripLineComments(
         std::string(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()));
 
-    const char* const kPaths[] =
-    {
-        "void UnloadAllPlugins()",
-        "static bool FreeShutDownPlugin(LoadedPlugin& p, const wchar_t* action)",
-        "bool ReloadPlugin(int index, std::string* refusal)",
-    };
-    for (const char* signature : kPaths)
+    // Every unload frees through FreeShutDownPlugin, which drops what the
+    // plugin registered before it waits at the call gate, and again with no
+    // call running, in case a running call registered more.
+    const std::string freeShutDown = FunctionBody(src, "static bool FreeShutDownPlugin(LoadedPlugin& p, DWORD waitMs)");
+    const size_t forgetFirst = freeShutDown.find("ForgetRegistrations(p);");
+    const size_t gated       = freeShutDown.find("PluginCallGate::FreeWhenIdle(");
+    CHECK(forgetFirst != std::string::npos);
+    CHECK(gated != std::string::npos);
+    CHECK(forgetFirst < gated);
+    CHECK(freeShutDown.find("ForgetRegistrations(p);", gated) != std::string::npos);
+    // ...and a free that did not happen keeps the module in the record.
+    const size_t kept    = freeShutDown.find("if (!freed)", gated);
+    const size_t cleared = freeShutDown.find("p.hModule = nullptr", gated);
+    CHECK(kept != std::string::npos);
+    CHECK(cleared != std::string::npos);
+    CHECK(kept < cleared);
+
+    for (const char* signature : { "void UnloadAllPlugins()", "bool UnloadPlugin(int index, std::string* refusal)",
+             "bool ReloadPlugin(int index, std::string* refusal)", "static bool ShutDownAndFree(LoadedPlugin& p)" })
     {
         printf("    %s\n", signature);
         const std::string body = FunctionBody(src, signature);
         CHECK(!body.empty());
-
-        const size_t free = body.find("FreeLibrary(");
-        CHECK(free != std::string::npos);
-        if (free == std::string::npos) continue;
-
-        // The module being freed, e.g. "p.hModule".
-        const size_t argStart = free + strlen("FreeLibrary(");
-        const std::string module = body.substr(argStart, body.find(')', argStart) - argStart);
-
-        // The renders are waited out before the purges...
-        const size_t wait = body.find("= WaitOutPluginRenders(" + module + ",");
-        CHECK(wait != std::string::npos);
-
-        // ...then everything the plugin registered goes, before the free.
-        const size_t forget = body.find("ForgetRegistrations(", wait);
-        CHECK(forget != std::string::npos);
-        CHECK(forget < free);
-
-        // ...and when the wait gives up, the overlay may still be in the
-        // module, so the path must stop before FreeLibrary.
-        const size_t refuse = body.find("if (!idle)", wait);
-        CHECK(refuse != std::string::npos);
-        CHECK(refuse < free);
+        CHECK(body.find("FreeShutDownPlugin(") != std::string::npos);
     }
-
-    // UNLOAD shuts the plugin down without the lock, then frees through
-    // FreeShutDownPlugin, checked above; it has no free of its own.
-    const std::string unload = FunctionBody(src, "bool UnloadPlugin(int index, std::string* refusal)");
-    const size_t shutDown = unload.find("ShutDownWithoutLock(");
-    const size_t freeIt   = unload.find("FreeShutDownPlugin(");
-    CHECK(shutDown != std::string::npos);
-    CHECK(freeIt != std::string::npos);
-    CHECK(shutDown < freeIt);
-    CHECK(unload.find("FreeLibrary(") == std::string::npos);
-
-    // ShutDownAndFree (the refusal paths of a load) frees through it as well.
-    const std::string shutDownAndFree = FunctionBody(src, "static bool ShutDownAndFree(LoadedPlugin& p, const wchar_t* action)");
-    CHECK(shutDownAndFree.find("FreeShutDownPlugin(") != std::string::npos);
-    CHECK(shutDownAndFree.find("FreeLibrary(") == std::string::npos);
+    // The plugin manager unmaps nothing itself.
+    CHECK(src.find("FreeLibrary(") == std::string::npos);
 
     // A refused UNLOAD or RELOAD is decided before anything of the plugin is
     // touched: the refusal check comes ahead of the shutdown and the free.
@@ -309,7 +288,7 @@ static void Test_UnloadPathsPurgePanels()
         const std::string body = FunctionBody(src, signature);
         const size_t refuse = body.find("ReloadPolicy::");
         CHECK(refuse != std::string::npos);
-        for (const char* teardown : { "ShutDownWithoutLock(", "FreeShutDownPlugin(", "CallShutdown(", "WaitOutPluginRenders(", "FreeLibrary(" })
+        for (const char* teardown : { "ShutDownWithoutLock(", "FreeShutDownPlugin(", "CallShutdown(" })
         {
             const size_t at = body.find(teardown);
             if (at != std::string::npos)
@@ -317,17 +296,12 @@ static void Test_UnloadPathsPurgePanels()
         }
     }
 
-    // ForgetRegistrations purges both registries for the module being freed.
+    // ForgetRegistrations purges both registries for the module being freed,
+    // without waiting: the call gate waits out the renders.
     const std::string forget = FunctionBody(src, "static void ForgetRegistrations(LoadedPlugin& p)");
-    CHECK(forget.find("UI::PluginPanelRegistry::ForgetModule(p.hModule)") != std::string::npos);
-    CHECK(forget.find("UI::PluginWidgetRegistry::ForgetModule(p.hModule)") != std::string::npos);
+    CHECK(forget.find("UI::PluginPanelRegistry::ForgetModule(p.hModule, 0)") != std::string::npos);
+    CHECK(forget.find("UI::PluginWidgetRegistry::ForgetModule(p.hModule, 0)") != std::string::npos);
     CHECK(forget.find("ModLoaderLogger::ForgetPluginCallbacks(p.hModule)") != std::string::npos);
-
-    // ...and that wait must come from both registries, with its answer used.
-    const std::string wait = FunctionBody(src, "static bool WaitOutPluginRenders(");
-    CHECK(wait.find("= UI::PluginPanelRegistry::ForgetModule(module)") != std::string::npos);
-    CHECK(wait.find("= UI::PluginWidgetRegistry::ForgetModule(module)") != std::string::npos);
-    CHECK(wait.find("return false;") != std::string::npos);
 }
 
 static std::string ReadSource(const std::filesystem::path& file)
@@ -1283,6 +1257,194 @@ static void Test_GuardRemembersRunningCallback()
     PluginGuard::Untrack(ThisModule());
 }
 
+// ---------------------------------------------------------------------------
+// The call gate: no module is freed while a thread is in a plugin call, or
+// holds a callback pointer it has not called yet. The free step is replaced,
+// so nothing is really unmapped.
+// ---------------------------------------------------------------------------
+
+namespace Gate = PluginCallGate;
+
+static std::atomic<bool> g_gateCallDone{ false };
+static std::atomic<int>  g_gateFrees{ 0 };
+static std::atomic<bool> g_gateFreedAfterCall{ false };
+static HANDLE            g_gateHeld      = nullptr;
+static HANDLE            g_gateLetHolder = nullptr;
+static HANDLE            g_gateInStep    = nullptr;
+static HANDLE            g_gateLetStep   = nullptr;
+
+static HMODULE FakeModule() { return reinterpret_cast<HMODULE>(static_cast<uintptr_t>(0x10000)); }
+
+static void CountingFreeStep(HMODULE)
+{
+    g_gateFreedAfterCall = g_gateCallDone.load();
+    ++g_gateFrees;
+}
+
+static void BlockingFreeStep(HMODULE)
+{
+    { Gate::Scope own; }   // freeing runs DllMain, which may call back in
+    SetEvent(g_gateInStep);
+    WaitForSingleObject(g_gateLetStep, 5000);
+    ++g_gateFrees;
+}
+
+static void ResetGateTest(Gate::FreeStep step)
+{
+    g_gateCallDone       = false;
+    g_gateFrees          = 0;
+    g_gateFreedAfterCall = false;
+    ResetEvent(g_gateHeld);
+    ResetEvent(g_gateLetHolder);
+    ResetEvent(g_gateInStep);
+    ResetEvent(g_gateLetStep);
+    Gate::SetFreeStep(step);
+}
+
+// A dispatcher has copied a callback out of its registry but not called it yet:
+// the registration is already gone, and the free must still wait.
+static void Test_GateCoversACopiedPointer()
+{
+    ResetGateTest(CountingFreeStep);
+    using Callback = void (*)();
+    std::mutex registryMutex;
+    Callback   registered = [] { g_gateCallDone = true; };
+
+    std::thread dispatcher([&] {
+        Gate::Scope gate;
+        Callback copy = nullptr;
+        {
+            std::lock_guard<std::mutex> lock(registryMutex);
+            copy = registered;
+        }
+        SetEvent(g_gateHeld);
+        WaitForSingleObject(g_gateLetHolder, 5000);
+        copy();
+    });
+    CHECK(WaitForSingleObject(g_gateHeld, 5000) == WAIT_OBJECT_0);
+    {
+        std::lock_guard<std::mutex> lock(registryMutex);
+        registered = nullptr;
+    }
+
+    CHECK(!Gate::WaitUntilIdle(50));
+    CHECK(!Gate::FreeWhenIdle(FakeModule(), "copied", 50));
+    CHECK(g_gateFrees == 0);
+
+    std::thread release([] { Sleep(100); SetEvent(g_gateLetHolder); });
+    CHECK(Gate::FreeWhenIdle(FakeModule(), "copied", 5000));
+    release.join();
+    dispatcher.join();
+    CHECK(g_gateFrees == 1);
+    CHECK(g_gateFreedAfterCall);
+    Gate::SetFreeStep(nullptr);
+}
+
+// A call already running nests while a free waits for it; a new call and a
+// second free are held back until the first free is done.
+static void Test_GateWhileClosing()
+{
+    ResetGateTest(BlockingFreeStep);
+
+    std::atomic<bool> nested{ false };
+    std::thread running([&] {
+        Gate::Scope outer;
+        SetEvent(g_gateHeld);
+        Sleep(200);   // the closer is waiting by now
+        {
+            Gate::Scope inner;
+            nested = true;
+        }
+        WaitForSingleObject(g_gateLetHolder, 5000);
+    });
+    CHECK(WaitForSingleObject(g_gateHeld, 5000) == WAIT_OBJECT_0);
+
+    std::atomic<bool> freed{ false };
+    std::thread closer([&] { freed = Gate::FreeWhenIdle(FakeModule(), "closing", 5000); });
+    Sleep(400);
+    CHECK(nested);
+    CHECK(g_gateFrees == 0);
+    SetEvent(g_gateLetHolder);
+    CHECK(WaitForSingleObject(g_gateInStep, 5000) == WAIT_OBJECT_0);
+
+    std::atomic<bool> entered{ false };
+    std::thread late([&] {
+        Gate::Scope gate;
+        entered = true;
+    });
+    CHECK(!Gate::WaitUntilIdle(50));
+    CHECK(!Gate::FreeWhenIdle(FakeModule(), "second", 50));
+    Sleep(100);
+    CHECK(!entered);
+
+    SetEvent(g_gateLetStep);
+    closer.join();
+    late.join();
+    running.join();
+    CHECK(freed);
+    CHECK(entered);
+    CHECK(g_gateFrees == 1);
+    Gate::SetFreeStep(nullptr);
+}
+
+// A thread inside a plugin call is refused at once rather than waiting for
+// itself; a call or a free that throws still leaves the gate open.
+static void Test_GateRefusesFromInsideACall()
+{
+    ResetGateTest(CountingFreeStep);
+    {
+        Gate::Scope gate;
+        CHECK(Gate::InsideCall());
+        CHECK(!Gate::WaitUntilIdle(5000));
+        CHECK(!Gate::FreeWhenIdle(FakeModule(), "inside", 5000));
+    }
+    CHECK(g_gateFrees == 0);
+
+    try
+    {
+        Gate::Scope gate;
+        throw 1;
+    }
+    catch (int) {}
+    CHECK(!Gate::InsideCall());
+
+    try { Gate::FreeWhenIdle(FakeModule(), "throws", 50, [] { throw 2; }); }
+    catch (int) {}
+    CHECK(g_gateFrees == 0);
+    CHECK(Gate::WaitUntilIdle(50));
+    Gate::SetFreeStep(nullptr);
+}
+
+static void RenderHeld(IModLoaderImGui*)
+{
+    SetEvent(g_gateHeld);
+    WaitForSingleObject(g_gateLetHolder, 5000);
+    g_gateCallDone = true;
+}
+
+// A real dispatch site: a widget being drawn on another thread holds the gate.
+static void Test_GateHeldByAWidgetRender()
+{
+    ResetGateTest(CountingFreeStep);
+    const PluginWidgetDesc widget = { "Held widget", RenderHeld, nullptr };
+    const WidgetHandle handle = UI::PluginWidgetRegistry::RegisterWidget(&widget);
+    CHECK(handle != nullptr);
+
+    std::thread render([] { UI::PluginWidgetRegistry::RenderWidgets(nullptr); });   // inside main's frame
+    CHECK(WaitForSingleObject(g_gateHeld, 5000) == WAIT_OBJECT_0);
+    CHECK(!Gate::FreeWhenIdle(FakeModule(), "widget", 50));
+    CHECK(g_gateFrees == 0);
+    std::thread release([] { Sleep(100); SetEvent(g_gateLetHolder); });
+    CHECK(Gate::FreeWhenIdle(FakeModule(), "widget", 5000));
+    release.join();
+    render.join();
+    CHECK(g_gateFrees == 1);
+    CHECK(g_gateFreedAfterCall);
+
+    UI::PluginWidgetRegistry::UnregisterWidget(handle);
+    Gate::SetFreeStep(nullptr);
+}
+
 int main()
 {
     RunTest("PanelsPurgedByModule",              Test_PanelsPurgedByModule);
@@ -1327,6 +1489,19 @@ int main()
     RunTest("DenyLeavesOtherTokensAlone",           Test_DenyLeavesOtherTokensAlone);
     RunTest("GuardRemembersRunningCallback",        Test_GuardRemembersRunningCallback);
     RunTest("ForgetModuleDropsTokensTakenInItsCalls", Test_ForgetModuleDropsTokensTakenInItsCalls);
+
+    g_gateHeld      = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+    g_gateLetHolder = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+    g_gateInStep    = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+    g_gateLetStep   = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+    RunTest("GateCoversACopiedPointer",   Test_GateCoversACopiedPointer);
+    RunTest("GateWhileClosing",           Test_GateWhileClosing);
+    RunTest("GateRefusesFromInsideACall", Test_GateRefusesFromInsideACall);
+    RunTest("GateHeldByAWidgetRender",    Test_GateHeldByAWidgetRender);
+    CloseHandle(g_gateLetStep);
+    CloseHandle(g_gateInStep);
+    CloseHandle(g_gateLetHolder);
+    CloseHandle(g_gateHeld);
 
     RunTest("TitleBarCallbackRuns",                 Test_TitleBarCallbackRuns);
     RunTest("OldSizedDescriptorIsNeverReadPastItsEnd", Test_OldSizedDescriptorIsNeverReadPastItsEnd);

@@ -1067,7 +1067,7 @@ namespace PluginManager
 	}
 
 	static bool ShutDownAndFree(LoadedPlugin& p);
-	static void ForgetRegistrations(LoadedPlugin&, DWORD renderWaitMs = PluginCallGate::kWaitTimeoutMs);
+	static void ForgetRegistrations(LoadedPlugin&);
 
 	// What the plugin says it is busy with. A plugin that crashed and was
 	// switched off is busy with nothing: a reason it set before the crash
@@ -1242,10 +1242,10 @@ namespace PluginManager
 	// list, would otherwise be called into freed memory -- or, once another
 	// DLL is mapped at the same address, into the middle of its code.
 	//
-	// This drops what is registered or queued; PluginCallGate waits for the
-	// calls already running. renderWaitMs is how long the panel and widget
-	// registries wait for the plugin's own running renders.
-	static void ForgetRegistrations(LoadedPlugin& p, DWORD renderWaitMs)
+	// This drops what is registered or queued and waits for nothing, so it may
+	// be called with the plugin lock held; PluginCallGate waits for the calls
+	// already running.
+	static void ForgetRegistrations(LoadedPlugin& p)
 	{
 		// The schema the config manager cached lives inside this module.
 		ModLoaderLogger::ForgetPluginSchema(p.cachedName.c_str());
@@ -1272,8 +1272,8 @@ namespace PluginManager
 #ifdef MODLOADER_CLIENT_BUILD
 		// A panel or widget it registered and did not unregister: the
 		// registries keep its descriptor and renderFn, both inside the module.
-		UI::PluginPanelRegistry::ForgetModule(p.hModule, renderWaitMs);
-		UI::PluginWidgetRegistry::ForgetModule(p.hModule, renderWaitMs);
+		UI::PluginPanelRegistry::ForgetModule(p.hModule, 0);
+		UI::PluginWidgetRegistry::ForgetModule(p.hModule, 0);
 		GameMenu::Registry::ForgetPlugin(p.cachedName.c_str());
 		Hooks::MouseWheel::ForgetModule(p.hModule);
 		UIState::ForgetModule(p.hModule);
@@ -1288,8 +1288,6 @@ namespace PluginManager
 		// The image sets it said it draws from. Its images stay: they belong to
 		// the session, not to the plugin.
 		ImageLibrary::ForgetPlugin(&p.self);
-#else
-		(void)renderWaitMs;
 #endif
 	}
 
@@ -1600,7 +1598,7 @@ namespace PluginManager
 	static bool FreeShutDownPlugin(LoadedPlugin& p, DWORD waitMs)
 	{
 		// Now, so that nothing new reaches it even if the wait runs out.
-		ForgetRegistrations(p, 0);
+		ForgetRegistrations(p);
 		++g_pluginGeneration;   // it is shut down now
 		if (!p.hModule)
 			return true;
@@ -1609,7 +1607,7 @@ namespace PluginManager
 		LeaveCriticalSection(&g_pluginLock);
 		// Again before the free: a call that was still running may have registered more.
 		const bool freed = PluginCallGate::FreeWhenIdle(p.hModule, p.cachedName.c_str(), waitMs,
-			[&p] { ForgetRegistrations(p, 0); });
+			[&p] { ForgetRegistrations(p); });
 		EnterCriticalSection(&g_pluginLock);
 		p.isUnloading  = false;
 		p.awaitingFree = !freed;
