@@ -517,10 +517,11 @@ namespace ScanPatterns
 
 	// FCrCraftingFragment::StaticStruct
 	// Taken from a call to it: its own code matches other StaticStruct getters.
-	// The match is FCrMassReplicationProcessorCraftingHandler::CacheFragmentViews,
-	// unique before the call. That handler is for this one fragment and calls
-	// this getter once, so there is no second fragment type for the compiler to
-	// put in the same place. If the code up to the call changes, nothing matches.
+	// The match is FCrMassReplicationProcessorCraftingHandler::CacheFragmentViews.
+	// Expected to last because that handler exists for this one fragment and calls
+	// this getter once. It is game code, and the closest other place on build 127004
+	// differs in 13 of the 36 fixed bytes. A match count cannot tell which function
+	// is called, so check the callee against the PDB on a new build.
 	inline constexpr auto FCrCraftingFragment_StaticStruct_CallSite =
 		"48 89 5C 24 18 48 89 74 24 20 57 48 83 EC ?? 48 8B FA 48 8B F1 E8 ?? ?? ?? ?? 48 8D 8F ?? ?? ?? ?? 8B D0 E8 ?? ?? ?? ?? 88 06 E8 ?? ?? ?? ?? 4C 8B 87 ?? ?? ?? ?? 48 8B DF";
 
@@ -532,11 +533,13 @@ namespace ScanPatterns
 	// FMassEntityManager::InternalGetFragmentDataPtr
 	// Taken from a call to it: its own code differs from look-alikes only in a
 	// constant that changes with the source. The match is
-	// ACrBaseCore::ShouldActiveCoolingWorking, unique before the call: a fragment
-	// type, then this lookup for the same entity, then a null test. The function
-	// reads two fragments this way and both reads call this one function, so their
-	// order does not matter. The null test keeps out a checked lookup, whose
-	// result is not tested.
+	// ACrBaseCore::ShouldActiveCoolingWorking: a fragment type, then this lookup
+	// for the same entity, then a null test. It reads two fragments this way and
+	// both reads call this function, so their order does not matter. The null test
+	// keeps out a checked lookup, whose result is not tested. It is game code that
+	// an update can edit, and the closest other place on build 127004 differs in 8
+	// of the 35 fixed bytes. A match count cannot tell which function is called, so
+	// check the callee against the PDB on a new build.
 	inline constexpr auto FMassEntityManager_InternalGetFragmentDataPtr_CallSite =
 		"48 89 5C 24 08 48 89 74 24 10 57 48 83 EC ?? 48 8B DA 48 8B F1 E8 ?? ?? ?? ?? 4C 8B C0 48 8B D3 48 8B CE E8 ?? ?? ?? ?? 48 85 C0 74 ??";
 
@@ -587,9 +590,11 @@ namespace ScanPatterns
 	// UWorld::GetSubsystem<UMassEntitySubsystem>
 	// Taken from a call to it: its own code matches other subsystem getters. The
 	// match is the engine function UE::Mass::Utils::GetEntityManager(const
-	// UObject*), unique before the call. It gets the world and then this
-	// subsystem, the one that owns the entity manager, so it has no reason to ask
-	// for another, and as engine code it moves only with an engine change.
+	// UObject*). Expected to last because it gets the world and then this
+	// subsystem, the one that owns the entity manager, and as engine code it
+	// should change only with the engine. The closest other place on build 127004
+	// differs in 11 of the 31 fixed bytes. A match count cannot tell which function
+	// is called, so check the callee against the PDB on a new build.
 	inline constexpr auto UWorld_GetSubsystem_UMassEntitySubsystem_CallSite =
 		"48 83 EC ?? 48 85 C9 74 ?? 48 8B 01 48 89 5C 24 ?? FF 90 ?? ?? ?? ?? 48 85 C0 74 ?? 48 8B C8 E8 ?? ?? ?? ?? 48 8B D8 48 85 C0 74 ??";
 
