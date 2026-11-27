@@ -2218,6 +2218,26 @@ int main()
 				}
 			Check(bitRows, "real field rows: the controller's three cinematic bits are 0x4D0 byte rows with their masks on all four builds");
 		}
+		// The replication graph's policy map, its two-int key and UObject::OuterPrivate: one row each on all
+		// four builds, and none on a build the table does not list.
+		{
+			struct NativeKey { const char* key; int32_t offset; uint32_t size; };
+			const NativeKey kNative[] = {
+				{ "TClassMap<EClassRepNodeMapping>::Map", 0x30, 0x50 }, { "FObjectKey::ObjectIndex", 0x0, 0x4 },
+				{ "FObjectKey::ObjectSerialNumber", 0x4, 0x4 }, { "UObject::OuterPrivate", 0x20, 0x8 },
+			};
+			bool nativeRows = true;
+			for (const NativeKey& n : kNative)
+			{
+				for (const uint32_t cl : { 127004u, 128786u, 129402u, 130045u })
+				{
+					const Real::VersionMap::FieldRow* row = fieldRow(n.key, cl);
+					nativeRows = nativeRows && row && row->offset == n.offset && row->size == n.size && row->boolMask == 0;
+				}
+				nativeRows = nativeRows && !fieldRow(n.key, 130046);
+			}
+			Check(nativeRows, "real field rows: the policy map, its key and OuterPrivate on all four builds and on no other");
+		}
 		// The hotbar subsystem exists only on CL-129402: a row there, none on the older builds.
 		const Real::VersionMap::FieldRow* index = fieldRow("UCrHotbarLocalPlayerSubsystem::CurrentHotbarIndex", 129402);
 		const Real::VersionMap::FieldRow* pages = fieldRow("UCrHotbarLocalPlayerSubsystem::Hotbars", 129402);

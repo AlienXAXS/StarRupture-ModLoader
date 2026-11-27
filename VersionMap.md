@@ -363,7 +363,8 @@ one exe, the server exe CI measured (CL-127004, PE time stamp `0x2E3595FF`, imag
   table (`FTransform::Translation` is a `0x20`-byte vector register in the game files and is read as a
   `0x18`-byte `FVector`, so its row says `0x18`). The exceptions are three rows for plain C++ types, taken
   from the engine's type layout: `FObjectKey::ObjectIndex`, `FObjectKey::ObjectSerialNumber` and
-  `TClassMap<EClassRepNodeMapping>::Map` (the header says what each rests on).
+  `TClassMap<EClassRepNodeMapping>::Map` (the header says what each rests on). The client's
+  table has the same three rows, with the same values, on each build it lists.
 
 The server serves a row only on that exe: the CL, the time stamp and the image size must all match. On any
 other exe the table is off and a plugin runs on its own patterns and rows, as it did before the table. The
