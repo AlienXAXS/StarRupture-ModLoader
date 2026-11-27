@@ -9,6 +9,8 @@
 
 #include <cstdint>
 
+#include "pdb.h"
+
 #include "hooks/game/scan_patterns.h"
 #include "memory_scanner/scan_validation.h"
 #include "memory_scanner/version_map.h"
@@ -70,4 +72,16 @@ namespace AobScan
 	// row made from it would carry no pattern the loader accepts there.
 	ObservedLocator ObservePluginRequest(const char* owner, const std::string& key, uint32_t fp,
 		const ScanValidation::Request& request, const VersionMap::Exe& exe, uintptr_t address);
+
+	// A registry row's viaCall and nameMatch, as the JSON members that follow
+	// the ones before them. `ok` is whether the row resolved, `rva` is null for
+	// a row with no address, and `observed` is the locator observed at it.
+	std::string LoaderRowChecks(const ScanPatterns::PreflightEntry& entry, bool ok, const uint64_t* rva,
+		const ObservedLocator& observed, uint32_t runningCL, SymbolStarts& symbols);
+
+	// The same for a plugin's row. `seen` is the locator observed at its
+	// address, null when none was; canFollow says whether any it could have
+	// been resolved with follows a call.
+	std::string PluginRowChecks(bool ok, const ObservedLocator* seen, bool canFollow, const std::string& kind,
+		const std::string& key, bool otherModule, const uint64_t* rva, SymbolStarts& symbols);
 }

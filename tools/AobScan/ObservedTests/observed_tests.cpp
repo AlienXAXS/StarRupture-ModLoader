@@ -186,6 +186,12 @@ namespace
 		Check(ComparablePublicName(L"??$GetSubsystem@VUThing@@@UWorld@@QEAAHXZ") == wanted, "a template public");
 		Check(ComparablePublicName(L"?B@FMulti@@W7EAAHH@Z").empty(), "an adjustor thunk has no name");
 		Check(ComparablePublicName(L"PlainFn") == L"PlainFn", "an undecorated public keeps its name");
+
+		const std::wstring pointer = ComparablePublicName(L"??$Get@PEAUThing@@@Owner@@QEAAHH@Z");
+		Check(!pointer.empty() && pointer != L"Owner::Get<Thing>", "a public's pointer argument counts");
+		const std::wstring nested = ComparablePublicName(L"??$Get@U?$Box@U?$Box@PEBUOther@@@@@@@Owner@@QEAAHH@Z");
+		Check(nested.rfind(L"Owner::Get<Box<Box<Other const*", 0) == 0,
+			"a public's nested const pointer argument counts");
 	}
 
 	struct ProbeThing {};
@@ -200,11 +206,166 @@ namespace
 		}
 	};
 
+	template <int N> struct ProbeBox {};
+	template <typename T> struct ProbeHolder {};
+
 	// The PDB lookup on this program's own image.
 	__declspec(noinline) int NamedHere(int a)
 	{
 		volatile int v = a;
 		return v * 31 + 5;
+	}
+
+	template <typename T>
+	uint64_t TemplateRva(uintptr_t base)
+	{
+		int (ProbeOwner::*volatile member)(int) = &ProbeOwner::Get<T>;
+		ProbeOwner owner;
+		(owner.*member)(1);
+		int (ProbeOwner::*taken)(int) = member;
+		return *reinterpret_cast<uintptr_t*>(&taken) - base;
+	}
+
+	// The key ProbeOwner::Get<argument>, where each "~" in `argument` stands for
+	// the anonymous namespace.
+	std::string GetKey(std::string argument)
+	{
+		const std::string ns = "`anonymous namespace'::";
+		for (size_t at = argument.find('~'); at != std::string::npos; at = argument.find('~', at + ns.size()))
+			argument.replace(at, 1, ns);
+		return ns + "ProbeOwner::Get<" + argument + ">";
+	}
+
+	// A pointer, a const, a nested and a number template argument each count.
+	void TemplateArgumentChecks(AobScan::SymbolStarts& symbols, uintptr_t base)
+	{
+		const std::optional<bool> yes(true), no(false);
+
+		const uint64_t pointer = TemplateRva<ProbeThing*>(base);
+		Check(symbols.Named(&pointer, GetKey("~ProbeThing*")) == yes, "a pointer argument is true");
+		Check(symbols.Named(&pointer, GetKey("~ProbeThing")) == no, "without the pointer it is false");
+		Check(symbols.Named(&pointer, GetKey("~ProbeThing**")) == no, "with one pointer more it is false");
+
+		const uint64_t constant = TemplateRva<const ProbeThing*>(base);
+		Check(symbols.Named(&constant, GetKey("~ProbeThing const*")) == yes, "a const argument is true");
+		Check(symbols.Named(&constant, GetKey("~ProbeThing*")) == no, "without the const it is false");
+
+		const uint64_t nested = TemplateRva<ProbeHolder<ProbeHolder<ProbeOther*>>>(base);
+		Check(symbols.Named(&nested, GetKey("~ProbeHolder<~ProbeHolder<~ProbeOther*>>")) == yes,
+			"a nested argument is true");
+		Check(symbols.Named(&nested, GetKey("~ProbeHolder<~ProbeHolder<~ProbeThing*>>")) == no,
+			"another inner argument is false");
+		Check(symbols.Named(&nested, GetKey("~ProbeHolder<~ProbeHolder<~ProbeOther>>")) == no,
+			"without the inner pointer it is false");
+		Check(symbols.Named(&nested, GetKey("~ProbeHolder<~ProbeOther*>")) == no, "a level less is false");
+
+		const uint64_t number = TemplateRva<ProbeBox<1>>(base);
+		Check(symbols.Named(&number, GetKey("~ProbeBox<1>")) == yes, "a number argument is true");
+		Check(symbols.Named(&number, GetKey("~ProbeBox<2>")) == no, "another number is false");
+	}
+
+	std::string Fields(const char* viaCall, const char* nameMatch)
+	{
+		return std::string(", \"viaCall\": ") + viaCall + ", \"nameMatch\": " + nameMatch;
+	}
+
+	constexpr const char* kNamedHere = "`anonymous namespace'::NamedHere";
+
+	// What the JSON writes for a registry row that resolved at `rva`, with the
+	// locator observed the way the harness observes it.
+	std::string LoaderFields(const ScanPatterns::PreflightEntry& e, uint64_t rva, AobScan::SymbolStarts& symbols)
+	{
+		Request request = Ask(e);
+		request.followRel32At = e.followRel32At;
+		const AobScan::ObservedLocator seen = AobScan::ObserveLoaderEntry(e, request, kNew,
+			Base() + static_cast<uintptr_t>(rva));
+		return AobScan::LoaderRowChecks(e, true, &rva, seen, kNew.cl, symbols);
+	}
+
+	// viaCall and nameMatch as the two JSON writers print them. `rva` is
+	// NamedHere's. The scan double does not read bytes, so a call and a tail
+	// jump are the same locator here.
+	void RowCheckFields(AobScan::SymbolStarts& symbols, uint64_t rva)
+	{
+		using ScanPatterns::PatternKind;
+		const ScanPatterns::PreflightEntry plain = Entry(kNamedHere, kRegistry, PatternKind::FunctionStart);
+		ScanPatterns::PreflightEntry follows = plain;
+		follows.followRel32At = 3;
+		TestDoubles::g_rvas = { { kRegistry, static_cast<uintptr_t>(rva) } };
+
+		UseMap({});
+		Check(LoaderFields(plain, rva, symbols) == Fields("false", "true"), "a plain pattern match");
+		Check(LoaderFields(follows, rva, symbols) == Fields("true", "true"), "a followed call");
+
+		// A map row that follows a tail jump decides the address.
+		MapFunctionRow row = Row(plain, kNew.cl, kMapRow);
+		row.followRel32At = 24;
+		UseMap({ row });
+		TestDoubles::g_rvas = { { kMapRow, static_cast<uintptr_t>(rva) } };
+		Check(LoaderFields(plain, rva, symbols) == Fields("true", "true"), "a followed tail jump");
+
+		row.followRel32At   = -1;
+		row.followRipDispAt = 3;
+		UseMap({ row });
+		Check(LoaderFields(plain, rva, symbols) == Fields("false", "true"), "a followed data reference");
+
+		// No locator observed: any the row could have used counts.
+		const AobScan::ObservedLocator unseen;
+		UseMap({});
+		Check(AobScan::LoaderRowChecks(follows, true, &rva, unseen, kNew.cl, symbols) == Fields("true", "true"),
+			"unobserved, the registry follows a call");
+		Check(AobScan::LoaderRowChecks(plain, true, &rva, unseen, kNew.cl, symbols) == Fields("false", "true"),
+			"unobserved, nothing follows one");
+		row.followRel32At   = 3;
+		row.followRipDispAt = -1;
+		UseMap({ row });
+		Check(AobScan::LoaderRowChecks(plain, true, &rva, unseen, kNew.cl, symbols) == Fields("true", "true"),
+			"unobserved, a map row follows one");
+		Check(AobScan::LoaderRowChecks(follows, false, nullptr, unseen, kNew.cl, symbols) == Fields("false", "false"),
+			"a failed function row with no address");
+
+		for (const PatternKind kind : { PatternKind::Data, PatternKind::Any })
+		{
+			ScanPatterns::PreflightEntry other = follows;
+			other.kind = kind;
+			Check(AobScan::LoaderRowChecks(other, true, &rva, unseen, kNew.cl, symbols) == Fields("true", "null"),
+				"a registry row that is not a function is null");
+		}
+
+		AobScan::ObservedLocator call, data;
+		call.followRel32At   = 3;
+		data.followRipDispAt = 3;
+		const auto plugin = [&](bool ok, const AobScan::ObservedLocator* seen, bool canFollow, const char* kind,
+			const char* key, bool otherModule)
+		{
+			return AobScan::PluginRowChecks(ok, seen, canFollow, kind, key, otherModule, &rva, symbols);
+		};
+		Check(plugin(true, &call, false, "function", kNamedHere, false) == Fields("true", "true"),
+			"plugin: the observed locator follows a call");
+		Check(plugin(true, &data, true, "function", kNamedHere, false) == Fields("false", "true"),
+			"plugin: the observed locator follows data, whatever others do");
+		Check(plugin(true, nullptr, true, "function", kNamedHere, false) == Fields("true", "true"),
+			"plugin: unobserved, one could follow");
+		Check(plugin(true, nullptr, false, "function", "NamedHere", false) == Fields("false", "false"),
+			"plugin: unobserved, none could, another name");
+		Check(plugin(false, &call, true, "function", kNamedHere, false) == Fields("false", "true"),
+			"plugin: a row that is not OK");
+		Check(plugin(true, nullptr, false, "data", kNamedHere, false) == Fields("false", "null"), "plugin: a data row");
+		Check(plugin(true, nullptr, false, "function", "", false) == Fields("false", "null"), "plugin: no key");
+		Check(plugin(true, nullptr, false, "function", kNamedHere, true) == Fields("false", "null"),
+			"plugin: another module");
+		UseMap({});
+	}
+
+	void RowChecksWithoutPdb(AobScan::SymbolStarts& none, uint64_t rva)
+	{
+		const ScanPatterns::PreflightEntry e = Entry(kNamedHere, kRegistry, ScanPatterns::PatternKind::FunctionStart);
+		const AobScan::ObservedLocator unseen;
+		UseMap({});
+		Check(AobScan::LoaderRowChecks(e, true, &rva, unseen, kNew.cl, none) == Fields("false", "null"),
+			"no PDB: a registry row is null");
+		Check(AobScan::PluginRowChecks(true, nullptr, false, "function", kNamedHere, false, &rva, none)
+				== Fields("false", "null"), "no PDB: a plugin row is null");
 	}
 
 	void LookupChecks()
@@ -217,6 +378,15 @@ namespace
 		const uint64_t rva = reinterpret_cast<uintptr_t>(fn) - image.base;
 		const uint64_t inside = rva + 1;
 
+		// First: one DbgHelp session serves every SymbolStarts, so with another
+		// one open the load would fail before it looked at the path.
+		{
+			AobScan::SymbolStarts none(L"Z:\\no-such-dir\\no-such.exe", image.base, image.size);
+			Check(!none.Named(&rva, "NamedHere").has_value(), "no PDB is neither");
+			Check(!none.Named(nullptr, "NamedHere").has_value(), "no PDB and no address is neither");
+			RowChecksWithoutPdb(none, rva);
+		}
+
 		AobScan::SymbolStarts symbols(path, image.base, image.size);
 		const std::optional<bool> right = symbols.Named(&rva, "`anonymous namespace'::NamedHere");
 		Check(right == std::optional<bool>(true), "the name at its start is true");
@@ -224,6 +394,9 @@ namespace
 		Check(symbols.Named(&inside, "`anonymous namespace'::NamedHere") == std::optional<bool>(false),
 			"an address inside the function is false");
 		Check(symbols.Named(nullptr, "NamedHere") == std::optional<bool>(false), "no address is false");
+		const uint64_t uncovered = 0x10;   // in the PE headers, where no symbol is
+		Check(symbols.Named(&uncovered, "NamedHere") == std::optional<bool>(false),
+			"an address no symbol covers is false");
 
 		int (ProbeOwner::*volatile member)(int) = &ProbeOwner::Get<ProbeThing>;
 		ProbeOwner owner;
@@ -236,8 +409,8 @@ namespace
 		Check(symbols.Named(&templateRva, "`anonymous namespace'::ProbeOwner::Get<`anonymous namespace'::ProbeOther>")
 				== std::optional<bool>(false), "another template argument is false");
 
-		AobScan::SymbolStarts none(L"Z:\no-such-dir\no-such.exe", image.base, image.size);
-		Check(!none.Named(&rva, "NamedHere").has_value(), "no PDB is neither");
+		TemplateArgumentChecks(symbols, image.base);
+		RowCheckFields(symbols, rva);
 	}
 }
 

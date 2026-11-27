@@ -1272,17 +1272,8 @@ namespace
 			uint64_t symbolRva = 0;
 			if (row.result == "OK" && row.hasRva && symbols.Of(row.rva, symbolRva))
 				printf(", \"symbolRva\": \"%s\"", Hex(symbolRva).c_str());
-			// Whether the address came from following a call site: as the locator
-			// observed at it says, else true when any the request could have been
-			// resolved with follows one.
-			const bool viaCall = row.result == "OK" && (fromRow ? row.seen.followRel32At >= 0 : row.canFollow);
-			printf(", \"viaCall\": %s", viaCall ? "true" : "false");
-			// Whether the exe's PDB gives that address the key's name: only for a
-			// function with a key, in the exe.
-			std::optional<bool> nameMatch;
-			if (row.kind == "function" && !row.key.empty() && !row.otherModule)
-				nameMatch = symbols.Named(row.hasRva ? &row.rva : nullptr, row.key);
-			printf(", \"nameMatch\": %s", !nameMatch ? "null" : *nameMatch ? "true" : "false");
+			fputs(AobScan::PluginRowChecks(row.result == "OK", fromRow ? &row.seen : nullptr, row.canFollow, row.kind,
+				row.key, row.otherModule, row.hasRva ? &row.rva : nullptr, symbols).c_str(), stdout);
 			if (!row.detail.empty())
 				printf(", \"detail\": \"%s\"", JsonEscape(AobScan::JsonDetail(row.detail)).c_str());
 			if (row.suggest.attempted)

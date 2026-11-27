@@ -5,6 +5,15 @@
 #include <algorithm>
 #include <vector>
 
+namespace
+{
+	std::string RowChecksJson(bool viaCall, const std::optional<bool>& nameMatch)
+	{
+		return std::string(", \"viaCall\": ") + (viaCall ? "true" : "false")
+			+ ", \"nameMatch\": " + (!nameMatch ? "null" : *nameMatch ? "true" : "false");
+	}
+}
+
 namespace AobScan
 {
 	bool LandsOn(const ScanValidation::Request& request, uintptr_t address)
@@ -178,5 +187,42 @@ namespace AobScan
 		const ScanValidation::Request& request, const VersionMap::Exe& exe, uintptr_t address)
 	{
 		return Pick(MapRows(key, static_cast<int>(request.kind), fp, owner ? owner : "", exe.cl), request, exe, address);
+	}
+
+	std::string LoaderRowChecks(const ScanPatterns::PreflightEntry& entry, bool ok, const uint64_t* rva,
+		const ObservedLocator& observed, uint32_t runningCL, SymbolStarts& symbols)
+	{
+		const std::string key = VersionMap::LoaderEntryKey(entry);
+		// Whether the address came from following a call site (a call or a
+		// tail jump; a followed data reference is not one). An OK row with no
+		// locator observed at it counts when any it could have been resolved
+		// with follows one.
+		bool viaCall = false;
+		if (ok)
+		{
+			viaCall = observed.found ? observed.followRel32At >= 0 : entry.followRel32At >= 0;
+			if (!observed.found)
+				for (const MapLocator& l : MapLocators(key, static_cast<int>(entry.kind),
+						VersionMap::LoaderEntryFingerprint(entry), "ModLoader", runningCL))
+					viaCall = viaCall || l.followRel32At >= 0;
+		}
+		// Whether the PDB gives that address the key's name; functions only.
+		std::optional<bool> nameMatch;
+		if (entry.kind == ScanPatterns::PatternKind::FunctionStart)
+			nameMatch = symbols.Named(rva, key);
+		return RowChecksJson(viaCall, nameMatch);
+	}
+
+	std::string PluginRowChecks(bool ok, const ObservedLocator* seen, bool canFollow, const std::string& kind,
+		const std::string& key, bool otherModule, const uint64_t* rva, SymbolStarts& symbols)
+	{
+		// As the locator observed at the address says, else as any the request
+		// could have been resolved with.
+		const bool viaCall = ok && (seen ? seen->followRel32At >= 0 : canFollow);
+		// Only for a function with a key, in the exe.
+		std::optional<bool> nameMatch;
+		if (kind == "function" && !key.empty() && !otherModule)
+			nameMatch = symbols.Named(rva, key);
+		return RowChecksJson(viaCall, nameMatch);
 	}
 }
