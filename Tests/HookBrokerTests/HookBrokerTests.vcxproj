@@ -9,7 +9,7 @@
 
   It compiles the loader's own hook_broker.cpp and hooks_common.cpp and hooks small
   functions it writes itself, so no game is needed; the loader's logger is the one
-  test double. Output goes to build	ests\hook_broker_tests.exe.
+  test double. Output goes to build\tests\hook_broker_tests.exe.
 -->
 <Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">

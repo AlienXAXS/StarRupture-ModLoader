@@ -360,7 +360,7 @@ the cuts are switched 10,000 times. It ends itself after two minutes if it hangs
 
 ```
 msbuild Tests\HookBrokerTests\HookBrokerTests.vcxproj /p:Configuration="Client Release" /p:Platform=x64
-build	ests\hook_broker_tests.exe
+build\tests\hook_broker_tests.exe
 ```
 
 It prints each test's name and any failed check, and exits 0 when every check passes.
