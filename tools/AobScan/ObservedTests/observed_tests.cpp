@@ -188,6 +188,18 @@ namespace
 		Check(ComparablePublicName(L"PlainFn") == L"PlainFn", "an undecorated public keeps its name");
 	}
 
+	struct ProbeThing {};
+	struct ProbeOther {};
+	struct ProbeOwner
+	{
+		template <typename T>
+		__declspec(noinline) int Get(int a)
+		{
+			volatile int v = a + static_cast<int>(sizeof(T));
+			return v * 37 + 11;
+		}
+	};
+
 	// The PDB lookup on this program's own image.
 	__declspec(noinline) int NamedHere(int a)
 	{
@@ -212,6 +224,17 @@ namespace
 		Check(symbols.Named(&inside, "`anonymous namespace'::NamedHere") == std::optional<bool>(false),
 			"an address inside the function is false");
 		Check(symbols.Named(nullptr, "NamedHere") == std::optional<bool>(false), "no address is false");
+
+		int (ProbeOwner::*volatile member)(int) = &ProbeOwner::Get<ProbeThing>;
+		ProbeOwner owner;
+		Check((owner.*member)(1) != 0, "the template runs");
+		int (ProbeOwner::*taken)(int) = member;
+		const uint64_t templateRva = *reinterpret_cast<uintptr_t*>(&taken) - image.base;
+		Check(symbols.Named(&templateRva,
+				"`anonymous namespace'::ProbeOwner::Get<struct `anonymous namespace'::ProbeThing>")
+				== std::optional<bool>(true), "a template function from the PDB is true");
+		Check(symbols.Named(&templateRva, "`anonymous namespace'::ProbeOwner::Get<`anonymous namespace'::ProbeOther>")
+				== std::optional<bool>(false), "another template argument is false");
 
 		AobScan::SymbolStarts none(L"Z:\no-such-dir\no-such.exe", image.base, image.size);
 		Check(!none.Named(&rva, "NamedHere").has_value(), "no PDB is neither");
