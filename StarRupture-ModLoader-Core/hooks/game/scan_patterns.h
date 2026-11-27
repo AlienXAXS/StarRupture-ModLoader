@@ -604,6 +604,22 @@ namespace ScanPatterns
 	// ACrGameModeBase::PreLogin
 	inline constexpr auto ACrGameModeBase_PreLogin =
 		"48 89 5C 24 08 48 89 6C 24 10 48 89 74 24 18 57 41 56 41 57 48 83 EC ?? 80 3D ?? ?? ?? ?? 03 49 8B E9 4D 8B F0 4C 8B FA 48 8B F1 0F 82 ?? ?? ?? ??";
+
+	// UCrSaveSubsystem::SaveNextSaveGame
+	inline constexpr auto UCrSaveSubsystem_SaveNextSaveGame =
+		"48 89 5C 24 08 48 89 6C 24 10 48 89 74 24 18 57 48 83 EC ?? 48 8B F9 E8 ?? ?? ?? ?? 33 ED 48 8B D8 48 85 C0 74 ?? E8 ?? ?? ?? ?? 48 8B 53 ?? 4C 8D 40 ?? 48 63 40 ?? 3B 42 ?? 7F ?? 48 8B C8 48 8B 42 ?? 4C 39 04 C8 74 ?? 48 8B DD 48 8D 54 24 ?? 48 8B CB E8 ?? ?? ?? ?? 48 63 5C 24 ?? 48 8B 74 24 ?? 48 89 6C 24 ?? 89 5C 24 ?? 85 DB";
+
+	// UReplicationGraph::AddNetworkActor
+	inline constexpr auto UReplicationGraph_AddNetworkActor =
+		"48 85 D2 0F 84 ?? ?? ?? ?? 48 89 54 24 10 55 53 41 56 48 8B EC 48 83 EC ?? F6 42 ?? 02 48 8B DA 4C 8B F1";
+
+	// UReplicationGraph::RemoveNetworkActor
+	inline constexpr auto UReplicationGraph_RemoveNetworkActor =
+		"40 57 41 54 41 56 48 83 EC ?? 4C 8D 25 ?? ?? ?? ?? 48 8B FA 4C 8B F1 48 85 D2 74 ?? 8B 42 ?? C1 E8 1E";
+
+	// FPaths::ProjectSavedDir
+	inline constexpr auto FPaths_ProjectSavedDir =
+		"4C 89 74 24 20 55 48 8B EC 48 83 EC ?? E8 ?? ?? ?? ?? 4C 8B F0 80 B8 ?? ?? ?? ?? 00 0F 85 ?? ?? ?? ??";
 #endif
 
 	// -----------------------------------------------------------------------
@@ -975,6 +991,10 @@ namespace ScanPatterns
 		{ "UCrDedicatedServerSettingsComp::ParseSettings", UCrDedicatedServerSettingsComp_ParseSettings, false },
 		{ "ACrGameModeBase::GetProfessionForNewPlayer", ACrGameModeBase_GetProfessionForNewPlayer, false },
 		{ "ACrGameModeBase::PreLogin", ACrGameModeBase_PreLogin, false },
+		{ "UCrSaveSubsystem::SaveNextSaveGame", UCrSaveSubsystem_SaveNextSaveGame, false },
+		{ "UReplicationGraph::AddNetworkActor", UReplicationGraph_AddNetworkActor, false },
+		{ "UReplicationGraph::RemoveNetworkActor", UReplicationGraph_RemoveNetworkActor, false },
+		{ "FPaths::ProjectSavedDir", FPaths_ProjectSavedDir, false },
 #endif
 
 		// Optional: losing it only costs engine-command fallthrough in the -console window.
