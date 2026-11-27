@@ -1663,8 +1663,8 @@ namespace
 			const Installed i = InstallFrom(SiteWith(ReleaseOf("1.2.0", url)));
 			Check(nothing(i, "doesn't allow") && i.asked.size() == 3, ("latest: refused, nothing written: " + url).c_str());
 		}
-		Check(nothing(InstallFrom(SiteWith(ReleaseOf("latest", outside))), "doesn't allow"),
-			"latest: a version with no number that points elsewhere is refused, as the auto-update would take it");
+		Check(listed(InstallFrom(SiteWith(ReleaseOf("latest", outside)))),
+			"latest: the list's file when a version with no number points elsewhere, as the auto-update never takes it");
 		Check(nothing(InstallFrom(SiteWith(ReleaseOf("one", outside)), [](ModInstall::Request& r) { r.version = "one"; }), "doesn't allow"),
 			"latest: with a list version that has no number, any address elsewhere is refused");
 

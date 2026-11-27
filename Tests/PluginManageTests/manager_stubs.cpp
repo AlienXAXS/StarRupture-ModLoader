@@ -180,6 +180,7 @@ namespace UIState { void ForgetModule(HMODULE) {} }
 // Nothing here reaches the network.
 std::string FormatWinHttpError(unsigned long) { return {}; }
 std::string HttpGet(const char*, const char*, const HttpGetOptions&) { return {}; }
+std::string HttpGetUpdate(const std::string&, const std::string&, UpdateHosts::Owner, const char*) { return {}; }
 namespace VersionFeed
 {
 	const std::vector<PublicKey>& CompiledKeys()
