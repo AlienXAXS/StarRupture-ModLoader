@@ -419,14 +419,6 @@ namespace PluginManager
 	static constexpr const char* kRefusedStaysNote =
 		"It was not loaded, but its file stays in memory until you restart the game.";
 
-	// What to say of a shut-down plugin the caller meant to load again: RELOAD is
-	// only named where it would not be refused.
-	static const char* ShutDownNote(const LoadedPlugin& p)
-	{
-		return !p.isDisabled && !p.isUninstalled && ReloadPolicy::LoadRefusal(p.reload.load, false,
-			ReloadPolicy::GameplayWorldRunning()).empty() ? kShutDownNote : kUnloadShutDownNote;
-	}
-
 	static std::string BaseFileNameA(const std::wstring& path);
 	static void ShowCrashToast(const std::string& name, const std::string& text);
 
@@ -549,6 +541,26 @@ namespace PluginManager
 
 	static void FillCachedIdentity(LoadedPlugin& rec);
 #endif
+
+	// Why the mod manager's state rules out loading this record again, or null.
+	// Reads memory only: the plugin list asks every frame.
+	static const char* ManagedLoadRefusal(const LoadedPlugin& p)
+	{
+#ifdef MODLOADER_CLIENT_BUILD
+		if (p.isDisabled)      return kDisabledWhy;
+		if (p.isUninstalled)   return "uninstalled; restore it on the Browse page";
+		if (IsStale(p.fileName)) return kStaleWhy;
+#endif
+		return nullptr;
+	}
+
+	// What to say of a shut-down plugin the caller meant to load again: RELOAD is
+	// only named where it would not be refused.
+	static const char* ShutDownNote(const LoadedPlugin& p)
+	{
+		return !ManagedLoadRefusal(p) && ReloadPolicy::LoadRefusal(p.reload.load, false,
+			ReloadPolicy::GameplayWorldRunning()).empty() ? kShutDownNote : kUnloadShutDownNote;
+	}
 
 	// Inner load helper: performs LoadLibrary, GetProcAddress, GetPluginInfo,
 	// version check, and PluginInit on an existing LoadedPlugin record.
@@ -1556,6 +1568,7 @@ namespace PluginManager
 				const std::string unloadWhy = p.isUnloading ? std::string(kUnloadingNow)
 					: p.isInitialized ? ReloadPolicy::UnloadRefusal(p.reload.unload, busy, world) : std::string();
 				const std::string reloadWhy = p.isUnloading ? std::string(kUnloadingNow)
+					: ManagedLoadRefusal(p) ? std::string(ManagedLoadRefusal(p))
 					: ReloadPolicy::ReloadRefusal(p.reload, busy, p.isInitialized, world);
 				strncpy_s(out[i].unloadBlock, unloadWhy.c_str(), _TRUNCATE);
 				strncpy_s(out[i].reloadBlock, reloadWhy.c_str(), _TRUNCATE);
@@ -1741,6 +1754,8 @@ namespace PluginManager
 
 	static std::string ReloadRuleRefusal(const LoadedPlugin& p)
 	{
+		if (const char* const managed = ManagedLoadRefusal(p))
+			return managed;
 		return ReloadPolicy::ReloadRefusal(p.reload, BusyReasonOf(p), p.isInitialized,
 			ReloadPolicy::GameplayWorldRunning());
 	}
@@ -1868,6 +1883,7 @@ namespace PluginManager
 			if (refusal) *refusal = blocked;
 			return false;
 		}
+		p.isDisabled = false;    // not on the list now
 		p.isUninstalled = false; // a file is back at its path
 #endif
 
