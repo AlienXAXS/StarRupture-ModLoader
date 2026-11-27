@@ -19,6 +19,7 @@ namespace PluginGuard
 		std::atomic<uintptr_t>   end{ 0 };
 		std::atomic<bool>        off{ false };
 		std::atomic<bool>        denied{ false };
+		std::atomic<bool>        keepsHooks{ false };   // hooks stay live while denied
 		std::atomic<uint32_t>    code{ 0 };
 		std::atomic<const char*> callback{ nullptr };
 		char                     name[64] = {};   // cut to fit: for the crash report
@@ -27,6 +28,10 @@ namespace PluginGuard
 
 	// More plugins than this are loaded without the guard (and say so).
 	static constexpr size_t kMaxModules = 128;
+
+	// This plugin keeps its hooks without asking, until a deny that cuts them
+	// has been tried in game with it.
+	static constexpr std::string_view kKeepsHooksByName = "MainMap";
 
 	static Slot                  s_slots[kMaxModules];
 	static std::atomic<int>      s_offCount{ 0 };   // slots with off set: IsOff's fast path
@@ -99,7 +104,7 @@ namespace PluginGuard
 
 	RunningScope::~RunningScope() { t_running = m_outer; }
 
-	void Track(HMODULE module, const char* pluginName)
+	void Track(HMODULE module, const char* pluginName, bool keepsHooks)
 	{
 		if (!module) return;
 		const auto base = reinterpret_cast<uintptr_t>(module);
@@ -124,6 +129,8 @@ namespace PluginGuard
 		free->code.store(0, std::memory_order_relaxed);
 		free->callback.store(nullptr, std::memory_order_relaxed);
 		free->end.store(ImageEnd(module), std::memory_order_relaxed);
+		free->keepsHooks.store(keepsHooks || HostRules::SamePlugin(kKeepsHooksByName, free->fullName),
+		                       std::memory_order_relaxed);
 		const bool denied = NameDenied(free->fullName);
 		free->denied.store(denied, std::memory_order_relaxed);
 		if (denied)
@@ -191,6 +198,14 @@ namespace PluginGuard
 			return false;
 		const Slot* s = SlotFor(reinterpret_cast<uintptr_t>(address));
 		return s && s->denied.load(std::memory_order_acquire);
+	}
+
+	bool IsHookCut(const void* address)
+	{
+		if (s_deniedCount.load(std::memory_order_relaxed) == 0)
+			return false;
+		const Slot* s = SlotFor(reinterpret_cast<uintptr_t>(address));
+		return s && s->denied.load(std::memory_order_acquire) && !s->keepsHooks.load(std::memory_order_relaxed);
 	}
 
 	bool IsDeniedName(std::string_view pluginName)

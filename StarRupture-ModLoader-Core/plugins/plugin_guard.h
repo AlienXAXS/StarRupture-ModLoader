@@ -70,8 +70,10 @@ namespace PluginGuard
 
 	// The plugin manager tells the guard which DLLs are plugins: Track once
 	// LoadLibrary has returned, Untrack just before FreeLibrary. Untrack also
-	// forgets a fault, so a reloaded plugin starts out running. Any thread.
-	void Track(HMODULE module, const char* pluginName);
+	// forgets a fault, so a reloaded plugin starts out running. keepsHooks: the
+	// plugin's hooks are not to be cut while it is denied (see IsHookCut). Any
+	// thread.
+	void Track(HMODULE module, const char* pluginName, bool keepsHooks = false);
 	void Untrack(HMODULE module);
 
 	// True when the plugin `address` lives in has been switched off after a
@@ -105,6 +107,12 @@ namespace PluginGuard
 	// True when the plugin `address` lives in is denied. Lock-free, any thread;
 	// one relaxed atomic load while none is.
 	bool IsDenied(const void* address);
+
+	// True when the plugin `address` lives in is denied and its hooks are to be
+	// cut: it was not tracked with keepsHooks and is not one the guard exempts
+	// by name. Lock-free, any thread; one relaxed atomic load while none is
+	// denied.
+	bool IsHookCut(const void* address);
 
 	// The same by plugin name, for records that hold a name and no callback
 	// address. One relaxed atomic load while none is denied, else a short lock

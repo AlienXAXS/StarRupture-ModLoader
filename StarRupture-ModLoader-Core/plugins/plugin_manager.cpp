@@ -1129,7 +1129,8 @@ namespace PluginManager
 		plugin.self.config  = ModLoaderLogger::GetPluginConfig();
 		plugin.self.hooks   = nullptr;   // populated below, after the scan phase
 		ReloadPolicy::SetBusyReason(&plugin.self, nullptr);   // a new instance starts not busy
-		PluginGuard::Track(plugin.hModule, plugin.cachedName.c_str());   // its callbacks are guarded from here on
+		PluginGuard::Track(plugin.hModule, plugin.cachedName.c_str(),   // its callbacks are guarded from here on
+		                   (plugin.gameBuild.mapFlags & PLUGIN_HANDLES_HOST_DENY) != 0);
 #ifdef MODLOADER_CLIENT_BUILD
 		NetworkChannel::PluginFeaturesDeclared();   // joined rules may deny it: settle that before it registers anything
 #endif

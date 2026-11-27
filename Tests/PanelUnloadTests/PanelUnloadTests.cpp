@@ -1203,6 +1203,44 @@ static void Test_GuardForgetModuleDropsOnlyThatModule()
 // A plugin the joined server denies as a whole
 // ---------------------------------------------------------------------------
 
+// A denied plugin's hooks are cut unless it was tracked with keepsHooks, or is
+// MainMap; an allow ends the cut.
+static void Test_DeniedHooksAreCutUnlessKept()
+{
+    const void* const inA = reinterpret_cast<const void*>(&OkA);
+    const void* const inB = reinterpret_cast<const void*>(GetLastError);
+    PluginGuard::Track(ThisModule(), "A");
+    PluginGuard::Track(Kernel32(), "B", true);
+    CHECK(!PluginGuard::IsHookCut(inA));
+
+    PluginGuard::SetDenied({ "A", "B" });
+    CHECK(PluginGuard::IsHookCut(inA));
+    CHECK(PluginGuard::IsHookCut(ThisModule()));   // a module handle is an address in it
+    CHECK(PluginGuard::IsDenied(inB));
+    CHECK(!PluginGuard::IsHookCut(inB));
+    CHECK(!PluginGuard::IsHookCut(nullptr));
+
+    PluginGuard::SetDenied({});
+    CHECK(!PluginGuard::IsHookCut(inA));
+    CHECK(!PluginGuard::IsHookCut(inB));
+
+    // A slot used again starts without the last plugin's keepsHooks, and a
+    // plugin tracked while its name is denied starts cut.
+    PluginGuard::Untrack(Kernel32());
+    PluginGuard::SetDenied({ "B", "mainmap" });
+    PluginGuard::Track(Kernel32(), "B");
+    CHECK(PluginGuard::IsHookCut(inB));
+
+    PluginGuard::Untrack(Kernel32());
+    PluginGuard::Track(Kernel32(), "mainmap");
+    CHECK(PluginGuard::IsDenied(inB));
+    CHECK(!PluginGuard::IsHookCut(inB));
+
+    PluginGuard::SetDenied({});
+    PluginGuard::Untrack(ThisModule());
+    PluginGuard::Untrack(Kernel32());
+}
+
 // A denied plugin's open panel is not drawn, and CloseForModule closes it the
 // normal way, so its panel-closed callback runs. It stays shut while denied and
 // after the allow. The other plugin's panel is left alone.
@@ -1655,6 +1693,7 @@ int main()
     RunTest("GuardTwoThreadsFaultAtOnce",           Test_GuardTwoThreadsFaultAtOnce);
     RunTest("GuardStaleCallbacks",                  Test_GuardStaleCallbacks);
     RunTest("GuardRestoresImGuiAfterRenderFault",   Test_GuardRestoresImGuiAfterRenderFault);
+    RunTest("DeniedHooksAreCutUnlessKept",          Test_DeniedHooksAreCutUnlessKept);
     RunTest("DeniedPanelClosesAndStaysShut",        Test_DeniedPanelClosesAndStaysShut);
     RunTest("DeniedWidgetIsNotDrawn",               Test_DeniedWidgetIsNotDrawn);
     RunTest("DeniedTokensAreNotHonoured",           Test_DeniedTokensAreNotHonoured);
