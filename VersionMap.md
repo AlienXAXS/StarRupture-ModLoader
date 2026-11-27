@@ -399,6 +399,11 @@ The file has the same format, the same Ed25519 signatures and the same trusted k
   in all, 1 MiB) and the ETag are the client's, as described in [The feed](#the-feed). It is asked for with the
   game's main thread parked at startup; when that is not so, or the build is refused, the file is asked
   for for the next launch.
+- **How long the server waits.** At most 8 s for the request, whatever the network does: redirects
+  and connection retries are inside that limit. The request runs on a thread of its own. When it has not
+  ended in time, the server logs that it is given up on and carries on with the cache. What it answers
+  later is dropped: it is not stored and changes nothing, and the next start asks again. The 8 s is for
+  the request only; reading the cache from disk is outside it.
 - **Where it is kept.** `ModLoader\version-map-server.v1.cache`, with its ETag in
   `version-map-server.v1.cache.etag`: the client's cache has a different name, so neither reads the other's,
   and a file of the other kind is refused before it is stored.
@@ -516,7 +521,10 @@ disallowed, each operation has a 2 s timeout, the whole request has an 8 s deadl
 is capped at 1 MiB while it is read (`feed_fetch.h`, `http_get.cpp`). These cut the request off: on a
 network that drops the connection, a host that does not answer costs about 4 s and an unroutable one
 about 6 s (measured), and then the game starts on the cache. The deadline is checked between steps,
-not inside a redirect, so a network that is slow at every step can take a little longer.
+and redirects and connection retries run inside one step, each operation with its own timeout, so a
+request that is slow at every one of them can take longer than 8 s. The dedicated server also bounds
+its wait, so there 8 s is the most
+([above](#the-dedicated-servers-downloaded-version-map)).
 
 **Cache.** The signed file itself, `ModLoader\version-map-client.v1.cache`, written to a temp
 file and then renamed over. It is verified again on every launch and only ever replaced by a file
