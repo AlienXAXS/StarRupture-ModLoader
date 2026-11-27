@@ -4782,9 +4782,16 @@ enum PluginMapFlags : uint32_t
     //     none, and so does a cut detour's own call to its original;
     //   - IPluginDelegateHook::Hook callbacks, which are not called.
     // Declaring features does not exempt a plugin. The loader switches both
-    // ways on the game thread. A detour installed while turned off starts cut,
-    // and Hooks->Remove works as always. A call already inside a detour on
-    // another thread finishes it, so the switch is not instant for that call.
+    // ways on the game thread, and Hooks->Remove works as always. A call
+    // already inside a detour on another thread finishes it, so the switch is
+    // not instant for that call. A detour installed after the loader has marked
+    // the plugin turned off starts cut. Two kinds can run until later: for a
+    // plugin loaded off the game thread while joined, the mark waits for the
+    // game thread, so its detours run until then; and a detour installed from
+    // DllMain, before the loader tracks the plugin, goes in live and is cut
+    // only when the loader next switches hooks. On a reload that is marked as
+    // soon as it is tracked, that waits for another change in what is turned
+    // off.
     //
     // Loader events, world end among them, keep firing, and IsDeniedByHost
     // lists what else changes. Not touched either way: byte patches, direct
