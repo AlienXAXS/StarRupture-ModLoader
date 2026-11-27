@@ -76,6 +76,9 @@ namespace PluginGuard
 	void Track(HMODULE module, const char* pluginName, bool keepsHooks = false);
 	void Untrack(HMODULE module);
 
+	// The bytes a loaded module's image spans from its base.
+	size_t ImageSize(HMODULE module);
+
 	// The address that says which module a hook belongs to: `caller`, where the
 	// install call returns to, unless only the detour is in a tracked plugin. A
 	// plugin whose last act is the install call can be compiled into a tail

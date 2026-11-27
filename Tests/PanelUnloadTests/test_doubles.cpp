@@ -4,6 +4,7 @@
 #include "plugins/plugin_manager.h"
 #include "logging/logger.h"
 #include "theme.h"
+#include "hooks/hook_broker.h"
 
 namespace TestDoubles
 {
@@ -74,3 +75,5 @@ bool IsMenuWidgetUnderCursorNow()
 {
     return false;
 }
+
+namespace Hooks::Broker { size_t RetireModule(HMODULE, size_t) { return 0; } }

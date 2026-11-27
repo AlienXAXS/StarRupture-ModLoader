@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "plugins/plugin_call_gate.h"
 
+#include "hooks/hook_broker.h"
 #include "logging/logger.h"
 #include "plugins/plugin_guard.h"
 
@@ -21,6 +22,9 @@ namespace PluginCallGate
 
 		void UntrackAndFree(HMODULE module)
 		{
+			// Before Untrack, after which no deny names the module: a hook it
+			// left behind must never be led into again.
+			Hooks::Broker::RetireModule(module, PluginGuard::ImageSize(module));
 			PluginGuard::Untrack(module);
 			FreeLibrary(module);
 		}

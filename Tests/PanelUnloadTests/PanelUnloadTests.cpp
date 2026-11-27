@@ -23,6 +23,7 @@
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
+#include <map>
 #include <fstream>
 #include <iterator>
 #include <mutex>
@@ -238,6 +239,49 @@ static std::string FunctionBody(const std::string& src, const char* signature, c
     return end == std::string::npos ? "" : src.substr(start, end - start);
 }
 
+static std::string ReadSource(const std::filesystem::path& file);
+
+// The call gate's free step is the one place a plugin DLL is unmapped. It
+// retires the DLL's hooks first, then untracks it, and syncs nothing.
+static void CheckFreeSites()
+{
+    wchar_t exe[MAX_PATH];
+    GetModuleFileNameW(nullptr, exe, MAX_PATH);
+    std::filesystem::path core = exe;
+    core = core.parent_path().parent_path().parent_path() / L"StarRupture-ModLoader-Core";
+
+    const std::string gate = ReadSource(core / L"plugins" / L"plugin_call_gate.cpp");
+    const std::string step = FunctionBody(gate, "void UntrackAndFree(HMODULE module)", "\n\t\t}");
+    const size_t retire  = step.find("Hooks::Broker::RetireModule(module, PluginGuard::ImageSize(module));");
+    const size_t untrack = step.find("PluginGuard::Untrack(module);");
+    const size_t unmap   = step.find("FreeLibrary(module);");
+    CHECK(retire != std::string::npos);
+    CHECK(untrack != std::string::npos);
+    CHECK(unmap != std::string::npos);
+    CHECK(retire < untrack && untrack < unmap);
+    CHECK(step.find("SyncCuts") == std::string::npos);
+
+    // Every FreeLibrary in the loader. A new one that can unmap a plugin goes
+    // through the call gate; any other is added here.
+    const std::map<std::wstring, int> expected = {
+        { L"plugin_call_gate.cpp",   1 },   // the free step
+        { L"plugin_dll_version.h",   1 },   // mapped to read it: none of its code ran
+        { L"preload_manager.cpp",    7 },   // preload DLLs, whose hooks are never skipped
+        { L"imgui_backend.cpp",      1 },   // the loader's own module
+        { L"imgui_backend_shim.cpp", 2 },   // the render host DLL
+    };
+    std::map<std::wstring, int> found;
+    for (const auto& entry : std::filesystem::recursive_directory_iterator(core))
+    {
+        if (entry.path().extension() != L".cpp" && entry.path().extension() != L".h")
+            continue;
+        const std::string text = StripLineComments(ReadSource(entry.path()));
+        for (size_t at = text.find("FreeLibrary("); at != std::string::npos; at = text.find("FreeLibrary(", at + 1))
+            ++found[entry.path().filename().wstring()];
+    }
+    CHECK(found == expected);
+}
+
 static void Test_UnloadPathsPurgePanels()
 {
     // <solution>\build\tests\panel_unload_tests.exe: the exe's name, then tests, then build.
@@ -280,6 +324,7 @@ static void Test_UnloadPathsPurgePanels()
     }
     // The plugin manager unmaps nothing itself.
     CHECK(src.find("FreeLibrary(") == std::string::npos);
+    CheckFreeSites();
 
     // UNLOAD runs the plugin's shutdown before it frees it.
     const std::string unload = FunctionBody(src, "bool UnloadPlugin(int index, std::string* refusal)");

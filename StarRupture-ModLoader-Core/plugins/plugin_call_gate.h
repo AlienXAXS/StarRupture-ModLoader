@@ -52,7 +52,8 @@ namespace PluginCallGate
 	                  const std::function<void()>& whileIdle = {});
 
 	// Replaces what FreeWhenIdle runs while the gate is closed, for tests.
-	// Null restores the real one (PluginGuard::Untrack, then FreeLibrary).
+	// Null restores the real one (Hooks::Broker::RetireModule,
+	// PluginGuard::Untrack, then FreeLibrary).
 	using FreeStep = void (*)(HMODULE module);
 	void SetFreeStep(FreeStep step);
 }

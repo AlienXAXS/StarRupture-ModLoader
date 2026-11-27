@@ -12,6 +12,7 @@
 #include "theme.h"
 
 #include <cstring>
+#include "hooks/hook_broker.h"
 
 namespace TestDoubles
 {
@@ -84,3 +85,5 @@ namespace UI::Theme
 
     void EndChamferedWindow() {}
 }
+
+namespace Hooks::Broker { size_t RetireModule(HMODULE, size_t) { return 0; } }

@@ -11,6 +11,7 @@
 
 #include <cstdarg>
 #include <cwchar>
+#include "hooks/hook_broker.h"
 
 namespace TestDoubles
 {
@@ -129,4 +130,5 @@ namespace ScanCache
 std::wstring GetGameVersionString() { return std::wstring(); }
 
 // The call gate only reaches the guard when it frees a module, which no test here does.
-namespace PluginGuard { void Untrack(HMODULE) {} }
+namespace PluginGuard { void Untrack(HMODULE) {} size_t ImageSize(HMODULE) { return 0; } }
+namespace Hooks::Broker { size_t RetireModule(HMODULE, size_t) { return 0; } }

@@ -541,6 +541,114 @@ static void Test_TwoModulesCutOnOneChainAndTheLoaderNever()
 	other.Close();
 }
 
+// Retires fake module `m`. Its image is the one byte that stands for it, which
+// no detour is inside.
+static size_t Retire(int m) { return Broker::RetireModule(Module(m), 1); }
+
+// A module freed while cut: neither an allow nor anything later brings it back.
+static void Test_ARetiredLinkStaysCut()
+{
+	AllowAll();
+	Built c;
+	c.Add(0, 0);
+	c.Add(1, 1);
+	c.Add(2, 0);
+	Deny(0, true);
+	CHECK(Broker::SyncCuts() == 2);
+	CHECK(Retire(0) == 2);
+	CHECK(c.Cuts() == "101");
+	VERIFY(c);
+	AllowAll();                  // what the cut query says once it is untracked
+	CHECK(Broker::SyncCuts() == 0);
+	CHECK(c.Cuts() == "101");
+	VERIFY(c);
+	CHECK(Retire(0) == 0);
+
+	c.Add(3, 2);                 // a later install
+	CHECK(c.Cuts() == "1010");
+	VERIFY(c);
+	c.Remove(1);                 // a later detach
+	CHECK(c.Cuts() == "110");
+	VERIFY(c);
+	Deny(2, true);               // later syncs that switch another module
+	CHECK(Broker::SyncCuts() == 1);
+	VERIFY(c);
+	AllowAll();
+	CHECK(Broker::SyncCuts() == 1);
+	CHECK(c.Cuts() == "110");
+	CHECK(c.target.Trace() == "3");
+	VERIFY(c);
+	c.Close();                   // retired links still detach
+}
+
+// Retiring cuts a live link at once, with no sync and with no query answer.
+static void Test_RetiringCutsLiveLinksAtOnce()
+{
+	AllowAll();
+	Built c;
+	c.Add(0, 0);
+	c.Add(1, 1);
+	Built other;
+	other.Add(2, 0);
+	CHECK(Retire(0) == 2);       // every chain
+	CHECK(c.Cuts() == "10");
+	CHECK(other.Cuts() == "1");
+	CHECK(c.target.Trace() == "1");
+	CHECK(other.target.Trace().empty());
+	VERIFY(c);
+	VERIFY(other);
+	CHECK(Broker::SyncCuts() == 0);
+	CHECK(Retire(1) == 1);       // all retired: calls reach the function
+	CHECK(c.target.Trace().empty());
+	VERIFY(c);
+	c.Close();
+	other.Close();
+}
+
+static void Test_AModuleAtTheSameAddressStartsClean()
+{
+	AllowAll();
+	Built c;
+	c.Add(0, 0);
+	CHECK(Retire(0) == 1);
+	c.Add(1, 0);                 // the next module loaded there
+	CHECK(c.Cuts() == "10");
+	VERIFY(c);
+	Deny(0, true);
+	CHECK(Broker::SyncCuts() == 1);
+	CHECK(c.Cuts() == "11");
+	AllowAll();
+	CHECK(Broker::SyncCuts() == 1);
+	CHECK(c.Cuts() == "10");
+	CHECK(c.target.Trace() == "1");
+	VERIFY(c);
+	c.Close();
+}
+
+// A hook another module (or no module) is named for, with its detour in the
+// freed image.
+static void Test_ADetourInsideAFreedImageIsRetired()
+{
+	AllowAll();
+	CHECK(Broker::RetireModule(nullptr, ~static_cast<size_t>(0)) == 0);
+	Built c;
+	c.Add(0, 1);
+	c.Add(1, -1);
+	c.Add(2, -1);
+	// An image that ends at the third detour, and one that starts just past it.
+	const auto third = reinterpret_cast<uintptr_t>(kDetour[2]);
+	CHECK(Broker::RetireModule(reinterpret_cast<HMODULE>(third - 1), 1) == 0);
+	CHECK(Broker::RetireModule(reinterpret_cast<HMODULE>(third + 1), 1) == 0);
+	CHECK(c.Cuts() == "000");
+	for (int d : { 0, 1 })
+		CHECK(Broker::RetireModule(reinterpret_cast<HMODULE>(kDetour[d]), 1) == 1);
+	CHECK(c.Cuts() == "110");
+	CHECK(Broker::SyncCuts() == 0);
+	CHECK(c.target.Trace() == "2");
+	VERIFY(c);
+	c.Close();
+}
+
 // Callers hammer the target while the cuts are switched 10,000 times. The
 // loader's two links are never cut, so a call that misses one was misrouted.
 static void Test_CallingWhileCutsToggle()
@@ -639,6 +747,10 @@ int main()
 		T(Test_ALateSyncLeavesNoStaleCut),
 		T(Test_DetachWithEveryCutPattern),
 		T(Test_TwoModulesCutOnOneChainAndTheLoaderNever),
+		T(Test_ARetiredLinkStaysCut),
+		T(Test_RetiringCutsLiveLinksAtOnce),
+		T(Test_AModuleAtTheSameAddressStartsClean),
+		T(Test_ADetourInsideAFreedImageIsRetired),
 		T(Test_CallingWhileCutsToggle),
 #undef T
 	};

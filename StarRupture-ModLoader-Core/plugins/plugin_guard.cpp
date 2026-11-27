@@ -45,12 +45,12 @@ namespace PluginGuard
 	static uintptr_t             s_staleLogged[kMaxStale];
 	static size_t                s_staleCount = 0;
 
-	static uintptr_t ImageEnd(HMODULE module)
+	size_t ImageSize(HMODULE module)
 	{
 		const auto base = reinterpret_cast<uintptr_t>(module);
 		const auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(base);
 		const auto* nt  = reinterpret_cast<const IMAGE_NT_HEADERS*>(base + dos->e_lfanew);
-		return base + nt->OptionalHeader.SizeOfImage;
+		return nt->OptionalHeader.SizeOfImage;
 	}
 
 	// Lock-free: the filter runs it on the faulting thread.
@@ -128,7 +128,7 @@ namespace PluginGuard
 		free->off.store(false, std::memory_order_relaxed);
 		free->code.store(0, std::memory_order_relaxed);
 		free->callback.store(nullptr, std::memory_order_relaxed);
-		free->end.store(ImageEnd(module), std::memory_order_relaxed);
+		free->end.store(base + ImageSize(module), std::memory_order_relaxed);
 		free->keepsHooks.store(keepsHooks || HostRules::SamePlugin(kKeepsHooksByName, free->fullName),
 		                       std::memory_order_relaxed);
 		const bool denied = NameDenied(free->fullName);

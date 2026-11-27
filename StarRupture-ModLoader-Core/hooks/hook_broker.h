@@ -71,6 +71,10 @@
 // patched even with every link cut. A call already past a slot when it changes
 // runs the cut detour once more.
 //
+// A link left behind by a module that is about to be freed is retired: cut for
+// good, whatever the cut query says later, so nothing leads calls back into
+// memory that is gone.
+//
 // ---------------------------------------------------------------------------
 // Why every `original` is a thunk
 // ---------------------------------------------------------------------------
@@ -143,6 +147,13 @@ namespace Hooks::Broker
 	// changed. It reads the current answer, so calling it late or twice is safe.
 	// Call it with no lock held.
 	size_t SyncCuts();
+
+	// Call just before `module` (imageSize bytes from its base) is freed. Cuts
+	// for good every link it installed and every link whose detour is inside it,
+	// and returns how many were retired by this call. The links stay in their
+	// chains and can still be detached. A module loaded later at the same address
+	// starts clean. Takes only the broker's lock.
+	size_t RetireModule(HMODULE module, size_t imageSize);
 
 	// --- Diagnostics ---------------------------------------------------------
 

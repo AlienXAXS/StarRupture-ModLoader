@@ -90,7 +90,8 @@ namespace Hooks::Broker
 			uintptr_t   detour = 0;
 			uint8_t*    thunk  = nullptr;   // this link's `original`
 			HMODULE     module = nullptr;   // who asked for the hook; null is never cut
-			bool        cut    = false;
+			bool        cut     = false;
+			bool        retired = false;     // its module was freed: stays cut
 		};
 
 		struct Chain
@@ -308,7 +309,7 @@ namespace Hooks::Broker
 				bool dirty = false;
 				for (Link& link : chain.links)
 				{
-					const bool cut = WantsCut(link.module);
+					const bool cut = link.retired || WantsCut(link.module);
 					if (cut == link.cut)
 						continue;
 					link.cut = cut;
@@ -323,6 +324,42 @@ namespace Hooks::Broker
 		if (changed)
 			LogToFile::Info("[HookBroker] %zu hook(s) cut or restored", changed);
 		return changed;
+	}
+
+	size_t RetireModule(HMODULE module, size_t imageSize)
+	{
+		if (!module)
+			return 0;
+		const auto base = reinterpret_cast<uintptr_t>(module);
+
+		size_t retired = 0;
+		{
+			std::lock_guard<std::mutex> lock(g_mutex);
+
+			for (Chain& chain : g_chains)
+			{
+				bool dirty = false;
+				for (Link& link : chain.links)
+				{
+					// Unsigned: a detour below the base wraps round and is outside.
+					if (link.retired || (link.module != module && link.detour - base >= imageSize))
+						continue;
+					link.retired = true;
+					++retired;
+					if (!link.cut)
+					{
+						link.cut = true;
+						dirty = true;
+					}
+				}
+				if (dirty)
+					Rewire(chain);
+			}
+		}
+
+		if (retired)
+			LogToFile::Warn("[HookBroker] %zu hook(s) left behind by a plugin being freed are skipped from now on", retired);
+		return retired;
 	}
 
 	std::vector<PatchedRange> GetPatchedRanges()

@@ -3,6 +3,7 @@
 #include "test_doubles.h"
 #include "plugins/plugin_manager.h"
 #include "logging/logger.h"
+#include "hooks/hook_broker.h"
 
 namespace TestDoubles
 {
@@ -75,3 +76,5 @@ namespace ModLoaderLogger
     void LogWarn(const wchar_t*, ...)  {}
     void LogError(const wchar_t*, ...) {}
 }
+
+namespace Hooks::Broker { size_t RetireModule(HMODULE, size_t) { return 0; } }

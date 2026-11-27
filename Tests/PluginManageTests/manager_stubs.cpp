@@ -170,6 +170,7 @@ namespace NetworkChannel { void PluginFeaturesDeclared() {} }
 namespace Hooks::Broker { void SetCutQuery(CutQuery query) { g_cutQuery = reinterpret_cast<const void*>(query); } }
 namespace Hooks::Input { void ForgetPluginBlocking(const char*) {} }
 namespace Hooks::MouseWheel { void ForgetModule(HMODULE) {} }
+namespace Hooks::Broker { size_t RetireModule(HMODULE, size_t) { return 0; } }
 namespace ImageLibrary { void ForgetPlugin(const IPluginSelf*) {} }
 namespace PakRegistry { void ForgetPlugin(const char*) {} }
 namespace PluginConsole { void ForgetPlugin(const char*) {} }
