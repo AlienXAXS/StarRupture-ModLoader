@@ -523,8 +523,8 @@ network that drops the connection, a host that does not answer costs about 4 s a
 about 6 s (measured), and then the game starts on the cache. The deadline is checked between steps,
 and redirects and connection retries run inside one step, each operation with its own timeout, so a
 request that is slow at every one of them can take longer than 8 s. The dedicated server also bounds
-its wait, so there 8 s is the most
-([above](#the-dedicated-servers-downloaded-version-map)).
+its wait, so there
+8 s is the most ([above](#the-dedicated-servers-downloaded-version-map)).
 
 **Cache.** The signed file itself, `ModLoader\version-map-client.v1.cache`, written to a temp
 file and then renamed over. It is verified again on every launch and only ever replaced by a file
@@ -550,13 +550,13 @@ private halves are CI secrets (`VMAP_SIGN_KEY_TEST`, `VMAP_SIGN_KEY`); a leaked 
 a loader release that drops its slot.
 
 **Merge.** This is the client's rule; the server's is
-[above](#the-dedicated-servers-downloaded-version-map). The loader merges the built-in version map and the feed into one row per key and CL (per `fp`
-for a site key), once at startup, and the result stays unchanged for the process. For each group
-it takes the built-in row for the running exe if there is one, otherwise the feed's, otherwise
-the built-in. The feed can add builds and keys and fill a shipped `absent` row; it can never
-change a locator the loader shipped with for the running exe. A CL known only from the feed is
-supported only if the union holds a locator for every required loader entry and loader field on
-it; otherwise it is dropped and the build stays unknown.
+[above](#the-dedicated-servers-downloaded-version-map). The loader merges the built-in version map
+and the feed into one row per key and CL (per `fp` for a site key), once at startup, and the result
+stays unchanged for the process. For each group it takes the built-in row for the running exe if
+there is one, otherwise the feed's, otherwise the built-in. The feed can add builds and keys and
+fill a shipped `absent` row; it can never change a locator the loader shipped with for the running
+exe. A CL known only from the feed is supported only if the union holds a locator for every
+required loader entry and loader field on it; otherwise it is dropped and the build stays unknown.
 
 **What a bad feed can do.** It cannot run code. Every row still has to pass its kind check, the
 uniqueness rule, equality with its `rva` on its own exe, and for a native field the class-size

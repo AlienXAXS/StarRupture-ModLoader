@@ -35,9 +35,13 @@
 //
 // What a loader does with a verified feed:
 //   1. Merge it with the map compiled into the loader (Merge), one row per key
-//      and CL, and for a scoped key one per (key, fp, CL). The feed can add
-//      builds and keys and fill a shipped `absent`; it never changes a
-//      locator the loader shipped with for the running exe.
+//      and CL, and for a scoped key one per (key, fp, CL). On the client the
+//      feed can add builds and keys and fill a shipped `absent`; it never
+//      changes a locator the loader shipped with for the running exe. The
+//      dedicated server first binds each build to one exe (BindToExe,
+//      version_feed.cpp): a feed line for the exe of the built-in table adds
+//      only names the table has no row for, an `absent` one included, and a
+//      line for another exe of that build shares no row with the table.
 //   2. Drop every CL only the feed knows that lacks a locator for a required
 //      loader entry or a loader field (DropUncovered).
 //   3. Make the result the map every lookup reads (VersionMap::SetActiveMap),
