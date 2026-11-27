@@ -40,6 +40,12 @@
 // A key naming a class and one of its base classes
 // (ACrGatherableBaseActor::ICrGatherableInterface) is where that base sits
 // inside the class, with the base's size.
+//
+// Three field rows describe plain C++ types and were not read from the PDB.
+// FObjectKey::ObjectIndex and FObjectKey::ObjectSerialNumber are the engine's
+// two int32 members in declaration order, as FWeakObjectPtr has them in the
+// server SDK. TClassMap<EClassRepNodeMapping>::Map is the 0x50-byte TMap at the
+// end of the 0x80-byte ClassRepNodePolicies member, behind its TFunction.
 #pragma once
 
 #include "hooks/game/version_map_built.h"
@@ -149,7 +155,7 @@ inline constexpr std::array<FunctionRow, 46> kServerFunctionRows = {{
 	{ 127004, 0x2E3595FF, 0x0E2A8000, 1, 0x00000000, false, nullptr, 0, -1, -1, 0x03BE9E90, nullptr },
 }};
 
-inline constexpr std::array<FieldRow, 117> kServerFieldRows = {{
+inline constexpr std::array<FieldRow, 120> kServerFieldRows = {{
 	// AActor::Owner
 	{ 127004, 0x158, 0x8, 0x00, nullptr },
 	// AActor::bAlwaysRelevant
@@ -306,12 +312,18 @@ inline constexpr std::array<FieldRow, 117> kServerFieldRows = {{
 	{ 127004, 0x0, 0x4, 0x00, nullptr },
 	// FMassEntityManager::ConstSharedFragmentsContainer
 	{ 127004, 0x120, 0xB0, 0x00, nullptr },
+	// FObjectKey::ObjectIndex
+	{ 127004, 0x0, 0x4, 0x00, nullptr },
+	// FObjectKey::ObjectSerialNumber
+	{ 127004, 0x4, 0x4, 0x00, nullptr },
 	// FTransform::Translation
 	{ 127004, 0x20, 0x18, 0x00, nullptr },
 	// FTransformFragment::Transform
 	{ 127004, 0x0, 0x60, 0x00, nullptr },
 	// FUObjectItem::SerialNumber
 	{ 127004, 0x10, 0x4, 0x00, nullptr },
+	// TClassMap<EClassRepNodeMapping>::Map
+	{ 127004, 0x30, 0x50, 0x00, nullptr },   // inside ClassRepNodePolicies, after its TFunction
 	// UAuItemDataBase::ItemName
 	{ 127004, 0x2E0, 0x10, 0x00, nullptr },
 	// UAuItemDataBase::UniqueItemName
@@ -435,7 +447,7 @@ inline constexpr std::array<Index, 46> kServerFunctions = {{
 	{ "UWorld::GetSubsystem<UMassEntitySubsystem>", 45, 1 },
 }};
 
-inline constexpr std::array<Index, 117> kServerFields = {{
+inline constexpr std::array<Index, 120> kServerFields = {{
 	{ "AActor::Owner", 0, 1 },
 	{ "AActor::bAlwaysRelevant", 1, 1 },
 	{ "ACrGameStateBase::WaveTimerActor", 2, 1 },
@@ -514,45 +526,48 @@ inline constexpr std::array<Index, 117> kServerFields = {{
 	{ "FMassActorFragment::Actor", 75, 1 },
 	{ "FMassEnemyHealthFragment::HP", 76, 1 },
 	{ "FMassEntityManager::ConstSharedFragmentsContainer", 77, 1 },
-	{ "FTransform::Translation", 78, 1 },
-	{ "FTransformFragment::Transform", 79, 1 },
-	{ "FUObjectItem::SerialNumber", 80, 1 },
-	{ "UAuItemDataBase::ItemName", 81, 1 },
-	{ "UAuItemDataBase::UniqueItemName", 82, 1 },
-	{ "UAuItemDataBaseSubsystem::ItemDataBaseArray", 83, 1 },
-	{ "UCrDedicatedServerSettingsComp::SaveGameInterval", 84, 1 },
-	{ "UCrDedicatedServerSettingsComp::SaveGameName", 85, 1 },
-	{ "UCrDedicatedServerSettingsComp::SessionName", 86, 1 },
-	{ "UCrDedicatedServerSettingsComp::bLoadSavedGame", 87, 1 },
-	{ "UCrDedicatedServerSettingsComp::bStartNewGame", 88, 1 },
-	{ "UCrEnviroWaveSubsystem::CurrentFadeoutSubstage", 89, 1 },
-	{ "UCrEnviroWaveSubsystem::CurrentGrowbackSubstage", 90, 1 },
-	{ "UCrEnviroWaveSubsystem::CurrentPreWaveSubstage", 91, 1 },
-	{ "UCrEnviroWaveTimerSubsystem::NextWaveTimer", 92, 1 },
-	{ "UCrEnviroWaveTimerSubsystem::TimerActor", 93, 1 },
-	{ "UCrEnviroWaveTimerSubsystem::bStopWaves", 94, 1 },
-	{ "UCrEnviroWaveTimerSubsystem::bWaitingForNextWave", 95, 1 },
-	{ "UCrGameInstance::ServerSessionName", 96, 1 },
-	{ "UCrMassPersistentIDSubsystem::HandleIDMap", 97, 1 },
-	{ "UCrMassPersistentIDSubsystem::IDHandleMap", 98, 1 },
-	{ "UCrMassPersistentIDSubsystem::MaxID", 99, 1 },
-	{ "UCrReplicationGraph::ClassRepNodePolicies", 100, 1 },
-	{ "UCrSaveSubsystem::OnAfterSave", 101, 1 },
-	{ "UCrSaveSubsystem::OnPreSaveStart", 102, 1 },
-	{ "UCrSaveSubsystem::SaveData", 103, 1 },
-	{ "UMassActorSubsystem::ActorManager", 104, 1 },
-	{ "UMassEntitySubsystem::EntityManager", 105, 1 },
-	{ "UMassSignalSubsystem::CachedWorld", 106, 1 },
-	{ "UNetDriver::ClientConnections", 107, 1 },
-	{ "UObject::ClassPrivate", 108, 1 },
-	{ "UObject::InternalIndex", 109, 1 },
-	{ "UObject::OuterPrivate", 110, 1 },
-	{ "UWorld::AudioTimeSeconds", 111, 1 },
-	{ "UWorld::GameState", 112, 1 },
-	{ "UWorld::NetDriver", 113, 1 },
-	{ "UWorld::RealTimeSeconds", 114, 1 },
-	{ "UWorld::TimeSeconds", 115, 1 },
-	{ "UWorld::UnpausedTimeSeconds", 116, 1 },
+	{ "FObjectKey::ObjectIndex", 78, 1 },
+	{ "FObjectKey::ObjectSerialNumber", 79, 1 },
+	{ "FTransform::Translation", 80, 1 },
+	{ "FTransformFragment::Transform", 81, 1 },
+	{ "FUObjectItem::SerialNumber", 82, 1 },
+	{ "TClassMap<EClassRepNodeMapping>::Map", 83, 1 },
+	{ "UAuItemDataBase::ItemName", 84, 1 },
+	{ "UAuItemDataBase::UniqueItemName", 85, 1 },
+	{ "UAuItemDataBaseSubsystem::ItemDataBaseArray", 86, 1 },
+	{ "UCrDedicatedServerSettingsComp::SaveGameInterval", 87, 1 },
+	{ "UCrDedicatedServerSettingsComp::SaveGameName", 88, 1 },
+	{ "UCrDedicatedServerSettingsComp::SessionName", 89, 1 },
+	{ "UCrDedicatedServerSettingsComp::bLoadSavedGame", 90, 1 },
+	{ "UCrDedicatedServerSettingsComp::bStartNewGame", 91, 1 },
+	{ "UCrEnviroWaveSubsystem::CurrentFadeoutSubstage", 92, 1 },
+	{ "UCrEnviroWaveSubsystem::CurrentGrowbackSubstage", 93, 1 },
+	{ "UCrEnviroWaveSubsystem::CurrentPreWaveSubstage", 94, 1 },
+	{ "UCrEnviroWaveTimerSubsystem::NextWaveTimer", 95, 1 },
+	{ "UCrEnviroWaveTimerSubsystem::TimerActor", 96, 1 },
+	{ "UCrEnviroWaveTimerSubsystem::bStopWaves", 97, 1 },
+	{ "UCrEnviroWaveTimerSubsystem::bWaitingForNextWave", 98, 1 },
+	{ "UCrGameInstance::ServerSessionName", 99, 1 },
+	{ "UCrMassPersistentIDSubsystem::HandleIDMap", 100, 1 },
+	{ "UCrMassPersistentIDSubsystem::IDHandleMap", 101, 1 },
+	{ "UCrMassPersistentIDSubsystem::MaxID", 102, 1 },
+	{ "UCrReplicationGraph::ClassRepNodePolicies", 103, 1 },
+	{ "UCrSaveSubsystem::OnAfterSave", 104, 1 },
+	{ "UCrSaveSubsystem::OnPreSaveStart", 105, 1 },
+	{ "UCrSaveSubsystem::SaveData", 106, 1 },
+	{ "UMassActorSubsystem::ActorManager", 107, 1 },
+	{ "UMassEntitySubsystem::EntityManager", 108, 1 },
+	{ "UMassSignalSubsystem::CachedWorld", 109, 1 },
+	{ "UNetDriver::ClientConnections", 110, 1 },
+	{ "UObject::ClassPrivate", 111, 1 },
+	{ "UObject::InternalIndex", 112, 1 },
+	{ "UObject::OuterPrivate", 113, 1 },
+	{ "UWorld::AudioTimeSeconds", 114, 1 },
+	{ "UWorld::GameState", 115, 1 },
+	{ "UWorld::NetDriver", 116, 1 },
+	{ "UWorld::RealTimeSeconds", 117, 1 },
+	{ "UWorld::TimeSeconds", 118, 1 },
+	{ "UWorld::UnpausedTimeSeconds", 119, 1 },
 }};
 
 inline constexpr std::array<AbsentField, 0> kServerAbsentFields = {};
