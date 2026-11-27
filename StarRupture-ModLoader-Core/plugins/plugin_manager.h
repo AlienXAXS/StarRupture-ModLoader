@@ -291,6 +291,7 @@ namespace PluginManager
         ManageOp     lastOp = ManageOp::Disable;
         ManageResult lastResult = ManageResult::None;
         std::string  message;            // why, when the result needs saying
+        bool         shutDown = false;   // shut down, DLL still mapped
         // Install only: the mod list it came from passed its signature check.
         bool         listSigned = false;
     };

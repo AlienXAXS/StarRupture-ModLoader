@@ -363,7 +363,8 @@ namespace PluginManager
 		bool isUnloading = false;
 
 		// Shut down, but still mapped because a call was running when it was to
-		// be freed. Nothing is dispatched into it; RELOAD or UNLOAD frees it.
+		// be freed. UNLOAD frees it, and so does RELOAD unless the plugin has
+		// been disabled or uninstalled.
 		bool awaitingFree = false;
 
 		// Cached display strings — valid even after FreeLibrary.
@@ -410,7 +411,7 @@ namespace PluginManager
 	static constexpr const char* kReloadBusyNote =
 		"A plugin call is still running, so nothing was reloaded. Press RELOAD again.";
 	static constexpr const char* kUnloadBusyNote =
-		"A plugin call is still running, so nothing was unloaded. Try again.";
+		"A plugin call is still running, so nothing was unloaded. Press UNLOAD to try again.";
 	static constexpr const char* kShutDownNote =
 		"It is shut down but stays loaded: a plugin call was still running. Press RELOAD or UNLOAD again.";
 	static constexpr const char* kUnloadShutDownNote =
@@ -1627,7 +1628,11 @@ namespace PluginManager
 	// Everything after PluginShutdown: what the plugin registered that lives in
 	// its module, then FreeLibrary once no plugin call is running. Caller holds
 	// g_pluginLock once; it is released for the wait, which lasts at most waitMs.
-	// False: it stays mapped, with nothing more dispatched into it.
+	// False: it stays mapped. What it had registered by this call is gone, but
+	// the second cleanup runs only if the free goes ahead, so whatever a call
+	// that was still running registers or posts afterwards still reaches it,
+	// shut down, until a later UNLOAD or RELOAD frees it. Posted tasks are not
+	// dropped here: that call may be waiting for one of its own.
 	static bool FreeShutDownPlugin(LoadedPlugin& p, DWORD waitMs)
 	{
 		// Now, so that nothing new reaches it even if the wait runs out.
@@ -2688,6 +2693,7 @@ namespace PluginManager
 			{
 				const LoadedPlugin& rec = *g_loadedPlugins[index];
 				m.facts.running = rec.hModule != nullptr;
+				m.shutDown = rec.awaitingFree && !rec.isUnloading;
 				if (!rec.cachedName.empty())
 				{
 					m.name = rec.cachedName;

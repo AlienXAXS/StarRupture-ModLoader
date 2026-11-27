@@ -549,7 +549,9 @@ namespace UI::ModLoaderWindow
                 {
                     ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.1f, 1.0f), "Shut down");
                     if (ImGui::IsItemHovered())
-                        ImGui::SetTooltip("Still in memory: a plugin call was running. Press RELOAD or UNLOAD again.");
+                        ImGui::SetTooltip("Still in memory: a plugin call was running. %s",
+                                          s.isDisabled || s.isRemoved ? "Press UNLOAD again."
+                                                                      : "Press RELOAD or UNLOAD again.");
                 }
                 else if (s.isLoaded)
                 {
@@ -2525,9 +2527,12 @@ namespace UI::ModLoaderWindow
             return {};
         case Result::AfterRestart:
             if (p.lastOp == Op::Disable)
-                return name + " can't stop right now. It will be off after you restart the game.";
+                return name + (p.shutDown ? " is shut down but still in memory." : " can't stop right now.") +
+                       " It will be off after you restart the game.";
             if (p.lastOp == Op::Uninstall)
-                return "Moved. " + name + " keeps running until you restart the game.";
+                return "Moved. " + name + (p.shutDown ? " is shut down but stays in memory"
+                                                      : " keeps running") +
+                       " until you restart the game.";
             return "It will be on after you restart the game.";
         case Result::NotReady:
             return "Plugins are still starting. Try again in a moment.";
