@@ -494,6 +494,7 @@ namespace ModConsole
             else if (s.isDisabled && !s.isLoaded) state = "Disabled";
             else if (s.isCrashed)       state = "Crashed";
             else if (s.isLoaded)        state = loadedState;
+            else if (s.awaitingFree)    state = "Not freed";
 
             const bool crashed = s.isCrashed && !s.isWrongTarget && !s.hookScanFailed && !s.isOutOfDate;
             out.Printf(s.isWrongTarget || s.isOutOfDate || s.hookScanFailed || crashed ? LineKind::Error : LineKind::Output,

@@ -1114,11 +1114,11 @@ namespace PluginManager
 			// got as far as registering anything, and leaving a half-committed
 			// plugin resident is how a stale detour outlives its module.
 			plugin.hookScanFailed = true;
-			if (plugin.hModule)
-			{
-				FreeRefused(plugin.hModule, plugin.fileName, true);
-			}
+			// Forgotten first: the lock is released while the DLL is freed.
+			const HMODULE refused = plugin.hModule;
 			ForgetEntryPoints(plugin);
+			if (refused)
+				FreeRefused(refused, plugin.fileName, true);
 			ModLoaderLogger::LogError(
 				L"Plugin '%S' was NOT loaded: one or more of its hooks could not be resolved.",
 				plugin.cachedName.c_str());
@@ -1200,8 +1200,10 @@ namespace PluginManager
 		int failCount = 0;
 		int current   = 0;
 
-		for (auto& plugin : g_loadedPlugins)
+		// By index: the lock is released while a refused plugin is freed.
+		for (size_t i = 0; i < g_loadedPlugins.size(); ++i)
 		{
+			LoadedPlugin* const plugin = g_loadedPlugins[i].get();
 			if (plugin->isInitialized || plugin->isUnloading || !plugin->init)
 				continue;
 
@@ -1319,12 +1321,16 @@ namespace PluginManager
 		// wait is bounded so a PluginShutdown that never returns cannot hold up
 		// the exit as well; its record is then left alone below.
 		const ULONGLONG unloadDeadline = GetTickCount64() + 5000;
-		while (AnyPluginUnloading() && GetTickCount64() < unloadDeadline)
+		const auto waitForOthers = [unloadDeadline]
 		{
-			LeaveCriticalSection(&g_pluginLock);
-			Sleep(1);
-			EnterCriticalSection(&g_pluginLock);
-		}
+			while (AnyPluginUnloading() && GetTickCount64() < unloadDeadline)
+			{
+				LeaveCriticalSection(&g_pluginLock);
+				Sleep(1);
+				EnterCriticalSection(&g_pluginLock);
+			}
+		};
+		waitForOthers();
 		for (const auto& plugin : g_loadedPlugins)
 			if (plugin->isUnloading)
 				ModLoaderLogger::LogError(L"%S is still inside its PluginShutdown after 5 s; continuing the shutdown without it",
@@ -1333,6 +1339,10 @@ namespace PluginManager
 		// By index: the lock is released while each one is freed.
 		for (size_t i = 0; i < g_loadedPlugins.size(); ++i)
 		{
+			// The last record may be one a scan is about to drop.
+			waitForOthers();
+			if (i >= g_loadedPlugins.size())
+				break;
 			LoadedPlugin& plugin = *g_loadedPlugins[i];
 			if (plugin.isUnloading)
 				continue;
@@ -1473,6 +1483,7 @@ namespace PluginManager
 				strncpy_s(out[i].version, p.cachedVersion.c_str(), _TRUNCATE);
 				strncpy_s(out[i].author,  p.cachedAuthor.c_str(),  _TRUNCATE);
 				out[i].isLoaded              = p.isInitialized || p.isUnloading;
+				out[i].awaitingFree          = p.awaitingFree && !p.isUnloading;
 				out[i].isOutOfDate           = p.isOutOfDate;
 				out[i].needsModLoaderUpdate  = p.needsModLoaderUpdate;
 				out[i].declaredInterface     = p.interfaceVersion;
@@ -1744,11 +1755,12 @@ namespace PluginManager
 		if (p.isInitialized)
 			ShutDownWithoutLock(p, L"PluginShutdown (unload)");
 		const bool freed = FreeShutDownPlugin(p, waitMs);
+		const std::string name = p.cachedName;   // the record is not ours once the lock is out
 		LeaveCriticalSection(&g_pluginLock);
 		if (freed)
-			ModLoaderLogger::LogMessage(L"Plugin unloaded: %S", p.cachedName.c_str());
+			ModLoaderLogger::LogMessage(L"Plugin unloaded: %S", name.c_str());
 		else
-			SayStillBusy(p.cachedName, kShutDownNote, refusal);
+			SayStillBusy(name, kShutDownNote, refusal);
 		return freed;
 	}
 
@@ -1822,8 +1834,9 @@ namespace PluginManager
 		// InitPluginRecord below re-registers whatever the new build asks for.
 		if (p.hModule && !FreeShutDownPlugin(p, waitMs))
 		{
+			const std::string name = p.cachedName;
 			LeaveCriticalSection(&g_pluginLock);
-			SayStillBusy(p.cachedName, kShutDownNote, refusal);
+			SayStillBusy(name, kShutDownNote, refusal);
 			WriteDeclaredFeaturesDump();
 			return false;
 		}
@@ -1841,11 +1854,12 @@ namespace PluginManager
 		{
 			RefreshSelfPointers(p);
 			bool inited = InitPluginRecord(p);
+			const std::string name = p.cachedName;
 			LeaveCriticalSection(&g_pluginLock);
 			if (inited)
-				ModLoaderLogger::LogMessage(L"Plugin reloaded and initialized: %S", p.cachedName.c_str());
+				ModLoaderLogger::LogMessage(L"Plugin reloaded and initialized: %S", name.c_str());
 			else
-				ModLoaderLogger::LogMessage(L"Plugin reloaded but PluginInit failed: %S", p.cachedName.c_str());
+				ModLoaderLogger::LogMessage(L"Plugin reloaded but PluginInit failed: %S", name.c_str());
 		}
 		else
 		{

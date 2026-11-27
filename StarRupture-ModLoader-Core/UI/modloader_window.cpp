@@ -545,6 +545,12 @@ namespace UI::ModLoaderWindow
                         ImGui::SetTooltip("Crashed: %s\nThe loader calls none of its callbacks until it is reloaded or unloaded.",
                                           s.crashReason);
                 }
+                else if (s.awaitingFree)
+                {
+                    ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.1f, 1.0f), "Shut down");
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip("Still in memory: a plugin call was running. Press RELOAD or UNLOAD again.");
+                }
                 else if (s.isLoaded)
                 {
                     ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "Loaded");
@@ -575,7 +581,7 @@ namespace UI::ModLoaderWindow
                 ImGui::TableSetColumnIndex(4);
                 ImGui::PushID(i);
 
-                if (!s.isLoaded && (s.isDisabled || s.isRemoved))
+                if (!s.isLoaded && !s.awaitingFree && (s.isDisabled || s.isRemoved))
                 {
                     ImGui::TextDisabled(s.isRemoved ? "Restore it on the Browse tab"
                                                     : "Enable it on the Browse tab");
@@ -608,7 +614,7 @@ namespace UI::ModLoaderWindow
                         ImGui::TextDisabled("Please Update The Plugin");
                     }
                 }
-                else if (s.isLoaded ? s.unloadBlock[0] != '\0' : s.reloadBlock[0] != '\0')
+                else if (s.isLoaded ? s.unloadBlock[0] != '\0' : !s.awaitingFree && s.reloadBlock[0] != '\0')
                 {
                     // The plugin, or the state of the game, does not allow it
                     // right now (plugins/reload_policy.h). Say why, in place of
@@ -621,19 +627,20 @@ namespace UI::ModLoaderWindow
 
                     const bool busy = s_pluginActionPending[i];
 
-                    // Unload — active only when loaded, and not mid-action
-                    if (!s.isLoaded || busy) ImGui::BeginDisabled();
+                    // Unload — active when loaded or still to be freed, and not mid-action
+                    const bool canUnload = s.isLoaded || s.awaitingFree;
+                    if (!canUnload || busy) ImGui::BeginDisabled();
                     if (ImGui::Button(busy ? "..." : "UNLOAD"))
                         PostPluginAction(i, [](int idx) { PluginManager::UnloadPlugin(idx); });
-                    if (!s.isLoaded || busy) ImGui::EndDisabled();
+                    if (!canUnload || busy) ImGui::EndDisabled();
 
                     ImGui::SameLine();
 
                     // Load — active only when unloaded, and not mid-action
-                    if (s.isLoaded || busy) ImGui::BeginDisabled();
+                    if (canUnload || busy) ImGui::BeginDisabled();
                     if (ImGui::Button(busy ? "..." : "LOAD"))
                         PostPluginAction(i, [](int idx) { PluginManager::ReloadPlugin(idx); });
-                    if (s.isLoaded || busy) ImGui::EndDisabled();
+                    if (canUnload || busy) ImGui::EndDisabled();
 
                     ImGui::SameLine();
 
