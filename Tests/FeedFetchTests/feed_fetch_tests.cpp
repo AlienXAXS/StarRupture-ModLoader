@@ -29,6 +29,7 @@
 #include <Windows.h>
 #include <winsock2.h>
 #include <ws2tcpip.h>
+#include <winhttp.h>
 
 #pragma comment(lib, "ws2_32.lib")
 
@@ -164,6 +165,7 @@ namespace
 	//              the request's If-None-Match is that ETag
 	//   /catalog   200 with the current plugin catalog, no ETag
 	//   /redirect  302 to /ok
+//   /signed?q  302 to /asset?q
 	//   /missing   404
 	//   /hang      reads the request and says nothing
 	//   /stall     200 with a length, then no body
@@ -283,7 +285,13 @@ namespace
 			lastPath = path;
 			++hits;
 
-			if (path == "/ok")
+			if (path.rfind("/signed?", 0) == 0)
+			{
+				const std::string extra = "Location: /asset?" + path.substr(8) + "\r\n";
+				const std::string h = Head(302, "Found", 0, extra.c_str());
+				SendAll(c, h.data(), h.size());
+			}
+			else if (path == "/ok")
 			{
 				if (!etag.empty() && inm == etag)
 				{
@@ -422,6 +430,201 @@ int main()
 		Check(DecidePluginUpdate("v0.20.0", "", "v0.22.0").download, "unreadable DLL: the stored version decides");
 		const PluginUpdateDecision unknown = DecidePluginUpdate("", "", "v0.22.0");
 		Check(!unknown.download && unknown.installed.empty(), "no version known: nothing is downloaded");
+	}
+
+	// ---- Version labels: plain numbers, and nothing readable lost ------------
+	{
+		using namespace AutoUpdateVersion;
+		const auto newer = [](const char* r, const char* i) { return ReleaseIsNewer(r, i); };
+		for (const char* label : { "1.27.0", "v1.28.0", "1.28.0-rc.10", "1.28.0-rc.11", "1.28.0-dev.10",
+		                           "1.23.2-gss.3", "1.2", "v2.0", "5", "v5", "20261127", "202611271200" })
+			Check(ParseVersion(label).valid, "labels: a version in use parses");
+		for (const char* label : { "", "dev", "latest", "garbage", "v", "5b", "5-rc1", "2026-11-27", " 1.2.0",
+		                           "release-1.2.0", ".5" })
+			Check(!ParseVersion(label).valid, "labels: text that is not a version does not parse");
+
+		Check(newer("2", "1") && newer("10", "9") && !newer("1", "2") && !newer("5", "5"), "plain numbers: by number");
+		Check(newer("3", "1.2.0") && !newer("1.9", "2") && !newer("5.0", "5") && !newer("5", "5.0.0"),
+		      "plain numbers: missing parts count as 0");
+		Check(newer("20261128", "20261127") && newer("202611271201", "202611271200") && !newer("20261127", "20261128"),
+		      "plain numbers: dates and timestamps stay apart");
+
+		Check(newer("1.28.0-rc.11", "1.27.0") && newer("v1.28.0", "1.23.2-gss.3") && newer("1.28.1", "1.28.0-dev.10"),
+		      "suffix: a higher number is offered");
+		Check(!newer("1.28.0", "1.28.0-rc.11") && !newer("1.28.0-rc.11", "1.28.0")
+		      && !newer("1.28.0-rc.11", "1.28.0-rc.10") && !newer("1.28.0-rc.10", "1.28.0-dev.10"),
+		      "suffix: ignored, so the same number is never offered either way");
+
+		for (const char* bad : { "", "latest", "2026-11-27" })
+		{
+			Check(!newer(bad, "1.0.0") && !newer("9.0.0", bad), "unreadable: never newer, never replaced by number");
+			const PluginUpdateDecision d = DecidePluginUpdate("1.0.0", "1.0.0", bad);
+			Check(!d.download && d.installed == "1.0.0", "unreadable remote: no download, the stored version is kept");
+			Check(DecidePluginUpdate(d.installed.c_str(), "1.0.0", "1.1.0").download, "unreadable remote: a later good one is taken");
+			Check(DecidePluginUpdate(bad, "1.0.0", "1.1.0").download, "unreadable stored value: the DLL's version replaces it");
+		}
+
+		// The rule before this one, to show that no pair it could read changed.
+		const auto oldParse = [](const char* text)
+		{
+			ParsedVersion v;
+			const char* c = text;
+			if (*c == 'v' || *c == 'V')
+				++c;
+			int n = 0;
+			while (n < 4 && *c >= '0' && *c <= '9')
+			{
+				long long val = 0;
+				for (; *c >= '0' && *c <= '9'; ++c)
+					val = val * 10 + (*c - '0') > 1000000 ? 1000000 : val * 10 + (*c - '0');
+				v.parts[n++] = val;
+				if (*c != '.')
+					break;
+				++c;
+			}
+			v.valid = n >= 2;
+			return v;
+		};
+		const char* const labels[] = { "1.27.0", "v1.28.0", "1.28.0-rc.10", "1.28.0-rc.11", "1.28.0", "1.28.0-dev.10",
+		                               "1.23.2-gss.3", "v1.23.2", "1.2", "1.10", "1.9.9", "v0.22.0", "0.23.0-rc1",
+		                               "1.2.3.4", "1.2abc" };
+		bool same = true;
+		for (const char* r : labels)
+			for (const char* i : labels)
+				same = same && ReleaseIsNewer(r, i) == (CompareVersions(oldParse(r), oldParse(i)) > 0);
+		Check(same, "no regression: every pair readable before is offered exactly as before");
+	}
+
+	// ---- Where an update may come from ---------------------------------------
+	{
+		using namespace UpdateHosts;
+		const std::string own = "https://example.com/m.json";
+		const auto loader = [&](const char* url) { return IsExpected(url, own, Owner::Loader); };
+		const auto plugin = [&](const char* url) { return IsExpected(url, own, Owner::Plugin); };
+
+		for (const char* url : { "https://github.com/o/r/releases/latest/download/m.json", "https://GITHUB.com:443/x",
+		                         "https://release-assets.githubusercontent.com/a?x=1",
+		                         "https://objects.githubusercontent.com/a", "https://example.com/a.dll",
+		                         "https://Example.com:443/a.dll" })
+			Check(loader(url) && plugin(url), "hosts: GitHub's release hosts and the manifest's own");
+		for (const char* url : { "http://github.com/x", "http://example.com/x", "https://evilgithub.com/x",
+		                         "https://github.com.example/x", "https://github.com./x", "https://github.com:8443/x",
+		                         "https://api.github.com/x", "https://evil.githubusercontent.com/x",
+		                         "https://release-assets.githubusercontent.com.evil.test/x", "https://gist.githubusercontent.com/x",
+		                         "https://user@github.com/x", "https://github.com@evil.test/x", "https://github.com\\@evil.test/x",
+		                         "https://evil.test#@github.com/x", "https://evil.test?@github.com", "https://git%68ub.com/x",
+		                         "https://github.com%2f@evil.test/", "https://[::1]/x", "https://github.com:0/x",
+		                         "https://github.com:65536/x", "https://github.com:/x", "https://github.com:443:1/x",
+		                         "https://:443/x", "https://github.com\t.evil.test/x", " https://github.com/x",
+		                         "https:github.com/x", "github.com/x", "", "https://wwwexample.com/x",
+		                         "https://www.www.example.com/x", "https://dl.example.com/x", "https://example.com.evil.test/x",
+		                         "https://www.example.com:8443/x" })
+			Check(!loader(url) && !plugin(url), "hosts: look-alikes and odd addresses are refused");
+
+		Check(plugin("https://raw.githubusercontent.com/o/r/main/a.dll") && !loader("https://raw.githubusercontent.com/o/r/main/a.dll"),
+		      "hosts: the raw file host is for plugins only");
+		Check(plugin("https://www.example.com/a") && !loader("https://www.example.com/a"), "hosts: the www twin is for plugins only");
+		Check(IsExpected("https://example.com/a", "https://www.example.com/m.json", Owner::Plugin), "hosts: www removed");
+		Check(IsExpected("https://www.example.com:8443/a", "https://example.com:8443/m.json", Owner::Plugin)
+		      && !IsExpected("https://www.example.com/a", "https://example.com:8443/m.json", Owner::Plugin),
+		      "hosts: the twin keeps the port");
+		Check(!IsExpected("https://www./x", "not an address", Owner::Plugin), "hosts: no source, no twin");
+
+		// A signed asset address, as long and as escaped as GitHub's.
+		const std::string query = "sp=r&sv=2018-11-09&se=2026-11-27T10%3A00%3A00Z&sig=Ab%2Bc%2Fd%3D&jwt="
+			+ std::string(2200, 'q') + "&response-content-disposition=attachment%3B%20filename%3Da.zip&end=1";
+		const std::string asset = "https://release-assets.githubusercontent.com/p/1/2?" + query;
+		const std::string from = "https://github.com/o/r/releases/download/v1/a.zip?was=1";
+		Check(asset.size() > 2000 && ResolveLocation(from, asset) == asset, "next address: an absolute one is untouched");
+		Check(ResolveLocation(from, "/o/r2/a.zip?" + query) == "https://github.com/o/r2/a.zip?" + query,
+		      "next address: from the root");
+		Check(ResolveLocation(from, "b.zip?" + query) == "https://github.com/o/r/releases/download/v1/b.zip?" + query,
+		      "next address: beside the last");
+		Check(ResolveLocation(from, "?" + query) == "https://github.com/o/r/releases/download/v1/a.zip?" + query,
+		      "next address: a new query");
+		Check(ResolveLocation(from, "//objects.githubusercontent.com/a?u=https://x") == "https://objects.githubusercontent.com/a?u=https://x",
+		      "next address: without a scheme");
+		Check(ResolveLocation(from, "/a?u=http://evil.test/") == "https://github.com/a?u=http://evil.test/",
+		      "next address: a URL inside a query stays a query");
+		Check(ResolveLocation("https://github.com", "a") == "https://github.com/a" && ResolveLocation(from, "").empty(),
+		      "next address: no path, and no Location");
+
+		std::vector<std::string> asked;
+		std::string refused;
+		const auto follow = [&](const std::vector<std::string>& locations, bool endless)
+		{
+			asked.clear();
+			return Follow(from, own, Owner::Loader, [&](const std::string& at, unsigned& status, std::string& location)
+				{
+					asked.push_back(at);
+					if (!endless && asked.size() > locations.size())
+					{
+						status = 200;
+						return std::string("body");
+					}
+					status = 302;
+					location = locations[(asked.size() - 1) % locations.size()];
+					return std::string();
+				}, refused);
+		};
+		Check(follow({ "/o/r/releases/download/v1/a.zip", asset }, false) == "body" && refused.empty()
+		      && asked.size() == 3 && asked[2] == asset, "follow: GitHub's chain, the signed query intact");
+		for (const char* bad : { "http://release-assets.githubusercontent.com/a?sig=secret", "https://evilgithub.com/a?sig=secret",
+		                         "//github.com.example/a?sig=secret", "" })
+		{
+			Check(follow({ bad }, false).empty() && asked.size() == 1 && !refused.empty(), "follow: a bad step is never asked for");
+			Check(refused.find("secret") == std::string::npos, "follow: the refusal names no query");
+		}
+		Check(follow(std::vector<std::string>(kMaxRedirects, "/next"), false) == "body" && asked.size() == kMaxRedirects + 1,
+		      "follow: ten redirects are followed");
+		Check(follow({ "/loop" }, true).empty() && asked.size() == kMaxRedirects + 1 && refused == "a chain of too many redirects",
+		      "follow: the eleventh is refused");
+
+		// What the check reads is what WinHTTP connects to.
+		bool agree = true;
+		for (const char* url : { "https://github.com/x", "https://GitHub.com:443/x", "https://example.com:8443?q",
+		                         "https://github.com#f", "https://github.com?@evil.test", "https://github.com/@evil.test",
+		                         "https://github.com/\\evil.test", "https://github.com./x", "https://a_b-c.test:00443/x",
+		                         "https://github.com/a:1@b" })
+		{
+			const std::wstring wide(url, url + std::strlen(url));
+			URL_COMPONENTS uc{};
+			uc.dwStructSize = sizeof(uc);
+			wchar_t host[256]{};
+			uc.lpszHostName = host;
+			uc.dwHostNameLength = 256;
+			std::string cracked;
+			if (WinHttpCrackUrl(wide.c_str(), 0, 0, &uc))
+				for (const wchar_t* c = host; *c; ++c)
+					cracked += static_cast<char>(towlower(*c));
+			if (!cracked.empty() && uc.nPort != 443)
+				cracked += ":" + std::to_string(uc.nPort);
+			const std::string checked = Authority(url);
+			const bool match = !checked.empty() && (cracked.empty() || cracked == checked);
+			if (!match)
+				printf("      parser difference: %s checked [%s] connects [%s]\n", url, checked.c_str(), cracked.c_str());
+			agree = agree && match;
+		}
+		Check(agree, "hosts: the checked host is the one WinHTTP connects to");
+	}
+
+	// ---- A long query goes out and a long Location comes back, unchanged ------
+	{
+		Server srv;
+		Check(srv.Start(), "long address: local server starts");
+		const std::string query = "sp=r&sig=Ab%2Bc%2Fd%3D&jwt=" + std::string(5000, 'q') + "&name=a%20b&end=1";
+		HttpGetOptions options;
+		options.allowPlainHttp = true;
+		options.noRedirect = true;
+		std::string location;
+		unsigned status = 0;
+		options.location = &location;
+		options.status = &status;
+		HttpGet(srv.Url(("/signed?" + query).c_str()).c_str(), "long", options);
+		Check(status == 302 && location == "/asset?" + query, "long address: the Location is read whole");
+		HttpGet(srv.Url(location.c_str()).c_str(), "long", options);
+		Check(srv.lastPath == "/asset?" + query, "long address: the query is sent as it was");
+		srv.Stop();
 	}
 
 	// ---- Release notes per version --------------------------------------------
