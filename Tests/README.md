@@ -156,7 +156,11 @@ and `UI/plugin_widget_registry.cpp` and replaces only what those call out to (se
 - The call gate (`plugins/plugin_call_gate.cpp`), with the free step replaced: nothing is freed while a
   thread holds a callback it copied from a registry but has not called yet, or while a widget is being
   drawn; a running call can nest while a free waits; a new call and a second free are held back until the
-  free is done; a free asked for from inside a call is refused at once; an exception leaves the gate open.
+  free is done; a free asked for from inside a call is refused at once (in under a second, not after the
+  full wait); an exception leaves the gate open.
+- Every dispatch site takes the call gate before it reads its registry, and an HTTP handler or filter is
+  copied and then called with no registry lock held. Checked by reading the sources, 44 sites and the HTTP
+  locks. No test runs an HTTP request through the hook.
 
 ```
 msbuild Tests\PanelUnloadTests\PanelUnloadTests.vcxproj /p:Configuration="Client Release" /p:Platform=x64
@@ -754,8 +758,8 @@ it.
 
 The plugin manager (`manager_tests.cpp`) runs the loader's own `plugin_manager.cpp` against small test plugin DLLs
 (`ManageTestPlugin.vcxproj`, built along with the tests). The preload step, the network and the other loader parts
-it calls are stand-ins, and work meant for the game thread runs on the caller. There are 7 made-up game folders
-and 13 game starts, each start a process of its own, so a restart is a real one. It checks:
+it calls are stand-ins, and work meant for the game thread runs on the caller. There are 9 made-up game folders
+and 15 game starts, each start a process of its own, so a restart is a real one. It checks:
 
 - Disable, uninstall and restore through the same calls the Browse tab makes, which plugin code runs after each,
   and that file contents do not change.
@@ -775,6 +779,9 @@ and 13 game starts, each start a process of its own, so a restart is a real one.
   refused even when it carries the install fields; and a second install while one runs is refused with
   "Another mod is installing. Try again when it finishes." (the first install is held in its download while
   the second is asked for).
+- While a plugin call has not returned, UNLOAD, RELOAD and Disable change nothing and ask for a retry (the
+  unload notes never name RELOAD), a plugin that cannot unload gets that reason instead, and UNLOAD works once
+  the call returns. No test times out the wait that follows a plugin's shutdown through the plugin manager.
 - What this step does not reach: in the tests `PostVoid` runs the task inline (`manager_stubs.cpp`), so the
   hop to the game thread, the lock order and the posted task's `Halted()` check are not exercised. Those
   are checked by reading the code and in the game.
@@ -785,7 +792,7 @@ build\tests\plugin_manage_tests.exe
 ```
 
 It prints one line per failed check and a total, and exits 0 when every check passes. The last run was
-`638 checks, 0 failed`.
+`654 checks, 0 failed`.
 
 ## ImageShrinkTests
 
