@@ -474,8 +474,9 @@ namespace ScanPatterns
 		"48 89 5C 24 ?? 55 56 57 41 54 41 55 41 56 41 57 48 8D 6C 24 ?? 48 81 EC ?? ?? ?? ?? 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 45 ?? 48 8B F9 4D 8B E0";
 
 #if defined(MODLOADER_SERVER_BUILD)
-	// Building placement and unlock functions, server build only. Plugins ask
-	// for them by name; the server scan finds them on a new build with these.
+	// Building placement, availability and resource gathering functions, server
+	// build only. Plugins ask for them by name; the server scan finds them on a
+	// new build with these.
 
 	// ACrAPHelper::GetBoxCollisionResult
 	// The overload taking (FVector min, FVector max, TArray<AActor*>,
@@ -494,6 +495,10 @@ namespace ScanPatterns
 	// ACrAPHelperDynamicPillar::CheckStability
 	inline constexpr auto ACrAPHelperDynamicPillar_CheckStability =
 		"40 56 48 83 EC ?? 48 83 B9 ?? ?? ?? ?? 00 48 8B F1 75 ?? 32 C0 48 83 C4 ?? 5E C3 48 89 5C 24 ?? 48 89 6C 24 ??";
+
+	// ACrGatherableBaseActor::DepleteResource
+	inline constexpr auto ACrGatherableBaseActor_DepleteResource =
+		"48 8B C4 4C 89 48 20 55 56 41 57 48 8D A8 ?? ?? ?? ?? 48 81 EC ?? ?? ?? ?? 48 89 58 E0 4C 8B FA 48 89 78 D8 48 8D B9 ?? ?? ?? ??";
 
 	// ACrTechnologyKeeper::CheckAvailableBuildings
 	inline constexpr auto ACrTechnologyKeeper_CheckAvailableBuildings =
@@ -858,6 +863,7 @@ namespace ScanPatterns
 		{ "ACrAPHelperActorCustom::CheckMainMeshCollision", ACrAPHelperActorCustom_CheckMainMeshCollision, false },
 		{ "ACrAPHelperActorCustom::CheckStability", ACrAPHelperActorCustom_CheckStability, false },
 		{ "ACrAPHelperDynamicPillar::CheckStability", ACrAPHelperDynamicPillar_CheckStability, false },
+		{ "ACrGatherableBaseActor::DepleteResource", ACrGatherableBaseActor_DepleteResource, false },
 		{ "ACrTechnologyKeeper::CheckAvailableBuildings", ACrTechnologyKeeper_CheckAvailableBuildings, false },
 		{ "UCrBuildingComponent::GetPlacementResourceConditionResult", UCrBuildingComponent_GetPlacementResourceConditionResult, false },
 		{ "UCrBuildingStabilitySubsystem::IsSocketFree", UCrBuildingStabilitySubsystem_IsSocketFree, false },
