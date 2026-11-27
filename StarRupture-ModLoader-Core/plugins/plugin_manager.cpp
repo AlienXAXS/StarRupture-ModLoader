@@ -364,7 +364,7 @@ namespace PluginManager
 
 		// Shut down, but still mapped because a call was running when it was to
 		// be freed. UNLOAD frees it, and so does RELOAD unless the plugin has
-		// been disabled or uninstalled.
+		// been disabled or uninstalled, or may not be loaded now.
 		bool awaitingFree = false;
 
 		// Cached display strings — valid even after FreeLibrary.
@@ -418,6 +418,15 @@ namespace PluginManager
 		"It is shut down but stays loaded: a plugin call was still running. Press UNLOAD again.";
 	static constexpr const char* kRefusedStaysNote =
 		"It was not loaded, but its file stays in memory until you restart the game.";
+
+	// What to say of a shut-down plugin the caller meant to load again: RELOAD is
+	// only named where it would not be refused.
+	static const char* ShutDownNote(const LoadedPlugin& p)
+	{
+		return !p.isDisabled && !p.isUninstalled && ReloadPolicy::LoadRefusal(p.reload.load, false,
+			ReloadPolicy::GameplayWorldRunning()).empty() ? kShutDownNote : kUnloadShutDownNote;
+	}
+
 	static std::string BaseFileNameA(const std::wstring& path);
 	static void ShowCrashToast(const std::string& name, const std::string& text);
 
@@ -1190,7 +1199,7 @@ namespace PluginManager
 			if (ShutDownAndFree(plugin))
 				ForgetEntryPoints(plugin);
 			else
-				SayStillBusy(plugin.cachedName, kShutDownNote, nullptr);
+				SayStillBusy(plugin.cachedName, ShutDownNote(plugin), nullptr);
 		}
 		else if (initResult.retval)
 		{
@@ -1722,17 +1731,36 @@ namespace PluginManager
 		if (refusal) *refusal = note;
 	}
 
+	// Why the plugin's rules refuse an unload or a reload now, or "". A plugin
+	// that is already shut down has nothing left to refuse the unload of.
+	static std::string UnloadRuleRefusal(const LoadedPlugin& p)
+	{
+		return p.awaitingFree ? std::string() : ReloadPolicy::UnloadRefusal(p.reload.unload,
+			BusyReasonOf(p), ReloadPolicy::GameplayWorldRunning());
+	}
+
+	static std::string ReloadRuleRefusal(const LoadedPlugin& p)
+	{
+		return ReloadPolicy::ReloadRefusal(p.reload, BusyReasonOf(p), p.isInitialized,
+			ReloadPolicy::GameplayWorldRunning());
+	}
+
 	// Before anything is shut down: waits for the running plugin calls, and takes
 	// the time that took off waitMs, which the free then has left. False when
-	// they did not return, with nothing changed.
-	static bool CallsReturned(int index, DWORD& waitMs, const char* busyNote, std::string* refusal)
+	// they did not return, with nothing changed. The user is then told to try
+	// again, unless the plugin's rules would refuse the retry: then why.
+	static bool CallsReturned(int index, DWORD& waitMs, std::string (*ruleRefusal)(const LoadedPlugin&),
+		const char* busyNote, std::string* refusal)
 	{
-		std::string name;
+		std::string name, ruled;
 		EnterCriticalSection(&g_pluginLock);
 		const bool mapped = index >= 0 && index < static_cast<int>(g_loadedPlugins.size()) &&
 			g_loadedPlugins[index]->hModule && !g_loadedPlugins[index]->isUnloading;
 		if (mapped)
+		{
 			name = g_loadedPlugins[index]->cachedName;
+			ruled = ruleRefusal(*g_loadedPlugins[index]);
+		}
 		LeaveCriticalSection(&g_pluginLock);
 		if (!mapped)
 			return true;
@@ -1740,7 +1768,7 @@ namespace PluginManager
 		const ULONGLONG start = GetTickCount64();
 		if (!PluginCallGate::WaitUntilIdle(waitMs))
 		{
-			SayStillBusy(name, busyNote, refusal);
+			SayStillBusy(name, ruled.empty() ? busyNote : ruled.c_str(), refusal);
 			return false;
 		}
 		const ULONGLONG waited = GetTickCount64() - start;
@@ -1754,7 +1782,7 @@ namespace PluginManager
 		if (QueuedOutOfCall(&UnloadPlugin, index, refusal))
 			return false;
 		DWORD waitMs = PluginCallGate::kWaitTimeoutMs;
-		if (!CallsReturned(index, waitMs, kUnloadBusyNote, refusal))
+		if (!CallsReturned(index, waitMs, &UnloadRuleRefusal, kUnloadBusyNote, refusal))
 			return false;
 		EnterCriticalSection(&g_pluginLock);
 
@@ -1778,8 +1806,7 @@ namespace PluginManager
 
 		// Everything is asked before anything is shut down, so a refusal leaves
 		// the plugin running exactly as it was.
-		if (std::string why = p.awaitingFree ? std::string() : ReloadPolicy::UnloadRefusal(p.reload.unload,
-				BusyReasonOf(p), ReloadPolicy::GameplayWorldRunning()); !why.empty())
+		if (std::string why = UnloadRuleRefusal(p); !why.empty())
 		{
 			ModLoaderLogger::LogWarn(L"Unload of %S refused: %S", p.cachedName.c_str(), why.c_str());
 			LeaveCriticalSection(&g_pluginLock);
@@ -1806,7 +1833,7 @@ namespace PluginManager
 		if (QueuedOutOfCall(&ReloadPlugin, index, refusal))
 			return false;
 		DWORD waitMs = PluginCallGate::kWaitTimeoutMs;
-		if (!CallsReturned(index, waitMs, kReloadBusyNote, refusal))
+		if (!CallsReturned(index, waitMs, &ReloadRuleRefusal, kReloadBusyNote, refusal))
 			return false;
 		EnterCriticalSection(&g_pluginLock);
 
@@ -1854,8 +1881,7 @@ namespace PluginManager
 
 		// The unload half and the load half are both asked before the first of
 		// them starts: a refused reload must not leave a plugin shut down.
-		if (std::string why = ReloadPolicy::ReloadRefusal(p.reload, BusyReasonOf(p), p.isInitialized,
-				ReloadPolicy::GameplayWorldRunning()); !why.empty())
+		if (std::string why = ReloadRuleRefusal(p); !why.empty())
 		{
 			ModLoaderLogger::LogWarn(L"Reload of %S refused: %S", p.cachedName.c_str(), why.c_str());
 			LeaveCriticalSection(&g_pluginLock);
@@ -1871,8 +1897,9 @@ namespace PluginManager
 		if (p.hModule && !FreeShutDownPlugin(p, waitMs))
 		{
 			const std::string name = p.cachedName;
+			const char* const note = ShutDownNote(p);
 			LeaveCriticalSection(&g_pluginLock);
-			SayStillBusy(name, kShutDownNote, refusal);
+			SayStillBusy(name, note, refusal);
 			WriteDeclaredFeaturesDump();
 			return false;
 		}

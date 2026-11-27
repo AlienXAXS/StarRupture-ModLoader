@@ -381,6 +381,9 @@ namespace
 		Expect(message.find("nothing was unloaded") != std::string::npos &&
 			message.find("RELOAD") == std::string::npos, "Disable gives the unload note: " + message);
 		Expect(Count("shutdown-file-there A") == 0 && Count("detach A") == 0, "A is left as it was");
+		Expect(!UnloadPlugin(IndexOf("StuckC"), &why) && why.find("requires a game restart") != std::string::npos &&
+			why.find("again") == std::string::npos,
+			"no retry is offered where the unload is refused anyway: " + why);
 
 		leave = true;
 		call.join();
@@ -732,7 +735,7 @@ void RunManagerTests(const std::wstring& root, int& checks, int& failures)
 		{ { L"A" }, { L"duplicate-name" } },
 		{ { L"A", L"B" }, { L"vortex" } },
 		{ { L"A", L"B", L"StuckC" }, { L"install" } },
-		{ { L"A" }, { L"busy-call" } },
+		{ { L"A", L"StuckC" }, { L"busy-call" } },
 	};
 
 	wchar_t self[MAX_PATH]{};

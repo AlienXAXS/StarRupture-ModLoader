@@ -550,8 +550,9 @@ namespace UI::ModLoaderWindow
                     ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.1f, 1.0f), "Shut down");
                     if (ImGui::IsItemHovered())
                         ImGui::SetTooltip("Still in memory: a plugin call was running. %s",
-                                          s.isDisabled || s.isRemoved ? "Press UNLOAD again."
-                                                                      : "Press RELOAD or UNLOAD again.");
+                                          s.isDisabled || s.isRemoved || s.reloadBlock[0]
+                                              ? "Press UNLOAD again."
+                                              : "Press RELOAD or UNLOAD again.");
                 }
                 else if (s.isLoaded)
                 {

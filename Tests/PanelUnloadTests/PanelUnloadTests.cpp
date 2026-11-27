@@ -286,7 +286,7 @@ static void Test_UnloadPathsPurgePanels()
     for (const char* signature : { "bool UnloadPlugin(int index, std::string* refusal)", "bool ReloadPlugin(int index, std::string* refusal)" })
     {
         const std::string body = FunctionBody(src, signature);
-        const size_t refuse = body.find("ReloadPolicy::");
+        const size_t refuse = body.find("RuleRefusal(p)");
         CHECK(refuse != std::string::npos);
         for (const char* teardown : { "ShutDownWithoutLock(", "FreeShutDownPlugin(", "CallShutdown(" })
         {
