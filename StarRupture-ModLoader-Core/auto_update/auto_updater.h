@@ -36,13 +36,20 @@
 //     "download_url":          "https://example.com/releases/MyPlugin-1.2.0.dll"
 //   }
 //
+// Both addresses, and every redirect of either, must be https and on an
+// expected host (UpdateHosts, in http_get.h). Versions are compared by number
+// (version_compare.h): when one can't be read as a number, nothing is
+// downloaded.
+//
 // Both passes are skipped entirely when:
 //   - Disabled via modloader.ini [AutoUpdate] Enabled=0
 //   - Network or parse errors (failures are logged, never fatal)
 //
 // Per-plugin pass additionally skips a plugin when:
 //   - Its declared interface_version range does not overlap [MIN, MAX]
-//   - The remote manifest is unreachable or malformed
+//   - The remote manifest is unreachable, malformed or on an unexpected host
+//   - The remote version is not a higher number than the installed one, or
+//     either one can't be read as a number
 //
 // Configuration (modloader.ini):
 //   [AutoUpdate]

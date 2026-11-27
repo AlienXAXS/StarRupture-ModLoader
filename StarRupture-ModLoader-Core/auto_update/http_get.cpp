@@ -58,7 +58,6 @@ namespace
 
 	// The longest URL, path or query taken. A signed download address runs to
 	// well over a thousand characters.
-	// A signed download address runs to well over a thousand characters.
 	constexpr DWORD kUrlChars = 16384;
 
 	// A header's text, kept only when it is printable ASCII of at most maxLen.

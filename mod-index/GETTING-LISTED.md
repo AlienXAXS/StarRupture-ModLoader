@@ -83,7 +83,9 @@ auto-updater keeps the plugin current:
   "update_manifest_url": "https://github.com/example-author/StarRupture-Plugin-QuickHaul/releases/latest/download/QuickHaul-client-manifest.json"
 ```
 
-The `.json` and `update_manifest_url` go together: both or neither.
+The `.json` and `update_manifest_url` go together: both or neither. For the addresses and version
+numbers the auto-updater accepts, see
+[Auto-updating your plugin](../README.md#auto-updating-your-plugin) in the README.
 
 With a manifest, **Install** also takes your latest GitHub release when it is newer than your entry. The
 file in your entry is the oldest one a player gets. It is also what installs when the manifest can't be

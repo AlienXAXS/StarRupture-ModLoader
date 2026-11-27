@@ -90,6 +90,22 @@ for a new version at startup and downloads it. The **Plugins** tab marks those w
 (amber means the plugin has no update manifest and has to be updated by hand). Auto-updating can be
 turned off in the **Settings** tab.
 
+An automatic update only comes from the places expected of it, and never replaces a newer version with
+an older one:
+
+- A plugin updates from GitHub, or from the website its author's update address is on. The mod loader
+  updates from GitHub, or from the website of a `ManifestUrl` you set yourself.
+- Versions are compared as numbers. If the new version, or the one you have, can't be read as a number,
+  nothing is downloaded.
+
+When an update is refused, the file you have stays. A plugin shows no pop-up:
+`ModLoader\Logs\ModLoader.log` has an `[AutoUpdate]` line that says `update refused` (the address) or
+`can't be compared by number` or `installed version not known yet` (the version). To get the new version
+of a plugin, replace its `.dll` by hand with the one from the author's page, or, for a mod the **Browse**
+tab installs, **Uninstall** it and **Install** it again. Then tell the author what the log line says. If
+the mod loader can't update itself, download the new release and extract it over your install;
+`ModLoader\Logs\AutoUpdate.log` says why.
+
 ### If you use Vortex
 
 An update the mod loader makes itself, to a plugin or to itself, can replace files Vortex installed.
@@ -843,6 +859,37 @@ pair with different versions it logs one INFO saying why.
 
 [Networking.md](Networking.md) has the rest of the networking API.
 <sup>[✦](#msantoro12)</sup>
+
+### Auto-updating your plugin
+
+A `.json` file beside your `.dll`, with the same name, turns auto-updates on:
+
+```json
+{ "manifest_url": "https://github.com/<owner>/<repo>/releases/latest/download/<name>-client-manifest.json" }
+```
+
+The file at that address names the release:
+
+```json
+{ "version": "1.2.0", "download_url": "https://github.com/<owner>/<repo>/releases/download/v1.2.0/<Name>-Client.dll" }
+```
+
+For the loader to take an update:
+
+1. `manifest_url`, `download_url` and every address either one redirects to (10 redirects at most) start
+   with `https://`, with no user name in the address, and a host name made of plain letters, digits, `.`,
+   `-` and `_`.
+2. Each of them is on `github.com`, `release-assets.githubusercontent.com`,
+   `objects.githubusercontent.com`, `raw.githubusercontent.com`, or the host of your `manifest_url`, with
+   or without `www.`. A port other than 443 must be the same as in `manifest_url`. Any other host, such
+   as a separate download or CDN host, is refused: serve the file from the host of your `manifest_url`.
+3. `version` starts with numbers such as `1.2.0` or `v1.2.0`, or is a plain number such as `5`. A name, a
+   date such as `2026-01-31` or `5-rc1` can't be compared. Anything after dotted numbers is ignored, so
+   `1.2.0-rc1` and `1.2.0` count as the same version.
+4. Your DLL reports its version, in `PluginInfo::version`, the same way. A DLL that reports something
+   else, and that the loader has no earlier version number for, is never updated: players have to
+   replace it by hand once with a build that reports a number.
+5. Only a `version` higher than the installed one is downloaded.
 
 ### Preload plugins
 
