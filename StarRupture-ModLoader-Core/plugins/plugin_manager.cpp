@@ -2826,7 +2826,7 @@ namespace PluginManager
 		}
 		const std::string name = rec ? rec->cachedName : std::string();
 		const std::string version = rec ? rec->cachedVersion : std::string();
-		const bool initialized = rec && rec->isInitialized;
+		const bool initialized = rec && (rec->isInitialized || rec->awaitingFree);   // UNLOAD has work left
 		LeaveCriticalSection(&g_pluginLock);
 
 		switch (op)
