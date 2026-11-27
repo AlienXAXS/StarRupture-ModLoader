@@ -829,9 +829,9 @@ int main()
 				"feed, functions: and on no other exe, whatever CL, stamp or size it shares");
 			Check(At(Key("Test::ThirdFn", kThird), 0x7777) && !Key("Test::ThirdFn", kNew).Succeeded(), "feed, functions: the third CL's block serves on its exe only");
 			Check(At(Key("UCrSaveSubsystem::GetSaveData", kNew), 0x5678), "feed, precedence: the same key on the new CL comes from the file");
-			// Running on the second CL, the built-in table is not the running exe's, so the file's newer row for CL 127004 is
-			// the one the map holds (the client's rule too: the built-in table wins only on the exe the loader is running).
-			Check(At(Key("UCrSaveSubsystem::GetSaveData", kServer), 0x9999), "feed, precedence: on another exe the file's row replaces the built-in one");
+			// The file's CL 127004 line is the table's exe, so on whichever exe the map was made for, the file does not
+			// replace the table's row for that build.
+			Check(At(Key("UCrSaveSubsystem::GetSaveData", kServer), builtinSaveData), "feed, precedence: the table's row stands for the table's exe");
 
 			// The loader's own entries: from the file's rows on the second CL (the row decides), by their own patterns on a CL
 			// whose block has none.
@@ -913,6 +913,186 @@ int main()
 		DeleteFileW((cache + L".etag").c_str());
 		Check(!VersionMap::ServesExe(kNew) && VersionMap::ServesExe(kServer) && VersionMap::SupportedBuilds().size() == 1,
 			"feed: without the cache the server is back on its built-in table");
+
+		// ---- A file's rows are bound to its exe: CL, time stamp and image size ------------------------------
+
+		const auto load = [&](const std::string& body, const VersionMap::Exe& running)
+		{
+			Put(cache, Sign(sk, 40, body));
+			TestDoubles::g_log.clear();
+			const auto read = VersionFeed::BuildFromCache(cache, keys, running, VersionFeed::LoaderCoverage());
+			DeleteFileW(cache.c_str());
+			return read;
+		};
+		const auto logLines = [](const wchar_t* text)
+		{
+			int n = 0;
+			for (const std::wstring& line : TestDoubles::g_log)
+				n += line.find(text) != std::wstring::npos;
+			return n;
+		};
+		const auto buildLine = [](const VersionMap::Exe& on)
+		{
+			char b[128];
+			sprintf_s(b, "build\t%u\t0x%08X\t0x%08X\tserver steam_build 4\n", on.cl, on.imageStamp, on.imageSize);
+			return std::string(b);
+		};
+		const auto functionRows = [](const VersionMap::MapData& map, const char* key)
+		{
+			int n = 0;
+			for (const VersionMap::MapFunctionRow& r : map.functions)
+				n += r.key == key;
+			return n;
+		};
+		const auto fieldRows = [](const VersionMap::MapData& map, const char* key)
+		{
+			int n = 0;
+			for (const VersionMap::MapFieldRow& r : map.fields)
+				n += r.key == key;
+			return n;
+		};
+		VersionMap::SetLiveFieldSource(Unreflected);
+
+		// The measured exe and a matching line: the file adds new names only.
+		{
+			std::string body = buildLine(kServer);
+			body += FnRow("Test::NewFn", 0, kServer, 1, 0x2222);
+			body += FnRow("UCrSaveSubsystem::GetSaveData", 0x12345678, kServer, 2, 0x9999);   // built-in name, another fp and kind
+			body += FnRow("FTransform::Translation", 0, kServer, 1, 0x3333);                  // a built-in field's name
+			body += FieldRow("Test::NewField", 127004, 0x10, 0x8);
+			body += FieldRow("UCrSaveSubsystem::GetSaveData", 127004, 0x8, 0x8);              // a built-in function's name
+			const auto own = load(body, kServer);
+			Check(own != nullptr, "same exe: the file is read");
+			if (own)
+			{
+				const int addedFn = logLines(L"Test::NewFn"), addedField = logLines(L"Test::NewField");
+				Check(addedFn == 1 && addedField == 1, "same exe: each added row is logged once");
+				Check(functionRows(*own, "UCrSaveSubsystem::GetSaveData") == 1 && fieldRows(*own, "UCrSaveSubsystem::GetSaveData") == 0,
+					"same exe: a built-in function name gets no second row, of any kind or fingerprint");
+				Check(functionRows(*own, "FTransform::Translation") == 0 && fieldRows(*own, "FTransform::Translation") == 1,
+					"same exe: a built-in field name gets no function row");
+				VersionMap::SetActiveMap(own);
+				VersionMap::FieldValue v;
+				std::string e;
+				Check(At(Key("Test::NewFn", kServer), 0x2222), "same exe: a new function is served");
+				Check(Field("Test::NewField", PLUGIN_FIELD_NATIVE, 0x8, {}, kServer, v, e) && v.offset == 0x10, "same exe: a new field is served");
+				Check(At(Key("UCrSaveSubsystem::GetSaveData", kServer), builtinSaveData), "same exe: the built-in function is served");
+				VersionMap::SetActiveMap(nullptr);
+			}
+		}
+
+		// Absent rows, on a map made here (the built-in table has no absent field).
+		{
+			VersionMap::MapData base, feed;
+			const VersionMap::MapBuild line{ 127004, 0x2E3595FF, 0x0E2A8000, "server" };
+			base.builds = { line };
+			feed.builds = { line };
+			VersionMap::MapFunctionRow gone;
+			gone.key = "Test::GoneFn"; gone.gameCL = 127004; gone.imageStamp = line.imageStamp; gone.imageSize = line.imageSize;
+			gone.kind = 1; gone.absent = true;
+			base.functions = { gone };
+			VersionMap::MapAbsentField goneField;
+			goneField.key = "Test::GoneField"; goneField.gameCL = 127004;
+			base.absentFields = { goneField };
+			VersionMap::MapFunctionRow found = gone;
+			found.absent = false;
+			found.rva    = 0x4444;
+			feed.functions = { found };
+			feed.fields = { { "Test::GoneField", 127004, 0x18, 0x8, 0, "" } };
+			VersionFeed::MergeReport report;
+			const VersionMap::MapData merged = VersionFeed::Merge(base, feed, kServer, report);
+			Check(merged.functions.size() == 1 && merged.functions[0].absent && report.absentFilled == 0,
+				"same exe: the file does not fill an absent function");
+			Check(merged.fields.empty() && merged.absentFields.size() == 1, "same exe: the file does not fill an absent field");
+			const VersionMap::MapData client = VersionFeed::Merge(base, feed, kServer, report, VersionFeed::Flavor::Client);
+			Check(client.functions.size() == 1 && !client.functions[0].absent && report.absentFilled == 1 && client.fields.size() == 1,
+				"same exe: the client's merge still fills an absent row and takes the file's field");
+		}
+
+		// A line with the same CL and another stamp, or another size: nothing of it is used on the measured exe.
+		for (const VersionMap::Exe* other : { &kWrongStamp, &kWrongSize })
+		{
+			std::string body = buildLine(*other);
+			body += FnRow("Test::NewFn", 0, *other, 1, 0x2222, "AA 01");
+			body += FieldRow("Test::NewField", 127004, 0x10, 0x8);
+			const auto map = load(body, kServer);
+			Check(map && functionRows(*map, "Test::NewFn") == 0 && fieldRows(*map, "Test::NewField") == 0 && logLines(L"Test::NewField") == 0,
+				"another exe's line: the map for the measured exe holds none of its rows");
+			if (map)
+			{
+				VersionMap::SetActiveMap(map);
+				VersionMap::FieldValue v;
+				std::string e;
+				TestDoubles::g_rvas["AA 01"] = 0x2222;
+				Check(!Key("Test::NewFn", kServer).Succeeded(), "another exe's line: its new function is not served");
+				TestDoubles::g_rvas.erase("AA 01");
+				Check(!Field("Test::NewField", PLUGIN_FIELD_NATIVE, 0x8, {}, kServer, v, e), "another exe's line: its new field is not served");
+				Check(At(Key("UCrSaveSubsystem::GetSaveData", kServer), builtinSaveData), "another exe's line: the built-in table is still served");
+				VersionMap::SetActiveMap(nullptr);
+			}
+		}
+
+		// A rebuilt exe the file lists: the file's rows replace the built-in ones.
+		{
+			const ScanPatterns::PreflightEntry* names = nullptr;
+			for (const ScanPatterns::PreflightEntry& e : ScanPatterns::PreflightRegistry)
+				if (strcmp(e.name, "GNames (NamePoolData)") == 0)
+					names = &e;
+			Check(names != nullptr, "rebuilt exe: the loader's entry is in the preflight registry");
+			if (names)
+			{
+				std::string body = buildLine(kWrongStamp);
+				body += FnRow("Test::NewFn", 0, kWrongStamp, 1, 0x2222);
+				body += FnRow(VersionMap::LoaderEntryKey(*names), VersionMap::LoaderEntryFingerprint(*names), kWrongStamp,
+					static_cast<int>(names->kind), 0x4500, "AA 02");
+				body += FieldRow("Test::NewField", 127004, 0x10, 0x8);
+				const auto map = load(body, kWrongStamp);
+				Check(map != nullptr, "rebuilt exe: the file is read");
+				if (map)
+				{
+					Check(map->functions.size() == 2 && map->fields.size() == 1 && map->absentFields.empty(),
+						"rebuilt exe: the map holds the file's rows and no built-in row");
+					VersionMap::SetActiveMap(map);
+					VersionMap::FieldValue v;
+					std::string e;
+					Check(At(Key("Test::NewFn", kWrongStamp), 0x2222), "rebuilt exe: the file's function is served");
+					Check(!Key("UCrSaveSubsystem::GetSaveData", kWrongStamp).Succeeded(), "rebuilt exe: a built-in function is not served");
+					Check(!Field("FTransform::Translation", PLUGIN_FIELD_NATIVE, 0x18, {}, kWrongStamp, v, e), "rebuilt exe: a built-in field is not served");
+					Request request = Ask(names->name, static_cast<Kind>(static_cast<int>(names->kind)));
+					request.pattern         = names->pattern;
+					request.followRel32At   = names->followRel32At;
+					request.followRipDispAt = names->followRipDispAt;
+					TestDoubles::g_rvas["AA 02"]        = 0x4500;
+					TestDoubles::g_rvas[names->pattern] = 0x1234;
+					Check(At(VersionMap::ResolveLoaderEntry(*names, request, kWrongStamp), 0x4500),
+						"rebuilt exe: the loader's own entry is resolved by the file's pattern, not the compiled one");
+					TestDoubles::g_rvas.erase("AA 02");
+					TestDoubles::g_rvas.erase(names->pattern);
+					VersionMap::SetActiveMap(nullptr);
+				}
+			}
+		}
+
+		// Rows of another build the file lists are not carried to the running one.
+		{
+			std::string body = buildLine(kServer) + buildLine(kThird);
+			body += FnRow("Test::CarryFn", 0, kThird, 1, 0x7777, "AA 03");
+			body += FieldRow("Test::CarryField", 130000, 0x10, 0x8);
+			const auto map = load(body, kServer);
+			Check(map != nullptr, "other builds: the file is read");
+			if (map)
+			{
+				VersionMap::SetActiveMap(map);
+				VersionMap::FieldValue v;
+				std::string e;
+				TestDoubles::g_rvas["AA 03"] = 0x7777;
+				Check(!Key("Test::CarryFn", kServer).Succeeded(), "other builds: a function row is not carried to the measured exe");
+				Check(At(Key("Test::CarryFn", kThird), 0x7777), "other builds: the row is served on its own exe");
+				TestDoubles::g_rvas.erase("AA 03");
+				VersionMap::SetActiveMap(nullptr);
+			}
+		}
+		VersionMap::SetLiveFieldSource(nullptr);
 	}
 
 	printf("%d checks, %d failed\n", g_checks, g_failed);

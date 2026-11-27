@@ -141,10 +141,94 @@ namespace VersionFeed
 			return r.gameCL == running.cl && r.imageStamp == running.imageStamp && r.imageSize == running.imageSize;
 		}
 
+		// A server row holds on one exe: CL, time stamp and image size. Cuts both
+		// sides down, before the merge, to one exe's rows per build. A file line
+		// that is the table's exe adds rows only for names the table has no row
+		// for, of any kind or fingerprint, an absent one included. A line for
+		// another exe of that CL shares nothing with the table: the side whose
+		// line the merge keeps supplies the whole build.
+		void BindToExe(MapData& baseline, MapData& feed, const Exe& running, MergeReport& report)
+		{
+			const auto eraseRows = [](auto& rows, const auto& unwanted)
+			{
+				rows.erase(std::remove_if(rows.begin(), rows.end(), unwanted), rows.end());
+			};
+			for (const MapBuild& own : baseline.builds)
+			{
+				const MapBuild* theirs = BuildOf(feed, own.gameCL);
+				if (!theirs)
+					continue;
+				const uint32_t cl = own.gameCL;
+				const bool sameExe = own.imageStamp == theirs->imageStamp && own.imageSize == theirs->imageSize;
+				const bool onRunning = OnRunning(own, running);
+
+				std::set<std::string> names;
+				for (const MapFunctionRow& r : baseline.functions)
+					if (r.gameCL == cl)
+						names.insert(r.key);
+				for (const MapFieldRow& r : baseline.fields)
+					if (r.gameCL == cl)
+						names.insert(r.key);
+				for (const VersionMap::MapAbsentField& a : baseline.absentFields)
+					if (a.gameCL == cl)
+						names.insert(a.key);
+
+				if (!sameExe && !onRunning)
+				{
+					const auto ofThisBuild = [&](const auto& r) { return r.gameCL == cl; };
+					const size_t before = baseline.functions.size() + baseline.fields.size();
+					eraseRows(baseline.functions, ofThisBuild);
+					eraseRows(baseline.fields, ofThisBuild);
+					eraseRows(baseline.absentFields, ofThisBuild);
+					report.discarded += before - baseline.functions.size() - baseline.fields.size();
+					continue;
+				}
+
+				// A file row that goes. It clashes when the table's exe is running
+				// and the table says otherwise: on that exe, about the name; from
+				// another exe's line, about the same row.
+				const auto drop = [&](const auto& r, const auto& rows, const auto& samePlace)
+				{
+					if (r.gameCL != cl || (sameExe && !names.count(r.key)))
+						return false;
+					++report.discarded;
+					bool paired = false, twin = false;
+					for (const auto& o : rows)
+						if (o.gameCL == cl && o.key == r.key && samePlace(o, r))
+						{
+							paired = true;
+							twin   = twin || SameRow(o, r);
+						}
+					if (onRunning && !twin && (sameExe || paired))
+						++report.clashes;
+					return true;
+				};
+				eraseRows(feed.functions, [&](const MapFunctionRow& r)
+				{
+					return drop(r, baseline.functions, [](const MapFunctionRow& a, const MapFunctionRow& b) { return a.fp == b.fp; });
+				});
+				eraseRows(feed.fields, [&](const MapFieldRow& r)
+				{
+					return drop(r, baseline.fields, [](const MapFieldRow&, const MapFieldRow&) { return true; });
+				});
+
+				if (sameExe && onRunning)
+				{
+					for (const MapFunctionRow& r : feed.functions)
+						if (r.gameCL == cl)
+							report.added.push_back(r.key);
+					for (const MapFieldRow& r : feed.fields)
+						if (r.gameCL == cl)
+							report.added.push_back(r.key);
+				}
+			}
+		}
+
 		// One line per build the feed names, after the summary: what the file
 		// holds for it and what the merge did with it. Reads the feed and the
 		// baseline again; it changes nothing.
-		void LogBuilds(const MapData& baseline, const MapData& feed, const MapData& merged, const Exe& running)
+		void LogBuilds(const MapData& baseline, const MapData& feed, const MapData& merged, const Exe& running,
+			const MergeReport& report, Flavor flavor)
 		{
 			constexpr size_t kMaxLines = 8;
 			using FKey = std::tuple<std::string, uint32_t, uint32_t>;
@@ -194,7 +278,17 @@ namespace VersionFeed
 					swprintf_s(label, L"CL %u (other exe, stamp 0x%08X, size 0x%08X)", cl, fb.imageStamp, fb.imageSize);
 
 				const MapBuild* own = BuildOf(baseline, cl);
-				if (!BuildOf(merged, cl))
+				if (flavor == Flavor::Server && own && BuildOf(merged, cl))
+				{
+					if (!OnRunning(fb, running))
+						ModLoaderLogger::LogInfo(L"[VersionFeed]   %ls: %zu rows, not used on this exe", label, rows);
+					else if (OnRunning(*own, running))
+						ModLoaderLogger::LogInfo(L"[VersionFeed]   %ls: %zu rows, %zu added to the loader's own, the rest not used",
+							label, rows, report.added.size());
+					else
+						ModLoaderLogger::LogInfo(L"[VersionFeed]   %ls: %zu rows, used in place of the loader's own", label, rows);
+				}
+				else if (!BuildOf(merged, cl))
 					ModLoaderLogger::LogInfo(L"[VersionFeed]   %ls: %zu rows, refused (see below), not in the version map", label, rows);
 				else if (!own)
 					ModLoaderLogger::LogInfo(L"[VersionFeed]   %ls: %zu rows, a build the loader does not have, added to the version map", label, rows);
@@ -355,9 +449,13 @@ namespace VersionFeed
 		return true;
 	}
 
-	MapData Merge(const MapData& baseline, const MapData& feed, const Exe& running, MergeReport& report)
+	MapData Merge(const MapData& builtIn, const MapData& downloaded, const Exe& running, MergeReport& report, Flavor flavor)
 	{
 		report = MergeReport{};
+		MapData baseline = builtIn;
+		MapData feed     = downloaded;
+		if (flavor == Flavor::Server)
+			BindToExe(baseline, feed, running, report);
 		MapData out;
 
 		// Builds, by CL: the baseline's if it holds the running exe, else the
@@ -593,12 +691,14 @@ namespace VersionFeed
 			return nullptr;
 		}
 		MergeReport report;
-		MapData merged = Merge(VersionMap::BaselineMap(), feed.map, running, report);
+		MapData merged = Merge(VersionMap::BaselineMap(), feed.map, running, report, flavor);
 		const auto refused = DropUncovered(merged, VersionMap::BaselineMap(), cov);
 		ModLoaderLogger::LogInfo(L"[VersionFeed] Feed seq %llu (key %ls%ls): %zu rows from the feed, %zu discarded (%zu clashed with the loader's map on this exe, %zu absent rows filled, %zu scoped rows without fp dropped)",
 			static_cast<unsigned long long>(feed.seq), Widen(feed.keyId).c_str(), feed.testKey ? L", TEST KEY" : L"",
 			report.fromFeed, report.discarded, report.clashes, report.absentFilled, report.droppedNoFp);
-		LogBuilds(VersionMap::BaselineMap(), feed.map, merged, running);
+		LogBuilds(VersionMap::BaselineMap(), feed.map, merged, running, report, flavor);
+		for (const std::string& name : report.added)
+			ModLoaderLogger::LogInfo(L"[VersionFeed]   added from the file: %ls", Widen(name).c_str());
 		for (const auto& r : refused)
 			ModLoaderLogger::LogWarn(L"[VersionFeed] CL-%u from the feed is refused: it lacks %zu of the keys the loader needs", r.first, r.second);
 		if (seqOut)

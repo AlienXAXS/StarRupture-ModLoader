@@ -118,11 +118,12 @@ namespace VersionFeed
 		size_t clashes         = 0;   // of those, feed rows that disagreed with the baseline on the running exe
 		size_t absentFilled    = 0;   // baseline `absent` rows replaced by a feed locator
 		size_t droppedNoFp     = 0;   // baseline scoped rows with fp 0, which match no request
+		std::vector<std::string> added;   // server: keys of the file's rows added on the table's own exe
 	};
 
 	// The baseline and the feed as one map. See the file comment.
 	VersionMap::MapData Merge(const VersionMap::MapData& baseline, const VersionMap::MapData& feed,
-		const VersionMap::Exe& running, MergeReport& report);
+		const VersionMap::Exe& running, MergeReport& report, Flavor flavor = kBuildFlavor);
 
 	// What a CL needs before the loader runs on it: a locator (not `absent`)
 	// for each function entry, under that fp, and a row for each field key.

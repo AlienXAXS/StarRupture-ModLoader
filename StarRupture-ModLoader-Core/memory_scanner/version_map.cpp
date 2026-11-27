@@ -299,6 +299,42 @@ namespace VersionMap
 
 	namespace
 	{
+		// Whether a row of build `rowCL` may be used on build `runningCL`. The
+		// client carries a row to later builds. A server row holds on its own
+		// exe only; the server's map has one exe per CL, so with MapServes the
+		// CL is enough.
+		bool RowOfBuild(uint32_t rowCL, uint32_t runningCL)
+		{
+#if defined(MODLOADER_CLIENT_BUILD)
+			(void)rowCL;
+			(void)runningCL;
+			return true;
+#else
+			return rowCL == runningCL;
+#endif
+		}
+
+		// Whether a row of kBuiltCL was made on the exe this loader's own
+		// patterns were written for. On the server that is the table's exe, not
+		// a rebuilt one of the same CL.
+		bool OnBuiltExe(const Candidate& row)
+		{
+			if (row.gameCL != kBuiltCL)
+				return false;
+#if defined(MODLOADER_CLIENT_BUILD)
+			return true;
+#else
+			const MapData& table = BaselineMap();
+			return std::any_of(table.builds.begin(), table.builds.end(), [&](const MapBuild& b)
+			{
+				return b.gameCL == row.gameCL && b.imageStamp == row.imageStamp && b.imageSize == row.imageSize;
+			});
+#endif
+		}
+	}
+
+	namespace
+	{
 		// "0x" and 1 to 8 upper-case hex digits, as the feed writes every hex number.
 		bool FeedHex(const std::string& s, uint32_t& v)
 		{
@@ -975,7 +1011,7 @@ namespace VersionMap
 			uint32_t absentCL   = 0;   // the newest build the key is absent on, for a request it binds
 			for (const MapFunctionRow& f : map.functions)
 			{
-				if (f.key != key)
+				if (f.key != key || !RowOfBuild(f.gameCL, runningCL))
 					continue;
 				if (f.kind != kind)
 				{
@@ -1081,7 +1117,7 @@ namespace VersionMap
 				// stands in for the row's, so the row's RVA checks the pattern
 				// the code ships: one edited in the code fails here instead of
 				// passing on the row it replaced.
-				if (c.gameCL == kBuiltCL)
+				if (OnBuiltExe(c))
 				{
 					c.pattern         = entry.pattern;
 					c.resultOffset    = 0;
@@ -1326,7 +1362,7 @@ namespace VersionMap
 			}
 			const MapData& data = ActiveMap();
 			if (std::none_of(data.fields.begin(), data.fields.end(),
-					[&](const MapFieldRow& f) { return f.key == request.key; }))
+					[&](const MapFieldRow& f) { return f.key == request.key && RowOfBuild(f.gameCL, running.cl); }))
 				return true;
 
 			const bool bitfield = (request.flags & PLUGIN_FIELD_BITFIELD) != 0;
@@ -1344,7 +1380,7 @@ namespace VersionMap
 			bool renamed = false;
 			for (const MapFieldRow& f : data.fields)
 			{
-				if (f.key != request.key)
+				if (f.key != request.key || !RowOfBuild(f.gameCL, running.cl))
 					continue;
 				const std::string name = f.member.empty() ? keyMember : f.member;
 				renamed = renamed || (!f.member.empty() && name == request.member);
