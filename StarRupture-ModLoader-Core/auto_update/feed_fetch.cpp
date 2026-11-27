@@ -128,7 +128,7 @@ namespace FeedFetch
 			if (!RunWithin(get, kDeadlineMs))
 			{
 				request->cancel = true;
-				ModLoaderLogger::LogInfo(L"[VersionFeed] The version object map request has not ended in %u ms and is given up on; the cache is as it was", kDeadlineMs);
+				ModLoaderLogger::LogInfo(L"[VersionFeed] The version object map request did not end within %u ms or could not be started, and is given up on; the cache is as it was", kDeadlineMs);
 				return Result::Failed;
 			}
 		}
