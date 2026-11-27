@@ -574,6 +574,26 @@ int wmain(int argc, wchar_t** argv)
 			uint64_t symbolRva = 0;
 			if (row.result.Succeeded() && symbols.Of(row.rva, symbolRva))
 				printf(", \"symbolRva\": \"0x%llX\"", static_cast<unsigned long long>(symbolRva));
+			// Whether the address came from following a call site (a call or a
+			// tail jump; a followed data reference is not one). An OK row with no
+			// locator observed at it counts when any it could have been resolved
+			// with follows one.
+			bool viaCall = false;
+			if (row.result.Succeeded())
+			{
+				viaCall = row.observed.found ? row.observed.followRel32At >= 0 : row.entry->followRel32At >= 0;
+				if (!row.observed.found)
+					for (const AobScan::MapLocator& l : AobScan::MapLocators(VersionMap::LoaderEntryKey(*row.entry),
+							static_cast<int>(row.entry->kind), VersionMap::LoaderEntryFingerprint(*row.entry),
+							"ModLoader", exe.cl))
+						viaCall = viaCall || l.followRel32At >= 0;
+			}
+			printf(", \"viaCall\": %s", viaCall ? "true" : "false");
+			// Whether the PDB gives that address the key's name; functions only.
+			std::optional<bool> nameMatch;
+			if (row.entry->kind == ScanPatterns::PatternKind::FunctionStart)
+				nameMatch = symbols.Named(row.hasRva ? &row.rva : nullptr, VersionMap::LoaderEntryKey(*row.entry));
+			printf(", \"nameMatch\": %s", !nameMatch ? "null" : *nameMatch ? "true" : "false");
 			// What a version-map row for this entry is made of, and the key and
 			// fingerprint (0 for a global key) the map keeps it under. The
 			// locator is the one that matched at rva, which is the map's own row

@@ -297,6 +297,7 @@ namespace
 		std::string            key;             // the map key, for a PLUGIN_SCAN_FLAG_MAP_KEY request
 		uint32_t               fp = 0;          // its fingerprint: 0 for a global key and for a site with no pattern
 		bool                   otherModule   = false;
+		bool                   canFollow     = false;   // a locator of the request, or of the map for it, follows a call
 		std::string            result;
 		bool                   hasRva = false;
 		uint64_t               rva    = 0;
@@ -548,7 +549,10 @@ namespace
 		row.followRel32At = (local.flags & PLUGIN_SCAN_FLAG_FOLLOW_REL32) ? local.followRel32At : -1;
 		row.otherModule   = local.module != nullptr && local.module != g_image;
 		row.patterns.push_back({ local.pattern ? local.pattern : "" });
+		row.canFollow     = row.followRel32At >= 0;
 #if PLUGIN_INTERFACE_VERSION >= 72
+		for (uint32_t i = 0; local.candidates && i < local.candidateCount && i < 64; ++i)
+			row.canFollow = row.canFollow || (local.candidates[i].flags & PLUGIN_SCAN_FLAG_FOLLOW_REL32) != 0;
 		// Locators for other game builds, after the request's own pattern.
 		for (uint32_t i = 0; local.candidates && i < local.candidateCount && i < 64; ++i)
 			if (local.candidates[i].pattern && local.candidates[i].pattern[0]
@@ -579,6 +583,11 @@ namespace
 			}
 		}
 #endif
+		if (!row.key.empty())
+			for (const AobScan::MapLocator& l : AobScan::MapLocators(row.key,
+					static_cast<int>(ScanValidation::ParseKind(row.kind.c_str())), row.fp,
+					self && self->name ? self->name : "", VersionMap::ExeOf(g_image).cl))
+				row.canFollow = row.canFollow || l.followRel32At >= 0;
 		const bool badRequest = !request || !local.hookName || !local.hookName[0]
 			|| ((!local.pattern || !local.pattern[0]) && !keyOnly)
 			|| local.kind < PLUGIN_SCAN_FUNCTION_START || local.kind > PLUGIN_SCAN_ANY;
@@ -1263,6 +1272,17 @@ namespace
 			uint64_t symbolRva = 0;
 			if (row.result == "OK" && row.hasRva && symbols.Of(row.rva, symbolRva))
 				printf(", \"symbolRva\": \"%s\"", Hex(symbolRva).c_str());
+			// Whether the address came from following a call site: as the locator
+			// observed at it says, else true when any the request could have been
+			// resolved with follows one.
+			const bool viaCall = row.result == "OK" && (fromRow ? row.seen.followRel32At >= 0 : row.canFollow);
+			printf(", \"viaCall\": %s", viaCall ? "true" : "false");
+			// Whether the exe's PDB gives that address the key's name: only for a
+			// function with a key, in the exe.
+			std::optional<bool> nameMatch;
+			if (row.kind == "function" && !row.key.empty() && !row.otherModule)
+				nameMatch = symbols.Named(row.hasRva ? &row.rva : nullptr, row.key);
+			printf(", \"nameMatch\": %s", !nameMatch ? "null" : *nameMatch ? "true" : "false");
 			if (!row.detail.empty())
 				printf(", \"detail\": \"%s\"", JsonEscape(AobScan::JsonDetail(row.detail)).c_str());
 			if (row.suggest.attempted)
