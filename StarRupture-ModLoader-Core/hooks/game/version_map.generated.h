@@ -1095,7 +1095,7 @@ inline constexpr std::array<FunctionRow, 980> kFunctionRows = {{
 	{ 130045, 0xCCBFE20D, 0x0F47F000, 1, 0x00000000, false, "48 89 5C 24 ?? 48 89 74 24 ?? 57 48 83 EC ?? 48 83 79 ?? ?? 49 8B D8 48 8B FA 48 8B F1 75 ?? 4C 8D 0D ?? ?? ?? ?? 41 B8 ?? ?? ?? ?? 48 8D 15 ?? ?? ?? ?? 48 8D 0D ?? ?? ?? ?? E8 ?? ?? ?? ?? 84 C0 74 ?? 90 ?? 48 8B 4E", 0, -1, -1, 0x073F32C0, nullptr },
 	// UMassProcessor::CallExecute
 	{ 127004, 0xE8972298, 0x0F35C000, 1, 0x00000000, true, nullptr, 0, -1, -1, 0x00000000, "PerfTuner" },
-	{ 128786, 0xCF8579A6, 0x0F47D000, 1, 0x00000000, true, nullptr, 0, -1, -1, 0x00000000, "PerfTuner" },
+	{ 128786, 0xCF8579A6, 0x0F47D000, 1, 0x00000000, false, "48 89 5C 24 ?? 48 89 74 24 ?? 57 48 83 EC ?? 80 79 53 00 49 8B F8 48 8B F2 48 8B D9 75 ?? 48 89 4C 24 ?? 48 8D 4C 24 ?? E8 ?? ?? ?? ?? 84 C0 0F 84 ?? ?? ?? ?? 48 8D 53 ?? 48 8D 8F ?? ?? ?? ?? E8", 0, -1, -1, 0x04452810, nullptr },
 	{ 129402, 0x6499F129, 0x0F482000, 1, 0x00000000, true, nullptr, 0, -1, -1, 0x00000000, "PerfTuner" },
 	{ 130045, 0xCCBFE20D, 0x0F47F000, 1, 0x00000000, false, "48 89 5C 24 ?? 48 89 74 24 ?? 57 48 83 EC ?? 80 79 53 00 49 8B F8 48 8B F2 48 8B D9 75 ?? 48 89 4C 24 ?? 48 8D 4C 24 ?? E8 ?? ?? ?? ?? 84 C0 0F 84 ?? ?? ?? ?? 48 8D 53 ?? 48 8D 8F ?? ?? ?? ?? E8", 0, -1, -1, 0x04451F30, nullptr },
 	// UMassSignalSubsystem::SignalEntities
