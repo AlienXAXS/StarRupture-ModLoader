@@ -489,7 +489,7 @@ namespace Hooks
 	// Everything about the prologue patch lives in InstallRaw below, which only
 	// the broker calls.
 	bool Hook::Install(uintptr_t targetAddr, void* detourFunc, void** originalFunc,
-		   const char* owner, const char* name)
+		   const char* owner, const char* name, HMODULE module)
 	{
 		if (installed)
 		{
@@ -498,7 +498,7 @@ namespace Hooks
 			return false;
 		}
 
-		const Broker::LinkId id = Broker::Attach(targetAddr, detourFunc, originalFunc, owner, name);
+		const Broker::LinkId id = Broker::Attach(targetAddr, detourFunc, originalFunc, owner, name, module);
 		if (!id.Valid())
 			return false;
 

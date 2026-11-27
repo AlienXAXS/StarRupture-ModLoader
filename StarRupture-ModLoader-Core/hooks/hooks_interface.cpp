@@ -117,6 +117,9 @@ namespace ModLoaderLogger
 		// plugin context, so the caller's module is the only identity available
 		// without an ABI change that would break every existing plugin.
 		const std::string owner = Hooks::GetCallerModuleName(_ReturnAddress());
+		// The same caller, as the module whose hooks a host deny cuts. Looked up
+		// here, before any lock: it takes the OS loader lock.
+		const HMODULE module = PluginGuard::ModuleOf(_ReturnAddress());
 
 		char name[64]{};
 		sprintf_s(name, "hook at 0x%llX", static_cast<unsigned long long>(targetAddress));
@@ -125,7 +128,7 @@ namespace ModLoaderLogger
 		auto hook = new Hooks::Hook();
 
 		// Try to install the hook
-		if (!hook->Install(targetAddress, detourFunction, originalFunction, owner.c_str(), name))
+		if (!hook->Install(targetAddress, detourFunction, originalFunction, owner.c_str(), name, module))
 		{
 			LogMessage(L"[HooksInterface] ERROR: Hook installation failed at 0x%llX",
 			           static_cast<unsigned long long>(targetAddress));

@@ -58,6 +58,20 @@
 // the diagnostics readable; it is not the identity.
 //
 // ---------------------------------------------------------------------------
+// Cutting a link
+// ---------------------------------------------------------------------------
+//
+// A link can be cut: it keeps its place in the chain, but calls go past it. The
+// cut query says which links are cut, by the module that installed them. The one
+// rule: every slot -- the head thunk and each link's own thunk -- goes to the
+// first link after it that is not cut, else to the trampoline. That holds for a
+// cut link's own slot too, so a call already inside a cut detour still reaches
+// the right place. A cut or a restore only rewrites thunk slots, last first, so
+// each store points at something that is already right; the prologue stays
+// patched even with every link cut. A call already past a slot when it changes
+// runs the cut detour once more.
+//
+// ---------------------------------------------------------------------------
 // Why every `original` is a thunk
 // ---------------------------------------------------------------------------
 //
@@ -100,8 +114,12 @@ namespace Hooks::Broker
 	//
 	// owner/name are recorded for diagnostics only ("ModA" / "FEngineLoop::PreInit").
 	// Both may be null.
+	//
+	// module is the DLL that asked for the hook, the one the cut query is asked
+	// about; null means the link is never cut. A link added while its module is
+	// to be cut starts out cut.
 	LinkId Attach(uintptr_t target, void* detour, void** outOriginal,
-	              const char* owner, const char* name);
+	              const char* owner, const char* name, HMODULE module = nullptr);
 
 	// Remove one link, wherever it sits in the chain. The prologue is restored
 	// only when the last link goes -- which is the whole point: a plugin
@@ -109,7 +127,22 @@ namespace Hooks::Broker
 	bool Detach(LinkId id);
 
 	bool IsHooked(uintptr_t target);
-	int  GetLinkCount(uintptr_t target);
+	int  GetLinkCount(uintptr_t target);   // cut links included
+
+	// --- Cutting -------------------------------------------------------------
+
+	// True when the links installed by `address` (a module handle) are to be
+	// cut. It runs under the broker's lock, so it must not take a lock or call
+	// into the OS loader.
+	using CutQuery = bool (*)(const void* address);
+
+	// Without a query nothing is cut.
+	void SetCutQuery(CutQuery query);
+
+	// Make every link match what the cut query says now, and return how many
+	// changed. It reads the current answer, so calling it late or twice is safe.
+	// Call it with no lock held.
+	size_t SyncCuts();
 
 	// --- Diagnostics ---------------------------------------------------------
 
@@ -118,6 +151,7 @@ namespace Hooks::Broker
 		std::string owner;
 		std::string name;
 		uintptr_t   detour = 0;
+		bool        cut = false;
 	};
 
 	struct ChainInfo

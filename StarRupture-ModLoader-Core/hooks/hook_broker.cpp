@@ -2,6 +2,7 @@
 #include "hooks/hooks_common.h"
 #include "logging/log.h"
 
+#include <atomic>
 #include <mutex>
 
 namespace Hooks::Broker
@@ -88,6 +89,8 @@ namespace Hooks::Broker
 			std::string name;
 			uintptr_t   detour = 0;
 			uint8_t*    thunk  = nullptr;   // this link's `original`
+			HMODULE     module = nullptr;   // who asked for the hook; null is never cut
+			bool        cut    = false;
 		};
 
 		struct Chain
@@ -111,17 +114,39 @@ namespace Hooks::Broker
 			return nullptr;
 		}
 
-		// Where the link before `index` currently sends control. For index 0 that
-		// is the head thunk the prologue jumps to; otherwise the previous link's
-		// own thunk. Rewriting this slot is how a link is spliced in or out.
-		uint8_t* PredecessorSlot(Chain& chain, size_t index)
+		std::atomic<CutQuery> g_cutQuery{ nullptr };
+
+		bool WantsCut(HMODULE module)
 		{
-			return index == 0 ? chain.headThunk : chain.links[index - 1].thunk;
+			const CutQuery query = g_cutQuery.load(std::memory_order_acquire);
+			return query && module && query(module);
+		}
+
+		void PointThunk(uint8_t* thunk, uintptr_t destination)
+		{
+			if (GetThunkTarget(thunk) != destination)
+				SetThunkTarget(thunk, destination);
+		}
+
+		// Point every slot at the detour of the first link after it that is not
+		// cut, else at the trampoline. Last slot first: whatever a slot is
+		// pointed at already sends its own `original` to the right place. This is
+		// how a link is spliced in, spliced out, cut and restored.
+		void Rewire(Chain& chain)
+		{
+			uintptr_t next = chain.trampoline;
+			for (size_t k = chain.links.size(); k-- > 0;)
+			{
+				PointThunk(chain.links[k].thunk, next);
+				if (!chain.links[k].cut)
+					next = chain.links[k].detour;
+			}
+			PointThunk(chain.headThunk, next);
 		}
 	}
 
 	LinkId Attach(uintptr_t target, void* detour, void** outOriginal,
-	              const char* owner, const char* name)
+	              const char* owner, const char* name, HMODULE module)
 	{
 		if (outOriginal)
 			*outOriginal = nullptr;
@@ -172,12 +197,10 @@ namespace Hooks::Broker
 		if (!linkThunk)
 			return LinkId{};
 
-		// Splice at the tail: the new link runs last, so the first thing
-		// installed on an address is the first thing called. That is what keeps
-		// PreloadInfo::priority meaning what it says.
+		// The caller has its `original`, leading somewhere, before its detour can
+		// be reached.
 		SetThunkTarget(linkThunk, chain->trampoline);
-		SetThunkTarget(PredecessorSlot(*chain, chain->links.size()),
-			reinterpret_cast<uintptr_t>(detour));
+		*outOriginal = linkThunk;
 
 		Link link;
 		link.id     = g_nextLinkId++;
@@ -185,9 +208,16 @@ namespace Hooks::Broker
 		link.name   = name  ? name  : "(unnamed)";
 		link.detour = reinterpret_cast<uintptr_t>(detour);
 		link.thunk  = linkThunk;
+		link.module = module;
+		link.cut    = WantsCut(module);
 
 		const LinkId id{ link.id };
+
+		// Splice at the tail: the new link runs last, so the first thing
+		// installed on an address is the first thing called. That is what keeps
+		// PreloadInfo::priority meaning what it says.
 		chain->links.push_back(std::move(link));
+		Rewire(*chain);
 
 		if (chain->links.size() > 1)
 		{
@@ -197,7 +227,6 @@ namespace Hooks::Broker
 				chain->links[chain->links.size() - 2].owner.c_str());
 		}
 
-		*outOriginal = linkThunk;
 		return id;
 	}
 
@@ -217,18 +246,17 @@ namespace Hooks::Broker
 				if (chain.links[k].id != id.value)
 					continue;
 
-				// Route the predecessor past this link, to wherever this link was
-				// going. One aligned store; anyone already inside the removed
-				// detour finishes normally through its own thunk, which still
-				// points somewhere valid because thunks are never freed.
-				SetThunkTarget(PredecessorSlot(chain, k), GetThunkTarget(chain.links[k].thunk));
-
 				LogToFile::Debug("[HookBroker] Detached '%s' (%s) from 0x%llX -- %zu left",
 					chain.links[k].name.c_str(), chain.links[k].owner.c_str(),
 					static_cast<unsigned long long>(chain.target),
 					chain.links.size() - 1);
 
+				// Route everything in front past this link. Its own thunk is left
+				// alone: anyone already inside the removed detour finishes
+				// normally through it, and it still points somewhere valid
+				// because thunks are never freed.
 				chain.links.erase(chain.links.begin() + static_cast<ptrdiff_t>(k));
+				Rewire(chain);
 
 				// Last one out restores the prologue. This is the whole reason
 				// the broker exists: one plugin unhooking must not unhook
@@ -260,6 +288,39 @@ namespace Hooks::Broker
 		std::lock_guard<std::mutex> lock(g_mutex);
 		const Chain* chain = FindChain(target);
 		return chain ? static_cast<int>(chain->links.size()) : 0;
+	}
+
+	void SetCutQuery(CutQuery query)
+	{
+		g_cutQuery.store(query, std::memory_order_release);
+	}
+
+	size_t SyncCuts()
+	{
+		size_t changed = 0;
+		{
+			std::lock_guard<std::mutex> lock(g_mutex);
+
+			for (Chain& chain : g_chains)
+			{
+				bool dirty = false;
+				for (Link& link : chain.links)
+				{
+					const bool cut = WantsCut(link.module);
+					if (cut == link.cut)
+						continue;
+					link.cut = cut;
+					dirty = true;
+					++changed;
+				}
+				if (dirty)
+					Rewire(chain);
+			}
+		}
+
+		if (changed)
+			LogToFile::Info("[HookBroker] %zu hook(s) cut or restored", changed);
+		return changed;
 	}
 
 	std::vector<PatchedRange> GetPatchedRanges()
@@ -298,7 +359,7 @@ namespace Hooks::Broker
 			info.trampoline = chain.trampoline;
 
 			for (const Link& link : chain.links)
-				info.links.push_back(LinkInfo{ link.owner, link.name, link.detour });
+				info.links.push_back(LinkInfo{ link.owner, link.name, link.detour, link.cut });
 
 			out.push_back(std::move(info));
 		}

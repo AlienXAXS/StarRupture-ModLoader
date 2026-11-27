@@ -734,8 +734,10 @@ namespace ModConsole
 
             for (size_t i = 0; i < chain.links.size(); ++i)
             {
+                const std::string owner = chain.links[i].owner +
+                                          (chain.links[i].cut ? " (cut)" : "");
                 out.Notice("      %zu. %-24s %s", i + 1,
-                           chain.links[i].owner.c_str(), chain.links[i].name.c_str());
+                           owner.c_str(), chain.links[i].name.c_str());
             }
         }
 

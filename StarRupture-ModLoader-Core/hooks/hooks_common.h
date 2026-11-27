@@ -51,9 +51,12 @@ namespace Hooks
 		// of yours is removed. Call it, do not inspect it.
 		//
 		// owner/name are recorded for diagnostics only (the `hooks` console
-		// command); both may be omitted by loader-internal callers.
+		// command); both may be omitted by loader-internal callers. module is the
+		// plugin DLL that asked for the hook, so the broker can cut it; null (the
+		// loader's own hooks and preload hooks) is never cut.
 		bool Install(uintptr_t target, void* detour, void** originalFunc,
-			     const char* owner = nullptr, const char* name = nullptr);
+			     const char* owner = nullptr, const char* name = nullptr,
+			     HMODULE module = nullptr);
 
 		// Remove this hook's link. The original prologue is restored only when
 		// the LAST link on that address goes -- one caller unhooking does not
