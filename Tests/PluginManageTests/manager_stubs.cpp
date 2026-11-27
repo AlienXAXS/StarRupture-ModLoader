@@ -44,6 +44,12 @@ namespace
 	int g_moves = 0;
 	int g_failFirst = 0;
 	int g_failSecond = 0;
+	const void* g_cutQuery = nullptr;
+}
+
+const void* RegisteredCutQuery()
+{
+	return g_cutQuery;
 }
 
 void FailMoves(int first, int second)
@@ -161,7 +167,7 @@ namespace PreloadManager
 
 namespace GameMenu::Registry { void ForgetPlugin(const char*) {} }
 namespace NetworkChannel { void PluginFeaturesDeclared() {} }
-namespace Hooks::Broker { void SetCutQuery(CutQuery) {} }
+namespace Hooks::Broker { void SetCutQuery(CutQuery query) { g_cutQuery = reinterpret_cast<const void*>(query); } }
 namespace Hooks::Input { void ForgetPluginBlocking(const char*) {} }
 namespace Hooks::MouseWheel { void ForgetModule(HMODULE) {} }
 namespace ImageLibrary { void ForgetPlugin(const IPluginSelf*) {} }

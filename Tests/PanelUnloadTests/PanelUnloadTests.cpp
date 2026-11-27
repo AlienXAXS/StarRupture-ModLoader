@@ -228,13 +228,13 @@ static std::string StripLineComments(const std::string& src)
 // Text of the function whose definition starts with signature, up to its
 // closing brace (a tab-indented "}" line; the functions sit in a namespace).
 // A forward declaration (the signature then ';') is not the definition.
-static std::string FunctionBody(const std::string& src, const char* signature)
+static std::string FunctionBody(const std::string& src, const char* signature, const char* closingBrace = "\n\t}")
 {
     size_t start = src.find(signature);
     while (start != std::string::npos && src.compare(start + strlen(signature), 1, ";") == 0)
         start = src.find(signature, start + 1);
     if (start == std::string::npos) return "";
-    const size_t end = src.find("\n\t}", start);
+    const size_t end = src.find(closingBrace, start);
     return end == std::string::npos ? "" : src.substr(start, end - start);
 }
 
@@ -1270,6 +1270,95 @@ static void Test_DeniedHooksAreCutUnlessKept()
     PluginGuard::Untrack(Kernel32());
 }
 
+// SetDenied reports a switch only when a tracked plugin goes one way or the
+// other: not for the same list again, nor for a name no tracked plugin has.
+static void Test_SetDeniedReportsASwitch()
+{
+    PluginGuard::Track(ThisModule(), "A");
+    const auto switches = [](const std::vector<std::string>& names)
+    {
+        bool switched = false;
+        PluginGuard::SetDenied(names, &switched);
+        return switched;
+    };
+
+    CHECK(!switches({}));
+    CHECK(!switches({ "Absent" }));
+    CHECK(switches({ "A", "Absent" }));
+    CHECK(!switches({ "A" }));
+    CHECK(switches({}));
+
+    // The name of an unloaded plugin leaves the list without a switch.
+    CHECK(switches({ "A" }));
+    PluginGuard::Untrack(ThisModule());
+    CHECK(!switches({}));
+}
+
+static size_t CountOf(const std::string& text, const char* what)
+{
+    size_t count = 0;
+    for (size_t at = text.find(what); at != std::string::npos; at = text.find(what, at + 1))
+        ++count;
+    return count;
+}
+
+// The hooks are resynced only when a loaded plugin switched, after the rules
+// lock is released, and never by the clear itself, which also runs when the
+// channel shuts down. A cut delegate callback is skipped before it is called.
+static void Test_DenyChangesResyncTheCutHooks()
+{
+    wchar_t exe[MAX_PATH];
+    GetModuleFileNameW(nullptr, exe, MAX_PATH);
+    std::filesystem::path core = exe;
+    core = core.parent_path().parent_path().parent_path() / L"StarRupture-ModLoader-Core";
+
+    const char* const sync = "Hooks::Broker::SyncCuts()";
+    const std::string net = ReadSource(core / L"network_channel" / L"network_channel.cpp");
+    CHECK(CountOf(net, "PluginGuard::SetDenied(") == 2);
+    CHECK(CountOf(net, sync) == 3);
+
+    const std::string apply = FunctionBody(net,
+        "static void ApplyDeniedPlugins(const HostRulesWire::RulesSet& rules, unsigned epoch)", "\n    }");
+    const size_t lock = apply.find("std::lock_guard<std::mutex> lk(g_clientRulesMutex);");
+    const size_t set = apply.find("PluginGuard::SetDenied(denied, &switched)");
+    const size_t gate = apply.find("if (switched)");
+    const size_t resync = apply.find(sync);
+    CHECK(CountOf(apply, sync) == 1);
+    CHECK(lock != std::string::npos);
+    CHECK(set != std::string::npos);
+    CHECK(gate != std::string::npos);
+    if (lock != std::string::npos && set != std::string::npos && gate != std::string::npos
+        && resync != std::string::npos)
+    {
+        CHECK(lock < set && set < gate && gate < resync);
+        CHECK(apply.find_first_not_of(" \r\n", gate + strlen("if (switched)")) == resync);
+        CHECK(!StillInBlock(apply, lock, resync));
+    }
+
+    const std::string forget = FunctionBody(net, "static bool ForgetClientRules()", "\n    }");
+    CHECK(forget.find("PluginGuard::SetDenied({}, &restored)") != std::string::npos);
+    CHECK(forget.find("return restored;") != std::string::npos);
+    CHECK(CountOf(forget, "SyncCuts") == 0);
+
+    // On the game thread the sync is direct, from any other it is posted.
+    const std::string leave = FunctionBody(net, "static void LeaveServerRules(bool onGameThread)", "\n    }");
+    CHECK(CountOf(leave, sync) == 2);
+    CHECK(CountOf(leave, "if (restored)") == 2);
+    const size_t direct = leave.find(sync);
+    const size_t otherwise = leave.find("else");
+    const size_t posted = leave.find("GameThreadDispatch::PostVoid([] { Hooks::Broker::SyncCuts(); });");
+    CHECK(direct != std::string::npos && direct < otherwise);
+    CHECK(posted != std::string::npos && otherwise < posted);
+
+    const std::string delegates = ReadSource(core / L"hooks" / L"game" / L"delegate_hook" / L"delegate_hook.cpp");
+    const size_t query = delegates.find("if (PluginGuard::IsHookCut(reinterpret_cast<const void*>(cb)))");
+    const size_t call = delegates.find("PluginGuard::Invoke(cb, \"delegate callback\"");
+    CHECK(query != std::string::npos);
+    CHECK(call != std::string::npos);
+    if (query != std::string::npos && call != std::string::npos)
+        CHECK(query < delegates.find("return;", query) && delegates.find("return;", query) < call);
+}
+
 // A denied plugin's open panel is not drawn, and CloseForModule closes it the
 // normal way, so its panel-closed callback runs. It stays shut while denied and
 // after the allow. The other plugin's panel is left alone.
@@ -1724,6 +1813,8 @@ int main()
     RunTest("GuardRestoresImGuiAfterRenderFault",   Test_GuardRestoresImGuiAfterRenderFault);
     RunTest("HookSiteFallsBackToTheDetoursPlugin",  Test_HookSiteFallsBackToTheDetoursPlugin);
     RunTest("DeniedHooksAreCutUnlessKept",          Test_DeniedHooksAreCutUnlessKept);
+    RunTest("SetDeniedReportsASwitch",              Test_SetDeniedReportsASwitch);
+    RunTest("DenyChangesResyncTheCutHooks",         Test_DenyChangesResyncTheCutHooks);
     RunTest("DeniedPanelClosesAndStaysShut",        Test_DeniedPanelClosesAndStaysShut);
     RunTest("DeniedWidgetIsNotDrawn",               Test_DeniedWidgetIsNotDrawn);
     RunTest("DeniedTokensAreNotHonoured",           Test_DeniedTokensAreNotHonoured);

@@ -5,6 +5,9 @@
 // The DLL file names the plugin updater would check in this Plugins folder.
 std::vector<std::string> UpdaterSidecars(const std::wstring& pluginsDir);
 
+// The cut query the plugin manager gave the hook broker, or null.
+const void* RegisteredCutQuery();
+
 // Copies the test and its plugin into a folder under root and runs the manager
 // steps there, one process per game start. Adds every start's checks to the
 // totals; a start that fails or reports no checks adds at least one failure.

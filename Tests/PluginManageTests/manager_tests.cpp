@@ -4,6 +4,7 @@
 #include "plugins/plugin_manager.h"
 #include "plugins/plugin_manage.h"
 #include "plugins/plugin_call_gate.h"
+#include "plugins/plugin_guard.h"
 #include "auto_update/auto_updater.h"
 #include "auto_update/mod_install.h"
 #include "utils/sha256.h"
@@ -712,6 +713,8 @@ int RunManagerStart(const std::string& step)
 {
 	g_step = step;
 	InitializePluginManager();
+	// In place before the first plugin loads and can install a hook.
+	Expect(RegisteredCutQuery() == reinterpret_cast<const void*>(&PluginGuard::IsHookCut), "the hook broker has the cut query");
 	LoadAllPlugins();
 	InitAllLoadedPlugins();
 	MarkStartupComplete();
