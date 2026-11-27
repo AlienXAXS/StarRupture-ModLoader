@@ -76,6 +76,13 @@ namespace PluginGuard
 	void Track(HMODULE module, const char* pluginName, bool keepsHooks = false);
 	void Untrack(HMODULE module);
 
+	// The address that says which module a hook belongs to: `caller`, where the
+	// install call returns to, unless only the detour is in a tracked plugin. A
+	// plugin whose last act is the install call can be compiled into a tail
+	// call, and the return address is then in whoever called the plugin, often
+	// the loader. Lock-free, any thread.
+	const void* HookSite(const void* caller, const void* detour);
+
 	// True when the plugin `address` lives in has been switched off after a
 	// fault. One relaxed atomic load while no plugin has crashed.
 	bool IsOff(const void* address);

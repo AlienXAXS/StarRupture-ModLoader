@@ -115,11 +115,13 @@ namespace ModLoaderLogger
 		// every plugin detour to the loader. _ReturnAddress() has to be read HERE,
 		// in the frame the plugin called into -- and this interface carries no
 		// plugin context, so the caller's module is the only identity available
-		// without an ABI change that would break every existing plugin.
-		const std::string owner = Hooks::GetCallerModuleName(_ReturnAddress());
-		// The same caller, as the module whose hooks a host deny cuts. Looked up
+		// without an ABI change that would break every existing plugin. A tail
+		// call hides that caller, and then the detour says whose hook it is.
+		const void* site = PluginGuard::HookSite(_ReturnAddress(), detourFunction);
+		const std::string owner = Hooks::GetCallerModuleName(const_cast<void*>(site));
+		// The same module, as the one whose hooks a host deny cuts. Looked up
 		// here, before any lock: it takes the OS loader lock.
-		const HMODULE module = PluginGuard::ModuleOf(_ReturnAddress());
+		const HMODULE module = PluginGuard::ModuleOf(site);
 
 		char name[64]{};
 		sprintf_s(name, "hook at 0x%llX", static_cast<unsigned long long>(targetAddress));

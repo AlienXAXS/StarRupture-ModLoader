@@ -156,6 +156,13 @@ namespace PluginGuard
 		}
 	}
 
+	const void* HookSite(const void* caller, const void* detour)
+	{
+		const bool detourOnly = !SlotFor(reinterpret_cast<uintptr_t>(caller)) &&
+		                        SlotFor(reinterpret_cast<uintptr_t>(detour));
+		return detourOnly ? detour : caller;
+	}
+
 	bool IsOff(const void* address)
 	{
 		if (s_offCount.load(std::memory_order_relaxed) == 0)

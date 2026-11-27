@@ -1203,6 +1203,35 @@ static void Test_GuardForgetModuleDropsOnlyThatModule()
 // A plugin the joined server denies as a whole
 // ---------------------------------------------------------------------------
 
+// A hook belongs to the caller of the install, except when only the detour is in
+// a tracked plugin. The test image stands in for the loader; kernel32 and ntdll
+// for DLLs.
+static void Test_HookSiteFallsBackToTheDetoursPlugin()
+{
+    const void* const loader   = reinterpret_cast<const void*>(&OkA);
+    const void* const inPlugin = reinterpret_cast<const void*>(GetProcAddress(Kernel32(), "Sleep"));
+    const void* const outside  = reinterpret_cast<const void*>(
+        GetProcAddress(GetModuleHandleW(L"ntdll.dll"), "strlen"));
+    CHECK(inPlugin && outside);
+
+    // Nothing tracked: the caller stands.
+    CHECK(PluginGuard::HookSite(loader, inPlugin) == loader);
+
+    PluginGuard::Track(Kernel32(), "B");
+
+    // A tail call: the return address is in no plugin, the detour is.
+    CHECK(PluginGuard::HookSite(loader, inPlugin) == inPlugin);
+    CHECK(PluginGuard::HookSite(outside, inPlugin) == inPlugin);
+    // A plugin's ordinary call, with its detour inside it or elsewhere.
+    CHECK(PluginGuard::HookSite(inPlugin, inPlugin) == inPlugin);
+    CHECK(PluginGuard::HookSite(inPlugin, outside) == inPlugin);
+    // Neither is in a plugin: the loader's own hook stays the loader's.
+    CHECK(PluginGuard::HookSite(loader, loader) == loader);
+    CHECK(PluginGuard::HookSite(loader, outside) == loader);
+
+    PluginGuard::Untrack(Kernel32());
+}
+
 // A denied plugin's hooks are cut unless it was tracked with keepsHooks, or is
 // MainMap; an allow ends the cut.
 static void Test_DeniedHooksAreCutUnlessKept()
@@ -1693,6 +1722,7 @@ int main()
     RunTest("GuardTwoThreadsFaultAtOnce",           Test_GuardTwoThreadsFaultAtOnce);
     RunTest("GuardStaleCallbacks",                  Test_GuardStaleCallbacks);
     RunTest("GuardRestoresImGuiAfterRenderFault",   Test_GuardRestoresImGuiAfterRenderFault);
+    RunTest("HookSiteFallsBackToTheDetoursPlugin",  Test_HookSiteFallsBackToTheDetoursPlugin);
     RunTest("DeniedHooksAreCutUnlessKept",          Test_DeniedHooksAreCutUnlessKept);
     RunTest("DeniedPanelClosesAndStaysShut",        Test_DeniedPanelClosesAndStaysShut);
     RunTest("DeniedWidgetIsNotDrawn",               Test_DeniedWidgetIsNotDrawn);
