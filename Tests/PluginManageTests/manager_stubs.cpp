@@ -12,6 +12,7 @@
 #include "memory_scanner/version_map.h"
 #include "memory_scanner/version_feed.h"
 #include "network_channel/network_channel.h"
+#include "hooks/hooks_interface.h"
 #include "hooks/hook_broker.h"
 #include "hooks/game/game_menu/game_menu_registry.h"
 #include "hooks/input/keybind_registry.h"
