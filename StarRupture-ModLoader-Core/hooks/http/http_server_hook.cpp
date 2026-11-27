@@ -108,6 +108,12 @@ namespace Hooks::HttpServer
 	static std::vector<PluginHttpRequestFilterCallback> g_filters;
 	static std::mutex g_filtersMutex;
 
+	// Filters run one at a time, and so do route handlers. These are held across
+	// the plugin's code, so only the dispatch takes them: an unload takes the two
+	// registry locks on the game thread, which a handler may be waiting for.
+	static std::mutex g_filterCallsMutex;
+	static std::mutex g_rawRouteCallsMutex;
+
 	// ---------------------------------------------------------------------------
 	// TFunction callback type helpers
 	// ---------------------------------------------------------------------------
@@ -969,20 +975,31 @@ namespace Hooks::HttpServer
 		HttpMethod method,
 		const std::string& bodyStr)
 	{
-		PluginCallGate::Scope gate;   // before the callbacks are read
-		std::lock_guard lock(g_rawRoutesMutex);
+		PluginCallGate::Scope gate;   // before the callbacks are read; held across the call
+		std::lock_guard calls(g_rawRouteCallsMutex);
 
-		ModLoaderLogger::LogTrace(L"[HttpServer] TryDispatchRawRoute: checking %zu registered raw route(s) for url=%S",
-			g_rawRoutes.size(), urlLower.c_str());
-
-		for (const auto& route : g_rawRoutes)
+		RawRouteEntry route{};   // a copy: the handler runs without the registry lock
 		{
-			ModLoaderLogger::LogTrace(L"[HttpServer]   raw route check: url=%S prefix=%S plugin=%S",
-				urlLower.c_str(), route.urlPrefix.c_str(), route.pluginName.c_str());
+			std::lock_guard lock(g_rawRoutesMutex);
 
-			if (urlLower.size() < route.urlPrefix.size()) continue;
-			if (urlLower.compare(0, route.urlPrefix.size(), route.urlPrefix) != 0) continue;
+			ModLoaderLogger::LogTrace(L"[HttpServer] TryDispatchRawRoute: checking %zu registered raw route(s) for url=%S",
+				g_rawRoutes.size(), urlLower.c_str());
 
+			for (const auto& candidate : g_rawRoutes)
+			{
+				ModLoaderLogger::LogTrace(L"[HttpServer]   raw route check: url=%S prefix=%S plugin=%S",
+					urlLower.c_str(), candidate.urlPrefix.c_str(), candidate.pluginName.c_str());
+
+				if (urlLower.size() < candidate.urlPrefix.size()) continue;
+				if (urlLower.compare(0, candidate.urlPrefix.size(), candidate.urlPrefix) != 0) continue;
+
+				route = candidate;
+				break;
+			}
+		}
+
+		if (route.callback)
+		{
 			ModLoaderLogger::LogDebug(L"[HttpServer] Raw route matched: %S -> %S",
 				urlOrig.c_str(), route.pluginName.c_str());
 			ModLoaderLogger::LogTrace(L"[HttpServer]   raw route matched: prefix=%S, invoking plugin callback",
@@ -1123,13 +1140,24 @@ namespace Hooks::HttpServer
 					req.bodyLen = body.size();
 					req.method = method;
 
-					PluginCallGate::Scope gate;   // before the callbacks are read
-					std::lock_guard lock(g_filtersMutex);
-					ModLoaderLogger::LogTrace(L"[HttpServer] Phase 1: evaluating %zu filter(s)", g_filters.size());
-					size_t filterIdx = 0;
-					for (auto* cb : g_filters)
+					PluginCallGate::Scope gate;   // before the callbacks are read; held across each call
+					std::lock_guard calls(g_filterCallsMutex);
+					std::vector<PluginHttpRequestFilterCallback> filters;
 					{
-						if (!cb) { ++filterIdx; continue; }
+						std::lock_guard lock(g_filtersMutex);
+						filters = g_filters;
+					}
+					ModLoaderLogger::LogTrace(L"[HttpServer] Phase 1: evaluating %zu filter(s)", filters.size());
+					size_t filterIdx = 0;
+					for (auto* cb : filters)
+					{
+						bool registered = false;
+						{
+							// An earlier filter, or an unload, may have removed this one.
+							std::lock_guard lock(g_filtersMutex);
+							registered = std::find(g_filters.begin(), g_filters.end(), cb) != g_filters.end();
+						}
+						if (!cb || !registered) { ++filterIdx; continue; }
 						ModLoaderLogger::LogTrace(L"[HttpServer]   filter[%zu]: invoking for url=%S", filterIdx, urlOrig.c_str());
 						HttpRequestAction action = InvokeFilterSEH(cb, &req);
 						ModLoaderLogger::LogTrace(L"[HttpServer]   filter[%zu]: result=%s", filterIdx,
@@ -1391,7 +1419,8 @@ namespace Hooks::HttpServer
 	}
 
 	// Drops every raw route and request filter whose callback lives in
-	// `module`: a plugin being unloaded. Before FreeLibrary.
+	// `module`: a plugin being unloaded. Before FreeLibrary. Waits for no handler;
+	// the call gate is what keeps the module mapped while one runs.
 	void ForgetModule(HMODULE module)
 	{
 		size_t dropped = 0;

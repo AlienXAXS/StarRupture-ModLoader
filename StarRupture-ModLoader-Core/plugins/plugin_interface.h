@@ -3499,6 +3499,10 @@ struct IPluginHttpServer
 	void (*RegisterOnRawRequest)(PluginHttpRequestFilterCallback callback);
 
 	// Unregister a raw-request filter. No-op if not registered.
+	// From ModLoader 1.28.0 this does not wait for a call of the filter already
+	// running on another thread (earlier loaders did). The loader keeps the plugin
+	// DLL loaded until that call returns, but not memory the plugin frees itself:
+	// if the filter uses any, count its calls and free it once none is running.
 	void (*UnregisterOnRawRequest)(PluginHttpRequestFilterCallback callback);
 
 	// -----------------------------------------------------------------------
@@ -3513,6 +3517,7 @@ struct IPluginHttpServer
 	bool (*AddRawRoute)(const IPluginSelf* self, const char* urlPrefix, PluginHttpRouteCallback callback);
 
 	// Unregister a previously added raw-response route. No-op if not registered.
+	// Like UnregisterOnRawRequest, it does not wait for a running call.
 	// Always call during PluginShutdown to avoid dangling callback pointers.
 	void (*RemoveRawRoute)(const IPluginSelf* self, const char* urlPrefix);
 };

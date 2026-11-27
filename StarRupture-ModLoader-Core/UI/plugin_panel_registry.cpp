@@ -215,7 +215,16 @@ namespace UI::PluginPanelRegistry
                     toCall.push_back(e.callback);
         }
         for (auto cb : toCall)
+        {
+            {
+                // An earlier one, or an unload, may have removed this one.
+                std::lock_guard<std::mutex> lock(s_mutex);
+                if (std::none_of(s_configCallbacks.begin(), s_configCallbacks.end(),
+                        [&](const ConfigCallbackEntry& e) { return e.callback == cb && e.self == changedSelf; }))
+                    continue;
+            }
             PluginGuard::Invoke(cb, "config-changed callback", section, key, newValue);
+        }
     }
 
     // Returns the PanelEntry* if the handle is a known registered panel, otherwise null.

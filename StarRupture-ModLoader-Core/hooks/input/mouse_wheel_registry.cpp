@@ -7,6 +7,7 @@
 #include <windows.h>
 #include <windowsx.h>
 #include <mutex>
+#include <algorithm>
 #include <vector>
 
 // Client-only feature -- entire translation unit is a no-op on server/generic builds.
@@ -178,6 +179,14 @@ namespace Hooks::MouseWheel
 
 		for (const Entry& e : toCall)
 		{
+			{
+				// An earlier handler, or an unload, may have removed this one.
+				std::lock_guard<std::mutex> lock(s_mutex);
+				if (std::none_of(s_entries.begin(), s_entries.end(), [&](const Entry& x)
+						{ return x.callback == e.callback && x.userData == e.userData; }))
+					continue;
+			}
+
 			bool consumed = false;
 			try { PluginGuard::InvokeInto(&consumed, e.callback, "mouse-wheel callback", &ev, e.userData); }
 			catch (...)
