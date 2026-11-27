@@ -548,6 +548,10 @@ new Steam build
 ```
 
 1. **Client check.** Checks the build and scans the loader's and the plugins' patterns on it.
+   Each result row of the scan's JSON says whether its address came from following a call or
+   tail jump (`viaCall`), and whether the exe's PDB has a function of the key's name starting
+   there (`nameMatch`: true, false, or null when it cannot be checked or the row is not a
+   function).
 2. **Rows.** `map-mode.mjs` writes a function row per key (the pattern the harness saw match at
    the key's address, otherwise a high-confidence suggestion unique on the build, otherwise an
    `absent` row) and `field-rows.mjs` writes the field rows.

@@ -65,6 +65,18 @@
 // --json gives each OK row a symbolRva: where the PDB symbol that holds the
 // resolved address starts, read from the PDB next to the exe when there is one
 // (as an address only; no symbol name is ever printed).
+//
+// --json also gives every row two checks on the address. viaCall is true when
+// it came from following a call or a tail jump (following a data reference
+// does not count); for an OK row where no single locator was seen to land on
+// it, true when any it could have used follows one. nameMatch is true when a
+// function or public code symbol that starts exactly at rva has the key's
+// qualified name (folded functions share an address; any one name counts;
+// return type, parameters, spaces and class/struct keywords are ignored; an
+// adjustor thunk never counts), false when the PDB has no such symbol there or
+// the row has no address, and null with no matching PDB, when the PDB cannot
+// be searched, or for a row that is not a function in the exe with a key. The
+// key must be spelled as the C++ name; there is no alias table.
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
