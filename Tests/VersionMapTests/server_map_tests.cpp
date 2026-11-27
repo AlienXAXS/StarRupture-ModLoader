@@ -1078,6 +1078,7 @@ int main()
 			std::string body = buildLine(kServer) + buildLine(kThird);
 			body += FnRow("Test::CarryFn", 0, kThird, 1, 0x7777, "AA 03");
 			body += FieldRow("Test::CarryField", 130000, 0x10, 0x8);
+			body += FieldRow("FCarrySize", 130000, 0, 0x40);
 			const auto map = load(body, kServer);
 			Check(map != nullptr, "other builds: the file is read");
 			if (map)
@@ -1089,6 +1090,16 @@ int main()
 				Check(!Key("Test::CarryFn", kServer).Succeeded(), "other builds: a function row is not carried to the measured exe");
 				Check(At(Key("Test::CarryFn", kThird), 0x7777), "other builds: the row is served on its own exe");
 				TestDoubles::g_rvas.erase("AA 03");
+				// A native member or an unreflected size is refused for want of this build's row either way.
+				// The refusal names a row of another build only if that row reached the request.
+				Check(!Field("Test::CarryField", PLUGIN_FIELD_NATIVE, 0x8, {}, kServer, v, e) && e.find("CL-130000") == std::string::npos,
+					"other builds: a member row is not carried to the measured exe");
+				Check(Field("Test::CarryField", PLUGIN_FIELD_NATIVE, 0x8, {}, kThird, v, e) && v.offset == 0x10,
+					"other builds: the member row is served on its own exe");
+				Check(!Field("FCarrySize", 0, 0x40, {}, kServer, v, e) && e.find("CL-130000") == std::string::npos,
+					"other builds: a size row is not carried to the measured exe");
+				Check(Field("FCarrySize", 0, 0x40, {}, kThird, v, e) && v.size == 0x40,
+					"other builds: the size row is served on its own exe");
 				VersionMap::SetActiveMap(nullptr);
 			}
 		}
