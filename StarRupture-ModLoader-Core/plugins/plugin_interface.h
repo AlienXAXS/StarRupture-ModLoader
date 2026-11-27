@@ -1016,6 +1016,10 @@
 //      to a named plugin on the other side, for two plugins that work together.
 //      Receiving is unchanged. Optional use needs no higher declared need: ask
 //      through PluginOptSendToServerPlugin and PluginOptSendToClientPlugin.
+//      Also adds the PluginMapFlags bit PLUGIN_HANDLES_HOST_DENY. While a server
+//      has a plugin turned off as a whole, the loader takes its hooks out of the
+//      call path unless the plugin sets that bit: see the notes at the bit. No
+//      layout change, and the bit needs no higher declared need.
 // --- v83 ---
 //
 #define PLUGIN_INTERFACE_VERSION_MIN 70
@@ -3257,10 +3261,11 @@ struct IPluginNetworkChannel
 	// taken, a key read or a shape drawn there works as before, so a plugin that
 	// can hold a capture or passthrough token must release it when it reads 1.
 	// Nor does it undo or stop what the plugin does by other means: debug shapes
-	// already drawn, UI it makes through the engine, its hooks, patches and other
-	// changes to the game, direct reads of the keyboard or mouse, and its network
+	// already drawn, UI it makes through the engine, patches and other changes
+	// to the game, direct reads of the keyboard or mouse, and its network
 	// traffic. Ticks, key releases, events and its other callbacks still run, so
-	// the plugin can undo its changes.
+	// the plugin can undo its changes. From v83 its hooks are taken out of the
+	// call path unless it sets PLUGIN_HANDLES_HOST_DENY: see PluginMapFlags.
 	//
 	// It can change at any time and goes back to 0 when the host allows the plugin
 	// again or the connection ends, so read it each tick rather than keeping it.
@@ -4761,6 +4766,37 @@ enum PluginMapFlags : uint32_t
     // Game-SDK globals through GetSdkGlobals. Only such a plugin may run on a
     // game build other than gameBuiltCL.
     PLUGIN_MAP_MIGRATED = 1u << 0,
+
+    // v83. "I handle being turned off as a whole by the joined server"
+    // (IsDeniedByHost reads 1). Setting it promises that for as long as that
+    // lasts, nothing the plugin's hooks do changes the game: each detour only
+    // calls its original and hands back the result (or its effect sits behind
+    // a feature that is now off, or a per-call IsDeniedByHost check), what was
+    // already applied is undone, and it all comes back on an allow. The loader
+    // then leaves the plugin's hooks running.
+    //
+    // Without it, for as long as the plugin is turned off as a whole, the
+    // loader takes these out of the call path:
+    //   - detours installed with Hooks->Install. A call runs the next live
+    //     detour on that function, or the original game function when there is
+    //     none, and so does a cut detour's own call to its original;
+    //   - IPluginDelegateHook::Hook callbacks, which are not called.
+    // Declaring features does not exempt a plugin. The loader switches both
+    // ways on the game thread. A detour installed while turned off starts cut,
+    // and Hooks->Remove works as always. A call already inside a detour on
+    // another thread finishes it, so the switch is not instant for that call.
+    //
+    // Loader events, world end among them, keep firing, and IsDeniedByHost
+    // lists what else changes. Not touched either way: byte patches, direct
+    // writes to the game, vtable swaps and any hook made without the loader,
+    // the plugin's own threads, and ticks. A preload plugin's hooks are not
+    // cut. So set the bit, and keep the promise, when the plugin cannot have
+    // its detours skipped: detours that work as a pair, or a patch that is
+    // only right while a detour runs.
+    //
+    // A loader that does not know the bit ignores it and never cuts hooks. It
+    // is read from interface 72 on and needs no higher declared need.
+    PLUGIN_HANDLES_HOST_DENY = 1u << 12,
 };
 
 // v73. When a plugin may be loaded, or unloaded, while the game runs. Stored

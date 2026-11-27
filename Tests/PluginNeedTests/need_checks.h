@@ -69,6 +69,12 @@ static_assert(sizeof(IPluginUIEvents)       == (NEED >= 75 ? 144 : 128),        
 static_assert(sizeof(IPluginNetworkChannel) == (NEED >= 83 ? 168 : NEED >= 82 ? 152 : NEED >= 81 ? 144 : NEED >= 80 ? 136 : 128),     "IPluginNetworkChannel size");
 static_assert(sizeof(IPluginHooks)          == (NEED >= 80 ? 216 : NEED >= 79 ? 208 : NEED >= 77 ? 200 : 192),     "IPluginHooks size");
 
+// A PluginMapFlags bit, so it is there at every level, 72 included, and changes
+// no table above. It shares mapFlags with the map flag and the reload settings
+// (bits 8-11).
+static_assert(PLUGIN_HANDLES_HOST_DENY == 1u << 12, "PLUGIN_HANDLES_HOST_DENY moved");
+static_assert((PLUGIN_HANDLES_HOST_DENY & (PLUGIN_MAP_MIGRATED | 0xF00u)) == 0, "PLUGIN_HANDLES_HOST_DENY overlaps another flag");
+
 // Structs the plugin allocates and the loader reads. PluginInfo is whole at every level;
 // PluginPanelDesc has titleBarFn from level 75, which is all the loader reads it for.
 static_assert(sizeof(PluginInfo) == 48, "PluginInfo is not truncated");
