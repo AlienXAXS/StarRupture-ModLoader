@@ -19,7 +19,7 @@ namespace PluginManager
         char version[32];
         char author[64];
         bool isLoaded;   // initialized, or inside its PluginShutdown for an unload or reload
-        bool awaitingFree;   // shut down, DLL still mapped: UNLOAD and RELOAD finish it
+        bool awaitingFree;   // shut down, DLL still mapped: UNLOAD, or an allowed RELOAD, finishes it
         bool isOutOfDate;
         bool needsModLoaderUpdate;
         int  declaredInterface;   // the plugin interface it declares; kept for a plugin refused as too new

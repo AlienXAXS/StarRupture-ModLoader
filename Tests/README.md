@@ -780,7 +780,8 @@ and 15 game starts, each start a process of its own, so a restart is a real one.
   "Another mod is installing. Try again when it finishes." (the first install is held in its download while
   the second is asked for).
 - While a plugin call has not returned, UNLOAD, RELOAD and Disable change nothing and ask for a retry (the
-  unload notes never name RELOAD), a plugin that cannot unload gets that reason instead, and UNLOAD works once
+  unload notes never name RELOAD), a plugin disabled that way is refused a RELOAD with its reason in the plugin
+  list, a plugin that cannot unload gets that reason instead, and UNLOAD works once
   the call returns. No test times out the wait that follows a plugin's shutdown through the plugin manager.
 - What this step does not reach: in the tests `PostVoid` runs the task inline (`manager_stubs.cpp`), so the
   hop to the game thread, the lock order and the posted task's `Halted()` check are not exercised. Those
@@ -792,7 +793,7 @@ build\tests\plugin_manage_tests.exe
 ```
 
 It prints one line per failed check and a total, and exits 0 when every check passes. The last run was
-`654 checks, 0 failed`.
+`656 checks, 0 failed`.
 
 ## ImageShrinkTests
 
