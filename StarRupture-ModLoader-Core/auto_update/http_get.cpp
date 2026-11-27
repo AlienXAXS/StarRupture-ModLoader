@@ -290,3 +290,21 @@ std::string HttpGet(const char* url, const char* label, const HttpGetOptions& op
 	LogToFile::Debug("[AutoUpdate] HttpGet [%s]: received %zu bytes", label, body.size());
 	return body;
 }
+
+std::string HttpGetUpdate(const std::string& url, const std::string& source, const char* label)
+{
+	std::string refused;
+	std::string body = UpdateHosts::Follow(url, source,
+		[label](const std::string& at, unsigned& status, std::string& location)
+		{
+			HttpGetOptions options;
+			options.noRedirect = true;
+			options.status = &status;
+			options.location = &location;
+			return HttpGet(at.c_str(), label, options);
+		}, refused);
+	if (!refused.empty())
+		LogToFile::Warn("[AutoUpdate] [%s]: update refused: it points to %s, not an expected update host",
+		                label, refused.c_str());
+	return body;
+}

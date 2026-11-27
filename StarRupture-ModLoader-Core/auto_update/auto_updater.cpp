@@ -271,8 +271,11 @@ static void ReadUpdaterLogs(std::string& currentLog, std::string& previousLog)
 //     path on next plugin load.
 //   - There is no payload checksum/signature check beyond what HTTPS (via
 //     WinHttp) already guarantees for transport integrity; trust is anchored
-//     at the manifest URL, not at this function.
+//     at the manifest URL, not at this function. The address and every
+//     redirect from it must be on GitHub's release hosts or on the manifest
+//     URL's own host (UpdateHosts, http_get.h).
 static bool DownloadPlugin(const char* url,
+                           const char* manifestUrl,
                            const wchar_t* pluginsDir,
                            const wchar_t* filename,
                            const char* displayName)
@@ -282,7 +285,7 @@ static bool DownloadPlugin(const char* url,
 	swprintf_s(tmpPath, L"%s\\%s.tmp", pluginsDir, filename);
 	swprintf_s(finalPath, L"%s\\%s", pluginsDir, filename);
 
-	std::string body = HttpGet(url, displayName);
+	std::string body = HttpGetUpdate(url, manifestUrl, displayName);
 	if (body.empty())
 	{
 		LogToFile::Debug("[AutoUpdate] Download [%s]: HttpGet returned empty body", displayName);
@@ -354,6 +357,11 @@ static bool DownloadPlugin(const char* url,
 //     "download_url":          "https://example.com/releases/MyPlugin-1.2.0.dll",
 //     "notes":                 "Fixed a crash on load\nAdded a new option"
 //   }
+//
+// Both addresses are https. download_url, and every redirect of either fetch,
+// must be on github.com, GitHub's two release asset hosts, or the same host
+// (and port) as manifest_url. "version" is numbers with at least two parts,
+// like 1.2.0 or v1.2.0-rc1; one that has none is never downloaded.
 //
 // "notes" is optional: one change per line, lines separated by the \n escape.
 // When present it is listed under the plugin in the "Plugins Updated" pop-up.
@@ -586,7 +594,7 @@ static void ProcessPluginSidecar(const PluginSidecar& sc,
     LogToFile::Debug("[AutoUpdate][Sidecar] Checking '%s' via %s",
                      sc.dllFilename.c_str(), sc.manifestUrl.c_str());
 
-    std::string json = HttpGet(sc.manifestUrl.c_str(), sc.dllFilename.c_str());
+    std::string json = HttpGetUpdate(sc.manifestUrl, sc.manifestUrl, sc.dllFilename.c_str());
     if (json.empty())
     {
         LogToFile::Warn("[AutoUpdate][Sidecar] '%s' — manifest fetch failed, skipping",
@@ -652,7 +660,7 @@ static void ProcessPluginSidecar(const PluginSidecar& sc,
                      remoteVersion.c_str());
 
     // By number, so an older release never replaces a newer build. A version
-    // that does not parse falls back to "differs".
+    // that does not parse is never downloaded.
     const AutoUpdateVersion::PluginUpdateDecision decision =
         AutoUpdateVersion::DecidePluginUpdate(storedVersion.c_str(), onDisk.c_str(), remoteVersion.c_str());
     if (decision.installed != storedVersion)
@@ -662,6 +670,15 @@ static void ProcessPluginSidecar(const PluginSidecar& sc,
     {
         LogToFile::Info("[AutoUpdate][Sidecar] '%s' — installed version not known yet (remote %s); "
                         "it is recorded when the plugin loads", displayName, remoteVersion.c_str());
+        return;
+    }
+
+    if (!AutoUpdateVersion::ParseVersion(remoteVersion.c_str()).valid
+        || !AutoUpdateVersion::ParseVersion(decision.installed.c_str()).valid)
+    {
+        LogToFile::Warn("[AutoUpdate][Sidecar] '%s' — not updated: installed [%s] and remote [%s] "
+                        "can't be compared by number",
+                        displayName, decision.installed.c_str(), remoteVersion.c_str());
         return;
     }
 
@@ -683,7 +700,7 @@ static void ProcessPluginSidecar(const PluginSidecar& sc,
     }
 #endif
 
-    if (DownloadPlugin(downloadUrl.c_str(), pluginsDir, wFilename, displayName))
+    if (DownloadPlugin(downloadUrl.c_str(), sc.manifestUrl.c_str(), pluginsDir, wFilename, displayName))
     {
         LogToFile::Info("[AutoUpdate][Sidecar] '%s' — updated to %s", displayName, remoteVersion.c_str());
         WritePluginVersion(stateIniPath, sc.dllFilename.c_str(), remoteVersion.c_str());
@@ -815,7 +832,7 @@ static void RunCentralManifestUpdate(const AutoUpdateConfig& cfg)
 	Splash::SetSubProgress(0.0f);
 #endif
 
-	std::string manifest = HttpGet(cfg.manifestUrl, "manifest");
+	std::string manifest = HttpGetUpdate(cfg.manifestUrl, cfg.manifestUrl, "manifest");
 	if (manifest.empty())
 	{
 		LogToFile::Warn("[AutoUpdate] Manifest fetch failed — skipping modloader version check");
@@ -870,8 +887,18 @@ static void RunCentralManifestUpdate(const AutoUpdateConfig& cfg)
 	// (a pre-release or a local build) is up to date, not offered an older one.
 	const AutoUpdateVersion::ParsedVersion localVer  = AutoUpdateVersion::ParseVersion(effectiveLocalTag);
 	const AutoUpdateVersion::ParsedVersion remoteVer = AutoUpdateVersion::ParseVersion(remoteBuildTag.c_str());
-	if (localVer.valid && remoteVer.valid ? AutoUpdateVersion::CompareVersions(remoteVer, localVer) <= 0
-	                                      : strcmp(effectiveLocalTag, remoteBuildTag.c_str()) == 0)
+	if (!localVer.valid || !remoteVer.valid)
+	{
+		LogToFile::Warn("[AutoUpdate] Not offering an update: installed [%s] and remote [%s] "
+		                "can't be compared by number", effectiveLocalTag, remoteBuildTag.c_str());
+#ifdef MODLOADER_CLIENT_BUILD
+		Splash::SetSubStatus(L"Update check failed (unreadable version)");
+		Splash::SetSubProgress(1.0f);
+#endif
+		return;
+	}
+
+	if (AutoUpdateVersion::CompareVersions(remoteVer, localVer) <= 0)
 	{
 		LogToFile::Info("[AutoUpdate] Modloader is up to date (installed %s, remote %s)",
 		                effectiveLocalTag, remoteBuildTag.c_str());

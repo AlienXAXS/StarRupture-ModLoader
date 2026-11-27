@@ -1,6 +1,5 @@
 #pragma once
 
-#include <cstring>
 #include <string>
 #include <vector>
 
@@ -76,15 +75,13 @@ namespace AutoUpdateVersion
         return !was.valid || CompareVersions(in, was) > 0;
     }
 
-    // Whether a release is newer than the installed version: by number, and
-    // by plain difference when either does not parse.
+    // Whether a release is newer than the installed version: by number. With
+    // either one not parsing there is nothing to compare, so it is not.
     inline bool ReleaseIsNewer(const char* remote, const char* installed)
     {
         const ParsedVersion r = ParseVersion(remote);
         const ParsedVersion i = ParseVersion(installed);
-        if (r.valid && i.valid)
-            return CompareVersions(r, i) > 0;
-        return std::strcmp(remote ? remote : "", installed ? installed : "") != 0;
+        return r.valid && i.valid && CompareVersions(r, i) > 0;
     }
 
     // What the plugin update pass does with a release.

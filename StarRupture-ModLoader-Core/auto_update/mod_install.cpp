@@ -27,8 +27,7 @@ namespace ModInstall
 		constexpr int        kMoveRetries      = 3;
 		constexpr DWORD      kMoveRetryMs      = 200;
 
-		// The two hosts GitHub serves release assets from.
-		const char* const kDownloadHosts[] = { "release-assets.githubusercontent.com", "objects.githubusercontent.com" };
+		using UpdateHosts::IsDownloadHost;
 
 		// The host of an https URL that has no user info or port, else empty.
 		std::string HttpsHost(const std::string& url)
@@ -41,14 +40,6 @@ namespace ModInstall
 			const size_t end = url.find_first_of("/?#", 8);
 			const std::string host = url.substr(8, end == std::string::npos ? std::string::npos : end - 8);
 			return host.find_first_of("@:%") == std::string::npos ? host : std::string();
-		}
-
-		bool IsDownloadHost(const std::string& host)
-		{
-			for (const char* allowed : kDownloadHosts)
-				if (ModIndex::detail::EqualsNoCase(host, allowed))
-					return true;
-			return false;
 		}
 
 		// The pieces after the host of a github.com address of the form
