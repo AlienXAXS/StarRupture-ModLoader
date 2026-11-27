@@ -26,6 +26,7 @@
 #include "plugins/remote_reload.h"
 #include "core/startup_utils.h"
 #include "hooks/hooks_interface.h"
+#include "hooks/hook_broker.h"
 #include "memory_scanner/version_map.h"
 #include "console/plugin_console.h"
 #include "plugins/pak_registry.h"
@@ -867,6 +868,8 @@ namespace PluginManager
 		InitializeCriticalSection(&g_pluginLock);
 		g_initCompleteEvent  = CreateEventW(nullptr, TRUE, FALSE, nullptr);
 		PluginGuard::SetReporter(ReportGuardedCrash);
+		// Before any plugin loads: the hooks of one a server turns off are cut.
+		Hooks::Broker::SetCutQuery(&PluginGuard::IsHookCut);
 		g_managerInitialized = true;
 		ModLoaderLogger::LogMessage(L"Plugin manager initialized");
 	}
