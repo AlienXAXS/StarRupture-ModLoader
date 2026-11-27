@@ -366,11 +366,13 @@ one exe, the server exe CI measured (CL-127004, PE time stamp `0x2E3595FF`, imag
   `TClassMap<EClassRepNodeMapping>::Map` (the header says what each rests on). The client's
   table has the same three rows, with the same values, on each build it lists.
 
-The server serves a row only on that exe: the CL, the time stamp and the image size must all match. On any
-other exe the table is off and a plugin runs on its own patterns and rows, as it did before the table. The
-same applies to the lookups of absent members and of field and size rows, and to the class bound on native
-members: the server bounds only a member the table gave a row for. The client's table and its lookups are
-unchanged. A plugin gets a function row from the table only when it asks for the map key
+The server serves a row of this table only on that exe: the CL, the time stamp and the image size must
+all match. On any other exe the table is off, and unless a
+[downloaded version object map](#the-dedicated-servers-downloaded-version-map) names that exe, a plugin
+runs on its own patterns and rows, as it did before the table. The same applies to the lookups of absent
+members and of field and size rows, and to the class bound on native members: the server bounds only a
+member it has a row for on the running exe. The client's table and its lookups are unchanged. A plugin
+gets a function row from the server's version map only when it asks for the map key
 (`PLUGIN_SCAN_FLAG_MAP_KEY`) on the server build too, and a field or size row through the same member and
 size requests it makes on the client.
 
@@ -380,12 +382,12 @@ plugin through `GetSdkGlobals` when the version map serves the running server bu
 time stamp and image size as above), GObjects has passed the loader's structural check after engine init,
 and `FName::AppendString` was found (GWorld too, off the build the loader is compiled for). On any other server
 exe the loader resolves none of them, the SDK keeps its compiled offsets and `GetSdkGlobals` returns none, as
-before. The server still lists and runs on CL-127004 only.
+before. With no downloaded version map the server lists and runs on CL-127004 only.
 
 ## The dedicated server's downloaded version map
 
-A Server build can add game builds the same way the client does, from a signed file of its own. The file
-has the same format, the same Ed25519 signatures and the same trusted keys as the client's.
+A Server build can add rows and game builds from a signed version object map (version map) of its own.
+The file has the same format, the same Ed25519 signatures and the same trusted keys as the client's.
 
 - **What is downloaded.** `version-map-server.v1.txt`: one `build` line per server game build, each with a
   source starting `server ` (for example `server steam_build 25642172`), then that build's function,
@@ -400,15 +402,35 @@ has the same format, the same Ed25519 signatures and the same trusted keys as th
 - **Where it is kept.** `ModLoader\version-map-server.v1.cache`, with its ETag in
   `version-map-server.v1.cache.etag`: the client's cache has a different name, so neither reads the other's,
   and a file of the other kind is refused before it is stored.
-- **How an exe is matched.** Exactly as on the built-in table: the game build number, the exe's time stamp
-  and its image size must all equal a `build` line. A rebuilt exe of a listed build number gets no row from
-  the file. The server's built-in table still wins on the exe it was measured on, and a clash there is
-  counted in the log line, as on the client. On any other exe the file's rows replace the built-in ones.
+- **How an exe is matched.** Every set of rows belongs to one exe: its game build number, the exe's time
+  stamp and its image size. The file's rows for a build are used only when its `build` line equals the
+  running exe in all three. A line with the same build number and another stamp or size gives the running
+  exe nothing, new rows included. Unlike the client, the server never carries a row from one build to another.
+- **On the exe the built-in table was measured on**, a matching line only adds rows, for names the table
+  has no row for. A name the table has, as a function, a field or a size, under any fingerprint, or as
+  absent, is served from the table alone: the file cannot change it, add a second row beside it or fill an
+  absence. Each added row is logged once at start (`[VersionFeed]   added from the file: <key>`), and a
+  file row for a table name that says something else is counted as a clash in the merge line.
+- **On any other exe that a line matches**, for example a rebuilt exe of build 127004, the file's rows
+  replace the table: nothing of the table is served there. The file therefore has to hold every row that
+  exe needs. For the loader's own patterns and its plugins' keys, a row the file lacks leaves them on
+  their own patterns and rows.
+- **When rows are missing.** On an exe that neither the table nor the file names, no row is served and each plugin
+  runs on its own patterns and rows. The version check goes by build number alone: a build number that
+  neither has is refused. Where the running exe has rows but not one a plugin needs, the plugin gets
+  its own pattern or row if it has one for that exe, and otherwise the loader refuses that request and logs
+  it. For a native member with no row, the plugin's compiled offset is used only on a build number it was
+  built for. The fix is a newer file with the missing rows (or a newer loader); it is read at the next
+  start.
+- **Turning it off.** `[AutoUpdate] Enabled=0` in `modloader.ini` makes no request at start, so the start
+  is not delayed. A file already cached is still read and applied; delete
+  `ModLoader\version-map-server.v1.cache` to run on the built-in table alone.
 - **What the server checks.** The coverage rule the client uses (a game build from a file is kept only if
   it has a row for each loader entry and field) is empty on the server: the loader finds its own entries by
   their own patterns and reads its own fields from the game, so the file needs no `ModLoader/` rows. On a
-  server game build other than the one the loader was compiled for, the loader reads its fields from
-  the game and uses a file's row only to cross-check; if a field or a game global cannot be found it logs
+  server build number other than the one the loader was compiled for, the loader reads its fields from
+  the game and uses a file's row only to cross-check (a rebuilt exe of the compiled build number keeps the
+  loader's compiled field offsets); if a field or a game global cannot be found it logs
   which and starts the game with no plugins. A plugin that takes its game data from the version map
   (`PLUGIN_MAP_MIGRATED`) runs on the second build with its fields read per build, from that build's rows.
   A plugin that does not stays refused there.
@@ -436,8 +458,11 @@ has the same format, the same Ed25519 signatures and the same trusted keys as th
   counts it under `rows the game does not reflect`. The table generator already leaves such a member out,
   so no table has that row now and the count is 0; the list is a net for one the generator misses.
 - **What the log says.** After the merge line, `[VersionFeed]` prints one line per build in the file:
-  `this exe` or `other exe` (with its stamp and size), its row count, and whether it was identical to the
-  loader's own (none used), differs (and whose rows are kept), added, or refused.
+  `this exe` or `other exe` (with its stamp and size) and its row count. For build 127004, which the
+  loader's table has, it then says how many rows were added to the table (`the rest not used`), that the
+  file's rows are `used in place of the loader's own`, or that they are `not used on this exe`. For any
+  other build it says the build was added to the version map. Then comes one `added from the file:` line
+  for each row added to the table.
 
 To try it without a published file, build the Server configuration with `VMAP_TRUST_TEST_KEY` (the
 test key, `k1`), sign a server file with that key, and copy it byte for byte to
@@ -516,7 +541,8 @@ A release build therefore trusts only `k2`. A feed signed with `k1` is rejected 
 private halves are CI secrets (`VMAP_SIGN_KEY_TEST`, `VMAP_SIGN_KEY`); a leaked key is answered by
 a loader release that drops its slot.
 
-**Merge.** The loader merges the built-in version map and the feed into one row per key and CL (per `fp`
+**Merge.** This is the client's rule; the server's is
+[above](#the-dedicated-servers-downloaded-version-map). The loader merges the built-in version map and the feed into one row per key and CL (per `fp`
 for a site key), once at startup, and the result stays unchanged for the process. For each group
 it takes the built-in row for the running exe if there is one, otherwise the feed's, otherwise
 the built-in. The feed can add builds and keys and fill a shipped `absent` row; it can never
