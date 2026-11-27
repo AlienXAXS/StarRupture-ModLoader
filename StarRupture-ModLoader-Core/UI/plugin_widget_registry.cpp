@@ -79,7 +79,7 @@ namespace UI::PluginWidgetRegistry
         // Handle not found — caller passed a stale or invalid handle; ignore silently.
     }
 
-    bool ForgetModule(HMODULE module)
+    bool ForgetModule(HMODULE module, DWORD waitMs)
     {
         if (!module) return true;
 
@@ -95,10 +95,10 @@ namespace UI::PluginWidgetRegistry
         // again after, under the same lock: a render still running in the
         // module during the wait may have registered another widget.
         const bool finished = s_calls.WaitForOtherThreads(lock,
-            [&](const void*, HMODULE owner) { return owner == module; });
+            [&](const void*, HMODULE owner) { return owner == module; }, waitMs);
         forget();
         lock.unlock();
-        if (!finished)
+        if (!finished && waitMs)
             ModLoaderLogger::LogError(
                 L"[PluginWidgets] A widget render in module %p was still running after %lu ms.",
                 static_cast<void*>(module), PluginCallTracker::kWaitTimeoutMs);

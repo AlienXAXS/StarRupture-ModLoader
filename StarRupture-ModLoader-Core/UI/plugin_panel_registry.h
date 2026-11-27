@@ -3,6 +3,7 @@
 #ifdef MODLOADER_CLIENT_BUILD
 
 #include "plugins/plugin_interface.h"
+#include "UI/plugin_call_tracker.h"
 
 // ---------------------------------------------------------------------------
 // PluginPanelRegistry
@@ -74,7 +75,8 @@ namespace UI::PluginPanelRegistry
     // panel-closed callback of the module still running on another thread.
     // Returns false if one still was when the wait gave up: the module must
     // not be freed then.
-    bool ForgetModule(HMODULE module);
+    // waitMs: how long to wait for the module's running renders.
+    bool ForgetModule(HMODULE module, DWORD waitMs = PluginCallTracker::kWaitTimeoutMs);
 
     // Acquire/release an input-capture request token. While at least one
     // token is held, AnyInputCaptureRequested() returns true.

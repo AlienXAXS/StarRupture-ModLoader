@@ -12,6 +12,7 @@
 #include "plugins/plugin_hook_report.h"
 #include "network_channel/network_channel.h"
 #include "plugins/plugin_guard.h"
+#include "plugins/plugin_call_gate.h"
 #include "plugins/plugin_host_info.h"
 #include "plugins/plugin_version_query.h"
 #include "plugins/declared_features_text.h"
@@ -360,6 +361,10 @@ namespace PluginManager
 		// this. Only read or written with g_pluginLock held.
 		bool isUnloading = false;
 
+		// Shut down, but still mapped because a call was running when it was to
+		// be freed. Nothing is dispatched into it; RELOAD or UNLOAD frees it.
+		bool awaitingFree = false;
+
 		// Cached display strings — valid even after FreeLibrary.
 		std::string cachedName;
 		std::string cachedVersion;
@@ -399,6 +404,23 @@ namespace PluginManager
 	// What the plugin list and the console say, in place of the buttons and as
 	// the refusal, while a plugin is inside its PluginShutdown (isUnloading).
 	static constexpr const char* kUnloadingNow = "This plugin is being unloaded right now.";
+	static constexpr const char* kBusyNote =
+		"A plugin call is still running, so nothing was changed. Press RELOAD again.";
+	static constexpr const char* kShutDownNote =
+		"It is shut down but stays loaded: a plugin call was still running. Press RELOAD or UNLOAD again.";
+	static std::string BaseFileNameA(const std::wstring& path);
+	static void ShowCrashToast(const std::string& name, const std::string& text);
+
+	// Frees a DLL that never became a running plugin. Its DllMain has run, so
+	// another plugin may already have found it by name and be calling it.
+	// lockHeld: this thread holds g_pluginLock (once); it is released for the wait.
+	static void FreeRefused(HMODULE module, const std::wstring& path, bool lockHeld)
+	{
+		const std::string name = BaseFileNameA(path);
+		if (lockHeld) LeaveCriticalSection(&g_pluginLock);
+		PluginCallGate::FreeWhenIdle(module, name.c_str());
+		if (lockHeld) EnterCriticalSection(&g_pluginLock);
+	}
 
 	// A record with no code, its plugin turned off or uninstalled. A
 	// name lookup passes over it while another record has the name.
@@ -502,7 +524,7 @@ namespace PluginManager
 	// load setting is checked once its info has been read (a DLL has to be loaded
 	// to be asked), and a refused plugin is freed before PluginInit or its load
 	// hooks run.
-	static bool LoadPluginIntoRecord(LoadedPlugin& rec, bool startup, LoadFailureInfo* why = nullptr)
+	static bool LoadPluginIntoRecord(LoadedPlugin& rec, bool startup, bool lockHeld, LoadFailureInfo* why = nullptr)
 	{
 		if (g_refuseLoads.load())
 		{
@@ -574,7 +596,7 @@ namespace PluginManager
 		if (!getInfo || !init || !shutdown)
 		{
 			ModLoaderLogger::LogMessage(L"Plugin missing required exports: %s", rec.fileName.c_str());
-			FreeLibrary(hModule);
+			FreeRefused(hModule, rec.fileName, lockHeld);
 #ifdef MODLOADER_CLIENT_BUILD
 			EnterCriticalSection(&g_pluginLock);
 			s_notPlugins.insert(LowerCase(rec.fileName));
@@ -601,7 +623,7 @@ namespace PluginManager
 			{
 				ModLoaderLogger::LogMessage(L"Plugin GetPluginInfo returned nullptr: %s", rec.fileName.c_str());
 			}
-			FreeLibrary(hModule);
+			FreeRefused(hModule, rec.fileName, lockHeld);
 			if (why) why->kind = LoadFailure::Crashed;
 			return false;
 		}
@@ -637,7 +659,7 @@ namespace PluginManager
 			}
 			// info points into the plugin's own image, so read it before the free.
 			if (why) { why->kind = LoadFailure::OutOfDate; why->interfaceVersion = info->interfaceVersion; }
-			FreeLibrary(hModule);
+			FreeRefused(hModule, rec.fileName, lockHeld);
 			return false;
 		}
 
@@ -666,7 +688,7 @@ namespace PluginManager
 			rec.isOutOfDate          = true;
 			rec.needsModLoaderUpdate = false;
 			if (why) { why->kind = LoadFailure::OffBuild; why->detail = refusal; }
-			FreeLibrary(hModule);
+			FreeRefused(hModule, rec.fileName, lockHeld);
 			return false;
 		}
 
@@ -692,7 +714,7 @@ namespace PluginManager
 			rec.cachedVersion = info->version ? info->version : "";
 			rec.cachedAuthor  = info->author  ? info->author  : "";
 			rec.isWrongTarget = true;
-			FreeLibrary(hModule);
+			FreeRefused(hModule, rec.fileName, lockHeld);
 			if (why) why->kind = LoadFailure::WrongTarget;
 			return false;
 		}
@@ -707,7 +729,7 @@ namespace PluginManager
 			rec.cachedVersion = info->version ? info->version : "";
 			rec.cachedAuthor  = info->author  ? info->author  : "";
 			if (why) { why->kind = LoadFailure::Refused; why->detail = refusal; }
-			FreeLibrary(hModule);
+			FreeRefused(hModule, rec.fileName, lockHeld);
 			return false;
 		}
 
@@ -752,7 +774,7 @@ namespace PluginManager
 	}
 
 	// Load a single plugin DLL by path (the startup scan, and ScanForNewPlugins).
-	static bool LoadPlugin(const std::wstring& dllPath, bool startup, LoadFailureInfo* why = nullptr)
+	static bool LoadPlugin(const std::wstring& dllPath, bool startup, bool lockHeld, LoadFailureInfo* why = nullptr)
 	{
 		auto rec = std::make_unique<LoadedPlugin>();
 		rec->fileName = dllPath;
@@ -762,7 +784,7 @@ namespace PluginManager
 		rec->hookScanFailed       = false;
 		rec->isDisabled           = false;
 
-		if (!LoadPluginIntoRecord(*rec, startup, why))
+		if (!LoadPluginIntoRecord(*rec, startup, lockHeld, why))
 		{
 			if (why) why->name = rec->cachedName;
 
@@ -925,7 +947,7 @@ namespace PluginManager
 			Splash::SetSubProgress(static_cast<float>(i) / static_cast<float>(total));
 #endif
 
-			if (LoadPlugin(dllPaths[i], true))
+			if (LoadPlugin(dllPaths[i], true, false))
 				loadedCount++;
 		}
 
@@ -1032,8 +1054,8 @@ namespace PluginManager
 		plugin.setHostInfo = nullptr;
 	}
 
-	static bool ShutDownAndFree(LoadedPlugin& p, const wchar_t* action);
-	static void ForgetRegistrations(LoadedPlugin&);
+	static bool ShutDownAndFree(LoadedPlugin& p);
+	static void ForgetRegistrations(LoadedPlugin&, DWORD renderWaitMs = PluginCallGate::kWaitTimeoutMs);
 
 	// What the plugin says it is busy with. A plugin that crashed and was
 	// switched off is busy with nothing: a reason it set before the crash
@@ -1082,8 +1104,7 @@ namespace PluginManager
 			plugin.hookScanFailed = true;
 			if (plugin.hModule)
 			{
-				PluginGuard::Untrack(plugin.hModule);
-				FreeLibrary(plugin.hModule);
+				FreeRefused(plugin.hModule, plugin.fileName, true);
 			}
 			ForgetEntryPoints(plugin);
 			ModLoaderLogger::LogError(
@@ -1123,7 +1144,7 @@ namespace PluginManager
 			ModLoaderLogger::LogWarn(L"Plugin '%S' was NOT loaded: %S", plugin.cachedName.c_str(), lateRefusal.c_str());
 			plugin.isInitialized = true;
 			plugin.isOutOfDate   = true;
-			if (ShutDownAndFree(plugin, L"Unload"))
+			if (ShutDownAndFree(plugin))
 				ForgetEntryPoints(plugin);
 		}
 		else if (initResult.retval)
@@ -1201,45 +1222,16 @@ namespace PluginManager
 		if (g_initCompleteEvent) SetEvent(g_initCompleteEvent);
 	}
 
-	// Called right after PluginShutdown, before any of the purges that follow
-	// it. The render thread may still be inside one of the plugin's panels or
-	// widgets, and code running there can register more of anything; waiting
-	// it out first means nothing gets added behind those purges. The panel and
-	// widget purges are repeated in their usual place for whatever the second
-	// wait let through.
-	//
-	// Returns false if the overlay is still in the plugin's code after the
-	// (bounded) wait. The purges still run, since the plugin is shut down, but
-	// the module must stay mapped: freeing it would crash the render thread on
-	// return.
-	static bool WaitOutPluginRenders(HMODULE module, const char* name, const wchar_t* action)
-	{
-#ifdef MODLOADER_CLIENT_BUILD
-		const bool panelsIdle  = UI::PluginPanelRegistry::ForgetModule(module);
-		const bool widgetsIdle = UI::PluginWidgetRegistry::ForgetModule(module);
-		if (panelsIdle && widgetsIdle)
-			return true;
-		ModLoaderLogger::LogError(L"%s of %S skipped: the overlay is still drawing its panel. "
-		                          L"It is shut down but stays loaded; reload it to try again.",
-		                          action, name);
-		return false;
-#else
-		(void)module; (void)name; (void)action;
-		return true;
-#endif
-	}
-
 	// Everything a plugin registered that points into its module: called after
-	// PluginShutdown (and WaitOutPluginRenders), before FreeLibrary. Whatever
+	// PluginShutdown, before FreeLibrary. Whatever
 	// the plugin did not unregister itself, or unregistered from the wrong
 	// list, would otherwise be called into freed memory -- or, once another
 	// DLL is mapped at the same address, into the middle of its code.
 	//
-	// This drops what is registered or queued; it does not wait for a call
-	// already running. The game and render threads are not inside the plugin
-	// here (RELOAD and UNLOAD run on the game thread, and WaitOutPluginRenders
-	// has waited out the overlay), but an HTTP or network thread can be.
-	static void ForgetRegistrations(LoadedPlugin& p)
+	// This drops what is registered or queued; PluginCallGate waits for the
+	// calls already running. renderWaitMs is how long the panel and widget
+	// registries wait for the plugin's own running renders.
+	static void ForgetRegistrations(LoadedPlugin& p, DWORD renderWaitMs)
 	{
 		// The schema the config manager cached lives inside this module.
 		ModLoaderLogger::ForgetPluginSchema(p.cachedName.c_str());
@@ -1266,8 +1258,8 @@ namespace PluginManager
 #ifdef MODLOADER_CLIENT_BUILD
 		// A panel or widget it registered and did not unregister: the
 		// registries keep its descriptor and renderFn, both inside the module.
-		UI::PluginPanelRegistry::ForgetModule(p.hModule);
-		UI::PluginWidgetRegistry::ForgetModule(p.hModule);
+		UI::PluginPanelRegistry::ForgetModule(p.hModule, renderWaitMs);
+		UI::PluginWidgetRegistry::ForgetModule(p.hModule, renderWaitMs);
 		GameMenu::Registry::ForgetPlugin(p.cachedName.c_str());
 		Hooks::MouseWheel::ForgetModule(p.hModule);
 		UIState::ForgetModule(p.hModule);
@@ -1282,6 +1274,8 @@ namespace PluginManager
 		// The image sets it said it draws from. Its images stay: they belong to
 		// the session, not to the plugin.
 		ImageLibrary::ForgetPlugin(&p.self);
+#else
+		(void)renderWaitMs;
 #endif
 	}
 
@@ -1295,6 +1289,8 @@ namespace PluginManager
 				return true;
 		return false;
 	}
+
+	static bool FreeShutDownPlugin(LoadedPlugin& p, DWORD waitMs);
 
 	void UnloadAllPlugins()
 	{
@@ -1320,33 +1316,21 @@ namespace PluginManager
 				ModLoaderLogger::LogError(L"%S is still inside its PluginShutdown after 5 s; continuing the shutdown without it",
 					plugin->cachedName.c_str());
 
-		for (auto& plugin : g_loadedPlugins)
+		// By index: the lock is released while each one is freed.
+		for (size_t i = 0; i < g_loadedPlugins.size(); ++i)
 		{
-			if (plugin->isUnloading)
+			LoadedPlugin& plugin = *g_loadedPlugins[i];
+			if (plugin.isUnloading)
 				continue;
 
-			if (plugin->isInitialized)
+			if (plugin.isInitialized)
 			{
-				ModLoaderLogger::LogMessage(L"Shutting down plugin: %S", plugin->cachedName.c_str());
-				if (!CallShutdown(plugin->shutdown))
-					LogPluginCrash(plugin->cachedName.c_str(), plugin->hModule, L"PluginShutdown (unload all)");
-				plugin->isInitialized = false;
+				ModLoaderLogger::LogMessage(L"Shutting down plugin: %S", plugin.cachedName.c_str());
+				if (!CallShutdown(plugin.shutdown))
+					LogPluginCrash(plugin.cachedName.c_str(), plugin.hModule, L"PluginShutdown (unload all)");
+				plugin.isInitialized = false;
 			}
-			const bool idle = WaitOutPluginRenders(plugin->hModule, plugin->cachedName.c_str(), L"Unload");
-
-			// Before FreeLibrary: everything it registered points into the module.
-			ForgetRegistrations(*plugin);
-
-			if (!idle)
-				continue;   // left mapped, not freed under the overlay
-
-			if (plugin->hModule)
-			{
-				PluginGuard::Untrack(plugin->hModule);
-				FreeLibrary(plugin->hModule);
-				plugin->hModule = nullptr;
-				plugin->info    = nullptr;
-			}
+			FreeShutDownPlugin(plugin, PluginCallGate::kWaitTimeoutMs);
 		}
 
 		if (!AnyPluginUnloading())
@@ -1585,24 +1569,28 @@ namespace PluginManager
 	}
 
 	// Everything after PluginShutdown: what the plugin registered that lives in
-	// its module, then FreeLibrary. Caller holds g_pluginLock. False when one of
-	// its renders is still running: it is shut down, but stays mapped.
-	static bool FreeShutDownPlugin(LoadedPlugin& p, const wchar_t* action)
+	// its module, then FreeLibrary once no plugin call is running. Caller holds
+	// g_pluginLock once; it is released for the wait, which lasts at most waitMs.
+	// False: it stays mapped, with nothing more dispatched into it.
+	static bool FreeShutDownPlugin(LoadedPlugin& p, DWORD waitMs)
 	{
-		const bool idle = WaitOutPluginRenders(p.hModule, p.cachedName.c_str(), action);
+		// Now, so that nothing new reaches it even if the wait runs out.
+		ForgetRegistrations(p, 0);
+		++g_pluginGeneration;   // it is shut down now
+		if (!p.hModule)
+			return true;
 
-		// Before FreeLibrary, not after: the moment the module is unmapped, every
-		// pointer into it is a read or a call into freed memory.
-		ForgetRegistrations(p);
-
-		if (!idle)
-		{
-			++g_pluginGeneration;   // it is shut down now
+		p.isUnloading = true;   // the record stays ours while the lock is out
+		LeaveCriticalSection(&g_pluginLock);
+		// Again before the free: a call that was still running may have registered more.
+		const bool freed = PluginCallGate::FreeWhenIdle(p.hModule, p.cachedName.c_str(), waitMs,
+			[&p] { ForgetRegistrations(p, 0); });
+		EnterCriticalSection(&g_pluginLock);
+		p.isUnloading  = false;
+		p.awaitingFree = !freed;
+		if (!freed)
 			return false;
-		}
 
-		PluginGuard::Untrack(p.hModule);
-		FreeLibrary(p.hModule);
 		p.hModule = nullptr;
 		p.info    = nullptr;
 		p.wire    = WireCompat::Decl{};
@@ -1610,16 +1598,15 @@ namespace PluginManager
 		return true;
 	}
 
-	// PluginShutdown, then FreeShutDownPlugin. Caller holds g_pluginLock the
-	// whole time: for a plugin that was only just initialized, inside
-	// InitPluginRecord.
-	static bool ShutDownAndFree(LoadedPlugin& p, const wchar_t* action)
+	// PluginShutdown, then FreeShutDownPlugin. Caller holds g_pluginLock, for a
+	// plugin that was only just initialized, inside InitPluginRecord.
+	static bool ShutDownAndFree(LoadedPlugin& p)
 	{
 		if (!CallShutdown(p.shutdown))
 			LogPluginCrash(p.cachedName.c_str(), p.hModule, L"PluginShutdown (unload)");
 		p.isInitialized = false;
 		ReloadPolicy::SetBusyReason(&p.self, nullptr);
-		return FreeShutDownPlugin(p, action);
+		return FreeShutDownPlugin(p, PluginCallGate::kWaitTimeoutMs);
 	}
 
 	// PluginShutdown of a running plugin, called with g_pluginLock released.
@@ -1654,9 +1641,60 @@ namespace PluginManager
 		ReloadPolicy::SetBusyReason(&p.self, nullptr);
 	}
 
+	// A reload or unload asked for from inside a plugin call: the caller, or the
+	// plugin being freed, may be on this stack. It runs from the game-thread
+	// queue instead, outside every call. Records keep their index.
+	static bool QueuedOutOfCall(bool (*action)(int, std::string*), int index, std::string* refusal)
+	{
+		if (!PluginCallGate::InsideCall())
+			return false;
+		GameThreadDispatch::PostVoid([action, index] { action(index, nullptr); });
+		if (refusal) *refusal = kQueuedNote;
+		return true;
+	}
+
+	// Tells the user why a reload or unload stopped short.
+	static void SayStillBusy(const std::string& name, const char* note, std::string* refusal)
+	{
+		ModLoaderLogger::LogWarn(L"[PluginManager] '%S': %S", name.c_str(), note);
+		ShowCrashToast(name, note);
+		if (refusal) *refusal = note;
+	}
+
+	// Before anything is shut down: waits for the running plugin calls, and takes
+	// the time that took off waitMs, which the free then has left. False when
+	// they did not return, with nothing changed.
+	static bool CallsReturned(int index, DWORD& waitMs, std::string* refusal)
+	{
+		std::string name;
+		EnterCriticalSection(&g_pluginLock);
+		const bool mapped = index >= 0 && index < static_cast<int>(g_loadedPlugins.size()) &&
+			g_loadedPlugins[index]->hModule && !g_loadedPlugins[index]->isUnloading;
+		if (mapped)
+			name = g_loadedPlugins[index]->cachedName;
+		LeaveCriticalSection(&g_pluginLock);
+		if (!mapped)
+			return true;
+
+		const ULONGLONG start = GetTickCount64();
+		if (!PluginCallGate::WaitUntilIdle(waitMs))
+		{
+			SayStillBusy(name, kBusyNote, refusal);
+			return false;
+		}
+		const ULONGLONG waited = GetTickCount64() - start;
+		waitMs -= waited < waitMs ? static_cast<DWORD>(waited) : waitMs;
+		return true;
+	}
+
 	bool UnloadPlugin(int index, std::string* refusal)
 	{
 		if (refusal) refusal->clear();
+		if (QueuedOutOfCall(&UnloadPlugin, index, refusal))
+			return false;
+		DWORD waitMs = PluginCallGate::kWaitTimeoutMs;
+		if (!CallsReturned(index, waitMs, refusal))
+			return false;
 		EnterCriticalSection(&g_pluginLock);
 
 		if (index >= 0 && index < static_cast<int>(g_loadedPlugins.size()) &&
@@ -1669,7 +1707,7 @@ namespace PluginManager
 		}
 
 		if (index < 0 || index >= static_cast<int>(g_loadedPlugins.size()) ||
-			!g_loadedPlugins[index]->isInitialized)
+			(!g_loadedPlugins[index]->isInitialized && !g_loadedPlugins[index]->awaitingFree))
 		{
 			LeaveCriticalSection(&g_pluginLock);
 			return false;
@@ -1679,8 +1717,8 @@ namespace PluginManager
 
 		// Everything is asked before anything is shut down, so a refusal leaves
 		// the plugin running exactly as it was.
-		if (std::string why = ReloadPolicy::UnloadRefusal(p.reload.unload, BusyReasonOf(p),
-				ReloadPolicy::GameplayWorldRunning()); !why.empty())
+		if (std::string why = p.awaitingFree ? std::string() : ReloadPolicy::UnloadRefusal(p.reload.unload,
+				BusyReasonOf(p), ReloadPolicy::GameplayWorldRunning()); !why.empty())
 		{
 			ModLoaderLogger::LogWarn(L"Unload of %S refused: %S", p.cachedName.c_str(), why.c_str());
 			LeaveCriticalSection(&g_pluginLock);
@@ -1689,17 +1727,25 @@ namespace PluginManager
 		}
 
 		ModLoaderLogger::LogMessage(L"Unloading plugin: %S", p.cachedName.c_str());
-		ShutDownWithoutLock(p, L"PluginShutdown (unload)");
-		const bool freed = FreeShutDownPlugin(p, L"Unload");
+		if (p.isInitialized)
+			ShutDownWithoutLock(p, L"PluginShutdown (unload)");
+		const bool freed = FreeShutDownPlugin(p, waitMs);
 		LeaveCriticalSection(&g_pluginLock);
 		if (freed)
 			ModLoaderLogger::LogMessage(L"Plugin unloaded: %S", p.cachedName.c_str());
+		else
+			SayStillBusy(p.cachedName, kShutDownNote, refusal);
 		return freed;
 	}
 
 	bool ReloadPlugin(int index, std::string* refusal)
 	{
 		if (refusal) refusal->clear();
+		if (QueuedOutOfCall(&ReloadPlugin, index, refusal))
+			return false;
+		DWORD waitMs = PluginCallGate::kWaitTimeoutMs;
+		if (!CallsReturned(index, waitMs, refusal))
+			return false;
 		EnterCriticalSection(&g_pluginLock);
 
 		if (index < 0 || index >= static_cast<int>(g_loadedPlugins.size()))
@@ -1759,27 +1805,13 @@ namespace PluginManager
 
 		if (p.isInitialized)
 			ShutDownWithoutLock(p, L"PluginShutdown (reload)");
-		if (p.hModule)
+		// InitPluginRecord below re-registers whatever the new build asks for.
+		if (p.hModule && !FreeShutDownPlugin(p, waitMs))
 		{
-			const bool idle = WaitOutPluginRenders(p.hModule, p.cachedName.c_str(), L"Reload");
-
-			// Same reason as UnloadPlugin. InitPluginRecord below re-registers
-			// whatever the new build asks for.
-			ForgetRegistrations(p);
-
-			if (!idle)
-			{
-				++g_pluginGeneration;   // it is shut down now
-				LeaveCriticalSection(&g_pluginLock);
-				WriteDeclaredFeaturesDump();
-				return false;
-			}
-
-			PluginGuard::Untrack(p.hModule);
-			FreeLibrary(p.hModule);
-			p.hModule = nullptr;
-			p.info    = nullptr;
-			p.wire    = WireCompat::Decl{};
+			LeaveCriticalSection(&g_pluginLock);
+			SayStillBusy(p.cachedName, kShutDownNote, refusal);
+			WriteDeclaredFeaturesDump();
+			return false;
 		}
 
 		p.isOutOfDate         = false;
@@ -1788,7 +1820,7 @@ namespace PluginManager
 		p.hookScanFailed       = false;
 
 		LoadFailureInfo failure;
-		bool ok = LoadPluginIntoRecord(p, false, &failure);
+		bool ok = LoadPluginIntoRecord(p, false, true, &failure);
 		++g_pluginGeneration;
 
 		if (ok)
@@ -2315,7 +2347,7 @@ namespace PluginManager
 
 			ModLoaderLogger::LogMessage(L"ScanForNewPlugins: new plugin DLL found: %s", path.c_str());
 			LoadFailureInfo why;
-			if (!LoadPlugin(path, false, &why))
+			if (!LoadPlugin(path, false, true, &why))
 			{
 				if (outResults)
 					outResults->push_back(ResultForLoadFailure(path, why));
@@ -2345,7 +2377,7 @@ namespace PluginManager
 						BaseFileNameA(nameHolder->fileName) + "). Remove or rename one of the two files.";
 					outResults->push_back(std::move(r));
 				}
-				FreeLibrary(added.hModule);
+				FreeRefused(added.hModule, path, true);
 				g_loadedPlugins.pop_back();
 				continue;
 			}

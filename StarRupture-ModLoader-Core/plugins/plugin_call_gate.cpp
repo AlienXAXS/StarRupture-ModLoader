@@ -32,6 +32,25 @@ namespace PluginCallGate
 			s_closer = 0;
 			s_changed.notify_all();
 		}
+
+		// Closes the gate and waits for it to empty; open again when it did not.
+		bool Close(DWORD timeoutMs)
+		{
+			std::unique_lock<std::mutex> lock(s_mutex);
+			if (s_closer) return false;
+			s_closer = GetCurrentThreadId();
+			const bool idle = s_changed.wait_for(lock, std::chrono::milliseconds(timeoutMs),
+			                                     [] { return s_active == 0; });
+			if (!idle)
+				Open();
+			return idle;
+		}
+
+		void Reopen()
+		{
+			std::lock_guard<std::mutex> lock(s_mutex);
+			Open();
+		}
 	}
 
 	Scope::Scope()
@@ -58,7 +77,15 @@ namespace PluginCallGate
 
 	void SetFreeStep(FreeStep step) { s_freeStep.store(step ? step : &UntrackAndFree); }
 
-	bool FreeWhenIdle(HMODULE module, const char* name, DWORD timeoutMs)
+	bool WaitUntilIdle(DWORD timeoutMs)
+	{
+		if (InsideCall() || !Close(timeoutMs)) return false;
+		Reopen();
+		return true;
+	}
+
+	bool FreeWhenIdle(HMODULE module, const char* name, DWORD timeoutMs,
+	                  const std::function<void()>& whileIdle)
 	{
 		if (!module) return true;
 		if (!name) name = "?";
@@ -69,19 +96,8 @@ namespace PluginCallGate
 			return false;
 		}
 
-		bool idle = false;
-		{
-			std::unique_lock<std::mutex> lock(s_mutex);
-			if (!s_closer)
-			{
-				s_closer = GetCurrentThreadId();
-				idle = s_changed.wait_for(lock, std::chrono::milliseconds(timeoutMs), [] { return s_active == 0; });
-				if (!idle)
-					Open();
-			}
-		}
 		// Logged with the gate open: a log sink may itself be waiting at it.
-		if (!idle)
+		if (!Close(timeoutMs))
 		{
 			ModLoaderLogger::LogError(L"[PluginCallGate] '%S' stays loaded: plugin calls were still running after "
 			                          L"%lu ms (or another unload was freeing a module). Try again.",
@@ -89,10 +105,10 @@ namespace PluginCallGate
 			return false;
 		}
 
+		if (whileIdle)
+			whileIdle();
 		s_freeStep.load()(module);
-
-		std::lock_guard<std::mutex> lock(s_mutex);
-		Open();
+		Reopen();
 		return true;
 	}
 }

@@ -3,6 +3,7 @@
 #ifdef MODLOADER_CLIENT_BUILD
 
 #include "plugins/plugin_interface.h"
+#include "UI/plugin_call_tracker.h"
 
 // ---------------------------------------------------------------------------
 // PluginWidgetRegistry
@@ -32,7 +33,8 @@ namespace UI::PluginWidgetRegistry
     // Then waits (bounded) for any render of the module still running on
     // another thread. Returns false if one still was when the wait gave up:
     // the module must not be freed then.
-    bool ForgetModule(HMODULE module);
+    // waitMs: how long to wait for the module's running renders.
+    bool ForgetModule(HMODULE module, DWORD waitMs = PluginCallTracker::kWaitTimeoutMs);
 
     // Show or hide a widget window.  Widgets are visible by default after registration.
     void SetWidgetVisible(WidgetHandle handle, bool visible);

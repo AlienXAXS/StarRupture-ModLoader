@@ -157,6 +157,11 @@ namespace PluginManager
     //
     // PluginShutdown runs without the plugin manager's lock, so the plugin list
     // can be read, and the render thread can draw it, while a plugin shuts down.
+    // The refusal of an unload or reload asked for from inside a plugin call: it
+    // runs on the next game-thread tick instead.
+    inline constexpr const char* kQueuedNote =
+        "It runs on the next frame, after the plugin call that asked for it returns.";
+
     bool UnloadPlugin(int index, std::string* refusal = nullptr);
 
     // Reload the plugin at index: unloads it (if currently loaded) then

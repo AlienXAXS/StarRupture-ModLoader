@@ -76,12 +76,13 @@ namespace UI
 
         // Waits until no other thread is inside a call that match(key, owner)
         // accepts. `lock` holds the registry's mutex on entry and on return.
-        // Returns false if it gave up after kWaitTimeoutMs.
+        // Returns false if it gave up after waitMs.
         template <typename Match>
-        bool WaitForOtherThreads(std::unique_lock<std::mutex>& lock, Match match)
+        bool WaitForOtherThreads(std::unique_lock<std::mutex>& lock, Match match,
+                                 DWORD waitMs = kWaitTimeoutMs)
         {
             const DWORD self = GetCurrentThreadId();
-            return m_done.wait_for(lock, std::chrono::milliseconds(kWaitTimeoutMs), [&]
+            return m_done.wait_for(lock, std::chrono::milliseconds(waitMs), [&]
             {
                 for (const Call& call : m_calls)
                     if (call.thread != self && match(call.key, call.owner))

@@ -300,7 +300,7 @@ namespace UI::PluginPanelRegistry
             s_panelClosedCallbacks.end());
     }
 
-    bool ForgetModule(HMODULE module)
+    bool ForgetModule(HMODULE module, DWORD waitMs)
     {
         if (!module) return true;
 
@@ -332,10 +332,10 @@ namespace UI::PluginPanelRegistry
         // the same lock: a call still running in the module during the wait
         // may have registered another panel or callback.
         const bool finished = s_calls.WaitForOtherThreads(lock,
-            [&](const void*, HMODULE owner) { return owner == module; });
+            [&](const void*, HMODULE owner) { return owner == module; }, waitMs);
         forget();
         lock.unlock();
-        if (!finished)
+        if (!finished && waitMs)
             ModLoaderLogger::LogError(
                 L"[PluginPanels] A panel render or panel-closed callback in module %p was still "
                 L"running after %lu ms.", static_cast<void*>(module), PluginCallTracker::kWaitTimeoutMs);

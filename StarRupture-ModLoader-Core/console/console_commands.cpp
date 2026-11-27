@@ -541,6 +541,8 @@ namespace ModConsole
             std::string refusal;
             if (PluginManager::ReloadPlugin(index, &refusal))
                 out.Out("Reloaded %s.", name.c_str());
+            else if (refusal == PluginManager::kQueuedNote)
+                out.Notice("%s: %s", name.c_str(), refusal.c_str());
             else if (!refusal.empty())
                 out.Error("Reload refused for %s: %s", name.c_str(), refusal.c_str());
             else
@@ -566,6 +568,8 @@ namespace ModConsole
             std::string refusal;
             if (PluginManager::UnloadPlugin(index, &refusal))
                 out.Out("Unloaded %s.", name.c_str());
+            else if (refusal == PluginManager::kQueuedNote)
+                out.Notice("%s: %s", name.c_str(), refusal.c_str());
             else if (!refusal.empty())
                 out.Error("Unload refused for %s: %s", name.c_str(), refusal.c_str());
             else
@@ -607,6 +611,8 @@ namespace ModConsole
             std::string refusal;
             if (PluginManager::ReloadPlugin(index, &refusal))
                 out.Out("Loaded %s.", name.c_str());
+            else if (refusal == PluginManager::kQueuedNote)
+                out.Notice("%s: %s", name.c_str(), refusal.c_str());
             else if (!refusal.empty())
                 out.Error("Load refused for %s: %s", name.c_str(), refusal.c_str());
             else
