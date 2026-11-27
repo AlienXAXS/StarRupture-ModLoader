@@ -542,8 +542,8 @@ namespace UI::ModLoaderWindow
                 {
                     ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "Crashed");
                     if (ImGui::IsItemHovered())
-                        ImGui::SetTooltip("Crashed: %s\nThe loader calls none of its callbacks until it is reloaded or unloaded.",
-                                          s.crashReason);
+                        ImGui::SetTooltip("Crashed: %s\nThe loader calls none of its callbacks %s.", s.crashReason,
+                                          s.reloadBlock[0] ? "while it is crashed" : "until it is reloaded or unloaded");
                 }
                 else if (s.awaitingFree)
                 {

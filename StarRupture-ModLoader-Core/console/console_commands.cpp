@@ -507,8 +507,8 @@ namespace ModConsole
 
             // Switched off after a fault in one of its callbacks: what and where.
             if (crashed)
-                out.Notice("      crashed: %s -- %s it", s.crashReason,
-                           s.reloadBlock[0] ? "unload" : "reload or unload");
+                out.Notice("      crashed: %s%s", s.crashReason,
+                           !s.reloadBlock[0] ? " -- reload or unload it" : s.unloadBlock[0] ? "" : " -- unload it");
 
             if (s.isOutOfDate && s.needsModLoaderUpdate)
             {

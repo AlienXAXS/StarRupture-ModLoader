@@ -281,6 +281,14 @@ static void Test_UnloadPathsPurgePanels()
     // The plugin manager unmaps nothing itself.
     CHECK(src.find("FreeLibrary(") == std::string::npos);
 
+    // UNLOAD runs the plugin's shutdown before it frees it.
+    const std::string unload = FunctionBody(src, "bool UnloadPlugin(int index, std::string* refusal)");
+    const size_t shutDown = unload.find("ShutDownWithoutLock(");
+    const size_t freeIt   = unload.find("FreeShutDownPlugin(");
+    CHECK(shutDown != std::string::npos);
+    CHECK(freeIt != std::string::npos);
+    CHECK(shutDown < freeIt);
+
     // A refused UNLOAD or RELOAD is decided before anything of the plugin is
     // touched: the refusal check comes ahead of the shutdown and the free.
     for (const char* signature : { "bool UnloadPlugin(int index, std::string* refusal)", "bool ReloadPlugin(int index, std::string* refusal)" })

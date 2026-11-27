@@ -380,6 +380,14 @@ namespace
 		const std::string message = Card("A.dll").message;
 		Expect(message.find("nothing was unloaded") != std::string::npos &&
 			message.find("RELOAD") == std::string::npos, "Disable gives the unload note: " + message);
+		// A is now disabled but still running: nothing may send anyone to RELOAD.
+		Expect(!ReloadPlugin(IndexOf("A"), &why) && why.find("disabled") != std::string::npos &&
+			why.find("RELOAD") == std::string::npos, "no RELOAD retry for a disabled plugin: " + why);
+		PluginStatus rows[16]{};
+		const int row = IndexOf("A");
+		Expect(row >= 0 && row < GetAllPluginStatuses(rows, 16) &&
+			std::string(rows[row].reloadBlock).find("disabled") != std::string::npos,
+			"the plugin list shows why in place of the RELOAD button");
 		Expect(Count("shutdown-file-there A") == 0 && Count("detach A") == 0, "A is left as it was");
 		Expect(!UnloadPlugin(IndexOf("StuckC"), &why) && why.find("requires a game restart") != std::string::npos &&
 			why.find("again") == std::string::npos,
