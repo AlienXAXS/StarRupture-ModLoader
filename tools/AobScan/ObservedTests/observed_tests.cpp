@@ -7,6 +7,7 @@
 #include "../bitfield.h"
 #include "../carry.h"
 #include "../observed.h"
+#include "../pdb.h"
 #include "../plugin_scan.h"
 #include "hooks/game/version_map_built.h"
 #include "memory_scanner/image_info.h"
@@ -158,6 +159,62 @@ namespace
 	bool Has(const std::string& text, const char* part)
 	{
 		return text.find(part) != std::string::npos;
+	}
+
+	// nameMatch's comparison, on made-up names.
+	void NameChecks()
+	{
+		using AobScan::ComparableName;
+		using AobScan::ComparablePublicName;
+		const std::wstring wanted = ComparableName(L"UWorld::GetSubsystem<UThing>");
+		Check(ComparableName(L"UWorld::GetSubsystem< class UThing >") == wanted
+			&& ComparableName(L"UWorld::GetSubsystem<struct UThing>") == wanted,
+			"spaces and class/struct keywords do not count in a template argument");
+		Check(ComparableName(L"TBox<TBox<A,B> >::Take") == ComparableName(L"TBox<class TBox<struct A, B>>::Take"),
+			"nested template spelling");
+		Check(ComparableName(L"A<unsigned int>") != ComparableName(L"A<unsignedint>"), "a space between two words counts");
+		Check(ComparableName(L"A<classX>") == L"A<classX>" && ComparableName(L"myclass ::F") == L"myclass::F",
+			"class inside a longer word stays");
+		Check(ComparableName(L"UWorld::GetSubsystemBase<UThing>") != wanted
+			&& ComparableName(L"UWorld::GetSubsystem<UThingy>") != wanted
+			&& ComparableName(L"UWorld::GetSubsystem<UThing*>") != wanted
+			&& ComparableName(L"FWorld::GetSubsystem<UThing>") != wanted
+			&& ComparableName(L"UWorld::getSubsystem<UThing>") != wanted,
+			"a longer name, another argument, another class or another case differs");
+
+		Check(ComparablePublicName(L"?Get@FOne@@QEAAHXZ") == L"FOne::Get", "a public's qualified name, without return type or parameters");
+		Check(ComparablePublicName(L"??$GetSubsystem@VUThing@@@UWorld@@QEAAHXZ") == wanted, "a template public");
+		Check(ComparablePublicName(L"?B@FMulti@@W7EAAHH@Z").empty(), "an adjustor thunk has no name");
+		Check(ComparablePublicName(L"PlainFn") == L"PlainFn", "an undecorated public keeps its name");
+	}
+
+	// The PDB lookup on this program's own image.
+	__declspec(noinline) int NamedHere(int a)
+	{
+		volatile int v = a;
+		return v * 31 + 5;
+	}
+
+	void LookupChecks()
+	{
+		const HMODULE self = GetModuleHandleW(nullptr);
+		const Scanner::ImageInfo image = Scanner::GetImageInfo(self);
+		wchar_t path[MAX_PATH];
+		GetModuleFileNameW(self, path, MAX_PATH);
+		int (*volatile fn)(int) = &NamedHere;
+		const uint64_t rva = reinterpret_cast<uintptr_t>(fn) - image.base;
+		const uint64_t inside = rva + 1;
+
+		AobScan::SymbolStarts symbols(path, image.base, image.size);
+		const std::optional<bool> right = symbols.Named(&rva, "`anonymous namespace'::NamedHere");
+		Check(right == std::optional<bool>(true), "the name at its start is true");
+		Check(symbols.Named(&rva, "NamedHere") == std::optional<bool>(false), "part of the qualified name is false");
+		Check(symbols.Named(&inside, "`anonymous namespace'::NamedHere") == std::optional<bool>(false),
+			"an address inside the function is false");
+		Check(symbols.Named(nullptr, "NamedHere") == std::optional<bool>(false), "no address is false");
+
+		AobScan::SymbolStarts none(L"Z:\no-such-dir\no-such.exe", image.base, image.size);
+		Check(!none.Named(&rva, "NamedHere").has_value(), "no PDB is neither");
 	}
 }
 
@@ -616,6 +673,9 @@ int main()
 		Check(!AobScan::PlaceBitfield(0x5d, 0, 9).inOneByte, "a field wider than 8 bits is BITFIELD");
 		Check(!AobScan::PlaceBitfield(0x5d, 0, 32).inOneByte, "a 32-bit field is BITFIELD");
 	}
+
+	NameChecks();
+	LookupChecks();
 
 	printf("%d checks, %d failed\n", g_checks, g_failed);
 	return g_failed ? 1 : 0;
